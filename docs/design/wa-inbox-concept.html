@@ -1,0 +1,851 @@
+<title>wa-inbox — Konsep &amp; Arsitektur</title>
+<style>
+  :root {
+    --ink: #1C1B1A;
+    --ink-soft: #55524D;
+    --ink-faint: #8A867E;
+    --paper: #F0F1EC;
+    --paper-raised: #FBFBF9;
+    --line: #DBDCD4;
+    --line-strong: #C3C4BA;
+    --accent: #106877;
+    --accent-strong: #0B4C57;
+    --accent-soft: #E1EFEF;
+    --amber: #A85F0B;
+    --amber-soft: #F8ECDA;
+    --moss: #3C6B42;
+    --moss-soft: #E5EEE1;
+    --red: #A13F2E;
+    --red-soft: #F5E4DE;
+    --clay: #8A6A50;
+    --clay-soft: #EFE7DE;
+    --shadow: 0 1px 2px rgba(28,27,26,0.04), 0 6px 20px rgba(28,27,26,0.05);
+    --font-display: 'Iowan Old Style', 'Palatino Linotype', Palatino, 'URW Palladio L', Georgia, serif;
+    --font-body: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    --font-mono: ui-monospace, 'SF Mono', 'Cascadia Code', 'Roboto Mono', Menlo, Consolas, monospace;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ink: #EDEEE9;
+      --ink-soft: #B8B6AE;
+      --ink-faint: #7C7A73;
+      --paper: #17191A;
+      --paper-raised: #1F2224;
+      --line: #33363333;
+      --line: #34373A;
+      --line-strong: #454A4D;
+      --accent: #52C4D3;
+      --accent-strong: #7FDAE6;
+      --accent-soft: #17383D;
+      --amber: #EFAA52;
+      --amber-soft: #3B2C17;
+      --moss: #86B98C;
+      --moss-soft: #24352A;
+      --red: #E28A75;
+      --red-soft: #3B241F;
+      --clay: #CDA57F;
+      --clay-soft: #332A22;
+      --shadow: 0 1px 2px rgba(0,0,0,0.3), 0 8px 24px rgba(0,0,0,0.35);
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --ink: #EDEEE9; --ink-soft: #B8B6AE; --ink-faint: #7C7A73;
+    --paper: #17191A; --paper-raised: #1F2224; --line: #34373A; --line-strong: #454A4D;
+    --accent: #52C4D3; --accent-strong: #7FDAE6; --accent-soft: #17383D;
+    --amber: #EFAA52; --amber-soft: #3B2C17;
+    --moss: #86B98C; --moss-soft: #24352A;
+    --red: #E28A75; --red-soft: #3B241F;
+    --clay: #CDA57F; --clay-soft: #332A22;
+    --shadow: 0 1px 2px rgba(0,0,0,0.3), 0 8px 24px rgba(0,0,0,0.35);
+  }
+  :root[data-theme="light"] {
+    --ink: #1C1B1A; --ink-soft: #55524D; --ink-faint: #8A867E;
+    --paper: #F0F1EC; --paper-raised: #FBFBF9; --line: #DBDCD4; --line-strong: #C3C4BA;
+    --accent: #106877; --accent-strong: #0B4C57; --accent-soft: #E1EFEF;
+    --amber: #A85F0B; --amber-soft: #F8ECDA;
+    --moss: #3C6B42; --moss-soft: #E5EEE1;
+    --red: #A13F2E; --red-soft: #F5E4DE;
+    --clay: #8A6A50; --clay-soft: #EFE7DE;
+    --shadow: 0 1px 2px rgba(28,27,26,0.04), 0 6px 20px rgba(28,27,26,0.05);
+  }
+
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--font-body);
+    font-size: 16px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+  a { color: var(--accent-strong); }
+  :root[data-theme="dark"] a, @media (prefers-color-scheme: dark) { a { color: var(--accent-strong); } }
+
+  ::selection { background: var(--accent-soft); color: var(--accent-strong); }
+
+  h1, h2, h3, h4 { font-family: var(--font-display); font-weight: 600; text-wrap: balance; color: var(--ink); }
+  code, .mono { font-family: var(--font-mono); }
+
+  /* ---------- Cover ---------- */
+  .cover {
+    padding: 5.5rem 1.5rem 4rem;
+    border-bottom: 1px solid var(--line);
+    background:
+      radial-gradient(1100px 420px at 12% -10%, var(--accent-soft) 0%, transparent 60%),
+      var(--paper);
+  }
+  .cover-inner { max-width: 46rem; margin: 0 auto; }
+  .eyebrow {
+    display: inline-flex; align-items: center; gap: .5rem;
+    font-family: var(--font-mono); font-size: .72rem; letter-spacing: .12em; text-transform: uppercase;
+    color: var(--accent-strong); background: var(--accent-soft);
+    padding: .3rem .6rem; border-radius: 3px; margin-bottom: 1.6rem;
+  }
+  .eyebrow .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
+  .cover h1 { font-size: clamp(2.3rem, 5vw, 3.4rem); line-height: 1.05; margin: 0 0 .9rem; letter-spacing: -.01em; }
+  .cover .lede { font-size: 1.18rem; color: var(--ink-soft); max-width: 40rem; margin: 0 0 2rem; }
+  .cover-meta {
+    display: flex; flex-wrap: wrap; gap: 1.6rem 2.4rem;
+    font-size: .85rem; color: var(--ink-faint);
+    border-top: 1px solid var(--line); padding-top: 1.4rem;
+  }
+  .cover-meta strong { display: block; font-family: var(--font-mono); font-size: .68rem; text-transform: uppercase; letter-spacing: .09em; color: var(--ink-faint); margin-bottom: .25rem; font-weight: 500; }
+  .cover-meta span { color: var(--ink); font-size: .92rem; }
+
+  /* ---------- Shell ---------- */
+  .shell { max-width: 78rem; margin: 0 auto; display: grid; grid-template-columns: 15.5rem minmax(0,1fr); gap: 3.5rem; padding: 3rem 1.5rem 6rem; }
+  nav.toc { position: sticky; top: 2rem; align-self: start; max-height: calc(100vh - 4rem); overflow-y: auto; }
+  nav.toc .toc-title { font-family: var(--font-mono); font-size: .68rem; text-transform: uppercase; letter-spacing: .1em; color: var(--ink-faint); margin: 0 0 .9rem; }
+  nav.toc ol { list-style: none; margin: 0; padding: 0; border-left: 1px solid var(--line); }
+  nav.toc li { margin: 0; }
+  nav.toc a {
+    display: block; padding: .38rem .9rem; margin-left: -1px; border-left: 1px solid transparent;
+    font-size: .87rem; color: var(--ink-soft); text-decoration: none; line-height: 1.35;
+  }
+  nav.toc a:hover { color: var(--ink); border-left-color: var(--line-strong); }
+  nav.toc .toc-sub { padding-left: 1.6rem; font-size: .81rem; color: var(--ink-faint); }
+
+  main { min-width: 0; }
+  section { margin-bottom: 4.5rem; scroll-margin-top: 1.5rem; }
+  section > .kicker {
+    font-family: var(--font-mono); font-size: .72rem; letter-spacing: .1em; text-transform: uppercase;
+    color: var(--accent-strong); margin-bottom: .6rem; display: block;
+  }
+  section > h2 { font-size: 1.85rem; margin: 0 0 .3rem; }
+  section > .dek { color: var(--ink-soft); font-size: 1.02rem; max-width: 44rem; margin: 0 0 1.8rem; }
+  h3 { font-size: 1.22rem; margin: 2rem 0 .7rem; }
+  h4 { font-size: 1rem; margin: 1.4rem 0 .5rem; color: var(--ink); }
+  p { max-width: 42rem; color: var(--ink-soft); }
+  p.tight { max-width: none; }
+  ul, ol { max-width: 42rem; color: var(--ink-soft); padding-left: 1.3rem; }
+  li { margin-bottom: .35rem; }
+  li::marker { color: var(--ink-faint); }
+  strong { color: var(--ink); font-weight: 600; }
+
+  hr.rule { border: none; border-top: 1px solid var(--line); margin: 3.2rem 0; }
+
+  /* ---------- Callouts ---------- */
+  .callout {
+    border: 1px solid var(--line); border-left: 3px solid var(--accent);
+    background: var(--paper-raised); border-radius: 4px;
+    padding: 1rem 1.2rem; margin: 1.4rem 0; max-width: 44rem; box-shadow: var(--shadow);
+  }
+  .callout.warn { border-left-color: var(--amber); }
+  .callout.risk { border-left-color: var(--red); }
+  .callout .callout-label {
+    font-family: var(--font-mono); font-size: .68rem; text-transform: uppercase; letter-spacing: .09em;
+    color: var(--accent-strong); margin-bottom: .35rem; display: block;
+  }
+  .callout.warn .callout-label { color: var(--amber); }
+  .callout.risk .callout-label { color: var(--red); }
+  .callout p { margin: 0; max-width: none; font-size: .93rem; }
+
+  /* ---------- Pills / tags ---------- */
+  .pill {
+    display: inline-flex; align-items: center; gap: .35rem;
+    font-family: var(--font-mono); font-size: .72rem; letter-spacing: .02em;
+    padding: .18rem .55rem; border-radius: 99px; border: 1px solid transparent; white-space: nowrap;
+  }
+  .pill::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+  .pill.ok { background: var(--moss-soft); color: var(--moss); }
+  .pill.pending { background: var(--amber-soft); color: var(--amber); }
+  .pill.off { background: var(--red-soft); color: var(--red); }
+  .pill.info { background: var(--accent-soft); color: var(--accent-strong); }
+  .pill.bot { background: var(--accent-soft); color: var(--accent-strong); }
+  .pill.human { background: var(--clay-soft); color: var(--clay); }
+
+  /* ---------- Tables ---------- */
+  .table-wrap { overflow-x: auto; margin: 1.2rem 0 1.8rem; border: 1px solid var(--line); border-radius: 6px; background: var(--paper-raised); box-shadow: var(--shadow); }
+  table { border-collapse: collapse; width: 100%; min-width: 34rem; font-size: .89rem; }
+  table.wide { min-width: 48rem; }
+  th, td { text-align: left; padding: .6rem .9rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+  thead th {
+    font-family: var(--font-mono); font-size: .68rem; text-transform: uppercase; letter-spacing: .07em;
+    color: var(--ink-faint); font-weight: 500; background: var(--paper);
+  }
+  tbody tr:last-child td { border-bottom: none; }
+  td.mono, th.mono { font-family: var(--font-mono); font-size: .84rem; }
+  td .sub { color: var(--ink-faint); font-size: .82rem; display: block; margin-top: .15rem; }
+  .num { font-variant-numeric: tabular-nums; }
+
+  /* ---------- Repo landscape cards ---------- */
+  .repo-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr)); gap: .9rem; margin: 1.5rem 0; }
+  .repo-card { border: 1px solid var(--line); background: var(--paper-raised); border-radius: 6px; padding: 1rem 1.1rem; box-shadow: var(--shadow); }
+  .repo-card .repo-name { font-family: var(--font-mono); font-size: .84rem; color: var(--ink); display: block; margin-bottom: .4rem; }
+  .repo-card p { font-size: .85rem; margin: 0 0 .6rem; max-width: none; }
+  .repo-card .repo-fate { font-size: .74rem; }
+
+  /* ---------- Menu cards (core section) ---------- */
+  .menu-card {
+    border: 1px solid var(--line); background: var(--paper-raised); border-radius: 8px;
+    padding: 1.8rem 2rem; margin: 1.6rem 0; box-shadow: var(--shadow);
+  }
+  .menu-card .menu-head { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; flex-wrap: wrap; margin-bottom: .3rem; }
+  .menu-card .menu-name { font-family: var(--font-display); font-size: 1.4rem; margin: 0; }
+  .menu-card .menu-tag { font-family: var(--font-mono); font-size: .72rem; color: var(--ink-faint); }
+  .menu-card .menu-purpose { color: var(--ink-soft); font-size: .95rem; margin: .3rem 0 1.3rem; max-width: 42rem; }
+  .feature-list { display: grid; gap: .9rem; margin: 0; padding: 0; list-style: none; max-width: none; }
+  .feature-list li { display: grid; grid-template-columns: 11.5rem minmax(0,1fr); gap: 1rem; padding-top: .9rem; border-top: 1px solid var(--line); margin: 0; }
+  .feature-list li:first-child { border-top: none; padding-top: 0; }
+  .feature-list .feature-name { font-weight: 600; color: var(--ink); font-size: .92rem; }
+  .feature-list .feature-desc { color: var(--ink-soft); font-size: .89rem; }
+  .feature-list .feature-desc ul { margin: .4rem 0 0; padding-left: 1.1rem; max-width: none; }
+  .feature-list .feature-desc li { border: none; padding: 0; display: list-item; margin-bottom: .25rem; font-size: .87rem; }
+
+  /* ---------- Architecture diagram (hand-built) ---------- */
+  .diagram { border: 1px solid var(--line); background: var(--paper-raised); border-radius: 8px; padding: 2.2rem 1.8rem; margin: 1.6rem 0; box-shadow: var(--shadow); overflow-x: auto; }
+  .diagram-row { display: flex; align-items: stretch; justify-content: center; gap: 0; min-width: 44rem; }
+  .node {
+    border: 1.5px solid var(--line-strong); border-radius: 6px; background: var(--paper);
+    padding: .8rem 1rem; font-size: .85rem; text-align: center; display: flex; flex-direction: column; justify-content: center; gap: .2rem;
+  }
+  .node .node-title { font-weight: 600; color: var(--ink); font-size: .88rem; }
+  .node .node-sub { font-family: var(--font-mono); font-size: .68rem; color: var(--ink-faint); }
+  .node.accent { border-color: var(--accent); background: var(--accent-soft); }
+  .node.accent .node-title { color: var(--accent-strong); }
+  .node.hub { border-color: var(--accent); border-width: 2px; background: var(--accent-soft); min-width: 12rem; }
+  .connector { display: flex; align-items: center; justify-content: center; flex-direction: column; padding: 0 .8rem; min-width: 3.5rem; }
+  .connector .line { height: 1.5px; width: 100%; background: var(--line-strong); position: relative; }
+  .connector .line::after { content: "▸"; position: absolute; right: -.35rem; top: -.62rem; color: var(--line-strong); font-size: .8rem; }
+  .connector .clabel { font-family: var(--font-mono); font-size: .64rem; color: var(--ink-faint); margin-top: .3rem; text-align: center; white-space: nowrap; }
+  .diagram-branches { display: flex; justify-content: center; gap: 1.4rem; margin-top: 2.2rem; min-width: 44rem; flex-wrap: wrap; }
+  .branch { display: flex; flex-direction: column; align-items: center; gap: .5rem; }
+  .branch .vline { width: 1.5px; height: 1.6rem; background: var(--line-strong); }
+
+  /* ---------- Flow steps ---------- */
+  .flow { counter-reset: step; margin: 1.6rem 0; max-width: 44rem; }
+  .flow-step { display: grid; grid-template-columns: 2.1rem minmax(0,1fr); gap: 1rem; position: relative; padding-bottom: 1.4rem; }
+  .flow-step:last-child { padding-bottom: 0; }
+  .flow-step::before {
+    counter-increment: step; content: counter(step);
+    width: 2.1rem; height: 2.1rem; border-radius: 50%; border: 1.5px solid var(--accent); color: var(--accent-strong);
+    display: flex; align-items: center; justify-content: center; font-family: var(--font-mono); font-size: .82rem; font-weight: 600;
+    background: var(--paper-raised); z-index: 1;
+  }
+  .flow-step::after {
+    content: ""; position: absolute; left: 1.05rem; top: 2.1rem; bottom: -.2rem; width: 1.5px; background: var(--line);
+  }
+  .flow-step:last-child::after { display: none; }
+  .flow-step .step-title { grid-column: 2; grid-row: 1; font-weight: 600; color: var(--ink); margin-bottom: .25rem; font-size: .95rem; }
+  .flow-step .step-body { grid-column: 2; grid-row: 2; color: var(--ink-soft); font-size: .88rem; }
+  .flow-step .step-body code { background: var(--paper); border: 1px solid var(--line); padding: .05rem .35rem; border-radius: 3px; font-size: .82rem; }
+
+  /* ---------- Decision table ---------- */
+  .decision-row { display: grid; grid-template-columns: 1fr auto; gap: 1rem; align-items: center; padding: .7rem 0; border-top: 1px solid var(--line); }
+  .decision-row:first-child { border-top: none; }
+  .decision-row .situation { font-size: .9rem; color: var(--ink); }
+  .decision-row .situation .sub { display: block; font-size: .8rem; color: var(--ink-faint); margin-top: .1rem; }
+
+  /* ---------- Rollout timeline ---------- */
+  .timeline { display: grid; grid-template-columns: repeat(4, minmax(11rem,1fr)); gap: 1rem; margin: 1.6rem 0; }
+  .phase { border: 1px solid var(--line); background: var(--paper-raised); border-radius: 6px; padding: 1.1rem 1.15rem; box-shadow: var(--shadow); position: relative; }
+  .phase .phase-num { font-family: var(--font-mono); font-size: .68rem; color: var(--accent-strong); letter-spacing: .06em; text-transform: uppercase; }
+  .phase h4 { margin: .4rem 0 .5rem; font-size: 1rem; }
+  .phase ul { padding-left: 1.05rem; margin: 0; }
+  .phase li { font-size: .82rem; margin-bottom: .3rem; }
+
+  /* ---------- Decisions log (durable) ---------- */
+  .decisions-log { border: 1px solid var(--line); background: var(--paper-raised); border-radius: 8px; overflow: hidden; margin: 1.6rem 0; box-shadow: var(--shadow); }
+  .decisions-log .d-row { padding: 1rem 1.3rem; border-top: 1px solid var(--line); display: grid; grid-template-columns: 1fr; gap: .3rem; }
+  .decisions-log .d-row:first-child { border-top: none; }
+  .decisions-log .d-title { font-weight: 600; font-size: .91rem; color: var(--ink); }
+  .decisions-log .d-why { font-size: .84rem; color: var(--ink-soft); }
+
+  footer { max-width: 78rem; margin: 0 auto; padding: 2.5rem 1.5rem 4rem; border-top: 1px solid var(--line); color: var(--ink-faint); font-size: .82rem; }
+
+  @media (max-width: 880px) {
+    .shell { grid-template-columns: 1fr; }
+    nav.toc { position: static; max-height: none; border-bottom: 1px solid var(--line); padding-bottom: 1.5rem; margin-bottom: .5rem; }
+    .feature-list li { grid-template-columns: 1fr; gap: .3rem; }
+    .timeline { grid-template-columns: 1fr 1fr; }
+  }
+  @media (max-width: 520px) {
+    .cover { padding: 3.5rem 1.2rem 2.8rem; }
+    .timeline { grid-template-columns: 1fr; }
+  }
+</style>
+
+<article class="cover">
+  <div class="cover-inner">
+    <span class="eyebrow"><span class="dot"></span>Dokumen Konsep — Draf untuk Ditinjau</span>
+    <h1>wa-inbox</h1>
+    <p class="lede">Satu ruang kerja WhatsApp terpadu untuk tim Java Volcano Tour Operator — menyatukan percakapan resmi &amp; tidak resmi, kendali bot, dan data pelanggan yang selama ini tersebar di lima aplikasi berbeda dan dikerjakan manual lewat Meta Business Suite.</p>
+    <div class="cover-meta">
+      <div><strong>Nomor yang dilayani</strong><span>6282244788833 (satu nomor, dua jalur akses)</span></div>
+      <div><strong>Menggantikan</strong><span>wa-dashboard, waba-jvto, chatbot-web</span></div>
+      <div><strong>Tetap terpisah</strong><span>wa-coexist, jvto-whatsapp-agent-runtime</span></div>
+      <div><strong>Status</strong><span>Hasil brainstorming — belum diimplementasikan</span></div>
+    </div>
+  </div>
+</article>
+
+<div class="shell">
+  <nav class="toc">
+    <p class="toc-title">Daftar Isi</p>
+    <ol>
+      <li><a href="#ringkasan">1. Ringkasan Eksekutif</a></li>
+      <li><a href="#peta-sistem">2. Peta Sistem Saat Ini</a></li>
+      <li><a href="#keputusan">3. Keputusan Arsitektur</a></li>
+      <li><a href="#arsitektur">4. Diagram Arsitektur</a></li>
+      <li><a href="#alur-masuk">5. Alur Pesan Masuk</a></li>
+      <li><a href="#alur-keluar">6. Alur Pesan Keluar</a></li>
+      <li><a href="#otak-bot">7. Logika Otak Bot</a>
+        <ol class="toc-sub">
+          <li><a href="#kapan-handoff">Kapan bot vs. handoff</a></li>
+        </ol>
+      </li>
+      <li><a href="#menu">8. Struktur Menu Aplikasi</a>
+        <ol class="toc-sub">
+          <li><a href="#menu-beranda">Beranda</a></li>
+          <li><a href="#menu-chat">Chat / Inbox</a></li>
+          <li><a href="#menu-kontak">Kontak (CRM)</a></li>
+          <li><a href="#menu-template">Template Pesan</a></li>
+          <li><a href="#menu-setting">Pengaturan <span style="opacity:.6">(+ Nomor, Bot &amp; Otomasi)</span></a></li>
+        </ol>
+      </li>
+      <li><a href="#data">9. Model Data</a></li>
+      <li><a href="#keamanan">10. Keamanan &amp; Penanganan Error</a></li>
+      <li><a href="#rollout">11. Rencana Rollout</a></li>
+      <li><a href="#stack">12. Stack Teknologi</a></li>
+      <li><a href="#terbuka">13. Item yang Masih Terbuka</a></li>
+    </ol>
+  </nav>
+
+  <main>
+
+    <section id="ringkasan">
+      <span class="kicker">01 — Konteks</span>
+      <h2>Ringkasan Eksekutif</h2>
+      <p class="dek">Tim JVTO hari ini melayani WhatsApp lewat lima aplikasi yang tumpang tindih, dan sebagian besar pekerjaan nyatanya masih dilakukan manual lewat Meta Business Suite — salin-tempel balasan template, atur label satu-satu, tanpa visibilitas terhadap apa yang bot sudah/belum jawab.</p>
+
+      <h3>Masalah</h3>
+      <ul>
+        <li><strong>Tiga dashboard yang tumpang tindih</strong> — wa-dashboard, waba-jvto, dan mini-dashboard chatbot-web masing-masing punya sebagian dari CRM, inbox, dan kendali bot, tidak satu pun yang lengkap.</li>
+        <li><strong>Kerja manual di Meta Business Suite</strong> — agen menyalin balasan template dan mengatur label satu per satu, tanpa terhubung ke data pelanggan atau riwayat booking.</li>
+        <li><strong>Bot dan manusia tidak saling lihat</strong> — tidak ada satu tempat yang menunjukkan percakapan mana yang sedang dipegang bot, kenapa bot menjawab begitu, dan kapan harus diambil alih.</li>
+      </ul>
+
+      <h3>Solusi yang diusulkan</h3>
+      <p>Satu aplikasi baru, <strong>wa-inbox</strong>, dibangun independen (bukan fork dari aplikasi manapun) sebagai satu-satunya ruang kerja agen: menerima seluruh pesan masuk, menyimpan seluruh data pelanggan, menjalankan logika bot, dan mengirim balasan lewat jalur resmi maupun tidak resmi — semua dari satu layar.</p>
+
+      <h3>Prinsip yang memandu desain ini</h3>
+      <ul>
+        <li><strong>Satu sumber kebenaran</strong> — satu percakapan per kontak, bukan terpecah per jalur pengiriman.</li>
+        <li><strong>Gagal aman</strong> — kalau bot ragu di titik manapun, defaultnya selalu lempar ke manusia, bukan menebak.</li>
+        <li><strong>Tidak menduplikasi logika tanpa alasan</strong> — kecuali untuk bagian yang sudah matang dan diporting secara sadar, dengan proses sinkronisasi yang jelas saat sumber aslinya berubah.</li>
+        <li><strong>Servis eksternal seminimal mungkin</strong> — hanya dipertahankan kalau benar-benar tidak bisa digantikan (sesi WhatsApp langsung, komputasi keputusan yang diatur tata kelola khusus).</li>
+      </ul>
+    </section>
+
+    <section id="peta-sistem">
+      <span class="kicker">02 — Sebelum</span>
+      <h2>Peta Sistem Saat Ini</h2>
+      <p class="dek">Lima aplikasi yang ada hari ini, dan nasib masing-masing setelah wa-inbox dibangun.</p>
+
+      <div class="repo-grid">
+        <div class="repo-card">
+          <span class="repo-name">wa-coexist</span>
+          <p>Servis kecil yang memegang sesi WhatsApp langsung (whatsapp-web.js / Baileys) untuk jalur tidak resmi nomor JVTO. Mengurus pairing, kirim pesan tak resmi, dan status koneksi.</p>
+          <span class="pill ok repo-fate">Tetap berjalan terpisah</span>
+        </div>
+        <div class="repo-card">
+          <span class="repo-name">waba-jvto</span>
+          <p>Dashboard Next.js untuk jalur resmi Meta Cloud API — inbox, kontak, template, Flows. Fungsinya diserap penuh ke wa-inbox.</p>
+          <span class="pill off repo-fate">Dipensiunkan</span>
+        </div>
+        <div class="repo-card">
+          <span class="repo-name">wa-dashboard</span>
+          <p>Dashboard lama berbasis Baileys — CRM paling lengkap saat ini (kontak, label, pipeline, reminder). Bukan basis kode wa-inbox, tapi konsep CRM-nya jadi rujukan.</p>
+          <span class="pill off repo-fate">Dipensiunkan setelah tidak dipakai</span>
+        </div>
+        <div class="repo-card">
+          <span class="repo-name">chatbot-web</span>
+          <p>Otak bot booking — state machine, template balasan statis, fallback LLM untuk FAQ. Logikanya diporting masuk ke wa-inbox.</p>
+          <span class="pill off repo-fate">Dipensiunkan, logika diserap</span>
+        </div>
+        <div class="repo-card">
+          <span class="repo-name">jvto-whatsapp-agent-runtime</span>
+          <p>Lapisan keputusan bergaransi tata kelola (Python) — klasifikasi kebutuhan pelanggan, penyusunan draf jawaban dari katalog data resmi, gerbang persetujuan sebelum ke pelanggan asli.</p>
+          <span class="pill info repo-fate">Sumber logika &amp; data — diporting bertahap</span>
+        </div>
+      </div>
+
+      <div class="callout">
+        <span class="callout-label">Temuan dari tangkapan layar</span>
+        <p>Alur kerja hari ini: agen membalas manual di Meta Business Suite dengan pesan template tersalin ("What's included", panduan booking), lalu mengatur label ("Confirmed Booking") satu per satu. Nomor wa.me yang muncul cocok dengan nomor yang dipegang wa-coexist — inilah pekerjaan yang ingin digantikan wa-inbox.</p>
+      </div>
+    </section>
+
+    <section id="keputusan">
+      <span class="kicker">03 — Catatan Keputusan</span>
+      <h2>Keputusan Arsitektur</h2>
+      <p class="dek">Keputusan yang sudah final dari diskusi, dicatat di sini supaya tidak dibahas ulang saat implementasi.</p>
+
+      <div class="decisions-log">
+        <div class="d-row">
+          <span class="d-title">wa-inbox adalah hub, bukan cermin pasif</span>
+          <span class="d-why">Kenapa: aplikasi lain berhenti jadi sumber kebenaran ganda — wa-inbox yang menerima, memutuskan, dan mengirim.</span>
+        </div>
+        <div class="d-row">
+          <span class="d-title">Satu nomor, satu Conversation — bukan per jalur kirim</span>
+          <span class="d-why">Kenapa: 6282244788833 diakses lewat dua jalur (coexistence) tapi tetap satu nomor di mata pelanggan. Jalur dicatat per pesan, bukan memecah percakapan.</span>
+        </div>
+        <div class="d-row">
+          <span class="d-title">Pesan masuk hanya lewat webhook Meta official</span>
+          <span class="d-why">Kenapa: Meta menjamin pengiriman event ke Cloud API pada nomor coexistence — satu sumber, tanpa perlu dedup lintas webhook.</span>
+        </div>
+        <div class="d-row">
+          <span class="d-title">Pesan keluar bisa lewat Official (Graph API) atau Unofficial (wa-coexist)</span>
+          <span class="d-why">Kenapa: template resmi wajib lewat Official; balasan bebas lebih fleksibel lewat Unofficial. Default diatur di Pengaturan, bisa di-override per pesan.</span>
+        </div>
+        <div class="d-row">
+          <span class="d-title">Pairing &amp; onboarding nomor tidak dibangun ulang</span>
+          <span class="d-why">Kenapa: wa-coexist sudah mengurus sesi tidak resmi, kredensial resmi sudah ada dari proses embedded signup. wa-inbox cukup memakainya, bukan membangun ulang.</span>
+        </div>
+        <div class="d-row">
+          <span class="d-title">Logika keputusan bot: diporting ke TypeScript, data tetap disinkron</span>
+          <span class="d-why">Kenapa: bagian tersulit (live tools/feasibility real-time) masih berstatus <em>NotConnected</em> di agent-runtime — tidak ada kemampuan nyata yang hilang dengan porting sekarang. Update lanjutan disinkron manual sebagai kebiasaan rutin, bukan otomatis.</span>
+        </div>
+        <div class="d-row">
+          <span class="d-title">Gerbang persetujuan (deployment-approval) ikut diporting</span>
+          <span class="d-why">Kenapa: supaya wa-inbox tetap patuh pada aturan "jangan balas otomatis penuh ke pelanggan asli sebelum disetujui" walau logikanya tidak lagi dipanggil live.</span>
+        </div>
+        <div class="d-row">
+          <span class="d-title">Booking API JVTO dipanggil live, bukan diporting seperti agent-runtime</span>
+          <span class="d-why">Kenapa: ini bukan logika keputusan yang stabil seperti agent-runtime, tapi data pelanggan nyata yang berubah kapan saja (status bayar, itinerary) — sama seperti alasan pesan tidak pernah disinkron statis. Diperiksa di setiap pesan masuk, dicache ~24 jam, mengikuti pola yang sudah terbukti di chatbot-web.</span>
+        </div>
+      </div>
+    </section>
+
+    <section id="arsitektur">
+      <span class="kicker">04 — Bentuk Sistem</span>
+      <h2>Diagram Arsitektur</h2>
+      <p class="dek">wa-inbox sebagai pusat — satu aplikasi Next.js yang berisi inbox, CRM, dan otak bot. Hanya satu servis eksternal yang tetap dipertahankan: wa-coexist, karena dialah yang memegang sesi WhatsApp tak resmi yang sesungguhnya.</p>
+
+      <div class="diagram">
+        <div class="diagram-row">
+          <div class="node accent">
+            <span class="node-title">Meta Cloud API</span>
+            <span class="node-sub">webhook · pesan masuk</span>
+          </div>
+          <div class="connector"><div class="line"></div><span class="clabel">POST /webhooks/meta</span></div>
+          <div class="node hub">
+            <span class="node-title">wa-inbox</span>
+            <span class="node-sub">inbox · CRM · state · otak bot · kirim</span>
+          </div>
+        </div>
+        <div class="diagram-branches">
+          <div class="branch">
+            <div class="vline"></div>
+            <div class="node">
+              <span class="node-title">Kirim Official</span>
+              <span class="node-sub">Graph API langsung</span>
+            </div>
+          </div>
+          <div class="branch">
+            <div class="vline"></div>
+            <div class="node">
+              <span class="node-title">wa-coexist</span>
+              <span class="node-sub">kirim unofficial + status koneksi</span>
+            </div>
+          </div>
+          <div class="branch">
+            <div class="vline"></div>
+            <div class="node">
+              <span class="node-title">Katalog Pengetahuan</span>
+              <span class="node-sub">sync berkala dari agent-runtime</span>
+            </div>
+          </div>
+          <div class="branch">
+            <div class="vline"></div>
+            <div class="node">
+              <span class="node-title">Booking API JVTO</span>
+              <span class="node-sub">lookup live by nomor telepon</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <p style="font-size:.85rem; color:var(--ink-faint); max-width:44rem;">Panah menunjukkan arah pemicu/panggilan, bukan arah data semata. wa-inbox selalu jadi pihak yang memanggil dan memutuskan; tidak ada servis lain yang mendorong balik kecuali lewat webhook Meta.</p>
+    </section>
+
+    <section id="alur-masuk">
+      <span class="kicker">05 — Inbound</span>
+      <h2>Alur Pesan Masuk</h2>
+      <p class="dek">Dari pesan pelanggan sampai muncul di layar agen (atau dibalas bot).</p>
+      <div class="flow">
+        <div class="flow-step">
+          <div class="step-title">Meta mengirim event ke webhook</div>
+          <div class="step-body">Payload diverifikasi pakai HMAC (<code>X-Hub-Signature-256</code> terhadap <code>META_APP_SECRET</code>) sebelum diproses — payload tidak sah ditolak diam-diam tanpa memicu efek samping.</div>
+        </div>
+        <div class="flow-step">
+          <div class="step-title">Pesan disimpan, ditautkan ke Conversation</div>
+          <div class="step-body">Dicari/dibuat <code>Contact</code> berdasarkan nomor, lalu <code>Conversation</code> yang sesuai (satu per kontak). Upsert memakai ID pesan WhatsApp sebagai kunci — retry dari Meta tidak menggandakan pesan.</div>
+        </div>
+        <div class="flow-step">
+          <div class="step-title">Tampil langsung di inbox (real-time)</div>
+          <div class="step-body">Didorong ke layar agen yang sedang online lewat koneksi live, tanpa perlu refresh manual.</div>
+        </div>
+        <div class="flow-step">
+          <div class="step-title">Cek status bot untuk percakapan ini</div>
+          <div class="step-body">Kalau bot sedang <strong>nonaktif</strong> untuk kontak ini → berhenti di sini, menunggu agen. Kalau <strong>aktif</strong> → lanjut ke alur otak bot (lihat bagian 7).</div>
+        </div>
+      </div>
+    </section>
+
+    <section id="alur-keluar">
+      <span class="kicker">06 — Outbound</span>
+      <h2>Alur Pesan Keluar</h2>
+      <p class="dek">Baik dikirim manual oleh agen maupun otomatis oleh bot, semua balasan melewati satu pengambilan keputusan jalur kirim yang sama.</p>
+
+      <h3>Pemilihan jalur kirim</h3>
+      <ul>
+        <li><strong>Template resmi Meta</strong> → dipaksa lewat Official (Graph API) — ini aturan Meta, bukan pilihan.</li>
+        <li><strong>Selain itu</strong> → memakai <em>default</em> yang diatur di menu Pengaturan (Official / Unofficial), dengan tombol override di kotak chat kalau agen mau pakai jalur lain untuk pesan tertentu.</li>
+      </ul>
+
+      <h3>Langkah pengiriman</h3>
+      <div class="flow">
+        <div class="flow-step">
+          <div class="step-title">Tentukan jalur (lihat di atas)</div>
+          <div class="step-body">Ditentukan sebelum pesan dikirim, dicatat di <code>Message.channel</code>.</div>
+        </div>
+        <div class="flow-step">
+          <div class="step-title">Panggil konektor yang sesuai</div>
+          <div class="step-body">Official → panggil Graph API langsung dengan kredensial <code>WaNumber</code>. Unofficial → panggil API kirim wa-coexist.</div>
+        </div>
+        <div class="flow-step">
+          <div class="step-title">Catat status pengiriman</div>
+          <div class="step-body">Terkirim / gagal disimpan per pesan. Kalau gagal, terlihat di UI dengan tombol <strong>Kirim Ulang</strong> — tidak pernah gagal diam-diam.</div>
+        </div>
+      </div>
+    </section>
+
+    <section id="otak-bot">
+      <span class="kicker">07 — Bot</span>
+      <h2>Logika Otak Bot</h2>
+      <p class="dek">Bot tidak pernah mengarang jawaban bebas untuk hal yang berisiko salah. Dia hanya boleh: memakai template yang sudah pasti benar, menyusun ulang fakta tervalidasi dari katalog, atau melempar ke manusia.</p>
+
+      <p>Bot punya <strong>tiga mode jawaban</strong>, dan yang menentukan mode mana yang jalan bukan klasifikasi topik pesan, tapi satu pertanyaan sederhana di awal: <strong>nomor ini sudah punya booking atau belum?</strong> — pola ini terbukti jalan di chatbot-web, diporting apa adanya.</p>
+
+      <div class="flow">
+        <div class="flow-step">
+          <div class="step-title">Cek kata kunci eskalasi</div>
+          <div class="step-body">Komplain/refund/minta bicara manusia → <strong>langsung handoff</strong>, mengalahkan semua langkah di bawah.</div>
+        </div>
+        <div class="flow-step">
+          <div class="step-title">Cek apakah nomor ini sudah punya booking</div>
+          <div class="step-body">Panggil <strong>Booking API JVTO</strong> (live, by nomor telepon) di setiap pesan masuk — hasilnya dicache di <code>Conversation</code>, disegarkan ulang kalau sudah &gt;24 jam. Ini konektor eksternal keempat wa-inbox, di luar Meta/wa-coexist/agent-runtime, karena datanya nyata &amp; berubah — sama seperti alasan wa-coexist harus dipanggil live.</div>
+        </div>
+        <div class="flow-step">
+          <div class="step-title">Bercabang: Mode 3 — Konteks Booking (kalau ditemukan)</div>
+          <div class="step-body">Funnel &amp; klasifikasi <strong>dilewati sepenuhnya</strong>. Bot jawab lewat LLM dengan fakta booking asli disuntikkan ke prompt + instruksi tegas <em>"pakai hanya fakta ini, jangan menebak"</em>. Aman diserahkan ke LLM karena faktanya sudah konkret — beda dari menjawab pertanyaan harga baru yang faktanya belum pasti.</div>
+        </div>
+        <div class="flow-step">
+          <div class="step-title">Bercabang: Mode 1/2 — Funnel &amp; FAQ (kalau belum ada booking)</div>
+          <div class="step-body">Perbarui <code>TripBrief</code> → <strong>route gate</strong> (rute/paket tidak jelas → handoff) → klasifikasi kebutuhan pelanggan. Pertanyaan yang menggerakkan alur booking (Mode 1) dibalas <strong>template statis tervalidasi</strong>; pertanyaan umum/FAQ (Mode 2) dibalas draf dari katalog yang dirapikan LLM.</div>
+        </div>
+        <div class="flow-step">
+          <div class="step-title">Kirim + simpan jejak keputusan</div>
+          <div class="step-body">Balasan terkirim, dan jejaknya (<em>mode mana yang dipakai, kenapa</em>) tersimpan di <code>Message.botTrace</code> — bisa dibuka agen kapan saja dari thread chat.</div>
+        </div>
+      </div>
+
+      <h3 id="kapan-handoff">Kapan bot balas sendiri, kapan handoff</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Situasi</th><th>Perilaku bot</th></tr></thead>
+          <tbody>
+            <tr><td>Info umum paket, kebijakan, cara booking, sapaan<span class="sub">data katalog sudah matang</span></td><td><span class="pill ok">Jawab otomatis</span></td></tr>
+            <tr><td>Status booking / sudah bayar berapa / itinerary<span class="sub">nomor sudah punya booking — data real dari Booking API</span></td><td><span class="pill ok">Jawab otomatis</span></td></tr>
+            <tr><td>Harga/ketersediaan untuk pertanyaan baru (belum booking)<span class="sub">live tools agent-runtime belum tersambung</span></td><td><span class="pill off">Handoff</span></td></tr>
+            <tr><td>Komplain atau permintaan refund<span class="sub">kebijakan permanen, bukan soal kesiapan sistem</span></td><td><span class="pill off">Handoff — selalu</span></td></tr>
+            <tr><td>Rute/paket belum jelas statusnya di data</td><td><span class="pill off">Handoff</span></td></tr>
+            <tr><td>Bot gagal klasifikasi, timeout, atau ragu</td><td><span class="pill off">Handoff (default gagal-aman)</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="callout warn">
+        <span class="callout-label">Realita hari ini</span>
+        <p>Karena live tools agent-runtime masih <em>NotConnected</em> dan gerbang <code>customer_traffic_ready</code> masih terkunci (dataset <code>jvto-itinerary-core</code> belum <code>production_ready</code>), pertanyaan harga/ketersediaan untuk inquiry <strong>baru</strong> (belum booking) wajar berujung handoff di v1. Tapi untuk pelanggan yang <strong>sudah</strong> booking, statusnya tetap bisa dijawab otomatis hari ini — itu bergantung ke Booking API JVTO yang terpisah dan sudah berjalan nyata, bukan ke agent-runtime.</p>
+      </div>
+
+      <div class="callout">
+        <span class="callout-label">Koreksi dari draf sebelumnya</span>
+        <p>Alur funnel booking di chatbot-web (<code>orderFlow.js</code>) yang jadi rujukan porting ternyata baru mengimplementasikan <strong>4 state</strong> (Greeting → Tanya Tujuan → Rekomendasi → Handoff), bukan 10 seperti disebut di awal diskusi — desain 10-tahap ada di dokumentasi lama yang sudah tidak sesuai kode aslinya. Porting sebaiknya mengikuti kode yang benar-benar jalan, bukan dokumen aspirasionalnya.</p>
+      </div>
+    </section>
+
+    <section id="menu">
+      <span class="kicker">08 — Antarmuka</span>
+      <h2>Struktur Menu Aplikasi</h2>
+      <p class="dek">Lima menu utama — disederhanakan dari rancangan awal dengan menggabungkan "Nomor &amp; Koneksi" serta sebagian besar "Bot &amp; Otomasi" ke dalam Pengaturan, karena v1 cuma melayani satu nomor dan kontrol bot yang tersisa cuma kartu status/toggle. Log Keputusan Bot tetap jadi halaman detail tersendiri, diakses dari Pengaturan.</p>
+
+      <div class="menu-card" id="menu-beranda">
+        <div class="menu-head"><h3 class="menu-name">Beranda</h3><span class="menu-tag">/dashboard</span></div>
+        <p class="menu-purpose">Ringkasan kondisi begitu agen membuka aplikasi — apa yang butuh perhatian, tanpa harus membuka menu lain dulu.</p>
+        <ul class="feature-list">
+          <li><span class="feature-name">Ringkasan percakapan</span><span class="feature-desc">Jumlah belum dibaca, sedang menunggu balasan, dan yang di-handoff hari ini — ditampilkan sebagai angka besar, bukan tabel.</span></li>
+          <li><span class="feature-name">Status koneksi nomor</span><span class="feature-desc">Dua indikator berdampingan: token Official (valid/kedaluwarsa) dan koneksi wa-coexist (<span class="pill ok">tersambung</span> / <span class="pill off">terputus</span>). Terlihat langsung tanpa masuk ke Pengaturan.</span></li>
+          <li><span class="feature-name">Perlu perhatian</span><span class="feature-desc">Daftar percakapan yang ditandai handoff atau belum dibalas lebih dari waktu tertentu, diurutkan paling mendesak dulu.</span></li>
+          <li><span class="feature-name">Reminder jatuh tempo</span><span class="feature-desc">Pengingat follow-up dari CRM yang jatuh tempo hari ini.</span></li>
+        </ul>
+      </div>
+
+      <div class="menu-card" id="menu-chat">
+        <div class="menu-head"><h3 class="menu-name">Chat / Inbox</h3><span class="menu-tag">/inbox</span></div>
+        <p class="menu-purpose">Ruang kerja utama agen — tiga kolom: daftar percakapan, thread chat, dan panel kontak.</p>
+        <ul class="feature-list">
+          <li><span class="feature-name">Kolom kiri — Daftar percakapan</span><span class="feature-desc">
+            <ul>
+              <li>Filter: Semua / Belum dibaca / Bot aktif / Butuh manusia / per Label / per Agen</li>
+              <li>Tiap baris: nama, cuplikan pesan terakhir, waktu, badge jalur terakhir (<span class="pill info">Official</span>/<span class="pill human">Unofficial</span>), badge <span class="pill bot">Bot</span> / <span class="pill human">Agen</span>, label warna, jumlah belum dibaca</li>
+              <li>Pencarian nama, nomor telepon, <strong>atau isi pesan</strong> — lintas percakapan, bukan cuma yang sedang dibuka</li>
+            </ul>
+          </span></li>
+          <li><span class="feature-name">Kolom tengah — Thread</span><span class="feature-desc">
+            <ul>
+              <li>Bubble pesan dengan penanda pengirim: bot atau agen (dan nama agen jika manusia)</li>
+              <li>Klik pesan bot → buka <strong>jejak keputusan</strong>: intent yang terdeteksi, data katalog yang dipakai, hasil route gate</li>
+              <li>Status per pesan: terkirim / dibaca / gagal, dengan tombol kirim ulang untuk yang gagal</li>
+              <li><strong>Assign percakapan</strong> ke agen tertentu — dari kepala thread, seperti "Assign this conversation" di Meta Business Suite</li>
+            </ul>
+          </span></li>
+          <li><span class="feature-name">Kotak balas (compose)</span><span class="feature-desc">
+            <ul>
+              <li>Switch jalur kirim (Official/Unofficial), default mengikuti Pengaturan</li>
+              <li>Pilihan cepat dari Template Pesan</li>
+              <li>Lampirkan media (gambar, dokumen)</li>
+              <li>Tombol <strong>Ambil Alih dari Bot</strong> — toggle cepat kalau bot sedang aktif di percakapan ini</li>
+            </ul>
+          </span></li>
+          <li><span class="feature-name">Kolom kanan — Panel kontak</span><span class="feature-desc">
+            <ul>
+              <li>Nama, foto profil (kalau tersedia), label, catatan internal, reminder</li>
+              <li>Kalau nomor <strong>sudah punya booking</strong> (Mode 3): ringkasan data asli dari Booking API — itinerary, status bayar</li>
+              <li>Kalau <strong>belum</strong> (Mode 1/2): ringkasan TripBrief yang terkumpul dari funnel (tujuan, tanggal, jumlah orang)</li>
+              <li>Status pipeline (baru / negosiasi / booked / lunas)</li>
+            </ul>
+          </span></li>
+        </ul>
+      </div>
+
+      <div class="menu-card" id="menu-kontak">
+        <div class="menu-head"><h3 class="menu-name">Kontak (CRM)</h3><span class="menu-tag">/contacts</span></div>
+        <p class="menu-purpose">Kelola data pelanggan lintas percakapan — di luar konteks chat yang sedang dibuka.</p>
+        <ul class="feature-list">
+          <li><span class="feature-name">Daftar kontak</span><span class="feature-desc">Tabel: nama, nomor, label, kontak terakhir, status pipeline — bisa disortir dan difilter.</span></li>
+          <li><span class="feature-name">Halaman detail kontak</span><span class="feature-desc">Riwayat percakapan (termasuk yang lampau), semua catatan &amp; reminder, edit info dasar.</span></li>
+          <li><span class="feature-name">Kelola label</span><span class="feature-desc">Buat, hapus, dan atur warna label (mis. "Confirmed Booking", "New Customer" — sama seperti yang dipakai manual di Meta Business Suite hari ini).</span></li>
+          <li><span class="feature-name">Status pipeline</span><span class="feature-desc">Dropdown status per kontak (baru → nego → booked → lunas) + filter di daftar kontak — fungsinya sama seperti papan kanban, jauh lebih ringan dibangun. Papan visual bisa menyusul di fase berikutnya kalau memang dibutuhkan.</span></li>
+        </ul>
+      </div>
+
+      <div class="menu-card" id="menu-template">
+        <div class="menu-head"><h3 class="menu-name">Template Pesan</h3><span class="menu-tag">/templates</span></div>
+        <p class="menu-purpose">Kelola pesan siap-pakai — baik yang harus disetujui Meta maupun balasan cepat bebas.</p>
+        <ul class="feature-list">
+          <li><span class="feature-name">Tab Template Resmi (Meta)</span><span class="feature-desc">Daftar dengan status <span class="pill ok">disetujui</span> / <span class="pill pending">menunggu</span> / <span class="pill off">ditolak</span>; buat baru (header/isi/footer/tombol), kirim untuk persetujuan, pratinjau sebelum kirim.</span></li>
+          <li><span class="feature-name">Tab Balasan Cepat</span><span class="feature-desc">Teks bebas tanpa perlu persetujuan Meta, dipakai di jalur Unofficial. Dikelompokkan per kategori (mis. "Paket &amp; Harga", "Cara Booking", "Kebijakan") — menggantikan kebiasaan salin-tempel manual di screenshot.</span></li>
+          <li><span class="feature-name">Variabel isian</span><span class="feature-desc">Sisipkan nama pelanggan, tanggal, dan variabel lain otomatis saat dipakai.</span></li>
+        </ul>
+      </div>
+
+      <div class="menu-card" id="menu-setting">
+        <div class="menu-head"><h3 class="menu-name">Pengaturan</h3><span class="menu-tag">/settings</span></div>
+        <p class="menu-purpose">Konfigurasi aplikasi, nomor, bot, dan tim dalam satu tempat — sebagian dibatasi khusus role admin.</p>
+        <ul class="feature-list">
+          <li><span class="feature-name">Default jalur kirim</span><span class="feature-desc">Official / Unofficial. Tidak perlu opsi "tanya setiap kali" — override per pesan sudah tersedia di kotak chat.</span></li>
+          <li><span class="feature-name">Jam kerja &amp; auto-reply</span><span class="feature-desc">Balasan otomatis di luar jam kerja.</span></li>
+          <li><span class="feature-name">Status nomor</span><span class="feature-desc">Kartu status Official (validitas token) &amp; Unofficial (koneksi wa-coexist) dengan tombol <strong>Sambungkan Ulang</strong>, plus riwayat gangguan. <em>Bukan tempat setup awal</em> — itu tetap dilakukan sekali di waba-jvto/wa-coexist.</span></li>
+          <li><span class="feature-name">Bot &amp; otomasi</span><span class="feature-desc">Kill switch global (matikan bot untuk semua percakapan sekaligus), status sinkronisasi katalog + tombol sinkron manual, status gerbang persetujuan <code>customer_traffic_ready</code> apa adanya (termasuk alasan kalau masih terkunci) — dengan tautan ke <strong>Log Keputusan Bot</strong> (halaman detail: riwayat semua keputusan bot lintas percakapan, bisa difilter, untuk audit &amp; evaluasi).</span></li>
+          <li><span class="feature-name">Manajemen pengguna</span><span class="feature-desc"><em>Admin saja</em> — tambah/hapus akun agen, reset kata sandi.</span></li>
+          <li><span class="feature-name">Webhook &amp; kredensial</span><span class="feature-desc"><em>Admin saja</em> — endpoint webhook Meta, secret wa-coexist. Data sensitif, dibatasi role.</span></li>
+          <li><span class="feature-name">Notifikasi</span><span class="feature-desc">Peringatan aktif (badge/suara/push) saat bot melakukan handoff ke manusia — bukan cuma menunggu agen membuka daftar "Perlu perhatian" di Beranda. Bisa diatur per agen mana yang menerima.</span></li>
+        </ul>
+      </div>
+    </section>
+
+    <section id="data">
+      <span class="kicker">09 — Skema</span>
+      <h2>Model Data</h2>
+      <p class="dek">Skema Postgres baru milik wa-inbox sendiri, dikelompokkan per domain.</p>
+
+      <h3>Percakapan &amp; Pesan</h3>
+      <div class="table-wrap">
+        <table class="wide">
+          <thead><tr><th class="mono">Entitas</th><th>Kolom kunci</th><th>Catatan</th></tr></thead>
+          <tbody>
+            <tr><td class="mono">Contact</td><td class="mono">phone, name, avatarUrl, source</td><td>Satu per nomor pelanggan. <code>name</code> dari <code>profile.name</code> webhook Meta (otomatis). <code>avatarUrl</code> dari wa-coexist (opsional, lihat catatan di bawah).</td></tr>
+            <tr><td class="mono">Conversation</td><td class="mono">contactId, botEnabled, assignedAgent, status, bookingData, bookingCheckedAt</td><td>Satu per kontak — bukan per jalur kirim. <code>bookingData</code> adalah cache JSON dari Booking API (disegarkan kalau &gt;24 jam) — kehadirannya menentukan Mode 3 vs Mode 1/2 di otak bot.</td></tr>
+            <tr><td class="mono">Message</td><td class="mono">direction, type, content, channel, sentBy, botTrace, deliveryStatus</td><td><code>channel</code>: official/unofficial. <code>sentBy</code>: bot/agent.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="callout">
+        <span class="callout-label">Sumber nama &amp; foto profil kontak</span>
+        <p><strong>Nama</strong> selalu tersedia otomatis dari webhook Meta (<code>contacts[].profile.name</code>) — tidak perlu kerja tambahan. <strong>Foto profil</strong> tidak disediakan Meta Cloud API sama sekali (dibatasi demi privasi bisnis-ke-konsumen), tapi bisa didapat lewat jalur unofficial: <code>whatsapp-web.js</code> dan Baileys (dua-duanya dipakai wa-coexist) sudah punya fungsi bawaan untuk ini (<code>getProfilePicUrl()</code> / <code>profilePictureUrl()</code>), cuma <strong>belum diekspos lewat endpoint apa pun di wa-coexist saat ini</strong> — perlu ditambah satu endpoint kecil (mis. <code>GET /api/contact/:jid/avatar</code>) sebagai bagian dari pekerjaan Tahap 2. Kalau privasi pelanggan membatasi foto, wa-inbox jatuh ke avatar generik (sama seperti Meta Business Suite hari ini).</p>
+      </div>
+
+      <h3>CRM</h3>
+      <div class="table-wrap">
+        <table class="wide">
+          <thead><tr><th class="mono">Entitas</th><th>Kolom kunci</th><th>Catatan</th></tr></thead>
+          <tbody>
+            <tr><td class="mono">Label</td><td class="mono">name, color</td><td>Ditautkan many-to-many ke Conversation.</td></tr>
+            <tr><td class="mono">Note</td><td class="mono">contactId, body, authorId</td><td>Catatan internal, tidak terlihat pelanggan.</td></tr>
+            <tr><td class="mono">Reminder</td><td class="mono">contactId, dueAt, note, done</td><td>Muncul di Beranda saat jatuh tempo.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>Bot &amp; Pengetahuan</h3>
+      <div class="table-wrap">
+        <table class="wide">
+          <thead><tr><th class="mono">Entitas</th><th>Kolom kunci</th><th>Catatan</th></tr></thead>
+          <tbody>
+            <tr><td class="mono">TripBrief</td><td class="mono">conversationId, destination, dates, pax, updatedAt</td><td>State booking yang terakumulasi per percakapan.</td></tr>
+            <tr><td class="mono">Template</td><td class="mono">type, metaStatus, body, variables</td><td><code>type</code>: official/quick-reply.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>Nomor &amp; Pengaturan</h3>
+      <div class="table-wrap">
+        <table class="wide">
+          <thead><tr><th class="mono">Entitas</th><th>Kolom kunci</th><th>Catatan</th></tr></thead>
+          <tbody>
+            <tr><td class="mono">WaNumber</td><td class="mono">phoneNumberId, wabaId, accessToken, coexistBaseUrl, coexistApiKey</td><td>Kredensial kedua jalur, satu nomor.</td></tr>
+            <tr><td class="mono">Account</td><td class="mono">email, role, passwordHash</td><td><code>role</code>: admin/agent.</td></tr>
+            <tr><td class="mono">Settings</td><td class="mono">defaultChannel, workingHours</td><td>Baris tunggal konfigurasi global.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="keamanan">
+      <span class="kicker">10 — Tata Kelola</span>
+      <h2>Keamanan &amp; Penanganan Error</h2>
+      <div class="table-wrap">
+        <table class="wide">
+          <thead><tr><th>Risiko</th><th>Penanganan</th></tr></thead>
+          <tbody>
+            <tr><td>Webhook palsu</td><td>Verifikasi HMAC (<code class="mono">X-Hub-Signature-256</code>) sebelum diproses.</td></tr>
+            <tr><td>Pesan terkirim ganda dari retry Meta</td><td>Upsert idempoten memakai ID pesan WhatsApp sebagai kunci.</td></tr>
+            <tr><td>Bot ragu atau gagal klasifikasi</td><td>Default gagal-aman: percakapan jatuh ke manusia, tidak pernah diam.</td></tr>
+            <tr><td>Pengiriman gagal (Official/Unofficial)</td><td>Terlihat di UI dengan status gagal + tombol kirim ulang, tidak gagal diam-diam.</td></tr>
+            <tr><td>Bot menjawab tanpa izin tata kelola</td><td>Logika gerbang <code>customer_traffic_ready</code> ikut diporting — bot tetap patuh walau logika keputusan sudah lokal di wa-inbox.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="rollout">
+      <span class="kicker">11 — Urutan Kerja</span>
+      <h2>Rencana Rollout</h2>
+      <p class="dek">Empat tahap, masing-masing bisa diverifikasi sebelum lanjut ke tahap berikutnya.</p>
+      <div class="timeline">
+        <div class="phase">
+          <span class="phase-num">Tahap 1</span>
+          <h4>Fondasi + Official</h4>
+          <ul>
+            <li>Skema data &amp; auth admin/agent</li>
+            <li>Webhook Meta + kredensial Official</li>
+            <li>Kirim &amp; terima jalur resmi end-to-end</li>
+          </ul>
+        </div>
+        <div class="phase">
+          <span class="phase-num">Tahap 2</span>
+          <h4>Sambungkan Unofficial</h4>
+          <ul>
+            <li>Kirim via API wa-coexist</li>
+            <li>Status koneksi real-time</li>
+            <li>Switch jalur kirim di compose box</li>
+            <li>Endpoint baru di wa-coexist untuk foto profil kontak</li>
+          </ul>
+        </div>
+        <div class="phase">
+          <span class="phase-num">Tahap 3</span>
+          <h4>Otak Bot</h4>
+          <ul>
+            <li>Porting logika keputusan + gerbang persetujuan</li>
+            <li>Sinkron katalog pengetahuan</li>
+            <li>Integrasi Booking API JVTO (Mode 3)</li>
+            <li>Toggle bot per percakapan + jejak keputusan</li>
+          </ul>
+        </div>
+        <div class="phase">
+          <span class="phase-num">Tahap 4</span>
+          <h4>CRM &amp; Pensiun Lama</h4>
+          <ul>
+            <li>Label, catatan, reminder, template, assign agen</li>
+            <li>Pencarian isi pesan lintas percakapan</li>
+            <li>Pensiunkan dashboard waba-jvto &amp; chatbot-web</li>
+            <li>wa-dashboard menyusul setelah tidak dipakai</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section id="stack">
+      <span class="kicker">12 — Fondasi Teknis</span>
+      <h2>Stack Teknologi</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Lapisan</th><th>Pilihan</th></tr></thead>
+          <tbody>
+            <tr><td>Framework</td><td class="mono">Next.js 16 (App Router) + TypeScript</td></tr>
+            <tr><td>Tampilan</td><td class="mono">Tailwind CSS</td></tr>
+            <tr><td>Data</td><td class="mono">Prisma + PostgreSQL (Neon via Vercel Marketplace)</td></tr>
+            <tr><td>Autentikasi</td><td class="mono">Sesi sederhana (email/password), role admin/agent</td></tr>
+            <tr><td>Real-time</td><td class="mono">Server-Sent Events</td></tr>
+            <tr><td>Deploy</td><td class="mono">Vercel</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="terbuka">
+      <span class="kicker">13 — Belum Diputuskan</span>
+      <h2>Item yang Masih Terbuka</h2>
+      <div class="callout risk">
+        <span class="callout-label">Perlu konfirmasi</span>
+        <p>Gerbang <code>customer_traffic_ready</code> di agent-runtime ditulis sebagai gerbang untuk seluruh release, sementara chatbot-web hari ini tampak sudah beroperasi ke pelanggan asli tanpa menunggu gerbang itu. Perlu dikonfirmasi ke pemilik agent-runtime apakah ini kesenjangan tata kelola yang perlu ditutup, atau memang disengaja untuk konten informasional.</p>
+      </div>
+      <div class="callout warn">
+        <span class="callout-label">Ditunda ke fase berikutnya (disengaja)</span>
+        <p>Menu Laporan/Statistik lanjutan (tren volume, waktu respons) belum termasuk lima menu inti — menyusul begitu data dasar sudah terkumpul. Pencarian isi pesan lintas percakapan sudah masuk v1 sebagai fitur, tapi implementasinya (full-text index) bisa disederhanakan dulu di rilis pertama kalau perlu.</p>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<footer>
+  Disusun dari eksplorasi lima repo terkait (wa-coexist, waba-jvto, wa-dashboard, chatbot-web, jvto-whatsapp-agent-runtime) dan sesi brainstorming — dokumen ini adalah konsep untuk ditinjau, belum masuk tahap implementasi.
+</footer>

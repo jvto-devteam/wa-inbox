@@ -1,0 +1,271 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>wa-inbox — UI Mockup (referensi waba-jvto / jvto-cms)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  tailwind.config = {
+    theme: {
+      extend: {
+        fontFamily: { sans: ['Plus Jakarta Sans', 'sans-serif'] },
+        colors: {
+          navy: '#0B1B3D',
+          'navy-light': '#162C5A',
+          brand: { DEFAULT: '#2563EB', light: '#3B82F6', dark: '#1D4ED8' },
+          border: '#E5E7EB',
+          input: '#E5E7EB',
+          background: '#FFFFFF',
+          foreground: '#0B1B3D',
+          muted: { DEFAULT: '#F1F5F9', foreground: '#64748B' },
+          primary: { DEFAULT: '#0B1B3D', foreground: '#FAFAFA' },
+          secondary: { DEFAULT: '#F1F5F9', foreground: '#0B1B3D' },
+          accent: { DEFAULT: '#EFF6FF', foreground: '#1D4ED8' },
+          destructive: { DEFAULT: '#DC2626', foreground: '#FAFAFA' },
+        },
+        borderRadius: { lg: '0.625rem', md: 'calc(0.625rem - 2px)', xl: 'calc(0.625rem + 4px)', '4xl': '2rem' },
+      },
+    },
+  }
+</script>
+<style>
+  body { background: #F8FAFC; color: #0B1B3D; }
+  .badge { display: inline-flex; align-items: center; height: 1.25rem; padding: 0 0.5rem; border-radius: 2rem; font-size: 0.75rem; font-weight: 500; gap: 0.25rem; white-space: nowrap; }
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-thumb { background: #CBD5E1; border-radius: 3px; }
+</style>
+</head>
+<body class="font-sans antialiased text-sm">
+
+<div class="mx-auto flex h-screen max-w-[100rem] flex-col">
+
+  <!-- ============ TOP BAR — brand + 5-menu nav, referensi struktur tab Meta Business Suite ============ -->
+  <header class="flex items-center justify-between border-b border-border bg-white px-5 py-3">
+    <div class="flex items-center gap-8">
+      <span class="text-lg font-extrabold tracking-tight text-navy">wa-inbox</span>
+      <nav class="flex items-center gap-1">
+        <a class="rounded-lg px-3 py-1.5 text-sm font-medium text-muted-foreground hover:bg-muted hover:text-foreground" href="#">Beranda</a>
+        <a class="relative rounded-lg px-3 py-1.5 text-sm font-semibold text-brand" href="#">
+          Chat / Inbox
+          <span class="absolute -bottom-[13px] left-3 right-3 h-0.5 rounded-full bg-brand"></span>
+        </a>
+        <a class="rounded-lg px-3 py-1.5 text-sm font-medium text-muted-foreground hover:bg-muted hover:text-foreground" href="#">Kontak</a>
+        <a class="rounded-lg px-3 py-1.5 text-sm font-medium text-muted-foreground hover:bg-muted hover:text-foreground" href="#">Template Pesan</a>
+        <a class="rounded-lg px-3 py-1.5 text-sm font-medium text-muted-foreground hover:bg-muted hover:text-foreground" href="#">Pengaturan</a>
+      </nav>
+    </div>
+    <div class="flex items-center gap-3">
+      <span class="badge bg-emerald-50 text-emerald-700"><span class="size-1.5 rounded-full bg-emerald-500"></span>Official Valid</span>
+      <span class="badge bg-emerald-50 text-emerald-700"><span class="size-1.5 rounded-full bg-emerald-500"></span>Unofficial Tersambung</span>
+      <div class="size-8 rounded-full bg-navy text-white flex items-center justify-center text-xs font-semibold">AD</div>
+    </div>
+  </header>
+
+  <!-- ============ 3-COLUMN INBOX ============ -->
+  <div class="grid flex-1 grid-cols-[22rem_1fr_20rem] overflow-hidden">
+
+    <!-- ===== KOLOM KIRI — daftar percakapan ===== -->
+    <aside class="flex flex-col border-r border-border bg-white">
+      <div class="space-y-3 border-b border-border p-3">
+        <input
+          type="text"
+          placeholder="Cari nama, nomor, atau isi pesan..."
+          class="h-8 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm placeholder:text-muted-foreground outline-none focus-visible:border-brand focus-visible:ring-3 focus-visible:ring-brand/20"
+        />
+        <div class="flex flex-wrap gap-1.5">
+          <button class="rounded-lg bg-navy px-2.5 py-1 text-xs font-medium text-white">Semua</button>
+          <button class="rounded-lg px-2.5 py-1 text-xs font-medium text-muted-foreground hover:bg-muted">Belum dibaca</button>
+          <button class="rounded-lg px-2.5 py-1 text-xs font-medium text-muted-foreground hover:bg-muted">Bot aktif</button>
+          <button class="rounded-lg px-2.5 py-1 text-xs font-medium text-muted-foreground hover:bg-muted">Butuh manusia</button>
+        </div>
+      </div>
+
+      <div class="flex-1 overflow-y-auto">
+        <!-- item aktif -->
+        <button class="flex w-full items-start gap-3 border-b border-border bg-accent px-3 py-3 text-left">
+          <div class="size-10 shrink-0 rounded-full bg-gradient-to-br from-brand to-navy text-white flex items-center justify-center text-xs font-semibold">BF</div>
+          <div class="min-w-0 flex-1">
+            <div class="flex items-center justify-between gap-2">
+              <span class="truncate font-semibold text-navy">Bruno Figarola JVTO</span>
+              <span class="shrink-0 text-[11px] text-muted-foreground">14:40</span>
+            </div>
+            <p class="truncate text-xs text-muted-foreground">Baik, saya sambungkan ke tim kami untuk lanjut booking.</p>
+            <div class="mt-1.5 flex items-center gap-1">
+              <span class="badge bg-brand/10 text-brand">Bot</span>
+              <span class="badge bg-slate-100 text-slate-600">Unofficial</span>
+              <span class="badge bg-emerald-50 text-emerald-700">Confirmed Booking</span>
+            </div>
+          </div>
+        </button>
+
+        <button class="flex w-full items-start gap-3 border-b border-border px-3 py-3 text-left hover:bg-muted/50">
+          <div class="size-10 shrink-0 rounded-full bg-slate-200 text-slate-500 flex items-center justify-center text-xs font-semibold">LA</div>
+          <div class="min-w-0 flex-1">
+            <div class="flex items-center justify-between gap-2">
+              <span class="truncate font-semibold text-navy">L.A.</span>
+              <span class="shrink-0 text-[11px] text-muted-foreground">14:39</span>
+            </div>
+            <p class="truncate text-xs text-muted-foreground">You: That's wonderful! Booking is quick,...</p>
+            <div class="mt-1.5 flex items-center gap-1">
+              <span class="badge bg-slate-100 text-slate-600">Agen</span>
+              <span class="badge bg-accent text-brand">Official</span>
+            </div>
+          </div>
+        </button>
+
+        <button class="flex w-full items-start gap-3 border-b border-border px-3 py-3 text-left hover:bg-muted/50">
+          <div class="size-10 shrink-0 rounded-full bg-slate-200 text-slate-500 flex items-center justify-center text-xs font-semibold">DL</div>
+          <div class="min-w-0 flex-1">
+            <div class="flex items-center justify-between gap-2">
+              <span class="truncate font-semibold text-navy">David Loon Klook</span>
+              <span class="shrink-0 text-[11px] text-muted-foreground">13:17</span>
+            </div>
+            <p class="truncate text-xs text-muted-foreground">You: Iya 🙏😊</p>
+            <div class="mt-1.5 flex items-center gap-1">
+              <span class="badge bg-slate-100 text-slate-600">Agen</span>
+            </div>
+          </div>
+        </button>
+
+        <button class="flex w-full items-start gap-3 border-b border-border px-3 py-3 text-left hover:bg-muted/50">
+          <div class="size-10 shrink-0 rounded-full bg-slate-200 text-slate-500 flex items-center justify-center text-xs font-semibold">SD</div>
+          <div class="min-w-0 flex-1">
+            <div class="flex items-center justify-between gap-2">
+              <span class="truncate font-semibold text-navy">Sanjeev Deva JVTO</span>
+              <span class="shrink-0 text-[11px] text-muted-foreground">12:21</span>
+            </div>
+            <p class="truncate text-xs text-muted-foreground">You: We are so happy to hear that you had ...</p>
+            <div class="mt-1.5 flex items-center gap-1">
+              <span class="badge bg-slate-100 text-slate-600">Agen</span>
+              <span class="badge bg-amber-50 text-amber-700">New Customer</span>
+            </div>
+          </div>
+        </button>
+      </div>
+    </aside>
+
+    <!-- ===== KOLOM TENGAH — thread ===== -->
+    <main class="flex flex-col bg-slate-50">
+      <div class="flex items-center justify-between border-b border-border bg-white px-5 py-3">
+        <div>
+          <p class="font-semibold text-navy">Bruno Figarola JVTO</p>
+          <p class="text-xs text-muted-foreground">+52 1 81 2508 1714</p>
+        </div>
+        <div class="flex items-center gap-2">
+          <label class="text-xs text-muted-foreground">Ditugaskan ke</label>
+          <select class="h-8 rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none focus-visible:border-brand">
+            <option>— Belum ditugaskan —</option>
+            <option selected>Admin</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="flex-1 space-y-4 overflow-y-auto p-5">
+        <div class="flex justify-start">
+          <div class="max-w-md rounded-lg rounded-tl-none bg-white px-3.5 py-2.5 shadow-sm ring-1 ring-border">
+            <p>Halo, mau tanya paket Ijen Blue Fire dong</p>
+            <p class="mt-1 text-[11px] text-muted-foreground">09:12</p>
+          </div>
+        </div>
+
+        <div class="flex flex-col items-end gap-1">
+          <div class="max-w-md rounded-lg rounded-tr-none bg-accent px-3.5 py-2.5 ring-1 ring-brand/10">
+            <p>Rekomendasi untuk Ijen: Ijen Blue Fire 1D. Mau lanjut booking?</p>
+            <p class="mt-1 text-[11px] text-brand/70">09:12 · Terkirim</p>
+          </div>
+          <button class="badge bg-brand/10 text-brand cursor-pointer">🤖 Bot · mode: funnel</button>
+        </div>
+
+        <div class="flex justify-start">
+          <div class="max-w-md rounded-lg rounded-tl-none bg-white px-3.5 py-2.5 shadow-sm ring-1 ring-border">
+            <p>Booking saya sudah lunas belum ya?</p>
+            <p class="mt-1 text-[11px] text-muted-foreground">09:15</p>
+          </div>
+        </div>
+
+        <div class="flex flex-col items-end gap-1">
+          <div class="max-w-md rounded-lg rounded-tr-none bg-accent px-3.5 py-2.5 ring-1 ring-brand/10">
+            <p>Booking Anda ke Ijen tanggal 1 Agustus sudah lunas (Rp850.000).</p>
+            <p class="mt-1 text-[11px] text-brand/70">09:15 · Terkirim</p>
+          </div>
+          <button class="badge bg-brand/10 text-brand cursor-pointer">🤖 Bot · mode: booking_context</button>
+        </div>
+
+        <div class="flex justify-center">
+          <span class="badge bg-amber-50 text-amber-700">Percakapan di-handoff ke agen — menunggu balasan manual</span>
+        </div>
+      </div>
+
+      <div class="border-t border-border bg-white p-3">
+        <div class="mb-2 flex items-center gap-2">
+          <button class="badge bg-amber-50 text-amber-700 cursor-pointer">Ambil Alih dari Bot</button>
+        </div>
+        <div class="flex items-center gap-2">
+          <select class="h-8 rounded-lg border border-input bg-transparent px-2 text-xs outline-none">
+            <option>Official</option>
+            <option selected>Unofficial</option>
+          </select>
+          <button class="h-8 rounded-lg border border-input px-2.5 text-xs font-medium text-muted-foreground hover:bg-muted">Template</button>
+          <input
+            type="text"
+            placeholder="Reply on WhatsApp..."
+            class="h-8 flex-1 rounded-lg border border-input bg-transparent px-3 text-sm outline-none focus-visible:border-brand focus-visible:ring-3 focus-visible:ring-brand/20"
+          />
+          <button class="h-8 rounded-lg bg-navy px-3.5 text-sm font-medium text-white hover:bg-navy-light">Kirim</button>
+        </div>
+      </div>
+    </main>
+
+    <!-- ===== KOLOM KANAN — panel kontak ===== -->
+    <aside class="overflow-y-auto border-l border-border bg-white p-4">
+      <div class="flex flex-col items-center gap-2 border-b border-border pb-4">
+        <div class="size-16 rounded-full bg-gradient-to-br from-brand to-navy text-white flex items-center justify-center text-lg font-semibold">BF</div>
+        <p class="font-semibold text-navy">Bruno Figarola JVTO</p>
+        <p class="text-xs text-muted-foreground">+52 1 81 2508 1714</p>
+      </div>
+
+      <div class="space-y-3 border-b border-border py-4">
+        <p class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Booking Ada</p>
+        <div class="rounded-lg bg-emerald-50 p-3 text-xs text-emerald-800 space-y-1">
+          <p><span class="font-medium">Tujuan:</span> Ijen Blue Fire 1D</p>
+          <p><span class="font-medium">Tanggal:</span> 1–2 Agustus 2026</p>
+          <p><span class="font-medium">Pax:</span> 2 orang</p>
+          <p><span class="font-medium">Status:</span> Lunas (Rp850.000)</p>
+        </div>
+      </div>
+
+      <div class="space-y-2 border-b border-border py-4">
+        <div class="flex items-center justify-between">
+          <p class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Label</p>
+          <button class="text-xs font-medium text-brand hover:underline">+ Tambah</button>
+        </div>
+        <div class="flex flex-wrap gap-1.5">
+          <span class="badge bg-emerald-50 text-emerald-700">Confirmed Booking</span>
+        </div>
+      </div>
+
+      <div class="space-y-2 border-b border-border py-4">
+        <p class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Pipeline</p>
+        <select class="h-8 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none">
+          <option>Baru</option>
+          <option>Negosiasi</option>
+          <option selected>Booked</option>
+          <option>Lunas</option>
+        </select>
+      </div>
+
+      <div class="space-y-2 py-4">
+        <p class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Catatan</p>
+        <textarea rows="2" placeholder="Tambah catatan internal..." class="w-full rounded-lg border border-input bg-transparent p-2.5 text-sm outline-none placeholder:text-muted-foreground focus-visible:border-brand"></textarea>
+        <button class="h-7 rounded-lg bg-secondary px-2.5 text-xs font-medium text-navy hover:bg-slate-200">Tambah Catatan</button>
+      </div>
+    </aside>
+  </div>
+</div>
+
+</body>
+</html>
