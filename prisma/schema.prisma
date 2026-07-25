@@ -1,0 +1,183 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum AccountRole {
+  ADMIN
+  AGENT
+}
+
+model Account {
+  id                    String         @id @default(cuid())
+  email                 String         @unique
+  passwordHash          String
+  name                  String
+  role                  AccountRole    @default(AGENT)
+  createdAt             DateTime       @default(now())
+  assignedConversations Conversation[] @relation("AssignedAgent")
+  notes                 Note[]
+}
+
+model WaNumber {
+  id               String   @id @default(cuid())
+  phoneNumber      String   @unique
+  phoneNumberId    String
+  wabaId           String
+  accessToken      String
+  coexistBaseUrl   String
+  coexistApiKey    String
+  coexistNumberKey String
+  createdAt        DateTime @default(now())
+}
+
+model Contact {
+  id        String     @id @default(cuid())
+  phone     String     @unique
+  name      String?
+  avatarUrl String?
+  source    String?
+  createdAt DateTime   @default(now())
+  conversation Conversation?
+  notes     Note[]
+  reminders Reminder[]
+}
+
+enum ConversationStatus {
+  OPEN
+  PENDING
+  CLOSED
+}
+
+model Conversation {
+  id               String                @id @default(cuid())
+  contactId        String                @unique
+  contact          Contact               @relation(fields: [contactId], references: [id])
+  botEnabled       Boolean               @default(true)
+  assignedAgentId  String?
+  assignedAgent    Account?              @relation("AssignedAgent", fields: [assignedAgentId], references: [id])
+  status           ConversationStatus    @default(OPEN)
+  pipelineStage    String                @default("new")
+  bookingData      Json?
+  bookingCheckedAt DateTime?
+  tripBrief        Json?
+  lastMessageAt    DateTime              @default(now())
+  createdAt        DateTime              @default(now())
+  messages         Message[]
+  labels           LabelOnConversation[]
+}
+
+enum MessageDirection {
+  INBOUND
+  OUTBOUND
+}
+
+enum MessageChannel {
+  OFFICIAL
+  UNOFFICIAL
+}
+
+enum SentBy {
+  BOT
+  AGENT
+  CUSTOMER
+}
+
+enum DeliveryStatus {
+  PENDING
+  SENT
+  DELIVERED
+  READ
+  FAILED
+}
+
+model Message {
+  id             String           @id @default(cuid())
+  conversationId String
+  conversation   Conversation     @relation(fields: [conversationId], references: [id])
+  externalId     String?          @unique
+  direction      MessageDirection
+  type           String
+  content        String?
+  mediaUrl       String?
+  channel        MessageChannel
+  sentBy         SentBy
+  agentId        String?
+  botTrace       Json?
+  deliveryStatus DeliveryStatus   @default(PENDING)
+  createdAt      DateTime         @default(now())
+
+  @@index([conversationId, createdAt])
+}
+
+model Label {
+  id            String                @id @default(cuid())
+  name          String                @unique
+  color         String
+  conversations LabelOnConversation[]
+}
+
+model LabelOnConversation {
+  labelId        String
+  conversationId String
+  label          Label        @relation(fields: [labelId], references: [id])
+  conversation   Conversation @relation(fields: [conversationId], references: [id])
+
+  @@id([labelId, conversationId])
+}
+
+model Note {
+  id        String   @id @default(cuid())
+  contactId String
+  contact   Contact  @relation(fields: [contactId], references: [id])
+  authorId  String
+  author    Account  @relation(fields: [authorId], references: [id])
+  body      String
+  createdAt DateTime @default(now())
+}
+
+model Reminder {
+  id        String   @id @default(cuid())
+  contactId String
+  contact   Contact  @relation(fields: [contactId], references: [id])
+  dueAt     DateTime
+  note      String
+  done      Boolean  @default(false)
+  createdAt DateTime @default(now())
+}
+
+enum TemplateType {
+  OFFICIAL
+  QUICK_REPLY
+}
+
+enum TemplateMetaStatus {
+  APPROVED
+  PENDING
+  REJECTED
+  NOT_APPLICABLE
+}
+
+model Template {
+  id         String              @id @default(cuid())
+  name       String
+  type       TemplateType
+  metaStatus TemplateMetaStatus  @default(NOT_APPLICABLE)
+  category   String?
+  body       String
+  variables  Json?
+  createdAt  DateTime            @default(now())
+}
+
+model Settings {
+  id                Int             @id @default(1)
+  defaultChannel    MessageChannel  @default(OFFICIAL)
+  workingHoursStart String?
+  workingHoursEnd   String?
+  offHoursAutoReply String?
+  botKillSwitch     Boolean         @default(false)
+  catalogSyncedAt   DateTime?
+}
