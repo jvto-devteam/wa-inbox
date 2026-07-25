@@ -4383,6 +4383,7 @@ Expected: PASS (1 test).
 ```tsx
 'use client'
 import { useEffect, useState } from 'react'
+import { Select } from '@/components/ui/select'
 
 type Decision = { id: string; conversationId: string; contactName: string | null; mode: string; trace: unknown; createdAt: string }
 
@@ -4397,13 +4398,13 @@ export default function BotLogPage() {
   return (
     <main className="mx-auto max-w-3xl space-y-4 p-6">
       <h1 className="text-xl font-semibold text-navy">Log Keputusan Bot</h1>
-      <select value={filter} onChange={(e) => setFilter(e.target.value)} className="h-8 rounded-lg border border-input px-2 text-sm outline-none">
+      <Select value={filter} onChange={(e) => setFilter(e.target.value)} className="w-auto">
         <option value="">Semua mode</option>
         <option value="handoff">Handoff</option>
         <option value="faq">FAQ</option>
         <option value="funnel">Funnel</option>
         <option value="booking_context">Konteks Booking</option>
-      </select>
+      </Select>
       <div className="divide-y">
         {decisions.map((d) => (
           <div key={d.id} className="py-2 text-sm">
@@ -4884,7 +4885,7 @@ Expected: PASS (2 tests).
 
 - [ ] **Step 5: Add a pipeline dropdown to `ContactPanel`**
 
-Extend `src/components/inbox/ContactPanel.tsx` with a `<select>` of the four stages, calling `PATCH` on change.
+Extend `src/components/inbox/ContactPanel.tsx` with the shared `Select` component (`@/components/ui/select`) listing the four stages, calling `PATCH` on change.
 
 - [ ] **Step 6: Commit**
 
@@ -5384,7 +5385,7 @@ Expected: PASS (2 tests).
 
 - [ ] **Step 5: Add an assign dropdown to the thread header**
 
-Modify `src/components/inbox/ThreadView.tsx` — add a header bar above the message list with an agent `<select>` (populated from `GET /api/accounts`, current value from the conversation's `assignedAgentId`) calling `PATCH /api/conversations/:id/assign` on change.
+Modify `src/components/inbox/ThreadView.tsx` — add a header bar above the message list with the shared `Select` component (`@/components/ui/select`, populated from `GET /api/accounts`, current value from the conversation's `assignedAgentId`) calling `PATCH /api/conversations/:id/assign` on change.
 
 - [ ] **Step 6: Commit**
 
@@ -5472,7 +5473,7 @@ Expected: PASS (2 tests).
 
 - [ ] **Step 6: Wire a search input into `ConversationList`**
 
-Modify `src/components/inbox/ConversationList.tsx` — add a search `<input>` above the list, debounced (simple `setTimeout`-based debounce is sufficient), re-fetching `/api/conversations?q=...` on change.
+Modify `src/components/inbox/ConversationList.tsx` — add the shared `Input` component (`@/components/ui/input`, placeholder `"Cari nama, nomor, atau isi pesan..."` per the approved mockup) above the list, debounced (simple `setTimeout`-based debounce is sufficient), re-fetching `/api/conversations?q=...` on change.
 
 - [ ] **Step 7: Commit**
 
@@ -5926,9 +5927,9 @@ Expected: PASS (4 tests).
 
 Add three sections to `src/app/settings/page.tsx` (all gated on `role === 'ADMIN'` where noted — fetch the current session's role via a small `GET /api/session` route returning `{ role }`, backed by `verifySessionToken` on the request cookie, if one doesn't already exist from an earlier task):
 
-1. **Jam kerja & auto-reply** (any role can view; admin can edit): two `<input type="time">` fields bound to `workingHoursStart`/`workingHoursEnd`, a textarea for `offHoursAutoReply`, all PATCHed through the existing `/api/settings` route from Task 17.
-2. **Manajemen pengguna** (admin only): a list of accounts from `GET /api/accounts` (Task 42), each with a "Reset Kata Sandi" button (prompts for a new password, calls `PATCH /api/accounts/:id`) and a "Hapus" button (calls `DELETE /api/accounts/:id`), plus a small form to create a new agent (calls `POST /api/accounts`).
-3. **Webhook & kredensial** (admin only, read-only): displays the Meta webhook URL (`{deployedBaseUrl}/api/webhooks/meta`) and the wa-coexist base URL for reference — never renders the actual `accessToken`/`coexistApiKey` values, only whether each is set (`Boolean(...)`), consistent with this plan's "sensitive data, admin-only" requirement from the concept doc.
+1. **Jam kerja & auto-reply** (any role can view; admin can edit): two shared `Input` components (`type="time"`) bound to `workingHoursStart`/`workingHoursEnd`, a shared `Textarea` for `offHoursAutoReply`, all PATCHed through the existing `/api/settings` route from Task 17. Wrap the section in the shared `Card`, matching the other Pengaturan sections from Task 17.
+2. **Manajemen pengguna** (admin only, wrapped in `Card`): a list of accounts from `GET /api/accounts` (Task 42), each with a "Reset Kata Sandi" `Button` (`variant="outline" size="sm"`, prompts for a new password, calls `PATCH /api/accounts/:id`) and a "Hapus" `Button` (`variant="destructive" size="sm"`, calls `DELETE /api/accounts/:id`), plus a small form using shared `Input`/`Select`/`Button` to create a new agent (calls `POST /api/accounts`).
+3. **Webhook & kredensial** (admin only, read-only, wrapped in `Card`): displays the Meta webhook URL (`{deployedBaseUrl}/api/webhooks/meta`) and the wa-coexist base URL for reference — never renders the actual `accessToken`/`coexistApiKey` values, only whether each is set (as a `success`/`destructive` `Badge`), consistent with this plan's "sensitive data, admin-only" requirement from the concept doc.
 
 - [ ] **Step 6: Commit**
 
