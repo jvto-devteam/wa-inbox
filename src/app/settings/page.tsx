@@ -5,32 +5,78 @@ import { Select } from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
+import { UserManagementSection } from '@/components/settings/UserManagementSection'
+import { WebhookCredentialsPanel } from '@/components/settings/WebhookCredentialsPanel'
 
 type Settings = {
   defaultChannel: 'OFFICIAL' | 'UNOFFICIAL'
   workingHoursStart: string | null
   workingHoursEnd: string | null
+  offHoursAutoReply: string | null
   botKillSwitch: boolean
   catalogSyncedAt: string | null
 }
 type NumberStatus = { officialTokenValid: boolean; unofficialConnected: boolean }
 type GateStatus = { readyForApproval: boolean; blocking: string[] }
+type Role = 'ADMIN' | 'AGENT' | null
 
 export default function SettingsPage() {
   const [settings, setSettings] = useState<Settings | null>(null)
   const [status, setStatus] = useState<NumberStatus | null>(null)
   const [gateStatus, setGateStatus] = useState<GateStatus | null>(null)
   const [syncing, setSyncing] = useState(false)
+  const [role, setRole] = useState<Role>(null)
+
+  const [workingHoursStart, setWorkingHoursStart] = useState('')
+  const [workingHoursEnd, setWorkingHoursEnd] = useState('')
+  const [offHoursAutoReply, setOffHoursAutoReply] = useState('')
+  const [savingHours, setSavingHours] = useState(false)
 
   useEffect(() => {
     fetch('/api/settings').then((r) => r.json()).then(setSettings)
     fetch('/api/numbers/status').then((r) => r.json()).then(setStatus)
     fetch('/api/bot/gate-status').then((r) => r.json()).then(setGateStatus)
+    // Backs the admin-only gating below (Manajemen pengguna, Webhook &
+    // kredensial, and edit rights on Jam kerja). 401 (no/invalid session) is
+    // treated the same as "no role" — the gated sections simply stay hidden.
+    fetch('/api/session')
+      .then((r) => (r.ok ? r.json() : { role: null }))
+      .then((data) => setRole(data.role ?? null))
   }, [])
+
+  // Syncs the working-hours form fields from the server whenever `settings`
+  // is (re)loaded — including right after saveWorkingHours() PATCHes and
+  // replaces `settings` with the server's confirmed values, so the fields
+  // never show anything the server hasn't confirmed. Deriving this during
+  // render (comparing against the last-synced object) rather than in a
+  // useEffect avoids the extra render+effect round trip React recommends
+  // against for "adjusting state" from a prop/data change.
+  const [syncedSettings, setSyncedSettings] = useState<Settings | null>(null)
+  if (settings && settings !== syncedSettings) {
+    setSyncedSettings(settings)
+    setWorkingHoursStart(settings.workingHoursStart ?? '')
+    setWorkingHoursEnd(settings.workingHoursEnd ?? '')
+    setOffHoursAutoReply(settings.offHoursAutoReply ?? '')
+  }
 
   async function updateDefaultChannel(defaultChannel: 'OFFICIAL' | 'UNOFFICIAL') {
     const res = await fetch('/api/settings', { method: 'PATCH', body: JSON.stringify({ defaultChannel }) })
     setSettings(await res.json())
+  }
+
+  async function saveWorkingHours() {
+    setSavingHours(true)
+    try {
+      const res = await fetch('/api/settings', {
+        method: 'PATCH',
+        body: JSON.stringify({ workingHoursStart, workingHoursEnd, offHoursAutoReply }),
+      })
+      setSettings(await res.json())
+    } finally {
+      setSavingHours(false)
+    }
   }
 
   async function relink() {
@@ -127,6 +173,57 @@ export default function SettingsPage() {
           </div>
         </div>
       </Card>
+
+      <Card className="space-y-3 p-4">
+        <h2 className="font-medium text-navy">Jam kerja & auto-reply</h2>
+        <div className="grid grid-cols-2 gap-2">
+          <div className="space-y-1">
+            <label htmlFor="working-hours-start" className="text-xs text-muted-foreground">
+              Mulai
+            </label>
+            <Input
+              id="working-hours-start"
+              type="time"
+              value={workingHoursStart}
+              onChange={(e) => setWorkingHoursStart(e.target.value)}
+              disabled={role !== 'ADMIN'}
+            />
+          </div>
+          <div className="space-y-1">
+            <label htmlFor="working-hours-end" className="text-xs text-muted-foreground">
+              Selesai
+            </label>
+            <Input
+              id="working-hours-end"
+              type="time"
+              value={workingHoursEnd}
+              onChange={(e) => setWorkingHoursEnd(e.target.value)}
+              disabled={role !== 'ADMIN'}
+            />
+          </div>
+        </div>
+        <div className="space-y-1">
+          <label htmlFor="off-hours-auto-reply" className="text-xs text-muted-foreground">
+            Auto-reply di luar jam kerja
+          </label>
+          <Textarea
+            id="off-hours-auto-reply"
+            rows={3}
+            value={offHoursAutoReply}
+            onChange={(e) => setOffHoursAutoReply(e.target.value)}
+            disabled={role !== 'ADMIN'}
+            placeholder="Contoh: Terima kasih sudah menghubungi kami, tim kami akan membalas pada jam kerja."
+          />
+        </div>
+        {role === 'ADMIN' && (
+          <Button onClick={saveWorkingHours} size="sm" disabled={savingHours}>
+            {savingHours ? 'Menyimpan...' : 'Simpan'}
+          </Button>
+        )}
+      </Card>
+
+      {role === 'ADMIN' && <UserManagementSection />}
+      {role === 'ADMIN' && <WebhookCredentialsPanel />}
     </main>
   )
 }
