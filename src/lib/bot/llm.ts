@@ -3,6 +3,7 @@ async function callOllama(prompt: string): Promise<string> {
     method: 'POST',
     body: JSON.stringify({ model: 'llama3', prompt, stream: false }),
   })
+  if (!res.ok) throw new Error('Ollama request failed')
   const body = await res.json()
   return body.response
 }

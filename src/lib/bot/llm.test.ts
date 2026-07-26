@@ -29,4 +29,9 @@ describe('callLLM', () => {
     const result = await callLLM('Apa saja paket Ijen?')
     expect(result).toBe('Fallback dari Ollama')
   })
+
+  it('throws when Ollama returns error with forceLocal', async () => {
+    ;(fetch as any).mockResolvedValue({ ok: false, json: async () => ({}) })
+    await expect(callLLM('Booking saya kapan?', { forceLocal: true })).rejects.toThrow('Ollama request failed')
+  })
 })
