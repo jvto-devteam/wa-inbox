@@ -3762,11 +3762,14 @@ git commit -m "feat: add LLM client wrapper with OpenAI-primary, Ollama-fallback
 
 **Files:**
 - Create: `src/lib/bot/orchestrator.ts`
+- Modify: `src/lib/bot/types.ts` — add one optional field to `TripBrief` (see below)
 - Test: `src/lib/bot/orchestrator.test.ts`
 
 **Interfaces:**
 - Consumes: `lookupBooking` (26), `processFunnelState` (27), `checkRouteGate` (22), `classifySalesNeed` (23), `composeResponse` (24), `callLLM` (28), `loadCatalog` (20), `checkDeploymentGate` (25), `prisma` (2).
 - Produces: `decideAndRespond(conversationId: string, inboundText: string): Promise<BotDecision>` — the single entry point Task 30 wires into the webhook handler. This is where the escalation → booking-lookup → 3-mode branch documented in the design happens; every rule here must match the "Kapan bot balas sendiri, kapan handoff" table from `docs/design/wa-inbox-concept.html`.
+
+**Correction found during Task 27 implementation:** `processFunnelState` is correctly stateless per-call (it takes `currentState` as an input, per Task 20/27's design) — but that means *this* task is responsible for persisting funnel progress across messages. An earlier draft of this task hardcoded `currentState: 'GREETING'` on every call, which would reset every customer back to the first funnel question on every single message instead of letting them progress. Fix: add `funnelState?: string` to `TripBrief` in `src/lib/bot/types.ts` (an additive, backward-compatible field — Task 20's other fields are unchanged), read `tripBrief.funnelState ?? 'GREETING'` as the current state on each call, and persist `funnelResult.nextState` back onto `conversation.tripBrief` after each funnel step (see the corrected code below, which already reflects this fix).
 
 - [ ] **Step 1: Write the failing test**
 
@@ -3797,6 +3800,7 @@ beforeEach(() => {
   vi.clearAllMocks()
   ;(loadCatalog as any).mockReturnValue({ packages: [], syncedAt: null })
   mockPrisma.conversation.findUniqueOrThrow.mockResolvedValue({ id: 'conv_1', tripBrief: {}, bookingData: null, bookingCheckedAt: null, contact: { phone: '6281234567890' } } as never)
+  mockPrisma.conversation.update.mockResolvedValue({} as never)
 })
 
 describe('decideAndRespond', () => {
@@ -3832,6 +3836,25 @@ describe('decideAndRespond', () => {
     const result = await decideAndRespond('conv_1', 'Halo')
 
     expect(result.mode).toBe('handoff')
+  })
+
+  it('resumes the funnel from the persisted funnelState and persists the new one, instead of always restarting at GREETING', async () => {
+    ;(lookupBooking as any).mockResolvedValue(null)
+    ;(checkRouteGate as any).mockReturnValue({ status: 'clear' })
+    ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
+    mockPrisma.conversation.findUniqueOrThrow.mockResolvedValue({
+      id: 'conv_1', tripBrief: { funnelState: 'TANYA_ORIGIN' }, bookingData: null, bookingCheckedAt: null, contact: { phone: '6281234567890' },
+    } as never)
+    ;(processFunnelState as any).mockReturnValue({ reply: 'Rekomendasi untuk Ijen...', nextState: 'REKOMENDASI' })
+
+    const result = await decideAndRespond('conv_1', 'Saya mau ke Ijen')
+
+    expect(processFunnelState).toHaveBeenCalledWith(expect.objectContaining({ currentState: 'TANYA_ORIGIN' }))
+    expect(mockPrisma.conversation.update).toHaveBeenCalledWith({
+      where: { id: 'conv_1' },
+      data: { tripBrief: { funnelState: 'REKOMENDASI' } },
+    })
+    expect(result).toEqual({ mode: 'funnel', reply: 'Rekomendasi untuk Ijen...', nextState: 'REKOMENDASI' })
   })
 })
 ```
@@ -3899,7 +3922,11 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
       return { mode: 'handoff', reason: 'Butuh data harga/ketersediaan real-time — belum tersambung' }
     }
 
-    const funnelResult = processFunnelState({ currentState: 'GREETING', message: inboundText, catalog })
+    const funnelResult = processFunnelState({ currentState: tripBrief.funnelState ?? 'GREETING', message: inboundText, catalog })
+    await prisma.conversation.update({
+      where: { id: conversationId },
+      data: { tripBrief: { ...tripBrief, funnelState: funnelResult.nextState } as never },
+    })
     if (funnelResult.nextState !== 'HUMAN_HANDOFF') {
       return { mode: 'funnel', reply: funnelResult.reply, nextState: funnelResult.nextState }
     }
@@ -3915,7 +3942,7 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run src/lib/bot/orchestrator.test.ts`
-Expected: PASS (4 tests).
+Expected: PASS (5 tests).
 
 - [ ] **Step 5: Commit**
 
