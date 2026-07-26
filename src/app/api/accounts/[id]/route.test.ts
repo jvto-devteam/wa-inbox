@@ -84,6 +84,16 @@ describe('PATCH /api/accounts/[id]', () => {
     expect(mockPrisma.account.update).not.toHaveBeenCalled()
   })
 
+  it('rejects when there is no session cookie at all', async () => {
+    const req = new Request('http://localhost', {
+      method: 'PATCH',
+      body: JSON.stringify({ password: 'NewPass123' }),
+    })
+    const res = await PATCH(req, { params: Promise.resolve({ id: 'acc_2' }) })
+    expect(res.status).toBe(403)
+    expect(mockPrisma.account.update).not.toHaveBeenCalled()
+  })
+
   it('rejects a too-short password with 400', async () => {
     const req = new Request('http://localhost', {
       method: 'PATCH',

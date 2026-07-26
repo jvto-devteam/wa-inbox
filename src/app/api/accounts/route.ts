@@ -1,8 +1,8 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { prisma } from '@/lib/db'
-import { verifySessionToken } from '@/lib/auth/session'
 import { hashPassword } from '@/lib/auth/password'
+import { requireAdmin } from '@/lib/auth/require-admin'
 
 // Widened from Task 42's { id, name } (originally selected tightly for
 // ThreadView's agent-assignment dropdown, which only needs id/name) to also
@@ -13,12 +13,6 @@ import { hashPassword } from '@/lib/auth/password'
 export async function GET() {
   const accounts = await prisma.account.findMany({ select: { id: true, name: true, email: true, role: true } })
   return NextResponse.json(accounts)
-}
-
-async function requireAdmin(req: Request) {
-  const token = req.headers.get('cookie')?.match(/wa_inbox_session=([^;]+)/)?.[1]
-  const session = token ? await verifySessionToken(decodeURIComponent(token)) : null
-  return session?.role === 'ADMIN' ? session : null
 }
 
 const createSchema = z.object({

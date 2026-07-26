@@ -2,14 +2,8 @@ import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db'
-import { verifySessionToken } from '@/lib/auth/session'
 import { hashPassword } from '@/lib/auth/password'
-
-async function requireAdmin(req: Request) {
-  const token = req.headers.get('cookie')?.match(/wa_inbox_session=([^;]+)/)?.[1]
-  const session = token ? await verifySessionToken(decodeURIComponent(token)) : null
-  return session?.role === 'ADMIN' ? session : null
-}
+import { requireAdmin } from '@/lib/auth/require-admin'
 
 export async function DELETE(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const admin = await requireAdmin(req)
