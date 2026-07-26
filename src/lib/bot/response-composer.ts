@@ -76,6 +76,19 @@
  *      case."). This port has no upstream delivery-plan step to rely on, so it enforces
  *      the same no-CTA-on-handoff invariant directly. Confidence: high -- this is
  *      preserving a stated safety invariant, not inventing one.
+ *      SCOPE NOTE (self-review): in the real source, `_link_intents` (presentation_
+ *      resolver.py:109-118) picks the package-page URL as the primary link for topic
+ *      in `("price", "general", "booking")` -- i.e. a `price`-topic question ALSO gets
+ *      a "Details: {url}" line in the real system, not just `booking`. This port
+ *      deliberately narrows the link line to `how_to_book` only: `CatalogPackage.links`
+ *      (Task 20) is an untyped `Record<string, string>` with no "package page" / "public
+ *      page" key convention established anywhere (the only key ever demonstrated is
+ *      `booking`), so picking a link for the `price` topic would mean inventing which
+ *      key counts as "the" package page -- not a simplification of an existing field,
+ *      but a guess at one that doesn't exist. Confidence: medium -- this is a real,
+ *      disclosed narrowing of scope (a `price` reply here never includes a link, where
+ *      the real system's would), not a defect; if wa-inbox later adds a dedicated
+ *      "page" link key, this should be revisited.
  *
  *   4. `topic: 'policy'` has NO direct analog in the real topic set at all -- the real
  *      system splits this across "payment" and "cancellation" topics (module_resolver.py
