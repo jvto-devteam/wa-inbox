@@ -35,6 +35,14 @@
   })
   ```
   Every subsequent test file in this plan that shows the old broken pattern should be written with this corrected one instead — this is a scaffolding fix, not a change to what any test asserts.
+- **Second correction discovered during Task 20 implementation:** a bare `vi.mock('fs')` (automock, no factory) does not actually replace `fs.existsSync`/`readdirSync`/`readFileSync` with `vi.fn()`s under this project's installed Vitest 4.1.10 / Node 25.2.1 — the real implementations stay in place and calling `.mockReturnValue(...)` on them throws `TypeError: ... is not a function`. Wherever a task's example test code shows a bare `vi.mock('fs')` for mocking file-system calls (e.g. Task 21's sync script, Task 25's deployment-gate reader), use an explicit factory mock instead:
+  ```typescript
+  vi.mock('fs', async () => {
+    const actual = await vi.importActual<typeof import('fs')>('fs')
+    return { ...actual, existsSync: vi.fn(), readdirSync: vi.fn(), readFileSync: vi.fn() }
+  })
+  ```
+  (adjust the overridden method list to whatever the specific test actually needs to mock). Same test assertions/intent as whatever the task brief shows — this is a scaffolding fix, not a behavior change.
 - All UI matches the approved `docs/design/wa-inbox-ui-mockup.html` — Plus Jakarta Sans, navy `#0B1B3D` + brand blue `#2563EB`, shadcn-derived token classes (`border-input`, `text-muted-foreground`, `bg-accent`, `rounded-lg`, `h-8` controls). Always use the shared `src/components/ui/*` primitives (`Button`, `Input`, `Select`, `Textarea`, `Badge`, `Card`, `Table`) from Task 1 instead of raw `<button>`/`<input>`/`<select>` with inline ad-hoc classes — this was a deliberate, explicitly-approved trust-repair step after prior design mismatches, so treat any deviation from the mockup's palette/components as a bug, not a style choice.
 - **No live message testing against real customers, ever, during implementation.** Any step that sends or triggers a real WhatsApp message (manual verification steps, ad-hoc `curl`/dev-server checks, and especially anything that exercises the bot orchestrator end-to-end) must target **only the whitelisted test number `6282143403501`** — never a real JVTO customer conversation, and never broadcast/bulk sends. This applies with extra force to the bot (Fase 3, Tasks 20–34 and the cutover in Task 46): the orchestrator must never be exercised against live production customer traffic during implementation, regardless of how confident a task's automated tests are — automated tests use mocked Prisma/fetch and never touch a real number, so they're always safe; it's only manual/exploratory verification steps that carry this risk. If a task's "manual verification" step would otherwise touch a real number, substitute the whitelist number or skip that specific manual check and rely on the automated test coverage instead, flagging the skip in that task's completion report.
 
