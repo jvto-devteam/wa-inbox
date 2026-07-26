@@ -6,7 +6,10 @@ import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 
-type QuickReplyTemplate = { id: string; name: string; category: string; body: string }
+type QuickReplyTemplate = { id: string; name: string; category: string | null; body: string }
+type TemplateApiRow = QuickReplyTemplate & { type: string }
+
+const UNCATEGORIZED_LABEL = 'Lainnya'
 
 export function ComposeBox({
   conversationId,
@@ -24,6 +27,7 @@ export function ComposeBox({
   const [sending, setSending] = useState(false)
   const [templates, setTemplates] = useState<QuickReplyTemplate[]>([])
   const [pickerOpen, setPickerOpen] = useState(false)
+  const [templateError, setTemplateError] = useState<string | null>(null)
 
   async function send() {
     if (!text.trim() || sending) return
@@ -56,15 +60,27 @@ export function ComposeBox({
     onBotToggled(newValue)
   }
 
+  // Fetch failures here must not leave the picker in a half-open, silently-broken state
+  // (same rule LabelPicker's attach/detach follow) — catch the error, surface it inline,
+  // and never call setPickerOpen(true) on a request that didn't actually succeed.
   async function toggleTemplatePicker() {
     if (pickerOpen) {
       setPickerOpen(false)
       return
     }
-    const res = await fetch('/api/templates')
-    const all = (await res.json()) as Array<{ type: string; id: string; name: string; category: string; body: string }>
-    setTemplates(all.filter((t) => t.type === 'QUICK_REPLY'))
-    setPickerOpen(true)
+    setTemplateError(null)
+    try {
+      const res = await fetch('/api/templates')
+      if (!res.ok) {
+        setTemplateError('Gagal memuat template')
+        return
+      }
+      const all = (await res.json()) as TemplateApiRow[]
+      setTemplates(all.filter((t) => t.type === 'QUICK_REPLY'))
+      setPickerOpen(true)
+    } catch {
+      setTemplateError('Gagal memuat template')
+    }
   }
 
   function selectTemplate(body: string) {
@@ -73,7 +89,8 @@ export function ComposeBox({
   }
 
   const templatesByCategory = templates.reduce<Record<string, QuickReplyTemplate[]>>((acc, t) => {
-    ;(acc[t.category] ??= []).push(t)
+    const category = t.category ?? UNCATEGORIZED_LABEL
+    ;(acc[category] ??= []).push(t)
     return acc
   }, {})
 
@@ -95,7 +112,11 @@ export function ComposeBox({
           ) : (
             Object.entries(templatesByCategory).map(([category, items]) => (
               <div key={category} className="space-y-1.5">
-                <h4 className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                {/* .toUpperCase() transforms the actual text node (not just CSS text-transform)
+                    so a category heading can never collide with an item's own `name` text when
+                    they happen to be the same string — RTL's getByText/findByText would otherwise
+                    throw on the ambiguous match. */}
+                <h4 className="text-[11px] font-semibold tracking-wide text-muted-foreground">
                   {category.toUpperCase()}
                 </h4>
                 <div className="flex flex-wrap gap-1.5">
@@ -115,6 +136,7 @@ export function ComposeBox({
           )}
         </Card>
       )}
+      {templateError && <p className="text-xs text-destructive">{templateError}</p>}
       <div className="flex items-center gap-2">
         <Select
           value={channel}

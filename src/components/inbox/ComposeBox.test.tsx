@@ -45,6 +45,7 @@ describe('ComposeBox quick replies', () => {
       vi.fn((url: string) => {
         if (url === '/api/templates')
           return Promise.resolve({
+            ok: true,
             json: async () => [
               { id: 'tpl_1', name: 'Cara Booking', type: 'QUICK_REPLY', category: 'Cara Booking', body: 'Ikuti panduan booking di link ini...' },
             ],
@@ -78,6 +79,7 @@ describe('ComposeBox quick replies', () => {
       vi.fn((url: string) => {
         if (url === '/api/templates')
           return Promise.resolve({
+            ok: true,
             json: async () => [
               { id: 'tpl_1', name: 'Cara Booking', type: 'QUICK_REPLY', category: 'Panduan', body: 'Ikuti panduan booking...' },
               { id: 'tpl_2', name: 'Harga Paket', type: 'QUICK_REPLY', category: 'Paket & Harga', body: 'Berikut harga paket kami...' },
@@ -95,5 +97,33 @@ describe('ComposeBox quick replies', () => {
     expect(screen.getByText('Cara Booking')).toBeInTheDocument()
     expect(screen.getByText('Harga Paket')).toBeInTheDocument()
     expect(screen.queryByText('booking_confirmation')).not.toBeInTheDocument()
+  })
+
+  it('shows an inline error and does not open the picker when the templates request fails', async () => {
+    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve({ ok: false, json: async () => ({ error: 'Internal error' }) })))
+    render(<ComposeBox conversationId="conv_1" botEnabled={false} onSent={() => {}} onBotToggled={() => {}} />)
+
+    fireEvent.click(await screen.findByText('Template'))
+
+    expect(await screen.findByText('Gagal memuat template')).toBeInTheDocument()
+    expect(screen.queryByText('Belum ada template quick reply.')).not.toBeInTheDocument()
+  })
+
+  it('shows an inline error when the templates request throws (network failure)', async () => {
+    vi.stubGlobal('fetch', vi.fn(() => Promise.reject(new Error('Network error'))))
+    render(<ComposeBox conversationId="conv_1" botEnabled={false} onSent={() => {}} onBotToggled={() => {}} />)
+
+    fireEvent.click(await screen.findByText('Template'))
+
+    expect(await screen.findByText('Gagal memuat template')).toBeInTheDocument()
+  })
+
+  it('shows the empty state when there are no quick-reply templates', async () => {
+    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve({ ok: true, json: async () => [] })))
+    render(<ComposeBox conversationId="conv_1" botEnabled={false} onSent={() => {}} onBotToggled={() => {}} />)
+
+    fireEvent.click(await screen.findByText('Template'))
+
+    expect(await screen.findByText('Belum ada template quick reply.')).toBeInTheDocument()
   })
 })
