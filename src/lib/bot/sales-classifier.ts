@@ -60,6 +60,16 @@
  *      (c) an "operational status query" phrase is hit (guardrails YAML lines 34-44,
  *          e.g. "will it reopen", "is it open") -- independent of job, never a handoff;
  *      (d) a guarantee is demanded (guardrails YAML lines 15-19, e.g. "guarantee", "100%").
+ *    Critically, (d) is NOT just a live-check trigger: `derive_response_plan` lines 230-233
+ *    ALSO set `handoff_escalation = "attraction_guarantee_demanded"` and force
+ *    `mode="handoff"` for it -- distinct from (b), whose trigger_phrases alone never force a
+ *    handoff (guardrails YAML's `attraction_hard_dependency.handoff_when`, lines 26-30, only
+ *    escalates on `guarantee_demanded` / `access_unconfirmable` / `attraction_inaccessible` /
+ *    `redesign_outside_standard` -- not on the bare trigger_phrases). This is also listed
+ *    verbatim in `handoff_rules.mandatory_signals` (guardrails YAML line 73):
+ *    `attraction_guarantee_demanded`, alongside payment_discrepancy, medical_or_fitness, etc.
+ *    -- i.e. the real system treats a guarantee demand as a first-class mandatory-handoff
+ *    signal, not a mere live-data flag.
  *
  * --- Mapping to wa-inbox's simpler inputs (judgment calls) ---
  *
@@ -101,7 +111,41 @@
  *
  * `needsLiveData` depends only on job (J4) and message keywords, never on TripBrief
  * completeness, so it ports independently of the TripBrief-shape questions above.
- * Confidence: high.
+ * Confidence: high. NOTE: a guarantee demand is the one keyword group that affects BOTH
+ * `needsLiveData` and `job` (see point 3(d) above) -- `SalesClassification` has no separate
+ * `handoff`/`mode` field the way the real `ResponsePlan` does, so job='J5' is this port's
+ * only available signal for "this must route to a human," and the Global Constraint that the
+ * bot must fail safe toward human handoff on ambiguity makes dropping that escalation the
+ * wrong simplification. JUDGMENT CALL (high confidence): guarantee-demand keywords are
+ * treated exactly like `HANDOFF_KEYWORDS` (force job='J5') in addition to setting
+ * `needsLiveData=true`, mirroring the real system layering a handoff escalation on top of an
+ * already-flagged live_check rather than replacing it.
+ *
+ * JUDGMENT CALL 5 (job/profile conflation -- disclosed, not previously called out).
+ * `routing-and-clarification.yaml` lines 3-5 are explicit that "Customer job: a GROUPING
+ * LABEL only... Required fields, actions, and disclosures are driven by the requirement
+ * profile below, NOT by the job." The real system has TWO independent axes: 5 jobs
+ * (J1-J5, `default_job_by_intent` + `job_overrides`) and 7 requirement profiles
+ * (`general_information`, `policy_explanation`, `package_information`,
+ * `package_recommendation`, `standard_price`, `route_validation`, `availability_check`,
+ * `default_profile_by_intent` + a SEPARATE `profile_overrides` list) -- and profile
+ * selection can diverge from job. Concrete example of the divergence:
+ * `query_package_details` + query containing "included"/"inclusion" matches a
+ * `job_overrides` rule -> job = J2_price_and_value, but ALSO matches a *different*,
+ * independent `profile_overrides` rule (routing YAML lines 54-56) -> profile =
+ * `package_information`, whose `required` is just `[selected_package_key]` (routing YAML
+ * line 76) -- NOT J2's own `standard_price` profile's `[selected_package_key,
+ * pax.confirmed]` (lines 84-88). Task 20's `SalesClassification` type has only a `job`
+ * field, no `profile` field, so there is no separate axis to preserve without redesigning
+ * the type (out of scope here). This port's `REQUIRED_FIELDS_BY_JOB` therefore treats job
+ * AS IF it were profile -- a real simplification, not an oversight, but one that means
+ * required-fields can be wrong for job/message combinations where the real system's job
+ * and profile diverge (as in the "included" example above: this port would require
+ * `destination` + `pax` for that message, where the real system would only require the
+ * package selection). Confidence: medium -- the conflation is a reasonable simplification
+ * forced by the type contract, but the specific fields it gets wrong are a known,
+ * documented risk rather than something the type made *unavoidable* the way the J1-J5-only
+ * union did for the "greeting"/"unsupported" case above.
  */
 import type { TripBrief, SalesClassification } from './types'
 
@@ -155,10 +199,12 @@ const AVAILABILITY_KEYWORDS = [
   'status terkini',
 ]
 
-// guardrails-and-state.yaml's attraction_hard_dependency.trigger_phrases (lines 8-13) and
-// .guarantee_phrases (lines 16-20): these force a live_check action (needsLiveData) but do
-// NOT by themselves change the resolved job -- they can co-occur with any job.
-const LIVE_DATA_ONLY_KEYWORDS = [
+// guardrails-and-state.yaml's attraction_hard_dependency.trigger_phrases (lines 8-13): these
+// force a live_check action (needsLiveData) but do NOT by themselves change the resolved
+// job -- the real guardrails only escalate to handoff on guarantee_demanded /
+// access_unconfirmable / attraction_inaccessible / redesign_outside_standard (lines 26-30),
+// never on a bare trigger_phrase -- so these can co-occur with any job.
+const HARD_DEPENDENCY_TRIGGER_KEYWORDS = [
   'main reason',
   'must see',
   'definitely want',
@@ -167,12 +213,15 @@ const LIVE_DATA_ONLY_KEYWORDS = [
   'blue fire is why',
   'blue lava is why',
   'why we are coming',
-  'guarantee',
-  'guaranteed',
-  '100%',
-  'certain',
-  'definitely be open',
 ]
+
+// guardrails-and-state.yaml's attraction_hard_dependency.guarantee_phrases (lines 16-20).
+// Unlike the trigger phrases above, a guarantee demand IS a mandatory-handoff signal in the
+// real system (`derive_response_plan` lines 230-233 set handoff_escalation and force
+// mode="handoff"; also listed in `handoff_rules.mandatory_signals`, line 73, as
+// `attraction_guarantee_demanded`). Ported as forcing job='J5' (this port's only handoff
+// signal -- see JUDGMENT CALL above) in addition to needsLiveData=true.
+const GUARANTEE_KEYWORDS = ['guarantee', 'guaranteed', '100%', 'certain', 'definitely be open']
 
 // plan_itinerary's default job + query_package_details' connection-word override (routing
 // YAML lines 24-26) + guardrails' connection_keywords (guardrails YAML line 58).
@@ -248,7 +297,7 @@ export function classifySalesNeed(input: { message: string; tripBrief: TripBrief
   const text = message.toLowerCase()
 
   let job: Job
-  if (includesAny(text, HANDOFF_KEYWORDS)) {
+  if (includesAny(text, HANDOFF_KEYWORDS) || includesAny(text, GUARANTEE_KEYWORDS)) {
     job = 'J5'
   } else if (includesAny(text, AVAILABILITY_KEYWORDS)) {
     job = 'J4'
@@ -262,7 +311,8 @@ export function classifySalesNeed(input: { message: string; tripBrief: TripBrief
 
   const missingInfo = REQUIRED_FIELDS_BY_JOB[job].filter((field) => isMissing(tripBrief[field]))
 
-  const needsLiveData = job === 'J4' || includesAny(text, LIVE_DATA_ONLY_KEYWORDS)
+  const needsLiveData =
+    job === 'J4' || includesAny(text, HARD_DEPENDENCY_TRIGGER_KEYWORDS) || includesAny(text, GUARANTEE_KEYWORDS)
 
   return { job, missingInfo, needsLiveData }
 }

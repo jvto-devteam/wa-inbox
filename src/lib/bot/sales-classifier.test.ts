@@ -109,11 +109,17 @@ describe('classifySalesNeed', () => {
     expect(result.needsLiveData).toBe(true)
   })
 
-  it('flags needsLiveData when a guarantee is demanded', () => {
+  // guardrails-and-state.yaml's guarantee_phrases (lines 16-20) are a MANDATORY handoff
+  // signal in the real system (derive_response_plan lines 230-233: handoff_escalation +
+  // forced mode="handoff"), not merely a live-check trigger like the bare hard-dependency
+  // trigger_phrases above. SalesClassification has no separate handoff/mode field, so this
+  // port signals it the only way it can: job='J5', alongside needsLiveData=true.
+  it('escalates to handoff (J5) and flags needsLiveData when a guarantee is demanded', () => {
     const result = classifySalesNeed({
       message: 'Can you guarantee we will see Blue Fire?',
       tripBrief: { destination: 'Ijen' },
     })
+    expect(result.job).toBe('J5')
     expect(result.needsLiveData).toBe(true)
   })
 
