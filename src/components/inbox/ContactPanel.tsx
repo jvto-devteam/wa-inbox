@@ -4,6 +4,7 @@ import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { LabelPicker, type LabelOption } from './LabelPicker'
 import { NotesSection } from './NotesSection'
+import { RemindersSection } from './RemindersSection'
 
 type BookingData = {
   destination?: string
@@ -116,6 +117,8 @@ export function ContactPanel({ conversationId }: { conversationId: string }) {
         attachedLabels={detail.labels}
         onAttachedChange={(labels) => setDetail((prev) => (prev ? { ...prev, labels } : prev))}
       />
+
+      <RemindersSection contactId={detail.contactId} />
 
       <NotesSection contactId={detail.contactId} />
     </div>

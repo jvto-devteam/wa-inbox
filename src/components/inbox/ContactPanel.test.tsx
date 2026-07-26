@@ -24,6 +24,7 @@ function mockFetchWith(detail: typeof baseDetail) {
     vi.fn((url: string) => {
       if (url === '/api/labels') return Promise.resolve({ json: () => Promise.resolve(allLabels) } as Response)
       if (url === `/api/contacts/${detail.contactId}/notes`) return Promise.resolve({ json: () => Promise.resolve([]) } as Response)
+      if (url === `/api/contacts/${detail.contactId}/reminders`) return Promise.resolve({ json: () => Promise.resolve([]) } as Response)
       return Promise.resolve({ json: () => Promise.resolve(detail) } as Response)
     })
   )
@@ -95,5 +96,14 @@ describe('ContactPanel', () => {
     await screen.findByText('Catatan')
     await screen.findByText('Belum ada catatan.')
     expect(fetch).toHaveBeenCalledWith('/api/contacts/contact_1/notes')
+  })
+
+  it('fetches reminders for the contact (using contactId, not conversationId) and renders the reminders section', async () => {
+    mockFetchWith(baseDetail)
+    render(<ContactPanel conversationId="conv_1" />)
+
+    await screen.findByText('Reminder')
+    await screen.findByText('Belum ada reminder.')
+    expect(fetch).toHaveBeenCalledWith('/api/contacts/contact_1/reminders')
   })
 })
