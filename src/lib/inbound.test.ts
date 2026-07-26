@@ -126,4 +126,23 @@ describe('ingestMetaMessage', () => {
 
     expect(decideAndRespond).not.toHaveBeenCalled()
   })
+
+  it('sends nothing when the orchestrator returns handoff', async () => {
+    // Safety-critical invariant: a handoff decision must never produce an outbound bot message
+    // — the conversation just waits for a human. This guards against a regression that calls
+    // sendMessage unconditionally, or that broadens the mode-matching condition to accidentally
+    // include 'handoff'.
+    mockPrisma.message.findUnique.mockResolvedValue(null)
+    mockPrisma.contact.upsert.mockResolvedValue({ id: 'contact_1', avatarUrl: 'x' } as never)
+    mockPrisma.conversation.upsert.mockResolvedValue({ id: 'conv_1', botEnabled: true } as never)
+    mockPrisma.waNumber.findFirstOrThrow.mockResolvedValue({ coexistBaseUrl: 'http://x' } as never)
+    mockPrisma.message.create.mockResolvedValue({} as never)
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: async () => ({ url: null }) }))
+    ;(decideAndRespond as any).mockResolvedValue({ mode: 'handoff', reason: 'Kata kunci eskalasi terdeteksi' })
+
+    await ingestMetaMessage(samplePayload)
+
+    expect(decideAndRespond).toHaveBeenCalledWith('conv_1', 'Halo, mau tanya paket Ijen')
+    expect(sendMessage).not.toHaveBeenCalled()
+  })
 })
