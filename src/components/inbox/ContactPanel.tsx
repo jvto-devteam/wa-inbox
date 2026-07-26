@@ -1,11 +1,10 @@
 'use client'
 import { useEffect, useState } from 'react'
-import { Card } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
 import { Select } from '@/components/ui/select'
 import { LabelPicker, type LabelOption } from './LabelPicker'
 import { NotesSection } from './NotesSection'
 import { RemindersSection } from './RemindersSection'
+import { BookingSummary, type BookingData, type TripBrief } from '@/components/contacts/BookingSummary'
 
 const PIPELINE_STAGES = [
   { value: 'new', label: 'Baru' },
@@ -13,21 +12,6 @@ const PIPELINE_STAGES = [
   { value: 'booked', label: 'Booked' },
   { value: 'lunas', label: 'Lunas' },
 ] as const
-
-type BookingData = {
-  destination?: string
-  dateRange?: string
-  pax?: number
-  amountPaid?: number
-  amountDue?: number
-  status?: string
-} | null
-
-type TripBrief = {
-  destination?: string
-  dateRange?: string
-  pax?: number
-} | null
 
 type ContactDetail = {
   botEnabled: boolean
@@ -39,23 +23,6 @@ type ContactDetail = {
   tripBrief: TripBrief
   labels: LabelOption[]
   pipelineStage: string
-}
-
-function hasAnyValue(obj: Record<string, unknown> | null | undefined) {
-  return !!obj && Object.values(obj).some((v) => v !== null && v !== undefined && v !== '')
-}
-
-function formatIDR(amount: number) {
-  return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(amount)
-}
-
-function Row({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex justify-between gap-2">
-      <dt className="text-muted-foreground">{label}</dt>
-      <dd className="font-medium text-navy">{value}</dd>
-    </div>
-  )
 }
 
 export function ContactPanel({ conversationId }: { conversationId: string }) {
@@ -92,10 +59,6 @@ export function ContactPanel({ conversationId }: { conversationId: string }) {
   if (!detail) return <div className="border-l border-border p-4 text-sm text-muted-foreground">Memuat...</div>
 
   const initial = (detail.contactName ?? '?').trim().charAt(0).toUpperCase()
-  // A brand-new conversation has neither a verified booking nor any funnel-collected brief data yet
-  // — that's a third state, distinct from Mode 3 (booking) and Mode 1/2 (funnel-only lead).
-  const isBookingConfirmed = hasAnyValue(detail.bookingData)
-  const isFunnelOnly = !isBookingConfirmed && hasAnyValue(detail.tripBrief)
 
   return (
     <div className="flex h-full flex-col gap-4 overflow-y-auto border-l border-border bg-white p-4">
@@ -117,30 +80,7 @@ export function ContactPanel({ conversationId }: { conversationId: string }) {
         </div>
       </div>
 
-      {isBookingConfirmed && detail.bookingData ? (
-        <Card className="space-y-2 p-3">
-          <Badge variant="success">Booking Ada</Badge>
-          <dl className="space-y-1 text-sm">
-            {detail.bookingData.destination && <Row label="Destinasi" value={detail.bookingData.destination} />}
-            {detail.bookingData.dateRange && <Row label="Tanggal" value={detail.bookingData.dateRange} />}
-            {detail.bookingData.pax != null && <Row label="Pax" value={String(detail.bookingData.pax)} />}
-            {detail.bookingData.amountPaid != null && <Row label="Dibayar" value={formatIDR(detail.bookingData.amountPaid)} />}
-            {detail.bookingData.amountDue != null && <Row label="Sisa" value={formatIDR(detail.bookingData.amountDue)} />}
-            {detail.bookingData.status && <Row label="Status" value={detail.bookingData.status} />}
-          </dl>
-        </Card>
-      ) : isFunnelOnly && detail.tripBrief ? (
-        <Card className="space-y-2 p-3">
-          <Badge variant="warning">Dari Funnel (belum booking)</Badge>
-          <dl className="space-y-1 text-sm">
-            {detail.tripBrief.destination && <Row label="Destinasi" value={detail.tripBrief.destination} />}
-            {detail.tripBrief.dateRange && <Row label="Tanggal" value={detail.tripBrief.dateRange} />}
-            {detail.tripBrief.pax != null && <Row label="Pax" value={String(detail.tripBrief.pax)} />}
-          </dl>
-        </Card>
-      ) : (
-        <Card className="p-3 text-sm text-muted-foreground">Belum ada data booking atau brief perjalanan.</Card>
-      )}
+      <BookingSummary bookingData={detail.bookingData} tripBrief={detail.tripBrief} />
 
       <div className="space-y-2">
         <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Tahap Pipeline</h3>
