@@ -57,6 +57,27 @@ describe('MessageBubble', () => {
     expect(screen.queryByText(/mode:/i)).not.toBeInTheDocument()
   })
 
+  it('shows a clear handoff placeholder instead of a blank bubble for a logged handoff decision', () => {
+    // Task 34 logs a handoff decision as a Message row with content: null, sentBy: 'BOT'. Without
+    // a placeholder, the bubble would render empty, reading as a broken bot reply instead of a
+    // silent handoff to a human agent.
+    render(
+      <MessageBubble
+        message={{
+          id: 'm6',
+          direction: 'OUTBOUND',
+          content: null,
+          channel: 'OFFICIAL',
+          sentBy: 'BOT',
+          deliveryStatus: 'SENT',
+          createdAt: new Date().toISOString(),
+          botTrace: { mode: 'handoff', reason: 'Kata kunci eskalasi terdeteksi' },
+        }}
+      />
+    )
+    expect(screen.getByText('Bot menyerahkan ke agen — lihat alasan')).toBeInTheDocument()
+  })
+
   it('does not show a popover when clicking a non-bot message', () => {
     render(
       <MessageBubble

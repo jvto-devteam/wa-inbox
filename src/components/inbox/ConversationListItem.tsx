@@ -5,6 +5,7 @@ export type ConversationSummary = {
   contactName: string | null
   contactPhone: string
   lastMessage: string | null
+  lastMessageSentBy: string | null
   lastMessageAt: string
   unreadCount: number
   botEnabled: boolean
@@ -21,6 +22,10 @@ export function ConversationListItem({
   onClick: () => void
   active?: boolean
 }) {
+  // A handoff decision (Task 34) is logged as a Message row with content: null, sentBy: 'BOT' --
+  // no real reply was ever sent to the customer. Without this, the sidebar preview renders blank.
+  const isHandoffLog = conversation.lastMessage === null && conversation.lastMessageSentBy === 'BOT'
+
   return (
     <button
       onClick={onClick}
@@ -32,7 +37,9 @@ export function ConversationListItem({
           {conversation.botEnabled ? 'Bot' : 'Agen'}
         </Badge>
       </div>
-      <span className="truncate text-sm text-muted-foreground">{conversation.lastMessage}</span>
+      <span className="truncate text-sm text-muted-foreground">
+        {isHandoffLog ? 'Bot menyerahkan ke agen — lihat alasan' : conversation.lastMessage}
+      </span>
       <div className="flex gap-1">
         {conversation.labels.map((l) => (
           <Badge key={l.id} style={{ backgroundColor: l.color + '22', color: l.color }}>

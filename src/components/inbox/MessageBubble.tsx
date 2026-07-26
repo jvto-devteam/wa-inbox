@@ -20,6 +20,10 @@ export function MessageBubble({ message }: { message: MessageView }) {
   const isOutbound = message.direction === 'OUTBOUND'
   const isFailed = message.deliveryStatus === 'FAILED'
   const hasTrace = message.sentBy === 'BOT' && Boolean(message.botTrace)
+  // A handoff decision is logged (Task 34) as a Message row with content: null, sentBy: 'BOT' --
+  // no real reply was ever sent to the customer. Without this, the bubble renders empty, which
+  // reads as "the bot sent something and it's broken" rather than "the bot silently handed off".
+  const isHandoffLog = message.sentBy === 'BOT' && message.content === null
   const [showTrace, setShowTrace] = useState(false)
 
   return (
@@ -44,7 +48,11 @@ export function MessageBubble({ message }: { message: MessageView }) {
             : 'max-w-md rounded-lg rounded-tl-none bg-white px-3.5 py-2.5 shadow-sm ring-1 ring-border'
         }
       >
-        {message.content}
+        {isHandoffLog ? (
+          <span className="italic text-muted-foreground">Bot menyerahkan ke agen — lihat alasan</span>
+        ) : (
+          message.content
+        )}
       </div>
       {hasTrace && showTrace && <BotTracePopover trace={message.botTrace as BotDecision} />}
       <div className="flex items-center gap-2 text-[11px] text-muted-foreground">

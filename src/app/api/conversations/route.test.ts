@@ -25,7 +25,7 @@ describe('GET /api/conversations', () => {
       status: 'OPEN',
       lastMessageAt: new Date('2026-07-25T10:00:00Z'),
       contact: { name: 'Bruno Figarola', phone: '6281234567890' },
-      messages: [{ content: 'Halo!', createdAt: new Date() }],
+      messages: [{ content: 'Halo!', sentBy: 'CUSTOMER', createdAt: new Date() }],
       labels: [{ label: { id: 'lbl_1', name: 'Confirmed Booking', color: '#3C6B42' } }],
     }] as never)
 
@@ -38,8 +38,26 @@ describe('GET /api/conversations', () => {
       contactName: 'Bruno Figarola',
       contactPhone: '6281234567890',
       lastMessage: 'Halo!',
+      lastMessageSentBy: 'CUSTOMER',
       botEnabled: true,
       labels: [{ id: 'lbl_1', name: 'Confirmed Booking', color: '#3C6B42' }],
     }))
+  })
+
+  it('surfaces the last message sender as null when a conversation has no messages yet', async () => {
+    mockPrisma.conversation.findMany.mockResolvedValue([{
+      id: 'conv_2',
+      botEnabled: true,
+      status: 'OPEN',
+      lastMessageAt: new Date('2026-07-25T10:00:00Z'),
+      contact: { name: null, phone: '6281234567891' },
+      messages: [],
+      labels: [],
+    }] as never)
+
+    const res = await GET(new Request('http://localhost/api/conversations'))
+    const body = await res.json()
+
+    expect(body[0]).toEqual(expect.objectContaining({ lastMessage: null, lastMessageSentBy: null }))
   })
 })

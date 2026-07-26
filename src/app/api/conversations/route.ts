@@ -16,6 +16,7 @@ export async function GET(_req: Request) {
     contactName: c.contact.name,
     contactPhone: c.contact.phone,
     lastMessage: c.messages[0]?.content ?? null,
+    lastMessageSentBy: c.messages[0]?.sentBy ?? null,
     lastMessageAt: c.lastMessageAt.toISOString(),
     unreadCount: 0,
     botEnabled: c.botEnabled,
