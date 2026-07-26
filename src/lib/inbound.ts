@@ -1,6 +1,8 @@
 import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { broadcast } from '@/lib/realtime'
+import { decideAndRespond } from '@/lib/bot/orchestrator'
+import { sendMessage } from '@/lib/send'
 
 export type MetaWebhookPayload = {
   entry: Array<{
@@ -76,6 +78,15 @@ export async function ingestMetaMessage(payload: MetaWebhookPayload): Promise<{ 
       return { skipped: true }
     }
     throw error
+  }
+
+  if (conversation.botEnabled) {
+    const decision = await decideAndRespond(conversation.id, message.text?.body ?? '')
+    if (decision.mode === 'funnel' || decision.mode === 'faq' || decision.mode === 'booking_context') {
+      const text = decision.mode === 'funnel' ? decision.reply : decision.mode === 'faq' ? decision.draft : decision.reply
+      await sendMessage({ conversationId: conversation.id, text, sentBy: 'BOT', botTrace: decision })
+    }
+    // mode 'handoff' intentionally sends nothing — the conversation just waits for a human.
   }
 
   return { skipped: false }

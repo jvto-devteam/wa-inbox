@@ -3,12 +3,22 @@ import { mockDeep, mockReset, type DeepMockProxy } from 'vitest-mock-extended'
 import { Prisma, type PrismaClient } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { ingestMetaMessage } from './inbound'
+import { decideAndRespond } from '@/lib/bot/orchestrator'
+import { sendMessage } from '@/lib/send'
 
 vi.mock('@/lib/db', () => ({ prisma: mockDeep<PrismaClient>() }))
+vi.mock('@/lib/bot/orchestrator', () => ({ decideAndRespond: vi.fn() }))
+vi.mock('@/lib/send', () => ({ sendMessage: vi.fn() }))
 const mockPrisma = prisma as unknown as DeepMockProxy<PrismaClient>
 
 beforeEach(() => {
   mockReset(mockPrisma)
+  // decideAndRespond/sendMessage are plain vi.fn() module mocks (not reset by mockReset(mockPrisma)
+  // above), so without this their call history leaks across tests and, absent a default resolved
+  // value, a pre-existing test with botEnabled: true would crash on `decision.mode` being undefined.
+  // 'handoff' is a safe no-op default since it triggers no sendMessage call.
+  vi.mocked(decideAndRespond).mockReset().mockResolvedValue({ mode: 'handoff', reason: 'default test stub' })
+  vi.mocked(sendMessage).mockReset()
 })
 
 const samplePayload = {
@@ -89,5 +99,31 @@ describe('ingestMetaMessage', () => {
 
     expect(fetch).toHaveBeenCalledWith('http://localhost:4000/api/contact/6281234567890@s.whatsapp.net/avatar')
     expect(mockPrisma.contact.update).toHaveBeenCalledWith({ where: { id: 'contact_1' }, data: { avatarUrl: 'https://pic.example/x.jpg' } })
+  })
+
+  it('calls the bot orchestrator and sends its reply when the conversation has botEnabled', async () => {
+    mockPrisma.message.findUnique.mockResolvedValue(null)
+    mockPrisma.contact.upsert.mockResolvedValue({ id: 'contact_1', avatarUrl: 'x' } as never)
+    mockPrisma.conversation.upsert.mockResolvedValue({ id: 'conv_1', botEnabled: true } as never)
+    mockPrisma.waNumber.findFirstOrThrow.mockResolvedValue({ coexistBaseUrl: 'http://x' } as never)
+    mockPrisma.message.create.mockResolvedValue({} as never)
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: async () => ({ url: null }) }))
+    ;(decideAndRespond as any).mockResolvedValue({ mode: 'faq', draft: 'Info paket...', sourceTopic: 'inclusions' })
+
+    await ingestMetaMessage(samplePayload)
+
+    expect(decideAndRespond).toHaveBeenCalledWith('conv_1', 'Halo, mau tanya paket Ijen')
+    expect(sendMessage).toHaveBeenCalledWith(expect.objectContaining({ conversationId: 'conv_1', text: 'Info paket...', sentBy: 'BOT' }))
+  })
+
+  it('does not call the orchestrator when botEnabled is false', async () => {
+    mockPrisma.message.findUnique.mockResolvedValue(null)
+    mockPrisma.contact.upsert.mockResolvedValue({ id: 'contact_1', avatarUrl: 'x' } as never)
+    mockPrisma.conversation.upsert.mockResolvedValue({ id: 'conv_1', botEnabled: false } as never)
+    mockPrisma.message.create.mockResolvedValue({} as never)
+
+    await ingestMetaMessage(samplePayload)
+
+    expect(decideAndRespond).not.toHaveBeenCalled()
   })
 })
