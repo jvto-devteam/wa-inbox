@@ -14,6 +14,10 @@ node_modules/
 # testing
 /coverage
 
+# bot catalog (synced by scripts/sync-catalog, see Task 21)
+catalog/*.json
+!catalog/.gitkeep
+
 # next.js
 /.next/
 /out/
