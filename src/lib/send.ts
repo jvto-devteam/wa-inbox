@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/db'
 import { sendMetaText } from '@/lib/meta/messages'
+import { broadcast } from '@/lib/realtime'
 
 export async function sendMessage(params: {
   conversationId: string
@@ -30,7 +31,7 @@ export async function sendMessage(params: {
     deliveryStatus = 'FAILED'
   }
 
-  return prisma.message.create({
+  const created = await prisma.message.create({
     data: {
       conversationId: params.conversationId,
       externalId,
@@ -44,4 +45,6 @@ export async function sendMessage(params: {
       deliveryStatus,
     },
   })
+  broadcast({ type: 'message.created', conversationId: params.conversationId, message: created })
+  return created
 }

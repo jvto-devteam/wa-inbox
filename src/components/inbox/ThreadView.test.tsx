@@ -31,8 +31,17 @@ const conv1Messages = [
   },
 ]
 
+// ThreadView also opens an EventSource for live updates; jsdom doesn't implement it, so
+// stub a minimal no-op version (this component's SSE behavior itself is exercised
+// separately, not by this test) just enough to satisfy `new EventSource(...)` and `.close()`.
+class FakeEventSource {
+  onmessage: ((event: MessageEvent) => void) | null = null
+  close = vi.fn()
+}
+
 beforeEach(() => {
   vi.stubGlobal('fetch', vi.fn())
+  vi.stubGlobal('EventSource', FakeEventSource)
 })
 
 describe('ThreadView keyed by conversationId', () => {

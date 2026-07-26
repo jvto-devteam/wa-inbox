@@ -1,5 +1,6 @@
 import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db'
+import { broadcast } from '@/lib/realtime'
 
 export type MetaWebhookPayload = {
   entry: Array<{
@@ -40,7 +41,7 @@ export async function ingestMetaMessage(payload: MetaWebhookPayload): Promise<{ 
   })
 
   try {
-    await prisma.message.create({
+    const created = await prisma.message.create({
       data: {
         conversationId: conversation.id,
         externalId: message.id,
@@ -53,6 +54,7 @@ export async function ingestMetaMessage(payload: MetaWebhookPayload): Promise<{ 
         createdAt: new Date(Number(message.timestamp) * 1000),
       },
     })
+    broadcast({ type: 'message.created', conversationId: conversation.id, message: created })
   } catch (error) {
     // Race condition: a concurrent delivery of the same message (Meta's at-least-once
     // retries) can pass the findUnique check above before either request's create()

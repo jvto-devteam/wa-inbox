@@ -12,6 +12,17 @@ export function ThreadView({ conversationId }: { conversationId: string }) {
       .then(setMessages)
   }, [conversationId])
 
+  useEffect(() => {
+    const es = new EventSource('/api/sse')
+    es.onmessage = (e) => {
+      const event = JSON.parse(e.data)
+      if (event.type === 'message.created' && event.conversationId === conversationId) {
+        setMessages((prev) => (prev.some((m) => m.id === event.message.id) ? prev : [...prev, event.message]))
+      }
+    }
+    return () => es.close()
+  }, [conversationId])
+
   return (
     <div className="flex h-full flex-col bg-slate-50">
       <div className="flex-1 space-y-3 overflow-y-auto p-4">
