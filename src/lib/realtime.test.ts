@@ -17,4 +17,12 @@ describe('realtime pub/sub', () => {
     broadcast({ type: 'message.created', conversationId: 'conv_1', message: { id: 'm2' } })
     expect(listener).not.toHaveBeenCalled()
   })
+
+  it('delivers a handoff.alert event distinctly from message.created', () => {
+    const listener = vi.fn()
+    const unsubscribe = subscribe(listener)
+    broadcast({ type: 'handoff.alert', conversationId: 'conv_1', contactName: 'Bruno' })
+    expect(listener).toHaveBeenCalledWith({ type: 'handoff.alert', conversationId: 'conv_1', contactName: 'Bruno' })
+    unsubscribe()
+  })
 })

@@ -104,6 +104,7 @@ export async function ingestMetaMessage(payload: MetaWebhookPayload): Promise<{ 
         },
       })
       broadcast({ type: 'message.created', conversationId: conversation.id, message: created })
+      broadcast({ type: 'handoff.alert', conversationId: conversation.id, contactName: contact.name })
     }
   }
 

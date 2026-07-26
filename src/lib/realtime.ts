@@ -1,4 +1,6 @@
-type RealtimeEvent = { type: 'message.created'; conversationId: string; message: unknown }
+type RealtimeEvent =
+  | { type: 'message.created'; conversationId: string; message: unknown }
+  | { type: 'handoff.alert'; conversationId: string; contactName: string | null }
 
 const listeners = new Set<(event: RealtimeEvent) => void>()
 
