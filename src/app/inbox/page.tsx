@@ -10,7 +10,7 @@ export default function InboxPage() {
     <div className="grid h-screen grid-cols-[20rem_1fr]">
       <ConversationList selectedId={selectedId} onSelect={setSelectedId} />
       {selectedId ? (
-        <ThreadView conversationId={selectedId} />
+        <ThreadView key={selectedId} conversationId={selectedId} />
       ) : (
         <div className="flex items-center justify-center text-muted-foreground">Pilih percakapan</div>
       )}
