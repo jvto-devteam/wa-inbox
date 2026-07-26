@@ -3,6 +3,7 @@ export type TripBrief = {
   dateRange?: string
   pax?: number
   notes?: string
+  funnelState?: string
 }
 
 export type RouteGateResult =
