@@ -5,11 +5,18 @@ import { ComposeBox } from './ComposeBox'
 
 export function ThreadView({ conversationId }: { conversationId: string }) {
   const [messages, setMessages] = useState<MessageView[]>([])
+  const [botEnabled, setBotEnabled] = useState(false)
 
   useEffect(() => {
     fetch(`/api/conversations/${conversationId}/messages`)
       .then((r) => r.json())
       .then(setMessages)
+  }, [conversationId])
+
+  useEffect(() => {
+    fetch(`/api/conversations/${conversationId}`)
+      .then((r) => r.json())
+      .then((data) => setBotEnabled(data.botEnabled))
   }, [conversationId])
 
   useEffect(() => {
@@ -30,7 +37,12 @@ export function ThreadView({ conversationId }: { conversationId: string }) {
           <MessageBubble key={m.id} message={m} />
         ))}
       </div>
-      <ComposeBox conversationId={conversationId} onSent={(m) => setMessages((prev) => [...prev, m])} />
+      <ComposeBox
+        conversationId={conversationId}
+        botEnabled={botEnabled}
+        onSent={(m) => setMessages((prev) => [...prev, m])}
+        onBotToggled={setBotEnabled}
+      />
     </div>
   )
 }
