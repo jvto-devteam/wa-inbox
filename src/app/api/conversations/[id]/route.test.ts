@@ -25,6 +25,7 @@ describe('GET /api/conversations/[id]', () => {
       tripBrief: null,
       contact: { id: 'contact_1', name: 'Bruno Figarola', avatarUrl: 'https://example.com/a.jpg', source: 'Instagram' },
       labels: [{ label: { id: 'lbl_1', name: 'Confirmed Booking', color: '#3C6B42' } }],
+      pipelineStage: 'booked',
     } as never)
 
     const res = await GET(new Request('http://localhost/api/conversations/conv_1'), { params: Promise.resolve({ id: 'conv_1' }) })
@@ -40,6 +41,7 @@ describe('GET /api/conversations/[id]', () => {
       bookingData: { destination: 'Bromo', dateRange: '10-12 Aug', pax: 2, amountPaid: 500000, amountDue: 500000, status: 'CONFIRMED' },
       tripBrief: null,
       labels: [{ id: 'lbl_1', name: 'Confirmed Booking', color: '#3C6B42' }],
+      pipelineStage: 'booked',
     })
     expect(mockPrisma.conversation.findUniqueOrThrow).toHaveBeenCalledWith({
       where: { id: 'conv_1' },
@@ -54,6 +56,7 @@ describe('GET /api/conversations/[id]', () => {
       tripBrief: null,
       contact: { name: null, avatarUrl: null, source: null },
       labels: [],
+      pipelineStage: 'new',
     } as never)
 
     const res = await GET(new Request('http://localhost/api/conversations/conv_1'), { params: Promise.resolve({ id: 'conv_1' }) })
@@ -68,6 +71,7 @@ describe('GET /api/conversations/[id]', () => {
       tripBrief: { destination: 'Bali', pax: 4 },
       contact: { name: 'Ayu', avatarUrl: null, source: 'WhatsApp Ads' },
       labels: [],
+      pipelineStage: 'new',
     } as never)
 
     const res = await GET(new Request('http://localhost/api/conversations/conv_1'), { params: Promise.resolve({ id: 'conv_1' }) })
@@ -84,6 +88,7 @@ describe('GET /api/conversations/[id]', () => {
       tripBrief: null,
       contact: { name: null, avatarUrl: null, source: null },
       labels: [],
+      pipelineStage: 'new',
     } as never)
 
     const res = await GET(new Request('http://localhost/api/conversations/conv_1'), { params: Promise.resolve({ id: 'conv_1' }) })

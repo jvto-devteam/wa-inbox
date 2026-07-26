@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, fireEvent } from '@testing-library/react'
 import { ContactPanel } from './ContactPanel'
 
 const baseDetail = {
@@ -11,6 +11,7 @@ const baseDetail = {
   bookingData: null as unknown,
   tripBrief: null as unknown,
   labels: [{ id: 'lbl_1', name: 'Confirmed Booking', color: '#3C6B42' }],
+  pipelineStage: 'new',
 }
 
 const allLabels = [
@@ -25,6 +26,19 @@ function mockFetchWith(detail: typeof baseDetail) {
       if (url === '/api/labels') return Promise.resolve({ json: () => Promise.resolve(allLabels) } as Response)
       if (url === `/api/contacts/${detail.contactId}/notes`) return Promise.resolve({ json: () => Promise.resolve([]) } as Response)
       if (url === `/api/contacts/${detail.contactId}/reminders`) return Promise.resolve({ json: () => Promise.resolve([]) } as Response)
+      return Promise.resolve({ json: () => Promise.resolve(detail) } as Response)
+    })
+  )
+}
+
+function mockFetchWithPipeline(detail: typeof baseDetail, pipelineResponse: { ok: boolean; json: () => Promise<unknown> }) {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn((url: string) => {
+      if (url === '/api/labels') return Promise.resolve({ json: () => Promise.resolve(allLabels) } as Response)
+      if (url === `/api/contacts/${detail.contactId}/notes`) return Promise.resolve({ json: () => Promise.resolve([]) } as Response)
+      if (url === `/api/contacts/${detail.contactId}/reminders`) return Promise.resolve({ json: () => Promise.resolve([]) } as Response)
+      if (url === `/api/conversations/conv_1/pipeline`) return Promise.resolve(pipelineResponse as Response)
       return Promise.resolve({ json: () => Promise.resolve(detail) } as Response)
     })
   )
@@ -105,5 +119,62 @@ describe('ContactPanel', () => {
     await screen.findByText('Reminder')
     await screen.findByText('Belum ada reminder.')
     expect(fetch).toHaveBeenCalledWith('/api/contacts/contact_1/reminders')
+  })
+
+  it('shows the pipeline stage dropdown pre-selected to the server-provided stage', async () => {
+    mockFetchWith({ ...baseDetail, pipelineStage: 'nego' })
+    render(<ContactPanel conversationId="conv_1" />)
+
+    await screen.findByText('Bruno Figarola')
+    expect(screen.getByLabelText('Tahap pipeline')).toHaveValue('nego')
+  })
+
+  it('PATCHes the new pipeline stage on change, only updating the displayed value once the server confirms', async () => {
+    mockFetchWithPipeline(baseDetail, { ok: true, json: () => Promise.resolve({ pipelineStage: 'booked' }) })
+    render(<ContactPanel conversationId="conv_1" />)
+
+    await screen.findByText('Bruno Figarola')
+    expect(screen.getByLabelText('Tahap pipeline')).toHaveValue('new')
+
+    fireEvent.change(screen.getByLabelText('Tahap pipeline'), { target: { value: 'booked' } })
+
+    expect(fetch).toHaveBeenCalledWith('/api/conversations/conv_1/pipeline', {
+      method: 'PATCH',
+      body: JSON.stringify({ stage: 'booked' }),
+    })
+    await waitFor(() => expect(screen.getByLabelText('Tahap pipeline')).toHaveValue('booked'))
+  })
+
+  it('does not change the displayed pipeline stage when the PATCH responds non-ok, and shows an error', async () => {
+    mockFetchWithPipeline(baseDetail, { ok: false, json: () => Promise.resolve({ error: 'nope' }) })
+    render(<ContactPanel conversationId="conv_1" />)
+
+    await screen.findByText('Bruno Figarola')
+
+    fireEvent.change(screen.getByLabelText('Tahap pipeline'), { target: { value: 'booked' } })
+
+    await waitFor(() => expect(screen.getByText('Gagal mengubah status pipeline')).toBeInTheDocument())
+    expect(screen.getByLabelText('Tahap pipeline')).toHaveValue('new')
+  })
+
+  it('does not change the displayed pipeline stage when the PATCH request itself rejects (network failure)', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url: string) => {
+        if (url === '/api/labels') return Promise.resolve({ json: () => Promise.resolve(allLabels) } as Response)
+        if (url === `/api/contacts/${baseDetail.contactId}/notes`) return Promise.resolve({ json: () => Promise.resolve([]) } as Response)
+        if (url === `/api/contacts/${baseDetail.contactId}/reminders`) return Promise.resolve({ json: () => Promise.resolve([]) } as Response)
+        if (url === '/api/conversations/conv_1/pipeline') return Promise.reject(new Error('network down'))
+        return Promise.resolve({ json: () => Promise.resolve(baseDetail) } as Response)
+      })
+    )
+    render(<ContactPanel conversationId="conv_1" />)
+
+    await screen.findByText('Bruno Figarola')
+
+    fireEvent.change(screen.getByLabelText('Tahap pipeline'), { target: { value: 'booked' } })
+
+    await waitFor(() => expect(screen.getByText('Gagal mengubah status pipeline')).toBeInTheDocument())
+    expect(screen.getByLabelText('Tahap pipeline')).toHaveValue('new')
   })
 })

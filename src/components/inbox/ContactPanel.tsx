@@ -2,9 +2,17 @@
 import { useEffect, useState } from 'react'
 import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+import { Select } from '@/components/ui/select'
 import { LabelPicker, type LabelOption } from './LabelPicker'
 import { NotesSection } from './NotesSection'
 import { RemindersSection } from './RemindersSection'
+
+const PIPELINE_STAGES = [
+  { value: 'new', label: 'Baru' },
+  { value: 'nego', label: 'Negosiasi' },
+  { value: 'booked', label: 'Booked' },
+  { value: 'lunas', label: 'Lunas' },
+] as const
 
 type BookingData = {
   destination?: string
@@ -30,6 +38,7 @@ type ContactDetail = {
   bookingData: BookingData
   tripBrief: TripBrief
   labels: LabelOption[]
+  pipelineStage: string
 }
 
 function hasAnyValue(obj: Record<string, unknown> | null | undefined) {
@@ -52,11 +61,33 @@ function Row({ label, value }: { label: string; value: string }) {
 export function ContactPanel({ conversationId }: { conversationId: string }) {
   const [detail, setDetail] = useState<ContactDetail | null>(null)
   const [allLabels, setAllLabels] = useState<LabelOption[]>([])
+  const [pipelineError, setPipelineError] = useState<string | null>(null)
 
   useEffect(() => {
     fetch(`/api/conversations/${conversationId}`).then((r) => r.json()).then(setDetail)
     fetch('/api/labels').then((r) => r.json()).then(setAllLabels)
   }, [conversationId])
+
+  // Mirrors LabelPicker's pattern: the pipeline stage drives follow-up/triage
+  // decisions, so the dropdown must only ever reflect what the server confirmed —
+  // no optimistic update. Await the response and only update displayed state on success.
+  async function changePipelineStage(stage: string) {
+    setPipelineError(null)
+    try {
+      const res = await fetch(`/api/conversations/${conversationId}/pipeline`, {
+        method: 'PATCH',
+        body: JSON.stringify({ stage }),
+      })
+      if (!res.ok) {
+        setPipelineError('Gagal mengubah status pipeline')
+        return
+      }
+      const updated = await res.json()
+      setDetail((prev) => (prev ? { ...prev, pipelineStage: updated.pipelineStage } : prev))
+    } catch {
+      setPipelineError('Gagal mengubah status pipeline')
+    }
+  }
 
   if (!detail) return <div className="border-l border-border p-4 text-sm text-muted-foreground">Memuat...</div>
 
@@ -110,6 +141,23 @@ export function ContactPanel({ conversationId }: { conversationId: string }) {
       ) : (
         <Card className="p-3 text-sm text-muted-foreground">Belum ada data booking atau brief perjalanan.</Card>
       )}
+
+      <div className="space-y-2">
+        <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Tahap Pipeline</h3>
+        <Select
+          aria-label="Tahap pipeline"
+          value={detail.pipelineStage}
+          onChange={(e) => changePipelineStage(e.target.value)}
+          className="w-auto"
+        >
+          {PIPELINE_STAGES.map((s) => (
+            <option key={s.value} value={s.value}>
+              {s.label}
+            </option>
+          ))}
+        </Select>
+        {pipelineError && <p className="text-xs text-destructive">{pipelineError}</p>}
+      </div>
 
       <LabelPicker
         conversationId={conversationId}
