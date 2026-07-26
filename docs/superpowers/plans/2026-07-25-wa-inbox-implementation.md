@@ -20,7 +20,21 @@
 - Numeric/price/booking-flow replies use static validated templates, never free-form LLM generation. LLM is only used to phrase answers from already-verified facts (catalog or booking data), never to source facts itself.
 - Every Prisma model, function signature, and field name introduced in one task must be reused verbatim by later tasks — do not rename silently.
 - All API routes validate input with `zod` and return `{ error: string }` with a 4xx status on validation failure.
-- Test runner is Vitest. Unit/route tests mock Prisma via `vitest-mock-extended`'s `mockDeep<PrismaClient>()`; no test hits a real database.
+- Test runner is Vitest. Unit/route tests mock Prisma via `vitest-mock-extended`'s `mockDeep<PrismaClient>()`; no test hits a real database. **Correction discovered during Task 4 implementation:** the pattern shown inline in several task briefs below — `vi.mock('@/lib/db', () => ({ prisma: mockPrisma }))` paired with `let mockPrisma: DeepMockProxy<PrismaClient>` reassigned in `beforeEach` — throws a Vitest hoisting TDZ error (`Cannot access 'mockPrisma' before initialization`), because `vi.mock` factories are hoisted above the `let` declaration. Wherever a task's example test code shows that pattern, use this corrected idiom instead (same assertions, same behavior, just fixed scaffolding):
+  ```typescript
+  import { prisma } from '@/lib/db'
+  import { mockDeep, mockReset, type DeepMockProxy } from 'vitest-mock-extended'
+  import type { PrismaClient } from '@prisma/client'
+
+  vi.mock('@/lib/db', () => ({ prisma: mockDeep<PrismaClient>() }))
+  const mockPrisma = prisma as unknown as DeepMockProxy<PrismaClient>
+
+  beforeEach(() => {
+    mockReset(mockPrisma)
+    // ...any other per-test setup (env vars, etc.) stays here unchanged
+  })
+  ```
+  Every subsequent test file in this plan that shows the old broken pattern should be written with this corrected one instead — this is a scaffolding fix, not a change to what any test asserts.
 - All UI matches the approved `docs/design/wa-inbox-ui-mockup.html` — Plus Jakarta Sans, navy `#0B1B3D` + brand blue `#2563EB`, shadcn-derived token classes (`border-input`, `text-muted-foreground`, `bg-accent`, `rounded-lg`, `h-8` controls). Always use the shared `src/components/ui/*` primitives (`Button`, `Input`, `Select`, `Textarea`, `Badge`, `Card`, `Table`) from Task 1 instead of raw `<button>`/`<input>`/`<select>` with inline ad-hoc classes — this was a deliberate, explicitly-approved trust-repair step after prior design mismatches, so treat any deviation from the mockup's palette/components as a bug, not a style choice.
 - **No live message testing against real customers, ever, during implementation.** Any step that sends or triggers a real WhatsApp message (manual verification steps, ad-hoc `curl`/dev-server checks, and especially anything that exercises the bot orchestrator end-to-end) must target **only the whitelisted test number `6282143403501`** — never a real JVTO customer conversation, and never broadcast/bulk sends. This applies with extra force to the bot (Fase 3, Tasks 20–34 and the cutover in Task 46): the orchestrator must never be exercised against live production customer traffic during implementation, regardless of how confident a task's automated tests are — automated tests use mocked Prisma/fetch and never touch a real number, so they're always safe; it's only manual/exploratory verification steps that carry this risk. If a task's "manual verification" step would otherwise touch a real number, substitute the whitelist number or skip that specific manual check and rely on the automated test coverage instead, flagging the skip in that task's completion report.
 
