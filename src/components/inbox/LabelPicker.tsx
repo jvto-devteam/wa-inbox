@@ -1,4 +1,5 @@
 'use client'
+import { useState } from 'react'
 import { Badge } from '@/components/ui/badge'
 import { Select } from '@/components/ui/select'
 
@@ -15,24 +16,47 @@ export function LabelPicker({
   attachedLabels: LabelOption[]
   onAttachedChange: (labels: LabelOption[]) => void
 }) {
+  const [error, setError] = useState<string | null>(null)
   const availableLabels = allLabels.filter((l) => !attachedLabels.some((a) => a.id === l.id))
 
+  // Labels drive triage decisions, so the UI must only ever show what the server confirmed —
+  // no optimistic update here. Await the response, and only call onAttachedChange on success;
+  // otherwise the pill state can silently drift from the database with no recovery path.
   async function attach(labelId: string) {
     const label = allLabels.find((l) => l.id === labelId)
     if (!label) return
-    onAttachedChange([...attachedLabels, label])
-    await fetch(`/api/conversations/${conversationId}/labels`, {
-      method: 'POST',
-      body: JSON.stringify({ labelId }),
-    })
+    setError(null)
+    try {
+      const res = await fetch(`/api/conversations/${conversationId}/labels`, {
+        method: 'POST',
+        body: JSON.stringify({ labelId }),
+      })
+      if (!res.ok) {
+        setError(`Gagal menambahkan label "${label.name}"`)
+        return
+      }
+      onAttachedChange([...attachedLabels, label])
+    } catch {
+      setError(`Gagal menambahkan label "${label.name}"`)
+    }
   }
 
   async function detach(labelId: string) {
-    onAttachedChange(attachedLabels.filter((l) => l.id !== labelId))
-    await fetch(`/api/conversations/${conversationId}/labels`, {
-      method: 'DELETE',
-      body: JSON.stringify({ labelId }),
-    })
+    const label = attachedLabels.find((l) => l.id === labelId)
+    setError(null)
+    try {
+      const res = await fetch(`/api/conversations/${conversationId}/labels`, {
+        method: 'DELETE',
+        body: JSON.stringify({ labelId }),
+      })
+      if (!res.ok) {
+        setError(`Gagal menghapus label "${label?.name ?? labelId}"`)
+        return
+      }
+      onAttachedChange(attachedLabels.filter((l) => l.id !== labelId))
+    } catch {
+      setError(`Gagal menghapus label "${label?.name ?? labelId}"`)
+    }
   }
 
   return (
@@ -70,6 +94,7 @@ export function LabelPicker({
           ))}
         </Select>
       )}
+      {error && <p className="text-xs text-destructive">{error}</p>}
     </div>
   )
 }

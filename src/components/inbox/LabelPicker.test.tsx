@@ -8,7 +8,7 @@ const allLabels = [
 ]
 
 beforeEach(() => {
-  vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ json: () => Promise.resolve({ ok: true }) }))
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve({ ok: true }) }))
 })
 
 describe('LabelPicker', () => {
@@ -61,5 +61,51 @@ describe('LabelPicker', () => {
       <LabelPicker conversationId="conv_1" allLabels={allLabels} attachedLabels={allLabels} onAttachedChange={() => {}} />
     )
     expect(screen.queryByLabelText('Tambah label')).not.toBeInTheDocument()
+  })
+
+  it('does not attach the label when the POST responds non-ok, and shows an error', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, json: () => Promise.resolve({ error: 'nope' }) }))
+    const onAttachedChange = vi.fn()
+    render(
+      <LabelPicker conversationId="conv_1" allLabels={allLabels} attachedLabels={[]} onAttachedChange={onAttachedChange} />
+    )
+
+    fireEvent.change(screen.getByLabelText('Tambah label'), { target: { value: 'lbl_1' } })
+
+    await waitFor(() => expect(screen.getByText(/Gagal menambahkan label/)).toBeInTheDocument())
+    expect(onAttachedChange).not.toHaveBeenCalled()
+  })
+
+  it('does not attach the label when the fetch itself rejects (network failure)', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('network down')))
+    const onAttachedChange = vi.fn()
+    render(
+      <LabelPicker conversationId="conv_1" allLabels={allLabels} attachedLabels={[]} onAttachedChange={onAttachedChange} />
+    )
+
+    fireEvent.change(screen.getByLabelText('Tambah label'), { target: { value: 'lbl_1' } })
+
+    await waitFor(() => expect(screen.getByText(/Gagal menambahkan label/)).toBeInTheDocument())
+    expect(onAttachedChange).not.toHaveBeenCalled()
+  })
+
+  it('does not detach the label when the DELETE responds non-ok, and shows an error', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, json: () => Promise.resolve({ error: 'nope' }) }))
+    const onAttachedChange = vi.fn()
+    render(
+      <LabelPicker
+        conversationId="conv_1"
+        allLabels={allLabels}
+        attachedLabels={[allLabels[0]]}
+        onAttachedChange={onAttachedChange}
+      />
+    )
+
+    fireEvent.click(screen.getByLabelText('Hapus label Confirmed Booking'))
+
+    await waitFor(() => expect(screen.getByText(/Gagal menghapus label/)).toBeInTheDocument())
+    expect(onAttachedChange).not.toHaveBeenCalled()
+    // The pill must still be visible — UI stayed in sync with server truth.
+    expect(screen.getByText('Confirmed Booking')).toBeInTheDocument()
   })
 })
