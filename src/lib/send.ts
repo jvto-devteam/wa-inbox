@@ -25,7 +25,8 @@ export async function sendMessage(params: {
     } else {
       throw new Error('Unofficial channel not implemented until Task 16')
     }
-  } catch {
+  } catch (error) {
+    console.error('sendMessage: send attempt failed', { conversationId: params.conversationId, channel, error })
     deliveryStatus = 'FAILED'
   }
 

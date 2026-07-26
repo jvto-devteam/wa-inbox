@@ -32,8 +32,10 @@ describe('sendMessage', () => {
     }))
   })
 
-  it('records a FAILED message when the send throws, without throwing itself', async () => {
-    vi.mocked(sendMetaText).mockRejectedValue(new Error('rate limited'))
+  it('records a FAILED message when the send throws, without throwing itself, and logs the error', async () => {
+    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const sendError = new Error('rate limited')
+    vi.mocked(sendMetaText).mockRejectedValue(sendError)
     mockPrisma.message.create.mockResolvedValue({ id: 'msg_2', deliveryStatus: 'FAILED' } as never)
 
     const result = await sendMessage({ conversationId: 'conv_1', text: 'Halo!', sentBy: 'BOT' })
@@ -42,5 +44,11 @@ describe('sendMessage', () => {
     expect(mockPrisma.message.create).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({ deliveryStatus: 'FAILED' }),
     }))
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
+      expect.stringContaining('sendMessage'),
+      expect.objectContaining({ conversationId: 'conv_1', error: sendError })
+    )
+
+    consoleErrorSpy.mockRestore()
   })
 })
