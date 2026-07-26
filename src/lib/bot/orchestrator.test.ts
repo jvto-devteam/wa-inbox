@@ -9,6 +9,7 @@ import { classifySalesNeed } from './sales-classifier'
 import { processFunnelState } from './funnel'
 import { callLLM } from './llm'
 import { loadCatalog } from './catalog'
+import { checkDeploymentGate } from './deployment-gate'
 
 // `vi.mock` factories are hoisted above regular imports and `let`/`const`
 // declarations, so the mock instance must be constructed inline inside the
@@ -21,6 +22,7 @@ vi.mock('./sales-classifier')
 vi.mock('./funnel')
 vi.mock('./llm')
 vi.mock('./catalog')
+vi.mock('./deployment-gate')
 
 const mockPrisma = prisma as unknown as DeepMockProxy<PrismaClient>
 
@@ -28,6 +30,10 @@ beforeEach(() => {
   mockReset(mockPrisma)
   vi.clearAllMocks()
   ;(loadCatalog as any).mockReturnValue({ packages: [], syncedAt: null })
+  // Default: gate open, so pre-existing Mode 1/2 tests (written before the
+  // deployment-gate wiring fix) don't have to know about it unless they're
+  // specifically testing gate behavior.
+  ;(checkDeploymentGate as any).mockReturnValue({ readyForApproval: true, blocking: [] })
   mockPrisma.conversation.findUniqueOrThrow.mockResolvedValue({
     id: 'conv_1',
     tripBrief: {},
@@ -103,5 +109,48 @@ describe('decideAndRespond', () => {
       data: { tripBrief: { funnelState: 'REKOMENDASI' } },
     })
     expect(result).toEqual({ mode: 'funnel', reply: 'Rekomendasi untuk Ijen...', nextState: 'REKOMENDASI' })
+  })
+
+  it('hands off on classification job J5 (e.g. cancellation/payment-status) even when the message misses the orchestrator\'s own narrow ESCALATION_KEYWORDS', async () => {
+    ;(lookupBooking as any).mockResolvedValue(null)
+    ;(checkRouteGate as any).mockReturnValue({ status: 'clear' })
+    // "cancel" / "status pembayaran" do not appear in ESCALATION_KEYWORDS
+    // (komplain, refund, bicara dengan manusia, agen manusia, cs manusia),
+    // so the pre-DB keyword check must NOT catch this on its own — only
+    // classifySalesNeed's job==='J5' signal should route it to handoff.
+    ;(classifySalesNeed as any).mockReturnValue({ job: 'J5', missingInfo: [], needsLiveData: false })
+
+    const result = await decideAndRespond('conv_1', 'Saya mau cancel booking saya, status pembayaran gimana ya')
+
+    expect(result.mode).toBe('handoff')
+    expect(processFunnelState).not.toHaveBeenCalled()
+  })
+
+  it('hands off Mode 1/2 when the deployment gate is not ready for approval, citing the blocking reasons', async () => {
+    ;(lookupBooking as any).mockResolvedValue(null)
+    ;(checkDeploymentGate as any).mockReturnValue({
+      readyForApproval: false,
+      blocking: ['core_dataset_not_production_ready'],
+    })
+
+    const result = await decideAndRespond('conv_1', 'Halo, saya mau tanya paket ke Ijen')
+
+    expect(result.mode).toBe('handoff')
+    expect((result as { mode: 'handoff'; reason: string }).reason).toContain('core_dataset_not_production_ready')
+    expect(checkRouteGate).not.toHaveBeenCalled()
+  })
+
+  it('leaves Mode 3 (booking_context) unaffected by deployment gate status', async () => {
+    ;(checkDeploymentGate as any).mockReturnValue({
+      readyForApproval: false,
+      blocking: ['core_dataset_not_production_ready'],
+    })
+    ;(lookupBooking as any).mockResolvedValue({ id: 'B1', guest: 'Bruno' })
+    ;(callLLM as any).mockResolvedValue('Booking Anda atas nama Bruno.')
+
+    const result = await decideAndRespond('conv_1', 'Booking saya sudah lunas belum?')
+
+    expect(result.mode).toBe('booking_context')
+    expect(checkDeploymentGate).not.toHaveBeenCalled()
   })
 })

@@ -12,18 +12,27 @@
 //      sensitive, so it stays off any hosted API) and the funnel/route-gate
 //      machinery is bypassed entirely, since a returning customer with a
 //      real booking is not in acquisition-funnel territory.
-//   2. No booking -> route-integrity gate (Task 22) first, since a handoff
-//      there means no verified package to even hold a funnel conversation
-//      about.
-//   3. Sales-need classification (Task 23): a message needing live data
+//   2. No booking -> deployment gate (Task 25): Mode 1/2 answers are built
+//      from agent-runtime's catalog/release, so they stay off unless that
+//      release has been approved for customer traffic. This does NOT gate
+//      Mode 3 (booking_context) above, which is grounded in the independent,
+//      already-live, already-trusted Booking API -- gating it on catalog
+//      readiness would be a category error.
+//   3. Route-integrity gate (Task 22) next, since a handoff there means no
+//      verified package to even hold a funnel conversation about.
+//   4. Sales-need classification (Task 23): a message needing live data
 //      (availability, guarantees) can't be safely answered by the funnel or
-//      a cached catalog, so it hands off too.
-//   4. Funnel (Task 27), resumed from the conversation's persisted
+//      a cached catalog, so it hands off too -- and so does `job === 'J5'`,
+//      the classifier's own dedicated "route to a human" signal (covers
+//      cancellations, reschedules, payment/booking-status queries, and
+//      complaints via a materially larger keyword surface than this file's
+//      own small pre-DB `ESCALATION_KEYWORDS`).
+//   5. Funnel (Task 27), resumed from the conversation's persisted
 //      `tripBrief.funnelState` (defaulting to 'GREETING' only for brand-new
 //      conversations) and persisted back after every step -- NOT hardcoded
 //      to 'GREETING' on every call, which would reset returning customers
 //      back to the first funnel question on every single message.
-//   5. Funnel reaching HUMAN_HANDOFF falls through to a catalog-driven FAQ
+//   6. Funnel reaching HUMAN_HANDOFF falls through to a catalog-driven FAQ
 //      draft (Task 24) as the last automated attempt before a human takes
 //      over.
 //
@@ -31,12 +40,6 @@
 // an LLM timeout) is wrapped in a single outer try/catch that defaults to
 // handoff -- the fail-safe of last resort for this, the highest-stakes
 // integration point in the whole bot brain.
-//
-// Note on `checkDeploymentGate` (Task 25): it answers a different question
-// ("is the catalog sync ready for an admin to approve for deployment?"),
-// which is an admin/ops-facing concern, not a per-message customer-facing
-// decision. It has no natural call site in this customer-message decision
-// flow and is therefore intentionally NOT called here.
 import { prisma } from '@/lib/db'
 import { lookupBooking } from '@/lib/booking/client'
 import { checkRouteGate } from './route-gate'
@@ -45,6 +48,7 @@ import { processFunnelState } from './funnel'
 import { composeResponse } from './response-composer'
 import { callLLM } from './llm'
 import { loadCatalog } from './catalog'
+import { checkDeploymentGate } from './deployment-gate'
 import type { BotDecision, TripBrief } from './types'
 
 const ESCALATION_KEYWORDS = ['komplain', 'refund', 'bicara dengan manusia', 'agen manusia', 'cs manusia']
@@ -85,7 +89,19 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
       return { mode: 'booking_context', reply }
     }
 
-    // Mode 1/2 -- funnel + FAQ, gated by route integrity.
+    // Mode 1/2 -- funnel + FAQ, gated by deployment approval + route integrity.
+    // Deployment gate governs agent-runtime's catalog/release (what Mode 1/2 is
+    // built from) -- it deliberately does NOT run before the Mode 3 branch
+    // above, since Mode 3 is grounded in the independent, already-trusted
+    // Booking API, not the catalog release this gate approves.
+    const deploymentGate = checkDeploymentGate()
+    if (!deploymentGate.readyForApproval) {
+      return {
+        mode: 'handoff',
+        reason: `Gerbang persetujuan belum terbuka: ${deploymentGate.blocking.join(', ')}`,
+      }
+    }
+
     const tripBrief = (conversation.tripBrief as TripBrief | null) ?? {}
     const catalog = loadCatalog()
     const routeResult = checkRouteGate({ destination: tripBrief.destination, catalog })
@@ -96,6 +112,9 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
     const classification = classifySalesNeed({ message: inboundText, tripBrief })
     if (classification.needsLiveData) {
       return { mode: 'handoff', reason: 'Butuh data harga/ketersediaan real-time — belum tersambung' }
+    }
+    if (classification.job === 'J5') {
+      return { mode: 'handoff', reason: 'Permintaan memerlukan penanganan manusia (pembatalan/status/komplain)' }
     }
 
     const funnelResult = processFunnelState({
