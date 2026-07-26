@@ -26,6 +26,7 @@ describe('GET /api/conversations/[id]', () => {
       contact: { id: 'contact_1', name: 'Bruno Figarola', avatarUrl: 'https://example.com/a.jpg', source: 'Instagram' },
       labels: [{ label: { id: 'lbl_1', name: 'Confirmed Booking', color: '#3C6B42' } }],
       pipelineStage: 'booked',
+      assignedAgentId: 'acc_1',
     } as never)
 
     const res = await GET(new Request('http://localhost/api/conversations/conv_1'), { params: Promise.resolve({ id: 'conv_1' }) })
@@ -42,6 +43,7 @@ describe('GET /api/conversations/[id]', () => {
       tripBrief: null,
       labels: [{ id: 'lbl_1', name: 'Confirmed Booking', color: '#3C6B42' }],
       pipelineStage: 'booked',
+      assignedAgentId: 'acc_1',
     })
     expect(mockPrisma.conversation.findUniqueOrThrow).toHaveBeenCalledWith({
       where: { id: 'conv_1' },
@@ -57,6 +59,7 @@ describe('GET /api/conversations/[id]', () => {
       contact: { name: null, avatarUrl: null, source: null },
       labels: [],
       pipelineStage: 'new',
+      assignedAgentId: null,
     } as never)
 
     const res = await GET(new Request('http://localhost/api/conversations/conv_1'), { params: Promise.resolve({ id: 'conv_1' }) })
@@ -72,6 +75,7 @@ describe('GET /api/conversations/[id]', () => {
       contact: { name: 'Ayu', avatarUrl: null, source: 'WhatsApp Ads' },
       labels: [],
       pipelineStage: 'new',
+      assignedAgentId: null,
     } as never)
 
     const res = await GET(new Request('http://localhost/api/conversations/conv_1'), { params: Promise.resolve({ id: 'conv_1' }) })
@@ -89,6 +93,7 @@ describe('GET /api/conversations/[id]', () => {
       contact: { name: null, avatarUrl: null, source: null },
       labels: [],
       pipelineStage: 'new',
+      assignedAgentId: null,
     } as never)
 
     const res = await GET(new Request('http://localhost/api/conversations/conv_1'), { params: Promise.resolve({ id: 'conv_1' }) })

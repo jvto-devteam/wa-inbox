@@ -44,15 +44,16 @@ beforeEach(() => {
   vi.stubGlobal('EventSource', FakeEventSource)
 })
 
-// ThreadView fires two distinct GET requests per conversation:
+// ThreadView fires three distinct GET requests per conversation:
 //   /api/conversations/:id/messages  -> Message[]
 //   /api/conversations/:id           -> { botEnabled: boolean }
+//   /api/accounts                    -> Agent[] (not conversation-specific)
 // A mock that only branches on "does the URL contain the conversation id"
 // (without also checking the `/messages` suffix) would answer the detail
 // request with the messages array, silently resolving `data.botEnabled` to
 // `undefined` — the test would then pass without ever exercising the real
 // botEnabled-sourcing behavior. This helper routes each endpoint separately
-// so the two calls can be asserted independently.
+// so the calls can be asserted independently.
 function routeFetchByEndpoint(routes: {
   messages: Record<string, unknown>
   detail: Record<string, { botEnabled: boolean }>
@@ -62,6 +63,9 @@ function routeFetchByEndpoint(routes: {
     if (s.endsWith('/messages')) {
       const id = s.split('/').at(-2)!
       return Promise.resolve({ json: () => Promise.resolve(routes.messages[id] ?? []) } as Response)
+    }
+    if (s.endsWith('/api/accounts')) {
+      return Promise.resolve({ json: () => Promise.resolve([]) } as Response)
     }
     const id = s.split('/').at(-1)!
     return Promise.resolve({ json: () => Promise.resolve(routes.detail[id]) } as Response)
@@ -80,6 +84,9 @@ describe('ThreadView keyed by conversationId', () => {
       if (s.endsWith('/messages')) {
         if (s.includes('conv_1')) return Promise.resolve({ json: () => Promise.resolve(conv1Messages) } as Response)
         return conv2MessagesPending.then((data) => ({ json: () => Promise.resolve(data) }) as Response)
+      }
+      if (s.endsWith('/api/accounts')) {
+        return Promise.resolve({ json: () => Promise.resolve([]) } as Response)
       }
       // conversation-detail requests: resolve immediately, irrelevant to this test
       return Promise.resolve({ json: () => Promise.resolve({ botEnabled: false }) } as Response)
@@ -140,5 +147,120 @@ describe('ThreadView keyed by conversationId', () => {
     // detail fetch resolves, proving the value is freshly sourced per
     // conversation rather than stuck at whatever conv_1 had (or the default).
     await waitFor(() => expect(screen.getByText('Ambil Alih dari Bot')).toBeInTheDocument())
+  })
+})
+
+describe('ThreadView assign-agent dropdown', () => {
+  const agents = [
+    { id: 'acc_1', name: 'Rina' },
+    { id: 'acc_2', name: 'Budi' },
+  ]
+
+  // Routes GET messages/detail/accounts plus PATCH assign, recording PATCH
+  // request bodies so tests can assert exactly what was sent.
+  function mockFetchWithAssign(opts: { assignedAgentId: string | null; patchResponse?: { assignedAgentId: string | null } }) {
+    const patchCalls: unknown[] = []
+    vi.mocked(fetch).mockImplementation((url, init) => {
+      const s = String(url)
+      if (s.endsWith('/messages')) return Promise.resolve({ json: () => Promise.resolve([]) } as Response)
+      if (s.endsWith('/api/accounts')) return Promise.resolve({ json: () => Promise.resolve(agents) } as Response)
+      if (s.endsWith('/assign') && init?.method === 'PATCH') {
+        patchCalls.push(JSON.parse(String(init.body)))
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve(opts.patchResponse ?? { assignedAgentId: null }),
+        } as Response)
+      }
+      return Promise.resolve({ json: () => Promise.resolve({ botEnabled: false, assignedAgentId: opts.assignedAgentId }) } as Response)
+    })
+    return patchCalls
+  }
+
+  it('populates the dropdown from GET /api/accounts and selects the conversation\'s assigned agent', async () => {
+    mockFetchWithAssign({ assignedAgentId: 'acc_2' })
+
+    render(<ThreadView conversationId="conv_1" />)
+
+    const select = (await screen.findByLabelText('Ditugaskan ke')) as HTMLSelectElement
+    await waitFor(() => expect(screen.getByText('Budi')).toBeInTheDocument())
+    await waitFor(() => expect(select.value).toBe('acc_2'))
+  })
+
+  it('shows "Belum ditugaskan" selected when the conversation has no assigned agent', async () => {
+    mockFetchWithAssign({ assignedAgentId: null })
+
+    render(<ThreadView conversationId="conv_1" />)
+
+    const select = (await screen.findByLabelText('Ditugaskan ke')) as HTMLSelectElement
+    await waitFor(() => expect(select.value).toBe(''))
+  })
+
+  it('PATCHes agentId on selection and updates the dropdown only after the server confirms', async () => {
+    let resolvePatch: (() => void) | undefined
+    const patchPending = new Promise<void>((resolve) => {
+      resolvePatch = resolve
+    })
+    const patchCalls: unknown[] = []
+    vi.mocked(fetch).mockImplementation((url, init) => {
+      const s = String(url)
+      if (s.endsWith('/messages')) return Promise.resolve({ json: () => Promise.resolve([]) } as Response)
+      if (s.endsWith('/api/accounts')) return Promise.resolve({ json: () => Promise.resolve(agents) } as Response)
+      if (s.endsWith('/assign') && init?.method === 'PATCH') {
+        patchCalls.push(JSON.parse(String(init.body)))
+        return patchPending.then(() => ({ ok: true, json: () => Promise.resolve({ assignedAgentId: 'acc_1' }) }) as Response)
+      }
+      return Promise.resolve({ json: () => Promise.resolve({ botEnabled: false, assignedAgentId: null }) } as Response)
+    })
+
+    render(<ThreadView conversationId="conv_1" />)
+
+    const select = (await screen.findByLabelText('Ditugaskan ke')) as HTMLSelectElement
+    await waitFor(() => expect(select.value).toBe(''))
+
+    fireEvent.change(select, { target: { value: 'acc_1' } })
+
+    // Request fired, but the server hasn't responded yet — no optimistic
+    // update, so the dropdown must still reflect the old (unassigned) value.
+    await waitFor(() => expect(patchCalls).toEqual([{ agentId: 'acc_1' }]))
+    expect(select.value).toBe('')
+
+    resolvePatch?.()
+    await waitFor(() => expect(select.value).toBe('acc_1'))
+  })
+
+  it('PATCHes agentId: null when "Belum ditugaskan" is selected to unassign', async () => {
+    const patchCalls = mockFetchWithAssign({ assignedAgentId: 'acc_1', patchResponse: { assignedAgentId: null } })
+
+    render(<ThreadView conversationId="conv_1" />)
+
+    const select = (await screen.findByLabelText('Ditugaskan ke')) as HTMLSelectElement
+    await waitFor(() => expect(select.value).toBe('acc_1'))
+
+    fireEvent.change(select, { target: { value: '' } })
+
+    await waitFor(() => expect(patchCalls).toEqual([{ agentId: null }]))
+    await waitFor(() => expect(select.value).toBe(''))
+  })
+
+  it('shows an error and leaves the dropdown unchanged when the PATCH request fails', async () => {
+    vi.mocked(fetch).mockImplementation((url, init) => {
+      const s = String(url)
+      if (s.endsWith('/messages')) return Promise.resolve({ json: () => Promise.resolve([]) } as Response)
+      if (s.endsWith('/api/accounts')) return Promise.resolve({ json: () => Promise.resolve(agents) } as Response)
+      if (s.endsWith('/assign') && init?.method === 'PATCH') {
+        return Promise.resolve({ ok: false, json: () => Promise.resolve({ error: 'nope' }) } as Response)
+      }
+      return Promise.resolve({ json: () => Promise.resolve({ botEnabled: false, assignedAgentId: null }) } as Response)
+    })
+
+    render(<ThreadView conversationId="conv_1" />)
+
+    const select = (await screen.findByLabelText('Ditugaskan ke')) as HTMLSelectElement
+    await waitFor(() => expect(select.value).toBe(''))
+
+    fireEvent.change(select, { target: { value: 'acc_1' } })
+
+    await waitFor(() => expect(screen.getByText('Gagal mengubah penugasan agen')).toBeInTheDocument())
+    expect(select.value).toBe('')
   })
 })

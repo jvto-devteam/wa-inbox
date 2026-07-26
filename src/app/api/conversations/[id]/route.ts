@@ -17,5 +17,6 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     tripBrief: conversation.tripBrief,
     labels: conversation.labels.map((l) => ({ id: l.label.id, name: l.label.name, color: l.label.color })),
     pipelineStage: conversation.pipelineStage,
+    assignedAgentId: conversation.assignedAgentId,
   })
 }
