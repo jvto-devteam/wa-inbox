@@ -11,9 +11,15 @@
  *    `catalog/customer-sales/` directories in agent-runtime contain more
  *    files than chatbot-web's script enumerates, and the set can grow;
  *  - filenames that exist in both source directories (e.g.
- *    `general-modules.json`) are prefixed with their source directory to
- *    avoid one silently overwriting the other in the flat destination dir
- *    that `src/lib/bot/catalog.ts` (`loadCatalog`) reads from;
+ *    `general-modules.json`, `module-compatibility.json`,
+ *    `package-variations.json`) are byte-compared: when both copies are
+ *    identical (confirmed via `cmp` — these are intentionally shared
+ *    module-layer data per `catalog-manifest.json`'s `module_layer` block),
+ *    the file is copied once, unprefixed, to avoid double-counting in
+ *    `src/lib/bot/catalog.ts` (`loadCatalog`), which concatenates every
+ *    top-level array-shaped `*.json` file in the flat destination dir. Only
+ *    a same-named file with genuinely divergent content would be prefixed
+ *    with its source directory to keep both copies without collision.
  *  - it additionally writes `catalog/meta.json` (`{ syncedAt }`) and shells
  *    out to the agent-runtime's `deployment-gate` CLI to produce
  *    `catalog/deployment-gate.json`.
@@ -50,6 +56,12 @@ function syncCatalogFiles(): { synced: number; skipped: number } {
   let synced = 0
   let skipped = 0
 
+  // Group source files by basename across both source dirs first, so that a
+  // filename appearing in both `agent-catalog/` and `customer-sales/` (e.g.
+  // `general-modules.json`) can be deduplicated when the two copies are the
+  // same underlying shared data, instead of always being prefixed apart.
+  const byName = new Map<string, { sourceDir: string; srcPath: string }[]>()
+
   for (const sourceDir of CATALOG_SOURCE_DIRS) {
     const srcDirPath = path.join(RUNTIME_ROOT, 'catalog', sourceDir)
     if (!fs.existsSync(srcDirPath)) {
@@ -63,25 +75,63 @@ function syncCatalogFiles(): { synced: number; skipped: number } {
       .map((entry) => entry.name)
 
     for (const file of files) {
-      const srcPath = path.join(srcDirPath, file)
-      const destName = `${sourceDir}--${file}`
-      const dstPath = path.join(DEST, destName)
+      const entries = byName.get(file) ?? []
+      entries.push({ sourceDir, srcPath: path.join(srcDirPath, file) })
+      byName.set(file, entries)
+    }
+  }
 
-      try {
-        JSON.parse(fs.readFileSync(srcPath, 'utf8'))
-      } catch (err) {
-        console.warn(`  SKIP (invalid JSON): catalog/${sourceDir}/${file} — ${(err as Error).message}`)
+  for (const [file, entries] of byName) {
+    if (entries.length === 1) {
+      const [{ sourceDir, srcPath }] = entries
+      if (copyValidatedJson(srcPath, path.join(DEST, file), `catalog/${sourceDir}/${file}`, file)) synced++
+      else skipped++
+      continue
+    }
+
+    // Same filename present in both source dirs: check whether it's genuinely
+    // the same shared data (byte-identical — confirmed via `cmp` for
+    // `general-modules.json`, `module-compatibility.json`, and
+    // `package-variations.json`, and corroborated by `catalog-manifest.json`'s
+    // `module_layer` block, which references these as shared module-layer
+    // data) or truly divergent content per source dir.
+    const buffers = entries.map((e) => fs.readFileSync(e.srcPath))
+    const allIdentical = buffers.every((buf) => buf.equals(buffers[0]))
+
+    if (allIdentical) {
+      // Shared data: copy once, unprefixed, from the first source dir.
+      const { sourceDir, srcPath } = entries[0]
+      if (copyValidatedJson(srcPath, path.join(DEST, file), `catalog/${sourceDir}/${file}`, `${file} (shared, deduped)`)) {
+        synced++
+      } else {
         skipped++
-        continue
       }
-
-      fs.copyFileSync(srcPath, dstPath)
-      console.log(`  OK: ${destName}`)
-      synced++
+    } else {
+      // Genuinely divergent content under the same filename: keep both,
+      // disambiguated by source dir so neither is silently lost.
+      for (const { sourceDir, srcPath } of entries) {
+        const destName = `${sourceDir}--${file}`
+        if (copyValidatedJson(srcPath, path.join(DEST, destName), `catalog/${sourceDir}/${file}`, destName)) synced++
+        else skipped++
+      }
     }
   }
 
   return { synced, skipped }
+}
+
+/** Validates `srcPath` is parseable JSON, then copies it to `dstPath`. Returns whether it was copied. */
+function copyValidatedJson(srcPath: string, dstPath: string, label: string, logName: string): boolean {
+  try {
+    JSON.parse(fs.readFileSync(srcPath, 'utf8'))
+  } catch (err) {
+    console.warn(`  SKIP (invalid JSON): ${label} — ${(err as Error).message}`)
+    return false
+  }
+
+  fs.copyFileSync(srcPath, dstPath)
+  console.log(`  OK: ${logName}`)
+  return true
 }
 
 function writeMeta(): void {
