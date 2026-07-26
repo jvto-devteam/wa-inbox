@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mockDeep, mockReset, type DeepMockProxy } from 'vitest-mock-extended'
-import type { PrismaClient } from '@prisma/client'
+import { Prisma, type PrismaClient } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { ingestMetaMessage } from './inbound'
 
@@ -53,5 +53,25 @@ describe('ingestMetaMessage', () => {
 
     expect(result.skipped).toBe(true)
     expect(mockPrisma.message.create).not.toHaveBeenCalled()
+  })
+
+  it('treats a concurrent duplicate create (P2002 unique constraint) as an idempotent skip', async () => {
+    // Simulates two concurrent deliveries of the same Meta webhook retry both passing the
+    // findUnique idempotency check (both see null) before either message.create() commits.
+    // The DB's @unique constraint on externalId rejects the loser's insert with P2002; the
+    // function must swallow that and report a clean skip instead of throwing/500ing.
+    mockPrisma.message.findUnique.mockResolvedValue(null)
+    mockPrisma.contact.upsert.mockResolvedValue({ id: 'contact_1', phone: '6281234567890', name: 'Bruno Figarola', avatarUrl: null, source: null, createdAt: new Date() })
+    mockPrisma.conversation.upsert.mockResolvedValue({ id: 'conv_1', contactId: 'contact_1', botEnabled: true, assignedAgentId: null, status: 'OPEN', pipelineStage: 'new', bookingData: null, bookingCheckedAt: null, tripBrief: null, lastMessageAt: new Date(), createdAt: new Date() })
+    mockPrisma.message.create.mockRejectedValue(
+      new Prisma.PrismaClientKnownRequestError('Unique constraint failed on the fields: (`externalId`)', {
+        code: 'P2002',
+        clientVersion: '7.9.0',
+      })
+    )
+
+    const result = await ingestMetaMessage(samplePayload)
+
+    expect(result.skipped).toBe(true)
   })
 })
