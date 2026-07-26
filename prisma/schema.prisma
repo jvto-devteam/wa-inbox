@@ -111,6 +111,7 @@ model Message {
   createdAt      DateTime         @default(now())
 
   @@index([conversationId, createdAt])
+  @@index([content])
 }
 
 model Label {

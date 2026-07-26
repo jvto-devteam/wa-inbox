@@ -60,4 +60,25 @@ describe('GET /api/conversations', () => {
 
     expect(body[0]).toEqual(expect.objectContaining({ lastMessage: null, lastMessageSentBy: null }))
   })
+
+  it('filters by a search query matching contact name or message content', async () => {
+    mockPrisma.conversation.findMany.mockResolvedValue([] as never)
+    await GET(new Request('http://localhost/api/conversations?q=ijen'))
+    expect(mockPrisma.conversation.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({
+        OR: expect.arrayContaining([
+          expect.objectContaining({ contact: expect.objectContaining({ name: { contains: 'ijen', mode: 'insensitive' } }) }),
+          expect.objectContaining({ messages: expect.objectContaining({ some: { content: { contains: 'ijen', mode: 'insensitive' } } }) }),
+        ]),
+      }),
+    }))
+  })
+
+  it('treats a whitespace-only q as no search, returning the unfiltered list', async () => {
+    mockPrisma.conversation.findMany.mockResolvedValue([] as never)
+    await GET(new Request('http://localhost/api/conversations?q=%20%20'))
+    expect(mockPrisma.conversation.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: undefined,
+    }))
+  })
 })
