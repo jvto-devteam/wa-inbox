@@ -7,6 +7,8 @@ import { sendMetaText } from '@/lib/meta/messages'
 
 vi.mock('@/lib/db', () => ({ prisma: mockDeep<PrismaClient>() }))
 vi.mock('@/lib/meta/messages', () => ({ sendMetaText: vi.fn() }))
+vi.mock('@/lib/channel-router', () => ({ resolveChannel: vi.fn().mockResolvedValue('OFFICIAL') }))
+vi.mock('@/lib/coexist/client', () => ({ sendCoexistText: vi.fn() }))
 const mockPrisma = prisma as unknown as DeepMockProxy<PrismaClient>
 
 beforeEach(() => {
@@ -50,5 +52,18 @@ describe('sendMessage', () => {
     )
 
     consoleErrorSpy.mockRestore()
+  })
+
+  it('sends via wa-coexist when resolveChannel returns UNOFFICIAL', async () => {
+    const { resolveChannel } = await import('@/lib/channel-router')
+    const { sendCoexistText } = await import('@/lib/coexist/client')
+    ;(resolveChannel as any).mockResolvedValue('UNOFFICIAL')
+    ;(sendCoexistText as any).mockResolvedValue({ externalId: 'coex_1' })
+    mockPrisma.message.create.mockResolvedValue({ id: 'msg_3', deliveryStatus: 'SENT' } as never)
+
+    const result = await sendMessage({ conversationId: 'conv_1', text: 'Halo!', sentBy: 'AGENT' })
+
+    expect(result.deliveryStatus).toBe('SENT')
+    expect(mockPrisma.message.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ channel: 'UNOFFICIAL' }) }))
   })
 })

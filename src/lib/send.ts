@@ -1,5 +1,7 @@
 import { prisma } from '@/lib/db'
 import { sendMetaText } from '@/lib/meta/messages'
+import { sendCoexistText } from '@/lib/coexist/client'
+import { resolveChannel } from '@/lib/channel-router'
 import { broadcast } from '@/lib/realtime'
 
 export async function sendMessage(params: {
@@ -10,7 +12,7 @@ export async function sendMessage(params: {
   agentId?: string
   botTrace?: unknown
 }) {
-  const channel = params.channel ?? 'OFFICIAL'
+  const channel = await resolveChannel(params.channel)
   const conversation = await prisma.conversation.findUniqueOrThrow({
     where: { id: params.conversationId },
     include: { contact: true },
@@ -24,7 +26,8 @@ export async function sendMessage(params: {
       const result = await sendMetaText(waNumber, conversation.contact.phone, params.text)
       externalId = result.externalId
     } else {
-      throw new Error('Unofficial channel not implemented until Task 16')
+      const result = await sendCoexistText(waNumber, conversation.contact.phone, params.text)
+      externalId = result.externalId
     }
   } catch (error) {
     console.error('sendMessage: send attempt failed', { conversationId: params.conversationId, channel, error })
