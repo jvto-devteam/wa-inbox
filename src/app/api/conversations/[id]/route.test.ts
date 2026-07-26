@@ -23,7 +23,7 @@ describe('GET /api/conversations/[id]', () => {
       botEnabled: true,
       bookingData: { destination: 'Bromo', dateRange: '10-12 Aug', pax: 2, amountPaid: 500000, amountDue: 500000, status: 'CONFIRMED' },
       tripBrief: null,
-      contact: { name: 'Bruno Figarola', avatarUrl: 'https://example.com/a.jpg', source: 'Instagram' },
+      contact: { id: 'contact_1', name: 'Bruno Figarola', avatarUrl: 'https://example.com/a.jpg', source: 'Instagram' },
       labels: [{ label: { id: 'lbl_1', name: 'Confirmed Booking', color: '#3C6B42' } }],
     } as never)
 
@@ -33,6 +33,7 @@ describe('GET /api/conversations/[id]', () => {
     expect(res.status).toBe(200)
     expect(body).toEqual({
       botEnabled: true,
+      contactId: 'contact_1',
       contactName: 'Bruno Figarola',
       avatarUrl: 'https://example.com/a.jpg',
       source: 'Instagram',

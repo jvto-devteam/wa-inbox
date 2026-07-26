@@ -1,9 +1,10 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import { ContactPanel } from './ContactPanel'
 
 const baseDetail = {
   botEnabled: true,
+  contactId: 'contact_1',
   contactName: 'Bruno Figarola',
   avatarUrl: null as string | null,
   source: 'Instagram',
@@ -22,6 +23,7 @@ function mockFetchWith(detail: typeof baseDetail) {
     'fetch',
     vi.fn((url: string) => {
       if (url === '/api/labels') return Promise.resolve({ json: () => Promise.resolve(allLabels) } as Response)
+      if (url === `/api/contacts/${detail.contactId}/notes`) return Promise.resolve({ json: () => Promise.resolve([]) } as Response)
       return Promise.resolve({ json: () => Promise.resolve(detail) } as Response)
     })
   )
@@ -84,5 +86,14 @@ describe('ContactPanel', () => {
     render(<ContactPanel conversationId="conv_1" />)
 
     await screen.findByText('Confirmed Booking')
+  })
+
+  it('fetches notes for the contact (using contactId, not conversationId) and renders the notes section', async () => {
+    mockFetchWith(baseDetail)
+    render(<ContactPanel conversationId="conv_1" />)
+
+    await screen.findByText('Catatan')
+    await screen.findByText('Belum ada catatan.')
+    expect(fetch).toHaveBeenCalledWith('/api/contacts/contact_1/notes')
   })
 })

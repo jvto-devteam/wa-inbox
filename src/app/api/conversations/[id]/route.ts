@@ -9,6 +9,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   })
   return NextResponse.json({
     botEnabled: conversation.botEnabled,
+    contactId: conversation.contact.id,
     contactName: conversation.contact.name,
     avatarUrl: conversation.contact.avatarUrl,
     source: conversation.contact.source,

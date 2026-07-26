@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { LabelPicker, type LabelOption } from './LabelPicker'
+import { NotesSection } from './NotesSection'
 
 type BookingData = {
   destination?: string
@@ -21,6 +22,7 @@ type TripBrief = {
 
 type ContactDetail = {
   botEnabled: boolean
+  contactId: string
   contactName: string | null
   avatarUrl: string | null
   source: string | null
@@ -114,6 +116,8 @@ export function ContactPanel({ conversationId }: { conversationId: string }) {
         attachedLabels={detail.labels}
         onAttachedChange={(labels) => setDetail((prev) => (prev ? { ...prev, labels } : prev))}
       />
+
+      <NotesSection contactId={detail.contactId} />
     </div>
   )
 }
