@@ -3,6 +3,11 @@
 // documented in docs/design/wa-inbox-concept.html's "Kapan bot balas
 // sendiri, kapan handoff" table:
 //
+//   -1. Kill switch (Task 33): an operator emergency-stop flag
+//      (`Settings.botKillSwitch`) checked first, before even the escalation
+//      keywords below -- an unconditional override that bypasses every mode,
+//      including Mode 3 (booking_context), unlike the deployment gate at
+//      step 2, which deliberately leaves Mode 3 untouched.
 //   0. Escalation check (keyword-based) short-circuits everything else,
 //      including the booking lookup -- a complaint/refund message must
 //      never wait on a network call before handing off to a human.
@@ -62,6 +67,16 @@ const BOOKING_CACHE_MS = 24 * 60 * 60 * 1000
 
 export async function decideAndRespond(conversationId: string, inboundText: string): Promise<BotDecision> {
   try {
+    // Kill switch (Task 33): an unconditional operator emergency stop, checked
+    // before even the escalation-keyword check. Unlike the deployment gate
+    // below, this bypasses EVERY mode -- including Mode 3 (booking_context) --
+    // since it's meant as a strictly stronger override for "something is
+    // wrong, halt all automated replies right now."
+    const settings = await prisma.settings.findUniqueOrThrow({ where: { id: 1 } })
+    if (settings.botKillSwitch) {
+      return { mode: 'handoff', reason: 'Bot dimatikan sementara (kill switch aktif)' }
+    }
+
     if (isEscalation(inboundText)) {
       return { mode: 'handoff', reason: 'Kata kunci eskalasi terdeteksi' }
     }

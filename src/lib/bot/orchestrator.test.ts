@@ -34,6 +34,10 @@ beforeEach(() => {
   // deployment-gate wiring fix) don't have to know about it unless they're
   // specifically testing gate behavior.
   ;(checkDeploymentGate as any).mockReturnValue({ readyForApproval: true, blocking: [] })
+  // Default: kill switch off, so pre-existing tests (written before Task 33's
+  // kill-switch wiring) don't have to know about it unless they're
+  // specifically testing kill-switch behavior.
+  mockPrisma.settings.findUniqueOrThrow.mockResolvedValue({ botKillSwitch: false } as never)
   mockPrisma.conversation.findUniqueOrThrow.mockResolvedValue({
     id: 'conv_1',
     tripBrief: {},
@@ -45,6 +49,27 @@ beforeEach(() => {
 })
 
 describe('decideAndRespond', () => {
+  it('hands off unconditionally when the bot kill switch is on, before even the escalation-keyword check', async () => {
+    mockPrisma.settings.findUniqueOrThrow.mockResolvedValue({ botKillSwitch: true } as never)
+
+    const result = await decideAndRespond('conv_1', 'Halo, saya mau tanya paket ke Ijen')
+
+    expect(result).toEqual({ mode: 'handoff', reason: 'Bot dimatikan sementara (kill switch aktif)' })
+    expect(mockPrisma.conversation.findUniqueOrThrow).not.toHaveBeenCalled()
+    expect(lookupBooking).not.toHaveBeenCalled()
+  })
+
+  it('hands off via the kill switch even for Mode 3 (booking_context) messages, unlike the deployment gate which leaves Mode 3 untouched', async () => {
+    mockPrisma.settings.findUniqueOrThrow.mockResolvedValue({ botKillSwitch: true } as never)
+    ;(lookupBooking as any).mockResolvedValue({ id: 'B1', guest: 'Bruno' })
+
+    const result = await decideAndRespond('conv_1', 'Booking saya sudah lunas belum?')
+
+    expect(result).toEqual({ mode: 'handoff', reason: 'Bot dimatikan sementara (kill switch aktif)' })
+    expect(lookupBooking).not.toHaveBeenCalled()
+    expect(callLLM).not.toHaveBeenCalled()
+  })
+
   it('escalates immediately on complaint keywords, skipping every other check', async () => {
     const result = await decideAndRespond('conv_1', 'Saya mau komplain dan minta refund!')
     expect(result).toEqual({ mode: 'handoff', reason: 'Kata kunci eskalasi terdeteksi' })
