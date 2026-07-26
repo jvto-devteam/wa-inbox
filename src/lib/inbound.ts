@@ -85,8 +85,26 @@ export async function ingestMetaMessage(payload: MetaWebhookPayload): Promise<{ 
     if (decision.mode === 'funnel' || decision.mode === 'faq' || decision.mode === 'booking_context') {
       const text = decision.mode === 'funnel' ? decision.reply : decision.mode === 'faq' ? decision.draft : decision.reply
       await sendMessage({ conversationId: conversation.id, text, sentBy: 'BOT', botTrace: decision })
+    } else {
+      // mode 'handoff' never dispatches a real WhatsApp message (fail-safe: silence + human
+      // takeover), so we deliberately do NOT call sendMessage() here -- it always dispatches via
+      // sendMetaText/sendCoexistText and requires reply text we don't have. Instead we write a
+      // log-only Message row directly, mirroring the shape sendMessage() itself writes (see
+      // src/lib/send.ts) so the decision is still auditable on the bot-log page.
+      const created = await prisma.message.create({
+        data: {
+          conversationId: conversation.id,
+          direction: 'OUTBOUND',
+          type: 'text',
+          content: null,
+          channel: 'OFFICIAL', // never actually dispatched; required by schema but not meaningful here
+          sentBy: 'BOT',
+          botTrace: decision as never,
+          deliveryStatus: 'SENT',
+        },
+      })
+      broadcast({ type: 'message.created', conversationId: conversation.id, message: created })
     }
-    // mode 'handoff' intentionally sends nothing — the conversation just waits for a human.
   }
 
   return { skipped: false }
