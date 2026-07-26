@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { sendCoexistText, sendCoexistMedia } from './client'
+import { sendCoexistText, sendCoexistMedia, getCoexistStatus, relinkCoexist } from './client'
 
 const waNumber = { coexistBaseUrl: 'http://localhost:4000', coexistApiKey: 'key123', coexistNumberKey: 'num456' }
 
@@ -120,5 +120,63 @@ describe('sendCoexistMedia', () => {
     await expect(sendCoexistMedia(waNumber, '6281234567890', 'https://x/img.jpg', 'image')).rejects.toThrow(
       'Missing required fields: phone_no, url'
     )
+  })
+})
+
+describe('getCoexistStatus', () => {
+  it('returns connected: true when wa-coexist status is "connected"', async () => {
+    ;(fetch as any).mockResolvedValue({
+      ok: true,
+      json: async () => ({ status: 'connected', user: { id: '1234@s.whatsapp.net' }, qr: null }),
+    })
+    const result = await getCoexistStatus(waNumber)
+    expect(result).toEqual({ connected: true })
+    expect(fetch).toHaveBeenCalledWith('http://localhost:4000/api/status')
+  })
+
+  it('returns connected: false when wa-coexist status is "disconnected"', async () => {
+    ;(fetch as any).mockResolvedValue({
+      ok: true,
+      json: async () => ({ status: 'disconnected', user: null, qr: null }),
+    })
+    const result = await getCoexistStatus(waNumber)
+    expect(result).toEqual({ connected: false })
+  })
+
+  it('returns connected: false when wa-coexist status is "connecting"', async () => {
+    ;(fetch as any).mockResolvedValue({
+      ok: true,
+      json: async () => ({ status: 'connecting', user: null, qr: 'data:image/png...' }),
+    })
+    const result = await getCoexistStatus(waNumber)
+    expect(result).toEqual({ connected: false })
+  })
+
+  it('returns connected: false when the request fails outright', async () => {
+    ;(fetch as any).mockRejectedValue(new Error('network error'))
+    const result = await getCoexistStatus(waNumber)
+    expect(result).toEqual({ connected: false })
+  })
+
+  it('returns connected: false when HTTP response is not ok', async () => {
+    ;(fetch as any).mockResolvedValue({
+      ok: false,
+      json: async () => ({ error: 'Internal server error' }),
+    })
+    const result = await getCoexistStatus(waNumber)
+    expect(result).toEqual({ connected: false })
+  })
+})
+
+describe('relinkCoexist', () => {
+  it('posts to /api/relink', async () => {
+    ;(fetch as any).mockResolvedValue({ ok: true, json: async () => ({ success: true }) })
+    await relinkCoexist(waNumber)
+    expect(fetch).toHaveBeenCalledWith('http://localhost:4000/api/relink', expect.objectContaining({ method: 'POST' }))
+  })
+
+  it('does not throw on success', async () => {
+    ;(fetch as any).mockResolvedValue({ ok: true, json: async () => ({ success: true }) })
+    await expect(relinkCoexist(waNumber)).resolves.toBeUndefined()
   })
 })

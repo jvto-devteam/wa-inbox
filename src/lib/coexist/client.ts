@@ -51,3 +51,19 @@ export async function sendCoexistMedia(
   }
   return {}
 }
+
+export async function getCoexistStatus(creds: CoexistCreds): Promise<{ connected: boolean }> {
+  try {
+    const res = await fetch(`${creds.coexistBaseUrl}/api/status`)
+    if (!res.ok) return { connected: false }
+    const json = (await res.json()) as { status: string; user?: unknown; qr?: unknown }
+    return { connected: json.status === 'connected' }
+  } catch {
+    return { connected: false }
+  }
+}
+
+export async function relinkCoexist(creds: CoexistCreds): Promise<void> {
+  const res = await fetch(`${creds.coexistBaseUrl}/api/relink`, { method: 'POST' })
+  if (!res.ok) throw new Error('Relink failed')
+}
