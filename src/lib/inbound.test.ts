@@ -33,7 +33,9 @@ describe('ingestMetaMessage', () => {
     mockPrisma.message.findUnique.mockResolvedValue(null)
     mockPrisma.contact.upsert.mockResolvedValue({ id: 'contact_1', phone: '6281234567890', name: 'Bruno Figarola', avatarUrl: null, source: null, createdAt: new Date() })
     mockPrisma.conversation.upsert.mockResolvedValue({ id: 'conv_1', contactId: 'contact_1', botEnabled: true, assignedAgentId: null, status: 'OPEN', pipelineStage: 'new', bookingData: null, bookingCheckedAt: null, tripBrief: null, lastMessageAt: new Date(), createdAt: new Date() })
+    mockPrisma.waNumber.findFirstOrThrow.mockResolvedValue({ coexistBaseUrl: 'http://x' } as never)
     mockPrisma.message.create.mockResolvedValue({} as never)
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: async () => ({ url: null }) }))
 
     const result = await ingestMetaMessage(samplePayload)
 
@@ -73,5 +75,19 @@ describe('ingestMetaMessage', () => {
     const result = await ingestMetaMessage(samplePayload)
 
     expect(result.skipped).toBe(true)
+  })
+
+  it('fetches and stores an avatar URL for a newly created contact', async () => {
+    mockPrisma.message.findUnique.mockResolvedValue(null)
+    mockPrisma.contact.upsert.mockResolvedValue({ id: 'contact_1', phone: '6281234567890', name: 'Bruno Figarola', avatarUrl: null, source: null, createdAt: new Date() })
+    mockPrisma.conversation.upsert.mockResolvedValue({ id: 'conv_1' } as never)
+    mockPrisma.waNumber.findFirstOrThrow.mockResolvedValue({ coexistBaseUrl: 'http://localhost:4000' } as never)
+    mockPrisma.message.create.mockResolvedValue({} as never)
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: async () => ({ url: 'https://pic.example/x.jpg' }) }))
+
+    await ingestMetaMessage(samplePayload)
+
+    expect(fetch).toHaveBeenCalledWith('http://localhost:4000/api/contact/6281234567890@s.whatsapp.net/avatar')
+    expect(mockPrisma.contact.update).toHaveBeenCalledWith({ where: { id: 'contact_1' }, data: { avatarUrl: 'https://pic.example/x.jpg' } })
   })
 })

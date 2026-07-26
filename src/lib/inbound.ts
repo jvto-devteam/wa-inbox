@@ -34,6 +34,17 @@ export async function ingestMetaMessage(payload: MetaWebhookPayload): Promise<{ 
     create: { phone: message.from, name: profileName ?? null },
   })
 
+  if (!contact.avatarUrl) {
+    const waNumber = await prisma.waNumber.findFirstOrThrow()
+    try {
+      const res = await fetch(`${waNumber.coexistBaseUrl}/api/contact/${message.from}@s.whatsapp.net/avatar`)
+      const { url } = await res.json()
+      if (url) await prisma.contact.update({ where: { id: contact.id }, data: { avatarUrl: url } })
+    } catch {
+      // wa-coexist unreachable — leave avatarUrl null, not fatal to message ingestion
+    }
+  }
+
   const conversation = await prisma.conversation.upsert({
     where: { contactId: contact.id },
     update: { lastMessageAt: new Date(Number(message.timestamp) * 1000) },
