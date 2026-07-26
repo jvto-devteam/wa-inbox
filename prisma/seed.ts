@@ -12,6 +12,19 @@ async function main() {
     update: {},
     create: { email: 'admin@jvto.com', passwordHash, name: 'Admin', role: 'ADMIN' },
   })
+  await prisma.waNumber.upsert({
+    where: { phoneNumber: '6282244788833' },
+    update: {},
+    create: {
+      phoneNumber: '6282244788833',
+      phoneNumberId: process.env.META_PHONE_NUMBER_ID ?? '',
+      wabaId: process.env.META_WABA_ID ?? '',
+      accessToken: process.env.META_ACCESS_TOKEN ?? '',
+      coexistBaseUrl: process.env.COEXIST_BASE_URL ?? '',
+      coexistApiKey: process.env.COEXIST_API_KEY ?? '',
+      coexistNumberKey: process.env.COEXIST_NUMBER_KEY ?? '',
+    },
+  })
   await prisma.settings.upsert({
     where: { id: 1 },
     update: {},
