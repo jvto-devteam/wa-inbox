@@ -39,6 +39,29 @@ describe('POST /api/send', () => {
     expect(res.status).toBe(400)
   })
 
+  // `bodySchema.safeParse(await req.json())` never got the chance to run on a body that
+  // isn't JSON — req.json() rejects first, so the handler blew up as an unhandled 500 with
+  // a stack trace instead of returning the { error } 4xx this project mandates.
+  it('returns a clean { error } 400 — not a 500 — when the body is not JSON at all', async () => {
+    const req = new Request('http://localhost/api/send', { method: 'POST', body: '{"conversationId": "conv_1", ' })
+
+    const res = await POST(req)
+
+    expect(res.status).toBe(400)
+    expect(await res.json()).toEqual({ error: 'conversationId dan text wajib diisi' })
+    expect(sendMessage).not.toHaveBeenCalled()
+  })
+
+  it('returns 400 for an empty body rather than throwing', async () => {
+    const req = new Request('http://localhost/api/send', { method: 'POST', body: '' })
+
+    const res = await POST(req)
+
+    expect(res.status).toBe(400)
+    expect(await res.json()).toEqual({ error: 'conversationId dan text wajib diisi' })
+    expect(sendMessage).not.toHaveBeenCalled()
+  })
+
   it('resolves a phone-based { to, text } body to its conversation and sends', async () => {
     mockPrisma.contact.findUnique.mockResolvedValue({
       id: 'contact_1',

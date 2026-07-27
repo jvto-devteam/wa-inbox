@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { prisma } from '@/lib/db'
 import { getSession } from '@/lib/auth/get-session'
+import { parseJsonBody } from '@/lib/parse-json'
 
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
@@ -19,8 +20,8 @@ const bodySchema = z.object({ body: z.string().min(1) })
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
-  const parsed = bodySchema.safeParse(await req.json())
-  if (!parsed.success) return NextResponse.json({ error: 'Isi catatan wajib diisi' }, { status: 400 })
+  const parsed = await parseJsonBody(req, bodySchema, 'Isi catatan wajib diisi')
+  if (!parsed.success) return NextResponse.json({ error: parsed.error }, { status: 400 })
 
   const session = await getSession(req)
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })

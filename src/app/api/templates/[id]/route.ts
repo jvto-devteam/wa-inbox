@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { prisma } from '@/lib/db'
 import { requireAdmin } from '@/lib/auth/require-admin'
+import { parseJsonBody } from '@/lib/parse-json'
 
 // GET stays open — agents read templates to use them in the compose box.
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -35,8 +36,8 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   if (!admin) return NextResponse.json({ error: 'Hanya admin yang bisa mengubah template' }, { status: 403 })
 
   const { id } = await params
-  const parsed = patchSchema.safeParse(await req.json())
-  if (!parsed.success) return NextResponse.json({ error: 'Data template tidak valid' }, { status: 400 })
+  const parsed = await parseJsonBody(req, patchSchema, 'Data template tidak valid')
+  if (!parsed.success) return NextResponse.json({ error: parsed.error }, { status: 400 })
 
   const existing = await prisma.template.findUnique({ where: { id } })
   if (!existing) return NextResponse.json({ error: 'Template tidak ditemukan' }, { status: 404 })

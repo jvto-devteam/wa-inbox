@@ -37,4 +37,26 @@ describe('POST /api/auth/login', () => {
     const res = await POST(req)
     expect(res.status).toBe(400)
   })
+
+  // `bodySchema.safeParse(await req.json())` reads as if it handles a bad body, but
+  // req.json() throws before safeParse runs — a login form posting a truncated or
+  // non-JSON body produced an unhandled 500 with a stack trace, on an unauthenticated
+  // endpoint, instead of this app's mandated { error } 4xx.
+  it('returns a clean { error } 400 — not a 500 — when the body is not JSON at all', async () => {
+    const req = new Request('http://localhost/api/auth/login', { method: 'POST', body: 'not json at all' })
+
+    const res = await POST(req)
+
+    expect(res.status).toBe(400)
+    expect(await res.json()).toEqual({ error: 'Email atau kata sandi tidak valid' })
+  })
+
+  it('returns 400 for an empty body', async () => {
+    const req = new Request('http://localhost/api/auth/login', { method: 'POST', body: '' })
+
+    const res = await POST(req)
+
+    expect(res.status).toBe(400)
+    expect(await res.json()).toEqual({ error: 'Email atau kata sandi tidak valid' })
+  })
 })

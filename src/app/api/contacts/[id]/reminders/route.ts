@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { prisma } from '@/lib/db'
+import { parseJsonBody } from '@/lib/parse-json'
 
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
@@ -15,8 +16,8 @@ const createSchema = z.object({ dueAt: z.string(), note: z.string().min(1) })
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
-  const parsed = createSchema.safeParse(await req.json())
-  if (!parsed.success) return NextResponse.json({ error: 'Tanggal dan catatan reminder wajib diisi' }, { status: 400 })
+  const parsed = await parseJsonBody(req, createSchema, 'Tanggal dan catatan reminder wajib diisi')
+  if (!parsed.success) return NextResponse.json({ error: parsed.error }, { status: 400 })
 
   const reminder = await prisma.reminder.create({
     data: { contactId: id, dueAt: new Date(parsed.data.dueAt), note: parsed.data.note },
@@ -33,8 +34,8 @@ const patchSchema = z.object({ reminderId: z.string(), done: z.boolean() })
 // as a defense-in-depth guard against a buggy or malicious client.
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
-  const parsed = patchSchema.safeParse(await req.json())
-  if (!parsed.success) return NextResponse.json({ error: 'reminderId dan done wajib diisi' }, { status: 400 })
+  const parsed = await parseJsonBody(req, patchSchema, 'reminderId dan done wajib diisi')
+  if (!parsed.success) return NextResponse.json({ error: parsed.error }, { status: 400 })
 
   const existing = await prisma.reminder.findUnique({ where: { id: parsed.data.reminderId } })
   if (!existing || existing.contactId !== id) {

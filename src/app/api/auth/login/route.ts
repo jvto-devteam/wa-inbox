@@ -3,12 +3,13 @@ import { z } from 'zod'
 import { prisma } from '@/lib/db'
 import { verifyPassword } from '@/lib/auth/password'
 import { createSessionCookie } from '@/lib/auth/session'
+import { parseJsonBody } from '@/lib/parse-json'
 
 const bodySchema = z.object({ email: z.string().email(), password: z.string().min(1) })
 
 export async function POST(req: Request) {
-  const parsed = bodySchema.safeParse(await req.json())
-  if (!parsed.success) return NextResponse.json({ error: 'Email atau kata sandi tidak valid' }, { status: 400 })
+  const parsed = await parseJsonBody(req, bodySchema, 'Email atau kata sandi tidak valid')
+  if (!parsed.success) return NextResponse.json({ error: parsed.error }, { status: 400 })
 
   const account = await prisma.account.findUnique({ where: { email: parsed.data.email } })
   if (!account || !(await verifyPassword(parsed.data.password, account.passwordHash))) {

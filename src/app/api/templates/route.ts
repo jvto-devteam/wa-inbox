@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { prisma } from '@/lib/db'
 import { submitMetaTemplate } from '@/lib/meta/templates'
 import { requireAdmin } from '@/lib/auth/require-admin'
+import { parseJsonBody } from '@/lib/parse-json'
 
 // Reading templates stays open — agents pick quick replies from this list in
 // the compose box.
@@ -26,8 +27,8 @@ export async function POST(req: Request) {
   const admin = await requireAdmin(req)
   if (!admin) return NextResponse.json({ error: 'Hanya admin yang bisa membuat template' }, { status: 403 })
 
-  const parsed = bodySchema.safeParse(await req.json())
-  if (!parsed.success) return NextResponse.json({ error: 'Data template tidak valid' }, { status: 400 })
+  const parsed = await parseJsonBody(req, bodySchema, 'Data template tidak valid')
+  if (!parsed.success) return NextResponse.json({ error: parsed.error }, { status: 400 })
 
   let metaStatus: 'PENDING' | 'NOT_APPLICABLE' = 'NOT_APPLICABLE'
   if (parsed.data.type === 'OFFICIAL') {

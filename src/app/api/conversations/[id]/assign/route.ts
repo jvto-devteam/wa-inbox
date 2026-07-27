@@ -1,13 +1,14 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { prisma } from '@/lib/db'
+import { parseJsonBody } from '@/lib/parse-json'
 
 const bodySchema = z.object({ agentId: z.string().nullable() })
 
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
-  const parsed = bodySchema.safeParse(await req.json())
-  if (!parsed.success) return NextResponse.json({ error: 'agentId wajib diisi (atau null)' }, { status: 400 })
+  const parsed = await parseJsonBody(req, bodySchema, 'agentId wajib diisi (atau null)')
+  if (!parsed.success) return NextResponse.json({ error: parsed.error }, { status: 400 })
 
   // An agentId that doesn't reference a real Account trips the FK constraint
   // and surfaces as a raw Prisma P2003 500. Check up front so the caller gets

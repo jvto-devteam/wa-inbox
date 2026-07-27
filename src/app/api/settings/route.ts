@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { prisma } from '@/lib/db'
 import { requireAdmin } from '@/lib/auth/require-admin'
+import { parseJsonBody } from '@/lib/parse-json'
 
 // GET stays open to every authenticated user: the inbox and settings pages
 // both read defaultChannel/working hours, and agents need them.
@@ -25,8 +26,8 @@ export async function PATCH(req: Request) {
   const admin = await requireAdmin(req)
   if (!admin) return NextResponse.json({ error: 'Hanya admin yang bisa mengubah pengaturan' }, { status: 403 })
 
-  const parsed = patchSchema.safeParse(await req.json())
-  if (!parsed.success) return NextResponse.json({ error: 'Data pengaturan tidak valid' }, { status: 400 })
+  const parsed = await parseJsonBody(req, patchSchema, 'Data pengaturan tidak valid')
+  if (!parsed.success) return NextResponse.json({ error: parsed.error }, { status: 400 })
   const settings = await prisma.settings.update({ where: { id: 1 }, data: parsed.data })
   return NextResponse.json(settings)
 }

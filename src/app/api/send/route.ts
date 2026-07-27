@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { sendMessage } from '@/lib/send'
 import { getSession } from '@/lib/auth/get-session'
 import { prisma } from '@/lib/db'
+import { parseJsonBody } from '@/lib/parse-json'
 
 // Two accepted shapes:
 // - { conversationId, text } — the native wa-inbox shape (Task 9).
@@ -23,8 +24,8 @@ const bodySchema = z.union([
 ])
 
 export async function POST(req: Request) {
-  const parsed = bodySchema.safeParse(await req.json())
-  if (!parsed.success) return NextResponse.json({ error: 'conversationId dan text wajib diisi' }, { status: 400 })
+  const parsed = await parseJsonBody(req, bodySchema, 'conversationId dan text wajib diisi')
+  if (!parsed.success) return NextResponse.json({ error: parsed.error }, { status: 400 })
 
   let conversationId: string
   if ('conversationId' in parsed.data) {

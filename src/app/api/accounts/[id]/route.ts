@@ -4,6 +4,7 @@ import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { hashPassword } from '@/lib/auth/password'
 import { requireAdmin } from '@/lib/auth/require-admin'
+import { parseJsonBody } from '@/lib/parse-json'
 
 export async function DELETE(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const admin = await requireAdmin(req)
@@ -59,8 +60,8 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   if (!admin) return NextResponse.json({ error: 'Hanya admin yang bisa reset kata sandi' }, { status: 403 })
 
   const { id } = await params
-  const parsed = patchSchema.safeParse(await req.json())
-  if (!parsed.success) return NextResponse.json({ error: 'Kata sandi minimal 8 karakter' }, { status: 400 })
+  const parsed = await parseJsonBody(req, patchSchema, 'Kata sandi minimal 8 karakter')
+  if (!parsed.success) return NextResponse.json({ error: parsed.error }, { status: 400 })
 
   const passwordHash = await hashPassword(parsed.data.password)
   // A password reset is the response to a compromised (or offboarded)

@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { prisma } from '@/lib/db'
 import { hashPassword } from '@/lib/auth/password'
 import { requireAdmin } from '@/lib/auth/require-admin'
+import { parseJsonBody } from '@/lib/parse-json'
 
 // Widened from Task 42's { id, name } (originally selected tightly for
 // ThreadView's agent-assignment dropdown, which only needs id/name) to also
@@ -26,8 +27,8 @@ export async function POST(req: Request) {
   const admin = await requireAdmin(req)
   if (!admin) return NextResponse.json({ error: 'Hanya admin yang bisa menambah akun' }, { status: 403 })
 
-  const parsed = createSchema.safeParse(await req.json())
-  if (!parsed.success) return NextResponse.json({ error: 'Data akun tidak valid' }, { status: 400 })
+  const parsed = await parseJsonBody(req, createSchema, 'Data akun tidak valid')
+  if (!parsed.success) return NextResponse.json({ error: parsed.error }, { status: 400 })
 
   const passwordHash = await hashPassword(parsed.data.password)
   const account = await prisma.account.create({
