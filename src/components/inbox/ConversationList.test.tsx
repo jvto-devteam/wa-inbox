@@ -125,6 +125,7 @@ describe('ConversationList live updates', () => {
       lastMessageAt: '2026-07-20T10:00:00.000Z',
       botEnabled: false,
       status: 'OPEN',
+      unreadCount: 0,
       labels: [],
       ...overrides,
     }
@@ -250,6 +251,89 @@ describe('ConversationList live updates', () => {
     unmount()
 
     expect(es.close).toHaveBeenCalled()
+  })
+})
+
+describe('ConversationList unread counts', () => {
+  function conversation(id: string, overrides: Record<string, unknown> = {}) {
+    return {
+      id,
+      contactName: `Kontak ${id}`,
+      contactPhone: `62812000${id}`,
+      lastMessage: `Pesan lama ${id}`,
+      lastMessageSentBy: 'CUSTOMER',
+      lastMessageAt: '2026-07-20T10:00:00.000Z',
+      botEnabled: false,
+      status: 'OPEN',
+      unreadCount: 0,
+      labels: [],
+      ...overrides,
+    }
+  }
+
+  it('bumps the unread badge on an inbound message for a conversation that is not selected', async () => {
+    vi.mocked(fetch).mockImplementation(() => Promise.resolve(jsonResponse([conversation('a')])))
+    render(<ConversationList selectedId={null} onSelect={() => {}} />)
+    await advanceTimers(0)
+
+    const es = FakeEventSource.instances[0]
+    act(() => {
+      es.emit({
+        type: 'message.created',
+        conversationId: 'a',
+        message: { id: 'm1', content: 'Halo', sentBy: 'CUSTOMER', direction: 'INBOUND', createdAt: '2026-07-20T16:00:00.000Z' },
+      })
+    })
+    await advanceTimers(0)
+
+    expect(screen.getByLabelText('1 pesan belum dibaca')).toBeInTheDocument()
+  })
+
+  it('does not bump the unread badge for an inbound message on the currently selected conversation', async () => {
+    vi.mocked(fetch).mockImplementation(() => Promise.resolve(jsonResponse([conversation('a')])))
+    render(<ConversationList selectedId="a" onSelect={() => {}} />)
+    await advanceTimers(0)
+
+    const es = FakeEventSource.instances[0]
+    act(() => {
+      es.emit({
+        type: 'message.created',
+        conversationId: 'a',
+        message: { id: 'm1', content: 'Halo', sentBy: 'CUSTOMER', direction: 'INBOUND', createdAt: '2026-07-20T16:00:00.000Z' },
+      })
+    })
+    await advanceTimers(0)
+
+    expect(screen.queryByLabelText(/pesan belum dibaca/)).not.toBeInTheDocument()
+  })
+
+  it('does not bump the unread badge for an outbound message', async () => {
+    vi.mocked(fetch).mockImplementation(() => Promise.resolve(jsonResponse([conversation('a')])))
+    render(<ConversationList selectedId={null} onSelect={() => {}} />)
+    await advanceTimers(0)
+
+    const es = FakeEventSource.instances[0]
+    act(() => {
+      es.emit({
+        type: 'message.created',
+        conversationId: 'a',
+        message: { id: 'm1', content: 'Halo', sentBy: 'AGENT', direction: 'OUTBOUND', createdAt: '2026-07-20T16:00:00.000Z' },
+      })
+    })
+    await advanceTimers(0)
+
+    expect(screen.queryByLabelText(/pesan belum dibaca/)).not.toBeInTheDocument()
+  })
+
+  it('clears the unread badge for a conversation as soon as it becomes selected', async () => {
+    vi.mocked(fetch).mockImplementation(() => Promise.resolve(jsonResponse([conversation('a', { unreadCount: 5 })])))
+    const { rerender } = render(<ConversationList selectedId={null} onSelect={() => {}} />)
+    await advanceTimers(0)
+    expect(screen.getByLabelText('5 pesan belum dibaca')).toBeInTheDocument()
+
+    rerender(<ConversationList selectedId="a" onSelect={() => {}} />)
+
+    expect(screen.queryByLabelText(/pesan belum dibaca/)).not.toBeInTheDocument()
   })
 })
 

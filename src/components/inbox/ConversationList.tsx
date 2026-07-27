@@ -22,6 +22,7 @@ type BroadcastMessage = {
   content: string | null
   sentBy: string | null
   createdAt: string
+  direction: string
 }
 
 export function ConversationList({
@@ -40,12 +41,19 @@ export function ConversationList({
   // single incoming message; the refs let that effect stay mounted for the tab's lifetime.
   const queryRef = useRef(query)
   const conversationsRef = useRef(conversations)
+  const selectedIdRef = useRef(selectedId)
   useEffect(() => {
     queryRef.current = query
   }, [query])
   useEffect(() => {
     conversationsRef.current = conversations
   }, [conversations])
+  useEffect(() => {
+    selectedIdRef.current = selectedId
+    // Opening a conversation is an immediate "I've seen this" signal, ahead of ThreadView's
+    // own PATCH landing — without this the badge would linger for the length of that request.
+    if (selectedId) setConversations((prev) => prev.map((c) => (c.id === selectedId ? { ...c, unreadCount: 0 } : c)))
+  }, [selectedId])
 
   const loadConversations = useCallback((q: string) => {
     // On a rejection the list simply keeps whatever it already had: a 401 has already sent
@@ -99,6 +107,10 @@ export function ConversationList({
       }
 
       const message = event.message as BroadcastMessage
+      // A message arriving for the conversation currently open on screen is not
+      // unread -- the agent is looking straight at it (ThreadView's own SSE handler
+      // re-marks it read server-side). Anything else bumps the sidebar badge.
+      const isUnreadable = message.direction === 'INBOUND' && event.conversationId !== selectedIdRef.current
       setConversations((prev) =>
         prev
           .map((c) =>
@@ -108,6 +120,7 @@ export function ConversationList({
                   lastMessage: message.content ?? null,
                   lastMessageSentBy: message.sentBy ?? null,
                   lastMessageAt: message.createdAt,
+                  unreadCount: isUnreadable ? c.unreadCount + 1 : c.unreadCount,
                 }
               : c
           )
@@ -118,7 +131,7 @@ export function ConversationList({
   }, [loadConversations])
 
   return (
-    <div className="flex h-full flex-col overflow-y-auto border-r">
+    <div className="flex h-full min-h-0 flex-col overflow-y-auto border-r">
       <div className="border-b p-2">
         <Input
           type="text"

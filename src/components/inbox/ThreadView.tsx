@@ -6,7 +6,12 @@ import { Select } from '@/components/ui/select'
 import { fetchJson } from '@/lib/fetch-json'
 
 type Agent = { id: string; name: string }
-type ConversationDetail = { botEnabled: boolean; assignedAgentId?: string | null }
+type ConversationDetail = { botEnabled: boolean; assignedAgentId?: string | null; lastReadAt?: string | null }
+
+/** Fire-and-forget: a failed mark-as-read is a cosmetic sidebar-badge staleness, never worth surfacing. */
+function markAsRead(conversationId: string) {
+  fetch(`/api/conversations/${conversationId}/read`, { method: 'PATCH' }).catch(() => {})
+}
 
 export function ThreadView({ conversationId }: { conversationId: string }) {
   const [messages, setMessages] = useState<MessageView[]>([])
@@ -14,6 +19,12 @@ export function ThreadView({ conversationId }: { conversationId: string }) {
   const [assignedAgentId, setAssignedAgentId] = useState<string | null>(null)
   const [agents, setAgents] = useState<Agent[]>([])
   const [assignError, setAssignError] = useState<string | null>(null)
+  // Captured once, from the conversation's lastReadAt as of the moment the thread was opened --
+  // this draws the "Pesan belum dibaca" divider. It must not track later markAsRead() calls
+  // (which move the read boundary forward as the agent keeps watching) or the divider would
+  // vanish out from under them mid-read.
+  const [unreadCutoff, setUnreadCutoff] = useState<string | null>(null)
+  const [replyingTo, setReplyingTo] = useState<MessageView | null>(null)
 
   // Each of these swallows its rejection: fetchJson has already redirected on a 401, and on
   // any other failure the thread must keep its empty/default state rather than take an error
@@ -29,6 +40,10 @@ export function ThreadView({ conversationId }: { conversationId: string }) {
       .then((data) => {
         setBotEnabled(data.botEnabled)
         setAssignedAgentId(data.assignedAgentId ?? null)
+        setUnreadCutoff(data.lastReadAt ?? null)
+        // Only after lastReadAt is captured above -- otherwise a mark-as-read that lands
+        // before this GET resolves would erase the very boundary the divider needs.
+        markAsRead(conversationId)
       })
       .catch(() => {})
   }, [conversationId])
@@ -67,6 +82,10 @@ export function ThreadView({ conversationId }: { conversationId: string }) {
       const event = JSON.parse(e.data)
       if (event.type === 'message.created' && event.conversationId === conversationId) {
         setMessages((prev) => (prev.some((m) => m.id === event.message.id) ? prev : [...prev, event.message]))
+        // The agent is looking at this thread right now, so whatever just arrived counts as
+        // seen -- without this, a message that arrived while the thread was open would still
+        // read as unread in the sidebar the moment the agent navigated away from it.
+        markAsRead(conversationId)
       }
       // Delivery receipts (Meta's sent/delivered/read/failed callbacks) arrive minutes
       // after the message itself, so the bubble must be replaced in place -- appending
@@ -78,8 +97,14 @@ export function ThreadView({ conversationId }: { conversationId: string }) {
     return () => es.close()
   }, [conversationId])
 
+  // -1 (never renders) when the conversation has never been read before -- everything being
+  // "unread" on a first-ever open isn't a useful signal, only a boundary that moved is.
+  const firstUnreadIndex = unreadCutoff
+    ? messages.findIndex((m) => m.direction === 'INBOUND' && new Date(m.createdAt) > new Date(unreadCutoff))
+    : -1
+
   return (
-    <div className="flex h-full flex-col bg-slate-50">
+    <div className="flex h-full min-h-0 flex-col bg-slate-50">
       <div className="flex items-center justify-between gap-2 border-b border-border bg-white px-4 py-2">
         <div className="flex items-center gap-2">
           <label htmlFor="assign-agent" className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
@@ -102,15 +127,29 @@ export function ThreadView({ conversationId }: { conversationId: string }) {
         </div>
         {assignError && <p className="text-xs text-destructive">{assignError}</p>}
       </div>
-      <div className="flex-1 space-y-3 overflow-y-auto p-4">
-        {messages.map((m) => (
-          <MessageBubble key={m.id} message={m} />
+      <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4">
+        {messages.map((m, i) => (
+          <div key={m.id}>
+            {i === firstUnreadIndex && (
+              <div className="mb-3 flex items-center gap-2 text-xs font-medium text-muted-foreground">
+                <div className="h-px flex-1 bg-border" />
+                <span>Pesan belum dibaca</span>
+                <div className="h-px flex-1 bg-border" />
+              </div>
+            )}
+            <MessageBubble message={m} onReply={setReplyingTo} />
+          </div>
         ))}
       </div>
       <ComposeBox
         conversationId={conversationId}
         botEnabled={botEnabled}
-        onSent={(m) => setMessages((prev) => [...prev, m])}
+        replyingTo={replyingTo}
+        onCancelReply={() => setReplyingTo(null)}
+        onSent={(m) => {
+          setMessages((prev) => [...prev, m])
+          setReplyingTo(null)
+        }}
         onBotToggled={setBotEnabled}
       />
     </div>

@@ -3,6 +3,9 @@ import { prisma } from '@/lib/db'
 import { broadcast } from '@/lib/realtime'
 import { decideAndRespond } from '@/lib/bot/orchestrator'
 import { sendMessage } from '@/lib/send'
+import { withMediaUrl } from '@/lib/serialize-message'
+
+type MetaMediaObject = { id: string; mime_type: string; caption?: string; filename?: string }
 
 export type MetaInboundMessage = {
   id: string
@@ -10,6 +13,26 @@ export type MetaInboundMessage = {
   timestamp: string
   type: string
   text?: { body: string }
+  image?: MetaMediaObject
+  audio?: MetaMediaObject
+  video?: MetaMediaObject
+  document?: MetaMediaObject
+  // Present when this message is a WhatsApp "reply" to an earlier one. `id` is the
+  // wamid of the quoted message, matched against Message.externalId below.
+  context?: { id?: string }
+}
+
+// Every media message type Meta can send carries the same {id, mime_type, caption?,
+// filename?} shape under a key matching `type` -- image/audio/video/document. Reading
+// it off `message[message.type]` instead of four near-identical if-branches means a
+// fifth media type (were Meta to add one) degrades to the existing `[type]` text
+// fallback instead of silently losing the caption too.
+function mediaObjectFor(message: MetaInboundMessage): MetaMediaObject | undefined {
+  if (message.type === 'image') return message.image
+  if (message.type === 'audio') return message.audio
+  if (message.type === 'video') return message.video
+  if (message.type === 'document') return message.document
+  return undefined
 }
 
 export type MetaContact = { profile?: { name?: string | null } | null; wa_id: string }
@@ -165,7 +188,7 @@ async function applyStatusUpdate(status: MetaStatus): Promise<boolean> {
     where: { id: existing.id },
     data: { deliveryStatus: mapped },
   })
-  broadcast({ type: 'message.updated', conversationId: updated.conversationId, message: updated })
+  broadcast({ type: 'message.updated', conversationId: updated.conversationId, message: withMediaUrl(updated) })
   return true
 }
 
@@ -235,6 +258,15 @@ async function ingestSingleMessage(message: MetaInboundMessage, contacts: MetaCo
     create: { contactId: contact.id, lastMessageAt: sentAt },
   })
 
+  const media = mediaObjectFor(message)
+
+  // The parent may legitimately not exist locally (a reply to a message from before this
+  // feature shipped, or one this system never ingested) -- that's a plain null replyToId,
+  // not a failure, since the reply itself is still a perfectly good message on its own.
+  const replyToId = message.context?.id
+    ? (await prisma.message.findUnique({ where: { externalId: message.context.id } }))?.id ?? null
+    : null
+
   try {
     const created = await prisma.message.create({
       data: {
@@ -242,14 +274,19 @@ async function ingestSingleMessage(message: MetaInboundMessage, contacts: MetaCo
         externalId: message.id,
         direction: 'INBOUND',
         type: message.type,
-        content: message.text?.body ?? null,
+        content: message.text?.body ?? media?.caption ?? null,
+        mediaId: media?.id ?? null,
+        mimeType: media?.mime_type ?? null,
+        fileName: media?.filename ?? null,
+        replyToId,
         channel: 'OFFICIAL',
         sentBy: 'CUSTOMER',
         deliveryStatus: 'DELIVERED',
         createdAt: sentAt,
       },
+      include: { replyTo: true },
     })
-    broadcast({ type: 'message.created', conversationId: conversation.id, message: created })
+    broadcast({ type: 'message.created', conversationId: conversation.id, message: withMediaUrl(created) })
   } catch (error) {
     // Race condition: a concurrent delivery of the same message (Meta's at-least-once
     // retries) can pass the findUnique check above before either request's create()
@@ -297,7 +334,7 @@ async function ingestSingleMessage(message: MetaInboundMessage, contacts: MetaCo
           deliveryStatus: 'SENT',
         },
       })
-      broadcast({ type: 'message.created', conversationId: conversation.id, message: created })
+      broadcast({ type: 'message.created', conversationId: conversation.id, message: withMediaUrl(created) })
 
       // A handoff has to actually hand off: without flipping botEnabled the conversation
       // stays bot-driven, so it never reaches the dashboard's "needs attention" widget

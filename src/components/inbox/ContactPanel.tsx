@@ -56,7 +56,7 @@ export function ContactPanel({ conversationId }: { conversationId: string }) {
   const initial = (detail.contactName ?? '?').trim().charAt(0).toUpperCase()
 
   return (
-    <div className="flex h-full flex-col gap-4 overflow-y-auto border-l border-border bg-white p-4">
+    <div className="flex h-full min-h-0 flex-col gap-4 overflow-y-auto border-l border-border bg-white p-4">
       <div className="flex items-center gap-3">
         {detail.avatarUrl ? (
           <img

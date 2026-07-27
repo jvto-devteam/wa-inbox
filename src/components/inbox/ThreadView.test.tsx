@@ -186,7 +186,7 @@ describe('ThreadView live delivery-status updates', () => {
 
     render(<ThreadView conversationId="conv_1" />)
 
-    await waitFor(() => expect(screen.getByText('SENT')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByRole('img', { name: 'Terkirim' })).toBeInTheDocument())
 
     const es = FakeEventSource.instances[0]
     act(() => {
@@ -198,7 +198,7 @@ describe('ThreadView live delivery-status updates', () => {
     })
 
     await waitFor(() => expect(screen.getByText('FAILED')).toBeInTheDocument())
-    expect(screen.queryByText('SENT')).not.toBeInTheDocument()
+    expect(screen.queryByRole('img', { name: 'Terkirim' })).not.toBeInTheDocument()
     expect(screen.getAllByText('Penawaran paket Ijen')).toHaveLength(1)
   })
 
@@ -207,7 +207,7 @@ describe('ThreadView live delivery-status updates', () => {
 
     render(<ThreadView conversationId="conv_1" />)
 
-    await waitFor(() => expect(screen.getByText('SENT')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByRole('img', { name: 'Terkirim' })).toBeInTheDocument())
 
     const es = FakeEventSource.instances[0]
     act(() => {
@@ -218,7 +218,91 @@ describe('ThreadView live delivery-status updates', () => {
       })
     })
 
-    await waitFor(() => expect(screen.getByText('SENT')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByRole('img', { name: 'Terkirim' })).toBeInTheDocument())
+  })
+})
+
+describe('ThreadView read tracking', () => {
+  function mockFetchWithDetail(messages: unknown[], detail: { lastReadAt: string | null }) {
+    return vi.fn((url: RequestInfo | URL, init?: RequestInit) => {
+      const s = String(url)
+      if (s.endsWith('/messages')) return Promise.resolve({ ok: true, json: () => Promise.resolve(messages) } as Response)
+      if (s.endsWith('/api/accounts')) return Promise.resolve({ ok: true, json: () => Promise.resolve([]) } as Response)
+      if (s.endsWith('/read') && init?.method === 'PATCH') {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ lastReadAt: new Date().toISOString() }) } as Response)
+      }
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({ botEnabled: false, assignedAgentId: null, ...detail }) } as Response)
+    })
+  }
+
+  it('marks the conversation as read on mount', async () => {
+    const fetchMock = mockFetchWithDetail([], { lastReadAt: null })
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<ThreadView conversationId="conv_1" />)
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith('/api/conversations/conv_1/read', expect.objectContaining({ method: 'PATCH' }))
+    )
+  })
+
+  it('marks the conversation as read again when a new message arrives while the thread is open', async () => {
+    const fetchMock = mockFetchWithDetail([], { lastReadAt: null })
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<ThreadView conversationId="conv_1" />)
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith('/api/conversations/conv_1/read', expect.objectContaining({ method: 'PATCH' }))
+    )
+    fetchMock.mockClear()
+
+    const es = FakeEventSource.instances[0]
+    act(() => {
+      es.emit({
+        type: 'message.created',
+        conversationId: 'conv_1',
+        message: { id: 'm_new', direction: 'INBOUND', content: 'Halo lagi', channel: 'OFFICIAL', sentBy: 'CUSTOMER', deliveryStatus: 'DELIVERED', createdAt: new Date().toISOString(), botTrace: null },
+      })
+    })
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith('/api/conversations/conv_1/read', expect.objectContaining({ method: 'PATCH' }))
+    )
+  })
+
+  it('shows an unread divider above the first inbound message received after lastReadAt', async () => {
+    const messages = [
+      { id: 'm1', direction: 'INBOUND', content: 'Pesan lama', channel: 'OFFICIAL', sentBy: 'CUSTOMER', deliveryStatus: 'DELIVERED', createdAt: '2026-07-20T09:00:00.000Z', botTrace: null },
+      { id: 'm2', direction: 'INBOUND', content: 'Pesan baru', channel: 'OFFICIAL', sentBy: 'CUSTOMER', deliveryStatus: 'DELIVERED', createdAt: '2026-07-20T11:00:00.000Z', botTrace: null },
+    ]
+    vi.stubGlobal('fetch', mockFetchWithDetail(messages, { lastReadAt: '2026-07-20T10:00:00.000Z' }))
+
+    render(<ThreadView conversationId="conv_1" />)
+
+    await waitFor(() => expect(screen.getByText('Pesan baru')).toBeInTheDocument())
+    expect(screen.getByText('Pesan belum dibaca')).toBeInTheDocument()
+
+    // The divider sits between the already-read message and the first unread one, not
+    // above the whole thread.
+    const container = screen.getByText('Pesan lama').closest('.space-y-3')!
+    const order = [...container.querySelectorAll('div')].map((el) => el.textContent).join('|')
+    const oldIndex = order.indexOf('Pesan lama')
+    const dividerIndex = order.indexOf('Pesan belum dibaca')
+    const newIndex = order.indexOf('Pesan baru')
+    expect(oldIndex).toBeLessThan(dividerIndex)
+    expect(dividerIndex).toBeLessThan(newIndex)
+  })
+
+  it('shows no unread divider when the conversation has never been read before', async () => {
+    const messages = [
+      { id: 'm1', direction: 'INBOUND', content: 'Halo', channel: 'OFFICIAL', sentBy: 'CUSTOMER', deliveryStatus: 'DELIVERED', createdAt: new Date().toISOString(), botTrace: null },
+    ]
+    vi.stubGlobal('fetch', mockFetchWithDetail(messages, { lastReadAt: null }))
+
+    render(<ThreadView conversationId="conv_1" />)
+
+    await waitFor(() => expect(screen.getByText('Halo')).toBeInTheDocument())
+    expect(screen.queryByText('Pesan belum dibaca')).not.toBeInTheDocument()
   })
 })
 
@@ -334,5 +418,72 @@ describe('ThreadView assign-agent dropdown', () => {
 
     await waitFor(() => expect(screen.getByText('Gagal mengubah penugasan agen')).toBeInTheDocument())
     expect(select.value).toBe('')
+  })
+})
+
+describe('ThreadView reply/quote', () => {
+  const inboundMessage = {
+    id: 'm1',
+    direction: 'INBOUND',
+    content: 'Paketnya yang 3D2N kan?',
+    channel: 'OFFICIAL',
+    sentBy: 'CUSTOMER',
+    deliveryStatus: 'DELIVERED',
+    createdAt: new Date().toISOString(),
+    botTrace: null,
+  }
+
+  function mockFetch(opts: { sendResponse?: unknown } = {}) {
+    return vi.fn((url: RequestInfo | URL, init?: RequestInit) => {
+      const s = String(url)
+      if (s.endsWith('/messages')) return Promise.resolve({ ok: true, json: () => Promise.resolve([inboundMessage]) } as Response)
+      if (s.endsWith('/api/accounts')) return Promise.resolve({ ok: true, json: () => Promise.resolve([]) } as Response)
+      if (s === '/api/send' && init?.method === 'POST') {
+        return Promise.resolve(
+          opts.sendResponse ?? ({ ok: true, json: () => Promise.resolve({ id: 'm_new', deliveryStatus: 'SENT' }) } as Response)
+        )
+      }
+      if (s.endsWith('/read') && init?.method === 'PATCH') {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ lastReadAt: new Date().toISOString() }) } as Response)
+      }
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({ botEnabled: false, assignedAgentId: null, lastReadAt: null }) } as Response)
+    })
+  }
+
+  it('shows the reply preview bar in ComposeBox after clicking Balas on a message', async () => {
+    vi.stubGlobal('fetch', mockFetch())
+
+    render(<ThreadView conversationId="conv_1" />)
+    await waitFor(() => expect(screen.getByText('Paketnya yang 3D2N kan?')).toBeInTheDocument())
+
+    fireEvent.click(screen.getByRole('button', { name: 'Balas pesan ini' }))
+
+    expect(screen.getByText('Membalas Pelanggan')).toBeInTheDocument()
+  })
+
+  it('clears the reply preview bar after a successful send', async () => {
+    vi.stubGlobal('fetch', mockFetch())
+
+    render(<ThreadView conversationId="conv_1" />)
+    await waitFor(() => expect(screen.getByText('Paketnya yang 3D2N kan?')).toBeInTheDocument())
+    fireEvent.click(screen.getByRole('button', { name: 'Balas pesan ini' }))
+    expect(screen.getByText('Membalas Pelanggan')).toBeInTheDocument()
+
+    fireEvent.change(screen.getByLabelText('Pesan'), { target: { value: 'Iya benar' } })
+    fireEvent.click(screen.getByText('Kirim'))
+
+    await waitFor(() => expect(screen.queryByText('Membalas Pelanggan')).not.toBeInTheDocument())
+  })
+
+  it('clears the reply preview bar when the cancel button is clicked', async () => {
+    vi.stubGlobal('fetch', mockFetch())
+
+    render(<ThreadView conversationId="conv_1" />)
+    await waitFor(() => expect(screen.getByText('Paketnya yang 3D2N kan?')).toBeInTheDocument())
+    fireEvent.click(screen.getByRole('button', { name: 'Balas pesan ini' }))
+
+    fireEvent.click(screen.getByLabelText('Batalkan balasan'))
+
+    expect(screen.queryByText('Membalas Pelanggan')).not.toBeInTheDocument()
   })
 })

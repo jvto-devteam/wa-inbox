@@ -10,6 +10,7 @@ export type ConversationSummary = {
   lastMessageAt: string
   botEnabled: boolean
   status: string
+  unreadCount: number
   labels: Array<{ id: string; name: string; color: string }>
 }
 
@@ -28,6 +29,7 @@ export function ConversationListItem({
     sentBy: conversation.lastMessageSentBy,
     content: conversation.lastMessage,
   })
+  const isUnread = conversation.unreadCount > 0
 
   return (
     <button
@@ -35,12 +37,24 @@ export function ConversationListItem({
       className={`flex w-full flex-col gap-1 border-b border-border p-3 text-left ${active ? 'bg-accent' : 'hover:bg-muted/50'}`}
     >
       <div className="flex items-center justify-between">
-        <span className="font-medium">{conversation.contactName ?? conversation.contactPhone}</span>
-        <Badge variant={conversation.botEnabled ? 'brand' : 'muted'}>
-          {conversation.botEnabled ? 'Bot' : 'Agen'}
-        </Badge>
+        <span className={isUnread ? 'font-semibold' : 'font-medium'}>
+          {conversation.contactName ?? conversation.contactPhone}
+        </span>
+        <div className="flex items-center gap-1.5">
+          <Badge variant={conversation.botEnabled ? 'brand' : 'muted'}>
+            {conversation.botEnabled ? 'Bot' : 'Agen'}
+          </Badge>
+          {isUnread && (
+            <span
+              aria-label={`${conversation.unreadCount} pesan belum dibaca`}
+              className="flex h-5 min-w-5 items-center justify-center rounded-full bg-brand px-1.5 text-[11px] font-semibold text-white"
+            >
+              {conversation.unreadCount > 99 ? '99+' : conversation.unreadCount}
+            </span>
+          )}
+        </div>
       </div>
-      <span className="truncate text-sm text-muted-foreground">
+      <span className={`truncate text-sm ${isUnread ? 'font-medium text-foreground' : 'text-muted-foreground'}`}>
         {isHandoffLog ? HANDOFF_LOG_TEXT : conversation.lastMessage}
       </span>
       <div className="flex gap-1">

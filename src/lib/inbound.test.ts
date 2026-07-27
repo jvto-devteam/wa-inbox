@@ -49,6 +49,7 @@ const conversationRow = {
   bookingCheckedAt: null,
   tripBrief: null,
   lastMessageAt: new Date(),
+  lastReadAt: null,
   createdAt: new Date(),
 }
 
@@ -227,6 +228,174 @@ describe('ingestMetaMessage timestamp handling', () => {
     const createdAt = (mockPrisma.message.create.mock.calls[0][0] as { data: { createdAt: Date } }).data.createdAt
     expect(Number.isNaN(createdAt.getTime())).toBe(false)
     expect(createdAt.getTime()).toBeGreaterThanOrEqual(before)
+  })
+})
+
+describe('ingestMetaMessage media messages', () => {
+  it('stores mediaId, mimeType, and the caption as content for an inbound image', async () => {
+    stubHappyPath({ conversation: { botEnabled: false } })
+
+    await ingestMetaMessage({
+      entry: [{
+        changes: [{
+          value: {
+            messages: [{
+              id: 'wamid.IMG1',
+              from: '6281234567890',
+              timestamp: '1700000000',
+              type: 'image',
+              image: { id: 'media_123', mime_type: 'image/jpeg', caption: 'Ini paketnya ya' },
+            }],
+          },
+        }],
+      }],
+    })
+
+    expect(mockPrisma.message.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        type: 'image',
+        content: 'Ini paketnya ya',
+        mediaId: 'media_123',
+        mimeType: 'image/jpeg',
+        fileName: null,
+      }),
+    }))
+  })
+
+  it('stores the filename for an inbound document, with null content when there is no caption', async () => {
+    stubHappyPath({ conversation: { botEnabled: false } })
+
+    await ingestMetaMessage({
+      entry: [{
+        changes: [{
+          value: {
+            messages: [{
+              id: 'wamid.DOC1',
+              from: '6281234567890',
+              timestamp: '1700000000',
+              type: 'document',
+              document: { id: 'media_456', mime_type: 'application/pdf', filename: 'itinerary.pdf' },
+            }],
+          },
+        }],
+      }],
+    })
+
+    expect(mockPrisma.message.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        type: 'document',
+        content: null,
+        mediaId: 'media_456',
+        mimeType: 'application/pdf',
+        fileName: 'itinerary.pdf',
+      }),
+    }))
+  })
+
+  it('does not invoke the bot for an image message even when it has a caption', async () => {
+    // Wave 2's `botCanAnswer` check is keyed off `message.type === 'text'`; a captioned photo
+    // must not be treated as a question the bot should answer.
+    stubHappyPath({ conversation: { botEnabled: true } })
+
+    await ingestMetaMessage({
+      entry: [{
+        changes: [{
+          value: {
+            messages: [{
+              id: 'wamid.IMG2',
+              from: '6281234567890',
+              timestamp: '1700000000',
+              type: 'image',
+              image: { id: 'media_789', mime_type: 'image/jpeg', caption: 'Paket Ijen berapa harganya?' },
+            }],
+          },
+        }],
+      }],
+    })
+
+    expect(decideAndRespond).not.toHaveBeenCalled()
+  })
+
+  it('leaves mediaId/mimeType/fileName null for an ordinary text message', async () => {
+    stubHappyPath({ conversation: { botEnabled: false } })
+
+    await ingestMetaMessage(samplePayload)
+
+    expect(mockPrisma.message.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ mediaId: null, mimeType: null, fileName: null }),
+    }))
+  })
+})
+
+describe('ingestMetaMessage quoted replies', () => {
+  it('resolves context.id to the local parent message and stores it as replyToId', async () => {
+    stubHappyPath({ conversation: { botEnabled: false } })
+    mockPrisma.message.findUnique
+      .mockResolvedValueOnce(null) // idempotency check for the new message itself
+      .mockResolvedValueOnce({ id: 'msg_parent' } as never) // lookup of the quoted parent
+
+    await ingestMetaMessage({
+      entry: [{
+        changes: [{
+          value: {
+            messages: [{
+              id: 'wamid.REPLY1',
+              from: '6281234567890',
+              timestamp: '1700000000',
+              type: 'text',
+              text: { body: 'Iya benar' },
+              context: { id: 'wamid.PARENT' },
+            }],
+          },
+        }],
+      }],
+    })
+
+    expect(mockPrisma.message.findUnique).toHaveBeenCalledWith({ where: { externalId: 'wamid.PARENT' } })
+    expect(mockPrisma.message.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ replyToId: 'msg_parent' }),
+      include: { replyTo: true },
+    }))
+  })
+
+  it('stores a null replyToId when the quoted parent was never ingested locally', async () => {
+    stubHappyPath({ conversation: { botEnabled: false } })
+    mockPrisma.message.findUnique
+      .mockResolvedValueOnce(null) // idempotency check
+      .mockResolvedValueOnce(null) // parent lookup: not found
+
+    await ingestMetaMessage({
+      entry: [{
+        changes: [{
+          value: {
+            messages: [{
+              id: 'wamid.REPLY2',
+              from: '6281234567890',
+              timestamp: '1700000000',
+              type: 'text',
+              text: { body: 'Balasan ke pesan lama' },
+              context: { id: 'wamid.UNKNOWN' },
+            }],
+          },
+        }],
+      }],
+    })
+
+    expect(mockPrisma.message.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ replyToId: null }),
+    }))
+  })
+
+  it('does not look up a parent at all for an ordinary (non-reply) message', async () => {
+    stubHappyPath({ conversation: { botEnabled: false } })
+
+    await ingestMetaMessage(samplePayload)
+
+    // Only the idempotency check -- no second findUnique for a context that doesn't exist.
+    expect(mockPrisma.message.findUnique).toHaveBeenCalledTimes(1)
+    expect(mockPrisma.message.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ replyToId: null }),
+    }))
   })
 })
 
@@ -510,7 +679,7 @@ describe('ingestMetaMessage delivery-status callbacks', () => {
     expect(broadcast).toHaveBeenCalledWith({
       type: 'message.updated',
       conversationId: 'conv_1',
-      message: { id: 'msg_1', conversationId: 'conv_1', deliveryStatus: 'DELIVERED' },
+      message: { id: 'msg_1', conversationId: 'conv_1', deliveryStatus: 'DELIVERED', mediaUrl: null },
     })
   })
 

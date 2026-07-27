@@ -15,11 +15,13 @@ const bodySchema = z.union([
     conversationId: z.string(),
     text: z.string().min(1),
     channel: z.enum(['OFFICIAL', 'UNOFFICIAL']).optional(),
+    replyToId: z.string().optional(),
   }),
   z.object({
     to: z.string(),
     text: z.string().min(1),
     channel: z.enum(['OFFICIAL', 'UNOFFICIAL']).optional(),
+    replyToId: z.string().optional(),
   }),
 ])
 
@@ -48,6 +50,7 @@ export async function POST(req: Request) {
     channel: parsed.data.channel,
     sentBy: 'AGENT',
     agentId: session?.accountId,
+    replyToId: parsed.data.replyToId,
   })
   return NextResponse.json(message)
 }

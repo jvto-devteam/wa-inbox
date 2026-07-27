@@ -1,25 +1,31 @@
 'use client'
 import { useEffect, useRef, useState } from 'react'
-import type { MessageView } from './MessageBubble'
+import { SENDER_LABEL, type MessageView } from './MessageBubble'
 import { Select } from '@/components/ui/select'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { fetchJson } from '@/lib/fetch-json'
+import { formatWhatsAppText } from '@/lib/whatsapp-format'
 
 type QuickReplyTemplate = { id: string; name: string; category: string | null; body: string }
-type TemplateApiRow = QuickReplyTemplate & { type: string }
+type OfficialTemplate = { id: string; name: string; body: string; variables: string[] | null; metaStatus: string; format: string }
+type TemplateApiRow = QuickReplyTemplate & { type: string; metaStatus: string; format: string; variables: string[] | null }
 
 const UNCATEGORIZED_LABEL = 'Lainnya'
 
 export function ComposeBox({
   conversationId,
   botEnabled,
+  replyingTo,
+  onCancelReply,
   onSent,
   onBotToggled,
 }: {
   conversationId: string
   botEnabled: boolean
+  replyingTo?: MessageView | null
+  onCancelReply?: () => void
   onSent: (m: MessageView) => void
   onBotToggled: (enabled: boolean) => void
 }) {
@@ -33,9 +39,15 @@ export function ComposeBox({
   const [channel, setChannel] = useState<'OFFICIAL' | 'UNOFFICIAL'>('OFFICIAL')
   const [sending, setSending] = useState(false)
   const [templates, setTemplates] = useState<QuickReplyTemplate[]>([])
+  const [officialTemplates, setOfficialTemplates] = useState<OfficialTemplate[]>([])
   const [pickerOpen, setPickerOpen] = useState(false)
   const [templateError, setTemplateError] = useState<string | null>(null)
   const [sendError, setSendError] = useState<string | null>(null)
+  // The OFFICIAL template currently being filled in (its variables need values before it can
+  // be dispatched) -- null means the picker is just showing the list, not a param form.
+  const [templateForm, setTemplateForm] = useState<OfficialTemplate | null>(null)
+  const [templateParamValues, setTemplateParamValues] = useState<string[]>([])
+  const [templateSending, setTemplateSending] = useState(false)
   // Guards the seed below against clobbering a deliberate per-message override:
   // if the agent picks a channel before the settings fetch resolves, their
   // choice wins.
@@ -81,7 +93,7 @@ export function ComposeBox({
     try {
       const res = await fetch('/api/send', {
         method: 'POST',
-        body: JSON.stringify({ conversationId, text, channel }),
+        body: JSON.stringify({ conversationId, text, channel, replyToId: replyingTo?.id }),
       })
       if (!res.ok) {
         // fetchJson isn't used here: on a 401 it navigates away immediately, which would
@@ -103,6 +115,7 @@ export function ComposeBox({
         deliveryStatus: message.deliveryStatus,
         createdAt: new Date().toISOString(),
         botTrace: null,
+        replyTo: replyingTo ? { id: replyingTo.id, content: replyingTo.content, type: replyingTo.type ?? 'text', sentBy: replyingTo.sentBy } : null,
       })
       setText('')
     } catch {
@@ -130,6 +143,7 @@ export function ComposeBox({
   async function toggleTemplatePicker() {
     if (pickerOpen) {
       setPickerOpen(false)
+      setTemplateForm(null)
       return
     }
     setTemplateError(null)
@@ -141,6 +155,10 @@ export function ComposeBox({
       }
       const all = (await res.json()) as TemplateApiRow[]
       setTemplates(all.filter((t) => t.type === 'QUICK_REPLY'))
+      // Only APPROVED templates are actually sendable via the real Cloud API dispatch --
+      // Meta rejects a send attempt for anything still PENDING/REJECTED, so there is no
+      // point offering those here.
+      setOfficialTemplates(all.filter((t) => t.type === 'OFFICIAL' && t.metaStatus === 'APPROVED'))
       setPickerOpen(true)
     } catch {
       setTemplateError('Gagal memuat template')
@@ -152,6 +170,53 @@ export function ComposeBox({
     setPickerOpen(false)
   }
 
+  function selectOfficialTemplate(t: OfficialTemplate) {
+    if (t.variables && t.variables.length > 0) {
+      setTemplateForm(t)
+      setTemplateParamValues(new Array(t.variables.length).fill(''))
+      return
+    }
+    sendTemplate(t, [])
+  }
+
+  // Dispatches a real Cloud API template message (type: 'template'), as opposed to
+  // selectTemplate above, which just pastes a QUICK_REPLY's body into the plain-text input.
+  async function sendTemplate(t: OfficialTemplate, bodyParams: string[]) {
+    setSendError(null)
+    setTemplateSending(true)
+    try {
+      const res = await fetch('/api/send/template', {
+        method: 'POST',
+        body: JSON.stringify({ conversationId, templateId: t.id, bodyParams }),
+      })
+      if (!res.ok) {
+        const data = await res.json().catch(() => null)
+        setSendError(data?.error ?? 'Gagal mengirim template')
+        return
+      }
+      const message = await res.json()
+      onSent({
+        id: message.id,
+        direction: 'OUTBOUND',
+        content: message.content,
+        channel: 'OFFICIAL',
+        sentBy: 'AGENT',
+        deliveryStatus: message.deliveryStatus,
+        createdAt: new Date().toISOString(),
+        botTrace: null,
+        type: 'template',
+        templatePayload: message.templatePayload,
+      })
+      setPickerOpen(false)
+      setTemplateForm(null)
+      setTemplateParamValues([])
+    } catch {
+      setSendError('Gagal mengirim template')
+    } finally {
+      setTemplateSending(false)
+    }
+  }
+
   const templatesByCategory = templates.reduce<Record<string, QuickReplyTemplate[]>>((acc, t) => {
     const category = t.category ?? UNCATEGORIZED_LABEL
     ;(acc[category] ??= []).push(t)
@@ -160,6 +225,24 @@ export function ComposeBox({
 
   return (
     <div className="flex flex-col gap-2 border-t border-border bg-white p-3">
+      {replyingTo && (
+        <div className="flex items-center justify-between gap-2 rounded border-l-2 border-brand bg-secondary px-2.5 py-1.5 text-xs">
+          <div className="min-w-0">
+            <p className="font-medium text-brand">Membalas {SENDER_LABEL[replyingTo.sentBy] ?? replyingTo.sentBy}</p>
+            <p className="truncate text-muted-foreground">
+              {replyingTo.content ? formatWhatsAppText(replyingTo.content) : replyingTo.type && replyingTo.type !== 'text' ? `[${replyingTo.type}]` : ''}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onCancelReply}
+            aria-label="Batalkan balasan"
+            className="shrink-0 text-muted-foreground hover:text-foreground"
+          >
+            ✕
+          </button>
+        </div>
+      )}
       {botEnabled && (
         <button
           type="button"
@@ -169,34 +252,87 @@ export function ComposeBox({
           Ambil Alih dari Bot
         </button>
       )}
-      {pickerOpen && (
+      {pickerOpen && templateForm && (
+        <Card className="space-y-3 p-3">
+          <h4 className="text-sm font-medium">Kirim Template: {templateForm.name}</h4>
+          {templateForm.variables?.map((varName, i) => (
+            <div key={varName} className="space-y-1">
+              <label htmlFor={`tpl-param-${i}`} className="text-xs text-muted-foreground">
+                {varName}
+              </label>
+              <Input
+                id={`tpl-param-${i}`}
+                aria-label={varName}
+                value={templateParamValues[i] ?? ''}
+                onChange={(e) =>
+                  setTemplateParamValues((prev) => prev.map((v, idx) => (idx === i ? e.target.value : v)))
+                }
+              />
+            </div>
+          ))}
+          <div className="flex gap-2">
+            <Button
+              type="button"
+              size="sm"
+              disabled={templateSending}
+              onClick={() => sendTemplate(templateForm, templateParamValues)}
+            >
+              Kirim Template
+            </Button>
+            <Button type="button" variant="outline" size="sm" onClick={() => setTemplateForm(null)}>
+              Batal
+            </Button>
+          </div>
+        </Card>
+      )}
+      {pickerOpen && !templateForm && (
         <Card className="max-h-56 space-y-3 overflow-y-auto p-3">
-          {templates.length === 0 ? (
-            <p className="text-sm text-muted-foreground">Belum ada template quick reply.</p>
+          {templates.length === 0 && officialTemplates.length === 0 ? (
+            <p className="text-sm text-muted-foreground">Belum ada template.</p>
           ) : (
-            Object.entries(templatesByCategory).map(([category, items]) => (
-              <div key={category} className="space-y-1.5">
-                {/* .toUpperCase() transforms the actual text node (not just CSS text-transform)
-                    so a category heading can never collide with an item's own `name` text when
-                    they happen to be the same string — RTL's getByText/findByText would otherwise
-                    throw on the ambiguous match. */}
-                <h4 className="text-[11px] font-semibold tracking-wide text-muted-foreground">
-                  {category.toUpperCase()}
-                </h4>
-                <div className="flex flex-wrap gap-1.5">
-                  {items.map((t) => (
-                    <button
-                      key={t.id}
-                      type="button"
-                      onClick={() => selectTemplate(t.body)}
-                      className="badge cursor-pointer bg-secondary text-secondary-foreground hover:bg-slate-200"
-                    >
-                      {t.name}
-                    </button>
-                  ))}
+            <>
+              {officialTemplates.length > 0 && (
+                <div className="space-y-1.5">
+                  <h4 className="text-[11px] font-semibold tracking-wide text-muted-foreground">TEMPLATE RESMI (META)</h4>
+                  <div className="flex flex-wrap gap-1.5">
+                    {officialTemplates.map((t) => (
+                      <button
+                        key={t.id}
+                        type="button"
+                        onClick={() => selectOfficialTemplate(t)}
+                        className="badge cursor-pointer bg-brand/10 text-brand hover:bg-brand/20"
+                      >
+                        {t.name}
+                        {t.format === 'CAROUSEL' && ' 🎠'}
+                      </button>
+                    ))}
+                  </div>
                 </div>
-              </div>
-            ))
+              )}
+              {Object.entries(templatesByCategory).map(([category, items]) => (
+                <div key={category} className="space-y-1.5">
+                  {/* .toUpperCase() transforms the actual text node (not just CSS text-transform)
+                      so a category heading can never collide with an item's own `name` text when
+                      they happen to be the same string — RTL's getByText/findByText would otherwise
+                      throw on the ambiguous match. */}
+                  <h4 className="text-[11px] font-semibold tracking-wide text-muted-foreground">
+                    {category.toUpperCase()}
+                  </h4>
+                  <div className="flex flex-wrap gap-1.5">
+                    {items.map((t) => (
+                      <button
+                        key={t.id}
+                        type="button"
+                        onClick={() => selectTemplate(t.body)}
+                        className="badge cursor-pointer bg-secondary text-secondary-foreground hover:bg-slate-200"
+                      >
+                        {t.name}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </>
           )}
         </Card>
       )}

@@ -1,7 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { submitMetaTemplate } from './templates'
+import { submitMetaTemplate, submitCarouselTemplate } from './templates'
+import { uploadMetaResumable } from './media-upload'
 
-beforeEach(() => vi.stubGlobal('fetch', vi.fn()))
+vi.mock('./media-upload', () => ({ uploadMetaResumable: vi.fn() }))
+
+beforeEach(() => {
+  vi.stubGlobal('fetch', vi.fn())
+  vi.mocked(uploadMetaResumable).mockReset()
+})
 
 describe('submitMetaTemplate', () => {
   it('posts to the WABA message_templates endpoint', async () => {
@@ -14,5 +20,86 @@ describe('submitMetaTemplate', () => {
 
     expect(result).toEqual({ metaId: 'tpl_meta_1', status: 'PENDING' })
     expect(fetch).toHaveBeenCalledWith('https://graph.facebook.com/v20.0/waba_1/message_templates', expect.objectContaining({ method: 'POST' }))
+  })
+})
+
+describe('submitCarouselTemplate', () => {
+  const card = {
+    mediaType: 'IMAGE' as const,
+    mediaUrl: 'https://example.com/ijen.jpg',
+    bodyText: 'Paket Ijen 3D2N',
+    buttons: [{ type: 'QUICK_REPLY' as const, text: 'Pesan Sekarang' }],
+  }
+
+  it('uploads each card header via the resumable upload API and submits a CAROUSEL component', async () => {
+    vi.mocked(uploadMetaResumable).mockResolvedValue({ handle: 'handle_abc' })
+    ;(fetch as any).mockResolvedValue({ ok: true, json: async () => ({ id: 'tpl_carousel_1', status: 'PENDING' }) })
+
+    const result = await submitCarouselTemplate(
+      { wabaId: 'waba_1', accessToken: 'tok' },
+      'app_123',
+      { name: 'katalog_paket', category: 'MARKETING', body: 'Halo, ini rekomendasi untuk Anda:', cards: [card] }
+    )
+
+    expect(result).toEqual({ metaId: 'tpl_carousel_1', status: 'PENDING' })
+    expect(uploadMetaResumable).toHaveBeenCalledWith('app_123', 'tok', card.mediaUrl)
+
+    const [, options] = (fetch as any).mock.calls[0]
+    const payload = JSON.parse(options.body)
+    expect(payload.components[0]).toEqual({ type: 'BODY', text: 'Halo, ini rekomendasi untuk Anda:' })
+    expect(payload.components[1].type).toBe('CAROUSEL')
+    expect(payload.components[1].cards[0].components).toEqual([
+      { type: 'HEADER', format: 'IMAGE', example: { header_handle: ['handle_abc'] } },
+      { type: 'BODY', text: 'Paket Ijen 3D2N' },
+      { type: 'BUTTONS', buttons: [{ type: 'QUICK_REPLY', text: 'Pesan Sekarang' }] },
+    ])
+  })
+
+  it('omits the BUTTONS component for a card with no buttons', async () => {
+    vi.mocked(uploadMetaResumable).mockResolvedValue({ handle: 'handle_abc' })
+    ;(fetch as any).mockResolvedValue({ ok: true, json: async () => ({ id: 'tpl_carousel_2', status: 'PENDING' }) })
+
+    await submitCarouselTemplate(
+      { wabaId: 'waba_1', accessToken: 'tok' },
+      'app_123',
+      { name: 'katalog_paket', category: 'MARKETING', body: 'Halo', cards: [{ ...card, buttons: [] }] }
+    )
+
+    const [, options] = (fetch as any).mock.calls[0]
+    const payload = JSON.parse(options.body)
+    expect(payload.components[1].cards[0].components).toEqual([
+      { type: 'HEADER', format: 'IMAGE', example: { header_handle: ['handle_abc'] } },
+      { type: 'BODY', text: 'Paket Ijen 3D2N' },
+    ])
+  })
+
+  it('maps URL and PHONE_NUMBER button types to Meta\'s expected shape', async () => {
+    vi.mocked(uploadMetaResumable).mockResolvedValue({ handle: 'handle_abc' })
+    ;(fetch as any).mockResolvedValue({ ok: true, json: async () => ({ id: 'tpl_carousel_3', status: 'PENDING' }) })
+
+    await submitCarouselTemplate(
+      { wabaId: 'waba_1', accessToken: 'tok' },
+      'app_123',
+      {
+        name: 'katalog_paket', category: 'MARKETING', body: 'Halo',
+        cards: [{
+          ...card,
+          buttons: [
+            { type: 'URL', text: 'Lihat Detail', url: 'https://jvto.com/ijen' },
+            { type: 'PHONE_NUMBER', text: 'Telepon Kami', phoneNumber: '+622112345678' },
+          ],
+        }],
+      }
+    )
+
+    const [, options] = (fetch as any).mock.calls[0]
+    const payload = JSON.parse(options.body)
+    expect(payload.components[1].cards[0].components[2]).toEqual({
+      type: 'BUTTONS',
+      buttons: [
+        { type: 'URL', text: 'Lihat Detail', url: 'https://jvto.com/ijen' },
+        { type: 'PHONE_NUMBER', text: 'Telepon Kami', phone_number: '+622112345678' },
+      ],
+    })
   })
 })

@@ -5,7 +5,7 @@ import { ConversationListItem } from './ConversationListItem'
 const summary = {
   id: 'conv_1', contactName: 'Bruno Figarola', contactPhone: '6281234567890',
   lastMessage: 'Halo!', lastMessageSentBy: 'CUSTOMER', lastMessageAt: new Date().toISOString(),
-  botEnabled: true, status: 'OPEN', labels: [{ id: 'lbl_1', name: 'Confirmed Booking', color: '#3C6B42' }],
+  botEnabled: true, status: 'OPEN', unreadCount: 0, labels: [{ id: 'lbl_1', name: 'Confirmed Booking', color: '#3C6B42' }],
 }
 
 describe('ConversationListItem', () => {
@@ -27,5 +27,16 @@ describe('ConversationListItem', () => {
       />
     )
     expect(screen.getByText('Bot menyerahkan ke agen — lihat alasan')).toBeInTheDocument()
+  })
+
+  it('shows an unread badge and bolds the row when unreadCount is greater than zero', () => {
+    render(<ConversationListItem conversation={{ ...summary, unreadCount: 3 }} onClick={() => {}} />)
+    expect(screen.getByText('3')).toBeInTheDocument()
+    expect(screen.getByLabelText('3 pesan belum dibaca')).toBeInTheDocument()
+  })
+
+  it('shows no unread badge when unreadCount is zero', () => {
+    render(<ConversationListItem conversation={summary} onClick={() => {}} />)
+    expect(screen.queryByLabelText(/pesan belum dibaca/)).not.toBeInTheDocument()
   })
 })

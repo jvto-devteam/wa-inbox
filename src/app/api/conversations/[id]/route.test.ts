@@ -44,6 +44,7 @@ describe('GET /api/conversations/[id]', () => {
       labels: [{ id: 'lbl_1', name: 'Confirmed Booking', color: '#3C6B42' }],
       pipelineStage: 'booked',
       assignedAgentId: 'acc_1',
+      lastReadAt: null,
     })
     expect(mockPrisma.conversation.findUniqueOrThrow).toHaveBeenCalledWith({
       where: { id: 'conv_1' },

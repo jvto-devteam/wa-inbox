@@ -22,7 +22,21 @@ export async function GET(req: Request) {
     },
   })
 
-  return NextResponse.json(conversations.map((c) => ({
+  // One count query per conversation rather than a single aggregated one: Prisma
+  // can't compare a relation's own column (Message.createdAt) against another
+  // column on the parent row (Conversation.lastReadAt) within one query, and at
+  // this app's scale (a single tour operator's inbox) that's the same accepted
+  // trade-off the rest of this codebase already makes (see Message's `content`
+  // index comment) rather than reaching for raw SQL.
+  const unreadCounts = await Promise.all(
+    conversations.map((c) =>
+      prisma.message.count({
+        where: { conversationId: c.id, direction: 'INBOUND', createdAt: { gt: c.lastReadAt ?? new Date(0) } },
+      })
+    )
+  )
+
+  return NextResponse.json(conversations.map((c, i) => ({
     id: c.id,
     contactName: c.contact.name,
     contactPhone: c.contact.phone,
@@ -31,6 +45,7 @@ export async function GET(req: Request) {
     lastMessageAt: c.lastMessageAt.toISOString(),
     botEnabled: c.botEnabled,
     status: c.status,
+    unreadCount: unreadCounts[i],
     labels: c.labels.map((l) => ({ id: l.label.id, name: l.label.name, color: l.label.color })),
   })))
 }

@@ -17,7 +17,16 @@ function InboxPageContent() {
     // h-full, not h-screen: src/app/(authenticated)/layout.tsx now puts a nav bar above every
     // page and owns the viewport height, so a 100vh child here would make the document taller
     // than the screen and scroll the nav bar off the top.
-    <div className="grid h-full grid-cols-[20rem_1fr_20rem]">
+    //
+    // grid-rows-[minmax(0,1fr)] is load-bearing, not decoration: a grid's implicit row
+    // defaults to `auto` sizing (tallest child's natural content height), so without it a long
+    // contact panel or a long message thread grows the row past the viewport and the *outer*
+    // layout wrapper (which owns its own overflow-y-auto) ends up scrolling the whole three-pane
+    // grid as one unit instead of each pane scrolling internally. minmax(0, 1fr) pins the row to
+    // exactly the container's height and lets it shrink, so each pane's own h-full/overflow-y-auto
+    // (see ConversationList/ThreadView/ContactPanel, each also needing min-h-0 for the same reason
+    // grid/flex items refuse to shrink below their content by default) does the actual scrolling.
+    <div className="grid h-full grid-cols-[20rem_1fr_20rem] grid-rows-[minmax(0,1fr)]">
       <ConversationList selectedId={selectedId} onSelect={setSelectedId} />
       {selectedId ? (
         <>

@@ -106,7 +106,7 @@ describe('ComposeBox quick replies', () => {
     fireEvent.click(await screen.findByText('Template'))
 
     expect(await screen.findByText('Gagal memuat template')).toBeInTheDocument()
-    expect(screen.queryByText('Belum ada template quick reply.')).not.toBeInTheDocument()
+    expect(screen.queryByText('Belum ada template.')).not.toBeInTheDocument()
   })
 
   it('shows an inline error when the templates request throws (network failure)', async () => {
@@ -124,7 +124,7 @@ describe('ComposeBox quick replies', () => {
 
     fireEvent.click(await screen.findByText('Template'))
 
-    expect(await screen.findByText('Belum ada template quick reply.')).toBeInTheDocument()
+    expect(await screen.findByText('Belum ada template.')).toBeInTheDocument()
   })
 })
 
@@ -348,5 +348,193 @@ describe('ComposeBox default channel from Settings', () => {
 
     await waitFor(() => expect(fetch).toHaveBeenCalledWith('/api/settings'))
     expect(screen.getByLabelText('Channel')).toHaveValue('OFFICIAL')
+  })
+})
+
+describe('ComposeBox reply preview', () => {
+  const replyingTo = {
+    id: 'm_parent', direction: 'INBOUND' as const, content: 'Paketnya yang 3D2N kan?', channel: 'OFFICIAL',
+    sentBy: 'CUSTOMER', deliveryStatus: 'DELIVERED', createdAt: new Date().toISOString(), botTrace: null,
+  }
+
+  it('shows the quoted preview bar when replyingTo is set', () => {
+    render(
+      <ComposeBox
+        conversationId="conv_1"
+        botEnabled={false}
+        replyingTo={replyingTo}
+        onCancelReply={() => {}}
+        onSent={() => {}}
+        onBotToggled={() => {}}
+      />
+    )
+    expect(screen.getByText('Membalas Pelanggan')).toBeInTheDocument()
+    expect(screen.getByText('Paketnya yang 3D2N kan?')).toBeInTheDocument()
+  })
+
+  it('does not show the preview bar when replyingTo is null', () => {
+    render(<ComposeBox conversationId="conv_1" botEnabled={false} onSent={() => {}} onBotToggled={() => {}} />)
+    expect(screen.queryByText(/^Membalas /)).not.toBeInTheDocument()
+  })
+
+  it('calls onCancelReply when the cancel button is clicked', () => {
+    const onCancelReply = vi.fn()
+    render(
+      <ComposeBox
+        conversationId="conv_1"
+        botEnabled={false}
+        replyingTo={replyingTo}
+        onCancelReply={onCancelReply}
+        onSent={() => {}}
+        onBotToggled={() => {}}
+      />
+    )
+    fireEvent.click(screen.getByLabelText('Batalkan balasan'))
+    expect(onCancelReply).toHaveBeenCalled()
+  })
+
+  it('sends replyToId in the /api/send body and includes replyTo in the sent message', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url: string) => {
+        if (url === '/api/send') return Promise.resolve({ ok: true, json: async () => ({ id: 'msg_1', deliveryStatus: 'SENT' }) })
+        return Promise.resolve({ ok: true, json: async () => ({ defaultChannel: 'OFFICIAL' }) })
+      })
+    )
+    const onSent = vi.fn()
+
+    render(
+      <ComposeBox
+        conversationId="conv_1"
+        botEnabled={false}
+        replyingTo={replyingTo}
+        onCancelReply={() => {}}
+        onSent={onSent}
+        onBotToggled={() => {}}
+      />
+    )
+    fireEvent.change(await screen.findByLabelText('Pesan'), { target: { value: 'Iya benar' } })
+    fireEvent.click(screen.getByText('Kirim'))
+
+    await waitFor(() =>
+      expect(fetch).toHaveBeenCalledWith(
+        '/api/send',
+        expect.objectContaining({ body: JSON.stringify({ conversationId: 'conv_1', text: 'Iya benar', channel: 'OFFICIAL', replyToId: 'm_parent' }) })
+      )
+    )
+    await waitFor(() =>
+      expect(onSent).toHaveBeenCalledWith(
+        expect.objectContaining({ replyTo: { id: 'm_parent', content: 'Paketnya yang 3D2N kan?', type: 'text', sentBy: 'CUSTOMER' } })
+      )
+    )
+  })
+})
+
+describe('ComposeBox official template dispatch', () => {
+  const quickReply = { id: 'tpl_qr', name: 'Cara Booking', type: 'QUICK_REPLY', category: 'Cara Booking', body: 'Ikuti panduan booking...', metaStatus: 'NOT_APPLICABLE', format: 'TEXT', variables: null }
+  const simpleOfficial = { id: 'tpl_simple', name: 'sapaan', type: 'OFFICIAL', category: null, body: 'Halo, ada yang bisa dibantu?', metaStatus: 'APPROVED', format: 'TEXT', variables: [] }
+  const paramOfficial = { id: 'tpl_param', name: 'booking_confirmation', type: 'OFFICIAL', category: null, body: 'Halo {{1}}, paket {{2}} dikonfirmasi.', metaStatus: 'APPROVED', format: 'TEXT', variables: ['nama', 'paket'] }
+  const pendingOfficial = { id: 'tpl_pending', name: 'belum_disetujui', type: 'OFFICIAL', category: null, body: 'x', metaStatus: 'PENDING', format: 'TEXT', variables: [] }
+
+  function mockFetch(templates: unknown[], sendResponse?: unknown) {
+    return vi.fn((url: string, init?: RequestInit) => {
+      if (url === '/api/templates') return Promise.resolve({ ok: true, json: async () => templates })
+      if (url === '/api/send/template') {
+        return Promise.resolve(
+          sendResponse ?? { ok: true, json: async () => ({ id: 'msg_1', deliveryStatus: 'SENT', content: 'Halo, ada yang bisa dibantu?', templatePayload: { templateName: 'sapaan', bodyText: 'Halo, ada yang bisa dibantu?' } }) }
+        )
+      }
+      return Promise.resolve({ ok: true, json: async () => ({ defaultChannel: 'OFFICIAL' }) })
+    })
+  }
+
+  it('only lists APPROVED official templates, not PENDING ones', async () => {
+    vi.stubGlobal('fetch', mockFetch([quickReply, simpleOfficial, pendingOfficial]))
+    render(<ComposeBox conversationId="conv_1" botEnabled={false} onSent={() => {}} onBotToggled={() => {}} />)
+
+    fireEvent.click(await screen.findByText('Template'))
+
+    expect(await screen.findByText('sapaan')).toBeInTheDocument()
+    expect(screen.queryByText('belum_disetujui')).not.toBeInTheDocument()
+  })
+
+  it('sends a variable-less official template immediately on click', async () => {
+    const fetchMock = mockFetch([simpleOfficial])
+    vi.stubGlobal('fetch', fetchMock)
+    const onSent = vi.fn()
+    render(<ComposeBox conversationId="conv_1" botEnabled={false} onSent={onSent} onBotToggled={() => {}} />)
+
+    fireEvent.click(await screen.findByText('Template'))
+    fireEvent.click(await screen.findByText('sapaan'))
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        '/api/send/template',
+        expect.objectContaining({ body: JSON.stringify({ conversationId: 'conv_1', templateId: 'tpl_simple', bodyParams: [] }) })
+      )
+    )
+    await waitFor(() =>
+      expect(onSent).toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'template', content: 'Halo, ada yang bisa dibantu?', channel: 'OFFICIAL' })
+      )
+    )
+  })
+
+  it('opens a parameter form for a template with variables instead of sending immediately', async () => {
+    vi.stubGlobal('fetch', mockFetch([paramOfficial]))
+    render(<ComposeBox conversationId="conv_1" botEnabled={false} onSent={() => {}} onBotToggled={() => {}} />)
+
+    fireEvent.click(await screen.findByText('Template'))
+    fireEvent.click(await screen.findByText('booking_confirmation'))
+
+    expect(await screen.findByText('Kirim Template: booking_confirmation')).toBeInTheDocument()
+    expect(screen.getByLabelText('nama')).toBeInTheDocument()
+    expect(screen.getByLabelText('paket')).toBeInTheDocument()
+  })
+
+  it('sends the filled-in parameters in order when the form is submitted', async () => {
+    const fetchMock = mockFetch([paramOfficial])
+    vi.stubGlobal('fetch', fetchMock)
+    render(<ComposeBox conversationId="conv_1" botEnabled={false} onSent={() => {}} onBotToggled={() => {}} />)
+
+    fireEvent.click(await screen.findByText('Template'))
+    fireEvent.click(await screen.findByText('booking_confirmation'))
+    fireEvent.change(await screen.findByLabelText('nama'), { target: { value: 'Bruno' } })
+    fireEvent.change(screen.getByLabelText('paket'), { target: { value: 'Ijen 3D2N' } })
+    fireEvent.click(screen.getByText('Kirim Template'))
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        '/api/send/template',
+        expect.objectContaining({ body: JSON.stringify({ conversationId: 'conv_1', templateId: 'tpl_param', bodyParams: ['Bruno', 'Ijen 3D2N'] }) })
+      )
+    )
+  })
+
+  it('closes the param form and returns to the list on Batal', async () => {
+    vi.stubGlobal('fetch', mockFetch([paramOfficial]))
+    render(<ComposeBox conversationId="conv_1" botEnabled={false} onSent={() => {}} onBotToggled={() => {}} />)
+
+    fireEvent.click(await screen.findByText('Template'))
+    fireEvent.click(await screen.findByText('booking_confirmation'))
+    expect(await screen.findByText('Kirim Template: booking_confirmation')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByText('Batal'))
+
+    expect(screen.queryByText('Kirim Template: booking_confirmation')).not.toBeInTheDocument()
+    expect(screen.getByText('booking_confirmation')).toBeInTheDocument()
+  })
+
+  it('shows an inline error and does not call onSent when the template send fails', async () => {
+    const fetchMock = mockFetch([simpleOfficial], { ok: false, json: async () => ({ error: 'Template belum disetujui Meta' }) })
+    vi.stubGlobal('fetch', fetchMock)
+    const onSent = vi.fn()
+    render(<ComposeBox conversationId="conv_1" botEnabled={false} onSent={onSent} onBotToggled={() => {}} />)
+
+    fireEvent.click(await screen.findByText('Template'))
+    fireEvent.click(await screen.findByText('sapaan'))
+
+    expect(await screen.findByText('Template belum disetujui Meta')).toBeInTheDocument()
+    expect(onSent).not.toHaveBeenCalled()
   })
 })

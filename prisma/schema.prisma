@@ -78,6 +78,13 @@ model Conversation {
   bookingCheckedAt DateTime?
   tripBrief        Json?
   lastMessageAt    DateTime              @default(now())
+  // Null means "never opened" -- every inbound message counts as unread. Set to
+  // now() whenever an agent opens this conversation's thread (see
+  // src/app/api/conversations/[id]/read/route.ts) or a new inbound message
+  // arrives while the thread is already open, so the sidebar's unread badge
+  // (src/components/inbox/ConversationListItem.tsx) reflects what the agent has
+  // actually seen rather than every message ever received.
+  lastReadAt       DateTime?
   createdAt        DateTime              @default(now())
   messages         Message[]
   labels           LabelOnConversation[]
@@ -116,6 +123,31 @@ model Message {
   type           String
   content        String?
   mediaUrl       String?
+  // Meta's own id for an inbound image/audio/video/document/sticker. Meta's
+  // media URLs expire (~5 min) and require an Authorization header, so the
+  // raw URL can't be stored for later display -- mediaUrl is instead computed
+  // at read time as a proxy path (/api/media/{message.id}) that re-resolves
+  // this id through the Graph API on each request. See src/lib/inbound.ts and
+  // src/app/api/media/[messageId]/route.ts.
+  mediaId        String?
+  mimeType       String?
+  // Only set for `document` messages, where Meta supplies the original filename.
+  fileName       String?
+  // The local Message this one quotes/replies to (WhatsApp's "reply" feature). Set from
+  // Meta's inbound `context.id` (matched against the parent's externalId) or from the
+  // agent's chosen reply target on send. Deliberately a self-relation to OUR row, not a
+  // raw wamid column: it survives even if the parent's own wamid becomes unresolvable,
+  // and lets the UI join straight to the parent's content/type/sender.
+  replyToId      String?
+  replyTo        Message?         @relation("MessageReplyTo", fields: [replyToId], references: [id])
+  replies        Message[]        @relation("MessageReplyTo")
+  // Set only when this OUTBOUND message was dispatched as a real Cloud API template message
+  // (type: 'template', sent via sendTemplateMessage) -- the exact resolved structure at send
+  // time: template name, substituted body text, and for a carousel, each card's real display
+  // URL/body/buttons (see src/lib/meta/carousel-types.ts's SentTemplatePayload). Stored rather
+  // than re-derived from the Template row so the bubble keeps rendering the message exactly as
+  // sent even if that Template is later edited or deleted.
+  templatePayload Json?
   channel        MessageChannel
   sentBy         SentBy
   agentId        String?
@@ -185,10 +217,21 @@ enum TemplateMetaStatus {
   NOT_APPLICABLE
 }
 
+// TEXT is every template this app supported before carousels: a single BODY component,
+// dispatched today by pasting its text into the compose box. CAROUSEL adds up to 10 media
+// cards (see Template.cards) and is only ever submitted/sent through the real Cloud API
+// template pipeline (src/lib/meta/templates.ts, src/lib/meta/messages.ts) -- there is no
+// "paste it as plain text" fallback for a carousel.
+enum TemplateFormat {
+  TEXT
+  CAROUSEL
+}
+
 model Template {
   id         String             @id @default(cuid())
   name       String
   type       TemplateType
+  format     TemplateFormat     @default(TEXT)
   // Meta's own id for this template, returned by the create-template Graph call.
   // Meta reviews templates asynchronously (often hours later) and reports the
   // outcome through the message_template_status_update webhook, keyed by this id
@@ -200,6 +243,11 @@ model Template {
   category   String?
   body       String
   variables  Json?
+  // Only set when format is CAROUSEL: CarouselCardDef[] (see src/lib/meta/carousel-types.ts)
+  // -- each card's own source media URL, body text, and buttons, exactly as submitted. The
+  // source URL is re-uploaded to Meta fresh on every send (see uploadMetaMediaFromUrl):
+  // Meta's own asset handles/ids from submission time are short-lived and cannot be reused.
+  cards      Json?
   createdAt  DateTime           @default(now())
 }
 

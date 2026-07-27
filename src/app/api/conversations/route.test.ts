@@ -81,4 +81,27 @@ describe('GET /api/conversations', () => {
       where: undefined,
     }))
   })
+
+  it('includes each conversation\'s unread inbound message count, counted since its own lastReadAt', async () => {
+    const lastReadAt = new Date('2026-07-26T00:00:00Z')
+    mockPrisma.conversation.findMany.mockResolvedValue([
+      { id: 'conv_1', botEnabled: true, status: 'OPEN', lastMessageAt: new Date(), lastReadAt, contact: { name: 'A', phone: '1' }, messages: [], labels: [] },
+      { id: 'conv_2', botEnabled: true, status: 'OPEN', lastMessageAt: new Date(), lastReadAt: null, contact: { name: 'B', phone: '2' }, messages: [], labels: [] },
+    ] as never)
+    mockPrisma.message.count.mockResolvedValueOnce(2).mockResolvedValueOnce(0)
+
+    const res = await GET(new Request('http://localhost/api/conversations'))
+    const body = await res.json()
+
+    expect(body[0].unreadCount).toBe(2)
+    expect(body[1].unreadCount).toBe(0)
+    expect(mockPrisma.message.count).toHaveBeenNthCalledWith(1, {
+      where: { conversationId: 'conv_1', direction: 'INBOUND', createdAt: { gt: lastReadAt } },
+    })
+    // A conversation never opened before (lastReadAt: null) must count every inbound message,
+    // not silently report zero -- `gt: null` in Prisma would match nothing.
+    expect(mockPrisma.message.count).toHaveBeenNthCalledWith(2, {
+      where: { conversationId: 'conv_2', direction: 'INBOUND', createdAt: { gt: expect.any(Date) } },
+    })
+  })
 })
