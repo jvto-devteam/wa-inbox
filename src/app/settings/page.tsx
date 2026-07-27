@@ -27,6 +27,8 @@ export default function SettingsPage() {
   const [status, setStatus] = useState<NumberStatus | null>(null)
   const [gateStatus, setGateStatus] = useState<GateStatus | null>(null)
   const [syncing, setSyncing] = useState(false)
+  const [relinking, setRelinking] = useState(false)
+  const [relinkError, setRelinkError] = useState<string | null>(null)
   const [role, setRole] = useState<Role>(null)
 
   const [workingHoursStart, setWorkingHoursStart] = useState('')
@@ -79,9 +81,30 @@ export default function SettingsPage() {
     }
   }
 
+  // A relink can take real time — wa-coexist re-pairs the session and our
+  // client allows up to 10s for it — so the button gets the same
+  // disabled-while-in-flight treatment as "Sinkron Sekarang" below. Without it
+  // an impatient admin can fire several concurrent re-pairs at the live
+  // company session, which is exactly the operation this endpoint warns about.
+  // Failures are surfaced inline rather than silently swallowed: before this,
+  // clicking against a down wa-coexist did nothing visible at all.
   async function relink() {
-    await fetch('/api/numbers/relink', { method: 'POST' })
-    fetch('/api/numbers/status').then((r) => r.json()).then(setStatus)
+    if (relinking) return
+    setRelinking(true)
+    setRelinkError(null)
+    try {
+      const res = await fetch('/api/numbers/relink', { method: 'POST' })
+      if (!res.ok) {
+        setRelinkError('Gagal menyambungkan ulang — periksa wa-coexist')
+        return
+      }
+      const statusRes = await fetch('/api/numbers/status')
+      if (statusRes.ok) setStatus(await statusRes.json())
+    } catch {
+      setRelinkError('Gagal menyambungkan ulang — periksa wa-coexist')
+    } finally {
+      setRelinking(false)
+    }
   }
 
   async function toggleKillSwitch() {
@@ -130,9 +153,12 @@ export default function SettingsPage() {
             Unofficial: {status.unofficialConnected ? 'Tersambung' : 'Terputus'}
           </Badge>
           {!status.unofficialConnected && role === 'ADMIN' && (
-            <Button onClick={relink} variant="outline" size="sm">Sambungkan Ulang</Button>
+            <Button onClick={relink} variant="outline" size="sm" disabled={relinking}>
+              {relinking ? 'Menyambungkan...' : 'Sambungkan Ulang'}
+            </Button>
           )}
         </div>
+        {relinkError && <p className="text-xs text-destructive">{relinkError}</p>}
       </Card>
 
       <Card className="space-y-4 p-4">

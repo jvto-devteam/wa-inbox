@@ -48,4 +48,27 @@ describe('POST /api/numbers/relink', () => {
     expect(res.status).toBe(403)
     expect(relinkCoexist).not.toHaveBeenCalled()
   })
+
+  // Without this the route produced a bare unhandled 500 and the Settings page
+  // showed the admin nothing at all.
+  it('returns 502 with Indonesian copy when wa-coexist rejects the relink', async () => {
+    mockPrisma.waNumber.findFirstOrThrow.mockResolvedValue({ id: 'wa_1', coexistNumberKey: 'k' } as never)
+    vi.mocked(relinkCoexist).mockRejectedValue(new Error('Relink failed'))
+
+    const res = await POST(request())
+
+    expect(res.status).toBe(502)
+    expect(await res.json()).toEqual({ error: 'Gagal menyambungkan ulang — periksa wa-coexist' })
+  })
+
+  it('returns 502 when the relink request times out', async () => {
+    mockPrisma.waNumber.findFirstOrThrow.mockResolvedValue({ id: 'wa_1', coexistNumberKey: 'k' } as never)
+    vi.mocked(relinkCoexist).mockRejectedValue(
+      new DOMException('The operation was aborted due to timeout', 'TimeoutError')
+    )
+
+    const res = await POST(request())
+
+    expect(res.status).toBe(502)
+  })
 })
