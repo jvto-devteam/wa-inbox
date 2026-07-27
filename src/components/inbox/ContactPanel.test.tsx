@@ -64,16 +64,27 @@ describe('ContactPanel', () => {
   })
 
   it('shows a verified "Booking Ada" summary when bookingData is present (Mode 3)', async () => {
+    // Real booking-API shape (see src/lib/booking/client.ts) — the client passes the
+    // upstream JVTO payload through unmapped, so there is no destination/pax/status.
     mockFetchWith({
       ...baseDetail,
-      bookingData: { destination: 'Bromo', dateRange: '10-12 Aug', pax: 2, amountPaid: 500000, amountDue: 500000, status: 'CONFIRMED' },
+      bookingData: {
+        id: 'B1',
+        guest: 'Bruno Figarola',
+        package: 'Bromo Sunrise Tour',
+        date: { start: '10 Aug 2026', end: '12 Aug 2026', start_ymd: '2026-08-10', end_ymd: '2026-08-12' },
+        orderChannel: 'JVTO',
+        total_pax: 2,
+        financial: { payment: 500000, balance: 500000 },
+      },
       tripBrief: { destination: 'Ignored', pax: 99 },
     })
     render(<ContactPanel conversationId="conv_1" />)
 
     await screen.findByText('Booking Ada')
-    expect(screen.getByText('Bromo')).toBeInTheDocument()
-    expect(screen.getByText('CONFIRMED')).toBeInTheDocument()
+    expect(screen.getByText('Bromo Sunrise Tour')).toBeInTheDocument()
+    expect(screen.getByText('10 Aug 2026 – 12 Aug 2026')).toBeInTheDocument()
+    expect(screen.getByText('Belum lunas')).toBeInTheDocument()
     expect(screen.queryByText('Dari Funnel (belum booking)')).not.toBeInTheDocument()
   })
 

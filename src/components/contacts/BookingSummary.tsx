@@ -1,16 +1,18 @@
 import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { hasAnyValue, formatIDR } from '@/lib/contact-format'
+import type { BookingData, BookingDate } from '@/lib/booking/client'
 
-export type BookingData = {
-  destination?: string
-  dateRange?: string
-  pax?: number
-  amountPaid?: number
-  amountDue?: number
-  status?: string
-} | null
+// The booking shape is owned by the API client, which passes the upstream JVTO
+// payload straight through without remapping. This component used to declare its
+// own guessed shape (destination/dateRange/pax/amountPaid/amountDue/status) — none
+// of those keys exist on a real booking, so every genuine "Booking Ada" card
+// rendered with an empty detail list. Re-export the real type so the two consumers
+// (ContactPanel, contacts/[id]) keep importing it from here.
+export type { BookingData }
 
+// tripBrief is a different thing: it is the bot funnel's own collected brief
+// (src/lib/bot/funnel.ts), not booking-API data, and this IS its real shape.
 export type TripBrief = {
   destination?: string
   dateRange?: string
@@ -26,24 +28,56 @@ function Row({ label, value }: { label: string; value: string }) {
   )
 }
 
+// The API returns both a human-readable range ("01 Aug 2026") and a sortable one
+// ("2026-08-01"); prefer the human one, fall back to the ymd variant, and tolerate
+// a booking with only a start date.
+function formatBookingDate(date: BookingDate | undefined): string | null {
+  if (!date) return null
+  const start = date.start ?? date.start_ymd
+  const end = date.end ?? date.end_ymd
+  if (!start) return end ?? null
+  return end && end !== start ? `${start} – ${end}` : start
+}
+
+// The real payload has no top-level `status` field. `financial.balance` is the
+// operationally meaningful equivalent an agent actually acts on — a zero balance
+// is a fully-paid booking ("Lunas", matching the pipeline stage of the same name),
+// anything outstanding is not. With no financial block there is nothing to derive,
+// so the row is omitted rather than guessed.
+function derivePaymentStatus(balance: number | undefined): string | null {
+  if (balance == null) return null
+  return balance <= 0 ? 'Lunas' : 'Belum lunas'
+}
+
 // Shared by ContactPanel (per-conversation, inbox) and the contacts/[id] CRM detail page —
 // both need to distinguish a verified booking (Mode 3) from a funnel-only lead (Mode 1/2) from
 // a brand-new conversation with neither, and render the same summary card either way.
-export function BookingSummary({ bookingData, tripBrief }: { bookingData: BookingData; tripBrief: TripBrief }) {
+export function BookingSummary({
+  bookingData,
+  tripBrief,
+}: {
+  bookingData: BookingData | null
+  tripBrief: TripBrief
+}) {
   const isBookingConfirmed = hasAnyValue(bookingData)
   const isFunnelOnly = !isBookingConfirmed && hasAnyValue(tripBrief)
 
   if (isBookingConfirmed && bookingData) {
+    const dateRange = formatBookingDate(bookingData.date)
+    const payment = bookingData.financial?.payment
+    const balance = bookingData.financial?.balance
+    const paymentStatus = derivePaymentStatus(balance)
+
     return (
       <Card className="space-y-2 p-3">
         <Badge variant="success">Booking Ada</Badge>
         <dl className="space-y-1 text-sm">
-          {bookingData.destination && <Row label="Destinasi" value={bookingData.destination} />}
-          {bookingData.dateRange && <Row label="Tanggal" value={bookingData.dateRange} />}
-          {bookingData.pax != null && <Row label="Pax" value={String(bookingData.pax)} />}
-          {bookingData.amountPaid != null && <Row label="Dibayar" value={formatIDR(bookingData.amountPaid)} />}
-          {bookingData.amountDue != null && <Row label="Sisa" value={formatIDR(bookingData.amountDue)} />}
-          {bookingData.status && <Row label="Status" value={bookingData.status} />}
+          {bookingData.package && <Row label="Paket" value={bookingData.package} />}
+          {dateRange && <Row label="Tanggal" value={dateRange} />}
+          {bookingData.total_pax != null && <Row label="Pax" value={String(bookingData.total_pax)} />}
+          {payment != null && <Row label="Dibayar" value={formatIDR(payment)} />}
+          {balance != null && <Row label="Sisa" value={formatIDR(balance)} />}
+          {paymentStatus && <Row label="Status" value={paymentStatus} />}
         </dl>
       </Card>
     )
