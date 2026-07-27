@@ -6,13 +6,7 @@ import { NotesSection } from './NotesSection'
 import { RemindersSection } from './RemindersSection'
 import { BookingSummary, type BookingData, type TripBrief } from '@/components/contacts/BookingSummary'
 import { fetchJson } from '@/lib/fetch-json'
-
-const PIPELINE_STAGES = [
-  { value: 'new', label: 'Baru' },
-  { value: 'nego', label: 'Negosiasi' },
-  { value: 'booked', label: 'Booked' },
-  { value: 'lunas', label: 'Lunas' },
-] as const
+import { PIPELINE_STAGES } from '@/lib/pipeline'
 
 type ContactDetail = {
   botEnabled: boolean
@@ -20,7 +14,7 @@ type ContactDetail = {
   contactName: string | null
   avatarUrl: string | null
   source: string | null
-  bookingData: BookingData
+  bookingData: BookingData | null
   tripBrief: TripBrief
   labels: LabelOption[]
   pipelineStage: string
