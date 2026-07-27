@@ -7,7 +7,6 @@ export type ConversationSummary = {
   lastMessage: string | null
   lastMessageSentBy: string | null
   lastMessageAt: string
-  unreadCount: number
   botEnabled: boolean
   status: string
   labels: Array<{ id: string; name: string; color: string }>

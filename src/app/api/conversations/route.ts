@@ -29,7 +29,6 @@ export async function GET(req: Request) {
     lastMessage: c.messages[0]?.content ?? null,
     lastMessageSentBy: c.messages[0]?.sentBy ?? null,
     lastMessageAt: c.lastMessageAt.toISOString(),
-    unreadCount: 0,
     botEnabled: c.botEnabled,
     status: c.status,
     labels: c.labels.map((l) => ({ id: l.label.id, name: l.label.name, color: l.label.color })),

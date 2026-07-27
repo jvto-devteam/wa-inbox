@@ -38,10 +38,11 @@ export async function GET() {
 
   const coexist = await getCoexistStatus(waNumber)
 
+  // There is deliberately no `unreadCount` here. Nothing in the Prisma schema tracks reads
+  // (no lastReadAt on Conversation, no per-agent read marker), so the field could only ever
+  // be a hardcoded 0 — it claimed "nothing unread" even with a queue of unanswered
+  // customers, and nothing rendered it. Real unread tracking is a feature, not a bug fix.
   return NextResponse.json({
-    // No unread-tracking concept exists anywhere in this schema yet, so this is always 0 -- a
-    // deliberate v1 placeholder, not a computation to fill in.
-    unreadCount: 0,
     openCount,
     handoffTodayCount,
     officialTokenValid: Boolean(waNumber.accessToken),

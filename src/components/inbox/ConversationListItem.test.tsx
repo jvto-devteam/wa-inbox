@@ -4,7 +4,7 @@ import { ConversationListItem } from './ConversationListItem'
 
 const summary = {
   id: 'conv_1', contactName: 'Bruno Figarola', contactPhone: '6281234567890',
-  lastMessage: 'Halo!', lastMessageSentBy: 'CUSTOMER', lastMessageAt: new Date().toISOString(), unreadCount: 2,
+  lastMessage: 'Halo!', lastMessageSentBy: 'CUSTOMER', lastMessageAt: new Date().toISOString(),
   botEnabled: true, status: 'OPEN', labels: [{ id: 'lbl_1', name: 'Confirmed Booking', color: '#3C6B42' }],
 }
 

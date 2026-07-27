@@ -36,7 +36,6 @@ describe('GET /api/dashboard/summary', () => {
     const body = await res.json()
 
     expect(body).toEqual({
-      unreadCount: 0,
       openCount: 0,
       handoffTodayCount: 0,
       officialTokenValid: true,
