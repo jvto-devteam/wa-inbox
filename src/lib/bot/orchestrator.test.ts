@@ -180,13 +180,110 @@ describe('decideAndRespond', () => {
     })
   })
 
-  it('handoffs when route gate is not clear and no booking exists', async () => {
+  it('handoffs when the route gate rejects the destination the funnel just matched', async () => {
     ;(lookupBooking as any).mockResolvedValue(null)
+    ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
+    ;(processFunnelState as any).mockReturnValue({
+      reply: 'Here are our tours for *Atlantis*!',
+      nextState: 'REKOMENDASI',
+      destination: 'atlantis',
+    })
     ;(checkRouteGate as any).mockReturnValue({ status: 'handoff', reason: 'Tidak ada paket terverifikasi' })
 
     const result = await decideAndRespond('conv_1', 'Saya mau ke Atlantis')
 
+    // The funnel's priced reply must NOT be sent once the gate rejects it.
     expect(result).toEqual({ mode: 'handoff', reason: 'Tidak ada paket terverifikasi' })
+    expect(checkRouteGate).toHaveBeenCalledWith(expect.objectContaining({ destination: 'atlantis' }))
+  })
+
+  // --- Fix Wave 3b ---
+
+  // I2 (deadlock): the route gate used to run BEFORE the funnel, on a
+  // `tripBrief.destination` that nothing ever wrote. `checkRouteGate(undefined)`
+  // hands off, so the funnel never ran, so no destination was ever matched or
+  // persisted, so the next message hit the same wall — Modes 1/2 could never be
+  // reached at all, whatever the catalog contained.
+  it('does not consult the route gate at all while no destination is known, and still runs the funnel', async () => {
+    ;(lookupBooking as any).mockResolvedValue(null)
+    ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
+    ;(processFunnelState as any).mockReturnValue({ reply: 'Where would you like to go? 🗺️', nextState: 'TANYA_ORIGIN' })
+
+    const result = await decideAndRespond('conv_1', 'Halo')
+
+    expect(processFunnelState).toHaveBeenCalled()
+    expect(checkRouteGate).not.toHaveBeenCalled()
+    expect(result).toEqual({ mode: 'funnel', reply: 'Where would you like to go? 🗺️', nextState: 'TANYA_ORIGIN' })
+  })
+
+  // I2: the funnel's matched destination must survive into the NEXT message.
+  it('persists the destination the funnel matched, so the next message reaches the route gate with it', async () => {
+    ;(lookupBooking as any).mockResolvedValue(null)
+    ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
+    ;(checkRouteGate as any).mockReturnValue({ status: 'clear' })
+    ;(processFunnelState as any).mockReturnValue({
+      reply: 'Here are our tours for *Ijen*!',
+      nextState: 'REKOMENDASI',
+      destination: 'ijen',
+    })
+
+    // Message 1: the customer names a destination for the first time.
+    const first = await decideAndRespond('conv_1', 'Saya mau ke Ijen')
+
+    expect(first.mode).toBe('funnel')
+    expect(mockPrisma.conversation.update).toHaveBeenCalledWith({
+      where: { id: 'conv_1' },
+      data: { tripBrief: { funnelState: 'REKOMENDASI', destination: 'ijen' } },
+    })
+
+    // Message 2: the conversation now carries that destination, the funnel no longer
+    // re-matches (REKOMENDASI stays put), and the route gate validates the
+    // PERSISTED destination instead of seeing `undefined`.
+    vi.clearAllMocks()
+    ;(loadCatalog as any).mockReturnValue({ packages: [], syncedAt: null })
+    ;(checkDeploymentGate as any).mockReturnValue({ readyForApproval: true, blocking: [] })
+    ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
+    ;(checkRouteGate as any).mockReturnValue({ status: 'clear' })
+    ;(processFunnelState as any).mockReturnValue({ reply: 'Sorry, I did not catch that.', nextState: 'REKOMENDASI' })
+    mockPrisma.settings.findUniqueOrThrow.mockResolvedValue({ botKillSwitch: false } as never)
+    mockPrisma.conversation.findUniqueOrThrow.mockResolvedValue({
+      id: 'conv_1',
+      tripBrief: { funnelState: 'REKOMENDASI', destination: 'ijen' },
+      bookingData: null,
+      bookingCheckedAt: new Date(),
+      contact: { phone: '6281234567890' },
+    } as never)
+
+    const second = await decideAndRespond('conv_1', 'Yang 2 hari harganya berapa?')
+
+    expect(checkRouteGate).toHaveBeenCalledWith(expect.objectContaining({ destination: 'ijen' }))
+    expect(second.mode).toBe('funnel')
+    // The known destination must not be wiped by a message that matched nothing.
+    expect(mockPrisma.conversation.update).toHaveBeenCalledWith({
+      where: { id: 'conv_1' },
+      data: { tripBrief: { funnelState: 'REKOMENDASI', destination: 'ijen' } },
+    })
+  })
+
+  // I3: `needs_review` means "show the standard price, with a disclosure" in the real
+  // presentation_resolver — NOT a handoff. Wave 3a removed composeResponse's only call
+  // site, so the disclosure now travels inside the funnel's own reply (funnel.ts
+  // appends the package's policyNotes); the orchestrator's job is simply not to
+  // suppress the reply.
+  it('still answers on a needs_review route gate, letting the funnel reply carry the disclosure', async () => {
+    ;(lookupBooking as any).mockResolvedValue(null)
+    ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
+    ;(checkRouteGate as any).mockReturnValue({ status: 'needs_review', reason: 'Ada catatan kebijakan' })
+    ;(processFunnelState as any).mockReturnValue({
+      reply: 'Here are our tours for *Ijen*!\n\nGood to know:\n• Ijen Health Screening: ...',
+      nextState: 'REKOMENDASI',
+      destination: 'ijen',
+    })
+
+    const result = await decideAndRespond('conv_1', 'Saya mau ke Ijen')
+
+    expect(result.mode).toBe('funnel')
+    expect((result as { mode: 'funnel'; reply: string }).reply).toContain('Good to know:')
   })
 
   it('falls back to handoff if any step throws (fail-safe)', async () => {
@@ -287,7 +384,7 @@ describe('decideAndRespond', () => {
       packages: [
         {
           packageKey: 'ijen-1d',
-          destination: 'Ijen',
+          destinationTokens: ['ijen'],
           title: 'Ijen Blue Fire 1D',
           priceIdr: 500000,
           inclusions: ['guide'],

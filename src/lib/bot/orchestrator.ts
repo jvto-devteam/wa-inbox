@@ -29,9 +29,7 @@
 //      Mode 3 (booking_context) above, which is grounded in the independent,
 //      already-live, already-trusted Booking API -- gating it on catalog
 //      readiness would be a category error.
-//   3. Route-integrity gate (Task 22) next, since a handoff there means no
-//      verified package to even hold a funnel conversation about.
-//   4. Sales-need classification (Task 23): a message needing live data
+//   3. Sales-need classification (Task 23): a message needing live data
 //      (availability, guarantees) can't be safely answered by the funnel or
 //      a cached catalog, so it hands off too -- and so does `job === 'J5'`,
 //      the classifier's own dedicated "route to a human" signal. Since step 0
@@ -39,12 +37,43 @@
 //      J5 has already fired by the time execution gets here; what J5 still
 //      adds at this point is its NON-keyword escalation surface, notably a
 //      guarantee demand (`GUARANTEE_KEYWORDS`).
-//   5. Funnel (Task 27), resumed from the conversation's persisted
+//   4. Funnel (Task 27), resumed from the conversation's persisted
 //      `tripBrief.funnelState` (defaulting to 'GREETING' only for brand-new
 //      conversations) and persisted back after every step -- NOT hardcoded
 //      to 'GREETING' on every call, which would reset returning customers
-//      back to the first funnel question on every single message.
-//   6. Funnel reaching HUMAN_HANDOFF hands off. HUMAN_HANDOFF is the funnel's
+//      back to the first funnel question on every single message. The funnel
+//      also reports which destination it matched, which is persisted into
+//      `tripBrief.destination` in the same write (Fix Wave 3b): before that,
+//      NOTHING ever wrote that field, so step 5's gate below saw `undefined`
+//      forever.
+//   5. Route-integrity gate (Task 22) -- deliberately AFTER the funnel, not
+//      before it (Fix Wave 3b). It used to run first, on the destination the
+//      funnel had not yet extracted, which deadlocked Modes 1/2 completely:
+//      `checkRouteGate(undefined)` hands off ("Tujuan belum diketahui"), the
+//      handoff returned before `processFunnelState` ever ran, so no destination
+//      was ever matched or persisted, so the next message hit exactly the same
+//      wall. Every Mode 1/2 message handed off, forever, regardless of catalog
+//      contents.
+//      Running it after the funnel is also what the gate is FOR: its job is to
+//      decide whether a package claim may be made about a destination, and the
+//      claim in question -- a priced tour list -- is precisely what the funnel
+//      just built. So the gate now guards that reply before it is returned.
+//      It is called only when a destination is actually known (freshly matched
+//      or previously persisted); with no destination the funnel's reply is its
+//      own "which destination?" clarifying question, which asserts nothing about
+//      any package and so has nothing for a route gate to protect. The gate's
+//      own no-destination handoff branch is untouched and still the correct
+//      answer for any caller that asks it about a conversation with no
+//      destination.
+//   6. `needs_review` from that gate does NOT hand off. Mirroring the real
+//      `presentation_resolver` (see route-gate.ts's header), the standard price
+//      is still shown and the disclosure travels with it: funnel.ts appends the
+//      package-scoped `policyNotes` to the recommendation reply. Wave 3a removed
+//      `composeResponse`'s only call site, which had been the intended (but
+//      misfiring) consumer of this middle state, leaving the disclosure silently
+//      dropped; surfacing it in the funnel reply restores the information
+//      without reviving a call site that was removed for good reason.
+//   7. Funnel reaching HUMAN_HANDOFF hands off. HUMAN_HANDOFF is the funnel's
 //      own sink state meaning "a human should take over now", so the previous
 //      behaviour -- emitting one MORE automated reply (a catalog FAQ draft
 //      about `packages[0]`'s inclusions, regardless of what the customer
@@ -52,6 +81,8 @@
 //      Nothing in funnel.ts currently transitions a different state INTO
 //      HUMAN_HANDOFF, so this was latent rather than firing, but it would
 //      have misfired the moment anything upstream started writing that state.
+//      It is checked before the route gate purely because it is cheaper and
+//      unconditional -- both outcomes are a handoff either way.
 //
 // Every step that can throw (a down booking API, a malformed catalog file,
 // an LLM timeout) is wrapped in a single outer try/catch that defaults to
@@ -164,10 +195,6 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
 
     const tripBrief = (conversation.tripBrief as TripBrief | null) ?? {}
     const catalog = loadCatalog()
-    const routeResult = checkRouteGate({ destination: tripBrief.destination, catalog })
-    if (routeResult.status === 'handoff') {
-      return { mode: 'handoff', reason: routeResult.reason }
-    }
 
     const classification = classifySalesNeed({ message: inboundText, tripBrief })
     if (classification.needsLiveData) {
@@ -182,19 +209,45 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
       message: inboundText,
       catalog,
     })
+    // A destination the funnel matched on THIS message wins over the one already on
+    // file (the customer just told us where they want to go); otherwise the persisted
+    // one carries the conversation, since the funnel only re-matches while it is still
+    // in GREETING/TANYA_ORIGIN.
+    const destination = funnelResult.destination ?? tripBrief.destination
     await prisma.conversation.update({
       where: { id: conversationId },
       // Always a plain object here (never null), so no DbNull branch is needed --
       // but typed as InputJsonValue rather than `as never` so that the compiler
       // still checks it, for the same reason as the bookingData write above.
-      data: { tripBrief: { ...tripBrief, funnelState: funnelResult.nextState } as Prisma.InputJsonValue },
+      // `destination` is spread conditionally so an unmatched message never
+      // overwrites a known destination with `undefined`.
+      data: {
+        tripBrief: {
+          ...tripBrief,
+          funnelState: funnelResult.nextState,
+          ...(destination ? { destination } : {}),
+        } as Prisma.InputJsonValue,
+      },
     })
 
     // HUMAN_HANDOFF is the funnel's sink state for "a human should take over now",
     // so it hands off. It must NOT emit one more automated reply first (see header
-    // step 6).
+    // step 7).
     if (funnelResult.nextState === 'HUMAN_HANDOFF') {
       return { mode: 'handoff', reason: 'Funnel mencapai status butuh bantuan manusia' }
+    }
+
+    // Route-integrity gate, guarding the reply the funnel just built (header steps
+    // 5-6). Skipped entirely when no destination is known yet, because that reply is
+    // the funnel's own "which destination?" question, which makes no package claim.
+    if (destination) {
+      const routeResult = checkRouteGate({ destination, catalog })
+      if (routeResult.status === 'handoff') {
+        return { mode: 'handoff', reason: routeResult.reason }
+      }
+      // `needs_review` deliberately falls through to the funnel reply: the price
+      // stays, and funnel.ts has already appended the package's policy disclosures
+      // to it. See header step 6.
     }
 
     return { mode: 'funnel', reply: funnelResult.reply, nextState: funnelResult.nextState }
