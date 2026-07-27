@@ -6,11 +6,29 @@ const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL })
 const prisma = new PrismaClient({ adapter })
 
 async function main() {
-  const passwordHash = await bcrypt.hash('Admin1234', 12)
+  // The seed admin's credentials come from the environment, never from a
+  // literal in this file. This same seed runs against production at cutover,
+  // and a hardcoded admin@jvto.com / Admin1234 would be a live, publicly
+  // guessable admin login with nothing forcing a rotation.
+  //
+  // For local development, set SEED_ADMIN_EMAIL and SEED_ADMIN_PASSWORD in
+  // your local .env (see .env.example) — any values you like, they only exist
+  // on your machine. Failing loudly here is deliberate: a seed that silently
+  // fell back to a default would put that default into production.
+  const seedAdminEmail = process.env.SEED_ADMIN_EMAIL
+  const seedAdminPassword = process.env.SEED_ADMIN_PASSWORD
+  if (!seedAdminEmail || !seedAdminPassword) {
+    throw new Error(
+      'SEED_ADMIN_EMAIL dan SEED_ADMIN_PASSWORD wajib diisi sebelum menjalankan seed. ' +
+        'Set keduanya di .env (lihat .env.example).'
+    )
+  }
+
+  const passwordHash = await bcrypt.hash(seedAdminPassword, 12)
   await prisma.account.upsert({
-    where: { email: 'admin@jvto.com' },
+    where: { email: seedAdminEmail },
     update: {},
-    create: { email: 'admin@jvto.com', passwordHash, name: 'Admin', role: 'ADMIN' },
+    create: { email: seedAdminEmail, passwordHash, name: 'Admin', role: 'ADMIN' },
   })
   await prisma.waNumber.upsert({
     where: { phoneNumber: '6282244788833' },
