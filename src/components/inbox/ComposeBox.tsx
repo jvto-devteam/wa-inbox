@@ -5,6 +5,7 @@ import { Select } from '@/components/ui/select'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
+import { fetchJson } from '@/lib/fetch-json'
 
 type QuickReplyTemplate = { id: string; name: string; category: string | null; body: string }
 type TemplateApiRow = QuickReplyTemplate & { type: string }
@@ -34,6 +35,7 @@ export function ComposeBox({
   const [templates, setTemplates] = useState<QuickReplyTemplate[]>([])
   const [pickerOpen, setPickerOpen] = useState(false)
   const [templateError, setTemplateError] = useState<string | null>(null)
+  const [sendError, setSendError] = useState<string | null>(null)
   // Guards the seed below against clobbering a deliberate per-message override:
   // if the agent picks a channel before the settings fetch resolves, their
   // choice wins.
@@ -66,14 +68,31 @@ export function ComposeBox({
     setChannel(value)
   }
 
+  // The agent's typed message is real work that only exists in this input. A non-ok /api/send
+  // response (an expired session's 401, or a 500) used to be read as if it were a Message:
+  // `onSent` appended a bubble with `id: undefined` (a duplicate React key the second time it
+  // failed) and an empty delivery badge, and `setText('')` threw away what they had written
+  // mid-conversation with a customer. So: confirm the send first, and on failure keep the
+  // text exactly where it is and say so inline — same rule as the template picker above.
   async function send() {
     if (!text.trim() || sending) return
+    setSendError(null)
     setSending(true)
     try {
       const res = await fetch('/api/send', {
         method: 'POST',
         body: JSON.stringify({ conversationId, text, channel }),
       })
+      if (!res.ok) {
+        // fetchJson isn't used here: on a 401 it navigates away immediately, which would
+        // discard the draft just as surely as clearing the input did. Losing a half-written
+        // reply is the exact failure this fixes, so the message stays on screen and the agent
+        // decides when to re-authenticate.
+        setSendError(
+          res.status === 401 ? 'Sesi berakhir — masuk kembali lalu kirim ulang' : 'Gagal mengirim pesan — coba lagi'
+        )
+        return
+      }
       const message = await res.json()
       onSent({
         id: message.id,
@@ -86,15 +105,23 @@ export function ComposeBox({
         botTrace: null,
       })
       setText('')
+    } catch {
+      setSendError('Gagal mengirim pesan — coba lagi')
     } finally {
       setSending(false)
     }
   }
 
   async function toggleBot() {
-    const res = await fetch(`/api/conversations/${conversationId}/toggle-bot`, { method: 'POST' })
-    const { botEnabled: newValue } = await res.json()
-    onBotToggled(newValue)
+    try {
+      const { botEnabled: newValue } = await fetchJson<{ botEnabled: boolean }>(
+        `/api/conversations/${conversationId}/toggle-bot`,
+        { method: 'POST' }
+      )
+      onBotToggled(newValue)
+    } catch {
+      setSendError('Gagal mengambil alih dari bot')
+    }
   }
 
   // Fetch failures here must not leave the picker in a half-open, silently-broken state
@@ -174,6 +201,7 @@ export function ComposeBox({
         </Card>
       )}
       {templateError && <p className="text-xs text-destructive">{templateError}</p>}
+      {sendError && <p className="text-xs text-destructive">{sendError}</p>}
       <div className="flex items-center gap-2">
         <Select
           value={channel}

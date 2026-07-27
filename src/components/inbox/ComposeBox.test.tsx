@@ -24,7 +24,7 @@ describe('ComposeBox — Ambil Alih dari Bot toggle', () => {
   })
 
   it('calls the toggle-bot endpoint and reports the new value on click', async () => {
-    vi.mocked(fetch).mockResolvedValue({ json: () => Promise.resolve({ botEnabled: false }) } as Response)
+    vi.mocked(fetch).mockResolvedValue({ ok: true, json: () => Promise.resolve({ botEnabled: false }) } as Response)
     const onBotToggled = vi.fn()
 
     render(
@@ -125,6 +125,122 @@ describe('ComposeBox quick replies', () => {
     fireEvent.click(await screen.findByText('Template'))
 
     expect(await screen.findByText('Belum ada template quick reply.')).toBeInTheDocument()
+  })
+})
+
+// A half-written reply to a live customer only exists in this input. `send()` used to read
+// any /api/send response as if it were a Message: on a 401 or 500 it appended a bubble with
+// `id: undefined` and an empty delivery badge, then cleared the box — destroying what the
+// agent had actually typed.
+describe('ComposeBox send failures', () => {
+  const TYPED = 'Halo kak, untuk tanggal 12 masih tersedia ya'
+
+  function mockSend(sendResponse: unknown) {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url: string) => {
+        if (url === '/api/send') {
+          return typeof sendResponse === 'function'
+            ? (sendResponse as () => unknown)()
+            : Promise.resolve(sendResponse)
+        }
+        return Promise.resolve({ ok: true, json: async () => ({ defaultChannel: 'OFFICIAL' }) })
+      })
+    )
+  }
+
+  async function type(text: string) {
+    const input = await screen.findByLabelText('Pesan')
+    fireEvent.change(input, { target: { value: text } })
+    return input
+  }
+
+  it('keeps the typed message, shows an error, and does not call onSent when the send fails', async () => {
+    mockSend({ ok: false, status: 500, json: async () => ({ error: 'Internal error' }) })
+    const onSent = vi.fn()
+
+    render(<ComposeBox conversationId="conv_1" botEnabled={false} onSent={onSent} onBotToggled={() => {}} />)
+    const input = await type(TYPED)
+    fireEvent.click(screen.getByText('Kirim'))
+
+    expect(await screen.findByText('Gagal mengirim pesan — coba lagi')).toBeInTheDocument()
+    expect(input).toHaveValue(TYPED)
+    expect(onSent).not.toHaveBeenCalled()
+  })
+
+  it('tells the agent their session expired on a 401, and still keeps the draft', async () => {
+    mockSend({ ok: false, status: 401, json: async () => ({ error: 'Unauthorized' }) })
+    const onSent = vi.fn()
+
+    render(<ComposeBox conversationId="conv_1" botEnabled={false} onSent={onSent} onBotToggled={() => {}} />)
+    const input = await type(TYPED)
+    fireEvent.click(screen.getByText('Kirim'))
+
+    expect(await screen.findByText('Sesi berakhir — masuk kembali lalu kirim ulang')).toBeInTheDocument()
+    expect(input).toHaveValue(TYPED)
+    expect(onSent).not.toHaveBeenCalled()
+  })
+
+  it('keeps the draft when the send request itself rejects (network failure)', async () => {
+    mockSend(() => Promise.reject(new Error('Network error')))
+    const onSent = vi.fn()
+
+    render(<ComposeBox conversationId="conv_1" botEnabled={false} onSent={onSent} onBotToggled={() => {}} />)
+    const input = await type(TYPED)
+    fireEvent.click(screen.getByText('Kirim'))
+
+    expect(await screen.findByText('Gagal mengirim pesan — coba lagi')).toBeInTheDocument()
+    expect(input).toHaveValue(TYPED)
+    expect(onSent).not.toHaveBeenCalled()
+  })
+
+  it('re-enables the Kirim button after a failure so the agent can retry the same text', async () => {
+    mockSend({ ok: false, status: 500, json: async () => ({ error: 'Internal error' }) })
+
+    render(<ComposeBox conversationId="conv_1" botEnabled={false} onSent={() => {}} onBotToggled={() => {}} />)
+    await type(TYPED)
+    fireEvent.click(screen.getByText('Kirim'))
+
+    await screen.findByText('Gagal mengirim pesan — coba lagi')
+    await waitFor(() => expect(screen.getByText('Kirim')).not.toBeDisabled())
+  })
+
+  it('still clears the input and reports the message on a successful send', async () => {
+    mockSend({ ok: true, status: 200, json: async () => ({ id: 'msg_1', deliveryStatus: 'SENT' }) })
+    const onSent = vi.fn()
+
+    render(<ComposeBox conversationId="conv_1" botEnabled={false} onSent={onSent} onBotToggled={() => {}} />)
+    const input = await type(TYPED)
+    fireEvent.click(screen.getByText('Kirim'))
+
+    await waitFor(() =>
+      expect(onSent).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 'msg_1', content: TYPED, deliveryStatus: 'SENT', sentBy: 'AGENT' })
+      )
+    )
+    await waitFor(() => expect(input).toHaveValue(''))
+    expect(screen.queryByText('Gagal mengirim pesan — coba lagi')).not.toBeInTheDocument()
+  })
+
+  it('clears a previous send error once a retry succeeds', async () => {
+    let ok = false
+    mockSend(() =>
+      Promise.resolve(
+        ok
+          ? { ok: true, status: 200, json: async () => ({ id: 'msg_1', deliveryStatus: 'SENT' }) }
+          : { ok: false, status: 500, json: async () => ({ error: 'Internal error' }) }
+      )
+    )
+
+    render(<ComposeBox conversationId="conv_1" botEnabled={false} onSent={() => {}} onBotToggled={() => {}} />)
+    await type(TYPED)
+    fireEvent.click(screen.getByText('Kirim'))
+    await screen.findByText('Gagal mengirim pesan — coba lagi')
+
+    ok = true
+    fireEvent.click(screen.getByText('Kirim'))
+
+    await waitFor(() => expect(screen.queryByText('Gagal mengirim pesan — coba lagi')).not.toBeInTheDocument())
   })
 })
 
