@@ -661,29 +661,51 @@ describe('ingestMetaMessage bot dispatch', () => {
     }))
   })
 
-  it('logs a handoff message on the very first message of a conversation (no prior outbound at all)', async () => {
+  it('always logs an ordinary (non-kill-switch) handoff without querying for a prior one', async () => {
     stubHappyPath()
-    mockPrisma.message.findFirst.mockResolvedValue(null)
     vi.mocked(decideAndRespond).mockResolvedValue({ mode: 'handoff', reason: 'Kata kunci eskalasi terdeteksi' })
 
     await ingestMetaMessage(samplePayload)
 
+    // botEnabled flips off immediately after (see the next test), which already prevents any
+    // repeat -- an ordinary handoff never needs the kill-switch dedup query at all.
+    expect(mockPrisma.message.findFirst).not.toHaveBeenCalled()
+    expect(mockPrisma.message.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ sentBy: 'BOT', content: null }),
+    }))
+  })
+
+  it('logs the first kill-switch handoff placeholder in a conversation, scoped to the current kill-switch period', async () => {
+    stubHappyPath()
+    const killSwitchEnabledAt = new Date('2026-07-27T10:00:00Z')
+    mockPrisma.message.findFirst.mockResolvedValue(null)
+    vi.mocked(decideAndRespond).mockResolvedValue({
+      mode: 'handoff',
+      reason: 'Bot dimatikan sementara (kill switch aktif)',
+      cause: 'kill_switch',
+      killSwitchEnabledAt,
+    })
+
+    await ingestMetaMessage(samplePayload)
+
     expect(mockPrisma.message.findFirst).toHaveBeenCalledWith({
-      where: { conversationId: 'conv_1', direction: 'OUTBOUND' },
-      orderBy: { createdAt: 'desc' },
+      where: { conversationId: 'conv_1', sentBy: 'BOT', content: null, createdAt: { gte: killSwitchEnabledAt } },
     })
     expect(mockPrisma.message.create).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({ sentBy: 'BOT', content: null }),
     }))
   })
 
-  it('does not log a duplicate handoff message when the last outbound message was already one (kill-switch repeat)', async () => {
+  it('does not log a second kill-switch handoff placeholder in the same kill-switch period, even after a real agent reply', async () => {
+    // The dedup query only cares whether a matching placeholder exists in the period -- not
+    // what happened after it -- so an agent actively replying in between must not resurrect it.
     stubHappyPath()
     mockPrisma.message.findFirst.mockResolvedValue({ id: 'msg_prev_handoff', sentBy: 'BOT', content: null } as never)
     vi.mocked(decideAndRespond).mockResolvedValue({
       mode: 'handoff',
       reason: 'Bot dimatikan sementara (kill switch aktif)',
       cause: 'kill_switch',
+      killSwitchEnabledAt: new Date('2026-07-27T10:00:00Z'),
     })
 
     await ingestMetaMessage(samplePayload)
@@ -696,23 +718,45 @@ describe('ingestMetaMessage bot dispatch', () => {
     }))
   })
 
-  it('logs a fresh handoff message once a real agent/bot reply happened since the last one', async () => {
+  it('logs a fresh kill-switch placeholder once the switch has been toggled off and back on', async () => {
+    // A later killSwitchEnabledAt means a new on-period started -- the dedup query's createdAt
+    // lower bound moves forward with it, so a placeholder logged during the PREVIOUS on-period
+    // no longer counts as "already logged this period".
     stubHappyPath()
-    mockPrisma.message.findFirst.mockResolvedValue({ id: 'msg_prev_reply', sentBy: 'AGENT', content: 'Baik, saya bantu ya' } as never)
+    mockPrisma.message.findFirst.mockResolvedValue(null) // none found at-or-after the new period start
     vi.mocked(decideAndRespond).mockResolvedValue({
       mode: 'handoff',
       reason: 'Bot dimatikan sementara (kill switch aktif)',
       cause: 'kill_switch',
+      killSwitchEnabledAt: new Date('2026-07-27T15:00:00Z'),
     })
 
     await ingestMetaMessage(samplePayload)
 
-    // The customer's inbound message, plus a fresh handoff-log row -- the state changed
-    // (a real reply happened) since the last placeholder, so this one is genuinely new.
-    expect(mockPrisma.message.create).toHaveBeenCalledTimes(2)
+    expect(mockPrisma.message.findFirst).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ createdAt: { gte: new Date('2026-07-27T15:00:00Z') } }),
+    }))
     expect(mockPrisma.message.create).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({ sentBy: 'BOT', content: null }),
     }))
+  })
+
+  it('treats a null killSwitchEnabledAt (pre-existing data) as no lower bound on the dedup check', async () => {
+    stubHappyPath()
+    mockPrisma.message.findFirst.mockResolvedValue({ id: 'msg_prev_handoff', sentBy: 'BOT', content: null } as never)
+    vi.mocked(decideAndRespond).mockResolvedValue({
+      mode: 'handoff',
+      reason: 'Bot dimatikan sementara (kill switch aktif)',
+      cause: 'kill_switch',
+      killSwitchEnabledAt: null,
+    })
+
+    await ingestMetaMessage(samplePayload)
+
+    expect(mockPrisma.message.findFirst).toHaveBeenCalledWith({
+      where: { conversationId: 'conv_1', sentBy: 'BOT', content: null, createdAt: undefined },
+    })
+    expect(mockPrisma.message.create).toHaveBeenCalledTimes(1)
   })
 })
 

@@ -4,7 +4,6 @@ import { broadcast } from '@/lib/realtime'
 import { decideAndRespond } from '@/lib/bot/orchestrator'
 import { sendMessage } from '@/lib/send'
 import { withMediaUrl } from '@/lib/serialize-message'
-import { isHandoffLogMessage } from '@/lib/message-display'
 
 type MetaMediaObject = { id: string; mime_type: string; caption?: string; filename?: string }
 
@@ -351,20 +350,30 @@ async function ingestSingleMessage(message: MetaInboundMessage, contacts: MetaCo
       // log-only Message row directly, mirroring the shape sendMessage() itself writes (see
       // src/lib/send.ts) so the decision is still auditable on the bot-log page.
       //
-      // Only when the state actually changed, though. While the kill switch is on, botEnabled
-      // never flips (see below), so every single inbound customer message re-runs this branch --
-      // logging a fresh placeholder per message would bury the thread in identical "Bot
-      // menyerahkan ke agen" rows even while an agent is actively replying in between. The last
-      // OUTBOUND message (ignoring the customer's own inbound messages, which don't represent a
-      // bot/agent state change) tells us whether anything has actually changed since the last
-      // placeholder: if it was itself a handoff log, nothing has -- skip. If it was a real
-      // agent/bot reply, or there isn't one yet (start of the conversation), this is a genuine
-      // new transition worth logging.
-      const lastOutbound = await prisma.message.findFirst({
-        where: { conversationId: conversation.id, direction: 'OUTBOUND' },
-        orderBy: { createdAt: 'desc' },
-      })
-      if (!lastOutbound || !isHandoffLogMessage(lastOutbound)) {
+      // Only when this is a genuinely new reason to log, though. While the kill switch is on,
+      // botEnabled never flips (see below), so every single inbound customer message re-runs
+      // this branch -- logging a fresh placeholder per message would bury the thread in
+      // repeated "Bot menyerahkan ke agen" rows, even between real agent replies (an agent
+      // actively working the conversation doesn't need to be told the bot is off again for
+      // every message that arrives while they're on it). So for a kill-switch handoff
+      // specifically: log at most ONE placeholder per conversation per kill-switch period --
+      // "already logged" means a handoff-log row exists in this conversation created at or
+      // after decision.killSwitchEnabledAt (the timestamp of the current on-period; an admin
+      // toggling the switch off then on again starts a new period, and this conversation is
+      // eligible for one fresh placeholder again). A normal (non-kill-switch) handoff always
+      // logs -- botEnabled flips off immediately after, which already prevents any repeat.
+      const shouldLogHandoff =
+        decision.cause === 'kill_switch'
+          ? !(await prisma.message.findFirst({
+              where: {
+                conversationId: conversation.id,
+                sentBy: 'BOT',
+                content: null,
+                createdAt: decision.killSwitchEnabledAt ? { gte: decision.killSwitchEnabledAt } : undefined,
+              },
+            }))
+          : true
+      if (shouldLogHandoff) {
         const created = await prisma.message.create({
           data: {
             conversationId: conversation.id,

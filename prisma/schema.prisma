@@ -258,5 +258,10 @@ model Settings {
   workingHoursEnd   String?
   offHoursAutoReply String?
   botKillSwitch     Boolean        @default(false)
+  // Stamped whenever an admin flips botKillSwitch OFF -> ON. Lets inbound.ts tell a handoff-log
+  // placeholder from the CURRENT kill-switch period apart from a stale one left over from an
+  // earlier on/off cycle, so "log at most one placeholder per conversation per kill-switch
+  // period" can reset itself the next time the switch is turned back on.
+  killSwitchEnabledAt DateTime?
   catalogSyncedAt   DateTime?
 }

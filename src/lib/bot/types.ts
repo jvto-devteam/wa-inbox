@@ -24,7 +24,9 @@ export type BotDecision =
   // operator kill switch should not -- it is global and temporary, and per-conversation
   // disabling would leave every touched conversation needing manual re-enabling once
   // the switch goes back off. Absent `cause` means an ordinary per-conversation handoff.
-  | { mode: 'handoff'; reason: string; cause?: 'kill_switch' }
+  // killSwitchEnabledAt is only meaningful (and only ever set) alongside cause: 'kill_switch' --
+  // see src/lib/inbound.ts's handoff-log dedup for why it needs it.
+  | { mode: 'handoff'; reason: string; cause?: 'kill_switch'; killSwitchEnabledAt?: Date | null }
   | { mode: 'funnel'; reply: string; nextState: string }
   | { mode: 'faq'; draft: string; sourceTopic: string }
   | { mode: 'booking_context'; reply: string }

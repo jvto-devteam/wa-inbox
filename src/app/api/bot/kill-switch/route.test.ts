@@ -30,6 +30,30 @@ describe('POST /api/bot/kill-switch', () => {
     expect((await res.json()).botKillSwitch).toBe(true)
   })
 
+  it('stamps killSwitchEnabledAt when flipping OFF -> ON', async () => {
+    mockPrisma.settings.findUniqueOrThrow.mockResolvedValue({ botKillSwitch: false } as never)
+    mockPrisma.settings.update.mockResolvedValue({ botKillSwitch: true } as never)
+
+    await POST(request())
+
+    expect(mockPrisma.settings.update).toHaveBeenCalledWith({
+      where: { id: 1 },
+      data: { botKillSwitch: true, killSwitchEnabledAt: expect.any(Date) },
+    })
+  })
+
+  it('does not touch killSwitchEnabledAt when flipping ON -> OFF', async () => {
+    mockPrisma.settings.findUniqueOrThrow.mockResolvedValue({ botKillSwitch: true } as never)
+    mockPrisma.settings.update.mockResolvedValue({ botKillSwitch: false } as never)
+
+    await POST(request())
+
+    expect(mockPrisma.settings.update).toHaveBeenCalledWith({
+      where: { id: 1 },
+      data: { botKillSwitch: false },
+    })
+  })
+
   it('rejects when the caller is not an admin — an agent must not be able to halt all bot automation', async () => {
     vi.mocked(verifySessionToken).mockResolvedValue({ accountId: 'acc_agent', role: 'AGENT', tokenVersion: 0 })
     const res = await POST(request())

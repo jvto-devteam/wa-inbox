@@ -80,6 +80,20 @@ describe('decideAndRespond', () => {
     expect(callLLM).not.toHaveBeenCalled()
   })
 
+  it('passes killSwitchEnabledAt through so inbound.ts can dedup repeated kill-switch placeholders per on-period', async () => {
+    const killSwitchEnabledAt = new Date('2026-07-27T10:00:00Z')
+    mockPrisma.settings.findUniqueOrThrow.mockResolvedValue({ botKillSwitch: true, killSwitchEnabledAt } as never)
+
+    const result = await decideAndRespond('conv_1', 'Halo')
+
+    expect(result).toEqual({
+      mode: 'handoff',
+      reason: 'Bot dimatikan sementara (kill switch aktif)',
+      cause: 'kill_switch',
+      killSwitchEnabledAt,
+    })
+  })
+
   it('escalates immediately on complaint keywords, skipping every other check', async () => {
     const result = await decideAndRespond('conv_1', 'Saya mau komplain dan minta refund!')
     expect(result).toEqual({ mode: 'handoff', reason: 'Kata kunci eskalasi terdeteksi' })
