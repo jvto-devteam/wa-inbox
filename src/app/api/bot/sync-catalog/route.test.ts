@@ -41,6 +41,17 @@ describe('POST /api/bot/sync-catalog', () => {
     expect(execSync).toHaveBeenCalledWith('npm run sync:knowledge', expect.anything())
   })
 
+  // execSync blocks the event loop for its entire duration, so an unbounded call
+  // lets one hung child process freeze every other request in the server.
+  it('bounds the blocking child process with a timeout', async () => {
+    mockPrisma.settings.update.mockResolvedValue({ id: 1 } as never)
+    await POST(request())
+    expect(execSync).toHaveBeenCalledWith(
+      'npm run sync:knowledge',
+      expect.objectContaining({ cwd: expect.any(String), timeout: 60_000 })
+    )
+  })
+
   it('rejects when the caller is not an admin — and never spawns the child process', async () => {
     vi.mocked(verifySessionToken).mockResolvedValue({ accountId: 'acc_agent', role: 'AGENT', tokenVersion: 0 })
     const res = await POST(request())
@@ -55,12 +66,29 @@ describe('POST /api/bot/sync-catalog', () => {
     expect(execSync).not.toHaveBeenCalled()
   })
 
-  it('returns 500 with a legible message when the sync command fails', async () => {
+  it('returns 500 with a legible message when the sync command fails, and logs the real error', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const failure = new Error('exit 1')
     vi.mocked(execSync).mockImplementation(() => {
-      throw new Error('exit 1')
+      throw failure
     })
     const res = await POST(request())
     expect(res.status).toBe(500)
     expect((await res.json()).error).toMatch(/Sinkronisasi gagal/)
+    // "cek log server" is only actionable if the cause actually reaches the log.
+    expect(consoleError).toHaveBeenCalledWith('sync-catalog failed', failure)
+    consoleError.mockRestore()
+  })
+
+  it('returns the same clean 500 when the child process is killed by the timeout', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+    vi.mocked(execSync).mockImplementation(() => {
+      throw Object.assign(new Error('spawnSync /bin/sh ETIMEDOUT'), { code: 'ETIMEDOUT' })
+    })
+    const res = await POST(request())
+    expect(res.status).toBe(500)
+    expect((await res.json()).error).toMatch(/Sinkronisasi gagal/)
+    expect(mockPrisma.settings.update).not.toHaveBeenCalled()
+    consoleError.mockRestore()
   })
 })
