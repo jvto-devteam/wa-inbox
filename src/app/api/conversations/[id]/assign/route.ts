@@ -8,6 +8,15 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   const { id } = await params
   const parsed = bodySchema.safeParse(await req.json())
   if (!parsed.success) return NextResponse.json({ error: 'agentId wajib diisi (atau null)' }, { status: 400 })
+
+  // An agentId that doesn't reference a real Account trips the FK constraint
+  // and surfaces as a raw Prisma P2003 500. Check up front so the caller gets
+  // the same kind of legible 4xx the accounts DELETE route already returns.
+  if (parsed.data.agentId !== null) {
+    const agent = await prisma.account.findUnique({ where: { id: parsed.data.agentId }, select: { id: true } })
+    if (!agent) return NextResponse.json({ error: 'Agen tidak ditemukan' }, { status: 404 })
+  }
+
   const conversation = await prisma.conversation.update({ where: { id }, data: { assignedAgentId: parsed.data.agentId } })
   return NextResponse.json(conversation)
 }

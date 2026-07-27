@@ -15,6 +15,7 @@ const mockPrisma = prisma as unknown as DeepMockProxy<PrismaClient>
 
 beforeEach(() => {
   mockReset(mockPrisma)
+  mockPrisma.account.findUnique.mockResolvedValue({ id: 'acc_2' } as never)
 })
 
 describe('PATCH /api/conversations/[id]/assign', () => {
@@ -45,5 +46,21 @@ describe('PATCH /api/conversations/[id]/assign', () => {
     const res = await PATCH(req, { params: Promise.resolve({ id: 'conv_1' }) })
     expect(res.status).toBe(400)
     expect(mockPrisma.conversation.update).not.toHaveBeenCalled()
+  })
+
+  it('returns a clean 404 instead of a raw Prisma FK error when agentId is not a real account', async () => {
+    mockPrisma.account.findUnique.mockResolvedValue(null)
+    const req = new Request('http://localhost', { method: 'PATCH', body: JSON.stringify({ agentId: 'acc_ghost' }) })
+    const res = await PATCH(req, { params: Promise.resolve({ id: 'conv_1' }) })
+    expect(res.status).toBe(404)
+    expect((await res.json()).error).toMatch(/Agen tidak ditemukan/i)
+    expect(mockPrisma.conversation.update).not.toHaveBeenCalled()
+  })
+
+  it('skips the agent lookup entirely when unassigning', async () => {
+    mockPrisma.conversation.update.mockResolvedValue({ assignedAgentId: null } as never)
+    const req = new Request('http://localhost', { method: 'PATCH', body: JSON.stringify({ agentId: null }) })
+    await PATCH(req, { params: Promise.resolve({ id: 'conv_1' }) })
+    expect(mockPrisma.account.findUnique).not.toHaveBeenCalled()
   })
 })
