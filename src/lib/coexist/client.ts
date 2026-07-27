@@ -10,11 +10,29 @@ type CoexistResponse = {
   [key: string]: unknown
 }
 
+// Timeouts differ per call because the work behind each endpoint differs.
+// wa-coexist's own `ensureConnected` can block up to 15s before a send
+// endpoint responds, so a send timeout must sit ABOVE that (20s) or we'd
+// abort legitimately-slow-but-successful sends before wa-coexist even
+// finishes its own wait. Sends still need *some* bound: sendCoexistText is on
+// the bot-reply path (src/lib/send.ts, called from the Meta inbound webhook),
+// so an unbounded hang there stalls the webhook response past Meta's window.
+const SEND_TIMEOUT_MS = 20000
+// /api/status is a lightweight in-memory probe with no connection wait — if
+// it hasn't answered in 5s wa-coexist is effectively down, and the Settings
+// page is blocked on this.
+const STATUS_TIMEOUT_MS = 5000
+// /api/relink is admin-triggered with a human waiting on the response: long
+// enough to cover a real re-pair round trip, short enough to fail visibly
+// rather than leave the button spinning indefinitely.
+const RELINK_TIMEOUT_MS = 10000
+
 async function coexistPost(creds: CoexistCreds, path: string, body: Record<string, unknown>): Promise<CoexistResponse> {
   const res = await fetch(`${creds.coexistBaseUrl}${path}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ api_key: creds.coexistApiKey, number_key: creds.coexistNumberKey, ...body }),
+    signal: AbortSignal.timeout(SEND_TIMEOUT_MS),
   })
   const json = (await res.json()) as CoexistResponse
   if (!res.ok || json.status !== '200') throw new Error(json.message ?? 'wa-coexist send failed')
@@ -54,7 +72,9 @@ export async function sendCoexistMedia(
 
 export async function getCoexistStatus(creds: CoexistCreds): Promise<{ connected: boolean }> {
   try {
-    const res = await fetch(`${creds.coexistBaseUrl}/api/status`)
+    const res = await fetch(`${creds.coexistBaseUrl}/api/status`, {
+      signal: AbortSignal.timeout(STATUS_TIMEOUT_MS),
+    })
     if (!res.ok) return { connected: false }
     const json = (await res.json()) as { status: string; user?: unknown; qr?: unknown }
     return { connected: json.status === 'connected' }
@@ -64,6 +84,9 @@ export async function getCoexistStatus(creds: CoexistCreds): Promise<{ connected
 }
 
 export async function relinkCoexist(creds: CoexistCreds): Promise<void> {
-  const res = await fetch(`${creds.coexistBaseUrl}/api/relink`, { method: 'POST' })
+  const res = await fetch(`${creds.coexistBaseUrl}/api/relink`, {
+    method: 'POST',
+    signal: AbortSignal.timeout(RELINK_TIMEOUT_MS),
+  })
   if (!res.ok) throw new Error('Relink failed')
 }
