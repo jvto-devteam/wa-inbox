@@ -11,7 +11,7 @@ import { GET, POST } from './route'
 // factory throws "Cannot access ... before initialization".
 vi.mock('@/lib/db', () => ({ prisma: mockDeep<PrismaClient>() }))
 vi.mock('@/lib/auth/session', () => ({
-  verifySessionToken: vi.fn().mockResolvedValue({ accountId: 'acc_1', role: 'AGENT' }),
+  verifySessionToken: vi.fn().mockResolvedValue({ accountId: 'acc_1', role: 'AGENT', tokenVersion: 0 }),
 }))
 
 const mockPrisma = prisma as unknown as DeepMockProxy<PrismaClient>

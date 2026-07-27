@@ -15,7 +15,13 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Email atau kata sandi salah' }, { status: 401 })
   }
 
-  const token = await createSessionCookie({ accountId: account.id, role: account.role })
+  // tokenVersion is baked into the token so src/middleware.ts can revoke it
+  // the moment the account's version is bumped (password reset, role change).
+  const token = await createSessionCookie({
+    accountId: account.id,
+    role: account.role,
+    tokenVersion: account.tokenVersion,
+  })
   const res = NextResponse.json({ ok: true })
   res.cookies.set('wa_inbox_session', token, {
     httpOnly: true,

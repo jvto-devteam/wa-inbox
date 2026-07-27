@@ -17,6 +17,13 @@ model Account {
   passwordHash          String
   name                  String
   role                  AccountRole    @default(AGENT)
+  // Bumped whenever an account's credentials or privileges change (password
+  // reset, role change). Every issued JWT carries the tokenVersion it was
+  // minted with; the session check in src/middleware.ts compares it against
+  // this column and rejects the request if they differ. Without it, JWT
+  // sessions are fully stateless and survive password resets and demotions
+  // for up to their 30-day expiry.
+  tokenVersion          Int            @default(0)
   createdAt             DateTime       @default(now())
   assignedConversations Conversation[] @relation("AssignedAgent")
   notes                 Note[]

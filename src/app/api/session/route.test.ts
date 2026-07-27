@@ -10,7 +10,7 @@ beforeEach(() => {
 
 describe('GET /api/session', () => {
   it('returns the role for a valid session cookie', async () => {
-    vi.mocked(verifySessionToken).mockResolvedValue({ accountId: 'acc_admin', role: 'ADMIN' })
+    vi.mocked(verifySessionToken).mockResolvedValue({ accountId: 'acc_admin', role: 'ADMIN', tokenVersion: 0 })
     const req = new Request('http://localhost', { headers: { cookie: 'wa_inbox_session=tok' } })
     const res = await GET(req)
     expect(res.status).toBe(200)

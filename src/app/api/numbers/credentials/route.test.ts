@@ -15,7 +15,7 @@ const mockPrisma = prisma as unknown as DeepMockProxy<PrismaClient>
 
 beforeEach(() => {
   mockReset(mockPrisma)
-  vi.mocked(verifySessionToken).mockResolvedValue({ accountId: 'acc_admin', role: 'ADMIN' })
+  vi.mocked(verifySessionToken).mockResolvedValue({ accountId: 'acc_admin', role: 'ADMIN', tokenVersion: 0 })
 })
 
 describe('GET /api/numbers/credentials', () => {
@@ -59,7 +59,7 @@ describe('GET /api/numbers/credentials', () => {
   })
 
   it('rejects non-admin callers with 403', async () => {
-    vi.mocked(verifySessionToken).mockResolvedValue({ accountId: 'acc_agent', role: 'AGENT' })
+    vi.mocked(verifySessionToken).mockResolvedValue({ accountId: 'acc_agent', role: 'AGENT', tokenVersion: 0 })
     const req = new Request('http://localhost', { headers: { cookie: 'wa_inbox_session=tok' } })
     const res = await GET(req)
     expect(res.status).toBe(403)

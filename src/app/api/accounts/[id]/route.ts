@@ -10,6 +10,28 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
   if (!admin) return NextResponse.json({ error: 'Hanya admin yang bisa menghapus akun' }, { status: 403 })
 
   const { id } = await params
+
+  // Deleting yourself logs you out of an account you can no longer restore,
+  // and is almost always a misclick on the wrong row.
+  if (id === admin.accountId) {
+    return NextResponse.json({ error: 'Anda tidak bisa menghapus akun Anda sendiri' }, { status: 400 })
+  }
+
+  // Deleting the last ADMIN permanently locks out user management, the
+  // webhook credentials panel and settings editing — there is no in-app way
+  // back, only direct database access. Refuse rather than let it happen.
+  const target = await prisma.account.findUnique({ where: { id }, select: { role: true } })
+  if (!target) return NextResponse.json({ error: 'Akun tidak ditemukan' }, { status: 404 })
+  if (target.role === 'ADMIN') {
+    const adminCount = await prisma.account.count({ where: { role: 'ADMIN' } })
+    if (adminCount <= 1) {
+      return NextResponse.json(
+        { error: 'Tidak bisa menghapus admin terakhir — sisakan minimal satu admin' },
+        { status: 400 }
+      )
+    }
+  }
+
   try {
     await prisma.account.delete({ where: { id } })
   } catch (err) {
@@ -41,6 +63,14 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   if (!parsed.success) return NextResponse.json({ error: 'Kata sandi minimal 8 karakter' }, { status: 400 })
 
   const passwordHash = await hashPassword(parsed.data.password)
-  await prisma.account.update({ where: { id }, data: { passwordHash } })
+  // A password reset is the response to a compromised (or offboarded)
+  // account, so it has to kill the sessions that were already issued — the
+  // JWT itself is otherwise valid for 30 more days regardless of the new
+  // password. Bumping tokenVersion makes src/middleware.ts reject every
+  // outstanding token for this account on the very next request.
+  await prisma.account.update({
+    where: { id },
+    data: { passwordHash, tokenVersion: { increment: 1 } },
+  })
   return NextResponse.json({ ok: true })
 }
