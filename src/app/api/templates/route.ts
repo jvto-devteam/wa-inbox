@@ -31,6 +31,12 @@ export async function POST(req: Request) {
   if (!parsed.success) return NextResponse.json({ error: parsed.error }, { status: 400 })
 
   let metaStatus: 'PENDING' | 'NOT_APPLICABLE' = 'NOT_APPLICABLE'
+  // Meta's own id for the submitted template. It must be persisted: Meta reviews
+  // templates asynchronously and only reports the outcome later, via the
+  // message_template_status_update webhook keyed by this id (see
+  // applyTemplateStatusUpdate in src/lib/inbound.ts). Throwing it away here left
+  // metaStatus permanently stuck at whatever the submission response said.
+  let metaId: string | null = null
   if (parsed.data.type === 'OFFICIAL') {
     const waNumber = await prisma.waNumber.findFirstOrThrow()
     let result: { metaId: string; status: string }
@@ -48,10 +54,11 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: message }, { status: 502 })
     }
     metaStatus = result.status as 'PENDING'
+    metaId = result.metaId
   }
 
   const template = await prisma.template.create({
-    data: { ...parsed.data, variables: parsed.data.variables ?? [], metaStatus },
+    data: { ...parsed.data, variables: parsed.data.variables ?? [], metaId, metaStatus },
   })
   return NextResponse.json(template)
 }

@@ -46,12 +46,36 @@ describe('templates API', () => {
     expect(mockPrisma.template.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ metaStatus: 'PENDING' }) }))
   })
 
-  it('POST with type QUICK_REPLY skips Meta entirely', async () => {
+  it('POST with type OFFICIAL stores the metaId Meta returned', async () => {
+    // Without the id there is no key to reconcile Meta's later (asynchronous)
+    // approve/reject verdict against, so metaStatus would be stuck at PENDING forever.
+    mockPrisma.waNumber.findFirstOrThrow.mockResolvedValue({ wabaId: 'waba_1', accessToken: 'tok' } as never)
+    vi.mocked(submitMetaTemplate).mockResolvedValue({ metaId: '671551331431970', status: 'PENDING' })
+    mockPrisma.template.create.mockResolvedValue({ id: 't2', metaId: '671551331431970', metaStatus: 'PENDING' } as never)
+
+    const req = new Request('http://localhost/api/templates', {
+      method: 'POST',
+      headers: adminCookie,
+      body: JSON.stringify({ name: 'booking_confirmation', type: 'OFFICIAL', category: 'UTILITY', body: 'Booking {{1}} dikonfirmasi.', variables: ['nama'] }),
+    })
+    const res = await POST(req)
+
+    expect(res.status).toBe(200)
+    expect(mockPrisma.template.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ metaId: '671551331431970', metaStatus: 'PENDING' }) })
+    )
+    expect((await res.json()).metaId).toBe('671551331431970')
+  })
+
+  it('POST with type QUICK_REPLY skips Meta entirely and stores a null metaId', async () => {
     mockPrisma.template.create.mockResolvedValue({ id: 't3', metaStatus: 'NOT_APPLICABLE' } as never)
     const req = new Request('http://localhost/api/templates', { method: 'POST', headers: adminCookie, body: JSON.stringify({ name: 'harga_paket', type: 'QUICK_REPLY', body: 'Info harga...', category: 'Paket & Harga' }) })
     const res = await POST(req)
     expect(res.status).toBe(200)
     expect(submitMetaTemplate).not.toHaveBeenCalled()
+    expect(mockPrisma.template.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ metaId: null, metaStatus: 'NOT_APPLICABLE' }) })
+    )
   })
 
   it('POST with type OFFICIAL propagates a Meta submission failure without creating a local row', async () => {

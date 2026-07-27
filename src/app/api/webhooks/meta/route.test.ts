@@ -4,7 +4,7 @@ import { GET, POST } from './route'
 import { ingestMetaMessage } from '@/lib/inbound'
 
 vi.mock('@/lib/inbound', () => ({
-  ingestMetaMessage: vi.fn().mockResolvedValue({ processed: 0, skipped: 0, statusUpdates: 0 }),
+  ingestMetaMessage: vi.fn().mockResolvedValue({ processed: 0, skipped: 0, statusUpdates: 0, templateStatusUpdates: 0 }),
 }))
 
 beforeAll(() => {

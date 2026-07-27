@@ -88,7 +88,7 @@ describe('ingestMetaMessage', () => {
 
     const result = await ingestMetaMessage(samplePayload)
 
-    expect(result).toEqual({ processed: 1, skipped: 0, statusUpdates: 0 })
+    expect(result).toEqual({ processed: 1, skipped: 0, statusUpdates: 0, templateStatusUpdates: 0 })
     expect(mockPrisma.contact.upsert).toHaveBeenCalledWith(expect.objectContaining({
       where: { phone: '6281234567890' },
     }))
@@ -102,7 +102,7 @@ describe('ingestMetaMessage', () => {
 
     const result = await ingestMetaMessage(samplePayload)
 
-    expect(result).toEqual({ processed: 0, skipped: 1, statusUpdates: 0 })
+    expect(result).toEqual({ processed: 0, skipped: 1, statusUpdates: 0, templateStatusUpdates: 0 })
     expect(mockPrisma.message.create).not.toHaveBeenCalled()
   })
 
@@ -123,7 +123,7 @@ describe('ingestMetaMessage', () => {
 
     const result = await ingestMetaMessage(samplePayload)
 
-    expect(result).toEqual({ processed: 0, skipped: 1, statusUpdates: 0 })
+    expect(result).toEqual({ processed: 0, skipped: 1, statusUpdates: 0, templateStatusUpdates: 0 })
   })
 })
 
@@ -151,7 +151,7 @@ describe('ingestMetaMessage batching', () => {
 
     const result = await ingestMetaMessage(twoMessagePayload)
 
-    expect(result).toEqual({ processed: 2, skipped: 0, statusUpdates: 0 })
+    expect(result).toEqual({ processed: 2, skipped: 0, statusUpdates: 0, templateStatusUpdates: 0 })
     const externalIds = mockPrisma.message.create.mock.calls.map((c) => (c[0] as { data: { externalId?: string } }).data.externalId)
     expect(externalIds).toEqual(['wamid.ONE', 'wamid.TWO'])
     expect(mockPrisma.message.create).toHaveBeenCalledWith(expect.objectContaining({
@@ -208,7 +208,7 @@ describe('ingestMetaMessage batching', () => {
 
   it('tolerates a payload with no entry/changes/messages at all', async () => {
     const result = await ingestMetaMessage({})
-    expect(result).toEqual({ processed: 0, skipped: 0, statusUpdates: 0 })
+    expect(result).toEqual({ processed: 0, skipped: 0, statusUpdates: 0, templateStatusUpdates: 0 })
     expect(mockPrisma.message.create).not.toHaveBeenCalled()
   })
 })
@@ -531,7 +531,7 @@ describe('ingestMetaMessage delivery-status callbacks', () => {
 
     const result = await ingestMetaMessage(statusPayload([{ id: 'wamid.UNKNOWN', status: 'read' }]))
 
-    expect(result).toEqual({ processed: 0, skipped: 0, statusUpdates: 0 })
+    expect(result).toEqual({ processed: 0, skipped: 0, statusUpdates: 0, templateStatusUpdates: 0 })
     expect(mockPrisma.message.update).not.toHaveBeenCalled()
   })
 
@@ -573,6 +573,102 @@ describe('ingestMetaMessage delivery-status callbacks', () => {
       }],
     })
 
-    expect(result).toEqual({ processed: 1, skipped: 0, statusUpdates: 1 })
+    expect(result).toEqual({ processed: 1, skipped: 0, statusUpdates: 1, templateStatusUpdates: 0 })
+  })
+})
+
+describe('ingestMetaMessage template-status callbacks', () => {
+  // Meta's message_template_status_update change: the fields sit flat on `value`,
+  // and the change carries neither messages nor statuses.
+  function templatePayload(value: Record<string, unknown>) {
+    return { entry: [{ changes: [{ field: 'message_template_status_update', value }] }] }
+  }
+
+  it('reconciles an APPROVED verdict onto the Template row matching metaId', async () => {
+    // The whole point of storing metaId: Meta approves hours after submission, so
+    // without this the row is stuck at the PENDING the submission response returned.
+    mockPrisma.template.updateMany.mockResolvedValue({ count: 1 } as never)
+
+    const result = await ingestMetaMessage(templatePayload({
+      event: 'APPROVED',
+      message_template_id: 671551331431970,
+      message_template_name: 'booking_confirmation',
+      message_template_language: 'id',
+      reason: 'NONE',
+    }))
+
+    expect(result.templateStatusUpdates).toBe(1)
+    expect(mockPrisma.template.updateMany).toHaveBeenCalledWith({
+      // Meta sends the id as a number; Template.metaId is a string column.
+      where: { metaId: '671551331431970', metaStatus: { not: 'APPROVED' } },
+      data: { metaStatus: 'APPROVED' },
+    })
+  })
+
+  it('reconciles a REJECTED verdict', async () => {
+    mockPrisma.template.updateMany.mockResolvedValue({ count: 1 } as never)
+
+    const result = await ingestMetaMessage(templatePayload({
+      event: 'REJECTED',
+      message_template_id: '990',
+      reason: 'INVALID_FORMAT',
+    }))
+
+    expect(result.templateStatusUpdates).toBe(1)
+    expect(mockPrisma.template.updateMany).toHaveBeenCalledWith({
+      where: { metaId: '990', metaStatus: { not: 'REJECTED' } },
+      data: { metaStatus: 'REJECTED' },
+    })
+  })
+
+  it('ignores a verdict this schema cannot express rather than mislabelling it', async () => {
+    // PAUSED/DISABLED/FLAGGED have no TemplateMetaStatus member. NOT_APPLICABLE means
+    // "never submitted to Meta", so writing it here would be actively wrong.
+    const result = await ingestMetaMessage(templatePayload({ event: 'PAUSED', message_template_id: '991' }))
+
+    expect(result.templateStatusUpdates).toBe(0)
+    expect(mockPrisma.template.updateMany).not.toHaveBeenCalled()
+  })
+
+  it('is a silent no-op for a verdict about a template this system never submitted', async () => {
+    mockPrisma.template.updateMany.mockResolvedValue({ count: 0 } as never)
+
+    const result = await ingestMetaMessage(templatePayload({ event: 'APPROVED', message_template_id: '992' }))
+
+    expect(result).toEqual({ processed: 0, skipped: 0, statusUpdates: 0, templateStatusUpdates: 0 })
+  })
+
+  it('does not treat a template change as a message change', async () => {
+    mockPrisma.template.updateMany.mockResolvedValue({ count: 1 } as never)
+
+    await ingestMetaMessage(templatePayload({ event: 'APPROVED', message_template_id: '993' }))
+
+    expect(mockPrisma.message.create).not.toHaveBeenCalled()
+    expect(mockPrisma.contact.upsert).not.toHaveBeenCalled()
+  })
+
+  it('still ingests ordinary message changes batched alongside a template change', async () => {
+    mockPrisma.template.updateMany.mockResolvedValue({ count: 1 } as never)
+    mockPrisma.message.findUnique.mockResolvedValue(null)
+    mockPrisma.contact.upsert.mockResolvedValue({ ...contactRow, avatarUrl: 'x' })
+    mockPrisma.conversation.upsert.mockResolvedValue({ ...conversationRow, botEnabled: false })
+    mockPrisma.message.create.mockResolvedValue({ id: 'msg_in' } as never)
+
+    const result = await ingestMetaMessage({
+      entry: [{
+        changes: [
+          { field: 'message_template_status_update', value: { event: 'APPROVED', message_template_id: '994' } },
+          {
+            field: 'messages',
+            value: {
+              contacts: [{ profile: { name: 'Bruno Figarola' }, wa_id: '6281234567890' }],
+              messages: [{ id: 'wamid.IN', from: '6281234567890', timestamp: '1700000000', type: 'text', text: { body: 'halo' } }],
+            },
+          },
+        ],
+      }],
+    })
+
+    expect(result).toEqual({ processed: 1, skipped: 0, statusUpdates: 0, templateStatusUpdates: 1 })
   })
 })

@@ -1,4 +1,4 @@
-import { Prisma, type Contact, type DeliveryStatus } from '@prisma/client'
+import { Prisma, type Contact, type DeliveryStatus, type TemplateMetaStatus } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { broadcast } from '@/lib/realtime'
 import { decideAndRespond } from '@/lib/bot/orchestrator'
@@ -23,6 +23,20 @@ export type MetaStatus = {
   timestamp?: string
 }
 
+// The outcome of Meta's asynchronous review of a template we submitted. Unlike
+// messages/statuses these fields sit FLAT on `value` (the change is identified by
+// its sibling `field: "message_template_status_update"`), so the union below is
+// discriminated by the presence of `message_template_id` rather than by nesting.
+// `message_template_id` is the id `submitMetaTemplate()` stored as Template.metaId
+// -- Meta sends it as a number, hence the string|number.
+export type MetaTemplateStatusUpdate = {
+  event?: string
+  message_template_id?: string | number
+  message_template_name?: string
+  message_template_language?: string
+  reason?: string
+}
+
 export type MetaWebhookPayload = {
   // Every level here is an array and Meta genuinely batches: one webhook delivery
   // can carry several entries, several changes per entry, and several messages per
@@ -31,11 +45,12 @@ export type MetaWebhookPayload = {
   // retries -- permanent, invisible loss. Hence the full triple iteration below.
   entry?: Array<{
     changes?: Array<{
+      field?: string
       value?: {
         contacts?: Array<MetaContact>
         messages?: Array<MetaInboundMessage>
         statuses?: Array<MetaStatus>
-      }
+      } & MetaTemplateStatusUpdate
     }>
   }>
 }
@@ -47,6 +62,8 @@ export type IngestResult = {
   skipped: number
   /** Delivery-status receipts that updated an existing Message row. */
   statusUpdates: number
+  /** Meta template-review outcomes that updated an existing Template row. */
+  templateStatusUpdates: number
 }
 
 // How long a contact who was checked and found to have no profile photo stays
@@ -150,6 +167,43 @@ async function applyStatusUpdate(status: MetaStatus): Promise<boolean> {
   })
   broadcast({ type: 'message.updated', conversationId: updated.conversationId, message: updated })
   return true
+}
+
+// Meta's template-review verdicts, narrowed to the ones this app's TemplateMetaStatus
+// enum can actually express. Meta also emits PAUSED / DISABLED / FLAGGED /
+// PENDING_DELETION / REINSTATED / LIMIT_EXCEEDED; those are deliberately left
+// unmapped and ignored rather than squashed into NOT_APPLICABLE, which in this
+// schema means "this template never went to Meta at all" and would be a lie.
+const TEMPLATE_META_STATUS_BY_EVENT: Record<string, TemplateMetaStatus> = {
+  APPROVED: 'APPROVED',
+  REJECTED: 'REJECTED',
+  PENDING: 'PENDING',
+}
+
+/**
+ * Applies one Meta template-review outcome to the local Template row it refers to.
+ * This is the only way metaStatus ever moves off the PENDING that submission
+ * returned -- Meta reviews templates hours after submission, out of band.
+ * Returns true if a row was actually updated.
+ *
+ * Requires the `message_template_status_update` webhook field to be subscribed on
+ * the app in Meta's dashboard; if it is not, no such payload ever arrives and this
+ * is simply never called (no error, just no reconciliation).
+ */
+async function applyTemplateStatusUpdate(update: MetaTemplateStatusUpdate): Promise<boolean> {
+  if (update.message_template_id === undefined || update.message_template_id === null) return false
+  const mapped = TEMPLATE_META_STATUS_BY_EVENT[update.event ?? '']
+  if (!mapped) return false
+
+  // updateMany (not update) because metaId is not a unique column and, more
+  // importantly, a verdict for a template this system never submitted is a
+  // legitimate no-op rather than a failure. The metaStatus guard keeps Meta's
+  // repeated/duplicate deliveries from generating pointless writes.
+  const result = await prisma.template.updateMany({
+    where: { metaId: String(update.message_template_id), metaStatus: { not: mapped } },
+    data: { metaStatus: mapped },
+  })
+  return result.count > 0
 }
 
 /**
@@ -280,11 +334,22 @@ export async function ingestMetaMessage(payload: MetaWebhookPayload): Promise<In
   let processed = 0
   let skipped = 0
   let statusUpdates = 0
+  let templateStatusUpdates = 0
 
   for (const entry of payload.entry ?? []) {
     for (const change of entry.changes ?? []) {
       const value = change?.value
       if (!value) continue
+
+      // A template-review verdict arrives as its own change (field ===
+      // 'message_template_status_update') carrying neither messages nor statuses.
+      // Keyed off message_template_id rather than `field` so it still works if a
+      // relaying BSP drops the field label -- nothing else in this webhook's
+      // payload carries that key, so it cannot false-positive.
+      if (value.message_template_id !== undefined && value.message_template_id !== null) {
+        if (await applyTemplateStatusUpdate(value)) templateStatusUpdates += 1
+        continue
+      }
 
       for (const message of value.messages ?? []) {
         // Messages are processed sequentially: two messages from the same new contact in
@@ -299,5 +364,5 @@ export async function ingestMetaMessage(payload: MetaWebhookPayload): Promise<In
     }
   }
 
-  return { processed, skipped, statusUpdates }
+  return { processed, skipped, statusUpdates, templateStatusUpdates }
 }
