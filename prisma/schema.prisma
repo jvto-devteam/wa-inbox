@@ -123,8 +123,18 @@ model Message {
   deliveryStatus DeliveryStatus   @default(PENDING)
   createdAt      DateTime         @default(now())
 
+  // NOTE: there is deliberately no index on `content`. A plain btree index there
+  // was actively harmful: Postgres caps a btree index entry at ~2704 bytes, but a
+  // WhatsApp text message can be 4096 characters, so ingesting a long message
+  // (a pasted itinerary, a long complaint) made prisma.message.create throw
+  // "index row size ... exceeds btree version 4 maximum" and dropped a real
+  // customer message. It also bought nothing: the search it was added for
+  // (GET /api/conversations?q=...) is a `contains` / ILIKE '%q%' substring match,
+  // which a default-opclass btree cannot serve at all. Search therefore falls back
+  // to a sequential scan -- correct, and fine at one tour operator's message
+  // volume. If that ever stops being true, the right fix is a GIN + pg_trgm
+  // trigram index (needs the pg_trgm extension enabled), not a btree.
   @@index([conversationId, createdAt])
-  @@index([content])
 }
 
 model Label {
@@ -179,6 +189,13 @@ model Template {
   id         String             @id @default(cuid())
   name       String
   type       TemplateType
+  // Meta's own id for this template, returned by the create-template Graph call.
+  // Meta reviews templates asynchronously (often hours later) and reports the
+  // outcome through the message_template_status_update webhook, keyed by this id
+  // -- without storing it there is no way to ever reconcile the local metaStatus
+  // back to what Meta actually decided, so it would stay stuck at PENDING forever.
+  // Null for QUICK_REPLY templates, which never go to Meta.
+  metaId     String?
   metaStatus TemplateMetaStatus @default(NOT_APPLICABLE)
   category   String?
   body       String
