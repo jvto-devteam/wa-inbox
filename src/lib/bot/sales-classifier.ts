@@ -154,7 +154,14 @@ type Job = SalesClassification['job']
 // handoff_rules.mandatory_intents (complaint_or_refund, human_handoff_request) + query_policy
 // job_overrides' cancel/refund words (routing YAML lines 27-32) + booking/payment-status
 // intents (get_booking_status, get_payment_status -> J5 directly per default_job_by_intent).
-const HANDOFF_KEYWORDS = [
+//
+// EXPORTED because orchestrator.ts's pre-booking-lookup escalation check reuses this exact
+// list as its own gate. That check runs before Mode 3 (booking_context), which bypasses this
+// classifier entirely, so it is the ONLY keyword protection a customer WITH a booking gets --
+// it previously had its own, much narrower Indonesian-only copy of this list, which let
+// English complaints/cancellations through to an automated LLM reply. One list, one source of
+// truth: adding a keyword here now closes the gap in both paths at once.
+export const HANDOFF_KEYWORDS = [
   'refund',
   'komplain',
   'keluhan',
