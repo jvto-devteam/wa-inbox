@@ -3,9 +3,9 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+import { fetchJson } from '@/lib/fetch-json'
 
 type Summary = {
-  unreadCount: number
   openCount: number
   handoffTodayCount: number
   officialTokenValid: boolean
@@ -18,9 +18,12 @@ export default function DashboardPage() {
   const [summary, setSummary] = useState<Summary | null>(null)
 
   useEffect(() => {
-    fetch('/api/dashboard/summary')
-      .then((r) => r.json())
+    // A rejection here is either "session gone" (fetchJson has already sent the browser to
+    // /login) or a server error. Neither should be swallowed into `summary` — leaving it
+    // null keeps the "Memuat..." state instead of crashing on `summary.remindersDue.length`.
+    fetchJson<Summary>('/api/dashboard/summary')
       .then(setSummary)
+      .catch(() => {})
   }, [])
 
   if (!summary) return <div className="p-6 text-muted-foreground">Memuat...</div>

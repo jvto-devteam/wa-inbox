@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { Select } from '@/components/ui/select'
 import { Card } from '@/components/ui/card'
+import { fetchJson } from '@/lib/fetch-json'
 
 type Decision = { id: string; conversationId: string; contactName: string | null; mode: string; trace: unknown; createdAt: string }
 
@@ -11,7 +12,9 @@ export default function BotLogPage() {
   const [filter, setFilter] = useState('')
 
   useEffect(() => {
-    fetch(`/api/bot/decisions${filter ? `?mode=${filter}` : ''}`).then((r) => r.json()).then(setDecisions)
+    fetchJson<Decision[]>(`/api/bot/decisions${filter ? `?mode=${filter}` : ''}`)
+      .then(setDecisions)
+      .catch(() => {})
   }, [filter])
 
   return (

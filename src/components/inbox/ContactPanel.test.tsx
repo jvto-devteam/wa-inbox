@@ -23,10 +23,10 @@ function mockFetchWith(detail: typeof baseDetail) {
   vi.stubGlobal(
     'fetch',
     vi.fn((url: string) => {
-      if (url === '/api/labels') return Promise.resolve({ json: () => Promise.resolve(allLabels) } as Response)
-      if (url === `/api/contacts/${detail.contactId}/notes`) return Promise.resolve({ json: () => Promise.resolve([]) } as Response)
-      if (url === `/api/contacts/${detail.contactId}/reminders`) return Promise.resolve({ json: () => Promise.resolve([]) } as Response)
-      return Promise.resolve({ json: () => Promise.resolve(detail) } as Response)
+      if (url === '/api/labels') return Promise.resolve({ ok: true, json: () => Promise.resolve(allLabels) } as Response)
+      if (url === `/api/contacts/${detail.contactId}/notes`) return Promise.resolve({ ok: true, json: () => Promise.resolve([]) } as Response)
+      if (url === `/api/contacts/${detail.contactId}/reminders`) return Promise.resolve({ ok: true, json: () => Promise.resolve([]) } as Response)
+      return Promise.resolve({ ok: true, json: () => Promise.resolve(detail) } as Response)
     })
   )
 }
@@ -35,11 +35,11 @@ function mockFetchWithPipeline(detail: typeof baseDetail, pipelineResponse: { ok
   vi.stubGlobal(
     'fetch',
     vi.fn((url: string) => {
-      if (url === '/api/labels') return Promise.resolve({ json: () => Promise.resolve(allLabels) } as Response)
-      if (url === `/api/contacts/${detail.contactId}/notes`) return Promise.resolve({ json: () => Promise.resolve([]) } as Response)
-      if (url === `/api/contacts/${detail.contactId}/reminders`) return Promise.resolve({ json: () => Promise.resolve([]) } as Response)
+      if (url === '/api/labels') return Promise.resolve({ ok: true, json: () => Promise.resolve(allLabels) } as Response)
+      if (url === `/api/contacts/${detail.contactId}/notes`) return Promise.resolve({ ok: true, json: () => Promise.resolve([]) } as Response)
+      if (url === `/api/contacts/${detail.contactId}/reminders`) return Promise.resolve({ ok: true, json: () => Promise.resolve([]) } as Response)
       if (url === `/api/conversations/conv_1/pipeline`) return Promise.resolve(pipelineResponse as Response)
-      return Promise.resolve({ json: () => Promise.resolve(detail) } as Response)
+      return Promise.resolve({ ok: true, json: () => Promise.resolve(detail) } as Response)
     })
   )
 }
@@ -161,11 +161,11 @@ describe('ContactPanel', () => {
     vi.stubGlobal(
       'fetch',
       vi.fn((url: string) => {
-        if (url === '/api/labels') return Promise.resolve({ json: () => Promise.resolve(allLabels) } as Response)
-        if (url === `/api/contacts/${baseDetail.contactId}/notes`) return Promise.resolve({ json: () => Promise.resolve([]) } as Response)
-        if (url === `/api/contacts/${baseDetail.contactId}/reminders`) return Promise.resolve({ json: () => Promise.resolve([]) } as Response)
+        if (url === '/api/labels') return Promise.resolve({ ok: true, json: () => Promise.resolve(allLabels) } as Response)
+        if (url === `/api/contacts/${baseDetail.contactId}/notes`) return Promise.resolve({ ok: true, json: () => Promise.resolve([]) } as Response)
+        if (url === `/api/contacts/${baseDetail.contactId}/reminders`) return Promise.resolve({ ok: true, json: () => Promise.resolve([]) } as Response)
         if (url === '/api/conversations/conv_1/pipeline') return Promise.reject(new Error('network down'))
-        return Promise.resolve({ json: () => Promise.resolve(baseDetail) } as Response)
+        return Promise.resolve({ ok: true, json: () => Promise.resolve(baseDetail) } as Response)
       })
     )
     render(<ContactPanel conversationId="conv_1" />)

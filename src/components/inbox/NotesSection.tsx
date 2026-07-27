@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import { Card } from '@/components/ui/card'
 import { Textarea } from '@/components/ui/textarea'
 import { Button } from '@/components/ui/button'
+import { fetchJson } from '@/lib/fetch-json'
 
 export type Note = { id: string; body: string; authorName: string | null; createdAt: string }
 
@@ -17,9 +18,9 @@ export function NotesSection({ contactId }: { contactId: string }) {
   const [submitting, setSubmitting] = useState(false)
 
   useEffect(() => {
-    fetch(`/api/contacts/${contactId}/notes`)
-      .then((r) => r.json())
+    fetchJson<Note[]>(`/api/contacts/${contactId}/notes`)
       .then(setNotes)
+      .catch(() => setError('Gagal memuat catatan'))
   }, [contactId])
 
   // Notes are a record of what agents told each other about a customer, so the list must only

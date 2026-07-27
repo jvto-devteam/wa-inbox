@@ -5,6 +5,7 @@ import { LabelPicker, type LabelOption } from './LabelPicker'
 import { NotesSection } from './NotesSection'
 import { RemindersSection } from './RemindersSection'
 import { BookingSummary, type BookingData, type TripBrief } from '@/components/contacts/BookingSummary'
+import { fetchJson } from '@/lib/fetch-json'
 
 const PIPELINE_STAGES = [
   { value: 'new', label: 'Baru' },
@@ -31,8 +32,8 @@ export function ContactPanel({ conversationId }: { conversationId: string }) {
   const [pipelineError, setPipelineError] = useState<string | null>(null)
 
   useEffect(() => {
-    fetch(`/api/conversations/${conversationId}`).then((r) => r.json()).then(setDetail)
-    fetch('/api/labels').then((r) => r.json()).then(setAllLabels)
+    fetchJson<ContactDetail>(`/api/conversations/${conversationId}`).then(setDetail).catch(() => {})
+    fetchJson<LabelOption[]>('/api/labels').then(setAllLabels).catch(() => {})
   }, [conversationId])
 
   // Mirrors LabelPicker's pattern: the pipeline stage drives follow-up/triage

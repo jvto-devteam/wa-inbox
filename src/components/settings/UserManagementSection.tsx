@@ -6,6 +6,7 @@ import { Select } from '@/components/ui/select'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table'
+import { fetchJson } from '@/lib/fetch-json'
 
 type Account = { id: string; name: string; email: string; role: 'ADMIN' | 'AGENT' }
 
@@ -18,10 +19,13 @@ export function UserManagementSection() {
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
 
+  // Resolves rather than rejects on failure: addAccount/deleteAccount await it after their
+  // own request already succeeded, so a re-load failure must surface as its own message
+  // instead of being caught by their handler and mislabelled "Gagal menambahkan akun".
   function loadAccounts() {
-    return fetch('/api/accounts')
-      .then((r) => r.json())
+    return fetchJson<Account[]>('/api/accounts')
       .then(setAccounts)
+      .catch(() => setError('Gagal memuat daftar akun'))
   }
 
   useEffect(() => {

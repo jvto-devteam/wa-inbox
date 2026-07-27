@@ -5,6 +5,7 @@ import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table'
 import { STAGE_LABELS, STAGE_VARIANTS } from '@/lib/pipeline'
+import { fetchJson } from '@/lib/fetch-json'
 
 export type ContactRow = {
   id: string
@@ -19,9 +20,11 @@ export function ContactTable() {
   const [contacts, setContacts] = useState<ContactRow[]>([])
 
   useEffect(() => {
-    fetch('/api/contacts')
-      .then((r) => r.json())
+    // Failures leave the table on its "Belum ada kontak." empty state rather than feeding
+    // an error object into `contacts.map`; a 401 has already redirected to /login.
+    fetchJson<ContactRow[]>('/api/contacts')
       .then(setContacts)
+      .catch(() => {})
   }, [])
 
   return (

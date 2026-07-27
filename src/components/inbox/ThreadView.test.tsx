@@ -70,13 +70,13 @@ function routeFetchByEndpoint(routes: {
     const s = String(url)
     if (s.endsWith('/messages')) {
       const id = s.split('/').at(-2)!
-      return Promise.resolve({ json: () => Promise.resolve(routes.messages[id] ?? []) } as Response)
+      return Promise.resolve({ ok: true, json: () => Promise.resolve(routes.messages[id] ?? []) } as Response)
     }
     if (s.endsWith('/api/accounts')) {
-      return Promise.resolve({ json: () => Promise.resolve([]) } as Response)
+      return Promise.resolve({ ok: true, json: () => Promise.resolve([]) } as Response)
     }
     const id = s.split('/').at(-1)!
-    return Promise.resolve({ json: () => Promise.resolve(routes.detail[id]) } as Response)
+    return Promise.resolve({ ok: true, json: () => Promise.resolve(routes.detail[id]) } as Response)
   }
 }
 
@@ -90,14 +90,14 @@ describe('ThreadView keyed by conversationId', () => {
     vi.mocked(fetch).mockImplementation((url) => {
       const s = String(url)
       if (s.endsWith('/messages')) {
-        if (s.includes('conv_1')) return Promise.resolve({ json: () => Promise.resolve(conv1Messages) } as Response)
-        return conv2MessagesPending.then((data) => ({ json: () => Promise.resolve(data) }) as Response)
+        if (s.includes('conv_1')) return Promise.resolve({ ok: true, json: () => Promise.resolve(conv1Messages) } as Response)
+        return conv2MessagesPending.then((data) => ({ ok: true, json: () => Promise.resolve(data) }) as Response)
       }
       if (s.endsWith('/api/accounts')) {
-        return Promise.resolve({ json: () => Promise.resolve([]) } as Response)
+        return Promise.resolve({ ok: true, json: () => Promise.resolve([]) } as Response)
       }
       // conversation-detail requests: resolve immediately, irrelevant to this test
-      return Promise.resolve({ json: () => Promise.resolve({ botEnabled: false }) } as Response)
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({ botEnabled: false }) } as Response)
     })
 
     render(<Harness />)
@@ -162,9 +162,9 @@ describe('ThreadView live delivery-status updates', () => {
   function mockBasicFetch(messages: unknown[]) {
     vi.mocked(fetch).mockImplementation((url) => {
       const s = String(url)
-      if (s.endsWith('/messages')) return Promise.resolve({ json: () => Promise.resolve(messages) } as Response)
-      if (s.endsWith('/api/accounts')) return Promise.resolve({ json: () => Promise.resolve([]) } as Response)
-      return Promise.resolve({ json: () => Promise.resolve({ botEnabled: false, assignedAgentId: null }) } as Response)
+      if (s.endsWith('/messages')) return Promise.resolve({ ok: true, json: () => Promise.resolve(messages) } as Response)
+      if (s.endsWith('/api/accounts')) return Promise.resolve({ ok: true, json: () => Promise.resolve([]) } as Response)
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({ botEnabled: false, assignedAgentId: null }) } as Response)
     })
   }
 
@@ -234,8 +234,8 @@ describe('ThreadView assign-agent dropdown', () => {
     const patchCalls: unknown[] = []
     vi.mocked(fetch).mockImplementation((url, init) => {
       const s = String(url)
-      if (s.endsWith('/messages')) return Promise.resolve({ json: () => Promise.resolve([]) } as Response)
-      if (s.endsWith('/api/accounts')) return Promise.resolve({ json: () => Promise.resolve(agents) } as Response)
+      if (s.endsWith('/messages')) return Promise.resolve({ ok: true, json: () => Promise.resolve([]) } as Response)
+      if (s.endsWith('/api/accounts')) return Promise.resolve({ ok: true, json: () => Promise.resolve(agents) } as Response)
       if (s.endsWith('/assign') && init?.method === 'PATCH') {
         patchCalls.push(JSON.parse(String(init.body)))
         return Promise.resolve({
@@ -243,7 +243,7 @@ describe('ThreadView assign-agent dropdown', () => {
           json: () => Promise.resolve(opts.patchResponse ?? { assignedAgentId: null }),
         } as Response)
       }
-      return Promise.resolve({ json: () => Promise.resolve({ botEnabled: false, assignedAgentId: opts.assignedAgentId }) } as Response)
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({ botEnabled: false, assignedAgentId: opts.assignedAgentId }) } as Response)
     })
     return patchCalls
   }
@@ -275,13 +275,13 @@ describe('ThreadView assign-agent dropdown', () => {
     const patchCalls: unknown[] = []
     vi.mocked(fetch).mockImplementation((url, init) => {
       const s = String(url)
-      if (s.endsWith('/messages')) return Promise.resolve({ json: () => Promise.resolve([]) } as Response)
-      if (s.endsWith('/api/accounts')) return Promise.resolve({ json: () => Promise.resolve(agents) } as Response)
+      if (s.endsWith('/messages')) return Promise.resolve({ ok: true, json: () => Promise.resolve([]) } as Response)
+      if (s.endsWith('/api/accounts')) return Promise.resolve({ ok: true, json: () => Promise.resolve(agents) } as Response)
       if (s.endsWith('/assign') && init?.method === 'PATCH') {
         patchCalls.push(JSON.parse(String(init.body)))
         return patchPending.then(() => ({ ok: true, json: () => Promise.resolve({ assignedAgentId: 'acc_1' }) }) as Response)
       }
-      return Promise.resolve({ json: () => Promise.resolve({ botEnabled: false, assignedAgentId: null }) } as Response)
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({ botEnabled: false, assignedAgentId: null }) } as Response)
     })
 
     render(<ThreadView conversationId="conv_1" />)
@@ -317,12 +317,12 @@ describe('ThreadView assign-agent dropdown', () => {
   it('shows an error and leaves the dropdown unchanged when the PATCH request fails', async () => {
     vi.mocked(fetch).mockImplementation((url, init) => {
       const s = String(url)
-      if (s.endsWith('/messages')) return Promise.resolve({ json: () => Promise.resolve([]) } as Response)
-      if (s.endsWith('/api/accounts')) return Promise.resolve({ json: () => Promise.resolve(agents) } as Response)
+      if (s.endsWith('/messages')) return Promise.resolve({ ok: true, json: () => Promise.resolve([]) } as Response)
+      if (s.endsWith('/api/accounts')) return Promise.resolve({ ok: true, json: () => Promise.resolve(agents) } as Response)
       if (s.endsWith('/assign') && init?.method === 'PATCH') {
         return Promise.resolve({ ok: false, json: () => Promise.resolve({ error: 'nope' }) } as Response)
       }
-      return Promise.resolve({ json: () => Promise.resolve({ botEnabled: false, assignedAgentId: null }) } as Response)
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({ botEnabled: false, assignedAgentId: null }) } as Response)
     })
 
     render(<ThreadView conversationId="conv_1" />)

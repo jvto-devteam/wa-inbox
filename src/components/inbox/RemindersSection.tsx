@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
+import { fetchJson } from '@/lib/fetch-json'
 
 export type Reminder = { id: string; dueAt: string; note: string; done: boolean }
 
@@ -18,9 +19,9 @@ export function RemindersSection({ contactId }: { contactId: string }) {
   const [submitting, setSubmitting] = useState(false)
 
   useEffect(() => {
-    fetch(`/api/contacts/${contactId}/reminders`)
-      .then((r) => r.json())
+    fetchJson<Reminder[]>(`/api/contacts/${contactId}/reminders`)
       .then(setReminders)
+      .catch(() => setError('Gagal memuat reminder'))
   }, [contactId])
 
   // Same rule as NotesSection/LabelPicker: only ever show what the server confirmed, no

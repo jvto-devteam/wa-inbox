@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { UserManagementSection } from '@/components/settings/UserManagementSection'
 import { WebhookCredentialsPanel } from '@/components/settings/WebhookCredentialsPanel'
+import { fetchJson } from '@/lib/fetch-json'
 
 type Settings = {
   defaultChannel: 'OFFICIAL' | 'UNOFFICIAL'
@@ -37,15 +38,21 @@ export default function SettingsPage() {
   const [savingHours, setSavingHours] = useState(false)
 
   useEffect(() => {
-    fetch('/api/settings').then((r) => r.json()).then(setSettings)
-    fetch('/api/numbers/status').then((r) => r.json()).then(setStatus)
-    fetch('/api/bot/gate-status').then((r) => r.json()).then(setGateStatus)
+    // Each rejection is swallowed: the page renders "Memuat..." until all three land, which
+    // is the correct resting state for a failure — feeding an `{ error }` body into these
+    // typed states instead would render a Settings screen full of undefined values.
+    fetchJson<Settings>('/api/settings').then(setSettings).catch(() => {})
+    fetchJson<NumberStatus>('/api/numbers/status').then(setStatus).catch(() => {})
+    fetchJson<GateStatus>('/api/bot/gate-status').then(setGateStatus).catch(() => {})
     // Backs the admin-only gating below (Manajemen pengguna, Webhook &
     // kredensial, and edit rights on Jam kerja). 401 (no/invalid session) is
     // treated the same as "no role" — the gated sections simply stay hidden.
+    // Kept on raw fetch rather than fetchJson deliberately: fetchJson redirects on 401, and
+    // this probe's whole purpose is to tolerate not being signed in as an admin.
     fetch('/api/session')
       .then((r) => (r.ok ? r.json() : { role: null }))
       .then((data) => setRole(data.role ?? null))
+      .catch(() => setRole(null))
   }, [])
 
   // Syncs the working-hours form fields from the server whenever `settings`
@@ -63,19 +70,27 @@ export default function SettingsPage() {
     setOffHoursAutoReply(settings.offHoursAutoReply ?? '')
   }
 
+  // These PATCHes replace `settings` wholesale with the server's response, so an unchecked
+  // non-ok body would put `{ error: '...' }` behind every field this page reads.
   async function updateDefaultChannel(defaultChannel: 'OFFICIAL' | 'UNOFFICIAL') {
-    const res = await fetch('/api/settings', { method: 'PATCH', body: JSON.stringify({ defaultChannel }) })
-    setSettings(await res.json())
+    try {
+      setSettings(await fetchJson<Settings>('/api/settings', { method: 'PATCH', body: JSON.stringify({ defaultChannel }) }))
+    } catch {
+      // Leaves the select showing the last server-confirmed value.
+    }
   }
 
   async function saveWorkingHours() {
     setSavingHours(true)
     try {
-      const res = await fetch('/api/settings', {
-        method: 'PATCH',
-        body: JSON.stringify({ workingHoursStart, workingHoursEnd, offHoursAutoReply }),
-      })
-      setSettings(await res.json())
+      setSettings(
+        await fetchJson<Settings>('/api/settings', {
+          method: 'PATCH',
+          body: JSON.stringify({ workingHoursStart, workingHoursEnd, offHoursAutoReply }),
+        })
+      )
+    } catch {
+      // Leaves the form on the values the server last confirmed.
     } finally {
       setSavingHours(false)
     }
@@ -108,17 +123,24 @@ export default function SettingsPage() {
   }
 
   async function toggleKillSwitch() {
-    const res = await fetch('/api/bot/kill-switch', { method: 'POST' })
-    const { botKillSwitch } = await res.json()
-    setSettings((prev) => (prev ? { ...prev, botKillSwitch } : prev))
+    try {
+      const { botKillSwitch } = await fetchJson<{ botKillSwitch: boolean }>('/api/bot/kill-switch', { method: 'POST' })
+      setSettings((prev) => (prev ? { ...prev, botKillSwitch } : prev))
+    } catch {
+      // Badge keeps showing the last confirmed state — never a guessed one.
+    }
   }
 
   async function syncCatalog() {
     setSyncing(true)
     try {
-      await fetch('/api/bot/sync-catalog', { method: 'POST' })
-      fetch('/api/settings').then((r) => r.json()).then(setSettings)
-      fetch('/api/bot/gate-status').then((r) => r.json()).then(setGateStatus)
+      await fetchJson('/api/bot/sync-catalog', { method: 'POST' })
+      await Promise.all([
+        fetchJson<Settings>('/api/settings').then(setSettings),
+        fetchJson<GateStatus>('/api/bot/gate-status').then(setGateStatus),
+      ])
+    } catch {
+      // The "terakhir disinkron" timestamp and gate badge just stay as they were.
     } finally {
       setSyncing(false)
     }

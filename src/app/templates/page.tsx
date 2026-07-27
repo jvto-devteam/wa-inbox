@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table'
+import { fetchJson } from '@/lib/fetch-json'
 
 type TemplateType = 'OFFICIAL' | 'QUICK_REPLY'
 type MetaStatus = 'APPROVED' | 'PENDING' | 'REJECTED' | 'NOT_APPLICABLE'
@@ -48,9 +49,9 @@ export default function TemplatesPage() {
   const [variablesText, setVariablesText] = useState('')
 
   useEffect(() => {
-    fetch('/api/templates')
-      .then((r) => r.json())
+    fetchJson<Template[]>('/api/templates')
       .then(setTemplates)
+      .catch(() => setError('Gagal memuat template'))
       .finally(() => setLoading(false))
   }, [])
 

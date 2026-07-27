@@ -3,8 +3,10 @@ import { useEffect, useState } from 'react'
 import { MessageBubble, type MessageView } from './MessageBubble'
 import { ComposeBox } from './ComposeBox'
 import { Select } from '@/components/ui/select'
+import { fetchJson } from '@/lib/fetch-json'
 
 type Agent = { id: string; name: string }
+type ConversationDetail = { botEnabled: boolean; assignedAgentId?: string | null }
 
 export function ThreadView({ conversationId }: { conversationId: string }) {
   const [messages, setMessages] = useState<MessageView[]>([])
@@ -13,25 +15,28 @@ export function ThreadView({ conversationId }: { conversationId: string }) {
   const [agents, setAgents] = useState<Agent[]>([])
   const [assignError, setAssignError] = useState<string | null>(null)
 
+  // Each of these swallows its rejection: fetchJson has already redirected on a 401, and on
+  // any other failure the thread must keep its empty/default state rather than take an error
+  // object into `messages` (which `messages.map` would then throw on).
   useEffect(() => {
-    fetch(`/api/conversations/${conversationId}/messages`)
-      .then((r) => r.json())
+    fetchJson<MessageView[]>(`/api/conversations/${conversationId}/messages`)
       .then(setMessages)
+      .catch(() => {})
   }, [conversationId])
 
   useEffect(() => {
-    fetch(`/api/conversations/${conversationId}`)
-      .then((r) => r.json())
+    fetchJson<ConversationDetail>(`/api/conversations/${conversationId}`)
       .then((data) => {
         setBotEnabled(data.botEnabled)
         setAssignedAgentId(data.assignedAgentId ?? null)
       })
+      .catch(() => {})
   }, [conversationId])
 
   useEffect(() => {
-    fetch('/api/accounts')
-      .then((r) => r.json())
+    fetchJson<Agent[]>('/api/accounts')
       .then(setAgents)
+      .catch(() => {})
   }, [])
 
   // Mirrors ContactPanel's pipeline-stage dropdown: assignment drives who is

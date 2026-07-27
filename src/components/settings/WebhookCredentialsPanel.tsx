@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react'
 import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+import { fetchJson } from '@/lib/fetch-json'
 
 type CredentialsStatus = { coexistBaseUrl: string; accessTokenSet: boolean; coexistApiKeySet: boolean }
 
@@ -20,9 +21,10 @@ export function WebhookCredentialsPanel() {
   )
 
   useEffect(() => {
-    fetch('/api/numbers/credentials')
-      .then((r) => r.json())
+    // The panel renders nothing until `status` lands, so a failure simply keeps it hidden.
+    fetchJson<CredentialsStatus>('/api/numbers/credentials')
       .then(setStatus)
+      .catch(() => {})
   }, [])
 
   if (!status) return null
