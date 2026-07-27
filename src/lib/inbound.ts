@@ -4,6 +4,7 @@ import { broadcast } from '@/lib/realtime'
 import { decideAndRespond } from '@/lib/bot/orchestrator'
 import { sendMessage } from '@/lib/send'
 import { withMediaUrl } from '@/lib/serialize-message'
+import { isHandoffLogMessage } from '@/lib/message-display'
 
 type MetaMediaObject = { id: string; mime_type: string; caption?: string; filename?: string }
 
@@ -349,22 +350,38 @@ async function ingestSingleMessage(message: MetaInboundMessage, contacts: MetaCo
       // sendMetaText/sendCoexistText and requires reply text we don't have. Instead we write a
       // log-only Message row directly, mirroring the shape sendMessage() itself writes (see
       // src/lib/send.ts) so the decision is still auditable on the bot-log page.
-      const created = await prisma.message.create({
-        data: {
-          conversationId: conversation.id,
-          direction: 'OUTBOUND',
-          type: 'text',
-          content: null,
-          // Never actually dispatched, so this has no delivery effect either way -- set to
-          // match the default outbound channel policy (Settings.defaultChannel, currently
-          // UNOFFICIAL) purely for consistency with every other message this row sits next to.
-          channel: 'UNOFFICIAL',
-          sentBy: 'BOT',
-          botTrace: decision as never,
-          deliveryStatus: 'SENT',
-        },
+      //
+      // Only when the state actually changed, though. While the kill switch is on, botEnabled
+      // never flips (see below), so every single inbound customer message re-runs this branch --
+      // logging a fresh placeholder per message would bury the thread in identical "Bot
+      // menyerahkan ke agen" rows even while an agent is actively replying in between. The last
+      // OUTBOUND message (ignoring the customer's own inbound messages, which don't represent a
+      // bot/agent state change) tells us whether anything has actually changed since the last
+      // placeholder: if it was itself a handoff log, nothing has -- skip. If it was a real
+      // agent/bot reply, or there isn't one yet (start of the conversation), this is a genuine
+      // new transition worth logging.
+      const lastOutbound = await prisma.message.findFirst({
+        where: { conversationId: conversation.id, direction: 'OUTBOUND' },
+        orderBy: { createdAt: 'desc' },
       })
-      broadcast({ type: 'message.created', conversationId: conversation.id, message: withMediaUrl(created) })
+      if (!lastOutbound || !isHandoffLogMessage(lastOutbound)) {
+        const created = await prisma.message.create({
+          data: {
+            conversationId: conversation.id,
+            direction: 'OUTBOUND',
+            type: 'text',
+            content: null,
+            // Never actually dispatched, so this has no delivery effect either way -- set to
+            // match the default outbound channel policy (Settings.defaultChannel, currently
+            // UNOFFICIAL) purely for consistency with every other message this row sits next to.
+            channel: 'UNOFFICIAL',
+            sentBy: 'BOT',
+            botTrace: decision as never,
+            deliveryStatus: 'SENT',
+          },
+        })
+        broadcast({ type: 'message.created', conversationId: conversation.id, message: withMediaUrl(created) })
+      }
 
       // A handoff has to actually hand off: without flipping botEnabled the conversation
       // stays bot-driven, so it never reaches the dashboard's "needs attention" widget
@@ -379,8 +396,9 @@ async function ingestSingleMessage(message: MetaInboundMessage, contacts: MetaCo
       // re-enabled by hand once the switch goes back off -- turning a one-click global lever
       // into an unbounded manual cleanup. The alert is suppressed for the same reason: the
       // team already knows the bot is off, and a notification per inbound message app-wide
-      // is pure noise. The audit row is still written, so the bot log honestly records that
-      // the bot declined to answer this specific message.
+      // is pure noise. The bot log still honestly records that the bot declined each message
+      // (deduped consecutive runs collapse to one row, per the dedup check above -- not one
+      // row per message).
       if (decision.cause !== 'kill_switch') {
         await prisma.conversation.update({ where: { id: conversation.id }, data: { botEnabled: false } })
         broadcast({ type: 'handoff.alert', conversationId: conversation.id, contactName: contact.name })

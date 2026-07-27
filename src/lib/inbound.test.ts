@@ -660,6 +660,60 @@ describe('ingestMetaMessage bot dispatch', () => {
       data: expect.objectContaining({ sentBy: 'BOT', content: null, direction: 'OUTBOUND' }),
     }))
   })
+
+  it('logs a handoff message on the very first message of a conversation (no prior outbound at all)', async () => {
+    stubHappyPath()
+    mockPrisma.message.findFirst.mockResolvedValue(null)
+    vi.mocked(decideAndRespond).mockResolvedValue({ mode: 'handoff', reason: 'Kata kunci eskalasi terdeteksi' })
+
+    await ingestMetaMessage(samplePayload)
+
+    expect(mockPrisma.message.findFirst).toHaveBeenCalledWith({
+      where: { conversationId: 'conv_1', direction: 'OUTBOUND' },
+      orderBy: { createdAt: 'desc' },
+    })
+    expect(mockPrisma.message.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ sentBy: 'BOT', content: null }),
+    }))
+  })
+
+  it('does not log a duplicate handoff message when the last outbound message was already one (kill-switch repeat)', async () => {
+    stubHappyPath()
+    mockPrisma.message.findFirst.mockResolvedValue({ id: 'msg_prev_handoff', sentBy: 'BOT', content: null } as never)
+    vi.mocked(decideAndRespond).mockResolvedValue({
+      mode: 'handoff',
+      reason: 'Bot dimatikan sementara (kill switch aktif)',
+      cause: 'kill_switch',
+    })
+
+    await ingestMetaMessage(samplePayload)
+
+    // Only the inbound customer message itself was created -- no second handoff-log row, and
+    // nothing new broadcast for it.
+    expect(mockPrisma.message.create).toHaveBeenCalledTimes(1)
+    expect(broadcast).not.toHaveBeenCalledWith(expect.objectContaining({
+      message: expect.objectContaining({ sentBy: 'BOT', content: null }),
+    }))
+  })
+
+  it('logs a fresh handoff message once a real agent/bot reply happened since the last one', async () => {
+    stubHappyPath()
+    mockPrisma.message.findFirst.mockResolvedValue({ id: 'msg_prev_reply', sentBy: 'AGENT', content: 'Baik, saya bantu ya' } as never)
+    vi.mocked(decideAndRespond).mockResolvedValue({
+      mode: 'handoff',
+      reason: 'Bot dimatikan sementara (kill switch aktif)',
+      cause: 'kill_switch',
+    })
+
+    await ingestMetaMessage(samplePayload)
+
+    // The customer's inbound message, plus a fresh handoff-log row -- the state changed
+    // (a real reply happened) since the last placeholder, so this one is genuinely new.
+    expect(mockPrisma.message.create).toHaveBeenCalledTimes(2)
+    expect(mockPrisma.message.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ sentBy: 'BOT', content: null }),
+    }))
+  })
 })
 
 describe('ingestMetaMessage delivery-status callbacks', () => {
