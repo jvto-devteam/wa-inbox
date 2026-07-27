@@ -46,11 +46,23 @@
  *      route integrity against at all, so a human must take over. This case
  *      is also required verbatim by Task 20/the task brief's fixed contract.
  *
- *   2. Destination given, no package's `destination` matches (case-insensitive)
- *      -> handoff, reason cites the destination.
+ *   2. Destination given, no package carries it among its `destinationTokens`
+ *      (case-insensitive) -> handoff, reason cites the destination.
  *      Direct analog of `RouteGate.get()`'s fail-safe: an unrecognized key
  *      resolves to `integrity="unknown"` -> `route_gap=True` -> handoff.
  *      High confidence — this is the clearest and most direct port.
+ *
+ *      (Fix Wave 3b: this used to compare against a single
+ *      `CatalogPackage.destination` string. The real synced release has no
+ *      single-destination package -- all 16 are multi-destination overland
+ *      tours -- so `CatalogPackage` now carries `destinationTokens: string[]`
+ *      and a package matches when ANY of its tokens equals the destination.
+ *      The comparison stays *exact* per token, not a substring test: the
+ *      destination reaching this gate is the canonical token the funnel already
+ *      matched and persisted into `tripBrief.destination`, so a looser
+ *      comparison could only ever widen the gate, never help it. Fuzzy,
+ *      customer-text-facing matching belongs in funnel.ts's `findMatch`, which
+ *      is what produces that canonical token in the first place.)
  *
  *   3. Destination matches one or more packages, but NONE of them has a
  *      synced price (`priceIdr === null` for every match) -> handoff.
@@ -75,6 +87,18 @@
  *      signal: it reuses data that already means "there is something the
  *      customer must be told" rather than fabricating a new field.
  *
+ *      (Fix Wave 3b, on real data: `policyNotes` is now populated from the
+ *      release's policy modules, but deliberately only the PACKAGE-SCOPED ones
+ *      -- see catalog.ts's header. Had the 6 company-wide `global` policies
+ *      been included too, every package would carry notes, `needs_review` would
+ *      be constant-true, and this branch would stop discriminating anything. As
+ *      populated, 13 of 16 packages (the Ijen ones) are `needs_review` for two
+ *      real disclosures -- mandatory health screening and the monthly crater
+ *      closure -- and the 3 non-Ijen packages are `clear`. Consumer side: the
+ *      orchestrator does NOT hand off on `needs_review`; matching the real
+ *      Python, the price is still shown and funnel.ts appends the disclosure to
+ *      the reply. See orchestrator.ts step 6.)
+ *
  *   5. A priced match exists with no policy notes -> clear.
  *
  * There is no wa-inbox equivalent of `effective_instant_book_eligible`
@@ -92,8 +116,9 @@ export function checkRouteGate(input: { destination?: string; catalog: Catalog }
     return { status: 'handoff', reason: 'Tujuan belum diketahui dari percakapan' }
   }
 
-  const matches = catalog.packages.filter(
-    (p) => p.destination.toLowerCase() === destination.toLowerCase()
+  const wanted = destination.toLowerCase()
+  const matches = catalog.packages.filter((p) =>
+    p.destinationTokens.some((token) => token.toLowerCase() === wanted)
   )
 
   if (matches.length === 0) {

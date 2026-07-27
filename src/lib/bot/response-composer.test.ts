@@ -5,7 +5,7 @@ import type { Catalog, CatalogPackage } from './types'
 function pkg(overrides: Partial<CatalogPackage> = {}): CatalogPackage {
   return {
     packageKey: 'ijen-1d',
-    destination: 'Ijen',
+    destinationTokens: ['ijen'],
     title: 'Ijen Blue Fire 1D',
     priceIdr: 850000,
     inclusions: ['Guide lokal', 'Transport'],

@@ -1,21 +1,339 @@
+/**
+ * Catalog adapter -- turns the *synced release data* under `catalog/` (written by
+ * `scripts/sync-agent-catalog.ts` from jvto-whatsapp-agent-runtime's
+ * `catalog/agent-catalog/` + `catalog/customer-sales/`) into the flat
+ * `CatalogPackage[]` shape the bot brain (funnel.ts, route-gate.ts,
+ * response-composer.ts) actually consumes.
+ *
+ * --- Why this file is an explicit adapter and not a generic loader ---
+ *
+ * The previous implementation walked `catalog/`, `JSON.parse`d every `*.json`
+ * file, and spread any top-level array straight into `packages`. Nothing in the
+ * synced release is shaped like a `CatalogPackage`: the release is a *normalized,
+ * multi-file* dataset joined on `package_key` (16 packages x ~10 per-package
+ * files + several registry/manifest objects). So the old loader produced ~190
+ * objects with none of the fields the bot reads (`packageKey`, `title`,
+ * `priceIdr`, ...) -- every one of them `undefined` -- which made
+ * `p.destination.toLowerCase()` in route-gate.ts throw and took the whole
+ * orchestrator down its fail-safe handoff path on every Mode 1/2 message. Modes
+ * 1/2 were therefore dead in production despite being individually built and
+ * tested. This adapter is the join the data always needed.
+ *
+ * --- The join (all sources are real files in `catalog/`, verified 2026-07-27) ---
+ *
+ *   package-profiles.json      (array, 16) -- the spine: `package_key`, `title`,
+ *                                 `public_url`, `slug`, `destination_tokens`.
+ *   standard-price-tiers.json  (array, 16) -- `pax_tiers[] {min_pax, max_pax,
+ *                                 idr_per_person}`, joined on `package_key`.
+ *   component-matrices.json    (array, 16) -- `included[]` / `excluded[]`,
+ *                                 joined on `package_key`.
+ *   module-compatibility.json  (object)    -- `destination_to_packages`
+ *                                 (destination -> package_key[]) and
+ *                                 `module_applicability` (module_id ->
+ *                                 package_key[]).
+ *   general-modules.json       (array, 67) -- the module texts referenced by
+ *                                 `module_applicability`, incl. the policy cards
+ *                                 with `short_answer` / `scope` / `approval_status`.
+ *   customer-link-registry.json (object)   -- `base_url` for the public site.
+ *
+ * `meta.json` (`syncedAt`) is read exactly as before. `deployment-gate.json` is
+ * not read here at all (deployment-gate.ts owns it). Every other file in
+ * `catalog/` (endpoint-chains, accommodation-rules, vehicle-and-luggage-rules,
+ * guide-support-rules, ...) carries operational detail that `CatalogPackage` has
+ * no field for and is deliberately ignored rather than half-mapped.
+ *
+ * --- Field-by-field judgment calls ---
+ *
+ * `priceIdr` <- the LOWEST `idr_per_person` across the package's `pax_tiers`.
+ *   The catalog's published price is a per-pax tier ladder (larger group => lower
+ *   per-person price), but `CatalogPackage.priceIdr` is a single number. The
+ *   lowest tier is the "starting from" price, which is exactly how the only
+ *   consumer renders it (funnel.ts: `from Rp ${priceIdr}/person`). A package with
+ *   no price entry, or an entry with no usable tier, gets `null` -- route-gate.ts
+ *   already treats a null price as "not yet route-clean" and hands off, which is
+ *   the correct fail-safe for a package we cannot quote.
+ *
+ * `inclusions` <- `component-matrices.json`'s `included[]` verbatim. `excluded[]`
+ *   and `conditional[]` have no `CatalogPackage` field and are dropped rather
+ *   than merged into `inclusions` (merging them would let response-composer.ts
+ *   emit "Termasuk: ... visas, tips" -- the exact opposite of the truth).
+ *
+ * `destinationTokens` <- the keys of `module-compatibility.json`'s
+ *   `destination_to_packages` (`destination_bromo` -> `bromo`,
+ *   `destination_tumpak_sewu` -> `tumpak sewu`), i.e. the release's own curated
+ *   destination taxonomy (5 destinations; the same 5 that destination-guidance.json
+ *   documents and that location-aliases.json assigns aliases to). Deliberately NOT
+ *   `package-profiles.json`'s own `destination_tokens`, which is slug-derived and
+ *   noisy: it splits "Tumpak Sewu" into `["tumpak","sewu"]` and "Taman Safari
+ *   Prigen" into `["taman","safari","prigen"]`, none of which is a destination a
+ *   customer would name. The profile tokens are used only as a fallback if
+ *   module-compatibility.json is missing or malformed, so a partial sync degrades
+ *   to fuzzy matching rather than to no matching at all.
+ *
+ *   Aliases (location-aliases.json) are intentionally NOT expanded into the token
+ *   list: every alias there is a superset string of the canonical token ("Mount
+ *   Bromo", "Ijen Crater", "Tumpak Sewu Waterfall"), and funnel.ts matches tokens
+ *   as substrings of the customer's message, so the canonical token already
+ *   matches every alias -- including Indonesian phrasings the alias list does not
+ *   even carry ("gunung bromo", "kawah ijen").
+ *
+ * `policyNotes` <- the package-scoped, customer-visible, approved `policy` modules
+ *   that `module_applicability` links to this package, rendered as
+ *   "`title`: `short_answer`".
+ *
+ *   This is a *filtered* view of the policy layer, and the filter is the load-bearing
+ *   judgment call. `general-modules.json` carries 10 policy modules with a declared
+ *   `scope`: 6 `global`, 2 `ijen_scoped`, 1 `conditional_eligible` (ISIC student
+ *   pricing), 1 `conditional_large_group` (police escort). `module_applicability`
+ *   attaches all 6 global ones plus both conditional ones to all 16 packages.
+ *   Including them would make `policyNotes` non-empty for every package, and
+ *   `policyNotes.length > 0` is precisely the signal route-gate.ts reads to decide
+ *   `needs_review` -- a gate condition that is true for every package is not a gate.
+ *   It would also append ~8 boilerplate paragraphs to every funnel reply.
+ *
+ *   So only package-scoped policies are included (`scope` is neither `global` nor
+ *   `conditional_*`): for the current release that is Ijen health screening and the
+ *   Ijen monthly closure, on the 13 packages that visit Ijen. Those are genuine
+ *   per-package disclosures ("a health certificate is mandatory for every guest"),
+ *   which is exactly what route-gate.ts's `needs_review` and funnel.ts's disclosure
+ *   block are for. `conditional_*` policies are excluded on top of that because they
+ *   apply only under a customer-side condition (being a student, being a large
+ *   group) that the catalog cannot evaluate -- stating them unconditionally would
+ *   assert something that may not apply. The global policies are not lost: they are
+ *   company-wide FAQ material (Mode 2), not per-package route disclosures.
+ *
+ * `links` <- `{ details: <customer-link-registry base_url> + <profile public_url> }`.
+ *   The registry's `links[]` entries are keyed by `link_key` and their `used_by`
+ *   points at *module ids*, not package keys; the 16 `package_page` entries have
+ *   `used_by: null` and their `link_key` is slug-derived, which COLLIDES for the
+ *   from-Bali and from-Surabaya variants of the same slug (e.g.
+ *   `package_ijen_papuma_tumpak_sewu_bromo_4d3n` appears twice with different URLs).
+ *   `public_url` on the profile is unambiguous and reconstructs the same URL, so it
+ *   is the join used. The 16 `booking_start` entries are deliberately NOT surfaced:
+ *   they carry `status: "prefill_unverified"` and the registry's own notes say the
+ *   `?package=` param "is not yet wired" -- sending a customer a link that does not
+ *   preselect their package is worse than sending none. (response-composer.ts reads
+ *   `links.booking` for its how-to-book line; that key stays absent until the
+ *   prefill is verified, and the composer already handles its absence.)
+ */
 import fs from 'fs'
 import path from 'path'
 import type { Catalog, CatalogPackage } from './types'
 
 const CATALOG_DIR = path.join(process.cwd(), 'catalog')
 
+const PROFILES_FILE = 'package-profiles.json'
+const PRICE_TIERS_FILE = 'standard-price-tiers.json'
+const COMPONENTS_FILE = 'component-matrices.json'
+const MODULE_COMPATIBILITY_FILE = 'module-compatibility.json'
+const GENERAL_MODULES_FILE = 'general-modules.json'
+const LINK_REGISTRY_FILE = 'customer-link-registry.json'
+const META_FILE = 'meta.json'
+
+const DESTINATION_KEY_PREFIX = 'destination_'
+
+type Json = Record<string, unknown>
+
+function isObject(value: unknown): value is Json {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function asString(value: unknown): string | null {
+  return typeof value === 'string' && value.trim().length > 0 ? value : null
+}
+
+function asStringArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string' && v.length > 0) : []
+}
+
+/**
+ * Reads one file from `catalog/`. A missing or malformed file is a *degradation*,
+ * never a crash: the bot loses whatever that file contributed (a price, an
+ * inclusion list) and keeps serving the rest, with a `console.warn` for the
+ * operator. Throwing here would take out the orchestrator's entire Mode 1/2 path.
+ */
+function readCatalogFile(fileName: string): unknown {
+  const filePath = path.join(CATALOG_DIR, fileName)
+  if (!fs.existsSync(filePath)) {
+    console.warn(`loadCatalog: catalog/${fileName} is missing — continuing without it`)
+    return null
+  }
+  try {
+    return JSON.parse(fs.readFileSync(filePath, 'utf-8'))
+  } catch (error) {
+    console.warn(`loadCatalog: catalog/${fileName} is not valid JSON — skipped`, error)
+    return null
+  }
+}
+
+/** Indexes an array of `{ package_key, ... }` release objects by `package_key`. */
+function indexByPackageKey(parsed: unknown, fileName: string): Map<string, Json> {
+  const index = new Map<string, Json>()
+  if (parsed === null) return index
+  if (!Array.isArray(parsed)) {
+    console.warn(`loadCatalog: expected catalog/${fileName} to be an array — ignored`)
+    return index
+  }
+  for (const entry of parsed) {
+    if (!isObject(entry)) continue
+    const key = asString(entry.package_key)
+    if (key) index.set(key, entry)
+  }
+  return index
+}
+
+/**
+ * Lowest published per-person price across the tier ladder ("starting from").
+ * Non-numeric, non-finite and non-positive tier values are ignored rather than
+ * trusted, so a partially-synced tier cannot produce a `Rp 0/person` quote.
+ */
+function lowestTierPriceIdr(entry: Json | undefined): number | null {
+  if (!entry) return null
+  const tiers = Array.isArray(entry.pax_tiers) ? entry.pax_tiers : []
+  const prices = tiers
+    .map((tier) => (isObject(tier) ? tier.idr_per_person : null))
+    .filter((price): price is number => typeof price === 'number' && Number.isFinite(price) && price > 0)
+  return prices.length > 0 ? Math.min(...prices) : null
+}
+
+/** `destination_to_packages` -> `package_key` -> canonical destination tokens. */
+function buildDestinationIndex(moduleCompatibility: unknown): Map<string, string[]> {
+  const index = new Map<string, string[]>()
+  if (!isObject(moduleCompatibility)) return index
+  const byDestination = moduleCompatibility.destination_to_packages
+  if (!isObject(byDestination)) return index
+
+  for (const [destinationKey, packageKeys] of Object.entries(byDestination)) {
+    if (!destinationKey.startsWith(DESTINATION_KEY_PREFIX)) continue
+    // `destination_tumpak_sewu` -> `tumpak sewu`: the node id is snake_cased, but
+    // customers type it with a space, and funnel.ts matches tokens as substrings.
+    const token = destinationKey.slice(DESTINATION_KEY_PREFIX.length).replace(/_/g, ' ').trim()
+    if (!token) continue
+    for (const packageKey of asStringArray(packageKeys)) {
+      const tokens = index.get(packageKey) ?? []
+      if (!tokens.includes(token)) tokens.push(token)
+      index.set(packageKey, tokens)
+    }
+  }
+  return index
+}
+
+/**
+ * `module_applicability` x `general-modules.json` -> `package_key` -> policy
+ * disclosure lines. See the file header for why only package-scoped policies
+ * (not `global`, not `conditional_*`) are included.
+ */
+function buildPolicyNoteIndex(moduleCompatibility: unknown, generalModules: unknown): Map<string, string[]> {
+  const index = new Map<string, string[]>()
+  if (!isObject(moduleCompatibility) || !Array.isArray(generalModules)) return index
+  const applicability = moduleCompatibility.module_applicability
+  if (!isObject(applicability)) return index
+
+  const noteByModuleId = new Map<string, string>()
+  for (const generalModule of generalModules) {
+    if (!isObject(generalModule)) continue
+    if (generalModule.category !== 'policy') continue
+    if (generalModule.customer_visible !== true) continue
+    if (generalModule.approval_status !== 'approved') continue
+    const scope = asString(generalModule.scope)
+    if (!scope || scope === 'global' || scope.startsWith('conditional')) continue
+    const moduleId = asString(generalModule.module_id)
+    const shortAnswer = asString(generalModule.short_answer)
+    if (!moduleId || !shortAnswer) continue
+    const title = asString(generalModule.title)
+    noteByModuleId.set(moduleId, title ? `${title}: ${shortAnswer}` : shortAnswer)
+  }
+
+  for (const [moduleId, packageKeys] of Object.entries(applicability)) {
+    const note = noteByModuleId.get(moduleId)
+    if (!note) continue
+    // The applicability lists contain duplicate package keys in the real release
+    // (e.g. `destination_bromo` lists all 15 Bromo packages twice), so dedupe.
+    for (const packageKey of new Set(asStringArray(packageKeys))) {
+      const notes = index.get(packageKey) ?? []
+      if (!notes.includes(note)) notes.push(note)
+      index.set(packageKey, notes)
+    }
+  }
+  return index
+}
+
+function publicSiteBaseUrl(linkRegistry: unknown): string {
+  if (!isObject(linkRegistry)) return ''
+  return (asString(linkRegistry.base_url) ?? '').replace(/\/+$/, '')
+}
+
+function buildDetailsLink(baseUrl: string, publicUrl: string | null): Record<string, string> {
+  if (!publicUrl) return {}
+  if (/^https?:\/\//i.test(publicUrl)) return { details: publicUrl }
+  if (!baseUrl) return {}
+  return { details: `${baseUrl}${publicUrl.startsWith('/') ? '' : '/'}${publicUrl}` }
+}
+
 export function loadCatalog(): Catalog {
   if (!fs.existsSync(CATALOG_DIR)) return { packages: [], syncedAt: null }
 
+  const profiles = readCatalogFile(PROFILES_FILE)
+  const priceTiers = indexByPackageKey(readCatalogFile(PRICE_TIERS_FILE), PRICE_TIERS_FILE)
+  const components = indexByPackageKey(readCatalogFile(COMPONENTS_FILE), COMPONENTS_FILE)
+  const moduleCompatibility = readCatalogFile(MODULE_COMPATIBILITY_FILE)
+  const destinationIndex = buildDestinationIndex(moduleCompatibility)
+  const policyNoteIndex = buildPolicyNoteIndex(moduleCompatibility, readCatalogFile(GENERAL_MODULES_FILE))
+  const baseUrl = publicSiteBaseUrl(readCatalogFile(LINK_REGISTRY_FILE))
+
   const packages: CatalogPackage[] = []
-  for (const file of fs.readdirSync(CATALOG_DIR)) {
-    if (!file.endsWith('.json') || file === 'meta.json') continue
-    const parsed = JSON.parse(fs.readFileSync(path.join(CATALOG_DIR, file), 'utf-8'))
-    if (Array.isArray(parsed)) packages.push(...parsed)
+  const seen = new Set<string>()
+
+  if (profiles !== null && !Array.isArray(profiles)) {
+    console.warn(`loadCatalog: expected catalog/${PROFILES_FILE} to be an array — no packages loaded`)
+  }
+
+  for (const profile of Array.isArray(profiles) ? profiles : []) {
+    if (!isObject(profile)) {
+      console.warn(`loadCatalog: skipping a non-object entry in catalog/${PROFILES_FILE}`)
+      continue
+    }
+
+    // Validation, not blind trust: a malformed entry is skipped with a warning so
+    // the catalog degrades (one fewer package) instead of the bot serving a
+    // package it cannot name or key.
+    const packageKey = asString(profile.package_key)
+    const title = asString(profile.title)
+    if (!packageKey || !title) {
+      console.warn(
+        `loadCatalog: skipping malformed package in catalog/${PROFILES_FILE} ` +
+          `(package_key=${JSON.stringify(profile.package_key)}, title=${JSON.stringify(profile.title)})`
+      )
+      continue
+    }
+    if (seen.has(packageKey)) {
+      console.warn(`loadCatalog: skipping duplicate package_key "${packageKey}" in catalog/${PROFILES_FILE}`)
+      continue
+    }
+    seen.add(packageKey)
+
+    // Fallback to the profile's own slug-derived tokens only when the curated
+    // taxonomy is unavailable (see the file header) -- fuzzy matching beats none.
+    const destinationTokens = destinationIndex.get(packageKey) ?? asStringArray(profile.destination_tokens)
+    if (destinationTokens.length === 0) {
+      console.warn(`loadCatalog: package "${packageKey}" has no destination tokens — it will never match a customer message`)
+    }
+
+    const component = components.get(packageKey)
+
+    packages.push({
+      packageKey,
+      title,
+      destinationTokens,
+      priceIdr: lowestTierPriceIdr(priceTiers.get(packageKey)),
+      inclusions: component ? asStringArray(component.included) : [],
+      policyNotes: policyNoteIndex.get(packageKey) ?? [],
+      links: buildDetailsLink(baseUrl, asString(profile.public_url)),
+    })
   }
 
   let syncedAt: string | null = null
-  const metaPath = path.join(CATALOG_DIR, 'meta.json')
+  const metaPath = path.join(CATALOG_DIR, META_FILE)
   if (fs.existsSync(metaPath)) syncedAt = JSON.parse(fs.readFileSync(metaPath, 'utf-8')).syncedAt ?? null
 
   return { packages, syncedAt }

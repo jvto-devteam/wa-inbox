@@ -5,7 +5,7 @@ import type { Catalog, CatalogPackage } from './types'
 function pkg(overrides: Partial<CatalogPackage> = {}): CatalogPackage {
   return {
     packageKey: 'ijen-1d',
-    destination: 'Ijen',
+    destinationTokens: ['ijen'],
     title: 'Ijen Blue Fire 1D',
     priceIdr: 850000,
     inclusions: [],
@@ -26,8 +26,22 @@ describe('checkRouteGate', () => {
   })
 
   it('is case-insensitive when matching destination', () => {
-    const catalog = catalogOf([pkg({ destination: 'Ijen' })])
+    const catalog = catalogOf([pkg({ destinationTokens: ['Ijen'] })])
     expect(checkRouteGate({ destination: 'ijen', catalog })).toEqual({ status: 'clear' })
+  })
+
+  // Fix Wave 3b: every one of the 16 real synced packages is a multi-destination
+  // overland tour, so a package must match on ANY of its tokens -- not on one
+  // arbitrarily-chosen "primary" destination.
+  it('matches a multi-destination package on any of its destination tokens', () => {
+    const catalog = catalogOf([pkg({ packageKey: 'bali/bromo-ijen-3d2n', destinationTokens: ['bromo', 'ijen'] })])
+    expect(checkRouteGate({ destination: 'bromo', catalog })).toEqual({ status: 'clear' })
+    expect(checkRouteGate({ destination: 'ijen', catalog })).toEqual({ status: 'clear' })
+  })
+
+  it('hands off for a destination that is only a substring of a token (no accidental fuzzy match)', () => {
+    const catalog = catalogOf([pkg({ destinationTokens: ['tumpak sewu'] })])
+    expect(checkRouteGate({ destination: 'tumpak', catalog }).status).toBe('handoff')
   })
 
   it('returns handoff when no destination has been extracted yet', () => {

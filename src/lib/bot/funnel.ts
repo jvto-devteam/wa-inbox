@@ -45,10 +45,10 @@
  * `orderData` payload travels between calls the way `userStates[userId]` does in the
  * real source. Two consequences follow, both disclosed rather than silently invented:
  *
- *   1. Domain mismatch (city-routing vs single-destination catalog): orderFlow.js's
+ *   1. Domain mismatch (city-routing vs destination catalog): orderFlow.js's
  *      actual question is "which of our 2 hub cities (Surabaya/Bali) do you start/end
  *      at", entirely orthogonal to wa-inbox's Catalog, which has no city/route field —
- *      only a single `destination` per package (e.g. "Ijen"). The real TANYA_ORIGIN/
+ *      only the destinations each package visits (e.g. "ijen"). The real TANYA_ORIGIN/
  *      REKOMENDASI copy is therefore NOT literally portable (porting it verbatim would
  *      ask customers a question the system cannot validate against). TANYA_ORIGIN's
  *      "which destination" matching below is a reasoned substitute for
@@ -56,6 +56,19 @@
  *      unlock REKOMENDASI from free text), simplified to one field since Catalog only
  *      has one. Wherever the real copy is domain-agnostic (not city-specific), it is
  *      reused verbatim (see per-state notes below).
+ *
+ *      Fix Wave 3b: `CatalogPackage.destination: string` became
+ *      `destinationTokens: string[]`, because every one of the 16 real synced
+ *      packages is a multi-destination overland tour (see types.ts). `findMatch`
+ *      below therefore scans the union of all packages' tokens and returns every
+ *      package carrying the earliest-mentioned one — closer to `detectOriginAndEnd`
+ *      than the single-string version was, since a real message ("bromo dan ijen")
+ *      names several and the real source also disambiguates by string index.
+ *      `processFunnelState` now also RETURNS the matched destination token: the
+ *      orchestrator persists it into `tripBrief.destination`, which is what
+ *      route-gate.ts validates. Previously the match was computed here, used for
+ *      the reply, and thrown away — so `tripBrief.destination` was never written
+ *      by anything and the route gate handed off on every single message.
  *   2. No persisted `orderData` means a `currentState === 'REKOMENDASI'` call has no
  *      memory of which destination was previously matched, and real `getReply` returns
  *      `null` for that case anyway (delegates to the LLM layer, which is Task 28/29 --
@@ -90,6 +103,19 @@
  *     verbatim; the per-package line drops fields Catalog doesn't have (days/nights/
  *     priceTiers/highlights) since `CatalogPackage` only carries `title`/`priceIdr`/
  *     `links`.
+ *   - "Good to know:" disclosure block (Fix Wave 3b): newly authored, with no
+ *     counterpart in `packages.js` -- chatbot-web has no policy layer at all. It
+ *     exists because the ported jvto-agent-runtime DOES: `presentation_resolver`'s
+ *     `needs_review` branch keeps showing the standard price but attaches a
+ *     disclosure (see route-gate.ts's header). route-gate.ts derives exactly that
+ *     state from `policyNotes`, but after Wave 3a removed `composeResponse`'s only
+ *     call site, nothing surfaced the disclosure anywhere -- the customer got the
+ *     price with the caveat silently dropped. Attaching the notes here, to the
+ *     reply that quotes the price, is the smallest faithful place to put them:
+ *     the funnel already holds the matched packages, so no extra state has to be
+ *     threaded from the route gate. The alternative (hand off on `needs_review`)
+ *     would send 13 of the 16 real packages to a human for two disclosures that
+ *     are published on the website anyway.
  */
 import type { Catalog, CatalogPackage } from './types'
 
@@ -108,33 +134,53 @@ const GENERIC_CLARIFY = "Sorry, I didn't quite catch that. Could you clarify? �
 // function's -- documented here rather than silently ported and left dead.
 const HUMAN_HANDOFF_NUDGE = 'Our team will be with you shortly. Thank you for your patience! 😊'
 
-// Finds every package for the single destination mentioned earliest in the message
-// (mirrors orderFlow.js's `detectOriginAndEnd` disambiguating multiple city mentions
-// by string index via `msg.search(...)`) -- avoids mixing packages from two different
-// destinations under one recommendation reply if a message happens to name more than one.
-function findMatch(message: string, catalog: Catalog): CatalogPackage[] {
+// Cap on how many disclosure lines one recommendation reply may carry. The real
+// release attaches at most 2 package-scoped policies to any package, so this is
+// headroom against a future sync, not a filter on today's data -- an unbounded
+// policy dump would push the actual tour list off a phone screen.
+const MAX_DISCLOSURES = 4
+
+// Every distinct destination token in the catalog, lowercased and deduped.
+function allDestinationTokens(catalog: Catalog): string[] {
+  return [...new Set(catalog.packages.flatMap((p) => p.destinationTokens.map((t) => t.toLowerCase())))]
+}
+
+// Tokens are canonical and lowercase ('tumpak sewu'); replies show them to a
+// customer, so they get title-cased for display only -- never for matching.
+function displayDestination(token: string): string {
+  return token.replace(/\b\w/g, (c) => c.toUpperCase())
+}
+
+// Finds every package covering the single destination mentioned earliest in the
+// message (mirrors orderFlow.js's `detectOriginAndEnd` disambiguating multiple city
+// mentions by string index via `msg.search(...)`) -- avoids mixing packages from two
+// different destinations under one recommendation reply if a message names more than
+// one. A package matches on ANY of its `destinationTokens`, so a combined
+// Bromo+Ijen tour is offered to a customer who asked about either.
+function findMatch(message: string, catalog: Catalog): { destination: string; matches: CatalogPackage[] } | null {
   const lower = message.toLowerCase()
   let bestDestination: string | null = null
   let bestIndex = Infinity
-  for (const destination of new Set(catalog.packages.map((p) => p.destination))) {
-    const index = lower.indexOf(destination.toLowerCase())
+  for (const token of allDestinationTokens(catalog)) {
+    const index = lower.indexOf(token)
     if (index !== -1 && index < bestIndex) {
       bestIndex = index
-      bestDestination = destination
+      bestDestination = token
     }
   }
-  if (bestDestination === null) return []
-  return catalog.packages.filter((p) => p.destination === bestDestination)
+  if (bestDestination === null) return null
+  const destination = bestDestination
+  const matches = catalog.packages.filter((p) => p.destinationTokens.some((t) => t.toLowerCase() === destination))
+  return matches.length > 0 ? { destination, matches } : null
 }
 
 function askForDestinationReply(catalog: Catalog): string {
-  const destinations = [...new Set(catalog.packages.map((p) => p.destination))]
+  const destinations = allDestinationTokens(catalog).map(displayDestination)
   const list = destinations.length > 0 ? destinations.join(', ') : 'our tours'
   return `Where would you like to go? 🗺️\n\nWe currently offer tours to: ${list}. Just let me know which one interests you!`
 }
 
-function recommendationReply(matches: CatalogPackage[]): string {
-  const destination = matches[0]!.destination
+function recommendationReply(destination: string, matches: CatalogPackage[]): string {
   const list = matches
     .map((p, i) => {
       const price = p.priceIdr != null ? `from Rp ${p.priceIdr.toLocaleString('id-ID')}/person` : 'price on request'
@@ -143,8 +189,15 @@ function recommendationReply(matches: CatalogPackage[]): string {
     })
     .join('\n')
 
+  // Package-scoped disclosures, deduped across the listed packages (they overlap
+  // heavily -- every Ijen package carries the same two). This is the surfacing of
+  // route-gate.ts's `needs_review` state; see the copy-provenance note in the header.
+  const disclosures = [...new Set(matches.flatMap((p) => p.policyNotes))].slice(0, MAX_DISCLOSURES)
+  const disclosureBlock =
+    disclosures.length > 0 ? `\n\nGood to know:\n${disclosures.map((note) => `• ${note}`).join('\n')}` : ''
+
   return (
-    `Here are our tours for *${destination}*! 🌋\n\n${list}\n\n` +
+    `Here are our tours for *${displayDestination(destination)}*! 🌋\n\n${list}${disclosureBlock}\n\n` +
     'All tours are 100% private — just your group, no strangers!\n' +
     'Tap any link to view full details, or feel free to ask me anything! 😊'
   )
@@ -154,7 +207,7 @@ export function processFunnelState(input: {
   currentState: string
   message: string
   catalog: Catalog
-}): { reply: string; nextState: string } {
+}): { reply: string; nextState: string; destination?: string } {
   const { currentState, message, catalog } = input
 
   switch (currentState) {
@@ -163,9 +216,17 @@ export function processFunnelState(input: {
     // in the first message.
     case 'GREETING':
     case 'TANYA_ORIGIN': {
-      const matches = findMatch(message, catalog)
-      if (matches.length > 0) {
-        return { reply: recommendationReply(matches), nextState: 'REKOMENDASI' }
+      const match = findMatch(message, catalog)
+      if (match) {
+        // `destination` is the caller's only signal of what was matched -- the real
+        // orderFlow.js kept it in its per-user `orderData`, which this stateless
+        // signature has no equivalent for, so it travels out in the return value and
+        // the orchestrator persists it into `tripBrief`.
+        return {
+          reply: recommendationReply(match.destination, match.matches),
+          nextState: 'REKOMENDASI',
+          destination: match.destination,
+        }
       }
       return { reply: askForDestinationReply(catalog), nextState: 'TANYA_ORIGIN' }
     }

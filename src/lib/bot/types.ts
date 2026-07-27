@@ -31,7 +31,18 @@ export type BotDecision =
 
 export type CatalogPackage = {
   packageKey: string
-  destination: string
+  // Every canonical destination this package visits, lowercase, e.g.
+  // ['bromo', 'ijen'] or ['tumpak sewu', 'bromo', 'ijen'].
+  //
+  // This replaced a single `destination: string`. The real synced release
+  // (catalog/package-profiles.json + module-compatibility.json) has NO
+  // single-destination package: all 16 are multi-destination overland tours
+  // covering 2-6 of the 5 canonical destinations. Collapsing that to one string
+  // would mean a customer asking about "ijen" silently fails to match a package
+  // whose single chosen destination happens to be "bromo" -- for 13 of the 16
+  // packages. Matching (route-gate.ts, funnel.ts) is therefore token-wise:
+  // a package matches if ANY of its tokens matches.
+  destinationTokens: string[]
   title: string
   priceIdr: number | null
   inclusions: string[]

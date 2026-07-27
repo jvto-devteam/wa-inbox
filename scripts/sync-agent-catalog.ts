@@ -15,11 +15,22 @@
  *    `package-variations.json`) are byte-compared: when both copies are
  *    identical (confirmed via `cmp` — these are intentionally shared
  *    module-layer data per `catalog-manifest.json`'s `module_layer` block),
- *    the file is copied once, unprefixed, to avoid double-counting in
- *    `src/lib/bot/catalog.ts` (`loadCatalog`), which concatenates every
- *    top-level array-shaped `*.json` file in the flat destination dir. Only
- *    a same-named file with genuinely divergent content would be prefixed
- *    with its source directory to keep both copies without collision.
+ *    the file is copied once, UNPREFIXED. Only a same-named file with
+ *    genuinely divergent content is prefixed with its source directory, to
+ *    keep both copies without collision.
+ *
+ *    Keeping shared files unprefixed matters more than it used to: as of Fix
+ *    Wave 3b, `src/lib/bot/catalog.ts` (`loadCatalog`) no longer scans the
+ *    directory and concatenates every array-shaped file — it reads six
+ *    specific filenames (`package-profiles.json`, `standard-price-tiers.json`,
+ *    `component-matrices.json`, `module-compatibility.json`,
+ *    `general-modules.json`, `customer-link-registry.json`) and joins them on
+ *    `package_key`. A prefixed copy is therefore not double-counted but
+ *    INVISIBLE to the bot. If two source dirs ever ship genuinely divergent
+ *    copies of one of those six files, both land prefixed, the adapter finds
+ *    neither, and `loadCatalog` warns that the file is missing — which is the
+ *    intended loud failure, but the sync should then be taught which copy is
+ *    authoritative rather than left in that state.
  *  - it additionally writes `catalog/meta.json` (`{ syncedAt }`) and shells
  *    out to the agent-runtime's `deployment-gate` CLI to produce
  *    `catalog/deployment-gate.json`.
