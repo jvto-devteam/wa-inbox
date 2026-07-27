@@ -14,7 +14,10 @@ function InboxPageContent() {
   const [selectedId, setSelectedId] = useState<string | null>(() => searchParams.get('conversation'))
 
   return (
-    <div className="grid h-screen grid-cols-[20rem_1fr_20rem]">
+    // h-full, not h-screen: src/app/(authenticated)/layout.tsx now puts a nav bar above every
+    // page and owns the viewport height, so a 100vh child here would make the document taller
+    // than the screen and scroll the nav bar off the top.
+    <div className="grid h-full grid-cols-[20rem_1fr_20rem]">
       <ConversationList selectedId={selectedId} onSelect={setSelectedId} />
       {selectedId ? (
         <>
@@ -40,7 +43,7 @@ export default function InboxPage() {
   // suspense boundary"). The fallback is effectively invisible in practice -- searchParams
   // resolves synchronously on the client -- but is still a real, non-empty loading state.
   return (
-    <Suspense fallback={<div className="flex h-screen items-center justify-center text-muted-foreground">Memuat...</div>}>
+    <Suspense fallback={<div className="flex h-full items-center justify-center text-muted-foreground">Memuat...</div>}>
       <InboxPageContent />
     </Suspense>
   )
