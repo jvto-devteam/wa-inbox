@@ -74,7 +74,7 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
     // wrong, halt all automated replies right now."
     const settings = await prisma.settings.findUniqueOrThrow({ where: { id: 1 } })
     if (settings.botKillSwitch) {
-      return { mode: 'handoff', reason: 'Bot dimatikan sementara (kill switch aktif)' }
+      return { mode: 'handoff', reason: 'Bot dimatikan sementara (kill switch aktif)', cause: 'kill_switch' }
     }
 
     if (isEscalation(inboundText)) {

@@ -3,7 +3,9 @@ import crypto from 'crypto'
 import { GET, POST } from './route'
 import { ingestMetaMessage } from '@/lib/inbound'
 
-vi.mock('@/lib/inbound', () => ({ ingestMetaMessage: vi.fn().mockResolvedValue({ skipped: false }) }))
+vi.mock('@/lib/inbound', () => ({
+  ingestMetaMessage: vi.fn().mockResolvedValue({ processed: 0, skipped: 0, statusUpdates: 0 }),
+}))
 
 beforeAll(() => {
   process.env.META_WEBHOOK_VERIFY_TOKEN = 'my-verify-token'

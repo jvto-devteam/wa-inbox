@@ -54,7 +54,7 @@ describe('decideAndRespond', () => {
 
     const result = await decideAndRespond('conv_1', 'Halo, saya mau tanya paket ke Ijen')
 
-    expect(result).toEqual({ mode: 'handoff', reason: 'Bot dimatikan sementara (kill switch aktif)' })
+    expect(result).toEqual({ mode: 'handoff', reason: 'Bot dimatikan sementara (kill switch aktif)', cause: 'kill_switch' })
     expect(mockPrisma.conversation.findUniqueOrThrow).not.toHaveBeenCalled()
     expect(lookupBooking).not.toHaveBeenCalled()
   })
@@ -65,7 +65,7 @@ describe('decideAndRespond', () => {
 
     const result = await decideAndRespond('conv_1', 'Booking saya sudah lunas belum?')
 
-    expect(result).toEqual({ mode: 'handoff', reason: 'Bot dimatikan sementara (kill switch aktif)' })
+    expect(result).toEqual({ mode: 'handoff', reason: 'Bot dimatikan sementara (kill switch aktif)', cause: 'kill_switch' })
     expect(lookupBooking).not.toHaveBeenCalled()
     expect(callLLM).not.toHaveBeenCalled()
   })

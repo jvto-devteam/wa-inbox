@@ -42,15 +42,21 @@ model WaNumber {
 }
 
 model Contact {
-  id        String     @id @default(cuid())
-  phone     String     @unique
-  name      String?
-  avatarUrl String?
-  source    String?
-  createdAt DateTime   @default(now())
-  conversation Conversation?
-  notes     Note[]
-  reminders Reminder[]
+  id              String        @id @default(cuid())
+  phone           String        @unique
+  name            String?
+  avatarUrl       String?
+  // Negative cache for avatar enrichment, mirroring Conversation.bookingCheckedAt.
+  // Without it, `avatarUrl == null` cannot distinguish "never looked" from "looked,
+  // and this contact genuinely has no profile photo" -- so every single inbound
+  // message from a photo-less contact would re-fire a wa-coexist HTTP round-trip
+  // forever. Stamped on every enrichment attempt, successful or not.
+  avatarCheckedAt DateTime?
+  source          String?
+  createdAt       DateTime      @default(now())
+  conversation    Conversation?
+  notes           Note[]
+  reminders       Reminder[]
 }
 
 enum ConversationStatus {
@@ -170,22 +176,22 @@ enum TemplateMetaStatus {
 }
 
 model Template {
-  id         String              @id @default(cuid())
+  id         String             @id @default(cuid())
   name       String
   type       TemplateType
-  metaStatus TemplateMetaStatus  @default(NOT_APPLICABLE)
+  metaStatus TemplateMetaStatus @default(NOT_APPLICABLE)
   category   String?
   body       String
   variables  Json?
-  createdAt  DateTime            @default(now())
+  createdAt  DateTime           @default(now())
 }
 
 model Settings {
-  id                Int             @id @default(1)
-  defaultChannel    MessageChannel  @default(OFFICIAL)
+  id                Int            @id @default(1)
+  defaultChannel    MessageChannel @default(OFFICIAL)
   workingHoursStart String?
   workingHoursEnd   String?
   offHoursAutoReply String?
-  botKillSwitch     Boolean         @default(false)
+  botKillSwitch     Boolean        @default(false)
   catalogSyncedAt   DateTime?
 }
