@@ -355,7 +355,10 @@ async function ingestSingleMessage(message: MetaInboundMessage, contacts: MetaCo
           direction: 'OUTBOUND',
           type: 'text',
           content: null,
-          channel: 'OFFICIAL', // never actually dispatched; required by schema but not meaningful here
+          // Never actually dispatched, so this has no delivery effect either way -- set to
+          // match the default outbound channel policy (Settings.defaultChannel, currently
+          // UNOFFICIAL) purely for consistency with every other message this row sits next to.
+          channel: 'UNOFFICIAL',
           sentBy: 'BOT',
           botTrace: decision as never,
           deliveryStatus: 'SENT',
