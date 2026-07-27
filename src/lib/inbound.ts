@@ -35,6 +35,30 @@ function mediaObjectFor(message: MetaInboundMessage): MetaMediaObject | undefine
   return undefined
 }
 
+// Reported when the business sends a message from the WhatsApp Business app or a linked
+// device (coexistence mode) rather than through this app -- the reverse of an inbound
+// message's from/to: `from` is the business's own number, `to` is the customer's. Structurally
+// compatible with mediaObjectFor's MetaInboundMessage parameter (same id/from/timestamp/type
+// plus media fields), so it's reused for echoes too rather than duplicated.
+export type MetaMessageEcho = {
+  id: string
+  from: string
+  to: string
+  timestamp: string
+  type: string
+  text?: { body: string }
+  image?: MetaMediaObject
+  audio?: MetaMediaObject
+  video?: MetaMediaObject
+  document?: MetaMediaObject
+  // Meta also reports the business editing or revoking (deleting) a message sent from the
+  // app through this same field. Neither has a home in this schema (no edit history, no
+  // soft-delete) -- ingestEchoedMessage accepts and ignores both rather than mis-storing an
+  // edit/revoke notice as if it were a new ordinary message.
+  revoke?: { original_message_id: string }
+  edit?: { original_message_id: string }
+}
+
 export type MetaContact = { profile?: { name?: string | null } | null; wa_id: string }
 
 // Delivery receipts for previously-sent OUTBOUND messages. `id` is the wamid we
@@ -73,6 +97,7 @@ export type MetaWebhookPayload = {
         contacts?: Array<MetaContact>
         messages?: Array<MetaInboundMessage>
         statuses?: Array<MetaStatus>
+        message_echoes?: Array<MetaMessageEcho>
       } & MetaTemplateStatusUpdate
     }>
   }>
@@ -87,6 +112,8 @@ export type IngestResult = {
   statusUpdates: number
   /** Meta template-review outcomes that updated an existing Template row. */
   templateStatusUpdates: number
+  /** Message echoes (sent from the WhatsApp Business app/a linked device) that produced a new Message row. */
+  echoed: number
 }
 
 // How long a contact who was checked and found to have no profile photo stays
@@ -362,6 +389,71 @@ async function ingestSingleMessage(message: MetaInboundMessage, contacts: MetaCo
 }
 
 /**
+ * Ingests one smb_message_echoes entry -- a message the business sent from the WhatsApp
+ * Business app or a linked device (coexistence), not through this app. Deliberately a
+ * separate function from ingestSingleMessage rather than a shared one with extra branches:
+ * the contact lookup key is reversed (echo.to, the customer, vs an inbound message's
+ * echo.from, the business itself) and there is no bot dispatch -- a human already handled
+ * this message by typing it.
+ */
+async function ingestEchoedMessage(echo: MetaMessageEcho): Promise<boolean> {
+  if (echo.type === 'revoke' || echo.type === 'edit') return false
+
+  const existing = await prisma.message.findUnique({ where: { externalId: echo.id } })
+  if (existing) return false
+
+  const contact = await prisma.contact.upsert({
+    where: { phone: echo.to },
+    update: {},
+    create: { phone: echo.to, name: null },
+  })
+
+  await enrichContactAvatar(contact, echo.to)
+
+  const sentAt = parseMetaTimestamp(echo.timestamp)
+  const conversation = await prisma.conversation.upsert({
+    where: { contactId: contact.id },
+    update: { lastMessageAt: sentAt },
+    create: { contactId: contact.id, lastMessageAt: sentAt },
+  })
+
+  const media = mediaObjectFor(echo)
+
+  try {
+    const created = await prisma.message.create({
+      data: {
+        conversationId: conversation.id,
+        externalId: echo.id,
+        direction: 'OUTBOUND',
+        type: echo.type,
+        content: echo.text?.body ?? media?.caption ?? null,
+        mediaId: media?.id ?? null,
+        mimeType: media?.mime_type ?? null,
+        fileName: media?.filename ?? null,
+        channel: 'OFFICIAL',
+        sentBy: 'AGENT',
+        // Deliberately SENT, not DELIVERED: Meta's ordinary `statuses` receipts for this same
+        // wamid (delivered/read) still arrive independently and applyStatusUpdate's rank
+        // check already advances this row correctly when they do -- no special-casing needed.
+        deliveryStatus: 'SENT',
+        createdAt: sentAt,
+      },
+      include: { replyTo: true },
+    })
+    broadcast({ type: 'message.created', conversationId: conversation.id, message: withMediaUrl(created) })
+  } catch (error) {
+    // Same at-least-once-retry race as ingestSingleMessage: a concurrent delivery of the
+    // same echo can pass the findUnique check above before either request's create() commits.
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+      return false
+    }
+    throw error
+  }
+
+  return true
+}
+
+/**
  * A genuinely unexpected failure (DB down, etc.) is deliberately allowed to propagate:
  * the route then answers non-2xx and Meta retries the whole delivery, which is safe
  * because every step is idempotent. Swallowing it to return 200 would reintroduce
@@ -372,6 +464,7 @@ export async function ingestMetaMessage(payload: MetaWebhookPayload): Promise<In
   let skipped = 0
   let statusUpdates = 0
   let templateStatusUpdates = 0
+  let echoed = 0
 
   for (const entry of payload.entry ?? []) {
     for (const change of entry.changes ?? []) {
@@ -398,8 +491,12 @@ export async function ingestMetaMessage(payload: MetaWebhookPayload): Promise<In
       for (const status of value.statuses ?? []) {
         if (await applyStatusUpdate(status)) statusUpdates += 1
       }
+
+      for (const echo of value.message_echoes ?? []) {
+        if (await ingestEchoedMessage(echo)) echoed += 1
+      }
     }
   }
 
-  return { processed, skipped, statusUpdates, templateStatusUpdates }
+  return { processed, skipped, statusUpdates, templateStatusUpdates, echoed }
 }

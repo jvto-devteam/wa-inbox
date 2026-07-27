@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mockDeep, mockReset, type DeepMockProxy } from 'vitest-mock-extended'
 import { Prisma, type PrismaClient } from '@prisma/client'
 import { prisma } from '@/lib/db'
-import { ingestMetaMessage } from './inbound'
+import { ingestMetaMessage, type MetaWebhookPayload } from './inbound'
 import { decideAndRespond } from '@/lib/bot/orchestrator'
 import { sendMessage } from '@/lib/send'
 import { broadcast } from '@/lib/realtime'
@@ -89,7 +89,7 @@ describe('ingestMetaMessage', () => {
 
     const result = await ingestMetaMessage(samplePayload)
 
-    expect(result).toEqual({ processed: 1, skipped: 0, statusUpdates: 0, templateStatusUpdates: 0 })
+    expect(result).toEqual({ processed: 1, skipped: 0, statusUpdates: 0, templateStatusUpdates: 0, echoed: 0 })
     expect(mockPrisma.contact.upsert).toHaveBeenCalledWith(expect.objectContaining({
       where: { phone: '6281234567890' },
     }))
@@ -103,7 +103,7 @@ describe('ingestMetaMessage', () => {
 
     const result = await ingestMetaMessage(samplePayload)
 
-    expect(result).toEqual({ processed: 0, skipped: 1, statusUpdates: 0, templateStatusUpdates: 0 })
+    expect(result).toEqual({ processed: 0, skipped: 1, statusUpdates: 0, templateStatusUpdates: 0, echoed: 0 })
     expect(mockPrisma.message.create).not.toHaveBeenCalled()
   })
 
@@ -124,7 +124,7 @@ describe('ingestMetaMessage', () => {
 
     const result = await ingestMetaMessage(samplePayload)
 
-    expect(result).toEqual({ processed: 0, skipped: 1, statusUpdates: 0, templateStatusUpdates: 0 })
+    expect(result).toEqual({ processed: 0, skipped: 1, statusUpdates: 0, templateStatusUpdates: 0, echoed: 0 })
   })
 })
 
@@ -152,7 +152,7 @@ describe('ingestMetaMessage batching', () => {
 
     const result = await ingestMetaMessage(twoMessagePayload)
 
-    expect(result).toEqual({ processed: 2, skipped: 0, statusUpdates: 0, templateStatusUpdates: 0 })
+    expect(result).toEqual({ processed: 2, skipped: 0, statusUpdates: 0, templateStatusUpdates: 0, echoed: 0 })
     const externalIds = mockPrisma.message.create.mock.calls.map((c) => (c[0] as { data: { externalId?: string } }).data.externalId)
     expect(externalIds).toEqual(['wamid.ONE', 'wamid.TWO'])
     expect(mockPrisma.message.create).toHaveBeenCalledWith(expect.objectContaining({
@@ -209,7 +209,7 @@ describe('ingestMetaMessage batching', () => {
 
   it('tolerates a payload with no entry/changes/messages at all', async () => {
     const result = await ingestMetaMessage({})
-    expect(result).toEqual({ processed: 0, skipped: 0, statusUpdates: 0, templateStatusUpdates: 0 })
+    expect(result).toEqual({ processed: 0, skipped: 0, statusUpdates: 0, templateStatusUpdates: 0, echoed: 0 })
     expect(mockPrisma.message.create).not.toHaveBeenCalled()
   })
 })
@@ -700,7 +700,7 @@ describe('ingestMetaMessage delivery-status callbacks', () => {
 
     const result = await ingestMetaMessage(statusPayload([{ id: 'wamid.UNKNOWN', status: 'read' }]))
 
-    expect(result).toEqual({ processed: 0, skipped: 0, statusUpdates: 0, templateStatusUpdates: 0 })
+    expect(result).toEqual({ processed: 0, skipped: 0, statusUpdates: 0, templateStatusUpdates: 0, echoed: 0 })
     expect(mockPrisma.message.update).not.toHaveBeenCalled()
   })
 
@@ -742,7 +742,7 @@ describe('ingestMetaMessage delivery-status callbacks', () => {
       }],
     })
 
-    expect(result).toEqual({ processed: 1, skipped: 0, statusUpdates: 1, templateStatusUpdates: 0 })
+    expect(result).toEqual({ processed: 1, skipped: 0, statusUpdates: 1, templateStatusUpdates: 0, echoed: 0 })
   })
 })
 
@@ -804,7 +804,7 @@ describe('ingestMetaMessage template-status callbacks', () => {
 
     const result = await ingestMetaMessage(templatePayload({ event: 'APPROVED', message_template_id: '992' }))
 
-    expect(result).toEqual({ processed: 0, skipped: 0, statusUpdates: 0, templateStatusUpdates: 0 })
+    expect(result).toEqual({ processed: 0, skipped: 0, statusUpdates: 0, templateStatusUpdates: 0, echoed: 0 })
   })
 
   it('does not treat a template change as a message change', async () => {
@@ -838,6 +838,114 @@ describe('ingestMetaMessage template-status callbacks', () => {
       }],
     })
 
-    expect(result).toEqual({ processed: 1, skipped: 0, statusUpdates: 0, templateStatusUpdates: 1 })
+    expect(result).toEqual({ processed: 1, skipped: 0, statusUpdates: 0, templateStatusUpdates: 1, echoed: 0 })
+  })
+})
+
+describe('ingestMetaMessage message echoes (smb_message_echoes)', () => {
+  function echoPayload(echoes: Array<Record<string, unknown>>): MetaWebhookPayload {
+    return { entry: [{ changes: [{ field: 'smb_message_echoes', value: { message_echoes: echoes as never } }] }] }
+  }
+
+  it('stores an echoed text message as an OUTBOUND/AGENT message keyed to the customer (echo.to), not echo.from', async () => {
+    stubHappyPath()
+
+    const result = await ingestMetaMessage(echoPayload([{
+      id: 'wamid.ECHO1',
+      from: '622244788833',
+      to: '6281234567890',
+      timestamp: '1700000000',
+      type: 'text',
+      text: { body: 'Halo, ini info yang Anda minta.' },
+    }]))
+
+    expect(result).toEqual({ processed: 0, skipped: 0, statusUpdates: 0, templateStatusUpdates: 0, echoed: 1 })
+    expect(mockPrisma.contact.upsert).toHaveBeenCalledWith(expect.objectContaining({ where: { phone: '6281234567890' } }))
+    expect(mockPrisma.message.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        externalId: 'wamid.ECHO1',
+        direction: 'OUTBOUND',
+        sentBy: 'AGENT',
+        channel: 'OFFICIAL',
+        content: 'Halo, ini info yang Anda minta.',
+        deliveryStatus: 'SENT',
+      }),
+    }))
+  })
+
+  it('does not invoke the bot orchestrator for an echoed message', async () => {
+    stubHappyPath({ conversation: { botEnabled: true } })
+
+    await ingestMetaMessage(echoPayload([{
+      id: 'wamid.ECHO2', from: '622244788833', to: '6281234567890', timestamp: '1700000000', type: 'text', text: { body: 'Halo' },
+    }]))
+
+    expect(decideAndRespond).not.toHaveBeenCalled()
+  })
+
+  it('skips an already-ingested echo (idempotent retry)', async () => {
+    mockPrisma.message.findUnique.mockResolvedValue({ id: 'msg_existing' } as never)
+
+    const result = await ingestMetaMessage(echoPayload([{
+      id: 'wamid.ECHO3', from: '622244788833', to: '6281234567890', timestamp: '1700000000', type: 'text', text: { body: 'x' },
+    }]))
+
+    expect(result.echoed).toBe(0)
+    expect(mockPrisma.message.create).not.toHaveBeenCalled()
+  })
+
+  it('stores media fields for an echoed image with a caption', async () => {
+    stubHappyPath()
+
+    await ingestMetaMessage(echoPayload([{
+      id: 'wamid.ECHO4', from: '622244788833', to: '6281234567890', timestamp: '1700000000', type: 'image',
+      image: { id: 'media_1', mime_type: 'image/jpeg', caption: 'Ini paketnya' },
+    }]))
+
+    expect(mockPrisma.message.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ type: 'image', content: 'Ini paketnya', mediaId: 'media_1', mimeType: 'image/jpeg' }),
+    }))
+  })
+
+  it('ignores a revoke echo without creating a Message row', async () => {
+    stubHappyPath()
+
+    const result = await ingestMetaMessage(echoPayload([{
+      id: 'wamid.ECHO5', from: '622244788833', to: '6281234567890', timestamp: '1700000000', type: 'revoke',
+      revoke: { original_message_id: 'wamid.ORIGINAL' },
+    }]))
+
+    expect(result.echoed).toBe(0)
+    expect(mockPrisma.message.create).not.toHaveBeenCalled()
+  })
+
+  it('ignores an edit echo without creating a Message row', async () => {
+    stubHappyPath()
+
+    const result = await ingestMetaMessage(echoPayload([{
+      id: 'wamid.ECHO6', from: '622244788833', to: '6281234567890', timestamp: '1700000000', type: 'edit',
+      edit: { original_message_id: 'wamid.ORIGINAL' },
+    }]))
+
+    expect(result.echoed).toBe(0)
+    expect(mockPrisma.message.create).not.toHaveBeenCalled()
+  })
+
+  it('treats a concurrent duplicate echo create (P2002) as an idempotent skip', async () => {
+    mockPrisma.message.findUnique.mockResolvedValue(null)
+    mockPrisma.contact.upsert.mockResolvedValue({ ...contactRow, avatarUrl: 'x' })
+    mockPrisma.conversation.upsert.mockResolvedValue(conversationRow)
+    mockPrisma.message.create.mockRejectedValue(
+      new Prisma.PrismaClientKnownRequestError('Unique constraint failed on the fields: (`externalId`)', {
+        code: 'P2002',
+        clientVersion: '7.9.0',
+      })
+    )
+
+    const result = await ingestMetaMessage(echoPayload([{
+      id: 'wamid.ECHO7', from: '622244788833', to: '6281234567890', timestamp: '1700000000', type: 'text', text: { body: 'x' },
+    }]))
+
+    expect(result.echoed).toBe(0)
   })
 })
