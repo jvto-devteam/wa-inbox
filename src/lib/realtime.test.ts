@@ -18,6 +18,18 @@ describe('realtime pub/sub', () => {
     expect(listener).not.toHaveBeenCalled()
   })
 
+  it('delivers a message.updated event distinctly from message.created', () => {
+    // Meta delivery receipts (sent/delivered/read/failed) mutate an existing message row
+    // long after it was created; subscribers must be able to tell "replace this bubble"
+    // from "append a new one".
+    const listener = vi.fn()
+    const unsubscribe = subscribe(listener)
+    const message = { id: 'm1', deliveryStatus: 'DELIVERED' }
+    broadcast({ type: 'message.updated', conversationId: 'conv_1', message })
+    expect(listener).toHaveBeenCalledWith({ type: 'message.updated', conversationId: 'conv_1', message })
+    unsubscribe()
+  })
+
   it('delivers a handoff.alert event distinctly from message.created', () => {
     const listener = vi.fn()
     const unsubscribe = subscribe(listener)

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor, fireEvent } from '@testing-library/react'
+import { render, screen, waitFor, fireEvent, act } from '@testing-library/react'
 import { useState } from 'react'
 import { ThreadView } from './ThreadView'
 
@@ -35,11 +35,19 @@ const conv1Messages = [
 // stub a minimal no-op version (this component's SSE behavior itself is exercised
 // separately, not by this test) just enough to satisfy `new EventSource(...)` and `.close()`.
 class FakeEventSource {
+  static instances: FakeEventSource[] = []
   onmessage: ((event: MessageEvent) => void) | null = null
   close = vi.fn()
+  constructor() {
+    FakeEventSource.instances.push(this)
+  }
+  emit(payload: unknown) {
+    this.onmessage?.({ data: JSON.stringify(payload) } as MessageEvent)
+  }
 }
 
 beforeEach(() => {
+  FakeEventSource.instances = []
   vi.stubGlobal('fetch', vi.fn())
   vi.stubGlobal('EventSource', FakeEventSource)
 })
@@ -147,6 +155,70 @@ describe('ThreadView keyed by conversationId', () => {
     // detail fetch resolves, proving the value is freshly sourced per
     // conversation rather than stuck at whatever conv_1 had (or the default).
     await waitFor(() => expect(screen.getByText('Ambil Alih dari Bot')).toBeInTheDocument())
+  })
+})
+
+describe('ThreadView live delivery-status updates', () => {
+  function mockBasicFetch(messages: unknown[]) {
+    vi.mocked(fetch).mockImplementation((url) => {
+      const s = String(url)
+      if (s.endsWith('/messages')) return Promise.resolve({ json: () => Promise.resolve(messages) } as Response)
+      if (s.endsWith('/api/accounts')) return Promise.resolve({ json: () => Promise.resolve([]) } as Response)
+      return Promise.resolve({ json: () => Promise.resolve({ botEnabled: false, assignedAgentId: null }) } as Response)
+    })
+  }
+
+  const outboundMessage = {
+    id: 'm1',
+    direction: 'OUTBOUND',
+    content: 'Penawaran paket Ijen',
+    channel: 'OFFICIAL',
+    sentBy: 'AGENT',
+    deliveryStatus: 'SENT',
+    createdAt: new Date().toISOString(),
+    botTrace: null,
+  }
+
+  it('replaces an existing bubble in place on a message.updated event', async () => {
+    // Meta's delivery receipt arrives long after the message was sent. Appending it as a
+    // new message would duplicate the bubble; the status badge must just change.
+    mockBasicFetch([outboundMessage])
+
+    render(<ThreadView conversationId="conv_1" />)
+
+    await waitFor(() => expect(screen.getByText('SENT')).toBeInTheDocument())
+
+    const es = FakeEventSource.instances[0]
+    act(() => {
+      es.emit({
+        type: 'message.updated',
+        conversationId: 'conv_1',
+        message: { ...outboundMessage, deliveryStatus: 'FAILED' },
+      })
+    })
+
+    await waitFor(() => expect(screen.getByText('FAILED')).toBeInTheDocument())
+    expect(screen.queryByText('SENT')).not.toBeInTheDocument()
+    expect(screen.getAllByText('Penawaran paket Ijen')).toHaveLength(1)
+  })
+
+  it('ignores a message.updated event for a different conversation', async () => {
+    mockBasicFetch([outboundMessage])
+
+    render(<ThreadView conversationId="conv_1" />)
+
+    await waitFor(() => expect(screen.getByText('SENT')).toBeInTheDocument())
+
+    const es = FakeEventSource.instances[0]
+    act(() => {
+      es.emit({
+        type: 'message.updated',
+        conversationId: 'conv_other',
+        message: { ...outboundMessage, deliveryStatus: 'FAILED' },
+      })
+    })
+
+    await waitFor(() => expect(screen.getByText('SENT')).toBeInTheDocument())
   })
 })
 

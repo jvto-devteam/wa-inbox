@@ -63,6 +63,12 @@ export function ThreadView({ conversationId }: { conversationId: string }) {
       if (event.type === 'message.created' && event.conversationId === conversationId) {
         setMessages((prev) => (prev.some((m) => m.id === event.message.id) ? prev : [...prev, event.message]))
       }
+      // Delivery receipts (Meta's sent/delivered/read/failed callbacks) arrive minutes
+      // after the message itself, so the bubble must be replaced in place -- appending
+      // would duplicate it. Ignored if the message isn't loaded in this thread.
+      if (event.type === 'message.updated' && event.conversationId === conversationId) {
+        setMessages((prev) => prev.map((m) => (m.id === event.message.id ? event.message : m)))
+      }
     }
     return () => es.close()
   }, [conversationId])
