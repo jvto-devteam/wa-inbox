@@ -3,6 +3,7 @@ import { useState } from 'react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { BotTracePopover } from './BotTracePopover'
+import { isHandoffLogMessage, HANDOFF_LOG_TEXT } from '@/lib/message-display'
 import type { BotDecision } from '@/lib/bot/types'
 
 export type MessageView = {
@@ -23,7 +24,7 @@ export function MessageBubble({ message }: { message: MessageView }) {
   // A handoff decision is logged (Task 34) as a Message row with content: null, sentBy: 'BOT' --
   // no real reply was ever sent to the customer. Without this, the bubble renders empty, which
   // reads as "the bot sent something and it's broken" rather than "the bot silently handed off".
-  const isHandoffLog = message.sentBy === 'BOT' && message.content === null
+  const isHandoffLog = isHandoffLogMessage(message)
   const [showTrace, setShowTrace] = useState(false)
 
   return (
@@ -49,7 +50,7 @@ export function MessageBubble({ message }: { message: MessageView }) {
         }
       >
         {isHandoffLog ? (
-          <span className="italic text-muted-foreground">Bot menyerahkan ke agen — lihat alasan</span>
+          <span className="italic text-muted-foreground">{HANDOFF_LOG_TEXT}</span>
         ) : (
           message.content
         )}

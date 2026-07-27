@@ -8,6 +8,7 @@ import { ContactLabels } from '@/components/contacts/ContactLabels'
 import { NotesSection } from '@/components/inbox/NotesSection'
 import { RemindersSection } from '@/components/inbox/RemindersSection'
 import { STAGE_LABELS, STAGE_VARIANTS } from '@/lib/pipeline'
+import { displayMessageContent } from '@/lib/message-display'
 
 function formatMessageDate(date: Date) {
   return date.toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' })
@@ -65,7 +66,7 @@ export default async function ContactDetailPage({ params }: { params: Promise<{ 
       </div>
 
       <BookingSummary
-        bookingData={(conversation?.bookingData as unknown as BookingData) ?? null}
+        bookingData={(conversation?.bookingData as unknown as BookingData | null) ?? null}
         tripBrief={(conversation?.tripBrief as unknown as TripBrief) ?? null}
       />
 
@@ -95,7 +96,9 @@ export default async function ContactDetailPage({ params }: { params: Promise<{ 
             <ul className="space-y-2">
               {messages.map((m) => (
                 <li key={m.id} className="space-y-0.5 border-b border-border pb-2 last:border-0 last:pb-0">
-                  <p className="text-sm text-navy">{m.content ?? `[${m.type}]`}</p>
+                  {/* A logged bot handoff has content: null — rendering the raw `[${m.type}]`
+                      fallback claimed the bot sent a text message when it never sent anything. */}
+                  <p className="text-sm text-navy">{displayMessageContent(m)}</p>
                   <p className="text-xs text-muted-foreground">
                     {m.direction === 'INBOUND' ? 'Masuk' : 'Keluar'} · {formatMessageDate(m.createdAt)}
                   </p>

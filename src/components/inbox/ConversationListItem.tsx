@@ -1,4 +1,5 @@
 import { Badge } from '@/components/ui/badge'
+import { isHandoffLogMessage, HANDOFF_LOG_TEXT } from '@/lib/message-display'
 
 export type ConversationSummary = {
   id: string
@@ -23,7 +24,10 @@ export function ConversationListItem({
 }) {
   // A handoff decision (Task 34) is logged as a Message row with content: null, sentBy: 'BOT' --
   // no real reply was ever sent to the customer. Without this, the sidebar preview renders blank.
-  const isHandoffLog = conversation.lastMessage === null && conversation.lastMessageSentBy === 'BOT'
+  const isHandoffLog = isHandoffLogMessage({
+    sentBy: conversation.lastMessageSentBy,
+    content: conversation.lastMessage,
+  })
 
   return (
     <button
@@ -37,7 +41,7 @@ export function ConversationListItem({
         </Badge>
       </div>
       <span className="truncate text-sm text-muted-foreground">
-        {isHandoffLog ? 'Bot menyerahkan ke agen — lihat alasan' : conversation.lastMessage}
+        {isHandoffLog ? HANDOFF_LOG_TEXT : conversation.lastMessage}
       </span>
       <div className="flex gap-1">
         {conversation.labels.map((l) => (
