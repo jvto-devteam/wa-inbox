@@ -1,5 +1,5 @@
 'use client'
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { MessageView } from './MessageBubble'
 import { Select } from '@/components/ui/select'
 import { Input } from '@/components/ui/input'
@@ -23,11 +23,48 @@ export function ComposeBox({
   onBotToggled: (enabled: boolean) => void
 }) {
   const [text, setText] = useState('')
+  // Seeded from the org-wide Settings.defaultChannel ("Default jalur kirim" in
+  // Pengaturan) below, not left as a hardcoded literal: ComposeBox always puts
+  // an explicit `channel` in its /api/send body, and resolveChannel lets an
+  // explicit value win, so a hardcoded 'OFFICIAL' here made that setting dead
+  // configuration for every human-agent send. 'OFFICIAL' remains the fallback
+  // for the pre-fetch render and for a failed settings fetch.
   const [channel, setChannel] = useState<'OFFICIAL' | 'UNOFFICIAL'>('OFFICIAL')
   const [sending, setSending] = useState(false)
   const [templates, setTemplates] = useState<QuickReplyTemplate[]>([])
   const [pickerOpen, setPickerOpen] = useState(false)
   const [templateError, setTemplateError] = useState<string | null>(null)
+  // Guards the seed below against clobbering a deliberate per-message override:
+  // if the agent picks a channel before the settings fetch resolves, their
+  // choice wins.
+  const channelTouched = useRef(false)
+
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      try {
+        const res = await fetch('/api/settings')
+        // No optimistic seeding: a non-ok response or a network failure leaves
+        // the compose box on the 'OFFICIAL' fallback rather than on some
+        // half-read value.
+        if (!res.ok) return
+        const s = (await res.json()) as { defaultChannel?: 'OFFICIAL' | 'UNOFFICIAL' }
+        if (cancelled || channelTouched.current) return
+        if (s.defaultChannel === 'OFFICIAL' || s.defaultChannel === 'UNOFFICIAL') setChannel(s.defaultChannel)
+      } catch {
+        // Fall back to 'OFFICIAL' — an unreachable settings endpoint must not
+        // leave the agent unable to send.
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  function selectChannel(value: 'OFFICIAL' | 'UNOFFICIAL') {
+    channelTouched.current = true
+    setChannel(value)
+  }
 
   async function send() {
     if (!text.trim() || sending) return
@@ -140,7 +177,7 @@ export function ComposeBox({
       <div className="flex items-center gap-2">
         <Select
           value={channel}
-          onChange={(e) => setChannel(e.target.value as 'OFFICIAL' | 'UNOFFICIAL')}
+          onChange={(e) => selectChannel(e.target.value as 'OFFICIAL' | 'UNOFFICIAL')}
           className="w-auto"
           aria-label="Channel"
         >

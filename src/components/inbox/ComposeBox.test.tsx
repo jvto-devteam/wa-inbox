@@ -127,3 +127,110 @@ describe('ComposeBox quick replies', () => {
     expect(await screen.findByText('Belum ada template quick reply.')).toBeInTheDocument()
   })
 })
+
+// ComposeBox always puts an explicit `channel` in its /api/send body, and
+// resolveChannel lets an explicit value win — so a hardcoded initial
+// 'OFFICIAL' made the admin-configurable Settings.defaultChannel dead
+// configuration for every human-agent send.
+describe('ComposeBox default channel from Settings', () => {
+  function mockSettings(response: unknown) {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url: string) => {
+        if (url === '/api/settings')
+          return typeof response === 'function' ? (response as () => unknown)() : Promise.resolve(response)
+        return Promise.resolve({ ok: true, json: async () => ({ id: 'm1', deliveryStatus: 'SENT' }) })
+      })
+    )
+  }
+
+  it('seeds the channel select from Settings.defaultChannel', async () => {
+    mockSettings({ ok: true, json: async () => ({ defaultChannel: 'UNOFFICIAL', botKillSwitch: false }) })
+
+    render(<ComposeBox conversationId="conv_1" botEnabled={false} onSent={() => {}} onBotToggled={() => {}} />)
+
+    await waitFor(() => expect(screen.getByLabelText('Channel')).toHaveValue('UNOFFICIAL'))
+  })
+
+  it('keeps OFFICIAL when Settings.defaultChannel is OFFICIAL', async () => {
+    mockSettings({ ok: true, json: async () => ({ defaultChannel: 'OFFICIAL', botKillSwitch: false }) })
+
+    render(<ComposeBox conversationId="conv_1" botEnabled={false} onSent={() => {}} onBotToggled={() => {}} />)
+
+    await waitFor(() => expect(fetch).toHaveBeenCalledWith('/api/settings'))
+    expect(screen.getByLabelText('Channel')).toHaveValue('OFFICIAL')
+  })
+
+  it('sends on the seeded channel', async () => {
+    mockSettings({ ok: true, json: async () => ({ defaultChannel: 'UNOFFICIAL' }) })
+
+    render(<ComposeBox conversationId="conv_1" botEnabled={false} onSent={() => {}} onBotToggled={() => {}} />)
+    await waitFor(() => expect(screen.getByLabelText('Channel')).toHaveValue('UNOFFICIAL'))
+
+    fireEvent.change(screen.getByLabelText('Pesan'), { target: { value: 'Halo' } })
+    fireEvent.click(screen.getByText('Kirim'))
+
+    await waitFor(() =>
+      expect(fetch).toHaveBeenCalledWith('/api/send', {
+        method: 'POST',
+        body: JSON.stringify({ conversationId: 'conv_1', text: 'Halo', channel: 'UNOFFICIAL' }),
+      })
+    )
+  })
+
+  it('still lets the agent override the seeded channel for a single message', async () => {
+    mockSettings({ ok: true, json: async () => ({ defaultChannel: 'UNOFFICIAL' }) })
+
+    render(<ComposeBox conversationId="conv_1" botEnabled={false} onSent={() => {}} onBotToggled={() => {}} />)
+    await waitFor(() => expect(screen.getByLabelText('Channel')).toHaveValue('UNOFFICIAL'))
+
+    fireEvent.change(screen.getByLabelText('Channel'), { target: { value: 'OFFICIAL' } })
+
+    expect(screen.getByLabelText('Channel')).toHaveValue('OFFICIAL')
+  })
+
+  // A late-resolving settings fetch must not silently flip a channel the agent
+  // has already chosen for the message they're composing.
+  it('does not clobber an override made before the settings fetch resolves', async () => {
+    let release: (value: unknown) => void = () => {}
+    mockSettings(() => new Promise((resolve) => (release = resolve)))
+
+    render(<ComposeBox conversationId="conv_1" botEnabled={false} onSent={() => {}} onBotToggled={() => {}} />)
+    // Override away from the 'OFFICIAL' pre-fetch fallback, then let the
+    // settings fetch land with a *different* value — a clobber would be visible.
+    fireEvent.change(screen.getByLabelText('Channel'), { target: { value: 'UNOFFICIAL' } })
+    expect(screen.getByLabelText('Channel')).toHaveValue('UNOFFICIAL')
+
+    release({ ok: true, json: async () => ({ defaultChannel: 'OFFICIAL' }) })
+
+    await waitFor(() => expect(fetch).toHaveBeenCalledWith('/api/settings'))
+    expect(screen.getByLabelText('Channel')).toHaveValue('UNOFFICIAL')
+  })
+
+  it('falls back to OFFICIAL when the settings request is not ok', async () => {
+    mockSettings({ ok: false, json: async () => ({ error: 'Internal error' }) })
+
+    render(<ComposeBox conversationId="conv_1" botEnabled={false} onSent={() => {}} onBotToggled={() => {}} />)
+
+    await waitFor(() => expect(fetch).toHaveBeenCalledWith('/api/settings'))
+    expect(screen.getByLabelText('Channel')).toHaveValue('OFFICIAL')
+  })
+
+  it('falls back to OFFICIAL when the settings request throws', async () => {
+    mockSettings(() => Promise.reject(new Error('Network error')))
+
+    render(<ComposeBox conversationId="conv_1" botEnabled={false} onSent={() => {}} onBotToggled={() => {}} />)
+
+    await waitFor(() => expect(fetch).toHaveBeenCalledWith('/api/settings'))
+    expect(screen.getByLabelText('Channel')).toHaveValue('OFFICIAL')
+  })
+
+  it('falls back to OFFICIAL when defaultChannel is missing or unrecognised', async () => {
+    mockSettings({ ok: true, json: async () => ({ botKillSwitch: false }) })
+
+    render(<ComposeBox conversationId="conv_1" botEnabled={false} onSent={() => {}} onBotToggled={() => {}} />)
+
+    await waitFor(() => expect(fetch).toHaveBeenCalledWith('/api/settings'))
+    expect(screen.getByLabelText('Channel')).toHaveValue('OFFICIAL')
+  })
+})
