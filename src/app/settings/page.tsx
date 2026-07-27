@@ -109,7 +109,12 @@ export default function SettingsPage() {
 
       <Card className="space-y-2 p-4">
         <h2 className="font-medium text-navy">Default jalur kirim</h2>
-        <Select value={settings.defaultChannel} onChange={(e) => updateDefaultChannel(e.target.value as 'OFFICIAL' | 'UNOFFICIAL')} className="w-auto">
+        <Select
+          value={settings.defaultChannel}
+          onChange={(e) => updateDefaultChannel(e.target.value as 'OFFICIAL' | 'UNOFFICIAL')}
+          className="w-auto"
+          disabled={role !== 'ADMIN'}
+        >
           <option value="OFFICIAL">Official</option>
           <option value="UNOFFICIAL">Unofficial</option>
         </Select>
@@ -124,7 +129,7 @@ export default function SettingsPage() {
           <Badge variant={status.unofficialConnected ? 'success' : 'destructive'}>
             Unofficial: {status.unofficialConnected ? 'Tersambung' : 'Terputus'}
           </Badge>
-          {!status.unofficialConnected && (
+          {!status.unofficialConnected && role === 'ADMIN' && (
             <Button onClick={relink} variant="outline" size="sm">Sambungkan Ulang</Button>
           )}
         </div>
@@ -138,13 +143,15 @@ export default function SettingsPage() {
             <Badge variant={settings.botKillSwitch ? 'destructive' : 'success'}>
               Bot: {settings.botKillSwitch ? 'Dimatikan' : 'Aktif'}
             </Badge>
-            <Button
-              onClick={toggleKillSwitch}
-              variant={settings.botKillSwitch ? 'default' : 'destructive'}
-              size="sm"
-            >
-              {settings.botKillSwitch ? 'Aktifkan Bot' : 'Matikan Bot (Darurat)'}
-            </Button>
+            {role === 'ADMIN' && (
+              <Button
+                onClick={toggleKillSwitch}
+                variant={settings.botKillSwitch ? 'default' : 'destructive'}
+                size="sm"
+              >
+                {settings.botKillSwitch ? 'Aktifkan Bot' : 'Matikan Bot (Darurat)'}
+              </Button>
+            )}
           </div>
           <p className="text-xs text-muted-foreground">
             Saat dimatikan, semua pesan langsung dialihkan ke manusia — tanpa pengecualian.
@@ -156,9 +163,11 @@ export default function SettingsPage() {
             <span className="text-sm text-muted-foreground">
               Katalog terakhir disinkron: {settings.catalogSyncedAt ? new Date(settings.catalogSyncedAt).toLocaleString('id-ID') : 'Belum pernah'}
             </span>
-            <Button onClick={syncCatalog} variant="outline" size="sm" disabled={syncing}>
-              {syncing ? 'Menyinkron...' : 'Sinkron Sekarang'}
-            </Button>
+            {role === 'ADMIN' && (
+              <Button onClick={syncCatalog} variant="outline" size="sm" disabled={syncing}>
+                {syncing ? 'Menyinkron...' : 'Sinkron Sekarang'}
+              </Button>
+            )}
           </div>
         </div>
 

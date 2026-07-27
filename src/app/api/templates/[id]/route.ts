@@ -1,7 +1,9 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { prisma } from '@/lib/db'
+import { requireAdmin } from '@/lib/auth/require-admin'
 
+// GET stays open — agents read templates to use them in the compose box.
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   const template = await prisma.template.findUnique({ where: { id } })
@@ -25,7 +27,13 @@ const patchSchema = z.object({
 // new template (a new name/version), which is a create, not an update. Silently allowing PATCH
 // to rewrite the local row would desync it from what Meta actually approved/rejected. So we
 // reject with 409 and let the operator create a new template instead.
+//
+// Editing is also admin-only — templates are shared company-wide, so one agent
+// rewriting a quick reply changes what every other agent sends.
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
+  const admin = await requireAdmin(req)
+  if (!admin) return NextResponse.json({ error: 'Hanya admin yang bisa mengubah template' }, { status: 403 })
+
   const { id } = await params
   const parsed = patchSchema.safeParse(await req.json())
   if (!parsed.success) return NextResponse.json({ error: 'Data template tidak valid' }, { status: 400 })
@@ -44,7 +52,12 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   return NextResponse.json(template)
 }
 
-export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+// Admin-only: templates are a shared resource, and a deletion silently removes
+// a reply other agents depend on with no way to undo it.
+export async function DELETE(req: Request, { params }: { params: Promise<{ id: string }> }) {
+  const admin = await requireAdmin(req)
+  if (!admin) return NextResponse.json({ error: 'Hanya admin yang bisa menghapus template' }, { status: 403 })
+
   const { id } = await params
   await prisma.template.delete({ where: { id } })
   return NextResponse.json({ ok: true })

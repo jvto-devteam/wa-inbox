@@ -2,7 +2,10 @@ import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { prisma } from '@/lib/db'
 import { submitMetaTemplate } from '@/lib/meta/templates'
+import { requireAdmin } from '@/lib/auth/require-admin'
 
+// Reading templates stays open — agents pick quick replies from this list in
+// the compose box.
 export async function GET() {
   return NextResponse.json(await prisma.template.findMany())
 }
@@ -15,7 +18,14 @@ const bodySchema = z.object({
   variables: z.array(z.string()).optional(),
 })
 
+// Creating a template is admin-only: an OFFICIAL one is submitted straight to
+// Meta under the company's WABA, and rejected submissions count against the
+// account's quality rating. That is a company-level consequence an individual
+// agent shouldn't be able to trigger.
 export async function POST(req: Request) {
+  const admin = await requireAdmin(req)
+  if (!admin) return NextResponse.json({ error: 'Hanya admin yang bisa membuat template' }, { status: 403 })
+
   const parsed = bodySchema.safeParse(await req.json())
   if (!parsed.success) return NextResponse.json({ error: 'Data template tidak valid' }, { status: 400 })
 

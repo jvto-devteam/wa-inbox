@@ -1,7 +1,10 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { prisma } from '@/lib/db'
+import { requireAdmin } from '@/lib/auth/require-admin'
 
+// GET stays open to every authenticated user: the inbox and settings pages
+// both read defaultChannel/working hours, and agents need them.
 export async function GET() {
   const settings = await prisma.settings.findUniqueOrThrow({ where: { id: 1 } })
   return NextResponse.json(settings)
@@ -14,7 +17,14 @@ const patchSchema = z.object({
   offHoursAutoReply: z.string().optional(),
 })
 
+// Writing settings is admin-only. The Settings page already disables the
+// working-hours inputs for non-admins, but that is presentation, not
+// authorization — anyone could PATCH this endpoint directly and change the
+// default send channel or the off-hours auto-reply for the whole company.
 export async function PATCH(req: Request) {
+  const admin = await requireAdmin(req)
+  if (!admin) return NextResponse.json({ error: 'Hanya admin yang bisa mengubah pengaturan' }, { status: 403 })
+
   const parsed = patchSchema.safeParse(await req.json())
   if (!parsed.success) return NextResponse.json({ error: 'Data pengaturan tidak valid' }, { status: 400 })
   const settings = await prisma.settings.update({ where: { id: 1 }, data: parsed.data })
