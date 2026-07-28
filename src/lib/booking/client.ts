@@ -199,6 +199,7 @@ export async function ensureFreshBookingData(conversation: {
   bookingData: unknown
   bookingCheckedAt: Date | null
   pipelineStage: string
+  orderChannel?: string | null
   contact: { phone: string }
 }): Promise<BookingData | null> {
   let bookingData = conversation.bookingData as BookingData | null
@@ -214,6 +215,12 @@ export async function ensureFreshBookingData(conversation: {
       if (PIPELINE_STAGE_RANK[derived] > currentRank) pipelineStage = derived
     }
 
+    // Snapshotted once and never overwritten afterward -- see the column comment in
+    // schema.prisma. `conversation.orderChannel` already being set (from a previous refresh)
+    // wins even if a later API response's orderChannel ever came back different/missing.
+    const orderChannel =
+      !conversation.orderChannel && bookingData?.orderChannel ? bookingData.orderChannel : undefined
+
     await prisma.conversation.update({
       where: { id: conversation.id },
       data: {
@@ -225,6 +232,7 @@ export async function ensureFreshBookingData(conversation: {
         bookingData: bookingData === null ? Prisma.DbNull : (bookingData as Prisma.InputJsonValue),
         bookingCheckedAt: new Date(),
         ...(pipelineStage ? { pipelineStage } : {}),
+        ...(orderChannel ? { orderChannel } : {}),
       },
     })
   }

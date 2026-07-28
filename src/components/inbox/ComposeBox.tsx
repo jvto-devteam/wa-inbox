@@ -11,10 +11,30 @@ import { formatWhatsAppText } from '@/lib/whatsapp-format'
 type QuickReplyTemplate = { id: string; name: string; category: string | null; body: string }
 type OfficialTemplate = { id: string; name: string; body: string; variables: string[] | null; metaStatus: string; format: string }
 type TemplateApiRow = QuickReplyTemplate & { type: string; metaStatus: string; format: string; variables: string[] | null }
-type UploadedMedia = { url: string; type: 'image' | 'video' | 'audio' | 'document'; mimeType: string; fileName: string }
+type MediaKind = 'image' | 'video' | 'audio' | 'document'
+type UploadedMedia = { url: string; type: MediaKind; mimeType: string; fileName: string }
+// A local, not-yet-uploaded selection -- exists purely so the rich preview (actual thumbnail
+// for image/video) can show up the instant a file is picked, without waiting on the upload
+// round trip. `previewUrl` is a local blob: URL (see URL.createObjectURL), never sent anywhere.
+type PendingFile = { file: File; previewUrl: string; kind: MediaKind }
 
 const UNCATEGORIZED_LABEL = 'Lainnya'
-const ATTACHMENT_ICON: Record<UploadedMedia['type'], string> = { image: '🖼️', video: '🎞️', audio: '🎵', document: '📎' }
+const ATTACHMENT_ICON: Record<MediaKind, string> = { image: '🖼️', video: '🎞️', audio: '🎵', document: '📎' }
+
+function mediaKindFromMime(mime: string): MediaKind {
+  if (mime.startsWith('image/')) return 'image'
+  if (mime.startsWith('video/')) return 'video'
+  if (mime.startsWith('audio/')) return 'audio'
+  return 'document'
+}
+
+// Two entry points into the same hidden input, distinguished only by which file types the OS
+// picker offers -- both ultimately upload through the identical path, since the server
+// classifies the real type itself regardless of which menu item the agent clicked.
+const ATTACH_ACCEPT: Record<'media' | 'document', string> = {
+  media: 'image/*,video/*',
+  document: '.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,audio/*',
+}
 
 export function ComposeBox({
   conversationId,
@@ -46,9 +66,12 @@ export function ComposeBox({
   const [templateError, setTemplateError] = useState<string | null>(null)
   const [sendError, setSendError] = useState<string | null>(null)
   const [attachment, setAttachment] = useState<UploadedMedia | null>(null)
+  const [pendingFile, setPendingFile] = useState<PendingFile | null>(null)
   const [uploading, setUploading] = useState(false)
   const [attachmentError, setAttachmentError] = useState<string | null>(null)
+  const [attachMenuOpen, setAttachMenuOpen] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const attachMenuRef = useRef<HTMLDivElement>(null)
   // The OFFICIAL template currently being filled in (its variables need values before it can
   // be dispatched) -- null means the picker is just showing the list, not a param form.
   const [templateForm, setTemplateForm] = useState<OfficialTemplate | null>(null)
@@ -84,6 +107,33 @@ export function ComposeBox({
   function selectChannel(value: 'OFFICIAL' | 'UNOFFICIAL') {
     channelTouched.current = true
     setChannel(value)
+  }
+
+  // Same dismiss-on-outside-click/Escape pattern as AppNav's account menu.
+  useEffect(() => {
+    if (!attachMenuOpen) return
+    function onPointerDown(e: MouseEvent) {
+      if (!attachMenuRef.current?.contains(e.target as Node)) setAttachMenuOpen(false)
+    }
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Escape') setAttachMenuOpen(false)
+    }
+    document.addEventListener('mousedown', onPointerDown)
+    document.addEventListener('keydown', onKeyDown)
+    return () => {
+      document.removeEventListener('mousedown', onPointerDown)
+      document.removeEventListener('keydown', onKeyDown)
+    }
+  }, [attachMenuOpen])
+
+  // The local preview blob: URL is only ever useful for as long as this component (or this
+  // particular selection) is alive -- revoking it whenever a selection is replaced or cleared
+  // avoids leaking one blob per attachment for the lifetime of the tab.
+  function clearPendingFile() {
+    setPendingFile((prev) => {
+      if (prev) URL.revokeObjectURL(prev.previewUrl)
+      return null
+    })
   }
 
   // The agent's typed message is real work that only exists in this input. A non-ok /api/send
@@ -138,6 +188,7 @@ export function ComposeBox({
       })
       setText('')
       setAttachment(null)
+      clearPendingFile()
     } catch {
       setSendError('Gagal mengirim pesan — coba lagi')
     } finally {
@@ -155,24 +206,31 @@ export function ComposeBox({
       const data = await res.json()
       if (!res.ok) {
         setAttachmentError(data?.error ?? 'Gagal mengunggah lampiran')
+        clearPendingFile()
         return
       }
       setAttachment(data as UploadedMedia)
     } catch {
       setAttachmentError('Gagal mengunggah lampiran')
+      clearPendingFile()
     } finally {
       setUploading(false)
     }
   }
 
-  function pickAttachment() {
+  function pickAttachment(kind: 'media' | 'document') {
+    setAttachMenuOpen(false)
+    if (fileInputRef.current) fileInputRef.current.accept = ATTACH_ACCEPT[kind]
     fileInputRef.current?.click()
   }
 
   function handleAttachmentSelected(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
     e.target.value = ''
-    if (file) uploadAttachment(file)
+    if (!file) return
+    clearPendingFile()
+    setPendingFile({ file, previewUrl: URL.createObjectURL(file), kind: mediaKindFromMime(file.type) })
+    uploadAttachment(file)
   }
 
   async function toggleBot() {
@@ -302,21 +360,33 @@ export function ComposeBox({
           Ambil Alih dari Bot
         </button>
       )}
-      {uploading && <p className="text-xs text-muted-foreground">Mengunggah lampiran...</p>}
       {attachmentError && <p className="text-xs text-destructive">{attachmentError}</p>}
-      {attachment && (
-        <div className="flex items-center justify-between gap-2 rounded border-l-2 border-brand bg-secondary px-2.5 py-1.5 text-xs">
-          <p className="min-w-0 truncate">
-            {ATTACHMENT_ICON[attachment.type]} {attachment.fileName}
-          </p>
+      {pendingFile && (
+        <div className="relative w-fit max-w-40 rounded border border-border bg-secondary p-1.5">
           <button
             type="button"
-            onClick={() => setAttachment(null)}
+            onClick={() => {
+              clearPendingFile()
+              setAttachment(null)
+            }}
             aria-label="Batalkan lampiran"
-            className="shrink-0 text-muted-foreground hover:text-foreground"
+            className="absolute -right-1.5 -top-1.5 flex size-5 items-center justify-center rounded-full bg-navy text-xs text-white shadow"
           >
             ✕
           </button>
+          {pendingFile.kind === 'image' ? (
+            <img src={pendingFile.previewUrl} alt={pendingFile.file.name} className="h-28 w-full rounded object-cover" />
+          ) : pendingFile.kind === 'video' ? (
+            // No controls -- this is a compose-time preview, not a player; the browser shows
+            // the first frame by default with no autoplay/interaction needed.
+            <video src={pendingFile.previewUrl} className="h-28 w-full rounded object-cover" muted />
+          ) : (
+            <div className="flex items-center gap-1.5 px-1 py-6 text-xs">
+              <span className="text-lg">{ATTACHMENT_ICON[pendingFile.kind]}</span>
+              <span className="min-w-0 truncate">{pendingFile.file.name}</span>
+            </div>
+          )}
+          {uploading && <p className="mt-1 text-center text-[10px] text-muted-foreground">Mengunggah...</p>}
         </div>
       )}
       {pickerOpen && templateForm && (
@@ -418,23 +488,37 @@ export function ComposeBox({
         <Button type="button" variant="outline" size="sm" onClick={toggleTemplatePicker}>
           Template
         </Button>
-        <input
-          ref={fileInputRef}
-          type="file"
-          className="hidden"
-          accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt"
-          onChange={handleAttachmentSelected}
-        />
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          aria-label="Lampirkan file"
-          onClick={pickAttachment}
-          disabled={uploading}
-        >
-          📎
-        </Button>
+        <input ref={fileInputRef} type="file" className="hidden" onChange={handleAttachmentSelected} />
+        <div ref={attachMenuRef} className="relative">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            aria-label="Lampirkan file"
+            onClick={() => setAttachMenuOpen((prev) => !prev)}
+            disabled={uploading}
+          >
+            📎
+          </Button>
+          {attachMenuOpen && (
+            <Card className="absolute bottom-full left-0 z-10 mb-1 w-44 space-y-0.5 p-1">
+              <button
+                type="button"
+                onClick={() => pickAttachment('media')}
+                className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-muted"
+              >
+                🖼️ Foto &amp; Video
+              </button>
+              <button
+                type="button"
+                onClick={() => pickAttachment('document')}
+                className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-muted"
+              >
+                📄 Dokumen
+              </button>
+            </Card>
+          )}
+        </div>
         <Input
           value={text}
           onChange={(e) => setText(e.target.value)}

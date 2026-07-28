@@ -274,7 +274,7 @@ describe('ComposeBox attachments', () => {
     selectFile(new File(['x'], 'foto.jpg', { type: 'image/jpeg' }))
 
     await waitFor(() => expect(fetch).toHaveBeenCalledWith('/api/uploads', expect.objectContaining({ method: 'POST' })))
-    expect(await screen.findByText(/foto\.jpg/)).toBeInTheDocument()
+    expect(await screen.findByAltText(/foto\.jpg/)).toBeInTheDocument()
   })
 
   it('sends a media-only message (no caption) with the uploaded attachment', async () => {
@@ -283,7 +283,7 @@ describe('ComposeBox attachments', () => {
     render(<ComposeBox conversationId="conv_1" botEnabled={false} onSent={onSent} onBotToggled={() => {}} />)
 
     selectFile(new File(['x'], 'foto.jpg', { type: 'image/jpeg' }))
-    await screen.findByText(/foto\.jpg/)
+    await screen.findByAltText(/foto\.jpg/)
 
     fireEvent.click(screen.getByText('Kirim'))
 
@@ -302,7 +302,7 @@ describe('ComposeBox attachments', () => {
     render(<ComposeBox conversationId="conv_1" botEnabled={false} onSent={() => {}} onBotToggled={() => {}} />)
 
     selectFile(new File(['x'], 'foto.jpg', { type: 'image/jpeg' }))
-    await screen.findByText(/foto\.jpg/)
+    await screen.findByAltText(/foto\.jpg/)
 
     fireEvent.click(screen.getByLabelText('Batalkan lampiran'))
 

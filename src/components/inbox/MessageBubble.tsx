@@ -53,16 +53,47 @@ function QuotedPreview({ replyTo }: { replyTo: NonNullable<MessageView['replyTo'
   )
 }
 
+/**
+ * A `<img>`/`<video>` fetches its full bytes the instant it's in the DOM -- unlike audio/video's
+ * own default `preload="metadata"`, an `<img>` has no lazy/on-demand mode at all. With every
+ * thread showing every image inline, that's a real, unbounded fetch (Official: a Graph API
+ * resolve + download through the /api/media proxy on every render; Unofficial: a full request
+ * to wherever the file lives) for media the agent may never actually need to look at closely.
+ * Gating it behind an explicit tap -- same as WhatsApp's own default media behavior -- means the
+ * fetch only happens when someone actually wants to see it.
+ */
+function LazyMedia({ url, alt, kind }: { url: string; alt: string; kind: 'image' | 'video' }) {
+  const [revealed, setRevealed] = useState(false)
+
+  if (revealed) {
+    return kind === 'image' ? (
+      <img src={url} alt={alt} className="h-auto w-full rounded-md" />
+    ) : (
+      <video src={url} controls className="h-auto w-full rounded-md" />
+    )
+  }
+  return (
+    <button
+      type="button"
+      onClick={() => setRevealed(true)}
+      className="flex aspect-4/3 w-full flex-col items-center justify-center gap-1 rounded-md bg-black/5 text-sm text-muted-foreground hover:bg-black/10"
+    >
+      <span className="text-2xl">{kind === 'image' ? '🖼️' : '🎞️'}</span>
+      <span>Ketuk untuk memuat {kind === 'image' ? 'gambar' : 'video'}</span>
+    </button>
+  )
+}
+
 /** Renders an inbound/outbound image, audio, video, or document inline. */
 function MediaContent({ message }: { message: MessageView }) {
   if (!message.mediaUrl) return null
   switch (message.type) {
     case 'image':
-      return <img src={message.mediaUrl} alt={message.content ?? 'Gambar'} className="h-auto w-full max-w-xs rounded-md" />
+      return <LazyMedia url={message.mediaUrl} alt={message.content ?? 'Gambar'} kind="image" />
     case 'video':
-      return <video src={message.mediaUrl} controls className="h-auto w-full max-w-xs rounded-md" />
+      return <LazyMedia url={message.mediaUrl} alt={message.content ?? 'Video'} kind="video" />
     case 'audio':
-      return <audio src={message.mediaUrl} controls className="w-full max-w-60" />
+      return <audio src={message.mediaUrl} controls className="w-full" />
     case 'document':
       return (
         <a

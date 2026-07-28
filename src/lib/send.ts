@@ -1,3 +1,5 @@
+import { unlink } from 'fs/promises'
+import path from 'path'
 import { prisma } from '@/lib/db'
 import { sendMetaText, sendMetaMedia } from '@/lib/meta/messages'
 import { uploadMetaMediaFromUrl } from '@/lib/meta/media-upload'
@@ -5,6 +7,25 @@ import { sendCoexistText, sendCoexistMedia } from '@/lib/coexist/client'
 import { resolveChannel } from '@/lib/channel-router'
 import { broadcast } from '@/lib/realtime'
 import { withMediaUrl } from '@/lib/serialize-message'
+
+/**
+ * Removes an agent's uploaded attachment from local disk (see POST /api/uploads) once Meta has
+ * its own durable copy (a `mediaId`, resolvable later through the existing /api/media proxy) --
+ * there's no reason to keep two copies forever. Only ever called for Official-channel sends;
+ * Unofficial has no equivalent remote copy (wa-coexist doesn't retain what it sends), so that
+ * upload has to stay in place as the only surviving copy the bubble can ever render again.
+ * Best-effort: a failed delete is just a few stray KB on disk, never worth failing a send that
+ * has already gone out.
+ */
+async function deleteLocalUpload(url: string): Promise<void> {
+  try {
+    const { pathname } = new URL(url)
+    if (!pathname.startsWith('/uploads/')) return
+    await unlink(path.join(process.cwd(), 'public', pathname))
+  } catch (error) {
+    console.warn('sendMessage: failed to clean up local upload after Official send', { url, error })
+  }
+}
 
 export type OutboundMedia = {
   // Wherever /api/uploads just stored the agent's file -- a normal https URL, fetchable by
@@ -85,6 +106,11 @@ export async function sendMessage(params: {
     console.error('sendMessage: send attempt failed', { conversationId: params.conversationId, channel, error })
     deliveryStatus = 'FAILED'
   }
+
+  // mediaId only ever ends up set once uploadMetaMediaFromUrl has actually succeeded (see
+  // above), independent of whether the follow-up sendMetaMedia call itself then failed --
+  // either way, Meta already holds a durable copy, so the local one is no longer needed.
+  if (mediaId && params.media) await deleteLocalUpload(params.media.url)
 
   const created = await prisma.message.create({
     data: {

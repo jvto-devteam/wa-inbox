@@ -100,7 +100,7 @@ describe('MessageBubble', () => {
     expect(screen.queryByRole('img')).not.toBeInTheDocument()
   })
 
-  it('renders an inbound image inline, with its caption below', () => {
+  it('shows a tap-to-load placeholder for an inbound image instead of fetching it immediately', () => {
     render(
       <MessageBubble
         message={{
@@ -110,6 +110,22 @@ describe('MessageBubble', () => {
         }}
       />
     )
+    expect(screen.queryByRole('img', { name: 'Ini paketnya' })).not.toBeInTheDocument()
+    expect(screen.getByText('Ketuk untuk memuat gambar')).toBeInTheDocument()
+    expect(screen.getByText('Ini paketnya')).toBeInTheDocument()
+  })
+
+  it('renders the real image, with its caption below, once the placeholder is tapped', () => {
+    render(
+      <MessageBubble
+        message={{
+          id: 'm10', direction: 'INBOUND', content: 'Ini paketnya', channel: 'OFFICIAL', sentBy: 'CUSTOMER',
+          deliveryStatus: 'DELIVERED', createdAt: new Date().toISOString(), botTrace: null,
+          type: 'image', mediaUrl: '/api/media/m10', mimeType: 'image/jpeg', fileName: null,
+        }}
+      />
+    )
+    fireEvent.click(screen.getByText('Ketuk untuk memuat gambar'))
     const img = screen.getByRole('img', { name: 'Ini paketnya' })
     expect(img).toHaveAttribute('src', '/api/media/m10')
     expect(screen.getByText('Ini paketnya')).toBeInTheDocument()

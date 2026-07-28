@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mockDeep, mockReset, type DeepMockProxy } from 'vitest-mock-extended'
 import type { PrismaClient } from '@prisma/client'
+import { unlink } from 'fs/promises'
+import path from 'path'
 import { prisma } from '@/lib/db'
 import { sendMessage } from './send'
 import { sendMetaText, sendMetaMedia } from '@/lib/meta/messages'
@@ -13,6 +15,10 @@ vi.mock('@/lib/meta/messages', () => ({ sendMetaText: vi.fn(), sendMetaMedia: vi
 vi.mock('@/lib/meta/media-upload', () => ({ uploadMetaMediaFromUrl: vi.fn() }))
 vi.mock('@/lib/channel-router', () => ({ resolveChannel: vi.fn() }))
 vi.mock('@/lib/coexist/client', () => ({ sendCoexistText: vi.fn(), sendCoexistMedia: vi.fn() }))
+vi.mock('fs/promises', () => {
+  const unlink = vi.fn()
+  return { unlink, default: { unlink } }
+})
 const mockPrisma = prisma as unknown as DeepMockProxy<PrismaClient>
 
 beforeEach(() => {
@@ -26,6 +32,7 @@ beforeEach(() => {
   vi.mocked(uploadMetaMediaFromUrl).mockReset()
   vi.mocked(sendCoexistText).mockReset()
   vi.mocked(sendCoexistMedia).mockReset()
+  vi.mocked(unlink).mockReset().mockResolvedValue(undefined)
   mockPrisma.conversation.findUniqueOrThrow.mockResolvedValue({
     id: 'conv_1', contact: { phone: '6281234567890' },
   } as never)
@@ -148,7 +155,42 @@ describe('sendMessage — media attachments', () => {
     }))
   })
 
-  it('sends via sendCoexistMedia on the Unofficial channel, storing the raw upload URL (no Meta media id)', async () => {
+  it('deletes the local upload after a successful Official send, since Meta now holds a durable copy', async () => {
+    vi.mocked(uploadMetaMediaFromUrl).mockResolvedValue({ id: 'meta_media_1', mimeType: 'image/jpeg' })
+    vi.mocked(sendMetaMedia).mockResolvedValue({ externalId: 'wamid.M1' })
+    mockPrisma.message.create.mockResolvedValue({ id: 'msg_m1', deliveryStatus: 'SENT' } as never)
+
+    await sendMessage({ conversationId: 'conv_1', text: 'Lihat ini', sentBy: 'AGENT', media })
+
+    expect(unlink).toHaveBeenCalledWith(expect.stringContaining(path.join('public', 'uploads', 'x.jpg')))
+  })
+
+  it('still deletes the local upload even when the follow-up sendMetaMedia call itself fails (Meta already has the media)', async () => {
+    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    vi.mocked(uploadMetaMediaFromUrl).mockResolvedValue({ id: 'meta_media_1', mimeType: 'image/jpeg' })
+    vi.mocked(sendMetaMedia).mockRejectedValue(new Error('rate limited'))
+    mockPrisma.message.create.mockResolvedValue({ id: 'msg_m1b', deliveryStatus: 'FAILED' } as never)
+
+    await sendMessage({ conversationId: 'conv_1', text: 'Lihat ini', sentBy: 'AGENT', media })
+
+    expect(unlink).toHaveBeenCalled()
+    consoleErrorSpy.mockRestore()
+  })
+
+  it('does not fail the send when deleting the local upload itself throws', async () => {
+    vi.mocked(uploadMetaMediaFromUrl).mockResolvedValue({ id: 'meta_media_1', mimeType: 'image/jpeg' })
+    vi.mocked(sendMetaMedia).mockResolvedValue({ externalId: 'wamid.M1' })
+    vi.mocked(unlink).mockRejectedValue(new Error('ENOENT'))
+    mockPrisma.message.create.mockResolvedValue({ id: 'msg_m1c', deliveryStatus: 'SENT' } as never)
+    const consoleWarnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    const result = await sendMessage({ conversationId: 'conv_1', text: 'Lihat ini', sentBy: 'AGENT', media })
+
+    expect(result.deliveryStatus).toBe('SENT')
+    consoleWarnSpy.mockRestore()
+  })
+
+  it('sends via sendCoexistMedia on the Unofficial channel, storing the raw upload URL (no Meta media id), and does not delete the local upload', async () => {
     vi.mocked(resolveChannel).mockResolvedValue('UNOFFICIAL')
     vi.mocked(sendCoexistMedia).mockResolvedValue({})
     mockPrisma.message.create.mockResolvedValue({ id: 'msg_m2', deliveryStatus: 'SENT' } as never)
@@ -160,6 +202,9 @@ describe('sendMessage — media attachments', () => {
     expect(mockPrisma.message.create).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({ type: 'image', mediaId: null, mediaUrl: media.url }),
     }))
+    // No Meta media id exists to fall back on, so wa-coexist's upload is the ONLY surviving
+    // copy of this file -- deleting it here would make the media unrenderable forever after.
+    expect(unlink).not.toHaveBeenCalled()
   })
 
   it('routes an audio attachment through the same send_file_url path as document on Unofficial, but keeps Message.type as audio', async () => {

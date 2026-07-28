@@ -76,6 +76,13 @@ model Conversation {
   pipelineStage    String                @default("new")
   bookingData      Json?
   bookingCheckedAt DateTime?
+  // Snapshotted once from bookingData.orderChannel the first time a booking is found, then
+  // never overwritten -- unlike the rest of bookingData (payment/hotel/etc., which keep
+  // refreshing on ensureFreshBookingData's normal 24h cycle since they can genuinely change),
+  // which platform a booking originated from is a permanent fact about it. Kept as its own
+  // column (not read out of the bookingData JSON on every request) so the sidebar list's
+  // badge doesn't depend on bookingData's freshness/shape at all.
+  orderChannel     String?
   tripBrief        Json?
   lastMessageAt    DateTime              @default(now())
   // Null means "never opened" -- every inbound message counts as unread. Set to

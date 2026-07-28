@@ -47,6 +47,7 @@ const conversationRow = {
   pipelineStage: 'new',
   bookingData: null,
   bookingCheckedAt: null,
+  orderChannel: null,
   tripBrief: null,
   lastMessageAt: new Date(),
   lastReadAt: null,

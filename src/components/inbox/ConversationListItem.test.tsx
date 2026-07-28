@@ -5,15 +5,14 @@ import { ConversationListItem } from './ConversationListItem'
 const summary = {
   id: 'conv_1', contactName: 'Bruno Figarola', contactPhone: '6281234567890', avatarUrl: null,
   lastMessage: 'Halo!', lastMessageSentBy: 'CUSTOMER', lastMessageAt: new Date().toISOString(),
-  botEnabled: true, status: 'OPEN', unreadCount: 0, labels: [{ id: 'lbl_1', name: 'Confirmed Booking', color: '#3C6B42' }],
+  botEnabled: true, status: 'OPEN', orderChannel: null, unreadCount: 0, labels: [{ id: 'lbl_1', name: 'Confirmed Booking', color: '#3C6B42' }],
 }
 
 describe('ConversationListItem', () => {
-  it('shows contact name, last message, and Bot badge', () => {
+  it('shows contact name, last message, and labels', () => {
     render(<ConversationListItem conversation={summary} onClick={() => {}} />)
     expect(screen.getByText('Bruno Figarola')).toBeInTheDocument()
     expect(screen.getByText('Halo!')).toBeInTheDocument()
-    expect(screen.getByText('Bot')).toBeInTheDocument()
     expect(screen.getByText('Confirmed Booking')).toBeInTheDocument()
   })
 
@@ -40,17 +39,15 @@ describe('ConversationListItem', () => {
     expect(screen.queryByLabelText(/pesan belum dibaca/)).not.toBeInTheDocument()
   })
 
-  it('shows Agen instead of Bot when the global kill switch is on, even if botEnabled is true', () => {
-    // botEnabled reflects this conversation's own toggle, not whether a reply can actually
-    // happen right now -- the kill switch overrides it company-wide.
-    render(<ConversationListItem conversation={summary} killSwitchOn onClick={() => {}} />)
-    expect(screen.queryByText('Bot')).not.toBeInTheDocument()
-    expect(screen.getByText('Agen')).toBeInTheDocument()
+  it('shows the order channel badge when a booking exists', () => {
+    render(<ConversationListItem conversation={{ ...summary, orderChannel: 'KLOOK' }} onClick={() => {}} />)
+    expect(screen.getByText('KLOOK')).toBeInTheDocument()
   })
 
-  it('still shows Bot when botEnabled is true and the kill switch is off', () => {
-    render(<ConversationListItem conversation={summary} killSwitchOn={false} onClick={() => {}} />)
-    expect(screen.getByText('Bot')).toBeInTheDocument()
+  it('shows no order channel badge at all when there is no booking yet', () => {
+    render(<ConversationListItem conversation={summary} onClick={() => {}} />)
+    expect(screen.queryByText('KLOOK')).not.toBeInTheDocument()
+    expect(screen.queryByText('JVTO')).not.toBeInTheDocument()
   })
 
   it('shows the real avatar photo when avatarUrl is set, instead of the initial fallback', () => {

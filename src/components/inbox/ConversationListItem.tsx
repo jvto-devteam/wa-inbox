@@ -12,6 +12,9 @@ export type ConversationSummary = {
   lastMessageAt: string
   botEnabled: boolean
   status: string
+  // Which platform a booking (if any) originated from -- Klook, JVTO, TWT, etc. Null until
+  // there's an actual booking on file, in which case no badge shows at all (see below).
+  orderChannel: string | null
   unreadCount: number
   labels: Array<{ id: string; name: string; color: string }>
 }
@@ -20,15 +23,10 @@ export function ConversationListItem({
   conversation,
   onClick,
   active,
-  killSwitchOn,
 }: {
   conversation: ConversationSummary
   onClick: () => void
   active?: boolean
-  // Global kill switch overrides every conversation's own botEnabled: while it's on, no bot
-  // reply is actually possible here, so the badge must say so even though botEnabled itself
-  // is untouched (it's what the bot resumes to once the switch flips back off).
-  killSwitchOn?: boolean
 }) {
   // A handoff decision (Task 34) is logged as a Message row with content: null, sentBy: 'BOT' --
   // no real reply was ever sent to the customer. Without this, the sidebar preview renders blank.
@@ -37,7 +35,6 @@ export function ConversationListItem({
     content: conversation.lastMessage,
   })
   const isUnread = conversation.unreadCount > 0
-  const botActive = conversation.botEnabled && !killSwitchOn
 
   return (
     <button
@@ -51,7 +48,7 @@ export function ConversationListItem({
             {conversation.contactName ?? conversation.contactPhone}
           </span>
           <div className="flex shrink-0 items-center gap-1.5">
-            <Badge variant={botActive ? 'brand' : 'muted'}>{botActive ? 'Bot' : 'Agen'}</Badge>
+            {conversation.orderChannel && <Badge variant="muted">{conversation.orderChannel}</Badge>}
             {isUnread && (
               <span
                 aria-label={`${conversation.unreadCount} pesan belum dibaca`}
