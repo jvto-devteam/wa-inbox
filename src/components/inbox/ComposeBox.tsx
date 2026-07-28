@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type ChangeEvent } from 'react'
 import { SENDER_LABEL, type MessageView } from './MessageBubble'
 import { Select } from '@/components/ui/select'
 import { Input } from '@/components/ui/input'
@@ -11,8 +11,10 @@ import { formatWhatsAppText } from '@/lib/whatsapp-format'
 type QuickReplyTemplate = { id: string; name: string; category: string | null; body: string }
 type OfficialTemplate = { id: string; name: string; body: string; variables: string[] | null; metaStatus: string; format: string }
 type TemplateApiRow = QuickReplyTemplate & { type: string; metaStatus: string; format: string; variables: string[] | null }
+type UploadedMedia = { url: string; type: 'image' | 'video' | 'audio' | 'document'; mimeType: string; fileName: string }
 
 const UNCATEGORIZED_LABEL = 'Lainnya'
+const ATTACHMENT_ICON: Record<UploadedMedia['type'], string> = { image: '🖼️', video: '🎞️', audio: '🎵', document: '📎' }
 
 export function ComposeBox({
   conversationId,
@@ -43,6 +45,10 @@ export function ComposeBox({
   const [pickerOpen, setPickerOpen] = useState(false)
   const [templateError, setTemplateError] = useState<string | null>(null)
   const [sendError, setSendError] = useState<string | null>(null)
+  const [attachment, setAttachment] = useState<UploadedMedia | null>(null)
+  const [uploading, setUploading] = useState(false)
+  const [attachmentError, setAttachmentError] = useState<string | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
   // The OFFICIAL template currently being filled in (its variables need values before it can
   // be dispatched) -- null means the picker is just showing the list, not a param form.
   const [templateForm, setTemplateForm] = useState<OfficialTemplate | null>(null)
@@ -87,13 +93,19 @@ export function ComposeBox({
   // mid-conversation with a customer. So: confirm the send first, and on failure keep the
   // text exactly where it is and say so inline — same rule as the template picker above.
   async function send() {
-    if (!text.trim() || sending) return
+    if ((!text.trim() && !attachment) || sending || uploading) return
     setSendError(null)
     setSending(true)
     try {
       const res = await fetch('/api/send', {
         method: 'POST',
-        body: JSON.stringify({ conversationId, text, channel, replyToId: replyingTo?.id }),
+        body: JSON.stringify({
+          conversationId,
+          text: text || undefined,
+          channel,
+          replyToId: replyingTo?.id,
+          media: attachment ?? undefined,
+        }),
       })
       if (!res.ok) {
         // fetchJson isn't used here: on a 401 it navigates away immediately, which would
@@ -109,20 +121,58 @@ export function ComposeBox({
       onSent({
         id: message.id,
         direction: 'OUTBOUND',
-        content: text,
+        content: text || null,
         channel,
         sentBy: 'AGENT',
         deliveryStatus: message.deliveryStatus,
         createdAt: new Date().toISOString(),
         botTrace: null,
+        // The attachment's own upload URL, not anything the API response carries -- it's
+        // already a normal https URL (see /api/uploads), renderable as-is without waiting
+        // for a later re-fetch to resolve it through the Official-channel media proxy.
+        type: attachment?.type,
+        mediaUrl: attachment?.url ?? null,
+        mimeType: attachment?.mimeType ?? null,
+        fileName: attachment?.fileName ?? null,
         replyTo: replyingTo ? { id: replyingTo.id, content: replyingTo.content, type: replyingTo.type ?? 'text', sentBy: replyingTo.sentBy } : null,
       })
       setText('')
+      setAttachment(null)
     } catch {
       setSendError('Gagal mengirim pesan — coba lagi')
     } finally {
       setSending(false)
     }
+  }
+
+  async function uploadAttachment(file: File) {
+    setAttachmentError(null)
+    setUploading(true)
+    try {
+      const form = new FormData()
+      form.append('file', file)
+      const res = await fetch('/api/uploads', { method: 'POST', body: form })
+      const data = await res.json()
+      if (!res.ok) {
+        setAttachmentError(data?.error ?? 'Gagal mengunggah lampiran')
+        return
+      }
+      setAttachment(data as UploadedMedia)
+    } catch {
+      setAttachmentError('Gagal mengunggah lampiran')
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  function pickAttachment() {
+    fileInputRef.current?.click()
+  }
+
+  function handleAttachmentSelected(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (file) uploadAttachment(file)
   }
 
   async function toggleBot() {
@@ -252,6 +302,23 @@ export function ComposeBox({
           Ambil Alih dari Bot
         </button>
       )}
+      {uploading && <p className="text-xs text-muted-foreground">Mengunggah lampiran...</p>}
+      {attachmentError && <p className="text-xs text-destructive">{attachmentError}</p>}
+      {attachment && (
+        <div className="flex items-center justify-between gap-2 rounded border-l-2 border-brand bg-secondary px-2.5 py-1.5 text-xs">
+          <p className="min-w-0 truncate">
+            {ATTACHMENT_ICON[attachment.type]} {attachment.fileName}
+          </p>
+          <button
+            type="button"
+            onClick={() => setAttachment(null)}
+            aria-label="Batalkan lampiran"
+            className="shrink-0 text-muted-foreground hover:text-foreground"
+          >
+            ✕
+          </button>
+        </div>
+      )}
       {pickerOpen && templateForm && (
         <Card className="space-y-3 p-3">
           <h4 className="text-sm font-medium">Kirim Template: {templateForm.name}</h4>
@@ -351,6 +418,23 @@ export function ComposeBox({
         <Button type="button" variant="outline" size="sm" onClick={toggleTemplatePicker}>
           Template
         </Button>
+        <input
+          ref={fileInputRef}
+          type="file"
+          className="hidden"
+          accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt"
+          onChange={handleAttachmentSelected}
+        />
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          aria-label="Lampirkan file"
+          onClick={pickAttachment}
+          disabled={uploading}
+        >
+          📎
+        </Button>
         <Input
           value={text}
           onChange={(e) => setText(e.target.value)}
@@ -358,7 +442,7 @@ export function ComposeBox({
           placeholder="Reply on WhatsApp..."
           aria-label="Pesan"
         />
-        <Button onClick={send} disabled={sending}>
+        <Button onClick={send} disabled={sending || uploading}>
           Kirim
         </Button>
       </div>

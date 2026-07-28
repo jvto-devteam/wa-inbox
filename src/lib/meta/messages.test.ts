@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { sendMetaText, sendTemplateMessage } from './messages'
+import { sendMetaText, sendMetaMedia, sendTemplateMessage } from './messages'
 
 beforeEach(() => {
   vi.stubGlobal('fetch', vi.fn())
@@ -55,6 +55,50 @@ describe('sendMetaText', () => {
     })
 
     await expect(sendMetaText({ phoneNumberId: '123', accessToken: 'bad' }, '628', 'x')).rejects.toThrow('Invalid token')
+  })
+})
+
+describe('sendMetaMedia', () => {
+  it('sends an image message with a caption', async () => {
+    ;(fetch as any).mockResolvedValue({ ok: true, json: async () => ({ messages: [{ id: 'wamid.IMG1' }] }) })
+
+    const result = await sendMetaMedia({ phoneNumberId: '123', accessToken: 'tok' }, '6281234567890', 'image', 'media_1', 'Lihat ini')
+
+    expect(result).toEqual({ externalId: 'wamid.IMG1' })
+    const [, options] = (fetch as any).mock.calls[0]
+    expect(JSON.parse(options.body)).toEqual({
+      messaging_product: 'whatsapp',
+      to: '6281234567890',
+      type: 'image',
+      image: { id: 'media_1', caption: 'Lihat ini' },
+    })
+  })
+
+  it('omits caption entirely when none is given', async () => {
+    ;(fetch as any).mockResolvedValue({ ok: true, json: async () => ({ messages: [{ id: 'wamid.DOC1' }] }) })
+
+    await sendMetaMedia({ phoneNumberId: '123', accessToken: 'tok' }, '628', 'document', 'media_2')
+
+    const [, options] = (fetch as any).mock.calls[0]
+    expect(JSON.parse(options.body).document).toEqual({ id: 'media_2' })
+  })
+
+  it('drops a caption for audio, since Meta silently ignores one there', async () => {
+    ;(fetch as any).mockResolvedValue({ ok: true, json: async () => ({ messages: [{ id: 'wamid.AUD1' }] }) })
+
+    await sendMetaMedia({ phoneNumberId: '123', accessToken: 'tok' }, '628', 'audio', 'media_3', 'ini caption yang tidak akan terkirim')
+
+    const [, options] = (fetch as any).mock.calls[0]
+    expect(JSON.parse(options.body).audio).toEqual({ id: 'media_3' })
+  })
+
+  it('includes a context.message_id when replying to a specific wamid', async () => {
+    ;(fetch as any).mockResolvedValue({ ok: true, json: async () => ({ messages: [{ id: 'wamid.VID1' }] }) })
+
+    await sendMetaMedia({ phoneNumberId: '123', accessToken: 'tok' }, '628', 'video', 'media_4', undefined, 'wamid.PARENT')
+
+    const [, options] = (fetch as any).mock.calls[0]
+    expect(JSON.parse(options.body)).toEqual(expect.objectContaining({ context: { message_id: 'wamid.PARENT' } }))
   })
 })
 

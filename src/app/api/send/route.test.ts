@@ -48,7 +48,7 @@ describe('POST /api/send', () => {
     const res = await POST(req)
 
     expect(res.status).toBe(400)
-    expect(await res.json()).toEqual({ error: 'conversationId dan text wajib diisi' })
+    expect(await res.json()).toEqual({ error: 'conversationId wajib diisi, dan pesan atau lampiran wajib diisi' })
     expect(sendMessage).not.toHaveBeenCalled()
   })
 
@@ -58,7 +58,7 @@ describe('POST /api/send', () => {
     const res = await POST(req)
 
     expect(res.status).toBe(400)
-    expect(await res.json()).toEqual({ error: 'conversationId dan text wajib diisi' })
+    expect(await res.json()).toEqual({ error: 'conversationId wajib diisi, dan pesan atau lampiran wajib diisi' })
     expect(sendMessage).not.toHaveBeenCalled()
   })
 
@@ -96,6 +96,20 @@ describe('POST /api/send', () => {
 
     expect(res.status).toBe(404)
     expect(sendMessage).not.toHaveBeenCalled()
+  })
+
+  it('accepts a media-only body with no text, passing it through to sendMessage', async () => {
+    vi.mocked(sendMessage).mockResolvedValue({ id: 'msg_2', deliveryStatus: 'SENT' } as never)
+    const media = { url: 'https://wa-inbox.example.com/uploads/x.jpg', type: 'image', mimeType: 'image/jpeg', fileName: 'x.jpg' }
+    const req = new Request('http://localhost/api/send', {
+      method: 'POST',
+      body: JSON.stringify({ conversationId: 'conv_1', media }),
+    })
+
+    const res = await POST(req)
+
+    expect(res.status).toBe(200)
+    expect(sendMessage).toHaveBeenCalledWith(expect.objectContaining({ conversationId: 'conv_1', text: '', media }))
   })
 
   it('returns 404 when the Contact exists but has no Conversation yet', async () => {

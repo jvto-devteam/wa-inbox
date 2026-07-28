@@ -33,7 +33,7 @@ export function serializeMessage(m: Message & { replyTo?: Message | null }): Mes
     direction: m.direction,
     type: m.type,
     content: m.content,
-    mediaUrl: m.mediaId ? `/api/media/${m.id}` : null,
+    mediaUrl: m.mediaId ? `/api/media/${m.id}` : m.mediaUrl,
     mimeType: m.mimeType,
     fileName: m.fileName,
     channel: m.channel,
@@ -47,16 +47,20 @@ export function serializeMessage(m: Message & { replyTo?: Message | null }): Mes
 }
 
 /**
- * Adds the resolvable media proxy path to a message row before it goes out over
- * SSE, leaving every other field untouched. Deliberately lighter-weight than
- * `serializeMessage` (no `createdAt.toISOString()`, no fixed field list) because
- * `broadcast()` call sites pass through whatever Prisma's `create`/`update`
- * returned as-is -- without this, a message delivered live would carry the raw
- * `mediaId` and a permanently-null legacy `mediaUrl` column instead of the proxy
- * path, so an inbound photo would only ever render after a manual refresh.
+ * Adds the resolvable media URL to a message row before it goes out over SSE, leaving every
+ * other field untouched. Deliberately lighter-weight than `serializeMessage` (no
+ * `createdAt.toISOString()`, no fixed field list) because `broadcast()` call sites pass
+ * through whatever Prisma's `create`/`update` returned as-is -- without this, a message
+ * delivered live would carry the raw `mediaId` instead of the proxy path an Official-channel
+ * photo needs to render.
+ *
+ * `mediaId` set (any Official-channel media, inbound or outbound) -> the /api/media/{id}
+ * proxy, since Meta's media ids need re-resolving through the Graph API on every read.
+ * `mediaId` unset but `mediaUrl` set (Unofficial-channel outbound media) -> that raw URL as-is,
+ * since it's our own locally-hosted upload, not a Meta id that needs resolving.
  */
-export function withMediaUrl<T extends { id: string; mediaId?: string | null }>(
+export function withMediaUrl<T extends { id: string; mediaId?: string | null; mediaUrl?: string | null }>(
   m: T
 ): T & { mediaUrl: string | null } {
-  return { ...m, mediaUrl: m.mediaId ? `/api/media/${m.id}` : null }
+  return { ...m, mediaUrl: m.mediaId ? `/api/media/${m.id}` : (m.mediaUrl ?? null) }
 }

@@ -3,14 +3,16 @@ import { mockDeep, mockReset, type DeepMockProxy } from 'vitest-mock-extended'
 import type { PrismaClient } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { sendMessage } from './send'
-import { sendMetaText } from '@/lib/meta/messages'
-import { sendCoexistText } from '@/lib/coexist/client'
+import { sendMetaText, sendMetaMedia } from '@/lib/meta/messages'
+import { uploadMetaMediaFromUrl } from '@/lib/meta/media-upload'
+import { sendCoexistText, sendCoexistMedia } from '@/lib/coexist/client'
 import { resolveChannel } from '@/lib/channel-router'
 
 vi.mock('@/lib/db', () => ({ prisma: mockDeep<PrismaClient>() }))
-vi.mock('@/lib/meta/messages', () => ({ sendMetaText: vi.fn() }))
+vi.mock('@/lib/meta/messages', () => ({ sendMetaText: vi.fn(), sendMetaMedia: vi.fn() }))
+vi.mock('@/lib/meta/media-upload', () => ({ uploadMetaMediaFromUrl: vi.fn() }))
 vi.mock('@/lib/channel-router', () => ({ resolveChannel: vi.fn() }))
-vi.mock('@/lib/coexist/client', () => ({ sendCoexistText: vi.fn() }))
+vi.mock('@/lib/coexist/client', () => ({ sendCoexistText: vi.fn(), sendCoexistMedia: vi.fn() }))
 const mockPrisma = prisma as unknown as DeepMockProxy<PrismaClient>
 
 beforeEach(() => {
@@ -20,7 +22,10 @@ beforeEach(() => {
   // test (or a stale call history) leaks into every test that runs after it in this file.
   vi.mocked(resolveChannel).mockReset().mockResolvedValue('OFFICIAL')
   vi.mocked(sendMetaText).mockReset()
+  vi.mocked(sendMetaMedia).mockReset()
+  vi.mocked(uploadMetaMediaFromUrl).mockReset()
   vi.mocked(sendCoexistText).mockReset()
+  vi.mocked(sendCoexistMedia).mockReset()
   mockPrisma.conversation.findUniqueOrThrow.mockResolvedValue({
     id: 'conv_1', contact: { phone: '6281234567890' },
   } as never)
@@ -116,5 +121,70 @@ describe('sendMessage', () => {
     await sendMessage({ conversationId: 'conv_1', text: 'Halo', sentBy: 'AGENT', replyToId: 'msg_parent' })
 
     expect(sendMetaText).toHaveBeenCalledWith(expect.anything(), '6281234567890', 'Halo', undefined)
+  })
+})
+
+describe('sendMessage — media attachments', () => {
+  const media = { url: 'https://wa-inbox.example.com/uploads/x.jpg', type: 'image' as const, mimeType: 'image/jpeg', fileName: 'x.jpg' }
+
+  it('uploads to Meta and sends via sendMetaMedia on the Official channel, storing the returned media id', async () => {
+    vi.mocked(uploadMetaMediaFromUrl).mockResolvedValue({ id: 'meta_media_1', mimeType: 'image/jpeg' })
+    vi.mocked(sendMetaMedia).mockResolvedValue({ externalId: 'wamid.M1' })
+    mockPrisma.message.create.mockResolvedValue({ id: 'msg_m1', deliveryStatus: 'SENT' } as never)
+
+    await sendMessage({ conversationId: 'conv_1', text: 'Lihat ini', sentBy: 'AGENT', media })
+
+    expect(uploadMetaMediaFromUrl).toHaveBeenCalledWith(expect.objectContaining({ phoneNumberId: 'pnid' }), media.url)
+    expect(sendMetaMedia).toHaveBeenCalledWith(
+      expect.objectContaining({ phoneNumberId: 'pnid' }),
+      '6281234567890',
+      'image',
+      'meta_media_1',
+      'Lihat ini',
+      undefined
+    )
+    expect(mockPrisma.message.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ type: 'image', mediaId: 'meta_media_1', mediaUrl: null, mimeType: 'image/jpeg', fileName: 'x.jpg' }),
+    }))
+  })
+
+  it('sends via sendCoexistMedia on the Unofficial channel, storing the raw upload URL (no Meta media id)', async () => {
+    vi.mocked(resolveChannel).mockResolvedValue('UNOFFICIAL')
+    vi.mocked(sendCoexistMedia).mockResolvedValue({})
+    mockPrisma.message.create.mockResolvedValue({ id: 'msg_m2', deliveryStatus: 'SENT' } as never)
+
+    await sendMessage({ conversationId: 'conv_1', text: '', sentBy: 'AGENT', media })
+
+    expect(uploadMetaMediaFromUrl).not.toHaveBeenCalled()
+    expect(sendCoexistMedia).toHaveBeenCalledWith(expect.anything(), '6281234567890', media.url, 'image', undefined)
+    expect(mockPrisma.message.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ type: 'image', mediaId: null, mediaUrl: media.url }),
+    }))
+  })
+
+  it('routes an audio attachment through the same send_file_url path as document on Unofficial, but keeps Message.type as audio', async () => {
+    vi.mocked(resolveChannel).mockResolvedValue('UNOFFICIAL')
+    vi.mocked(sendCoexistMedia).mockResolvedValue({})
+    mockPrisma.message.create.mockResolvedValue({ id: 'msg_m3', deliveryStatus: 'SENT' } as never)
+
+    await sendMessage({
+      conversationId: 'conv_1', text: '', sentBy: 'AGENT',
+      media: { url: 'https://wa-inbox.example.com/uploads/x.ogg', type: 'audio', mimeType: 'audio/ogg', fileName: 'x.ogg' },
+    })
+
+    expect(sendCoexistMedia).toHaveBeenCalledWith(expect.anything(), '6281234567890', expect.any(String), 'document', undefined)
+    expect(mockPrisma.message.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ type: 'audio' }) }))
+  })
+
+  it('records a FAILED message when the Meta media upload itself throws', async () => {
+    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    vi.mocked(uploadMetaMediaFromUrl).mockRejectedValue(new Error('download failed'))
+    mockPrisma.message.create.mockResolvedValue({ id: 'msg_m4', deliveryStatus: 'FAILED' } as never)
+
+    const result = await sendMessage({ conversationId: 'conv_1', text: '', sentBy: 'AGENT', media })
+
+    expect(result.deliveryStatus).toBe('FAILED')
+    expect(sendMetaMedia).not.toHaveBeenCalled()
+    consoleErrorSpy.mockRestore()
   })
 })

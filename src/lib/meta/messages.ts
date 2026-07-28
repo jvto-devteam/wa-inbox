@@ -20,6 +20,37 @@ export async function sendMetaText(
   return { externalId: body.messages[0].id }
 }
 
+type MetaMediaType = 'image' | 'video' | 'audio' | 'document'
+
+/**
+ * Sends an already-uploaded media message (see uploadMetaMediaFromUrl for the upload step
+ * that produces `mediaId`). Audio never carries a caption on Meta's API -- passing one there
+ * is silently ignored by Meta, so it's dropped here rather than sent for nothing.
+ */
+export async function sendMetaMedia(
+  waNumber: { phoneNumberId: string; accessToken: string },
+  to: string,
+  mediaType: MetaMediaType,
+  mediaId: string,
+  caption?: string,
+  replyToExternalId?: string
+): Promise<{ externalId: string }> {
+  const mediaObject: Record<string, unknown> = { id: mediaId }
+  if (caption && mediaType !== 'audio') mediaObject.caption = caption
+
+  const body = await metaFetch(`/${waNumber.phoneNumberId}/messages`, waNumber.accessToken, {
+    method: 'POST',
+    body: JSON.stringify({
+      messaging_product: 'whatsapp',
+      to,
+      type: mediaType,
+      [mediaType]: mediaObject,
+      ...(replyToExternalId ? { context: { message_id: replyToExternalId } } : {}),
+    }),
+  })
+  return { externalId: body.messages[0].id }
+}
+
 type TemplateCardToSend = { mediaId: string; mediaType: 'IMAGE' | 'VIDEO'; buttons: CarouselButtonDef[] }
 
 /**

@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation'
 import { prisma } from '@/lib/db'
 import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+import { ContactAvatar } from '@/components/ContactAvatar'
 import { BookingSummary, type BookingData, type TripBrief } from '@/components/contacts/BookingSummary'
 import { ensureFreshBookingData } from '@/lib/booking/client'
 import { ContactLabels } from '@/components/contacts/ContactLabels'
@@ -40,7 +41,6 @@ export default async function ContactDetailPage({ params }: { params: Promise<{ 
   const attachedLabels = conversation?.labels.map((l) => l.label) ?? []
   const pipelineStage = conversation?.pipelineStage ?? 'new'
   const messages = conversation?.messages ?? []
-  const initial = (contact.name ?? '?').trim().charAt(0).toUpperCase()
 
   return (
     <main className="mx-auto max-w-3xl space-y-4 p-6">
@@ -49,14 +49,7 @@ export default async function ContactDetailPage({ params }: { params: Promise<{ 
       </Link>
 
       <div className="flex items-center gap-3">
-        {contact.avatarUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={contact.avatarUrl} alt={contact.name ?? 'Kontak'} className="size-12 rounded-full object-cover" />
-        ) : (
-          <div className="flex size-12 items-center justify-center rounded-full bg-navy text-base font-medium text-white">
-            {initial}
-          </div>
-        )}
+        <ContactAvatar name={contact.name} avatarUrl={contact.avatarUrl} size="size-12" />
         <div>
           <h1 className="text-xl font-semibold text-navy">{contact.name ?? contact.phone}</h1>
           <p className="text-sm text-muted-foreground">

@@ -1,10 +1,12 @@
 import { Badge } from '@/components/ui/badge'
+import { ContactAvatar } from '@/components/ContactAvatar'
 import { isHandoffLogMessage, HANDOFF_LOG_TEXT } from '@/lib/message-display'
 
 export type ConversationSummary = {
   id: string
   contactName: string | null
   contactPhone: string
+  avatarUrl: string | null
   lastMessage: string | null
   lastMessageSentBy: string | null
   lastMessageAt: string
@@ -40,33 +42,36 @@ export function ConversationListItem({
   return (
     <button
       onClick={onClick}
-      className={`flex w-full flex-col gap-1 border-b border-border p-3 text-left ${active ? 'bg-accent' : 'hover:bg-muted/50'}`}
+      className={`flex w-full items-start gap-2.5 border-b border-border p-3 text-left ${active ? 'bg-accent' : 'hover:bg-muted/50'}`}
     >
-      <div className="flex items-center justify-between">
-        <span className={isUnread ? 'font-semibold' : 'font-medium'}>
-          {conversation.contactName ?? conversation.contactPhone}
-        </span>
-        <div className="flex items-center gap-1.5">
-          <Badge variant={botActive ? 'brand' : 'muted'}>{botActive ? 'Bot' : 'Agen'}</Badge>
-          {isUnread && (
-            <span
-              aria-label={`${conversation.unreadCount} pesan belum dibaca`}
-              className="flex h-5 min-w-5 items-center justify-center rounded-full bg-brand px-1.5 text-[11px] font-semibold text-white"
-            >
-              {conversation.unreadCount > 99 ? '99+' : conversation.unreadCount}
-            </span>
-          )}
+      <ContactAvatar name={conversation.contactName} avatarUrl={conversation.avatarUrl} size="size-9" />
+      <div className="flex min-w-0 flex-1 flex-col gap-1">
+        <div className="flex items-center justify-between">
+          <span className={`truncate ${isUnread ? 'font-semibold' : 'font-medium'}`}>
+            {conversation.contactName ?? conversation.contactPhone}
+          </span>
+          <div className="flex shrink-0 items-center gap-1.5">
+            <Badge variant={botActive ? 'brand' : 'muted'}>{botActive ? 'Bot' : 'Agen'}</Badge>
+            {isUnread && (
+              <span
+                aria-label={`${conversation.unreadCount} pesan belum dibaca`}
+                className="flex h-5 min-w-5 items-center justify-center rounded-full bg-brand px-1.5 text-[11px] font-semibold text-white"
+              >
+                {conversation.unreadCount > 99 ? '99+' : conversation.unreadCount}
+              </span>
+            )}
+          </div>
         </div>
-      </div>
-      <span className={`truncate text-sm ${isUnread ? 'font-medium text-foreground' : 'text-muted-foreground'}`}>
-        {isHandoffLog ? HANDOFF_LOG_TEXT : conversation.lastMessage}
-      </span>
-      <div className="flex gap-1">
-        {conversation.labels.map((l) => (
-          <Badge key={l.id} style={{ backgroundColor: l.color + '22', color: l.color }}>
-            {l.name}
-          </Badge>
-        ))}
+        <span className={`truncate text-sm ${isUnread ? 'font-medium text-foreground' : 'text-muted-foreground'}`}>
+          {isHandoffLog ? HANDOFF_LOG_TEXT : conversation.lastMessage}
+        </span>
+        <div className="flex gap-1">
+          {conversation.labels.map((l) => (
+            <Badge key={l.id} style={{ backgroundColor: l.color + '22', color: l.color }}>
+              {l.name}
+            </Badge>
+          ))}
+        </div>
       </div>
     </button>
   )

@@ -3,10 +3,17 @@ import { useEffect, useState } from 'react'
 import { MessageBubble, type MessageView } from './MessageBubble'
 import { ComposeBox } from './ComposeBox'
 import { Select } from '@/components/ui/select'
+import { ContactAvatar } from '@/components/ContactAvatar'
 import { fetchJson } from '@/lib/fetch-json'
 
 type Agent = { id: string; name: string }
-type ConversationDetail = { botEnabled: boolean; assignedAgentId?: string | null; lastReadAt?: string | null }
+type ConversationDetail = {
+  botEnabled: boolean
+  assignedAgentId?: string | null
+  lastReadAt?: string | null
+  contactName?: string | null
+  avatarUrl?: string | null
+}
 
 /** Fire-and-forget: a failed mark-as-read is a cosmetic sidebar-badge staleness, never worth surfacing. */
 function markAsRead(conversationId: string) {
@@ -16,6 +23,8 @@ function markAsRead(conversationId: string) {
 export function ThreadView({ conversationId }: { conversationId: string }) {
   const [messages, setMessages] = useState<MessageView[]>([])
   const [botEnabled, setBotEnabled] = useState(false)
+  const [contactName, setContactName] = useState<string | null>(null)
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null)
   // Global kill switch overrides this conversation's own botEnabled -- without it, "Ambil
   // Alih dari Bot" kept showing (and offering to take over from a bot that can't reply
   // anyway) while the switch was on. Same override ConversationListItem applies to its badge.
@@ -45,6 +54,8 @@ export function ThreadView({ conversationId }: { conversationId: string }) {
         setBotEnabled(data.botEnabled)
         setAssignedAgentId(data.assignedAgentId ?? null)
         setUnreadCutoff(data.lastReadAt ?? null)
+        setContactName(data.contactName ?? null)
+        setAvatarUrl(data.avatarUrl ?? null)
         // Only after lastReadAt is captured above -- otherwise a mark-as-read that lands
         // before this GET resolves would erase the very boundary the divider needs.
         markAsRead(conversationId)
@@ -116,7 +127,11 @@ export function ThreadView({ conversationId }: { conversationId: string }) {
   return (
     <div className="flex h-full min-h-0 flex-col bg-slate-50">
       <div className="flex items-center justify-between gap-2 border-b border-border bg-white px-4 py-2">
-        <div className="flex items-center gap-2">
+        <div className="flex min-w-0 items-center gap-2.5">
+          <ContactAvatar name={contactName} avatarUrl={avatarUrl} size="size-8" />
+          <span className="truncate font-medium text-navy">{contactName ?? 'Tanpa nama'}</span>
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
           <label htmlFor="assign-agent" className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
             Ditugaskan ke
           </label>

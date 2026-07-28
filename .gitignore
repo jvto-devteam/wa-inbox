@@ -18,6 +18,11 @@ node_modules/
 catalog/*.json
 !catalog/.gitkeep
 
+# agent-uploaded outbound attachments (see src/app/api/uploads/route.ts) -- real
+# customer-facing files, never repo content
+public/uploads/*
+!public/uploads/.gitkeep
+
 # next.js
 /.next/
 /out/

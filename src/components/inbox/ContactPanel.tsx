@@ -1,6 +1,7 @@
 'use client'
 import { useEffect, useState } from 'react'
 import { Select } from '@/components/ui/select'
+import { ContactAvatar } from '@/components/ContactAvatar'
 import { LabelPicker, type LabelOption } from './LabelPicker'
 import { NotesSection } from './NotesSection'
 import { RemindersSection } from './RemindersSection'
@@ -53,22 +54,10 @@ export function ContactPanel({ conversationId }: { conversationId: string }) {
 
   if (!detail) return <div className="border-l border-border p-4 text-sm text-muted-foreground">Memuat...</div>
 
-  const initial = (detail.contactName ?? '?').trim().charAt(0).toUpperCase()
-
   return (
     <div className="flex h-full min-h-0 flex-col gap-4 overflow-y-auto border-l border-border bg-white p-4">
       <div className="flex items-center gap-3">
-        {detail.avatarUrl ? (
-          <img
-            src={detail.avatarUrl}
-            alt={detail.contactName ?? 'Kontak'}
-            className="size-10 rounded-full object-cover"
-          />
-        ) : (
-          <div className="flex size-10 items-center justify-center rounded-full bg-navy text-sm font-medium text-white">
-            {initial}
-          </div>
-        )}
+        <ContactAvatar name={detail.contactName} avatarUrl={detail.avatarUrl} />
         <div>
           <p className="font-medium text-navy">{detail.contactName ?? 'Tanpa nama'}</p>
           {detail.source && <p className="text-xs text-muted-foreground">{detail.source}</p>}

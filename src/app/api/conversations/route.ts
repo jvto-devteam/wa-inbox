@@ -40,6 +40,7 @@ export async function GET(req: Request) {
     id: c.id,
     contactName: c.contact.name,
     contactPhone: c.contact.phone,
+    avatarUrl: c.contact.avatarUrl,
     lastMessage: c.messages[0]?.content ?? null,
     lastMessageSentBy: c.messages[0]?.sentBy ?? null,
     lastMessageAt: c.lastMessageAt.toISOString(),

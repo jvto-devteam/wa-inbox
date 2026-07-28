@@ -3,7 +3,7 @@ import { render, screen } from '@testing-library/react'
 import { ConversationListItem } from './ConversationListItem'
 
 const summary = {
-  id: 'conv_1', contactName: 'Bruno Figarola', contactPhone: '6281234567890',
+  id: 'conv_1', contactName: 'Bruno Figarola', contactPhone: '6281234567890', avatarUrl: null,
   lastMessage: 'Halo!', lastMessageSentBy: 'CUSTOMER', lastMessageAt: new Date().toISOString(),
   botEnabled: true, status: 'OPEN', unreadCount: 0, labels: [{ id: 'lbl_1', name: 'Confirmed Booking', color: '#3C6B42' }],
 }
@@ -51,5 +51,16 @@ describe('ConversationListItem', () => {
   it('still shows Bot when botEnabled is true and the kill switch is off', () => {
     render(<ConversationListItem conversation={summary} killSwitchOn={false} onClick={() => {}} />)
     expect(screen.getByText('Bot')).toBeInTheDocument()
+  })
+
+  it('shows the real avatar photo when avatarUrl is set, instead of the initial fallback', () => {
+    render(<ConversationListItem conversation={{ ...summary, avatarUrl: 'https://x.test/photo.jpg' }} onClick={() => {}} />)
+    expect(screen.getByAltText('Bruno Figarola')).toBeInTheDocument()
+    expect(screen.queryByText('B')).not.toBeInTheDocument()
+  })
+
+  it('shows an initial-letter avatar when there is no avatarUrl', () => {
+    render(<ConversationListItem conversation={summary} onClick={() => {}} />)
+    expect(screen.getByText('B')).toBeInTheDocument()
   })
 })

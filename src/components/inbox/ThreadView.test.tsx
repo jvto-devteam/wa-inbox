@@ -178,6 +178,42 @@ describe('ThreadView kill switch', () => {
   })
 })
 
+describe('ThreadView header identity', () => {
+  it("shows the contact's name and avatar photo in the header when available", async () => {
+    vi.mocked(fetch).mockImplementation((url) => {
+      const s = String(url)
+      if (s.endsWith('/messages')) return Promise.resolve({ ok: true, json: () => Promise.resolve([]) } as Response)
+      if (s.endsWith('/api/accounts')) return Promise.resolve({ ok: true, json: () => Promise.resolve([]) } as Response)
+      return Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({ botEnabled: false, contactName: 'Bruno Figarola', avatarUrl: 'https://x.test/photo.jpg' }),
+      } as Response)
+    })
+
+    render(<ThreadView conversationId="conv_1" />)
+
+    expect(await screen.findByText('Bruno Figarola')).toBeInTheDocument()
+    expect(screen.getByAltText('Bruno Figarola')).toBeInTheDocument()
+  })
+
+  it('falls back to an initial-letter avatar when the contact has no avatarUrl', async () => {
+    vi.mocked(fetch).mockImplementation((url) => {
+      const s = String(url)
+      if (s.endsWith('/messages')) return Promise.resolve({ ok: true, json: () => Promise.resolve([]) } as Response)
+      if (s.endsWith('/api/accounts')) return Promise.resolve({ ok: true, json: () => Promise.resolve([]) } as Response)
+      return Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({ botEnabled: false, contactName: 'Bruno Figarola', avatarUrl: null }),
+      } as Response)
+    })
+
+    render(<ThreadView conversationId="conv_1" />)
+
+    await screen.findByText('Bruno Figarola')
+    expect(screen.getByText('B')).toBeInTheDocument()
+  })
+})
+
 describe('ThreadView live delivery-status updates', () => {
   function mockBasicFetch(messages: unknown[]) {
     vi.mocked(fetch).mockImplementation((url) => {

@@ -244,6 +244,82 @@ describe('ComposeBox send failures', () => {
   })
 })
 
+describe('ComposeBox attachments', () => {
+  function mockFetch(routes: { uploads?: unknown; send?: unknown } = {}) {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url: string) => {
+        if (url === '/api/uploads') {
+          const r = routes.uploads ?? { ok: true, json: async () => ({ url: 'https://x.test/uploads/f.jpg', type: 'image', mimeType: 'image/jpeg', fileName: 'foto.jpg' }) }
+          return typeof r === 'function' ? (r as () => unknown)() : Promise.resolve(r)
+        }
+        if (url === '/api/send') {
+          const r = routes.send ?? { ok: true, status: 200, json: async () => ({ id: 'msg_1', deliveryStatus: 'SENT' }) }
+          return typeof r === 'function' ? (r as () => unknown)() : Promise.resolve(r)
+        }
+        return Promise.resolve({ ok: true, json: async () => ({ defaultChannel: 'OFFICIAL' }) })
+      })
+    )
+  }
+
+  function selectFile(file: File) {
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement
+    fireEvent.change(input, { target: { files: [file] } })
+  }
+
+  it('uploads a selected file and shows an attachment preview chip with its filename', async () => {
+    mockFetch()
+    render(<ComposeBox conversationId="conv_1" botEnabled={false} onSent={() => {}} onBotToggled={() => {}} />)
+
+    selectFile(new File(['x'], 'foto.jpg', { type: 'image/jpeg' }))
+
+    await waitFor(() => expect(fetch).toHaveBeenCalledWith('/api/uploads', expect.objectContaining({ method: 'POST' })))
+    expect(await screen.findByText(/foto\.jpg/)).toBeInTheDocument()
+  })
+
+  it('sends a media-only message (no caption) with the uploaded attachment', async () => {
+    mockFetch()
+    const onSent = vi.fn()
+    render(<ComposeBox conversationId="conv_1" botEnabled={false} onSent={onSent} onBotToggled={() => {}} />)
+
+    selectFile(new File(['x'], 'foto.jpg', { type: 'image/jpeg' }))
+    await screen.findByText(/foto\.jpg/)
+
+    fireEvent.click(screen.getByText('Kirim'))
+
+    await waitFor(() => expect(fetch).toHaveBeenCalledWith('/api/send', expect.objectContaining({ method: 'POST' })))
+    const [, options] = vi.mocked(fetch).mock.calls.find(([url]) => url === '/api/send')!
+    expect(JSON.parse((options as RequestInit).body as string)).toEqual(
+      expect.objectContaining({
+        media: { url: 'https://x.test/uploads/f.jpg', type: 'image', mimeType: 'image/jpeg', fileName: 'foto.jpg' },
+      })
+    )
+    await waitFor(() => expect(onSent).toHaveBeenCalledWith(expect.objectContaining({ mediaUrl: 'https://x.test/uploads/f.jpg', type: 'image' })))
+  })
+
+  it('removes the staged attachment when its cancel button is clicked, without sending media', async () => {
+    mockFetch()
+    render(<ComposeBox conversationId="conv_1" botEnabled={false} onSent={() => {}} onBotToggled={() => {}} />)
+
+    selectFile(new File(['x'], 'foto.jpg', { type: 'image/jpeg' }))
+    await screen.findByText(/foto\.jpg/)
+
+    fireEvent.click(screen.getByLabelText('Batalkan lampiran'))
+
+    expect(screen.queryByText(/foto\.jpg/)).not.toBeInTheDocument()
+  })
+
+  it('shows an error and stages nothing when the upload itself fails', async () => {
+    mockFetch({ uploads: { ok: false, json: async () => ({ error: 'Ukuran file melebihi batas 5MB untuk image' }) } })
+    render(<ComposeBox conversationId="conv_1" botEnabled={false} onSent={() => {}} onBotToggled={() => {}} />)
+
+    selectFile(new File(['x'], 'foto.jpg', { type: 'image/jpeg' }))
+
+    expect(await screen.findByText('Ukuran file melebihi batas 5MB untuk image')).toBeInTheDocument()
+    expect(screen.queryByText(/foto\.jpg/)).not.toBeInTheDocument()
+  })
+})
+
 // ComposeBox always puts an explicit `channel` in its /api/send body, and
 // resolveChannel lets an explicit value win — so a hardcoded initial
 // 'OFFICIAL' made the admin-configurable Settings.defaultChannel dead
