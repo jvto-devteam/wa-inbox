@@ -41,6 +41,30 @@ describe('callLLM', () => {
     await expect(callLLM('Booking saya kapan?', { forceLocal: true })).rejects.toThrow('Ollama request failed')
   })
 
+  it('defaults to llama3/gpt-4o-mini when no model override is given', async () => {
+    fetchMock.mockResolvedValue({ ok: true, json: async () => ({ choices: [{ message: { content: 'ok' } }] }) })
+    await callLLM('Apa saja paket Ijen?')
+    const [, options] = fetchMock.mock.calls[0]
+    expect(JSON.parse(options.body).model).toBe('gpt-4o-mini')
+
+    fetchMock.mockReset().mockResolvedValue({ ok: true, json: async () => ({ response: 'ok' }) })
+    await callLLM('Booking saya kapan?', { forceLocal: true })
+    const [, ollamaOptions] = fetchMock.mock.calls[0]
+    expect(JSON.parse(ollamaOptions.body).model).toBe('llama3')
+  })
+
+  it('uses the given model override for Ollama and OpenAI respectively', async () => {
+    fetchMock.mockResolvedValue({ ok: true, json: async () => ({ response: 'ok' }) })
+    await callLLM('Booking saya kapan?', { forceLocal: true, model: 'mistral' })
+    const [, ollamaOptions] = fetchMock.mock.calls[0]
+    expect(JSON.parse(ollamaOptions.body).model).toBe('mistral')
+
+    fetchMock.mockReset().mockResolvedValue({ ok: true, json: async () => ({ choices: [{ message: { content: 'ok' } }] }) })
+    await callLLM('Apa saja paket Ijen?', { model: 'gpt-4o' })
+    const [, openaiOptions] = fetchMock.mock.calls[0]
+    expect(JSON.parse(openaiOptions.body).model).toBe('gpt-4o')
+  })
+
   // --- Timeouts (I5) -------------------------------------------------------
   // decideAndRespond is awaited inline through the inbound webhook handler, so an
   // unbounded LLM socket hangs the webhook. "timeout -> handoff" needs a timeout

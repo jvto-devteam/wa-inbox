@@ -290,4 +290,11 @@ model Settings {
   // period" can reset itself the next time the switch is turned back on.
   killSwitchEnabledAt DateTime?
   catalogSyncedAt     DateTime?
+  // Model names for src/lib/bot/llm.ts's two providers. NOT a provider *switch* -- the one
+  // real call site (orchestrator.ts's booking-context reply) deliberately hardcodes
+  // forceLocal (Ollama) whenever real customer booking data is in the prompt, a privacy
+  // safeguard that must never become an admin-toggleable "use OpenAI instead" setting. These
+  // only change which model within each already-fixed provider gets used.
+  ollamaModel         String         @default("llama3")
+  openaiModel         String         @default("gpt-4o-mini")
 }

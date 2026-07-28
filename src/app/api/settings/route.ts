@@ -16,6 +16,10 @@ const patchSchema = z.object({
   workingHoursStart: z.string().optional(),
   workingHoursEnd: z.string().optional(),
   offHoursAutoReply: z.string().optional(),
+  // Which model within each already-fixed provider src/lib/bot/llm.ts uses -- not a
+  // provider switch (see the Settings.ollamaModel/openaiModel schema comment).
+  ollamaModel: z.string().min(1).optional(),
+  openaiModel: z.string().min(1).optional(),
 })
 
 // Writing settings is admin-only. The Settings page already disables the

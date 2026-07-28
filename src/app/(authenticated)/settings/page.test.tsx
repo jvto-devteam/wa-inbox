@@ -13,14 +13,7 @@ vi.mock('@/components/settings/WebhookCredentialsPanel', () => ({
   WebhookCredentialsPanel: () => <div data-testid="webhook-credentials" />,
 }))
 
-const settings = {
-  defaultChannel: 'OFFICIAL',
-  workingHoursStart: null,
-  workingHoursEnd: null,
-  offHoursAutoReply: null,
-  botKillSwitch: false,
-  catalogSyncedAt: null,
-}
+const settings = { defaultChannel: 'OFFICIAL' }
 
 // Unofficial disconnected + ADMIN role are what make the relink button render
 // at all (see the Status nomor card).
@@ -31,8 +24,6 @@ function mockFetch(relinkResponse: unknown) {
       if (url === '/api/settings') return Promise.resolve({ ok: true, json: async () => settings })
       if (url === '/api/numbers/status')
         return Promise.resolve({ ok: true, json: async () => ({ officialTokenValid: true, unofficialConnected: false }) })
-      if (url === '/api/bot/gate-status')
-        return Promise.resolve({ ok: true, json: async () => ({ readyForApproval: true, blocking: [] }) })
       if (url === '/api/session') return Promise.resolve({ ok: true, json: async () => ({ role: 'ADMIN' }) })
       if (url === '/api/numbers/relink' && init?.method === 'POST') {
         return typeof relinkResponse === 'function' ? (relinkResponse as () => unknown)() : relinkResponse

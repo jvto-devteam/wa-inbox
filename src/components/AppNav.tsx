@@ -15,12 +15,15 @@ import { cn } from '@/lib/utils'
 // channel health + account on the right. The mockup's hardcoded pills and "AD" avatar are
 // replaced with the real /api/numbers/status and /api/session data.
 
-// The five top-level menus mandated by the plan's Global Constraints, in mockup order.
+// The five top-level menus mandated by the plan's Global Constraints, in mockup order, plus
+// Chatbot -- everything about the bot itself (on/off, knowledge, LLM model, working hours)
+// consolidated in one place instead of buried inside the general Pengaturan page.
 const NAV_ITEMS = [
   { href: '/dashboard', label: 'Beranda' },
   { href: '/inbox', label: 'Chat / Inbox' },
   { href: '/contacts', label: 'Kontak' },
   { href: '/templates', label: 'Template Pesan' },
+  { href: '/chatbot', label: 'Chatbot' },
   { href: '/settings', label: 'Pengaturan' },
 ] as const
 

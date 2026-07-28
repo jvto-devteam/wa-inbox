@@ -22,10 +22,19 @@
 // Matches src/lib/booking/client.ts's existing 10s convention.
 const LLM_TIMEOUT_MS = 10000
 
+// Fallbacks only -- callers that care which model runs (see Settings.ollamaModel/openaiModel
+// in the Chatbot page) pass their own via LLMOptions.model. Kept here so a caller that omits
+// it (every existing test, and any future call site that doesn't care) still gets a real,
+// working model rather than `undefined` reaching the provider's API.
+const DEFAULT_OLLAMA_MODEL = 'llama3'
+const DEFAULT_OPENAI_MODEL = 'gpt-4o-mini'
+
 export type LLMOptions = {
   forceLocal?: boolean
   /** Grounding/system instructions, kept separate from the untrusted user turn. */
   system?: string
+  /** Which model to ask the resolved provider for -- see the two DEFAULT_* constants above. */
+  model?: string
 }
 
 // A provider that answers with a non-string or a blank string has not answered.
@@ -37,14 +46,14 @@ function requireNonEmptyReply(value: unknown, provider: string): string {
   return value
 }
 
-async function callOllama(prompt: string, system?: string): Promise<string> {
+async function callOllama(prompt: string, system?: string, model?: string): Promise<string> {
   const res = await fetch(`${process.env.OLLAMA_URL}/api/generate`, {
     method: 'POST',
     // Ollama's /api/generate accepts a top-level `system` field (documented
     // alongside `template`/`raw`/`format`), which overrides the Modelfile's
     // SYSTEM block -- so the grounding instructions do not have to be
     // concatenated into `prompt` next to untrusted customer text.
-    body: JSON.stringify({ model: 'llama3', prompt, stream: false, ...(system ? { system } : {}) }),
+    body: JSON.stringify({ model: model ?? DEFAULT_OLLAMA_MODEL, prompt, stream: false, ...(system ? { system } : {}) }),
     signal: AbortSignal.timeout(LLM_TIMEOUT_MS),
   })
   if (!res.ok) throw new Error('Ollama request failed')
@@ -52,12 +61,12 @@ async function callOllama(prompt: string, system?: string): Promise<string> {
   return requireNonEmptyReply(body?.response, 'Ollama')
 }
 
-async function callOpenAI(prompt: string, system?: string): Promise<string> {
+async function callOpenAI(prompt: string, system?: string, model?: string): Promise<string> {
   const res = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
     headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      model: 'gpt-4o-mini',
+      model: model ?? DEFAULT_OPENAI_MODEL,
       messages: [
         ...(system ? [{ role: 'system', content: system }] : []),
         { role: 'user', content: prompt },
@@ -73,10 +82,10 @@ async function callOpenAI(prompt: string, system?: string): Promise<string> {
 }
 
 export async function callLLM(prompt: string, opts?: LLMOptions): Promise<string> {
-  if (opts?.forceLocal) return callOllama(prompt, opts.system)
+  if (opts?.forceLocal) return callOllama(prompt, opts.system, opts.model)
   try {
-    return await callOpenAI(prompt, opts?.system)
+    return await callOpenAI(prompt, opts?.system, opts?.model)
   } catch {
-    return callOllama(prompt, opts?.system)
+    return callOllama(prompt, opts?.system, opts?.model)
   }
 }

@@ -53,6 +53,23 @@ describe('PATCH /api/settings', () => {
     expect((await res.json()).defaultChannel).toBe('UNOFFICIAL')
   })
 
+  it('updates ollamaModel and openaiModel when called by an admin', async () => {
+    mockPrisma.settings.update.mockResolvedValue({ id: 1, ollamaModel: 'mistral', openaiModel: 'gpt-4o' } as never)
+
+    const req = new Request('http://localhost/api/settings', {
+      method: 'PATCH',
+      headers: adminCookie,
+      body: JSON.stringify({ ollamaModel: 'mistral', openaiModel: 'gpt-4o' }),
+    })
+    const res = await PATCH(req)
+
+    expect(res.status).toBe(200)
+    expect(mockPrisma.settings.update).toHaveBeenCalledWith({
+      where: { id: 1 },
+      data: { ollamaModel: 'mistral', openaiModel: 'gpt-4o' },
+    })
+  })
+
   it('rejects invalid payloads', async () => {
     const req = new Request('http://localhost/api/settings', {
       method: 'PATCH',

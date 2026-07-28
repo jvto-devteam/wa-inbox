@@ -1,52 +1,38 @@
 'use client'
 import { useEffect, useState } from 'react'
-import Link from 'next/link'
 import { Select } from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
-import { Input } from '@/components/ui/input'
-import { Textarea } from '@/components/ui/textarea'
 import { UserManagementSection } from '@/components/settings/UserManagementSection'
 import { WebhookCredentialsPanel } from '@/components/settings/WebhookCredentialsPanel'
 import { fetchJson } from '@/lib/fetch-json'
 
 type Settings = {
   defaultChannel: 'OFFICIAL' | 'UNOFFICIAL'
-  workingHoursStart: string | null
-  workingHoursEnd: string | null
-  offHoursAutoReply: string | null
-  botKillSwitch: boolean
-  catalogSyncedAt: string | null
 }
 type NumberStatus = { officialTokenValid: boolean; unofficialConnected: boolean }
-type GateStatus = { readyForApproval: boolean; blocking: string[] }
 type Role = 'ADMIN' | 'AGENT' | null
 
+// Bot-specific configuration (kill switch, working hours/auto-reply, LLM model, knowledge
+// base) lives on its own /chatbot page now, not here -- this page keeps only what isn't
+// specific to the bot: which channel sends by default, the two numbers' own health, and
+// user/webhook administration.
 export default function SettingsPage() {
   const [settings, setSettings] = useState<Settings | null>(null)
   const [status, setStatus] = useState<NumberStatus | null>(null)
-  const [gateStatus, setGateStatus] = useState<GateStatus | null>(null)
-  const [syncing, setSyncing] = useState(false)
   const [relinking, setRelinking] = useState(false)
   const [relinkError, setRelinkError] = useState<string | null>(null)
   const [role, setRole] = useState<Role>(null)
 
-  const [workingHoursStart, setWorkingHoursStart] = useState('')
-  const [workingHoursEnd, setWorkingHoursEnd] = useState('')
-  const [offHoursAutoReply, setOffHoursAutoReply] = useState('')
-  const [savingHours, setSavingHours] = useState(false)
-
   useEffect(() => {
-    // Each rejection is swallowed: the page renders "Memuat..." until all three land, which
+    // Each rejection is swallowed: the page renders "Memuat..." until both land, which
     // is the correct resting state for a failure — feeding an `{ error }` body into these
     // typed states instead would render a Settings screen full of undefined values.
     fetchJson<Settings>('/api/settings').then(setSettings).catch(() => {})
     fetchJson<NumberStatus>('/api/numbers/status').then(setStatus).catch(() => {})
-    fetchJson<GateStatus>('/api/bot/gate-status').then(setGateStatus).catch(() => {})
-    // Backs the admin-only gating below (Manajemen pengguna, Webhook &
-    // kredensial, and edit rights on Jam kerja). 401 (no/invalid session) is
-    // treated the same as "no role" — the gated sections simply stay hidden.
+    // Backs the admin-only gating below (Manajemen pengguna, Webhook & kredensial). 401
+    // (no/invalid session) is treated the same as "no role" — the gated sections stay hidden.
     // Kept on raw fetch rather than fetchJson deliberately: fetchJson redirects on 401, and
     // this probe's whole purpose is to tolerate not being signed in as an admin.
     fetch('/api/session')
@@ -55,44 +41,13 @@ export default function SettingsPage() {
       .catch(() => setRole(null))
   }, [])
 
-  // Syncs the working-hours form fields from the server whenever `settings`
-  // is (re)loaded — including right after saveWorkingHours() PATCHes and
-  // replaces `settings` with the server's confirmed values, so the fields
-  // never show anything the server hasn't confirmed. Deriving this during
-  // render (comparing against the last-synced object) rather than in a
-  // useEffect avoids the extra render+effect round trip React recommends
-  // against for "adjusting state" from a prop/data change.
-  const [syncedSettings, setSyncedSettings] = useState<Settings | null>(null)
-  if (settings && settings !== syncedSettings) {
-    setSyncedSettings(settings)
-    setWorkingHoursStart(settings.workingHoursStart ?? '')
-    setWorkingHoursEnd(settings.workingHoursEnd ?? '')
-    setOffHoursAutoReply(settings.offHoursAutoReply ?? '')
-  }
-
-  // These PATCHes replace `settings` wholesale with the server's response, so an unchecked
+  // This PATCH replaces `settings` wholesale with the server's response, so an unchecked
   // non-ok body would put `{ error: '...' }` behind every field this page reads.
   async function updateDefaultChannel(defaultChannel: 'OFFICIAL' | 'UNOFFICIAL') {
     try {
       setSettings(await fetchJson<Settings>('/api/settings', { method: 'PATCH', body: JSON.stringify({ defaultChannel }) }))
     } catch {
       // Leaves the select showing the last server-confirmed value.
-    }
-  }
-
-  async function saveWorkingHours() {
-    setSavingHours(true)
-    try {
-      setSettings(
-        await fetchJson<Settings>('/api/settings', {
-          method: 'PATCH',
-          body: JSON.stringify({ workingHoursStart, workingHoursEnd, offHoursAutoReply }),
-        })
-      )
-    } catch {
-      // Leaves the form on the values the server last confirmed.
-    } finally {
-      setSavingHours(false)
     }
   }
 
@@ -122,31 +77,7 @@ export default function SettingsPage() {
     }
   }
 
-  async function toggleKillSwitch() {
-    try {
-      const { botKillSwitch } = await fetchJson<{ botKillSwitch: boolean }>('/api/bot/kill-switch', { method: 'POST' })
-      setSettings((prev) => (prev ? { ...prev, botKillSwitch } : prev))
-    } catch {
-      // Badge keeps showing the last confirmed state — never a guessed one.
-    }
-  }
-
-  async function syncCatalog() {
-    setSyncing(true)
-    try {
-      await fetchJson('/api/bot/sync-catalog', { method: 'POST' })
-      await Promise.all([
-        fetchJson<Settings>('/api/settings').then(setSettings),
-        fetchJson<GateStatus>('/api/bot/gate-status').then(setGateStatus),
-      ])
-    } catch {
-      // The "terakhir disinkron" timestamp and gate badge just stay as they were.
-    } finally {
-      setSyncing(false)
-    }
-  }
-
-  if (!settings || !status || !gateStatus) return <div className="p-6 text-sm text-muted-foreground">Memuat...</div>
+  if (!settings || !status) return <div className="p-6 text-sm text-muted-foreground">Memuat...</div>
 
   return (
     <main className="mx-auto max-w-2xl space-y-8 p-6">
@@ -181,102 +112,6 @@ export default function SettingsPage() {
           )}
         </div>
         {relinkError && <p className="text-xs text-destructive">{relinkError}</p>}
-      </Card>
-
-      <Card className="space-y-4 p-4">
-        <h2 className="font-medium text-navy">Bot & Otomasi</h2>
-
-        <div className="space-y-1.5">
-          <div className="flex items-center gap-3">
-            <Badge variant={settings.botKillSwitch ? 'destructive' : 'success'}>
-              Bot: {settings.botKillSwitch ? 'Dimatikan' : 'Aktif'}
-            </Badge>
-            {role === 'ADMIN' && (
-              <Button
-                onClick={toggleKillSwitch}
-                variant={settings.botKillSwitch ? 'default' : 'destructive'}
-                size="sm"
-              >
-                {settings.botKillSwitch ? 'Aktifkan Bot' : 'Matikan Bot (Darurat)'}
-              </Button>
-            )}
-          </div>
-          <p className="text-xs text-muted-foreground">
-            Saat dimatikan, semua pesan langsung dialihkan ke manusia — tanpa pengecualian.
-          </p>
-        </div>
-
-        <div className="space-y-1.5">
-          <div className="flex items-center gap-3">
-            <span className="text-sm text-muted-foreground">
-              Katalog terakhir disinkron: {settings.catalogSyncedAt ? new Date(settings.catalogSyncedAt).toLocaleString('id-ID') : 'Belum pernah'}
-            </span>
-            {role === 'ADMIN' && (
-              <Button onClick={syncCatalog} variant="outline" size="sm" disabled={syncing}>
-                {syncing ? 'Menyinkron...' : 'Sinkron Sekarang'}
-              </Button>
-            )}
-          </div>
-        </div>
-
-        <div className="space-y-1.5">
-          <div className="flex items-center gap-3">
-            <Badge variant={gateStatus.readyForApproval ? 'success' : 'warning'}>
-              {gateStatus.readyForApproval ? 'Siap' : `Terkunci: ${gateStatus.blocking.join(', ')}`}
-            </Badge>
-            <Link href="/settings/bot-log" className="text-sm text-brand hover:underline">
-              Lihat log bot
-            </Link>
-          </div>
-        </div>
-      </Card>
-
-      <Card className="space-y-3 p-4">
-        <h2 className="font-medium text-navy">Jam kerja & auto-reply</h2>
-        <div className="grid grid-cols-2 gap-2">
-          <div className="space-y-1">
-            <label htmlFor="working-hours-start" className="text-xs text-muted-foreground">
-              Mulai
-            </label>
-            <Input
-              id="working-hours-start"
-              type="time"
-              value={workingHoursStart}
-              onChange={(e) => setWorkingHoursStart(e.target.value)}
-              disabled={role !== 'ADMIN'}
-            />
-          </div>
-          <div className="space-y-1">
-            <label htmlFor="working-hours-end" className="text-xs text-muted-foreground">
-              Selesai
-            </label>
-            <Input
-              id="working-hours-end"
-              type="time"
-              value={workingHoursEnd}
-              onChange={(e) => setWorkingHoursEnd(e.target.value)}
-              disabled={role !== 'ADMIN'}
-            />
-          </div>
-        </div>
-        <div className="space-y-1">
-          <label htmlFor="off-hours-auto-reply" className="text-xs text-muted-foreground">
-            Auto-reply di luar jam kerja
-          </label>
-          <Textarea
-            id="off-hours-auto-reply"
-            rows={3}
-            value={offHoursAutoReply}
-            onChange={(e) => setOffHoursAutoReply(e.target.value)}
-            disabled={role !== 'ADMIN'}
-            placeholder="Contoh: Terima kasih sudah menghubungi kami, tim kami akan membalas pada jam kerja."
-          />
-        </div>
-        {role === 'ADMIN' && (
-          <Button onClick={saveWorkingHours} size="sm" disabled={savingHours}>
-            {savingHours ? 'Menyimpan...' : 'Simpan'}
-          </Button>
-        )}
       </Card>
 
       {role === 'ADMIN' && <UserManagementSection />}
