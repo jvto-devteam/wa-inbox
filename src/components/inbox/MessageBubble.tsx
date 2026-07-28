@@ -33,6 +33,11 @@ export type MessageView = {
       bodyText: string
       buttons: Array<{ type: 'QUICK_REPLY' | 'URL' | 'PHONE_NUMBER'; text: string; url?: string; phoneNumber?: string }>
     }>
+    // LTO/COUPON: the real per-send values that were actually used, snapshotted at send time
+    // (see src/app/api/send/template/route.ts) -- never the template's own submission-time
+    // has_expiration boolean or example code.
+    limitedTimeOffer?: { text: string; expirationTimeMs: number }
+    coupon?: { buttonText: string; code: string }
   } | null
 }
 
@@ -159,6 +164,26 @@ function CarouselContent({ cards }: { cards: CarouselCards }) {
   )
 }
 
+/** The countdown banner WhatsApp shows atop an LTO template, sourced from Message.templatePayload. */
+function LimitedTimeOfferBanner({ offer }: { offer: NonNullable<NonNullable<MessageView['templatePayload']>['limitedTimeOffer']> }) {
+  const expires = new Date(offer.expirationTimeMs).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' })
+  return (
+    <div className="rounded-md bg-amber-50 px-2.5 py-1.5 text-xs font-medium text-amber-700">
+      ⏳ {offer.text} — berakhir {expires}
+    </div>
+  )
+}
+
+/** The coupon code chip WhatsApp shows on a COPY_CODE button template, sourced from Message.templatePayload. */
+function CouponChip({ coupon }: { coupon: NonNullable<NonNullable<MessageView['templatePayload']>['coupon']> }) {
+  return (
+    <div className="flex items-center justify-between rounded-md border border-dashed border-brand/40 bg-brand/5 px-2.5 py-1.5 text-xs">
+      <span className="font-mono font-semibold tracking-wide text-brand">{coupon.code}</span>
+      <span className="text-muted-foreground">{coupon.buttonText}</span>
+    </div>
+  )
+}
+
 const CHANNEL_LABEL: Record<string, string> = { OFFICIAL: 'Official', UNOFFICIAL: 'Unofficial' }
 
 function formatTime(iso: string): string {
@@ -233,6 +258,9 @@ export function MessageBubble({ message, onReply }: { message: MessageView; onRe
           <span className="italic text-muted-foreground">{HANDOFF_LOG_TEXT}</span>
         ) : (
           <div className="flex flex-col gap-1.5">
+            {message.templatePayload?.limitedTimeOffer && (
+              <LimitedTimeOfferBanner offer={message.templatePayload.limitedTimeOffer} />
+            )}
             {hasMedia && <MediaContent message={message} />}
             {message.content ? (
               <span>{formatWhatsAppText(message.content)}</span>
@@ -240,6 +268,7 @@ export function MessageBubble({ message, onReply }: { message: MessageView; onRe
               !hasMedia && message.type && message.type !== 'text' && `[${message.type}]`
             )}
             {cards && cards.length > 0 && <CarouselContent cards={cards} />}
+            {message.templatePayload?.coupon && <CouponChip coupon={message.templatePayload.coupon} />}
           </div>
         )}
       </div>

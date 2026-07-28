@@ -13,6 +13,13 @@ const bodySchema = z.object({
   conversationId: z.string(),
   templateId: z.string(),
   bodyParams: z.array(z.string()).optional(),
+  // LTO: the real expiration for this specific send, in epoch milliseconds -- required
+  // whenever the template's format is LTO (Meta needs a fresh timestamp every send; the
+  // submission-time row only ever recorded `has_expiration: true`, never a real value).
+  expirationTimeMs: z.number().optional(),
+  // COUPON: the real, live code this customer receives -- required whenever the template's
+  // format is COUPON (never the submission-time placeholder `couponExampleCode`).
+  couponCode: z.string().optional(),
 })
 
 function interpolateBody(body: string, params: string[]): string {
@@ -33,6 +40,12 @@ export async function POST(req: Request) {
   if (!template) return NextResponse.json({ error: 'Template tidak ditemukan' }, { status: 404 })
   if (template.metaStatus !== 'APPROVED') {
     return NextResponse.json({ error: 'Template belum disetujui Meta' }, { status: 400 })
+  }
+  if (template.format === 'LTO' && parsed.data.expirationTimeMs == null) {
+    return NextResponse.json({ error: 'Template LTO butuh waktu kadaluarsa' }, { status: 400 })
+  }
+  if (template.format === 'COUPON' && !parsed.data.couponCode) {
+    return NextResponse.json({ error: 'Template kupon butuh kode yang akan dikirim' }, { status: 400 })
   }
 
   const conversation = await prisma.conversation.findUniqueOrThrow({
@@ -68,6 +81,8 @@ export async function POST(req: Request) {
       name: template.name,
       bodyParams,
       cards: sendCards,
+      limitedTimeOfferExpirationMs: parsed.data.expirationTimeMs,
+      couponCode: parsed.data.couponCode,
     })
     externalId = result.externalId
   } catch (error) {
@@ -79,6 +94,14 @@ export async function POST(req: Request) {
     templateName: template.name,
     bodyText: resolvedBody,
     cards: cardDefs.length > 0 ? cardDefs : undefined,
+    limitedTimeOffer:
+      template.format === 'LTO' && template.offerTitle && parsed.data.expirationTimeMs != null
+        ? { text: template.offerTitle, expirationTimeMs: parsed.data.expirationTimeMs }
+        : undefined,
+    coupon:
+      template.format === 'COUPON' && template.couponButtonText && parsed.data.couponCode
+        ? { buttonText: template.couponButtonText, code: parsed.data.couponCode }
+        : undefined,
   }
 
   const created = await prisma.message.create({

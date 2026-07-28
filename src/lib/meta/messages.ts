@@ -64,11 +64,41 @@ type TemplateCardToSend = { mediaId: string; mediaType: 'IMAGE' | 'VIDEO'; butto
 export async function sendTemplateMessage(
   waNumber: { phoneNumberId: string; accessToken: string },
   to: string,
-  template: { name: string; bodyParams: string[]; cards?: TemplateCardToSend[] }
+  template: {
+    name: string
+    bodyParams: string[]
+    cards?: TemplateCardToSend[]
+    // LTO: the real, per-send expiration for the countdown banner -- submission time only
+    // ever recorded `has_expiration: true` (see submitLtoTemplate), Meta requires the actual
+    // timestamp fresh on every send.
+    limitedTimeOfferExpirationMs?: number
+    // COUPON: the real, live code this customer actually receives -- never the placeholder
+    // `example` value the template was submitted with (see submitCouponTemplate).
+    couponCode?: string
+  }
 ): Promise<{ externalId: string }> {
   const components: unknown[] = []
   if (template.bodyParams.length > 0) {
     components.push({ type: 'body', parameters: template.bodyParams.map((text) => ({ type: 'text', text })) })
+  }
+  if (template.limitedTimeOfferExpirationMs != null) {
+    components.push({
+      type: 'limited_time_offer',
+      parameters: [
+        { type: 'limited_time_offer', limited_time_offer: { expiration_time_ms: template.limitedTimeOfferExpirationMs } },
+      ],
+    })
+  }
+  if (template.couponCode) {
+    // index '0': a coupon template has exactly one BUTTONS component with exactly one
+    // button (see submitCouponTemplate) -- there is no second button whose index this could
+    // ever need to disambiguate from.
+    components.push({
+      type: 'button',
+      sub_type: 'copy_code',
+      index: '0',
+      parameters: [{ type: 'coupon_code', coupon_code: template.couponCode }],
+    })
   }
   if (template.cards && template.cards.length > 0) {
     components.push({

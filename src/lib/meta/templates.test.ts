@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { submitMetaTemplate, submitCarouselTemplate } from './templates'
+import { submitMetaTemplate, submitCarouselTemplate, submitLtoTemplate, submitCouponTemplate } from './templates'
 import { uploadMetaResumable } from './media-upload'
 
 vi.mock('./media-upload', () => ({ uploadMetaResumable: vi.fn() }))
@@ -101,5 +101,64 @@ describe('submitCarouselTemplate', () => {
         { type: 'PHONE_NUMBER', text: 'Telepon Kami', phone_number: '+622112345678' },
       ],
     })
+  })
+})
+
+describe('submitLtoTemplate', () => {
+  it('submits a LIMITED_TIME_OFFER component with has_expiration always true, ahead of BODY and BUTTONS', async () => {
+    ;(fetch as any).mockResolvedValue({ ok: true, json: async () => ({ id: 'tpl_lto_1', status: 'PENDING' }) })
+
+    const result = await submitLtoTemplate(
+      { wabaId: 'waba_1', accessToken: 'tok' },
+      {
+        name: 'promo_akhir_tahun', category: 'MARKETING', body: 'Nikmati diskon spesial akhir tahun!',
+        offerTitle: 'Diskon 25%', buttons: [{ type: 'URL', text: 'Lihat Promo', url: 'https://example.com/promo' }],
+      }
+    )
+
+    expect(result).toEqual({ metaId: 'tpl_lto_1', status: 'PENDING' })
+    const [, options] = (fetch as any).mock.calls[0]
+    const payload = JSON.parse(options.body)
+    expect(payload.category).toBe('MARKETING')
+    expect(payload.components).toEqual([
+      { type: 'LIMITED_TIME_OFFER', limited_time_offer: { text: 'Diskon 25%', has_expiration: true } },
+      { type: 'BODY', text: 'Nikmati diskon spesial akhir tahun!' },
+      { type: 'BUTTONS', buttons: [{ type: 'URL', text: 'Lihat Promo', url: 'https://example.com/promo' }] },
+    ])
+  })
+
+  it('omits the BUTTONS component when there are no buttons', async () => {
+    ;(fetch as any).mockResolvedValue({ ok: true, json: async () => ({ id: 'tpl_lto_2', status: 'PENDING' }) })
+
+    await submitLtoTemplate(
+      { wabaId: 'waba_1', accessToken: 'tok' },
+      { name: 'promo', category: 'MARKETING', body: 'Halo', offerTitle: 'Promo', buttons: [] }
+    )
+
+    const [, options] = (fetch as any).mock.calls[0]
+    const payload = JSON.parse(options.body)
+    expect(payload.components).toEqual([
+      { type: 'LIMITED_TIME_OFFER', limited_time_offer: { text: 'Promo', has_expiration: true } },
+      { type: 'BODY', text: 'Halo' },
+    ])
+  })
+})
+
+describe('submitCouponTemplate', () => {
+  it('submits a BODY plus a BUTTONS component holding one COPY_CODE button with the example code', async () => {
+    ;(fetch as any).mockResolvedValue({ ok: true, json: async () => ({ id: 'tpl_coupon_1', status: 'PENDING' }) })
+
+    const result = await submitCouponTemplate(
+      { wabaId: 'waba_1', accessToken: 'tok' },
+      { name: 'kode_diskon', category: 'UTILITY', body: 'Gunakan kode ini untuk diskon spesial Anda.', buttonText: 'Salin Kode', exampleCode: 'PROMO25' }
+    )
+
+    expect(result).toEqual({ metaId: 'tpl_coupon_1', status: 'PENDING' })
+    const [, options] = (fetch as any).mock.calls[0]
+    const payload = JSON.parse(options.body)
+    expect(payload.components).toEqual([
+      { type: 'BODY', text: 'Gunakan kode ini untuk diskon spesial Anda.' },
+      { type: 'BUTTONS', buttons: [{ type: 'COPY_CODE', text: 'Salin Kode', example: ['PROMO25'] }] },
+    ])
   })
 })

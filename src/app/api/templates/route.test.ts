@@ -3,14 +3,19 @@ import { mockDeep, mockReset, type DeepMockProxy } from 'vitest-mock-extended'
 import type { PrismaClient } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { GET, POST } from './route'
-import { submitMetaTemplate, submitCarouselTemplate } from '@/lib/meta/templates'
+import { submitMetaTemplate, submitCarouselTemplate, submitLtoTemplate, submitCouponTemplate } from '@/lib/meta/templates'
 import { verifySessionToken } from '@/lib/auth/session'
 
 // `vi.mock` factories are hoisted above regular imports and `let`/`const`
 // declarations, so the mock instance must be constructed inline inside the
 // factory rather than via an outer variable reassigned in beforeEach.
 vi.mock('@/lib/db', () => ({ prisma: mockDeep<PrismaClient>() }))
-vi.mock('@/lib/meta/templates', () => ({ submitMetaTemplate: vi.fn(), submitCarouselTemplate: vi.fn() }))
+vi.mock('@/lib/meta/templates', () => ({
+  submitMetaTemplate: vi.fn(),
+  submitCarouselTemplate: vi.fn(),
+  submitLtoTemplate: vi.fn(),
+  submitCouponTemplate: vi.fn(),
+}))
 vi.mock('@/lib/auth/session', () => ({ verifySessionToken: vi.fn() }))
 
 const adminCookie = { cookie: 'wa_inbox_session=tok' }
@@ -21,6 +26,8 @@ beforeEach(() => {
   mockReset(mockPrisma)
   vi.mocked(submitMetaTemplate).mockReset()
   vi.mocked(submitCarouselTemplate).mockReset()
+  vi.mocked(submitLtoTemplate).mockReset()
+  vi.mocked(submitCouponTemplate).mockReset()
   vi.mocked(verifySessionToken).mockResolvedValue({ accountId: 'acc_admin', role: 'ADMIN', tokenVersion: 0 })
   delete process.env.META_APP_ID
 })
@@ -209,6 +216,106 @@ describe('templates API', () => {
 
       expect(res.status).toBe(502)
       expect(mockPrisma.template.create).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('LTO templates', () => {
+    it('submits via submitLtoTemplate, forcing category to MARKETING regardless of what was sent', async () => {
+      mockPrisma.waNumber.findFirstOrThrow.mockResolvedValue({ wabaId: 'waba_1', accessToken: 'tok' } as never)
+      vi.mocked(submitLtoTemplate).mockResolvedValue({ metaId: 'tpl_lto_1', status: 'PENDING' })
+      mockPrisma.template.create.mockResolvedValue({ id: 't_lto', format: 'LTO', metaStatus: 'PENDING' } as never)
+
+      const req = new Request('http://localhost/api/templates', {
+        method: 'POST',
+        headers: adminCookie,
+        body: JSON.stringify({
+          name: 'promo_akhir_tahun', type: 'OFFICIAL', format: 'LTO', category: 'UTILITY',
+          body: 'Nikmati diskon spesial akhir tahun!', offerTitle: 'Diskon 25%',
+          buttons: [{ type: 'URL', text: 'Lihat Promo', url: 'https://example.com/promo' }],
+        }),
+      })
+      const res = await POST(req)
+
+      expect(res.status).toBe(200)
+      expect(submitLtoTemplate).toHaveBeenCalledWith(
+        { wabaId: 'waba_1', accessToken: 'tok' },
+        expect.objectContaining({ category: 'MARKETING', offerTitle: 'Diskon 25%' })
+      )
+      expect(mockPrisma.template.create).toHaveBeenCalledWith(expect.objectContaining({
+        data: expect.objectContaining({ format: 'LTO', category: 'MARKETING', offerTitle: 'Diskon 25%', metaStatus: 'PENDING' }),
+      }))
+    })
+
+    it('rejects an LTO submission with no offerTitle', async () => {
+      const req = new Request('http://localhost/api/templates', {
+        method: 'POST',
+        headers: adminCookie,
+        body: JSON.stringify({ name: 'x', type: 'OFFICIAL', format: 'LTO', body: 'x' }),
+      })
+      const res = await POST(req)
+      expect(res.status).toBe(400)
+      expect(submitLtoTemplate).not.toHaveBeenCalled()
+      expect(mockPrisma.template.create).not.toHaveBeenCalled()
+    })
+
+    it('rejects an LTO format on a QUICK_REPLY template', async () => {
+      const req = new Request('http://localhost/api/templates', {
+        method: 'POST',
+        headers: adminCookie,
+        body: JSON.stringify({ name: 'x', type: 'QUICK_REPLY', format: 'LTO', body: 'x', offerTitle: 'Promo' }),
+      })
+      const res = await POST(req)
+      expect(res.status).toBe(400)
+      expect(submitLtoTemplate).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('COUPON templates', () => {
+    it('submits via submitCouponTemplate with the button text and example code', async () => {
+      mockPrisma.waNumber.findFirstOrThrow.mockResolvedValue({ wabaId: 'waba_1', accessToken: 'tok' } as never)
+      vi.mocked(submitCouponTemplate).mockResolvedValue({ metaId: 'tpl_coupon_1', status: 'PENDING' })
+      mockPrisma.template.create.mockResolvedValue({ id: 't_coupon', format: 'COUPON', metaStatus: 'PENDING' } as never)
+
+      const req = new Request('http://localhost/api/templates', {
+        method: 'POST',
+        headers: adminCookie,
+        body: JSON.stringify({
+          name: 'kode_diskon', type: 'OFFICIAL', format: 'COUPON',
+          body: 'Gunakan kode ini untuk diskon spesial Anda.', couponButtonText: 'Salin Kode', couponExampleCode: 'PROMO25',
+        }),
+      })
+      const res = await POST(req)
+
+      expect(res.status).toBe(200)
+      expect(submitCouponTemplate).toHaveBeenCalledWith(
+        { wabaId: 'waba_1', accessToken: 'tok' },
+        expect.objectContaining({ category: 'UTILITY', buttonText: 'Salin Kode', exampleCode: 'PROMO25' })
+      )
+      expect(mockPrisma.template.create).toHaveBeenCalledWith(expect.objectContaining({
+        data: expect.objectContaining({ format: 'COUPON', couponButtonText: 'Salin Kode', couponExampleCode: 'PROMO25', metaStatus: 'PENDING' }),
+      }))
+    })
+
+    it('rejects a COUPON submission missing the example code', async () => {
+      const req = new Request('http://localhost/api/templates', {
+        method: 'POST',
+        headers: adminCookie,
+        body: JSON.stringify({ name: 'x', type: 'OFFICIAL', format: 'COUPON', body: 'x', couponButtonText: 'Salin Kode' }),
+      })
+      const res = await POST(req)
+      expect(res.status).toBe(400)
+      expect(submitCouponTemplate).not.toHaveBeenCalled()
+    })
+
+    it('rejects a COUPON format on a QUICK_REPLY template', async () => {
+      const req = new Request('http://localhost/api/templates', {
+        method: 'POST',
+        headers: adminCookie,
+        body: JSON.stringify({ name: 'x', type: 'QUICK_REPLY', format: 'COUPON', body: 'x', couponButtonText: 'a', couponExampleCode: 'b' }),
+      })
+      const res = await POST(req)
+      expect(res.status).toBe(400)
+      expect(submitCouponTemplate).not.toHaveBeenCalled()
     })
   })
 })

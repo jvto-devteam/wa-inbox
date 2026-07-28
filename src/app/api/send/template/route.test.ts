@@ -102,6 +102,72 @@ describe('POST /api/send/template', () => {
     expect(mockPrisma.message.create).not.toHaveBeenCalled()
   })
 
+  it('sends an LTO template with the real per-send expiration and snapshots it onto templatePayload', async () => {
+    mockPrisma.template.findUnique.mockResolvedValue({
+      id: 't_lto', name: 'promo_akhir_tahun', metaStatus: 'APPROVED', format: 'LTO',
+      body: 'Nikmati diskon spesial!', cards: null, offerTitle: 'Diskon 25%',
+    } as never)
+    vi.mocked(sendTemplateMessage).mockResolvedValue({ externalId: 'wamid.LTO1' })
+    mockPrisma.message.create.mockResolvedValue({ id: 'msg_lto', deliveryStatus: 'SENT' } as never)
+
+    const res = await POST(req({ conversationId: 'conv_1', templateId: 't_lto', expirationTimeMs: 1735680000000 }))
+
+    expect(res.status).toBe(200)
+    expect(sendTemplateMessage).toHaveBeenCalledWith(
+      expect.anything(), '6281234567890',
+      expect.objectContaining({ limitedTimeOfferExpirationMs: 1735680000000 })
+    )
+    expect(mockPrisma.message.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        templatePayload: expect.objectContaining({ limitedTimeOffer: { text: 'Diskon 25%', expirationTimeMs: 1735680000000 } }),
+      }),
+    }))
+  })
+
+  it('returns 400 for an LTO template send with no expiration given', async () => {
+    mockPrisma.template.findUnique.mockResolvedValue({
+      id: 't_lto', name: 'promo_akhir_tahun', metaStatus: 'APPROVED', format: 'LTO', body: 'Halo', cards: null, offerTitle: 'Promo',
+    } as never)
+
+    const res = await POST(req({ conversationId: 'conv_1', templateId: 't_lto' }))
+
+    expect(res.status).toBe(400)
+    expect(sendTemplateMessage).not.toHaveBeenCalled()
+  })
+
+  it('sends a COUPON template with the real per-send code and snapshots it onto templatePayload', async () => {
+    mockPrisma.template.findUnique.mockResolvedValue({
+      id: 't_coupon', name: 'kode_diskon', metaStatus: 'APPROVED', format: 'COUPON',
+      body: 'Gunakan kode ini.', cards: null, couponButtonText: 'Salin Kode',
+    } as never)
+    vi.mocked(sendTemplateMessage).mockResolvedValue({ externalId: 'wamid.COUPON1' })
+    mockPrisma.message.create.mockResolvedValue({ id: 'msg_coupon', deliveryStatus: 'SENT' } as never)
+
+    const res = await POST(req({ conversationId: 'conv_1', templateId: 't_coupon', couponCode: 'PROMO25' }))
+
+    expect(res.status).toBe(200)
+    expect(sendTemplateMessage).toHaveBeenCalledWith(
+      expect.anything(), '6281234567890',
+      expect.objectContaining({ couponCode: 'PROMO25' })
+    )
+    expect(mockPrisma.message.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        templatePayload: expect.objectContaining({ coupon: { buttonText: 'Salin Kode', code: 'PROMO25' } }),
+      }),
+    }))
+  })
+
+  it('returns 400 for a COUPON template send with no code given', async () => {
+    mockPrisma.template.findUnique.mockResolvedValue({
+      id: 't_coupon', name: 'kode_diskon', metaStatus: 'APPROVED', format: 'COUPON', body: 'Halo', cards: null, couponButtonText: 'Salin Kode',
+    } as never)
+
+    const res = await POST(req({ conversationId: 'conv_1', templateId: 't_coupon' }))
+
+    expect(res.status).toBe(400)
+    expect(sendTemplateMessage).not.toHaveBeenCalled()
+  })
+
   it('records a FAILED message when the Cloud API dispatch itself fails, without throwing', async () => {
     const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
     mockPrisma.template.findUnique.mockResolvedValue({

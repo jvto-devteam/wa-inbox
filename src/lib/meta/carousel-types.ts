@@ -24,4 +24,9 @@ export type SentTemplatePayload = {
   templateName: string
   bodyText: string
   cards?: CarouselCardDef[]
+  // LTO: the countdown banner's fixed text plus the real per-send expiration that was
+  // actually used -- both needed to render the banner as it looked at send time.
+  limitedTimeOffer?: { text: string; expirationTimeMs: number }
+  // COUPON: the button's fixed label plus the real, live code this specific send used.
+  coupon?: { buttonText: string; code: string }
 }

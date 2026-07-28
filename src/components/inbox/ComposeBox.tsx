@@ -77,6 +77,10 @@ export function ComposeBox({
   const [templateForm, setTemplateForm] = useState<OfficialTemplate | null>(null)
   const [templateParamValues, setTemplateParamValues] = useState<string[]>([])
   const [templateSending, setTemplateSending] = useState(false)
+  // LTO/COUPON runtime values -- both are per-send, never reused from the template's own
+  // submission-time example/placeholder (see submitLtoTemplate/submitCouponTemplate).
+  const [ltoExpiration, setLtoExpiration] = useState('')
+  const [couponCode, setCouponCode] = useState('')
   // Guards the seed below against clobbering a deliberate per-message override:
   // if the agent picks a channel before the settings fetch resolves, their
   // choice wins.
@@ -279,9 +283,14 @@ export function ComposeBox({
   }
 
   function selectOfficialTemplate(t: OfficialTemplate) {
-    if (t.variables && t.variables.length > 0) {
+    // LTO/COUPON always need a runtime value only the agent can supply (a real expiration or
+    // a real code) -- unlike a variable-less BASIC/CAROUSEL template, there's no zero-input
+    // path to dispatch these immediately.
+    if ((t.variables && t.variables.length > 0) || t.format === 'LTO' || t.format === 'COUPON') {
       setTemplateForm(t)
-      setTemplateParamValues(new Array(t.variables.length).fill(''))
+      setTemplateParamValues(new Array(t.variables?.length ?? 0).fill(''))
+      setLtoExpiration('')
+      setCouponCode('')
       return
     }
     sendTemplate(t, [])
@@ -289,13 +298,22 @@ export function ComposeBox({
 
   // Dispatches a real Cloud API template message (type: 'template'), as opposed to
   // selectTemplate above, which just pastes a QUICK_REPLY's body into the plain-text input.
+  // `ltoExpiration`/`couponCode` are read from component state rather than taken as arguments:
+  // the only caller that can ever have them populated is the "Kirim Template" button below,
+  // which already has them in scope via the same closure.
   async function sendTemplate(t: OfficialTemplate, bodyParams: string[]) {
     setSendError(null)
     setTemplateSending(true)
     try {
       const res = await fetch('/api/send/template', {
         method: 'POST',
-        body: JSON.stringify({ conversationId, templateId: t.id, bodyParams }),
+        body: JSON.stringify({
+          conversationId,
+          templateId: t.id,
+          bodyParams,
+          expirationTimeMs: t.format === 'LTO' && ltoExpiration ? new Date(ltoExpiration).getTime() : undefined,
+          couponCode: t.format === 'COUPON' && couponCode ? couponCode : undefined,
+        }),
       })
       if (!res.ok) {
         const data = await res.json().catch(() => null)
@@ -318,6 +336,8 @@ export function ComposeBox({
       setPickerOpen(false)
       setTemplateForm(null)
       setTemplateParamValues([])
+      setLtoExpiration('')
+      setCouponCode('')
     } catch {
       setSendError('Gagal mengirim template')
     } finally {
@@ -407,11 +427,42 @@ export function ComposeBox({
               />
             </div>
           ))}
+          {templateForm.format === 'LTO' && (
+            <div className="space-y-1">
+              <label htmlFor="tpl-lto-expiration" className="text-xs text-muted-foreground">
+                Waktu kadaluarsa penawaran
+              </label>
+              <Input
+                id="tpl-lto-expiration"
+                aria-label="Waktu kadaluarsa penawaran"
+                type="datetime-local"
+                value={ltoExpiration}
+                onChange={(e) => setLtoExpiration(e.target.value)}
+              />
+            </div>
+          )}
+          {templateForm.format === 'COUPON' && (
+            <div className="space-y-1">
+              <label htmlFor="tpl-coupon-code" className="text-xs text-muted-foreground">
+                Kode kupon
+              </label>
+              <Input
+                id="tpl-coupon-code"
+                aria-label="Kode kupon"
+                value={couponCode}
+                onChange={(e) => setCouponCode(e.target.value)}
+              />
+            </div>
+          )}
           <div className="flex gap-2">
             <Button
               type="button"
               size="sm"
-              disabled={templateSending}
+              disabled={
+                templateSending ||
+                (templateForm.format === 'LTO' && !ltoExpiration) ||
+                (templateForm.format === 'COUPON' && !couponCode.trim())
+              }
               onClick={() => sendTemplate(templateForm, templateParamValues)}
             >
               Kirim Template
@@ -441,6 +492,8 @@ export function ComposeBox({
                       >
                         {t.name}
                         {t.format === 'CAROUSEL' && ' 🎠'}
+                        {t.format === 'LTO' && ' ⏳'}
+                        {t.format === 'COUPON' && ' 🎟️'}
                       </button>
                     ))}
                   </div>

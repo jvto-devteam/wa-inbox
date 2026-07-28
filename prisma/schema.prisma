@@ -122,32 +122,32 @@ enum DeliveryStatus {
 }
 
 model Message {
-  id             String           @id @default(cuid())
-  conversationId String
-  conversation   Conversation     @relation(fields: [conversationId], references: [id])
-  externalId     String?          @unique
-  direction      MessageDirection
-  type           String
-  content        String?
-  mediaUrl       String?
+  id              String           @id @default(cuid())
+  conversationId  String
+  conversation    Conversation     @relation(fields: [conversationId], references: [id])
+  externalId      String?          @unique
+  direction       MessageDirection
+  type            String
+  content         String?
+  mediaUrl        String?
   // Meta's own id for an inbound image/audio/video/document/sticker. Meta's
   // media URLs expire (~5 min) and require an Authorization header, so the
   // raw URL can't be stored for later display -- mediaUrl is instead computed
   // at read time as a proxy path (/api/media/{message.id}) that re-resolves
   // this id through the Graph API on each request. See src/lib/inbound.ts and
   // src/app/api/media/[messageId]/route.ts.
-  mediaId        String?
-  mimeType       String?
+  mediaId         String?
+  mimeType        String?
   // Only set for `document` messages, where Meta supplies the original filename.
-  fileName       String?
+  fileName        String?
   // The local Message this one quotes/replies to (WhatsApp's "reply" feature). Set from
   // Meta's inbound `context.id` (matched against the parent's externalId) or from the
   // agent's chosen reply target on send. Deliberately a self-relation to OUR row, not a
   // raw wamid column: it survives even if the parent's own wamid becomes unresolvable,
   // and lets the UI join straight to the parent's content/type/sender.
-  replyToId      String?
-  replyTo        Message?         @relation("MessageReplyTo", fields: [replyToId], references: [id])
-  replies        Message[]        @relation("MessageReplyTo")
+  replyToId       String?
+  replyTo         Message?         @relation("MessageReplyTo", fields: [replyToId], references: [id])
+  replies         Message[]        @relation("MessageReplyTo")
   // Set only when this OUTBOUND message was dispatched as a real Cloud API template message
   // (type: 'template', sent via sendTemplateMessage) -- the exact resolved structure at send
   // time: template name, substituted body text, and for a carousel, each card's real display
@@ -155,12 +155,12 @@ model Message {
   // than re-derived from the Template row so the bubble keeps rendering the message exactly as
   // sent even if that Template is later edited or deleted.
   templatePayload Json?
-  channel        MessageChannel
-  sentBy         SentBy
-  agentId        String?
-  botTrace       Json?
-  deliveryStatus DeliveryStatus   @default(PENDING)
-  createdAt      DateTime         @default(now())
+  channel         MessageChannel
+  sentBy          SentBy
+  agentId         String?
+  botTrace        Json?
+  deliveryStatus  DeliveryStatus   @default(PENDING)
+  createdAt       DateTime         @default(now())
 
   // NOTE: there is deliberately no index on `content`. A plain btree index there
   // was actively harmful: Postgres caps a btree index entry at ~2704 bytes, but a
@@ -232,43 +232,62 @@ enum TemplateMetaStatus {
 enum TemplateFormat {
   TEXT
   CAROUSEL
+  // Meta's real LIMITED_TIME_OFFER component (a countdown banner) -- category is always
+  // forced to MARKETING (a Meta requirement for this component). The actual expiration
+  // timestamp is supplied per-send (see /api/send/template), not stored here.
+  LTO
+  // Not a distinct Meta component -- structurally just a BODY + a BUTTONS component
+  // containing one COPY_CODE button. Modeled as its own format for the same reason the UI
+  // presents it as its own template type: the real coupon code is a per-send runtime value,
+  // never the submission-time example.
+  COUPON
 }
 
 model Template {
-  id         String             @id @default(cuid())
-  name       String
-  type       TemplateType
-  format     TemplateFormat     @default(TEXT)
+  id                String             @id @default(cuid())
+  name              String
+  type              TemplateType
+  format            TemplateFormat     @default(TEXT)
   // Meta's own id for this template, returned by the create-template Graph call.
   // Meta reviews templates asynchronously (often hours later) and reports the
   // outcome through the message_template_status_update webhook, keyed by this id
   // -- without storing it there is no way to ever reconcile the local metaStatus
   // back to what Meta actually decided, so it would stay stuck at PENDING forever.
   // Null for QUICK_REPLY templates, which never go to Meta.
-  metaId     String?
-  metaStatus TemplateMetaStatus @default(NOT_APPLICABLE)
-  category   String?
-  body       String
-  variables  Json?
+  metaId            String?
+  metaStatus        TemplateMetaStatus @default(NOT_APPLICABLE)
+  category          String?
+  body              String
+  variables         Json?
   // Only set when format is CAROUSEL: CarouselCardDef[] (see src/lib/meta/carousel-types.ts)
   // -- each card's own source media URL, body text, and buttons, exactly as submitted. The
   // source URL is re-uploaded to Meta fresh on every send (see uploadMetaMediaFromUrl):
   // Meta's own asset handles/ids from submission time are short-lived and cannot be reused.
-  cards      Json?
-  createdAt  DateTime           @default(now())
+  cards             Json?
+  // LTO only: the countdown banner's fixed text (Meta caps this at 16 characters).
+  offerTitle        String?
+  // LTO only: optional top-level buttons (CarouselButtonDef[] -- same shape carousel cards
+  // use, since Meta allows the same QUICK_REPLY/URL/PHONE_NUMBER types here).
+  buttons           Json?
+  // COUPON only: the button's fixed label and the placeholder code Meta needs to approve the
+  // submission. The real, live code is supplied per-send instead (see /api/send/template) --
+  // never this column, which would otherwise go stale the moment it's reused.
+  couponButtonText  String?
+  couponExampleCode String?
+  createdAt         DateTime           @default(now())
 }
 
 model Settings {
-  id                Int            @id @default(1)
-  defaultChannel    MessageChannel @default(OFFICIAL)
-  workingHoursStart String?
-  workingHoursEnd   String?
-  offHoursAutoReply String?
-  botKillSwitch     Boolean        @default(false)
+  id                  Int            @id @default(1)
+  defaultChannel      MessageChannel @default(OFFICIAL)
+  workingHoursStart   String?
+  workingHoursEnd     String?
+  offHoursAutoReply   String?
+  botKillSwitch       Boolean        @default(false)
   // Stamped whenever an admin flips botKillSwitch OFF -> ON. Lets inbound.ts tell a handoff-log
   // placeholder from the CURRENT kill-switch period apart from a stale one left over from an
   // earlier on/off cycle, so "log at most one placeholder per conversation per kill-switch
   // period" can reset itself the next time the switch is turned back on.
   killSwitchEnabledAt DateTime?
-  catalogSyncedAt   DateTime?
+  catalogSyncedAt     DateTime?
 }

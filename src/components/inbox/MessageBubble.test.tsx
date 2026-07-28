@@ -283,6 +283,40 @@ describe('MessageBubble', () => {
     expect(screen.queryByText('Template')).not.toBeInTheDocument()
   })
 
+  it('shows the LTO countdown banner with the real per-send expiration time', () => {
+    render(
+      <MessageBubble
+        message={{
+          id: 'm_lto', direction: 'OUTBOUND', content: 'Nikmati diskon spesial!', channel: 'OFFICIAL', sentBy: 'AGENT',
+          deliveryStatus: 'SENT', createdAt: new Date().toISOString(), botTrace: null, type: 'template',
+          templatePayload: {
+            templateName: 'promo_akhir_tahun', bodyText: 'Nikmati diskon spesial!',
+            limitedTimeOffer: { text: 'Diskon 25%', expirationTimeMs: new Date('2026-12-31T23:59:00').getTime() },
+          },
+        }}
+      />
+    )
+    expect(screen.getByText(/Diskon 25%/)).toBeInTheDocument()
+    expect(screen.getByText(/berakhir/)).toBeInTheDocument()
+  })
+
+  it('shows the coupon code chip with the real per-send code', () => {
+    render(
+      <MessageBubble
+        message={{
+          id: 'm_coupon', direction: 'OUTBOUND', content: 'Gunakan kode ini.', channel: 'OFFICIAL', sentBy: 'AGENT',
+          deliveryStatus: 'SENT', createdAt: new Date().toISOString(), botTrace: null, type: 'template',
+          templatePayload: {
+            templateName: 'kode_diskon', bodyText: 'Gunakan kode ini.',
+            coupon: { buttonText: 'Salin Kode', code: 'PROMO25' },
+          },
+        }}
+      />
+    )
+    expect(screen.getByText('PROMO25')).toBeInTheDocument()
+    expect(screen.getByText('Salin Kode')).toBeInTheDocument()
+  })
+
   it('does not show a popover when clicking a non-bot message', () => {
     render(
       <MessageBubble

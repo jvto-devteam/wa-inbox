@@ -10,7 +10,7 @@ import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@
 import { fetchJson } from '@/lib/fetch-json'
 
 type TemplateType = 'OFFICIAL' | 'QUICK_REPLY'
-type TemplateFormat = 'TEXT' | 'CAROUSEL'
+type TemplateFormat = 'TEXT' | 'CAROUSEL' | 'LTO' | 'COUPON'
 type MetaStatus = 'APPROVED' | 'PENDING' | 'REJECTED' | 'NOT_APPLICABLE'
 type ButtonType = 'QUICK_REPLY' | 'URL' | 'PHONE_NUMBER'
 
@@ -27,6 +27,10 @@ type Template = {
   body: string
   variables: string[] | null
   cards: TemplateCard[] | null
+  offerTitle: string | null
+  buttons: CardButton[] | null
+  couponButtonText: string | null
+  couponExampleCode: string | null
   createdAt: string
 }
 
@@ -55,12 +59,7 @@ const metaStatusLabel: Record<MetaStatus, string> = {
 }
 
 function cardDraftIsValid(card: CardDraft): boolean {
-  return card.mediaUrl.trim() !== '' && card.bodyText.trim() !== '' && card.buttons.every((b) => {
-    if (!b.text.trim()) return false
-    if (b.type === 'URL') return b.url.trim() !== ''
-    if (b.type === 'PHONE_NUMBER') return b.phoneNumber.trim() !== ''
-    return true
-  })
+  return card.mediaUrl.trim() !== '' && card.bodyText.trim() !== '' && card.buttons.every(buttonDraftIsValid)
 }
 
 function toCardPayload(card: CardDraft): TemplateCard {
@@ -68,13 +67,25 @@ function toCardPayload(card: CardDraft): TemplateCard {
     mediaType: card.mediaType,
     mediaUrl: card.mediaUrl.trim(),
     bodyText: card.bodyText.trim(),
-    buttons: card.buttons.map((b): CardButton => {
-      if (b.type === 'URL') return { type: 'URL', text: b.text.trim(), url: b.url.trim() }
-      if (b.type === 'PHONE_NUMBER') return { type: 'PHONE_NUMBER', text: b.text.trim(), phoneNumber: b.phoneNumber.trim() }
-      return { type: 'QUICK_REPLY', text: b.text.trim() }
-    }),
+    buttons: card.buttons.map(toButtonPayload),
   }
 }
+
+function toButtonPayload(b: ButtonDraft): CardButton {
+  if (b.type === 'URL') return { type: 'URL', text: b.text.trim(), url: b.url.trim() }
+  if (b.type === 'PHONE_NUMBER') return { type: 'PHONE_NUMBER', text: b.text.trim(), phoneNumber: b.phoneNumber.trim() }
+  return { type: 'QUICK_REPLY', text: b.text.trim() }
+}
+
+function buttonDraftIsValid(b: ButtonDraft): boolean {
+  if (!b.text.trim()) return false
+  if (b.type === 'URL') return b.url.trim() !== ''
+  if (b.type === 'PHONE_NUMBER') return b.phoneNumber.trim() !== ''
+  return true
+}
+
+const EMPTY_BUTTON: ButtonDraft = { type: 'QUICK_REPLY', text: '', url: '', phoneNumber: '' }
+const MAX_LTO_BUTTONS = 3
 
 export default function TemplatesPage() {
   const [tab, setTab] = useState<TemplateType>('OFFICIAL')
@@ -89,6 +100,10 @@ export default function TemplatesPage() {
   const [variablesText, setVariablesText] = useState('')
   const [format, setFormat] = useState<TemplateFormat>('TEXT')
   const [cards, setCards] = useState<CardDraft[]>([EMPTY_CARD])
+  const [offerTitle, setOfferTitle] = useState('')
+  const [ltoButtons, setLtoButtons] = useState<ButtonDraft[]>([])
+  const [couponButtonText, setCouponButtonText] = useState('')
+  const [couponExampleCode, setCouponExampleCode] = useState('')
 
   useEffect(() => {
     fetchJson<Template[]>('/api/templates')
@@ -104,6 +119,10 @@ export default function TemplatesPage() {
     setVariablesText('')
     setFormat('TEXT')
     setCards([EMPTY_CARD])
+    setOfferTitle('')
+    setLtoButtons([])
+    setCouponButtonText('')
+    setCouponExampleCode('')
   }
 
   function updateCard(index: number, patch: Partial<CardDraft>) {
@@ -144,15 +163,32 @@ export default function TemplatesPage() {
     )
   }
 
+  function addLtoButton() {
+    setLtoButtons((prev) => (prev.length >= MAX_LTO_BUTTONS ? prev : [...prev, EMPTY_BUTTON]))
+  }
+
+  function removeLtoButton(index: number) {
+    setLtoButtons((prev) => prev.filter((_, i) => i !== index))
+  }
+
+  function updateLtoButton(index: number, patch: Partial<ButtonDraft>) {
+    setLtoButtons((prev) => prev.map((b, i) => (i === index ? { ...b, ...patch } : b)))
+  }
+
   const isCarousel = tab === 'OFFICIAL' && format === 'CAROUSEL'
+  const isLto = tab === 'OFFICIAL' && format === 'LTO'
+  const isCoupon = tab === 'OFFICIAL' && format === 'COUPON'
   const cardsValid = !isCarousel || cards.every(cardDraftIsValid)
+  const ltoValid = !isLto || (offerTitle.trim() !== '' && ltoButtons.every(buttonDraftIsValid))
+  const couponValid = !isCoupon || (couponButtonText.trim() !== '' && couponExampleCode.trim() !== '')
+  const formValid = cardsValid && ltoValid && couponValid
 
   // Templates are what actually gets submitted to Meta (or shown as compose-box shortcuts), so
   // the list must only ever reflect what the server confirmed — no optimistic insert. Await the
   // response, and only append to state once the server has created (and, for OFFICIAL, actually
   // submitted to Meta) the row. On failure, surface the server's error instead of guessing.
   async function createTemplate() {
-    if (!name.trim() || !body.trim() || !cardsValid) return
+    if (!name.trim() || !body.trim() || !formValid) return
     setError(null)
     setSubmitting(true)
     try {
@@ -170,6 +206,10 @@ export default function TemplatesPage() {
           body: body.trim(),
           ...(tab === 'OFFICIAL' ? { variables } : {}),
           ...(isCarousel ? { format: 'CAROUSEL', cards: cards.map(toCardPayload) } : {}),
+          ...(isLto ? { format: 'LTO', offerTitle: offerTitle.trim(), buttons: ltoButtons.map(toButtonPayload) } : {}),
+          ...(isCoupon
+            ? { format: 'COUPON', couponButtonText: couponButtonText.trim(), couponExampleCode: couponExampleCode.trim() }
+            : {}),
         }),
       })
 
@@ -232,7 +272,10 @@ export default function TemplatesPage() {
             >
               <option value="TEXT">Teks</option>
               <option value="CAROUSEL">Carousel</option>
+              <option value="LTO">Penawaran Waktu Terbatas</option>
+              <option value="COUPON">Kode Kupon</option>
             </Select>
+            {isLto && <span className="text-xs text-muted-foreground">(kategori dikunci ke MARKETING oleh Meta)</span>}
           </div>
         )}
         <div className="grid gap-2 sm:grid-cols-2">
@@ -363,7 +406,88 @@ export default function TemplatesPage() {
           </div>
         )}
 
-        <Button type="button" onClick={createTemplate} disabled={!name.trim() || !body.trim() || !cardsValid || submitting}>
+        {isLto && (
+          <div className="space-y-3 rounded-lg border border-border p-3">
+            <Input
+              aria-label="Judul penawaran"
+              placeholder="Judul penawaran (maks. 16 karakter)"
+              value={offerTitle}
+              maxLength={16}
+              onChange={(e) => setOfferTitle(e.target.value)}
+            />
+            <div className="space-y-1.5">
+              <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Tombol (opsional)</h3>
+              {ltoButtons.map((btn, bi) => (
+                <div key={bi} className="flex items-center gap-1.5">
+                  <Select
+                    aria-label={`Tipe tombol ${bi + 1}`}
+                    value={btn.type}
+                    onChange={(e) => updateLtoButton(bi, { type: e.target.value as ButtonType })}
+                    className="w-auto"
+                  >
+                    <option value="QUICK_REPLY">Balasan Cepat</option>
+                    <option value="URL">Tautan URL</option>
+                    <option value="PHONE_NUMBER">Nomor Telepon</option>
+                  </Select>
+                  <Input
+                    aria-label={`Label tombol ${bi + 1}`}
+                    placeholder="Label tombol"
+                    value={btn.text}
+                    onChange={(e) => updateLtoButton(bi, { text: e.target.value })}
+                  />
+                  {btn.type === 'URL' && (
+                    <Input
+                      aria-label={`URL tombol ${bi + 1}`}
+                      placeholder="https://..."
+                      value={btn.url}
+                      onChange={(e) => updateLtoButton(bi, { url: e.target.value })}
+                    />
+                  )}
+                  {btn.type === 'PHONE_NUMBER' && (
+                    <Input
+                      aria-label={`Nomor tombol ${bi + 1}`}
+                      placeholder="+62..."
+                      value={btn.phoneNumber}
+                      onChange={(e) => updateLtoButton(bi, { phoneNumber: e.target.value })}
+                    />
+                  )}
+                  <button
+                    type="button"
+                    aria-label={`Hapus tombol ${bi + 1}`}
+                    onClick={() => removeLtoButton(bi)}
+                    className="shrink-0 text-muted-foreground hover:text-destructive"
+                  >
+                    ✕
+                  </button>
+                </div>
+              ))}
+              {ltoButtons.length < MAX_LTO_BUTTONS && (
+                <Button type="button" variant="outline" size="sm" onClick={addLtoButton}>
+                  + Tombol
+                </Button>
+              )}
+            </div>
+          </div>
+        )}
+
+        {isCoupon && (
+          <div className="grid gap-2 sm:grid-cols-2 rounded-lg border border-border p-3">
+            <Input
+              aria-label="Label tombol kupon"
+              placeholder="Label tombol (mis. Salin Kode)"
+              value={couponButtonText}
+              onChange={(e) => setCouponButtonText(e.target.value)}
+            />
+            <Input
+              aria-label="Contoh kode kupon"
+              placeholder="Contoh kode untuk pengajuan (mis. PROMO25)"
+              value={couponExampleCode}
+              onChange={(e) => setCouponExampleCode(e.target.value)}
+            />
+          </div>
+        )}
+
+        <Button type="button" onClick={createTemplate} disabled={!name.trim() || !body.trim() || !formValid || submitting}>
           {submitting ? 'Menyimpan...' : tab === 'OFFICIAL' ? 'Ajukan ke Meta' : 'Simpan Balasan Cepat'}
         </Button>
         {error && <p className="text-xs text-destructive">{error}</p>}
@@ -390,6 +514,8 @@ export default function TemplatesPage() {
                   <TableCell className="font-medium text-navy">
                     {t.name}
                     {t.format === 'CAROUSEL' && ' 🎠'}
+                    {t.format === 'LTO' && ' ⏳'}
+                    {t.format === 'COUPON' && ' 🎟️'}
                   </TableCell>
                   <TableCell className="text-muted-foreground">{t.category ?? '-'}</TableCell>
                   <TableCell className="max-w-xs truncate text-muted-foreground">{t.body}</TableCell>

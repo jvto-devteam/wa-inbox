@@ -143,3 +143,143 @@ describe('TemplatesPage — carousel builder', () => {
     expect(await screen.findByText(/katalog_paket/)).toHaveTextContent('katalog_paket 🎠')
   })
 })
+
+describe('TemplatesPage — LTO builder', () => {
+  it('shows the offer title field only when format is switched to LTO', async () => {
+    render(<TemplatesPage />)
+    await waitFor(() => expect(screen.getByLabelText('Format template')).toBeInTheDocument())
+
+    expect(screen.queryByLabelText('Judul penawaran')).not.toBeInTheDocument()
+
+    fireEvent.change(screen.getByLabelText('Format template'), { target: { value: 'LTO' } })
+
+    expect(screen.getByLabelText('Judul penawaran')).toBeInTheDocument()
+  })
+
+  it('disables submission until the offer title is filled in', async () => {
+    render(<TemplatesPage />)
+    await waitFor(() => expect(screen.getByLabelText('Format template')).toBeInTheDocument())
+    fireEvent.change(screen.getByLabelText('Format template'), { target: { value: 'LTO' } })
+    fireEvent.change(screen.getByLabelText('Nama template'), { target: { value: 'promo_akhir_tahun' } })
+    fireEvent.change(screen.getByLabelText('Isi pesan'), { target: { value: 'Nikmati diskon spesial!' } })
+
+    expect(screen.getByText('Ajukan ke Meta')).toBeDisabled()
+
+    fireEvent.change(screen.getByLabelText('Judul penawaran'), { target: { value: 'Diskon 25%' } })
+
+    await waitFor(() => expect(screen.getByText('Ajukan ke Meta')).not.toBeDisabled())
+  })
+
+  it('submits an LTO template with format, offerTitle, and buttons in the request body', async () => {
+    const fetchMock = vi.fn((url: string, init?: RequestInit) => {
+      if (url === '/api/templates' && init?.method === 'POST') {
+        return jsonResponse({ id: 't_lto', metaStatus: 'PENDING', format: 'LTO' })
+      }
+      return jsonResponse([])
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<TemplatesPage />)
+    await waitFor(() => expect(screen.getByLabelText('Format template')).toBeInTheDocument())
+    fireEvent.change(screen.getByLabelText('Format template'), { target: { value: 'LTO' } })
+    fireEvent.change(screen.getByLabelText('Nama template'), { target: { value: 'promo_akhir_tahun' } })
+    fireEvent.change(screen.getByLabelText('Isi pesan'), { target: { value: 'Nikmati diskon spesial!' } })
+    fireEvent.change(screen.getByLabelText('Judul penawaran'), { target: { value: 'Diskon 25%' } })
+    fireEvent.click(screen.getByText('+ Tombol'))
+    fireEvent.change(screen.getByLabelText('Tipe tombol 1'), { target: { value: 'URL' } })
+    fireEvent.change(screen.getByLabelText('Label tombol 1'), { target: { value: 'Lihat Promo' } })
+    fireEvent.change(screen.getByLabelText('URL tombol 1'), { target: { value: 'https://example.com/promo' } })
+
+    fireEvent.click(screen.getByText('Ajukan ke Meta'))
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/templates', expect.objectContaining({ method: 'POST' })))
+    const [, options] = fetchMock.mock.calls.find(([url, init]) => url === '/api/templates' && init?.method === 'POST')!
+    const payload = JSON.parse((options as RequestInit).body as string)
+    expect(payload).toEqual(expect.objectContaining({
+      name: 'promo_akhir_tahun',
+      format: 'LTO',
+      offerTitle: 'Diskon 25%',
+      buttons: [{ type: 'URL', text: 'Lihat Promo', url: 'https://example.com/promo' }],
+    }))
+  })
+
+  it('shows a ⏳ marker next to an LTO template in the list', async () => {
+    vi.stubGlobal('fetch', vi.fn(() => jsonResponse([
+      { id: 't1', name: 'promo_akhir_tahun', type: 'OFFICIAL', format: 'LTO', metaStatus: 'APPROVED', category: 'MARKETING', body: 'Halo', variables: [], cards: null, offerTitle: 'Diskon 25%', buttons: [], couponButtonText: null, couponExampleCode: null, createdAt: new Date().toISOString() },
+    ])))
+
+    render(<TemplatesPage />)
+
+    expect(await screen.findByText(/promo_akhir_tahun/)).toHaveTextContent('promo_akhir_tahun ⏳')
+  })
+})
+
+describe('TemplatesPage — Coupon builder', () => {
+  it('shows the coupon fields only when format is switched to COUPON', async () => {
+    render(<TemplatesPage />)
+    await waitFor(() => expect(screen.getByLabelText('Format template')).toBeInTheDocument())
+
+    expect(screen.queryByLabelText('Label tombol kupon')).not.toBeInTheDocument()
+
+    fireEvent.change(screen.getByLabelText('Format template'), { target: { value: 'COUPON' } })
+
+    expect(screen.getByLabelText('Label tombol kupon')).toBeInTheDocument()
+    expect(screen.getByLabelText('Contoh kode kupon')).toBeInTheDocument()
+  })
+
+  it('disables submission until both coupon fields are filled in', async () => {
+    render(<TemplatesPage />)
+    await waitFor(() => expect(screen.getByLabelText('Format template')).toBeInTheDocument())
+    fireEvent.change(screen.getByLabelText('Format template'), { target: { value: 'COUPON' } })
+    fireEvent.change(screen.getByLabelText('Nama template'), { target: { value: 'kode_diskon' } })
+    fireEvent.change(screen.getByLabelText('Isi pesan'), { target: { value: 'Gunakan kode ini.' } })
+
+    expect(screen.getByText('Ajukan ke Meta')).toBeDisabled()
+
+    fireEvent.change(screen.getByLabelText('Label tombol kupon'), { target: { value: 'Salin Kode' } })
+    expect(screen.getByText('Ajukan ke Meta')).toBeDisabled()
+
+    fireEvent.change(screen.getByLabelText('Contoh kode kupon'), { target: { value: 'PROMO25' } })
+    await waitFor(() => expect(screen.getByText('Ajukan ke Meta')).not.toBeDisabled())
+  })
+
+  it('submits a COUPON template with format, couponButtonText, and couponExampleCode in the request body', async () => {
+    const fetchMock = vi.fn((url: string, init?: RequestInit) => {
+      if (url === '/api/templates' && init?.method === 'POST') {
+        return jsonResponse({ id: 't_coupon', metaStatus: 'PENDING', format: 'COUPON' })
+      }
+      return jsonResponse([])
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<TemplatesPage />)
+    await waitFor(() => expect(screen.getByLabelText('Format template')).toBeInTheDocument())
+    fireEvent.change(screen.getByLabelText('Format template'), { target: { value: 'COUPON' } })
+    fireEvent.change(screen.getByLabelText('Nama template'), { target: { value: 'kode_diskon' } })
+    fireEvent.change(screen.getByLabelText('Isi pesan'), { target: { value: 'Gunakan kode ini.' } })
+    fireEvent.change(screen.getByLabelText('Label tombol kupon'), { target: { value: 'Salin Kode' } })
+    fireEvent.change(screen.getByLabelText('Contoh kode kupon'), { target: { value: 'PROMO25' } })
+
+    fireEvent.click(screen.getByText('Ajukan ke Meta'))
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/templates', expect.objectContaining({ method: 'POST' })))
+    const [, options] = fetchMock.mock.calls.find(([url, init]) => url === '/api/templates' && init?.method === 'POST')!
+    const payload = JSON.parse((options as RequestInit).body as string)
+    expect(payload).toEqual(expect.objectContaining({
+      name: 'kode_diskon',
+      format: 'COUPON',
+      couponButtonText: 'Salin Kode',
+      couponExampleCode: 'PROMO25',
+    }))
+  })
+
+  it('shows a 🎟️ marker next to a coupon template in the list', async () => {
+    vi.stubGlobal('fetch', vi.fn(() => jsonResponse([
+      { id: 't1', name: 'kode_diskon', type: 'OFFICIAL', format: 'COUPON', metaStatus: 'APPROVED', category: 'UTILITY', body: 'Halo', variables: [], cards: null, offerTitle: null, buttons: null, couponButtonText: 'Salin Kode', couponExampleCode: 'PROMO25', createdAt: new Date().toISOString() },
+    ])))
+
+    render(<TemplatesPage />)
+
+    expect(await screen.findByText(/kode_diskon/)).toHaveTextContent('kode_diskon 🎟️')
+  })
+})

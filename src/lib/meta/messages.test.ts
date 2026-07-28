@@ -179,4 +179,60 @@ describe('sendTemplateMessage', () => {
       { type: 'header', parameters: [{ type: 'video', video: { id: 'media_2' } }] },
     ])
   })
+
+  it('includes a limited_time_offer component with the real per-send expiration timestamp', async () => {
+    ;(fetch as any).mockResolvedValue({ ok: true, json: async () => ({ messages: [{ id: 'wamid.LTO1' }] }) })
+
+    await sendTemplateMessage(
+      { phoneNumberId: '123', accessToken: 'tok' },
+      '628',
+      { name: 'promo_akhir_tahun', bodyParams: [], limitedTimeOfferExpirationMs: 1735680000000 }
+    )
+
+    const [, options] = (fetch as any).mock.calls[0]
+    const components = JSON.parse(options.body).template.components
+    expect(components).toContainEqual({
+      type: 'limited_time_offer',
+      parameters: [{ type: 'limited_time_offer', limited_time_offer: { expiration_time_ms: 1735680000000 } }],
+    })
+  })
+
+  it('omits the limited_time_offer component when no expiration is given', async () => {
+    ;(fetch as any).mockResolvedValue({ ok: true, json: async () => ({ messages: [{ id: 'wamid.LTO2' }] }) })
+
+    await sendTemplateMessage({ phoneNumberId: '123', accessToken: 'tok' }, '628', { name: 'basic', bodyParams: [] })
+
+    const [, options] = (fetch as any).mock.calls[0]
+    const components = JSON.parse(options.body).template.components
+    expect(components.find((c: { type: string }) => c.type === 'limited_time_offer')).toBeUndefined()
+  })
+
+  it('includes a copy_code button override with the real per-send coupon code', async () => {
+    ;(fetch as any).mockResolvedValue({ ok: true, json: async () => ({ messages: [{ id: 'wamid.COUPON1' }] }) })
+
+    await sendTemplateMessage(
+      { phoneNumberId: '123', accessToken: 'tok' },
+      '628',
+      { name: 'kode_diskon', bodyParams: [], couponCode: 'PROMO25' }
+    )
+
+    const [, options] = (fetch as any).mock.calls[0]
+    const components = JSON.parse(options.body).template.components
+    expect(components).toContainEqual({
+      type: 'button',
+      sub_type: 'copy_code',
+      index: '0',
+      parameters: [{ type: 'coupon_code', coupon_code: 'PROMO25' }],
+    })
+  })
+
+  it('omits the copy_code button override when no coupon code is given', async () => {
+    ;(fetch as any).mockResolvedValue({ ok: true, json: async () => ({ messages: [{ id: 'wamid.NOCOUPON' }] }) })
+
+    await sendTemplateMessage({ phoneNumberId: '123', accessToken: 'tok' }, '628', { name: 'basic', bodyParams: [] })
+
+    const [, options] = (fetch as any).mock.calls[0]
+    const components = JSON.parse(options.body).template.components
+    expect(components.some((c: { sub_type?: string }) => c.sub_type === 'copy_code')).toBe(false)
+  })
 })

@@ -613,4 +613,65 @@ describe('ComposeBox official template dispatch', () => {
     expect(await screen.findByText('Template belum disetujui Meta')).toBeInTheDocument()
     expect(onSent).not.toHaveBeenCalled()
   })
+
+  const ltoOfficial = { id: 'tpl_lto', name: 'promo_akhir_tahun', type: 'OFFICIAL', category: null, body: 'Nikmati diskon spesial!', metaStatus: 'APPROVED', format: 'LTO', variables: [] }
+  const couponOfficial = { id: 'tpl_coupon', name: 'kode_diskon', type: 'OFFICIAL', category: null, body: 'Gunakan kode ini.', metaStatus: 'APPROVED', format: 'COUPON', variables: [] }
+
+  it('opens the param form for an LTO template even with zero body variables, and requires an expiration', async () => {
+    vi.stubGlobal('fetch', mockFetch([ltoOfficial]))
+    render(<ComposeBox conversationId="conv_1" botEnabled={false} onSent={() => {}} onBotToggled={() => {}} />)
+
+    fireEvent.click(await screen.findByText('Template'))
+    fireEvent.click(await screen.findByText('promo_akhir_tahun ⏳'))
+
+    expect(await screen.findByText('Kirim Template: promo_akhir_tahun')).toBeInTheDocument()
+    expect(screen.getByLabelText('Waktu kadaluarsa penawaran')).toBeInTheDocument()
+    expect(screen.getByText('Kirim Template')).toBeDisabled()
+  })
+
+  it('sends an LTO template with the expiration converted to epoch milliseconds', async () => {
+    const fetchMock = mockFetch([ltoOfficial])
+    vi.stubGlobal('fetch', fetchMock)
+    render(<ComposeBox conversationId="conv_1" botEnabled={false} onSent={() => {}} onBotToggled={() => {}} />)
+
+    fireEvent.click(await screen.findByText('Template'))
+    fireEvent.click(await screen.findByText('promo_akhir_tahun ⏳'))
+    fireEvent.change(await screen.findByLabelText('Waktu kadaluarsa penawaran'), { target: { value: '2026-12-31T23:59' } })
+    fireEvent.click(screen.getByText('Kirim Template'))
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/send/template', expect.anything()))
+    const [, options] = fetchMock.mock.calls.find(([url]) => url === '/api/send/template')!
+    const payload = JSON.parse((options as RequestInit).body as string)
+    expect(payload.templateId).toBe('tpl_lto')
+    expect(payload.expirationTimeMs).toBe(new Date('2026-12-31T23:59').getTime())
+  })
+
+  it('opens the param form for a COUPON template even with zero body variables, and requires a code', async () => {
+    vi.stubGlobal('fetch', mockFetch([couponOfficial]))
+    render(<ComposeBox conversationId="conv_1" botEnabled={false} onSent={() => {}} onBotToggled={() => {}} />)
+
+    fireEvent.click(await screen.findByText('Template'))
+    fireEvent.click(await screen.findByText('kode_diskon 🎟️'))
+
+    expect(await screen.findByText('Kirim Template: kode_diskon')).toBeInTheDocument()
+    expect(screen.getByLabelText('Kode kupon')).toBeInTheDocument()
+    expect(screen.getByText('Kirim Template')).toBeDisabled()
+  })
+
+  it('sends a COUPON template with the real code the agent typed', async () => {
+    const fetchMock = mockFetch([couponOfficial])
+    vi.stubGlobal('fetch', fetchMock)
+    render(<ComposeBox conversationId="conv_1" botEnabled={false} onSent={() => {}} onBotToggled={() => {}} />)
+
+    fireEvent.click(await screen.findByText('Template'))
+    fireEvent.click(await screen.findByText('kode_diskon 🎟️'))
+    fireEvent.change(await screen.findByLabelText('Kode kupon'), { target: { value: 'PROMO25' } })
+    fireEvent.click(screen.getByText('Kirim Template'))
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/send/template', expect.anything()))
+    const [, options] = fetchMock.mock.calls.find(([url]) => url === '/api/send/template')!
+    const payload = JSON.parse((options as RequestInit).body as string)
+    expect(payload.templateId).toBe('tpl_coupon')
+    expect(payload.couponCode).toBe('PROMO25')
+  })
 })

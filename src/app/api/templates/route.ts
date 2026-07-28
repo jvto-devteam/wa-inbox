@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { prisma } from '@/lib/db'
-import { submitMetaTemplate, submitCarouselTemplate } from '@/lib/meta/templates'
+import { submitMetaTemplate, submitCarouselTemplate, submitLtoTemplate, submitCouponTemplate } from '@/lib/meta/templates'
 import { requireAdmin } from '@/lib/auth/require-admin'
 import { parseJsonBody } from '@/lib/parse-json'
 
@@ -31,8 +31,15 @@ const bodySchema = z.object({
   category: z.string().optional(),
   body: z.string().min(1),
   variables: z.array(z.string()).optional(),
-  format: z.enum(['TEXT', 'CAROUSEL']).optional(),
+  format: z.enum(['TEXT', 'CAROUSEL', 'LTO', 'COUPON']).optional(),
   cards: z.array(cardSchema).min(1).max(10).optional(),
+  // LTO fields. Meta caps the countdown banner's text at 16 characters.
+  offerTitle: z.string().min(1).max(16).optional(),
+  buttons: z.array(buttonSchema).max(3).default([]).optional(),
+  // COUPON fields. `couponExampleCode` is only ever the submission-time placeholder Meta
+  // needs to approve the template -- the real code is supplied per-send instead.
+  couponButtonText: z.string().min(1).optional(),
+  couponExampleCode: z.string().min(1).optional(),
 })
 
 // Creating a template is admin-only: an OFFICIAL one is submitted straight to
@@ -47,15 +54,28 @@ export async function POST(req: Request) {
   if (!parsed.success) return NextResponse.json({ error: parsed.error }, { status: 400 })
 
   const format = parsed.data.format ?? 'TEXT'
-  // A carousel is never sent as a QUICK_REPLY (those never go to Meta at all, and are
-  // dispatched by pasting plain text) -- so a CAROUSEL/QUICK_REPLY combination can only be a
-  // client bug, not a legitimate request.
-  if (format === 'CAROUSEL' && parsed.data.type !== 'OFFICIAL') {
-    return NextResponse.json({ error: 'Template carousel harus bertipe OFFICIAL' }, { status: 400 })
+  // None of LTO/COUPON/CAROUSEL are ever sent as a QUICK_REPLY (those never go to Meta at
+  // all, and are dispatched by pasting plain text) -- so any of these combined with
+  // QUICK_REPLY can only be a client bug, not a legitimate request.
+  if (format !== 'TEXT' && parsed.data.type !== 'OFFICIAL') {
+    return NextResponse.json({ error: 'Format ini harus bertipe OFFICIAL' }, { status: 400 })
   }
   if (format === 'CAROUSEL' && (!parsed.data.cards || parsed.data.cards.length === 0)) {
     return NextResponse.json({ error: 'Template carousel butuh minimal 1 kartu' }, { status: 400 })
   }
+  if (format === 'LTO' && !parsed.data.offerTitle) {
+    return NextResponse.json({ error: 'Template LTO butuh judul penawaran' }, { status: 400 })
+  }
+  if (format === 'COUPON' && (!parsed.data.couponButtonText || !parsed.data.couponExampleCode)) {
+    return NextResponse.json({ error: 'Template kupon butuh label tombol dan contoh kode' }, { status: 400 })
+  }
+
+  // MARKETING is not just a default for LTO -- Meta requires it for LIMITED_TIME_OFFER
+  // components, so it overrides any category the caller supplied rather than merely falling
+  // back to it. Persisted below too, so Template.category reflects what was actually sent
+  // to Meta, not whatever the client happened to pass.
+  const resolvedCategory =
+    format === 'LTO' ? 'MARKETING' : (parsed.data.category ?? (format === 'CAROUSEL' ? 'MARKETING' : 'UTILITY'))
 
   let metaStatus: 'PENDING' | 'NOT_APPLICABLE' = 'NOT_APPLICABLE'
   // Meta's own id for the submitted template. It must be persisted: Meta reviews
@@ -78,14 +98,30 @@ export async function POST(req: Request) {
         }
         result = await submitCarouselTemplate(waNumber, appId, {
           name: parsed.data.name,
-          category: parsed.data.category ?? 'MARKETING',
+          category: resolvedCategory,
           body: parsed.data.body,
           cards: parsed.data.cards!,
+        })
+      } else if (format === 'LTO') {
+        result = await submitLtoTemplate(waNumber, {
+          name: parsed.data.name,
+          category: resolvedCategory,
+          body: parsed.data.body,
+          offerTitle: parsed.data.offerTitle!,
+          buttons: parsed.data.buttons ?? [],
+        })
+      } else if (format === 'COUPON') {
+        result = await submitCouponTemplate(waNumber, {
+          name: parsed.data.name,
+          category: resolvedCategory,
+          body: parsed.data.body,
+          buttonText: parsed.data.couponButtonText!,
+          exampleCode: parsed.data.couponExampleCode!,
         })
       } else {
         result = await submitMetaTemplate(waNumber, {
           name: parsed.data.name,
-          category: parsed.data.category ?? 'UTILITY',
+          category: resolvedCategory,
           body: parsed.data.body,
           variables: parsed.data.variables ?? [],
         })
@@ -105,10 +141,14 @@ export async function POST(req: Request) {
       name: parsed.data.name,
       type: parsed.data.type,
       format,
-      category: parsed.data.category,
+      category: parsed.data.type === 'OFFICIAL' ? resolvedCategory : parsed.data.category,
       body: parsed.data.body,
       variables: parsed.data.variables ?? [],
       cards: parsed.data.cards ?? undefined,
+      offerTitle: parsed.data.offerTitle,
+      buttons: format === 'LTO' ? (parsed.data.buttons ?? []) : undefined,
+      couponButtonText: parsed.data.couponButtonText,
+      couponExampleCode: parsed.data.couponExampleCode,
       metaId,
       metaStatus,
     },
