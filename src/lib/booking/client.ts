@@ -1,5 +1,6 @@
 import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db'
+import { PIPELINE_STAGE_RANK } from '@/lib/pipeline'
 
 // Ported from chatbot-web's src/bookingApiClient.js (lookupByPhone) — the
 // proven, currently-live booking-lookup client for the JVTO booking API.
@@ -41,6 +42,15 @@ export type BookingPoint = {
   [key: string]: unknown
 }
 
+export type BookingHotelStay = {
+  day?: string
+  checkIn?: string
+  hotel?: string
+  rooms?: Array<{ roomId?: number; roomName?: string; quantity?: string | number }>
+  meals?: string[]
+  [key: string]: unknown
+}
+
 export type BookingData = {
   id?: string
   guest?: string
@@ -60,7 +70,7 @@ export type BookingData = {
   pickup?: BookingPoint
   dropoff?: BookingPoint
   itinerary?: BookingItineraryDay[]
-  hotels?: Array<Record<string, unknown>>
+  hotels?: BookingHotelStay[]
   guides?: Array<Record<string, unknown>>
   drivers?: Array<Record<string, unknown>>
   [key: string]: unknown
@@ -151,6 +161,24 @@ export async function lookupBooking(phone: string): Promise<BookingData | null> 
 // one consistent "re-check external data daily" cadence across the codebase.
 const BOOKING_CACHE_MS = 24 * 60 * 60 * 1000
 
+function todayYmd(): string {
+  const now = new Date()
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`
+}
+
+// What the pipeline stage should be given a just-fetched, real booking -- 'selesai' once the
+// trip's own end date has passed, 'lunas' once the outstanding balance hits zero, otherwise
+// just 'booked' (a real booking exists, but isn't paid off or over yet). YYYY-MM-DD strings
+// compare correctly with plain `<`, same trick lookupBooking's own date-range builder relies on.
+function deriveStageFromBooking(bookingData: BookingData): string {
+  const endYmd = bookingData.date?.end_ymd
+  if (endYmd && endYmd < todayYmd()) return 'selesai'
+  const balance = bookingData.financial?.balance
+  if (balance != null && balance <= 0) return 'lunas'
+  return 'booked'
+}
+
 /**
  * Returns this conversation's booking data, refreshing it from the live API first if the
  * cached value is stale or was never fetched. Shared by two callers that need it on
@@ -159,6 +187,10 @@ const BOOKING_CACHE_MS = 24 * 60 * 60 * 1000
  * of whether the bot ever actually ran for this conversation -- e.g. while the kill switch is
  * on, which stops the bot but has no bearing on whether a customer has a real booking).
  *
+ * Also auto-advances Conversation.pipelineStage from what the fresh booking data itself
+ * implies (booked / lunas / selesai) -- never backward past whatever an agent already set by
+ * hand (see PIPELINE_STAGE_RANK), and only on a genuine refresh, not on every cache hit.
+ *
  * Takes an already-fetched conversation (not just an id) so a caller that already has one on
  * hand for other reasons doesn't pay for a second query.
  */
@@ -166,6 +198,7 @@ export async function ensureFreshBookingData(conversation: {
   id: string
   bookingData: unknown
   bookingCheckedAt: Date | null
+  pipelineStage: string
   contact: { phone: string }
 }): Promise<BookingData | null> {
   let bookingData = conversation.bookingData as BookingData | null
@@ -173,6 +206,14 @@ export async function ensureFreshBookingData(conversation: {
     !conversation.bookingCheckedAt || Date.now() - conversation.bookingCheckedAt.getTime() > BOOKING_CACHE_MS
   if (stale) {
     bookingData = await lookupBooking(conversation.contact.phone)
+
+    let pipelineStage: string | undefined
+    if (bookingData) {
+      const derived = deriveStageFromBooking(bookingData)
+      const currentRank = PIPELINE_STAGE_RANK[conversation.pipelineStage] ?? -1
+      if (PIPELINE_STAGE_RANK[derived] > currentRank) pipelineStage = derived
+    }
+
     await prisma.conversation.update({
       where: { id: conversation.id },
       data: {
@@ -183,6 +224,7 @@ export async function ensureFreshBookingData(conversation: {
         // not-yet-booked customer's first message. Do not reintroduce `as never` here.
         bookingData: bookingData === null ? Prisma.DbNull : (bookingData as Prisma.InputJsonValue),
         bookingCheckedAt: new Date(),
+        ...(pipelineStage ? { pipelineStage } : {}),
       },
     })
   }

@@ -104,48 +104,48 @@ describe('BookingSummary — confirmed booking', () => {
     expect(screen.getByText('Surabaya Hotel')).toBeInTheDocument()
   })
 
-  it('renders a compact day-by-day itinerary when present', () => {
+  it('renders a compact day-by-day hotel list when present, including the room type', () => {
     render(
       <BookingSummary
         bookingData={{
           ...realBooking,
-          itinerary: [
-            { day: '1', activity: 'Ijen Crater Hike' },
-            { day: '2', activity: 'Bromo Sunrise Tour' },
+          hotels: [
+            { day: '1', hotel: 'Baratha Hotel and Resto', rooms: [{ roomId: 9, roomName: 'Deluxe Double', quantity: '1' }] },
+            { day: '2', hotel: 'Joglo Kecombrang Bromo', rooms: [{ roomId: 24, roomName: 'Double', quantity: '1' }] },
           ],
         }}
         tripBrief={null}
       />
     )
-    expect(screen.getByText('Itinerary')).toBeInTheDocument()
+    expect(screen.getByText('Hotel')).toBeInTheDocument()
     expect(screen.getByText('Hari 1')).toBeInTheDocument()
-    expect(screen.getByText('Ijen Crater Hike')).toBeInTheDocument()
+    expect(screen.getByText('Baratha Hotel and Resto (Deluxe Double)')).toBeInTheDocument()
     expect(screen.getByText('Hari 2')).toBeInTheDocument()
-    expect(screen.getByText('Bromo Sunrise Tour')).toBeInTheDocument()
+    expect(screen.getByText('Joglo Kecombrang Bromo (Double)')).toBeInTheDocument()
   })
 
-  it('omits the itinerary section entirely when the payload carries none', () => {
+  it('omits the hotel section entirely when the payload carries none', () => {
     render(<BookingSummary bookingData={realBooking} tripBrief={null} />)
-    expect(screen.queryByText('Itinerary')).not.toBeInTheDocument()
+    expect(screen.queryByText('Hotel')).not.toBeInTheDocument()
   })
 
-  it('shows an invoice link when one is present, pointing at the real URL', () => {
+  it('shows a portal link when customer_portal is present, pointing at the real URL', () => {
     render(
       <BookingSummary
         bookingData={{
           ...realBooking,
-          financial: { ...realBooking.financial, invoice: { total: 6200000, invoiceLink: ['https://new-backoffice.javavolcano-touroperator.com/preview-file?url=x.pdf'] } },
+          customer_portal: 'https://javavolcano-touroperator.com/my-booking/752b6477206e7d45d79b74d936cb3448',
         }}
         tripBrief={null}
       />
     )
-    const link = screen.getByRole('link', { name: 'Lihat Invoice' })
-    expect(link).toHaveAttribute('href', 'https://new-backoffice.javavolcano-touroperator.com/preview-file?url=x.pdf')
+    const link = screen.getByRole('link', { name: 'Lihat Portal' })
+    expect(link).toHaveAttribute('href', 'https://javavolcano-touroperator.com/my-booking/752b6477206e7d45d79b74d936cb3448')
   })
 
-  it('omits the invoice link when none is present', () => {
+  it('omits the portal link when customer_portal is absent', () => {
     render(<BookingSummary bookingData={realBooking} tripBrief={null} />)
-    expect(screen.queryByRole('link', { name: 'Lihat Invoice' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Lihat Portal' })).not.toBeInTheDocument()
   })
 })
 

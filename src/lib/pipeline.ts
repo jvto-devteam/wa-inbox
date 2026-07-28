@@ -11,6 +11,7 @@ export const PIPELINE_STAGES = [
   { value: 'nego', label: 'Negosiasi' },
   { value: 'booked', label: 'Booked' },
   { value: 'lunas', label: 'Lunas' },
+  { value: 'selesai', label: 'Selesai' },
 ] as const
 
 export const STAGE_LABELS: Record<string, string> = Object.fromEntries(
@@ -22,4 +23,14 @@ export const STAGE_VARIANTS: Record<string, 'muted' | 'warning' | 'brand' | 'suc
   nego: 'warning',
   booked: 'brand',
   lunas: 'success',
+  selesai: 'success',
 }
+
+// Ordinal rank of each stage, in the same order as PIPELINE_STAGES. Used by
+// src/lib/booking/client.ts's auto-advance-from-booking-data logic (see
+// deriveStageFromBooking) to decide whether a freshly observed booking signal
+// (confirmed / fully paid / trip ended) should move the stage forward -- never
+// backward over whatever an agent already set it to by hand.
+export const PIPELINE_STAGE_RANK: Record<string, number> = Object.fromEntries(
+  PIPELINE_STAGES.map((s, i) => [s.value, i]),
+)

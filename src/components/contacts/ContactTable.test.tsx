@@ -107,6 +107,7 @@ describe('ContactTable filters', () => {
       'Negosiasi',
       'Booked',
       'Lunas',
+      'Selesai',
     ])
   })
 

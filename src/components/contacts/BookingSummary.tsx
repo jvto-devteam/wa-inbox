@@ -71,8 +71,8 @@ export function BookingSummary({
     const payment = bookingData.financial?.payment
     const balance = bookingData.financial?.balance
     const paymentStatus = derivePaymentStatus(balance)
-    const invoiceLink = bookingData.financial?.invoice?.invoiceLink?.[0]
-    const itinerary = bookingData.itinerary ?? []
+    const portalUrl = bookingData.customer_portal
+    const hotels = bookingData.hotels ?? []
 
     return (
       <Card className="space-y-2 p-3">
@@ -87,27 +87,30 @@ export function BookingSummary({
           {balance != null && <Row label="Sisa" value={formatIDR(balance)} />}
           {paymentStatus && <Row label="Status" value={paymentStatus} />}
         </dl>
-        {itinerary.length > 0 && (
+        {hotels.length > 0 && (
           <div className="space-y-1 border-t border-border pt-2">
-            <h4 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Itinerary</h4>
+            <h4 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Hotel</h4>
             <ol className="space-y-0.5 text-sm">
-              {itinerary.map((day, i) => (
+              {hotels.map((stay, i) => (
                 <li key={i} className="flex gap-2">
-                  <span className="shrink-0 text-muted-foreground">Hari {day.day ?? i + 1}</span>
-                  <span className="min-w-0 wrap-break-word text-navy">{day.activity ?? day.itinerary ?? day.destination ?? '-'}</span>
+                  <span className="shrink-0 text-muted-foreground">Hari {stay.day ?? i + 1}</span>
+                  <span className="min-w-0 wrap-break-word text-navy">
+                    {stay.hotel ?? '-'}
+                    {stay.rooms?.[0]?.roomName && ` (${stay.rooms[0].roomName})`}
+                  </span>
                 </li>
               ))}
             </ol>
           </div>
         )}
-        {invoiceLink && (
+        {portalUrl && (
           <a
-            href={invoiceLink}
+            href={portalUrl}
             target="_blank"
             rel="noreferrer"
             className="block border-t border-border pt-2 text-sm text-brand underline"
           >
-            Lihat Invoice
+            Lihat Portal
           </a>
         )}
       </Card>

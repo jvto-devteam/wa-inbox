@@ -127,6 +127,7 @@ describe('ensureFreshBookingData', () => {
       id: 'conv_1',
       bookingData: { id: 'B1', guest: 'Bruno' },
       bookingCheckedAt: new Date(),
+      pipelineStage: 'new',
       contact: { phone: '6281234567890' },
     }
 
@@ -139,7 +140,7 @@ describe('ensureFreshBookingData', () => {
 
   it('refetches when bookingCheckedAt is null (never checked)', async () => {
     ;(fetch as any).mockResolvedValue({ ok: true, json: async () => ({ id: 'B1', guest: 'Bruno' }) })
-    const conversation = { id: 'conv_1', bookingData: null, bookingCheckedAt: null, contact: { phone: '6281234567890' } }
+    const conversation = { id: 'conv_1', bookingData: null, bookingCheckedAt: null, pipelineStage: 'new', contact: { phone: '6281234567890' } }
 
     const result = await ensureFreshBookingData(conversation)
 
@@ -150,7 +151,7 @@ describe('ensureFreshBookingData', () => {
   it('refetches when the cached value is older than 24h', async () => {
     ;(fetch as any).mockResolvedValue({ ok: true, json: async () => ({ id: 'B2' }) })
     const stale = new Date(Date.now() - 25 * 60 * 60 * 1000)
-    const conversation = { id: 'conv_1', bookingData: { id: 'B1' }, bookingCheckedAt: stale, contact: { phone: '6281234567890' } }
+    const conversation = { id: 'conv_1', bookingData: { id: 'B1' }, bookingCheckedAt: stale, pipelineStage: 'new', contact: { phone: '6281234567890' } }
 
     const result = await ensureFreshBookingData(conversation)
 
@@ -160,7 +161,7 @@ describe('ensureFreshBookingData', () => {
 
   it('does not refetch when the cached value is under 24h old', async () => {
     const fresh = new Date(Date.now() - 60 * 60 * 1000)
-    const conversation = { id: 'conv_1', bookingData: { id: 'B1' }, bookingCheckedAt: fresh, contact: { phone: '6281234567890' } }
+    const conversation = { id: 'conv_1', bookingData: { id: 'B1' }, bookingCheckedAt: fresh, pipelineStage: 'new', contact: { phone: '6281234567890' } }
 
     await ensureFreshBookingData(conversation)
 
@@ -176,7 +177,7 @@ describe('ensureFreshBookingData', () => {
   // down is the exact `data` object handed to Prisma.
   it('writes Prisma.DbNull (never plain null) when no booking is found, so bookingCheckedAt still persists', async () => {
     ;(fetch as any).mockResolvedValue({ ok: true, json: async () => ({}) })
-    const conversation = { id: 'conv_1', bookingData: null, bookingCheckedAt: null, contact: { phone: '6281234567890' } }
+    const conversation = { id: 'conv_1', bookingData: null, bookingCheckedAt: null, pipelineStage: 'new', contact: { phone: '6281234567890' } }
 
     const result = await ensureFreshBookingData(conversation)
 
@@ -189,7 +190,10 @@ describe('ensureFreshBookingData', () => {
 
   it('writes the raw booking object through unchanged when a booking is found', async () => {
     ;(fetch as any).mockResolvedValue({ ok: true, json: async () => ({ id: 'B1', guest: 'Bruno' }) })
-    const conversation = { id: 'conv_1', bookingData: null, bookingCheckedAt: null, contact: { phone: '6281234567890' } }
+    // pipelineStage starts at 'lunas' (outranks the 'booked' this booking would otherwise
+    // derive) specifically so this test's assertion isn't also asserting on the pipeline
+    // auto-advance behavior -- that has its own describe block below.
+    const conversation = { id: 'conv_1', bookingData: null, bookingCheckedAt: null, pipelineStage: 'lunas', contact: { phone: '6281234567890' } }
 
     await ensureFreshBookingData(conversation)
 
@@ -197,5 +201,95 @@ describe('ensureFreshBookingData', () => {
       where: { id: 'conv_1' },
       data: { bookingData: { id: 'B1', guest: 'Bruno' }, bookingCheckedAt: expect.any(Date) },
     })
+  })
+})
+
+describe('ensureFreshBookingData — pipeline auto-advance', () => {
+  function conversationWith(pipelineStage: string) {
+    return { id: 'conv_1', bookingData: null, bookingCheckedAt: null, pipelineStage, contact: { phone: '6281234567890' } }
+  }
+
+  it('advances a new/nego conversation to "booked" once a real booking is found with no balance/end-date info', async () => {
+    ;(fetch as any).mockResolvedValue({ ok: true, json: async () => ({ id: 'B1' }) })
+
+    await ensureFreshBookingData(conversationWith('nego'))
+
+    expect(mockPrisma.conversation.update).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ pipelineStage: 'booked' }),
+    }))
+  })
+
+  it('advances straight to "lunas" once the booking\'s outstanding balance is zero', async () => {
+    ;(fetch as any).mockResolvedValue({ ok: true, json: async () => ({ id: 'B1', financial: { balance: 0 } }) })
+
+    await ensureFreshBookingData(conversationWith('new'))
+
+    expect(mockPrisma.conversation.update).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ pipelineStage: 'lunas' }),
+    }))
+  })
+
+  it('does not treat a positive outstanding balance as paid', async () => {
+    ;(fetch as any).mockResolvedValue({ ok: true, json: async () => ({ id: 'B1', financial: { balance: 350000 } }) })
+
+    await ensureFreshBookingData(conversationWith('new'))
+
+    expect(mockPrisma.conversation.update).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ pipelineStage: 'booked' }),
+    }))
+  })
+
+  it('advances to "selesai" once the trip\'s own end date has passed', async () => {
+    ;(fetch as any).mockResolvedValue({
+      ok: true,
+      json: async () => ({ id: 'B1', financial: { balance: 350000 }, date: { end_ymd: '2020-01-01' } }),
+    })
+
+    await ensureFreshBookingData(conversationWith('booked'))
+
+    expect(mockPrisma.conversation.update).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ pipelineStage: 'selesai' }),
+    }))
+  })
+
+  it('does not advance to "selesai" for a future end date', async () => {
+    ;(fetch as any).mockResolvedValue({
+      ok: true,
+      json: async () => ({ id: 'B1', date: { end_ymd: '2099-01-01' } }),
+    })
+
+    await ensureFreshBookingData(conversationWith('booked'))
+
+    expect(mockPrisma.conversation.update).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.not.objectContaining({ pipelineStage: expect.anything() }),
+    }))
+  })
+
+  it('never moves the stage backward past what an agent already set (lunas stays lunas even though this booking only derives "booked")', async () => {
+    ;(fetch as any).mockResolvedValue({ ok: true, json: async () => ({ id: 'B1' }) })
+
+    await ensureFreshBookingData(conversationWith('lunas'))
+
+    const call = mockPrisma.conversation.update.mock.calls[0][0] as { data: Record<string, unknown> }
+    expect(call.data).not.toHaveProperty('pipelineStage')
+  })
+
+  it('does not touch pipelineStage when no booking is found at all', async () => {
+    ;(fetch as any).mockResolvedValue({ ok: true, json: async () => ({}) })
+
+    await ensureFreshBookingData(conversationWith('new'))
+
+    const call = mockPrisma.conversation.update.mock.calls[0][0] as { data: Record<string, unknown> }
+    expect(call.data).not.toHaveProperty('pipelineStage')
+  })
+
+  it('treats an unrecognized current pipelineStage as rank -1, so it still advances', async () => {
+    ;(fetch as any).mockResolvedValue({ ok: true, json: async () => ({ id: 'B1' }) })
+
+    await ensureFreshBookingData(conversationWith('some_custom_stage'))
+
+    expect(mockPrisma.conversation.update).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ pipelineStage: 'booked' }),
+    }))
   })
 })
