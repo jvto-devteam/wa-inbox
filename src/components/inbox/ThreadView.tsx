@@ -16,6 +16,10 @@ function markAsRead(conversationId: string) {
 export function ThreadView({ conversationId }: { conversationId: string }) {
   const [messages, setMessages] = useState<MessageView[]>([])
   const [botEnabled, setBotEnabled] = useState(false)
+  // Global kill switch overrides this conversation's own botEnabled -- without it, "Ambil
+  // Alih dari Bot" kept showing (and offering to take over from a bot that can't reply
+  // anyway) while the switch was on. Same override ConversationListItem applies to its badge.
+  const [killSwitchOn, setKillSwitchOn] = useState(false)
   const [assignedAgentId, setAssignedAgentId] = useState<string | null>(null)
   const [agents, setAgents] = useState<Agent[]>([])
   const [assignError, setAssignError] = useState<string | null>(null)
@@ -51,6 +55,12 @@ export function ThreadView({ conversationId }: { conversationId: string }) {
   useEffect(() => {
     fetchJson<Agent[]>('/api/accounts')
       .then(setAgents)
+      .catch(() => {})
+  }, [])
+
+  useEffect(() => {
+    fetchJson<{ botKillSwitch: boolean }>('/api/settings')
+      .then((settings) => setKillSwitchOn(settings.botKillSwitch))
       .catch(() => {})
   }, [])
 
@@ -143,7 +153,7 @@ export function ThreadView({ conversationId }: { conversationId: string }) {
       </div>
       <ComposeBox
         conversationId={conversationId}
-        botEnabled={botEnabled}
+        botEnabled={botEnabled && !killSwitchOn}
         replyingTo={replyingTo}
         onCancelReply={() => setReplyingTo(null)}
         onSent={(m) => {

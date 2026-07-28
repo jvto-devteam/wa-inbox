@@ -26,7 +26,13 @@ function InboxPageContent() {
     // exactly the container's height and lets it shrink, so each pane's own h-full/overflow-y-auto
     // (see ConversationList/ThreadView/ContactPanel, each also needing min-h-0 for the same reason
     // grid/flex items refuse to shrink below their content by default) does the actual scrolling.
-    <div className="grid h-full grid-cols-[20rem_1fr_20rem] grid-rows-[minmax(0,1fr)]">
+    //
+    // The middle column needs the exact same minmax(0, ...) treatment, not just `1fr`: a track's
+    // implicit minimum defaults to `auto` (the min-content size of what's inside it), so one long
+    // unbreakable string anywhere in the thread -- a quoted reply preview, a URL, a long word --
+    // grows the whole column (and the grid) past the viewport instead of letting ThreadView's own
+    // truncate/wrap/overflow handling engage.
+    <div className="grid h-full grid-cols-[20rem_minmax(0,1fr)_20rem] grid-rows-[minmax(0,1fr)]">
       <ConversationList selectedId={selectedId} onSelect={setSelectedId} />
       {selectedId ? (
         <>

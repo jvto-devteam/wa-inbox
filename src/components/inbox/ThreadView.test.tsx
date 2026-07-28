@@ -158,6 +158,26 @@ describe('ThreadView keyed by conversationId', () => {
   })
 })
 
+describe('ThreadView kill switch', () => {
+  it('hides the Ambil Alih dari Bot button when the global kill switch is on, even though this conversation has botEnabled true', async () => {
+    vi.mocked(fetch).mockImplementation((url) => {
+      const s = String(url)
+      if (s.endsWith('/messages')) return Promise.resolve({ ok: true, json: () => Promise.resolve([]) } as Response)
+      if (s.endsWith('/api/accounts')) return Promise.resolve({ ok: true, json: () => Promise.resolve([]) } as Response)
+      if (s.endsWith('/api/settings')) return Promise.resolve({ ok: true, json: () => Promise.resolve({ botKillSwitch: true }) } as Response)
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({ botEnabled: true, assignedAgentId: null }) } as Response)
+    })
+
+    render(<ThreadView conversationId="conv_1" />)
+
+    // Both the per-conversation detail (botEnabled: true) and the settings (kill switch: on)
+    // fetches must have resolved before the negative assertion below means anything.
+    await waitFor(() => expect(fetch).toHaveBeenCalledWith('/api/conversations/conv_1'))
+    await waitFor(() => expect(fetch).toHaveBeenCalledWith('/api/settings'))
+    await waitFor(() => expect(screen.queryByText('Ambil Alih dari Bot')).not.toBeInTheDocument())
+  })
+})
+
 describe('ThreadView live delivery-status updates', () => {
   function mockBasicFetch(messages: unknown[]) {
     vi.mocked(fetch).mockImplementation((url) => {
