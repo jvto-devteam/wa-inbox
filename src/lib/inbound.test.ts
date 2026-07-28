@@ -964,7 +964,7 @@ describe('ingestMetaMessage message echoes (smb_message_echoes)', () => {
         externalId: 'wamid.ECHO1',
         direction: 'OUTBOUND',
         sentBy: 'AGENT',
-        channel: 'OFFICIAL',
+        channel: 'UNOFFICIAL',
         content: 'Halo, ini info yang Anda minta.',
         deliveryStatus: 'SENT',
       }),

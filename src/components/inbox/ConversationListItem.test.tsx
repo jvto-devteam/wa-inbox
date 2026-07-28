@@ -39,4 +39,17 @@ describe('ConversationListItem', () => {
     render(<ConversationListItem conversation={summary} onClick={() => {}} />)
     expect(screen.queryByLabelText(/pesan belum dibaca/)).not.toBeInTheDocument()
   })
+
+  it('shows Agen instead of Bot when the global kill switch is on, even if botEnabled is true', () => {
+    // botEnabled reflects this conversation's own toggle, not whether a reply can actually
+    // happen right now -- the kill switch overrides it company-wide.
+    render(<ConversationListItem conversation={summary} killSwitchOn onClick={() => {}} />)
+    expect(screen.queryByText('Bot')).not.toBeInTheDocument()
+    expect(screen.getByText('Agen')).toBeInTheDocument()
+  })
+
+  it('still shows Bot when botEnabled is true and the kill switch is off', () => {
+    render(<ConversationListItem conversation={summary} killSwitchOn={false} onClick={() => {}} />)
+    expect(screen.getByText('Bot')).toBeInTheDocument()
+  })
 })

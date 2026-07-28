@@ -460,7 +460,12 @@ async function ingestEchoedMessage(echo: MetaMessageEcho): Promise<boolean> {
         mediaId: media?.id ?? null,
         mimeType: media?.mime_type ?? null,
         fileName: media?.filename ?? null,
-        channel: 'OFFICIAL',
+        // Deliberately UNOFFICIAL, even though this genuinely arrived via the Official Cloud
+        // API's smb_message_echoes (a message sent from the phone app, not through wa-inbox at
+        // all): the "Official" label is reserved for messages this app itself deliberately
+        // dispatched that way (a template send, or an agent explicitly picking Official in
+        // ComposeBox) -- an operator preference, not a claim about which Meta API carried it.
+        channel: 'UNOFFICIAL',
         sentBy: 'AGENT',
         // Deliberately SENT, not DELIVERED: Meta's ordinary `statuses` receipts for this same
         // wamid (delivered/read) still arrive independently and applyStatusUpdate's rank

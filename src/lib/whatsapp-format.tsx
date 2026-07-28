@@ -9,6 +9,10 @@ const MONO_RE = /```([^`]+)```/g
 const BOLD_RE = /\*([^\s*](?:[^*]*[^\s*])?)\*/g
 const ITALIC_RE = /_([^\s_](?:[^_]*[^\s_])?)_/g
 const STRIKE_RE = /~([^\s~](?:[^~]*[^~])?)~/g
+// Greedy up to the last non-space character, then backtracks off common trailing
+// punctuation (a sentence-ending '.', a wrapping ')', etc.) that's almost never actually
+// part of the URL -- "cek link https://example.com/x!" must not swallow the '!'.
+const URL_RE = /(https?:\/\/[^\s]+[^\s.,!?;:'")\]}])/g
 
 let keySeq = 0
 
@@ -38,9 +42,20 @@ function splitByPattern(nodes: Node[], regex: RegExp, wrap: (content: string, ke
   return result
 }
 
-/** Renders WhatsApp's *bold*, _italic_, ~strikethrough~, and ```monospace``` marks. */
+/**
+ * Renders WhatsApp's *bold*, _italic_, ~strikethrough~, and ```monospace``` marks, plus
+ * auto-links bare http(s) URLs. Linkification runs FIRST, before the mark passes: a link
+ * becomes a non-string node immediately, and every later pass only ever touches remaining
+ * plain-string entries -- so a URL that happens to contain `_` or `~` can never be partially
+ * swallowed by the italic/strikethrough passes running after it.
+ */
 export function formatWhatsAppText(text: string): ReactNode[] {
   let nodes: Node[] = [text]
+  nodes = splitByPattern(nodes, URL_RE, (url, k) => (
+    <a key={k} href={url} target="_blank" rel="noreferrer" className="text-brand underline">
+      {url}
+    </a>
+  ))
   nodes = splitByPattern(nodes, MONO_RE, (c, k) => (
     <code key={k} className="rounded bg-black/10 px-1 font-mono text-[0.9em]">
       {c}

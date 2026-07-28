@@ -34,6 +34,10 @@ export function ConversationList({
 }) {
   const [conversations, setConversations] = useState<ConversationSummary[]>([])
   const [query, setQuery] = useState('')
+  // Global kill switch overrides every conversation's own botEnabled -- fetched once so the
+  // sidebar's Bot/Agen badge reflects whether the bot can actually reply right now, not just
+  // whether it's toggled on for this conversation.
+  const [killSwitchOn, setKillSwitchOn] = useState(false)
   const isFirstRender = useRef(true)
 
   // Latest-value mirrors read by the SSE effect below. Depending on `query`/`conversations`
@@ -60,6 +64,12 @@ export function ConversationList({
     // the browser to /login, and a 500 must not blank out the agent's inbox.
     fetchJson<ConversationSummary[]>(conversationsUrl(q))
       .then(setConversations)
+      .catch(() => {})
+  }, [])
+
+  useEffect(() => {
+    fetchJson<{ botKillSwitch: boolean }>('/api/settings')
+      .then((settings) => setKillSwitchOn(settings.botKillSwitch))
       .catch(() => {})
   }, [])
 
@@ -142,7 +152,13 @@ export function ConversationList({
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto">
         {conversations.map((c) => (
-          <ConversationListItem key={c.id} conversation={c} active={c.id === selectedId} onClick={() => onSelect(c.id)} />
+          <ConversationListItem
+            key={c.id}
+            conversation={c}
+            active={c.id === selectedId}
+            killSwitchOn={killSwitchOn}
+            onClick={() => onSelect(c.id)}
+          />
         ))}
       </div>
     </div>

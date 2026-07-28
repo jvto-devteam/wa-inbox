@@ -58,11 +58,11 @@ function MediaContent({ message }: { message: MessageView }) {
   if (!message.mediaUrl) return null
   switch (message.type) {
     case 'image':
-      return <img src={message.mediaUrl} alt={message.content ?? 'Gambar'} className="max-w-xs rounded-md" />
+      return <img src={message.mediaUrl} alt={message.content ?? 'Gambar'} className="h-auto w-full max-w-xs rounded-md" />
     case 'video':
-      return <video src={message.mediaUrl} controls className="max-w-xs rounded-md" />
+      return <video src={message.mediaUrl} controls className="h-auto w-full max-w-xs rounded-md" />
     case 'audio':
-      return <audio src={message.mediaUrl} controls className="max-w-60" />
+      return <audio src={message.mediaUrl} controls className="w-full max-w-60" />
     case 'document':
       return (
         <a
@@ -193,7 +193,7 @@ export function MessageBubble({ message, onReply }: { message: MessageView; onRe
         }
         className={
           (cards?.length ? 'max-w-lg' : 'max-w-md') +
-          ' whitespace-pre-wrap rounded-lg px-3.5 py-2.5 ring-1 ' +
+          ' overflow-hidden whitespace-pre-wrap rounded-lg px-3.5 py-2.5 ring-1 ' +
           (isOutbound ? 'rounded-tr-none bg-accent ring-brand/10' : 'rounded-tl-none bg-white shadow-sm ring-border')
         }
       >
@@ -217,7 +217,9 @@ export function MessageBubble({ message, onReply }: { message: MessageView; onRe
         {message.sentBy === 'BOT' && <Badge variant="brand">Bot</Badge>}
         {message.sentBy === 'AGENT' && <span>Agen</span>}
         {message.templatePayload && <Badge variant="muted">Template</Badge>}
-        {CHANNEL_LABEL[message.channel] && <Badge variant="muted">{CHANNEL_LABEL[message.channel]}</Badge>}
+        {/* Only outbound: which channel WE sent through is useful to an agent; which channel a
+            customer's own inbound message happened to arrive on is not. */}
+        {isOutbound && CHANNEL_LABEL[message.channel] && <Badge variant="muted">{CHANNEL_LABEL[message.channel]}</Badge>}
         <span>{formatTime(message.createdAt)}</span>
         {isFailed ? (
           <>

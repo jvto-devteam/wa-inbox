@@ -53,7 +53,8 @@ describe('ConversationList search debounce', () => {
     // No timer advance at all -- the very first load must not wait out the debounce window.
     await advanceTimers(0)
 
-    expect(fetch).toHaveBeenCalledTimes(1)
+    // Also fetches /api/settings once on mount (for the kill-switch badge override), so this
+    // checks the conversations call specifically rather than the total call count.
     expect(fetch).toHaveBeenCalledWith('/api/conversations')
   })
 
@@ -397,6 +398,38 @@ describe('ConversationList session expiry', () => {
     // A server error must not blank out the agent's inbox, and must not bounce them to login.
     expect(screen.getByText('Bruno')).toBeInTheDocument()
     expect(location.href).toBe('http://localhost/inbox')
+  })
+})
+
+describe('ConversationList kill switch', () => {
+  function conversation(id: string, overrides: Record<string, unknown> = {}) {
+    return {
+      id,
+      contactName: `Kontak ${id}`,
+      contactPhone: `62812000${id}`,
+      lastMessage: `Pesan lama ${id}`,
+      lastMessageSentBy: 'CUSTOMER',
+      lastMessageAt: '2026-07-20T10:00:00.000Z',
+      botEnabled: true,
+      status: 'OPEN',
+      unreadCount: 0,
+      labels: [],
+      ...overrides,
+    }
+  }
+
+  it('shows Agen instead of Bot once /api/settings reports the kill switch is on', async () => {
+    vi.mocked(fetch).mockImplementation((input) => {
+      const url = String(input)
+      if (url === '/api/settings') return Promise.resolve(jsonResponse({ botKillSwitch: true }))
+      return Promise.resolve(jsonResponse([conversation('a')]))
+    })
+
+    render(<ConversationList selectedId={null} onSelect={() => {}} />)
+    await advanceTimers(0)
+
+    expect(screen.queryByText('Bot')).not.toBeInTheDocument()
+    expect(screen.getByText('Agen')).toBeInTheDocument()
   })
 })
 
