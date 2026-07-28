@@ -220,16 +220,30 @@ function DeliveryTicks({ status }: { status: string }) {
 }
 
 export function MessageBubble({ message, onReply }: { message: MessageView; onReply?: (message: MessageView) => void }) {
+  // Declared before the handoff-log early return below so every render calls the same hooks
+  // in the same order (Rules of Hooks) -- unused in that branch, which is fine.
+  const [showTrace, setShowTrace] = useState(false)
+
+  // A handoff decision is logged (Task 34) as a Message row with content: null, sentBy: 'BOT' --
+  // no real reply was ever sent to the customer. Rendered as WhatsApp's own centered system
+  // divider (the same line-text-line style as the "Pesan belum dibaca" marker in ThreadView),
+  // not a chat bubble: no channel/sender badge, no timestamp, no delivery ticks, no reply
+  // action -- none of those describe an actual message, so showing them here is just noise.
+  if (isHandoffLogMessage(message)) {
+    return (
+      <div className="flex w-full items-center gap-2 text-xs font-medium text-muted-foreground">
+        <div className="h-px flex-1 bg-border" />
+        <span>{HANDOFF_LOG_TEXT}</span>
+        <div className="h-px flex-1 bg-border" />
+      </div>
+    )
+  }
+
   const isOutbound = message.direction === 'OUTBOUND'
   const isFailed = message.deliveryStatus === 'FAILED'
   const hasTrace = message.sentBy === 'BOT' && Boolean(message.botTrace)
-  // A handoff decision is logged (Task 34) as a Message row with content: null, sentBy: 'BOT' --
-  // no real reply was ever sent to the customer. Without this, the bubble renders empty, which
-  // reads as "the bot sent something and it's broken" rather than "the bot silently handed off".
-  const isHandoffLog = isHandoffLogMessage(message)
   const hasMedia = Boolean(message.mediaUrl)
   const cards = message.templatePayload?.cards
-  const [showTrace, setShowTrace] = useState(false)
 
   return (
     <div className={`flex flex-col gap-1 ${isOutbound ? 'items-end' : 'items-start'}`}>
@@ -253,24 +267,20 @@ export function MessageBubble({ message, onReply }: { message: MessageView; onRe
           (isOutbound ? 'rounded-tr-none bg-accent ring-brand/10' : 'rounded-tl-none bg-white shadow-sm ring-border')
         }
       >
-        {!isHandoffLog && message.replyTo && <QuotedPreview replyTo={message.replyTo} />}
-        {isHandoffLog ? (
-          <span className="italic text-muted-foreground">{HANDOFF_LOG_TEXT}</span>
-        ) : (
-          <div className="flex flex-col gap-1.5">
-            {message.templatePayload?.limitedTimeOffer && (
-              <LimitedTimeOfferBanner offer={message.templatePayload.limitedTimeOffer} />
-            )}
-            {hasMedia && <MediaContent message={message} />}
-            {message.content ? (
-              <span>{formatWhatsAppText(message.content)}</span>
-            ) : (
-              !hasMedia && message.type && message.type !== 'text' && `[${message.type}]`
-            )}
-            {cards && cards.length > 0 && <CarouselContent cards={cards} />}
-            {message.templatePayload?.coupon && <CouponChip coupon={message.templatePayload.coupon} />}
-          </div>
-        )}
+        {message.replyTo && <QuotedPreview replyTo={message.replyTo} />}
+        <div className="flex flex-col gap-1.5">
+          {message.templatePayload?.limitedTimeOffer && (
+            <LimitedTimeOfferBanner offer={message.templatePayload.limitedTimeOffer} />
+          )}
+          {hasMedia && <MediaContent message={message} />}
+          {message.content ? (
+            <span>{formatWhatsAppText(message.content)}</span>
+          ) : (
+            !hasMedia && message.type && message.type !== 'text' && `[${message.type}]`
+          )}
+          {cards && cards.length > 0 && <CarouselContent cards={cards} />}
+          {message.templatePayload?.coupon && <CouponChip coupon={message.templatePayload.coupon} />}
+        </div>
       </div>
       {hasTrace && showTrace && <BotTracePopover trace={message.botTrace as BotDecision} />}
       <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
@@ -297,7 +307,7 @@ export function MessageBubble({ message, onReply }: { message: MessageView; onRe
         ) : (
           isOutbound && <DeliveryTicks status={message.deliveryStatus} />
         )}
-        {!isHandoffLog && onReply && (
+        {onReply && (
           <Button
             type="button"
             variant="ghost"

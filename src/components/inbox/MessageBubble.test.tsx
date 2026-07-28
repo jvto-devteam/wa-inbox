@@ -78,6 +78,25 @@ describe('MessageBubble', () => {
     expect(screen.getByText('Bot menyerahkan ke agen — lihat alasan')).toBeInTheDocument()
   })
 
+  it('renders a handoff placeholder as a plain centered divider, not a chat bubble with badge/time/reply', () => {
+    render(
+      <MessageBubble
+        message={{
+          id: 'm6b', direction: 'OUTBOUND', content: null, channel: 'OFFICIAL', sentBy: 'BOT',
+          deliveryStatus: 'SENT', createdAt: new Date().toISOString(),
+          botTrace: { mode: 'handoff', reason: 'Kata kunci eskalasi terdeteksi' },
+        }}
+        onReply={() => {}}
+      />
+    )
+    expect(screen.queryByText('Bot')).not.toBeInTheDocument()
+    expect(screen.queryByText('Official')).not.toBeInTheDocument()
+    expect(screen.queryByText('Unofficial')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Balas pesan ini' })).not.toBeInTheDocument()
+    // No formatted time string rendered anywhere for this row.
+    expect(screen.queryByText(/^\d{2}\.\d{2}$/)).not.toBeInTheDocument()
+  })
+
   it('shows a channel badge and time for every message', () => {
     render(<MessageBubble message={{ id: 'm7', direction: 'OUTBOUND', content: 'Halo', channel: 'UNOFFICIAL', sentBy: 'AGENT', deliveryStatus: 'SENT', createdAt: new Date('2026-01-01T10:30:00Z').toISOString(), botTrace: null }} />)
     expect(screen.getByText('Unofficial')).toBeInTheDocument()
