@@ -131,8 +131,8 @@ export function ConversationList({
   }, [loadConversations])
 
   return (
-    <div className="flex h-full min-h-0 flex-col overflow-y-auto border-r">
-      <div className="border-b p-2">
+    <div className="flex h-full min-h-0 flex-col border-r">
+      <div className="shrink-0 border-b p-2">
         <Input
           type="text"
           placeholder="Cari nama, nomor, atau isi pesan..."
@@ -140,9 +140,11 @@ export function ConversationList({
           onChange={(e) => setQuery(e.target.value)}
         />
       </div>
-      {conversations.map((c) => (
-        <ConversationListItem key={c.id} conversation={c} active={c.id === selectedId} onClick={() => onSelect(c.id)} />
-      ))}
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        {conversations.map((c) => (
+          <ConversationListItem key={c.id} conversation={c} active={c.id === selectedId} onClick={() => onSelect(c.id)} />
+        ))}
+      </div>
     </div>
   )
 }

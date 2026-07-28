@@ -19,11 +19,15 @@ export type TripBrief = {
   pax?: number
 } | null
 
+// Stacked (label above value), not side-by-side: a booking's real values -- a full
+// pickup address, a long package name -- routinely run well past what fits next to a
+// label on one line, and squeezing them into `justify-between` wrapped the value
+// awkwardly under/against the label instead of using the card's full width.
 function Row({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex justify-between gap-2">
-      <dt className="text-muted-foreground">{label}</dt>
-      <dd className="font-medium text-navy">{value}</dd>
+    <div>
+      <dt className="text-xs text-muted-foreground">{label}</dt>
+      <dd className="wrap-break-word font-medium text-navy">{value}</dd>
     </div>
   )
 }
@@ -90,7 +94,7 @@ export function BookingSummary({
               {itinerary.map((day, i) => (
                 <li key={i} className="flex gap-2">
                   <span className="shrink-0 text-muted-foreground">Hari {day.day ?? i + 1}</span>
-                  <span className="text-navy">{day.activity ?? day.itinerary ?? day.destination ?? '-'}</span>
+                  <span className="min-w-0 wrap-break-word text-navy">{day.activity ?? day.itinerary ?? day.destination ?? '-'}</span>
                 </li>
               ))}
             </ol>
