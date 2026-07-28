@@ -86,6 +86,67 @@ describe('BookingSummary — confirmed booking', () => {
     render(<BookingSummary bookingData={{ id: 'B9' }} tripBrief={null} />)
     expect(screen.getByText('Booking Ada')).toBeInTheDocument()
   })
+
+  it('shows pickup and dropoff points when present', () => {
+    render(
+      <BookingSummary
+        bookingData={{
+          ...realBooking,
+          pickup: { text: 'Surabaya Hotel  Surabaya Suites Hotel Powered by Archipelago' },
+          dropoff: { text: 'Surabaya Hotel  ' },
+        }}
+        tripBrief={null}
+      />
+    )
+    // RTL's default text matching normalizes whitespace (collapses the API's double
+    // spaces to one), so match on the normalized form.
+    expect(screen.getByText('Surabaya Hotel Surabaya Suites Hotel Powered by Archipelago')).toBeInTheDocument()
+    expect(screen.getByText('Surabaya Hotel')).toBeInTheDocument()
+  })
+
+  it('renders a compact day-by-day itinerary when present', () => {
+    render(
+      <BookingSummary
+        bookingData={{
+          ...realBooking,
+          itinerary: [
+            { day: '1', activity: 'Ijen Crater Hike' },
+            { day: '2', activity: 'Bromo Sunrise Tour' },
+          ],
+        }}
+        tripBrief={null}
+      />
+    )
+    expect(screen.getByText('Itinerary')).toBeInTheDocument()
+    expect(screen.getByText('Hari 1')).toBeInTheDocument()
+    expect(screen.getByText('Ijen Crater Hike')).toBeInTheDocument()
+    expect(screen.getByText('Hari 2')).toBeInTheDocument()
+    expect(screen.getByText('Bromo Sunrise Tour')).toBeInTheDocument()
+  })
+
+  it('omits the itinerary section entirely when the payload carries none', () => {
+    render(<BookingSummary bookingData={realBooking} tripBrief={null} />)
+    expect(screen.queryByText('Itinerary')).not.toBeInTheDocument()
+  })
+
+  it('shows an invoice link when one is present, pointing at the real URL', () => {
+    render(
+      <BookingSummary
+        bookingData={{
+          ...realBooking,
+          financial: { ...realBooking.financial, invoice: { total: 6200000, invoiceLink: ['https://new-backoffice.javavolcano-touroperator.com/preview-file?url=x.pdf'] } },
+        }}
+        tripBrief={null}
+      />
+    )
+    const link = screen.getByRole('link', { name: 'Lihat Invoice' })
+    expect(link).toHaveAttribute('href', 'https://new-backoffice.javavolcano-touroperator.com/preview-file?url=x.pdf')
+  })
+
+  it('omits the invoice link when none is present', () => {
+    render(<BookingSummary bookingData={realBooking} tripBrief={null} />)
+    expect(screen.queryByRole('link', { name: 'Lihat Invoice' })).not.toBeInTheDocument()
+  })
 })
 
 describe('BookingSummary — other states', () => {

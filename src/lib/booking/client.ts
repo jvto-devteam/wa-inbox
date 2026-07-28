@@ -1,3 +1,6 @@
+import { Prisma } from '@prisma/client'
+import { prisma } from '@/lib/db'
+
 // Ported from chatbot-web's src/bookingApiClient.js (lookupByPhone) — the
 // proven, currently-live booking-lookup client for the JVTO booking API.
 //
@@ -24,6 +27,20 @@ export type BookingDate = {
   days?: string | number
 }
 
+export type BookingItineraryDay = {
+  day?: string
+  date?: string
+  itinerary?: string
+  activity?: string
+  destination?: string
+  [key: string]: unknown
+}
+
+export type BookingPoint = {
+  text?: string
+  [key: string]: unknown
+}
+
 export type BookingData = {
   id?: string
   guest?: string
@@ -34,11 +51,15 @@ export type BookingData = {
   total_pax?: number
   duration?: string
   booking_date?: string
-  financial?: { payment?: number; balance?: number }
+  financial?: {
+    payment?: number
+    balance?: number
+    invoice?: { total?: number; invoiceLink?: string[] }
+  }
   guestDetails?: { email?: string; country?: string; phone?: string; trip_media?: string }
-  pickup?: Record<string, unknown>
-  dropoff?: Record<string, unknown>
-  itinerary?: Array<Record<string, unknown>>
+  pickup?: BookingPoint
+  dropoff?: BookingPoint
+  itinerary?: BookingItineraryDay[]
   hotels?: Array<Record<string, unknown>>
   guides?: Array<Record<string, unknown>>
   drivers?: Array<Record<string, unknown>>
@@ -122,4 +143,48 @@ export async function lookupBooking(phone: string): Promise<BookingData | null> 
   } catch {
     return null
   }
+}
+
+// How long a fetched (or confirmed-absent) booking lookup is trusted before re-checking the
+// live API. Matches the window the orchestrator already used for this before the cache logic
+// moved here, and the one enrichContactAvatar (src/lib/inbound.ts) uses for the same reason:
+// one consistent "re-check external data daily" cadence across the codebase.
+const BOOKING_CACHE_MS = 24 * 60 * 60 * 1000
+
+/**
+ * Returns this conversation's booking data, refreshing it from the live API first if the
+ * cached value is stale or was never fetched. Shared by two callers that need it on
+ * independent triggers: the bot orchestrator (as part of answering a message) and the
+ * conversation-detail API route (so ContactPanel shows real booking data on open, regardless
+ * of whether the bot ever actually ran for this conversation -- e.g. while the kill switch is
+ * on, which stops the bot but has no bearing on whether a customer has a real booking).
+ *
+ * Takes an already-fetched conversation (not just an id) so a caller that already has one on
+ * hand for other reasons doesn't pay for a second query.
+ */
+export async function ensureFreshBookingData(conversation: {
+  id: string
+  bookingData: unknown
+  bookingCheckedAt: Date | null
+  contact: { phone: string }
+}): Promise<BookingData | null> {
+  let bookingData = conversation.bookingData as BookingData | null
+  const stale =
+    !conversation.bookingCheckedAt || Date.now() - conversation.bookingCheckedAt.getTime() > BOOKING_CACHE_MS
+  if (stale) {
+    bookingData = await lookupBooking(conversation.contact.phone)
+    await prisma.conversation.update({
+      where: { id: conversation.id },
+      data: {
+        // `Conversation.bookingData` is `Json?`. Prisma requires the explicit `Prisma.DbNull`
+        // sentinel to write SQL NULL to a nullable Json column -- plain JS `null` is rejected
+        // at runtime. See the orchestrator's original comment (git history) for the incident
+        // this caused when that was missed: it silently disabled Modes 1/2 for every
+        // not-yet-booked customer's first message. Do not reintroduce `as never` here.
+        bookingData: bookingData === null ? Prisma.DbNull : (bookingData as Prisma.InputJsonValue),
+        bookingCheckedAt: new Date(),
+      },
+    })
+  }
+  return bookingData
 }

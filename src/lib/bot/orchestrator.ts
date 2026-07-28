@@ -90,7 +90,7 @@
 // integration point in the whole bot brain.
 import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db'
-import { lookupBooking } from '@/lib/booking/client'
+import { ensureFreshBookingData } from '@/lib/booking/client'
 import { checkRouteGate } from './route-gate'
 import { classifySalesNeed, HANDOFF_KEYWORDS } from './sales-classifier'
 import { processFunnelState } from './funnel'
@@ -106,8 +106,6 @@ function isEscalation(message: string): boolean {
   const lower = message.toLowerCase()
   return HANDOFF_KEYWORDS.some((kw) => lower.includes(kw))
 }
-
-const BOOKING_CACHE_MS = 24 * 60 * 60 * 1000
 
 export async function decideAndRespond(conversationId: string, inboundText: string): Promise<BotDecision> {
   try {
@@ -135,30 +133,7 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
       include: { contact: true },
     })
 
-    let bookingData = conversation.bookingData as unknown
-    const stale =
-      !conversation.bookingCheckedAt || Date.now() - conversation.bookingCheckedAt.getTime() > BOOKING_CACHE_MS
-    if (stale) {
-      bookingData = await lookupBooking(conversation.contact.phone)
-      await prisma.conversation.update({
-        where: { id: conversationId },
-        data: {
-          // `Conversation.bookingData` is `Json?`. Prisma requires the explicit
-          // `Prisma.DbNull` sentinel to write SQL NULL to a nullable Json column --
-          // plain JS `null` is rejected at runtime. `lookupBooking` returns null for
-          // the COMMON case (a customer with no booking), so writing `null as never`
-          // here threw on every non-booked customer's first (and every cache-stale)
-          // message; the outer catch swallowed it and returned a generic handoff,
-          // silently disabling Modes 1/2 for exactly the customers they exist for.
-          // It also meant `bookingCheckedAt` never persisted, so the 24h cache never
-          // engaged and the live booking-API call fired on every inbound message.
-          // The `as never` cast was what suppressed the compile error that would
-          // have caught this -- do not reintroduce it.
-          bookingData: bookingData === null ? Prisma.DbNull : (bookingData as Prisma.InputJsonValue),
-          bookingCheckedAt: new Date(),
-        },
-      })
-    }
+    const bookingData = await ensureFreshBookingData(conversation)
 
     // Mode 3 -- booking context: bypasses funnel and route gate entirely.
     if (bookingData) {

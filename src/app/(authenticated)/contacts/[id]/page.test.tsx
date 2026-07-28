@@ -3,9 +3,14 @@ import { render, screen, cleanup } from '@testing-library/react'
 import { mockDeep, mockReset, type DeepMockProxy } from 'vitest-mock-extended'
 import type { PrismaClient } from '@prisma/client'
 import { prisma } from '@/lib/db'
+import { ensureFreshBookingData } from '@/lib/booking/client'
 import ContactDetailPage from './page'
 
 vi.mock('@/lib/db', () => ({ prisma: mockDeep<PrismaClient>() }))
+// Explicit, rather than relying on process.env.BOOKING_API_URL happening to be unset in the
+// test process: without this, ensureFreshBookingData would try a real network call (this
+// suite doesn't otherwise touch the booking API at all -- none of it asserts on bookingData).
+vi.mock('@/lib/booking/client', () => ({ ensureFreshBookingData: vi.fn() }))
 const mockPrisma = prisma as unknown as DeepMockProxy<PrismaClient>
 
 // The nested client components (labels, notes, reminders) each fetch on mount and are
@@ -36,6 +41,7 @@ function contactWith(messages: Array<Record<string, unknown>>) {
 beforeEach(() => {
   mockReset(mockPrisma)
   mockPrisma.label.findMany.mockResolvedValue([] as never)
+  vi.mocked(ensureFreshBookingData).mockReset().mockResolvedValue(null)
 })
 
 afterEach(cleanup)

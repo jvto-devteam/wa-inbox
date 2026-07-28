@@ -4,6 +4,7 @@ import { prisma } from '@/lib/db'
 import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { BookingSummary, type BookingData, type TripBrief } from '@/components/contacts/BookingSummary'
+import { ensureFreshBookingData } from '@/lib/booking/client'
 import { ContactLabels } from '@/components/contacts/ContactLabels'
 import { NotesSection } from '@/components/inbox/NotesSection'
 import { RemindersSection } from '@/components/inbox/RemindersSection'
@@ -32,6 +33,9 @@ export default async function ContactDetailPage({ params }: { params: Promise<{ 
   if (!contact) notFound()
 
   const conversation = contact.conversation
+  // Same reasoning as the /api/conversations/[id] route: refresh on open, independent of
+  // whether the bot ever ran for this conversation (e.g. while the kill switch is on).
+  const bookingData = conversation ? await ensureFreshBookingData({ ...conversation, contact }) : null
   const allLabels = await prisma.label.findMany()
   const attachedLabels = conversation?.labels.map((l) => l.label) ?? []
   const pipelineStage = conversation?.pipelineStage ?? 'new'
@@ -66,7 +70,7 @@ export default async function ContactDetailPage({ params }: { params: Promise<{ 
       </div>
 
       <BookingSummary
-        bookingData={(conversation?.bookingData as unknown as BookingData | null) ?? null}
+        bookingData={(bookingData as unknown as BookingData | null) ?? null}
         tripBrief={(conversation?.tripBrief as unknown as TripBrief) ?? null}
       />
 

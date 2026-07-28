@@ -1,10 +1,18 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { lookupBooking } from './client'
+import { mockDeep, mockReset, type DeepMockProxy } from 'vitest-mock-extended'
+import { Prisma, type PrismaClient } from '@prisma/client'
+import { prisma } from '@/lib/db'
+import { lookupBooking, ensureFreshBookingData } from './client'
+
+vi.mock('@/lib/db', () => ({ prisma: mockDeep<PrismaClient>() }))
+const mockPrisma = prisma as unknown as DeepMockProxy<PrismaClient>
 
 beforeEach(() => {
   vi.stubGlobal('fetch', vi.fn())
   process.env.BOOKING_API_URL = 'https://booking.jvto.example/bookings'
   process.env.BOOKING_API_KEY = 'booking-key'
+  mockReset(mockPrisma)
+  mockPrisma.conversation.update.mockResolvedValue({} as never)
 })
 
 describe('lookupBooking', () => {
@@ -110,5 +118,84 @@ describe('lookupBooking', () => {
       },
     })
     expect(await lookupBooking('6281234567890')).toBeNull()
+  })
+})
+
+describe('ensureFreshBookingData', () => {
+  it('returns the cached bookingData without calling the API when it was checked recently', async () => {
+    const conversation = {
+      id: 'conv_1',
+      bookingData: { id: 'B1', guest: 'Bruno' },
+      bookingCheckedAt: new Date(),
+      contact: { phone: '6281234567890' },
+    }
+
+    const result = await ensureFreshBookingData(conversation)
+
+    expect(result).toEqual({ id: 'B1', guest: 'Bruno' })
+    expect(fetch).not.toHaveBeenCalled()
+    expect(mockPrisma.conversation.update).not.toHaveBeenCalled()
+  })
+
+  it('refetches when bookingCheckedAt is null (never checked)', async () => {
+    ;(fetch as any).mockResolvedValue({ ok: true, json: async () => ({ id: 'B1', guest: 'Bruno' }) })
+    const conversation = { id: 'conv_1', bookingData: null, bookingCheckedAt: null, contact: { phone: '6281234567890' } }
+
+    const result = await ensureFreshBookingData(conversation)
+
+    expect(result).toEqual({ id: 'B1', guest: 'Bruno' })
+    expect(fetch).toHaveBeenCalledTimes(1)
+  })
+
+  it('refetches when the cached value is older than 24h', async () => {
+    ;(fetch as any).mockResolvedValue({ ok: true, json: async () => ({ id: 'B2' }) })
+    const stale = new Date(Date.now() - 25 * 60 * 60 * 1000)
+    const conversation = { id: 'conv_1', bookingData: { id: 'B1' }, bookingCheckedAt: stale, contact: { phone: '6281234567890' } }
+
+    const result = await ensureFreshBookingData(conversation)
+
+    expect(result).toEqual({ id: 'B2' })
+    expect(fetch).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not refetch when the cached value is under 24h old', async () => {
+    const fresh = new Date(Date.now() - 60 * 60 * 1000)
+    const conversation = { id: 'conv_1', bookingData: { id: 'B1' }, bookingCheckedAt: fresh, contact: { phone: '6281234567890' } }
+
+    await ensureFreshBookingData(conversation)
+
+    expect(fetch).not.toHaveBeenCalled()
+  })
+
+  // Regression guard for the `bookingData: null as never` crash. The mocked Prisma
+  // client can't reject a plain `null` the way the real client does at runtime (the
+  // mock accepts any argument), so this unit test structurally cannot catch this
+  // class of bug by observing behaviour — `npx tsc --noEmit` is the real proof, since
+  // `null` is genuinely unassignable to `NullableJsonNullValueInput | InputJsonValue`
+  // and only an `as never` cast would suppress that error. What this test CAN pin
+  // down is the exact `data` object handed to Prisma.
+  it('writes Prisma.DbNull (never plain null) when no booking is found, so bookingCheckedAt still persists', async () => {
+    ;(fetch as any).mockResolvedValue({ ok: true, json: async () => ({}) })
+    const conversation = { id: 'conv_1', bookingData: null, bookingCheckedAt: null, contact: { phone: '6281234567890' } }
+
+    const result = await ensureFreshBookingData(conversation)
+
+    expect(result).toBeNull()
+    expect(mockPrisma.conversation.update).toHaveBeenCalledWith({
+      where: { id: 'conv_1' },
+      data: { bookingData: Prisma.DbNull, bookingCheckedAt: expect.any(Date) },
+    })
+  })
+
+  it('writes the raw booking object through unchanged when a booking is found', async () => {
+    ;(fetch as any).mockResolvedValue({ ok: true, json: async () => ({ id: 'B1', guest: 'Bruno' }) })
+    const conversation = { id: 'conv_1', bookingData: null, bookingCheckedAt: null, contact: { phone: '6281234567890' } }
+
+    await ensureFreshBookingData(conversation)
+
+    expect(mockPrisma.conversation.update).toHaveBeenCalledWith({
+      where: { id: 'conv_1' },
+      data: { bookingData: { id: 'B1', guest: 'Bruno' }, bookingCheckedAt: expect.any(Date) },
+    })
   })
 })

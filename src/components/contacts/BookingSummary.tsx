@@ -67,6 +67,8 @@ export function BookingSummary({
     const payment = bookingData.financial?.payment
     const balance = bookingData.financial?.balance
     const paymentStatus = derivePaymentStatus(balance)
+    const invoiceLink = bookingData.financial?.invoice?.invoiceLink?.[0]
+    const itinerary = bookingData.itinerary ?? []
 
     return (
       <Card className="space-y-2 p-3">
@@ -75,10 +77,35 @@ export function BookingSummary({
           {bookingData.package && <Row label="Paket" value={bookingData.package} />}
           {dateRange && <Row label="Tanggal" value={dateRange} />}
           {bookingData.total_pax != null && <Row label="Pax" value={String(bookingData.total_pax)} />}
+          {bookingData.pickup?.text && <Row label="Jemput" value={bookingData.pickup.text.trim()} />}
+          {bookingData.dropoff?.text && <Row label="Antar" value={bookingData.dropoff.text.trim()} />}
           {payment != null && <Row label="Dibayar" value={formatIDR(payment)} />}
           {balance != null && <Row label="Sisa" value={formatIDR(balance)} />}
           {paymentStatus && <Row label="Status" value={paymentStatus} />}
         </dl>
+        {itinerary.length > 0 && (
+          <div className="space-y-1 border-t border-border pt-2">
+            <h4 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Itinerary</h4>
+            <ol className="space-y-0.5 text-sm">
+              {itinerary.map((day, i) => (
+                <li key={i} className="flex gap-2">
+                  <span className="shrink-0 text-muted-foreground">Hari {day.day ?? i + 1}</span>
+                  <span className="text-navy">{day.activity ?? day.itinerary ?? day.destination ?? '-'}</span>
+                </li>
+              ))}
+            </ol>
+          </div>
+        )}
+        {invoiceLink && (
+          <a
+            href={invoiceLink}
+            target="_blank"
+            rel="noreferrer"
+            className="block border-t border-border pt-2 text-sm text-brand underline"
+          >
+            Lihat Invoice
+          </a>
+        )}
       </Card>
     )
   }
