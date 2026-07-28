@@ -2,6 +2,13 @@ import { Badge } from '@/components/ui/badge'
 import { ContactAvatar } from '@/components/ContactAvatar'
 import { isHandoffLogMessage, HANDOFF_LOG_TEXT } from '@/lib/message-display'
 
+// Unlisted channels (e.g. TWT) fall back to the Badge component's own default `muted` look
+// rather than guessing a color for a platform we haven't been told one for.
+const ORDER_CHANNEL_CLASSES: Record<string, string> = {
+  JVTO: 'bg-blue-50 text-blue-700',
+  KLOOK: 'bg-orange-50 text-orange-700',
+}
+
 export type ConversationSummary = {
   id: string
   contactName: string | null
@@ -48,7 +55,11 @@ export function ConversationListItem({
             {conversation.contactName ?? conversation.contactPhone}
           </span>
           <div className="flex shrink-0 items-center gap-1.5">
-            {conversation.orderChannel && <Badge variant="muted">{conversation.orderChannel}</Badge>}
+            {conversation.orderChannel && (
+              <Badge variant="muted" className={ORDER_CHANNEL_CLASSES[conversation.orderChannel]}>
+                {conversation.orderChannel}
+              </Badge>
+            )}
             {isUnread && (
               <span
                 aria-label={`${conversation.unreadCount} pesan belum dibaca`}

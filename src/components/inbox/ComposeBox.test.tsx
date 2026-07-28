@@ -6,6 +6,20 @@ beforeEach(() => {
   vi.stubGlobal('fetch', vi.fn())
 })
 
+// Template is one of three options (alongside Foto & Video / Dokumen) inside the "+"
+// attach menu now, not its own standalone button -- opens the menu, then picks it.
+async function openTemplateMenu() {
+  fireEvent.click(await screen.findByLabelText('Tambah lampiran atau template'))
+  fireEvent.click(await screen.findByText('📋 Template'))
+}
+
+// The picker now only ever shows the templates sendable on whichever channel is currently
+// selected (OFFICIAL templates vs QUICK_REPLY ones) -- quick-reply tests need to be on
+// Unofficial first, since ComposeBox defaults to Official.
+async function switchToUnofficial() {
+  fireEvent.change(await screen.findByLabelText('Channel'), { target: { value: 'UNOFFICIAL' } })
+}
+
 describe('ComposeBox — Ambil Alih dari Bot toggle', () => {
   it('renders the "Ambil Alih dari Bot" button when botEnabled is true', () => {
     render(
@@ -57,7 +71,8 @@ describe('ComposeBox quick replies', () => {
 
   it('fills the text input when a quick reply is selected', async () => {
     render(<ComposeBox conversationId="conv_1" botEnabled={false} onSent={() => {}} onBotToggled={() => {}} />)
-    fireEvent.click(await screen.findByText('Template'))
+    await switchToUnofficial()
+    await openTemplateMenu()
     fireEvent.click(await screen.findByText('Cara Booking'))
     await waitFor(() => {
       expect(screen.getByPlaceholderText('Reply on WhatsApp...')).toHaveValue('Ikuti panduan booking di link ini...')
@@ -66,14 +81,15 @@ describe('ComposeBox quick replies', () => {
 
   it('closes the picker after a template is selected', async () => {
     render(<ComposeBox conversationId="conv_1" botEnabled={false} onSent={() => {}} onBotToggled={() => {}} />)
-    fireEvent.click(await screen.findByText('Template'))
+    await switchToUnofficial()
+    await openTemplateMenu()
     fireEvent.click(await screen.findByText('Cara Booking'))
     await waitFor(() => {
       expect(screen.queryByText('Ikuti panduan booking di link ini...')).not.toBeInTheDocument()
     })
   })
 
-  it('groups templates by category and excludes OFFICIAL templates', async () => {
+  it('groups templates by category, only on the Unofficial channel', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn((url: string) => {
@@ -90,7 +106,8 @@ describe('ComposeBox quick replies', () => {
       })
     )
     render(<ComposeBox conversationId="conv_1" botEnabled={false} onSent={() => {}} onBotToggled={() => {}} />)
-    fireEvent.click(await screen.findByText('Template'))
+    await switchToUnofficial()
+    await openTemplateMenu()
 
     expect(await screen.findByRole('heading', { name: /panduan/i })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: /paket & harga/i })).toBeInTheDocument()
@@ -102,18 +119,20 @@ describe('ComposeBox quick replies', () => {
   it('shows an inline error and does not open the picker when the templates request fails', async () => {
     vi.stubGlobal('fetch', vi.fn(() => Promise.resolve({ ok: false, json: async () => ({ error: 'Internal error' }) })))
     render(<ComposeBox conversationId="conv_1" botEnabled={false} onSent={() => {}} onBotToggled={() => {}} />)
+    await switchToUnofficial()
 
-    fireEvent.click(await screen.findByText('Template'))
+    await openTemplateMenu()
 
     expect(await screen.findByText('Gagal memuat template')).toBeInTheDocument()
-    expect(screen.queryByText('Belum ada template.')).not.toBeInTheDocument()
+    expect(screen.queryByText('Belum ada balasan cepat.')).not.toBeInTheDocument()
   })
 
   it('shows an inline error when the templates request throws (network failure)', async () => {
     vi.stubGlobal('fetch', vi.fn(() => Promise.reject(new Error('Network error'))))
     render(<ComposeBox conversationId="conv_1" botEnabled={false} onSent={() => {}} onBotToggled={() => {}} />)
+    await switchToUnofficial()
 
-    fireEvent.click(await screen.findByText('Template'))
+    await openTemplateMenu()
 
     expect(await screen.findByText('Gagal memuat template')).toBeInTheDocument()
   })
@@ -121,10 +140,11 @@ describe('ComposeBox quick replies', () => {
   it('shows the empty state when there are no quick-reply templates', async () => {
     vi.stubGlobal('fetch', vi.fn(() => Promise.resolve({ ok: true, json: async () => [] })))
     render(<ComposeBox conversationId="conv_1" botEnabled={false} onSent={() => {}} onBotToggled={() => {}} />)
+    await switchToUnofficial()
 
-    fireEvent.click(await screen.findByText('Template'))
+    await openTemplateMenu()
 
-    expect(await screen.findByText('Belum ada template.')).toBeInTheDocument()
+    expect(await screen.findByText('Belum ada balasan cepat.')).toBeInTheDocument()
   })
 })
 
@@ -528,7 +548,7 @@ describe('ComposeBox official template dispatch', () => {
     vi.stubGlobal('fetch', mockFetch([quickReply, simpleOfficial, pendingOfficial]))
     render(<ComposeBox conversationId="conv_1" botEnabled={false} onSent={() => {}} onBotToggled={() => {}} />)
 
-    fireEvent.click(await screen.findByText('Template'))
+    await openTemplateMenu()
 
     expect(await screen.findByText('sapaan')).toBeInTheDocument()
     expect(screen.queryByText('belum_disetujui')).not.toBeInTheDocument()
@@ -540,7 +560,7 @@ describe('ComposeBox official template dispatch', () => {
     const onSent = vi.fn()
     render(<ComposeBox conversationId="conv_1" botEnabled={false} onSent={onSent} onBotToggled={() => {}} />)
 
-    fireEvent.click(await screen.findByText('Template'))
+    await openTemplateMenu()
     fireEvent.click(await screen.findByText('sapaan'))
 
     await waitFor(() =>
@@ -560,7 +580,7 @@ describe('ComposeBox official template dispatch', () => {
     vi.stubGlobal('fetch', mockFetch([paramOfficial]))
     render(<ComposeBox conversationId="conv_1" botEnabled={false} onSent={() => {}} onBotToggled={() => {}} />)
 
-    fireEvent.click(await screen.findByText('Template'))
+    await openTemplateMenu()
     fireEvent.click(await screen.findByText('booking_confirmation'))
 
     expect(await screen.findByText('Kirim Template: booking_confirmation')).toBeInTheDocument()
@@ -573,7 +593,7 @@ describe('ComposeBox official template dispatch', () => {
     vi.stubGlobal('fetch', fetchMock)
     render(<ComposeBox conversationId="conv_1" botEnabled={false} onSent={() => {}} onBotToggled={() => {}} />)
 
-    fireEvent.click(await screen.findByText('Template'))
+    await openTemplateMenu()
     fireEvent.click(await screen.findByText('booking_confirmation'))
     fireEvent.change(await screen.findByLabelText('nama'), { target: { value: 'Bruno' } })
     fireEvent.change(screen.getByLabelText('paket'), { target: { value: 'Ijen 3D2N' } })
@@ -591,7 +611,7 @@ describe('ComposeBox official template dispatch', () => {
     vi.stubGlobal('fetch', mockFetch([paramOfficial]))
     render(<ComposeBox conversationId="conv_1" botEnabled={false} onSent={() => {}} onBotToggled={() => {}} />)
 
-    fireEvent.click(await screen.findByText('Template'))
+    await openTemplateMenu()
     fireEvent.click(await screen.findByText('booking_confirmation'))
     expect(await screen.findByText('Kirim Template: booking_confirmation')).toBeInTheDocument()
 
@@ -607,7 +627,7 @@ describe('ComposeBox official template dispatch', () => {
     const onSent = vi.fn()
     render(<ComposeBox conversationId="conv_1" botEnabled={false} onSent={onSent} onBotToggled={() => {}} />)
 
-    fireEvent.click(await screen.findByText('Template'))
+    await openTemplateMenu()
     fireEvent.click(await screen.findByText('sapaan'))
 
     expect(await screen.findByText('Template belum disetujui Meta')).toBeInTheDocument()
@@ -621,8 +641,8 @@ describe('ComposeBox official template dispatch', () => {
     vi.stubGlobal('fetch', mockFetch([ltoOfficial]))
     render(<ComposeBox conversationId="conv_1" botEnabled={false} onSent={() => {}} onBotToggled={() => {}} />)
 
-    fireEvent.click(await screen.findByText('Template'))
-    fireEvent.click(await screen.findByText('promo_akhir_tahun ⏳'))
+    await openTemplateMenu()
+    fireEvent.click(await screen.findByText('promo_akhir_tahun'))
 
     expect(await screen.findByText('Kirim Template: promo_akhir_tahun')).toBeInTheDocument()
     expect(screen.getByLabelText('Waktu kadaluarsa penawaran')).toBeInTheDocument()
@@ -634,8 +654,8 @@ describe('ComposeBox official template dispatch', () => {
     vi.stubGlobal('fetch', fetchMock)
     render(<ComposeBox conversationId="conv_1" botEnabled={false} onSent={() => {}} onBotToggled={() => {}} />)
 
-    fireEvent.click(await screen.findByText('Template'))
-    fireEvent.click(await screen.findByText('promo_akhir_tahun ⏳'))
+    await openTemplateMenu()
+    fireEvent.click(await screen.findByText('promo_akhir_tahun'))
     fireEvent.change(await screen.findByLabelText('Waktu kadaluarsa penawaran'), { target: { value: '2026-12-31T23:59' } })
     fireEvent.click(screen.getByText('Kirim Template'))
 
@@ -650,8 +670,8 @@ describe('ComposeBox official template dispatch', () => {
     vi.stubGlobal('fetch', mockFetch([couponOfficial]))
     render(<ComposeBox conversationId="conv_1" botEnabled={false} onSent={() => {}} onBotToggled={() => {}} />)
 
-    fireEvent.click(await screen.findByText('Template'))
-    fireEvent.click(await screen.findByText('kode_diskon 🎟️'))
+    await openTemplateMenu()
+    fireEvent.click(await screen.findByText('kode_diskon'))
 
     expect(await screen.findByText('Kirim Template: kode_diskon')).toBeInTheDocument()
     expect(screen.getByLabelText('Kode kupon')).toBeInTheDocument()
@@ -663,8 +683,8 @@ describe('ComposeBox official template dispatch', () => {
     vi.stubGlobal('fetch', fetchMock)
     render(<ComposeBox conversationId="conv_1" botEnabled={false} onSent={() => {}} onBotToggled={() => {}} />)
 
-    fireEvent.click(await screen.findByText('Template'))
-    fireEvent.click(await screen.findByText('kode_diskon 🎟️'))
+    await openTemplateMenu()
+    fireEvent.click(await screen.findByText('kode_diskon'))
     fireEvent.change(await screen.findByLabelText('Kode kupon'), { target: { value: 'PROMO25' } })
     fireEvent.click(screen.getByText('Kirim Template'))
 

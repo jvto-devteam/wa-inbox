@@ -44,6 +44,14 @@ describe('ConversationListItem', () => {
     expect(screen.getByText('KLOOK')).toBeInTheDocument()
   })
 
+  it('colors the KLOOK badge orange and the JVTO badge blue', () => {
+    const { rerender } = render(<ConversationListItem conversation={{ ...summary, orderChannel: 'KLOOK' }} onClick={() => {}} />)
+    expect(screen.getByText('KLOOK')).toHaveClass('bg-orange-50', 'text-orange-700')
+
+    rerender(<ConversationListItem conversation={{ ...summary, orderChannel: 'JVTO' }} onClick={() => {}} />)
+    expect(screen.getByText('JVTO')).toHaveClass('bg-blue-50', 'text-blue-700')
+  })
+
   it('shows no order channel badge at all when there is no booking yet', () => {
     render(<ConversationListItem conversation={summary} onClick={() => {}} />)
     expect(screen.queryByText('KLOOK')).not.toBeInTheDocument()

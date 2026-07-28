@@ -7,10 +7,23 @@ import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { fetchJson } from '@/lib/fetch-json'
 import { formatWhatsAppText } from '@/lib/whatsapp-format'
+import { TemplatePreviewBubble, type PreviewButton, type PreviewCard } from './TemplatePreviewBubble'
 
 type QuickReplyTemplate = { id: string; name: string; category: string | null; body: string }
-type OfficialTemplate = { id: string; name: string; body: string; variables: string[] | null; metaStatus: string; format: string }
-type TemplateApiRow = QuickReplyTemplate & { type: string; metaStatus: string; format: string; variables: string[] | null }
+type OfficialTemplate = {
+  id: string
+  name: string
+  body: string
+  variables: string[] | null
+  metaStatus: string
+  format: string
+  cards?: PreviewCard[] | null
+  offerTitle?: string | null
+  buttons?: PreviewButton[] | null
+  couponButtonText?: string | null
+}
+type TemplateApiRow = QuickReplyTemplate &
+  Omit<OfficialTemplate, 'id' | 'name' | 'body'> & { type: string }
 type MediaKind = 'image' | 'video' | 'audio' | 'document'
 type UploadedMedia = { url: string; type: MediaKind; mimeType: string; fileName: string }
 // A local, not-yet-uploaded selection -- exists purely so the rich preview (actual thumbnail
@@ -251,13 +264,12 @@ export function ComposeBox({
 
   // Fetch failures here must not leave the picker in a half-open, silently-broken state
   // (same rule LabelPicker's attach/detach follow) — catch the error, surface it inline,
-  // and never call setPickerOpen(true) on a request that didn't actually succeed.
-  async function toggleTemplatePicker() {
-    if (pickerOpen) {
-      setPickerOpen(false)
-      setTemplateForm(null)
-      return
-    }
+  // and never call setPickerOpen(true) on a request that didn't actually succeed. Template is
+  // one of the three attach-menu options (alongside Foto & Video / Dokumen) rather than its
+  // own standalone button, so this only ever opens the picker -- closing it is handled by the
+  // "Batal"/selection actions already in the picker itself.
+  async function openTemplatePicker() {
+    setAttachMenuOpen(false)
     setTemplateError(null)
     try {
       const res = await fetch('/api/templates')
@@ -474,55 +486,54 @@ export function ComposeBox({
         </Card>
       )}
       {pickerOpen && !templateForm && (
-        <Card className="max-h-56 space-y-3 overflow-y-auto p-3">
-          {templates.length === 0 && officialTemplates.length === 0 ? (
-            <p className="text-sm text-muted-foreground">Belum ada template.</p>
+        <Card className="max-h-80 space-y-3 overflow-y-auto p-3">
+          <div className="flex items-center justify-between">
+            <h4 className="text-[11px] font-semibold tracking-wide text-muted-foreground">
+              {channel === 'OFFICIAL' ? 'TEMPLATE RESMI (META)' : 'BALASAN CEPAT'}
+            </h4>
+            <button
+              type="button"
+              onClick={() => setPickerOpen(false)}
+              aria-label="Tutup daftar template"
+              className="text-muted-foreground hover:text-foreground"
+            >
+              ✕
+            </button>
+          </div>
+          {/* Only the templates sendable on whichever channel is currently selected: an
+              OFFICIAL template is a real Cloud API dispatch (see sendTemplate) that has no
+              Unofficial equivalent, and a QUICK_REPLY template never goes through Meta at all
+              -- it just pastes its body into the plain-text input, which only makes sense for
+              the channel actually selected below. */}
+          {channel === 'OFFICIAL' ? (
+            officialTemplates.length === 0 ? (
+              <p className="text-sm text-muted-foreground">Belum ada template resmi yang disetujui.</p>
+            ) : (
+              <div className="grid grid-cols-2 gap-2">
+                {officialTemplates.map((t) => (
+                  <TemplatePreviewBubble key={t.id} template={t} onClick={() => selectOfficialTemplate(t)} />
+                ))}
+              </div>
+            )
+          ) : templates.length === 0 ? (
+            <p className="text-sm text-muted-foreground">Belum ada balasan cepat.</p>
           ) : (
-            <>
-              {officialTemplates.length > 0 && (
-                <div className="space-y-1.5">
-                  <h4 className="text-[11px] font-semibold tracking-wide text-muted-foreground">TEMPLATE RESMI (META)</h4>
-                  <div className="flex flex-wrap gap-1.5">
-                    {officialTemplates.map((t) => (
-                      <button
-                        key={t.id}
-                        type="button"
-                        onClick={() => selectOfficialTemplate(t)}
-                        className="badge cursor-pointer bg-brand/10 text-brand hover:bg-brand/20"
-                      >
-                        {t.name}
-                        {t.format === 'CAROUSEL' && ' 🎠'}
-                        {t.format === 'LTO' && ' ⏳'}
-                        {t.format === 'COUPON' && ' 🎟️'}
-                      </button>
-                    ))}
-                  </div>
+            Object.entries(templatesByCategory).map(([category, items]) => (
+              <div key={category} className="space-y-1.5">
+                {/* .toUpperCase() transforms the actual text node (not just CSS text-transform)
+                    so a category heading can never collide with an item's own `name` text when
+                    they happen to be the same string — RTL's getByText/findByText would otherwise
+                    throw on the ambiguous match. */}
+                <h5 className="text-[10px] font-semibold tracking-wide text-muted-foreground">
+                  {category.toUpperCase()}
+                </h5>
+                <div className="grid grid-cols-2 gap-2">
+                  {items.map((t) => (
+                    <TemplatePreviewBubble key={t.id} template={{ ...t, format: 'TEXT' }} onClick={() => selectTemplate(t.body)} />
+                  ))}
                 </div>
-              )}
-              {Object.entries(templatesByCategory).map(([category, items]) => (
-                <div key={category} className="space-y-1.5">
-                  {/* .toUpperCase() transforms the actual text node (not just CSS text-transform)
-                      so a category heading can never collide with an item's own `name` text when
-                      they happen to be the same string — RTL's getByText/findByText would otherwise
-                      throw on the ambiguous match. */}
-                  <h4 className="text-[11px] font-semibold tracking-wide text-muted-foreground">
-                    {category.toUpperCase()}
-                  </h4>
-                  <div className="flex flex-wrap gap-1.5">
-                    {items.map((t) => (
-                      <button
-                        key={t.id}
-                        type="button"
-                        onClick={() => selectTemplate(t.body)}
-                        className="badge cursor-pointer bg-secondary text-secondary-foreground hover:bg-slate-200"
-                      >
-                        {t.name}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              ))}
-            </>
+              </div>
+            ))
           )}
         </Card>
       )}
@@ -538,20 +549,20 @@ export function ComposeBox({
           <option value="OFFICIAL">Official</option>
           <option value="UNOFFICIAL">Unofficial</option>
         </Select>
-        <Button type="button" variant="outline" size="sm" onClick={toggleTemplatePicker}>
-          Template
-        </Button>
         <input ref={fileInputRef} type="file" className="hidden" onChange={handleAttachmentSelected} />
         <div ref={attachMenuRef} className="relative">
+          {/* A single "+" trigger for everything besides plain text -- Foto & Video, Dokumen,
+              and Template are three peers in the same menu, not a separate standalone
+              "Template" button living outside it. */}
           <Button
             type="button"
             variant="outline"
             size="sm"
-            aria-label="Lampirkan file"
+            aria-label="Tambah lampiran atau template"
             onClick={() => setAttachMenuOpen((prev) => !prev)}
             disabled={uploading}
           >
-            📎
+            +
           </Button>
           {attachMenuOpen && (
             <Card className="absolute bottom-full left-0 z-10 mb-1 w-44 space-y-0.5 p-1">
@@ -568,6 +579,13 @@ export function ComposeBox({
                 className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-muted"
               >
                 📄 Dokumen
+              </button>
+              <button
+                type="button"
+                onClick={openTemplatePicker}
+                className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-muted"
+              >
+                📋 Template
               </button>
             </Card>
           )}
