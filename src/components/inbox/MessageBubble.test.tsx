@@ -97,6 +97,39 @@ describe('MessageBubble', () => {
     expect(screen.queryByText(/^\d{2}\.\d{2}$/)).not.toBeInTheDocument()
   })
 
+  it('reveals the real handoff reason when the "lihat alasan" divider is clicked', () => {
+    render(
+      <MessageBubble
+        message={{
+          id: 'm6c', direction: 'OUTBOUND', content: null, channel: 'OFFICIAL', sentBy: 'BOT',
+          deliveryStatus: 'SENT', createdAt: new Date().toISOString(),
+          botTrace: { mode: 'handoff', reason: 'Gerbang persetujuan belum terbuka: catalog belum pernah disinkron' },
+        }}
+      />
+    )
+    expect(screen.queryByText(/Gerbang persetujuan/)).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByText('Bot menyerahkan ke agen — lihat alasan'))
+
+    expect(screen.getByText('Gerbang persetujuan belum terbuka: catalog belum pernah disinkron')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByText('Bot menyerahkan ke agen — lihat alasan'))
+    expect(screen.queryByText(/Gerbang persetujuan/)).not.toBeInTheDocument()
+  })
+
+  it('does not make the handoff divider clickable when the row somehow has no trace to show', () => {
+    render(
+      <MessageBubble
+        message={{
+          id: 'm6d', direction: 'OUTBOUND', content: null, channel: 'OFFICIAL', sentBy: 'BOT',
+          deliveryStatus: 'SENT', createdAt: new Date().toISOString(),
+          botTrace: null,
+        }}
+      />
+    )
+    expect(screen.getByText('Bot menyerahkan ke agen — lihat alasan').closest('button')).toBeDisabled()
+  })
+
   it('shows a channel badge and time for every message', () => {
     render(<MessageBubble message={{ id: 'm7', direction: 'OUTBOUND', content: 'Halo', channel: 'UNOFFICIAL', sentBy: 'AGENT', deliveryStatus: 'SENT', createdAt: new Date('2026-01-01T10:30:00Z').toISOString(), botTrace: null }} />)
     expect(screen.getByText('Unofficial')).toBeInTheDocument()
