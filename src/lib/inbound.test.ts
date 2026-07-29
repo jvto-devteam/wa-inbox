@@ -932,6 +932,56 @@ describe('ingestMetaMessage message echoes (smb_message_echoes)', () => {
     expect(mockPrisma.message.create).not.toHaveBeenCalled()
   })
 
+  it('attaches the echo id to an existing self-sent row instead of creating a duplicate, when wa-coexist never returned a message id for it', async () => {
+    // wa-coexist's send API never returns a message id (see src/lib/coexist/client.ts), so a
+    // message THIS app just sent over Unofficial (agent or bot) has externalId: null the
+    // instant it's created. The matching coexistence echo for that same send has to attach to
+    // THAT row, not spawn a second one.
+    mockPrisma.message.findUnique.mockResolvedValue(null)
+    mockPrisma.contact.upsert.mockResolvedValue({ ...contactRow, avatarUrl: 'x' })
+    mockPrisma.conversation.upsert.mockResolvedValue(conversationRow)
+    mockPrisma.message.findFirst.mockResolvedValue({ id: 'msg_self_sent', content: 'Where would you like to go?' } as never)
+    mockPrisma.message.update.mockResolvedValue({ id: 'msg_self_sent', externalId: 'wamid.ECHO_SELF' } as never)
+
+    const result = await ingestMetaMessage(echoPayload([{
+      id: 'wamid.ECHO_SELF', from: '622244788833', to: '6281234567890', timestamp: '1700000000', type: 'text',
+      text: { body: 'Where would you like to go?' },
+    }]))
+
+    expect(result.echoed).toBe(1)
+    expect(mockPrisma.message.create).not.toHaveBeenCalled()
+    expect(mockPrisma.message.update).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: 'msg_self_sent' },
+      data: { externalId: 'wamid.ECHO_SELF' },
+    }))
+    expect(vi.mocked(broadcast)).toHaveBeenCalledWith(expect.objectContaining({ type: 'message.updated' }))
+  })
+
+  it('only matches a self-sent row that is still unmatched (externalId: null), UNOFFICIAL, and recent -- scoping the findFirst query correctly', async () => {
+    mockPrisma.message.findUnique.mockResolvedValue(null)
+    mockPrisma.contact.upsert.mockResolvedValue({ ...contactRow, avatarUrl: 'x' })
+    mockPrisma.conversation.upsert.mockResolvedValue(conversationRow)
+    mockPrisma.message.findFirst.mockResolvedValue(null)
+    mockPrisma.message.create.mockResolvedValue({ id: 'msg_new' } as never)
+
+    await ingestMetaMessage(echoPayload([{
+      id: 'wamid.ECHO_SCOPED', from: '622244788833', to: '6281234567890', timestamp: '1700000000', type: 'text',
+      text: { body: 'Halo' },
+    }]))
+
+    expect(mockPrisma.message.findFirst).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({
+        conversationId: conversationRow.id,
+        direction: 'OUTBOUND',
+        channel: 'UNOFFICIAL',
+        externalId: null,
+        content: 'Halo',
+      }),
+    }))
+    // No self-sent match found -> falls through to the normal create path.
+    expect(mockPrisma.message.create).toHaveBeenCalled()
+  })
+
   it('treats a concurrent duplicate echo create (P2002) as an idempotent skip', async () => {
     mockPrisma.message.findUnique.mockResolvedValue(null)
     mockPrisma.contact.upsert.mockResolvedValue({ ...contactRow, avatarUrl: 'x' })

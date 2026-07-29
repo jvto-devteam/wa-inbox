@@ -425,6 +425,44 @@ async function ingestEchoedMessage(echo: MetaMessageEcho): Promise<boolean> {
   })
 
   const media = mediaObjectFor(echo)
+  const content = echo.text?.body ?? media?.caption ?? null
+
+  // wa-coexist's send API never returns a message id (see sendCoexistText/sendCoexistMedia in
+  // src/lib/coexist/client.ts) -- every Unofficial-channel message THIS app itself just sent
+  // (agent or bot) is created with externalId: null, so it can never be matched against its own
+  // future echo by id alone. When that same send's coexistence echo later arrives, blindly
+  // creating a second row would double it up in the thread even though only one message ever
+  // reached the customer. Instead, look for an unmatched self-sent row in this conversation with
+  // the same content from moments ago and attach the now-known real wamid to THAT row, rather
+  // than creating a duplicate. Scoped to a short window and to rows that still have no
+  // externalId (once matched, a row drops out of consideration, so a second identical send
+  // shortly after correctly matches its own separate row instead of colliding with this one).
+  const SELF_SENT_MATCH_WINDOW_MS = 60_000
+  const selfSent =
+    content != null
+      ? await prisma.message.findFirst({
+          where: {
+            conversationId: conversation.id,
+            direction: 'OUTBOUND',
+            channel: 'UNOFFICIAL',
+            externalId: null,
+            content,
+            createdAt: { gte: new Date(sentAt.getTime() - SELF_SENT_MATCH_WINDOW_MS) },
+          },
+          orderBy: { createdAt: 'desc' },
+          include: { replyTo: true },
+        })
+      : null
+
+  if (selfSent) {
+    const updated = await prisma.message.update({
+      where: { id: selfSent.id },
+      data: { externalId: echo.id },
+      include: { replyTo: true },
+    })
+    broadcast({ type: 'message.updated', conversationId: conversation.id, message: withMediaUrl(updated) })
+    return true
+  }
 
   try {
     const created = await prisma.message.create({
@@ -433,7 +471,7 @@ async function ingestEchoedMessage(echo: MetaMessageEcho): Promise<boolean> {
         externalId: echo.id,
         direction: 'OUTBOUND',
         type: echo.type,
-        content: echo.text?.body ?? media?.caption ?? null,
+        content,
         mediaId: media?.id ?? null,
         mimeType: media?.mime_type ?? null,
         fileName: media?.filename ?? null,
