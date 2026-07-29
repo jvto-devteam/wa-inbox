@@ -258,6 +258,50 @@ describe('ThreadView live delivery-status updates', () => {
   })
 })
 
+describe('ThreadView live handoff sync', () => {
+  function mockFetchWithBotEnabled() {
+    vi.mocked(fetch).mockImplementation((url) => {
+      const s = String(url)
+      if (s.endsWith('/messages')) return Promise.resolve({ ok: true, json: () => Promise.resolve([]) } as Response)
+      if (s.endsWith('/api/accounts')) return Promise.resolve({ ok: true, json: () => Promise.resolve([]) } as Response)
+      // Agent manually re-activated the bot for this one chat (botEnabled: true), the scenario
+      // where a stale "Ambil Alih dari Bot" button reads exactly backwards after a handoff.
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({ botEnabled: true, assignedAgentId: null }) } as Response)
+    })
+  }
+
+  it('flips botEnabled to false the moment a handoff.alert arrives, without a page reload', async () => {
+    mockFetchWithBotEnabled()
+
+    render(<ThreadView conversationId="conv_1" />)
+
+    expect(await screen.findByText('Ambil Alih dari Bot')).toBeInTheDocument()
+
+    const es = FakeEventSource.instances[0]
+    act(() => {
+      es.emit({ type: 'handoff.alert', conversationId: 'conv_1', contactName: 'David Setya' })
+    })
+
+    await waitFor(() => expect(screen.getByText('Aktifkan Bot untuk Chat Ini')).toBeInTheDocument())
+    expect(screen.queryByText('Ambil Alih dari Bot')).not.toBeInTheDocument()
+  })
+
+  it('ignores a handoff.alert event for a different conversation', async () => {
+    mockFetchWithBotEnabled()
+
+    render(<ThreadView conversationId="conv_1" />)
+
+    expect(await screen.findByText('Ambil Alih dari Bot')).toBeInTheDocument()
+
+    const es = FakeEventSource.instances[0]
+    act(() => {
+      es.emit({ type: 'handoff.alert', conversationId: 'conv_other', contactName: 'Someone Else' })
+    })
+
+    await waitFor(() => expect(screen.getByText('Ambil Alih dari Bot')).toBeInTheDocument())
+  })
+})
+
 describe('ThreadView read tracking', () => {
   function mockFetchWithDetail(messages: unknown[], detail: { lastReadAt: string | null }) {
     return vi.fn((url: RequestInfo | URL, init?: RequestInit) => {

@@ -108,6 +108,15 @@ export function ThreadView({ conversationId }: { conversationId: string }) {
       if (event.type === 'message.updated' && event.conversationId === conversationId) {
         setMessages((prev) => prev.map((m) => (m.id === event.message.id ? event.message : m)))
       }
+      // inbound.ts flips conversation.botEnabled to false server-side the moment the bot hands
+      // off -- broadcasting this alert is the ONLY signal of that, since it happens without any
+      // click in THIS browser tab. Without syncing local state to it, an agent who had just
+      // manually re-activated the bot for this one chat (see ComposeBox's "Aktifkan Bot untuk
+      // Chat Ini") kept seeing "Ambil Alih dari Bot" -- implying the bot was still answering --
+      // for a chat the bot had already handed straight back off, which is exactly backwards.
+      if (event.type === 'handoff.alert' && event.conversationId === conversationId) {
+        setBotEnabled(false)
+      }
     }
     return () => es.close()
   }, [conversationId])
