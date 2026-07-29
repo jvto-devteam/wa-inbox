@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { isHandoffLogMessage, displayMessageContent, HANDOFF_LOG_TEXT } from './message-display'
+import { isHandoffLogMessage, displayMessageContent, HANDOFF_LOG_SUMMARY } from './message-display'
 
 describe('isHandoffLogMessage', () => {
   it('is true only for a bot-authored row with no content', () => {
@@ -26,7 +26,7 @@ describe('isHandoffLogMessage', () => {
 
 describe('displayMessageContent', () => {
   it('returns the handoff placeholder for a logged handoff decision', () => {
-    expect(displayMessageContent({ sentBy: 'BOT', content: null, type: 'text' })).toBe(HANDOFF_LOG_TEXT)
+    expect(displayMessageContent({ sentBy: 'BOT', content: null, type: 'text' })).toBe(HANDOFF_LOG_SUMMARY)
   })
 
   it('returns the message content verbatim when there is any', () => {

@@ -11,7 +11,12 @@
 // Each used to carry its own copy of this one-line check; this module is the
 // single definition so a fourth surface cannot drift.
 
-export const HANDOFF_LOG_TEXT = 'Bot menyerahkan ke agen — lihat alasan'
+export const HANDOFF_LOG_SUMMARY = 'Bot menyerahkan ke agen'
+
+// Only MessageBubble's thread divider is actually clickable (it opens the trace modal) --
+// the "— lihat alasan" suffix promises an action that the sidebar preview and CRM history
+// (both plain, non-interactive text) can't deliver, so those two use HANDOFF_LOG_SUMMARY alone.
+export const HANDOFF_LOG_TEXT = `${HANDOFF_LOG_SUMMARY} — lihat alasan`
 
 export function isHandoffLogMessage(message: {
   sentBy: string | null
@@ -32,7 +37,7 @@ export function displayMessageContent(message: {
   content: string | null
   type?: string | null
 }): string {
-  if (isHandoffLogMessage(message)) return HANDOFF_LOG_TEXT
+  if (isHandoffLogMessage(message)) return HANDOFF_LOG_SUMMARY
   if (message.content !== null) return message.content
   return message.type ? `[${message.type}]` : ''
 }

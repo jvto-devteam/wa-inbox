@@ -1,6 +1,6 @@
 import { Badge } from '@/components/ui/badge'
 import { ContactAvatar } from '@/components/ContactAvatar'
-import { isHandoffLogMessage, HANDOFF_LOG_TEXT } from '@/lib/message-display'
+import { isHandoffLogMessage, HANDOFF_LOG_SUMMARY } from '@/lib/message-display'
 
 // Unlisted channels (e.g. TWT) fall back to the Badge component's own default `muted` look
 // rather than guessing a color for a platform we haven't been told one for.
@@ -71,7 +71,7 @@ export function ConversationListItem({
           </div>
         </div>
         <span className={`truncate text-sm ${isUnread ? 'font-medium text-foreground' : 'text-muted-foreground'}`}>
-          {isHandoffLog ? HANDOFF_LOG_TEXT : conversation.lastMessage}
+          {isHandoffLog ? HANDOFF_LOG_SUMMARY : conversation.lastMessage}
         </span>
         <div className="flex gap-1">
           {conversation.labels.map((l) => (

@@ -25,7 +25,7 @@ describe('ConversationListItem', () => {
         onClick={() => {}}
       />
     )
-    expect(screen.getByText('Bot menyerahkan ke agen — lihat alasan')).toBeInTheDocument()
+    expect(screen.getByText('Bot menyerahkan ke agen')).toBeInTheDocument()
   })
 
   it('shows an unread badge and bolds the row when unreadCount is greater than zero', () => {

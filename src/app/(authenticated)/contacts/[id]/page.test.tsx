@@ -67,7 +67,7 @@ describe('contacts/[id] message history', () => {
 
     render(await ContactDetailPage({ params: Promise.resolve({ id: 'contact_1' }) }))
 
-    expect(screen.getByText('Bot menyerahkan ke agen — lihat alasan')).toBeInTheDocument()
+    expect(screen.getByText('Bot menyerahkan ke agen')).toBeInTheDocument()
     expect(screen.queryByText('[text]')).not.toBeInTheDocument()
   })
 

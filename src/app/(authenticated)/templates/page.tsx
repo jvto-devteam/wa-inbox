@@ -101,6 +101,10 @@ export default function TemplatesPage() {
   const [category, setCategory] = useState('')
   const [body, setBody] = useState('')
   const [variableNames, setVariableNames] = useState<string[]>([])
+  // The "+ Tambah Variabel" input's own draft text -- kept separate from variableNames so a
+  // variable only ever enters the list (and the binding UI below) already named, instead of
+  // appending a blank row the admin then has to fill in themselves.
+  const [newVariable, setNewVariable] = useState('')
   const [format, setFormat] = useState<TemplateFormat>('TEXT')
   const [cards, setCards] = useState<CardDraft[]>([EMPTY_CARD])
   const [offerTitle, setOfferTitle] = useState('')
@@ -134,6 +138,7 @@ export default function TemplatesPage() {
     setCategory('')
     setBody('')
     setVariableNames([])
+    setNewVariable('')
     setFormat('TEXT')
     setCards([EMPTY_CARD])
     setOfferTitle('')
@@ -182,7 +187,10 @@ export default function TemplatesPage() {
   }
 
   function addVariable() {
-    setVariableNames((prev) => [...prev, ''])
+    const trimmed = newVariable.trim()
+    if (!trimmed) return
+    setVariableNames((prev) => [...prev, trimmed])
+    setNewVariable('')
   }
 
   function updateVariable(index: number, name: string) {
@@ -499,9 +507,23 @@ export default function TemplatesPage() {
               </button>
             </div>
           ))}
-          <Button type="button" variant="outline" size="sm" onClick={addVariable}>
-            + Tambah Variabel
-          </Button>
+          <div className="flex items-center gap-1.5">
+            <Input
+              aria-label="Variabel baru"
+              placeholder="mis. nama"
+              value={newVariable}
+              onChange={(e) => setNewVariable(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault()
+                  addVariable()
+                }
+              }}
+            />
+            <Button type="button" variant="outline" size="sm" className="shrink-0" onClick={addVariable}>
+              + Tambah
+            </Button>
+          </div>
         </div>
 
         {variablePositions.length > 0 && (
