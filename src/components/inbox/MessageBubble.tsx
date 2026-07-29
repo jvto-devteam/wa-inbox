@@ -250,7 +250,9 @@ export function MessageBubble({ message, onReply }: { message: MessageView; onRe
           </span>
           <div className="h-px flex-1 bg-border" />
         </button>
-        {hasTrace && showTrace && <BotTracePopover trace={message.botTrace as BotDecision} />}
+        {hasTrace && showTrace && (
+          <BotTracePopover trace={message.botTrace as BotDecision} onClose={() => setShowTrace(false)} />
+        )}
       </div>
     )
   }
@@ -285,7 +287,9 @@ export function MessageBubble({ message, onReply }: { message: MessageView; onRe
           {message.templatePayload?.coupon && <CouponChip coupon={message.templatePayload.coupon} />}
         </div>
       </div>
-      {hasTrace && showTrace && <BotTracePopover trace={message.botTrace as BotDecision} />}
+      {hasTrace && showTrace && (
+        <BotTracePopover trace={message.botTrace as BotDecision} onClose={() => setShowTrace(false)} />
+      )}
       <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
         {message.sentBy === 'BOT' && <Badge variant="brand">Bot</Badge>}
         {/* Dedicated trigger for the reasoning trace, separate from the bubble itself -- clicking

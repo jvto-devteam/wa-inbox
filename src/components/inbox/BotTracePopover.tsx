@@ -1,13 +1,26 @@
-import { Card } from '@/components/ui/card'
+import { Modal } from '@/components/ui/modal'
+import { Button } from '@/components/ui/button'
 import type { BotDecision } from '@/lib/bot/types'
 
 // Step-by-step reasoning (src/lib/bot/orchestrator.ts's `trace`) is optional on BotDecision so a
 // botTrace row stored before this existed still renders -- it just falls back to the old terse
 // one-line summary below instead of a step list.
-export function BotTracePopover({ trace }: { trace: BotDecision }) {
+export function BotTracePopover({ trace, onClose }: { trace: BotDecision; onClose: () => void }) {
   return (
-    <Card className="max-w-sm space-y-2 p-3 text-xs shadow-md">
-      <p className="font-mono uppercase text-brand">Mode: {trace.mode}</p>
+    <Modal onClose={onClose} className="max-w-sm space-y-2 text-xs">
+      <div className="flex items-start justify-between gap-2">
+        <p className="font-mono uppercase text-brand">Mode: {trace.mode}</p>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          aria-label="Tutup"
+          className="h-auto w-auto shrink-0 px-1 py-0.5 text-muted-foreground hover:text-foreground"
+          onClick={onClose}
+        >
+          ✕
+        </Button>
+      </div>
       {trace.mode === 'handoff' && <p>{trace.reason}</p>}
       {trace.mode === 'faq' && <p>Sumber topik: {trace.sourceTopic}</p>}
       {trace.mode === 'funnel' && <p>Tahap berikutnya: {trace.nextState}</p>}
@@ -25,6 +38,6 @@ export function BotTracePopover({ trace }: { trace: BotDecision }) {
           ))}
         </ol>
       )}
-    </Card>
+    </Modal>
   )
 }

@@ -4,24 +4,24 @@ import { BotTracePopover } from './BotTracePopover'
 
 describe('BotTracePopover', () => {
   it('shows the FAQ mode and source topic', () => {
-    render(<BotTracePopover trace={{ mode: 'faq', draft: 'Info paket...', sourceTopic: 'inclusions' }} />)
+    render(<BotTracePopover trace={{ mode: 'faq', draft: 'Info paket...', sourceTopic: 'inclusions' }} onClose={() => {}} />)
     expect(screen.getByText(/faq/i)).toBeInTheDocument()
     expect(screen.getByText(/inclusions/i)).toBeInTheDocument()
   })
 
   it('shows the handoff reason', () => {
-    render(<BotTracePopover trace={{ mode: 'handoff', reason: 'Kata kunci eskalasi terdeteksi' }} />)
+    render(<BotTracePopover trace={{ mode: 'handoff', reason: 'Kata kunci eskalasi terdeteksi' }} onClose={() => {}} />)
     expect(screen.getByText('Kata kunci eskalasi terdeteksi')).toBeInTheDocument()
   })
 
   it('shows the funnel next state', () => {
-    render(<BotTracePopover trace={{ mode: 'funnel', reply: 'Boleh info tanggal?', nextState: 'ASK_DATE' }} />)
+    render(<BotTracePopover trace={{ mode: 'funnel', reply: 'Boleh info tanggal?', nextState: 'ASK_DATE' }} onClose={() => {}} />)
     expect(screen.getByText(/funnel/i)).toBeInTheDocument()
     expect(screen.getByText(/ASK_DATE/)).toBeInTheDocument()
   })
 
   it('shows the booking_context source', () => {
-    render(<BotTracePopover trace={{ mode: 'booking_context', reply: 'Booking Anda berangkat 5 Agustus.' }} />)
+    render(<BotTracePopover trace={{ mode: 'booking_context', reply: 'Booking Anda berangkat 5 Agustus.' }} onClose={() => {}} />)
     expect(screen.getByText(/booking_context/i)).toBeInTheDocument()
     expect(screen.getByText(/booking api/i)).toBeInTheDocument()
   })
@@ -37,6 +37,7 @@ describe('BotTracePopover', () => {
             { label: 'Eskalasi terdeteksi', detail: 'Diserahkan ke agen.' },
           ],
         }}
+        onClose={() => {}}
       />
     )
 
@@ -47,13 +48,13 @@ describe('BotTracePopover', () => {
   })
 
   it('falls back to just the terse summary when steps is absent (a botTrace row stored before the trace feature existed)', () => {
-    render(<BotTracePopover trace={{ mode: 'handoff', reason: 'Kata kunci eskalasi terdeteksi' }} />)
+    render(<BotTracePopover trace={{ mode: 'handoff', reason: 'Kata kunci eskalasi terdeteksi' }} onClose={() => {}} />)
     // No numbered step list rendered -- only the one-line summary above.
     expect(screen.queryByRole('list')).not.toBeInTheDocument()
   })
 
   it('renders nothing extra when steps is an empty array', () => {
-    render(<BotTracePopover trace={{ mode: 'handoff', reason: 'x', steps: [] }} />)
+    render(<BotTracePopover trace={{ mode: 'handoff', reason: 'x', steps: [] }} onClose={() => {}} />)
     expect(screen.queryByRole('list')).not.toBeInTheDocument()
   })
 })
