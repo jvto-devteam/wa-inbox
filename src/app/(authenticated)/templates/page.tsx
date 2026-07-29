@@ -8,6 +8,8 @@ import { Badge } from '@/components/ui/badge'
 import { Select } from '@/components/ui/select'
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table'
 import { fetchJson } from '@/lib/fetch-json'
+import { VARIABLE_FIELD_DEFS } from '@/lib/booking/variable-fields'
+import { extractVariableNumbers } from '@/lib/template-variables'
 
 type TemplateType = 'OFFICIAL' | 'QUICK_REPLY'
 type TemplateFormat = 'TEXT' | 'CAROUSEL' | 'LTO' | 'COUPON'
@@ -26,6 +28,7 @@ type Template = {
   category: string | null
   body: string
   variables: string[] | null
+  variableBindings: Record<string, string> | null
   cards: TemplateCard[] | null
   offerTitle: string | null
   buttons: CardButton[] | null
@@ -104,6 +107,10 @@ export default function TemplatesPage() {
   const [ltoButtons, setLtoButtons] = useState<ButtonDraft[]>([])
   const [couponButtonText, setCouponButtonText] = useState('')
   const [couponExampleCode, setCouponExampleCode] = useState('')
+  // Maps a variable's 1-indexed position (as a string key) to a variable-fields.ts field key --
+  // chosen once here, resolved automatically against each conversation's own data at send time
+  // (see ComposeBox). A position absent from this map is unbound: the agent fills it manually.
+  const [variableBindings, setVariableBindings] = useState<Record<string, string>>({})
 
   useEffect(() => {
     fetchJson<Template[]>('/api/templates')
@@ -123,6 +130,7 @@ export default function TemplatesPage() {
     setLtoButtons([])
     setCouponButtonText('')
     setCouponExampleCode('')
+    setVariableBindings({})
   }
 
   function updateCard(index: number, patch: Partial<CardDraft>) {
@@ -183,6 +191,17 @@ export default function TemplatesPage() {
   const couponValid = !isCoupon || (couponButtonText.trim() !== '' && couponExampleCode.trim() !== '')
   const formValid = cardsValid && ltoValid && couponValid
 
+  // Every variable this draft currently has, as {position, label} -- OFFICIAL variables are
+  // named (comma-separated in variablesText, positional by index), QUICK_REPLY variables are
+  // detected straight from the body's {{n}} placeholders (no separate name field). Both feed
+  // the same "Sumber Nilai Variabel" binding UI below.
+  const officialVarNames = tab === 'OFFICIAL' ? variablesText.split(',').map((v) => v.trim()).filter(Boolean) : []
+  const quickReplyVarNumbers = tab === 'QUICK_REPLY' ? extractVariableNumbers(body) : []
+  const variablePositions =
+    tab === 'OFFICIAL'
+      ? officialVarNames.map((name, i) => ({ position: i + 1, label: `{{${i + 1}}} ${name}` }))
+      : quickReplyVarNumbers.map((n) => ({ position: n, label: `{{${n}}}` }))
+
   // Templates are what actually gets submitted to Meta (or shown as compose-box shortcuts), so
   // the list must only ever reflect what the server confirmed — no optimistic insert. Await the
   // response, and only append to state once the server has created (and, for OFFICIAL, actually
@@ -197,6 +216,14 @@ export default function TemplatesPage() {
         .map((v) => v.trim())
         .filter(Boolean)
 
+      // Only positions that (a) are still real on this draft (a variable removed after being
+      // bound must not resurrect a stale binding) and (b) actually have a chosen source --
+      // "Isi manual" leaves that position out of the map entirely.
+      const validPositions = new Set(variablePositions.map((v) => String(v.position)))
+      const bindings = Object.fromEntries(
+        Object.entries(variableBindings).filter(([position, key]) => key && validPositions.has(position))
+      )
+
       const res = await fetch('/api/templates', {
         method: 'POST',
         body: JSON.stringify({
@@ -204,6 +231,7 @@ export default function TemplatesPage() {
           type: tab,
           category: category.trim() || undefined,
           body: body.trim(),
+          ...(Object.keys(bindings).length > 0 ? { variableBindings: bindings } : {}),
           ...(tab === 'OFFICIAL' ? { variables } : {}),
           ...(isCarousel ? { format: 'CAROUSEL', cards: cards.map(toCardPayload) } : {}),
           ...(isLto ? { format: 'LTO', offerTitle: offerTitle.trim(), buttons: ltoButtons.map(toButtonPayload) } : {}),
@@ -302,6 +330,36 @@ export default function TemplatesPage() {
             value={variablesText}
             onChange={(e) => setVariablesText(e.target.value)}
           />
+        )}
+
+        {variablePositions.length > 0 && (
+          <div className="space-y-1.5 rounded-lg border border-border p-3">
+            <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Sumber Nilai Variabel</h3>
+            <p className="text-xs text-muted-foreground">
+              Pilih data mana yang otomatis mengisi variabel ini setiap kali template dikirim, mengikuti
+              chat masing-masing. Kosongkan untuk isi manual saat kirim.
+            </p>
+            {variablePositions.map(({ position, label }) => (
+              <div key={position} className="flex items-center gap-2">
+                <span className="w-48 shrink-0 truncate text-sm text-navy">{label}</span>
+                <Select
+                  aria-label={`Sumber nilai untuk ${label}`}
+                  value={variableBindings[String(position)] ?? ''}
+                  onChange={(e) =>
+                    setVariableBindings((prev) => ({ ...prev, [String(position)]: e.target.value }))
+                  }
+                  className="w-auto"
+                >
+                  <option value="">Isi manual</option>
+                  {VARIABLE_FIELD_DEFS.map((f) => (
+                    <option key={f.key} value={f.key}>
+                      {f.label}
+                    </option>
+                  ))}
+                </Select>
+              </div>
+            ))}
+          </div>
         )}
 
         {isCarousel && (

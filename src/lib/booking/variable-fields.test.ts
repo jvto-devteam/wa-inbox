@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { bookingVariableFields } from './variable-fields'
+import { bookingVariableFields, resolveVariableField, VARIABLE_FIELD_DEFS } from './variable-fields'
 import { formatIDR } from '@/lib/contact-format'
 import type { BookingData } from './client'
 
@@ -14,45 +14,54 @@ const booking: BookingData = {
   drivers: [{ name: 'Agus Driver' }],
 }
 
-describe('bookingVariableFields', () => {
-  it('leads with the WhatsApp contact name, distinct from the booking guest name', () => {
-    const fields = bookingVariableFields('Jane WA Display Name', booking)
-    expect(fields[0]).toEqual({ label: 'Nama Kontak (WhatsApp)', value: 'Jane WA Display Name' })
-    expect(fields).toContainEqual({ label: 'Nama Kontak (Booking)', value: 'Jane Doe' })
+describe('resolveVariableField', () => {
+  it('resolves a field by its stable key against a given conversation', () => {
+    expect(resolveVariableField('package', null, booking)).toBe('Ijen Blue Fire Trekking')
+    expect(resolveVariableField('financialBalance', null, booking)).toBe(formatIDR(350000))
+    expect(resolveVariableField('hotel:1', null, booking)).toBe('Luminor Hotel')
+    expect(resolveVariableField('guide:1', null, booking)).toBe('Budi Guide')
+    expect(resolveVariableField('driver:1', null, booking)).toBe('Agus Driver')
+    expect(resolveVariableField('contactName', 'Jane WA', booking)).toBe('Jane WA')
   })
 
+  it('resolves the SAME key against a different conversation with different data -- the whole point of binding by key', () => {
+    const otherBooking: BookingData = { package: 'Bromo Sunrise Tour', financial: { balance: 100000 } }
+    expect(resolveVariableField('package', null, otherBooking)).toBe('Bromo Sunrise Tour')
+    expect(resolveVariableField('financialBalance', null, otherBooking)).toBe(formatIDR(100000))
+  })
+
+  it('returns null for an unknown key, a key with no data, or when bookingData is null', () => {
+    expect(resolveVariableField('not_a_real_key', null, booking)).toBeNull()
+    expect(resolveVariableField('hotel:5', null, booking)).toBeNull()
+    expect(resolveVariableField('package', null, null)).toBeNull()
+  })
+})
+
+describe('bookingVariableFields', () => {
   it('includes package name, remaining balance, hotel, and crew -- exactly what the user asked for', () => {
     const fields = bookingVariableFields(null, booking)
-    expect(fields).toContainEqual({ label: 'Nama Paket', value: 'Ijen Blue Fire Trekking' })
-    expect(fields).toContainEqual({ label: 'Sisa Tagihan', value: formatIDR(350000) })
-    expect(fields).toContainEqual({ label: 'Nama Hotel (Hari 1)', value: 'Luminor Hotel' })
-    expect(fields).toContainEqual({ label: 'Nama Kru', value: 'Budi Guide' })
-    expect(fields).toContainEqual({ label: 'Nama Transportasi/Sopir', value: 'Agus Driver' })
+    expect(fields).toContainEqual({ key: 'package', label: 'Nama Paket', value: 'Ijen Blue Fire Trekking' })
+    expect(fields).toContainEqual({ key: 'financialBalance', label: 'Sisa Tagihan', value: formatIDR(350000) })
+    expect(fields).toContainEqual({ key: 'hotel:1', label: 'Nama Hotel (Hari 1)', value: 'Luminor Hotel' })
+    expect(fields).toContainEqual({ key: 'guide:1', label: 'Nama Kru 1', value: 'Budi Guide' })
+    expect(fields).toContainEqual({ key: 'driver:1', label: 'Nama Transportasi/Sopir 1', value: 'Agus Driver' })
   })
 
-  it('returns just the contact name when there is no booking data', () => {
-    expect(bookingVariableFields('Jane', null)).toEqual([{ label: 'Nama Kontak (WhatsApp)', value: 'Jane' }])
+  it('omits a field entirely when it has no resolvable value, rather than an empty-string entry', () => {
+    const fields = bookingVariableFields(null, { package: 'Ijen Trek' } as BookingData)
+    expect(fields.every((f) => f.value.trim() !== '')).toBe(true)
+    expect(fields.find((f) => f.key === 'financialBalance')).toBeUndefined()
+    expect(fields.find((f) => f.key === 'hotel:1')).toBeUndefined()
   })
 
   it('returns an empty list when there is neither a contact name nor booking data', () => {
     expect(bookingVariableFields(null, null)).toEqual([])
   })
+})
 
-  it('surfaces a field with no known label using a humanized path, so unmapped API fields still show up', () => {
-    const fields = bookingVariableFields(null, { booking_date: '2026-07-01', duration: '2D1N' } as BookingData)
-    expect(fields).toContainEqual({ label: 'Tanggal Booking', value: '2026-07-01' })
-    expect(fields).toContainEqual({ label: 'Durasi', value: '2D1N' })
-  })
-
-  it('does not list the same financial/hotel/guide/driver fields twice under a generic label', () => {
-    const fields = bookingVariableFields(null, booking)
-    const balanceEntries = fields.filter((f) => f.value === formatIDR(350000))
-    expect(balanceEntries).toHaveLength(1)
-  })
-
-  it('skips a hotel/guide/driver entry with a blank name rather than inserting an empty value', () => {
-    const fields = bookingVariableFields(null, { hotels: [{ day: '1', hotel: '' }], guides: [{ name: '' }] } as BookingData)
-    expect(fields.find((f) => f.label.startsWith('Nama Hotel'))).toBeUndefined()
-    expect(fields.find((f) => f.label === 'Nama Kru')).toBeUndefined()
+describe('VARIABLE_FIELD_DEFS', () => {
+  it('has no duplicate keys -- each key must uniquely resolve one field', () => {
+    const keys = VARIABLE_FIELD_DEFS.map((d) => d.key)
+    expect(new Set(keys).size).toBe(keys.length)
   })
 })

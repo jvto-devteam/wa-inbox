@@ -76,6 +76,31 @@ describe('templates API', () => {
     expect((await res.json()).metaId).toBe('671551331431970')
   })
 
+  it('persists variableBindings when the caller provides them', async () => {
+    mockPrisma.waNumber.findFirstOrThrow.mockResolvedValue({ wabaId: 'waba_1', accessToken: 'tok' } as never)
+    vi.mocked(submitMetaTemplate).mockResolvedValue({ metaId: '671551331431970', status: 'PENDING' })
+    mockPrisma.template.create.mockResolvedValue({ id: 't2' } as never)
+
+    const req = new Request('http://localhost/api/templates', {
+      method: 'POST',
+      headers: adminCookie,
+      body: JSON.stringify({
+        name: 'booking_confirmation',
+        type: 'OFFICIAL',
+        category: 'UTILITY',
+        body: 'Halo {{1}}, sisa tagihan {{2}}.',
+        variables: ['nama', 'sisa'],
+        variableBindings: { '1': 'contactName', '2': 'financialBalance' },
+      }),
+    })
+    const res = await POST(req)
+
+    expect(res.status).toBe(200)
+    expect(mockPrisma.template.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ variableBindings: { '1': 'contactName', '2': 'financialBalance' } }) })
+    )
+  })
+
   it('POST with type QUICK_REPLY skips Meta entirely and stores a null metaId', async () => {
     mockPrisma.template.create.mockResolvedValue({ id: 't3', metaStatus: 'NOT_APPLICABLE' } as never)
     const req = new Request('http://localhost/api/templates', { method: 'POST', headers: adminCookie, body: JSON.stringify({ name: 'harga_paket', type: 'QUICK_REPLY', body: 'Info harga...', category: 'Paket & Harga' }) })

@@ -5,7 +5,6 @@ import { ComposeBox } from './ComposeBox'
 import { Select } from '@/components/ui/select'
 import { ContactAvatar } from '@/components/ContactAvatar'
 import { fetchJson } from '@/lib/fetch-json'
-import { bookingVariableFields } from '@/lib/booking/variable-fields'
 import type { BookingData } from '@/lib/booking/client'
 
 type Agent = { id: string; name: string }
@@ -164,7 +163,8 @@ export function ThreadView({ conversationId }: { conversationId: string }) {
       <ComposeBox
         conversationId={conversationId}
         botEnabled={botEnabled}
-        variableFields={bookingVariableFields(contactName, bookingData)}
+        contactName={contactName}
+        bookingData={bookingData}
         replyingTo={replyingTo}
         onCancelReply={() => setReplyingTo(null)}
         onSent={(m) => {

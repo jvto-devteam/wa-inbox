@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor, fireEvent } from '@testing-library/react'
 import { ComposeBox } from './ComposeBox'
+import { formatIDR } from '@/lib/contact-format'
 
 beforeEach(() => {
   vi.stubGlobal('fetch', vi.fn())
@@ -245,10 +246,9 @@ describe('ComposeBox quick reply variables', () => {
 })
 
 describe('ComposeBox variable-from-data picker', () => {
-  const fields = [
-    { label: 'Nama Kontak (WhatsApp)', value: 'Bruno Figarola' },
-    { label: 'Sisa Tagihan', value: 'Rp 350.000' },
-  ]
+  const contactName = 'Bruno Figarola'
+  const bookingData = { financial: { balance: 350000 } }
+  const balanceValue = formatIDR(350000)
 
   it('offers no picker at all when there is no variable data for this conversation', async () => {
     vi.stubGlobal(
@@ -259,7 +259,7 @@ describe('ComposeBox variable-from-data picker', () => {
         return Promise.resolve({ ok: true, json: async () => ({ defaultChannel: 'UNOFFICIAL' }) })
       })
     )
-    render(<ComposeBox conversationId="conv_1" botEnabled={false} variableFields={[]} onSent={() => {}} onBotToggled={() => {}} />)
+    render(<ComposeBox conversationId="conv_1" botEnabled={false} onSent={() => {}} onBotToggled={() => {}} />)
     await switchToUnofficial()
     await openTemplateMenu()
     fireEvent.click(await screen.findByText('Konfirmasi'))
@@ -279,7 +279,7 @@ describe('ComposeBox variable-from-data picker', () => {
         return Promise.resolve({ ok: true, json: async () => ({ defaultChannel: 'OFFICIAL' }) })
       })
     )
-    render(<ComposeBox conversationId="conv_1" botEnabled={false} variableFields={fields} onSent={() => {}} onBotToggled={() => {}} />)
+    render(<ComposeBox conversationId="conv_1" botEnabled={false} contactName={contactName} bookingData={bookingData} onSent={() => {}} onBotToggled={() => {}} />)
     await openTemplateMenu()
     fireEvent.click(await screen.findByText('booking_confirmation'))
 
@@ -298,15 +298,134 @@ describe('ComposeBox variable-from-data picker', () => {
         return Promise.resolve({ ok: true, json: async () => ({ defaultChannel: 'UNOFFICIAL' }) })
       })
     )
-    render(<ComposeBox conversationId="conv_1" botEnabled={false} variableFields={fields} onSent={() => {}} onBotToggled={() => {}} />)
+    render(<ComposeBox conversationId="conv_1" botEnabled={false} contactName={contactName} bookingData={bookingData} onSent={() => {}} onBotToggled={() => {}} />)
     await switchToUnofficial()
     await openTemplateMenu()
     fireEvent.click(await screen.findByText('Konfirmasi'))
 
     const picker = await screen.findByLabelText('Isi dari data booking/kontak')
-    fireEvent.change(picker, { target: { value: 'Rp 350.000' } })
+    fireEvent.change(picker, { target: { value: balanceValue } })
 
-    expect(screen.getByLabelText('{{1}}')).toHaveValue('Rp 350.000')
+    expect(screen.getByLabelText('{{1}}')).toHaveValue(balanceValue)
+  })
+})
+
+describe('ComposeBox variable bindings (auto-resolved at selection time)', () => {
+  const contactName = 'Bruno Figarola'
+  const bookingData = { package: 'Ijen Blue Fire Trekking', financial: { balance: 350000 } }
+  const balanceValue = formatIDR(350000)
+
+  it('pre-fills a bound OFFICIAL variable from this conversation’s data, with no manual pick needed', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url: string) => {
+        if (url === '/api/templates')
+          return Promise.resolve({
+            ok: true,
+            json: async () => [
+              {
+                id: 'tpl_param',
+                name: 'booking_confirmation',
+                type: 'OFFICIAL',
+                category: null,
+                body: 'Paket {{1}}, sisa {{2}}.',
+                metaStatus: 'APPROVED',
+                format: 'TEXT',
+                variables: ['paket', 'sisa'],
+                variableBindings: { '1': 'package', '2': 'financialBalance' },
+              },
+            ],
+          })
+        return Promise.resolve({ ok: true, json: async () => ({ defaultChannel: 'OFFICIAL' }) })
+      })
+    )
+    render(<ComposeBox conversationId="conv_1" botEnabled={false} contactName={contactName} bookingData={bookingData} onSent={() => {}} onBotToggled={() => {}} />)
+    await openTemplateMenu()
+    fireEvent.click(await screen.findByText('booking_confirmation'))
+
+    expect(await screen.findByLabelText('paket')).toHaveValue('Ijen Blue Fire Trekking')
+    expect(screen.getByLabelText('sisa')).toHaveValue(balanceValue)
+  })
+
+  it('leaves an unbound variable blank even when other variables on the same template are bound', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url: string) => {
+        if (url === '/api/templates')
+          return Promise.resolve({
+            ok: true,
+            json: async () => [
+              {
+                id: 'tpl_param',
+                name: 'booking_confirmation',
+                type: 'OFFICIAL',
+                category: null,
+                body: 'Paket {{1}}, catatan {{2}}.',
+                metaStatus: 'APPROVED',
+                format: 'TEXT',
+                variables: ['paket', 'catatan'],
+                variableBindings: { '1': 'package' },
+              },
+            ],
+          })
+        return Promise.resolve({ ok: true, json: async () => ({ defaultChannel: 'OFFICIAL' }) })
+      })
+    )
+    render(<ComposeBox conversationId="conv_1" botEnabled={false} contactName={contactName} bookingData={bookingData} onSent={() => {}} onBotToggled={() => {}} />)
+    await openTemplateMenu()
+    fireEvent.click(await screen.findByText('booking_confirmation'))
+
+    expect(await screen.findByLabelText('paket')).toHaveValue('Ijen Blue Fire Trekking')
+    expect(screen.getByLabelText('catatan')).toHaveValue('')
+  })
+
+  it('pre-fills a bound quick-reply variable automatically on selection, before Gunakan Balasan is even clicked', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url: string) => {
+        if (url === '/api/templates')
+          return Promise.resolve({
+            ok: true,
+            json: async () => [
+              { id: 'tpl_qr', name: 'Konfirmasi', type: 'QUICK_REPLY', category: null, body: 'Sisa tagihan Anda {{1}}.', variableBindings: { '1': 'financialBalance' } },
+            ],
+          })
+        return Promise.resolve({ ok: true, json: async () => ({ defaultChannel: 'UNOFFICIAL' }) })
+      })
+    )
+    render(<ComposeBox conversationId="conv_1" botEnabled={false} contactName={contactName} bookingData={bookingData} onSent={() => {}} onBotToggled={() => {}} />)
+    await switchToUnofficial()
+    await openTemplateMenu()
+    fireEvent.click(await screen.findByText('Konfirmasi'))
+
+    expect(await screen.findByLabelText('{{1}}')).toHaveValue(balanceValue)
+
+    fireEvent.click(screen.getByText('Gunakan Balasan'))
+    await waitFor(() => {
+      expect(screen.getByPlaceholderText('Reply on WhatsApp...')).toHaveValue(`Sisa tagihan Anda ${balanceValue}.`)
+    })
+  })
+
+  it('leaves the field blank when the bound key has no data for this conversation', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url: string) => {
+        if (url === '/api/templates')
+          return Promise.resolve({
+            ok: true,
+            json: async () => [
+              { id: 'tpl_qr', name: 'Konfirmasi', type: 'QUICK_REPLY', category: null, body: 'Sopir Anda: {{1}}.', variableBindings: { '1': 'driver:1' } },
+            ],
+          })
+        return Promise.resolve({ ok: true, json: async () => ({ defaultChannel: 'UNOFFICIAL' }) })
+      })
+    )
+    render(<ComposeBox conversationId="conv_1" botEnabled={false} contactName={contactName} bookingData={bookingData} onSent={() => {}} onBotToggled={() => {}} />)
+    await switchToUnofficial()
+    await openTemplateMenu()
+    fireEvent.click(await screen.findByText('Konfirmasi'))
+
+    expect(await screen.findByLabelText('{{1}}')).toHaveValue('')
   })
 })
 

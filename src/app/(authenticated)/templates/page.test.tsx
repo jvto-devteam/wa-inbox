@@ -283,3 +283,85 @@ describe('TemplatesPage — Coupon builder', () => {
     expect(await screen.findByText(/kode_diskon/)).toHaveTextContent('kode_diskon 🎟️')
   })
 })
+
+describe('TemplatesPage — variable source bindings', () => {
+  it('shows no binding section until there is at least one variable', async () => {
+    render(<TemplatesPage />)
+    await waitFor(() => expect(screen.getByLabelText('Nama template')).toBeInTheDocument())
+
+    expect(screen.queryByText('Sumber Nilai Variabel')).not.toBeInTheDocument()
+  })
+
+  it('shows one binding row per named OFFICIAL variable, labeled with its position and name', async () => {
+    render(<TemplatesPage />)
+    await waitFor(() => expect(screen.getByLabelText('Variabel')).toBeInTheDocument())
+
+    fireEvent.change(screen.getByLabelText('Variabel'), { target: { value: 'nama, paket' } })
+
+    expect(screen.getByText('Sumber Nilai Variabel')).toBeInTheDocument()
+    expect(screen.getByText('{{1}} nama')).toBeInTheDocument()
+    expect(screen.getByText('{{2}} paket')).toBeInTheDocument()
+    expect(screen.getByLabelText('Sumber nilai untuk {{1}} nama')).toBeInTheDocument()
+  })
+
+  it('shows one binding row per {{n}} placeholder in a QUICK_REPLY body, with no separate variable name input', async () => {
+    render(<TemplatesPage />)
+    await waitFor(() => expect(screen.getByLabelText('Nama template')).toBeInTheDocument())
+    fireEvent.click(screen.getByText('Balasan Cepat'))
+
+    fireEvent.change(screen.getByLabelText('Isi pesan'), { target: { value: 'Halo {{1}}, sisa tagihan {{2}}.' } })
+
+    expect(screen.getByText('Sumber Nilai Variabel')).toBeInTheDocument()
+    expect(screen.getByText('{{1}}')).toBeInTheDocument()
+    expect(screen.getByText('{{2}}')).toBeInTheDocument()
+  })
+
+  it('submits variableBindings only for positions with a chosen source, omitting "Isi manual" ones', async () => {
+    const fetchMock = vi.fn((url: string, init?: RequestInit) => {
+      if (url === '/api/templates' && init?.method === 'POST') return jsonResponse({ id: 't1', metaStatus: 'PENDING' })
+      return jsonResponse([])
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<TemplatesPage />)
+    await waitFor(() => expect(screen.getByLabelText('Variabel')).toBeInTheDocument())
+    fireEvent.change(screen.getByLabelText('Nama template'), { target: { value: 'booking_confirmation' } })
+    fireEvent.change(screen.getByLabelText('Isi pesan'), { target: { value: 'Halo {{1}}, sisa {{2}}.' } })
+    fireEvent.change(screen.getByLabelText('Variabel'), { target: { value: 'nama, sisa' } })
+
+    fireEvent.change(screen.getByLabelText('Sumber nilai untuk {{1}} nama'), { target: { value: 'contactName' } })
+    // {{2}} sisa deliberately left as "Isi manual".
+
+    fireEvent.click(screen.getByText('Ajukan ke Meta'))
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/templates', expect.objectContaining({ method: 'POST' })))
+    const [, options] = fetchMock.mock.calls.find(([url, init]) => url === '/api/templates' && init?.method === 'POST')!
+    const payload = JSON.parse((options as RequestInit).body as string)
+    expect(payload.variableBindings).toEqual({ '1': 'contactName' })
+  })
+
+  it('drops a stale binding when the bound variable is removed from the draft before submitting', async () => {
+    const fetchMock = vi.fn((url: string, init?: RequestInit) => {
+      if (url === '/api/templates' && init?.method === 'POST') return jsonResponse({ id: 't1', metaStatus: 'PENDING' })
+      return jsonResponse([])
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<TemplatesPage />)
+    await waitFor(() => expect(screen.getByLabelText('Variabel')).toBeInTheDocument())
+    fireEvent.change(screen.getByLabelText('Nama template'), { target: { value: 'booking_confirmation' } })
+    fireEvent.change(screen.getByLabelText('Isi pesan'), { target: { value: 'Halo {{1}}, sisa {{2}}.' } })
+    fireEvent.change(screen.getByLabelText('Variabel'), { target: { value: 'nama, sisa' } })
+    fireEvent.change(screen.getByLabelText('Sumber nilai untuk {{2}} sisa'), { target: { value: 'financialBalance' } })
+
+    // Remove the second variable -- its binding must not resurrect at a now-unrelated position.
+    fireEvent.change(screen.getByLabelText('Variabel'), { target: { value: 'nama' } })
+
+    fireEvent.click(screen.getByText('Ajukan ke Meta'))
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/templates', expect.objectContaining({ method: 'POST' })))
+    const [, options] = fetchMock.mock.calls.find(([url, init]) => url === '/api/templates' && init?.method === 'POST')!
+    const payload = JSON.parse((options as RequestInit).body as string)
+    expect(payload.variableBindings).toBeUndefined()
+  })
+})

@@ -8,14 +8,21 @@ import { Card } from '@/components/ui/card'
 import { fetchJson } from '@/lib/fetch-json'
 import { formatWhatsAppText } from '@/lib/whatsapp-format'
 import { TemplatePreviewBubble, type PreviewButton, type PreviewCard } from './TemplatePreviewBubble'
-import type { VariableField } from '@/lib/booking/variable-fields'
+import { bookingVariableFields, resolveVariableField, type VariableField } from '@/lib/booking/variable-fields'
+import { extractVariableNumbers, interpolateVariables } from '@/lib/template-variables'
+import type { BookingData } from '@/lib/booking/client'
 
-type QuickReplyTemplate = { id: string; name: string; category: string | null; body: string }
+// Maps a variable's 1-indexed position (as a string key, e.g. "1" for {{1}}) to a
+// src/lib/booking/variable-fields.ts field key, chosen once at template-creation time --
+// applies to OFFICIAL `variables` (positional) and QUICK_REPLY `{{n}}` alike.
+type VariableBindings = Record<string, string> | null
+type QuickReplyTemplate = { id: string; name: string; category: string | null; body: string; variableBindings?: VariableBindings }
 type OfficialTemplate = {
   id: string
   name: string
   body: string
   variables: string[] | null
+  variableBindings?: VariableBindings
   metaStatus: string
   format: string
   cards?: PreviewCard[] | null
@@ -50,20 +57,6 @@ const ATTACH_ACCEPT: Record<'media' | 'document', string> = {
   document: '.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,audio/*',
 }
 
-// A {{n}} placeholder can appear more than once and in any order -- Meta's own convention
-// (and the API's positional `bodyParams` array) is 1-indexed and sequential, so this collects
-// every DISTINCT number used, sorted ascending, rather than assuming the template author wrote
-// them in order or used each one only once.
-function extractVariableNumbers(body: string): number[] {
-  const found = new Set<number>()
-  for (const match of body.matchAll(/\{\{(\d+)\}\}/g)) found.add(Number(match[1]))
-  return [...found].sort((a, b) => a - b)
-}
-
-function interpolateQuickReply(body: string, valuesByNumber: Record<number, string>): string {
-  return body.replace(/\{\{(\d+)\}\}/g, (_, n) => valuesByNumber[Number(n)] ?? '')
-}
-
 // Lets an agent fill a template variable (OFFICIAL {{n}} param or QUICK_REPLY {{n}} in the raw
 // body) from the current conversation's contact/booking data instead of typing it by hand --
 // e.g. the customer's name, the booked package, the remaining balance. `fields` is computed
@@ -95,7 +88,8 @@ export function ComposeBox({
   conversationId,
   botEnabled,
   replyingTo,
-  variableFields = [],
+  contactName = null,
+  bookingData = null,
   onCancelReply,
   onSent,
   onBotToggled,
@@ -103,13 +97,16 @@ export function ComposeBox({
   conversationId: string
   botEnabled: boolean
   replyingTo?: MessageView | null
-  // Contact/booking fields available to fill a template {{n}} variable from -- see
-  // VariableSourceSelect above and src/lib/booking/variable-fields.ts.
-  variableFields?: VariableField[]
+  // This conversation's contact name + real booking payload -- resolves a template variable
+  // bound to a data field (src/lib/booking/variable-fields.ts) at selection time, and backs
+  // the manual "Isi dari data..." picker for anything left unbound.
+  contactName?: string | null
+  bookingData?: BookingData | null
   onCancelReply?: () => void
   onSent: (m: MessageView) => void
   onBotToggled: (enabled: boolean) => void
 }) {
+  const variableFields = bookingVariableFields(contactName, bookingData)
   const [text, setText] = useState('')
   // Seeded from the org-wide Settings.defaultChannel ("Default jalur kirim" in
   // Pengaturan) below, not left as a hardcoded literal: ComposeBox always puts
@@ -340,9 +337,20 @@ export function ComposeBox({
     }
   }
 
+  // A binding chosen at template-creation time (Template.variableBindings, keyed by 1-indexed
+  // position) resolves automatically against THIS conversation's contact/booking data -- the
+  // agent never has to pick it again per send. A position with no binding just starts blank,
+  // same as before; the manual "Isi dari data..." picker (VariableSourceSelect) still covers
+  // that case, and either way the agent can edit the pre-filled value before sending.
+  function resolveBoundValue(bindings: VariableBindings | undefined, position: number): string {
+    const key = bindings?.[String(position)]
+    return key ? (resolveVariableField(key, contactName, bookingData) ?? '') : ''
+  }
+
   // A quick reply with no {{n}} placeholders pastes straight into the text input, same as
   // before. One that has them opens the same kind of param form OFFICIAL templates use, so the
-  // agent fills real values (optionally from variableFields) before it lands in the input.
+  // agent fills real values (bound ones pre-filled, the rest optionally from variableFields)
+  // before it lands in the input.
   function selectTemplate(t: QuickReplyTemplate) {
     const varNumbers = extractVariableNumbers(t.body)
     if (varNumbers.length === 0) {
@@ -351,7 +359,7 @@ export function ComposeBox({
       return
     }
     setQuickReplyForm({ template: t, varNumbers })
-    setQuickReplyParamValues(new Array(varNumbers.length).fill(''))
+    setQuickReplyParamValues(varNumbers.map((n) => resolveBoundValue(t.variableBindings, n)))
   }
 
   function confirmQuickReply() {
@@ -359,7 +367,7 @@ export function ComposeBox({
     const valuesByNumber = Object.fromEntries(
       quickReplyForm.varNumbers.map((n, i) => [n, quickReplyParamValues[i] ?? ''])
     )
-    setText(interpolateQuickReply(quickReplyForm.template.body, valuesByNumber))
+    setText(interpolateVariables(quickReplyForm.template.body, valuesByNumber))
     setPickerOpen(false)
     setQuickReplyForm(null)
     setQuickReplyParamValues([])
@@ -371,7 +379,7 @@ export function ComposeBox({
     // path to dispatch these immediately.
     if ((t.variables && t.variables.length > 0) || t.format === 'LTO' || t.format === 'COUPON') {
       setTemplateForm(t)
-      setTemplateParamValues(new Array(t.variables?.length ?? 0).fill(''))
+      setTemplateParamValues((t.variables ?? []).map((_, i) => resolveBoundValue(t.variableBindings, i + 1)))
       setLtoExpiration('')
       setCouponCode('')
       return

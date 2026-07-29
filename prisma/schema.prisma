@@ -259,6 +259,12 @@ model Template {
   category          String?
   body              String
   variables         Json?
+  // Maps a variable's 1-indexed position (as a string, e.g. "1", "2" -- {{1}}, {{2}}) to a
+  // src/lib/booking/variable-fields.ts field key (e.g. "package", "financialBalance"), chosen
+  // once here at template-creation time. A position missing from this map is unbound -- the
+  // agent fills it manually at send time (see ComposeBox's per-variable "Isi dari data..."
+  // fallback picker). Applies to both OFFICIAL and QUICK_REPLY templates.
+  variableBindings  Json?
   // Only set when format is CAROUSEL: CarouselCardDef[] (see src/lib/meta/carousel-types.ts)
   // -- each card's own source media URL, body text, and buttons, exactly as submitted. The
   // source URL is re-uploaded to Meta fresh on every send (see uploadMetaMediaFromUrl):

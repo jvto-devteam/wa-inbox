@@ -31,6 +31,13 @@ const bodySchema = z.object({
   category: z.string().optional(),
   body: z.string().min(1),
   variables: z.array(z.string()).optional(),
+  // Maps a variable's 1-indexed position (as a string key, e.g. "1") to a
+  // src/lib/booking/variable-fields.ts field key -- see the Template.variableBindings schema
+  // comment. Positions absent from this map stay unbound (agent fills them manually at send
+  // time). Not validated against VARIABLE_FIELD_DEFS here: an unrecognized key just resolves
+  // to null at send time (src/lib/booking/variable-fields.ts's resolveVariableField), the same
+  // as any other field with no data for a given conversation -- no special-casing needed.
+  variableBindings: z.record(z.string(), z.string()).optional(),
   format: z.enum(['TEXT', 'CAROUSEL', 'LTO', 'COUPON']).optional(),
   cards: z.array(cardSchema).min(1).max(10).optional(),
   // LTO fields. Meta caps the countdown banner's text at 16 characters.
@@ -144,6 +151,7 @@ export async function POST(req: Request) {
       category: parsed.data.type === 'OFFICIAL' ? resolvedCategory : parsed.data.category,
       body: parsed.data.body,
       variables: parsed.data.variables ?? [],
+      variableBindings: parsed.data.variableBindings ?? undefined,
       cards: parsed.data.cards ?? undefined,
       offerTitle: parsed.data.offerTitle,
       buttons: format === 'LTO' ? (parsed.data.buttons ?? []) : undefined,
