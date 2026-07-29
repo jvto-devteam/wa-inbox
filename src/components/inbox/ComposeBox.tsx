@@ -383,13 +383,25 @@ export function ComposeBox({
           </button>
         </div>
       )}
-      {botEnabled && (
+      {botEnabled ? (
         <button
           type="button"
           onClick={toggleBot}
           className="badge self-start cursor-pointer bg-amber-50 text-amber-700"
         >
           Ambil Alih dari Bot
+        </button>
+      ) : (
+        // Bidirectional: when the bot is off for this chat -- either because an agent took
+        // over above, or because the global mode is Off ("aktifkan manual per chat") and this
+        // conversation was never opted in -- an agent can flip it back on for just this one
+        // chat via the same toggle-bot endpoint.
+        <button
+          type="button"
+          onClick={toggleBot}
+          className="badge self-start cursor-pointer bg-emerald-50 text-emerald-700"
+        >
+          Aktifkan Bot untuk Chat Ini
         </button>
       )}
       {attachmentError && <p className="text-xs text-destructive">{attachmentError}</p>}

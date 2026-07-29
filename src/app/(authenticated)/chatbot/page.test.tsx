@@ -6,10 +6,9 @@ const settings = {
   workingHoursStart: null,
   workingHoursEnd: null,
   offHoursAutoReply: null,
-  botKillSwitch: false,
+  botAutoReplyAll: true,
   catalogSyncedAt: null,
-  ollamaModel: 'llama3',
-  openaiModel: 'gpt-4o-mini',
+  ollamaModel: 'gemma4:31b-cloud',
 }
 const gateStatus = { readyForApproval: true, blocking: [] }
 const catalogSummary = {
@@ -30,8 +29,8 @@ function mockFetch(overrides: Record<string, unknown> = {}) {
       if (url === '/api/bot/gate-status') return Promise.resolve({ ok: true, json: async () => gateStatus })
       if (url === '/api/bot/catalog-summary') return Promise.resolve({ ok: true, json: async () => catalogSummary })
       if (url === '/api/session') return Promise.resolve({ ok: true, json: async () => ({ role: 'ADMIN' }) })
-      if (url === '/api/bot/kill-switch' && init?.method === 'POST') {
-        return Promise.resolve({ ok: true, json: async () => ({ botKillSwitch: true }) })
+      if (url === '/api/bot/mode' && init?.method === 'POST') {
+        return Promise.resolve({ ok: true, json: async () => ({ botAutoReplyAll: false }) })
       }
       if (url === '/api/bot/sync-catalog' && init?.method === 'POST') {
         return typeof overrides.sync === 'function' ? (overrides.sync as () => unknown)() : Promise.resolve({ ok: true, json: async () => ({ ok: true }) })
@@ -45,14 +44,14 @@ beforeEach(() => vi.unstubAllGlobals())
 afterEach(() => cleanup())
 
 describe('ChatbotPage', () => {
-  it('shows the bot on/off status and toggles the kill switch', async () => {
+  it('shows the bot On/Off status and toggles the global mode', async () => {
     mockFetch()
     render(<ChatbotPage />)
 
-    expect(await screen.findByText('Bot: Aktif')).toBeInTheDocument()
-    fireEvent.click(screen.getByText('Matikan Bot (Darurat)'))
+    expect(await screen.findByText('Bot: On (Semua Chat)')).toBeInTheDocument()
+    fireEvent.click(screen.getByText('Matikan (Off)'))
 
-    await waitFor(() => expect(screen.getByText('Bot: Dimatikan')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText('Bot: Off (Manual per Chat)')).toBeInTheDocument())
   })
 
   it('shows the deployment gate status and a link to the bot log', async () => {
@@ -87,13 +86,12 @@ describe('ChatbotPage', () => {
     void fetchMock
   })
 
-  it('shows the current LLM models and saves changes', async () => {
+  it('shows the current LLM model and saves changes', async () => {
     mockFetch()
     render(<ChatbotPage />)
 
-    const ollamaInput = await screen.findByLabelText('Model Ollama (lokal)')
-    expect(ollamaInput).toHaveValue('llama3')
-    expect(screen.getByLabelText('Model OpenAI')).toHaveValue('gpt-4o-mini')
+    const ollamaInput = await screen.findByLabelText('Model Ollama')
+    expect(ollamaInput).toHaveValue('gemma4:31b-cloud')
 
     fireEvent.change(ollamaInput, { target: { value: 'mistral' } })
     fireEvent.click(screen.getAllByText('Simpan')[1])
@@ -101,7 +99,7 @@ describe('ChatbotPage', () => {
     await waitFor(() =>
       expect(fetch).toHaveBeenCalledWith(
         '/api/settings',
-        expect.objectContaining({ method: 'PATCH', body: JSON.stringify({ ollamaModel: 'mistral', openaiModel: 'gpt-4o-mini' }) })
+        expect.objectContaining({ method: 'PATCH', body: JSON.stringify({ ollamaModel: 'mistral' }) })
       )
     )
   })
@@ -139,10 +137,10 @@ describe('ChatbotPage', () => {
     )
     render(<ChatbotPage />)
 
-    await screen.findByText('Bot: Aktif')
-    expect(screen.queryByText('Matikan Bot (Darurat)')).not.toBeInTheDocument()
+    await screen.findByText('Bot: On (Semua Chat)')
+    expect(screen.queryByText('Matikan (Off)')).not.toBeInTheDocument()
     expect(screen.queryByText('Sinkron Sekarang')).not.toBeInTheDocument()
     expect(screen.getByLabelText('Mulai')).toBeDisabled()
-    expect(screen.getByLabelText('Model Ollama (lokal)')).toBeDisabled()
+    expect(screen.getByLabelText('Model Ollama')).toBeDisabled()
   })
 })

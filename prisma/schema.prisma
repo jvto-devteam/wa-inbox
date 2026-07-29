@@ -278,23 +278,20 @@ model Template {
 }
 
 model Settings {
-  id                  Int            @id @default(1)
-  defaultChannel      MessageChannel @default(OFFICIAL)
-  workingHoursStart   String?
-  workingHoursEnd     String?
-  offHoursAutoReply   String?
-  botKillSwitch       Boolean        @default(false)
-  // Stamped whenever an admin flips botKillSwitch OFF -> ON. Lets inbound.ts tell a handoff-log
-  // placeholder from the CURRENT kill-switch period apart from a stale one left over from an
-  // earlier on/off cycle, so "log at most one placeholder per conversation per kill-switch
-  // period" can reset itself the next time the switch is turned back on.
-  killSwitchEnabledAt DateTime?
-  catalogSyncedAt     DateTime?
-  // Model names for src/lib/bot/llm.ts's two providers. NOT a provider *switch* -- the one
-  // real call site (orchestrator.ts's booking-context reply) deliberately hardcodes
-  // forceLocal (Ollama) whenever real customer booking data is in the prompt, a privacy
-  // safeguard that must never become an admin-toggleable "use OpenAI instead" setting. These
-  // only change which model within each already-fixed provider gets used.
-  ollamaModel         String         @default("llama3")
-  openaiModel         String         @default("gpt-4o-mini")
+  id                Int            @id @default(1)
+  defaultChannel    MessageChannel @default(OFFICIAL)
+  workingHoursStart String?
+  workingHoursEnd   String?
+  offHoursAutoReply String?
+  // The bot's global mode. true ("On") = active for all chats -- every conversation's
+  // botEnabled is bulk-set true on the OFF->ON toggle, and every new conversation defaults
+  // to true while this is on. false ("Off") = inactive by default everywhere -- bulk-set
+  // false on toggle, and an agent must manually flip a specific conversation's botEnabled
+  // back on (src/app/api/conversations/[id]/toggle-bot) to activate the bot in just that
+  // one chat. See src/app/api/bot/mode/route.ts.
+  botAutoReplyAll   Boolean        @default(true)
+  catalogSyncedAt   DateTime?
+  // Which Ollama model src/lib/bot/llm.ts asks for. Local-only (no hosted-API fallback) --
+  // customer text and booking data never leave the VPS's own Ollama daemon.
+  ollamaModel       String         @default("gemma4:31b-cloud")
 }

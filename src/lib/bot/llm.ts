@@ -1,19 +1,18 @@
-// LLM provider shim. Two hard rules live here, both of them fail-safe rules for
-// the bot brain that calls this file:
+// LLM provider shim. Local-only (Ollama), matching chatbot-web's setup -- no hosted-API
+// fallback, so customer text and booking data never leave the VPS's own Ollama daemon. Two
+// hard rules live here, both fail-safe rules for the bot brain that calls this file:
 //
 //   1. Every request is bounded by a timeout. `decideAndRespond` is awaited inline
-//      all the way up through the inbound webhook handler, so a hung Ollama/OpenAI
-//      socket would hang the webhook itself. The design principle is "timeout ->
-//      handoff", which needs an actual timeout to fire: an aborted fetch rejects,
-//      which propagates to the orchestrator's outer catch and becomes a handoff.
-//      10s matches the convention already set by src/lib/booking/client.ts.
+//      all the way up through the inbound webhook handler, so a hung Ollama socket
+//      would hang the webhook itself. The design principle is "timeout -> handoff",
+//      which needs an actual timeout to fire: an aborted fetch rejects, which
+//      propagates to the orchestrator's outer catch and becomes a handoff. 10s
+//      matches the convention already set by src/lib/booking/client.ts.
 //   2. A reply is validated before it is returned. An unexpected response shape
 //      used to yield `undefined`, which travelled all the way to
 //      `sendMessage({ text: undefined })` -- the customer silently got nothing,
 //      and because the orchestrator had returned a "successful" decision, no
-//      handoff alert was broadcast either. Throwing instead means a bad local
-//      response still falls through to OpenAI (when `forceLocal` isn't set), and
-//      to the orchestrator's fail-safe handoff either way.
+//      handoff alert was broadcast either.
 //
 // `system` carries grounding instructions and any sensitive context (e.g. booking
 // data) OUT of the user turn, so raw customer text can never be read as an
@@ -22,18 +21,18 @@
 // Matches src/lib/booking/client.ts's existing 10s convention.
 const LLM_TIMEOUT_MS = 10000
 
-// Fallbacks only -- callers that care which model runs (see Settings.ollamaModel/openaiModel
-// in the Chatbot page) pass their own via LLMOptions.model. Kept here so a caller that omits
-// it (every existing test, and any future call site that doesn't care) still gets a real,
-// working model rather than `undefined` reaching the provider's API.
-const DEFAULT_OLLAMA_MODEL = 'llama3'
-const DEFAULT_OPENAI_MODEL = 'gpt-4o-mini'
+// Fallback only -- callers that care which model runs (see Settings.ollamaModel in the
+// Chatbot page) pass their own via LLMOptions.model. Kept here so a caller that omits it
+// (every existing test, and any future call site that doesn't care) still gets a real,
+// working model rather than `undefined` reaching the provider's API. gemma4:31b-cloud is
+// one of Ollama's own cloud-proxied model tags -- authenticated at the OS/daemon level on
+// the VPS, so no app-level API key is needed, unlike the OpenAI provider this replaced.
+const DEFAULT_OLLAMA_MODEL = 'gemma4:31b-cloud'
 
 export type LLMOptions = {
-  forceLocal?: boolean
   /** Grounding/system instructions, kept separate from the untrusted user turn. */
   system?: string
-  /** Which model to ask the resolved provider for -- see the two DEFAULT_* constants above. */
+  /** Which model to ask Ollama for -- see DEFAULT_OLLAMA_MODEL above. */
   model?: string
 }
 
@@ -47,45 +46,23 @@ function requireNonEmptyReply(value: unknown, provider: string): string {
 }
 
 async function callOllama(prompt: string, system?: string, model?: string): Promise<string> {
-  const res = await fetch(`${process.env.OLLAMA_URL}/api/generate`, {
+  const res = await fetch(`${process.env.OLLAMA_URL}/api/chat`, {
     method: 'POST',
-    // Ollama's /api/generate accepts a top-level `system` field (documented
-    // alongside `template`/`raw`/`format`), which overrides the Modelfile's
-    // SYSTEM block -- so the grounding instructions do not have to be
-    // concatenated into `prompt` next to untrusted customer text.
-    body: JSON.stringify({ model: model ?? DEFAULT_OLLAMA_MODEL, prompt, stream: false, ...(system ? { system } : {}) }),
+    // Messages-array style (matching chatbot-web's src/chatbot.js), rather than
+    // /api/generate's flat prompt+system fields -- same shape, same endpoint as the
+    // already-authenticated Ollama daemon this app now shares with chatbot-web.
+    body: JSON.stringify({
+      model: model ?? DEFAULT_OLLAMA_MODEL,
+      stream: false,
+      messages: [...(system ? [{ role: 'system', content: system }] : []), { role: 'user', content: prompt }],
+    }),
     signal: AbortSignal.timeout(LLM_TIMEOUT_MS),
   })
   if (!res.ok) throw new Error('Ollama request failed')
   const body = await res.json()
-  return requireNonEmptyReply(body?.response, 'Ollama')
-}
-
-async function callOpenAI(prompt: string, system?: string, model?: string): Promise<string> {
-  const res = await fetch('https://api.openai.com/v1/chat/completions', {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      model: model ?? DEFAULT_OPENAI_MODEL,
-      messages: [
-        ...(system ? [{ role: 'system', content: system }] : []),
-        { role: 'user', content: prompt },
-      ],
-    }),
-    signal: AbortSignal.timeout(LLM_TIMEOUT_MS),
-  })
-  if (!res.ok) throw new Error('OpenAI request failed')
-  const body = await res.json()
-  // Optional chaining throughout: a malformed body must produce the explicit
-  // "empty or malformed" error below, not a raw TypeError on `choices[0]`.
-  return requireNonEmptyReply(body?.choices?.[0]?.message?.content, 'OpenAI')
+  return requireNonEmptyReply(body?.message?.content, 'Ollama')
 }
 
 export async function callLLM(prompt: string, opts?: LLMOptions): Promise<string> {
-  if (opts?.forceLocal) return callOllama(prompt, opts.system, opts.model)
-  try {
-    return await callOpenAI(prompt, opts?.system, opts?.model)
-  } catch {
-    return callOllama(prompt, opts?.system, opts?.model)
-  }
+  return callOllama(prompt, opts?.system, opts?.model)
 }

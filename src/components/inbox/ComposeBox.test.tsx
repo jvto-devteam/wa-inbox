@@ -29,12 +29,13 @@ describe('ComposeBox — Ambil Alih dari Bot toggle', () => {
     expect(screen.getByText('Ambil Alih dari Bot')).toBeInTheDocument()
   })
 
-  it('does not render the "Ambil Alih dari Bot" button when botEnabled is false', () => {
+  it('renders an "Aktifkan Bot untuk Chat Ini" button instead when botEnabled is false', () => {
     render(
       <ComposeBox conversationId="conv_1" botEnabled={false} onSent={() => {}} onBotToggled={() => {}} />
     )
 
     expect(screen.queryByText('Ambil Alih dari Bot')).not.toBeInTheDocument()
+    expect(screen.getByText('Aktifkan Bot untuk Chat Ini')).toBeInTheDocument()
   })
 
   it('calls the toggle-bot endpoint and reports the new value on click', async () => {
@@ -49,6 +50,20 @@ describe('ComposeBox — Ambil Alih dari Bot toggle', () => {
 
     expect(fetch).toHaveBeenCalledWith('/api/conversations/conv_1/toggle-bot', { method: 'POST' })
     await waitFor(() => expect(onBotToggled).toHaveBeenCalledWith(false))
+  })
+
+  it('calls the same toggle-bot endpoint to manually re-activate the bot for just this chat', async () => {
+    vi.mocked(fetch).mockResolvedValue({ ok: true, json: () => Promise.resolve({ botEnabled: true }) } as Response)
+    const onBotToggled = vi.fn()
+
+    render(
+      <ComposeBox conversationId="conv_1" botEnabled={false} onSent={() => {}} onBotToggled={onBotToggled} />
+    )
+
+    fireEvent.click(screen.getByText('Aktifkan Bot untuk Chat Ini'))
+
+    expect(fetch).toHaveBeenCalledWith('/api/conversations/conv_1/toggle-bot', { method: 'POST' })
+    await waitFor(() => expect(onBotToggled).toHaveBeenCalledWith(true))
   })
 })
 
@@ -357,7 +372,7 @@ describe('ComposeBox default channel from Settings', () => {
   }
 
   it('seeds the channel select from Settings.defaultChannel', async () => {
-    mockSettings({ ok: true, json: async () => ({ defaultChannel: 'UNOFFICIAL', botKillSwitch: false }) })
+    mockSettings({ ok: true, json: async () => ({ defaultChannel: 'UNOFFICIAL', botAutoReplyAll: true }) })
 
     render(<ComposeBox conversationId="conv_1" botEnabled={false} onSent={() => {}} onBotToggled={() => {}} />)
 
@@ -365,7 +380,7 @@ describe('ComposeBox default channel from Settings', () => {
   })
 
   it('keeps OFFICIAL when Settings.defaultChannel is OFFICIAL', async () => {
-    mockSettings({ ok: true, json: async () => ({ defaultChannel: 'OFFICIAL', botKillSwitch: false }) })
+    mockSettings({ ok: true, json: async () => ({ defaultChannel: 'OFFICIAL', botAutoReplyAll: true }) })
 
     render(<ComposeBox conversationId="conv_1" botEnabled={false} onSent={() => {}} onBotToggled={() => {}} />)
 
@@ -438,7 +453,7 @@ describe('ComposeBox default channel from Settings', () => {
   })
 
   it('falls back to OFFICIAL when defaultChannel is missing or unrecognised', async () => {
-    mockSettings({ ok: true, json: async () => ({ botKillSwitch: false }) })
+    mockSettings({ ok: true, json: async () => ({ botAutoReplyAll: true }) })
 
     render(<ComposeBox conversationId="conv_1" botEnabled={false} onSent={() => {}} onBotToggled={() => {}} />)
 

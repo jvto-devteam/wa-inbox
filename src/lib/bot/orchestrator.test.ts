@@ -44,10 +44,8 @@ beforeEach(() => {
   // deployment-gate wiring fix) don't have to know about it unless they're
   // specifically testing gate behavior.
   ;(checkDeploymentGate as any).mockReturnValue({ readyForApproval: true, blocking: [] })
-  // Default: kill switch off, so pre-existing tests (written before Task 33's
-  // kill-switch wiring) don't have to know about it unless they're
-  // specifically testing kill-switch behavior.
-  mockPrisma.settings.findUniqueOrThrow.mockResolvedValue({ botKillSwitch: false } as never)
+  // decideAndRespond still reads Settings once, for ollamaModel (see the Mode 3 callLLM call).
+  mockPrisma.settings.findUniqueOrThrow.mockResolvedValue({ ollamaModel: 'gemma4:31b-cloud' } as never)
   mockPrisma.conversation.findUniqueOrThrow.mockResolvedValue({
     id: 'conv_1',
     tripBrief: {},
@@ -59,41 +57,6 @@ beforeEach(() => {
 })
 
 describe('decideAndRespond', () => {
-  it('hands off unconditionally when the bot kill switch is on, before even the escalation-keyword check', async () => {
-    mockPrisma.settings.findUniqueOrThrow.mockResolvedValue({ botKillSwitch: true } as never)
-
-    const result = await decideAndRespond('conv_1', 'Halo, saya mau tanya paket ke Ijen')
-
-    expect(result).toEqual({ mode: 'handoff', reason: 'Bot dimatikan sementara (kill switch aktif)', cause: 'kill_switch' })
-    expect(mockPrisma.conversation.findUniqueOrThrow).not.toHaveBeenCalled()
-    expect(ensureFreshBookingData).not.toHaveBeenCalled()
-  })
-
-  it('hands off via the kill switch even for Mode 3 (booking_context) messages, unlike the deployment gate which leaves Mode 3 untouched', async () => {
-    mockPrisma.settings.findUniqueOrThrow.mockResolvedValue({ botKillSwitch: true } as never)
-    ;(ensureFreshBookingData as any).mockResolvedValue({ id: 'B1', guest: 'Bruno' })
-
-    const result = await decideAndRespond('conv_1', 'Booking saya sudah lunas belum?')
-
-    expect(result).toEqual({ mode: 'handoff', reason: 'Bot dimatikan sementara (kill switch aktif)', cause: 'kill_switch' })
-    expect(ensureFreshBookingData).not.toHaveBeenCalled()
-    expect(callLLM).not.toHaveBeenCalled()
-  })
-
-  it('passes killSwitchEnabledAt through so inbound.ts can dedup repeated kill-switch placeholders per on-period', async () => {
-    const killSwitchEnabledAt = new Date('2026-07-27T10:00:00Z')
-    mockPrisma.settings.findUniqueOrThrow.mockResolvedValue({ botKillSwitch: true, killSwitchEnabledAt } as never)
-
-    const result = await decideAndRespond('conv_1', 'Halo')
-
-    expect(result).toEqual({
-      mode: 'handoff',
-      reason: 'Bot dimatikan sementara (kill switch aktif)',
-      cause: 'kill_switch',
-      killSwitchEnabledAt,
-    })
-  })
-
   it('escalates immediately on complaint keywords, skipping every other check', async () => {
     const result = await decideAndRespond('conv_1', 'Saya mau komplain dan minta refund!')
     expect(result).toEqual({ mode: 'handoff', reason: 'Kata kunci eskalasi terdeteksi' })
@@ -121,7 +84,7 @@ describe('decideAndRespond', () => {
     // carries ONLY the customer's raw question (prompt-injection hardening).
     expect(callLLM).toHaveBeenCalledWith(
       'Booking saya sudah lunas belum?',
-      expect.objectContaining({ forceLocal: true, system: expect.stringContaining('B1') })
+      expect.objectContaining({ system: expect.stringContaining('B1') })
     )
   })
 
@@ -230,7 +193,7 @@ describe('decideAndRespond', () => {
     ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
     ;(checkRouteGate as any).mockReturnValue({ status: 'clear' })
     ;(processFunnelState as any).mockReturnValue({ reply: 'Sorry, I did not catch that.', nextState: 'REKOMENDASI' })
-    mockPrisma.settings.findUniqueOrThrow.mockResolvedValue({ botKillSwitch: false } as never)
+    mockPrisma.settings.findUniqueOrThrow.mockResolvedValue({ ollamaModel: 'gemma4:31b-cloud' } as never)
     mockPrisma.conversation.findUniqueOrThrow.mockResolvedValue({
       id: 'conv_1',
       tripBrief: { funnelState: 'REKOMENDASI', destination: 'ijen' },

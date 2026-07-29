@@ -22,6 +22,18 @@ export type MetaInboundMessage = {
   context?: { id?: string }
 }
 
+// A brand-new conversation must start with the bot in whatever state the global mode
+// currently dictates -- On (Settings.botAutoReplyAll) means every conversation defaults
+// active, Off means every conversation defaults inactive until an agent manually opts it
+// in (see src/app/api/bot/mode/route.ts, which bulk-writes existing conversations the
+// same way on every toggle). Reading this fresh on every new conversation, rather than
+// relying on the schema's static default, is what keeps a conversation created five
+// minutes after an Off toggle from starting active anyway.
+async function defaultBotEnabled(): Promise<boolean> {
+  const settings = await prisma.settings.findUniqueOrThrow({ where: { id: 1 } })
+  return settings.botAutoReplyAll
+}
+
 // Every media message type Meta can send carries the same {id, mime_type, caption?,
 // filename?} shape under a key matching `type` -- image/audio/video/document. Reading
 // it off `message[message.type]` instead of four near-identical if-branches means a
@@ -282,7 +294,7 @@ async function ingestSingleMessage(message: MetaInboundMessage, contacts: MetaCo
   const conversation = await prisma.conversation.upsert({
     where: { contactId: contact.id },
     update: { lastMessageAt: sentAt },
-    create: { contactId: contact.id, lastMessageAt: sentAt },
+    create: { contactId: contact.id, lastMessageAt: sentAt, botEnabled: await defaultBotEnabled() },
   })
 
   const media = mediaObjectFor(message)
@@ -349,69 +361,34 @@ async function ingestSingleMessage(message: MetaInboundMessage, contacts: MetaCo
       // sendMetaText/sendCoexistText and requires reply text we don't have. Instead we write a
       // log-only Message row directly, mirroring the shape sendMessage() itself writes (see
       // src/lib/send.ts) so the decision is still auditable on the bot-log page.
-      //
-      // Only when this is a genuinely new reason to log, though. While the kill switch is on,
-      // botEnabled never flips (see below), so every single inbound customer message re-runs
-      // this branch -- logging a fresh placeholder per message would bury the thread in
-      // repeated "Bot menyerahkan ke agen" rows, even between real agent replies (an agent
-      // actively working the conversation doesn't need to be told the bot is off again for
-      // every message that arrives while they're on it). So for a kill-switch handoff
-      // specifically: log at most ONE placeholder per conversation per kill-switch period --
-      // "already logged" means a handoff-log row exists in this conversation created at or
-      // after decision.killSwitchEnabledAt (the timestamp of the current on-period; an admin
-      // toggling the switch off then on again starts a new period, and this conversation is
-      // eligible for one fresh placeholder again). A normal (non-kill-switch) handoff always
-      // logs -- botEnabled flips off immediately after, which already prevents any repeat.
-      const shouldLogHandoff =
-        decision.cause === 'kill_switch'
-          ? !(await prisma.message.findFirst({
-              where: {
-                conversationId: conversation.id,
-                sentBy: 'BOT',
-                content: null,
-                createdAt: decision.killSwitchEnabledAt ? { gte: decision.killSwitchEnabledAt } : undefined,
-              },
-            }))
-          : true
-      if (shouldLogHandoff) {
-        const created = await prisma.message.create({
-          data: {
-            conversationId: conversation.id,
-            direction: 'OUTBOUND',
-            type: 'text',
-            content: null,
-            // Never actually dispatched, so this has no delivery effect either way -- set to
-            // match the default outbound channel policy (Settings.defaultChannel, currently
-            // UNOFFICIAL) purely for consistency with every other message this row sits next to.
-            channel: 'UNOFFICIAL',
-            sentBy: 'BOT',
-            botTrace: decision as never,
-            deliveryStatus: 'SENT',
-          },
-        })
-        broadcast({ type: 'message.created', conversationId: conversation.id, message: withMediaUrl(created) })
-      }
+      const created = await prisma.message.create({
+        data: {
+          conversationId: conversation.id,
+          direction: 'OUTBOUND',
+          type: 'text',
+          content: null,
+          // Never actually dispatched, so this has no delivery effect either way -- set to
+          // match the default outbound channel policy (Settings.defaultChannel, currently
+          // UNOFFICIAL) purely for consistency with every other message this row sits next to.
+          channel: 'UNOFFICIAL',
+          sentBy: 'BOT',
+          botTrace: decision as never,
+          deliveryStatus: 'SENT',
+        },
+      })
+      broadcast({ type: 'message.created', conversationId: conversation.id, message: withMediaUrl(created) })
 
       // A handoff has to actually hand off: without flipping botEnabled the conversation
       // stays bot-driven, so it never reaches the dashboard's "needs attention" widget
       // (which queries botEnabled: false, assignedAgentId: null) AND every further message
       // from that customer re-runs the same decision, writing another audit row and
-      // re-firing handoff.alert -- one notification per message.
-      //
-      // The kill switch is the deliberate exception. It is a global, temporary, operator-
-      // visible emergency stop: while it is on, decideAndRespond returns handoff for EVERY
-      // message on EVERY conversation. Disabling the bot per conversation there would mean
-      // every conversation that happened to receive a message during the outage needs to be
-      // re-enabled by hand once the switch goes back off -- turning a one-click global lever
-      // into an unbounded manual cleanup. The alert is suppressed for the same reason: the
-      // team already knows the bot is off, and a notification per inbound message app-wide
-      // is pure noise. The bot log still honestly records that the bot declined each message
-      // (deduped consecutive runs collapse to one row, per the dedup check above -- not one
-      // row per message).
-      if (decision.cause !== 'kill_switch') {
-        await prisma.conversation.update({ where: { id: conversation.id }, data: { botEnabled: false } })
-        broadcast({ type: 'handoff.alert', conversationId: conversation.id, contactName: contact.name })
-      }
+      // re-firing handoff.alert -- one notification per message. Unlike the old global kill
+      // switch, the bot On/Off mode (Settings.botAutoReplyAll) never reaches this far: it is
+      // enforced entirely by the conversation.botEnabled gate above (bulk-set by
+      // src/app/api/bot/mode/route.ts), so every handoff reaching this branch is a genuine
+      // per-conversation one and always flips botEnabled off.
+      await prisma.conversation.update({ where: { id: conversation.id }, data: { botEnabled: false } })
+      broadcast({ type: 'handoff.alert', conversationId: conversation.id, contactName: contact.name })
     }
   }
 
@@ -444,7 +421,7 @@ async function ingestEchoedMessage(echo: MetaMessageEcho): Promise<boolean> {
   const conversation = await prisma.conversation.upsert({
     where: { contactId: contact.id },
     update: { lastMessageAt: sentAt },
-    create: { contactId: contact.id, lastMessageAt: sentAt },
+    create: { contactId: contact.id, lastMessageAt: sentAt, botEnabled: await defaultBotEnabled() },
   })
 
   const media = mediaObjectFor(echo)

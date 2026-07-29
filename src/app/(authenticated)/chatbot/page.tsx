@@ -13,10 +13,9 @@ type Settings = {
   workingHoursStart: string | null
   workingHoursEnd: string | null
   offHoursAutoReply: string | null
-  botKillSwitch: boolean
+  botAutoReplyAll: boolean
   catalogSyncedAt: string | null
   ollamaModel: string
-  openaiModel: string
 }
 type GateStatus = { readyForApproval: boolean; blocking: string[] }
 type CatalogPackageSummary = { packageKey: string; title: string; destinationTokens: string[]; priceIdr: number | null }
@@ -42,7 +41,6 @@ export default function ChatbotPage() {
   const [savingHours, setSavingHours] = useState(false)
 
   const [ollamaModel, setOllamaModel] = useState('')
-  const [openaiModel, setOpenaiModel] = useState('')
   const [savingModels, setSavingModels] = useState(false)
   const [modelError, setModelError] = useState<string | null>(null)
 
@@ -67,13 +65,12 @@ export default function ChatbotPage() {
     setWorkingHoursEnd(settings.workingHoursEnd ?? '')
     setOffHoursAutoReply(settings.offHoursAutoReply ?? '')
     setOllamaModel(settings.ollamaModel)
-    setOpenaiModel(settings.openaiModel)
   }
 
-  async function toggleKillSwitch() {
+  async function toggleBotMode() {
     try {
-      const { botKillSwitch } = await fetchJson<{ botKillSwitch: boolean }>('/api/bot/kill-switch', { method: 'POST' })
-      setSettings((prev) => (prev ? { ...prev, botKillSwitch } : prev))
+      const { botAutoReplyAll } = await fetchJson<{ botAutoReplyAll: boolean }>('/api/bot/mode', { method: 'POST' })
+      setSettings((prev) => (prev ? { ...prev, botAutoReplyAll } : prev))
     } catch {
       // Badge keeps showing the last confirmed state — never a guessed one.
     }
@@ -96,14 +93,14 @@ export default function ChatbotPage() {
   }
 
   async function saveModels() {
-    if (!ollamaModel.trim() || !openaiModel.trim()) return
+    if (!ollamaModel.trim()) return
     setModelError(null)
     setSavingModels(true)
     try {
       setSettings(
         await fetchJson<Settings>('/api/settings', {
           method: 'PATCH',
-          body: JSON.stringify({ ollamaModel: ollamaModel.trim(), openaiModel: openaiModel.trim() }),
+          body: JSON.stringify({ ollamaModel: ollamaModel.trim() }),
         })
       )
     } catch {
@@ -140,21 +137,22 @@ export default function ChatbotPage() {
 
         <div className="space-y-1.5">
           <div className="flex items-center gap-3">
-            <Badge variant={settings.botKillSwitch ? 'destructive' : 'success'}>
-              Bot: {settings.botKillSwitch ? 'Dimatikan' : 'Aktif'}
+            <Badge variant={settings.botAutoReplyAll ? 'success' : 'warning'}>
+              Bot: {settings.botAutoReplyAll ? 'On (Semua Chat)' : 'Off (Manual per Chat)'}
             </Badge>
             {role === 'ADMIN' && (
               <Button
-                onClick={toggleKillSwitch}
-                variant={settings.botKillSwitch ? 'default' : 'destructive'}
+                onClick={toggleBotMode}
+                variant={settings.botAutoReplyAll ? 'destructive' : 'default'}
                 size="sm"
               >
-                {settings.botKillSwitch ? 'Aktifkan Bot' : 'Matikan Bot (Darurat)'}
+                {settings.botAutoReplyAll ? 'Matikan (Off)' : 'Aktifkan untuk Semua Chat (On)'}
               </Button>
             )}
           </div>
           <p className="text-xs text-muted-foreground">
-            Saat dimatikan, semua pesan langsung dialihkan ke manusia — tanpa pengecualian.
+            On: bot balas otomatis di semua percakapan. Off: bot nonaktif secara default —
+            agen bisa mengaktifkan bot secara manual per percakapan lewat tombol di dalam chat.
           </p>
         </div>
 
@@ -221,37 +219,24 @@ export default function ChatbotPage() {
       <Card className="space-y-3 p-4">
         <h2 className="font-medium text-navy">Model LLM</h2>
         <p className="text-xs text-muted-foreground">
-          Balasan yang menyertakan data booking pelanggan (Mode 3) selalu diproses lokal lewat
-          Ollama, tidak pernah dikirim ke OpenAI — ini pengaman privasi yang sengaja dikunci,
-          bukan bagian yang bisa diganti di sini. Yang bisa diatur di bawah cuma model mana yang
-          dipakai di dalam masing-masing penyedia yang sudah tetap itu.
+          Semua balasan bot diproses lokal lewat Ollama di VPS yang sama — tidak ada penyedia
+          hosted (OpenAI dkk) yang pernah dihubungi, jadi teks pelanggan dan data booking tidak
+          pernah keluar server. Model default adalah gemma4:31b-cloud, tag cloud Ollama sendiri
+          (sama seperti yang dipakai chatbot-web).
         </p>
-        <div className="grid gap-2 sm:grid-cols-2">
-          <div className="space-y-1">
-            <label htmlFor="ollama-model" className="text-xs text-muted-foreground">
-              Model Ollama (lokal)
-            </label>
-            <Input
-              id="ollama-model"
-              value={ollamaModel}
-              onChange={(e) => setOllamaModel(e.target.value)}
-              disabled={role !== 'ADMIN'}
-            />
-          </div>
-          <div className="space-y-1">
-            <label htmlFor="openai-model" className="text-xs text-muted-foreground">
-              Model OpenAI
-            </label>
-            <Input
-              id="openai-model"
-              value={openaiModel}
-              onChange={(e) => setOpenaiModel(e.target.value)}
-              disabled={role !== 'ADMIN'}
-            />
-          </div>
+        <div className="space-y-1">
+          <label htmlFor="ollama-model" className="text-xs text-muted-foreground">
+            Model Ollama
+          </label>
+          <Input
+            id="ollama-model"
+            value={ollamaModel}
+            onChange={(e) => setOllamaModel(e.target.value)}
+            disabled={role !== 'ADMIN'}
+          />
         </div>
         {role === 'ADMIN' && (
-          <Button onClick={saveModels} size="sm" disabled={savingModels || !ollamaModel.trim() || !openaiModel.trim()}>
+          <Button onClick={saveModels} size="sm" disabled={savingModels || !ollamaModel.trim()}>
             {savingModels ? 'Menyimpan...' : 'Simpan'}
           </Button>
         )}
