@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { MessageBubble, type MessageView } from './MessageBubble'
 import { ComposeBox } from './ComposeBox'
 import { Select } from '@/components/ui/select'
@@ -37,6 +37,17 @@ export function ThreadView({ conversationId }: { conversationId: string }) {
   // vanish out from under them mid-read.
   const [unreadCutoff, setUnreadCutoff] = useState<string | null>(null)
   const [replyingTo, setReplyingTo] = useState<MessageView | null>(null)
+  // Gate the initial scroll (below) on BOTH requests having settled -- messages and
+  // lastReadAt/unreadCutoff load in parallel effects and can resolve in either order, and
+  // firstUnreadIndex is meaningless until unreadCutoff is actually known one way or the other.
+  const [messagesLoaded, setMessagesLoaded] = useState(false)
+  const [detailLoaded, setDetailLoaded] = useState(false)
+  const unreadDividerRef = useRef<HTMLDivElement>(null)
+  const bottomRef = useRef<HTMLDivElement>(null)
+  // Runs the initial scroll-into-place exactly once per opened conversation (ThreadView
+  // remounts on conversation switch -- see the `key` on its call site -- so this never needs
+  // resetting itself).
+  const hasScrolledRef = useRef(false)
 
   // Each of these swallows its rejection: fetchJson has already redirected on a 401, and on
   // any other failure the thread must keep its empty/default state rather than take an error
@@ -45,6 +56,7 @@ export function ThreadView({ conversationId }: { conversationId: string }) {
     fetchJson<MessageView[]>(`/api/conversations/${conversationId}/messages`)
       .then(setMessages)
       .catch(() => {})
+      .finally(() => setMessagesLoaded(true))
   }, [conversationId])
 
   useEffect(() => {
@@ -61,7 +73,20 @@ export function ThreadView({ conversationId }: { conversationId: string }) {
         markAsRead(conversationId)
       })
       .catch(() => {})
+      .finally(() => setDetailLoaded(true))
   }, [conversationId])
+
+  // Opening a thread used to always land scrolled to the very top (the browser's default for
+  // a tall overflow container), forcing the agent to scroll down past the whole history every
+  // single time -- even when nothing was unread. Once both requests above have settled, jump
+  // straight to the first unread message (matching the "Pesan belum dibaca" divider below), or
+  // to the very last message when everything is already read.
+  useEffect(() => {
+    if (hasScrolledRef.current || !messagesLoaded || !detailLoaded) return
+    hasScrolledRef.current = true
+    const target = unreadDividerRef.current ?? bottomRef.current
+    target?.scrollIntoView({ block: unreadDividerRef.current ? 'start' : 'end' })
+  }, [messagesLoaded, detailLoaded])
 
   useEffect(() => {
     fetchJson<Agent[]>('/api/accounts')
@@ -159,7 +184,7 @@ export function ThreadView({ conversationId }: { conversationId: string }) {
         {messages.map((m, i) => (
           <div key={m.id}>
             {i === firstUnreadIndex && (
-              <div className="mb-3 flex items-center gap-2 text-xs font-medium text-muted-foreground">
+              <div ref={unreadDividerRef} className="mb-3 flex items-center gap-2 text-xs font-medium text-muted-foreground">
                 <div className="h-px flex-1 bg-border" />
                 <span>Pesan belum dibaca</span>
                 <div className="h-px flex-1 bg-border" />
@@ -168,6 +193,7 @@ export function ThreadView({ conversationId }: { conversationId: string }) {
             <MessageBubble message={m} onReply={setReplyingTo} />
           </div>
         ))}
+        <div ref={bottomRef} />
       </div>
       <ComposeBox
         conversationId={conversationId}

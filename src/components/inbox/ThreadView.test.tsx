@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, waitFor, fireEvent, act } from '@testing-library/react'
 import { useState } from 'react'
 import { ThreadView } from './ThreadView'
@@ -608,5 +608,89 @@ describe('ThreadView template variable data', () => {
     const picker = await screen.findByLabelText('Isi dari data booking/kontak')
     fireEvent.change(picker, { target: { value: 'Bruno Figarola' } })
     expect(screen.getByLabelText('{{1}}')).toHaveValue('Bruno Figarola')
+  })
+})
+
+describe('ThreadView initial scroll position', () => {
+  // Element.prototype.scrollIntoView is a shared, module-level target -- vi.spyOn wraps
+  // whatever is currently installed, so without restoring it after each test the call count
+  // would keep accumulating across every test in this block instead of resetting per test.
+  afterEach(() => vi.restoreAllMocks())
+
+  const oldMessage = {
+    id: 'm_old',
+    direction: 'INBOUND',
+    content: 'Pesan lama yang sudah dibaca',
+    channel: 'OFFICIAL',
+    sentBy: 'CUSTOMER',
+    deliveryStatus: 'DELIVERED',
+    createdAt: '2026-07-01T08:00:00.000Z',
+    botTrace: null,
+  }
+  const newUnreadMessage = {
+    id: 'm_new',
+    direction: 'INBOUND',
+    content: 'Pesan baru yang belum dibaca',
+    channel: 'OFFICIAL',
+    sentBy: 'CUSTOMER',
+    deliveryStatus: 'DELIVERED',
+    createdAt: '2026-07-01T09:00:00.000Z',
+    botTrace: null,
+  }
+
+  function mockFetch(messages: unknown[], lastReadAt: string | null) {
+    return vi.fn((url: RequestInfo | URL) => {
+      const s = String(url)
+      if (s.endsWith('/messages')) return Promise.resolve({ ok: true, json: () => Promise.resolve(messages) } as Response)
+      if (s.endsWith('/api/accounts')) return Promise.resolve({ ok: true, json: () => Promise.resolve([]) } as Response)
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({ botEnabled: false, assignedAgentId: null, lastReadAt }) } as Response)
+    })
+  }
+
+  it('scrolls the "Pesan belum dibaca" divider into view when there is an unread message', async () => {
+    const scrollSpy = vi.spyOn(Element.prototype, 'scrollIntoView')
+    vi.stubGlobal('fetch', mockFetch([oldMessage, newUnreadMessage], '2026-07-01T08:30:00.000Z'))
+
+    render(<ThreadView conversationId="conv_1" />)
+
+    await waitFor(() => expect(screen.getByText('Pesan belum dibaca')).toBeInTheDocument())
+    await waitFor(() => expect(scrollSpy).toHaveBeenCalledWith({ block: 'start' }))
+  })
+
+  it('scrolls to the last message (bottom) when everything is already read', async () => {
+    const scrollSpy = vi.spyOn(Element.prototype, 'scrollIntoView')
+    vi.stubGlobal('fetch', mockFetch([oldMessage, newUnreadMessage], '2026-07-02T00:00:00.000Z'))
+
+    render(<ThreadView conversationId="conv_1" />)
+
+    await waitFor(() => expect(screen.getByText('Pesan baru yang belum dibaca')).toBeInTheDocument())
+    expect(screen.queryByText('Pesan belum dibaca')).not.toBeInTheDocument()
+    await waitFor(() => expect(scrollSpy).toHaveBeenCalledWith({ block: 'end' }))
+  })
+
+  it('scrolls to the last message on a conversation that has never been opened before (lastReadAt: null)', async () => {
+    const scrollSpy = vi.spyOn(Element.prototype, 'scrollIntoView')
+    vi.stubGlobal('fetch', mockFetch([oldMessage, newUnreadMessage], null))
+
+    render(<ThreadView conversationId="conv_1" />)
+
+    await waitFor(() => expect(screen.getByText('Pesan baru yang belum dibaca')).toBeInTheDocument())
+    await waitFor(() => expect(scrollSpy).toHaveBeenCalledWith({ block: 'end' }))
+  })
+
+  it('only scrolls once, even if messages/detail state updates again later', async () => {
+    const scrollSpy = vi.spyOn(Element.prototype, 'scrollIntoView')
+    vi.stubGlobal('fetch', mockFetch([oldMessage], '2026-07-02T00:00:00.000Z'))
+
+    render(<ThreadView conversationId="conv_1" />)
+    await waitFor(() => expect(scrollSpy).toHaveBeenCalledTimes(1))
+
+    const es = FakeEventSource.instances[0]
+    act(() => {
+      es.emit({ type: 'message.created', conversationId: 'conv_1', message: newUnreadMessage })
+    })
+
+    await waitFor(() => expect(screen.getByText('Pesan baru yang belum dibaca')).toBeInTheDocument())
+    expect(scrollSpy).toHaveBeenCalledTimes(1)
   })
 })
