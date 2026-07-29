@@ -264,19 +264,6 @@ export function MessageBubble({ message, onReply }: { message: MessageView; onRe
   return (
     <div className={`flex flex-col gap-1 ${isOutbound ? 'items-end' : 'items-start'}`}>
       <div
-        role={hasTrace ? 'button' : undefined}
-        tabIndex={hasTrace ? 0 : undefined}
-        onClick={hasTrace ? () => setShowTrace((prev) => !prev) : undefined}
-        onKeyDown={
-          hasTrace
-            ? (e) => {
-                if (e.key === 'Enter' || e.key === ' ') {
-                  e.preventDefault()
-                  setShowTrace((prev) => !prev)
-                }
-              }
-            : undefined
-        }
         className={
           (cards?.length ? 'max-w-lg' : 'max-w-md') +
           ' overflow-hidden whitespace-pre-wrap rounded-lg px-3.5 py-2.5 ring-1 ' +
@@ -301,6 +288,19 @@ export function MessageBubble({ message, onReply }: { message: MessageView; onRe
       {hasTrace && showTrace && <BotTracePopover trace={message.botTrace as BotDecision} />}
       <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
         {message.sentBy === 'BOT' && <Badge variant="brand">Bot</Badge>}
+        {/* Dedicated trigger for the reasoning trace, separate from the bubble itself -- clicking
+            the message text/media should never be overloaded with an unrelated toggle. */}
+        {hasTrace && (
+          <button
+            type="button"
+            onClick={() => setShowTrace((prev) => !prev)}
+            aria-label={showTrace ? 'Sembunyikan alur berpikir bot' : 'Lihat alur berpikir bot'}
+            aria-pressed={showTrace}
+            className="text-sm hover:opacity-70"
+          >
+            🧠
+          </button>
+        )}
         {message.sentBy === 'AGENT' && <span>Agen</span>}
         {message.templatePayload && <Badge variant="muted">Template</Badge>}
         {/* Only outbound: which channel WE sent through is useful to an agent; which channel a

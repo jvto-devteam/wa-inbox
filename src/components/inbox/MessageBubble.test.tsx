@@ -14,7 +14,7 @@ describe('MessageBubble', () => {
     expect(screen.getByRole('button', { name: /kirim ulang/i })).toBeInTheDocument()
   })
 
-  it('toggles the bot trace popover open and closed when clicking a bot message with a trace', () => {
+  it('toggles the bot trace popover open and closed via the dedicated 🧠 icon, not the message text', () => {
     render(
       <MessageBubble
         message={{
@@ -31,14 +31,16 @@ describe('MessageBubble', () => {
     )
     expect(screen.queryByText(/sumber topik/i)).not.toBeInTheDocument()
 
-    fireEvent.click(screen.getByText('Info paket Ijen...'))
+    const icon = screen.getByLabelText('Lihat alur berpikir bot')
+    fireEvent.click(icon)
     expect(screen.getByText(/sumber topik/i)).toBeInTheDocument()
+    expect(screen.getByLabelText('Sembunyikan alur berpikir bot')).toBeInTheDocument()
 
-    fireEvent.click(screen.getByText('Info paket Ijen...'))
+    fireEvent.click(screen.getByLabelText('Sembunyikan alur berpikir bot'))
     expect(screen.queryByText(/sumber topik/i)).not.toBeInTheDocument()
   })
 
-  it('does not show a popover when clicking a bot message with no botTrace', () => {
+  it('does not show a 🧠 trace icon at all for a bot message with no botTrace', () => {
     render(
       <MessageBubble
         message={{
@@ -53,8 +55,25 @@ describe('MessageBubble', () => {
         }}
       />
     )
-    fireEvent.click(screen.getByText('Halo dari bot'))
-    expect(screen.queryByText(/mode:/i)).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Lihat alur berpikir bot')).not.toBeInTheDocument()
+  })
+
+  it('does not show a 🧠 trace icon on a non-bot message even if botTrace were somehow set', () => {
+    render(
+      <MessageBubble
+        message={{
+          id: 'm4b',
+          direction: 'OUTBOUND',
+          content: 'Halo dari agen',
+          channel: 'OFFICIAL',
+          sentBy: 'AGENT',
+          deliveryStatus: 'SENT',
+          createdAt: new Date().toISOString(),
+          botTrace: null,
+        }}
+      />
+    )
+    expect(screen.queryByLabelText('Lihat alur berpikir bot')).not.toBeInTheDocument()
   })
 
   it('shows a clear handoff placeholder instead of a blank bubble for a logged handoff decision', () => {

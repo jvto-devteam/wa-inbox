@@ -59,8 +59,77 @@ beforeEach(() => {
 describe('decideAndRespond', () => {
   it('escalates immediately on complaint keywords, skipping every other check', async () => {
     const result = await decideAndRespond('conv_1', 'Saya mau komplain dan minta refund!')
-    expect(result).toEqual({ mode: 'handoff', reason: 'Kata kunci eskalasi terdeteksi' })
+    expect(result).toMatchObject({ mode: 'handoff', reason: 'Kata kunci eskalasi terdeteksi' })
     expect(ensureFreshBookingData).not.toHaveBeenCalled()
+  })
+
+  describe('reasoning trace (steps)', () => {
+    it('records a short trace for an escalation handoff -- received, checked, escalated', async () => {
+      const result = await decideAndRespond('conv_1', 'Saya mau komplain dan minta refund!')
+
+      expect(result.steps).toEqual([
+        { label: 'Pesan diterima', detail: expect.stringContaining('eskalasi') },
+        { label: 'Eskalasi terdeteksi', detail: expect.stringContaining('diserahkan ke agen') },
+      ])
+    })
+
+    it('records the full path for a Mode 3 (booking_context) reply, ending with the answer sent', async () => {
+      ;(ensureFreshBookingData as any).mockResolvedValue({ bookingId: 'B1', package: 'Ijen Blue Fire Trekking' })
+      ;(callLLM as any).mockResolvedValue('Booking Anda ke Ijen sudah lunas.')
+
+      const result = await decideAndRespond('conv_1', 'Booking saya sudah lunas belum?')
+
+      expect(result.steps?.map((s) => s.label)).toEqual([
+        'Pesan diterima',
+        'Tidak ada eskalasi',
+        'Mencari data booking',
+        'Booking ditemukan',
+        'Meminta jawaban dari model lokal',
+        'Jawaban siap dikirim',
+      ])
+      expect(result.steps?.find((s) => s.label === 'Booking ditemukan')?.detail).toContain('Ijen Blue Fire Trekking')
+      expect(result.steps?.at(-1)?.detail).toBe('Booking Anda ke Ijen sudah lunas.')
+    })
+
+    it('records candidate-search and selection steps for a successful funnel reply', async () => {
+      ;(ensureFreshBookingData as any).mockResolvedValue(null)
+      ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
+      ;(checkRouteGate as any).mockReturnValue({ status: 'clear' })
+      ;(processFunnelState as any).mockReturnValue({
+        reply: 'Berikut paket untuk Ijen!',
+        nextState: 'REKOMENDASI',
+        destination: 'ijen',
+      })
+
+      const result = await decideAndRespond('conv_1', 'Saya mau ke Ijen')
+
+      expect(result.steps?.map((s) => s.label)).toEqual([
+        'Pesan diterima',
+        'Tidak ada eskalasi',
+        'Mencari data booking',
+        'Tidak ada booking',
+        'Memeriksa gerbang persetujuan',
+        'Gerbang persetujuan terbuka',
+        'Mengklasifikasi kebutuhan pelanggan',
+        'Mencari kandidat jawaban (funnel)',
+        'Kandidat ditemukan',
+        'Memilih kandidat & memeriksa validitas',
+        'Kandidat dipilih',
+        'Jawaban siap dikirim',
+      ])
+      expect(result.steps?.find((s) => s.label === 'Kandidat ditemukan')?.detail).toContain('ijen')
+    })
+
+    it('marks a needs_review route-gate result distinctly in the trace from a fully clear one', async () => {
+      ;(ensureFreshBookingData as any).mockResolvedValue(null)
+      ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
+      ;(checkRouteGate as any).mockReturnValue({ status: 'needs_review', reason: 'perlu tinjauan' })
+      ;(processFunnelState as any).mockReturnValue({ reply: 'Berikut paket!', nextState: 'REKOMENDASI', destination: 'ijen' })
+
+      const result = await decideAndRespond('conv_1', 'Saya mau ke Ijen')
+
+      expect(result.steps?.find((s) => s.label === 'Kandidat dipilih')?.detail).toContain('tinjauan')
+    })
   })
 
   it('uses Mode 3 (booking_context) when an existing booking is found, skipping the funnel entirely', async () => {
@@ -120,7 +189,7 @@ describe('decideAndRespond', () => {
 
     const result = await decideAndRespond('conv_1', 'Booking saya sudah lunas belum?')
 
-    expect(result).toEqual({ mode: 'handoff', reason: 'Terjadi kegagalan saat memproses — default gagal-aman' })
+    expect(result).toMatchObject({ mode: 'handoff', reason: 'Terjadi kegagalan saat memproses — default gagal-aman' })
   })
 
   // The bookingData-caching write (Prisma.DbNull handling included) moved into
@@ -141,7 +210,7 @@ describe('decideAndRespond', () => {
     const result = await decideAndRespond('conv_1', 'Saya mau ke Atlantis')
 
     // The funnel's priced reply must NOT be sent once the gate rejects it.
-    expect(result).toEqual({ mode: 'handoff', reason: 'Tidak ada paket terverifikasi' })
+    expect(result).toMatchObject({ mode: 'handoff', reason: 'Tidak ada paket terverifikasi' })
     expect(checkRouteGate).toHaveBeenCalledWith(expect.objectContaining({ destination: 'atlantis' }))
   })
 
@@ -161,7 +230,7 @@ describe('decideAndRespond', () => {
 
     expect(processFunnelState).toHaveBeenCalled()
     expect(checkRouteGate).not.toHaveBeenCalled()
-    expect(result).toEqual({ mode: 'funnel', reply: 'Where would you like to go? 🗺️', nextState: 'TANYA_ORIGIN' })
+    expect(result).toMatchObject({ mode: 'funnel', reply: 'Where would you like to go? 🗺️', nextState: 'TANYA_ORIGIN' })
   })
 
   // I2: the funnel's matched destination must survive into the NEXT message.
@@ -262,7 +331,7 @@ describe('decideAndRespond', () => {
       where: { id: 'conv_1' },
       data: { tripBrief: { funnelState: 'REKOMENDASI' } },
     })
-    expect(result).toEqual({ mode: 'funnel', reply: 'Rekomendasi untuk Ijen...', nextState: 'REKOMENDASI' })
+    expect(result).toMatchObject({ mode: 'funnel', reply: 'Rekomendasi untuk Ijen...', nextState: 'REKOMENDASI' })
   })
 
   it("hands off on classification job J5 even when the message misses the shared HANDOFF_KEYWORDS entirely", async () => {
@@ -296,7 +365,7 @@ describe('decideAndRespond', () => {
 
     const result = await decideAndRespond('conv_1', message)
 
-    expect(result).toEqual({ mode: 'handoff', reason: 'Kata kunci eskalasi terdeteksi' })
+    expect(result).toMatchObject({ mode: 'handoff', reason: 'Kata kunci eskalasi terdeteksi' })
     // Must short-circuit before the booking lookup AND before any LLM call.
     expect(ensureFreshBookingData).not.toHaveBeenCalled()
     expect(callLLM).not.toHaveBeenCalled()
@@ -306,7 +375,7 @@ describe('decideAndRespond', () => {
     for (const message of ['Saya mau komplain', 'Tolong refund pesanan saya', 'Saya mau batal']) {
       vi.clearAllMocks()
       const result = await decideAndRespond('conv_1', message)
-      expect(result).toEqual({ mode: 'handoff', reason: 'Kata kunci eskalasi terdeteksi' })
+      expect(result).toMatchObject({ mode: 'handoff', reason: 'Kata kunci eskalasi terdeteksi' })
     }
   })
 
@@ -346,7 +415,7 @@ describe('decideAndRespond', () => {
 
     const result = await decideAndRespond('conv_1', 'Saya butuh bantuan')
 
-    expect(result).toEqual({ mode: 'handoff', reason: 'Funnel mencapai status butuh bantuan manusia' })
+    expect(result).toMatchObject({ mode: 'handoff', reason: 'Funnel mencapai status butuh bantuan manusia' })
     // The new funnel state is still persisted before handing off.
     expect(mockPrisma.conversation.update).toHaveBeenCalledWith({
       where: { id: 'conv_1' },

@@ -17,11 +17,18 @@ export type SalesClassification = {
   needsLiveData: boolean
 }
 
+// One step of the bot's reasoning, in the order it actually happened -- what it checked,
+// what it found, why it moved to the next step. Shown to an agent via BotTracePopover
+// (clicking the 🧠 icon on a bot reply), so a decision is auditable beyond just the final
+// mode/reason. Optional on every BotDecision variant so a botTrace row stored before this
+// existed still renders (falls back to the old terse summary).
+export type TraceStep = { label: string; detail: string }
+
 export type BotDecision =
-  | { mode: 'handoff'; reason: string }
-  | { mode: 'funnel'; reply: string; nextState: string }
-  | { mode: 'faq'; draft: string; sourceTopic: string }
-  | { mode: 'booking_context'; reply: string }
+  | { mode: 'handoff'; reason: string; steps?: TraceStep[] }
+  | { mode: 'funnel'; reply: string; nextState: string; steps?: TraceStep[] }
+  | { mode: 'faq'; draft: string; sourceTopic: string; steps?: TraceStep[] }
+  | { mode: 'booking_context'; reply: string; steps?: TraceStep[] }
 
 export type CatalogPackage = {
   packageKey: string
