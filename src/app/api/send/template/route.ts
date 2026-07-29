@@ -7,7 +7,7 @@ import { sendTemplateMessage } from '@/lib/meta/messages'
 import { uploadMetaMediaFromUrl } from '@/lib/meta/media-upload'
 import { broadcast } from '@/lib/realtime'
 import { withMediaUrl } from '@/lib/serialize-message'
-import type { CarouselCardDef, SentTemplatePayload } from '@/lib/meta/carousel-types'
+import type { CarouselCardDef, SentTemplatePayload, TemplateHeaderDef } from '@/lib/meta/carousel-types'
 
 const bodySchema = z.object({
   conversationId: z.string(),
@@ -57,20 +57,28 @@ export async function POST(req: Request) {
 
   const bodyParams = parsed.data.bodyParams ?? []
   const cardDefs = (template.cards as CarouselCardDef[] | null) ?? []
+  const headerDef = template.header as TemplateHeaderDef | null
 
   // Every card's source media is re-uploaded fresh on every send: Meta's ids/handles from
   // template-submission time are short-lived and cannot be reused (see media-upload.ts).
   let sendCards: Array<{ mediaId: string; mediaType: 'IMAGE' | 'VIDEO'; buttons: CarouselCardDef['buttons'] }> = []
-  if (cardDefs.length > 0) {
-    try {
+  // Same reasoning for a TEXT/AUTH template's own media header (a plain TEXT header is
+  // static and needs nothing here).
+  let sendHeader: { mediaId: string; mediaType: 'IMAGE' | 'VIDEO' | 'DOCUMENT' } | undefined
+  try {
+    if (cardDefs.length > 0) {
       const uploaded = await Promise.all(
         cardDefs.map(async (card) => ({ card, media: await uploadMetaMediaFromUrl(waNumber, card.mediaUrl) }))
       )
       sendCards = uploaded.map(({ card, media }) => ({ mediaId: media.id, mediaType: card.mediaType, buttons: card.buttons }))
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Gagal menyiapkan media carousel'
-      return NextResponse.json({ error: message }, { status: 502 })
     }
+    if (headerDef && headerDef.type !== 'NONE' && headerDef.type !== 'TEXT') {
+      const media = await uploadMetaMediaFromUrl(waNumber, headerDef.mediaUrl)
+      sendHeader = { mediaId: media.id, mediaType: headerDef.type }
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Gagal menyiapkan media template'
+    return NextResponse.json({ error: message }, { status: 502 })
   }
 
   const resolvedBody = interpolateBody(template.body, bodyParams)
@@ -80,6 +88,7 @@ export async function POST(req: Request) {
     const result = await sendTemplateMessage(waNumber, conversation.contact.phone, {
       name: template.name,
       bodyParams,
+      header: sendHeader,
       cards: sendCards,
       limitedTimeOfferExpirationMs: parsed.data.expirationTimeMs,
       couponCode: parsed.data.couponCode,

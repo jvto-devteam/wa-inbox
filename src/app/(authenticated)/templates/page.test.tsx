@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import TemplatesPage from './page'
 
@@ -10,24 +10,28 @@ beforeEach(() => {
   vi.stubGlobal('fetch', vi.fn(() => jsonResponse([])))
 })
 
-describe('TemplatesPage — carousel builder', () => {
-  it('only shows the format toggle and carousel builder on the OFFICIAL tab', async () => {
+afterEach(() => vi.restoreAllMocks())
+
+describe('TemplatesPage — type selector', () => {
+  it('only shows the type selector on the OFFICIAL tab', async () => {
     render(<TemplatesPage />)
     await waitFor(() => expect(screen.getByLabelText('Nama template')).toBeInTheDocument())
 
-    expect(screen.getByLabelText('Format template')).toBeInTheDocument()
+    expect(screen.getByRole('radiogroup')).toBeInTheDocument()
 
     fireEvent.click(screen.getByText('Balasan Cepat'))
-    expect(screen.queryByLabelText('Format template')).not.toBeInTheDocument()
+    expect(screen.queryByRole('radiogroup')).not.toBeInTheDocument()
   })
+})
 
+describe('TemplatesPage — carousel builder', () => {
   it('shows the card builder only when format is switched to CAROUSEL', async () => {
     render(<TemplatesPage />)
-    await waitFor(() => expect(screen.getByLabelText('Format template')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByRole('radiogroup')).toBeInTheDocument())
 
     expect(screen.queryByText(/Kartu Carousel/)).not.toBeInTheDocument()
 
-    fireEvent.change(screen.getByLabelText('Format template'), { target: { value: 'CAROUSEL' } })
+    fireEvent.click(screen.getByText('Carousel'))
 
     expect(screen.getByText('Kartu Carousel (1/10)')).toBeInTheDocument()
     expect(screen.getByLabelText('URL media kartu 1')).toBeInTheDocument()
@@ -35,8 +39,8 @@ describe('TemplatesPage — carousel builder', () => {
 
   it('adds and removes cards, capping the "+ Kartu" action out of view at 10', async () => {
     render(<TemplatesPage />)
-    await waitFor(() => expect(screen.getByLabelText('Format template')).toBeInTheDocument())
-    fireEvent.change(screen.getByLabelText('Format template'), { target: { value: 'CAROUSEL' } })
+    await waitFor(() => expect(screen.getByRole('radiogroup')).toBeInTheDocument())
+    fireEvent.click(screen.getByText('Carousel'))
 
     fireEvent.click(screen.getByText('+ Kartu'))
     expect(screen.getByText('Kartu Carousel (2/10)')).toBeInTheDocument()
@@ -49,16 +53,16 @@ describe('TemplatesPage — carousel builder', () => {
 
   it('does not offer to remove the last remaining card', async () => {
     render(<TemplatesPage />)
-    await waitFor(() => expect(screen.getByLabelText('Format template')).toBeInTheDocument())
-    fireEvent.change(screen.getByLabelText('Format template'), { target: { value: 'CAROUSEL' } })
+    await waitFor(() => expect(screen.getByRole('radiogroup')).toBeInTheDocument())
+    fireEvent.click(screen.getByText('Carousel'))
 
     expect(screen.queryByLabelText('Hapus kartu 1')).not.toBeInTheDocument()
   })
 
   it('adds a button to a card and shows the URL field only for a URL button', async () => {
     render(<TemplatesPage />)
-    await waitFor(() => expect(screen.getByLabelText('Format template')).toBeInTheDocument())
-    fireEvent.change(screen.getByLabelText('Format template'), { target: { value: 'CAROUSEL' } })
+    await waitFor(() => expect(screen.getByRole('radiogroup')).toBeInTheDocument())
+    fireEvent.click(screen.getByText('Carousel'))
 
     fireEvent.click(screen.getByText('+ Tombol'))
     expect(screen.getByLabelText('Label tombol 1 kartu 1')).toBeInTheDocument()
@@ -70,8 +74,8 @@ describe('TemplatesPage — carousel builder', () => {
 
   it('caps buttons per card at 2, hiding "+ Tombol" once reached', async () => {
     render(<TemplatesPage />)
-    await waitFor(() => expect(screen.getByLabelText('Format template')).toBeInTheDocument())
-    fireEvent.change(screen.getByLabelText('Format template'), { target: { value: 'CAROUSEL' } })
+    await waitFor(() => expect(screen.getByRole('radiogroup')).toBeInTheDocument())
+    fireEvent.click(screen.getByText('Carousel'))
 
     fireEvent.click(screen.getByText('+ Tombol'))
     fireEvent.click(screen.getByText('+ Tombol'))
@@ -83,8 +87,8 @@ describe('TemplatesPage — carousel builder', () => {
 
   it('disables submission until every card has a media URL and body', async () => {
     render(<TemplatesPage />)
-    await waitFor(() => expect(screen.getByLabelText('Format template')).toBeInTheDocument())
-    fireEvent.change(screen.getByLabelText('Format template'), { target: { value: 'CAROUSEL' } })
+    await waitFor(() => expect(screen.getByRole('radiogroup')).toBeInTheDocument())
+    fireEvent.click(screen.getByText('Carousel'))
     fireEvent.change(screen.getByLabelText('Nama template'), { target: { value: 'katalog_paket' } })
     fireEvent.change(screen.getByLabelText('Isi pesan'), { target: { value: 'Halo, rekomendasi untuk Anda:' } })
 
@@ -106,8 +110,8 @@ describe('TemplatesPage — carousel builder', () => {
     vi.stubGlobal('fetch', fetchMock)
 
     render(<TemplatesPage />)
-    await waitFor(() => expect(screen.getByLabelText('Format template')).toBeInTheDocument())
-    fireEvent.change(screen.getByLabelText('Format template'), { target: { value: 'CAROUSEL' } })
+    await waitFor(() => expect(screen.getByRole('radiogroup')).toBeInTheDocument())
+    fireEvent.click(screen.getByText('Carousel'))
     fireEvent.change(screen.getByLabelText('Nama template'), { target: { value: 'katalog_paket' } })
     fireEvent.change(screen.getByLabelText('Isi pesan'), { target: { value: 'Halo, rekomendasi untuk Anda:' } })
     fireEvent.change(screen.getByLabelText('URL media kartu 1'), { target: { value: 'https://example.com/ijen.jpg' } })
@@ -133,33 +137,39 @@ describe('TemplatesPage — carousel builder', () => {
     }))
   })
 
-  it('shows a 🎠 marker next to a carousel template in the list', async () => {
+  it('shows a live carousel thumbnail in the template list', async () => {
     vi.stubGlobal('fetch', vi.fn(() => jsonResponse([
-      { id: 't1', name: 'katalog_paket', type: 'OFFICIAL', format: 'CAROUSEL', metaStatus: 'APPROVED', category: null, body: 'Halo', variables: [], cards: [], createdAt: new Date().toISOString() },
+      {
+        id: 't1', name: 'katalog_paket', type: 'OFFICIAL', format: 'CAROUSEL', metaStatus: 'APPROVED', category: null,
+        body: 'Halo', variables: [],
+        cards: [{ mediaType: 'IMAGE', mediaUrl: 'https://example.com/ijen.jpg', bodyText: 'Ijen', buttons: [] }],
+        createdAt: new Date().toISOString(),
+      },
     ])))
 
     render(<TemplatesPage />)
 
-    expect(await screen.findByText(/katalog_paket/)).toHaveTextContent('katalog_paket 🎠')
+    expect(await screen.findByText('katalog_paket')).toBeInTheDocument()
+    expect(screen.getByAltText('Ijen')).toHaveAttribute('src', 'https://example.com/ijen.jpg')
   })
 })
 
 describe('TemplatesPage — LTO builder', () => {
   it('shows the offer title field only when format is switched to LTO', async () => {
     render(<TemplatesPage />)
-    await waitFor(() => expect(screen.getByLabelText('Format template')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByRole('radiogroup')).toBeInTheDocument())
 
     expect(screen.queryByLabelText('Judul penawaran')).not.toBeInTheDocument()
 
-    fireEvent.change(screen.getByLabelText('Format template'), { target: { value: 'LTO' } })
+    fireEvent.click(screen.getByText('Penawaran Waktu Terbatas'))
 
     expect(screen.getByLabelText('Judul penawaran')).toBeInTheDocument()
   })
 
   it('disables submission until the offer title is filled in', async () => {
     render(<TemplatesPage />)
-    await waitFor(() => expect(screen.getByLabelText('Format template')).toBeInTheDocument())
-    fireEvent.change(screen.getByLabelText('Format template'), { target: { value: 'LTO' } })
+    await waitFor(() => expect(screen.getByRole('radiogroup')).toBeInTheDocument())
+    fireEvent.click(screen.getByText('Penawaran Waktu Terbatas'))
     fireEvent.change(screen.getByLabelText('Nama template'), { target: { value: 'promo_akhir_tahun' } })
     fireEvent.change(screen.getByLabelText('Isi pesan'), { target: { value: 'Nikmati diskon spesial!' } })
 
@@ -180,8 +190,8 @@ describe('TemplatesPage — LTO builder', () => {
     vi.stubGlobal('fetch', fetchMock)
 
     render(<TemplatesPage />)
-    await waitFor(() => expect(screen.getByLabelText('Format template')).toBeInTheDocument())
-    fireEvent.change(screen.getByLabelText('Format template'), { target: { value: 'LTO' } })
+    await waitFor(() => expect(screen.getByRole('radiogroup')).toBeInTheDocument())
+    fireEvent.click(screen.getByText('Penawaran Waktu Terbatas'))
     fireEvent.change(screen.getByLabelText('Nama template'), { target: { value: 'promo_akhir_tahun' } })
     fireEvent.change(screen.getByLabelText('Isi pesan'), { target: { value: 'Nikmati diskon spesial!' } })
     fireEvent.change(screen.getByLabelText('Judul penawaran'), { target: { value: 'Diskon 25%' } })
@@ -203,25 +213,25 @@ describe('TemplatesPage — LTO builder', () => {
     }))
   })
 
-  it('shows a ⏳ marker next to an LTO template in the list', async () => {
+  it('shows the LTO offer banner in the template list', async () => {
     vi.stubGlobal('fetch', vi.fn(() => jsonResponse([
       { id: 't1', name: 'promo_akhir_tahun', type: 'OFFICIAL', format: 'LTO', metaStatus: 'APPROVED', category: 'MARKETING', body: 'Halo', variables: [], cards: null, offerTitle: 'Diskon 25%', buttons: [], couponButtonText: null, couponExampleCode: null, createdAt: new Date().toISOString() },
     ])))
 
     render(<TemplatesPage />)
 
-    expect(await screen.findByText(/promo_akhir_tahun/)).toHaveTextContent('promo_akhir_tahun ⏳')
+    expect(await screen.findByText(/Diskon 25%/)).toBeInTheDocument()
   })
 })
 
 describe('TemplatesPage — Coupon builder', () => {
   it('shows the coupon fields only when format is switched to COUPON', async () => {
     render(<TemplatesPage />)
-    await waitFor(() => expect(screen.getByLabelText('Format template')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByRole('radiogroup')).toBeInTheDocument())
 
     expect(screen.queryByLabelText('Label tombol kupon')).not.toBeInTheDocument()
 
-    fireEvent.change(screen.getByLabelText('Format template'), { target: { value: 'COUPON' } })
+    fireEvent.click(screen.getByText('Kode Kupon'))
 
     expect(screen.getByLabelText('Label tombol kupon')).toBeInTheDocument()
     expect(screen.getByLabelText('Contoh kode kupon')).toBeInTheDocument()
@@ -229,8 +239,8 @@ describe('TemplatesPage — Coupon builder', () => {
 
   it('disables submission until both coupon fields are filled in', async () => {
     render(<TemplatesPage />)
-    await waitFor(() => expect(screen.getByLabelText('Format template')).toBeInTheDocument())
-    fireEvent.change(screen.getByLabelText('Format template'), { target: { value: 'COUPON' } })
+    await waitFor(() => expect(screen.getByRole('radiogroup')).toBeInTheDocument())
+    fireEvent.click(screen.getByText('Kode Kupon'))
     fireEvent.change(screen.getByLabelText('Nama template'), { target: { value: 'kode_diskon' } })
     fireEvent.change(screen.getByLabelText('Isi pesan'), { target: { value: 'Gunakan kode ini.' } })
 
@@ -243,7 +253,7 @@ describe('TemplatesPage — Coupon builder', () => {
     await waitFor(() => expect(screen.getByText('Ajukan ke Meta')).not.toBeDisabled())
   })
 
-  it('submits a COUPON template with format, couponButtonText, and couponExampleCode in the request body', async () => {
+  it('submits a COUPON template with format, couponButtonText, couponExampleCode, and an optional footer', async () => {
     const fetchMock = vi.fn((url: string, init?: RequestInit) => {
       if (url === '/api/templates' && init?.method === 'POST') {
         return jsonResponse({ id: 't_coupon', metaStatus: 'PENDING', format: 'COUPON' })
@@ -253,12 +263,13 @@ describe('TemplatesPage — Coupon builder', () => {
     vi.stubGlobal('fetch', fetchMock)
 
     render(<TemplatesPage />)
-    await waitFor(() => expect(screen.getByLabelText('Format template')).toBeInTheDocument())
-    fireEvent.change(screen.getByLabelText('Format template'), { target: { value: 'COUPON' } })
+    await waitFor(() => expect(screen.getByRole('radiogroup')).toBeInTheDocument())
+    fireEvent.click(screen.getByText('Kode Kupon'))
     fireEvent.change(screen.getByLabelText('Nama template'), { target: { value: 'kode_diskon' } })
     fireEvent.change(screen.getByLabelText('Isi pesan'), { target: { value: 'Gunakan kode ini.' } })
     fireEvent.change(screen.getByLabelText('Label tombol kupon'), { target: { value: 'Salin Kode' } })
     fireEvent.change(screen.getByLabelText('Contoh kode kupon'), { target: { value: 'PROMO25' } })
+    fireEvent.change(screen.getByLabelText('Footer'), { target: { value: 'JVTO Tour' } })
 
     fireEvent.click(screen.getByText('Ajukan ke Meta'))
 
@@ -270,114 +281,154 @@ describe('TemplatesPage — Coupon builder', () => {
       format: 'COUPON',
       couponButtonText: 'Salin Kode',
       couponExampleCode: 'PROMO25',
+      footer: 'JVTO Tour',
     }))
   })
 
-  it('shows a 🎟️ marker next to a coupon template in the list', async () => {
+  it('shows the coupon button label in the template list', async () => {
     vi.stubGlobal('fetch', vi.fn(() => jsonResponse([
       { id: 't1', name: 'kode_diskon', type: 'OFFICIAL', format: 'COUPON', metaStatus: 'APPROVED', category: 'UTILITY', body: 'Halo', variables: [], cards: null, offerTitle: null, buttons: null, couponButtonText: 'Salin Kode', couponExampleCode: 'PROMO25', createdAt: new Date().toISOString() },
     ])))
 
     render(<TemplatesPage />)
 
-    expect(await screen.findByText(/kode_diskon/)).toHaveTextContent('kode_diskon 🎟️')
+    expect(await screen.findByText(/Salin Kode/)).toBeInTheDocument()
   })
 })
 
-// Adds one named variable row at a time via the single "+ Tambah Variabel" button (which also
-// drops the {{n}} placeholder into the body) -- mirrors how an agent actually builds the list.
-function addNamedVariables(names: string[]) {
-  names.forEach((name, i) => {
-    fireEvent.click(screen.getByText('+ Tambah Variabel'))
-    fireEvent.change(screen.getByLabelText(`Nama variabel ${i + 1}`), { target: { value: name } })
-  })
-}
-
-describe('TemplatesPage — variable create/edit/delete', () => {
-  it('has no variable rows until "+ Tambah Variabel" is clicked', async () => {
+describe('TemplatesPage — AUTH builder', () => {
+  it('shows an AUTHENTICATION category hint only when AUTH is selected', async () => {
     render(<TemplatesPage />)
-    await waitFor(() => expect(screen.getByText('+ Tambah Variabel')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByRole('radiogroup')).toBeInTheDocument())
 
-    expect(screen.queryByLabelText('Nama variabel 1')).not.toBeInTheDocument()
+    expect(screen.queryByText(/AUTHENTICATION/)).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByText('Autentikasi'))
+
+    expect(screen.getByText(/AUTHENTICATION/)).toBeInTheDocument()
   })
 
-  it('adds a new editable row per click, and edits are reflected immediately', async () => {
+  it('submits an AUTH template via the same TEXT-like fields, locking category to AUTHENTICATION server-side', async () => {
+    const fetchMock = vi.fn((url: string, init?: RequestInit) => {
+      if (url === '/api/templates' && init?.method === 'POST') {
+        return jsonResponse({ id: 't_auth', metaStatus: 'PENDING', format: 'AUTH' })
+      }
+      return jsonResponse([])
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
     render(<TemplatesPage />)
-    await waitFor(() => expect(screen.getByText('+ Tambah Variabel')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByRole('radiogroup')).toBeInTheDocument())
+    fireEvent.click(screen.getByText('Autentikasi'))
+    fireEvent.change(screen.getByLabelText('Nama template'), { target: { value: 'kode_otp' } })
+    fireEvent.click(screen.getByText('+ Variabel'))
 
-    addNamedVariables(['nama', 'paket'])
+    fireEvent.click(screen.getByText('Ajukan ke Meta'))
 
-    expect(screen.getByLabelText('Nama variabel 1')).toHaveValue('nama')
-    expect(screen.getByLabelText('Nama variabel 2')).toHaveValue('paket')
-
-    fireEvent.change(screen.getByLabelText('Nama variabel 1'), { target: { value: 'nama_pelanggan' } })
-    expect(screen.getByLabelText('Nama variabel 1')).toHaveValue('nama_pelanggan')
-  })
-
-  it('drops the next {{n}} placeholder into the body textarea on each click, in order', async () => {
-    render(<TemplatesPage />)
-    await waitFor(() => expect(screen.getByText('+ Tambah Variabel')).toBeInTheDocument())
-
-    fireEvent.click(screen.getByText('+ Tambah Variabel'))
-    expect(screen.getByLabelText('Isi pesan')).toHaveValue('{{1}}')
-
-    fireEvent.click(screen.getByText('+ Tambah Variabel'))
-    expect(screen.getByLabelText('Isi pesan')).toHaveValue('{{1}} {{2}}')
-  })
-
-  it('appends the placeholder after any existing body text, with a separating space', async () => {
-    render(<TemplatesPage />)
-    await waitFor(() => expect(screen.getByText('+ Tambah Variabel')).toBeInTheDocument())
-
-    fireEvent.change(screen.getByLabelText('Isi pesan'), { target: { value: 'Halo,' } })
-    fireEvent.click(screen.getByText('+ Tambah Variabel'))
-
-    expect(screen.getByLabelText('Isi pesan')).toHaveValue('Halo, {{1}}')
-  })
-
-  it('deletes a variable row', async () => {
-    render(<TemplatesPage />)
-    await waitFor(() => expect(screen.getByText('+ Tambah Variabel')).toBeInTheDocument())
-    addNamedVariables(['nama', 'paket'])
-
-    fireEvent.click(screen.getByLabelText('Hapus variabel 1'))
-
-    expect(screen.queryByLabelText('Nama variabel 2')).not.toBeInTheDocument()
-    expect(screen.getByLabelText('Nama variabel 1')).toHaveValue('paket')
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/templates', expect.objectContaining({ method: 'POST' })))
+    const [, options] = fetchMock.mock.calls.find(([url, init]) => url === '/api/templates' && init?.method === 'POST')!
+    const payload = JSON.parse((options as RequestInit).body as string)
+    expect(payload).toEqual(expect.objectContaining({ name: 'kode_otp', format: 'AUTH', body: '{{1}}' }))
   })
 })
 
-describe('TemplatesPage — variable source bindings', () => {
-  it('shows no binding section until there is at least one variable', async () => {
+describe('TemplatesPage — header, footer, and buttons (TEXT/AUTH)', () => {
+  it('shows the header, footer, and buttons fields for TEXT by default, not for CAROUSEL', async () => {
+    render(<TemplatesPage />)
+    await waitFor(() => expect(screen.getByRole('radiogroup')).toBeInTheDocument())
+
+    expect(screen.getByLabelText('Tipe header')).toBeInTheDocument()
+    expect(screen.getByLabelText('Footer')).toBeInTheDocument()
+    expect(screen.getByText('Tombol (opsional)')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByText('Carousel'))
+    expect(screen.queryByLabelText('Tipe header')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Footer')).not.toBeInTheDocument()
+  })
+
+  it('submits a TEXT template with a TEXT header, footer, and a top-level button', async () => {
+    const fetchMock = vi.fn((url: string, init?: RequestInit) => {
+      if (url === '/api/templates' && init?.method === 'POST') return jsonResponse({ id: 't1', metaStatus: 'PENDING' })
+      return jsonResponse([])
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<TemplatesPage />)
+    await waitFor(() => expect(screen.getByRole('radiogroup')).toBeInTheDocument())
+    fireEvent.change(screen.getByLabelText('Nama template'), { target: { value: 'sapaan' } })
+    fireEvent.change(screen.getByLabelText('Isi pesan'), { target: { value: 'Halo!' } })
+    fireEvent.change(screen.getByLabelText('Tipe header'), { target: { value: 'TEXT' } })
+    fireEvent.change(screen.getByLabelText('Teks header'), { target: { value: 'Selamat Datang' } })
+    fireEvent.change(screen.getByLabelText('Footer'), { target: { value: 'JVTO Tour' } })
+    fireEvent.click(screen.getByText('+ Tombol'))
+    fireEvent.change(screen.getByLabelText('Label tombol 1'), { target: { value: 'Ya' } })
+
+    fireEvent.click(screen.getByText('Ajukan ke Meta'))
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/templates', expect.objectContaining({ method: 'POST' })))
+    const [, options] = fetchMock.mock.calls.find(([url, init]) => url === '/api/templates' && init?.method === 'POST')!
+    const payload = JSON.parse((options as RequestInit).body as string)
+    expect(payload).toEqual(expect.objectContaining({
+      name: 'sapaan',
+      format: 'TEXT',
+      header: { type: 'TEXT', text: 'Selamat Datang' },
+      footer: 'JVTO Tour',
+      buttons: [{ type: 'QUICK_REPLY', text: 'Ya' }],
+    }))
+  })
+
+  it('shows a media URL input when the header type is IMAGE', async () => {
+    render(<TemplatesPage />)
+    await waitFor(() => expect(screen.getByRole('radiogroup')).toBeInTheDocument())
+
+    fireEvent.change(screen.getByLabelText('Tipe header'), { target: { value: 'IMAGE' } })
+
+    expect(screen.getByLabelText('URL media header')).toBeInTheDocument()
+  })
+})
+
+describe('TemplatesPage — variables', () => {
+  it('has no binding section until a {{n}} placeholder exists in the body', async () => {
     render(<TemplatesPage />)
     await waitFor(() => expect(screen.getByLabelText('Nama template')).toBeInTheDocument())
 
     expect(screen.queryByText('Sumber Nilai Variabel')).not.toBeInTheDocument()
   })
 
-  it('shows one binding row per named OFFICIAL variable, labeled with its position and name', async () => {
+  it('clicking + Variabel inserts {{n}} into the body and immediately shows a binding row for it', async () => {
     render(<TemplatesPage />)
-    await waitFor(() => expect(screen.getByText('+ Tambah Variabel')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByLabelText('Nama template')).toBeInTheDocument())
 
-    addNamedVariables(['nama', 'paket'])
+    fireEvent.click(screen.getByText('+ Variabel'))
 
+    expect(screen.getByLabelText('Isi pesan')).toHaveValue('{{1}}')
     expect(screen.getByText('Sumber Nilai Variabel')).toBeInTheDocument()
-    expect(screen.getByText('{{1}} nama')).toBeInTheDocument()
-    expect(screen.getByText('{{2}} paket')).toBeInTheDocument()
-    expect(screen.getByLabelText('Sumber nilai untuk {{1}} nama')).toBeInTheDocument()
+    expect(screen.getByLabelText('Sumber nilai untuk {{1}}')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByText('+ Variabel'))
+    expect(screen.getByLabelText('Isi pesan')).toHaveValue('{{1}}{{2}}')
+    expect(screen.getByLabelText('Sumber nilai untuk {{2}}')).toBeInTheDocument()
   })
 
-  it('shows the same add/edit/delete variable list and binding rows on the Balasan Cepat tab too', async () => {
+  it('derives the binding rows directly from {{n}} placeholders typed into the body, no button needed', async () => {
+    render(<TemplatesPage />)
+    await waitFor(() => expect(screen.getByLabelText('Nama template')).toBeInTheDocument())
+
+    fireEvent.change(screen.getByLabelText('Isi pesan'), { target: { value: 'Halo {{1}}, sisa {{2}}.' } })
+
+    expect(screen.getByLabelText('Sumber nilai untuk {{1}}')).toBeInTheDocument()
+    expect(screen.getByLabelText('Sumber nilai untuk {{2}}')).toBeInTheDocument()
+  })
+
+  it('shows the same body + bindings behavior on the Balasan Cepat tab too', async () => {
     render(<TemplatesPage />)
     await waitFor(() => expect(screen.getByLabelText('Nama template')).toBeInTheDocument())
     fireEvent.click(screen.getByText('Balasan Cepat'))
-    fireEvent.change(screen.getByLabelText('Isi pesan'), { target: { value: 'Halo {{1}}, sisa tagihan {{2}}.' } })
 
-    addNamedVariables(['nama', 'sisa'])
+    fireEvent.click(screen.getByText('+ Variabel'))
 
+    expect(screen.getByLabelText('Isi pesan')).toHaveValue('{{1}}')
     expect(screen.getByText('Sumber Nilai Variabel')).toBeInTheDocument()
-    expect(screen.getByText('{{1}} nama')).toBeInTheDocument()
-    expect(screen.getByText('{{2}} sisa')).toBeInTheDocument()
   })
 
   it('submits variableBindings only for positions with a chosen source, omitting "Isi manual" ones', async () => {
@@ -388,13 +439,11 @@ describe('TemplatesPage — variable source bindings', () => {
     vi.stubGlobal('fetch', fetchMock)
 
     render(<TemplatesPage />)
-    await waitFor(() => expect(screen.getByText('+ Tambah Variabel')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByRole('radiogroup')).toBeInTheDocument())
     fireEvent.change(screen.getByLabelText('Nama template'), { target: { value: 'booking_confirmation' } })
     fireEvent.change(screen.getByLabelText('Isi pesan'), { target: { value: 'Halo {{1}}, sisa {{2}}.' } })
-    addNamedVariables(['nama', 'sisa'])
-
-    fireEvent.change(screen.getByLabelText('Sumber nilai untuk {{1}} nama'), { target: { value: 'contactName' } })
-    // {{2}} sisa deliberately left as "Isi manual".
+    fireEvent.change(screen.getByLabelText('Sumber nilai untuk {{1}}'), { target: { value: 'contactName' } })
+    // {{2}} deliberately left as "Isi manual".
 
     fireEvent.click(screen.getByText('Ajukan ke Meta'))
 
@@ -402,9 +451,10 @@ describe('TemplatesPage — variable source bindings', () => {
     const [, options] = fetchMock.mock.calls.find(([url, init]) => url === '/api/templates' && init?.method === 'POST')!
     const payload = JSON.parse((options as RequestInit).body as string)
     expect(payload.variableBindings).toEqual({ '1': 'contactName' })
+    expect(payload.variables).toBeUndefined()
   })
 
-  it('drops a stale binding when the bound variable is removed from the draft before submitting', async () => {
+  it('drops a stale binding when the body no longer has that many variables before submitting', async () => {
     const fetchMock = vi.fn((url: string, init?: RequestInit) => {
       if (url === '/api/templates' && init?.method === 'POST') return jsonResponse({ id: 't1', metaStatus: 'PENDING' })
       return jsonResponse([])
@@ -412,14 +462,13 @@ describe('TemplatesPage — variable source bindings', () => {
     vi.stubGlobal('fetch', fetchMock)
 
     render(<TemplatesPage />)
-    await waitFor(() => expect(screen.getByText('+ Tambah Variabel')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByRole('radiogroup')).toBeInTheDocument())
     fireEvent.change(screen.getByLabelText('Nama template'), { target: { value: 'booking_confirmation' } })
     fireEvent.change(screen.getByLabelText('Isi pesan'), { target: { value: 'Halo {{1}}, sisa {{2}}.' } })
-    addNamedVariables(['nama', 'sisa'])
-    fireEvent.change(screen.getByLabelText('Sumber nilai untuk {{2}} sisa'), { target: { value: 'financialBalance' } })
+    fireEvent.change(screen.getByLabelText('Sumber nilai untuk {{2}}'), { target: { value: 'financialBalance' } })
 
-    // Remove the second variable -- its binding must not resurrect at a now-unrelated position.
-    fireEvent.click(screen.getByLabelText('Hapus variabel 2'))
+    // Edit the body back down to one variable -- the stale {{2}} binding must not resurrect.
+    fireEvent.change(screen.getByLabelText('Isi pesan'), { target: { value: 'Halo {{1}}.' } })
 
     fireEvent.click(screen.getByText('Ajukan ke Meta'))
 
@@ -427,6 +476,61 @@ describe('TemplatesPage — variable source bindings', () => {
     const [, options] = fetchMock.mock.calls.find(([url, init]) => url === '/api/templates' && init?.method === 'POST')!
     const payload = JSON.parse((options as RequestInit).body as string)
     expect(payload.variableBindings).toBeUndefined()
+  })
+})
+
+describe('TemplatesPage — template list', () => {
+  it('shows an empty state when there are no templates', async () => {
+    render(<TemplatesPage />)
+    expect(await screen.findByText('Belum ada template.')).toBeInTheDocument()
+  })
+
+  it('shows each template as a live preview card, filtered to the active tab', async () => {
+    vi.stubGlobal('fetch', vi.fn(() => jsonResponse([
+      { id: 't1', name: 'sapaan_resmi', type: 'OFFICIAL', format: 'TEXT', metaStatus: 'APPROVED', category: 'UTILITY', body: 'Halo', variables: [], createdAt: new Date().toISOString() },
+      { id: 't2', name: 'balasan_cepat', type: 'QUICK_REPLY', format: 'TEXT', metaStatus: 'NOT_APPLICABLE', category: null, body: 'Halo juga', variables: [], createdAt: new Date().toISOString() },
+    ])))
+
+    render(<TemplatesPage />)
+
+    expect(await screen.findByText('sapaan_resmi')).toBeInTheDocument()
+    expect(screen.queryByText('balasan_cepat')).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByText('Balasan Cepat'))
+    expect(screen.getByText('balasan_cepat')).toBeInTheDocument()
+    expect(screen.queryByText('sapaan_resmi')).not.toBeInTheDocument()
+  })
+
+  it('shows the Meta status badge only for OFFICIAL templates', async () => {
+    vi.stubGlobal('fetch', vi.fn(() => jsonResponse([
+      { id: 't1', name: 'sapaan_resmi', type: 'OFFICIAL', format: 'TEXT', metaStatus: 'APPROVED', category: 'UTILITY', body: 'Halo', variables: [], createdAt: new Date().toISOString() },
+    ])))
+
+    render(<TemplatesPage />)
+
+    expect(await screen.findByText('Disetujui')).toBeInTheDocument()
+  })
+
+  it('deletes a template after the confirm dialog is accepted', async () => {
+    const fetchMock = vi.fn((url: string, init?: RequestInit) => {
+      if (url === '/api/templates/t1' && init?.method === 'DELETE') return jsonResponse({ ok: true })
+      if (url === '/api/templates' && !init) {
+        return jsonResponse([
+          { id: 't1', name: 'sapaan_resmi', type: 'OFFICIAL', format: 'TEXT', metaStatus: 'APPROVED', category: 'UTILITY', body: 'Halo', variables: [], createdAt: new Date().toISOString() },
+        ])
+      }
+      return jsonResponse([])
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+
+    render(<TemplatesPage />)
+    await screen.findByText('sapaan_resmi')
+
+    fireEvent.click(screen.getByText('Hapus'))
+
+    await waitFor(() => expect(screen.queryByText('sapaan_resmi')).not.toBeInTheDocument())
+    expect(fetchMock).toHaveBeenCalledWith('/api/templates/t1', expect.objectContaining({ method: 'DELETE' }))
   })
 })
 

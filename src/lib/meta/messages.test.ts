@@ -180,6 +180,33 @@ describe('sendTemplateMessage', () => {
     ])
   })
 
+  it('includes a top-level header component (ahead of body) for a TEXT/AUTH template with a media header', async () => {
+    ;(fetch as any).mockResolvedValue({ ok: true, json: async () => ({ messages: [{ id: 'wamid.TPL5' }] }) })
+
+    await sendTemplateMessage(
+      { phoneNumberId: '123', accessToken: 'tok' },
+      '628',
+      { name: 'promo', bodyParams: ['Bruno'], header: { mediaId: 'media_3', mediaType: 'IMAGE' } }
+    )
+
+    const [, options] = (fetch as any).mock.calls[0]
+    const components = JSON.parse(options.body).template.components
+    expect(components).toEqual([
+      { type: 'header', parameters: [{ type: 'image', image: { id: 'media_3' } }] },
+      { type: 'body', parameters: [{ type: 'text', text: 'Bruno' }] },
+    ])
+  })
+
+  it('omits the header component when the template has no media header', async () => {
+    ;(fetch as any).mockResolvedValue({ ok: true, json: async () => ({ messages: [{ id: 'wamid.TPL6' }] }) })
+
+    await sendTemplateMessage({ phoneNumberId: '123', accessToken: 'tok' }, '628', { name: 'basic', bodyParams: [] })
+
+    const [, options] = (fetch as any).mock.calls[0]
+    const components = JSON.parse(options.body).template.components
+    expect(components.some((c: { type: string }) => c.type === 'header')).toBe(false)
+  })
+
   it('includes a limited_time_offer component with the real per-send expiration timestamp', async () => {
     ;(fetch as any).mockResolvedValue({ ok: true, json: async () => ({ messages: [{ id: 'wamid.LTO1' }] }) })
 

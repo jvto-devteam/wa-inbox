@@ -3,18 +3,18 @@ import { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
-import { Textarea } from '@/components/ui/textarea'
-import { Badge } from '@/components/ui/badge'
 import { Select } from '@/components/ui/select'
-import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table'
 import { fetchJson } from '@/lib/fetch-json'
 import { VARIABLE_FIELD_DEFS } from '@/lib/booking/variable-fields'
 import type { TemplateSuggestion } from '@/lib/bot/template-suggester'
+import { BodyField } from '@/components/templates/BodyField'
+import { HeaderField, EMPTY_HEADER, type HeaderDraft } from '@/components/templates/HeaderField'
+import { FooterField } from '@/components/templates/FooterField'
+import { ButtonsField, buttonDraftIsValid, type ButtonDraft, type ButtonType } from '@/components/templates/ButtonsField'
+import { TypeSelector, type TemplateFormat } from '@/components/templates/TypeSelector'
+import { TemplateGrid, type MetaStatus } from '@/components/templates/TemplateGrid'
 
 type TemplateType = 'OFFICIAL' | 'QUICK_REPLY'
-type TemplateFormat = 'TEXT' | 'CAROUSEL' | 'LTO' | 'COUPON'
-type MetaStatus = 'APPROVED' | 'PENDING' | 'REJECTED' | 'NOT_APPLICABLE'
-type ButtonType = 'QUICK_REPLY' | 'URL' | 'PHONE_NUMBER'
 
 type CardButton = { type: ButtonType; text: string; url?: string; phoneNumber?: string }
 type TemplateCard = { mediaType: 'IMAGE' | 'VIDEO'; mediaUrl: string; bodyText: string; buttons: CardButton[] }
@@ -29,6 +29,8 @@ type Template = {
   body: string
   variables: string[] | null
   variableBindings: Record<string, string> | null
+  header: HeaderDraft | null
+  footer: string | null
   cards: TemplateCard[] | null
   offerTitle: string | null
   buttons: CardButton[] | null
@@ -37,29 +39,15 @@ type Template = {
   createdAt: string
 }
 
-// Draft shape for the card builder -- every field is a plain string (even the button type
-// selects) so every input stays a controlled component; only converted to the real
+// Draft shape for the carousel card builder -- every field is a plain string (even the button
+// type selects) so every input stays a controlled component; only converted to the real
 // CardButton/TemplateCard union on submit.
-type ButtonDraft = { type: ButtonType; text: string; url: string; phoneNumber: string }
 type CardDraft = { mediaType: 'IMAGE' | 'VIDEO'; mediaUrl: string; bodyText: string; buttons: ButtonDraft[] }
 
 const EMPTY_CARD: CardDraft = { mediaType: 'IMAGE', mediaUrl: '', bodyText: '', buttons: [] }
 const MAX_CARDS = 10
 const MAX_BUTTONS_PER_CARD = 2
-
-const metaStatusVariant: Record<MetaStatus, 'success' | 'warning' | 'destructive' | 'muted'> = {
-  APPROVED: 'success',
-  PENDING: 'warning',
-  REJECTED: 'destructive',
-  NOT_APPLICABLE: 'muted',
-}
-
-const metaStatusLabel: Record<MetaStatus, string> = {
-  APPROVED: 'Disetujui',
-  PENDING: 'Menunggu',
-  REJECTED: 'Ditolak',
-  NOT_APPLICABLE: 'Tidak berlaku',
-}
+const MAX_BUTTONS = 3
 
 function cardDraftIsValid(card: CardDraft): boolean {
   return card.mediaUrl.trim() !== '' && card.bodyText.trim() !== '' && card.buttons.every(buttonDraftIsValid)
@@ -80,15 +68,25 @@ function toButtonPayload(b: ButtonDraft): CardButton {
   return { type: 'QUICK_REPLY', text: b.text.trim() }
 }
 
-function buttonDraftIsValid(b: ButtonDraft): boolean {
-  if (!b.text.trim()) return false
-  if (b.type === 'URL') return b.url.trim() !== ''
-  if (b.type === 'PHONE_NUMBER') return b.phoneNumber.trim() !== ''
-  return true
+function toHeaderPayload(header: HeaderDraft): HeaderDraft {
+  if (header.type === 'NONE') return header
+  if (header.type === 'TEXT') return { type: 'TEXT', text: header.text.trim() }
+  return { ...header, mediaUrl: header.mediaUrl.trim() }
 }
 
-const EMPTY_BUTTON: ButtonDraft = { type: 'QUICK_REPLY', text: '', url: '', phoneNumber: '' }
-const MAX_LTO_BUTTONS = 3
+function headerIsValid(header: HeaderDraft): boolean {
+  if (header.type === 'NONE') return true
+  if (header.type === 'TEXT') return header.text.trim() !== ''
+  return header.mediaUrl.trim() !== ''
+}
+
+// How many distinct {{n}} variables the body currently has -- never a manually-typed name (see
+// BodyField's cursor-insert "+ Variabel" button), just a count. Feeds the "Sumber Nilai
+// Variabel" binding UI below, the same for OFFICIAL and QUICK_REPLY alike.
+function variablePositionsFor(body: string): { position: number; label: string }[] {
+  const count = (body.match(/\{\{\d+\}\}/g) ?? []).length
+  return Array.from({ length: count }, (_, i) => ({ position: i + 1, label: `{{${i + 1}}}` }))
+}
 
 export default function TemplatesPage() {
   const [tab, setTab] = useState<TemplateType>('OFFICIAL')
@@ -100,11 +98,12 @@ export default function TemplatesPage() {
   const [name, setName] = useState('')
   const [category, setCategory] = useState('')
   const [body, setBody] = useState('')
-  const [variableNames, setVariableNames] = useState<string[]>([])
   const [format, setFormat] = useState<TemplateFormat>('TEXT')
+  const [header, setHeader] = useState<HeaderDraft>(EMPTY_HEADER)
+  const [footer, setFooter] = useState('')
+  const [buttons, setButtons] = useState<ButtonDraft[]>([])
   const [cards, setCards] = useState<CardDraft[]>([EMPTY_CARD])
   const [offerTitle, setOfferTitle] = useState('')
-  const [ltoButtons, setLtoButtons] = useState<ButtonDraft[]>([])
   const [couponButtonText, setCouponButtonText] = useState('')
   const [couponExampleCode, setCouponExampleCode] = useState('')
   // Maps a variable's 1-indexed position (as a string key) to a variable-fields.ts field key --
@@ -133,11 +132,12 @@ export default function TemplatesPage() {
     setName('')
     setCategory('')
     setBody('')
-    setVariableNames([])
     setFormat('TEXT')
+    setHeader(EMPTY_HEADER)
+    setFooter('')
+    setButtons([])
     setCards([EMPTY_CARD])
     setOfferTitle('')
-    setLtoButtons([])
     setCouponButtonText('')
     setCouponExampleCode('')
     setVariableBindings({})
@@ -155,79 +155,17 @@ export default function TemplatesPage() {
     setCards((prev) => (prev.length <= 1 ? prev : prev.filter((_, i) => i !== index)))
   }
 
-  function addButton(cardIndex: number) {
-    setCards((prev) =>
-      prev.map((c, i) =>
-        i === cardIndex && c.buttons.length < MAX_BUTTONS_PER_CARD
-          ? { ...c, buttons: [...c.buttons, { type: 'QUICK_REPLY', text: '', url: '', phoneNumber: '' }] }
-          : c
-      )
-    )
-  }
-
-  function removeButton(cardIndex: number, buttonIndex: number) {
-    setCards((prev) =>
-      prev.map((c, i) => (i === cardIndex ? { ...c, buttons: c.buttons.filter((_, bi) => bi !== buttonIndex) } : c))
-    )
-  }
-
-  function updateButton(cardIndex: number, buttonIndex: number, patch: Partial<ButtonDraft>) {
-    setCards((prev) =>
-      prev.map((c, i) =>
-        i === cardIndex
-          ? { ...c, buttons: c.buttons.map((b, bi) => (bi === buttonIndex ? { ...b, ...patch } : b)) }
-          : c
-      )
-    )
-  }
-
-  // A single button: no separate "type a name first" step. Clicking it drops the next
-  // {{n}} placeholder straight into the body (where an agent would otherwise have to type it
-  // by hand, easy to get out of sync with the list below) and adds its row to the variable
-  // list in the same action, ready to be named.
-  function addVariable() {
-    const nextPosition = variableNames.length + 1
-    setBody((prev) => {
-      const placeholder = `{{${nextPosition}}}`
-      if (!prev) return placeholder
-      return /\s$/.test(prev) ? prev + placeholder : `${prev} ${placeholder}`
-    })
-    setVariableNames((prev) => [...prev, ''])
-  }
-
-  function updateVariable(index: number, name: string) {
-    setVariableNames((prev) => prev.map((v, i) => (i === index ? name : v)))
-  }
-
-  function removeVariable(index: number) {
-    setVariableNames((prev) => prev.filter((_, i) => i !== index))
-  }
-
-  function addLtoButton() {
-    setLtoButtons((prev) => (prev.length >= MAX_LTO_BUTTONS ? prev : [...prev, EMPTY_BUTTON]))
-  }
-
-  function removeLtoButton(index: number) {
-    setLtoButtons((prev) => prev.filter((_, i) => i !== index))
-  }
-
-  function updateLtoButton(index: number, patch: Partial<ButtonDraft>) {
-    setLtoButtons((prev) => prev.map((b, i) => (i === index ? { ...b, ...patch } : b)))
-  }
-
   const isCarousel = tab === 'OFFICIAL' && format === 'CAROUSEL'
   const isLto = tab === 'OFFICIAL' && format === 'LTO'
   const isCoupon = tab === 'OFFICIAL' && format === 'COUPON'
+  const isTextOrAuth = tab === 'OFFICIAL' && (format === 'TEXT' || format === 'AUTH')
   const cardsValid = !isCarousel || cards.every(cardDraftIsValid)
-  const ltoValid = !isLto || (offerTitle.trim() !== '' && ltoButtons.every(buttonDraftIsValid))
+  const ltoValid = !isLto || (offerTitle.trim() !== '' && buttons.every(buttonDraftIsValid))
   const couponValid = !isCoupon || (couponButtonText.trim() !== '' && couponExampleCode.trim() !== '')
-  const formValid = cardsValid && ltoValid && couponValid
+  const textOrAuthValid = !isTextOrAuth || (headerIsValid(header) && buttons.every(buttonDraftIsValid))
+  const formValid = cardsValid && ltoValid && couponValid && textOrAuthValid
 
-  // Every variable this draft currently has, as {position, label} -- named and positional by
-  // index (the "+ Tambah Variabel" list below), the same for OFFICIAL and QUICK_REPLY alike.
-  // Feeds the "Sumber Nilai Variabel" binding UI below.
-  const namedVariables = variableNames.map((v) => v.trim()).filter(Boolean)
-  const variablePositions = namedVariables.map((name, i) => ({ position: i + 1, label: `{{${i + 1}}} ${name}` }))
+  const variablePositions = variablePositionsFor(body)
 
   // Templates are what actually gets submitted to Meta (or shown as compose-box shortcuts), so
   // the list must only ever reflect what the server confirmed — no optimistic insert. Await the
@@ -238,8 +176,6 @@ export default function TemplatesPage() {
     setError(null)
     setSubmitting(true)
     try {
-      const variables = variableNames.map((v) => v.trim()).filter(Boolean)
-
       // Only positions that (a) are still real on this draft (a variable removed after being
       // bound must not resurrect a stale binding) and (b) actually have a chosen source --
       // "Isi manual" leaves that position out of the map entirely.
@@ -256,11 +192,23 @@ export default function TemplatesPage() {
           category: category.trim() || undefined,
           body: body.trim(),
           ...(Object.keys(bindings).length > 0 ? { variableBindings: bindings } : {}),
-          ...(variables.length > 0 ? { variables } : {}),
           ...(isCarousel ? { format: 'CAROUSEL', cards: cards.map(toCardPayload) } : {}),
-          ...(isLto ? { format: 'LTO', offerTitle: offerTitle.trim(), buttons: ltoButtons.map(toButtonPayload) } : {}),
+          ...(isLto ? { format: 'LTO', offerTitle: offerTitle.trim(), buttons: buttons.map(toButtonPayload) } : {}),
           ...(isCoupon
-            ? { format: 'COUPON', couponButtonText: couponButtonText.trim(), couponExampleCode: couponExampleCode.trim() }
+            ? {
+                format: 'COUPON',
+                couponButtonText: couponButtonText.trim(),
+                couponExampleCode: couponExampleCode.trim(),
+                ...(footer.trim() ? { footer: footer.trim() } : {}),
+              }
+            : {}),
+          ...(isTextOrAuth
+            ? {
+                format,
+                ...(header.type !== 'NONE' ? { header: toHeaderPayload(header) } : {}),
+                ...(footer.trim() ? { footer: footer.trim() } : {}),
+                ...(buttons.length > 0 ? { buttons: buttons.map(toButtonPayload) } : {}),
+              }
             : {}),
         }),
       })
@@ -278,6 +226,23 @@ export default function TemplatesPage() {
       setError('Gagal menyimpan template')
     } finally {
       setSubmitting(false)
+    }
+  }
+
+  // Templates are a shared resource -- removing one silently takes away a reply other agents
+  // depend on, so the list must only ever drop a row once the server confirms it's gone.
+  async function deleteTemplate(id: string) {
+    setError(null)
+    try {
+      const res = await fetch(`/api/templates/${id}`, { method: 'DELETE' })
+      if (!res.ok) {
+        const data = await res.json().catch(() => null)
+        setError(data?.error ?? 'Gagal menghapus template')
+        return
+      }
+      setTemplates((prev) => prev.filter((t) => t.id !== id))
+    } catch {
+      setError('Gagal menghapus template')
     }
   }
 
@@ -351,7 +316,7 @@ export default function TemplatesPage() {
   const filtered = templates.filter((t) => t.type === tab)
 
   return (
-    <main className="mx-auto max-w-3xl space-y-4 p-6">
+    <main className="mx-auto max-w-4xl space-y-4 p-6">
       <h1 className="text-xl font-semibold text-navy">Template Pesan</h1>
 
       <div className="flex gap-2">
@@ -452,67 +417,36 @@ export default function TemplatesPage() {
         <h2 className="font-medium text-navy">
           {tab === 'OFFICIAL' ? 'Ajukan Template Resmi Baru' : 'Buat Balasan Cepat Baru'}
         </h2>
+
         {tab === 'OFFICIAL' && (
-          <div className="flex items-center gap-2">
-            <label htmlFor="template-format" className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              Format
-            </label>
-            <Select
-              id="template-format"
-              aria-label="Format template"
-              value={format}
-              onChange={(e) => setFormat(e.target.value as TemplateFormat)}
-              className="w-auto"
-            >
-              <option value="TEXT">Teks</option>
-              <option value="CAROUSEL">Carousel</option>
-              <option value="LTO">Penawaran Waktu Terbatas</option>
-              <option value="COUPON">Kode Kupon</option>
-            </Select>
-            {isLto && <span className="text-xs text-muted-foreground">(kategori dikunci ke MARKETING oleh Meta)</span>}
-          </div>
+          <>
+            <TypeSelector value={format} onChange={setFormat} />
+            {isLto && <p className="text-xs text-muted-foreground">Kategori dikunci ke MARKETING oleh Meta.</p>}
+            {format === 'AUTH' && <p className="text-xs text-muted-foreground">Kategori dikunci ke AUTHENTICATION oleh Meta.</p>}
+          </>
         )}
+
         <div className="grid gap-2 sm:grid-cols-2">
           <Input aria-label="Nama template" placeholder="Nama template" value={name} onChange={(e) => setName(e.target.value)} />
           <Input aria-label="Kategori" placeholder="Kategori" value={category} onChange={(e) => setCategory(e.target.value)} />
         </div>
-        <Textarea
-          aria-label="Isi pesan"
+
+        {isTextOrAuth && <HeaderField value={header} onChange={setHeader} />}
+
+        <BodyField
+          value={body}
+          onChange={setBody}
+          maxLength={isLto ? 600 : 1024}
           placeholder={
             tab === 'OFFICIAL'
               ? isCarousel
-                ? 'Isi pesan pembuka carousel, gunakan {{1}}, {{2}}, dst untuk variabel...'
-                : 'Isi pesan, gunakan {{1}}, {{2}}, dst untuk variabel...'
+                ? 'Isi pesan pembuka carousel...'
+                : 'Isi pesan...'
               : 'Isi pesan balasan cepat...'
           }
-          value={body}
-          onChange={(e) => setBody(e.target.value)}
-          rows={3}
         />
-        <div className="space-y-1.5">
-          <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Variabel</h3>
-          {variableNames.map((v, i) => (
-            <div key={i} className="flex items-center gap-1.5">
-              <Input
-                aria-label={`Nama variabel ${i + 1}`}
-                placeholder="mis. nama"
-                value={v}
-                onChange={(e) => updateVariable(i, e.target.value)}
-              />
-              <button
-                type="button"
-                aria-label={`Hapus variabel ${i + 1}`}
-                onClick={() => removeVariable(i)}
-                className="shrink-0 text-muted-foreground hover:text-destructive"
-              >
-                ✕
-              </button>
-            </div>
-          ))}
-          <Button type="button" variant="outline" size="sm" onClick={addVariable}>
-            + Tambah Variabel
-          </Button>
-        </div>
+
+        {(isTextOrAuth || isCoupon) && <FooterField value={footer} onChange={setFooter} />}
 
         {variablePositions.length > 0 && (
           <div className="space-y-1.5 rounded-lg border border-border p-3">
@@ -523,7 +457,7 @@ export default function TemplatesPage() {
             </p>
             {variablePositions.map(({ position, label }) => (
               <div key={position} className="flex items-center gap-2">
-                <span className="w-48 shrink-0 truncate text-sm text-navy">{label}</span>
+                <span className="w-16 shrink-0 text-sm text-navy">{label}</span>
                 <Select
                   aria-label={`Sumber nilai untuk ${label}`}
                   value={variableBindings[String(position)] ?? ''}
@@ -541,6 +475,13 @@ export default function TemplatesPage() {
                 </Select>
               </div>
             ))}
+          </div>
+        )}
+
+        {isTextOrAuth && (
+          <div className="space-y-1.5 rounded-lg border border-border p-3">
+            <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Tombol (opsional)</h3>
+            <ButtonsField buttons={buttons} onChange={setButtons} max={MAX_BUTTONS} />
           </div>
         )}
 
@@ -578,64 +519,20 @@ export default function TemplatesPage() {
                     onChange={(e) => updateCard(i, { mediaUrl: e.target.value })}
                   />
                 </div>
-                <Textarea
-                  aria-label={`Isi kartu ${i + 1}`}
-                  placeholder="Isi kartu..."
+                <BodyField
                   value={card.bodyText}
-                  onChange={(e) => updateCard(i, { bodyText: e.target.value })}
+                  onChange={(value) => updateCard(i, { bodyText: value })}
+                  label={`Isi kartu ${i + 1}`}
+                  placeholder="Isi kartu..."
+                  maxLength={160}
                   rows={2}
                 />
-                <div className="space-y-1.5">
-                  {card.buttons.map((btn, bi) => (
-                    <div key={bi} className="flex items-center gap-1.5">
-                      <Select
-                        aria-label={`Tipe tombol ${bi + 1} kartu ${i + 1}`}
-                        value={btn.type}
-                        onChange={(e) => updateButton(i, bi, { type: e.target.value as ButtonType })}
-                        className="w-auto"
-                      >
-                        <option value="QUICK_REPLY">Balasan Cepat</option>
-                        <option value="URL">Tautan URL</option>
-                        <option value="PHONE_NUMBER">Nomor Telepon</option>
-                      </Select>
-                      <Input
-                        aria-label={`Label tombol ${bi + 1} kartu ${i + 1}`}
-                        placeholder="Label tombol"
-                        value={btn.text}
-                        onChange={(e) => updateButton(i, bi, { text: e.target.value })}
-                      />
-                      {btn.type === 'URL' && (
-                        <Input
-                          aria-label={`URL tombol ${bi + 1} kartu ${i + 1}`}
-                          placeholder="https://..."
-                          value={btn.url}
-                          onChange={(e) => updateButton(i, bi, { url: e.target.value })}
-                        />
-                      )}
-                      {btn.type === 'PHONE_NUMBER' && (
-                        <Input
-                          aria-label={`Nomor tombol ${bi + 1} kartu ${i + 1}`}
-                          placeholder="+62..."
-                          value={btn.phoneNumber}
-                          onChange={(e) => updateButton(i, bi, { phoneNumber: e.target.value })}
-                        />
-                      )}
-                      <button
-                        type="button"
-                        aria-label={`Hapus tombol ${bi + 1} kartu ${i + 1}`}
-                        onClick={() => removeButton(i, bi)}
-                        className="shrink-0 text-muted-foreground hover:text-destructive"
-                      >
-                        ✕
-                      </button>
-                    </div>
-                  ))}
-                  {card.buttons.length < MAX_BUTTONS_PER_CARD && (
-                    <Button type="button" variant="outline" size="sm" onClick={() => addButton(i)}>
-                      + Tombol
-                    </Button>
-                  )}
-                </div>
+                <ButtonsField
+                  buttons={card.buttons}
+                  onChange={(value) => updateCard(i, { buttons: value })}
+                  max={MAX_BUTTONS_PER_CARD}
+                  labelSuffix={` kartu ${i + 1}`}
+                />
               </div>
             ))}
             {cards.length < MAX_CARDS && (
@@ -657,55 +554,7 @@ export default function TemplatesPage() {
             />
             <div className="space-y-1.5">
               <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Tombol (opsional)</h3>
-              {ltoButtons.map((btn, bi) => (
-                <div key={bi} className="flex items-center gap-1.5">
-                  <Select
-                    aria-label={`Tipe tombol ${bi + 1}`}
-                    value={btn.type}
-                    onChange={(e) => updateLtoButton(bi, { type: e.target.value as ButtonType })}
-                    className="w-auto"
-                  >
-                    <option value="QUICK_REPLY">Balasan Cepat</option>
-                    <option value="URL">Tautan URL</option>
-                    <option value="PHONE_NUMBER">Nomor Telepon</option>
-                  </Select>
-                  <Input
-                    aria-label={`Label tombol ${bi + 1}`}
-                    placeholder="Label tombol"
-                    value={btn.text}
-                    onChange={(e) => updateLtoButton(bi, { text: e.target.value })}
-                  />
-                  {btn.type === 'URL' && (
-                    <Input
-                      aria-label={`URL tombol ${bi + 1}`}
-                      placeholder="https://..."
-                      value={btn.url}
-                      onChange={(e) => updateLtoButton(bi, { url: e.target.value })}
-                    />
-                  )}
-                  {btn.type === 'PHONE_NUMBER' && (
-                    <Input
-                      aria-label={`Nomor tombol ${bi + 1}`}
-                      placeholder="+62..."
-                      value={btn.phoneNumber}
-                      onChange={(e) => updateLtoButton(bi, { phoneNumber: e.target.value })}
-                    />
-                  )}
-                  <button
-                    type="button"
-                    aria-label={`Hapus tombol ${bi + 1}`}
-                    onClick={() => removeLtoButton(bi)}
-                    className="shrink-0 text-muted-foreground hover:text-destructive"
-                  >
-                    ✕
-                  </button>
-                </div>
-              ))}
-              {ltoButtons.length < MAX_LTO_BUTTONS && (
-                <Button type="button" variant="outline" size="sm" onClick={addLtoButton}>
-                  + Tombol
-                </Button>
-              )}
+              <ButtonsField buttons={buttons} onChange={setButtons} max={MAX_BUTTONS} />
             </div>
           </div>
         )}
@@ -736,38 +585,8 @@ export default function TemplatesPage() {
       <Card className="p-4">
         {loading ? (
           <p className="text-sm text-muted-foreground">Memuat...</p>
-        ) : filtered.length === 0 ? (
-          <p className="text-sm text-muted-foreground">Belum ada template.</p>
         ) : (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Nama</TableHead>
-                <TableHead>Kategori</TableHead>
-                <TableHead>Isi</TableHead>
-                {tab === 'OFFICIAL' && <TableHead>Status Meta</TableHead>}
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filtered.map((t) => (
-                <TableRow key={t.id}>
-                  <TableCell className="font-medium text-navy">
-                    {t.name}
-                    {t.format === 'CAROUSEL' && ' 🎠'}
-                    {t.format === 'LTO' && ' ⏳'}
-                    {t.format === 'COUPON' && ' 🎟️'}
-                  </TableCell>
-                  <TableCell className="text-muted-foreground">{t.category ?? '-'}</TableCell>
-                  <TableCell className="max-w-xs truncate text-muted-foreground">{t.body}</TableCell>
-                  {tab === 'OFFICIAL' && (
-                    <TableCell>
-                      <Badge variant={metaStatusVariant[t.metaStatus]}>{metaStatusLabel[t.metaStatus]}</Badge>
-                    </TableCell>
-                  )}
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+          <TemplateGrid templates={filtered} showStatus={tab === 'OFFICIAL'} onDelete={deleteTemplate} />
         )}
       </Card>
     </main>

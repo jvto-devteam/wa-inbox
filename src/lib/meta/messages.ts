@@ -67,6 +67,11 @@ export async function sendTemplateMessage(
   template: {
     name: string
     bodyParams: string[]
+    // TEXT/AUTH only, and only for a media-type header (a plain TEXT header is static and
+    // needs no runtime parameter): the media re-uploaded fresh for this send (see
+    // uploadMetaMediaFromUrl) -- same reasoning as CAROUSEL cards, Meta's submission-time
+    // handle is long expired by send time.
+    header?: { mediaId: string; mediaType: 'IMAGE' | 'VIDEO' | 'DOCUMENT' }
     cards?: TemplateCardToSend[]
     // LTO: the real, per-send expiration for the countdown banner -- submission time only
     // ever recorded `has_expiration: true` (see submitLtoTemplate), Meta requires the actual
@@ -78,6 +83,10 @@ export async function sendTemplateMessage(
   }
 ): Promise<{ externalId: string }> {
   const components: unknown[] = []
+  if (template.header) {
+    const mediaKey = template.header.mediaType.toLowerCase()
+    components.push({ type: 'header', parameters: [{ type: mediaKey, [mediaKey]: { id: template.header.mediaId } }] })
+  }
   if (template.bodyParams.length > 0) {
     components.push({ type: 'body', parameters: template.bodyParams.map((text) => ({ type: 'text', text })) })
   }

@@ -10,16 +10,92 @@ beforeEach(() => {
 })
 
 describe('submitMetaTemplate', () => {
-  it('posts to the WABA message_templates endpoint', async () => {
+  it('posts to the WABA message_templates endpoint with just a BODY component when there is nothing else', async () => {
     ;(fetch as any).mockResolvedValue({ ok: true, json: async () => ({ id: 'tpl_meta_1', status: 'PENDING' }) })
 
     const result = await submitMetaTemplate(
       { wabaId: 'waba_1', accessToken: 'tok' },
-      { name: 'booking_confirmation', category: 'UTILITY', body: 'Booking Anda {{1}} sudah dikonfirmasi.', variables: ['nama'] }
+      { name: 'sapaan', category: 'UTILITY', body: 'Halo, ada yang bisa dibantu?' }
     )
 
     expect(result).toEqual({ metaId: 'tpl_meta_1', status: 'PENDING' })
     expect(fetch).toHaveBeenCalledWith('https://graph.facebook.com/v20.0/waba_1/message_templates', expect.objectContaining({ method: 'POST' }))
+    const [, options] = (fetch as any).mock.calls[0]
+    const payload = JSON.parse(options.body)
+    expect(payload.components).toEqual([{ type: 'BODY', text: 'Halo, ada yang bisa dibantu?' }])
+  })
+
+  it('auto-generates example.body_text from the number of {{n}} placeholders in the body', async () => {
+    ;(fetch as any).mockResolvedValue({ ok: true, json: async () => ({ id: 'tpl_meta_2', status: 'PENDING' }) })
+
+    await submitMetaTemplate(
+      { wabaId: 'waba_1', accessToken: 'tok' },
+      { name: 'booking_confirmation', category: 'UTILITY', body: 'Booking Anda {{1}} sudah dikonfirmasi, sisa {{2}}.' }
+    )
+
+    const [, options] = (fetch as any).mock.calls[0]
+    const payload = JSON.parse(options.body)
+    expect(payload.components).toEqual([
+      { type: 'BODY', text: 'Booking Anda {{1}} sudah dikonfirmasi, sisa {{2}}.', example: { body_text: [['contoh1', 'contoh2']] } },
+    ])
+  })
+
+  it('includes a plain TEXT header and FOOTER when provided, ahead of and after BODY respectively', async () => {
+    ;(fetch as any).mockResolvedValue({ ok: true, json: async () => ({ id: 'tpl_meta_3', status: 'PENDING' }) })
+
+    await submitMetaTemplate(
+      { wabaId: 'waba_1', accessToken: 'tok' },
+      { name: 'sapaan', category: 'UTILITY', body: 'Halo!', header: { type: 'TEXT', text: 'Selamat Datang' }, footer: 'JVTO Tour' }
+    )
+
+    const [, options] = (fetch as any).mock.calls[0]
+    const payload = JSON.parse(options.body)
+    expect(payload.components).toEqual([
+      { type: 'HEADER', format: 'TEXT', text: 'Selamat Datang' },
+      { type: 'BODY', text: 'Halo!' },
+      { type: 'FOOTER', text: 'JVTO Tour' },
+    ])
+  })
+
+  it('uploads a media header via the resumable upload API using the header_handle', async () => {
+    vi.mocked(uploadMetaResumable).mockResolvedValue({ handle: 'handle_header_1' })
+    ;(fetch as any).mockResolvedValue({ ok: true, json: async () => ({ id: 'tpl_meta_4', status: 'PENDING' }) })
+
+    await submitMetaTemplate(
+      { wabaId: 'waba_1', accessToken: 'tok' },
+      { name: 'promo', category: 'MARKETING', body: 'Halo!', header: { type: 'IMAGE', mediaUrl: 'https://example.com/banner.jpg' } },
+      'app_123'
+    )
+
+    expect(uploadMetaResumable).toHaveBeenCalledWith('app_123', 'tok', 'https://example.com/banner.jpg')
+    const [, options] = (fetch as any).mock.calls[0]
+    const payload = JSON.parse(options.body)
+    expect(payload.components[0]).toEqual({ type: 'HEADER', format: 'IMAGE', example: { header_handle: ['handle_header_1'] } })
+  })
+
+  it('throws a clear error when a media header is requested without META_APP_ID', async () => {
+    await expect(
+      submitMetaTemplate(
+        { wabaId: 'waba_1', accessToken: 'tok' },
+        { name: 'promo', category: 'MARKETING', body: 'Halo!', header: { type: 'IMAGE', mediaUrl: 'https://example.com/banner.jpg' } }
+      )
+    ).rejects.toThrow('META_APP_ID')
+  })
+
+  it('includes a BUTTONS component when buttons are provided', async () => {
+    ;(fetch as any).mockResolvedValue({ ok: true, json: async () => ({ id: 'tpl_meta_5', status: 'PENDING' }) })
+
+    await submitMetaTemplate(
+      { wabaId: 'waba_1', accessToken: 'tok' },
+      { name: 'sapaan', category: 'UTILITY', body: 'Halo!', buttons: [{ type: 'QUICK_REPLY', text: 'Ya' }] }
+    )
+
+    const [, options] = (fetch as any).mock.calls[0]
+    const payload = JSON.parse(options.body)
+    expect(payload.components).toEqual([
+      { type: 'BODY', text: 'Halo!' },
+      { type: 'BUTTONS', buttons: [{ type: 'QUICK_REPLY', text: 'Ya' }] },
+    ])
   })
 })
 
@@ -158,6 +234,23 @@ describe('submitCouponTemplate', () => {
     const payload = JSON.parse(options.body)
     expect(payload.components).toEqual([
       { type: 'BODY', text: 'Gunakan kode ini untuk diskon spesial Anda.' },
+      { type: 'BUTTONS', buttons: [{ type: 'COPY_CODE', text: 'Salin Kode', example: ['PROMO25'] }] },
+    ])
+  })
+
+  it('includes a FOOTER component between BODY and BUTTONS when provided', async () => {
+    ;(fetch as any).mockResolvedValue({ ok: true, json: async () => ({ id: 'tpl_coupon_2', status: 'PENDING' }) })
+
+    await submitCouponTemplate(
+      { wabaId: 'waba_1', accessToken: 'tok' },
+      { name: 'kode_diskon', category: 'UTILITY', body: 'Halo', footer: 'JVTO Tour', buttonText: 'Salin Kode', exampleCode: 'PROMO25' }
+    )
+
+    const [, options] = (fetch as any).mock.calls[0]
+    const payload = JSON.parse(options.body)
+    expect(payload.components).toEqual([
+      { type: 'BODY', text: 'Halo' },
+      { type: 'FOOTER', text: 'JVTO Tour' },
       { type: 'BUTTONS', buttons: [{ type: 'COPY_CODE', text: 'Salin Kode', example: ['PROMO25'] }] },
     ])
   })

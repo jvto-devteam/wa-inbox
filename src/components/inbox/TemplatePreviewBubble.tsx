@@ -2,10 +2,16 @@ import { formatWhatsAppText } from '@/lib/whatsapp-format'
 
 export type PreviewButton = { type: 'QUICK_REPLY' | 'URL' | 'PHONE_NUMBER'; text: string; url?: string; phoneNumber?: string }
 export type PreviewCard = { mediaType: 'IMAGE' | 'VIDEO'; mediaUrl: string; bodyText: string; buttons: PreviewButton[] }
+export type PreviewHeader =
+  | { type: 'NONE' }
+  | { type: 'TEXT'; text: string }
+  | { type: 'IMAGE' | 'VIDEO' | 'DOCUMENT'; mediaUrl: string }
 export type TemplatePreviewData = {
   name: string
   body: string
   format: string
+  header?: PreviewHeader | null
+  footer?: string | null
   cards?: PreviewCard[] | null
   offerTitle?: string | null
   buttons?: PreviewButton[] | null
@@ -33,8 +39,23 @@ export function TemplatePreviewBubble({ template, onClick }: { template: Templat
         {template.format === 'LTO' && template.offerTitle && (
           <div className="bg-amber-50 px-2.5 py-1 text-[11px] font-medium text-amber-700">⏳ {template.offerTitle}</div>
         )}
+        {template.header?.type === 'TEXT' && (
+          <p className="px-2.5 pt-2 text-xs font-semibold text-navy">{template.header.text}</p>
+        )}
+        {template.header && ['IMAGE', 'VIDEO', 'DOCUMENT'].includes(template.header.type) && (
+          <div className="p-2.5 pb-0">
+            {template.header.type === 'VIDEO' ? (
+              <video src={template.header.mediaUrl} className="h-24 w-full rounded object-cover" muted />
+            ) : template.header.type === 'IMAGE' ? (
+              <img src={template.header.mediaUrl} alt="" className="h-24 w-full rounded object-cover" />
+            ) : (
+              <div className="flex h-16 items-center justify-center rounded bg-black/5 text-2xl">📎</div>
+            )}
+          </div>
+        )}
         <div className="space-y-1.5 p-2.5">
           <p className="line-clamp-3 text-xs text-foreground">{formatWhatsAppText(template.body)}</p>
+          {template.footer && <p className="text-[11px] text-muted-foreground">{template.footer}</p>}
           {template.format === 'CAROUSEL' && template.cards && template.cards.length > 0 && (
             <div className="-mx-1 flex gap-1.5 overflow-x-auto px-1 pb-1">
               {template.cards.map((c, i) => (

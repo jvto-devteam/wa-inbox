@@ -1,24 +1,18 @@
 import { metaFetch } from './client'
 import { uploadMetaResumable } from './media-upload'
-import type { CarouselCardDef, CarouselButtonDef } from './carousel-types'
+import type { CarouselCardDef, CarouselButtonDef, TemplateHeaderDef } from './carousel-types'
 
-export async function submitMetaTemplate(
-  waNumber: { wabaId: string; accessToken: string },
-  template: { name: string; category: string; body: string; variables: string[] }
-): Promise<{ metaId: string; status: string }> {
-  const body = await metaFetch(`/${waNumber.wabaId}/message_templates`, waNumber.accessToken, {
-    method: 'POST',
-    body: JSON.stringify({
-      name: template.name,
-      language: 'id',
-      category: template.category,
-      components: [{ type: 'BODY', text: template.body }],
-    }),
-  })
-  return { metaId: body.id, status: body.status }
+// Meta requires a concrete sample value per {{n}} placeholder in a BODY component before it
+// will review a submission -- generic, position-numbered placeholders (never the real data a
+// customer would see) are all Meta actually needs at submission time; the true content is
+// filled in per-send instead (see ComposeBox).
+function bodyExample(body: string): string[] | undefined {
+  const count = (body.match(/\{\{\d+\}\}/g) ?? []).length
+  if (count === 0) return undefined
+  return Array.from({ length: count }, (_, i) => `contoh${i + 1}`)
 }
 
-function buildCardButtonComponents(buttons: CarouselCardDef['buttons']) {
+function buildButtonComponents(buttons: CarouselButtonDef[]) {
   if (buttons.length === 0) return []
   return [
     {
@@ -32,6 +26,45 @@ function buildCardButtonComponents(buttons: CarouselCardDef['buttons']) {
       ),
     },
   ]
+}
+
+async function buildHeaderComponent(
+  header: TemplateHeaderDef | undefined,
+  accessToken: string,
+  appId?: string
+): Promise<Record<string, unknown>[]> {
+  if (!header || header.type === 'NONE') return []
+  if (header.type === 'TEXT') return [{ type: 'HEADER', format: 'TEXT', text: header.text }]
+  if (!appId) throw new Error('META_APP_ID belum dikonfigurasi di server')
+  const { handle } = await uploadMetaResumable(appId, accessToken, header.mediaUrl)
+  return [{ type: 'HEADER', format: header.type, example: { header_handle: [handle] } }]
+}
+
+export async function submitMetaTemplate(
+  waNumber: { wabaId: string; accessToken: string },
+  template: {
+    name: string
+    category: string
+    body: string
+    header?: TemplateHeaderDef
+    footer?: string
+    buttons?: CarouselButtonDef[]
+  },
+  appId?: string
+): Promise<{ metaId: string; status: string }> {
+  const example = bodyExample(template.body)
+  const components = [
+    ...(await buildHeaderComponent(template.header, waNumber.accessToken, appId)),
+    { type: 'BODY', text: template.body, ...(example ? { example: { body_text: [example] } } : {}) },
+    ...(template.footer ? [{ type: 'FOOTER', text: template.footer }] : []),
+    ...buildButtonComponents(template.buttons ?? []),
+  ]
+
+  const body = await metaFetch(`/${waNumber.wabaId}/message_templates`, waNumber.accessToken, {
+    method: 'POST',
+    body: JSON.stringify({ name: template.name, language: 'id', category: template.category, components }),
+  })
+  return { metaId: body.id, status: body.status }
 }
 
 /**
@@ -51,7 +84,7 @@ export async function submitLtoTemplate(
   const components = [
     { type: 'LIMITED_TIME_OFFER', limited_time_offer: { text: template.offerTitle, has_expiration: true } },
     { type: 'BODY', text: template.body },
-    ...buildCardButtonComponents(template.buttons),
+    ...buildButtonComponents(template.buttons),
   ]
 
   const body = await metaFetch(`/${waNumber.wabaId}/message_templates`, waNumber.accessToken, {
@@ -70,10 +103,11 @@ export async function submitLtoTemplate(
  */
 export async function submitCouponTemplate(
   waNumber: { wabaId: string; accessToken: string },
-  template: { name: string; category: string; body: string; buttonText: string; exampleCode: string }
+  template: { name: string; category: string; body: string; footer?: string; buttonText: string; exampleCode: string }
 ): Promise<{ metaId: string; status: string }> {
   const components = [
     { type: 'BODY', text: template.body },
+    ...(template.footer ? [{ type: 'FOOTER', text: template.footer }] : []),
     { type: 'BUTTONS', buttons: [{ type: 'COPY_CODE', text: template.buttonText, example: [template.exampleCode] }] },
   ]
 
@@ -101,7 +135,7 @@ export async function submitCarouselTemplate(
         components: [
           { type: 'HEADER', format: card.mediaType, example: { header_handle: [handle] } },
           { type: 'BODY', text: card.bodyText },
-          ...buildCardButtonComponents(card.buttons),
+          ...buildButtonComponents(card.buttons),
         ],
       }
     })

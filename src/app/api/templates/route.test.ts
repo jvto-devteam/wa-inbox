@@ -343,4 +343,168 @@ describe('templates API', () => {
       expect(submitCouponTemplate).not.toHaveBeenCalled()
     })
   })
+
+  describe('variable labels', () => {
+    it('derives generic "Variabel N" labels from the body when the caller sends no variables array', async () => {
+      mockPrisma.waNumber.findFirstOrThrow.mockResolvedValue({ wabaId: 'waba_1', accessToken: 'tok' } as never)
+      vi.mocked(submitMetaTemplate).mockResolvedValue({ metaId: 'tpl_1', status: 'PENDING' })
+      mockPrisma.template.create.mockResolvedValue({ id: 't1' } as never)
+
+      const req = new Request('http://localhost/api/templates', {
+        method: 'POST',
+        headers: adminCookie,
+        body: JSON.stringify({ name: 'x', type: 'OFFICIAL', category: 'UTILITY', body: 'Halo {{1}}, sisa {{2}}.' }),
+      })
+      const res = await POST(req)
+
+      expect(res.status).toBe(200)
+      expect(mockPrisma.template.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ variables: ['Variabel 1', 'Variabel 2'] }) })
+      )
+    })
+
+    it('labels a bound position with the bound field\'s own label instead of a generic one', async () => {
+      mockPrisma.waNumber.findFirstOrThrow.mockResolvedValue({ wabaId: 'waba_1', accessToken: 'tok' } as never)
+      vi.mocked(submitMetaTemplate).mockResolvedValue({ metaId: 'tpl_1', status: 'PENDING' })
+      mockPrisma.template.create.mockResolvedValue({ id: 't1' } as never)
+
+      const req = new Request('http://localhost/api/templates', {
+        method: 'POST',
+        headers: adminCookie,
+        body: JSON.stringify({
+          name: 'x', type: 'OFFICIAL', category: 'UTILITY', body: 'Halo {{1}}.',
+          variableBindings: { '1': 'contactName' },
+        }),
+      })
+      const res = await POST(req)
+
+      expect(res.status).toBe(200)
+      const [options] = vi.mocked(mockPrisma.template.create).mock.calls[0]
+      expect((options as { data: { variables: string[] } }).data.variables).toEqual(['Nama Kontak (WhatsApp)'])
+    })
+
+    it('keeps a caller-provided variables array as-is (the AI-suggestion save path)', async () => {
+      mockPrisma.waNumber.findFirstOrThrow.mockResolvedValue({ wabaId: 'waba_1', accessToken: 'tok' } as never)
+      vi.mocked(submitMetaTemplate).mockResolvedValue({ metaId: 'tpl_1', status: 'PENDING' })
+      mockPrisma.template.create.mockResolvedValue({ id: 't1' } as never)
+
+      const req = new Request('http://localhost/api/templates', {
+        method: 'POST',
+        headers: adminCookie,
+        body: JSON.stringify({ name: 'x', type: 'OFFICIAL', category: 'UTILITY', body: 'Halo {{1}}.', variables: ['nama_pelanggan'] }),
+      })
+      const res = await POST(req)
+
+      expect(res.status).toBe(200)
+      expect(mockPrisma.template.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ variables: ['nama_pelanggan'] }) })
+      )
+    })
+  })
+
+  describe('AUTH templates', () => {
+    it('submits via submitMetaTemplate, locking category to AUTHENTICATION regardless of what was sent', async () => {
+      mockPrisma.waNumber.findFirstOrThrow.mockResolvedValue({ wabaId: 'waba_1', accessToken: 'tok' } as never)
+      vi.mocked(submitMetaTemplate).mockResolvedValue({ metaId: 'tpl_auth_1', status: 'PENDING' })
+      mockPrisma.template.create.mockResolvedValue({ id: 't_auth', format: 'AUTH', metaStatus: 'PENDING' } as never)
+
+      const req = new Request('http://localhost/api/templates', {
+        method: 'POST',
+        headers: adminCookie,
+        body: JSON.stringify({ name: 'kode_otp', type: 'OFFICIAL', format: 'AUTH', category: 'UTILITY', body: 'Kode OTP Anda: {{1}}' }),
+      })
+      const res = await POST(req)
+
+      expect(res.status).toBe(200)
+      expect(submitMetaTemplate).toHaveBeenCalledWith(
+        { wabaId: 'waba_1', accessToken: 'tok' },
+        expect.objectContaining({ category: 'AUTHENTICATION' }),
+        undefined
+      )
+      expect(mockPrisma.template.create).toHaveBeenCalledWith(expect.objectContaining({
+        data: expect.objectContaining({ format: 'AUTH', category: 'AUTHENTICATION', metaStatus: 'PENDING' }),
+      }))
+    })
+
+    it('rejects an AUTH format on a QUICK_REPLY template', async () => {
+      const req = new Request('http://localhost/api/templates', {
+        method: 'POST',
+        headers: adminCookie,
+        body: JSON.stringify({ name: 'x', type: 'QUICK_REPLY', format: 'AUTH', body: 'x' }),
+      })
+      const res = await POST(req)
+      expect(res.status).toBe(400)
+      expect(submitMetaTemplate).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('header and footer', () => {
+    it('passes a TEXT header and footer through to submitMetaTemplate and persists them', async () => {
+      mockPrisma.waNumber.findFirstOrThrow.mockResolvedValue({ wabaId: 'waba_1', accessToken: 'tok' } as never)
+      vi.mocked(submitMetaTemplate).mockResolvedValue({ metaId: 'tpl_1', status: 'PENDING' })
+      mockPrisma.template.create.mockResolvedValue({ id: 't1' } as never)
+
+      const req = new Request('http://localhost/api/templates', {
+        method: 'POST',
+        headers: adminCookie,
+        body: JSON.stringify({
+          name: 'sapaan', type: 'OFFICIAL', category: 'UTILITY', body: 'Halo!',
+          header: { type: 'TEXT', text: 'Selamat Datang' }, footer: 'JVTO Tour',
+        }),
+      })
+      const res = await POST(req)
+
+      expect(res.status).toBe(200)
+      expect(submitMetaTemplate).toHaveBeenCalledWith(
+        { wabaId: 'waba_1', accessToken: 'tok' },
+        expect.objectContaining({ header: { type: 'TEXT', text: 'Selamat Datang' }, footer: 'JVTO Tour' }),
+        undefined
+      )
+      expect(mockPrisma.template.create).toHaveBeenCalledWith(expect.objectContaining({
+        data: expect.objectContaining({ header: { type: 'TEXT', text: 'Selamat Datang' }, footer: 'JVTO Tour' }),
+      }))
+    })
+
+    it('returns 500 without creating a row when a media header is used but META_APP_ID is not configured', async () => {
+      mockPrisma.waNumber.findFirstOrThrow.mockResolvedValue({ wabaId: 'waba_1', accessToken: 'tok' } as never)
+
+      const req = new Request('http://localhost/api/templates', {
+        method: 'POST',
+        headers: adminCookie,
+        body: JSON.stringify({
+          name: 'promo', type: 'OFFICIAL', category: 'MARKETING', body: 'Halo!',
+          header: { type: 'IMAGE', mediaUrl: 'https://example.com/banner.jpg' },
+        }),
+      })
+      const res = await POST(req)
+
+      expect(res.status).toBe(500)
+      expect(submitMetaTemplate).not.toHaveBeenCalled()
+      expect(mockPrisma.template.create).not.toHaveBeenCalled()
+    })
+
+    it('passes META_APP_ID through to submitMetaTemplate when a media header is used and it is configured', async () => {
+      process.env.META_APP_ID = 'app_123'
+      mockPrisma.waNumber.findFirstOrThrow.mockResolvedValue({ wabaId: 'waba_1', accessToken: 'tok' } as never)
+      vi.mocked(submitMetaTemplate).mockResolvedValue({ metaId: 'tpl_1', status: 'PENDING' })
+      mockPrisma.template.create.mockResolvedValue({ id: 't1' } as never)
+
+      const req = new Request('http://localhost/api/templates', {
+        method: 'POST',
+        headers: adminCookie,
+        body: JSON.stringify({
+          name: 'promo', type: 'OFFICIAL', category: 'MARKETING', body: 'Halo!',
+          header: { type: 'IMAGE', mediaUrl: 'https://example.com/banner.jpg' },
+        }),
+      })
+      const res = await POST(req)
+
+      expect(res.status).toBe(200)
+      expect(submitMetaTemplate).toHaveBeenCalledWith(
+        { wabaId: 'waba_1', accessToken: 'tok' },
+        expect.objectContaining({ header: { type: 'IMAGE', mediaUrl: 'https://example.com/banner.jpg' } }),
+        'app_123'
+      )
+    })
+  })
 })

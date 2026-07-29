@@ -88,6 +88,41 @@ describe('POST /api/send/template', () => {
     }))
   })
 
+  it('uploads a TEXT/AUTH template\'s media header fresh and sends it as a header parameter', async () => {
+    mockPrisma.template.findUnique.mockResolvedValue({
+      id: 't4', name: 'promo', metaStatus: 'APPROVED', body: 'Halo!', cards: null,
+      header: { type: 'IMAGE', mediaUrl: 'https://example.com/banner.jpg' },
+    } as never)
+    vi.mocked(uploadMetaMediaFromUrl).mockResolvedValue({ id: 'media_header_1', mimeType: 'image/jpeg' })
+    vi.mocked(sendTemplateMessage).mockResolvedValue({ externalId: 'wamid.TPL5' })
+    mockPrisma.message.create.mockResolvedValue({ id: 'msg_4', deliveryStatus: 'SENT' } as never)
+
+    const res = await POST(req({ conversationId: 'conv_1', templateId: 't4' }))
+
+    expect(res.status).toBe(200)
+    expect(uploadMetaMediaFromUrl).toHaveBeenCalledWith({ phoneNumberId: 'pnid', accessToken: 'tok' }, 'https://example.com/banner.jpg')
+    expect(sendTemplateMessage).toHaveBeenCalledWith(
+      expect.anything(),
+      '6281234567890',
+      expect.objectContaining({ header: { mediaId: 'media_header_1', mediaType: 'IMAGE' } })
+    )
+  })
+
+  it('sends no header parameter for a plain TEXT header (static, no upload needed)', async () => {
+    mockPrisma.template.findUnique.mockResolvedValue({
+      id: 't5', name: 'sapaan', metaStatus: 'APPROVED', body: 'Halo!', cards: null,
+      header: { type: 'TEXT', text: 'Selamat Datang' },
+    } as never)
+    vi.mocked(sendTemplateMessage).mockResolvedValue({ externalId: 'wamid.TPL6' })
+    mockPrisma.message.create.mockResolvedValue({ id: 'msg_5', deliveryStatus: 'SENT' } as never)
+
+    const res = await POST(req({ conversationId: 'conv_1', templateId: 't5' }))
+
+    expect(res.status).toBe(200)
+    expect(uploadMetaMediaFromUrl).not.toHaveBeenCalled()
+    expect(sendTemplateMessage).toHaveBeenCalledWith(expect.anything(), '6281234567890', expect.objectContaining({ header: undefined }))
+  })
+
   it('returns 502 without sending or creating a row when media upload fails', async () => {
     const card = { mediaType: 'IMAGE', mediaUrl: 'https://example.com/broken.jpg', bodyText: 'x', buttons: [] }
     mockPrisma.template.findUnique.mockResolvedValue({

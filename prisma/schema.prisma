@@ -241,6 +241,9 @@ enum TemplateFormat {
   // presents it as its own template type: the real coupon code is a per-send runtime value,
   // never the submission-time example.
   COUPON
+  // Same component shape as TEXT (optional HEADER/BODY/FOOTER/BUTTONS) -- Meta only
+  // distinguishes it by locking category to AUTHENTICATION (OTP-style templates).
+  AUTH
 }
 
 model Template {
@@ -258,6 +261,11 @@ model Template {
   metaStatus        TemplateMetaStatus @default(NOT_APPLICABLE)
   category          String?
   body              String
+  // Auto-derived at submission time from how many {{n}} placeholders the body actually
+  // contains (see src/components/templates/BodyField.tsx's cursor-insert button) -- never
+  // manually named by the admin. Each entry is a display label only (the bound field's own
+  // label when variableBindings covers that position, else a generic "Variabel N"), read by
+  // ComposeBox to label each fill-in input at send time.
   variables         Json?
   // Maps a variable's 1-indexed position (as a string, e.g. "1", "2" -- {{1}}, {{2}}) to a
   // src/lib/booking/variable-fields.ts field key (e.g. "package", "financialBalance"), chosen
@@ -265,6 +273,13 @@ model Template {
   // agent fills it manually at send time (see ComposeBox's per-variable "Isi dari data..."
   // fallback picker). Applies to both OFFICIAL and QUICK_REPLY templates.
   variableBindings  Json?
+  // TEXT/AUTH only: TemplateHeaderDef (see src/lib/meta/carousel-types.ts) -- None/Text/Image
+  // URL/Video URL/Document URL. Media variants are uploaded via the Resumable Upload API at
+  // submission time (same mechanism CAROUSEL cards use), never stored as a Meta handle here.
+  header            Json?
+  // TEXT/AUTH/COUPON only: a fixed footer line under the body (Meta caps this at 60
+  // characters, and forbids variables in it).
+  footer            String?
   // Only set when format is CAROUSEL: CarouselCardDef[] (see src/lib/meta/carousel-types.ts)
   // -- each card's own source media URL, body text, and buttons, exactly as submitted. The
   // source URL is re-uploaded to Meta fresh on every send (see uploadMetaMediaFromUrl):
@@ -272,8 +287,8 @@ model Template {
   cards             Json?
   // LTO only: the countdown banner's fixed text (Meta caps this at 16 characters).
   offerTitle        String?
-  // LTO only: optional top-level buttons (CarouselButtonDef[] -- same shape carousel cards
-  // use, since Meta allows the same QUICK_REPLY/URL/PHONE_NUMBER types here).
+  // TEXT/AUTH/LTO only: optional top-level buttons (CarouselButtonDef[] -- same shape
+  // carousel cards use, since Meta allows the same QUICK_REPLY/URL/PHONE_NUMBER types here).
   buttons           Json?
   // COUPON only: the button's fixed label and the placeholder code Meta needs to approve the
   // submission. The real, live code is supplied per-send instead (see /api/send/template) --

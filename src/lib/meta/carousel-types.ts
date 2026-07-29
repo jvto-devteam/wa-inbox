@@ -17,6 +17,18 @@ export type CarouselCardDef = {
   buttons: CarouselButtonDef[]
 }
 
+// A TEXT/AUTH template's optional top-level HEADER component. Media variants carry a plain
+// public HTTPS source URL (same convention as CarouselCardDef.mediaUrl) -- uploaded fresh via
+// the Resumable Upload API at submission time (see submitMetaTemplate), never a stored Meta
+// handle. NONE means the template has no header at all; distinct from omitting the field so
+// the builder UI can always render a definite selection.
+export type TemplateHeaderDef =
+  | { type: 'NONE' }
+  | { type: 'TEXT'; text: string }
+  | { type: 'IMAGE'; mediaUrl: string }
+  | { type: 'VIDEO'; mediaUrl: string }
+  | { type: 'DOCUMENT'; mediaUrl: string }
+
 // The exact structure of a template message as it was actually sent, snapshotted onto
 // Message.templatePayload so the bubble renders it identically forever, independent of
 // whatever the source Template row looks like later (edited, deleted, cards changed).

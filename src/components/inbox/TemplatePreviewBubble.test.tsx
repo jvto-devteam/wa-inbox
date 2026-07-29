@@ -38,6 +38,32 @@ describe('TemplatePreviewBubble', () => {
     expect(screen.getByAltText('Ijen')).toHaveAttribute('src', 'https://example.com/ijen.jpg')
   })
 
+  it('shows a TEXT header above the body', () => {
+    render(
+      <TemplatePreviewBubble
+        template={{ name: 'sapaan', body: 'Halo!', format: 'TEXT', header: { type: 'TEXT', text: 'Selamat Datang' } }}
+      />
+    )
+    expect(screen.getByText('Selamat Datang')).toBeInTheDocument()
+  })
+
+  it('shows a media header image using its real URL', () => {
+    render(
+      <TemplatePreviewBubble
+        template={{
+          name: 'promo', body: 'Halo!', format: 'TEXT',
+          header: { type: 'IMAGE', mediaUrl: 'https://example.com/banner.jpg' },
+        }}
+      />
+    )
+    expect(document.querySelector('img[src="https://example.com/banner.jpg"]')).toBeInTheDocument()
+  })
+
+  it('shows the footer text below the body', () => {
+    render(<TemplatePreviewBubble template={{ name: 'sapaan', body: 'Halo!', format: 'TEXT', footer: 'JVTO Tour' }} />)
+    expect(screen.getByText('JVTO Tour')).toBeInTheDocument()
+  })
+
   it('shows up to 3 button rows with type-specific icons', () => {
     render(
       <TemplatePreviewBubble
