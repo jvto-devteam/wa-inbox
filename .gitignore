@@ -14,9 +14,12 @@ node_modules/
 # testing
 /coverage
 
-# bot catalog (synced by scripts/sync-catalog, see Task 21)
-catalog/*.json
-!catalog/.gitkeep
+# bot catalog: data files ARE committed (wa-inbox is self-contained -- no Python
+# agent-runtime dependency in production, see scripts/sync-agent-catalog.ts). The one
+# exception is deployment-approval.json: a signed operator artifact, not source data, and
+# must never land in version control -- same reason .env doesn't. See
+# scripts/approve-deployment.ts and src/lib/bot/deployment-gate.ts.
+catalog/deployment-approval.json
 
 # agent-uploaded outbound attachments (see src/app/api/uploads/route.ts) -- real
 # customer-facing files, never repo content

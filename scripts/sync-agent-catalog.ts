@@ -1,8 +1,10 @@
 #!/usr/bin/env tsx
 /**
- * Syncs catalog JSON data from the sibling `jvto-whatsapp-agent-runtime` repo
- * into this project's `catalog/` directory, and records the runtime's
- * deployment-gate result.
+ * Syncs catalog JSON data from the sibling `jvto-whatsapp-agent-runtime` repo into this
+ * project's `catalog/` directory. This is a DEV-TIME, operator-run step (the sibling repo
+ * only ever needs to exist on whoever's machine runs this, never in production) -- the
+ * resulting `catalog/*.json` files are committed into wa-inbox itself and reach the VPS
+ * through the normal deploy pipeline, same as any other code/data change.
  *
  * Ported from chatbot-web's `scripts/sync-agent-catalog.js` (a proven pattern
  * in a sibling project), adapted for wa-inbox:
@@ -31,16 +33,18 @@
  *    neither, and `loadCatalog` warns that the file is missing — which is the
  *    intended loud failure, but the sync should then be taught which copy is
  *    authoritative rather than left in that state.
- *  - it additionally writes `catalog/meta.json` (`{ syncedAt }`) and shells
- *    out to the agent-runtime's `deployment-gate` CLI to produce
- *    `catalog/deployment-gate.json`.
+ *  - it additionally writes `catalog/meta.json` (`{ syncedAt }`).
+ *
+ * Deployment approval is a SEPARATE step from this sync, and does not touch Python either --
+ * see src/lib/bot/deployment-gate.ts (readiness check, ported from the agent-runtime's own
+ * deployment.py) and scripts/approve-deployment.ts (mints the signed approval record an
+ * operator runs once a release is ready for customer traffic).
  *
  * Usage: npm run sync:knowledge
  */
 
 import fs from 'node:fs'
 import path from 'node:path'
-import { execFileSync } from 'node:child_process'
 
 // wa-inbox and jvto-whatsapp-agent-runtime are sibling directories on disk
 // (e.g. ~/Code/wa-inbox and ~/Code/jvto-whatsapp-agent-runtime), so from
@@ -50,16 +54,6 @@ const RUNTIME_ROOT = path.resolve(__dirname, '../../jvto-whatsapp-agent-runtime'
 const DEST = path.resolve(__dirname, '../catalog')
 
 const CATALOG_SOURCE_DIRS = ['agent-catalog', 'customer-sales'] as const
-
-interface DeploymentGateResult {
-  readyForApproval: boolean
-  blocking: string[]
-}
-
-const FALLBACK_GATE_RESULT: DeploymentGateResult = {
-  readyForApproval: false,
-  blocking: ['deployment-gate command unavailable'],
-}
 
 function syncCatalogFiles(): { synced: number; skipped: number } {
   fs.mkdirSync(DEST, { recursive: true })
@@ -151,77 +145,6 @@ function writeMeta(): void {
   console.log(`  OK: meta.json (syncedAt: ${meta.syncedAt})`)
 }
 
-/** Most recently built release dir under dist/releases (release ids sort chronologically). */
-function findLatestReleaseDir(): string | null {
-  const releasesDir = path.join(RUNTIME_ROOT, 'dist', 'releases')
-  if (!fs.existsSync(releasesDir)) return null
-
-  const entries = fs
-    .readdirSync(releasesDir, { withFileTypes: true })
-    .filter((entry) => entry.isDirectory())
-    .map((entry) => entry.name)
-    .sort()
-
-  return entries.length > 0 ? path.join(releasesDir, entries[entries.length - 1]) : null
-}
-
-function parseGateOutput(text: string): DeploymentGateResult {
-  const parsed = JSON.parse(text)
-  if (typeof parsed.ready_for_approval !== 'boolean' || !Array.isArray(parsed.blocking)) {
-    throw new Error('unexpected deployment-gate output shape')
-  }
-  return { readyForApproval: parsed.ready_for_approval, blocking: parsed.blocking }
-}
-
-function runDeploymentGate(): DeploymentGateResult {
-  if (!fs.existsSync(RUNTIME_ROOT)) {
-    console.warn('  SKIP: agent-runtime not found — using fallback deployment-gate result')
-    return FALLBACK_GATE_RESULT
-  }
-
-  const releaseDir = findLatestReleaseDir()
-  if (!releaseDir) {
-    console.warn('  SKIP: no release directory found under dist/releases — using fallback deployment-gate result')
-    return FALLBACK_GATE_RESULT
-  }
-
-  try {
-    // Per docs/deployment-approval.md:
-    //   python -m jvto_agent_runtime deployment-gate --release-dir <dir>
-    // This environment only has `python3` on PATH (no `python` alias), so
-    // that's what we invoke.
-    const stdout = execFileSync(
-      'python3',
-      ['-m', 'jvto_agent_runtime', 'deployment-gate', '--release-dir', releaseDir],
-      { cwd: RUNTIME_ROOT, encoding: 'utf8' }
-    )
-    return parseGateOutput(stdout)
-  } catch (err) {
-    // The CLI's own `main()` does `raise SystemExit(0 if result["ready_for_approval"] else 1)`,
-    // so a non-zero exit does NOT necessarily mean the command failed — it commonly
-    // means the gate ran successfully and legitimately blocked. execFileSync attaches
-    // captured stdout to the thrown error in that case, so recover the real result
-    // from it before giving up and using the generic fallback.
-    const stdout = (err as { stdout?: Buffer | string }).stdout
-    if (stdout) {
-      const text = typeof stdout === 'string' ? stdout : stdout.toString('utf8')
-      try {
-        return parseGateOutput(text)
-      } catch {
-        // stdout wasn't parseable gate JSON — fall through to generic fallback.
-      }
-    }
-    console.warn(`  WARN: deployment-gate command failed — ${(err as Error).message}`)
-    return FALLBACK_GATE_RESULT
-  }
-}
-
-function writeDeploymentGate(): void {
-  const result = runDeploymentGate()
-  fs.writeFileSync(path.join(DEST, 'deployment-gate.json'), JSON.stringify(result, null, 2) + '\n')
-  console.log(`  OK: deployment-gate.json (readyForApproval: ${result.readyForApproval}, blocking: [${result.blocking.join(', ')}])`)
-}
-
 function main(): void {
   if (!fs.existsSync(RUNTIME_ROOT)) {
     console.error(`ERROR: agent-runtime not found at ${RUNTIME_ROOT}`)
@@ -232,10 +155,13 @@ function main(): void {
   console.log(`Syncing catalog from ${RUNTIME_ROOT}`)
   const { synced, skipped } = syncCatalogFiles()
   writeMeta()
-  writeDeploymentGate()
 
   console.log(`\nDone. ${synced} catalog file(s) synced, ${skipped} skipped.`)
   console.log(`Catalog: ${DEST}`)
+  console.log(
+    'Note: this only refreshes catalog data. Deployment approval is separate -- see ' +
+      'src/lib/bot/deployment-gate.ts and `npm run approve:deployment`.'
+  )
 }
 
 main()
