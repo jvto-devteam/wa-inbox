@@ -284,60 +284,60 @@ describe('TemplatesPage — Coupon builder', () => {
   })
 })
 
-// Types a name into the "Variabel baru" input and commits it via "+ Tambah", one at a time --
-// mirrors how an agent actually builds the list now: type, then it appears in the list below.
+// Adds one named variable row at a time via the single "+ Tambah Variabel" button (which also
+// drops the {{n}} placeholder into the body) -- mirrors how an agent actually builds the list.
 function addNamedVariables(names: string[]) {
-  names.forEach((name) => {
-    fireEvent.change(screen.getByLabelText('Variabel baru'), { target: { value: name } })
-    fireEvent.click(screen.getByText('+ Tambah'))
+  names.forEach((name, i) => {
+    fireEvent.click(screen.getByText('+ Tambah Variabel'))
+    fireEvent.change(screen.getByLabelText(`Nama variabel ${i + 1}`), { target: { value: name } })
   })
 }
 
 describe('TemplatesPage — variable create/edit/delete', () => {
-  it('has no variable rows until one is added via the input', async () => {
+  it('has no variable rows until "+ Tambah Variabel" is clicked', async () => {
     render(<TemplatesPage />)
-    await waitFor(() => expect(screen.getByLabelText('Variabel baru')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText('+ Tambah Variabel')).toBeInTheDocument())
 
     expect(screen.queryByLabelText('Nama variabel 1')).not.toBeInTheDocument()
   })
 
-  it('adds a variable already named as soon as it is committed, and edits are reflected immediately', async () => {
+  it('adds a new editable row per click, and edits are reflected immediately', async () => {
     render(<TemplatesPage />)
-    await waitFor(() => expect(screen.getByLabelText('Variabel baru')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText('+ Tambah Variabel')).toBeInTheDocument())
 
     addNamedVariables(['nama', 'paket'])
 
     expect(screen.getByLabelText('Nama variabel 1')).toHaveValue('nama')
     expect(screen.getByLabelText('Nama variabel 2')).toHaveValue('paket')
-    // The "new variable" input clears after each add, ready for the next one.
-    expect(screen.getByLabelText('Variabel baru')).toHaveValue('')
 
     fireEvent.change(screen.getByLabelText('Nama variabel 1'), { target: { value: 'nama_pelanggan' } })
     expect(screen.getByLabelText('Nama variabel 1')).toHaveValue('nama_pelanggan')
   })
 
-  it('commits the new-variable input on Enter, without needing to click the button', async () => {
+  it('drops the next {{n}} placeholder into the body textarea on each click, in order', async () => {
     render(<TemplatesPage />)
-    await waitFor(() => expect(screen.getByLabelText('Variabel baru')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText('+ Tambah Variabel')).toBeInTheDocument())
 
-    fireEvent.change(screen.getByLabelText('Variabel baru'), { target: { value: 'nama' } })
-    fireEvent.keyDown(screen.getByLabelText('Variabel baru'), { key: 'Enter' })
+    fireEvent.click(screen.getByText('+ Tambah Variabel'))
+    expect(screen.getByLabelText('Isi pesan')).toHaveValue('{{1}}')
 
-    expect(screen.getByLabelText('Nama variabel 1')).toHaveValue('nama')
+    fireEvent.click(screen.getByText('+ Tambah Variabel'))
+    expect(screen.getByLabelText('Isi pesan')).toHaveValue('{{1}} {{2}}')
   })
 
-  it('does not add a blank variable when "+ Tambah" is clicked with an empty input', async () => {
+  it('appends the placeholder after any existing body text, with a separating space', async () => {
     render(<TemplatesPage />)
-    await waitFor(() => expect(screen.getByLabelText('Variabel baru')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText('+ Tambah Variabel')).toBeInTheDocument())
 
-    fireEvent.click(screen.getByText('+ Tambah'))
+    fireEvent.change(screen.getByLabelText('Isi pesan'), { target: { value: 'Halo,' } })
+    fireEvent.click(screen.getByText('+ Tambah Variabel'))
 
-    expect(screen.queryByLabelText('Nama variabel 1')).not.toBeInTheDocument()
+    expect(screen.getByLabelText('Isi pesan')).toHaveValue('Halo, {{1}}')
   })
 
   it('deletes a variable row', async () => {
     render(<TemplatesPage />)
-    await waitFor(() => expect(screen.getByLabelText('Variabel baru')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText('+ Tambah Variabel')).toBeInTheDocument())
     addNamedVariables(['nama', 'paket'])
 
     fireEvent.click(screen.getByLabelText('Hapus variabel 1'))
@@ -357,7 +357,7 @@ describe('TemplatesPage — variable source bindings', () => {
 
   it('shows one binding row per named OFFICIAL variable, labeled with its position and name', async () => {
     render(<TemplatesPage />)
-    await waitFor(() => expect(screen.getByLabelText('Variabel baru')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText('+ Tambah Variabel')).toBeInTheDocument())
 
     addNamedVariables(['nama', 'paket'])
 
@@ -388,7 +388,7 @@ describe('TemplatesPage — variable source bindings', () => {
     vi.stubGlobal('fetch', fetchMock)
 
     render(<TemplatesPage />)
-    await waitFor(() => expect(screen.getByLabelText('Variabel baru')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText('+ Tambah Variabel')).toBeInTheDocument())
     fireEvent.change(screen.getByLabelText('Nama template'), { target: { value: 'booking_confirmation' } })
     fireEvent.change(screen.getByLabelText('Isi pesan'), { target: { value: 'Halo {{1}}, sisa {{2}}.' } })
     addNamedVariables(['nama', 'sisa'])
@@ -412,7 +412,7 @@ describe('TemplatesPage — variable source bindings', () => {
     vi.stubGlobal('fetch', fetchMock)
 
     render(<TemplatesPage />)
-    await waitFor(() => expect(screen.getByLabelText('Variabel baru')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText('+ Tambah Variabel')).toBeInTheDocument())
     fireEvent.change(screen.getByLabelText('Nama template'), { target: { value: 'booking_confirmation' } })
     fireEvent.change(screen.getByLabelText('Isi pesan'), { target: { value: 'Halo {{1}}, sisa {{2}}.' } })
     addNamedVariables(['nama', 'sisa'])

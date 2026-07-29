@@ -94,7 +94,7 @@ describe('MessageBubble', () => {
         }}
       />
     )
-    expect(screen.getByText('Bot menyerahkan ke agen — lihat alasan')).toBeInTheDocument()
+    expect(screen.getByText('Bot menyerahkan ke agen')).toBeInTheDocument()
   })
 
   it('renders a handoff placeholder as a plain centered divider, not a chat bubble with badge/time/reply', () => {
@@ -116,7 +116,7 @@ describe('MessageBubble', () => {
     expect(screen.queryByText(/^\d{2}\.\d{2}$/)).not.toBeInTheDocument()
   })
 
-  it('reveals the real handoff reason when the "lihat alasan" divider is clicked', () => {
+  it('never renders the handoff divider as clickable, trace or no trace -- it is an info line, not a link', () => {
     render(
       <MessageBubble
         message={{
@@ -126,17 +126,12 @@ describe('MessageBubble', () => {
         }}
       />
     )
-    expect(screen.queryByText(/Gerbang persetujuan/)).not.toBeInTheDocument()
-
-    fireEvent.click(screen.getByText('Bot menyerahkan ke agen — lihat alasan'))
-
-    expect(screen.getByText('Gerbang persetujuan belum terbuka: catalog belum pernah disinkron')).toBeInTheDocument()
-
-    fireEvent.click(screen.getByText('Bot menyerahkan ke agen — lihat alasan'))
+    expect(screen.getByText('Bot menyerahkan ke agen').closest('button')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByText('Bot menyerahkan ke agen'))
     expect(screen.queryByText(/Gerbang persetujuan/)).not.toBeInTheDocument()
   })
 
-  it('does not make the handoff divider clickable when the row somehow has no trace to show', () => {
+  it('does not show the divider trace even when the row has no trace to show', () => {
     render(
       <MessageBubble
         message={{
@@ -146,7 +141,8 @@ describe('MessageBubble', () => {
         }}
       />
     )
-    expect(screen.getByText('Bot menyerahkan ke agen — lihat alasan').closest('button')).toBeDisabled()
+    expect(screen.getByText('Bot menyerahkan ke agen')).toBeInTheDocument()
+    expect(screen.getByText('Bot menyerahkan ke agen').closest('button')).not.toBeInTheDocument()
   })
 
   it('shows a channel badge and time for every message', () => {

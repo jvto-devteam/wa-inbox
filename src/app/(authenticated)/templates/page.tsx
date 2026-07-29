@@ -101,10 +101,6 @@ export default function TemplatesPage() {
   const [category, setCategory] = useState('')
   const [body, setBody] = useState('')
   const [variableNames, setVariableNames] = useState<string[]>([])
-  // The "+ Tambah Variabel" input's own draft text -- kept separate from variableNames so a
-  // variable only ever enters the list (and the binding UI below) already named, instead of
-  // appending a blank row the admin then has to fill in themselves.
-  const [newVariable, setNewVariable] = useState('')
   const [format, setFormat] = useState<TemplateFormat>('TEXT')
   const [cards, setCards] = useState<CardDraft[]>([EMPTY_CARD])
   const [offerTitle, setOfferTitle] = useState('')
@@ -138,7 +134,6 @@ export default function TemplatesPage() {
     setCategory('')
     setBody('')
     setVariableNames([])
-    setNewVariable('')
     setFormat('TEXT')
     setCards([EMPTY_CARD])
     setOfferTitle('')
@@ -186,11 +181,18 @@ export default function TemplatesPage() {
     )
   }
 
+  // A single button: no separate "type a name first" step. Clicking it drops the next
+  // {{n}} placeholder straight into the body (where an agent would otherwise have to type it
+  // by hand, easy to get out of sync with the list below) and adds its row to the variable
+  // list in the same action, ready to be named.
   function addVariable() {
-    const trimmed = newVariable.trim()
-    if (!trimmed) return
-    setVariableNames((prev) => [...prev, trimmed])
-    setNewVariable('')
+    const nextPosition = variableNames.length + 1
+    setBody((prev) => {
+      const placeholder = `{{${nextPosition}}}`
+      if (!prev) return placeholder
+      return /\s$/.test(prev) ? prev + placeholder : `${prev} ${placeholder}`
+    })
+    setVariableNames((prev) => [...prev, ''])
   }
 
   function updateVariable(index: number, name: string) {
@@ -507,23 +509,9 @@ export default function TemplatesPage() {
               </button>
             </div>
           ))}
-          <div className="flex items-center gap-1.5">
-            <Input
-              aria-label="Variabel baru"
-              placeholder="mis. nama"
-              value={newVariable}
-              onChange={(e) => setNewVariable(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  e.preventDefault()
-                  addVariable()
-                }
-              }}
-            />
-            <Button type="button" variant="outline" size="sm" className="shrink-0" onClick={addVariable}>
-              + Tambah
-            </Button>
-          </div>
+          <Button type="button" variant="outline" size="sm" onClick={addVariable}>
+            + Tambah Variabel
+          </Button>
         </div>
 
         {variablePositions.length > 0 && (

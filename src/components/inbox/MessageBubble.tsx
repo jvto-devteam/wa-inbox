@@ -3,7 +3,7 @@ import { useState } from 'react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { BotTracePopover } from './BotTracePopover'
-import { isHandoffLogMessage, HANDOFF_LOG_TEXT } from '@/lib/message-display'
+import { isHandoffLogMessage, HANDOFF_LOG_SUMMARY } from '@/lib/message-display'
 import { formatWhatsAppText } from '@/lib/whatsapp-format'
 import type { BotDecision } from '@/lib/bot/types'
 
@@ -229,30 +229,14 @@ export function MessageBubble({ message, onReply }: { message: MessageView; onRe
   // divider (the same line-text-line style as the "Pesan belum dibaca" marker in ThreadView),
   // not a chat bubble: no channel/sender badge, no timestamp, no delivery ticks, no reply
   // action -- none of those describe an actual message, so showing them here is just noise.
-  //
-  // The label itself says "lihat alasan" (see reason), so it has to actually do that -- every
-  // handoff-log row always carries the real `botTrace` decision (see src/lib/inbound.ts), the
-  // same one a regular bot reply's bubble reveals via BotTracePopover below. Reusing that here
-  // instead of leaving the divider inert is what makes the promised click real.
+  // Plain, non-interactive text -- no "lihat alasan" link here (the reasoning trace is only
+  // ever opened via a real bot reply's 🧠 icon below, never from this info-only divider).
   if (isHandoffLogMessage(message)) {
-    const hasTrace = Boolean(message.botTrace)
     return (
-      <div className="flex w-full flex-col items-center gap-1.5">
-        <button
-          type="button"
-          disabled={!hasTrace}
-          onClick={hasTrace ? () => setShowTrace((prev) => !prev) : undefined}
-          className="flex w-full items-center gap-2 text-xs font-medium text-muted-foreground disabled:cursor-default"
-        >
-          <div className="h-px flex-1 bg-border" />
-          <span className={hasTrace ? 'underline decoration-dotted underline-offset-2 hover:text-foreground' : undefined}>
-            {HANDOFF_LOG_TEXT}
-          </span>
-          <div className="h-px flex-1 bg-border" />
-        </button>
-        {hasTrace && showTrace && (
-          <BotTracePopover trace={message.botTrace as BotDecision} onClose={() => setShowTrace(false)} />
-        )}
+      <div className="flex w-full items-center gap-2 text-xs font-medium text-muted-foreground">
+        <div className="h-px flex-1 bg-border" />
+        <span>{HANDOFF_LOG_SUMMARY}</span>
+        <div className="h-px flex-1 bg-border" />
       </div>
     )
   }
