@@ -346,16 +346,17 @@ describe('TemplatesPage — variable source bindings', () => {
     expect(screen.getByLabelText('Sumber nilai untuk {{1}} nama')).toBeInTheDocument()
   })
 
-  it('shows one binding row per {{n}} placeholder in a QUICK_REPLY body, with no separate variable name input', async () => {
+  it('shows the same add/edit/delete variable list and binding rows on the Balasan Cepat tab too', async () => {
     render(<TemplatesPage />)
     await waitFor(() => expect(screen.getByLabelText('Nama template')).toBeInTheDocument())
     fireEvent.click(screen.getByText('Balasan Cepat'))
-
     fireEvent.change(screen.getByLabelText('Isi pesan'), { target: { value: 'Halo {{1}}, sisa tagihan {{2}}.' } })
 
+    addNamedVariables(['nama', 'sisa'])
+
     expect(screen.getByText('Sumber Nilai Variabel')).toBeInTheDocument()
-    expect(screen.getByText('{{1}}')).toBeInTheDocument()
-    expect(screen.getByText('{{2}}')).toBeInTheDocument()
+    expect(screen.getByText('{{1}} nama')).toBeInTheDocument()
+    expect(screen.getByText('{{2}} sisa')).toBeInTheDocument()
   })
 
   it('submits variableBindings only for positions with a chosen source, omitting "Isi manual" ones', async () => {
@@ -405,5 +406,157 @@ describe('TemplatesPage — variable source bindings', () => {
     const [, options] = fetchMock.mock.calls.find(([url, init]) => url === '/api/templates' && init?.method === 'POST')!
     const payload = JSON.parse((options as RequestInit).body as string)
     expect(payload.variableBindings).toBeUndefined()
+  })
+})
+
+describe('TemplatesPage — AI template suggestions', () => {
+  it('only shows the suggestion panel on the Balasan Cepat tab, not Resmi (Meta)', async () => {
+    render(<TemplatesPage />)
+    await waitFor(() => expect(screen.getByLabelText('Nama template')).toBeInTheDocument())
+
+    expect(screen.queryByText('✨ Rekomendasi Template (AI)')).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByText('Balasan Cepat'))
+    expect(screen.getByText('✨ Rekomendasi Template (AI)')).toBeInTheDocument()
+  })
+
+  it('fetches and shows suggestions with their variables, bindings, and reason', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url: string, init?: RequestInit) => {
+        if (url === '/api/templates/suggest' && init?.method === 'POST') {
+          return jsonResponse({
+            suggestions: [
+              {
+                name: 'info_harga_paket',
+                body: 'Halo {{1}}, harga paket kami mulai dari Rp1.500.000.',
+                variables: [{ name: 'nama', bindingKey: 'contactName' }],
+                reason: 'Banyak pelanggan menanyakan harga paket',
+              },
+            ],
+          })
+        }
+        return jsonResponse([])
+      })
+    )
+    render(<TemplatesPage />)
+    await waitFor(() => expect(screen.getByLabelText('Nama template')).toBeInTheDocument())
+    fireEvent.click(screen.getByText('Balasan Cepat'))
+
+    fireEvent.click(screen.getByText('Buat Rekomendasi'))
+
+    expect(await screen.findByText('info_harga_paket')).toBeInTheDocument()
+    expect(screen.getByText('Halo {{1}}, harga paket kami mulai dari Rp1.500.000.')).toBeInTheDocument()
+    expect(screen.getByText(/nama \(Nama Kontak \(WhatsApp\)\)/)).toBeInTheDocument()
+    expect(screen.getByText('Banyak pelanggan menanyakan harga paket')).toBeInTheDocument()
+  })
+
+  it('labels an unbound suggested variable as "isi manual"', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url: string, init?: RequestInit) => {
+        if (url === '/api/templates/suggest' && init?.method === 'POST') {
+          return jsonResponse({ suggestions: [{ name: 'x', body: 'y {{1}}', variables: [{ name: 'catatan', bindingKey: null }], reason: 'z' }] })
+        }
+        return jsonResponse([])
+      })
+    )
+    render(<TemplatesPage />)
+    await waitFor(() => expect(screen.getByLabelText('Nama template')).toBeInTheDocument())
+    fireEvent.click(screen.getByText('Balasan Cepat'))
+    fireEvent.click(screen.getByText('Buat Rekomendasi'))
+
+    expect(await screen.findByText(/catatan \(isi manual\)/)).toBeInTheDocument()
+  })
+
+  it('shows an empty state when no clear pattern is found', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url: string, init?: RequestInit) => {
+        if (url === '/api/templates/suggest' && init?.method === 'POST') return jsonResponse({ suggestions: [] })
+        return jsonResponse([])
+      })
+    )
+    render(<TemplatesPage />)
+    await waitFor(() => expect(screen.getByLabelText('Nama template')).toBeInTheDocument())
+    fireEvent.click(screen.getByText('Balasan Cepat'))
+    fireEvent.click(screen.getByText('Buat Rekomendasi'))
+
+    expect(await screen.findByText('Belum ada pola pertanyaan yang cukup jelas untuk direkomendasikan.')).toBeInTheDocument()
+  })
+
+  it('shows an inline error when the suggest request fails', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url: string, init?: RequestInit) => {
+        if (url === '/api/templates/suggest' && init?.method === 'POST') return jsonResponse({ error: 'Model tidak mengembalikan JSON yang valid' }, false)
+        return jsonResponse([])
+      })
+    )
+    render(<TemplatesPage />)
+    await waitFor(() => expect(screen.getByLabelText('Nama template')).toBeInTheDocument())
+    fireEvent.click(screen.getByText('Balasan Cepat'))
+    fireEvent.click(screen.getByText('Buat Rekomendasi'))
+
+    expect(await screen.findByText('Model tidak mengembalikan JSON yang valid')).toBeInTheDocument()
+  })
+
+  it('saves only the checked suggestions as real QUICK_REPLY templates, carrying their variables and bindings', async () => {
+    const fetchMock = vi.fn((url: string, init?: RequestInit) => {
+      if (url === '/api/templates/suggest' && init?.method === 'POST') {
+        return jsonResponse({
+          suggestions: [
+            { name: 'info_harga', body: 'Harga {{1}}', variables: [{ name: 'paket', bindingKey: 'package' }], reason: 'a' },
+            { name: 'info_jam', body: 'Kami buka jam 8', variables: [], reason: 'b' },
+          ],
+        })
+      }
+      if (url === '/api/templates' && init?.method === 'POST') return jsonResponse({ id: 't_new', metaStatus: 'NOT_APPLICABLE' })
+      return jsonResponse([])
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    render(<TemplatesPage />)
+    await waitFor(() => expect(screen.getByLabelText('Nama template')).toBeInTheDocument())
+    fireEvent.click(screen.getByText('Balasan Cepat'))
+    fireEvent.click(screen.getByText('Buat Rekomendasi'))
+    await screen.findByText('info_harga')
+
+    fireEvent.click(screen.getByLabelText('Pilih rekomendasi info_harga'))
+    fireEvent.click(screen.getByText('Simpan Terpilih (1)'))
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/templates', expect.objectContaining({ method: 'POST' })))
+    const [, options] = fetchMock.mock.calls.find(([url, init]) => url === '/api/templates' && init?.method === 'POST')!
+    const payload = JSON.parse((options as RequestInit).body as string)
+    expect(payload).toEqual({
+      name: 'info_harga',
+      type: 'QUICK_REPLY',
+      body: 'Harga {{1}}',
+      variables: ['paket'],
+      variableBindings: { '1': 'package' },
+    })
+    // Only the checked suggestion was saved -- info_jam was left unchecked.
+    expect(fetchMock.mock.calls.filter(([url, init]) => url === '/api/templates' && init?.method === 'POST')).toHaveLength(1)
+  })
+
+  it('disables the save button until at least one suggestion is checked', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url: string, init?: RequestInit) => {
+        if (url === '/api/templates/suggest' && init?.method === 'POST') {
+          return jsonResponse({ suggestions: [{ name: 'x', body: 'y', variables: [], reason: 'z' }] })
+        }
+        return jsonResponse([])
+      })
+    )
+    render(<TemplatesPage />)
+    await waitFor(() => expect(screen.getByLabelText('Nama template')).toBeInTheDocument())
+    fireEvent.click(screen.getByText('Balasan Cepat'))
+    fireEvent.click(screen.getByText('Buat Rekomendasi'))
+    await screen.findByText('x')
+
+    expect(screen.getByText('Simpan Terpilih (0)')).toBeDisabled()
+
+    fireEvent.click(screen.getByLabelText('Pilih rekomendasi x'))
+    expect(screen.getByText('Simpan Terpilih (1)')).not.toBeDisabled()
   })
 })

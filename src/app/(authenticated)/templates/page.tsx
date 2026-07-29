@@ -9,7 +9,7 @@ import { Select } from '@/components/ui/select'
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table'
 import { fetchJson } from '@/lib/fetch-json'
 import { VARIABLE_FIELD_DEFS } from '@/lib/booking/variable-fields'
-import { extractVariableNumbers } from '@/lib/template-variables'
+import type { TemplateSuggestion } from '@/lib/bot/template-suggester'
 
 type TemplateType = 'OFFICIAL' | 'QUICK_REPLY'
 type TemplateFormat = 'TEXT' | 'CAROUSEL' | 'LTO' | 'COUPON'
@@ -111,6 +111,16 @@ export default function TemplatesPage() {
   // chosen once here, resolved automatically against each conversation's own data at send time
   // (see ComposeBox). A position absent from this map is unbound: the agent fills it manually.
   const [variableBindings, setVariableBindings] = useState<Record<string, string>>({})
+  // AI-drafted new template suggestions, mined from real inbound messages across every
+  // conversation (not one chat) -- see openSuggestions below and
+  // src/lib/bot/template-suggester.ts. Purely a drafting aid: nothing is saved until the
+  // admin selects one or more and confirms.
+  const [suggestOpen, setSuggestOpen] = useState(false)
+  const [suggestions, setSuggestions] = useState<TemplateSuggestion[]>([])
+  const [suggestLoading, setSuggestLoading] = useState(false)
+  const [suggestError, setSuggestError] = useState<string | null>(null)
+  const [selectedSuggestions, setSelectedSuggestions] = useState<Set<number>>(new Set())
+  const [savingSuggestions, setSavingSuggestions] = useState(false)
 
   useEffect(() => {
     fetchJson<Template[]>('/api/templates')
@@ -203,16 +213,11 @@ export default function TemplatesPage() {
   const couponValid = !isCoupon || (couponButtonText.trim() !== '' && couponExampleCode.trim() !== '')
   const formValid = cardsValid && ltoValid && couponValid
 
-  // Every variable this draft currently has, as {position, label} -- OFFICIAL variables are
-  // named (comma-separated in variablesText, positional by index), QUICK_REPLY variables are
-  // detected straight from the body's {{n}} placeholders (no separate name field). Both feed
-  // the same "Sumber Nilai Variabel" binding UI below.
-  const officialVarNames = tab === 'OFFICIAL' ? variableNames.map((v) => v.trim()).filter(Boolean) : []
-  const quickReplyVarNumbers = tab === 'QUICK_REPLY' ? extractVariableNumbers(body) : []
-  const variablePositions =
-    tab === 'OFFICIAL'
-      ? officialVarNames.map((name, i) => ({ position: i + 1, label: `{{${i + 1}}} ${name}` }))
-      : quickReplyVarNumbers.map((n) => ({ position: n, label: `{{${n}}}` }))
+  // Every variable this draft currently has, as {position, label} -- named and positional by
+  // index (the "+ Tambah Variabel" list below), the same for OFFICIAL and QUICK_REPLY alike.
+  // Feeds the "Sumber Nilai Variabel" binding UI below.
+  const namedVariables = variableNames.map((v) => v.trim()).filter(Boolean)
+  const variablePositions = namedVariables.map((name, i) => ({ position: i + 1, label: `{{${i + 1}}} ${name}` }))
 
   // Templates are what actually gets submitted to Meta (or shown as compose-box shortcuts), so
   // the list must only ever reflect what the server confirmed — no optimistic insert. Await the
@@ -241,7 +246,7 @@ export default function TemplatesPage() {
           category: category.trim() || undefined,
           body: body.trim(),
           ...(Object.keys(bindings).length > 0 ? { variableBindings: bindings } : {}),
-          ...(tab === 'OFFICIAL' ? { variables } : {}),
+          ...(variables.length > 0 ? { variables } : {}),
           ...(isCarousel ? { format: 'CAROUSEL', cards: cards.map(toCardPayload) } : {}),
           ...(isLto ? { format: 'LTO', offerTitle: offerTitle.trim(), buttons: ltoButtons.map(toButtonPayload) } : {}),
           ...(isCoupon
@@ -263,6 +268,73 @@ export default function TemplatesPage() {
       setError('Gagal menyimpan template')
     } finally {
       setSubmitting(false)
+    }
+  }
+
+  async function openSuggestions() {
+    setSuggestError(null)
+    setSuggestions([])
+    setSelectedSuggestions(new Set())
+    setSuggestOpen(true)
+    setSuggestLoading(true)
+    try {
+      const res = await fetch('/api/templates/suggest', { method: 'POST' })
+      if (!res.ok) {
+        const data = await res.json().catch(() => null)
+        setSuggestError(data?.error ?? 'Gagal membuat rekomendasi')
+        return
+      }
+      const data = (await res.json()) as { suggestions: TemplateSuggestion[] }
+      setSuggestions(data.suggestions)
+    } catch {
+      setSuggestError('Gagal membuat rekomendasi')
+    } finally {
+      setSuggestLoading(false)
+    }
+  }
+
+  function toggleSuggestion(index: number) {
+    setSelectedSuggestions((prev) => {
+      const next = new Set(prev)
+      if (next.has(index)) next.delete(index)
+      else next.add(index)
+      return next
+    })
+  }
+
+  // Every selected draft is created as a real QUICK_REPLY template via the same POST
+  // /api/templates the manual form above uses -- variable names + suggested bindings ride
+  // along exactly as chosen at creation time (src/lib/booking/variable-fields.ts keys), no
+  // different from an admin having typed them in by hand.
+  async function saveSelectedSuggestions() {
+    if (selectedSuggestions.size === 0) return
+    setSavingSuggestions(true)
+    setSuggestError(null)
+    try {
+      const toSave = suggestions.filter((_, i) => selectedSuggestions.has(i))
+      const created: Template[] = []
+      for (const s of toSave) {
+        const bindings = Object.fromEntries(
+          s.variables.map((v, i) => [String(i + 1), v.bindingKey] as const).filter(([, key]) => key)
+        )
+        const res = await fetch('/api/templates', {
+          method: 'POST',
+          body: JSON.stringify({
+            name: s.name,
+            type: 'QUICK_REPLY',
+            body: s.body,
+            ...(s.variables.length > 0 ? { variables: s.variables.map((v) => v.name) } : {}),
+            ...(Object.keys(bindings).length > 0 ? { variableBindings: bindings } : {}),
+          }),
+        })
+        if (res.ok) created.push(await res.json())
+      }
+      setTemplates((prev) => [...created, ...prev])
+      setSuggestOpen(false)
+    } catch {
+      setSuggestError('Gagal menyimpan template terpilih')
+    } finally {
+      setSavingSuggestions(false)
     }
   }
 
@@ -290,6 +362,81 @@ export default function TemplatesPage() {
           Balasan Cepat
         </Button>
       </div>
+
+      {tab === 'QUICK_REPLY' && (
+        <Card className="space-y-3 p-4">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <h2 className="font-medium text-navy">✨ Rekomendasi Template (AI)</h2>
+              <p className="text-xs text-muted-foreground">
+                Analisis pertanyaan yang sering masuk dari seluruh chat, lalu usulkan balasan cepat baru.
+              </p>
+            </div>
+            <Button type="button" variant="outline" size="sm" onClick={openSuggestions} disabled={suggestLoading}>
+              {suggestLoading ? 'Menganalisis...' : 'Buat Rekomendasi'}
+            </Button>
+          </div>
+          {suggestOpen && (
+            <div className="space-y-2 rounded-lg border border-border p-3">
+              {suggestLoading && (
+                <p className="text-sm text-muted-foreground">Menganalisis pesan masuk dari seluruh chat...</p>
+              )}
+              {suggestError && <p className="text-xs text-destructive">{suggestError}</p>}
+              {!suggestLoading && !suggestError && suggestions.length === 0 && (
+                <p className="text-sm text-muted-foreground">Belum ada pola pertanyaan yang cukup jelas untuk direkomendasikan.</p>
+              )}
+              {!suggestLoading && suggestions.length > 0 && (
+                <>
+                  <div className="space-y-2">
+                    {suggestions.map((s, i) => (
+                      <label
+                        key={i}
+                        className="flex cursor-pointer items-start gap-2 rounded-lg border border-border p-2 hover:bg-muted/50"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selectedSuggestions.has(i)}
+                          onChange={() => toggleSuggestion(i)}
+                          aria-label={`Pilih rekomendasi ${s.name}`}
+                          className="mt-1"
+                        />
+                        <div className="min-w-0 flex-1 space-y-0.5">
+                          <p className="text-sm font-medium text-navy">{s.name}</p>
+                          <p className="text-xs text-foreground">{s.body}</p>
+                          {s.variables.length > 0 && (
+                            <p className="text-[11px] text-muted-foreground">
+                              Variabel:{' '}
+                              {s.variables
+                                .map(
+                                  (v) =>
+                                    `${v.name} (${
+                                      v.bindingKey
+                                        ? (VARIABLE_FIELD_DEFS.find((f) => f.key === v.bindingKey)?.label ?? v.bindingKey)
+                                        : 'isi manual'
+                                    })`
+                                )
+                                .join(', ')}
+                            </p>
+                          )}
+                          <p className="text-[11px] italic text-muted-foreground">{s.reason}</p>
+                        </div>
+                      </label>
+                    ))}
+                  </div>
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={saveSelectedSuggestions}
+                    disabled={selectedSuggestions.size === 0 || savingSuggestions}
+                  >
+                    {savingSuggestions ? 'Menyimpan...' : `Simpan Terpilih (${selectedSuggestions.size})`}
+                  </Button>
+                </>
+              )}
+            </div>
+          )}
+        </Card>
+      )}
 
       <Card className="space-y-3 p-4">
         <h2 className="font-medium text-navy">
@@ -332,32 +479,30 @@ export default function TemplatesPage() {
           onChange={(e) => setBody(e.target.value)}
           rows={3}
         />
-        {tab === 'OFFICIAL' && (
-          <div className="space-y-1.5">
-            <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Variabel</h3>
-            {variableNames.map((v, i) => (
-              <div key={i} className="flex items-center gap-1.5">
-                <Input
-                  aria-label={`Nama variabel ${i + 1}`}
-                  placeholder="mis. nama"
-                  value={v}
-                  onChange={(e) => updateVariable(i, e.target.value)}
-                />
-                <button
-                  type="button"
-                  aria-label={`Hapus variabel ${i + 1}`}
-                  onClick={() => removeVariable(i)}
-                  className="shrink-0 text-muted-foreground hover:text-destructive"
-                >
-                  ✕
-                </button>
-              </div>
-            ))}
-            <Button type="button" variant="outline" size="sm" onClick={addVariable}>
-              + Tambah Variabel
-            </Button>
-          </div>
-        )}
+        <div className="space-y-1.5">
+          <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Variabel</h3>
+          {variableNames.map((v, i) => (
+            <div key={i} className="flex items-center gap-1.5">
+              <Input
+                aria-label={`Nama variabel ${i + 1}`}
+                placeholder="mis. nama"
+                value={v}
+                onChange={(e) => updateVariable(i, e.target.value)}
+              />
+              <button
+                type="button"
+                aria-label={`Hapus variabel ${i + 1}`}
+                onClick={() => removeVariable(i)}
+                className="shrink-0 text-muted-foreground hover:text-destructive"
+              >
+                ✕
+              </button>
+            </div>
+          ))}
+          <Button type="button" variant="outline" size="sm" onClick={addVariable}>
+            + Tambah Variabel
+          </Button>
+        </div>
 
         {variablePositions.length > 0 && (
           <div className="space-y-1.5 rounded-lg border border-border p-3">
