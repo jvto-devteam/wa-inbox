@@ -51,26 +51,21 @@ describe.skipIf(!RELEASE_PRESENT)('loadCatalog against the real synced catalog/'
     }
   })
 
-  it('lets the funnel and the route gate agree on the same real destination tokens', async () => {
-    const { processFunnelState } = await import('./funnel')
+  it('lets package-match and the route gate agree on the same real destination tokens', async () => {
+    const { matchDestination } = await import('./package-match')
     const { checkRouteGate } = await import('./route-gate')
     const catalog = loadCatalog()
 
-    // Every token the funnel can match must also pass the route gate (or at worst
+    // Every token package-match can match must also pass the route gate (or at worst
     // need review) — i.e. the two matchers cannot disagree about the real data.
     const tokens = [...new Set(catalog.packages.flatMap((p) => p.destinationTokens))]
     expect(tokens.length).toBeGreaterThan(0)
 
     for (const token of tokens) {
-      const funnelResult = processFunnelState({
-        currentState: 'GREETING',
-        message: `Halo, saya mau ke ${token}`,
-        catalog,
-      })
-      expect(funnelResult.nextState).toBe('REKOMENDASI')
-      expect(funnelResult.destination).toBe(token)
+      const matched = matchDestination(`Halo, saya mau ke ${token}`, catalog)
+      expect(matched?.destination).toBe(token)
 
-      const gate = checkRouteGate({ destination: funnelResult.destination, catalog })
+      const gate = checkRouteGate({ destination: matched?.destination, catalog })
       expect(gate.status).not.toBe('handoff')
     }
   })

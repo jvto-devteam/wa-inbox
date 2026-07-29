@@ -352,8 +352,8 @@ async function ingestSingleMessage(message: MetaInboundMessage, contacts: MetaCo
 
   if (conversation.botEnabled && botCanAnswer) {
     const decision = await decideAndRespond(conversation.id, inboundText)
-    if (decision.mode === 'funnel' || decision.mode === 'faq' || decision.mode === 'booking_context') {
-      const text = decision.mode === 'funnel' ? decision.reply : decision.mode === 'faq' ? decision.draft : decision.reply
+    if (decision.mode === 'faq' || decision.mode === 'booking_context') {
+      const text = decision.mode === 'faq' ? decision.draft : decision.reply
       await sendMessage({ conversationId: conversation.id, text, sentBy: 'BOT', botTrace: decision })
     } else {
       // mode 'handoff' never dispatches a real WhatsApp message (fail-safe: silence + human

@@ -14,12 +14,6 @@ describe('BotTracePopover', () => {
     expect(screen.getByText('Kata kunci eskalasi terdeteksi')).toBeInTheDocument()
   })
 
-  it('shows the funnel next state', () => {
-    render(<BotTracePopover trace={{ mode: 'funnel', reply: 'Boleh info tanggal?', nextState: 'ASK_DATE' }} onClose={() => {}} />)
-    expect(screen.getByText(/funnel/i)).toBeInTheDocument()
-    expect(screen.getByText(/ASK_DATE/)).toBeInTheDocument()
-  })
-
   it('shows the booking_context source', () => {
     render(<BotTracePopover trace={{ mode: 'booking_context', reply: 'Booking Anda berangkat 5 Agustus.' }} onClose={() => {}} />)
     expect(screen.getByText(/booking_context/i)).toBeInTheDocument()

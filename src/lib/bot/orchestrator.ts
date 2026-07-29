@@ -1,7 +1,7 @@
 // Bot orchestrator -- the central integration point tying together every
-// bot-brain building block from Tasks 20-28 into the 3-mode decision flow
-// documented in docs/design/wa-inbox-concept.html's "Kapan bot balas
-// sendiri, kapan handoff" table:
+// bot-brain building block into the 3-mode decision flow documented in
+// docs/design/wa-inbox-concept.html's "Kapan bot balas sendiri, kapan
+// handoff" table:
 //
 //   0. Escalation check (keyword-based) short-circuits everything else,
 //      including the booking lookup -- a complaint/refund message must
@@ -15,69 +15,47 @@
 //   1. Booking lookup (Mode 3, "booking_context"): if the customer has an
 //      existing booking, the reply is grounded ONLY in that booking's data
 //      via callLLM (local-only Ollama -- there is no hosted-API fallback to
-//      leak booking data to) and the funnel/route-gate machinery is bypassed
-//      entirely, since a returning customer with a real booking is not in
-//      acquisition-funnel territory.
-//   2. No booking -> deployment gate (Task 25): Mode 1/2 answers are built
-//      from agent-runtime's catalog/release, so they stay off unless that
-//      release has been approved for customer traffic. This does NOT gate
-//      Mode 3 (booking_context) above, which is grounded in the independent,
-//      already-live, already-trusted Booking API -- gating it on catalog
-//      readiness would be a category error.
-//   3. Sales-need classification (Task 23): a message needing live data
-//      (availability, guarantees) can't be safely answered by the funnel or
-//      a cached catalog, so it hands off too -- and so does `job === 'J5'`,
-//      the classifier's own dedicated "route to a human" signal. Since step 0
-//      now shares this classifier's `HANDOFF_KEYWORDS`, the keyword half of
-//      J5 has already fired by the time execution gets here; what J5 still
-//      adds at this point is its NON-keyword escalation surface, notably a
-//      guarantee demand (`GUARANTEE_KEYWORDS`).
-//   4. Funnel (Task 27), resumed from the conversation's persisted
-//      `tripBrief.funnelState` (defaulting to 'GREETING' only for brand-new
-//      conversations) and persisted back after every step -- NOT hardcoded
-//      to 'GREETING' on every call, which would reset returning customers
-//      back to the first funnel question on every single message. The funnel
-//      also reports which destination it matched, which is persisted into
-//      `tripBrief.destination` in the same write (Fix Wave 3b): before that,
-//      NOTHING ever wrote that field, so step 5's gate below saw `undefined`
-//      forever.
-//   5. Route-integrity gate (Task 22) -- deliberately AFTER the funnel, not
-//      before it (Fix Wave 3b). It used to run first, on the destination the
-//      funnel had not yet extracted, which deadlocked Modes 1/2 completely:
-//      `checkRouteGate(undefined)` hands off ("Tujuan belum diketahui"), the
-//      handoff returned before `processFunnelState` ever ran, so no destination
-//      was ever matched or persisted, so the next message hit exactly the same
-//      wall. Every Mode 1/2 message handed off, forever, regardless of catalog
-//      contents.
-//      Running it after the funnel is also what the gate is FOR: its job is to
-//      decide whether a package claim may be made about a destination, and the
-//      claim in question -- a priced tour list -- is precisely what the funnel
-//      just built. So the gate now guards that reply before it is returned.
-//      It is called only when a destination is actually known (freshly matched
-//      or previously persisted); with no destination the funnel's reply is its
-//      own "which destination?" clarifying question, which asserts nothing about
-//      any package and so has nothing for a route gate to protect. The gate's
-//      own no-destination handoff branch is untouched and still the correct
-//      answer for any caller that asks it about a conversation with no
-//      destination.
-//   6. `needs_review` from that gate does NOT hand off. Mirroring the real
-//      `presentation_resolver` (see route-gate.ts's header), the standard price
-//      is still shown and the disclosure travels with it: funnel.ts appends the
-//      package-scoped `policyNotes` to the recommendation reply. Wave 3a removed
-//      `composeResponse`'s only call site, which had been the intended (but
-//      misfiring) consumer of this middle state, leaving the disclosure silently
-//      dropped; surfacing it in the funnel reply restores the information
-//      without reviving a call site that was removed for good reason.
-//   7. Funnel reaching HUMAN_HANDOFF hands off. HUMAN_HANDOFF is the funnel's
-//      own sink state meaning "a human should take over now", so the previous
-//      behaviour -- emitting one MORE automated reply (a catalog FAQ draft
-//      about `packages[0]`'s inclusions, regardless of what the customer
-//      actually asked) before handing over -- was semantically backwards.
-//      Nothing in funnel.ts currently transitions a different state INTO
-//      HUMAN_HANDOFF, so this was latent rather than firing, but it would
-//      have misfired the moment anything upstream started writing that state.
-//      It is checked before the route gate purely because it is cheaper and
-//      unconditional -- both outcomes are a handoff either way.
+//      leak booking data to), bypassing every step below -- a returning
+//      customer with a real booking is not a general-enquiry case.
+//   2. No booking -> deployment gate: Mode 1/2 answers are built from
+//      agent-runtime's catalog/release, so they stay off unless that release
+//      has been approved for customer traffic. This does NOT gate Mode 3
+//      above, which is grounded in the independent, already-live,
+//      already-trusted Booking API -- gating it on catalog readiness would
+//      be a category error.
+//   3. Sales-need classification: a message needing live data (availability,
+//      guarantees) can't be safely answered from a cached catalog, so it
+//      hands off too -- and so does `job === 'J5'`, the classifier's own
+//      dedicated "route to a human" signal. Since step 0 already shares this
+//      classifier's `HANDOFF_KEYWORDS`, the keyword half of J5 has already
+//      fired by the time execution gets here; what J5 still adds at this
+//      point is its NON-keyword escalation surface, notably a guarantee
+//      demand (`GUARANTEE_KEYWORDS`).
+//   4. Destination match (package-match.ts): a stateless, one-shot scan of
+//      the message for a known destination token -- NOT a chatbot-web-style
+//      multi-turn funnel (that state machine, formerly funnel.ts, was a port
+//      of a completely different sibling repo's `orderFlow.js`, not this
+//      bot's own jvto-agent-runtime, and has been removed entirely). A
+//      destination matched THIS message overrides one already on file (the
+//      customer just told us where they want to go); otherwise the
+//      previously persisted one carries the conversation. No destination at
+//      all (neither matched now nor on file) hands off -- this mirrors
+//      route-gate.ts's own "no destination extracted yet -> handoff" rule
+//      rather than inventing a clarifying-question flow of our own.
+//   5. Route-integrity gate: decides whether a package claim may be made
+//      about the matched destination at all. `handoff` -> hand off.
+//      `needs_review` does NOT hand off -- mirroring the real
+//      `presentation_resolver` (see route-gate.ts's header), the standard
+//      price is still shown and the package's policyNotes disclosure is
+//      appended to the composed reply.
+//   6. Response composition (response-composer.ts, a faithful port of
+//      jvto-agent-runtime's `response_composer.py` -- this bot's own real
+//      answering logic, previously built and tested but never wired in):
+//      `detectTopic` reads which of inclusions/how_to_book/policy/price the
+//      message is asking about, `pickPackage` picks the destination's best
+//      (priced) package, and `composeResponse` assembles the catalog-grounded
+//      reply -- price shown only for price-relevant topics, never on a
+//      handoff, never an empty draft.
 //
 // Every step that can throw (a down booking API, a malformed catalog file,
 // an LLM timeout) is wrapped in a single outer try/catch that defaults to
@@ -88,7 +66,8 @@ import { prisma } from '@/lib/db'
 import { ensureFreshBookingData } from '@/lib/booking/client'
 import { checkRouteGate } from './route-gate'
 import { classifySalesNeed, HANDOFF_KEYWORDS } from './sales-classifier'
-import { processFunnelState } from './funnel'
+import { matchDestination, packagesForDestination, pickPackage } from './package-match'
+import { composeResponse, detectTopic } from './response-composer'
 import { callLLM } from './llm'
 import { loadCatalog } from './catalog'
 import { checkDeploymentGate } from './deployment-gate'
@@ -107,6 +86,11 @@ function isEscalation(message: string): boolean {
 function previewText(text: string, max = 140): string {
   return text.length > max ? `${text.slice(0, max)}…` : text
 }
+
+// How many disclosure lines a composed reply may carry on a `needs_review` route-gate
+// result. The real release attaches at most 2 package-scoped policies to any package, so
+// this is headroom against a future sync, not a filter on today's data.
+const MAX_DISCLOSURES = 4
 
 /**
  * Accumulates the step-by-step reasoning behind one decideAndRespond call, in the order it
@@ -147,11 +131,11 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
     trace.push('Mencari data booking', 'Mengecek apakah kontak ini punya booking aktif di Booking API.')
     const bookingData = await ensureFreshBookingData(conversation)
 
-    // Mode 3 -- booking context: bypasses funnel and route gate entirely.
+    // Mode 3 -- booking context: bypasses the catalog-grounded path entirely.
     if (bookingData) {
       trace.push(
         'Booking ditemukan',
-        `Kontak ini punya booking untuk paket "${bookingData.package ?? '-'}" -- jawaban akan didasarkan HANYA pada data booking ini, tanpa melalui funnel/FAQ umum.`
+        `Kontak ini punya booking untuk paket "${bookingData.package ?? '-'}" -- jawaban akan didasarkan HANYA pada data booking ini, tanpa melalui FAQ umum.`
       )
       // The customer's raw text is untrusted input, so it is NOT concatenated into
       // the same string as the instructions it could otherwise try to override
@@ -178,9 +162,9 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
       trace.push('Jawaban siap dikirim', previewText(reply))
       return { mode: 'booking_context', reply, steps: trace.steps }
     }
-    trace.push('Tidak ada booking', 'Kontak ini belum punya booking aktif -- lanjut ke alur funnel/FAQ umum (Mode 1/2).')
+    trace.push('Tidak ada booking', 'Kontak ini belum punya booking aktif -- lanjut ke jawaban FAQ berbasis katalog (Mode 1/2).')
 
-    // Mode 1/2 -- funnel + FAQ, gated by deployment approval + route integrity.
+    // Mode 1/2 -- catalog-grounded FAQ, gated by deployment approval + route integrity.
     // Deployment gate governs agent-runtime's catalog/release (what Mode 1/2 is
     // built from) -- it deliberately does NOT run before the Mode 3 branch
     // above, since Mode 3 is grounded in the independent, already-trusted
@@ -214,72 +198,56 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
       return { mode: 'handoff', reason: 'Permintaan memerlukan penanganan manusia (pembatalan/status/komplain)', steps: trace.steps }
     }
 
-    trace.push(
-      'Mencari kandidat jawaban (funnel)',
-      `Memproses dari status "${tripBrief.funnelState ?? 'GREETING'}", mencari paket yang cocok dengan pesan pelanggan.`
-    )
-    const funnelResult = processFunnelState({
-      currentState: tripBrief.funnelState ?? 'GREETING',
-      message: inboundText,
-      catalog,
-    })
-    // A destination the funnel matched on THIS message wins over the one already on
-    // file (the customer just told us where they want to go); otherwise the persisted
-    // one carries the conversation, since the funnel only re-matches while it is still
-    // in GREETING/TANYA_ORIGIN.
-    const destination = funnelResult.destination ?? tripBrief.destination
-    await prisma.conversation.update({
-      where: { id: conversationId },
-      // Always a plain object here (never null), so no DbNull branch is needed --
-      // but typed as InputJsonValue rather than `as never` so that the compiler
-      // still checks it, for the same reason as the bookingData write above.
-      // `destination` is spread conditionally so an unmatched message never
-      // overwrites a known destination with `undefined`.
-      data: {
-        tripBrief: {
-          ...tripBrief,
-          funnelState: funnelResult.nextState,
-          ...(destination ? { destination } : {}),
-        } as Prisma.InputJsonValue,
-      },
-    })
-
-    trace.push(
-      'Kandidat ditemukan',
-      `Status berikutnya "${funnelResult.nextState}"${destination ? `, destinasi terdeteksi: ${destination}` : ', belum ada destinasi yang cocok.'}`
-    )
-
-    // HUMAN_HANDOFF is the funnel's sink state for "a human should take over now",
-    // so it hands off. It must NOT emit one more automated reply first (see header
-    // step 7).
-    if (funnelResult.nextState === 'HUMAN_HANDOFF') {
-      trace.push('Funnel butuh bantuan manusia', 'Tidak ada kandidat paket yang cukup cocok -- diserahkan ke agen.')
-      return { mode: 'handoff', reason: 'Funnel mencapai status butuh bantuan manusia', steps: trace.steps }
+    trace.push('Mencari destinasi', 'Mencari destinasi yang cocok dengan pesan pelanggan, atau memakai destinasi yang sudah tercatat sebelumnya.')
+    const matched = matchDestination(inboundText, catalog)
+    // A destination matched on THIS message wins over the one already on file (the
+    // customer just told us where they want to go); otherwise the persisted one
+    // carries the conversation.
+    const destination = matched?.destination ?? tripBrief.destination
+    if (destination !== tripBrief.destination) {
+      await prisma.conversation.update({
+        where: { id: conversationId },
+        data: { tripBrief: { ...tripBrief, destination } as Prisma.InputJsonValue },
+      })
     }
 
-    // Route-integrity gate, guarding the reply the funnel just built (header steps
-    // 5-6). Skipped entirely when no destination is known yet, because that reply is
-    // the funnel's own "which destination?" question, which makes no package claim.
-    if (destination) {
-      trace.push('Memilih kandidat & memeriksa validitas', `Memeriksa apakah paket untuk "${destination}" boleh ditampilkan ke pelanggan.`)
-      const routeResult = checkRouteGate({ destination, catalog })
-      if (routeResult.status === 'handoff') {
-        trace.push('Kandidat ditolak', `${routeResult.reason} -- diserahkan ke agen.`)
-        return { mode: 'handoff', reason: routeResult.reason, steps: trace.steps }
-      }
-      // `needs_review` deliberately falls through to the funnel reply: the price
-      // stays, and funnel.ts has already appended the package's policy disclosures
-      // to it. See header step 6.
-      trace.push(
-        'Kandidat dipilih',
-        routeResult.status === 'needs_review'
-          ? 'Paket lolos dengan catatan tinjauan -- tetap ditampilkan beserta disclaimer kebijakan.'
-          : 'Paket valid untuk ditampilkan ke pelanggan.'
-      )
+    if (!destination) {
+      trace.push('Destinasi tidak diketahui', 'Tidak ada destinasi yang bisa dikenali dari pesan maupun riwayat percakapan -- diserahkan ke agen.')
+      return { mode: 'handoff', reason: 'Tujuan belum diketahui dari percakapan', steps: trace.steps }
+    }
+    trace.push('Destinasi ditemukan', `Destinasi: "${destination}".`)
+
+    trace.push('Memeriksa validitas paket', `Memeriksa apakah paket untuk "${destination}" boleh ditampilkan ke pelanggan.`)
+    const routeResult = checkRouteGate({ destination, catalog })
+    if (routeResult.status === 'handoff') {
+      trace.push('Paket ditolak', `${routeResult.reason} -- diserahkan ke agen.`)
+      return { mode: 'handoff', reason: routeResult.reason, steps: trace.steps }
+    }
+    trace.push(
+      'Paket valid',
+      routeResult.status === 'needs_review'
+        ? 'Paket lolos dengan catatan tinjauan -- tetap dijawab beserta disclaimer kebijakan.'
+        : 'Paket valid untuk dijawab ke pelanggan.'
+    )
+
+    const matches = matched?.matches ?? packagesForDestination(destination, catalog)
+    const pkg = pickPackage(matches)
+    const topic = detectTopic(inboundText)
+    trace.push('Menyusun jawaban', `Topik terdeteksi: "${topic}", paket: "${pkg.title}".`)
+
+    let reply = composeResponse({ topic, packageKey: pkg.packageKey, catalog, isHandoff: false })
+
+    // `needs_review` deliberately does not hand off (header step 5): the price stays,
+    // and the package's policyNotes disclosure travels with it, regardless of which
+    // topic the customer actually asked about (composeResponse itself only surfaces
+    // policyNotes for the 'policy' topic).
+    if (routeResult.status === 'needs_review' && pkg.policyNotes.length > 0) {
+      const disclosures = pkg.policyNotes.slice(0, MAX_DISCLOSURES)
+      reply += `\n\nCatatan:\n${disclosures.map((note) => `• ${note}`).join('\n')}`
     }
 
-    trace.push('Jawaban siap dikirim', previewText(funnelResult.reply))
-    return { mode: 'funnel', reply: funnelResult.reply, nextState: funnelResult.nextState, steps: trace.steps }
+    trace.push('Jawaban siap dikirim', previewText(reply))
+    return { mode: 'faq', draft: reply, sourceTopic: topic, steps: trace.steps }
   } catch (error) {
     // Log before failing safe: without this, the single most likely production
     // failure surfaces in the bot audit log as an identical, uninformative generic

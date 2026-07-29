@@ -152,6 +152,40 @@ import type { Catalog } from './types'
 // 'how_to_book' is this port's analog of the real "booking" topic (see file header).
 const PRICE_RELEVANT_TOPICS = new Set(['price', 'how_to_book'])
 
+// Topic detection has NO Python counterpart to port: the real system's topic comes from
+// `module_resolver.py`'s own NLU-ish resolution (out of scope, see the file header's point
+// 4), which this codebase has no equivalent of. This is new glue logic, needed only because
+// removing the chatbot-web-style funnel state machine (formerly funnel.ts) means nothing else
+// tells `composeResponse` which of its four topics a message is actually asking about.
+// Keyword-based, in the same spirit as sales-classifier.ts's own job classification, but a
+// deliberately separate list: sales-classifier's PRICE_KEYWORDS groups "included"/"termasuk"
+// under its own J2 (price-and-value) job for staging purposes, but a customer asking "what's
+// included" wants the inclusions list, not necessarily a price line, so this topic classifier
+// checks inclusions-style phrasing before price-style phrasing.
+const HOW_TO_BOOK_KEYWORDS = ['book', 'booking', 'pesan', 'reservasi', 'reserve', 'dp', 'down payment']
+const POLICY_KEYWORDS = ['kebijakan', 'policy', 'ketentuan', 'syarat', 'aturan', 'peraturan']
+const INCLUSIONS_KEYWORDS = ['termasuk', 'include', 'included', 'inclusion', 'fasilitas', 'dapat apa']
+const PRICE_KEYWORDS = ['harga', 'price', 'berapa', 'cost', 'how much', 'biaya', 'tarif']
+
+function includesAny(text: string, needles: string[]): boolean {
+  return needles.some((needle) => text.includes(needle))
+}
+
+/**
+ * Which of composeResponse's four topics a message is asking about. Falls back to
+ * 'inclusions' (a general "tell me about this package" answer) when nothing matches --
+ * the same fail-safe-toward-something-useful spirit as J1 being sales-classifier.ts's
+ * own default job for a message with no other signal.
+ */
+export function detectTopic(message: string): 'inclusions' | 'how_to_book' | 'policy' | 'price' {
+  const text = message.toLowerCase()
+  if (includesAny(text, HOW_TO_BOOK_KEYWORDS)) return 'how_to_book'
+  if (includesAny(text, POLICY_KEYWORDS)) return 'policy'
+  if (includesAny(text, INCLUSIONS_KEYWORDS)) return 'inclusions'
+  if (includesAny(text, PRICE_KEYWORDS)) return 'price'
+  return 'inclusions'
+}
+
 const HANDOFF_FALLBACK_LINE = 'Tim kami akan segera membantu Anda untuk paket ini.'
 
 export function composeResponse(input: {

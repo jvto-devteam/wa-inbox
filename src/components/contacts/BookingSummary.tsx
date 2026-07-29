@@ -11,8 +11,8 @@ import type { BookingData, BookingDate } from '@/lib/booking/client'
 // (ContactPanel, contacts/[id]) keep importing it from here.
 export type { BookingData }
 
-// tripBrief is a different thing: it is the bot funnel's own collected brief
-// (src/lib/bot/funnel.ts), not booking-API data, and this IS its real shape.
+// tripBrief is a different thing: it is the bot orchestrator's own collected brief
+// (src/lib/bot/types.ts's TripBrief), not booking-API data, and this IS its real shape.
 export type TripBrief = {
   destination?: string
   dateRange?: string

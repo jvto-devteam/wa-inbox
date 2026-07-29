@@ -3,7 +3,6 @@ export type TripBrief = {
   dateRange?: string
   pax?: number
   notes?: string
-  funnelState?: string
 }
 
 export type RouteGateResult =
@@ -26,7 +25,6 @@ export type TraceStep = { label: string; detail: string }
 
 export type BotDecision =
   | { mode: 'handoff'; reason: string; steps?: TraceStep[] }
-  | { mode: 'funnel'; reply: string; nextState: string; steps?: TraceStep[] }
   | { mode: 'faq'; draft: string; sourceTopic: string; steps?: TraceStep[] }
   | { mode: 'booking_context'; reply: string; steps?: TraceStep[] }
 
@@ -41,8 +39,8 @@ export type CatalogPackage = {
   // covering 2-6 of the 5 canonical destinations. Collapsing that to one string
   // would mean a customer asking about "ijen" silently fails to match a package
   // whose single chosen destination happens to be "bromo" -- for 13 of the 16
-  // packages. Matching (route-gate.ts, funnel.ts) is therefore token-wise:
-  // a package matches if ANY of its tokens matches.
+  // packages. Matching (route-gate.ts, package-match.ts) is therefore
+  // token-wise: a package matches if ANY of its tokens matches.
   destinationTokens: string[]
   title: string
   priceIdr: number | null

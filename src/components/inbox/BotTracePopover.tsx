@@ -23,7 +23,6 @@ export function BotTracePopover({ trace, onClose }: { trace: BotDecision; onClos
       </div>
       {trace.mode === 'handoff' && <p>{trace.reason}</p>}
       {trace.mode === 'faq' && <p>Sumber topik: {trace.sourceTopic}</p>}
-      {trace.mode === 'funnel' && <p>Tahap berikutnya: {trace.nextState}</p>}
       {trace.mode === 'booking_context' && <p>Dijawab dari data booking asli (Booking API).</p>}
       {trace.steps && trace.steps.length > 0 && (
         <ol className="space-y-1.5 border-t border-border pt-2">

@@ -6,7 +6,8 @@ import { decideAndRespond } from './orchestrator'
 import { ensureFreshBookingData } from '@/lib/booking/client'
 import { checkRouteGate } from './route-gate'
 import { classifySalesNeed } from './sales-classifier'
-import { processFunnelState } from './funnel'
+import { matchDestination, packagesForDestination, pickPackage } from './package-match'
+import { composeResponse, detectTopic } from './response-composer'
 import { callLLM } from './llm'
 import { loadCatalog } from './catalog'
 import { checkDeploymentGate } from './deployment-gate'
@@ -29,12 +30,26 @@ vi.mock('./sales-classifier', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./sales-classifier')>()),
   classifySalesNeed: vi.fn(),
 }))
-vi.mock('./funnel')
+vi.mock('./package-match')
+vi.mock('./response-composer', () => ({ composeResponse: vi.fn(), detectTopic: vi.fn() }))
 vi.mock('./llm')
 vi.mock('./catalog')
 vi.mock('./deployment-gate')
 
 const mockPrisma = prisma as unknown as DeepMockProxy<PrismaClient>
+
+function pkg(overrides: Record<string, unknown> = {}) {
+  return {
+    packageKey: 'ijen-1d',
+    destinationTokens: ['ijen'],
+    title: 'Ijen Blue Fire 1D',
+    priceIdr: 850000,
+    inclusions: [],
+    policyNotes: [],
+    links: {},
+    ...overrides,
+  }
+}
 
 beforeEach(() => {
   mockReset(mockPrisma)
@@ -44,6 +59,10 @@ beforeEach(() => {
   // deployment-gate wiring fix) don't have to know about it unless they're
   // specifically testing gate behavior.
   ;(checkDeploymentGate as any).mockReturnValue({ readyForApproval: true, blocking: [] })
+  ;(packagesForDestination as any).mockReturnValue([])
+  ;(pickPackage as any).mockImplementation((matches: any[]) => matches[0])
+  ;(detectTopic as any).mockReturnValue('inclusions')
+  ;(composeResponse as any).mockReturnValue('Berikut informasi paket untuk Ijen!')
   // decideAndRespond still reads Settings once, for ollamaModel (see the Mode 3 callLLM call).
   mockPrisma.settings.findUniqueOrThrow.mockResolvedValue({ ollamaModel: 'gemma4:31b-cloud' } as never)
   mockPrisma.conversation.findUniqueOrThrow.mockResolvedValue({
@@ -91,15 +110,13 @@ describe('decideAndRespond', () => {
       expect(result.steps?.at(-1)?.detail).toBe('Booking Anda ke Ijen sudah lunas.')
     })
 
-    it('records candidate-search and selection steps for a successful funnel reply', async () => {
+    it('records destination-search and package-selection steps for a successful FAQ reply', async () => {
       ;(ensureFreshBookingData as any).mockResolvedValue(null)
       ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
+      ;(matchDestination as any).mockReturnValue({ destination: 'ijen', matches: [pkg()] })
       ;(checkRouteGate as any).mockReturnValue({ status: 'clear' })
-      ;(processFunnelState as any).mockReturnValue({
-        reply: 'Berikut paket untuk Ijen!',
-        nextState: 'REKOMENDASI',
-        destination: 'ijen',
-      })
+      ;(detectTopic as any).mockReturnValue('inclusions')
+      ;(composeResponse as any).mockReturnValue('Berikut paket untuk Ijen!')
 
       const result = await decideAndRespond('conv_1', 'Saya mau ke Ijen')
 
@@ -111,28 +128,29 @@ describe('decideAndRespond', () => {
         'Memeriksa gerbang persetujuan',
         'Gerbang persetujuan terbuka',
         'Mengklasifikasi kebutuhan pelanggan',
-        'Mencari kandidat jawaban (funnel)',
-        'Kandidat ditemukan',
-        'Memilih kandidat & memeriksa validitas',
-        'Kandidat dipilih',
+        'Mencari destinasi',
+        'Destinasi ditemukan',
+        'Memeriksa validitas paket',
+        'Paket valid',
+        'Menyusun jawaban',
         'Jawaban siap dikirim',
       ])
-      expect(result.steps?.find((s) => s.label === 'Kandidat ditemukan')?.detail).toContain('ijen')
+      expect(result.steps?.find((s) => s.label === 'Destinasi ditemukan')?.detail).toContain('ijen')
     })
 
     it('marks a needs_review route-gate result distinctly in the trace from a fully clear one', async () => {
       ;(ensureFreshBookingData as any).mockResolvedValue(null)
       ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
+      ;(matchDestination as any).mockReturnValue({ destination: 'ijen', matches: [pkg()] })
       ;(checkRouteGate as any).mockReturnValue({ status: 'needs_review', reason: 'perlu tinjauan' })
-      ;(processFunnelState as any).mockReturnValue({ reply: 'Berikut paket!', nextState: 'REKOMENDASI', destination: 'ijen' })
 
       const result = await decideAndRespond('conv_1', 'Saya mau ke Ijen')
 
-      expect(result.steps?.find((s) => s.label === 'Kandidat dipilih')?.detail).toContain('tinjauan')
+      expect(result.steps?.find((s) => s.label === 'Paket valid')?.detail).toContain('tinjauan')
     })
   })
 
-  it('uses Mode 3 (booking_context) when an existing booking is found, skipping the funnel entirely', async () => {
+  it('uses Mode 3 (booking_context) when an existing booking is found, skipping the FAQ path entirely', async () => {
     ;(ensureFreshBookingData as any).mockResolvedValue({
       bookingId: 'B1',
       destination: 'Ijen',
@@ -148,7 +166,7 @@ describe('decideAndRespond', () => {
     const result = await decideAndRespond('conv_1', 'Booking saya sudah lunas belum?')
 
     expect(result.mode).toBe('booking_context')
-    expect(processFunnelState).not.toHaveBeenCalled()
+    expect(matchDestination).not.toHaveBeenCalled()
     // The booking JSON and the grounding rules travel in `system`; the `prompt`
     // carries ONLY the customer's raw question (prompt-injection hardening).
     expect(callLLM).toHaveBeenCalledWith(
@@ -197,110 +215,124 @@ describe('decideAndRespond', () => {
   // booking-lookup-and-cache logic; it's tested directly there now, against the real
   // implementation rather than this file's automocked one.
 
-  it('handoffs when the route gate rejects the destination the funnel just matched', async () => {
+  it('hands off when the route gate rejects the destination package-match just found', async () => {
     ;(ensureFreshBookingData as any).mockResolvedValue(null)
     ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
-    ;(processFunnelState as any).mockReturnValue({
-      reply: 'Here are our tours for *Atlantis*!',
-      nextState: 'REKOMENDASI',
-      destination: 'atlantis',
-    })
+    ;(matchDestination as any).mockReturnValue({ destination: 'atlantis', matches: [pkg({ packageKey: 'atlantis-1d', destinationTokens: ['atlantis'] })] })
     ;(checkRouteGate as any).mockReturnValue({ status: 'handoff', reason: 'Tidak ada paket terverifikasi' })
 
     const result = await decideAndRespond('conv_1', 'Saya mau ke Atlantis')
 
-    // The funnel's priced reply must NOT be sent once the gate rejects it.
+    // composeResponse must NOT be reached once the gate rejects the destination.
     expect(result).toMatchObject({ mode: 'handoff', reason: 'Tidak ada paket terverifikasi' })
     expect(checkRouteGate).toHaveBeenCalledWith(expect.objectContaining({ destination: 'atlantis' }))
+    expect(composeResponse).not.toHaveBeenCalled()
   })
 
-  // --- Fix Wave 3b ---
-
-  // I2 (deadlock): the route gate used to run BEFORE the funnel, on a
-  // `tripBrief.destination` that nothing ever wrote. `checkRouteGate(undefined)`
-  // hands off, so the funnel never ran, so no destination was ever matched or
-  // persisted, so the next message hit the same wall — Modes 1/2 could never be
-  // reached at all, whatever the catalog contained.
-  it('does not consult the route gate at all while no destination is known, and still runs the funnel', async () => {
+  it('hands off (instead of running a clarifying-question dialogue) when no destination is known from the message or conversation history', async () => {
     ;(ensureFreshBookingData as any).mockResolvedValue(null)
     ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
-    ;(processFunnelState as any).mockReturnValue({ reply: 'Where would you like to go? 🗺️', nextState: 'TANYA_ORIGIN' })
+    ;(matchDestination as any).mockReturnValue(null)
 
     const result = await decideAndRespond('conv_1', 'Halo')
 
-    expect(processFunnelState).toHaveBeenCalled()
     expect(checkRouteGate).not.toHaveBeenCalled()
-    expect(result).toMatchObject({ mode: 'funnel', reply: 'Where would you like to go? 🗺️', nextState: 'TANYA_ORIGIN' })
+    expect(composeResponse).not.toHaveBeenCalled()
+    expect(result).toMatchObject({ mode: 'handoff', reason: 'Tujuan belum diketahui dari percakapan' })
   })
 
-  // I2: the funnel's matched destination must survive into the NEXT message.
-  it('persists the destination the funnel matched, so the next message reaches the route gate with it', async () => {
+  it('persists the destination package-match found, so the next message reaches the route gate with it', async () => {
     ;(ensureFreshBookingData as any).mockResolvedValue(null)
     ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
     ;(checkRouteGate as any).mockReturnValue({ status: 'clear' })
-    ;(processFunnelState as any).mockReturnValue({
-      reply: 'Here are our tours for *Ijen*!',
-      nextState: 'REKOMENDASI',
-      destination: 'ijen',
-    })
+    ;(matchDestination as any).mockReturnValue({ destination: 'ijen', matches: [pkg()] })
+    ;(composeResponse as any).mockReturnValue('Berikut paket untuk Ijen!')
 
     // Message 1: the customer names a destination for the first time.
     const first = await decideAndRespond('conv_1', 'Saya mau ke Ijen')
 
-    expect(first.mode).toBe('funnel')
+    expect(first.mode).toBe('faq')
     expect(mockPrisma.conversation.update).toHaveBeenCalledWith({
       where: { id: 'conv_1' },
-      data: { tripBrief: { funnelState: 'REKOMENDASI', destination: 'ijen' } },
+      data: { tripBrief: { destination: 'ijen' } },
     })
 
-    // Message 2: the conversation now carries that destination, the funnel no longer
-    // re-matches (REKOMENDASI stays put), and the route gate validates the
-    // PERSISTED destination instead of seeing `undefined`.
+    // Message 2: the conversation now carries that destination, this message names no
+    // new one, and the route gate validates the PERSISTED destination instead of
+    // seeing `undefined`.
     vi.clearAllMocks()
     ;(loadCatalog as any).mockReturnValue({ packages: [], syncedAt: null })
     ;(checkDeploymentGate as any).mockReturnValue({ readyForApproval: true, blocking: [] })
     ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
     ;(checkRouteGate as any).mockReturnValue({ status: 'clear' })
-    ;(processFunnelState as any).mockReturnValue({ reply: 'Sorry, I did not catch that.', nextState: 'REKOMENDASI' })
+    ;(matchDestination as any).mockReturnValue(null)
+    ;(packagesForDestination as any).mockReturnValue([pkg()])
+    ;(pickPackage as any).mockImplementation((matches: any[]) => matches[0])
+    ;(detectTopic as any).mockReturnValue('price')
+    ;(composeResponse as any).mockReturnValue('Harga mulai dari Rp850.000/orang.')
     mockPrisma.settings.findUniqueOrThrow.mockResolvedValue({ ollamaModel: 'gemma4:31b-cloud' } as never)
     mockPrisma.conversation.findUniqueOrThrow.mockResolvedValue({
       id: 'conv_1',
-      tripBrief: { funnelState: 'REKOMENDASI', destination: 'ijen' },
+      tripBrief: { destination: 'ijen' },
       bookingData: null,
       bookingCheckedAt: new Date(),
       contact: { phone: '6281234567890' },
     } as never)
 
-    const second = await decideAndRespond('conv_1', 'Yang 2 hari harganya berapa?')
+    const second = await decideAndRespond('conv_1', 'Harganya berapa?')
 
     expect(checkRouteGate).toHaveBeenCalledWith(expect.objectContaining({ destination: 'ijen' }))
-    expect(second.mode).toBe('funnel')
-    // The known destination must not be wiped by a message that matched nothing.
-    expect(mockPrisma.conversation.update).toHaveBeenCalledWith({
-      where: { id: 'conv_1' },
-      data: { tripBrief: { funnelState: 'REKOMENDASI', destination: 'ijen' } },
-    })
+    expect(packagesForDestination).toHaveBeenCalledWith('ijen', expect.anything())
+    expect(second.mode).toBe('faq')
+    // The known destination must not be wiped by a message that matched nothing new,
+    // and having matched nothing this turn, must not trigger a redundant DB write either.
+    expect(mockPrisma.conversation.update).not.toHaveBeenCalled()
   })
 
-  // I3: `needs_review` means "show the standard price, with a disclosure" in the real
-  // presentation_resolver — NOT a handoff. Wave 3a removed composeResponse's only call
-  // site, so the disclosure now travels inside the funnel's own reply (funnel.ts
-  // appends the package's policyNotes); the orchestrator's job is simply not to
-  // suppress the reply.
-  it('still answers on a needs_review route gate, letting the funnel reply carry the disclosure', async () => {
+  it('still answers on a needs_review route gate, appending the package policy notes as a disclosure', async () => {
     ;(ensureFreshBookingData as any).mockResolvedValue(null)
     ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
-    ;(checkRouteGate as any).mockReturnValue({ status: 'needs_review', reason: 'Ada catatan kebijakan' })
-    ;(processFunnelState as any).mockReturnValue({
-      reply: 'Here are our tours for *Ijen*!\n\nGood to know:\n• Ijen Health Screening: ...',
-      nextState: 'REKOMENDASI',
+    ;(matchDestination as any).mockReturnValue({
       destination: 'ijen',
+      matches: [pkg({ policyNotes: ['Ijen Health Screening: a health certificate is mandatory for every guest.'] })],
     })
+    ;(checkRouteGate as any).mockReturnValue({ status: 'needs_review', reason: 'Ada catatan kebijakan' })
+    ;(composeResponse as any).mockReturnValue('Berikut paket untuk Ijen!')
 
     const result = await decideAndRespond('conv_1', 'Saya mau ke Ijen')
 
-    expect(result.mode).toBe('funnel')
-    expect((result as { mode: 'funnel'; reply: string }).reply).toContain('Good to know:')
+    expect(result.mode).toBe('faq')
+    expect((result as { mode: 'faq'; draft: string }).draft).toContain('Catatan:')
+    expect((result as { mode: 'faq'; draft: string }).draft).toContain('Ijen Health Screening')
+  })
+
+  it('caps disclosures at 4 policy notes on a needs_review result', async () => {
+    ;(ensureFreshBookingData as any).mockResolvedValue(null)
+    ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
+    ;(matchDestination as any).mockReturnValue({
+      destination: 'ijen',
+      matches: [pkg({ policyNotes: ['Note1', 'Note2', 'Note3', 'Note4', 'Note5'] })],
+    })
+    ;(checkRouteGate as any).mockReturnValue({ status: 'needs_review', reason: 'Ada catatan kebijakan' })
+    ;(composeResponse as any).mockReturnValue('Berikut paket untuk Ijen!')
+
+    const result = await decideAndRespond('conv_1', 'Saya mau ke Ijen')
+
+    const draft = (result as { mode: 'faq'; draft: string }).draft
+    expect(draft).toContain('Note4')
+    expect(draft).not.toContain('Note5')
+  })
+
+  it('does not append a disclosure block on a fully clear route-gate result', async () => {
+    ;(ensureFreshBookingData as any).mockResolvedValue(null)
+    ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
+    ;(matchDestination as any).mockReturnValue({ destination: 'ijen', matches: [pkg()] })
+    ;(checkRouteGate as any).mockReturnValue({ status: 'clear' })
+    ;(composeResponse as any).mockReturnValue('Berikut paket untuk Ijen!')
+
+    const result = await decideAndRespond('conv_1', 'Saya mau ke Ijen')
+
+    expect((result as { mode: 'faq'; draft: string }).draft).not.toContain('Catatan:')
   })
 
   it('falls back to handoff if any step throws (fail-safe)', async () => {
@@ -309,29 +341,6 @@ describe('decideAndRespond', () => {
     const result = await decideAndRespond('conv_1', 'Halo')
 
     expect(result.mode).toBe('handoff')
-  })
-
-  it('resumes the funnel from the persisted funnelState and persists the new one, instead of always restarting at GREETING', async () => {
-    ;(ensureFreshBookingData as any).mockResolvedValue(null)
-    ;(checkRouteGate as any).mockReturnValue({ status: 'clear' })
-    ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
-    mockPrisma.conversation.findUniqueOrThrow.mockResolvedValue({
-      id: 'conv_1',
-      tripBrief: { funnelState: 'TANYA_ORIGIN' },
-      bookingData: null,
-      bookingCheckedAt: null,
-      contact: { phone: '6281234567890' },
-    } as never)
-    ;(processFunnelState as any).mockReturnValue({ reply: 'Rekomendasi untuk Ijen...', nextState: 'REKOMENDASI' })
-
-    const result = await decideAndRespond('conv_1', 'Saya mau ke Ijen')
-
-    expect(processFunnelState).toHaveBeenCalledWith(expect.objectContaining({ currentState: 'TANYA_ORIGIN' }))
-    expect(mockPrisma.conversation.update).toHaveBeenCalledWith({
-      where: { id: 'conv_1' },
-      data: { tripBrief: { funnelState: 'REKOMENDASI' } },
-    })
-    expect(result).toMatchObject({ mode: 'funnel', reply: 'Rekomendasi untuk Ijen...', nextState: 'REKOMENDASI' })
   })
 
   it("hands off on classification job J5 even when the message misses the shared HANDOFF_KEYWORDS entirely", async () => {
@@ -346,7 +355,7 @@ describe('decideAndRespond', () => {
     const result = await decideAndRespond('conv_1', 'Can you guarantee the blue fire will be visible on my date?')
 
     expect(result.mode).toBe('handoff')
-    expect(processFunnelState).not.toHaveBeenCalled()
+    expect(matchDestination).not.toHaveBeenCalled()
   })
 
   // C2: the pre-booking escalation gate is the ONLY keyword protection a customer
@@ -383,44 +392,12 @@ describe('decideAndRespond', () => {
     ;(ensureFreshBookingData as any).mockResolvedValue(null)
     ;(checkRouteGate as any).mockReturnValue({ status: 'clear' })
     ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
-    ;(processFunnelState as any).mockReturnValue({ reply: 'Halo!', nextState: 'TANYA_ORIGIN' })
+    ;(matchDestination as any).mockReturnValue({ destination: 'ijen', matches: [pkg()] })
+    ;(composeResponse as any).mockReturnValue('Berikut informasi paket Ijen untuk 2 orang.')
 
     const result = await decideAndRespond('conv_1', 'Halo, saya mau tanya paket ke Ijen untuk 2 orang')
 
-    expect(result.mode).toBe('funnel')
-  })
-
-  // I4: HUMAN_HANDOFF is the funnel's "a human takes over now" sink state, so it must
-  // NOT emit one more automated reply (the old code sent a catalog FAQ draft about
-  // packages[0]'s inclusions, regardless of what the customer had asked).
-  it('hands off when the funnel reaches HUMAN_HANDOFF, instead of sending one more automated FAQ draft', async () => {
-    ;(ensureFreshBookingData as any).mockResolvedValue(null)
-    ;(checkRouteGate as any).mockReturnValue({ status: 'clear' })
-    ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
-    ;(loadCatalog as any).mockReturnValue({
-      packages: [
-        {
-          packageKey: 'ijen-1d',
-          destinationTokens: ['ijen'],
-          title: 'Ijen Blue Fire 1D',
-          priceIdr: 500000,
-          inclusions: ['guide'],
-          policyNotes: [],
-          links: {},
-        },
-      ],
-      syncedAt: null,
-    })
-    ;(processFunnelState as any).mockReturnValue({ reply: 'Our team will be with you shortly.', nextState: 'HUMAN_HANDOFF' })
-
-    const result = await decideAndRespond('conv_1', 'Saya butuh bantuan')
-
-    expect(result).toMatchObject({ mode: 'handoff', reason: 'Funnel mencapai status butuh bantuan manusia' })
-    // The new funnel state is still persisted before handing off.
-    expect(mockPrisma.conversation.update).toHaveBeenCalledWith({
-      where: { id: 'conv_1' },
-      data: { tripBrief: { funnelState: 'HUMAN_HANDOFF' } },
-    })
+    expect(result.mode).toBe('faq')
   })
 
   // I7: without this, the most likely production failure is indistinguishable in the
