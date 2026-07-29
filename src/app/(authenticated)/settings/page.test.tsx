@@ -38,6 +38,32 @@ afterEach(() => cleanup())
 
 const ERROR_COPY = 'Gagal menyambungkan ulang — periksa wa-coexist'
 
+describe('SettingsPage — billing link', () => {
+  it('shows a link to the conversation-cost history page for an admin', async () => {
+    mockFetch({ ok: true, json: async () => ({}) })
+    render(<SettingsPage />)
+
+    expect(await screen.findByRole('link', { name: 'Lihat histori biaya' })).toHaveAttribute('href', '/settings/billing')
+  })
+
+  it('hides the billing link for a non-admin', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url: string) => {
+        if (url === '/api/settings') return Promise.resolve({ ok: true, json: async () => settings })
+        if (url === '/api/numbers/status')
+          return Promise.resolve({ ok: true, json: async () => ({ officialTokenValid: true, unofficialConnected: true }) })
+        if (url === '/api/session') return Promise.resolve({ ok: true, json: async () => ({ role: 'AGENT' }) })
+        return Promise.resolve({ ok: true, json: async () => ({}) })
+      })
+    )
+    render(<SettingsPage />)
+
+    await screen.findByText('Status nomor')
+    expect(screen.queryByRole('link', { name: 'Lihat histori biaya' })).not.toBeInTheDocument()
+  })
+})
+
 describe('SettingsPage — Sambungkan Ulang', () => {
   it('shows an inline error when the relink endpoint responds with a non-ok status', async () => {
     mockFetch(Promise.resolve({ ok: false, status: 502, json: async () => ({ error: ERROR_COPY }) }))

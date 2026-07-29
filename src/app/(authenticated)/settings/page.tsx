@@ -1,5 +1,6 @@
 'use client'
 import { useEffect, useState } from 'react'
+import Link from 'next/link'
 import { Select } from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -113,6 +114,18 @@ export default function SettingsPage() {
         </div>
         {relinkError && <p className="text-xs text-destructive">{relinkError}</p>}
       </Card>
+
+      {role === 'ADMIN' && (
+        <Card className="space-y-1 p-4">
+          <h2 className="font-medium text-navy">Biaya percakapan</h2>
+          <p className="text-sm text-muted-foreground">
+            Histori biaya WhatsApp berdasarkan kategori percakapan (dari Meta).
+          </p>
+          <Link href="/settings/billing" className="text-sm text-brand hover:underline">
+            Lihat histori biaya
+          </Link>
+        </Card>
+      )}
 
       {role === 'ADMIN' && <UserManagementSection />}
       {role === 'ADMIN' && <WebhookCredentialsPanel />}
