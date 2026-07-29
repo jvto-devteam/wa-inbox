@@ -5,6 +5,8 @@ import { ComposeBox } from './ComposeBox'
 import { Select } from '@/components/ui/select'
 import { ContactAvatar } from '@/components/ContactAvatar'
 import { fetchJson } from '@/lib/fetch-json'
+import { bookingVariableFields } from '@/lib/booking/variable-fields'
+import type { BookingData } from '@/lib/booking/client'
 
 type Agent = { id: string; name: string }
 type ConversationDetail = {
@@ -13,6 +15,7 @@ type ConversationDetail = {
   lastReadAt?: string | null
   contactName?: string | null
   avatarUrl?: string | null
+  bookingData?: BookingData | null
 }
 
 /** Fire-and-forget: a failed mark-as-read is a cosmetic sidebar-badge staleness, never worth surfacing. */
@@ -25,6 +28,7 @@ export function ThreadView({ conversationId }: { conversationId: string }) {
   const [botEnabled, setBotEnabled] = useState(false)
   const [contactName, setContactName] = useState<string | null>(null)
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null)
+  const [bookingData, setBookingData] = useState<BookingData | null>(null)
   const [assignedAgentId, setAssignedAgentId] = useState<string | null>(null)
   const [agents, setAgents] = useState<Agent[]>([])
   const [assignError, setAssignError] = useState<string | null>(null)
@@ -52,6 +56,7 @@ export function ThreadView({ conversationId }: { conversationId: string }) {
         setUnreadCutoff(data.lastReadAt ?? null)
         setContactName(data.contactName ?? null)
         setAvatarUrl(data.avatarUrl ?? null)
+        setBookingData(data.bookingData ?? null)
         // Only after lastReadAt is captured above -- otherwise a mark-as-read that lands
         // before this GET resolves would erase the very boundary the divider needs.
         markAsRead(conversationId)
@@ -159,6 +164,7 @@ export function ThreadView({ conversationId }: { conversationId: string }) {
       <ComposeBox
         conversationId={conversationId}
         botEnabled={botEnabled}
+        variableFields={bookingVariableFields(contactName, bookingData)}
         replyingTo={replyingTo}
         onCancelReply={() => setReplyingTo(null)}
         onSent={(m) => {

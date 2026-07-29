@@ -163,6 +163,153 @@ describe('ComposeBox quick replies', () => {
   })
 })
 
+describe('ComposeBox quick reply variables', () => {
+  function mockFetch(templates: unknown[]) {
+    return vi.fn((url: string) => {
+      if (url === '/api/templates') return Promise.resolve({ ok: true, json: async () => templates })
+      return Promise.resolve({ ok: true, json: async () => ({ defaultChannel: 'UNOFFICIAL' }) })
+    })
+  }
+
+  const varQuickReply = {
+    id: 'tpl_qr_var',
+    name: 'Konfirmasi Booking',
+    type: 'QUICK_REPLY',
+    category: null,
+    body: 'Halo {{1}}, paket {{2}} sudah dikonfirmasi.',
+  }
+
+  it('opens a parameter form instead of pasting immediately when the body has {{n}} placeholders', async () => {
+    vi.stubGlobal('fetch', mockFetch([varQuickReply]))
+    render(<ComposeBox conversationId="conv_1" botEnabled={false} onSent={() => {}} onBotToggled={() => {}} />)
+    await switchToUnofficial()
+    await openTemplateMenu()
+
+    fireEvent.click(await screen.findByText('Konfirmasi Booking'))
+
+    expect(await screen.findByText('Balasan Cepat: Konfirmasi Booking')).toBeInTheDocument()
+    expect(screen.getByLabelText('{{1}}')).toBeInTheDocument()
+    expect(screen.getByLabelText('{{2}}')).toBeInTheDocument()
+    expect(screen.getByPlaceholderText('Reply on WhatsApp...')).toHaveValue('')
+  })
+
+  it('interpolates the filled values into the text input on Gunakan Balasan', async () => {
+    vi.stubGlobal('fetch', mockFetch([varQuickReply]))
+    render(<ComposeBox conversationId="conv_1" botEnabled={false} onSent={() => {}} onBotToggled={() => {}} />)
+    await switchToUnofficial()
+    await openTemplateMenu()
+    fireEvent.click(await screen.findByText('Konfirmasi Booking'))
+
+    fireEvent.change(await screen.findByLabelText('{{1}}'), { target: { value: 'Bruno' } })
+    fireEvent.change(screen.getByLabelText('{{2}}'), { target: { value: 'Ijen 3D2N' } })
+    fireEvent.click(screen.getByText('Gunakan Balasan'))
+
+    await waitFor(() => {
+      expect(screen.getByPlaceholderText('Reply on WhatsApp...')).toHaveValue('Halo Bruno, paket Ijen 3D2N sudah dikonfirmasi.')
+    })
+    expect(screen.queryByText('Balasan Cepat: Konfirmasi Booking')).not.toBeInTheDocument()
+  })
+
+  it('closes the param form and returns to the list on Batal, without touching the text input', async () => {
+    vi.stubGlobal('fetch', mockFetch([varQuickReply]))
+    render(<ComposeBox conversationId="conv_1" botEnabled={false} onSent={() => {}} onBotToggled={() => {}} />)
+    await switchToUnofficial()
+    await openTemplateMenu()
+    fireEvent.click(await screen.findByText('Konfirmasi Booking'))
+
+    fireEvent.click(screen.getByText('Batal'))
+
+    expect(screen.queryByText('Balasan Cepat: Konfirmasi Booking')).not.toBeInTheDocument()
+    expect(screen.getByText('Konfirmasi Booking')).toBeInTheDocument()
+    expect(screen.getByPlaceholderText('Reply on WhatsApp...')).toHaveValue('')
+  })
+
+  it('reuses the same distinct-placeholder number when {{n}} repeats in the body', async () => {
+    vi.stubGlobal(
+      'fetch',
+      mockFetch([{ ...varQuickReply, body: 'Halo {{1}}, apakah benar {{1}}?' }])
+    )
+    render(<ComposeBox conversationId="conv_1" botEnabled={false} onSent={() => {}} onBotToggled={() => {}} />)
+    await switchToUnofficial()
+    await openTemplateMenu()
+    fireEvent.click(await screen.findByText('Konfirmasi Booking'))
+
+    expect(screen.getAllByLabelText('{{1}}')).toHaveLength(1)
+    fireEvent.change(screen.getByLabelText('{{1}}'), { target: { value: 'Bruno' } })
+    fireEvent.click(screen.getByText('Gunakan Balasan'))
+
+    await waitFor(() => {
+      expect(screen.getByPlaceholderText('Reply on WhatsApp...')).toHaveValue('Halo Bruno, apakah benar Bruno?')
+    })
+  })
+})
+
+describe('ComposeBox variable-from-data picker', () => {
+  const fields = [
+    { label: 'Nama Kontak (WhatsApp)', value: 'Bruno Figarola' },
+    { label: 'Sisa Tagihan', value: 'Rp 350.000' },
+  ]
+
+  it('offers no picker at all when there is no variable data for this conversation', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url: string) => {
+        if (url === '/api/templates')
+          return Promise.resolve({ ok: true, json: async () => [{ id: 'tpl_qr_var', name: 'Konfirmasi', type: 'QUICK_REPLY', category: null, body: 'Halo {{1}}.' }] })
+        return Promise.resolve({ ok: true, json: async () => ({ defaultChannel: 'UNOFFICIAL' }) })
+      })
+    )
+    render(<ComposeBox conversationId="conv_1" botEnabled={false} variableFields={[]} onSent={() => {}} onBotToggled={() => {}} />)
+    await switchToUnofficial()
+    await openTemplateMenu()
+    fireEvent.click(await screen.findByText('Konfirmasi'))
+
+    expect(screen.queryByLabelText('Isi dari data booking/kontak')).not.toBeInTheDocument()
+  })
+
+  it('fills an OFFICIAL template variable from the picked data field', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url: string) => {
+        if (url === '/api/templates')
+          return Promise.resolve({
+            ok: true,
+            json: async () => [{ id: 'tpl_param', name: 'booking_confirmation', type: 'OFFICIAL', category: null, body: 'Halo {{1}}.', metaStatus: 'APPROVED', format: 'TEXT', variables: ['nama'] }],
+          })
+        return Promise.resolve({ ok: true, json: async () => ({ defaultChannel: 'OFFICIAL' }) })
+      })
+    )
+    render(<ComposeBox conversationId="conv_1" botEnabled={false} variableFields={fields} onSent={() => {}} onBotToggled={() => {}} />)
+    await openTemplateMenu()
+    fireEvent.click(await screen.findByText('booking_confirmation'))
+
+    const pickers = await screen.findAllByLabelText('Isi dari data booking/kontak')
+    fireEvent.change(pickers[0], { target: { value: 'Bruno Figarola' } })
+
+    expect(screen.getByLabelText('nama')).toHaveValue('Bruno Figarola')
+  })
+
+  it('fills a quick-reply variable from the picked data field', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url: string) => {
+        if (url === '/api/templates')
+          return Promise.resolve({ ok: true, json: async () => [{ id: 'tpl_qr_var', name: 'Konfirmasi', type: 'QUICK_REPLY', category: null, body: 'Sisa tagihan Anda {{1}}.' }] })
+        return Promise.resolve({ ok: true, json: async () => ({ defaultChannel: 'UNOFFICIAL' }) })
+      })
+    )
+    render(<ComposeBox conversationId="conv_1" botEnabled={false} variableFields={fields} onSent={() => {}} onBotToggled={() => {}} />)
+    await switchToUnofficial()
+    await openTemplateMenu()
+    fireEvent.click(await screen.findByText('Konfirmasi'))
+
+    const picker = await screen.findByLabelText('Isi dari data booking/kontak')
+    fireEvent.change(picker, { target: { value: 'Rp 350.000' } })
+
+    expect(screen.getByLabelText('{{1}}')).toHaveValue('Rp 350.000')
+  })
+})
+
 // A half-written reply to a live customer only exists in this input. `send()` used to read
 // any /api/send response as if it were a Message: on a 401 or 500 it appended a bubble with
 // `id: undefined` and an empty delivery badge, then cleared the box — destroying what the

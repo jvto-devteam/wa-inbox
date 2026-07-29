@@ -8,6 +8,7 @@ import { Card } from '@/components/ui/card'
 import { fetchJson } from '@/lib/fetch-json'
 import { formatWhatsAppText } from '@/lib/whatsapp-format'
 import { TemplatePreviewBubble, type PreviewButton, type PreviewCard } from './TemplatePreviewBubble'
+import type { VariableField } from '@/lib/booking/variable-fields'
 
 type QuickReplyTemplate = { id: string; name: string; category: string | null; body: string }
 type OfficialTemplate = {
@@ -49,10 +50,52 @@ const ATTACH_ACCEPT: Record<'media' | 'document', string> = {
   document: '.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,audio/*',
 }
 
+// A {{n}} placeholder can appear more than once and in any order -- Meta's own convention
+// (and the API's positional `bodyParams` array) is 1-indexed and sequential, so this collects
+// every DISTINCT number used, sorted ascending, rather than assuming the template author wrote
+// them in order or used each one only once.
+function extractVariableNumbers(body: string): number[] {
+  const found = new Set<number>()
+  for (const match of body.matchAll(/\{\{(\d+)\}\}/g)) found.add(Number(match[1]))
+  return [...found].sort((a, b) => a - b)
+}
+
+function interpolateQuickReply(body: string, valuesByNumber: Record<number, string>): string {
+  return body.replace(/\{\{(\d+)\}\}/g, (_, n) => valuesByNumber[Number(n)] ?? '')
+}
+
+// Lets an agent fill a template variable (OFFICIAL {{n}} param or QUICK_REPLY {{n}} in the raw
+// body) from the current conversation's contact/booking data instead of typing it by hand --
+// e.g. the customer's name, the booked package, the remaining balance. `fields` is computed
+// once per conversation (see ThreadView) from whatever the real booking API actually returned,
+// so the options offered here are exactly whatever data exists for THIS customer, no more.
+function VariableSourceSelect({ fields, onPick }: { fields: VariableField[]; onPick: (value: string) => void }) {
+  if (fields.length === 0) return null
+  return (
+    <select
+      aria-label="Isi dari data booking/kontak"
+      value=""
+      onChange={(e) => {
+        if (e.target.value) onPick(e.target.value)
+        e.target.value = ''
+      }}
+      className="shrink-0 rounded border border-border bg-secondary px-1.5 py-1.5 text-xs text-muted-foreground"
+    >
+      <option value="">Isi dari data...</option>
+      {fields.map((f, i) => (
+        <option key={i} value={f.value}>
+          {f.label}
+        </option>
+      ))}
+    </select>
+  )
+}
+
 export function ComposeBox({
   conversationId,
   botEnabled,
   replyingTo,
+  variableFields = [],
   onCancelReply,
   onSent,
   onBotToggled,
@@ -60,6 +103,9 @@ export function ComposeBox({
   conversationId: string
   botEnabled: boolean
   replyingTo?: MessageView | null
+  // Contact/booking fields available to fill a template {{n}} variable from -- see
+  // VariableSourceSelect above and src/lib/booking/variable-fields.ts.
+  variableFields?: VariableField[]
   onCancelReply?: () => void
   onSent: (m: MessageView) => void
   onBotToggled: (enabled: boolean) => void
@@ -90,6 +136,11 @@ export function ComposeBox({
   const [templateForm, setTemplateForm] = useState<OfficialTemplate | null>(null)
   const [templateParamValues, setTemplateParamValues] = useState<string[]>([])
   const [templateSending, setTemplateSending] = useState(false)
+  // QUICK_REPLY {{n}} variables -- mirrors templateForm/templateParamValues above, but for the
+  // plain-text quick-reply path (no Cloud API dispatch, no LTO/COUPON runtime fields). null
+  // means the picker is just showing the list, not a param form.
+  const [quickReplyForm, setQuickReplyForm] = useState<{ template: QuickReplyTemplate; varNumbers: number[] } | null>(null)
+  const [quickReplyParamValues, setQuickReplyParamValues] = useState<string[]>([])
   // LTO/COUPON runtime values -- both are per-send, never reused from the template's own
   // submission-time example/placeholder (see submitLtoTemplate/submitCouponTemplate).
   const [ltoExpiration, setLtoExpiration] = useState('')
@@ -289,9 +340,29 @@ export function ComposeBox({
     }
   }
 
-  function selectTemplate(body: string) {
-    setText(body)
+  // A quick reply with no {{n}} placeholders pastes straight into the text input, same as
+  // before. One that has them opens the same kind of param form OFFICIAL templates use, so the
+  // agent fills real values (optionally from variableFields) before it lands in the input.
+  function selectTemplate(t: QuickReplyTemplate) {
+    const varNumbers = extractVariableNumbers(t.body)
+    if (varNumbers.length === 0) {
+      setText(t.body)
+      setPickerOpen(false)
+      return
+    }
+    setQuickReplyForm({ template: t, varNumbers })
+    setQuickReplyParamValues(new Array(varNumbers.length).fill(''))
+  }
+
+  function confirmQuickReply() {
+    if (!quickReplyForm) return
+    const valuesByNumber = Object.fromEntries(
+      quickReplyForm.varNumbers.map((n, i) => [n, quickReplyParamValues[i] ?? ''])
+    )
+    setText(interpolateQuickReply(quickReplyForm.template.body, valuesByNumber))
     setPickerOpen(false)
+    setQuickReplyForm(null)
+    setQuickReplyParamValues([])
   }
 
   function selectOfficialTemplate(t: OfficialTemplate) {
@@ -441,14 +512,20 @@ export function ComposeBox({
               <label htmlFor={`tpl-param-${i}`} className="text-xs text-muted-foreground">
                 {varName}
               </label>
-              <Input
-                id={`tpl-param-${i}`}
-                aria-label={varName}
-                value={templateParamValues[i] ?? ''}
-                onChange={(e) =>
-                  setTemplateParamValues((prev) => prev.map((v, idx) => (idx === i ? e.target.value : v)))
-                }
-              />
+              <div className="flex gap-1.5">
+                <Input
+                  id={`tpl-param-${i}`}
+                  aria-label={varName}
+                  value={templateParamValues[i] ?? ''}
+                  onChange={(e) =>
+                    setTemplateParamValues((prev) => prev.map((v, idx) => (idx === i ? e.target.value : v)))
+                  }
+                />
+                <VariableSourceSelect
+                  fields={variableFields}
+                  onPick={(value) => setTemplateParamValues((prev) => prev.map((v, idx) => (idx === i ? value : v)))}
+                />
+              </div>
             </div>
           ))}
           {templateForm.format === 'LTO' && (
@@ -497,7 +574,49 @@ export function ComposeBox({
           </div>
         </Card>
       )}
-      {pickerOpen && !templateForm && (
+      {pickerOpen && quickReplyForm && (
+        <Card className="space-y-3 p-3">
+          <h4 className="text-sm font-medium">Balasan Cepat: {quickReplyForm.template.name}</h4>
+          {quickReplyForm.varNumbers.map((n, i) => (
+            <div key={n} className="space-y-1">
+              <label htmlFor={`qr-param-${i}`} className="text-xs text-muted-foreground">
+                {`{{${n}}}`}
+              </label>
+              <div className="flex gap-1.5">
+                <Input
+                  id={`qr-param-${i}`}
+                  aria-label={`{{${n}}}`}
+                  value={quickReplyParamValues[i] ?? ''}
+                  onChange={(e) =>
+                    setQuickReplyParamValues((prev) => prev.map((v, idx) => (idx === i ? e.target.value : v)))
+                  }
+                />
+                <VariableSourceSelect
+                  fields={variableFields}
+                  onPick={(value) => setQuickReplyParamValues((prev) => prev.map((v, idx) => (idx === i ? value : v)))}
+                />
+              </div>
+            </div>
+          ))}
+          <div className="flex gap-2">
+            <Button type="button" size="sm" onClick={confirmQuickReply}>
+              Gunakan Balasan
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setQuickReplyForm(null)
+                setQuickReplyParamValues([])
+              }}
+            >
+              Batal
+            </Button>
+          </div>
+        </Card>
+      )}
+      {pickerOpen && !templateForm && !quickReplyForm && (
         <Card className="max-h-80 space-y-3 overflow-y-auto p-3">
           <div className="flex items-center justify-between">
             <h4 className="text-[11px] font-semibold tracking-wide text-muted-foreground">
@@ -541,7 +660,7 @@ export function ComposeBox({
                 </h5>
                 <div className="grid grid-cols-2 gap-2">
                   {items.map((t) => (
-                    <TemplatePreviewBubble key={t.id} template={{ ...t, format: 'TEXT' }} onClick={() => selectTemplate(t.body)} />
+                    <TemplatePreviewBubble key={t.id} template={{ ...t, format: 'TEXT' }} onClick={() => selectTemplate(t)} />
                   ))}
                 </div>
               </div>

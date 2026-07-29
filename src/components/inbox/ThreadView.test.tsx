@@ -523,3 +523,46 @@ describe('ThreadView reply/quote', () => {
     expect(screen.queryByText('Membalas Pelanggan')).not.toBeInTheDocument()
   })
 })
+
+describe('ThreadView template variable data', () => {
+  function mockFetch() {
+    return vi.fn((url: RequestInfo | URL) => {
+      const s = String(url)
+      if (s.endsWith('/messages')) return Promise.resolve({ ok: true, json: () => Promise.resolve([]) } as Response)
+      if (s.endsWith('/api/accounts')) return Promise.resolve({ ok: true, json: () => Promise.resolve([]) } as Response)
+      if (s === '/api/templates') {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve([{ id: 'tpl_1', name: 'Konfirmasi', type: 'QUICK_REPLY', category: null, body: 'Sisa tagihan: {{1}}' }]),
+        } as Response)
+      }
+      return Promise.resolve({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            botEnabled: false,
+            assignedAgentId: null,
+            lastReadAt: null,
+            contactName: 'Bruno Figarola',
+            bookingData: { financial: { balance: 350000 } },
+          }),
+      } as Response)
+    })
+  }
+
+  it('passes the conversation’s contact name and booking data into ComposeBox as pickable variable fields', async () => {
+    vi.stubGlobal('fetch', mockFetch())
+
+    render(<ThreadView conversationId="conv_1" />)
+    await waitFor(() => expect(screen.getByText('Bruno Figarola')).toBeInTheDocument())
+
+    fireEvent.change(screen.getByLabelText('Channel'), { target: { value: 'UNOFFICIAL' } })
+    fireEvent.click(screen.getByLabelText('Tambah lampiran atau template'))
+    fireEvent.click(await screen.findByText('📋 Template'))
+    fireEvent.click(await screen.findByText('Konfirmasi'))
+
+    const picker = await screen.findByLabelText('Isi dari data booking/kontak')
+    fireEvent.change(picker, { target: { value: 'Bruno Figarola' } })
+    expect(screen.getByLabelText('{{1}}')).toHaveValue('Bruno Figarola')
+  })
+})
