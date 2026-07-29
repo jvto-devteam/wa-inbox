@@ -73,6 +73,12 @@ export function BookingSummary({
     const paymentStatus = derivePaymentStatus(balance)
     const portalUrl = bookingData.customer_portal
     const hotels = bookingData.hotels ?? []
+    // Klook bookings are third-party OTA day tours: no JVTO-collected payment figures (Klook
+    // handles that on its own platform) and no JVTO-booked hotel stays -- what a Klook booking
+    // DOES carry is who is actually running the tour, so Kru/Transportasi replace Hotel there.
+    const isKlook = bookingData.orderChannel === 'KLOOK'
+    const guides = bookingData.guides ?? []
+    const drivers = bookingData.drivers ?? []
 
     return (
       <Card className="space-y-2 p-3">
@@ -83,25 +89,52 @@ export function BookingSummary({
           {bookingData.total_pax != null && <Row label="Pax" value={String(bookingData.total_pax)} />}
           {bookingData.pickup?.text && <Row label="Jemput" value={bookingData.pickup.text.trim()} />}
           {bookingData.dropoff?.text && <Row label="Antar" value={bookingData.dropoff.text.trim()} />}
-          {payment != null && <Row label="Dibayar" value={formatIDR(payment)} />}
-          {balance != null && <Row label="Sisa" value={formatIDR(balance)} />}
+          {!isKlook && payment != null && <Row label="Dibayar" value={formatIDR(payment)} />}
+          {!isKlook && balance != null && <Row label="Sisa" value={formatIDR(balance)} />}
           {paymentStatus && <Row label="Status" value={paymentStatus} />}
         </dl>
-        {hotels.length > 0 && (
-          <div className="space-y-1 border-t border-border pt-2">
-            <h4 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Hotel</h4>
-            <ol className="space-y-0.5 text-sm">
-              {hotels.map((stay, i) => (
-                <li key={i} className="flex gap-2">
-                  <span className="shrink-0 text-muted-foreground">Hari {stay.day ?? i + 1}</span>
-                  <span className="min-w-0 wrap-break-word text-navy">
-                    {stay.hotel ?? '-'}
-                    {stay.rooms?.[0]?.roomName && ` (${stay.rooms[0].roomName})`}
-                  </span>
-                </li>
-              ))}
-            </ol>
-          </div>
+        {isKlook ? (
+          (guides.length > 0 || drivers.length > 0) && (
+            <div className="space-y-1 border-t border-border pt-2">
+              {guides.length > 0 && (
+                <div>
+                  <h4 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Kru</h4>
+                  <ol className="space-y-0.5 text-sm">
+                    {guides.map((g, i) => (
+                      <li key={i} className="wrap-break-word text-navy">{String(g.name ?? '-')}</li>
+                    ))}
+                  </ol>
+                </div>
+              )}
+              {drivers.length > 0 && (
+                <div>
+                  <h4 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Transportasi</h4>
+                  <ol className="space-y-0.5 text-sm">
+                    {drivers.map((d, i) => (
+                      <li key={i} className="wrap-break-word text-navy">{String(d.name ?? '-')}</li>
+                    ))}
+                  </ol>
+                </div>
+              )}
+            </div>
+          )
+        ) : (
+          hotels.length > 0 && (
+            <div className="space-y-1 border-t border-border pt-2">
+              <h4 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Hotel</h4>
+              <ol className="space-y-0.5 text-sm">
+                {hotels.map((stay, i) => (
+                  <li key={i} className="flex gap-2">
+                    <span className="shrink-0 text-muted-foreground">Hari {stay.day ?? i + 1}</span>
+                    <span className="min-w-0 wrap-break-word text-navy">
+                      {stay.hotel ?? '-'}
+                      {stay.rooms?.[0]?.roomName && ` (${stay.rooms[0].roomName})`}
+                    </span>
+                  </li>
+                ))}
+              </ol>
+            </div>
+          )
         )}
         {portalUrl && (
           <a

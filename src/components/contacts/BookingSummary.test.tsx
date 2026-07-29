@@ -129,6 +129,35 @@ describe('BookingSummary — confirmed booking', () => {
     expect(screen.queryByText('Hotel')).not.toBeInTheDocument()
   })
 
+  it('hides Dibayar and Sisa, and shows Kru/Transportasi instead of Hotel, for a KLOOK booking', () => {
+    render(
+      <BookingSummary
+        bookingData={{
+          ...realBooking,
+          orderChannel: 'KLOOK',
+          hotels: [{ day: '1', hotel: 'Should not render' }],
+          guides: [{ name: 'Budi Guide' }],
+          drivers: [{ name: 'Agus Driver' }],
+        }}
+        tripBrief={null}
+      />
+    )
+    expect(screen.queryByText('Dibayar')).not.toBeInTheDocument()
+    expect(screen.queryByText('Sisa')).not.toBeInTheDocument()
+    expect(screen.queryByText('Hotel')).not.toBeInTheDocument()
+    expect(screen.queryByText('Should not render')).not.toBeInTheDocument()
+    expect(screen.getByText('Kru')).toBeInTheDocument()
+    expect(screen.getByText('Budi Guide')).toBeInTheDocument()
+    expect(screen.getByText('Transportasi')).toBeInTheDocument()
+    expect(screen.getByText('Agus Driver')).toBeInTheDocument()
+  })
+
+  it('still shows Status for a KLOOK booking even though Dibayar/Sisa are hidden', () => {
+    render(<BookingSummary bookingData={{ ...realBooking, orderChannel: 'KLOOK' }} tripBrief={null} />)
+    expect(screen.getByText('Status')).toBeInTheDocument()
+    expect(screen.getByText('Belum lunas')).toBeInTheDocument()
+  })
+
   it('shows a portal link when customer_portal is present, pointing at the real URL', () => {
     render(
       <BookingSummary
