@@ -284,6 +284,48 @@ describe('TemplatesPage — Coupon builder', () => {
   })
 })
 
+// Adds one named variable row at a time via the "+ Tambah Variabel" button (create/edit, no
+// manual comma-separated typing) -- mirrors how an agent actually builds the list now.
+function addNamedVariables(names: string[]) {
+  names.forEach((name, i) => {
+    fireEvent.click(screen.getByText('+ Tambah Variabel'))
+    fireEvent.change(screen.getByLabelText(`Nama variabel ${i + 1}`), { target: { value: name } })
+  })
+}
+
+describe('TemplatesPage — variable create/edit/delete', () => {
+  it('has no variable rows until "+ Tambah Variabel" is clicked', async () => {
+    render(<TemplatesPage />)
+    await waitFor(() => expect(screen.getByText('+ Tambah Variabel')).toBeInTheDocument())
+
+    expect(screen.queryByLabelText('Nama variabel 1')).not.toBeInTheDocument()
+  })
+
+  it('adds a new editable row per click, and edits are reflected immediately', async () => {
+    render(<TemplatesPage />)
+    await waitFor(() => expect(screen.getByText('+ Tambah Variabel')).toBeInTheDocument())
+
+    addNamedVariables(['nama', 'paket'])
+
+    expect(screen.getByLabelText('Nama variabel 1')).toHaveValue('nama')
+    expect(screen.getByLabelText('Nama variabel 2')).toHaveValue('paket')
+
+    fireEvent.change(screen.getByLabelText('Nama variabel 1'), { target: { value: 'nama_pelanggan' } })
+    expect(screen.getByLabelText('Nama variabel 1')).toHaveValue('nama_pelanggan')
+  })
+
+  it('deletes a variable row', async () => {
+    render(<TemplatesPage />)
+    await waitFor(() => expect(screen.getByText('+ Tambah Variabel')).toBeInTheDocument())
+    addNamedVariables(['nama', 'paket'])
+
+    fireEvent.click(screen.getByLabelText('Hapus variabel 1'))
+
+    expect(screen.queryByLabelText('Nama variabel 2')).not.toBeInTheDocument()
+    expect(screen.getByLabelText('Nama variabel 1')).toHaveValue('paket')
+  })
+})
+
 describe('TemplatesPage — variable source bindings', () => {
   it('shows no binding section until there is at least one variable', async () => {
     render(<TemplatesPage />)
@@ -294,9 +336,9 @@ describe('TemplatesPage — variable source bindings', () => {
 
   it('shows one binding row per named OFFICIAL variable, labeled with its position and name', async () => {
     render(<TemplatesPage />)
-    await waitFor(() => expect(screen.getByLabelText('Variabel')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText('+ Tambah Variabel')).toBeInTheDocument())
 
-    fireEvent.change(screen.getByLabelText('Variabel'), { target: { value: 'nama, paket' } })
+    addNamedVariables(['nama', 'paket'])
 
     expect(screen.getByText('Sumber Nilai Variabel')).toBeInTheDocument()
     expect(screen.getByText('{{1}} nama')).toBeInTheDocument()
@@ -324,10 +366,10 @@ describe('TemplatesPage — variable source bindings', () => {
     vi.stubGlobal('fetch', fetchMock)
 
     render(<TemplatesPage />)
-    await waitFor(() => expect(screen.getByLabelText('Variabel')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText('+ Tambah Variabel')).toBeInTheDocument())
     fireEvent.change(screen.getByLabelText('Nama template'), { target: { value: 'booking_confirmation' } })
     fireEvent.change(screen.getByLabelText('Isi pesan'), { target: { value: 'Halo {{1}}, sisa {{2}}.' } })
-    fireEvent.change(screen.getByLabelText('Variabel'), { target: { value: 'nama, sisa' } })
+    addNamedVariables(['nama', 'sisa'])
 
     fireEvent.change(screen.getByLabelText('Sumber nilai untuk {{1}} nama'), { target: { value: 'contactName' } })
     // {{2}} sisa deliberately left as "Isi manual".
@@ -348,14 +390,14 @@ describe('TemplatesPage — variable source bindings', () => {
     vi.stubGlobal('fetch', fetchMock)
 
     render(<TemplatesPage />)
-    await waitFor(() => expect(screen.getByLabelText('Variabel')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText('+ Tambah Variabel')).toBeInTheDocument())
     fireEvent.change(screen.getByLabelText('Nama template'), { target: { value: 'booking_confirmation' } })
     fireEvent.change(screen.getByLabelText('Isi pesan'), { target: { value: 'Halo {{1}}, sisa {{2}}.' } })
-    fireEvent.change(screen.getByLabelText('Variabel'), { target: { value: 'nama, sisa' } })
+    addNamedVariables(['nama', 'sisa'])
     fireEvent.change(screen.getByLabelText('Sumber nilai untuk {{2}} sisa'), { target: { value: 'financialBalance' } })
 
     // Remove the second variable -- its binding must not resurrect at a now-unrelated position.
-    fireEvent.change(screen.getByLabelText('Variabel'), { target: { value: 'nama' } })
+    fireEvent.click(screen.getByLabelText('Hapus variabel 2'))
 
     fireEvent.click(screen.getByText('Ajukan ke Meta'))
 

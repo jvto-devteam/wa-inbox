@@ -11,6 +11,7 @@ import { TemplatePreviewBubble, type PreviewButton, type PreviewCard } from './T
 import { bookingVariableFields, resolveVariableField, type VariableField } from '@/lib/booking/variable-fields'
 import { extractVariableNumbers, interpolateVariables } from '@/lib/template-variables'
 import type { BookingData } from '@/lib/booking/client'
+import type { TemplateRecommendation } from '@/lib/bot/template-recommender'
 
 // Maps a variable's 1-indexed position (as a string key, e.g. "1" for {{1}}) to a
 // src/lib/booking/variable-fields.ts field key, chosen once at template-creation time --
@@ -138,6 +139,12 @@ export function ComposeBox({
   // means the picker is just showing the list, not a param form.
   const [quickReplyForm, setQuickReplyForm] = useState<{ template: QuickReplyTemplate; varNumbers: number[] } | null>(null)
   const [quickReplyParamValues, setQuickReplyParamValues] = useState<string[]>([])
+  // AI template recommendations for the customer's latest inbound message -- see
+  // openRecommendations below and src/lib/bot/template-recommender.ts.
+  const [recommendationsOpen, setRecommendationsOpen] = useState(false)
+  const [recommendations, setRecommendations] = useState<TemplateRecommendation[]>([])
+  const [recommendLoading, setRecommendLoading] = useState(false)
+  const [recommendError, setRecommendError] = useState<string | null>(null)
   // LTO/COUPON runtime values -- both are per-send, never reused from the template's own
   // submission-time example/placeholder (see submitLtoTemplate/submitCouponTemplate).
   const [ltoExpiration, setLtoExpiration] = useState('')
@@ -310,20 +317,19 @@ export function ComposeBox({
     }
   }
 
-  // Fetch failures here must not leave the picker in a half-open, silently-broken state
-  // (same rule LabelPicker's attach/detach follow) — catch the error, surface it inline,
-  // and never call setPickerOpen(true) on a request that didn't actually succeed. Template is
-  // one of the three attach-menu options (alongside Foto & Video / Dokumen) rather than its
-  // own standalone button, so this only ever opens the picker -- closing it is handled by the
-  // "Batal"/selection actions already in the picker itself.
-  async function openTemplatePicker() {
-    setAttachMenuOpen(false)
+  // Shared by openTemplatePicker and openRecommendations -- both need templates/officialTemplates
+  // populated: the picker to list them, recommendations to resolve a suggested id back into the
+  // full template object selectTemplate/selectOfficialTemplate need. Fetch failures here must not
+  // leave either surface in a half-open, silently-broken state (same rule LabelPicker's
+  // attach/detach follow) — catch the error, surface it inline, and never flip the caller's
+  // "open" flag on a request that didn't actually succeed.
+  async function loadTemplateLists(): Promise<boolean> {
     setTemplateError(null)
     try {
       const res = await fetch('/api/templates')
       if (!res.ok) {
         setTemplateError('Gagal memuat template')
-        return
+        return false
       }
       const all = (await res.json()) as TemplateApiRow[]
       setTemplates(all.filter((t) => t.type === 'QUICK_REPLY'))
@@ -331,9 +337,63 @@ export function ComposeBox({
       // Meta rejects a send attempt for anything still PENDING/REJECTED, so there is no
       // point offering those here.
       setOfficialTemplates(all.filter((t) => t.type === 'OFFICIAL' && t.metaStatus === 'APPROVED'))
-      setPickerOpen(true)
+      return true
     } catch {
       setTemplateError('Gagal memuat template')
+      return false
+    }
+  }
+
+  // Template is one of the attach-menu options (alongside Foto & Video / Dokumen) rather than
+  // its own standalone button, so this only ever opens the picker -- closing it is handled by
+  // the "Batal"/selection actions already in the picker itself.
+  async function openTemplatePicker() {
+    setAttachMenuOpen(false)
+    if (await loadTemplateLists()) setPickerOpen(true)
+  }
+
+  // AI-suggested replies for the customer's latest inbound message (src/lib/bot/template-
+  // recommender.ts) -- ranks EXISTING templates for the agent to pick from; it never drafts or
+  // sends anything on its own. Loads templates fresh (recommendations reference by id, and the
+  // agent may not have opened the picker yet this session) before asking the LLM to rank them.
+  async function openRecommendations() {
+    setAttachMenuOpen(false)
+    setRecommendError(null)
+    setRecommendations([])
+    setRecommendationsOpen(true)
+    setRecommendLoading(true)
+    try {
+      const loaded = await loadTemplateLists()
+      if (!loaded) return
+      const res = await fetch('/api/templates/recommend', {
+        method: 'POST',
+        body: JSON.stringify({ conversationId, channel }),
+      })
+      if (!res.ok) {
+        const data = await res.json().catch(() => null)
+        setRecommendError(data?.error ?? 'Gagal membuat rekomendasi')
+        return
+      }
+      const data = (await res.json()) as { recommendations: TemplateRecommendation[] }
+      setRecommendations(data.recommendations)
+    } catch {
+      setRecommendError('Gagal membuat rekomendasi')
+    } finally {
+      setRecommendLoading(false)
+    }
+  }
+
+  // Resolves a recommended id back into the full template object (loadTemplateLists already
+  // ran in openRecommendations) and hands off to the same selection flow the picker itself
+  // uses, so a recommended template goes through the identical param-form/binding-resolve path.
+  function selectRecommendedTemplate(templateId: string) {
+    setRecommendationsOpen(false)
+    if (channel === 'OFFICIAL') {
+      const t = officialTemplates.find((o) => o.id === templateId)
+      if (t) selectOfficialTemplate(t)
+    } else {
+      const t = templates.find((q) => q.id === templateId)
+      if (t) selectTemplate(t)
     }
   }
 
@@ -676,6 +736,41 @@ export function ComposeBox({
           )}
         </Card>
       )}
+      {recommendationsOpen && (
+        <Card className="max-h-80 space-y-2 overflow-y-auto p-3">
+          <div className="flex items-center justify-between">
+            <h4 className="text-[11px] font-semibold tracking-wide text-muted-foreground">✨ REKOMENDASI TEMPLATE (AI)</h4>
+            <button
+              type="button"
+              onClick={() => setRecommendationsOpen(false)}
+              aria-label="Tutup rekomendasi template"
+              className="text-muted-foreground hover:text-foreground"
+            >
+              ✕
+            </button>
+          </div>
+          {recommendLoading && <p className="text-sm text-muted-foreground">Menganalisis pesan masuk...</p>}
+          {recommendError && <p className="text-xs text-destructive">{recommendError}</p>}
+          {!recommendLoading && !recommendError && recommendations.length === 0 && (
+            <p className="text-sm text-muted-foreground">Tidak ada template yang relevan untuk pesan ini.</p>
+          )}
+          {!recommendLoading && recommendations.length > 0 && (
+            <div className="space-y-1.5">
+              {recommendations.map((r) => (
+                <button
+                  key={r.templateId}
+                  type="button"
+                  onClick={() => selectRecommendedTemplate(r.templateId)}
+                  className="block w-full rounded-lg border border-border p-2 text-left hover:bg-muted"
+                >
+                  <p className="text-sm font-medium text-navy">{r.templateName}</p>
+                  <p className="text-xs text-muted-foreground">{r.reason}</p>
+                </button>
+              ))}
+            </div>
+          )}
+        </Card>
+      )}
       {templateError && <p className="text-xs text-destructive">{templateError}</p>}
       {sendError && <p className="text-xs text-destructive">{sendError}</p>}
       <div className="flex items-center gap-2">
@@ -725,6 +820,13 @@ export function ComposeBox({
                 className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-muted"
               >
                 📋 Template
+              </button>
+              <button
+                type="button"
+                onClick={openRecommendations}
+                className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-muted"
+              >
+                ✨ Rekomendasi Template
               </button>
             </Card>
           )}

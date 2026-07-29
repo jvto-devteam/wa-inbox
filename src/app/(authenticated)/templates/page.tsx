@@ -100,7 +100,7 @@ export default function TemplatesPage() {
   const [name, setName] = useState('')
   const [category, setCategory] = useState('')
   const [body, setBody] = useState('')
-  const [variablesText, setVariablesText] = useState('')
+  const [variableNames, setVariableNames] = useState<string[]>([])
   const [format, setFormat] = useState<TemplateFormat>('TEXT')
   const [cards, setCards] = useState<CardDraft[]>([EMPTY_CARD])
   const [offerTitle, setOfferTitle] = useState('')
@@ -123,7 +123,7 @@ export default function TemplatesPage() {
     setName('')
     setCategory('')
     setBody('')
-    setVariablesText('')
+    setVariableNames([])
     setFormat('TEXT')
     setCards([EMPTY_CARD])
     setOfferTitle('')
@@ -171,6 +171,18 @@ export default function TemplatesPage() {
     )
   }
 
+  function addVariable() {
+    setVariableNames((prev) => [...prev, ''])
+  }
+
+  function updateVariable(index: number, name: string) {
+    setVariableNames((prev) => prev.map((v, i) => (i === index ? name : v)))
+  }
+
+  function removeVariable(index: number) {
+    setVariableNames((prev) => prev.filter((_, i) => i !== index))
+  }
+
   function addLtoButton() {
     setLtoButtons((prev) => (prev.length >= MAX_LTO_BUTTONS ? prev : [...prev, EMPTY_BUTTON]))
   }
@@ -195,7 +207,7 @@ export default function TemplatesPage() {
   // named (comma-separated in variablesText, positional by index), QUICK_REPLY variables are
   // detected straight from the body's {{n}} placeholders (no separate name field). Both feed
   // the same "Sumber Nilai Variabel" binding UI below.
-  const officialVarNames = tab === 'OFFICIAL' ? variablesText.split(',').map((v) => v.trim()).filter(Boolean) : []
+  const officialVarNames = tab === 'OFFICIAL' ? variableNames.map((v) => v.trim()).filter(Boolean) : []
   const quickReplyVarNumbers = tab === 'QUICK_REPLY' ? extractVariableNumbers(body) : []
   const variablePositions =
     tab === 'OFFICIAL'
@@ -211,10 +223,7 @@ export default function TemplatesPage() {
     setError(null)
     setSubmitting(true)
     try {
-      const variables = variablesText
-        .split(',')
-        .map((v) => v.trim())
-        .filter(Boolean)
+      const variables = variableNames.map((v) => v.trim()).filter(Boolean)
 
       // Only positions that (a) are still real on this draft (a variable removed after being
       // bound must not resurrect a stale binding) and (b) actually have a chosen source --
@@ -324,12 +333,30 @@ export default function TemplatesPage() {
           rows={3}
         />
         {tab === 'OFFICIAL' && (
-          <Input
-            aria-label="Variabel"
-            placeholder="Variabel, pisahkan dengan koma (mis. nama, tanggal)"
-            value={variablesText}
-            onChange={(e) => setVariablesText(e.target.value)}
-          />
+          <div className="space-y-1.5">
+            <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Variabel</h3>
+            {variableNames.map((v, i) => (
+              <div key={i} className="flex items-center gap-1.5">
+                <Input
+                  aria-label={`Nama variabel ${i + 1}`}
+                  placeholder="mis. nama"
+                  value={v}
+                  onChange={(e) => updateVariable(i, e.target.value)}
+                />
+                <button
+                  type="button"
+                  aria-label={`Hapus variabel ${i + 1}`}
+                  onClick={() => removeVariable(i)}
+                  className="shrink-0 text-muted-foreground hover:text-destructive"
+                >
+                  ✕
+                </button>
+              </div>
+            ))}
+            <Button type="button" variant="outline" size="sm" onClick={addVariable}>
+              + Tambah Variabel
+            </Button>
+          </div>
         )}
 
         {variablePositions.length > 0 && (
