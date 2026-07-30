@@ -7,7 +7,8 @@ import { ensureFreshBookingData } from '@/lib/booking/client'
 import { checkRouteGate } from './route-gate'
 import { classifySalesNeed } from './sales-classifier'
 import { matchDestination, packagesForDestination, pickPackage } from './package-match'
-import { composeResponse, detectTopic } from './response-composer'
+import { classifyTopic } from './module-resolver'
+import { composeResponse } from './response-composer'
 import { callLLM } from './llm'
 import { loadCatalog } from './catalog'
 import { checkDeploymentGate } from './deployment-gate'
@@ -31,7 +32,13 @@ vi.mock('./sales-classifier', async (importOriginal) => ({
   classifySalesNeed: vi.fn(),
 }))
 vi.mock('./package-match')
-vi.mock('./response-composer', () => ({ composeResponse: vi.fn(), detectTopic: vi.fn() }))
+// Partial mock: toComposableTopic is a pure, deterministic mapping table worth exercising
+// for real; only classifyTopic (keyword scanning against the raw message) is stubbed.
+vi.mock('./module-resolver', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./module-resolver')>()),
+  classifyTopic: vi.fn(),
+}))
+vi.mock('./response-composer', () => ({ composeResponse: vi.fn() }))
 vi.mock('./llm')
 vi.mock('./catalog')
 vi.mock('./deployment-gate')
@@ -61,7 +68,7 @@ beforeEach(() => {
   ;(checkDeploymentGate as any).mockReturnValue({ readyForApproval: true, blocking: [] })
   ;(packagesForDestination as any).mockReturnValue([])
   ;(pickPackage as any).mockImplementation((matches: any[]) => matches[0])
-  ;(detectTopic as any).mockReturnValue('inclusions')
+  ;(classifyTopic as any).mockReturnValue('inclusions')
   ;(composeResponse as any).mockReturnValue('Berikut informasi paket untuk Ijen!')
   // decideAndRespond still reads Settings once, for ollamaModel (see the Mode 3 callLLM call).
   mockPrisma.settings.findUniqueOrThrow.mockResolvedValue({ ollamaModel: 'gemma4:31b-cloud' } as never)
@@ -115,7 +122,7 @@ describe('decideAndRespond', () => {
       ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
       ;(matchDestination as any).mockReturnValue({ destination: 'ijen', matches: [pkg()] })
       ;(checkRouteGate as any).mockReturnValue({ status: 'clear' })
-      ;(detectTopic as any).mockReturnValue('inclusions')
+      ;(classifyTopic as any).mockReturnValue('inclusions')
       ;(composeResponse as any).mockReturnValue('Berikut paket untuk Ijen!')
 
       const result = await decideAndRespond('conv_1', 'Saya mau ke Ijen')
@@ -130,6 +137,7 @@ describe('decideAndRespond', () => {
         'Mengklasifikasi kebutuhan pelanggan',
         'Mencari destinasi',
         'Destinasi ditemukan',
+        'Mengklasifikasi topik',
         'Memeriksa validitas paket',
         'Paket valid',
         'Menyusun jawaban',
@@ -229,6 +237,19 @@ describe('decideAndRespond', () => {
     expect(composeResponse).not.toHaveBeenCalled()
   })
 
+  it('hands off when the real topic classifier detects a topic wa-inbox has no catalog data for, without consulting the route gate', async () => {
+    ;(ensureFreshBookingData as any).mockResolvedValue(null)
+    ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
+    ;(matchDestination as any).mockReturnValue({ destination: 'ijen', matches: [pkg()] })
+    ;(classifyTopic as any).mockReturnValue('vehicle')
+
+    const result = await decideAndRespond('conv_1', 'Mobil apa yang dipakai?')
+
+    expect(result).toMatchObject({ mode: 'handoff', reason: expect.stringContaining('vehicle') })
+    expect(checkRouteGate).not.toHaveBeenCalled()
+    expect(composeResponse).not.toHaveBeenCalled()
+  })
+
   it('hands off (instead of running a clarifying-question dialogue) when no destination is known from the message or conversation history', async () => {
     ;(ensureFreshBookingData as any).mockResolvedValue(null)
     ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
@@ -268,7 +289,7 @@ describe('decideAndRespond', () => {
     ;(matchDestination as any).mockReturnValue(null)
     ;(packagesForDestination as any).mockReturnValue([pkg()])
     ;(pickPackage as any).mockImplementation((matches: any[]) => matches[0])
-    ;(detectTopic as any).mockReturnValue('price')
+    ;(classifyTopic as any).mockReturnValue('price')
     ;(composeResponse as any).mockReturnValue('Harga mulai dari Rp850.000/orang.')
     mockPrisma.settings.findUniqueOrThrow.mockResolvedValue({ ollamaModel: 'gemma4:31b-cloud' } as never)
     mockPrisma.conversation.findUniqueOrThrow.mockResolvedValue({

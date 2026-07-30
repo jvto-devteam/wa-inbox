@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { composeResponse, detectTopic } from './response-composer'
+import { composeResponse } from './response-composer'
 import type { Catalog, CatalogPackage } from './types'
 
 function pkg(overrides: Partial<CatalogPackage> = {}): CatalogPackage {
@@ -131,34 +131,5 @@ describe('composeResponse', () => {
     const catalog = catalogOf([pkg()])
     const text = composeResponse({ topic: 'policy', packageKey: 'ijen-1d', catalog, isHandoff: false })
     expect(text).toContain('Tidak bisa refund H-1')
-  })
-})
-
-describe('detectTopic', () => {
-  it('detects how_to_book from booking-style phrasing', () => {
-    expect(detectTopic('Bagaimana cara booking paket ini?')).toBe('how_to_book')
-    expect(detectTopic('How do I book this tour?')).toBe('how_to_book')
-  })
-
-  it('detects policy from policy-style phrasing', () => {
-    expect(detectTopic('Apa kebijakan pembatalannya?')).toBe('policy')
-  })
-
-  it('detects inclusions from "what is included" phrasing', () => {
-    expect(detectTopic('Paket ini termasuk apa saja?')).toBe('inclusions')
-    expect(detectTopic('What is included in this package?')).toBe('inclusions')
-  })
-
-  it('detects price from price-style phrasing', () => {
-    expect(detectTopic('Harganya berapa?')).toBe('price')
-    expect(detectTopic('How much does this cost?')).toBe('price')
-  })
-
-  it('falls back to inclusions when nothing matches', () => {
-    expect(detectTopic('Halo, saya mau tanya paket ke Ijen')).toBe('inclusions')
-  })
-
-  it('is case-insensitive', () => {
-    expect(detectTopic('BERAPA HARGANYA?')).toBe('price')
   })
 })

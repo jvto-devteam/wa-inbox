@@ -48,14 +48,23 @@
 //      `presentation_resolver` (see route-gate.ts's header), the standard
 //      price is still shown and the package's policyNotes disclosure is
 //      appended to the composed reply.
-//   6. Response composition (response-composer.ts, a faithful port of
+//   6. Topic classification (module-resolver.ts, a faithful port of
+//      jvto-agent-runtime's `module_resolver.py`'s `classify_topic`): scans
+//      the message against the real system's own keyword table for which of
+//      14 real topics it's asking about. Most of those 14 have no
+//      `CatalogPackage` field to answer from at all (vehicle/rooming/hotel/
+//      route_endpoint/payment/cancellation/...) -- `toComposableTopic` maps
+//      the few wa-inbox's catalog data CAN answer (price, booking,
+//      inclusions/general, destination_readiness/blue_fire -> policy) and
+//      hands off on every other real topic, rather than fabricate an answer
+//      from data that doesn't exist.
+//   7. Response composition (response-composer.ts, a faithful port of
 //      jvto-agent-runtime's `response_composer.py` -- this bot's own real
 //      answering logic, previously built and tested but never wired in):
-//      `detectTopic` reads which of inclusions/how_to_book/policy/price the
-//      message is asking about, `pickPackage` picks the destination's best
-//      (priced) package, and `composeResponse` assembles the catalog-grounded
-//      reply -- price shown only for price-relevant topics, never on a
-//      handoff, never an empty draft.
+//      `pickPackage` picks the destination's best (priced) package, and
+//      `composeResponse` assembles the catalog-grounded reply -- price shown
+//      only for price-relevant topics, never on a handoff, never an empty
+//      draft.
 //
 // Every step that can throw (a down booking API, a malformed catalog file,
 // an LLM timeout) is wrapped in a single outer try/catch that defaults to
@@ -67,7 +76,8 @@ import { ensureFreshBookingData } from '@/lib/booking/client'
 import { checkRouteGate } from './route-gate'
 import { classifySalesNeed, HANDOFF_KEYWORDS } from './sales-classifier'
 import { matchDestination, packagesForDestination, pickPackage } from './package-match'
-import { composeResponse, detectTopic } from './response-composer'
+import { classifyTopic, toComposableTopic } from './module-resolver'
+import { composeResponse } from './response-composer'
 import { callLLM } from './llm'
 import { loadCatalog } from './catalog'
 import { checkDeploymentGate } from './deployment-gate'
@@ -217,6 +227,21 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
     }
     trace.push('Destinasi ditemukan', `Destinasi: "${destination}".`)
 
+    const resolverTopic = classifyTopic(classification.job, inboundText)
+    const topic = toComposableTopic(resolverTopic)
+    trace.push('Mengklasifikasi topik', `Topik terdeteksi: "${resolverTopic}".`)
+    if (!topic) {
+      trace.push(
+        'Topik tidak didukung',
+        `Topik "${resolverTopic}" terdeteksi, tapi katalog wa-inbox tidak punya data untuk menjawabnya -- diserahkan ke agen.`
+      )
+      return {
+        mode: 'handoff',
+        reason: `Topik "${resolverTopic}" memerlukan data yang belum tersedia di katalog`,
+        steps: trace.steps,
+      }
+    }
+
     trace.push('Memeriksa validitas paket', `Memeriksa apakah paket untuk "${destination}" boleh ditampilkan ke pelanggan.`)
     const routeResult = checkRouteGate({ destination, catalog })
     if (routeResult.status === 'handoff') {
@@ -232,8 +257,7 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
 
     const matches = matched?.matches ?? packagesForDestination(destination, catalog)
     const pkg = pickPackage(matches)
-    const topic = detectTopic(inboundText)
-    trace.push('Menyusun jawaban', `Topik terdeteksi: "${topic}", paket: "${pkg.title}".`)
+    trace.push('Menyusun jawaban', `Topik: "${topic}", paket: "${pkg.title}".`)
 
     let reply = composeResponse({ topic, packageKey: pkg.packageKey, catalog, isHandoff: false })
 
