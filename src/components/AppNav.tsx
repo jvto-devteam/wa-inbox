@@ -122,7 +122,10 @@ export function AppNav() {
   return (
     <header className="flex items-center justify-between border-b border-border bg-white px-5 py-3">
       <div className="flex items-center gap-8">
-        <span className="text-lg font-extrabold tracking-tight text-navy">wa-inbox</span>
+        <span className="flex items-center gap-2">
+          <img src="/logo.png" alt="wa-inbox" className="h-7 w-7 rounded object-contain" />
+          <span className="text-lg font-extrabold tracking-tight text-navy">wa-inbox</span>
+        </span>
         <nav aria-label="Menu utama" className="flex items-center gap-1">
           {NAV_ITEMS.map((item) => {
             const active = isActivePath(pathname, item.href)

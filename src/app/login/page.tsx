@@ -30,7 +30,10 @@ export default function LoginPage() {
     <main className="flex min-h-screen items-center justify-center bg-slate-50">
       <Card className="w-80 p-6">
         <form onSubmit={onSubmit} className="space-y-4">
-          <h1 className="text-lg font-semibold text-navy">Masuk ke wa-inbox</h1>
+          <div className="flex flex-col items-center gap-2">
+            <img src="/logo.png" alt="wa-inbox" className="h-14 w-14 rounded-lg object-contain" />
+            <h1 className="text-lg font-semibold text-navy">Masuk ke wa-inbox</h1>
+          </div>
           <Input type="email" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} required />
           <Input type="password" placeholder="Kata sandi" value={password} onChange={(e) => setPassword(e.target.value)} required />
           {error && <p className="text-sm text-red-600">{error}</p>}
