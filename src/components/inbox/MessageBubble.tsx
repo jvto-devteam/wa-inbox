@@ -229,14 +229,22 @@ export function MessageBubble({ message, onReply }: { message: MessageView; onRe
   // divider (the same line-text-line style as the "Pesan belum dibaca" marker in ThreadView),
   // not a chat bubble: no channel/sender badge, no timestamp, no delivery ticks, no reply
   // action -- none of those describe an actual message, so showing them here is just noise.
-  // Plain, non-interactive text -- no "lihat alasan" link here (the reasoning trace is only
-  // ever opened via a real bot reply's 🧠 icon below, never from this info-only divider).
+  // The reason IS worth surfacing though: an agent picking up a handoff wants to know why
+  // without digging through settings/logs, so the divider itself is clickable and opens the
+  // same BotTracePopover a real bot reply's 🧠 icon would.
   if (isHandoffLogMessage(message)) {
     return (
-      <div className="flex w-full items-center gap-2 text-xs font-medium text-muted-foreground">
-        <div className="h-px flex-1 bg-border" />
-        <span>{HANDOFF_LOG_SUMMARY}</span>
-        <div className="h-px flex-1 bg-border" />
+      <div className="flex w-full flex-col items-center gap-1">
+        <div className="flex w-full items-center gap-2 text-xs font-medium text-muted-foreground">
+          <div className="h-px flex-1 bg-border" />
+          <button type="button" onClick={() => setShowTrace((prev) => !prev)} className="cursor-pointer hover:underline">
+            {HANDOFF_LOG_SUMMARY}
+          </button>
+          <div className="h-px flex-1 bg-border" />
+        </div>
+        {showTrace && message.botTrace != null && (
+          <BotTracePopover trace={message.botTrace as BotDecision} onClose={() => setShowTrace(false)} />
+        )}
       </div>
     )
   }

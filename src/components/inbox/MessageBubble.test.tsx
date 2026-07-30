@@ -116,7 +116,7 @@ describe('MessageBubble', () => {
     expect(screen.queryByText(/^\d{2}\.\d{2}$/)).not.toBeInTheDocument()
   })
 
-  it('never renders the handoff divider as clickable, trace or no trace -- it is an info line, not a link', () => {
+  it('opens the reasoning popover with the handoff reason when the divider is clicked', () => {
     render(
       <MessageBubble
         message={{
@@ -126,12 +126,13 @@ describe('MessageBubble', () => {
         }}
       />
     )
-    expect(screen.getByText('Bot menyerahkan ke agen').closest('button')).not.toBeInTheDocument()
-    fireEvent.click(screen.getByText('Bot menyerahkan ke agen'))
+    expect(screen.getByText('Bot menyerahkan ke agen').closest('button')).toBeInTheDocument()
     expect(screen.queryByText(/Gerbang persetujuan/)).not.toBeInTheDocument()
+    fireEvent.click(screen.getByText('Bot menyerahkan ke agen'))
+    expect(screen.getByText(/Gerbang persetujuan/)).toBeInTheDocument()
   })
 
-  it('does not show the divider trace even when the row has no trace to show', () => {
+  it('clicking the divider is a no-op when the row has no trace to show', () => {
     render(
       <MessageBubble
         message={{
@@ -141,8 +142,8 @@ describe('MessageBubble', () => {
         }}
       />
     )
+    fireEvent.click(screen.getByText('Bot menyerahkan ke agen'))
     expect(screen.getByText('Bot menyerahkan ke agen')).toBeInTheDocument()
-    expect(screen.getByText('Bot menyerahkan ke agen').closest('button')).not.toBeInTheDocument()
   })
 
   it('shows a channel badge and time for every message', () => {

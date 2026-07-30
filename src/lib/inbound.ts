@@ -352,7 +352,7 @@ async function ingestSingleMessage(message: MetaInboundMessage, contacts: MetaCo
 
   if (conversation.botEnabled && botCanAnswer) {
     const decision = await decideAndRespond(conversation.id, inboundText)
-    if (decision.mode === 'faq' || decision.mode === 'booking_context') {
+    if (decision.mode === 'faq' || decision.mode === 'booking_context' || decision.mode === 'clarify') {
       const text = decision.mode === 'faq' ? decision.draft : decision.reply
       await sendMessage({ conversationId: conversation.id, text, sentBy: 'BOT', botTrace: decision })
     } else {

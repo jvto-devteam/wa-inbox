@@ -30,7 +30,7 @@ export default function BotLogPage() {
         <option value="">Semua mode</option>
         <option value="handoff">Handoff</option>
         <option value="faq">FAQ</option>
-        <option value="funnel">Funnel</option>
+        <option value="clarify">Tanya Destinasi</option>
         <option value="booking_context">Konteks Booking</option>
       </Select>
 

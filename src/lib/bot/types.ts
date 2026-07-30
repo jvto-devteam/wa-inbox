@@ -27,6 +27,7 @@ export type BotDecision =
   | { mode: 'handoff'; reason: string; steps?: TraceStep[] }
   | { mode: 'faq'; draft: string; sourceTopic: string; steps?: TraceStep[] }
   | { mode: 'booking_context'; reply: string; steps?: TraceStep[] }
+  | { mode: 'clarify'; reply: string; steps?: TraceStep[] }
 
 export type CatalogPackage = {
   packageKey: string

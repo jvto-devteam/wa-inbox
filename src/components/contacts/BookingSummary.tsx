@@ -153,7 +153,7 @@ export function BookingSummary({
   if (isFunnelOnly && tripBrief) {
     return (
       <Card className="space-y-2 p-3">
-        <Badge variant="warning">Dari Funnel (belum booking)</Badge>
+        <Badge variant="warning">Info dari percakapan (belum booking)</Badge>
         <dl className="space-y-1 text-sm">
           {tripBrief.destination && <Row label="Destinasi" value={tripBrief.destination} />}
           {tripBrief.dateRange && <Row label="Tanggal" value={tripBrief.dateRange} />}

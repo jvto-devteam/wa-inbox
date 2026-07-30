@@ -39,9 +39,10 @@
 //      destination matched THIS message overrides one already on file (the
 //      customer just told us where they want to go); otherwise the
 //      previously persisted one carries the conversation. No destination at
-//      all (neither matched now nor on file) hands off -- this mirrors
-//      route-gate.ts's own "no destination extracted yet -> handoff" rule
-//      rather than inventing a clarifying-question flow of our own.
+//      all (neither matched now nor on file) asks a one-line clarifying
+//      question listing the catalog's destinations (`mode: 'clarify'`) rather
+//      than handing off -- the bot stays active for the customer's next
+//      reply, unlike every other branch in this function.
 //   5. Route-integrity gate: decides whether a package claim may be made
 //      about the matched destination at all. `handoff` -> hand off.
 //      `needs_review` does NOT hand off -- mirroring the real
@@ -75,7 +76,7 @@ import { prisma } from '@/lib/db'
 import { ensureFreshBookingData } from '@/lib/booking/client'
 import { checkRouteGate } from './route-gate'
 import { classifySalesNeed, HANDOFF_KEYWORDS } from './sales-classifier'
-import { matchDestination, packagesForDestination, pickPackage } from './package-match'
+import { listDestinations, matchDestination, packagesForDestination, pickPackage } from './package-match'
 import { classifyTopic, toComposableTopic } from './module-resolver'
 import { composeResponse } from './response-composer'
 import { callLLM } from './llm'
@@ -222,8 +223,17 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
     }
 
     if (!destination) {
-      trace.push('Destinasi tidak diketahui', 'Tidak ada destinasi yang bisa dikenali dari pesan maupun riwayat percakapan -- diserahkan ke agen.')
-      return { mode: 'handoff', reason: 'Tujuan belum diketahui dari percakapan', steps: trace.steps }
+      trace.push(
+        'Destinasi tidak diketahui',
+        'Tidak ada destinasi yang bisa dikenali dari pesan maupun riwayat percakapan -- menanyakan destinasi ke pelanggan.'
+      )
+      const options = listDestinations(catalog)
+      const reply =
+        `Halo! Anda tertarik jalan-jalan ke mana? 🏝️\n\n` +
+        `Saat ini kami menyediakan tur ke: ${options.join(', ')}. ` +
+        `Beri tahu kami destinasi mana yang Anda minati ya!`
+      trace.push('Jawaban siap dikirim', previewText(reply))
+      return { mode: 'clarify', reply, steps: trace.steps }
     }
     trace.push('Destinasi ditemukan', `Destinasi: "${destination}".`)
 

@@ -85,14 +85,14 @@ describe('ContactPanel', () => {
     expect(screen.getByText('Bromo Sunrise Tour')).toBeInTheDocument()
     expect(screen.getByText('10 Aug 2026 – 12 Aug 2026')).toBeInTheDocument()
     expect(screen.getByText('Belum lunas')).toBeInTheDocument()
-    expect(screen.queryByText('Dari Funnel (belum booking)')).not.toBeInTheDocument()
+    expect(screen.queryByText('Info dari percakapan (belum booking)')).not.toBeInTheDocument()
   })
 
-  it('shows a "Dari Funnel (belum booking)" summary when only tripBrief is set (Mode 1/2)', async () => {
+  it('shows a "Info dari percakapan (belum booking)" summary when only tripBrief is set (Mode 1/2)', async () => {
     mockFetchWith({ ...baseDetail, bookingData: null, tripBrief: { destination: 'Bali', pax: 4 } })
     render(<ContactPanel conversationId="conv_1" />)
 
-    await screen.findByText('Dari Funnel (belum booking)')
+    await screen.findByText('Info dari percakapan (belum booking)')
     expect(screen.getByText('Bali')).toBeInTheDocument()
     expect(screen.queryByText('Booking Ada')).not.toBeInTheDocument()
   })
@@ -103,7 +103,7 @@ describe('ContactPanel', () => {
 
     await waitFor(() => expect(screen.getByText('Bruno Figarola')).toBeInTheDocument())
     expect(screen.queryByText('Booking Ada')).not.toBeInTheDocument()
-    expect(screen.queryByText('Dari Funnel (belum booking)')).not.toBeInTheDocument()
+    expect(screen.queryByText('Info dari percakapan (belum booking)')).not.toBeInTheDocument()
     expect(screen.getByText('Belum ada data booking atau brief perjalanan.')).toBeInTheDocument()
   })
 

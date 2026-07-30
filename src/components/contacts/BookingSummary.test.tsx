@@ -182,7 +182,7 @@ describe('BookingSummary — other states', () => {
   it('shows the funnel-only card when there is a trip brief but no booking', () => {
     render(<BookingSummary bookingData={null} tripBrief={{ destination: 'Bali', pax: 4 }} />)
 
-    expect(screen.getByText('Dari Funnel (belum booking)')).toBeInTheDocument()
+    expect(screen.getByText('Info dari percakapan (belum booking)')).toBeInTheDocument()
     expect(screen.getByText('Bali')).toBeInTheDocument()
     expect(screen.queryByText('Booking Ada')).not.toBeInTheDocument()
   })

@@ -518,6 +518,17 @@ describe('ingestMetaMessage bot dispatch', () => {
     expect(sendMessage).toHaveBeenCalledWith(expect.objectContaining({ conversationId: 'conv_1', text: 'Info paket...', sentBy: 'BOT' }))
   })
 
+  it('sends a clarify reply and keeps botEnabled on, unlike a real handoff', async () => {
+    stubHappyPath()
+    vi.mocked(decideAndRespond).mockResolvedValue({ mode: 'clarify', reply: 'Anda tertarik jalan-jalan ke mana?' })
+
+    await ingestMetaMessage(samplePayload)
+
+    expect(sendMessage).toHaveBeenCalledWith(expect.objectContaining({ conversationId: 'conv_1', text: 'Anda tertarik jalan-jalan ke mana?', sentBy: 'BOT' }))
+    expect(mockPrisma.conversation.update).not.toHaveBeenCalledWith(expect.objectContaining({ data: { botEnabled: false } }))
+    expect(broadcast).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'handoff.alert' }))
+  })
+
   it('does not call the orchestrator when botEnabled is false', async () => {
     stubHappyPath({ conversation: { botEnabled: false } })
 

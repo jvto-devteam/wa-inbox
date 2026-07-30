@@ -24,6 +24,7 @@ export function BotTracePopover({ trace, onClose }: { trace: BotDecision; onClos
       {trace.mode === 'handoff' && <p>{trace.reason}</p>}
       {trace.mode === 'faq' && <p>Sumber topik: {trace.sourceTopic}</p>}
       {trace.mode === 'booking_context' && <p>Dijawab dari data booking asli (Booking API).</p>}
+      {trace.mode === 'clarify' && <p>Destinasi belum diketahui -- bot menanyakan ke pelanggan.</p>}
       {trace.steps && trace.steps.length > 0 && (
         <ol className="space-y-1.5 border-t border-border pt-2">
           {trace.steps.map((step, i) => (

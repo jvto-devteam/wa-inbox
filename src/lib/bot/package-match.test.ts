@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { matchDestination, packagesForDestination, pickPackage } from './package-match'
+import { matchDestination, packagesForDestination, pickPackage, listDestinations } from './package-match'
 import type { Catalog, CatalogPackage } from './types'
 
 function pkg(overrides: Partial<CatalogPackage> = {}): CatalogPackage {
@@ -91,6 +91,24 @@ describe('packagesForDestination', () => {
 
   it('returns an empty array for an unrecognized destination', () => {
     expect(packagesForDestination('mars', catalog)).toEqual([])
+  })
+})
+
+describe('listDestinations', () => {
+  it('title-cases every distinct destination token for a customer-facing message', () => {
+    const multi = catalogOf([
+      pkg({ destinationTokens: ['bromo', 'ijen'] }),
+      pkg({ packageKey: 'ts-2d', destinationTokens: ['tumpak sewu'], title: 'Tumpak Sewu 2D1N' }),
+    ])
+    expect(listDestinations(multi)).toEqual(['Bromo', 'Ijen', 'Tumpak Sewu'])
+  })
+
+  it('dedupes a token shared by multiple packages', () => {
+    const multi = catalogOf([
+      pkg({ packageKey: 'ijen-1d', destinationTokens: ['ijen'] }),
+      pkg({ packageKey: 'ijen-2d', destinationTokens: ['ijen'] }),
+    ])
+    expect(listDestinations(multi)).toEqual(['Ijen'])
   })
 })
 

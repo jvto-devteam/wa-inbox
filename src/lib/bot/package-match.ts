@@ -16,6 +16,12 @@ function allDestinationTokens(catalog: Catalog): string[] {
   return [...new Set(catalog.packages.flatMap((p) => p.destinationTokens.map((t) => t.toLowerCase())))]
 }
 
+// Same set, title-cased for display in a customer-facing message (orchestrator.ts's
+// clarifying question) -- "tumpak sewu" -> "Tumpak Sewu".
+export function listDestinations(catalog: Catalog): string[] {
+  return allDestinationTokens(catalog).map((t) => t.replace(/\b\w/g, (c) => c.toUpperCase()))
+}
+
 /**
  * Finds every package covering the single destination mentioned earliest in the
  * message. A package matches on ANY of its `destinationTokens`, so a combined

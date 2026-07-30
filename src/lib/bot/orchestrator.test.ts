@@ -6,7 +6,7 @@ import { decideAndRespond } from './orchestrator'
 import { ensureFreshBookingData } from '@/lib/booking/client'
 import { checkRouteGate } from './route-gate'
 import { classifySalesNeed } from './sales-classifier'
-import { matchDestination, packagesForDestination, pickPackage } from './package-match'
+import { matchDestination, packagesForDestination, pickPackage, listDestinations } from './package-match'
 import { classifyTopic } from './module-resolver'
 import { composeResponse } from './response-composer'
 import { callLLM } from './llm'
@@ -68,6 +68,7 @@ beforeEach(() => {
   ;(checkDeploymentGate as any).mockReturnValue({ readyForApproval: true, blocking: [] })
   ;(packagesForDestination as any).mockReturnValue([])
   ;(pickPackage as any).mockImplementation((matches: any[]) => matches[0])
+  ;(listDestinations as any).mockReturnValue(['Bromo', 'Ijen'])
   ;(classifyTopic as any).mockReturnValue('inclusions')
   ;(composeResponse as any).mockReturnValue('Berikut informasi paket untuk Ijen!')
   // decideAndRespond still reads Settings once, for ollamaModel (see the Mode 3 callLLM call).
@@ -250,16 +251,18 @@ describe('decideAndRespond', () => {
     expect(composeResponse).not.toHaveBeenCalled()
   })
 
-  it('hands off (instead of running a clarifying-question dialogue) when no destination is known from the message or conversation history', async () => {
+  it('asks a clarifying question (instead of handing off) when no destination is known from the message or conversation history', async () => {
     ;(ensureFreshBookingData as any).mockResolvedValue(null)
     ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
     ;(matchDestination as any).mockReturnValue(null)
+    ;(listDestinations as any).mockReturnValue(['Bromo', 'Ijen', 'Madakaripura'])
 
     const result = await decideAndRespond('conv_1', 'Halo')
 
     expect(checkRouteGate).not.toHaveBeenCalled()
     expect(composeResponse).not.toHaveBeenCalled()
-    expect(result).toMatchObject({ mode: 'handoff', reason: 'Tujuan belum diketahui dari percakapan' })
+    expect(result.mode).toBe('clarify')
+    expect((result as { reply: string }).reply).toContain('Bromo, Ijen, Madakaripura')
   })
 
   it('persists the destination package-match found, so the next message reaches the route gate with it', async () => {

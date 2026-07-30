@@ -14,6 +14,12 @@ describe('BotTracePopover', () => {
     expect(screen.getByText('Kata kunci eskalasi terdeteksi')).toBeInTheDocument()
   })
 
+  it('shows the clarify mode explanation', () => {
+    render(<BotTracePopover trace={{ mode: 'clarify', reply: 'Anda tertarik jalan-jalan ke mana?' }} onClose={() => {}} />)
+    expect(screen.getByText(/clarify/i)).toBeInTheDocument()
+    expect(screen.getByText(/menanyakan/i)).toBeInTheDocument()
+  })
+
   it('shows the booking_context source', () => {
     render(<BotTracePopover trace={{ mode: 'booking_context', reply: 'Booking Anda berangkat 5 Agustus.' }} onClose={() => {}} />)
     expect(screen.getByText(/booking_context/i)).toBeInTheDocument()
