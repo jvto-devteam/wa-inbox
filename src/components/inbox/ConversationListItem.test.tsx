@@ -5,7 +5,8 @@ import { ConversationListItem } from './ConversationListItem'
 const summary = {
   id: 'conv_1', contactName: 'Bruno Figarola', contactPhone: '6281234567890', avatarUrl: null,
   lastMessage: 'Halo!', lastMessageSentBy: 'CUSTOMER', lastMessageAt: new Date().toISOString(),
-  botEnabled: true, status: 'OPEN', orderChannel: null, unreadCount: 0, labels: [{ id: 'lbl_1', name: 'Confirmed Booking', color: '#3C6B42' }],
+  botEnabled: true, status: 'OPEN', orderChannel: null, pipelineStage: 'new', unreadCount: 0,
+  labels: [{ id: 'lbl_1', name: 'Confirmed Booking', color: '#3C6B42' }],
 }
 
 describe('ConversationListItem', () => {
@@ -56,6 +57,22 @@ describe('ConversationListItem', () => {
     render(<ConversationListItem conversation={summary} onClick={() => {}} />)
     expect(screen.queryByText('KLOOK')).not.toBeInTheDocument()
     expect(screen.queryByText('JVTO')).not.toBeInTheDocument()
+  })
+
+  it('shows the pipeline stage badge, translated to its Indonesian label', () => {
+    render(<ConversationListItem conversation={{ ...summary, pipelineStage: 'nego' }} onClick={() => {}} />)
+    expect(screen.getByText('Negosiasi')).toBeInTheDocument()
+  })
+
+  it('always shows a pipeline stage badge, even for the default "new" stage', () => {
+    render(<ConversationListItem conversation={summary} onClick={() => {}} />)
+    expect(screen.getByText('Baru')).toBeInTheDocument()
+  })
+
+  it('shows the order channel badge and the pipeline stage badge together without either being dropped', () => {
+    render(<ConversationListItem conversation={{ ...summary, orderChannel: 'JVTO', pipelineStage: 'lunas' }} onClick={() => {}} />)
+    expect(screen.getByText('JVTO')).toBeInTheDocument()
+    expect(screen.getByText('Lunas')).toBeInTheDocument()
   })
 
   it('shows the real avatar photo when avatarUrl is set, instead of the initial fallback', () => {

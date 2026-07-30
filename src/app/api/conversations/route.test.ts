@@ -23,6 +23,7 @@ describe('GET /api/conversations', () => {
       id: 'conv_1',
       botEnabled: true,
       status: 'OPEN',
+      pipelineStage: 'nego',
       lastMessageAt: new Date('2026-07-25T10:00:00Z'),
       contact: { name: 'Bruno Figarola', phone: '6281234567890' },
       messages: [{ content: 'Halo!', sentBy: 'CUSTOMER', createdAt: new Date() }],
@@ -40,6 +41,7 @@ describe('GET /api/conversations', () => {
       lastMessage: 'Halo!',
       lastMessageSentBy: 'CUSTOMER',
       botEnabled: true,
+      pipelineStage: 'nego',
       labels: [{ id: 'lbl_1', name: 'Confirmed Booking', color: '#3C6B42' }],
     }))
   })

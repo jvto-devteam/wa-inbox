@@ -1,6 +1,7 @@
 import { Badge } from '@/components/ui/badge'
 import { ContactAvatar } from '@/components/ContactAvatar'
 import { isHandoffLogMessage, HANDOFF_LOG_SUMMARY } from '@/lib/message-display'
+import { STAGE_LABELS, STAGE_VARIANTS } from '@/lib/pipeline'
 
 // Unlisted channels (e.g. TWT) fall back to the Badge component's own default `muted` look
 // rather than guessing a color for a platform we haven't been told one for.
@@ -22,6 +23,9 @@ export type ConversationSummary = {
   // Which platform a booking (if any) originated from -- Klook, JVTO, TWT, etc. Null until
   // there's an actual booking on file, in which case no badge shows at all (see below).
   orderChannel: string | null
+  // Where this contact currently sits in the sales pipeline (src/lib/pipeline.ts) -- always
+  // present (defaults to "new" in the schema), so its badge always renders, unlike orderChannel.
+  pipelineStage: string
   unreadCount: number
   labels: Array<{ id: string; name: string; color: string }>
 }
@@ -50,30 +54,33 @@ export function ConversationListItem({
     >
       <ContactAvatar name={conversation.contactName} avatarUrl={conversation.avatarUrl} size="size-9" />
       <div className="flex min-w-0 flex-1 flex-col gap-1">
-        <div className="flex items-center justify-between">
-          <span className={`truncate ${isUnread ? 'font-semibold' : 'font-medium'}`}>
+        <div className="flex items-center justify-between gap-2">
+          <span className={`min-w-0 truncate ${isUnread ? 'font-semibold' : 'font-medium'}`}>
             {conversation.contactName ?? conversation.contactPhone}
           </span>
-          <div className="flex shrink-0 items-center gap-1.5">
-            {conversation.orderChannel && (
-              <Badge variant="muted" className={ORDER_CHANNEL_CLASSES[conversation.orderChannel]}>
-                {conversation.orderChannel}
-              </Badge>
-            )}
-            {isUnread && (
-              <span
-                aria-label={`${conversation.unreadCount} pesan belum dibaca`}
-                className="flex h-5 min-w-5 items-center justify-center rounded-full bg-brand px-1.5 text-[11px] font-semibold text-white"
-              >
-                {conversation.unreadCount > 99 ? '99+' : conversation.unreadCount}
-              </span>
-            )}
-          </div>
+          {isUnread && (
+            <span
+              aria-label={`${conversation.unreadCount} pesan belum dibaca`}
+              className="flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-brand px-1.5 text-[11px] font-semibold text-white"
+            >
+              {conversation.unreadCount > 99 ? '99+' : conversation.unreadCount}
+            </span>
+          )}
         </div>
         <span className={`truncate text-sm ${isUnread ? 'font-medium text-foreground' : 'text-muted-foreground'}`}>
           {isHandoffLog ? HANDOFF_LOG_SUMMARY : conversation.lastMessage}
         </span>
-        <div className="flex gap-1">
+        {/* flex-wrap: order channel + pipeline stage + every label share one row when they
+            fit, and drop to a second line instead of overflowing/colliding when they don't. */}
+        <div className="flex flex-wrap items-center gap-1">
+          {conversation.orderChannel && (
+            <Badge variant="muted" className={ORDER_CHANNEL_CLASSES[conversation.orderChannel]}>
+              {conversation.orderChannel}
+            </Badge>
+          )}
+          <Badge variant={STAGE_VARIANTS[conversation.pipelineStage] ?? 'muted'}>
+            {STAGE_LABELS[conversation.pipelineStage] ?? conversation.pipelineStage}
+          </Badge>
           {conversation.labels.map((l) => (
             <Badge key={l.id} style={{ backgroundColor: l.color + '22', color: l.color }}>
               {l.name}

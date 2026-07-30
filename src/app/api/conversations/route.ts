@@ -46,6 +46,7 @@ export async function GET(req: Request) {
     lastMessageAt: c.lastMessageAt.toISOString(),
     botEnabled: c.botEnabled,
     status: c.status,
+    pipelineStage: c.pipelineStage,
     // Sidebar shows this instead of the Bot/Agen badge -- null (no badge at all) until
     // there's an actual booking on file. A dedicated column (see schema.prisma), not parsed
     // out of bookingData: it's snapshotted once and permanent, unlike the rest of bookingData.
