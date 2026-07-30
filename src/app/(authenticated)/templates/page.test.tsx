@@ -580,6 +580,111 @@ describe('TemplatesPage — template list', () => {
   })
 })
 
+describe('TemplatesPage — template library', () => {
+  it('only shows the library panel on the Resmi (Meta) tab', async () => {
+    render(<TemplatesPage />)
+    await waitFor(() => expect(screen.getByLabelText('Nama template')).toBeInTheDocument())
+
+    expect(screen.getByText('📚 Template Siap Pakai (Meta)')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByText('Balasan Cepat'))
+    expect(screen.queryByText('📚 Template Siap Pakai (Meta)')).not.toBeInTheDocument()
+  })
+
+  it('fetches and lists library results when opened', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url: string) => {
+        if (url.startsWith('/api/templates/library')) {
+          return jsonResponse({
+            templates: [
+              { id: '1', name: 'booking_confirmation_3', category: 'UTILITY', language: 'en_US', header: null, body: 'Hi {{1}}, your booking is confirmed.', buttons: [] },
+            ],
+          })
+        }
+        return jsonResponse([])
+      })
+    )
+    render(<TemplatesPage />)
+    await waitFor(() => expect(screen.getByLabelText('Nama template')).toBeInTheDocument())
+
+    fireEvent.click(screen.getByText('Jelajahi'))
+
+    expect(await screen.findByText('booking_confirmation_3')).toBeInTheDocument()
+    expect(screen.getByText('Hi {{1}}, your booking is confirmed.')).toBeInTheDocument()
+  })
+
+  it('re-searches with the chosen filters', async () => {
+    const fetchMock = vi.fn((url: string) => {
+      if (url.startsWith('/api/templates/library')) return jsonResponse({ templates: [] })
+      return jsonResponse([])
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    render(<TemplatesPage />)
+    await waitFor(() => expect(screen.getByLabelText('Nama template')).toBeInTheDocument())
+    fireEvent.click(screen.getByText('Jelajahi'))
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining('/api/templates/library')))
+
+    fireEvent.change(screen.getByLabelText('Filter kategori'), { target: { value: 'UTILITY' } })
+    fireEvent.change(screen.getByLabelText('Filter bahasa'), { target: { value: 'en_US' } })
+    fireEvent.click(screen.getByText('Cari'))
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith('/api/templates/library?category=UTILITY&language=en_US')
+    )
+  })
+
+  it('pre-fills the form (name, category, body, header, buttons) when a result is picked', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url: string) => {
+        if (url.startsWith('/api/templates/library')) {
+          return jsonResponse({
+            templates: [{
+              id: '1', name: 'booking_confirmation_3', category: 'UTILITY', language: 'en_US',
+              header: 'Booking Confirmed', body: 'Hi {{1}}, your booking is confirmed.',
+              buttons: [{ type: 'URL', text: 'View Booking', url: 'https://example.com' }],
+            }],
+          })
+        }
+        return jsonResponse([])
+      })
+    )
+    render(<TemplatesPage />)
+    await waitFor(() => expect(screen.getByLabelText('Nama template')).toBeInTheDocument())
+    fireEvent.click(screen.getByText('Jelajahi'))
+    await screen.findByText('booking_confirmation_3')
+
+    fireEvent.click(screen.getByText('booking_confirmation_3'))
+
+    expect(screen.getByLabelText('Nama template')).toHaveValue('booking_confirmation_3')
+    expect(screen.getByLabelText('Kategori')).toHaveValue('UTILITY')
+    expect(screen.getByLabelText('Isi pesan')).toHaveValue('Hi {{1}}, your booking is confirmed.')
+    expect(screen.getByLabelText('Teks header')).toHaveValue('Booking Confirmed')
+    expect(screen.getByLabelText('Label tombol 1')).toHaveValue('View Booking')
+    // The library panel itself closes once a result is picked (its own filter controls are
+    // gone) -- the name now legitimately reappears as the live preview's own caption, so that
+    // isn't what proves the panel closed.
+    expect(screen.queryByLabelText('Filter kategori')).not.toBeInTheDocument()
+  })
+
+  it('shows an inline error when the search fails', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url: string) => {
+        if (url.startsWith('/api/templates/library')) return jsonResponse({ error: 'Meta Graph API error' }, false)
+        return jsonResponse([])
+      })
+    )
+    render(<TemplatesPage />)
+    await waitFor(() => expect(screen.getByLabelText('Nama template')).toBeInTheDocument())
+
+    fireEvent.click(screen.getByText('Jelajahi'))
+
+    expect(await screen.findByText('Meta Graph API error')).toBeInTheDocument()
+  })
+})
+
 describe('TemplatesPage — AI template suggestions', () => {
   it('only shows the suggestion panel on the Balasan Cepat tab, not Resmi (Meta)', async () => {
     render(<TemplatesPage />)

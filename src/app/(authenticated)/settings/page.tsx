@@ -127,6 +127,18 @@ export default function SettingsPage() {
         </Card>
       )}
 
+      {role === 'ADMIN' && (
+        <Card className="space-y-1 p-4">
+          <h2 className="font-medium text-navy">Profil bisnis WhatsApp</h2>
+          <p className="text-sm text-muted-foreground">
+            Info bisnis yang dilihat pelanggan, status akun, dan pengaturan commerce (dari Meta).
+          </p>
+          <Link href="/settings/business-profile" className="text-sm text-brand hover:underline">
+            Kelola profil bisnis
+          </Link>
+        </Card>
+      )}
+
       {role === 'ADMIN' && <UserManagementSection />}
       {role === 'ADMIN' && <WebhookCredentialsPanel />}
     </main>

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { submitMetaTemplate, submitCarouselTemplate, submitLtoTemplate, submitCouponTemplate, deleteMetaTemplate } from './templates'
+import { submitMetaTemplate, submitCarouselTemplate, submitLtoTemplate, submitCouponTemplate, deleteMetaTemplate, getTemplateLibrary } from './templates'
 import { uploadMetaResumable } from './media-upload'
 
 vi.mock('./media-upload', () => ({ uploadMetaResumable: vi.fn() }))
@@ -281,5 +281,56 @@ describe('deleteMetaTemplate', () => {
     ;(fetch as any).mockResolvedValue({ ok: false, json: async () => ({ error: { message: 'Template not found' } }) })
 
     await expect(deleteMetaTemplate({ wabaId: 'waba_1', accessToken: 'tok' }, 'gone_already')).rejects.toThrow('Template not found')
+  })
+})
+
+describe('getTemplateLibrary', () => {
+  it('requests the global message_template_library endpoint (no WABA id in the path)', async () => {
+    ;(fetch as any).mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        data: [{
+          id: '7213311995461680', name: 'account_creation_confirmation_3', category: 'UTILITY', language: 'en_US',
+          header: 'Finish setting up your account', body: 'Hi {{1}}, your account is ready.',
+          buttons: [{ type: 'URL', text: 'Confirm', url: 'https://example.com' }],
+        }],
+        paging: { cursors: { after: 'MgZDZD' } },
+      }),
+    })
+
+    const result = await getTemplateLibrary('tok', { category: 'UTILITY', language: 'en_US' })
+
+    const [url, options] = (fetch as any).mock.calls[0]
+    expect(url).toBe('https://graph.facebook.com/v20.0/message_template_library?category=UTILITY&language=en_US&limit=25')
+    expect(options.headers.Authorization).toBe('Bearer tok')
+    expect(result).toEqual({
+      templates: [{
+        id: '7213311995461680', name: 'account_creation_confirmation_3', category: 'UTILITY', language: 'en_US',
+        header: 'Finish setting up your account', body: 'Hi {{1}}, your account is ready.',
+        buttons: [{ type: 'URL', text: 'Confirm', url: 'https://example.com' }],
+      }],
+      nextCursor: 'MgZDZD',
+    })
+  })
+
+  it('defaults header to null and buttons to an empty array when Meta omits them', async () => {
+    ;(fetch as any).mockResolvedValue({
+      ok: true,
+      json: async () => ({ data: [{ id: '1', name: 'plain', category: 'UTILITY', language: 'en_US', body: 'Hello.' }] }),
+    })
+
+    const result = await getTemplateLibrary('tok')
+
+    expect(result.templates[0]).toEqual({
+      id: '1', name: 'plain', category: 'UTILITY', language: 'en_US', header: null, body: 'Hello.', buttons: [],
+    })
+  })
+
+  it('returns an empty list and null cursor when Meta reports no templates at all', async () => {
+    ;(fetch as any).mockResolvedValue({ ok: true, json: async () => ({}) })
+
+    const result = await getTemplateLibrary('tok')
+
+    expect(result).toEqual({ templates: [], nextCursor: null })
   })
 })

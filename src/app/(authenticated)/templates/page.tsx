@@ -45,6 +45,16 @@ type Template = {
 // CardButton/TemplateCard union on submit.
 type CardDraft = { mediaType: 'IMAGE' | 'VIDEO'; mediaUrl: string; bodyText: string; buttons: ButtonDraft[] }
 
+type LibraryTemplate = {
+  id: string
+  name: string
+  category: string
+  language: string
+  header: string | null
+  body: string
+  buttons: Array<{ type: string; text: string; url?: string }>
+}
+
 const EMPTY_CARD: CardDraft = { mediaType: 'IMAGE', mediaUrl: '', bodyText: '', buttons: [] }
 const MAX_CARDS = 10
 const MAX_BUTTONS_PER_CARD = 2
@@ -121,6 +131,17 @@ export default function TemplatesPage() {
   const [suggestError, setSuggestError] = useState<string | null>(null)
   const [selectedSuggestions, setSelectedSuggestions] = useState<Set<number>>(new Set())
   const [savingSuggestions, setSavingSuggestions] = useState(false)
+  // Meta's own pre-vetted template library (OFFICIAL tab only) -- browsing here is purely a
+  // drafting shortcut: picking a result pre-fills the form below (name/category/body/header/
+  // buttons) exactly as if the admin had typed it in by hand, nothing is saved until "Ajukan
+  // ke Meta" is pressed.
+  const [libraryOpen, setLibraryOpen] = useState(false)
+  const [libraryTemplates, setLibraryTemplates] = useState<LibraryTemplate[]>([])
+  const [libraryLoading, setLibraryLoading] = useState(false)
+  const [libraryError, setLibraryError] = useState<string | null>(null)
+  const [libraryCategory, setLibraryCategory] = useState('')
+  const [libraryLanguage, setLibraryLanguage] = useState('')
+  const [libraryQuery, setLibraryQuery] = useState('')
 
   useEffect(() => {
     fetchJson<Template[]>('/api/templates')
@@ -330,6 +351,47 @@ export default function TemplatesPage() {
     }
   }
 
+  async function searchLibrary() {
+    setLibraryLoading(true)
+    setLibraryError(null)
+    try {
+      const params = new URLSearchParams()
+      if (libraryCategory) params.set('category', libraryCategory)
+      if (libraryLanguage) params.set('language', libraryLanguage)
+      if (libraryQuery) params.set('q', libraryQuery)
+      const res = await fetch(`/api/templates/library?${params.toString()}`)
+      if (!res.ok) {
+        const data = await res.json().catch(() => null)
+        setLibraryError(data?.error ?? 'Gagal memuat template siap pakai')
+        return
+      }
+      const data = (await res.json()) as { templates: LibraryTemplate[] }
+      setLibraryTemplates(data.templates)
+    } catch {
+      setLibraryError('Gagal memuat template siap pakai')
+    } finally {
+      setLibraryLoading(false)
+    }
+  }
+
+  // Only QUICK_REPLY/URL/PHONE_NUMBER map onto ButtonsField's draft shape -- a library result's
+  // rare COPY_CODE button is dropped rather than guessed into the unrelated COUPON format's own
+  // dedicated fields.
+  function useLibraryTemplate(t: LibraryTemplate) {
+    setName(t.name)
+    setCategory(t.category)
+    setBody(t.body)
+    setFormat('TEXT')
+    setHeader(t.header ? { type: 'TEXT', text: t.header } : EMPTY_HEADER)
+    setFooter('')
+    setButtons(
+      t.buttons
+        .filter((b): b is { type: 'QUICK_REPLY' | 'URL' | 'PHONE_NUMBER'; text: string; url?: string } => b.type !== 'COPY_CODE')
+        .map((b) => ({ type: b.type, text: b.text, url: b.url ?? '', phoneNumber: '' }))
+    )
+    setLibraryOpen(false)
+  }
+
   const filtered = templates.filter((t) => t.type === tab)
 
   return (
@@ -425,6 +487,77 @@ export default function TemplatesPage() {
                   </Button>
                 </>
               )}
+            </div>
+          )}
+        </Card>
+      )}
+
+      {tab === 'OFFICIAL' && (
+        <Card className="space-y-3 p-4">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <h2 className="font-medium text-navy">📚 Template Siap Pakai (Meta)</h2>
+              <p className="text-xs text-muted-foreground">
+                Jelajahi template yang sudah divalidasi Meta sebagai titik awal -- lebih cepat disetujui daripada menulis dari nol.
+              </p>
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setLibraryOpen((prev) => !prev)
+                if (!libraryOpen) searchLibrary()
+              }}
+            >
+              {libraryOpen ? 'Tutup' : 'Jelajahi'}
+            </Button>
+          </div>
+          {libraryOpen && (
+            <div className="space-y-2 rounded-lg border border-border p-3">
+              <div className="grid gap-2 sm:grid-cols-3">
+                <Select aria-label="Filter kategori" value={libraryCategory} onChange={(e) => setLibraryCategory(e.target.value)}>
+                  <option value="">Semua kategori</option>
+                  <option value="MARKETING">Marketing</option>
+                  <option value="UTILITY">Utility</option>
+                  <option value="AUTHENTICATION">Authentication</option>
+                </Select>
+                <Input
+                  aria-label="Filter bahasa"
+                  placeholder="Kode bahasa (mis. en_US)"
+                  value={libraryLanguage}
+                  onChange={(e) => setLibraryLanguage(e.target.value)}
+                />
+                <Input
+                  aria-label="Cari template"
+                  placeholder="Cari nama/isi..."
+                  value={libraryQuery}
+                  onChange={(e) => setLibraryQuery(e.target.value)}
+                />
+              </div>
+              <Button type="button" variant="outline" size="sm" onClick={searchLibrary} disabled={libraryLoading}>
+                {libraryLoading ? 'Mencari...' : 'Cari'}
+              </Button>
+              {libraryError && <p className="text-xs text-destructive">{libraryError}</p>}
+              {!libraryLoading && !libraryError && libraryTemplates.length === 0 && (
+                <p className="text-sm text-muted-foreground">Tidak ada hasil untuk filter ini.</p>
+              )}
+              <div className="max-h-80 space-y-1.5 overflow-y-auto">
+                {libraryTemplates.map((t) => (
+                  <button
+                    key={t.id}
+                    type="button"
+                    onClick={() => useLibraryTemplate(t)}
+                    className="block w-full rounded-lg border border-border p-2.5 text-left hover:bg-muted/50"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="truncate text-sm font-medium text-navy">{t.name}</span>
+                      <span className="shrink-0 text-[10px] uppercase text-muted-foreground">{t.category} · {t.language}</span>
+                    </div>
+                    <p className="line-clamp-2 text-xs text-muted-foreground">{t.body}</p>
+                  </button>
+                ))}
+              </div>
             </div>
           )}
         </Card>

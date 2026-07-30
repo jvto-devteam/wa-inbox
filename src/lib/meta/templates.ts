@@ -168,3 +168,44 @@ export async function deleteMetaTemplate(waNumber: { wabaId: string; accessToken
     method: 'DELETE',
   })
 }
+
+export type LibraryTemplateButton = { type: 'QUICK_REPLY' | 'URL' | 'PHONE_NUMBER' | 'COPY_CODE'; text: string; url?: string }
+export type LibraryTemplate = {
+  id: string
+  name: string
+  category: string
+  language: string
+  header: string | null
+  body: string
+  buttons: LibraryTemplateButton[]
+}
+
+/**
+ * Meta's pre-built, pre-vetted template library (`GET /message_template_library`) -- a global,
+ * account-independent catalog (no WABA id in the path), so any of this app's Meta-linked
+ * access tokens can read it. Starting a new OFFICIAL template from one of these is faster to
+ * get approved than free-authored text, since Meta already reviewed the pattern itself.
+ */
+export async function getTemplateLibrary(
+  accessToken: string,
+  filters: { category?: string; language?: string; nameOrContent?: string; after?: string; limit?: number } = {}
+): Promise<{ templates: LibraryTemplate[]; nextCursor: string | null }> {
+  const params = new URLSearchParams()
+  if (filters.category) params.set('category', filters.category)
+  if (filters.language) params.set('language', filters.language)
+  if (filters.nameOrContent) params.set('name_or_content', filters.nameOrContent)
+  if (filters.after) params.set('after', filters.after)
+  params.set('limit', String(filters.limit ?? 25))
+
+  const body = await metaFetch(`/message_template_library?${params.toString()}`, accessToken)
+  const templates: LibraryTemplate[] = (body.data ?? []).map((t: Record<string, unknown>) => ({
+    id: t.id,
+    name: t.name,
+    category: t.category,
+    language: t.language,
+    header: (t.header as string | undefined) ?? null,
+    body: t.body,
+    buttons: (t.buttons as LibraryTemplateButton[] | undefined) ?? [],
+  }))
+  return { templates, nextCursor: body.paging?.cursors?.after ?? null }
+}
