@@ -22,6 +22,26 @@ function markAsRead(conversationId: string) {
   fetch(`/api/conversations/${conversationId}/read`, { method: 'PATCH' }).catch(() => {})
 }
 
+function isSameDay(a: Date, b: Date): boolean {
+  return a.toDateString() === b.toDateString()
+}
+
+/**
+ * "Hari ini" / "Kemarin" / a full date -- a long-running conversation otherwise mixes
+ * messages from many different days with nothing but a bare HH.MM under each bubble
+ * (MessageBubble's `formatTime` never shows the date), reading as if they all happened
+ * today.
+ */
+function dayDividerLabel(iso: string): string {
+  const date = new Date(iso)
+  const now = new Date()
+  if (isSameDay(date, now)) return 'Hari ini'
+  const yesterday = new Date(now)
+  yesterday.setDate(yesterday.getDate() - 1)
+  if (isSameDay(date, yesterday)) return 'Kemarin'
+  return date.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })
+}
+
 export function ThreadView({ conversationId }: { conversationId: string }) {
   const [messages, setMessages] = useState<MessageView[]>([])
   const [botEnabled, setBotEnabled] = useState(false)
@@ -183,6 +203,13 @@ export function ThreadView({ conversationId }: { conversationId: string }) {
       <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4">
         {messages.map((m, i) => (
           <div key={m.id}>
+            {(i === 0 || !isSameDay(new Date(m.createdAt), new Date(messages[i - 1].createdAt))) && (
+              <div className="mb-3 flex items-center gap-2 text-xs font-medium text-muted-foreground">
+                <div className="h-px flex-1 bg-border" />
+                <span>{dayDividerLabel(m.createdAt)}</span>
+                <div className="h-px flex-1 bg-border" />
+              </div>
+            )}
             {i === firstUnreadIndex && (
               <div ref={unreadDividerRef} className="mb-3 flex items-center gap-2 text-xs font-medium text-muted-foreground">
                 <div className="h-px flex-1 bg-border" />

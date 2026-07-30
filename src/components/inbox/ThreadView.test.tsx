@@ -694,3 +694,89 @@ describe('ThreadView initial scroll position', () => {
     expect(scrollSpy).toHaveBeenCalledTimes(1)
   })
 })
+
+describe('ThreadView date dividers', () => {
+  function mockFetch(messages: unknown[]) {
+    return vi.fn((url: RequestInfo | URL) => {
+      const s = String(url)
+      if (s.endsWith('/messages')) return Promise.resolve({ ok: true, json: () => Promise.resolve(messages) } as Response)
+      if (s.endsWith('/api/accounts')) return Promise.resolve({ ok: true, json: () => Promise.resolve([]) } as Response)
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({ botEnabled: false, assignedAgentId: null, lastReadAt: null }) } as Response)
+    })
+  }
+
+  it('labels a message from today as "Hari ini"', async () => {
+    vi.stubGlobal(
+      'fetch',
+      mockFetch([
+        { id: 'm1', direction: 'INBOUND', content: 'Halo', channel: 'OFFICIAL', sentBy: 'CUSTOMER', deliveryStatus: 'DELIVERED', createdAt: new Date().toISOString(), botTrace: null },
+      ])
+    )
+
+    render(<ThreadView conversationId="conv_1" />)
+
+    await waitFor(() => expect(screen.getByText('Hari ini')).toBeInTheDocument())
+  })
+
+  it('labels a message from yesterday as "Kemarin"', async () => {
+    const yesterday = new Date()
+    yesterday.setDate(yesterday.getDate() - 1)
+    vi.stubGlobal(
+      'fetch',
+      mockFetch([
+        { id: 'm1', direction: 'INBOUND', content: 'Halo kemarin', channel: 'OFFICIAL', sentBy: 'CUSTOMER', deliveryStatus: 'DELIVERED', createdAt: yesterday.toISOString(), botTrace: null },
+      ])
+    )
+
+    render(<ThreadView conversationId="conv_1" />)
+
+    await waitFor(() => expect(screen.getByText('Kemarin')).toBeInTheDocument())
+  })
+
+  it('labels an older message with its full date', async () => {
+    vi.stubGlobal(
+      'fetch',
+      mockFetch([
+        { id: 'm1', direction: 'INBOUND', content: 'Pesan lama', channel: 'OFFICIAL', sentBy: 'CUSTOMER', deliveryStatus: 'DELIVERED', createdAt: '2026-01-05T03:00:00.000Z', botTrace: null },
+      ])
+    )
+
+    render(<ThreadView conversationId="conv_1" />)
+
+    await waitFor(() => expect(screen.getByText('5 Januari 2026')).toBeInTheDocument())
+  })
+
+  it('shows only one divider for consecutive messages on the same day', async () => {
+    const today = new Date().toISOString()
+    vi.stubGlobal(
+      'fetch',
+      mockFetch([
+        { id: 'm1', direction: 'INBOUND', content: 'Pesan satu', channel: 'OFFICIAL', sentBy: 'CUSTOMER', deliveryStatus: 'DELIVERED', createdAt: today, botTrace: null },
+        { id: 'm2', direction: 'OUTBOUND', content: 'Pesan dua', channel: 'OFFICIAL', sentBy: 'AGENT', deliveryStatus: 'SENT', createdAt: today, botTrace: null },
+      ])
+    )
+
+    render(<ThreadView conversationId="conv_1" />)
+
+    await waitFor(() => expect(screen.getByText('Pesan dua')).toBeInTheDocument())
+    expect(screen.getAllByText('Hari ini')).toHaveLength(1)
+  })
+
+  it('shows a new divider when messages cross a day boundary', async () => {
+    const yesterday = new Date()
+    yesterday.setDate(yesterday.getDate() - 1)
+    vi.stubGlobal(
+      'fetch',
+      mockFetch([
+        { id: 'm1', direction: 'INBOUND', content: 'Pesan kemarin', channel: 'OFFICIAL', sentBy: 'CUSTOMER', deliveryStatus: 'DELIVERED', createdAt: yesterday.toISOString(), botTrace: null },
+        { id: 'm2', direction: 'OUTBOUND', content: 'Pesan hari ini', channel: 'OFFICIAL', sentBy: 'AGENT', deliveryStatus: 'SENT', createdAt: new Date().toISOString(), botTrace: null },
+      ])
+    )
+
+    render(<ThreadView conversationId="conv_1" />)
+
+    await waitFor(() => expect(screen.getByText('Pesan hari ini')).toBeInTheDocument())
+    expect(screen.getByText('Kemarin')).toBeInTheDocument()
+    expect(screen.getByText('Hari ini')).toBeInTheDocument()
+  })
+})
