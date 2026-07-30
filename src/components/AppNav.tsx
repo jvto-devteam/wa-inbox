@@ -120,9 +120,9 @@ export function AppNav() {
   }
 
   return (
-    <header className="flex items-center justify-between border-b border-border bg-white px-5 py-3">
+    <header className="flex items-center justify-between border-b border-border bg-white px-5">
       <div className="flex items-center gap-8">
-        <img src="/logo.png" alt="wa-inbox" className="h-8 w-8 rounded object-contain" />
+        <img src="/logo.png" alt="wa-inbox" className="h-16 w-16 rounded object-contain" />
         <nav aria-label="Menu utama" className="flex items-center gap-1">
           {NAV_ITEMS.map((item) => {
             const active = isActivePath(pathname, item.href)
