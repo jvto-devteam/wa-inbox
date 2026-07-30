@@ -13,6 +13,7 @@ import { FooterField } from '@/components/templates/FooterField'
 import { ButtonsField, buttonDraftIsValid, type ButtonDraft, type ButtonType } from '@/components/templates/ButtonsField'
 import { TypeSelector, type TemplateFormat } from '@/components/templates/TypeSelector'
 import { TemplateGrid, type MetaStatus } from '@/components/templates/TemplateGrid'
+import { TemplatePreviewBubble, type TemplatePreviewData } from '@/components/inbox/TemplatePreviewBubble'
 
 type TemplateType = 'OFFICIAL' | 'QUICK_REPLY'
 
@@ -167,6 +168,22 @@ export default function TemplatesPage() {
 
   const variablePositions = variablePositionsFor(body)
 
+  // Live preview, fed straight from the draft's own React state -- re-derived on every render,
+  // so it updates on every keystroke/onChange with no extra plumbing. Mirrors waba-jvto's own
+  // <TemplatePreview>, reusing wa-inbox's existing TemplatePreviewBubble (already used for the
+  // list below) instead of a second preview component.
+  const previewData: TemplatePreviewData = {
+    name,
+    body,
+    format: tab === 'OFFICIAL' ? format : 'TEXT',
+    header: isTextOrAuth ? header : undefined,
+    footer: isTextOrAuth || isCoupon ? footer : undefined,
+    cards: isCarousel ? cards.map(toCardPayload) : undefined,
+    offerTitle: isLto ? offerTitle : undefined,
+    buttons: isTextOrAuth || isLto ? buttons.map(toButtonPayload) : undefined,
+    couponButtonText: isCoupon ? couponButtonText : undefined,
+  }
+
   // Templates are what actually gets submitted to Meta (or shown as compose-box shortcuts), so
   // the list must only ever reflect what the server confirmed — no optimistic insert. Await the
   // response, and only append to state once the server has created (and, for OFFICIAL, actually
@@ -316,7 +333,7 @@ export default function TemplatesPage() {
   const filtered = templates.filter((t) => t.type === tab)
 
   return (
-    <main className="mx-auto max-w-4xl space-y-4 p-6">
+    <main className="mx-auto max-w-5xl space-y-4 p-6">
       <h1 className="text-xl font-semibold text-navy">Template Pesan</h1>
 
       <div className="flex gap-2">
@@ -413,174 +430,181 @@ export default function TemplatesPage() {
         </Card>
       )}
 
-      <Card className="space-y-3 p-4">
-        <h2 className="font-medium text-navy">
-          {tab === 'OFFICIAL' ? 'Ajukan Template Resmi Baru' : 'Buat Balasan Cepat Baru'}
-        </h2>
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_320px]">
+        <Card className="space-y-3 p-4">
+          <h2 className="font-medium text-navy">
+            {tab === 'OFFICIAL' ? 'Ajukan Template Resmi Baru' : 'Buat Balasan Cepat Baru'}
+          </h2>
 
-        {tab === 'OFFICIAL' && (
-          <>
-            <TypeSelector value={format} onChange={setFormat} />
-            {isLto && <p className="text-xs text-muted-foreground">Kategori dikunci ke MARKETING oleh Meta.</p>}
-            {format === 'AUTH' && <p className="text-xs text-muted-foreground">Kategori dikunci ke AUTHENTICATION oleh Meta.</p>}
-          </>
-        )}
+          {tab === 'OFFICIAL' && (
+            <>
+              <TypeSelector value={format} onChange={setFormat} />
+              {isLto && <p className="text-xs text-muted-foreground">Kategori dikunci ke MARKETING oleh Meta.</p>}
+              {format === 'AUTH' && <p className="text-xs text-muted-foreground">Kategori dikunci ke AUTHENTICATION oleh Meta.</p>}
+            </>
+          )}
 
-        <div className="grid gap-2 sm:grid-cols-2">
-          <Input aria-label="Nama template" placeholder="Nama template" value={name} onChange={(e) => setName(e.target.value)} />
-          <Input aria-label="Kategori" placeholder="Kategori" value={category} onChange={(e) => setCategory(e.target.value)} />
-        </div>
-
-        {isTextOrAuth && <HeaderField value={header} onChange={setHeader} />}
-
-        <BodyField
-          value={body}
-          onChange={setBody}
-          maxLength={isLto ? 600 : 1024}
-          placeholder={
-            tab === 'OFFICIAL'
-              ? isCarousel
-                ? 'Isi pesan pembuka carousel...'
-                : 'Isi pesan...'
-              : 'Isi pesan balasan cepat...'
-          }
-        />
-
-        {(isTextOrAuth || isCoupon) && <FooterField value={footer} onChange={setFooter} />}
-
-        {variablePositions.length > 0 && (
-          <div className="space-y-1.5 rounded-lg border border-border p-3">
-            <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Sumber Nilai Variabel</h3>
-            <p className="text-xs text-muted-foreground">
-              Pilih data mana yang otomatis mengisi variabel ini setiap kali template dikirim, mengikuti
-              chat masing-masing. Kosongkan untuk isi manual saat kirim.
-            </p>
-            {variablePositions.map(({ position, label }) => (
-              <div key={position} className="flex items-center gap-2">
-                <span className="w-16 shrink-0 text-sm text-navy">{label}</span>
-                <Select
-                  aria-label={`Sumber nilai untuk ${label}`}
-                  value={variableBindings[String(position)] ?? ''}
-                  onChange={(e) =>
-                    setVariableBindings((prev) => ({ ...prev, [String(position)]: e.target.value }))
-                  }
-                  className="w-auto"
-                >
-                  <option value="">Isi manual</option>
-                  {VARIABLE_FIELD_DEFS.map((f) => (
-                    <option key={f.key} value={f.key}>
-                      {f.label}
-                    </option>
-                  ))}
-                </Select>
-              </div>
-            ))}
+          <div className="grid gap-2 sm:grid-cols-2">
+            <Input aria-label="Nama template" placeholder="Nama template" value={name} onChange={(e) => setName(e.target.value)} />
+            <Input aria-label="Kategori" placeholder="Kategori" value={category} onChange={(e) => setCategory(e.target.value)} />
           </div>
-        )}
 
-        {isTextOrAuth && (
-          <div className="space-y-1.5 rounded-lg border border-border p-3">
-            <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Tombol (opsional)</h3>
-            <ButtonsField buttons={buttons} onChange={setButtons} max={MAX_BUTTONS} />
-          </div>
-        )}
+          {isTextOrAuth && <HeaderField value={header} onChange={setHeader} />}
 
-        {isCarousel && (
-          <div className="space-y-3 rounded-lg border border-border p-3">
-            <h3 className="text-sm font-medium text-navy">Kartu Carousel ({cards.length}/{MAX_CARDS})</h3>
-            {cards.map((card, i) => (
-              <div key={i} className="space-y-2 rounded-lg border border-border bg-secondary/40 p-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-semibold text-muted-foreground">Kartu {i + 1}</span>
-                  {cards.length > 1 && (
-                    <button
-                      type="button"
-                      aria-label={`Hapus kartu ${i + 1}`}
-                      onClick={() => removeCard(i)}
-                      className="text-xs text-destructive hover:underline"
-                    >
-                      Hapus Kartu
-                    </button>
-                  )}
-                </div>
-                <div className="grid gap-2 sm:grid-cols-2">
+          <BodyField
+            value={body}
+            onChange={setBody}
+            maxLength={isLto ? 600 : 1024}
+            placeholder={
+              tab === 'OFFICIAL'
+                ? isCarousel
+                  ? 'Isi pesan pembuka carousel...'
+                  : 'Isi pesan...'
+                : 'Isi pesan balasan cepat...'
+            }
+          />
+
+          {(isTextOrAuth || isCoupon) && <FooterField value={footer} onChange={setFooter} />}
+
+          {variablePositions.length > 0 && (
+            <div className="space-y-1.5 rounded-lg border border-border p-3">
+              <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Sumber Nilai Variabel</h3>
+              <p className="text-xs text-muted-foreground">
+                Pilih data mana yang otomatis mengisi variabel ini setiap kali template dikirim, mengikuti
+                chat masing-masing. Kosongkan untuk isi manual saat kirim.
+              </p>
+              {variablePositions.map(({ position, label }) => (
+                <div key={position} className="flex items-center gap-2">
+                  <span className="w-16 shrink-0 text-sm text-navy">{label}</span>
                   <Select
-                    aria-label={`Tipe media kartu ${i + 1}`}
-                    value={card.mediaType}
-                    onChange={(e) => updateCard(i, { mediaType: e.target.value as 'IMAGE' | 'VIDEO' })}
+                    aria-label={`Sumber nilai untuk ${label}`}
+                    value={variableBindings[String(position)] ?? ''}
+                    onChange={(e) =>
+                      setVariableBindings((prev) => ({ ...prev, [String(position)]: e.target.value }))
+                    }
+                    className="w-auto"
                   >
-                    <option value="IMAGE">Gambar</option>
-                    <option value="VIDEO">Video</option>
+                    <option value="">Isi manual</option>
+                    {VARIABLE_FIELD_DEFS.map((f) => (
+                      <option key={f.key} value={f.key}>
+                        {f.label}
+                      </option>
+                    ))}
                   </Select>
-                  <Input
-                    aria-label={`URL media kartu ${i + 1}`}
-                    placeholder="URL gambar/video (https://...)"
-                    value={card.mediaUrl}
-                    onChange={(e) => updateCard(i, { mediaUrl: e.target.value })}
-                  />
                 </div>
-                <BodyField
-                  value={card.bodyText}
-                  onChange={(value) => updateCard(i, { bodyText: value })}
-                  label={`Isi kartu ${i + 1}`}
-                  placeholder="Isi kartu..."
-                  maxLength={160}
-                  rows={2}
-                />
-                <ButtonsField
-                  buttons={card.buttons}
-                  onChange={(value) => updateCard(i, { buttons: value })}
-                  max={MAX_BUTTONS_PER_CARD}
-                  labelSuffix={` kartu ${i + 1}`}
-                />
-              </div>
-            ))}
-            {cards.length < MAX_CARDS && (
-              <Button type="button" variant="outline" size="sm" onClick={addCard}>
-                + Kartu
-              </Button>
-            )}
-          </div>
-        )}
+              ))}
+            </div>
+          )}
 
-        {isLto && (
-          <div className="space-y-3 rounded-lg border border-border p-3">
-            <Input
-              aria-label="Judul penawaran"
-              placeholder="Judul penawaran (maks. 16 karakter)"
-              value={offerTitle}
-              maxLength={16}
-              onChange={(e) => setOfferTitle(e.target.value)}
-            />
-            <div className="space-y-1.5">
+          {isTextOrAuth && (
+            <div className="space-y-1.5 rounded-lg border border-border p-3">
               <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Tombol (opsional)</h3>
               <ButtonsField buttons={buttons} onChange={setButtons} max={MAX_BUTTONS} />
             </div>
-          </div>
-        )}
+          )}
 
-        {isCoupon && (
-          <div className="grid gap-2 sm:grid-cols-2 rounded-lg border border-border p-3">
-            <Input
-              aria-label="Label tombol kupon"
-              placeholder="Label tombol (mis. Salin Kode)"
-              value={couponButtonText}
-              onChange={(e) => setCouponButtonText(e.target.value)}
-            />
-            <Input
-              aria-label="Contoh kode kupon"
-              placeholder="Contoh kode untuk pengajuan (mis. PROMO25)"
-              value={couponExampleCode}
-              onChange={(e) => setCouponExampleCode(e.target.value)}
-            />
-          </div>
-        )}
+          {isCarousel && (
+            <div className="space-y-3 rounded-lg border border-border p-3">
+              <h3 className="text-sm font-medium text-navy">Kartu Carousel ({cards.length}/{MAX_CARDS})</h3>
+              {cards.map((card, i) => (
+                <div key={i} className="space-y-2 rounded-lg border border-border bg-secondary/40 p-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-semibold text-muted-foreground">Kartu {i + 1}</span>
+                    {cards.length > 1 && (
+                      <button
+                        type="button"
+                        aria-label={`Hapus kartu ${i + 1}`}
+                        onClick={() => removeCard(i)}
+                        className="text-xs text-destructive hover:underline"
+                      >
+                        Hapus Kartu
+                      </button>
+                    )}
+                  </div>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    <Select
+                      aria-label={`Tipe media kartu ${i + 1}`}
+                      value={card.mediaType}
+                      onChange={(e) => updateCard(i, { mediaType: e.target.value as 'IMAGE' | 'VIDEO' })}
+                    >
+                      <option value="IMAGE">Gambar</option>
+                      <option value="VIDEO">Video</option>
+                    </Select>
+                    <Input
+                      aria-label={`URL media kartu ${i + 1}`}
+                      placeholder="URL gambar/video (https://...)"
+                      value={card.mediaUrl}
+                      onChange={(e) => updateCard(i, { mediaUrl: e.target.value })}
+                    />
+                  </div>
+                  <BodyField
+                    value={card.bodyText}
+                    onChange={(value) => updateCard(i, { bodyText: value })}
+                    label={`Isi kartu ${i + 1}`}
+                    placeholder="Isi kartu..."
+                    maxLength={160}
+                    rows={2}
+                  />
+                  <ButtonsField
+                    buttons={card.buttons}
+                    onChange={(value) => updateCard(i, { buttons: value })}
+                    max={MAX_BUTTONS_PER_CARD}
+                    labelSuffix={` kartu ${i + 1}`}
+                  />
+                </div>
+              ))}
+              {cards.length < MAX_CARDS && (
+                <Button type="button" variant="outline" size="sm" onClick={addCard}>
+                  + Kartu
+                </Button>
+              )}
+            </div>
+          )}
 
-        <Button type="button" onClick={createTemplate} disabled={!name.trim() || !body.trim() || !formValid || submitting}>
-          {submitting ? 'Menyimpan...' : tab === 'OFFICIAL' ? 'Ajukan ke Meta' : 'Simpan Balasan Cepat'}
-        </Button>
-        {error && <p className="text-xs text-destructive">{error}</p>}
-      </Card>
+          {isLto && (
+            <div className="space-y-3 rounded-lg border border-border p-3">
+              <Input
+                aria-label="Judul penawaran"
+                placeholder="Judul penawaran (maks. 16 karakter)"
+                value={offerTitle}
+                maxLength={16}
+                onChange={(e) => setOfferTitle(e.target.value)}
+              />
+              <div className="space-y-1.5">
+                <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Tombol (opsional)</h3>
+                <ButtonsField buttons={buttons} onChange={setButtons} max={MAX_BUTTONS} />
+              </div>
+            </div>
+          )}
+
+          {isCoupon && (
+            <div className="grid gap-2 sm:grid-cols-2 rounded-lg border border-border p-3">
+              <Input
+                aria-label="Label tombol kupon"
+                placeholder="Label tombol (mis. Salin Kode)"
+                value={couponButtonText}
+                onChange={(e) => setCouponButtonText(e.target.value)}
+              />
+              <Input
+                aria-label="Contoh kode kupon"
+                placeholder="Contoh kode untuk pengajuan (mis. PROMO25)"
+                value={couponExampleCode}
+                onChange={(e) => setCouponExampleCode(e.target.value)}
+              />
+            </div>
+          )}
+
+          <Button type="button" onClick={createTemplate} disabled={!name.trim() || !body.trim() || !formValid || submitting}>
+            {submitting ? 'Menyimpan...' : tab === 'OFFICIAL' ? 'Ajukan ke Meta' : 'Simpan Balasan Cepat'}
+          </Button>
+          {error && <p className="text-xs text-destructive">{error}</p>}
+        </Card>
+
+        <div className="lg:sticky lg:top-4 lg:self-start" data-testid="template-preview">
+          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Preview</p>
+          <TemplatePreviewBubble template={previewData} />
+        </div>
+      </div>
 
       <Card className="p-4">
         {loading ? (

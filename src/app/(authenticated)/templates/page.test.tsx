@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import TemplatesPage from './page'
 
 function jsonResponse(body: unknown, ok = true) {
@@ -476,6 +476,52 @@ describe('TemplatesPage — variables', () => {
     const [, options] = fetchMock.mock.calls.find(([url, init]) => url === '/api/templates' && init?.method === 'POST')!
     const payload = JSON.parse((options as RequestInit).body as string)
     expect(payload.variableBindings).toBeUndefined()
+  })
+})
+
+describe('TemplatesPage — live preview', () => {
+  it('shows a preview column that updates live as the name and body are typed', async () => {
+    render(<TemplatesPage />)
+    await waitFor(() => expect(screen.getByLabelText('Nama template')).toBeInTheDocument())
+
+    expect(screen.getByText('Preview')).toBeInTheDocument()
+
+    fireEvent.change(screen.getByLabelText('Nama template'), { target: { value: 'sapaan_resmi' } })
+    fireEvent.change(screen.getByLabelText('Isi pesan'), { target: { value: 'Halo, ada yang bisa dibantu?' } })
+
+    const preview = within(screen.getByTestId('template-preview'))
+    expect(preview.getByText('sapaan_resmi')).toBeInTheDocument()
+    expect(preview.getByText('Halo, ada yang bisa dibantu?')).toBeInTheDocument()
+  })
+
+  it('reflects the LTO offer title in the preview once that format is selected', async () => {
+    render(<TemplatesPage />)
+    await waitFor(() => expect(screen.getByRole('radiogroup')).toBeInTheDocument())
+    fireEvent.click(screen.getByText('Penawaran Waktu Terbatas'))
+
+    fireEvent.change(screen.getByLabelText('Judul penawaran'), { target: { value: 'Diskon 25%' } })
+
+    expect(within(screen.getByTestId('template-preview')).getByText(/Diskon 25%/)).toBeInTheDocument()
+  })
+
+  it('reflects a TEXT header typed into the form', async () => {
+    render(<TemplatesPage />)
+    await waitFor(() => expect(screen.getByRole('radiogroup')).toBeInTheDocument())
+
+    fireEvent.change(screen.getByLabelText('Tipe header'), { target: { value: 'TEXT' } })
+    fireEvent.change(screen.getByLabelText('Teks header'), { target: { value: 'Selamat Datang' } })
+
+    expect(within(screen.getByTestId('template-preview')).getByText('Selamat Datang')).toBeInTheDocument()
+  })
+
+  it('also shows a live preview on the Balasan Cepat tab', async () => {
+    render(<TemplatesPage />)
+    await waitFor(() => expect(screen.getByLabelText('Nama template')).toBeInTheDocument())
+    fireEvent.click(screen.getByText('Balasan Cepat'))
+
+    fireEvent.change(screen.getByLabelText('Isi pesan'), { target: { value: 'Info harga paket Ijen' } })
+
+    expect(within(screen.getByTestId('template-preview')).getByText('Info harga paket Ijen')).toBeInTheDocument()
   })
 })
 

@@ -155,3 +155,16 @@ export async function submitCarouselTemplate(
   })
   return { metaId: body.id, status: body.status }
 }
+
+/**
+ * Deletes an OFFICIAL template on Meta's side by name (Meta has no delete-by-id endpoint for
+ * templates -- name is the only key it accepts here, and deleting by name removes every
+ * language variant of that name at once). Without this, a template removed from wa-inbox's own
+ * database keeps existing -- and keeps being sendable -- on Meta, and its name stays reserved
+ * for 30 days (Meta will reject a same-named resubmission with no obvious reason why).
+ */
+export async function deleteMetaTemplate(waNumber: { wabaId: string; accessToken: string }, name: string): Promise<void> {
+  await metaFetch(`/${waNumber.wabaId}/message_templates?name=${encodeURIComponent(name)}`, waNumber.accessToken, {
+    method: 'DELETE',
+  })
+}

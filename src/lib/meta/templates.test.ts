@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { submitMetaTemplate, submitCarouselTemplate, submitLtoTemplate, submitCouponTemplate } from './templates'
+import { submitMetaTemplate, submitCarouselTemplate, submitLtoTemplate, submitCouponTemplate, deleteMetaTemplate } from './templates'
 import { uploadMetaResumable } from './media-upload'
 
 vi.mock('./media-upload', () => ({ uploadMetaResumable: vi.fn() }))
@@ -253,5 +253,33 @@ describe('submitCouponTemplate', () => {
       { type: 'FOOTER', text: 'JVTO Tour' },
       { type: 'BUTTONS', buttons: [{ type: 'COPY_CODE', text: 'Salin Kode', example: ['PROMO25'] }] },
     ])
+  })
+})
+
+describe('deleteMetaTemplate', () => {
+  it('sends a DELETE to the WABA message_templates endpoint, keyed by name', async () => {
+    ;(fetch as any).mockResolvedValue({ ok: true, json: async () => ({ success: true }) })
+
+    await deleteMetaTemplate({ wabaId: 'waba_1', accessToken: 'tok' }, 'booking_confirmation')
+
+    expect(fetch).toHaveBeenCalledWith(
+      'https://graph.facebook.com/v20.0/waba_1/message_templates?name=booking_confirmation',
+      expect.objectContaining({ method: 'DELETE' })
+    )
+  })
+
+  it('URL-encodes a template name with special characters', async () => {
+    ;(fetch as any).mockResolvedValue({ ok: true, json: async () => ({ success: true }) })
+
+    await deleteMetaTemplate({ wabaId: 'waba_1', accessToken: 'tok' }, 'promo & diskon')
+
+    const [url] = (fetch as any).mock.calls[0]
+    expect(url).toBe('https://graph.facebook.com/v20.0/waba_1/message_templates?name=promo%20%26%20diskon')
+  })
+
+  it('throws when Meta rejects the deletion', async () => {
+    ;(fetch as any).mockResolvedValue({ ok: false, json: async () => ({ error: { message: 'Template not found' } }) })
+
+    await expect(deleteMetaTemplate({ wabaId: 'waba_1', accessToken: 'tok' }, 'gone_already')).rejects.toThrow('Template not found')
   })
 })
