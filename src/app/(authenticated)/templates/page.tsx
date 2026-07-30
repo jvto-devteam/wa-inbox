@@ -99,6 +99,19 @@ function variablePositionsFor(body: string): { position: number; label: string }
   return Array.from({ length: count }, (_, i) => ({ position: i + 1, label: `{{${i + 1}}}` }))
 }
 
+// Same "COPY_CODE dropped, everything else kept" rule useLibraryTemplate applies when
+// pre-filling the form -- the preview must show exactly what picking a result will actually
+// produce, not the full raw library button set.
+function toLibraryPreview(t: LibraryTemplate): TemplatePreviewData {
+  return {
+    name: t.name,
+    body: t.body,
+    format: 'TEXT',
+    header: t.header ? { type: 'TEXT', text: t.header } : undefined,
+    buttons: t.buttons.filter((b): b is { type: 'QUICK_REPLY' | 'URL' | 'PHONE_NUMBER'; text: string; url?: string } => b.type !== 'COPY_CODE'),
+  }
+}
+
 export default function TemplatesPage() {
   const [tab, setTab] = useState<TemplateType>('OFFICIAL')
   const [templates, setTemplates] = useState<Template[]>([])
@@ -542,20 +555,9 @@ export default function TemplatesPage() {
               {!libraryLoading && !libraryError && libraryTemplates.length === 0 && (
                 <p className="text-sm text-muted-foreground">Tidak ada hasil untuk filter ini.</p>
               )}
-              <div className="max-h-80 space-y-1.5 overflow-y-auto">
+              <div className="grid max-h-96 grid-cols-2 gap-2 overflow-y-auto sm:grid-cols-3">
                 {libraryTemplates.map((t) => (
-                  <button
-                    key={t.id}
-                    type="button"
-                    onClick={() => useLibraryTemplate(t)}
-                    className="block w-full rounded-lg border border-border p-2.5 text-left hover:bg-muted/50"
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="truncate text-sm font-medium text-navy">{t.name}</span>
-                      <span className="shrink-0 text-[10px] uppercase text-muted-foreground">{t.category} · {t.language}</span>
-                    </div>
-                    <p className="line-clamp-2 text-xs text-muted-foreground">{t.body}</p>
-                  </button>
+                  <TemplatePreviewBubble key={t.id} template={toLibraryPreview(t)} onClick={() => useLibraryTemplate(t)} />
                 ))}
               </div>
             </div>
