@@ -14,7 +14,7 @@ import { prisma } from '@/lib/db'
 // is bundled for Node and that importing Prisma here does not break the build.
 export const runtime = 'nodejs'
 
-const PUBLIC_PATHS = ['/login', '/api/auth/login', '/api/webhooks/meta']
+const PUBLIC_PATHS = ['/login', '/api/auth/login', '/api/webhooks/meta', '/logo.png', '/icon.png']
 
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl
