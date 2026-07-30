@@ -3,6 +3,7 @@ import { useEffect, useRef, useState, type ChangeEvent } from 'react'
 import { SENDER_LABEL, type MessageView } from './MessageBubble'
 import { Select } from '@/components/ui/select'
 import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { fetchJson } from '@/lib/fetch-json'
@@ -678,7 +679,7 @@ export function ComposeBox({
       )}
       {templateError && <p className="text-xs text-destructive">{templateError}</p>}
       {sendError && <p className="text-xs text-destructive">{sendError}</p>}
-      <div className="flex items-center gap-2">
+      <div className="flex items-end gap-2">
         <Select
           value={channel}
           onChange={(e) => selectChannel(e.target.value as 'OFFICIAL' | 'UNOFFICIAL')}
@@ -729,12 +730,21 @@ export function ComposeBox({
             </Card>
           )}
         </div>
-        <Input
+        <Textarea
           value={text}
           onChange={(e) => setText(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && send()}
+          onKeyDown={(e) => {
+            // Plain Enter sends. Shift/Ctrl/Cmd+Enter falls through to the textarea's own
+            // default behavior (insert a newline) -- nothing to handle for those explicitly.
+            if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
+              e.preventDefault()
+              send()
+            }
+          }}
           placeholder="Reply on WhatsApp..."
           aria-label="Pesan"
+          rows={Math.min(5, Math.max(1, text.split('\n').length))}
+          className="resize-none py-1.5"
         />
         <Button onClick={send} disabled={sending || uploading}>
           Kirim

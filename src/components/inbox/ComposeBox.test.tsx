@@ -100,8 +100,12 @@ describe('ComposeBox quick replies', () => {
     await switchToUnofficial()
     await openTemplateMenu()
     fireEvent.click(await screen.findByText('Cara Booking'))
+    // The template's name (its picker button label) only ever lives in the picker itself --
+    // unlike its body text, which the message textarea now also legitimately carries as its
+    // own value after selection, so checking for the name is what actually proves the picker
+    // closed rather than merely that its own content changed.
     await waitFor(() => {
-      expect(screen.queryByText('Ikuti panduan booking di link ini...')).not.toBeInTheDocument()
+      expect(screen.queryByText('Cara Booking')).not.toBeInTheDocument()
     })
   })
 
@@ -521,6 +525,36 @@ describe('ComposeBox send failures', () => {
     )
     await waitFor(() => expect(input).toHaveValue(''))
     expect(screen.queryByText('Gagal mengirim pesan — coba lagi')).not.toBeInTheDocument()
+  })
+
+  it('sends on a plain Enter keypress, same as clicking Kirim', async () => {
+    mockSend({ ok: true, status: 200, json: async () => ({ id: 'msg_1', deliveryStatus: 'SENT' }) })
+    const onSent = vi.fn()
+
+    render(<ComposeBox conversationId="conv_1" botEnabled={false} onSent={onSent} onBotToggled={() => {}} />)
+    const input = await type(TYPED)
+    fireEvent.keyDown(input, { key: 'Enter' })
+
+    await waitFor(() => expect(onSent).toHaveBeenCalledWith(expect.objectContaining({ content: TYPED })))
+  })
+
+  // Enter alone is the only combination that sends -- every modifier variant instead falls
+  // through to the textarea's own default behavior (insert a newline), so a longer message
+  // can actually be composed across multiple lines before it's sent.
+  it.each([
+    ['Shift+Enter', { key: 'Enter', shiftKey: true }],
+    ['Ctrl+Enter', { key: 'Enter', ctrlKey: true }],
+    ['Cmd+Enter', { key: 'Enter', metaKey: true }],
+  ])('does not send on %s -- lets the textarea insert a newline instead', async (_label, keyEvent) => {
+    mockSend({ ok: true, status: 200, json: async () => ({ id: 'msg_1', deliveryStatus: 'SENT' }) })
+    const onSent = vi.fn()
+
+    render(<ComposeBox conversationId="conv_1" botEnabled={false} onSent={onSent} onBotToggled={() => {}} />)
+    const input = await type(TYPED)
+    fireEvent.keyDown(input, keyEvent)
+
+    expect(onSent).not.toHaveBeenCalled()
+    expect(input).toHaveValue(TYPED)
   })
 
   it('clears a previous send error once a retry succeeds', async () => {
