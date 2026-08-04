@@ -138,6 +138,26 @@ describe('ensureFreshBookingData', () => {
     expect(mockPrisma.conversation.update).not.toHaveBeenCalled()
   })
 
+  it('returns null without ever calling the booking API for an isTest conversation, even with stale/no cache', async () => {
+    // The sandbox conversation's sentinel phone has no digits, so normalizePhone() reduces it
+    // to '' -- a real booking API could answer an empty phone_no filter with someone else's
+    // most recent booking instead of erroring, leaking real customer data into the test room.
+    const conversation = {
+      id: 'conv_test',
+      bookingData: null,
+      bookingCheckedAt: null,
+      pipelineStage: 'new',
+      isTest: true,
+      contact: { phone: '__bot_test__' },
+    }
+
+    const result = await ensureFreshBookingData(conversation)
+
+    expect(result).toBeNull()
+    expect(fetch).not.toHaveBeenCalled()
+    expect(mockPrisma.conversation.update).not.toHaveBeenCalled()
+  })
+
   it('refetches when bookingCheckedAt is null (never checked)', async () => {
     ;(fetch as any).mockResolvedValue({ ok: true, json: async () => ({ id: 'B1', guest: 'Bruno' }) })
     const conversation = { id: 'conv_1', bookingData: null, bookingCheckedAt: null, pipelineStage: 'new', contact: { phone: '6281234567890' } }

@@ -585,6 +585,56 @@ describe('ThreadView reply/quote', () => {
   })
 })
 
+describe('ThreadView test-room send/SSE race', () => {
+  it("does not duplicate a message that arrives via SSE before ComposeBox's own fetch response resolves", async () => {
+    // Reproduces a real bug: /api/conversations/[id]/test-message broadcasts the customer's
+    // message immediately, then awaits the (possibly slow, real-LLM) bot before returning its
+    // HTTP response -- so the SSE echo can land in the browser well before ComposeBox's own
+    // fetch() resolves and calls onSent for the very same message id.
+    let resolveSend: (value: unknown) => void = () => {}
+    const sendPending = new Promise((resolve) => {
+      resolveSend = resolve
+    })
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url: RequestInfo | URL) => {
+        const s = String(url)
+        if (s.endsWith('/messages')) return Promise.resolve({ ok: true, json: () => Promise.resolve([]) } as Response)
+        if (s.endsWith('/api/accounts')) return Promise.resolve({ ok: true, json: () => Promise.resolve([]) } as Response)
+        if (s.endsWith('/test-message')) return sendPending.then((data) => ({ ok: true, json: () => Promise.resolve(data) }) as Response)
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ botEnabled: true, isTest: true }) } as Response)
+      })
+    )
+
+    render(<ThreadView conversationId="conv_test" />)
+    await screen.findByPlaceholderText('Ketik sebagai customer untuk menguji bot...')
+
+    fireEvent.change(screen.getByLabelText('Pesan'), { target: { value: 'is ijen safe?' } })
+    fireEvent.click(screen.getByText('Kirim'))
+
+    // SSE echo of the same message arrives first, while the bot is still "thinking" server-side.
+    const es = FakeEventSource.instances[0]
+    const broadcastMessage = {
+      id: 'msg_1', direction: 'INBOUND', content: 'is ijen safe?', channel: 'UNOFFICIAL',
+      sentBy: 'CUSTOMER', deliveryStatus: 'DELIVERED', createdAt: '2026-08-04T00:00:00.000Z', botTrace: null,
+    }
+    // A <textarea> exposes its own value as DOM text content, so getAllByText would otherwise
+    // ambiguously match both the still-typed draft AND the rendered bubble -- excluded here.
+    const bubbleCopies = () => screen.getAllByText('is ijen safe?').filter((el) => el.tagName !== 'TEXTAREA')
+
+    act(() => {
+      es.emit({ type: 'message.created', conversationId: 'conv_test', message: broadcastMessage })
+    })
+    await waitFor(() => expect(bubbleCopies()).toHaveLength(1))
+
+    // Only now does the slow fetch() resolve, calling ComposeBox's onSent with the same id.
+    resolveSend({ id: 'msg_1', channel: 'UNOFFICIAL', deliveryStatus: 'DELIVERED', createdAt: '2026-08-04T00:00:00.000Z' })
+
+    await waitFor(() => expect(screen.queryByLabelText('Pesan')).toHaveValue(''))
+    expect(bubbleCopies()).toHaveLength(1)
+  })
+})
+
 describe('ThreadView template variable data', () => {
   function mockFetch() {
     return vi.fn((url: RequestInfo | URL) => {

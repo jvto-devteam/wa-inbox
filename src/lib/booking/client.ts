@@ -200,8 +200,16 @@ export async function ensureFreshBookingData(conversation: {
   bookingCheckedAt: Date | null
   pipelineStage: string
   orderChannel?: string | null
+  isTest?: boolean
   contact: { phone: string }
 }): Promise<BookingData | null> {
+  // The sandbox conversation's sentinel phone (src/lib/test-conversation.ts) has no digits at
+  // all, so normalizePhone() below reduces it to '' -- an empty phone_no filter that some
+  // booking APIs answer with the most recent booking for ANYONE instead of erroring, which
+  // would leak a real customer's booking into what is supposed to be an isolated test room.
+  // Test conversations simply never have a booking, full stop.
+  if (conversation.isTest) return null
+
   let bookingData = conversation.bookingData as BookingData | null
   const stale =
     !conversation.bookingCheckedAt || Date.now() - conversation.bookingCheckedAt.getTime() > BOOKING_CACHE_MS

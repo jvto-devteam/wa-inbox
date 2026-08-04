@@ -239,7 +239,11 @@ export function ThreadView({ conversationId }: { conversationId: string }) {
         replyingTo={replyingTo}
         onCancelReply={() => setReplyingTo(null)}
         onSent={(m) => {
-          setMessages((prev) => [...prev, m])
+          // A test-room send's SSE echo (broadcast the instant the message is created,
+          // server-side) can outrace this fetch's own response when the bot takes a while to
+          // answer (e.g. the booking_context path's real Ollama call) -- without this guard
+          // the same message lands here a second time once the response finally arrives.
+          setMessages((prev) => (prev.some((existing) => existing.id === m.id) ? prev : [...prev, m]))
           setReplyingTo(null)
         }}
         onBotToggled={setBotEnabled}
