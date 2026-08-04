@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { classifyTopic, toComposableTopic } from './module-resolver'
+import { classifyTopic } from './module-resolver'
 
 describe('classifyTopic', () => {
   // Real test_topic_classification (jvto-whatsapp-agent-runtime/tests/test_resolvers.py) --
@@ -35,22 +35,5 @@ describe('classifyTopic', () => {
   it('falls back to general with no job and no keyword match', () => {
     expect(classifyTopic(null, 'xyz')).toBe('general')
     expect(classifyTopic(undefined, '')).toBe('general')
-  })
-})
-
-describe('toComposableTopic', () => {
-  it('maps the topics wa-inbox catalog data can actually answer', () => {
-    expect(toComposableTopic('price')).toBe('price')
-    expect(toComposableTopic('booking')).toBe('how_to_book')
-    expect(toComposableTopic('inclusions')).toBe('inclusions')
-    expect(toComposableTopic('general')).toBe('inclusions')
-    expect(toComposableTopic('destination_readiness')).toBe('policy')
-    expect(toComposableTopic('blue_fire')).toBe('policy')
-  })
-
-  it('returns null (hand off) for every topic wa-inbox has no catalog data for', () => {
-    for (const topic of ['private_tour', 'vehicle', 'rooming', 'hotel', 'route_endpoint', 'payment', 'cancellation', 'greeting'] as const) {
-      expect(toComposableTopic(topic)).toBeNull()
-    }
   })
 })

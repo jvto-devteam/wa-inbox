@@ -120,7 +120,7 @@ import fs from 'fs'
 import path from 'path'
 import type { Catalog, CatalogPackage } from './types'
 
-const CATALOG_DIR = path.join(process.cwd(), 'catalog')
+export const CATALOG_DIR = path.join(process.cwd(), 'catalog')
 
 const PROFILES_FILE = 'package-profiles.json'
 const PRICE_TIERS_FILE = 'standard-price-tiers.json'
@@ -152,7 +152,7 @@ function asStringArray(value: unknown): string[] {
  * inclusion list) and keeps serving the rest, with a `console.warn` for the
  * operator. Throwing here would take out the orchestrator's entire Mode 1/2 path.
  */
-function readCatalogFile(fileName: string): unknown {
+export function readCatalogFile(fileName: string): unknown {
   const filePath = path.join(CATALOG_DIR, fileName)
   if (!fs.existsSync(filePath)) {
     console.warn(`loadCatalog: catalog/${fileName} is missing — continuing without it`)

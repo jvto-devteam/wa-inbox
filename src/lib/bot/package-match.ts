@@ -58,11 +58,11 @@ export function packagesForDestination(destination: string, catalog: Catalog): C
 }
 
 /**
- * Among a destination's matching packages, the one response-composer.ts should
+ * Among a destination's matching packages, the one orchestrator.ts should
  * answer about. Prefers a priced package -- matching route-gate.ts's own "no
  * priced match -> handoff" rule, so the package chosen here is always one
  * route-gate would actually let through -- falling back to the first match so
- * there is still *a* package for composeResponse to name if every match is
+ * there is still *a* package for orchestrator.ts to name if every match is
  * unpriced (route-gate will already have handed off before this runs in that case).
  */
 export function pickPackage(matches: CatalogPackage[]): CatalogPackage {

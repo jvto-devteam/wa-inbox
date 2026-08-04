@@ -8,7 +8,7 @@ import { checkRouteGate } from './route-gate'
 import { classifySalesNeed } from './sales-classifier'
 import { matchDestination, packagesForDestination, pickPackage, listDestinations } from './package-match'
 import { classifyTopic } from './module-resolver'
-import { composeResponse } from './response-composer'
+import { resolveKnowledgeForTopic } from './knowledge'
 import { callLLM } from './llm'
 import { loadCatalog } from './catalog'
 import { checkDeploymentGate } from './deployment-gate'
@@ -38,7 +38,7 @@ vi.mock('./module-resolver', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./module-resolver')>()),
   classifyTopic: vi.fn(),
 }))
-vi.mock('./response-composer', () => ({ composeResponse: vi.fn() }))
+vi.mock('./knowledge', () => ({ resolveKnowledgeForTopic: vi.fn(), GUARDRAIL_INSTRUCTION: 'GUARDRAILS' }))
 vi.mock('./llm')
 vi.mock('./catalog')
 vi.mock('./deployment-gate')
@@ -70,7 +70,18 @@ beforeEach(() => {
   ;(pickPackage as any).mockImplementation((matches: any[]) => matches[0])
   ;(listDestinations as any).mockReturnValue(['Bromo', 'Ijen'])
   ;(classifyTopic as any).mockReturnValue('inclusions')
-  ;(composeResponse as any).mockReturnValue('Berikut informasi paket untuk Ijen!')
+  // Non-empty by default so ordinary FAQ tests don't have to know about knowledge.ts's own
+  // "no modules resolved -> handoff" branch unless they're specifically testing it.
+  ;(resolveKnowledgeForTopic as any).mockReturnValue({
+    factualLines: ['Every package includes private transport and a driver/guide.'],
+    detailLines: [],
+    primaryLink: null,
+    disclosures: [],
+    handoffRequired: false,
+  })
+  // Mode 1/2 now composes via the same LLM path as Mode 3 -- default resolved value so
+  // ordinary FAQ tests don't each have to mock it themselves.
+  ;(callLLM as any).mockResolvedValue('Every package includes private transport and a driver/guide.')
   // decideAndRespond still reads Settings once, for ollamaModel (see the Mode 3 callLLM call).
   mockPrisma.settings.findUniqueOrThrow.mockResolvedValue({ ollamaModel: 'gemma4:31b-cloud' } as never)
   // Mode 3's history fetch (see HISTORY_LIMIT) -- empty by default so tests that don't care
@@ -127,7 +138,6 @@ describe('decideAndRespond', () => {
       ;(matchDestination as any).mockReturnValue({ destination: 'ijen', matches: [pkg()] })
       ;(checkRouteGate as any).mockReturnValue({ status: 'clear' })
       ;(classifyTopic as any).mockReturnValue('inclusions')
-      ;(composeResponse as any).mockReturnValue('Berikut paket untuk Ijen!')
 
       const result = await decideAndRespond('conv_1', 'Saya mau ke Ijen')
 
@@ -144,7 +154,7 @@ describe('decideAndRespond', () => {
         'Mengklasifikasi topik',
         'Memeriksa validitas paket',
         'Paket valid',
-        'Menyusun jawaban',
+        'Meminta jawaban dari model lokal',
         'Jawaban siap dikirim',
       ])
       expect(result.steps?.find((s) => s.label === 'Destinasi ditemukan')?.detail).toContain('ijen')
@@ -246,7 +256,7 @@ describe('decideAndRespond', () => {
     expect(prompt).toBe(injection)
     // It must NOT have been concatenated into the grounding/system instructions.
     expect(opts.system).not.toContain(injection)
-    expect(opts.system).toContain('Answer the customer\'s question ONLY based on the booking data')
+    expect(opts.system).toContain('Customer\'s booking data (JSON) -- this is your ONLY source of fact')
   })
 
   it('hands off instead of returning an empty reply when the LLM yields blank content (Mode 3 second-layer defence)', async () => {
@@ -282,23 +292,42 @@ describe('decideAndRespond', () => {
 
     const result = await decideAndRespond('conv_1', 'Saya mau ke Atlantis')
 
-    // composeResponse must NOT be reached once the gate rejects the destination.
+    // The LLM must NOT be reached once the gate rejects the destination.
     expect(result).toMatchObject({ mode: 'handoff', reason: 'Tidak ada paket terverifikasi' })
     expect(checkRouteGate).toHaveBeenCalledWith(expect.objectContaining({ destination: 'atlantis' }))
-    expect(composeResponse).not.toHaveBeenCalled()
+    expect(callLLM).not.toHaveBeenCalled()
   })
 
-  it('hands off when the real topic classifier detects a topic wa-inbox has no catalog data for, without consulting the route gate', async () => {
+  it('hands off when knowledge.ts resolves no facts at all for the classified topic (genuinely no data anywhere), without calling the LLM', async () => {
     ;(ensureFreshBookingData as any).mockResolvedValue(null)
     ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
     ;(matchDestination as any).mockReturnValue({ destination: 'ijen', matches: [pkg()] })
-    ;(classifyTopic as any).mockReturnValue('vehicle')
+    ;(checkRouteGate as any).mockReturnValue({ status: 'clear' })
+    ;(classifyTopic as any).mockReturnValue('route_endpoint')
+    ;(resolveKnowledgeForTopic as any).mockReturnValue({
+      factualLines: [], detailLines: [], primaryLink: null, disclosures: [], handoffRequired: false,
+    })
 
-    const result = await decideAndRespond('conv_1', 'Mobil apa yang dipakai?')
+    const result = await decideAndRespond('conv_1', 'Can we finish in Bali?')
 
-    expect(result).toMatchObject({ mode: 'handoff', reason: expect.stringContaining('vehicle') })
-    expect(checkRouteGate).not.toHaveBeenCalled()
-    expect(composeResponse).not.toHaveBeenCalled()
+    expect(result).toMatchObject({ mode: 'handoff', reason: expect.stringContaining('route_endpoint') })
+    expect(callLLM).not.toHaveBeenCalled()
+  })
+
+  it('hands off when the customer demands a guarantee knowledge.ts flags as unpromisable', async () => {
+    ;(ensureFreshBookingData as any).mockResolvedValue(null)
+    ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
+    ;(matchDestination as any).mockReturnValue({ destination: 'ijen', matches: [pkg()] })
+    ;(checkRouteGate as any).mockReturnValue({ status: 'clear' })
+    ;(resolveKnowledgeForTopic as any).mockReturnValue({
+      factualLines: ['Blue Fire access depends on conditions.'], detailLines: [], primaryLink: null,
+      disclosures: [], handoffRequired: true,
+    })
+
+    const result = await decideAndRespond('conv_1', 'Can you guarantee blue fire is the main reason we book, 100%?')
+
+    expect(result).toMatchObject({ mode: 'handoff', reason: 'Pelanggan meminta jaminan yang tidak bisa dipastikan sistem' })
+    expect(callLLM).not.toHaveBeenCalled()
   })
 
   it('asks a clarifying question (instead of handing off) when no destination is known from the message or conversation history', async () => {
@@ -310,7 +339,7 @@ describe('decideAndRespond', () => {
     const result = await decideAndRespond('conv_1', 'Halo')
 
     expect(checkRouteGate).not.toHaveBeenCalled()
-    expect(composeResponse).not.toHaveBeenCalled()
+    expect(callLLM).not.toHaveBeenCalled()
     expect(result.mode).toBe('clarify')
     expect((result as { reply: string }).reply).toContain('Bromo, Ijen, Madakaripura')
   })
@@ -331,7 +360,6 @@ describe('decideAndRespond', () => {
     ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
     ;(checkRouteGate as any).mockReturnValue({ status: 'clear' })
     ;(matchDestination as any).mockReturnValue({ destination: 'ijen', matches: [pkg()] })
-    ;(composeResponse as any).mockReturnValue('Berikut paket untuk Ijen!')
 
     // Message 1: the customer names a destination for the first time.
     const first = await decideAndRespond('conv_1', 'Saya mau ke Ijen')
@@ -354,7 +382,10 @@ describe('decideAndRespond', () => {
     ;(packagesForDestination as any).mockReturnValue([pkg()])
     ;(pickPackage as any).mockImplementation((matches: any[]) => matches[0])
     ;(classifyTopic as any).mockReturnValue('price')
-    ;(composeResponse as any).mockReturnValue('Harga mulai dari Rp850.000/orang.')
+    ;(resolveKnowledgeForTopic as any).mockReturnValue({
+      factualLines: ['Starts from Rp850.000/person.'], detailLines: [], primaryLink: null, disclosures: [], handoffRequired: false,
+    })
+    ;(callLLM as any).mockResolvedValue('Harga mulai dari Rp850.000/orang.')
     mockPrisma.settings.findUniqueOrThrow.mockResolvedValue({ ollamaModel: 'gemma4:31b-cloud' } as never)
     mockPrisma.conversation.findUniqueOrThrow.mockResolvedValue({
       id: 'conv_1',
@@ -386,7 +417,6 @@ describe('decideAndRespond', () => {
     ;(matchDestination as any).mockReturnValue(null)
     ;(packagesForDestination as any).mockReturnValue([pkg()])
     ;(classifyTopic as any).mockReturnValue('inclusions')
-    ;(composeResponse as any).mockReturnValue('Termasuk...')
     mockPrisma.conversation.findUniqueOrThrow.mockResolvedValue({
       id: 'conv_1', tripBrief: { destination: 'ijen', lastTopic: 'inclusions' },
       bookingData: null, bookingCheckedAt: new Date(), contact: { phone: '6281234567890' },
@@ -398,7 +428,7 @@ describe('decideAndRespond', () => {
     expect(mockPrisma.conversation.update).not.toHaveBeenCalled()
   })
 
-  it('still answers on a needs_review route gate, appending the package policy notes as a disclosure', async () => {
+  it('feeds the package policy notes into the LLM grounding (not appended as raw text) on a needs_review route gate', async () => {
     ;(ensureFreshBookingData as any).mockResolvedValue(null)
     ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
     ;(matchDestination as any).mockReturnValue({
@@ -406,42 +436,119 @@ describe('decideAndRespond', () => {
       matches: [pkg({ policyNotes: ['Ijen Health Screening: a health certificate is mandatory for every guest.'] })],
     })
     ;(checkRouteGate as any).mockReturnValue({ status: 'needs_review', reason: 'Ada catatan kebijakan' })
-    ;(composeResponse as any).mockReturnValue('Berikut paket untuk Ijen!')
 
     const result = await decideAndRespond('conv_1', 'Saya mau ke Ijen')
 
     expect(result.mode).toBe('faq')
-    expect((result as { mode: 'faq'; draft: string }).draft).toContain('Catatan:')
-    expect((result as { mode: 'faq'; draft: string }).draft).toContain('Ijen Health Screening')
+    const [, opts] = (callLLM as any).mock.calls[0]
+    expect(opts.system).toContain('Ijen Health Screening')
+    // The returned draft is the LLM's own composed reply, not a raw string the orchestrator
+    // built itself -- no more separate "Catatan:" block glued on after the fact.
+    expect((result as { mode: 'faq'; draft: string }).draft).not.toContain('Catatan:')
   })
 
-  it('caps disclosures at 4 policy notes on a needs_review result', async () => {
+  it('does not duplicate a policy note that is already among knowledge.ts\'s own disclosures', async () => {
     ;(ensureFreshBookingData as any).mockResolvedValue(null)
     ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
     ;(matchDestination as any).mockReturnValue({
       destination: 'ijen',
-      matches: [pkg({ policyNotes: ['Note1', 'Note2', 'Note3', 'Note4', 'Note5'] })],
+      matches: [pkg({ policyNotes: ['Shared disclosure text'] })],
     })
     ;(checkRouteGate as any).mockReturnValue({ status: 'needs_review', reason: 'Ada catatan kebijakan' })
-    ;(composeResponse as any).mockReturnValue('Berikut paket untuk Ijen!')
+    ;(resolveKnowledgeForTopic as any).mockReturnValue({
+      factualLines: ['Some fact.'], detailLines: [], primaryLink: null,
+      disclosures: ['Shared disclosure text'], handoffRequired: false,
+    })
 
-    const result = await decideAndRespond('conv_1', 'Saya mau ke Ijen')
+    await decideAndRespond('conv_1', 'Saya mau ke Ijen')
 
-    const draft = (result as { mode: 'faq'; draft: string }).draft
-    expect(draft).toContain('Note4')
-    expect(draft).not.toContain('Note5')
+    const [, opts] = (callLLM as any).mock.calls[0]
+    const occurrences = opts.system.split('Shared disclosure text').length - 1
+    expect(occurrences).toBe(1)
   })
 
-  it('does not append a disclosure block on a fully clear route-gate result', async () => {
+  it('does not mention the package policy notes at all on a fully clear route-gate result', async () => {
+    ;(ensureFreshBookingData as any).mockResolvedValue(null)
+    ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
+    ;(matchDestination as any).mockReturnValue({
+      destination: 'ijen',
+      matches: [pkg({ policyNotes: ['Only relevant on needs_review'] })],
+    })
+    ;(checkRouteGate as any).mockReturnValue({ status: 'clear' })
+
+    await decideAndRespond('conv_1', 'Saya mau ke Ijen')
+
+    const [, opts] = (callLLM as any).mock.calls[0]
+    expect(opts.system).not.toContain('Only relevant on needs_review')
+  })
+
+  it("uses knowledge.ts's own link when it resolves one, ahead of the package's generic detail page", async () => {
+    ;(ensureFreshBookingData as any).mockResolvedValue(null)
+    ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
+    ;(matchDestination as any).mockReturnValue({
+      destination: 'ijen',
+      matches: [pkg({ links: { details: 'https://example.com/ijen-package' } })],
+    })
+    ;(checkRouteGate as any).mockReturnValue({ status: 'clear' })
+    ;(resolveKnowledgeForTopic as any).mockReturnValue({
+      factualLines: ['Payment info.'], detailLines: [], primaryLink: 'https://example.com/payment-and-deposit',
+      disclosures: [], handoffRequired: false,
+    })
+
+    await decideAndRespond('conv_1', 'How do I pay?')
+
+    const [, opts] = (callLLM as any).mock.calls[0]
+    expect(opts.system).toContain('https://example.com/payment-and-deposit')
+    expect(opts.system).not.toContain('https://example.com/ijen-package')
+  })
+
+  it("falls back to the package's own detail page link when knowledge.ts resolves none for the topic", async () => {
+    ;(ensureFreshBookingData as any).mockResolvedValue(null)
+    ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
+    ;(matchDestination as any).mockReturnValue({
+      destination: 'ijen',
+      matches: [pkg({ links: { details: 'https://example.com/ijen-package' } })],
+    })
+    ;(checkRouteGate as any).mockReturnValue({ status: 'clear' })
+    ;(resolveKnowledgeForTopic as any).mockReturnValue({
+      factualLines: ['Some fact.'], detailLines: [], primaryLink: null, disclosures: [], handoffRequired: false,
+    })
+
+    await decideAndRespond('conv_1', 'Tell me about this package')
+
+    const [, opts] = (callLLM as any).mock.calls[0]
+    expect(opts.system).toContain('https://example.com/ijen-package')
+  })
+
+  it('includes the persona instructions and resolved facts in the Mode 1/2 system prompt', async () => {
     ;(ensureFreshBookingData as any).mockResolvedValue(null)
     ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
     ;(matchDestination as any).mockReturnValue({ destination: 'ijen', matches: [pkg()] })
     ;(checkRouteGate as any).mockReturnValue({ status: 'clear' })
-    ;(composeResponse as any).mockReturnValue('Berikut paket untuk Ijen!')
+    ;(resolveKnowledgeForTopic as any).mockReturnValue({
+      factualLines: ['Fact A.', 'Fact B.'], detailLines: [], primaryLink: null, disclosures: [], handoffRequired: false,
+    })
+
+    await decideAndRespond('conv_1', 'Saya mau ke Ijen')
+
+    const [prompt, opts] = (callLLM as any).mock.calls[0]
+    expect(prompt).toBe('Saya mau ke Ijen')
+    expect(opts.system).toContain('Never say you are an AI, a bot, an assistant, or a language model')
+    expect(opts.system).toContain('Fact A.')
+    expect(opts.system).toContain('Fact B.')
+    expect(opts.system).toContain('GUARDRAILS')
+  })
+
+  it('hands off instead of returning an empty reply when the Mode 1/2 LLM yields blank content', async () => {
+    ;(ensureFreshBookingData as any).mockResolvedValue(null)
+    ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
+    ;(matchDestination as any).mockReturnValue({ destination: 'ijen', matches: [pkg()] })
+    ;(checkRouteGate as any).mockReturnValue({ status: 'clear' })
+    ;(callLLM as any).mockResolvedValue('   ')
 
     const result = await decideAndRespond('conv_1', 'Saya mau ke Ijen')
 
-    expect((result as { mode: 'faq'; draft: string }).draft).not.toContain('Catatan:')
+    expect(result.mode).toBe('handoff')
   })
 
   it('falls back to handoff if any step throws (fail-safe)', async () => {
@@ -502,7 +609,6 @@ describe('decideAndRespond', () => {
     ;(checkRouteGate as any).mockReturnValue({ status: 'clear' })
     ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
     ;(matchDestination as any).mockReturnValue({ destination: 'ijen', matches: [pkg()] })
-    ;(composeResponse as any).mockReturnValue('Berikut informasi paket Ijen untuk 2 orang.')
 
     const result = await decideAndRespond('conv_1', 'Halo, saya mau tanya paket ke Ijen untuk 2 orang')
 

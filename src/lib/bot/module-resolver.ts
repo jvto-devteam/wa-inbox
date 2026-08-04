@@ -4,16 +4,11 @@
  * 98-103) + its supporting tables (`TOPICS` lines 26-30, `_TOPIC_KEYWORDS` lines 51-65,
  * `_JOB_DEFAULT_TOPIC` lines 68-76). This is a DIRECT, faithful port: the keyword table,
  * match order (first hit wins), and job-fallback are copied verbatim -- nothing here is
- * wa-inbox's own invention, unlike the topic-narrowing mapping at the bottom of this file.
+ * wa-inbox's own invention.
  *
- * `resolve_modules` (the rest of the real file, lines 106-194) is NOT ported: it selects
- * general-module/package-variation ids from a `general-modules.json` / `package-variations.json`
- * / `module-compatibility.json` layer that carries vehicle rules, rooming rules, staging/
- * endpoint chains, and per-destination readiness copy -- none of which `CatalogPackage`
- * (Task 20) has a field for. wa-inbox's own `response-composer.ts` (a scoped port of
- * `response_composer.py`) only ever answers 4 topics (inclusions/how_to_book/policy/price),
- * against the 14 the real system resolves modules for. See `toComposableTopic` below for how
- * the gap between the two is handled -- honestly, not silently.
+ * `resolve_modules` (the rest of the real file, lines 106-194) is NOT ported here -- that
+ * piece now lives in knowledge.ts, which resolves real facts for all 14 topics `classifyTopic`
+ * can return (see that file's header for why it lives separately from topic classification).
  */
 
 // Real: TOPICS (module_resolver.py:26-30), verbatim.
@@ -77,44 +72,4 @@ export function classifyTopic(job: string | null | undefined, query: string): Re
     if (needles.some((needle) => low.includes(needle))) return topic
   }
   return JOB_DEFAULT_TOPIC[job ?? ''] ?? 'general'
-}
-
-// NOT a port -- module_resolver.py's real 14 topics are each answered from real module
-// data (vehicle rules, rooming rules, staging/endpoint chains, per-destination readiness
-// copy) that `CatalogPackage` has no field for at all (Task 20 confirmed this gap; see
-// catalog.ts's header on which release files are deliberately left unsynced). Rather than
-// silently narrowing every unsupported topic to the nearest-sounding one (which would
-// answer a vehicle/rooming/payment question with invented or misleading content),
-// unsupported topics map to `null` and the orchestrator hands off -- the same
-// fail-safe-toward-human philosophy this whole bot brain already applies to every other
-// data gap (route-gate.ts's `priceIdr === null` -> handoff, sales-classifier.ts's
-// `needsLiveData` -> handoff).
-//
-// The three real topics that DO map onto wa-inbox's 4 composable ones:
-//   - 'price'   -> 'price' (direct)
-//   - 'booking' -> 'how_to_book' (response-composer.ts's own already-documented analog)
-//   - 'inclusions'/'general' -> 'inclusions' ('general' reuses TOPIC_GENERAL_MODULES's own
-//     inclusions-flavored default content -- module_resolver.py:47's `general` bucket is
-//     `inclusion_all_inclusive_baseline, service_private_tour_standard`)
-//   - 'destination_readiness'/'blue_fire' -> 'policy': these two real topics are answered
-//     in the real system by exactly the Ijen disclosures (`policy_ijen_health_screening`,
-//     `policy_ijen_monthly_closure`, `policy_natural_phenomena`) that catalog.ts's
-//     `policyNotes` already carries (see catalog.ts's header on the Ijen policy-scope
-//     filter) -- the one real topic-to-catalog-data mapping outside price/booking/inclusions
-//     that wa-inbox's data actually supports.
-export function toComposableTopic(topic: ResolverTopic): 'inclusions' | 'how_to_book' | 'policy' | 'price' | null {
-  switch (topic) {
-    case 'price':
-      return 'price'
-    case 'booking':
-      return 'how_to_book'
-    case 'inclusions':
-    case 'general':
-      return 'inclusions'
-    case 'destination_readiness':
-    case 'blue_fire':
-      return 'policy'
-    default:
-      return null
-  }
 }
