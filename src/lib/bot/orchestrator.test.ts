@@ -314,6 +314,32 @@ describe('decideAndRespond', () => {
     expect(callLLM).not.toHaveBeenCalled()
   })
 
+  // Regression: destination_readiness/blue_fire have an empty TOPIC_MODULES list of their own
+  // (matching chatbot-web's own mapping -- see knowledge.ts), so knowledge.ts alone resolves no
+  // facts for them. They are still answerable once the package's real Ijen policyNotes are
+  // folded in via needs_review -- the "nothing to answer with" check must account for that
+  // merge, not just knowledge.ts's own factualLines/detailLines, or a genuinely answerable
+  // question like "is ijen safe?" hands off for no reason.
+  it('answers via the package policyNotes even when knowledge.ts itself has no modules for the topic (destination_readiness)', async () => {
+    ;(ensureFreshBookingData as any).mockResolvedValue(null)
+    ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
+    ;(matchDestination as any).mockReturnValue({
+      destination: 'ijen',
+      matches: [pkg({ policyNotes: ['Ijen Health Screening: a health certificate is mandatory for every guest.'] })],
+    })
+    ;(checkRouteGate as any).mockReturnValue({ status: 'needs_review', reason: 'Ada catatan kebijakan' })
+    ;(classifyTopic as any).mockReturnValue('destination_readiness')
+    ;(resolveKnowledgeForTopic as any).mockReturnValue({
+      factualLines: [], detailLines: [], primaryLink: null, disclosures: [], handoffRequired: false,
+    })
+
+    const result = await decideAndRespond('conv_1', 'is ijen safe?')
+
+    expect(result.mode).toBe('faq')
+    const [, opts] = (callLLM as any).mock.calls[0]
+    expect(opts.system).toContain('Ijen Health Screening')
+  })
+
   it('hands off when the customer demands a guarantee knowledge.ts flags as unpromisable', async () => {
     ;(ensureFreshBookingData as any).mockResolvedValue(null)
     ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })

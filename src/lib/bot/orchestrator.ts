@@ -312,7 +312,25 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
       )
       return { mode: 'handoff', reason: 'Pelanggan meminta jaminan yang tidak bisa dipastikan sistem', steps: trace.steps }
     }
-    if (knowledge.factualLines.length === 0 && knowledge.detailLines.length === 0) {
+    // `needs_review` deliberately does not hand off (header step 5): the package's own
+    // policyNotes travel into the SAME LLM grounding as knowledge.ts's own disclosures
+    // (deduped against them, mirroring the real response_composer.py's own `if d not in
+    // disclosures` -- see knowledge.ts's header) rather than being concatenated onto the
+    // reply as raw text after the fact, which is what caused the old composer to repeat the
+    // same disclosure twice in one message whenever the topic itself already covered it.
+    // Computed BEFORE the "anything to answer with at all" check below: a topic like
+    // destination_readiness/blue_fire has an empty module list of its own in TOPIC_MODULES
+    // (matching chatbot-web's own mapping) but IS answerable once the package's real Ijen
+    // policyNotes are folded in -- checking factualLines alone would hand off a genuinely
+    // answerable question.
+    const disclosures = [...knowledge.disclosures]
+    if (routeResult.status === 'needs_review') {
+      for (const note of pkg.policyNotes) {
+        if (!disclosures.includes(note)) disclosures.push(note)
+      }
+    }
+
+    if (knowledge.factualLines.length === 0 && knowledge.detailLines.length === 0 && disclosures.length === 0) {
       trace.push(
         'Topik tidak didukung',
         `Topik "${resolverTopic}" terdeteksi, tapi tidak ada modul pengetahuan untuk menjawabnya -- diserahkan ke agen.`
@@ -330,19 +348,6 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
         where: { id: conversationId },
         data: { tripBrief: { ...tripBrief, destination, lastTopic: resolverTopic } as Prisma.InputJsonValue },
       })
-    }
-
-    // `needs_review` deliberately does not hand off (header step 5): the package's own
-    // policyNotes travel into the SAME LLM grounding as knowledge.ts's own disclosures
-    // (deduped against them, mirroring the real response_composer.py's own `if d not in
-    // disclosures` -- see knowledge.ts's header) rather than being concatenated onto the
-    // reply as raw text after the fact, which is what caused the old composer to repeat the
-    // same disclosure twice in one message whenever the topic itself already covered it.
-    const disclosures = [...knowledge.disclosures]
-    if (routeResult.status === 'needs_review') {
-      for (const note of pkg.policyNotes) {
-        if (!disclosures.includes(note)) disclosures.push(note)
-      }
     }
 
     const primaryLink = knowledge.primaryLink ?? pkg.links.details ?? null
