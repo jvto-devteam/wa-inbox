@@ -940,5 +940,30 @@ describe('decideAndRespond', () => {
       // No competing single "the reply's link" directive when each option already carries one.
       expect(opts.system).not.toContain('Relevant link (include this URL at the end of your reply)')
     })
+
+    // Reported 2026-08-04: "hello, could you give me a recommendation for my trip at 10-13
+    // june start from surabaya?" still got only one package. Root cause: classifyTopic (a
+    // verbatim, first-match-wins port) matches "hello" -> topic 'greeting' before any of the
+    // message's real content is ever checked -- which used to fall outside
+    // isRecommendationTopic entirely (and 'greeting' has an empty TOPIC_MODULES list, so
+    // this could ALSO have handed off outright on a destination with no policy notes).
+    it('still recommends multiple options (and does not hand off) when a greeting keyword hijacks topic classification', async () => {
+      ;(ensureFreshBookingData as any).mockResolvedValue(null)
+      ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
+      const otherFromSurabaya = pkg({ packageKey: 'surabaya-4d', origin: 'Surabaya', dayCount: 4, priceIdr: 3000000 })
+      ;(matchDestination as any).mockReturnValue({ destination: 'ijen', matches: [fromBali, fromSurabaya, otherFromSurabaya] })
+      ;(checkRouteGate as any).mockReturnValue({ status: 'clear' })
+      ;(classifyTopic as any).mockReturnValue('greeting')
+      ;(resolveKnowledgeForTopic as any).mockReturnValue({
+        factualLines: [], detailLines: [], primaryLink: null, disclosures: [], handoffRequired: false,
+      })
+      ;(parseTripPreferences as any).mockReturnValue({ origin: 'Surabaya', dayCount: 4 })
+
+      const result = await decideAndRespond('conv_1', 'hello, could you give me a recommendation for my trip at 10-13 june start from surabaya?')
+
+      expect(result.mode).toBe('faq')
+      const [, opts] = (callLLM as any).mock.calls[0]
+      expect(opts.system).toContain('present ALL 2 of the options above')
+    })
   })
 })

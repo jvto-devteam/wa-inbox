@@ -314,8 +314,17 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
     // mirroring `destination`'s own "ask once, remember" pattern): a customer who never
     // answers the finish-point half of the question still gets a real recommendation on
     // their very next message, since this branch never fires a second time.
+    //
+    // 'greeting' included: live-tested 2026-08-04, "hello, could you give me a
+    // recommendation for my trip at 10-13 june start from surabaya?" classifies as
+    // 'greeting' -- module-resolver.ts's classifyTopic is a verbatim first-match-wins port,
+    // and "hello" is a greeting keyword hit before any of this message's real content is
+    // ever checked. A short destination-less "Hello!" never reaches this branch at all (the
+    // "no destination" clarify above returns first), so this only ever affects a message
+    // that opens with a greeting but is substantively a recommendation ask -- exactly the
+    // case that was silently losing its recommendation treatment.
     const distinctOrigins = new Set(matches.map((p) => p.origin).filter((o): o is string => Boolean(o)))
-    const isRecommendationTopic = resolverTopic === 'price' || resolverTopic === 'general'
+    const isRecommendationTopic = resolverTopic === 'price' || resolverTopic === 'general' || resolverTopic === 'greeting'
     if (!origin && distinctOrigins.size > 1 && isRecommendationTopic && !tripBrief.askedTripPreferences) {
       await prisma.conversation.update({
         where: { id: conversationId },
@@ -381,7 +390,19 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
       }
     }
 
-    if (knowledge.factualLines.length === 0 && knowledge.detailLines.length === 0 && disclosures.length === 0) {
+    // A recommendation-shaped question (price/general/greeting-that's-really-a-question --
+    // see isRecommendationTopic's own comment) with at least one priced match is still
+    // answerable even when knowledge.ts itself has nothing: the package list built below IS
+    // the answer. Without this, "greeting" topic's own empty TOPIC_MODULES would hand off a
+    // perfectly answerable "hello, recommend me a package" on a destination with no policy
+    // notes to fall back on either.
+    const hasPricedMatch = matches.some((p) => p.priceIdr !== null)
+    if (
+      knowledge.factualLines.length === 0 &&
+      knowledge.detailLines.length === 0 &&
+      disclosures.length === 0 &&
+      !(isRecommendationTopic && hasPricedMatch)
+    ) {
       trace.push(
         'Topik tidak didukung',
         `Topik "${resolverTopic}" terdeteksi, tapi tidak ada modul pengetahuan untuk menjawabnya -- diserahkan ke agen.`
