@@ -157,7 +157,7 @@ const PRICE_RELEVANT_TOPICS = new Set(['price', 'how_to_book'])
 // `toComposableTopic` (the honest, disclosed narrowing from its real 14 topics down to the
 // 4 this file can actually answer) -- not by this file. See module-resolver.ts's header.
 
-const HANDOFF_FALLBACK_LINE = 'Tim kami akan segera membantu Anda untuk paket ini.'
+const HANDOFF_FALLBACK_LINE = 'Our team will follow up shortly to help you with this package.'
 
 export function composeResponse(input: {
   topic: 'inclusions' | 'how_to_book' | 'policy' | 'price'
@@ -184,7 +184,7 @@ export function composeResponse(input: {
     if (!isHandoff) {
       if (topic === 'inclusions' && pkg.inclusions.length > 0) {
         // Real: inc[:4] cap (line 129) -- never dumps an unbounded inclusion list.
-        lines.push(`Termasuk: ${pkg.inclusions.slice(0, 4).join(', ')}.`)
+        lines.push(`Includes: ${pkg.inclusions.slice(0, 4).join(', ')}.`)
       } else if (topic === 'policy' && pkg.policyNotes.length > 0) {
         lines.push(pkg.policyNotes.join(' '))
       }
@@ -197,13 +197,13 @@ export function composeResponse(input: {
         // disclosure (docstring line 23; see file header on why it's inline here
         // rather than a separate disclosures entry).
         lines.push(
-          `Rp${pkg.priceIdr.toLocaleString('id-ID')} per orang -- harga standar yang sudah dipublikasikan. ` +
-            'Ketersediaan tetap perlu dikonfirmasi untuk tanggal Anda.'
+          `Rp${pkg.priceIdr.toLocaleString('id-ID')} per person -- our published standard rate. ` +
+            'Availability still needs to be confirmed for your dates.'
         )
       } else {
         // Real: the custom_quote_required fallback line (line 210-211), generalized to
         // also cover the real system's separate `unavailable` state (see file header).
-        lines.push('Untuk paket ini, harga akan dikonfirmasi langsung oleh tim kami.')
+        lines.push('The price for this package will be confirmed directly by our team.')
       }
     }
 
@@ -211,7 +211,7 @@ export function composeResponse(input: {
     // gated on !isHandoff -- see file header for why this port adds the handoff gate
     // explicitly instead of relying on an upstream delivery plan to have stripped it.
     if (topic === 'how_to_book' && !isHandoff && pkg.links.booking) {
-      lines.push(`Link booking: ${pkg.links.booking}`)
+      lines.push(`Booking link: ${pkg.links.booking}`)
     }
   }
 

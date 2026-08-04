@@ -268,13 +268,76 @@ async function applyTemplateStatusUpdate(update: MetaTemplateStatusUpdate): Prom
   return result.count > 0
 }
 
+// How long to wait after the most recent message in a conversation before actually running the
+// bot -- a human typing on WhatsApp routinely splits one thought across several messages
+// ("halo" / "is ijen safe?" / "i want to go there" sent seconds apart). Without this, each
+// fragment ran through decideAndRespond on its own: 2-3 disjointed bot replies landing back to
+// back, which is both a confusing conversation AND the exact "many outbound messages in a short
+// window" pattern that got this number flagged for spam once already (see the Unofficial-channel
+// bulk-send incident). A new message from the same conversation restarts the wait, so a genuine
+// multi-message thought gets combined into one decision instead of several.
+const BURST_DEBOUNCE_MS = 5000
+
+type PendingBurst = { texts: string[]; timer: ReturnType<typeof setTimeout> }
+// Module-level, in-memory, per-process -- fine for this app (a single always-on Node process
+// behind pm2, not serverless; see src/lib/send.ts's equivalent single-process assumptions). A
+// deploy restart mid-burst drops whatever was pending: the customer's own messages are already
+// persisted (ingestSingleMessage/the test-message route write them before scheduling), so a human
+// agent still sees them in the inbox -- only the bot's reply to that specific burst is skipped,
+// not lost data.
+const pendingBursts = new Map<string, PendingBurst>()
+
+/**
+ * Buffers one inbound text for `conversation.id` and (re)starts the debounce timer. Repeated
+ * calls for the same conversation within BURST_DEBOUNCE_MS accumulate into a single combined
+ * decision instead of one per message -- shared between the real webhook path
+ * (ingestSingleMessage below) and /api/conversations/[id]/test-message, so the sandbox
+ * conversation exhibits the exact same batching behavior an admin is testing for.
+ */
+export function scheduleBotRun(conversation: { id: string; contactName: string | null }, inboundText: string): void {
+  const existing = pendingBursts.get(conversation.id)
+  if (existing) {
+    existing.texts.push(inboundText)
+    clearTimeout(existing.timer)
+    existing.timer = setTimeout(() => void flushBurst(conversation), BURST_DEBOUNCE_MS)
+    return
+  }
+  pendingBursts.set(conversation.id, {
+    texts: [inboundText],
+    timer: setTimeout(() => void flushBurst(conversation), BURST_DEBOUNCE_MS),
+  })
+}
+
+async function flushBurst(conversation: { id: string; contactName: string | null }): Promise<void> {
+  const burst = pendingBursts.get(conversation.id)
+  if (!burst) return
+  pendingBursts.delete(conversation.id)
+
+  // Re-checked fresh, not trusted from whenever the first message in this burst arrived: an
+  // agent may have clicked "Ambil Alih dari Bot" (or the bot itself may have handed off, on a
+  // prior message this same tick) at any point during the wait, and a stale botEnabled=true
+  // would still dispatch a reply the moment after a human took over.
+  const fresh = await prisma.conversation.findUnique({ where: { id: conversation.id }, select: { botEnabled: true } })
+  if (!fresh?.botEnabled) return
+
+  // Joined in arrival order, one line per fragment -- decideAndRespond sees them as the single
+  // combined thought a human reading the thread would.
+  await runBotForConversation(conversation, burst.texts.join('\n'))
+}
+
+// Test-only: clears in-memory burst state between test files/cases, and cancels any timer a
+// test forgot to advance -- without this, vitest's module cache can leak a pending setTimeout
+// (and its captured conversation id) across unrelated test files that happen to reuse an id.
+export function __resetPendingBurstsForTests(): void {
+  for (const burst of pendingBursts.values()) clearTimeout(burst.timer)
+  pendingBursts.clear()
+}
+
 /**
  * Runs the bot orchestrator against one already-ingested inbound message and dispatches
- * whatever it decides -- shared between the real webhook path (ingestSingleMessage below) and
- * /api/conversations/[id]/test-message, which simulates an inbound message for the pinned
- * sandbox conversation (src/lib/test-conversation.ts) so an admin can exercise the bot without
- * a real WhatsApp number. Caller is responsible for the botEnabled/non-empty-text gate --
- * this always runs the decision once called.
+ * whatever it decides -- called once a burst's debounce window (scheduleBotRun above) has
+ * elapsed. Caller is responsible for the botEnabled/non-empty-text gate -- this always runs the
+ * decision once called.
  */
 export async function runBotForConversation(
   conversation: { id: string; contactName: string | null },
@@ -404,7 +467,10 @@ async function ingestSingleMessage(message: MetaInboundMessage, contacts: MetaCo
   const botCanAnswer = inboundText.trim().length > 0
 
   if (conversation.botEnabled && botCanAnswer) {
-    await runBotForConversation({ id: conversation.id, contactName: contact.name }, inboundText)
+    // Not awaited: this buffers the message and (re)starts a debounce timer (see
+    // scheduleBotRun's header) rather than running the bot inline, so a burst of messages a
+    // few seconds apart is combined into one decision instead of one reply per fragment.
+    scheduleBotRun({ id: conversation.id, contactName: contact.name }, inboundText)
   }
 
   return true

@@ -34,6 +34,14 @@ export type LLMOptions = {
   system?: string
   /** Which model to ask Ollama for -- see DEFAULT_OLLAMA_MODEL above. */
   model?: string
+  /**
+   * Prior turns of this conversation, oldest first -- inserted between `system` and the final
+   * user `prompt` as real per-turn roles (not flattened into the system text), so Ollama sees
+   * an actual multi-turn chat instead of a single grounded question every time. Still untrusted
+   * customer text on the 'user' entries -- the same prompt-injection reasoning that keeps
+   * `system` separate from `prompt` applies here too.
+   */
+  history?: Array<{ role: 'user' | 'assistant'; content: string }>
 }
 
 // A provider that answers with a non-string or a blank string has not answered.
@@ -45,7 +53,12 @@ function requireNonEmptyReply(value: unknown, provider: string): string {
   return value
 }
 
-async function callOllama(prompt: string, system?: string, model?: string): Promise<string> {
+async function callOllama(
+  prompt: string,
+  system?: string,
+  model?: string,
+  history?: LLMOptions['history']
+): Promise<string> {
   const res = await fetch(`${process.env.OLLAMA_URL}/api/chat`, {
     method: 'POST',
     // Messages-array style (matching chatbot-web's src/chatbot.js), rather than
@@ -54,7 +67,11 @@ async function callOllama(prompt: string, system?: string, model?: string): Prom
     body: JSON.stringify({
       model: model ?? DEFAULT_OLLAMA_MODEL,
       stream: false,
-      messages: [...(system ? [{ role: 'system', content: system }] : []), { role: 'user', content: prompt }],
+      messages: [
+        ...(system ? [{ role: 'system', content: system }] : []),
+        ...(history ?? []),
+        { role: 'user', content: prompt },
+      ],
     }),
     signal: AbortSignal.timeout(LLM_TIMEOUT_MS),
   })
@@ -64,5 +81,5 @@ async function callOllama(prompt: string, system?: string, model?: string): Prom
 }
 
 export async function callLLM(prompt: string, opts?: LLMOptions): Promise<string> {
-  return callOllama(prompt, opts?.system, opts?.model)
+  return callOllama(prompt, opts?.system, opts?.model, opts?.history)
 }

@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { prisma } from '@/lib/db'
 import { broadcast } from '@/lib/realtime'
 import { withMediaUrl } from '@/lib/serialize-message'
-import { runBotForConversation } from '@/lib/inbound'
+import { scheduleBotRun } from '@/lib/inbound'
 import { parseJsonBody } from '@/lib/parse-json'
 
 const bodySchema = z.object({ text: z.string().min(1) })
@@ -44,7 +44,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   broadcast({ type: 'message.created', conversationId: conversation.id, message: withMediaUrl(created) })
 
   if (conversation.botEnabled) {
-    await runBotForConversation({ id: conversation.id, contactName: conversation.contact.name }, parsed.data.text)
+    // Not awaited: same debounce/burst-batching as the real webhook path (see
+    // scheduleBotRun's header in src/lib/inbound.ts) -- the sandbox room exercises the exact
+    // same behavior an admin is testing for, including how rapid-fire messages get combined.
+    scheduleBotRun({ id: conversation.id, contactName: conversation.contact.name }, parsed.data.text)
   }
 
   return NextResponse.json(withMediaUrl(created))

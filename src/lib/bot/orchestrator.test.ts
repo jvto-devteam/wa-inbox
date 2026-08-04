@@ -73,6 +73,9 @@ beforeEach(() => {
   ;(composeResponse as any).mockReturnValue('Berikut informasi paket untuk Ijen!')
   // decideAndRespond still reads Settings once, for ollamaModel (see the Mode 3 callLLM call).
   mockPrisma.settings.findUniqueOrThrow.mockResolvedValue({ ollamaModel: 'gemma4:31b-cloud' } as never)
+  // Mode 3's history fetch (see HISTORY_LIMIT) -- empty by default so tests that don't care
+  // about history don't have to configure it themselves.
+  mockPrisma.message.findMany.mockResolvedValue([] as never)
   mockPrisma.conversation.findUniqueOrThrow.mockResolvedValue({
     id: 'conv_1',
     tripBrief: {},
@@ -184,6 +187,53 @@ describe('decideAndRespond', () => {
     )
   })
 
+  it('passes recent messages as history, oldest first, mapped to user/assistant roles', async () => {
+    ;(ensureFreshBookingData as any).mockResolvedValue({ bookingId: 'B1', status: 'unpaid' })
+    ;(callLLM as any).mockResolvedValue('Sisa Rp500.000.')
+    // Mocking the query's own `orderBy: { createdAt: 'desc' }` -- most recent first, exactly
+    // what a real findMany call returns before the code's own .reverse() flips it to ascending.
+    mockPrisma.message.findMany.mockResolvedValue([
+      { direction: 'INBOUND', content: 'Sudah lunas belum?', createdAt: new Date('2026-08-01T10:01:00Z') },
+      { direction: 'OUTBOUND', content: 'Halo, ada yang bisa dibantu?', createdAt: new Date('2026-08-01T10:00:00Z') },
+    ] as never)
+
+    await decideAndRespond('conv_1', 'Kalau yang kemarin gimana?')
+
+    expect(mockPrisma.message.findMany).toHaveBeenCalledWith({
+      where: { conversationId: 'conv_1', content: { not: null } },
+      orderBy: { createdAt: 'desc' },
+      take: 8,
+    })
+    expect(callLLM).toHaveBeenCalledWith(
+      'Kalau yang kemarin gimana?',
+      expect.objectContaining({
+        history: [
+          { role: 'assistant', content: 'Halo, ada yang bisa dibantu?' },
+          { role: 'user', content: 'Sudah lunas belum?' },
+        ],
+      })
+    )
+  })
+
+  it('drops the tail history entry when it exactly echoes the message that just triggered this decision', async () => {
+    ;(ensureFreshBookingData as any).mockResolvedValue({ bookingId: 'B1', status: 'unpaid' })
+    ;(callLLM as any).mockResolvedValue('Sisa Rp500.000.')
+    mockPrisma.message.findMany.mockResolvedValue([
+      // Already persisted before decideAndRespond ran (see ingestSingleMessage/test-message) --
+      // an exact match of the current inboundText (most recent, matching orderBy: desc), so it
+      // must not appear twice.
+      { direction: 'INBOUND', content: 'Sudah lunas belum?', createdAt: new Date('2026-08-01T10:01:00Z') },
+      { direction: 'OUTBOUND', content: 'Halo, ada yang bisa dibantu?', createdAt: new Date('2026-08-01T10:00:00Z') },
+    ] as never)
+
+    await decideAndRespond('conv_1', 'Sudah lunas belum?')
+
+    expect(callLLM).toHaveBeenCalledWith(
+      'Sudah lunas belum?',
+      expect.objectContaining({ history: [{ role: 'assistant', content: 'Halo, ada yang bisa dibantu?' }] })
+    )
+  })
+
   it('keeps raw customer text out of the Mode 3 instruction string, so it cannot pose as an instruction', async () => {
     ;(ensureFreshBookingData as any).mockResolvedValue({ bookingId: 'B1', status: 'unpaid' })
     ;(callLLM as any).mockResolvedValue('Mohon maaf, sisa pembayaran Anda belum lunas.')
@@ -196,7 +246,7 @@ describe('decideAndRespond', () => {
     expect(prompt).toBe(injection)
     // It must NOT have been concatenated into the grounding/system instructions.
     expect(opts.system).not.toContain(injection)
-    expect(opts.system).toContain('Jawab pertanyaan pelanggan HANYA berdasarkan data booking')
+    expect(opts.system).toContain('Answer the customer\'s question ONLY based on the booking data')
   })
 
   it('hands off instead of returning an empty reply when the LLM yields blank content (Mode 3 second-layer defence)', async () => {
@@ -265,6 +315,17 @@ describe('decideAndRespond', () => {
     expect((result as { reply: string }).reply).toContain('Bromo, Ijen, Madakaripura')
   })
 
+  it('hands off instead of asking a broken clarifying question when the catalog has no destinations to offer', async () => {
+    ;(ensureFreshBookingData as any).mockResolvedValue(null)
+    ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
+    ;(matchDestination as any).mockReturnValue(null)
+    ;(listDestinations as any).mockReturnValue([])
+
+    const result = await decideAndRespond('conv_1', 'Halo')
+
+    expect(result).toMatchObject({ mode: 'handoff', reason: 'Katalog destinasi kosong — tidak dapat menanyakan destinasi' })
+  })
+
   it('persists the destination package-match found, so the next message reaches the route gate with it', async () => {
     ;(ensureFreshBookingData as any).mockResolvedValue(null)
     ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
@@ -308,8 +369,32 @@ describe('decideAndRespond', () => {
     expect(checkRouteGate).toHaveBeenCalledWith(expect.objectContaining({ destination: 'ijen' }))
     expect(packagesForDestination).toHaveBeenCalledWith('ijen', expect.anything())
     expect(second.mode).toBe('faq')
-    // The known destination must not be wiped by a message that matched nothing new,
-    // and having matched nothing this turn, must not trigger a redundant DB write either.
+    // The known destination must not be wiped by a message that matched nothing new (no
+    // redundant destination write), but the newly-resolved topic ('price', vs. no lastTopic on
+    // file yet) IS worth persisting -- exactly one call, for that reason alone.
+    expect(mockPrisma.conversation.update).toHaveBeenCalledTimes(1)
+    expect(mockPrisma.conversation.update).toHaveBeenCalledWith({
+      where: { id: 'conv_1' },
+      data: { tripBrief: { destination: 'ijen', lastTopic: 'price' } },
+    })
+  })
+
+  it('does not re-persist tripBrief when the resolved topic matches what is already on file', async () => {
+    ;(ensureFreshBookingData as any).mockResolvedValue(null)
+    ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
+    ;(checkRouteGate as any).mockReturnValue({ status: 'clear' })
+    ;(matchDestination as any).mockReturnValue(null)
+    ;(packagesForDestination as any).mockReturnValue([pkg()])
+    ;(classifyTopic as any).mockReturnValue('inclusions')
+    ;(composeResponse as any).mockReturnValue('Termasuk...')
+    mockPrisma.conversation.findUniqueOrThrow.mockResolvedValue({
+      id: 'conv_1', tripBrief: { destination: 'ijen', lastTopic: 'inclusions' },
+      bookingData: null, bookingCheckedAt: new Date(), contact: { phone: '6281234567890' },
+    } as never)
+
+    const result = await decideAndRespond('conv_1', 'Apa saja yang termasuk?')
+
+    expect(result.mode).toBe('faq')
     expect(mockPrisma.conversation.update).not.toHaveBeenCalled()
   })
 

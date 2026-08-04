@@ -3,6 +3,12 @@ export type TripBrief = {
   dateRange?: string
   pax?: number
   notes?: string
+  // The last Mode 1/2 topic the bot actually answered (see orchestrator.ts's `toComposableTopic`
+  // call) -- captured for visibility into what a customer was last asking about, mirroring how
+  // `destination` already persists across messages. Not currently read back to influence a
+  // later decision (e.g. as a fallback when a follow-up message's own topic can't be
+  // classified) -- that's a deliberate, separate follow-up, not wired in yet.
+  lastTopic?: string
 }
 
 export type RouteGateResult =

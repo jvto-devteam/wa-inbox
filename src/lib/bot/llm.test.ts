@@ -93,4 +93,37 @@ describe('callLLM', () => {
     const body = JSON.parse(fetchMock.mock.calls[0][1].body)
     expect(body.messages).toEqual([{ role: 'user', content: 'Halo' }])
   })
+
+  // --- Conversation history -------------------------------------------------
+  // Prior turns are inserted as real per-turn roles between `system` and the final
+  // `prompt`, not flattened into the system text -- Ollama gets an actual multi-turn
+  // chat, matching how a human reading the thread would see it.
+
+  it('inserts history between the system message and the final user prompt, in order', async () => {
+    fetchMock.mockResolvedValue({ ok: true, json: async () => ({ message: { content: 'ok' } }) })
+    await callLLM('Kalau yang itu gimana?', {
+      system: 'Data booking: {"id":"B1"}',
+      history: [
+        { role: 'user', content: 'Sudah lunas belum?' },
+        { role: 'assistant', content: 'Belum, sisa Rp500.000.' },
+      ],
+    })
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body)
+    expect(body.messages).toEqual([
+      { role: 'system', content: 'Data booking: {"id":"B1"}' },
+      { role: 'user', content: 'Sudah lunas belum?' },
+      { role: 'assistant', content: 'Belum, sisa Rp500.000.' },
+      { role: 'user', content: 'Kalau yang itu gimana?' },
+    ])
+  })
+
+  it('sends no history entries when none are given', async () => {
+    fetchMock.mockResolvedValue({ ok: true, json: async () => ({ message: { content: 'ok' } }) })
+    await callLLM('Halo', { system: 'Data booking: {}' })
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body)
+    expect(body.messages).toEqual([
+      { role: 'system', content: 'Data booking: {}' },
+      { role: 'user', content: 'Halo' },
+    ])
+  })
 })

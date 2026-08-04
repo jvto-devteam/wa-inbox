@@ -1,8 +1,8 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { mockDeep, mockReset, type DeepMockProxy } from 'vitest-mock-extended'
 import { Prisma, type PrismaClient } from '@prisma/client'
 import { prisma } from '@/lib/db'
-import { ingestMetaMessage, type MetaWebhookPayload } from './inbound'
+import { ingestMetaMessage, scheduleBotRun, __resetPendingBurstsForTests, type MetaWebhookPayload } from './inbound'
 import { decideAndRespond } from '@/lib/bot/orchestrator'
 import { sendMessage } from '@/lib/send'
 import { broadcast } from '@/lib/realtime'
@@ -25,6 +25,9 @@ beforeEach(() => {
   // Read by defaultBotEnabled() whenever a new conversation is created, so a brand-new
   // conversation starts in whatever state the global bot mode currently dictates.
   mockPrisma.settings.findUniqueOrThrow.mockResolvedValue({ botAutoReplyAll: true } as never)
+  // flushBurst's own fresh re-check (see scheduleBotRun's header) -- default to "still on" so
+  // every existing botEnabled:true test doesn't have to know this second read exists.
+  mockPrisma.conversation.findUnique.mockResolvedValue({ botEnabled: true } as never)
   // vi.stubGlobal('fetch', ...) is not undone between tests by default, so a leaked stub from a
   // previous test would silently satisfy an avatar fetch a later test never meant to allow.
   vi.unstubAllGlobals()
@@ -510,11 +513,24 @@ describe('ingestMetaMessage avatar enrichment', () => {
 })
 
 describe('ingestMetaMessage bot dispatch', () => {
+  // scheduleBotRun (see src/lib/inbound.ts) buffers a message and only actually runs the bot
+  // after a 5s debounce window -- fake timers let these tests fast-forward past that wait
+  // instead of the bot never running at all.
+  beforeEach(() => {
+    vi.useFakeTimers()
+    __resetPendingBurstsForTests()
+  })
+  afterEach(() => {
+    __resetPendingBurstsForTests()
+    vi.useRealTimers()
+  })
+
   it('calls the bot orchestrator and sends its reply when the conversation has botEnabled', async () => {
     stubHappyPath()
     vi.mocked(decideAndRespond).mockResolvedValue({ mode: 'faq', draft: 'Info paket...', sourceTopic: 'inclusions' })
 
     await ingestMetaMessage(samplePayload)
+    await vi.advanceTimersByTimeAsync(5000)
 
     expect(decideAndRespond).toHaveBeenCalledWith('conv_1', 'Halo, mau tanya paket Ijen')
     expect(sendMessage).toHaveBeenCalledWith(expect.objectContaining({ conversationId: 'conv_1', text: 'Info paket...', sentBy: 'BOT' }))
@@ -525,6 +541,7 @@ describe('ingestMetaMessage bot dispatch', () => {
     vi.mocked(decideAndRespond).mockResolvedValue({ mode: 'clarify', reply: 'Anda tertarik jalan-jalan ke mana?' })
 
     await ingestMetaMessage(samplePayload)
+    await vi.advanceTimersByTimeAsync(5000)
 
     expect(sendMessage).toHaveBeenCalledWith(expect.objectContaining({ conversationId: 'conv_1', text: 'Anda tertarik jalan-jalan ke mana?', sentBy: 'BOT' }))
     expect(mockPrisma.conversation.update).not.toHaveBeenCalledWith(expect.objectContaining({ data: { botEnabled: false } }))
@@ -597,6 +614,7 @@ describe('ingestMetaMessage bot dispatch', () => {
     vi.mocked(decideAndRespond).mockResolvedValue(decision)
 
     await ingestMetaMessage(samplePayload)
+    await vi.advanceTimersByTimeAsync(5000)
 
     expect(decideAndRespond).toHaveBeenCalledWith('conv_1', 'Halo, mau tanya paket Ijen')
     expect(sendMessage).not.toHaveBeenCalled()
@@ -620,20 +638,20 @@ describe('ingestMetaMessage bot dispatch', () => {
     vi.mocked(decideAndRespond).mockResolvedValue({ mode: 'handoff', reason: 'Kata kunci eskalasi terdeteksi' })
 
     await ingestMetaMessage(samplePayload)
+    await vi.advanceTimersByTimeAsync(5000)
 
     expect(mockPrisma.conversation.update).toHaveBeenCalledWith({ where: { id: 'conv_1' }, data: { botEnabled: false } })
     expect(broadcast).toHaveBeenCalledWith(expect.objectContaining({ type: 'handoff.alert', conversationId: 'conv_1' }))
   })
 
-  it('does not re-invoke the orchestrator for a second message once a handoff disabled the bot', async () => {
+  it('merges two messages arriving close together into one combined decision, not one reply per fragment', async () => {
+    // scheduleBotRun's debounce (see its header in inbound.ts) is exactly for this: a customer
+    // splitting one thought across "halo" / "is ijen safe?" must not produce two disjointed bot
+    // replies -- both fragments land in the same 5s window and are joined into one inboundText.
     mockPrisma.message.findUnique.mockResolvedValue(null)
     mockPrisma.contact.upsert.mockResolvedValue({ ...contactRow, avatarUrl: 'x' })
     mockPrisma.message.create.mockResolvedValue({ id: 'msg_new' } as never)
-    // First message: bot still on. Second message reads back the conversation the handoff
-    // just disabled — the existing `if (conversation.botEnabled)` gate must now skip it.
-    mockPrisma.conversation.upsert
-      .mockResolvedValueOnce({ ...conversationRow, botEnabled: true })
-      .mockResolvedValueOnce({ ...conversationRow, botEnabled: false })
+    mockPrisma.conversation.upsert.mockResolvedValue({ ...conversationRow, botEnabled: true })
     vi.mocked(decideAndRespond).mockResolvedValue({ mode: 'handoff', reason: 'Kata kunci eskalasi terdeteksi' })
 
     await ingestMetaMessage({
@@ -642,17 +660,19 @@ describe('ingestMetaMessage bot dispatch', () => {
           value: {
             contacts: [{ profile: { name: 'Bruno Figarola' }, wa_id: '6281234567890' }],
             messages: [
-              { id: 'wamid.ONE', from: '6281234567890', timestamp: '1700000000', type: 'text', text: { body: 'refund dong' } },
-              { id: 'wamid.TWO', from: '6281234567890', timestamp: '1700000005', type: 'text', text: { body: 'halo?' } },
+              { id: 'wamid.ONE', from: '6281234567890', timestamp: '1700000000', type: 'text', text: { body: 'halo' } },
+              { id: 'wamid.TWO', from: '6281234567890', timestamp: '1700000005', type: 'text', text: { body: 'is ijen safe?' } },
             ],
           },
         }],
       }],
     })
+    await vi.advanceTimersByTimeAsync(5000)
 
     expect(decideAndRespond).toHaveBeenCalledTimes(1)
+    expect(decideAndRespond).toHaveBeenCalledWith('conv_1', 'halo\nis ijen safe?')
     expect(mockPrisma.conversation.update).toHaveBeenCalledTimes(1)
-    // Exactly one handoff alert for two inbound messages.
+    // Exactly one handoff alert for the merged decision, not one per fragment.
     const alerts = vi.mocked(broadcast).mock.calls.filter(([e]) => e.type === 'handoff.alert')
     expect(alerts).toHaveLength(1)
   })
@@ -667,12 +687,104 @@ describe('ingestMetaMessage bot dispatch', () => {
     vi.mocked(decideAndRespond).mockResolvedValue({ mode: 'handoff', reason: 'Kata kunci eskalasi terdeteksi' })
 
     await ingestMetaMessage(samplePayload)
+    await vi.advanceTimersByTimeAsync(5000)
 
     expect(mockPrisma.conversation.update).toHaveBeenCalledWith({ where: { id: 'conv_1' }, data: { botEnabled: false } })
     expect(broadcast).toHaveBeenCalledWith(expect.objectContaining({ type: 'handoff.alert' }))
     expect(mockPrisma.message.create).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({ sentBy: 'BOT', content: null, direction: 'OUTBOUND' }),
     }))
+  })
+
+  it("re-checks botEnabled fresh at flush time, so an agent taking over mid-wait cancels the bot's reply", async () => {
+    stubHappyPath()
+    vi.mocked(decideAndRespond).mockResolvedValue({ mode: 'faq', draft: 'Info paket...', sourceTopic: 'inclusions' })
+    // The conversation still looked bot-enabled when the message was first ingested, but an
+    // agent clicks "Ambil Alih dari Bot" before the debounce window elapses -- flushBurst's own
+    // fresh read must see that and skip running the bot entirely.
+    mockPrisma.conversation.findUnique.mockResolvedValue({ botEnabled: false } as never)
+
+    await ingestMetaMessage(samplePayload)
+    await vi.advanceTimersByTimeAsync(5000)
+
+    expect(decideAndRespond).not.toHaveBeenCalled()
+    expect(sendMessage).not.toHaveBeenCalled()
+  })
+})
+
+describe('scheduleBotRun burst batching', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+    __resetPendingBurstsForTests()
+    vi.mocked(decideAndRespond).mockReset().mockResolvedValue({ mode: 'handoff', reason: 'default test stub' })
+    mockPrisma.conversation.findUnique.mockResolvedValue({ botEnabled: true } as never)
+    // The default 'handoff' mode writes a log-only Message row (see runBotForConversation) --
+    // give it a resolvable value so that path doesn't throw on an unconfigured mock.
+    mockPrisma.message.create.mockResolvedValue({ id: 'msg_burst' } as never)
+  })
+  afterEach(() => {
+    __resetPendingBurstsForTests()
+    vi.useRealTimers()
+  })
+
+  const conv = { id: 'conv_1', contactName: 'Bruno Figarola' }
+
+  it('does not run the bot before the debounce window elapses', () => {
+    scheduleBotRun(conv, 'halo')
+    expect(decideAndRespond).not.toHaveBeenCalled()
+  })
+
+  it('a second message before the window elapses restarts the timer instead of running two decisions', async () => {
+    scheduleBotRun(conv, 'halo')
+    await vi.advanceTimersByTimeAsync(4000)
+    expect(decideAndRespond).not.toHaveBeenCalled()
+
+    // Second fragment arrives with 1s left on the original timer -- that must not fire on
+    // schedule; the wait restarts from THIS message instead.
+    scheduleBotRun(conv, 'is ijen safe?')
+    await vi.advanceTimersByTimeAsync(4000)
+    expect(decideAndRespond).not.toHaveBeenCalled()
+
+    await vi.advanceTimersByTimeAsync(1000)
+    expect(decideAndRespond).toHaveBeenCalledTimes(1)
+    expect(decideAndRespond).toHaveBeenCalledWith('conv_1', 'halo\nis ijen safe?')
+  })
+
+  it('joins three or more fragments in arrival order', async () => {
+    scheduleBotRun(conv, 'halo')
+    scheduleBotRun(conv, 'is ijen safe?')
+    scheduleBotRun(conv, 'i want to go there')
+    await vi.advanceTimersByTimeAsync(5000)
+
+    expect(decideAndRespond).toHaveBeenCalledTimes(1)
+    expect(decideAndRespond).toHaveBeenCalledWith('conv_1', 'halo\nis ijen safe?\ni want to go there')
+  })
+
+  it('buffers different conversations independently, without cross-contaminating their text', async () => {
+    scheduleBotRun({ id: 'conv_1', contactName: 'A' }, 'halo dari conv 1')
+    scheduleBotRun({ id: 'conv_2', contactName: 'B' }, 'halo dari conv 2')
+    await vi.advanceTimersByTimeAsync(5000)
+
+    expect(decideAndRespond).toHaveBeenCalledTimes(2)
+    expect(decideAndRespond).toHaveBeenCalledWith('conv_1', 'halo dari conv 1')
+    expect(decideAndRespond).toHaveBeenCalledWith('conv_2', 'halo dari conv 2')
+  })
+
+  it('skips running the bot entirely if botEnabled turned false before the window elapsed', async () => {
+    mockPrisma.conversation.findUnique.mockResolvedValue({ botEnabled: false } as never)
+
+    scheduleBotRun(conv, 'halo')
+    await vi.advanceTimersByTimeAsync(5000)
+
+    expect(decideAndRespond).not.toHaveBeenCalled()
+  })
+
+  it('__resetPendingBurstsForTests cancels a pending timer so it never fires', async () => {
+    scheduleBotRun(conv, 'halo')
+    __resetPendingBurstsForTests()
+    await vi.advanceTimersByTimeAsync(10000)
+
+    expect(decideAndRespond).not.toHaveBeenCalled()
   })
 })
 
