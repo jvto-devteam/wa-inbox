@@ -70,6 +70,7 @@ beforeEach(() => {
   ;(checkDeploymentGate as any).mockReturnValue({ readyForApproval: true, blocking: [] })
   ;(packagesForDestination as any).mockReturnValue([])
   ;(pickPackage as any).mockImplementation((matches: any[]) => matches[0])
+  ;(parseTripPreferences as any).mockReturnValue({ origin: null, dayCount: null })
   ;(listDestinations as any).mockReturnValue(['Bromo', 'Ijen'])
   ;(classifyTopic as any).mockReturnValue('inclusions')
   // Non-empty by default so ordinary FAQ tests don't have to know about knowledge.ts's own
@@ -592,6 +593,22 @@ describe('decideAndRespond', () => {
     expect(opts.system).toContain('GUARDRAILS')
   })
 
+  // Reported 2026-08-04: an "I'm sorry, I don't have that specific information" reply reads
+  // as a dead end for a real business, not a genuine JVTO team member -- reworded to defer to
+  // the team instead, still without fabricating an answer.
+  it('instructs the LLM to defer to the team instead of a bare "I don\'t have that information" when facts are missing', async () => {
+    ;(ensureFreshBookingData as any).mockResolvedValue(null)
+    ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
+    ;(matchDestination as any).mockReturnValue({ destination: 'ijen', matches: [pkg()] })
+    ;(checkRouteGate as any).mockReturnValue({ status: 'clear' })
+
+    await decideAndRespond('conv_1', 'Saya mau ke Ijen')
+
+    const [, opts] = (callLLM as any).mock.calls[0]
+    expect(opts.system).toContain('do NOT say "I\'m sorry, I don\'t have that information"')
+    expect(opts.system.toLowerCase()).toContain('check that with our team')
+  })
+
   it('hands off instead of returning an empty reply when the Mode 1/2 LLM yields blank content', async () => {
     ;(ensureFreshBookingData as any).mockResolvedValue(null)
     ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
@@ -711,5 +728,130 @@ describe('decideAndRespond', () => {
 
     expect(result.mode).toBe('booking_context')
     expect(checkDeploymentGate).not.toHaveBeenCalled()
+  })
+
+  describe('trip-preferences clarify (origin ambiguity)', () => {
+    const fromBali = pkg({ packageKey: 'bali-3d', origin: 'Bali', dayCount: 3 })
+    const fromSurabaya = pkg({ packageKey: 'surabaya-2d', origin: 'Surabaya', dayCount: 2 })
+
+    it('asks for a starting city instead of guessing when a destination has packages from more than one origin', async () => {
+      ;(ensureFreshBookingData as any).mockResolvedValue(null)
+      ;(classifySalesNeed as any).mockReturnValue({ job: 'J2', missingInfo: [], needsLiveData: false })
+      ;(matchDestination as any).mockReturnValue({ destination: 'ijen', matches: [fromBali, fromSurabaya] })
+      ;(classifyTopic as any).mockReturnValue('price')
+
+      const result = await decideAndRespond('conv_1', 'Which package do you recommend for Ijen?')
+
+      expect(result.mode).toBe('clarify')
+      expect((result as { mode: 'clarify'; reply: string }).reply.toLowerCase()).toContain('bali')
+      expect(checkRouteGate).not.toHaveBeenCalled()
+      expect(callLLM).not.toHaveBeenCalled()
+      expect(mockPrisma.conversation.update).toHaveBeenCalledWith({
+        where: { id: 'conv_1' },
+        data: { tripBrief: { destination: 'ijen', askedTripPreferences: true } },
+      })
+    })
+
+    it('does not ask when every matching package shares the same origin (no real ambiguity)', async () => {
+      ;(ensureFreshBookingData as any).mockResolvedValue(null)
+      ;(classifySalesNeed as any).mockReturnValue({ job: 'J2', missingInfo: [], needsLiveData: false })
+      ;(matchDestination as any).mockReturnValue({ destination: 'ijen', matches: [pkg({ origin: 'Surabaya' }), pkg({ origin: 'Surabaya', packageKey: 'other' })] })
+      ;(checkRouteGate as any).mockReturnValue({ status: 'clear' })
+      ;(classifyTopic as any).mockReturnValue('price')
+
+      const result = await decideAndRespond('conv_1', 'Which package do you recommend for Ijen?')
+
+      expect(result.mode).toBe('faq')
+    })
+
+    it('does not ask for topics unrelated to picking a specific package (e.g. destination_readiness)', async () => {
+      ;(ensureFreshBookingData as any).mockResolvedValue(null)
+      ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
+      ;(matchDestination as any).mockReturnValue({ destination: 'ijen', matches: [fromBali, fromSurabaya] })
+      ;(checkRouteGate as any).mockReturnValue({ status: 'clear' })
+      ;(classifyTopic as any).mockReturnValue('destination_readiness')
+
+      const result = await decideAndRespond('conv_1', 'is ijen safe?')
+
+      expect(result.mode).toBe('faq')
+    })
+
+    it('never asks twice -- proceeds straight to a recommendation once askedTripPreferences is already on file', async () => {
+      ;(ensureFreshBookingData as any).mockResolvedValue(null)
+      ;(classifySalesNeed as any).mockReturnValue({ job: 'J2', missingInfo: [], needsLiveData: false })
+      ;(matchDestination as any).mockReturnValue({ destination: 'ijen', matches: [fromBali, fromSurabaya] })
+      ;(checkRouteGate as any).mockReturnValue({ status: 'clear' })
+      ;(classifyTopic as any).mockReturnValue('price')
+      mockPrisma.conversation.findUniqueOrThrow.mockResolvedValue({
+        id: 'conv_1',
+        tripBrief: { destination: 'ijen', askedTripPreferences: true },
+        bookingData: null,
+        bookingCheckedAt: new Date(),
+        contact: { phone: '6281234567890' },
+      } as never)
+
+      const result = await decideAndRespond('conv_1', 'Not sure yet, what do you suggest?')
+
+      expect(result.mode).toBe('faq')
+    })
+
+    it('persists a stated origin so a later message narrows pickPackage without restating it', async () => {
+      ;(ensureFreshBookingData as any).mockResolvedValue(null)
+      ;(classifySalesNeed as any).mockReturnValue({ job: 'J2', missingInfo: [], needsLiveData: false })
+      ;(matchDestination as any).mockReturnValue({ destination: 'ijen', matches: [fromBali, fromSurabaya] })
+      ;(checkRouteGate as any).mockReturnValue({ status: 'clear' })
+      ;(classifyTopic as any).mockReturnValue('price')
+      ;(parseTripPreferences as any).mockReturnValue({ origin: 'Surabaya', dayCount: null })
+
+      await decideAndRespond('conv_1', '3 day trip from Surabaya please')
+
+      expect(mockPrisma.conversation.update).toHaveBeenCalledWith({
+        where: { id: 'conv_1' },
+        data: { tripBrief: { destination: 'ijen', origin: 'Surabaya' } },
+      })
+      expect(pickPackage).toHaveBeenCalledWith([fromBali, fromSurabaya], { origin: 'Surabaya', dayCount: null })
+    })
+
+    it('uses the origin already on file (not just this message) to narrow pickPackage', async () => {
+      ;(ensureFreshBookingData as any).mockResolvedValue(null)
+      ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
+      ;(matchDestination as any).mockReturnValue({ destination: 'ijen', matches: [fromBali, fromSurabaya] })
+      ;(checkRouteGate as any).mockReturnValue({ status: 'clear' })
+      ;(classifyTopic as any).mockReturnValue('inclusions')
+      ;(parseTripPreferences as any).mockReturnValue({ origin: null, dayCount: null })
+      mockPrisma.conversation.findUniqueOrThrow.mockResolvedValue({
+        id: 'conv_1',
+        tripBrief: { destination: 'ijen', origin: 'Bali' },
+        bookingData: null,
+        bookingCheckedAt: new Date(),
+        contact: { phone: '6281234567890' },
+      } as never)
+
+      await decideAndRespond('conv_1', 'What is included?')
+
+      expect(pickPackage).toHaveBeenCalledWith([fromBali, fromSurabaya], { origin: 'Bali', dayCount: null })
+    })
+
+    it("lists every matching priced package in the LLM system prompt, not just pickPackage's single choice", async () => {
+      ;(ensureFreshBookingData as any).mockResolvedValue(null)
+      ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
+      ;(matchDestination as any).mockReturnValue({
+        destination: 'ijen',
+        matches: [
+          pkg({ packageKey: 'a', title: 'Ijen 2D1N from Surabaya', origin: 'Surabaya', dayCount: 2, priceIdr: 1500000 }),
+          pkg({ packageKey: 'b', title: 'Ijen Bromo 3D2N from Surabaya', origin: 'Surabaya', dayCount: 3, priceIdr: 2500000 }),
+        ],
+      })
+      ;(checkRouteGate as any).mockReturnValue({ status: 'clear' })
+      ;(classifyTopic as any).mockReturnValue('price')
+
+      await decideAndRespond('conv_1', 'Which packages do you have for Ijen?')
+
+      const [, opts] = (callLLM as any).mock.calls[0]
+      expect(opts.system).toContain('Ijen 2D1N from Surabaya')
+      expect(opts.system).toContain('Ijen Bromo 3D2N from Surabaya')
+      expect(opts.system).toContain('Rp1.500.000')
+      expect(opts.system).toContain('Rp2.500.000')
+    })
   })
 })

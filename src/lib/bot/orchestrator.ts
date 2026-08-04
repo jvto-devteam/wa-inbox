@@ -54,6 +54,14 @@
 //      jvto-agent-runtime's `module_resolver.py`'s `classify_topic`): scans
 //      the message against the real system's own keyword table for which of
 //      14 real topics it's asking about.
+//   6b. Trip-preferences check (package-match.ts's `parseTripPreferences`):
+//      a destination can be served by packages starting from more than one
+//      city (Ijen: 4 from Bali, 8 from Surabaya) -- a genuine ambiguity, not
+//      one `pickPackage` should silently guess through. A 'price'/'general'
+//      question with no known origin (this message or `tripBrief.origin`)
+//      asks once, persists `askedTripPreferences` so it never asks twice, and
+//      stays active (`mode: 'clarify'`) -- a customer who never answers the
+//      finish-point half still gets a real recommendation next message.
 //   7. Knowledge resolution + response composition (knowledge.ts, a port of
 //      chatbot-web's `agentResolver.js` -- itself the piece of the real
 //      `module_resolver.py` this file used to leave unported, see knowledge.ts's
@@ -112,7 +120,8 @@ const SHARED_PERSONA_INSTRUCTIONS = `You are a real member of the JVTO (Java Vol
 - Keep your reply SHORT -- 2-3 sentences at most. The customer can always ask a follow-up, and a relevant link (if given below) covers the full detail.
 - Answer ONLY using the facts given below. Never invent details, prices, policies, or URLs that are not present in them.
 - If a relevant link is given below, end your reply with that exact URL so the customer can read more.
-- Be warm and genuinely helpful, not generic or robotic.`
+- Be warm and genuinely helpful, not generic or robotic.
+- If the facts below genuinely don't cover what the customer asked, do NOT say "I'm sorry, I don't have that information" or anything that reads as a dead end. Instead say our team will confirm/follow up on that specific detail shortly (e.g. "Let me check that with our team and get back to you shortly!"), and still point them to the link below if one is given.`
 
 /**
  * Recent turns for this conversation, oldest first, as real per-turn chat roles -- shared by
@@ -285,6 +294,44 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
     const resolverTopic = classifyTopic(classification.job, inboundText)
     trace.push('Mengklasifikasi topik', `Topik terdeteksi: "${resolverTopic}".`)
 
+    const matches = matched?.matches ?? packagesForDestination(destination, catalog)
+    const preferences = parseTripPreferences(inboundText)
+    // A destination mentioned THIS message wins, same precedence as `destination` above;
+    // otherwise the persisted one carries the conversation.
+    const origin = preferences.origin ?? tripBrief.origin ?? null
+    if (origin && origin !== tripBrief.origin) {
+      await prisma.conversation.update({
+        where: { id: conversationId },
+        data: { tripBrief: { ...tripBrief, destination, origin } as Prisma.InputJsonValue },
+      })
+    }
+
+    // A destination like "ijen" is served by packages starting from BOTH Bali and Surabaya
+    // (a real ambiguity: live-checked 2026-08-04, 4 Ijen packages start from Bali, 8 from
+    // Surabaya) -- recommending one without knowing which the customer means is a guess, so
+    // ask first for a recommendation-shaped question ('price'/'general' -- "which package,"
+    // "how much"). Asked at most once per conversation (askedTripPreferences persists,
+    // mirroring `destination`'s own "ask once, remember" pattern): a customer who never
+    // answers the finish-point half of the question still gets a real recommendation on
+    // their very next message, since this branch never fires a second time.
+    const distinctOrigins = new Set(matches.map((p) => p.origin).filter((o): o is string => Boolean(o)))
+    const isRecommendationTopic = resolverTopic === 'price' || resolverTopic === 'general'
+    if (!origin && distinctOrigins.size > 1 && isRecommendationTopic && !tripBrief.askedTripPreferences) {
+      await prisma.conversation.update({
+        where: { id: conversationId },
+        data: { tripBrief: { ...tripBrief, destination, askedTripPreferences: true } as Prisma.InputJsonValue },
+      })
+      trace.push(
+        'Menanyakan asal & titik akhir',
+        `Destinasi "${destination}" punya paket dari lebih dari satu kota asal -- menanyakan sebelum merekomendasikan.`
+      )
+      const reply =
+        `Happy to recommend a package! Would you like to start from Bali or Surabaya, and do you have a preferred finish point? ` +
+        `No worries if you're not sure yet -- let me know either way and I can suggest our most popular option.`
+      trace.push('Jawaban siap dikirim', previewText(reply))
+      return { mode: 'clarify', reply, steps: trace.steps }
+    }
+
     trace.push('Memeriksa validitas paket', `Memeriksa apakah paket untuk "${destination}" boleh ditampilkan ke pelanggan.`)
     const routeResult = checkRouteGate({ destination, catalog })
     if (routeResult.status === 'handoff') {
@@ -298,11 +345,12 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
         : 'Paket valid untuk dijawab ke pelanggan.'
     )
 
-    const matches = matched?.matches ?? packagesForDestination(destination, catalog)
     // "3 day trip from Surabaya" or "10-12 June (3 days) from Surabaya" -> narrows which of
     // the destination's several packages (they differ by day count/origin) to recommend,
     // instead of always naming whichever priced one happens to be first (see package-match.ts).
-    const pkg = pickPackage(matches, parseTripPreferences(inboundText))
+    // `origin` (not `preferences.origin`) so a city stated on an EARLIER message still
+    // narrows this pick, matching the clarify branch above's own persisted-origin precedence.
+    const pkg = pickPackage(matches, { origin, dayCount: preferences.dayCount })
 
     // The module-resolution step catalog.ts's own header names as never having been ported
     // (see knowledge.ts's header) -- resolves real facts/links/disclosures for all 14 real
@@ -360,11 +408,30 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
     // re-verified live. Falls back to the package page only when knowledge.ts has no link for
     // this specific topic.
     const primaryLink = knowledge.primaryLink ?? pkg.links.details ?? null
+
+    // Every priced package matching this destination (narrowed to the known origin, if
+    // any) as real, comparison-ready options -- so "which package do you recommend" gets an
+    // actual list (per-package title/duration/origin/price), not just the single package
+    // pickPackage silently chose above for topic-general facts. Capped at 8 so an
+    // origin-ambiguous destination with a dozen variations doesn't bloat the prompt.
+    const optionPackages = (origin ? matches.filter((p) => p.origin === origin) : matches)
+      .filter((p) => p.priceIdr !== null)
+      .slice(0, 8)
+    const packageOptionsText =
+      optionPackages.length > 0
+        ? optionPackages
+            .map((p) => `- ${p.title}${p.dayCount ? ` (${p.dayCount}D` : ''}${p.origin ? `, from ${p.origin})` : p.dayCount ? ')' : ''}: Rp${p.priceIdr!.toLocaleString('id-ID')}/person`)
+            .join('\n')
+        : null
+
     const system =
       `${SHARED_PERSONA_INSTRUCTIONS}\n\n` +
       `Package the customer is asking about: ${pkg.title}\n\n` +
       `Known facts relevant to their question (topic: "${resolverTopic}"):\n${knowledge.factualLines.map((f) => `- ${f}`).join('\n')}` +
       (knowledge.detailLines.length > 0 ? `\n\nMore detail if useful:\n${knowledge.detailLines.map((d) => `- ${d}`).join('\n')}` : '') +
+      (packageOptionsText
+        ? `\n\nMatching tour packages for this destination (list the relevant ones if the customer is asking for a recommendation or comparison -- never invent others or state a price not shown here):\n${packageOptionsText}`
+        : '') +
       (disclosures.length > 0 ? `\n\nImportant -- must be reflected in your reply:\n${disclosures.map((d) => `- ${d}`).join('\n')}` : '') +
       (primaryLink ? `\n\nRelevant link (include this URL at the end of your reply): ${primaryLink}` : '') +
       `\n\n${GUARDRAIL_INSTRUCTION}`

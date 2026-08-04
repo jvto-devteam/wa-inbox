@@ -158,7 +158,7 @@
     },
     {
       "link_key": "rooming_and_accommodation",
-      "url": "https://javavolcano-touroperator.com/travel-guide/packing-and-fitness",
+      "url": "https://javavolcano-touroperator.com/policy/inclusions-exclusions",
       "content_type": "general_explainer",
       "status": "existing",
       "used_by": [
@@ -177,7 +177,7 @@
     },
     {
       "link_key": "vehicle_and_luggage",
-      "url": "https://javavolcano-touroperator.com/travel-guide/packing-and-fitness",
+      "url": "https://javavolcano-touroperator.com/policy/inclusions-exclusions",
       "content_type": "general_explainer",
       "status": "existing",
       "used_by": [

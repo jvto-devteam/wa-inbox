@@ -9,6 +9,16 @@ export type TripBrief = {
   // currently read back to influence a later decision -- that's a deliberate, separate
   // follow-up, not wired in yet.
   lastTopic?: string
+  // The customer's stated starting city ("Bali" | "Surabaya", from package-match.ts's
+  // parseTripPreferences) -- persists the same way `destination` does, so "3 day trip from
+  // Surabaya" once stated doesn't need repeating on a later message about the same trip.
+  origin?: string
+  // True once orchestrator.ts has asked a customer where they'd like to start/finish for an
+  // origin-ambiguous destination (see orchestrator.ts's TripPreferences clarify branch).
+  // Asked AT MOST ONCE per conversation: a customer who never answers the finish-point half
+  // still gets a real package recommendation on their next message rather than being asked
+  // again -- this flag is what prevents the repeat ask.
+  askedTripPreferences?: boolean
 }
 
 export type RouteGateResult =
