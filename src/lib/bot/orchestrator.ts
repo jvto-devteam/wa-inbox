@@ -350,13 +350,13 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
       })
     }
 
-    // Deliberately NOT knowledge.primaryLink: customer-link-registry.json marks 16 of its 35
-    // "existing" URLs as live when they are, live-checked 2026-08-04, actually 404 (every
-    // /travel-guide/* and most /destinations/* entries) -- the sync's own status flag cannot
-    // be trusted. pkg.links.details is the one link source with a 100% real hit rate (it's
-    // catalog.ts's own already-verified package-page join, not this registry), so it is the
-    // only link ever surfaced until the registry data itself is fixed upstream.
-    const primaryLink = pkg.links.details ?? null
+    // Prefer knowledge.ts's own topic-specific link (e.g. the Ijen destination guide for a
+    // safety question) over the package's generic detail page -- customer-link-registry.json
+    // was live-checked 2026-08-04 with 18 broken "existing" URLs, now fixed by copying
+    // chatbot-web's already-corrected copy of the same file (see knowledge.ts's header) and
+    // re-verified live. Falls back to the package page only when knowledge.ts has no link for
+    // this specific topic.
+    const primaryLink = knowledge.primaryLink ?? pkg.links.details ?? null
     const system =
       `${SHARED_PERSONA_INSTRUCTIONS}\n\n` +
       `Package the customer is asking about: ${pkg.title}\n\n` +

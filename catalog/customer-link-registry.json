@@ -18,7 +18,7 @@
   "links": [
     {
       "link_key": "booking_safety_anti_fraud",
-      "url": "https://javavolcano-touroperator.com/travel-guide/booking-safety",
+      "url": "https://javavolcano-touroperator.com/travel-guide/booking-information",
       "content_type": "general_explainer",
       "status": "existing",
       "used_by": [
@@ -36,7 +36,7 @@
     },
     {
       "link_key": "cancellation_travel_credit",
-      "url": "https://javavolcano-touroperator.com/travel-guide/cancellation-travel-credit",
+      "url": "https://javavolcano-touroperator.com/policy/booking-payment-cancellation",
       "content_type": "general_explainer",
       "status": "existing",
       "used_by": [
@@ -45,7 +45,7 @@
     },
     {
       "link_key": "finish_in_bali",
-      "url": "https://javavolcano-touroperator.com/travel-guide/finish-in-bali",
+      "url": "https://javavolcano-touroperator.com/tours/from-bali",
       "content_type": "general_explainer",
       "status": "existing",
       "used_by": [
@@ -54,7 +54,7 @@
     },
     {
       "link_key": "how_booking_works",
-      "url": "https://javavolcano-touroperator.com/travel-guide/how-booking-works",
+      "url": "https://javavolcano-touroperator.com/travel-guide/booking-information",
       "content_type": "general_explainer",
       "status": "existing",
       "used_by": [
@@ -63,7 +63,7 @@
     },
     {
       "link_key": "ijen_monthly_closure",
-      "url": "https://javavolcano-touroperator.com/destinations/kawah-ijen",
+      "url": "https://javavolcano-touroperator.com/destinations/ijen-crater",
       "content_type": "destination_page",
       "status": "existing",
       "used_by": [
@@ -72,7 +72,7 @@
     },
     {
       "link_key": "ijen_readiness",
-      "url": "https://javavolcano-touroperator.com/destinations/kawah-ijen",
+      "url": "https://javavolcano-touroperator.com/destinations/ijen-crater",
       "content_type": "destination_page",
       "status": "existing",
       "used_by": [
@@ -84,7 +84,7 @@
     },
     {
       "link_key": "isic_student_pricing",
-      "url": "https://javavolcano-touroperator.com/student-deals/isic",
+      "url": "https://javavolcano-touroperator.com/isic/student-package",
       "content_type": "general_explainer",
       "status": "existing",
       "used_by": [
@@ -93,7 +93,7 @@
     },
     {
       "link_key": "madakaripura_guide",
-      "url": "https://javavolcano-touroperator.com/destinations/madakaripura",
+      "url": "https://javavolcano-touroperator.com/destinations/madakaripura-waterfall",
       "content_type": "destination_page",
       "status": "existing",
       "used_by": [
@@ -102,7 +102,7 @@
     },
     {
       "link_key": "malang_batu_guide",
-      "url": "https://javavolcano-touroperator.com/travel-guide/malang-batu",
+      "url": "https://javavolcano-touroperator.com/travel-guide/faq",
       "content_type": "general_explainer",
       "status": "existing",
       "used_by": [
@@ -111,7 +111,7 @@
     },
     {
       "link_key": "natural_phenomena",
-      "url": "https://javavolcano-touroperator.com/travel-guide/blue-fire-and-sunrise",
+      "url": "https://javavolcano-touroperator.com/travel-guide/weather-and-closures",
       "content_type": "general_explainer",
       "status": "existing",
       "used_by": [
@@ -130,7 +130,7 @@
     },
     {
       "link_key": "payment_and_deposit",
-      "url": "https://javavolcano-touroperator.com/travel-guide/payment-and-deposit",
+      "url": "https://javavolcano-touroperator.com/policy/booking-payment-cancellation",
       "content_type": "general_explainer",
       "status": "existing",
       "used_by": [
@@ -148,7 +148,7 @@
     },
     {
       "link_key": "private_tour",
-      "url": "https://javavolcano-touroperator.com/travel-guide/private-tour",
+      "url": "https://javavolcano-touroperator.com/why-jvto/the-jvto-difference",
       "content_type": "general_explainer",
       "status": "existing",
       "used_by": [
@@ -158,7 +158,7 @@
     },
     {
       "link_key": "rooming_and_accommodation",
-      "url": "https://javavolcano-touroperator.com/travel-guide/rooming-and-accommodation",
+      "url": "https://javavolcano-touroperator.com/travel-guide/packing-and-fitness",
       "content_type": "general_explainer",
       "status": "existing",
       "used_by": [
@@ -167,7 +167,7 @@
     },
     {
       "link_key": "tumpak_sewu_difficulty",
-      "url": "https://javavolcano-touroperator.com/destinations/tumpak-sewu",
+      "url": "https://javavolcano-touroperator.com/destinations/tumpak-sewu-waterfall",
       "content_type": "destination_page",
       "status": "existing",
       "used_by": [
@@ -177,7 +177,7 @@
     },
     {
       "link_key": "vehicle_and_luggage",
-      "url": "https://javavolcano-touroperator.com/travel-guide/vehicle-and-luggage",
+      "url": "https://javavolcano-touroperator.com/travel-guide/packing-and-fitness",
       "content_type": "general_explainer",
       "status": "existing",
       "used_by": [
@@ -186,7 +186,7 @@
     },
     {
       "link_key": "what_is_included",
-      "url": "https://javavolcano-touroperator.com/travel-guide/what-is-included",
+      "url": "https://javavolcano-touroperator.com/policy/inclusions-exclusions",
       "content_type": "general_explainer",
       "status": "existing",
       "used_by": [
@@ -204,7 +204,7 @@
     },
     {
       "link_key": "why_stay_near_bromo",
-      "url": "https://javavolcano-touroperator.com/travel-guide/bromo-sunrise",
+      "url": "https://javavolcano-touroperator.com/destinations/mount-bromo",
       "content_type": "general_explainer",
       "status": "existing",
       "used_by": [
@@ -213,7 +213,7 @@
     },
     {
       "link_key": "why_stay_near_ijen",
-      "url": "https://javavolcano-touroperator.com/travel-guide/why-stay-near-ijen",
+      "url": "https://javavolcano-touroperator.com/destinations/ijen-crater",
       "content_type": "general_explainer",
       "status": "existing",
       "used_by": [

@@ -75,6 +75,7 @@ beforeEach(() => {
   ;(resolveKnowledgeForTopic as any).mockReturnValue({
     factualLines: ['Every package includes private transport and a driver/guide.'],
     detailLines: [],
+    primaryLink: null,
     disclosures: [],
     handoffRequired: false,
   })
@@ -304,7 +305,7 @@ describe('decideAndRespond', () => {
     ;(checkRouteGate as any).mockReturnValue({ status: 'clear' })
     ;(classifyTopic as any).mockReturnValue('route_endpoint')
     ;(resolveKnowledgeForTopic as any).mockReturnValue({
-      factualLines: [], detailLines: [], disclosures: [], handoffRequired: false,
+      factualLines: [], detailLines: [], primaryLink: null, disclosures: [], handoffRequired: false,
     })
 
     const result = await decideAndRespond('conv_1', 'Can we finish in Bali?')
@@ -329,7 +330,7 @@ describe('decideAndRespond', () => {
     ;(checkRouteGate as any).mockReturnValue({ status: 'needs_review', reason: 'Ada catatan kebijakan' })
     ;(classifyTopic as any).mockReturnValue('destination_readiness')
     ;(resolveKnowledgeForTopic as any).mockReturnValue({
-      factualLines: [], detailLines: [], disclosures: [], handoffRequired: false,
+      factualLines: [], detailLines: [], primaryLink: null, disclosures: [], handoffRequired: false,
     })
 
     const result = await decideAndRespond('conv_1', 'is ijen safe?')
@@ -345,7 +346,7 @@ describe('decideAndRespond', () => {
     ;(matchDestination as any).mockReturnValue({ destination: 'ijen', matches: [pkg()] })
     ;(checkRouteGate as any).mockReturnValue({ status: 'clear' })
     ;(resolveKnowledgeForTopic as any).mockReturnValue({
-      factualLines: ['Blue Fire access depends on conditions.'], detailLines: [],
+      factualLines: ['Blue Fire access depends on conditions.'], detailLines: [], primaryLink: null,
       disclosures: [], handoffRequired: true,
     })
 
@@ -408,7 +409,7 @@ describe('decideAndRespond', () => {
     ;(pickPackage as any).mockImplementation((matches: any[]) => matches[0])
     ;(classifyTopic as any).mockReturnValue('price')
     ;(resolveKnowledgeForTopic as any).mockReturnValue({
-      factualLines: ['Starts from Rp850.000/person.'], detailLines: [], disclosures: [], handoffRequired: false,
+      factualLines: ['Starts from Rp850.000/person.'], detailLines: [], primaryLink: null, disclosures: [], handoffRequired: false,
     })
     ;(callLLM as any).mockResolvedValue('Harga mulai dari Rp850.000/orang.')
     mockPrisma.settings.findUniqueOrThrow.mockResolvedValue({ ollamaModel: 'gemma4:31b-cloud' } as never)
@@ -481,7 +482,7 @@ describe('decideAndRespond', () => {
     })
     ;(checkRouteGate as any).mockReturnValue({ status: 'needs_review', reason: 'Ada catatan kebijakan' })
     ;(resolveKnowledgeForTopic as any).mockReturnValue({
-      factualLines: ['Some fact.'], detailLines: [],
+      factualLines: ['Some fact.'], detailLines: [], primaryLink: null,
       disclosures: ['Shared disclosure text'], handoffRequired: false,
     })
 
@@ -507,10 +508,7 @@ describe('decideAndRespond', () => {
     expect(opts.system).not.toContain('Only relevant on needs_review')
   })
 
-  it("always uses the package's own detail page link, regardless of what knowledge.ts resolves", async () => {
-    // customer-link-registry.json marks broken URLs as "existing" (16/35 404 on the real site,
-    // live-checked 2026-08-04) -- pkg.links.details (catalog.ts's own package-page join) is the
-    // only link source with a 100% real hit rate, so it's the only one ever surfaced.
+  it("uses knowledge.ts's own link when it resolves one, ahead of the package's generic detail page", async () => {
     ;(ensureFreshBookingData as any).mockResolvedValue(null)
     ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
     ;(matchDestination as any).mockReturnValue({
@@ -519,10 +517,30 @@ describe('decideAndRespond', () => {
     })
     ;(checkRouteGate as any).mockReturnValue({ status: 'clear' })
     ;(resolveKnowledgeForTopic as any).mockReturnValue({
-      factualLines: ['Payment info.'], detailLines: [], disclosures: [], handoffRequired: false,
+      factualLines: ['Payment info.'], detailLines: [], primaryLink: 'https://example.com/payment-and-deposit',
+      disclosures: [], handoffRequired: false,
     })
 
     await decideAndRespond('conv_1', 'How do I pay?')
+
+    const [, opts] = (callLLM as any).mock.calls[0]
+    expect(opts.system).toContain('https://example.com/payment-and-deposit')
+    expect(opts.system).not.toContain('https://example.com/ijen-package')
+  })
+
+  it("falls back to the package's own detail page link when knowledge.ts resolves none for the topic", async () => {
+    ;(ensureFreshBookingData as any).mockResolvedValue(null)
+    ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
+    ;(matchDestination as any).mockReturnValue({
+      destination: 'ijen',
+      matches: [pkg({ links: { details: 'https://example.com/ijen-package' } })],
+    })
+    ;(checkRouteGate as any).mockReturnValue({ status: 'clear' })
+    ;(resolveKnowledgeForTopic as any).mockReturnValue({
+      factualLines: ['Some fact.'], detailLines: [], primaryLink: null, disclosures: [], handoffRequired: false,
+    })
+
+    await decideAndRespond('conv_1', 'Tell me about this package')
 
     const [, opts] = (callLLM as any).mock.calls[0]
     expect(opts.system).toContain('https://example.com/ijen-package')
@@ -534,7 +552,7 @@ describe('decideAndRespond', () => {
     ;(matchDestination as any).mockReturnValue({ destination: 'ijen', matches: [pkg()] })
     ;(checkRouteGate as any).mockReturnValue({ status: 'clear' })
     ;(resolveKnowledgeForTopic as any).mockReturnValue({
-      factualLines: ['Fact A.', 'Fact B.'], detailLines: [], disclosures: [], handoffRequired: false,
+      factualLines: ['Fact A.', 'Fact B.'], detailLines: [], primaryLink: null, disclosures: [], handoffRequired: false,
     })
 
     await decideAndRespond('conv_1', 'Saya mau ke Ijen')

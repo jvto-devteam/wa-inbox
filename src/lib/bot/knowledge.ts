@@ -7,12 +7,13 @@
  * to chatbot-web's copy, verified 2026-08-04) but never read past the four package-scoped fields
  * catalog.ts's `CatalogPackage` carries.
  *
- * Deliberately does NOT resolve links from `customer-link-registry.json`, unlike agentResolver.js
- * -- live-checked 2026-08-04, 16 of the registry's 35 `status: "existing"` URLs (every
- * /travel-guide/* entry, most /destinations/* ones) actually 404 on the real site. The sync's own
- * status flag cannot be trusted, so orchestrator.ts uses ONLY `CatalogPackage.links.details`
- * (catalog.ts's own package-page join, 100% live in the same check) for any link surfaced to a
- * customer. Revisit once the registry data itself is fixed upstream.
+ * `customer-link-registry.json` itself was live-checked 2026-08-04 and found to have 18 broken
+ * (404) URLs across its "existing"-status entries -- a stale scrape against an old site
+ * structure. Corrected by copying chatbot-web's own already-fixed copy of the same file (its
+ * `src/agent-catalog/customer-link-registry.json`, re-verified live 2026-08-04 against
+ * https://javavolcano-touroperator.com/sitemap.xml -- all 31 non-checkout URLs return 200) over
+ * both this repo's `catalog/` copy and the upstream sync source in the sibling
+ * jvto-whatsapp-agent-runtime repo, so `npm run sync:knowledge` won't reintroduce the breakage.
  *
  * Unlike catalog.ts's package-centric adapter, this file is topic-centric and NOT package-scoped
  * (matching agentResolver.js: module selection is `TOPIC_MODULES[topic]`, independent of which
@@ -24,6 +25,7 @@ import { readCatalogFile } from './catalog'
 import type { ResolverTopic } from './module-resolver'
 
 const GENERAL_MODULES_FILE = 'general-modules.json'
+const LINK_REGISTRY_FILE = 'customer-link-registry.json'
 
 export type KnowledgeModule = {
   module_id: string
@@ -31,7 +33,10 @@ export type KnowledgeModule = {
   detail_summary?: string
   customer_visible?: boolean
   approval_status?: string
+  link_key?: string
 }
+
+type LinkRecord = { link_key: string; url: string | null; status: string }
 
 // Real: TOPIC_GENERAL_MODULES (module_resolver.py, per catalog.ts's header) -- verbatim from
 // chatbot-web's already-working `TOPIC_MODULES` (agentResolver.js:64-79), the same mapping this
@@ -55,10 +60,12 @@ const TOPIC_MODULES: Record<ResolverTopic, string[]> = {
 }
 
 let _modules: Record<string, KnowledgeModule> | null = null
+let _linkIndex: Map<string, LinkRecord[]> | null = null
 
 /** Test-only: clears the lazy cache so a test's own catalog fixtures aren't shadowed by a real one. */
 export function __resetKnowledgeCacheForTests(): void {
   _modules = null
+  _linkIndex = null
 }
 
 function loadModules(): Record<string, KnowledgeModule> {
@@ -67,6 +74,34 @@ function loadModules(): Record<string, KnowledgeModule> {
   const list = Array.isArray(raw) ? (raw as KnowledgeModule[]) : []
   _modules = Object.fromEntries(list.filter((m) => m && typeof m.module_id === 'string').map((m) => [m.module_id, m]))
   return _modules
+}
+
+function loadLinkIndex(): Map<string, LinkRecord[]> {
+  if (_linkIndex) return _linkIndex
+  const raw = readCatalogFile(LINK_REGISTRY_FILE) as { links?: LinkRecord[] } | null
+  const records = Array.isArray(raw?.links) ? raw.links : []
+  const index = new Map<string, LinkRecord[]>()
+  for (const r of records) {
+    if (!r || typeof r.link_key !== 'string') continue
+    const bucket = index.get(r.link_key) ?? []
+    bucket.push(r)
+    index.set(r.link_key, bucket)
+  }
+  _linkIndex = index
+  return index
+}
+
+/**
+ * Resolves one module's `link_key` to a single live URL -- never guesses when a key maps to
+ * more than one URL (ambiguous) or when the registry hasn't confirmed the page exists yet.
+ */
+function resolveLink(linkKey: string | undefined): string | null {
+  if (!linkKey) return null
+  const records = loadLinkIndex().get(linkKey)
+  if (!records || records.length !== 1) return null
+  const record = records[0]
+  if (record.status !== 'existing' || !record.url) return null
+  return record.url
 }
 
 // Real: DISCLOSURES + _disclosures_for (module_resolver.py), verbatim from agentResolver.js's
@@ -116,6 +151,7 @@ function getTopicDisclosures(topic: ResolverTopic, hasIjen: boolean): string[] {
 export type ResolvedKnowledge = {
   factualLines: string[]
   detailLines: string[]
+  primaryLink: string | null
   disclosures: string[]
   /** True only when a guarantee was demanded about attraction access -- escalate, never promise. */
   handoffRequired: boolean
@@ -123,9 +159,10 @@ export type ResolvedKnowledge = {
 
 /**
  * Resolves customer-facing facts for one classified topic (module-resolver.ts's `classifyTopic`,
- * already a faithful full-14-topic port) -- the module-selection + disclosure-assembly step
- * catalog.ts's header names as the thing that was never ported. Not package-scoped: module
- * selection is topic-only, matching agentResolver.js's own FAQ-time behavior.
+ * already a faithful full-14-topic port) -- the module-selection + link-resolution +
+ * disclosure-assembly step catalog.ts's header names as the thing that was never ported. Not
+ * package-scoped: mirrors agentResolver.js's own FAQ-time behavior of resolving links without a
+ * package_key (ambiguous keys resolve to no link rather than guessing).
  */
 export function resolveKnowledgeForTopic(topic: ResolverTopic, message: string): ResolvedKnowledge {
   const modules = loadModules()
@@ -141,6 +178,15 @@ export function resolveKnowledgeForTopic(topic: ResolverTopic, message: string):
   const factualLines = resolvedModules.map((m) => m.short_answer).filter((v): v is string => Boolean(v))
   const detailLines = resolvedModules.map((m) => m.detail_summary).filter((v): v is string => Boolean(v))
 
+  let primaryLink: string | null = null
+  for (const m of resolvedModules) {
+    const url = resolveLink(m.link_key)
+    if (url) {
+      primaryLink = url
+      break
+    }
+  }
+
   const hasIjen = low.includes('ijen')
   const disclosures = getTopicDisclosures(topic, hasIjen)
   if (GUARANTEE_PHRASES.some((p) => low.includes(p))) {
@@ -153,6 +199,7 @@ export function resolveKnowledgeForTopic(topic: ResolverTopic, message: string):
   return {
     factualLines,
     detailLines,
+    primaryLink,
     disclosures,
     handoffRequired: attractionTrigger && guaranteeDemanded,
   }
