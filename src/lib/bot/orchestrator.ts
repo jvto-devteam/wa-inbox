@@ -411,18 +411,24 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
 
     // Every priced package matching this destination (narrowed to the known origin, if
     // any) as real, comparison-ready options -- so "which package do you recommend" gets an
-    // actual list (per-package title/duration/origin/price), not just the single package
-    // pickPackage silently chose above for topic-general facts. Capped at 8 so an
-    // origin-ambiguous destination with a dozen variations doesn't bloat the prompt.
+    // actual short list (per-package title/duration/origin/price), not just the single
+    // package pickPackage silently chose above for topic-general facts. Capped at 5 --
+    // "give 3 or 5 options" was the explicit ask, and it doubles as the LLM's presentation
+    // limit so it isn't tempted to dump every variation of a destination back at the customer.
     const optionPackages = (origin ? matches.filter((p) => p.origin === origin) : matches)
       .filter((p) => p.priceIdr !== null)
-      .slice(0, 8)
+      .slice(0, 5)
     const packageOptionsText =
       optionPackages.length > 0
         ? optionPackages
             .map((p) => `- ${p.title}${p.dayCount ? ` (${p.dayCount}D` : ''}${p.origin ? `, from ${p.origin})` : p.dayCount ? ')' : ''}: Rp${p.priceIdr!.toLocaleString('id-ID')}/person`)
             .join('\n')
         : null
+    // A soft "list them if relevant" instruction wasn't enough -- live-tested 2026-08-04, the
+    // LLM kept silently recommending just one package even with several real options in the
+    // prompt above. For an actual recommendation/comparison question, require presenting a
+    // short list instead of picking on the customer's behalf.
+    const recommendMultiple = isRecommendationTopic && optionPackages.length > 1
 
     const system =
       `${SHARED_PERSONA_INSTRUCTIONS}\n\n` +
@@ -430,7 +436,10 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
       `Known facts relevant to their question (topic: "${resolverTopic}"):\n${knowledge.factualLines.map((f) => `- ${f}`).join('\n')}` +
       (knowledge.detailLines.length > 0 ? `\n\nMore detail if useful:\n${knowledge.detailLines.map((d) => `- ${d}`).join('\n')}` : '') +
       (packageOptionsText
-        ? `\n\nMatching tour packages for this destination (list the relevant ones if the customer is asking for a recommendation or comparison -- never invent others or state a price not shown here):\n${packageOptionsText}`
+        ? `\n\nMatching tour packages for this destination (never invent others or state a price not shown here):\n${packageOptionsText}` +
+          (recommendMultiple
+            ? `\n\nThis is a recommendation/comparison question -- present ALL ${optionPackages.length} of the options above as a short list (each with its duration and price), not just one. Let the customer choose; don't pick on their behalf.`
+            : '')
         : '') +
       (disclosures.length > 0 ? `\n\nImportant -- must be reflected in your reply:\n${disclosures.map((d) => `- ${d}`).join('\n')}` : '') +
       (primaryLink ? `\n\nRelevant link (include this URL at the end of your reply): ${primaryLink}` : '') +

@@ -853,5 +853,65 @@ describe('decideAndRespond', () => {
       expect(opts.system).toContain('Rp1.500.000')
       expect(opts.system).toContain('Rp2.500.000')
     })
+
+    // Reported 2026-08-04: a soft "list them if relevant" instruction wasn't enough -- the
+    // LLM kept silently recommending just one package even with several real options
+    // available. Now requires presenting all of them (up to the 5-item cap) as a list.
+    it('explicitly instructs the LLM to present multiple options (not pick one) for a recommendation-shaped question', async () => {
+      ;(ensureFreshBookingData as any).mockResolvedValue(null)
+      ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
+      ;(matchDestination as any).mockReturnValue({
+        destination: 'ijen',
+        matches: [
+          pkg({ packageKey: 'a', title: 'Ijen 2D1N', origin: 'Surabaya', dayCount: 2, priceIdr: 1500000 }),
+          pkg({ packageKey: 'b', title: 'Ijen Bromo 3D2N', origin: 'Surabaya', dayCount: 3, priceIdr: 2500000 }),
+        ],
+      })
+      ;(checkRouteGate as any).mockReturnValue({ status: 'clear' })
+      ;(classifyTopic as any).mockReturnValue('price')
+
+      await decideAndRespond('conv_1', 'Which package do you recommend for Ijen?')
+
+      const [, opts] = (callLLM as any).mock.calls[0]
+      expect(opts.system).toContain('present ALL 2 of the options above as a short list')
+      expect(opts.system).toContain("don't pick on their behalf")
+    })
+
+    it('does not push the "present multiple" instruction for a non-recommendation topic, even with several options available', async () => {
+      ;(ensureFreshBookingData as any).mockResolvedValue(null)
+      ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
+      ;(matchDestination as any).mockReturnValue({
+        destination: 'ijen',
+        matches: [
+          pkg({ packageKey: 'a', title: 'Ijen 2D1N', origin: 'Surabaya', dayCount: 2, priceIdr: 1500000 }),
+          pkg({ packageKey: 'b', title: 'Ijen Bromo 3D2N', origin: 'Surabaya', dayCount: 3, priceIdr: 2500000 }),
+        ],
+      })
+      ;(checkRouteGate as any).mockReturnValue({ status: 'clear' })
+      ;(classifyTopic as any).mockReturnValue('inclusions')
+
+      await decideAndRespond('conv_1', 'What is included?')
+
+      const [, opts] = (callLLM as any).mock.calls[0]
+      expect(opts.system).not.toContain('present ALL')
+    })
+
+    it('caps the presented package list at 5 options', async () => {
+      ;(ensureFreshBookingData as any).mockResolvedValue(null)
+      ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
+      const sixOptions = Array.from({ length: 6 }, (_, i) =>
+        pkg({ packageKey: `p${i}`, title: `Ijen Package ${i}`, origin: 'Surabaya', dayCount: i + 1, priceIdr: 1000000 + i })
+      )
+      ;(matchDestination as any).mockReturnValue({ destination: 'ijen', matches: sixOptions })
+      ;(checkRouteGate as any).mockReturnValue({ status: 'clear' })
+      ;(classifyTopic as any).mockReturnValue('price')
+
+      await decideAndRespond('conv_1', 'Which package do you recommend for Ijen?')
+
+      const [, opts] = (callLLM as any).mock.calls[0]
+      for (let i = 0; i < 5; i++) expect(opts.system).toContain(`Ijen Package ${i}`)
+      expect(opts.system).not.toContain('Ijen Package 5')
+      expect(opts.system).toContain('present ALL 5 of the options above')
+    })
   })
 })
