@@ -508,6 +508,18 @@ describe('decideAndRespond', () => {
     expect(opts.system).not.toContain('Only relevant on needs_review')
   })
 
+  it('passes the matched destination through to resolveKnowledgeForTopic (so destination_readiness can resolve a destination-specific link)', async () => {
+    ;(ensureFreshBookingData as any).mockResolvedValue(null)
+    ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
+    ;(matchDestination as any).mockReturnValue({ destination: 'ijen', matches: [pkg()] })
+    ;(checkRouteGate as any).mockReturnValue({ status: 'clear' })
+    ;(classifyTopic as any).mockReturnValue('destination_readiness')
+
+    await decideAndRespond('conv_1', 'is ijen safe?')
+
+    expect(resolveKnowledgeForTopic).toHaveBeenCalledWith('destination_readiness', 'is ijen safe?', 'ijen')
+  })
+
   it("uses knowledge.ts's own link when it resolves one, ahead of the package's generic detail page", async () => {
     ;(ensureFreshBookingData as any).mockResolvedValue(null)
     ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })

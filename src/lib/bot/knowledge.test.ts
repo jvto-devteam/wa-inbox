@@ -34,6 +34,15 @@ const modules = [
     short_answer: 'Ijen crater is an active volcano site.',
     customer_visible: true,
     approval_status: 'approved',
+    link_key: 'ijen_readiness',
+  },
+  {
+    module_id: 'destination_bromo',
+    title: 'Bromo',
+    short_answer: 'Bromo is famous for its sunrise viewpoint.',
+    customer_visible: true,
+    approval_status: 'approved',
+    link_key: 'bromo_sunrise',
   },
   {
     module_id: 'unapproved_module',
@@ -55,6 +64,8 @@ const linkRegistry = {
   base_url: 'https://javavolcano-touroperator.com',
   links: [
     { link_key: 'what_is_included', url: 'https://javavolcano-touroperator.com/policy/inclusions-exclusions', status: 'existing' },
+    { link_key: 'ijen_readiness', url: 'https://javavolcano-touroperator.com/destinations/ijen-crater', status: 'existing' },
+    { link_key: 'bromo_sunrise', url: 'https://javavolcano-touroperator.com/destinations/mount-bromo', status: 'existing' },
     // Two different URLs under the same key -> ambiguous, must never be guessed at.
     { link_key: 'ambiguous_key', url: 'https://example.com/a', status: 'existing' },
     { link_key: 'ambiguous_key', url: 'https://example.com/b', status: 'existing' },
@@ -129,6 +140,29 @@ describe('resolveKnowledgeForTopic', () => {
   it('adds the availability disclosure for the price topic', () => {
     const result = resolveKnowledgeForTopic('price', 'how much?')
     expect(result.disclosures).toEqual(['Availability is not yet confirmed for the requested date.'])
+  })
+
+  it('resolves the matching destination module + link for destination_readiness when a destination is passed', () => {
+    const result = resolveKnowledgeForTopic('destination_readiness', 'is ijen safe?', 'ijen')
+    expect(result.factualLines).toContain('Ijen crater is an active volcano site.')
+    expect(result.primaryLink).toBe('https://javavolcano-touroperator.com/destinations/ijen-crater')
+  })
+
+  it('resolves a different destination module for a different destination, same topic', () => {
+    const result = resolveKnowledgeForTopic('destination_readiness', 'is bromo safe?', 'bromo')
+    expect(result.factualLines).toContain('Bromo is famous for its sunrise viewpoint.')
+    expect(result.primaryLink).toBe('https://javavolcano-touroperator.com/destinations/mount-bromo')
+  })
+
+  it('stays empty for destination_readiness when no destination is passed (unknown/ambiguous)', () => {
+    const result = resolveKnowledgeForTopic('destination_readiness', 'is it safe?')
+    expect(result.factualLines).toEqual([])
+    expect(result.primaryLink).toBeNull()
+  })
+
+  it('does not pull in a destination module for topics other than destination_readiness', () => {
+    const result = resolveKnowledgeForTopic('price', 'how much?', 'ijen')
+    expect(result.factualLines).not.toContain('Ijen crater is an active volcano site.')
   })
 
   it('adds the Ijen access-risk disclosures only when the message actually mentions Ijen', () => {

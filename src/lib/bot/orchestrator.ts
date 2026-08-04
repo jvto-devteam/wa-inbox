@@ -304,7 +304,7 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
     // The module-resolution step catalog.ts's own header names as never having been ported
     // (see knowledge.ts's header) -- resolves real facts/links/disclosures for all 14 real
     // topics from general-modules.json, not just the 4 CatalogPackage itself can answer.
-    const knowledge = resolveKnowledgeForTopic(resolverTopic, inboundText)
+    const knowledge = resolveKnowledgeForTopic(resolverTopic, inboundText, destination)
     if (knowledge.handoffRequired) {
       trace.push(
         'Jaminan diminta',

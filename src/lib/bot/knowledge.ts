@@ -163,12 +163,23 @@ export type ResolvedKnowledge = {
  * disclosure-assembly step catalog.ts's header names as the thing that was never ported. Not
  * package-scoped: mirrors agentResolver.js's own FAQ-time behavior of resolving links without a
  * package_key (ambiguous keys resolve to no link rather than guessing).
+ *
+ * `destination` is the one deliberate divergence from chatbot-web's `agentResolver.js`: that repo
+ * runs FAQ-time with no package/destination context at all, so it leaves `destination_readiness`
+ * (a topic covering all 5 destinations) with an empty module list rather than guess which one.
+ * orchestrator.ts, unlike chatbot-web, has ALREADY matched a specific destination by this point
+ * (matchDestination/tripBrief) -- passing it through lets a destination_readiness question (e.g.
+ * "is ijen safe?") resolve the matching single `destination_<token>` module (and its link, e.g.
+ * the Ijen destination guide) instead of falling all the way back to the generic package page.
  */
-export function resolveKnowledgeForTopic(topic: ResolverTopic, message: string): ResolvedKnowledge {
+export function resolveKnowledgeForTopic(topic: ResolverTopic, message: string, destination?: string): ResolvedKnowledge {
   const modules = loadModules()
   const low = (message ?? '').toLowerCase()
 
   const moduleIds = [...new Set(TOPIC_MODULES[topic] ?? [])]
+  if (topic === 'destination_readiness' && destination) {
+    moduleIds.push(`destination_${destination.toLowerCase().replace(/\s+/g, '_')}`)
+  }
   const resolvedModules = moduleIds
     .map((id) => modules[id])
     .filter((m): m is KnowledgeModule => Boolean(m))
