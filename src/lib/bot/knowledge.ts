@@ -3,25 +3,30 @@
  * (see /Users/macbook/Code/chatbot-web/src/agentResolver.js), which is itself the piece of
  * jvto-agent-runtime's `module_resolver.py` that catalog.ts's header explicitly says was NOT
  * ported here: `resolve_modules` (module_resolver.py:106-194), which answers module-resolver.ts's
- * full 14 real topics from `general-modules.json` + `customer-link-registry.json` -- data
- * wa-inbox already syncs (byte-identical to chatbot-web's copy, verified 2026-08-04) but never
- * read past the four package-scoped fields catalog.ts's `CatalogPackage` carries.
+ * full 14 real topics from `general-modules.json` -- data wa-inbox already syncs (byte-identical
+ * to chatbot-web's copy, verified 2026-08-04) but never read past the four package-scoped fields
+ * catalog.ts's `CatalogPackage` carries.
+ *
+ * Deliberately does NOT resolve links from `customer-link-registry.json`, unlike agentResolver.js
+ * -- live-checked 2026-08-04, 16 of the registry's 35 `status: "existing"` URLs (every
+ * /travel-guide/* entry, most /destinations/* ones) actually 404 on the real site. The sync's own
+ * status flag cannot be trusted, so orchestrator.ts uses ONLY `CatalogPackage.links.details`
+ * (catalog.ts's own package-page join, 100% live in the same check) for any link surfaced to a
+ * customer. Revisit once the registry data itself is fixed upstream.
  *
  * Unlike catalog.ts's package-centric adapter, this file is topic-centric and NOT package-scoped
  * (matching agentResolver.js: module selection is `TOPIC_MODULES[topic]`, independent of which
  * specific package the customer is asking about) -- the same tradeoff chatbot-web already ships
- * with successfully. orchestrator.ts feeds the resolved facts/disclosures/link into callLLM as
+ * with successfully. orchestrator.ts feeds the resolved facts/disclosures into callLLM as
  * grounding, instead of composeResponse's retired deterministic string-concatenation.
  */
 import { readCatalogFile } from './catalog'
 import type { ResolverTopic } from './module-resolver'
 
 const GENERAL_MODULES_FILE = 'general-modules.json'
-const LINK_REGISTRY_FILE = 'customer-link-registry.json'
 
 export type KnowledgeModule = {
   module_id: string
-  link_key?: string
   short_answer?: string
   detail_summary?: string
   customer_visible?: boolean
@@ -50,14 +55,10 @@ const TOPIC_MODULES: Record<ResolverTopic, string[]> = {
 }
 
 let _modules: Record<string, KnowledgeModule> | null = null
-let _linkIndex: Record<string, { url: string | null; ambiguous: boolean; all?: LinkRecord[] }> | null = null
 
-type LinkRecord = { link_key: string; url?: string; status?: string; used_by?: string[] }
-
-/** Test-only: clears the lazy caches so a test's own catalog fixtures aren't shadowed by a real one. */
+/** Test-only: clears the lazy cache so a test's own catalog fixtures aren't shadowed by a real one. */
 export function __resetKnowledgeCacheForTests(): void {
   _modules = null
-  _linkIndex = null
 }
 
 function loadModules(): Record<string, KnowledgeModule> {
@@ -66,41 +67,6 @@ function loadModules(): Record<string, KnowledgeModule> {
   const list = Array.isArray(raw) ? (raw as KnowledgeModule[]) : []
   _modules = Object.fromEntries(list.filter((m) => m && typeof m.module_id === 'string').map((m) => [m.module_id, m]))
   return _modules
-}
-
-// Real: link_resolver.py, via agentResolver.js's loadLinkIndex -- a link_key with more than one
-// distinct URL across the registry's records is `ambiguous` and never guessed at without a
-// package_key to disambiguate (this file never has one; module resolution here is topic-scoped,
-// not package-scoped -- see file header), matching agentResolver.js's own FAQ-time behavior.
-function loadLinkIndex(): Record<string, { url: string | null; ambiguous: boolean; all?: LinkRecord[] }> {
-  if (_linkIndex) return _linkIndex
-  const raw = readCatalogFile(LINK_REGISTRY_FILE) as { links?: LinkRecord[] } | LinkRecord[] | null
-  const records = Array.isArray(raw) ? raw : (raw?.links ?? [])
-  const byKey = new Map<string, LinkRecord[]>()
-  for (const rec of records) {
-    if (!rec?.link_key) continue
-    const list = byKey.get(rec.link_key) ?? []
-    list.push(rec)
-    byKey.set(rec.link_key, list)
-  }
-  const index: Record<string, { url: string | null; ambiguous: boolean; all?: LinkRecord[] }> = {}
-  for (const [key, recs] of byKey) {
-    const urls = [...new Set(recs.map((r) => r.url).filter(Boolean))]
-    if (recs.length === 1 || urls.length === 1) {
-      index[key] = { url: recs[0].status === 'existing' ? (recs[0].url ?? null) : null, ambiguous: false }
-    } else {
-      index[key] = { url: null, ambiguous: true, all: recs }
-    }
-  }
-  _linkIndex = index
-  return _linkIndex
-}
-
-function resolveLink(linkKey: string | undefined): string | null {
-  if (!linkKey) return null
-  const entry = loadLinkIndex()[linkKey]
-  if (!entry || entry.ambiguous) return null
-  return entry.url
 }
 
 // Real: DISCLOSURES + _disclosures_for (module_resolver.py), verbatim from agentResolver.js's
@@ -150,7 +116,6 @@ function getTopicDisclosures(topic: ResolverTopic, hasIjen: boolean): string[] {
 export type ResolvedKnowledge = {
   factualLines: string[]
   detailLines: string[]
-  primaryLink: string | null
   disclosures: string[]
   /** True only when a guarantee was demanded about attraction access -- escalate, never promise. */
   handoffRequired: boolean
@@ -158,10 +123,9 @@ export type ResolvedKnowledge = {
 
 /**
  * Resolves customer-facing facts for one classified topic (module-resolver.ts's `classifyTopic`,
- * already a faithful full-14-topic port) -- the module-selection + link-resolution +
- * disclosure-assembly step catalog.ts's header names as the thing that was never ported. Not
- * package-scoped: mirrors agentResolver.js's own FAQ-time behavior of resolving links without a
- * package_key (ambiguous keys resolve to no link rather than guessing).
+ * already a faithful full-14-topic port) -- the module-selection + disclosure-assembly step
+ * catalog.ts's header names as the thing that was never ported. Not package-scoped: module
+ * selection is topic-only, matching agentResolver.js's own FAQ-time behavior.
  */
 export function resolveKnowledgeForTopic(topic: ResolverTopic, message: string): ResolvedKnowledge {
   const modules = loadModules()
@@ -177,15 +141,6 @@ export function resolveKnowledgeForTopic(topic: ResolverTopic, message: string):
   const factualLines = resolvedModules.map((m) => m.short_answer).filter((v): v is string => Boolean(v))
   const detailLines = resolvedModules.map((m) => m.detail_summary).filter((v): v is string => Boolean(v))
 
-  let primaryLink: string | null = null
-  for (const m of resolvedModules) {
-    const url = resolveLink(m.link_key)
-    if (url) {
-      primaryLink = url
-      break
-    }
-  }
-
   const hasIjen = low.includes('ijen')
   const disclosures = getTopicDisclosures(topic, hasIjen)
   if (GUARANTEE_PHRASES.some((p) => low.includes(p))) {
@@ -198,7 +153,6 @@ export function resolveKnowledgeForTopic(topic: ResolverTopic, message: string):
   return {
     factualLines,
     detailLines,
-    primaryLink,
     disclosures,
     handoffRequired: attractionTrigger && guaranteeDemanded,
   }

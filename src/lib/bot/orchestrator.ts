@@ -350,7 +350,13 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
       })
     }
 
-    const primaryLink = knowledge.primaryLink ?? pkg.links.details ?? null
+    // Deliberately NOT knowledge.primaryLink: customer-link-registry.json marks 16 of its 35
+    // "existing" URLs as live when they are, live-checked 2026-08-04, actually 404 (every
+    // /travel-guide/* and most /destinations/* entries) -- the sync's own status flag cannot
+    // be trusted. pkg.links.details is the one link source with a 100% real hit rate (it's
+    // catalog.ts's own already-verified package-page join, not this registry), so it is the
+    // only link ever surfaced until the registry data itself is fixed upstream.
+    const primaryLink = pkg.links.details ?? null
     const system =
       `${SHARED_PERSONA_INSTRUCTIONS}\n\n` +
       `Package the customer is asking about: ${pkg.title}\n\n` +

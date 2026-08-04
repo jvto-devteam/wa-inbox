@@ -12,7 +12,6 @@ const modules = [
     detail_summary: 'Full detail about inclusions.',
     customer_visible: true,
     approval_status: 'approved',
-    link_key: 'what_is_included',
   },
   {
     module_id: 'service_private_tour_standard',
@@ -51,21 +50,9 @@ const modules = [
   },
 ]
 
-const linkRegistry = {
-  base_url: 'https://javavolcano-touroperator.com',
-  links: [
-    { link_key: 'what_is_included', url: 'https://javavolcano-touroperator.com/travel-guide/what-is-included', status: 'existing' },
-    // Two different URLs under the same key -> ambiguous, must never be guessed at.
-    { link_key: 'ambiguous_key', url: 'https://example.com/a', status: 'existing' },
-    { link_key: 'ambiguous_key', url: 'https://example.com/b', status: 'existing' },
-    { link_key: 'not_yet_live', url: null, status: 'prefill_unverified' },
-  ],
-}
-
 function mockCatalogFiles() {
   vi.mocked(readCatalogFile).mockImplementation((fileName: string) => {
     if (fileName === 'general-modules.json') return modules
-    if (fileName === 'customer-link-registry.json') return linkRegistry
     return null
   })
 }
@@ -77,12 +64,11 @@ beforeEach(() => {
 })
 
 describe('resolveKnowledgeForTopic', () => {
-  it('resolves approved, customer-visible modules for a topic into facts + link', () => {
+  it('resolves approved, customer-visible modules for a topic into facts', () => {
     const result = resolveKnowledgeForTopic('inclusions', 'what is included?')
 
     expect(result.factualLines).toEqual(['Every package includes private transport, driver/guide, entrance fees, and water.'])
     expect(result.detailLines).toEqual(['Full detail about inclusions.'])
-    expect(result.primaryLink).toBe('https://javavolcano-touroperator.com/travel-guide/what-is-included')
     expect(result.handoffRequired).toBe(false)
   })
 
@@ -101,29 +87,6 @@ describe('resolveKnowledgeForTopic', () => {
     const result = resolveKnowledgeForTopic('route_endpoint', 'can we finish in bali?')
     expect(result.factualLines).toEqual([])
     expect(result.detailLines).toEqual([])
-    expect(result.primaryLink).toBeNull()
-  })
-
-  it('never guesses a link for an ambiguous link_key', () => {
-    const withAmbiguousLink = [{ ...modules[0], link_key: 'ambiguous_key' }]
-    vi.mocked(readCatalogFile).mockImplementation((fileName: string) => {
-      if (fileName === 'general-modules.json') return withAmbiguousLink
-      if (fileName === 'customer-link-registry.json') return linkRegistry
-      return null
-    })
-    const result = resolveKnowledgeForTopic('inclusions', 'what is included?')
-    expect(result.primaryLink).toBeNull()
-  })
-
-  it('never surfaces a link whose registry status is not "existing"', () => {
-    const withUnverifiedLink = [{ ...modules[0], link_key: 'not_yet_live' }]
-    vi.mocked(readCatalogFile).mockImplementation((fileName: string) => {
-      if (fileName === 'general-modules.json') return withUnverifiedLink
-      if (fileName === 'customer-link-registry.json') return linkRegistry
-      return null
-    })
-    const result = resolveKnowledgeForTopic('inclusions', 'what is included?')
-    expect(result.primaryLink).toBeNull()
   })
 
   it('adds the availability disclosure for the price topic', () => {
@@ -160,10 +123,10 @@ describe('resolveKnowledgeForTopic', () => {
     expect(resolveKnowledgeForTopic('blue_fire', 'blue fire is the main reason we book').handoffRequired).toBe(false)
   })
 
-  it('caches loaded modules/links across calls until reset (module-level lazy cache)', () => {
+  it('caches loaded modules across calls until reset (module-level lazy cache)', () => {
     resolveKnowledgeForTopic('inclusions', 'what is included?')
     resolveKnowledgeForTopic('inclusions', 'what is included?')
-    // Each of loadModules/loadLinkIndex reads its own file once, not once per call.
+    // loadModules reads its file once, not once per call.
     const generalModulesCalls = vi.mocked(readCatalogFile).mock.calls.filter(([f]) => f === 'general-modules.json')
     expect(generalModulesCalls).toHaveLength(1)
   })

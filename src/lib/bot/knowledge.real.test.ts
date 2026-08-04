@@ -26,11 +26,6 @@ describe.skipIf(!RELEASE_PRESENT)('resolveKnowledgeForTopic against the real syn
     }
   )
 
-  it('resolves a real, live URL (not null) for the price topic', () => {
-    const result = resolveKnowledgeForTopic('price', 'how much?')
-    expect(result.primaryLink).toMatch(/^https:\/\/javavolcano-touroperator\.com\//)
-  })
-
   it('returns no facts for a topic the real release genuinely has no modules for (route_endpoint)', () => {
     const result = resolveKnowledgeForTopic('route_endpoint', 'can we finish in bali?')
     expect(result.factualLines).toEqual([])
