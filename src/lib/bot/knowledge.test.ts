@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { readCatalogFile } from './catalog'
-import { resolveKnowledgeForTopic, __resetKnowledgeCacheForTests } from './knowledge'
+import { resolveKnowledgeForTopic, __resetKnowledgeCacheForTests, GENERAL_FAQ_FALLBACK } from './knowledge'
 
 vi.mock('./catalog', () => ({ readCatalogFile: vi.fn() }))
 
@@ -43,6 +43,22 @@ const modules = [
     customer_visible: true,
     approval_status: 'approved',
     link_key: 'bromo_sunrise',
+  },
+  {
+    module_id: 'inclusion_ijen_equipment',
+    title: 'Ijen Equipment',
+    short_answer: 'Gas masks and trekking poles for the Ijen crater hike.',
+    customer_visible: true,
+    approval_status: 'approved',
+    variation_trigger: 'ijen',
+  },
+  {
+    module_id: 'inclusion_bromo_private_jeep',
+    title: 'Bromo Jeep',
+    short_answer: 'Private 4WD jeep for the Bromo Sea of Sand and sunrise viewpoint.',
+    customer_visible: true,
+    approval_status: 'approved',
+    variation_trigger: 'bromo',
   },
   {
     module_id: 'unapproved_module',
@@ -165,6 +181,22 @@ describe('resolveKnowledgeForTopic', () => {
     expect(result.factualLines).not.toContain('Ijen crater is an active volcano site.')
   })
 
+  it('pulls in destination-conditional inclusion variations (gas mask) for the inclusions topic when destination matches', () => {
+    const result = resolveKnowledgeForTopic('inclusions', 'is gas mask included?', 'ijen')
+    expect(result.factualLines).toContain('Gas masks and trekking poles for the Ijen crater hike.')
+  })
+
+  it('pulls in a different destination-conditional inclusion (private jeep) for a different destination', () => {
+    const result = resolveKnowledgeForTopic('inclusions', 'what is included?', 'bromo')
+    expect(result.factualLines).toContain('Private 4WD jeep for the Bromo Sea of Sand and sunrise viewpoint.')
+    expect(result.factualLines).not.toContain('Gas masks and trekking poles for the Ijen crater hike.')
+  })
+
+  it('does not pull in a destination-conditional inclusion when no destination is passed', () => {
+    const result = resolveKnowledgeForTopic('inclusions', 'what is included?')
+    expect(result.factualLines).not.toContain('Gas masks and trekking poles for the Ijen crater hike.')
+  })
+
   it('adds the Ijen access-risk disclosures only when the message actually mentions Ijen', () => {
     const withIjen = resolveKnowledgeForTopic('destination_readiness', 'is ijen safe?')
     expect(withIjen.disclosures.length).toBeGreaterThan(0)
@@ -200,5 +232,19 @@ describe('resolveKnowledgeForTopic', () => {
     // Each of loadModules/loadLinkIndex reads its own file once, not once per call.
     const generalModulesCalls = vi.mocked(readCatalogFile).mock.calls.filter(([f]) => f === 'general-modules.json')
     expect(generalModulesCalls).toHaveLength(1)
+  })
+})
+
+describe('GENERAL_FAQ_FALLBACK', () => {
+  // Reported 2026-08-05: the bot handed off "genuinely unsupported" topics that this exact
+  // content already answers -- deposit percentage, Ijen gas mask/health screening inclusion,
+  // packing list, physical difficulty per destination.
+  it('covers the specific facts reported as missing (deposit percentage, gas mask inclusion)', () => {
+    expect(GENERAL_FAQ_FALLBACK).toContain('Deposit: 20%')
+    expect(GENERAL_FAQ_FALLBACK.toLowerCase()).toContain('gas mask')
+  })
+
+  it('is always non-empty (a static constant, not data that can fail to load)', () => {
+    expect(GENERAL_FAQ_FALLBACK.length).toBeGreaterThan(500)
   })
 })

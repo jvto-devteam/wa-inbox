@@ -85,7 +85,7 @@ import { checkRouteGate } from './route-gate'
 import { classifySalesNeed, HANDOFF_KEYWORDS } from './sales-classifier'
 import { listDestinations, matchDestination, packagesForDestination, parseTripPreferences, pickPackage } from './package-match'
 import { classifyTopic } from './module-resolver'
-import { resolveKnowledgeForTopic, GUARDRAIL_INSTRUCTION } from './knowledge'
+import { resolveKnowledgeForTopic, GUARDRAIL_INSTRUCTION, GENERAL_FAQ_FALLBACK } from './knowledge'
 import { callLLM, type LLMOptions } from './llm'
 import { loadCatalog } from './catalog'
 import { checkDeploymentGate } from './deployment-gate'
@@ -136,7 +136,7 @@ const SHARED_PERSONA_INSTRUCTIONS = `You are a real member of the JVTO (Java Vol
 - Always reply in English, regardless of what language the customer wrote in.
 - Keep your reply SHORT -- 2-3 sentences at most. The customer can always ask a follow-up, and a relevant link (if given below) covers the full detail.
 - Answer ONLY using the facts given below. Never invent details, prices, policies, or URLs that are not present in them.
-- If a relevant link is given below, end your reply with that exact URL so the customer can read more.
+- Structure every reply in this order: (1) the explicit, direct answer FIRST -- a yes/no, a number, a specific fact, right at the start of the message, never buried after a preamble; (2) a brief explanation after it; (3) the relevant link (if given below) at the end. Example: asked "how much is the deposit?", start with "20% of the total" before explaining when the balance is due -- do not open with "It depends" or "Great question!".
 - Be warm and genuinely helpful, not generic or robotic.
 - If the facts below genuinely don't cover what the customer asked, do NOT say "I'm sorry, I don't have that information" or anything that reads as a dead end. Instead say our team will confirm/follow up on that specific detail shortly (e.g. "Let me check that with our team and get back to you shortly!"), and still point them to the link below if one is given.`
 
@@ -263,9 +263,14 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
       'Mengklasifikasi kebutuhan pelanggan',
       `Kategori ${classification.job}${classification.needsLiveData ? ' -- butuh data harga/ketersediaan real-time' : ''}.`
     )
+    // Previously handed off outright -- no live availability/booking system is wired in for
+    // FAQ-time questions, matching chatbot-web (which has no needsLiveData concept at all: it
+    // never hands off on a data gap, only on an explicit human-escalation keyword, see
+    // knowledge.ts's GENERAL_FAQ_FALLBACK header). The bot stays active and still answers
+    // whatever it genuinely can from static facts below; the system prompt gets an extra
+    // instruction (see `system` below) to defer ONLY the live-data-dependent part.
     if (classification.needsLiveData) {
-      trace.push('Butuh data real-time', 'Pertanyaan ini butuh data langsung (harga/ketersediaan) yang belum tersambung -- diserahkan ke agen.')
-      return { mode: 'handoff', reason: 'Butuh data harga/ketersediaan real-time — belum tersambung', steps: trace.steps }
+      trace.push('Butuh data real-time', 'Pertanyaan ini juga menyentuh data langsung (harga/ketersediaan) -- tetap dijawab, bagian real-time diarahkan ke tim untuk konfirmasi.')
     }
     if (classification.job === 'J5') {
       trace.push('Perlu penanganan manusia', 'Klasifikasi J5 (pembatalan/status/komplain/jaminan) -- diserahkan ke agen.')
@@ -400,29 +405,13 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
       }
     }
 
-    // A recommendation-shaped question (price/general/greeting-that's-really-a-question --
-    // see isRecommendationTopic's own comment) with at least one priced match is still
-    // answerable even when knowledge.ts itself has nothing: the package list built below IS
-    // the answer. Without this, "greeting" topic's own empty TOPIC_MODULES would hand off a
-    // perfectly answerable "hello, recommend me a package" on a destination with no policy
-    // notes to fall back on either.
-    const hasPricedMatch = matches.some((p) => p.priceIdr !== null)
-    if (
-      knowledge.factualLines.length === 0 &&
-      knowledge.detailLines.length === 0 &&
-      disclosures.length === 0 &&
-      !(isRecommendationTopic && hasPricedMatch)
-    ) {
-      trace.push(
-        'Topik tidak didukung',
-        `Topik "${resolverTopic}" terdeteksi, tapi tidak ada modul pengetahuan untuk menjawabnya -- diserahkan ke agen.`
-      )
-      return {
-        mode: 'handoff',
-        reason: `Topik "${resolverTopic}" memerlukan data yang belum tersedia di katalog`,
-        steps: trace.steps,
-      }
-    }
+    // Previously handed off outright when knowledge.ts resolved nothing for the topic. No
+    // longer possible to genuinely have "nothing to answer with": GENERAL_FAQ_FALLBACK below
+    // is always present in the system prompt (chatbot-web's own proven pattern, see
+    // knowledge.ts's header), on top of whatever topic-specific facts, package policyNotes, or
+    // recommendation package list already apply. The persona instructions' own "defer to the
+    // team" guidance (SHARED_PERSONA_INSTRUCTIONS) covers the genuine residual case -- the bot
+    // stays active either way, never disables itself over a content gap.
 
     // Recorded for visibility (see TripBrief.lastTopic's header) -- not yet read back anywhere.
     if (resolverTopic !== tripBrief.lastTopic) {
@@ -478,7 +467,11 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
             ? `\n\nThis is a recommendation/comparison question -- present ALL ${optionPackages.length} of the options above as a short list, each with its own duration, price, AND link right after it (not one shared link at the end). Let the customer choose; don't pick on their behalf.`
             : '')
         : '') +
+      `\n\nGeneral JVTO facts (use these for anything the specific facts above don't cover -- e.g. packing list, best time to visit, physical difficulty, what's included/excluded, payment terms):\n${GENERAL_FAQ_FALLBACK}` +
       (disclosures.length > 0 ? `\n\nImportant -- must be reflected in your reply:\n${disclosures.map((d) => `- ${d}`).join('\n')}` : '') +
+      (classification.needsLiveData
+        ? `\n\nThis question also touches live/real-time availability or pricing confirmation, which you cannot verify -- answer everything else from the facts above, but for that specific part say our team will confirm it shortly.`
+        : '') +
       (primaryLink && !recommendMultiple ? `\n\nRelevant link (include this URL at the end of your reply): ${primaryLink}` : '') +
       `\n\n${GUARDRAIL_INSTRUCTION}`
 

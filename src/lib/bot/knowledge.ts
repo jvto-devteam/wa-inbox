@@ -34,7 +34,97 @@ export type KnowledgeModule = {
   customer_visible?: boolean
   approval_status?: string
   link_key?: string
+  // Which single destination token (e.g. "ijen", "bromo") this module's content applies to --
+  // set only on module_resolver.py's "conditional_variation" inclusion modules (gas mask,
+  // health screening, private jeep), never on the destination-scoped modules already handled
+  // by resolveKnowledgeForTopic's own `destination_${...}` lookup. See its use below.
+  variation_trigger?: string
 }
+
+/**
+ * General JVTO facts, always available in the system prompt regardless of topic -- ported
+ * verbatim (content, not wording style) from chatbot-web's own `src/faqData.js` FAQ_BASE
+ * ("=== JVTO FACTS ===" section). chatbot-web's own `buildFaqPrompt` (src/faqPrompt.js) falls
+ * back to this exact block whenever its topic-specific module resolution comes up empty, and
+ * chatbot-web's ONLY handoff trigger anywhere in its codebase is an explicit human-escalation
+ * keyword regex (src/chatbot.js) -- it never hands off on a knowledge gap, because this
+ * fallback means there almost never IS one. Reported 2026-08-04: wa-inbox's Mode 1/2 was
+ * handing off "genuinely unsupported" topics that this exact fallback text already answers
+ * (deposit percentage, Ijen gas mask/health screening, packing list, difficulty per
+ * destination, etc.) -- orchestrator.ts's "nothing to answer with" handoff branch is removed
+ * entirely now that this is always present; the persona's own "defer to the team" guidance
+ * covers whatever residual gap remains.
+ */
+export const GENERAL_FAQ_FALLBACK = `GENERAL:
+- All tours are 100% PRIVATE -- your group only, no strangers ever.
+- Guides: certified, English-speaking local guides.
+- Tours depart from Surabaya or Bali.
+
+BLUE FIRE (Api Biru) at Ijen:
+- A rare natural phenomenon caused by ignited sulfuric gas -- one of Earth's most unique sights.
+- NOT guaranteed -- visibility depends on weather, volcanic activity, and local authority clearance.
+- Best chance: dry season (April-October), typically between 2am-4am before sunrise.
+- Even without blue fire, the sunrise and turquoise crater lake are spectacular.
+
+MEDICAL SCREENING (Ijen hike):
+- Required for ALL participants before the Ijen hike.
+- Conducted by our licensed doctor on-site before departure.
+- Basic fitness check -- anyone with heart, respiratory, or mobility conditions should consult their doctor beforehand.
+- The screening takes about 10-15 minutes.
+
+INCLUSIONS (all packages):
+- Private transport & dedicated driver throughout the tour.
+- Hotel accommodation as per the package duration.
+- All entrance tickets to attractions visited.
+- Certified English-speaking local guide.
+- 4WD Jeep for Bromo (where applicable).
+- Gas mask for Ijen hike (where applicable).
+- Medical health screening for Ijen hike (where applicable).
+
+EXCLUSIONS (not included):
+- International & domestic flights.
+- Personal travel insurance.
+- Personal expenses, tips, souvenirs.
+- Meals unless stated in the specific package itinerary.
+
+PAYMENT:
+- Deposit: 20% of total to confirm booking.
+- Balance due 3 days before Day 1 via Bank Transfer / Wise.
+- Cash on Arrival is available for some packages, subject to approval.
+- Last-minute bookings (under 6 days before Day 1): 100% full payment via Bank Transfer required.
+- Within 14 days of Day 1: JVTO may require full payment instead of the standard deposit.
+
+WHAT TO BRING / PACKING:
+- Warm layers / jacket -- Bromo and Ijen are cold at night (5-15°C).
+- Sturdy closed-toe walking shoes.
+- Headlamp or flashlight (for early morning hikes).
+- Sunscreen and sunglasses for daytime.
+- Small backpack, water bottle, light snacks.
+- Camera or fully charged phone.
+- Passport / ID for entrance tickets.
+
+BEST TIME TO VISIT:
+- Dry season (April-October): best visibility, highest chance of Blue Fire at Ijen.
+- Wet season (November-March): possible rain and fog; Bromo can still be beautiful; Ijen hikes still possible but blue fire less likely.
+
+PHYSICAL DIFFICULTY:
+- Bromo: Moderate -- short 15-20 min walk to crater rim across volcanic sand (or horse ride available).
+- Ijen: Moderate-Challenging -- 3km hike each way, about 1.5-2 hours, steep in sections; requires good physical fitness.
+- Tumpak Sewu: Moderate -- 30-45 min steep descent and ascent; very rewarding.
+- Not recommended for guests with serious heart, lung, or severe mobility conditions.
+
+DESTINATIONS:
+- Mount Bromo: iconic active volcano, sunrise viewpoints, Sea of Sand, 4WD Jeep ride.
+- Ijen Crater: blue fire phenomenon, turquoise sulfuric crater lake, sunrise, sulfur miners.
+- Tumpak Sewu: Java's most spectacular multi-tiered waterfall.
+- Madakaripura: sacred hidden canyon waterfall, tallest in Java.
+- Papuma Beach: pristine hidden beach in Jember, great for sunsets.
+- Malang / Batu City: Rainbow Village, apple farms, Batu Night Spectacular.
+- Taman Safari Prigen: family-friendly safari park near Bromo (open-air safari).
+
+FERRY / TRANSPORT:
+- Java-Bali crossing: done via Ketapang-Gilimanuk ferry, included in overland packages.
+- All transport is private and handled by JVTO -- no public buses or shared vans.`
 
 type LinkRecord = { link_key: string; url: string | null; status: string }
 
@@ -179,6 +269,17 @@ export function resolveKnowledgeForTopic(topic: ResolverTopic, message: string, 
   const moduleIds = [...new Set(TOPIC_MODULES[topic] ?? [])]
   if (topic === 'destination_readiness' && destination) {
     moduleIds.push(`destination_${destination.toLowerCase().replace(/\s+/g, '_')}`)
+  }
+  // Destination-conditional inclusions (Ijen's gas mask + health-screening coordination,
+  // Bromo's private jeep) live as separate "conditional_variation" modules, never listed in
+  // TOPIC_MODULES.inclusions itself since they only apply to some destinations, not all --
+  // reported 2026-08-04: "is a gas mask included?" (topic 'inclusions') never surfaced this
+  // fact even though it exists in general-modules.json, because nothing ever looked it up.
+  if (topic === 'inclusions' && destination) {
+    const dest = destination.toLowerCase()
+    for (const m of Object.values(modules)) {
+      if (m.variation_trigger?.toLowerCase() === dest) moduleIds.push(m.module_id)
+    }
   }
   const resolvedModules = moduleIds
     .map((id) => modules[id])

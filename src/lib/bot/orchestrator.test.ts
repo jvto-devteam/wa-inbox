@@ -38,7 +38,11 @@ vi.mock('./module-resolver', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./module-resolver')>()),
   classifyTopic: vi.fn(),
 }))
-vi.mock('./knowledge', () => ({ resolveKnowledgeForTopic: vi.fn(), GUARDRAIL_INSTRUCTION: 'GUARDRAILS' }))
+vi.mock('./knowledge', () => ({
+  resolveKnowledgeForTopic: vi.fn(),
+  GUARDRAIL_INSTRUCTION: 'GUARDRAILS',
+  GENERAL_FAQ_FALLBACK: 'GENERAL FAQ FALLBACK TEXT',
+}))
 vi.mock('./llm')
 vi.mock('./catalog')
 vi.mock('./deployment-gate')
@@ -301,7 +305,12 @@ describe('decideAndRespond', () => {
     expect(callLLM).not.toHaveBeenCalled()
   })
 
-  it('hands off when knowledge.ts resolves no facts at all for the classified topic (genuinely no data anywhere), without calling the LLM', async () => {
+  // Reported 2026-08-05: wa-inbox was handing off "genuinely unsupported" topics that
+  // GENERAL_FAQ_FALLBACK (always present in the system prompt) already answers, matching
+  // chatbot-web's own behavior -- its ONLY handoff trigger anywhere is an explicit human-
+  // escalation keyword, never a knowledge gap (see knowledge.ts's GENERAL_FAQ_FALLBACK
+  // header). Still answers via the LLM even when knowledge.ts itself resolves nothing.
+  it('still answers via the LLM (using the general FAQ fallback) when knowledge.ts resolves no topic-specific facts at all, instead of handing off', async () => {
     ;(ensureFreshBookingData as any).mockResolvedValue(null)
     ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
     ;(matchDestination as any).mockReturnValue({ destination: 'ijen', matches: [pkg()] })
@@ -313,8 +322,10 @@ describe('decideAndRespond', () => {
 
     const result = await decideAndRespond('conv_1', 'Can we finish in Bali?')
 
-    expect(result).toMatchObject({ mode: 'handoff', reason: expect.stringContaining('route_endpoint') })
-    expect(callLLM).not.toHaveBeenCalled()
+    expect(result.mode).toBe('faq')
+    expect(callLLM).toHaveBeenCalled()
+    const [, opts] = (callLLM as any).mock.calls[0]
+    expect(opts.system).toContain('GENERAL FAQ FALLBACK TEXT')
   })
 
   // Regression: destination_readiness/blue_fire have an empty TOPIC_MODULES list of their own
@@ -687,6 +698,23 @@ describe('decideAndRespond', () => {
     const result = await decideAndRespond('conv_1', 'Halo, saya mau tanya paket ke Ijen untuk 2 orang')
 
     expect(result.mode).toBe('faq')
+  })
+
+  // Reported 2026-08-05: a needsLiveData question (e.g. "is there a slot available on the
+  // 10th?") used to hand off outright -- no live availability system is wired in for FAQ-time
+  // questions, mirroring chatbot-web (which has no needsLiveData concept at all). The bot now
+  // stays active and answers whatever it can, deferring only the live-data-dependent part.
+  it('stays in faq mode for a needsLiveData question instead of handing off, with an instruction to defer only the live-data part', async () => {
+    ;(ensureFreshBookingData as any).mockResolvedValue(null)
+    ;(checkRouteGate as any).mockReturnValue({ status: 'clear' })
+    ;(classifySalesNeed as any).mockReturnValue({ job: 'J4', missingInfo: [], needsLiveData: true })
+    ;(matchDestination as any).mockReturnValue({ destination: 'ijen', matches: [pkg()] })
+
+    const result = await decideAndRespond('conv_1', 'Is there a slot available on the 10th?')
+
+    expect(result.mode).toBe('faq')
+    const [, opts] = (callLLM as any).mock.calls[0]
+    expect(opts.system).toContain('live/real-time availability')
   })
 
   // I7: without this, the most likely production failure is indistinguishable in the
