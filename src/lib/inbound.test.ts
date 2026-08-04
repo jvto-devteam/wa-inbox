@@ -54,6 +54,8 @@ const conversationRow = {
   tripBrief: null,
   lastMessageAt: new Date(),
   lastReadAt: null,
+  isPinned: false,
+  isTest: false,
   createdAt: new Date(),
 }
 

@@ -172,6 +172,33 @@ describe('ConversationList live updates', () => {
     expect(fetch).not.toHaveBeenCalled()
   })
 
+  it('keeps a pinned conversation above a fresher non-pinned one after a live re-sort', async () => {
+    const list = [
+      conversation('test', { lastMessageAt: '2026-07-20T09:00:00.000Z', isPinned: true }),
+      conversation('a', { lastMessageAt: '2026-07-20T10:00:00.000Z', isPinned: false }),
+    ]
+    vi.mocked(fetch).mockImplementation(() => Promise.resolve(jsonResponse(list)))
+
+    render(<ConversationList selectedId={null} onSelect={() => {}} />)
+    await advanceTimers(0)
+
+    // 'a' gets a brand-new message, which would normally jump it to the top -- but the
+    // pinned sandbox conversation must stay first regardless.
+    const es = FakeEventSource.instances[0]
+    act(() => {
+      es.emit({
+        type: 'message.created',
+        conversationId: 'a',
+        message: { id: 'm_new', content: 'Baru masuk', sentBy: 'CUSTOMER', createdAt: '2026-07-20T20:00:00.000Z' },
+      })
+    })
+    await advanceTimers(0)
+
+    const rows = screen.getAllByRole('button').map((el) => el.textContent)
+    expect(rows[0]).toContain('Kontak test')
+    expect(rows[1]).toContain('Kontak a')
+  })
+
   it('re-fetches when the event is for a conversation not currently in the list', async () => {
     vi.mocked(fetch).mockImplementation(() => Promise.resolve(jsonResponse([conversation('a')])))
 

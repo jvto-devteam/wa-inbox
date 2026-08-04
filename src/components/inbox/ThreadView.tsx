@@ -10,6 +10,7 @@ import type { BookingData } from '@/lib/booking/client'
 type Agent = { id: string; name: string }
 type ConversationDetail = {
   botEnabled: boolean
+  isTest?: boolean
   assignedAgentId?: string | null
   lastReadAt?: string | null
   contactName?: string | null
@@ -45,6 +46,7 @@ function dayDividerLabel(iso: string): string {
 export function ThreadView({ conversationId }: { conversationId: string }) {
   const [messages, setMessages] = useState<MessageView[]>([])
   const [botEnabled, setBotEnabled] = useState(false)
+  const [isTest, setIsTest] = useState(false)
   const [contactName, setContactName] = useState<string | null>(null)
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null)
   const [bookingData, setBookingData] = useState<BookingData | null>(null)
@@ -83,6 +85,7 @@ export function ThreadView({ conversationId }: { conversationId: string }) {
     fetchJson<ConversationDetail>(`/api/conversations/${conversationId}`)
       .then((data) => {
         setBotEnabled(data.botEnabled)
+        setIsTest(data.isTest ?? false)
         setAssignedAgentId(data.assignedAgentId ?? null)
         setUnreadCutoff(data.lastReadAt ?? null)
         setContactName(data.contactName ?? null)
@@ -178,6 +181,11 @@ export function ThreadView({ conversationId }: { conversationId: string }) {
         <div className="flex min-w-0 items-center gap-2.5">
           <ContactAvatar name={contactName} avatarUrl={avatarUrl} size="size-8" />
           <span className="truncate font-medium text-navy">{contactName ?? 'Tanpa nama'}</span>
+          {isTest && (
+            <span className="shrink-0 rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700">
+              Room Tes -- tidak terkirim ke WhatsApp
+            </span>
+          )}
         </div>
         <div className="flex shrink-0 items-center gap-2">
           <label htmlFor="assign-agent" className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
@@ -227,6 +235,7 @@ export function ThreadView({ conversationId }: { conversationId: string }) {
         botEnabled={botEnabled}
         contactName={contactName}
         bookingData={bookingData}
+        isTest={isTest}
         replyingTo={replyingTo}
         onCancelReply={() => setReplyingTo(null)}
         onSent={(m) => {

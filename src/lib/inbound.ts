@@ -269,6 +269,59 @@ async function applyTemplateStatusUpdate(update: MetaTemplateStatusUpdate): Prom
 }
 
 /**
+ * Runs the bot orchestrator against one already-ingested inbound message and dispatches
+ * whatever it decides -- shared between the real webhook path (ingestSingleMessage below) and
+ * /api/conversations/[id]/test-message, which simulates an inbound message for the pinned
+ * sandbox conversation (src/lib/test-conversation.ts) so an admin can exercise the bot without
+ * a real WhatsApp number. Caller is responsible for the botEnabled/non-empty-text gate --
+ * this always runs the decision once called.
+ */
+export async function runBotForConversation(
+  conversation: { id: string; contactName: string | null },
+  inboundText: string
+): Promise<void> {
+  const decision = await decideAndRespond(conversation.id, inboundText)
+  if (decision.mode === 'faq' || decision.mode === 'booking_context' || decision.mode === 'clarify') {
+    const text = decision.mode === 'faq' ? decision.draft : decision.reply
+    await sendMessage({ conversationId: conversation.id, text, sentBy: 'BOT', botTrace: decision })
+  } else {
+    // mode 'handoff' never dispatches a real WhatsApp message (fail-safe: silence + human
+    // takeover), so we deliberately do NOT call sendMessage() here -- it always dispatches via
+    // sendMetaText/sendCoexistText and requires reply text we don't have. Instead we write a
+    // log-only Message row directly, mirroring the shape sendMessage() itself writes (see
+    // src/lib/send.ts) so the decision is still auditable on the bot-log page.
+    const created = await prisma.message.create({
+      data: {
+        conversationId: conversation.id,
+        direction: 'OUTBOUND',
+        type: 'text',
+        content: null,
+        // Never actually dispatched, so this has no delivery effect either way -- set to
+        // match the default outbound channel policy (Settings.defaultChannel, currently
+        // UNOFFICIAL) purely for consistency with every other message this row sits next to.
+        channel: 'UNOFFICIAL',
+        sentBy: 'BOT',
+        botTrace: decision as never,
+        deliveryStatus: 'SENT',
+      },
+    })
+    broadcast({ type: 'message.created', conversationId: conversation.id, message: withMediaUrl(created) })
+
+    // A handoff has to actually hand off: without flipping botEnabled the conversation
+    // stays bot-driven, so it never reaches the dashboard's "needs attention" widget
+    // (which queries botEnabled: false, assignedAgentId: null) AND every further message
+    // from that customer re-runs the same decision, writing another audit row and
+    // re-firing handoff.alert -- one notification per message. Unlike the old global kill
+    // switch, the bot On/Off mode (Settings.botAutoReplyAll) never reaches this far: it is
+    // enforced entirely by the conversation.botEnabled gate above (bulk-set by
+    // src/app/api/bot/mode/route.ts), so every handoff reaching this branch is a genuine
+    // per-conversation one and always flips botEnabled off.
+    await prisma.conversation.update({ where: { id: conversation.id }, data: { botEnabled: false } })
+    broadcast({ type: 'handoff.alert', conversationId: conversation.id, contactName: conversation.contactName })
+  }
+}
+
+/**
  * The full per-message pipeline: idempotency, contact upsert, avatar enrichment,
  * conversation upsert, message row + broadcast, bot dispatch.
  */
@@ -351,45 +404,7 @@ async function ingestSingleMessage(message: MetaInboundMessage, contacts: MetaCo
   const botCanAnswer = inboundText.trim().length > 0
 
   if (conversation.botEnabled && botCanAnswer) {
-    const decision = await decideAndRespond(conversation.id, inboundText)
-    if (decision.mode === 'faq' || decision.mode === 'booking_context' || decision.mode === 'clarify') {
-      const text = decision.mode === 'faq' ? decision.draft : decision.reply
-      await sendMessage({ conversationId: conversation.id, text, sentBy: 'BOT', botTrace: decision })
-    } else {
-      // mode 'handoff' never dispatches a real WhatsApp message (fail-safe: silence + human
-      // takeover), so we deliberately do NOT call sendMessage() here -- it always dispatches via
-      // sendMetaText/sendCoexistText and requires reply text we don't have. Instead we write a
-      // log-only Message row directly, mirroring the shape sendMessage() itself writes (see
-      // src/lib/send.ts) so the decision is still auditable on the bot-log page.
-      const created = await prisma.message.create({
-        data: {
-          conversationId: conversation.id,
-          direction: 'OUTBOUND',
-          type: 'text',
-          content: null,
-          // Never actually dispatched, so this has no delivery effect either way -- set to
-          // match the default outbound channel policy (Settings.defaultChannel, currently
-          // UNOFFICIAL) purely for consistency with every other message this row sits next to.
-          channel: 'UNOFFICIAL',
-          sentBy: 'BOT',
-          botTrace: decision as never,
-          deliveryStatus: 'SENT',
-        },
-      })
-      broadcast({ type: 'message.created', conversationId: conversation.id, message: withMediaUrl(created) })
-
-      // A handoff has to actually hand off: without flipping botEnabled the conversation
-      // stays bot-driven, so it never reaches the dashboard's "needs attention" widget
-      // (which queries botEnabled: false, assignedAgentId: null) AND every further message
-      // from that customer re-runs the same decision, writing another audit row and
-      // re-firing handoff.alert -- one notification per message. Unlike the old global kill
-      // switch, the bot On/Off mode (Settings.botAutoReplyAll) never reaches this far: it is
-      // enforced entirely by the conversation.botEnabled gate above (bulk-set by
-      // src/app/api/bot/mode/route.ts), so every handoff reaching this branch is a genuine
-      // per-conversation one and always flips botEnabled off.
-      await prisma.conversation.update({ where: { id: conversation.id }, data: { botEnabled: false } })
-      broadcast({ type: 'handoff.alert', conversationId: conversation.id, contactName: contact.name })
-    }
+    await runBotForConversation({ id: conversation.id, contactName: contact.name }, inboundText)
   }
 
   return true

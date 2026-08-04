@@ -1010,3 +1010,34 @@ describe('ComposeBox official template dispatch', () => {
     expect(payload.couponCode).toBe('PROMO25')
   })
 })
+
+describe('ComposeBox — test room (isTest)', () => {
+  it('hides the channel selector and attach menu, and shows the customer-typing placeholder', () => {
+    render(<ComposeBox conversationId="conv_test" botEnabled={true} isTest={true} onSent={() => {}} onBotToggled={() => {}} />)
+
+    expect(screen.queryByLabelText('Channel')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Tambah lampiran atau template')).not.toBeInTheDocument()
+    expect(screen.getByPlaceholderText('Ketik sebagai customer untuk menguji bot...')).toBeInTheDocument()
+  })
+
+  it('posts to the test-message endpoint instead of /api/send, and reports the message as an inbound customer send', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ id: 'msg_1', channel: 'UNOFFICIAL', deliveryStatus: 'DELIVERED', createdAt: '2026-08-01T00:00:00.000Z' }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const onSent = vi.fn()
+
+    render(<ComposeBox conversationId="conv_test" botEnabled={true} isTest={true} onSent={onSent} onBotToggled={() => {}} />)
+
+    fireEvent.change(screen.getByLabelText('Pesan'), { target: { value: 'Halo bot' } })
+    fireEvent.click(screen.getByText('Kirim'))
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/conversations/conv_test/test-message', expect.anything()))
+    const [, options] = fetchMock.mock.calls.find(([url]) => url === '/api/conversations/conv_test/test-message')!
+    expect(JSON.parse((options as RequestInit).body as string)).toEqual({ text: 'Halo bot' })
+    await waitFor(() =>
+      expect(onSent).toHaveBeenCalledWith(expect.objectContaining({ direction: 'INBOUND', sentBy: 'CUSTOMER', content: 'Halo bot' }))
+    )
+  })
+})

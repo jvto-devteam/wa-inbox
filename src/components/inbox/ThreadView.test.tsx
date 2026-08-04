@@ -192,6 +192,23 @@ describe('ThreadView header identity', () => {
     await screen.findByText('Bruno Figarola')
     expect(screen.getByText('B')).toBeInTheDocument()
   })
+
+  it('shows the "Room Tes" badge and hides ComposeBox\'s channel selector when isTest is true', async () => {
+    vi.mocked(fetch).mockImplementation((url) => {
+      const s = String(url)
+      if (s.endsWith('/messages')) return Promise.resolve({ ok: true, json: () => Promise.resolve([]) } as Response)
+      if (s.endsWith('/api/accounts')) return Promise.resolve({ ok: true, json: () => Promise.resolve([]) } as Response)
+      return Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({ botEnabled: true, isTest: true, contactName: '🧪 Tes Bot (Internal)' }),
+      } as Response)
+    })
+
+    render(<ThreadView conversationId="conv_test" />)
+
+    expect(await screen.findByText(/Room Tes/)).toBeInTheDocument()
+    expect(screen.queryByLabelText('Channel')).not.toBeInTheDocument()
+  })
 })
 
 describe('ThreadView live delivery-status updates', () => {

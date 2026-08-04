@@ -16,6 +16,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   const bookingData = await ensureFreshBookingData(conversation)
   return NextResponse.json({
     botEnabled: conversation.botEnabled,
+    isTest: conversation.isTest,
     contactId: conversation.contact.id,
     contactName: conversation.contact.name,
     avatarUrl: conversation.contact.avatarUrl,

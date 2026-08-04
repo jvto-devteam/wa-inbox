@@ -91,6 +91,7 @@ export function ComposeBox({
   replyingTo,
   contactName = null,
   bookingData = null,
+  isTest = false,
   onCancelReply,
   onSent,
   onBotToggled,
@@ -103,6 +104,12 @@ export function ComposeBox({
   // the manual "Isi dari data..." picker for anything left unbound.
   contactName?: string | null
   bookingData?: BookingData | null
+  // The pinned sandbox conversation (src/lib/test-conversation.ts): every send here is
+  // simulated as if it were the customer's own inbound message, dispatched through
+  // /api/conversations/[id]/test-message instead of /api/send, so nothing ever reaches a
+  // real WhatsApp number. Channel/attachments/templates are all agent-outbound concepts
+  // that don't apply to "typing as the customer", so they're hidden in this mode.
+  isTest?: boolean
   onCancelReply?: () => void
   onSent: (m: MessageView) => void
   onBotToggled: (enabled: boolean) => void
@@ -213,15 +220,13 @@ export function ComposeBox({
     setSendError(null)
     setSending(true)
     try {
-      const res = await fetch('/api/send', {
+      const res = await fetch(isTest ? `/api/conversations/${conversationId}/test-message` : '/api/send', {
         method: 'POST',
-        body: JSON.stringify({
-          conversationId,
-          text: text || undefined,
-          channel,
-          replyToId: replyingTo?.id,
-          media: attachment ?? undefined,
-        }),
+        body: JSON.stringify(
+          isTest
+            ? { text }
+            : { conversationId, text: text || undefined, channel, replyToId: replyingTo?.id, media: attachment ?? undefined }
+        ),
       })
       if (!res.ok) {
         // fetchJson isn't used here: on a 401 it navigates away immediately, which would
@@ -234,24 +239,45 @@ export function ComposeBox({
         return
       }
       const message = await res.json()
-      onSent({
-        id: message.id,
-        direction: 'OUTBOUND',
-        content: text || null,
-        channel,
-        sentBy: 'AGENT',
-        deliveryStatus: message.deliveryStatus,
-        createdAt: new Date().toISOString(),
-        botTrace: null,
-        // The attachment's own upload URL, not anything the API response carries -- it's
-        // already a normal https URL (see /api/uploads), renderable as-is without waiting
-        // for a later re-fetch to resolve it through the Official-channel media proxy.
-        type: attachment?.type,
-        mediaUrl: attachment?.url ?? null,
-        mimeType: attachment?.mimeType ?? null,
-        fileName: attachment?.fileName ?? null,
-        replyTo: replyingTo ? { id: replyingTo.id, content: replyingTo.content, type: replyingTo.type ?? 'text', sentBy: replyingTo.sentBy } : null,
-      })
+      // A test-room send simulates the customer's own inbound message -- the bot's reply (if
+      // any) arrives separately through the same SSE broadcast a real inbound message would
+      // trigger (see ThreadView's message.created handler), not from this response.
+      onSent(
+        isTest
+          ? {
+              id: message.id,
+              direction: 'INBOUND',
+              content: text,
+              channel: message.channel,
+              sentBy: 'CUSTOMER',
+              deliveryStatus: message.deliveryStatus,
+              createdAt: message.createdAt,
+              botTrace: null,
+              type: 'text',
+              mediaUrl: null,
+              mimeType: null,
+              fileName: null,
+              replyTo: null,
+            }
+          : {
+              id: message.id,
+              direction: 'OUTBOUND',
+              content: text || null,
+              channel,
+              sentBy: 'AGENT',
+              deliveryStatus: message.deliveryStatus,
+              createdAt: new Date().toISOString(),
+              botTrace: null,
+              // The attachment's own upload URL, not anything the API response carries -- it's
+              // already a normal https URL (see /api/uploads), renderable as-is without waiting
+              // for a later re-fetch to resolve it through the Official-channel media proxy.
+              type: attachment?.type,
+              mediaUrl: attachment?.url ?? null,
+              mimeType: attachment?.mimeType ?? null,
+              fileName: attachment?.fileName ?? null,
+              replyTo: replyingTo ? { id: replyingTo.id, content: replyingTo.content, type: replyingTo.type ?? 'text', sentBy: replyingTo.sentBy } : null,
+            }
+      )
       setText('')
       setAttachment(null)
       clearPendingFile()
@@ -680,56 +706,60 @@ export function ComposeBox({
       {templateError && <p className="text-xs text-destructive">{templateError}</p>}
       {sendError && <p className="text-xs text-destructive">{sendError}</p>}
       <div className="flex items-end gap-2">
-        <Select
-          value={channel}
-          onChange={(e) => selectChannel(e.target.value as 'OFFICIAL' | 'UNOFFICIAL')}
-          className="w-auto"
-          aria-label="Channel"
-        >
-          <option value="OFFICIAL">Official</option>
-          <option value="UNOFFICIAL">Unofficial</option>
-        </Select>
-        <input ref={fileInputRef} type="file" className="hidden" onChange={handleAttachmentSelected} />
-        <div ref={attachMenuRef} className="relative">
-          {/* A single "+" trigger for everything besides plain text -- Foto & Video, Dokumen,
-              and Template are three peers in the same menu, not a separate standalone
-              "Template" button living outside it. */}
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            aria-label="Tambah lampiran atau template"
-            onClick={() => setAttachMenuOpen((prev) => !prev)}
-            disabled={uploading}
-          >
-            +
-          </Button>
-          {attachMenuOpen && (
-            <Card className="absolute bottom-full left-0 z-10 mb-1 w-44 space-y-0.5 p-1">
-              <button
+        {!isTest && (
+          <>
+            <Select
+              value={channel}
+              onChange={(e) => selectChannel(e.target.value as 'OFFICIAL' | 'UNOFFICIAL')}
+              className="w-auto"
+              aria-label="Channel"
+            >
+              <option value="OFFICIAL">Official</option>
+              <option value="UNOFFICIAL">Unofficial</option>
+            </Select>
+            <input ref={fileInputRef} type="file" className="hidden" onChange={handleAttachmentSelected} />
+            <div ref={attachMenuRef} className="relative">
+              {/* A single "+" trigger for everything besides plain text -- Foto & Video, Dokumen,
+                  and Template are three peers in the same menu, not a separate standalone
+                  "Template" button living outside it. */}
+              <Button
                 type="button"
-                onClick={() => pickAttachment('media')}
-                className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-muted"
+                variant="outline"
+                size="sm"
+                aria-label="Tambah lampiran atau template"
+                onClick={() => setAttachMenuOpen((prev) => !prev)}
+                disabled={uploading}
               >
-                🖼️ Foto &amp; Video
-              </button>
-              <button
-                type="button"
-                onClick={() => pickAttachment('document')}
-                className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-muted"
-              >
-                📄 Dokumen
-              </button>
-              <button
-                type="button"
-                onClick={openTemplatePicker}
-                className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-muted"
-              >
-                📋 Template
-              </button>
-            </Card>
-          )}
-        </div>
+                +
+              </Button>
+              {attachMenuOpen && (
+                <Card className="absolute bottom-full left-0 z-10 mb-1 w-44 space-y-0.5 p-1">
+                  <button
+                    type="button"
+                    onClick={() => pickAttachment('media')}
+                    className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-muted"
+                  >
+                    🖼️ Foto &amp; Video
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => pickAttachment('document')}
+                    className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-muted"
+                  >
+                    📄 Dokumen
+                  </button>
+                  <button
+                    type="button"
+                    onClick={openTemplatePicker}
+                    className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-muted"
+                  >
+                    📋 Template
+                  </button>
+                </Card>
+              )}
+            </div>
+          </>
+        )}
         <Textarea
           value={text}
           onChange={(e) => setText(e.target.value)}
@@ -741,7 +771,7 @@ export function ComposeBox({
               send()
             }
           }}
-          placeholder="Reply on WhatsApp..."
+          placeholder={isTest ? 'Ketik sebagai customer untuk menguji bot...' : 'Reply on WhatsApp...'}
           aria-label="Pesan"
           rows={Math.min(5, Math.max(1, text.split('\n').length))}
           className="resize-none py-1.5"

@@ -11,9 +11,12 @@ function conversationsUrl(query: string) {
   return trimmed ? `/api/conversations?q=${encodeURIComponent(trimmed)}` : '/api/conversations'
 }
 
-// Newest conversation first — the same ordering the API applies
-// (`orderBy: { lastMessageAt: 'desc' }`), re-applied client-side after a live patch.
-function byLastMessageAtDesc(a: ConversationSummary, b: ConversationSummary) {
+// Pinned first, then newest -- the same ordering the API applies
+// (`orderBy: [{ isPinned: 'desc' }, { lastMessageAt: 'desc' }]`), re-applied client-side
+// after a live patch so a pinned row (the isTest sandbox conversation) can't drift below a
+// very recently active one once its own lastMessageAt is no longer the newest.
+function byPinnedThenLastMessageAtDesc(a: ConversationSummary, b: ConversationSummary) {
+  if (a.isPinned !== b.isPinned) return a.isPinned ? -1 : 1
   return b.lastMessageAt.localeCompare(a.lastMessageAt)
 }
 
@@ -124,7 +127,7 @@ export function ConversationList({
                 }
               : c
           )
-          .sort(byLastMessageAtDesc)
+          .sort(byPinnedThenLastMessageAtDesc)
       )
     }
     return () => es.close()

@@ -129,6 +129,23 @@ describe('sendMessage', () => {
 
     expect(sendMetaText).toHaveBeenCalledWith(expect.anything(), '6281234567890', 'Halo', undefined)
   })
+
+  it('skips the real dispatch entirely for the sandbox (isTest) conversation and still records the message as SENT', async () => {
+    mockPrisma.conversation.findUniqueOrThrow.mockResolvedValue({
+      id: 'conv_test', isTest: true, contact: { phone: '__bot_test__' },
+    } as never)
+    mockPrisma.message.create.mockResolvedValue({ id: 'msg_test', deliveryStatus: 'SENT' } as never)
+
+    const result = await sendMessage({ conversationId: 'conv_test', text: 'Anda tertarik jalan-jalan ke mana?', sentBy: 'BOT' })
+
+    expect(result.deliveryStatus).toBe('SENT')
+    expect(sendMetaText).not.toHaveBeenCalled()
+    expect(sendCoexistText).not.toHaveBeenCalled()
+    expect(mockPrisma.waNumber.findFirstOrThrow).not.toHaveBeenCalled()
+    expect(mockPrisma.message.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ externalId: undefined, deliveryStatus: 'SENT', sentBy: 'BOT' }),
+    }))
+  })
 })
 
 describe('sendMessage — media attachments', () => {

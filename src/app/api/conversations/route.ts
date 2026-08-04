@@ -1,8 +1,13 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
+import { ensureTestConversation } from '@/lib/test-conversation'
 
 export async function GET(req: Request) {
   const q = new URL(req.url).searchParams.get('q')?.trim() || null
+
+  // Only on the unfiltered load -- a search's own result set deciding whether the sandbox
+  // room matches is normal filtering behavior, no need to re-upsert on every keystroke.
+  if (!q) await ensureTestConversation()
 
   const conversations = await prisma.conversation.findMany({
     where: q
@@ -14,7 +19,7 @@ export async function GET(req: Request) {
           ],
         }
       : undefined,
-    orderBy: { lastMessageAt: 'desc' },
+    orderBy: [{ isPinned: 'desc' }, { lastMessageAt: 'desc' }],
     include: {
       contact: true,
       messages: { orderBy: { createdAt: 'desc' }, take: 1 },
@@ -51,6 +56,8 @@ export async function GET(req: Request) {
     // there's an actual booking on file. A dedicated column (see schema.prisma), not parsed
     // out of bookingData: it's snapshotted once and permanent, unlike the rest of bookingData.
     orderChannel: c.orderChannel,
+    isPinned: c.isPinned,
+    isTest: c.isTest,
     unreadCount: unreadCounts[i],
     labels: c.labels.map((l) => ({ id: l.label.id, name: l.label.name, color: l.label.color })),
   })))

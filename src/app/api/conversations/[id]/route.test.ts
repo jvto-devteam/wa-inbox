@@ -24,6 +24,7 @@ describe('GET /api/conversations/[id]', () => {
   it('returns the conversation botEnabled flag plus contact and booking/trip-brief info', async () => {
     mockPrisma.conversation.findUniqueOrThrow.mockResolvedValue({
       botEnabled: true,
+      isTest: false,
       bookingData: { destination: 'Bromo', dateRange: '10-12 Aug', pax: 2, amountPaid: 500000, amountDue: 500000, status: 'CONFIRMED' },
       tripBrief: null,
       contact: { id: 'contact_1', name: 'Bruno Figarola', avatarUrl: 'https://example.com/a.jpg', source: 'Instagram' },
@@ -41,6 +42,7 @@ describe('GET /api/conversations/[id]', () => {
     expect(res.status).toBe(200)
     expect(body).toEqual({
       botEnabled: true,
+      isTest: false,
       contactId: 'contact_1',
       contactName: 'Bruno Figarola',
       avatarUrl: 'https://example.com/a.jpg',

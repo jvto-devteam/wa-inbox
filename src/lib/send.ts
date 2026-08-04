@@ -52,14 +52,6 @@ export async function sendMessage(params: {
     where: { id: params.conversationId },
     include: { contact: true },
   })
-  const waNumber = await prisma.waNumber.findFirstOrThrow()
-
-  // Only looked up to grab the parent's own wamid for Meta's `context.message_id` --
-  // wa-coexist's send API has no equivalent field, so Unofficial sends still store
-  // replyToId locally (for the UI's own quote preview) but never pass it upstream.
-  const replyToExternalId = params.replyToId
-    ? (await prisma.message.findUnique({ where: { id: params.replyToId } }))?.externalId ?? undefined
-    : undefined
 
   let externalId: string | undefined
   let deliveryStatus: 'SENT' | 'FAILED' = 'SENT'
@@ -67,50 +59,66 @@ export async function sendMessage(params: {
   // /api/media/{id} proxy inbound media already uses. The Unofficial path has no such id --
   // it stores the agent's own upload URL directly on `mediaUrl` instead (see below).
   let mediaId: string | undefined
-  try {
-    if (channel === 'OFFICIAL') {
-      if (params.media) {
-        const uploaded = await uploadMetaMediaFromUrl(waNumber, params.media.url)
-        mediaId = uploaded.id
-        const result = await sendMetaMedia(
+
+  // The sandbox conversation's entire point (src/lib/test-conversation.ts) is that nothing
+  // ever reaches a real WhatsApp number -- skip the Meta/wa-coexist dispatch (and the
+  // waNumber/replyToExternalId lookups it needs) entirely and record the message as if it
+  // had gone out cleanly.
+  if (!conversation.isTest) {
+    const waNumber = await prisma.waNumber.findFirstOrThrow()
+
+    // Only looked up to grab the parent's own wamid for Meta's `context.message_id` --
+    // wa-coexist's send API has no equivalent field, so Unofficial sends still store
+    // replyToId locally (for the UI's own quote preview) but never pass it upstream.
+    const replyToExternalId = params.replyToId
+      ? (await prisma.message.findUnique({ where: { id: params.replyToId } }))?.externalId ?? undefined
+      : undefined
+
+    try {
+      if (channel === 'OFFICIAL') {
+        if (params.media) {
+          const uploaded = await uploadMetaMediaFromUrl(waNumber, params.media.url)
+          mediaId = uploaded.id
+          const result = await sendMetaMedia(
+            waNumber,
+            conversation.contact.phone,
+            params.media.type,
+            uploaded.id,
+            params.text || undefined,
+            replyToExternalId
+          )
+          externalId = result.externalId
+        } else {
+          const result = await sendMetaText(waNumber, conversation.contact.phone, params.text, replyToExternalId)
+          externalId = result.externalId
+        }
+      } else if (params.media) {
+        // wa-coexist's WatZap-compatible API has no distinct audio endpoint (see
+        // src/lib/coexist/client.ts) -- audio rides the same send_file_url path as video/document,
+        // which is fine since it's plain file delivery either way; only our own Message.type keeps
+        // it labeled 'audio' so the bubble still renders an audio player.
+        const result = await sendCoexistMedia(
           waNumber,
           conversation.contact.phone,
-          params.media.type,
-          uploaded.id,
-          params.text || undefined,
-          replyToExternalId
+          params.media.url,
+          params.media.type === 'audio' ? 'document' : params.media.type,
+          params.text || undefined
         )
         externalId = result.externalId
       } else {
-        const result = await sendMetaText(waNumber, conversation.contact.phone, params.text, replyToExternalId)
+        const result = await sendCoexistText(waNumber, conversation.contact.phone, params.text)
         externalId = result.externalId
       }
-    } else if (params.media) {
-      // wa-coexist's WatZap-compatible API has no distinct audio endpoint (see
-      // src/lib/coexist/client.ts) -- audio rides the same send_file_url path as video/document,
-      // which is fine since it's plain file delivery either way; only our own Message.type keeps
-      // it labeled 'audio' so the bubble still renders an audio player.
-      const result = await sendCoexistMedia(
-        waNumber,
-        conversation.contact.phone,
-        params.media.url,
-        params.media.type === 'audio' ? 'document' : params.media.type,
-        params.text || undefined
-      )
-      externalId = result.externalId
-    } else {
-      const result = await sendCoexistText(waNumber, conversation.contact.phone, params.text)
-      externalId = result.externalId
+    } catch (error) {
+      console.error('sendMessage: send attempt failed', { conversationId: params.conversationId, channel, error })
+      deliveryStatus = 'FAILED'
     }
-  } catch (error) {
-    console.error('sendMessage: send attempt failed', { conversationId: params.conversationId, channel, error })
-    deliveryStatus = 'FAILED'
-  }
 
-  // mediaId only ever ends up set once uploadMetaMediaFromUrl has actually succeeded (see
-  // above), independent of whether the follow-up sendMetaMedia call itself then failed --
-  // either way, Meta already holds a durable copy, so the local one is no longer needed.
-  if (mediaId && params.media) await deleteLocalUpload(params.media.url)
+    // mediaId only ever ends up set once uploadMetaMediaFromUrl has actually succeeded (see
+    // above), independent of whether the follow-up sendMetaMedia call itself then failed --
+    // either way, Meta already holds a durable copy, so the local one is no longer needed.
+    if (mediaId && params.media) await deleteLocalUpload(params.media.url)
+  }
 
   const created = await prisma.message.create({
     data: {

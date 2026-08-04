@@ -15,6 +15,11 @@ const mockPrisma = prisma as unknown as DeepMockProxy<PrismaClient>
 
 beforeEach(() => {
   mockReset(mockPrisma)
+  // Every unfiltered GET calls ensureTestConversation() first (see route.ts), which upserts
+  // the sandbox contact + conversation -- give it a harmless default so tests that don't care
+  // about that behavior don't have to configure it themselves.
+  mockPrisma.contact.upsert.mockResolvedValue({ id: 'contact_test' } as never)
+  mockPrisma.conversation.upsert.mockResolvedValue({ id: 'conv_test' } as never)
 })
 
 describe('GET /api/conversations', () => {
@@ -105,5 +110,35 @@ describe('GET /api/conversations', () => {
     expect(mockPrisma.message.count).toHaveBeenNthCalledWith(2, {
       where: { conversationId: 'conv_2', direction: 'INBOUND', createdAt: { gt: expect.any(Date) } },
     })
+  })
+
+  it('orders pinned conversations first, ahead of lastMessageAt', async () => {
+    mockPrisma.conversation.findMany.mockResolvedValue([] as never)
+    await GET(new Request('http://localhost/api/conversations'))
+    expect(mockPrisma.conversation.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ orderBy: [{ isPinned: 'desc' }, { lastMessageAt: 'desc' }] })
+    )
+  })
+
+  it('surfaces isPinned and isTest on each conversation', async () => {
+    mockPrisma.conversation.findMany.mockResolvedValue([{
+      id: 'conv_test', botEnabled: true, status: 'OPEN', lastMessageAt: new Date(), isPinned: true, isTest: true,
+      contact: { name: '🧪 Tes Bot (Internal)', phone: '__bot_test__' }, messages: [], labels: [],
+    }] as never)
+
+    const res = await GET(new Request('http://localhost/api/conversations'))
+    const body = await res.json()
+
+    expect(body[0]).toEqual(expect.objectContaining({ isPinned: true, isTest: true }))
+  })
+
+  it('ensures the sandbox test conversation exists on an unfiltered load, but not on a search', async () => {
+    mockPrisma.conversation.findMany.mockResolvedValue([] as never)
+
+    await GET(new Request('http://localhost/api/conversations'))
+    expect(mockPrisma.contact.upsert).toHaveBeenCalledTimes(1)
+
+    await GET(new Request('http://localhost/api/conversations?q=ijen'))
+    expect(mockPrisma.contact.upsert).toHaveBeenCalledTimes(1)
   })
 })

@@ -5,7 +5,7 @@ import { ConversationListItem } from './ConversationListItem'
 const summary = {
   id: 'conv_1', contactName: 'Bruno Figarola', contactPhone: '6281234567890', avatarUrl: null,
   lastMessage: 'Halo!', lastMessageSentBy: 'CUSTOMER', lastMessageAt: new Date().toISOString(),
-  botEnabled: true, status: 'OPEN', orderChannel: null, pipelineStage: 'new', unreadCount: 0,
+  botEnabled: true, status: 'OPEN', isPinned: false, orderChannel: null, pipelineStage: 'new', unreadCount: 0,
   labels: [{ id: 'lbl_1', name: 'Confirmed Booking', color: '#3C6B42' }],
 }
 
@@ -38,6 +38,14 @@ describe('ConversationListItem', () => {
   it('shows no unread badge when unreadCount is zero', () => {
     render(<ConversationListItem conversation={summary} onClick={() => {}} />)
     expect(screen.queryByLabelText(/pesan belum dibaca/)).not.toBeInTheDocument()
+  })
+
+  it('shows a pin indicator when isPinned is true, and none when false', () => {
+    const { rerender } = render(<ConversationListItem conversation={{ ...summary, isPinned: true }} onClick={() => {}} />)
+    expect(screen.getByLabelText('Disematkan')).toBeInTheDocument()
+
+    rerender(<ConversationListItem conversation={summary} onClick={() => {}} />)
+    expect(screen.queryByLabelText('Disematkan')).not.toBeInTheDocument()
   })
 
   it('shows the order channel badge when a booking exists', () => {

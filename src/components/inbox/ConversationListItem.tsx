@@ -20,6 +20,9 @@ export type ConversationSummary = {
   lastMessageAt: string
   botEnabled: boolean
   status: string
+  // Sorts this conversation to the top of the list (see GET /api/conversations' orderBy) --
+  // currently only ever true for the one isTest sandbox conversation.
+  isPinned: boolean
   // Which platform a booking (if any) originated from -- Klook, JVTO, TWT, etc. Null until
   // there's an actual booking on file, in which case no badge shows at all (see below).
   orderChannel: string | null
@@ -55,8 +58,13 @@ export function ConversationListItem({
       <ContactAvatar name={conversation.contactName} avatarUrl={conversation.avatarUrl} size="size-9" />
       <div className="flex min-w-0 flex-1 flex-col gap-1">
         <div className="flex items-center justify-between gap-2">
-          <span className={`min-w-0 truncate ${isUnread ? 'font-semibold' : 'font-medium'}`}>
-            {conversation.contactName ?? conversation.contactPhone}
+          <span className={`flex min-w-0 items-center gap-1 truncate ${isUnread ? 'font-semibold' : 'font-medium'}`}>
+            {conversation.isPinned && (
+              <span aria-label="Disematkan" title="Disematkan" className="shrink-0">
+                📌
+              </span>
+            )}
+            <span className="truncate">{conversation.contactName ?? conversation.contactPhone}</span>
           </span>
           {isUnread && (
             <span
