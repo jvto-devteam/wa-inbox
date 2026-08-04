@@ -16,6 +16,7 @@ describe('GET /api/bot/catalog-summary', () => {
         {
           packageKey: 'ijen-bromo-3d2n', title: 'Ijen Bromo 3D2N', destinationTokens: ['ijen', 'bromo'],
           priceIdr: 1500000, inclusions: ['Hotel', 'Transport'], policyNotes: ['No refund'], links: {},
+          origin: 'Surabaya', dayCount: 3,
         },
       ],
     })

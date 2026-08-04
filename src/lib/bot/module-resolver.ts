@@ -2,9 +2,11 @@
  * Topic classification -- TypeScript port of jvto-agent-runtime's `module_resolver.py`
  * (see .../src/jvto_agent_runtime/module_resolver.py), scoped to `classify_topic` (lines
  * 98-103) + its supporting tables (`TOPICS` lines 26-30, `_TOPIC_KEYWORDS` lines 51-65,
- * `_JOB_DEFAULT_TOPIC` lines 68-76). This is a DIRECT, faithful port: the keyword table,
- * match order (first hit wins), and job-fallback are copied verbatim -- nothing here is
- * wa-inbox's own invention.
+ * `_JOB_DEFAULT_TOPIC` lines 68-76). The keyword table and job-fallback are copied verbatim;
+ * match order (first hit wins) is verbatim EXCEPT one deliberate swap -- see TOPIC_KEYWORDS'
+ * own comment -- 'payment' now checked before 'price', a live-tested fix for a real
+ * misclassification the real source shares (its own TOPIC_GENERAL_MODULES['price'] has no
+ * payment/deposit modules either).
  *
  * `resolve_modules` (the rest of the real file, lines 106-194) is NOT ported here -- that
  * piece now lives in knowledge.ts, which resolves real facts for all 14 topics `classifyTopic`
@@ -28,9 +30,18 @@ export type ResolverTopic =
   | 'greeting'
   | 'general'
 
-// Real: _TOPIC_KEYWORDS (module_resolver.py:51-65). Order matters -- first match wins,
-// scanned top to bottom, exactly as the real source does.
+// Real: _TOPIC_KEYWORDS (module_resolver.py:51-65) -- a faithful port EXCEPT for one
+// reordering: the real source checks 'price' (whose keyword list includes the very broad
+// "how much") before 'payment'. Live-tested 2026-08-04: "how much is the deposit and when
+// do I pay?" therefore classified as 'price', whose module set has no payment/deposit
+// content, so the bot honestly (not wrongly) said it didn't have deposit details -- for a
+// question the catalog CAN answer via policy_payment_deposit. 'payment's own keywords
+// ('deposit', 'transfer', 'installment', 'payment') are specific enough that moving this
+// entry ahead of 'price' doesn't cost any genuine price question: none of price's own test
+// fixtures ("how much for 4 people?", "how much to book this tour?", "HOW MUCH DOES IT
+// COST?") contain a payment keyword. Order otherwise matches the real source verbatim.
 const TOPIC_KEYWORDS: Array<[ResolverTopic, string[]]> = [
+  ['payment', ['deposit', 'pay', 'payment', 'transfer', 'installment']],
   ['price', ['how much', 'price', 'cost', 'rate', 'per person', 'per pax', 'budget']],
   ['blue_fire', ['blue fire', 'blue-fire', 'bluefire']],
   ['vehicle', ['vehicle', 'car', 'mpv', 'hiace', 'luggage', 'suitcase', 'transport']],
@@ -40,7 +51,6 @@ const TOPIC_KEYWORDS: Array<[ResolverTopic, string[]]> = [
   ['inclusions', ['include', 'included', 'inclusion', 'what do we get', 'all inclusive', 'all-inclusive']],
   ['route_endpoint', ['finish', 'end in', 'drop', 'dropoff', 'drop-off', 'ketapang', 'ferry', 'bali', 'airport']],
   ['destination_readiness', ['ijen', 'bromo', 'tumpak', 'madakaripura', 'papuma', 'difficult', 'readiness', 'prepare', 'hike', 'trek']],
-  ['payment', ['deposit', 'pay', 'payment', 'transfer', 'installment']],
   ['cancellation', ['cancel', 'refund', 'reschedule', 'travel credit']],
   ['booking', ['book', 'booking', 'reserve', 'how do i book', 'instant']],
   ['greeting', ['hello', 'hi ', 'halo', 'good morning', 'good evening']],

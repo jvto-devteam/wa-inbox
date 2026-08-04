@@ -26,6 +26,20 @@ describe('classifyTopic', () => {
     expect(classifyTopic(null, 'How much to book this tour?')).toBe('price')
   })
 
+  // Regression, reported 2026-08-04: "how much is the deposit and when do I pay?" was
+  // classifying as 'price' (whose keyword list includes the broad "how much"), whose module
+  // set has no payment/deposit content -- so the bot said it didn't have deposit details for
+  // a question policy_payment_deposit could actually answer. 'payment' is now checked first.
+  it('classifies a compound price+payment question as payment, not price', () => {
+    expect(classifyTopic(null, 'How much is the deposit and when do I pay?')).toBe('payment')
+    expect(classifyTopic(null, 'Can I pay by bank transfer or installment?')).toBe('payment')
+  })
+
+  it('still classifies a pure price question as price when no payment keyword is present', () => {
+    expect(classifyTopic(null, 'How much for 4 people?')).toBe('price')
+    expect(classifyTopic(null, 'What is the cost per person?')).toBe('price')
+  })
+
   it('falls back to the job default topic when no keyword matches', () => {
     expect(classifyTopic('J2', 'xyz')).toBe('price')
     expect(classifyTopic('J3', 'xyz')).toBe('route_endpoint')

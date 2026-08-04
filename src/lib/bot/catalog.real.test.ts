@@ -51,6 +51,26 @@ describe.skipIf(!RELEASE_PRESENT)('loadCatalog against the real synced catalog/'
     }
   })
 
+  it('populates origin and dayCount for every package, matching its packageKey duration suffix', () => {
+    for (const pkg of loadCatalog().packages) {
+      expect(pkg.origin).toEqual(expect.any(String))
+      expect(pkg.dayCount).toBeGreaterThan(0)
+    }
+  })
+
+  it('lets pickPackage recommend the specific package a "3 day trip from Surabaya"-style message asks for', async () => {
+    const { matchDestination, pickPackage, parseTripPreferences } = await import('./package-match')
+    const catalog = loadCatalog()
+
+    const message = 'Interested in a 3 day trip to Ijen from Surabaya'
+    const matched = matchDestination(message, catalog)
+    expect(matched).not.toBeNull()
+
+    const picked = pickPackage(matched!.matches, parseTripPreferences(message))
+    expect(picked.origin).toBe('Surabaya')
+    expect(picked.dayCount).toBe(3)
+  })
+
   it('lets package-match and the route gate agree on the same real destination tokens', async () => {
     const { matchDestination } = await import('./package-match')
     const { checkRouteGate } = await import('./route-gate')

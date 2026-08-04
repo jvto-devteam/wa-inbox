@@ -146,6 +146,10 @@ function asStringArray(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string' && v.length > 0) : []
 }
 
+function asPositiveInt(value: unknown): number | null {
+  return typeof value === 'number' && Number.isInteger(value) && value > 0 ? value : null
+}
+
 /**
  * Reads one file from `catalog/`. A missing or malformed file is a *degradation*,
  * never a crash: the bot loses whatever that file contributed (a price, an
@@ -329,6 +333,8 @@ export function loadCatalog(): Catalog {
       inclusions: component ? asStringArray(component.included) : [],
       policyNotes: policyNoteIndex.get(packageKey) ?? [],
       links: buildDetailsLink(baseUrl, asString(profile.public_url)),
+      origin: asString(profile.origin),
+      dayCount: asPositiveInt(profile.day_count),
     })
   }
 

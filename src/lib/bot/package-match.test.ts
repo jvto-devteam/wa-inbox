@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { matchDestination, packagesForDestination, pickPackage, listDestinations } from './package-match'
+import { matchDestination, packagesForDestination, pickPackage, listDestinations, parseTripPreferences } from './package-match'
 import type { Catalog, CatalogPackage } from './types'
 
 function pkg(overrides: Partial<CatalogPackage> = {}): CatalogPackage {
@@ -11,6 +11,8 @@ function pkg(overrides: Partial<CatalogPackage> = {}): CatalogPackage {
     inclusions: [],
     policyNotes: [],
     links: {},
+    origin: null,
+    dayCount: null,
     ...overrides,
   }
 }
@@ -123,5 +125,64 @@ describe('pickPackage', () => {
     const a = pkg({ packageKey: 'a', priceIdr: null })
     const b = pkg({ packageKey: 'b', priceIdr: null })
     expect(pickPackage([a, b]).packageKey).toBe('a')
+  })
+
+  const threeDayFromBali = pkg({ packageKey: 'bali-3d', origin: 'Bali', dayCount: 3 })
+  const fourDayFromBali = pkg({ packageKey: 'bali-4d', origin: 'Bali', dayCount: 4 })
+  const threeDayFromSurabaya = pkg({ packageKey: 'surabaya-3d', origin: 'Surabaya', dayCount: 3 })
+  const twoDayFromSurabaya = pkg({ packageKey: 'surabaya-2d', origin: 'Surabaya', dayCount: 2 })
+  const allOptions = [threeDayFromBali, fourDayFromBali, threeDayFromSurabaya, twoDayFromSurabaya]
+
+  it('picks the package matching both a stated origin and day count', () => {
+    expect(pickPackage(allOptions, { origin: 'Surabaya', dayCount: 3 }).packageKey).toBe('surabaya-3d')
+    expect(pickPackage(allOptions, { origin: 'Bali', dayCount: 4 }).packageKey).toBe('bali-4d')
+  })
+
+  it('falls back to matching origin alone when no package matches both', () => {
+    expect(pickPackage(allOptions, { origin: 'Bali', dayCount: 2 }).packageKey).toBe('bali-3d')
+  })
+
+  it('falls back to matching day count alone when origin alone matches nothing', () => {
+    const noSurabaya = [threeDayFromBali, fourDayFromBali]
+    expect(pickPackage(noSurabaya, { origin: 'Surabaya', dayCount: 4 }).packageKey).toBe('bali-4d')
+  })
+
+  it('falls back to plain price-only selection when preferences match nothing at all', () => {
+    expect(pickPackage(allOptions, { origin: 'Jakarta', dayCount: 9 }).packageKey).toBe('bali-3d')
+  })
+
+  it('ignores preferences entirely when none are given (default parameter)', () => {
+    expect(pickPackage(allOptions).packageKey).toBe('bali-3d')
+  })
+})
+
+describe('parseTripPreferences', () => {
+  it('parses an explicit day count ("3 days")', () => {
+    expect(parseTripPreferences('I want a 3 day trip').dayCount).toBe(3)
+    expect(parseTripPreferences('a 1 day trip please').dayCount).toBe(1)
+    expect(parseTripPreferences('mau trip 4 hari')['dayCount']).toBe(4)
+  })
+
+  it('parses an "NdMn" duration shorthand', () => {
+    expect(parseTripPreferences('the 3d2n package please').dayCount).toBe(3)
+    expect(parseTripPreferences('interested in 5D4N').dayCount).toBe(5)
+  })
+
+  it('parses an inclusive date range as a day count', () => {
+    expect(parseTripPreferences('10-12 June works for us').dayCount).toBe(3)
+    expect(parseTripPreferences('June 10-12').dayCount).toBeNull() // month-first phrasing not (yet) supported
+  })
+
+  it('parses an origin city', () => {
+    expect(parseTripPreferences('starting from Surabaya').origin).toBe('Surabaya')
+    expect(parseTripPreferences('departing from Bali').origin).toBe('Bali')
+  })
+
+  it('returns null for both fields when nothing is stated', () => {
+    expect(parseTripPreferences('is ijen safe?')).toEqual({ origin: null, dayCount: null })
+  })
+
+  it('never invents an unreasonable day count from an unrelated number pair', () => {
+    expect(parseTripPreferences('the price is between 500000-2000000').dayCount).toBeNull()
   })
 })

@@ -75,7 +75,7 @@ import { prisma } from '@/lib/db'
 import { ensureFreshBookingData } from '@/lib/booking/client'
 import { checkRouteGate } from './route-gate'
 import { classifySalesNeed, HANDOFF_KEYWORDS } from './sales-classifier'
-import { listDestinations, matchDestination, packagesForDestination, pickPackage } from './package-match'
+import { listDestinations, matchDestination, packagesForDestination, parseTripPreferences, pickPackage } from './package-match'
 import { classifyTopic } from './module-resolver'
 import { resolveKnowledgeForTopic, GUARDRAIL_INSTRUCTION } from './knowledge'
 import { callLLM, type LLMOptions } from './llm'
@@ -299,7 +299,10 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
     )
 
     const matches = matched?.matches ?? packagesForDestination(destination, catalog)
-    const pkg = pickPackage(matches)
+    // "3 day trip from Surabaya" or "10-12 June (3 days) from Surabaya" -> narrows which of
+    // the destination's several packages (they differ by day count/origin) to recommend,
+    // instead of always naming whichever priced one happens to be first (see package-match.ts).
+    const pkg = pickPackage(matches, parseTripPreferences(inboundText))
 
     // The module-resolution step catalog.ts's own header names as never having been ported
     // (see knowledge.ts's header) -- resolves real facts/links/disclosures for all 14 real

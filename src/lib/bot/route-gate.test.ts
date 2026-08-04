@@ -11,6 +11,8 @@ function pkg(overrides: Partial<CatalogPackage> = {}): CatalogPackage {
     inclusions: [],
     policyNotes: [],
     links: {},
+    origin: null,
+    dayCount: null,
     ...overrides,
   }
 }

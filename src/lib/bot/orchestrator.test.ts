@@ -6,7 +6,7 @@ import { decideAndRespond } from './orchestrator'
 import { ensureFreshBookingData } from '@/lib/booking/client'
 import { checkRouteGate } from './route-gate'
 import { classifySalesNeed } from './sales-classifier'
-import { matchDestination, packagesForDestination, pickPackage, listDestinations } from './package-match'
+import { matchDestination, packagesForDestination, pickPackage, listDestinations, parseTripPreferences } from './package-match'
 import { classifyTopic } from './module-resolver'
 import { resolveKnowledgeForTopic } from './knowledge'
 import { callLLM } from './llm'
@@ -54,6 +54,8 @@ function pkg(overrides: Record<string, unknown> = {}) {
     inclusions: [],
     policyNotes: [],
     links: {},
+    origin: null,
+    dayCount: null,
     ...overrides,
   }
 }
@@ -506,6 +508,19 @@ describe('decideAndRespond', () => {
 
     const [, opts] = (callLLM as any).mock.calls[0]
     expect(opts.system).not.toContain('Only relevant on needs_review')
+  })
+
+  it('parses trip preferences from the message and passes them to pickPackage, so "3 day trip from Surabaya" can select the matching package', async () => {
+    ;(ensureFreshBookingData as any).mockResolvedValue(null)
+    ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
+    ;(matchDestination as any).mockReturnValue({ destination: 'ijen', matches: [pkg()] })
+    ;(checkRouteGate as any).mockReturnValue({ status: 'clear' })
+    ;(parseTripPreferences as any).mockReturnValue({ origin: 'Surabaya', dayCount: 3 })
+
+    await decideAndRespond('conv_1', '3 day ijen trip from Surabaya')
+
+    expect(parseTripPreferences).toHaveBeenCalledWith('3 day ijen trip from Surabaya')
+    expect(pickPackage).toHaveBeenCalledWith([pkg()], { origin: 'Surabaya', dayCount: 3 })
   })
 
   it('passes the matched destination through to resolveKnowledgeForTopic (so destination_readiness can resolve a destination-specific link)', async () => {

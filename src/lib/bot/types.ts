@@ -54,6 +54,11 @@ export type CatalogPackage = {
   inclusions: string[]
   policyNotes: string[]
   links: Record<string, string>
+  // package-profiles.json's own `origin` ("Bali" | "Surabaya") and `day_count` --
+  // present in the synced data but unused until package-match.ts's duration/origin-aware
+  // pickPackage (see that file's header). Title-cased origin, verbatim from the source.
+  origin: string | null
+  dayCount: number | null
 }
 
 export type Catalog = {
