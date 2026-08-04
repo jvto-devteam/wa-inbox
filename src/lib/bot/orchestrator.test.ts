@@ -965,5 +965,47 @@ describe('decideAndRespond', () => {
       const [, opts] = (callLLM as any).mock.calls[0]
       expect(opts.system).toContain('present ALL 2 of the options above')
     })
+
+    // Reported 2026-08-04, second round: fixing 'greeting' wasn't enough -- "hello, could you
+    // give me a recommendation for ijen, my trip is 10-13 june start from surabaya?" still got
+    // one package, because THIS message's "ijen" hits destination_readiness's own keyword list
+    // before 'greeting' is ever reached. isRecommendationTopic now also matches directly on
+    // the customer's own words ("recommendation"), independent of whatever topic wins the
+    // keyword race.
+    it('still recommends multiple options when a DIFFERENT keyword (a destination name) hijacks topic classification to destination_readiness', async () => {
+      ;(ensureFreshBookingData as any).mockResolvedValue(null)
+      ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
+      const otherFromSurabaya = pkg({ packageKey: 'surabaya-4d', origin: 'Surabaya', dayCount: 4, priceIdr: 3000000 })
+      ;(matchDestination as any).mockReturnValue({ destination: 'ijen', matches: [fromBali, fromSurabaya, otherFromSurabaya] })
+      ;(checkRouteGate as any).mockReturnValue({ status: 'clear' })
+      ;(classifyTopic as any).mockReturnValue('destination_readiness')
+      ;(resolveKnowledgeForTopic as any).mockReturnValue({
+        factualLines: ['Ijen access depends on conditions.'], detailLines: [], primaryLink: null, disclosures: [], handoffRequired: false,
+      })
+      ;(parseTripPreferences as any).mockReturnValue({ origin: 'Surabaya', dayCount: 4 })
+
+      const result = await decideAndRespond(
+        'conv_1',
+        'hello, could you give me a recommendation for ijen, my trip is 10-13 june start from surabaya?'
+      )
+
+      expect(result.mode).toBe('faq')
+      const [, opts] = (callLLM as any).mock.calls[0]
+      expect(opts.system).toContain('present ALL 2 of the options above')
+    })
+
+    it('does NOT treat an ordinary safety question (no recommendation wording) as a recommendation request', async () => {
+      ;(ensureFreshBookingData as any).mockResolvedValue(null)
+      ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
+      ;(matchDestination as any).mockReturnValue({ destination: 'ijen', matches: [fromBali, fromSurabaya] })
+      ;(checkRouteGate as any).mockReturnValue({ status: 'clear' })
+      ;(classifyTopic as any).mockReturnValue('destination_readiness')
+
+      const result = await decideAndRespond('conv_1', 'is ijen safe?')
+
+      expect(result.mode).toBe('faq')
+      const [, opts] = (callLLM as any).mock.calls[0]
+      expect(opts.system).not.toContain('present ALL')
+    })
   })
 })

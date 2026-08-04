@@ -110,6 +110,23 @@ function previewText(text: string, max = 140): string {
 // Ollama call.
 const HISTORY_LIMIT = 8
 
+// Detects "please recommend/list a package" intent directly from the customer's own words,
+// independent of module-resolver.ts's classifyTopic. Needed because classifyTopic is a
+// verbatim, first-match-wins keyword port with 13 topics ahead of it in scan order -- live-
+// tested 2026-08-04, a genuine recommendation question kept getting classified as whichever
+// UNRELATED topic's keyword happened to appear first ("hello" -> 'greeting'; a destination
+// name like "ijen" -> 'destination_readiness'), silently losing the multi-option treatment
+// below each time. Matching directly on the customer's own request phrasing sidesteps that
+// topic-classifier fragility entirely rather than trying to out-order it.
+const RECOMMENDATION_INTENT_KEYWORDS = [
+  'recommend', 'suggest', 'which package', 'what package', 'which tour', 'what tour',
+  'options', 'choices', 'what do you have', 'what packages', 'compare',
+]
+function isRecommendationRequest(message: string): boolean {
+  const low = message.toLowerCase()
+  return RECOMMENDATION_INTENT_KEYWORDS.some((k) => low.includes(k))
+}
+
 // Shared by both LLM-grounded modes (Mode 1/2's catalog-knowledge path and Mode 3's
 // booking_context path): the bot must read as a real JVTO team member typing on WhatsApp, not
 // as an AI assistant -- terse, human, and honest about not knowing something rather than
@@ -309,22 +326,15 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
     // A destination like "ijen" is served by packages starting from BOTH Bali and Surabaya
     // (a real ambiguity: live-checked 2026-08-04, 4 Ijen packages start from Bali, 8 from
     // Surabaya) -- recommending one without knowing which the customer means is a guess, so
-    // ask first for a recommendation-shaped question ('price'/'general' -- "which package,"
-    // "how much"). Asked at most once per conversation (askedTripPreferences persists,
-    // mirroring `destination`'s own "ask once, remember" pattern): a customer who never
-    // answers the finish-point half of the question still gets a real recommendation on
-    // their very next message, since this branch never fires a second time.
-    //
-    // 'greeting' included: live-tested 2026-08-04, "hello, could you give me a
-    // recommendation for my trip at 10-13 june start from surabaya?" classifies as
-    // 'greeting' -- module-resolver.ts's classifyTopic is a verbatim first-match-wins port,
-    // and "hello" is a greeting keyword hit before any of this message's real content is
-    // ever checked. A short destination-less "Hello!" never reaches this branch at all (the
-    // "no destination" clarify above returns first), so this only ever affects a message
-    // that opens with a greeting but is substantively a recommendation ask -- exactly the
-    // case that was silently losing its recommendation treatment.
+    // ask first for a recommendation-shaped question. Asked at most once per conversation
+    // (askedTripPreferences persists, mirroring `destination`'s own "ask once, remember"
+    // pattern): a customer who never answers the finish-point half of the question still
+    // gets a real recommendation on their very next message, since this branch never fires
+    // a second time. 'price'/'general' kept alongside isRecommendationRequest (see its own
+    // comment) as a belt-and-suspenders topic-based signal -- either one is enough.
     const distinctOrigins = new Set(matches.map((p) => p.origin).filter((o): o is string => Boolean(o)))
-    const isRecommendationTopic = resolverTopic === 'price' || resolverTopic === 'general' || resolverTopic === 'greeting'
+    const isRecommendationTopic =
+      resolverTopic === 'price' || resolverTopic === 'general' || isRecommendationRequest(inboundText)
     if (!origin && distinctOrigins.size > 1 && isRecommendationTopic && !tripBrief.askedTripPreferences) {
       await prisma.conversation.update({
         where: { id: conversationId },
