@@ -411,17 +411,23 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
 
     // Every priced package matching this destination (narrowed to the known origin, if
     // any) as real, comparison-ready options -- so "which package do you recommend" gets an
-    // actual short list (per-package title/duration/origin/price), not just the single
+    // actual short list (per-package title/duration/origin/price/link), not just the single
     // package pickPackage silently chose above for topic-general facts. Capped at 5 --
     // "give 3 or 5 options" was the explicit ask, and it doubles as the LLM's presentation
     // limit so it isn't tempted to dump every variation of a destination back at the customer.
+    // Each option carries its OWN details-page link (never the shared `primaryLink` below) --
+    // live-tested 2026-08-04, a single link at the end of a 5-option list left the customer
+    // unable to tell which package it belonged to.
     const optionPackages = (origin ? matches.filter((p) => p.origin === origin) : matches)
       .filter((p) => p.priceIdr !== null)
       .slice(0, 5)
     const packageOptionsText =
       optionPackages.length > 0
         ? optionPackages
-            .map((p) => `- ${p.title}${p.dayCount ? ` (${p.dayCount}D` : ''}${p.origin ? `, from ${p.origin})` : p.dayCount ? ')' : ''}: Rp${p.priceIdr!.toLocaleString('id-ID')}/person`)
+            .map((p) => {
+              const details = `${p.title}${p.dayCount ? ` (${p.dayCount}D` : ''}${p.origin ? `, from ${p.origin})` : p.dayCount ? ')' : ''}: Rp${p.priceIdr!.toLocaleString('id-ID')}/person`
+              return p.links.details ? `- ${details} - ${p.links.details}` : `- ${details}`
+            })
             .join('\n')
         : null
     // A soft "list them if relevant" instruction wasn't enough -- live-tested 2026-08-04, the
@@ -436,13 +442,13 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
       `Known facts relevant to their question (topic: "${resolverTopic}"):\n${knowledge.factualLines.map((f) => `- ${f}`).join('\n')}` +
       (knowledge.detailLines.length > 0 ? `\n\nMore detail if useful:\n${knowledge.detailLines.map((d) => `- ${d}`).join('\n')}` : '') +
       (packageOptionsText
-        ? `\n\nMatching tour packages for this destination (never invent others or state a price not shown here):\n${packageOptionsText}` +
+        ? `\n\nMatching tour packages for this destination (never invent others or state a price/link not shown here):\n${packageOptionsText}` +
           (recommendMultiple
-            ? `\n\nThis is a recommendation/comparison question -- present ALL ${optionPackages.length} of the options above as a short list (each with its duration and price), not just one. Let the customer choose; don't pick on their behalf.`
+            ? `\n\nThis is a recommendation/comparison question -- present ALL ${optionPackages.length} of the options above as a short list, each with its own duration, price, AND link right after it (not one shared link at the end). Let the customer choose; don't pick on their behalf.`
             : '')
         : '') +
       (disclosures.length > 0 ? `\n\nImportant -- must be reflected in your reply:\n${disclosures.map((d) => `- ${d}`).join('\n')}` : '') +
-      (primaryLink ? `\n\nRelevant link (include this URL at the end of your reply): ${primaryLink}` : '') +
+      (primaryLink && !recommendMultiple ? `\n\nRelevant link (include this URL at the end of your reply): ${primaryLink}` : '') +
       `\n\n${GUARDRAIL_INSTRUCTION}`
 
     const history = await fetchRecentHistory(conversationId, inboundText)

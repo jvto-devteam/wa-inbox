@@ -552,8 +552,12 @@ describe('decideAndRespond', () => {
     await decideAndRespond('conv_1', 'How do I pay?')
 
     const [, opts] = (callLLM as any).mock.calls[0]
-    expect(opts.system).toContain('https://example.com/payment-and-deposit')
-    expect(opts.system).not.toContain('https://example.com/ijen-package')
+    // The trailing "Relevant link" directive (what the reply's OWN link should be) must be
+    // knowledge.ts's payment link, not the package's own detail page -- the package's own link
+    // legitimately appears elsewhere too, in the per-option list (see the dedicated
+    // package-options tests), which is a separate, additive section, not a competing choice.
+    expect(opts.system).toContain('Relevant link (include this URL at the end of your reply): https://example.com/payment-and-deposit')
+    expect(opts.system).not.toContain('Relevant link (include this URL at the end of your reply): https://example.com/ijen-package')
   })
 
   it("falls back to the package's own detail page link when knowledge.ts resolves none for the topic", async () => {
@@ -912,6 +916,29 @@ describe('decideAndRespond', () => {
       for (let i = 0; i < 5; i++) expect(opts.system).toContain(`Ijen Package ${i}`)
       expect(opts.system).not.toContain('Ijen Package 5')
       expect(opts.system).toContain('present ALL 5 of the options above')
+    })
+
+    it("gives each listed package option its own link, not one shared link for the whole list", async () => {
+      ;(ensureFreshBookingData as any).mockResolvedValue(null)
+      ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
+      ;(matchDestination as any).mockReturnValue({
+        destination: 'ijen',
+        matches: [
+          pkg({ packageKey: 'a', title: 'Ijen 2D1N', origin: 'Surabaya', dayCount: 2, priceIdr: 1500000, links: { details: 'https://example.com/ijen-2d1n' } }),
+          pkg({ packageKey: 'b', title: 'Ijen Bromo 3D2N', origin: 'Surabaya', dayCount: 3, priceIdr: 2500000, links: { details: 'https://example.com/ijen-bromo-3d2n' } }),
+        ],
+      })
+      ;(checkRouteGate as any).mockReturnValue({ status: 'clear' })
+      ;(classifyTopic as any).mockReturnValue('price')
+
+      await decideAndRespond('conv_1', 'Which package do you recommend for Ijen?')
+
+      const [, opts] = (callLLM as any).mock.calls[0]
+      expect(opts.system).toContain('Ijen 2D1N (2D, from Surabaya): Rp1.500.000/person - https://example.com/ijen-2d1n')
+      expect(opts.system).toContain('Ijen Bromo 3D2N (3D, from Surabaya): Rp2.500.000/person - https://example.com/ijen-bromo-3d2n')
+      expect(opts.system).toContain('link right after it')
+      // No competing single "the reply's link" directive when each option already carries one.
+      expect(opts.system).not.toContain('Relevant link (include this URL at the end of your reply)')
     })
   })
 })
