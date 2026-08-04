@@ -151,40 +151,55 @@ import type { TripBrief, SalesClassification } from './types'
 
 type Job = SalesClassification['job']
 
-// handoff_rules.mandatory_intents (complaint_or_refund, human_handoff_request) + query_policy
-// job_overrides' cancel/refund words (routing YAML lines 27-32) + booking/payment-status
-// intents (get_booking_status, get_payment_status -> J5 directly per default_job_by_intent).
+// Narrowed 2026-08-05 to match chatbot-web's own live ESCALATION regex (src/chatbot.js) --
+// the user's explicit reference for what "no more handoff" should look like. That regex
+// escalates on exactly two things: an explicit request for a human ("talk/speak/connect to a
+// human/agent/staff/person/real/someone", "human agent/support/help", "live agent/person/
+// support", "I want a human/real/person") and genuine complaint/frustration sentiment
+// ("complaint", "not helpful", "useless", "terrible", "awful", "frustrated", "angry").
+// Deliberately does NOT include "refund", "cancel", "reschedule", "status booking/pembayaran",
+// or "sudah bayar/transfer" -- chatbot-web's own regex doesn't either, because these are
+// ordinary, answerable FAQ topics (policy_cancellation_package_credit's real 48-hour-cutoff/
+// Lifetime-Package-Credit policy, policy_booking_paths' booking-channel policy, or -- for a
+// customer who actually has a booking -- Mode 3's own real booking-status answer, which this
+// list gates before it ever runs), not knowledge gaps that need a human. A bare "refund" or
+// "cancel" question forced job=J5 (automatic handoff) before this change even when it was a
+// simple policy question, never reaching the real cancellation-policy content that already
+// existed in general-modules.json.
 //
 // EXPORTED because orchestrator.ts's pre-booking-lookup escalation check reuses this exact
 // list as its own gate. That check runs before Mode 3 (booking_context), which bypasses this
-// classifier entirely, so it is the ONLY keyword protection a customer WITH a booking gets --
-// it previously had its own, much narrower Indonesian-only copy of this list, which let
-// English complaints/cancellations through to an automated LLM reply. One list, one source of
-// truth: adding a keyword here now closes the gap in both paths at once.
+// classifier entirely, so it is the ONLY keyword protection a customer WITH a booking gets.
+// One list, one source of truth.
 export const HANDOFF_KEYWORDS = [
-  'refund',
   'komplain',
   'keluhan',
   'complaint',
-  'cancel',
-  'batal',
-  'reschedule',
-  'ganti jadwal',
-  'ubah jadwal',
-  'amend',
-  'change my booking',
-  'human',
+  'complain',
+  'not helpful',
+  'useless',
+  'terrible',
+  'awful',
+  'frustrated',
+  'marah',
+  'kecewa',
   'agent manusia',
-  'customer service',
-  ' cs ',
-  'operator',
   'bicara dengan orang',
+  'ngomong sama orang',
   'talk to a human',
-  'status pesanan',
-  'status booking',
-  'status pembayaran',
-  'sudah bayar',
-  'sudah transfer',
+  'speak to a human',
+  'speak to an agent',
+  'speak to a person',
+  'connect me to a human',
+  'connect me to an agent',
+  'human agent',
+  'human support',
+  'human help',
+  'live agent',
+  'live person',
+  'live support',
+  'want a human',
+  'want a real person',
 ]
 
 // check_availability / query_operational_notice's own keywords (routing YAML default job
@@ -222,12 +237,14 @@ const HARD_DEPENDENCY_TRIGGER_KEYWORDS = [
   'why we are coming',
 ]
 
-// guardrails-and-state.yaml's attraction_hard_dependency.guarantee_phrases (lines 16-20).
-// Unlike the trigger phrases above, a guarantee demand IS a mandatory-handoff signal in the
-// real system (`derive_response_plan` lines 230-233 set handoff_escalation and force
-// mode="handoff"; also listed in `handoff_rules.mandatory_signals`, line 73, as
-// `attraction_guarantee_demanded`). Ported as forcing job='J5' (this port's only handoff
-// signal -- see JUDGMENT CALL above) in addition to needsLiveData=true.
+// guardrails-and-state.yaml's attraction_hard_dependency.guarantee_phrases (lines 16-20). The
+// real system forces mode="handoff" on a guarantee demand (`derive_response_plan` lines
+// 230-233); this port deliberately DIVERGES from that as of 2026-08-05 (see orchestrator.ts's
+// header for the "no more handoff on a content gap" rationale) -- a guarantee demand no longer
+// forces job='J5', only needsLiveData=true. The LLM's own GUARDRAIL_INSTRUCTION ("NEVER
+// guarantee Blue Fire visibility... always say cannot be guaranteed") is what keeps the reply
+// honest now, matching chatbot-web's approach: it has no guarantee-triggered handoff at all,
+// relying entirely on its own equivalent guardrail wording.
 const GUARANTEE_KEYWORDS = ['guarantee', 'guaranteed', '100%', 'certain', 'definitely be open']
 
 // plan_itinerary's default job + query_package_details' connection-word override (routing
@@ -308,7 +325,7 @@ export function classifySalesNeed(input: { message: string; tripBrief: TripBrief
   const text = message.toLowerCase()
 
   let job: Job
-  if (includesAny(text, HANDOFF_KEYWORDS) || includesAny(text, GUARANTEE_KEYWORDS)) {
+  if (includesAny(text, HANDOFF_KEYWORDS)) {
     job = 'J5'
   } else if (includesAny(text, AVAILABILITY_KEYWORDS)) {
     job = 'J4'

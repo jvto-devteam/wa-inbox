@@ -1,17 +1,22 @@
 // Bot orchestrator -- the central integration point tying together every
-// bot-brain building block into the 3-mode decision flow documented in
-// docs/design/wa-inbox-concept.html's "Kapan bot balas sendiri, kapan
-// handoff" table:
+// bot-brain building block into the FAQ-answering decision flow.
 //
-//   0. Escalation check (keyword-based) short-circuits everything else,
-//      including the booking lookup -- a complaint/refund message must
-//      never wait on a network call before handing off to a human. It reuses
-//      sales-classifier.ts's own exported `HANDOFF_KEYWORDS` rather than
-//      keeping a second, narrower list here: this check is the ONLY keyword
-//      protection a customer WITH a booking gets (Mode 3 below bypasses the
-//      classifier entirely), and the two lists had already drifted -- the
-//      local one was Indonesian-only, so an English "I want to cancel my
-//      booking" from a booked customer reached the LLM instead of a human.
+// NO MORE HANDOFF ON A CONTENT GAP (2026-08-05, user directive, re-affirmed twice: "the main
+// goal is there is no more handoff to an agent"). Checked chatbot-web's own live production
+// code (src/chatbot.js) as the explicit reference for what that means in practice: its ONLY
+// escalation trigger anywhere is a narrow regex for an EXPLICIT human request ("talk/speak to
+// a human/agent") or genuine complaint/frustration sentiment ("complaint", "frustrated",
+// "angry", ...) -- never a topic keyword like "refund"/"cancel"/"reschedule" (those are
+// ordinary, answerable FAQ questions there), never a knowledge gap (chatbot-web always has
+// GENERAL_FAQ_FALLBACK -- see knowledge.ts -- to fall back on), never a technical failure.
+// This file now mirrors that scope exactly:
+//
+//   0. Escalation check (keyword-based, sales-classifier.ts's `HANDOFF_KEYWORDS`, narrowed
+//      2026-08-05 to match chatbot-web's own regex) is the ONE remaining real handoff --
+//      an explicit "talk to a human" request or genuine complaint/frustration sentiment is not
+//      a knowledge gap the bot could ever close by itself, so it still routes to a person.
+//      Runs before the booking lookup so a customer WITH a booking gets this same protection
+//      (Mode 3 below bypasses the classifier entirely, so this is its only keyword gate too).
 //   1. Booking lookup (Mode 3, "booking_context"): if the customer has an
 //      existing booking, the reply is grounded ONLY in that booking's data
 //      via callLLM (local-only Ollama -- there is no hosted-API fallback to
@@ -19,18 +24,16 @@
 //      customer with a real booking is not a general-enquiry case.
 //   2. No booking -> deployment gate: Mode 1/2 answers are built from
 //      agent-runtime's catalog/release, so they stay off unless that release
-//      has been approved for customer traffic. This does NOT gate Mode 3
-//      above, which is grounded in the independent, already-live,
-//      already-trusted Booking API -- gating it on catalog readiness would
-//      be a category error.
-//   3. Sales-need classification: a message needing live data (availability,
-//      guarantees) can't be safely answered from a cached catalog, so it
-//      hands off too -- and so does `job === 'J5'`, the classifier's own
-//      dedicated "route to a human" signal. Since step 0 already shares this
-//      classifier's `HANDOFF_KEYWORDS`, the keyword half of J5 has already
-//      fired by the time execution gets here; what J5 still adds at this
-//      point is its NON-keyword escalation surface, notably a guarantee
-//      demand (`GUARANTEE_KEYWORDS`).
+//      has been approved for customer traffic. Deliberately still a real
+//      `mode: 'handoff'` -- unlike every other branch below, this isn't about
+//      whether the bot HAS an answer, it's an operator-controlled approval
+//      switch for whether it may show this release's data to customers at
+//      all yet. Does NOT gate Mode 3 above, which is grounded in the
+//      independent, already-live, already-trusted Booking API.
+//   3. Sales-need classification: `needsLiveData` (availability/guarantee
+//      phrasing) and `job === 'J5'` no longer hand off (see their own inline
+//      comments) -- both now stay active, deferring only the specific
+//      live-data-dependent detail via an extra system-prompt instruction.
 //   4. Destination match (package-match.ts): a stateless, one-shot scan of
 //      the message for a known destination token -- NOT a chatbot-web-style
 //      multi-turn funnel (that state machine, formerly funnel.ts, was a port
@@ -39,13 +42,15 @@
 //      destination matched THIS message overrides one already on file (the
 //      customer just told us where they want to go); otherwise the
 //      previously persisted one carries the conversation. No destination at
-//      all (neither matched now nor on file) asks a one-line clarifying
-//      question listing the catalog's destinations (`mode: 'clarify'`) rather
-//      than handing off -- the bot stays active for the customer's next
-//      reply, unlike every other branch in this function.
+//      all (neither matched now nor on file, or the catalog is empty) asks a
+//      one-line clarifying question or a generic apology (`mode: 'clarify'`)
+//      rather than handing off -- the bot stays active for the customer's
+//      next reply either way.
 //   5. Route-integrity gate: decides whether a package claim may be made
-//      about the matched destination at all. `handoff` -> hand off.
-//      `needs_review` does NOT hand off -- mirroring the real
+//      about the matched destination at all. `handoff` status (no synced
+//      price at all) no longer hands off either -- a generic apology instead
+//      (`mode: 'clarify'`), never a fabricated price. `needs_review` never
+//      handed off in the first place -- mirroring the real
 //      `presentation_resolver` (see route-gate.ts's header), the package's
 //      policyNotes disclosure is merged into step 7's LLM grounding (deduped
 //      against knowledge.ts's own disclosures) instead of being appended to
@@ -71,13 +76,20 @@
 //      (Ollama, local) as grounding -- the same LLM-composition pattern Mode 3
 //      already used, so a reply reads as one coherent, human-written answer
 //      instead of deterministically-concatenated template fragments. A topic
-//      with no resolvable modules (genuinely no data anywhere) hands off
-//      rather than fabricate an answer.
+//      with no resolvable modules no longer hands off -- knowledge.ts's
+//      GENERAL_FAQ_FALLBACK (always present, see its own header) and/or the
+//      package recommendation list mean there's almost always something to
+//      answer with; the persona's own "defer to the team" guidance covers the
+//      genuine residual case. A demanded guarantee on an attraction
+//      (`knowledge.handoffRequired`) no longer hands off either -- folded into
+//      a stronger reminder alongside GUARDRAIL_INSTRUCTION's existing
+//      "never guarantee Blue Fire/weather" rule instead.
 //
-// Every step that can throw (a down booking API, a malformed catalog file,
-// an LLM timeout) is wrapped in a single outer try/catch that defaults to
-// handoff -- the fail-safe of last resort for this, the highest-stakes
-// integration point in the whole bot brain.
+// Every step that can throw (a down booking API, a malformed catalog file, an LLM timeout,
+// an empty/blank LLM reply) is wrapped in a single outer try/catch and every such failure
+// point now returns TECHNICAL_HICCUP_REPLY (`mode: 'clarify'`) instead of a handoff -- even a
+// technical failure must not disable the bot; the customer's very next message should still
+// reach it rather than wait on a human to notice and manually re-enable botEnabled.
 import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { ensureFreshBookingData } from '@/lib/booking/client'
@@ -109,6 +121,14 @@ function previewText(text: string, max = 140): string {
 // see fetchRecentHistory below) -- enough for a short back-and-forth without bloating every
 // Ollama call.
 const HISTORY_LIMIT = 8
+
+// The one reply used everywhere a technical failure (LLM timeout/empty reply, a down catalog,
+// an unexpected exception) previously forced a real handoff. Per this file's header ("no more
+// handoff on a content gap"), even a technical hiccup must not disable the bot -- `mode:
+// 'clarify'` keeps botEnabled true, so the very next message from the customer still reaches
+// the bot instead of waiting on a human to notice and re-enable it. Deliberately a static
+// string, not an LLM call: the LLM (or the data it depends on) is what may have just failed.
+const TECHNICAL_HICCUP_REPLY = `Sorry, I'm having a small technical hiccup on my end right now! Could you try asking that again in a moment? 🙏`
 
 // Detects "please recommend/list a package" intent directly from the customer's own words,
 // independent of module-resolver.ts's classifyTopic. Needed because classifyTopic is a
@@ -225,13 +245,12 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
 
       trace.push('Meminta jawaban dari model lokal', `Menggunakan model ${settings.ollamaModel} (Ollama, lokal) dengan data booking + ${history?.length ?? 0} pesan riwayat sebagai konteks.`)
       const reply = await callLLM(inboundText, { system, model: settings.ollamaModel, history })
-      // Second layer of defence behind llm.ts's own validation: an empty reply must
-      // become a handoff, never a dispatched blank message (which the customer would
-      // never see, and which would raise no handoff alert because the decision
-      // itself looked successful).
+      // Second layer of defence behind llm.ts's own validation: an empty reply must never
+      // become a dispatched blank message. Previously handed off outright; now a graceful,
+      // bot-stays-active fallback instead (see TECHNICAL_HICCUP_REPLY's header).
       if (!reply || !reply.trim()) {
-        trace.push('Jawaban kosong atau tidak valid', 'Model tidak memberikan jawaban yang bisa dikirim -- diserahkan ke agen sebagai langkah gagal-aman.')
-        return { mode: 'handoff', reason: 'Jawaban bot kosong atau tidak valid — diteruskan ke manusia', steps: trace.steps }
+        trace.push('Jawaban kosong atau tidak valid', 'Model tidak memberikan jawaban yang bisa dikirim -- tetap dijawab dengan pesan cadangan, bot tetap aktif.')
+        return { mode: 'clarify', reply: TECHNICAL_HICCUP_REPLY, steps: trace.steps }
       }
       trace.push('Jawaban siap dikirim', previewText(reply))
       return { mode: 'booking_context', reply, steps: trace.steps }
@@ -272,9 +291,12 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
     if (classification.needsLiveData) {
       trace.push('Butuh data real-time', 'Pertanyaan ini juga menyentuh data langsung (harga/ketersediaan) -- tetap dijawab, bagian real-time diarahkan ke tim untuk konfirmasi.')
     }
+    // As of 2026-08-05, job=J5 is set only via HANDOFF_KEYWORDS (see sales-classifier.ts) --
+    // the same list the pre-booking escalation gate above already checks -- so this is
+    // defense-in-depth, not a distinct escalation surface anymore.
     if (classification.job === 'J5') {
-      trace.push('Perlu penanganan manusia', 'Klasifikasi J5 (pembatalan/status/komplain/jaminan) -- diserahkan ke agen.')
-      return { mode: 'handoff', reason: 'Permintaan memerlukan penanganan manusia (pembatalan/status/komplain)', steps: trace.steps }
+      trace.push('Perlu penanganan manusia', 'Klasifikasi J5 (eskalasi manusia/komplain) -- diserahkan ke agen.')
+      return { mode: 'handoff', reason: 'Permintaan memerlukan penanganan manusia (eskalasi manusia/komplain)', steps: trace.steps }
     }
 
     trace.push('Mencari destinasi', 'Mencari destinasi yang cocok dengan pesan pelanggan, atau memakai destinasi yang sudah tercatat sebelumnya.')
@@ -293,12 +315,13 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
     if (!destination) {
       const options = listDestinations(catalog)
       // An empty catalog (sync never ran, or wiped) has no destinations to list -- asking
-      // "mau ke mana?" against an empty "kami menyediakan tur ke: " reads as broken, and there
-      // is nothing this branch could usefully say instead, so fail safe to handoff exactly
-      // like every other "the catalog can't answer this" case in this function.
+      // "mau ke mana?" against an empty "kami menyediakan tur ke: " reads as broken. Previously
+      // handed off outright; the bot now stays active with a generic apology instead (see
+      // TECHNICAL_HICCUP_REPLY's header) rather than disabling itself over what is, in
+      // practice, an operator-side sync problem, not this customer's problem to escalate.
       if (options.length === 0) {
-        trace.push('Destinasi tidak diketahui, katalog kosong', 'Tidak ada destinasi terdaftar di katalog untuk ditawarkan -- diserahkan ke agen.')
-        return { mode: 'handoff', reason: 'Katalog destinasi kosong — tidak dapat menanyakan destinasi', steps: trace.steps }
+        trace.push('Destinasi tidak diketahui, katalog kosong', 'Tidak ada destinasi terdaftar di katalog untuk ditawarkan -- tetap dijawab dengan pesan cadangan, bot tetap aktif.')
+        return { mode: 'clarify', reply: TECHNICAL_HICCUP_REPLY, steps: trace.steps }
       }
       trace.push(
         'Destinasi tidak diketahui',
@@ -359,8 +382,12 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
     trace.push('Memeriksa validitas paket', `Memeriksa apakah paket untuk "${destination}" boleh ditampilkan ke pelanggan.`)
     const routeResult = checkRouteGate({ destination, catalog })
     if (routeResult.status === 'handoff') {
-      trace.push('Paket ditolak', `${routeResult.reason} -- diserahkan ke agen.`)
-      return { mode: 'handoff', reason: routeResult.reason, steps: trace.steps }
+      // route-gate.ts's 'handoff' status means no synced price exists for this destination at
+      // all -- a genuine data gap (never fabricate a price), but per this file's header ("no
+      // more handoff on a content gap") that no longer disables the bot either; it stays
+      // active with a generic apology instead.
+      trace.push('Paket ditolak', `${routeResult.reason} -- tetap dijawab dengan pesan cadangan, bot tetap aktif.`)
+      return { mode: 'clarify', reply: TECHNICAL_HICCUP_REPLY, steps: trace.steps }
     }
     trace.push(
       'Paket valid',
@@ -380,12 +407,14 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
     // (see knowledge.ts's header) -- resolves real facts/links/disclosures for all 14 real
     // topics from general-modules.json, not just the 4 CatalogPackage itself can answer.
     const knowledge = resolveKnowledgeForTopic(resolverTopic, inboundText, destination)
+    // Previously handed off outright when the customer demanded a guarantee on an attraction
+    // they framed as their main reason for booking (e.g. "Blue Fire is why we're coming, can
+    // you guarantee it, 100%?"). Per this file's header, the bot now answers this itself,
+    // honestly -- GUARDRAIL_INSTRUCTION already forbids ever guaranteeing Blue Fire/weather/
+    // access, so `knowledge.handoffRequired` is folded into an extra, stronger reminder in the
+    // system prompt below instead of escalating.
     if (knowledge.handoffRequired) {
-      trace.push(
-        'Jaminan diminta',
-        'Pelanggan meminta jaminan (guarantee) atas akses atraksi/cuaca yang tidak bisa dipastikan sistem -- diserahkan ke agen.'
-      )
-      return { mode: 'handoff', reason: 'Pelanggan meminta jaminan yang tidak bisa dipastikan sistem', steps: trace.steps }
+      trace.push('Jaminan diminta', 'Pelanggan meminta jaminan (guarantee) atas akses atraksi/cuaca -- tetap dijawab dengan penekanan bahwa hal ini tidak bisa dipastikan.')
     }
     // `needs_review` deliberately does not hand off (header step 5): the package's own
     // policyNotes travel into the SAME LLM grounding as knowledge.ts's own disclosures
@@ -472,6 +501,9 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
       (classification.needsLiveData
         ? `\n\nThis question also touches live/real-time availability or pricing confirmation, which you cannot verify -- answer everything else from the facts above, but for that specific part say our team will confirm it shortly.`
         : '') +
+      (knowledge.handoffRequired
+        ? `\n\nThe customer is treating this attraction as their main reason for booking and is demanding a guarantee -- be warm but firm: it genuinely cannot be guaranteed (weather/authority conditions), do not soften that into a near-promise.`
+        : '') +
       (primaryLink && !recommendMultiple ? `\n\nRelevant link (include this URL at the end of your reply): ${primaryLink}` : '') +
       `\n\n${GUARDRAIL_INSTRUCTION}`
 
@@ -482,8 +514,8 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
     )
     const reply = await callLLM(inboundText, { system, model: settings.ollamaModel, history })
     if (!reply || !reply.trim()) {
-      trace.push('Jawaban kosong atau tidak valid', 'Model tidak memberikan jawaban yang bisa dikirim -- diserahkan ke agen sebagai langkah gagal-aman.')
-      return { mode: 'handoff', reason: 'Jawaban bot kosong atau tidak valid — diteruskan ke manusia', steps: trace.steps }
+      trace.push('Jawaban kosong atau tidak valid', 'Model tidak memberikan jawaban yang bisa dikirim -- tetap dijawab dengan pesan cadangan, bot tetap aktif.')
+      return { mode: 'clarify', reply: TECHNICAL_HICCUP_REPLY, steps: trace.steps }
     }
     trace.push('Jawaban siap dikirim', previewText(reply))
     return { mode: 'faq', draft: reply, sourceTopic: resolverTopic, steps: trace.steps }
@@ -494,7 +526,11 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
     // Deliberately does NOT log `inboundText` or `bookingData` -- customer message
     // content and booking details do not belong in application logs.
     console.error('decideAndRespond failed', { conversationId, error })
-    trace.push('Terjadi kegagalan', 'Kesalahan tak terduga saat memproses -- diserahkan ke agen sebagai langkah gagal-aman.')
-    return { mode: 'handoff', reason: 'Terjadi kegagalan saat memproses — default gagal-aman', steps: trace.steps }
+    // Previously handed off outright (mode: 'handoff', disabling the bot). Per this file's
+    // header, even an unexpected exception (a down Prisma connection, a malformed catalog
+    // file) now gets a graceful, bot-stays-active fallback -- TECHNICAL_HICCUP_REPLY is a
+    // static string, safe to return even when the failure's root cause is unknown.
+    trace.push('Terjadi kegagalan', 'Kesalahan tak terduga saat memproses -- tetap dijawab dengan pesan cadangan, bot tetap aktif.')
+    return { mode: 'clarify', reply: TECHNICAL_HICCUP_REPLY, steps: trace.steps }
   }
 }

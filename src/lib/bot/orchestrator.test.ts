@@ -266,24 +266,26 @@ describe('decideAndRespond', () => {
     expect(opts.system).toContain('Customer\'s booking data (JSON) -- this is your ONLY source of fact')
   })
 
-  it('hands off instead of returning an empty reply when the LLM yields blank content (Mode 3 second-layer defence)', async () => {
+  it('stays active with a graceful fallback (not a handoff) when the LLM yields blank content (Mode 3 second-layer defence)', async () => {
     ;(ensureFreshBookingData as any).mockResolvedValue({ bookingId: 'B1' })
     ;(callLLM as any).mockResolvedValue('   ')
 
     const result = await decideAndRespond('conv_1', 'Booking saya sudah lunas belum?')
 
-    // Must never be `{ mode: 'booking_context', reply: '   ' }` — that dispatches a
-    // blank WhatsApp message AND raises no handoff alert.
-    expect(result.mode).toBe('handoff')
+    // Must never be `{ mode: 'booking_context', reply: '   ' }` — that dispatches a blank
+    // WhatsApp message. Per this file's header ("no more handoff on a content gap" -- extended
+    // to technical failures too), this is now a graceful fallback that keeps the bot active,
+    // not a handoff.
+    expect(result.mode).toBe('clarify')
   })
 
-  it('hands off when the Mode 3 LLM call times out or rejects, rather than hanging or replying', async () => {
+  it('stays active with a graceful fallback (not a handoff) when the Mode 3 LLM call times out or rejects', async () => {
     ;(ensureFreshBookingData as any).mockResolvedValue({ bookingId: 'B1' })
     ;(callLLM as any).mockRejectedValue(new DOMException('The operation was aborted.', 'TimeoutError'))
 
     const result = await decideAndRespond('conv_1', 'Booking saya sudah lunas belum?')
 
-    expect(result).toMatchObject({ mode: 'handoff', reason: 'Terjadi kegagalan saat memproses — default gagal-aman' })
+    expect(result.mode).toBe('clarify')
   })
 
   // The bookingData-caching write (Prisma.DbNull handling included) moved into
@@ -291,7 +293,7 @@ describe('decideAndRespond', () => {
   // booking-lookup-and-cache logic; it's tested directly there now, against the real
   // implementation rather than this file's automocked one.
 
-  it('hands off when the route gate rejects the destination package-match just found', async () => {
+  it('stays active with a graceful fallback (not a handoff) when the route gate rejects the destination package-match just found', async () => {
     ;(ensureFreshBookingData as any).mockResolvedValue(null)
     ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
     ;(matchDestination as any).mockReturnValue({ destination: 'atlantis', matches: [pkg({ packageKey: 'atlantis-1d', destinationTokens: ['atlantis'] })] })
@@ -299,8 +301,9 @@ describe('decideAndRespond', () => {
 
     const result = await decideAndRespond('conv_1', 'Saya mau ke Atlantis')
 
-    // The LLM must NOT be reached once the gate rejects the destination.
-    expect(result).toMatchObject({ mode: 'handoff', reason: 'Tidak ada paket terverifikasi' })
+    // The LLM must NOT be reached once the gate rejects the destination -- no synced price
+    // means never fabricate one -- but per this file's header this no longer disables the bot.
+    expect(result.mode).toBe('clarify')
     expect(checkRouteGate).toHaveBeenCalledWith(expect.objectContaining({ destination: 'atlantis' }))
     expect(callLLM).not.toHaveBeenCalled()
   })
@@ -354,7 +357,7 @@ describe('decideAndRespond', () => {
     expect(opts.system).toContain('Ijen Health Screening')
   })
 
-  it('hands off when the customer demands a guarantee knowledge.ts flags as unpromisable', async () => {
+  it('still answers via the LLM (with a strengthened no-guarantee reminder) when the customer demands a guarantee knowledge.ts flags as unpromisable, instead of handing off', async () => {
     ;(ensureFreshBookingData as any).mockResolvedValue(null)
     ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
     ;(matchDestination as any).mockReturnValue({ destination: 'ijen', matches: [pkg()] })
@@ -366,8 +369,10 @@ describe('decideAndRespond', () => {
 
     const result = await decideAndRespond('conv_1', 'Can you guarantee blue fire is the main reason we book, 100%?')
 
-    expect(result).toMatchObject({ mode: 'handoff', reason: 'Pelanggan meminta jaminan yang tidak bisa dipastikan sistem' })
-    expect(callLLM).not.toHaveBeenCalled()
+    expect(result.mode).toBe('faq')
+    const [, opts] = (callLLM as any).mock.calls[0]
+    expect(opts.system).toContain('demanding a guarantee')
+    expect(opts.system).toContain('genuinely cannot be guaranteed')
   })
 
   it('asks a clarifying question (instead of handing off) when no destination is known from the message or conversation history', async () => {
@@ -384,7 +389,7 @@ describe('decideAndRespond', () => {
     expect((result as { reply: string }).reply).toContain('Bromo, Ijen, Madakaripura')
   })
 
-  it('hands off instead of asking a broken clarifying question when the catalog has no destinations to offer', async () => {
+  it('gives a graceful fallback (not a handoff) instead of asking a broken clarifying question when the catalog has no destinations to offer', async () => {
     ;(ensureFreshBookingData as any).mockResolvedValue(null)
     ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
     ;(matchDestination as any).mockReturnValue(null)
@@ -392,7 +397,7 @@ describe('decideAndRespond', () => {
 
     const result = await decideAndRespond('conv_1', 'Halo')
 
-    expect(result).toMatchObject({ mode: 'handoff', reason: 'Katalog destinasi kosong — tidak dapat menanyakan destinasi' })
+    expect(result.mode).toBe('clarify')
   })
 
   it('persists the destination package-match found, so the next message reaches the route gate with it', async () => {
@@ -624,7 +629,7 @@ describe('decideAndRespond', () => {
     expect(opts.system.toLowerCase()).toContain('check that with our team')
   })
 
-  it('hands off instead of returning an empty reply when the Mode 1/2 LLM yields blank content', async () => {
+  it('gives a graceful fallback (not a handoff) instead of returning an empty reply when the Mode 1/2 LLM yields blank content', async () => {
     ;(ensureFreshBookingData as any).mockResolvedValue(null)
     ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
     ;(matchDestination as any).mockReturnValue({ destination: 'ijen', matches: [pkg()] })
@@ -633,42 +638,47 @@ describe('decideAndRespond', () => {
 
     const result = await decideAndRespond('conv_1', 'Saya mau ke Ijen')
 
-    expect(result.mode).toBe('handoff')
+    expect(result.mode).toBe('clarify')
   })
 
-  it('falls back to handoff if any step throws (fail-safe)', async () => {
+  it('falls back to a graceful, bot-stays-active reply (not a handoff) if any step throws (fail-safe)', async () => {
     ;(ensureFreshBookingData as any).mockRejectedValue(new Error('booking API down'))
 
     const result = await decideAndRespond('conv_1', 'Halo')
 
-    expect(result.mode).toBe('handoff')
+    expect(result.mode).toBe('clarify')
   })
 
-  it("hands off on classification job J5 even when the message misses the shared HANDOFF_KEYWORDS entirely", async () => {
+  // As of 2026-08-05, job=J5 is set ONLY via HANDOFF_KEYWORDS (the classifier's own
+  // GUARANTEE_KEYWORDS no longer force it -- see sales-classifier.ts), the same list the
+  // pre-booking gate already checks, so in real production this branch is defense-in-depth
+  // (any message that reaches the classifier as J5 would already have been caught earlier).
+  // This test mocks classifySalesNeed directly to confirm the orchestrator's OWN handling of
+  // job==='J5' still hands off, independent of how the classifier arrived at it.
+  it("hands off on classification job J5, independent of how the classifier arrived at it", async () => {
     ;(ensureFreshBookingData as any).mockResolvedValue(null)
     ;(checkRouteGate as any).mockReturnValue({ status: 'clear' })
-    // A guarantee demand is J5 via the classifier's GUARANTEE_KEYWORDS, which are a
-    // SEPARATE list from the HANDOFF_KEYWORDS the pre-booking gate now shares — so
-    // this message reaches the classifier untouched and proves J5 still carries its
-    // own, non-keyword escalation surface beyond that shared gate.
     ;(classifySalesNeed as any).mockReturnValue({ job: 'J5', missingInfo: [], needsLiveData: false })
 
-    const result = await decideAndRespond('conv_1', 'Can you guarantee the blue fire will be visible on my date?')
+    // Deliberately a message that does NOT itself match HANDOFF_KEYWORDS, so this genuinely
+    // exercises the classification.job === 'J5' branch rather than the earlier pre-booking
+    // escalation check (which would otherwise short-circuit first, mocked classifier or not).
+    const result = await decideAndRespond('conv_1', 'What packages do you have?')
 
     expect(result.mode).toBe('handoff')
     expect(matchDestination).not.toHaveBeenCalled()
   })
 
-  // C2: the pre-booking escalation gate is the ONLY keyword protection a customer
-  // WITH a booking gets, because Mode 3 bypasses the classifier entirely. It used to
-  // hold its own Indonesian-only 5-phrase list, so these English messages sailed
-  // straight past it into an automated LLM reply about the customer's live booking.
+  // C2: the pre-booking escalation gate is the ONLY keyword protection a customer WITH a
+  // booking gets, because Mode 3 bypasses the classifier entirely. Narrowed 2026-08-05 to
+  // match chatbot-web's own live escalation scope (see sales-classifier.ts's HANDOFF_KEYWORDS
+  // header) -- genuine complaint sentiment or an explicit human request, not ordinary FAQ
+  // topic words.
   it.each([
-    ['I want to cancel my booking', 'cancel'],
     ['I want to complain about the guide, this is a serious complaint', 'complaint'],
-    ['Please reschedule my trip to next week', 'reschedule'],
-    ['I want a refund', 'refund'],
+    ['I am so frustrated with this experience', 'frustrated'],
     ['Can I talk to a human please', 'talk to a human'],
+    ['Can I speak to an agent', 'speak to an agent'],
   ])('hands off on the English message %j (keyword %j) even when the customer has a live booking', async (message) => {
     ;(ensureFreshBookingData as any).mockResolvedValue({ bookingId: 'B1', guest: 'Bruno', status: 'confirmed' })
     ;(callLLM as any).mockResolvedValue('Booking Anda sudah dikonfirmasi.')
@@ -681,12 +691,31 @@ describe('decideAndRespond', () => {
     expect(callLLM).not.toHaveBeenCalled()
   })
 
-  it('still escalates the Indonesian phrases the old narrow list covered', async () => {
-    for (const message of ['Saya mau komplain', 'Tolong refund pesanan saya', 'Saya mau batal']) {
+  it('still escalates the Indonesian complaint/human-request phrases the narrowed list covers', async () => {
+    for (const message of ['Saya mau komplain', 'Saya marah sekali', 'Bisa bicara dengan orang?']) {
       vi.clearAllMocks()
       const result = await decideAndRespond('conv_1', message)
       expect(result).toMatchObject({ mode: 'handoff', reason: 'Kata kunci eskalasi terdeteksi' })
     }
+  })
+
+  // Reported 2026-08-05: "refund"/"cancel"/"reschedule"/"sudah bayar" alone used to force an
+  // automatic handoff even for a customer with an active booking asking a completely ordinary
+  // question -- these are now answerable, real questions Mode 3 answers from the actual
+  // booking data, matching chatbot-web's own scope (its escalation regex doesn't include them
+  // either).
+  it.each([
+    'I want to cancel my booking',
+    'Please reschedule my trip to next week',
+    'I want a refund',
+    'Sudah bayar tapi belum ada konfirmasi',
+  ])('answers via Mode 3 (booking_context) instead of escalating for %j, now that it is not an automatic handoff keyword', async (message) => {
+    ;(ensureFreshBookingData as any).mockResolvedValue({ bookingId: 'B1', guest: 'Bruno', status: 'confirmed' })
+    ;(callLLM as any).mockResolvedValue('Let me help with that using your booking details.')
+
+    const result = await decideAndRespond('conv_1', message)
+
+    expect(result.mode).toBe('booking_context')
   })
 
   it('does not over-escalate an ordinary package enquiry', async () => {
@@ -726,7 +755,7 @@ describe('decideAndRespond', () => {
 
     const result = await decideAndRespond('conv_1', 'Booking saya sudah lunas belum?')
 
-    expect(result.mode).toBe('handoff')
+    expect(result.mode).toBe('clarify')
     expect(consoleError).toHaveBeenCalledWith('decideAndRespond failed', { conversationId: 'conv_1', error: boom })
     // The customer's own words must not land in application logs.
     const logged = JSON.stringify(consoleError.mock.calls)

@@ -84,16 +84,26 @@ describe('classifySalesNeed', () => {
   })
 
   it('classifies an explicit human-handoff request as J5', () => {
-    const result = classifySalesNeed({ message: 'Bisa saya bicara dengan customer service?', tripBrief: {} })
+    const result = classifySalesNeed({ message: 'Bisa saya bicara dengan orang?', tripBrief: {} })
     expect(result.job).toBe('J5')
   })
 
   it('prioritizes J5 handoff signals over price keywords in the same message', () => {
     const result = classifySalesNeed({
-      message: 'Saya sudah bayar tapi mau refund, harganya salah',
+      message: 'Saya komplain soal harganya, ini terlalu mahal',
       tripBrief: {},
     })
     expect(result.job).toBe('J5')
+  })
+
+  // Narrowed 2026-08-05 to match chatbot-web's own escalation scope: "refund"/"cancel"/
+  // "sudah bayar" alone no longer force job=J5 -- they're ordinary, answerable FAQ topics
+  // (policy_cancellation_package_credit's real cancellation/refund policy, or -- for a
+  // customer who actually has a booking -- Mode 3's own real payment-status answer).
+  it('does NOT force J5 for a bare refund/cancellation/payment-status question (now answerable FAQ, not automatic escalation)', () => {
+    expect(classifySalesNeed({ message: 'What is your refund policy?', tripBrief: {} }).job).not.toBe('J5')
+    expect(classifySalesNeed({ message: 'Bisa saya cancel booking saya?', tripBrief: {} }).job).not.toBe('J5')
+    expect(classifySalesNeed({ message: 'Sudah bayar tapi belum ada konfirmasi', tripBrief: {} }).job).not.toBe('J5')
   })
 
   // --- needsLiveData decoupled from job (attraction hard-dependency / guarantee phrases) ---
@@ -109,17 +119,17 @@ describe('classifySalesNeed', () => {
     expect(result.needsLiveData).toBe(true)
   })
 
-  // guardrails-and-state.yaml's guarantee_phrases (lines 16-20) are a MANDATORY handoff
-  // signal in the real system (derive_response_plan lines 230-233: handoff_escalation +
-  // forced mode="handoff"), not merely a live-check trigger like the bare hard-dependency
-  // trigger_phrases above. SalesClassification has no separate handoff/mode field, so this
-  // port signals it the only way it can: job='J5', alongside needsLiveData=true.
-  it('escalates to handoff (J5) and flags needsLiveData when a guarantee is demanded', () => {
+  // guardrails-and-state.yaml's guarantee_phrases (lines 16-20) force mode="handoff" in the
+  // real system -- deliberately DIVERGED from as of 2026-08-05 (see this file's
+  // GUARANTEE_KEYWORDS comment and orchestrator.ts's header): a guarantee demand still flags
+  // needsLiveData (so the LLM defers that specific detail), but no longer forces job=J5. The
+  // LLM's own GUARDRAIL_INSTRUCTION is what keeps the reply honest now, without escalating.
+  it('flags needsLiveData (but does NOT force J5) when a guarantee is demanded', () => {
     const result = classifySalesNeed({
       message: 'Can you guarantee we will see Blue Fire?',
       tripBrief: { destination: 'Ijen' },
     })
-    expect(result.job).toBe('J5')
+    expect(result.job).not.toBe('J5')
     expect(result.needsLiveData).toBe(true)
   })
 
