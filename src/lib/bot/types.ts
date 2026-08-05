@@ -13,6 +13,17 @@ export type TripBrief = {
   // parseTripPreferences) -- persists the same way `destination` does, so "3 day trip from
   // Surabaya" once stated doesn't need repeating on a later message about the same trip.
   origin?: string
+  // The customer's stated trip length and/or finish city (package-match.ts's
+  // parseTripPreferences) -- persist the same way `origin` does. Reported 2026-08-05: a
+  // customer who established "3D2N, Surabaya to Bali" across several turns (dates, then "back
+  // in Bali the 16th right?") got ALL 5 Surabaya-origin packages listed back at them on a later
+  // message, because dayCount/finishCity were previously read fresh from only the CURRENT
+  // message every time, unlike origin -- a duration or finish city stated earlier in the same
+  // conversation was silently forgotten the moment the customer's next message didn't restate
+  // it. Same "this message wins, else the persisted one carries the conversation" precedence
+  // origin already uses.
+  dayCount?: number
+  finishCity?: string
   // True once orchestrator.ts has asked a customer where they'd like to start/finish for an
   // origin-ambiguous destination (see orchestrator.ts's TripPreferences clarify branch).
   // Asked AT MOST ONCE per conversation: a customer who never answers the finish-point half

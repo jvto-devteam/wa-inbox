@@ -550,7 +550,7 @@ describe('decideAndRespond', () => {
     await decideAndRespond('conv_1', '3 day ijen trip from Surabaya')
 
     expect(parseTripPreferences).toHaveBeenCalledWith('3 day ijen trip from Surabaya')
-    expect(pickPackage).toHaveBeenCalledWith([pkg()], { origin: 'Surabaya', dayCount: 3 })
+    expect(pickPackage).toHaveBeenCalledWith([pkg()], { origin: 'Surabaya', dayCount: 3, finishCity: null })
   })
 
   it('passes the matched destination through to resolveKnowledgeForTopic (so destination_readiness can resolve a destination-specific link)', async () => {
@@ -914,7 +914,7 @@ describe('decideAndRespond', () => {
         where: { id: 'conv_1' },
         data: { tripBrief: { destination: 'ijen', origin: 'Surabaya' } },
       })
-      expect(pickPackage).toHaveBeenCalledWith([fromBali, fromSurabaya], { origin: 'Surabaya', dayCount: null })
+      expect(pickPackage).toHaveBeenCalledWith([fromBali, fromSurabaya], { origin: 'Surabaya', dayCount: null, finishCity: null })
     })
 
     it('uses the origin already on file (not just this message) to narrow pickPackage', async () => {
@@ -934,7 +934,7 @@ describe('decideAndRespond', () => {
 
       await decideAndRespond('conv_1', 'What is included?')
 
-      expect(pickPackage).toHaveBeenCalledWith([fromBali, fromSurabaya], { origin: 'Bali', dayCount: null })
+      expect(pickPackage).toHaveBeenCalledWith([fromBali, fromSurabaya], { origin: 'Bali', dayCount: null, finishCity: null })
     })
 
     it("lists every matching priced package in the LLM system prompt, not just pickPackage's single choice", async () => {
@@ -1082,7 +1082,7 @@ describe('decideAndRespond', () => {
       ;(resolveKnowledgeForTopic as any).mockReturnValue({
         factualLines: [], detailLines: [], primaryLink: null, disclosures: [], handoffRequired: false,
       })
-      ;(parseTripPreferences as any).mockReturnValue({ origin: 'Surabaya', dayCount: 4 })
+      ;(parseTripPreferences as any).mockReturnValue({ origin: 'Surabaya', dayCount: null, finishCity: null })
 
       const result = await decideAndRespond('conv_1', 'hello, could you give me a recommendation for my trip at 10-13 june start from surabaya?')
 
@@ -1107,7 +1107,7 @@ describe('decideAndRespond', () => {
       ;(resolveKnowledgeForTopic as any).mockReturnValue({
         factualLines: ['Ijen access depends on conditions.'], detailLines: [], primaryLink: null, disclosures: [], handoffRequired: false,
       })
-      ;(parseTripPreferences as any).mockReturnValue({ origin: 'Surabaya', dayCount: 4 })
+      ;(parseTripPreferences as any).mockReturnValue({ origin: 'Surabaya', dayCount: null, finishCity: null })
 
       const result = await decideAndRespond(
         'conv_1',

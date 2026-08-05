@@ -341,13 +341,25 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
 
     const matches = matched?.matches ?? packagesForDestination(destination, catalog)
     const preferences = parseTripPreferences(inboundText)
-    // A destination mentioned THIS message wins, same precedence as `destination` above;
-    // otherwise the persisted one carries the conversation.
+    // A city/duration mentioned THIS message wins, same precedence as `destination` above;
+    // otherwise whatever was persisted from an EARLIER message in the conversation carries it
+    // forward -- see TripBrief.dayCount/finishCity's own header for why all three (origin
+    // included) need this, not just origin.
     const origin = preferences.origin ?? tripBrief.origin ?? null
-    if (origin && origin !== tripBrief.origin) {
+    const dayCount = preferences.dayCount ?? tripBrief.dayCount ?? null
+    const finishCity = preferences.finishCity ?? tripBrief.finishCity ?? null
+    if (origin !== (tripBrief.origin ?? null) || dayCount !== (tripBrief.dayCount ?? null) || finishCity !== (tripBrief.finishCity ?? null)) {
       await prisma.conversation.update({
         where: { id: conversationId },
-        data: { tripBrief: { ...tripBrief, destination, origin } as Prisma.InputJsonValue },
+        data: {
+          tripBrief: {
+            ...tripBrief,
+            destination,
+            ...(origin ? { origin } : {}),
+            ...(dayCount ? { dayCount } : {}),
+            ...(finishCity ? { finishCity } : {}),
+          } as Prisma.InputJsonValue,
+        },
       })
     }
 
@@ -403,12 +415,11 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
     // "3 day trip from Surabaya" or "10-12 June (3 days) from Surabaya" -> narrows which of
     // the destination's several packages (they differ by day count/origin/finish city) to
     // recommend, instead of always naming whichever priced one happens to be first (see
-    // package-match.ts). `origin` (not `preferences.origin`) so a city stated on an EARLIER
-    // message still narrows this pick, matching the clarify branch above's own
-    // persisted-origin precedence. `preferences.finishCity` is THIS message only -- unlike
-    // origin, a finish-city preference isn't persisted (a one-off "can we finish in Bali?"
-    // shouldn't keep narrowing every later question in the conversation).
-    const pkg = pickPackage(matches, { origin, dayCount: preferences.dayCount, finishCity: preferences.finishCity })
+    // package-match.ts). `origin`/`dayCount`/`finishCity` (not the bare `preferences.*`
+    // equivalents) so a detail stated on an EARLIER message still narrows this pick -- e.g. a
+    // customer who confirmed "3D2N, Surabaya to Bali" across several turns must not have that
+    // forgotten the moment a later message in the same conversation doesn't restate it.
+    const pkg = pickPackage(matches, { origin, dayCount, finishCity })
 
     // The module-resolution step catalog.ts's own header names as never having been ported
     // (see knowledge.ts's header) -- resolves real facts/links/disclosures for all 14 real
@@ -475,7 +486,12 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
     // carries its OWN details-page link (never the shared `primaryLink` below) -- live-tested
     // 2026-08-04, a single link at the end of a 5-option list left the customer unable to tell
     // which package it belonged to.
-    const finishCity = preferences.finishCity
+    // `finishCity`/`origin`/`dayCount` are the merged (this-message-or-persisted) values
+    // computed earlier, not `preferences.*` directly -- see their own header for why: a
+    // customer who confirmed "3D2N, Surabaya to Bali" across several turns was getting ALL 5
+    // Surabaya-origin packages (every duration) listed back at them on a later message that
+    // didn't restate the duration/finish city, because this pool used to only ever look at
+    // THIS message's preferences.
     let optionPool = matches
     if (finishCity) {
       const filtered = optionPool.filter((p) => p.finishCities.includes(finishCity))
@@ -483,6 +499,10 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
     }
     if (origin) {
       const filtered = optionPool.filter((p) => p.origin === origin)
+      if (filtered.length > 0) optionPool = filtered
+    }
+    if (dayCount) {
+      const filtered = optionPool.filter((p) => p.dayCount === dayCount)
       if (filtered.length > 0) optionPool = filtered
     }
     const optionPackages = optionPool.filter((p) => p.priceIdr !== null).slice(0, 5)
