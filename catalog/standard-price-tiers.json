@@ -7,6 +7,11 @@
     "ferry_included": true,
     "pax_tiers": [
       {
+        "min_pax": 1,
+        "max_pax": 1,
+        "idr_per_person": 7500000
+      },
+      {
         "min_pax": 2,
         "max_pax": 2,
         "idr_per_person": 4050000
@@ -37,7 +42,7 @@
         "idr_per_person": 2850000
       }
     ],
-    "min_pax": 2,
+    "min_pax": 1,
     "availability": "needs_live_confirmation",
     "source_evidence": [
       "core:input/llm-wiki/package-readiness/package-pricing.json"

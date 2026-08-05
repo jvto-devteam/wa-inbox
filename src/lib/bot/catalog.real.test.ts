@@ -69,6 +69,18 @@ describe.skipIf(!RELEASE_PRESENT)('loadCatalog against the real synced catalog/'
     }
   })
 
+  // Confirmed directly with the operator 2026-08-05: "3 Day Bromo & Ijen Volcano Discovery
+  // from Bali" (bali/bromo-ijen-3d2n) genuinely supports a solo (1 pax) booking at
+  // Rp7.500.000/person -- the release previously had no 1-pax tier for this specific package
+  // at all (unlike its near-identical sibling bali/ijen-bromo-madakaripura-3d2n, which already
+  // had one), even though a real operator-exported pricing sheet listed it.
+  it('supports a solo (1 pax) booking for the Bali Bromo & Ijen 3D2N package at the confirmed real price', () => {
+    const pkg = loadCatalog().packages.find((p) => p.packageKey === 'bali/bromo-ijen-3d2n')
+    expect(pkg).toBeDefined()
+    const oneTier = pkg!.priceTiers.find((t) => t.minPax === 1)
+    expect(oneTier).toEqual({ minPax: 1, maxPax: 1, priceIdr: 7500000 })
+  })
+
   it('gives every package a public details link on the real site', () => {
     for (const pkg of loadCatalog().packages) {
       expect(pkg.links.details).toMatch(/^https:\/\/javavolcano-touroperator\.com\/tours\//)
