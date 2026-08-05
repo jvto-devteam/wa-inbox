@@ -156,4 +156,19 @@ describe.skipIf(!RELEASE_PRESENT)('resolveKnowledgeForTopic against the real syn
     )
     expect(result.factualLines.some((f) => f.toLowerCase().includes('backup'))).toBe(true)
   })
+
+  // Confirmed directly with the operator 2026-08-05: official access down into the Ijen
+  // crater for close-up blue fire is currently closed, but the summit sunrise viewpoint, blue
+  // crater-lake view, and surrounding mountain scenery are still open for hiking. A current,
+  // time-sensitive operational status, distinct from the evergreen "can't guarantee weather"
+  // disclaimer -- both must be present so the bot never implies crater access is open.
+  it.each([
+    ['is the blue fire still accessible?', 'blue fire'],
+    ['can we see the blue-fire at Ijen?', 'blue-fire'],
+    ['what is the current crater access status?', 'crater access'],
+  ] as const)('resolves the real Ijen crater-access closure fact for %s (%s)', (message, _keyword) => {
+    const result = resolveKnowledgeForTopic('blue_fire', message, 'ijen')
+    expect(result.factualLines.some((f) => f.toLowerCase().includes('closed'))).toBe(true)
+    expect(result.factualLines.some((f) => f.toLowerCase().includes('sunrise'))).toBe(true)
+  })
 })

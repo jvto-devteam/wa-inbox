@@ -136,6 +136,21 @@
     ]
   },
   {
+    "module_id": "policy_ijen_crater_access_status",
+    "category": "policy",
+    "scope": "ijen_scoped",
+    "title": "Ijen Crater Access Status (Blue Fire)",
+    "short_answer": "Official access down into the Ijen crater to see the blue fire up close is currently closed, but the summit sunrise viewpoint, the blue crater lake view, and the surrounding mountain scenery are still open for hiking.",
+    "detail_summary": "As of the current status, official access down into Kawah Ijen's crater -- the closest vantage point for the blue fire -- is closed. Guests can still hike up to the summit for the sunrise viewpoint, view the turquoise crater lake (blue lake) from the rim, and enjoy the surrounding mountain scenery -- the hike itself still runs, just without descending into the crater for close-up blue fire access. Status can change; JVTO confirms the current situation closer to the tour date.",
+    "customer_visible": true,
+    "reusable": true,
+    "link_key": "natural_phenomena",
+    "approval_status": "approved",
+    "source_evidence": [
+      "operator-confirmed:2026-08-05"
+    ]
+  },
+  {
     "module_id": "policy_payment_deposit",
     "category": "policy",
     "scope": "global",

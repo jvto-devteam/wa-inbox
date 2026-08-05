@@ -144,7 +144,12 @@ const TOPIC_MODULES: Record<ResolverTopic, string[]> = {
   booking: ['policy_booking_paths', 'policy_anti_fraud'],
   payment: ['policy_payment_deposit', 'policy_anti_fraud', 'policy_cancellation_package_credit'],
   cancellation: ['policy_cancellation_package_credit'],
-  blue_fire: ['policy_natural_phenomena', 'destination_ijen'],
+  // 'policy_ijen_crater_access_status' added 2026-08-05, operator-confirmed: official access
+  // down into the crater for close-up blue fire is currently closed, but the summit
+  // sunrise-viewpoint hike, blue crater-lake view, and surrounding mountain scenery are still
+  // open -- current, time-sensitive operational status, not the evergreen "can't guarantee
+  // weather" policy or the fixed monthly Rijik closure, so kept as its own module.
+  blue_fire: ['policy_natural_phenomena', 'policy_ijen_crater_access_status', 'destination_ijen'],
   greeting: [],
   general: ['inclusion_all_inclusive_baseline', 'service_private_tour_standard'],
 }
@@ -202,6 +207,13 @@ const KEYWORD_TRIGGERED_MODULES: Array<{ moduleId: string; keywords: string[] }>
       'driver unavailable', 'vehicle unavailable', 'backup vehicle', 'backup driver', 'backup unit',
       'spare vehicle', 'spare driver', 'reachable at any time', 'reach you any time', '24/7', '24 hours',
     ],
+  },
+  {
+    moduleId: 'policy_ijen_crater_access_status',
+    // Kept independent of topic classification (not just TOPIC_MODULES.blue_fire) so a "blue
+    // fire" mention buried inside a message that classifies to an earlier-checked topic (e.g.
+    // 'payment' via a bare "pay" match) still surfaces this current access status.
+    keywords: ['blue fire', 'blue-fire', 'bluefire', 'crater access', 'kawah ijen'],
   },
 ]
 
