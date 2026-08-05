@@ -58,4 +58,15 @@ describe.skipIf(!RELEASE_PRESENT)('resolveKnowledgeForTopic against the real syn
     expect(result.factualLines.length).toBeGreaterThan(0)
     expect(result.primaryLink).toBe('https://javavolcano-touroperator.com/policy/booking-payment-cancellation')
   })
+
+  // Reported 2026-08-05: real, approved, customer_visible ISIC/police-escort/ferry content
+  // that no topic or destination lookup could ever reach -- only the customer's own words can.
+  it.each([
+    ['do you offer student discounts with ISIC?', 'isic'],
+    ['can you arrange a police escort for our large group?', 'escort'],
+    ['is the ferry crossing included?', 'ferry'],
+  ] as const)('resolves a real fact when the message mentions %s (%s)', (message, _keyword) => {
+    const result = resolveKnowledgeForTopic('general', message)
+    expect(result.factualLines.length).toBeGreaterThan(0)
+  })
 })

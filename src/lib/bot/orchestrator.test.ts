@@ -68,6 +68,7 @@ function pkg(overrides: Record<string, unknown> = {}) {
     priceIdr: 850000,
     inclusions: [],
     policyNotes: [],
+    stagingNotes: [],
     links: {},
     origin: null,
     dayCount: null,
@@ -639,6 +640,37 @@ describe('decideAndRespond', () => {
     const [, opts] = (callLLM as any).mock.calls[0]
     expect(opts.system).toContain('do NOT say "I\'m sorry, I don\'t have that information"')
     expect(opts.system.toLowerCase()).toContain('check that with our team')
+  })
+
+  // Reported 2026-08-05: 6 real, approved, customer_visible staging modules (which hotel is
+  // used before an activity, medical-check timing, ferry pre-booking notes) existed in
+  // catalog.ts's join but were never surfaced anywhere in the system prompt.
+  it("surfaces the package's own stagingNotes as ordinary facts, unconditionally (not gated on needs_review the way policyNotes is)", async () => {
+    ;(ensureFreshBookingData as any).mockResolvedValue(null)
+    ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
+    ;(matchDestination as any).mockReturnValue({
+      destination: 'ijen',
+      matches: [pkg({ stagingNotes: ['Why We Stage Near Ijen: medical check can be arranged at hotel.'] })],
+    })
+    ;(checkRouteGate as any).mockReturnValue({ status: 'clear' })
+
+    await decideAndRespond('conv_1', 'Saya mau ke Ijen')
+
+    const [, opts] = (callLLM as any).mock.calls[0]
+    expect(opts.system).toContain('Logistics for this specific package:')
+    expect(opts.system).toContain('Why We Stage Near Ijen: medical check can be arranged at hotel.')
+  })
+
+  it('adds no "Logistics for this specific package" section when stagingNotes is empty', async () => {
+    ;(ensureFreshBookingData as any).mockResolvedValue(null)
+    ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
+    ;(matchDestination as any).mockReturnValue({ destination: 'ijen', matches: [pkg({ stagingNotes: [] })] })
+    ;(checkRouteGate as any).mockReturnValue({ status: 'clear' })
+
+    await decideAndRespond('conv_1', 'Saya mau ke Ijen')
+
+    const [, opts] = (callLLM as any).mock.calls[0]
+    expect(opts.system).not.toContain('Logistics for this specific package')
   })
 
   it('gives a graceful fallback (not a handoff) instead of returning an empty reply when the Mode 1/2 LLM yields blank content', async () => {

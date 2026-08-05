@@ -149,6 +149,24 @@ const TOPIC_MODULES: Record<ResolverTopic, string[]> = {
   general: ['inclusion_all_inclusive_baseline', 'service_private_tour_standard'],
 }
 
+// Content that applies only under a customer-STATED condition (being a student, traveling in
+// a large group, a Bali-linked route needing the ferry crossing) -- no topic or destination
+// context can ever detect these, only the customer's own words can, so they're checked
+// independent of (and in addition to) TOPIC_MODULES/destination-variation lookup. Added
+// 2026-08-05: general-modules.json carries `scope: "conditional_eligible"` (ISIC student
+// pricing) and `conditional_large_group"` (police escort) modules specifically BECAUSE
+// catalog.ts's own policyNotes join deliberately excludes conditional scopes (a condition the
+// catalog itself cannot evaluate, see that file's header) -- but nothing else ever picked them
+// up either, so "do you have student pricing?" had zero real facts to answer from despite the
+// content existing, approved and customer-visible, all along. `inclusion_east_java_bali_ferry`
+// is the 4th `conditional_variation` module never reached by the destination-variation lookup
+// either (its trigger is "ferry", not one of the 5 real destination tokens).
+const KEYWORD_TRIGGERED_MODULES: Array<{ moduleId: string; keywords: string[] }> = [
+  { moduleId: 'policy_isic_student', keywords: ['isic', 'student'] },
+  { moduleId: 'policy_police_escort', keywords: ['police escort', 'escort'] },
+  { moduleId: 'inclusion_east_java_bali_ferry', keywords: ['ferry', 'ketapang', 'gilimanuk'] },
+]
+
 let _modules: Record<string, KnowledgeModule> | null = null
 let _linkIndex: Map<string, LinkRecord[]> | null = null
 
@@ -280,6 +298,10 @@ export function resolveKnowledgeForTopic(topic: ResolverTopic, message: string, 
     for (const m of Object.values(modules)) {
       if (m.variation_trigger?.toLowerCase() === dest) moduleIds.push(m.module_id)
     }
+  }
+  // Checked regardless of topic -- see KEYWORD_TRIGGERED_MODULES' own comment.
+  for (const { moduleId, keywords } of KEYWORD_TRIGGERED_MODULES) {
+    if (keywords.some((k) => low.includes(k))) moduleIds.push(moduleId)
   }
   const resolvedModules = moduleIds
     .map((id) => modules[id])

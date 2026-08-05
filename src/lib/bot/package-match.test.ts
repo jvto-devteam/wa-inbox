@@ -10,6 +10,7 @@ function pkg(overrides: Partial<CatalogPackage> = {}): CatalogPackage {
     priceIdr: 850000,
     inclusions: [],
     policyNotes: [],
+    stagingNotes: [],
     links: {},
     origin: null,
     dayCount: null,

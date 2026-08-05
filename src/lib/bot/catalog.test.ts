@@ -95,6 +95,7 @@ const MODULE_COMPATIBILITY = {
     policy_booking_paths: ['bali/bromo-ijen-3d2n', 'bromo-1d1n'],
     policy_ijen_health_screening: ['bali/bromo-ijen-3d2n'],
     policy_isic_student: ['bali/bromo-ijen-3d2n', 'bromo-1d1n'],
+    staging_bromo_area_sunrise: ['bali/bromo-ijen-3d2n', 'bali/bromo-ijen-3d2n'],
   },
 }
 
@@ -123,6 +124,15 @@ const GENERAL_MODULES = [
     scope: 'conditional_eligible',
     title: 'ISIC Student Pricing',
     short_answer: 'Student pricing is available to verified ISIC cardholders.',
+    customer_visible: true,
+    approval_status: 'approved',
+  },
+  {
+    module_id: 'staging_bromo_area_sunrise',
+    category: 'staging',
+    scope: 'route_scoped',
+    title: 'Why We Stage Near Bromo',
+    short_answer: 'Early jeep pickup; takeaway breakfast possible.',
     customer_visible: true,
     approval_status: 'approved',
   },
@@ -235,6 +245,20 @@ describe('loadCatalog', () => {
     ])
     // Only global + conditional policies apply to this one, so it stays `clear`.
     expect(packages.find((p) => p.packageKey === 'bromo-1d1n')!.policyNotes).toEqual([])
+  })
+
+  // Reported 2026-08-05: 6 real, approved, customer_visible `category: "staging"` modules
+  // (which hotel/staging area is used before an activity) existed in general-modules.json and
+  // were joined via the exact same module_applicability mechanism as policyNotes, but were
+  // completely unreachable because the join only ever looked at `category: "policy"`.
+  it('includes staging modules in stagingNotes via the same module_applicability join as policyNotes, deduped', () => {
+    mockCatalogFiles(FULL_CATALOG)
+    const packages = loadCatalog().packages
+
+    expect(packages.find((p) => p.packageKey === 'bali/bromo-ijen-3d2n')!.stagingNotes).toEqual([
+      'Why We Stage Near Bromo: Early jeep pickup; takeaway breakfast possible.',
+    ])
+    expect(packages.find((p) => p.packageKey === 'bromo-1d1n')!.stagingNotes).toEqual([])
   })
 
   it('excludes policy modules that are not customer-visible or not approved', () => {

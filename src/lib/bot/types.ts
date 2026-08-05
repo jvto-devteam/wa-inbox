@@ -63,6 +63,14 @@ export type CatalogPackage = {
   priceIdr: number | null
   inclusions: string[]
   policyNotes: string[]
+  // module_applicability's `category: "staging"` modules (module-compatibility.json), joined
+  // the exact same way `policyNotes` already is -- which hotel/staging area is used before
+  // this package's activities, medical-check timing, ferry pre-booking notes. Added
+  // 2026-08-05: 6 real, approved, customer_visible modules with this data existed and were
+  // completely unreachable (catalog.ts's join only looked at `category: "policy"`) -- the
+  // same class of bug as knowledge.ts's Ijen gas-mask gap, just one level up (package-scoped
+  // data, not general-knowledge data).
+  stagingNotes: string[]
   links: Record<string, string>
   // package-profiles.json's own `origin` ("Bali" | "Surabaya") and `day_count` --
   // present in the synced data but unused until package-match.ts's duration/origin-aware

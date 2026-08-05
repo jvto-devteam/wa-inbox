@@ -61,6 +61,27 @@ const modules = [
     variation_trigger: 'bromo',
   },
   {
+    module_id: 'policy_isic_student',
+    title: 'ISIC Student Pricing',
+    short_answer: 'Student pricing is available to verified ISIC cardholders.',
+    customer_visible: true,
+    approval_status: 'approved',
+  },
+  {
+    module_id: 'policy_police_escort',
+    title: 'Police Escort',
+    short_answer: 'For large groups, JVTO can coordinate an official police escort.',
+    customer_visible: true,
+    approval_status: 'approved',
+  },
+  {
+    module_id: 'inclusion_east_java_bali_ferry',
+    title: 'Ferry Crossing',
+    short_answer: 'Ketapang-Gilimanuk ferry crossing for Bali-linked packages.',
+    customer_visible: true,
+    approval_status: 'approved',
+  },
+  {
     module_id: 'unapproved_module',
     title: 'Draft',
     short_answer: 'Should never be surfaced.',
@@ -195,6 +216,39 @@ describe('resolveKnowledgeForTopic', () => {
   it('does not pull in a destination-conditional inclusion when no destination is passed', () => {
     const result = resolveKnowledgeForTopic('inclusions', 'what is included?')
     expect(result.factualLines).not.toContain('Gas masks and trekking poles for the Ijen crater hike.')
+  })
+
+  // Reported 2026-08-05: policy_isic_student, policy_police_escort, and
+  // inclusion_east_java_bali_ferry were approved, customer_visible content that NOTHING ever
+  // surfaced -- not TOPIC_MODULES, not the destination-variation lookup (their triggers are
+  // "student"/"escort"/"ferry", none of which is a real destination token). Reachable ONLY
+  // through the customer's own words, regardless of topic.
+  describe('keyword-triggered conditional-eligibility modules', () => {
+    it('surfaces ISIC student pricing when the message mentions it, on an unrelated topic', () => {
+      const result = resolveKnowledgeForTopic('price', 'do you have student pricing with ISIC?')
+      expect(result.factualLines).toContain('Student pricing is available to verified ISIC cardholders.')
+    })
+
+    it('surfaces the police escort policy when a large group asks about it', () => {
+      const result = resolveKnowledgeForTopic('general', 'can you arrange a police escort for our group?')
+      expect(result.factualLines).toContain('For large groups, JVTO can coordinate an official police escort.')
+    })
+
+    it('surfaces the Bali ferry crossing fact when the message mentions ferry/Ketapang/Gilimanuk', () => {
+      expect(resolveKnowledgeForTopic('general', 'is the ferry included?').factualLines).toContain(
+        'Ketapang-Gilimanuk ferry crossing for Bali-linked packages.'
+      )
+      expect(resolveKnowledgeForTopic('general', 'how does the Ketapang crossing work?').factualLines).toContain(
+        'Ketapang-Gilimanuk ferry crossing for Bali-linked packages.'
+      )
+    })
+
+    it('does not surface any of these when the message never mentions them', () => {
+      const result = resolveKnowledgeForTopic('price', 'how much for 4 people?')
+      expect(result.factualLines).not.toContain('Student pricing is available to verified ISIC cardholders.')
+      expect(result.factualLines).not.toContain('For large groups, JVTO can coordinate an official police escort.')
+      expect(result.factualLines).not.toContain('Ketapang-Gilimanuk ferry crossing for Bali-linked packages.')
+    })
   })
 
   it('adds the Ijen access-risk disclosures only when the message actually mentions Ijen', () => {

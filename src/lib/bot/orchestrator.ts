@@ -512,6 +512,12 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
       `Package the customer is asking about: ${pkg.title}\n\n` +
       `Known facts relevant to their question (topic: "${resolverTopic}"):\n${knowledge.factualLines.map((f) => `- ${f}`).join('\n')}` +
       (knowledge.detailLines.length > 0 ? `\n\nMore detail if useful:\n${knowledge.detailLines.map((d) => `- ${d}`).join('\n')}` : '') +
+      // Which hotel/staging area this specific package uses, medical-check timing, ferry
+      // pre-booking notes -- genuinely useful, package-specific facts (not a caveat/
+      // disclosure), so shown unconditionally rather than gated on needs_review the way
+      // policyNotes is. See types.ts's CatalogPackage.stagingNotes header for why this data
+      // existed but was completely unreachable before 2026-08-05.
+      (pkg.stagingNotes.length > 0 ? `\n\nLogistics for this specific package:\n${pkg.stagingNotes.map((n) => `- ${n}`).join('\n')}` : '') +
       (packageOptionsText
         ? `\n\nMatching tour packages for this destination (never invent others or state a price/link not shown here):\n${packageOptionsText}` +
           (recommendMultiple

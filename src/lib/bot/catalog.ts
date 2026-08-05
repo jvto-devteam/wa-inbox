@@ -107,6 +107,15 @@
  *   assert something that may not apply. The global policies are not lost: they are
  *   company-wide FAQ material (Mode 2), not per-package route disclosures.
  *
+ * `stagingNotes` <- the exact same join as `policyNotes`, just for `category: "staging"`
+ *   instead of `"policy"` (added 2026-08-05, `buildNoteIndex`). No scope-driven exclusion
+ *   applies -- unlike the policy layer, all 6 staging modules already carry `scope:
+ *   "route_scoped"` (never `global`/`conditional_*`), so every one of them is genuinely
+ *   package-specific and safe to surface. Unlike `policyNotes`, these are informational
+ *   ("which hotel is used before this activity"), not disclosures/caveats, so orchestrator.ts
+ *   surfaces them unconditionally as ordinary facts rather than gating them on
+ *   route-gate.ts's `needs_review` status.
+ *
  * `links` <- `{ details: <customer-link-registry base_url> + <profile public_url> }`.
  *   The registry's `links[]` entries are keyed by `link_key` and their `used_by`
  *   points at *module ids*, not package keys; the 16 `package_page` entries have
@@ -230,11 +239,21 @@ function buildDestinationIndex(moduleCompatibility: unknown): Map<string, string
 }
 
 /**
- * `module_applicability` x `general-modules.json` -> `package_key` -> policy
- * disclosure lines. See the file header for why only package-scoped policies
- * (not `global`, not `conditional_*`) are included.
+ * `module_applicability` x `general-modules.json` -> `package_key` -> customer-facing note
+ * lines, for one module `category` at a time. Originally policy-only (`buildPolicyNoteIndex`);
+ * generalized 2026-08-05 after finding this exact join already exists for `category: "staging"`
+ * modules too (6 real,
+ * approved, customer_visible modules -- which hotel/staging area is used before Bromo/Ijen/
+ * Tumpak Sewu/Papuma, medical-check timing, ferry pre-booking notes) but the hardcoded
+ * `category !== 'policy'` filter silently dropped every one of them: same class of bug as the
+ * Ijen gas-mask gap (knowledge.ts), real approved content nothing ever read.
+ *
+ * `scope` filtering only applies to policy (global/conditional_* policies are meant to surface
+ * some other way, per the original policy-only header note); staging modules all carry
+ * `scope: "route_scoped"`, which isn't global or conditional, so the same filter is harmless
+ * to share.
  */
-function buildPolicyNoteIndex(moduleCompatibility: unknown, generalModules: unknown): Map<string, string[]> {
+function buildNoteIndex(moduleCompatibility: unknown, generalModules: unknown, category: string): Map<string, string[]> {
   const index = new Map<string, string[]>()
   if (!isObject(moduleCompatibility) || !Array.isArray(generalModules)) return index
   const applicability = moduleCompatibility.module_applicability
@@ -243,7 +262,7 @@ function buildPolicyNoteIndex(moduleCompatibility: unknown, generalModules: unkn
   const noteByModuleId = new Map<string, string>()
   for (const generalModule of generalModules) {
     if (!isObject(generalModule)) continue
-    if (generalModule.category !== 'policy') continue
+    if (generalModule.category !== category) continue
     if (generalModule.customer_visible !== true) continue
     if (generalModule.approval_status !== 'approved') continue
     const scope = asString(generalModule.scope)
@@ -315,7 +334,9 @@ export function loadCatalog(): Catalog {
   const components = indexByPackageKey(readCatalogFile(COMPONENTS_FILE), COMPONENTS_FILE)
   const moduleCompatibility = readCatalogFile(MODULE_COMPATIBILITY_FILE)
   const destinationIndex = buildDestinationIndex(moduleCompatibility)
-  const policyNoteIndex = buildPolicyNoteIndex(moduleCompatibility, readCatalogFile(GENERAL_MODULES_FILE))
+  const generalModulesData = readCatalogFile(GENERAL_MODULES_FILE)
+  const policyNoteIndex = buildNoteIndex(moduleCompatibility, generalModulesData, 'policy')
+  const stagingNoteIndex = buildNoteIndex(moduleCompatibility, generalModulesData, 'staging')
   const baseUrl = publicSiteBaseUrl(readCatalogFile(LINK_REGISTRY_FILE))
   const finishCityIndex = buildFinishCityIndex(readCatalogFile(ENDPOINT_CHAINS_FILE))
 
@@ -366,6 +387,7 @@ export function loadCatalog(): Catalog {
       priceIdr: lowestTierPriceIdr(priceTiers.get(packageKey)),
       inclusions: component ? asStringArray(component.included) : [],
       policyNotes: policyNoteIndex.get(packageKey) ?? [],
+      stagingNotes: stagingNoteIndex.get(packageKey) ?? [],
       links: buildDetailsLink(baseUrl, asString(profile.public_url)),
       origin: asString(profile.origin),
       dayCount: asPositiveInt(profile.day_count),

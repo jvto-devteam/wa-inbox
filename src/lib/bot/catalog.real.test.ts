@@ -88,6 +88,22 @@ describe.skipIf(!RELEASE_PRESENT)('loadCatalog against the real synced catalog/'
     expect(loadCatalog().packages.some((p) => p.finishCities.includes('bali'))).toBe(true)
   })
 
+  // Reported 2026-08-05: 6 real, approved, customer_visible staging modules (which hotel is
+  // used before Bromo/Ijen/Tumpak Sewu/Papuma, medical-check timing, ferry pre-booking notes)
+  // existed in the real release and were completely unreachable before this fix.
+  it('populates stagingNotes for at least some real packages (Ijen/Bromo/Tumpak Sewu/Papuma-visiting ones)', () => {
+    const packages = loadCatalog().packages
+    const withStaging = packages.filter((p) => p.stagingNotes.length > 0)
+    expect(withStaging.length).toBeGreaterThan(0)
+    // Every package touching Ijen should carry SOME staging note (Bondowoso or Banyuwangi
+    // area staging, depending on origin) -- real customer-facing logistics, not boilerplate.
+    const ijenPackages = packages.filter((p) => p.destinationTokens.includes('ijen'))
+    expect(ijenPackages.length).toBeGreaterThan(0)
+    for (const pkg of ijenPackages) {
+      expect(pkg.stagingNotes.length).toBeGreaterThan(0)
+    }
+  })
+
   it('lets pickPackage recommend a package that actually finishes in Bali for a "finish in Bali" question, not a Bali-origin one', async () => {
     const { matchDestination, pickPackage, parseTripPreferences } = await import('./package-match')
     const catalog = loadCatalog()
