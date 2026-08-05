@@ -211,6 +211,25 @@ describe('parseTripPreferences', () => {
     expect(parseTripPreferences('the price is between 500000-2000000').dayCount).toBeNull()
   })
 
+  // Reported 2026-08-05: "a 3-day, 2-night tour" (hyphenated, no space before "day") lost the
+  // stated duration entirely, since the regex only allowed whitespace between the number and
+  // the unit -- the recommendation list then fell back to showing every duration.
+  it('parses a hyphenated day count ("3-day")', () => {
+    expect(parseTripPreferences('a 3-day, 2-night tour please').dayCount).toBe(3)
+    expect(parseTripPreferences('the 4-day expedition').dayCount).toBe(4)
+  })
+
+  // Reported 2026-08-05: "I would like to be picked up in Bali... I have a flight from
+  // Surabaya Airport" was parsed as origin='Surabaya' -- the bare city-name fallback checks
+  // 'surabaya' before 'bali' with no regard for which city the customer actually named as
+  // their PICKUP point vs. one mentioned only incidentally (their departure airport).
+  it('treats "picked up in <city>" as the origin, even when the other city is also mentioned', () => {
+    expect(
+      parseTripPreferences('picked up in Bali on the morning of the 15th, flight from Surabaya Airport on the 17th').origin
+    ).toBe('Bali')
+    expect(parseTripPreferences('pickup at Surabaya please, our flight home is via Bali').origin).toBe('Surabaya')
+  })
+
   // Reported 2026-08-05: "can we finish the trip in Bali?" was parsed as origin='Bali' (the
   // bare city-name fallback), not as a question about the FINISH city -- a Bali-origin package
   // does not necessarily finish in Bali at all (see catalog.ts's finishCities).

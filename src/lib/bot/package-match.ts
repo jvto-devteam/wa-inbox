@@ -83,10 +83,13 @@ const NO_PREFERENCES: TripPreferences = { origin: null, dayCount: null, finishCi
 /**
  * "3 day(s)"/"3 hari" or "3d2n" -> 3. A date range like "10-12 June" implies a 3-day trip
  * (inclusive of both ends) -- capped at 10 days so a garbled or unrelated number pair
- * (e.g. two prices) can't be misread as a multi-week trip.
+ * (e.g. two prices) can't be misread as a multi-week trip. `[\s-]*` (not just `\s*`) between
+ * the number and the unit -- reported 2026-08-05: "a 3-day, 2-night tour" (hyphenated, no
+ * space before "day") didn't match a bare `\s*`, so a real, explicitly stated duration was
+ * silently lost and the recommendation list fell back to showing every duration.
  */
 function parseDayCount(low: string): number | null {
-  const explicit = low.match(/(\d{1,2})\s*(?:d\s*\d{1,2}\s*n\b|days?\b|hari\b)/)
+  const explicit = low.match(/(\d{1,2})[\s-]*(?:d[\s-]*\d{1,2}[\s-]*n\b|days?\b|hari\b)/)
   if (explicit) {
     const n = Number(explicit[1])
     if (n > 0 && n <= 10) return n
@@ -112,7 +115,14 @@ function parseDayCount(low: string): number | null {
 // (only 'back to' matched), so parseOrigin fell through to the bare "bali" fallback and
 // silently overwrote an already-confirmed Surabaya origin with 'Bali'.
 const FINISH_CONTEXT_PHRASES = ['finish', 'end in', 'ending in', 'drop off', 'dropoff', 'drop-off', 'back to', 'back in']
-const FROM_CITY_PATTERN = /\bfrom\s+(bali|surabaya)\b|\bstart(?:ing)?\s+(?:in|from)\s+(bali|surabaya)\b/
+// "picked up in Bali"/"pickup at Surabaya" is as strong and unambiguous an origin signal as
+// "from <city>" -- added 2026-08-05: "I would like to be picked up in Bali... I have a flight
+// from Surabaya Airport" was parsed as origin='Surabaya', because the bare fallback below
+// checks 'surabaya' before 'bali' with no regard for which city was actually the customer's
+// stated PICKUP point vs. one mentioned only incidentally (their departure airport). Checked
+// with the same priority as FROM_CITY_PATTERN so it wins before the bare fallback ever runs.
+const FROM_CITY_PATTERN =
+  /\bfrom\s+(bali|surabaya)\b|\bstart(?:ing)?\s+(?:in|from)\s+(bali|surabaya)\b|\bpick(?:ed)?[\s-]?up\s+(?:in|at|from)\s+(bali|surabaya)\b/
 
 // Every token this file/catalog.ts's finish-city matching can produce ("bali", "surabaya",
 // "malang", "ketapang") is already a single, simple word -- capitalizing the first letter is
@@ -123,7 +133,7 @@ export function titleCaseCity(city: string): string {
 
 function parseOrigin(low: string): string | null {
   const fromMatch = low.match(FROM_CITY_PATTERN)
-  if (fromMatch) return titleCaseCity(fromMatch[1] ?? fromMatch[2])
+  if (fromMatch) return titleCaseCity(fromMatch[1] ?? fromMatch[2] ?? fromMatch[3])
   if (FINISH_CONTEXT_PHRASES.some((p) => low.includes(p))) return null
   if (low.includes('surabaya')) return 'Surabaya'
   if (low.includes('bali')) return 'Bali'
