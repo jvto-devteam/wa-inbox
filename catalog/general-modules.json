@@ -255,14 +255,15 @@
     "category": "service",
     "scope": "global",
     "title": "Drone Usage",
-    "short_answer": "Yes, guests can bring and fly a personal drone, as long as it's operated safely.",
-    "detail_summary": "Drone usage by guests is permitted on JVTO tours, provided it is operated safely (e.g. away from other visitors, wildlife, and any posted restrictions at a given site). JVTO does not currently have a published per-destination drone policy (permits, fees, or altitude limits) beyond this general permission -- confirm with our team ahead of time for a specific destination if in doubt.",
+    "short_answer": "Drone rules vary by destination: at Bromo a Rp2.000.000 permit is required (bought directly at bromotenggersemeru.id), and at Ijen drones are currently NOT allowed at all.",
+    "detail_summary": "Drone rules are destination-specific. At Mount Bromo, flying a drone requires an official permit costing Rp2.000.000, purchased directly through the Bromo Tengger Semeru National Park's own site at bromotenggersemeru.id -- this is not something JVTO arranges or resells. At Kawah Ijen, drones are currently NOT permitted at all. For Madakaripura Waterfall, Papuma Beach, and Tumpak Sewu Waterfall, no specific drone restriction is published -- general safe operation applies, away from other visitors and wildlife. Confirm with our team ahead of time if in doubt for a specific destination.",
     "customer_visible": true,
     "reusable": true,
     "applies_to": "all_private_packages",
     "approval_status": "approved",
     "source_evidence": [
-      "live:data.ts#special-services"
+      "live:data.ts#special-services",
+      "operator-confirmed:2026-08-06"
     ]
   },
   {

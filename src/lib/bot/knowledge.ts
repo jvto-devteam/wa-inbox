@@ -215,13 +215,14 @@ const KEYWORD_TRIGGERED_MODULES: Array<{ moduleId: string; keywords: string[] }>
     // 'payment' via a bare "pay" match) still surfaces this current access status.
     keywords: ['blue fire', 'blue-fire', 'bluefire', 'crater access', 'kawah ijen'],
   },
-  // 'service_drone_usage' added 2026-08-05: researched jvto-web, jvto-itinerary-core,
-  // jvto-whatsapp-agent-runtime, chatbot-web, and the live site for a per-destination drone
-  // policy -- only ONE genuine, general (not destination-specific) fact exists anywhere
-  // (jvto-web's src/data.ts "special-services" FAQ entry: "Drone usage by guests is permitted,
-  // but you must operate it safely"). No permits/fees/altitude limits/per-destination rules
-  // are published anywhere, so none are stated here either -- the module's own detail_summary
-  // is honest about that gap rather than inventing specifics.
+  // 'service_drone_usage' added 2026-08-05, refined 2026-08-06: researched jvto-web,
+  // jvto-itinerary-core, jvto-whatsapp-agent-runtime, chatbot-web, and the live site for a
+  // per-destination drone policy -- only one general fact existed in any of those sources
+  // (jvto-web's src/data.ts "special-services" FAQ entry). The operator then confirmed the
+  // real per-destination rules directly: Bromo requires a Rp2.000.000 permit purchased at
+  // bromotenggersemeru.id (the park's own site, not something JVTO arranges); Ijen currently
+  // does not allow drones at all. No specific rule is published for Madakaripura/Papuma/
+  // Tumpak Sewu, so none is fabricated for them either.
   {
     moduleId: 'service_drone_usage',
     keywords: ['drone', 'uav', 'aerial photography', 'aerial footage', 'aerial video'],

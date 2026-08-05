@@ -173,16 +173,22 @@ describe.skipIf(!RELEASE_PRESENT)('resolveKnowledgeForTopic against the real syn
   })
 
   // Researched 2026-08-05 across jvto-web, jvto-itinerary-core, jvto-whatsapp-agent-runtime,
-  // and chatbot-web: only ONE genuine drone fact exists anywhere, and it is general (not
-  // per-destination) -- jvto-web's own "special-services" FAQ entry. No per-destination
-  // permits/fees/altitude limits are published anywhere, so none are fabricated here either.
+  // and chatbot-web: no source had per-destination drone rules. Operator-confirmed 2026-08-06:
+  // Bromo requires a Rp2.000.000 permit (bought at bromotenggersemeru.id, not via JVTO); Ijen
+  // currently does not allow drones at all. Genuinely destination-independent -- the module is
+  // keyword-triggered (fires regardless of topic/destination), so the SAME two real facts must
+  // surface whether or not a destination happens to be known yet.
   it.each([
     ['can we bring a drone?', 'drone'],
     ['is a UAV allowed on the tour?', 'UAV'],
     ['can we take aerial photography during the hike?', 'aerial photography'],
-  ] as const)('resolves the real drone-usage fact for %s (%s)', (message, _keyword) => {
+  ] as const)('resolves the real per-destination drone facts (Bromo permit, Ijen ban) for %s (%s)', (message, _keyword) => {
     const result = resolveKnowledgeForTopic('general', message)
-    expect(result.factualLines.some((f) => f.toLowerCase().includes('drone'))).toBe(true)
-    expect(result.detailLines.some((d) => d.toLowerCase().includes('permitted'))).toBe(true)
+    const allText = [...result.factualLines, ...result.detailLines].join(' ').toLowerCase()
+    expect(allText).toContain('bromo')
+    expect(allText).toContain('rp2.000.000')
+    expect(allText).toContain('bromotenggersemeru.id')
+    expect(allText).toContain('ijen')
+    expect(allText).toMatch(/ijen.{0,40}not/)
   })
 })
