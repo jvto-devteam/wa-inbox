@@ -468,31 +468,34 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
       })
     }
 
-    // A destination like "ijen" is served by packages starting from BOTH Bali and Surabaya
-    // (a real ambiguity: live-checked 2026-08-04, 4 Ijen packages start from Bali, 8 from
-    // Surabaya) -- recommending one without knowing which the customer means is a guess, so
-    // ask first for a recommendation-shaped question. Asked at most once per conversation
-    // (askedTripPreferences persists, mirroring `destination`'s own "ask once, remember"
-    // pattern): a customer who never answers the finish-point half of the question still
-    // gets a real recommendation on their very next message, since this branch never fires
-    // a second time. 'price' kept alongside isRecommendationRequest as a belt-and-suspenders
-    // topic-based signal -- either one is enough. 'general' deliberately NOT included here:
-    // live-tested 2026-08-05, it's classifyTopic's default fallback for basically any
-    // unclassified message (job J1's default topic), so treating every 'general'-topic
-    // message as a recommendation request meant an unrelated question ("can you arrange a
-    // police escort?") triggered the multi-package "present ALL options" instruction below and
-    // buried the real police-escort link under a package list the customer never asked for.
-    const distinctOrigins = new Set(matches.map((p) => p.origin).filter((o): o is string => Boolean(o)))
+    // Confirmed with the operator 2026-08-05: before recommending ANY package, the funnel
+    // requires all three of start city, finish city, and trip length to be known -- not just
+    // when the destination has multiple real origins (the narrower rule this replaces).
+    // Asked at most once per conversation (askedTripPreferences persists, mirroring
+    // `destination`'s own "ask once, remember" pattern): a customer who doesn't answer in the
+    // requested bullet format still gets a real recommendation on their very next message from
+    // whatever became known, via pickPackage/optionPool's own existing progressive-narrowing
+    // fallback -- this branch never fires a second time. Already-known fields are pre-filled
+    // in the bullet reply (never re-asked), so only genuinely missing ones need an answer.
+    // 'price' kept alongside isRecommendationRequest as a belt-and-suspenders topic-based
+    // signal -- either one is enough. 'general' deliberately NOT included here: live-tested
+    // 2026-08-05, it's classifyTopic's default fallback for basically any unclassified message
+    // (job J1's default topic), so treating every 'general'-topic message as a recommendation
+    // request meant an unrelated question ("can you arrange a police escort?") triggered this
+    // gate (and the multi-package "present ALL options" instruction below) and buried the real
+    // police-escort link under a funnel question the customer never asked for.
     const isRecommendationTopic = resolverTopic === 'price' || isRecommendationRequest(inboundText)
-    if (!origin && distinctOrigins.size > 1 && isRecommendationTopic && !tripBrief.askedTripPreferences) {
+    if (isRecommendationTopic && !tripBrief.askedTripPreferences && (!origin || !finishCity || !dayCount)) {
       await persistTripBrief({ destination, askedTripPreferences: true })
       trace.push(
-        'Menanyakan asal & titik akhir',
-        `Destinasi "${destination}" punya paket dari lebih dari satu kota asal -- menanyakan sebelum merekomendasikan.`
+        'Menanyakan detail trip',
+        `Merekomendasikan paket butuh start, finish, dan jumlah hari -- salah satu belum diketahui, menanyakan sebelum merekomendasikan.`
       )
       const reply =
-        `Happy to recommend a package! Would you like to start from Bali or Surabaya, and do you have a preferred finish point? ` +
-        `No worries if you're not sure yet -- let me know either way and I can suggest our most popular option.`
+        `Happy to recommend the best package for you! Could you share a few details?\n\n` +
+        `- Start (Surabaya/Bali): ${origin ?? ''}\n` +
+        `- Finish (Surabaya/Bali): ${finishCity ? titleCaseCity(finishCity) : ''}\n` +
+        `- Number of Day(s): ${dayCount ?? ''}`
       trace.push('Jawaban siap dikirim', previewText(reply))
       return { mode: 'clarify', reply, steps: trace.steps }
     }

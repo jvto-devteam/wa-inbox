@@ -527,7 +527,10 @@ describe('decideAndRespond', () => {
     mockPrisma.settings.findUniqueOrThrow.mockResolvedValue({ ollamaModel: 'gemma4:31b-cloud' } as never)
     mockPrisma.conversation.findUniqueOrThrow.mockResolvedValue({
       id: 'conv_1',
-      tripBrief: { destination: 'ijen' },
+      // askedTripPreferences: true -- this test is about destination persistence, not the
+      // start/finish/day-count funnel gate (see 'trip-preferences clarify' describe below for
+      // that), so already-asked bypasses it and lets the original flow run as intended.
+      tripBrief: { destination: 'ijen', askedTripPreferences: true },
       bookingData: null,
       bookingCheckedAt: new Date(),
       contact: { phone: '6281234567890' },
@@ -544,7 +547,7 @@ describe('decideAndRespond', () => {
     expect(mockPrisma.conversation.update).toHaveBeenCalledTimes(1)
     expect(mockPrisma.conversation.update).toHaveBeenCalledWith({
       where: { id: 'conv_1' },
-      data: { tripBrief: { destination: 'ijen', lastTopic: 'price' } },
+      data: { tripBrief: { destination: 'ijen', askedTripPreferences: true, lastTopic: 'price' } },
     })
   })
 
@@ -960,7 +963,7 @@ describe('decideAndRespond', () => {
     expect(checkDeploymentGate).not.toHaveBeenCalled()
   })
 
-  describe('trip-preferences clarify (origin ambiguity)', () => {
+  describe('trip-preferences clarify (start/finish/day-count funnel)', () => {
     const fromBali = pkg({ packageKey: 'bali-3d', origin: 'Bali', dayCount: 3 })
     const fromSurabaya = pkg({ packageKey: 'surabaya-2d', origin: 'Surabaya', dayCount: 2 })
 
@@ -982,14 +985,83 @@ describe('decideAndRespond', () => {
       })
     })
 
-    it('does not ask when every matching package shares the same origin (no real ambiguity)', async () => {
+    // Confirmed with the operator 2026-08-05: recommending a package requires knowing start,
+    // finish, AND day count -- asks using this exact bullet format when any is still missing.
+    it('asks using the exact bullet-list format when nothing is known yet', async () => {
       ;(ensureFreshBookingData as any).mockResolvedValue(null)
-      ;(classifySalesNeed as any).mockReturnValue({ job: 'J2', missingInfo: [], needsLiveData: false })
-      ;(matchDestination as any).mockReturnValue({ destination: 'ijen', matches: [pkg({ origin: 'Surabaya' }), pkg({ origin: 'Surabaya', packageKey: 'other' })] })
-      ;(checkRouteGate as any).mockReturnValue({ status: 'clear' })
+      ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
+      ;(matchDestination as any).mockReturnValue({ destination: 'ijen', matches: [fromBali, fromSurabaya] })
+      ;(classifyTopic as any).mockReturnValue('price')
+
+      const result = await decideAndRespond('conv_1', 'What packages do you have for Ijen?')
+
+      expect(result.mode).toBe('clarify')
+      const reply = (result as { mode: 'clarify'; reply: string }).reply
+      expect(reply).toContain('- Start (Surabaya/Bali):')
+      expect(reply).toContain('- Finish (Surabaya/Bali):')
+      expect(reply).toContain('- Number of Day(s):')
+    })
+
+    // Origin sharing alone used to be enough to skip the ask (the old, narrower rule) -- now
+    // finish city and day count are independently required, even when origin isn't ambiguous.
+    it('still asks (for finish/day count) even when the origin alone is unambiguous', async () => {
+      ;(ensureFreshBookingData as any).mockResolvedValue(null)
+      ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
+      ;(matchDestination as any).mockReturnValue({
+        destination: 'ijen',
+        matches: [pkg({ origin: 'Surabaya' }), pkg({ origin: 'Surabaya', packageKey: 'other' })],
+      })
       ;(classifyTopic as any).mockReturnValue('price')
 
       const result = await decideAndRespond('conv_1', 'Which package do you recommend for Ijen?')
+
+      expect(result.mode).toBe('clarify')
+    })
+
+    it('pre-fills already-known fields in the bullet reply instead of re-asking them', async () => {
+      ;(ensureFreshBookingData as any).mockResolvedValue(null)
+      ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
+      ;(matchDestination as any).mockReturnValue({ destination: 'ijen', matches: [fromBali, fromSurabaya] })
+      ;(classifyTopic as any).mockReturnValue('price')
+      ;(parseTripPreferences as any).mockReturnValue({ origin: 'Surabaya', dayCount: 3, finishCity: null, pax: null })
+
+      const result = await decideAndRespond('conv_1', '3 day trip from Surabaya, which package do you recommend?')
+
+      expect(result.mode).toBe('clarify')
+      const reply = (result as { mode: 'clarify'; reply: string }).reply
+      expect(reply).toContain('- Start (Surabaya/Bali): Surabaya')
+      expect(reply).toContain('- Finish (Surabaya/Bali): \n')
+      expect(reply).toContain('- Number of Day(s): 3')
+    })
+
+    it('does not ask a second time once askedTripPreferences is already on file, even with everything still missing', async () => {
+      ;(ensureFreshBookingData as any).mockResolvedValue(null)
+      ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
+      ;(matchDestination as any).mockReturnValue({ destination: 'ijen', matches: [fromBali, fromSurabaya] })
+      ;(checkRouteGate as any).mockReturnValue({ status: 'clear' })
+      ;(classifyTopic as any).mockReturnValue('price')
+      mockPrisma.conversation.findUniqueOrThrow.mockResolvedValue({
+        id: 'conv_1', tripBrief: { destination: 'ijen', askedTripPreferences: true }, bookingData: null,
+        bookingCheckedAt: new Date(), contact: { phone: '6281234567890' },
+      } as never)
+
+      const result = await decideAndRespond('conv_1', 'What packages do you have for Ijen?')
+
+      expect(result.mode).toBe('faq')
+    })
+
+    // Confirmed with the operator 2026-08-05: the funnel now requires start, finish, AND day
+    // count before recommending -- not just an unambiguous origin (the old, narrower rule this
+    // replaces). Origin sharing alone is no longer enough to skip the ask.
+    it('does not ask when start, finish, and day count are all already known (no gap left to ask about)', async () => {
+      ;(ensureFreshBookingData as any).mockResolvedValue(null)
+      ;(classifySalesNeed as any).mockReturnValue({ job: 'J2', missingInfo: [], needsLiveData: false })
+      ;(matchDestination as any).mockReturnValue({ destination: 'ijen', matches: [pkg({ origin: 'Surabaya', finishCities: ['surabaya'], dayCount: 3 })] })
+      ;(checkRouteGate as any).mockReturnValue({ status: 'clear' })
+      ;(classifyTopic as any).mockReturnValue('price')
+      ;(parseTripPreferences as any).mockReturnValue({ origin: 'Surabaya', dayCount: 3, finishCity: 'surabaya', pax: null })
+
+      const result = await decideAndRespond('conv_1', '3 day trip from Surabaya, ending in Surabaya -- which package do you recommend?')
 
       expect(result.mode).toBe('faq')
     })
@@ -1032,12 +1104,22 @@ describe('decideAndRespond', () => {
       ;(checkRouteGate as any).mockReturnValue({ status: 'clear' })
       ;(classifyTopic as any).mockReturnValue('price')
       ;(parseTripPreferences as any).mockReturnValue({ origin: 'Surabaya', dayCount: null })
+      // askedTripPreferences: true -- this test is about origin persistence/pickPackage
+      // narrowing, not the start/finish/day-count funnel gate itself (see the dedicated gate
+      // tests above), so already-asked bypasses it.
+      mockPrisma.conversation.findUniqueOrThrow.mockResolvedValue({
+        id: 'conv_1',
+        tripBrief: { askedTripPreferences: true },
+        bookingData: null,
+        bookingCheckedAt: new Date(),
+        contact: { phone: '6281234567890' },
+      } as never)
 
       await decideAndRespond('conv_1', '3 day trip from Surabaya please')
 
       expect(mockPrisma.conversation.update).toHaveBeenCalledWith({
         where: { id: 'conv_1' },
-        data: { tripBrief: { destination: 'ijen', origin: 'Surabaya' } },
+        data: { tripBrief: { askedTripPreferences: true, destination: 'ijen', origin: 'Surabaya' } },
       })
       expect(pickPackage).toHaveBeenCalledWith([fromBali, fromSurabaya], { origin: 'Surabaya', dayCount: null, finishCity: null, pax: null })
     })
@@ -1074,6 +1156,10 @@ describe('decideAndRespond', () => {
       })
       ;(checkRouteGate as any).mockReturnValue({ status: 'clear' })
       ;(classifyTopic as any).mockReturnValue('price')
+      mockPrisma.conversation.findUniqueOrThrow.mockResolvedValue({
+        id: 'conv_1', tripBrief: { askedTripPreferences: true }, bookingData: null, bookingCheckedAt: new Date(),
+        contact: { phone: '6281234567890' },
+      } as never)
 
       await decideAndRespond('conv_1', 'Which packages do you have for Ijen?')
 
@@ -1099,6 +1185,10 @@ describe('decideAndRespond', () => {
       })
       ;(checkRouteGate as any).mockReturnValue({ status: 'clear' })
       ;(classifyTopic as any).mockReturnValue('price')
+      mockPrisma.conversation.findUniqueOrThrow.mockResolvedValue({
+        id: 'conv_1', tripBrief: { askedTripPreferences: true }, bookingData: null, bookingCheckedAt: new Date(),
+        contact: { phone: '6281234567890' },
+      } as never)
 
       await decideAndRespond('conv_1', 'Which package do you recommend for Ijen?')
 
@@ -1159,6 +1249,10 @@ describe('decideAndRespond', () => {
       ;(matchDestination as any).mockReturnValue({ destination: 'ijen', matches: sixOptions })
       ;(checkRouteGate as any).mockReturnValue({ status: 'clear' })
       ;(classifyTopic as any).mockReturnValue('price')
+      mockPrisma.conversation.findUniqueOrThrow.mockResolvedValue({
+        id: 'conv_1', tripBrief: { askedTripPreferences: true }, bookingData: null, bookingCheckedAt: new Date(),
+        contact: { phone: '6281234567890' },
+      } as never)
 
       await decideAndRespond('conv_1', 'Which package do you recommend for Ijen?')
 
@@ -1214,6 +1308,10 @@ describe('decideAndRespond', () => {
       })
       ;(checkRouteGate as any).mockReturnValue({ status: 'clear' })
       ;(classifyTopic as any).mockReturnValue('price')
+      mockPrisma.conversation.findUniqueOrThrow.mockResolvedValue({
+        id: 'conv_1', tripBrief: { askedTripPreferences: true }, bookingData: null, bookingCheckedAt: new Date(),
+        contact: { phone: '6281234567890' },
+      } as never)
 
       await decideAndRespond('conv_1', 'What packages do you recommend?')
 
@@ -1233,6 +1331,10 @@ describe('decideAndRespond', () => {
       })
       ;(checkRouteGate as any).mockReturnValue({ status: 'clear' })
       ;(classifyTopic as any).mockReturnValue('price')
+      mockPrisma.conversation.findUniqueOrThrow.mockResolvedValue({
+        id: 'conv_1', tripBrief: { askedTripPreferences: true }, bookingData: null, bookingCheckedAt: new Date(),
+        contact: { phone: '6281234567890' },
+      } as never)
 
       await decideAndRespond('conv_1', 'Which package do you recommend for Ijen?')
 
@@ -1261,6 +1363,10 @@ describe('decideAndRespond', () => {
         factualLines: [], detailLines: [], primaryLink: null, disclosures: [], handoffRequired: false,
       })
       ;(parseTripPreferences as any).mockReturnValue({ origin: 'Surabaya', dayCount: null, finishCity: null })
+      mockPrisma.conversation.findUniqueOrThrow.mockResolvedValue({
+        id: 'conv_1', tripBrief: { askedTripPreferences: true }, bookingData: null, bookingCheckedAt: new Date(),
+        contact: { phone: '6281234567890' },
+      } as never)
 
       const result = await decideAndRespond('conv_1', 'hello, could you give me a recommendation for my trip at 10-13 june start from surabaya?')
 
@@ -1286,6 +1392,10 @@ describe('decideAndRespond', () => {
         factualLines: ['Ijen access depends on conditions.'], detailLines: [], primaryLink: null, disclosures: [], handoffRequired: false,
       })
       ;(parseTripPreferences as any).mockReturnValue({ origin: 'Surabaya', dayCount: null, finishCity: null })
+      mockPrisma.conversation.findUniqueOrThrow.mockResolvedValue({
+        id: 'conv_1', tripBrief: { askedTripPreferences: true }, bookingData: null, bookingCheckedAt: new Date(),
+        contact: { phone: '6281234567890' },
+      } as never)
 
       const result = await decideAndRespond(
         'conv_1',
