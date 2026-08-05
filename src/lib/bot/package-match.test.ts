@@ -13,6 +13,7 @@ function pkg(overrides: Partial<CatalogPackage> = {}): CatalogPackage {
     links: {},
     origin: null,
     dayCount: null,
+    finishCities: [],
     ...overrides,
   }
 }
@@ -134,25 +135,48 @@ describe('pickPackage', () => {
   const allOptions = [threeDayFromBali, fourDayFromBali, threeDayFromSurabaya, twoDayFromSurabaya]
 
   it('picks the package matching both a stated origin and day count', () => {
-    expect(pickPackage(allOptions, { origin: 'Surabaya', dayCount: 3 }).packageKey).toBe('surabaya-3d')
-    expect(pickPackage(allOptions, { origin: 'Bali', dayCount: 4 }).packageKey).toBe('bali-4d')
+    expect(pickPackage(allOptions, { origin: 'Surabaya', dayCount: 3, finishCity: null }).packageKey).toBe('surabaya-3d')
+    expect(pickPackage(allOptions, { origin: 'Bali', dayCount: 4, finishCity: null }).packageKey).toBe('bali-4d')
   })
 
   it('falls back to matching origin alone when no package matches both', () => {
-    expect(pickPackage(allOptions, { origin: 'Bali', dayCount: 2 }).packageKey).toBe('bali-3d')
+    expect(pickPackage(allOptions, { origin: 'Bali', dayCount: 2, finishCity: null }).packageKey).toBe('bali-3d')
   })
 
   it('falls back to matching day count alone when origin alone matches nothing', () => {
     const noSurabaya = [threeDayFromBali, fourDayFromBali]
-    expect(pickPackage(noSurabaya, { origin: 'Surabaya', dayCount: 4 }).packageKey).toBe('bali-4d')
+    expect(pickPackage(noSurabaya, { origin: 'Surabaya', dayCount: 4, finishCity: null }).packageKey).toBe('bali-4d')
   })
 
   it('falls back to plain price-only selection when preferences match nothing at all', () => {
-    expect(pickPackage(allOptions, { origin: 'Jakarta', dayCount: 9 }).packageKey).toBe('bali-3d')
+    expect(pickPackage(allOptions, { origin: 'Jakarta', dayCount: 9, finishCity: null }).packageKey).toBe('bali-3d')
   })
 
   it('ignores preferences entirely when none are given (default parameter)', () => {
     expect(pickPackage(allOptions).packageKey).toBe('bali-3d')
+  })
+
+  // Reported 2026-08-05: "can we finish the trip in Bali?" was answered from a Bali-ORIGIN
+  // package, which per real endpoint-chain data does NOT finish in Bali at all -- origin and
+  // finish city are genuinely different things.
+  describe('finish-city narrowing', () => {
+    const bringsBackToBali = pkg({ packageKey: 'finishes-bali', origin: 'Surabaya', finishCities: ['bali', 'surabaya'] })
+    const surabayaOnly = pkg({ packageKey: 'finishes-surabaya', origin: 'Bali', finishCities: ['surabaya', 'malang'] })
+    const options = [surabayaOnly, bringsBackToBali]
+
+    it('picks the package that can actually finish in the requested city, regardless of origin', () => {
+      expect(pickPackage(options, { origin: null, dayCount: null, finishCity: 'bali' }).packageKey).toBe('finishes-bali')
+    })
+
+    it('never picks a package based on origin alone when a finish city is requested and available', () => {
+      // surabayaOnly is Bali-ORIGIN but cannot finish in Bali -- must not be picked here.
+      const result = pickPackage(options, { origin: 'Bali', dayCount: null, finishCity: 'bali' })
+      expect(result.packageKey).toBe('finishes-bali')
+    })
+
+    it('falls back to price-only selection when no package can finish in the requested city', () => {
+      expect(pickPackage(options, { origin: null, dayCount: null, finishCity: 'ketapang' }).packageKey).toBe('finishes-surabaya')
+    })
   })
 })
 
@@ -178,11 +202,36 @@ describe('parseTripPreferences', () => {
     expect(parseTripPreferences('departing from Bali').origin).toBe('Bali')
   })
 
-  it('returns null for both fields when nothing is stated', () => {
-    expect(parseTripPreferences('is ijen safe?')).toEqual({ origin: null, dayCount: null })
+  it('returns null for all fields when nothing is stated', () => {
+    expect(parseTripPreferences('is ijen safe?')).toEqual({ origin: null, dayCount: null, finishCity: null })
   })
 
   it('never invents an unreasonable day count from an unrelated number pair', () => {
     expect(parseTripPreferences('the price is between 500000-2000000').dayCount).toBeNull()
+  })
+
+  // Reported 2026-08-05: "can we finish the trip in Bali?" was parsed as origin='Bali' (the
+  // bare city-name fallback), not as a question about the FINISH city -- a Bali-origin package
+  // does not necessarily finish in Bali at all (see catalog.ts's finishCities).
+  describe('finish-city phrasing does not get mistaken for origin', () => {
+    it('parses "finish in <city>" as finishCity, not origin', () => {
+      expect(parseTripPreferences('can we finish the trip in bali?')).toEqual({ origin: null, dayCount: null, finishCity: 'bali' })
+    })
+
+    it('parses "end in <city>" / "drop off in <city>" as finishCity too', () => {
+      expect(parseTripPreferences('does it end in Surabaya?').finishCity).toBe('surabaya')
+      expect(parseTripPreferences('can you drop off in Malang?').finishCity).toBe('malang')
+    })
+
+    it('an explicit "from <city>" still wins as origin even when finish-context phrasing is also present', () => {
+      const result = parseTripPreferences('3 day trip from Surabaya, finishing in Bali')
+      expect(result.origin).toBe('Surabaya')
+      expect(result.finishCity).toBe('bali')
+    })
+
+    it('a bare city mention with no finish-context phrasing is still parsed as origin, unchanged', () => {
+      expect(parseTripPreferences('I want to go to Ijen from Bali').origin).toBe('Bali')
+      expect(parseTripPreferences('a trip to Bali please').origin).toBe('Bali')
+    })
   })
 })

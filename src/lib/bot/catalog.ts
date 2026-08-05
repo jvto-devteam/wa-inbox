@@ -35,12 +35,17 @@
  *                                 `module_applicability`, incl. the policy cards
  *                                 with `short_answer` / `scope` / `approval_status`.
  *   customer-link-registry.json (object)   -- `base_url` for the public site.
+ *   endpoint-chains.json       (array, 16) -- `standard_dropoff_options`, joined on
+ *                                 `package_key` into `finishCities` (added 2026-08-05: "can
+ *                                 we finish in Bali?" was being answered from `origin` alone,
+ *                                 which cannot tell "starts in Bali" from "ends in Bali" --
+ *                                 they're a real, different set of cities per package).
  *
  * `meta.json` (`syncedAt`) is read exactly as before. `deployment-gate.json` is
  * not read here at all (deployment-gate.ts owns it). Every other file in
- * `catalog/` (endpoint-chains, accommodation-rules, vehicle-and-luggage-rules,
- * guide-support-rules, ...) carries operational detail that `CatalogPackage` has
- * no field for and is deliberately ignored rather than half-mapped.
+ * `catalog/` (accommodation-rules, vehicle-and-luggage-rules, guide-support-rules, ...)
+ * carries operational detail that `CatalogPackage` has no field for and is deliberately
+ * ignored rather than half-mapped.
  *
  * --- Field-by-field judgment calls ---
  *
@@ -128,9 +133,11 @@ const COMPONENTS_FILE = 'component-matrices.json'
 const MODULE_COMPATIBILITY_FILE = 'module-compatibility.json'
 const GENERAL_MODULES_FILE = 'general-modules.json'
 const LINK_REGISTRY_FILE = 'customer-link-registry.json'
+const ENDPOINT_CHAINS_FILE = 'endpoint-chains.json'
 const META_FILE = 'meta.json'
 
 const DESTINATION_KEY_PREFIX = 'destination_'
+const FINISH_CITY_TOKENS = ['bali', 'surabaya', 'malang', 'ketapang']
 
 type Json = Record<string, unknown>
 
@@ -262,6 +269,32 @@ function buildPolicyNoteIndex(moduleCompatibility: unknown, generalModules: unkn
   return index
 }
 
+/**
+ * `endpoint-chains.json`'s `standard_dropoff_options` -> `package_key` -> which cities this
+ * package can actually END in, normalized to lowercase single-word tokens. A Bali-origin
+ * package's own dropoff options are all Surabaya/Malang-area (verified 2026-08-05: none of the
+ * 4 Bali-origin packages list "Bali" as a dropoff option at all) -- `origin` alone cannot
+ * answer "can we finish in Bali?", only this can.
+ */
+function buildFinishCityIndex(endpointChains: unknown): Map<string, string[]> {
+  const index = new Map<string, string[]>()
+  if (!Array.isArray(endpointChains)) return index
+  for (const entry of endpointChains) {
+    if (!isObject(entry)) continue
+    const packageKey = asString(entry.package_key)
+    if (!packageKey) continue
+    const cities = new Set<string>()
+    for (const option of asStringArray(entry.standard_dropoff_options)) {
+      const lower = option.toLowerCase()
+      for (const city of FINISH_CITY_TOKENS) {
+        if (lower.includes(city)) cities.add(city)
+      }
+    }
+    if (cities.size > 0) index.set(packageKey, [...cities])
+  }
+  return index
+}
+
 function publicSiteBaseUrl(linkRegistry: unknown): string {
   if (!isObject(linkRegistry)) return ''
   return (asString(linkRegistry.base_url) ?? '').replace(/\/+$/, '')
@@ -284,6 +317,7 @@ export function loadCatalog(): Catalog {
   const destinationIndex = buildDestinationIndex(moduleCompatibility)
   const policyNoteIndex = buildPolicyNoteIndex(moduleCompatibility, readCatalogFile(GENERAL_MODULES_FILE))
   const baseUrl = publicSiteBaseUrl(readCatalogFile(LINK_REGISTRY_FILE))
+  const finishCityIndex = buildFinishCityIndex(readCatalogFile(ENDPOINT_CHAINS_FILE))
 
   const packages: CatalogPackage[] = []
   const seen = new Set<string>()
@@ -335,6 +369,7 @@ export function loadCatalog(): Catalog {
       links: buildDetailsLink(baseUrl, asString(profile.public_url)),
       origin: asString(profile.origin),
       dayCount: asPositiveInt(profile.day_count),
+      finishCities: finishCityIndex.get(packageKey) ?? [],
     })
   }
 

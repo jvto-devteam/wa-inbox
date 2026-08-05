@@ -31,7 +31,18 @@ vi.mock('./sales-classifier', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./sales-classifier')>()),
   classifySalesNeed: vi.fn(),
 }))
-vi.mock('./package-match')
+// Partial mock: titleCaseCity is a pure, trivial string helper worth exercising for real
+// (orchestrator.ts's finish-city fact string interpolates its actual output); the rest --
+// matching/lookup functions that need real Catalog fixtures to behave meaningfully in a unit
+// test -- stay stubbed.
+vi.mock('./package-match', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./package-match')>()),
+  matchDestination: vi.fn(),
+  packagesForDestination: vi.fn(),
+  parseTripPreferences: vi.fn(),
+  pickPackage: vi.fn(),
+  listDestinations: vi.fn(),
+}))
 // Partial mock: toComposableTopic is a pure, deterministic mapping table worth exercising
 // for real; only classifyTopic (keyword scanning against the raw message) is stubbed.
 vi.mock('./module-resolver', async (importOriginal) => ({
@@ -60,6 +71,7 @@ function pkg(overrides: Record<string, unknown> = {}) {
     links: {},
     origin: null,
     dayCount: null,
+    finishCities: [],
     ...overrides,
   }
 }
@@ -74,7 +86,7 @@ beforeEach(() => {
   ;(checkDeploymentGate as any).mockReturnValue({ readyForApproval: true, blocking: [] })
   ;(packagesForDestination as any).mockReturnValue([])
   ;(pickPackage as any).mockImplementation((matches: any[]) => matches[0])
-  ;(parseTripPreferences as any).mockReturnValue({ origin: null, dayCount: null })
+  ;(parseTripPreferences as any).mockReturnValue({ origin: null, dayCount: null, finishCity: null })
   ;(listDestinations as any).mockReturnValue(['Bromo', 'Ijen'])
   ;(classifyTopic as any).mockReturnValue('inclusions')
   // Non-empty by default so ordinary FAQ tests don't have to know about knowledge.ts's own
@@ -1063,6 +1075,74 @@ describe('decideAndRespond', () => {
       expect(result.mode).toBe('faq')
       const [, opts] = (callLLM as any).mock.calls[0]
       expect(opts.system).not.toContain('present ALL')
+    })
+  })
+
+  // Reported 2026-08-05: "can we finish the trip in Bali?" was answered from a Bali-ORIGIN
+  // package (parseOrigin matched the bare "bali" mention as a starting city), which per real
+  // endpoint-chain data does NOT finish in Bali at all -- "starts in X" and "ends in X" are
+  // genuinely different questions this file used to conflate.
+  describe('finish-city fact (route-endpoint questions)', () => {
+    const cannotFinishInBali = pkg({ packageKey: 'bali-origin', title: 'Ijen from Bali', origin: 'Bali', finishCities: ['surabaya', 'malang'] })
+    const canFinishInBali = pkg({ packageKey: 'surabaya-to-bali', title: 'Ijen from Surabaya to Bali', origin: 'Surabaya', finishCities: ['bali', 'surabaya'] })
+
+    it('tells the LLM explicitly (and honestly) when a package for this destination CAN finish in the requested city', async () => {
+      ;(ensureFreshBookingData as any).mockResolvedValue(null)
+      ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
+      ;(matchDestination as any).mockReturnValue({ destination: 'ijen', matches: [cannotFinishInBali, canFinishInBali] })
+      ;(checkRouteGate as any).mockReturnValue({ status: 'clear' })
+      ;(classifyTopic as any).mockReturnValue('route_endpoint')
+      ;(parseTripPreferences as any).mockReturnValue({ origin: null, dayCount: null, finishCity: 'bali' })
+
+      await decideAndRespond('conv_1', 'can we finish the trip in bali?')
+
+      const [, opts] = (callLLM as any).mock.calls[0]
+      expect(opts.system).toContain('yes, at least one of the matching packages above genuinely can')
+      expect(opts.system).toContain('finishes in Bali')
+    })
+
+    it('tells the LLM explicitly (and honestly) when NO package for this destination can finish in the requested city', async () => {
+      ;(ensureFreshBookingData as any).mockResolvedValue(null)
+      ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
+      ;(matchDestination as any).mockReturnValue({ destination: 'ijen', matches: [cannotFinishInBali] })
+      ;(checkRouteGate as any).mockReturnValue({ status: 'clear' })
+      ;(classifyTopic as any).mockReturnValue('route_endpoint')
+      ;(parseTripPreferences as any).mockReturnValue({ origin: null, dayCount: null, finishCity: 'bali' })
+
+      await decideAndRespond('conv_1', 'can we finish the trip in bali?')
+
+      const [, opts] = (callLLM as any).mock.calls[0]
+      expect(opts.system).toContain('none of the matching packages for this destination are set up to finish there')
+    })
+
+    it('does not add any finish-city fact when the message states no finish city', async () => {
+      ;(ensureFreshBookingData as any).mockResolvedValue(null)
+      ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
+      ;(matchDestination as any).mockReturnValue({ destination: 'ijen', matches: [cannotFinishInBali, canFinishInBali] })
+      ;(checkRouteGate as any).mockReturnValue({ status: 'clear' })
+      ;(classifyTopic as any).mockReturnValue('inclusions')
+
+      await decideAndRespond('conv_1', 'what is included?')
+
+      const [, opts] = (callLLM as any).mock.calls[0]
+      expect(opts.system).not.toContain('finish/end in')
+    })
+
+    it("picks the package that can actually finish in Bali, not the Bali-ORIGIN one, when both are candidates", async () => {
+      ;(ensureFreshBookingData as any).mockResolvedValue(null)
+      ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
+      ;(matchDestination as any).mockReturnValue({ destination: 'ijen', matches: [cannotFinishInBali, canFinishInBali] })
+      ;(checkRouteGate as any).mockReturnValue({ status: 'clear' })
+      ;(classifyTopic as any).mockReturnValue('route_endpoint')
+      ;(parseTripPreferences as any).mockReturnValue({ origin: null, dayCount: null, finishCity: 'bali' })
+      ;(pickPackage as any).mockImplementation((matches: any[], prefs: any) =>
+        prefs?.finishCity ? (matches.find((p) => p.finishCities.includes(prefs.finishCity)) ?? matches[0]) : matches[0]
+      )
+
+      await decideAndRespond('conv_1', 'can we finish the trip in bali?')
+
+      const [, opts] = (callLLM as any).mock.calls[0]
+      expect(opts.system).toContain('Package the customer is asking about: Ijen from Surabaya to Bali')
     })
   })
 })

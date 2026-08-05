@@ -46,4 +46,16 @@ describe.skipIf(!RELEASE_PRESENT)('resolveKnowledgeForTopic against the real syn
     const result = resolveKnowledgeForTopic('route_endpoint', 'can we finish in bali?')
     expect(result.factualLines).toEqual([])
   })
+
+  // Reported 2026-08-05: "what is your refund policy?" linked to a generic package tour page
+  // instead of the real cancellation policy page. Root cause: general-modules.json's
+  // policy_cancellation_package_credit module had link_key "cancellation_package_credit", but
+  // customer-link-registry.json's actual entry for this content is keyed
+  // "cancellation_travel_credit" -- a naming-drift bug shared with chatbot-web's own copy of
+  // the same file, fixed at the source in all three synced repos.
+  it('resolves the real cancellation/refund policy link for the cancellation topic, not a generic fallback', () => {
+    const result = resolveKnowledgeForTopic('cancellation', 'what is your refund policy?')
+    expect(result.factualLines.length).toBeGreaterThan(0)
+    expect(result.primaryLink).toBe('https://javavolcano-touroperator.com/policy/booking-payment-cancellation')
+  })
 })

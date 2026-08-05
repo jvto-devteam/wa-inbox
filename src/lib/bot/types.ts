@@ -69,6 +69,14 @@ export type CatalogPackage = {
   // pickPackage (see that file's header). Title-cased origin, verbatim from the source.
   origin: string | null
   dayCount: number | null
+  // endpoint-chains.json's `standard_dropoff_options`, normalized to lowercase single-word
+  // city tokens ("bali", "surabaya", "malang", "ketapang") -- which cities this specific
+  // package can actually END in. NOT the same as `origin`: a Bali-origin package's real
+  // dropoff options are all Surabaya/Malang-area (it does NOT finish in Bali), while some
+  // Surabaya-origin packages explicitly can finish in Bali. Added 2026-08-05 after "can we
+  // finish the trip in Bali?" got answered from a Bali-ORIGIN package (matching "bali" as a
+  // starting-city keyword) instead of checking which packages can actually END there.
+  finishCities: string[]
 }
 
 export type Catalog = {

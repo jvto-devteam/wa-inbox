@@ -95,7 +95,7 @@ import { prisma } from '@/lib/db'
 import { ensureFreshBookingData } from '@/lib/booking/client'
 import { checkRouteGate } from './route-gate'
 import { classifySalesNeed, HANDOFF_KEYWORDS } from './sales-classifier'
-import { listDestinations, matchDestination, packagesForDestination, parseTripPreferences, pickPackage } from './package-match'
+import { listDestinations, matchDestination, packagesForDestination, parseTripPreferences, pickPackage, titleCaseCity } from './package-match'
 import { classifyTopic } from './module-resolver'
 import { resolveKnowledgeForTopic, GUARDRAIL_INSTRUCTION, GENERAL_FAQ_FALLBACK } from './knowledge'
 import { callLLM, type LLMOptions } from './llm'
@@ -397,11 +397,14 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
     )
 
     // "3 day trip from Surabaya" or "10-12 June (3 days) from Surabaya" -> narrows which of
-    // the destination's several packages (they differ by day count/origin) to recommend,
-    // instead of always naming whichever priced one happens to be first (see package-match.ts).
-    // `origin` (not `preferences.origin`) so a city stated on an EARLIER message still
-    // narrows this pick, matching the clarify branch above's own persisted-origin precedence.
-    const pkg = pickPackage(matches, { origin, dayCount: preferences.dayCount })
+    // the destination's several packages (they differ by day count/origin/finish city) to
+    // recommend, instead of always naming whichever priced one happens to be first (see
+    // package-match.ts). `origin` (not `preferences.origin`) so a city stated on an EARLIER
+    // message still narrows this pick, matching the clarify branch above's own
+    // persisted-origin precedence. `preferences.finishCity` is THIS message only -- unlike
+    // origin, a finish-city preference isn't persisted (a one-off "can we finish in Bali?"
+    // shouldn't keep narrowing every later question in the conversation).
+    const pkg = pickPackage(matches, { origin, dayCount: preferences.dayCount, finishCity: preferences.finishCity })
 
     // The module-resolution step catalog.ts's own header names as never having been ported
     // (see knowledge.ts's header) -- resolves real facts/links/disclosures for all 14 real
@@ -458,27 +461,46 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
     // this specific topic.
     const primaryLink = knowledge.primaryLink ?? pkg.links.details ?? null
 
-    // Every priced package matching this destination (narrowed to the known origin, if
-    // any) as real, comparison-ready options -- so "which package do you recommend" gets an
-    // actual short list (per-package title/duration/origin/price/link), not just the single
-    // package pickPackage silently chose above for topic-general facts. Capped at 5 --
-    // "give 3 or 5 options" was the explicit ask, and it doubles as the LLM's presentation
-    // limit so it isn't tempted to dump every variation of a destination back at the customer.
-    // Each option carries its OWN details-page link (never the shared `primaryLink` below) --
-    // live-tested 2026-08-04, a single link at the end of a 5-option list left the customer
-    // unable to tell which package it belonged to.
-    const optionPackages = (origin ? matches.filter((p) => p.origin === origin) : matches)
-      .filter((p) => p.priceIdr !== null)
-      .slice(0, 5)
+    // Every priced package matching this destination (narrowed to the known finish city and/or
+    // origin, if any -- same progressive-narrowing precedence as pickPackage above) as real,
+    // comparison-ready options -- so "which package do you recommend" gets an actual short
+    // list (per-package title/duration/origin/price/link), not just the single package
+    // pickPackage silently chose above for topic-general facts. Capped at 5 -- "give 3 or 5
+    // options" was the explicit ask, and it doubles as the LLM's presentation limit so it
+    // isn't tempted to dump every variation of a destination back at the customer. Each option
+    // carries its OWN details-page link (never the shared `primaryLink` below) -- live-tested
+    // 2026-08-04, a single link at the end of a 5-option list left the customer unable to tell
+    // which package it belonged to.
+    const finishCity = preferences.finishCity
+    let optionPool = matches
+    if (finishCity) {
+      const filtered = optionPool.filter((p) => p.finishCities.includes(finishCity))
+      if (filtered.length > 0) optionPool = filtered
+    }
+    if (origin) {
+      const filtered = optionPool.filter((p) => p.origin === origin)
+      if (filtered.length > 0) optionPool = filtered
+    }
+    const optionPackages = optionPool.filter((p) => p.priceIdr !== null).slice(0, 5)
     const packageOptionsText =
       optionPackages.length > 0
         ? optionPackages
             .map((p) => {
-              const details = `${p.title}${p.dayCount ? ` (${p.dayCount}D` : ''}${p.origin ? `, from ${p.origin})` : p.dayCount ? ')' : ''}: Rp${p.priceIdr!.toLocaleString('id-ID')}/person`
+              const finishNote = finishCity && p.finishCities.includes(finishCity) ? `, finishes in ${titleCaseCity(finishCity)}` : ''
+              const details = `${p.title}${p.dayCount ? ` (${p.dayCount}D` : ''}${p.origin ? `, from ${p.origin}${finishNote})` : p.dayCount ? ')' : ''}: Rp${p.priceIdr!.toLocaleString('id-ID')}/person`
               return p.links.details ? `- ${details} - ${p.links.details}` : `- ${details}`
             })
             .join('\n')
         : null
+    // "Can we finish the trip in Bali?" -- a Bali-ORIGIN package's real dropoff options are
+    // all Surabaya/Malang-area (verified 2026-08-05: none of the 4 Bali-origin packages list
+    // Bali as a finish option), so this must be answered from `finishCities`, never guessed
+    // from `origin`/general knowledge. Told explicitly, honestly, in both directions.
+    const finishCityFact = !finishCity
+      ? ''
+      : matches.some((p) => p.finishCities.includes(finishCity))
+        ? `\n\nThe customer asked whether the trip can finish/end in ${titleCaseCity(finishCity)} -- yes, at least one of the matching packages above genuinely can (see which ones say "finishes in ${titleCaseCity(finishCity)}"); do not claim every package does.`
+        : `\n\nThe customer asked whether the trip can finish/end in ${titleCaseCity(finishCity)} -- be honest: none of the matching packages for this destination are set up to finish there. Say so clearly and mention our team can advise on custom routing if they specifically need this.`
     // A soft "list them if relevant" instruction wasn't enough -- live-tested 2026-08-04, the
     // LLM kept silently recommending just one package even with several real options in the
     // prompt above. For an actual recommendation/comparison question, require presenting a
@@ -497,6 +519,7 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
             : '')
         : '') +
       `\n\nGeneral JVTO facts (use these for anything the specific facts above don't cover -- e.g. packing list, best time to visit, physical difficulty, what's included/excluded, payment terms):\n${GENERAL_FAQ_FALLBACK}` +
+      finishCityFact +
       (disclosures.length > 0 ? `\n\nImportant -- must be reflected in your reply:\n${disclosures.map((d) => `- ${d}`).join('\n')}` : '') +
       (classification.needsLiveData
         ? `\n\nThis question also touches live/real-time availability or pricing confirmation, which you cannot verify -- answer everything else from the facts above, but for that specific part say our team will confirm it shortly.`

@@ -43,7 +43,7 @@
     "customer_visible": true,
     "reusable": true,
     "detail_ref": "policies/cancellation-package-credit",
-    "link_key": "cancellation_package_credit",
+    "link_key": "cancellation_travel_credit",
     "visual_key": "cancellation_card",
     "approval_status": "approved",
     "source_evidence": [

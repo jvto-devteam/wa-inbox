@@ -13,6 +13,7 @@ function pkg(overrides: Partial<CatalogPackage> = {}): CatalogPackage {
     links: {},
     origin: null,
     dayCount: null,
+    finishCities: [],
     ...overrides,
   }
 }

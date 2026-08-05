@@ -69,15 +69,16 @@ const MONTH_NAMES = [
   'july', 'august', 'september', 'october', 'november', 'december',
 ]
 
-// A customer-stated duration/origin, parsed from free text -- used to narrow
+// A customer-stated duration/origin/finish-city, parsed from free text -- used to narrow
 // pickPackage's choice among a destination's several packages (they differ mainly by
-// day count and starting city; see catalog/package-profiles.json's `origin`/`day_count`,
-// exposed on CatalogPackage since this file's header-adjacent commit). Never guesses:
-// an unrecognized or absent signal leaves the corresponding field `null`, so pickPackage
-// falls back to its previous (price-only) behavior rather than mismatching a package.
-export type TripPreferences = { origin: string | null; dayCount: number | null }
+// day count, starting city, and which cities they can end in; see catalog/package-profiles.json's
+// `origin`/`day_count` and endpoint-chains.json's `finishCities`, both exposed on
+// CatalogPackage). Never guesses: an unrecognized or absent signal leaves the corresponding
+// field `null`, so pickPackage falls back to its previous (price-only) behavior rather than
+// mismatching a package.
+export type TripPreferences = { origin: string | null; dayCount: number | null; finishCity: string | null }
 
-const NO_PREFERENCES: TripPreferences = { origin: null, dayCount: null }
+const NO_PREFERENCES: TripPreferences = { origin: null, dayCount: null, finishCity: null }
 
 /**
  * "3 day(s)"/"3 hari" or "3d2n" -> 3. A date range like "10-12 June" implies a 3-day trip
@@ -99,16 +100,50 @@ function parseDayCount(low: string): number | null {
   return null
 }
 
+// Phrasing that means the mentioned city is where the trip ENDS, not where it starts --
+// checked before the bare city-name fallback below. Reported 2026-08-05: "can we finish the
+// trip in Bali?" was parsed as origin='Bali' (the bare "bali" match), which then biased
+// pickPackage toward a Bali-ORIGIN package -- one that, per endpoint-chains.json's real
+// dropoff data, does NOT finish in Bali at all (Bali-origin packages all end in the
+// Surabaya/Malang area). An explicit "from <city>" always wins even when finish-context
+// phrasing is ALSO present ("3 day trip from Surabaya, finishing in Bali" -- origin is still
+// unambiguous), so that check runs first.
+const FINISH_CONTEXT_PHRASES = ['finish', 'end in', 'ending in', 'drop off', 'dropoff', 'drop-off', 'back to']
+const FROM_CITY_PATTERN = /\bfrom\s+(bali|surabaya)\b|\bstart(?:ing)?\s+(?:in|from)\s+(bali|surabaya)\b/
+
+// Every token this file/catalog.ts's finish-city matching can produce ("bali", "surabaya",
+// "malang", "ketapang") is already a single, simple word -- capitalizing the first letter is
+// sufficient and correct for all of them, unlike `parseOrigin`'s own two-city special case.
+export function titleCaseCity(city: string): string {
+  return city.charAt(0).toUpperCase() + city.slice(1)
+}
+
 function parseOrigin(low: string): string | null {
+  const fromMatch = low.match(FROM_CITY_PATTERN)
+  if (fromMatch) return titleCaseCity(fromMatch[1] ?? fromMatch[2])
+  if (FINISH_CONTEXT_PHRASES.some((p) => low.includes(p))) return null
   if (low.includes('surabaya')) return 'Surabaya'
   if (low.includes('bali')) return 'Bali'
   return null
 }
 
-/** Extracts whatever duration/origin signal a customer message actually states. */
+// "can we finish in Bali?" / "does it end in Surabaya?" / "drop off in Malang" -- the city a
+// customer wants the trip to END in, normalized to the same lowercase tokens
+// CatalogPackage.finishCities uses ("bali", "surabaya", "malang", "ketapang").
+const FINISH_CITY_TOKENS = ['bali', 'surabaya', 'malang', 'ketapang']
+
+function parseFinishCity(low: string): string | null {
+  if (!FINISH_CONTEXT_PHRASES.some((p) => low.includes(p))) return null
+  for (const city of FINISH_CITY_TOKENS) {
+    if (low.includes(city)) return city
+  }
+  return null
+}
+
+/** Extracts whatever duration/origin/finish-city signal a customer message actually states. */
 export function parseTripPreferences(message: string): TripPreferences {
   const low = message.toLowerCase()
-  return { origin: parseOrigin(low), dayCount: parseDayCount(low) }
+  return { origin: parseOrigin(low), dayCount: parseDayCount(low), finishCity: parseFinishCity(low) }
 }
 
 /**
@@ -116,26 +151,29 @@ export function parseTripPreferences(message: string): TripPreferences {
  * Prefers a priced package -- matching route-gate.ts's own "no priced match -> handoff"
  * rule, so the package chosen here is always one route-gate would actually let through.
  *
- * When the customer stated a duration and/or origin (parseTripPreferences), narrows to
- * packages matching BOTH first, then EITHER, before falling back to the plain price-only
- * choice -- so "3 day trip from Surabaya" recommends the specific 3D2N-from-Surabaya
- * package instead of whichever priced package for that destination happens to be first.
+ * When the customer stated a finish city, duration, and/or origin (parseTripPreferences),
+ * progressively narrows the candidate pool by each in turn (finish city first -- it's the
+ * most specific/rare signal, matching only 2 of 16 packages -- then origin, then day count),
+ * skipping any filter that would leave nothing so an earlier, looser match still wins over no
+ * match at all. "3 day trip from Surabaya" recommends the specific 3D2N-from-Surabaya package
+ * instead of whichever priced package for that destination happens to be first.
  */
 export function pickPackage(matches: CatalogPackage[], preferences: TripPreferences = NO_PREFERENCES): CatalogPackage {
   const priced = (pkgs: CatalogPackage[]) => pkgs.find((p) => p.priceIdr !== null) ?? null
-  const { origin, dayCount } = preferences
+  const { origin, dayCount, finishCity } = preferences
 
-  if (origin && dayCount) {
-    const both = priced(matches.filter((p) => p.origin === origin && p.dayCount === dayCount))
-    if (both) return both
+  let pool = matches
+  if (finishCity) {
+    const filtered = pool.filter((p) => p.finishCities.includes(finishCity))
+    if (filtered.length > 0) pool = filtered
   }
   if (origin) {
-    const byOrigin = priced(matches.filter((p) => p.origin === origin))
-    if (byOrigin) return byOrigin
+    const filtered = pool.filter((p) => p.origin === origin)
+    if (filtered.length > 0) pool = filtered
   }
   if (dayCount) {
-    const byDayCount = priced(matches.filter((p) => p.dayCount === dayCount))
-    if (byDayCount) return byDayCount
+    const filtered = pool.filter((p) => p.dayCount === dayCount)
+    if (filtered.length > 0) pool = filtered
   }
-  return priced(matches) ?? matches[0]
+  return priced(pool) ?? matches[0]
 }

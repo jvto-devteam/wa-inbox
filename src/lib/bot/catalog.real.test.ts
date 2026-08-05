@@ -71,6 +71,38 @@ describe.skipIf(!RELEASE_PRESENT)('loadCatalog against the real synced catalog/'
     expect(picked.dayCount).toBe(3)
   })
 
+  it('populates finishCities for every package from the real endpoint-chains.json, and no Bali-origin package finishes in Bali', () => {
+    for (const pkg of loadCatalog().packages) {
+      expect(Array.isArray(pkg.finishCities)).toBe(true)
+      expect(pkg.finishCities.length).toBeGreaterThan(0)
+    }
+    // Regression, reported 2026-08-05: "can we finish in Bali?" was answered from a
+    // Bali-ORIGIN package, which the real dropoff data says does NOT finish in Bali at all.
+    const baliOrigin = loadCatalog().packages.filter((p) => p.origin === 'Bali')
+    expect(baliOrigin.length).toBeGreaterThan(0)
+    for (const pkg of baliOrigin) {
+      expect(pkg.finishCities).not.toContain('bali')
+    }
+    // At least one real package genuinely can finish in Bali (so the "yes" branch of
+    // orchestrator.ts's finishCityFact is reachable, not just the "no" branch).
+    expect(loadCatalog().packages.some((p) => p.finishCities.includes('bali'))).toBe(true)
+  })
+
+  it('lets pickPackage recommend a package that actually finishes in Bali for a "finish in Bali" question, not a Bali-origin one', async () => {
+    const { matchDestination, pickPackage, parseTripPreferences } = await import('./package-match')
+    const catalog = loadCatalog()
+
+    const message = 'can we finish the trip in bali? we want to see ijen'
+    const matched = matchDestination(message, catalog)
+    expect(matched).not.toBeNull()
+
+    const preferences = parseTripPreferences(message)
+    expect(preferences.finishCity).toBe('bali')
+
+    const picked = pickPackage(matched!.matches, preferences)
+    expect(picked.finishCities).toContain('bali')
+  })
+
   it('lets package-match and the route gate agree on the same real destination tokens', async () => {
     const { matchDestination } = await import('./package-match')
     const { checkRouteGate } = await import('./route-gate')
