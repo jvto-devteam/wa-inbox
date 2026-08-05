@@ -251,6 +251,21 @@
     ]
   },
   {
+    "module_id": "service_drone_usage",
+    "category": "service",
+    "scope": "global",
+    "title": "Drone Usage",
+    "short_answer": "Yes, guests can bring and fly a personal drone, as long as it's operated safely.",
+    "detail_summary": "Drone usage by guests is permitted on JVTO tours, provided it is operated safely (e.g. away from other visitors, wildlife, and any posted restrictions at a given site). JVTO does not currently have a published per-destination drone policy (permits, fees, or altitude limits) beyond this general permission -- confirm with our team ahead of time for a specific destination if in doubt.",
+    "customer_visible": true,
+    "reusable": true,
+    "applies_to": "all_private_packages",
+    "approval_status": "approved",
+    "source_evidence": [
+      "live:data.ts#special-services"
+    ]
+  },
+  {
     "module_id": "service_vehicle_by_pax",
     "category": "service",
     "scope": "global",

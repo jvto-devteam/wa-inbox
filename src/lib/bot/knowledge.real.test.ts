@@ -171,4 +171,18 @@ describe.skipIf(!RELEASE_PRESENT)('resolveKnowledgeForTopic against the real syn
     expect(result.factualLines.some((f) => f.toLowerCase().includes('closed'))).toBe(true)
     expect(result.factualLines.some((f) => f.toLowerCase().includes('sunrise'))).toBe(true)
   })
+
+  // Researched 2026-08-05 across jvto-web, jvto-itinerary-core, jvto-whatsapp-agent-runtime,
+  // and chatbot-web: only ONE genuine drone fact exists anywhere, and it is general (not
+  // per-destination) -- jvto-web's own "special-services" FAQ entry. No per-destination
+  // permits/fees/altitude limits are published anywhere, so none are fabricated here either.
+  it.each([
+    ['can we bring a drone?', 'drone'],
+    ['is a UAV allowed on the tour?', 'UAV'],
+    ['can we take aerial photography during the hike?', 'aerial photography'],
+  ] as const)('resolves the real drone-usage fact for %s (%s)', (message, _keyword) => {
+    const result = resolveKnowledgeForTopic('general', message)
+    expect(result.factualLines.some((f) => f.toLowerCase().includes('drone'))).toBe(true)
+    expect(result.detailLines.some((d) => d.toLowerCase().includes('permitted'))).toBe(true)
+  })
 })
