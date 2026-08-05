@@ -40,6 +40,23 @@ describe('classifyTopic', () => {
     expect(classifyTopic(null, 'What is the cost per person?')).toBe('price')
   })
 
+  // Regression, reported 2026-08-05: "...after transfer to Bali... are there guaranteed
+  // private double rooms?" classified as 'payment' (bare "transfer" matched the travel sense,
+  // not a money transfer), silently losing the real 'rooming' topic and its actual facts.
+  // "airport transfer"/"private transfer"/"transfer to <city>" are common tour-operator
+  // phrasing, so 'payment' now requires money-specific transfer wording.
+  it('does NOT classify a travel/logistics "transfer" as payment', () => {
+    expect(classifyTopic(null, 'After the tour we transfer to Bali, are the rooms private?')).not.toBe('payment')
+    expect(classifyTopic(null, 'Is there an airport transfer included?')).not.toBe('payment')
+    expect(classifyTopic(null, 'Can you arrange a private transfer from the hotel?')).not.toBe('payment')
+  })
+
+  it('still classifies a genuine money-transfer payment question as payment', () => {
+    expect(classifyTopic(null, 'Can I pay by bank transfer?')).toBe('payment')
+    expect(classifyTopic(null, 'Is there a wire transfer fee?')).toBe('payment')
+    expect(classifyTopic(null, 'How do I transfer the deposit payment?')).toBe('payment')
+  })
+
   it('falls back to the job default topic when no keyword matches', () => {
     expect(classifyTopic('J2', 'xyz')).toBe('price')
     expect(classifyTopic('J3', 'xyz')).toBe('route_endpoint')

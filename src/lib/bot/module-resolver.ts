@@ -30,18 +30,28 @@ export type ResolverTopic =
   | 'greeting'
   | 'general'
 
-// Real: _TOPIC_KEYWORDS (module_resolver.py:51-65) -- a faithful port EXCEPT for one
-// reordering: the real source checks 'price' (whose keyword list includes the very broad
-// "how much") before 'payment'. Live-tested 2026-08-04: "how much is the deposit and when
-// do I pay?" therefore classified as 'price', whose module set has no payment/deposit
-// content, so the bot honestly (not wrongly) said it didn't have deposit details -- for a
-// question the catalog CAN answer via policy_payment_deposit. 'payment's own keywords
-// ('deposit', 'transfer', 'installment', 'payment') are specific enough that moving this
-// entry ahead of 'price' doesn't cost any genuine price question: none of price's own test
-// fixtures ("how much for 4 people?", "how much to book this tour?", "HOW MUCH DOES IT
-// COST?") contain a payment keyword. Order otherwise matches the real source verbatim.
+// Real: _TOPIC_KEYWORDS (module_resolver.py:51-65) -- a faithful port EXCEPT for two
+// deviations, both live-tested:
+// 1. Reordering: the real source checks 'price' (whose keyword list includes the very broad
+//    "how much") before 'payment'. Live-tested 2026-08-04: "how much is the deposit and when
+//    do I pay?" therefore classified as 'price', whose module set has no payment/deposit
+//    content, so the bot honestly (not wrongly) said it didn't have deposit details -- for a
+//    question the catalog CAN answer via policy_payment_deposit. 'payment's own keywords
+//    ('deposit', 'transfer', 'installment', 'payment') are specific enough that moving this
+//    entry ahead of 'price' doesn't cost any genuine price question: none of price's own test
+//    fixtures ("how much for 4 people?", "how much to book this tour?", "HOW MUCH DOES IT
+//    COST?") contain a payment keyword.
+// 2. Bare 'transfer' narrowed to money-specific phrasing. Reported 2026-08-05: "...Mount Ijen
+//    and after transfer to Bali. ... are there guaranteed private double rooms?" classified as
+//    'payment' (bare "transfer" matched the travel sense -- an airport/inter-city transfer --
+//    not a money transfer), which meant TOPIC_MODULES.payment's deposit/anti-fraud/
+//    cancellation facts got resolved instead of TOPIC_MODULES.rooming's real rooming policy,
+//    silently losing the actual topic entirely. "airport transfer"/"private transfer"/
+//    "transfer to <city>" are extremely common phrasing in a tour-operator conversation, so a
+//    bare match was too broad; narrowed to phrasing that's unambiguously about money.
+// Order otherwise matches the real source verbatim.
 const TOPIC_KEYWORDS: Array<[ResolverTopic, string[]]> = [
-  ['payment', ['deposit', 'pay', 'payment', 'transfer', 'installment']],
+  ['payment', ['deposit', 'pay', 'payment', 'bank transfer', 'wire transfer', 'money transfer', 'transfer fee', 'installment']],
   ['price', ['how much', 'price', 'cost', 'rate', 'per person', 'per pax', 'budget']],
   ['blue_fire', ['blue fire', 'blue-fire', 'bluefire']],
   ['vehicle', ['vehicle', 'car', 'mpv', 'hiace', 'luggage', 'suitcase', 'transport']],
