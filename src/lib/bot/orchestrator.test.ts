@@ -1530,6 +1530,27 @@ describe('decideAndRespond', () => {
       expect(opts.system).not.toContain('answer EVERY one of them')
     })
 
+    // Reported live 2026-08-05: the real message that surfaced the bug above also contained
+    // "...would you recommend that we buy our own travel insurance?" -- bare "recommend"
+    // (advice about insurance, nothing to do with picking a package) wrongly matched
+    // RECOMMENDATION_INTENT_KEYWORDS' old bare 'recommend' entry, which incorrectly triggered
+    // the start/finish/day-count funnel gate INSTEAD of answering the multi-question message
+    // directly, even though a package was already resolved from earlier in the conversation.
+    it('does not let an unrelated "would you recommend <something>?" (e.g. insurance advice) trigger the funnel gate', async () => {
+      ;(ensureFreshBookingData as any).mockResolvedValue(null)
+      ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
+      ;(matchDestination as any).mockReturnValue({ destination: 'ijen', matches: [pkg()] })
+      ;(checkRouteGate as any).mockReturnValue({ status: 'clear' })
+      ;(classifyTopic as any).mockReturnValue('payment')
+
+      const result = await decideAndRespond(
+        'conv_1',
+        'Does the package include insurance? If not, would you recommend that we buy our own travel insurance?'
+      )
+
+      expect(result.mode).toBe('faq')
+    })
+
     it('also adds the multi-question instruction on the destination-independent (pre-destination) path', async () => {
       ;(ensureFreshBookingData as any).mockResolvedValue(null)
       ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })

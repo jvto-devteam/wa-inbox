@@ -139,12 +139,21 @@ const TECHNICAL_HICCUP_REPLY = `Sorry, I'm having a small technical hiccup on my
 // below each time. Matching directly on the customer's own request phrasing sidesteps that
 // topic-classifier fragility entirely rather than trying to out-order it.
 const RECOMMENDATION_INTENT_KEYWORDS = [
-  'recommend', 'suggest', 'which package', 'what package', 'which tour', 'what tour',
+  'which package', 'what package', 'which tour', 'what tour',
   'options', 'choices', 'what do you have', 'what packages', 'compare',
 ]
+// Bare "recommend"/"suggest" used to be in RECOMMENDATION_INTENT_KEYWORDS directly, but
+// reported live 2026-08-05: "...would you recommend that we buy our own travel insurance?"
+// (advice about insurance, nothing to do with picking a package) matched the bare word and
+// wrongly triggered the start/finish/day-count funnel gate, derailing a real multi-question
+// message that needed a direct, complete answer instead. Requires "recommend"/"suggest" to
+// actually be near a package/tour/trip/itinerary word -- same class of fix as this file's
+// other over-broad bare-keyword bugs (bare "transfer", bare city-adjacency for finish-context).
+const RECOMMENDATION_VERB_PATTERN =
+  /\b(recommend|suggest)\w*\b.{0,25}\b(package|tour|trip|itinerary)\b|\b(package|tour|trip|itinerary)\b.{0,25}\b(recommend|suggest)\w*\b/
 function isRecommendationRequest(message: string): boolean {
   const low = message.toLowerCase()
-  return RECOMMENDATION_INTENT_KEYWORDS.some((k) => low.includes(k))
+  return RECOMMENDATION_INTENT_KEYWORDS.some((k) => low.includes(k)) || RECOMMENDATION_VERB_PATTERN.test(low)
 }
 
 // Detects explicit booking-confirmation intent ("can I book the 3D2N trip", "book this
