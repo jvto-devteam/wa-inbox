@@ -147,6 +147,15 @@
       ]
     },
     {
+      "link_key": "safety_on_tours",
+      "url": "https://javavolcano-touroperator.com/travel-guide/safety-on-tours",
+      "content_type": "general_explainer",
+      "status": "existing",
+      "used_by": [
+        "policy_emergency_and_support"
+      ]
+    },
+    {
       "link_key": "private_tour",
       "url": "https://javavolcano-touroperator.com/why-jvto/the-jvto-difference",
       "content_type": "general_explainer",

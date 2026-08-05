@@ -109,4 +109,33 @@ describe.skipIf(!RELEASE_PRESENT)('resolveKnowledgeForTopic against the real syn
     expect(result.factualLines.some((f) => f.toLowerCase().includes('private'))).toBe(true)
     expect(result.factualLines.some((f) => f.toLowerCase().includes('upgrade'))).toBe(true)
   })
+
+  // Reported live 2026-08-05: "will you send an official booking confirmation or invoice under
+  // PT Java Volcano Rendezvous?" had no real module to answer from -- confirmed real, live
+  // content exists (javavolcano-touroperator.com/policy/booking-payment-cancellation, cross-
+  // checked against jvto-web's real source): JVTO (legally PT Java Volcano Rendezvous) issues
+  // an Official E-Voucher/Invoice (PDF) after payment.
+  it.each([
+    ['will you send an official invoice after payment?', 'invoice'],
+    ['can I get an e-voucher for my booking?', 'e-voucher'],
+    ['is PT Java Volcano Rendezvous your legal company name?', 'PT Java Volcano'],
+  ] as const)('resolves the real official-invoice fact for %s (%s)', (message, _keyword) => {
+    const result = resolveKnowledgeForTopic('general', message)
+    expect(result.factualLines.some((f) => f.toLowerCase().includes('e-voucher') || f.toLowerCase().includes('invoice'))).toBe(true)
+  })
+
+  // Reported live 2026-08-05: "do you have a replacement arrangement and an emergency contact
+  // we can reach at any time?" had no real module either -- confirmed real, live content
+  // exists (safety-on-tours + booking-payment-cancellation + contact pages): medical-emergency
+  // handling, force-majeure alternative arrangements, and HONEST (not 24/7) support hours.
+  // Deliberately does NOT claim a specific vehicle-replacement guarantee -- that field exists
+  // internally but is not yet a published, customer-facing policy (confirmed 2026-08-05).
+  it.each([
+    ['what happens in a medical emergency during the tour?', 'emergency'],
+    ['is there a backup vehicle if ours breaks down?', 'vehicle breakdown'],
+    ['can I reach you 24/7?', '24/7'],
+  ] as const)('resolves the real emergency/support fact for %s (%s), honestly stating support hours are not 24/7', (message, _keyword) => {
+    const result = resolveKnowledgeForTopic('general', message)
+    expect(result.factualLines.some((f) => f.includes('08:00-22:00 WIB'))).toBe(true)
+  })
 })

@@ -168,6 +168,15 @@ const TOPIC_MODULES: Record<ResolverTopic, string[]> = {
 // directly with the operator: this is a per-customer preference to note for their trip, not a
 // specific accommodation guarantee to fabricate -- so the fact is an honest "noted", not an
 // invented capability claim.
+// 'policy_official_invoice'/'policy_emergency_and_support' added 2026-08-05: reported, a real
+// customer asked "will you send an official booking confirmation or invoice under PT Java
+// Volcano Rendezvous?" and "do you have a replacement arrangement and an emergency contact we
+// can reach at any time?" -- the bot deferred both to "let me check with our team" even though
+// genuine, live, customer-facing content answers them (javavolcano-touroperator.com's own
+// booking-payment-cancellation, safety-on-tours, and contact pages, cross-checked against
+// jvto-web's real source 2026-08-05). Neither maps cleanly to an existing topic bucket
+// ("invoice" isn't the same as 'payment'/deposit; "emergency"/"replacement driver" isn't
+// 'vehicle', which is about pax-based vehicle sizing), hence keyword-triggered like the others.
 const KEYWORD_TRIGGERED_MODULES: Array<{ moduleId: string; keywords: string[] }> = [
   { moduleId: 'policy_isic_student', keywords: ['isic', 'student'] },
   { moduleId: 'policy_police_escort', keywords: ['police escort', 'escort'] },
@@ -175,6 +184,17 @@ const KEYWORD_TRIGGERED_MODULES: Array<{ moduleId: string; keywords: string[] }>
   {
     moduleId: 'service_dietary_preference_noted',
     keywords: ['beef', 'pork', 'halal', 'vegetarian', 'vegan', 'allerg', 'gluten', 'dietary', 'no meat'],
+  },
+  {
+    moduleId: 'policy_official_invoice',
+    keywords: ['invoice', 'e-voucher', 'evoucher', 'official confirmation', 'official booking confirmation', 'pt java volcano'],
+  },
+  {
+    moduleId: 'policy_emergency_and_support',
+    keywords: [
+      'emergency contact', 'emergency', 'replacement driver', 'replacement vehicle', 'vehicle breakdown',
+      'driver unavailable', 'backup vehicle', 'reachable at any time', 'reach you any time', '24/7', '24 hours',
+    ],
   },
 ]
 

@@ -153,6 +153,39 @@
     ]
   },
   {
+    "module_id": "policy_official_invoice",
+    "category": "policy",
+    "scope": "global",
+    "title": "Official Booking Confirmation & Invoice",
+    "short_answer": "Yes -- JVTO (legally PT Java Volcano Rendezvous, NIB 1102230032918) issues an Official E-Voucher/Invoice (PDF) confirming your booking after payment.",
+    "detail_summary": "JVTO is operated by PT Java Volcano Rendezvous (NIB 1102230032918). Once your booking is confirmed and payment is received, JVTO issues an Official E-Voucher / Invoice (PDF) with your booking details -- this is the binding confirmation document for your tour.",
+    "customer_visible": true,
+    "reusable": true,
+    "link_key": "payment_and_deposit",
+    "approval_status": "approved",
+    "source_evidence": [
+      "live:policy/booking-payment-cancellation",
+      "live:contact"
+    ]
+  },
+  {
+    "module_id": "policy_emergency_and_support",
+    "category": "policy",
+    "scope": "global",
+    "title": "Emergency Handling & Support Contact",
+    "short_answer": "For medical emergencies, your guide coordinates directly with local clinics and evacuation services; for major disruptions, JVTO offers reasonable alternative arrangements or credit/refund per our cancellation policy. Our support line is reachable 08:00-22:00 WIB every day, not 24/7.",
+    "detail_summary": "Since every tour is private, your guide and driver respond only to your group -- no divided attention across strangers. For medical emergencies, the guide coordinates with local clinics, evacuation services, and relevant park authorities where relevant. JVTO strongly recommends guests carry their own travel insurance covering medical emergencies, evacuation, repatriation, and trip interruption (insurance is not included in tour pricing). For major infrastructure or transportation disruptions, JVTO's force majeure policy offers reasonable alternative arrangements of comparable value, or Lifetime Package Credit/refund. Our support team is reachable 08:00-22:00 WIB every day -- for anything outside those hours, message us and we'll respond as soon as we're back online.",
+    "customer_visible": true,
+    "reusable": true,
+    "link_key": "safety_on_tours",
+    "approval_status": "approved",
+    "source_evidence": [
+      "live:travel-guide/safety-on-tours",
+      "live:policy/booking-payment-cancellation",
+      "live:contact"
+    ]
+  },
+  {
     "module_id": "policy_police_escort",
     "category": "policy",
     "scope": "conditional_large_group",
