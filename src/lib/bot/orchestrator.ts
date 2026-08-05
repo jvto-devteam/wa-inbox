@@ -147,6 +147,26 @@ function isRecommendationRequest(message: string): boolean {
   return RECOMMENDATION_INTENT_KEYWORDS.some((k) => low.includes(k))
 }
 
+// Detects explicit booking-confirmation intent ("can I book the 3D2N trip", "book this
+// package") directly from the customer's own words. Reported 2026-08-05: a customer confirming
+// a specific narrowed-down package (origin+duration+finish city all resolved to exactly ONE
+// real package) got a reply whose link was the topic's own generic policy page (e.g. a
+// "hotel"-classified message linked to the general inclusions/exclusions page) instead of that
+// package's own tour page -- technically correct data (the registry really does map that
+// topic's link there), but not what's actually useful once the customer is trying to book a
+// specific, already-identified package: they need ITS page, not a policy tangent one part of
+// their message happened to touch on. Kept separate from isRecommendationRequest -- that one
+// detects "show me multiple options to compare", this one detects "I've decided, give me the
+// page for that one".
+const BOOKING_INTENT_KEYWORDS = [
+  'can i book', 'can we book', 'could i book', 'could we book', 'i want to book', 'we want to book',
+  'book the trip', 'book this', 'book that', 'confirm my booking', 'confirm the booking', 'proceed with booking',
+]
+function isBookingIntent(message: string): boolean {
+  const low = message.toLowerCase()
+  return BOOKING_INTENT_KEYWORDS.some((k) => low.includes(k))
+}
+
 // Topics genuinely answerable without knowing WHICH destination the customer wants --
 // payment terms, dietary/meal handling (folded into 'vehicle'/'inclusions' facts), rooming
 // policy, hotel standard, cancellation policy, and the booking process are the same
@@ -540,8 +560,13 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
     // was live-checked 2026-08-04 with 18 broken "existing" URLs, now fixed by copying
     // chatbot-web's already-corrected copy of the same file (see knowledge.ts's header) and
     // re-verified live. Falls back to the package page only when knowledge.ts has no link for
-    // this specific topic.
-    const primaryLink = knowledge.primaryLink ?? pkg.links.details ?? null
+    // this specific topic. EXCEPT when the customer has explicit booking-confirmation intent
+    // (see isBookingIntent's own header) -- they've already decided on this specific package,
+    // so ITS page is what's actually useful, not a topic-tangential policy page a side detail
+    // in their message happened to classify as.
+    const primaryLink = isBookingIntent(inboundText)
+      ? (pkg.links.details ?? knowledge.primaryLink ?? null)
+      : (knowledge.primaryLink ?? pkg.links.details ?? null)
 
     // Every priced package matching this destination (narrowed to the known finish city and/or
     // origin, if any -- same progressive-narrowing precedence as pickPackage above) as real,

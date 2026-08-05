@@ -686,6 +686,51 @@ describe('decideAndRespond', () => {
     expect(opts.system).toContain('https://example.com/ijen-package')
   })
 
+  // Reported 2026-08-05: a customer confirming a specific package ("can I book the 3D2N trip
+  // starting the 14th?") got a reply linking to a generic policy page (a "hotel"-classified
+  // side detail elsewhere in the same message) instead of that package's own tour page --
+  // technically correct per the registry, but not useful once the customer has already decided
+  // on a specific, already-identified package and wants to act on it.
+  it("prefers the package's own detail link over knowledge.ts's topic link when the customer has explicit booking intent", async () => {
+    ;(ensureFreshBookingData as any).mockResolvedValue(null)
+    ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
+    ;(matchDestination as any).mockReturnValue({
+      destination: 'bromo',
+      matches: [pkg({ links: { details: 'https://example.com/bromo-ijen-3d2n' } })],
+    })
+    ;(checkRouteGate as any).mockReturnValue({ status: 'clear' })
+    ;(classifyTopic as any).mockReturnValue('hotel')
+    ;(resolveKnowledgeForTopic as any).mockReturnValue({
+      factualLines: ['Rooming info.'], detailLines: [], primaryLink: 'https://example.com/policy/inclusions-exclusions',
+      disclosures: [], handoffRequired: false,
+    })
+
+    await decideAndRespond('conv_1', 'can I book the 3D2N trip starting the 14th? Also we will not be at the hotel that day.')
+
+    const [, opts] = (callLLM as any).mock.calls[0]
+    expect(opts.system).toContain('Relevant link (include this URL at the end of your reply): https://example.com/bromo-ijen-3d2n')
+    expect(opts.system).not.toContain('Relevant link (include this URL at the end of your reply): https://example.com/policy/inclusions-exclusions')
+  })
+
+  it('still prefers knowledge.ts\'s topic link when there is no explicit booking intent', async () => {
+    ;(ensureFreshBookingData as any).mockResolvedValue(null)
+    ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
+    ;(matchDestination as any).mockReturnValue({
+      destination: 'ijen',
+      matches: [pkg({ links: { details: 'https://example.com/ijen-package' } })],
+    })
+    ;(checkRouteGate as any).mockReturnValue({ status: 'clear' })
+    ;(resolveKnowledgeForTopic as any).mockReturnValue({
+      factualLines: ['Cancellation info.'], detailLines: [], primaryLink: 'https://example.com/cancellation-policy',
+      disclosures: [], handoffRequired: false,
+    })
+
+    await decideAndRespond('conv_1', 'What is your refund policy?')
+
+    const [, opts] = (callLLM as any).mock.calls[0]
+    expect(opts.system).toContain('Relevant link (include this URL at the end of your reply): https://example.com/cancellation-policy')
+  })
+
   it('includes the persona instructions and resolved facts in the Mode 1/2 system prompt', async () => {
     ;(ensureFreshBookingData as any).mockResolvedValue(null)
     ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
