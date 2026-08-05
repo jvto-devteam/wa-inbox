@@ -211,6 +211,87 @@ describe('ThreadView header identity', () => {
   })
 })
 
+describe('ThreadView clear-chat button', () => {
+  function mockTestRoomFetch(messages: unknown[] = []) {
+    vi.mocked(fetch).mockImplementation((url) => {
+      const s = String(url)
+      if (s.endsWith('/messages')) return Promise.resolve({ ok: true, json: () => Promise.resolve(messages) } as Response)
+      if (s.endsWith('/api/accounts')) return Promise.resolve({ ok: true, json: () => Promise.resolve([]) } as Response)
+      if (s.endsWith('/clear')) return Promise.resolve({ ok: true, json: () => Promise.resolve({ ok: true }) } as Response)
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({ botEnabled: true, isTest: true }) } as Response)
+    })
+  }
+
+  it('shows "Hapus Chat" only when isTest is true', async () => {
+    mockTestRoomFetch()
+    render(<ThreadView conversationId="conv_test" />)
+    expect(await screen.findByRole('button', { name: 'Hapus Chat' })).toBeInTheDocument()
+  })
+
+  it('does not show "Hapus Chat" for a normal (non-test) conversation', async () => {
+    vi.mocked(fetch).mockImplementation((url) => {
+      const s = String(url)
+      if (s.endsWith('/messages')) return Promise.resolve({ ok: true, json: () => Promise.resolve([]) } as Response)
+      if (s.endsWith('/api/accounts')) return Promise.resolve({ ok: true, json: () => Promise.resolve([]) } as Response)
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({ botEnabled: true, isTest: false }) } as Response)
+    })
+    render(<ThreadView conversationId="conv_1" />)
+    await screen.findByText('Tanpa nama')
+    expect(screen.queryByRole('button', { name: 'Hapus Chat' })).not.toBeInTheDocument()
+  })
+
+  it('asks for confirmation, then POSTs to /clear and empties the message list on confirm', async () => {
+    mockTestRoomFetch(conv1Messages)
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    render(<ThreadView conversationId="conv_test" />)
+
+    expect(await screen.findByText('Hello from conv1')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Hapus Chat' }))
+
+    expect(confirmSpy).toHaveBeenCalled()
+    await waitFor(() => expect(screen.queryByText('Hello from conv1')).not.toBeInTheDocument())
+    expect(vi.mocked(fetch)).toHaveBeenCalledWith('/api/conversations/conv_test/clear', { method: 'POST' })
+  })
+
+  it('does nothing when the confirmation dialog is declined', async () => {
+    mockTestRoomFetch(conv1Messages)
+    vi.spyOn(window, 'confirm').mockReturnValue(false)
+    render(<ThreadView conversationId="conv_test" />)
+
+    expect(await screen.findByText('Hello from conv1')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Hapus Chat' }))
+
+    expect(vi.mocked(fetch)).not.toHaveBeenCalledWith('/api/conversations/conv_test/clear', { method: 'POST' })
+    expect(screen.getByText('Hello from conv1')).toBeInTheDocument()
+  })
+
+  it('empties the message list on a conversation.cleared SSE event (e.g. cleared from another tab)', async () => {
+    mockTestRoomFetch(conv1Messages)
+    render(<ThreadView conversationId="conv_test" />)
+
+    expect(await screen.findByText('Hello from conv1')).toBeInTheDocument()
+    const es = FakeEventSource.instances[0]
+    act(() => {
+      es.emit({ type: 'conversation.cleared', conversationId: 'conv_test' })
+    })
+
+    await waitFor(() => expect(screen.queryByText('Hello from conv1')).not.toBeInTheDocument())
+  })
+
+  it('ignores a conversation.cleared event for a different conversation', async () => {
+    mockTestRoomFetch(conv1Messages)
+    render(<ThreadView conversationId="conv_test" />)
+
+    expect(await screen.findByText('Hello from conv1')).toBeInTheDocument()
+    const es = FakeEventSource.instances[0]
+    act(() => {
+      es.emit({ type: 'conversation.cleared', conversationId: 'conv_other' })
+    })
+
+    expect(screen.getByText('Hello from conv1')).toBeInTheDocument()
+  })
+})
+
 describe('ThreadView live delivery-status updates', () => {
   function mockBasicFetch(messages: unknown[]) {
     vi.mocked(fetch).mockImplementation((url) => {

@@ -5,6 +5,10 @@ type RealtimeEvent =
   // Distinct from message.created so subscribers replace a bubble instead of appending one.
   | { type: 'message.updated'; conversationId: string; message: unknown }
   | { type: 'handoff.alert'; conversationId: string; contactName: string | null }
+  // The pinned sandbox conversation's history + TripBrief were wiped (see
+  // api/conversations/[id]/clear) -- subscribers drop every locally-held message for this
+  // conversation rather than waiting for a full page reload.
+  | { type: 'conversation.cleared'; conversationId: string }
 
 const listeners = new Set<(event: RealtimeEvent) => void>()
 

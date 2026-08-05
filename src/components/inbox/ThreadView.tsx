@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react'
 import { MessageBubble, type MessageView } from './MessageBubble'
 import { ComposeBox } from './ComposeBox'
 import { Select } from '@/components/ui/select'
+import { Button } from '@/components/ui/button'
 import { ContactAvatar } from '@/components/ContactAvatar'
 import { fetchJson } from '@/lib/fetch-json'
 import type { BookingData } from '@/lib/booking/client'
@@ -53,6 +54,7 @@ export function ThreadView({ conversationId }: { conversationId: string }) {
   const [assignedAgentId, setAssignedAgentId] = useState<string | null>(null)
   const [agents, setAgents] = useState<Agent[]>([])
   const [assignError, setAssignError] = useState<string | null>(null)
+  const [clearingChat, setClearingChat] = useState(false)
   // Captured once, from the conversation's lastReadAt as of the moment the thread was opened --
   // this draws the "Pesan belum dibaca" divider. It must not track later markAsRead() calls
   // (which move the read boundary forward as the agent keeps watching) or the divider would
@@ -139,6 +141,26 @@ export function ThreadView({ conversationId }: { conversationId: string }) {
     }
   }
 
+  // Wipes this test room's message history + TripBrief server-side (see clear/route.ts) so a
+  // manual bot test starts from a genuinely clean slate -- otherwise a fact learned in an
+  // earlier test (destination, origin, dayCount, finishCity) silently carries into the next
+  // one. Optimistically clears local state on success rather than waiting for the
+  // 'conversation.cleared' SSE echo, which stays in place so other open tabs stay in sync.
+  async function clearChat() {
+    if (!window.confirm('Hapus semua riwayat pesan di room tes ini? Tindakan ini tidak bisa dibatalkan.')) return
+    setClearingChat(true)
+    try {
+      const res = await fetch(`/api/conversations/${conversationId}/clear`, { method: 'POST' })
+      if (res.ok) {
+        setMessages([])
+        setBotEnabled(true)
+        setUnreadCutoff(null)
+      }
+    } finally {
+      setClearingChat(false)
+    }
+  }
+
   useEffect(() => {
     const es = new EventSource('/api/sse')
     es.onmessage = (e) => {
@@ -165,6 +187,13 @@ export function ThreadView({ conversationId }: { conversationId: string }) {
       if (event.type === 'handoff.alert' && event.conversationId === conversationId) {
         setBotEnabled(false)
       }
+      // Another tab (or this one, via its own optimistic update above) cleared this test
+      // room -- drop every locally-held message rather than leaving a stale history visible.
+      if (event.type === 'conversation.cleared' && event.conversationId === conversationId) {
+        setMessages([])
+        setBotEnabled(true)
+        setUnreadCutoff(null)
+      }
     }
     return () => es.close()
   }, [conversationId])
@@ -188,6 +217,11 @@ export function ThreadView({ conversationId }: { conversationId: string }) {
           )}
         </div>
         <div className="flex shrink-0 items-center gap-2">
+          {isTest && (
+            <Button type="button" variant="destructive" size="sm" onClick={clearChat} disabled={clearingChat}>
+              {clearingChat ? 'Menghapus...' : 'Hapus Chat'}
+            </Button>
+          )}
           <label htmlFor="assign-agent" className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
             Ditugaskan ke
           </label>
