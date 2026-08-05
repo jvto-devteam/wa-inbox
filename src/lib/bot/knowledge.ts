@@ -191,9 +191,16 @@ const KEYWORD_TRIGGERED_MODULES: Array<{ moduleId: string; keywords: string[] }>
   },
   {
     moduleId: 'policy_emergency_and_support',
+    // Reported live 2026-08-05: "If the driver or vehicle breaks down during the tour, is
+    // there a backup unit ready?" matched none of the original literal phrases ('vehicle
+    // breakdown', 'backup vehicle') -- a customer's own wording ("breaks down", "backup unit")
+    // doesn't reliably match the noun form the module was originally titled after. Broadened
+    // to the underlying words/fragments themselves rather than exact multi-word phrases.
     keywords: [
-      'emergency contact', 'emergency', 'replacement driver', 'replacement vehicle', 'vehicle breakdown',
-      'driver unavailable', 'backup vehicle', 'reachable at any time', 'reach you any time', '24/7', '24 hours',
+      'emergency contact', 'emergency', 'replacement driver', 'replacement vehicle', 'replacement arrangement',
+      'vehicle breakdown', 'break down', 'breaks down', 'broke down', 'broken down',
+      'driver unavailable', 'vehicle unavailable', 'backup vehicle', 'backup driver', 'backup unit',
+      'spare vehicle', 'spare driver', 'reachable at any time', 'reach you any time', '24/7', '24 hours',
     ],
   },
 ]

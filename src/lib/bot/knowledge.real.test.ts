@@ -144,4 +144,16 @@ describe.skipIf(!RELEASE_PRESENT)('resolveKnowledgeForTopic against the real syn
     const result = resolveKnowledgeForTopic('general', 'is there a backup vehicle if ours breaks down?')
     expect(result.factualLines.some((f) => f.toLowerCase().includes('backup') && f.toLowerCase().includes('ready'))).toBe(true)
   })
+
+  // Reported live 2026-08-05: the real customer message ("If the driver or vehicle breaks
+  // down during the tour, is there a backup unit ready?") matched NEITHER of the original
+  // literal keyword phrases ('vehicle breakdown', 'backup vehicle') -- "breaks down" and
+  // "backup unit" are different word forms/phrasing that a real customer actually used.
+  it('resolves the emergency/support fact for the exact real phrasing that was missed ("breaks down" / "backup unit", not "vehicle breakdown" / "backup vehicle")', () => {
+    const result = resolveKnowledgeForTopic(
+      'general',
+      'If the driver or vehicle breaks down during the tour, is there a backup unit ready?'
+    )
+    expect(result.factualLines.some((f) => f.toLowerCase().includes('backup'))).toBe(true)
+  })
 })
