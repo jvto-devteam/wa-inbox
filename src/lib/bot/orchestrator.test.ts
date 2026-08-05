@@ -981,7 +981,7 @@ describe('decideAndRespond', () => {
       expect(callLLM).not.toHaveBeenCalled()
       expect(mockPrisma.conversation.update).toHaveBeenCalledWith({
         where: { id: 'conv_1' },
-        data: { tripBrief: { destination: 'ijen', askedTripPreferences: true } },
+        data: { tripBrief: { destination: 'ijen', askedTripPreferences: true, awaitingTripPreferencesAnswer: true } },
       })
     })
 
@@ -1048,6 +1048,67 @@ describe('decideAndRespond', () => {
       const result = await decideAndRespond('conv_1', 'What packages do you have for Ijen?')
 
       expect(result.mode).toBe('faq')
+    })
+
+    // Reported live 2026-08-05: after the gate above asks its bullet question, the customer's
+    // short funnel-completing reply ("Finish in Surabaya please") classifies as its own topic
+    // ('route_endpoint', not 'price') on its own -- without awaitingTripPreferencesAnswer,
+    // isRecommendationTopic/recommendMultiple never re-engaged for that reply, so a genuinely
+    // still-tied case (2 real packages matching all 3 criteria) silently got only 1 option.
+    it("still presents multiple tied options for the reply that immediately completes the funnel, even though that reply's own topic is not price/recommendation-shaped", async () => {
+      ;(ensureFreshBookingData as any).mockResolvedValue(null)
+      ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
+      const tiedA = pkg({ packageKey: 'tied-a', title: 'Bromo & Ijen Discovery', origin: 'Bali', dayCount: 3, finishCities: ['surabaya'], priceIdr: 2850000 })
+      const tiedB = pkg({ packageKey: 'tied-b', title: 'Ijen, Bromo & Madakaripura', origin: 'Bali', dayCount: 3, finishCities: ['surabaya'], priceIdr: 2850000 })
+      ;(matchDestination as any).mockReturnValue({ destination: 'ijen', matches: [tiedA, tiedB] })
+      ;(checkRouteGate as any).mockReturnValue({ status: 'clear' })
+      // This reply's own text ("Finish in Surabaya please") is what a real customer sends after
+      // being asked the bullet question -- classifies as 'route_endpoint', not 'price'.
+      ;(classifyTopic as any).mockReturnValue('route_endpoint')
+      ;(parseTripPreferences as any).mockReturnValue({ origin: null, dayCount: null, finishCity: 'surabaya', pax: null })
+      // awaitingTripPreferencesAnswer: true -- the PRIOR message was the funnel's bullet ask.
+      mockPrisma.conversation.findUniqueOrThrow.mockResolvedValue({
+        id: 'conv_1',
+        tripBrief: { destination: 'ijen', origin: 'Bali', dayCount: 3, askedTripPreferences: true, awaitingTripPreferencesAnswer: true },
+        bookingData: null,
+        bookingCheckedAt: new Date(),
+        contact: { phone: '6281234567890' },
+      } as never)
+
+      await decideAndRespond('conv_1', 'Finish in Surabaya please')
+
+      const [, opts] = (callLLM as any).mock.calls[0]
+      expect(opts.system).toContain('Bromo & Ijen Discovery')
+      expect(opts.system).toContain('Ijen, Bromo & Madakaripura')
+      expect(opts.system).toContain('present ALL 2 of the options above')
+    })
+
+    it('clears awaitingTripPreferencesAnswer after the one message that follows the ask, so a LATER unrelated message is not wrongly treated as a recommendation topic', async () => {
+      ;(ensureFreshBookingData as any).mockResolvedValue(null)
+      ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
+      ;(matchDestination as any).mockReturnValue({
+        destination: 'ijen',
+        matches: [
+          pkg({ packageKey: 'a', title: 'Ijen Package A', origin: 'Bali', dayCount: 3, finishCities: ['surabaya'], priceIdr: 2850000 }),
+          pkg({ packageKey: 'b', title: 'Ijen Package B', origin: 'Bali', dayCount: 3, finishCities: ['surabaya'], priceIdr: 2850000 }),
+        ],
+      })
+      ;(checkRouteGate as any).mockReturnValue({ status: 'clear' })
+      ;(classifyTopic as any).mockReturnValue('inclusions')
+      mockPrisma.conversation.findUniqueOrThrow.mockResolvedValue({
+        id: 'conv_1',
+        // awaitingTripPreferencesAnswer: false -- already cleared by an earlier message; this
+        // is a LATER, unrelated question, not the funnel-completing reply.
+        tripBrief: { destination: 'ijen', origin: 'Bali', dayCount: 3, finishCity: 'surabaya', askedTripPreferences: true, awaitingTripPreferencesAnswer: false },
+        bookingData: null,
+        bookingCheckedAt: new Date(),
+        contact: { phone: '6281234567890' },
+      } as never)
+
+      await decideAndRespond('conv_1', 'Can you arrange a police escort for our large group?')
+
+      const [, opts] = (callLLM as any).mock.calls[0]
+      expect(opts.system).not.toContain('present ALL')
     })
 
     // Confirmed with the operator 2026-08-05: the funnel now requires start, finish, AND day

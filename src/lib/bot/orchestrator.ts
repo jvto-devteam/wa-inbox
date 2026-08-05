@@ -484,9 +484,25 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
     // request meant an unrelated question ("can you arrange a police escort?") triggered this
     // gate (and the multi-package "present ALL options" instruction below) and buried the real
     // police-escort link under a funnel question the customer never asked for.
-    const isRecommendationTopic = resolverTopic === 'price' || isRecommendationRequest(inboundText)
+    // `tripBrief.awaitingTripPreferencesAnswer` (set true exactly when the gate below asks its
+    // bullet question, read here BEFORE this message, cleared right after) also counts as a
+    // recommendation-topic signal on its own -- but ONLY for the one message that immediately
+    // follows the ask, never longer. Live-tested 2026-08-05: once the gate asks, the customer's
+    // short, funnel-completing reply ("Finish in Surabaya please") classifies as
+    // 'route_endpoint' on its own -- not 'price' -- so the multi-option "present ALL options"
+    // logic further down never engaged, and a genuinely still-ambiguous case (2 real packages
+    // tied on all 3 criteria) silently got answered with just pickPackage's single first match.
+    // Deliberately one-shot (not `askedTripPreferences`, which stays true for the rest of the
+    // conversation): treating EVERY later message as a recommendation topic would resurrect the
+    // exact bug the comment below already warns about (an unrelated question later in the same
+    // conversation wrongly triggering the multi-option instruction).
+    const isRecommendationTopic =
+      resolverTopic === 'price' || isRecommendationRequest(inboundText) || tripBrief.awaitingTripPreferencesAnswer === true
+    if (tripBrief.awaitingTripPreferencesAnswer) {
+      await persistTripBrief({ destination, awaitingTripPreferencesAnswer: false })
+    }
     if (isRecommendationTopic && !tripBrief.askedTripPreferences && (!origin || !finishCity || !dayCount)) {
-      await persistTripBrief({ destination, askedTripPreferences: true })
+      await persistTripBrief({ destination, askedTripPreferences: true, awaitingTripPreferencesAnswer: true })
       trace.push(
         'Menanyakan detail trip',
         `Merekomendasikan paket butuh start, finish, dan jumlah hari -- salah satu belum diketahui, menanyakan sebelum merekomendasikan.`

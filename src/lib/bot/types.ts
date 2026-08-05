@@ -24,12 +24,21 @@ export type TripBrief = {
   // origin already uses.
   dayCount?: number
   finishCity?: string
-  // True once orchestrator.ts has asked a customer where they'd like to start/finish for an
-  // origin-ambiguous destination (see orchestrator.ts's TripPreferences clarify branch).
-  // Asked AT MOST ONCE per conversation: a customer who never answers the finish-point half
-  // still gets a real package recommendation on their next message rather than being asked
-  // again -- this flag is what prevents the repeat ask.
+  // True once orchestrator.ts has asked a customer for their start/finish/day-count (see
+  // orchestrator.ts's TripPreferences clarify branch). Asked AT MOST ONCE per conversation: a
+  // customer who never answers still gets a real package recommendation on their next message
+  // rather than being asked again -- this flag is what prevents the repeat ask.
   askedTripPreferences?: boolean
+  // True for exactly the ONE message that immediately follows the ask above, then explicitly
+  // cleared back to false -- unlike `askedTripPreferences` (permanent for the rest of the
+  // conversation), this is deliberately one-shot. Reported 2026-08-05: the customer's short,
+  // funnel-completing reply to the bullet question ("Finish in Surabaya please") classifies as
+  // its own unrelated topic ('route_endpoint', not 'price'), so without this flag the
+  // multi-option "present ALL options" logic never re-engaged for that reply, and a genuinely
+  // still-ambiguous case (2 real packages tied on all 3 criteria) silently got answered with
+  // just one. Kept separate from `askedTripPreferences` so this signal doesn't linger and wrongly
+  // apply to an unrelated later message in the same conversation.
+  awaitingTripPreferencesAnswer?: boolean
 }
 
 export type RouteGateResult =
