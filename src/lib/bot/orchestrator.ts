@@ -721,8 +721,9 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
     // entirely, never even acknowledged. Overrides SHARED_PERSONA_INSTRUCTIONS' usual 2-3
     // sentence brevity for this case specifically: completeness matters more than staying
     // short when the customer asked several distinct things and expects each one answered.
-    const multiQuestionNote = isMultiQuestionMessage(inboundText)
-      ? `\n\nThis message contains several distinct questions -- answer EVERY one of them, each as its own bullet point. Do not skip any, and do not lump multiple unconfirmed items into one vague sentence (e.g. never write "for the invoice, replacement arrangements, and hotel names, let me check" -- give each its own bullet, even if several of them end up saying the same honest "our team will confirm this shortly"). It's fine for this reply to be longer than usual to cover everything. For any question specifically about the day-by-day itinerary or schedule, don't manually re-derive it -- just point that bullet to the package's own link (given below) for the full itinerary, and only state itinerary-adjacent details (like a pickup time) if they're a fact you actually have.`
+    const isMultiQuestion = isMultiQuestionMessage(inboundText)
+    const multiQuestionNote = isMultiQuestion
+      ? `\n\nThis message contains several distinct questions -- answer EVERY one of them, each as its own bullet point. Do not skip any, and do not lump multiple unconfirmed items into one vague sentence (e.g. never write "for the invoice, replacement arrangements, and hotel names, let me check" -- give each its own bullet, even if several of them end up saying the same honest "our team will confirm this shortly"). It's fine for this reply to be longer than usual to cover everything. For any question specifically about the day-by-day itinerary/schedule OR specific hotel names/room details, don't manually re-derive them -- just point that bullet to the package's own link (given below), and only state itinerary/hotel-adjacent details (like a pickup time) if they're a fact you actually have. Include that link only ONCE in the whole reply (in whichever bullet needs it), never repeat it again at the end.`
       : ''
 
     const system =
@@ -756,7 +757,13 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
       (knowledge.handoffRequired
         ? `\n\nThe customer is treating this attraction as their main reason for booking and is demanding a guarantee -- be warm but firm: it genuinely cannot be guaranteed (weather/authority conditions), do not soften that into a near-promise.`
         : '') +
-      (primaryLink && !recommendMultiple ? `\n\nRelevant link (include this URL at the end of your reply): ${primaryLink}` : '') +
+      // Suppressed for a multi-question reply -- multiQuestionNote above already tells the LLM
+      // to embed the package link inline in whichever bullet needs it and never repeat it at
+      // the end; a separate "put it at the end too" directive here would fight that and
+      // produce the exact duplicate-link reply reported live 2026-08-05.
+      (primaryLink && !recommendMultiple && !isMultiQuestion
+        ? `\n\nRelevant link (include this URL at the end of your reply): ${primaryLink}`
+        : '') +
       `\n\n${GUARDRAIL_INSTRUCTION}`
 
     const history = await fetchRecentHistory(conversationId, inboundText)

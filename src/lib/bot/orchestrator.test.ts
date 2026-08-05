@@ -1510,6 +1510,43 @@ describe('decideAndRespond', () => {
       expect(opts.system).toContain("point that bullet to the package's own link")
     })
 
+    // Reported live 2026-08-05: the reply repeated the same package link twice -- once inline
+    // (per the itinerary-question bullet) and again as the standard trailing "Relevant link"
+    // directive, which conflicted with the new "include it only once" instruction above.
+    it('suppresses the trailing "Relevant link" directive for a multi-question reply (the inline bullet link already covers it)', async () => {
+      ;(ensureFreshBookingData as any).mockResolvedValue(null)
+      ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
+      ;(matchDestination as any).mockReturnValue({ destination: 'ijen', matches: [pkg({ links: { details: 'https://example.com/ijen-package' } })] })
+      ;(checkRouteGate as any).mockReturnValue({ status: 'clear' })
+      ;(classifyTopic as any).mockReturnValue('payment')
+      ;(resolveKnowledgeForTopic as any).mockReturnValue({
+        factualLines: ['A 20% deposit secures the booking.'], detailLines: [], primaryLink: 'https://example.com/payment-policy',
+        disclosures: [], handoffRequired: false,
+      })
+
+      await decideAndRespond('conv_1', manyQuestions)
+
+      const [, opts] = (callLLM as any).mock.calls[0]
+      expect(opts.system).toContain('Include that link only ONCE')
+      expect(opts.system).not.toContain('Relevant link (include this URL at the end of your reply)')
+    })
+
+    // Confirmed with the operator 2026-08-05: hotel-name/room-detail questions should be
+    // handled the same way as itinerary questions -- point to the package's own link rather
+    // than manually stating specific hotel names.
+    it('also points hotel-name/room-detail questions to the package link, same as itinerary questions', async () => {
+      ;(ensureFreshBookingData as any).mockResolvedValue(null)
+      ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
+      ;(matchDestination as any).mockReturnValue({ destination: 'ijen', matches: [pkg({ links: { details: 'https://example.com/ijen-package' } })] })
+      ;(checkRouteGate as any).mockReturnValue({ status: 'clear' })
+      ;(classifyTopic as any).mockReturnValue('payment')
+
+      await decideAndRespond('conv_1', manyQuestions)
+
+      const [, opts] = (callLLM as any).mock.calls[0]
+      expect(opts.system).toContain('specific hotel names/room details')
+    })
+
     it('does NOT add the multi-question instruction for an ordinary single-question message', async () => {
       ;(ensureFreshBookingData as any).mockResolvedValue(null)
       ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
