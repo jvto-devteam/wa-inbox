@@ -59,6 +59,16 @@ describe.skipIf(!RELEASE_PRESENT)('resolveKnowledgeForTopic against the real syn
     expect(result.primaryLink).toBe('https://javavolcano-touroperator.com/policy/booking-payment-cancellation')
   })
 
+  // Reported 2026-08-05: a group of 15 got "let me check with our team" for vehicle -- honest,
+  // but incomplete, since the real answer (multiple Hiace, scaled to group size) exists once
+  // told to us. service_vehicle_by_pax's `rules` array was never actually read by knowledge.ts
+  // (only `short_answer`/`detail_summary` feed factualLines/detailLines), so the fix is in the
+  // text itself, not new code.
+  it('mentions multiple-Hiace scaling for large groups in the vehicle topic', () => {
+    const result = resolveKnowledgeForTopic('vehicle', 'what vehicle for a group of 15?')
+    expect(result.factualLines.some((f) => f.toLowerCase().includes('multiple hiace'))).toBe(true)
+  })
+
   // Reported 2026-08-05: real, approved, customer_visible ISIC/police-escort/ferry content
   // that no topic or destination lookup could ever reach -- only the customer's own words can.
   it.each([

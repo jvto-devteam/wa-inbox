@@ -207,7 +207,7 @@
     "category": "service",
     "scope": "global",
     "title": "Vehicle by Group Size",
-    "short_answer": "We use an AC MPV for 1–3 guests and a Hiace for 4–9 guests.",
+    "short_answer": "We use an AC MPV for 1–3 guests, a Hiace for 4–9 guests, and multiple Hiace vehicles for groups larger than 9, scaled to your group size.",
     "rules": [
       {
         "pax_min": 1,
@@ -218,6 +218,11 @@
         "pax_min": 4,
         "pax_max": 9,
         "vehicle": "Hiace"
+      },
+      {
+        "pax_min": 10,
+        "pax_max": null,
+        "vehicle": "Multiple Hiace (scaled to group size)"
       }
     ],
     "requires_live_check_when": [
