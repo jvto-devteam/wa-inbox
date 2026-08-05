@@ -1702,6 +1702,105 @@ describe('decideAndRespond', () => {
     })
   })
 
+  // Confirmed with the operator 2026-08-05: before recommending, try progressively looser
+  // tiers in explicit priority order (see narrowPackagePool's own header in package-match.ts),
+  // rather than silently swapping in an alternative without ever telling the customer.
+  describe('package-match tiers (route/start/end fallback)', () => {
+    // mentionedDestinationTokens (unmocked -- package-match.ts is only a partial mock) reads
+    // its known-token universe from loadCatalog()'s real return value, not from `matches`, so
+    // these tests mock loadCatalog with a catalog containing both tokens even though `matches`
+    // itself (from the separately-mocked matchDestination) only covers one of them.
+    function catalogWithTokens(tokens: string[]) {
+      return { packages: [pkg({ packageKey: 'catalog-anchor', destinationTokens: tokens })], syncedAt: null }
+    }
+
+    it('tells the LLM the route/order differs (but start/finish/duration match) when no package covers every requested destination', async () => {
+      ;(ensureFreshBookingData as any).mockResolvedValue(null)
+      ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
+      ;(loadCatalog as any).mockReturnValue(catalogWithTokens(['bromo', 'ijen']))
+      const bromoOnly = pkg({ packageKey: 'bromo-only-3d', title: 'Bromo Only 3D', origin: 'Surabaya', dayCount: 3, finishCities: ['surabaya'] })
+      ;(matchDestination as any).mockReturnValue({ destination: 'bromo', matches: [bromoOnly] })
+      ;(checkRouteGate as any).mockReturnValue({ status: 'clear' })
+      ;(classifyTopic as any).mockReturnValue('price')
+      ;(parseTripPreferences as any).mockReturnValue({ origin: 'Surabaya', dayCount: 3, finishCity: 'surabaya', pax: null })
+
+      await decideAndRespond('conv_1', 'A 3 day trip from Surabaya to Bromo and Ijen, ending in Surabaya')
+
+      const [, opts] = (callLLM as any).mock.calls[0]
+      expect(opts.system).toContain('route/stop order is slightly different')
+    })
+
+    // The operator's own example: "4 day Bali -> Bali" doesn't exist -- offer "4 day
+    // Surabaya -> Bali" instead (same finish, different start), with an admin-adjust note.
+    it('tells the LLM to be upfront and mention admin will adjust when no package satisfies both origin and finishCity together', async () => {
+      ;(ensureFreshBookingData as any).mockResolvedValue(null)
+      ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
+      const surabayaToBali = pkg({ packageKey: 'surabaya-bali-4d', title: 'Surabaya to Bali 4D', origin: 'Surabaya', dayCount: 4, finishCities: ['bali'] })
+      const baliOrigin = pkg({ packageKey: 'bali-origin-4d', title: 'Bali Origin 4D', origin: 'Bali', dayCount: 4, finishCities: ['surabaya'] })
+      ;(matchDestination as any).mockReturnValue({ destination: 'ijen', matches: [surabayaToBali, baliOrigin] })
+      ;(checkRouteGate as any).mockReturnValue({ status: 'clear' })
+      ;(classifyTopic as any).mockReturnValue('price')
+      ;(parseTripPreferences as any).mockReturnValue({ origin: 'Bali', dayCount: 4, finishCity: 'bali', pax: null })
+
+      await decideAndRespond('conv_1', '4 day trip starting and finishing in Bali')
+
+      const [, opts] = (callLLM as any).mock.calls[0]
+      expect(opts.system).toContain("exact start/finish combination they wanted isn't a standard package")
+      expect(opts.system).toContain('our team can adjust the specifics after booking')
+    })
+
+    // Operator's own explicit ask: a genuinely too-custom request (not even the stated
+    // duration exists for this destination) hands off to a human instead of guessing.
+    it('hands off to a human agent when not even the stated duration matches any package', async () => {
+      ;(ensureFreshBookingData as any).mockResolvedValue(null)
+      ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
+      const onlyThreeDay = pkg({ packageKey: 'only-3d', origin: 'Surabaya', dayCount: 3, finishCities: ['surabaya'] })
+      ;(matchDestination as any).mockReturnValue({ destination: 'ijen', matches: [onlyThreeDay] })
+      ;(checkRouteGate as any).mockReturnValue({ status: 'clear' })
+      ;(classifyTopic as any).mockReturnValue('price')
+      ;(parseTripPreferences as any).mockReturnValue({ origin: null, dayCount: 15, finishCity: null, pax: null })
+      // askedTripPreferences: true -- bypasses the unrelated start/finish/day-count funnel
+      // gate so this test reaches narrowPackagePool's own tier logic being asserted.
+      mockPrisma.conversation.findUniqueOrThrow.mockResolvedValue({
+        id: 'conv_1', tripBrief: { askedTripPreferences: true }, bookingData: null, bookingCheckedAt: new Date(),
+        contact: { phone: '6281234567890' },
+      } as never)
+
+      const result = await decideAndRespond('conv_1', 'A 15 day trip to Ijen please')
+
+      expect(result.mode).toBe('handoff')
+      expect(callLLM).not.toHaveBeenCalled()
+    })
+
+    it('leads the option list with a confirmed best package even when it is not first in the matched array', async () => {
+      ;(ensureFreshBookingData as any).mockResolvedValue(null)
+      ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
+      const ordinary = pkg({ packageKey: 'ordinary-3d', title: 'Ordinary Package', origin: 'Surabaya', dayCount: 3, finishCities: ['surabaya'], priceIdr: 2000000 })
+      const best = pkg({ packageKey: 'bromo-madakaripura-ijen-3d2n', title: 'The Best Package', origin: 'Surabaya', dayCount: 3, finishCities: ['surabaya'], priceIdr: 2450000 })
+      ;(matchDestination as any).mockReturnValue({ destination: 'ijen', matches: [ordinary, best] })
+      ;(checkRouteGate as any).mockReturnValue({ status: 'clear' })
+      ;(classifyTopic as any).mockReturnValue('price')
+      mockPrisma.conversation.findUniqueOrThrow.mockResolvedValue({
+        id: 'conv_1', tripBrief: { askedTripPreferences: true }, bookingData: null, bookingCheckedAt: new Date(),
+        contact: { phone: '6281234567890' },
+      } as never)
+
+      await decideAndRespond('conv_1', 'What packages do you recommend for Ijen?')
+
+      const [, opts] = (callLLM as any).mock.calls[0]
+      // Compare positions within the options list itself, not the whole system prompt --
+      // pickPackage (mocked to matches[0] by default, a separate, unrelated selection used
+      // for the "Package the customer is asking about" header line) may independently name
+      // "Ordinary Package" earlier in the prompt; that's not what this test is about.
+      const optionsSection = opts.system.split('Matching tour packages for this destination')[1]
+      const orderedIndex = optionsSection.indexOf('The Best Package')
+      const ordinaryIndex = optionsSection.indexOf('Ordinary Package')
+      expect(orderedIndex).toBeGreaterThan(-1)
+      expect(ordinaryIndex).toBeGreaterThan(-1)
+      expect(orderedIndex).toBeLessThan(ordinaryIndex)
+    })
+  })
+
   // Reported 2026-08-05: "can we finish the trip in Bali?" was answered from a Bali-ORIGIN
   // package (parseOrigin matched the bare "bali" mention as a starting city), which per real
   // endpoint-chain data does NOT finish in Bali at all -- "starts in X" and "ends in X" are

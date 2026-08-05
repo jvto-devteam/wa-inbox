@@ -64,6 +64,17 @@ export function packagesForDestination(destination: string, catalog: Catalog): C
   return catalog.packages.filter((p) => p.destinationTokens.some((t) => t.toLowerCase() === wanted))
 }
 
+// EVERY destination token the customer's message mentions, unlike `matchDestination`'s single
+// earliest-mentioned anchor -- used by `narrowPackagePool` (see its own header) to tell "this
+// package covers the customer's full requested route" apart from "this package only covers
+// one of the destinations they named". Order doesn't matter here (route ORDER isn't modeled
+// anywhere in the catalog -- packages only expose an unordered destination set), only which
+// destinations were named at all.
+export function mentionedDestinationTokens(message: string, catalog: Catalog): string[] {
+  const low = message.toLowerCase()
+  return allDestinationTokens(catalog).filter((token) => low.includes(token))
+}
+
 const MONTH_NAMES = [
   'january', 'february', 'march', 'april', 'may', 'june',
   'july', 'august', 'september', 'october', 'november', 'december',
@@ -252,4 +263,115 @@ export function pickPackage(matches: CatalogPackage[], preferences: TripPreferen
     if (filtered.length > 0) pool = filtered
   }
   return priced(pool) ?? matches[0]
+}
+
+// Confirmed with the operator 2026-08-05 as JVTO's best/flagship packages -- whenever any of
+// these appear in a recommendation list, they lead it, ahead of any other match. Order within
+// this list IS the priority order (first = highest). Real packageKeys, cross-checked against
+// the synced catalog 2026-08-05 (titles below are the operator's own shorthand for each):
+//   "3D2N Surabaya bromo ijen bali"            -> bromo-madakaripura-ijen-3d2n
+//   "3d2n surabaya ijen bromo mada"            -> ijen-bromo-madakaripura-3d2n
+//   "4d3n surabaya tumpak sewu Bromo ijen bali" -> tumpak-sewu-bromo-ijen-4d3n
+//   "4d3n surabaya ijen papuma tumpak sewu Bromo" -> ijen-papuma-tumpak-sewu-bromo-4d3n
+const BEST_PACKAGE_KEYS = [
+  'bromo-madakaripura-ijen-3d2n',
+  'ijen-bromo-madakaripura-3d2n',
+  'tumpak-sewu-bromo-ijen-4d3n',
+  'ijen-papuma-tumpak-sewu-bromo-4d3n',
+]
+
+/** Stable sort: any of BEST_PACKAGE_KEYS lead the list (in that priority order); everything else keeps its relative order after them. */
+export function sortByBestPackagePriority(packages: CatalogPackage[]): CatalogPackage[] {
+  const rank = (p: CatalogPackage) => {
+    const i = BEST_PACKAGE_KEYS.indexOf(p.packageKey)
+    return i === -1 ? BEST_PACKAGE_KEYS.length : i
+  }
+  return packages
+    .map((p, i) => ({ p, i, r: rank(p) }))
+    .sort((a, b) => a.r - b.r || a.i - b.i)
+    .map(({ p }) => p)
+}
+
+export type PackageMatchTier = 'exact' | 'relaxed_route' | 'relaxed_start_end' | 'none'
+
+/**
+ * Confirmed with the operator 2026-08-05: before showing package options, try progressively
+ * looser tiers, in this exact priority order, rather than pickPackage's old "quietly skip
+ * whichever single filter would zero the pool" (which could silently drop the customer's
+ * duration or finish city without ever trying to keep BOTH by relaxing something else first).
+ *
+ *   1. 'exact': every one of origin/finishCity/dayCount the customer actually stated matches,
+ *      AND the package covers every destination they named (not just one) -- their exact
+ *      request. E.g. "3 day Surabaya -> Bromo -> Ijen -> Surabaya".
+ *   2. 'relaxed_route': same origin/finishCity/dayCount, but the package doesn't cover every
+ *      named destination (a different route/order covers some of them) -- e.g. no package
+ *      visits Bromo-then-Ijen in that order, but one visits Ijen-then-Bromo with the same
+ *      start, end, and duration.
+ *   3. 'relaxed_start_end': no package satisfies origin AND finishCity together for the
+ *      stated duration (route order is no longer the issue -- the start/end COMBINATION
+ *      itself doesn't exist), so origin or finishCity has to give. Tries keeping origin (drops
+ *      finishCity), then keeping finishCity (drops origin), unioning whichever succeed, before
+ *      relaxing both. E.g. "4 day Bali -> Bali" doesn't exist (no Bali-origin package finishes
+ *      in Bali) -- offers "4 day Surabaya -> Bali" instead (same finish, different start).
+ *   4. 'none': not even the stated duration has a match against this destination at all --
+ *      nothing to offer even approximately; the caller should hand off to a human agent
+ *      instead of presenting an unrelated list.
+ *
+ * `requestedTokens` should be `mentionedDestinationTokens(message, catalog)`, not just the
+ * single anchor token `matches` was already filtered by.
+ */
+export function narrowPackagePool(
+  matches: CatalogPackage[],
+  preferences: TripPreferences,
+  requestedTokens: string[]
+): { pool: CatalogPackage[]; tier: PackageMatchTier } {
+  const { origin, dayCount, finishCity } = preferences
+
+  const coversAllRequested = (p: CatalogPackage) =>
+    requestedTokens.every((t) => p.destinationTokens.some((pt) => pt.toLowerCase() === t))
+
+  // Applies origin/finishCity/dayCount together (only the ones actually stated) -- null (not
+  // []) means "this combination has zero matches", distinct from "matched, but empty on purpose".
+  const applyStartEndDuration = (pool: CatalogPackage[]): CatalogPackage[] | null => {
+    let out = pool
+    if (finishCity) {
+      out = out.filter((p) => p.finishCities.includes(finishCity))
+      if (out.length === 0) return null
+    }
+    if (origin) {
+      out = out.filter((p) => p.origin === origin)
+      if (out.length === 0) return null
+    }
+    if (dayCount) {
+      out = out.filter((p) => p.dayCount === dayCount)
+      if (out.length === 0) return null
+    }
+    return out
+  }
+
+  if (requestedTokens.length > 0) {
+    const exact = applyStartEndDuration(matches.filter(coversAllRequested))
+    if (exact) return { pool: exact, tier: 'exact' }
+  }
+
+  const relaxedRoute = applyStartEndDuration(matches)
+  if (relaxedRoute) return { pool: relaxedRoute, tier: requestedTokens.length > 0 ? 'relaxed_route' : 'exact' }
+
+  // Start/end combination itself doesn't exist -- duration is the only dimension worth
+  // holding onto absolutely (everything below is already a fallback for a genuinely
+  // unavailable route, so silently dropping duration too would be a second, compounding guess).
+  let durationPool = matches
+  if (dayCount) {
+    durationPool = durationPool.filter((p) => p.dayCount === dayCount)
+    if (durationPool.length === 0) return { pool: [], tier: 'none' }
+  }
+
+  const keepOrigin = origin ? durationPool.filter((p) => p.origin === origin) : []
+  const keepFinish = finishCity ? durationPool.filter((p) => p.finishCities.includes(finishCity)) : []
+  if (keepOrigin.length > 0 || keepFinish.length > 0) {
+    const merged = [...keepOrigin, ...keepFinish.filter((p) => !keepOrigin.includes(p))]
+    return { pool: merged, tier: 'relaxed_start_end' }
+  }
+
+  return { pool: durationPool, tier: 'relaxed_start_end' }
 }

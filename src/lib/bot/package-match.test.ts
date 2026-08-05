@@ -1,5 +1,15 @@
 import { describe, it, expect } from 'vitest'
-import { matchDestination, packagesForDestination, pickPackage, listDestinations, parseTripPreferences, priceForPax } from './package-match'
+import {
+  matchDestination,
+  packagesForDestination,
+  pickPackage,
+  listDestinations,
+  parseTripPreferences,
+  priceForPax,
+  mentionedDestinationTokens,
+  narrowPackagePool,
+  sortByBestPackagePriority,
+} from './package-match'
 import type { Catalog, CatalogPackage } from './types'
 
 function pkg(overrides: Partial<CatalogPackage> = {}): CatalogPackage {
@@ -342,5 +352,101 @@ describe('priceForPax', () => {
 
   it('falls back to the "starting from" priceIdr (null) for a package with no tiers at all', () => {
     expect(priceForPax(pkg({ priceIdr: null, priceTiers: [] }), 4)).toEqual({ priceIdr: null, isExactMatch: false })
+  })
+})
+
+describe('mentionedDestinationTokens', () => {
+  const multiDestCatalog = catalogOf([
+    pkg({ packageKey: 'a', destinationTokens: ['bromo', 'ijen'] }),
+    pkg({ packageKey: 'b', destinationTokens: ['tumpak sewu'] }),
+  ])
+
+  it('returns every destination token mentioned, not just the first', () => {
+    expect(mentionedDestinationTokens('we want to see Bromo and Ijen', multiDestCatalog).sort()).toEqual(['bromo', 'ijen'])
+  })
+
+  it('returns an empty array when no known destination is mentioned', () => {
+    expect(mentionedDestinationTokens('how much does it cost?', multiDestCatalog)).toEqual([])
+  })
+
+  it('is case-insensitive', () => {
+    expect(mentionedDestinationTokens('IJEN please', multiDestCatalog)).toEqual(['ijen'])
+  })
+})
+
+describe('sortByBestPackagePriority', () => {
+  it('moves the 4 confirmed best packages to the front, in their own priority order', () => {
+    const other = pkg({ packageKey: 'bromo-1d1n', title: 'Bromo 1D' })
+    const best2 = pkg({ packageKey: 'ijen-bromo-madakaripura-3d2n', title: 'Best #2' })
+    const best1 = pkg({ packageKey: 'bromo-madakaripura-ijen-3d2n', title: 'Best #1' })
+    const result = sortByBestPackagePriority([other, best2, best1])
+    expect(result.map((p) => p.packageKey)).toEqual(['bromo-madakaripura-ijen-3d2n', 'ijen-bromo-madakaripura-3d2n', 'bromo-1d1n'])
+  })
+
+  it('keeps the relative order of non-best packages unchanged', () => {
+    const a = pkg({ packageKey: 'a' })
+    const b = pkg({ packageKey: 'b' })
+    const c = pkg({ packageKey: 'c' })
+    expect(sortByBestPackagePriority([a, b, c]).map((p) => p.packageKey)).toEqual(['a', 'b', 'c'])
+  })
+
+  it('does not reorder anything when no best package is present', () => {
+    const list = [pkg({ packageKey: 'x' }), pkg({ packageKey: 'y' })]
+    expect(sortByBestPackagePriority(list)).toEqual(list)
+  })
+})
+
+// Confirmed with the operator 2026-08-05: before showing package options, try progressively
+// looser tiers in explicit priority order, rather than silently dropping the customer's
+// duration or finish city to keep something else.
+describe('narrowPackagePool', () => {
+  // Fixture mirrors the user's own example: "3 day Surabaya -> Bromo -> Ijen -> Surabaya"
+  // doesn't exist as its own package, but "3 day Surabaya -> Ijen -> Bromo -> Surabaya" does
+  // (same start/end/duration, different route/order -- route order itself isn't modeled, only
+  // which destinations are covered, so this is simulated as a package that simply doesn't
+  // cover one of the two requested destinations).
+  const bromoOnly3d = pkg({ packageKey: 'bromo-only-3d', destinationTokens: ['bromo'], origin: 'Surabaya', dayCount: 3, finishCities: ['surabaya'] })
+  const bromoIjen3d = pkg({ packageKey: 'bromo-ijen-3d', destinationTokens: ['bromo', 'ijen'], origin: 'Surabaya', dayCount: 3, finishCities: ['surabaya'] })
+
+  it('tier "exact": a package covering every requested destination, with the exact start/finish/duration', () => {
+    const result = narrowPackagePool([bromoOnly3d, bromoIjen3d], { origin: 'Surabaya', dayCount: 3, finishCity: 'surabaya', pax: null }, ['bromo', 'ijen'])
+    expect(result.tier).toBe('exact')
+    expect(result.pool.map((p) => p.packageKey)).toEqual(['bromo-ijen-3d'])
+  })
+
+  it('tier "relaxed_route": no package covers every requested destination, but one matches the same start/finish/duration', () => {
+    // Only bromoOnly3d exists -- doesn't cover the requested "ijen" too.
+    const result = narrowPackagePool([bromoOnly3d], { origin: 'Surabaya', dayCount: 3, finishCity: 'surabaya', pax: null }, ['bromo', 'ijen'])
+    expect(result.tier).toBe('relaxed_route')
+    expect(result.pool.map((p) => p.packageKey)).toEqual(['bromo-only-3d'])
+  })
+
+  // The user's own example: "4 day Bali -> Bali" doesn't exist (no Bali-origin package
+  // finishes in Bali) -- offer "4 day Surabaya -> Bali" instead (same finish, different start).
+  it('tier "relaxed_start_end": no package satisfies origin+finishCity together, keeps duration and offers the closest start/finish alternative', () => {
+    const surabayaToBali4d = pkg({ packageKey: 'surabaya-bali-4d', origin: 'Surabaya', dayCount: 4, finishCities: ['bali'] })
+    const baliOrigin4d = pkg({ packageKey: 'bali-origin-4d', origin: 'Bali', dayCount: 4, finishCities: ['surabaya'] })
+    const result = narrowPackagePool([surabayaToBali4d, baliOrigin4d], { origin: 'Bali', dayCount: 4, finishCity: 'bali', pax: null }, [])
+    expect(result.tier).toBe('relaxed_start_end')
+    // Keeps the one matching finishCity='bali' (surabayaToBali4d) even though origin differs.
+    expect(result.pool.map((p) => p.packageKey)).toContain('surabaya-bali-4d')
+  })
+
+  it('tier "none": not even the stated duration has any match for this destination', () => {
+    const onlyThreeDay = pkg({ packageKey: 'only-3d', origin: 'Surabaya', dayCount: 3, finishCities: ['surabaya'] })
+    const result = narrowPackagePool([onlyThreeDay], { origin: 'Surabaya', dayCount: 15, finishCity: null, pax: null }, [])
+    expect(result.tier).toBe('none')
+    expect(result.pool).toEqual([])
+  })
+
+  it('treats no requested destinations (a bare recommendation ask) the same as "exact" once start/finish/duration match', () => {
+    const result = narrowPackagePool([bromoIjen3d], { origin: 'Surabaya', dayCount: 3, finishCity: 'surabaya', pax: null }, [])
+    expect(result.tier).toBe('exact')
+  })
+
+  it('falls back gracefully when no preferences are stated at all (returns everything as "exact")', () => {
+    const result = narrowPackagePool([bromoOnly3d, bromoIjen3d], { origin: null, dayCount: null, finishCity: null, pax: null }, [])
+    expect(result.tier).toBe('exact')
+    expect(result.pool.length).toBe(2)
   })
 })

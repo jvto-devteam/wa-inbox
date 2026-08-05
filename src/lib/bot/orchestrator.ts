@@ -95,7 +95,18 @@ import { prisma } from '@/lib/db'
 import { ensureFreshBookingData } from '@/lib/booking/client'
 import { checkRouteGate } from './route-gate'
 import { classifySalesNeed, HANDOFF_KEYWORDS } from './sales-classifier'
-import { listDestinations, matchDestination, packagesForDestination, parseTripPreferences, pickPackage, priceForPax, titleCaseCity } from './package-match'
+import {
+  listDestinations,
+  matchDestination,
+  mentionedDestinationTokens,
+  narrowPackagePool,
+  packagesForDestination,
+  parseTripPreferences,
+  pickPackage,
+  priceForPax,
+  sortByBestPackagePriority,
+  titleCaseCity,
+} from './package-match'
 import { classifyTopic, type ResolverTopic } from './module-resolver'
 import { resolveKnowledgeForTopic, hasKeywordTriggeredModule, GUARDRAIL_INSTRUCTION, GENERAL_FAQ_FALLBACK } from './knowledge'
 import { callLLM, type LLMOptions } from './llm'
@@ -641,19 +652,27 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
     // Surabaya-origin packages (every duration) listed back at them on a later message that
     // didn't restate the duration/finish city, because this pool used to only ever look at
     // THIS message's preferences.
-    let optionPool = matches
-    if (finishCity) {
-      const filtered = optionPool.filter((p) => p.finishCities.includes(finishCity))
-      if (filtered.length > 0) optionPool = filtered
+    //
+    // Confirmed with the operator 2026-08-05: narrowPackagePool's own header explains the 4
+    // explicit priority tiers this replaces the old single-pass "skip whichever filter would
+    // zero the pool" narrowing with. `matchTier === 'none'` means not even the stated duration
+    // has a match for this destination at all -- hand off instead of presenting an unrelated
+    // list (the operator's own explicit ask: genuinely too-custom requests go to a human, who
+    // follows up directly, rather than the bot guessing something irrelevant).
+    const requestedTokens = mentionedDestinationTokens(inboundText, catalog)
+    const { pool: matchTierPool, tier: matchTier } = narrowPackagePool(matches, { origin, dayCount, finishCity, pax }, requestedTokens)
+    if (matchTier === 'none') {
+      trace.push(
+        'Tidak ada paket yang cocok',
+        `Tidak ada paket untuk destinasi "${destination}" dengan durasi ${dayCount} hari sama sekali -- diserahkan ke agen, tim akan follow up langsung.`
+      )
+      return {
+        mode: 'handoff',
+        reason: `Permintaan pelanggan (durasi ${dayCount ?? '?'} hari) tidak cocok dengan paket manapun untuk destinasi "${destination}", bahkan setelah dilonggarkan.`,
+        steps: trace.steps,
+      }
     }
-    if (origin) {
-      const filtered = optionPool.filter((p) => p.origin === origin)
-      if (filtered.length > 0) optionPool = filtered
-    }
-    if (dayCount) {
-      const filtered = optionPool.filter((p) => p.dayCount === dayCount)
-      if (filtered.length > 0) optionPool = filtered
-    }
+    const optionPool = sortByBestPackagePriority(matchTierPool)
     const optionPackages = optionPool.filter((p) => p.priceIdr !== null).slice(0, 5)
     // Reported 2026-08-05: cross-checked against a real operator-exported pricing sheet
     // (175/176 price points matched exactly what's already synced -- confirming the tier data
@@ -685,6 +704,14 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
       packageOptionsText && pax === null
         ? `\n\nAny price marked "from Rp X/person" above is the starting (largest-group) rate -- the actual per-person price is higher for a smaller group. If the customer's group size isn't already known from this conversation, mention that the price depends on group size, or ask how many people are traveling.`
         : ''
+    // Confirmed with the operator 2026-08-05: be upfront when a fallback tier was used --
+    // never silently swap in an alternative as if it were the customer's exact request.
+    const matchTierNote =
+      matchTier === 'relaxed_route'
+        ? `\n\nNone of the matching packages above cover the exact route/order the customer described, but they DO match the same start city, finish city, and trip length -- be upfront that the route/stop order is slightly different from what they described, while confirming the start, finish, and duration are exactly as requested.`
+        : matchTier === 'relaxed_start_end'
+          ? `\n\nNone of the matching packages above start and finish exactly where the customer asked -- these are the closest alternative(s) for their trip length instead. Be upfront that the exact start/finish combination they wanted isn't a standard package, and mention that our team can adjust the specifics after booking if needed.`
+          : ''
     // "Can we finish the trip in Bali?" -- a Bali-ORIGIN package's real dropoff options are
     // all Surabaya/Malang-area (verified 2026-08-05: none of the 4 Bali-origin packages list
     // Bali as a finish option), so this must be answered from `finishCities`, never guessed
@@ -749,6 +776,7 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
       `\n\nGeneral JVTO facts (use these for anything the specific facts above don't cover -- e.g. packing list, best time to visit, physical difficulty, what's included/excluded, payment terms):\n${GENERAL_FAQ_FALLBACK}` +
       finishCityFact +
       paxPriceNote +
+      matchTierNote +
       multiQuestionNote +
       (disclosures.length > 0 ? `\n\nImportant -- must be reflected in your reply:\n${disclosures.map((d) => `- ${d}`).join('\n')}` : '') +
       (classification.needsLiveData
