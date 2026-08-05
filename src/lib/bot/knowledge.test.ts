@@ -66,6 +66,7 @@ const modules = [
     short_answer: 'Student pricing is available to verified ISIC cardholders.',
     customer_visible: true,
     approval_status: 'approved',
+    link_key: 'isic_student_pricing',
   },
   {
     module_id: 'policy_police_escort',
@@ -103,6 +104,7 @@ const linkRegistry = {
     { link_key: 'what_is_included', url: 'https://javavolcano-touroperator.com/policy/inclusions-exclusions', status: 'existing' },
     { link_key: 'ijen_readiness', url: 'https://javavolcano-touroperator.com/destinations/ijen-crater', status: 'existing' },
     { link_key: 'bromo_sunrise', url: 'https://javavolcano-touroperator.com/destinations/mount-bromo', status: 'existing' },
+    { link_key: 'isic_student_pricing', url: 'https://javavolcano-touroperator.com/isic/student-package', status: 'existing' },
     // Two different URLs under the same key -> ambiguous, must never be guessed at.
     { link_key: 'ambiguous_key', url: 'https://example.com/a', status: 'existing' },
     { link_key: 'ambiguous_key', url: 'https://example.com/b', status: 'existing' },
@@ -227,6 +229,15 @@ describe('resolveKnowledgeForTopic', () => {
     it('surfaces ISIC student pricing when the message mentions it, on an unrelated topic', () => {
       const result = resolveKnowledgeForTopic('price', 'do you have student pricing with ISIC?')
       expect(result.factualLines).toContain('Student pricing is available to verified ISIC cardholders.')
+    })
+
+    // Reported live 2026-08-05: the fact surfaced correctly, but the link was a generic
+    // inclusions page instead of the ISIC-specific one -- the primaryLink loop found whichever
+    // TOPIC_MODULES-based module happened to resolve a link first, since keyword-triggered
+    // modules are appended to moduleIds last. A keyword-triggered module's own link now wins.
+    it("prefers the keyword-triggered module's OWN link over a topic-general module's link", () => {
+      const result = resolveKnowledgeForTopic('price', 'do you have student pricing with ISIC?')
+      expect(result.primaryLink).toBe('https://javavolcano-touroperator.com/isic/student-package')
     })
 
     it('surfaces the police escort policy when a large group asks about it', () => {

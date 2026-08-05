@@ -300,8 +300,12 @@ export function resolveKnowledgeForTopic(topic: ResolverTopic, message: string, 
     }
   }
   // Checked regardless of topic -- see KEYWORD_TRIGGERED_MODULES' own comment.
+  const keywordTriggeredIds = new Set<string>()
   for (const { moduleId, keywords } of KEYWORD_TRIGGERED_MODULES) {
-    if (keywords.some((k) => low.includes(k))) moduleIds.push(moduleId)
+    if (keywords.some((k) => low.includes(k))) {
+      moduleIds.push(moduleId)
+      keywordTriggeredIds.add(moduleId)
+    }
   }
   const resolvedModules = moduleIds
     .map((id) => modules[id])
@@ -312,12 +316,25 @@ export function resolveKnowledgeForTopic(topic: ResolverTopic, message: string, 
   const factualLines = resolvedModules.map((m) => m.short_answer).filter((v): v is string => Boolean(v))
   const detailLines = resolvedModules.map((m) => m.detail_summary).filter((v): v is string => Boolean(v))
 
+  // A keyword-triggered module's own link wins over a topic-general module's -- the customer
+  // asked specifically about student pricing/escort/ferry, so ISIC's own page is more useful
+  // than whatever generic inclusions/policy link the topic would otherwise resolve first.
   let primaryLink: string | null = null
   for (const m of resolvedModules) {
+    if (!keywordTriggeredIds.has(m.module_id)) continue
     const url = resolveLink(m.link_key)
     if (url) {
       primaryLink = url
       break
+    }
+  }
+  if (!primaryLink) {
+    for (const m of resolvedModules) {
+      const url = resolveLink(m.link_key)
+      if (url) {
+        primaryLink = url
+        break
+      }
     }
   }
 

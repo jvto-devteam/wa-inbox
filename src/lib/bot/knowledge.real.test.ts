@@ -69,4 +69,9 @@ describe.skipIf(!RELEASE_PRESENT)('resolveKnowledgeForTopic against the real syn
     const result = resolveKnowledgeForTopic('general', message)
     expect(result.factualLines.length).toBeGreaterThan(0)
   })
+
+  it("resolves the real ISIC-specific link (not a generic fallback) for a student-pricing question", () => {
+    const result = resolveKnowledgeForTopic('price', 'do you offer student discounts with ISIC?')
+    expect(result.primaryLink).toBe('https://javavolcano-touroperator.com/isic/student-package')
+  })
 })
