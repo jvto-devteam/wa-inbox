@@ -1483,6 +1483,73 @@ describe('decideAndRespond', () => {
     })
   })
 
+  // Reported live 2026-08-05: a real customer message with 6+ distinct questions bundled
+  // together (invoice under the company name, replacement/emergency-contact arrangements,
+  // insurance, itinerary after a skipped stop + pickup time, hotel names/breakfast, exact
+  // finish point) got 2-3 answered individually, then everything else lumped into ONE vague
+  // "let me check with our team" sentence -- and the itinerary question was dropped entirely.
+  describe('multi-question completeness', () => {
+    const manyQuestions =
+      'After payment, will you send an official invoice? If there is a problem with the driver, ' +
+      'do you have a replacement arrangement and an emergency contact? Does the package include ' +
+      'insurance? Could you confirm the final itinerary after we skip Madakaripura? Please also ' +
+      'confirm the hotel names. Does the service end at Ketapang or after Gilimanuk?'
+
+    it('instructs the LLM to answer every question as its own bullet, and to point itinerary questions to the package link, for a message with 3+ questions', async () => {
+      ;(ensureFreshBookingData as any).mockResolvedValue(null)
+      ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
+      ;(matchDestination as any).mockReturnValue({ destination: 'ijen', matches: [pkg({ links: { details: 'https://example.com/ijen-package' } })] })
+      ;(checkRouteGate as any).mockReturnValue({ status: 'clear' })
+      ;(classifyTopic as any).mockReturnValue('payment')
+
+      await decideAndRespond('conv_1', manyQuestions)
+
+      const [, opts] = (callLLM as any).mock.calls[0]
+      expect(opts.system).toContain('answer EVERY one of them, each as its own bullet point')
+      expect(opts.system).toContain('do not lump multiple unconfirmed items into one vague sentence')
+      expect(opts.system).toContain("point that bullet to the package's own link")
+    })
+
+    it('does NOT add the multi-question instruction for an ordinary single-question message', async () => {
+      ;(ensureFreshBookingData as any).mockResolvedValue(null)
+      ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
+      ;(matchDestination as any).mockReturnValue({ destination: 'ijen', matches: [pkg()] })
+      ;(checkRouteGate as any).mockReturnValue({ status: 'clear' })
+      ;(classifyTopic as any).mockReturnValue('price')
+      // askedTripPreferences: true -- bypasses the unrelated start/finish/day-count funnel
+      // gate (a 'price'-topic message with no destination context would otherwise trigger it),
+      // so this test isolates just the multi-question instruction being asserted.
+      mockPrisma.conversation.findUniqueOrThrow.mockResolvedValue({
+        id: 'conv_1', tripBrief: { askedTripPreferences: true }, bookingData: null, bookingCheckedAt: new Date(),
+        contact: { phone: '6281234567890' },
+      } as never)
+
+      await decideAndRespond('conv_1', 'How much is the deposit?')
+
+      const [, opts] = (callLLM as any).mock.calls[0]
+      expect(opts.system).not.toContain('answer EVERY one of them')
+    })
+
+    it('also adds the multi-question instruction on the destination-independent (pre-destination) path', async () => {
+      ;(ensureFreshBookingData as any).mockResolvedValue(null)
+      ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
+      ;(matchDestination as any).mockReturnValue(null)
+      ;(listDestinations as any).mockReturnValue(['Bromo', 'Ijen'])
+      ;(classifyTopic as any).mockReturnValue('payment')
+      ;(resolveKnowledgeForTopic as any).mockReturnValue({
+        factualLines: ['A 20% deposit secures the booking.'], detailLines: [], primaryLink: null, disclosures: [], handoffRequired: false,
+      })
+
+      await decideAndRespond(
+        'conv_1',
+        'Do you accept bank transfer? Is there a deposit required? What is your cancellation policy?'
+      )
+
+      const [, opts] = (callLLM as any).mock.calls[0]
+      expect(opts.system).toContain('answer EVERY one of them, each as its own bullet point')
+    })
+  })
+
   // Reported 2026-08-05: cross-checked against a real operator-exported pricing sheet, which
   // surfaced that the bot always quoted the cheapest (11+ pax) tier to every customer
   // regardless of their actual group size.

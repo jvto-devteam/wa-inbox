@@ -167,6 +167,20 @@ function isBookingIntent(message: string): boolean {
   return BOOKING_INTENT_KEYWORDS.some((k) => low.includes(k))
 }
 
+// A real customer message with several distinct questions bundled together (e.g. invoice
+// under the company name, replacement/emergency-contact arrangements, insurance, itinerary
+// after a skipped stop + pickup time, hotel names/breakfast, and the exact finish point --
+// all in one message) reported 2026-08-05: the bot answered 2-3 of them individually, then
+// lumped everything else ("invoice, replacement arrangements, specific hotel names, pickup
+// times, and the exact end point") into ONE vague "let me check with our team" sentence,
+// and silently dropped the itinerary-after-skipping-Madakaripura question entirely. A
+// question-mark count is a coarse but effective proxy -- a genuinely multi-part message reads
+// as several distinct "?"-terminated asks, unlike an ordinary single question.
+const MULTI_QUESTION_THRESHOLD = 3
+function isMultiQuestionMessage(message: string): boolean {
+  return (message.match(/\?/g)?.length ?? 0) >= MULTI_QUESTION_THRESHOLD
+}
+
 // Topics genuinely answerable without knowing WHICH destination the customer wants --
 // payment terms, dietary/meal handling (folded into 'vehicle'/'inclusions' facts), rooming
 // policy, hotel standard, cancellation policy, and the booking process are the same
@@ -395,6 +409,9 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
               ? `\n\nImportant -- must be reflected in your reply:\n${preDestinationKnowledge.disclosures.map((d) => `- ${d}`).join('\n')}`
               : '') +
             `\n\nThe customer has not said which destination/tour they're interested in yet -- answer their actual question honestly from the facts above first, then naturally ask which destination interests them (Bromo, Ijen, Madakaripura, Papuma, Tumpak Sewu) so a specific package and price can be recommended next.` +
+            (isMultiQuestionMessage(inboundText)
+              ? `\n\nThis message contains several distinct questions -- answer EVERY one of them, each as its own bullet point. Do not skip any, and do not lump multiple unconfirmed items into one vague sentence. It's fine for this reply to be longer than usual to cover everything.`
+              : '') +
             `\n\n${GUARDRAIL_INSTRUCTION}`
 
           const history = await fetchRecentHistory(conversationId, inboundText)
@@ -687,6 +704,17 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
     // 2026-08-05 audit of real customer messages ran 400-1900 characters, while an ordinary
     // "what do you recommend?" runs a few dozen.
     const looksLikeCustomItinerary = optionPackages.length > 1 && inboundText.length > 400
+    // Reported live 2026-08-05: a real customer message with 6+ distinct questions bundled
+    // together (invoice under the company name, replacement/emergency-contact arrangements,
+    // insurance, itinerary after a skipped stop + pickup time, hotel names/breakfast, exact
+    // finish point) got 2-3 answered individually, then everything else lumped into ONE vague
+    // "let me check with our team" sentence -- and the itinerary question was dropped
+    // entirely, never even acknowledged. Overrides SHARED_PERSONA_INSTRUCTIONS' usual 2-3
+    // sentence brevity for this case specifically: completeness matters more than staying
+    // short when the customer asked several distinct things and expects each one answered.
+    const multiQuestionNote = isMultiQuestionMessage(inboundText)
+      ? `\n\nThis message contains several distinct questions -- answer EVERY one of them, each as its own bullet point. Do not skip any, and do not lump multiple unconfirmed items into one vague sentence (e.g. never write "for the invoice, replacement arrangements, and hotel names, let me check" -- give each its own bullet, even if several of them end up saying the same honest "our team will confirm this shortly"). It's fine for this reply to be longer than usual to cover everything. For any question specifically about the day-by-day itinerary or schedule, don't manually re-derive it -- just point that bullet to the package's own link (given below) for the full itinerary, and only state itinerary-adjacent details (like a pickup time) if they're a fact you actually have.`
+      : ''
 
     const system =
       `${SHARED_PERSONA_INSTRUCTIONS}\n\n` +
@@ -711,6 +739,7 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
       `\n\nGeneral JVTO facts (use these for anything the specific facts above don't cover -- e.g. packing list, best time to visit, physical difficulty, what's included/excluded, payment terms):\n${GENERAL_FAQ_FALLBACK}` +
       finishCityFact +
       paxPriceNote +
+      multiQuestionNote +
       (disclosures.length > 0 ? `\n\nImportant -- must be reflected in your reply:\n${disclosures.map((d) => `- ${d}`).join('\n')}` : '') +
       (classification.needsLiveData
         ? `\n\nThis question also touches live/real-time availability or pricing confirmation, which you cannot verify -- answer everything else from the facts above, but for that specific part say our team will confirm it shortly.`
