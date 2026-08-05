@@ -58,6 +58,11 @@
  *   already treats a null price as "not yet route-clean" and hands off, which is
  *   the correct fail-safe for a package we cannot quote.
  *
+ * `priceTiers` <- `pax_tiers[]` verbatim (min/max pax + price), see that field's own header in
+ *   types.ts. Added 2026-08-05 alongside `priceIdr`, not instead of it -- orchestrator.ts picks
+ *   the correct tier once a customer's group size is known, falling back to `priceIdr`'s
+ *   "starting from" framing when it isn't.
+ *
  * `inclusions` <- `component-matrices.json`'s `included[]` verbatim. `excluded[]`
  *   and `conditional[]` have no `CatalogPackage` field and are dropped rather
  *   than merged into `inclusions` (merging them would let response-composer.ts
@@ -214,6 +219,28 @@ function lowestTierPriceIdr(entry: Json | undefined): number | null {
     .map((tier) => (isObject(tier) ? tier.idr_per_person : null))
     .filter((price): price is number => typeof price === 'number' && Number.isFinite(price) && price > 0)
   return prices.length > 0 ? Math.min(...prices) : null
+}
+
+/**
+ * The full per-group-size price ladder (CatalogPackage.priceTiers -- see that field's own
+ * header for why this exists alongside `priceIdr`), sorted ascending by `min_pax`. Same
+ * validation as `lowestTierPriceIdr`: a tier with a non-numeric/non-finite/non-positive price,
+ * or a non-positive `min_pax`, is dropped rather than trusted.
+ */
+function parsePriceTiers(entry: Json | undefined): Array<{ minPax: number; maxPax: number | null; priceIdr: number }> {
+  if (!entry) return []
+  const tiers = Array.isArray(entry.pax_tiers) ? entry.pax_tiers : []
+  const parsed: Array<{ minPax: number; maxPax: number | null; priceIdr: number }> = []
+  for (const tier of tiers) {
+    if (!isObject(tier)) continue
+    const minPax = tier.min_pax
+    const priceIdr = tier.idr_per_person
+    if (typeof minPax !== 'number' || !Number.isFinite(minPax) || minPax <= 0) continue
+    if (typeof priceIdr !== 'number' || !Number.isFinite(priceIdr) || priceIdr <= 0) continue
+    const maxPax = typeof tier.max_pax === 'number' && Number.isFinite(tier.max_pax) ? tier.max_pax : null
+    parsed.push({ minPax, maxPax, priceIdr })
+  }
+  return parsed.sort((a, b) => a.minPax - b.minPax)
 }
 
 /** `destination_to_packages` -> `package_key` -> canonical destination tokens. */
@@ -385,6 +412,7 @@ export function loadCatalog(): Catalog {
       title,
       destinationTokens,
       priceIdr: lowestTierPriceIdr(priceTiers.get(packageKey)),
+      priceTiers: parsePriceTiers(priceTiers.get(packageKey)),
       inclusions: component ? asStringArray(component.included) : [],
       policyNotes: policyNoteIndex.get(packageKey) ?? [],
       stagingNotes: stagingNoteIndex.get(packageKey) ?? [],

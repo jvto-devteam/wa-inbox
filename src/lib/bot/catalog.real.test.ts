@@ -45,6 +45,30 @@ describe.skipIf(!RELEASE_PRESENT)('loadCatalog against the real synced catalog/'
     expect(packages.filter((p) => p.inclusions.length > 0)).toHaveLength(packages.length)
   })
 
+  // Reported 2026-08-05: cross-checked against a real operator-exported pricing sheet
+  // (175/176 price points matched exactly what's already synced here), which surfaced that
+  // the bot was quoting `priceIdr` (always the cheapest, 11+ pax tier) to every customer
+  // regardless of their actual group size. `priceForPax` (package-match.ts) needs the FULL
+  // tier ladder to fix that -- this guards it actually reaches every package, not just the
+  // single lowest number `priceIdr` already covered.
+  it('populates the full per-group-size priceTiers ladder for every priced package, ascending by minPax', () => {
+    const { packages } = loadCatalog()
+    const priced = packages.filter((p) => p.priceIdr !== null)
+    expect(priced.length).toBeGreaterThan(0)
+    for (const pkg of priced) {
+      expect(pkg.priceTiers.length).toBeGreaterThan(0)
+      for (const tier of pkg.priceTiers) {
+        expect(tier.minPax).toBeGreaterThan(0)
+        expect(tier.maxPax === null || tier.maxPax >= tier.minPax).toBe(true)
+        expect(tier.priceIdr).toBeGreaterThan(0)
+      }
+      const minPaxes = pkg.priceTiers.map((t) => t.minPax)
+      expect(minPaxes).toEqual([...minPaxes].sort((a, b) => a - b))
+      // priceIdr is documented as the LOWEST tier price -- the ladder must actually contain it.
+      expect(pkg.priceTiers.map((t) => t.priceIdr)).toContain(pkg.priceIdr)
+    }
+  })
+
   it('gives every package a public details link on the real site', () => {
     for (const pkg of loadCatalog().packages) {
       expect(pkg.links.details).toMatch(/^https:\/\/javavolcano-touroperator\.com\/tours\//)

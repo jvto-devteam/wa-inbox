@@ -74,6 +74,7 @@ function pkg(overrides: Record<string, unknown> = {}) {
     origin: null,
     dayCount: null,
     finishCities: [],
+    priceTiers: [],
     ...overrides,
   }
 }
@@ -629,7 +630,7 @@ describe('decideAndRespond', () => {
     await decideAndRespond('conv_1', '3 day ijen trip from Surabaya')
 
     expect(parseTripPreferences).toHaveBeenCalledWith('3 day ijen trip from Surabaya')
-    expect(pickPackage).toHaveBeenCalledWith([pkg()], { origin: 'Surabaya', dayCount: 3, finishCity: null })
+    expect(pickPackage).toHaveBeenCalledWith([pkg()], { origin: 'Surabaya', dayCount: 3, finishCity: null, pax: null })
   })
 
   it('passes the matched destination through to resolveKnowledgeForTopic (so destination_readiness can resolve a destination-specific link)', async () => {
@@ -1038,7 +1039,7 @@ describe('decideAndRespond', () => {
         where: { id: 'conv_1' },
         data: { tripBrief: { destination: 'ijen', origin: 'Surabaya' } },
       })
-      expect(pickPackage).toHaveBeenCalledWith([fromBali, fromSurabaya], { origin: 'Surabaya', dayCount: null, finishCity: null })
+      expect(pickPackage).toHaveBeenCalledWith([fromBali, fromSurabaya], { origin: 'Surabaya', dayCount: null, finishCity: null, pax: null })
     })
 
     it('uses the origin already on file (not just this message) to narrow pickPackage', async () => {
@@ -1058,7 +1059,7 @@ describe('decideAndRespond', () => {
 
       await decideAndRespond('conv_1', 'What is included?')
 
-      expect(pickPackage).toHaveBeenCalledWith([fromBali, fromSurabaya], { origin: 'Bali', dayCount: null, finishCity: null })
+      expect(pickPackage).toHaveBeenCalledWith([fromBali, fromSurabaya], { origin: 'Bali', dayCount: null, finishCity: null, pax: null })
     })
 
     it("lists every matching priced package in the LLM system prompt, not just pickPackage's single choice", async () => {
@@ -1236,8 +1237,8 @@ describe('decideAndRespond', () => {
       await decideAndRespond('conv_1', 'Which package do you recommend for Ijen?')
 
       const [, opts] = (callLLM as any).mock.calls[0]
-      expect(opts.system).toContain('Ijen 2D1N (2D, from Surabaya): Rp1.500.000/person - https://example.com/ijen-2d1n')
-      expect(opts.system).toContain('Ijen Bromo 3D2N (3D, from Surabaya): Rp2.500.000/person - https://example.com/ijen-bromo-3d2n')
+      expect(opts.system).toContain('Ijen 2D1N (2D, from Surabaya): from Rp1.500.000/person - https://example.com/ijen-2d1n')
+      expect(opts.system).toContain('Ijen Bromo 3D2N (3D, from Surabaya): from Rp2.500.000/person - https://example.com/ijen-bromo-3d2n')
       expect(opts.system).toContain('link right after it')
       // No competing single "the reply's link" directive when each option already carries one.
       expect(opts.system).not.toContain('Relevant link (include this URL at the end of your reply)')
@@ -1308,6 +1309,100 @@ describe('decideAndRespond', () => {
       expect(result.mode).toBe('faq')
       const [, opts] = (callLLM as any).mock.calls[0]
       expect(opts.system).not.toContain('present ALL')
+    })
+  })
+
+  // Reported 2026-08-05: cross-checked against a real operator-exported pricing sheet, which
+  // surfaced that the bot always quoted the cheapest (11+ pax) tier to every customer
+  // regardless of their actual group size.
+  describe('pax-aware pricing', () => {
+    function tieredPkg(overrides: Record<string, unknown> = {}) {
+      return pkg({
+        packageKey: 'ijen-bromo-3d2n',
+        title: 'Ijen & Bromo 3D2N',
+        origin: 'Surabaya',
+        dayCount: 3,
+        priceIdr: 2450000,
+        links: { details: 'https://example.com/ijen-bromo-3d2n' },
+        priceTiers: [
+          { minPax: 2, maxPax: 2, priceIdr: 3570000 },
+          { minPax: 3, maxPax: 3, priceIdr: 3275000 },
+          { minPax: 11, maxPax: null, priceIdr: 2450000 },
+        ],
+        ...overrides,
+      })
+    }
+
+    it('states the exact tier price (not the cheapest "starting from" price) once the customer states their group size', async () => {
+      ;(ensureFreshBookingData as any).mockResolvedValue(null)
+      ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
+      ;(matchDestination as any).mockReturnValue({ destination: 'ijen', matches: [tieredPkg()] })
+      ;(checkRouteGate as any).mockReturnValue({ status: 'clear' })
+      ;(parseTripPreferences as any).mockReturnValue({ origin: null, dayCount: null, finishCity: null, pax: 2 })
+
+      await decideAndRespond('conv_1', 'We will be 2 people')
+
+      const [, opts] = (callLLM as any).mock.calls[0]
+      expect(opts.system).toContain('Rp3.570.000/person')
+      expect(opts.system).not.toContain('from Rp3.570.000/person')
+      expect(opts.system).not.toContain('Rp2.450.000/person')
+    })
+
+    it('labels the price as "from Rp X/person" and adds a group-size caveat when pax is unknown', async () => {
+      ;(ensureFreshBookingData as any).mockResolvedValue(null)
+      ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
+      ;(matchDestination as any).mockReturnValue({ destination: 'ijen', matches: [tieredPkg()] })
+      ;(checkRouteGate as any).mockReturnValue({ status: 'clear' })
+
+      await decideAndRespond('conv_1', 'How much for the Ijen Bromo tour?')
+
+      const [, opts] = (callLLM as any).mock.calls[0]
+      expect(opts.system).toContain('from Rp2.450.000/person')
+      expect(opts.system).toContain('depends on group size')
+    })
+
+    it('persists a stated pax so a later message in the same conversation still gets the exact tier price', async () => {
+      ;(ensureFreshBookingData as any).mockResolvedValue(null)
+      ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
+      ;(matchDestination as any).mockReturnValue({ destination: 'ijen', matches: [tieredPkg()] })
+      ;(checkRouteGate as any).mockReturnValue({ status: 'clear' })
+      ;(parseTripPreferences as any).mockReturnValue({ origin: null, dayCount: null, finishCity: null, pax: 3 })
+
+      const first = await decideAndRespond('conv_1', 'We are 3 people')
+      expect(first.mode).toBe('faq')
+      expect(mockPrisma.conversation.update).toHaveBeenCalledWith({
+        where: { id: 'conv_1' },
+        data: { tripBrief: { destination: 'ijen', pax: 3 } },
+      })
+
+      // Second message: tripBrief now carries pax=3 forward; this message states nothing new.
+      mockPrisma.conversation.findUniqueOrThrow.mockResolvedValue({
+        id: 'conv_1', tripBrief: { destination: 'ijen', pax: 3 }, contact: { name: 'Bruno' },
+      } as never)
+      ;(parseTripPreferences as any).mockReturnValue({ origin: null, dayCount: null, finishCity: null, pax: null })
+
+      await decideAndRespond('conv_1', 'What is included?')
+
+      const [, opts] = (callLLM as any).mock.calls[1]
+      expect(opts.system).toContain('Rp3.275.000/person')
+      expect(opts.system).not.toContain('from Rp3.275.000/person')
+    })
+
+    // Reported 2026-08-05: cross-checked against a real operator-exported pricing sheet
+    // (175/176 price points matched exactly), confirming this scenario is real: a solo
+    // traveler asking about a package whose real minimum group size is 2 must not be quoted
+    // that 2-pax price as if it were theirs -- honestly falls back to "starting from" instead.
+    it('falls back to "starting from" pricing when pax has no matching tier (below the minimum group size)', async () => {
+      ;(ensureFreshBookingData as any).mockResolvedValue(null)
+      ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
+      ;(matchDestination as any).mockReturnValue({ destination: 'ijen', matches: [tieredPkg()] })
+      ;(checkRouteGate as any).mockReturnValue({ status: 'clear' })
+      ;(parseTripPreferences as any).mockReturnValue({ origin: null, dayCount: null, finishCity: null, pax: 1 })
+
+      await decideAndRespond('conv_1', "I'm traveling solo")
+
+      const [, opts] = (callLLM as any).mock.calls[0]
+      expect(opts.system).toContain('from Rp2.450.000/person')
     })
   })
 

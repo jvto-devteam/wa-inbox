@@ -95,7 +95,7 @@ import { prisma } from '@/lib/db'
 import { ensureFreshBookingData } from '@/lib/booking/client'
 import { checkRouteGate } from './route-gate'
 import { classifySalesNeed, HANDOFF_KEYWORDS } from './sales-classifier'
-import { listDestinations, matchDestination, packagesForDestination, parseTripPreferences, pickPackage, titleCaseCity } from './package-match'
+import { listDestinations, matchDestination, packagesForDestination, parseTripPreferences, pickPackage, priceForPax, titleCaseCity } from './package-match'
 import { classifyTopic, type ResolverTopic } from './module-resolver'
 import { resolveKnowledgeForTopic, hasKeywordTriggeredModule, GUARDRAIL_INSTRUCTION, GENERAL_FAQ_FALLBACK } from './knowledge'
 import { callLLM, type LLMOptions } from './llm'
@@ -447,12 +447,24 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
     const origin = preferences.origin ?? tripBrief.origin ?? null
     const dayCount = preferences.dayCount ?? tripBrief.dayCount ?? null
     const finishCity = preferences.finishCity ?? tripBrief.finishCity ?? null
-    if (origin !== (tripBrief.origin ?? null) || dayCount !== (tripBrief.dayCount ?? null) || finishCity !== (tripBrief.finishCity ?? null)) {
+    // Same "this message wins, else the persisted one carries the conversation" precedence as
+    // origin/dayCount/finishCity -- see priceForPax's own header for why this matters: without
+    // it, a customer who states their group size once ("we will be 2 people") would need to
+    // repeat it on every later message to keep getting the correct per-pax price, exactly the
+    // bug already fixed once for dayCount/finishCity.
+    const pax = preferences.pax ?? tripBrief.pax ?? null
+    if (
+      origin !== (tripBrief.origin ?? null) ||
+      dayCount !== (tripBrief.dayCount ?? null) ||
+      finishCity !== (tripBrief.finishCity ?? null) ||
+      pax !== (tripBrief.pax ?? null)
+    ) {
       await persistTripBrief({
         destination,
         ...(origin ? { origin } : {}),
         ...(dayCount ? { dayCount } : {}),
         ...(finishCity ? { finishCity } : {}),
+        ...(pax ? { pax } : {}),
       })
     }
 
@@ -509,7 +521,7 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
     // equivalents) so a detail stated on an EARLIER message still narrows this pick -- e.g. a
     // customer who confirmed "3D2N, Surabaya to Bali" across several turns must not have that
     // forgotten the moment a later message in the same conversation doesn't restate it.
-    const pkg = pickPackage(matches, { origin, dayCount, finishCity })
+    const pkg = pickPackage(matches, { origin, dayCount, finishCity, pax })
 
     // The module-resolution step catalog.ts's own header names as never having been ported
     // (see knowledge.ts's header) -- resolves real facts/links/disclosures for all 14 real
@@ -598,16 +610,36 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
       if (filtered.length > 0) optionPool = filtered
     }
     const optionPackages = optionPool.filter((p) => p.priceIdr !== null).slice(0, 5)
+    // Reported 2026-08-05: cross-checked against a real operator-exported pricing sheet
+    // (175/176 price points matched exactly what's already synced -- confirming the tier data
+    // itself is accurate), which surfaced that the bot was quoting the CHEAPEST (11+ pax) tier
+    // to every customer regardless of their actual group size -- e.g. a solo traveler got the
+    // 11+-pax number stated as if it were their price, when the real per-person price for a
+    // small group is substantially higher. `priceForPax` (package-match.ts) resolves the REAL
+    // tier once `pax` is known (parsed this message or persisted from an earlier one, same
+    // precedence as origin/dayCount/finishCity); `isExactMatch: false` means it fell back to
+    // the lowest-tier "starting from" price, labeled as such rather than stated as a firm quote.
     const packageOptionsText =
       optionPackages.length > 0
         ? optionPackages
             .map((p) => {
               const finishNote = finishCity && p.finishCities.includes(finishCity) ? `, finishes in ${titleCaseCity(finishCity)}` : ''
-              const details = `${p.title}${p.dayCount ? ` (${p.dayCount}D` : ''}${p.origin ? `, from ${p.origin}${finishNote})` : p.dayCount ? ')' : ''}: Rp${p.priceIdr!.toLocaleString('id-ID')}/person`
+              const priceInfo = priceForPax(p, pax)
+              const priceLabel = priceInfo.isExactMatch
+                ? `Rp${priceInfo.priceIdr!.toLocaleString('id-ID')}/person`
+                : `from Rp${priceInfo.priceIdr!.toLocaleString('id-ID')}/person`
+              const details = `${p.title}${p.dayCount ? ` (${p.dayCount}D` : ''}${p.origin ? `, from ${p.origin}${finishNote})` : p.dayCount ? ')' : ''}: ${priceLabel}`
               return p.links.details ? `- ${details} - ${p.links.details}` : `- ${details}`
             })
             .join('\n')
         : null
+    // Only fires when a price is unqualified ("from Rp X") because the group size genuinely
+    // isn't known yet -- once pax IS known, priceLabel above already states their real,
+    // specific price and no further caveat is needed.
+    const paxPriceNote =
+      packageOptionsText && pax === null
+        ? `\n\nAny price marked "from Rp X/person" above is the starting (largest-group) rate -- the actual per-person price is higher for a smaller group. If the customer's group size isn't already known from this conversation, mention that the price depends on group size, or ask how many people are traveling.`
+        : ''
     // "Can we finish the trip in Bali?" -- a Bali-ORIGIN package's real dropoff options are
     // all Surabaya/Malang-area (verified 2026-08-05: none of the 4 Bali-origin packages list
     // Bali as a finish option), so this must be answered from `finishCities`, never guessed
@@ -659,6 +691,7 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
         : '') +
       `\n\nGeneral JVTO facts (use these for anything the specific facts above don't cover -- e.g. packing list, best time to visit, physical difficulty, what's included/excluded, payment terms):\n${GENERAL_FAQ_FALLBACK}` +
       finishCityFact +
+      paxPriceNote +
       (disclosures.length > 0 ? `\n\nImportant -- must be reflected in your reply:\n${disclosures.map((d) => `- ${d}`).join('\n')}` : '') +
       (classification.needsLiveData
         ? `\n\nThis question also touches live/real-time availability or pricing confirmation, which you cannot verify -- answer everything else from the facts above, but for that specific part say our team will confirm it shortly.`

@@ -96,6 +96,17 @@ export type CatalogPackage = {
   // finish the trip in Bali?" got answered from a Bali-ORIGIN package (matching "bali" as a
   // starting-city keyword) instead of checking which packages can actually END there.
   finishCities: string[]
+  // standard-price-tiers.json's own `pax_tiers[]` verbatim (min_pax/max_pax/idr_per_person),
+  // sorted ascending by min_pax -- the REAL per-group-size price ladder `priceIdr` collapses
+  // into a single "starting from" number. Added 2026-08-05: cross-checked against a real
+  // operator-exported pricing sheet (175/176 price points matched exactly, confirming this
+  // data is accurate), which surfaced that the bot was quoting the CHEAPEST (11+ pax) tier to
+  // every customer regardless of their actual group size -- e.g. a solo traveler asking about
+  // a package whose real 1-pax price is far higher than its 11+-pax price got the 11+-pax
+  // number stated as if it were their price. `null` `maxPax` means "this tier and up" (the
+  // top/largest-group tier). A package with no price entry at all gets `[]`, mirroring
+  // `priceIdr: null`'s existing "cannot quote" fail-safe.
+  priceTiers: Array<{ minPax: number; maxPax: number | null; priceIdr: number }>
 }
 
 export type Catalog = {

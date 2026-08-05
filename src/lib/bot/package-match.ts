@@ -76,9 +76,52 @@ const MONTH_NAMES = [
 // CatalogPackage). Never guesses: an unrecognized or absent signal leaves the corresponding
 // field `null`, so pickPackage falls back to its previous (price-only) behavior rather than
 // mismatching a package.
-export type TripPreferences = { origin: string | null; dayCount: number | null; finishCity: string | null }
+export type TripPreferences = { origin: string | null; dayCount: number | null; finishCity: string | null; pax: number | null }
 
-const NO_PREFERENCES: TripPreferences = { origin: null, dayCount: null, finishCity: null }
+const NO_PREFERENCES: TripPreferences = { origin: null, dayCount: null, finishCity: null, pax: null }
+
+// "2 people"/"4 pax"/"group of 15"/"a party of 6"/"3 of us" -> that number. "solo"/"just
+// me"/"myself"/"alone" -> 1. Added 2026-08-05: CatalogPackage.priceTiers (see that field's own
+// header) makes the real per-group-size price ladder available, but nothing had ever parsed the
+// customer's own stated group size to look a price up by -- the bot was quoting the cheapest
+// (11+ pax) tier to every customer regardless of their actual party size. Capped at 200 for the
+// same reason parseDayCount caps at 10: a garbled or unrelated number shouldn't be misread as a
+// group size (a genuine JVTO group has never approached that scale).
+function parsePax(low: string): number | null {
+  if (/\b(solo|just me|myself|alone|by myself)\b/.test(low)) return 1
+  const explicit = low.match(/\b(\d{1,3})\s*(?:people|persons?|pax|travell?ers?|guests?|adults?)\b/)
+  if (explicit) {
+    const n = Number(explicit[1])
+    if (n > 0 && n <= 200) return n
+  }
+  const groupOf = low.match(/\b(?:party|group) of (\d{1,3})\b/)
+  if (groupOf) {
+    const n = Number(groupOf[1])
+    if (n > 0 && n <= 200) return n
+  }
+  const ofUs = low.match(/\b(\d{1,3})\s*of us\b/)
+  if (ofUs) {
+    const n = Number(ofUs[1])
+    if (n > 0 && n <= 200) return n
+  }
+  return null
+}
+
+/**
+ * Resolves the correct per-person price for `pkg` given a customer's actual (or unknown) group
+ * size -- CatalogPackage.priceTiers holds the real ladder; `priceIdr` alone is only ever the
+ * cheapest (11+ pax) "starting from" figure. `isExactMatch: true` means this price is genuinely
+ * theirs for the stated pax; `false` means it fell back to the "starting from" price because
+ * pax is unknown, or a package genuinely has no tier covering that pax count (e.g. a solo
+ * traveler asking about a package whose real minimum group size is 2).
+ */
+export function priceForPax(pkg: CatalogPackage, pax: number | null): { priceIdr: number | null; isExactMatch: boolean } {
+  if (pax !== null) {
+    const tier = pkg.priceTiers.find((t) => pax >= t.minPax && (t.maxPax === null || pax <= t.maxPax))
+    if (tier) return { priceIdr: tier.priceIdr, isExactMatch: true }
+  }
+  return { priceIdr: pkg.priceIdr, isExactMatch: false }
+}
 
 /**
  * "3 day(s)"/"3 hari" or "3d2n" -> 3. A date range like "10-12 June" implies a 3-day trip
@@ -176,7 +219,7 @@ function parseFinishCity(low: string): string | null {
 /** Extracts whatever duration/origin/finish-city signal a customer message actually states. */
 export function parseTripPreferences(message: string): TripPreferences {
   const low = message.toLowerCase()
-  return { origin: parseOrigin(low), dayCount: parseDayCount(low), finishCity: parseFinishCity(low) }
+  return { origin: parseOrigin(low), dayCount: parseDayCount(low), finishCity: parseFinishCity(low), pax: parsePax(low) }
 }
 
 /**

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { matchDestination, packagesForDestination, pickPackage, listDestinations, parseTripPreferences } from './package-match'
+import { matchDestination, packagesForDestination, pickPackage, listDestinations, parseTripPreferences, priceForPax } from './package-match'
 import type { Catalog, CatalogPackage } from './types'
 
 function pkg(overrides: Partial<CatalogPackage> = {}): CatalogPackage {
@@ -15,6 +15,7 @@ function pkg(overrides: Partial<CatalogPackage> = {}): CatalogPackage {
     origin: null,
     dayCount: null,
     finishCities: [],
+    priceTiers: [],
     ...overrides,
   }
 }
@@ -136,21 +137,21 @@ describe('pickPackage', () => {
   const allOptions = [threeDayFromBali, fourDayFromBali, threeDayFromSurabaya, twoDayFromSurabaya]
 
   it('picks the package matching both a stated origin and day count', () => {
-    expect(pickPackage(allOptions, { origin: 'Surabaya', dayCount: 3, finishCity: null }).packageKey).toBe('surabaya-3d')
-    expect(pickPackage(allOptions, { origin: 'Bali', dayCount: 4, finishCity: null }).packageKey).toBe('bali-4d')
+    expect(pickPackage(allOptions, { origin: 'Surabaya', dayCount: 3, finishCity: null, pax: null }).packageKey).toBe('surabaya-3d')
+    expect(pickPackage(allOptions, { origin: 'Bali', dayCount: 4, finishCity: null, pax: null }).packageKey).toBe('bali-4d')
   })
 
   it('falls back to matching origin alone when no package matches both', () => {
-    expect(pickPackage(allOptions, { origin: 'Bali', dayCount: 2, finishCity: null }).packageKey).toBe('bali-3d')
+    expect(pickPackage(allOptions, { origin: 'Bali', dayCount: 2, finishCity: null, pax: null }).packageKey).toBe('bali-3d')
   })
 
   it('falls back to matching day count alone when origin alone matches nothing', () => {
     const noSurabaya = [threeDayFromBali, fourDayFromBali]
-    expect(pickPackage(noSurabaya, { origin: 'Surabaya', dayCount: 4, finishCity: null }).packageKey).toBe('bali-4d')
+    expect(pickPackage(noSurabaya, { origin: 'Surabaya', dayCount: 4, finishCity: null, pax: null }).packageKey).toBe('bali-4d')
   })
 
   it('falls back to plain price-only selection when preferences match nothing at all', () => {
-    expect(pickPackage(allOptions, { origin: 'Jakarta', dayCount: 9, finishCity: null }).packageKey).toBe('bali-3d')
+    expect(pickPackage(allOptions, { origin: 'Jakarta', dayCount: 9, finishCity: null, pax: null }).packageKey).toBe('bali-3d')
   })
 
   it('ignores preferences entirely when none are given (default parameter)', () => {
@@ -166,17 +167,17 @@ describe('pickPackage', () => {
     const options = [surabayaOnly, bringsBackToBali]
 
     it('picks the package that can actually finish in the requested city, regardless of origin', () => {
-      expect(pickPackage(options, { origin: null, dayCount: null, finishCity: 'bali' }).packageKey).toBe('finishes-bali')
+      expect(pickPackage(options, { origin: null, dayCount: null, finishCity: 'bali', pax: null }).packageKey).toBe('finishes-bali')
     })
 
     it('never picks a package based on origin alone when a finish city is requested and available', () => {
       // surabayaOnly is Bali-ORIGIN but cannot finish in Bali -- must not be picked here.
-      const result = pickPackage(options, { origin: 'Bali', dayCount: null, finishCity: 'bali' })
+      const result = pickPackage(options, { origin: 'Bali', dayCount: null, finishCity: 'bali', pax: null })
       expect(result.packageKey).toBe('finishes-bali')
     })
 
     it('falls back to price-only selection when no package can finish in the requested city', () => {
-      expect(pickPackage(options, { origin: null, dayCount: null, finishCity: 'ketapang' }).packageKey).toBe('finishes-surabaya')
+      expect(pickPackage(options, { origin: null, dayCount: null, finishCity: 'ketapang', pax: null }).packageKey).toBe('finishes-surabaya')
     })
   })
 })
@@ -204,7 +205,7 @@ describe('parseTripPreferences', () => {
   })
 
   it('returns null for all fields when nothing is stated', () => {
-    expect(parseTripPreferences('is ijen safe?')).toEqual({ origin: null, dayCount: null, finishCity: null })
+    expect(parseTripPreferences('is ijen safe?')).toEqual({ origin: null, dayCount: null, finishCity: null, pax: null })
   })
 
   it('never invents an unreasonable day count from an unrelated number pair', () => {
@@ -235,7 +236,7 @@ describe('parseTripPreferences', () => {
   // does not necessarily finish in Bali at all (see catalog.ts's finishCities).
   describe('finish-city phrasing does not get mistaken for origin', () => {
     it('parses "finish in <city>" as finishCity, not origin', () => {
-      expect(parseTripPreferences('can we finish the trip in bali?')).toEqual({ origin: null, dayCount: null, finishCity: 'bali' })
+      expect(parseTripPreferences('can we finish the trip in bali?')).toEqual({ origin: null, dayCount: null, finishCity: 'bali', pax: null })
     })
 
     it('parses "end in <city>" / "drop off in <city>" as finishCity too', () => {
@@ -271,5 +272,75 @@ describe('parseTripPreferences', () => {
       expect(result.origin).toBe('Surabaya')
       expect(result.dayCount).toBe(3)
     })
+  })
+
+  // Reported 2026-08-05: cross-checked against a real operator-exported pricing sheet, which
+  // surfaced that the bot always quoted the cheapest (11+ pax) tier regardless of the
+  // customer's actual group size -- nothing had ever parsed how many people were traveling.
+  describe('parses a stated group size (pax)', () => {
+    it('parses an explicit count with a group-size unit', () => {
+      expect(parseTripPreferences('we will be 2 people').pax).toBe(2)
+      expect(parseTripPreferences('4 pax please').pax).toBe(4)
+      expect(parseTripPreferences('booking for 6 persons').pax).toBe(6)
+      expect(parseTripPreferences('a group of 15 travelers').pax).toBe(15)
+    })
+
+    it('parses "party of N" / "group of N"', () => {
+      expect(parseTripPreferences('a party of 6').pax).toBe(6)
+      expect(parseTripPreferences('we are a group of 15').pax).toBe(15)
+    })
+
+    it('parses "N of us"', () => {
+      expect(parseTripPreferences('3 of us are coming').pax).toBe(3)
+    })
+
+    it('parses solo-traveler phrasing as 1', () => {
+      expect(parseTripPreferences("I'm traveling solo").pax).toBe(1)
+      expect(parseTripPreferences('just me for this trip').pax).toBe(1)
+      expect(parseTripPreferences('it will be myself only').pax).toBe(1)
+    })
+
+    it('returns null when no group size is stated', () => {
+      expect(parseTripPreferences('is ijen safe?').pax).toBeNull()
+    })
+
+    it('never invents an unreasonable group size from an unrelated large number', () => {
+      expect(parseTripPreferences('our budget is 500 pax').pax).toBeNull()
+    })
+  })
+})
+
+describe('priceForPax', () => {
+  const tieredPkg = pkg({
+    priceIdr: 2850000,
+    priceTiers: [
+      { minPax: 2, maxPax: 2, priceIdr: 4050000 },
+      { minPax: 3, maxPax: 3, priceIdr: 3800000 },
+      { minPax: 4, maxPax: 5, priceIdr: 3550000 },
+      { minPax: 6, maxPax: 7, priceIdr: 3350000 },
+      { minPax: 8, maxPax: 10, priceIdr: 3050000 },
+      { minPax: 11, maxPax: null, priceIdr: 2850000 },
+    ],
+  })
+
+  it('resolves the exact tier price for a known pax count, including an open-ended top tier', () => {
+    expect(priceForPax(tieredPkg, 2)).toEqual({ priceIdr: 4050000, isExactMatch: true })
+    expect(priceForPax(tieredPkg, 5)).toEqual({ priceIdr: 3550000, isExactMatch: true })
+    expect(priceForPax(tieredPkg, 20)).toEqual({ priceIdr: 2850000, isExactMatch: true })
+  })
+
+  it('falls back to the "starting from" priceIdr when pax is unknown', () => {
+    expect(priceForPax(tieredPkg, null)).toEqual({ priceIdr: 2850000, isExactMatch: false })
+  })
+
+  // Reported 2026-08-05: a solo traveler asking about a package whose real minimum group size
+  // is 2 (e.g. bali/bromo-ijen-3d2n's real tiers) has no 1-pax tier at all -- must fall back
+  // honestly to the "starting from" price rather than silently returning null or crashing.
+  it('falls back to the "starting from" priceIdr when pax has no matching tier (e.g. below the minimum)', () => {
+    expect(priceForPax(tieredPkg, 1)).toEqual({ priceIdr: 2850000, isExactMatch: false })
+  })
+
+  it('falls back to the "starting from" priceIdr (null) for a package with no tiers at all', () => {
+    expect(priceForPax(pkg({ priceIdr: null, priceTiers: [] }), 4)).toEqual({ priceIdr: null, isExactMatch: false })
   })
 })
