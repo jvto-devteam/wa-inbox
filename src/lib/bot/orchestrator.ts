@@ -96,7 +96,7 @@ import { ensureFreshBookingData } from '@/lib/booking/client'
 import { checkRouteGate } from './route-gate'
 import { classifySalesNeed, HANDOFF_KEYWORDS } from './sales-classifier'
 import { listDestinations, matchDestination, packagesForDestination, parseTripPreferences, pickPackage, titleCaseCity } from './package-match'
-import { classifyTopic } from './module-resolver'
+import { classifyTopic, type ResolverTopic } from './module-resolver'
 import { resolveKnowledgeForTopic, GUARDRAIL_INSTRUCTION, GENERAL_FAQ_FALLBACK } from './knowledge'
 import { callLLM, type LLMOptions } from './llm'
 import { loadCatalog } from './catalog'
@@ -146,6 +146,29 @@ function isRecommendationRequest(message: string): boolean {
   const low = message.toLowerCase()
   return RECOMMENDATION_INTENT_KEYWORDS.some((k) => low.includes(k))
 }
+
+// Topics genuinely answerable without knowing WHICH destination the customer wants --
+// payment terms, dietary/meal handling (folded into 'vehicle'/'inclusions' facts), rooming
+// policy, hotel standard, cancellation policy, and the booking process are the same
+// regardless of destination. Deliberately excludes 'destination_readiness'/'route_endpoint'/
+// 'blue_fire' (literally about a specific destination or package's finish city) and
+// 'general'/'greeting' (we genuinely don't know what they're asking yet, so asking which
+// destination interests them is the right move). Reported 2026-08-05: a customer asking a
+// completely answerable dietary-accommodation question ("please make sure her meals don't
+// contain beef"), before ever mentioning a destination, got stonewalled with "where would
+// you like to go?" instead of an answer that already existed -- the same "don't stonewall on
+// an answerable question" principle this file already applies to content gaps, just gated on
+// the wrong precondition (destination) this time.
+const DESTINATION_INDEPENDENT_TOPICS = new Set<ResolverTopic>([
+  'inclusions',
+  'private_tour',
+  'vehicle',
+  'rooming',
+  'hotel',
+  'payment',
+  'cancellation',
+  'booking',
+])
 
 // Shared by both LLM-grounded modes (Mode 1/2's catalog-knowledge path and Mode 3's
 // booking_context path): the bot must read as a real JVTO team member typing on WhatsApp, not
@@ -329,6 +352,42 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
     }
 
     if (!destination) {
+      const preDestinationTopic = classifyTopic(classification.job, inboundText)
+      if (DESTINATION_INDEPENDENT_TOPICS.has(preDestinationTopic)) {
+        const preDestinationKnowledge = resolveKnowledgeForTopic(preDestinationTopic, inboundText)
+        if (preDestinationKnowledge.factualLines.length > 0) {
+          trace.push(
+            'Topik tidak butuh destinasi',
+            `Topik "${preDestinationTopic}" bisa dijawab tanpa mengetahui destinasi -- menjawab langsung dari fakta umum, sambil tetap menanyakan destinasi untuk rekomendasi paket berikutnya.`
+          )
+          const system =
+            `${SHARED_PERSONA_INSTRUCTIONS}\n\n` +
+            `Known facts relevant to their question (topic: "${preDestinationTopic}"):\n${preDestinationKnowledge.factualLines.map((f) => `- ${f}`).join('\n')}` +
+            (preDestinationKnowledge.detailLines.length > 0
+              ? `\n\nMore detail if useful:\n${preDestinationKnowledge.detailLines.map((d) => `- ${d}`).join('\n')}`
+              : '') +
+            `\n\nGeneral JVTO facts (use these for anything the specific facts above don't cover):\n${GENERAL_FAQ_FALLBACK}` +
+            (preDestinationKnowledge.disclosures.length > 0
+              ? `\n\nImportant -- must be reflected in your reply:\n${preDestinationKnowledge.disclosures.map((d) => `- ${d}`).join('\n')}`
+              : '') +
+            `\n\nThe customer has not said which destination/tour they're interested in yet -- answer their actual question honestly from the facts above first, then naturally ask which destination interests them (Bromo, Ijen, Madakaripura, Papuma, Tumpak Sewu) so a specific package and price can be recommended next.` +
+            `\n\n${GUARDRAIL_INSTRUCTION}`
+
+          const history = await fetchRecentHistory(conversationId, inboundText)
+          trace.push(
+            'Meminta jawaban dari model lokal',
+            `Menggunakan model ${settings.ollamaModel} (Ollama, lokal), topik "${preDestinationTopic}", ${preDestinationKnowledge.factualLines.length} fakta, ${history?.length ?? 0} pesan riwayat.`
+          )
+          const reply = await callLLM(inboundText, { system, model: settings.ollamaModel, history })
+          if (!reply || !reply.trim()) {
+            trace.push('Jawaban kosong atau tidak valid', 'Model tidak memberikan jawaban yang bisa dikirim -- tetap dijawab dengan pesan cadangan, bot tetap aktif.')
+            return { mode: 'clarify', reply: TECHNICAL_HICCUP_REPLY, steps: trace.steps }
+          }
+          trace.push('Jawaban siap dikirim', previewText(reply))
+          return { mode: 'faq', draft: reply, sourceTopic: preDestinationTopic, steps: trace.steps }
+        }
+      }
+
       const options = listDestinations(catalog)
       // An empty catalog (sync never ran, or wiped) has no destinations to list -- asking
       // "mau ke mana?" against an empty "kami menyediakan tur ke: " reads as broken. Previously

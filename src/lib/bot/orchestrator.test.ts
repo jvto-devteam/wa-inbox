@@ -393,6 +393,11 @@ describe('decideAndRespond', () => {
     ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
     ;(matchDestination as any).mockReturnValue(null)
     ;(listDestinations as any).mockReturnValue(['Bromo', 'Ijen', 'Madakaripura'])
+    // A bare "Halo" really does classify as 'greeting' (module-resolver.ts's own keyword
+    // table), NOT the file's default 'inclusions' mock -- 'greeting' is deliberately excluded
+    // from DESTINATION_INDEPENDENT_TOPICS (orchestrator.ts), so this must still ask which
+    // destination interests them rather than answering from generic facts.
+    ;(classifyTopic as any).mockReturnValue('greeting')
 
     const result = await decideAndRespond('conv_1', 'Halo')
 
@@ -407,10 +412,54 @@ describe('decideAndRespond', () => {
     ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
     ;(matchDestination as any).mockReturnValue(null)
     ;(listDestinations as any).mockReturnValue([])
+    ;(classifyTopic as any).mockReturnValue('greeting')
 
     const result = await decideAndRespond('conv_1', 'Halo')
 
     expect(result.mode).toBe('clarify')
+  })
+
+  // Reported 2026-08-05: a customer asked "please make sure her meals don't contain beef"
+  // before ever naming a destination, and got stonewalled with "where would you like to go?"
+  // instead of an answer -- even though the real fact needed no destination at all. Topics in
+  // DESTINATION_INDEPENDENT_TOPICS (orchestrator.ts) must now answer directly instead.
+  it('answers a destination-independent question directly (not "where would you like to go?") when no destination is known yet', async () => {
+    ;(ensureFreshBookingData as any).mockResolvedValue(null)
+    ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
+    ;(matchDestination as any).mockReturnValue(null)
+    ;(listDestinations as any).mockReturnValue(['Bromo', 'Ijen'])
+    ;(classifyTopic as any).mockReturnValue('vehicle')
+    ;(resolveKnowledgeForTopic as any).mockReturnValue({
+      factualLines: ['Every package includes private transport and a driver/guide.'],
+      detailLines: [],
+      primaryLink: null,
+      disclosures: [],
+      handoffRequired: false,
+    })
+
+    const result = await decideAndRespond('conv_1', "Please make sure her meals don't contain beef")
+
+    expect(result.mode).toBe('faq')
+    expect(checkRouteGate).not.toHaveBeenCalled()
+    const [, opts] = (callLLM as any).mock.calls[0]
+    expect(opts.system).toContain('Every package includes private transport and a driver/guide.')
+    expect(opts.system).toContain('has not said which destination')
+  })
+
+  // 'general'/'greeting' stay excluded even when resolveKnowledgeForTopic would happen to
+  // return something non-empty (the default beforeEach mock does) -- otherwise every
+  // unclassifiable message would silently skip the "where would you like to go?" ask.
+  it('still asks which destination for a general/unclassified topic, even with no destination known', async () => {
+    ;(ensureFreshBookingData as any).mockResolvedValue(null)
+    ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
+    ;(matchDestination as any).mockReturnValue(null)
+    ;(listDestinations as any).mockReturnValue(['Bromo', 'Ijen'])
+    ;(classifyTopic as any).mockReturnValue('general')
+
+    const result = await decideAndRespond('conv_1', 'Something unrelated')
+
+    expect(result.mode).toBe('clarify')
+    expect(callLLM).not.toHaveBeenCalled()
   })
 
   it('persists the destination package-match found, so the next message reaches the route gate with it', async () => {
