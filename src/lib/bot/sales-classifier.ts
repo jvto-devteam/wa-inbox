@@ -339,8 +339,16 @@ export function classifySalesNeed(input: { message: string; tripBrief: TripBrief
 
   const missingInfo = REQUIRED_FIELDS_BY_JOB[job].filter((field) => isMissing(tripBrief[field]))
 
-  const needsLiveData =
-    job === 'J4' || includesAny(text, HARD_DEPENDENCY_TRIGGER_KEYWORDS) || includesAny(text, GUARANTEE_KEYWORDS)
+  // `job === 'J4'` (trigger (a) above -- availability_check's own default_actions) was
+  // dropped from this list 2026-08-05: the real system treats a bare availability question
+  // as needing a live capacity check, but JVTO's tours are private/bespoke with no shared
+  // slot inventory to check -- confirmed "Tour selalu available" (tours are always
+  // available). Deferring "is it available?" to "let me check with our team" was therefore
+  // stalling an answerable question; the bot now answers it directly. Triggers (b)/(c)/(d)
+  // (hard-dependency phrasing, guarantee demands) are genuinely different -- they're about
+  // whether a SPECIFIC attraction/weather condition can be promised, not whether the tour
+  // product itself exists, so those still defer.
+  const needsLiveData = includesAny(text, HARD_DEPENDENCY_TRIGGER_KEYWORDS) || includesAny(text, GUARANTEE_KEYWORDS)
 
   return { job, missingInfo, needsLiveData }
 }

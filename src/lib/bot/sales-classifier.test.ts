@@ -56,11 +56,16 @@ describe('classifySalesNeed', () => {
 
   // --- J4_live_confirmation (real profile: availability_check) ---
   // Real required fields: selected_package_key (-> destination), travel_dates.start,
-  // pax.confirmed. Also drives needsLiveData (default_actions: [live_check]).
-  it('flags needsLiveData and classifies as J4 for availability questions', () => {
+  // pax.confirmed.
+  //
+  // needsLiveData no longer follows from job===J4 alone (see sales-classifier.ts's own
+  // comment on that line): confirmed 2026-08-05, "Tour selalu available" -- JVTO's tours are
+  // private/bespoke with no shared slot inventory, so a bare availability question is
+  // directly answerable, not something needing "let me check with our team".
+  it('classifies as J4 for availability questions but no longer flags needsLiveData (tours are always available)', () => {
     const result = classifySalesNeed({ message: 'Ada slot kosong tanggal 1 Agustus?', tripBrief: { destination: 'Ijen' } })
     expect(result.job).toBe('J4')
-    expect(result.needsLiveData).toBe(true)
+    expect(result.needsLiveData).toBe(false)
     expect(result.missingInfo).toEqual(expect.arrayContaining(['dateRange', 'pax']))
   })
 
