@@ -161,11 +161,34 @@ const TOPIC_MODULES: Record<ResolverTopic, string[]> = {
 // content existing, approved and customer-visible, all along. `inclusion_east_java_bali_ferry`
 // is the 4th `conditional_variation` module never reached by the destination-variation lookup
 // either (its trigger is "ferry", not one of the 5 real destination tokens).
+// 'service_dietary_preference_noted' added 2026-08-05: reported, a customer's dietary
+// accommodation request ("please make sure her meals don't contain beef") had no real module
+// to answer from at all -- no topic keyword bucket recognized it (falls to classifyTopic's
+// 'general' job-default) and no catalog content addressed dietary restrictions. Confirmed
+// directly with the operator: this is a per-customer preference to note for their trip, not a
+// specific accommodation guarantee to fabricate -- so the fact is an honest "noted", not an
+// invented capability claim.
 const KEYWORD_TRIGGERED_MODULES: Array<{ moduleId: string; keywords: string[] }> = [
   { moduleId: 'policy_isic_student', keywords: ['isic', 'student'] },
   { moduleId: 'policy_police_escort', keywords: ['police escort', 'escort'] },
   { moduleId: 'inclusion_east_java_bali_ferry', keywords: ['ferry', 'ketapang', 'gilimanuk'] },
+  {
+    moduleId: 'service_dietary_preference_noted',
+    keywords: ['beef', 'pork', 'halal', 'vegetarian', 'vegan', 'allerg', 'gluten', 'dietary', 'no meat'],
+  },
 ]
+
+// Whether `message` matches a KEYWORD_TRIGGERED_MODULES keyword, independent of topic
+// classification entirely (these modules fire "regardless of topic" inside
+// resolveKnowledgeForTopic below). Used by orchestrator.ts's pre-destination branch: a topic
+// like 'general' always has non-empty baseline facts (TOPIC_MODULES.general), so checking
+// "does resolveKnowledgeForTopic return anything" alone can't distinguish a genuine keyword
+// hit (dietary/ISIC/escort/ferry) from an ordinary unclassified message -- this lets that
+// branch ask specifically "did a keyword actually match" instead.
+export function hasKeywordTriggeredModule(message: string): boolean {
+  const low = (message ?? '').toLowerCase()
+  return KEYWORD_TRIGGERED_MODULES.some(({ keywords }) => keywords.some((k) => low.includes(k)))
+}
 
 let _modules: Record<string, KnowledgeModule> | null = null
 let _linkIndex: Map<string, LinkRecord[]> | null = null

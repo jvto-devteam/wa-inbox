@@ -250,7 +250,7 @@
     "category": "service",
     "scope": "global",
     "title": "Standard Rooming",
-    "short_answer": "Standard rooming is arranged for the group; twin, double, separate rooms, or an extra room can be requested (subject to confirmation).",
+    "short_answer": "All rooms are private to your own group -- never shared with other travelers -- and are arranged as twin, double, or separate rooms as requested; room upgrades are also available (subject to confirmation).",
     "requires_quote_check_when": [
       "separate_room",
       "extra_room",
@@ -392,6 +392,20 @@
     "approval_status": "approved",
     "source_evidence": [
       "knowledge:customer-sales-release/component-matrices.json"
+    ]
+  },
+  {
+    "module_id": "service_dietary_preference_noted",
+    "category": "service",
+    "scope": "global",
+    "title": "Dietary Preferences & Restrictions",
+    "short_answer": "Noted -- dietary preferences and restrictions (e.g. no beef, halal, vegetarian, allergies) are recorded for your trip and passed along to our team and driver/guide.",
+    "customer_visible": true,
+    "reusable": true,
+    "applies_to": "all_private_packages",
+    "approval_status": "approved",
+    "source_evidence": [
+      "operator-confirmed:2026-08-05"
     ]
   },
   {

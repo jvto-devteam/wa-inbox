@@ -97,7 +97,7 @@ import { checkRouteGate } from './route-gate'
 import { classifySalesNeed, HANDOFF_KEYWORDS } from './sales-classifier'
 import { listDestinations, matchDestination, packagesForDestination, parseTripPreferences, pickPackage, titleCaseCity } from './package-match'
 import { classifyTopic, type ResolverTopic } from './module-resolver'
-import { resolveKnowledgeForTopic, GUARDRAIL_INSTRUCTION, GENERAL_FAQ_FALLBACK } from './knowledge'
+import { resolveKnowledgeForTopic, hasKeywordTriggeredModule, GUARDRAIL_INSTRUCTION, GENERAL_FAQ_FALLBACK } from './knowledge'
 import { callLLM, type LLMOptions } from './llm'
 import { loadCatalog } from './catalog'
 import { checkDeploymentGate } from './deployment-gate'
@@ -353,7 +353,11 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
 
     if (!destination) {
       const preDestinationTopic = classifyTopic(classification.job, inboundText)
-      if (DESTINATION_INDEPENDENT_TOPICS.has(preDestinationTopic)) {
+      // A keyword-triggered module (dietary/ISIC/escort/ferry) can genuinely answer a message
+      // regardless of what topic it classified as -- 'general' always has non-empty baseline
+      // facts of its own (TOPIC_MODULES.general), so that alone can't be used to detect a real
+      // keyword hit here the way it can for an already-allowlisted topic below.
+      if (DESTINATION_INDEPENDENT_TOPICS.has(preDestinationTopic) || hasKeywordTriggeredModule(inboundText)) {
         const preDestinationKnowledge = resolveKnowledgeForTopic(preDestinationTopic, inboundText)
         if (preDestinationKnowledge.factualLines.length > 0) {
           trace.push(
@@ -593,6 +597,20 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
     // prompt above. For an actual recommendation/comparison question, require presenting a
     // short list instead of picking on the customer's behalf.
     const recommendMultiple = isRecommendationTopic && optionPackages.length > 1
+    // Reported 2026-08-05: a detailed, real, day-by-day private-driver request (arrival/free
+    // day/sunrise-tour/departure spelled out across 4 separate dates, quotation + Jeep +
+    // entrance-ticket questions) got every standard package dumped back at it, several
+    // including a destination (Ijen) the customer never even mentioned -- because nothing in
+    // the message matched pickPackage/optionPool's compact duration/origin/finish-city
+    // patterns, so none of the real options narrowed down at all. Confirmed with the operator:
+    // for a request this specific, still show the closest existing standard packages as a
+    // starting point (never invent a bespoke one), but be upfront that our admin team follows
+    // up directly for anything that needs to be built around the customer's exact dates/route
+    // rather than silently presenting a mismatched list as if it were tailored to them. Length
+    // is a coarse but effective proxy here -- every detailed itinerary request found in a
+    // 2026-08-05 audit of real customer messages ran 400-1900 characters, while an ordinary
+    // "what do you recommend?" runs a few dozen.
+    const looksLikeCustomItinerary = optionPackages.length > 1 && inboundText.length > 400
 
     const system =
       `${SHARED_PERSONA_INSTRUCTIONS}\n\n` +
@@ -609,6 +627,9 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
         ? `\n\nMatching tour packages for this destination (never invent others or state a price/link not shown here):\n${packageOptionsText}` +
           (recommendMultiple
             ? `\n\nThis is a recommendation/comparison question -- present ALL ${optionPackages.length} of the options above as a short list, each with its own duration, price, AND link right after it (not one shared link at the end). Let the customer choose; don't pick on their behalf.`
+            : '') +
+          (looksLikeCustomItinerary
+            ? `\n\nThe customer described a detailed, specific itinerary (exact dates, pickup/drop-off points, or a day-by-day plan) that doesn't cleanly match one of the standard packages above -- present the closest standard option(s) as a starting point, but be upfront that this is a starting point, not a tailored plan, and that our admin team will follow up directly to arrange anything that needs to be built around their exact dates/route.`
             : '')
         : '') +
       `\n\nGeneral JVTO facts (use these for anything the specific facts above don't cover -- e.g. packing list, best time to visit, physical difficulty, what's included/excluded, payment terms):\n${GENERAL_FAQ_FALLBACK}` +

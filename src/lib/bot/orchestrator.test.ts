@@ -8,7 +8,7 @@ import { checkRouteGate } from './route-gate'
 import { classifySalesNeed } from './sales-classifier'
 import { matchDestination, packagesForDestination, pickPackage, listDestinations, parseTripPreferences } from './package-match'
 import { classifyTopic } from './module-resolver'
-import { resolveKnowledgeForTopic } from './knowledge'
+import { resolveKnowledgeForTopic, hasKeywordTriggeredModule } from './knowledge'
 import { callLLM } from './llm'
 import { loadCatalog } from './catalog'
 import { checkDeploymentGate } from './deployment-gate'
@@ -51,6 +51,7 @@ vi.mock('./module-resolver', async (importOriginal) => ({
 }))
 vi.mock('./knowledge', () => ({
   resolveKnowledgeForTopic: vi.fn(),
+  hasKeywordTriggeredModule: vi.fn(),
   GUARDRAIL_INSTRUCTION: 'GUARDRAILS',
   GENERAL_FAQ_FALLBACK: 'GENERAL FAQ FALLBACK TEXT',
 }))
@@ -90,6 +91,7 @@ beforeEach(() => {
   ;(parseTripPreferences as any).mockReturnValue({ origin: null, dayCount: null, finishCity: null })
   ;(listDestinations as any).mockReturnValue(['Bromo', 'Ijen'])
   ;(classifyTopic as any).mockReturnValue('inclusions')
+  ;(hasKeywordTriggeredModule as any).mockReturnValue(false)
   // Non-empty by default so ordinary FAQ tests don't have to know about knowledge.ts's own
   // "no modules resolved -> handoff" branch unless they're specifically testing it.
   ;(resolveKnowledgeForTopic as any).mockReturnValue({
@@ -444,6 +446,34 @@ describe('decideAndRespond', () => {
     const [, opts] = (callLLM as any).mock.calls[0]
     expect(opts.system).toContain('Every package includes private transport and a driver/guide.')
     expect(opts.system).toContain('has not said which destination')
+  })
+
+  // A dietary/allergy mention has no dedicated topic keyword bucket at all (module-resolver.ts
+  // -- confirmed 2026-08-05), so classifyTopic genuinely falls through to 'general', which is
+  // deliberately NOT in DESTINATION_INDEPENDENT_TOPICS. It's only answerable here because
+  // knowledge.ts's KEYWORD_TRIGGERED_MODULES fires regardless of topic -- hasKeywordTriggeredModule
+  // is what lets this branch tell a genuine keyword hit apart from an ordinary unclassified
+  // message (which would otherwise also get 'general''s always-non-empty baseline facts).
+  it('answers via a keyword-triggered module even when the topic itself resolves to general', async () => {
+    ;(ensureFreshBookingData as any).mockResolvedValue(null)
+    ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
+    ;(matchDestination as any).mockReturnValue(null)
+    ;(listDestinations as any).mockReturnValue(['Bromo', 'Ijen'])
+    ;(classifyTopic as any).mockReturnValue('general')
+    ;(hasKeywordTriggeredModule as any).mockReturnValue(true)
+    ;(resolveKnowledgeForTopic as any).mockReturnValue({
+      factualLines: ['Noted -- dietary preferences and restrictions are recorded for your trip.'],
+      detailLines: [],
+      primaryLink: null,
+      disclosures: [],
+      handoffRequired: false,
+    })
+
+    const result = await decideAndRespond('conv_1', "Please make sure her meals don't contain beef")
+
+    expect(result.mode).toBe('faq')
+    const [, opts] = (callLLM as any).mock.calls[0]
+    expect(opts.system).toContain('Noted -- dietary preferences and restrictions are recorded for your trip.')
   })
 
   // 'general'/'greeting' stay excluded even when resolveKnowledgeForTopic would happen to
@@ -1090,6 +1120,59 @@ describe('decideAndRespond', () => {
       for (let i = 0; i < 5; i++) expect(opts.system).toContain(`Ijen Package ${i}`)
       expect(opts.system).not.toContain('Ijen Package 5')
       expect(opts.system).toContain('present ALL 5 of the options above')
+    })
+
+    // Reported 2026-08-05: a real, detailed, day-by-day private-driver request (arrival/free
+    // day/sunrise-tour/departure spelled out across 4 separate dates, quotation + Jeep +
+    // entrance-ticket questions) got every standard package dumped back at it as if it were a
+    // tailored match. Confirmed with the operator: still show the closest existing packages,
+    // but be upfront that admin follows up directly for anything genuinely custom.
+    it('adds an admin-follow-up note for a long, detailed itinerary request that does not narrow to one package', async () => {
+      ;(ensureFreshBookingData as any).mockResolvedValue(null)
+      ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
+      ;(matchDestination as any).mockReturnValue({
+        destination: 'bromo',
+        matches: [
+          pkg({ packageKey: 'a', title: 'Bromo 1D', origin: 'Surabaya', dayCount: 1, priceIdr: 1000000 }),
+          pkg({ packageKey: 'b', title: 'Bromo Ijen 3D2N', origin: 'Surabaya', dayCount: 3, priceIdr: 2500000 }),
+        ],
+      })
+      ;(checkRouteGate as any).mockReturnValue({ status: 'clear' })
+      ;(classifyTopic as any).mockReturnValue('general')
+
+      const longMessage =
+        'We are a family of four travelling to East Java and looking for a private driver. ' +
+        'Our itinerary: 23 August arrival in Surabaya. 24 August free day, leave the hotel around ' +
+        '4-5 PM to Cemoro Lawang. 25 August sunrise tour at Mount Bromo, crater visit, then ' +
+        'Madakaripura Waterfall before returning to Surabaya. 26 August departure from Surabaya ' +
+        'Airport. Could you please provide a quotation for the private transportation, whether a ' +
+        'private Jeep is included, whether entrance tickets are included, and the estimated ' +
+        'timetable for the two days. Thank you very much for your time.'
+      expect(longMessage.length).toBeGreaterThan(400)
+
+      await decideAndRespond('conv_1', longMessage)
+
+      const [, opts] = (callLLM as any).mock.calls[0]
+      expect(opts.system).toContain('admin team will follow up directly')
+    })
+
+    it('does NOT add the admin-follow-up note for an ordinary short recommendation question', async () => {
+      ;(ensureFreshBookingData as any).mockResolvedValue(null)
+      ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
+      ;(matchDestination as any).mockReturnValue({
+        destination: 'bromo',
+        matches: [
+          pkg({ packageKey: 'a', title: 'Bromo 1D', origin: 'Surabaya', dayCount: 1, priceIdr: 1000000 }),
+          pkg({ packageKey: 'b', title: 'Bromo Ijen 3D2N', origin: 'Surabaya', dayCount: 3, priceIdr: 2500000 }),
+        ],
+      })
+      ;(checkRouteGate as any).mockReturnValue({ status: 'clear' })
+      ;(classifyTopic as any).mockReturnValue('price')
+
+      await decideAndRespond('conv_1', 'What packages do you recommend?')
+
+      const [, opts] = (callLLM as any).mock.calls[0]
+      expect(opts.system).not.toContain('admin team will follow up directly')
     })
 
     it("gives each listed package option its own link, not one shared link for the whole list", async () => {

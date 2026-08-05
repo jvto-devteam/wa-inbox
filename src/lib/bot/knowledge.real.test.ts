@@ -84,4 +84,29 @@ describe.skipIf(!RELEASE_PRESENT)('resolveKnowledgeForTopic against the real syn
     const result = resolveKnowledgeForTopic('price', 'do you offer student discounts with ISIC?')
     expect(result.primaryLink).toBe('https://javavolcano-touroperator.com/isic/student-package')
   })
+
+  // Reported 2026-08-05: a dietary-accommodation request ("please make sure her meals don't
+  // contain beef") had no real module to answer from at all -- no topic keyword bucket, no
+  // catalog content. Confirmed with the operator: this is a per-customer preference to note
+  // for their trip, not a specific accommodation to promise, hence "noted" rather than a
+  // fabricated capability claim. Reached via KEYWORD_TRIGGERED_MODULES (fires regardless of
+  // topic), so checked against 'general' -- the topic a dietary mention actually classifies as.
+  it.each([
+    ["please make sure her meals don't contain any beef-related ingredients", 'beef'],
+    ['do you have halal options?', 'halal'],
+    ['I am vegetarian, is that possible?', 'vegetarian'],
+  ] as const)('notes a dietary preference/restriction for %s (%s)', (message, _keyword) => {
+    const result = resolveKnowledgeForTopic('general', message)
+    expect(result.factualLines.some((f) => f.toLowerCase().includes('noted'))).toBe(true)
+  })
+
+  // Reported 2026-08-05: confirmed with the operator -- rooms are always private to the
+  // customer's own group (never shared with strangers), and upgrades are a real, offerable
+  // option, not just an internal ops flag (`requires_quote_check_when: ["room_upgrade"]`
+  // existed already, but the customer-facing short_answer never said so).
+  it('mentions rooms are private and that upgrades are available in the rooming topic', () => {
+    const result = resolveKnowledgeForTopic('rooming', 'are the rooms private, and can we upgrade?')
+    expect(result.factualLines.some((f) => f.toLowerCase().includes('private'))).toBe(true)
+    expect(result.factualLines.some((f) => f.toLowerCase().includes('upgrade'))).toBe(true)
+  })
 })
