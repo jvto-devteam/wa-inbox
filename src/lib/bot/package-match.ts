@@ -107,8 +107,11 @@ function parseDayCount(low: string): number | null {
 // dropoff data, does NOT finish in Bali at all (Bali-origin packages all end in the
 // Surabaya/Malang area). An explicit "from <city>" always wins even when finish-context
 // phrasing is ALSO present ("3 day trip from Surabaya, finishing in Bali" -- origin is still
-// unambiguous), so that check runs first.
-const FINISH_CONTEXT_PHRASES = ['finish', 'end in', 'ending in', 'drop off', 'dropoff', 'drop-off', 'back to']
+// unambiguous), so that check runs first. 'back in' added 2026-08-05 alongside the existing
+// 'back to': a customer confirming "we'll be back in Bali on the 16th" was missed by this list
+// (only 'back to' matched), so parseOrigin fell through to the bare "bali" fallback and
+// silently overwrote an already-confirmed Surabaya origin with 'Bali'.
+const FINISH_CONTEXT_PHRASES = ['finish', 'end in', 'ending in', 'drop off', 'dropoff', 'drop-off', 'back to', 'back in']
 const FROM_CITY_PATTERN = /\bfrom\s+(bali|surabaya)\b|\bstart(?:ing)?\s+(?:in|from)\s+(bali|surabaya)\b/
 
 // Every token this file/catalog.ts's finish-city matching can produce ("bali", "surabaya",

@@ -275,6 +275,25 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
     trace.push('Gerbang persetujuan terbuka', 'Katalog sudah disetujui -- lanjut memproses pertanyaan.')
 
     const tripBrief = (conversation.tripBrief as TripBrief | null) ?? {}
+    // `tripBrief` above is a single snapshot fetched once at the top of this call, but several
+    // branches below persist a change to it (destination, origin/dayCount/finishCity,
+    // askedTripPreferences, lastTopic) as the request runs. Postgres JSON columns replace the
+    // whole value, not a field-level merge -- so if each of those writes spread from the
+    // ORIGINAL stale `tripBrief` instead of the latest known state, whichever write happens
+    // LAST in a single request silently erases every field an EARLIER write in that same
+    // request had just set. Reported 2026-08-05: dayCount=3 was correctly written by the
+    // origin/dayCount/finishCity branch, then immediately erased by the lastTopic branch a few
+    // lines later in the very same request, because it spread from the pre-update snapshot.
+    // `nextTripBrief` accumulates every change in-memory so every write always includes every
+    // prior change made during this same call, not just its own patch.
+    let nextTripBrief: TripBrief = { ...tripBrief }
+    const persistTripBrief = async (patch: Partial<TripBrief>) => {
+      nextTripBrief = { ...nextTripBrief, ...patch }
+      await prisma.conversation.update({
+        where: { id: conversationId },
+        data: { tripBrief: nextTripBrief as Prisma.InputJsonValue },
+      })
+    }
     const catalog = loadCatalog()
 
     const classification = classifySalesNeed({ message: inboundText, tripBrief })
@@ -306,10 +325,7 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
     // carries the conversation.
     const destination = matched?.destination ?? tripBrief.destination
     if (destination !== tripBrief.destination) {
-      await prisma.conversation.update({
-        where: { id: conversationId },
-        data: { tripBrief: { ...tripBrief, destination } as Prisma.InputJsonValue },
-      })
+      await persistTripBrief({ destination })
     }
 
     if (!destination) {
@@ -349,17 +365,11 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
     const dayCount = preferences.dayCount ?? tripBrief.dayCount ?? null
     const finishCity = preferences.finishCity ?? tripBrief.finishCity ?? null
     if (origin !== (tripBrief.origin ?? null) || dayCount !== (tripBrief.dayCount ?? null) || finishCity !== (tripBrief.finishCity ?? null)) {
-      await prisma.conversation.update({
-        where: { id: conversationId },
-        data: {
-          tripBrief: {
-            ...tripBrief,
-            destination,
-            ...(origin ? { origin } : {}),
-            ...(dayCount ? { dayCount } : {}),
-            ...(finishCity ? { finishCity } : {}),
-          } as Prisma.InputJsonValue,
-        },
+      await persistTripBrief({
+        destination,
+        ...(origin ? { origin } : {}),
+        ...(dayCount ? { dayCount } : {}),
+        ...(finishCity ? { finishCity } : {}),
       })
     }
 
@@ -380,10 +390,7 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
     const distinctOrigins = new Set(matches.map((p) => p.origin).filter((o): o is string => Boolean(o)))
     const isRecommendationTopic = resolverTopic === 'price' || isRecommendationRequest(inboundText)
     if (!origin && distinctOrigins.size > 1 && isRecommendationTopic && !tripBrief.askedTripPreferences) {
-      await prisma.conversation.update({
-        where: { id: conversationId },
-        data: { tripBrief: { ...tripBrief, destination, askedTripPreferences: true } as Prisma.InputJsonValue },
-      })
+      await persistTripBrief({ destination, askedTripPreferences: true })
       trace.push(
         'Menanyakan asal & titik akhir',
         `Destinasi "${destination}" punya paket dari lebih dari satu kota asal -- menanyakan sebelum merekomendasikan.`
@@ -462,10 +469,7 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
 
     // Recorded for visibility (see TripBrief.lastTopic's header) -- not yet read back anywhere.
     if (resolverTopic !== tripBrief.lastTopic) {
-      await prisma.conversation.update({
-        where: { id: conversationId },
-        data: { tripBrief: { ...tripBrief, destination, lastTopic: resolverTopic } as Prisma.InputJsonValue },
-      })
+      await persistTripBrief({ destination, lastTopic: resolverTopic })
     }
 
     // Prefer knowledge.ts's own topic-specific link (e.g. the Ijen destination guide for a
