@@ -253,5 +253,23 @@ describe('parseTripPreferences', () => {
       expect(parseTripPreferences('I want to go to Ijen from Bali').origin).toBe('Bali')
       expect(parseTripPreferences('a trip to Bali please').origin).toBe('Bali')
     })
+
+    // Reported 2026-08-05: burst-batched customer messages get concatenated into one string
+    // before parsing (inbound.ts's debounce/batching), so a real conversation read "...we will
+    // be arriving at Surabaya the 14th... So we can be back in Bali the 16th right?" as ONE
+    // combined string. The old check suppressed origin for the WHOLE message the instant "back
+    // in" appeared anywhere in it, discarding "Surabaya" even though it's in an entirely
+    // different, unrelated sentence. Origin/finish-context suppression must be scoped to
+    // whichever city is actually near the finish phrase, not the message as a whole.
+    it('a finish-context phrase far away in the same (burst-batched) message does not suppress an unrelated earlier city mention', () => {
+      const combined =
+        "Hi JVTO, I'm interested in booking a private tour to Bromo & Ijen. Can you share options and pricing? " +
+        'I have a question we will be arriving at Surabaya the 14th, landing at 15h, can i book the 3D2N trip ' +
+        'strating the 14th ? So we can be back in Bali the 16th right ? We will be 2 people, ok perfect, when ' +
+        'and where will the medical visit take place?'
+      const result = parseTripPreferences(combined)
+      expect(result.origin).toBe('Surabaya')
+      expect(result.dayCount).toBe(3)
+    })
   })
 })

@@ -131,12 +131,32 @@ export function titleCaseCity(city: string): string {
   return city.charAt(0).toUpperCase() + city.slice(1)
 }
 
+// How many characters around a bare city mention to scan for nearby finish-context phrasing.
+// Reported 2026-08-05: rapid-fire customer messages get concatenated into one string before
+// parsing (see inbound.ts's burst-batching), so a real customer message read "...we will be
+// arriving at Surabaya the 14th... So we can be back in Bali the 16th right?" as ONE combined
+// string. The OLD check ("does ANY finish-context phrase appear ANYWHERE in the whole
+// message?") saw "back in" and suppressed origin detection for the ENTIRE message -- silently
+// discarding "arriving at Surabaya" even though it sits in a completely different sentence,
+// nowhere near "back in Bali". Scoped to a small window around each city's own mention instead,
+// so a finish-context phrase only suppresses the city it's actually adjacent to. 30 chars
+// comfortably covers "back in Bali the 16th" (~20 chars) while not reaching into an unrelated
+// earlier/later sentence.
+const FINISH_CONTEXT_WINDOW = 30
+function hasNearbyFinishContext(low: string, cityIndex: number, cityLength: number): boolean {
+  const start = Math.max(0, cityIndex - FINISH_CONTEXT_WINDOW)
+  const end = Math.min(low.length, cityIndex + cityLength + FINISH_CONTEXT_WINDOW)
+  const window = low.slice(start, end)
+  return FINISH_CONTEXT_PHRASES.some((p) => window.includes(p))
+}
+
 function parseOrigin(low: string): string | null {
   const fromMatch = low.match(FROM_CITY_PATTERN)
   if (fromMatch) return titleCaseCity(fromMatch[1] ?? fromMatch[2] ?? fromMatch[3])
-  if (FINISH_CONTEXT_PHRASES.some((p) => low.includes(p))) return null
-  if (low.includes('surabaya')) return 'Surabaya'
-  if (low.includes('bali')) return 'Bali'
+  const surabayaIndex = low.indexOf('surabaya')
+  if (surabayaIndex !== -1 && !hasNearbyFinishContext(low, surabayaIndex, 'surabaya'.length)) return 'Surabaya'
+  const baliIndex = low.indexOf('bali')
+  if (baliIndex !== -1 && !hasNearbyFinishContext(low, baliIndex, 'bali'.length)) return 'Bali'
   return null
 }
 
