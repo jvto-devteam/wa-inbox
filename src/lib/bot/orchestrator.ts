@@ -358,11 +358,15 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
     // (askedTripPreferences persists, mirroring `destination`'s own "ask once, remember"
     // pattern): a customer who never answers the finish-point half of the question still
     // gets a real recommendation on their very next message, since this branch never fires
-    // a second time. 'price'/'general' kept alongside isRecommendationRequest (see its own
-    // comment) as a belt-and-suspenders topic-based signal -- either one is enough.
+    // a second time. 'price' kept alongside isRecommendationRequest as a belt-and-suspenders
+    // topic-based signal -- either one is enough. 'general' deliberately NOT included here:
+    // live-tested 2026-08-05, it's classifyTopic's default fallback for basically any
+    // unclassified message (job J1's default topic), so treating every 'general'-topic
+    // message as a recommendation request meant an unrelated question ("can you arrange a
+    // police escort?") triggered the multi-package "present ALL options" instruction below and
+    // buried the real police-escort link under a package list the customer never asked for.
     const distinctOrigins = new Set(matches.map((p) => p.origin).filter((o): o is string => Boolean(o)))
-    const isRecommendationTopic =
-      resolverTopic === 'price' || resolverTopic === 'general' || isRecommendationRequest(inboundText)
+    const isRecommendationTopic = resolverTopic === 'price' || isRecommendationRequest(inboundText)
     if (!origin && distinctOrigins.size > 1 && isRecommendationTopic && !tripBrief.askedTripPreferences) {
       await prisma.conversation.update({
         where: { id: conversationId },

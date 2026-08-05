@@ -1001,6 +1001,30 @@ describe('decideAndRespond', () => {
       expect(opts.system).not.toContain('present ALL')
     })
 
+    // Reported live 2026-08-05: a police-escort question classified as topic 'general'
+    // (classifyTopic's default fallback for basically any unclassified message) used to trip
+    // the "present ALL options as a list" instruction just because the topic was 'general',
+    // burying the real keyword-triggered police-escort link under an unrelated package list
+    // the customer never asked to compare.
+    it("does not push the 'present multiple' instruction for topic 'general' alone (only isRecommendationRequest/'price' should)", async () => {
+      ;(ensureFreshBookingData as any).mockResolvedValue(null)
+      ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
+      ;(matchDestination as any).mockReturnValue({
+        destination: 'ijen',
+        matches: [
+          pkg({ packageKey: 'a', title: 'Ijen 2D1N', origin: 'Surabaya', dayCount: 2, priceIdr: 1500000 }),
+          pkg({ packageKey: 'b', title: 'Ijen Bromo 3D2N', origin: 'Surabaya', dayCount: 3, priceIdr: 2500000 }),
+        ],
+      })
+      ;(checkRouteGate as any).mockReturnValue({ status: 'clear' })
+      ;(classifyTopic as any).mockReturnValue('general')
+
+      await decideAndRespond('conv_1', 'can you arrange a police escort for our large group?')
+
+      const [, opts] = (callLLM as any).mock.calls[0]
+      expect(opts.system).not.toContain('present ALL')
+    })
+
     it('caps the presented package list at 5 options', async () => {
       ;(ensureFreshBookingData as any).mockResolvedValue(null)
       ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
