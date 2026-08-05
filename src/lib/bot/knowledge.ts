@@ -258,7 +258,13 @@ function resolveLink(linkKey: string | undefined): string | null {
 // Real: DISCLOSURES + _disclosures_for (module_resolver.py), verbatim from agentResolver.js's
 // canonical strings (guardrails-and-state.yaml's required_disclosures).
 const DISCLOSURES = {
-  availabilityNotConfirmed: 'Availability is not yet confirmed for the requested date.',
+  // Reworded 2026-08-05, confirmed with the operator: tours are nearly always available (only
+  // rarely closed), and the real availability check for a specific date already happens
+  // automatically at checkout -- the old wording ("not yet confirmed") was making the LLM ask
+  // the customer for their travel dates "to verify" before recommending they book at all,
+  // which is friction for something checkout already handles. Say so plainly instead.
+  availabilityNotConfirmed:
+    'Nearly always available -- exact availability for a specific date is confirmed automatically at checkout, so encourage the customer to go ahead and book rather than asking for their dates first "to verify".',
   noGuaranteeAccess:
     'Attraction access such as Blue Fire, along with weather and sunrise, cannot be guaranteed; it depends on current conditions and the authorities.',
 }
@@ -280,7 +286,7 @@ export const GUARDRAIL_INSTRUCTION = `=== STRICT GUARDRAILS -- NEVER VIOLATE ===
 - NEVER guarantee Blue Fire visibility, sunrise, or crater access -- always say "cannot be guaranteed"
 - NEVER state prices as final -- add "subject to availability and confirmation"
 - NEVER predict weather for specific dates
-- NEVER confirm exact availability without noting it needs live verification
+- Tours are private and nearly always available (only rarely closed) -- exact availability for a specific date is confirmed automatically at checkout, not something the customer needs to give you their dates for first. NEVER ask "please let us know your travel dates so we can verify" or similar -- state the price/details and encourage them to go ahead and book; checkout confirms their exact date.
 - NEVER make up tour inclusions, URLs, or prices not present in the knowledge above`
 
 function getTopicDisclosures(topic: ResolverTopic, hasIjen: boolean): string[] {

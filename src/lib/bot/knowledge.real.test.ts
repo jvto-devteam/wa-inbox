@@ -127,9 +127,10 @@ describe.skipIf(!RELEASE_PRESENT)('resolveKnowledgeForTopic against the real syn
   // Reported live 2026-08-05: "do you have a replacement arrangement and an emergency contact
   // we can reach at any time?" had no real module either -- confirmed real, live content
   // exists (safety-on-tours + booking-payment-cancellation + contact pages): medical-emergency
-  // handling, force-majeure alternative arrangements, and HONEST (not 24/7) support hours.
-  // Deliberately does NOT claim a specific vehicle-replacement guarantee -- that field exists
-  // internally but is not yet a published, customer-facing policy (confirmed 2026-08-05).
+  // handling, force-majeure alternative arrangements, and honest (not 24/7) support hours.
+  // Vehicle/driver backup wording confirmed directly with the operator 2026-08-05 (every unit
+  // is kept ready, backup always available) -- no longer hedged as an unpublished internal
+  // field the way it was on first pass.
   it.each([
     ['what happens in a medical emergency during the tour?', 'emergency'],
     ['is there a backup vehicle if ours breaks down?', 'vehicle breakdown'],
@@ -137,5 +138,10 @@ describe.skipIf(!RELEASE_PRESENT)('resolveKnowledgeForTopic against the real syn
   ] as const)('resolves the real emergency/support fact for %s (%s), honestly stating support hours are not 24/7', (message, _keyword) => {
     const result = resolveKnowledgeForTopic('general', message)
     expect(result.factualLines.some((f) => f.includes('08:00-22:00 WIB'))).toBe(true)
+  })
+
+  it('confirms every unit is kept ready with a backup always available (operator-confirmed 2026-08-05)', () => {
+    const result = resolveKnowledgeForTopic('general', 'is there a backup vehicle if ours breaks down?')
+    expect(result.factualLines.some((f) => f.toLowerCase().includes('backup') && f.toLowerCase().includes('ready'))).toBe(true)
   })
 })

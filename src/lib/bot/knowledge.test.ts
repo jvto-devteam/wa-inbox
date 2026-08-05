@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { readCatalogFile } from './catalog'
-import { resolveKnowledgeForTopic, __resetKnowledgeCacheForTests, GENERAL_FAQ_FALLBACK } from './knowledge'
+import { resolveKnowledgeForTopic, __resetKnowledgeCacheForTests, GENERAL_FAQ_FALLBACK, GUARDRAIL_INSTRUCTION } from './knowledge'
 
 vi.mock('./catalog', () => ({ readCatalogFile: vi.fn() }))
 
@@ -178,7 +178,9 @@ describe('resolveKnowledgeForTopic', () => {
 
   it('adds the availability disclosure for the price topic', () => {
     const result = resolveKnowledgeForTopic('price', 'how much?')
-    expect(result.disclosures).toEqual(['Availability is not yet confirmed for the requested date.'])
+    expect(result.disclosures).toEqual([
+      'Nearly always available -- exact availability for a specific date is confirmed automatically at checkout, so encourage the customer to go ahead and book rather than asking for their dates first "to verify".',
+    ])
   })
 
   it('resolves the matching destination module + link for destination_readiness when a destination is passed', () => {
@@ -311,5 +313,18 @@ describe('GENERAL_FAQ_FALLBACK', () => {
 
   it('is always non-empty (a static constant, not data that can fail to load)', () => {
     expect(GENERAL_FAQ_FALLBACK.length).toBeGreaterThan(500)
+  })
+})
+
+describe('GUARDRAIL_INSTRUCTION', () => {
+  // Reported live 2026-08-05: "For 3 people, the price is Rp3.275.000/person... Please let us
+  // know your travel dates so we can verify the schedule for you" -- confirmed with the
+  // operator, tours are nearly always available and the real check happens automatically at
+  // checkout, so asking the customer for their dates first is unnecessary friction, not honest
+  // caution. The old guardrail wording ("NEVER confirm exact availability without noting it
+  // needs live verification") was what pushed the LLM toward that "please verify" phrasing.
+  it('tells the LLM to encourage booking directly instead of asking for dates "to verify"', () => {
+    expect(GUARDRAIL_INSTRUCTION).toContain('nearly always available')
+    expect(GUARDRAIL_INSTRUCTION).toContain('NEVER ask "please let us know your travel dates so we can verify"')
   })
 })
