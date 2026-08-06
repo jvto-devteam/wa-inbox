@@ -932,7 +932,7 @@ describe('decideAndRespond', () => {
     expect(reply.toLowerCase()).toContain('rest')
     expect(reply).toContain('Happy to recommend the best package for you!')
     // The LLM-instruction suffix must never leak into a reply the LLM never composed.
-    expect(reply).not.toContain('Explain this recommendation')
+    expect(reply).not.toContain('Always mention this recommendation')
   })
 
   it('does not add an unsupported-origin note when a real, supported origin (Bali/Surabaya) is stated', async () => {

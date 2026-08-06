@@ -714,7 +714,15 @@ function scenarioFacts(evaluation: ScenarioEvaluation): string[] | null {
 export function describeScenarioForLLM(evaluation: ScenarioEvaluation): string | null {
   const lines = scenarioFacts(evaluation)
   if (!lines) return null
-  return `${lines.join(' ')} Explain this recommendation and the reasoning (e.g. limited rest time before an early-morning hike) if it's relevant to what the customer asked, rather than just stating the order with no explanation.`
+  // Reported live 2026-08-06: when the SAME message also asked something more direct (e.g.
+  // "...mau ke Bromo dan Ijen, berapa harganya?"), the LLM sometimes answered only the price
+  // and dropped this note entirely, even though it was present in the prompt -- a soft
+  // instruction lost out to the more explicit "answer the price" signal in the customer's own
+  // words. Worded as a hard requirement (briefly, alongside whatever else was asked) rather
+  // than a conditional "if relevant", since a real rest-time consideration is always relevant
+  // once the evaluator has found one -- it should never be silently dropped in favor of
+  // answering only the rest of the question.
+  return `${lines.join(' ')} Always mention this recommendation and its reasoning (e.g. limited rest time before an early-morning hike) in your reply, even briefly -- alongside whatever else the customer asked (price, packages, etc). Do not drop it in favor of answering only the other part of their question.`
 }
 
 /**
