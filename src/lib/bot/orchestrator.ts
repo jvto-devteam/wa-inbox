@@ -566,9 +566,16 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
         'Menanyakan detail trip',
         `Merekomendasikan paket butuh start, finish, dan jumlah hari -- salah satu belum diketahui, menanyakan sebelum merekomendasikan.`
       )
+      // Reported live 2026-08-06: this reply is a static template, built before the LLM
+      // knowledge-composition step below -- so it never saw `unsupportedOriginNote`, the
+      // customer's stated (unsupported) pickup city was silently dropped, and the funnel just
+      // re-asked for a start city as if nothing had been said at all.
+      const originLine = unsupportedOriginCity
+        ? `- Start (Surabaya/Bali): we don't have pickup from ${unsupportedOriginCity} -- could you start from Surabaya or Bali instead?\n`
+        : `- Start (Surabaya/Bali): ${origin ?? ''}\n`
       const reply =
         `Happy to recommend the best package for you! Could you share a few details?\n\n` +
-        `- Start (Surabaya/Bali): ${origin ?? ''}\n` +
+        originLine +
         `- Finish (Surabaya/Bali): ${finishCity ? titleCaseCity(finishCity) : ''}\n` +
         `- Number of Day(s): ${dayCount ?? ''}`
       trace.push('Jawaban siap dikirim', previewText(reply))

@@ -1028,6 +1028,24 @@ describe('decideAndRespond', () => {
       })
     })
 
+    // Reported live 2026-08-06: this funnel reply is a static template built BEFORE the LLM
+    // knowledge-composition step -- "Start / Pick-up: Yogyakarta. What is the price for 2
+    // people?" got the customer's stated (unsupported) city silently dropped, re-asking for a
+    // start city as if nothing had been said.
+    it('tells the customer their named pickup city is not supported instead of silently re-asking, inside the funnel reply itself', async () => {
+      ;(ensureFreshBookingData as any).mockResolvedValue(null)
+      ;(classifySalesNeed as any).mockReturnValue({ job: 'J2', missingInfo: [], needsLiveData: false })
+      ;(matchDestination as any).mockReturnValue({ destination: 'ijen', matches: [fromBali, fromSurabaya] })
+      ;(classifyTopic as any).mockReturnValue('price')
+
+      const result = await decideAndRespond('conv_1', 'Start / Pick-up: Yogyakarta. What is the price for 2 people?')
+
+      expect(result.mode).toBe('clarify')
+      const reply = (result as { mode: 'clarify'; reply: string }).reply
+      expect(reply).toContain("we don't have pickup from Yogyakarta")
+      expect(reply).toContain('start from Surabaya or Bali instead')
+    })
+
     // Confirmed with the operator 2026-08-05: recommending a package requires knowing start,
     // finish, AND day count -- asks using this exact bullet format when any is still missing.
     it('asks using the exact bullet-list format when nothing is known yet', async () => {
