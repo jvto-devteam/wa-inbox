@@ -89,7 +89,7 @@ EXCLUSIONS (not included):
 
 PAYMENT:
 - Deposit: 20% of total to confirm booking.
-- Balance due 3 days before Day 1 via Bank Transfer / Wise.
+- Balance due 3 days before Day 1 via Bank Transfer / Wise / Revolut.
 - Cash on Arrival is available for some packages, subject to approval.
 - Last-minute bookings (under 6 days before Day 1): 100% full payment via Bank Transfer required.
 - Within 14 days of Day 1: JVTO may require full payment instead of the standard deposit.
@@ -229,6 +229,40 @@ const KEYWORD_TRIGGERED_MODULES: Array<{ moduleId: string; keywords: string[] }>
     moduleId: 'service_drone_usage',
     keywords: ['drone', 'uav', 'aerial photography', 'aerial footage', 'aerial video'],
   },
+  // 'policy_bromo_seasonal_closures'/'service_jacket_rental'/'service_shoe_rental'/
+  // 'service_ijen_trolley'/'service_custom_destination_addon' added 2026-08-06, all
+  // operator-confirmed real facts: Bromo has no fixed monthly closure like Ijen, but the
+  // annual Yadnya Kasada ceremony (dates shift yearly) makes the area extremely crowded and
+  // triggers JVTO's Plan-B framework; jacket rental (~Rp35,000, both Bromo and Ijen), shoe
+  // rental (Ijen only), and the Ijen crater trolley/ojek (~Rp1.5-2M) are all real on-site
+  // services previously reported as gaps in the 2026-08-06 message audit.
+  {
+    moduleId: 'policy_bromo_seasonal_closures',
+    keywords: ['yadnya kasada', 'kasada', 'is bromo open', 'bromo closed', 'bromo closure', 'bromo open'],
+  },
+  {
+    moduleId: 'service_jacket_rental',
+    keywords: ['rent a jacket', 'rent jacket', 'jacket rental', 'sewa jaket', 'rental jaket'],
+  },
+  {
+    moduleId: 'service_shoe_rental',
+    keywords: ['rent shoes', 'rental shoes', 'shoe rental', 'sewa sepatu', 'rental sepatu'],
+  },
+  {
+    moduleId: 'service_ijen_trolley',
+    keywords: ['trolley', 'ojek ijen', 'gondola'],
+  },
+  // Destinations genuinely outside the 5-destination catalog, reported in the 2026-08-06
+  // audit -- real customer requests to extend a tour to these got no real fact to answer
+  // from. Deliberately excludes bare 'yogyakarta'/'jogja' -- package-match.ts's
+  // mentionedUnsupportedOriginCity already handles a Yogyakarta PICKUP request with its own,
+  // more specific note; this module is about wanting to VISIT a place outside the catalog
+  // (Borobudur/Prambanan specifically, not "Yogyakarta" as a bare city name, which is too
+  // often just the pickup-point case already covered elsewhere).
+  {
+    moduleId: 'service_custom_destination_addon',
+    keywords: ['borobudur', 'prambanan', 'baluran', 'tangkuban perahu', 'de djawatan', 'kawah wurung', 'blawan'],
+  },
 ]
 
 // Whether `message` matches a KEYWORD_TRIGGERED_MODULES keyword, independent of topic
@@ -334,8 +368,73 @@ function getTopicDisclosures(topic: ResolverTopic, hasIjen: boolean): string[] {
     }
   }
   if (topic === 'vehicle') out.push('Oversized or special luggage needs a live check before it is confirmed.')
-  if (topic === 'rooming' || topic === 'hotel') out.push('Exact rooming and upgrades are subject to confirmation.')
+  if (topic === 'rooming' || topic === 'hotel') {
+    out.push('Exact rooming and upgrades are subject to confirmation.')
+    // Operator-confirmed 2026-08-06: for a specific hotel NAME, point to this package's own
+    // detail page (not a generic policy page) -- that's where it's actually listed, rather
+    // than deferring vaguely to "our team will confirm."
+    out.push("For the specific hotel name, point the customer to this package's own detail page (link below) -- that's where it's listed.")
+  }
   return out
+}
+
+// Reported in the 2026-08-06 message audit: general-modules.json's 16 route_leg_* modules
+// carry real, operator-sourced travel-time estimates (duration_text, e.g. "Surabaya Airport
+// to Bromo Area: ±3.5-4.5 hours") but were never customer_visible and had no short_answer at
+// all -- customers asking "how many hours from X to Y" or asking about every leg of a
+// multi-day itinerary got nothing. Kept OUT of TOPIC_MODULES/KEYWORD_TRIGGERED_MODULES
+// deliberately: there are 16 of them, one per specific leg, so dumping all 16 into every
+// route question would bury the one the customer actually asked about -- looked up directly
+// by which place-names the message actually mentions instead.
+const ROUTE_NODE_NAMES = [
+  'surabaya', 'bali', 'bromo', 'ijen', 'madakaripura', 'malang',
+  'tumpak sewu', 'ketapang', 'banyuwangi', 'bondowoso', 'gilimanuk',
+]
+// Symmetric by construction (see resolveRouteLegFacts below, which checks both orderings) --
+// only one direction needs to be listed per pair.
+const ROUTE_LEG_MODULE_BY_PAIR: Record<string, string> = {
+  'surabaya:bromo': 'route_leg_surabaya_airport_to_bromo_area',
+  'bromo:madakaripura': 'route_leg_bromo_area_to_madakaripura',
+  'bromo:ijen': 'route_leg_bromo_area_to_bondowoso_ijen_area',
+  'bromo:bondowoso': 'route_leg_bromo_area_to_bondowoso_ijen_area',
+  'bondowoso:ijen': 'route_leg_bondowoso_ijen_area_to_ijen_crater',
+  'ijen:ketapang': 'route_leg_ijen_area_to_ketapang_harbor',
+  'surabaya:ijen': 'route_leg_surabaya_to_bondowoso_ijen_area',
+  'surabaya:tumpak sewu': 'route_leg_surabaya_to_tumpak_sewu',
+  'tumpak sewu:bromo': 'route_leg_tumpak_sewu_to_bromo_area',
+  'banyuwangi:ijen': 'route_leg_banyuwangi_to_ijen_base',
+  'ketapang:gilimanuk': 'route_leg_ketapang_harbor_to_gilimanuk_bali_side',
+  'bali:ijen': 'route_leg_bali_hotel_area_to_banyuwangi_ijen_area',
+  'bali:banyuwangi': 'route_leg_bali_hotel_area_to_banyuwangi_ijen_area',
+  'bromo:malang': 'route_leg_bromo_area_to_malang',
+  'malang:surabaya': 'route_leg_malang_to_surabaya',
+}
+const TRAVEL_TIME_QUESTION_PATTERN =
+  /\b(how (many |long )?hours?|how long|travel time|drive time|driving time|jam perjalanan|berapa jam|lama perjalanan)\b/
+
+/**
+ * Real drive-time facts for whichever specific leg(s) the message actually asks about --
+ * `null`/skipped when the message doesn't look like a travel-time question at all, so this
+ * never fires on an unrelated mention of two place names in the same message.
+ */
+export function resolveRouteLegFacts(message: string): string[] {
+  const low = (message ?? '').toLowerCase()
+  if (!TRAVEL_TIME_QUESTION_PATTERN.test(low)) return []
+  const nodes = ROUTE_NODE_NAMES.filter((n) => low.includes(n))
+  const modules = loadModules()
+  const seen = new Set<string>()
+  const facts: string[] = []
+  for (let i = 0; i < nodes.length; i++) {
+    for (let j = i + 1; j < nodes.length; j++) {
+      const moduleId = ROUTE_LEG_MODULE_BY_PAIR[`${nodes[i]}:${nodes[j]}`] ?? ROUTE_LEG_MODULE_BY_PAIR[`${nodes[j]}:${nodes[i]}`]
+      if (!moduleId || seen.has(moduleId)) continue
+      const m = modules[moduleId]
+      if (!m || m.customer_visible === false || !m.short_answer) continue
+      seen.add(moduleId)
+      facts.push(m.short_answer)
+    }
+  }
+  return facts
 }
 
 export type ResolvedKnowledge = {

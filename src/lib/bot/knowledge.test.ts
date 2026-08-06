@@ -1,6 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { readCatalogFile } from './catalog'
-import { resolveKnowledgeForTopic, __resetKnowledgeCacheForTests, GENERAL_FAQ_FALLBACK, GUARDRAIL_INSTRUCTION } from './knowledge'
+import {
+  resolveKnowledgeForTopic,
+  resolveRouteLegFacts,
+  __resetKnowledgeCacheForTests,
+  GENERAL_FAQ_FALLBACK,
+  GUARDRAIL_INSTRUCTION,
+} from './knowledge'
 
 vi.mock('./catalog', () => ({ readCatalogFile: vi.fn() }))
 
@@ -79,6 +85,20 @@ const modules = [
     module_id: 'inclusion_east_java_bali_ferry',
     title: 'Ferry Crossing',
     short_answer: 'Ketapang-Gilimanuk ferry crossing for Bali-linked packages.',
+    customer_visible: true,
+    approval_status: 'approved',
+  },
+  {
+    module_id: 'route_leg_surabaya_airport_to_bromo_area',
+    title: 'Surabaya Airport to Bromo Area',
+    short_answer: 'Surabaya Airport to Bromo Area: ±3.5-4.5 hours (operational).',
+    customer_visible: true,
+    approval_status: 'approved',
+  },
+  {
+    module_id: 'route_leg_bromo_area_to_madakaripura',
+    title: 'Bromo Area to Madakaripura',
+    short_answer: 'Bromo Area to Madakaripura Waterfall: ±45-60 min drive (+20-30 min canyon walk).',
     customer_visible: true,
     approval_status: 'approved',
   },
@@ -302,6 +322,41 @@ describe('resolveKnowledgeForTopic', () => {
   })
 })
 
+describe('resolveRouteLegFacts', () => {
+  // Reported 2026-08-06: general-modules.json's route_leg_* modules carry real,
+  // operator-sourced travel-time estimates but had no short_answer/customer_visible at all --
+  // a customer asking "how many hours from Surabaya to Bromo?" got nothing.
+  it('resolves the real fact when the message names two places AND asks a travel-time question', () => {
+    const facts = resolveRouteLegFacts('How many hours from Surabaya to Bromo?')
+    expect(facts).toEqual(['Surabaya Airport to Bromo Area: ±3.5-4.5 hours (operational).'])
+  })
+
+  it('works in Indonesian ("berapa jam") and regardless of place-name order', () => {
+    expect(resolveRouteLegFacts('Dari Bromo ke Surabaya berapa jam?')).toEqual([
+      'Surabaya Airport to Bromo Area: ±3.5-4.5 hours (operational).',
+    ])
+  })
+
+  it('resolves multiple legs when a message asks about several at once', () => {
+    const facts = resolveRouteLegFacts(
+      'Day 1 pickup at Surabaya to Bromo, how many hours? Day 2 Bromo to Madakaripura, how many hours?'
+    )
+    expect(facts).toEqual([
+      'Surabaya Airport to Bromo Area: ±3.5-4.5 hours (operational).',
+      'Bromo Area to Madakaripura Waterfall: ±45-60 min drive (+20-30 min canyon walk).',
+    ])
+  })
+
+  it('returns nothing when the message does not look like a travel-time question at all', () => {
+    expect(resolveRouteLegFacts('We are interested in Surabaya to Bromo package, how much?')).toEqual([])
+  })
+
+  it('returns nothing when only one place (or no known pair) is mentioned', () => {
+    expect(resolveRouteLegFacts('How many hours to Bromo?')).toEqual([])
+    expect(resolveRouteLegFacts('How many hours from Malang to Papuma?')).toEqual([])
+  })
+})
+
 describe('GENERAL_FAQ_FALLBACK', () => {
   // Reported 2026-08-05: the bot handed off "genuinely unsupported" topics that this exact
   // content already answers -- deposit percentage, Ijen gas mask/health screening inclusion,
@@ -309,6 +364,11 @@ describe('GENERAL_FAQ_FALLBACK', () => {
   it('covers the specific facts reported as missing (deposit percentage, gas mask inclusion)', () => {
     expect(GENERAL_FAQ_FALLBACK).toContain('Deposit: 20%')
     expect(GENERAL_FAQ_FALLBACK.toLowerCase()).toContain('gas mask')
+  })
+
+  // Operator-confirmed 2026-08-06: Revolut is fine too, it's essentially just a bank transfer.
+  it('mentions Revolut alongside Wise as an accepted transfer method', () => {
+    expect(GENERAL_FAQ_FALLBACK).toContain('Revolut')
   })
 
   it('is always non-empty (a static constant, not data that can fail to load)', () => {

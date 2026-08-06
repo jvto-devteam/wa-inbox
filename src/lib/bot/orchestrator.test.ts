@@ -8,7 +8,7 @@ import { checkRouteGate } from './route-gate'
 import { classifySalesNeed } from './sales-classifier'
 import { matchDestination, packagesForDestination, pickPackage, listDestinations, parseTripPreferences } from './package-match'
 import { classifyTopic } from './module-resolver'
-import { resolveKnowledgeForTopic, hasKeywordTriggeredModule } from './knowledge'
+import { resolveKnowledgeForTopic, hasKeywordTriggeredModule, resolveRouteLegFacts } from './knowledge'
 import { callLLM } from './llm'
 import { loadCatalog } from './catalog'
 import { checkDeploymentGate } from './deployment-gate'
@@ -52,6 +52,7 @@ vi.mock('./module-resolver', async (importOriginal) => ({
 vi.mock('./knowledge', () => ({
   resolveKnowledgeForTopic: vi.fn(),
   hasKeywordTriggeredModule: vi.fn(),
+  resolveRouteLegFacts: vi.fn(),
   GUARDRAIL_INSTRUCTION: 'GUARDRAILS',
   GENERAL_FAQ_FALLBACK: 'GENERAL FAQ FALLBACK TEXT',
 }))
@@ -93,6 +94,7 @@ beforeEach(() => {
   ;(listDestinations as any).mockReturnValue(['Bromo', 'Ijen'])
   ;(classifyTopic as any).mockReturnValue('inclusions')
   ;(hasKeywordTriggeredModule as any).mockReturnValue(false)
+  ;(resolveRouteLegFacts as any).mockReturnValue([])
   // Non-empty by default so ordinary FAQ tests don't have to know about knowledge.ts's own
   // "no modules resolved -> handoff" branch unless they're specifically testing it.
   ;(resolveKnowledgeForTopic as any).mockReturnValue({
@@ -799,6 +801,22 @@ describe('decideAndRespond', () => {
     const [, opts] = (callLLM as any).mock.calls[0]
     expect(opts.system).toContain('wanting pickup/start from "Yogyakarta"')
     expect(opts.system).toContain('not a supported pickup point')
+  })
+
+  // Reported 2026-08-06: real, operator-sourced travel-time facts exist per route leg but
+  // were never surfaced -- customers asking "how many hours" got nothing.
+  it('surfaces a real route-leg travel-time fact when the message asks a travel-time question naming a known leg', async () => {
+    ;(ensureFreshBookingData as any).mockResolvedValue(null)
+    ;(classifySalesNeed as any).mockReturnValue({ job: 'J3', missingInfo: [], needsLiveData: false })
+    ;(matchDestination as any).mockReturnValue({ destination: 'ijen', matches: [pkg()] })
+    ;(checkRouteGate as any).mockReturnValue({ status: 'clear' })
+    ;(resolveRouteLegFacts as any).mockReturnValue(['Surabaya Airport to Bromo Area: ±3.5-4.5 hours (operational).'])
+
+    await decideAndRespond('conv_1', 'How many hours from Surabaya to Bromo?')
+
+    const [, opts] = (callLLM as any).mock.calls[0]
+    expect(opts.system).toContain('Real travel-time estimates')
+    expect(opts.system).toContain('±3.5-4.5 hours')
   })
 
   it('does not add an unsupported-origin note when a real, supported origin (Bali/Surabaya) is stated', async () => {

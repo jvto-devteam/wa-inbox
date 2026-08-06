@@ -1123,12 +1123,13 @@
     "from_location": "Surabaya Airport",
     "to_location": "Bromo Area",
     "duration_text": "±3.5–4.5 hours (operational)",
+    "short_answer": "Surabaya Airport to Bromo Area: ±3.5–4.5 hours (operational).",
     "risk_factors": [
       "Surabaya traffic",
       "weekend Bromo traffic",
       "night mountain road"
     ],
-    "customer_visible": false,
+    "customer_visible": true,
     "reusable": true,
     "used_for": [
       "feasibility",
@@ -1137,7 +1138,7 @@
       "staging_explanation"
     ],
     "core_overlay_ref": "surabaya_airport_to_bromo_area",
-    "approval_status": "operational_reference",
+    "approval_status": "approved",
     "data_status": "available",
     "source_evidence": [
       "core:generated/itinerary-intelligence/04-route-leg-index.json"
@@ -1151,13 +1152,14 @@
     "from_location": "Bromo Area",
     "to_location": "Madakaripura Waterfall",
     "duration_text": "±45–60 min drive (+20–30 min canyon walk)",
+    "short_answer": "Bromo Area to Madakaripura Waterfall: ±45–60 min drive (+20–30 min canyon walk).",
     "risk_factors": [
       "rain",
       "flash_flood_closure",
       "local access control",
       "waterfall crowd"
     ],
-    "customer_visible": false,
+    "customer_visible": true,
     "reusable": true,
     "used_for": [
       "feasibility",
@@ -1166,7 +1168,7 @@
       "staging_explanation"
     ],
     "core_overlay_ref": "bromo_area_to_madakaripura",
-    "approval_status": "operational_reference",
+    "approval_status": "approved",
     "data_status": "available",
     "source_evidence": [
       "core:generated/itinerary-intelligence/04-route-leg-index.json"
@@ -1180,12 +1182,13 @@
     "from_location": "Bromo Area",
     "to_location": "Bondowoso / Ijen Area",
     "duration_text": "±5–7 hours",
+    "short_answer": "Bromo Area to Bondowoso / Ijen Area: ±5–7 hours.",
     "risk_factors": [
       "long drive fatigue",
       "late hotel arrival",
       "meal timing risk"
     ],
-    "customer_visible": false,
+    "customer_visible": true,
     "reusable": true,
     "used_for": [
       "feasibility",
@@ -1194,7 +1197,7 @@
       "staging_explanation"
     ],
     "core_overlay_ref": "bromo_area_to_bondowoso_ijen_area",
-    "approval_status": "operational_reference",
+    "approval_status": "approved",
     "data_status": "available",
     "source_evidence": [
       "core:generated/itinerary-intelligence/04-route-leg-index.json"
@@ -1208,13 +1211,14 @@
     "from_location": "Bondowoso / Ijen Area",
     "to_location": "Ijen Crater",
     "duration_text": "±1.5–2 hours before trekking",
+    "short_answer": "Bondowoso / Ijen Area to Ijen Crater: ±1.5–2 hours before trekking.",
     "risk_factors": [
       "midnight departure",
       "fatigue",
       "weather",
       "health screening dependency"
     ],
-    "customer_visible": false,
+    "customer_visible": true,
     "reusable": true,
     "used_for": [
       "feasibility",
@@ -1223,7 +1227,7 @@
       "staging_explanation"
     ],
     "core_overlay_ref": "bondowoso_ijen_area_to_ijen_crater",
-    "approval_status": "operational_reference",
+    "approval_status": "approved",
     "data_status": "available",
     "source_evidence": [
       "core:generated/itinerary-intelligence/04-route-leg-index.json"
@@ -1237,12 +1241,13 @@
     "from_location": "Ijen Area",
     "to_location": "Ketapang Harbor",
     "duration_text": "±1–2 hours after Ijen",
+    "short_answer": "Ijen Area to Ketapang Harbor: ±1–2 hours after Ijen.",
     "risk_factors": [
       "post-trek fatigue",
       "harbor queue",
       "late Bali connection"
     ],
-    "customer_visible": false,
+    "customer_visible": true,
     "reusable": true,
     "used_for": [
       "feasibility",
@@ -1251,7 +1256,7 @@
       "staging_explanation"
     ],
     "core_overlay_ref": "ijen_area_to_ketapang_harbor",
-    "approval_status": "operational_reference",
+    "approval_status": "approved",
     "data_status": "available",
     "source_evidence": [
       "core:generated/itinerary-intelligence/04-route-leg-index.json"
@@ -1265,12 +1270,13 @@
     "from_location": "Surabaya Hotel",
     "to_location": "Bromo Area",
     "duration_text": "+/-3-4 hours",
+    "short_answer": "Surabaya Hotel to Bromo Area: +/-3-4 hours.",
     "risk_factors": [
       "Surabaya traffic",
       "hotel checkout delay",
       "weekend Bromo traffic"
     ],
-    "customer_visible": false,
+    "customer_visible": true,
     "reusable": true,
     "used_for": [
       "feasibility",
@@ -1279,7 +1285,7 @@
       "staging_explanation"
     ],
     "core_overlay_ref": "surabaya_hotel_to_bromo_area",
-    "approval_status": "operational_reference",
+    "approval_status": "approved",
     "data_status": "available",
     "source_evidence": [
       "core:generated/itinerary-intelligence/04-route-leg-index.json"
@@ -1293,12 +1299,13 @@
     "from_location": "Surabaya",
     "to_location": "Bondowoso / Ijen Area",
     "duration_text": "+/-6-8 hours",
+    "short_answer": "Surabaya to Bondowoso / Ijen Area: +/-6-8 hours.",
     "risk_factors": [
       "long drive fatigue",
       "late hotel arrival",
       "Ijen rest reduction"
     ],
-    "customer_visible": false,
+    "customer_visible": true,
     "reusable": true,
     "used_for": [
       "feasibility",
@@ -1307,7 +1314,7 @@
       "staging_explanation"
     ],
     "core_overlay_ref": "surabaya_to_bondowoso_ijen_area",
-    "approval_status": "operational_reference",
+    "approval_status": "approved",
     "data_status": "available",
     "source_evidence": [
       "core:generated/itinerary-intelligence/04-route-leg-index.json"
@@ -1321,12 +1328,13 @@
     "from_location": "Surabaya",
     "to_location": "Tumpak Sewu Area",
     "duration_text": "+/-4-5 hours",
+    "short_answer": "Surabaya to Tumpak Sewu Area: +/-4-5 hours.",
     "risk_factors": [
       "long drive fatigue",
       "rain sensitive access",
       "late waterfall start"
     ],
-    "customer_visible": false,
+    "customer_visible": true,
     "reusable": true,
     "used_for": [
       "feasibility",
@@ -1335,7 +1343,7 @@
       "staging_explanation"
     ],
     "core_overlay_ref": "surabaya_to_tumpak_sewu",
-    "approval_status": "operational_reference",
+    "approval_status": "approved",
     "data_status": "available",
     "source_evidence": [
       "core:generated/itinerary-intelligence/04-route-leg-index.json"
@@ -1349,12 +1357,13 @@
     "from_location": "Tumpak Sewu Area",
     "to_location": "Bromo Area",
     "duration_text": "+/-4-6 hours",
+    "short_answer": "Tumpak Sewu Area to Bromo Area: +/-4-6 hours.",
     "risk_factors": [
       "post-waterfall fatigue",
       "late Bromo check-in",
       "mountain access at night"
     ],
-    "customer_visible": false,
+    "customer_visible": true,
     "reusable": true,
     "used_for": [
       "feasibility",
@@ -1363,7 +1372,7 @@
       "staging_explanation"
     ],
     "core_overlay_ref": "tumpak_sewu_to_bromo_area",
-    "approval_status": "operational_reference",
+    "approval_status": "approved",
     "data_status": "available",
     "source_evidence": [
       "core:generated/itinerary-intelligence/04-route-leg-index.json"
@@ -1377,12 +1386,13 @@
     "from_location": "Bondowoso",
     "to_location": "Ijen Base",
     "duration_text": "+/-1.5-2 hours",
+    "short_answer": "Bondowoso to Ijen Base: +/-1.5-2 hours.",
     "risk_factors": [
       "midnight departure",
       "health screening dependency",
       "weather"
     ],
-    "customer_visible": false,
+    "customer_visible": true,
     "reusable": true,
     "used_for": [
       "feasibility",
@@ -1391,7 +1401,7 @@
       "staging_explanation"
     ],
     "core_overlay_ref": "bondowoso_to_ijen_base",
-    "approval_status": "operational_reference",
+    "approval_status": "approved",
     "data_status": "available",
     "source_evidence": [
       "core:generated/itinerary-intelligence/04-route-leg-index.json"
@@ -1405,12 +1415,13 @@
     "from_location": "Banyuwangi",
     "to_location": "Ijen Base",
     "duration_text": "+/-1.5-2 hours",
+    "short_answer": "Banyuwangi to Ijen Base: +/-1.5-2 hours.",
     "risk_factors": [
       "midnight departure",
       "weather",
       "post-ferry timing risk"
     ],
-    "customer_visible": false,
+    "customer_visible": true,
     "reusable": true,
     "used_for": [
       "feasibility",
@@ -1419,7 +1430,7 @@
       "staging_explanation"
     ],
     "core_overlay_ref": "banyuwangi_to_ijen_base",
-    "approval_status": "operational_reference",
+    "approval_status": "approved",
     "data_status": "available",
     "source_evidence": [
       "core:generated/itinerary-intelligence/04-route-leg-index.json"
@@ -1433,6 +1444,7 @@
     "from_location": "Ketapang Harbor",
     "to_location": "Gilimanuk / Bali side",
     "duration_text": "~45–60 min sailing (+ queue/berthing); 24h service",
+    "short_answer": "Ketapang Harbor to Gilimanuk / Bali side: ~45–60 min sailing (+ queue/berthing); 24h service.",
     "risk_factors": [
       "ferry_queue",
       "crossing_delay",
@@ -1441,7 +1453,7 @@
       "high_waves_suspension",
       "must_prebook_ferizy"
     ],
-    "customer_visible": false,
+    "customer_visible": true,
     "reusable": true,
     "used_for": [
       "feasibility",
@@ -1450,7 +1462,7 @@
       "staging_explanation"
     ],
     "core_overlay_ref": "ketapang_harbor_to_gilimanuk_bali_side",
-    "approval_status": "operational_reference",
+    "approval_status": "approved",
     "data_status": "available",
     "source_evidence": [
       "core:generated/itinerary-intelligence/04-route-leg-index.json"
@@ -1464,12 +1476,13 @@
     "from_location": "Ijen Base",
     "to_location": "Ketapang Harbor",
     "duration_text": "+/-1-2 hours after Ijen",
+    "short_answer": "Ijen Base to Ketapang Harbor: +/-1-2 hours after Ijen.",
     "risk_factors": [
       "post-trek fatigue",
       "harbor queue",
       "late Bali connection"
     ],
-    "customer_visible": false,
+    "customer_visible": true,
     "reusable": true,
     "used_for": [
       "feasibility",
@@ -1478,7 +1491,7 @@
       "staging_explanation"
     ],
     "core_overlay_ref": "ijen_base_to_ketapang_harbor",
-    "approval_status": "operational_reference",
+    "approval_status": "approved",
     "data_status": "available",
     "source_evidence": [
       "core:generated/itinerary-intelligence/04-route-leg-index.json"
@@ -1492,12 +1505,13 @@
     "from_location": "Bali Hotel Area",
     "to_location": "Banyuwangi / Ijen Area",
     "duration_text": "Bali transfer + ferry + Banyuwangi/Ijen access requires verification",
+    "short_answer": "Bali hotel area to Banyuwangi/Ijen area: approx. 3-5.5 hours including the Ketapang-Gilimanuk ferry crossing, depending on traffic and ferry queue -- exact timing confirmed by our team closer to your dates.",
     "risk_factors": [
       "Bali traffic",
       "ferry queue",
       "late Ijen preparation"
     ],
-    "customer_visible": false,
+    "customer_visible": true,
     "reusable": true,
     "used_for": [
       "feasibility",
@@ -1506,7 +1520,7 @@
       "staging_explanation"
     ],
     "core_overlay_ref": "bali_hotel_area_to_banyuwangi_ijen_area",
-    "approval_status": "operational_reference",
+    "approval_status": "approved",
     "data_status": "partial",
     "source_evidence": [
       "core:generated/itinerary-intelligence/04-route-leg-index.json"
@@ -1520,12 +1534,13 @@
     "from_location": "Bromo Area",
     "to_location": "Malang",
     "duration_text": "+/-2.5-4 hours",
+    "short_answer": "Bromo Area to Malang: +/-2.5-4 hours.",
     "risk_factors": [
       "mountain descent",
       "weekend congestion",
       "late city arrival"
     ],
-    "customer_visible": false,
+    "customer_visible": true,
     "reusable": true,
     "used_for": [
       "feasibility",
@@ -1534,7 +1549,7 @@
       "staging_explanation"
     ],
     "core_overlay_ref": "bromo_area_to_malang",
-    "approval_status": "operational_reference",
+    "approval_status": "approved",
     "data_status": "available",
     "source_evidence": [
       "core:generated/itinerary-intelligence/04-route-leg-index.json"
@@ -1548,12 +1563,13 @@
     "from_location": "Malang",
     "to_location": "Surabaya",
     "duration_text": "+/-2-4 hours",
+    "short_answer": "Malang to Surabaya: +/-2-4 hours.",
     "risk_factors": [
       "Malang city traffic",
       "Surabaya city traffic",
       "airport or train deadline"
     ],
-    "customer_visible": false,
+    "customer_visible": true,
     "reusable": true,
     "used_for": [
       "feasibility",
@@ -1562,7 +1578,7 @@
       "staging_explanation"
     ],
     "core_overlay_ref": "malang_to_surabaya",
-    "approval_status": "operational_reference",
+    "approval_status": "approved",
     "data_status": "available",
     "source_evidence": [
       "core:generated/itinerary-intelligence/04-route-leg-index.json"
@@ -1762,6 +1778,78 @@
     "approval_status": "approved",
     "source_evidence": [
       "core:generated/itinerary-intelligence/09-accommodation-logic.json"
+    ]
+  },
+  {
+    "module_id": "policy_bromo_seasonal_closures",
+    "category": "policy",
+    "scope": "bromo_scoped",
+    "title": "Bromo Seasonal Closures (Yadnya Kasada)",
+    "short_answer": "Bromo has no fixed monthly closure like Ijen, but the annual Yadnya Kasada ceremony (a Tengger Hindu ceremony on the Bromo caldera floor, dates shift yearly per the lunar calendar) makes the Bromo area extremely crowded -- JVTO activates its Plan-B framework for bookings that fall in this window.",
+    "detail_summary": "Unlike Ijen's fixed first-Friday-of-the-month Rijik closure, Bromo does not have a recurring monthly closure. The main scheduled event to plan around is Yadnya Kasada, an annual Tengger Hindu ceremony held on the Bromo caldera floor; its exact date shifts every year following the lunar calendar, and the Bromo area becomes extremely crowded during it. JVTO activates its Plan-B framework for any booking that falls in this window. Bromo access can also be affected by less predictable triggers: volcanic gas emissions above safe levels, seismic activity flagged by PVMBG, heavy rainfall/flash-flood risk (mainly affecting Tumpak Sewu), or other national observance days -- JVTO monitors these and advises affected bookings directly.",
+    "customer_visible": true,
+    "reusable": true,
+    "link_key": "natural_phenomena",
+    "approval_status": "approved",
+    "source_evidence": [
+      "live:travel-guide/weather-and-closures",
+      "operator-confirmed:2026-08-06"
+    ]
+  },
+  {
+    "module_id": "service_jacket_rental",
+    "category": "service",
+    "scope": "global",
+    "title": "Jacket Rental",
+    "short_answer": "Jackets can be rented on-site at both Bromo and Ijen for around Rp35,000.",
+    "detail_summary": "Guests who don't bring their own warm layer can rent a jacket on-site at both Bromo and Ijen, for approximately Rp35,000. Bringing your own is still recommended for the best fit, but renting on arrival is a real option.",
+    "customer_visible": true,
+    "reusable": true,
+    "approval_status": "approved",
+    "source_evidence": [
+      "operator-confirmed:2026-08-06"
+    ]
+  },
+  {
+    "module_id": "service_shoe_rental",
+    "category": "service",
+    "scope": "ijen_scoped",
+    "title": "Shoe Rental (Ijen)",
+    "short_answer": "Shoes can be rented on-site at Ijen.",
+    "detail_summary": "Guests without sturdy closed-toe walking shoes can rent a pair on-site at Ijen. Bringing your own well-fitted hiking shoes is still recommended for the 3km trek, but renting on arrival is available.",
+    "customer_visible": true,
+    "reusable": true,
+    "approval_status": "approved",
+    "source_evidence": [
+      "operator-confirmed:2026-08-06"
+    ]
+  },
+  {
+    "module_id": "service_ijen_trolley",
+    "category": "service",
+    "scope": "ijen_scoped",
+    "title": "Ijen Crater Trolley/Ojek",
+    "short_answer": "A trolley/ojek service up and down the Ijen crater is available on-site, priced around Rp1,500,000-2,000,000.",
+    "detail_summary": "For guests who prefer not to hike the full way, a trolley/ojek service up and down the Ijen crater trail is available on-site, priced at approximately Rp1,500,000-2,000,000 (paid directly on-site, not pre-booked through JVTO). Exact price can vary -- confirm on arrival.",
+    "customer_visible": true,
+    "reusable": true,
+    "approval_status": "approved",
+    "source_evidence": [
+      "operator-confirmed:2026-08-06"
+    ]
+  },
+  {
+    "module_id": "service_custom_destination_addon",
+    "category": "service",
+    "scope": "global",
+    "title": "Adding a Destination Outside the Standard Catalog",
+    "short_answer": "That's outside our standard destinations (Bromo, Ijen, Madakaripura, Papuma, Tumpak Sewu), but our team can look into adding it as a custom extension -- they'll follow up with you directly about feasibility and pricing.",
+    "detail_summary": "JVTO's standard packages cover 5 East Java destinations: Bromo, Ijen, Madakaripura, Papuma, and Tumpak Sewu. A request for a destination outside this list (e.g. Yogyakarta/Borobudur/Prambanan, Baluran National Park, Tangkuban Perahu, De Djawatan Forest, or a specific attraction not in the standard itinerary) is not something to quote a price or confirm feasibility for directly -- our admin team follows up to assess whether it can be added as a custom extension and what it would cost.",
+    "customer_visible": true,
+    "reusable": true,
+    "approval_status": "approved",
+    "source_evidence": [
+      "operator-confirmed:2026-08-06"
     ]
   }
 ]

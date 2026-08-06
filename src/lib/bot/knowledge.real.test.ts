@@ -11,7 +11,7 @@
 import { describe, it, expect } from 'vitest'
 import fs from 'fs'
 import path from 'path'
-import { resolveKnowledgeForTopic } from './knowledge'
+import { resolveKnowledgeForTopic, resolveRouteLegFacts } from './knowledge'
 
 const RELEASE_PRESENT = fs.existsSync(path.join(process.cwd(), 'catalog', 'general-modules.json'))
 
@@ -193,5 +193,61 @@ describe.skipIf(!RELEASE_PRESENT)('resolveKnowledgeForTopic against the real syn
     expect(allText).toContain('bromotenggersemeru.id')
     expect(allText).toContain('ijen')
     expect(allText).toMatch(/ijen.{0,40}not/)
+  })
+
+  // Reported live 2026-08-06, all operator-confirmed 2026-08-06 in response to the message
+  // audit: Bromo's Yadnya Kasada closure window, jacket rental (~Rp35,000, Bromo+Ijen), shoe
+  // rental (Ijen), and the Ijen crater trolley/ojek (~Rp1.5-2M) all had no real fact before.
+  it('resolves the real Bromo/Yadnya Kasada seasonal-closure fact', () => {
+    const result = resolveKnowledgeForTopic('general', 'is bromo open right now, or is it closed for Yadnya Kasada?')
+    expect(result.factualLines.some((f) => f.toLowerCase().includes('yadnya kasada'))).toBe(true)
+  })
+
+  it('resolves the real jacket-rental fact for both Bromo and Ijen', () => {
+    const result = resolveKnowledgeForTopic('general', 'how much to rent a jacket?')
+    const allText = result.factualLines.join(' ').toLowerCase()
+    expect(allText).toContain('35,000')
+    expect(allText).toContain('bromo')
+    expect(allText).toContain('ijen')
+  })
+
+  it('resolves the real shoe-rental fact for Ijen', () => {
+    const result = resolveKnowledgeForTopic('general', 'is there shoe rental at Ijen crater?')
+    expect(result.factualLines.some((f) => f.toLowerCase().includes('rent'))).toBe(true)
+  })
+
+  it('resolves the real Ijen trolley/ojek price', () => {
+    const result = resolveKnowledgeForTopic('general', 'is there a trolley up and down at Ijen?')
+    const allText = result.factualLines.join(' ')
+    expect(allText).toContain('1,500,000')
+  })
+
+  // Reported live 2026-08-06: real customers asked about destinations genuinely outside the
+  // 5-destination catalog (Borobudur/Prambanan, Baluran, Tangkuban Perahu, De Djawatan,
+  // Kawah Wurung, Blawan) -- the bot only had a generic destination-list deflection.
+  it.each([
+    ['can you add Borobudur and Prambanan to our itinerary?', 'borobudur/prambanan'],
+    ['is there an open trip to Baluran National Park?', 'baluran'],
+    ['we want to visit Tangkuban Perahu volcano too', 'tangkuban perahu'],
+  ] as const)('resolves an honest "custom extension, team will follow up" fact for %s (%s)', (message, _keyword) => {
+    const result = resolveKnowledgeForTopic('general', message)
+    expect(result.factualLines.some((f) => f.toLowerCase().includes('team can look into'))).toBe(true)
+  })
+
+  // Reported live 2026-08-06: general-modules.json's route_leg_* modules carry real,
+  // operator-sourced travel-time estimates but had no short_answer/customer_visible at all.
+  it('resolves a real travel-time fact for a specific leg (Surabaya to Bromo)', () => {
+    const facts = resolveRouteLegFacts('How many hours from Surabaya to Bromo?')
+    expect(facts.length).toBeGreaterThan(0)
+    expect(facts[0].toLowerCase()).toContain('bromo')
+    expect(facts[0]).toMatch(/hours?/)
+  })
+
+  // Reported live 2026-08-06: a hotel-name question always got a vague "let me check with our
+  // team" even for a NOT-yet-booked customer, when the real answer (this package's own detail
+  // page) was one click away the whole time.
+  it('tells the LLM to point to the package detail page for a specific hotel name', () => {
+    const result = resolveKnowledgeForTopic('hotel', 'what is the name of the hotel?')
+    expect(result.disclosures.some((d) => d.toLowerCase().includes('detail page'))).toBe(true)
   })
 })
