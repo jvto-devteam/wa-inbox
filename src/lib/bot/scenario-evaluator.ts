@@ -683,19 +683,47 @@ export function buildItineraryScenario(input: {
 }
 
 /**
- * Translates a `ScenarioEvaluation` into a short, LLM-facing note -- `null` when there's
- * nothing worth surfacing. Gated on `warnings` specifically (not just route length): even a
- * genuinely multi-destination trip always produces a 3+-element `recommended_route` (pickup +
- * stops + dropoff), so route length alone can't distinguish "nothing noteworthy" from "here's
- * a real rest-time/backtracking consideration" -- a warning is what actually means the
- * evaluator found something worth explaining, not just restating the obvious default order.
+ * The customer-presentable substance of a `ScenarioEvaluation` -- `null` when there's nothing
+ * worth surfacing. Gated on `warnings` specifically (not just route length): even a genuinely
+ * multi-destination trip always produces a 3+-element `recommended_route` (pickup + stops +
+ * dropoff), so route length alone can't distinguish "nothing noteworthy" from "here's a real
+ * rest-time/backtracking consideration" -- a warning is what actually means the evaluator
+ * found something worth explaining, not just restating the obvious default order. `warnings`
+ * entries are themselves already human-readable (12-recommendation-rules.json's own
+ * `recommendation` text, e.g. "Route may be possible but guest rest time is reduced..."), safe
+ * to show directly -- unlike this function's own two callers below, this has NO meta-instruction
+ * text mixed in, so it's safe to use verbatim in a reply that is NOT LLM-composed (a static
+ * template), not just as LLM grounding.
  */
-export function describeScenarioForLLM(evaluation: ScenarioEvaluation): string | null {
+function scenarioFacts(evaluation: ScenarioEvaluation): string[] | null {
   if (evaluation.warnings.length === 0) return null
   const lines: string[] = []
   if (evaluation.recommended_route.length > 2) {
     lines.push(`Recommended route order based on real travel-time/rest-time data: ${evaluation.recommended_route.join(' -> ')}.`)
   }
   lines.push(...evaluation.warnings)
+  return lines
+}
+
+/**
+ * Translates a `ScenarioEvaluation` into a short, LLM-facing note -- adds a meta-instruction
+ * telling the LLM to explain the reasoning, not just state the order. Do NOT use this for a
+ * reply that isn't LLM-composed (e.g. a static template) -- the instruction text would leak to
+ * the customer verbatim; use `describeScenarioForCustomer` there instead.
+ */
+export function describeScenarioForLLM(evaluation: ScenarioEvaluation): string | null {
+  const lines = scenarioFacts(evaluation)
+  if (!lines) return null
   return `${lines.join(' ')} Explain this recommendation and the reasoning (e.g. limited rest time before an early-morning hike) if it's relevant to what the customer asked, rather than just stating the order with no explanation.`
+}
+
+/**
+ * Translates a `ScenarioEvaluation` into plain, customer-ready text -- for use in a reply that
+ * is NOT LLM-composed (e.g. the trip-preferences funnel gate's own static template), where
+ * `describeScenarioForLLM`'s meta-instruction suffix would otherwise leak to the customer
+ * verbatim.
+ */
+export function describeScenarioForCustomer(evaluation: ScenarioEvaluation): string | null {
+  const lines = scenarioFacts(evaluation)
+  return lines ? lines.join(' ') : null
 }

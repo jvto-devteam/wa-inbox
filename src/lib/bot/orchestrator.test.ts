@@ -910,6 +910,31 @@ describe('decideAndRespond', () => {
     expect(reply).toContain('Happy to recommend the best package for you!')
   })
 
+  // Reported 2026-08-06: "kadang bukan pertanyaan eksplisit, dia cuma bilang pickup jam
+  // sekian" -- a customer merely STATING their pickup time (no explicit "which first?"
+  // question), with start/finish/duration still unknown (so the funnel gate fires), should
+  // still get the rest-time/route recommendation INSIDE the funnel's own reply -- in plain
+  // customer-facing text, not the LLM-instruction phrasing describeScenarioForLLM produces
+  // (this reply is a static template, never reaches the LLM at all).
+  it('gives a route/rest-time recommendation inside the funnel reply when the customer only STATES a pickup time, not asks about it', async () => {
+    ;(ensureFreshBookingData as any).mockResolvedValue(null)
+    ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
+    ;(loadCatalog as any).mockReturnValue({ packages: [pkg({ packageKey: 'catalog-anchor', destinationTokens: ['bromo', 'ijen'] })], syncedAt: null })
+    ;(matchDestination as any).mockReturnValue({ destination: 'ijen', matches: [pkg()] })
+    ;(classifyTopic as any).mockReturnValue('price')
+    ;(parseTripPreferences as any).mockReturnValue({ origin: 'Surabaya', dayCount: null, finishCity: null, pax: null })
+
+    const result = await decideAndRespond('conv_1', 'Pickup Surabaya Airport jam 6 sore, mau ke Bromo dan Ijen.')
+
+    expect(result.mode).toBe('clarify')
+    const reply = (result as { mode: 'clarify'; reply: string }).reply
+    expect(reply.toLowerCase()).toMatch(/bromo.*ijen/)
+    expect(reply.toLowerCase()).toContain('rest')
+    expect(reply).toContain('Happy to recommend the best package for you!')
+    // The LLM-instruction suffix must never leak into a reply the LLM never composed.
+    expect(reply).not.toContain('Explain this recommendation')
+  })
+
   it('does not add an unsupported-origin note when a real, supported origin (Bali/Surabaya) is stated', async () => {
     ;(ensureFreshBookingData as any).mockResolvedValue(null)
     ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
