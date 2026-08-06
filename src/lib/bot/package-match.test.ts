@@ -344,6 +344,41 @@ describe('parseTripPreferences', () => {
       expect(result.origin).toBe('Surabaya')
       expect(result.dayCount).toBe(3)
     })
+
+    // Reported live 2026-08-07: a real, detailed itinerary said "we will continue our trip
+    // independently to Bali" after the Ketapang ferry -- none of FINISH_CONTEXT_PHRASES'
+    // literal wording ("finish"/"end in"/"drop off"/etc) appeared anywhere, so finishCity
+    // stayed null even though a human reads this as an unambiguous statement of where the
+    // JVTO-provided trip ends.
+    it('parses "continue...to <city>" as an implicit finishCity, not just the literal phrase whitelist', () => {
+      expect(parseTripPreferences('after the ferry, we will continue our trip independently to Bali').finishCity).toBe('bali')
+      expect(parseTripPreferences('we will then head to Surabaya on our own').finishCity).toBe('surabaya')
+    })
+
+    it('does not treat an unrelated "continue" elsewhere in the message as a finish-city signal', () => {
+      expect(parseTripPreferences('please continue browsing our packages, by the way Surabaya is lovely').finishCity).toBeNull()
+    })
+  })
+
+  // Reported live 2026-08-07: a real customer's day-by-day itinerary ("Day 1" airport pickup
+  // ... "Day 4" Ijen crater + ferry) never once said "4 days"/"4D3N" anywhere -- duration was
+  // only ever implied by its own "Day N" section headers.
+  describe('day count from "Day N" itinerary headers', () => {
+    it('takes the highest "Day N" header as dayCount when at least 2 headers are present', () => {
+      const itinerary =
+        'Day 1\nAirport pickup in Surabaya\nDay 2\nTumpak Sewu Waterfall\nDay 3\nMount Bromo Sunrise Tour\n' +
+        'Day 4\nKawah Ijen, Transfer to Ketapang Ferry Port'
+      expect(parseTripPreferences(itinerary).dayCount).toBe(4)
+    })
+
+    it('does not infer a day count from a single incidental "Day 1" mention', () => {
+      expect(parseTripPreferences('Day 1 we land in Surabaya, excited for the trip!').dayCount).toBeNull()
+    })
+
+    it('still prefers an explicit "N days"/"NDMN" phrase over Day-header counting when both are present and disagree', () => {
+      const itinerary = 'a 3-day trip: Day 1 arrival, Day 2 Bromo'
+      expect(parseTripPreferences(itinerary).dayCount).toBe(3)
+    })
   })
 
   // Reported 2026-08-05: cross-checked against a real operator-exported pricing sheet, which

@@ -186,6 +186,17 @@ function parseDayCount(low: string): number | null {
     const span = Number(dateRange[2]) - Number(dateRange[1]) + 1
     if (span > 0 && span <= 10) return span
   }
+  // Reported live 2026-08-07: a real, detailed day-by-day itinerary ("Day 1" airport pickup
+  // ... "Day 4" Ijen crater + ferry transfer) never once said "4 days" or "4D3N" anywhere --
+  // the duration was only ever implied by its own section headers. Requires at least 2
+  // distinct "Day N" headers before trusting this (a single incidental "Day 1" mention
+  // elsewhere in a message says nothing about total trip length); takes the highest N seen,
+  // since real itineraries are always numbered sequentially from 1.
+  const dayHeaders = [...low.matchAll(/\bday\s*(\d{1,2})\b/g)].map((m) => Number(m[1]))
+  if (dayHeaders.length >= 2) {
+    const maxDay = Math.max(...dayHeaders)
+    if (maxDay > 0 && maxDay <= 30) return maxDay
+  }
   return null
 }
 
@@ -313,11 +324,27 @@ function parseOrigin(low: string): string | null {
 // CatalogPackage.finishCities uses ("bali", "surabaya", "malang", "ketapang").
 const FINISH_CITY_TOKENS = ['bali', 'surabaya', 'malang', 'ketapang']
 
+// "we will continue our trip independently to Bali" -- reported live 2026-08-07: a real
+// customer's ferry-then-onward plan never used any of FINISH_CONTEXT_PHRASES' literal
+// wording ("finish"/"end in"/"drop off"/etc), so parseFinishCity returned null even though a
+// human reads this as an unambiguous statement that Bali is where their trip with JVTO ends.
+// Kept as its own bounded regex (not folded into FINISH_CONTEXT_PHRASES) rather than reusing
+// hasNearbyFinishContext's 30-char window: "continue" itself can sit well outside that
+// window from the city name once "our trip independently" (or similar) sits in between, and
+// FINISH_CONTEXT_PHRASES is also reused to suppress parseOrigin's bare-city fallback, so
+// widening it risks unrelated side effects there. `[^.!?]{0,40}?` bounds the gap to the same
+// sentence and a plausible phrase length, without requiring an exact wording match.
+const CONTINUE_ONWARD_PATTERN =
+  /\b(?:continue|continuing|carry on|carrying on|onward|make our way|making our way|head|heading)\b[^.!?]{0,40}?\bto\s+(bali|surabaya|malang|ketapang)\b/
+
 function parseFinishCity(low: string): string | null {
-  if (!FINISH_CONTEXT_PHRASES.some((p) => low.includes(p))) return null
-  for (const city of FINISH_CITY_TOKENS) {
-    if (low.includes(city)) return city
+  if (FINISH_CONTEXT_PHRASES.some((p) => low.includes(p))) {
+    for (const city of FINISH_CITY_TOKENS) {
+      if (low.includes(city)) return city
+    }
   }
+  const continueMatch = low.match(CONTINUE_ONWARD_PATTERN)
+  if (continueMatch) return continueMatch[1]
   return null
 }
 
