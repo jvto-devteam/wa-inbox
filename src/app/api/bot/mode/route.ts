@@ -18,7 +18,19 @@ export async function POST(req: Request) {
   // only affect brand-new conversations (see src/lib/inbound.ts's defaultBotEnabled) and every
   // existing conversation would keep whatever botEnabled it already had -- not the "for all
   // chats" / "manual per chat" behavior the toggle promises.
-  await prisma.conversation.updateMany({ data: { botEnabled: next } })
+  //
+  // EXCEPT Indonesian-number conversations when skipBotForIndonesianNumbers is on (see
+  // src/app/api/bot/indonesia-filter/route.ts) -- that filter must survive an unrelated
+  // botAutoReplyAll flip, so turning the bot back On must not silently re-activate the numbers
+  // the operator specifically asked to keep human-handled. Moot when turning Off (`next` is
+  // false either way) or when the filter isn't active, so those cases keep the original single
+  // unconditional bulk write.
+  if (next && current.skipBotForIndonesianNumbers) {
+    await prisma.conversation.updateMany({ where: { contact: { phone: { not: { startsWith: '62' } } } }, data: { botEnabled: true } })
+    await prisma.conversation.updateMany({ where: { contact: { phone: { startsWith: '62' } } }, data: { botEnabled: false } })
+  } else {
+    await prisma.conversation.updateMany({ data: { botEnabled: next } })
+  }
 
   return NextResponse.json({ botAutoReplyAll: updated.botAutoReplyAll })
 }

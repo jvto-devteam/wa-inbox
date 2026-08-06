@@ -51,6 +51,37 @@ describe('POST /api/bot/mode', () => {
     expect(mockPrisma.conversation.updateMany).toHaveBeenCalledWith({ data: { botEnabled: false } })
   })
 
+  // The Indonesia filter (see src/app/api/bot/indonesia-filter/route.ts) must survive an
+  // unrelated botAutoReplyAll flip -- turning the overall bot back On must not silently
+  // re-activate the numbers the operator specifically asked to keep human-handled.
+  it('does NOT re-activate Indonesian-number conversations when flipping Off -> On while the Indonesia filter is active', async () => {
+    mockPrisma.settings.findUniqueOrThrow.mockResolvedValue({ botAutoReplyAll: false, skipBotForIndonesianNumbers: true } as never)
+    mockPrisma.settings.update.mockResolvedValue({ botAutoReplyAll: true } as never)
+
+    await POST(request())
+
+    expect(mockPrisma.conversation.updateMany).toHaveBeenCalledWith({
+      where: { contact: { phone: { not: { startsWith: '62' } } } },
+      data: { botEnabled: true },
+    })
+    expect(mockPrisma.conversation.updateMany).toHaveBeenCalledWith({
+      where: { contact: { phone: { startsWith: '62' } } },
+      data: { botEnabled: false },
+    })
+    // Never the old single unconditional bulk write when the filter is active.
+    expect(mockPrisma.conversation.updateMany).not.toHaveBeenCalledWith({ data: { botEnabled: true } })
+  })
+
+  it('still does a single unconditional bulk write when flipping On -> Off, even with the Indonesia filter active (turning the whole bot off makes the filter moot)', async () => {
+    mockPrisma.settings.findUniqueOrThrow.mockResolvedValue({ botAutoReplyAll: true, skipBotForIndonesianNumbers: true } as never)
+    mockPrisma.settings.update.mockResolvedValue({ botAutoReplyAll: false } as never)
+
+    await POST(request())
+
+    expect(mockPrisma.conversation.updateMany).toHaveBeenCalledWith({ data: { botEnabled: false } })
+    expect(mockPrisma.conversation.updateMany).toHaveBeenCalledTimes(1)
+  })
+
   it('rejects when the caller is not an admin — an agent must not be able to halt all bot automation', async () => {
     vi.mocked(verifySessionToken).mockResolvedValue({ accountId: 'acc_agent', role: 'AGENT', tokenVersion: 0 })
     const res = await POST(request())

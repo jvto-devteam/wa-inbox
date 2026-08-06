@@ -7,6 +7,7 @@ const settings = {
   workingHoursEnd: null,
   offHoursAutoReply: null,
   botAutoReplyAll: true,
+  skipBotForIndonesianNumbers: false,
   catalogSyncedAt: null,
   ollamaModel: 'gemma4:31b-cloud',
 }
@@ -32,6 +33,9 @@ function mockFetch(overrides: Record<string, unknown> = {}) {
       if (url === '/api/bot/mode' && init?.method === 'POST') {
         return Promise.resolve({ ok: true, json: async () => ({ botAutoReplyAll: false }) })
       }
+      if (url === '/api/bot/indonesia-filter' && init?.method === 'POST') {
+        return Promise.resolve({ ok: true, json: async () => ({ skipBotForIndonesianNumbers: true }) })
+      }
       if (url === '/api/bot/sync-catalog' && init?.method === 'POST') {
         return typeof overrides.sync === 'function' ? (overrides.sync as () => unknown)() : Promise.resolve({ ok: true, json: async () => ({ ok: true }) })
       }
@@ -52,6 +56,16 @@ describe('ChatbotPage', () => {
     fireEvent.click(screen.getByText('Matikan (Off)'))
 
     await waitFor(() => expect(screen.getByText('Bot: Off (Manual per Chat)')).toBeInTheDocument())
+  })
+
+  it('shows the Indonesia-number filter status and toggles it', async () => {
+    mockFetch()
+    render(<ChatbotPage />)
+
+    expect(await screen.findByText('Nomor Indonesia: Dibalas bot')).toBeInTheDocument()
+    fireEvent.click(screen.getByText('Nonaktifkan Bot untuk Nomor Indonesia'))
+
+    await waitFor(() => expect(screen.getByText('Nomor Indonesia: Tidak dibalas bot')).toBeInTheDocument())
   })
 
   it('shows the deployment gate status and a link to the bot log', async () => {

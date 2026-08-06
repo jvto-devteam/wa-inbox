@@ -14,6 +14,7 @@ type Settings = {
   workingHoursEnd: string | null
   offHoursAutoReply: string | null
   botAutoReplyAll: boolean
+  skipBotForIndonesianNumbers: boolean
   catalogSyncedAt: string | null
   ollamaModel: string
 }
@@ -71,6 +72,18 @@ export default function ChatbotPage() {
     try {
       const { botAutoReplyAll } = await fetchJson<{ botAutoReplyAll: boolean }>('/api/bot/mode', { method: 'POST' })
       setSettings((prev) => (prev ? { ...prev, botAutoReplyAll } : prev))
+    } catch {
+      // Badge keeps showing the last confirmed state — never a guessed one.
+    }
+  }
+
+  async function toggleIndonesiaFilter() {
+    try {
+      const { skipBotForIndonesianNumbers } = await fetchJson<{ skipBotForIndonesianNumbers: boolean }>(
+        '/api/bot/indonesia-filter',
+        { method: 'POST' }
+      )
+      setSettings((prev) => (prev ? { ...prev, skipBotForIndonesianNumbers } : prev))
     } catch {
       // Badge keeps showing the last confirmed state — never a guessed one.
     }
@@ -153,6 +166,28 @@ export default function ChatbotPage() {
           <p className="text-xs text-muted-foreground">
             On: bot balas otomatis di semua percakapan. Off: bot nonaktif secara default —
             agen bisa mengaktifkan bot secara manual per percakapan lewat tombol di dalam chat.
+          </p>
+        </div>
+
+        <div className="space-y-1.5">
+          <div className="flex items-center gap-3">
+            <Badge variant={settings.skipBotForIndonesianNumbers ? 'warning' : 'success'}>
+              Nomor Indonesia: {settings.skipBotForIndonesianNumbers ? 'Tidak dibalas bot' : 'Dibalas bot'}
+            </Badge>
+            {role === 'ADMIN' && (
+              <Button
+                onClick={toggleIndonesiaFilter}
+                variant={settings.skipBotForIndonesianNumbers ? 'default' : 'destructive'}
+                size="sm"
+              >
+                {settings.skipBotForIndonesianNumbers ? 'Aktifkan Bot untuk Nomor Indonesia' : 'Nonaktifkan Bot untuk Nomor Indonesia'}
+              </Button>
+            )}
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Saat aktif, bot tidak pernah membalas otomatis ke nomor WhatsApp Indonesia (kode
+            +62) — percakapan langsung diam, agen yang menangani manual. Nomor negara lain
+            tetap dibalas bot seperti biasa.
           </p>
         </div>
 

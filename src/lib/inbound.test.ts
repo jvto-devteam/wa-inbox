@@ -24,7 +24,7 @@ beforeEach(() => {
   vi.mocked(broadcast).mockReset()
   // Read by defaultBotEnabled() whenever a new conversation is created, so a brand-new
   // conversation starts in whatever state the global bot mode currently dictates.
-  mockPrisma.settings.findUniqueOrThrow.mockResolvedValue({ botAutoReplyAll: true } as never)
+  mockPrisma.settings.findUniqueOrThrow.mockResolvedValue({ botAutoReplyAll: true, skipBotForIndonesianNumbers: false } as never)
   // flushBurst's own fresh re-check (see scheduleBotRun's header) -- default to "still on" so
   // every existing botEnabled:true test doesn't have to know this second read exists.
   mockPrisma.conversation.findUnique.mockResolvedValue({ botEnabled: true } as never)
@@ -134,6 +134,69 @@ describe('ingestMetaMessage', () => {
     const result = await ingestMetaMessage(samplePayload)
 
     expect(result).toEqual({ processed: 0, skipped: 1, statusUpdates: 0, templateStatusUpdates: 0, echoed: 0 })
+  })
+})
+
+describe('defaultBotEnabled (new conversation creation)', () => {
+  const usPayload = {
+    entry: [{
+      changes: [{
+        value: {
+          contacts: [{ profile: { name: 'John Doe' }, wa_id: '12025551234' }],
+          messages: [{ id: 'wamid.US1', from: '12025551234', timestamp: '1700000000', type: 'text', text: { body: 'Hi' } }],
+        },
+      }],
+    }],
+  }
+
+  it('starts a brand-new conversation active when botAutoReplyAll is on and the Indonesia filter is off', async () => {
+    mockPrisma.settings.findUniqueOrThrow.mockResolvedValue({ botAutoReplyAll: true, skipBotForIndonesianNumbers: false } as never)
+    stubHappyPath()
+
+    await ingestMetaMessage(samplePayload)
+
+    expect(mockPrisma.conversation.upsert).toHaveBeenCalledWith(expect.objectContaining({
+      create: expect.objectContaining({ botEnabled: true }),
+    }))
+  })
+
+  // The operator-facing feature this describe block exists for: an Indonesian contact's very
+  // first conversation must start inactive too when the filter is on, not just existing
+  // conversations caught by the toggle route's own bulk write.
+  it('starts a brand-new INDONESIAN-number conversation inactive when the Indonesia filter is on, even though botAutoReplyAll is on', async () => {
+    mockPrisma.settings.findUniqueOrThrow.mockResolvedValue({ botAutoReplyAll: true, skipBotForIndonesianNumbers: true } as never)
+    stubHappyPath()
+
+    await ingestMetaMessage(samplePayload) // samplePayload's contact is 6281234567890 -- Indonesian
+
+    expect(mockPrisma.conversation.upsert).toHaveBeenCalledWith(expect.objectContaining({
+      create: expect.objectContaining({ botEnabled: false }),
+    }))
+  })
+
+  it('still starts a NON-Indonesian conversation active when the Indonesia filter is on', async () => {
+    mockPrisma.settings.findUniqueOrThrow.mockResolvedValue({ botAutoReplyAll: true, skipBotForIndonesianNumbers: true } as never)
+    // stubHappyPath's default contact mock always resolves to the (Indonesian) fixture phone
+    // regardless of the payload's actual `from` -- override it to a real non-Indonesian phone,
+    // since that's what defaultBotEnabled() actually checks (the upserted contact's phone).
+    stubHappyPath({ contact: { phone: '12025551234' } })
+
+    await ingestMetaMessage(usPayload)
+
+    expect(mockPrisma.conversation.upsert).toHaveBeenCalledWith(expect.objectContaining({
+      create: expect.objectContaining({ botEnabled: true }),
+    }))
+  })
+
+  it('the Indonesia filter never overrides botAutoReplyAll being off -- both must independently allow the bot', async () => {
+    mockPrisma.settings.findUniqueOrThrow.mockResolvedValue({ botAutoReplyAll: false, skipBotForIndonesianNumbers: false } as never)
+    stubHappyPath()
+
+    await ingestMetaMessage(usPayload)
+
+    expect(mockPrisma.conversation.upsert).toHaveBeenCalledWith(expect.objectContaining({
+      create: expect.objectContaining({ botEnabled: false }),
+    }))
   })
 })
 

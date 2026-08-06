@@ -324,6 +324,11 @@ model Settings {
   // back on (src/app/api/conversations/[id]/toggle-bot) to activate the bot in just that
   // one chat. See src/app/api/bot/mode/route.ts.
   botAutoReplyAll   Boolean        @default(true)
+  // When true, the bot never auto-replies to a contact whose phone is an Indonesian number
+  // (country code 62) regardless of botAutoReplyAll -- an operator policy choice to have
+  // agents handle domestic customers directly, letting the bot serve everyone else. See
+  // src/lib/phone.ts's isIndonesianNumber and src/app/api/bot/indonesia-filter/route.ts.
+  skipBotForIndonesianNumbers Boolean @default(false)
   catalogSyncedAt   DateTime?
   // Which Ollama model src/lib/bot/llm.ts asks for. Local-only (no hosted-API fallback) --
   // customer text and booking data never leave the VPS's own Ollama daemon.

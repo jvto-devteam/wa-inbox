@@ -4,6 +4,7 @@ import { broadcast } from '@/lib/realtime'
 import { decideAndRespond } from '@/lib/bot/orchestrator'
 import { sendMessage } from '@/lib/send'
 import { withMediaUrl } from '@/lib/serialize-message'
+import { isIndonesianNumber } from '@/lib/phone'
 
 type MetaMediaObject = { id: string; mime_type: string; caption?: string; filename?: string }
 
@@ -29,8 +30,14 @@ export type MetaInboundMessage = {
 // same way on every toggle). Reading this fresh on every new conversation, rather than
 // relying on the schema's static default, is what keeps a conversation created five
 // minutes after an Off toggle from starting active anyway.
-async function defaultBotEnabled(): Promise<boolean> {
+//
+// `phone` additionally checks Settings.skipBotForIndonesianNumbers (see
+// src/app/api/bot/indonesia-filter/route.ts, src/lib/phone.ts): an Indonesian-number
+// contact's very first conversation must start inactive too when that filter is on, not
+// just existing ones caught by the toggle's own bulk write.
+async function defaultBotEnabled(phone: string): Promise<boolean> {
   const settings = await prisma.settings.findUniqueOrThrow({ where: { id: 1 } })
+  if (settings.skipBotForIndonesianNumbers && isIndonesianNumber(phone)) return false
   return settings.botAutoReplyAll
 }
 
@@ -349,7 +356,7 @@ async function ingestSingleMessage(message: MetaInboundMessage, contacts: MetaCo
   const conversation = await prisma.conversation.upsert({
     where: { contactId: contact.id },
     update: { lastMessageAt: sentAt },
-    create: { contactId: contact.id, lastMessageAt: sentAt, botEnabled: await defaultBotEnabled() },
+    create: { contactId: contact.id, lastMessageAt: sentAt, botEnabled: await defaultBotEnabled(contact.phone) },
   })
 
   const media = mediaObjectFor(message)
@@ -439,7 +446,7 @@ async function ingestEchoedMessage(echo: MetaMessageEcho): Promise<boolean> {
   const conversation = await prisma.conversation.upsert({
     where: { contactId: contact.id },
     update: { lastMessageAt: sentAt },
-    create: { contactId: contact.id, lastMessageAt: sentAt, botEnabled: await defaultBotEnabled() },
+    create: { contactId: contact.id, lastMessageAt: sentAt, botEnabled: await defaultBotEnabled(contact.phone) },
   })
 
   const media = mediaObjectFor(echo)
