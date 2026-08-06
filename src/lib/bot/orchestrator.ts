@@ -294,9 +294,20 @@ export function evaluatePickupScenario(
 // and silently dropped the itinerary-after-skipping-Madakaripura question entirely. A
 // question-mark count is a coarse but effective proxy -- a genuinely multi-part message reads
 // as several distinct "?"-terminated asks, unlike an ordinary single question.
+//
+// Reported live 2026-08-06: a real, detailed quotation request formatted as a numbered list
+// ("1. Exact total price... 2. Names of both standard hotels... 3. Private vehicle...", 10
+// items) had almost no "?" at all, so it never counted as multi-question -- which meant the
+// itinerary/hotel-names bullet (multiQuestionNote's own "point to the package link instead of
+// re-deriving it" instruction) never applied, and the bot tried to partially answer inline
+// instead. A numbered list is just as reliable a proxy for "several distinct asks bundled
+// together" as repeated "?" -- often more so, since a formal quotation request tends to be
+// phrased as instructions/requirements rather than literal questions.
 const MULTI_QUESTION_THRESHOLD = 3
 function isMultiQuestionMessage(message: string): boolean {
-  return (message.match(/\?/g)?.length ?? 0) >= MULTI_QUESTION_THRESHOLD
+  const questionMarks = message.match(/\?/g)?.length ?? 0
+  const numberedListItems = message.match(/(?:^|\n)\s*\d{1,2}[.)]\s+\S/g)?.length ?? 0
+  return questionMarks >= MULTI_QUESTION_THRESHOLD || numberedListItems >= MULTI_QUESTION_THRESHOLD
 }
 
 // Topics genuinely answerable without knowing WHICH destination the customer wants --
@@ -970,8 +981,14 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
             .map((p) => {
               const finishNote = finishCity && p.finishCities.includes(finishCity) ? `, finishes in ${titleCaseCity(finishCity)}` : ''
               const priceInfo = priceForPax(p, pax)
+              // Reported live 2026-08-06: a customer quoted the real 2-pax tier price got
+              // compared against the website showing the (different, and different from a
+              // different tier's) 3-pax price -- the two numbers genuinely differ by pax count,
+              // but the reply never said which pax count its price was for, reading as a data
+              // mismatch when it wasn't one. `isExactMatch` is only true once `pax` is known
+              // (see priceForPax's own contract), so it's always safe to state here.
               const priceLabel = priceInfo.isExactMatch
-                ? `Rp${priceInfo.priceIdr!.toLocaleString('id-ID')}/person`
+                ? `Rp${priceInfo.priceIdr!.toLocaleString('id-ID')}/person (for ${pax} pax)`
                 : `from Rp${priceInfo.priceIdr!.toLocaleString('id-ID')}/person`
               const details = `${p.title}${p.dayCount ? ` (${p.dayCount}D` : ''}${p.origin ? `, from ${p.origin}${finishNote})` : p.dayCount ? ')' : ''}: ${priceLabel}`
               return p.links.details ? `- ${details} - ${p.links.details}` : `- ${details}`

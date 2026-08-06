@@ -1834,6 +1834,49 @@ describe('decideAndRespond', () => {
       expect(opts.system).not.toContain('answer EVERY one of them')
     })
 
+    // Reported live 2026-08-06: a real, detailed quotation request formatted as a numbered
+    // list (10 items, almost no "?" at all) never counted as multi-question under the old
+    // "?"-count-only heuristic -- the itinerary/hotel-names bullet never applied, and the bot
+    // tried to partially answer inline instead of pointing to the package link.
+    it('also detects a numbered-list request (few or no question marks) as multi-question', async () => {
+      ;(ensureFreshBookingData as any).mockResolvedValue(null)
+      ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
+      ;(matchDestination as any).mockReturnValue({ destination: 'ijen', matches: [pkg({ links: { details: 'https://example.com/ijen-package' } })] })
+      ;(checkRouteGate as any).mockReturnValue({ status: 'clear' })
+      ;(classifyTopic as any).mockReturnValue('payment')
+
+      const numberedListRequest =
+        'Could you please provide a detailed quotation for 2 persons, including:\n' +
+        '1. Exact total price in IDR for 2 international travelers\n' +
+        '2. Names of both standard hotels and room type\n' +
+        '3. Private vehicle for only our party\n' +
+        '4. Private Bromo 4WD jeep\n' +
+        'Thank you!'
+
+      await decideAndRespond('conv_1', numberedListRequest)
+
+      const [, opts] = (callLLM as any).mock.calls[0]
+      expect(opts.system).toContain('answer EVERY one of them, each as its own bullet point')
+      expect(opts.system).toContain("point that bullet to the package's own link")
+    })
+
+    it('does not treat an ordinary short message that merely mentions a number as a numbered list', async () => {
+      ;(ensureFreshBookingData as any).mockResolvedValue(null)
+      ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
+      ;(matchDestination as any).mockReturnValue({ destination: 'ijen', matches: [pkg()] })
+      ;(checkRouteGate as any).mockReturnValue({ status: 'clear' })
+      ;(classifyTopic as any).mockReturnValue('price')
+      mockPrisma.conversation.findUniqueOrThrow.mockResolvedValue({
+        id: 'conv_1', tripBrief: { declinedTripPreferences: true }, bookingData: null, bookingCheckedAt: new Date(),
+        contact: { phone: '6281234567890' },
+      } as never)
+
+      await decideAndRespond('conv_1', 'We will be 2 people, how much is the 3D2N package?')
+
+      const [, opts] = (callLLM as any).mock.calls[0]
+      expect(opts.system).not.toContain('answer EVERY one of them')
+    })
+
     // Reported live 2026-08-05: the real message that surfaced the bug above also contained
     // "...would you recommend that we buy our own travel insurance?" -- bare "recommend"
     // (advice about insurance, nothing to do with picking a package) wrongly matched
@@ -1909,6 +1952,23 @@ describe('decideAndRespond', () => {
       expect(opts.system).toContain('Rp3.570.000/person')
       expect(opts.system).not.toContain('from Rp3.570.000/person')
       expect(opts.system).not.toContain('Rp2.450.000/person')
+    })
+
+    // Reported live 2026-08-06: an operator compared the bot's real 2-pax price against the
+    // website showing the (correctly different) 3-pax price and suspected a data bug -- the
+    // numbers were both correct, just for different group sizes, but the reply never said
+    // which pax count its price was for.
+    it('states which pax count an exact-tier price is for, so it is never mistaken for a data mismatch against a different tier', async () => {
+      ;(ensureFreshBookingData as any).mockResolvedValue(null)
+      ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
+      ;(matchDestination as any).mockReturnValue({ destination: 'ijen', matches: [tieredPkg()] })
+      ;(checkRouteGate as any).mockReturnValue({ status: 'clear' })
+      ;(parseTripPreferences as any).mockReturnValue({ origin: null, dayCount: null, finishCity: null, pax: 2 })
+
+      await decideAndRespond('conv_1', 'We will be 2 people')
+
+      const [, opts] = (callLLM as any).mock.calls[0]
+      expect(opts.system).toContain('Rp3.570.000/person (for 2 pax)')
     })
 
     it('labels the price as "from Rp X/person" and adds a group-size caveat when pax is unknown', async () => {
