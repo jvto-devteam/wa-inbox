@@ -370,12 +370,20 @@ const DISCLOSURES = {
 }
 
 const GUARANTEE_PHRASES = ['guarantee', 'guaranteed', '100%', 'certain', 'definitely be open']
+// Meant to mirror sales-classifier.ts's HARD_DEPENDENCY_TRIGGER_KEYWORDS exactly (same
+// real-system concept, guardrails-and-state.yaml's attraction_hard_dependency.trigger_phrases)
+// -- found drifted 2026-08-07 during an audit of manual-matching surfaces: 'blue fire is why'
+// was present in that file's copy but missing from this one, silently under-covering this list
+// for as long as the two existed independently. Kept in sync manually; a genuine hazard of two
+// hand-maintained copies of the same list, flagged for the operator alongside the audit that
+// found it.
 const ATTRACTION_TRIGGER_PHRASES = [
   'main reason',
   'must see',
   'definitely want',
   'otherwise we go elsewhere',
   'otherwise we will go elsewhere',
+  'blue fire is why',
   'blue lava is why',
   'why we are coming',
 ]

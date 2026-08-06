@@ -1,7 +1,8 @@
 /**
  * Regression suite against the REAL parsing/classification pipeline -- the gap orchestrator.test.ts
- * structurally cannot cover. That file mocks matchDestination/extractTripPreferences/classifyTopic/
- * resolveKnowledgeForTopic themselves, so the real regex/keyword logic inside package-match.ts,
+ * structurally cannot cover. That file mocks matchDestination/extractTripPreferences/
+ * classifyTopicViaLLM/resolveKnowledgeForTopic themselves, so the real regex/keyword logic inside
+ * package-match.ts,
  * module-resolver.ts, knowledge.ts, sales-classifier.ts, and scenario-evaluator.ts never actually
  * runs there -- exactly why 4+ real parsing bugs (finish-context word order, "instead of" false
  * suppression, funnel-swallows-unrelated-topic, etc.) all had to be found by live-testing in the
@@ -112,12 +113,12 @@ describe.skipIf(!RELEASE_PRESENT)('decideAndRespond against the real parsing pip
 
     await decideAndRespond('conv_1', 'Seeing the blue flames was the main reason we booked this tour. Is it still accessible right now?')
 
-    // callLLM is called twice per decideAndRespond now: [0] is the trip-preferences extraction
-    // call (this file deliberately leaves it real/unmocked -- see the file header -- and the
-    // blanket 'A real reply.' mock isn't valid JSON, so it falls back to the real regex parser,
-    // same origin/finishCity/dayCount/pax result as before this change), [1] is the actual
-    // reply-composing call this assertion cares about.
-    const [, opts] = (callLLM as any).mock.calls[1]
+    // callLLM is called 3 times per decideAndRespond now: [0] is the trip-preferences extraction
+    // call, [1] is the topic classification call (this file deliberately leaves both real/
+    // unmocked -- see the file header -- and the blanket 'A real reply.' mock isn't valid JSON
+    // for either, so both fall back to their real regex implementations, same result as before
+    // these changes), [2] is the actual reply-composing call this assertion cares about.
+    const [, opts] = (callLLM as any).mock.calls[2]
     expect(opts.system.toLowerCase()).toContain('closed')
   })
 
@@ -146,8 +147,8 @@ describe.skipIf(!RELEASE_PRESENT)('decideAndRespond against the real parsing pip
     const result = await decideAndRespond('conv_1', 'How much is the deposit?')
 
     expect(result.mode).toBe('faq')
-    // mock.calls[1], not [0] -- see the "blue flames" test above for why.
-    const [, opts] = (callLLM as any).mock.calls[1]
+    // mock.calls[2], not [0] -- see the "blue flames" test above for why (3 callLLM calls now).
+    const [, opts] = (callLLM as any).mock.calls[2]
     expect(opts.system.toLowerCase()).toContain('deposit')
     expect(opts.system).not.toContain('Happy to recommend the best package')
   })
@@ -160,8 +161,8 @@ describe.skipIf(!RELEASE_PRESENT)('decideAndRespond against the real parsing pip
 
     await decideAndRespond('conv_1', 'Pickup from Surabaya Airport jam 6 sore, mau ke Bromo dan Ijen.')
 
-    // mock.calls[1], not [0] -- see the "blue flames" test above for why.
-    const [, opts] = (callLLM as any).mock.calls[1]
+    // mock.calls[2], not [0] -- see the "blue flames" test above for why (3 callLLM calls now).
+    const [, opts] = (callLLM as any).mock.calls[2]
     expect(opts.system.toLowerCase()).toMatch(/bromo.*ijen/)
     expect(opts.system.toLowerCase()).toContain('rest')
   })

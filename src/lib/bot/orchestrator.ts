@@ -108,7 +108,8 @@ import {
   titleCaseCity,
 } from './package-match'
 import { extractTripPreferences } from './trip-preferences-extractor'
-import { classifyTopic, type ResolverTopic } from './module-resolver'
+import { type ResolverTopic } from './module-resolver'
+import { classifyTopicViaLLM } from './topic-classifier'
 import { parsePickupTiming, buildItineraryScenario, describeScenarioForLLM, describeScenarioForCustomer, evaluateScenario } from './scenario-evaluator'
 import {
   resolveKnowledgeForTopic,
@@ -551,7 +552,7 @@ async function runNoDestinationBranch(
   routeLegNote: string,
   trace: Tracer
 ): Promise<BotDecision> {
-  const preDestinationTopic = classifyTopic(job, inboundText)
+  const { topic: preDestinationTopic } = await classifyTopicViaLLM(job, inboundText, ollamaModel)
   // A keyword-triggered module (dietary/ISIC/escort/ferry) can genuinely answer a message
   // regardless of what topic it classified as -- 'general' always has non-empty baseline
   // facts of its own (TOPIC_MODULES.general), so that alone can't be used to detect a real
@@ -778,8 +779,11 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
     }
     trace.push('Destinasi ditemukan', `Destinasi: "${destination}".`)
 
-    const resolverTopic = classifyTopic(classification.job, inboundText)
-    trace.push('Mengklasifikasi topik', `Topik terdeteksi: "${resolverTopic}".`)
+    const { topic: resolverTopic, source: topicSource } = await classifyTopicViaLLM(classification.job, inboundText, settings.ollamaModel)
+    trace.push(
+      'Mengklasifikasi topik',
+      `Topik terdeteksi: "${resolverTopic}"${topicSource === 'regex_fallback' ? ' (fallback regex -- model LLM gagal/timeout)' : ''}.`
+    )
 
     const matches = matched?.matches ?? packagesForDestination(destination, catalog)
     // LLM-primary as of 2026-08-07 (see trip-preferences-extractor.ts's own header for the full
