@@ -232,11 +232,20 @@ export function titleCaseCity(city: string): string {
 // so a finish-context phrase only suppresses the city it's actually adjacent to. 30 chars
 // comfortably covers "back in Bali the 16th" (~20 chars) while not reaching into an unrelated
 // earlier/later sentence.
+//
+// Reported live 2026-08-06: "3 days start surabaya finish bali" got origin=null (neither city
+// resolved) -- the window used to look BOTH before and after each city, so "finish" (which
+// actually governs "bali", the word right after it) also fell inside surabaya's window purely
+// by proximity, wrongly suppressing surabaya as if the phrase were about IT. Every real
+// finish-context phrase in English always PRECEDES the city it governs ("finish in X", "back
+// to/in X", "drop off X") -- there is no natural phrasing where it follows -- so the window now
+// only looks at the text BEFORE each city, restoring directionality the proximity-only check
+// was missing. `cityLength` is no longer needed (the window never extended past the city
+// anyway) but kept in the signature to avoid changing both call sites for a cosmetic-only trim.
 const FINISH_CONTEXT_WINDOW = 30
-function hasNearbyFinishContext(low: string, cityIndex: number, cityLength: number): boolean {
+function hasNearbyFinishContext(low: string, cityIndex: number, _cityLength: number): boolean {
   const start = Math.max(0, cityIndex - FINISH_CONTEXT_WINDOW)
-  const end = Math.min(low.length, cityIndex + cityLength + FINISH_CONTEXT_WINDOW)
-  const window = low.slice(start, end)
+  const window = low.slice(start, cityIndex)
   return FINISH_CONTEXT_PHRASES.some((p) => window.includes(p))
 }
 

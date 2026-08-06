@@ -305,6 +305,17 @@ describe('parseTripPreferences', () => {
       expect(result.origin).toBeNull()
     })
 
+    // Reported live 2026-08-06: "3 days start surabaya finish bali" got origin=null (neither
+    // city resolved) -- 'finish' actually governs 'bali' (the word right after it), but the OLD
+    // proximity-only window also caught 'surabaya' (the word right BEFORE it) purely because
+    // it was nearby, wrongly suppressing it as if the phrase were about surabaya too.
+    it('does not let a finish-context phrase suppress an EARLIER city it does not actually govern ("start X finish Y")', () => {
+      const result = parseTripPreferences('3 days start surabaya finish bali')
+      expect(result.origin).toBe('Surabaya')
+      expect(result.finishCity).toBe('bali')
+      expect(result.dayCount).toBe(3)
+    })
+
     it('an explicit "from <city>" still wins as origin even when finish-context phrasing is also present', () => {
       const result = parseTripPreferences('3 day trip from Surabaya, finishing in Bali')
       expect(result.origin).toBe('Surabaya')
