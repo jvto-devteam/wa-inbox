@@ -24,11 +24,19 @@ export type TripBrief = {
   // origin already uses.
   dayCount?: number
   finishCity?: string
-  // True once orchestrator.ts has asked a customer for their start/finish/day-count (see
-  // orchestrator.ts's TripPreferences clarify branch). Asked AT MOST ONCE per conversation: a
-  // customer who never answers still gets a real package recommendation on their next message
-  // rather than being asked again -- this flag is what prevents the repeat ask.
+  // True once orchestrator.ts has asked a customer for their start/finish/day-count at least
+  // once (see orchestrator.ts's TripPreferences clarify branch) -- kept for trace/observability.
+  // Reported 2026-08-06: does NOT gate whether the funnel asks again (see
+  // `declinedTripPreferences` below for what actually does) -- start/finish/day-count remain
+  // mandatory before a package recommendation, so the funnel re-asks on every later
+  // recommendation-topic message until the fields are known or the customer explicitly declines.
   askedTripPreferences?: boolean
+  // True once the customer has explicitly said they don't know/don't care about their
+  // start/finish/day-count (package-match.ts... see orchestrator.ts's `isUnknownPreferenceSignal`)
+  // -- the ONLY thing that lets a package recommendation proceed despite missing fields.
+  // Permanent for the rest of the conversation, same persistence pattern as
+  // `askedTripPreferences`: a customer who says this once shouldn't have to repeat it.
+  declinedTripPreferences?: boolean
   // True for exactly the ONE message that immediately follows the ask above, then explicitly
   // cleared back to false -- unlike `askedTripPreferences` (permanent for the rest of the
   // conversation), this is deliberately one-shot. Reported 2026-08-05: the customer's short,

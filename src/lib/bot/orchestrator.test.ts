@@ -564,10 +564,10 @@ describe('decideAndRespond', () => {
     mockPrisma.settings.findUniqueOrThrow.mockResolvedValue({ ollamaModel: 'gemma4:31b-cloud' } as never)
     mockPrisma.conversation.findUniqueOrThrow.mockResolvedValue({
       id: 'conv_1',
-      // askedTripPreferences: true -- this test is about destination persistence, not the
+      // declinedTripPreferences: true -- this test is about destination persistence, not the
       // start/finish/day-count funnel gate (see 'trip-preferences clarify' describe below for
-      // that), so already-asked bypasses it and lets the original flow run as intended.
-      tripBrief: { destination: 'ijen', askedTripPreferences: true },
+      // that), so declining bypasses it and lets the original flow run as intended.
+      tripBrief: { destination: 'ijen', declinedTripPreferences: true },
       bookingData: null,
       bookingCheckedAt: new Date(),
       contact: { phone: '6281234567890' },
@@ -584,7 +584,7 @@ describe('decideAndRespond', () => {
     expect(mockPrisma.conversation.update).toHaveBeenCalledTimes(1)
     expect(mockPrisma.conversation.update).toHaveBeenCalledWith({
       where: { id: 'conv_1' },
-      data: { tripBrief: { destination: 'ijen', askedTripPreferences: true, lastTopic: 'price' } },
+      data: { tripBrief: { destination: 'ijen', declinedTripPreferences: true, lastTopic: 'price' } },
     })
   })
 
@@ -1229,7 +1229,11 @@ describe('decideAndRespond', () => {
       expect(reply).toContain('- Number of Day(s): 3')
     })
 
-    it('does not ask a second time once askedTripPreferences is already on file, even with everything still missing', async () => {
+    // Confirmed with the operator 2026-08-06 (refining the 2026-08-05 rule): start/finish/
+    // duration remain MANDATORY -- "one message has passed since the bot asked" (the old
+    // askedTripPreferences-blocks-a-second-ask behavior) is NOT the same as the customer
+    // actually answering or declining, so the funnel must keep asking.
+    it('asks AGAIN on a later recommendation-topic message when everything is still missing and the customer has not declined, even with askedTripPreferences already on file', async () => {
       ;(ensureFreshBookingData as any).mockResolvedValue(null)
       ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
       ;(matchDestination as any).mockReturnValue({ destination: 'ijen', matches: [fromBali, fromSurabaya] })
@@ -1237,6 +1241,42 @@ describe('decideAndRespond', () => {
       ;(classifyTopic as any).mockReturnValue('price')
       mockPrisma.conversation.findUniqueOrThrow.mockResolvedValue({
         id: 'conv_1', tripBrief: { destination: 'ijen', askedTripPreferences: true }, bookingData: null,
+        bookingCheckedAt: new Date(), contact: { phone: '6281234567890' },
+      } as never)
+
+      const result = await decideAndRespond('conv_1', 'What packages do you have for Ijen?')
+
+      expect(result.mode).toBe('clarify')
+      expect(callLLM).not.toHaveBeenCalled()
+    })
+
+    // The operator's explicit exception: a customer who says they don't know/don't care can be
+    // recommended a package directly, bypassing the otherwise-mandatory funnel.
+    it('proceeds straight to a recommendation when the customer explicitly says they don\'t know their preferences', async () => {
+      ;(ensureFreshBookingData as any).mockResolvedValue(null)
+      ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
+      ;(matchDestination as any).mockReturnValue({ destination: 'ijen', matches: [fromBali, fromSurabaya] })
+      ;(checkRouteGate as any).mockReturnValue({ status: 'clear' })
+      ;(classifyTopic as any).mockReturnValue('price')
+
+      const result = await decideAndRespond('conv_1', "I'm not sure yet, what would you recommend for Ijen?")
+
+      expect(result.mode).toBe('faq')
+      expect(mockPrisma.conversation.update).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ tripBrief: expect.objectContaining({ declinedTripPreferences: true }) }) })
+      )
+    })
+
+    // Declining once persists -- a customer who already said "gak tau" shouldn't have to repeat
+    // it on every later message in the same conversation.
+    it('does not re-ask once declinedTripPreferences is already on file from an earlier message', async () => {
+      ;(ensureFreshBookingData as any).mockResolvedValue(null)
+      ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
+      ;(matchDestination as any).mockReturnValue({ destination: 'ijen', matches: [fromBali, fromSurabaya] })
+      ;(checkRouteGate as any).mockReturnValue({ status: 'clear' })
+      ;(classifyTopic as any).mockReturnValue('price')
+      mockPrisma.conversation.findUniqueOrThrow.mockResolvedValue({
+        id: 'conv_1', tripBrief: { destination: 'ijen', declinedTripPreferences: true }, bookingData: null,
         bookingCheckedAt: new Date(), contact: { phone: '6281234567890' },
       } as never)
 
@@ -1360,12 +1400,12 @@ describe('decideAndRespond', () => {
       ;(checkRouteGate as any).mockReturnValue({ status: 'clear' })
       ;(classifyTopic as any).mockReturnValue('price')
       ;(parseTripPreferences as any).mockReturnValue({ origin: 'Surabaya', dayCount: null })
-      // askedTripPreferences: true -- this test is about origin persistence/pickPackage
+      // declinedTripPreferences: true -- this test is about origin persistence/pickPackage
       // narrowing, not the start/finish/day-count funnel gate itself (see the dedicated gate
-      // tests above), so already-asked bypasses it.
+      // tests above), so declining bypasses it.
       mockPrisma.conversation.findUniqueOrThrow.mockResolvedValue({
         id: 'conv_1',
-        tripBrief: { askedTripPreferences: true },
+        tripBrief: { declinedTripPreferences: true },
         bookingData: null,
         bookingCheckedAt: new Date(),
         contact: { phone: '6281234567890' },
@@ -1375,7 +1415,7 @@ describe('decideAndRespond', () => {
 
       expect(mockPrisma.conversation.update).toHaveBeenCalledWith({
         where: { id: 'conv_1' },
-        data: { tripBrief: { askedTripPreferences: true, destination: 'ijen', origin: 'Surabaya' } },
+        data: { tripBrief: { declinedTripPreferences: true, destination: 'ijen', origin: 'Surabaya' } },
       })
       expect(pickPackage).toHaveBeenCalledWith([fromBali, fromSurabaya], { origin: 'Surabaya', dayCount: null, finishCity: null, pax: null })
     })
@@ -1413,7 +1453,7 @@ describe('decideAndRespond', () => {
       ;(checkRouteGate as any).mockReturnValue({ status: 'clear' })
       ;(classifyTopic as any).mockReturnValue('price')
       mockPrisma.conversation.findUniqueOrThrow.mockResolvedValue({
-        id: 'conv_1', tripBrief: { askedTripPreferences: true }, bookingData: null, bookingCheckedAt: new Date(),
+        id: 'conv_1', tripBrief: { declinedTripPreferences: true }, bookingData: null, bookingCheckedAt: new Date(),
         contact: { phone: '6281234567890' },
       } as never)
 
@@ -1442,7 +1482,7 @@ describe('decideAndRespond', () => {
       ;(checkRouteGate as any).mockReturnValue({ status: 'clear' })
       ;(classifyTopic as any).mockReturnValue('price')
       mockPrisma.conversation.findUniqueOrThrow.mockResolvedValue({
-        id: 'conv_1', tripBrief: { askedTripPreferences: true }, bookingData: null, bookingCheckedAt: new Date(),
+        id: 'conv_1', tripBrief: { declinedTripPreferences: true }, bookingData: null, bookingCheckedAt: new Date(),
         contact: { phone: '6281234567890' },
       } as never)
 
@@ -1506,7 +1546,7 @@ describe('decideAndRespond', () => {
       ;(checkRouteGate as any).mockReturnValue({ status: 'clear' })
       ;(classifyTopic as any).mockReturnValue('price')
       mockPrisma.conversation.findUniqueOrThrow.mockResolvedValue({
-        id: 'conv_1', tripBrief: { askedTripPreferences: true }, bookingData: null, bookingCheckedAt: new Date(),
+        id: 'conv_1', tripBrief: { declinedTripPreferences: true }, bookingData: null, bookingCheckedAt: new Date(),
         contact: { phone: '6281234567890' },
       } as never)
 
@@ -1565,7 +1605,7 @@ describe('decideAndRespond', () => {
       ;(checkRouteGate as any).mockReturnValue({ status: 'clear' })
       ;(classifyTopic as any).mockReturnValue('price')
       mockPrisma.conversation.findUniqueOrThrow.mockResolvedValue({
-        id: 'conv_1', tripBrief: { askedTripPreferences: true }, bookingData: null, bookingCheckedAt: new Date(),
+        id: 'conv_1', tripBrief: { declinedTripPreferences: true }, bookingData: null, bookingCheckedAt: new Date(),
         contact: { phone: '6281234567890' },
       } as never)
 
@@ -1588,7 +1628,7 @@ describe('decideAndRespond', () => {
       ;(checkRouteGate as any).mockReturnValue({ status: 'clear' })
       ;(classifyTopic as any).mockReturnValue('price')
       mockPrisma.conversation.findUniqueOrThrow.mockResolvedValue({
-        id: 'conv_1', tripBrief: { askedTripPreferences: true }, bookingData: null, bookingCheckedAt: new Date(),
+        id: 'conv_1', tripBrief: { declinedTripPreferences: true }, bookingData: null, bookingCheckedAt: new Date(),
         contact: { phone: '6281234567890' },
       } as never)
 
@@ -1620,7 +1660,7 @@ describe('decideAndRespond', () => {
       })
       ;(parseTripPreferences as any).mockReturnValue({ origin: 'Surabaya', dayCount: null, finishCity: null })
       mockPrisma.conversation.findUniqueOrThrow.mockResolvedValue({
-        id: 'conv_1', tripBrief: { askedTripPreferences: true }, bookingData: null, bookingCheckedAt: new Date(),
+        id: 'conv_1', tripBrief: { declinedTripPreferences: true }, bookingData: null, bookingCheckedAt: new Date(),
         contact: { phone: '6281234567890' },
       } as never)
 
@@ -1649,7 +1689,7 @@ describe('decideAndRespond', () => {
       })
       ;(parseTripPreferences as any).mockReturnValue({ origin: 'Surabaya', dayCount: null, finishCity: null })
       mockPrisma.conversation.findUniqueOrThrow.mockResolvedValue({
-        id: 'conv_1', tripBrief: { askedTripPreferences: true }, bookingData: null, bookingCheckedAt: new Date(),
+        id: 'conv_1', tripBrief: { declinedTripPreferences: true }, bookingData: null, bookingCheckedAt: new Date(),
         contact: { phone: '6281234567890' },
       } as never)
 
@@ -1752,7 +1792,7 @@ describe('decideAndRespond', () => {
       // gate (a 'price'-topic message with no destination context would otherwise trigger it),
       // so this test isolates just the multi-question instruction being asserted.
       mockPrisma.conversation.findUniqueOrThrow.mockResolvedValue({
-        id: 'conv_1', tripBrief: { askedTripPreferences: true }, bookingData: null, bookingCheckedAt: new Date(),
+        id: 'conv_1', tripBrief: { declinedTripPreferences: true }, bookingData: null, bookingCheckedAt: new Date(),
         contact: { phone: '6281234567890' },
       } as never)
 
@@ -1957,7 +1997,7 @@ describe('decideAndRespond', () => {
       // askedTripPreferences: true -- bypasses the unrelated start/finish/day-count funnel
       // gate so this test reaches narrowPackagePool's own tier logic being asserted.
       mockPrisma.conversation.findUniqueOrThrow.mockResolvedValue({
-        id: 'conv_1', tripBrief: { askedTripPreferences: true }, bookingData: null, bookingCheckedAt: new Date(),
+        id: 'conv_1', tripBrief: { declinedTripPreferences: true }, bookingData: null, bookingCheckedAt: new Date(),
         contact: { phone: '6281234567890' },
       } as never)
 
@@ -1976,7 +2016,7 @@ describe('decideAndRespond', () => {
       ;(checkRouteGate as any).mockReturnValue({ status: 'clear' })
       ;(classifyTopic as any).mockReturnValue('price')
       mockPrisma.conversation.findUniqueOrThrow.mockResolvedValue({
-        id: 'conv_1', tripBrief: { askedTripPreferences: true }, bookingData: null, bookingCheckedAt: new Date(),
+        id: 'conv_1', tripBrief: { declinedTripPreferences: true }, bookingData: null, bookingCheckedAt: new Date(),
         contact: { phone: '6281234567890' },
       } as never)
 

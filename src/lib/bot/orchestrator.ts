@@ -196,6 +196,23 @@ function isBookingIntent(message: string): boolean {
   return BOOKING_INTENT_KEYWORDS.some((k) => low.includes(k))
 }
 
+// Confirmed with the operator 2026-08-06: start/finish/day-count stay MANDATORY before
+// recommending a package (see the trip-preferences funnel gate below) -- the ONLY exception is
+// the customer explicitly saying they don't know/don't care, not simply "one message has
+// passed since the bot asked". Deliberately excludes a bare "terserah"/"whatever" on its own
+// (too easily a genuine answer to an unrelated question, e.g. "whatever is included is fine")
+// -- phrasing here is specific to NOT KNOWING a travel preference.
+const UNKNOWN_PREFERENCE_KEYWORDS = [
+  'belum tau', 'belum tahu', 'gak tau', 'ga tau', 'gak tahu', 'ga tahu', 'tidak tau', 'tidak tahu',
+  'terserah aja', 'terserah saja', 'terserah kamu', 'terserah kalian', 'bebas aja', 'bebas saja',
+  "don't know", 'dont know', 'not sure yet', 'no idea', 'you decide', 'up to you',
+  'whatever you recommend', 'whatever you suggest', 'surprise us', 'no preference',
+]
+function isUnknownPreferenceSignal(message: string): boolean {
+  const low = message.toLowerCase()
+  return UNKNOWN_PREFERENCE_KEYWORDS.some((k) => low.includes(k))
+}
+
 // A real customer message with several distinct questions bundled together (e.g. invoice
 // under the company name, replacement/emergency-contact arrangements, insurance, itinerary
 // after a skipped stop + pickup time, hotel names/breakfast, and the exact finish point --
@@ -611,22 +628,24 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
     }
     const scenarioNote = scenarioDescription ? `\n\n${scenarioDescription}` : ''
 
-    // Confirmed with the operator 2026-08-05: before recommending ANY package, the funnel
-    // requires all three of start city, finish city, and trip length to be known -- not just
-    // when the destination has multiple real origins (the narrower rule this replaces).
-    // Asked at most once per conversation (askedTripPreferences persists, mirroring
-    // `destination`'s own "ask once, remember" pattern): a customer who doesn't answer in the
-    // requested bullet format still gets a real recommendation on their very next message from
-    // whatever became known, via pickPackage/optionPool's own existing progressive-narrowing
-    // fallback -- this branch never fires a second time. Already-known fields are pre-filled
-    // in the bullet reply (never re-asked), so only genuinely missing ones need an answer.
-    // 'price' kept alongside isRecommendationRequest as a belt-and-suspenders topic-based
-    // signal -- either one is enough. 'general' deliberately NOT included here: live-tested
-    // 2026-08-05, it's classifyTopic's default fallback for basically any unclassified message
-    // (job J1's default topic), so treating every 'general'-topic message as a recommendation
-    // request meant an unrelated question ("can you arrange a police escort?") triggered this
-    // gate (and the multi-package "present ALL options" instruction below) and buried the real
-    // police-escort link under a funnel question the customer never asked for.
+    // Confirmed with the operator 2026-08-05, REFINED 2026-08-06: before recommending ANY
+    // package, the funnel requires all three of start city, finish city, and trip length to be
+    // known -- not just when the destination has multiple real origins (the narrower rule this
+    // replaces). This stays MANDATORY -- not "ask once, then give up": a customer who ignores
+    // the bullet question, or answers something unrelated, must still be asked again on their
+    // next recommendation-topic message rather than silently getting a full package
+    // recommendation anyway. The ONLY way past this without all three known is the customer
+    // EXPLICITLY saying they don't know/don't care (`declinedTripPreferences`, checked below) --
+    // "one message has passed since the bot asked" is NOT that signal. Already-known fields are
+    // pre-filled in the bullet reply (never re-asked), so only genuinely missing ones need an
+    // answer. 'price' kept alongside isRecommendationRequest as a belt-and-suspenders
+    // topic-based signal -- either one is enough. 'general' deliberately NOT included here:
+    // live-tested 2026-08-05, it's classifyTopic's default fallback for basically any
+    // unclassified message (job J1's default topic), so treating every 'general'-topic message
+    // as a recommendation request meant an unrelated question ("can you arrange a police
+    // escort?") triggered this gate (and the multi-option "present ALL options" instruction
+    // below) and buried the real police-escort link under a funnel question the customer never
+    // asked for.
     // `tripBrief.awaitingTripPreferencesAnswer` (set true exactly when the gate below asks its
     // bullet question, read here BEFORE this message, cleared right after) also counts as a
     // recommendation-topic signal on its own -- but ONLY for the one message that immediately
@@ -644,7 +663,14 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
     if (tripBrief.awaitingTripPreferencesAnswer) {
       await persistTripBrief({ destination, awaitingTripPreferencesAnswer: false })
     }
-    if (isRecommendationTopic && !tripBrief.askedTripPreferences && (!origin || !finishCity || !dayCount)) {
+    // Permanent once signaled (mirrors `askedTripPreferences`'s own "persists for the rest of
+    // the conversation" pattern) -- a customer who says once "gak tau, terserah aja" shouldn't
+    // have to repeat it on every later message.
+    const declinedTripPreferences = tripBrief.declinedTripPreferences === true || isUnknownPreferenceSignal(inboundText)
+    if (declinedTripPreferences && tripBrief.declinedTripPreferences !== true) {
+      await persistTripBrief({ destination, declinedTripPreferences: true })
+    }
+    if (isRecommendationTopic && !declinedTripPreferences && (!origin || !finishCity || !dayCount)) {
       await persistTripBrief({ destination, askedTripPreferences: true, awaitingTripPreferencesAnswer: true })
       trace.push(
         'Menanyakan detail trip',
