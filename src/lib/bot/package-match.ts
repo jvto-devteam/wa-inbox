@@ -143,11 +143,21 @@ export function priceForPax(pkg: CatalogPackage, pax: number | null): { priceIdr
  * silently lost and the recommendation list fell back to showing every duration.
  */
 function parseDayCount(low: string): number | null {
+  // An explicit "N day(s)/hari"/"NdMn" match is unambiguous -- the customer said the number
+  // right next to the duration unit -- so it's trusted up to 30 (JVTO's real catalog tops out
+  // at 6 days, but a customer explicitly asking for something well beyond that should still
+  // reach narrowPackagePool's own 'none' tier and hand off, rather than being silently
+  // dropped here and left to an ad-hoc LLM hedge instead). Reported live 2026-08-05: "a 20 day
+  // expedition to Ijen" was rejected by the old cap of 10, so dayCount stayed null and the
+  // request never reached the tiered fallback/handoff logic it should have.
   const explicit = low.match(/(\d{1,2})[\s-]*(?:d[\s-]*\d{1,2}[\s-]*n\b|days?\b|hari\b)/)
   if (explicit) {
     const n = Number(explicit[1])
-    if (n > 0 && n <= 10) return n
+    if (n > 0 && n <= 30) return n
   }
+  // The date-range-IMPLIES-duration heuristic is a weaker signal (nothing in the message
+  // actually says "N days") -- kept at the original, tighter cap of 10 so a garbled or
+  // unrelated number pair (e.g. two prices) still can't be misread as a multi-week trip.
   const monthPattern = MONTH_NAMES.join('|')
   const dateRange = low.match(new RegExp(`(\\d{1,2})\\s*(?:-|to|–)\\s*(\\d{1,2})\\s+(?:${monthPattern})`))
   if (dateRange) {

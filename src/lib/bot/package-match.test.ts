@@ -222,6 +222,28 @@ describe('parseTripPreferences', () => {
     expect(parseTripPreferences('the price is between 500000-2000000').dayCount).toBeNull()
   })
 
+  // Reported live 2026-08-05: "a 20 day expedition to Ijen" was silently dropped (the old cap
+  // was 10), so dayCount stayed null and the request never reached narrowPackagePool's own
+  // 'none' tier/handoff -- it just got an ad-hoc LLM hedge instead. An EXPLICIT "N day(s)"
+  // mention is unambiguous (the customer said the number right next to the unit), so it's now
+  // trusted up to 30, well beyond JVTO's real 6-day catalog max, specifically so it reaches
+  // the tiered fallback logic instead of being parsed away before ever getting there.
+  it('parses an explicit day count beyond the real catalog max, up to 30, so it can reach the tiered fallback/handoff logic', () => {
+    expect(parseTripPreferences('a 20 day expedition to Ijen').dayCount).toBe(20)
+    expect(parseTripPreferences('we want a 30-day trip').dayCount).toBe(30)
+  })
+
+  it('still rejects an explicit day count beyond 30 as unreasonable', () => {
+    expect(parseTripPreferences('a 45 day trip please').dayCount).toBeNull()
+  })
+
+  // The weaker date-range-IMPLIES-duration heuristic (nothing actually says "N days") keeps
+  // its original, tighter cap of 10 -- a garbled or unrelated number pair misread as a date
+  // range is a real risk this heuristic never had explicit wording to rule out.
+  it('keeps the date-range-implied duration heuristic capped at 10, unlike the explicit "N day(s)" pattern', () => {
+    expect(parseTripPreferences('10-25 June works for us').dayCount).toBeNull()
+  })
+
   // Reported 2026-08-05: "a 3-day, 2-night tour" (hyphenated, no space before "day") lost the
   // stated duration entirely, since the regex only allowed whitespace between the number and
   // the unit -- the recommendation list then fell back to showing every duration.
