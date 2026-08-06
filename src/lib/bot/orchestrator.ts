@@ -109,6 +109,7 @@ import {
   titleCaseCity,
 } from './package-match'
 import { classifyTopic, type ResolverTopic } from './module-resolver'
+import { parsePickupTiming, buildItineraryScenario, describeScenarioForLLM, evaluateScenario } from './scenario-evaluator'
 import {
   resolveKnowledgeForTopic,
   hasKeywordTriggeredModule,
@@ -745,6 +746,38 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
         steps: trace.steps,
       }
     }
+    // Reported 2026-08-06 (operator's own example): "pickup Surabaya sore, mau Bromo dan
+    // Ijen, mana duluan?" needs REASONING (rest time, route order), not a single fact to
+    // quote -- ported from jvto-itinerary-core's real, backoffice-data-informed scenario
+    // evaluator (see scenario-evaluator.ts's header). Only runs when the customer's OWN words
+    // this message state both a pickup type and time (never guessed/defaulted) and at least
+    // one requested destination is known -- a wrong guess here would produce a confidently
+    // wrong rest-time recommendation, worse than not offering one at all.
+    const pickupTiming = parsePickupTiming(inboundText)
+    let scenarioNote = ''
+    if (pickupTiming.type && pickupTiming.time && requestedTokens.length > 0) {
+      try {
+        const scenario = buildItineraryScenario({
+          origin,
+          pickupType: pickupTiming.type,
+          pickupTime: pickupTiming.time,
+          requestedTokens,
+          finishCity,
+          dayCount,
+          pax,
+        })
+        const description = describeScenarioForLLM(evaluateScenario(scenario))
+        if (description) {
+          scenarioNote = `\n\n${description}`
+          trace.push('Evaluasi urutan rute & waktu istirahat', `Pickup ${pickupTiming.type} jam ${pickupTiming.time} -- ada rekomendasi urutan/peringatan dari data rute nyata.`)
+        }
+      } catch (err) {
+        // Never let this optional enrichment break the main reply -- see TECHNICAL_HICCUP_REPLY's
+        // own "even a technical failure must not disable the bot" rationale.
+        console.error('scenario evaluation failed', { conversationId, error: err })
+      }
+    }
+
     const optionPool = sortByBestPackagePriority(matchTierPool)
     const optionPackages = optionPool.filter((p) => p.priceIdr !== null).slice(0, 5)
     // Reported 2026-08-05: cross-checked against a real operator-exported pricing sheet
@@ -850,6 +883,7 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
       finishCityFact +
       unsupportedOriginNote +
       routeLegNote +
+      scenarioNote +
       paxPriceNote +
       matchTierNote +
       multiQuestionNote +

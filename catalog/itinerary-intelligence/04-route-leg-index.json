@@ -1,0 +1,890 @@
+[
+  {
+    "id": "surabaya_airport_to_bromo_area",
+    "label": "Surabaya Airport to Bromo Area",
+    "status": "active",
+    "confidence": "inferred",
+    "from_location": "Surabaya Airport",
+    "to_location": "Bromo Area",
+    "distance_km": 116,
+    "distance_km_range": "100-136",
+    "duration_text": "±3.5–4.5 hours (operational)",
+    "duration_normal_minutes": 210,
+    "duration_busy_minutes": 270,
+    "road_profiles": [
+      "airport_exit",
+      "toll_road",
+      "intercity_road",
+      "mountain_access"
+    ],
+    "risk_factors": [
+      "Surabaya traffic",
+      "weekend Bromo traffic",
+      "night mountain road"
+    ],
+    "meal_stop_possible": true,
+    "night_drive_possible": true,
+    "recommended_departure_window": "07:00–16:00",
+    "used_by_packages": [
+      "bromo-1d1n",
+      "bromo-2d1n",
+      "bromo-madakaripura-ijen-3d2n"
+    ],
+    "cost_impacts": [
+      "vehicle_day_usage",
+      "driver_cost",
+      "parking_toll_fuel_allowance"
+    ],
+    "research_note": "Rome2Rio 115.6km; ~100km via Wonokitri, ~136km via Probolinggo. Algo 1h35m is NOT operational time.",
+    "source_trace": [
+      {
+        "source": "manual_seed",
+        "ref": "seed/manual-overrides/route-leg-overrides.yaml",
+        "confidence": "manual_seed"
+      },
+      {
+        "source": "manual_seed",
+        "ref": "seed/research/east-java-field-data-2026.json",
+        "field": "distance_km,duration",
+        "confidence": "inferred"
+      }
+    ]
+  },
+  {
+    "id": "bromo_area_to_madakaripura",
+    "label": "Bromo Area to Madakaripura",
+    "status": "active",
+    "confidence": "inferred",
+    "from_location": "Bromo Area",
+    "to_location": "Madakaripura Waterfall",
+    "distance_km": 30,
+    "distance_km_range": "26-30",
+    "duration_text": "±45–60 min drive (+20–30 min canyon walk)",
+    "duration_normal_minutes": 60,
+    "duration_busy_minutes": 90,
+    "road_profiles": [
+      "mountain_access",
+      "waterfall_access_road",
+      "village_road"
+    ],
+    "risk_factors": [
+      "rain",
+      "flash_flood_closure",
+      "local access control",
+      "waterfall crowd"
+    ],
+    "meal_stop_possible": true,
+    "night_drive_possible": false,
+    "recommended_departure_window": "08:00–12:00",
+    "used_by_packages": [
+      "bromo-madakaripura-ijen-3d2n",
+      "bromo-madakaripura-2d1n"
+    ],
+    "cost_impacts": [
+      "madakaripura_ticket",
+      "madakaripura_local_guide",
+      "vehicle_day_usage"
+    ],
+    "research_note": "Drive 45–60min, ~30km (~26km Probolinggo→Lumbang + ~4km to trailhead); usually visited on the descent toward Probolinggo, not round-trip from Cemoro Lawang. Separate 20–30min (~1.5km) canyon walk to main falls. Helmets mandatory. Closes in heavy rain (flash flood). Apply 2PM rule.",
+    "source_trace": [
+      {
+        "source": "manual_seed",
+        "ref": "seed/manual-overrides/route-leg-overrides.yaml",
+        "confidence": "manual_seed"
+      },
+      {
+        "source": "manual_seed",
+        "ref": "seed/research/east-java-field-data-2026.json",
+        "field": "distance_km,duration",
+        "confidence": "inferred"
+      }
+    ]
+  },
+  {
+    "id": "bromo_area_to_bondowoso_ijen_area",
+    "label": "Bromo Area to Bondowoso / Ijen Area",
+    "status": "active",
+    "confidence": "inferred",
+    "from_location": "Bromo Area",
+    "to_location": "Bondowoso / Ijen Area",
+    "distance_km": 225,
+    "distance_km_range": "210-240",
+    "duration_text": "±5–7 hours",
+    "duration_normal_minutes": 330,
+    "duration_busy_minutes": 420,
+    "road_profiles": [
+      "intercity_road",
+      "mountain_access",
+      "long_transfer"
+    ],
+    "risk_factors": [
+      "long drive fatigue",
+      "late hotel arrival",
+      "meal timing risk"
+    ],
+    "meal_stop_possible": true,
+    "night_drive_possible": true,
+    "recommended_departure_window": "10:00–14:00",
+    "used_by_packages": [
+      "bromo-madakaripura-ijen-3d2n",
+      "bromo-ijen-3d2n"
+    ],
+    "cost_impacts": [
+      "vehicle_day_usage",
+      "driver_cost",
+      "dinner_bondowoso",
+      "ijen_preparation"
+    ],
+    "research_note": "Cemoro Lawang->Paltuding 210-240km, 5-7h via Probolinggo-Bondowoso/Sempol. REJECT Gecko 140km outlier.",
+    "source_trace": [
+      {
+        "source": "manual_seed",
+        "ref": "seed/manual-overrides/route-leg-overrides.yaml",
+        "confidence": "manual_seed"
+      },
+      {
+        "source": "manual_seed",
+        "ref": "seed/research/east-java-field-data-2026.json",
+        "field": "distance_km",
+        "confidence": "inferred"
+      }
+    ]
+  },
+  {
+    "id": "bondowoso_ijen_area_to_ijen_crater",
+    "label": "Bondowoso / Ijen Area to Ijen Crater",
+    "status": "active",
+    "confidence": "inferred",
+    "from_location": "Bondowoso / Ijen Area",
+    "to_location": "Ijen Crater",
+    "distance_km": 64,
+    "distance_km_range": "64-70",
+    "duration_text": "±1.5–2 hours before trekking",
+    "duration_normal_minutes": 105,
+    "duration_busy_minutes": 180,
+    "road_profiles": [
+      "night_drive",
+      "mountain_road",
+      "national_park_access"
+    ],
+    "risk_factors": [
+      "midnight departure",
+      "fatigue",
+      "weather",
+      "health screening dependency"
+    ],
+    "meal_stop_possible": false,
+    "night_drive_possible": true,
+    "recommended_departure_window": "00:00–01:00",
+    "used_by_packages": [
+      "ijen-2d1n",
+      "bromo-ijen-3d2n",
+      "bromo-madakaripura-ijen-3d2n"
+    ],
+    "cost_impacts": [
+      "ijen_ticket",
+      "ijen_local_guide",
+      "gas_mask",
+      "medical_check"
+    ],
+    "research_note": "Bondowoso town->Paltuding 64-70km via Wonosari/Sempol coffee-plantation road; full town-to-base climb 2-3.5h. Endpoint ambiguous: a Sempol/plateau lodge could be only ~15km/60-90min.",
+    "source_trace": [
+      {
+        "source": "manual_seed",
+        "ref": "seed/manual-overrides/route-leg-overrides.yaml",
+        "confidence": "manual_seed"
+      },
+      {
+        "source": "manual_seed",
+        "ref": "seed/research/east-java-field-data-2026.json",
+        "field": "distance_km",
+        "confidence": "inferred"
+      }
+    ]
+  },
+  {
+    "id": "ijen_area_to_ketapang_harbor",
+    "label": "Ijen Area to Ketapang Harbor",
+    "status": "active",
+    "confidence": "inferred",
+    "from_location": "Ijen Area",
+    "to_location": "Ketapang Harbor",
+    "distance_km": 45,
+    "distance_km_range": "40-50",
+    "duration_text": "±1–2 hours after Ijen",
+    "duration_normal_minutes": 90,
+    "duration_busy_minutes": 150,
+    "road_profiles": [
+      "mountain_descent",
+      "city_access",
+      "harbor_access"
+    ],
+    "risk_factors": [
+      "post-trek fatigue",
+      "harbor queue",
+      "late Bali connection"
+    ],
+    "meal_stop_possible": true,
+    "night_drive_possible": true,
+    "recommended_departure_window": "08:00–11:00",
+    "used_by_packages": [
+      "ijen-to-bali",
+      "bromo-ijen-ketapang-3d2n"
+    ],
+    "cost_impacts": [
+      "vehicle_day_usage",
+      "ketapang_dropoff",
+      "optional_bali_transfer"
+    ],
+    "research_note": "Paltuding->Ketapang ~45km/~1.5h (operator consensus). Same physical corridor as ijen_base_to_ketapang_harbor (reverse).",
+    "source_trace": [
+      {
+        "source": "manual_seed",
+        "ref": "seed/manual-overrides/route-leg-overrides.yaml",
+        "confidence": "manual_seed"
+      },
+      {
+        "source": "manual_seed",
+        "ref": "seed/research/east-java-field-data-2026.json",
+        "field": "distance_km",
+        "confidence": "inferred"
+      }
+    ]
+  },
+  {
+    "id": "surabaya_hotel_to_bromo_area",
+    "label": "Surabaya Hotel to Bromo Area",
+    "status": "active",
+    "confidence": "inferred",
+    "from_location": "Surabaya Hotel",
+    "to_location": "Bromo Area",
+    "distance_km": 120,
+    "distance_km_range": "100-136",
+    "duration_text": "+/-3-4 hours",
+    "duration_normal_minutes": 210,
+    "duration_busy_minutes": 300,
+    "road_profiles": [
+      "city_exit",
+      "toll_road",
+      "intercity_road",
+      "mountain_access"
+    ],
+    "risk_factors": [
+      "Surabaya traffic",
+      "hotel checkout delay",
+      "weekend Bromo traffic"
+    ],
+    "meal_stop_possible": true,
+    "night_drive_possible": true,
+    "recommended_departure_window": "07:00-15:00",
+    "used_by_packages": [
+      "bromo-2d1n",
+      "bromo-madakaripura-ijen-3d2n"
+    ],
+    "cost_impacts": [
+      "vehicle_day_usage",
+      "driver_cost",
+      "parking_toll_fuel_allowance"
+    ],
+    "research_note": "City hotel->Cemoro Lawang ~120km via Pasuruan-Probolinggo toll; final mountain segment ~2h alone. Slightly longer than the ~116km Juanda Airport variant. Algo ~2.5h underestimates the climb.",
+    "source_trace": [
+      {
+        "source": "manual_seed",
+        "ref": "seed/manual-overrides/route-leg-overrides.yaml",
+        "confidence": "manual_seed"
+      },
+      {
+        "source": "manual_seed",
+        "ref": "seed/research/east-java-field-data-2026.json",
+        "field": "distance_km",
+        "confidence": "inferred"
+      }
+    ]
+  },
+  {
+    "id": "surabaya_to_bondowoso_ijen_area",
+    "label": "Surabaya to Bondowoso / Ijen Area",
+    "status": "active",
+    "confidence": "inferred",
+    "from_location": "Surabaya",
+    "to_location": "Bondowoso / Ijen Area",
+    "distance_km": 290,
+    "distance_km_range": "270-320",
+    "duration_text": "+/-6-8 hours",
+    "duration_normal_minutes": 420,
+    "duration_busy_minutes": 540,
+    "road_profiles": [
+      "city_exit",
+      "toll_road",
+      "intercity_road",
+      "long_transfer"
+    ],
+    "risk_factors": [
+      "long drive fatigue",
+      "late hotel arrival",
+      "Ijen rest reduction"
+    ],
+    "meal_stop_possible": true,
+    "night_drive_possible": true,
+    "recommended_departure_window": "07:00-12:00",
+    "used_by_packages": [
+      "ijen-from-surabaya-2d1n",
+      "custom-ijen-route"
+    ],
+    "cost_impacts": [
+      "vehicle_day_usage",
+      "driver_cost",
+      "dinner_bondowoso",
+      "ijen_preparation"
+    ],
+    "research_note": "~6-7h via Pasuruan-Probolinggo-Besuki-Bondowoso to the Ijen-area hotel. Km inferred from corridor (operators quote hours, not km) so distance is lower-confidence than duration. Endpoint is the base hotel, NOT Paltuding (~2h further up).",
+    "source_trace": [
+      {
+        "source": "manual_seed",
+        "ref": "seed/manual-overrides/route-leg-overrides.yaml",
+        "confidence": "manual_seed"
+      },
+      {
+        "source": "manual_seed",
+        "ref": "seed/research/east-java-field-data-2026.json",
+        "field": "distance_km",
+        "confidence": "inferred"
+      }
+    ]
+  },
+  {
+    "id": "surabaya_to_tumpak_sewu",
+    "label": "Surabaya to Tumpak Sewu",
+    "status": "active",
+    "confidence": "inferred",
+    "from_location": "Surabaya",
+    "to_location": "Tumpak Sewu Area",
+    "distance_km": 160,
+    "distance_km_range": "150-163",
+    "duration_text": "+/-4-5 hours",
+    "duration_normal_minutes": 240,
+    "duration_busy_minutes": 300,
+    "road_profiles": [
+      "city_exit",
+      "toll_road",
+      "intercity_road",
+      "village_road",
+      "waterfall_access_road"
+    ],
+    "risk_factors": [
+      "long drive fatigue",
+      "rain sensitive access",
+      "late waterfall start"
+    ],
+    "meal_stop_possible": true,
+    "night_drive_possible": true,
+    "recommended_departure_window": "06:00-10:00",
+    "used_by_packages": [
+      "tumpak-sewu-add-on",
+      "custom-east-java-waterfall-route"
+    ],
+    "cost_impacts": [
+      "vehicle_day_usage",
+      "driver_cost",
+      "tumpak_sewu_ticket",
+      "tumpak_sewu_local_guide"
+    ],
+    "research_note": "CORRECTION from prior 6-8h seed: ~160km, 4-5h via Surabaya-Probolinggo toll road.",
+    "source_trace": [
+      {
+        "source": "manual_seed",
+        "ref": "seed/manual-overrides/route-leg-overrides.yaml",
+        "confidence": "manual_seed"
+      },
+      {
+        "source": "manual_seed",
+        "ref": "seed/research/east-java-field-data-2026.json",
+        "field": "distance_km,duration",
+        "confidence": "inferred"
+      }
+    ]
+  },
+  {
+    "id": "tumpak_sewu_to_bromo_area",
+    "label": "Tumpak Sewu to Bromo Area",
+    "status": "active",
+    "confidence": "inferred",
+    "from_location": "Tumpak Sewu Area",
+    "to_location": "Bromo Area",
+    "distance_km": 80,
+    "distance_km_range": "70-90",
+    "duration_text": "+/-4-6 hours",
+    "duration_normal_minutes": 300,
+    "duration_busy_minutes": 420,
+    "road_profiles": [
+      "village_road",
+      "intercity_road",
+      "mountain_access"
+    ],
+    "risk_factors": [
+      "post-waterfall fatigue",
+      "late Bromo check-in",
+      "mountain access at night"
+    ],
+    "meal_stop_possible": true,
+    "night_drive_possible": true,
+    "recommended_departure_window": "12:00-15:00",
+    "used_by_packages": [
+      "tumpak-sewu-bromo-ijen-custom"
+    ],
+    "cost_impacts": [
+      "vehicle_day_usage",
+      "driver_cost",
+      "hotel_bromo_area"
+    ],
+    "research_note": "Lumajang/Tumpak Sewu->Cemoro Lawang ~80km. Operators cite ~4h normal (some 4-5h); slow mountain road, via-Malang variant longer. Duration seed kept conservative for late-check-in safety.",
+    "source_trace": [
+      {
+        "source": "manual_seed",
+        "ref": "seed/manual-overrides/route-leg-overrides.yaml",
+        "confidence": "manual_seed"
+      },
+      {
+        "source": "manual_seed",
+        "ref": "seed/research/east-java-field-data-2026.json",
+        "field": "distance_km",
+        "confidence": "inferred"
+      }
+    ]
+  },
+  {
+    "id": "bondowoso_to_ijen_base",
+    "label": "Bondowoso to Ijen Base",
+    "status": "active",
+    "confidence": "inferred",
+    "from_location": "Bondowoso",
+    "to_location": "Ijen Base",
+    "distance_km": 64,
+    "distance_km_range": "64-70",
+    "duration_text": "+/-1.5-2 hours",
+    "duration_normal_minutes": 105,
+    "duration_busy_minutes": 150,
+    "road_profiles": [
+      "night_drive",
+      "mountain_access",
+      "national_park_access"
+    ],
+    "risk_factors": [
+      "midnight departure",
+      "health screening dependency",
+      "weather"
+    ],
+    "meal_stop_possible": false,
+    "night_drive_possible": true,
+    "recommended_departure_window": "00:00-01:00",
+    "used_by_packages": [
+      "ijen-2d1n",
+      "bromo-ijen-3d2n"
+    ],
+    "cost_impacts": [
+      "vehicle_day_usage",
+      "ijen_ticket",
+      "ijen_local_guide",
+      "medical_check"
+    ],
+    "research_note": "Bondowoso town->Paltuding 64-70km via Wonosari-Sempol-Paltuding. One operator quotes ~1h but that under-represents the full climb; 105/150 operational realistic.",
+    "source_trace": [
+      {
+        "source": "manual_seed",
+        "ref": "seed/manual-overrides/route-leg-overrides.yaml",
+        "confidence": "manual_seed"
+      },
+      {
+        "source": "manual_seed",
+        "ref": "seed/research/east-java-field-data-2026.json",
+        "field": "distance_km",
+        "confidence": "inferred"
+      }
+    ]
+  },
+  {
+    "id": "banyuwangi_to_ijen_base",
+    "label": "Banyuwangi to Ijen Base",
+    "status": "active",
+    "confidence": "inferred",
+    "from_location": "Banyuwangi",
+    "to_location": "Ijen Base",
+    "distance_km": 35,
+    "distance_km_range": "35-40",
+    "duration_text": "+/-1.5-2 hours",
+    "duration_normal_minutes": 105,
+    "duration_busy_minutes": 150,
+    "road_profiles": [
+      "night_drive",
+      "mountain_access",
+      "national_park_access"
+    ],
+    "risk_factors": [
+      "midnight departure",
+      "weather",
+      "post-ferry timing risk"
+    ],
+    "meal_stop_possible": false,
+    "night_drive_possible": true,
+    "recommended_departure_window": "00:00-01:00",
+    "used_by_packages": [
+      "bali-ijen-bromo-surabaya",
+      "ijen-from-banyuwangi"
+    ],
+    "cost_impacts": [
+      "vehicle_day_usage",
+      "ijen_ticket",
+      "ijen_local_guide",
+      "medical_check"
+    ],
+    "research_note": "Banyuwangi city->Paltuding ~35km (38-40km older sources) via the steep Licin/Erek-Erek climb. Steep winding road + fog make 90-120min normal, ~150 busy; operator 1h quotes are optimistic.",
+    "source_trace": [
+      {
+        "source": "manual_seed",
+        "ref": "seed/manual-overrides/route-leg-overrides.yaml",
+        "confidence": "manual_seed"
+      },
+      {
+        "source": "manual_seed",
+        "ref": "seed/research/east-java-field-data-2026.json",
+        "field": "distance_km",
+        "confidence": "inferred"
+      }
+    ]
+  },
+  {
+    "id": "ketapang_harbor_to_gilimanuk_bali_side",
+    "label": "Ketapang Harbor to Gilimanuk / Bali side",
+    "status": "active",
+    "confidence": "inferred",
+    "from_location": "Ketapang Harbor",
+    "to_location": "Gilimanuk / Bali side",
+    "distance_km": 5,
+    "distance_km_range": "5-6",
+    "duration_text": "~45–60 min sailing (+ queue/berthing); 24h service",
+    "duration_normal_minutes": 60,
+    "duration_busy_minutes": 90,
+    "road_profiles": [
+      "ferry_crossing",
+      "harbor_access"
+    ],
+    "risk_factors": [
+      "ferry_queue",
+      "crossing_delay",
+      "handoff_timing",
+      "nyepi_full_closure",
+      "high_waves_suspension",
+      "must_prebook_ferizy"
+    ],
+    "meal_stop_possible": false,
+    "night_drive_possible": true,
+    "recommended_departure_window": "after Ijen finish with ferry buffer",
+    "used_by_packages": [
+      "ijen-to-bali",
+      "bromo-ijen-bali-custom"
+    ],
+    "cost_impacts": [
+      "ferry_ticket",
+      "bali_transfer",
+      "vehicle_crossing_or_handoff"
+    ],
+    "research_note": "Sea crossing (Bali Strait), not a road leg: ~5-6km route, ~45-60min sailing (apparent 2h = WIB/WITA timezone artifact). 24h, ~hourly. CLOSED during Nyepi + high waves. Ferizy ticket MANDATORY before arrival (geofence 2.65km Ketapang) — pre-book H-1.",
+    "source_trace": [
+      {
+        "source": "manual_seed",
+        "ref": "seed/manual-overrides/route-leg-overrides.yaml",
+        "confidence": "manual_seed"
+      },
+      {
+        "source": "manual_seed",
+        "ref": "seed/research/east-java-field-data-2026.json",
+        "field": "duration,operations,booking",
+        "confidence": "inferred"
+      }
+    ]
+  },
+  {
+    "id": "ijen_base_to_ketapang_harbor",
+    "label": "Ijen Base to Ketapang Harbor",
+    "status": "active",
+    "confidence": "inferred",
+    "from_location": "Ijen Base",
+    "to_location": "Ketapang Harbor",
+    "distance_km": 45,
+    "distance_km_range": "40-50",
+    "duration_text": "+/-1-2 hours after Ijen",
+    "duration_normal_minutes": 90,
+    "duration_busy_minutes": 150,
+    "road_profiles": [
+      "mountain_descent",
+      "city_access",
+      "harbor_access"
+    ],
+    "risk_factors": [
+      "post-trek fatigue",
+      "harbor queue",
+      "late Bali connection"
+    ],
+    "meal_stop_possible": true,
+    "night_drive_possible": true,
+    "recommended_departure_window": "08:00-11:00",
+    "used_by_packages": [
+      "ijen-to-bali",
+      "bromo-ijen-ketapang-3d2n"
+    ],
+    "cost_impacts": [
+      "vehicle_day_usage",
+      "ketapang_dropoff",
+      "optional_bali_transfer"
+    ],
+    "research_note": "Paltuding->Ketapang ~45km/~1.5h. Same physical corridor as ijen_area_to_ketapang_harbor.",
+    "source_trace": [
+      {
+        "source": "manual_seed",
+        "ref": "seed/manual-overrides/route-leg-overrides.yaml",
+        "confidence": "manual_seed"
+      },
+      {
+        "source": "manual_seed",
+        "ref": "seed/research/east-java-field-data-2026.json",
+        "field": "distance_km",
+        "confidence": "inferred"
+      }
+    ]
+  },
+  {
+    "id": "bali_hotel_area_to_banyuwangi_ijen_area",
+    "label": "Bali Hotel Area to Banyuwangi / Ijen Area",
+    "status": "active",
+    "confidence": "manual_seed",
+    "from_location": "Bali Hotel Area",
+    "to_location": "Banyuwangi / Ijen Area",
+    "distance_km": null,
+    "duration_text": "Bali transfer + ferry + Banyuwangi/Ijen access requires verification",
+    "duration_normal_minutes": null,
+    "duration_busy_minutes": null,
+    "road_profiles": [
+      "bali_traffic",
+      "ferry_crossing",
+      "intercity_road",
+      "mountain_access"
+    ],
+    "risk_factors": [
+      "Bali traffic",
+      "ferry queue",
+      "late Ijen preparation"
+    ],
+    "meal_stop_possible": true,
+    "night_drive_possible": true,
+    "recommended_departure_window": "morning or early afternoon depending on Ijen plan",
+    "used_by_packages": [
+      "bromo-ijen-3d2n-bali",
+      "ijen-bromo-madakaripura-3d2n-bali",
+      "ijen-papuma-tumpak-sewu-bromo-4d3n-bali",
+      "ijen-papuma-tumpak-sewu-bromo-5d4n-bali"
+    ],
+    "cost_impacts": [
+      "bali_transfer",
+      "ferry_ticket",
+      "vehicle_day_usage",
+      "driver_cost"
+    ],
+    "research_note": "Multi-modal composite (Bali road + Gilimanuk->Ketapang ferry + Banyuwangi->Paltuding climb). No operator gives a clean end-to-end figure; the Gilimanuk->Banyuwangi road portion is only available from algorithmic sources (rejected). Left as a do-not-invent gap pending per-segment verification — compose from ketapang_harbor_to_gilimanuk_bali_side + banyuwangi_to_ijen_base if needed. NOTE: the derived route-leg-index.filled.json carries a real end-to-end mapbox estimate for the same city-pair as node-leg \"bali__to__ijen\" (175.9km/186min/311min busy); not reused here because it is algorithmic-only for the same rejected Gilimanuk->Banyuwangi segment this note already flags — see the structured missing_data record in agent-contract/operational-readiness.json for the current fallback and required source.",
+    "source_trace": [
+      {
+        "source": "manual_seed",
+        "ref": "seed/manual-overrides/route-leg-overrides.yaml",
+        "confidence": "manual_seed"
+      }
+    ]
+  },
+  {
+    "id": "bromo_area_to_malang",
+    "label": "Bromo Area to Malang",
+    "status": "active",
+    "confidence": "inferred",
+    "from_location": "Bromo Area",
+    "to_location": "Malang",
+    "distance_km": 100,
+    "distance_km_range": "90-110",
+    "duration_text": "+/-2.5-4 hours",
+    "duration_normal_minutes": 180,
+    "duration_busy_minutes": 300,
+    "road_profiles": [
+      "mountain_access",
+      "intercity_road",
+      "city_access"
+    ],
+    "risk_factors": [
+      "mountain descent",
+      "weekend congestion",
+      "late city arrival"
+    ],
+    "meal_stop_possible": true,
+    "night_drive_possible": true,
+    "recommended_departure_window": "09:00-14:00",
+    "used_by_packages": [
+      "bromo-malang-dropoff",
+      "bromo-batu-custom"
+    ],
+    "cost_impacts": [
+      "vehicle_day_usage",
+      "driver_cost"
+    ],
+    "research_note": "Cemoro Lawang->Malang ~100km (inferred; operators quote hours not km). Highway route ~2-2.5h vs ~3.5-4h national road, but the Probolinggo->Cemoro Lawang climb is slow regardless. Duration seed kept conservative.",
+    "source_trace": [
+      {
+        "source": "manual_seed",
+        "ref": "seed/manual-overrides/route-leg-overrides.yaml",
+        "confidence": "manual_seed"
+      },
+      {
+        "source": "manual_seed",
+        "ref": "seed/research/east-java-field-data-2026.json",
+        "field": "distance_km",
+        "confidence": "inferred"
+      }
+    ]
+  },
+  {
+    "id": "malang_to_surabaya",
+    "label": "Malang to Surabaya",
+    "status": "active",
+    "confidence": "inferred",
+    "from_location": "Malang",
+    "to_location": "Surabaya",
+    "distance_km": 95,
+    "distance_km_range": "90-100",
+    "duration_text": "+/-2-4 hours",
+    "duration_normal_minutes": 180,
+    "duration_busy_minutes": 300,
+    "road_profiles": [
+      "city_exit",
+      "toll_road",
+      "intercity_road",
+      "city_access"
+    ],
+    "risk_factors": [
+      "Malang city traffic",
+      "Surabaya city traffic",
+      "airport or train deadline"
+    ],
+    "meal_stop_possible": true,
+    "night_drive_possible": true,
+    "recommended_departure_window": "allow deadline buffer for airport/train",
+    "used_by_packages": [
+      "malang-surabaya-dropoff",
+      "bromo-malang-surabaya-custom"
+    ],
+    "cost_impacts": [
+      "vehicle_day_usage",
+      "driver_cost",
+      "parking_toll_fuel_allowance"
+    ],
+    "research_note": "~95km. Pandaan-Malang toll now open: operators advertise \"from 2 hours\"; prior seed (180/300) looks pre-toll. Duration seed kept conservative for airport/train deadline safety. Surabaya city vs Juanda ~15-20min.",
+    "source_trace": [
+      {
+        "source": "manual_seed",
+        "ref": "seed/manual-overrides/route-leg-overrides.yaml",
+        "confidence": "manual_seed"
+      },
+      {
+        "source": "manual_seed",
+        "ref": "seed/research/east-java-field-data-2026.json",
+        "field": "distance_km",
+        "confidence": "inferred"
+      }
+    ]
+  },
+  {
+    "id": "ijen_area_to_papuma",
+    "label": "Ijen Area to Papuma",
+    "status": "active",
+    "confidence": "inferred",
+    "from_location": "Ijen Crater",
+    "to_location": "Papuma Area",
+    "distance_km": 135,
+    "distance_km_range": "135.1",
+    "duration_text": "±2.3 hours (139 min free-flow / 233 min traffic-aware)",
+    "duration_normal_minutes": 139,
+    "duration_busy_minutes": 233,
+    "road_profiles": [
+      "intercity_road",
+      "coastal_access_condition"
+    ],
+    "risk_factors": [
+      "long drive fatigue after night trek",
+      "coastal road traffic"
+    ],
+    "meal_stop_possible": true,
+    "night_drive_possible": false,
+    "recommended_departure_window": "08:00-12:00",
+    "used_by_packages": [
+      "ijen-papuma-tumpak-sewu-bromo-4d3n",
+      "ijen-papuma-tumpak-sewu-bromo-5d4n",
+      "ijen-papuma-tumpak-sewu-bromo-malang-6d5n",
+      "ijen-papuma-tumpak-sewu-bromo-4d3n-bali",
+      "ijen-papuma-tumpak-sewu-bromo-5d4n-bali"
+    ],
+    "cost_impacts": [
+      "vehicle_day_usage",
+      "driver_cost",
+      "parking_toll_fuel_allowance"
+    ],
+    "research_note": "Distance/duration reused from generated/itinerary-intelligence/route-leg-index.filled.json leg \"ijen__to__papuma\" (OSRM free-flow 139min + Google Routes TRAFFIC_AWARE_OPTIMAL 233min); not independently re-researched here.",
+    "source_trace": [
+      {
+        "source": "generated",
+        "ref": "generated/itinerary-intelligence/route-leg-index.filled.json",
+        "field": "ijen__to__papuma",
+        "confidence": "inferred"
+      }
+    ]
+  },
+  {
+    "id": "papuma_to_tumpak_sewu_area",
+    "label": "Papuma to Tumpak Sewu Area",
+    "status": "active",
+    "confidence": "inferred",
+    "from_location": "Papuma Area",
+    "to_location": "Tumpak Sewu Area",
+    "distance_km": 113,
+    "distance_km_range": "112.6",
+    "duration_text": "±1.9 hours (112 min free-flow / 166 min traffic-aware)",
+    "duration_normal_minutes": 112,
+    "duration_busy_minutes": 166,
+    "road_profiles": [
+      "intercity_road",
+      "coastal_access_condition",
+      "village_road"
+    ],
+    "risk_factors": [
+      "coastal road traffic",
+      "rain sensitive access"
+    ],
+    "meal_stop_possible": true,
+    "night_drive_possible": false,
+    "recommended_departure_window": "10:00-14:00",
+    "used_by_packages": [
+      "ijen-papuma-tumpak-sewu-bromo-4d3n",
+      "ijen-papuma-tumpak-sewu-bromo-5d4n",
+      "ijen-papuma-tumpak-sewu-bromo-malang-6d5n",
+      "ijen-papuma-tumpak-sewu-bromo-4d3n-bali",
+      "ijen-papuma-tumpak-sewu-bromo-5d4n-bali"
+    ],
+    "cost_impacts": [
+      "vehicle_day_usage",
+      "driver_cost",
+      "parking_toll_fuel_allowance"
+    ],
+    "research_note": "Distance/duration reused from generated/itinerary-intelligence/route-leg-index.filled.json leg \"papuma__to__tumpak_sewu\" (OSRM free-flow 112min + Google Routes TRAFFIC_AWARE_OPTIMAL 166min); not independently re-researched here.",
+    "source_trace": [
+      {
+        "source": "generated",
+        "ref": "generated/itinerary-intelligence/route-leg-index.filled.json",
+        "field": "papuma__to__tumpak_sewu",
+        "confidence": "inferred"
+      }
+    ]
+  }
+]

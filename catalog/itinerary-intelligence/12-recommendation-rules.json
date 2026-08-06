@@ -1,0 +1,415 @@
+[
+  {
+    "id": "avoid_backtracking_ijen_bromo_ketapang",
+    "label": "Avoid inefficient backtracking if final dropoff is Ketapang or Bali",
+    "status": "active",
+    "confidence": "manual_seed",
+    "condition": {
+      "final_dropoff": [
+        "Ketapang Harbor",
+        "Bali"
+      ],
+      "route_contains_order": [
+        "Ijen",
+        "Bromo",
+        "Ketapang"
+      ]
+    },
+    "severity": "high",
+    "recommendation": "Use west-to-east route when ending in Ketapang/Bali: Surabaya → Bromo → Ijen → Ketapang.",
+    "alternatives": [
+      "Bromo → Madakaripura → Ijen → Ketapang",
+      "Add one night if adding Tumpak Sewu"
+    ],
+    "source_trace": [
+      {
+        "source": "manual_seed",
+        "ref": "seed/manual-overrides/recommendation-rules.yaml",
+        "confidence": "manual_seed"
+      }
+    ]
+  },
+  {
+    "id": "late_airport_arrival_requires_rest_warning",
+    "label": "Late airport arrival requires rest warning",
+    "status": "active",
+    "confidence": "inferred",
+    "condition": {
+      "pickup_type": "airport",
+      "arrival_after": "17:00",
+      "next_day_activity": [
+        "Bromo Sunrise",
+        "Ijen"
+      ]
+    },
+    "severity": "medium",
+    "recommendation": "Route may be possible but guest rest time is reduced. Recommend earlier arrival or add one night when possible.",
+    "alternatives": [
+      "start tour next morning",
+      "add overnight near pickup city",
+      "reduce destination count"
+    ],
+    "source_trace": [
+      {
+        "source": "manual_seed",
+        "ref": "seed/manual-overrides/recommendation-rules.yaml",
+        "confidence": "manual_seed"
+      },
+      {
+        "source": "new_backoffice",
+        "ref": "new-backoffice:ExportDataItineraryCore.bundle()",
+        "field": "booking evidence (logistics/finance/actuals)",
+        "confidence": "inferred"
+      }
+    ],
+    "backoffice_observed": {
+      "late_arrival_samples": 9,
+      "by_bucket": {
+        "evening_night": 9
+      },
+      "matched_pickup_groups": [
+        "Surabaya Airport"
+      ],
+      "destination_filter": null
+    }
+  },
+  {
+    "id": "waterfall_before_airport_deadline_risk",
+    "label": "Waterfall before airport deadline risk",
+    "status": "active",
+    "confidence": "manual_seed",
+    "condition": {
+      "last_activity": [
+        "Tumpak Sewu",
+        "Madakaripura"
+      ],
+      "dropoff_type": "airport",
+      "flight_buffer_less_than_minutes": 180
+    },
+    "severity": "high",
+    "recommendation": "Do not put waterfall activity before a tight airport dropoff. Skip waterfall or add one night.",
+    "alternatives": [
+      "move waterfall to previous day",
+      "drop at hotel instead of airport",
+      "choose later flight"
+    ],
+    "source_trace": [
+      {
+        "source": "manual_seed",
+        "ref": "seed/manual-overrides/recommendation-rules.yaml",
+        "confidence": "manual_seed"
+      }
+    ]
+  },
+  {
+    "id": "ferry_bali_buffer_required",
+    "label": "Ketapang ferry / Bali continuation requires pre-booking and queue buffer",
+    "status": "active",
+    "confidence": "inferred",
+    "condition": {
+      "dropoff_includes": [
+        "Ketapang Harbor",
+        "Bali"
+      ],
+      "or_route_passes_through": "Ketapang Harbor"
+    },
+    "severity": "high",
+    "recommendation": "Ferizy ticket must be pre-booked H-1 (geofence-gated 2.65km from Ketapang). Allow 2–3h harbor queue buffer especially during peak / holiday periods. Confirm vehicle-crossing or guest-only handoff preference before booking.",
+    "alternatives": [
+      "book Ferizy in advance",
+      "allow earlier departure from Ijen to hit ferry timing",
+      "use local Bali car handoff at Gilimanuk instead of vehicle crossing"
+    ],
+    "source_trace": [
+      {
+        "source": "manual_seed",
+        "ref": "seed/research/east-java-field-data-2026.json",
+        "confidence": "inferred"
+      },
+      {
+        "source": "new_backoffice",
+        "ref": "new-backoffice:ExportDataItineraryCore.bundle()",
+        "field": "booking evidence (logistics/finance/actuals)",
+        "confidence": "inferred"
+      }
+    ],
+    "backoffice_observed": {
+      "ferry_actuals": {
+        "sample_count": 8,
+        "avg_qty": 1,
+        "avg_price": 200000,
+        "avg_subtotal": 200000
+      },
+      "ferry_list_price_idr": 200000,
+      "bali_ketapang_dropoff_samples": 17,
+      "dropoff_groups": [
+        "Bali",
+        "Ketapang Harbor"
+      ]
+    }
+  },
+  {
+    "id": "ijen_access_closure_risk",
+    "label": "Ijen access / quota / closure operational risk",
+    "status": "active",
+    "confidence": "inferred",
+    "condition": {
+      "destination_includes": "Ijen"
+    },
+    "severity": "medium",
+    "recommendation": "Ijen has a daily visitor cap (~2000/day). Online ticket required at tiket.bbksdajatim.org; QRIS-only cashless since Jan 2025. Access can close without notice for volcanic activity or authority decision. Gas mask (IDR 45k rental) and medical check (IDR 20k) are mandatory on-site. Confirm ticket availability before finalizing Ijen date.",
+    "alternatives": [
+      "book Ijen ticket ahead of tour date",
+      "keep alternate date flexible if quota is full",
+      "confirm eruption / access status with local guide 24h before"
+    ],
+    "source_trace": [
+      {
+        "source": "manual_seed",
+        "ref": "seed/research/east-java-field-data-2026.json",
+        "confidence": "inferred"
+      }
+    ]
+  },
+  {
+    "id": "tight_multi_destination_short_days",
+    "label": "Too many destinations for available days",
+    "status": "active",
+    "confidence": "manual_seed",
+    "condition": {
+      "destination_count_gte": 3,
+      "duration_days_lte": 2
+    },
+    "severity": "high",
+    "recommendation": "Itinerary has more destination stops than the duration can support with adequate rest. Adding one or two nights significantly improves guest experience and lowers fatigue risk. Consider reducing destinations or extending tour length.",
+    "alternatives": [
+      "remove lowest-priority destination",
+      "extend by one night to allow full activity at each stop",
+      "prioritize Bromo or Ijen, not both, for very short trips"
+    ],
+    "source_trace": [
+      {
+        "source": "manual_seed",
+        "ref": "seed/manual-overrides/recommendation-rules.yaml",
+        "confidence": "manual_seed"
+      }
+    ]
+  },
+  {
+    "id": "bromo_weather_risk_advisory",
+    "label": "Mount Bromo weather and risk advisory",
+    "status": "active",
+    "confidence": "inferred",
+    "condition": {
+      "route_includes_destination": "bromo"
+    },
+    "severity": "medium",
+    "recommendation": "Mount Bromo: difficulty moderate (physical demand 3/5). Weather by season — Dry season (Apr-Sep): Clear skies, excellent sunrise visibility. Wet season (Oct-Mar): Frequent fog, rain, and limited visibility. Cold temperatures year-round at high altitude. Rainfall — Moderate during wet season (100-200mm/month), Low during dry season (20-50mm/month) Key risk (weather, medium): Wear multiple warm layers, gloves, and beanie. JVTO provides blankets and hot drinks.",
+    "weather_by_season": "Dry season (Apr-Sep): Clear skies, excellent sunrise visibility. Wet season (Oct-Mar): Frequent fog, rain, and limited visibility. Cold temperatures year-round at high altitude.",
+    "rainfall_intensity": "Moderate during wet season (100-200mm/month), Low during dry season (20-50mm/month)",
+    "risk_factors": [
+      {
+        "type": "weather",
+        "level": "medium",
+        "mitigation": "Wear multiple warm layers, gloves, and beanie. JVTO provides blankets and hot drinks.",
+        "description": "Extreme cold at sunrise viewpoints"
+      },
+      {
+        "type": "terrain",
+        "level": "low",
+        "mitigation": "Wear sturdy shoes and watch footing on stairs. JVTO guides assist with difficult sections.",
+        "description": "Volcanic ash and sand can be slippery"
+      },
+      {
+        "type": "health",
+        "level": "low",
+        "mitigation": "Take time to acclimatize, stay hydrated. JVTO plans gradual altitude exposure.",
+        "description": "Altitude effects for some visitors"
+      },
+      {
+        "type": "crowd",
+        "level": "medium",
+        "mitigation": "JVTO uses scheduled Jeep rotations and alternative viewpoints to avoid crowds",
+        "description": "High visitor density at sunrise viewpoints"
+      }
+    ],
+    "source_trace": [
+      {
+        "source": "jvto_web",
+        "ref": "jvto-web:publicContent/generated/destinationDetailSnapshots.json",
+        "field": "risk_factors, weather_by_season, rainfall_intensity",
+        "confidence": "inferred"
+      }
+    ]
+  },
+  {
+    "id": "ijen_weather_risk_advisory",
+    "label": "Ijen Crater weather and risk advisory",
+    "status": "active",
+    "confidence": "inferred",
+    "condition": {
+      "route_includes_destination": "ijen"
+    },
+    "severity": "high",
+    "recommendation": "Ijen Crater: difficulty hard (physical demand 5/5). Weather by season — Dry season (Apr-Oct): Clear skies, minimal fog. Wet season (Nov-Mar): Frequent rain, dense fog, higher gas concentration. Rainfall — High during wet season (200-400mm/month), Low during dry season (50-100mm/month) Key risk (health, high): Use provided gas masks, limit time near active vents, immediate descent if feeling unwell. JVTO provides professional equipment and health screening.",
+    "weather_by_season": "Dry season (Apr-Oct): Clear skies, minimal fog. Wet season (Nov-Mar): Frequent rain, dense fog, higher gas concentration.",
+    "rainfall_intensity": "High during wet season (200-400mm/month), Low during dry season (50-100mm/month)",
+    "risk_factors": [
+      {
+        "type": "health",
+        "level": "high",
+        "mitigation": "Use provided gas masks, limit time near active vents, immediate descent if feeling unwell. JVTO provides professional equipment and health screening.",
+        "description": "Toxic sulfur gas exposure causing respiratory issues"
+      },
+      {
+        "type": "terrain",
+        "level": "medium",
+        "mitigation": "Use headlamps, trekking poles, and proper footwear. Follow guide closely. JVTO guides are trained in night navigation.",
+        "description": "Steep, slippery paths especially in darkness"
+      },
+      {
+        "type": "weather",
+        "level": "medium",
+        "mitigation": "Bring warm layers, rain jacket, and check weather forecast. JVTO monitors conditions and may adjust timing.",
+        "description": "Rapid weather changes and cold temperatures at night"
+      },
+      {
+        "type": "health",
+        "level": "medium",
+        "mitigation": "JVTO conducts pre-ascent health screening. Guests must disclose relevant medical conditions.",
+        "description": "High altitude and physical exertion"
+      }
+    ],
+    "source_trace": [
+      {
+        "source": "jvto_web",
+        "ref": "jvto-web:publicContent/generated/destinationDetailSnapshots.json",
+        "field": "risk_factors, weather_by_season, rainfall_intensity",
+        "confidence": "inferred"
+      }
+    ]
+  },
+  {
+    "id": "madakaripura_weather_risk_advisory",
+    "label": "Madakaripura Waterfall weather and risk advisory",
+    "status": "active",
+    "confidence": "inferred",
+    "condition": {
+      "route_includes_destination": "madakaripura"
+    },
+    "severity": "high",
+    "recommendation": "Madakaripura Waterfall: difficulty moderate (physical demand 3/5). Weather by season — Dry season (May-Oct): Optimal conditions with minimal rain, clear water flow. Wet season (Nov-Apr): Heavy rainfall increases flash flood risk, stronger water currents. Rainfall — High during wet season (300-500mm/month), Moderate during dry season (50-150mm/month) Key risk (weather, high): JVTO monitors weather conditions and may cancel visits during unsafe conditions. Guides are trained in river safety.",
+    "weather_by_season": "Dry season (May-Oct): Optimal conditions with minimal rain, clear water flow. Wet season (Nov-Apr): Heavy rainfall increases flash flood risk, stronger water currents.",
+    "rainfall_intensity": "High during wet season (300-500mm/month), Moderate during dry season (50-150mm/month)",
+    "risk_factors": [
+      {
+        "type": "weather",
+        "level": "high",
+        "mitigation": "JVTO monitors weather conditions and may cancel visits during unsafe conditions. Guides are trained in river safety.",
+        "description": "Flash floods during heavy rainfall"
+      },
+      {
+        "type": "terrain",
+        "level": "medium",
+        "mitigation": "Proper footwear provided in JVTO packages. Guides assist with difficult sections.",
+        "description": "Slippery rocks and uneven riverbed"
+      },
+      {
+        "type": "health",
+        "level": "low",
+        "mitigation": "Safety briefing provided. JVTO guides are trained in first aid and emergency response.",
+        "description": "Slips and falls on wet surfaces"
+      }
+    ],
+    "source_trace": [
+      {
+        "source": "jvto_web",
+        "ref": "jvto-web:publicContent/generated/destinationDetailSnapshots.json",
+        "field": "risk_factors, weather_by_season, rainfall_intensity",
+        "confidence": "inferred"
+      }
+    ]
+  },
+  {
+    "id": "tumpak_sewu_weather_risk_advisory",
+    "label": "Tumpak Sewu Waterfall weather and risk advisory",
+    "status": "active",
+    "confidence": "inferred",
+    "condition": {
+      "route_includes_destination": "tumpak_sewu"
+    },
+    "severity": "high",
+    "recommendation": "Tumpak Sewu Waterfall: difficulty hard (physical demand 4/5). Weather by season — Dry season (May-Oct): Best conditions with minimal rain, clear skies. Wet season (Nov-Apr): Heavy rainfall increases water flow and flash flood risk. Rainfall — High during wet season (300-600mm/month), Moderate during dry season (50-200mm/month) Key risk (terrain, high): JVTO provides experienced guides and safety equipment. Descent is controlled and assisted.",
+    "weather_by_season": "Dry season (May-Oct): Best conditions with minimal rain, clear skies. Wet season (Nov-Apr): Heavy rainfall increases water flow and flash flood risk.",
+    "rainfall_intensity": "High during wet season (300-600mm/month), Moderate during dry season (50-200mm/month)",
+    "risk_factors": [
+      {
+        "type": "terrain",
+        "level": "high",
+        "mitigation": "JVTO provides experienced guides and safety equipment. Descent is controlled and assisted.",
+        "description": "Steep and slippery descent with rope sections"
+      },
+      {
+        "type": "weather",
+        "level": "high",
+        "mitigation": "JVTO monitors weather conditions and cancels visits during unsafe conditions. Emergency evacuation plans in place.",
+        "description": "Flash floods during rainfall"
+      },
+      {
+        "type": "health",
+        "level": "medium",
+        "mitigation": "Safety briefing and physical assessment. JVTO guides are trained in wilderness first aid.",
+        "description": "Physical exertion and potential for slips/falls"
+      }
+    ],
+    "source_trace": [
+      {
+        "source": "jvto_web",
+        "ref": "jvto-web:publicContent/generated/destinationDetailSnapshots.json",
+        "field": "risk_factors, weather_by_season, rainfall_intensity",
+        "confidence": "inferred"
+      }
+    ]
+  },
+  {
+    "id": "papuma_weather_risk_advisory",
+    "label": "Papuma Beach weather and risk advisory",
+    "status": "active",
+    "confidence": "inferred",
+    "condition": {
+      "route_includes_destination": "papuma"
+    },
+    "severity": "medium",
+    "recommendation": "Papuma Beach: difficulty easy (physical demand 1/5). Weather by season — Dry season (Apr-Oct): Clear skies, calm waters, ideal for beach activities. Wet season (Nov-Mar): Higher waves, occasional rain, stronger currents. Rainfall — Moderate during wet season (150-300mm/month), Low during dry season (30-100mm/month) Key risk (marine, medium): Swim only in designated safe areas. Follow lifeguard instructions if available.",
+    "weather_by_season": "Dry season (Apr-Oct): Clear skies, calm waters, ideal for beach activities. Wet season (Nov-Mar): Higher waves, occasional rain, stronger currents.",
+    "rainfall_intensity": "Moderate during wet season (150-300mm/month), Low during dry season (30-100mm/month)",
+    "risk_factors": [
+      {
+        "type": "marine",
+        "level": "medium",
+        "mitigation": "Swim only in designated safe areas. Follow lifeguard instructions if available.",
+        "description": "Strong currents and powerful waves"
+      },
+      {
+        "type": "terrain",
+        "level": "low",
+        "mitigation": "Wear water shoes with good grip on rocky surfaces",
+        "description": "Slippery rocks when wet"
+      },
+      {
+        "type": "weather",
+        "level": "low",
+        "mitigation": "Use sunscreen, hat, and seek shade during peak hours",
+        "description": "Strong sun exposure"
+      }
+    ],
+    "source_trace": [
+      {
+        "source": "jvto_web",
+        "ref": "jvto-web:publicContent/generated/destinationDetailSnapshots.json",
+        "field": "risk_factors, weather_by_season, rainfall_intensity",
+        "confidence": "inferred"
+      }
+    ]
+  }
+]

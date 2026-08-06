@@ -865,6 +865,28 @@ describe('decideAndRespond', () => {
     expect(opts.system).toContain('±3.5-4.5 hours')
   })
 
+  // Reported 2026-08-06 (operator's own example): "pickup Surabaya jam 6 sore, mau ke Bromo
+  // dan Ijen, mana yang harus duluan?" -- ported from jvto-itinerary-core's real scenario
+  // evaluator (scenario-evaluator.ts). Uses the REAL (unmocked) scenario-evaluator against the
+  // real copied catalog/itinerary-intelligence data, same as the route-leg test above.
+  it('surfaces a Bromo-first route recommendation with rest-time reasoning for a late Surabaya airport pickup wanting both Bromo and Ijen', async () => {
+    ;(ensureFreshBookingData as any).mockResolvedValue(null)
+    ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
+    ;(loadCatalog as any).mockReturnValue({ packages: [pkg({ packageKey: 'catalog-anchor', destinationTokens: ['bromo', 'ijen'] })], syncedAt: null })
+    ;(matchDestination as any).mockReturnValue({
+      destination: 'ijen',
+      matches: [pkg({ origin: 'Surabaya', dayCount: 3, finishCities: ['ketapang'] })],
+    })
+    ;(checkRouteGate as any).mockReturnValue({ status: 'clear' })
+    ;(parseTripPreferences as any).mockReturnValue({ origin: 'Surabaya', dayCount: 3, finishCity: 'ketapang', pax: 2 })
+
+    await decideAndRespond('conv_1', 'Pickup from Surabaya airport jam 6 sore, mau ke Bromo dan Ijen, mana yang harus duluan?')
+
+    const [, opts] = (callLLM as any).mock.calls[0]
+    expect(opts.system.toLowerCase()).toMatch(/bromo.*ijen/)
+    expect(opts.system.toLowerCase()).toContain('rest')
+  })
+
   // Reported live 2026-08-06: "How much to rent a jacket, and is there a trolley up Ijen
   // crater?" classifies as topic 'price' (like any "how much" question), which ALSO triggers
   // the trip-preferences funnel gate below (start/finish/duration all unknown) -- that gate's

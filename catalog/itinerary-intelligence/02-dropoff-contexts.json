@@ -1,0 +1,255 @@
+[
+  {
+    "id": "ketapang_harbor_dropoff",
+    "label": "Ketapang Harbor dropoff",
+    "status": "active",
+    "confidence": "inferred",
+    "type": "harbor",
+    "location_group": "Banyuwangi",
+    "default_buffer_minutes": 45,
+    "connects_to": [
+      "Gilimanuk Harbor",
+      "Pemuteran",
+      "Lovina",
+      "Ubud",
+      "Canggu",
+      "Seminyak",
+      "Denpasar Airport"
+    ],
+    "required_customer_fields": [
+      "next_destination",
+      "ferry_or_bali_transfer_preference"
+    ],
+    "cost_impacts": [
+      "ferry_ticket",
+      "bali_transfer",
+      "vehicle_crossing_or_handoff"
+    ],
+    "risk_factors": [
+      "ferry_queue",
+      "late_bali_arrival",
+      "bali_traffic"
+    ],
+    "source_trace": [
+      {
+        "source": "manual_seed",
+        "ref": "seed/manual-overrides/pickup-dropoff.yaml",
+        "confidence": "manual_seed"
+      },
+      {
+        "source": "new_backoffice",
+        "ref": "new-backoffice:ExportDataItineraryCore.bundle()",
+        "field": "dropoff reality (booking_logistics_patterns)",
+        "confidence": "inferred"
+      }
+    ],
+    "backoffice_observed": {
+      "matched_groups": [
+        "Ketapang Harbor"
+      ],
+      "total_samples": 6,
+      "destinations": [
+        "Bromo",
+        "Ijen"
+      ],
+      "package_ids": [
+        47
+      ]
+    }
+  },
+  {
+    "id": "surabaya_airport_dropoff",
+    "label": "Surabaya Airport dropoff",
+    "status": "active",
+    "confidence": "manual_seed",
+    "type": "airport",
+    "location_group": "Surabaya",
+    "default_buffer_minutes": 180,
+    "required_customer_fields": [
+      "flight_number",
+      "departure_time"
+    ],
+    "cost_impacts": [
+      "route_cutoff",
+      "vehicle_day_usage",
+      "parking_toll_fuel_allowance"
+    ],
+    "risk_factors": [
+      "city_traffic",
+      "late_activity_finish",
+      "airport_buffer_risk"
+    ],
+    "source_trace": [
+      {
+        "source": "manual_seed",
+        "ref": "seed/manual-overrides/pickup-dropoff.yaml",
+        "confidence": "manual_seed"
+      }
+    ]
+  },
+  {
+    "id": "bali_hotel_dropoff",
+    "label": "Bali hotel dropoff",
+    "status": "active",
+    "confidence": "inferred",
+    "type": "bali_area",
+    "location_group": "Bali",
+    "default_buffer_minutes": 60,
+    "required_customer_fields": [
+      "hotel_name",
+      "hotel_area"
+    ],
+    "cost_impacts": [
+      "bali_transfer",
+      "ferry_ticket",
+      "driver_vehicle_extra_time"
+    ],
+    "risk_factors": [
+      "ferry_queue",
+      "bali_traffic",
+      "late_hotel_arrival"
+    ],
+    "source_trace": [
+      {
+        "source": "manual_seed",
+        "ref": "seed/manual-overrides/pickup-dropoff.yaml",
+        "confidence": "manual_seed"
+      },
+      {
+        "source": "new_backoffice",
+        "ref": "new-backoffice:ExportDataItineraryCore.bundle()",
+        "field": "dropoff reality (booking_logistics_patterns)",
+        "confidence": "inferred"
+      }
+    ],
+    "backoffice_observed": {
+      "matched_groups": [
+        "Bali"
+      ],
+      "total_samples": 11,
+      "destinations": [
+        "Bromo",
+        "Ijen"
+      ],
+      "package_ids": [
+        48
+      ]
+    }
+  },
+  {
+    "id": "surabaya_hotel_dropoff",
+    "label": "Surabaya hotel dropoff",
+    "status": "active",
+    "confidence": "manual_seed",
+    "type": "hotel",
+    "location_group": "Surabaya",
+    "default_buffer_minutes": 30,
+    "required_customer_fields": [
+      "hotel_area"
+    ],
+    "cost_impacts": [
+      "vehicle_day_usage",
+      "parking_toll_fuel_allowance"
+    ],
+    "risk_factors": [
+      "city_traffic",
+      "late_arrival",
+      "hotel_access"
+    ],
+    "source_trace": [
+      {
+        "source": "manual_seed",
+        "ref": "seed/manual-overrides/pickup-dropoff.yaml",
+        "confidence": "manual_seed"
+      }
+    ]
+  },
+  {
+    "id": "surabaya_train_station_dropoff",
+    "label": "Surabaya train station dropoff",
+    "status": "active",
+    "confidence": "manual_seed",
+    "type": "train_station",
+    "location_group": "Surabaya",
+    "default_buffer_minutes": 90,
+    "required_customer_fields": [
+      "train_departure_time",
+      "station_name"
+    ],
+    "cost_impacts": [
+      "route_cutoff",
+      "vehicle_day_usage"
+    ],
+    "risk_factors": [
+      "city_traffic",
+      "station_crowd",
+      "missed_train_risk"
+    ],
+    "source_trace": [
+      {
+        "source": "manual_seed",
+        "ref": "seed/manual-overrides/pickup-dropoff.yaml",
+        "confidence": "manual_seed"
+      }
+    ]
+  },
+  {
+    "id": "malang_dropoff",
+    "label": "Malang dropoff",
+    "status": "active",
+    "confidence": "manual_seed",
+    "type": "city_point",
+    "location_group": "Malang",
+    "default_buffer_minutes": 45,
+    "required_customer_fields": [
+      "dropoff_area"
+    ],
+    "cost_impacts": [
+      "route_direction_change",
+      "vehicle_day_usage"
+    ],
+    "risk_factors": [
+      "mountain_descent",
+      "city_traffic",
+      "late_arrival"
+    ],
+    "source_trace": [
+      {
+        "source": "manual_seed",
+        "ref": "seed/manual-overrides/pickup-dropoff.yaml",
+        "confidence": "manual_seed"
+      }
+    ]
+  },
+  {
+    "id": "custom_address_dropoff",
+    "label": "Custom address dropoff",
+    "status": "active",
+    "confidence": "manual_seed",
+    "type": "custom_address",
+    "location_group": "Custom",
+    "default_buffer_minutes": 45,
+    "required_customer_fields": [
+      "address_area",
+      "deadline_if_any",
+      "vehicle_access_note"
+    ],
+    "cost_impacts": [
+      "route_deviation_review",
+      "vehicle_day_usage",
+      "extra_dropoff_transfer_if_outside_standard_area"
+    ],
+    "risk_factors": [
+      "address_unclear",
+      "vehicle_access_restriction",
+      "deadline_risk"
+    ],
+    "source_trace": [
+      {
+        "source": "manual_seed",
+        "ref": "seed/manual-overrides/pickup-dropoff.yaml",
+        "confidence": "manual_seed"
+      }
+    ]
+  }
+]

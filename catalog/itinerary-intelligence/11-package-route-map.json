@@ -1,0 +1,785 @@
+[
+  {
+    "package_id": "bromo-1d1n",
+    "label": "1D1N Bromo sunrise (day trip / overnight)",
+    "origin": "Surabaya",
+    "duration": "1D1N",
+    "route_sequence": [
+      "Surabaya",
+      "Bromo Area",
+      "Surabaya"
+    ],
+    "route_legs": [
+      "surabaya_airport_to_bromo_area",
+      "bromo_area_to_malang",
+      "malang_to_surabaya"
+    ],
+    "standard_dropoff_options": [
+      "Surabaya Hotel",
+      "Surabaya Airport"
+    ],
+    "possible_customizations": [
+      "hotel pickup instead of airport",
+      "skip return leg for Malang dropoff"
+    ],
+    "source_trace": [
+      {
+        "source": "llm_wiki",
+        "ref": "output/products/package-readiness/package-registry.json",
+        "confidence": "inferred"
+      },
+      {
+        "source": "llm_wiki",
+        "ref": "output/products/package-readiness/package-itineraries.json",
+        "confidence": "inferred"
+      }
+    ]
+  },
+  {
+    "package_id": "bromo-2d1n",
+    "label": "2D1N Bromo",
+    "origin": "Surabaya",
+    "duration": "2D1N",
+    "route_sequence": [
+      "Surabaya",
+      "Bromo Area",
+      "Surabaya"
+    ],
+    "route_legs": [
+      "surabaya_hotel_to_bromo_area",
+      "bromo_area_to_malang",
+      "malang_to_surabaya"
+    ],
+    "standard_dropoff_options": [
+      "Surabaya Hotel",
+      "Surabaya Airport"
+    ],
+    "possible_customizations": [
+      "airport pickup",
+      "add Madakaripura as spur from Bromo"
+    ],
+    "source_trace": [
+      {
+        "source": "llm_wiki",
+        "ref": "output/products/package-readiness/package-registry.json",
+        "confidence": "inferred"
+      },
+      {
+        "source": "llm_wiki",
+        "ref": "output/products/package-readiness/package-itineraries.json",
+        "confidence": "inferred"
+      }
+    ]
+  },
+  {
+    "package_id": "ijen-2d1n",
+    "label": "2D1N Ijen",
+    "origin": "Surabaya",
+    "duration": "2D1N",
+    "route_sequence": [
+      "Surabaya",
+      "Bondowoso / Ijen Area",
+      "Ijen Crater",
+      "Surabaya"
+    ],
+    "route_legs": [
+      "surabaya_to_bondowoso_ijen_area",
+      "bondowoso_to_ijen_base",
+      "malang_to_surabaya"
+    ],
+    "standard_dropoff_options": [
+      "Surabaya Hotel",
+      "Surabaya Airport",
+      "Ketapang Harbor"
+    ],
+    "possible_customizations": [
+      "Ketapang dropoff instead of Surabaya return",
+      "airport pickup in Surabaya"
+    ],
+    "source_trace": [
+      {
+        "source": "llm_wiki",
+        "ref": "output/products/package-readiness/package-registry.json",
+        "confidence": "inferred"
+      },
+      {
+        "source": "llm_wiki",
+        "ref": "output/products/package-readiness/package-itineraries.json",
+        "confidence": "inferred"
+      }
+    ]
+  },
+  {
+    "package_id": "bromo-madakaripura-ijen-3d2n",
+    "label": "3D2N Bromo, Madakaripura, Ijen",
+    "origin": "Surabaya",
+    "duration": "3D2N",
+    "route_sequence": [
+      "Surabaya",
+      "Bromo Area",
+      "Madakaripura Waterfall",
+      "Bondowoso / Ijen Area",
+      "Ijen Crater",
+      "Ketapang Harbor"
+    ],
+    "route_legs": [
+      "surabaya_airport_to_bromo_area",
+      "bromo_area_to_madakaripura",
+      "bromo_area_to_bondowoso_ijen_area",
+      "bondowoso_to_ijen_base",
+      "ijen_base_to_ketapang_harbor"
+    ],
+    "standard_dropoff_options": [
+      "Ketapang Harbor",
+      "Bali with additional transfer",
+      "Surabaya with route adjustment"
+    ],
+    "possible_customizations": [
+      "Bali hotel dropoff",
+      "skip Madakaripura",
+      "reverse to Surabaya"
+    ],
+    "source_trace": [
+      {
+        "source": "llm_wiki",
+        "ref": "output/products/package-readiness/package-registry.json",
+        "confidence": "inferred"
+      },
+      {
+        "source": "llm_wiki",
+        "ref": "output/products/package-readiness/package-itineraries.json",
+        "confidence": "inferred"
+      }
+    ]
+  },
+  {
+    "package_id": "ijen-bromo-madakaripura-3d2n",
+    "label": "3D2N Ijen, Bromo, Madakaripura (Ijen-first)",
+    "origin": "Surabaya",
+    "duration": "3D2N",
+    "route_sequence": [
+      "Surabaya",
+      "Bondowoso / Ijen Area",
+      "Ijen Crater",
+      "Bromo Area",
+      "Madakaripura Waterfall",
+      "Surabaya"
+    ],
+    "route_legs": [
+      "surabaya_to_bondowoso_ijen_area",
+      "bondowoso_to_ijen_base",
+      "bromo_area_to_bondowoso_ijen_area",
+      "bromo_area_to_madakaripura",
+      "malang_to_surabaya"
+    ],
+    "standard_dropoff_options": [
+      "Surabaya Hotel",
+      "Surabaya Airport"
+    ],
+    "possible_customizations": [
+      "Ketapang dropoff instead of Surabaya return",
+      "skip Madakaripura for shorter route"
+    ],
+    "source_trace": [
+      {
+        "source": "llm_wiki",
+        "ref": "output/products/package-readiness/package-registry.json",
+        "confidence": "inferred"
+      },
+      {
+        "source": "llm_wiki",
+        "ref": "output/products/package-readiness/package-itineraries.json",
+        "confidence": "inferred"
+      }
+    ]
+  },
+  {
+    "package_id": "taman-safari-prigen-bromo-madakaripura-3d2n",
+    "label": "3D2N Taman Safari / Prigen, Bromo, Madakaripura (specialty)",
+    "origin": "Surabaya",
+    "duration": "3D2N",
+    "route_sequence": [
+      "Surabaya",
+      "Bromo Area",
+      "Madakaripura Waterfall",
+      "Surabaya"
+    ],
+    "route_legs": [
+      "surabaya_airport_to_bromo_area",
+      "bromo_area_to_madakaripura",
+      "malang_to_surabaya"
+    ],
+    "standard_dropoff_options": [
+      "Surabaya Hotel",
+      "Surabaya Airport"
+    ],
+    "possible_customizations": [
+      "Taman Safari / Prigen stop on day 1 before Bromo; requires additional leg not in current index"
+    ],
+    "source_trace": [
+      {
+        "source": "llm_wiki",
+        "ref": "output/products/package-readiness/package-registry.json",
+        "confidence": "inferred"
+      },
+      {
+        "source": "llm_wiki",
+        "ref": "output/products/package-readiness/package-itineraries.json",
+        "confidence": "inferred"
+      }
+    ]
+  },
+  {
+    "package_id": "ijen-papuma-tumpak-sewu-bromo-4d3n",
+    "label": "4D3N Ijen, Papuma, Tumpak Sewu, Bromo",
+    "origin": "Surabaya",
+    "duration": "4D3N",
+    "route_sequence": [
+      "Surabaya",
+      "Bondowoso / Ijen Area",
+      "Ijen Crater",
+      "Papuma Area",
+      "Tumpak Sewu Area",
+      "Bromo Area",
+      "Surabaya"
+    ],
+    "route_legs": [
+      "surabaya_to_bondowoso_ijen_area",
+      "bondowoso_to_ijen_base",
+      "ijen_area_to_papuma",
+      "papuma_to_tumpak_sewu_area",
+      "tumpak_sewu_to_bromo_area",
+      "malang_to_surabaya"
+    ],
+    "standard_dropoff_options": [
+      "Surabaya Hotel",
+      "Surabaya Airport"
+    ],
+    "possible_customizations": [
+      "skip Papuma for cleaner 4D route"
+    ],
+    "source_trace": [
+      {
+        "source": "llm_wiki",
+        "ref": "output/products/package-readiness/package-registry.json",
+        "confidence": "inferred"
+      },
+      {
+        "source": "llm_wiki",
+        "ref": "output/products/package-readiness/package-itineraries.json",
+        "confidence": "inferred"
+      }
+    ]
+  },
+  {
+    "package_id": "ijen-bromo-madakaripura-4d3n",
+    "label": "4D3N Ijen, Bromo, Madakaripura",
+    "origin": "Surabaya",
+    "duration": "4D3N",
+    "route_sequence": [
+      "Surabaya",
+      "Bondowoso / Ijen Area",
+      "Ijen Crater",
+      "Bromo Area",
+      "Madakaripura Waterfall",
+      "Surabaya"
+    ],
+    "route_legs": [
+      "surabaya_to_bondowoso_ijen_area",
+      "bondowoso_to_ijen_base",
+      "bromo_area_to_bondowoso_ijen_area",
+      "bromo_area_to_madakaripura",
+      "malang_to_surabaya"
+    ],
+    "standard_dropoff_options": [
+      "Surabaya Hotel",
+      "Surabaya Airport"
+    ],
+    "possible_customizations": [
+      "Ketapang dropoff",
+      "add Tumpak Sewu with one extra day"
+    ],
+    "source_trace": [
+      {
+        "source": "llm_wiki",
+        "ref": "output/products/package-readiness/package-registry.json",
+        "confidence": "inferred"
+      },
+      {
+        "source": "llm_wiki",
+        "ref": "output/products/package-readiness/package-itineraries.json",
+        "confidence": "inferred"
+      }
+    ]
+  },
+  {
+    "package_id": "tumpak-sewu-bromo-ijen-4d3n",
+    "label": "4D3N Tumpak Sewu, Bromo, Ijen",
+    "origin": "Surabaya",
+    "duration": "4D3N",
+    "route_sequence": [
+      "Surabaya",
+      "Tumpak Sewu Area",
+      "Bromo Area",
+      "Bondowoso / Ijen Area",
+      "Ijen Crater",
+      "Ketapang Harbor"
+    ],
+    "route_legs": [
+      "surabaya_to_tumpak_sewu",
+      "tumpak_sewu_to_bromo_area",
+      "bromo_area_to_bondowoso_ijen_area",
+      "bondowoso_to_ijen_base",
+      "ijen_base_to_ketapang_harbor"
+    ],
+    "standard_dropoff_options": [
+      "Ketapang Harbor",
+      "Bali with additional transfer"
+    ],
+    "possible_customizations": [
+      "Surabaya return instead of Ketapang dropoff",
+      "add Madakaripura spur from Bromo"
+    ],
+    "source_trace": [
+      {
+        "source": "llm_wiki",
+        "ref": "output/products/package-readiness/package-registry.json",
+        "confidence": "inferred"
+      },
+      {
+        "source": "llm_wiki",
+        "ref": "output/products/package-readiness/package-itineraries.json",
+        "confidence": "inferred"
+      }
+    ]
+  },
+  {
+    "package_id": "ijen-papuma-tumpak-sewu-bromo-5d4n",
+    "label": "5D4N Ijen, Papuma, Tumpak Sewu, Bromo",
+    "origin": "Surabaya",
+    "duration": "5D4N",
+    "route_sequence": [
+      "Surabaya",
+      "Bondowoso / Ijen Area",
+      "Ijen Crater",
+      "Papuma Area",
+      "Tumpak Sewu Area",
+      "Bromo Area",
+      "Surabaya"
+    ],
+    "route_legs": [
+      "surabaya_to_bondowoso_ijen_area",
+      "bondowoso_to_ijen_base",
+      "ijen_area_to_papuma",
+      "papuma_to_tumpak_sewu_area",
+      "tumpak_sewu_to_bromo_area",
+      "malang_to_surabaya"
+    ],
+    "standard_dropoff_options": [
+      "Surabaya Hotel",
+      "Surabaya Airport"
+    ],
+    "possible_customizations": [
+      "Malang city stop on return"
+    ],
+    "source_trace": [
+      {
+        "source": "llm_wiki",
+        "ref": "output/products/package-readiness/package-registry.json",
+        "confidence": "inferred"
+      },
+      {
+        "source": "llm_wiki",
+        "ref": "output/products/package-readiness/package-itineraries.json",
+        "confidence": "inferred"
+      }
+    ]
+  },
+  {
+    "package_id": "ijen-bromo-madakaripura-malang-5d4n",
+    "label": "5D4N Ijen, Bromo, Madakaripura, Malang",
+    "origin": "Surabaya",
+    "duration": "5D4N",
+    "route_sequence": [
+      "Surabaya",
+      "Bondowoso / Ijen Area",
+      "Ijen Crater",
+      "Bromo Area",
+      "Madakaripura Waterfall",
+      "Malang",
+      "Surabaya"
+    ],
+    "route_legs": [
+      "surabaya_to_bondowoso_ijen_area",
+      "bondowoso_to_ijen_base",
+      "bromo_area_to_bondowoso_ijen_area",
+      "bromo_area_to_madakaripura",
+      "bromo_area_to_malang",
+      "malang_to_surabaya"
+    ],
+    "standard_dropoff_options": [
+      "Malang Hotel",
+      "Surabaya Airport",
+      "Surabaya Hotel"
+    ],
+    "possible_customizations": [
+      "Malang dropoff instead of Surabaya return",
+      "skip Malang for shorter route"
+    ],
+    "source_trace": [
+      {
+        "source": "llm_wiki",
+        "ref": "output/products/package-readiness/package-registry.json",
+        "confidence": "inferred"
+      },
+      {
+        "source": "llm_wiki",
+        "ref": "output/products/package-readiness/package-itineraries.json",
+        "confidence": "inferred"
+      }
+    ]
+  },
+  {
+    "package_id": "ijen-papuma-tumpak-sewu-bromo-malang-6d5n",
+    "label": "6D5N Ijen, Papuma, Tumpak Sewu, Bromo, Malang",
+    "origin": "Surabaya",
+    "duration": "6D5N",
+    "route_sequence": [
+      "Surabaya",
+      "Bondowoso / Ijen Area",
+      "Ijen Crater",
+      "Papuma Area",
+      "Tumpak Sewu Area",
+      "Bromo Area",
+      "Malang",
+      "Surabaya"
+    ],
+    "route_legs": [
+      "surabaya_to_bondowoso_ijen_area",
+      "bondowoso_to_ijen_base",
+      "ijen_area_to_papuma",
+      "papuma_to_tumpak_sewu_area",
+      "tumpak_sewu_to_bromo_area",
+      "bromo_area_to_malang",
+      "malang_to_surabaya"
+    ],
+    "standard_dropoff_options": [
+      "Malang Hotel",
+      "Surabaya Airport",
+      "Surabaya Hotel"
+    ],
+    "possible_customizations": [
+      "Malang dropoff instead of Surabaya return"
+    ],
+    "source_trace": [
+      {
+        "source": "llm_wiki",
+        "ref": "output/products/package-readiness/package-registry.json",
+        "confidence": "inferred"
+      },
+      {
+        "source": "llm_wiki",
+        "ref": "output/products/package-readiness/package-itineraries.json",
+        "confidence": "inferred"
+      }
+    ]
+  },
+  {
+    "package_id": "bromo-ijen-3d2n",
+    "label": "3D2N Bromo and Ijen (Surabaya-return)",
+    "origin": "Surabaya",
+    "duration": "3D2N",
+    "route_sequence": [
+      "Surabaya",
+      "Bromo Area",
+      "Bondowoso / Ijen Area",
+      "Ijen Crater",
+      "Ketapang Harbor"
+    ],
+    "route_legs": [
+      "surabaya_airport_to_bromo_area",
+      "bromo_area_to_bondowoso_ijen_area",
+      "bondowoso_to_ijen_base",
+      "ijen_base_to_ketapang_harbor"
+    ],
+    "standard_dropoff_options": [
+      "Ketapang Harbor",
+      "Bali with additional transfer",
+      "Surabaya with route adjustment"
+    ],
+    "possible_customizations": [
+      "Surabaya return instead of Ketapang dropoff",
+      "add Madakaripura as spur"
+    ],
+    "source_trace": [
+      {
+        "source": "llm_wiki",
+        "ref": "output/products/package-readiness/package-registry.json",
+        "confidence": "inferred"
+      },
+      {
+        "source": "llm_wiki",
+        "ref": "output/products/package-readiness/package-itineraries.json",
+        "confidence": "inferred"
+      },
+      {
+        "source": "new_backoffice",
+        "ref": "new-backoffice:ExportDataItineraryCore.bundle()",
+        "field": "package template structure (packages, itinerary days/details, destinations, hotels)",
+        "confidence": "inferred"
+      }
+    ],
+    "backoffice_observed": {
+      "backoffice_package_id": 47,
+      "code": "BRM-IJN-3D",
+      "duration_id": 3,
+      "order_channel_id": 1,
+      "day_count": 2,
+      "hotel_count": 2,
+      "start_core_destination": null,
+      "end_core_destination": "ijen",
+      "destination_core_ids": [
+        "bromo",
+        "ijen"
+      ],
+      "meal_totals": {
+        "breakfast": 2,
+        "lunch": 1,
+        "dinner": 2
+      }
+    }
+  },
+  {
+    "package_id": "bromo-ijen-bali-4d3n",
+    "label": "4D3N Bromo and Ijen ending in Bali (Surabaya origin)",
+    "origin": "Surabaya",
+    "duration": "4D3N",
+    "route_sequence": [
+      "Surabaya",
+      "Bromo Area",
+      "Bondowoso / Ijen Area",
+      "Ijen Crater",
+      "Ketapang Harbor",
+      "Bali"
+    ],
+    "route_legs": [
+      "surabaya_airport_to_bromo_area",
+      "bromo_area_to_bondowoso_ijen_area",
+      "bondowoso_to_ijen_base",
+      "ijen_base_to_ketapang_harbor",
+      "ketapang_harbor_to_gilimanuk_bali_side"
+    ],
+    "standard_dropoff_options": [
+      "Bali hotel area",
+      "Ketapang Harbor",
+      "Gilimanuk / Bali side"
+    ],
+    "possible_customizations": [
+      "add Madakaripura spur from Bromo",
+      "Surabaya return instead of Bali continuation"
+    ],
+    "source_trace": [
+      {
+        "source": "llm_wiki",
+        "ref": "output/products/package-readiness/package-registry.json",
+        "confidence": "inferred"
+      },
+      {
+        "source": "llm_wiki",
+        "ref": "output/products/package-readiness/package-itineraries.json",
+        "confidence": "inferred"
+      },
+      {
+        "source": "new_backoffice",
+        "ref": "new-backoffice:ExportDataItineraryCore.bundle()",
+        "field": "package template structure (packages, itinerary days/details, destinations, hotels)",
+        "confidence": "inferred"
+      }
+    ],
+    "backoffice_observed": {
+      "backoffice_package_id": 48,
+      "code": "BRM-IJN-BALI-4D",
+      "duration_id": 4,
+      "order_channel_id": 1,
+      "day_count": 4,
+      "hotel_count": 3,
+      "start_core_destination": null,
+      "end_core_destination": "bali_ketapang",
+      "destination_core_ids": [
+        "bromo",
+        "ijen",
+        "bali_ketapang"
+      ],
+      "meal_totals": {
+        "breakfast": 3,
+        "lunch": 1,
+        "dinner": 3
+      }
+    }
+  },
+  {
+    "package_id": "bromo-ijen-3d2n-bali",
+    "label": "3D2N Bromo and Ijen (Bali origin)",
+    "origin": "Bali",
+    "duration": "3D2N",
+    "route_sequence": [
+      "Bali Hotel Area",
+      "Banyuwangi / Ijen Area",
+      "Ijen Crater",
+      "Bromo Area",
+      "Surabaya"
+    ],
+    "route_legs": [
+      "bali_hotel_area_to_banyuwangi_ijen_area",
+      "banyuwangi_to_ijen_base",
+      "bromo_area_to_bondowoso_ijen_area",
+      "malang_to_surabaya"
+    ],
+    "standard_dropoff_options": [
+      "Surabaya Airport",
+      "Surabaya Hotel",
+      "Malang"
+    ],
+    "possible_customizations": [
+      "Malang dropoff",
+      "add Madakaripura spur from Bromo"
+    ],
+    "source_trace": [
+      {
+        "source": "llm_wiki",
+        "ref": "output/products/package-readiness/package-registry.json",
+        "confidence": "inferred"
+      },
+      {
+        "source": "llm_wiki",
+        "ref": "output/products/package-readiness/package-itineraries.json",
+        "confidence": "inferred"
+      }
+    ]
+  },
+  {
+    "package_id": "ijen-bromo-madakaripura-3d2n-bali",
+    "label": "3D2N Ijen, Bromo, Madakaripura (Bali origin)",
+    "origin": "Bali",
+    "duration": "3D2N",
+    "route_sequence": [
+      "Bali Hotel Area",
+      "Banyuwangi / Ijen Area",
+      "Ijen Crater",
+      "Bromo Area",
+      "Madakaripura Waterfall",
+      "Surabaya"
+    ],
+    "route_legs": [
+      "bali_hotel_area_to_banyuwangi_ijen_area",
+      "banyuwangi_to_ijen_base",
+      "bromo_area_to_bondowoso_ijen_area",
+      "bromo_area_to_madakaripura",
+      "malang_to_surabaya"
+    ],
+    "standard_dropoff_options": [
+      "Surabaya Airport",
+      "Surabaya Hotel"
+    ],
+    "possible_customizations": [
+      "Malang dropoff",
+      "skip Madakaripura for tighter schedule"
+    ],
+    "source_trace": [
+      {
+        "source": "llm_wiki",
+        "ref": "output/products/package-readiness/package-registry.json",
+        "confidence": "inferred"
+      },
+      {
+        "source": "llm_wiki",
+        "ref": "output/products/package-readiness/package-itineraries.json",
+        "confidence": "inferred"
+      }
+    ]
+  },
+  {
+    "package_id": "ijen-papuma-tumpak-sewu-bromo-4d3n-bali",
+    "label": "4D3N Ijen, Papuma, Tumpak Sewu, Bromo (Bali origin)",
+    "origin": "Bali",
+    "duration": "4D3N",
+    "route_sequence": [
+      "Bali Hotel Area",
+      "Banyuwangi / Ijen Area",
+      "Ijen Crater",
+      "Papuma Area",
+      "Tumpak Sewu Area",
+      "Bromo Area",
+      "Surabaya"
+    ],
+    "route_legs": [
+      "bali_hotel_area_to_banyuwangi_ijen_area",
+      "banyuwangi_to_ijen_base",
+      "ijen_area_to_papuma",
+      "papuma_to_tumpak_sewu_area",
+      "tumpak_sewu_to_bromo_area",
+      "malang_to_surabaya"
+    ],
+    "standard_dropoff_options": [
+      "Surabaya Airport",
+      "Surabaya Hotel"
+    ],
+    "possible_customizations": [
+      "Malang dropoff"
+    ],
+    "source_trace": [
+      {
+        "source": "llm_wiki",
+        "ref": "output/products/package-readiness/package-registry.json",
+        "confidence": "inferred"
+      },
+      {
+        "source": "llm_wiki",
+        "ref": "output/products/package-readiness/package-itineraries.json",
+        "confidence": "inferred"
+      }
+    ]
+  },
+  {
+    "package_id": "ijen-papuma-tumpak-sewu-bromo-5d4n-bali",
+    "label": "5D4N Ijen, Papuma, Tumpak Sewu, Bromo (Bali origin)",
+    "origin": "Bali",
+    "duration": "5D4N",
+    "route_sequence": [
+      "Bali Hotel Area",
+      "Banyuwangi / Ijen Area",
+      "Ijen Crater",
+      "Papuma Area",
+      "Tumpak Sewu Area",
+      "Bromo Area",
+      "Surabaya"
+    ],
+    "route_legs": [
+      "bali_hotel_area_to_banyuwangi_ijen_area",
+      "banyuwangi_to_ijen_base",
+      "ijen_area_to_papuma",
+      "papuma_to_tumpak_sewu_area",
+      "tumpak_sewu_to_bromo_area",
+      "malang_to_surabaya"
+    ],
+    "standard_dropoff_options": [
+      "Surabaya Airport",
+      "Surabaya Hotel"
+    ],
+    "possible_customizations": [
+      "Malang dropoff"
+    ],
+    "source_trace": [
+      {
+        "source": "llm_wiki",
+        "ref": "output/products/package-readiness/package-registry.json",
+        "confidence": "inferred"
+      },
+      {
+        "source": "llm_wiki",
+        "ref": "output/products/package-readiness/package-itineraries.json",
+        "confidence": "inferred"
+      }
+    ]
+  }
+]

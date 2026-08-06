@@ -1,0 +1,101 @@
+[
+  {
+    "id": "dinner_before_ijen",
+    "label": "Dinner before Ijen preparation",
+    "status": "active",
+    "confidence": "inferred",
+    "meal": "dinner",
+    "included": "depends_on_package",
+    "applies_when": [
+      "overnight before Ijen",
+      "arrival in Bondowoso or Ijen area before medical check"
+    ],
+    "customer_note": "Dinner is normally arranged before medical check and Ijen briefing when included in the package.",
+    "cost_components": [
+      "dinner_bondowoso"
+    ],
+    "source_trace": [
+      {
+        "source": "manual_seed",
+        "ref": "seed/manual-overrides/meal-logic.yaml",
+        "confidence": "manual_seed"
+      },
+      {
+        "source": "new_backoffice",
+        "ref": "new-backoffice:ExportDataItineraryCore.bundle()",
+        "field": "meal rates + package meal inclusion (hotels, packages)",
+        "confidence": "inferred"
+      }
+    ],
+    "backoffice_observed": {
+      "dinner_rate_min_idr": 80000,
+      "dinner_rate_max_idr": 95000,
+      "packages_with_dinner": 2
+    }
+  },
+  {
+    "id": "takeaway_breakfast_after_ijen_or_bromo",
+    "label": "Takeaway breakfast for early activity",
+    "status": "active",
+    "confidence": "inferred",
+    "meal": "breakfast",
+    "included": "depends_on_package",
+    "applies_when": [
+      "early_morning_activity",
+      "hotel_breakfast_not_available_before_departure"
+    ],
+    "customer_note": "Breakfast may be served as takeaway due to very early departure.",
+    "cost_components": [
+      "hotel_breakfast_or_takeaway"
+    ],
+    "source_trace": [
+      {
+        "source": "manual_seed",
+        "ref": "seed/manual-overrides/meal-logic.yaml",
+        "confidence": "manual_seed"
+      },
+      {
+        "source": "new_backoffice",
+        "ref": "new-backoffice:ExportDataItineraryCore.bundle()",
+        "field": "meal rates + package meal inclusion (hotels, packages)",
+        "confidence": "inferred"
+      }
+    ],
+    "backoffice_observed": {
+      "packages_with_breakfast": 2,
+      "early_departure_breakfast_days": 3
+    }
+  },
+  {
+    "id": "lunch_stop_own_expense_long_transfer",
+    "label": "Lunch stop at own expense during long transfer",
+    "status": "active",
+    "confidence": "inferred",
+    "meal": "lunch",
+    "included": false,
+    "applies_when": [
+      "long_transfer_more_than_4_hours",
+      "lunch_not_included"
+    ],
+    "customer_note": "Lunch stop can be arranged on the way, at customer's own expense unless stated as included.",
+    "cost_components": [],
+    "source_trace": [
+      {
+        "source": "manual_seed",
+        "ref": "seed/manual-overrides/meal-logic.yaml",
+        "confidence": "manual_seed"
+      },
+      {
+        "source": "new_backoffice",
+        "ref": "new-backoffice:ExportDataItineraryCore.bundle()",
+        "field": "meal rates + package meal inclusion (hotels, packages)",
+        "confidence": "inferred"
+      }
+    ],
+    "backoffice_observed": {
+      "lunch_rate_min_idr": 55000,
+      "lunch_rate_max_idr": 70000,
+      "packages_with_lunch": 2
+    }
+  }
+]

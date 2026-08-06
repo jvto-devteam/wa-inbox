@@ -1,0 +1,324 @@
+[
+  {
+    "id": "bondowoso_dinner_medical_check",
+    "label": "Bondowoso dinner and medical check before Ijen",
+    "status": "active",
+    "confidence": "inferred",
+    "event_type": "pre_ijen_preparation",
+    "applies_when": [
+      "destination includes Ijen",
+      "overnight area is Bondowoso or Ijen area"
+    ],
+    "typical_sequence": [
+      "hotel_checkin",
+      "dinner",
+      "medical_check",
+      "ijen_briefing",
+      "short_rest"
+    ],
+    "minimum_recommended_arrival_time": "18:00",
+    "latest_tolerable_arrival_time": "21:00",
+    "risk_if_late": [
+      "reduced rest",
+      "late medical screening",
+      "higher fatigue"
+    ],
+    "customer_visible": true,
+    "cost_components": [
+      "dinner_bondowoso",
+      "medical_check"
+    ],
+    "source_trace": [
+      {
+        "source": "manual_seed",
+        "ref": "seed/manual-overrides/operational-events.yaml",
+        "confidence": "manual_seed"
+      },
+      {
+        "source": "new_backoffice",
+        "ref": "new-backoffice:ExportDataItineraryCore.bundle()",
+        "field": "event evidence (activities, logistics, hotel rates)",
+        "confidence": "inferred"
+      }
+    ],
+    "backoffice_observed": {
+      "ijen_area_hotels": 1,
+      "dinner_rate_min_idr": 80000,
+      "dinner_rate_max_idr": 80000,
+      "late_arrival_samples": 9
+    }
+  },
+  {
+    "id": "bromo_jeep_handoff",
+    "label": "Bromo jeep handoff",
+    "status": "active",
+    "confidence": "inferred",
+    "event_type": "destination_transport_handoff",
+    "applies_when": [
+      "destination includes Bromo sunrise"
+    ],
+    "typical_sequence": [
+      "hotel_or_meeting_point_pickup",
+      "jeep_transfer",
+      "sunrise_viewpoint",
+      "crater_area"
+    ],
+    "customer_visible": true,
+    "cost_components": [
+      "bromo_jeep"
+    ],
+    "source_trace": [
+      {
+        "source": "manual_seed",
+        "ref": "seed/manual-overrides/operational-events.yaml",
+        "confidence": "manual_seed"
+      },
+      {
+        "source": "new_backoffice",
+        "ref": "new-backoffice:ExportDataItineraryCore.bundle()",
+        "field": "event evidence (activities, logistics, hotel rates)",
+        "confidence": "inferred"
+      }
+    ],
+    "backoffice_observed": {
+      "activity_id": 10,
+      "unit": "per_jeep",
+      "list_price_idr": 700000,
+      "actuals": {
+        "sample_count": 14,
+        "avg_qty": 1.2,
+        "avg_price": 700000,
+        "avg_subtotal": 840000
+      }
+    }
+  },
+  {
+    "id": "waterfall_local_guide_handoff",
+    "label": "Waterfall local guide handoff",
+    "status": "active",
+    "confidence": "manual_seed",
+    "event_type": "local_guide_handoff",
+    "applies_when": [
+      "destination includes Tumpak Sewu or Madakaripura"
+    ],
+    "typical_sequence": [
+      "parking_area",
+      "local_guide_meeting",
+      "waterfall_access",
+      "return_to_vehicle"
+    ],
+    "customer_visible": true,
+    "cost_components": [
+      "waterfall_local_guide"
+    ],
+    "source_trace": [
+      {
+        "source": "manual_seed",
+        "ref": "seed/manual-overrides/operational-events.yaml",
+        "confidence": "manual_seed"
+      }
+    ]
+  },
+  {
+    "id": "ketapang_ferry_connection",
+    "label": "Ketapang ferry connection",
+    "status": "active",
+    "confidence": "inferred",
+    "event_type": "dropoff_connection",
+    "applies_when": [
+      "dropoff is Ketapang Harbor",
+      "customer continues to Bali"
+    ],
+    "typical_sequence": [
+      "ketapang_dropoff",
+      "ferry_ticket_or_handoff",
+      "gilimanuk_arrival",
+      "bali_transfer_optional"
+    ],
+    "customer_visible": true,
+    "cost_components": [
+      "ferry_ticket",
+      "bali_transfer_optional"
+    ],
+    "source_trace": [
+      {
+        "source": "manual_seed",
+        "ref": "seed/manual-overrides/operational-events.yaml",
+        "confidence": "manual_seed"
+      },
+      {
+        "source": "new_backoffice",
+        "ref": "new-backoffice:ExportDataItineraryCore.bundle()",
+        "field": "event evidence (activities, logistics, hotel rates)",
+        "confidence": "inferred"
+      }
+    ],
+    "backoffice_observed": {
+      "ferry_activity_id": 50,
+      "ferry_unit": "per_vehicle",
+      "ferry_list_price_idr": 200000,
+      "ferry_actuals": {
+        "sample_count": 8,
+        "avg_qty": 1,
+        "avg_price": 200000,
+        "avg_subtotal": 200000
+      },
+      "bali_ketapang_dropoff_samples": 17
+    }
+  },
+  {
+    "id": "bromo_access_requirements",
+    "label": "Mount Bromo access requirements (gear, permits, guide)",
+    "status": "active",
+    "confidence": "inferred",
+    "event_type": "destination_access_requirements",
+    "applies_when": [
+      "destination includes bromo"
+    ],
+    "customer_visible": true,
+    "cost_components": [],
+    "required_gear": [
+      "warm_layers",
+      "headlamp",
+      "hiking_shoes",
+      "gloves",
+      "beanie",
+      "dust_mask"
+    ],
+    "permit_required": true,
+    "permit_details": "National Park entry fee: Foreign tourists IDR 220,000 (weekdays), IDR 320,000 (weekends). Domestic: IDR 25,000-50,000. JVTO includes all permits.",
+    "guide_required": false,
+    "source_trace": [
+      {
+        "source": "jvto_web",
+        "ref": "jvto-web:publicContent/generated/destinationDetailSnapshots.json",
+        "field": "required_gear, permit_required, permit_details, guide_required",
+        "confidence": "inferred"
+      }
+    ]
+  },
+  {
+    "id": "ijen_access_requirements",
+    "label": "Ijen Crater access requirements (gear, permits, guide)",
+    "status": "active",
+    "confidence": "inferred",
+    "event_type": "destination_access_requirements",
+    "applies_when": [
+      "destination includes ijen"
+    ],
+    "customer_visible": true,
+    "cost_components": [],
+    "required_gear": [
+      "gas_mask",
+      "headlamp",
+      "hiking_boots",
+      "warm_layers",
+      "gloves",
+      "waterproof_jacket"
+    ],
+    "permit_required": true,
+    "permit_details": "Available at Paltuding entry gate. Foreign tourists: IDR 100,000 (weekdays), IDR 150,000 (weekends). Domestic: IDR 5,000-15,000.",
+    "guide_required": true,
+    "source_trace": [
+      {
+        "source": "jvto_web",
+        "ref": "jvto-web:publicContent/generated/destinationDetailSnapshots.json",
+        "field": "required_gear, permit_required, permit_details, guide_required",
+        "confidence": "inferred"
+      }
+    ]
+  },
+  {
+    "id": "madakaripura_access_requirements",
+    "label": "Madakaripura Waterfall access requirements (gear, permits, guide)",
+    "status": "active",
+    "confidence": "inferred",
+    "event_type": "destination_access_requirements",
+    "applies_when": [
+      "destination includes madakaripura"
+    ],
+    "customer_visible": true,
+    "cost_components": [],
+    "required_gear": [
+      "water_shoes",
+      "waterproof_bag",
+      "raincoat",
+      "quick_dry_clothes",
+      "towel",
+      "dry_bag"
+    ],
+    "permit_required": true,
+    "permit_details": "Local entry ticket required: IDR 15,000-25,000 per person. JVTO includes all entrance fees.",
+    "guide_required": true,
+    "source_trace": [
+      {
+        "source": "jvto_web",
+        "ref": "jvto-web:publicContent/generated/destinationDetailSnapshots.json",
+        "field": "required_gear, permit_required, permit_details, guide_required",
+        "confidence": "inferred"
+      }
+    ]
+  },
+  {
+    "id": "tumpak_sewu_access_requirements",
+    "label": "Tumpak Sewu Waterfall access requirements (gear, permits, guide)",
+    "status": "active",
+    "confidence": "inferred",
+    "event_type": "destination_access_requirements",
+    "applies_when": [
+      "destination includes tumpak_sewu"
+    ],
+    "customer_visible": true,
+    "cost_components": [],
+    "required_gear": [
+      "trekking_shoes",
+      "gloves",
+      "waterproof_bag",
+      "dry_clothes",
+      "water_bottle",
+      "headlamp"
+    ],
+    "permit_required": true,
+    "permit_details": "Entry fee: IDR 20,000-30,000 per person. Additional guide fee for canyon descent. JVTO includes all fees.",
+    "guide_required": true,
+    "source_trace": [
+      {
+        "source": "jvto_web",
+        "ref": "jvto-web:publicContent/generated/destinationDetailSnapshots.json",
+        "field": "required_gear, permit_required, permit_details, guide_required",
+        "confidence": "inferred"
+      }
+    ]
+  },
+  {
+    "id": "papuma_access_requirements",
+    "label": "Papuma Beach access requirements (gear, permits, guide)",
+    "status": "active",
+    "confidence": "inferred",
+    "event_type": "destination_access_requirements",
+    "applies_when": [
+      "destination includes papuma"
+    ],
+    "customer_visible": true,
+    "cost_components": [],
+    "required_gear": [
+      "sunscreen",
+      "swimwear",
+      "beach_towel",
+      "water_shoes",
+      "hat",
+      "sunglasses"
+    ],
+    "permit_required": true,
+    "permit_details": "Entrance fee: IDR 40,000 per person included in package.",
+    "guide_required": false,
+    "source_trace": [
+      {
+        "source": "jvto_web",
+        "ref": "jvto-web:publicContent/generated/destinationDetailSnapshots.json",
+        "field": "required_gear, permit_required, permit_details, guide_required",
+        "confidence": "inferred"
+      }
+    ]
+  }
+]
