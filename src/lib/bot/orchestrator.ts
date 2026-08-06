@@ -508,8 +508,19 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
         'Destinasi tidak diketahui',
         'Tidak ada destinasi yang bisa dikenali dari pesan maupun riwayat percakapan -- menanyakan destinasi ke pelanggan.'
       )
+      // Reported live 2026-08-06 (3rd instance of the same bug class found in the funnel-gate
+      // and finish-city branches): the real customer message "picked up from Malang instead
+      // of Surabaya" mentions no destination at all, so it falls all the way through to this
+      // static "where would you like to go?" template -- which never saw the customer's
+      // actual, answerable question either. Same fix: answer what's answerable first.
+      const noDestinationSideFacts = [...resolveKeywordTriggeredFacts(inboundText), ...resolveRouteLegFacts(inboundText)]
+      const noDestinationOriginLine = unsupportedOriginCity
+        ? `We don't have pickup from ${unsupportedOriginCity} -- could you start from Surabaya or Bali instead? `
+        : ''
       const reply =
+        (noDestinationSideFacts.length > 0 ? `${noDestinationSideFacts.join(' ')}\n\n` : '') +
         `Hi! Where would you like to go? 🏝️\n\n` +
+        noDestinationOriginLine +
         `We currently offer tours to: ${options.join(', ')}. ` +
         `Let us know which destination interests you!`
       trace.push('Jawaban siap dikirim', previewText(reply))

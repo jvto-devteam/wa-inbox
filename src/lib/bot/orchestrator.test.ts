@@ -429,6 +429,24 @@ describe('decideAndRespond', () => {
     expect((result as { reply: string }).reply).toContain('Bromo, Ijen, Madakaripura')
   })
 
+  // Reported live 2026-08-06 (3rd instance of the same bug class as the funnel-gate/
+  // finish-city branches): the real customer message "picked up from Malang instead of
+  // Surabaya" names no destination at all, so it falls through to this static template --
+  // which never saw the customer's actual, answerable question either.
+  it('tells the customer about an unsupported origin city even when no destination is known at all (falls through to the generic destination-list reply)', async () => {
+    ;(ensureFreshBookingData as any).mockResolvedValue(null)
+    ;(classifySalesNeed as any).mockReturnValue({ job: 'J3', missingInfo: [], needsLiveData: false })
+    ;(matchDestination as any).mockReturnValue(null)
+    ;(listDestinations as any).mockReturnValue(['Bromo', 'Ijen', 'Madakaripura'])
+    ;(classifyTopic as any).mockReturnValue('route_endpoint')
+
+    const result = await decideAndRespond('conv_1', 'I was wondering if there is any option to get picked up from Malang instead of Surabaya?')
+
+    expect(result.mode).toBe('clarify')
+    const reply = (result as { mode: 'clarify'; reply: string }).reply
+    expect(reply).toContain("We don't have pickup from Malang")
+  })
+
   it('gives a graceful fallback (not a handoff) instead of asking a broken clarifying question when the catalog has no destinations to offer', async () => {
     ;(ensureFreshBookingData as any).mockResolvedValue(null)
     ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
