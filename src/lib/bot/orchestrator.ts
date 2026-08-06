@@ -213,6 +213,78 @@ function isUnknownPreferenceSignal(message: string): boolean {
   return UNKNOWN_PREFERENCE_KEYWORDS.some((k) => low.includes(k))
 }
 
+// Reported 2026-08-06 (architecture review): this exact expression was written inline in TWO
+// separate branches (the no-destination fallback and the trip-preferences funnel gate), which
+// both needed "whatever's directly answerable regardless of topic/destination" for their own
+// static (non-LLM-composed) reply. Single source now -- adding a third fact source only means
+// editing this one function, not finding and updating every call site that happened to inline
+// the same list.
+function gatherSideFacts(inboundText: string): string[] {
+  return [...resolveKeywordTriggeredFacts(inboundText), ...resolveRouteLegFacts(inboundText)]
+}
+
+// Prepends side facts (if any) as their own paragraph before a static reply -- the second half
+// of the same duplication `gatherSideFacts` fixes: both static-reply branches also repeated
+// this exact "join with a blank line before the main message" formatting inline.
+function withSideFacts(sideFacts: string[], baseReply: string): string {
+  return sideFacts.length > 0 ? `${sideFacts.join(' ')}\n\n${baseReply}` : baseReply
+}
+
+type PickupScenarioResult = {
+  /** Meta-instruction-bearing text for an LLM system prompt -- never show this to a customer directly. */
+  forLLM: string | null
+  /** Plain, customer-ready text -- safe to concatenate directly into a reply that never reaches the LLM. */
+  forCustomer: string | null
+  /** Non-null exactly when a real recommendation was found -- caller should push this to the trace. */
+  traceDetail: string | null
+}
+
+const NO_PICKUP_SCENARIO: PickupScenarioResult = { forLLM: null, forCustomer: null, traceDetail: null }
+
+/**
+ * Evaluates whether the customer's stated pickup type/time changes the recommended
+ * destination order or surfaces a rest-time warning -- ported from jvto-itinerary-core's real
+ * scenario evaluator (see scenario-evaluator.ts's header for the full rationale). Extracted
+ * into its own named function 2026-08-06 (architecture review) so this self-contained piece of
+ * logic isn't buried inline in decideAndRespond's own body -- same behavior, just given a name
+ * and a boundary. Never guessed: only runs when the customer's OWN words this message state
+ * both a pickup type and time, and at least one requested destination is known.
+ */
+function evaluatePickupScenario(
+  inboundText: string,
+  ctx: { origin: string | null; finishCity: string | null; dayCount: number | null; pax: number | null; requestedTokens: string[] },
+  conversationId: string
+): PickupScenarioResult {
+  const pickupTiming = parsePickupTiming(inboundText)
+  if (!pickupTiming.type || !pickupTiming.time || ctx.requestedTokens.length === 0) return NO_PICKUP_SCENARIO
+  try {
+    const scenario = buildItineraryScenario({
+      origin: ctx.origin,
+      pickupType: pickupTiming.type,
+      pickupTime: pickupTiming.time,
+      requestedTokens: ctx.requestedTokens,
+      finishCity: ctx.finishCity,
+      dayCount: ctx.dayCount,
+      pax: ctx.pax,
+    })
+    const evaluation = evaluateScenario(scenario)
+    const forLLM = describeScenarioForLLM(evaluation)
+    const forCustomer = describeScenarioForCustomer(evaluation)
+    return {
+      forLLM,
+      forCustomer,
+      traceDetail: forLLM
+        ? `Pickup ${pickupTiming.type} jam ${pickupTiming.time} -- ada rekomendasi urutan/peringatan dari data rute nyata.`
+        : null,
+    }
+  } catch (err) {
+    // Never let this optional enrichment break the main reply -- see TECHNICAL_HICCUP_REPLY's
+    // own "even a technical failure must not disable the bot" rationale.
+    console.error('scenario evaluation failed', { conversationId, error: err })
+    return NO_PICKUP_SCENARIO
+  }
+}
+
 // A real customer message with several distinct questions bundled together (e.g. invoice
 // under the company name, replacement/emergency-contact arrangements, insurance, itinerary
 // after a skipped stop + pickup time, hotel names/breakfast, and the exact finish point --
@@ -531,16 +603,16 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
       // of Surabaya" mentions no destination at all, so it falls all the way through to this
       // static "where would you like to go?" template -- which never saw the customer's
       // actual, answerable question either. Same fix: answer what's answerable first.
-      const noDestinationSideFacts = [...resolveKeywordTriggeredFacts(inboundText), ...resolveRouteLegFacts(inboundText)]
       const noDestinationOriginLine = unsupportedOriginCity
         ? `We don't have pickup from ${unsupportedOriginCity} -- could you start from Surabaya or Bali instead? `
         : ''
-      const reply =
-        (noDestinationSideFacts.length > 0 ? `${noDestinationSideFacts.join(' ')}\n\n` : '') +
+      const reply = withSideFacts(
+        gatherSideFacts(inboundText),
         `Hi! Where would you like to go? 🏝️\n\n` +
-        noDestinationOriginLine +
-        `We currently offer tours to: ${options.join(', ')}. ` +
-        `Let us know which destination interests you!`
+          noDestinationOriginLine +
+          `We currently offer tours to: ${options.join(', ')}. ` +
+          `Let us know which destination interests you!`
+      )
       trace.push('Jawaban siap dikirim', previewText(reply))
       return { mode: 'clarify', reply, steps: trace.steps }
     }
@@ -589,44 +661,11 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
     // Reported 2026-08-06 (operator's own example, refined further 2026-08-06: "kadang bukan
     // pertanyaan eksplisit, dia cuma bilang pickup jam sekian" -- a customer merely STATING
     // their pickup time, with no explicit "which first?" question, should still get the
-    // recommendation): needs REASONING (rest time, route order), not a single fact to quote --
-    // ported from jvto-itinerary-core's real, backoffice-data-informed scenario evaluator (see
-    // scenario-evaluator.ts's header). Only runs when the customer's OWN words this message
-    // state both a pickup type and time (never guessed/defaulted) and at least one requested
-    // destination is known -- a wrong guess here would produce a confidently wrong rest-time
-    // recommendation, worse than not offering one at all.
-    const pickupTiming = parsePickupTiming(inboundText)
-    let scenarioDescription: string | null = null
-    let scenarioForCustomer: string | null = null
-    if (pickupTiming.type && pickupTiming.time && requestedTokens.length > 0) {
-      try {
-        const scenario = buildItineraryScenario({
-          origin,
-          pickupType: pickupTiming.type,
-          pickupTime: pickupTiming.time,
-          requestedTokens,
-          finishCity,
-          dayCount,
-          pax,
-        })
-        const evaluation = evaluateScenario(scenario)
-        scenarioDescription = describeScenarioForLLM(evaluation)
-        // Used by the trip-preferences funnel gate below, whose reply is a static template,
-        // NOT LLM-composed -- describeScenarioForLLM's meta-instruction text would otherwise
-        // leak to the customer verbatim (the same class of bug as the funnel-bypass fixes
-        // above, just the reverse mistake: putting LLM-instruction text where the LLM never
-        // runs, instead of forgetting to reach the LLM step at all).
-        scenarioForCustomer = describeScenarioForCustomer(evaluation)
-        if (scenarioDescription) {
-          trace.push('Evaluasi urutan rute & waktu istirahat', `Pickup ${pickupTiming.type} jam ${pickupTiming.time} -- ada rekomendasi urutan/peringatan dari data rute nyata.`)
-        }
-      } catch (err) {
-        // Never let this optional enrichment break the main reply -- see TECHNICAL_HICCUP_REPLY's
-        // own "even a technical failure must not disable the bot" rationale.
-        console.error('scenario evaluation failed', { conversationId, error: err })
-      }
-    }
-    const scenarioNote = scenarioDescription ? `\n\n${scenarioDescription}` : ''
+    // recommendation): needs REASONING (rest time, route order), not a single fact to quote.
+    // See evaluatePickupScenario's own header for the full rationale.
+    const pickupScenario = evaluatePickupScenario(inboundText, { origin, finishCity, dayCount, pax, requestedTokens }, conversationId)
+    if (pickupScenario.traceDetail) trace.push('Evaluasi urutan rute & waktu istirahat', pickupScenario.traceDetail)
+    const scenarioNote = pickupScenario.forLLM ? `\n\n${pickupScenario.forLLM}` : ''
 
     // Confirmed with the operator 2026-08-05, REFINED 2026-08-06: before recommending ANY
     // package, the funnel requires all three of start city, finish city, and trip length to be
@@ -701,18 +740,19 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
       // crater?" also classifies as topic 'price' (triggering this same funnel gate), so its
       // genuinely answerable questions got silently dropped too -- answer them first, THEN
       // still ask for the missing start/finish/duration.
-      const funnelSideFacts = [...resolveKeywordTriggeredFacts(inboundText), ...resolveRouteLegFacts(inboundText)]
+      const funnelSideFacts = gatherSideFacts(inboundText)
       // Reported 2026-08-06: a customer who merely STATES their pickup time ("pickup jam 6
       // sore, mau ke Bromo dan Ijen") -- not an explicit "which first?" question -- with
       // start/finish/duration still unknown should get the rest-time/route recommendation
       // alongside the funnel's own questions, not only once the funnel is already satisfied.
-      if (scenarioForCustomer) funnelSideFacts.push(scenarioForCustomer)
-      const reply =
-        (funnelSideFacts.length > 0 ? `${funnelSideFacts.join(' ')}\n\n` : '') +
+      if (pickupScenario.forCustomer) funnelSideFacts.push(pickupScenario.forCustomer)
+      const reply = withSideFacts(
+        funnelSideFacts,
         `Happy to recommend the best package for you! Could you share a few details?\n\n` +
-        originLine +
-        `- Finish (Surabaya/Bali): ${finishCity ? titleCaseCity(finishCity) : ''}\n` +
-        `- Number of Day(s): ${dayCount ?? ''}`
+          originLine +
+          `- Finish (Surabaya/Bali): ${finishCity ? titleCaseCity(finishCity) : ''}\n` +
+          `- Number of Day(s): ${dayCount ?? ''}`
+      )
       trace.push('Jawaban siap dikirim', previewText(reply))
       return { mode: 'clarify', reply, steps: trace.steps }
     }
