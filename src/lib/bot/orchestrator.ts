@@ -700,8 +700,12 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
     // this specific topic. EXCEPT when the customer has explicit booking-confirmation intent
     // (see isBookingIntent's own header) -- they've already decided on this specific package,
     // so ITS page is what's actually useful, not a topic-tangential policy page a side detail
-    // in their message happened to classify as.
-    const primaryLink = isBookingIntent(inboundText)
+    // in their message happened to classify as. Reported live 2026-08-06: the SAME problem for
+    // topic 'hotel' specifically -- resolveKnowledgeForTopic's own hotel-name disclosure tells
+    // the LLM to point to "this package's own detail page", but the link actually passed was
+    // still service_standard_rooming's generic rooming_and_accommodation policy page (it won
+    // as knowledge.primaryLink), contradicting the disclosure's own words.
+    const primaryLink = isBookingIntent(inboundText) || resolverTopic === 'hotel'
       ? (pkg.links.details ?? knowledge.primaryLink ?? null)
       : (knowledge.primaryLink ?? pkg.links.details ?? null)
 

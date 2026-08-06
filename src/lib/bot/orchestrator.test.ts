@@ -753,6 +753,32 @@ describe('decideAndRespond', () => {
     expect(opts.system).not.toContain('Relevant link (include this URL at the end of your reply): https://example.com/policy/inclusions-exclusions')
   })
 
+  // Reported live 2026-08-06: "Could you confirm the hotel names for the 3D2N Bromo Ijen
+  // tour?" (topic 'hotel', no booking intent) still got the generic rooming policy page as
+  // its link, contradicting resolveKnowledgeForTopic's own disclosure telling the LLM to
+  // point to "this package's own detail page" -- the disclosure's words and the actual link
+  // passed to the LLM disagreed.
+  it("prefers the package's own detail link for topic 'hotel' even without explicit booking intent, matching the hotel-name disclosure's own wording", async () => {
+    ;(ensureFreshBookingData as any).mockResolvedValue(null)
+    ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
+    ;(matchDestination as any).mockReturnValue({
+      destination: 'bromo',
+      matches: [pkg({ links: { details: 'https://example.com/bromo-ijen-3d2n' } })],
+    })
+    ;(checkRouteGate as any).mockReturnValue({ status: 'clear' })
+    ;(classifyTopic as any).mockReturnValue('hotel')
+    ;(resolveKnowledgeForTopic as any).mockReturnValue({
+      factualLines: ['Rooming info.'], detailLines: [], primaryLink: 'https://example.com/policy/inclusions-exclusions',
+      disclosures: [], handoffRequired: false,
+    })
+
+    await decideAndRespond('conv_1', 'Could you confirm the hotel names for the 3D2N Bromo Ijen tour?')
+
+    const [, opts] = (callLLM as any).mock.calls[0]
+    expect(opts.system).toContain('Relevant link (include this URL at the end of your reply): https://example.com/bromo-ijen-3d2n')
+    expect(opts.system).not.toContain('Relevant link (include this URL at the end of your reply): https://example.com/policy/inclusions-exclusions')
+  })
+
   it('still prefers knowledge.ts\'s topic link when there is no explicit booking intent', async () => {
     ;(ensureFreshBookingData as any).mockResolvedValue(null)
     ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
