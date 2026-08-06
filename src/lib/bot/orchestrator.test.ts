@@ -239,6 +239,61 @@ describe('decideAndRespond', () => {
     expect(opts.system).toContain('GUARDRAILS')
   })
 
+  // Confirmed with the operator 2026-08-06: the customer portal link must only be attached
+  // when the reply actually drew on the booking JSON (crew/guide names, their hotel, dates,
+  // price, etc) -- not unconditionally on every Mode 3 reply, since a booked customer can
+  // still ask an ordinary general question (e.g. about Blue Fire) that has nothing to do with
+  // their own booking specifics.
+  it('instructs the LLM to only include the portal link when the answer actually used booking-specific data', async () => {
+    ;(ensureFreshBookingData as any).mockResolvedValue({ bookingId: 'B1', customer_portal: 'https://example.com/my-booking/abc123' })
+    ;(callLLM as any).mockResolvedValue('Your guide is Pak Budi.')
+
+    await decideAndRespond('conv_1', 'Who is my guide?')
+
+    const [, opts] = (callLLM as any).mock.calls[0]
+    expect(opts.system).toContain('https://example.com/my-booking/abc123')
+    expect(opts.system).toContain('ONLY when your answer actually used a fact from the booking data JSON above')
+    expect(opts.system).toContain('do NOT include this link')
+  })
+
+  it('does not mention the portal link at all when the booking has none', async () => {
+    ;(ensureFreshBookingData as any).mockResolvedValue({ bookingId: 'B1' })
+    ;(callLLM as any).mockResolvedValue('Sure, here is the info.')
+
+    await decideAndRespond('conv_1', 'Is Blue Fire guaranteed?')
+
+    const [, opts] = (callLLM as any).mock.calls[0]
+    expect(opts.system).not.toContain('customer_portal')
+    expect(opts.system).not.toContain('booking portal link')
+  })
+
+  // Confirmed with the operator 2026-08-06: Ijen's health screening is included for every
+  // channel except KLOOK -- a KLOOK-booked customer pays Rp35.000/person separately at their
+  // hotel (still medically examined, still accompanied by JVTO crew). JVTO-channel bookings
+  // (and anyone not yet booked, who never reaches Mode 3 at all) keep the normal "included"
+  // answer, since only bookingData.orderChannel === 'KLOOK' triggers this override.
+  it('overrides the Ijen health-screening fact to "not included, Rp35.000/pax at hotel" for a KLOOK booking', async () => {
+    ;(ensureFreshBookingData as any).mockResolvedValue({ bookingId: 'B1', orderChannel: 'KLOOK' })
+    ;(callLLM as any).mockResolvedValue('The health screening is a separate Rp35.000/person fee at your hotel.')
+
+    await decideAndRespond('conv_1', 'Is the Ijen health screening included?')
+
+    const [, opts] = (callLLM as any).mock.calls[0]
+    expect(opts.system).toContain('IMPORTANT override for this specific customer (KLOOK booking)')
+    expect(opts.system).toContain('Rp35.000/person')
+    expect(opts.system).toContain('a JVTO crew member will still accompany them')
+  })
+
+  it('does NOT override the Ijen health-screening fact for a JVTO-channel booking', async () => {
+    ;(ensureFreshBookingData as any).mockResolvedValue({ bookingId: 'B1', orderChannel: 'JVTO' })
+    ;(callLLM as any).mockResolvedValue('Yes, the health screening is included.')
+
+    await decideAndRespond('conv_1', 'Is the Ijen health screening included?')
+
+    const [, opts] = (callLLM as any).mock.calls[0]
+    expect(opts.system).not.toContain('IMPORTANT override for this specific customer')
+  })
+
   it('passes recent messages as history, oldest first, mapped to user/assistant roles', async () => {
     ;(ensureFreshBookingData as any).mockResolvedValue({ bookingId: 'B1', status: 'unpaid' })
     ;(callLLM as any).mockResolvedValue('Sisa Rp500.000.')
