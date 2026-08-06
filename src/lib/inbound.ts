@@ -1,4 +1,4 @@
-import { Prisma, type Contact, type DeliveryStatus, type TemplateMetaStatus } from '@prisma/client'
+import { Prisma, type DeliveryStatus, type TemplateMetaStatus } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { broadcast } from '@/lib/realtime'
 import { decideAndRespond } from '@/lib/bot/orchestrator'
@@ -128,14 +128,6 @@ export type IngestResult = {
   echoed: number
 }
 
-// How long a contact who was checked and found to have no profile photo stays
-// "known photo-less" before we look again. Matches the 24h window the orchestrator
-// already uses for Conversation.bookingCheckedAt (BOOKING_CACHE_MS), so the codebase
-// has one consistent "re-check external enrichment daily" cadence. A photo added
-// mid-day shows up within a day; a photo-less contact costs at most one wa-coexist
-// round-trip per day instead of one per message.
-const AVATAR_RECHECK_MS = 24 * 60 * 60 * 1000
-
 const DELIVERY_STATUS_BY_META_STATUS: Record<string, DeliveryStatus> = {
   sent: 'SENT',
   delivered: 'DELIVERED',
@@ -166,46 +158,6 @@ function parseMetaTimestamp(raw: string | undefined): Date {
   const date = new Date(seconds * 1000)
   if (Number.isNaN(date.getTime())) return new Date()
   return date
-}
-
-/**
- * Best-effort avatar enrichment via wa-coexist. Every failure mode here -- no WaNumber
- * row configured, wa-coexist down, a non-JSON error page, an unexpected body shape --
- * must stay non-fatal: a decorative avatar can never be allowed to take down inbound
- * message ingestion. Note the WaNumber lookup lives INSIDE the try (it used to sit
- * outside, so an un-seeded environment 500'd every single webhook delivery).
- */
-async function enrichContactAvatar(contact: Contact, phone: string): Promise<void> {
-  if (contact.avatarUrl) return
-  if (contact.avatarCheckedAt && Date.now() - contact.avatarCheckedAt.getTime() < AVATAR_RECHECK_MS) return
-
-  try {
-    let avatarUrl: string | null = null
-    const waNumber = await prisma.waNumber.findFirst()
-    if (!waNumber) {
-      console.warn('inbound: avatar enrichment skipped — no WaNumber row configured')
-    } else {
-      const res = await fetch(`${waNumber.coexistBaseUrl}/api/contact/${phone}@s.whatsapp.net/avatar`)
-      if (!res.ok) {
-        console.warn('inbound: avatar lookup returned a non-OK response', { status: res.status, contactId: contact.id })
-      } else {
-        const body: unknown = await res.json()
-        const url = (body as { url?: unknown } | null)?.url
-        if (typeof url === 'string' && url.length > 0) avatarUrl = url
-      }
-    }
-    // Stamped on every attempt, including the ones that found no photo or could not
-    // reach wa-coexist -- that is the whole point of the negative cache.
-    await prisma.contact.update({
-      where: { id: contact.id },
-      data: avatarUrl ? { avatarUrl, avatarCheckedAt: new Date() } : { avatarCheckedAt: new Date() },
-    })
-  } catch (error) {
-    console.warn('inbound: avatar enrichment failed — continuing without an avatar', {
-      contactId: contact.id,
-      error,
-    })
-  }
 }
 
 /**
@@ -393,8 +345,6 @@ async function ingestSingleMessage(message: MetaInboundMessage, contacts: MetaCo
     create: { phone: message.from, name: profileName ?? null },
   })
 
-  await enrichContactAvatar(contact, message.from)
-
   const sentAt = parseMetaTimestamp(message.timestamp)
   const conversation = await prisma.conversation.upsert({
     where: { contactId: contact.id },
@@ -484,8 +434,6 @@ async function ingestEchoedMessage(echo: MetaMessageEcho): Promise<boolean> {
     update: {},
     create: { phone: echo.to, name: null },
   })
-
-  await enrichContactAvatar(contact, echo.to)
 
   const sentAt = parseMetaTimestamp(echo.timestamp)
   const conversation = await prisma.conversation.upsert({
