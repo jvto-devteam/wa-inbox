@@ -602,13 +602,11 @@ describe('ingestMetaMessage bot dispatch', () => {
     expect(decideAndRespond).not.toHaveBeenCalled()
   })
 
-  it('logs a handoff decision without sending anything to the customer', async () => {
-    // Safety-critical invariant: a handoff decision must never produce an outbound WhatsApp
-    // dispatch — the conversation just waits for a human. This guards against a regression that
-    // calls sendMessage() (which always dispatches via sendMetaText/sendCoexistText) unconditionally,
-    // or that broadens the mode-matching condition to accidentally include 'handoff'. The decision
-    // must still be logged (content: null, sentBy: 'BOT', botTrace set) so it shows up in the bot
-    // audit log — it's just never sent to sendMessage().
+  // Confirmed with the operator 2026-08-06: EVERY handoff now sends one honest, generic
+  // acknowledgment before going silent -- leaving the customer with zero reply while waiting
+  // for a human agent to notice used to read as the bot having failed, not as "a person will
+  // help you shortly". This replaced the old "handoff never dispatches anything" invariant.
+  it('sends a generic handoff acknowledgment (not the raw internal reason) and tags it with the full decision as botTrace', async () => {
     stubHappyPath()
     const decision = { mode: 'handoff' as const, reason: 'Kata kunci eskalasi terdeteksi' }
     vi.mocked(decideAndRespond).mockResolvedValue(decision)
@@ -617,17 +615,17 @@ describe('ingestMetaMessage bot dispatch', () => {
     await vi.advanceTimersByTimeAsync(5000)
 
     expect(decideAndRespond).toHaveBeenCalledWith('conv_1', 'Halo, mau tanya paket Ijen')
-    expect(sendMessage).not.toHaveBeenCalled()
-    expect(mockPrisma.message.create).toHaveBeenCalledWith(expect.objectContaining({
-      data: expect.objectContaining({
-        conversationId: 'conv_1',
-        content: null,
-        sentBy: 'BOT',
-        botTrace: decision,
-        deliveryStatus: 'SENT',
-        direction: 'OUTBOUND',
-      }),
-    }))
+    expect(sendMessage).toHaveBeenCalledWith({
+      conversationId: 'conv_1',
+      text: "Thank you for your message! I'm connecting you with a member of our team, and they'll follow up with you shortly.",
+      sentBy: 'BOT',
+      botTrace: decision,
+    })
+    // The internal reason ("Kata kunci eskalasi terdeteksi") is never the customer's own
+    // reply text -- some reasons (e.g. an escalation keyword match) would read oddly quoted
+    // back to the customer who triggered them.
+    const [call] = vi.mocked(sendMessage).mock.calls
+    expect(call[0].text).not.toContain('Kata kunci eskalasi terdeteksi')
   })
 
   it('turns the bot off on the conversation when it hands off to a human', async () => {
@@ -677,12 +675,12 @@ describe('ingestMetaMessage bot dispatch', () => {
     expect(alerts).toHaveLength(1)
   })
 
-  it('always disables the bot per-conversation and logs an audit row on handoff -- the global bot mode never reaches this far', async () => {
+  it('always disables the bot per-conversation and sends the handoff acknowledgment -- the global bot mode never reaches this far', async () => {
     // Settings.botAutoReplyAll only ever affects conversation.botEnabled (bulk-written by
     // src/app/api/bot/mode/route.ts, and read fresh for brand-new conversations) -- by the time
     // decideAndRespond returns a handoff, this function has no idea (and no need to know)
     // whether that was due to the global mode or an ordinary per-conversation reason. Every
-    // handoff always flips botEnabled off and always logs the placeholder.
+    // handoff always flips botEnabled off and always sends the acknowledgment.
     stubHappyPath()
     vi.mocked(decideAndRespond).mockResolvedValue({ mode: 'handoff', reason: 'Kata kunci eskalasi terdeteksi' })
 
@@ -691,9 +689,7 @@ describe('ingestMetaMessage bot dispatch', () => {
 
     expect(mockPrisma.conversation.update).toHaveBeenCalledWith({ where: { id: 'conv_1' }, data: { botEnabled: false } })
     expect(broadcast).toHaveBeenCalledWith(expect.objectContaining({ type: 'handoff.alert' }))
-    expect(mockPrisma.message.create).toHaveBeenCalledWith(expect.objectContaining({
-      data: expect.objectContaining({ sentBy: 'BOT', content: null, direction: 'OUTBOUND' }),
-    }))
+    expect(sendMessage).toHaveBeenCalledWith(expect.objectContaining({ sentBy: 'BOT', conversationId: 'conv_1' }))
   })
 
   it("re-checks botEnabled fresh at flush time, so an agent taking over mid-wait cancels the bot's reply", async () => {
@@ -718,8 +714,9 @@ describe('scheduleBotRun burst batching', () => {
     __resetPendingBurstsForTests()
     vi.mocked(decideAndRespond).mockReset().mockResolvedValue({ mode: 'handoff', reason: 'default test stub' })
     mockPrisma.conversation.findUnique.mockResolvedValue({ botEnabled: true } as never)
-    // The default 'handoff' mode writes a log-only Message row (see runBotForConversation) --
-    // give it a resolvable value so that path doesn't throw on an unconfigured mock.
+    // A resolvable default in case any test in this block exercises a path that still touches
+    // prisma.message.create directly (the default 'handoff' mode itself now sends its
+    // acknowledgment via the separately-mocked sendMessage(), not this).
     mockPrisma.message.create.mockResolvedValue({ id: 'msg_burst' } as never)
   })
   afterEach(() => {
