@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mockDeep, mockReset, type DeepMockProxy } from 'vitest-mock-extended'
 import type { PrismaClient } from '@prisma/client'
 import { prisma } from '@/lib/db'
-import { decideAndRespond } from './orchestrator'
+import { decideAndRespond, gatherSideFacts, withSideFacts, computeTripPreferencesFunnelDecision } from './orchestrator'
 import { ensureFreshBookingData } from '@/lib/booking/client'
 import { checkRouteGate } from './route-gate'
 import { classifySalesNeed } from './sales-classifier'
@@ -2134,5 +2134,119 @@ describe('decideAndRespond', () => {
       const [, opts] = (callLLM as any).mock.calls[0]
       expect(opts.system).toContain('Package the customer is asking about: Ijen from Surabaya to Bali')
     })
+  })
+})
+
+// Architecture review, 2026-08-06: extracted 2026-08-06 as a genuinely pure function (no DB,
+// no LLM, no trace) so the many small state combinations it has to get right -- satisfied vs.
+// missing fields, declined-before vs. declined-just-now, awaiting-answer vs. not, topic
+// exclusions -- can be tested directly and exhaustively, instead of only reachable through the
+// full decideAndRespond mock harness one integration scenario at a time. This is the concrete
+// payoff of the extraction: every case below needs zero mocking.
+describe('computeTripPreferencesFunnelDecision (pure)', () => {
+  const base = { tripBrief: {}, inboundText: 'Which package do you recommend for Ijen?', resolverTopic: 'price' as const, origin: null, finishCity: null, dayCount: null }
+
+  it('asks when everything is missing and nothing has been asked or declined before', () => {
+    const d = computeTripPreferencesFunnelDecision(base)
+    expect(d).toEqual({ isRecommendationTopic: true, wasAwaitingAnswer: false, declinedTripPreferences: false, justDeclined: false, shouldAsk: true })
+  })
+
+  it('does not ask once all three of origin/finishCity/dayCount are known', () => {
+    const d = computeTripPreferencesFunnelDecision({ ...base, origin: 'Surabaya', finishCity: 'bali', dayCount: 3 })
+    expect(d.shouldAsk).toBe(false)
+    expect(d.isRecommendationTopic).toBe(true)
+  })
+
+  it('still asks even with fields partially known -- ALL three are required, not just one', () => {
+    expect(computeTripPreferencesFunnelDecision({ ...base, origin: 'Surabaya' }).shouldAsk).toBe(true)
+    expect(computeTripPreferencesFunnelDecision({ ...base, origin: 'Surabaya', finishCity: 'bali' }).shouldAsk).toBe(true)
+  })
+
+  it('is not a recommendation topic at all for an ordinary unrelated message (no funnel, no ask)', () => {
+    const d = computeTripPreferencesFunnelDecision({ ...base, inboundText: 'Is Ijen safe?', resolverTopic: 'destination_readiness' })
+    expect(d.isRecommendationTopic).toBe(false)
+    expect(d.shouldAsk).toBe(false)
+  })
+
+  it('detects a recommendation topic from phrasing alone, independent of resolverTopic', () => {
+    const d = computeTripPreferencesFunnelDecision({ ...base, inboundText: 'What packages do you have for Ijen?', resolverTopic: 'general' })
+    expect(d.isRecommendationTopic).toBe(true)
+  })
+
+  describe('the awaitingTripPreferencesAnswer override', () => {
+    it('extends recommendation-topic status to the immediate next message when its topic is genuinely ambiguous', () => {
+      const d = computeTripPreferencesFunnelDecision({
+        ...base, inboundText: 'Finish in Surabaya please', resolverTopic: 'route_endpoint',
+        tripBrief: { awaitingTripPreferencesAnswer: true },
+      })
+      expect(d.isRecommendationTopic).toBe(true)
+      expect(d.wasAwaitingAnswer).toBe(true)
+    })
+
+    // Reported live 2026-08-06: "How much is the deposit?" right after the funnel asked was
+    // getting re-funneled instead of answered -- DESTINATION_INDEPENDENT_TOPICS must be excluded.
+    it('does NOT extend recommendation-topic status when the reply resolves to a self-contained, unrelated topic (payment/hotel/cancellation/etc)', () => {
+      for (const topic of ['payment', 'hotel', 'cancellation', 'booking', 'inclusions', 'private_tour', 'vehicle', 'rooming'] as const) {
+        const d = computeTripPreferencesFunnelDecision({
+          ...base, inboundText: 'How much is the deposit?', resolverTopic: topic,
+          tripBrief: { awaitingTripPreferencesAnswer: true },
+        })
+        expect(d.isRecommendationTopic).toBe(false)
+        expect(d.shouldAsk).toBe(false)
+      }
+    })
+
+    it('reports wasAwaitingAnswer=true whenever it was set, regardless of whether the override actually applied', () => {
+      const d = computeTripPreferencesFunnelDecision({
+        ...base, inboundText: 'How much is the deposit?', resolverTopic: 'payment',
+        tripBrief: { awaitingTripPreferencesAnswer: true },
+      })
+      expect(d.wasAwaitingAnswer).toBe(true)
+    })
+  })
+
+  describe('declining', () => {
+    it('detects a decline signal in the message and flags it as NEW (justDeclined)', () => {
+      const d = computeTripPreferencesFunnelDecision({ ...base, inboundText: "I'm not sure yet, what would you recommend?" })
+      expect(d.declinedTripPreferences).toBe(true)
+      expect(d.justDeclined).toBe(true)
+      expect(d.shouldAsk).toBe(false)
+    })
+
+    it('recognizes a decline already on file and does NOT flag it as new (no redundant persist)', () => {
+      const d = computeTripPreferencesFunnelDecision({ ...base, tripBrief: { declinedTripPreferences: true } })
+      expect(d.declinedTripPreferences).toBe(true)
+      expect(d.justDeclined).toBe(false)
+      expect(d.shouldAsk).toBe(false)
+    })
+
+    it('an Indonesian decline phrase works the same as an English one', () => {
+      expect(computeTripPreferencesFunnelDecision({ ...base, inboundText: 'Ijen, tapi saya belum tau mau berapa hari' }).justDeclined).toBe(true)
+    })
+  })
+})
+
+describe('gatherSideFacts / withSideFacts (pure formatting helpers)', () => {
+  beforeEach(() => {
+    ;(resolveKeywordTriggeredFacts as any).mockReturnValue([])
+    ;(resolveRouteLegFacts as any).mockReturnValue([])
+  })
+
+  it('combines keyword-triggered and route-leg facts into one flat list', () => {
+    ;(resolveKeywordTriggeredFacts as any).mockReturnValue(['Jackets can be rented on-site.'])
+    ;(resolveRouteLegFacts as any).mockReturnValue(['Surabaya to Bromo: ±3.5-4.5 hours.'])
+    expect(gatherSideFacts('irrelevant, mocked below')).toEqual(['Jackets can be rented on-site.', 'Surabaya to Bromo: ±3.5-4.5 hours.'])
+  })
+
+  it('returns an empty list when neither source has anything', () => {
+    expect(gatherSideFacts('is ijen safe?')).toEqual([])
+  })
+
+  it('withSideFacts prepends facts as their own paragraph before the base reply', () => {
+    expect(withSideFacts(['Fact A.', 'Fact B.'], 'Base reply.')).toBe('Fact A. Fact B.\n\nBase reply.')
+  })
+
+  it('withSideFacts returns the base reply unchanged when there are no side facts', () => {
+    expect(withSideFacts([], 'Base reply.')).toBe('Base reply.')
   })
 })

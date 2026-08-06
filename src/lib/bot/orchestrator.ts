@@ -219,18 +219,18 @@ function isUnknownPreferenceSignal(message: string): boolean {
 // static (non-LLM-composed) reply. Single source now -- adding a third fact source only means
 // editing this one function, not finding and updating every call site that happened to inline
 // the same list.
-function gatherSideFacts(inboundText: string): string[] {
+export function gatherSideFacts(inboundText: string): string[] {
   return [...resolveKeywordTriggeredFacts(inboundText), ...resolveRouteLegFacts(inboundText)]
 }
 
 // Prepends side facts (if any) as their own paragraph before a static reply -- the second half
 // of the same duplication `gatherSideFacts` fixes: both static-reply branches also repeated
 // this exact "join with a blank line before the main message" formatting inline.
-function withSideFacts(sideFacts: string[], baseReply: string): string {
+export function withSideFacts(sideFacts: string[], baseReply: string): string {
   return sideFacts.length > 0 ? `${sideFacts.join(' ')}\n\n${baseReply}` : baseReply
 }
 
-type PickupScenarioResult = {
+export type PickupScenarioResult = {
   /** Meta-instruction-bearing text for an LLM system prompt -- never show this to a customer directly. */
   forLLM: string | null
   /** Plain, customer-ready text -- safe to concatenate directly into a reply that never reaches the LLM. */
@@ -250,7 +250,7 @@ const NO_PICKUP_SCENARIO: PickupScenarioResult = { forLLM: null, forCustomer: nu
  * and a boundary. Never guessed: only runs when the customer's OWN words this message state
  * both a pickup type and time, and at least one requested destination is known.
  */
-function evaluatePickupScenario(
+export function evaluatePickupScenario(
   inboundText: string,
   ctx: { origin: string | null; finishCity: string | null; dayCount: number | null; pax: number | null; requestedTokens: string[] },
   conversationId: string
@@ -321,6 +321,63 @@ const DESTINATION_INDEPENDENT_TOPICS = new Set<ResolverTopic>([
   'cancellation',
   'booking',
 ])
+
+export type TripPreferencesFunnelDecision = {
+  /** Whether this turn counts as a package-recommendation request at all. */
+  isRecommendationTopic: boolean
+  /** `tripBrief.awaitingTripPreferencesAnswer` was true coming into this turn -- caller must clear it. */
+  wasAwaitingAnswer: boolean
+  /** Final effective decline state (persisted from before, OR signaled this message). */
+  declinedTripPreferences: boolean
+  /** The decline is NEW this message -- caller must persist it. */
+  justDeclined: boolean
+  /** True => the funnel must ask (or re-ask) for start/finish/day-count before recommending. */
+  shouldAsk: boolean
+}
+
+/**
+ * The trip-preferences funnel's decision logic, extracted 2026-08-06 (architecture review) as
+ * a pure function -- no DB writes, no trace, just "what should happen" given the current
+ * state. decideAndRespond still performs the actual persistTripBrief calls/trace pushes/reply
+ * building based on the fields returned here (same call sequence as before this extraction,
+ * verified byte-for-byte against the full existing test suite) -- kept there rather than inside
+ * this function because those really are side effects tied to the request, not part of the
+ * decision itself. Confirmed with the operator 2026-08-05, REFINED 2026-08-06: start/finish/
+ * day-count stay MANDATORY before recommending a package -- not "ask once, then give up". The
+ * ONLY way past this without all three known is the customer EXPLICITLY saying they don't
+ * know/don't care -- "one message has passed since the bot asked" is NOT that signal.
+ */
+export function computeTripPreferencesFunnelDecision(input: {
+  tripBrief: TripBrief
+  inboundText: string
+  resolverTopic: ResolverTopic
+  origin: string | null
+  finishCity: string | null
+  dayCount: number | null
+}): TripPreferencesFunnelDecision {
+  const { tripBrief, inboundText, resolverTopic, origin, finishCity, dayCount } = input
+  const wasAwaitingAnswer = tripBrief.awaitingTripPreferencesAnswer === true
+  // 'price' kept alongside isRecommendationRequest as a belt-and-suspenders topic-based signal
+  // -- either one is enough. `wasAwaitingAnswer` (set true exactly when the gate below asked
+  // its bullet question last turn) also counts, but ONLY for the one message that immediately
+  // follows the ask, and NEVER for a reply that resolves to a DESTINATION_INDEPENDENT_TOPICS
+  // topic (payment, hotel, cancellation, etc.) -- those are fully answerable on their own
+  // regardless of trip specifics, so a reply resolving to one of them is clearly not an
+  // attempt to answer or continue the funnel (reported live 2026-08-06: "How much is the
+  // deposit?" right after the funnel asked was getting re-funneled instead of answered).
+  const isRecommendationTopic =
+    resolverTopic === 'price' ||
+    isRecommendationRequest(inboundText) ||
+    (wasAwaitingAnswer && !DESTINATION_INDEPENDENT_TOPICS.has(resolverTopic))
+  // Permanent once signaled (mirrors `askedTripPreferences`'s own "persists for the rest of the
+  // conversation" pattern) -- a customer who says once "gak tau, terserah aja" shouldn't have
+  // to repeat it on every later message.
+  const alreadyDeclined = tripBrief.declinedTripPreferences === true
+  const declinedTripPreferences = alreadyDeclined || isUnknownPreferenceSignal(inboundText)
+  const justDeclined = declinedTripPreferences && !alreadyDeclined
+  const shouldAsk = isRecommendationTopic && !declinedTripPreferences && (!origin || !finishCity || !dayCount)
+  return { isRecommendationTopic, wasAwaitingAnswer, declinedTripPreferences, justDeclined, shouldAsk }
+}
 
 // Shared by both LLM-grounded modes (Mode 1/2's catalog-knowledge path and Mode 3's
 // booking_context path): the bot must read as a real JVTO team member typing on WhatsApp, not
@@ -667,63 +724,19 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
     if (pickupScenario.traceDetail) trace.push('Evaluasi urutan rute & waktu istirahat', pickupScenario.traceDetail)
     const scenarioNote = pickupScenario.forLLM ? `\n\n${pickupScenario.forLLM}` : ''
 
-    // Confirmed with the operator 2026-08-05, REFINED 2026-08-06: before recommending ANY
-    // package, the funnel requires all three of start city, finish city, and trip length to be
-    // known -- not just when the destination has multiple real origins (the narrower rule this
-    // replaces). This stays MANDATORY -- not "ask once, then give up": a customer who ignores
-    // the bullet question, or answers something unrelated, must still be asked again on their
-    // next recommendation-topic message rather than silently getting a full package
-    // recommendation anyway. The ONLY way past this without all three known is the customer
-    // EXPLICITLY saying they don't know/don't care (`declinedTripPreferences`, checked below) --
-    // "one message has passed since the bot asked" is NOT that signal. Already-known fields are
-    // pre-filled in the bullet reply (never re-asked), so only genuinely missing ones need an
-    // answer. 'price' kept alongside isRecommendationRequest as a belt-and-suspenders
-    // topic-based signal -- either one is enough. 'general' deliberately NOT included here:
-    // live-tested 2026-08-05, it's classifyTopic's default fallback for basically any
-    // unclassified message (job J1's default topic), so treating every 'general'-topic message
-    // as a recommendation request meant an unrelated question ("can you arrange a police
-    // escort?") triggered this gate (and the multi-option "present ALL options" instruction
-    // below) and buried the real police-escort link under a funnel question the customer never
-    // asked for.
-    // `tripBrief.awaitingTripPreferencesAnswer` (set true exactly when the gate below asks its
-    // bullet question, read here BEFORE this message, cleared right after) also counts as a
-    // recommendation-topic signal on its own -- but ONLY for the one message that immediately
-    // follows the ask, never longer. Live-tested 2026-08-05: once the gate asks, the customer's
-    // short, funnel-completing reply ("Finish in Surabaya please") classifies as
-    // 'route_endpoint' on its own -- not 'price' -- so the multi-option "present ALL options"
-    // logic further down never engaged, and a genuinely still-ambiguous case (2 real packages
-    // tied on all 3 criteria) silently got answered with just pickPackage's single first match.
-    // Deliberately one-shot (not `askedTripPreferences`, which stays true for the rest of the
-    // conversation): treating EVERY later message as a recommendation topic would resurrect the
-    // exact bug the comment below already warns about (an unrelated question later in the same
-    // conversation wrongly triggering the multi-option instruction).
-    // Reported live 2026-08-06: "Which package do you recommend for Ijen?" -> bot asks for
-    // start/finish/days -> customer replies "How much is the deposit?" (a genuinely different,
-    // fully answerable-on-its-own question, classified 'payment') -> the OLD unconditional
-    // awaitingTripPreferencesAnswer override treated this as STILL being about the funnel and
-    // re-asked the bullet question instead of answering the real one. The funnel is mandatory
-    // for an actual package request, not for whatever message happens to arrive right after the
-    // bot asked -- DESTINATION_INDEPENDENT_TOPICS (payment, hotel, cancellation, etc.) are
-    // exactly the topics that are fully answerable on their own regardless of trip specifics,
-    // so a reply that resolves to one of THOSE is clearly not an attempt to answer (or continue)
-    // the funnel and must be excluded from the override. A genuinely ambiguous funnel-completing
-    // reply ("Finish in Surabaya please" -> topic 'route_endpoint', not in this set) still gets
-    // the override, unchanged from before.
-    const isRecommendationTopic =
-      resolverTopic === 'price' ||
-      isRecommendationRequest(inboundText) ||
-      (tripBrief.awaitingTripPreferencesAnswer === true && !DESTINATION_INDEPENDENT_TOPICS.has(resolverTopic))
-    if (tripBrief.awaitingTripPreferencesAnswer) {
+    // See computeTripPreferencesFunnelDecision's own header for the full rationale (mandatory
+    // start/finish/day-count before a package recommendation, the DESTINATION_INDEPENDENT_TOPICS
+    // exclusion, the decline signal) -- this call site just sequences the side effects (DB
+    // writes, trace, reply) the pure decision implies, in the exact same order as before.
+    const funnelDecision = computeTripPreferencesFunnelDecision({ tripBrief, inboundText, resolverTopic, origin, finishCity, dayCount })
+    const isRecommendationTopic = funnelDecision.isRecommendationTopic
+    if (funnelDecision.wasAwaitingAnswer) {
       await persistTripBrief({ destination, awaitingTripPreferencesAnswer: false })
     }
-    // Permanent once signaled (mirrors `askedTripPreferences`'s own "persists for the rest of
-    // the conversation" pattern) -- a customer who says once "gak tau, terserah aja" shouldn't
-    // have to repeat it on every later message.
-    const declinedTripPreferences = tripBrief.declinedTripPreferences === true || isUnknownPreferenceSignal(inboundText)
-    if (declinedTripPreferences && tripBrief.declinedTripPreferences !== true) {
+    if (funnelDecision.justDeclined) {
       await persistTripBrief({ destination, declinedTripPreferences: true })
     }
-    if (isRecommendationTopic && !declinedTripPreferences && (!origin || !finishCity || !dayCount)) {
+    if (funnelDecision.shouldAsk) {
       await persistTripBrief({ destination, askedTripPreferences: true, awaitingTripPreferencesAnswer: true })
       trace.push(
         'Menanyakan detail trip',
