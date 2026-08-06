@@ -523,8 +523,20 @@ describe('mentionedUnsupportedOriginCity', () => {
   // Malang/Ketapang are real waypoints/finish points elsewhere in a genuine itinerary (e.g.
   // the Ketapang-Gilimanuk ferry) -- flagging them here would produce a FALSE "not supported"
   // claim about a place that genuinely is part of real routes.
-  it('does not flag Malang or Ketapang, which are real route waypoints, not unsupported cities', () => {
+  it('does not flag Ketapang, a real route waypoint ("the ferry FROM Ketapang" is common, unrelated phrasing)', () => {
     expect(mentionedUnsupportedOriginCity('the ferry from Ketapang to Gilimanuk')).toBeNull()
-    expect(mentionedUnsupportedOriginCity('starting from Malang')).toBeNull()
+  })
+
+  // Reported live 2026-08-06, re-checked after the first pass: 2 real customers (Julia,
+  // anthony wijoyo) explicitly asked for pickup FROM Malang -- genuinely unsupported (real
+  // package origins are only ever Bali/Surabaya), and unlike Ketapang there's no common
+  // innocent "from Malang" phrasing to false-positive on.
+  it('flags Malang as an unsupported pickup city when explicitly requested as a start point', () => {
+    expect(mentionedUnsupportedOriginCity('starting from Malang')).toBe('Malang')
+    expect(mentionedUnsupportedOriginCity('can I get picked up from Malang instead of Surabaya?')).toBe('Malang')
+  })
+
+  it('does not flag an ordinary route-leg description mentioning Malang as a waypoint (not a start-context phrase)', () => {
+    expect(mentionedUnsupportedOriginCity('Day 3: Bromo Area to Malang, then Malang to Surabaya')).toBeNull()
   })
 })

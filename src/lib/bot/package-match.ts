@@ -242,14 +242,22 @@ function hasNearbyFinishContext(low: string, cityIndex: number, cityLength: numb
 
 // Cities customers occasionally name as their pickup/start point that JVTO genuinely does
 // not service (tours only depart from Surabaya or Bali, per GENERAL_FAQ_FALLBACK) -- e.g. a
-// real customer wrote "Start / Pick-up: Yogyakarta". Deliberately excludes Malang/Ketapang:
-// both are real waypoints/finish points elsewhere in a genuine itinerary ("the ferry from
-// Ketapang to Gilimanuk"), so flagging them here on a bare "from <city>" match would produce
-// a FALSE "not supported" claim about a place that genuinely is part of real routes -- worse
-// than staying silent. Scoped to explicit start-context phrasing (mirrors FROM_CITY_PATTERN)
-// so an unrelated mention elsewhere in the message never triggers this.
+// real customer wrote "Start / Pick-up: Yogyakarta". Deliberately excludes Ketapang: it's a
+// real waypoint elsewhere in a genuine itinerary ("the ferry from Ketapang to Gilimanuk"), so
+// flagging it here on a bare "from <city>" match would produce a FALSE "not supported" claim
+// about a place that genuinely is part of real routes -- worse than staying silent. Malang IS
+// included (see UNSUPPORTED_ORIGIN_CITIES below) since that false-positive risk doesn't apply
+// to it. Scoped to explicit start-context phrasing (mirrors FROM_CITY_PATTERN) so an
+// unrelated mention elsewhere in the message never triggers this.
+// 'malang' added 2026-08-06 after re-checking against the original audit: 2 real customers
+// (Julia, anthony wijoyo) explicitly asked for pickup FROM Malang -- genuinely unsupported
+// (packages' real `origin` field is only ever Bali/Surabaya) and the false-positive risk is
+// low, unlike Ketapang: a route-leg description like "Bromo Area to Malang" never matches
+// this pattern (it requires "from"/"start"/"pickup" immediately before the city name, not
+// "to <city>"). Ketapang stays excluded -- "the ferry FROM Ketapang" is common, genuinely
+// unrelated phrasing that would false-positive here.
 const UNSUPPORTED_ORIGIN_CITIES =
-  'yogyakarta|yogjakarta|jogjakarta|jogja|jakarta|bandung|semarang|solo|surakarta|padangbai|padang bai|canggu'
+  'yogyakarta|yogjakarta|jogjakarta|jogja|jakarta|bandung|semarang|solo|surakarta|padangbai|padang bai|canggu|malang'
 // `(?::|(?:in|at|from))?` (optional, unlike FROM_CITY_PATTERN's mandatory "in/at/from") --
 // a real customer wrote "Start / Pick-up: Yogyakarta" (a colon, not a preposition), which
 // FROM_CITY_PATTERN's own stricter shape would never match.
@@ -267,7 +275,14 @@ const UNSUPPORTED_ORIGIN_START_PATTERN = new RegExp(
  */
 export function mentionedUnsupportedOriginCity(message: string): string | null {
   const low = message.toLowerCase()
-  if (parseOrigin(low)) return null
+  // Reported live 2026-08-06: the real customer message "picked up from Malang INSTEAD OF
+  // Surabaya" was suppressed entirely -- parseOrigin's own bare-city fallback (deliberately
+  // loose, meant for genuinely ambiguous cases) misread "...instead of Surabaya" as if
+  // Surabaya were the stated pickup point, when it's explicitly the alternative being
+  // declined. Guards on FROM_CITY_PATTERN directly instead of the full parseOrigin -- only
+  // an UNAMBIGUOUS, explicitly-phrased Bali/Surabaya pickup ("picked up from Surabaya") should
+  // suppress this, not the loose fallback that "instead of" defeats.
+  if (FROM_CITY_PATTERN.test(low)) return null
   const match = low.match(UNSUPPORTED_ORIGIN_START_PATTERN)
   if (!match) return null
   const cityRaw = match[1] ?? match[2] ?? match[3]
