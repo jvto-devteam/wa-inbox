@@ -102,12 +102,12 @@ import {
   mentionedUnsupportedOriginCity,
   narrowPackagePool,
   packagesForDestination,
-  parseTripPreferences,
   pickPackage,
   priceForPax,
   sortByBestPackagePriority,
   titleCaseCity,
 } from './package-match'
+import { extractTripPreferences } from './trip-preferences-extractor'
 import { classifyTopic, type ResolverTopic } from './module-resolver'
 import { parsePickupTiming, buildItineraryScenario, describeScenarioForLLM, describeScenarioForCustomer, evaluateScenario } from './scenario-evaluator'
 import {
@@ -782,7 +782,16 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
     trace.push('Mengklasifikasi topik', `Topik terdeteksi: "${resolverTopic}".`)
 
     const matches = matched?.matches ?? packagesForDestination(destination, catalog)
-    const preferences = parseTripPreferences(inboundText)
+    // LLM-primary as of 2026-08-07 (see trip-preferences-extractor.ts's own header for the full
+    // rationale) -- validated against known values, falls back to the old regex parser only on
+    // a genuine technical failure (timeout/error/unparseable output), never as a first-pass gate.
+    const { preferences, source: preferencesSource } = await extractTripPreferences(inboundText, settings.ollamaModel)
+    trace.push(
+      'Mengekstrak preferensi perjalanan',
+      preferencesSource === 'llm'
+        ? 'Diekstrak oleh model LLM lokal dari teks pelanggan, tervalidasi terhadap nilai yang dikenal (origin/finishCity/dayCount/pax).'
+        : 'Model LLM gagal, timeout, atau hasilnya tidak valid -- fallback ke pemrosesan regex lama (parseTripPreferences).'
+    )
     // A city/duration mentioned THIS message wins, same precedence as `destination` above;
     // otherwise whatever was persisted from an EARLIER message in the conversation carries it
     // forward -- see TripBrief.dayCount/finishCity's own header for why all three (origin

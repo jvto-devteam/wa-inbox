@@ -6,7 +6,8 @@ import { decideAndRespond, gatherSideFacts, withSideFacts, computeTripPreference
 import { ensureFreshBookingData } from '@/lib/booking/client'
 import { checkRouteGate } from './route-gate'
 import { classifySalesNeed } from './sales-classifier'
-import { matchDestination, packagesForDestination, pickPackage, listDestinations, parseTripPreferences } from './package-match'
+import { matchDestination, packagesForDestination, pickPackage, listDestinations } from './package-match'
+import { extractTripPreferences } from './trip-preferences-extractor'
 import { classifyTopic } from './module-resolver'
 import { resolveKnowledgeForTopic, hasKeywordTriggeredModule, resolveKeywordTriggeredFacts, resolveRouteLegFacts } from './knowledge'
 import { callLLM } from './llm'
@@ -39,10 +40,14 @@ vi.mock('./package-match', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./package-match')>()),
   matchDestination: vi.fn(),
   packagesForDestination: vi.fn(),
-  parseTripPreferences: vi.fn(),
   pickPackage: vi.fn(),
   listDestinations: vi.fn(),
 }))
+// Mocked as a whole (not just its internal callLLM call) -- its real implementation calling the
+// real (also-mocked) callLLM would otherwise consume the blanket `callLLM` default below as its
+// own extraction response and add a SECOND callLLM invocation per decideAndRespond call, shifting
+// every existing `callLLM.mock.calls[0]` assertion in this file to the wrong call.
+vi.mock('./trip-preferences-extractor', () => ({ extractTripPreferences: vi.fn() }))
 // Partial mock: toComposableTopic is a pure, deterministic mapping table worth exercising
 // for real; only classifyTopic (keyword scanning against the raw message) is stubbed.
 vi.mock('./module-resolver', async (importOriginal) => ({
@@ -91,7 +96,7 @@ beforeEach(() => {
   ;(checkDeploymentGate as any).mockReturnValue({ readyForApproval: true, blocking: [] })
   ;(packagesForDestination as any).mockReturnValue([])
   ;(pickPackage as any).mockImplementation((matches: any[]) => matches[0])
-  ;(parseTripPreferences as any).mockReturnValue({ origin: null, dayCount: null, finishCity: null })
+  ;(extractTripPreferences as any).mockResolvedValue({ preferences: { origin: null, dayCount: null, finishCity: null, pax: null }, source: 'llm' })
   ;(listDestinations as any).mockReturnValue(['Bromo', 'Ijen'])
   ;(classifyTopic as any).mockReturnValue('inclusions')
   ;(hasKeywordTriggeredModule as any).mockReturnValue(false)
@@ -179,6 +184,7 @@ describe('decideAndRespond', () => {
         'Mencari destinasi',
         'Destinasi ditemukan',
         'Mengklasifikasi topik',
+        'Mengekstrak preferensi perjalanan',
         'Memeriksa validitas paket',
         'Paket valid',
         'Meminta jawaban dari model lokal',
@@ -720,11 +726,11 @@ describe('decideAndRespond', () => {
     ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
     ;(matchDestination as any).mockReturnValue({ destination: 'ijen', matches: [pkg()] })
     ;(checkRouteGate as any).mockReturnValue({ status: 'clear' })
-    ;(parseTripPreferences as any).mockReturnValue({ origin: 'Surabaya', dayCount: 3 })
+    ;(extractTripPreferences as any).mockResolvedValue({ preferences: { origin: 'Surabaya', dayCount: 3 }, source: 'llm' })
 
     await decideAndRespond('conv_1', '3 day ijen trip from Surabaya')
 
-    expect(parseTripPreferences).toHaveBeenCalledWith('3 day ijen trip from Surabaya')
+    expect(extractTripPreferences).toHaveBeenCalledWith('3 day ijen trip from Surabaya', 'gemma4:31b-cloud')
     expect(pickPackage).toHaveBeenCalledWith([pkg()], { origin: 'Surabaya', dayCount: 3, finishCity: null, pax: null })
   })
 
@@ -933,7 +939,7 @@ describe('decideAndRespond', () => {
       matches: [pkg({ origin: 'Surabaya', dayCount: 3, finishCities: ['ketapang'] })],
     })
     ;(checkRouteGate as any).mockReturnValue({ status: 'clear' })
-    ;(parseTripPreferences as any).mockReturnValue({ origin: 'Surabaya', dayCount: 3, finishCity: 'ketapang', pax: 2 })
+    ;(extractTripPreferences as any).mockResolvedValue({ preferences: { origin: 'Surabaya', dayCount: 3, finishCity: 'ketapang', pax: 2 }, source: 'llm' })
 
     await decideAndRespond('conv_1', 'Pickup from Surabaya airport jam 6 sore, mau ke Bromo dan Ijen, mana yang harus duluan?')
 
@@ -977,7 +983,7 @@ describe('decideAndRespond', () => {
     ;(loadCatalog as any).mockReturnValue({ packages: [pkg({ packageKey: 'catalog-anchor', destinationTokens: ['bromo', 'ijen'] })], syncedAt: null })
     ;(matchDestination as any).mockReturnValue({ destination: 'ijen', matches: [pkg()] })
     ;(classifyTopic as any).mockReturnValue('price')
-    ;(parseTripPreferences as any).mockReturnValue({ origin: 'Surabaya', dayCount: null, finishCity: null, pax: null })
+    ;(extractTripPreferences as any).mockResolvedValue({ preferences: { origin: 'Surabaya', dayCount: null, finishCity: null, pax: null }, source: 'llm' })
 
     const result = await decideAndRespond('conv_1', 'Pickup Surabaya Airport jam 6 sore, mau ke Bromo dan Ijen.')
 
@@ -1273,7 +1279,7 @@ describe('decideAndRespond', () => {
       ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
       ;(matchDestination as any).mockReturnValue({ destination: 'ijen', matches: [fromBali, fromSurabaya] })
       ;(classifyTopic as any).mockReturnValue('price')
-      ;(parseTripPreferences as any).mockReturnValue({ origin: 'Surabaya', dayCount: 3, finishCity: null, pax: null })
+      ;(extractTripPreferences as any).mockResolvedValue({ preferences: { origin: 'Surabaya', dayCount: 3, finishCity: null, pax: null }, source: 'llm' })
 
       const result = await decideAndRespond('conv_1', '3 day trip from Surabaya, which package do you recommend?')
 
@@ -1355,7 +1361,7 @@ describe('decideAndRespond', () => {
       // This reply's own text ("Finish in Surabaya please") is what a real customer sends after
       // being asked the bullet question -- classifies as 'route_endpoint', not 'price'.
       ;(classifyTopic as any).mockReturnValue('route_endpoint')
-      ;(parseTripPreferences as any).mockReturnValue({ origin: null, dayCount: null, finishCity: 'surabaya', pax: null })
+      ;(extractTripPreferences as any).mockResolvedValue({ preferences: { origin: null, dayCount: null, finishCity: 'surabaya', pax: null }, source: 'llm' })
       // awaitingTripPreferencesAnswer: true -- the PRIOR message was the funnel's bullet ask.
       mockPrisma.conversation.findUniqueOrThrow.mockResolvedValue({
         id: 'conv_1',
@@ -1442,7 +1448,7 @@ describe('decideAndRespond', () => {
       ;(matchDestination as any).mockReturnValue({ destination: 'ijen', matches: [pkg({ origin: 'Surabaya', finishCities: ['surabaya'], dayCount: 3 })] })
       ;(checkRouteGate as any).mockReturnValue({ status: 'clear' })
       ;(classifyTopic as any).mockReturnValue('price')
-      ;(parseTripPreferences as any).mockReturnValue({ origin: 'Surabaya', dayCount: 3, finishCity: 'surabaya', pax: null })
+      ;(extractTripPreferences as any).mockResolvedValue({ preferences: { origin: 'Surabaya', dayCount: 3, finishCity: 'surabaya', pax: null }, source: 'llm' })
 
       const result = await decideAndRespond('conv_1', '3 day trip from Surabaya, ending in Surabaya -- which package do you recommend?')
 
@@ -1486,7 +1492,7 @@ describe('decideAndRespond', () => {
       ;(matchDestination as any).mockReturnValue({ destination: 'ijen', matches: [fromBali, fromSurabaya] })
       ;(checkRouteGate as any).mockReturnValue({ status: 'clear' })
       ;(classifyTopic as any).mockReturnValue('price')
-      ;(parseTripPreferences as any).mockReturnValue({ origin: 'Surabaya', dayCount: null })
+      ;(extractTripPreferences as any).mockResolvedValue({ preferences: { origin: 'Surabaya', dayCount: null }, source: 'llm' })
       // declinedTripPreferences: true -- this test is about origin persistence/pickPackage
       // narrowing, not the start/finish/day-count funnel gate itself (see the dedicated gate
       // tests above), so declining bypasses it.
@@ -1513,7 +1519,7 @@ describe('decideAndRespond', () => {
       ;(matchDestination as any).mockReturnValue({ destination: 'ijen', matches: [fromBali, fromSurabaya] })
       ;(checkRouteGate as any).mockReturnValue({ status: 'clear' })
       ;(classifyTopic as any).mockReturnValue('inclusions')
-      ;(parseTripPreferences as any).mockReturnValue({ origin: null, dayCount: null })
+      ;(extractTripPreferences as any).mockResolvedValue({ preferences: { origin: null, dayCount: null }, source: 'llm' })
       mockPrisma.conversation.findUniqueOrThrow.mockResolvedValue({
         id: 'conv_1',
         tripBrief: { destination: 'ijen', origin: 'Bali' },
@@ -1792,7 +1798,7 @@ describe('decideAndRespond', () => {
       ;(resolveKnowledgeForTopic as any).mockReturnValue({
         factualLines: [], detailLines: [], primaryLink: null, disclosures: [], handoffRequired: false,
       })
-      ;(parseTripPreferences as any).mockReturnValue({ origin: 'Surabaya', dayCount: null, finishCity: null })
+      ;(extractTripPreferences as any).mockResolvedValue({ preferences: { origin: 'Surabaya', dayCount: null, finishCity: null }, source: 'llm' })
       mockPrisma.conversation.findUniqueOrThrow.mockResolvedValue({
         id: 'conv_1', tripBrief: { declinedTripPreferences: true }, bookingData: null, bookingCheckedAt: new Date(),
         contact: { phone: '6281234567890' },
@@ -1821,7 +1827,7 @@ describe('decideAndRespond', () => {
       ;(resolveKnowledgeForTopic as any).mockReturnValue({
         factualLines: ['Ijen access depends on conditions.'], detailLines: [], primaryLink: null, disclosures: [], handoffRequired: false,
       })
-      ;(parseTripPreferences as any).mockReturnValue({ origin: 'Surabaya', dayCount: null, finishCity: null })
+      ;(extractTripPreferences as any).mockResolvedValue({ preferences: { origin: 'Surabaya', dayCount: null, finishCity: null }, source: 'llm' })
       mockPrisma.conversation.findUniqueOrThrow.mockResolvedValue({
         id: 'conv_1', tripBrief: { declinedTripPreferences: true }, bookingData: null, bookingCheckedAt: new Date(),
         contact: { phone: '6281234567890' },
@@ -2077,7 +2083,7 @@ describe('decideAndRespond', () => {
       ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
       ;(matchDestination as any).mockReturnValue({ destination: 'ijen', matches: [tieredPkg()] })
       ;(checkRouteGate as any).mockReturnValue({ status: 'clear' })
-      ;(parseTripPreferences as any).mockReturnValue({ origin: null, dayCount: null, finishCity: null, pax: 2 })
+      ;(extractTripPreferences as any).mockResolvedValue({ preferences: { origin: null, dayCount: null, finishCity: null, pax: 2 }, source: 'llm' })
 
       await decideAndRespond('conv_1', 'We will be 2 people')
 
@@ -2096,7 +2102,7 @@ describe('decideAndRespond', () => {
       ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
       ;(matchDestination as any).mockReturnValue({ destination: 'ijen', matches: [tieredPkg()] })
       ;(checkRouteGate as any).mockReturnValue({ status: 'clear' })
-      ;(parseTripPreferences as any).mockReturnValue({ origin: null, dayCount: null, finishCity: null, pax: 2 })
+      ;(extractTripPreferences as any).mockResolvedValue({ preferences: { origin: null, dayCount: null, finishCity: null, pax: 2 }, source: 'llm' })
 
       await decideAndRespond('conv_1', 'We will be 2 people')
 
@@ -2122,7 +2128,7 @@ describe('decideAndRespond', () => {
       ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
       ;(matchDestination as any).mockReturnValue({ destination: 'ijen', matches: [tieredPkg()] })
       ;(checkRouteGate as any).mockReturnValue({ status: 'clear' })
-      ;(parseTripPreferences as any).mockReturnValue({ origin: null, dayCount: null, finishCity: null, pax: 3 })
+      ;(extractTripPreferences as any).mockResolvedValue({ preferences: { origin: null, dayCount: null, finishCity: null, pax: 3 }, source: 'llm' })
 
       const first = await decideAndRespond('conv_1', 'We are 3 people')
       expect(first.mode).toBe('faq')
@@ -2135,7 +2141,7 @@ describe('decideAndRespond', () => {
       mockPrisma.conversation.findUniqueOrThrow.mockResolvedValue({
         id: 'conv_1', tripBrief: { destination: 'ijen', pax: 3 }, contact: { name: 'Bruno' },
       } as never)
-      ;(parseTripPreferences as any).mockReturnValue({ origin: null, dayCount: null, finishCity: null, pax: null })
+      ;(extractTripPreferences as any).mockResolvedValue({ preferences: { origin: null, dayCount: null, finishCity: null, pax: null }, source: 'llm' })
 
       await decideAndRespond('conv_1', 'What is included?')
 
@@ -2153,7 +2159,7 @@ describe('decideAndRespond', () => {
       ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
       ;(matchDestination as any).mockReturnValue({ destination: 'ijen', matches: [tieredPkg()] })
       ;(checkRouteGate as any).mockReturnValue({ status: 'clear' })
-      ;(parseTripPreferences as any).mockReturnValue({ origin: null, dayCount: null, finishCity: null, pax: 1 })
+      ;(extractTripPreferences as any).mockResolvedValue({ preferences: { origin: null, dayCount: null, finishCity: null, pax: 1 }, source: 'llm' })
 
       await decideAndRespond('conv_1', "I'm traveling solo")
 
@@ -2182,7 +2188,7 @@ describe('decideAndRespond', () => {
       ;(matchDestination as any).mockReturnValue({ destination: 'bromo', matches: [bromoOnly] })
       ;(checkRouteGate as any).mockReturnValue({ status: 'clear' })
       ;(classifyTopic as any).mockReturnValue('price')
-      ;(parseTripPreferences as any).mockReturnValue({ origin: 'Surabaya', dayCount: 3, finishCity: 'surabaya', pax: null })
+      ;(extractTripPreferences as any).mockResolvedValue({ preferences: { origin: 'Surabaya', dayCount: 3, finishCity: 'surabaya', pax: null }, source: 'llm' })
 
       await decideAndRespond('conv_1', 'A 3 day trip from Surabaya to Bromo and Ijen, ending in Surabaya')
 
@@ -2200,7 +2206,7 @@ describe('decideAndRespond', () => {
       ;(matchDestination as any).mockReturnValue({ destination: 'ijen', matches: [surabayaToBali, baliOrigin] })
       ;(checkRouteGate as any).mockReturnValue({ status: 'clear' })
       ;(classifyTopic as any).mockReturnValue('price')
-      ;(parseTripPreferences as any).mockReturnValue({ origin: 'Bali', dayCount: 4, finishCity: 'bali', pax: null })
+      ;(extractTripPreferences as any).mockResolvedValue({ preferences: { origin: 'Bali', dayCount: 4, finishCity: 'bali', pax: null }, source: 'llm' })
 
       await decideAndRespond('conv_1', '4 day trip starting and finishing in Bali')
 
@@ -2218,7 +2224,7 @@ describe('decideAndRespond', () => {
       ;(matchDestination as any).mockReturnValue({ destination: 'ijen', matches: [onlyThreeDay] })
       ;(checkRouteGate as any).mockReturnValue({ status: 'clear' })
       ;(classifyTopic as any).mockReturnValue('price')
-      ;(parseTripPreferences as any).mockReturnValue({ origin: null, dayCount: 15, finishCity: null, pax: null })
+      ;(extractTripPreferences as any).mockResolvedValue({ preferences: { origin: null, dayCount: 15, finishCity: null, pax: null }, source: 'llm' })
       // askedTripPreferences: true -- bypasses the unrelated start/finish/day-count funnel
       // gate so this test reaches narrowPackagePool's own tier logic being asserted.
       mockPrisma.conversation.findUniqueOrThrow.mockResolvedValue({
@@ -2275,7 +2281,7 @@ describe('decideAndRespond', () => {
       ;(matchDestination as any).mockReturnValue({ destination: 'ijen', matches: [cannotFinishInBali, canFinishInBali] })
       ;(checkRouteGate as any).mockReturnValue({ status: 'clear' })
       ;(classifyTopic as any).mockReturnValue('route_endpoint')
-      ;(parseTripPreferences as any).mockReturnValue({ origin: null, dayCount: null, finishCity: 'bali' })
+      ;(extractTripPreferences as any).mockResolvedValue({ preferences: { origin: null, dayCount: null, finishCity: 'bali' }, source: 'llm' })
 
       await decideAndRespond('conv_1', 'can we finish the trip in bali?')
 
@@ -2290,7 +2296,7 @@ describe('decideAndRespond', () => {
       ;(matchDestination as any).mockReturnValue({ destination: 'ijen', matches: [cannotFinishInBali] })
       ;(checkRouteGate as any).mockReturnValue({ status: 'clear' })
       ;(classifyTopic as any).mockReturnValue('route_endpoint')
-      ;(parseTripPreferences as any).mockReturnValue({ origin: null, dayCount: null, finishCity: 'bali' })
+      ;(extractTripPreferences as any).mockResolvedValue({ preferences: { origin: null, dayCount: null, finishCity: 'bali' }, source: 'llm' })
 
       await decideAndRespond('conv_1', 'can we finish the trip in bali?')
 
@@ -2317,7 +2323,7 @@ describe('decideAndRespond', () => {
       ;(matchDestination as any).mockReturnValue({ destination: 'ijen', matches: [cannotFinishInBali, canFinishInBali] })
       ;(checkRouteGate as any).mockReturnValue({ status: 'clear' })
       ;(classifyTopic as any).mockReturnValue('route_endpoint')
-      ;(parseTripPreferences as any).mockReturnValue({ origin: null, dayCount: null, finishCity: 'bali' })
+      ;(extractTripPreferences as any).mockResolvedValue({ preferences: { origin: null, dayCount: null, finishCity: 'bali' }, source: 'llm' })
       ;(pickPackage as any).mockImplementation((matches: any[], prefs: any) =>
         prefs?.finishCity ? (matches.find((p) => p.finishCities.includes(prefs.finishCity)) ?? matches[0]) : matches[0]
       )
