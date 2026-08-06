@@ -209,6 +209,17 @@ const KEYWORD_TRIGGERED_MODULES: Array<{ moduleId: string; keywords: string[] }>
     ],
   },
   {
+    moduleId: 'policy_cancellation_package_credit',
+    // Reported live 2026-08-06: a real customer's itemized quotation request included
+    // "cancellation and refund terms" as one of several bundled asks. The primary topic
+    // classified as 'price' (not 'cancellation'/'payment', TOPIC_MODULES' own gate for this
+    // module), so the LLM had no real facts for that bullet and defaulted to "let me check with
+    // our team" even though the full 48h-cutoff/Lifetime-Package-Credit policy (and its live
+    // link) already exists. Kept independent of topic classification so a cancellation/refund
+    // mention buried inside a message about something else still surfaces the real policy.
+    keywords: ['cancellation', 'cancel', 'refund', 'reschedule terms', 'travel credit'],
+  },
+  {
     moduleId: 'policy_ijen_crater_access_status',
     // Kept independent of topic classification (not just TOPIC_MODULES.blue_fire) so a "blue
     // fire" mention buried inside a message that classifies to an earlier-checked topic (e.g.

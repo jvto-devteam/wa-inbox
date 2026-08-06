@@ -59,6 +59,18 @@ describe.skipIf(!RELEASE_PRESENT)('resolveKnowledgeForTopic against the real syn
     expect(result.primaryLink).toBe('https://javavolcano-touroperator.com/policy/booking-payment-cancellation')
   })
 
+  // Reported live 2026-08-06: a customer's bundled quotation request asked about "cancellation
+  // and refund terms" alongside price/hotel/vehicle questions -- classifyTopic picked 'price' as
+  // the dominant topic, so the cancellation policy module (only wired via TOPIC_MODULES.
+  // cancellation/payment) never surfaced and the LLM defaulted to "let me check with our team"
+  // for a policy that's fully known. Now keyword-triggered independent of topic, same pattern as
+  // the invoice/emergency modules above.
+  it('resolves the real cancellation policy fact and link even when the topic is "price", not "cancellation"', () => {
+    const result = resolveKnowledgeForTopic('price', 'Cancellation and refund terms?')
+    expect(result.factualLines.some((f) => f.toLowerCase().includes('lifetime package credit'))).toBe(true)
+    expect(result.primaryLink).toBe('https://javavolcano-touroperator.com/policy/booking-payment-cancellation')
+  })
+
   // Reported 2026-08-05: a group of 15 got "let me check with our team" for vehicle -- honest,
   // but incomplete, since the real answer (multiple Hiace, scaled to group size) exists once
   // told to us. service_vehicle_by_pax's `rules` array was never actually read by knowledge.ts

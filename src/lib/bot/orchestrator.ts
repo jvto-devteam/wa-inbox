@@ -1024,6 +1024,15 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
     // prompt above. For an actual recommendation/comparison question, require presenting a
     // short list instead of picking on the customer's behalf.
     const recommendMultiple = isRecommendationTopic && optionPackages.length > 1
+    // Reported live 2026-08-05: a real customer message with 6+ distinct questions bundled
+    // together (invoice under the company name, replacement/emergency-contact arrangements,
+    // insurance, itinerary after a skipped stop + pickup time, hotel names/breakfast, exact
+    // finish point) got 2-3 answered individually, then everything else lumped into ONE vague
+    // "let me check with our team" sentence -- and the itinerary question was dropped
+    // entirely, never even acknowledged. Overrides SHARED_PERSONA_INSTRUCTIONS' usual 2-3
+    // sentence brevity for this case specifically: completeness matters more than staying
+    // short when the customer asked several distinct things and expects each one answered.
+    const isMultiQuestion = isMultiQuestionMessage(inboundText)
     // Reported 2026-08-05: a detailed, real, day-by-day private-driver request (arrival/free
     // day/sunrise-tour/departure spelled out across 4 separate dates, quotation + Jeep +
     // entrance-ticket questions) got every standard package dumped back at it, several
@@ -1036,19 +1045,18 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
     // rather than silently presenting a mismatched list as if it were tailored to them. Length
     // is a coarse but effective proxy here -- every detailed itinerary request found in a
     // 2026-08-05 audit of real customer messages ran 400-1900 characters, while an ordinary
-    // "what do you recommend?" runs a few dozen.
-    const looksLikeCustomItinerary = optionPackages.length > 1 && inboundText.length > 400
-    // Reported live 2026-08-05: a real customer message with 6+ distinct questions bundled
-    // together (invoice under the company name, replacement/emergency-contact arrangements,
-    // insurance, itinerary after a skipped stop + pickup time, hotel names/breakfast, exact
-    // finish point) got 2-3 answered individually, then everything else lumped into ONE vague
-    // "let me check with our team" sentence -- and the itinerary question was dropped
-    // entirely, never even acknowledged. Overrides SHARED_PERSONA_INSTRUCTIONS' usual 2-3
-    // sentence brevity for this case specifically: completeness matters more than staying
-    // short when the customer asked several distinct things and expects each one answered.
-    const isMultiQuestion = isMultiQuestionMessage(inboundText)
+    // "what do you recommend?" runs a few dozen. Gated on `!isMultiQuestion` (added 2026-08-06):
+    // reported live, a customer's itemized 10-point numbered quotation request (exact price,
+    // hotel names, vehicle, jeep, entrance fees, cancellation terms, etc.) matched 2 similarly
+    // titled packages, so this note's "still building the day-by-day plan, our team will follow
+    // up" framing got tacked onto an already-confident, fully-answered price+package reply --
+    // unlike the free-form day-by-day narrative this was written for, an itemized list is
+    // already fully handled by multiQuestionNote below (answer each fact directly, defer only
+    // the specific items that genuinely need it), so this note would only add a redundant,
+    // unwarranted "we'll follow up" caveat and dilute multiQuestionNote's own per-item guidance.
+    const looksLikeCustomItinerary = !isMultiQuestion && optionPackages.length > 1 && inboundText.length > 400
     const multiQuestionNote = isMultiQuestion
-      ? `\n\nThis message contains several distinct questions -- answer EVERY one of them, each as its own bullet point. Do not skip any, and do not lump multiple unconfirmed items into one vague sentence (e.g. never write "for the invoice, replacement arrangements, and hotel names, let me check" -- give each its own bullet, even if several of them end up saying the same honest "our team will confirm this shortly"). It's fine for this reply to be longer than usual to cover everything. For any question specifically about the day-by-day itinerary/schedule OR specific hotel names/room details, don't manually re-derive them -- just point that bullet to the package's own link (given below), and only state itinerary/hotel-adjacent details (like a pickup time) if they're a fact you actually have. Include that link only ONCE in the whole reply (in whichever bullet needs it), never repeat it again at the end.`
+      ? `\n\nThis message contains several distinct questions -- answer EVERY one of them, each as its own bullet point. Do not skip any, and do not lump multiple unconfirmed items into one vague sentence (e.g. never write "for the invoice, replacement arrangements, and hotel names, let me check" -- give each its own bullet, even if several of them end up saying the same honest "our team will confirm this shortly"). It's fine for this reply to be longer than usual to cover everything. For any question specifically about the day-by-day itinerary/schedule OR specific hotel names/room details, don't manually re-derive them -- just point that bullet to the package's own link (given below), and only state itinerary/hotel-adjacent details (like a pickup time) if they're a fact you actually have. Include that link only ONCE in the whole reply (in whichever bullet needs it), never repeat it again at the end. For cancellation/refund terms, use the real cancellation policy facts given below (never "let me check with our team" -- that policy is fully known). Once you've already stated a confident price and package recommendation elsewhere in this reply, do not also add a "our team will follow up to adjust/build the itinerary" caveat -- only defer items you genuinely don't have a fact for.`
       : ''
 
     const system =

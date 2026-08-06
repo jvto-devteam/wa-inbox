@@ -1647,6 +1647,53 @@ describe('decideAndRespond', () => {
       expect(opts.system).not.toContain('admin team will follow up directly')
     })
 
+    // Reported live 2026-08-06: a real customer's itemized 10-point numbered quotation request
+    // (exact price, hotel names, vehicle, jeep, entrance fees, cancellation terms, drone permit)
+    // matched 2 similarly named packages and ran well over 400 characters -- the same shape
+    // looksLikeCustomItinerary's "admin team will follow up" note was written for, but this
+    // request already got a confident price + package answer, and every other item is either a
+    // known fact or explicitly deferred by multiQuestionNote's own per-item guidance. The
+    // operator's explicit feedback: don't tack the "our team will follow up to adjust the
+    // routing" caveat onto an answer that's already fully given.
+    it('does NOT add the admin-follow-up note for a numbered-list itemized quotation request, even with multiple matching packages', async () => {
+      ;(ensureFreshBookingData as any).mockResolvedValue(null)
+      ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
+      ;(matchDestination as any).mockReturnValue({
+        destination: 'bromo',
+        matches: [
+          pkg({ packageKey: 'a', title: 'Bromo Madakaripura Ijen 3D2N', origin: 'Surabaya', dayCount: 3, priceIdr: 3570000 }),
+          pkg({ packageKey: 'b', title: 'Ijen Bromo Madakaripura 3D2N', origin: 'Surabaya', dayCount: 3, priceIdr: 3570000 }),
+        ],
+      })
+      ;(checkRouteGate as any).mockReturnValue({ status: 'clear' })
+      ;(classifyTopic as any).mockReturnValue('price')
+      mockPrisma.conversation.findUniqueOrThrow.mockResolvedValue({
+        id: 'conv_1', tripBrief: { declinedTripPreferences: true }, bookingData: null, bookingCheckedAt: new Date(),
+        contact: { phone: '6281234567890' },
+      } as never)
+
+      const longNumberedMessage =
+        'Hello! We are two travelers and would like a private 3D2N tour from Surabaya. Could you please provide a detailed quotation for 2 persons, including:\n' +
+        '1. Exact total price in IDR for 2 international travelers\n' +
+        '2. Names of both standard hotels and room type\n' +
+        '3. Private vehicle for only our party\n' +
+        '4. Private Bromo 4WD jeep\n' +
+        '5. All Bromo and Ijen entrance fees\n' +
+        '6. Ijen health certificate, local guide, gas mask and headlamp\n' +
+        '7. Ketapang Harbour drop-off and passenger ferry tickets to Gilimanuk\n' +
+        '8. All fuel, tolls, parking and driver expenses\n' +
+        '9. Cancellation and refund terms\n' +
+        '10. Whether you can arrange a less-crowded legal Bromo sunrise viewpoint. Thank you!'
+      expect(longNumberedMessage.length).toBeGreaterThan(400)
+
+      await decideAndRespond('conv_1', longNumberedMessage)
+
+      const [, opts] = (callLLM as any).mock.calls[0]
+      expect(opts.system).not.toContain('admin team will follow up directly')
+      expect(opts.system).toContain('do not also add a "our team will follow up to adjust/build the itinerary" caveat')
+      expect(opts.system).toContain('use the real cancellation policy facts given below')
+    })
+
     it("gives each listed package option its own link, not one shared link for the whole list", async () => {
       ;(ensureFreshBookingData as any).mockResolvedValue(null)
       ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
