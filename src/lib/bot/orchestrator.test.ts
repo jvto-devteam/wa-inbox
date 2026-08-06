@@ -220,6 +220,21 @@ describe('decideAndRespond', () => {
     )
   })
 
+  // Reported live 2026-08-06, audited across 870 real customer messages: an already-booked
+  // customer asking something genuinely answerable but NOT in the booking JSON itself (cold
+  // weather packing, Bromo's trekking difficulty, cash-on-arrival policy) had nothing to
+  // answer from, because Mode 3 previously grounded the reply ONLY in bookingData.
+  it('gives Mode 3 access to GENERAL_FAQ_FALLBACK and GUARDRAIL_INSTRUCTION, not just the booking JSON', async () => {
+    ;(ensureFreshBookingData as any).mockResolvedValue({ bookingId: 'B1', destination: 'Ijen' })
+    ;(callLLM as any).mockResolvedValue('Nights at Bromo/Ijen can get down to 5-15°C, so bring warm layers!')
+
+    await decideAndRespond('conv_1', 'Will it be very cold at night?')
+
+    const [, opts] = (callLLM as any).mock.calls[0]
+    expect(opts.system).toContain('GENERAL FAQ FALLBACK TEXT')
+    expect(opts.system).toContain('GUARDRAILS')
+  })
+
   it('passes recent messages as history, oldest first, mapped to user/assistant roles', async () => {
     ;(ensureFreshBookingData as any).mockResolvedValue({ bookingId: 'B1', status: 'unpaid' })
     ;(callLLM as any).mockResolvedValue('Sisa Rp500.000.')
@@ -279,7 +294,7 @@ describe('decideAndRespond', () => {
     expect(prompt).toBe(injection)
     // It must NOT have been concatenated into the grounding/system instructions.
     expect(opts.system).not.toContain(injection)
-    expect(opts.system).toContain('Customer\'s booking data (JSON) -- this is your ONLY source of fact')
+    expect(opts.system).toContain('Customer\'s booking data (JSON) -- your PRIMARY source of fact')
   })
 
   it('stays active with a graceful fallback (not a handoff) when the LLM yields blank content (Mode 3 second-layer defence)', async () => {
@@ -768,6 +783,34 @@ describe('decideAndRespond', () => {
     const [, opts] = (callLLM as any).mock.calls[0]
     expect(opts.system).toContain('do NOT say "I\'m sorry, I don\'t have that information"')
     expect(opts.system.toLowerCase()).toContain('check that with our team')
+  })
+
+  // Reported live 2026-08-06: "Start / Pick-up: Yogyakarta... What is the price for 2
+  // people?" was silently mis-parsed instead of the bot ever telling the customer Yogyakarta
+  // isn't a supported pickup point (tours only depart from Surabaya or Bali).
+  it('tells the LLM about an unsupported origin city the customer explicitly named', async () => {
+    ;(ensureFreshBookingData as any).mockResolvedValue(null)
+    ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
+    ;(matchDestination as any).mockReturnValue({ destination: 'ijen', matches: [pkg()] })
+    ;(checkRouteGate as any).mockReturnValue({ status: 'clear' })
+
+    await decideAndRespond('conv_1', 'Start / Pick-up: Yogyakarta. What is the price for 2 people?')
+
+    const [, opts] = (callLLM as any).mock.calls[0]
+    expect(opts.system).toContain('wanting pickup/start from "Yogyakarta"')
+    expect(opts.system).toContain('not a supported pickup point')
+  })
+
+  it('does not add an unsupported-origin note when a real, supported origin (Bali/Surabaya) is stated', async () => {
+    ;(ensureFreshBookingData as any).mockResolvedValue(null)
+    ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
+    ;(matchDestination as any).mockReturnValue({ destination: 'ijen', matches: [pkg()] })
+    ;(checkRouteGate as any).mockReturnValue({ status: 'clear' })
+
+    await decideAndRespond('conv_1', 'Pickup from Surabaya please, what is the price for 2 people?')
+
+    const [, opts] = (callLLM as any).mock.calls[0]
+    expect(opts.system).not.toContain('not a supported pickup point')
   })
 
   // Reported 2026-08-05: 6 real, approved, customer_visible staging modules (which hotel is

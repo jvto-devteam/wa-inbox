@@ -7,6 +7,7 @@ import {
   parseTripPreferences,
   priceForPax,
   mentionedDestinationTokens,
+  mentionedUnsupportedOriginCity,
   narrowPackagePool,
   sortByBestPackagePriority,
 } from './package-match'
@@ -91,6 +92,20 @@ describe('matchDestination', () => {
     const multiWord = catalogOf([pkg({ destinationTokens: ['tumpak sewu'], title: 'Tumpak Sewu 2D1N' })])
     const result = matchDestination('mau ke tumpak sewu waterfall', multiWord)
     expect(result?.destination).toBe('tumpak sewu')
+  })
+
+  // Reported live 2026-08-06: a real customer's fully-specified itinerary+price question,
+  // written entirely in Chinese ("...第二天去婆罗摩,第三天布罗莫,第四天伊真,送到码头..."), matched
+  // nothing at all -- pure Latin-script token matching. Limited to the exact geographic names
+  // observed in that real message plus the one unambiguous standard term for Bali.
+  it('matches known Chinese aliases for a destination', () => {
+    const bromoIjen = catalogOf([
+      pkg({ packageKey: 'bromo-1d', destinationTokens: ['bromo'], title: 'Bromo Midnight 1D', priceIdr: 1000000 }),
+      pkg({ packageKey: 'ijen-1d', destinationTokens: ['ijen'], title: 'Ijen Blue Fire 1D' }),
+    ])
+    expect(matchDestination('第二天去婆罗摩看日出', bromoIjen)?.destination).toBe('bromo')
+    expect(matchDestination('第三天布罗莫', bromoIjen)?.destination).toBe('bromo')
+    expect(matchDestination('第四天伊真', bromoIjen)?.destination).toBe('ijen')
   })
 })
 
@@ -214,6 +229,11 @@ describe('parseTripPreferences', () => {
     expect(parseTripPreferences('departing from Bali').origin).toBe('Bali')
   })
 
+  it('parses an origin city from a known Chinese alias', () => {
+    expect(parseTripPreferences('泗水接机').origin).toBe('Surabaya')
+    expect(parseTripPreferences('从巴厘岛出发').origin).toBe('Bali')
+  })
+
   it('returns null for all fields when nothing is stated', () => {
     expect(parseTripPreferences('is ijen safe?')).toEqual({ origin: null, dayCount: null, finishCity: null, pax: null })
   })
@@ -274,6 +294,15 @@ describe('parseTripPreferences', () => {
     it('parses "end in <city>" / "drop off in <city>" as finishCity too', () => {
       expect(parseTripPreferences('does it end in Surabaya?').finishCity).toBe('surabaya')
       expect(parseTripPreferences('can you drop off in Malang?').finishCity).toBe('malang')
+    })
+
+    // Reported live 2026-08-06: "pickup from Yogyakarta... ending at Surabaya Airport" was
+    // parsed as origin='Surabaya' -- 'ending at' wasn't in FINISH_CONTEXT_PHRASES (only
+    // 'ending in' was), so the bare-city fallback picked up "Surabaya" with no suppression.
+    it('parses "ending at <city>" as finishCity, not origin', () => {
+      const result = parseTripPreferences('ending at Surabaya Airport on the last day')
+      expect(result.finishCity).toBe('surabaya')
+      expect(result.origin).toBeNull()
     })
 
     it('an explicit "from <city>" still wins as origin even when finish-context phrasing is also present', () => {
@@ -470,5 +499,32 @@ describe('narrowPackagePool', () => {
     const result = narrowPackagePool([bromoOnly3d, bromoIjen3d], { origin: null, dayCount: null, finishCity: null, pax: null }, [])
     expect(result.tier).toBe('exact')
     expect(result.pool.length).toBe(2)
+  })
+})
+
+describe('mentionedUnsupportedOriginCity', () => {
+  // Reported live 2026-08-06: "Start / Pick-up: Yogyakarta... What is the price for 2 people?"
+  // was silently mis-parsed instead of the bot ever telling the customer Yogyakarta isn't a
+  // supported pickup point (JVTO tours only depart from Surabaya or Bali).
+  it('flags an explicit start/pickup city JVTO does not service', () => {
+    expect(mentionedUnsupportedOriginCity('Start / Pick-up: Yogyakarta')).toBe('Yogyakarta')
+    expect(mentionedUnsupportedOriginCity('pickup from Jakarta please')).toBe('Jakarta')
+    expect(mentionedUnsupportedOriginCity('starting in Canggu')).toBe('Canggu')
+  })
+
+  it('returns null when a real, supported origin (Bali/Surabaya) is already stated', () => {
+    expect(mentionedUnsupportedOriginCity('pickup from Surabaya please')).toBeNull()
+  })
+
+  it('returns null when no start-context phrasing is present at all', () => {
+    expect(mentionedUnsupportedOriginCity('is ijen safe?')).toBeNull()
+  })
+
+  // Malang/Ketapang are real waypoints/finish points elsewhere in a genuine itinerary (e.g.
+  // the Ketapang-Gilimanuk ferry) -- flagging them here would produce a FALSE "not supported"
+  // claim about a place that genuinely is part of real routes.
+  it('does not flag Malang or Ketapang, which are real route waypoints, not unsupported cities', () => {
+    expect(mentionedUnsupportedOriginCity('the ferry from Ketapang to Gilimanuk')).toBeNull()
+    expect(mentionedUnsupportedOriginCity('starting from Malang')).toBeNull()
   })
 })

@@ -159,4 +159,31 @@ describe('classifySalesNeed', () => {
     const result = classifySalesNeed({ message: 'BERAPA HARGA paketnya?', tripBrief: {} })
     expect(result.job).toBe('J2')
   })
+
+  // Reported live 2026-08-06: real B2B/reseller-partnership questions (a Ctrip agent, PT
+  // Darmawisata staff, an influencer-collaboration offer) were answered as if they were
+  // ordinary retail customers -- no module carries commercial partnership terms, and an LLM
+  // must never invent one. This is a genuine "only a human can answer" case.
+  it('classifies B2B/partnership inquiries as J5 (human handoff), not an ordinary FAQ', () => {
+    expect(classifySalesNeed({ message: 'Kerja sama kemitraan yang mana dari produk kami', tripBrief: {} }).job).toBe('J5')
+    expect(classifySalesNeed({ message: 'Do you offer wholesale or reseller rates?', tripBrief: {} }).job).toBe('J5')
+    expect(classifySalesNeed({ message: 'We would love to explore collaborating with you for a reel', tripBrief: {} }).job).toBe(
+      'J5'
+    )
+  })
+
+  // Deliberately does NOT flag a bare "partner"/"group rate" mention -- both are ambiguous
+  // with an ordinary retail customer (a travel companion/spouse, or a real large family
+  // booking asking about group pricing), unlike the more specific B2B terms above.
+  it('does not misclassify an ordinary retail mention of "partner" or "group rate" as B2B handoff', () => {
+    expect(classifySalesNeed({ message: 'It will just be my partner and I for this trip', tripBrief: {} }).job).not.toBe('J5')
+    expect(classifySalesNeed({ message: 'Do you have a group rate for 15 people?', tripBrief: {} }).job).not.toBe('J5')
+  })
+
+  // Reported live 2026-08-06: a real service-failure complaint ("I am a bit disappointed
+  // because I buy an extra service...") used phrasing this list didn't cover.
+  it('classifies "disappointed"/"dissatisfied" as J5, alongside the existing "kecewa"', () => {
+    expect(classifySalesNeed({ message: 'I am a bit disappointed because of this', tripBrief: {} }).job).toBe('J5')
+    expect(classifySalesNeed({ message: 'We are not satisfied with the service', tripBrief: {} }).job).toBe('J5')
+  })
 })

@@ -52,8 +52,16 @@ export type ResolverTopic =
 // Order otherwise matches the real source verbatim.
 const TOPIC_KEYWORDS: Array<[ResolverTopic, string[]]> = [
   ['payment', ['deposit', 'pay', 'payment', 'bank transfer', 'wire transfer', 'money transfer', 'transfer fee', 'installment']],
-  ['price', ['how much', 'price', 'cost', 'rate', 'per person', 'per pax', 'budget']],
-  ['blue_fire', ['blue fire', 'blue-fire', 'bluefire']],
+  // '多少钱'/'价格'/'收费' added 2026-08-06: a real customer asked a fully-specified,
+  // fully-answerable itinerary+price question entirely in Chinese ("...送到码头,这样是怎么收费哦")
+  // -- these are the standard, unambiguous Chinese terms for "how much money"/"price"/"charge".
+  ['price', ['how much', 'price', 'cost', 'rate', 'per person', 'per pax', 'budget', '多少钱', '价格', '收费']],
+  // 'blue flames'/'blue flame' added 2026-08-06: a real customer consistently said "blue
+  // flames" (not "blue fire") throughout a whole conversation about her main reason for
+  // booking -- a natural English paraphrase that matched neither this topic nor the
+  // crater-access-status keyword list below, so pre-booking messages using this phrasing
+  // never classified as this topic at all.
+  ['blue_fire', ['blue fire', 'blue-fire', 'bluefire', 'blue flames', 'blue flame']],
   ['vehicle', ['vehicle', 'car', 'mpv', 'hiace', 'luggage', 'suitcase', 'transport']],
   ['rooming', ['room', 'twin', 'double', 'single', 'rooming', 'bed']],
   ['hotel', ['hotel', 'accommodation', 'stay', 'overnight', 'homestay']],

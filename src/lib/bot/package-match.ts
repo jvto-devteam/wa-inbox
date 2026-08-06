@@ -18,6 +18,28 @@
  */
 import type { Catalog, CatalogPackage } from './types'
 
+// A tiny set of verified Chinese place-name aliases -- customers occasionally write in
+// Chinese, and pure Latin-script token matching misses that entirely even when every fact
+// needed to answer is already known. Reported 2026-08-06: a real customer's fully-specified
+// itinerary+price question in Chinese ("...第二天去婆罗摩,第三天布罗莫,第四天伊真,送到码头...")
+// matched nothing at all. Deliberately limited to the exact geographic names actually
+// observed in that real message (布罗莫/婆罗摩 for Bromo, 伊真 for Ijen, 泗水 for Surabaya) plus
+// the one unambiguous, universally standard term for Bali (巴厘/巴厘岛) -- NOT guessing
+// translations for Madakaripura/Papuma/Tumpak Sewu, which have no single standard Chinese
+// name to be confident about.
+const CHINESE_ALIASES: Array<[RegExp, string]> = [
+  [/布罗莫|婆罗摩/g, 'bromo'],
+  [/伊真/g, 'ijen'],
+  [/泗水/g, 'surabaya'],
+  [/巴厘岛|巴厘/g, 'bali'],
+]
+
+function normalizeAliases(low: string): string {
+  let out = low
+  for (const [pattern, replacement] of CHINESE_ALIASES) out = out.replace(pattern, replacement)
+  return out
+}
+
 // Every distinct destination token in the catalog, lowercased and deduped.
 function allDestinationTokens(catalog: Catalog): string[] {
   return [...new Set(catalog.packages.flatMap((p) => p.destinationTokens.map((t) => t.toLowerCase())))]
@@ -38,7 +60,7 @@ export function listDestinations(catalog: Catalog): string[] {
  * does: hand off, rather than run a clarifying-question dialogue of its own.
  */
 export function matchDestination(message: string, catalog: Catalog): { destination: string; matches: CatalogPackage[] } | null {
-  const lower = message.toLowerCase()
+  const lower = normalizeAliases(message.toLowerCase())
   let bestDestination: string | null = null
   let bestIndex = Infinity
   for (const token of allDestinationTokens(catalog)) {
@@ -71,7 +93,7 @@ export function packagesForDestination(destination: string, catalog: Catalog): C
 // anywhere in the catalog -- packages only expose an unordered destination set), only which
 // destinations were named at all.
 export function mentionedDestinationTokens(message: string, catalog: Catalog): string[] {
-  const low = message.toLowerCase()
+  const low = normalizeAliases(message.toLowerCase())
   return allDestinationTokens(catalog).filter((token) => low.includes(token))
 }
 
@@ -178,7 +200,11 @@ function parseDayCount(low: string): number | null {
 // 'back to': a customer confirming "we'll be back in Bali on the 16th" was missed by this list
 // (only 'back to' matched), so parseOrigin fell through to the bare "bali" fallback and
 // silently overwrote an already-confirmed Surabaya origin with 'Bali'.
-const FINISH_CONTEXT_PHRASES = ['finish', 'end in', 'ending in', 'drop off', 'dropoff', 'drop-off', 'back to', 'back in']
+// 'ending at' added 2026-08-06: reported live, "pickup from Yogyakarta... ending at Surabaya
+// Airport" was parsed as origin='Surabaya' -- 'ending at' wasn't in this list (only 'ending
+// in' was), so the bare-city fallback below picked up "Surabaya" from the finish phrase with
+// no finish-context suppression at all.
+const FINISH_CONTEXT_PHRASES = ['finish', 'end in', 'ending in', 'ending at', 'drop off', 'dropoff', 'drop-off', 'back to', 'back in']
 // "picked up in Bali"/"pickup at Surabaya" is as strong and unambiguous an origin signal as
 // "from <city>" -- added 2026-08-05: "I would like to be picked up in Bali... I have a flight
 // from Surabaya Airport" was parsed as origin='Surabaya', because the bare fallback below
@@ -214,6 +240,40 @@ function hasNearbyFinishContext(low: string, cityIndex: number, cityLength: numb
   return FINISH_CONTEXT_PHRASES.some((p) => window.includes(p))
 }
 
+// Cities customers occasionally name as their pickup/start point that JVTO genuinely does
+// not service (tours only depart from Surabaya or Bali, per GENERAL_FAQ_FALLBACK) -- e.g. a
+// real customer wrote "Start / Pick-up: Yogyakarta". Deliberately excludes Malang/Ketapang:
+// both are real waypoints/finish points elsewhere in a genuine itinerary ("the ferry from
+// Ketapang to Gilimanuk"), so flagging them here on a bare "from <city>" match would produce
+// a FALSE "not supported" claim about a place that genuinely is part of real routes -- worse
+// than staying silent. Scoped to explicit start-context phrasing (mirrors FROM_CITY_PATTERN)
+// so an unrelated mention elsewhere in the message never triggers this.
+const UNSUPPORTED_ORIGIN_CITIES =
+  'yogyakarta|yogjakarta|jogjakarta|jogja|jakarta|bandung|semarang|solo|surakarta|padangbai|padang bai|canggu'
+// `(?::|(?:in|at|from))?` (optional, unlike FROM_CITY_PATTERN's mandatory "in/at/from") --
+// a real customer wrote "Start / Pick-up: Yogyakarta" (a colon, not a preposition), which
+// FROM_CITY_PATTERN's own stricter shape would never match.
+const UNSUPPORTED_ORIGIN_START_PATTERN = new RegExp(
+  `\\bfrom\\s+(${UNSUPPORTED_ORIGIN_CITIES})\\b|` +
+    `\\bstart(?:ing)?\\s*(?::|(?:in|from))?\\s+(${UNSUPPORTED_ORIGIN_CITIES})\\b|` +
+    `\\bpick(?:ed)?[\\s-]?up\\s*(?::|(?:in|at|from))?\\s+(${UNSUPPORTED_ORIGIN_CITIES})\\b`
+)
+
+/**
+ * A pickup/start city the customer explicitly named that isn't Bali or Surabaya -- `null`
+ * when a real, supported origin was already parsed (that always wins) or nothing matches.
+ * Used by orchestrator.ts to have the bot say so honestly instead of silently ignoring the
+ * city, or (the actual bug reported) misparsing a nearby unrelated city as the origin.
+ */
+export function mentionedUnsupportedOriginCity(message: string): string | null {
+  const low = message.toLowerCase()
+  if (parseOrigin(low)) return null
+  const match = low.match(UNSUPPORTED_ORIGIN_START_PATTERN)
+  if (!match) return null
+  const cityRaw = match[1] ?? match[2] ?? match[3]
+  return cityRaw.replace(/\b\w/g, (c) => c.toUpperCase())
+}
+
 function parseOrigin(low: string): string | null {
   const fromMatch = low.match(FROM_CITY_PATTERN)
   if (fromMatch) return titleCaseCity(fromMatch[1] ?? fromMatch[2] ?? fromMatch[3])
@@ -239,7 +299,7 @@ function parseFinishCity(low: string): string | null {
 
 /** Extracts whatever duration/origin/finish-city signal a customer message actually states. */
 export function parseTripPreferences(message: string): TripPreferences {
-  const low = message.toLowerCase()
+  const low = normalizeAliases(message.toLowerCase())
   return { origin: parseOrigin(low), dayCount: parseDayCount(low), finishCity: parseFinishCity(low), pax: parsePax(low) }
 }
 

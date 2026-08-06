@@ -200,6 +200,32 @@ export const HANDOFF_KEYWORDS = [
   'live support',
   'want a human',
   'want a real person',
+  // Added 2026-08-06: real customers asking about B2B/reseller partnerships (a Ctrip agent,
+  // two PT Darmawisata staff, an influencer-collaboration offer) were all answered as if they
+  // were ordinary retail customers -- no module anywhere carries commercial partnership terms
+  // to answer from, and no LLM-composed reply should ever invent one. This is a genuine "only
+  // a human can answer" case, same class as an explicit human request, not a knowledge gap.
+  // Deliberately does NOT include bare 'partner' (ambiguous with a travel companion/spouse,
+  // e.g. "just my partner and I") or bare 'group rate' (a real retail group can legitimately
+  // ask this) -- narrowed to phrasing that's unambiguously about a business arrangement.
+  'kemitraan',
+  'partnership',
+  'wholesale',
+  'reseller',
+  'b2b',
+  'net rate',
+  'agent commission',
+  'profit sharing',
+  'collaborating with you',
+  'influencer collaboration',
+  'content collaboration',
+  // Added 2026-08-06: a real customer's service-failure complaint ("I am a bit disappointed
+  // because I buy an extra service...") used phrasing this list didn't cover -- 'disappointed'
+  // wasn't here even though 'kecewa' (its Indonesian equivalent) already was.
+  'disappointed',
+  'disappointing',
+  'not satisfied',
+  'dissatisfied',
 ]
 
 // check_availability / query_operational_notice's own keywords (routing YAML default job
@@ -290,6 +316,11 @@ const PRICE_KEYWORDS = [
   'tax',
   'pajak',
   'fee',
+  // Added 2026-08-06: a real customer asked a fully-answerable price question entirely in
+  // Chinese -- see module-resolver.ts's 'price' topic for the same fix.
+  '多少钱',
+  '价格',
+  '收费',
 ]
 
 // Per-job required TripBrief fields, ported from requirement_profiles (routing YAML lines

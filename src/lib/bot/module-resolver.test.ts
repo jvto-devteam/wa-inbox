@@ -67,4 +67,18 @@ describe('classifyTopic', () => {
     expect(classifyTopic(null, 'xyz')).toBe('general')
     expect(classifyTopic(undefined, '')).toBe('general')
   })
+
+  // Reported live 2026-08-06: a real customer consistently said "blue flames" (not "blue
+  // fire") throughout a whole conversation about her main reason for booking.
+  it('classifies "blue flames" (a real customer paraphrase) as blue_fire', () => {
+    expect(classifyTopic(null, 'seeing the blue flames was the main reason we booked this tour')).toBe('blue_fire')
+    expect(classifyTopic(null, 'is the blue flame still visible right now?')).toBe('blue_fire')
+  })
+
+  // Reported live 2026-08-06: a real customer's fully-answerable itinerary+price question was
+  // written entirely in Chinese and matched no topic at all.
+  it('classifies a Chinese price question as price', () => {
+    expect(classifyTopic(null, '这样是怎么收费哦')).toBe('price')
+    expect(classifyTopic(null, '多少钱一个人')).toBe('price')
+  })
 })

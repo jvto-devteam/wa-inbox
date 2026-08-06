@@ -213,7 +213,9 @@ const KEYWORD_TRIGGERED_MODULES: Array<{ moduleId: string; keywords: string[] }>
     // Kept independent of topic classification (not just TOPIC_MODULES.blue_fire) so a "blue
     // fire" mention buried inside a message that classifies to an earlier-checked topic (e.g.
     // 'payment' via a bare "pay" match) still surfaces this current access status.
-    keywords: ['blue fire', 'blue-fire', 'bluefire', 'crater access', 'kawah ijen'],
+    // 'blue flames'/'blue flame' added 2026-08-06 -- see module-resolver.ts's blue_fire topic
+    // for the real customer conversation that used this exact phrasing throughout.
+    keywords: ['blue fire', 'blue-fire', 'bluefire', 'blue flames', 'blue flame', 'crater access', 'kawah ijen'],
   },
   // 'service_drone_usage' added 2026-08-05, refined 2026-08-06: researched jvto-web,
   // jvto-itinerary-core, jvto-whatsapp-agent-runtime, chatbot-web, and the live site for a

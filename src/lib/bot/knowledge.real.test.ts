@@ -166,6 +166,9 @@ describe.skipIf(!RELEASE_PRESENT)('resolveKnowledgeForTopic against the real syn
     ['is the blue fire still accessible?', 'blue fire'],
     ['can we see the blue-fire at Ijen?', 'blue-fire'],
     ['what is the current crater access status?', 'crater access'],
+    // Reported live 2026-08-06: a real customer consistently said "blue flames" (not "blue
+    // fire") throughout a whole conversation -- a natural paraphrase the keyword list missed.
+    ['seeing the blue flames was the main reason we booked this tour', 'blue flames'],
   ] as const)('resolves the real Ijen crater-access closure fact for %s (%s)', (message, _keyword) => {
     const result = resolveKnowledgeForTopic('blue_fire', message, 'ijen')
     expect(result.factualLines.some((f) => f.toLowerCase().includes('closed'))).toBe(true)
