@@ -304,9 +304,20 @@ export function evaluatePickupScenario(
 // together" as repeated "?" -- often more so, since a formal quotation request tends to be
 // phrased as instructions/requirements rather than literal questions.
 const MULTI_QUESTION_THRESHOLD = 3
+// Reported live 2026-08-06, immediately after the numbered-list fix above shipped: a real
+// customer's numbered quotation request (same shape as the one that motivated it) STILL fell
+// through to the old collapsed-paragraph behavior. Root cause: WhatsApp/iOS's numbered-list
+// auto-formatting inserts invisible U+2060 WORD JOINER characters around the list markers
+// ("1.⁠ ⁠Exact total price..."), which sit right where the numbered-list regex
+// expects plain whitespace (`\s+`) -- ⁠ is not a whitespace character, so the regex never
+// matched a single item and this message was scored as an ordinary (non-multi-question)
+// message. Stripped before testing (detection-only -- the original `message` with the invisible
+// characters intact is still what's sent to the LLM).
+const ZERO_WIDTH_CHARS = /[\u200B-\u200D\u2060\uFEFF]/g
 function isMultiQuestionMessage(message: string): boolean {
-  const questionMarks = message.match(/\?/g)?.length ?? 0
-  const numberedListItems = message.match(/(?:^|\n)\s*\d{1,2}[.)]\s+\S/g)?.length ?? 0
+  const clean = message.replace(ZERO_WIDTH_CHARS, '')
+  const questionMarks = clean.match(/\?/g)?.length ?? 0
+  const numberedListItems = clean.match(/(?:^|\n)\s*\d{1,2}[.)]\s+\S/g)?.length ?? 0
   return questionMarks >= MULTI_QUESTION_THRESHOLD || numberedListItems >= MULTI_QUESTION_THRESHOLD
 }
 

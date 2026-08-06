@@ -1907,6 +1907,37 @@ describe('decideAndRespond', () => {
       expect(opts.system).toContain("point that bullet to the package's own link")
     })
 
+    // Reported live 2026-08-06, immediately after the fix above shipped: the SAME real customer
+    // re-sent essentially the same 10-item numbered request and it STILL fell through to the old
+    // collapsed behavior (no per-item bullets, "let me check" for hotel/cancellation, the
+    // now-unwanted "team will follow up" filler back). Root cause: WhatsApp/iOS's numbered-list
+    // auto-formatting wraps each marker in invisible U+2060 WORD JOINER characters
+    // ("1.⁠ ⁠Exact total price..."), which sit exactly where the numbered-list regex
+    // expected plain whitespace right after "1." -- so it silently matched zero items on the
+    // real message even though the equivalent plain-text fixture above (no invisible chars)
+    // worked fine.
+    it('detects a numbered-list request even with WhatsApp/iOS invisible word-joiner characters around the markers', async () => {
+      ;(ensureFreshBookingData as any).mockResolvedValue(null)
+      ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
+      ;(matchDestination as any).mockReturnValue({ destination: 'ijen', matches: [pkg({ links: { details: 'https://example.com/ijen-package' } })] })
+      ;(checkRouteGate as any).mockReturnValue({ status: 'clear' })
+      ;(classifyTopic as any).mockReturnValue('payment')
+
+      const numberedListRequestWithInvisibleChars =
+        'Could you please provide a detailed quotation for 2 persons, including:\n' +
+        ' 1.⁠ ⁠Exact total price in IDR for 2 international travelers\n' +
+        ' 2.⁠ ⁠Names of both standard hotels and room type\n' +
+        ' 3.⁠ ⁠Private vehicle for only our party\n' +
+        ' 4.⁠ ⁠Private Bromo 4WD jeep\n' +
+        'Thank you!'
+
+      await decideAndRespond('conv_1', numberedListRequestWithInvisibleChars)
+
+      const [, opts] = (callLLM as any).mock.calls[0]
+      expect(opts.system).toContain('answer EVERY one of them, each as its own bullet point')
+      expect(opts.system).toContain("point that bullet to the package's own link")
+    })
+
     it('does not treat an ordinary short message that merely mentions a number as a numbered list', async () => {
       ;(ensureFreshBookingData as any).mockResolvedValue(null)
       ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
