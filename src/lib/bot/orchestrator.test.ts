@@ -1318,6 +1318,38 @@ describe('decideAndRespond', () => {
       expect(opts.system).toContain('present ALL 2 of the options above')
     })
 
+    // Reported live 2026-08-06: "Which package do you recommend for Ijen?" -> funnel asks ->
+    // customer replies "How much is the deposit?" (topic 'payment', fully answerable on its
+    // own, nothing to do with the funnel) -> the funnel is mandatory for an actual package
+    // request, NOT for whatever message happens to arrive right after the bot asked -- the
+    // deposit question must be answered directly, not swallowed by a re-ask.
+    it('answers a genuinely unrelated, self-contained question (deposit/payment) directly instead of re-asking the funnel, even though it arrives right after the funnel asked', async () => {
+      ;(ensureFreshBookingData as any).mockResolvedValue(null)
+      ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
+      ;(matchDestination as any).mockReturnValue({ destination: 'ijen', matches: [pkg()] })
+      ;(checkRouteGate as any).mockReturnValue({ status: 'clear' })
+      ;(classifyTopic as any).mockReturnValue('payment')
+      ;(resolveKnowledgeForTopic as any).mockReturnValue({
+        factualLines: ['Deposit is 20% of the total to confirm your booking.'],
+        detailLines: [], primaryLink: null, disclosures: [], handoffRequired: false,
+      })
+      // awaitingTripPreferencesAnswer: true -- the PRIOR message was the funnel's bullet ask.
+      mockPrisma.conversation.findUniqueOrThrow.mockResolvedValue({
+        id: 'conv_1',
+        tripBrief: { destination: 'ijen', askedTripPreferences: true, awaitingTripPreferencesAnswer: true },
+        bookingData: null,
+        bookingCheckedAt: new Date(),
+        contact: { phone: '6281234567890' },
+      } as never)
+
+      const result = await decideAndRespond('conv_1', 'How much is the deposit?')
+
+      expect(result.mode).toBe('faq')
+      const [, opts] = (callLLM as any).mock.calls[0]
+      expect(opts.system).toContain('Deposit is 20% of the total')
+      expect(opts.system).not.toContain('Happy to recommend the best package')
+    })
+
     it('clears awaitingTripPreferencesAnswer after the one message that follows the ask, so a LATER unrelated message is not wrongly treated as a recommendation topic', async () => {
       ;(ensureFreshBookingData as any).mockResolvedValue(null)
       ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })

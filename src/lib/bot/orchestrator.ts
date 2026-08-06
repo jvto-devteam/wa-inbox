@@ -658,8 +658,22 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
     // conversation): treating EVERY later message as a recommendation topic would resurrect the
     // exact bug the comment below already warns about (an unrelated question later in the same
     // conversation wrongly triggering the multi-option instruction).
+    // Reported live 2026-08-06: "Which package do you recommend for Ijen?" -> bot asks for
+    // start/finish/days -> customer replies "How much is the deposit?" (a genuinely different,
+    // fully answerable-on-its-own question, classified 'payment') -> the OLD unconditional
+    // awaitingTripPreferencesAnswer override treated this as STILL being about the funnel and
+    // re-asked the bullet question instead of answering the real one. The funnel is mandatory
+    // for an actual package request, not for whatever message happens to arrive right after the
+    // bot asked -- DESTINATION_INDEPENDENT_TOPICS (payment, hotel, cancellation, etc.) are
+    // exactly the topics that are fully answerable on their own regardless of trip specifics,
+    // so a reply that resolves to one of THOSE is clearly not an attempt to answer (or continue)
+    // the funnel and must be excluded from the override. A genuinely ambiguous funnel-completing
+    // reply ("Finish in Surabaya please" -> topic 'route_endpoint', not in this set) still gets
+    // the override, unchanged from before.
     const isRecommendationTopic =
-      resolverTopic === 'price' || isRecommendationRequest(inboundText) || tripBrief.awaitingTripPreferencesAnswer === true
+      resolverTopic === 'price' ||
+      isRecommendationRequest(inboundText) ||
+      (tripBrief.awaitingTripPreferencesAnswer === true && !DESTINATION_INDEPENDENT_TOPICS.has(resolverTopic))
     if (tripBrief.awaitingTripPreferencesAnswer) {
       await persistTripBrief({ destination, awaitingTripPreferencesAnswer: false })
     }
