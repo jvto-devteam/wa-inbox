@@ -277,6 +277,28 @@ export function hasKeywordTriggeredModule(message: string): boolean {
   return KEYWORD_TRIGGERED_MODULES.some(({ keywords }) => keywords.some((k) => low.includes(k)))
 }
 
+// Reported 2026-08-06: the start/finish/day-count funnel gate (orchestrator.ts) returns a
+// static template BEFORE ever reaching resolveKnowledgeForTopic's system-prompt composition
+// -- so a message like "How much to rent a jacket, and is there a trolley up Ijen crater?"
+// (which also happens to classify as topic 'price', triggering the funnel) got its actual,
+// answerable questions silently dropped, re-asking for start/finish/duration as if nothing
+// had been asked. Isolated from resolveKnowledgeForTopic's own factualLines (which always
+// includes non-keyword-triggered baseline facts like TOPIC_MODULES.general's) so the funnel
+// reply only gets genuinely keyword-matched facts, not generic filler on every message.
+export function resolveKeywordTriggeredFacts(message: string): string[] {
+  const low = (message ?? '').toLowerCase()
+  const modules = loadModules()
+  const facts: string[] = []
+  for (const { moduleId, keywords } of KEYWORD_TRIGGERED_MODULES) {
+    if (!keywords.some((k) => low.includes(k))) continue
+    const m = modules[moduleId]
+    if (!m || (m.approval_status && !m.approval_status.startsWith('approved'))) continue
+    if (m.customer_visible === false || !m.short_answer) continue
+    facts.push(m.short_answer)
+  }
+  return facts
+}
+
 let _modules: Record<string, KnowledgeModule> | null = null
 let _linkIndex: Map<string, LinkRecord[]> | null = null
 

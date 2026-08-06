@@ -112,6 +112,7 @@ import { classifyTopic, type ResolverTopic } from './module-resolver'
 import {
   resolveKnowledgeForTopic,
   hasKeywordTriggeredModule,
+  resolveKeywordTriggeredFacts,
   resolveRouteLegFacts,
   GUARDRAIL_INSTRUCTION,
   GENERAL_FAQ_FALLBACK,
@@ -595,7 +596,13 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
       const originLine = unsupportedOriginCity
         ? `- Start (Surabaya/Bali): we don't have pickup from ${unsupportedOriginCity} -- could you start from Surabaya or Bali instead?\n`
         : `- Start (Surabaya/Bali): ${origin ?? ''}\n`
+      // Reported live 2026-08-06: "How much to rent a jacket, and is there a trolley up Ijen
+      // crater?" also classifies as topic 'price' (triggering this same funnel gate), so its
+      // genuinely answerable questions got silently dropped too -- answer them first, THEN
+      // still ask for the missing start/finish/duration.
+      const funnelSideFacts = [...resolveKeywordTriggeredFacts(inboundText), ...resolveRouteLegFacts(inboundText)]
       const reply =
+        (funnelSideFacts.length > 0 ? `${funnelSideFacts.join(' ')}\n\n` : '') +
         `Happy to recommend the best package for you! Could you share a few details?\n\n` +
         originLine +
         `- Finish (Surabaya/Bali): ${finishCity ? titleCaseCity(finishCity) : ''}\n` +

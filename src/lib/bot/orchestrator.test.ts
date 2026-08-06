@@ -8,7 +8,7 @@ import { checkRouteGate } from './route-gate'
 import { classifySalesNeed } from './sales-classifier'
 import { matchDestination, packagesForDestination, pickPackage, listDestinations, parseTripPreferences } from './package-match'
 import { classifyTopic } from './module-resolver'
-import { resolveKnowledgeForTopic, hasKeywordTriggeredModule, resolveRouteLegFacts } from './knowledge'
+import { resolveKnowledgeForTopic, hasKeywordTriggeredModule, resolveKeywordTriggeredFacts, resolveRouteLegFacts } from './knowledge'
 import { callLLM } from './llm'
 import { loadCatalog } from './catalog'
 import { checkDeploymentGate } from './deployment-gate'
@@ -52,6 +52,7 @@ vi.mock('./module-resolver', async (importOriginal) => ({
 vi.mock('./knowledge', () => ({
   resolveKnowledgeForTopic: vi.fn(),
   hasKeywordTriggeredModule: vi.fn(),
+  resolveKeywordTriggeredFacts: vi.fn(),
   resolveRouteLegFacts: vi.fn(),
   GUARDRAIL_INSTRUCTION: 'GUARDRAILS',
   GENERAL_FAQ_FALLBACK: 'GENERAL FAQ FALLBACK TEXT',
@@ -94,6 +95,7 @@ beforeEach(() => {
   ;(listDestinations as any).mockReturnValue(['Bromo', 'Ijen'])
   ;(classifyTopic as any).mockReturnValue('inclusions')
   ;(hasKeywordTriggeredModule as any).mockReturnValue(false)
+  ;(resolveKeywordTriggeredFacts as any).mockReturnValue([])
   ;(resolveRouteLegFacts as any).mockReturnValue([])
   // Non-empty by default so ordinary FAQ tests don't have to know about knowledge.ts's own
   // "no modules resolved -> handoff" branch unless they're specifically testing it.
@@ -817,6 +819,29 @@ describe('decideAndRespond', () => {
     const [, opts] = (callLLM as any).mock.calls[0]
     expect(opts.system).toContain('Real travel-time estimates')
     expect(opts.system).toContain('±3.5-4.5 hours')
+  })
+
+  // Reported live 2026-08-06: "How much to rent a jacket, and is there a trolley up Ijen
+  // crater?" classifies as topic 'price' (like any "how much" question), which ALSO triggers
+  // the trip-preferences funnel gate below (start/finish/duration all unknown) -- that gate's
+  // reply is a static template returned BEFORE the LLM knowledge-composition step, so the
+  // customer's actual, answerable question was silently dropped and only the funnel's bullet
+  // list was sent back, as if nothing had been asked.
+  it('answers a genuinely answerable side-question (jacket rental) inside the funnel reply itself, not just the bullet list', async () => {
+    ;(ensureFreshBookingData as any).mockResolvedValue(null)
+    ;(classifySalesNeed as any).mockReturnValue({ job: 'J2', missingInfo: [], needsLiveData: false })
+    ;(matchDestination as any).mockReturnValue({ destination: 'ijen', matches: [pkg()] })
+    ;(classifyTopic as any).mockReturnValue('price')
+    ;(resolveKeywordTriggeredFacts as any).mockReturnValue([
+      'Jackets can be rented on-site at both Bromo and Ijen for around Rp35,000.',
+    ])
+
+    const result = await decideAndRespond('conv_1', 'How much to rent a jacket?')
+
+    expect(result.mode).toBe('clarify')
+    const reply = (result as { mode: 'clarify'; reply: string }).reply
+    expect(reply).toContain('Jackets can be rented on-site')
+    expect(reply).toContain('Happy to recommend the best package for you!')
   })
 
   it('does not add an unsupported-origin note when a real, supported origin (Bali/Surabaya) is stated', async () => {
