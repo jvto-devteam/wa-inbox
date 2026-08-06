@@ -9,7 +9,8 @@ import { classifySalesNeed } from './sales-classifier'
 import { matchDestination, packagesForDestination, pickPackage, listDestinations } from './package-match'
 import { extractTripPreferences } from './trip-preferences-extractor'
 import { classifyTopicViaLLM } from './topic-classifier'
-import { resolveKnowledgeForTopic, hasKeywordTriggeredModule, resolveKeywordTriggeredFacts, resolveRouteLegFacts } from './knowledge'
+import { classifyKeywordModulesViaLLM } from './keyword-module-classifier'
+import { resolveKnowledgeForTopic, resolveKeywordTriggeredFacts, resolveRouteLegFacts, factsForModuleIds } from './knowledge'
 import { callLLM } from './llm'
 import { loadCatalog } from './catalog'
 import { checkDeploymentGate } from './deployment-gate'
@@ -52,11 +53,13 @@ vi.mock('./trip-preferences-extractor', () => ({ extractTripPreferences: vi.fn()
 // implementation calling the real (also-mocked) callLLM would add an extra callLLM invocation
 // per decideAndRespond call and shift every `callLLM.mock.calls[0]` assertion in this file.
 vi.mock('./topic-classifier', () => ({ classifyTopicViaLLM: vi.fn() }))
+// Mocked as a whole, same rationale as trip-preferences-extractor.ts/topic-classifier.ts above.
+vi.mock('./keyword-module-classifier', () => ({ classifyKeywordModulesViaLLM: vi.fn() }))
 vi.mock('./knowledge', () => ({
   resolveKnowledgeForTopic: vi.fn(),
-  hasKeywordTriggeredModule: vi.fn(),
   resolveKeywordTriggeredFacts: vi.fn(),
   resolveRouteLegFacts: vi.fn(),
+  factsForModuleIds: vi.fn(),
   GUARDRAIL_INSTRUCTION: 'GUARDRAILS',
   GENERAL_FAQ_FALLBACK: 'GENERAL FAQ FALLBACK TEXT',
 }))
@@ -97,7 +100,8 @@ beforeEach(() => {
   ;(extractTripPreferences as any).mockResolvedValue({ preferences: { origin: null, dayCount: null, finishCity: null, pax: null }, source: 'llm' })
   ;(listDestinations as any).mockReturnValue(['Bromo', 'Ijen'])
   ;(classifyTopicViaLLM as any).mockResolvedValue({ topic: 'inclusions', source: 'llm' })
-  ;(hasKeywordTriggeredModule as any).mockReturnValue(false)
+  ;(classifyKeywordModulesViaLLM as any).mockResolvedValue({ moduleIds: [], source: 'llm' })
+  ;(factsForModuleIds as any).mockReturnValue([])
   ;(resolveKeywordTriggeredFacts as any).mockReturnValue([])
   ;(resolveRouteLegFacts as any).mockReturnValue([])
   // Non-empty by default so ordinary FAQ tests don't have to know about knowledge.ts's own
@@ -178,6 +182,7 @@ describe('decideAndRespond', () => {
         'Tidak ada booking',
         'Memeriksa gerbang persetujuan',
         'Gerbang persetujuan terbuka',
+        'Memeriksa modul fakta kata kunci',
         'Mengklasifikasi kebutuhan pelanggan',
         'Mencari destinasi',
         'Destinasi ditemukan',
@@ -548,16 +553,17 @@ describe('decideAndRespond', () => {
   // A dietary/allergy mention has no dedicated topic keyword bucket at all (module-resolver.ts
   // -- confirmed 2026-08-05), so classifyTopic genuinely falls through to 'general', which is
   // deliberately NOT in DESTINATION_INDEPENDENT_TOPICS. It's only answerable here because
-  // knowledge.ts's KEYWORD_TRIGGERED_MODULES fires regardless of topic -- hasKeywordTriggeredModule
-  // is what lets this branch tell a genuine keyword hit apart from an ordinary unclassified
-  // message (which would otherwise also get 'general''s always-non-empty baseline facts).
+  // knowledge.ts's KEYWORD_TRIGGERED_MODULES fires regardless of topic -- a non-empty
+  // classifyKeywordModulesViaLLM result is what lets this branch tell a genuine keyword hit
+  // apart from an ordinary unclassified message (which would otherwise also get 'general''s
+  // always-non-empty baseline facts).
   it('answers via a keyword-triggered module even when the topic itself resolves to general', async () => {
     ;(ensureFreshBookingData as any).mockResolvedValue(null)
     ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
     ;(matchDestination as any).mockReturnValue(null)
     ;(listDestinations as any).mockReturnValue(['Bromo', 'Ijen'])
     ;(classifyTopicViaLLM as any).mockResolvedValue({ topic: 'general', source: 'llm' })
-    ;(hasKeywordTriggeredModule as any).mockReturnValue(true)
+    ;(classifyKeywordModulesViaLLM as any).mockResolvedValue({ moduleIds: ['service_dietary_preference_noted'], source: 'llm' })
     ;(resolveKnowledgeForTopic as any).mockReturnValue({
       factualLines: ['Noted -- dietary preferences and restrictions are recorded for your trip.'],
       detailLines: [],
@@ -741,7 +747,7 @@ describe('decideAndRespond', () => {
 
     await decideAndRespond('conv_1', 'is ijen safe?')
 
-    expect(resolveKnowledgeForTopic).toHaveBeenCalledWith('destination_readiness', 'is ijen safe?', 'ijen')
+    expect(resolveKnowledgeForTopic).toHaveBeenCalledWith('destination_readiness', 'is ijen safe?', 'ijen', [])
   })
 
   it("uses knowledge.ts's own link when it resolves one, ahead of the package's generic detail page", async () => {
@@ -957,9 +963,8 @@ describe('decideAndRespond', () => {
     ;(classifySalesNeed as any).mockReturnValue({ job: 'J2', missingInfo: [], needsLiveData: false })
     ;(matchDestination as any).mockReturnValue({ destination: 'ijen', matches: [pkg()] })
     ;(classifyTopicViaLLM as any).mockResolvedValue({ topic: 'price', source: 'llm' })
-    ;(resolveKeywordTriggeredFacts as any).mockReturnValue([
-      'Jackets can be rented on-site at both Bromo and Ijen for around Rp35,000.',
-    ])
+    ;(classifyKeywordModulesViaLLM as any).mockResolvedValue({ moduleIds: ['service_jacket_rental'], source: 'llm' })
+    ;(factsForModuleIds as any).mockReturnValue(['Jackets can be rented on-site at both Bromo and Ijen for around Rp35,000.'])
 
     const result = await decideAndRespond('conv_1', 'How much to rent a jacket?')
 

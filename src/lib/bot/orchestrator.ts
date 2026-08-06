@@ -110,12 +110,13 @@ import {
 import { extractTripPreferences } from './trip-preferences-extractor'
 import { type ResolverTopic } from './module-resolver'
 import { classifyTopicViaLLM } from './topic-classifier'
+import { classifyKeywordModulesViaLLM } from './keyword-module-classifier'
 import { parsePickupTiming, buildItineraryScenario, describeScenarioForLLM, describeScenarioForCustomer, evaluateScenario } from './scenario-evaluator'
 import {
   resolveKnowledgeForTopic,
-  hasKeywordTriggeredModule,
   resolveKeywordTriggeredFacts,
   resolveRouteLegFacts,
+  factsForModuleIds,
   GUARDRAIL_INSTRUCTION,
   GENERAL_FAQ_FALLBACK,
 } from './knowledge'
@@ -220,8 +221,15 @@ function isUnknownPreferenceSignal(message: string): boolean {
 // static (non-LLM-composed) reply. Single source now -- adding a third fact source only means
 // editing this one function, not finding and updating every call site that happened to inline
 // the same list.
-export function gatherSideFacts(inboundText: string): string[] {
-  return [...resolveKeywordTriggeredFacts(inboundText), ...resolveRouteLegFacts(inboundText)]
+//
+// `keywordFacts` (added 2026-08-07): when the caller has already resolved
+// KEYWORD_TRIGGERED_MODULES hits via keyword-module-classifier.ts's LLM-primary path, pass the
+// result here instead of letting this function re-derive it from `resolveKeywordTriggeredFacts`'s
+// own keyword scan -- same "single LLM-primary source of truth, not re-derived per call site"
+// rationale as resolveKnowledgeForTopic's own `keywordTriggeredModuleIds` parameter. Omitted (the
+// default) falls back to the original keyword scan unchanged.
+export function gatherSideFacts(inboundText: string, keywordFacts?: string[]): string[] {
+  return [...(keywordFacts ?? resolveKeywordTriggeredFacts(inboundText)), ...resolveRouteLegFacts(inboundText)]
 }
 
 // Prepends side facts (if any) as their own paragraph before a static reply -- the second half
@@ -550,6 +558,7 @@ async function runNoDestinationBranch(
   catalog: Catalog,
   unsupportedOriginCity: string | null,
   routeLegNote: string,
+  keywordModuleIds: string[],
   trace: Tracer
 ): Promise<BotDecision> {
   const { topic: preDestinationTopic } = await classifyTopicViaLLM(job, inboundText, ollamaModel)
@@ -557,8 +566,8 @@ async function runNoDestinationBranch(
   // regardless of what topic it classified as -- 'general' always has non-empty baseline
   // facts of its own (TOPIC_MODULES.general), so that alone can't be used to detect a real
   // keyword hit here the way it can for an already-allowlisted topic below.
-  if (DESTINATION_INDEPENDENT_TOPICS.has(preDestinationTopic) || hasKeywordTriggeredModule(inboundText)) {
-    const preDestinationKnowledge = resolveKnowledgeForTopic(preDestinationTopic, inboundText)
+  if (DESTINATION_INDEPENDENT_TOPICS.has(preDestinationTopic) || keywordModuleIds.length > 0) {
+    const preDestinationKnowledge = resolveKnowledgeForTopic(preDestinationTopic, inboundText, undefined, keywordModuleIds)
     if (preDestinationKnowledge.factualLines.length > 0) {
       trace.push(
         'Topik tidak butuh destinasi',
@@ -622,7 +631,7 @@ async function runNoDestinationBranch(
     ? `We don't have pickup from ${unsupportedOriginCity} -- could you start from Surabaya or Bali instead? `
     : ''
   const reply = withSideFacts(
-    gatherSideFacts(inboundText),
+    gatherSideFacts(inboundText, factsForModuleIds(keywordModuleIds)),
     `Hi! Where would you like to go? 🏝️\n\n` +
       noDestinationOriginLine +
       `We currently offer tours to: ${options.join(', ')}. ` +
@@ -730,6 +739,21 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
         ? `\n\nReal travel-time estimates for the specific leg(s) the customer asked about (these are approximate/operational, so still phrase them as "approximately" or "around"):\n${routeLegFacts.map((f) => `- ${f}`).join('\n')}`
         : ''
 
+    // LLM-primary as of 2026-08-07 (see keyword-module-classifier.ts's own header) -- replaces
+    // KEYWORD_TRIGGERED_MODULES' keyword scan as the primary source of "which independent fact
+    // triggers (dietary, ISIC, emergency support, cancellation, Ijen access, drone, jacket/shoe
+    // rental, etc.) does this message call for," validated against the real module_id set,
+    // falling back to the unchanged regex scan only on a genuine technical failure. Computed
+    // once, up front, so both the pre-destination branch and the main knowledge-composition
+    // path below share the same resolved result instead of each re-deriving it independently.
+    const { moduleIds: keywordModuleIds, source: keywordModuleSource } = await classifyKeywordModulesViaLLM(inboundText, settings.ollamaModel)
+    trace.push(
+      'Memeriksa modul fakta kata kunci',
+      keywordModuleSource === 'llm'
+        ? `Diperiksa oleh model LLM lokal -- ${keywordModuleIds.length} modul cocok.`
+        : `Model LLM gagal/timeout -- fallback ke pemindaian kata kunci lama, ${keywordModuleIds.length} modul cocok.`
+    )
+
     const classification = classifySalesNeed({ message: inboundText, tripBrief })
     trace.push(
       'Mengklasifikasi kebutuhan pelanggan',
@@ -774,6 +798,7 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
         catalog,
         unsupportedOriginCity,
         routeLegNote,
+        keywordModuleIds,
         trace
       )
     }
@@ -869,7 +894,7 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
       // crater?" also classifies as topic 'price' (triggering this same funnel gate), so its
       // genuinely answerable questions got silently dropped too -- answer them first, THEN
       // still ask for the missing start/finish/duration.
-      const funnelSideFacts = gatherSideFacts(inboundText)
+      const funnelSideFacts = gatherSideFacts(inboundText, factsForModuleIds(keywordModuleIds))
       // Reported 2026-08-06: a customer who merely STATES their pickup time ("pickup jam 6
       // sore, mau ke Bromo dan Ijen") -- not an explicit "which first?" question -- with
       // start/finish/duration still unknown should get the rest-time/route recommendation
@@ -915,7 +940,7 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
     // The module-resolution step catalog.ts's own header names as never having been ported
     // (see knowledge.ts's header) -- resolves real facts/links/disclosures for all 14 real
     // topics from general-modules.json, not just the 4 CatalogPackage itself can answer.
-    const knowledge = resolveKnowledgeForTopic(resolverTopic, inboundText, destination)
+    const knowledge = resolveKnowledgeForTopic(resolverTopic, inboundText, destination, keywordModuleIds)
     // Previously handed off outright when the customer demanded a guarantee on an attraction
     // they framed as their main reason for booking (e.g. "Blue Fire is why we're coming, can
     // you guarantee it, 100%?"). Per this file's header, the bot now answers this itself,

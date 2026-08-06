@@ -182,20 +182,34 @@ const TOPIC_MODULES: Record<ResolverTopic, string[]> = {
 // jvto-web's real source 2026-08-05). Neither maps cleanly to an existing topic bucket
 // ("invoice" isn't the same as 'payment'/deposit; "emergency"/"replacement driver" isn't
 // 'vehicle', which is about pax-based vehicle sizing), hence keyword-triggered like the others.
-const KEYWORD_TRIGGERED_MODULES: Array<{ moduleId: string; keywords: string[] }> = [
-  { moduleId: 'policy_isic_student', keywords: ['isic', 'student'] },
-  { moduleId: 'policy_police_escort', keywords: ['police escort', 'escort'] },
-  { moduleId: 'inclusion_east_java_bali_ferry', keywords: ['ferry', 'ketapang', 'gilimanuk'] },
+// `description` (added 2026-08-07) is the plain-English gloss of each trigger, used by
+// topic-classifier.ts's sibling -- keyword-module-classifier.ts's LLM-primary resolver -- as
+// the ONLY source of truth for what each module is about; `keywords` remains the regex fallback
+// for when that LLM call fails technically. Single array, single source, deliberately: this file
+// already carries one documented instance of two hand-maintained copies of "the same" list
+// silently drifting (see ATTRACTION_TRIGGER_PHRASES's own comment) -- a second `description`
+// array next to this one would risk exactly that again.
+export const KEYWORD_TRIGGERED_MODULES: Array<{ moduleId: string; description: string; keywords: string[] }> = [
+  { moduleId: 'policy_isic_student', description: 'Asks about ISIC/student ID discount pricing.', keywords: ['isic', 'student'] },
+  { moduleId: 'policy_police_escort', description: 'Asks about a police escort for a large group.', keywords: ['police escort', 'escort'] },
+  {
+    moduleId: 'inclusion_east_java_bali_ferry',
+    description: 'Asks whether the Ketapang-Gilimanuk ferry crossing to/from Bali is included.',
+    keywords: ['ferry', 'ketapang', 'gilimanuk'],
+  },
   {
     moduleId: 'service_dietary_preference_noted',
+    description: 'States a dietary restriction, allergy, or food preference (halal, vegetarian, vegan, no beef/pork, gluten-free, etc.).',
     keywords: ['beef', 'pork', 'halal', 'vegetarian', 'vegan', 'allerg', 'gluten', 'dietary', 'no meat'],
   },
   {
     moduleId: 'policy_official_invoice',
+    description: 'Asks for an official invoice, e-voucher, or booking confirmation under a company/organization name.',
     keywords: ['invoice', 'e-voucher', 'evoucher', 'official confirmation', 'official booking confirmation', 'pt java volcano'],
   },
   {
     moduleId: 'policy_emergency_and_support',
+    description: 'Asks about an emergency contact, a driver/vehicle breaking down, a backup vehicle/driver, or 24/7 support during the tour.',
     // Reported live 2026-08-05: "If the driver or vehicle breaks down during the tour, is
     // there a backup unit ready?" matched none of the original literal phrases ('vehicle
     // breakdown', 'backup vehicle') -- a customer's own wording ("breaks down", "backup unit")
@@ -210,6 +224,7 @@ const KEYWORD_TRIGGERED_MODULES: Array<{ moduleId: string; keywords: string[] }>
   },
   {
     moduleId: 'policy_cancellation_package_credit',
+    description: 'Asks about cancellation, refund, reschedule, or travel credit terms.',
     // Reported live 2026-08-06: a real customer's itemized quotation request included
     // "cancellation and refund terms" as one of several bundled asks. The primary topic
     // classified as 'price' (not 'cancellation'/'payment', TOPIC_MODULES' own gate for this
@@ -221,6 +236,7 @@ const KEYWORD_TRIGGERED_MODULES: Array<{ moduleId: string; keywords: string[] }>
   },
   {
     moduleId: 'policy_ijen_crater_access_status',
+    description: 'Asks about the current access status for the Ijen Blue Fire crater itself (going down into the crater, not just the summit/sunrise hike).',
     // Kept independent of topic classification (not just TOPIC_MODULES.blue_fire) so a "blue
     // fire" mention buried inside a message that classifies to an earlier-checked topic (e.g.
     // 'payment' via a bare "pay" match) still surfaces this current access status.
@@ -238,6 +254,7 @@ const KEYWORD_TRIGGERED_MODULES: Array<{ moduleId: string; keywords: string[] }>
   // Tumpak Sewu, so none is fabricated for them either.
   {
     moduleId: 'service_drone_usage',
+    description: 'Asks about bringing or using a drone during the tour.',
     keywords: ['drone', 'uav', 'aerial photography', 'aerial footage', 'aerial video'],
   },
   // 'policy_bromo_seasonal_closures'/'service_jacket_rental'/'service_shoe_rental'/
@@ -249,18 +266,22 @@ const KEYWORD_TRIGGERED_MODULES: Array<{ moduleId: string; keywords: string[] }>
   // services previously reported as gaps in the 2026-08-06 message audit.
   {
     moduleId: 'policy_bromo_seasonal_closures',
+    description: 'Asks whether Bromo is open/closed, or about the Yadnya Kasada ceremony.',
     keywords: ['yadnya kasada', 'kasada', 'is bromo open', 'bromo closed', 'bromo closure', 'bromo open'],
   },
   {
     moduleId: 'service_jacket_rental',
+    description: 'Asks about renting a jacket on-site.',
     keywords: ['rent a jacket', 'rent jacket', 'jacket rental', 'sewa jaket', 'rental jaket'],
   },
   {
     moduleId: 'service_shoe_rental',
+    description: 'Asks about renting shoes on-site for the Ijen hike.',
     keywords: ['rent shoes', 'rental shoes', 'shoe rental', 'sewa sepatu', 'rental sepatu'],
   },
   {
     moduleId: 'service_ijen_trolley',
+    description: 'Asks about the trolley/ojek transport option up the Ijen crater.',
     keywords: ['trolley', 'ojek ijen', 'gondola'],
   },
   // Destinations genuinely outside the 5-destination catalog, reported in the 2026-08-06
@@ -272,6 +293,8 @@ const KEYWORD_TRIGGERED_MODULES: Array<{ moduleId: string; keywords: string[] }>
   // often just the pickup-point case already covered elsewhere).
   {
     moduleId: 'service_custom_destination_addon',
+    description:
+      "Asks about visiting a destination outside JVTO's standard 5 (Bromo, Ijen, Tumpak Sewu, Madakaripura, Papuma) -- e.g. Borobudur, Prambanan, Baluran, Tangkuban Perahu.",
     keywords: ['borobudur', 'prambanan', 'baluran', 'tangkuban perahu', 'de djawatan', 'kawah wurung', 'blawan'],
   },
 ]
@@ -302,6 +325,25 @@ export function resolveKeywordTriggeredFacts(message: string): string[] {
   const facts: string[] = []
   for (const { moduleId, keywords } of KEYWORD_TRIGGERED_MODULES) {
     if (!keywords.some((k) => low.includes(k))) continue
+    const m = modules[moduleId]
+    if (!m || (m.approval_status && !m.approval_status.startsWith('approved'))) continue
+    if (m.customer_visible === false || !m.short_answer) continue
+    facts.push(m.short_answer)
+  }
+  return facts
+}
+
+/**
+ * Resolves real facts for an already-known set of module IDs (from
+ * keyword-module-classifier.ts's LLM-primary resolver, which validates its own output against
+ * `KEYWORD_TRIGGERED_MODULES`' real module_id set before ever calling this) -- same
+ * approved/customer_visible/short_answer filtering as resolveKeywordTriggeredFacts above, just
+ * driven by a caller-supplied ID list instead of re-scanning the message's own keywords.
+ */
+export function factsForModuleIds(moduleIds: string[]): string[] {
+  const modules = loadModules()
+  const facts: string[] = []
+  for (const moduleId of moduleIds) {
     const m = modules[moduleId]
     if (!m || (m.approval_status && !m.approval_status.startsWith('approved'))) continue
     if (m.customer_visible === false || !m.short_answer) continue
@@ -501,8 +543,21 @@ export type ResolvedKnowledge = {
  * (matchDestination/tripBrief) -- passing it through lets a destination_readiness question (e.g.
  * "is ijen safe?") resolve the matching single `destination_<token>` module (and its link, e.g.
  * the Ijen destination guide) instead of falling all the way back to the generic package page.
+ *
+ * `keywordTriggeredModuleIds` (added 2026-08-07): when the caller has already resolved
+ * KEYWORD_TRIGGERED_MODULES hits via keyword-module-classifier.ts's LLM-primary path (validated
+ * against the real module_id set there), pass them here directly instead of letting this
+ * function re-scan `message`'s own keywords -- keeps the LLM-primary result as the single source
+ * of truth used everywhere it matters, not just wherever happened to call the new classifier.
+ * Omitted (the default) falls back to the original keyword scan unchanged, so every existing
+ * caller/test that doesn't know about the new classifier keeps its current behavior exactly.
  */
-export function resolveKnowledgeForTopic(topic: ResolverTopic, message: string, destination?: string): ResolvedKnowledge {
+export function resolveKnowledgeForTopic(
+  topic: ResolverTopic,
+  message: string,
+  destination?: string,
+  keywordTriggeredModuleIds?: string[]
+): ResolvedKnowledge {
   const modules = loadModules()
   const low = (message ?? '').toLowerCase()
 
@@ -523,10 +578,17 @@ export function resolveKnowledgeForTopic(topic: ResolverTopic, message: string, 
   }
   // Checked regardless of topic -- see KEYWORD_TRIGGERED_MODULES' own comment.
   const keywordTriggeredIds = new Set<string>()
-  for (const { moduleId, keywords } of KEYWORD_TRIGGERED_MODULES) {
-    if (keywords.some((k) => low.includes(k))) {
+  if (keywordTriggeredModuleIds) {
+    for (const moduleId of keywordTriggeredModuleIds) {
       moduleIds.push(moduleId)
       keywordTriggeredIds.add(moduleId)
+    }
+  } else {
+    for (const { moduleId, keywords } of KEYWORD_TRIGGERED_MODULES) {
+      if (keywords.some((k) => low.includes(k))) {
+        moduleIds.push(moduleId)
+        keywordTriggeredIds.add(moduleId)
+      }
     }
   }
   const resolvedModules = moduleIds

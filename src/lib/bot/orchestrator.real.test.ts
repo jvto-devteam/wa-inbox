@@ -113,12 +113,13 @@ describe.skipIf(!RELEASE_PRESENT)('decideAndRespond against the real parsing pip
 
     await decideAndRespond('conv_1', 'Seeing the blue flames was the main reason we booked this tour. Is it still accessible right now?')
 
-    // callLLM is called 3 times per decideAndRespond now: [0] is the trip-preferences extraction
-    // call, [1] is the topic classification call (this file deliberately leaves both real/
-    // unmocked -- see the file header -- and the blanket 'A real reply.' mock isn't valid JSON
-    // for either, so both fall back to their real regex implementations, same result as before
-    // these changes), [2] is the actual reply-composing call this assertion cares about.
-    const [, opts] = (callLLM as any).mock.calls[2]
+    // callLLM is called 4 times per decideAndRespond now: [0] keyword-module classification,
+    // [1] topic classification, [2] trip-preferences extraction (this file deliberately leaves
+    // all three real/unmocked -- see the file header -- and the blanket 'A real reply.' mock
+    // isn't valid JSON for any of them, so all three fall back to their real regex
+    // implementations, same result as before these changes), [3] is the actual reply-composing
+    // call this assertion cares about.
+    const [, opts] = (callLLM as any).mock.calls[3]
     expect(opts.system.toLowerCase()).toContain('closed')
   })
 
@@ -147,8 +148,8 @@ describe.skipIf(!RELEASE_PRESENT)('decideAndRespond against the real parsing pip
     const result = await decideAndRespond('conv_1', 'How much is the deposit?')
 
     expect(result.mode).toBe('faq')
-    // mock.calls[2], not [0] -- see the "blue flames" test above for why (3 callLLM calls now).
-    const [, opts] = (callLLM as any).mock.calls[2]
+    // mock.calls[3], not [0] -- see the "blue flames" test above for why (4 callLLM calls now).
+    const [, opts] = (callLLM as any).mock.calls[3]
     expect(opts.system.toLowerCase()).toContain('deposit')
     expect(opts.system).not.toContain('Happy to recommend the best package')
   })
@@ -161,8 +162,8 @@ describe.skipIf(!RELEASE_PRESENT)('decideAndRespond against the real parsing pip
 
     await decideAndRespond('conv_1', 'Pickup from Surabaya Airport jam 6 sore, mau ke Bromo dan Ijen.')
 
-    // mock.calls[2], not [0] -- see the "blue flames" test above for why (3 callLLM calls now).
-    const [, opts] = (callLLM as any).mock.calls[2]
+    // mock.calls[3], not [0] -- see the "blue flames" test above for why (4 callLLM calls now).
+    const [, opts] = (callLLM as any).mock.calls[3]
     expect(opts.system.toLowerCase()).toMatch(/bromo.*ijen/)
     expect(opts.system.toLowerCase()).toContain('rest')
   })
