@@ -113,6 +113,7 @@ import { classifyTopicViaLLM } from './topic-classifier'
 import { classifyKeywordModulesViaLLM } from './keyword-module-classifier'
 import { detectsAdditionalEscalationSignal } from './escalation-classifier'
 import { detectsPreferenceDeclineViaLLM } from './preference-decline-classifier'
+import { detectsRecommendationIntentViaLLM } from './recommendation-intent-classifier'
 import { parsePickupTiming, buildItineraryScenario, describeScenarioForLLM, describeScenarioForCustomer, evaluateScenario } from './scenario-evaluator'
 import {
   resolveKnowledgeForTopic,
@@ -385,6 +386,12 @@ export type TripPreferencesFunnelDecision = {
  * to the unchanged `isUnknownPreferenceSignal` keyword list only on a technical failure) --
  * passed in rather than computed here so this function stays pure/synchronous, matching its own
  * "no DB writes, no LLM calls, just a decision given the current state" contract.
+ *
+ * `recommendationIntentSignal` (added 2026-08-07): whether THIS message reads as a
+ * package-recommendation request, resolved by the caller via
+ * recommendation-intent-classifier.ts's LLM-primary check (falls back to the unchanged
+ * `isRecommendationRequest` regex only on a technical failure) -- same "passed in, not computed
+ * here" reasoning as `preferenceDeclineSignal` above.
  */
 export function computeTripPreferencesFunnelDecision(input: {
   tripBrief: TripBrief
@@ -394,8 +401,9 @@ export function computeTripPreferencesFunnelDecision(input: {
   finishCity: string | null
   dayCount: number | null
   preferenceDeclineSignal: boolean
+  recommendationIntentSignal: boolean
 }): TripPreferencesFunnelDecision {
-  const { tripBrief, inboundText, resolverTopic, origin, finishCity, dayCount, preferenceDeclineSignal } = input
+  const { tripBrief, inboundText, resolverTopic, origin, finishCity, dayCount, preferenceDeclineSignal, recommendationIntentSignal } = input
   const wasAwaitingAnswer = tripBrief.awaitingTripPreferencesAnswer === true
   // 'price' kept alongside isRecommendationRequest as a belt-and-suspenders topic-based signal
   // -- either one is enough. `wasAwaitingAnswer` (set true exactly when the gate below asked
@@ -406,17 +414,17 @@ export function computeTripPreferencesFunnelDecision(input: {
   // attempt to answer or continue the funnel (reported live 2026-08-06: "How much is the
   // deposit?" right after the funnel asked was getting re-funneled instead of answered).
   //
-  // Same DESTINATION_INDEPENDENT_TOPICS exclusion now also applied to isRecommendationRequest
-  // itself (added 2026-08-07): found during a proactive audit, RECOMMENDATION_INTENT_KEYWORDS'
-  // bare 'options'/'choices' keywords can fire on a message that's actually about something
-  // else entirely -- "What are my options if I have to cancel due to a flight delay?" resolves
-  // to topic 'cancellation' (fully answerable on its own) but the bare 'options' match would
-  // still wrongly derail it into the trip-preferences funnel. Same fix, same rationale as the
-  // `wasAwaitingAnswer` case right above -- a reply that resolves to a self-contained,
-  // unrelated topic is clearly not a recommendation request no matter which signal flagged it.
+  // Same DESTINATION_INDEPENDENT_TOPICS exclusion applied to recommendationIntentSignal too
+  // (added 2026-08-07): found during a proactive audit, a bare 'options'/'choices' match can
+  // fire on a message that's actually about something else entirely -- "What are my options if
+  // I have to cancel due to a flight delay?" resolves to topic 'cancellation' (fully answerable
+  // on its own) but a bare keyword match would still wrongly derail it into the trip-preferences
+  // funnel. Same fix, same rationale as the `wasAwaitingAnswer` case right above -- a reply that
+  // resolves to a self-contained, unrelated topic is clearly not a recommendation request no
+  // matter which signal flagged it.
   const isRecommendationTopic =
     resolverTopic === 'price' ||
-    (isRecommendationRequest(inboundText) && !DESTINATION_INDEPENDENT_TOPICS.has(resolverTopic)) ||
+    (recommendationIntentSignal && !DESTINATION_INDEPENDENT_TOPICS.has(resolverTopic)) ||
     (wasAwaitingAnswer && !DESTINATION_INDEPENDENT_TOPICS.has(resolverTopic))
   // Permanent once signaled (mirrors `askedTripPreferences`'s own "persists for the rest of the
   // conversation" pattern) -- a customer who says once "gak tau, terserah aja" shouldn't have
@@ -912,6 +920,22 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
       isUnknownPreferenceSignal,
       settings.ollamaModel
     )
+    // LLM-primary as of 2026-08-07 (see recommendation-intent-classifier.ts's own header) --
+    // the old regex both missed genuine recommendation requests phrased without its literal
+    // trigger words and had a documented history of false positives from its own bare keywords
+    // (each fixed as a one-off keyword patch previously). Falls back to the unchanged
+    // isRecommendationRequest regex only on a genuine technical failure.
+    const { isRecommendation: recommendationIntentSignal, source: recommendationSource } = await detectsRecommendationIntentViaLLM(
+      inboundText,
+      isRecommendationRequest,
+      settings.ollamaModel
+    )
+    trace.push(
+      'Mendeteksi niat rekomendasi paket',
+      recommendationSource === 'llm'
+        ? 'Diteksi oleh model LLM lokal.'
+        : 'Model LLM gagal/timeout -- fallback ke pemindaian kata kunci lama.'
+    )
     // See computeTripPreferencesFunnelDecision's own header for the full rationale (mandatory
     // start/finish/day-count before a package recommendation, the DESTINATION_INDEPENDENT_TOPICS
     // exclusion, the decline signal) -- this call site just sequences the side effects (DB
@@ -924,6 +948,7 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
       finishCity,
       dayCount,
       preferenceDeclineSignal,
+      recommendationIntentSignal,
     })
     if (funnelDecision.justDeclined) {
       trace.push(

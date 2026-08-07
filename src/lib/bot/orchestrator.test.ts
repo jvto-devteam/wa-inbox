@@ -12,6 +12,7 @@ import { classifyTopicViaLLM } from './topic-classifier'
 import { classifyKeywordModulesViaLLM } from './keyword-module-classifier'
 import { detectsAdditionalEscalationSignal } from './escalation-classifier'
 import { detectsPreferenceDeclineViaLLM } from './preference-decline-classifier'
+import { detectsRecommendationIntentViaLLM } from './recommendation-intent-classifier'
 import { resolveKnowledgeForTopic, resolveKeywordTriggeredFacts, resolveRouteLegFacts, factsForModuleIds } from './knowledge'
 import { callLLM } from './llm'
 import { loadCatalog } from './catalog'
@@ -59,6 +60,7 @@ vi.mock('./topic-classifier', () => ({ classifyTopicViaLLM: vi.fn() }))
 vi.mock('./keyword-module-classifier', () => ({ classifyKeywordModulesViaLLM: vi.fn() }))
 vi.mock('./escalation-classifier', () => ({ detectsAdditionalEscalationSignal: vi.fn() }))
 vi.mock('./preference-decline-classifier', () => ({ detectsPreferenceDeclineViaLLM: vi.fn() }))
+vi.mock('./recommendation-intent-classifier', () => ({ detectsRecommendationIntentViaLLM: vi.fn() }))
 vi.mock('./knowledge', () => ({
   resolveKnowledgeForTopic: vi.fn(),
   resolveKeywordTriggeredFacts: vi.fn(),
@@ -107,6 +109,7 @@ beforeEach(() => {
   ;(classifyKeywordModulesViaLLM as any).mockResolvedValue({ moduleIds: [], source: 'llm' })
   ;(detectsAdditionalEscalationSignal as any).mockResolvedValue(false)
   ;(detectsPreferenceDeclineViaLLM as any).mockResolvedValue({ declined: false, source: 'llm' })
+  ;(detectsRecommendationIntentViaLLM as any).mockResolvedValue({ isRecommendation: false, source: 'llm' })
   ;(factsForModuleIds as any).mockReturnValue([])
   ;(resolveKeywordTriggeredFacts as any).mockReturnValue([])
   ;(resolveRouteLegFacts as any).mockReturnValue([])
@@ -194,6 +197,7 @@ describe('decideAndRespond', () => {
         'Destinasi ditemukan',
         'Mengklasifikasi topik',
         'Mengekstrak preferensi perjalanan',
+        'Mendeteksi niat rekomendasi paket',
         'Memeriksa validitas paket',
         'Paket valid',
         'Meminta jawaban dari model lokal',
@@ -1905,6 +1909,7 @@ describe('decideAndRespond', () => {
         factualLines: [], detailLines: [], primaryLink: null, disclosures: [], handoffRequired: false,
       })
       ;(extractTripPreferences as any).mockResolvedValue({ preferences: { origin: 'Surabaya', dayCount: null, finishCity: null }, source: 'llm' })
+      ;(detectsRecommendationIntentViaLLM as any).mockResolvedValue({ isRecommendation: true, source: 'llm' })
       mockPrisma.conversation.findUniqueOrThrow.mockResolvedValue({
         id: 'conv_1', tripBrief: { declinedTripPreferences: true }, bookingData: null, bookingCheckedAt: new Date(),
         contact: { phone: '6281234567890' },
@@ -1934,6 +1939,7 @@ describe('decideAndRespond', () => {
         factualLines: ['Ijen access depends on conditions.'], detailLines: [], primaryLink: null, disclosures: [], handoffRequired: false,
       })
       ;(extractTripPreferences as any).mockResolvedValue({ preferences: { origin: 'Surabaya', dayCount: null, finishCity: null }, source: 'llm' })
+      ;(detectsRecommendationIntentViaLLM as any).mockResolvedValue({ isRecommendation: true, source: 'llm' })
       mockPrisma.conversation.findUniqueOrThrow.mockResolvedValue({
         id: 'conv_1', tripBrief: { declinedTripPreferences: true }, bookingData: null, bookingCheckedAt: new Date(),
         contact: { phone: '6281234567890' },
@@ -2479,6 +2485,7 @@ describe('computeTripPreferencesFunnelDecision (pure)', () => {
     finishCity: null,
     dayCount: null,
     preferenceDeclineSignal: false,
+    recommendationIntentSignal: true,
   }
 
   it('asks when everything is missing and nothing has been asked or declined before', () => {
@@ -2498,12 +2505,14 @@ describe('computeTripPreferencesFunnelDecision (pure)', () => {
   })
 
   it('is not a recommendation topic at all for an ordinary unrelated message (no funnel, no ask)', () => {
-    const d = computeTripPreferencesFunnelDecision({ ...base, inboundText: 'Is Ijen safe?', resolverTopic: 'destination_readiness' })
+    const d = computeTripPreferencesFunnelDecision({
+      ...base, inboundText: 'Is Ijen safe?', resolverTopic: 'destination_readiness', recommendationIntentSignal: false,
+    })
     expect(d.isRecommendationTopic).toBe(false)
     expect(d.shouldAsk).toBe(false)
   })
 
-  it('detects a recommendation topic from phrasing alone, independent of resolverTopic', () => {
+  it('detects a recommendation topic from the resolved signal, independent of resolverTopic', () => {
     const d = computeTripPreferencesFunnelDecision({ ...base, inboundText: 'What packages do you have for Ijen?', resolverTopic: 'general' })
     expect(d.isRecommendationTopic).toBe(true)
   })
