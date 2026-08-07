@@ -741,7 +741,7 @@ describe('decideAndRespond', () => {
     await decideAndRespond('conv_1', '3 day ijen trip from Surabaya')
 
     expect(extractTripPreferences).toHaveBeenCalledWith('3 day ijen trip from Surabaya', 'gemma4:31b-cloud')
-    expect(pickPackage).toHaveBeenCalledWith([pkg()], { origin: 'Surabaya', dayCount: 3, finishCity: null, pax: null })
+    expect(pickPackage).toHaveBeenCalledWith([pkg()], { origin: 'Surabaya', dayCount: 3, finishCity: null, pax: null }, [])
   })
 
   it('passes the matched destination through to resolveKnowledgeForTopic (so destination_readiness can resolve a destination-specific link)', async () => {
@@ -1521,7 +1521,7 @@ describe('decideAndRespond', () => {
         where: { id: 'conv_1' },
         data: { tripBrief: { declinedTripPreferences: true, destination: 'ijen', origin: 'Surabaya' } },
       })
-      expect(pickPackage).toHaveBeenCalledWith([fromBali, fromSurabaya], { origin: 'Surabaya', dayCount: null, finishCity: null, pax: null })
+      expect(pickPackage).toHaveBeenCalledWith([fromBali, fromSurabaya], { origin: 'Surabaya', dayCount: null, finishCity: null, pax: null }, [])
     })
 
     it('uses the origin already on file (not just this message) to narrow pickPackage', async () => {
@@ -1541,7 +1541,7 @@ describe('decideAndRespond', () => {
 
       await decideAndRespond('conv_1', 'What is included?')
 
-      expect(pickPackage).toHaveBeenCalledWith([fromBali, fromSurabaya], { origin: 'Bali', dayCount: null, finishCity: null, pax: null })
+      expect(pickPackage).toHaveBeenCalledWith([fromBali, fromSurabaya], { origin: 'Bali', dayCount: null, finishCity: null, pax: null }, [])
     })
 
     it("lists every matching priced package in the LLM system prompt, not just pickPackage's single choice", async () => {
@@ -1614,6 +1614,28 @@ describe('decideAndRespond', () => {
 
       const [, opts] = (callLLM as any).mock.calls[0]
       expect(opts.system).not.toContain('present ALL')
+    })
+
+    // Reported live 2026-08-07: "...to bromo, tumpak sewu and ijen. We want to return to
+    // Surabaya though. Is this possible with you?" -- a feasibility question, not phrased as a
+    // recommendation request, so isRecommendationRequest/topic='price' never fired and this
+    // message fell through to the single-primaryLink path even though several real,
+    // different-duration packages covering all 3 named destinations genuinely matched. Naming
+    // 2+ real destinations is itself now enough to trigger the transparent multi-option list.
+    it('presents multiple options when the customer names 2+ real destinations, even without recommendation-shaped phrasing', async () => {
+      ;(ensureFreshBookingData as any).mockResolvedValue(null)
+      ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
+      const combo4d = pkg({ packageKey: 'combo-4d', title: 'Ijen Bromo Combo 4D3N', destinationTokens: ['bromo', 'ijen'], origin: 'Surabaya', dayCount: 4, priceIdr: 3000000 })
+      const combo5d = pkg({ packageKey: 'combo-5d', title: 'Ijen Bromo Combo 5D4N', destinationTokens: ['bromo', 'ijen'], origin: 'Surabaya', dayCount: 5, priceIdr: 3500000 })
+      ;(loadCatalog as any).mockReturnValue({ packages: [combo4d, combo5d], syncedAt: null })
+      ;(matchDestination as any).mockReturnValue({ destination: 'bromo', matches: [combo4d, combo5d] })
+      ;(checkRouteGate as any).mockReturnValue({ status: 'clear' })
+      ;(classifyTopicViaLLM as any).mockResolvedValue({ topic: 'destination_readiness', source: 'llm' })
+
+      await decideAndRespond('conv_1', 'Tour to bromo and ijen, is this possible with you?')
+
+      const [, opts] = (callLLM as any).mock.calls[0]
+      expect(opts.system).toContain('present ALL 2 of the options above')
     })
 
     // Reported live 2026-08-05: a police-escort question classified as topic 'general'

@@ -354,10 +354,31 @@ export function parseTripPreferences(message: string): TripPreferences {
   return { origin: parseOrigin(low), dayCount: parseDayCount(low), finishCity: parseFinishCity(low), pax: parsePax(low) }
 }
 
+// Shared by pickPackage and narrowPackagePool below -- whether `p` covers EVERY destination
+// token the customer actually named (e.g. Bromo AND Tumpak Sewu AND Ijen), not just the single
+// anchor token matchDestination narrowed to. Factored out 2026-08-07 specifically so these two
+// functions can never drift into two different definitions of "covers what was asked" the way
+// ATTRACTION_TRIGGER_PHRASES/HARD_DEPENDENCY_TRIGGER_KEYWORDS silently did (see knowledge.ts's
+// own comment on that bug, found in the same audit that reported this one).
+function coversAllRequestedTokens(p: CatalogPackage, requestedTokens: string[]): boolean {
+  return requestedTokens.every((t) => p.destinationTokens.some((pt) => pt.toLowerCase() === t))
+}
+
 /**
  * Among a destination's matching packages, the one orchestrator.ts should answer about.
  * Prefers a priced package -- matching route-gate.ts's own "no priced match -> handoff"
  * rule, so the package chosen here is always one route-gate would actually let through.
+ *
+ * `requestedTokens` (added 2026-08-07): reported live, a customer who named 3 real
+ * destinations ("Bromo, Tumpak Sewu and Ijen") got a reply whose TEXT correctly described real
+ * 4/5/6-day multi-destination packages (narrowPackagePool below IS requestedTokens-aware), but
+ * whose LINK pointed to a completely different, single-destination Bromo-only 1-day package --
+ * because this function only ever knew about origin/finishCity/dayCount, never which
+ * destinations were actually named, so it silently picked the first/cheapest package matching
+ * ONLY the single anchor destination matchDestination had narrowed to. Applied FIRST (highest
+ * priority, mirroring narrowPackagePool's own 'exact' tier priority) so the single "package
+ * customer is asking about" is drawn from the same real coverage as the text describing it,
+ * for ANY combination of destinations named -- not a fix pinned to this one conversation.
  *
  * When the customer stated a finish city, duration, and/or origin (parseTripPreferences),
  * progressively narrows the candidate pool by each in turn (finish city first -- it's the
@@ -366,11 +387,19 @@ export function parseTripPreferences(message: string): TripPreferences {
  * match at all. "3 day trip from Surabaya" recommends the specific 3D2N-from-Surabaya package
  * instead of whichever priced package for that destination happens to be first.
  */
-export function pickPackage(matches: CatalogPackage[], preferences: TripPreferences = NO_PREFERENCES): CatalogPackage {
+export function pickPackage(
+  matches: CatalogPackage[],
+  preferences: TripPreferences = NO_PREFERENCES,
+  requestedTokens: string[] = []
+): CatalogPackage {
   const priced = (pkgs: CatalogPackage[]) => pkgs.find((p) => p.priceIdr !== null) ?? null
   const { origin, dayCount, finishCity } = preferences
 
   let pool = matches
+  if (requestedTokens.length > 1) {
+    const covering = pool.filter((p) => coversAllRequestedTokens(p, requestedTokens))
+    if (covering.length > 0) pool = covering
+  }
   if (finishCity) {
     const filtered = pool.filter((p) => p.finishCities.includes(finishCity))
     if (filtered.length > 0) pool = filtered
@@ -448,8 +477,7 @@ export function narrowPackagePool(
 ): { pool: CatalogPackage[]; tier: PackageMatchTier } {
   const { origin, dayCount, finishCity } = preferences
 
-  const coversAllRequested = (p: CatalogPackage) =>
-    requestedTokens.every((t) => p.destinationTokens.some((pt) => pt.toLowerCase() === t))
+  const coversAllRequested = (p: CatalogPackage) => coversAllRequestedTokens(p, requestedTokens)
 
   // Applies origin/finishCity/dayCount together (only the ones actually stated) -- null (not
   // []) means "this combination has zero matches", distinct from "matched, but empty on purpose".

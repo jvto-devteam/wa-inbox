@@ -205,6 +205,41 @@ describe('pickPackage', () => {
       expect(pickPackage(options, { origin: null, dayCount: null, finishCity: 'ketapang', pax: null }).packageKey).toBe('finishes-surabaya')
     })
   })
+
+  // Reported live 2026-08-07: a customer named 3 real destinations ("Bromo, Tumpak Sewu and
+  // Ijen") -- the reply's TEXT correctly described real multi-destination packages (narrowed
+  // via narrowPackagePool, which already knew about all 3 tokens), but its LINK pointed to a
+  // completely different, single-destination Bromo-only 1-day package, because pickPackage
+  // itself had no idea multiple destinations were even named -- it just picked the
+  // first/cheapest priced package matching the single anchor destination matchDestination had
+  // narrowed to. requestedTokens fixes this at the source, for any combination of destinations.
+  describe('requestedTokens (multi-destination awareness)', () => {
+    const bromoOnly1Day = pkg({ packageKey: 'bromo-1d1n', destinationTokens: ['bromo'], priceIdr: 1000000 })
+    const bromoIjenTumpakCombo = pkg({ packageKey: 'ijen-papuma-tumpak-sewu-bromo-4d3n', destinationTokens: ['ijen', 'papuma', 'tumpak', 'sewu', 'bromo'], dayCount: 4 })
+    const allOptionsWithCombo = [bromoOnly1Day, bromoIjenTumpakCombo]
+
+    it('prefers a package covering ALL named destinations over a cheaper single-destination one', () => {
+      const result = pickPackage(allOptionsWithCombo, { origin: null, dayCount: null, finishCity: null, pax: null }, ['bromo', 'tumpak', 'sewu', 'ijen'])
+      expect(result.packageKey).toBe('ijen-papuma-tumpak-sewu-bromo-4d3n')
+    })
+
+    it('falls back to the old single-destination behavior when only one destination is named', () => {
+      const result = pickPackage(allOptionsWithCombo, { origin: null, dayCount: null, finishCity: null, pax: null }, ['bromo'])
+      expect(result.packageKey).toBe('bromo-1d1n')
+    })
+
+    it('falls back to the old behavior entirely when requestedTokens is omitted (default parameter)', () => {
+      const result = pickPackage(allOptionsWithCombo, { origin: null, dayCount: null, finishCity: null, pax: null })
+      expect(result.packageKey).toBe('bromo-1d1n')
+    })
+
+    it('falls back gracefully when no package covers every named destination', () => {
+      const result = pickPackage(allOptionsWithCombo, { origin: null, dayCount: null, finishCity: null, pax: null }, ['bromo', 'madakaripura'])
+      // Neither option covers 'madakaripura' -- the coversAllRequested filter would zero the
+      // pool, so it's skipped (same "never filter to empty" guard as origin/finishCity/dayCount).
+      expect(result.packageKey).toBe('bromo-1d1n')
+    })
+  })
 })
 
 describe('parseTripPreferences', () => {

@@ -191,4 +191,26 @@ describe.skipIf(!RELEASE_PRESENT)('decideAndRespond against the real parsing pip
     expect(result.mode).toBe('clarify')
     expect((result as { reply: string }).reply).toContain('Happy to recommend the best package for you!')
   })
+
+  // Reported live 2026-08-07: this exact real customer message got a reply whose TEXT correctly
+  // described real 4/5/6-day Surabaya round-trip packages covering Bromo+Tumpak Sewu+Ijen, but
+  // whose LINK pointed to "bromo-1d1n" -- a completely different, single-destination, 1-day
+  // Bromo-only package. Root cause: matchDestination narrows to a single anchor destination
+  // ('bromo', mentioned first), and pickPackage (which decides the single package/link) had no
+  // awareness of the OTHER destinations named, unlike narrowPackagePool (which correctly used
+  // all of them for the options text). Fixed at the source in pickPackage itself (requestedTokens
+  // parameter) plus broadened recommendMultiple -- verified here against the real catalog with
+  // the exact real message, not a synthetic fixture.
+  it('never links to a single-destination package when the customer names multiple real destinations ("bromo, tumpak sewu and ijen... return to Surabaya")', async () => {
+    withTripBrief({})
+
+    await decideAndRespond(
+      'conv_1',
+      'Hello. We are looking for a tour on the 13th of August from Surabaya to bromo, tumpak sewu and ijen. We want to return to Surabaya though. Is this possible with you?'
+    )
+
+    const [, opts] = (callLLM as any).mock.calls[5]
+    expect(opts.system).not.toContain('bromo-1d1n')
+    expect(opts.system.toLowerCase()).toContain('tumpak-sewu-bromo')
+  })
 })

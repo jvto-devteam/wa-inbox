@@ -979,7 +979,10 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
     // equivalents) so a detail stated on an EARLIER message still narrows this pick -- e.g. a
     // customer who confirmed "3D2N, Surabaya to Bali" across several turns must not have that
     // forgotten the moment a later message in the same conversation doesn't restate it.
-    const pkg = pickPackage(matches, { origin, dayCount, finishCity, pax })
+    // `requestedTokens` (added 2026-08-07, see pickPackage's own header) -- without it, a
+    // customer naming several real destinations got a reply whose text correctly described a
+    // multi-destination package but whose LINK pointed to an unrelated single-destination one.
+    const pkg = pickPackage(matches, { origin, dayCount, finishCity, pax }, requestedTokens)
 
     // The module-resolution step catalog.ts's own header names as never having been ported
     // (see knowledge.ts's header) -- resolves real facts/links/disclosures for all 14 real
@@ -1137,7 +1140,14 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
     // LLM kept silently recommending just one package even with several real options in the
     // prompt above. For an actual recommendation/comparison question, require presenting a
     // short list instead of picking on the customer's behalf.
-    const recommendMultiple = isRecommendationTopic && optionPackages.length > 1
+    // `requestedTokens.length > 1` (added 2026-08-07): reported live, a feasibility question
+    // ("is this possible?") naming several real destinations doesn't read as a recommendation
+    // request (isRecommendationTopic stays false), so it fell through to the single-primaryLink
+    // path even though several real, different-duration packages genuinely matched -- the
+    // customer never got to see (or pick a correct link for) the actual options. Naming 2+ real
+    // destinations is itself a strong enough signal to show the real list transparently,
+    // independent of whether the phrasing happens to sound like an explicit recommendation ask.
+    const recommendMultiple = (isRecommendationTopic || requestedTokens.length > 1) && optionPackages.length > 1
     // Reported live 2026-08-05: a real customer message with 6+ distinct questions bundled
     // together (invoice under the company name, replacement/emergency-contact arrangements,
     // insurance, itinerary after a skipped stop + pickup time, hotel names/breakfast, exact
