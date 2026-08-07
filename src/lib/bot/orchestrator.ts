@@ -873,7 +873,17 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
     // that's still missing start/finish/duration still gets the rest-time recommendation
     // alongside the funnel's questions -- not just when they explicitly ask "which first?"
     // and not just once the funnel is already satisfied.
-    const requestedTokens = mentionedDestinationTokens(inboundText, catalog)
+    //
+    // Merged with the persisted value (added 2026-08-07, see TripBrief.requestedTokens' own
+    // header) -- same "this message wins if non-empty, else the persisted one carries the
+    // conversation" precedence origin/dayCount/finishCity/pax already use, so destinations
+    // named earlier in the conversation aren't silently forgotten the moment a later message
+    // (e.g. answering a follow-up "how many days?") doesn't restate them.
+    const requestedTokensThisMessage = mentionedDestinationTokens(inboundText, catalog)
+    const requestedTokens = requestedTokensThisMessage.length > 0 ? requestedTokensThisMessage : (tripBrief.requestedTokens ?? [])
+    if (requestedTokensThisMessage.length > 0 && requestedTokensThisMessage.join(',') !== (tripBrief.requestedTokens ?? []).join(',')) {
+      await persistTripBrief({ destination, requestedTokens: requestedTokensThisMessage })
+    }
     // Reported 2026-08-06 (operator's own example, refined further 2026-08-06: "kadang bukan
     // pertanyaan eksplisit, dia cuma bilang pickup jam sekian" -- a customer merely STATING
     // their pickup time, with no explicit "which first?" question, should still get the

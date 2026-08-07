@@ -343,12 +343,12 @@ function includesAny(text: string, needles: string[]): boolean {
 // missing (0 is not in the real _EMPTY tuple either) -- pax=0 is a corner case the real
 // source itself doesn't special-case here (it's `customer_sales_executor.py`'s pricing
 // lookup, a different file, that separately rejects `pax < 1`).
-// `keyof TripBrief` now also spans `origin`/`askedTripPreferences` (added for
-// package-match.ts's trip-preferences clarify branch, see orchestrator.ts), widening the
-// possible value type here -- REQUIRED_FIELDS_BY_JOB below never actually lists either, so
-// this is a type-only accommodation, not a behavior change.
-function isMissing(value: string | number | boolean | undefined): boolean {
-  return value === undefined || value === null || value === ''
+// `keyof TripBrief` now also spans `origin`/`askedTripPreferences`/`requestedTokens` (added for
+// package-match.ts's trip-preferences clarify branch and multi-destination awareness, see
+// orchestrator.ts), widening the possible value type here -- REQUIRED_FIELDS_BY_JOB below never
+// actually lists any of them, so this is a type-only accommodation, not a behavior change.
+function isMissing(value: string | number | boolean | string[] | undefined): boolean {
+  return value === undefined || value === null || value === '' || (Array.isArray(value) && value.length === 0)
 }
 
 export function classifySalesNeed(input: { message: string; tripBrief: TripBrief }): SalesClassification {

@@ -1544,6 +1544,60 @@ describe('decideAndRespond', () => {
       expect(pickPackage).toHaveBeenCalledWith([fromBali, fromSurabaya], { origin: 'Bali', dayCount: null, finishCity: null, pax: null }, [])
     })
 
+    // Reported live 2026-08-07: a customer named 3 destinations ("Ijen, Bromo, Madakaripura"),
+    // then replied to the funnel's own follow-up ("how many days?") with "we're flexible,
+    // whatever works" -- a message naming no destination at all. requestedTokens used to be
+    // read fresh from ONLY the current message every time (no persistence, unlike
+    // origin/dayCount/finishCity/pax), so the "must cover all 3 named destinations" constraint
+    // silently vanished on that reply and the package list got padded with irrelevant
+    // single/partial-destination packages. Same bug class already fixed once for
+    // origin/dayCount/finishCity/pax, just never applied to this field until now.
+    it('uses the destinations already on file (not just this message) to narrow pickPackage', async () => {
+      ;(ensureFreshBookingData as any).mockResolvedValue(null)
+      ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
+      ;(matchDestination as any).mockReturnValue({ destination: 'ijen', matches: [fromBali, fromSurabaya] })
+      ;(checkRouteGate as any).mockReturnValue({ status: 'clear' })
+      ;(classifyTopicViaLLM as any).mockResolvedValue({ topic: 'inclusions', source: 'llm' })
+      ;(extractTripPreferences as any).mockResolvedValue({ preferences: { origin: null, dayCount: null }, source: 'llm' })
+      mockPrisma.conversation.findUniqueOrThrow.mockResolvedValue({
+        id: 'conv_1',
+        tripBrief: { destination: 'ijen', requestedTokens: ['ijen', 'bromo', 'madakaripura'] },
+        bookingData: null,
+        bookingCheckedAt: new Date(),
+        contact: { phone: '6281234567890' },
+      } as never)
+
+      await decideAndRespond('conv_1', "we're flexible on days, whatever works")
+
+      expect(pickPackage).toHaveBeenCalledWith(
+        [fromBali, fromSurabaya],
+        { origin: null, dayCount: null, finishCity: null, pax: null },
+        ['ijen', 'bromo', 'madakaripura']
+      )
+    })
+
+    it('lets a fresh destination mention override the persisted set, rather than merging them', async () => {
+      ;(ensureFreshBookingData as any).mockResolvedValue(null)
+      ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
+      const combo = pkg({ packageKey: 'combo', destinationTokens: ['ijen', 'papuma'] })
+      ;(loadCatalog as any).mockReturnValue({ packages: [combo], syncedAt: null })
+      ;(matchDestination as any).mockReturnValue({ destination: 'ijen', matches: [combo] })
+      ;(checkRouteGate as any).mockReturnValue({ status: 'clear' })
+      ;(classifyTopicViaLLM as any).mockResolvedValue({ topic: 'inclusions', source: 'llm' })
+      ;(extractTripPreferences as any).mockResolvedValue({ preferences: { origin: null, dayCount: null }, source: 'llm' })
+      mockPrisma.conversation.findUniqueOrThrow.mockResolvedValue({
+        id: 'conv_1',
+        tripBrief: { destination: 'ijen', requestedTokens: ['ijen', 'bromo', 'madakaripura'] },
+        bookingData: null,
+        bookingCheckedAt: new Date(),
+        contact: { phone: '6281234567890' },
+      } as never)
+
+      await decideAndRespond('conv_1', 'Actually, just Ijen and Papuma please')
+
+      expect(pickPackage).toHaveBeenCalledWith([combo], { origin: null, dayCount: null, finishCity: null, pax: null }, ['ijen', 'papuma'])
+    })
+
     it("lists every matching priced package in the LLM system prompt, not just pickPackage's single choice", async () => {
       ;(ensureFreshBookingData as any).mockResolvedValue(null)
       ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })

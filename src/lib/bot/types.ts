@@ -24,6 +24,18 @@ export type TripBrief = {
   // origin already uses.
   dayCount?: number
   finishCity?: string
+  // Which destinations (package-match.ts's `mentionedDestinationTokens`) the customer has
+  // named, e.g. ['ijen', 'bromo', 'madakaripura'] -- persists the same "this message wins,
+  // else the persisted one carries the conversation" way origin/dayCount/finishCity already do.
+  // Reported live 2026-08-07: a customer named 3 destinations, then replied to the funnel's
+  // follow-up question ("how many days?") with "we're flexible, whatever works" -- a message
+  // that names no destination at all. requestedTokens used to be read fresh from ONLY the
+  // current message every time (no merge, unlike origin/dayCount/finishCity/pax), so the
+  // "must cover all 3 named destinations" constraint silently vanished on that reply, and the
+  // package list got padded with irrelevant single/partial-destination packages the customer
+  // never asked about. Same bug class already fixed once for origin/dayCount/finishCity/pax,
+  // just never applied to this field since it was introduced later.
+  requestedTokens?: string[]
   // True once orchestrator.ts has asked a customer for their start/finish/day-count at least
   // once (see orchestrator.ts's TripPreferences clarify branch) -- kept for trace/observability.
   // Reported 2026-08-06: does NOT gate whether the funnel asks again (see
