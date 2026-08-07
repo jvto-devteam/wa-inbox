@@ -189,20 +189,24 @@ describe.skipIf(!RELEASE_PRESENT)('resolveKnowledgeForTopic against the real syn
 
   // Researched 2026-08-05 across jvto-web, jvto-itinerary-core, jvto-whatsapp-agent-runtime,
   // and chatbot-web: no source had per-destination drone rules. Operator-confirmed 2026-08-06:
-  // Bromo requires a Rp2.000.000 permit (bought at bromotenggersemeru.id, not via JVTO); Ijen
-  // currently does not allow drones at all. Genuinely destination-independent -- the module is
-  // keyword-triggered (fires regardless of topic/destination), so the SAME two real facts must
-  // surface whether or not a destination happens to be known yet.
+  // Bromo requires a Rp2.000.000 permit, arranged directly with the national park authority
+  // (not via JVTO); Ijen currently does not allow drones at all. Genuinely
+  // destination-independent -- the module is keyword-triggered (fires regardless of topic/
+  // destination), so the SAME two real facts must surface whether or not a destination happens
+  // to be known yet. Reported 2026-08-07: the fact used to name the park's own booking site
+  // (bromotenggersemeru.id) directly -- the operator's own policy is to never reference any
+  // link other than JVTO's, so the domain was dropped from the data while keeping the real
+  // facts (price, and that it's arranged directly, not through JVTO).
   it.each([
     ['can we bring a drone?', 'drone'],
     ['is a UAV allowed on the tour?', 'UAV'],
     ['can we take aerial photography during the hike?', 'aerial photography'],
-  ] as const)('resolves the real per-destination drone facts (Bromo permit, Ijen ban) for %s (%s)', (message, _keyword) => {
+  ] as const)('resolves the real per-destination drone facts (Bromo permit, Ijen ban) for %s (%s), without naming any non-JVTO link', (message, _keyword) => {
     const result = resolveKnowledgeForTopic('general', message)
     const allText = [...result.factualLines, ...result.detailLines].join(' ').toLowerCase()
     expect(allText).toContain('bromo')
     expect(allText).toContain('rp2.000.000')
-    expect(allText).toContain('bromotenggersemeru.id')
+    expect(allText).not.toContain('bromotenggersemeru.id')
     expect(allText).toContain('ijen')
     expect(allText).toMatch(/ijen.{0,40}not/)
   })

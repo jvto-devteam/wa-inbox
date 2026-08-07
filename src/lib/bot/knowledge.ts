@@ -248,10 +248,13 @@ export const KEYWORD_TRIGGERED_MODULES: Array<{ moduleId: string; description: s
   // jvto-itinerary-core, jvto-whatsapp-agent-runtime, chatbot-web, and the live site for a
   // per-destination drone policy -- only one general fact existed in any of those sources
   // (jvto-web's src/data.ts "special-services" FAQ entry). The operator then confirmed the
-  // real per-destination rules directly: Bromo requires a Rp2.000.000 permit purchased at
-  // bromotenggersemeru.id (the park's own site, not something JVTO arranges); Ijen currently
+  // real per-destination rules directly: Bromo requires a Rp2.000.000 permit, arranged
+  // directly with the national park authority (not something JVTO arranges); Ijen currently
   // does not allow drones at all. No specific rule is published for Madakaripura/Papuma/
-  // Tumpak Sewu, so none is fabricated for them either.
+  // Tumpak Sewu, so none is fabricated for them either. Reported 2026-08-07: the underlying
+  // fact text (catalog/general-modules.json) used to name the park's own booking site
+  // (bromotenggersemeru.id) directly -- dropped per the operator's policy of never mentioning
+  // any link other than JVTO's own, while keeping the real price/arrangement facts.
   {
     moduleId: 'service_drone_usage',
     description: 'Asks about bringing or using a drone during the tour.',
