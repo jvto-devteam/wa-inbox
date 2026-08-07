@@ -10,6 +10,7 @@ import { matchDestination, packagesForDestination, pickPackage, listDestinations
 import { extractTripPreferences } from './trip-preferences-extractor'
 import { classifyTopicViaLLM } from './topic-classifier'
 import { classifyKeywordModulesViaLLM } from './keyword-module-classifier'
+import { detectsAdditionalEscalationSignal } from './escalation-classifier'
 import { resolveKnowledgeForTopic, resolveKeywordTriggeredFacts, resolveRouteLegFacts, factsForModuleIds } from './knowledge'
 import { callLLM } from './llm'
 import { loadCatalog } from './catalog'
@@ -55,6 +56,7 @@ vi.mock('./trip-preferences-extractor', () => ({ extractTripPreferences: vi.fn()
 vi.mock('./topic-classifier', () => ({ classifyTopicViaLLM: vi.fn() }))
 // Mocked as a whole, same rationale as trip-preferences-extractor.ts/topic-classifier.ts above.
 vi.mock('./keyword-module-classifier', () => ({ classifyKeywordModulesViaLLM: vi.fn() }))
+vi.mock('./escalation-classifier', () => ({ detectsAdditionalEscalationSignal: vi.fn() }))
 vi.mock('./knowledge', () => ({
   resolveKnowledgeForTopic: vi.fn(),
   resolveKeywordTriggeredFacts: vi.fn(),
@@ -101,6 +103,7 @@ beforeEach(() => {
   ;(listDestinations as any).mockReturnValue(['Bromo', 'Ijen'])
   ;(classifyTopicViaLLM as any).mockResolvedValue({ topic: 'inclusions', source: 'llm' })
   ;(classifyKeywordModulesViaLLM as any).mockResolvedValue({ moduleIds: [], source: 'llm' })
+  ;(detectsAdditionalEscalationSignal as any).mockResolvedValue(false)
   ;(factsForModuleIds as any).mockReturnValue([])
   ;(resolveKeywordTriggeredFacts as any).mockReturnValue([])
   ;(resolveRouteLegFacts as any).mockReturnValue([])

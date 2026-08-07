@@ -111,6 +111,7 @@ import { extractTripPreferences } from './trip-preferences-extractor'
 import { type ResolverTopic } from './module-resolver'
 import { classifyTopicViaLLM } from './topic-classifier'
 import { classifyKeywordModulesViaLLM } from './keyword-module-classifier'
+import { detectsAdditionalEscalationSignal } from './escalation-classifier'
 import { parsePickupTiming, buildItineraryScenario, describeScenarioForLLM, describeScenarioForCustomer, evaluateScenario } from './scenario-evaluator'
 import {
   resolveKnowledgeForTopic,
@@ -658,7 +659,16 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
       trace.push('Eskalasi terdeteksi', 'Pesan cocok dengan kata kunci eskalasi -- langsung diserahkan ke agen tanpa pemrosesan lebih lanjut.')
       return { mode: 'handoff', reason: 'Kata kunci eskalasi terdeteksi', steps: trace.steps }
     }
-    trace.push('Tidak ada eskalasi', 'Tidak ditemukan kata kunci eskalasi pada pesan ini.')
+    // Additive-only LLM check, added 2026-08-07 -- see escalation-classifier.ts's own header
+    // for the full rationale. The keyword list above always runs first and always wins; this
+    // only catches a genuine complaint/human-request/B2B-inquiry the keyword list missed
+    // (e.g. new phrasing), and fails safe to "no additional signal" on any technical failure --
+    // never worse than the keyword-only behavior that existed before this check.
+    if (await detectsAdditionalEscalationSignal(inboundText, settings.ollamaModel)) {
+      trace.push('Eskalasi terdeteksi (LLM)', 'Model LLM mendeteksi sinyal komplain/permintaan manusia/kemitraan B2B yang tidak tertangkap kata kunci -- diserahkan ke agen.')
+      return { mode: 'handoff', reason: 'Sinyal eskalasi terdeteksi oleh model LLM', steps: trace.steps }
+    }
+    trace.push('Tidak ada eskalasi', 'Tidak ditemukan kata kunci maupun sinyal eskalasi lain pada pesan ini.')
 
     const conversation = await prisma.conversation.findUniqueOrThrow({
       where: { id: conversationId },
