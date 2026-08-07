@@ -11,6 +11,7 @@ import { extractTripPreferences } from './trip-preferences-extractor'
 import { classifyTopicViaLLM } from './topic-classifier'
 import { classifyKeywordModulesViaLLM } from './keyword-module-classifier'
 import { detectsAdditionalEscalationSignal } from './escalation-classifier'
+import { detectsPreferenceDeclineViaLLM } from './preference-decline-classifier'
 import { resolveKnowledgeForTopic, resolveKeywordTriggeredFacts, resolveRouteLegFacts, factsForModuleIds } from './knowledge'
 import { callLLM } from './llm'
 import { loadCatalog } from './catalog'
@@ -57,6 +58,7 @@ vi.mock('./topic-classifier', () => ({ classifyTopicViaLLM: vi.fn() }))
 // Mocked as a whole, same rationale as trip-preferences-extractor.ts/topic-classifier.ts above.
 vi.mock('./keyword-module-classifier', () => ({ classifyKeywordModulesViaLLM: vi.fn() }))
 vi.mock('./escalation-classifier', () => ({ detectsAdditionalEscalationSignal: vi.fn() }))
+vi.mock('./preference-decline-classifier', () => ({ detectsPreferenceDeclineViaLLM: vi.fn() }))
 vi.mock('./knowledge', () => ({
   resolveKnowledgeForTopic: vi.fn(),
   resolveKeywordTriggeredFacts: vi.fn(),
@@ -104,6 +106,7 @@ beforeEach(() => {
   ;(classifyTopicViaLLM as any).mockResolvedValue({ topic: 'inclusions', source: 'llm' })
   ;(classifyKeywordModulesViaLLM as any).mockResolvedValue({ moduleIds: [], source: 'llm' })
   ;(detectsAdditionalEscalationSignal as any).mockResolvedValue(false)
+  ;(detectsPreferenceDeclineViaLLM as any).mockResolvedValue({ declined: false, source: 'llm' })
   ;(factsForModuleIds as any).mockReturnValue([])
   ;(resolveKeywordTriggeredFacts as any).mockReturnValue([])
   ;(resolveRouteLegFacts as any).mockReturnValue([])
@@ -1325,6 +1328,7 @@ describe('decideAndRespond', () => {
       ;(matchDestination as any).mockReturnValue({ destination: 'ijen', matches: [fromBali, fromSurabaya] })
       ;(checkRouteGate as any).mockReturnValue({ status: 'clear' })
       ;(classifyTopicViaLLM as any).mockResolvedValue({ topic: 'price', source: 'llm' })
+      ;(detectsPreferenceDeclineViaLLM as any).mockResolvedValue({ declined: true, source: 'llm' })
 
       const result = await decideAndRespond('conv_1', "I'm not sure yet, what would you recommend for Ijen?")
 
@@ -1479,6 +1483,7 @@ describe('decideAndRespond', () => {
       ;(matchDestination as any).mockReturnValue({ destination: 'ijen', matches: [fromBali, fromSurabaya] })
       ;(checkRouteGate as any).mockReturnValue({ status: 'clear' })
       ;(classifyTopicViaLLM as any).mockResolvedValue({ topic: 'price', source: 'llm' })
+      ;(detectsPreferenceDeclineViaLLM as any).mockResolvedValue({ declined: true, source: 'llm' })
       mockPrisma.conversation.findUniqueOrThrow.mockResolvedValue({
         id: 'conv_1',
         tripBrief: { destination: 'ijen', askedTripPreferences: true },
@@ -2349,7 +2354,15 @@ describe('decideAndRespond', () => {
 // full decideAndRespond mock harness one integration scenario at a time. This is the concrete
 // payoff of the extraction: every case below needs zero mocking.
 describe('computeTripPreferencesFunnelDecision (pure)', () => {
-  const base = { tripBrief: {}, inboundText: 'Which package do you recommend for Ijen?', resolverTopic: 'price' as const, origin: null, finishCity: null, dayCount: null }
+  const base = {
+    tripBrief: {},
+    inboundText: 'Which package do you recommend for Ijen?',
+    resolverTopic: 'price' as const,
+    origin: null,
+    finishCity: null,
+    dayCount: null,
+    preferenceDeclineSignal: false,
+  }
 
   it('asks when everything is missing and nothing has been asked or declined before', () => {
     const d = computeTripPreferencesFunnelDecision(base)
@@ -2412,7 +2425,7 @@ describe('computeTripPreferencesFunnelDecision (pure)', () => {
 
   describe('declining', () => {
     it('detects a decline signal in the message and flags it as NEW (justDeclined)', () => {
-      const d = computeTripPreferencesFunnelDecision({ ...base, inboundText: "I'm not sure yet, what would you recommend?" })
+      const d = computeTripPreferencesFunnelDecision({ ...base, inboundText: "I'm not sure yet, what would you recommend?", preferenceDeclineSignal: true })
       expect(d.declinedTripPreferences).toBe(true)
       expect(d.justDeclined).toBe(true)
       expect(d.shouldAsk).toBe(false)
@@ -2426,7 +2439,9 @@ describe('computeTripPreferencesFunnelDecision (pure)', () => {
     })
 
     it('an Indonesian decline phrase works the same as an English one', () => {
-      expect(computeTripPreferencesFunnelDecision({ ...base, inboundText: 'Ijen, tapi saya belum tau mau berapa hari' }).justDeclined).toBe(true)
+      expect(
+        computeTripPreferencesFunnelDecision({ ...base, inboundText: 'Ijen, tapi saya belum tau mau berapa hari', preferenceDeclineSignal: true }).justDeclined
+      ).toBe(true)
     })
   })
 })

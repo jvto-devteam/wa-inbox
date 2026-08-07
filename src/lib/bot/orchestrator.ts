@@ -112,6 +112,7 @@ import { type ResolverTopic } from './module-resolver'
 import { classifyTopicViaLLM } from './topic-classifier'
 import { classifyKeywordModulesViaLLM } from './keyword-module-classifier'
 import { detectsAdditionalEscalationSignal } from './escalation-classifier'
+import { detectsPreferenceDeclineViaLLM } from './preference-decline-classifier'
 import { parsePickupTiming, buildItineraryScenario, describeScenarioForLLM, describeScenarioForCustomer, evaluateScenario } from './scenario-evaluator'
 import {
   resolveKnowledgeForTopic,
@@ -378,6 +379,12 @@ export type TripPreferencesFunnelDecision = {
  * day-count stay MANDATORY before recommending a package -- not "ask once, then give up". The
  * ONLY way past this without all three known is the customer EXPLICITLY saying they don't
  * know/don't care -- "one message has passed since the bot asked" is NOT that signal.
+ *
+ * `preferenceDeclineSignal` (added 2026-08-07): whether THIS message signals a decline,
+ * resolved by the caller via preference-decline-classifier.ts's LLM-primary check (falls back
+ * to the unchanged `isUnknownPreferenceSignal` keyword list only on a technical failure) --
+ * passed in rather than computed here so this function stays pure/synchronous, matching its own
+ * "no DB writes, no LLM calls, just a decision given the current state" contract.
  */
 export function computeTripPreferencesFunnelDecision(input: {
   tripBrief: TripBrief
@@ -386,8 +393,9 @@ export function computeTripPreferencesFunnelDecision(input: {
   origin: string | null
   finishCity: string | null
   dayCount: number | null
+  preferenceDeclineSignal: boolean
 }): TripPreferencesFunnelDecision {
-  const { tripBrief, inboundText, resolverTopic, origin, finishCity, dayCount } = input
+  const { tripBrief, inboundText, resolverTopic, origin, finishCity, dayCount, preferenceDeclineSignal } = input
   const wasAwaitingAnswer = tripBrief.awaitingTripPreferencesAnswer === true
   // 'price' kept alongside isRecommendationRequest as a belt-and-suspenders topic-based signal
   // -- either one is enough. `wasAwaitingAnswer` (set true exactly when the gate below asked
@@ -405,7 +413,7 @@ export function computeTripPreferencesFunnelDecision(input: {
   // conversation" pattern) -- a customer who says once "gak tau, terserah aja" shouldn't have
   // to repeat it on every later message.
   const alreadyDeclined = tripBrief.declinedTripPreferences === true
-  const declinedTripPreferences = alreadyDeclined || isUnknownPreferenceSignal(inboundText)
+  const declinedTripPreferences = alreadyDeclined || preferenceDeclineSignal
   const justDeclined = declinedTripPreferences && !alreadyDeclined
   const shouldAsk = isRecommendationTopic && !declinedTripPreferences && (!origin || !finishCity || !dayCount)
   return { isRecommendationTopic, wasAwaitingAnswer, declinedTripPreferences, justDeclined, shouldAsk }
@@ -875,11 +883,37 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
     if (pickupScenario.traceDetail) trace.push('Evaluasi urutan rute & waktu istirahat', pickupScenario.traceDetail)
     const scenarioNote = pickupScenario.forLLM ? `\n\n${pickupScenario.forLLM}` : ''
 
+    // LLM-primary as of 2026-08-07 (see preference-decline-classifier.ts's own header) --
+    // flagged in the manual-matching audit as the highest-risk remaining matcher: this is the
+    // funnel's ONLY bypass, so a missed decline traps the customer in a repeat-question loop
+    // with no other way out. Falls back to the unchanged isUnknownPreferenceSignal keyword
+    // check only on a genuine technical failure.
+    const { declined: preferenceDeclineSignal, source: declineSource } = await detectsPreferenceDeclineViaLLM(
+      inboundText,
+      isUnknownPreferenceSignal,
+      settings.ollamaModel
+    )
     // See computeTripPreferencesFunnelDecision's own header for the full rationale (mandatory
     // start/finish/day-count before a package recommendation, the DESTINATION_INDEPENDENT_TOPICS
     // exclusion, the decline signal) -- this call site just sequences the side effects (DB
     // writes, trace, reply) the pure decision implies, in the exact same order as before.
-    const funnelDecision = computeTripPreferencesFunnelDecision({ tripBrief, inboundText, resolverTopic, origin, finishCity, dayCount })
+    const funnelDecision = computeTripPreferencesFunnelDecision({
+      tripBrief,
+      inboundText,
+      resolverTopic,
+      origin,
+      finishCity,
+      dayCount,
+      preferenceDeclineSignal,
+    })
+    if (funnelDecision.justDeclined) {
+      trace.push(
+        'Deteksi pelanggan tidak tahu preferensi',
+        declineSource === 'llm'
+          ? 'Diteksi oleh model LLM lokal.'
+          : 'Model LLM gagal/timeout -- fallback ke pemindaian kata kunci lama.'
+      )
+    }
     const isRecommendationTopic = funnelDecision.isRecommendationTopic
     if (funnelDecision.wasAwaitingAnswer) {
       await persistTripBrief({ destination, awaitingTripPreferencesAnswer: false })
