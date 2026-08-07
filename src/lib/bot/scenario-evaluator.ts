@@ -552,12 +552,26 @@ const HARBOR_KEYWORDS = ['harbor', 'harbour', 'pelabuhan', 'ferry terminal']
 const TRAIN_KEYWORDS = ['train station', 'kereta', 'stasiun']
 const HOTEL_KEYWORDS = ['hotel']
 
+// Found during a proactive audit 2026-08-07: a real, plausible message like "our flight already
+// landed a while ago, we're resting at our hotel now, please pick us up at 6pm" contains BOTH
+// "flight" (AIRPORT_KEYWORDS) and "hotel" (HOTEL_KEYWORDS) -- the old first-match-wins scan
+// confidently returned 'airport' (the customer's PAST arrival, mentioned only as backstory)
+// instead of 'hotel' (where they actually want pickup FROM). This type feeds `forCustomer` text
+// that bypasses the LLM entirely and goes straight into the reply, so a wrong-but-confident type
+// here is a genuinely wrong, unreviewed statement shipped to the customer -- not a silent miss.
+// Consistent with this whole feature's own documented design ("only proceed when BOTH type and
+// time are confidently known, conservative by null" -- see evaluatePickupScenario's own header):
+// when a message names MORE THAN ONE location type, that is itself evidence it is NOT
+// confidently known which one is the actual pickup point, so this now returns null (same
+// silent-no-recommendation outcome as any other "not confidently known" case) rather than
+// guessing via arbitrary keyword-check order.
 function detectPickupType(low: string): LocationType | null {
-  if (AIRPORT_KEYWORDS.some((k) => low.includes(k))) return 'airport'
-  if (HARBOR_KEYWORDS.some((k) => low.includes(k))) return 'harbor'
-  if (TRAIN_KEYWORDS.some((k) => low.includes(k))) return 'train_station'
-  if (HOTEL_KEYWORDS.some((k) => low.includes(k))) return 'hotel'
-  return null
+  const matches: LocationType[] = []
+  if (AIRPORT_KEYWORDS.some((k) => low.includes(k))) matches.push('airport')
+  if (HARBOR_KEYWORDS.some((k) => low.includes(k))) matches.push('harbor')
+  if (TRAIN_KEYWORDS.some((k) => low.includes(k))) matches.push('train_station')
+  if (HOTEL_KEYWORDS.some((k) => low.includes(k))) matches.push('hotel')
+  return matches.length === 1 ? matches[0] : null
 }
 
 // "jam 6 sore"/"pukul 18" -> hour, adjusted for the stated day-part. 'pagi' (morning) is

@@ -29,6 +29,21 @@ describe('parsePickupTiming', () => {
     expect(parsePickupTiming('naik kereta, jemput di stasiun').type).toBe('train_station')
   })
 
+  // Found during a proactive audit 2026-08-07: "flight" (AIRPORT_KEYWORDS) and "hotel"
+  // (HOTEL_KEYWORDS) can both appear in one real message -- a customer mentioning their past
+  // arrival as backstory while actually wanting pickup from their hotel now. The old
+  // first-match-wins scan confidently returned 'airport' (wrong -- they're at the hotel), and
+  // this type feeds a reply that bypasses the LLM entirely, so a wrong type here is a genuinely
+  // wrong statement shipped to the customer, not a silent miss. Returning null when multiple
+  // location types are named is safe -- it's the exact same "no bonus recommendation" outcome
+  // as any other not-confidently-known case (see the "nothing is stated" test below).
+  it('returns null (not a guess) when the message names more than one location type', () => {
+    const result = parsePickupTiming(
+      'our flight already landed a while ago, we are resting at our hotel now, please pick us up at 6pm'
+    )
+    expect(result.type).toBeNull()
+  })
+
   // Deliberately conservative: bare "sore" alone maps BELOW the real 17:00 late-arrival
   // threshold since Indonesian "sore" genuinely spans both sides of it -- a bare mention
   // must never manufacture a confident "limited rest time" warning out of an ambiguous word.
