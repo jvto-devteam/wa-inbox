@@ -405,9 +405,18 @@ export function computeTripPreferencesFunnelDecision(input: {
   // regardless of trip specifics, so a reply resolving to one of them is clearly not an
   // attempt to answer or continue the funnel (reported live 2026-08-06: "How much is the
   // deposit?" right after the funnel asked was getting re-funneled instead of answered).
+  //
+  // Same DESTINATION_INDEPENDENT_TOPICS exclusion now also applied to isRecommendationRequest
+  // itself (added 2026-08-07): found during a proactive audit, RECOMMENDATION_INTENT_KEYWORDS'
+  // bare 'options'/'choices' keywords can fire on a message that's actually about something
+  // else entirely -- "What are my options if I have to cancel due to a flight delay?" resolves
+  // to topic 'cancellation' (fully answerable on its own) but the bare 'options' match would
+  // still wrongly derail it into the trip-preferences funnel. Same fix, same rationale as the
+  // `wasAwaitingAnswer` case right above -- a reply that resolves to a self-contained,
+  // unrelated topic is clearly not a recommendation request no matter which signal flagged it.
   const isRecommendationTopic =
     resolverTopic === 'price' ||
-    isRecommendationRequest(inboundText) ||
+    (isRecommendationRequest(inboundText) && !DESTINATION_INDEPENDENT_TOPICS.has(resolverTopic)) ||
     (wasAwaitingAnswer && !DESTINATION_INDEPENDENT_TOPICS.has(resolverTopic))
   // Permanent once signaled (mirrors `askedTripPreferences`'s own "persists for the rest of the
   // conversation" pattern) -- a customer who says once "gak tau, terserah aja" shouldn't have

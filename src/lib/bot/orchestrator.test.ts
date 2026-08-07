@@ -2508,6 +2508,20 @@ describe('computeTripPreferencesFunnelDecision (pure)', () => {
     expect(d.isRecommendationTopic).toBe(true)
   })
 
+  // Reported live 2026-08-07 (proactive audit, same class as the 'wasAwaitingAnswer' exclusion
+  // right below): the bare 'options' keyword in RECOMMENDATION_INTENT_KEYWORDS fires on a pure
+  // cancellation question with nothing to do with picking a package, wrongly derailing it into
+  // the funnel gate instead of answering it directly.
+  it('does not treat a bare "options" match as recommendation intent when the topic is a self-contained, unrelated one', () => {
+    const d = computeTripPreferencesFunnelDecision({
+      ...base,
+      inboundText: 'What are my options if I have to cancel due to a flight delay?',
+      resolverTopic: 'cancellation',
+    })
+    expect(d.isRecommendationTopic).toBe(false)
+    expect(d.shouldAsk).toBe(false)
+  })
+
   describe('the awaitingTripPreferencesAnswer override', () => {
     it('extends recommendation-topic status to the immediate next message when its topic is genuinely ambiguous', () => {
       const d = computeTripPreferencesFunnelDecision({
