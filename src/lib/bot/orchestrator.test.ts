@@ -2350,6 +2350,28 @@ describe('decideAndRespond', () => {
       expect(opts.system).not.toContain('finish/end in')
     })
 
+    // Reported live 2026-08-07, same audit as pickPackage's own multi-destination fix: this
+    // fact now checks `optionPackages` (the exact pool narrowPackagePool already resolved and
+    // that packageOptionsText shows the customer) instead of the raw single-anchor-destination
+    // `matches` pool, so the claim is always about a package the customer can actually SEE in
+    // the same reply, never a different, unrelated package that happens to share the single
+    // anchor destination token.
+    it('bases the finish-city fact on the same narrowed pool shown to the customer, not the raw single-destination pool', async () => {
+      ;(ensureFreshBookingData as any).mockResolvedValue(null)
+      ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
+      ;(matchDestination as any).mockReturnValue({ destination: 'ijen', matches: [cannotFinishInBali, canFinishInBali] })
+      ;(checkRouteGate as any).mockReturnValue({ status: 'clear' })
+      ;(classifyTopicViaLLM as any).mockResolvedValue({ topic: 'route_endpoint', source: 'llm' })
+      ;(extractTripPreferences as any).mockResolvedValue({ preferences: { origin: null, dayCount: null, finishCity: 'bali' }, source: 'llm' })
+
+      await decideAndRespond('conv_1', 'can we finish the trip in bali?')
+
+      const [, opts] = (callLLM as any).mock.calls[0]
+      // canFinishInBali is priced and survives narrowPackagePool's finish-city filter, so it's
+      // genuinely present in optionPackages -- the honest "yes" claim still holds here.
+      expect(opts.system).toContain('yes, at least one of the matching packages above genuinely can')
+    })
+
     it("picks the package that can actually finish in Bali, not the Bali-ORIGIN one, when both are candidates", async () => {
       ;(ensureFreshBookingData as any).mockResolvedValue(null)
       ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })

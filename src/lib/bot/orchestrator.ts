@@ -1131,9 +1131,17 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
     // all Surabaya/Malang-area (verified 2026-08-05: none of the 4 Bali-origin packages list
     // Bali as a finish option), so this must be answered from `finishCities`, never guessed
     // from `origin`/general knowledge. Told explicitly, honestly, in both directions.
+    //
+    // Checked against `optionPackages` (already narrowed by narrowPackagePool -- covers every
+    // named destination, not just the single anchor one), not the raw single-destination
+    // `matches` pool -- found 2026-08-07 during the same audit that reported pickPackage's own
+    // multi-destination blindness: checking the raw pool could say "yes, one of the matching
+    // packages can finish there" based on a DIFFERENT single-destination package the customer
+    // never asked about, even when none of the packages actually covering everything they named
+    // can finish there. Same root cause, same fix, different call site.
     const finishCityFact = !finishCity
       ? ''
-      : matches.some((p) => p.finishCities.includes(finishCity))
+      : optionPackages.some((p) => p.finishCities.includes(finishCity))
         ? `\n\nThe customer asked whether the trip can finish/end in ${titleCaseCity(finishCity)} -- yes, at least one of the matching packages above genuinely can (see which ones say "finishes in ${titleCaseCity(finishCity)}"); do not claim every package does.`
         : `\n\nThe customer asked whether the trip can finish/end in ${titleCaseCity(finishCity)} -- be honest: none of the matching packages for this destination are set up to finish there. Say so clearly and mention our team can advise on custom routing if they specifically need this.`
     // A soft "list them if relevant" instruction wasn't enough -- live-tested 2026-08-04, the
