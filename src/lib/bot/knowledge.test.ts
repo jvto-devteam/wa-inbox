@@ -292,6 +292,21 @@ describe('resolveKnowledgeForTopic', () => {
     expect(withoutIjen.disclosures).toEqual([])
   })
 
+  // Reported live 2026-08-07: a follow-up message like "is the hike difficult?" (no literal
+  // "ijen") after Ijen was already established as the resolved destination in an earlier turn
+  // still classifies as destination_readiness (via 'difficult'/'hike' keywords) -- the Ijen
+  // access/health-screening disclosure was silently dropped because it only ever checked the
+  // CURRENT message's raw text, never the resolved `destination` parameter already passed in.
+  it('still adds the Ijen access-risk disclosures for a follow-up message with no literal "ijen", when destination is passed', () => {
+    const result = resolveKnowledgeForTopic('destination_readiness', 'is the hike difficult?', 'ijen')
+    expect(result.disclosures.length).toBeGreaterThan(0)
+  })
+
+  it('does not add the Ijen disclosure for a destination-less follow-up when the resolved destination is something else', () => {
+    const result = resolveKnowledgeForTopic('destination_readiness', 'is the hike difficult?', 'bromo')
+    expect(result.disclosures).toEqual([])
+  })
+
   it('adds the no-guarantee disclosure when the customer uses a guarantee phrase, even outside blue_fire/destination_readiness', () => {
     const result = resolveKnowledgeForTopic('inclusions', 'can you guarantee this 100%?')
     expect(result.disclosures).toContain(

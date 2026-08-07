@@ -213,4 +213,29 @@ describe.skipIf(!RELEASE_PRESENT)('decideAndRespond against the real parsing pip
     expect(opts.system).not.toContain('bromo-1d1n')
     expect(opts.system.toLowerCase()).toContain('tumpak-sewu-bromo')
   })
+
+  // Reported live 2026-08-07: no real Ijen package both starts AND finishes in Bali (all
+  // Bali-origin packages drop off in Surabaya/Malang, per catalog/endpoint-chains.json). The
+  // single grounding package (`pkg`, used for "Package the customer is asking about" and its
+  // own policyNotes/stagingNotes/link) used to be chosen by `pickPackage` independently from
+  // the options list (`packageOptionsText`, chosen by `narrowPackagePool`) -- two different
+  // narrowing algorithms that could disagree: `pickPackage` filtered by finishCity first, then
+  // silently DROPPED the customer's stated Bali origin when applying it to the already-narrowed
+  // (Surabaya-origin) pool, presenting a Surabaya-origin package as unqualified fact right next
+  // to matchTierNote's own honest disclosure that no package actually matches the stated
+  // combination. `pkg` is now derived from the exact same pool the options text uses, so
+  // whatever package it names is always genuinely present among the disclosed options.
+  it('keeps the single grounding package consistent with the disclosed options when origin+finishCity together have no real match ("Ijen from Bali, finishing in Bali too")', async () => {
+    withTripBrief({ destination: 'ijen' })
+
+    await decideAndRespond('conv_1', 'We want a 3 day Ijen tour starting from Bali, and finishing in Bali as well.')
+
+    const [, opts] = (callLLM as any).mock.calls[5]
+    const pkgMatch = opts.system.match(/Package the customer is asking about: (.+)/)
+    expect(pkgMatch).not.toBeNull()
+    const pkgTitle = pkgMatch![1].trim()
+    // Whatever single package is named, it must genuinely appear among the disclosed options
+    // the customer can see in the same reply -- never a package absent from that list.
+    expect(opts.system).toContain(`- ${pkgTitle}`)
+  })
 })

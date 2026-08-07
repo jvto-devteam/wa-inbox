@@ -982,17 +982,59 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
         : 'Paket valid untuk dijawab ke pelanggan.'
     )
 
-    // "3 day trip from Surabaya" or "10-12 June (3 days) from Surabaya" -> narrows which of
-    // the destination's several packages (they differ by day count/origin/finish city) to
-    // recommend, instead of always naming whichever priced one happens to be first (see
-    // package-match.ts). `origin`/`dayCount`/`finishCity` (not the bare `preferences.*`
-    // equivalents) so a detail stated on an EARLIER message still narrows this pick -- e.g. a
-    // customer who confirmed "3D2N, Surabaya to Bali" across several turns must not have that
-    // forgotten the moment a later message in the same conversation doesn't restate it.
-    // `requestedTokens` (added 2026-08-07, see pickPackage's own header) -- without it, a
-    // customer naming several real destinations got a reply whose text correctly described a
-    // multi-destination package but whose LINK pointed to an unrelated single-destination one.
-    const pkg = pickPackage(matches, { origin, dayCount, finishCity, pax }, requestedTokens)
+    // Confirmed with the operator 2026-08-05: narrowPackagePool's own header explains the 4
+    // explicit priority tiers this uses instead of a single-pass "skip whichever filter would
+    // zero the pool" narrowing. `matchTier === 'none'` means not even the stated duration has a
+    // match for this destination at all -- hand off instead of presenting an unrelated list
+    // (the operator's own explicit ask: genuinely too-custom requests go to a human, who
+    // follows up directly, rather than the bot guessing something irrelevant).
+    const { pool: matchTierPool, tier: matchTier } = narrowPackagePool(matches, { origin, dayCount, finishCity, pax }, requestedTokens)
+    if (matchTier === 'none') {
+      trace.push(
+        'Tidak ada paket yang cocok',
+        `Tidak ada paket untuk destinasi "${destination}" dengan durasi ${dayCount} hari sama sekali -- diserahkan ke agen, tim akan follow up langsung.`
+      )
+      return {
+        mode: 'handoff',
+        reason: `Permintaan pelanggan (durasi ${dayCount ?? '?'} hari) tidak cocok dengan paket manapun untuk destinasi "${destination}", bahkan setelah dilonggarkan.`,
+        steps: trace.steps,
+      }
+    }
+
+    // Every priced package matching this destination (narrowed to the known finish city and/or
+    // origin, if any) as real, comparison-ready options -- so "which package do you recommend"
+    // gets an actual short list (per-package title/duration/origin/price/link). Capped at 5 --
+    // "give 3 or 5 options" was the explicit ask, and it doubles as the LLM's presentation limit
+    // so it isn't tempted to dump every variation of a destination back at the customer. Each
+    // option carries its OWN details-page link (never the shared `primaryLink` below) --
+    // live-tested 2026-08-04, a single link at the end of a 5-option list left the customer
+    // unable to tell which package it belonged to.
+    const optionPool = sortByBestPackagePriority(matchTierPool)
+    const optionPackages = optionPool.filter((p) => p.priceIdr !== null).slice(0, 5)
+
+    // "3 day trip from Surabaya" or "10-12 June (3 days) from Surabaya" -> the single package
+    // topic-general facts (stagingNotes/policyNotes/primaryLink below) are grounded in, instead
+    // of always naming whichever priced one happens to be first. `origin`/`dayCount`/`finishCity`
+    // (not the bare `preferences.*` equivalents) so a detail stated on an EARLIER message still
+    // narrows this pick -- e.g. a customer who confirmed "3D2N, Surabaya to Bali" across several
+    // turns must not have that forgotten the moment a later message doesn't restate it.
+    //
+    // Derived from `optionPackages`/`matchTierPool` (added 2026-08-07), NOT a separate call to
+    // `pickPackage` -- reported live, `pickPackage`'s own progressive per-filter narrowing
+    // (finishCity, then origin, then dayCount, each independently skipped if it would zero the
+    // pool) is a structurally DIFFERENT algorithm from narrowPackagePool's atomic combined-tier
+    // narrowing, and the two can disagree: for an Ijen request stating both origin='Bali' and
+    // finishCity='bali' (no real package satisfies both together), `pickPackage` used to filter
+    // by finishCity first, then silently DROP the stated origin when applying it to the
+    // already-narrowed pool -- landing on a Surabaya-origin package -- while narrowPackagePool
+    // correctly recognized the exact combo doesn't exist, fell back to 'relaxed_start_end', and
+    // told the LLM to disclose the mismatch honestly. The system prompt was asserting "Package
+    // the customer is asking about: [Surabaya-origin package]" as unqualified fact right next to
+    // an honest disclosure that no package actually matches what was asked -- contradictory
+    // grounding. Deriving `pkg` from the SAME already-tiered pool `packageOptionsText` uses
+    // closes this for good: they can never disagree again, by construction. `pickPackage` itself
+    // is kept only as the final fallback for the (rare) case both pools are somehow empty.
+    const pkg = optionPackages[0] ?? matchTierPool[0] ?? pickPackage(matches, { origin, dayCount, finishCity, pax }, requestedTokens)
 
     // The module-resolution step catalog.ts's own header names as never having been ported
     // (see knowledge.ts's header) -- resolves real facts/links/disclosures for all 14 real
@@ -1055,44 +1097,10 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
       ? (pkg.links.details ?? knowledge.primaryLink ?? null)
       : (knowledge.primaryLink ?? pkg.links.details ?? null)
 
-    // Every priced package matching this destination (narrowed to the known finish city and/or
-    // origin, if any -- same progressive-narrowing precedence as pickPackage above) as real,
-    // comparison-ready options -- so "which package do you recommend" gets an actual short
-    // list (per-package title/duration/origin/price/link), not just the single package
-    // pickPackage silently chose above for topic-general facts. Capped at 5 -- "give 3 or 5
-    // options" was the explicit ask, and it doubles as the LLM's presentation limit so it
-    // isn't tempted to dump every variation of a destination back at the customer. Each option
-    // carries its OWN details-page link (never the shared `primaryLink` below) -- live-tested
-    // 2026-08-04, a single link at the end of a 5-option list left the customer unable to tell
-    // which package it belonged to.
-    // `finishCity`/`origin`/`dayCount` are the merged (this-message-or-persisted) values
-    // computed earlier, not `preferences.*` directly -- see their own header for why: a
-    // customer who confirmed "3D2N, Surabaya to Bali" across several turns was getting ALL 5
-    // Surabaya-origin packages (every duration) listed back at them on a later message that
-    // didn't restate the duration/finish city, because this pool used to only ever look at
-    // THIS message's preferences.
-    //
-    // Confirmed with the operator 2026-08-05: narrowPackagePool's own header explains the 4
-    // explicit priority tiers this replaces the old single-pass "skip whichever filter would
-    // zero the pool" narrowing with. `matchTier === 'none'` means not even the stated duration
-    // has a match for this destination at all -- hand off instead of presenting an unrelated
-    // list (the operator's own explicit ask: genuinely too-custom requests go to a human, who
-    // follows up directly, rather than the bot guessing something irrelevant).
-    const { pool: matchTierPool, tier: matchTier } = narrowPackagePool(matches, { origin, dayCount, finishCity, pax }, requestedTokens)
-    if (matchTier === 'none') {
-      trace.push(
-        'Tidak ada paket yang cocok',
-        `Tidak ada paket untuk destinasi "${destination}" dengan durasi ${dayCount} hari sama sekali -- diserahkan ke agen, tim akan follow up langsung.`
-      )
-      return {
-        mode: 'handoff',
-        reason: `Permintaan pelanggan (durasi ${dayCount ?? '?'} hari) tidak cocok dengan paket manapun untuk destinasi "${destination}", bahkan setelah dilonggarkan.`,
-        steps: trace.steps,
-      }
-    }
-
-    const optionPool = sortByBestPackagePriority(matchTierPool)
-    const optionPackages = optionPool.filter((p) => p.priceIdr !== null).slice(0, 5)
+    // `matchTierPool`/`matchTier`/`optionPool`/`optionPackages` already computed above (see the
+    // `pkg` derivation's own header) -- `packageOptionsText` below reuses that same pool rather
+    // than recomputing it, so the text and `pkg`/`primaryLink` can never disagree about which
+    // packages are actually relevant to what the customer asked.
     // Reported 2026-08-05: cross-checked against a real operator-exported pricing sheet
     // (175/176 price points matched exactly what's already synced -- confirming the tier data
     // itself is accurate), which surfaced that the bot was quoting the CHEAPEST (11+ pax) tier

@@ -202,7 +202,7 @@
       "domestic_weekend_holiday": 30000,
       "student_group_weekday": 10000,
       "student_group_weekend_holiday": 15000,
-      "note": "Foreign is FLAT (no weekday/weekend split). Online booking via tiket.bbksdajatim.org; QRIS-only cashless since 2025-01-31; daily cap ~2000",
+      "note": "Foreign is FLAT (no weekday/weekend split). Online booking required, cashless (QRIS) only since 2025-01-31; daily cap ~2000",
       "visitor_insurance_separate": {
         "domestic": 2000,
         "foreign": 5000,

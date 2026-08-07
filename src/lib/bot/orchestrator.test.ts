@@ -731,17 +731,27 @@ describe('decideAndRespond', () => {
     expect(opts.system).not.toContain('Only relevant on needs_review')
   })
 
-  it('parses trip preferences from the message and passes them to pickPackage, so "3 day trip from Surabaya" can select the matching package', async () => {
+  // Reported live 2026-08-07: `pkg` (the single package the reply's facts/link are grounded in)
+  // is now derived from the SAME narrowPackagePool-produced pool `packageOptionsText` uses
+  // (see the `pkg` derivation's own header in orchestrator.ts), not a separate `pickPackage`
+  // call -- asserting on the actual resulting package (via the system prompt's own "Package
+  // the customer is asking about" line) rather than on `pickPackage`'s mock call args, since
+  // `pickPackage` is now only reached as a last-resort fallback when the narrowed pools are
+  // empty.
+  it('parses trip preferences from the message and selects the matching package by origin/dayCount, so "3 day trip from Surabaya" grounds the reply in the right one', async () => {
     ;(ensureFreshBookingData as any).mockResolvedValue(null)
     ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
-    ;(matchDestination as any).mockReturnValue({ destination: 'ijen', matches: [pkg()] })
+    const matchingPkg = pkg({ packageKey: 'surabaya-3d', title: 'Ijen 3D2N from Surabaya', origin: 'Surabaya', dayCount: 3 })
+    const otherPkg = pkg({ packageKey: 'bali-4d', title: 'Ijen 4D3N from Bali', origin: 'Bali', dayCount: 4 })
+    ;(matchDestination as any).mockReturnValue({ destination: 'ijen', matches: [otherPkg, matchingPkg] })
     ;(checkRouteGate as any).mockReturnValue({ status: 'clear' })
     ;(extractTripPreferences as any).mockResolvedValue({ preferences: { origin: 'Surabaya', dayCount: 3 }, source: 'llm' })
 
     await decideAndRespond('conv_1', '3 day ijen trip from Surabaya')
 
     expect(extractTripPreferences).toHaveBeenCalledWith('3 day ijen trip from Surabaya', 'gemma4:31b-cloud')
-    expect(pickPackage).toHaveBeenCalledWith([pkg()], { origin: 'Surabaya', dayCount: 3, finishCity: null, pax: null }, [])
+    const [, opts] = (callLLM as any).mock.calls[0]
+    expect(opts.system).toContain('Package the customer is asking about: Ijen 3D2N from Surabaya')
   })
 
   it('passes the matched destination through to resolveKnowledgeForTopic (so destination_readiness can resolve a destination-specific link)', async () => {
@@ -1497,14 +1507,16 @@ describe('decideAndRespond', () => {
       expect(result.mode).toBe('faq')
     })
 
-    it('persists a stated origin so a later message narrows pickPackage without restating it', async () => {
+    it('persists a stated origin so a later message narrows the grounding package without restating it', async () => {
       ;(ensureFreshBookingData as any).mockResolvedValue(null)
       ;(classifySalesNeed as any).mockReturnValue({ job: 'J2', missingInfo: [], needsLiveData: false })
-      ;(matchDestination as any).mockReturnValue({ destination: 'ijen', matches: [fromBali, fromSurabaya] })
+      const namedFromBali = pkg({ packageKey: 'bali-3d', title: 'Ijen from Bali', origin: 'Bali', dayCount: 3 })
+      const namedFromSurabaya = pkg({ packageKey: 'surabaya-2d', title: 'Ijen from Surabaya', origin: 'Surabaya', dayCount: 2 })
+      ;(matchDestination as any).mockReturnValue({ destination: 'ijen', matches: [namedFromBali, namedFromSurabaya] })
       ;(checkRouteGate as any).mockReturnValue({ status: 'clear' })
       ;(classifyTopicViaLLM as any).mockResolvedValue({ topic: 'price', source: 'llm' })
       ;(extractTripPreferences as any).mockResolvedValue({ preferences: { origin: 'Surabaya', dayCount: null }, source: 'llm' })
-      // declinedTripPreferences: true -- this test is about origin persistence/pickPackage
+      // declinedTripPreferences: true -- this test is about origin persistence/package
       // narrowing, not the start/finish/day-count funnel gate itself (see the dedicated gate
       // tests above), so declining bypasses it.
       mockPrisma.conversation.findUniqueOrThrow.mockResolvedValue({
@@ -1521,13 +1533,16 @@ describe('decideAndRespond', () => {
         where: { id: 'conv_1' },
         data: { tripBrief: { declinedTripPreferences: true, destination: 'ijen', origin: 'Surabaya' } },
       })
-      expect(pickPackage).toHaveBeenCalledWith([fromBali, fromSurabaya], { origin: 'Surabaya', dayCount: null, finishCity: null, pax: null }, [])
+      const [, opts] = (callLLM as any).mock.calls[0]
+      expect(opts.system).toContain('Package the customer is asking about: Ijen from Surabaya')
     })
 
-    it('uses the origin already on file (not just this message) to narrow pickPackage', async () => {
+    it('uses the origin already on file (not just this message) to narrow the grounding package', async () => {
       ;(ensureFreshBookingData as any).mockResolvedValue(null)
       ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
-      ;(matchDestination as any).mockReturnValue({ destination: 'ijen', matches: [fromBali, fromSurabaya] })
+      const namedFromBali = pkg({ packageKey: 'bali-3d', title: 'Ijen from Bali', origin: 'Bali', dayCount: 3 })
+      const namedFromSurabaya = pkg({ packageKey: 'surabaya-2d', title: 'Ijen from Surabaya', origin: 'Surabaya', dayCount: 2 })
+      ;(matchDestination as any).mockReturnValue({ destination: 'ijen', matches: [namedFromBali, namedFromSurabaya] })
       ;(checkRouteGate as any).mockReturnValue({ status: 'clear' })
       ;(classifyTopicViaLLM as any).mockResolvedValue({ topic: 'inclusions', source: 'llm' })
       ;(extractTripPreferences as any).mockResolvedValue({ preferences: { origin: null, dayCount: null }, source: 'llm' })
@@ -1541,7 +1556,8 @@ describe('decideAndRespond', () => {
 
       await decideAndRespond('conv_1', 'What is included?')
 
-      expect(pickPackage).toHaveBeenCalledWith([fromBali, fromSurabaya], { origin: 'Bali', dayCount: null, finishCity: null, pax: null }, [])
+      const [, opts] = (callLLM as any).mock.calls[0]
+      expect(opts.system).toContain('Package the customer is asking about: Ijen from Bali')
     })
 
     // Reported live 2026-08-07: a customer named 3 destinations ("Ijen, Bromo, Madakaripura"),
@@ -1552,10 +1568,12 @@ describe('decideAndRespond', () => {
     // silently vanished on that reply and the package list got padded with irrelevant
     // single/partial-destination packages. Same bug class already fixed once for
     // origin/dayCount/finishCity/pax, just never applied to this field until now.
-    it('uses the destinations already on file (not just this message) to narrow pickPackage', async () => {
+    it('uses the destinations already on file (not just this message) to narrow the grounding package', async () => {
       ;(ensureFreshBookingData as any).mockResolvedValue(null)
       ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
-      ;(matchDestination as any).mockReturnValue({ destination: 'ijen', matches: [fromBali, fromSurabaya] })
+      const partialCombo = pkg({ packageKey: 'ijen-only', title: 'Ijen Only', destinationTokens: ['ijen'] })
+      const fullCombo = pkg({ packageKey: 'full-combo', title: 'Ijen Bromo Madakaripura Combo', destinationTokens: ['ijen', 'bromo', 'madakaripura'] })
+      ;(matchDestination as any).mockReturnValue({ destination: 'ijen', matches: [partialCombo, fullCombo] })
       ;(checkRouteGate as any).mockReturnValue({ status: 'clear' })
       ;(classifyTopicViaLLM as any).mockResolvedValue({ topic: 'inclusions', source: 'llm' })
       ;(extractTripPreferences as any).mockResolvedValue({ preferences: { origin: null, dayCount: null }, source: 'llm' })
@@ -1569,19 +1587,17 @@ describe('decideAndRespond', () => {
 
       await decideAndRespond('conv_1', "we're flexible on days, whatever works")
 
-      expect(pickPackage).toHaveBeenCalledWith(
-        [fromBali, fromSurabaya],
-        { origin: null, dayCount: null, finishCity: null, pax: null },
-        ['ijen', 'bromo', 'madakaripura']
-      )
+      const [, opts] = (callLLM as any).mock.calls[0]
+      expect(opts.system).toContain('Package the customer is asking about: Ijen Bromo Madakaripura Combo')
     })
 
     it('lets a fresh destination mention override the persisted set, rather than merging them', async () => {
       ;(ensureFreshBookingData as any).mockResolvedValue(null)
       ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
-      const combo = pkg({ packageKey: 'combo', destinationTokens: ['ijen', 'papuma'] })
-      ;(loadCatalog as any).mockReturnValue({ packages: [combo], syncedAt: null })
-      ;(matchDestination as any).mockReturnValue({ destination: 'ijen', matches: [combo] })
+      const ijenPapuma = pkg({ packageKey: 'ijen-papuma', title: 'Ijen Papuma Combo', destinationTokens: ['ijen', 'papuma'] })
+      const ijenBromoMadakaripura = pkg({ packageKey: 'ijen-bromo-mada', title: 'Ijen Bromo Madakaripura Combo', destinationTokens: ['ijen', 'bromo', 'madakaripura'] })
+      ;(loadCatalog as any).mockReturnValue({ packages: [ijenPapuma, ijenBromoMadakaripura], syncedAt: null })
+      ;(matchDestination as any).mockReturnValue({ destination: 'ijen', matches: [ijenPapuma, ijenBromoMadakaripura] })
       ;(checkRouteGate as any).mockReturnValue({ status: 'clear' })
       ;(classifyTopicViaLLM as any).mockResolvedValue({ topic: 'inclusions', source: 'llm' })
       ;(extractTripPreferences as any).mockResolvedValue({ preferences: { origin: null, dayCount: null }, source: 'llm' })
@@ -1595,7 +1611,10 @@ describe('decideAndRespond', () => {
 
       await decideAndRespond('conv_1', 'Actually, just Ijen and Papuma please')
 
-      expect(pickPackage).toHaveBeenCalledWith([combo], { origin: null, dayCount: null, finishCity: null, pax: null }, ['ijen', 'papuma'])
+      // If the persisted ['ijen','bromo','madakaripura'] had leaked through instead of being
+      // overridden by this message's own ['ijen','papuma'], the combo package would have won.
+      const [, opts] = (callLLM as any).mock.calls[0]
+      expect(opts.system).toContain('Package the customer is asking about: Ijen Papuma Combo')
     })
 
     it("lists every matching priced package in the LLM system prompt, not just pickPackage's single choice", async () => {

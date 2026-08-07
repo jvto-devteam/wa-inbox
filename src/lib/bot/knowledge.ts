@@ -625,7 +625,14 @@ export function resolveKnowledgeForTopic(
     }
   }
 
-  const hasIjen = low.includes('ijen')
+  // Reported live 2026-08-07: checking only the CURRENT message's raw text missed a real
+  // follow-up like "is the hike difficult?" after Ijen was already established as the resolved
+  // `destination` in an earlier turn -- 'destination_readiness' matches via 'difficult'/'hike'
+  // keywords with no literal "ijen" needed, so the real access/health-screening disclosure was
+  // silently dropped even though the customer is unambiguously still asking about Ijen. Checked
+  // additively against the resolved, cross-turn `destination` too, never removing the existing
+  // raw-text check.
+  const hasIjen = low.includes('ijen') || destination?.toLowerCase() === 'ijen'
   const disclosures = getTopicDisclosures(topic, hasIjen)
   if (GUARANTEE_PHRASES.some((p) => low.includes(p))) {
     if (!disclosures.includes(DISCLOSURES.noGuaranteeAccess)) disclosures.push(DISCLOSURES.noGuaranteeAccess)
