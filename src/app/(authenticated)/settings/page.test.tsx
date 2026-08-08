@@ -1,11 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, cleanup } from '@testing-library/react'
 import SettingsPage from './page'
 
-// Scoped to the "Sambungkan Ulang" (relink) control only. The two admin
-// sections below it each stand up their own fetch traffic; mocking them keeps
-// this file focused on the relink flow rather than turning into a
-// whole-page integration test.
+// The two admin sections below "Status nomor" each stand up their own fetch
+// traffic; mocking them keeps this file focused on the page shell rather
+// than turning into a whole-page integration test.
 vi.mock('@/components/settings/UserManagementSection', () => ({
   UserManagementSection: () => <div data-testid="user-management" />,
 }))
@@ -15,19 +14,14 @@ vi.mock('@/components/settings/WebhookCredentialsPanel', () => ({
 
 const settings = { defaultChannel: 'OFFICIAL' }
 
-// Unofficial disconnected + ADMIN role are what make the relink button render
-// at all (see the Status nomor card).
-function mockFetch(relinkResponse: unknown) {
+function mockFetch(role: 'ADMIN' | 'AGENT', unofficialConfigured = true) {
   vi.stubGlobal(
     'fetch',
-    vi.fn((url: string, init?: RequestInit) => {
+    vi.fn((url: string) => {
       if (url === '/api/settings') return Promise.resolve({ ok: true, json: async () => settings })
       if (url === '/api/numbers/status')
-        return Promise.resolve({ ok: true, json: async () => ({ officialTokenValid: true, unofficialConnected: false }) })
-      if (url === '/api/session') return Promise.resolve({ ok: true, json: async () => ({ role: 'ADMIN' }) })
-      if (url === '/api/numbers/relink' && init?.method === 'POST') {
-        return typeof relinkResponse === 'function' ? (relinkResponse as () => unknown)() : relinkResponse
-      }
+        return Promise.resolve({ ok: true, json: async () => ({ officialTokenValid: true, unofficialConfigured }) })
+      if (url === '/api/session') return Promise.resolve({ ok: true, json: async () => ({ role }) })
       return Promise.resolve({ ok: true, json: async () => ({}) })
     })
   )
@@ -36,27 +30,16 @@ function mockFetch(relinkResponse: unknown) {
 beforeEach(() => vi.unstubAllGlobals())
 afterEach(() => cleanup())
 
-const ERROR_COPY = 'Gagal menyambungkan ulang — periksa wa-coexist'
-
 describe('SettingsPage — billing link', () => {
   it('shows a link to the conversation-cost history page for an admin', async () => {
-    mockFetch({ ok: true, json: async () => ({}) })
+    mockFetch('ADMIN')
     render(<SettingsPage />)
 
     expect(await screen.findByRole('link', { name: 'Lihat histori biaya' })).toHaveAttribute('href', '/settings/billing')
   })
 
   it('hides the billing link for a non-admin', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn((url: string) => {
-        if (url === '/api/settings') return Promise.resolve({ ok: true, json: async () => settings })
-        if (url === '/api/numbers/status')
-          return Promise.resolve({ ok: true, json: async () => ({ officialTokenValid: true, unofficialConnected: true }) })
-        if (url === '/api/session') return Promise.resolve({ ok: true, json: async () => ({ role: 'AGENT' }) })
-        return Promise.resolve({ ok: true, json: async () => ({}) })
-      })
-    )
+    mockFetch('AGENT')
     render(<SettingsPage />)
 
     await screen.findByText('Status nomor')
@@ -64,52 +47,19 @@ describe('SettingsPage — billing link', () => {
   })
 })
 
-describe('SettingsPage — Sambungkan Ulang', () => {
-  it('shows an inline error when the relink endpoint responds with a non-ok status', async () => {
-    mockFetch(Promise.resolve({ ok: false, status: 502, json: async () => ({ error: ERROR_COPY }) }))
-
+describe('SettingsPage — Status nomor', () => {
+  it('shows the Unofficial badge as configured, with no relink control', async () => {
+    mockFetch('ADMIN', true)
     render(<SettingsPage />)
-    fireEvent.click(await screen.findByRole('button', { name: 'Sambungkan Ulang' }))
 
-    expect(await screen.findByText(ERROR_COPY)).toBeInTheDocument()
+    expect(await screen.findByText(/Unofficial: Terkonfigurasi/)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Sambungkan Ulang/ })).not.toBeInTheDocument()
   })
 
-  it('shows an inline error when the relink request throws outright', async () => {
-    mockFetch(() => Promise.reject(new Error('Network error')))
-
+  it('shows the Unofficial badge as unconfigured when the coexist fields are empty', async () => {
+    mockFetch('ADMIN', false)
     render(<SettingsPage />)
-    fireEvent.click(await screen.findByRole('button', { name: 'Sambungkan Ulang' }))
 
-    expect(await screen.findByText(ERROR_COPY)).toBeInTheDocument()
-  })
-
-  it('shows no error and refreshes the number status on a successful relink', async () => {
-    mockFetch(Promise.resolve({ ok: true, json: async () => ({ ok: true }) }))
-
-    render(<SettingsPage />)
-    fireEvent.click(await screen.findByRole('button', { name: 'Sambungkan Ulang' }))
-
-    await waitFor(() => {
-      expect(vi.mocked(fetch).mock.calls.filter(([url]) => url === '/api/numbers/status')).toHaveLength(2)
-    })
-    expect(screen.queryByText(ERROR_COPY)).not.toBeInTheDocument()
-  })
-
-  // A relink re-pairs the live company-wide WhatsApp session; firing several
-  // concurrently because the button stayed clickable is a real hazard.
-  it('disables the button while a relink is in flight', async () => {
-    let release: (value: unknown) => void = () => {}
-    mockFetch(() => new Promise((resolve) => (release = resolve)))
-
-    render(<SettingsPage />)
-    const button = await screen.findByRole('button', { name: 'Sambungkan Ulang' })
-    fireEvent.click(button)
-
-    const pending = await screen.findByRole('button', { name: 'Menyambungkan...' })
-    expect(pending).toBeDisabled()
-    expect(vi.mocked(fetch).mock.calls.filter(([url]) => url === '/api/numbers/relink')).toHaveLength(1)
-
-    release({ ok: true, json: async () => ({ ok: true }) })
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Sambungkan Ulang' })).not.toBeDisabled())
+    expect(await screen.findByText(/Unofficial: Belum diatur/)).toBeInTheDocument()
   })
 })

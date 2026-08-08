@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { sendCoexistText, sendCoexistMedia, getCoexistStatus, relinkCoexist } from './client'
+import { sendCoexistText, sendCoexistMedia } from './client'
 
 const waNumber = { coexistBaseUrl: 'http://localhost:4000', coexistApiKey: 'key123', coexistNumberKey: 'num456' }
 
@@ -123,67 +123,6 @@ describe('sendCoexistMedia', () => {
   })
 })
 
-describe('getCoexistStatus', () => {
-  it('returns connected: true when wa-coexist status is "connected"', async () => {
-    ;(fetch as any).mockResolvedValue({
-      ok: true,
-      json: async () => ({ status: 'connected', user: { id: '1234@s.whatsapp.net' }, qr: null }),
-    })
-    const result = await getCoexistStatus(waNumber)
-    expect(result).toEqual({ connected: true })
-    expect(fetch).toHaveBeenCalledWith(
-      'http://localhost:4000/api/status',
-      expect.objectContaining({ signal: expect.any(AbortSignal) })
-    )
-  })
-
-  it('returns connected: false when wa-coexist status is "disconnected"', async () => {
-    ;(fetch as any).mockResolvedValue({
-      ok: true,
-      json: async () => ({ status: 'disconnected', user: null, qr: null }),
-    })
-    const result = await getCoexistStatus(waNumber)
-    expect(result).toEqual({ connected: false })
-  })
-
-  it('returns connected: false when wa-coexist status is "connecting"', async () => {
-    ;(fetch as any).mockResolvedValue({
-      ok: true,
-      json: async () => ({ status: 'connecting', user: null, qr: 'data:image/png...' }),
-    })
-    const result = await getCoexistStatus(waNumber)
-    expect(result).toEqual({ connected: false })
-  })
-
-  it('returns connected: false when the request fails outright', async () => {
-    ;(fetch as any).mockRejectedValue(new Error('network error'))
-    const result = await getCoexistStatus(waNumber)
-    expect(result).toEqual({ connected: false })
-  })
-
-  it('returns connected: false when HTTP response is not ok', async () => {
-    ;(fetch as any).mockResolvedValue({
-      ok: false,
-      json: async () => ({ error: 'Internal server error' }),
-    })
-    const result = await getCoexistStatus(waNumber)
-    expect(result).toEqual({ connected: false })
-  })
-})
-
-describe('relinkCoexist', () => {
-  it('posts to /api/relink', async () => {
-    ;(fetch as any).mockResolvedValue({ ok: true, json: async () => ({ success: true }) })
-    await relinkCoexist(waNumber)
-    expect(fetch).toHaveBeenCalledWith('http://localhost:4000/api/relink', expect.objectContaining({ method: 'POST' }))
-  })
-
-  it('does not throw on success', async () => {
-    ;(fetch as any).mockResolvedValue({ ok: true, json: async () => ({ success: true }) })
-    await expect(relinkCoexist(waNumber)).resolves.toBeUndefined()
-  })
-})
-
 // Every wa-coexist call must be bounded. sendCoexistText in particular runs on
 // the bot-reply path (src/lib/send.ts, reached from the Meta inbound webhook),
 // and wa-coexist's own ensureConnected can block ~15s when the session is
@@ -210,51 +149,6 @@ describe('wa-coexist request timeouts', () => {
     expect(signalOf(1)).toBeInstanceOf(AbortSignal)
   })
 
-  it('sends an AbortSignal with the status probe', async () => {
-    mockedFetch().mockResolvedValue({ ok: true, json: async () => ({ status: 'connected' }) } as unknown as Response)
-    await getCoexistStatus(waNumber)
-    expect(signalOf(0)).toBeInstanceOf(AbortSignal)
-  })
-
-  it('sends an AbortSignal with the relink request', async () => {
-    mockedFetch().mockResolvedValue({ ok: true, json: async () => ({ success: true }) } as unknown as Response)
-    await relinkCoexist(waNumber)
-    expect(signalOf(0)).toBeInstanceOf(AbortSignal)
-  })
-
-  // The send timeout must sit above wa-coexist's own ~15s internal
-  // ensureConnected wait so a slow-but-successful send isn't aborted by our
-  // client before wa-coexist has even finished waiting; the status probe does
-  // no such wait and is blocking the Settings page, so it gets a much
-  // tighter bound.
-  it('gives sends a budget above wa-coexist\'s 15s internal wait, and the probe/relink tighter ones', async () => {
-    const timeoutSpy = vi.spyOn(AbortSignal, 'timeout')
-    try {
-      mockedFetch().mockResolvedValue({ ok: true, json: async () => ({ status: '200' }) } as unknown as Response)
-      await sendCoexistText(waNumber, '6281234567890', 'Halo!')
-      const sendMs = timeoutSpy.mock.calls[0][0]
-
-      timeoutSpy.mockClear()
-      mockedFetch().mockResolvedValue({ ok: true, json: async () => ({ status: 'connected' }) } as unknown as Response)
-      await getCoexistStatus(waNumber)
-      const statusMs = timeoutSpy.mock.calls[0][0]
-
-      timeoutSpy.mockClear()
-      mockedFetch().mockResolvedValue({ ok: true, json: async () => ({ success: true }) } as unknown as Response)
-      await relinkCoexist(waNumber)
-      const relinkMs = timeoutSpy.mock.calls[0][0]
-
-      // Sends must outlast wa-coexist's own worst-case ~15s ensureConnected
-      // wait, or we abort sends that would have succeeded.
-      expect(sendMs).toBeGreaterThan(15000)
-      expect(statusMs).toBeLessThan(sendMs)
-      expect(relinkMs).toBeLessThan(sendMs)
-      expect(statusMs).toBeLessThan(relinkMs)
-    } finally {
-      timeoutSpy.mockRestore()
-    }
-  })
-
   it('propagates an aborted send as an error rather than swallowing it', async () => {
     // AbortSignal.timeout firing rejects the fetch with a TimeoutError
     // DOMException; sendCoexistText has no catch, so it must surface to the
@@ -268,20 +162,5 @@ describe('wa-coexist request timeouts', () => {
     mockedFetch().mockRejectedValue(new DOMException('The operation was aborted due to timeout', 'TimeoutError'))
 
     await expect(sendCoexistMedia(waNumber, '6281234567890', 'https://x/img.jpg', 'image')).rejects.toThrow(/timeout/i)
-  })
-
-  it('propagates an aborted relink as an error', async () => {
-    mockedFetch().mockRejectedValue(new DOMException('The operation was aborted due to timeout', 'TimeoutError'))
-
-    await expect(relinkCoexist(waNumber)).rejects.toThrow(/timeout/i)
-  })
-
-  // getCoexistStatus is the one deliberate exception: it already degrades to
-  // { connected: false } on any failure, which is the correct read of "we
-  // could not reach wa-coexist".
-  it('reports a timed-out status probe as disconnected instead of throwing', async () => {
-    mockedFetch().mockRejectedValue(new DOMException('The operation was aborted due to timeout', 'TimeoutError'))
-
-    await expect(getCoexistStatus(waNumber)).resolves.toEqual({ connected: false })
   })
 })

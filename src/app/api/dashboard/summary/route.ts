@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
-import { getCoexistStatus } from '@/lib/coexist/client'
 
 export async function GET() {
   const startOfToday = new Date()
@@ -36,7 +35,12 @@ export async function GET() {
     prisma.waNumber.findFirstOrThrow(),
   ])
 
-  const coexist = await getCoexistStatus(waNumber)
+  // Unofficial is send-only (see src/lib/coexist/client.ts) -- there's no
+  // live connectivity probe against the target service anymore, just an
+  // honest "is this channel configured at all" read of our own DB.
+  const unofficialConfigured = Boolean(
+    waNumber.coexistBaseUrl && waNumber.coexistApiKey && waNumber.coexistNumberKey
+  )
 
   // There is deliberately no `unreadCount` here. Nothing in the Prisma schema tracks reads
   // (no lastReadAt on Conversation, no per-agent read marker), so the field could only ever
@@ -46,7 +50,7 @@ export async function GET() {
     openCount,
     handoffTodayCount,
     officialTokenValid: Boolean(waNumber.accessToken),
-    unofficialConnected: coexist.connected,
+    unofficialConfigured,
     needsAttention: needsAttentionConvos.map((c) => ({
       id: c.id,
       contactName: c.contact.name,

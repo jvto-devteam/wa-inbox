@@ -10,22 +10,23 @@ type CoexistResponse = {
   [key: string]: unknown
 }
 
-// Timeouts differ per call because the work behind each endpoint differs.
-// wa-coexist's own `ensureConnected` can block up to 15s before a send
-// endpoint responds, so a send timeout must sit ABOVE that (20s) or we'd
-// abort legitimately-slow-but-successful sends before wa-coexist even
-// finishes its own wait. Sends still need *some* bound: sendCoexistText is on
-// the bot-reply path (src/lib/send.ts, called from the Meta inbound webhook),
-// so an unbounded hang there stalls the webhook response past Meta's window.
+// The Unofficial channel now points at wa-dashboard's v1 API (the same
+// WatZap-compatible contract wa-coexist was originally ported from) instead
+// of the retired wa-coexist service. wa-dashboard has no equivalent of
+// wa-coexist's unauthenticated /api/status and /api/relink admin routes —
+// its own connect/status endpoints require a session-cookie admin login on
+// wa-dashboard's own domain, not something callable with api_key/number_key
+// creds from another service. Deliberately scoped down to send-only
+// (getCoexistStatus/relinkCoexist removed) rather than building new
+// integration surface wa-dashboard doesn't offer.
+//
+// A send timeout must sit above however long the target service's own
+// "wait for connected" grace period is (observed up to ~15s on wa-coexist),
+// or we'd abort a legitimately-slow-but-successful send. Sends still need
+// *some* bound: sendCoexistText is on the bot-reply path (src/lib/send.ts,
+// called from the Meta inbound webhook), so an unbounded hang there stalls
+// the webhook response past Meta's window.
 const SEND_TIMEOUT_MS = 20000
-// /api/status is a lightweight in-memory probe with no connection wait — if
-// it hasn't answered in 5s wa-coexist is effectively down, and the Settings
-// page is blocked on this.
-const STATUS_TIMEOUT_MS = 5000
-// /api/relink is admin-triggered with a human waiting on the response: long
-// enough to cover a real re-pair round trip, short enough to fail visibly
-// rather than leave the button spinning indefinitely.
-const RELINK_TIMEOUT_MS = 10000
 
 async function coexistPost(creds: CoexistCreds, path: string, body: Record<string, unknown>): Promise<CoexistResponse> {
   const res = await fetch(`${creds.coexistBaseUrl}${path}`, {
@@ -68,25 +69,4 @@ export async function sendCoexistMedia(
     await coexistPost(creds, '/api/v1/send_file_url', { phone_no: to, url: mediaUrl })
   }
   return {}
-}
-
-export async function getCoexistStatus(creds: CoexistCreds): Promise<{ connected: boolean }> {
-  try {
-    const res = await fetch(`${creds.coexistBaseUrl}/api/status`, {
-      signal: AbortSignal.timeout(STATUS_TIMEOUT_MS),
-    })
-    if (!res.ok) return { connected: false }
-    const json = (await res.json()) as { status: string; user?: unknown; qr?: unknown }
-    return { connected: json.status === 'connected' }
-  } catch {
-    return { connected: false }
-  }
-}
-
-export async function relinkCoexist(creds: CoexistCreds): Promise<void> {
-  const res = await fetch(`${creds.coexistBaseUrl}/api/relink`, {
-    method: 'POST',
-    signal: AbortSignal.timeout(RELINK_TIMEOUT_MS),
-  })
-  if (!res.ok) throw new Error('Relink failed')
 }

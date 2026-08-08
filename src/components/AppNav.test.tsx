@@ -16,7 +16,7 @@ function stubApi(overrides: Record<string, () => Promise<Response>> = {}) {
     const handler = overrides[key]
     if (handler) return handler()
     if (url === '/api/numbers/status') {
-      return jsonResponse({ officialTokenValid: true, unofficialConnected: true })
+      return jsonResponse({ officialTokenValid: true, unofficialConfigured: true })
     }
     if (url === '/api/session') return jsonResponse({ role: 'ADMIN', name: 'Admin Demo' })
     if (url === '/api/auth/logout') return jsonResponse({ ok: true })
@@ -120,17 +120,17 @@ describe('AppNav', () => {
     render(<AppNav />)
 
     expect(await screen.findByText(/Official: Valid/)).toBeInTheDocument()
-    expect(await screen.findByText(/Unofficial: Tersambung/)).toBeInTheDocument()
+    expect(await screen.findByText(/Unofficial: Terkonfigurasi/)).toBeInTheDocument()
   })
 
   it('shows the failure wording when a channel is down', async () => {
     stubApi({
-      '/api/numbers/status': async () => jsonResponse({ officialTokenValid: false, unofficialConnected: false }),
+      '/api/numbers/status': async () => jsonResponse({ officialTokenValid: false, unofficialConfigured: false }),
     })
     render(<AppNav />)
 
     expect(await screen.findByText(/Official: Tidak valid/)).toBeInTheDocument()
-    expect(await screen.findByText(/Unofficial: Terputus/)).toBeInTheDocument()
+    expect(await screen.findByText(/Unofficial: Belum diatur/)).toBeInTheDocument()
   })
 
   it('renders no badges rather than broken ones when the status call fails', async () => {

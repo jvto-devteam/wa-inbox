@@ -27,7 +27,7 @@ const NAV_ITEMS = [
   { href: '/settings', label: 'Pengaturan' },
 ] as const
 
-type NumberStatus = { officialTokenValid: boolean; unofficialConnected: boolean }
+type NumberStatus = { officialTokenValid: boolean; unofficialConfigured: boolean }
 type Session = { role: 'ADMIN' | 'AGENT'; name: string }
 
 /**
@@ -156,11 +156,11 @@ export function AppNav() {
               />
               Official: {status.officialTokenValid ? 'Valid' : 'Tidak valid'}
             </Badge>
-            <Badge variant={status.unofficialConnected ? 'success' : 'destructive'}>
+            <Badge variant={status.unofficialConfigured ? 'success' : 'destructive'}>
               <span
-                className={cn('size-1.5 rounded-full', status.unofficialConnected ? 'bg-emerald-500' : 'bg-red-500')}
+                className={cn('size-1.5 rounded-full', status.unofficialConfigured ? 'bg-emerald-500' : 'bg-red-500')}
               />
-              Unofficial: {status.unofficialConnected ? 'Tersambung' : 'Terputus'}
+              Unofficial: {status.unofficialConfigured ? 'Terkonfigurasi' : 'Belum diatur'}
             </Badge>
           </>
         )}

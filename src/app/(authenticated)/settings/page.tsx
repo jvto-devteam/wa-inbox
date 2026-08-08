@@ -3,7 +3,6 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { Select } from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { UserManagementSection } from '@/components/settings/UserManagementSection'
 import { WebhookCredentialsPanel } from '@/components/settings/WebhookCredentialsPanel'
@@ -12,7 +11,7 @@ import { fetchJson } from '@/lib/fetch-json'
 type Settings = {
   defaultChannel: 'OFFICIAL' | 'UNOFFICIAL'
 }
-type NumberStatus = { officialTokenValid: boolean; unofficialConnected: boolean }
+type NumberStatus = { officialTokenValid: boolean; unofficialConfigured: boolean }
 type Role = 'ADMIN' | 'AGENT' | null
 
 // Bot-specific configuration (kill switch, working hours/auto-reply, LLM model, knowledge
@@ -22,8 +21,6 @@ type Role = 'ADMIN' | 'AGENT' | null
 export default function SettingsPage() {
   const [settings, setSettings] = useState<Settings | null>(null)
   const [status, setStatus] = useState<NumberStatus | null>(null)
-  const [relinking, setRelinking] = useState(false)
-  const [relinkError, setRelinkError] = useState<string | null>(null)
   const [role, setRole] = useState<Role>(null)
 
   useEffect(() => {
@@ -52,32 +49,6 @@ export default function SettingsPage() {
     }
   }
 
-  // A relink can take real time — wa-coexist re-pairs the session and our
-  // client allows up to 10s for it — so the button gets the same
-  // disabled-while-in-flight treatment as "Sinkron Sekarang" below. Without it
-  // an impatient admin can fire several concurrent re-pairs at the live
-  // company session, which is exactly the operation this endpoint warns about.
-  // Failures are surfaced inline rather than silently swallowed: before this,
-  // clicking against a down wa-coexist did nothing visible at all.
-  async function relink() {
-    if (relinking) return
-    setRelinking(true)
-    setRelinkError(null)
-    try {
-      const res = await fetch('/api/numbers/relink', { method: 'POST' })
-      if (!res.ok) {
-        setRelinkError('Gagal menyambungkan ulang — periksa wa-coexist')
-        return
-      }
-      const statusRes = await fetch('/api/numbers/status')
-      if (statusRes.ok) setStatus(await statusRes.json())
-    } catch {
-      setRelinkError('Gagal menyambungkan ulang — periksa wa-coexist')
-    } finally {
-      setRelinking(false)
-    }
-  }
-
   if (!settings || !status) return <div className="p-6 text-sm text-muted-foreground">Memuat...</div>
 
   return (
@@ -103,16 +74,12 @@ export default function SettingsPage() {
           <Badge variant={status.officialTokenValid ? 'success' : 'destructive'}>
             Official: {status.officialTokenValid ? 'Valid' : 'Tidak valid'}
           </Badge>
-          <Badge variant={status.unofficialConnected ? 'success' : 'destructive'}>
-            Unofficial: {status.unofficialConnected ? 'Tersambung' : 'Terputus'}
+          <Badge variant={status.unofficialConfigured ? 'success' : 'destructive'}>
+            Unofficial: {status.unofficialConfigured ? 'Terkonfigurasi' : 'Belum diatur'}
           </Badge>
-          {!status.unofficialConnected && role === 'ADMIN' && (
-            <Button onClick={relink} variant="outline" size="sm" disabled={relinking}>
-              {relinking ? 'Menyambungkan...' : 'Sambungkan Ulang'}
-            </Button>
-          )}
         </div>
-        {relinkError && <p className="text-xs text-destructive">{relinkError}</p>}
+        {/* Unofficial is send-only -- its own connect/relink is managed on wa-dashboard directly,
+            not from here (see src/lib/coexist/client.ts). */}
       </Card>
 
       {role === 'ADMIN' && (

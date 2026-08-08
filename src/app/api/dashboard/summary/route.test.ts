@@ -3,14 +3,12 @@ import { mockDeep, mockReset, type DeepMockProxy } from 'vitest-mock-extended'
 import type { PrismaClient } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { GET } from './route'
-import { getCoexistStatus } from '@/lib/coexist/client'
 
 // See src/app/api/conversations/route.test.ts for why the mock must be constructed inline
 // inside the factory rather than via an outer `let` variable (vi.mock factories are hoisted
 // above `let`/`const` declarations, so closing over a reassigned outer variable throws a TDZ
 // error).
 vi.mock('@/lib/db', () => ({ prisma: mockDeep<PrismaClient>() }))
-vi.mock('@/lib/coexist/client', () => ({ getCoexistStatus: vi.fn() }))
 
 const mockPrisma = prisma as unknown as DeepMockProxy<PrismaClient>
 
@@ -26,8 +24,12 @@ beforeEach(() => {
   mockPrisma.message.count.mockResolvedValue(0)
   mockPrisma.conversation.findMany.mockResolvedValue([])
   mockPrisma.reminder.findMany.mockResolvedValue([])
-  mockPrisma.waNumber.findFirstOrThrow.mockResolvedValue({ accessToken: 'tok' } as never)
-  vi.mocked(getCoexistStatus).mockResolvedValue({ connected: true })
+  mockPrisma.waNumber.findFirstOrThrow.mockResolvedValue({
+    accessToken: 'tok',
+    coexistBaseUrl: 'http://x',
+    coexistApiKey: 'k',
+    coexistNumberKey: 'n',
+  } as never)
 })
 
 describe('GET /api/dashboard/summary', () => {
@@ -39,7 +41,7 @@ describe('GET /api/dashboard/summary', () => {
       openCount: 0,
       handoffTodayCount: 0,
       officialTokenValid: true,
-      unofficialConnected: true,
+      unofficialConfigured: true,
       needsAttention: [],
       remindersDue: [],
     })
@@ -81,12 +83,17 @@ describe('GET /api/dashboard/summary', () => {
     expect(body.officialTokenValid).toBe(false)
   })
 
-  it('reports unofficialConnected false when getCoexistStatus reports disconnected', async () => {
-    vi.mocked(getCoexistStatus).mockResolvedValue({ connected: false })
+  it('reports unofficialConfigured false when the coexist fields are empty', async () => {
+    mockPrisma.waNumber.findFirstOrThrow.mockResolvedValue({
+      accessToken: 'tok',
+      coexistBaseUrl: '',
+      coexistApiKey: '',
+      coexistNumberKey: '',
+    } as never)
 
     const body = await (await GET()).json()
 
-    expect(body.unofficialConnected).toBe(false)
+    expect(body.unofficialConfigured).toBe(false)
   })
 
   it('maps needsAttention conversations that were handed off (botEnabled: false) and are still unassigned', async () => {

@@ -6,7 +6,7 @@ const summary = {
   openCount: 3,
   handoffTodayCount: 1,
   officialTokenValid: true,
-  unofficialConnected: false,
+  unofficialConfigured: false,
   needsAttention: [{ id: 'conv_1', contactName: 'Bruno', reason: 'Menunggu agen setelah handoff' }],
   remindersDue: [{ id: 'rem_1', note: 'Follow up DP', contactName: 'Bruno' }],
 }

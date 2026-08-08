@@ -32,7 +32,7 @@ beforeEach(() => {
     'fetch',
     vi.fn(async (url: string) => {
       if (url === '/api/numbers/status') {
-        return { ok: true, status: 200, json: async () => ({ officialTokenValid: true, unofficialConnected: true }) }
+        return { ok: true, status: 200, json: async () => ({ officialTokenValid: true, unofficialConfigured: true }) }
       }
       return { ok: true, status: 200, json: async () => ({ role: 'ADMIN', name: 'Admin Demo' }) }
     })

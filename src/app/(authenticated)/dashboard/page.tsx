@@ -9,7 +9,7 @@ type Summary = {
   openCount: number
   handoffTodayCount: number
   officialTokenValid: boolean
-  unofficialConnected: boolean
+  unofficialConfigured: boolean
   needsAttention: Array<{ id: string; contactName: string | null; reason: string }>
   remindersDue: Array<{ id: string; note: string; contactName: string | null }>
 }
@@ -51,8 +51,8 @@ export default function DashboardPage() {
         <Badge variant={summary.officialTokenValid ? 'success' : 'destructive'}>
           Official: {summary.officialTokenValid ? 'Valid' : 'Tidak valid'}
         </Badge>
-        <Badge variant={summary.unofficialConnected ? 'success' : 'destructive'}>
-          Unofficial: {summary.unofficialConnected ? 'Tersambung' : 'Terputus'}
+        <Badge variant={summary.unofficialConfigured ? 'success' : 'destructive'}>
+          Unofficial: {summary.unofficialConfigured ? 'Terkonfigurasi' : 'Belum diatur'}
         </Badge>
       </section>
 
