@@ -579,28 +579,27 @@ async function runNoDestinationBranch(
   inboundText: string,
   conversationId: string,
   ollamaModel: string,
-  job: string | null | undefined,
+  resolverTopic: ResolverTopic,
   catalog: Catalog,
   unsupportedOriginCity: string | null,
   routeLegNote: string,
   keywordModuleIds: string[],
   trace: Tracer
 ): Promise<BotDecision> {
-  const { topic: preDestinationTopic } = await classifyTopicViaLLM(job, inboundText, ollamaModel)
   // A keyword-triggered module (dietary/ISIC/escort/ferry) can genuinely answer a message
   // regardless of what topic it classified as -- 'general' always has non-empty baseline
   // facts of its own (TOPIC_MODULES.general), so that alone can't be used to detect a real
   // keyword hit here the way it can for an already-allowlisted topic below.
-  if (DESTINATION_INDEPENDENT_TOPICS.has(preDestinationTopic) || keywordModuleIds.length > 0) {
-    const preDestinationKnowledge = resolveKnowledgeForTopic(preDestinationTopic, inboundText, undefined, keywordModuleIds)
+  if (DESTINATION_INDEPENDENT_TOPICS.has(resolverTopic) || keywordModuleIds.length > 0) {
+    const preDestinationKnowledge = resolveKnowledgeForTopic(resolverTopic, inboundText, undefined, keywordModuleIds)
     if (preDestinationKnowledge.factualLines.length > 0) {
       trace.push(
         'Topik tidak butuh destinasi',
-        `Topik "${preDestinationTopic}" bisa dijawab tanpa mengetahui destinasi -- menjawab langsung dari fakta umum, sambil tetap menanyakan destinasi untuk rekomendasi paket berikutnya.`
+        `Topik "${resolverTopic}" bisa dijawab tanpa mengetahui destinasi -- menjawab langsung dari fakta umum, sambil tetap menanyakan destinasi untuk rekomendasi paket berikutnya.`
       )
       const system =
         `${SHARED_PERSONA_INSTRUCTIONS}\n\n` +
-        `Known facts relevant to their question (topic: "${preDestinationTopic}"):\n${preDestinationKnowledge.factualLines.map((f) => `- ${f}`).join('\n')}` +
+        `Known facts relevant to their question (topic: "${resolverTopic}"):\n${preDestinationKnowledge.factualLines.map((f) => `- ${f}`).join('\n')}` +
         (preDestinationKnowledge.detailLines.length > 0
           ? `\n\nMore detail if useful:\n${preDestinationKnowledge.detailLines.map((d) => `- ${d}`).join('\n')}`
           : '') +
@@ -621,7 +620,7 @@ async function runNoDestinationBranch(
       const history = await fetchRecentHistory(conversationId, inboundText)
       trace.push(
         'Meminta jawaban dari model lokal',
-        `Menggunakan model ${ollamaModel} (Ollama, lokal), topik "${preDestinationTopic}", ${preDestinationKnowledge.factualLines.length} fakta, ${history?.length ?? 0} pesan riwayat.`
+        `Menggunakan model ${ollamaModel} (Ollama, lokal), topik "${resolverTopic}", ${preDestinationKnowledge.factualLines.length} fakta, ${history?.length ?? 0} pesan riwayat.`
       )
       const reply = await callLLM(inboundText, { system, model: ollamaModel, history })
       if (!reply || !reply.trim()) {
@@ -629,7 +628,7 @@ async function runNoDestinationBranch(
         return { mode: 'clarify', reply: TECHNICAL_HICCUP_REPLY, steps: trace.steps }
       }
       trace.push('Jawaban siap dikirim', previewText(reply))
-      return { mode: 'faq', draft: reply, sourceTopic: preDestinationTopic, steps: trace.steps }
+      return { mode: 'faq', draft: reply, sourceTopic: resolverTopic, steps: trace.steps }
     }
   }
 
@@ -683,24 +682,30 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
       trace.push('Eskalasi terdeteksi', 'Pesan cocok dengan kata kunci eskalasi -- langsung diserahkan ke agen tanpa pemrosesan lebih lanjut.')
       return { mode: 'handoff', reason: 'Kata kunci eskalasi terdeteksi', steps: trace.steps }
     }
-    // Additive-only LLM check, added 2026-08-07 -- see escalation-classifier.ts's own header
-    // for the full rationale. The keyword list above always runs first and always wins; this
-    // only catches a genuine complaint/human-request/B2B-inquiry the keyword list missed
-    // (e.g. new phrasing), and fails safe to "no additional signal" on any technical failure --
-    // never worse than the keyword-only behavior that existed before this check.
-    if (await detectsAdditionalEscalationSignal(inboundText, settings.ollamaModel)) {
-      trace.push('Eskalasi terdeteksi (LLM)', 'Model LLM mendeteksi sinyal komplain/permintaan manusia/kemitraan B2B yang tidak tertangkap kata kunci -- diserahkan ke agen.')
-      return { mode: 'handoff', reason: 'Sinyal eskalasi terdeteksi oleh model LLM', steps: trace.steps }
-    }
-    trace.push('Tidak ada eskalasi', 'Tidak ditemukan kata kunci maupun sinyal eskalasi lain pada pesan ini.')
 
     const conversation = await prisma.conversation.findUniqueOrThrow({
       where: { id: conversationId },
       include: { contact: true },
     })
 
-    trace.push('Mencari data booking', 'Mengecek apakah kontak ini punya booking aktif di Booking API.')
-    const bookingData = await ensureFreshBookingData(conversation)
+    // The additive-only LLM escalation check (added 2026-08-07 -- see escalation-classifier.ts's
+    // own header for the full rationale) reads only `inboundText`, and the booking lookup reads
+    // only the conversation: they share nothing, so the second no longer waits on the first. The
+    // keyword gate above still runs first and still wins -- it is free, and it short-circuits
+    // before either of these starts. The LLM check only catches a genuine complaint/human-
+    // request/B2B-inquiry the keyword list missed (e.g. new phrasing), fails safe to "no
+    // additional signal" on any technical failure, and is still decided BEFORE the Mode 3
+    // branch below, so a customer WITH a booking who complains still reaches a human.
+    trace.push('Mencari data booking', 'Mengecek data booking dan sinyal eskalasi tambahan secara paralel.')
+    const [additionalEscalation, bookingData] = await Promise.all([
+      detectsAdditionalEscalationSignal(inboundText, settings.ollamaModel),
+      ensureFreshBookingData(conversation),
+    ])
+    if (additionalEscalation) {
+      trace.push('Eskalasi terdeteksi (LLM)', 'Model LLM mendeteksi sinyal komplain/permintaan manusia/kemitraan B2B yang tidak tertangkap kata kunci -- diserahkan ke agen.')
+      return { mode: 'handoff', reason: 'Sinyal eskalasi terdeteksi oleh model LLM', steps: trace.steps }
+    }
+    trace.push('Tidak ada eskalasi', 'Tidak ditemukan kata kunci maupun sinyal eskalasi lain pada pesan ini.')
 
     // Mode 3 -- booking context: bypasses the catalog-grounded path entirely.
     // `await` here (not a bare `return <promise>`) is load-bearing: it keeps the call inside
@@ -784,21 +789,6 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
         ? `\n\nReal travel-time estimates for the specific leg(s) the customer asked about (these are approximate/operational, so still phrase them as "approximately" or "around"):\n${routeLegFacts.map((f) => `- ${f}`).join('\n')}`
         : ''
 
-    // LLM-primary as of 2026-08-07 (see keyword-module-classifier.ts's own header) -- replaces
-    // KEYWORD_TRIGGERED_MODULES' keyword scan as the primary source of "which independent fact
-    // triggers (dietary, ISIC, emergency support, cancellation, Ijen access, drone, jacket/shoe
-    // rental, etc.) does this message call for," validated against the real module_id set,
-    // falling back to the unchanged regex scan only on a genuine technical failure. Computed
-    // once, up front, so both the pre-destination branch and the main knowledge-composition
-    // path below share the same resolved result instead of each re-deriving it independently.
-    const { moduleIds: keywordModuleIds, source: keywordModuleSource } = await classifyKeywordModulesViaLLM(inboundText, settings.ollamaModel)
-    trace.push(
-      'Memeriksa modul fakta kata kunci',
-      keywordModuleSource === 'llm'
-        ? `Diperiksa oleh model LLM lokal -- ${keywordModuleIds.length} modul cocok.`
-        : `Model LLM gagal/timeout -- fallback ke pemindaian kata kunci lama, ${keywordModuleIds.length} modul cocok.`
-    )
-
     const classification = classifySalesNeed({ message: inboundText, tripBrief })
     trace.push(
       'Mengklasifikasi kebutuhan pelanggan',
@@ -831,41 +821,98 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
       await persistTripBrief({ destination })
     }
 
+    // Both branches need these two classifiers; only the destination-known branch needs the
+    // other three. `matchDestination` above is a synchronous catalog scan, so the branch is
+    // already known before any classifier starts -- which is why the no-destination path can
+    // spend two LLM calls rather than five.
+    //
     // `await` here (not a bare `return <promise>`) is load-bearing -- see runBookingContextMode's
     // own call site above for why: it keeps this inside the try block so the outer catch still
     // handles a rejection (an Ollama timeout, etc.) gracefully.
     if (!destination) {
+      const [keywordModuleResult, topicResult] = await Promise.all([
+        classifyKeywordModulesViaLLM(inboundText, settings.ollamaModel),
+        classifyTopicViaLLM(classification.job, inboundText, settings.ollamaModel),
+      ])
+      trace.push(
+        'Memeriksa modul fakta kata kunci',
+        keywordModuleResult.source === 'llm'
+          ? `Diperiksa oleh model LLM lokal -- ${keywordModuleResult.moduleIds.length} modul cocok.`
+          : `Model LLM gagal/timeout -- fallback ke pemindaian kata kunci lama, ${keywordModuleResult.moduleIds.length} modul cocok.`
+      )
       return await runNoDestinationBranch(
         inboundText,
         conversationId,
         settings.ollamaModel,
-        classification.job,
+        topicResult.topic,
         catalog,
         unsupportedOriginCity,
         routeLegNote,
-        keywordModuleIds,
+        keywordModuleResult.moduleIds,
         trace
       )
     }
     trace.push('Destinasi ditemukan', `Destinasi: "${destination}".`)
 
-    const { topic: resolverTopic, source: topicSource } = await classifyTopicViaLLM(classification.job, inboundText, settings.ollamaModel)
+    // Every one of these five reads nothing but `inboundText` (plus, for the topic classifier,
+    // the already-computed sales job) and none reads another's result -- so they run as one
+    // batch rather than five sequential waits, each with its own 10s timeout.
+    const [
+      { moduleIds: keywordModuleIds, source: keywordModuleSource },
+      { topic: resolverTopic, source: topicSource },
+      { preferences, source: preferencesSource },
+      { declined: preferenceDeclineSignal, source: declineSource },
+      { isRecommendation: recommendationIntentSignal, source: recommendationSource },
+    ] = await Promise.all([
+      // LLM-primary as of 2026-08-07 (see keyword-module-classifier.ts's own header) -- replaces
+      // KEYWORD_TRIGGERED_MODULES' keyword scan as the primary source of "which independent fact
+      // triggers (dietary, ISIC, emergency support, cancellation, Ijen access, drone, jacket/shoe
+      // rental, etc.) does this message call for," validated against the real module_id set,
+      // falling back to the unchanged regex scan only on a genuine technical failure. Resolved
+      // once here and shared by every step below rather than re-derived at each use.
+      classifyKeywordModulesViaLLM(inboundText, settings.ollamaModel),
+      classifyTopicViaLLM(classification.job, inboundText, settings.ollamaModel),
+      // LLM-primary as of 2026-08-07 (see trip-preferences-extractor.ts's own header for the full
+      // rationale) -- validated against known values, falls back to the old regex parser only on
+      // a genuine technical failure (timeout/error/unparseable output), never as a first-pass gate.
+      extractTripPreferences(inboundText, settings.ollamaModel),
+      // LLM-primary as of 2026-08-07 (see preference-decline-classifier.ts's own header) --
+      // flagged in the manual-matching audit as the highest-risk remaining matcher: this is the
+      // funnel's ONLY bypass, so a missed decline traps the customer in a repeat-question loop
+      // with no other way out. Falls back to the unchanged isUnknownPreferenceSignal keyword
+      // check only on a genuine technical failure.
+      detectsPreferenceDeclineViaLLM(inboundText, isUnknownPreferenceSignal, settings.ollamaModel),
+      // LLM-primary as of 2026-08-07 (see recommendation-intent-classifier.ts's own header) --
+      // the old regex both missed genuine recommendation requests phrased without its literal
+      // trigger words and had a documented history of false positives from its own bare keywords
+      // (each fixed as a one-off keyword patch previously). Falls back to the unchanged
+      // isRecommendationRequest regex only on a genuine technical failure.
+      detectsRecommendationIntentViaLLM(inboundText, isRecommendationRequest, settings.ollamaModel),
+    ])
+    trace.push(
+      'Memeriksa modul fakta kata kunci',
+      keywordModuleSource === 'llm'
+        ? `Diperiksa oleh model LLM lokal -- ${keywordModuleIds.length} modul cocok.`
+        : `Model LLM gagal/timeout -- fallback ke pemindaian kata kunci lama, ${keywordModuleIds.length} modul cocok.`
+    )
     trace.push(
       'Mengklasifikasi topik',
       `Topik terdeteksi: "${resolverTopic}"${topicSource === 'regex_fallback' ? ' (fallback regex -- model LLM gagal/timeout)' : ''}.`
     )
-
-    const matches = matched?.matches ?? packagesForDestination(destination, catalog)
-    // LLM-primary as of 2026-08-07 (see trip-preferences-extractor.ts's own header for the full
-    // rationale) -- validated against known values, falls back to the old regex parser only on
-    // a genuine technical failure (timeout/error/unparseable output), never as a first-pass gate.
-    const { preferences, source: preferencesSource } = await extractTripPreferences(inboundText, settings.ollamaModel)
     trace.push(
       'Mengekstrak preferensi perjalanan',
       preferencesSource === 'llm'
         ? 'Diekstrak oleh model LLM lokal dari teks pelanggan, tervalidasi terhadap nilai yang dikenal (origin/finishCity/dayCount/pax).'
         : 'Model LLM gagal, timeout, atau hasilnya tidak valid -- fallback ke pemrosesan regex lama (parseTripPreferences).'
     )
+    trace.push(
+      'Mendeteksi niat rekomendasi paket',
+      recommendationSource === 'llm'
+        ? 'Diteksi oleh model LLM lokal.'
+        : 'Model LLM gagal/timeout -- fallback ke pemindaian kata kunci lama.'
+    )
+
+    const matches = matched?.matches ?? packagesForDestination(destination, catalog)
     // A city/duration mentioned THIS message wins, same precedence as `destination` above;
     // otherwise whatever was persisted from an EARLIER message in the conversation carries it
     // forward -- see TripBrief.dayCount/finishCity's own header for why all three (origin
@@ -920,32 +967,6 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
     if (pickupScenario.traceDetail) trace.push('Evaluasi urutan rute & waktu istirahat', pickupScenario.traceDetail)
     const scenarioNote = pickupScenario.forLLM ? `\n\n${pickupScenario.forLLM}` : ''
 
-    // LLM-primary as of 2026-08-07 (see preference-decline-classifier.ts's own header) --
-    // flagged in the manual-matching audit as the highest-risk remaining matcher: this is the
-    // funnel's ONLY bypass, so a missed decline traps the customer in a repeat-question loop
-    // with no other way out. Falls back to the unchanged isUnknownPreferenceSignal keyword
-    // check only on a genuine technical failure.
-    const { declined: preferenceDeclineSignal, source: declineSource } = await detectsPreferenceDeclineViaLLM(
-      inboundText,
-      isUnknownPreferenceSignal,
-      settings.ollamaModel
-    )
-    // LLM-primary as of 2026-08-07 (see recommendation-intent-classifier.ts's own header) --
-    // the old regex both missed genuine recommendation requests phrased without its literal
-    // trigger words and had a documented history of false positives from its own bare keywords
-    // (each fixed as a one-off keyword patch previously). Falls back to the unchanged
-    // isRecommendationRequest regex only on a genuine technical failure.
-    const { isRecommendation: recommendationIntentSignal, source: recommendationSource } = await detectsRecommendationIntentViaLLM(
-      inboundText,
-      isRecommendationRequest,
-      settings.ollamaModel
-    )
-    trace.push(
-      'Mendeteksi niat rekomendasi paket',
-      recommendationSource === 'llm'
-        ? 'Diteksi oleh model LLM lokal.'
-        : 'Model LLM gagal/timeout -- fallback ke pemindaian kata kunci lama.'
-    )
     // See computeTripPreferencesFunnelDecision's own header for the full rationale (mandatory
     // start/finish/day-count before a package recommendation, the DESTINATION_INDEPENDENT_TOPICS
     // exclusion, the decline signal) -- this call site just sequences the side effects (DB

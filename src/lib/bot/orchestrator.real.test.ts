@@ -52,6 +52,19 @@ function tripBriefWrites(): Partial<TripBrief>[] {
   return mockPrisma.$executeRaw.mock.calls.map(([, patchJson]) => JSON.parse(patchJson as string) as Partial<TripBrief>)
 }
 
+// This file deliberately leaves the six real classifiers unmocked (see the file header), so
+// every decideAndRespond call fans out into several callLLM invocations, not one -- and their
+// order is an implementation detail that has already changed once (they now run batched rather
+// than in sequence). The reply-composing call is therefore identified by WHAT it is -- the only
+// one grounded in the shared persona preamble -- rather than by its position in mock.calls.
+function composerCall(): { system: string } {
+  const composerCalls = (callLLM as any).mock.calls.filter(
+    ([, opts]: [string, { system?: string }]) => opts?.system?.startsWith('You are a real member of the JVTO')
+  )
+  expect(composerCalls).toHaveLength(1)
+  return composerCalls[0][1]
+}
+
 function withTripBrief(tripBrief: TripBrief) {
   mockPrisma.conversation.findUniqueOrThrow.mockResolvedValue({
     id: 'conv_1',
@@ -119,14 +132,10 @@ describe.skipIf(!RELEASE_PRESENT)('decideAndRespond against the real parsing pip
 
     await decideAndRespond('conv_1', 'Seeing the blue flames was the main reason we booked this tour. Is it still accessible right now?')
 
-    // callLLM is called 7 times per decideAndRespond now: [0] additive escalation check,
-    // [1] keyword-module classification, [2] topic classification, [3] trip-preferences
-    // extraction, [4] preference-decline check, [5] recommendation-intent check (this file
-    // deliberately leaves all six real/unmocked -- see the file header -- and the blanket
-    // 'A real reply.' mock isn't valid JSON for any of them, so all six fall back to their
-    // real regex/fail-safe implementations, same result as before these changes), [6] is the
-    // actual reply-composing call this assertion cares about.
-    const [, opts] = (callLLM as any).mock.calls[6]
+    // The six unmocked classifiers each call callLLM too (the blanket 'A real reply.' mock
+    // isn't valid JSON for any of them, so they all fall back to their real regex/fail-safe
+    // implementations) -- composerCall() picks out the reply-composing one by identity.
+    const opts = composerCall()
     expect(opts.system.toLowerCase()).toContain('closed')
   })
 
@@ -155,8 +164,7 @@ describe.skipIf(!RELEASE_PRESENT)('decideAndRespond against the real parsing pip
     const result = await decideAndRespond('conv_1', 'How much is the deposit?')
 
     expect(result.mode).toBe('faq')
-    // mock.calls[6], not [0] -- see the "blue flames" test above for why (7 callLLM calls now).
-    const [, opts] = (callLLM as any).mock.calls[6]
+    const opts = composerCall()
     expect(opts.system.toLowerCase()).toContain('deposit')
     expect(opts.system).not.toContain('Happy to recommend the best package')
   })
@@ -169,8 +177,7 @@ describe.skipIf(!RELEASE_PRESENT)('decideAndRespond against the real parsing pip
 
     await decideAndRespond('conv_1', 'Pickup from Surabaya Airport jam 6 sore, mau ke Bromo dan Ijen.')
 
-    // mock.calls[6], not [0] -- see the "blue flames" test above for why (7 callLLM calls now).
-    const [, opts] = (callLLM as any).mock.calls[6]
+    const opts = composerCall()
     expect(opts.system.toLowerCase()).toMatch(/bromo.*ijen/)
     expect(opts.system.toLowerCase()).toContain('rest')
   })
@@ -215,7 +222,7 @@ describe.skipIf(!RELEASE_PRESENT)('decideAndRespond against the real parsing pip
       'Hello. We are looking for a tour on the 13th of August from Surabaya to bromo, tumpak sewu and ijen. We want to return to Surabaya though. Is this possible with you?'
     )
 
-    const [, opts] = (callLLM as any).mock.calls[6]
+    const opts = composerCall()
     expect(opts.system).not.toContain('bromo-1d1n')
     expect(opts.system.toLowerCase()).toContain('tumpak-sewu-bromo')
   })
@@ -236,7 +243,7 @@ describe.skipIf(!RELEASE_PRESENT)('decideAndRespond against the real parsing pip
 
     await decideAndRespond('conv_1', 'We want a 3 day Ijen tour starting from Bali, and finishing in Bali as well.')
 
-    const [, opts] = (callLLM as any).mock.calls[6]
+    const opts = composerCall()
     const pkgMatch = opts.system.match(/Package the customer is asking about: (.+)/)
     expect(pkgMatch).not.toBeNull()
     const pkgTitle = pkgMatch![1].trim()

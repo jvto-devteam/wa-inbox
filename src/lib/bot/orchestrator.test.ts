@@ -189,10 +189,13 @@ describe('decideAndRespond', () => {
 
       const result = await decideAndRespond('conv_1', 'Booking saya sudah lunas belum?')
 
+      // 'Mencari data booking' now precedes 'Tidak ada eskalasi': the LLM escalation check and
+      // the booking lookup are started together, and the escalation verdict is still applied
+      // (and can still hand off) before this Mode 3 branch is taken.
       expect(result.steps?.map((s) => s.label)).toEqual([
         'Pesan diterima',
-        'Tidak ada eskalasi',
         'Mencari data booking',
+        'Tidak ada eskalasi',
         'Booking ditemukan',
         'Meminta jawaban dari model lokal',
         'Jawaban siap dikirim',
@@ -210,17 +213,21 @@ describe('decideAndRespond', () => {
 
       const result = await decideAndRespond('conv_1', 'Saya mau ke Ijen')
 
+      // The keyword-module classifier now traces after the (synchronous) destination match
+      // rather than before it: the branch has to be known first so the no-destination path can
+      // batch only the two classifiers it needs. The five classifier steps still trace in their
+      // own original relative order.
       expect(result.steps?.map((s) => s.label)).toEqual([
         'Pesan diterima',
-        'Tidak ada eskalasi',
         'Mencari data booking',
+        'Tidak ada eskalasi',
         'Tidak ada booking',
         'Memeriksa gerbang persetujuan',
         'Gerbang persetujuan terbuka',
-        'Memeriksa modul fakta kata kunci',
         'Mengklasifikasi kebutuhan pelanggan',
         'Mencari destinasi',
         'Destinasi ditemukan',
+        'Memeriksa modul fakta kata kunci',
         'Mengklasifikasi topik',
         'Mengekstrak preferensi perjalanan',
         'Mendeteksi niat rekomendasi paket',
@@ -242,6 +249,57 @@ describe('decideAndRespond', () => {
 
       expect(result.steps?.find((s) => s.label === 'Paket valid')?.detail).toContain('tinjauan')
     })
+  })
+
+  // The five Mode 1/2 classifiers read nothing but `inboundText` (plus the already-computed
+  // sales job), so nothing forces them to be sequential -- and each carries its own 10s
+  // timeout, so awaiting them one after another is up to five of those back to back.
+  const NO_PREFS = { origin: null, dayCount: null, finishCity: null, pax: null }
+
+  it('runs the Mode 1/2 classifiers concurrently, not one after another', async () => {
+    vi.mocked(ensureFreshBookingData).mockResolvedValue(null)
+    vi.mocked(classifySalesNeed).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false } as never)
+    vi.mocked(matchDestination).mockReturnValue({ destination: 'ijen', matches: [pkg()] } as never)
+    vi.mocked(checkRouteGate).mockReturnValue({ status: 'clear' } as never)
+
+    // Each classifier records that it was entered, then resolves only on a later tick.
+    // `inFlightWhenFirstSettled` is the load-bearing number: awaited in sequence, the first
+    // one resolves while it is the only one that has ever been entered (1); started together,
+    // all five are already in flight by the time any of them resolves (5).
+    const inFlight: string[] = []
+    let inFlightWhenFirstSettled = 0
+    const gate = (name: string, value: unknown) => () => {
+      inFlight.push(name)
+      return new Promise((resolve) =>
+        setTimeout(() => {
+          if (inFlightWhenFirstSettled === 0) inFlightWhenFirstSettled = inFlight.length
+          resolve(value)
+        }, 0)
+      )
+    }
+    vi.mocked(classifyKeywordModulesViaLLM).mockImplementation(gate('keyword', { moduleIds: [], source: 'llm' }) as never)
+    vi.mocked(classifyTopicViaLLM).mockImplementation(gate('topic', { topic: 'price', source: 'llm' }) as never)
+    vi.mocked(extractTripPreferences).mockImplementation(gate('prefs', { preferences: NO_PREFS, source: 'llm' }) as never)
+    vi.mocked(detectsPreferenceDeclineViaLLM).mockImplementation(gate('decline', { declined: false, source: 'llm' }) as never)
+    vi.mocked(detectsRecommendationIntentViaLLM).mockImplementation(gate('reco', { isRecommendation: false, source: 'llm' }) as never)
+
+    await decideAndRespond('conv_1', 'berapa harga paket ijen 3 hari dari surabaya?')
+
+    expect(inFlight).toHaveLength(5)
+    // All five entered before the event loop drained any of them.
+    expect(inFlightWhenFirstSettled).toBe(5)
+  })
+
+  it('does not run the recommendation/preference classifiers when no destination is known', async () => {
+    vi.mocked(ensureFreshBookingData).mockResolvedValue(null)
+    vi.mocked(classifySalesNeed).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false } as never)
+    vi.mocked(matchDestination).mockReturnValue(null)
+
+    await decideAndRespond('conv_no_dest', 'boleh COD?')
+
+    expect(extractTripPreferences).not.toHaveBeenCalled()
+    expect(detectsPreferenceDeclineViaLLM).not.toHaveBeenCalled()
+    expect(detectsRecommendationIntentViaLLM).not.toHaveBeenCalled()
   })
 
   it('uses Mode 3 (booking_context) when an existing booking is found, skipping the FAQ path entirely', async () => {
