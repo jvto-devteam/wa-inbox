@@ -1242,11 +1242,21 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
     // packages can finish there" based on a DIFFERENT single-destination package the customer
     // never asked about, even when none of the packages actually covering everything they named
     // can finish there. Same root cause, same fix, different call site.
-    const finishCityFact = !finishCity
+    // Built from `preferences.finishCity` (THIS message) rather than the merged
+    // `finishCity`, which persists across turns by design. Reading the merged
+    // value asserted "The customer asked whether the trip can finish in X" into
+    // every later prompt in the conversation, so a customer who named a finish
+    // city on message two was still being answered about drop-off points on
+    // message ten while asking about breakfast. `unsupportedOriginNote` right
+    // above already reads only the current message; this is the same rule.
+    // The merged value is still what NARROWS the package pool -- only the
+    // "they asked about this" assertion is scoped to the asking message.
+    const askedFinishCity = preferences.finishCity
+    const finishCityFact = !askedFinishCity
       ? ''
-      : optionPackages.some((p) => p.finishCities.includes(finishCity))
-        ? `\n\nThe customer asked whether the trip can finish/end in ${titleCaseCity(finishCity)} -- yes, at least one of the matching packages above genuinely can (see which ones say "finishes in ${titleCaseCity(finishCity)}"); do not claim every package does.`
-        : `\n\nThe customer asked whether the trip can finish/end in ${titleCaseCity(finishCity)} -- be honest: none of the matching packages for this destination are set up to finish there. Say so clearly and mention our team can advise on custom routing if they specifically need this.`
+      : optionPackages.some((p) => p.finishCities.includes(askedFinishCity))
+        ? `\n\nThe customer asked whether the trip can finish/end in ${titleCaseCity(askedFinishCity)} -- yes, at least one of the matching packages above genuinely can (see which ones say "finishes in ${titleCaseCity(askedFinishCity)}"); do not claim every package does.`
+        : `\n\nThe customer asked whether the trip can finish/end in ${titleCaseCity(askedFinishCity)} -- be honest: none of the matching packages for this destination are set up to finish there. Say so clearly and mention our team can advise on custom routing if they specifically need this.`
     // A soft "list them if relevant" instruction wasn't enough -- live-tested 2026-08-04, the
     // LLM kept silently recommending just one package even with several real options in the
     // prompt above. For an actual recommendation/comparison question, require presenting a

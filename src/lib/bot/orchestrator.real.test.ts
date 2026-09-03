@@ -252,6 +252,31 @@ describe.skipIf(!RELEASE_PRESENT)('decideAndRespond against the real parsing pip
     expect(opts.system).toContain(`- ${pkgTitle}`)
   })
 
+  // finishCity persists across turns by design (see TripBrief.finishCity's own header), but the
+  // "customer asked whether the trip can finish there" sentence built from it must NOT persist
+  // the same way -- a customer who named a finish city once on an earlier message shouldn't
+  // still be told "you asked about finishing in Bali" ten messages later while asking about
+  // breakfast. The merged finishCity still narrows the package pool; only this assertion is
+  // scoped to the message that actually asked.
+  it('stops asserting a finish-city question the customer only asked earlier', async () => {
+    withTripBrief({ destination: 'ijen', finishCity: 'bali', origin: 'Surabaya', dayCount: 3 })
+
+    // This message is about breakfast. finishCity is only on file from an earlier turn.
+    await decideAndRespond('conv_1', 'is breakfast included every morning?')
+
+    const system = vi.mocked(callLLM).mock.lastCall![1]!.system!
+    expect(system).not.toContain('The customer asked whether the trip can finish')
+  })
+
+  it('still answers the finish-city question on the message that asks it', async () => {
+    withTripBrief({ destination: 'ijen' })
+
+    await decideAndRespond('conv_1', 'can we finish the trip in Bali?')
+
+    const system = vi.mocked(callLLM).mock.lastCall![1]!.system!
+    expect(system).toContain('The customer asked whether the trip can finish')
+  })
+
   it('puts the real overnight hotel names in the prompt for a hotel question', async () => {
     await decideAndRespond('conv_1', 'which hotel do we stay at for the 3 day bromo ijen tour from bali?')
     const system = vi.mocked(callLLM).mock.lastCall![1]!.system!
