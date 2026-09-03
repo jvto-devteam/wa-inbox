@@ -1718,6 +1718,63 @@ describe('decideAndRespond', () => {
       expect(consoleErrorSpy).toHaveBeenCalledWith('recordKnowledgeGap failed', expect.objectContaining({ conversationId: 'conv_1' }))
       consoleErrorSpy.mockRestore()
     })
+
+    // Regression: the two tests above both force a destination match, so they only ever
+    // exercised decideAndRespond's OWN `knowledge.factualLines.length === 0` check
+    // (around the `const knowledge = resolveKnowledgeForTopic(...)` call) -- they never
+    // routed through runNoDestinationBranch's separate `resolveKnowledgeForTopic` call for
+    // a DESTINATION_INDEPENDENT_TOPICS topic asked before any destination is known. That
+    // second call site resolved the same "catalog had nothing" signal but silently fell
+    // through to the generic "which destination?" clarify reply with no record at all --
+    // exactly the dietary-question stonewalling this file's own history documents (see
+    // DESTINATION_INDEPENDENT_TOPICS's own header). No destination match here (unlike
+    // every other test in this describe block) is what actually reaches that branch.
+    it('records a knowledge gap from the no-destination branch when a destination-independent topic resolves no facts', async () => {
+      vi.mocked(ensureFreshBookingData).mockResolvedValue(null)
+      vi.mocked(classifySalesNeed).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
+      vi.mocked(matchDestination).mockReturnValue(null)
+      vi.mocked(listDestinations).mockReturnValue(['Bromo', 'Ijen'])
+      vi.mocked(classifyTopicViaLLM).mockResolvedValue({ topic: 'payment', source: 'llm' })
+      vi.mocked(resolveKnowledgeForTopic).mockReturnValue({
+        factualLines: [],
+        detailLines: [],
+        primaryLink: null,
+        disclosures: [],
+        handoffRequired: false,
+      })
+
+      const result = await decideAndRespond('conv_1', 'How does the deposit work?')
+
+      expect(result.mode).toBe('clarify')
+      expect(mockPrisma.knowledgeGapLog.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            conversationId: 'conv_1',
+            topic: 'payment',
+            reason: 'no_facts_resolved',
+            messageText: 'How does the deposit work?',
+          }),
+        })
+      )
+    })
+
+    // The OTHER half of the same branch: an unclassified 'general' message with no
+    // destination never even calls resolveKnowledgeForTopic (the outer
+    // DESTINATION_INDEPENDENT_TOPICS/keyword-module guard is false), so there is no
+    // catalog gap to record -- this is an under-specified message, not a content gap.
+    it('does not record a gap for an unclassified topic with no destination known (outer guard false)', async () => {
+      vi.mocked(ensureFreshBookingData).mockResolvedValue(null)
+      vi.mocked(classifySalesNeed).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
+      vi.mocked(matchDestination).mockReturnValue(null)
+      vi.mocked(listDestinations).mockReturnValue(['Bromo', 'Ijen'])
+      vi.mocked(classifyTopicViaLLM).mockResolvedValue({ topic: 'general', source: 'llm' })
+
+      const result = await decideAndRespond('conv_1', 'Something unrelated')
+
+      expect(result.mode).toBe('clarify')
+      expect(resolveKnowledgeForTopic).not.toHaveBeenCalled()
+      expect(mockPrisma.knowledgeGapLog.create).not.toHaveBeenCalled()
+    })
   })
 
   describe('trip-preferences clarify (start/finish/day-count funnel)', () => {

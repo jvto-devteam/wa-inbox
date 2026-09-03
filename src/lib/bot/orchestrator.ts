@@ -838,6 +838,23 @@ async function runNoDestinationBranch(
       if (!composed.ok) return composed.decision
       return { mode: 'faq', draft: composed.reply, sourceTopic: resolverTopic, steps: trace.steps }
     }
+    // Task 11 (KnowledgeGapLog): the branch above WAS entered -- the topic is
+    // destination-independent, or a keyword module fired -- but the catalog had nothing
+    // for it, so control falls through to the generic "which destination?" reply below.
+    // That silent stonewall is exactly the failure this file's own history documents
+    // (see the dietary-question regression note on DESTINATION_INDEPENDENT_TOPICS's own
+    // header) -- a genuine gap, worth recording, unlike an unclassified 'general' message
+    // with no destination (the outer `if` being false below), which is merely
+    // under-specified, not a content gap the catalog failed to cover.
+    //
+    // 'greeting' can't reach this line in practice ('greeting' is never in
+    // DESTINATION_INDEPENDENT_TOPICS, and a keyword-module hit on a bare greeting
+    // doesn't happen), but guarded explicitly anyway -- same condition as the
+    // destination-known branch's own check, so the two call sites can't silently drift
+    // apart if that ever stops being true.
+    if (resolverTopic !== 'greeting') {
+      void recordKnowledgeGap(conversationId, resolverTopic, 'no_facts_resolved', inboundText)
+    }
   }
 
   const options = listDestinations(catalog)
