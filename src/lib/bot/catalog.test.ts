@@ -365,10 +365,11 @@ describe('loadCatalog', () => {
     expect(catalog.syncedAt).toBeNull()
   })
 
-  // Task 5: the catalog is ~250KB across eight files, read and JSON.parsed
+  // Task 5: the catalog is ~330KB across eleven files, read and JSON.parsed
   // synchronously on every inbound message inside one always-on Node process.
-  // These two tests pin the mtime-keyed cache: unchanged files -> no re-read;
-  // a changed mtime -> re-read.
+  // These three tests pin the mtime-keyed cache: unchanged files -> no re-read;
+  // a changed mtime -> re-read; and (Minor 7) a mtime moving BACKWARD on a file
+  // that was never the max still re-reads too.
   it('parses the catalog once and serves the cached value afterwards', () => {
     mockCatalogFiles(FULL_CATALOG)
     __resetCatalogCacheForTests()
@@ -386,6 +387,39 @@ describe('loadCatalog', () => {
     loadCatalog()
     const spy = vi.spyOn(fs, 'readFileSync')
     vi.spyOn(fs, 'statSync').mockReturnValue({ mtimeMs: Date.now() + 10_000 } as never)
+    loadCatalog()
+    expect(spy).toHaveBeenCalled()
+    vi.restoreAllMocks()
+  })
+
+  // Minor 7: `catalogMtimeFingerprint` used to be `newestCatalogMtime`, taking `Math.max`
+  // over every watched file's mtime -- a WATERMARK, not a change detector. rsync -a
+  // preserves each file's own source mtime, so a redeploy can move ONE file's mtime
+  // backward while another watched file's mtime -- already the max, and still the max
+  // afterwards -- is untouched. A max-based fingerprint would never notice that; summing
+  // every watched file's mtime does, because the backward move still changes the total.
+  it("re-reads when one file's mtime moves backward while another stays the newest", () => {
+    mockCatalogFiles(FULL_CATALOG)
+    __resetCatalogCacheForTests()
+    const mtimes: Record<string, number> = {
+      'package-profiles.json': 1_000,
+      'standard-price-tiers.json': 2_000, // stays the max throughout
+      'component-matrices.json': 500,
+      'module-compatibility.json': 500,
+      'general-modules.json': 500,
+      'customer-link-registry.json': 500,
+      'endpoint-chains.json': 500,
+      'meta.json': 500,
+      'accommodation-rules.json': 500,
+      'vehicle-and-luggage-rules.json': 500,
+      'guide-support-rules.json': 500,
+    }
+    vi.spyOn(fs, 'statSync').mockImplementation((p) => ({ mtimeMs: mtimes[String(p).split('/').pop()!] ?? 500 }) as never)
+    loadCatalog()
+    const spy = vi.spyOn(fs, 'readFileSync')
+    // Moves BACKWARD -- the file holding the overall max ('standard-price-tiers.json' at
+    // 2000) never changes, so Math.max over these would have missed this entirely.
+    mtimes['package-profiles.json'] = 100
     loadCatalog()
     expect(spy).toHaveBeenCalled()
     vi.restoreAllMocks()

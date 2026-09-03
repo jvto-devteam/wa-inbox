@@ -2172,6 +2172,6 @@ Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>"
 
 None of this reaches production automatically. After all phases are green:
 
-1. `npx prisma db push` against the production database (Task 11's `KnowledgeGapLog`). Must happen **before** the code lands, or every gap write fails into the orchestrator's catch and degrades the reply.
+1. `npx prisma migrate deploy` against the production database (applies the `add_knowledge_gap_log` migration, Task 11's `KnowledgeGapLog`). Must happen **before** the code lands, or every gap write fails into the orchestrator's catch and degrades the reply.
 2. Deploy per the repo's existing rsync procedure — and per the standing note, **exclude `catalog/deployment-approval.json`**, which lives only on the VPS and is gitignored. Deleting it silently closes the bot gate.
 3. `npm run eval` on the server to record the post-deploy baseline.

@@ -1457,6 +1457,39 @@ describe('decideAndRespond', () => {
       expect(vi.mocked(callLLM).mock.calls[1][1]!.system).toContain('https://javavolcano-touroperator.com/tours/made-up-package')
     })
 
+    // Important 3: a URL the customer themselves supplied is not something the model
+    // invented -- a customer pasting a tour-page link ("I saw this -- is it available?")
+    // must not trip the always-blocking unknownUrls check just because it isn't a URL this
+    // turn's catalog/module grounding happens to mention.
+    it('does not block a link the customer pasted in their own message', async () => {
+      groundedMainPath({ links: { details: 'https://javavolcano-touroperator.com/tours/ijen-blue-fire-1d' } })
+      const customerUrl = 'https://javavolcano-touroperator.com/tours/ijen-blue-fire-2d'
+      vi.mocked(callLLM).mockResolvedValue(`Hi! Yes, ${customerUrl} is still available.`)
+
+      const result = await decideAndRespond('conv_1', `I saw this -- is it available? ${customerUrl}`)
+
+      expect(result.mode).toBe('faq')
+      expect(vi.mocked(callLLM).mock.calls).toHaveLength(1)
+    })
+
+    // Same fold, but for a link an EARLIER turn in this conversation legitimately sent --
+    // fetchRecentHistory feeds up to 8 prior turns into the same callLLM call, so a follow-up
+    // reply repeating a link this conversation already gave is not an invention either.
+    it('does not block a link the assistant already sent earlier in this conversation', async () => {
+      groundedMainPath({ links: { details: 'https://javavolcano-touroperator.com/tours/ijen-blue-fire-1d' } })
+      const earlierUrl = 'https://javavolcano-touroperator.com/tours/ijen-blue-fire-2d'
+      mockPrisma.message.findMany.mockResolvedValue([
+        { direction: 'INBOUND', content: 'What about the other Ijen package?', createdAt: new Date('2026-08-01T10:00:00Z') },
+        { direction: 'OUTBOUND', content: `Sure, here it is: ${earlierUrl}`, createdAt: new Date('2026-08-01T10:01:00Z') },
+      ] as never)
+      vi.mocked(callLLM).mockResolvedValue(`Hi! Yes, ${earlierUrl} is still available.`)
+
+      const result = await decideAndRespond('conv_1', 'And is that one still available?')
+
+      expect(result.mode).toBe('faq')
+      expect(vi.mocked(callLLM).mock.calls).toHaveLength(1)
+    })
+
     // The advisory check reads the FINAL verdict, so a figure that survives an accepted
     // rewrite is still recorded -- otherwise a blocked-then-corrected reply could smuggle
     // an unaccountable number through unlogged.

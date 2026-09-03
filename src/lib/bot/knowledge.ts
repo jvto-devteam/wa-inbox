@@ -608,15 +608,27 @@ export function resolveKnowledgeForTopic(
   if (topic === 'destination_readiness' && destination) {
     moduleIds.push(`destination_${destination.toLowerCase().replace(/\s+/g, '_')}`)
   }
-  // Ijen's mandatory health screening and its monthly Rijik closure (the crater
-  // shuts to ALL visitors on the first Friday of each month) previously reached
-  // a prompt only through pkg.policyNotes -- which is merged only when the route
-  // gate happens to return `needs_review`, and only for the single anchor
-  // package. A customer could therefore be encouraged to book a date the
-  // mountain is closed. Gated on Ijen specifically so a Bromo question never
-  // picks them up.
+  // Ijen's monthly Rijik closure (the crater shuts to ALL visitors on the first Friday of
+  // each month) previously reached a prompt only through pkg.policyNotes -- which is merged
+  // only when the route gate happens to return `needs_review`, and only for the single anchor
+  // package. A customer could therefore be encouraged to book a date the mountain is closed.
+  // Gated on Ijen specifically so a Bromo question never picks it up.
+  //
+  // `policy_ijen_health_screening` was reconnected here alongside it (Task 7), then reverted
+  // (whole-branch review, 2026-09-03 fix wave, Important 4): the text it would add is already
+  // present a FOUR other times for the exact same fact -- this file's own GENERAL_FAQ_FALLBACK
+  // ("MEDICAL SCREENING (Ijen hike)" above), the hardcoded disclosure in getTopicDisclosures
+  // below, and this module's own short_answer AND detail_summary (both in one
+  // resolveKnowledgeForTopic call, since factualLines/disclosures are never deduped against
+  // each other) -- so pushing it here only bloats the prompt with a fifth restatement, and its
+  // detail_summary additionally drags an Indonesian regulator circular number ("Surat Edaran
+  // SE.1658/KSA.9/2024") into customer-facing grounding for no reader-facing benefit.
+  // `policy_ijen_monthly_closure` is the genuine win and stays: nothing else anywhere states
+  // the first-Friday Rijik closure, so a customer could otherwise be encouraged to book a date
+  // the mountain is closed. Do not re-add `policy_ijen_health_screening` here without first
+  // removing (or deduping against) the four other places that already say it.
   if (hasIjen && (topic === 'destination_readiness' || topic === 'blue_fire' || topic === 'inclusions')) {
-    moduleIds.push('policy_ijen_health_screening', 'policy_ijen_monthly_closure')
+    moduleIds.push('policy_ijen_monthly_closure')
   }
   // Destination-conditional inclusions (Ijen's gas mask + health-screening coordination,
   // Bromo's private jeep) live as separate "conditional_variation" modules, never listed in

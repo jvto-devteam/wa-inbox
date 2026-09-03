@@ -340,7 +340,8 @@ export async function runBotForConversation(
   const decision = await decideAndRespond(conversation.id, inboundText)
 
   // `botEnabled` was last read before decideAndRespond, which spends up to
-  // seven Ollama calls -- tens of seconds. If an agent clicked "Ambil Alih dari
+  // eight Ollama calls across four sequential waits (see rate-limiter.ts) --
+  // tens of seconds. If an agent clicked "Ambil Alih dari
   // Bot" during that window they have almost certainly already replied by hand,
   // and this in-flight turn must not send its own answer on top of them: the
   // customer would get a human message immediately followed by a contradicting

@@ -385,7 +385,7 @@ function buildDetailsLink(baseUrl: string, publicUrl: string | null): Record<str
   return { details: `${baseUrl}${publicUrl.startsWith('/') ? '' : '/'}${publicUrl}` }
 }
 
-// The catalog is ~250KB across eight files, read and JSON.parsed synchronously
+// The catalog is ~330KB across eleven files, read and JSON.parsed synchronously
 // on every single inbound message inside one always-on Node process. It only
 // ever changes when an operator runs `npm run sync:knowledge` and redeploys,
 // so it is cached and invalidated on the newest mtime across the files
@@ -399,19 +399,29 @@ const CACHED_FILES = [
 ]
 
 let cachedCatalog: Catalog | null = null
+// Despite the name, this holds catalogMtimeFingerprint()'s SUM of watched mtimes, not any
+// single file's mtime -- see that function's own header for why a sum, not a max.
 let cachedMtime = -1
 
-function newestCatalogMtime(): number {
-  let newest = -1
+// Minor 7: this used to be `newestCatalogMtime`, taking `Math.max` over the watched files'
+// mtimes -- a WATERMARK, not a change detector. rsync `-a` preserves each source file's own
+// mtime, so a redeploy can legitimately move one file's mtime backward (e.g. a file reverted
+// to an earlier sync'd version, or files arriving out of their original order) while another
+// watched file's older-but-still-newest mtime remains untouched: the max is unchanged, the
+// cache is never invalidated, and the process serves a stale catalog until it restarts. Summing
+// every watched file's mtime instead means ANY single file's mtime moving in EITHER
+// direction -- forward or backward -- changes the sum, at the exact same O(files) cost.
+function catalogMtimeFingerprint(): number {
+  let sum = 0
   for (const fileName of CACHED_FILES) {
     try {
-      newest = Math.max(newest, fs.statSync(path.join(CATALOG_DIR, fileName)).mtimeMs)
+      sum += fs.statSync(path.join(CATALOG_DIR, fileName)).mtimeMs
     } catch {
       // A missing file is already handled (and warned about) by readCatalogFile;
-      // it just doesn't contribute an mtime.
+      // it just doesn't contribute to the fingerprint.
     }
   }
-  return newest
+  return sum
 }
 
 export function __resetCatalogCacheForTests(): void {
@@ -506,7 +516,7 @@ function buildCatalog(): Catalog {
 }
 
 export function loadCatalog(): Catalog {
-  const mtime = newestCatalogMtime()
+  const mtime = catalogMtimeFingerprint()
   if (cachedCatalog && mtime === cachedMtime) return cachedCatalog
   cachedCatalog = buildCatalog()
   cachedMtime = mtime

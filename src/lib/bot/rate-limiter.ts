@@ -1,8 +1,10 @@
 // Cost/abuse guard for the bot brain. Every message that reaches
-// decideAndRespond costs up to seven Ollama calls (see orchestrator.ts), so a
-// customer -- or an attacker -- messaging in a tight loop would otherwise burn
-// budget with no ceiling at all. Ported from watsapin's
-// lib/bot-engine/rate-limiter.ts.
+// decideAndRespond costs up to eight Ollama calls across four sequential
+// waits (see orchestrator.ts's header: the escalation LLM signal, the
+// five-way parallel classifier batch, the initial composed reply, and
+// Task 10's one corrective verification retry), so a customer -- or an
+// attacker -- messaging in a tight loop would otherwise burn budget with no
+// ceiling at all. Ported from watsapin's lib/bot-engine/rate-limiter.ts.
 //
 // Scoped PER CONVERSATION, not per deployment, so one spammy number cannot
 // degrade service for every other customer. In-memory and per-process, the

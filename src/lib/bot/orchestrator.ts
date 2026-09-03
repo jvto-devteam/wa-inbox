@@ -9,14 +9,27 @@
 // "angry", ...) -- never a topic keyword like "refund"/"cancel"/"reschedule" (those are
 // ordinary, answerable FAQ questions there), never a knowledge gap (chatbot-web always has
 // GENERAL_FAQ_FALLBACK -- see knowledge.ts -- to fall back on), never a technical failure.
-// This file now mirrors that scope exactly:
+// This file mirrors that scope, plus exactly ONE addition Task 10 introduced on top of it
+// (step 8 below). As of that task there are exactly SIX real handoffs left in this file, not
+// one: escalation keyword (step 0), escalation LLM signal (step 0b), a closed deployment gate
+// (step 2), job === 'J5' (step 3), matchTier === 'none' (step 5b), and a reply that fails
+// price/URL verification twice in a row (step 8). The first five are all the same shape as
+// chatbot-web's own scope -- "a human must handle this, the bot could not possibly close this
+// itself" -- never a plain knowledge gap. Step 8 is deliberately NOT that shape (see its own
+// entry below for why it is still the right call to keep):
 //
 //   0. Escalation check (keyword-based, sales-classifier.ts's `HANDOFF_KEYWORDS`, narrowed
-//      2026-08-05 to match chatbot-web's own regex) is the ONE remaining real handoff --
-//      an explicit "talk to a human" request or genuine complaint/frustration sentiment is not
-//      a knowledge gap the bot could ever close by itself, so it still routes to a person.
-//      Runs before the booking lookup so a customer WITH a booking gets this same protection
-//      (Mode 3 below bypasses the classifier entirely, so this is its only keyword gate too).
+//      2026-08-05 to match chatbot-web's own regex) -- an explicit "talk to a human" request
+//      or genuine complaint/frustration sentiment is not a knowledge gap the bot could ever
+//      close by itself, so it still routes to a person. Runs before the booking lookup so a
+//      customer WITH a booking gets this same protection (Mode 3 below bypasses the
+//      classifier entirely, so this is its only keyword gate too).
+//   0b. Escalation check (LLM-based, escalation-classifier.ts, added 2026-08-07): runs in
+//      parallel with the booking lookup (see the inline comment at the call site for why a
+//      bare `Promise.all` would be wrong here) and catches a genuine complaint/human-
+//      request/B2B inquiry that step 0's keyword list missed -- new phrasing chatbot-web's
+//      own regex would also miss. Same rationale as step 0 (not a content gap, a person
+//      genuinely has to answer), just a second, LLM-shaped net under the same keyword one.
 //   1. Booking lookup (Mode 3, "booking_context"): if the customer has an
 //      existing booking, the reply is grounded ONLY in that booking's data
 //      via callLLM (local-only Ollama -- there is no hosted-API fallback to
@@ -25,15 +38,18 @@
 //   2. No booking -> deployment gate: Mode 1/2 answers are built from
 //      agent-runtime's catalog/release, so they stay off unless that release
 //      has been approved for customer traffic. Deliberately still a real
-//      `mode: 'handoff'` -- unlike every other branch below, this isn't about
+//      `mode: 'handoff'` -- unlike every content-resolution branch below, this isn't about
 //      whether the bot HAS an answer, it's an operator-controlled approval
 //      switch for whether it may show this release's data to customers at
 //      all yet. Does NOT gate Mode 3 above, which is grounded in the
 //      independent, already-live, already-trusted Booking API.
-//   3. Sales-need classification: `needsLiveData` (availability/guarantee
-//      phrasing) and `job === 'J5'` no longer hand off (see their own inline
-//      comments) -- both now stay active, deferring only the specific
-//      live-data-dependent detail via an extra system-prompt instruction.
+//   3. Sales-need classification: `needsLiveData` (availability/guarantee phrasing) no longer
+//      hands off (see its own inline comment) -- it stays active, deferring only the specific
+//      live-data-dependent detail via an extra system-prompt instruction. `job === 'J5'`
+//      still hands off, but only as defense-in-depth: it is set exclusively from the same
+//      `HANDOFF_KEYWORDS` step 0 already checks (see the inline comment at the call site), so
+//      this branch exists only for the case where the two diverge, not as a distinct
+//      escalation surface of its own.
 //   4. Destination match (package-match.ts): a stateless, one-shot scan of
 //      the message for a known destination token -- NOT a chatbot-web-style
 //      multi-turn funnel (that state machine, formerly funnel.ts, was a port
@@ -55,6 +71,11 @@
 //      policyNotes disclosure is merged into step 7's LLM grounding (deduped
 //      against knowledge.ts's own disclosures) instead of being appended to
 //      the reply as raw text.
+//   5b. Match-tier narrowing (package-match.ts's `narrowPackagePool`): `matchTier === 'none'`
+//      means not even the stated duration has a match for this destination at all -- the
+//      operator's own explicit ask (confirmed 2026-08-05) is that a genuinely too-custom
+//      request hands off here rather than the bot presenting an unrelated list and leaving the
+//      customer to discover the mismatch themselves; the team follows up directly instead.
 //   6. Topic classification (module-resolver.ts, a faithful port of
 //      jvto-agent-runtime's `module_resolver.py`'s `classify_topic`): scans
 //      the message against the real system's own keyword table for which of
@@ -84,6 +105,16 @@
 //      (`knowledge.handoffRequired`) no longer hands off either -- folded into
 //      a stronger reminder alongside GUARDRAIL_INSTRUCTION's existing
 //      "never guarantee Blue Fire/weather" rule instead.
+//   8. Reply verification (Task 10, reply-verifier.ts's `verifyReply`, run from
+//      `composeVerifiedReply`): checks the composed reply's prices and URLs against the
+//      grounding actually handed to the LLM in step 7, and gives the model exactly one
+//      corrective retry before giving up. This IS an exception to "no more handoff on a
+//      content gap" -- but deliberately not a content-gap case at all: the facts WERE present
+//      in the prompt (step 7 already resolved them) and the model reached past them anyway,
+//      twice. There is no fact left to add and no fallback text that would fix this -- the bot
+//      has already proven, twice in a row, that it cannot answer this turn without inventing a
+//      price or a link, which is exactly the shape of error a human must catch before it
+//      reaches the customer.
 //
 // Every step that can throw (a down booking API, a malformed catalog file, an LLM timeout,
 // an empty/blank LLM reply) is wrapped in a single outer try/catch and every such failure
@@ -739,6 +770,12 @@ async function runBookingContextMode(
   const groundedUrls = [
     ...(portalLink ? [portalLink] : []),
     ...extractUrls([bookingJson, GENERAL_FAQ_FALLBACK].join('\n')),
+    // A URL the customer themselves just pasted ("I saw this -- is it available?"), or one
+    // this same conversation already sent in an earlier turn (history, fed into the same
+    // callLLM call below), is not something the model invented -- repeating it back is not a
+    // fabrication, so both are grounding, same as the module text above.
+    ...extractUrls(inboundText),
+    ...extractUrls(history?.map((h) => h.content).join('\n') ?? ''),
   ]
   const composed = await composeVerifiedReply({
     conversationId,
@@ -832,7 +869,14 @@ async function runNoDestinationBranch(
         model: ollamaModel,
         history,
         groundedAmounts: extractRupiahAmounts(preDestinationText),
-        groundedUrls: extractUrls(preDestinationText),
+        // A URL the customer themselves just pasted, or one this same conversation already
+        // sent in an earlier turn (`history` above, fed into the same callLLM call), is not
+        // something the model invented -- repeating it back is not a fabrication.
+        groundedUrls: [
+          ...extractUrls(preDestinationText),
+          ...extractUrls(inboundText),
+          ...extractUrls(history?.map((h) => h.content).join('\n') ?? ''),
+        ],
         trace,
       })
       if (!composed.ok) return composed.decision
@@ -1647,6 +1691,12 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
     const groundedAmounts = [
       ...optionPackages.flatMap((p) => p.priceTiers.map((t) => t.priceIdr)),
       ...(pkg.priceIdr !== null ? [pkg.priceIdr] : []),
+      // Minor 6: `packageOptionsText` (below) prints `priceForPax(p, pax)`, which falls back to
+      // `p.priceIdr` whenever a package has no tier covering this pax count -- a figure
+      // `groundedAmounts` didn't otherwise carry for any package but `pkg` itself. No mismatch
+      // exists in today's catalog (every option's priceIdr is also one of its own priceTiers),
+      // but this closes the gap by construction rather than by coincidence of today's data.
+      ...optionPackages.map((p) => p.priceIdr).filter((n): n is number => n !== null),
       ...extractRupiahAmounts(groundedText),
     ]
     const groundedUrls = [
@@ -1656,6 +1706,12 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
       // A module's own text can carry a link of its own; it is in the prompt, so
       // repeating it is not an invention.
       ...extractUrls(groundedText),
+      // Neither is a URL the customer themselves just pasted ("I saw this -- is it
+      // available?"), or one this same conversation already sent in an earlier turn
+      // (`history` above, fed into the same callLLM call) -- the model repeating either
+      // back is not something it invented.
+      ...extractUrls(inboundText),
+      ...extractUrls(history?.map((h) => h.content).join('\n') ?? ''),
     ]
 
     // Exactly the per-option prices `packageOptionsText` printed above for this
