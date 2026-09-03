@@ -696,16 +696,36 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
     // request/B2B-inquiry the keyword list missed (e.g. new phrasing), fails safe to "no
     // additional signal" on any technical failure, and is still decided BEFORE the Mode 3
     // branch below, so a customer WITH a booking who complains still reaches a human.
+    //
+    // DO NOT "simplify" this back to a plain `Promise.all([escalation, booking])`. The booking
+    // lookup has no try/catch of its own (see ensureFreshBookingData) -- a Booking API outage
+    // or a DB blip rejects. A bare Promise.all rejects with it, so the whole call would land in
+    // the outer catch and answer TECHNICAL_HICCUP_REPLY *even when the LLM flagged an
+    // escalation*: an angry customer would be told "I'm having a small technical hiccup" and no
+    // human would ever be alerted. That inverts the asymmetry escalation-classifier.ts is built
+    // on -- a missed complaint is far worse than an unnecessary handoff. Settling the booking
+    // promise into a result object instead lets the escalation verdict be decided first, and the
+    // failure is re-thrown immediately afterwards so every non-escalating path keeps exactly the
+    // technical-hiccup behavior it had before these two were ever paired.
     trace.push('Mencari data booking', 'Mengecek data booking dan sinyal eskalasi tambahan secara paralel.')
-    const [additionalEscalation, bookingData] = await Promise.all([
+    const [additionalEscalation, bookingResult] = await Promise.all([
       detectsAdditionalEscalationSignal(inboundText, settings.ollamaModel),
-      ensureFreshBookingData(conversation),
+      ensureFreshBookingData(conversation).then(
+        (data) => ({ ok: true as const, data }),
+        (error: unknown) => ({ ok: false as const, error })
+      ),
     ])
     if (additionalEscalation) {
       trace.push('Eskalasi terdeteksi (LLM)', 'Model LLM mendeteksi sinyal komplain/permintaan manusia/kemitraan B2B yang tidak tertangkap kata kunci -- diserahkan ke agen.')
       return { mode: 'handoff', reason: 'Sinyal eskalasi terdeteksi oleh model LLM', steps: trace.steps }
     }
     trace.push('Tidak ada eskalasi', 'Tidak ditemukan kata kunci maupun sinyal eskalasi lain pada pesan ini.')
+    // Only the escalation verdict above is immune to a booking failure; from here on it is an
+    // ordinary technical failure again, handled by the outer catch exactly as it always was.
+    // Re-thrown below the trace push so a failed lookup still leaves the same trace behind it
+    // always did -- the escalation check genuinely did run and genuinely did find nothing.
+    if (!bookingResult.ok) throw bookingResult.error
+    const bookingData = bookingResult.data
 
     // Mode 3 -- booking context: bypasses the catalog-grounded path entirely.
     // `await` here (not a bare `return <promise>`) is load-bearing: it keeps the call inside

@@ -1154,6 +1154,33 @@ describe('decideAndRespond', () => {
     expect(result.mode).toBe('clarify')
   })
 
+  // The escalation classifier and the booking lookup are started together, but a booking
+  // failure must never be able to swallow an escalation: escalation-classifier.ts's own header
+  // is built on the asymmetry that a MISSED complaint is far worse than an unnecessary handoff.
+  // If a Booking API outage could turn an angry customer's message into "I'm having a small
+  // technical hiccup", no human would ever be alerted to it.
+  it('still hands off on an LLM escalation signal when the booking lookup fails outright', async () => {
+    vi.mocked(ensureFreshBookingData).mockRejectedValue(new Error('booking API down'))
+    vi.mocked(detectsAdditionalEscalationSignal).mockResolvedValue(true)
+
+    const result = await decideAndRespond('conv_1', 'This is unacceptable, I want to speak to someone')
+
+    expect(result).toMatchObject({ mode: 'handoff', reason: 'Sinyal eskalasi terdeteksi oleh model LLM' })
+  })
+
+  // The companion to the case above: for every NON-escalating message a booking failure is
+  // still an ordinary technical failure, and must produce exactly the reply it did before the
+  // escalation check and the booking lookup were ever paired.
+  it('still returns the technical-hiccup reply when the booking lookup fails and there is no escalation', async () => {
+    vi.mocked(ensureFreshBookingData).mockRejectedValue(new Error('booking API down'))
+    vi.mocked(detectsAdditionalEscalationSignal).mockResolvedValue(false)
+
+    const result = await decideAndRespond('conv_1', 'Halo')
+
+    expect(result.mode).toBe('clarify')
+    expect((result as { reply: string }).reply).toContain("having a small technical hiccup")
+  })
+
   it('falls back to a graceful, bot-stays-active reply (not a handoff) if any step throws (fail-safe)', async () => {
     ;(ensureFreshBookingData as any).mockRejectedValue(new Error('booking API down'))
 
