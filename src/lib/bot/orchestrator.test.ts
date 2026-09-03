@@ -3,7 +3,7 @@ import { mockDeep, mockReset, type DeepMockProxy } from 'vitest-mock-extended'
 import type { PrismaClient } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { decideAndRespond, gatherSideFacts, withSideFacts, computeTripPreferencesFunnelDecision } from './orchestrator'
-import { ensureFreshBookingData } from '@/lib/booking/client'
+import { ensureFreshBookingData, type BookingData } from '@/lib/booking/client'
 import { checkRouteGate } from './route-gate'
 import { classifySalesNeed } from './sales-classifier'
 import { matchDestination, packagesForDestination, pickPackage, listDestinations } from './package-match'
@@ -1473,6 +1473,27 @@ describe('decideAndRespond', () => {
       const result = await decideAndRespond('conv_1', 'Sisa pembayaran saya berapa?')
 
       expect(result).toMatchObject({ mode: 'booking_context', reply: 'Sisa pembayaran Anda Rp500.000.' })
+      expect(vi.mocked(callLLM).mock.calls).toHaveLength(1)
+    })
+
+    // BookingData is a hand-written description of an UNTYPED external API response (see its
+    // own header). `financial.balance` is typed `number` from what has been observed, but a
+    // channel sending it as a string must not turn "what's my balance?" -- the question from
+    // the segment that matters most -- into a handoff. Both string forms the API could plausibly
+    // use: with thousands separators, and bare.
+    it('verifies a Mode 3 reply against amounts the booking JSON states as strings', async () => {
+      // Cast deliberately: `BookingData` declares these as `number` from what has been
+      // observed, and this fixture is exactly the shape that declaration does NOT cover --
+      // which is the point. The API is not governed by that type.
+      vi.mocked(ensureFreshBookingData).mockResolvedValue({
+        bookingId: 'B1',
+        financial: { balance: '500.000', invoice: { total: '4050000' } },
+      } as unknown as BookingData)
+      vi.mocked(callLLM).mockResolvedValue('Sisa pembayaran Anda Rp500.000 dari total Rp4.050.000.')
+
+      const result = await decideAndRespond('conv_1', 'Sisa pembayaran saya berapa?')
+
+      expect(result).toMatchObject({ mode: 'booking_context', reply: 'Sisa pembayaran Anda Rp500.000 dari total Rp4.050.000.' })
       expect(vi.mocked(callLLM).mock.calls).toHaveLength(1)
     })
 

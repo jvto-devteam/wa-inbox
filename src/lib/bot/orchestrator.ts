@@ -485,17 +485,45 @@ function createTracer() {
 type Tracer = ReturnType<typeof createTracer>
 
 /**
- * Every number carried by a structured payload (the booking JSON), at any depth.
- * The customer's own balance/payment/invoice total arrive as plain JSON numbers,
- * not as Rp-formatted text, so `extractRupiahAmounts` alone would never see them
- * and a reply correctly quoting their real outstanding balance would read as an
- * invented price. Everything in that JSON is verbatim in the prompt, so every
- * number in it is genuinely grounding for that turn.
+ * A string leaf that is nothing but digits and thousands separators, as the
+ * number it states ("500.000" -> 500000, "500000" -> 500000). Anything else --
+ * a date ("2026-09-03"), a phone number, "3 days", an id -- fails the shape
+ * test and is ignored, so this cannot quietly ground arbitrary text.
  */
-function numericValuesIn(value: unknown): number[] {
+function numericStringValue(raw: string): number | null {
+  const trimmed = raw.trim()
+  if (!/^\d[\d.,]*$/.test(trimmed)) return null
+  const value = Number(trimmed.replace(/[.,]/g, ''))
+  return Number.isFinite(value) ? value : null
+}
+
+/**
+ * Every amount carried by the booking payload, at any depth -- numbers AND
+ * numeric-looking strings. Used by Mode 3 ONLY, deliberately: there the booking
+ * JSON is handed to the model verbatim as the authoritative source for the turn,
+ * so every figure in it is grounded by definition and the verifier's job is to
+ * catch a figure that is in neither the booking record nor the general facts.
+ * The other two call sites ground on catalog tiers and knowledge text, where a
+ * set this wide genuinely would weaken the check.
+ *
+ * Strings matter because `BookingData` is a hand-written description of an
+ * UNTYPED external API response this repo does not control (see its own header
+ * -- `[key: string]: unknown`, `guides`/`drivers` as `Record<string, unknown>[]`).
+ * `financial.balance` is typed `number` from what has been observed, but if a
+ * channel ever sends `"500000"`, a booked customer asking about their own
+ * balance would get a handoff instead of an answer -- a false-positive block on
+ * the segment that matters most, invisible until someone read the bot log.
+ * `extractRupiahAmounts` still runs over the same JSON text at the call site, so
+ * an already-formatted `"Rp500.000"` string is caught there rather than here.
+ */
+function bookingAmountsIn(value: unknown): number[] {
   if (typeof value === 'number') return Number.isFinite(value) ? [value] : []
-  if (Array.isArray(value)) return value.flatMap(numericValuesIn)
-  if (value !== null && typeof value === 'object') return Object.values(value).flatMap(numericValuesIn)
+  if (typeof value === 'string') {
+    const parsed = numericStringValue(value)
+    return parsed === null ? [] : [parsed]
+  }
+  if (Array.isArray(value)) return value.flatMap(bookingAmountsIn)
+  if (value !== null && typeof value === 'object') return Object.values(value).flatMap(bookingAmountsIn)
   return []
 }
 
@@ -655,16 +683,17 @@ async function runBookingContextMode(
   const history = await fetchRecentHistory(conversationId, inboundText)
 
   trace.push('Meminta jawaban dari model lokal', `Menggunakan model ${ollamaModel} (Ollama, lokal) dengan data booking + ${history?.length ?? 0} pesan riwayat sebagai konteks.`)
-  // What THIS turn was grounded in, and nothing else: every number the booking
-  // JSON carries (their real balance/payment/invoice total are plain JSON
-  // numbers), plus any Rp figure written into the general facts, the KLOOK
+  // What THIS turn was grounded in, and nothing else: every amount the booking
+  // JSON carries at any depth (their real balance/payment/invoice total arrive
+  // as bare JSON values, number or numeric string, never as Rp-formatted text),
+  // plus any Rp figure written into the general facts, the KLOOK
   // health-screening override (Rp35.000/person -- a real price this branch and
   // only this branch may state), or the route-leg facts. The catalog's package
   // prices are deliberately absent: Mode 3 never shows them, so a package tier
   // quoted here would be a number this reply had no way to know.
   const bookingJson = JSON.stringify(bookingData)
   const groundedAmounts = [
-    ...numericValuesIn(bookingData),
+    ...bookingAmountsIn(bookingData),
     ...extractRupiahAmounts([bookingJson, GENERAL_FAQ_FALLBACK, klookHealthScreeningNote, ...modeThreeRouteLegFacts].join('\n')),
   ]
   const groundedUrls = [
