@@ -16,6 +16,12 @@ function pkg(overrides: Partial<CatalogPackage> = {}): CatalogPackage {
     dayCount: null,
     finishCities: [],
     priceTiers: [],
+    overnights: [],
+    roomingAssumption: null,
+    vehicleCategory: null,
+    luggageRule: null,
+    crewRoles: null,
+    languageNote: null,
     ...overrides,
   }
 }

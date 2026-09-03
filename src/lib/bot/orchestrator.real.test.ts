@@ -251,4 +251,11 @@ describe.skipIf(!RELEASE_PRESENT)('decideAndRespond against the real parsing pip
     // the customer can see in the same reply -- never a package absent from that list.
     expect(opts.system).toContain(`- ${pkgTitle}`)
   })
+
+  it('puts the real overnight hotel names in the prompt for a hotel question', async () => {
+    await decideAndRespond('conv_1', 'which hotel do we stay at for the 3 day bromo ijen tour from bali?')
+    const system = vi.mocked(callLLM).mock.lastCall![1]!.system!
+    expect(system).toContain('Joglo Kecombrang Bromo')
+    expect(system).not.toContain("that's where it's listed")
+  })
 })

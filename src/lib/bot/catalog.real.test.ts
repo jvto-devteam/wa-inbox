@@ -155,6 +155,18 @@ describe.skipIf(!RELEASE_PRESENT)('loadCatalog against the real synced catalog/'
     expect(picked.finishCities).toContain('bali')
   })
 
+  it('carries the real overnight hotels, vehicle class and crew note per package', () => {
+    const catalog = loadCatalog()
+    const pkg = catalog.packages.find((p) => p.packageKey === 'bali/bromo-ijen-3d2n')!
+    expect(pkg.overnights).toContain('Joglo Kecombrang Bromo')
+    expect(pkg.vehicleCategory).toContain('MPV')
+    expect(pkg.crewRoles).toBeTruthy()
+    // luggage_rule is null for every package in the current release (see
+    // catalog/gap-report.json: 16 of the 17 recorded gaps) -- absence must be
+    // carried honestly as null, never invented.
+    expect(pkg.luggageRule).toBeNull()
+  })
+
   it('lets package-match and the route gate agree on the same real destination tokens', async () => {
     const { matchDestination } = await import('./package-match')
     const { checkRouteGate } = await import('./route-gate')

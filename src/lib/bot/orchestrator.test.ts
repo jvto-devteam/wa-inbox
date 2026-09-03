@@ -100,6 +100,12 @@ function pkg(overrides: Record<string, unknown> = {}) {
     dayCount: null,
     finishCities: [],
     priceTiers: [],
+    overnights: [],
+    roomingAssumption: null,
+    vehicleCategory: null,
+    luggageRule: null,
+    crewRoles: null,
+    languageNote: null,
     ...overrides,
   }
 }

@@ -470,10 +470,12 @@ function getTopicDisclosures(topic: ResolverTopic, hasIjen: boolean): string[] {
   if (topic === 'vehicle') out.push('Oversized or special luggage needs a live check before it is confirmed.')
   if (topic === 'rooming' || topic === 'hotel') {
     out.push('Exact rooming and upgrades are subject to confirmation.')
-    // Operator-confirmed 2026-08-06: for a specific hotel NAME, point to this package's own
-    // detail page (not a generic policy page) -- that's where it's actually listed, rather
-    // than deferring vaguely to "our team will confirm."
-    out.push("For the specific hotel name, point the customer to this package's own detail page (link below) -- that's where it's listed.")
+    // Was: "point the customer to this package's own detail page -- that's
+    // where it's listed." As of the accommodation-rules join (catalog.ts) the
+    // real overnight names are in the prompt itself, so sending the customer
+    // away to look up a fact we just handed the model was strictly worse.
+    // Kept as a hedge only for the case where that list is genuinely empty.
+    out.push('If the specific overnight hotel names are given in the package logistics above, state them directly; only if they are absent, say our team will confirm the exact property.')
   }
   return out
 }

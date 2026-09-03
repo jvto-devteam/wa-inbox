@@ -40,12 +40,22 @@
  *                                 we finish in Bali?" was being answered from `origin` alone,
  *                                 which cannot tell "starts in Bali" from "ends in Bali" --
  *                                 they're a real, different set of cities per package).
+ *   accommodation-rules.json   (array, 16) -- `overnights[]` / `rooming_assumption`, joined on
+ *                                 `package_key`.
+ *   vehicle-and-luggage-rules.json (array, 16) -- `vehicle_category` / `luggage_rule`, joined on
+ *                                 `package_key`.
+ *   guide-support-rules.json   (array, 16) -- `crew_roles` / `language_note`, joined on
+ *                                 `package_key`. (Added together 2026-09-03: three release files
+ *                                 that shipped with the catalog and that nothing in `src/` ever
+ *                                 opened -- "which hotel do we stay at?" was being deferred to
+ *                                 the package page by a disclosure in knowledge.ts even though
+ *                                 the real names were sitting in accommodation-rules.json the
+ *                                 whole time.)
  *
  * `meta.json` (`syncedAt`) is read exactly as before. `deployment-gate.json` is
  * not read here at all (deployment-gate.ts owns it). Every other file in
- * `catalog/` (accommodation-rules, vehicle-and-luggage-rules, guide-support-rules, ...)
- * carries operational detail that `CatalogPackage` has no field for and is deliberately
- * ignored rather than half-mapped.
+ * `catalog/` carries operational detail that `CatalogPackage` has no field for and is
+ * deliberately ignored rather than half-mapped.
  *
  * --- Field-by-field judgment calls ---
  *
@@ -149,6 +159,9 @@ const GENERAL_MODULES_FILE = 'general-modules.json'
 const LINK_REGISTRY_FILE = 'customer-link-registry.json'
 const ENDPOINT_CHAINS_FILE = 'endpoint-chains.json'
 const META_FILE = 'meta.json'
+const ACCOMMODATION_FILE = 'accommodation-rules.json'
+const VEHICLE_FILE = 'vehicle-and-luggage-rules.json'
+const GUIDE_FILE = 'guide-support-rules.json'
 
 const DESTINATION_KEY_PREFIX = 'destination_'
 const FINISH_CITY_TOKENS = ['bali', 'surabaya', 'malang', 'ketapang']
@@ -363,6 +376,7 @@ function buildDetailsLink(baseUrl: string, publicUrl: string | null): Record<str
 const CACHED_FILES = [
   PROFILES_FILE, PRICE_TIERS_FILE, COMPONENTS_FILE, MODULE_COMPATIBILITY_FILE,
   GENERAL_MODULES_FILE, LINK_REGISTRY_FILE, ENDPOINT_CHAINS_FILE, META_FILE,
+  ACCOMMODATION_FILE, VEHICLE_FILE, GUIDE_FILE,
 ]
 
 let cachedCatalog: Catalog | null = null
@@ -399,6 +413,9 @@ function buildCatalog(): Catalog {
   const stagingNoteIndex = buildNoteIndex(moduleCompatibility, generalModulesData, 'staging')
   const baseUrl = publicSiteBaseUrl(readCatalogFile(LINK_REGISTRY_FILE))
   const finishCityIndex = buildFinishCityIndex(readCatalogFile(ENDPOINT_CHAINS_FILE))
+  const accommodation = indexByPackageKey(readCatalogFile(ACCOMMODATION_FILE), ACCOMMODATION_FILE)
+  const vehicle = indexByPackageKey(readCatalogFile(VEHICLE_FILE), VEHICLE_FILE)
+  const guide = indexByPackageKey(readCatalogFile(GUIDE_FILE), GUIDE_FILE)
 
   const packages: CatalogPackage[] = []
   const seen = new Set<string>()
@@ -453,6 +470,12 @@ function buildCatalog(): Catalog {
       origin: asString(profile.origin),
       dayCount: asPositiveInt(profile.day_count),
       finishCities: finishCityIndex.get(packageKey) ?? [],
+      overnights: asStringArray(accommodation.get(packageKey)?.overnights),
+      roomingAssumption: asString(accommodation.get(packageKey)?.rooming_assumption),
+      vehicleCategory: asString(vehicle.get(packageKey)?.vehicle_category),
+      luggageRule: asString(vehicle.get(packageKey)?.luggage_rule),
+      crewRoles: asString(guide.get(packageKey)?.crew_roles),
+      languageNote: asString(guide.get(packageKey)?.language_note),
     })
   }
 

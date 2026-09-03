@@ -1305,6 +1305,22 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
       // policyNotes is. See types.ts's CatalogPackage.stagingNotes header for why this data
       // existed but was completely unreachable before 2026-08-05.
       (pkg.stagingNotes.length > 0 ? `\n\nLogistics for this specific package:\n${pkg.stagingNotes.map((n) => `- ${n}`).join('\n')}` : '') +
+      // Per-package logistics the customer most often asks about, stated as
+      // fact rather than deferred to a link. Each line is omitted when the
+      // release genuinely has no value for it -- an absent luggage allowance
+      // (true for every package today) must read as "we'll confirm", never as
+      // an invented number.
+      ((): string => {
+        const lines = [
+          pkg.overnights.length > 0 ? `Overnight stays for this package, in night order: ${pkg.overnights.join(' then ')}. State these names directly if asked which hotel they stay at.` : null,
+          pkg.roomingAssumption ? `Rooming: ${pkg.roomingAssumption}` : null,
+          pkg.vehicleCategory ? `Vehicle for this package: ${pkg.vehicleCategory}` : null,
+          pkg.luggageRule ? `Luggage allowance: ${pkg.luggageRule}` : null,
+          pkg.crewRoles ? `Crew: ${pkg.crewRoles}` : null,
+          pkg.languageNote ? `Guide language: ${pkg.languageNote}` : null,
+        ].filter((l): l is string => l !== null)
+        return lines.length > 0 ? `\n\nLogistics for this specific package:\n${lines.map((l) => `- ${l}`).join('\n')}` : ''
+      })() +
       (packageOptionsText
         ? `\n\nMatching tour packages for this destination (never invent others or state a price/link not shown here):\n${packageOptionsText}` +
           (recommendMultiple
