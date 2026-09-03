@@ -3,7 +3,7 @@ import { mockDeep, mockReset, type DeepMockProxy } from 'vitest-mock-extended'
 import type { PrismaClient } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { decideAndRespond, gatherSideFacts, withSideFacts, computeTripPreferencesFunnelDecision } from './orchestrator'
-import { ensureFreshBookingData } from '@/lib/booking/client'
+import { ensureFreshBookingData, type BookingData } from '@/lib/booking/client'
 import { checkRouteGate } from './route-gate'
 import { classifySalesNeed } from './sales-classifier'
 import { matchDestination, packagesForDestination, pickPackage, listDestinations } from './package-match'
@@ -17,6 +17,7 @@ import { resolveKnowledgeForTopic, resolveKeywordTriggeredFacts, resolveRouteLeg
 import { callLLM } from './llm'
 import { loadCatalog } from './catalog'
 import { checkDeploymentGate } from './deployment-gate'
+import type { CatalogPackage } from './types'
 
 // `vi.mock` factories are hoisted above regular imports and `let`/`const`
 // declarations, so the mock instance must be constructed inline inside the
@@ -75,6 +76,17 @@ vi.mock('./deployment-gate')
 
 const mockPrisma = prisma as unknown as DeepMockProxy<PrismaClient>
 
+// persistTripBrief now writes via a tagged-template `$executeRaw` call (server-side jsonb
+// merge) instead of `conversation.update`, so assertions that used to inspect the update
+// payload now read the raw call's interpolated values instead: `mock.calls[i]` is
+// `[templateStrings, patchJson, conversationId]` for each write.
+function tripBriefWrites() {
+  return mockPrisma.$executeRaw.mock.calls.map(([, patchJson, id]) => ({
+    id: id as string,
+    patch: JSON.parse(patchJson as string) as Record<string, unknown>,
+  }))
+}
+
 function pkg(overrides: Record<string, unknown> = {}) {
   return {
     packageKey: 'ijen-1d',
@@ -89,6 +101,12 @@ function pkg(overrides: Record<string, unknown> = {}) {
     dayCount: null,
     finishCities: [],
     priceTiers: [],
+    overnights: [],
+    roomingAssumption: null,
+    vehicleCategory: null,
+    luggageRule: null,
+    crewRoles: null,
+    languageNote: null,
     ...overrides,
   }
 }
@@ -147,6 +165,21 @@ describe('decideAndRespond', () => {
     expect(ensureFreshBookingData).not.toHaveBeenCalled()
   })
 
+  it('merges tripBrief server-side rather than overwriting the whole column', async () => {
+    // A read-modify-write across two round trips is a lost-update race: two
+    // turns for the same conversation each hold 30s+ of LLM time, and each
+    // would write a snapshot taken before the other's write.
+    ;(ensureFreshBookingData as any).mockResolvedValue(null)
+    ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
+    ;(checkRouteGate as any).mockReturnValue({ status: 'clear' })
+    ;(matchDestination as any).mockReturnValue({ destination: 'ijen', matches: [pkg()] })
+
+    await decideAndRespond('conv_1', 'i want to go to ijen')
+
+    expect(mockPrisma.conversation.update).not.toHaveBeenCalled()
+    expect(mockPrisma.$executeRaw).toHaveBeenCalled()
+  })
+
   describe('reasoning trace (steps)', () => {
     it('records a short trace for an escalation handoff -- received, checked, escalated', async () => {
       const result = await decideAndRespond('conv_1', 'Saya mau komplain dan minta refund!')
@@ -163,10 +196,13 @@ describe('decideAndRespond', () => {
 
       const result = await decideAndRespond('conv_1', 'Booking saya sudah lunas belum?')
 
+      // 'Mencari data booking' now precedes 'Tidak ada eskalasi': the LLM escalation check and
+      // the booking lookup are started together, and the escalation verdict is still applied
+      // (and can still hand off) before this Mode 3 branch is taken.
       expect(result.steps?.map((s) => s.label)).toEqual([
         'Pesan diterima',
-        'Tidak ada eskalasi',
         'Mencari data booking',
+        'Tidak ada eskalasi',
         'Booking ditemukan',
         'Meminta jawaban dari model lokal',
         'Jawaban siap dikirim',
@@ -184,17 +220,21 @@ describe('decideAndRespond', () => {
 
       const result = await decideAndRespond('conv_1', 'Saya mau ke Ijen')
 
+      // The keyword-module classifier now traces after the (synchronous) destination match
+      // rather than before it: the branch has to be known first so the no-destination path can
+      // batch only the two classifiers it needs. The five classifier steps still trace in their
+      // own original relative order.
       expect(result.steps?.map((s) => s.label)).toEqual([
         'Pesan diterima',
-        'Tidak ada eskalasi',
         'Mencari data booking',
+        'Tidak ada eskalasi',
         'Tidak ada booking',
         'Memeriksa gerbang persetujuan',
         'Gerbang persetujuan terbuka',
-        'Memeriksa modul fakta kata kunci',
         'Mengklasifikasi kebutuhan pelanggan',
         'Mencari destinasi',
         'Destinasi ditemukan',
+        'Memeriksa modul fakta kata kunci',
         'Mengklasifikasi topik',
         'Mengekstrak preferensi perjalanan',
         'Mendeteksi niat rekomendasi paket',
@@ -216,6 +256,57 @@ describe('decideAndRespond', () => {
 
       expect(result.steps?.find((s) => s.label === 'Paket valid')?.detail).toContain('tinjauan')
     })
+  })
+
+  // The five Mode 1/2 classifiers read nothing but `inboundText` (plus the already-computed
+  // sales job), so nothing forces them to be sequential -- and each carries its own 10s
+  // timeout, so awaiting them one after another is up to five of those back to back.
+  const NO_PREFS = { origin: null, dayCount: null, finishCity: null, pax: null }
+
+  it('runs the Mode 1/2 classifiers concurrently, not one after another', async () => {
+    vi.mocked(ensureFreshBookingData).mockResolvedValue(null)
+    vi.mocked(classifySalesNeed).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false } as never)
+    vi.mocked(matchDestination).mockReturnValue({ destination: 'ijen', matches: [pkg()] } as never)
+    vi.mocked(checkRouteGate).mockReturnValue({ status: 'clear' } as never)
+
+    // Each classifier records that it was entered, then resolves only on a later tick.
+    // `inFlightWhenFirstSettled` is the load-bearing number: awaited in sequence, the first
+    // one resolves while it is the only one that has ever been entered (1); started together,
+    // all five are already in flight by the time any of them resolves (5).
+    const inFlight: string[] = []
+    let inFlightWhenFirstSettled = 0
+    const gate = (name: string, value: unknown) => () => {
+      inFlight.push(name)
+      return new Promise((resolve) =>
+        setTimeout(() => {
+          if (inFlightWhenFirstSettled === 0) inFlightWhenFirstSettled = inFlight.length
+          resolve(value)
+        }, 0)
+      )
+    }
+    vi.mocked(classifyKeywordModulesViaLLM).mockImplementation(gate('keyword', { moduleIds: [], source: 'llm' }) as never)
+    vi.mocked(classifyTopicViaLLM).mockImplementation(gate('topic', { topic: 'price', source: 'llm' }) as never)
+    vi.mocked(extractTripPreferences).mockImplementation(gate('prefs', { preferences: NO_PREFS, source: 'llm' }) as never)
+    vi.mocked(detectsPreferenceDeclineViaLLM).mockImplementation(gate('decline', { declined: false, source: 'llm' }) as never)
+    vi.mocked(detectsRecommendationIntentViaLLM).mockImplementation(gate('reco', { isRecommendation: false, source: 'llm' }) as never)
+
+    await decideAndRespond('conv_1', 'berapa harga paket ijen 3 hari dari surabaya?')
+
+    expect(inFlight).toHaveLength(5)
+    // All five entered before the event loop drained any of them.
+    expect(inFlightWhenFirstSettled).toBe(5)
+  })
+
+  it('does not run the recommendation/preference classifiers when no destination is known', async () => {
+    vi.mocked(ensureFreshBookingData).mockResolvedValue(null)
+    vi.mocked(classifySalesNeed).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false } as never)
+    vi.mocked(matchDestination).mockReturnValue(null)
+
+    await decideAndRespond('conv_no_dest', 'boleh COD?')
+
+    expect(extractTripPreferences).not.toHaveBeenCalled()
+    expect(detectsPreferenceDeclineViaLLM).not.toHaveBeenCalled()
+    expect(detectsRecommendationIntentViaLLM).not.toHaveBeenCalled()
   })
 
   it('uses Mode 3 (booking_context) when an existing booking is found, skipping the FAQ path entirely', async () => {
@@ -314,7 +405,10 @@ describe('decideAndRespond', () => {
   })
 
   it('passes recent messages as history, oldest first, mapped to user/assistant roles', async () => {
-    ;(ensureFreshBookingData as any).mockResolvedValue({ bookingId: 'B1', status: 'unpaid' })
+    // The balance is in the booking JSON, so the quoted figure is one a real reply could
+    // actually have read (reply-verifier.ts) -- without it this fixture's reply is an
+    // invented price and the turn would hand off instead of exercising the history path.
+    ;(ensureFreshBookingData as any).mockResolvedValue({ bookingId: 'B1', status: 'unpaid', financial: { balance: 500000 } })
     ;(callLLM as any).mockResolvedValue('Sisa Rp500.000.')
     // Mocking the query's own `orderBy: { createdAt: 'desc' }` -- most recent first, exactly
     // what a real findMany call returns before the code's own .reverse() flips it to ascending.
@@ -342,7 +436,10 @@ describe('decideAndRespond', () => {
   })
 
   it('drops the tail history entry when it exactly echoes the message that just triggered this decision', async () => {
-    ;(ensureFreshBookingData as any).mockResolvedValue({ bookingId: 'B1', status: 'unpaid' })
+    // The balance is in the booking JSON, so the quoted figure is one a real reply could
+    // actually have read (reply-verifier.ts) -- without it this fixture's reply is an
+    // invented price and the turn would hand off instead of exercising the history path.
+    ;(ensureFreshBookingData as any).mockResolvedValue({ bookingId: 'B1', status: 'unpaid', financial: { balance: 500000 } })
     ;(callLLM as any).mockResolvedValue('Sisa Rp500.000.')
     mockPrisma.message.findMany.mockResolvedValue([
       // Already persisted before decideAndRespond ran (see ingestSingleMessage/test-message) --
@@ -615,10 +712,7 @@ describe('decideAndRespond', () => {
     const first = await decideAndRespond('conv_1', 'Saya mau ke Ijen')
 
     expect(first.mode).toBe('faq')
-    expect(mockPrisma.conversation.update).toHaveBeenCalledWith({
-      where: { id: 'conv_1' },
-      data: { tripBrief: { destination: 'ijen' } },
-    })
+    expect(tripBriefWrites()).toContainEqual({ id: 'conv_1', patch: { destination: 'ijen' } })
 
     // Message 2: the conversation now carries that destination, this message names no
     // new one, and the route gate validates the PERSISTED destination instead of
@@ -655,12 +749,11 @@ describe('decideAndRespond', () => {
     expect(second.mode).toBe('faq')
     // The known destination must not be wiped by a message that matched nothing new (no
     // redundant destination write), but the newly-resolved topic ('price', vs. no lastTopic on
-    // file yet) IS worth persisting -- exactly one call, for that reason alone.
-    expect(mockPrisma.conversation.update).toHaveBeenCalledTimes(1)
-    expect(mockPrisma.conversation.update).toHaveBeenCalledWith({
-      where: { id: 'conv_1' },
-      data: { tripBrief: { destination: 'ijen', declinedTripPreferences: true, lastTopic: 'price' } },
-    })
+    // file yet) IS worth persisting -- exactly one call, for that reason alone. The patch omits
+    // declinedTripPreferences (it wasn't touched by this write) -- the server-side merge is what
+    // keeps it on the row, not resending it.
+    expect(mockPrisma.$executeRaw).toHaveBeenCalledTimes(1)
+    expect(tripBriefWrites()).toContainEqual({ id: 'conv_1', patch: { destination: 'ijen', lastTopic: 'price' } })
   })
 
   it('does not re-persist tripBrief when the resolved topic matches what is already on file', async () => {
@@ -678,7 +771,7 @@ describe('decideAndRespond', () => {
     const result = await decideAndRespond('conv_1', 'Apa saja yang termasuk?')
 
     expect(result.mode).toBe('faq')
-    expect(mockPrisma.conversation.update).not.toHaveBeenCalled()
+    expect(mockPrisma.$executeRaw).not.toHaveBeenCalled()
   })
 
   it('feeds the package policy notes into the LLM grounding (not appended as raw text) on a needs_review route gate', async () => {
@@ -1074,6 +1167,33 @@ describe('decideAndRespond', () => {
     expect(result.mode).toBe('clarify')
   })
 
+  // The escalation classifier and the booking lookup are started together, but a booking
+  // failure must never be able to swallow an escalation: escalation-classifier.ts's own header
+  // is built on the asymmetry that a MISSED complaint is far worse than an unnecessary handoff.
+  // If a Booking API outage could turn an angry customer's message into "I'm having a small
+  // technical hiccup", no human would ever be alerted to it.
+  it('still hands off on an LLM escalation signal when the booking lookup fails outright', async () => {
+    vi.mocked(ensureFreshBookingData).mockRejectedValue(new Error('booking API down'))
+    vi.mocked(detectsAdditionalEscalationSignal).mockResolvedValue(true)
+
+    const result = await decideAndRespond('conv_1', 'This is unacceptable, I want to speak to someone')
+
+    expect(result).toMatchObject({ mode: 'handoff', reason: 'Sinyal eskalasi terdeteksi oleh model LLM' })
+  })
+
+  // The companion to the case above: for every NON-escalating message a booking failure is
+  // still an ordinary technical failure, and must produce exactly the reply it did before the
+  // escalation check and the booking lookup were ever paired.
+  it('still returns the technical-hiccup reply when the booking lookup fails and there is no escalation', async () => {
+    vi.mocked(ensureFreshBookingData).mockRejectedValue(new Error('booking API down'))
+    vi.mocked(detectsAdditionalEscalationSignal).mockResolvedValue(false)
+
+    const result = await decideAndRespond('conv_1', 'Halo')
+
+    expect(result.mode).toBe('clarify')
+    expect((result as { reply: string }).reply).toContain("having a small technical hiccup")
+  })
+
   it('falls back to a graceful, bot-stays-active reply (not a handoff) if any step throws (fail-safe)', async () => {
     ;(ensureFreshBookingData as any).mockRejectedValue(new Error('booking API down'))
 
@@ -1224,6 +1344,472 @@ describe('decideAndRespond', () => {
     expect(checkDeploymentGate).not.toHaveBeenCalled()
   })
 
+  // Task 10 (reply-verifier.ts): until this existed, the only check applied to a composed
+  // reply was that it was non-empty -- "never invent a price or a URL" lived entirely inside
+  // the prompt text. These cover the two severities and the ONE new handoff.
+  describe('reply verification (prices and links)', () => {
+    function groundedMainPath(overrides: Record<string, unknown> = {}) {
+      ;vi.mocked(ensureFreshBookingData).mockResolvedValue(null)
+      ;vi.mocked(classifySalesNeed).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
+      ;vi.mocked(checkRouteGate).mockReturnValue({ status: 'clear' })
+      ;vi.mocked(matchDestination).mockReturnValue({ destination: 'ijen', matches: [pkg(overrides) as unknown as CatalogPackage] })
+    }
+
+    it('blocks a price invented out of nothing, then sends the corrected rewrite', async () => {
+      // priceIdr null + no Rp anywhere in the facts -> this turn published NO price at all,
+      // so a figure in the reply cannot have come from anywhere but the model.
+      groundedMainPath({ priceIdr: null, priceTiers: [] })
+      ;vi.mocked(callLLM)
+        .mockResolvedValueOnce('Hi! It is Rp2.000.000 per person.')
+        .mockResolvedValueOnce('Hi! Our team will confirm the exact price for your group shortly.')
+
+      const result = await decideAndRespond('conv_1', 'How much is the Ijen tour?')
+
+      expect(result).toMatchObject({ mode: 'faq', draft: 'Hi! Our team will confirm the exact price for your group shortly.' })
+      expect(vi.mocked(callLLM).mock.calls).toHaveLength(2)
+      // The retry must name the offending figure, so the model knows what to drop.
+      expect(vi.mocked(callLLM).mock.calls[1][1]!.system).toContain('CRITICAL CORRECTION')
+      expect(vi.mocked(callLLM).mock.calls[1][1]!.system).toContain('Rp2.000.000')
+      expect(result.steps?.map((s) => s.label)).toContain('Verifikasi gagal')
+      expect(result.steps?.map((s) => s.label)).toContain('Penulisan ulang berhasil')
+    })
+
+    // The one handoff this branch adds, and deliberately the only one: NOT a content gap --
+    // the facts were in the prompt and the model would not use them.
+    it('hands off when the rewrite still invents a price', async () => {
+      groundedMainPath({ priceIdr: null, priceTiers: [] })
+      ;vi.mocked(callLLM).mockResolvedValue('Hi! It is Rp2.000.000 per person.')
+
+      const result = await decideAndRespond('conv_1', 'How much is the Ijen tour?')
+
+      expect(result).toMatchObject({ mode: 'handoff', reason: 'Balasan gagal verifikasi harga/link dua kali berturut-turut' })
+      expect(vi.mocked(callLLM).mock.calls).toHaveLength(2)
+      expect(result.steps?.map((s) => s.label)).toContain('Balasan ditahan')
+      // Task 11: the facts WERE present and the model reached past them anyway -- an
+      // opposite failure mode from 'no_facts_resolved', recorded as such.
+      expect(mockPrisma.knowledgeGapLog.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            conversationId: 'conv_1',
+            reason: 'verification_failed',
+            messageText: 'How much is the Ijen tour?',
+          }),
+        })
+      )
+    })
+
+    it('sends a price that is a real catalog tier untouched', async () => {
+      groundedMainPath({ priceIdr: 4050000, priceTiers: [{ minPax: 2, maxPax: 3, priceIdr: 4050000 }] })
+      ;vi.mocked(callLLM).mockResolvedValue('Hi! It is Rp4.050.000 per person.')
+
+      const result = await decideAndRespond('conv_1', 'How much is the Ijen tour?')
+
+      expect(result).toMatchObject({ mode: 'faq', draft: 'Hi! It is Rp4.050.000 per person.' })
+      expect(vi.mocked(callLLM).mock.calls).toHaveLength(1)
+      expect(result.steps?.map((s) => s.label)).not.toContain('Harga perlu dicek')
+    })
+
+    // A group total is legitimate arithmetic the bot is expected to do -- blocking it would
+    // break real quoting to defend against a much rarer failure.
+    it('sends a group total derived from a real per-person tier without flagging it', async () => {
+      groundedMainPath({ priceIdr: 4050000, priceTiers: [{ minPax: 2, maxPax: 3, priceIdr: 4050000 }] })
+      ;vi.mocked(callLLM).mockResolvedValue('Hi! For 2 people that comes to Rp8.100.000 in total.')
+
+      const result = await decideAndRespond('conv_1', 'How much for 2 people?')
+
+      expect(result.mode).toBe('faq')
+      expect(result.steps?.map((s) => s.label)).not.toContain('Harga perlu dicek')
+    })
+
+    // Second severity: the grounding DID publish prices, so this is a figure to review, not
+    // one that could only have been invented -- recorded in the trace and still sent.
+    it('records but still sends a price the grounding cannot account for', async () => {
+      groundedMainPath({ priceIdr: 4050000, priceTiers: [{ minPax: 2, maxPax: 3, priceIdr: 4050000 }] })
+      ;vi.mocked(callLLM).mockResolvedValue('Hi! That works out to Rp9.999.999 for your group.')
+
+      const result = await decideAndRespond('conv_1', 'How much for my group?')
+
+      expect(result).toMatchObject({ mode: 'faq', draft: 'Hi! That works out to Rp9.999.999 for your group.' })
+      expect(vi.mocked(callLLM).mock.calls).toHaveLength(1)
+      expect(result.steps?.find((s) => s.label === 'Harga perlu dicek')?.detail).toContain('Rp9.999.999')
+    })
+
+    it("sends a link that is the matched package's own detail page", async () => {
+      groundedMainPath({ links: { details: 'https://javavolcano-touroperator.com/tours/ijen-blue-fire-1d' } })
+      ;vi.mocked(callLLM).mockResolvedValue('Hi! Full details here: https://javavolcano-touroperator.com/tours/ijen-blue-fire-1d')
+
+      const result = await decideAndRespond('conv_1', 'Where can I read more about Ijen?')
+
+      expect(result.mode).toBe('faq')
+      expect(vi.mocked(callLLM).mock.calls).toHaveLength(1)
+    })
+
+    // Unlike a price there is no arithmetic that could legitimately produce a URL the
+    // grounding never contained -- customer-link-registry.json shipped 18 dead "existing"
+    // URLs once already (knowledge.ts), so a half-remembered link is a real failure mode.
+    it('blocks a link that appears in no grounding for this turn', async () => {
+      groundedMainPath({ links: { details: 'https://javavolcano-touroperator.com/tours/ijen-blue-fire-1d' } })
+      ;vi.mocked(callLLM).mockResolvedValue('Hi! See https://javavolcano-touroperator.com/tours/made-up-package')
+
+      const result = await decideAndRespond('conv_1', 'Where can I read more about Ijen?')
+
+      expect(result.mode).toBe('handoff')
+      expect(vi.mocked(callLLM).mock.calls[1][1]!.system).toContain('https://javavolcano-touroperator.com/tours/made-up-package')
+    })
+
+    // Important 3: a URL the customer themselves supplied is not something the model
+    // invented -- a customer pasting a tour-page link ("I saw this -- is it available?")
+    // must not trip the always-blocking unknownUrls check just because it isn't a URL this
+    // turn's catalog/module grounding happens to mention.
+    it('does not block a link the customer pasted in their own message', async () => {
+      groundedMainPath({ links: { details: 'https://javavolcano-touroperator.com/tours/ijen-blue-fire-1d' } })
+      const customerUrl = 'https://javavolcano-touroperator.com/tours/ijen-blue-fire-2d'
+      vi.mocked(callLLM).mockResolvedValue(`Hi! Yes, ${customerUrl} is still available.`)
+
+      const result = await decideAndRespond('conv_1', `I saw this -- is it available? ${customerUrl}`)
+
+      expect(result.mode).toBe('faq')
+      expect(vi.mocked(callLLM).mock.calls).toHaveLength(1)
+    })
+
+    // Same fold, but for a link an EARLIER turn in this conversation legitimately sent --
+    // fetchRecentHistory feeds up to 8 prior turns into the same callLLM call, so a follow-up
+    // reply repeating a link this conversation already gave is not an invention either.
+    it('does not block a link the assistant already sent earlier in this conversation', async () => {
+      groundedMainPath({ links: { details: 'https://javavolcano-touroperator.com/tours/ijen-blue-fire-1d' } })
+      const earlierUrl = 'https://javavolcano-touroperator.com/tours/ijen-blue-fire-2d'
+      mockPrisma.message.findMany.mockResolvedValue([
+        { direction: 'INBOUND', content: 'What about the other Ijen package?', createdAt: new Date('2026-08-01T10:00:00Z') },
+        { direction: 'OUTBOUND', content: `Sure, here it is: ${earlierUrl}`, createdAt: new Date('2026-08-01T10:01:00Z') },
+      ] as never)
+      vi.mocked(callLLM).mockResolvedValue(`Hi! Yes, ${earlierUrl} is still available.`)
+
+      const result = await decideAndRespond('conv_1', 'And is that one still available?')
+
+      expect(result.mode).toBe('faq')
+      expect(vi.mocked(callLLM).mock.calls).toHaveLength(1)
+    })
+
+    // The advisory check reads the FINAL verdict, so a figure that survives an accepted
+    // rewrite is still recorded -- otherwise a blocked-then-corrected reply could smuggle
+    // an unaccountable number through unlogged.
+    it('still records an unaccountable price in a rewrite that was accepted', async () => {
+      groundedMainPath({
+        priceIdr: 4050000,
+        priceTiers: [{ minPax: 2, maxPax: 3, priceIdr: 4050000 }],
+        links: { details: 'https://javavolcano-touroperator.com/tours/ijen-blue-fire-1d' },
+      })
+      vi.mocked(callLLM)
+        .mockResolvedValueOnce('Hi! Rp9.999.999 total -- see https://javavolcano-touroperator.com/tours/made-up-package')
+        .mockResolvedValueOnce('Hi! Rp9.999.999 total.')
+
+      const result = await decideAndRespond('conv_1', 'How much for my group?')
+
+      expect(result).toMatchObject({ mode: 'faq', draft: 'Hi! Rp9.999.999 total.' })
+      expect(result.steps?.map((s) => s.label)).toContain('Penulisan ulang berhasil')
+      expect(result.steps?.find((s) => s.label === 'Harga perlu dicek')?.detail).toContain('Rp9.999.999')
+    })
+
+    // The wrong-TIER case verification cannot catch by construction: a neighbouring tier is
+    // an exact member of the (deliberately wide) grounding, so it passes silently. All this
+    // adds is a trace note -- the reply still goes out, because the figure IS a real catalog
+    // price and blocking it would trade a common false positive for a rarer real one.
+    it('notes in the trace when the reply quotes a real tier that is not this pax count\'s', async () => {
+      vi.mocked(ensureFreshBookingData).mockResolvedValue(null)
+      vi.mocked(classifySalesNeed).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
+      vi.mocked(checkRouteGate).mockReturnValue({ status: 'clear' })
+      vi.mocked(matchDestination).mockReturnValue({
+        destination: 'ijen',
+        matches: [
+          pkg({
+            priceIdr: 2450000,
+            priceTiers: [
+              { minPax: 2, maxPax: 2, priceIdr: 3570000 },
+              { minPax: 11, maxPax: null, priceIdr: 2450000 },
+            ],
+          }) as unknown as CatalogPackage,
+        ],
+      })
+      vi.mocked(extractTripPreferences).mockResolvedValue({
+        preferences: { origin: null, dayCount: null, finishCity: null, pax: 2 },
+        source: 'llm',
+      })
+      // The 11+-pax rate, quoted to a group of 2 -- exactly the error priceForPax exists to
+      // prevent, and a real catalog number, so nothing blocks it.
+      vi.mocked(callLLM).mockResolvedValue('Hi! It is Rp2.450.000 per person.')
+
+      const result = await decideAndRespond('conv_1', 'We will be 2 people, how much?')
+
+      expect(result).toMatchObject({ mode: 'faq', draft: 'Hi! It is Rp2.450.000 per person.' })
+      expect(vi.mocked(callLLM).mock.calls).toHaveLength(1)
+      const note = result.steps?.find((s) => s.label === 'Tier harga tidak sesuai jumlah orang')
+      expect(note?.detail).toContain('Rp2.450.000')
+      expect(note?.detail).toContain('Rp3.570.000')
+    })
+
+    it("stays quiet when the reply quotes this pax count's own tier, or a group total built from it", async () => {
+      vi.mocked(ensureFreshBookingData).mockResolvedValue(null)
+      vi.mocked(classifySalesNeed).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
+      vi.mocked(checkRouteGate).mockReturnValue({ status: 'clear' })
+      vi.mocked(matchDestination).mockReturnValue({
+        destination: 'ijen',
+        matches: [
+          pkg({
+            priceIdr: 2450000,
+            priceTiers: [
+              { minPax: 2, maxPax: 2, priceIdr: 3570000 },
+              { minPax: 11, maxPax: null, priceIdr: 2450000 },
+            ],
+          }) as unknown as CatalogPackage,
+        ],
+      })
+      vi.mocked(extractTripPreferences).mockResolvedValue({
+        preferences: { origin: null, dayCount: null, finishCity: null, pax: 2 },
+        source: 'llm',
+      })
+      vi.mocked(callLLM).mockResolvedValue('Hi! It is Rp3.570.000 per person, so Rp7.140.000 for the two of you.')
+
+      const result = await decideAndRespond('conv_1', 'We will be 2 people, how much?')
+
+      expect(result.mode).toBe('faq')
+      expect(result.steps?.map((s) => s.label)).not.toContain('Tier harga tidak sesuai jumlah orang')
+      expect(result.steps?.map((s) => s.label)).not.toContain('Harga perlu dicek')
+    })
+
+    it('verifies a Mode 3 reply against the numbers in the booking JSON itself', async () => {
+      ;vi.mocked(ensureFreshBookingData).mockResolvedValue({ bookingId: 'B1', financial: { balance: 500000 } })
+      ;vi.mocked(callLLM).mockResolvedValue('Sisa pembayaran Anda Rp500.000.')
+
+      const result = await decideAndRespond('conv_1', 'Sisa pembayaran saya berapa?')
+
+      expect(result).toMatchObject({ mode: 'booking_context', reply: 'Sisa pembayaran Anda Rp500.000.' })
+      expect(vi.mocked(callLLM).mock.calls).toHaveLength(1)
+    })
+
+    // BookingData is a hand-written description of an UNTYPED external API response (see its
+    // own header). `financial.balance` is typed `number` from what has been observed, but a
+    // channel sending it as a string must not turn "what's my balance?" -- the question from
+    // the segment that matters most -- into a handoff. Both string forms the API could plausibly
+    // use: with thousands separators, and bare.
+    it('verifies a Mode 3 reply against amounts the booking JSON states as strings', async () => {
+      // Cast deliberately: `BookingData` declares these as `number` from what has been
+      // observed, and this fixture is exactly the shape that declaration does NOT cover --
+      // which is the point. The API is not governed by that type.
+      vi.mocked(ensureFreshBookingData).mockResolvedValue({
+        bookingId: 'B1',
+        financial: { balance: '500.000', invoice: { total: '4050000' } },
+      } as unknown as BookingData)
+      vi.mocked(callLLM).mockResolvedValue('Sisa pembayaran Anda Rp500.000 dari total Rp4.050.000.')
+
+      const result = await decideAndRespond('conv_1', 'Sisa pembayaran saya berapa?')
+
+      expect(result).toMatchObject({ mode: 'booking_context', reply: 'Sisa pembayaran Anda Rp500.000 dari total Rp4.050.000.' })
+      expect(vi.mocked(callLLM).mock.calls).toHaveLength(1)
+    })
+
+    it('hands off a Mode 3 reply quoting a price the booking data never contained', async () => {
+      ;vi.mocked(ensureFreshBookingData).mockResolvedValue({ bookingId: 'B1', package: 'Ijen Blue Fire Trekking' })
+      ;vi.mocked(callLLM).mockResolvedValue('Sisa pembayaran Anda Rp2.000.000.')
+
+      const result = await decideAndRespond('conv_1', 'Sisa pembayaran saya berapa?')
+
+      expect(result).toMatchObject({ mode: 'handoff', reason: 'Balasan gagal verifikasi harga/link dua kali berturut-turut' })
+      // Task 11: verification-failed recording is wired at composeVerifiedReply's one
+      // shared blocking branch, so Mode 3 (booking context) trips it too.
+      expect(mockPrisma.knowledgeGapLog.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ conversationId: 'conv_1', reason: 'verification_failed' }),
+        })
+      )
+    })
+
+    // The no-destination branch has matched no package at all, so its grounding is only
+    // whatever the resolved modules and the general fallback state in their own text.
+    it('verifies the no-destination branch against its own resolved facts', async () => {
+      ;vi.mocked(ensureFreshBookingData).mockResolvedValue(null)
+      ;vi.mocked(classifySalesNeed).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
+      ;vi.mocked(matchDestination).mockReturnValue(null)
+      ;vi.mocked(classifyTopicViaLLM).mockResolvedValue({ topic: 'payment', source: 'llm' })
+      ;vi.mocked(resolveKnowledgeForTopic).mockReturnValue({
+        factualLines: ['The ISIC student rate is Rp1.500.000 per person.'],
+        detailLines: [],
+        primaryLink: null,
+        disclosures: [],
+        handoffRequired: false,
+      })
+      ;vi.mocked(callLLM).mockResolvedValue('Hi! The student rate is Rp1.500.000 per person. Which destination interests you?')
+
+      const result = await decideAndRespond('conv_1', 'Is there a student discount?')
+
+      expect(result.mode).toBe('faq')
+      expect(vi.mocked(callLLM).mock.calls).toHaveLength(1)
+    })
+
+    it('hands off a no-destination reply quoting a price none of its facts contained', async () => {
+      ;vi.mocked(ensureFreshBookingData).mockResolvedValue(null)
+      ;vi.mocked(classifySalesNeed).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
+      ;vi.mocked(matchDestination).mockReturnValue(null)
+      ;vi.mocked(classifyTopicViaLLM).mockResolvedValue({ topic: 'payment', source: 'llm' })
+      ;vi.mocked(callLLM).mockResolvedValue('Hi! The deposit is Rp2.000.000. Which destination interests you?')
+
+      const result = await decideAndRespond('conv_1', 'How does the deposit work?')
+
+      expect(result).toMatchObject({ mode: 'handoff', reason: 'Balasan gagal verifikasi harga/link dua kali berturut-turut' })
+      expect(mockPrisma.knowledgeGapLog.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ conversationId: 'conv_1', topic: 'payment', reason: 'verification_failed' }),
+        })
+      )
+    })
+  })
+
+  // Task 11 (KnowledgeGapLog): until this existed, the only way to learn what the bot
+  // could not answer was a manual read of the whole message history. Two signals need no
+  // cooperation from the model: the catalog resolving no facts for the classified topic
+  // (this describe block), and the reply verifier from Task 10 catching the model reaching
+  // for a price/link that was not there (covered by assertions added to the existing
+  // 'reply verification' tests above, since 'verification_failed' is recorded from
+  // composeVerifiedReply's one shared blocking branch, common to all three composition
+  // sites).
+  describe('knowledge gap logging', () => {
+    it('records a knowledge gap when the catalog resolved no facts for the topic', async () => {
+      vi.mocked(ensureFreshBookingData).mockResolvedValue(null)
+      vi.mocked(classifySalesNeed).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
+      vi.mocked(matchDestination).mockReturnValue({ destination: 'ijen', matches: [pkg() as unknown as CatalogPackage] })
+      vi.mocked(checkRouteGate).mockReturnValue({ status: 'clear' })
+      vi.mocked(classifyTopicViaLLM).mockResolvedValue({ topic: 'destination_readiness', source: 'llm' })
+      vi.mocked(resolveKnowledgeForTopic).mockReturnValue({
+        factualLines: [],
+        detailLines: [],
+        primaryLink: null,
+        disclosures: [],
+        handoffRequired: false,
+      })
+
+      await decideAndRespond('conv_1', 'do you offer paragliding over the crater?')
+
+      expect(mockPrisma.knowledgeGapLog.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            conversationId: 'conv_1',
+            topic: 'destination_readiness',
+            reason: 'no_facts_resolved',
+            messageText: 'do you offer paragliding over the crater?',
+          }),
+        })
+      )
+    })
+
+    // 'greeting' resolving to nothing is correct, not a gap -- there was no question to
+    // answer. Routed through the destination-known main path (not the no-destination
+    // branch) so this actually exercises the `resolverTopic !== 'greeting'` guard, rather
+    // than passing vacuously because no branch happened to check at all.
+    it('does not record a gap for a plain greeting', async () => {
+      vi.mocked(ensureFreshBookingData).mockResolvedValue(null)
+      vi.mocked(classifySalesNeed).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
+      vi.mocked(matchDestination).mockReturnValue({ destination: 'ijen', matches: [pkg() as unknown as CatalogPackage] })
+      vi.mocked(checkRouteGate).mockReturnValue({ status: 'clear' })
+      vi.mocked(classifyTopicViaLLM).mockResolvedValue({ topic: 'greeting', source: 'llm' })
+      vi.mocked(resolveKnowledgeForTopic).mockReturnValue({
+        factualLines: [],
+        detailLines: [],
+        primaryLink: null,
+        disclosures: [],
+        handoffRequired: false,
+      })
+
+      await decideAndRespond('conv_1', 'halo')
+
+      expect(mockPrisma.knowledgeGapLog.create).not.toHaveBeenCalled()
+    })
+
+    // A gap-log write failure is bookkeeping, not the customer's problem -- it must never
+    // surface as a handoff/technical-hiccup, and it must not stop the real reply from
+    // composing and sending normally.
+    it('still sends the reply when the gap-log write itself fails', async () => {
+      vi.mocked(ensureFreshBookingData).mockResolvedValue(null)
+      vi.mocked(classifySalesNeed).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
+      vi.mocked(matchDestination).mockReturnValue({ destination: 'ijen', matches: [pkg() as unknown as CatalogPackage] })
+      vi.mocked(checkRouteGate).mockReturnValue({ status: 'clear' })
+      vi.mocked(classifyTopicViaLLM).mockResolvedValue({ topic: 'destination_readiness', source: 'llm' })
+      vi.mocked(resolveKnowledgeForTopic).mockReturnValue({
+        factualLines: [],
+        detailLines: [],
+        primaryLink: null,
+        disclosures: [],
+        handoffRequired: false,
+      })
+      mockPrisma.knowledgeGapLog.create.mockRejectedValue(new Error('db unavailable'))
+      const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+      const result = await decideAndRespond('conv_1', 'do you offer paragliding over the crater?')
+
+      expect(result.mode).toBe('faq')
+      // recordKnowledgeGap is fire-and-forget (`void`-ed) -- give its rejection a tick to
+      // settle before asserting it was swallowed rather than thrown.
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      expect(consoleErrorSpy).toHaveBeenCalledWith('recordKnowledgeGap failed', expect.objectContaining({ conversationId: 'conv_1' }))
+      consoleErrorSpy.mockRestore()
+    })
+
+    // Regression: the two tests above both force a destination match, so they only ever
+    // exercised decideAndRespond's OWN `knowledge.factualLines.length === 0` check
+    // (around the `const knowledge = resolveKnowledgeForTopic(...)` call) -- they never
+    // routed through runNoDestinationBranch's separate `resolveKnowledgeForTopic` call for
+    // a DESTINATION_INDEPENDENT_TOPICS topic asked before any destination is known. That
+    // second call site resolved the same "catalog had nothing" signal but silently fell
+    // through to the generic "which destination?" clarify reply with no record at all --
+    // exactly the dietary-question stonewalling this file's own history documents (see
+    // DESTINATION_INDEPENDENT_TOPICS's own header). No destination match here (unlike
+    // every other test in this describe block) is what actually reaches that branch.
+    it('records a knowledge gap from the no-destination branch when a destination-independent topic resolves no facts', async () => {
+      vi.mocked(ensureFreshBookingData).mockResolvedValue(null)
+      vi.mocked(classifySalesNeed).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
+      vi.mocked(matchDestination).mockReturnValue(null)
+      vi.mocked(listDestinations).mockReturnValue(['Bromo', 'Ijen'])
+      vi.mocked(classifyTopicViaLLM).mockResolvedValue({ topic: 'payment', source: 'llm' })
+      vi.mocked(resolveKnowledgeForTopic).mockReturnValue({
+        factualLines: [],
+        detailLines: [],
+        primaryLink: null,
+        disclosures: [],
+        handoffRequired: false,
+      })
+
+      const result = await decideAndRespond('conv_1', 'How does the deposit work?')
+
+      expect(result.mode).toBe('clarify')
+      expect(mockPrisma.knowledgeGapLog.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            conversationId: 'conv_1',
+            topic: 'payment',
+            reason: 'no_facts_resolved',
+            messageText: 'How does the deposit work?',
+          }),
+        })
+      )
+    })
+
+    // The OTHER half of the same branch: an unclassified 'general' message with no
+    // destination never even calls resolveKnowledgeForTopic (the outer
+    // DESTINATION_INDEPENDENT_TOPICS/keyword-module guard is false), so there is no
+    // catalog gap to record -- this is an under-specified message, not a content gap.
+    it('does not record a gap for an unclassified topic with no destination known (outer guard false)', async () => {
+      vi.mocked(ensureFreshBookingData).mockResolvedValue(null)
+      vi.mocked(classifySalesNeed).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
+      vi.mocked(matchDestination).mockReturnValue(null)
+      vi.mocked(listDestinations).mockReturnValue(['Bromo', 'Ijen'])
+      vi.mocked(classifyTopicViaLLM).mockResolvedValue({ topic: 'general', source: 'llm' })
+
+      const result = await decideAndRespond('conv_1', 'Something unrelated')
+
+      expect(result.mode).toBe('clarify')
+      expect(resolveKnowledgeForTopic).not.toHaveBeenCalled()
+      expect(mockPrisma.knowledgeGapLog.create).not.toHaveBeenCalled()
+    })
+  })
+
   describe('trip-preferences clarify (start/finish/day-count funnel)', () => {
     const fromBali = pkg({ packageKey: 'bali-3d', origin: 'Bali', dayCount: 3 })
     const fromSurabaya = pkg({ packageKey: 'surabaya-2d', origin: 'Surabaya', dayCount: 2 })
@@ -1240,9 +1826,9 @@ describe('decideAndRespond', () => {
       expect((result as { mode: 'clarify'; reply: string }).reply.toLowerCase()).toContain('bali')
       expect(checkRouteGate).not.toHaveBeenCalled()
       expect(callLLM).not.toHaveBeenCalled()
-      expect(mockPrisma.conversation.update).toHaveBeenCalledWith({
-        where: { id: 'conv_1' },
-        data: { tripBrief: { destination: 'ijen', askedTripPreferences: true, awaitingTripPreferencesAnswer: true } },
+      expect(tripBriefWrites()).toContainEqual({
+        id: 'conv_1',
+        patch: { destination: 'ijen', askedTripPreferences: true, awaitingTripPreferencesAnswer: true },
       })
     })
 
@@ -1347,8 +1933,8 @@ describe('decideAndRespond', () => {
       const result = await decideAndRespond('conv_1', "I'm not sure yet, what would you recommend for Ijen?")
 
       expect(result.mode).toBe('faq')
-      expect(mockPrisma.conversation.update).toHaveBeenCalledWith(
-        expect.objectContaining({ data: expect.objectContaining({ tripBrief: expect.objectContaining({ declinedTripPreferences: true }) }) })
+      expect(tripBriefWrites()).toContainEqual(
+        expect.objectContaining({ id: 'conv_1', patch: expect.objectContaining({ declinedTripPreferences: true }) })
       )
     })
 
@@ -1533,10 +2119,9 @@ describe('decideAndRespond', () => {
 
       await decideAndRespond('conv_1', '3 day trip from Surabaya please')
 
-      expect(mockPrisma.conversation.update).toHaveBeenCalledWith({
-        where: { id: 'conv_1' },
-        data: { tripBrief: { declinedTripPreferences: true, destination: 'ijen', origin: 'Surabaya' } },
-      })
+      // The patch omits declinedTripPreferences (it wasn't touched by this write) -- the
+      // server-side merge is what keeps it on the row, not resending it.
+      expect(tripBriefWrites()).toContainEqual({ id: 'conv_1', patch: { destination: 'ijen', origin: 'Surabaya' } })
       const [, opts] = (callLLM as any).mock.calls[0]
       expect(opts.system).toContain('Package the customer is asking about: Ijen from Surabaya')
     })
@@ -2244,10 +2829,7 @@ describe('decideAndRespond', () => {
 
       const first = await decideAndRespond('conv_1', 'We are 3 people')
       expect(first.mode).toBe('faq')
-      expect(mockPrisma.conversation.update).toHaveBeenCalledWith({
-        where: { id: 'conv_1' },
-        data: { tripBrief: { destination: 'ijen', pax: 3 } },
-      })
+      expect(tripBriefWrites()).toContainEqual({ id: 'conv_1', patch: { destination: 'ijen', pax: 3 } })
 
       // Second message: tripBrief now carries pax=3 forward; this message states nothing new.
       mockPrisma.conversation.findUniqueOrThrow.mockResolvedValue({

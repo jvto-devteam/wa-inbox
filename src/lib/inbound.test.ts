@@ -2,8 +2,9 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { mockDeep, mockReset, type DeepMockProxy } from 'vitest-mock-extended'
 import { Prisma, type PrismaClient } from '@prisma/client'
 import { prisma } from '@/lib/db'
-import { ingestMetaMessage, scheduleBotRun, __resetPendingBurstsForTests, type MetaWebhookPayload } from './inbound'
+import { ingestMetaMessage, scheduleBotRun, runBotForConversation, __resetPendingBurstsForTests, type MetaWebhookPayload } from './inbound'
 import { decideAndRespond } from '@/lib/bot/orchestrator'
+import { __resetRateLimiterForTests } from '@/lib/bot/rate-limiter'
 import { sendMessage } from '@/lib/send'
 import { broadcast } from '@/lib/realtime'
 
@@ -478,9 +479,16 @@ describe('ingestMetaMessage bot dispatch', () => {
   beforeEach(() => {
     vi.useFakeTimers()
     __resetPendingBurstsForTests()
+    // Sibling module state to pendingBursts: checkAndRecordRateLimit's own counters persist
+    // across tests otherwise (it's a plain module-level Map, same as pendingBursts), so a
+    // conversation id reused by several tests in this block would silently accumulate toward
+    // its 20-per-window budget and eventually suppress decideAndRespond in a test that never
+    // touched rate limiting at all.
+    __resetRateLimiterForTests()
   })
   afterEach(() => {
     __resetPendingBurstsForTests()
+    __resetRateLimiterForTests()
     vi.useRealTimers()
   })
 
@@ -667,10 +675,29 @@ describe('ingestMetaMessage bot dispatch', () => {
   })
 })
 
+describe('runBotForConversation', () => {
+  it('does not send the bot reply when an agent took over during the LLM call', async () => {
+    const conversation = { id: 'conv_takeover', contactName: null }
+    vi.mocked(decideAndRespond).mockResolvedValue({ mode: 'faq', draft: 'Hi!', sourceTopic: 'general' })
+    // botEnabled was true when the turn started; the agent flipped it during
+    // decideAndRespond.
+    mockPrisma.conversation.findUnique.mockResolvedValue({ botEnabled: false, isTest: false } as never)
+
+    await runBotForConversation(conversation, 'halo')
+
+    expect(sendMessage).not.toHaveBeenCalled()
+  })
+})
+
 describe('scheduleBotRun burst batching', () => {
   beforeEach(() => {
     vi.useFakeTimers()
     __resetPendingBurstsForTests()
+    // Sibling module state to pendingBursts (see the identical comment in the
+    // 'ingestMetaMessage bot dispatch' describe block above): without this, the several tests
+    // below that flush 'conv_1' through decideAndRespond would silently eat into the rate
+    // limiter's 20-per-window budget across test-run order instead of starting fresh.
+    __resetRateLimiterForTests()
     vi.mocked(decideAndRespond).mockReset().mockResolvedValue({ mode: 'handoff', reason: 'default test stub' })
     mockPrisma.conversation.findUnique.mockResolvedValue({ botEnabled: true } as never)
     // A resolvable default in case any test in this block exercises a path that still touches
@@ -680,6 +707,7 @@ describe('scheduleBotRun burst batching', () => {
   })
   afterEach(() => {
     __resetPendingBurstsForTests()
+    __resetRateLimiterForTests()
     vi.useRealTimers()
   })
 
@@ -741,6 +769,38 @@ describe('scheduleBotRun burst batching', () => {
     await vi.advanceTimersByTimeAsync(10000)
 
     expect(decideAndRespond).not.toHaveBeenCalled()
+  })
+
+  it('flushes a never-pausing burst once the max wait elapses', async () => {
+    vi.useFakeTimers()
+    const conversation = { id: 'conv_burst_cap', contactName: null }
+    // A customer typing every 4s keeps resetting the 5s trailing debounce
+    // forever. Without a ceiling they are never answered at all.
+    scheduleBotRun(conversation, 'satu')
+    for (let i = 0; i < 8; i++) {
+      await vi.advanceTimersByTimeAsync(4000)
+      scheduleBotRun(conversation, `lagi-${i}`)
+    }
+    await vi.advanceTimersByTimeAsync(4000)
+    expect(decideAndRespond).toHaveBeenCalledTimes(1)
+    // Every fragment up to the cap is in the one combined decision.
+    expect(vi.mocked(decideAndRespond).mock.calls[0][1]).toContain('satu')
+    vi.useRealTimers()
+  })
+
+  it('skips the bot reply once a conversation exceeds its rate-limit budget', async () => {
+    __resetRateLimiterForTests()
+    vi.useFakeTimers()
+    const conversation = { id: 'conv_rate', contactName: null }
+    mockPrisma.conversation.findUnique.mockResolvedValue({ botEnabled: true, isTest: false } as never)
+    for (let i = 0; i < 21; i++) {
+      scheduleBotRun(conversation, `pesan ${i}`)
+      await vi.advanceTimersByTimeAsync(6000)
+    }
+    // 20 turns answered, the 21st dropped -- the customer's messages are all
+    // still persisted by the caller, only the automated reply is skipped.
+    expect(decideAndRespond).toHaveBeenCalledTimes(20)
+    vi.useRealTimers()
   })
 })
 

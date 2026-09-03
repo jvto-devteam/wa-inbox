@@ -9,14 +9,27 @@
 // "angry", ...) -- never a topic keyword like "refund"/"cancel"/"reschedule" (those are
 // ordinary, answerable FAQ questions there), never a knowledge gap (chatbot-web always has
 // GENERAL_FAQ_FALLBACK -- see knowledge.ts -- to fall back on), never a technical failure.
-// This file now mirrors that scope exactly:
+// This file mirrors that scope, plus exactly ONE addition Task 10 introduced on top of it
+// (step 8 below). As of that task there are exactly SIX real handoffs left in this file, not
+// one: escalation keyword (step 0), escalation LLM signal (step 0b), a closed deployment gate
+// (step 2), job === 'J5' (step 3), matchTier === 'none' (step 5b), and a reply that fails
+// price/URL verification twice in a row (step 8). The first five are all the same shape as
+// chatbot-web's own scope -- "a human must handle this, the bot could not possibly close this
+// itself" -- never a plain knowledge gap. Step 8 is deliberately NOT that shape (see its own
+// entry below for why it is still the right call to keep):
 //
 //   0. Escalation check (keyword-based, sales-classifier.ts's `HANDOFF_KEYWORDS`, narrowed
-//      2026-08-05 to match chatbot-web's own regex) is the ONE remaining real handoff --
-//      an explicit "talk to a human" request or genuine complaint/frustration sentiment is not
-//      a knowledge gap the bot could ever close by itself, so it still routes to a person.
-//      Runs before the booking lookup so a customer WITH a booking gets this same protection
-//      (Mode 3 below bypasses the classifier entirely, so this is its only keyword gate too).
+//      2026-08-05 to match chatbot-web's own regex) -- an explicit "talk to a human" request
+//      or genuine complaint/frustration sentiment is not a knowledge gap the bot could ever
+//      close by itself, so it still routes to a person. Runs before the booking lookup so a
+//      customer WITH a booking gets this same protection (Mode 3 below bypasses the
+//      classifier entirely, so this is its only keyword gate too).
+//   0b. Escalation check (LLM-based, escalation-classifier.ts, added 2026-08-07): runs in
+//      parallel with the booking lookup (see the inline comment at the call site for why a
+//      bare `Promise.all` would be wrong here) and catches a genuine complaint/human-
+//      request/B2B inquiry that step 0's keyword list missed -- new phrasing chatbot-web's
+//      own regex would also miss. Same rationale as step 0 (not a content gap, a person
+//      genuinely has to answer), just a second, LLM-shaped net under the same keyword one.
 //   1. Booking lookup (Mode 3, "booking_context"): if the customer has an
 //      existing booking, the reply is grounded ONLY in that booking's data
 //      via callLLM (local-only Ollama -- there is no hosted-API fallback to
@@ -25,15 +38,18 @@
 //   2. No booking -> deployment gate: Mode 1/2 answers are built from
 //      agent-runtime's catalog/release, so they stay off unless that release
 //      has been approved for customer traffic. Deliberately still a real
-//      `mode: 'handoff'` -- unlike every other branch below, this isn't about
+//      `mode: 'handoff'` -- unlike every content-resolution branch below, this isn't about
 //      whether the bot HAS an answer, it's an operator-controlled approval
 //      switch for whether it may show this release's data to customers at
 //      all yet. Does NOT gate Mode 3 above, which is grounded in the
 //      independent, already-live, already-trusted Booking API.
-//   3. Sales-need classification: `needsLiveData` (availability/guarantee
-//      phrasing) and `job === 'J5'` no longer hand off (see their own inline
-//      comments) -- both now stay active, deferring only the specific
-//      live-data-dependent detail via an extra system-prompt instruction.
+//   3. Sales-need classification: `needsLiveData` (availability/guarantee phrasing) no longer
+//      hands off (see its own inline comment) -- it stays active, deferring only the specific
+//      live-data-dependent detail via an extra system-prompt instruction. `job === 'J5'`
+//      still hands off, but only as defense-in-depth: it is set exclusively from the same
+//      `HANDOFF_KEYWORDS` step 0 already checks (see the inline comment at the call site), so
+//      this branch exists only for the case where the two diverge, not as a distinct
+//      escalation surface of its own.
 //   4. Destination match (package-match.ts): a stateless, one-shot scan of
 //      the message for a known destination token -- NOT a chatbot-web-style
 //      multi-turn funnel (that state machine, formerly funnel.ts, was a port
@@ -55,6 +71,11 @@
 //      policyNotes disclosure is merged into step 7's LLM grounding (deduped
 //      against knowledge.ts's own disclosures) instead of being appended to
 //      the reply as raw text.
+//   5b. Match-tier narrowing (package-match.ts's `narrowPackagePool`): `matchTier === 'none'`
+//      means not even the stated duration has a match for this destination at all -- the
+//      operator's own explicit ask (confirmed 2026-08-05) is that a genuinely too-custom
+//      request hands off here rather than the bot presenting an unrelated list and leaving the
+//      customer to discover the mismatch themselves; the team follows up directly instead.
 //   6. Topic classification (module-resolver.ts, a faithful port of
 //      jvto-agent-runtime's `module_resolver.py`'s `classify_topic`): scans
 //      the message against the real system's own keyword table for which of
@@ -84,13 +105,22 @@
 //      (`knowledge.handoffRequired`) no longer hands off either -- folded into
 //      a stronger reminder alongside GUARDRAIL_INSTRUCTION's existing
 //      "never guarantee Blue Fire/weather" rule instead.
+//   8. Reply verification (Task 10, reply-verifier.ts's `verifyReply`, run from
+//      `composeVerifiedReply`): checks the composed reply's prices and URLs against the
+//      grounding actually handed to the LLM in step 7, and gives the model exactly one
+//      corrective retry before giving up. This IS an exception to "no more handoff on a
+//      content gap" -- but deliberately not a content-gap case at all: the facts WERE present
+//      in the prompt (step 7 already resolved them) and the model reached past them anyway,
+//      twice. There is no fact left to add and no fallback text that would fix this -- the bot
+//      has already proven, twice in a row, that it cannot answer this turn without inventing a
+//      price or a link, which is exactly the shape of error a human must catch before it
+//      reaches the customer.
 //
 // Every step that can throw (a down booking API, a malformed catalog file, an LLM timeout,
 // an empty/blank LLM reply) is wrapped in a single outer try/catch and every such failure
 // point now returns TECHNICAL_HICCUP_REPLY (`mode: 'clarify'`) instead of a handoff -- even a
 // technical failure must not disable the bot; the customer's very next message should still
 // reach it rather than wait on a human to notice and manually re-enable botEnabled.
-import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { ensureFreshBookingData, type BookingData } from '@/lib/booking/client'
 import { checkRouteGate } from './route-gate'
@@ -124,6 +154,7 @@ import {
   GENERAL_FAQ_FALLBACK,
 } from './knowledge'
 import { callLLM, type LLMOptions } from './llm'
+import { verifyReply, buildVerificationRetryInstruction, extractRupiahAmounts, extractUrls, isDerivableAmount } from './reply-verifier'
 import { loadCatalog } from './catalog'
 import { checkDeploymentGate } from './deployment-gate'
 import type { BotDecision, Catalog, TraceStep, TripBrief } from './types'
@@ -485,6 +516,174 @@ function createTracer() {
 type Tracer = ReturnType<typeof createTracer>
 
 /**
+ * A string leaf that is nothing but digits and thousands separators, as the
+ * number it states ("500.000" -> 500000, "500000" -> 500000). Anything else --
+ * a date ("2026-09-03"), a phone number, "3 days", an id -- fails the shape
+ * test and is ignored, so this cannot quietly ground arbitrary text.
+ */
+function numericStringValue(raw: string): number | null {
+  const trimmed = raw.trim()
+  if (!/^\d[\d.,]*$/.test(trimmed)) return null
+  const value = Number(trimmed.replace(/[.,]/g, ''))
+  return Number.isFinite(value) ? value : null
+}
+
+/**
+ * Every amount carried by the booking payload, at any depth -- numbers AND
+ * numeric-looking strings. Used by Mode 3 ONLY, deliberately: there the booking
+ * JSON is handed to the model verbatim as the authoritative source for the turn,
+ * so every figure in it is grounded by definition and the verifier's job is to
+ * catch a figure that is in neither the booking record nor the general facts.
+ * The other two call sites ground on catalog tiers and knowledge text, where a
+ * set this wide genuinely would weaken the check.
+ *
+ * Strings matter because `BookingData` is a hand-written description of an
+ * UNTYPED external API response this repo does not control (see its own header
+ * -- `[key: string]: unknown`, `guides`/`drivers` as `Record<string, unknown>[]`).
+ * `financial.balance` is typed `number` from what has been observed, but if a
+ * channel ever sends `"500000"`, a booked customer asking about their own
+ * balance would get a handoff instead of an answer -- a false-positive block on
+ * the segment that matters most, invisible until someone read the bot log.
+ * `extractRupiahAmounts` still runs over the same JSON text at the call site, so
+ * an already-formatted `"Rp500.000"` string is caught there rather than here.
+ */
+function bookingAmountsIn(value: unknown): number[] {
+  if (typeof value === 'number') return Number.isFinite(value) ? [value] : []
+  if (typeof value === 'string') {
+    const parsed = numericStringValue(value)
+    return parsed === null ? [] : [parsed]
+  }
+  if (Array.isArray(value)) return value.flatMap(bookingAmountsIn)
+  if (value !== null && typeof value === 'object') return Object.values(value).flatMap(bookingAmountsIn)
+  return []
+}
+
+type ComposedReply = { ok: true; reply: string } | { ok: false; decision: BotDecision }
+
+/**
+ * The composition step EVERY LLM-grounded branch goes through: ask the model,
+ * refuse a blank answer, then verify the prices and links in what came back
+ * against what this specific turn was actually grounded in (see
+ * reply-verifier.ts's header for the two deliberately different severities).
+ *
+ * Shared by all three call sites rather than copied into each. The
+ * retry-then-handoff sequence below is the ONLY handoff on this branch that
+ * isn't one of the four long-standing ones, and three near-identical copies of
+ * it would be three chances for that rule to drift apart unnoticed. Each caller
+ * still composes its OWN `groundedAmounts`/`groundedUrls` -- they differ per
+ * branch by design: a grounding set wider than the turn (say, every price in the
+ * catalog) would verify everything and catch nothing.
+ *
+ * Pushes the final 'Jawaban siap dikirim' step itself, so the trace reads the
+ * same way whichever branch produced the reply; the caller only wraps the text
+ * in its own BotDecision shape.
+ */
+async function composeVerifiedReply(params: {
+  // Task 11 (KnowledgeGapLog): identifies which conversation/topic a
+  // twice-failed verification gets recorded against -- see the blocking
+  // branch below. `topic` is not always a real ResolverTopic: the booking-
+  // context (Mode 3) caller has never classified one, so it passes a fixed
+  // label instead.
+  conversationId: string
+  topic: string
+  inboundText: string
+  system: string
+  model: string
+  history: LLMOptions['history']
+  groundedAmounts: number[]
+  groundedUrls: string[]
+  // The prices this turn's prompt actually PRINTED for the customer's known group
+  // size. Trace-only, and only the destination-known path can supply it (it is the
+  // one branch that resolves a per-pax tier at all). See the wrong-tier note below.
+  pricesShownForPax?: number[]
+  trace: Tracer
+}): Promise<ComposedReply> {
+  const { conversationId, topic, inboundText, system, model, history, groundedAmounts, groundedUrls, pricesShownForPax, trace } = params
+  let reply = await callLLM(inboundText, { system, model, history })
+  // Second layer of defence behind llm.ts's own validation: an empty reply must never
+  // become a dispatched blank message. Previously handed off outright; now a graceful,
+  // bot-stays-active fallback instead (see TECHNICAL_HICCUP_REPLY's header).
+  if (!reply || !reply.trim()) {
+    trace.push('Jawaban kosong atau tidak valid', 'Model tidak memberikan jawaban yang bisa dikirim -- tetap dijawab dengan pesan cadangan, bot tetap aktif.')
+    return { ok: false, decision: { mode: 'clarify', reply: TECHNICAL_HICCUP_REPLY, steps: trace.steps } }
+  }
+
+  // GUARDRAIL_INSTRUCTION forbids inventing a price or URL, but nothing ever
+  // checked. A wrong price here is the most expensive error this bot can make
+  // -- the customer treats it as a quote -- and the link registry has already
+  // shipped 18 broken "existing" URLs once (see knowledge.ts). One corrective
+  // retry, then a safe deferral: never a fabricated number, never a dead link.
+  let verdict = verifyReply({ replyText: reply, groundedAmounts, groundedUrls })
+  if (verdict.fabricatedPrices.length > 0 || verdict.unknownUrls.length > 0) {
+    trace.push(
+      'Verifikasi gagal',
+      `Balasan menyebut harga/link yang tidak ada di data: ${[...verdict.fabricatedPrices, ...verdict.unknownUrls].join(', ')} -- model diminta menulis ulang.`
+    )
+    const retried = await callLLM(inboundText, {
+      system: `${system}${buildVerificationRetryInstruction(verdict)}`,
+      model,
+      history,
+    })
+    const retriedVerdict = retried?.trim() ? verifyReply({ replyText: retried, groundedAmounts, groundedUrls }) : null
+    if (retried?.trim() && retriedVerdict && retriedVerdict.fabricatedPrices.length === 0 && retriedVerdict.unknownUrls.length === 0) {
+      reply = retried
+      verdict = retriedVerdict
+      trace.push('Penulisan ulang berhasil', 'Balasan kedua hanya memakai harga/link yang benar-benar ada di data.')
+    } else {
+      // The ONE handoff this branch adds, and deliberately the only one. It is
+      // NOT a content gap -- the facts WERE present in the prompt and the model
+      // would not use them -- which is exactly why it is the one case where a
+      // human genuinely must answer: the bot has already proven, twice, that it
+      // cannot answer this turn without inventing a price or a link.
+      trace.push('Balasan ditahan', 'Penulisan ulang masih mengarang harga/link -- balasan diganti pesan aman dan percakapan diserahkan ke agen.')
+      // NOT a content gap -- the facts WERE present in the prompt and the model reached
+      // past them anyway. Opposite failure mode from 'no_facts_resolved' below, needing
+      // an opposite fix (see KnowledgeGapLog's own schema comment).
+      void recordKnowledgeGap(conversationId, topic, 'verification_failed', inboundText)
+      return { ok: false, decision: { mode: 'handoff', reason: 'Balasan gagal verifikasi harga/link dua kali berturut-turut', steps: trace.steps } }
+    }
+  }
+  // Read off the FINAL verdict, so a figure in an accepted REWRITE is recorded too
+  // -- not just one in a reply that passed first time.
+  if (verdict.unverifiedPrices.length > 0) {
+    // Advisory only: a group total is legitimate arithmetic no closed-form
+    // check can enumerate, and blocking those would break real quoting.
+    trace.push(
+      'Harga perlu dicek',
+      `Balasan menyebut ${verdict.unverifiedPrices.map((a) => `Rp${a.toLocaleString('id-ID')}`).join(', ')} yang bukan tier langsung dari katalog (mungkin hasil hitungan) -- tetap dikirim.`
+    )
+  }
+
+  // The wrong-TIER case, which verification by construction cannot catch: a
+  // neighbouring tier is an exact member of `groundedAmounts` (the caller grounds
+  // on every tier of every presented option, deliberately -- see that comment),
+  // so `isDerivableAmount` returns true on its first line and the figure never
+  // reaches `unverifiedPrices`. Where the caller knows which prices this prompt
+  // actually printed for a KNOWN pax count, a real-but-not-this-customer's tier is
+  // worth naming in the trace. Trace-only on purpose: the reply states a genuine
+  // catalog price, and blocking it would trade a common false positive for a rarer
+  // real one -- exactly the trade the wide grounding exists to avoid.
+  if (pricesShownForPax && pricesShownForPax.length > 0) {
+    const misquotedTiers = [
+      ...new Set(
+        extractRupiahAmounts(reply).filter(
+          (a) => groundedAmounts.includes(a) && !isDerivableAmount(a, pricesShownForPax)
+        )
+      ),
+    ]
+    if (misquotedTiers.length > 0) {
+      trace.push(
+        'Tier harga tidak sesuai jumlah orang',
+        `Balasan menyebut ${misquotedTiers.map((a) => `Rp${a.toLocaleString('id-ID')}`).join(', ')} -- harga itu ada di katalog, tapi bukan tier untuk jumlah pax pelanggan ini (${pricesShownForPax.map((a) => `Rp${a.toLocaleString('id-ID')}`).join(', ')}) -- tetap dikirim.`
+      )
+    }
+  }
+
+  trace.push('Jawaban siap dikirim', previewText(reply))
+  return { ok: true, reply }
+}
+
+/**
  * Mode 3 -- booking context. Extracted 2026-08-06 (architecture review) as a named,
  * independently-callable step: bypasses the catalog-grounded path entirely, grounding the
  * reply ONLY in the customer's real booking data (plus GENERAL_FAQ_FALLBACK/route-leg facts
@@ -555,16 +754,44 @@ async function runBookingContextMode(
   const history = await fetchRecentHistory(conversationId, inboundText)
 
   trace.push('Meminta jawaban dari model lokal', `Menggunakan model ${ollamaModel} (Ollama, lokal) dengan data booking + ${history?.length ?? 0} pesan riwayat sebagai konteks.`)
-  const reply = await callLLM(inboundText, { system, model: ollamaModel, history })
-  // Second layer of defence behind llm.ts's own validation: an empty reply must never
-  // become a dispatched blank message. Previously handed off outright; now a graceful,
-  // bot-stays-active fallback instead (see TECHNICAL_HICCUP_REPLY's header).
-  if (!reply || !reply.trim()) {
-    trace.push('Jawaban kosong atau tidak valid', 'Model tidak memberikan jawaban yang bisa dikirim -- tetap dijawab dengan pesan cadangan, bot tetap aktif.')
-    return { mode: 'clarify', reply: TECHNICAL_HICCUP_REPLY, steps: trace.steps }
-  }
-  trace.push('Jawaban siap dikirim', previewText(reply))
-  return { mode: 'booking_context', reply, steps: trace.steps }
+  // What THIS turn was grounded in, and nothing else: every amount the booking
+  // JSON carries at any depth (their real balance/payment/invoice total arrive
+  // as bare JSON values, number or numeric string, never as Rp-formatted text),
+  // plus any Rp figure written into the general facts, the KLOOK
+  // health-screening override (Rp35.000/person -- a real price this branch and
+  // only this branch may state), or the route-leg facts. The catalog's package
+  // prices are deliberately absent: Mode 3 never shows them, so a package tier
+  // quoted here would be a number this reply had no way to know.
+  const bookingJson = JSON.stringify(bookingData)
+  const groundedAmounts = [
+    ...bookingAmountsIn(bookingData),
+    ...extractRupiahAmounts([bookingJson, GENERAL_FAQ_FALLBACK, klookHealthScreeningNote, ...modeThreeRouteLegFacts].join('\n')),
+  ]
+  const groundedUrls = [
+    ...(portalLink ? [portalLink] : []),
+    ...extractUrls([bookingJson, GENERAL_FAQ_FALLBACK].join('\n')),
+    // A URL the customer themselves just pasted ("I saw this -- is it available?"), or one
+    // this same conversation already sent in an earlier turn (history, fed into the same
+    // callLLM call below), is not something the model invented -- repeating it back is not a
+    // fabrication, so both are grounding, same as the module text above.
+    ...extractUrls(inboundText),
+    ...extractUrls(history?.map((h) => h.content).join('\n') ?? ''),
+  ]
+  const composed = await composeVerifiedReply({
+    conversationId,
+    // Mode 3 bypasses topic classification entirely (grounded only in the booking data
+    // itself) -- there is no real ResolverTopic to name here, so a fixed label stands in.
+    topic: 'booking_context',
+    inboundText,
+    system,
+    model: ollamaModel,
+    history,
+    groundedAmounts,
+    groundedUrls,
+    trace,
+  })
+  if (!composed.ok) return composed.decision
+  return { mode: 'booking_context', reply: composed.reply, steps: trace.steps }
 }
 
 /**
@@ -580,28 +807,27 @@ async function runNoDestinationBranch(
   inboundText: string,
   conversationId: string,
   ollamaModel: string,
-  job: string | null | undefined,
+  resolverTopic: ResolverTopic,
   catalog: Catalog,
   unsupportedOriginCity: string | null,
   routeLegNote: string,
   keywordModuleIds: string[],
   trace: Tracer
 ): Promise<BotDecision> {
-  const { topic: preDestinationTopic } = await classifyTopicViaLLM(job, inboundText, ollamaModel)
   // A keyword-triggered module (dietary/ISIC/escort/ferry) can genuinely answer a message
   // regardless of what topic it classified as -- 'general' always has non-empty baseline
   // facts of its own (TOPIC_MODULES.general), so that alone can't be used to detect a real
   // keyword hit here the way it can for an already-allowlisted topic below.
-  if (DESTINATION_INDEPENDENT_TOPICS.has(preDestinationTopic) || keywordModuleIds.length > 0) {
-    const preDestinationKnowledge = resolveKnowledgeForTopic(preDestinationTopic, inboundText, undefined, keywordModuleIds)
+  if (DESTINATION_INDEPENDENT_TOPICS.has(resolverTopic) || keywordModuleIds.length > 0) {
+    const preDestinationKnowledge = resolveKnowledgeForTopic(resolverTopic, inboundText, undefined, keywordModuleIds)
     if (preDestinationKnowledge.factualLines.length > 0) {
       trace.push(
         'Topik tidak butuh destinasi',
-        `Topik "${preDestinationTopic}" bisa dijawab tanpa mengetahui destinasi -- menjawab langsung dari fakta umum, sambil tetap menanyakan destinasi untuk rekomendasi paket berikutnya.`
+        `Topik "${resolverTopic}" bisa dijawab tanpa mengetahui destinasi -- menjawab langsung dari fakta umum, sambil tetap menanyakan destinasi untuk rekomendasi paket berikutnya.`
       )
       const system =
         `${SHARED_PERSONA_INSTRUCTIONS}\n\n` +
-        `Known facts relevant to their question (topic: "${preDestinationTopic}"):\n${preDestinationKnowledge.factualLines.map((f) => `- ${f}`).join('\n')}` +
+        `Known facts relevant to their question (topic: "${resolverTopic}"):\n${preDestinationKnowledge.factualLines.map((f) => `- ${f}`).join('\n')}` +
         (preDestinationKnowledge.detailLines.length > 0
           ? `\n\nMore detail if useful:\n${preDestinationKnowledge.detailLines.map((d) => `- ${d}`).join('\n')}`
           : '') +
@@ -622,15 +848,56 @@ async function runNoDestinationBranch(
       const history = await fetchRecentHistory(conversationId, inboundText)
       trace.push(
         'Meminta jawaban dari model lokal',
-        `Menggunakan model ${ollamaModel} (Ollama, lokal), topik "${preDestinationTopic}", ${preDestinationKnowledge.factualLines.length} fakta, ${history?.length ?? 0} pesan riwayat.`
+        `Menggunakan model ${ollamaModel} (Ollama, lokal), topik "${resolverTopic}", ${preDestinationKnowledge.factualLines.length} fakta, ${history?.length ?? 0} pesan riwayat.`
       )
-      const reply = await callLLM(inboundText, { system, model: ollamaModel, history })
-      if (!reply || !reply.trim()) {
-        trace.push('Jawaban kosong atau tidak valid', 'Model tidak memberikan jawaban yang bisa dikirim -- tetap dijawab dengan pesan cadangan, bot tetap aktif.')
-        return { mode: 'clarify', reply: TECHNICAL_HICCUP_REPLY, steps: trace.steps }
-      }
-      trace.push('Jawaban siap dikirim', previewText(reply))
-      return { mode: 'faq', draft: reply, sourceTopic: preDestinationTopic, steps: trace.steps }
+      // No package has been matched yet on this branch, so the ONLY prices and
+      // links this turn was grounded in are whatever the resolved knowledge
+      // modules and the general fallback happen to state in their own text --
+      // no catalog tier, and no package link (this prompt never shows one, so a
+      // package URL appearing in the reply is a URL the model invented).
+      const preDestinationText = [
+        ...preDestinationKnowledge.factualLines,
+        ...preDestinationKnowledge.detailLines,
+        ...preDestinationKnowledge.disclosures,
+        GENERAL_FAQ_FALLBACK,
+      ].join('\n')
+      const composed = await composeVerifiedReply({
+        conversationId,
+        topic: resolverTopic,
+        inboundText,
+        system,
+        model: ollamaModel,
+        history,
+        groundedAmounts: extractRupiahAmounts(preDestinationText),
+        // A URL the customer themselves just pasted, or one this same conversation already
+        // sent in an earlier turn (`history` above, fed into the same callLLM call), is not
+        // something the model invented -- repeating it back is not a fabrication.
+        groundedUrls: [
+          ...extractUrls(preDestinationText),
+          ...extractUrls(inboundText),
+          ...extractUrls(history?.map((h) => h.content).join('\n') ?? ''),
+        ],
+        trace,
+      })
+      if (!composed.ok) return composed.decision
+      return { mode: 'faq', draft: composed.reply, sourceTopic: resolverTopic, steps: trace.steps }
+    }
+    // Task 11 (KnowledgeGapLog): the branch above WAS entered -- the topic is
+    // destination-independent, or a keyword module fired -- but the catalog had nothing
+    // for it, so control falls through to the generic "which destination?" reply below.
+    // That silent stonewall is exactly the failure this file's own history documents
+    // (see the dietary-question regression note on DESTINATION_INDEPENDENT_TOPICS's own
+    // header) -- a genuine gap, worth recording, unlike an unclassified 'general' message
+    // with no destination (the outer `if` being false below), which is merely
+    // under-specified, not a content gap the catalog failed to cover.
+    //
+    // 'greeting' can't reach this line in practice ('greeting' is never in
+    // DESTINATION_INDEPENDENT_TOPICS, and a keyword-module hit on a bare greeting
+    // doesn't happen), but guarded explicitly anyway -- same condition as the
+    // destination-known branch's own check, so the two call sites can't silently drift
+    // apart if that ever stops being true.
+    if (resolverTopic !== 'greeting') {
+      void recordKnowledgeGap(conversationId, resolverTopic, 'no_facts_resolved', inboundText)
     }
   }
 
@@ -667,6 +934,25 @@ async function runNoDestinationBranch(
   return { mode: 'clarify', reply, steps: trace.steps }
 }
 
+/**
+ * Records something the bot could not answer. Best-effort by design: a failure
+ * to write the audit row must never cost the customer their reply, so this
+ * swallows and logs rather than propagating into decideAndRespond's outer
+ * catch (which would turn a bookkeeping error into TECHNICAL_HICCUP_REPLY).
+ */
+async function recordKnowledgeGap(
+  conversationId: string,
+  topic: string,
+  reason: 'no_facts_resolved' | 'verification_failed',
+  messageText: string
+): Promise<void> {
+  try {
+    await prisma.knowledgeGapLog.create({ data: { conversationId, topic, reason, messageText } })
+  } catch (error) {
+    console.error('recordKnowledgeGap failed', { conversationId, reason, error })
+  }
+}
+
 export async function decideAndRespond(conversationId: string, inboundText: string): Promise<BotDecision> {
   const trace = createTracer()
   try {
@@ -684,24 +970,50 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
       trace.push('Eskalasi terdeteksi', 'Pesan cocok dengan kata kunci eskalasi -- langsung diserahkan ke agen tanpa pemrosesan lebih lanjut.')
       return { mode: 'handoff', reason: 'Kata kunci eskalasi terdeteksi', steps: trace.steps }
     }
-    // Additive-only LLM check, added 2026-08-07 -- see escalation-classifier.ts's own header
-    // for the full rationale. The keyword list above always runs first and always wins; this
-    // only catches a genuine complaint/human-request/B2B-inquiry the keyword list missed
-    // (e.g. new phrasing), and fails safe to "no additional signal" on any technical failure --
-    // never worse than the keyword-only behavior that existed before this check.
-    if (await detectsAdditionalEscalationSignal(inboundText, settings.ollamaModel)) {
-      trace.push('Eskalasi terdeteksi (LLM)', 'Model LLM mendeteksi sinyal komplain/permintaan manusia/kemitraan B2B yang tidak tertangkap kata kunci -- diserahkan ke agen.')
-      return { mode: 'handoff', reason: 'Sinyal eskalasi terdeteksi oleh model LLM', steps: trace.steps }
-    }
-    trace.push('Tidak ada eskalasi', 'Tidak ditemukan kata kunci maupun sinyal eskalasi lain pada pesan ini.')
 
     const conversation = await prisma.conversation.findUniqueOrThrow({
       where: { id: conversationId },
       include: { contact: true },
     })
 
-    trace.push('Mencari data booking', 'Mengecek apakah kontak ini punya booking aktif di Booking API.')
-    const bookingData = await ensureFreshBookingData(conversation)
+    // The additive-only LLM escalation check (added 2026-08-07 -- see escalation-classifier.ts's
+    // own header for the full rationale) reads only `inboundText`, and the booking lookup reads
+    // only the conversation: they share nothing, so the second no longer waits on the first. The
+    // keyword gate above still runs first and still wins -- it is free, and it short-circuits
+    // before either of these starts. The LLM check only catches a genuine complaint/human-
+    // request/B2B-inquiry the keyword list missed (e.g. new phrasing), fails safe to "no
+    // additional signal" on any technical failure, and is still decided BEFORE the Mode 3
+    // branch below, so a customer WITH a booking who complains still reaches a human.
+    //
+    // DO NOT "simplify" this back to a plain `Promise.all([escalation, booking])`. The booking
+    // lookup has no try/catch of its own (see ensureFreshBookingData) -- a Booking API outage
+    // or a DB blip rejects. A bare Promise.all rejects with it, so the whole call would land in
+    // the outer catch and answer TECHNICAL_HICCUP_REPLY *even when the LLM flagged an
+    // escalation*: an angry customer would be told "I'm having a small technical hiccup" and no
+    // human would ever be alerted. That inverts the asymmetry escalation-classifier.ts is built
+    // on -- a missed complaint is far worse than an unnecessary handoff. Settling the booking
+    // promise into a result object instead lets the escalation verdict be decided first, and the
+    // failure is re-thrown immediately afterwards so every non-escalating path keeps exactly the
+    // technical-hiccup behavior it had before these two were ever paired.
+    trace.push('Mencari data booking', 'Mengecek data booking dan sinyal eskalasi tambahan secara paralel.')
+    const [additionalEscalation, bookingResult] = await Promise.all([
+      detectsAdditionalEscalationSignal(inboundText, settings.ollamaModel),
+      ensureFreshBookingData(conversation).then(
+        (data) => ({ ok: true as const, data }),
+        (error: unknown) => ({ ok: false as const, error })
+      ),
+    ])
+    if (additionalEscalation) {
+      trace.push('Eskalasi terdeteksi (LLM)', 'Model LLM mendeteksi sinyal komplain/permintaan manusia/kemitraan B2B yang tidak tertangkap kata kunci -- diserahkan ke agen.')
+      return { mode: 'handoff', reason: 'Sinyal eskalasi terdeteksi oleh model LLM', steps: trace.steps }
+    }
+    trace.push('Tidak ada eskalasi', 'Tidak ditemukan kata kunci maupun sinyal eskalasi lain pada pesan ini.')
+    // Only the escalation verdict above is immune to a booking failure; from here on it is an
+    // ordinary technical failure again, handled by the outer catch exactly as it always was.
+    // Re-thrown below the trace push so a failed lookup still leaves the same trace behind it
+    // always did -- the escalation check genuinely did run and genuinely did find nothing.
+    if (!bookingResult.ok) throw bookingResult.error
+    const bookingData = bookingResult.data
 
     // Mode 3 -- booking context: bypasses the catalog-grounded path entirely.
     // `await` here (not a bare `return <promise>`) is load-bearing: it keeps the call inside
@@ -734,22 +1046,33 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
     const tripBrief = (conversation.tripBrief as TripBrief | null) ?? {}
     // `tripBrief` above is a single snapshot fetched once at the top of this call, but several
     // branches below persist a change to it (destination, origin/dayCount/finishCity,
-    // askedTripPreferences, lastTopic) as the request runs. Postgres JSON columns replace the
-    // whole value, not a field-level merge -- so if each of those writes spread from the
-    // ORIGINAL stale `tripBrief` instead of the latest known state, whichever write happens
-    // LAST in a single request silently erases every field an EARLIER write in that same
-    // request had just set. Reported 2026-08-05: dayCount=3 was correctly written by the
-    // origin/dayCount/finishCity branch, then immediately erased by the lastTopic branch a few
-    // lines later in the very same request, because it spread from the pre-update snapshot.
-    // `nextTripBrief` accumulates every change in-memory so every write always includes every
-    // prior change made during this same call, not just its own patch.
+    // askedTripPreferences, lastTopic) as the request runs, and some of those same branches read
+    // the trip brief again before an earlier write's DB round trip in this same call has
+    // completed. `nextTripBrief` accumulates every change in-memory so those in-request reads
+    // always see every prior change made during this same call, not just what `tripBrief` held
+    // at the top.
     let nextTripBrief: TripBrief = { ...tripBrief }
     const persistTripBrief = async (patch: Partial<TripBrief>) => {
+      // In-memory accumulation is still needed for READS later in this same
+      // request (branches below consult nextTripBrief before the DB round trip
+      // completes), but the WRITE is now a server-side merge.
+      //
+      // Postgres replaces a whole JSON column on an ordinary update, so two
+      // concurrent turns for this conversation -- each holding 30s+ of LLM time
+      // -- would each write a snapshot taken before the other's write, silently
+      // dropping one side's fields. `jsonb || jsonb` merges under the row lock
+      // the UPDATE itself takes, so a concurrent merge either happens strictly
+      // before ours (and is visible to it) or strictly after (and sees ours).
+      // The jsonb_typeof guard covers both a SQL NULL column and a stored JSON
+      // scalar -- `||` errors on those rather than treating them as {}.
       nextTripBrief = { ...nextTripBrief, ...patch }
-      await prisma.conversation.update({
-        where: { id: conversationId },
-        data: { tripBrief: nextTripBrief as Prisma.InputJsonValue },
-      })
+      await prisma.$executeRaw`
+        UPDATE "Conversation"
+        SET "tripBrief" =
+              CASE WHEN jsonb_typeof("tripBrief") = 'object' THEN "tripBrief" ELSE '{}'::jsonb END
+              || ${JSON.stringify(patch)}::jsonb
+        WHERE id = ${conversationId}
+      `
     }
     const catalog = loadCatalog()
 
@@ -773,21 +1096,6 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
       routeLegFacts.length > 0
         ? `\n\nReal travel-time estimates for the specific leg(s) the customer asked about (these are approximate/operational, so still phrase them as "approximately" or "around"):\n${routeLegFacts.map((f) => `- ${f}`).join('\n')}`
         : ''
-
-    // LLM-primary as of 2026-08-07 (see keyword-module-classifier.ts's own header) -- replaces
-    // KEYWORD_TRIGGERED_MODULES' keyword scan as the primary source of "which independent fact
-    // triggers (dietary, ISIC, emergency support, cancellation, Ijen access, drone, jacket/shoe
-    // rental, etc.) does this message call for," validated against the real module_id set,
-    // falling back to the unchanged regex scan only on a genuine technical failure. Computed
-    // once, up front, so both the pre-destination branch and the main knowledge-composition
-    // path below share the same resolved result instead of each re-deriving it independently.
-    const { moduleIds: keywordModuleIds, source: keywordModuleSource } = await classifyKeywordModulesViaLLM(inboundText, settings.ollamaModel)
-    trace.push(
-      'Memeriksa modul fakta kata kunci',
-      keywordModuleSource === 'llm'
-        ? `Diperiksa oleh model LLM lokal -- ${keywordModuleIds.length} modul cocok.`
-        : `Model LLM gagal/timeout -- fallback ke pemindaian kata kunci lama, ${keywordModuleIds.length} modul cocok.`
-    )
 
     const classification = classifySalesNeed({ message: inboundText, tripBrief })
     trace.push(
@@ -821,41 +1129,98 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
       await persistTripBrief({ destination })
     }
 
+    // Both branches need these two classifiers; only the destination-known branch needs the
+    // other three. `matchDestination` above is a synchronous catalog scan, so the branch is
+    // already known before any classifier starts -- which is why the no-destination path can
+    // spend two LLM calls rather than five.
+    //
     // `await` here (not a bare `return <promise>`) is load-bearing -- see runBookingContextMode's
     // own call site above for why: it keeps this inside the try block so the outer catch still
     // handles a rejection (an Ollama timeout, etc.) gracefully.
     if (!destination) {
+      const [keywordModuleResult, topicResult] = await Promise.all([
+        classifyKeywordModulesViaLLM(inboundText, settings.ollamaModel),
+        classifyTopicViaLLM(classification.job, inboundText, settings.ollamaModel),
+      ])
+      trace.push(
+        'Memeriksa modul fakta kata kunci',
+        keywordModuleResult.source === 'llm'
+          ? `Diperiksa oleh model LLM lokal -- ${keywordModuleResult.moduleIds.length} modul cocok.`
+          : `Model LLM gagal/timeout -- fallback ke pemindaian kata kunci lama, ${keywordModuleResult.moduleIds.length} modul cocok.`
+      )
       return await runNoDestinationBranch(
         inboundText,
         conversationId,
         settings.ollamaModel,
-        classification.job,
+        topicResult.topic,
         catalog,
         unsupportedOriginCity,
         routeLegNote,
-        keywordModuleIds,
+        keywordModuleResult.moduleIds,
         trace
       )
     }
     trace.push('Destinasi ditemukan', `Destinasi: "${destination}".`)
 
-    const { topic: resolverTopic, source: topicSource } = await classifyTopicViaLLM(classification.job, inboundText, settings.ollamaModel)
+    // Every one of these five reads nothing but `inboundText` (plus, for the topic classifier,
+    // the already-computed sales job) and none reads another's result -- so they run as one
+    // batch rather than five sequential waits, each with its own 10s timeout.
+    const [
+      { moduleIds: keywordModuleIds, source: keywordModuleSource },
+      { topic: resolverTopic, source: topicSource },
+      { preferences, source: preferencesSource },
+      { declined: preferenceDeclineSignal, source: declineSource },
+      { isRecommendation: recommendationIntentSignal, source: recommendationSource },
+    ] = await Promise.all([
+      // LLM-primary as of 2026-08-07 (see keyword-module-classifier.ts's own header) -- replaces
+      // KEYWORD_TRIGGERED_MODULES' keyword scan as the primary source of "which independent fact
+      // triggers (dietary, ISIC, emergency support, cancellation, Ijen access, drone, jacket/shoe
+      // rental, etc.) does this message call for," validated against the real module_id set,
+      // falling back to the unchanged regex scan only on a genuine technical failure. Resolved
+      // once here and shared by every step below rather than re-derived at each use.
+      classifyKeywordModulesViaLLM(inboundText, settings.ollamaModel),
+      classifyTopicViaLLM(classification.job, inboundText, settings.ollamaModel),
+      // LLM-primary as of 2026-08-07 (see trip-preferences-extractor.ts's own header for the full
+      // rationale) -- validated against known values, falls back to the old regex parser only on
+      // a genuine technical failure (timeout/error/unparseable output), never as a first-pass gate.
+      extractTripPreferences(inboundText, settings.ollamaModel),
+      // LLM-primary as of 2026-08-07 (see preference-decline-classifier.ts's own header) --
+      // flagged in the manual-matching audit as the highest-risk remaining matcher: this is the
+      // funnel's ONLY bypass, so a missed decline traps the customer in a repeat-question loop
+      // with no other way out. Falls back to the unchanged isUnknownPreferenceSignal keyword
+      // check only on a genuine technical failure.
+      detectsPreferenceDeclineViaLLM(inboundText, isUnknownPreferenceSignal, settings.ollamaModel),
+      // LLM-primary as of 2026-08-07 (see recommendation-intent-classifier.ts's own header) --
+      // the old regex both missed genuine recommendation requests phrased without its literal
+      // trigger words and had a documented history of false positives from its own bare keywords
+      // (each fixed as a one-off keyword patch previously). Falls back to the unchanged
+      // isRecommendationRequest regex only on a genuine technical failure.
+      detectsRecommendationIntentViaLLM(inboundText, isRecommendationRequest, settings.ollamaModel),
+    ])
+    trace.push(
+      'Memeriksa modul fakta kata kunci',
+      keywordModuleSource === 'llm'
+        ? `Diperiksa oleh model LLM lokal -- ${keywordModuleIds.length} modul cocok.`
+        : `Model LLM gagal/timeout -- fallback ke pemindaian kata kunci lama, ${keywordModuleIds.length} modul cocok.`
+    )
     trace.push(
       'Mengklasifikasi topik',
       `Topik terdeteksi: "${resolverTopic}"${topicSource === 'regex_fallback' ? ' (fallback regex -- model LLM gagal/timeout)' : ''}.`
     )
-
-    const matches = matched?.matches ?? packagesForDestination(destination, catalog)
-    // LLM-primary as of 2026-08-07 (see trip-preferences-extractor.ts's own header for the full
-    // rationale) -- validated against known values, falls back to the old regex parser only on
-    // a genuine technical failure (timeout/error/unparseable output), never as a first-pass gate.
-    const { preferences, source: preferencesSource } = await extractTripPreferences(inboundText, settings.ollamaModel)
     trace.push(
       'Mengekstrak preferensi perjalanan',
       preferencesSource === 'llm'
         ? 'Diekstrak oleh model LLM lokal dari teks pelanggan, tervalidasi terhadap nilai yang dikenal (origin/finishCity/dayCount/pax).'
         : 'Model LLM gagal, timeout, atau hasilnya tidak valid -- fallback ke pemrosesan regex lama (parseTripPreferences).'
     )
+    trace.push(
+      'Mendeteksi niat rekomendasi paket',
+      recommendationSource === 'llm'
+        ? 'Diteksi oleh model LLM lokal.'
+        : 'Model LLM gagal/timeout -- fallback ke pemindaian kata kunci lama.'
+    )
+
+    const matches = matched?.matches ?? packagesForDestination(destination, catalog)
     // A city/duration mentioned THIS message wins, same precedence as `destination` above;
     // otherwise whatever was persisted from an EARLIER message in the conversation carries it
     // forward -- see TripBrief.dayCount/finishCity's own header for why all three (origin
@@ -910,32 +1275,6 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
     if (pickupScenario.traceDetail) trace.push('Evaluasi urutan rute & waktu istirahat', pickupScenario.traceDetail)
     const scenarioNote = pickupScenario.forLLM ? `\n\n${pickupScenario.forLLM}` : ''
 
-    // LLM-primary as of 2026-08-07 (see preference-decline-classifier.ts's own header) --
-    // flagged in the manual-matching audit as the highest-risk remaining matcher: this is the
-    // funnel's ONLY bypass, so a missed decline traps the customer in a repeat-question loop
-    // with no other way out. Falls back to the unchanged isUnknownPreferenceSignal keyword
-    // check only on a genuine technical failure.
-    const { declined: preferenceDeclineSignal, source: declineSource } = await detectsPreferenceDeclineViaLLM(
-      inboundText,
-      isUnknownPreferenceSignal,
-      settings.ollamaModel
-    )
-    // LLM-primary as of 2026-08-07 (see recommendation-intent-classifier.ts's own header) --
-    // the old regex both missed genuine recommendation requests phrased without its literal
-    // trigger words and had a documented history of false positives from its own bare keywords
-    // (each fixed as a one-off keyword patch previously). Falls back to the unchanged
-    // isRecommendationRequest regex only on a genuine technical failure.
-    const { isRecommendation: recommendationIntentSignal, source: recommendationSource } = await detectsRecommendationIntentViaLLM(
-      inboundText,
-      isRecommendationRequest,
-      settings.ollamaModel
-    )
-    trace.push(
-      'Mendeteksi niat rekomendasi paket',
-      recommendationSource === 'llm'
-        ? 'Diteksi oleh model LLM lokal.'
-        : 'Model LLM gagal/timeout -- fallback ke pemindaian kata kunci lama.'
-    )
     // See computeTripPreferencesFunnelDecision's own header for the full rationale (mandatory
     // start/finish/day-count before a package recommendation, the DESTINATION_INDEPENDENT_TOPICS
     // exclusion, the decline signal) -- this call site just sequences the side effects (DB
@@ -1074,6 +1413,13 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
     // (see knowledge.ts's header) -- resolves real facts/links/disclosures for all 14 real
     // topics from general-modules.json, not just the 4 CatalogPackage itself can answer.
     const knowledge = resolveKnowledgeForTopic(resolverTopic, inboundText, destination, keywordModuleIds)
+    // Task 11 (KnowledgeGapLog): the catalog had nothing for this classified topic -- one
+    // of the two signals that need no cooperation from the model (the other is Task 10's
+    // verification-failed branch, recorded from composeVerifiedReply). 'greeting' resolving
+    // to nothing is correct, not a gap -- there was no question to answer.
+    if (knowledge.factualLines.length === 0 && resolverTopic !== 'greeting') {
+      void recordKnowledgeGap(conversationId, resolverTopic, 'no_facts_resolved', inboundText)
+    }
     // Previously handed off outright when the customer demanded a guarantee on an attraction
     // they framed as their main reason for booking (e.g. "Blue Fire is why we're coming, can
     // you guarantee it, 100%?"). Per this file's header, the bot now answers this itself,
@@ -1191,11 +1537,21 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
     // packages can finish there" based on a DIFFERENT single-destination package the customer
     // never asked about, even when none of the packages actually covering everything they named
     // can finish there. Same root cause, same fix, different call site.
-    const finishCityFact = !finishCity
+    // Built from `preferences.finishCity` (THIS message) rather than the merged
+    // `finishCity`, which persists across turns by design. Reading the merged
+    // value asserted "The customer asked whether the trip can finish in X" into
+    // every later prompt in the conversation, so a customer who named a finish
+    // city on message two was still being answered about drop-off points on
+    // message ten while asking about breakfast. `unsupportedOriginNote` right
+    // above already reads only the current message; this is the same rule.
+    // The merged value is still what NARROWS the package pool -- only the
+    // "they asked about this" assertion is scoped to the asking message.
+    const askedFinishCity = preferences.finishCity
+    const finishCityFact = !askedFinishCity
       ? ''
-      : optionPackages.some((p) => p.finishCities.includes(finishCity))
-        ? `\n\nThe customer asked whether the trip can finish/end in ${titleCaseCity(finishCity)} -- yes, at least one of the matching packages above genuinely can (see which ones say "finishes in ${titleCaseCity(finishCity)}"); do not claim every package does.`
-        : `\n\nThe customer asked whether the trip can finish/end in ${titleCaseCity(finishCity)} -- be honest: none of the matching packages for this destination are set up to finish there. Say so clearly and mention our team can advise on custom routing if they specifically need this.`
+      : optionPackages.some((p) => p.finishCities.includes(askedFinishCity))
+        ? `\n\nThe customer asked whether the trip can finish/end in ${titleCaseCity(askedFinishCity)} -- yes, at least one of the matching packages above genuinely can (see which ones say "finishes in ${titleCaseCity(askedFinishCity)}"); do not claim every package does.`
+        : `\n\nThe customer asked whether the trip can finish/end in ${titleCaseCity(askedFinishCity)} -- be honest: none of the matching packages for this destination are set up to finish there. Say so clearly and mention our team can advise on custom routing if they specifically need this.`
     // A soft "list them if relevant" instruction wasn't enough -- live-tested 2026-08-04, the
     // LLM kept silently recommending just one package even with several real options in the
     // prompt above. For an actual recommendation/comparison question, require presenting a
@@ -1254,6 +1610,22 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
       // policyNotes is. See types.ts's CatalogPackage.stagingNotes header for why this data
       // existed but was completely unreachable before 2026-08-05.
       (pkg.stagingNotes.length > 0 ? `\n\nLogistics for this specific package:\n${pkg.stagingNotes.map((n) => `- ${n}`).join('\n')}` : '') +
+      // Per-package logistics the customer most often asks about, stated as
+      // fact rather than deferred to a link. Each line is omitted when the
+      // release genuinely has no value for it -- an absent luggage allowance
+      // (true for every package today) must read as "we'll confirm", never as
+      // an invented number.
+      ((): string => {
+        const lines = [
+          pkg.overnights.length > 0 ? `Overnight stays for this package, in night order: ${pkg.overnights.join(' then ')}. State these names directly if asked which hotel they stay at.` : null,
+          pkg.roomingAssumption ? `Rooming: ${pkg.roomingAssumption}` : null,
+          pkg.vehicleCategory ? `Vehicle for this package: ${pkg.vehicleCategory}` : null,
+          pkg.luggageRule ? `Luggage allowance: ${pkg.luggageRule}` : null,
+          pkg.crewRoles ? `Crew: ${pkg.crewRoles}` : null,
+          pkg.languageNote ? `Guide language: ${pkg.languageNote}` : null,
+        ].filter((l): l is string => l !== null)
+        return lines.length > 0 ? `\n\nAccommodation, vehicle and crew for this specific package:\n${lines.map((l) => `- ${l}`).join('\n')}` : ''
+      })() +
       (packageOptionsText
         ? `\n\nMatching tour packages for this destination (never invent others or state a price/link not shown here):\n${packageOptionsText}` +
           (recommendMultiple
@@ -1292,13 +1664,78 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
       'Meminta jawaban dari model lokal',
       `Menggunakan model ${settings.ollamaModel} (Ollama, lokal), topik "${resolverTopic}", ${knowledge.factualLines.length} fakta, ${history?.length ?? 0} pesan riwayat.`
     )
-    const reply = await callLLM(inboundText, { system, model: settings.ollamaModel, history })
-    if (!reply || !reply.trim()) {
-      trace.push('Jawaban kosong atau tidak valid', 'Model tidak memberikan jawaban yang bisa dikirim -- tetap dijawab dengan pesan cadangan, bot tetap aktif.')
-      return { mode: 'clarify', reply: TECHNICAL_HICCUP_REPLY, steps: trace.steps }
-    }
-    trace.push('Jawaban siap dikirim', previewText(reply))
-    return { mode: 'faq', draft: reply, sourceTopic: resolverTopic, steps: trace.steps }
+    // What this specific turn was actually grounded in -- not the whole catalog.
+    // A price the model could not have read here is one it made up.
+    //
+    // Every tier of every presented option is included, not just the one
+    // `priceLabel` printed -- deliberately WIDE, because that is what keeps a
+    // legitimate quote from being blocked: a group total, the "from Rp X"
+    // largest-group fallback, a neighbouring tier named while comparing options.
+    //
+    // Be clear about what that costs. Quoting the WRONG tier for this customer's
+    // pax count passes verification SILENTLY: a neighbouring tier is an exact
+    // member of this set, so isDerivableAmount returns true on its first line and
+    // the figure never reaches `unverifiedPrices` -- neither severity sees it, and
+    // no trace step is written by the verifier. That is an OPEN gap this file does
+    // not close, and it is the very error the per-pax tier ladder exists to make
+    // possible (see priceForPax's own header). `pricesShownForPax` below is the
+    // partial mitigation -- a trace-only note, no blocking -- and it only applies
+    // once `pax` is actually known.
+    const groundedText = [
+      ...knowledge.factualLines,
+      ...knowledge.detailLines,
+      ...disclosures,
+      ...pkg.stagingNotes,
+      GENERAL_FAQ_FALLBACK,
+    ].join('\n')
+    const groundedAmounts = [
+      ...optionPackages.flatMap((p) => p.priceTiers.map((t) => t.priceIdr)),
+      ...(pkg.priceIdr !== null ? [pkg.priceIdr] : []),
+      // Minor 6: `packageOptionsText` (below) prints `priceForPax(p, pax)`, which falls back to
+      // `p.priceIdr` whenever a package has no tier covering this pax count -- a figure
+      // `groundedAmounts` didn't otherwise carry for any package but `pkg` itself. No mismatch
+      // exists in today's catalog (every option's priceIdr is also one of its own priceTiers),
+      // but this closes the gap by construction rather than by coincidence of today's data.
+      ...optionPackages.map((p) => p.priceIdr).filter((n): n is number => n !== null),
+      ...extractRupiahAmounts(groundedText),
+    ]
+    const groundedUrls = [
+      ...optionPackages.map((p) => p.links.details).filter((u): u is string => Boolean(u)),
+      ...(pkg.links.details ? [pkg.links.details] : []),
+      ...(primaryLink ? [primaryLink] : []),
+      // A module's own text can carry a link of its own; it is in the prompt, so
+      // repeating it is not an invention.
+      ...extractUrls(groundedText),
+      // Neither is a URL the customer themselves just pasted ("I saw this -- is it
+      // available?"), or one this same conversation already sent in an earlier turn
+      // (`history` above, fed into the same callLLM call) -- the model repeating either
+      // back is not something it invented.
+      ...extractUrls(inboundText),
+      ...extractUrls(history?.map((h) => h.content).join('\n') ?? ''),
+    ]
+
+    // Exactly the per-option prices `packageOptionsText` printed above for this
+    // group size -- same `priceForPax` call, so the two can never disagree about
+    // which price this customer was actually shown. Empty when `pax` is unknown:
+    // every option then prints its "from Rp X" fallback and there is no single
+    // correct tier to be wrong about.
+    const pricesShownForPax =
+      pax === null ? [] : optionPackages.map((p) => priceForPax(p, pax).priceIdr).filter((n): n is number => n !== null)
+
+    const composed = await composeVerifiedReply({
+      conversationId,
+      topic: resolverTopic,
+      inboundText,
+      system,
+      model: settings.ollamaModel,
+      history,
+      groundedAmounts,
+      groundedUrls,
+      pricesShownForPax,
+      trace,
+    })
+    if (!composed.ok) return composed.decision
+    return { mode: 'faq', draft: composed.reply, sourceTopic: resolverTopic, steps: trace.steps }
   } catch (error) {
     // Log before failing safe: without this, the single most likely production
     // failure surfaces in the bot audit log as an identical, uninformative generic

@@ -44,6 +44,27 @@ const RELEASE_PRESENT = fs.existsSync(path.join(process.cwd(), 'catalog', 'gener
 
 const mockPrisma = prisma as unknown as DeepMockProxy<PrismaClient>
 
+// persistTripBrief now writes via a tagged-template `$executeRaw` call (server-side jsonb
+// merge) instead of `conversation.update`, so assertions that used to inspect the update
+// payload now read the raw call's interpolated patch instead: `mock.calls[i]` is
+// `[templateStrings, patchJson, conversationId]` for each write.
+function tripBriefWrites(): Partial<TripBrief>[] {
+  return mockPrisma.$executeRaw.mock.calls.map(([, patchJson]) => JSON.parse(patchJson as string) as Partial<TripBrief>)
+}
+
+// This file deliberately leaves the six real classifiers unmocked (see the file header), so
+// every decideAndRespond call fans out into several callLLM invocations, not one -- and their
+// order is an implementation detail that has already changed once (they now run batched rather
+// than in sequence). The reply-composing call is therefore identified by WHAT it is -- the only
+// one grounded in the shared persona preamble -- rather than by its position in mock.calls.
+function composerCall(): { system: string } {
+  const composerCalls = (callLLM as any).mock.calls.filter(
+    ([, opts]: [string, { system?: string }]) => opts?.system?.startsWith('You are a real member of the JVTO')
+  )
+  expect(composerCalls).toHaveLength(1)
+  return composerCalls[0][1]
+}
+
 function withTripBrief(tripBrief: TripBrief) {
   mockPrisma.conversation.findUniqueOrThrow.mockResolvedValue({
     id: 'conv_1',
@@ -76,10 +97,8 @@ describe.skipIf(!RELEASE_PRESENT)('decideAndRespond against the real parsing pip
 
     await decideAndRespond('conv_1', '3 days start surabaya finish bali')
 
-    const tripBriefUpdate = (mockPrisma.conversation.update.mock.calls as any[]).find(
-      (c: any) => c[0]?.data?.tripBrief?.origin || c[0]?.data?.tripBrief?.finishCity
-    )
-    expect(tripBriefUpdate?.[0]?.data?.tripBrief).toMatchObject({ origin: 'Surabaya', finishCity: 'bali', dayCount: 3 })
+    const tripBriefUpdate = tripBriefWrites().find((patch) => patch.origin || patch.finishCity)
+    expect(tripBriefUpdate).toMatchObject({ origin: 'Surabaya', finishCity: 'bali', dayCount: 3 })
   })
 
   // Reported live 2026-08-06: "picked up from Malang instead of Surabaya" -- the bare-city
@@ -101,8 +120,8 @@ describe.skipIf(!RELEASE_PRESENT)('decideAndRespond against the real parsing pip
 
     await decideAndRespond('conv_1', '第二天去布罗莫,第三天伊真,这样是怎么收费哦')
 
-    const destinationUpdate = (mockPrisma.conversation.update.mock.calls as any[]).find((c: any) => c[0]?.data?.tripBrief?.destination)
-    expect(destinationUpdate?.[0]?.data?.tripBrief?.destination).toBe('bromo')
+    const destinationUpdate = tripBriefWrites().find((patch) => patch.destination)
+    expect(destinationUpdate?.destination).toBe('bromo')
   })
 
   // Reported live 2026-08-06: a real customer said "blue flames" (not "blue fire") throughout
@@ -113,14 +132,10 @@ describe.skipIf(!RELEASE_PRESENT)('decideAndRespond against the real parsing pip
 
     await decideAndRespond('conv_1', 'Seeing the blue flames was the main reason we booked this tour. Is it still accessible right now?')
 
-    // callLLM is called 7 times per decideAndRespond now: [0] additive escalation check,
-    // [1] keyword-module classification, [2] topic classification, [3] trip-preferences
-    // extraction, [4] preference-decline check, [5] recommendation-intent check (this file
-    // deliberately leaves all six real/unmocked -- see the file header -- and the blanket
-    // 'A real reply.' mock isn't valid JSON for any of them, so all six fall back to their
-    // real regex/fail-safe implementations, same result as before these changes), [6] is the
-    // actual reply-composing call this assertion cares about.
-    const [, opts] = (callLLM as any).mock.calls[6]
+    // The six unmocked classifiers each call callLLM too (the blanket 'A real reply.' mock
+    // isn't valid JSON for any of them, so they all fall back to their real regex/fail-safe
+    // implementations) -- composerCall() picks out the reply-composing one by identity.
+    const opts = composerCall()
     expect(opts.system.toLowerCase()).toContain('closed')
   })
 
@@ -149,8 +164,7 @@ describe.skipIf(!RELEASE_PRESENT)('decideAndRespond against the real parsing pip
     const result = await decideAndRespond('conv_1', 'How much is the deposit?')
 
     expect(result.mode).toBe('faq')
-    // mock.calls[6], not [0] -- see the "blue flames" test above for why (7 callLLM calls now).
-    const [, opts] = (callLLM as any).mock.calls[6]
+    const opts = composerCall()
     expect(opts.system.toLowerCase()).toContain('deposit')
     expect(opts.system).not.toContain('Happy to recommend the best package')
   })
@@ -163,8 +177,7 @@ describe.skipIf(!RELEASE_PRESENT)('decideAndRespond against the real parsing pip
 
     await decideAndRespond('conv_1', 'Pickup from Surabaya Airport jam 6 sore, mau ke Bromo dan Ijen.')
 
-    // mock.calls[6], not [0] -- see the "blue flames" test above for why (7 callLLM calls now).
-    const [, opts] = (callLLM as any).mock.calls[6]
+    const opts = composerCall()
     expect(opts.system.toLowerCase()).toMatch(/bromo.*ijen/)
     expect(opts.system.toLowerCase()).toContain('rest')
   })
@@ -209,7 +222,7 @@ describe.skipIf(!RELEASE_PRESENT)('decideAndRespond against the real parsing pip
       'Hello. We are looking for a tour on the 13th of August from Surabaya to bromo, tumpak sewu and ijen. We want to return to Surabaya though. Is this possible with you?'
     )
 
-    const [, opts] = (callLLM as any).mock.calls[6]
+    const opts = composerCall()
     expect(opts.system).not.toContain('bromo-1d1n')
     expect(opts.system.toLowerCase()).toContain('tumpak-sewu-bromo')
   })
@@ -230,12 +243,44 @@ describe.skipIf(!RELEASE_PRESENT)('decideAndRespond against the real parsing pip
 
     await decideAndRespond('conv_1', 'We want a 3 day Ijen tour starting from Bali, and finishing in Bali as well.')
 
-    const [, opts] = (callLLM as any).mock.calls[6]
+    const opts = composerCall()
     const pkgMatch = opts.system.match(/Package the customer is asking about: (.+)/)
     expect(pkgMatch).not.toBeNull()
     const pkgTitle = pkgMatch![1].trim()
     // Whatever single package is named, it must genuinely appear among the disclosed options
     // the customer can see in the same reply -- never a package absent from that list.
     expect(opts.system).toContain(`- ${pkgTitle}`)
+  })
+
+  // finishCity persists across turns by design (see TripBrief.finishCity's own header), but the
+  // "customer asked whether the trip can finish there" sentence built from it must NOT persist
+  // the same way -- a customer who named a finish city once on an earlier message shouldn't
+  // still be told "you asked about finishing in Bali" ten messages later while asking about
+  // breakfast. The merged finishCity still narrows the package pool; only this assertion is
+  // scoped to the message that actually asked.
+  it('stops asserting a finish-city question the customer only asked earlier', async () => {
+    withTripBrief({ destination: 'ijen', finishCity: 'bali', origin: 'Surabaya', dayCount: 3 })
+
+    // This message is about breakfast. finishCity is only on file from an earlier turn.
+    await decideAndRespond('conv_1', 'is breakfast included every morning?')
+
+    const system = vi.mocked(callLLM).mock.lastCall![1]!.system!
+    expect(system).not.toContain('The customer asked whether the trip can finish')
+  })
+
+  it('still answers the finish-city question on the message that asks it', async () => {
+    withTripBrief({ destination: 'ijen' })
+
+    await decideAndRespond('conv_1', 'can we finish the trip in Bali?')
+
+    const system = vi.mocked(callLLM).mock.lastCall![1]!.system!
+    expect(system).toContain('The customer asked whether the trip can finish')
+  })
+
+  it('puts the real overnight hotel names in the prompt for a hotel question', async () => {
+    await decideAndRespond('conv_1', 'which hotel do we stay at for the 3 day bromo ijen tour from bali?')
+    const system = vi.mocked(callLLM).mock.lastCall![1]!.system!
+    expect(system).toContain('Joglo Kecombrang Bromo')
+    expect(system).not.toContain("that's where it's listed")
   })
 })

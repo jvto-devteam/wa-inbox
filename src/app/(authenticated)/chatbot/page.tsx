@@ -199,6 +199,9 @@ export default function ChatbotPage() {
             <Link href="/settings/bot-log" className="text-sm text-brand hover:underline">
               Lihat log bot
             </Link>
+            <Link href="/settings/knowledge-gaps" className="text-sm text-brand hover:underline">
+              Lihat pertanyaan tak terjawab
+            </Link>
           </div>
         </div>
       </Card>

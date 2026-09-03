@@ -136,6 +136,22 @@ export type CatalogPackage = {
   // top/largest-group tier). A package with no price entry at all gets `[]`, mirroring
   // `priceIdr: null`'s existing "cannot quote" fail-safe.
   priceTiers: Array<{ minPax: number; maxPax: number | null; priceIdr: number }>
+  // accommodation-rules.json / vehicle-and-luggage-rules.json /
+  // guide-support-rules.json, joined on package_key the same way policyNotes
+  // and stagingNotes already are. All three files shipped with the release and
+  // NOTHING in src/ ever opened them -- so "which hotel do we stay at?" was
+  // deferred to the package page by a disclosure in knowledge.ts even though
+  // the real names sit right here, and "what vehicle?" was answered from a
+  // generic per-pax module instead of this package's own class.
+  // `luggageRule` is null for every package in the current release (see
+  // catalog/gap-report.json) -- carried as null rather than omitted, so the
+  // absence is a fact the prompt can state honestly instead of guessing.
+  overnights: string[]
+  roomingAssumption: string | null
+  vehicleCategory: string | null
+  luggageRule: string | null
+  crewRoles: string | null
+  languageNote: string | null
 }
 
 export type Catalog = {

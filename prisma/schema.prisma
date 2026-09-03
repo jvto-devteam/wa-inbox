@@ -108,6 +108,7 @@ model Conversation {
   createdAt        DateTime              @default(now())
   messages         Message[]
   labels           LabelOnConversation[]
+  knowledgeGaps    KnowledgeGapLog[]
 }
 
 enum MessageDirection {
@@ -187,6 +188,26 @@ model Message {
   // volume. If that ever stops being true, the right fix is a GIN + pg_trgm
   // trigram index (needs the pg_trgm extension enabled), not a btree.
   @@index([conversationId, createdAt])
+}
+
+// What the bot could not answer, recorded as it happens. Until this existed
+// the only way to learn the bot's blind spots was a manual read of the whole
+// message history -- the 2026-08-06 audit of 870 messages that produced most
+// of orchestrator.ts's branches. That does not repeat and does not scale.
+// `reason` is deliberately a small closed set, not free text, so the settings
+// page can group by it: 'no_facts_resolved' means the catalog had nothing for
+// the classified topic, 'verification_failed' means it had something and the
+// model reached past it anyway. Those need opposite fixes.
+model KnowledgeGapLog {
+  id             String       @id @default(cuid())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  topic          String
+  reason         String
+  messageText    String
+  createdAt      DateTime     @default(now())
+
+  @@index([createdAt])
 }
 
 model Label {

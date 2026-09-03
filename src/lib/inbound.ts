@@ -2,6 +2,7 @@ import { Prisma, type DeliveryStatus, type TemplateMetaStatus } from '@prisma/cl
 import { prisma } from '@/lib/db'
 import { broadcast } from '@/lib/realtime'
 import { decideAndRespond } from '@/lib/bot/orchestrator'
+import { checkAndRecordRateLimit } from '@/lib/bot/rate-limiter'
 import { sendMessage } from '@/lib/send'
 import { withMediaUrl } from '@/lib/serialize-message'
 import { isIndonesianNumber } from '@/lib/phone'
@@ -237,7 +238,23 @@ async function applyTemplateStatusUpdate(update: MetaTemplateStatusUpdate): Prom
 // multi-message thought gets combined into one decision instead of several.
 const BURST_DEBOUNCE_MS = 5000
 
-type PendingBurst = { texts: string[]; timer: ReturnType<typeof setTimeout> }
+// Hard ceiling on how long ONE burst may keep being extended. Without it the
+// trailing debounce has no upper bound: a customer sending a message every 4
+// seconds resets the timer forever and is never replied to at all, while
+// `texts` grows unboundedly and is eventually handed to decideAndRespond as
+// one enormous blob. 25s is well past a normal "split one thought across
+// bubbles" pause but still inside the window where a customer is plausibly
+// waiting. Ported from watsapin's lib/bot-engine/burst-scheduler.ts, which
+// took this file's own debounce as its reference and then found the gap.
+const BURST_MAX_WAIT_MS = 25000
+
+type PendingBurst = {
+  texts: string[]
+  timer: ReturnType<typeof setTimeout>
+  // Wall-clock time the FIRST message of this burst was buffered, so each
+  // later message can shorten -- never extend -- the remaining wait.
+  firstScheduledAt: number
+}
 // Module-level, in-memory, per-process -- fine for this app (a single always-on Node process
 // behind pm2, not serverless; see src/lib/send.ts's equivalent single-process assumptions). A
 // deploy restart mid-burst drops whatever was pending: the customer's own messages are already
@@ -258,12 +275,17 @@ export function scheduleBotRun(conversation: { id: string; contactName: string |
   if (existing) {
     existing.texts.push(inboundText)
     clearTimeout(existing.timer)
-    existing.timer = setTimeout(() => void flushBurst(conversation), BURST_DEBOUNCE_MS)
+    // Trailing-quiet wait, clamped to whatever is left of the max-wait budget.
+    // Once that budget is spent this is 0 -- flush on the next tick rather than
+    // granting yet another full debounce window.
+    const remainingMaxWait = Math.max(0, BURST_MAX_WAIT_MS - (Date.now() - existing.firstScheduledAt))
+    existing.timer = setTimeout(() => void flushBurst(conversation), Math.min(BURST_DEBOUNCE_MS, remainingMaxWait))
     return
   }
   pendingBursts.set(conversation.id, {
     texts: [inboundText],
     timer: setTimeout(() => void flushBurst(conversation), BURST_DEBOUNCE_MS),
+    firstScheduledAt: Date.now(),
   })
 }
 
@@ -276,8 +298,20 @@ async function flushBurst(conversation: { id: string; contactName: string | null
   // agent may have clicked "Ambil Alih dari Bot" (or the bot itself may have handed off, on a
   // prior message this same tick) at any point during the wait, and a stale botEnabled=true
   // would still dispatch a reply the moment after a human took over.
-  const fresh = await prisma.conversation.findUnique({ where: { id: conversation.id }, select: { botEnabled: true } })
+  const fresh = await prisma.conversation.findUnique({
+    where: { id: conversation.id },
+    select: { botEnabled: true, isTest: true },
+  })
   if (!fresh?.botEnabled) return
+
+  // Cost guard, checked here rather than inside decideAndRespond so a blocked
+  // turn costs nothing at all -- not even the escalation classifier. The
+  // sandbox conversation is exempt: an admin deliberately hammering it to test
+  // bot behavior is exactly who this must not throttle.
+  if (!fresh.isTest && !checkAndRecordRateLimit(conversation.id)) {
+    console.warn('flushBurst: rate limit exceeded, skipping bot reply', { conversationId: conversation.id })
+    return
+  }
 
   // Joined in arrival order, one line per fragment -- decideAndRespond sees them as the single
   // combined thought a human reading the thread would.
@@ -295,14 +329,29 @@ export function __resetPendingBurstsForTests(): void {
 /**
  * Runs the bot orchestrator against one already-ingested inbound message and dispatches
  * whatever it decides -- called once a burst's debounce window (scheduleBotRun above) has
- * elapsed. Caller is responsible for the botEnabled/non-empty-text gate -- this always runs the
- * decision once called.
+ * elapsed. Caller is responsible for the initial botEnabled/non-empty-text gate; this function
+ * re-reads botEnabled itself right after the orchestrator returns and aborts without dispatching
+ * anything if it has since gone false.
  */
 export async function runBotForConversation(
   conversation: { id: string; contactName: string | null },
   inboundText: string
 ): Promise<void> {
   const decision = await decideAndRespond(conversation.id, inboundText)
+
+  // `botEnabled` was last read before decideAndRespond, which spends up to
+  // eight Ollama calls across four sequential waits (see rate-limiter.ts) --
+  // tens of seconds. If an agent clicked "Ambil Alih dari
+  // Bot" during that window they have almost certainly already replied by hand,
+  // and this in-flight turn must not send its own answer on top of them: the
+  // customer would get a human message immediately followed by a contradicting
+  // bot one. Re-read and abort before anything is stored or dispatched.
+  const stillBotDriven = await prisma.conversation.findUnique({
+    where: { id: conversation.id },
+    select: { botEnabled: true },
+  })
+  if (!stillBotDriven?.botEnabled) return
+
   if (decision.mode === 'faq' || decision.mode === 'booking_context' || decision.mode === 'clarify') {
     const text = decision.mode === 'faq' ? decision.draft : decision.reply
     await sendMessage({ conversationId: conversation.id, text, sentBy: 'BOT', botTrace: decision })

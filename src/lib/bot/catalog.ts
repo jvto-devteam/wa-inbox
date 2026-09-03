@@ -40,12 +40,22 @@
  *                                 we finish in Bali?" was being answered from `origin` alone,
  *                                 which cannot tell "starts in Bali" from "ends in Bali" --
  *                                 they're a real, different set of cities per package).
+ *   accommodation-rules.json   (array, 16) -- `overnights[]` / `rooming_assumption`, joined on
+ *                                 `package_key`.
+ *   vehicle-and-luggage-rules.json (array, 16) -- `vehicle_category` / `luggage_rule`, joined on
+ *                                 `package_key`.
+ *   guide-support-rules.json   (array, 16) -- `crew_roles` / `language_note`, joined on
+ *                                 `package_key`. (Added together 2026-09-03: three release files
+ *                                 that shipped with the catalog and that nothing in `src/` ever
+ *                                 opened -- "which hotel do we stay at?" was being deferred to
+ *                                 the package page by a disclosure in knowledge.ts even though
+ *                                 the real names were sitting in accommodation-rules.json the
+ *                                 whole time.)
  *
  * `meta.json` (`syncedAt`) is read exactly as before. `deployment-gate.json` is
  * not read here at all (deployment-gate.ts owns it). Every other file in
- * `catalog/` (accommodation-rules, vehicle-and-luggage-rules, guide-support-rules, ...)
- * carries operational detail that `CatalogPackage` has no field for and is deliberately
- * ignored rather than half-mapped.
+ * `catalog/` carries operational detail that `CatalogPackage` has no field for and is
+ * deliberately ignored rather than half-mapped.
  *
  * --- Field-by-field judgment calls ---
  *
@@ -149,6 +159,9 @@ const GENERAL_MODULES_FILE = 'general-modules.json'
 const LINK_REGISTRY_FILE = 'customer-link-registry.json'
 const ENDPOINT_CHAINS_FILE = 'endpoint-chains.json'
 const META_FILE = 'meta.json'
+const ACCOMMODATION_FILE = 'accommodation-rules.json'
+const VEHICLE_FILE = 'vehicle-and-luggage-rules.json'
+const GUIDE_FILE = 'guide-support-rules.json'
 
 const DESTINATION_KEY_PREFIX = 'destination_'
 const FINISH_CITY_TOKENS = ['bali', 'surabaya', 'malang', 'ketapang']
@@ -341,6 +354,25 @@ function buildFinishCityIndex(endpointChains: unknown): Map<string, string[]> {
   return index
 }
 
+/**
+ * `accommodation-rules.json`'s `rooming_assumption` is boilerplate the release writer applied to
+ * every row regardless of whether the package actually has an overnight -- `bromo-1d1n` (the
+ * one same-day, zero-overnight package) carries the exact same "standard rooming... twin/double
+ * or extra room on request" string as every multi-night package, even though it has no hotel
+ * stay to room a customer into. The release itself flags this: `readiness.rooming` is
+ * `"unavailable"` for that row (`"available"` everywhere else). Read that signal, not a proxy
+ * like `overnights.length > 0` -- the two agree today only because the current release happens
+ * to have exactly one zero-overnight package; `readiness` is the field the release actually
+ * asserts, and a future sync could add a package with overnights but rooming genuinely still
+ * not ready (or vice versa) without this staying in sync.
+ */
+function roomingAssumptionFor(entry: Json | undefined): string | null {
+  if (!entry) return null
+  const readiness = isObject(entry.readiness) ? entry.readiness : null
+  if (asString(readiness?.rooming) !== 'available') return null
+  return asString(entry.rooming_assumption)
+}
+
 function publicSiteBaseUrl(linkRegistry: unknown): string {
   if (!isObject(linkRegistry)) return ''
   return (asString(linkRegistry.base_url) ?? '').replace(/\/+$/, '')
@@ -353,7 +385,51 @@ function buildDetailsLink(baseUrl: string, publicUrl: string | null): Record<str
   return { details: `${baseUrl}${publicUrl.startsWith('/') ? '' : '/'}${publicUrl}` }
 }
 
-export function loadCatalog(): Catalog {
+// The catalog is ~330KB across eleven files, read and JSON.parsed synchronously
+// on every single inbound message inside one always-on Node process. It only
+// ever changes when an operator runs `npm run sync:knowledge` and redeploys,
+// so it is cached and invalidated on the newest mtime across the files
+// loadCatalog actually reads -- the same shape knowledge.ts's own module cache
+// already uses. mtime (not a TTL) means a fresh deploy is picked up on the
+// very next message with no restart and no stale window.
+const CACHED_FILES = [
+  PROFILES_FILE, PRICE_TIERS_FILE, COMPONENTS_FILE, MODULE_COMPATIBILITY_FILE,
+  GENERAL_MODULES_FILE, LINK_REGISTRY_FILE, ENDPOINT_CHAINS_FILE, META_FILE,
+  ACCOMMODATION_FILE, VEHICLE_FILE, GUIDE_FILE,
+]
+
+let cachedCatalog: Catalog | null = null
+// Despite the name, this holds catalogMtimeFingerprint()'s SUM of watched mtimes, not any
+// single file's mtime -- see that function's own header for why a sum, not a max.
+let cachedMtime = -1
+
+// Minor 7: this used to be `newestCatalogMtime`, taking `Math.max` over the watched files'
+// mtimes -- a WATERMARK, not a change detector. rsync `-a` preserves each source file's own
+// mtime, so a redeploy can legitimately move one file's mtime backward (e.g. a file reverted
+// to an earlier sync'd version, or files arriving out of their original order) while another
+// watched file's older-but-still-newest mtime remains untouched: the max is unchanged, the
+// cache is never invalidated, and the process serves a stale catalog until it restarts. Summing
+// every watched file's mtime instead means ANY single file's mtime moving in EITHER
+// direction -- forward or backward -- changes the sum, at the exact same O(files) cost.
+function catalogMtimeFingerprint(): number {
+  let sum = 0
+  for (const fileName of CACHED_FILES) {
+    try {
+      sum += fs.statSync(path.join(CATALOG_DIR, fileName)).mtimeMs
+    } catch {
+      // A missing file is already handled (and warned about) by readCatalogFile;
+      // it just doesn't contribute to the fingerprint.
+    }
+  }
+  return sum
+}
+
+export function __resetCatalogCacheForTests(): void {
+  cachedCatalog = null
+  cachedMtime = -1
+}
+
+function buildCatalog(): Catalog {
   if (!fs.existsSync(CATALOG_DIR)) return { packages: [], syncedAt: null }
 
   const profiles = readCatalogFile(PROFILES_FILE)
@@ -366,6 +442,9 @@ export function loadCatalog(): Catalog {
   const stagingNoteIndex = buildNoteIndex(moduleCompatibility, generalModulesData, 'staging')
   const baseUrl = publicSiteBaseUrl(readCatalogFile(LINK_REGISTRY_FILE))
   const finishCityIndex = buildFinishCityIndex(readCatalogFile(ENDPOINT_CHAINS_FILE))
+  const accommodation = indexByPackageKey(readCatalogFile(ACCOMMODATION_FILE), ACCOMMODATION_FILE)
+  const vehicle = indexByPackageKey(readCatalogFile(VEHICLE_FILE), VEHICLE_FILE)
+  const guide = indexByPackageKey(readCatalogFile(GUIDE_FILE), GUIDE_FILE)
 
   const packages: CatalogPackage[] = []
   const seen = new Set<string>()
@@ -420,6 +499,12 @@ export function loadCatalog(): Catalog {
       origin: asString(profile.origin),
       dayCount: asPositiveInt(profile.day_count),
       finishCities: finishCityIndex.get(packageKey) ?? [],
+      overnights: asStringArray(accommodation.get(packageKey)?.overnights),
+      roomingAssumption: roomingAssumptionFor(accommodation.get(packageKey)),
+      vehicleCategory: asString(vehicle.get(packageKey)?.vehicle_category),
+      luggageRule: asString(vehicle.get(packageKey)?.luggage_rule),
+      crewRoles: asString(guide.get(packageKey)?.crew_roles),
+      languageNote: asString(guide.get(packageKey)?.language_note),
     })
   }
 
@@ -428,4 +513,12 @@ export function loadCatalog(): Catalog {
   if (fs.existsSync(metaPath)) syncedAt = JSON.parse(fs.readFileSync(metaPath, 'utf-8')).syncedAt ?? null
 
   return { packages, syncedAt }
+}
+
+export function loadCatalog(): Catalog {
+  const mtime = catalogMtimeFingerprint()
+  if (cachedCatalog && mtime === cachedMtime) return cachedCatalog
+  cachedCatalog = buildCatalog()
+  cachedMtime = mtime
+  return cachedCatalog
 }

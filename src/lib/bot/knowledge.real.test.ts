@@ -260,10 +260,55 @@ describe.skipIf(!RELEASE_PRESENT)('resolveKnowledgeForTopic against the real syn
   })
 
   // Reported live 2026-08-06: a hotel-name question always got a vague "let me check with our
-  // team" even for a NOT-yet-booked customer, when the real answer (this package's own detail
-  // page) was one click away the whole time.
-  it('tells the LLM to point to the package detail page for a specific hotel name', () => {
+  // team" even for a NOT-yet-booked customer, when the real answer was one click away the whole
+  // time. As of the accommodation-rules join (catalog.ts, Task 8), the real overnight names are
+  // now stated directly in the prompt itself (orchestrator.ts's "Accommodation, vehicle and
+  // crew" block), so this disclosure was rewritten from "go look at the package page" to "if a
+  // name is known, state it" -- the package-page hedge is now a fallback for the (currently
+  // nonexistent) case where a package's overnights list is genuinely empty. Worded WITHOUT
+  // naming a section, since 'hotel' is a DESTINATION_INDEPENDENT_TOPIC and this same disclosure
+  // also fires from runNoDestinationBranch, where no package-logistics section exists yet.
+  it('tells the LLM to state the hotel name directly if known, deferring only if it is absent', () => {
     const result = resolveKnowledgeForTopic('hotel', 'what is the name of the hotel?')
-    expect(result.disclosures.some((d) => d.toLowerCase().includes('detail page'))).toBe(true)
+    expect(result.disclosures.some((d) => d.toLowerCase().includes('state it directly'))).toBe(true)
+    expect(result.disclosures.some((d) => d.toLowerCase().includes('detail page'))).toBe(false)
+  })
+
+  // Characterization guard: an inclusions question surfaces the baseline inclusions facts
+  // (inclusion_all_inclusive_baseline, already listed in TOPIC_MODULES.inclusions). Renamed
+  // 2026-09-03 -- this was originally written as a Group-1 regression test for the six
+  // inclusion_component modules + policy_inclusions_exclusions, but those are deliberately NOT
+  // listed (see TOPIC_MODULES.inclusions's own comment): inclusion_all_inclusive_baseline's
+  // short_answer already contains every fact this test checks for, so the assertions below were
+  // never actually exercising the modules the test's old name claimed to cover.
+  it('surfaces the baseline inclusions facts for an inclusions question', () => {
+    const k = resolveKnowledgeForTopic('inclusions', 'what exactly is included?', 'bromo')
+    const joined = k.factualLines.join(' ').toLowerCase()
+    expect(joined).toContain('drinking water')
+    expect(joined).toContain('entrance fees')
+  })
+
+  // Reported 2026-09-03: Ijen's mandatory health screening and its first-Friday Rijik closure
+  // reached a prompt only via pkg.policyNotes, which is only merged when the route gate happens
+  // to return needs_review, and only for the single anchor package -- a customer could be
+  // encouraged to book a date the crater is shut.
+  it('surfaces the Ijen monthly closure on a readiness question about Ijen', () => {
+    const k = resolveKnowledgeForTopic('destination_readiness', 'is the hike difficult?', 'ijen')
+    const joined = [...k.factualLines, ...k.disclosures].join(' ').toLowerCase()
+    expect(joined).toContain('first friday')
+  })
+
+  it('does not leak Ijen-only policies into a Bromo readiness question', () => {
+    const k = resolveKnowledgeForTopic('destination_readiness', 'is the hike difficult?', 'bromo')
+    expect(k.factualLines.join(' ').toLowerCase()).not.toContain('first friday')
+  })
+
+  // Reported 2026-09-03: a hotel pickup and an airport pickup are genuinely different drives,
+  // but ROUTE_LEG_MODULE_BY_PAIR held only one module id per node pair -- the Surabaya-hotel
+  // leg was silently unreachable because the airport leg was written into the map first.
+  it('offers both the airport and hotel drives for Surabaya to Bromo', () => {
+    const facts = resolveRouteLegFacts('how many hours from surabaya to bromo?')
+    expect(facts).toHaveLength(2)
+    expect(facts.join(' ')).toContain('Surabaya Hotel to Bromo Area')
   })
 })
