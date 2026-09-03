@@ -548,6 +548,13 @@ type ComposedReply = { ok: true; reply: string } | { ok: false; decision: BotDec
  * in its own BotDecision shape.
  */
 async function composeVerifiedReply(params: {
+  // Task 11 (KnowledgeGapLog): identifies which conversation/topic a
+  // twice-failed verification gets recorded against -- see the blocking
+  // branch below. `topic` is not always a real ResolverTopic: the booking-
+  // context (Mode 3) caller has never classified one, so it passes a fixed
+  // label instead.
+  conversationId: string
+  topic: string
   inboundText: string
   system: string
   model: string
@@ -560,7 +567,7 @@ async function composeVerifiedReply(params: {
   pricesShownForPax?: number[]
   trace: Tracer
 }): Promise<ComposedReply> {
-  const { inboundText, system, model, history, groundedAmounts, groundedUrls, pricesShownForPax, trace } = params
+  const { conversationId, topic, inboundText, system, model, history, groundedAmounts, groundedUrls, pricesShownForPax, trace } = params
   let reply = await callLLM(inboundText, { system, model, history })
   // Second layer of defence behind llm.ts's own validation: an empty reply must never
   // become a dispatched blank message. Previously handed off outright; now a graceful,
@@ -598,6 +605,10 @@ async function composeVerifiedReply(params: {
       // human genuinely must answer: the bot has already proven, twice, that it
       // cannot answer this turn without inventing a price or a link.
       trace.push('Balasan ditahan', 'Penulisan ulang masih mengarang harga/link -- balasan diganti pesan aman dan percakapan diserahkan ke agen.')
+      // NOT a content gap -- the facts WERE present in the prompt and the model reached
+      // past them anyway. Opposite failure mode from 'no_facts_resolved' below, needing
+      // an opposite fix (see KnowledgeGapLog's own schema comment).
+      void recordKnowledgeGap(conversationId, topic, 'verification_failed', inboundText)
       return { ok: false, decision: { mode: 'handoff', reason: 'Balasan gagal verifikasi harga/link dua kali berturut-turut', steps: trace.steps } }
     }
   }
@@ -730,6 +741,10 @@ async function runBookingContextMode(
     ...extractUrls([bookingJson, GENERAL_FAQ_FALLBACK].join('\n')),
   ]
   const composed = await composeVerifiedReply({
+    conversationId,
+    // Mode 3 bypasses topic classification entirely (grounded only in the booking data
+    // itself) -- there is no real ResolverTopic to name here, so a fixed label stands in.
+    topic: 'booking_context',
     inboundText,
     system,
     model: ollamaModel,
@@ -810,6 +825,8 @@ async function runNoDestinationBranch(
         GENERAL_FAQ_FALLBACK,
       ].join('\n')
       const composed = await composeVerifiedReply({
+        conversationId,
+        topic: resolverTopic,
         inboundText,
         system,
         model: ollamaModel,
@@ -854,6 +871,25 @@ async function runNoDestinationBranch(
   )
   trace.push('Jawaban siap dikirim', previewText(reply))
   return { mode: 'clarify', reply, steps: trace.steps }
+}
+
+/**
+ * Records something the bot could not answer. Best-effort by design: a failure
+ * to write the audit row must never cost the customer their reply, so this
+ * swallows and logs rather than propagating into decideAndRespond's outer
+ * catch (which would turn a bookkeeping error into TECHNICAL_HICCUP_REPLY).
+ */
+async function recordKnowledgeGap(
+  conversationId: string,
+  topic: string,
+  reason: 'no_facts_resolved' | 'verification_failed',
+  messageText: string
+): Promise<void> {
+  try {
+    await prisma.knowledgeGapLog.create({ data: { conversationId, topic, reason, messageText } })
+  } catch (error) {
+    console.error('recordKnowledgeGap failed', { conversationId, reason, error })
+  }
 }
 
 export async function decideAndRespond(conversationId: string, inboundText: string): Promise<BotDecision> {
@@ -1316,6 +1352,13 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
     // (see knowledge.ts's header) -- resolves real facts/links/disclosures for all 14 real
     // topics from general-modules.json, not just the 4 CatalogPackage itself can answer.
     const knowledge = resolveKnowledgeForTopic(resolverTopic, inboundText, destination, keywordModuleIds)
+    // Task 11 (KnowledgeGapLog): the catalog had nothing for this classified topic -- one
+    // of the two signals that need no cooperation from the model (the other is Task 10's
+    // verification-failed branch, recorded from composeVerifiedReply). 'greeting' resolving
+    // to nothing is correct, not a gap -- there was no question to answer.
+    if (knowledge.factualLines.length === 0 && resolverTopic !== 'greeting') {
+      void recordKnowledgeGap(conversationId, resolverTopic, 'no_facts_resolved', inboundText)
+    }
     // Previously handed off outright when the customer demanded a guarantee on an attraction
     // they framed as their main reason for booking (e.g. "Blue Fire is why we're coming, can
     // you guarantee it, 100%?"). Per this file's header, the bot now answers this itself,
@@ -1607,6 +1650,8 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
       pax === null ? [] : optionPackages.map((p) => priceForPax(p, pax).priceIdr).filter((n): n is number => n !== null)
 
     const composed = await composeVerifiedReply({
+      conversationId,
+      topic: resolverTopic,
       inboundText,
       system,
       model: settings.ollamaModel,

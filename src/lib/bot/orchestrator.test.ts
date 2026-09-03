@@ -1385,6 +1385,17 @@ describe('decideAndRespond', () => {
       expect(result).toMatchObject({ mode: 'handoff', reason: 'Balasan gagal verifikasi harga/link dua kali berturut-turut' })
       expect(vi.mocked(callLLM).mock.calls).toHaveLength(2)
       expect(result.steps?.map((s) => s.label)).toContain('Balasan ditahan')
+      // Task 11: the facts WERE present and the model reached past them anyway -- an
+      // opposite failure mode from 'no_facts_resolved', recorded as such.
+      expect(mockPrisma.knowledgeGapLog.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            conversationId: 'conv_1',
+            reason: 'verification_failed',
+            messageText: 'How much is the Ijen tour?',
+          }),
+        })
+      )
     })
 
     it('sends a price that is a real catalog tier untouched', async () => {
@@ -1570,6 +1581,13 @@ describe('decideAndRespond', () => {
       const result = await decideAndRespond('conv_1', 'Sisa pembayaran saya berapa?')
 
       expect(result).toMatchObject({ mode: 'handoff', reason: 'Balasan gagal verifikasi harga/link dua kali berturut-turut' })
+      // Task 11: verification-failed recording is wired at composeVerifiedReply's one
+      // shared blocking branch, so Mode 3 (booking context) trips it too.
+      expect(mockPrisma.knowledgeGapLog.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ conversationId: 'conv_1', reason: 'verification_failed' }),
+        })
+      )
     })
 
     // The no-destination branch has matched no package at all, so its grounding is only
@@ -1604,6 +1622,101 @@ describe('decideAndRespond', () => {
       const result = await decideAndRespond('conv_1', 'How does the deposit work?')
 
       expect(result).toMatchObject({ mode: 'handoff', reason: 'Balasan gagal verifikasi harga/link dua kali berturut-turut' })
+      expect(mockPrisma.knowledgeGapLog.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ conversationId: 'conv_1', topic: 'payment', reason: 'verification_failed' }),
+        })
+      )
+    })
+  })
+
+  // Task 11 (KnowledgeGapLog): until this existed, the only way to learn what the bot
+  // could not answer was a manual read of the whole message history. Two signals need no
+  // cooperation from the model: the catalog resolving no facts for the classified topic
+  // (this describe block), and the reply verifier from Task 10 catching the model reaching
+  // for a price/link that was not there (covered by assertions added to the existing
+  // 'reply verification' tests above, since 'verification_failed' is recorded from
+  // composeVerifiedReply's one shared blocking branch, common to all three composition
+  // sites).
+  describe('knowledge gap logging', () => {
+    it('records a knowledge gap when the catalog resolved no facts for the topic', async () => {
+      vi.mocked(ensureFreshBookingData).mockResolvedValue(null)
+      vi.mocked(classifySalesNeed).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
+      vi.mocked(matchDestination).mockReturnValue({ destination: 'ijen', matches: [pkg() as unknown as CatalogPackage] })
+      vi.mocked(checkRouteGate).mockReturnValue({ status: 'clear' })
+      vi.mocked(classifyTopicViaLLM).mockResolvedValue({ topic: 'destination_readiness', source: 'llm' })
+      vi.mocked(resolveKnowledgeForTopic).mockReturnValue({
+        factualLines: [],
+        detailLines: [],
+        primaryLink: null,
+        disclosures: [],
+        handoffRequired: false,
+      })
+
+      await decideAndRespond('conv_1', 'do you offer paragliding over the crater?')
+
+      expect(mockPrisma.knowledgeGapLog.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            conversationId: 'conv_1',
+            topic: 'destination_readiness',
+            reason: 'no_facts_resolved',
+            messageText: 'do you offer paragliding over the crater?',
+          }),
+        })
+      )
+    })
+
+    // 'greeting' resolving to nothing is correct, not a gap -- there was no question to
+    // answer. Routed through the destination-known main path (not the no-destination
+    // branch) so this actually exercises the `resolverTopic !== 'greeting'` guard, rather
+    // than passing vacuously because no branch happened to check at all.
+    it('does not record a gap for a plain greeting', async () => {
+      vi.mocked(ensureFreshBookingData).mockResolvedValue(null)
+      vi.mocked(classifySalesNeed).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
+      vi.mocked(matchDestination).mockReturnValue({ destination: 'ijen', matches: [pkg() as unknown as CatalogPackage] })
+      vi.mocked(checkRouteGate).mockReturnValue({ status: 'clear' })
+      vi.mocked(classifyTopicViaLLM).mockResolvedValue({ topic: 'greeting', source: 'llm' })
+      vi.mocked(resolveKnowledgeForTopic).mockReturnValue({
+        factualLines: [],
+        detailLines: [],
+        primaryLink: null,
+        disclosures: [],
+        handoffRequired: false,
+      })
+
+      await decideAndRespond('conv_1', 'halo')
+
+      expect(mockPrisma.knowledgeGapLog.create).not.toHaveBeenCalled()
+    })
+
+    // A gap-log write failure is bookkeeping, not the customer's problem -- it must never
+    // surface as a handoff/technical-hiccup, and it must not stop the real reply from
+    // composing and sending normally.
+    it('still sends the reply when the gap-log write itself fails', async () => {
+      vi.mocked(ensureFreshBookingData).mockResolvedValue(null)
+      vi.mocked(classifySalesNeed).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
+      vi.mocked(matchDestination).mockReturnValue({ destination: 'ijen', matches: [pkg() as unknown as CatalogPackage] })
+      vi.mocked(checkRouteGate).mockReturnValue({ status: 'clear' })
+      vi.mocked(classifyTopicViaLLM).mockResolvedValue({ topic: 'destination_readiness', source: 'llm' })
+      vi.mocked(resolveKnowledgeForTopic).mockReturnValue({
+        factualLines: [],
+        detailLines: [],
+        primaryLink: null,
+        disclosures: [],
+        handoffRequired: false,
+      })
+      mockPrisma.knowledgeGapLog.create.mockRejectedValue(new Error('db unavailable'))
+      const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+      const result = await decideAndRespond('conv_1', 'do you offer paragliding over the crater?')
+
+      expect(result.mode).toBe('faq')
+      // recordKnowledgeGap is fire-and-forget (`void`-ed) -- give its rejection a tick to
+      // settle before asserting it was swallowed rather than thrown.
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      expect(consoleErrorSpy).toHaveBeenCalledWith('recordKnowledgeGap failed', expect.objectContaining({ conversationId: 'conv_1' }))
+      consoleErrorSpy.mockRestore()
     })
   })
 
