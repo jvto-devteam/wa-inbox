@@ -75,6 +75,17 @@ vi.mock('./deployment-gate')
 
 const mockPrisma = prisma as unknown as DeepMockProxy<PrismaClient>
 
+// persistTripBrief now writes via a tagged-template `$executeRaw` call (server-side jsonb
+// merge) instead of `conversation.update`, so assertions that used to inspect the update
+// payload now read the raw call's interpolated values instead: `mock.calls[i]` is
+// `[templateStrings, patchJson, conversationId]` for each write.
+function tripBriefWrites() {
+  return mockPrisma.$executeRaw.mock.calls.map(([, patchJson, id]) => ({
+    id: id as string,
+    patch: JSON.parse(patchJson as string) as Record<string, unknown>,
+  }))
+}
+
 function pkg(overrides: Record<string, unknown> = {}) {
   return {
     packageKey: 'ijen-1d',
@@ -145,6 +156,21 @@ describe('decideAndRespond', () => {
     const result = await decideAndRespond('conv_1', 'Saya mau komplain dan minta refund!')
     expect(result).toMatchObject({ mode: 'handoff', reason: 'Kata kunci eskalasi terdeteksi' })
     expect(ensureFreshBookingData).not.toHaveBeenCalled()
+  })
+
+  it('merges tripBrief server-side rather than overwriting the whole column', async () => {
+    // A read-modify-write across two round trips is a lost-update race: two
+    // turns for the same conversation each hold 30s+ of LLM time, and each
+    // would write a snapshot taken before the other's write.
+    ;(ensureFreshBookingData as any).mockResolvedValue(null)
+    ;(classifySalesNeed as any).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
+    ;(checkRouteGate as any).mockReturnValue({ status: 'clear' })
+    ;(matchDestination as any).mockReturnValue({ destination: 'ijen', matches: [pkg()] })
+
+    await decideAndRespond('conv_1', 'i want to go to ijen')
+
+    expect(mockPrisma.conversation.update).not.toHaveBeenCalled()
+    expect(mockPrisma.$executeRaw).toHaveBeenCalled()
   })
 
   describe('reasoning trace (steps)', () => {
@@ -615,10 +641,7 @@ describe('decideAndRespond', () => {
     const first = await decideAndRespond('conv_1', 'Saya mau ke Ijen')
 
     expect(first.mode).toBe('faq')
-    expect(mockPrisma.conversation.update).toHaveBeenCalledWith({
-      where: { id: 'conv_1' },
-      data: { tripBrief: { destination: 'ijen' } },
-    })
+    expect(tripBriefWrites()).toContainEqual({ id: 'conv_1', patch: { destination: 'ijen' } })
 
     // Message 2: the conversation now carries that destination, this message names no
     // new one, and the route gate validates the PERSISTED destination instead of
@@ -655,12 +678,11 @@ describe('decideAndRespond', () => {
     expect(second.mode).toBe('faq')
     // The known destination must not be wiped by a message that matched nothing new (no
     // redundant destination write), but the newly-resolved topic ('price', vs. no lastTopic on
-    // file yet) IS worth persisting -- exactly one call, for that reason alone.
-    expect(mockPrisma.conversation.update).toHaveBeenCalledTimes(1)
-    expect(mockPrisma.conversation.update).toHaveBeenCalledWith({
-      where: { id: 'conv_1' },
-      data: { tripBrief: { destination: 'ijen', declinedTripPreferences: true, lastTopic: 'price' } },
-    })
+    // file yet) IS worth persisting -- exactly one call, for that reason alone. The patch omits
+    // declinedTripPreferences (it wasn't touched by this write) -- the server-side merge is what
+    // keeps it on the row, not resending it.
+    expect(mockPrisma.$executeRaw).toHaveBeenCalledTimes(1)
+    expect(tripBriefWrites()).toContainEqual({ id: 'conv_1', patch: { destination: 'ijen', lastTopic: 'price' } })
   })
 
   it('does not re-persist tripBrief when the resolved topic matches what is already on file', async () => {
@@ -678,7 +700,7 @@ describe('decideAndRespond', () => {
     const result = await decideAndRespond('conv_1', 'Apa saja yang termasuk?')
 
     expect(result.mode).toBe('faq')
-    expect(mockPrisma.conversation.update).not.toHaveBeenCalled()
+    expect(mockPrisma.$executeRaw).not.toHaveBeenCalled()
   })
 
   it('feeds the package policy notes into the LLM grounding (not appended as raw text) on a needs_review route gate', async () => {
@@ -1240,9 +1262,9 @@ describe('decideAndRespond', () => {
       expect((result as { mode: 'clarify'; reply: string }).reply.toLowerCase()).toContain('bali')
       expect(checkRouteGate).not.toHaveBeenCalled()
       expect(callLLM).not.toHaveBeenCalled()
-      expect(mockPrisma.conversation.update).toHaveBeenCalledWith({
-        where: { id: 'conv_1' },
-        data: { tripBrief: { destination: 'ijen', askedTripPreferences: true, awaitingTripPreferencesAnswer: true } },
+      expect(tripBriefWrites()).toContainEqual({
+        id: 'conv_1',
+        patch: { destination: 'ijen', askedTripPreferences: true, awaitingTripPreferencesAnswer: true },
       })
     })
 
@@ -1347,8 +1369,8 @@ describe('decideAndRespond', () => {
       const result = await decideAndRespond('conv_1', "I'm not sure yet, what would you recommend for Ijen?")
 
       expect(result.mode).toBe('faq')
-      expect(mockPrisma.conversation.update).toHaveBeenCalledWith(
-        expect.objectContaining({ data: expect.objectContaining({ tripBrief: expect.objectContaining({ declinedTripPreferences: true }) }) })
+      expect(tripBriefWrites()).toContainEqual(
+        expect.objectContaining({ id: 'conv_1', patch: expect.objectContaining({ declinedTripPreferences: true }) })
       )
     })
 
@@ -1533,10 +1555,9 @@ describe('decideAndRespond', () => {
 
       await decideAndRespond('conv_1', '3 day trip from Surabaya please')
 
-      expect(mockPrisma.conversation.update).toHaveBeenCalledWith({
-        where: { id: 'conv_1' },
-        data: { tripBrief: { declinedTripPreferences: true, destination: 'ijen', origin: 'Surabaya' } },
-      })
+      // The patch omits declinedTripPreferences (it wasn't touched by this write) -- the
+      // server-side merge is what keeps it on the row, not resending it.
+      expect(tripBriefWrites()).toContainEqual({ id: 'conv_1', patch: { destination: 'ijen', origin: 'Surabaya' } })
       const [, opts] = (callLLM as any).mock.calls[0]
       expect(opts.system).toContain('Package the customer is asking about: Ijen from Surabaya')
     })
@@ -2244,10 +2265,7 @@ describe('decideAndRespond', () => {
 
       const first = await decideAndRespond('conv_1', 'We are 3 people')
       expect(first.mode).toBe('faq')
-      expect(mockPrisma.conversation.update).toHaveBeenCalledWith({
-        where: { id: 'conv_1' },
-        data: { tripBrief: { destination: 'ijen', pax: 3 } },
-      })
+      expect(tripBriefWrites()).toContainEqual({ id: 'conv_1', patch: { destination: 'ijen', pax: 3 } })
 
       // Second message: tripBrief now carries pax=3 forward; this message states nothing new.
       mockPrisma.conversation.findUniqueOrThrow.mockResolvedValue({

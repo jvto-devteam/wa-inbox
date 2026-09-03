@@ -44,6 +44,14 @@ const RELEASE_PRESENT = fs.existsSync(path.join(process.cwd(), 'catalog', 'gener
 
 const mockPrisma = prisma as unknown as DeepMockProxy<PrismaClient>
 
+// persistTripBrief now writes via a tagged-template `$executeRaw` call (server-side jsonb
+// merge) instead of `conversation.update`, so assertions that used to inspect the update
+// payload now read the raw call's interpolated patch instead: `mock.calls[i]` is
+// `[templateStrings, patchJson, conversationId]` for each write.
+function tripBriefWrites(): Partial<TripBrief>[] {
+  return mockPrisma.$executeRaw.mock.calls.map(([, patchJson]) => JSON.parse(patchJson as string) as Partial<TripBrief>)
+}
+
 function withTripBrief(tripBrief: TripBrief) {
   mockPrisma.conversation.findUniqueOrThrow.mockResolvedValue({
     id: 'conv_1',
@@ -76,10 +84,8 @@ describe.skipIf(!RELEASE_PRESENT)('decideAndRespond against the real parsing pip
 
     await decideAndRespond('conv_1', '3 days start surabaya finish bali')
 
-    const tripBriefUpdate = (mockPrisma.conversation.update.mock.calls as any[]).find(
-      (c: any) => c[0]?.data?.tripBrief?.origin || c[0]?.data?.tripBrief?.finishCity
-    )
-    expect(tripBriefUpdate?.[0]?.data?.tripBrief).toMatchObject({ origin: 'Surabaya', finishCity: 'bali', dayCount: 3 })
+    const tripBriefUpdate = tripBriefWrites().find((patch) => patch.origin || patch.finishCity)
+    expect(tripBriefUpdate).toMatchObject({ origin: 'Surabaya', finishCity: 'bali', dayCount: 3 })
   })
 
   // Reported live 2026-08-06: "picked up from Malang instead of Surabaya" -- the bare-city
@@ -101,8 +107,8 @@ describe.skipIf(!RELEASE_PRESENT)('decideAndRespond against the real parsing pip
 
     await decideAndRespond('conv_1', '第二天去布罗莫,第三天伊真,这样是怎么收费哦')
 
-    const destinationUpdate = (mockPrisma.conversation.update.mock.calls as any[]).find((c: any) => c[0]?.data?.tripBrief?.destination)
-    expect(destinationUpdate?.[0]?.data?.tripBrief?.destination).toBe('bromo')
+    const destinationUpdate = tripBriefWrites().find((patch) => patch.destination)
+    expect(destinationUpdate?.destination).toBe('bromo')
   })
 
   // Reported live 2026-08-06: a real customer said "blue flames" (not "blue fire") throughout

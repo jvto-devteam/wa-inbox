@@ -90,7 +90,6 @@
 // point now returns TECHNICAL_HICCUP_REPLY (`mode: 'clarify'`) instead of a handoff -- even a
 // technical failure must not disable the bot; the customer's very next message should still
 // reach it rather than wait on a human to notice and manually re-enable botEnabled.
-import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { ensureFreshBookingData, type BookingData } from '@/lib/booking/client'
 import { checkRouteGate } from './route-gate'
@@ -734,22 +733,33 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
     const tripBrief = (conversation.tripBrief as TripBrief | null) ?? {}
     // `tripBrief` above is a single snapshot fetched once at the top of this call, but several
     // branches below persist a change to it (destination, origin/dayCount/finishCity,
-    // askedTripPreferences, lastTopic) as the request runs. Postgres JSON columns replace the
-    // whole value, not a field-level merge -- so if each of those writes spread from the
-    // ORIGINAL stale `tripBrief` instead of the latest known state, whichever write happens
-    // LAST in a single request silently erases every field an EARLIER write in that same
-    // request had just set. Reported 2026-08-05: dayCount=3 was correctly written by the
-    // origin/dayCount/finishCity branch, then immediately erased by the lastTopic branch a few
-    // lines later in the very same request, because it spread from the pre-update snapshot.
-    // `nextTripBrief` accumulates every change in-memory so every write always includes every
-    // prior change made during this same call, not just its own patch.
+    // askedTripPreferences, lastTopic) as the request runs, and some of those same branches read
+    // the trip brief again before an earlier write's DB round trip in this same call has
+    // completed. `nextTripBrief` accumulates every change in-memory so those in-request reads
+    // always see every prior change made during this same call, not just what `tripBrief` held
+    // at the top.
     let nextTripBrief: TripBrief = { ...tripBrief }
     const persistTripBrief = async (patch: Partial<TripBrief>) => {
+      // In-memory accumulation is still needed for READS later in this same
+      // request (branches below consult nextTripBrief before the DB round trip
+      // completes), but the WRITE is now a server-side merge.
+      //
+      // Postgres replaces a whole JSON column on an ordinary update, so two
+      // concurrent turns for this conversation -- each holding 30s+ of LLM time
+      // -- would each write a snapshot taken before the other's write, silently
+      // dropping one side's fields. `jsonb || jsonb` merges under the row lock
+      // the UPDATE itself takes, so a concurrent merge either happens strictly
+      // before ours (and is visible to it) or strictly after (and sees ours).
+      // The jsonb_typeof guard covers both a SQL NULL column and a stored JSON
+      // scalar -- `||` errors on those rather than treating them as {}.
       nextTripBrief = { ...nextTripBrief, ...patch }
-      await prisma.conversation.update({
-        where: { id: conversationId },
-        data: { tripBrief: nextTripBrief as Prisma.InputJsonValue },
-      })
+      await prisma.$executeRaw`
+        UPDATE "Conversation"
+        SET "tripBrief" =
+              CASE WHEN jsonb_typeof("tripBrief") = 'object' THEN "tripBrief" ELSE '{}'::jsonb END
+              || ${JSON.stringify(patch)}::jsonb
+        WHERE id = ${conversationId}
+      `
     }
     const catalog = loadCatalog()
 
