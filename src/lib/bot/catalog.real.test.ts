@@ -167,6 +167,23 @@ describe.skipIf(!RELEASE_PRESENT)('loadCatalog against the real synced catalog/'
     expect(pkg.luggageRule).toBeNull()
   })
 
+  // Reported in review: accommodation-rules.json's `rooming_assumption` boilerplate ("standard
+  // rooming... twin/double or extra room on request") is written onto EVERY row, including
+  // `bromo-1d1n` -- the one zero-overnight, same-day package -- even though it has no hotel
+  // stay to room a customer into. The release itself flags this via `readiness.rooming:
+  // "unavailable"` for that row (`"available"` everywhere else); roomingAssumption must honour
+  // that signal, not just echo the boilerplate string.
+  it('nulls out roomingAssumption for the one zero-overnight package whose readiness says rooming is unavailable, but not for a normal package', () => {
+    const catalog = loadCatalog()
+    const noOvernight = catalog.packages.find((p) => p.packageKey === 'bromo-1d1n')!
+    expect(noOvernight.overnights).toEqual([])
+    expect(noOvernight.roomingAssumption).toBeNull()
+
+    const normal = catalog.packages.find((p) => p.packageKey === 'bali/bromo-ijen-3d2n')!
+    expect(normal.roomingAssumption).toEqual(expect.any(String))
+    expect(normal.roomingAssumption).not.toBeNull()
+  })
+
   it('lets package-match and the route gate agree on the same real destination tokens', async () => {
     const { matchDestination } = await import('./package-match')
     const { checkRouteGate } = await import('./route-gate')

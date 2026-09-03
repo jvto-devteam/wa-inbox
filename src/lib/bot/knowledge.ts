@@ -472,10 +472,15 @@ function getTopicDisclosures(topic: ResolverTopic, hasIjen: boolean): string[] {
     out.push('Exact rooming and upgrades are subject to confirmation.')
     // Was: "point the customer to this package's own detail page -- that's
     // where it's listed." As of the accommodation-rules join (catalog.ts) the
-    // real overnight names are in the prompt itself, so sending the customer
-    // away to look up a fact we just handed the model was strictly worse.
-    // Kept as a hedge only for the case where that list is genuinely empty.
-    out.push('If the specific overnight hotel names are given in the package logistics above, state them directly; only if they are absent, say our team will confirm the exact property.')
+    // real overnight names are in the prompt itself for a destination-known
+    // reply, so sending the customer away to look up a fact we just handed
+    // the model was strictly worse. Deliberately does NOT name a section
+    // ("the package logistics above") -- 'hotel' is a
+    // DESTINATION_INDEPENDENT_TOPIC, so this disclosure also fires from
+    // runNoDestinationBranch (orchestrator.ts) before any package is matched,
+    // where no such section exists; referring to one there would point at
+    // nothing. Worded to hold in both branches.
+    out.push('If a specific overnight hotel name is known for their package, state it directly; otherwise say our team will confirm the exact property.')
   }
   return out
 }

@@ -354,6 +354,25 @@ function buildFinishCityIndex(endpointChains: unknown): Map<string, string[]> {
   return index
 }
 
+/**
+ * `accommodation-rules.json`'s `rooming_assumption` is boilerplate the release writer applied to
+ * every row regardless of whether the package actually has an overnight -- `bromo-1d1n` (the
+ * one same-day, zero-overnight package) carries the exact same "standard rooming... twin/double
+ * or extra room on request" string as every multi-night package, even though it has no hotel
+ * stay to room a customer into. The release itself flags this: `readiness.rooming` is
+ * `"unavailable"` for that row (`"available"` everywhere else). Read that signal, not a proxy
+ * like `overnights.length > 0` -- the two agree today only because the current release happens
+ * to have exactly one zero-overnight package; `readiness` is the field the release actually
+ * asserts, and a future sync could add a package with overnights but rooming genuinely still
+ * not ready (or vice versa) without this staying in sync.
+ */
+function roomingAssumptionFor(entry: Json | undefined): string | null {
+  if (!entry) return null
+  const readiness = isObject(entry.readiness) ? entry.readiness : null
+  if (asString(readiness?.rooming) !== 'available') return null
+  return asString(entry.rooming_assumption)
+}
+
 function publicSiteBaseUrl(linkRegistry: unknown): string {
   if (!isObject(linkRegistry)) return ''
   return (asString(linkRegistry.base_url) ?? '').replace(/\/+$/, '')
@@ -471,7 +490,7 @@ function buildCatalog(): Catalog {
       dayCount: asPositiveInt(profile.day_count),
       finishCities: finishCityIndex.get(packageKey) ?? [],
       overnights: asStringArray(accommodation.get(packageKey)?.overnights),
-      roomingAssumption: asString(accommodation.get(packageKey)?.rooming_assumption),
+      roomingAssumption: roomingAssumptionFor(accommodation.get(packageKey)),
       vehicleCategory: asString(vehicle.get(packageKey)?.vehicle_category),
       luggageRule: asString(vehicle.get(packageKey)?.luggage_rule),
       crewRoles: asString(guide.get(packageKey)?.crew_roles),

@@ -262,13 +262,15 @@ describe.skipIf(!RELEASE_PRESENT)('resolveKnowledgeForTopic against the real syn
   // Reported live 2026-08-06: a hotel-name question always got a vague "let me check with our
   // team" even for a NOT-yet-booked customer, when the real answer was one click away the whole
   // time. As of the accommodation-rules join (catalog.ts, Task 8), the real overnight names are
-  // now stated directly in the prompt itself (orchestrator.ts's "Logistics for this specific
-  // package" block), so this disclosure was rewritten from "go look at the package page" to "if
-  // the names are given above, state them" -- the package-page hedge is now a fallback for the
-  // (currently nonexistent) case where a package's overnights list is genuinely empty.
-  it('tells the LLM to state the hotel names directly if given, deferring only if they are absent', () => {
+  // now stated directly in the prompt itself (orchestrator.ts's "Accommodation, vehicle and
+  // crew" block), so this disclosure was rewritten from "go look at the package page" to "if a
+  // name is known, state it" -- the package-page hedge is now a fallback for the (currently
+  // nonexistent) case where a package's overnights list is genuinely empty. Worded WITHOUT
+  // naming a section, since 'hotel' is a DESTINATION_INDEPENDENT_TOPIC and this same disclosure
+  // also fires from runNoDestinationBranch, where no package-logistics section exists yet.
+  it('tells the LLM to state the hotel name directly if known, deferring only if it is absent', () => {
     const result = resolveKnowledgeForTopic('hotel', 'what is the name of the hotel?')
-    expect(result.disclosures.some((d) => d.toLowerCase().includes('state them directly'))).toBe(true)
+    expect(result.disclosures.some((d) => d.toLowerCase().includes('state it directly'))).toBe(true)
     expect(result.disclosures.some((d) => d.toLowerCase().includes('detail page'))).toBe(false)
   })
 

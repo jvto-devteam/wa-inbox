@@ -1319,7 +1319,7 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
           pkg.crewRoles ? `Crew: ${pkg.crewRoles}` : null,
           pkg.languageNote ? `Guide language: ${pkg.languageNote}` : null,
         ].filter((l): l is string => l !== null)
-        return lines.length > 0 ? `\n\nLogistics for this specific package:\n${lines.map((l) => `- ${l}`).join('\n')}` : ''
+        return lines.length > 0 ? `\n\nAccommodation, vehicle and crew for this specific package:\n${lines.map((l) => `- ${l}`).join('\n')}` : ''
       })() +
       (packageOptionsText
         ? `\n\nMatching tour packages for this destination (never invent others or state a price/link not shown here):\n${packageOptionsText}` +
