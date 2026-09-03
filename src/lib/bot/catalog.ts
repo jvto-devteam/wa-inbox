@@ -353,7 +353,40 @@ function buildDetailsLink(baseUrl: string, publicUrl: string | null): Record<str
   return { details: `${baseUrl}${publicUrl.startsWith('/') ? '' : '/'}${publicUrl}` }
 }
 
-export function loadCatalog(): Catalog {
+// The catalog is ~250KB across eight files, read and JSON.parsed synchronously
+// on every single inbound message inside one always-on Node process. It only
+// ever changes when an operator runs `npm run sync:knowledge` and redeploys,
+// so it is cached and invalidated on the newest mtime across the files
+// loadCatalog actually reads -- the same shape knowledge.ts's own module cache
+// already uses. mtime (not a TTL) means a fresh deploy is picked up on the
+// very next message with no restart and no stale window.
+const CACHED_FILES = [
+  PROFILES_FILE, PRICE_TIERS_FILE, COMPONENTS_FILE, MODULE_COMPATIBILITY_FILE,
+  GENERAL_MODULES_FILE, LINK_REGISTRY_FILE, ENDPOINT_CHAINS_FILE, META_FILE,
+]
+
+let cachedCatalog: Catalog | null = null
+let cachedMtime = -1
+
+function newestCatalogMtime(): number {
+  let newest = -1
+  for (const fileName of CACHED_FILES) {
+    try {
+      newest = Math.max(newest, fs.statSync(path.join(CATALOG_DIR, fileName)).mtimeMs)
+    } catch {
+      // A missing file is already handled (and warned about) by readCatalogFile;
+      // it just doesn't contribute an mtime.
+    }
+  }
+  return newest
+}
+
+export function __resetCatalogCacheForTests(): void {
+  cachedCatalog = null
+  cachedMtime = -1
+}
+
+function buildCatalog(): Catalog {
   if (!fs.existsSync(CATALOG_DIR)) return { packages: [], syncedAt: null }
 
   const profiles = readCatalogFile(PROFILES_FILE)
@@ -428,4 +461,12 @@ export function loadCatalog(): Catalog {
   if (fs.existsSync(metaPath)) syncedAt = JSON.parse(fs.readFileSync(metaPath, 'utf-8')).syncedAt ?? null
 
   return { packages, syncedAt }
+}
+
+export function loadCatalog(): Catalog {
+  const mtime = newestCatalogMtime()
+  if (cachedCatalog && mtime === cachedMtime) return cachedCatalog
+  cachedCatalog = buildCatalog()
+  cachedMtime = mtime
+  return cachedCatalog
 }

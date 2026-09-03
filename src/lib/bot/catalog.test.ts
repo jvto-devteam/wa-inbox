@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import fs from 'fs'
-import { loadCatalog } from './catalog'
+import { loadCatalog, __resetCatalogCacheForTests } from './catalog'
 
 // NOTE: bare `vi.mock('fs')` (per the task brief) does not automock the
 // built-in `fs` module's methods in this environment (Vitest 4.1.10 /
@@ -156,6 +156,10 @@ describe('loadCatalog', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    // loadCatalog() now caches on mtime (Task 5). Every test in this file writes
+    // a fresh in-memory "catalog/" via mockCatalogFiles() and expects loadCatalog()
+    // to read it, so the cache from the previous test must not leak in here.
+    __resetCatalogCacheForTests()
   })
   afterEach(() => warn.mockRestore())
 
@@ -359,5 +363,31 @@ describe('loadCatalog', () => {
     const catalog = loadCatalog()
     expect(catalog.packages).toEqual([])
     expect(catalog.syncedAt).toBeNull()
+  })
+
+  // Task 5: the catalog is ~250KB across eight files, read and JSON.parsed
+  // synchronously on every inbound message inside one always-on Node process.
+  // These two tests pin the mtime-keyed cache: unchanged files -> no re-read;
+  // a changed mtime -> re-read.
+  it('parses the catalog once and serves the cached value afterwards', () => {
+    mockCatalogFiles(FULL_CATALOG)
+    __resetCatalogCacheForTests()
+    const spy = vi.spyOn(fs, 'readFileSync')
+    loadCatalog()
+    const firstCallCount = spy.mock.calls.length
+    loadCatalog()
+    expect(spy.mock.calls.length).toBe(firstCallCount)
+    spy.mockRestore()
+  })
+
+  it('re-reads when a catalog file changes on disk', () => {
+    mockCatalogFiles(FULL_CATALOG)
+    __resetCatalogCacheForTests()
+    loadCatalog()
+    const spy = vi.spyOn(fs, 'readFileSync')
+    vi.spyOn(fs, 'statSync').mockReturnValue({ mtimeMs: Date.now() + 10_000 } as never)
+    loadCatalog()
+    expect(spy).toHaveBeenCalled()
+    vi.restoreAllMocks()
   })
 })
