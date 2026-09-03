@@ -479,9 +479,16 @@ describe('ingestMetaMessage bot dispatch', () => {
   beforeEach(() => {
     vi.useFakeTimers()
     __resetPendingBurstsForTests()
+    // Sibling module state to pendingBursts: checkAndRecordRateLimit's own counters persist
+    // across tests otherwise (it's a plain module-level Map, same as pendingBursts), so a
+    // conversation id reused by several tests in this block would silently accumulate toward
+    // its 20-per-window budget and eventually suppress decideAndRespond in a test that never
+    // touched rate limiting at all.
+    __resetRateLimiterForTests()
   })
   afterEach(() => {
     __resetPendingBurstsForTests()
+    __resetRateLimiterForTests()
     vi.useRealTimers()
   })
 
@@ -672,6 +679,11 @@ describe('scheduleBotRun burst batching', () => {
   beforeEach(() => {
     vi.useFakeTimers()
     __resetPendingBurstsForTests()
+    // Sibling module state to pendingBursts (see the identical comment in the
+    // 'ingestMetaMessage bot dispatch' describe block above): without this, the several tests
+    // below that flush 'conv_1' through decideAndRespond would silently eat into the rate
+    // limiter's 20-per-window budget across test-run order instead of starting fresh.
+    __resetRateLimiterForTests()
     vi.mocked(decideAndRespond).mockReset().mockResolvedValue({ mode: 'handoff', reason: 'default test stub' })
     mockPrisma.conversation.findUnique.mockResolvedValue({ botEnabled: true } as never)
     // A resolvable default in case any test in this block exercises a path that still touches
@@ -681,6 +693,7 @@ describe('scheduleBotRun burst batching', () => {
   })
   afterEach(() => {
     __resetPendingBurstsForTests()
+    __resetRateLimiterForTests()
     vi.useRealTimers()
   })
 
