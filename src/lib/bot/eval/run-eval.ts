@@ -29,6 +29,12 @@
  * bot is broken" when the truth is "this release isn't approved for customer
  * traffic here". So the gate is checked once, up front, before any case runs,
  * and a closed gate exits honestly instead of producing a misleading score.
+ *
+ * The top-level `main()` invocation at the bottom is guarded by `!process.env.VITEST` --
+ * Vitest sets that env var for every test process, so run-eval.test.ts can import `cleanup`
+ * from this module (to test its deletion order against a mocked prisma, no real database)
+ * without that import ever firing `main()`, touching a real database, or calling
+ * `process.exit`.
  */
 import { prisma } from '@/lib/db'
 import { checkDeploymentGate } from '../deployment-gate'
@@ -70,9 +76,30 @@ async function runCase(c: EvalCase): Promise<CaseResult> {
   return { id: c.id, passed: missing.length === 0 && present.length === 0, detail: detail || 'ok', reply }
 }
 
-async function cleanup(): Promise<void> {
-  // Deleting the contact cascades to its conversation and messages. Scoped by
-  // the `eval-` prefix so it can never touch a real customer row.
+// Exported for run-eval.test.ts, which asserts the deletion order and scoping against a
+// mocked prisma (no real database, no Ollama) -- see that file's header for why this needed
+// its own regression test.
+export async function cleanup(): Promise<void> {
+  // NOT a cascade. `Contact <--RESTRICT-- Conversation <--RESTRICT-- Message` (see
+  // prisma/migrations/20260727013701_init/migration.sql:194 and :200): this schema uses real
+  // Postgres foreign keys, not Prisma-emulated ones (`relationMode` is unset in schema.prisma,
+  // which defaults to "foreignKeys"), and neither FK cascades. Deleting a Contact while its
+  // Conversation still exists -- or a Conversation while a Message referencing it still
+  // exists -- aborts the WHOLE delete statement atomically; Prisma throws and zero rows are
+  // removed. So this must delete leaves of the dependency tree first: Message, then
+  // Conversation, then Contact.
+  //
+  // decideAndRespond (all `runCase` above ever calls) never itself creates a Message, Note,
+  // or Reminder row -- `Message.create` only happens in inbound.ts and send.ts, neither of
+  // which this runner calls -- so the Message delete below is defensive, not load-bearing
+  // today. Note/Reminder both also reference Contact with the same RESTRICT behavior, but
+  // nothing this script does can ever create one, so they're deliberately left alone.
+  //
+  // All three are independently scoped to the literal `eval-` phone prefix (never inferred
+  // from IDs collected during this run), so a partial/crashed run can never leave a stray
+  // WHERE clause wide enough to touch a real customer's rows.
+  await prisma.message.deleteMany({ where: { conversation: { contact: { phone: { startsWith: 'eval-' } } } } })
+  await prisma.conversation.deleteMany({ where: { contact: { phone: { startsWith: 'eval-' } } } })
   await prisma.contact.deleteMany({ where: { phone: { startsWith: 'eval-' } } })
 }
 
@@ -100,17 +127,46 @@ async function main(): Promise<void> {
   const results: CaseResult[] = []
   try {
     for (const c of EVAL_CASES) results.push(await runCase(c))
-  } finally {
-    await cleanup()
+  } catch (error) {
+    // A case being SCORED a failure never throws -- that comes back as an ordinary
+    // CaseResult from runCase. A throw here means the harness itself broke mid-run (a
+    // network blip, a real bug). Caught, not left to propagate, so whatever results were
+    // already collected still get printed below and cleanup still runs -- a crash on case
+    // #9 must not silently discard the report for cases #1-8, nor skip removing their rows.
+    console.error(`\nrun-eval crashed after ${results.length}/${EVAL_CASES.length} case(s) completed:`, error)
   }
 
+  // Printed BEFORE cleanup, deliberately: a cleanup failure below (or the crash above) must
+  // never be able to swallow the one thing this whole script exists to produce.
   for (const r of results) {
     console.log(`${r.passed ? 'PASS' : 'FAIL'}  ${r.id.padEnd(28)} ${r.detail}`)
     if (!r.passed && r.reply) console.log(`      reply: ${r.reply.replace(/\n/g, ' ').slice(0, 200)}`)
   }
   const passed = results.filter((r) => r.passed).length
-  const rate = Math.round((passed / results.length) * 100)
+  const rate = results.length > 0 ? Math.round((passed / results.length) * 100) : 0
   console.log(`\nPASS ${passed}/${results.length} (${rate}%)`)
+  const incomplete = results.length < EVAL_CASES.length
+  if (incomplete) {
+    console.error(`INCOMPLETE: only ${results.length}/${EVAL_CASES.length} cases ran (see the crash above) -- this is not a real score, do not compare it to the baseline.`)
+  }
+
+  try {
+    await cleanup()
+  } catch (error) {
+    // Never let this exception propagate past here: the report above has already printed,
+    // and it must survive even though the rows this run created are now stuck. Logged loudly
+    // enough that an operator can remove them by hand rather than them silently accumulating
+    // and breaking every later run's `upsert` (which would re-use, not recreate, them).
+    console.error(
+      "\nCleanup FAILED -- leftover eval- rows were NOT removed. Remove them by hand, in this order (Message, then Conversation, then Contact -- the FKs are RESTRICT, not CASCADE, see cleanup()'s own comment):"
+    )
+    console.error(`  DELETE FROM "Message" USING "Conversation" c, "Contact" ct WHERE "Message"."conversationId" = c.id AND c."contactId" = ct.id AND ct.phone LIKE 'eval-%';`)
+    console.error(`  DELETE FROM "Conversation" USING "Contact" ct WHERE "Conversation"."contactId" = ct.id AND ct.phone LIKE 'eval-%';`)
+    console.error(`  DELETE FROM "Contact" WHERE phone LIKE 'eval-%';`)
+    console.error(error)
+  }
+
+  if (incomplete) process.exit(1)
 
   // BASELINE is recorded by the operator after the first run and raised only
   // deliberately. Exiting non-zero below it is what lets this gate a deploy
@@ -122,4 +178,15 @@ async function main(): Promise<void> {
   }
 }
 
-void main()
+// Guarded so importing this module (run-eval.test.ts does, to unit-test `cleanup`'s ordering
+// against a mocked prisma) can never accidentally fire `main()` -- see this file's header.
+if (!process.env.VITEST) {
+  main().catch((error) => {
+    // Belt-and-suspenders: every await inside main() that can throw is already handled above
+    // (the case loop, cleanup), but this still catches anything outside those -- e.g.
+    // checkDeploymentGate() itself throwing -- so the process always exits with a clear
+    // message and a non-zero code instead of an unhandled rejection.
+    console.error('run-eval crashed unexpectedly:', error)
+    process.exit(1)
+  })
+}
