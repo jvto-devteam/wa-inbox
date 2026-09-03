@@ -133,7 +133,23 @@ type LinkRecord = { link_key: string; url: string | null; status: string }
 // app's own general-modules.json module_ids resolve against (identical file, confirmed byte-for-
 // byte equal to chatbot-web's copy).
 const TOPIC_MODULES: Record<ResolverTopic, string[]> = {
-  inclusions: ['inclusion_all_inclusive_baseline', 'exclusion_standard'],
+  // The seven `inclusion_component` modules and `policy_inclusions_exclusions`
+  // are `scope: "global"`, and catalog.ts's buildNoteIndex deliberately skips
+  // global scope (a global fact is not a per-package policy note). Nothing else
+  // ever picked them up either, so the facts that apply to EVERY package were
+  // the only ones with no route into a reply at all -- listed explicitly here,
+  // which is the path built for exactly this.
+  inclusions: [
+    'inclusion_all_inclusive_baseline',
+    'exclusion_standard',
+    'policy_inclusions_exclusions',
+    'inclusion_private_transport',
+    'inclusion_dedicated_crew',
+    'inclusion_entrance_permits',
+    'inclusion_drinking_water',
+    'inclusion_stated_meals',
+    'inclusion_pickup_dropoff_assistance',
+  ],
   price: ['inclusion_all_inclusive_baseline', 'service_private_tour_standard', 'service_vehicle_by_pax'],
   private_tour: ['service_private_tour_standard', 'service_crew_language_standard'],
   vehicle: ['service_vehicle_by_pax'],
@@ -476,24 +492,30 @@ const ROUTE_NODE_NAMES = [
   'surabaya', 'bali', 'bromo', 'ijen', 'madakaripura', 'malang',
   'tumpak sewu', 'ketapang', 'banyuwangi', 'bondowoso', 'gilimanuk',
 ]
+// A pair can legitimately have MORE THAN ONE real leg: a Surabaya hotel pickup
+// and a Surabaya airport pickup are different drives with different published
+// durations, and a single-id map silently kept only whichever was written
+// first. Returning both, in listed order, is more accurate than picking one --
+// the customer knows which of the two applies to them, and the model is told
+// both rather than asserting the wrong one.
 // Symmetric by construction (see resolveRouteLegFacts below, which checks both orderings) --
 // only one direction needs to be listed per pair.
-const ROUTE_LEG_MODULE_BY_PAIR: Record<string, string> = {
-  'surabaya:bromo': 'route_leg_surabaya_airport_to_bromo_area',
-  'bromo:madakaripura': 'route_leg_bromo_area_to_madakaripura',
-  'bromo:ijen': 'route_leg_bromo_area_to_bondowoso_ijen_area',
-  'bromo:bondowoso': 'route_leg_bromo_area_to_bondowoso_ijen_area',
-  'bondowoso:ijen': 'route_leg_bondowoso_ijen_area_to_ijen_crater',
-  'ijen:ketapang': 'route_leg_ijen_area_to_ketapang_harbor',
-  'surabaya:ijen': 'route_leg_surabaya_to_bondowoso_ijen_area',
-  'surabaya:tumpak sewu': 'route_leg_surabaya_to_tumpak_sewu',
-  'tumpak sewu:bromo': 'route_leg_tumpak_sewu_to_bromo_area',
-  'banyuwangi:ijen': 'route_leg_banyuwangi_to_ijen_base',
-  'ketapang:gilimanuk': 'route_leg_ketapang_harbor_to_gilimanuk_bali_side',
-  'bali:ijen': 'route_leg_bali_hotel_area_to_banyuwangi_ijen_area',
-  'bali:banyuwangi': 'route_leg_bali_hotel_area_to_banyuwangi_ijen_area',
-  'bromo:malang': 'route_leg_bromo_area_to_malang',
-  'malang:surabaya': 'route_leg_malang_to_surabaya',
+const ROUTE_LEG_MODULE_BY_PAIR: Record<string, string[]> = {
+  'surabaya:bromo': ['route_leg_surabaya_airport_to_bromo_area', 'route_leg_surabaya_hotel_to_bromo_area'],
+  'bromo:madakaripura': ['route_leg_bromo_area_to_madakaripura'],
+  'bromo:ijen': ['route_leg_bromo_area_to_bondowoso_ijen_area'],
+  'bromo:bondowoso': ['route_leg_bromo_area_to_bondowoso_ijen_area'],
+  'bondowoso:ijen': ['route_leg_bondowoso_ijen_area_to_ijen_crater', 'route_leg_bondowoso_to_ijen_base'],
+  'ijen:ketapang': ['route_leg_ijen_area_to_ketapang_harbor', 'route_leg_ijen_base_to_ketapang_harbor'],
+  'surabaya:ijen': ['route_leg_surabaya_to_bondowoso_ijen_area'],
+  'surabaya:tumpak sewu': ['route_leg_surabaya_to_tumpak_sewu'],
+  'tumpak sewu:bromo': ['route_leg_tumpak_sewu_to_bromo_area'],
+  'banyuwangi:ijen': ['route_leg_banyuwangi_to_ijen_base'],
+  'ketapang:gilimanuk': ['route_leg_ketapang_harbor_to_gilimanuk_bali_side'],
+  'bali:ijen': ['route_leg_bali_hotel_area_to_banyuwangi_ijen_area'],
+  'bali:banyuwangi': ['route_leg_bali_hotel_area_to_banyuwangi_ijen_area'],
+  'bromo:malang': ['route_leg_bromo_area_to_malang'],
+  'malang:surabaya': ['route_leg_malang_to_surabaya'],
 }
 const TRAVEL_TIME_QUESTION_PATTERN =
   /\b(how (many |long )?hours?|how long|travel time|drive time|driving time|jam perjalanan|berapa jam|lama perjalanan)\b/
@@ -512,12 +534,15 @@ export function resolveRouteLegFacts(message: string): string[] {
   const facts: string[] = []
   for (let i = 0; i < nodes.length; i++) {
     for (let j = i + 1; j < nodes.length; j++) {
-      const moduleId = ROUTE_LEG_MODULE_BY_PAIR[`${nodes[i]}:${nodes[j]}`] ?? ROUTE_LEG_MODULE_BY_PAIR[`${nodes[j]}:${nodes[i]}`]
-      if (!moduleId || seen.has(moduleId)) continue
-      const m = modules[moduleId]
-      if (!m || m.customer_visible === false || !m.short_answer) continue
-      seen.add(moduleId)
-      facts.push(m.short_answer)
+      const moduleIds =
+        ROUTE_LEG_MODULE_BY_PAIR[`${nodes[i]}:${nodes[j]}`] ?? ROUTE_LEG_MODULE_BY_PAIR[`${nodes[j]}:${nodes[i]}`] ?? []
+      for (const moduleId of moduleIds) {
+        if (seen.has(moduleId)) continue
+        const m = modules[moduleId]
+        if (!m || m.customer_visible === false || !m.short_answer) continue
+        seen.add(moduleId)
+        facts.push(m.short_answer)
+      }
     }
   }
   return facts
@@ -564,9 +589,29 @@ export function resolveKnowledgeForTopic(
   const modules = loadModules()
   const low = (message ?? '').toLowerCase()
 
+  // Reported live 2026-08-07: checking only the CURRENT message's raw text missed a real
+  // follow-up like "is the hike difficult?" after Ijen was already established as the resolved
+  // `destination` in an earlier turn -- 'destination_readiness' matches via 'difficult'/'hike'
+  // keywords with no literal "ijen" needed, so the real access/health-screening disclosure was
+  // silently dropped even though the customer is unambiguously still asking about Ijen. Checked
+  // additively against the resolved, cross-turn `destination` too, never removing the existing
+  // raw-text check. Moved above the module-id assembly (2026-09-03) so it can also gate the
+  // Ijen-scoped policy modules below, not just getTopicDisclosures.
+  const hasIjen = low.includes('ijen') || destination?.toLowerCase() === 'ijen'
+
   const moduleIds = [...new Set(TOPIC_MODULES[topic] ?? [])]
   if (topic === 'destination_readiness' && destination) {
     moduleIds.push(`destination_${destination.toLowerCase().replace(/\s+/g, '_')}`)
+  }
+  // Ijen's mandatory health screening and its monthly Rijik closure (the crater
+  // shuts to ALL visitors on the first Friday of each month) previously reached
+  // a prompt only through pkg.policyNotes -- which is merged only when the route
+  // gate happens to return `needs_review`, and only for the single anchor
+  // package. A customer could therefore be encouraged to book a date the
+  // mountain is closed. Gated on Ijen specifically so a Bromo question never
+  // picks them up.
+  if (hasIjen && (topic === 'destination_readiness' || topic === 'blue_fire' || topic === 'inclusions')) {
+    moduleIds.push('policy_ijen_health_screening', 'policy_ijen_monthly_closure')
   }
   // Destination-conditional inclusions (Ijen's gas mask + health-screening coordination,
   // Bromo's private jeep) live as separate "conditional_variation" modules, never listed in
@@ -625,14 +670,6 @@ export function resolveKnowledgeForTopic(
     }
   }
 
-  // Reported live 2026-08-07: checking only the CURRENT message's raw text missed a real
-  // follow-up like "is the hike difficult?" after Ijen was already established as the resolved
-  // `destination` in an earlier turn -- 'destination_readiness' matches via 'difficult'/'hike'
-  // keywords with no literal "ijen" needed, so the real access/health-screening disclosure was
-  // silently dropped even though the customer is unambiguously still asking about Ijen. Checked
-  // additively against the resolved, cross-turn `destination` too, never removing the existing
-  // raw-text check.
-  const hasIjen = low.includes('ijen') || destination?.toLowerCase() === 'ijen'
   const disclosures = getTopicDisclosures(topic, hasIjen)
   if (GUARANTEE_PHRASES.some((p) => low.includes(p))) {
     if (!disclosures.includes(DISCLOSURES.noGuaranteeAccess)) disclosures.push(DISCLOSURES.noGuaranteeAccess)

@@ -266,4 +266,39 @@ describe.skipIf(!RELEASE_PRESENT)('resolveKnowledgeForTopic against the real syn
     const result = resolveKnowledgeForTopic('hotel', 'what is the name of the hotel?')
     expect(result.disclosures.some((d) => d.toLowerCase().includes('detail page'))).toBe(true)
   })
+
+  // Reported 2026-09-03: the seven inclusion_component modules plus
+  // policy_inclusions_exclusions are `scope: "global"`, which catalog.ts's buildNoteIndex
+  // deliberately skips -- so the facts true of EVERY package were the only ones with no path
+  // into a reply at all, despite being approved and customer_visible all along.
+  it('answers an inclusions question from the global inclusion-component modules', () => {
+    const k = resolveKnowledgeForTopic('inclusions', 'what exactly is included?', 'bromo')
+    const joined = k.factualLines.join(' ').toLowerCase()
+    expect(joined).toContain('drinking water')
+    expect(joined).toContain('entrance fees')
+  })
+
+  // Reported 2026-09-03: Ijen's mandatory health screening and its first-Friday Rijik closure
+  // reached a prompt only via pkg.policyNotes, which is only merged when the route gate happens
+  // to return needs_review, and only for the single anchor package -- a customer could be
+  // encouraged to book a date the crater is shut.
+  it('surfaces the Ijen monthly closure on a readiness question about Ijen', () => {
+    const k = resolveKnowledgeForTopic('destination_readiness', 'is the hike difficult?', 'ijen')
+    const joined = [...k.factualLines, ...k.disclosures].join(' ').toLowerCase()
+    expect(joined).toContain('first friday')
+  })
+
+  it('does not leak Ijen-only policies into a Bromo readiness question', () => {
+    const k = resolveKnowledgeForTopic('destination_readiness', 'is the hike difficult?', 'bromo')
+    expect(k.factualLines.join(' ').toLowerCase()).not.toContain('first friday')
+  })
+
+  // Reported 2026-09-03: a hotel pickup and an airport pickup are genuinely different drives,
+  // but ROUTE_LEG_MODULE_BY_PAIR held only one module id per node pair -- the Surabaya-hotel
+  // leg was silently unreachable because the airport leg was written into the map first.
+  it('offers both the airport and hotel drives for Surabaya to Bromo', () => {
+    const facts = resolveRouteLegFacts('how many hours from surabaya to bromo?')
+    expect(facts).toHaveLength(2)
+    expect(facts.join(' ')).toContain('Surabaya Hotel to Bromo Area')
+  })
 })
