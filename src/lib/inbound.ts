@@ -237,7 +237,23 @@ async function applyTemplateStatusUpdate(update: MetaTemplateStatusUpdate): Prom
 // multi-message thought gets combined into one decision instead of several.
 const BURST_DEBOUNCE_MS = 5000
 
-type PendingBurst = { texts: string[]; timer: ReturnType<typeof setTimeout> }
+// Hard ceiling on how long ONE burst may keep being extended. Without it the
+// trailing debounce has no upper bound: a customer sending a message every 4
+// seconds resets the timer forever and is never replied to at all, while
+// `texts` grows unboundedly and is eventually handed to decideAndRespond as
+// one enormous blob. 25s is well past a normal "split one thought across
+// bubbles" pause but still inside the window where a customer is plausibly
+// waiting. Ported from watsapin's lib/bot-engine/burst-scheduler.ts, which
+// took this file's own debounce as its reference and then found the gap.
+const BURST_MAX_WAIT_MS = 25000
+
+type PendingBurst = {
+  texts: string[]
+  timer: ReturnType<typeof setTimeout>
+  // Wall-clock time the FIRST message of this burst was buffered, so each
+  // later message can shorten -- never extend -- the remaining wait.
+  firstScheduledAt: number
+}
 // Module-level, in-memory, per-process -- fine for this app (a single always-on Node process
 // behind pm2, not serverless; see src/lib/send.ts's equivalent single-process assumptions). A
 // deploy restart mid-burst drops whatever was pending: the customer's own messages are already
@@ -258,12 +274,17 @@ export function scheduleBotRun(conversation: { id: string; contactName: string |
   if (existing) {
     existing.texts.push(inboundText)
     clearTimeout(existing.timer)
-    existing.timer = setTimeout(() => void flushBurst(conversation), BURST_DEBOUNCE_MS)
+    // Trailing-quiet wait, clamped to whatever is left of the max-wait budget.
+    // Once that budget is spent this is 0 -- flush on the next tick rather than
+    // granting yet another full debounce window.
+    const remainingMaxWait = Math.max(0, BURST_MAX_WAIT_MS - (Date.now() - existing.firstScheduledAt))
+    existing.timer = setTimeout(() => void flushBurst(conversation), Math.min(BURST_DEBOUNCE_MS, remainingMaxWait))
     return
   }
   pendingBursts.set(conversation.id, {
     texts: [inboundText],
     timer: setTimeout(() => void flushBurst(conversation), BURST_DEBOUNCE_MS),
+    firstScheduledAt: Date.now(),
   })
 }
 

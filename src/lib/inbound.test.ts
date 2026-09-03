@@ -742,6 +742,23 @@ describe('scheduleBotRun burst batching', () => {
 
     expect(decideAndRespond).not.toHaveBeenCalled()
   })
+
+  it('flushes a never-pausing burst once the max wait elapses', async () => {
+    vi.useFakeTimers()
+    const conversation = { id: 'conv_burst_cap', contactName: null }
+    // A customer typing every 4s keeps resetting the 5s trailing debounce
+    // forever. Without a ceiling they are never answered at all.
+    scheduleBotRun(conversation, 'satu')
+    for (let i = 0; i < 8; i++) {
+      await vi.advanceTimersByTimeAsync(4000)
+      scheduleBotRun(conversation, `lagi-${i}`)
+    }
+    await vi.advanceTimersByTimeAsync(4000)
+    expect(decideAndRespond).toHaveBeenCalledTimes(1)
+    // Every fragment up to the cap is in the one combined decision.
+    expect(vi.mocked(decideAndRespond).mock.calls[0][1]).toContain('satu')
+    vi.useRealTimers()
+  })
 })
 
 describe('ingestMetaMessage delivery-status callbacks', () => {
