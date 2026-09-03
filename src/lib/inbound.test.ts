@@ -4,6 +4,7 @@ import { Prisma, type PrismaClient } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { ingestMetaMessage, scheduleBotRun, __resetPendingBurstsForTests, type MetaWebhookPayload } from './inbound'
 import { decideAndRespond } from '@/lib/bot/orchestrator'
+import { __resetRateLimiterForTests } from '@/lib/bot/rate-limiter'
 import { sendMessage } from '@/lib/send'
 import { broadcast } from '@/lib/realtime'
 
@@ -757,6 +758,21 @@ describe('scheduleBotRun burst batching', () => {
     expect(decideAndRespond).toHaveBeenCalledTimes(1)
     // Every fragment up to the cap is in the one combined decision.
     expect(vi.mocked(decideAndRespond).mock.calls[0][1]).toContain('satu')
+    vi.useRealTimers()
+  })
+
+  it('skips the bot reply once a conversation exceeds its rate-limit budget', async () => {
+    __resetRateLimiterForTests()
+    vi.useFakeTimers()
+    const conversation = { id: 'conv_rate', contactName: null }
+    mockPrisma.conversation.findUnique.mockResolvedValue({ botEnabled: true, isTest: false } as never)
+    for (let i = 0; i < 21; i++) {
+      scheduleBotRun(conversation, `pesan ${i}`)
+      await vi.advanceTimersByTimeAsync(6000)
+    }
+    // 20 turns answered, the 21st dropped -- the customer's messages are all
+    // still persisted by the caller, only the automated reply is skipped.
+    expect(decideAndRespond).toHaveBeenCalledTimes(20)
     vi.useRealTimers()
   })
 })

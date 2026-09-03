@@ -2,6 +2,7 @@ import { Prisma, type DeliveryStatus, type TemplateMetaStatus } from '@prisma/cl
 import { prisma } from '@/lib/db'
 import { broadcast } from '@/lib/realtime'
 import { decideAndRespond } from '@/lib/bot/orchestrator'
+import { checkAndRecordRateLimit } from '@/lib/bot/rate-limiter'
 import { sendMessage } from '@/lib/send'
 import { withMediaUrl } from '@/lib/serialize-message'
 import { isIndonesianNumber } from '@/lib/phone'
@@ -297,8 +298,20 @@ async function flushBurst(conversation: { id: string; contactName: string | null
   // agent may have clicked "Ambil Alih dari Bot" (or the bot itself may have handed off, on a
   // prior message this same tick) at any point during the wait, and a stale botEnabled=true
   // would still dispatch a reply the moment after a human took over.
-  const fresh = await prisma.conversation.findUnique({ where: { id: conversation.id }, select: { botEnabled: true } })
+  const fresh = await prisma.conversation.findUnique({
+    where: { id: conversation.id },
+    select: { botEnabled: true, isTest: true },
+  })
   if (!fresh?.botEnabled) return
+
+  // Cost guard, checked here rather than inside decideAndRespond so a blocked
+  // turn costs nothing at all -- not even the escalation classifier. The
+  // sandbox conversation is exempt: an admin deliberately hammering it to test
+  // bot behavior is exactly who this must not throttle.
+  if (!fresh.isTest && !checkAndRecordRateLimit(conversation.id)) {
+    console.warn('flushBurst: rate limit exceeded, skipping bot reply', { conversationId: conversation.id })
+    return
+  }
 
   // Joined in arrival order, one line per fragment -- decideAndRespond sees them as the single
   // combined thought a human reading the thread would.
