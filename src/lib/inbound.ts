@@ -329,14 +329,28 @@ export function __resetPendingBurstsForTests(): void {
 /**
  * Runs the bot orchestrator against one already-ingested inbound message and dispatches
  * whatever it decides -- called once a burst's debounce window (scheduleBotRun above) has
- * elapsed. Caller is responsible for the botEnabled/non-empty-text gate -- this always runs the
- * decision once called.
+ * elapsed. Caller is responsible for the initial botEnabled/non-empty-text gate; this function
+ * re-reads botEnabled itself right after the orchestrator returns and aborts without dispatching
+ * anything if it has since gone false.
  */
 export async function runBotForConversation(
   conversation: { id: string; contactName: string | null },
   inboundText: string
 ): Promise<void> {
   const decision = await decideAndRespond(conversation.id, inboundText)
+
+  // `botEnabled` was last read before decideAndRespond, which spends up to
+  // seven Ollama calls -- tens of seconds. If an agent clicked "Ambil Alih dari
+  // Bot" during that window they have almost certainly already replied by hand,
+  // and this in-flight turn must not send its own answer on top of them: the
+  // customer would get a human message immediately followed by a contradicting
+  // bot one. Re-read and abort before anything is stored or dispatched.
+  const stillBotDriven = await prisma.conversation.findUnique({
+    where: { id: conversation.id },
+    select: { botEnabled: true },
+  })
+  if (!stillBotDriven?.botEnabled) return
+
   if (decision.mode === 'faq' || decision.mode === 'booking_context' || decision.mode === 'clarify') {
     const text = decision.mode === 'faq' ? decision.draft : decision.reply
     await sendMessage({ conversationId: conversation.id, text, sentBy: 'BOT', botTrace: decision })

@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { mockDeep, mockReset, type DeepMockProxy } from 'vitest-mock-extended'
 import { Prisma, type PrismaClient } from '@prisma/client'
 import { prisma } from '@/lib/db'
-import { ingestMetaMessage, scheduleBotRun, __resetPendingBurstsForTests, type MetaWebhookPayload } from './inbound'
+import { ingestMetaMessage, scheduleBotRun, runBotForConversation, __resetPendingBurstsForTests, type MetaWebhookPayload } from './inbound'
 import { decideAndRespond } from '@/lib/bot/orchestrator'
 import { __resetRateLimiterForTests } from '@/lib/bot/rate-limiter'
 import { sendMessage } from '@/lib/send'
@@ -671,6 +671,20 @@ describe('ingestMetaMessage bot dispatch', () => {
     await vi.advanceTimersByTimeAsync(5000)
 
     expect(decideAndRespond).not.toHaveBeenCalled()
+    expect(sendMessage).not.toHaveBeenCalled()
+  })
+})
+
+describe('runBotForConversation', () => {
+  it('does not send the bot reply when an agent took over during the LLM call', async () => {
+    const conversation = { id: 'conv_takeover', contactName: null }
+    vi.mocked(decideAndRespond).mockResolvedValue({ mode: 'faq', draft: 'Hi!', sourceTopic: 'general' })
+    // botEnabled was true when the turn started; the agent flipped it during
+    // decideAndRespond.
+    mockPrisma.conversation.findUnique.mockResolvedValue({ botEnabled: false, isTest: false } as never)
+
+    await runBotForConversation(conversation, 'halo')
+
     expect(sendMessage).not.toHaveBeenCalled()
   })
 })
