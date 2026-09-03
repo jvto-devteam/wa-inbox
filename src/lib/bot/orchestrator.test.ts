@@ -1466,6 +1466,72 @@ describe('decideAndRespond', () => {
       expect(result.steps?.find((s) => s.label === 'Harga perlu dicek')?.detail).toContain('Rp9.999.999')
     })
 
+    // The wrong-TIER case verification cannot catch by construction: a neighbouring tier is
+    // an exact member of the (deliberately wide) grounding, so it passes silently. All this
+    // adds is a trace note -- the reply still goes out, because the figure IS a real catalog
+    // price and blocking it would trade a common false positive for a rarer real one.
+    it('notes in the trace when the reply quotes a real tier that is not this pax count\'s', async () => {
+      vi.mocked(ensureFreshBookingData).mockResolvedValue(null)
+      vi.mocked(classifySalesNeed).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
+      vi.mocked(checkRouteGate).mockReturnValue({ status: 'clear' })
+      vi.mocked(matchDestination).mockReturnValue({
+        destination: 'ijen',
+        matches: [
+          pkg({
+            priceIdr: 2450000,
+            priceTiers: [
+              { minPax: 2, maxPax: 2, priceIdr: 3570000 },
+              { minPax: 11, maxPax: null, priceIdr: 2450000 },
+            ],
+          }) as unknown as CatalogPackage,
+        ],
+      })
+      vi.mocked(extractTripPreferences).mockResolvedValue({
+        preferences: { origin: null, dayCount: null, finishCity: null, pax: 2 },
+        source: 'llm',
+      })
+      // The 11+-pax rate, quoted to a group of 2 -- exactly the error priceForPax exists to
+      // prevent, and a real catalog number, so nothing blocks it.
+      vi.mocked(callLLM).mockResolvedValue('Hi! It is Rp2.450.000 per person.')
+
+      const result = await decideAndRespond('conv_1', 'We will be 2 people, how much?')
+
+      expect(result).toMatchObject({ mode: 'faq', draft: 'Hi! It is Rp2.450.000 per person.' })
+      expect(vi.mocked(callLLM).mock.calls).toHaveLength(1)
+      const note = result.steps?.find((s) => s.label === 'Tier harga tidak sesuai jumlah orang')
+      expect(note?.detail).toContain('Rp2.450.000')
+      expect(note?.detail).toContain('Rp3.570.000')
+    })
+
+    it("stays quiet when the reply quotes this pax count's own tier, or a group total built from it", async () => {
+      vi.mocked(ensureFreshBookingData).mockResolvedValue(null)
+      vi.mocked(classifySalesNeed).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
+      vi.mocked(checkRouteGate).mockReturnValue({ status: 'clear' })
+      vi.mocked(matchDestination).mockReturnValue({
+        destination: 'ijen',
+        matches: [
+          pkg({
+            priceIdr: 2450000,
+            priceTiers: [
+              { minPax: 2, maxPax: 2, priceIdr: 3570000 },
+              { minPax: 11, maxPax: null, priceIdr: 2450000 },
+            ],
+          }) as unknown as CatalogPackage,
+        ],
+      })
+      vi.mocked(extractTripPreferences).mockResolvedValue({
+        preferences: { origin: null, dayCount: null, finishCity: null, pax: 2 },
+        source: 'llm',
+      })
+      vi.mocked(callLLM).mockResolvedValue('Hi! It is Rp3.570.000 per person, so Rp7.140.000 for the two of you.')
+
+      const result = await decideAndRespond('conv_1', 'We will be 2 people, how much?')
+
+      expect(result.mode).toBe('faq')
+      expect(result.steps?.map((s) => s.label)).not.toContain('Tier harga tidak sesuai jumlah orang')
+      expect(result.steps?.map((s) => s.label)).not.toContain('Harga perlu dicek')
+    })
+
     it('verifies a Mode 3 reply against the numbers in the booking JSON itself', async () => {
       ;vi.mocked(ensureFreshBookingData).mockResolvedValue({ bookingId: 'B1', financial: { balance: 500000 } })
       ;vi.mocked(callLLM).mockResolvedValue('Sisa pembayaran Anda Rp500.000.')

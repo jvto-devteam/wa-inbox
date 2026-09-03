@@ -123,7 +123,7 @@ import {
   GENERAL_FAQ_FALLBACK,
 } from './knowledge'
 import { callLLM, type LLMOptions } from './llm'
-import { verifyReply, buildVerificationRetryInstruction, extractRupiahAmounts, extractUrls } from './reply-verifier'
+import { verifyReply, buildVerificationRetryInstruction, extractRupiahAmounts, extractUrls, isDerivableAmount } from './reply-verifier'
 import { loadCatalog } from './catalog'
 import { checkDeploymentGate } from './deployment-gate'
 import type { BotDecision, Catalog, TraceStep, TripBrief } from './types'
@@ -554,9 +554,13 @@ async function composeVerifiedReply(params: {
   history: LLMOptions['history']
   groundedAmounts: number[]
   groundedUrls: string[]
+  // The prices this turn's prompt actually PRINTED for the customer's known group
+  // size. Trace-only, and only the destination-known path can supply it (it is the
+  // one branch that resolves a per-pax tier at all). See the wrong-tier note below.
+  pricesShownForPax?: number[]
   trace: Tracer
 }): Promise<ComposedReply> {
-  const { inboundText, system, model, history, groundedAmounts, groundedUrls, trace } = params
+  const { inboundText, system, model, history, groundedAmounts, groundedUrls, pricesShownForPax, trace } = params
   let reply = await callLLM(inboundText, { system, model, history })
   // Second layer of defence behind llm.ts's own validation: an empty reply must never
   // become a dispatched blank message. Previously handed off outright; now a graceful,
@@ -606,6 +610,31 @@ async function composeVerifiedReply(params: {
       'Harga perlu dicek',
       `Balasan menyebut ${verdict.unverifiedPrices.map((a) => `Rp${a.toLocaleString('id-ID')}`).join(', ')} yang bukan tier langsung dari katalog (mungkin hasil hitungan) -- tetap dikirim.`
     )
+  }
+
+  // The wrong-TIER case, which verification by construction cannot catch: a
+  // neighbouring tier is an exact member of `groundedAmounts` (the caller grounds
+  // on every tier of every presented option, deliberately -- see that comment),
+  // so `isDerivableAmount` returns true on its first line and the figure never
+  // reaches `unverifiedPrices`. Where the caller knows which prices this prompt
+  // actually printed for a KNOWN pax count, a real-but-not-this-customer's tier is
+  // worth naming in the trace. Trace-only on purpose: the reply states a genuine
+  // catalog price, and blocking it would trade a common false positive for a rarer
+  // real one -- exactly the trade the wide grounding exists to avoid.
+  if (pricesShownForPax && pricesShownForPax.length > 0) {
+    const misquotedTiers = [
+      ...new Set(
+        extractRupiahAmounts(reply).filter(
+          (a) => groundedAmounts.includes(a) && !isDerivableAmount(a, pricesShownForPax)
+        )
+      ),
+    ]
+    if (misquotedTiers.length > 0) {
+      trace.push(
+        'Tier harga tidak sesuai jumlah orang',
+        `Balasan menyebut ${misquotedTiers.map((a) => `Rp${a.toLocaleString('id-ID')}`).join(', ')} -- harga itu ada di katalog, tapi bukan tier untuk jumlah pax pelanggan ini (${pricesShownForPax.map((a) => `Rp${a.toLocaleString('id-ID')}`).join(', ')}) -- tetap dikirim.`
+      )
+    }
   }
 
   trace.push('Jawaban siap dikirim', previewText(reply))
@@ -1532,11 +1561,22 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
       `Menggunakan model ${settings.ollamaModel} (Ollama, lokal), topik "${resolverTopic}", ${knowledge.factualLines.length} fakta, ${history?.length ?? 0} pesan riwayat.`
     )
     // What this specific turn was actually grounded in -- not the whole catalog.
-    // A price the model could not have read here is one it made up. Every tier of
-    // every option shown (not just the one `priceLabel` printed): quoting a real
-    // neighbouring tier is a wrong-tier answer to review, not an invented number
-    // to block -- and reply-verifier.ts's second severity is exactly where that
-    // distinction gets made.
+    // A price the model could not have read here is one it made up.
+    //
+    // Every tier of every presented option is included, not just the one
+    // `priceLabel` printed -- deliberately WIDE, because that is what keeps a
+    // legitimate quote from being blocked: a group total, the "from Rp X"
+    // largest-group fallback, a neighbouring tier named while comparing options.
+    //
+    // Be clear about what that costs. Quoting the WRONG tier for this customer's
+    // pax count passes verification SILENTLY: a neighbouring tier is an exact
+    // member of this set, so isDerivableAmount returns true on its first line and
+    // the figure never reaches `unverifiedPrices` -- neither severity sees it, and
+    // no trace step is written by the verifier. That is an OPEN gap this file does
+    // not close, and it is the very error the per-pax tier ladder exists to make
+    // possible (see priceForPax's own header). `pricesShownForPax` below is the
+    // partial mitigation -- a trace-only note, no blocking -- and it only applies
+    // once `pax` is actually known.
     const groundedText = [
       ...knowledge.factualLines,
       ...knowledge.detailLines,
@@ -1558,6 +1598,14 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
       ...extractUrls(groundedText),
     ]
 
+    // Exactly the per-option prices `packageOptionsText` printed above for this
+    // group size -- same `priceForPax` call, so the two can never disagree about
+    // which price this customer was actually shown. Empty when `pax` is unknown:
+    // every option then prints its "from Rp X" fallback and there is no single
+    // correct tier to be wrong about.
+    const pricesShownForPax =
+      pax === null ? [] : optionPackages.map((p) => priceForPax(p, pax).priceIdr).filter((n): n is number => n !== null)
+
     const composed = await composeVerifiedReply({
       inboundText,
       system,
@@ -1565,6 +1613,7 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
       history,
       groundedAmounts,
       groundedUrls,
+      pricesShownForPax,
       trace,
     })
     if (!composed.ok) return composed.decision
