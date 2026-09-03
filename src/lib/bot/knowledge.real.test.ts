@@ -267,11 +267,14 @@ describe.skipIf(!RELEASE_PRESENT)('resolveKnowledgeForTopic against the real syn
     expect(result.disclosures.some((d) => d.toLowerCase().includes('detail page'))).toBe(true)
   })
 
-  // Reported 2026-09-03: the seven inclusion_component modules plus
-  // policy_inclusions_exclusions are `scope: "global"`, which catalog.ts's buildNoteIndex
-  // deliberately skips -- so the facts true of EVERY package were the only ones with no path
-  // into a reply at all, despite being approved and customer_visible all along.
-  it('answers an inclusions question from the global inclusion-component modules', () => {
+  // Characterization guard: an inclusions question surfaces the baseline inclusions facts
+  // (inclusion_all_inclusive_baseline, already listed in TOPIC_MODULES.inclusions). Renamed
+  // 2026-09-03 -- this was originally written as a Group-1 regression test for the six
+  // inclusion_component modules + policy_inclusions_exclusions, but those are deliberately NOT
+  // listed (see TOPIC_MODULES.inclusions's own comment): inclusion_all_inclusive_baseline's
+  // short_answer already contains every fact this test checks for, so the assertions below were
+  // never actually exercising the modules the test's old name claimed to cover.
+  it('surfaces the baseline inclusions facts for an inclusions question', () => {
     const k = resolveKnowledgeForTopic('inclusions', 'what exactly is included?', 'bromo')
     const joined = k.factualLines.join(' ').toLowerCase()
     expect(joined).toContain('drinking water')

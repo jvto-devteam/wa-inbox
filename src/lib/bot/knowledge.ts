@@ -133,23 +133,21 @@ type LinkRecord = { link_key: string; url: string | null; status: string }
 // app's own general-modules.json module_ids resolve against (identical file, confirmed byte-for-
 // byte equal to chatbot-web's copy).
 const TOPIC_MODULES: Record<ResolverTopic, string[]> = {
-  // The seven `inclusion_component` modules and `policy_inclusions_exclusions`
-  // are `scope: "global"`, and catalog.ts's buildNoteIndex deliberately skips
-  // global scope (a global fact is not a per-package policy note). Nothing else
-  // ever picked them up either, so the facts that apply to EVERY package were
-  // the only ones with no route into a reply at all -- listed explicitly here,
-  // which is the path built for exactly this.
-  inclusions: [
-    'inclusion_all_inclusive_baseline',
-    'exclusion_standard',
-    'policy_inclusions_exclusions',
-    'inclusion_private_transport',
-    'inclusion_dedicated_crew',
-    'inclusion_entrance_permits',
-    'inclusion_drinking_water',
-    'inclusion_stated_meals',
-    'inclusion_pickup_dropoff_assistance',
-  ],
+  // A reachability scan of general-modules.json will flag the six
+  // `inclusion_component` modules, `policy_inclusions_exclusions`, and its
+  // `detail_summary` as orphans (scope: "global", which catalog.ts's
+  // buildNoteIndex deliberately skips, and nothing else picks them up
+  // either) and suggest listing them here. Don't: `inclusion_all_inclusive_
+  // baseline` (already listed below) is one sentence that already states
+  // every one of those fragments verbatim -- "private transport, a
+  // dedicated driver and guide(s), all entrance fees and permits, drinking
+  // water, meals as stated, and full pick-up to drop-off assistance."
+  // `policy_inclusions_exclusions` restates the same six plus exclusions
+  // `exclusion_standard` (also already listed) already covers. Listing the
+  // orphans adds no new fact, only makes an inclusions reply repeat itself
+  // three times over. Investigated and reverted 2026-09-03 after a first
+  // pass added them on reachability grounds alone.
+  inclusions: ['inclusion_all_inclusive_baseline', 'exclusion_standard'],
   price: ['inclusion_all_inclusive_baseline', 'service_private_tour_standard', 'service_vehicle_by_pax'],
   private_tour: ['service_private_tour_standard', 'service_crew_language_standard'],
   vehicle: ['service_vehicle_by_pax'],
