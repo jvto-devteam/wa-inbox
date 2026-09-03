@@ -17,6 +17,7 @@ import { resolveKnowledgeForTopic, resolveKeywordTriggeredFacts, resolveRouteLeg
 import { callLLM } from './llm'
 import { loadCatalog } from './catalog'
 import { checkDeploymentGate } from './deployment-gate'
+import type { CatalogPackage } from './types'
 
 // `vi.mock` factories are hoisted above regular imports and `let`/`const`
 // declarations, so the mock instance must be constructed inline inside the
@@ -404,7 +405,10 @@ describe('decideAndRespond', () => {
   })
 
   it('passes recent messages as history, oldest first, mapped to user/assistant roles', async () => {
-    ;(ensureFreshBookingData as any).mockResolvedValue({ bookingId: 'B1', status: 'unpaid' })
+    // The balance is in the booking JSON, so the quoted figure is one a real reply could
+    // actually have read (reply-verifier.ts) -- without it this fixture's reply is an
+    // invented price and the turn would hand off instead of exercising the history path.
+    ;(ensureFreshBookingData as any).mockResolvedValue({ bookingId: 'B1', status: 'unpaid', financial: { balance: 500000 } })
     ;(callLLM as any).mockResolvedValue('Sisa Rp500.000.')
     // Mocking the query's own `orderBy: { createdAt: 'desc' }` -- most recent first, exactly
     // what a real findMany call returns before the code's own .reverse() flips it to ascending.
@@ -432,7 +436,10 @@ describe('decideAndRespond', () => {
   })
 
   it('drops the tail history entry when it exactly echoes the message that just triggered this decision', async () => {
-    ;(ensureFreshBookingData as any).mockResolvedValue({ bookingId: 'B1', status: 'unpaid' })
+    // The balance is in the booking JSON, so the quoted figure is one a real reply could
+    // actually have read (reply-verifier.ts) -- without it this fixture's reply is an
+    // invented price and the turn would hand off instead of exercising the history path.
+    ;(ensureFreshBookingData as any).mockResolvedValue({ bookingId: 'B1', status: 'unpaid', financial: { balance: 500000 } })
     ;(callLLM as any).mockResolvedValue('Sisa Rp500.000.')
     mockPrisma.message.findMany.mockResolvedValue([
       // Already persisted before decideAndRespond ran (see ingestSingleMessage/test-message) --
@@ -1335,6 +1342,182 @@ describe('decideAndRespond', () => {
 
     expect(result.mode).toBe('booking_context')
     expect(checkDeploymentGate).not.toHaveBeenCalled()
+  })
+
+  // Task 10 (reply-verifier.ts): until this existed, the only check applied to a composed
+  // reply was that it was non-empty -- "never invent a price or a URL" lived entirely inside
+  // the prompt text. These cover the two severities and the ONE new handoff.
+  describe('reply verification (prices and links)', () => {
+    function groundedMainPath(overrides: Record<string, unknown> = {}) {
+      ;vi.mocked(ensureFreshBookingData).mockResolvedValue(null)
+      ;vi.mocked(classifySalesNeed).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
+      ;vi.mocked(checkRouteGate).mockReturnValue({ status: 'clear' })
+      ;vi.mocked(matchDestination).mockReturnValue({ destination: 'ijen', matches: [pkg(overrides) as unknown as CatalogPackage] })
+    }
+
+    it('blocks a price invented out of nothing, then sends the corrected rewrite', async () => {
+      // priceIdr null + no Rp anywhere in the facts -> this turn published NO price at all,
+      // so a figure in the reply cannot have come from anywhere but the model.
+      groundedMainPath({ priceIdr: null, priceTiers: [] })
+      ;vi.mocked(callLLM)
+        .mockResolvedValueOnce('Hi! It is Rp2.000.000 per person.')
+        .mockResolvedValueOnce('Hi! Our team will confirm the exact price for your group shortly.')
+
+      const result = await decideAndRespond('conv_1', 'How much is the Ijen tour?')
+
+      expect(result).toMatchObject({ mode: 'faq', draft: 'Hi! Our team will confirm the exact price for your group shortly.' })
+      expect(vi.mocked(callLLM).mock.calls).toHaveLength(2)
+      // The retry must name the offending figure, so the model knows what to drop.
+      expect(vi.mocked(callLLM).mock.calls[1][1]!.system).toContain('CRITICAL CORRECTION')
+      expect(vi.mocked(callLLM).mock.calls[1][1]!.system).toContain('Rp2.000.000')
+      expect(result.steps?.map((s) => s.label)).toContain('Verifikasi gagal')
+      expect(result.steps?.map((s) => s.label)).toContain('Penulisan ulang berhasil')
+    })
+
+    // The one handoff this branch adds, and deliberately the only one: NOT a content gap --
+    // the facts were in the prompt and the model would not use them.
+    it('hands off when the rewrite still invents a price', async () => {
+      groundedMainPath({ priceIdr: null, priceTiers: [] })
+      ;vi.mocked(callLLM).mockResolvedValue('Hi! It is Rp2.000.000 per person.')
+
+      const result = await decideAndRespond('conv_1', 'How much is the Ijen tour?')
+
+      expect(result).toMatchObject({ mode: 'handoff', reason: 'Balasan gagal verifikasi harga/link dua kali berturut-turut' })
+      expect(vi.mocked(callLLM).mock.calls).toHaveLength(2)
+      expect(result.steps?.map((s) => s.label)).toContain('Balasan ditahan')
+    })
+
+    it('sends a price that is a real catalog tier untouched', async () => {
+      groundedMainPath({ priceIdr: 4050000, priceTiers: [{ minPax: 2, maxPax: 3, priceIdr: 4050000 }] })
+      ;vi.mocked(callLLM).mockResolvedValue('Hi! It is Rp4.050.000 per person.')
+
+      const result = await decideAndRespond('conv_1', 'How much is the Ijen tour?')
+
+      expect(result).toMatchObject({ mode: 'faq', draft: 'Hi! It is Rp4.050.000 per person.' })
+      expect(vi.mocked(callLLM).mock.calls).toHaveLength(1)
+      expect(result.steps?.map((s) => s.label)).not.toContain('Harga perlu dicek')
+    })
+
+    // A group total is legitimate arithmetic the bot is expected to do -- blocking it would
+    // break real quoting to defend against a much rarer failure.
+    it('sends a group total derived from a real per-person tier without flagging it', async () => {
+      groundedMainPath({ priceIdr: 4050000, priceTiers: [{ minPax: 2, maxPax: 3, priceIdr: 4050000 }] })
+      ;vi.mocked(callLLM).mockResolvedValue('Hi! For 2 people that comes to Rp8.100.000 in total.')
+
+      const result = await decideAndRespond('conv_1', 'How much for 2 people?')
+
+      expect(result.mode).toBe('faq')
+      expect(result.steps?.map((s) => s.label)).not.toContain('Harga perlu dicek')
+    })
+
+    // Second severity: the grounding DID publish prices, so this is a figure to review, not
+    // one that could only have been invented -- recorded in the trace and still sent.
+    it('records but still sends a price the grounding cannot account for', async () => {
+      groundedMainPath({ priceIdr: 4050000, priceTiers: [{ minPax: 2, maxPax: 3, priceIdr: 4050000 }] })
+      ;vi.mocked(callLLM).mockResolvedValue('Hi! That works out to Rp9.999.999 for your group.')
+
+      const result = await decideAndRespond('conv_1', 'How much for my group?')
+
+      expect(result).toMatchObject({ mode: 'faq', draft: 'Hi! That works out to Rp9.999.999 for your group.' })
+      expect(vi.mocked(callLLM).mock.calls).toHaveLength(1)
+      expect(result.steps?.find((s) => s.label === 'Harga perlu dicek')?.detail).toContain('Rp9.999.999')
+    })
+
+    it("sends a link that is the matched package's own detail page", async () => {
+      groundedMainPath({ links: { details: 'https://javavolcano-touroperator.com/tours/ijen-blue-fire-1d' } })
+      ;vi.mocked(callLLM).mockResolvedValue('Hi! Full details here: https://javavolcano-touroperator.com/tours/ijen-blue-fire-1d')
+
+      const result = await decideAndRespond('conv_1', 'Where can I read more about Ijen?')
+
+      expect(result.mode).toBe('faq')
+      expect(vi.mocked(callLLM).mock.calls).toHaveLength(1)
+    })
+
+    // Unlike a price there is no arithmetic that could legitimately produce a URL the
+    // grounding never contained -- customer-link-registry.json shipped 18 dead "existing"
+    // URLs once already (knowledge.ts), so a half-remembered link is a real failure mode.
+    it('blocks a link that appears in no grounding for this turn', async () => {
+      groundedMainPath({ links: { details: 'https://javavolcano-touroperator.com/tours/ijen-blue-fire-1d' } })
+      ;vi.mocked(callLLM).mockResolvedValue('Hi! See https://javavolcano-touroperator.com/tours/made-up-package')
+
+      const result = await decideAndRespond('conv_1', 'Where can I read more about Ijen?')
+
+      expect(result.mode).toBe('handoff')
+      expect(vi.mocked(callLLM).mock.calls[1][1]!.system).toContain('https://javavolcano-touroperator.com/tours/made-up-package')
+    })
+
+    // The advisory check reads the FINAL verdict, so a figure that survives an accepted
+    // rewrite is still recorded -- otherwise a blocked-then-corrected reply could smuggle
+    // an unaccountable number through unlogged.
+    it('still records an unaccountable price in a rewrite that was accepted', async () => {
+      groundedMainPath({
+        priceIdr: 4050000,
+        priceTiers: [{ minPax: 2, maxPax: 3, priceIdr: 4050000 }],
+        links: { details: 'https://javavolcano-touroperator.com/tours/ijen-blue-fire-1d' },
+      })
+      vi.mocked(callLLM)
+        .mockResolvedValueOnce('Hi! Rp9.999.999 total -- see https://javavolcano-touroperator.com/tours/made-up-package')
+        .mockResolvedValueOnce('Hi! Rp9.999.999 total.')
+
+      const result = await decideAndRespond('conv_1', 'How much for my group?')
+
+      expect(result).toMatchObject({ mode: 'faq', draft: 'Hi! Rp9.999.999 total.' })
+      expect(result.steps?.map((s) => s.label)).toContain('Penulisan ulang berhasil')
+      expect(result.steps?.find((s) => s.label === 'Harga perlu dicek')?.detail).toContain('Rp9.999.999')
+    })
+
+    it('verifies a Mode 3 reply against the numbers in the booking JSON itself', async () => {
+      ;vi.mocked(ensureFreshBookingData).mockResolvedValue({ bookingId: 'B1', financial: { balance: 500000 } })
+      ;vi.mocked(callLLM).mockResolvedValue('Sisa pembayaran Anda Rp500.000.')
+
+      const result = await decideAndRespond('conv_1', 'Sisa pembayaran saya berapa?')
+
+      expect(result).toMatchObject({ mode: 'booking_context', reply: 'Sisa pembayaran Anda Rp500.000.' })
+      expect(vi.mocked(callLLM).mock.calls).toHaveLength(1)
+    })
+
+    it('hands off a Mode 3 reply quoting a price the booking data never contained', async () => {
+      ;vi.mocked(ensureFreshBookingData).mockResolvedValue({ bookingId: 'B1', package: 'Ijen Blue Fire Trekking' })
+      ;vi.mocked(callLLM).mockResolvedValue('Sisa pembayaran Anda Rp2.000.000.')
+
+      const result = await decideAndRespond('conv_1', 'Sisa pembayaran saya berapa?')
+
+      expect(result).toMatchObject({ mode: 'handoff', reason: 'Balasan gagal verifikasi harga/link dua kali berturut-turut' })
+    })
+
+    // The no-destination branch has matched no package at all, so its grounding is only
+    // whatever the resolved modules and the general fallback state in their own text.
+    it('verifies the no-destination branch against its own resolved facts', async () => {
+      ;vi.mocked(ensureFreshBookingData).mockResolvedValue(null)
+      ;vi.mocked(classifySalesNeed).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
+      ;vi.mocked(matchDestination).mockReturnValue(null)
+      ;vi.mocked(classifyTopicViaLLM).mockResolvedValue({ topic: 'payment', source: 'llm' })
+      ;vi.mocked(resolveKnowledgeForTopic).mockReturnValue({
+        factualLines: ['The ISIC student rate is Rp1.500.000 per person.'],
+        detailLines: [],
+        primaryLink: null,
+        disclosures: [],
+        handoffRequired: false,
+      })
+      ;vi.mocked(callLLM).mockResolvedValue('Hi! The student rate is Rp1.500.000 per person. Which destination interests you?')
+
+      const result = await decideAndRespond('conv_1', 'Is there a student discount?')
+
+      expect(result.mode).toBe('faq')
+      expect(vi.mocked(callLLM).mock.calls).toHaveLength(1)
+    })
+
+    it('hands off a no-destination reply quoting a price none of its facts contained', async () => {
+      ;vi.mocked(ensureFreshBookingData).mockResolvedValue(null)
+      ;vi.mocked(classifySalesNeed).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
+      ;vi.mocked(matchDestination).mockReturnValue(null)
+      ;vi.mocked(classifyTopicViaLLM).mockResolvedValue({ topic: 'payment', source: 'llm' })
+      ;vi.mocked(callLLM).mockResolvedValue('Hi! The deposit is Rp2.000.000. Which destination interests you?')
+
+      const result = await decideAndRespond('conv_1', 'How does the deposit work?')
+
+      expect(result).toMatchObject({ mode: 'handoff', reason: 'Balasan gagal verifikasi harga/link dua kali berturut-turut' })
+    })
   })
 
   describe('trip-preferences clarify (start/finish/day-count funnel)', () => {

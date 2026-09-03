@@ -123,6 +123,7 @@ import {
   GENERAL_FAQ_FALLBACK,
 } from './knowledge'
 import { callLLM, type LLMOptions } from './llm'
+import { verifyReply, buildVerificationRetryInstruction, extractRupiahAmounts, extractUrls } from './reply-verifier'
 import { loadCatalog } from './catalog'
 import { checkDeploymentGate } from './deployment-gate'
 import type { BotDecision, Catalog, TraceStep, TripBrief } from './types'
@@ -484,6 +485,106 @@ function createTracer() {
 type Tracer = ReturnType<typeof createTracer>
 
 /**
+ * Every number carried by a structured payload (the booking JSON), at any depth.
+ * The customer's own balance/payment/invoice total arrive as plain JSON numbers,
+ * not as Rp-formatted text, so `extractRupiahAmounts` alone would never see them
+ * and a reply correctly quoting their real outstanding balance would read as an
+ * invented price. Everything in that JSON is verbatim in the prompt, so every
+ * number in it is genuinely grounding for that turn.
+ */
+function numericValuesIn(value: unknown): number[] {
+  if (typeof value === 'number') return Number.isFinite(value) ? [value] : []
+  if (Array.isArray(value)) return value.flatMap(numericValuesIn)
+  if (value !== null && typeof value === 'object') return Object.values(value).flatMap(numericValuesIn)
+  return []
+}
+
+type ComposedReply = { ok: true; reply: string } | { ok: false; decision: BotDecision }
+
+/**
+ * The composition step EVERY LLM-grounded branch goes through: ask the model,
+ * refuse a blank answer, then verify the prices and links in what came back
+ * against what this specific turn was actually grounded in (see
+ * reply-verifier.ts's header for the two deliberately different severities).
+ *
+ * Shared by all three call sites rather than copied into each. The
+ * retry-then-handoff sequence below is the ONLY handoff on this branch that
+ * isn't one of the four long-standing ones, and three near-identical copies of
+ * it would be three chances for that rule to drift apart unnoticed. Each caller
+ * still composes its OWN `groundedAmounts`/`groundedUrls` -- they differ per
+ * branch by design: a grounding set wider than the turn (say, every price in the
+ * catalog) would verify everything and catch nothing.
+ *
+ * Pushes the final 'Jawaban siap dikirim' step itself, so the trace reads the
+ * same way whichever branch produced the reply; the caller only wraps the text
+ * in its own BotDecision shape.
+ */
+async function composeVerifiedReply(params: {
+  inboundText: string
+  system: string
+  model: string
+  history: LLMOptions['history']
+  groundedAmounts: number[]
+  groundedUrls: string[]
+  trace: Tracer
+}): Promise<ComposedReply> {
+  const { inboundText, system, model, history, groundedAmounts, groundedUrls, trace } = params
+  let reply = await callLLM(inboundText, { system, model, history })
+  // Second layer of defence behind llm.ts's own validation: an empty reply must never
+  // become a dispatched blank message. Previously handed off outright; now a graceful,
+  // bot-stays-active fallback instead (see TECHNICAL_HICCUP_REPLY's header).
+  if (!reply || !reply.trim()) {
+    trace.push('Jawaban kosong atau tidak valid', 'Model tidak memberikan jawaban yang bisa dikirim -- tetap dijawab dengan pesan cadangan, bot tetap aktif.')
+    return { ok: false, decision: { mode: 'clarify', reply: TECHNICAL_HICCUP_REPLY, steps: trace.steps } }
+  }
+
+  // GUARDRAIL_INSTRUCTION forbids inventing a price or URL, but nothing ever
+  // checked. A wrong price here is the most expensive error this bot can make
+  // -- the customer treats it as a quote -- and the link registry has already
+  // shipped 18 broken "existing" URLs once (see knowledge.ts). One corrective
+  // retry, then a safe deferral: never a fabricated number, never a dead link.
+  let verdict = verifyReply({ replyText: reply, groundedAmounts, groundedUrls })
+  if (verdict.fabricatedPrices.length > 0 || verdict.unknownUrls.length > 0) {
+    trace.push(
+      'Verifikasi gagal',
+      `Balasan menyebut harga/link yang tidak ada di data: ${[...verdict.fabricatedPrices, ...verdict.unknownUrls].join(', ')} -- model diminta menulis ulang.`
+    )
+    const retried = await callLLM(inboundText, {
+      system: `${system}${buildVerificationRetryInstruction(verdict)}`,
+      model,
+      history,
+    })
+    const retriedVerdict = retried?.trim() ? verifyReply({ replyText: retried, groundedAmounts, groundedUrls }) : null
+    if (retried?.trim() && retriedVerdict && retriedVerdict.fabricatedPrices.length === 0 && retriedVerdict.unknownUrls.length === 0) {
+      reply = retried
+      verdict = retriedVerdict
+      trace.push('Penulisan ulang berhasil', 'Balasan kedua hanya memakai harga/link yang benar-benar ada di data.')
+    } else {
+      // The ONE handoff this branch adds, and deliberately the only one. It is
+      // NOT a content gap -- the facts WERE present in the prompt and the model
+      // would not use them -- which is exactly why it is the one case where a
+      // human genuinely must answer: the bot has already proven, twice, that it
+      // cannot answer this turn without inventing a price or a link.
+      trace.push('Balasan ditahan', 'Penulisan ulang masih mengarang harga/link -- balasan diganti pesan aman dan percakapan diserahkan ke agen.')
+      return { ok: false, decision: { mode: 'handoff', reason: 'Balasan gagal verifikasi harga/link dua kali berturut-turut', steps: trace.steps } }
+    }
+  }
+  // Read off the FINAL verdict, so a figure in an accepted REWRITE is recorded too
+  // -- not just one in a reply that passed first time.
+  if (verdict.unverifiedPrices.length > 0) {
+    // Advisory only: a group total is legitimate arithmetic no closed-form
+    // check can enumerate, and blocking those would break real quoting.
+    trace.push(
+      'Harga perlu dicek',
+      `Balasan menyebut ${verdict.unverifiedPrices.map((a) => `Rp${a.toLocaleString('id-ID')}`).join(', ')} yang bukan tier langsung dari katalog (mungkin hasil hitungan) -- tetap dikirim.`
+    )
+  }
+
+  trace.push('Jawaban siap dikirim', previewText(reply))
+  return { ok: true, reply }
+}
+
+/**
  * Mode 3 -- booking context. Extracted 2026-08-06 (architecture review) as a named,
  * independently-callable step: bypasses the catalog-grounded path entirely, grounding the
  * reply ONLY in the customer's real booking data (plus GENERAL_FAQ_FALLBACK/route-leg facts
@@ -554,16 +655,33 @@ async function runBookingContextMode(
   const history = await fetchRecentHistory(conversationId, inboundText)
 
   trace.push('Meminta jawaban dari model lokal', `Menggunakan model ${ollamaModel} (Ollama, lokal) dengan data booking + ${history?.length ?? 0} pesan riwayat sebagai konteks.`)
-  const reply = await callLLM(inboundText, { system, model: ollamaModel, history })
-  // Second layer of defence behind llm.ts's own validation: an empty reply must never
-  // become a dispatched blank message. Previously handed off outright; now a graceful,
-  // bot-stays-active fallback instead (see TECHNICAL_HICCUP_REPLY's header).
-  if (!reply || !reply.trim()) {
-    trace.push('Jawaban kosong atau tidak valid', 'Model tidak memberikan jawaban yang bisa dikirim -- tetap dijawab dengan pesan cadangan, bot tetap aktif.')
-    return { mode: 'clarify', reply: TECHNICAL_HICCUP_REPLY, steps: trace.steps }
-  }
-  trace.push('Jawaban siap dikirim', previewText(reply))
-  return { mode: 'booking_context', reply, steps: trace.steps }
+  // What THIS turn was grounded in, and nothing else: every number the booking
+  // JSON carries (their real balance/payment/invoice total are plain JSON
+  // numbers), plus any Rp figure written into the general facts, the KLOOK
+  // health-screening override (Rp35.000/person -- a real price this branch and
+  // only this branch may state), or the route-leg facts. The catalog's package
+  // prices are deliberately absent: Mode 3 never shows them, so a package tier
+  // quoted here would be a number this reply had no way to know.
+  const bookingJson = JSON.stringify(bookingData)
+  const groundedAmounts = [
+    ...numericValuesIn(bookingData),
+    ...extractRupiahAmounts([bookingJson, GENERAL_FAQ_FALLBACK, klookHealthScreeningNote, ...modeThreeRouteLegFacts].join('\n')),
+  ]
+  const groundedUrls = [
+    ...(portalLink ? [portalLink] : []),
+    ...extractUrls([bookingJson, GENERAL_FAQ_FALLBACK].join('\n')),
+  ]
+  const composed = await composeVerifiedReply({
+    inboundText,
+    system,
+    model: ollamaModel,
+    history,
+    groundedAmounts,
+    groundedUrls,
+    trace,
+  })
+  if (!composed.ok) return composed.decision
+  return { mode: 'booking_context', reply: composed.reply, steps: trace.steps }
 }
 
 /**
@@ -622,13 +740,28 @@ async function runNoDestinationBranch(
         'Meminta jawaban dari model lokal',
         `Menggunakan model ${ollamaModel} (Ollama, lokal), topik "${resolverTopic}", ${preDestinationKnowledge.factualLines.length} fakta, ${history?.length ?? 0} pesan riwayat.`
       )
-      const reply = await callLLM(inboundText, { system, model: ollamaModel, history })
-      if (!reply || !reply.trim()) {
-        trace.push('Jawaban kosong atau tidak valid', 'Model tidak memberikan jawaban yang bisa dikirim -- tetap dijawab dengan pesan cadangan, bot tetap aktif.')
-        return { mode: 'clarify', reply: TECHNICAL_HICCUP_REPLY, steps: trace.steps }
-      }
-      trace.push('Jawaban siap dikirim', previewText(reply))
-      return { mode: 'faq', draft: reply, sourceTopic: resolverTopic, steps: trace.steps }
+      // No package has been matched yet on this branch, so the ONLY prices and
+      // links this turn was grounded in are whatever the resolved knowledge
+      // modules and the general fallback happen to state in their own text --
+      // no catalog tier, and no package link (this prompt never shows one, so a
+      // package URL appearing in the reply is a URL the model invented).
+      const preDestinationText = [
+        ...preDestinationKnowledge.factualLines,
+        ...preDestinationKnowledge.detailLines,
+        ...preDestinationKnowledge.disclosures,
+        GENERAL_FAQ_FALLBACK,
+      ].join('\n')
+      const composed = await composeVerifiedReply({
+        inboundText,
+        system,
+        model: ollamaModel,
+        history,
+        groundedAmounts: extractRupiahAmounts(preDestinationText),
+        groundedUrls: extractUrls(preDestinationText),
+        trace,
+      })
+      if (!composed.ok) return composed.decision
+      return { mode: 'faq', draft: composed.reply, sourceTopic: resolverTopic, steps: trace.steps }
     }
   }
 
@@ -1369,13 +1502,44 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
       'Meminta jawaban dari model lokal',
       `Menggunakan model ${settings.ollamaModel} (Ollama, lokal), topik "${resolverTopic}", ${knowledge.factualLines.length} fakta, ${history?.length ?? 0} pesan riwayat.`
     )
-    const reply = await callLLM(inboundText, { system, model: settings.ollamaModel, history })
-    if (!reply || !reply.trim()) {
-      trace.push('Jawaban kosong atau tidak valid', 'Model tidak memberikan jawaban yang bisa dikirim -- tetap dijawab dengan pesan cadangan, bot tetap aktif.')
-      return { mode: 'clarify', reply: TECHNICAL_HICCUP_REPLY, steps: trace.steps }
-    }
-    trace.push('Jawaban siap dikirim', previewText(reply))
-    return { mode: 'faq', draft: reply, sourceTopic: resolverTopic, steps: trace.steps }
+    // What this specific turn was actually grounded in -- not the whole catalog.
+    // A price the model could not have read here is one it made up. Every tier of
+    // every option shown (not just the one `priceLabel` printed): quoting a real
+    // neighbouring tier is a wrong-tier answer to review, not an invented number
+    // to block -- and reply-verifier.ts's second severity is exactly where that
+    // distinction gets made.
+    const groundedText = [
+      ...knowledge.factualLines,
+      ...knowledge.detailLines,
+      ...disclosures,
+      ...pkg.stagingNotes,
+      GENERAL_FAQ_FALLBACK,
+    ].join('\n')
+    const groundedAmounts = [
+      ...optionPackages.flatMap((p) => p.priceTiers.map((t) => t.priceIdr)),
+      ...(pkg.priceIdr !== null ? [pkg.priceIdr] : []),
+      ...extractRupiahAmounts(groundedText),
+    ]
+    const groundedUrls = [
+      ...optionPackages.map((p) => p.links.details).filter((u): u is string => Boolean(u)),
+      ...(pkg.links.details ? [pkg.links.details] : []),
+      ...(primaryLink ? [primaryLink] : []),
+      // A module's own text can carry a link of its own; it is in the prompt, so
+      // repeating it is not an invention.
+      ...extractUrls(groundedText),
+    ]
+
+    const composed = await composeVerifiedReply({
+      inboundText,
+      system,
+      model: settings.ollamaModel,
+      history,
+      groundedAmounts,
+      groundedUrls,
+      trace,
+    })
+    if (!composed.ok) return composed.decision
+    return { mode: 'faq', draft: composed.reply, sourceTopic: resolverTopic, steps: trace.steps }
   } catch (error) {
     // Log before failing safe: without this, the single most likely production
     // failure surfaces in the bot audit log as an identical, uninformative generic
