@@ -16,7 +16,7 @@
 - **Never fabricate.** No task may introduce a price, URL, hotel name or policy that is not present in `catalog/*.json`.
 - **The bot must stay active.** Every failure path returns `mode: 'clarify'` with `TECHNICAL_HICCUP_REPLY`, never `mode: 'handoff'`, unless it is one of the permitted handoffs above.
 - **All customer-facing reply text is English.** Trace/`botTrace` detail strings are Indonesian. Follow the file you are editing.
-- **Tests:** `npm test` (vitest). The suite is 1348 tests and must stay green at the end of every task. `npx tsc --noEmit` and `npx eslint` must both be clean before every commit.
+- **Tests:** `npm test` (vitest). The suite must stay green at the end of every task and no existing test may be deleted or skipped to achieve that. Do not assert on a total test COUNT -- it changes as tasks add tests, and the count in any task step is indicative only. `npx tsc --noEmit` and `npx eslint` must both be clean before every commit.
 - **Do not run the dev server, a browser, or any script that writes to the production database.** Verification is the automated suite only.
 - **Commit per task**, message in the style of the existing history (imperative subject, body explaining *why*), ending with:
   `Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>`
@@ -143,7 +143,7 @@ Note: the test uses fake timers, so `Date.now()` must advance with them. `vi.adv
 - [ ] **Step 4: Run the file, then the whole suite**
 
 Run: `npx vitest run src/lib/inbound.test.ts` — expect PASS.
-Run: `npm test` — expect 1349 passed (1348 + the new one).
+Run: `npm test` — expect all green, with one more test than before.
 Run: `npx tsc --noEmit && npx eslint src/lib/inbound.ts` — expect clean.
 
 - [ ] **Step 5: Commit**
@@ -790,7 +790,7 @@ For each failure: assert on **which mock was called with what**, not on its posi
 
 - [ ] **Step 7: Verify**
 
-Run: `npm test` — expect all green (1348 + the 2 new).
+Run: `npm test` — expect all green, with two more tests than before.
 Run: `npx tsc --noEmit && npx eslint src/lib/bot/orchestrator.ts` — expect clean.
 
 - [ ] **Step 8: Commit**
@@ -1686,7 +1686,7 @@ Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>"
 
 ### Task 12: A golden-set evaluation harness
 
-**Why:** 1348 tests verify *routing* — which mode, which facts entered the prompt, which tier was picked — because `callLLM` is mocked everywhere. Not one of them looks at the text actually sent to a customer. `orchestrator.real.test.ts`'s own header admits four real parsing bugs had to be found by live-testing after deploy. There is currently no way to answer "did that change make answers better?" with a number.
+**Why:** The existing tests verify *routing* — which mode, which facts entered the prompt, which tier was picked — because `callLLM` is mocked everywhere. Not one of them looks at the text actually sent to a customer. `orchestrator.real.test.ts`'s own header admits four real parsing bugs had to be found by live-testing after deploy. There is currently no way to answer "did that change make answers better?" with a number.
 
 This harness runs the **real** orchestrator against the **real** Ollama, over conversations taken from the real customer messages already documented in the code comments, and scores each one.
 
@@ -1840,7 +1840,7 @@ Create `src/lib/bot/eval/run-eval.ts`. It is a **script**, not a vitest file —
 /**
  * Scores the bot's ACTUAL replies against real customer messages.
  *
- * The 1348-test suite verifies routing -- which mode, which facts entered the
+ * The existing test suite verifies routing -- which mode, which facts entered the
  * prompt -- because callLLM is mocked in all of it. Nothing checks the text a
  * customer receives, which is why orchestrator.real.test.ts's own header
  * records four real parsing bugs that had to be found by live-testing after
@@ -1944,7 +1944,7 @@ Run: `npx tsc --noEmit && npx eslint src/lib/bot/eval` — expect clean.
 git add src/lib/bot/eval package.json
 git commit -m "Add a golden-set evaluation harness for real replies
 
-Every one of the 1348 existing tests mocks callLLM, so the suite verifies
+Every one of the the existing tests mocks callLLM, so the suite verifies
 routing and never once looks at the text a customer receives -- which is why
 orchestrator.real.test.ts records four parsing bugs that had to be found by
 live-testing after deploy. This scores the real orchestrator against real
