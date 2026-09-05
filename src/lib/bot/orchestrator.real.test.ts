@@ -28,7 +28,7 @@ import { prisma } from '@/lib/db'
 import { decideAndRespond } from './orchestrator'
 import { ensureFreshBookingData } from '@/lib/booking/client'
 import { checkRouteGate } from './route-gate'
-import { callLLM } from './llm'
+import { callLLM, type LLMOptions } from './llm'
 import { checkDeploymentGate } from './deployment-gate'
 import type { TripBrief } from './types'
 
@@ -57,12 +57,21 @@ function tripBriefWrites(): Partial<TripBrief>[] {
 // order is an implementation detail that has already changed once (they now run batched rather
 // than in sequence). The reply-composing call is therefore identified by WHAT it is -- the only
 // one grounded in the shared persona preamble -- rather than by its position in mock.calls.
-function composerCall(): { system: string } {
-  const composerCalls = (callLLM as any).mock.calls.filter(
-    ([, opts]: [string, { system?: string }]) => opts?.system?.startsWith('You are a real member of the JVTO')
+// The composing call is selected BY its system prompt above, so a missing one here would mean
+// composerCall() returned the wrong call -- surface that rather than widening the assertions.
+function systemOf(opts: LLMOptions): string {
+  if (opts.system === undefined) throw new Error('the composing callLLM call carried no system prompt')
+  return opts.system
+}
+
+function composerCall(): LLMOptions {
+  const composerCalls = vi.mocked(callLLM).mock.calls.filter(
+    ([, opts]) => opts?.system?.startsWith('You are a real member of the JVTO')
   )
   expect(composerCalls).toHaveLength(1)
-  return composerCalls[0][1]
+  const opts = composerCalls[0][1]
+  if (!opts) throw new Error('the composing callLLM call was made without options')
+  return opts
 }
 
 function withTripBrief(tripBrief: TripBrief) {
@@ -78,10 +87,10 @@ function withTripBrief(tripBrief: TripBrief) {
 beforeEach(() => {
   mockReset(mockPrisma)
   vi.clearAllMocks()
-  ;(ensureFreshBookingData as any).mockResolvedValue(null)
-  ;(checkDeploymentGate as any).mockReturnValue({ readyForApproval: true, blocking: [] })
-  ;(checkRouteGate as any).mockReturnValue({ status: 'clear' })
-  ;(callLLM as any).mockResolvedValue('A real reply.')
+  ;vi.mocked(ensureFreshBookingData).mockResolvedValue(null)
+  ;vi.mocked(checkDeploymentGate).mockReturnValue({ readyForApproval: true, blocking: [] })
+  ;vi.mocked(checkRouteGate).mockReturnValue({ status: 'clear' })
+  ;vi.mocked(callLLM).mockResolvedValue('A real reply.')
   mockPrisma.settings.findUniqueOrThrow.mockResolvedValue({ ollamaModel: 'gemma4:31b-cloud' } as never)
   mockPrisma.message.findMany.mockResolvedValue([] as never)
   mockPrisma.conversation.update.mockResolvedValue({} as never)
@@ -136,7 +145,7 @@ describe.skipIf(!RELEASE_PRESENT)('decideAndRespond against the real parsing pip
     // isn't valid JSON for any of them, so they all fall back to their real regex/fail-safe
     // implementations) -- composerCall() picks out the reply-composing one by identity.
     const opts = composerCall()
-    expect(opts.system.toLowerCase()).toContain('closed')
+    expect(systemOf(opts).toLowerCase()).toContain('closed')
   })
 
   // Reported live 2026-08-06: this exact message classifies as topic 'price' (any "how much"
@@ -165,7 +174,7 @@ describe.skipIf(!RELEASE_PRESENT)('decideAndRespond against the real parsing pip
 
     expect(result.mode).toBe('faq')
     const opts = composerCall()
-    expect(opts.system.toLowerCase()).toContain('deposit')
+    expect(systemOf(opts).toLowerCase()).toContain('deposit')
     expect(opts.system).not.toContain('Happy to recommend the best package')
   })
 
@@ -178,8 +187,8 @@ describe.skipIf(!RELEASE_PRESENT)('decideAndRespond against the real parsing pip
     await decideAndRespond('conv_1', 'Pickup from Surabaya Airport jam 6 sore, mau ke Bromo dan Ijen.')
 
     const opts = composerCall()
-    expect(opts.system.toLowerCase()).toMatch(/bromo.*ijen/)
-    expect(opts.system.toLowerCase()).toContain('rest')
+    expect(systemOf(opts).toLowerCase()).toMatch(/bromo.*ijen/)
+    expect(systemOf(opts).toLowerCase()).toContain('rest')
   })
 
   // A customer who explicitly declines to state trip preferences should be recommended a
@@ -224,7 +233,7 @@ describe.skipIf(!RELEASE_PRESENT)('decideAndRespond against the real parsing pip
 
     const opts = composerCall()
     expect(opts.system).not.toContain('bromo-1d1n')
-    expect(opts.system.toLowerCase()).toContain('tumpak-sewu-bromo')
+    expect(systemOf(opts).toLowerCase()).toContain('tumpak-sewu-bromo')
   })
 
   // Reported live 2026-08-07: no real Ijen package both starts AND finishes in Bali (all
@@ -244,7 +253,7 @@ describe.skipIf(!RELEASE_PRESENT)('decideAndRespond against the real parsing pip
     await decideAndRespond('conv_1', 'We want a 3 day Ijen tour starting from Bali, and finishing in Bali as well.')
 
     const opts = composerCall()
-    const pkgMatch = opts.system.match(/Package the customer is asking about: (.+)/)
+    const pkgMatch = systemOf(opts).match(/Package the customer is asking about: (.+)/)
     expect(pkgMatch).not.toBeNull()
     const pkgTitle = pkgMatch![1].trim()
     // Whatever single package is named, it must genuinely appear among the disclosed options

@@ -4,6 +4,17 @@ import { Prisma, type PrismaClient } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { lookupBooking, ensureFreshBookingData } from './client'
 
+import type { MockedFunction } from 'vitest'
+
+// `fetch` is re-stubbed on every beforeEach, so the handle is resolved lazily instead of
+// bound once at module scope -- binding it once would keep pointing at the previous test's
+// stub. The stubbed value stays loose because these tests hand fetch deliberately partial
+// Response fixtures (ok + json only); the call tuple gets its real shape back at the point
+// of inspection instead, which is where the types actually earn something.
+const mockFetch = () => fetch as unknown as MockedFunction<(...args: never[]) => unknown>
+type FetchInit = { method?: string; body: string; signal?: AbortSignal | null; headers: Record<string, string | undefined> }
+const fetchCall = (index = 0) => mockFetch().mock.calls[index] as unknown as [string, FetchInit]
+
 vi.mock('@/lib/db', () => ({ prisma: mockDeep<PrismaClient>() }))
 const mockPrisma = prisma as unknown as DeepMockProxy<PrismaClient>
 
@@ -23,12 +34,12 @@ describe('lookupBooking', () => {
   })
 
   it('builds the request URL with filter_type=range, a date_range from the 1st of last month, and phone_no; sends a Bearer Authorization header', async () => {
-    ;(fetch as any).mockResolvedValue({ ok: true, json: async () => ({ id: 'B1' }) })
+    ;mockFetch().mockResolvedValue({ ok: true, json: async () => ({ id: 'B1' }) })
 
     await lookupBooking('+62 812-3456-7890')
 
     expect(fetch).toHaveBeenCalledTimes(1)
-    const [url, options] = (fetch as any).mock.calls[0]
+    const [url, options] = fetchCall(0)
     // Phone is normalized (spaces/dashes stripped) and the '+' is kept as a
     // literal character in the query string (not percent-encoded to %2B).
     expect(url).toMatch(
@@ -40,11 +51,11 @@ describe('lookupBooking', () => {
 
   it('omits the Authorization header when BOOKING_API_KEY is not set', async () => {
     delete process.env.BOOKING_API_KEY
-    ;(fetch as any).mockResolvedValue({ ok: true, json: async () => ({ id: 'B1' }) })
+    ;mockFetch().mockResolvedValue({ ok: true, json: async () => ({ id: 'B1' }) })
 
     await lookupBooking('6281234567890')
 
-    const [, options] = (fetch as any).mock.calls[0]
+    const [, options] = fetchCall(0)
     expect(options.headers.Authorization).toBeUndefined()
   })
 
@@ -57,7 +68,7 @@ describe('lookupBooking', () => {
       orderChannel: 'JVTO',
       financial: { payment: 500000, balance: 350000 },
     }
-    ;(fetch as any).mockResolvedValue({ ok: true, json: async () => raw })
+    ;mockFetch().mockResolvedValue({ ok: true, json: async () => raw })
 
     const result = await lookupBooking('6281234567890')
 
@@ -65,7 +76,7 @@ describe('lookupBooking', () => {
   })
 
   it('picks the booking with the latest date.start_ymd when the API returns an array', async () => {
-    ;(fetch as any).mockResolvedValue({
+    ;mockFetch().mockResolvedValue({
       ok: true,
       json: async () => [
         { id: 'B1', date: { start_ymd: '2026-08-01' } },
@@ -80,17 +91,17 @@ describe('lookupBooking', () => {
   })
 
   it('returns null when the API returns an empty array', async () => {
-    ;(fetch as any).mockResolvedValue({ ok: true, json: async () => [] })
+    ;mockFetch().mockResolvedValue({ ok: true, json: async () => [] })
     expect(await lookupBooking('6281234567890')).toBeNull()
   })
 
   it('returns null when the API returns an empty object', async () => {
-    ;(fetch as any).mockResolvedValue({ ok: true, json: async () => ({}) })
+    ;mockFetch().mockResolvedValue({ ok: true, json: async () => ({}) })
     expect(await lookupBooking('6281234567890')).toBeNull()
   })
 
   it('handles array items with a missing date gracefully instead of throwing', async () => {
-    ;(fetch as any).mockResolvedValue({
+    ;mockFetch().mockResolvedValue({
       ok: true,
       json: async () => [{ id: 'B1' }, { id: 'B2', date: { start_ymd: '2026-09-01' } }],
     })
@@ -101,17 +112,17 @@ describe('lookupBooking', () => {
   })
 
   it('returns null when the response is not ok (e.g. 404 or 500)', async () => {
-    ;(fetch as any).mockResolvedValue({ ok: false, status: 500, json: async () => ({}) })
+    ;mockFetch().mockResolvedValue({ ok: false, status: 500, json: async () => ({}) })
     expect(await lookupBooking('6281234567890')).toBeNull()
   })
 
   it('returns null instead of throwing when the request fails outright', async () => {
-    ;(fetch as any).mockRejectedValue(new Error('timeout'))
+    ;mockFetch().mockRejectedValue(new Error('timeout'))
     expect(await lookupBooking('6281234567890')).toBeNull()
   })
 
   it('returns null instead of throwing when the response body is not valid JSON', async () => {
-    ;(fetch as any).mockResolvedValue({
+    ;mockFetch().mockResolvedValue({
       ok: true,
       json: async () => {
         throw new Error('invalid JSON')
@@ -159,7 +170,7 @@ describe('ensureFreshBookingData', () => {
   })
 
   it('refetches when bookingCheckedAt is null (never checked)', async () => {
-    ;(fetch as any).mockResolvedValue({ ok: true, json: async () => ({ id: 'B1', guest: 'Bruno' }) })
+    ;mockFetch().mockResolvedValue({ ok: true, json: async () => ({ id: 'B1', guest: 'Bruno' }) })
     const conversation = { id: 'conv_1', bookingData: null, bookingCheckedAt: null, pipelineStage: 'new', contact: { phone: '6281234567890' } }
 
     const result = await ensureFreshBookingData(conversation)
@@ -169,7 +180,7 @@ describe('ensureFreshBookingData', () => {
   })
 
   it('refetches when the cached value is older than 24h', async () => {
-    ;(fetch as any).mockResolvedValue({ ok: true, json: async () => ({ id: 'B2' }) })
+    ;mockFetch().mockResolvedValue({ ok: true, json: async () => ({ id: 'B2' }) })
     const stale = new Date(Date.now() - 25 * 60 * 60 * 1000)
     const conversation = { id: 'conv_1', bookingData: { id: 'B1' }, bookingCheckedAt: stale, pipelineStage: 'new', contact: { phone: '6281234567890' } }
 
@@ -196,7 +207,7 @@ describe('ensureFreshBookingData', () => {
   // and only an `as never` cast would suppress that error. What this test CAN pin
   // down is the exact `data` object handed to Prisma.
   it('writes Prisma.DbNull (never plain null) when no booking is found, so bookingCheckedAt still persists', async () => {
-    ;(fetch as any).mockResolvedValue({ ok: true, json: async () => ({}) })
+    ;mockFetch().mockResolvedValue({ ok: true, json: async () => ({}) })
     const conversation = { id: 'conv_1', bookingData: null, bookingCheckedAt: null, pipelineStage: 'new', contact: { phone: '6281234567890' } }
 
     const result = await ensureFreshBookingData(conversation)
@@ -209,7 +220,7 @@ describe('ensureFreshBookingData', () => {
   })
 
   it('writes the raw booking object through unchanged when a booking is found', async () => {
-    ;(fetch as any).mockResolvedValue({ ok: true, json: async () => ({ id: 'B1', guest: 'Bruno' }) })
+    ;mockFetch().mockResolvedValue({ ok: true, json: async () => ({ id: 'B1', guest: 'Bruno' }) })
     // pipelineStage starts at 'lunas' (outranks the 'booked' this booking would otherwise
     // derive) specifically so this test's assertion isn't also asserting on the pipeline
     // auto-advance behavior -- that has its own describe block below.
@@ -230,7 +241,7 @@ describe('ensureFreshBookingData — pipeline auto-advance', () => {
   }
 
   it('advances a new/nego conversation to "booked" once a real booking is found with no balance/end-date info', async () => {
-    ;(fetch as any).mockResolvedValue({ ok: true, json: async () => ({ id: 'B1' }) })
+    ;mockFetch().mockResolvedValue({ ok: true, json: async () => ({ id: 'B1' }) })
 
     await ensureFreshBookingData(conversationWith('nego'))
 
@@ -240,7 +251,7 @@ describe('ensureFreshBookingData — pipeline auto-advance', () => {
   })
 
   it('advances straight to "lunas" once the booking\'s outstanding balance is zero', async () => {
-    ;(fetch as any).mockResolvedValue({ ok: true, json: async () => ({ id: 'B1', financial: { balance: 0 } }) })
+    ;mockFetch().mockResolvedValue({ ok: true, json: async () => ({ id: 'B1', financial: { balance: 0 } }) })
 
     await ensureFreshBookingData(conversationWith('new'))
 
@@ -250,7 +261,7 @@ describe('ensureFreshBookingData — pipeline auto-advance', () => {
   })
 
   it('does not treat a positive outstanding balance as paid', async () => {
-    ;(fetch as any).mockResolvedValue({ ok: true, json: async () => ({ id: 'B1', financial: { balance: 350000 } }) })
+    ;mockFetch().mockResolvedValue({ ok: true, json: async () => ({ id: 'B1', financial: { balance: 350000 } }) })
 
     await ensureFreshBookingData(conversationWith('new'))
 
@@ -260,7 +271,7 @@ describe('ensureFreshBookingData — pipeline auto-advance', () => {
   })
 
   it('advances to "selesai" once the trip\'s own end date has passed', async () => {
-    ;(fetch as any).mockResolvedValue({
+    ;mockFetch().mockResolvedValue({
       ok: true,
       json: async () => ({ id: 'B1', financial: { balance: 350000 }, date: { end_ymd: '2020-01-01' } }),
     })
@@ -273,7 +284,7 @@ describe('ensureFreshBookingData — pipeline auto-advance', () => {
   })
 
   it('does not advance to "selesai" for a future end date', async () => {
-    ;(fetch as any).mockResolvedValue({
+    ;mockFetch().mockResolvedValue({
       ok: true,
       json: async () => ({ id: 'B1', date: { end_ymd: '2099-01-01' } }),
     })
@@ -286,7 +297,7 @@ describe('ensureFreshBookingData — pipeline auto-advance', () => {
   })
 
   it('never moves the stage backward past what an agent already set (lunas stays lunas even though this booking only derives "booked")', async () => {
-    ;(fetch as any).mockResolvedValue({ ok: true, json: async () => ({ id: 'B1' }) })
+    ;mockFetch().mockResolvedValue({ ok: true, json: async () => ({ id: 'B1' }) })
 
     await ensureFreshBookingData(conversationWith('lunas'))
 
@@ -295,7 +306,7 @@ describe('ensureFreshBookingData — pipeline auto-advance', () => {
   })
 
   it('does not touch pipelineStage when no booking is found at all', async () => {
-    ;(fetch as any).mockResolvedValue({ ok: true, json: async () => ({}) })
+    ;mockFetch().mockResolvedValue({ ok: true, json: async () => ({}) })
 
     await ensureFreshBookingData(conversationWith('new'))
 
@@ -304,7 +315,7 @@ describe('ensureFreshBookingData — pipeline auto-advance', () => {
   })
 
   it('treats an unrecognized current pipelineStage as rank -1, so it still advances', async () => {
-    ;(fetch as any).mockResolvedValue({ ok: true, json: async () => ({ id: 'B1' }) })
+    ;mockFetch().mockResolvedValue({ ok: true, json: async () => ({ id: 'B1' }) })
 
     await ensureFreshBookingData(conversationWith('some_custom_stage'))
 

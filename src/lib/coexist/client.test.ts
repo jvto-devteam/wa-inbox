@@ -1,13 +1,22 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { sendCoexistText, sendCoexistMedia } from './client'
 
+import type { MockedFunction } from 'vitest'
+
+// `fetch` is re-stubbed on every beforeEach, so the handle is resolved lazily instead of
+// bound once at module scope -- binding it once would keep pointing at the previous test's
+// stub. The stubbed value stays loose because these tests hand fetch deliberately partial
+// Response fixtures (ok + json only); the call tuple gets its real shape back at the point
+// of inspection instead, which is where the types actually earn something.
+const mockFetch = () => fetch as unknown as MockedFunction<(...args: never[]) => unknown>
+
 const waNumber = { coexistBaseUrl: 'http://localhost:4000', coexistApiKey: 'key123', coexistNumberKey: 'num456' }
 
 beforeEach(() => vi.stubGlobal('fetch', vi.fn()))
 
 describe('sendCoexistText', () => {
   it('posts to /api/v1/send_message with api_key/number_key/phone_no/message and returns {} on success', async () => {
-    ;(fetch as any).mockResolvedValue({
+    ;mockFetch().mockResolvedValue({
       ok: true,
       json: async () => ({
         status: '200',
@@ -34,7 +43,7 @@ describe('sendCoexistText', () => {
   })
 
   it('throws using the message field when wa-coexist returns a non-"200" status', async () => {
-    ;(fetch as any).mockResolvedValue({
+    ;mockFetch().mockResolvedValue({
       ok: true,
       json: async () => ({ status: '1004', message: 'WhatsApp is not connected' }),
     })
@@ -43,7 +52,7 @@ describe('sendCoexistText', () => {
   })
 
   it('throws when the HTTP response itself is not ok', async () => {
-    ;(fetch as any).mockResolvedValue({
+    ;mockFetch().mockResolvedValue({
       ok: false,
       json: async () => ({ status: '1005', message: 'Internal error' }),
     })
@@ -54,7 +63,7 @@ describe('sendCoexistText', () => {
 
 describe('sendCoexistMedia', () => {
   it('posts to /api/v1/send_image_url with the caption in the `message` field for type image', async () => {
-    ;(fetch as any).mockResolvedValue({
+    ;mockFetch().mockResolvedValue({
       ok: true,
       json: async () => ({ status: '200', message: 'Successfully', ack: 'successfully' }),
     })
@@ -78,7 +87,7 @@ describe('sendCoexistMedia', () => {
   })
 
   it('posts to /api/v1/send_file_url for type document, dropping caption (wa-coexist has no caption field there)', async () => {
-    ;(fetch as any).mockResolvedValue({
+    ;mockFetch().mockResolvedValue({
       ok: true,
       json: async () => ({ status: '200', message: 'Successfully', ack: 'successfully' }),
     })
@@ -101,7 +110,7 @@ describe('sendCoexistMedia', () => {
   })
 
   it('posts to /api/v1/send_file_url for type video', async () => {
-    ;(fetch as any).mockResolvedValue({
+    ;mockFetch().mockResolvedValue({
       ok: true,
       json: async () => ({ status: '200', message: 'Successfully', ack: 'successfully' }),
     })
@@ -112,7 +121,7 @@ describe('sendCoexistMedia', () => {
   })
 
   it('throws when wa-coexist returns a non-"200" status for media sends', async () => {
-    ;(fetch as any).mockResolvedValue({
+    ;mockFetch().mockResolvedValue({
       ok: true,
       json: async () => ({ status: '1006', message: 'Missing required fields: phone_no, url' }),
     })
@@ -128,7 +137,7 @@ describe('sendCoexistMedia', () => {
 // and wa-coexist's own ensureConnected can block ~15s when the session is
 // down — an unbounded fetch there stalls the webhook past Meta's delivery
 // window.
-// The `(fetch as any)` shorthand used above predates this block; new
+// The `mockFetch()` shorthand used above predates this block; new
 // assertions use vi.mocked() so they stay type-checked.
 function mockedFetch() {
   return vi.mocked(fetch)

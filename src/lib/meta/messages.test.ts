@@ -1,13 +1,24 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { sendMetaText, sendMetaMedia, sendTemplateMessage } from './messages'
 
+import type { MockedFunction } from 'vitest'
+
+// `fetch` is re-stubbed on every beforeEach, so the handle is resolved lazily instead of
+// bound once at module scope -- binding it once would keep pointing at the previous test's
+// stub. The stubbed value stays loose because these tests hand fetch deliberately partial
+// Response fixtures (ok + json only); the call tuple gets its real shape back at the point
+// of inspection instead, which is where the types actually earn something.
+const mockFetch = () => fetch as unknown as MockedFunction<(...args: never[]) => unknown>
+type FetchInit = { method?: string; body: string; signal?: AbortSignal | null; headers: Record<string, string | undefined> }
+const fetchCall = (index = 0) => mockFetch().mock.calls[index] as unknown as [string, FetchInit]
+
 beforeEach(() => {
   vi.stubGlobal('fetch', vi.fn())
 })
 
 describe('sendMetaText', () => {
   it('posts to the Graph API messages endpoint and returns the message id', async () => {
-    ;(fetch as any).mockResolvedValue({
+    ;mockFetch().mockResolvedValue({
       ok: true,
       json: async () => ({ messages: [{ id: 'wamid.OUT1' }] }),
     })
@@ -25,31 +36,31 @@ describe('sendMetaText', () => {
   })
 
   it('includes a context.message_id when replying to a specific wamid', async () => {
-    ;(fetch as any).mockResolvedValue({
+    ;mockFetch().mockResolvedValue({
       ok: true,
       json: async () => ({ messages: [{ id: 'wamid.OUT2' }] }),
     })
 
     await sendMetaText({ phoneNumberId: '123', accessToken: 'tok' }, '6281234567890', 'Baik, siap!', 'wamid.PARENT')
 
-    const [, options] = (fetch as any).mock.calls[0]
+    const [, options] = fetchCall(0)
     expect(JSON.parse(options.body)).toEqual(expect.objectContaining({ context: { message_id: 'wamid.PARENT' } }))
   })
 
   it('omits context entirely when there is no reply target', async () => {
-    ;(fetch as any).mockResolvedValue({
+    ;mockFetch().mockResolvedValue({
       ok: true,
       json: async () => ({ messages: [{ id: 'wamid.OUT3' }] }),
     })
 
     await sendMetaText({ phoneNumberId: '123', accessToken: 'tok' }, '6281234567890', 'Halo')
 
-    const [, options] = (fetch as any).mock.calls[0]
+    const [, options] = fetchCall(0)
     expect(JSON.parse(options.body)).not.toHaveProperty('context')
   })
 
   it('throws with the Graph API error message on failure', async () => {
-    ;(fetch as any).mockResolvedValue({
+    ;mockFetch().mockResolvedValue({
       ok: false,
       json: async () => ({ error: { message: 'Invalid token' } }),
     })
@@ -60,12 +71,12 @@ describe('sendMetaText', () => {
 
 describe('sendMetaMedia', () => {
   it('sends an image message with a caption', async () => {
-    ;(fetch as any).mockResolvedValue({ ok: true, json: async () => ({ messages: [{ id: 'wamid.IMG1' }] }) })
+    ;mockFetch().mockResolvedValue({ ok: true, json: async () => ({ messages: [{ id: 'wamid.IMG1' }] }) })
 
     const result = await sendMetaMedia({ phoneNumberId: '123', accessToken: 'tok' }, '6281234567890', 'image', 'media_1', 'Lihat ini')
 
     expect(result).toEqual({ externalId: 'wamid.IMG1' })
-    const [, options] = (fetch as any).mock.calls[0]
+    const [, options] = fetchCall(0)
     expect(JSON.parse(options.body)).toEqual({
       messaging_product: 'whatsapp',
       to: '6281234567890',
@@ -75,36 +86,36 @@ describe('sendMetaMedia', () => {
   })
 
   it('omits caption entirely when none is given', async () => {
-    ;(fetch as any).mockResolvedValue({ ok: true, json: async () => ({ messages: [{ id: 'wamid.DOC1' }] }) })
+    ;mockFetch().mockResolvedValue({ ok: true, json: async () => ({ messages: [{ id: 'wamid.DOC1' }] }) })
 
     await sendMetaMedia({ phoneNumberId: '123', accessToken: 'tok' }, '628', 'document', 'media_2')
 
-    const [, options] = (fetch as any).mock.calls[0]
+    const [, options] = fetchCall(0)
     expect(JSON.parse(options.body).document).toEqual({ id: 'media_2' })
   })
 
   it('drops a caption for audio, since Meta silently ignores one there', async () => {
-    ;(fetch as any).mockResolvedValue({ ok: true, json: async () => ({ messages: [{ id: 'wamid.AUD1' }] }) })
+    ;mockFetch().mockResolvedValue({ ok: true, json: async () => ({ messages: [{ id: 'wamid.AUD1' }] }) })
 
     await sendMetaMedia({ phoneNumberId: '123', accessToken: 'tok' }, '628', 'audio', 'media_3', 'ini caption yang tidak akan terkirim')
 
-    const [, options] = (fetch as any).mock.calls[0]
+    const [, options] = fetchCall(0)
     expect(JSON.parse(options.body).audio).toEqual({ id: 'media_3' })
   })
 
   it('includes a context.message_id when replying to a specific wamid', async () => {
-    ;(fetch as any).mockResolvedValue({ ok: true, json: async () => ({ messages: [{ id: 'wamid.VID1' }] }) })
+    ;mockFetch().mockResolvedValue({ ok: true, json: async () => ({ messages: [{ id: 'wamid.VID1' }] }) })
 
     await sendMetaMedia({ phoneNumberId: '123', accessToken: 'tok' }, '628', 'video', 'media_4', undefined, 'wamid.PARENT')
 
-    const [, options] = (fetch as any).mock.calls[0]
+    const [, options] = fetchCall(0)
     expect(JSON.parse(options.body)).toEqual(expect.objectContaining({ context: { message_id: 'wamid.PARENT' } }))
   })
 })
 
 describe('sendTemplateMessage', () => {
   it('sends a plain text-body template with substituted parameters', async () => {
-    ;(fetch as any).mockResolvedValue({ ok: true, json: async () => ({ messages: [{ id: 'wamid.TPL1' }] }) })
+    ;mockFetch().mockResolvedValue({ ok: true, json: async () => ({ messages: [{ id: 'wamid.TPL1' }] }) })
 
     const result = await sendTemplateMessage(
       { phoneNumberId: '123', accessToken: 'tok' },
@@ -113,7 +124,7 @@ describe('sendTemplateMessage', () => {
     )
 
     expect(result).toEqual({ externalId: 'wamid.TPL1' })
-    const [, options] = (fetch as any).mock.calls[0]
+    const [, options] = fetchCall(0)
     expect(JSON.parse(options.body)).toEqual({
       messaging_product: 'whatsapp',
       to: '6281234567890',
@@ -127,16 +138,16 @@ describe('sendTemplateMessage', () => {
   })
 
   it('omits the body component entirely when the template has no variables', async () => {
-    ;(fetch as any).mockResolvedValue({ ok: true, json: async () => ({ messages: [{ id: 'wamid.TPL2' }] }) })
+    ;mockFetch().mockResolvedValue({ ok: true, json: async () => ({ messages: [{ id: 'wamid.TPL2' }] }) })
 
     await sendTemplateMessage({ phoneNumberId: '123', accessToken: 'tok' }, '628', { name: 'no_vars', bodyParams: [] })
 
-    const [, options] = (fetch as any).mock.calls[0]
+    const [, options] = fetchCall(0)
     expect(JSON.parse(options.body).template.components).toEqual([])
   })
 
   it('sends a carousel with an image header and a quick-reply button parameter', async () => {
-    ;(fetch as any).mockResolvedValue({ ok: true, json: async () => ({ messages: [{ id: 'wamid.TPL3' }] }) })
+    ;mockFetch().mockResolvedValue({ ok: true, json: async () => ({ messages: [{ id: 'wamid.TPL3' }] }) })
 
     await sendTemplateMessage(
       { phoneNumberId: '123', accessToken: 'tok' },
@@ -148,7 +159,7 @@ describe('sendTemplateMessage', () => {
       }
     )
 
-    const [, options] = (fetch as any).mock.calls[0]
+    const [, options] = fetchCall(0)
     const components = JSON.parse(options.body).template.components
     const carousel = components.find((c: { type: string }) => c.type === 'carousel')
     expect(carousel.cards).toEqual([{
@@ -161,7 +172,7 @@ describe('sendTemplateMessage', () => {
   })
 
   it('sends a video header without a button parameter for a static URL button', async () => {
-    ;(fetch as any).mockResolvedValue({ ok: true, json: async () => ({ messages: [{ id: 'wamid.TPL4' }] }) })
+    ;mockFetch().mockResolvedValue({ ok: true, json: async () => ({ messages: [{ id: 'wamid.TPL4' }] }) })
 
     await sendTemplateMessage(
       { phoneNumberId: '123', accessToken: 'tok' },
@@ -173,7 +184,7 @@ describe('sendTemplateMessage', () => {
       }
     )
 
-    const [, options] = (fetch as any).mock.calls[0]
+    const [, options] = fetchCall(0)
     const carousel = JSON.parse(options.body).template.components.find((c: { type: string }) => c.type === 'carousel')
     expect(carousel.cards[0].components).toEqual([
       { type: 'header', parameters: [{ type: 'video', video: { id: 'media_2' } }] },
@@ -181,7 +192,7 @@ describe('sendTemplateMessage', () => {
   })
 
   it('includes a top-level header component (ahead of body) for a TEXT/AUTH template with a media header', async () => {
-    ;(fetch as any).mockResolvedValue({ ok: true, json: async () => ({ messages: [{ id: 'wamid.TPL5' }] }) })
+    ;mockFetch().mockResolvedValue({ ok: true, json: async () => ({ messages: [{ id: 'wamid.TPL5' }] }) })
 
     await sendTemplateMessage(
       { phoneNumberId: '123', accessToken: 'tok' },
@@ -189,7 +200,7 @@ describe('sendTemplateMessage', () => {
       { name: 'promo', bodyParams: ['Bruno'], header: { mediaId: 'media_3', mediaType: 'IMAGE' } }
     )
 
-    const [, options] = (fetch as any).mock.calls[0]
+    const [, options] = fetchCall(0)
     const components = JSON.parse(options.body).template.components
     expect(components).toEqual([
       { type: 'header', parameters: [{ type: 'image', image: { id: 'media_3' } }] },
@@ -198,17 +209,17 @@ describe('sendTemplateMessage', () => {
   })
 
   it('omits the header component when the template has no media header', async () => {
-    ;(fetch as any).mockResolvedValue({ ok: true, json: async () => ({ messages: [{ id: 'wamid.TPL6' }] }) })
+    ;mockFetch().mockResolvedValue({ ok: true, json: async () => ({ messages: [{ id: 'wamid.TPL6' }] }) })
 
     await sendTemplateMessage({ phoneNumberId: '123', accessToken: 'tok' }, '628', { name: 'basic', bodyParams: [] })
 
-    const [, options] = (fetch as any).mock.calls[0]
+    const [, options] = fetchCall(0)
     const components = JSON.parse(options.body).template.components
     expect(components.some((c: { type: string }) => c.type === 'header')).toBe(false)
   })
 
   it('includes a limited_time_offer component with the real per-send expiration timestamp', async () => {
-    ;(fetch as any).mockResolvedValue({ ok: true, json: async () => ({ messages: [{ id: 'wamid.LTO1' }] }) })
+    ;mockFetch().mockResolvedValue({ ok: true, json: async () => ({ messages: [{ id: 'wamid.LTO1' }] }) })
 
     await sendTemplateMessage(
       { phoneNumberId: '123', accessToken: 'tok' },
@@ -216,7 +227,7 @@ describe('sendTemplateMessage', () => {
       { name: 'promo_akhir_tahun', bodyParams: [], limitedTimeOfferExpirationMs: 1735680000000 }
     )
 
-    const [, options] = (fetch as any).mock.calls[0]
+    const [, options] = fetchCall(0)
     const components = JSON.parse(options.body).template.components
     expect(components).toContainEqual({
       type: 'limited_time_offer',
@@ -225,17 +236,17 @@ describe('sendTemplateMessage', () => {
   })
 
   it('omits the limited_time_offer component when no expiration is given', async () => {
-    ;(fetch as any).mockResolvedValue({ ok: true, json: async () => ({ messages: [{ id: 'wamid.LTO2' }] }) })
+    ;mockFetch().mockResolvedValue({ ok: true, json: async () => ({ messages: [{ id: 'wamid.LTO2' }] }) })
 
     await sendTemplateMessage({ phoneNumberId: '123', accessToken: 'tok' }, '628', { name: 'basic', bodyParams: [] })
 
-    const [, options] = (fetch as any).mock.calls[0]
+    const [, options] = fetchCall(0)
     const components = JSON.parse(options.body).template.components
     expect(components.find((c: { type: string }) => c.type === 'limited_time_offer')).toBeUndefined()
   })
 
   it('includes a copy_code button override with the real per-send coupon code', async () => {
-    ;(fetch as any).mockResolvedValue({ ok: true, json: async () => ({ messages: [{ id: 'wamid.COUPON1' }] }) })
+    ;mockFetch().mockResolvedValue({ ok: true, json: async () => ({ messages: [{ id: 'wamid.COUPON1' }] }) })
 
     await sendTemplateMessage(
       { phoneNumberId: '123', accessToken: 'tok' },
@@ -243,7 +254,7 @@ describe('sendTemplateMessage', () => {
       { name: 'kode_diskon', bodyParams: [], couponCode: 'PROMO25' }
     )
 
-    const [, options] = (fetch as any).mock.calls[0]
+    const [, options] = fetchCall(0)
     const components = JSON.parse(options.body).template.components
     expect(components).toContainEqual({
       type: 'button',
@@ -254,11 +265,11 @@ describe('sendTemplateMessage', () => {
   })
 
   it('omits the copy_code button override when no coupon code is given', async () => {
-    ;(fetch as any).mockResolvedValue({ ok: true, json: async () => ({ messages: [{ id: 'wamid.NOCOUPON' }] }) })
+    ;mockFetch().mockResolvedValue({ ok: true, json: async () => ({ messages: [{ id: 'wamid.NOCOUPON' }] }) })
 
     await sendTemplateMessage({ phoneNumberId: '123', accessToken: 'tok' }, '628', { name: 'basic', bodyParams: [] })
 
-    const [, options] = (fetch as any).mock.calls[0]
+    const [, options] = fetchCall(0)
     const components = JSON.parse(options.body).template.components
     expect(components.some((c: { sub_type?: string }) => c.sub_type === 'copy_code')).toBe(false)
   })
