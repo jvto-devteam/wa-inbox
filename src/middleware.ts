@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth/get-session'
 import { prisma } from '@/lib/db'
+import { hasValidCronSecret } from '@/lib/outbound/cron-auth'
 
 // Next.js middleware runs on the Edge runtime by default, which cannot run
 // Prisma. The session check below has to reach the database, so this file
@@ -16,9 +17,24 @@ export const runtime = 'nodejs'
 
 const PUBLIC_PATHS = ['/login', '/api/auth/login', '/api/webhooks/meta', '/logo.png', '/icon.png']
 
+/**
+ * Endpoints a scheduler may call with a shared secret instead of a session cookie.
+ *
+ * Deliberately NOT added to PUBLIC_PATHS. That list is matched with `startsWith`, so putting
+ * this path there would also expose `/api/outbound-jobs/process-anything-else` to the world,
+ * and it would make the endpoint public outright rather than secret-gated. This is an exact
+ * match, and it still requires a valid secret — a request without one falls straight through
+ * to the normal session check below and is rejected like any other.
+ */
+const CRON_PATHS = new Set(['/api/outbound-jobs/process'])
+
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl
   if (PUBLIC_PATHS.some((p) => pathname.startsWith(p))) return NextResponse.next()
+
+  // Checked before the session lookup so a cron never needs an account row, and skipped
+  // entirely (hasValidCronSecret returns false) when no secret is configured.
+  if (CRON_PATHS.has(pathname) && hasValidCronSecret(req)) return NextResponse.next()
 
   const session = await getSession(req)
 

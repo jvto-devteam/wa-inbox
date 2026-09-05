@@ -1,7 +1,7 @@
 /**
  * @vitest-environment node
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { mockDeep, mockReset, type DeepMockProxy } from 'vitest-mock-extended'
 import type { PrismaClient } from '@prisma/client'
 import { NextRequest } from 'next/server'
@@ -109,5 +109,63 @@ describe('middleware — no or invalid session', () => {
     const res = await middleware(request('/inbox'))
     expect(res.status).toBe(307)
     expect(res.headers.get('location')).toBe('http://localhost/login')
+  })
+})
+
+describe('middleware — cron secret', () => {
+  const SECRET = 'e'.repeat(40)
+  const original = process.env.OUTBOUND_CRON_SECRET
+
+  function cronRequest(path: string, secret?: string) {
+    return new NextRequest(`http://localhost${path}`, {
+      headers: secret === undefined ? {} : { 'x-cron-secret': secret },
+    })
+  }
+
+  beforeEach(() => {
+    process.env.OUTBOUND_CRON_SECRET = SECRET
+  })
+
+  afterEach(() => {
+    if (original === undefined) delete process.env.OUTBOUND_CRON_SECRET
+    else process.env.OUTBOUND_CRON_SECRET = original
+  })
+
+  it('lets the worker endpoint through on a valid secret, with no session lookup', async () => {
+    const res = await middleware(cronRequest('/api/outbound-jobs/process', SECRET))
+    expect(res.status).toBe(200)
+    // A cron has no account row; requiring one would defeat the whole point.
+    expect(mockPrisma.account.findUnique).not.toHaveBeenCalled()
+  })
+
+  it('falls through to the normal 401 when the secret is wrong', async () => {
+    vi.mocked(verifySessionToken).mockResolvedValue(null)
+    const res = await middleware(cronRequest('/api/outbound-jobs/process', 'f'.repeat(40)))
+    expect(res.status).toBe(401)
+  })
+
+  it('falls through to the normal 401 when no secret header is sent', async () => {
+    vi.mocked(verifySessionToken).mockResolvedValue(null)
+    expect((await middleware(cronRequest('/api/outbound-jobs/process'))).status).toBe(401)
+  })
+
+  it('does NOT open sibling paths that merely share the prefix', async () => {
+    // PUBLIC_PATHS is matched with startsWith; this list is matched exactly, so
+    // /api/outbound-jobs/process-anything stays protected.
+    vi.mocked(verifySessionToken).mockResolvedValue(null)
+    expect((await middleware(cronRequest('/api/outbound-jobs/process-anything', SECRET))).status).toBe(401)
+    expect((await middleware(cronRequest('/api/outbound-jobs/retry', SECRET))).status).toBe(401)
+  })
+
+  it('does not let the secret unlock any other endpoint', async () => {
+    vi.mocked(verifySessionToken).mockResolvedValue(null)
+    expect((await middleware(cronRequest('/api/conversations', SECRET))).status).toBe(401)
+    expect((await middleware(cronRequest('/api/send', SECRET))).status).toBe(401)
+  })
+
+  it('protects the endpoint completely when no secret is configured', async () => {
+    delete process.env.OUTBOUND_CRON_SECRET
+    vi.mocked(verifySessionToken).mockResolvedValue(null)
+    expect((await middleware(cronRequest('/api/outbound-jobs/process', 'anything'))).status).toBe(401)
   })
 })

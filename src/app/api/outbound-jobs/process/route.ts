@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { requireAdmin } from '@/lib/auth/require-admin'
+import { hasValidCronSecret } from '@/lib/outbound/cron-auth'
 import { processDueOutboundJobs } from '@/lib/outbound/worker'
 
 /**
@@ -11,12 +12,20 @@ import { processDueOutboundJobs } from '@/lib/outbound/worker'
  * would ever come back for them without a scheduler hitting this endpoint. It follows the same
  * pattern GET /api/reminders/due already established for time-based work.
  *
- * Admin-only, and safe to call concurrently: the worker claims each job atomically, so two
- * overlapping runs cannot dispatch the same message twice.
+ * Two callers are accepted: an ADMIN session (a human pressing something in the UI) and a
+ * scheduler presenting the `x-cron-secret` header. The secret is re-checked HERE as well as in
+ * src/middleware.ts — the middleware decides whether the request may reach a handler at all,
+ * this decides whether it may act. Relying on the middleware alone would mean a future edit to
+ * its matcher config silently unauthenticating this endpoint.
+ *
+ * Safe to call concurrently: the worker claims each job atomically, so two overlapping runs
+ * cannot dispatch the same message twice.
  */
 export async function POST(req: Request) {
-  const admin = await requireAdmin(req)
-  if (!admin) return NextResponse.json({ error: 'Hanya admin yang bisa memproses antrean' }, { status: 403 })
+  const authorized = hasValidCronSecret(req) || (await requireAdmin(req)) !== null
+  if (!authorized) {
+    return NextResponse.json({ error: 'Hanya admin atau scheduler yang bisa memproses antrean' }, { status: 403 })
+  }
 
   try {
     return NextResponse.json(await processDueOutboundJobs())
