@@ -18,12 +18,20 @@ import { cn } from '@/lib/utils'
 // The five top-level menus mandated by the plan's Global Constraints, in mockup order, plus
 // Chatbot -- everything about the bot itself (on/off, knowledge, LLM model, working hours)
 // consolidated in one place instead of buried inside the general Pengaturan page.
+//
+// Bot Control sits next to Chatbot rather than replacing it. They answer different questions:
+// Chatbot is where an operator CHANGES bot settings, Bot Control is where they SEE what the
+// bot actually does and why. The guidebook's own recommendation (section 19) is to keep both
+// until Bot Control is proven, then move the settings under it -- folding them together now
+// would mean moving a working page during the one phase that is supposed to change no
+// behaviour at all.
 const NAV_ITEMS = [
   { href: '/dashboard', label: 'Beranda' },
   { href: '/inbox', label: 'Chat / Inbox' },
   { href: '/contacts', label: 'Kontak' },
   { href: '/templates', label: 'Template Pesan' },
   { href: '/chatbot', label: 'Chatbot' },
+  { href: '/bot-control', label: 'Bot Control' },
   { href: '/settings', label: 'Pengaturan' },
 ] as const
 

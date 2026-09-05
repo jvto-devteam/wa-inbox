@@ -1,5 +1,5 @@
-import { describe, it, expect, vi } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { describe, it, expect, vi, afterEach } from 'vitest'
+import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { MessageBubble } from './MessageBubble'
 
 describe('MessageBubble', () => {
@@ -31,16 +31,20 @@ describe('MessageBubble', () => {
     )
     expect(screen.queryByText(/sumber topik/i)).not.toBeInTheDocument()
 
-    const icon = screen.getByLabelText('Lihat alur berpikir bot')
+    const icon = screen.getByLabelText('Lihat alasan bot')
     fireEvent.click(icon)
     expect(screen.getByText(/sumber topik/i)).toBeInTheDocument()
-    expect(screen.getByLabelText('Sembunyikan alur berpikir bot')).toBeInTheDocument()
+    expect(screen.getByLabelText('Sembunyikan alasan bot')).toBeInTheDocument()
 
-    fireEvent.click(screen.getByLabelText('Sembunyikan alur berpikir bot'))
+    fireEvent.click(screen.getByLabelText('Sembunyikan alasan bot'))
     expect(screen.queryByText(/sumber topik/i)).not.toBeInTheDocument()
   })
 
-  it('does not show a 🧠 trace icon at all for a bot message with no botTrace', () => {
+  // Behaviour deliberately changed in Phase 3 (guidebook §12): the trigger now appears on
+  // EVERY bot message, including one with no stored trace. A bot reply nobody can explain is
+  // exactly the case an agent most needs to ask about, and hiding the button there left them
+  // with no way to ask at all. The popover answers honestly instead of not existing.
+  it('shows the trace trigger for a bot message with no botTrace, and says the trace is missing', () => {
     render(
       <MessageBubble
         message={{
@@ -55,7 +59,9 @@ describe('MessageBubble', () => {
         }}
       />
     )
-    expect(screen.queryByLabelText('Lihat alur berpikir bot')).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByLabelText('Lihat alasan bot'))
+    expect(screen.getByText('Trace tidak tersedia untuk pesan ini')).toBeInTheDocument()
   })
 
   it('does not show a 🧠 trace icon on a non-bot message even if botTrace were somehow set', () => {
@@ -73,7 +79,7 @@ describe('MessageBubble', () => {
         }}
       />
     )
-    expect(screen.queryByLabelText('Lihat alur berpikir bot')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Lihat alasan bot')).not.toBeInTheDocument()
   })
 
   it('shows a clear handoff placeholder instead of a blank bubble for a logged handoff decision', () => {
@@ -402,5 +408,64 @@ describe('MessageBubble', () => {
     )
     fireEvent.click(screen.getByText('Halo dari agen'))
     expect(screen.queryByText(/mode:/i)).not.toBeInTheDocument()
+  })
+})
+
+describe('MessageBubble retry (Phase 6)', () => {
+  const failed = {
+    id: 'msg_failed',
+    direction: 'OUTBOUND' as const,
+    content: 'Halo',
+    channel: 'UNOFFICIAL',
+    sentBy: 'AGENT',
+    deliveryStatus: 'FAILED',
+    createdAt: new Date().toISOString(),
+    botTrace: null,
+  }
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('re-queues the message when Kirim Ulang is pressed', async () => {
+    // This button shipped with no onClick at all: it looked like a working recovery path and
+    // did nothing.
+    const fetchMock = vi.fn(async () => ({ ok: true, status: 200, json: async () => ({ ok: true }) }) as Response)
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<MessageBubble message={failed} />)
+    fireEvent.click(screen.getByLabelText('Kirim ulang'))
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled())
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+    expect(url).toBe('/api/outbound-jobs/retry')
+    expect(JSON.parse(init.body as string)).toEqual({ messageId: 'msg_failed' })
+  })
+
+  it('does not claim the message was sent — the worker broadcasts the real outcome', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, status: 200, json: async () => ({ ok: true }) }) as Response))
+
+    render(<MessageBubble message={failed} />)
+    fireEvent.click(screen.getByLabelText('Kirim ulang'))
+
+    // The bubble is replaced from the `message.updated` event, not optimistically here.
+    await waitFor(() => expect(screen.getByText('FAILED')).toBeInTheDocument())
+  })
+
+  it('surfaces a retry failure instead of failing silently', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({ ok: false, status: 409, json: async () => ({ error: 'Pengiriman ini sedang diproses' }) }) as Response)
+    )
+
+    render(<MessageBubble message={failed} />)
+    fireEvent.click(screen.getByLabelText('Kirim ulang'))
+
+    await waitFor(() => expect(screen.getByText('Pengiriman ini sedang diproses')).toBeInTheDocument())
+  })
+
+  it('shows no retry control on a message that did not fail', () => {
+    render(<MessageBubble message={{ ...failed, deliveryStatus: 'SENT' }} />)
+    expect(screen.queryByLabelText('Kirim ulang')).toBeNull()
   })
 })

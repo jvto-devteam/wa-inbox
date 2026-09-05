@@ -68,7 +68,7 @@ describe('initialsFrom', () => {
 })
 
 describe('AppNav', () => {
-  it('renders all six top-level menus as real links to their routes', () => {
+  it('renders all seven top-level menus as real links to their routes', () => {
     stubApi()
     render(<AppNav />)
 
@@ -78,6 +78,7 @@ describe('AppNav', () => {
       ['Kontak', '/contacts'],
       ['Template Pesan', '/templates'],
       ['Chatbot', '/chatbot'],
+      ['Bot Control', '/bot-control'],
       ['Pengaturan', '/settings'],
     ]
     for (const [label, href] of expected) {

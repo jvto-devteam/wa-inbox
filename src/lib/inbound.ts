@@ -6,6 +6,8 @@ import { checkAndRecordRateLimit } from '@/lib/bot/rate-limiter'
 import { sendMessage } from '@/lib/send'
 import { withMediaUrl } from '@/lib/serialize-message'
 import { isIndonesianNumber } from '@/lib/phone'
+import { recordBotDecisionRun, attachMessageToDecisionRun } from '@/lib/bot-control/decision-recorder'
+import type { BotDecision } from '@/lib/bot/types'
 
 type MetaMediaObject = { id: string; mime_type: string; caption?: string; filename?: string }
 
@@ -337,7 +339,36 @@ export async function runBotForConversation(
   conversation: { id: string; contactName: string | null },
   inboundText: string
 ): Promise<void> {
-  const decision = await decideAndRespond(conversation.id, inboundText)
+  // Audit bookkeeping only. Everything added here for BotDecisionRun is failure-isolated and
+  // must not alter a single decision the bot makes -- see decision-recorder.ts's header.
+  const startedAt = new Date()
+
+  let decision: BotDecision
+  try {
+    decision = await decideAndRespond(conversation.id, inboundText)
+  } catch (error) {
+    // Recorded, then RE-THROWN unchanged. Without the rethrow this catch would swallow a
+    // genuine orchestrator crash and silently turn a broken turn into a quiet no-op, which is
+    // a real behaviour change. With it, the caller sees exactly what it saw before -- the only
+    // difference is that the failure is now auditable instead of invisible.
+    await recordBotDecisionRun({
+      conversationId: conversation.id,
+      inboundText,
+      decision: null,
+      startedAt,
+      finishedAt: new Date(),
+      error: error instanceof Error ? error.message : String(error),
+    })
+    throw error
+  }
+
+  const decisionRunId = await recordBotDecisionRun({
+    conversationId: conversation.id,
+    inboundText,
+    decision,
+    startedAt,
+    finishedAt: new Date(),
+  })
 
   // `botEnabled` was last read before decideAndRespond, which spends up to
   // eight Ollama calls across four sequential waits (see rate-limiter.ts) --
@@ -354,7 +385,14 @@ export async function runBotForConversation(
 
   if (decision.mode === 'faq' || decision.mode === 'booking_context' || decision.mode === 'clarify') {
     const text = decision.mode === 'faq' ? decision.draft : decision.reply
-    await sendMessage({ conversationId: conversation.id, text, sentBy: 'BOT', botTrace: decision })
+    // botTrace is still written exactly as before. BotDecisionRun does not replace it: the
+    // inbox bubble reads botTrace, and every historical row has nothing else.
+    const sent = await sendMessage({ conversationId: conversation.id, text, sentBy: 'BOT', botTrace: decision })
+    // Optional access on purpose. Reading `sent.id` directly would make the bot's send path
+    // depend on sendMessage's return value for the first time, so any caller or test double
+    // that returns nothing would throw AFTER the customer's message was already dispatched --
+    // audit bookkeeping taking down a turn that had actually succeeded.
+    await attachMessageToDecisionRun(decisionRunId, sent?.id)
   } else {
     // Confirmed with the operator 2026-08-06: EVERY handoff (escalation keywords, an explicit
     // human request, the deployment gate being closed, or a genuinely unmatched custom
@@ -365,7 +403,8 @@ export async function runBotForConversation(
     // customer's own reply text, since none of the handoff reasons are meant to be surfaced
     // verbatim (some -- e.g. an escalation keyword match -- would read oddly quoted back).
     const handoffReply = "Thank you for your message! I'm connecting you with a member of our team, and they'll follow up with you shortly."
-    await sendMessage({ conversationId: conversation.id, text: handoffReply, sentBy: 'BOT', botTrace: decision })
+    const sent = await sendMessage({ conversationId: conversation.id, text: handoffReply, sentBy: 'BOT', botTrace: decision })
+    await attachMessageToDecisionRun(decisionRunId, sent?.id)
 
     // A handoff has to actually hand off: without flipping botEnabled the conversation
     // stays bot-driven, so it never reaches the dashboard's "needs attention" widget

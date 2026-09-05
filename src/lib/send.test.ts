@@ -9,12 +9,20 @@ import { sendMetaText, sendMetaMedia } from '@/lib/meta/messages'
 import { uploadMetaMediaFromUrl } from '@/lib/meta/media-upload'
 import { sendCoexistText, sendCoexistMedia } from '@/lib/coexist/client'
 import { resolveChannel } from '@/lib/channel-router'
+import { enqueueOutboundJob } from '@/lib/outbound/queue'
+import { processOutboundJob } from '@/lib/outbound/worker'
 
 vi.mock('@/lib/db', () => ({ prisma: mockDeep<PrismaClient>() }))
 vi.mock('@/lib/meta/messages', () => ({ sendMetaText: vi.fn(), sendMetaMedia: vi.fn() }))
 vi.mock('@/lib/meta/media-upload', () => ({ uploadMetaMediaFromUrl: vi.fn() }))
 vi.mock('@/lib/channel-router', () => ({ resolveChannel: vi.fn() }))
 vi.mock('@/lib/coexist/client', () => ({ sendCoexistText: vi.fn(), sendCoexistMedia: vi.fn() }))
+// Phase 6: Unofficial sends now go through the outbound queue. The queue and worker have their
+// own suites (src/lib/outbound/*.test.ts); mocked here so these tests stay about what
+// sendMessage itself decides -- which channel, what row, what payload -- exactly as the Meta
+// and wa-coexist clients have always been mocked.
+vi.mock('@/lib/outbound/queue', () => ({ enqueueOutboundJob: vi.fn() }))
+vi.mock('@/lib/outbound/worker', () => ({ processOutboundJob: vi.fn() }))
 vi.mock('fs/promises', () => {
   const unlink = vi.fn()
   return { unlink, default: { unlink } }
@@ -33,8 +41,10 @@ beforeEach(() => {
   vi.mocked(sendCoexistText).mockReset()
   vi.mocked(sendCoexistMedia).mockReset()
   vi.mocked(unlink).mockReset().mockResolvedValue(undefined)
+  vi.mocked(enqueueOutboundJob).mockReset().mockResolvedValue({ jobId: 'job_1', blocked: false, warnings: [] })
+  vi.mocked(processOutboundJob).mockReset().mockResolvedValue('sent')
   mockPrisma.conversation.findUniqueOrThrow.mockResolvedValue({
-    id: 'conv_1', contact: { phone: '6281234567890' },
+    id: 'conv_1', contactId: 'contact_1', contact: { phone: '6281234567890' },
   } as never)
   mockPrisma.waNumber.findFirstOrThrow.mockResolvedValue({
     phoneNumberId: 'pnid', accessToken: 'tok',
@@ -74,15 +84,51 @@ describe('sendMessage', () => {
     consoleErrorSpy.mockRestore()
   })
 
-  it('sends via wa-coexist when resolveChannel returns UNOFFICIAL', async () => {
+  it('queues an Unofficial send instead of firing at wa-coexist inline', async () => {
+    // Phase 6 behaviour change: the message row is stored FIRST, as PENDING, so a provider
+    // outage can no longer destroy it. The provider call itself moved to the worker.
     vi.mocked(resolveChannel).mockResolvedValue('UNOFFICIAL')
-    vi.mocked(sendCoexistText).mockResolvedValue({ externalId: 'coex_1' })
-    mockPrisma.message.create.mockResolvedValue({ id: 'msg_3', deliveryStatus: 'SENT' } as never)
+    mockPrisma.message.create.mockResolvedValue({ id: 'msg_3', deliveryStatus: 'PENDING' } as never)
 
     const result = await sendMessage({ conversationId: 'conv_1', text: 'Halo!', sentBy: 'AGENT' })
 
-    expect(result.deliveryStatus).toBe('SENT')
-    expect(mockPrisma.message.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ channel: 'UNOFFICIAL' }) }))
+    expect(result.deliveryStatus).toBe('PENDING')
+    expect(sendCoexistText).not.toHaveBeenCalled()
+    expect(mockPrisma.message.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ channel: 'UNOFFICIAL', deliveryStatus: 'PENDING' }),
+    }))
+    expect(enqueueOutboundJob).toHaveBeenCalledWith(expect.objectContaining({
+      messageId: 'msg_3',
+      channel: 'UNOFFICIAL',
+      provider: 'COEXIST',
+      contactId: 'contact_1',
+      payload: expect.objectContaining({ to: '6281234567890', text: 'Halo!' }),
+    }))
+  })
+
+  it('fires the first attempt immediately, so a healthy queued send is no slower than before', async () => {
+    vi.mocked(resolveChannel).mockResolvedValue('UNOFFICIAL')
+    mockPrisma.message.create.mockResolvedValue({ id: 'msg_3b', deliveryStatus: 'PENDING' } as never)
+
+    await sendMessage({ conversationId: 'conv_1', text: 'Halo!', sentBy: 'AGENT' })
+
+    expect(processOutboundJob).toHaveBeenCalledWith('job_1')
+  })
+
+  it('marks the message FAILED when the safety guard blocks the send', async () => {
+    // Left PENDING it would be a message that silently never arrives; the reason lives on the
+    // cancelled job row and the bubble shows FAILED with a retry button.
+    vi.mocked(resolveChannel).mockResolvedValue('UNOFFICIAL')
+    vi.mocked(enqueueOutboundJob).mockResolvedValue({
+      jobId: 'job_blocked', blocked: true, blockingReason: 'Kontak opt-out', warnings: [],
+    })
+    mockPrisma.message.create.mockResolvedValue({ id: 'msg_blocked', deliveryStatus: 'PENDING' } as never)
+    mockPrisma.message.update.mockResolvedValue({ id: 'msg_blocked', deliveryStatus: 'FAILED' } as never)
+
+    const result = await sendMessage({ conversationId: 'conv_1', text: 'Promo!', sentBy: 'AGENT' })
+
+    expect(result.deliveryStatus).toBe('FAILED')
+    expect(processOutboundJob).not.toHaveBeenCalled()
   })
 
   it('passes the quoted parent\'s wamid as Meta context on an Official reply', async () => {
@@ -105,19 +151,20 @@ describe('sendMessage', () => {
     }))
   })
 
-  it('stores replyToId locally but does not pass a context to wa-coexist on an Unofficial reply', async () => {
+  it('stores replyToId locally but never puts a reply context in the queued payload', async () => {
+    // wa-coexist's send API has no context/reply parameter, so the quote is a local-only
+    // concept. The queued payload must not carry one either, or a worker would try to use it.
     vi.mocked(resolveChannel).mockResolvedValue('UNOFFICIAL')
-    vi.mocked(sendCoexistText).mockResolvedValue({ externalId: 'coex_2' })
     mockPrisma.message.findUnique.mockResolvedValue({ id: 'msg_parent', externalId: 'wamid.PARENT' } as never)
-    mockPrisma.message.create.mockResolvedValue({ id: 'msg_5', deliveryStatus: 'SENT' } as never)
+    mockPrisma.message.create.mockResolvedValue({ id: 'msg_5', deliveryStatus: 'PENDING' } as never)
 
     await sendMessage({ conversationId: 'conv_1', text: 'Oke', sentBy: 'AGENT', replyToId: 'msg_parent' })
 
-    // wa-coexist's send API has no context/reply parameter to pass one to.
-    expect(sendCoexistText).toHaveBeenCalledWith(expect.anything(), '6281234567890', 'Oke')
     expect(mockPrisma.message.create).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({ replyToId: 'msg_parent' }),
     }))
+    const payload = vi.mocked(enqueueOutboundJob).mock.calls[0][0].payload
+    expect(payload).toEqual({ to: '6281234567890', text: 'Oke', media: undefined })
   })
 
   it('sends with no context when the quoted parent has no externalId (e.g. a log-only handoff row)', async () => {
@@ -207,35 +254,36 @@ describe('sendMessage — media attachments', () => {
     consoleWarnSpy.mockRestore()
   })
 
-  it('sends via sendCoexistMedia on the Unofficial channel, storing the raw upload URL (no Meta media id), and does not delete the local upload', async () => {
+  it('queues an Unofficial media send with the raw upload URL, and never deletes the local upload', async () => {
     vi.mocked(resolveChannel).mockResolvedValue('UNOFFICIAL')
-    vi.mocked(sendCoexistMedia).mockResolvedValue({})
-    mockPrisma.message.create.mockResolvedValue({ id: 'msg_m2', deliveryStatus: 'SENT' } as never)
+    mockPrisma.message.create.mockResolvedValue({ id: 'msg_m2', deliveryStatus: 'PENDING' } as never)
 
     await sendMessage({ conversationId: 'conv_1', text: '', sentBy: 'AGENT', media })
 
     expect(uploadMetaMediaFromUrl).not.toHaveBeenCalled()
-    expect(sendCoexistMedia).toHaveBeenCalledWith(expect.anything(), '6281234567890', media.url, 'image', undefined)
     expect(mockPrisma.message.create).toHaveBeenCalledWith(expect.objectContaining({
-      data: expect.objectContaining({ type: 'image', mediaId: null, mediaUrl: media.url }),
+      data: expect.objectContaining({ type: 'image', mediaUrl: media.url }),
     }))
-    // No Meta media id exists to fall back on, so wa-coexist's upload is the ONLY surviving
-    // copy of this file -- deleting it here would make the media unrenderable forever after.
+    expect(vi.mocked(enqueueOutboundJob).mock.calls[0][0].payload.media).toEqual(media)
+    // No Meta media id exists to fall back on, so the local upload is the ONLY surviving copy
+    // of this file -- deleting it would make the media unrenderable forever after. It matters
+    // even more now: a retry ten minutes later still has to be able to fetch that URL.
     expect(unlink).not.toHaveBeenCalled()
   })
 
-  it('routes an audio attachment through the same send_file_url path as document on Unofficial, but keeps Message.type as audio', async () => {
+  it('keeps Message.type as audio and passes the audio type through to the queue', async () => {
+    // The audio -> document mapping wa-coexist needs now happens in the worker's dispatch (see
+    // outbound/worker.test.ts); the payload must carry the TRUE type so the worker can decide.
     vi.mocked(resolveChannel).mockResolvedValue('UNOFFICIAL')
-    vi.mocked(sendCoexistMedia).mockResolvedValue({})
-    mockPrisma.message.create.mockResolvedValue({ id: 'msg_m3', deliveryStatus: 'SENT' } as never)
+    mockPrisma.message.create.mockResolvedValue({ id: 'msg_m3', deliveryStatus: 'PENDING' } as never)
 
     await sendMessage({
       conversationId: 'conv_1', text: '', sentBy: 'AGENT',
       media: { url: 'https://wa-inbox.example.com/uploads/x.ogg', type: 'audio', mimeType: 'audio/ogg', fileName: 'x.ogg' },
     })
 
-    expect(sendCoexistMedia).toHaveBeenCalledWith(expect.anything(), '6281234567890', expect.any(String), 'document', undefined)
     expect(mockPrisma.message.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ type: 'audio' }) }))
+    expect(vi.mocked(enqueueOutboundJob).mock.calls[0][0].payload.media?.type).toBe('audio')
   })
 
   it('records a FAILED message when the Meta media upload itself throws', async () => {

@@ -7,6 +7,8 @@ import { sendCoexistText, sendCoexistMedia } from '@/lib/coexist/client'
 import { resolveChannel } from '@/lib/channel-router'
 import { broadcast } from '@/lib/realtime'
 import { withMediaUrl } from '@/lib/serialize-message'
+import { enqueueOutboundJob } from '@/lib/outbound/queue'
+import { processOutboundJob } from '@/lib/outbound/worker'
 
 /**
  * Removes an agent's uploaded attachment from local disk (see POST /api/uploads) once Meta has
@@ -52,6 +54,23 @@ export async function sendMessage(params: {
     where: { id: params.conversationId },
     include: { contact: true },
   })
+
+  // --- Phase 6: Unofficial goes through the outbound queue ---
+  //
+  // Unofficial is the primary send path, and until now it was fire-and-forget: one attempt at
+  // wa-coexist, and a five-second outage destroyed the message permanently. Queued sends get
+  // the retry ladder, a safety-guard check, and a row an operator can actually retry.
+  //
+  // Official deliberately keeps the direct path. It carries templates, campaigns and the media
+  // upload/cleanup dance (uploadMetaMediaFromUrl -> deleteLocalUpload), it reports real
+  // delivery status through the Meta webhook, and it is not the channel this phase was written
+  // to make durable. Moving it too would have been a second, unrelated behaviour change in the
+  // same commit.
+  //
+  // The sandbox conversation still short-circuits everything, exactly as before.
+  if (channel === 'UNOFFICIAL' && !conversation.isTest) {
+    return sendViaQueue({ ...params, conversation, channel })
+  }
 
   let externalId: string | undefined
   let deliveryStatus: 'SENT' | 'FAILED' = 'SENT'
@@ -143,5 +162,92 @@ export async function sendMessage(params: {
     include: { replyTo: true },
   })
   broadcast({ type: 'message.created', conversationId: params.conversationId, message: withMediaUrl(created) })
+  return created
+}
+
+/**
+ * The queued Unofficial path: store the message first, then let the worker deliver it.
+ *
+ * Ordering is deliberate and is the opposite of the direct path's. The Message row is created
+ * BEFORE any provider call, as PENDING, so the agent's own bubble appears instantly and the
+ * message physically cannot be lost by a provider failure — guidebook §24 (Risiko 4). The
+ * first attempt is then fired immediately, so a healthy send is no slower than it was before
+ * the queue existed.
+ */
+async function sendViaQueue(params: {
+  conversationId: string
+  text: string
+  sentBy: 'AGENT' | 'BOT'
+  agentId?: string
+  botTrace?: unknown
+  replyToId?: string
+  media?: OutboundMedia
+  conversation: { id: string; contactId: string; contact: { phone: string } }
+  channel: 'OFFICIAL' | 'UNOFFICIAL'
+}) {
+  const created = await prisma.message.create({
+    data: {
+      conversationId: params.conversationId,
+      direction: 'OUTBOUND',
+      type: params.media?.type ?? 'text',
+      content: params.text || null,
+      // Unofficial has no Meta media id, so the agent's own upload URL stays the only copy the
+      // bubble can render -- same as the direct path, and the reason deleteLocalUpload is
+      // never called for this channel.
+      mediaUrl: params.media?.url ?? null,
+      mimeType: params.media?.mimeType ?? null,
+      fileName: params.media?.fileName ?? null,
+      channel: params.channel,
+      sentBy: params.sentBy,
+      agentId: params.agentId,
+      botTrace: params.botTrace as never,
+      deliveryStatus: 'PENDING',
+      replyToId: params.replyToId,
+    },
+    include: { replyTo: true },
+  })
+  broadcast({ type: 'message.created', conversationId: params.conversationId, message: withMediaUrl(created) })
+
+  const enqueued = await enqueueOutboundJob({
+    conversationId: params.conversationId,
+    messageId: created.id,
+    contactId: params.conversation.contactId,
+    channel: params.channel,
+    provider: 'COEXIST',
+    payload: {
+      // Resolved once, here: a retry ten minutes later must send to the number this message was
+      // addressed to, not to whatever the contact row says by then.
+      to: params.conversation.contact.phone,
+      text: params.text,
+      media: params.media,
+    },
+    sentBy: params.sentBy,
+  })
+
+  if (enqueued.warnings.length > 0) {
+    console.warn('sendMessage: peringatan safety guard', { conversationId: params.conversationId, warnings: enqueued.warnings })
+  }
+
+  if (enqueued.blocked || !enqueued.jobId) {
+    // A blocked or un-queueable send is marked FAILED rather than left PENDING forever. The
+    // reason lives on the cancelled job row; the bubble shows FAILED with a retry button, so
+    // the outcome is visible instead of being a message that silently never arrives.
+    const failed = await prisma.message.update({
+      where: { id: created.id },
+      data: { deliveryStatus: 'FAILED' },
+      include: { replyTo: true },
+    })
+    broadcast({ type: 'message.updated', conversationId: params.conversationId, message: withMediaUrl(failed) })
+    return failed
+  }
+
+  // Attempt 1, immediately and without awaiting: the retry ladder's first rung is zero delay,
+  // and awaiting it here would put the provider round-trip back on the caller's critical path,
+  // reintroducing exactly the latency the queue is meant to decouple. Rejections cannot escape
+  // -- processOutboundJob handles its own failures and records them on the job.
+  void processOutboundJob(enqueued.jobId).catch((error: unknown) => {
+    console.error('sendMessage: percobaan pertama gagal dijadwalkan', { jobId: enqueued.jobId, error })
+  })
+
   return created
 }

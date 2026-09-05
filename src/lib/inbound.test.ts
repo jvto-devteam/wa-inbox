@@ -33,6 +33,11 @@ beforeEach(() => {
   // previous test would silently satisfy an avatar fetch a later test never meant to allow.
   vi.unstubAllGlobals()
   vi.spyOn(console, 'warn').mockImplementation(() => {})
+  // Phase 3 audit recording runs inside runBotForConversation. Stubbed here so the many
+  // pre-existing tests below exercise the same path production does, without every one of
+  // them needing to know the audit table exists.
+  mockPrisma.botDecisionRun.create.mockResolvedValue({ id: 'run_1' } as never)
+  mockPrisma.botDecisionRun.update.mockResolvedValue({ id: 'run_1' } as never)
 })
 
 const contactRow = {
@@ -1139,5 +1144,110 @@ describe('ingestMetaMessage message echoes (smb_message_echoes)', () => {
     }]))
 
     expect(result.echoed).toBe(0)
+  })
+})
+
+describe('runBotForConversation decision recording', () => {
+  const conversation = { id: 'conv_1', contactName: 'Bruno' }
+
+  beforeEach(() => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+  })
+
+  it('records a run for every decision, with the mapped status', async () => {
+    vi.mocked(decideAndRespond).mockResolvedValue({ mode: 'faq', draft: 'Rp 1.500.000', sourceTopic: 'price' })
+    vi.mocked(sendMessage).mockResolvedValue({ id: 'msg_1' } as never)
+
+    await runBotForConversation(conversation, 'berapa harga ijen?')
+
+    expect(mockPrisma.botDecisionRun.create).toHaveBeenCalledTimes(1)
+    expect(mockPrisma.botDecisionRun.create.mock.calls[0][0].data).toMatchObject({
+      conversationId: 'conv_1',
+      inboundText: 'berapa harga ijen?',
+      mode: 'faq',
+      status: 'REPLIED',
+    })
+  })
+
+  it('keeps writing Message.botTrace exactly as before', async () => {
+    // BotDecisionRun supplements botTrace, it does not replace it -- the inbox bubble and
+    // every historical row still depend on it.
+    const decision = { mode: 'faq' as const, draft: 'x', sourceTopic: 'price' }
+    vi.mocked(decideAndRespond).mockResolvedValue(decision)
+    vi.mocked(sendMessage).mockResolvedValue({ id: 'msg_1' } as never)
+
+    await runBotForConversation(conversation, 'halo')
+
+    expect(sendMessage).toHaveBeenCalledWith(expect.objectContaining({ botTrace: decision }))
+  })
+
+  it('links the run to the message that carried the reply', async () => {
+    vi.mocked(decideAndRespond).mockResolvedValue({ mode: 'clarify', reply: 'Ke mana?' })
+    vi.mocked(sendMessage).mockResolvedValue({ id: 'msg_42' } as never)
+
+    await runBotForConversation(conversation, 'halo')
+
+    expect(mockPrisma.botDecisionRun.update).toHaveBeenCalledWith({
+      where: { id: 'run_1' },
+      data: { messageId: 'msg_42' },
+    })
+  })
+
+  it('records a handoff run and still flips botEnabled off', async () => {
+    vi.mocked(decideAndRespond).mockResolvedValue({ mode: 'handoff', reason: 'Minta manusia' })
+    vi.mocked(sendMessage).mockResolvedValue({ id: 'msg_9' } as never)
+
+    await runBotForConversation(conversation, 'mau bicara dengan orang')
+
+    expect(mockPrisma.botDecisionRun.create.mock.calls[0][0].data).toMatchObject({ status: 'HANDOFF' })
+    expect(mockPrisma.conversation.update).toHaveBeenCalledWith({
+      where: { id: 'conv_1' },
+      data: { botEnabled: false },
+    })
+  })
+
+  it('records the run even when an agent takes over mid-flight and nothing is sent', async () => {
+    // This is the case Message.botTrace structurally cannot capture: no message is ever
+    // created, so before Phase 3 the turn left no trace at all.
+    vi.mocked(decideAndRespond).mockResolvedValue({ mode: 'faq', draft: 'x', sourceTopic: 'price' })
+    mockPrisma.conversation.findUnique.mockResolvedValue({ botEnabled: false } as never)
+
+    await runBotForConversation(conversation, 'halo')
+
+    expect(sendMessage).not.toHaveBeenCalled()
+    expect(mockPrisma.botDecisionRun.create).toHaveBeenCalledTimes(1)
+  })
+
+  it('records FAILED and re-throws when the orchestrator crashes', async () => {
+    // The rethrow is the point: swallowing it would turn a broken turn into a silent no-op,
+    // which is a real behaviour change. The caller must see exactly what it saw before.
+    vi.mocked(decideAndRespond).mockRejectedValue(new Error('Ollama timeout'))
+
+    await expect(runBotForConversation(conversation, 'halo')).rejects.toThrow('Ollama timeout')
+
+    expect(mockPrisma.botDecisionRun.create.mock.calls[0][0].data).toMatchObject({
+      status: 'FAILED',
+      error: 'Ollama timeout',
+    })
+    expect(sendMessage).not.toHaveBeenCalled()
+  })
+
+  it('still replies to the customer when recording the audit row fails', async () => {
+    // Audit bookkeeping must never cost a customer their answer.
+    mockPrisma.botDecisionRun.create.mockRejectedValue(new Error('db down'))
+    vi.mocked(decideAndRespond).mockResolvedValue({ mode: 'faq', draft: 'Rp 1.500.000', sourceTopic: 'price' })
+    vi.mocked(sendMessage).mockResolvedValue({ id: 'msg_1' } as never)
+
+    await runBotForConversation(conversation, 'halo')
+
+    expect(sendMessage).toHaveBeenCalledWith(expect.objectContaining({ text: 'Rp 1.500.000' }))
+  })
+
+  it('still replies when sendMessage returns nothing to link the run to', async () => {
+    vi.mocked(decideAndRespond).mockResolvedValue({ mode: 'faq', draft: 'x', sourceTopic: 'price' })
+    vi.mocked(sendMessage).mockResolvedValue(undefined as never)
+
+    await expect(runBotForConversation(conversation, 'halo')).resolves.toBeUndefined()
+    expect(mockPrisma.botDecisionRun.update).not.toHaveBeenCalled()
   })
 })

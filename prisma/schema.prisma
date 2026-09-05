@@ -210,6 +210,165 @@ model KnowledgeGapLog {
   @@index([createdAt])
 }
 
+/// Satu pengiriman keluar yang tertunda, sedang diproses, atau gagal.
+///
+/// Sebelum ini, `sendMessage` menembak provider langsung dan sekali saja: provider down lima
+/// detik berarti pesan itu hilang selamanya, dan satu-satunya jejaknya adalah satu baris
+/// Message berstatus FAILED yang tidak bisa dicoba ulang oleh siapa pun. Karena Unofficial
+/// adalah jalur kirim utama, itu tidak memadai untuk pemakaian nyata.
+///
+/// `maxAttempts` default 4, BUKAN 3 seperti tertulis di guidebook §6.6. Tangga retry di §16.1
+/// mendaftarkan empat percobaan (segera, +30 detik, +2 menit, +10 menit) sebelum FAILED;
+/// dengan maxAttempts 3, percobaan +10 menit tidak akan pernah tercapai dan tangga yang
+/// didokumentasikan itu tinggal separuh. Angka di sini mengikuti tangga yang operasional.
+model OutboundJob {
+  id             String         @id @default(cuid())
+  conversationId String
+  messageId      String?
+  channel        MessageChannel
+  /// COEXIST (Unofficial) atau META (Official).
+  provider       String
+  /// Semua yang dibutuhkan worker untuk mengirim ulang tanpa membaca ulang state apa pun:
+  /// nomor tujuan, teks, dan media. Tidak pernah memuat kredensial — worker mengambilnya
+  /// sendiri dari WaNumber saat memproses.
+  payload        Json
+  /// QUEUED, SENDING, SENT, FAILED, RETRYING, CANCELLED.
+  status         String         @default("QUEUED")
+  attempts       Int            @default(0)
+  maxAttempts    Int            @default(4)
+  nextAttemptAt  DateTime?
+  lastError      String?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  @@index([status, nextAttemptAt])
+  @@index([conversationId])
+  /// Dipakai UI retry untuk menemukan job di balik satu bubble yang gagal.
+  @@index([messageId])
+}
+
+/// Opt-in/opt-out per kontak, dasar campaign yang aman.
+///
+/// Baris yang TIDAK ADA berarti "belum pernah ditanya", dan diperlakukan sebagai opt-in
+/// (lihat safety-guard.ts) — sama seperti perilaku hari ini, di mana consent belum pernah
+/// dicatat sama sekali. Menjadikan ketiadaan baris sebagai opt-out akan langsung memblokir
+/// setiap kontak yang sudah ada.
+model ContactConsent {
+  id        String   @id @default(cuid())
+  contactId String   @unique
+  optIn     Boolean  @default(true)
+  optOut    Boolean  @default(false)
+  source    String?
+  note      String?
+  updatedBy String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+/// Satu putaran keputusan bot, disimpan sebagai entitas tersendiri agar bisa diaudit.
+///
+/// `Message.botTrace` TETAP ditulis seperti sebelumnya dan tidak digantikan — bubble bot di
+/// inbox masih membacanya, dan ribuan baris lama hanya punya itu. Tabel ini menjawab hal yang
+/// tidak bisa dijawab kolom JSON pada pesan: putaran yang TIDAK PERNAH menghasilkan pesan sama
+/// sekali (agent mengambil alih di tengah jalan, atau orchestrator melempar exception) dulu
+/// tidak meninggalkan jejak apa pun.
+///
+/// `conversationId` dan `messageId` sengaja kolom string biasa, BUKAN relasi ber-foreign-key —
+/// mengikuti guidebook §6.5. Alasannya konkret: src/app/api/conversations/[id]/clear
+/// menjalankan message.deleteMany, jadi FK ke Message akan memaksa memilih antara memblokir
+/// clear (RESTRICT) atau menghapus jejak audit (CASCADE). Keduanya salah untuk tabel audit —
+/// catatan harus tetap hidup melebihi hal yang dicatatnya.
+model BotDecisionRun {
+  id             String    @id @default(cuid())
+  conversationId String
+  messageId      String?
+  mode           String
+  inboundText    String
+  replyText      String?
+  /// REPLIED, CLARIFIED, HANDOFF, FAILED, SKIPPED — pemetaan di decision-recorder.ts.
+  status         String
+  flowKey        String?
+  flowVersion    Int?
+  startedAt      DateTime  @default(now())
+  finishedAt     DateTime?
+  latencyMs      Int?
+  /// Sudah melewati sanitizer sebelum ditulis (lihat trace-sanitizer.ts) — rahasia tidak
+  /// pernah mendarat di database, bukan sekadar disembunyikan saat render.
+  trace          Json
+  knowledgeRefs  Json?
+  verification   Json?
+  error          String?
+
+  @@index([conversationId])
+  @@index([startedAt])
+  @@index([status])
+  /// Tidak ada di guidebook, tapi wajib: popover trace di inbox mencari baris ini BERDASARKAN
+  /// messageId untuk setiap bubble bot. Tanpa index, itu sequential scan pada tabel yang
+  /// tumbuh satu baris per balasan bot.
+  @@index([messageId])
+}
+
+/// Satu file knowledge yang dibaca bot, dibungkus menjadi baris yang bisa dilihat operator.
+///
+/// Untuk sekarang isinya HANYA cerminan dari `catalog/*.json` — tabel ini tidak pernah dibaca
+/// saat bot menjawab. Bot tetap membaca file JSON di disk lewat src/lib/bot/catalog.ts dan
+/// knowledge.ts, persis seperti sebelumnya. Menjadikan tabel ini sumber runtime akan mengubah
+/// perilaku bot, dan guidebook §24 (Risiko 2) secara khusus melarangnya di fase ini: index
+/// bisa basi terhadap disk, dan bot yang menjawab dari data basi lebih buruk daripada bot yang
+/// tidak punya explorer sama sekali.
+///
+/// `key` memakai path relatif file (mis. "catalog/policy-cards.json") supaya sinkronisasi
+/// berikutnya menemukan kembali baris yang sama alih-alih menumpuk duplikat.
+model KnowledgeSource {
+  id           String           @id @default(cuid())
+  key          String           @unique
+  title        String
+  /// CATALOG_JSON, FAQ, URL, PDF, DOC, MANUAL. Indexer HANYA menyentuh CATALOG_JSON —
+  /// sumber yang dibuat manusia tidak boleh ditimpa oleh sinkronisasi (guidebook §10.1).
+  type         String
+  sourcePath   String?
+  status       String           @default("PUBLISHED")
+  summary      String?
+  /// Ukuran file, waktu modifikasi, dan daftar key top-level — supaya operator bisa
+  /// membandingkan apa yang ter-index dengan file yang ada di disk tanpa membuka JSON-nya.
+  metadata     Json?
+  lastSyncedAt DateTime?
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+  chunks       KnowledgeChunk[]
+
+  @@index([type])
+  @@index([status])
+}
+
+/// Satu potongan knowledge yang bisa dicari, ditampilkan, dan nanti dikutip oleh trace.
+///
+/// `hash` adalah SHA-256 dari isi record yang dinormalisasi. Keunikannya di-scope ke
+/// knowledgeSourceId, BUKAN global: fakta yang sama bisa muncul sah di dua file berbeda
+/// (mis. catatan kebijakan yang sama di policy-cards.json dan general-modules.json), dan
+/// menggabungkannya secara global akan menyembunyikan file mana yang sebenarnya dibaca bot —
+/// justru pertanyaan yang halaman ini ada untuk menjawabnya.
+model KnowledgeChunk {
+  id                String          @id @default(cuid())
+  knowledgeSourceId String
+  knowledgeSource   KnowledgeSource @relation(fields: [knowledgeSourceId], references: [id], onDelete: Cascade)
+  topic             String?
+  title             String?
+  body              String
+  facts             Json?
+  links             Json?
+  prices            Json?
+  tags              Json?
+  hash              String
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  @@unique([knowledgeSourceId, hash])
+  @@index([knowledgeSourceId])
+  @@index([topic])
+  @@index([hash])
+}
+
 model Label {
   id            String                @id @default(cuid())
   name          String                @unique
@@ -333,25 +492,25 @@ model Template {
 }
 
 model Settings {
-  id                Int            @id @default(1)
-  defaultChannel    MessageChannel @default(OFFICIAL)
-  workingHoursStart String?
-  workingHoursEnd   String?
-  offHoursAutoReply String?
+  id                          Int            @id @default(1)
+  defaultChannel              MessageChannel @default(OFFICIAL)
+  workingHoursStart           String?
+  workingHoursEnd             String?
+  offHoursAutoReply           String?
   // The bot's global mode. true ("On") = active for all chats -- every conversation's
   // botEnabled is bulk-set true on the OFF->ON toggle, and every new conversation defaults
   // to true while this is on. false ("Off") = inactive by default everywhere -- bulk-set
   // false on toggle, and an agent must manually flip a specific conversation's botEnabled
   // back on (src/app/api/conversations/[id]/toggle-bot) to activate the bot in just that
   // one chat. See src/app/api/bot/mode/route.ts.
-  botAutoReplyAll   Boolean        @default(true)
+  botAutoReplyAll             Boolean        @default(true)
   // When true, the bot never auto-replies to a contact whose phone is an Indonesian number
   // (country code 62) regardless of botAutoReplyAll -- an operator policy choice to have
   // agents handle domestic customers directly, letting the bot serve everyone else. See
   // src/lib/phone.ts's isIndonesianNumber and src/app/api/bot/indonesia-filter/route.ts.
-  skipBotForIndonesianNumbers Boolean @default(false)
-  catalogSyncedAt   DateTime?
+  skipBotForIndonesianNumbers Boolean        @default(false)
+  catalogSyncedAt             DateTime?
   // Which Ollama model src/lib/bot/llm.ts asks for. Local-only (no hosted-API fallback) --
   // customer text and booking data never leave the VPS's own Ollama daemon.
-  ollamaModel       String         @default("gemma4:31b-cloud")
+  ollamaModel                 String         @default("gemma4:31b-cloud")
 }

@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { BotTracePopover } from './BotTracePopover'
 import { isHandoffLogMessage, HANDOFF_LOG_SUMMARY } from '@/lib/message-display'
 import { formatWhatsAppText } from '@/lib/whatsapp-format'
+import { fetchJson } from '@/lib/fetch-json'
 import type { BotDecision } from '@/lib/bot/types'
 
 export type MessageView = {
@@ -223,6 +224,30 @@ export function MessageBubble({ message, onReply }: { message: MessageView; onRe
   // Declared before the handoff-log early return below so every render calls the same hooks
   // in the same order (Rules of Hooks) -- unused in that branch, which is fine.
   const [showTrace, setShowTrace] = useState(false)
+  // Phase 6: the "Kirim Ulang" button below shipped with no onClick at all -- it looked like a
+  // working recovery path and did nothing. It now re-queues the message's outbound job.
+  const [retrying, setRetrying] = useState(false)
+  const [retryError, setRetryError] = useState<string | null>(null)
+
+  async function retrySend() {
+    if (retrying) return
+    setRetrying(true)
+    setRetryError(null)
+    try {
+      await fetchJson('/api/outbound-jobs/retry', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ messageId: message.id }),
+      })
+      // No local state change on success: the worker broadcasts `message.updated` when the
+      // attempt resolves, and the thread replaces this bubble from that. Optimistically
+      // flipping to "sent" here would claim a delivery that has not happened yet.
+    } catch (error: unknown) {
+      setRetryError(error instanceof Error ? error.message : 'Gagal mengirim ulang')
+    } finally {
+      setRetrying(false)
+    }
+  }
 
   // A handoff decision is logged (Task 34) as a Message row with content: null, sentBy: 'BOT' --
   // no real reply was ever sent to the customer. Rendered as WhatsApp's own centered system
@@ -242,8 +267,12 @@ export function MessageBubble({ message, onReply }: { message: MessageView; onRe
           </button>
           <div className="h-px flex-1 bg-border" />
         </div>
-        {showTrace && message.botTrace != null && (
-          <BotTracePopover trace={message.botTrace as BotDecision} onClose={() => setShowTrace(false)} />
+        {showTrace && (
+          <BotTracePopover
+            trace={(message.botTrace as BotDecision | null) ?? null}
+            messageId={message.id}
+            onClose={() => setShowTrace(false)}
+          />
         )}
       </div>
     )
@@ -251,7 +280,11 @@ export function MessageBubble({ message, onReply }: { message: MessageView; onRe
 
   const isOutbound = message.direction === 'OUTBOUND'
   const isFailed = message.deliveryStatus === 'FAILED'
-  const hasTrace = message.sentBy === 'BOT' && Boolean(message.botTrace)
+  // Every BOT message gets the trigger, not just the ones that happen to carry a botTrace
+  // (guidebook §12). A bot reply with no stored trace is precisely the case an agent most
+  // needs an answer for, and hiding the button there left them with no way to ask -- the
+  // popover now says "Trace tidak tersedia untuk pesan ini" instead of silently not existing.
+  const isBotMessage = message.sentBy === 'BOT'
   const hasMedia = Boolean(message.mediaUrl)
   const cards = message.templatePayload?.cards
 
@@ -279,18 +312,22 @@ export function MessageBubble({ message, onReply }: { message: MessageView; onRe
           {message.templatePayload?.coupon && <CouponChip coupon={message.templatePayload.coupon} />}
         </div>
       </div>
-      {hasTrace && showTrace && (
-        <BotTracePopover trace={message.botTrace as BotDecision} onClose={() => setShowTrace(false)} />
+      {isBotMessage && showTrace && (
+        <BotTracePopover
+          trace={(message.botTrace as BotDecision | null) ?? null}
+          messageId={message.id}
+          onClose={() => setShowTrace(false)}
+        />
       )}
       <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
         {message.sentBy === 'BOT' && <Badge variant="brand">Bot</Badge>}
         {/* Dedicated trigger for the reasoning trace, separate from the bubble itself -- clicking
             the message text/media should never be overloaded with an unrelated toggle. */}
-        {hasTrace && (
+        {isBotMessage && (
           <button
             type="button"
             onClick={() => setShowTrace((prev) => !prev)}
-            aria-label={showTrace ? 'Sembunyikan alur berpikir bot' : 'Lihat alur berpikir bot'}
+            aria-label={showTrace ? 'Sembunyikan alasan bot' : 'Lihat alasan bot'}
             aria-pressed={showTrace}
             className="text-sm hover:opacity-70"
           >
@@ -310,11 +347,14 @@ export function MessageBubble({ message, onReply }: { message: MessageView; onRe
               type="button"
               variant="ghost"
               size="sm"
+              onClick={retrySend}
+              disabled={retrying}
               aria-label="Kirim ulang"
               className="h-auto px-0 text-brand hover:bg-transparent hover:underline"
             >
-              Kirim Ulang
+              {retrying ? 'Mengirim...' : 'Kirim Ulang'}
             </Button>
+            {retryError && <span className="text-destructive">{retryError}</span>}
           </>
         ) : (
           isOutbound && <DeliveryTicks status={message.deliveryStatus} />
