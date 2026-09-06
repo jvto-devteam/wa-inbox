@@ -53,10 +53,24 @@ export function ConversationList({
   }, [conversations])
   useEffect(() => {
     selectedIdRef.current = selectedId
-    // Opening a conversation is an immediate "I've seen this" signal, ahead of ThreadView's
-    // own PATCH landing — without this the badge would linger for the length of that request.
-    if (selectedId) setConversations((prev) => prev.map((c) => (c.id === selectedId ? { ...c, unreadCount: 0 } : c)))
   }, [selectedId])
+
+  // Opening a conversation is an immediate "I've seen this" signal, ahead of ThreadView's own
+  // PATCH landing — without it the badge would linger for the length of that request. It is
+  // handled in two halves rather than by writing state from an effect on `selectedId`, which
+  // is what react-hooks/set-state-in-effect flags:
+  //
+  //   - while a row IS the selected one, its badge is DERIVED away at render (below), so the
+  //     clearing also covers a selection this component did not initiate;
+  //   - the click ALSO zeroes the stored count, so the badge stays cleared once the agent
+  //     moves on to another conversation. Deriving alone would let the old count reappear.
+  const openConversation = useCallback(
+    (id: string) => {
+      setConversations((prev) => prev.map((c) => (c.id === id ? { ...c, unreadCount: 0 } : c)))
+      onSelect(id)
+    },
+    [onSelect]
+  )
 
   const loadConversations = useCallback((q: string) => {
     // On a rejection the list simply keeps whatever it already had: a 401 has already sent
@@ -145,7 +159,12 @@ export function ConversationList({
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto">
         {conversations.map((c) => (
-          <ConversationListItem key={c.id} conversation={c} active={c.id === selectedId} onClick={() => onSelect(c.id)} />
+          <ConversationListItem
+            key={c.id}
+            conversation={c.id === selectedId ? { ...c, unreadCount: 0 } : c}
+            active={c.id === selectedId}
+            onClick={() => openConversation(c.id)}
+          />
         ))}
       </div>
     </div>

@@ -38,17 +38,33 @@ function formatCost(value: number, currency: string | null): string {
  */
 export default function BillingPage() {
   const [days, setDays] = useState(30)
-  const [report, setReport] = useState<CostReport | null>(null)
-  const [error, setError] = useState<string | null>(null)
-  const [loading, setLoading] = useState(true)
+  // One state for "what has actually been fetched, and for which range", so `loading` can be
+  // DERIVED from it. Setting loading/error synchronously at the top of the effect instead --
+  // the shape this replaced -- costs an extra render pass on every range change and is what
+  // react-hooks/set-state-in-effect warns about.
+  const [loaded, setLoaded] = useState<{ days: number; report: CostReport | null; error: string | null } | null>(null)
+
+  const loading = loaded?.days !== days
+  // The previous range's report stays on screen underneath "Memuat..." while the next one
+  // loads, but its error does not: a stale failure next to a running request reads as if the
+  // new request had already failed.
+  const report = loaded?.report ?? null
+  const error = loading ? null : (loaded?.error ?? null)
 
   useEffect(() => {
-    setLoading(true)
-    setError(null)
+    // Without this guard a slow response for an earlier range could land last and park
+    // `loaded.days` on a range the user has already left, leaving the page loading forever.
+    let cancelled = false
     fetchJson<CostReport>(`/api/analytics/conversation-cost?days=${days}`)
-      .then(setReport)
-      .catch(() => setError('Gagal memuat histori biaya dari Meta'))
-      .finally(() => setLoading(false))
+      .then((fetched) => {
+        if (!cancelled) setLoaded({ days, report: fetched, error: null })
+      })
+      .catch(() => {
+        if (!cancelled) setLoaded((prev) => ({ days, report: prev?.report ?? null, error: 'Gagal memuat histori biaya dari Meta' }))
+      })
+    return () => {
+      cancelled = true
+    }
   }, [days])
 
   return (
