@@ -1,5 +1,5 @@
 /**
- * Seeds `BotRuleSetting` from the static rule registry.
+ * Seeds `BotRuleSetting` and `BotFlowDefinition` from their static registries.
  *
  * Safe to re-run: the registry's metadata is re-asserted every time, but an operator's
  * published `config`/`enabled` is never touched. See src/lib/bot-control/rule-seed.ts for why
@@ -13,12 +13,18 @@
 // ran. Import order is the load-bearing part here.
 import 'dotenv/config'
 import { seedBotRuleSettings } from '../src/lib/bot-control/rule-seed'
+import { seedBotFlowDefinitions } from '../src/lib/bot-control/flow-seed'
 import { prisma } from '../src/lib/db'
 
 async function main() {
-  const result = await seedBotRuleSettings()
+  const rules = await seedBotRuleSettings()
   console.log(
-    `Seed rule selesai: ${result.created} dibuat, ${result.updated} disinkronkan, ${result.unchanged} tidak berubah.`
+    `Seed rule selesai: ${rules.created} dibuat, ${rules.updated} disinkronkan, ${rules.unchanged} tidak berubah.`
+  )
+
+  const flows = await seedBotFlowDefinitions()
+  console.log(
+    `Seed flow selesai: ${flows.created} dibuat, ${flows.updated} disinkronkan, ${flows.unchanged} tidak berubah.`
   )
 }
 

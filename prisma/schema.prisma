@@ -683,3 +683,78 @@ model BotRuleSetting {
   @@index([severity])
   @@index([status])
 }
+
+/// Satu flow bot yang bisa dikelola. SDD Manage Second §7.5.
+///
+/// Sama seperti BotRuleSetting terhadap rule-registry.ts: baris ini TIDAK menggantikan
+/// `existing-flow-registry.ts`. Registry tetap memutuskan flow apa yang ADA, node apa saja di
+/// dalamnya, dan file mana yang menjalankannya — semua itu control flow di kode, bukan data.
+/// Tabel ini hanya menyimpan bagian yang boleh berubah tanpa deploy.
+///
+/// `editableLevel` adalah batas keamanannya, dan disalin dari seed, bukan ditentukan baris ini
+/// sendiri. READ_ONLY, TEXT_ONLY, SAFE_CONFIG, FLOW_BUILDER_V1. Fase ini berhenti di
+/// SAFE_CONFIG: yang boleh diubah hanyalah teks dan ambang yang sudah dibaca kode apa adanya,
+/// bukan percabangannya. Percabangan adalah `if` di orchestrator.ts — mengubahnya dari form web
+/// berarti membangun interpreter, dan interpreter setengah jadi yang menjalankan produksi jauh
+/// lebih berbahaya daripada flow yang belum bisa diedit.
+///
+/// `activeVersionId` adalah pointer, bukan sumber kebenaran kedua: versi yang aktif tetap
+/// baris BotFlowVersion berstatus PUBLISHED. Pointer ini ada supaya loader runtime tidak perlu
+/// memindai seluruh versi pada setiap giliran bot.
+model BotFlowDefinition {
+  id              String           @id @default(cuid())
+  key             String           @unique
+  name            String
+  description     String?
+  category        String?
+  /// "code" selama perilaku masih sepenuhnya dari kode, "database" setelah ada versi terbit.
+  runtimeSource   String?
+  editableLevel   String           @default("READ_ONLY")
+  activeVersionId String?
+  status          String           @default("PUBLISHED")
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  versions        BotFlowVersion[]
+
+  @@index([category])
+  @@index([status])
+}
+
+/// Satu versi konfigurasi flow. SDD Manage Second §7.6.
+///
+/// `nodeConfig` di fase ini HANYA memuat safe config (teks sapaan, balasan fallback, ambang
+/// klarifikasi, dan seterusnya) — bukan definisi node. Node-nya tetap di registry statis,
+/// karena node adalah kode. Nama kolomnya mengikuti SDD supaya Flow Builder V1 nanti bisa
+/// mengisinya tanpa migrasi lagi.
+///
+/// PUBLISHED tidak bisa diedit, alasan yang sama dengan KnowledgeRevision: snapshot release
+/// yang menunjuk versi ini harus tetap mendeskripsikan konfigurasi yang benar-benar dipakai bot
+/// saat itu. Perubahan selalu berarti versi baru.
+model BotFlowVersion {
+  id             String            @id @default(cuid())
+  flowId         String
+  flow           BotFlowDefinition @relation(fields: [flowId], references: [id], onDelete: Cascade)
+  version        Int
+  /// DRAFT, REVIEW, APPROVED, PUBLISHED, ARCHIVED, REJECTED.
+  status         String            @default("DRAFT")
+  triggerConfig  Json?
+  /// Bentuknya didefinisikan di src/lib/bot-control/flow-config.ts (FlowSafeConfig).
+  nodeConfig     Json
+  edgeConfig     Json?
+  fallbackConfig Json?
+  handoffConfig  Json?
+  changeReason   String?
+  createdBy      String?
+  reviewedBy     String?
+  reviewedAt     DateTime?
+  publishedBy    String?
+  publishedAt    DateTime?
+  releaseId      String?
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  @@unique([flowId, version])
+  @@index([flowId])
+  @@index([status])
+  @@index([releaseId])
+}

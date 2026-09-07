@@ -31,6 +31,8 @@ import { writeBotAuditLog, type AuditWriter } from '@/lib/bot-control/audit'
 import { getBotRule } from '@/lib/bot-control/rule-registry'
 import { invalidateRuntimeRuleCache } from '@/lib/bot-control/runtime-rules'
 import { invalidateManagedKnowledgeCache } from '@/lib/bot/managed-knowledge'
+import { invalidateRuntimeFlowCache } from '@/lib/bot-control/runtime-flows'
+import { getExistingFlow } from '@/lib/bot-control/existing-flow-registry'
 
 /**
  * 2, not 1. Version 1 recorded only WHICH rules were published, never their values — which
@@ -122,6 +124,12 @@ export async function createReleaseSnapshot(
     orderBy: [{ knowledgeSourceId: 'asc' }],
   })
 
+  const storedFlows = await client.botFlowVersion.findMany({
+    where: { status: 'PUBLISHED', flow: { status: { not: 'ARCHIVED' } } },
+    select: { id: true, version: true, flow: { select: { key: true, name: true } } },
+    orderBy: [{ flowId: 'asc' }],
+  })
+
   const snapshot: ReleaseSnapshot = {
     schemaVersion: RELEASE_SNAPSHOT_SCHEMA_VERSION,
     capturedAt: new Date().toISOString(),
@@ -144,8 +152,11 @@ export async function createReleaseSnapshot(
       name: row.title,
       version: row.version,
     })),
-    // Empty until Phases E and H add their readers — see the note at the top.
-    flows: [],
+    // Same shape as knowledge, and for the same reason: a flow version is a versioned
+    // document, so naming the version is enough for a rollback to republish it.
+    flows: storedFlows
+      .filter((row) => getExistingFlow(row.flow.key) !== null)
+      .map((row) => ({ id: row.id, key: row.flow.key, name: row.flow.name, version: row.version })),
     channelPolicy: null,
     testSummary,
   }
@@ -190,7 +201,7 @@ export type ReleasePreview = {
  * further to check", not "everything checked out".
  */
 export async function previewRelease(): Promise<ReleasePreview> {
-  const [approvedRules, approvedKnowledge, unreviewedKnowledge] = await Promise.all([
+  const [approvedRules, approvedKnowledge, unreviewedKnowledge, approvedFlows] = await Promise.all([
     prisma.botRuleSetting.findMany({ where: { status: 'APPROVED' }, select: { key: true, name: true } }),
     prisma.knowledgeRevision.findMany({
       where: { status: 'APPROVED', knowledgeSource: { status: { not: 'ARCHIVED' } } },
@@ -202,6 +213,10 @@ export async function previewRelease(): Promise<ReleasePreview> {
     prisma.knowledgeRevision.findMany({
       where: { status: 'REVIEW', knowledgeSource: { status: { not: 'ARCHIVED' } } },
       select: { title: true, version: true },
+    }),
+    prisma.botFlowVersion.findMany({
+      where: { status: 'APPROVED', flow: { status: { not: 'ARCHIVED' } } },
+      select: { id: true, version: true, flow: { select: { key: true, name: true, editableLevel: true } } },
     }),
   ])
 
@@ -216,11 +231,24 @@ export async function previewRelease(): Promise<ReleasePreview> {
     blockingIssues.push(`Knowledge "${row.title}" v${row.version} masih menunggu approve dan tidak akan ikut terbit.`)
   }
 
+  // Same class of hazard as a rule whose registry entry was locked after approval: a deploy can
+  // drop a flow's editable level, and publishing an approved draft would then apply a change
+  // the code has since decided may not be made from a form.
+  for (const row of approvedFlows) {
+    if (getExistingFlow(row.flow.key) === null) {
+      blockingIssues.push(`Flow "${row.flow.name}" (${row.flow.key}) sudah tidak ada di kode — draft-nya harus ditolak.`)
+      continue
+    }
+    if (row.flow.editableLevel === 'READ_ONLY') {
+      blockingIssues.push(`Flow "${row.flow.name}" sekarang READ_ONLY — draft v${row.version} harus ditolak.`)
+    }
+  }
+
   return {
     changes: {
       rules: approvedRules.length,
       knowledge: approvedKnowledge.length,
-      flows: 0,
+      flows: approvedFlows.length,
       channelPolicy: 0,
     },
     // Flips to true in Phase F, when BotTestRun exists and a publish can actually be gated on one.
@@ -449,6 +477,7 @@ export async function publishRelease(params: PublishReleaseParams): Promise<Publ
       const actor = { id: params.actorId, name: params.actorName }
       await publishApprovedRules(tx, release.id, actor, params.req)
       await publishApprovedKnowledge(tx, release.id, actor, params.req)
+      await publishApprovedFlows(tx, release.id, actor, params.req)
 
       const snapshot = await createReleaseSnapshot(null, tx)
       await tx.botRelease.update({
@@ -481,6 +510,7 @@ export async function publishRelease(params: PublishReleaseParams): Promise<Publ
     // without it a change that appears not to have worked gets published again.
     invalidateRuntimeRuleCache()
     invalidateManagedKnowledgeCache()
+    invalidateRuntimeFlowCache()
     return release
   } catch (error) {
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
@@ -488,6 +518,69 @@ export async function publishRelease(params: PublishReleaseParams): Promise<Publ
     }
     throw error
   }
+}
+
+/**
+ * Moves every APPROVED flow version into its published state, inside the transaction.
+ *
+ * The definition's `activeVersionId` is moved with it. That pointer is not a second source of
+ * truth — the published version is still whichever row says PUBLISHED — it exists so the
+ * runtime loader does not have to scan every version on each bot turn.
+ */
+async function publishApprovedFlows(
+  tx: Prisma.TransactionClient,
+  releaseId: string,
+  actor: { id?: string | null; name?: string | null },
+  req?: Request | null
+): Promise<number> {
+  const approved = await tx.botFlowVersion.findMany({
+    where: { status: 'APPROVED', flow: { status: { not: 'ARCHIVED' } } },
+    include: { flow: { select: { key: true, editableLevel: true } } },
+  })
+  const publishedAt = new Date()
+
+  for (const version of approved) {
+    // Re-checked here and not only in preview: preview and publish are separate requests, and a
+    // deploy between them can drop the flow out of the code or lock it.
+    if (getExistingFlow(version.flow.key) === null || version.flow.editableLevel === 'READ_ONLY') {
+      throw new ReleaseBlockedError([`Flow ${version.flow.key} tidak boleh dipublish dari UI.`])
+    }
+
+    // Supersede whatever was live first: two PUBLISHED versions on one flow would make "which
+    // config is the bot reading" unanswerable.
+    await tx.botFlowVersion.updateMany({
+      where: { flowId: version.flowId, status: 'PUBLISHED' },
+      data: { status: 'ARCHIVED' },
+    })
+
+    const updated = await tx.botFlowVersion.update({
+      where: { id: version.id },
+      data: { status: 'PUBLISHED', publishedBy: actor.id ?? null, publishedAt, releaseId },
+    })
+
+    await tx.botFlowDefinition.update({
+      where: { id: version.flowId },
+      data: { activeVersionId: version.id, runtimeSource: 'database' },
+    })
+
+    await writeBotAuditLog(
+      {
+        action: 'PUBLISH',
+        entityType: 'FLOW',
+        entityId: version.flowId,
+        entityKey: version.flow.key,
+        actorId: actor.id,
+        actorName: actor.name,
+        before: { version: version.version, status: version.status },
+        after: { version: updated.version, status: updated.status },
+        releaseId,
+        req,
+      },
+      tx
+    )
+  }
+
+  return approved.length
 }
 
 /**
@@ -584,6 +677,42 @@ async function restoreSnapshot(
         actorId: actor.id,
         actorName: actor.name,
         after: { version: revision.version, status: 'PUBLISHED' },
+        releaseId,
+        req,
+      },
+      tx
+    )
+  }
+
+  for (const entry of snapshot.flows) {
+    // Same shape as knowledge: `id` is the VERSION the snapshot named, still present because
+    // publishing a newer one archives the old rather than deleting it.
+    const version = await tx.botFlowVersion.findUnique({ where: { id: entry.id } })
+    if (!version) continue
+    if (version.status === 'PUBLISHED') continue
+
+    await tx.botFlowVersion.updateMany({
+      where: { flowId: version.flowId, status: 'PUBLISHED' },
+      data: { status: 'ARCHIVED' },
+    })
+    await tx.botFlowVersion.update({
+      where: { id: version.id },
+      data: { status: 'PUBLISHED', releaseId, publishedBy: actor.id ?? null, publishedAt: new Date() },
+    })
+    await tx.botFlowDefinition.update({
+      where: { id: version.flowId },
+      data: { activeVersionId: version.id, runtimeSource: 'database' },
+    })
+
+    await writeBotAuditLog(
+      {
+        action: 'ROLLBACK',
+        entityType: 'FLOW',
+        entityId: version.flowId,
+        entityKey: entry.key,
+        actorId: actor.id,
+        actorName: actor.name,
+        after: { version: version.version, status: 'PUBLISHED' },
         releaseId,
         req,
       },
@@ -692,6 +821,7 @@ export async function rollbackToRelease(params: RollbackParams): Promise<Publish
 
     invalidateRuntimeRuleCache()
     invalidateManagedKnowledgeCache()
+    invalidateRuntimeFlowCache()
     return release
   } catch (error) {
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {

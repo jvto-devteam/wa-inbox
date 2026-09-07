@@ -28,6 +28,7 @@ beforeEach(() => {
   mockPrisma.botRuleSetting.findMany.mockResolvedValue([] as never)
   // previewRelease asks twice: APPROVED knowledge to count, REVIEW knowledge to warn about.
   mockPrisma.knowledgeRevision.findMany.mockResolvedValue([] as never)
+  mockPrisma.botFlowVersion.findMany.mockResolvedValue([] as never)
 })
 
 describe('POST /api/bot-control/releases/preview', () => {
@@ -88,5 +89,15 @@ describe('POST /api/bot-control/releases/preview', () => {
     expect(body.changes.knowledge).toBe(1)
     expect(body.blockingIssues).toHaveLength(1)
     expect(body.blockingIssues[0]).toContain('FAQ Ijen')
+  })
+
+  it('counts approved flows and blocks one the code has since locked', async () => {
+    mockPrisma.botFlowVersion.findMany.mockResolvedValue([
+      { id: 'ver_1', version: 2, flow: { key: 'whatsapp-existing-bot-v1', name: 'WhatsApp Bot', editableLevel: 'READ_ONLY' } },
+    ] as never)
+
+    const body = await (await POST(req())).json()
+    expect(body.changes.flows).toBe(1)
+    expect(body.blockingIssues[0]).toContain('READ_ONLY')
   })
 })

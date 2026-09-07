@@ -72,7 +72,13 @@ beforeEach(() => {
   mockTx.botRuleSetting.findMany.mockResolvedValue([] as never)
   mockTx.botRuleSetting.update.mockResolvedValue({ enabled: true, config: null, status: 'PUBLISHED' } as never)
   mockPrisma.botRuleSetting.findMany.mockResolvedValue([] as never)
-  // No approved knowledge by default either; the knowledge tests opt in.
+  // No approved knowledge or flows by default either; those tests opt in.
+  mockTx.botFlowVersion.findMany.mockResolvedValue([] as never)
+  mockTx.botFlowVersion.findUnique.mockResolvedValue(null as never)
+  mockTx.botFlowVersion.updateMany.mockResolvedValue({ count: 0 } as never)
+  mockTx.botFlowVersion.update.mockResolvedValue({ version: 1, status: 'PUBLISHED' } as never)
+  mockTx.botFlowDefinition.update.mockResolvedValue({ id: 'flow_1' } as never)
+  mockPrisma.botFlowVersion.findMany.mockResolvedValue([] as never)
   mockTx.knowledgeRevision.findMany.mockResolvedValue([] as never)
   mockTx.knowledgeRevision.findUnique.mockResolvedValue(null as never)
   mockTx.knowledgeRevision.updateMany.mockResolvedValue({ count: 0 } as never)
@@ -356,6 +362,64 @@ describe('publishRelease', () => {
     expect(mockTx.botRuleSetting.update).not.toHaveBeenCalled()
   })
 
+  it('moves an approved flow version to PUBLISHED and repoints the definition', async () => {
+    mockTx.botFlowVersion.findMany.mockResolvedValue([
+      {
+        id: 'ver_2',
+        flowId: 'flow_1',
+        version: 2,
+        status: 'APPROVED',
+        flow: { key: 'whatsapp-existing-bot-v1', editableLevel: 'SAFE_CONFIG' },
+      },
+    ] as never)
+
+    await publishRelease({ title: 'x', actorId: 'acc_1' })
+
+    // The previous one steps aside first: two PUBLISHED versions on one flow would make "which
+    // config is the bot reading" unanswerable.
+    expect(mockTx.botFlowVersion.updateMany).toHaveBeenCalledWith({
+      where: { flowId: 'flow_1', status: 'PUBLISHED' },
+      data: { status: 'ARCHIVED' },
+    })
+    expect(mockTx.botFlowDefinition.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { activeVersionId: 'ver_2', runtimeSource: 'database' } })
+    )
+  })
+
+  it('refuses to publish a flow the code has since locked to READ_ONLY', async () => {
+    // Preview and publish are separate requests; a deploy between them can drop the level.
+    mockTx.botFlowVersion.findMany.mockResolvedValue([
+      {
+        id: 'ver_2',
+        flowId: 'flow_1',
+        version: 2,
+        status: 'APPROVED',
+        flow: { key: 'whatsapp-existing-bot-v1', editableLevel: 'READ_ONLY' },
+      },
+    ] as never)
+
+    await expect(publishRelease({ title: 'x' })).rejects.toBeInstanceOf(ReleaseBlockedError)
+  })
+
+  it('refuses to publish a flow whose key the registry no longer has', async () => {
+    mockTx.botFlowVersion.findMany.mockResolvedValue([
+      { id: 'ver_2', flowId: 'flow_1', version: 2, status: 'APPROVED', flow: { key: 'flow-hantu', editableLevel: 'SAFE_CONFIG' } },
+    ] as never)
+
+    await expect(publishRelease({ title: 'x' })).rejects.toBeInstanceOf(ReleaseBlockedError)
+  })
+
+  it('records published flows in the snapshot by version', async () => {
+    mockPrisma.botFlowVersion.findMany.mockResolvedValue([
+      { id: 'ver_2', version: 2, flow: { key: 'whatsapp-existing-bot-v1', name: 'WhatsApp Existing Bot' } },
+    ] as never)
+
+    const snapshot = await createReleaseSnapshot()
+    expect(snapshot.flows).toEqual([
+      { id: 'ver_2', key: 'whatsapp-existing-bot-v1', name: 'WhatsApp Existing Bot', version: 2 },
+    ])
+  })
+
   it('turns a version collision into a typed conflict the route can answer 409 with', async () => {
     // `version` is unique, so the publish that loses a race fails its insert rather than
     // quietly reusing a number.
@@ -572,6 +636,37 @@ describe('rollbackToRelease', () => {
     })
     expect(mockTx.knowledgeRevision.update).toHaveBeenCalledWith(
       expect.objectContaining({ where: { id: 'krev_3' }, data: expect.objectContaining({ status: 'PUBLISHED' }) })
+    )
+  })
+
+  it('republishes the flow version the snapshot names and repoints the definition', async () => {
+    mockTx.botRelease.findUnique.mockResolvedValue(
+      release({
+        snapshot: {
+          schemaVersion: 2,
+          capturedAt: 'x',
+          rules: [],
+          knowledge: [],
+          flows: [{ id: 'ver_1', key: 'whatsapp-existing-bot-v1', name: 'WhatsApp Existing Bot', version: 1 }],
+          channelPolicy: null,
+          testSummary: null,
+        },
+      })
+    )
+    mockTx.botFlowVersion.findUnique.mockResolvedValue({
+      id: 'ver_1',
+      flowId: 'flow_1',
+      version: 1,
+      status: 'ARCHIVED',
+    } as never)
+
+    await rollbackToRelease({ targetReleaseId: 'rel_1', reason: 'Kalimat baru membingungkan customer' })
+
+    expect(mockTx.botFlowVersion.update).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: 'ver_1' }, data: expect.objectContaining({ status: 'PUBLISHED' }) })
+    )
+    expect(mockTx.botFlowDefinition.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { activeVersionId: 'ver_1', runtimeSource: 'database' } })
     )
   })
 

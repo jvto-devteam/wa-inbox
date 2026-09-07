@@ -27,6 +27,9 @@ const store = {
   // rule lifecycle can no longer be exercised at all.
   knowledgeRevisions: [] as Row[],
   knowledgeSources: [] as Row[],
+  // Phase E put flows in the same publish transaction, for the same reason.
+  flowVersions: [] as Row[],
+  flowDefinitions: [] as Row[],
 }
 
 function matches(row: Row, where: Row | undefined): boolean {
@@ -104,6 +107,25 @@ const db = {
       return row ?? {}
     },
   },
+  botFlowVersion: {
+    findMany: async (args?: { where?: Row }) =>
+      store.flowVersions.filter((row) => matches(row, args?.where ? { status: args.where.status } : undefined)),
+    findUnique: async ({ where }: { where: { id: string } }) =>
+      store.flowVersions.find((r) => r.id === where.id) ?? null,
+    updateMany: async () => ({ count: 0 }),
+    update: async ({ where, data }: { where: { id: string }; data: Row }) => {
+      const row = store.flowVersions.find((r) => r.id === where.id)
+      if (row) Object.assign(row, normalise(data))
+      return row ?? {}
+    },
+  },
+  botFlowDefinition: {
+    update: async ({ where, data }: { where: { id: string }; data: Row }) => {
+      const row = store.flowDefinitions.find((r) => r.id === where.id)
+      if (row) Object.assign(row, normalise(data))
+      return row ?? {}
+    },
+  },
   botControlAuditLog: {
     create: async ({ data }: { data: Row }) => {
       const row = { id: `audit_${store.audits.length + 1}`, ...data }
@@ -134,6 +156,8 @@ beforeEach(async () => {
   store.audits.length = 0
   store.knowledgeRevisions.length = 0
   store.knowledgeSources.length = 0
+  store.flowVersions.length = 0
+  store.flowDefinitions.length = 0
   invalidateRuntimeRuleCache()
   await seedBotRuleSettings()
 })
