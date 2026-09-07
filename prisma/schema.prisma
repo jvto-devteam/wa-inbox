@@ -514,3 +514,79 @@ model Settings {
   // customer text and booking data never leave the VPS's own Ollama daemon.
   ollamaModel                 String         @default("gemma4:31b-cloud")
 }
+
+/// Catatan setiap perubahan penting di Bot Control. SDD Manage Second §7.1.
+///
+/// Alasan ini ada sebagai tabel sendiri, bukan kolom di entitas yang berubah: pertanyaan yang
+/// harus dijawab adalah "siapa mengubah apa, kapan, dan mengapa", dan pertanyaan itu melintasi
+/// rule, knowledge, flow, channel policy, dan release sekaligus. Kolom `updatedBy` pada
+/// masing-masing entitas hanya menyimpan penulis TERAKHIR — perubahan sebelumnya hilang, dan
+/// justru perubahan sebelumnya itu yang dicari orang saat bot mulai menjawab salah.
+///
+/// Semua kolom identitas sengaja string biasa, BUKAN relasi ber-foreign-key, dengan alasan yang
+/// sama seperti BotDecisionRun di atas: catatan audit harus tetap hidup melebihi hal yang
+/// dicatatnya. Akun yang dihapus tidak boleh menghapus jejak apa yang pernah ia publish.
+///
+/// `before`/`after` HANYA berisi field yang benar-benar berubah dan sudah melewati
+/// sanitizeTrace (lihat src/lib/bot-control/audit.ts). Menyimpan objek utuh akan membuat
+/// setiap baris audit menggandakan konfigurasi lengkap, dan cepat atau lambat menggandakan
+/// sebuah token bersamanya.
+model BotControlAuditLog {
+  id         String   @id @default(cuid())
+  actorId    String?
+  actorName  String?
+  /// CREATE_DRAFT, UPDATE_DRAFT, REQUEST_REVIEW, APPROVE, REJECT, PUBLISH, ROLLBACK, ENABLE,
+  /// DISABLE, RUN_TEST, OVERRIDE_TEST_FAILURE.
+  action     String
+  entityType String
+  entityId   String?
+  entityKey  String?
+  before     Json?
+  after      Json?
+  reason     String?
+  releaseId  String?
+  ipAddress  String?
+  userAgent  String?
+  createdAt  DateTime @default(now())
+
+  @@index([entityType, entityId])
+  @@index([entityKey])
+  @@index([action])
+  @@index([releaseId])
+  @@index([createdAt])
+}
+
+/// Satu publish, dengan snapshot lengkap dari apa yang aktif saat itu. SDD Manage Second §7.2.
+///
+/// Snapshot disimpan sebagai salinan, bukan sebagai daftar pointer ke baris lain, karena
+/// itulah yang membuat rollback mungkin. Kalau release hanya menyimpan id versi, rollback
+/// harus berharap baris-baris itu masih ada dan masih berisi hal yang sama — padahal fase
+/// berikutnya justru akan mengeditnya. Salinan membuat "kembalikan ke keadaan tanggal sekian"
+/// jadi pernyataan yang bisa dipenuhi, bukan harapan.
+///
+/// `version` naik satu per satu dan unik, dihitung di dalam transaksi publish. Nomor yang bisa
+/// diucapkan ("rollback ke versi 12") jauh lebih berguna saat insiden daripada cuid.
+///
+/// `rollbackOfId` menunjuk release yang DIPULIHKAN, bukan release yang ditinggalkan. Rollback
+/// tidak pernah menghapus apa pun: ia membuat release baru dan hanya memindahkan pointer.
+model BotRelease {
+  id           String   @id @default(cuid())
+  version      Int      @unique
+  title        String
+  description  String?
+  /// PUBLISHED, ROLLED_BACK, SUPERSEDED.
+  status       String   @default("PUBLISHED")
+  publishedBy  String?
+  publishedAt  DateTime @default(now())
+  rollbackOfId String?
+  testRunId    String?
+  /// Bentuknya didefinisikan di src/lib/bot-control/release.ts (ReleaseSnapshot).
+  /// Tidak boleh memuat token/API key — lihat CLAUDE.md "Larangan Mutlak".
+  snapshot     Json
+  notes        String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([status])
+  @@index([publishedAt])
+}

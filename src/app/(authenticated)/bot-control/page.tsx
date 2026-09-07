@@ -42,6 +42,18 @@ const SECTIONS = [
     ready: true,
   },
   {
+    href: '/bot-control/releases',
+    title: 'Releases',
+    description: 'Riwayat publish beserta snapshot-nya, dan rollback ke keadaan sebelumnya tanpa menghapus apa pun.',
+    ready: true,
+  },
+  {
+    href: '/bot-control/audit-logs',
+    title: 'Audit Logs',
+    description: 'Siapa mengubah apa, kapan, dan mengapa — termasuk before/after tiap field yang berubah.',
+    ready: true,
+  },
+  {
     href: '/bot-control/docs',
     title: 'Documentation',
     description: 'Dokumentasi hidup dari flow, rules, knowledge, dan settings — dapat diunduh sebagai Markdown.',
