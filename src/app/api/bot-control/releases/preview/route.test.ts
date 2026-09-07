@@ -26,6 +26,8 @@ beforeEach(() => {
   vi.clearAllMocks()
   vi.mocked(verifySessionToken).mockResolvedValue({ accountId: 'acc_admin', role: 'ADMIN', tokenVersion: 0 })
   mockPrisma.botRuleSetting.findMany.mockResolvedValue([] as never)
+  // previewRelease asks twice: APPROVED knowledge to count, REVIEW knowledge to warn about.
+  mockPrisma.knowledgeRevision.findMany.mockResolvedValue([] as never)
 })
 
 describe('POST /api/bot-control/releases/preview', () => {
@@ -68,5 +70,23 @@ describe('POST /api/bot-control/releases/preview', () => {
     const res = await POST(req())
     expect(res.status).toBe(500)
     expect(await res.json()).toEqual({ error: 'Gagal membuat preview release' })
+  })
+
+  it('counts approved knowledge and warns about revisions left in review', async () => {
+    // A revision still in REVIEW does not block an unrelated publish, but an operator pressing
+    // Publish with work still in review needs to be told it is being left behind.
+    // Prisma types `where.status` as a string OR a filter object, so the narrowing has to be a
+    // runtime check rather than a parameter annotation.
+    mockPrisma.knowledgeRevision.findMany.mockImplementation((args) => {
+      const status = args?.where?.status
+      return (status === 'APPROVED'
+        ? [{ id: 'krev_1', title: 'FAQ ATV', version: 2 }]
+        : [{ title: 'FAQ Ijen', version: 1 }]) as never
+    })
+
+    const body = await (await POST(req())).json()
+    expect(body.changes.knowledge).toBe(1)
+    expect(body.blockingIssues).toHaveLength(1)
+    expect(body.blockingIssues[0]).toContain('FAQ Ijen')
   })
 })

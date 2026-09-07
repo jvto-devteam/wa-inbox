@@ -1,0 +1,123 @@
+import { describe, it, expect, vi, afterEach } from 'vitest'
+import { render, screen, cleanup, fireEvent } from '@testing-library/react'
+import { KnowledgeEditor, type KnowledgeDraft } from './KnowledgeEditor'
+
+afterEach(cleanup)
+
+const REASON = 'Menutup knowledge gap harga ATV'
+
+function draft(overrides: Partial<KnowledgeDraft> = {}): KnowledgeDraft {
+  return {
+    title: 'FAQ Harga ATV',
+    summary: '',
+    items: [{ question: 'Berapa harga ATV?', answer: 'Mengikuti paket di katalog aktif.' }],
+    ...overrides,
+  }
+}
+
+function renderEditor(props: Partial<Parameters<typeof KnowledgeEditor>[0]> = {}) {
+  const onSave = vi.fn()
+  const onCancel = vi.fn()
+  render(
+    <KnowledgeEditor
+      initial={draft()}
+      title="FAQ Harga ATV"
+      saving={false}
+      error={null}
+      onCancel={onCancel}
+      onSave={onSave}
+      {...props}
+    />
+  )
+  return { onSave, onCancel }
+}
+
+describe('KnowledgeEditor', () => {
+  it('says plainly that a draft does not reach the bot', () => {
+    // A draft that looks applied is the failure mode of this whole workflow: an operator who
+    // thinks they fixed an answer walks away.
+    renderEditor()
+    expect(screen.getByText(/belum membacanya sampai dipublish/i)).toBeInTheDocument()
+  })
+
+  it('opens with one empty item rather than no fields at all', () => {
+    renderEditor({ initial: draft({ items: [] }) })
+    expect(screen.getByLabelText('Pertanyaan item 1')).toBeInTheDocument()
+  })
+
+  it('will not save without a substantive reason', () => {
+    const { onSave } = renderEditor()
+    const save = screen.getByRole('button', { name: 'Simpan draft' })
+    expect(save).toBeDisabled()
+
+    fireEvent.change(screen.getByLabelText('Alasan perubahan'), { target: { value: 'pendek' } })
+    expect(save).toBeDisabled()
+
+    fireEvent.change(screen.getByLabelText('Alasan perubahan'), { target: { value: REASON } })
+    expect(save).toBeEnabled()
+    fireEvent.click(save)
+    expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ title: 'FAQ Harga ATV' }), REASON)
+  })
+
+  it('will not save an item missing its answer', () => {
+    // The bot reads this; a missing answer is a customer being told `undefined`.
+    renderEditor({ initial: draft({ items: [{ question: 'Halo?', answer: '' }] }) })
+    fireEvent.change(screen.getByLabelText('Alasan perubahan'), { target: { value: REASON } })
+    expect(screen.getByRole('button', { name: 'Simpan draft' })).toBeDisabled()
+  })
+
+  it('adds and removes items, never dropping below one', () => {
+    renderEditor()
+    // One item: no remove button, because an empty body is rejected by the API anyway.
+    expect(screen.queryByRole('button', { name: 'Hapus item' })).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Tambah item' }))
+    expect(screen.getByLabelText('Pertanyaan item 2')).toBeInTheDocument()
+
+    fireEvent.click(screen.getAllByRole('button', { name: 'Hapus item' })[1])
+    expect(screen.queryByLabelText('Pertanyaan item 2')).not.toBeInTheDocument()
+  })
+
+  it('collects prices as structured fields, currency included', () => {
+    // `bot.no_invented_price` is CRITICAL: the bot may only state a price it can SOURCE, and a
+    // figure buried in prose is indistinguishable from one the model made up.
+    const { onSave } = renderEditor()
+    fireEvent.click(screen.getByRole('button', { name: 'Tambah harga' }))
+
+    fireEvent.change(screen.getByLabelText('Label harga 1 item 1'), { target: { value: 'ATV 1 jam' } })
+    fireEvent.change(screen.getByLabelText('Nominal harga 1 item 1'), { target: { value: '350000' } })
+    fireEvent.change(screen.getByLabelText('Mata uang harga 1 item 1'), { target: { value: 'IDR' } })
+    fireEvent.change(screen.getByLabelText('Alasan perubahan'), { target: { value: REASON } })
+    fireEvent.click(screen.getByRole('button', { name: 'Simpan draft' }))
+
+    expect(onSave.mock.calls[0][0].items[0].prices).toEqual([
+      { label: 'ATV 1 jam', amount: 350000, currency: 'IDR' },
+    ])
+  })
+
+  it('collects links as structured fields too', () => {
+    const { onSave } = renderEditor()
+    fireEvent.click(screen.getByRole('button', { name: 'Tambah tautan' }))
+
+    fireEvent.change(screen.getByLabelText('Label tautan 1 item 1'), { target: { value: 'Detail' } })
+    fireEvent.change(screen.getByLabelText('URL tautan 1 item 1'), { target: { value: 'https://example.com' } })
+    fireEvent.change(screen.getByLabelText('Alasan perubahan'), { target: { value: REASON } })
+    fireEvent.click(screen.getByRole('button', { name: 'Simpan draft' }))
+
+    expect(onSave.mock.calls[0][0].items[0].links).toEqual([{ label: 'Detail', url: 'https://example.com' }])
+  })
+
+  it('parses comma-separated tags into a list', () => {
+    const { onSave } = renderEditor()
+    fireEvent.change(screen.getByLabelText('Tag item 1'), { target: { value: 'atv, harga ,  ' } })
+    fireEvent.change(screen.getByLabelText('Alasan perubahan'), { target: { value: REASON } })
+    fireEvent.click(screen.getByRole('button', { name: 'Simpan draft' }))
+
+    expect(onSave.mock.calls[0][0].items[0].tags).toEqual(['atv', 'harga'])
+  })
+
+  it('surfaces a server error instead of failing silently', () => {
+    renderEditor({ error: 'Isi knowledge tidak valid pada: answer.' })
+    expect(screen.getByText(/Isi knowledge tidak valid/)).toBeInTheDocument()
+  })
+})

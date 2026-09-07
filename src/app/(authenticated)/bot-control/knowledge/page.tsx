@@ -5,12 +5,37 @@ import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
 import { Button } from '@/components/ui/button'
-import { KnowledgeSourceTable, type KnowledgeSourceRow } from '@/components/bot-control/KnowledgeSourceTable'
+import {
+  KnowledgeSourceTable,
+  type KnowledgeSourceRow,
+  type KnowledgeAction,
+} from '@/components/bot-control/KnowledgeSourceTable'
 import { KnowledgeChunkPanel, type KnowledgeChunkRow } from '@/components/bot-control/KnowledgeChunkPanel'
+import { KnowledgeEditor, type KnowledgeDraft } from '@/components/bot-control/KnowledgeEditor'
+import { KnowledgeRevisionPanel, type RevisionRow } from '@/components/bot-control/KnowledgeRevisionPanel'
+import type { KnowledgeItem } from '@/lib/bot-control/knowledge-body'
 import { fetchJson } from '@/lib/fetch-json'
 
 type Paged<T> = { items: T[]; page: number; limit: number; total: number }
 type SyncResult = { sourcesIndexed: number; chunksIndexed: number; errors: Array<{ sourcePath: string; message: string }> }
+type SourceDetail = {
+  id: string
+  title: string
+  summary: string | null
+  managed: boolean
+  latestRevision: {
+    id: string
+    version: number
+    status: string
+    title: string
+    summary: string | null
+    body: { items: KnowledgeItem[] } | null
+    bodyUnreadable: boolean
+  } | null
+}
+
+/** SDD Manage Second §8.2: a change with no stated reason answers nothing later. */
+const MIN_REASON_LENGTH = 10
 
 type Session = { role: 'ADMIN' | 'AGENT' }
 
@@ -31,6 +56,16 @@ export default function KnowledgeExplorerPage() {
 
   const [role, setRole] = useState<Session['role'] | null>(null)
   const [syncing, setSyncing] = useState(false)
+
+  // Managed-knowledge editing state. Kept beside the existing explorer state rather than in a
+  // separate page: an operator finding a gap in the catalog is one click from writing the
+  // answer, which is the whole reason this feature exists.
+  const [editing, setEditing] = useState<{ sourceId: string | null; title: string; draft: KnowledgeDraft } | null>(null)
+  const [saving, setSaving] = useState(false)
+  const [actionError, setActionError] = useState<string | null>(null)
+  const [historyFor, setHistoryFor] = useState<{ title: string; revisions: RevisionRow[] } | null>(null)
+  const [historyLoading, setHistoryLoading] = useState(false)
+  const [historyError, setHistoryError] = useState<string | null>(null)
   const [syncMessage, setSyncMessage] = useState<string | null>(null)
   const [syncError, setSyncError] = useState<string | null>(null)
 
@@ -114,6 +149,113 @@ export default function KnowledgeExplorerPage() {
     }
   }, [selectedSourceId, chunkQuery])
 
+  function openCreate() {
+    setActionError(null)
+    setEditing({ sourceId: null, title: 'Knowledge baru', draft: { title: '', summary: '', items: [] } })
+  }
+
+  async function openEditor(source: KnowledgeSourceRow) {
+    setActionError(null)
+    try {
+      const detail = await fetchJson<SourceDetail>(`/api/bot-control/knowledge/sources/${source.id}`)
+      if (detail.latestRevision?.bodyUnreadable) {
+        // Opening the form on a body the server could not parse would silently drop whatever it
+        // did not understand on the next save.
+        setActionError('Isi revisi ini tidak bisa dibaca oleh versi aplikasi saat ini, jadi tidak bisa diedit di sini.')
+        return
+      }
+      setEditing({
+        sourceId: detail.id,
+        title: detail.title,
+        draft: {
+          title: detail.latestRevision?.title ?? detail.title,
+          summary: detail.latestRevision?.summary ?? detail.summary ?? '',
+          items: detail.latestRevision?.body?.items ?? [],
+        },
+      })
+    } catch (err: unknown) {
+      setActionError(err instanceof Error ? err.message : 'Gagal memuat isi knowledge')
+    }
+  }
+
+  async function openHistory(source: KnowledgeSourceRow) {
+    setHistoryFor({ title: source.title, revisions: [] })
+    setHistoryLoading(true)
+    setHistoryError(null)
+    try {
+      const data = await fetchJson<{ revisions: RevisionRow[] }>(
+        `/api/bot-control/knowledge/sources/${source.id}/revisions`
+      )
+      setHistoryFor({ title: source.title, revisions: data.revisions })
+    } catch (err: unknown) {
+      setHistoryError(err instanceof Error ? err.message : 'Gagal memuat riwayat revisi')
+    } finally {
+      setHistoryLoading(false)
+    }
+  }
+
+  async function saveDraft(draft: KnowledgeDraft, reason: string) {
+    if (!editing || saving) return
+    setSaving(true)
+    setActionError(null)
+    try {
+      const payload = {
+        title: draft.title.trim(),
+        summary: draft.summary.trim() || undefined,
+        body: { items: draft.items },
+        reason,
+      }
+      if (editing.sourceId) {
+        await fetchJson(`/api/bot-control/knowledge/sources/${editing.sourceId}/draft`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        })
+      } else {
+        await fetchJson('/api/bot-control/knowledge/sources', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        })
+      }
+      setEditing(null)
+      await loadSources()
+    } catch (err: unknown) {
+      setActionError(err instanceof Error ? err.message : 'Gagal menyimpan draft knowledge')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function runAction(source: KnowledgeSourceRow, action: Exclude<KnowledgeAction, 'edit' | 'history'>) {
+    // Reject and archive both take something away, so both ask why before doing it.
+    const body: { reason?: string } = {}
+    if (action === 'reject' || action === 'archive') {
+      const prompt = action === 'reject' ? 'Alasan menolak revisi ini?' : 'Alasan mengarsipkan knowledge ini?'
+      const typed = window.prompt(`${prompt} (minimal ${MIN_REASON_LENGTH} karakter)`)?.trim()
+      if (!typed || typed.length < MIN_REASON_LENGTH) return
+      body.reason = typed
+    }
+
+    setActionError(null)
+    try {
+      await fetchJson(`/api/bot-control/knowledge/sources/${source.id}/${action}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      await loadSources()
+    } catch (err: unknown) {
+      setActionError(err instanceof Error ? err.message : 'Gagal memproses permintaan')
+    }
+  }
+
+  function handleAction(source: KnowledgeSourceRow, action: KnowledgeAction) {
+    if (action === 'edit') return void openEditor(source)
+    if (action === 'history') return void openHistory(source)
+    void runAction(source, action)
+  }
+
   async function runSync() {
     if (syncing) return
     setSyncing(true)
@@ -178,14 +320,18 @@ export default function KnowledgeExplorerPage() {
         </Select>
 
         {role === 'ADMIN' && (
-          <Button onClick={runSync} disabled={syncing} className="ml-auto">
-            {syncing ? 'Meng-index...' : 'Index ulang katalog'}
-          </Button>
+          <div className="ml-auto flex gap-2">
+            <Button onClick={openCreate}>Buat knowledge baru</Button>
+            <Button variant="outline" onClick={runSync} disabled={syncing}>
+              {syncing ? 'Meng-index...' : 'Index ulang katalog'}
+            </Button>
+          </div>
         )}
       </div>
 
       {syncMessage && <p className="text-sm text-emerald-700">{syncMessage}</p>}
       {syncError && <p className="text-sm text-destructive">{syncError}</p>}
+      {actionError && <p className="text-sm text-destructive">{actionError}</p>}
 
       <Card className="p-0">
         {sourcesLoading && <p className="p-3 text-sm text-muted-foreground">Memuat sumber...</p>}
@@ -195,6 +341,9 @@ export default function KnowledgeExplorerPage() {
             sources={sources}
             selectedId={selectedSourceId}
             onSelect={(id) => changeSelectedSource(id === selectedSourceId ? null : id)}
+            canEdit={role === 'ADMIN'}
+            canApprove={role === 'ADMIN'}
+            onAction={handleAction}
           />
         )}
       </Card>
@@ -224,6 +373,27 @@ export default function KnowledgeExplorerPage() {
           <KnowledgeChunkPanel chunks={chunks} total={chunkTotal} loading={chunksLoading} error={chunksError} />
         )}
       </div>
+
+      {editing && (
+        <KnowledgeEditor
+          initial={editing.draft}
+          title={editing.title}
+          saving={saving}
+          error={actionError}
+          onCancel={() => setEditing(null)}
+          onSave={saveDraft}
+        />
+      )}
+
+      {historyFor && (
+        <KnowledgeRevisionPanel
+          sourceTitle={historyFor.title}
+          revisions={historyFor.revisions}
+          loading={historyLoading}
+          error={historyError}
+          onClose={() => setHistoryFor(null)}
+        />
+      )}
     </main>
   )
 }

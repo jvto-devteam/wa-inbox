@@ -7,11 +7,13 @@
  *
  *   npm run seed:rules
  */
-import { config } from 'dotenv'
+// FIRST, and as a side-effecting import rather than a `config()` call further down: ESM
+// evaluates every import before any statement in this file, so `src/lib/db.ts` would build its
+// Postgres adapter from an empty DATABASE_URL and fail with ECONNREFUSED before dotenv ever
+// ran. Import order is the load-bearing part here.
+import 'dotenv/config'
 import { seedBotRuleSettings } from '../src/lib/bot-control/rule-seed'
 import { prisma } from '../src/lib/db'
-
-config()
 
 async function main() {
   const result = await seedBotRuleSettings()

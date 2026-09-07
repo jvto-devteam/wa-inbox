@@ -30,8 +30,16 @@ import { sanitizeTrace } from '@/lib/bot-control/trace-sanitizer'
 import { writeBotAuditLog, type AuditWriter } from '@/lib/bot-control/audit'
 import { getBotRule } from '@/lib/bot-control/rule-registry'
 import { invalidateRuntimeRuleCache } from '@/lib/bot-control/runtime-rules'
+import { invalidateManagedKnowledgeCache } from '@/lib/bot/managed-knowledge'
 
-export const RELEASE_SNAPSHOT_SCHEMA_VERSION = 1
+/**
+ * 2, not 1. Version 1 recorded only WHICH rules were published, never their values — which
+ * made it unrestorable: rollback could name the configuration to return to but could not
+ * reproduce it. Version 2 carries each rule's `enabled` and `config`. Snapshots written at v1
+ * stay readable (their releases still list correctly) but are refused for rollback rather than
+ * restored by guesswork.
+ */
+export const RELEASE_SNAPSHOT_SCHEMA_VERSION = 2
 
 export const RELEASE_STATUSES = ['PUBLISHED', 'ROLLED_BACK', 'SUPERSEDED'] as const
 export type ReleaseStatus = (typeof RELEASE_STATUSES)[number]
@@ -45,6 +53,19 @@ export type ReleaseSnapshotEntry = {
   version: number | null
 }
 
+/**
+ * A rule entry carries its VALUES, not just its identity.
+ *
+ * Knowledge and flows are versioned documents: naming version 3 is enough, because version 3
+ * still exists and still says what it said. A rule is configuration — there is one row, and it
+ * holds whatever it currently holds — so a snapshot that only named it would leave rollback
+ * with nothing to put back.
+ */
+export type ReleaseSnapshotRule = ReleaseSnapshotEntry & {
+  enabled: boolean
+  config: Record<string, unknown> | null
+}
+
 export type ReleaseTestSummary = {
   testRunId: string | null
   status: string
@@ -56,7 +77,7 @@ export type ReleaseTestSummary = {
 export type ReleaseSnapshot = {
   schemaVersion: number
   capturedAt: string
-  rules: ReleaseSnapshotEntry[]
+  rules: ReleaseSnapshotRule[]
   knowledge: ReleaseSnapshotEntry[]
   flows: ReleaseSnapshotEntry[]
   channelPolicy: Record<string, unknown> | null
@@ -81,26 +102,59 @@ export async function createReleaseSnapshot(
 ): Promise<ReleaseSnapshot> {
   // A rule the registry no longer knows about is left out: it describes behaviour the code no
   // longer implements, and restoring it later would resurrect nothing.
-  const stored = await client.botRuleSetting.findMany({
+  const storedRules = await client.botRuleSetting.findMany({
     where: { status: 'PUBLISHED' },
-    select: { id: true, key: true, name: true },
+    select: { id: true, key: true, name: true, enabled: true, config: true },
     orderBy: { key: 'asc' },
+  })
+
+  // Only revisions whose SOURCE is still active. An archived source's revision stays in the
+  // table so older snapshots keep resolving, but it is not part of what is live now.
+  const storedKnowledge = await client.knowledgeRevision.findMany({
+    where: { status: 'PUBLISHED', knowledgeSource: { status: { not: 'ARCHIVED' } } },
+    select: {
+      id: true,
+      version: true,
+      title: true,
+      knowledgeSourceId: true,
+      knowledgeSource: { select: { key: true } },
+    },
+    orderBy: [{ knowledgeSourceId: 'asc' }],
   })
 
   const snapshot: ReleaseSnapshot = {
     schemaVersion: RELEASE_SNAPSHOT_SCHEMA_VERSION,
     capturedAt: new Date().toISOString(),
-    // `version: null` throughout: a rule is configuration, not a versioned document.
-    rules: stored
+    // `version: null` throughout: a rule is configuration, not a versioned document. Its
+    // values ride along instead, which is what makes rollback able to put them back.
+    rules: storedRules
       .filter((row) => getBotRule(row.key) !== null)
-      .map((row) => ({ id: row.id, key: row.key, name: row.name, version: null })),
-    // Empty until Phases D, E and H add their readers — see the note at the top.
-    knowledge: [],
+      .map((row) => ({
+        id: row.id,
+        key: row.key,
+        name: row.name,
+        version: null,
+        enabled: row.enabled,
+        config: asRecord(row.config),
+      })),
+    knowledge: storedKnowledge.map((row) => ({
+      // `id` is the REVISION, not the source: that is the thing a rollback republishes.
+      id: row.id,
+      key: row.knowledgeSource.key,
+      name: row.title,
+      version: row.version,
+    })),
+    // Empty until Phases E and H add their readers — see the note at the top.
     flows: [],
     channelPolicy: null,
     testSummary,
   }
   return sanitizeTrace(snapshot) as unknown as ReleaseSnapshot
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return null
+  return value as Record<string, unknown>
 }
 
 /**
@@ -136,20 +190,39 @@ export type ReleasePreview = {
  * further to check", not "everything checked out".
  */
 export async function previewRelease(): Promise<ReleasePreview> {
-  const approved = await prisma.botRuleSetting.findMany({
-    where: { status: 'APPROVED' },
-    select: { key: true, name: true },
-  })
+  const [approvedRules, approvedKnowledge, unreviewedKnowledge] = await Promise.all([
+    prisma.botRuleSetting.findMany({ where: { status: 'APPROVED' }, select: { key: true, name: true } }),
+    prisma.knowledgeRevision.findMany({
+      where: { status: 'APPROVED', knowledgeSource: { status: { not: 'ARCHIVED' } } },
+      select: { id: true, title: true, version: true },
+    }),
+    // SDD §11 blocking condition 3. Not a hard block — a revision sitting in REVIEW is normal
+    // and does not stop an unrelated publish — but an operator pressing Publish with work
+    // still in review needs to be told it is being left behind, not silently skipped.
+    prisma.knowledgeRevision.findMany({
+      where: { status: 'REVIEW', knowledgeSource: { status: { not: 'ARCHIVED' } } },
+      select: { title: true, version: true },
+    }),
+  ])
 
   // SDD §11 blocking condition 2. This is not hypothetical: a deploy that flips a rule to
   // `editable: false` in the registry can strand an already-approved draft, and publishing it
   // would apply a change the code has since decided may not be made from a web form.
-  const blockingIssues = approved
+  const blockingIssues = approvedRules
     .filter((row) => getBotRule(row.key)?.editable !== true)
     .map((row) => `Rule "${row.name}" (${row.key}) sudah tidak boleh diubah dari UI — draft-nya harus ditolak.`)
 
+  for (const row of unreviewedKnowledge) {
+    blockingIssues.push(`Knowledge "${row.title}" v${row.version} masih menunggu approve dan tidak akan ikut terbit.`)
+  }
+
   return {
-    changes: { rules: approved.length, knowledge: 0, flows: 0, channelPolicy: 0 },
+    changes: {
+      rules: approvedRules.length,
+      knowledge: approvedKnowledge.length,
+      flows: 0,
+      channelPolicy: 0,
+    },
     // Flips to true in Phase F, when BotTestRun exists and a publish can actually be gated on one.
     requiresTestRun: false,
     blockingIssues,
@@ -228,6 +301,64 @@ async function publishApprovedRules(
   return approved.length
 }
 
+/**
+ * Moves every APPROVED knowledge revision into its published state, inside the transaction.
+ *
+ * Publishing v4 of a source ARCHIVES v3 rather than deleting it: v3 is what a release from
+ * last month names, and a snapshot that resolves to a missing row cannot be rolled back to.
+ * The source itself is flipped out of DRAFT at the same moment, because until now it has been
+ * a row describing content the bot never actually read.
+ */
+async function publishApprovedKnowledge(
+  tx: Prisma.TransactionClient,
+  releaseId: string,
+  actor: { id?: string | null; name?: string | null },
+  req?: Request | null
+): Promise<number> {
+  const approved = await tx.knowledgeRevision.findMany({
+    where: { status: 'APPROVED', knowledgeSource: { status: { not: 'ARCHIVED' } } },
+    include: { knowledgeSource: { select: { key: true } } },
+  })
+  const publishedAt = new Date()
+
+  for (const revision of approved) {
+    // Supersede whatever this source had live, before the new one lands — two PUBLISHED
+    // revisions on one source would make "what is the bot reading" unanswerable.
+    await tx.knowledgeRevision.updateMany({
+      where: { knowledgeSourceId: revision.knowledgeSourceId, status: 'PUBLISHED' },
+      data: { status: 'ARCHIVED' },
+    })
+
+    const updated = await tx.knowledgeRevision.update({
+      where: { id: revision.id },
+      data: { status: 'PUBLISHED', publishedBy: actor.id ?? null, publishedAt, releaseId },
+    })
+
+    await tx.knowledgeSource.update({
+      where: { id: revision.knowledgeSourceId },
+      data: { status: 'PUBLISHED', title: revision.title, summary: revision.summary },
+    })
+
+    await writeBotAuditLog(
+      {
+        action: 'PUBLISH',
+        entityType: 'KNOWLEDGE',
+        entityId: revision.knowledgeSourceId,
+        entityKey: revision.knowledgeSource.key,
+        actorId: actor.id,
+        actorName: actor.name,
+        before: { version: revision.version, status: revision.status },
+        after: { version: updated.version, status: updated.status },
+        releaseId,
+        req,
+      },
+      tx
+    )
+  }
+
+  return approved.length
+}
+
 export type PublishReleaseParams = {
   title: string
   description?: string | null
@@ -259,6 +390,14 @@ export class ReleaseNotFoundError extends Error {
   constructor() {
     super('Release tidak ditemukan.')
     this.name = 'ReleaseNotFoundError'
+  }
+}
+
+/** Raised when a snapshot is readable but predates the values a restore needs. */
+export class ReleaseNotRestorableError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'ReleaseNotRestorableError'
   }
 }
 
@@ -307,7 +446,9 @@ export async function publishRelease(params: PublishReleaseParams): Promise<Publ
       })
 
       // Entities first, then the snapshot of what they became.
-      await publishApprovedRules(tx, release.id, { id: params.actorId, name: params.actorName }, params.req)
+      const actor = { id: params.actorId, name: params.actorName }
+      await publishApprovedRules(tx, release.id, actor, params.req)
+      await publishApprovedKnowledge(tx, release.id, actor, params.req)
 
       const snapshot = await createReleaseSnapshot(null, tx)
       await tx.botRelease.update({
@@ -339,6 +480,7 @@ export async function publishRelease(params: PublishReleaseParams): Promise<Publ
     // is what makes a publish take effect while the operator is still looking at the screen —
     // without it a change that appears not to have worked gets published again.
     invalidateRuntimeRuleCache()
+    invalidateManagedKnowledgeCache()
     return release
   } catch (error) {
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
@@ -346,6 +488,119 @@ export async function publishRelease(params: PublishReleaseParams): Promise<Publ
     }
     throw error
   }
+}
+
+/**
+ * Puts the configuration in a snapshot back into effect. Pointers only; nothing is deleted.
+ *
+ * This is the half of rollback that actually rolls anything back. Creating a release row that
+ * NAMES an earlier configuration, without restoring it, is worse than having no rollback
+ * button at all: an operator presses it, sees "Rollback ke versi 3" appear at the top of the
+ * list, and walks away believing the bot has changed. It has not.
+ *
+ * A v1 snapshot is refused rather than half-applied. It recorded which rules were published
+ * but never their values, so restoring from it would set every rule to whatever the row
+ * happens to hold now — which is exactly the state being rolled back FROM.
+ */
+async function restoreSnapshot(
+  tx: Prisma.TransactionClient,
+  snapshot: ReleaseSnapshot,
+  targetVersion: number,
+  releaseId: string,
+  actor: { id?: string | null; name?: string | null },
+  req?: Request | null
+): Promise<void> {
+  const rulesCarryValues = snapshot.rules.every((rule) => typeof rule.enabled === 'boolean')
+  if (snapshot.rules.length > 0 && !rulesCarryValues) {
+    throw new ReleaseNotRestorableError(
+      `Snapshot release v${targetVersion} dibuat sebelum nilai rule ikut disimpan, jadi konfigurasinya tidak bisa dikembalikan. Ubah rule-nya lewat draft biasa.`
+    )
+  }
+
+  for (const rule of snapshot.rules) {
+    // A rule the registry has since locked is skipped, not restored. The code has decided it
+    // may no longer be changed from outside; a rollback is still a change from outside.
+    if (getBotRule(rule.key)?.editable !== true) continue
+
+    const current = await tx.botRuleSetting.findUnique({ where: { key: rule.key } })
+    if (!current) continue
+    if (current.enabled === rule.enabled && stableEqual(current.config, rule.config)) continue
+
+    await tx.botRuleSetting.update({
+      where: { key: rule.key },
+      data: {
+        enabled: rule.enabled,
+        config: (rule.config ?? Prisma.DbNull) as Prisma.InputJsonValue,
+        runtimeSource: 'database',
+        releaseId,
+        publishedBy: actor.id ?? null,
+        publishedAt: new Date(),
+      },
+    })
+
+    await writeBotAuditLog(
+      {
+        action: 'ROLLBACK',
+        entityType: 'RULE',
+        entityId: current.id,
+        entityKey: rule.key,
+        actorId: actor.id,
+        actorName: actor.name,
+        before: { enabled: current.enabled, config: current.config },
+        after: { enabled: rule.enabled, config: rule.config },
+        releaseId,
+        req,
+      },
+      tx
+    )
+  }
+
+  for (const entry of snapshot.knowledge) {
+    // `id` is the revision the snapshot named. It is still there — publishing a newer version
+    // archives the old one rather than deleting it, precisely so this lookup resolves.
+    const revision = await tx.knowledgeRevision.findUnique({ where: { id: entry.id } })
+    if (!revision) continue
+    if (revision.status === 'PUBLISHED') continue
+
+    await tx.knowledgeRevision.updateMany({
+      where: { knowledgeSourceId: revision.knowledgeSourceId, status: 'PUBLISHED' },
+      data: { status: 'ARCHIVED' },
+    })
+    await tx.knowledgeRevision.update({
+      where: { id: revision.id },
+      data: { status: 'PUBLISHED', releaseId, publishedBy: actor.id ?? null, publishedAt: new Date() },
+    })
+    await tx.knowledgeSource.update({
+      where: { id: revision.knowledgeSourceId },
+      data: { status: 'PUBLISHED', title: revision.title, summary: revision.summary },
+    })
+
+    await writeBotAuditLog(
+      {
+        action: 'ROLLBACK',
+        entityType: 'KNOWLEDGE',
+        entityId: revision.knowledgeSourceId,
+        entityKey: entry.key,
+        actorId: actor.id,
+        actorName: actor.name,
+        after: { version: revision.version, status: 'PUBLISHED' },
+        releaseId,
+        req,
+      },
+      tx
+    )
+  }
+}
+
+/** Key-order-insensitive comparison, so a rebuilt object is not treated as a change. */
+function stableEqual(a: unknown, b: unknown): boolean {
+  return JSON.stringify(sortKeys(a)) === JSON.stringify(sortKeys(b))
+}
+
+function sortKeys(value: unknown): unknown {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return value
+  const record = value as Record<string, unknown>
+  return Object.fromEntries(Object.keys(record).sort().map((k) => [k, sortKeys(record[k])]))
 }
 
 export type RollbackParams = {
@@ -375,7 +630,8 @@ export async function rollbackToRelease(params: RollbackParams): Promise<Publish
       if (target.status === 'PUBLISHED') throw new ReleaseAlreadyActiveError()
 
       // A snapshot this code cannot read is a snapshot it must not claim to restore.
-      if (!readReleaseSnapshot(target.snapshot)) {
+      const snapshot = readReleaseSnapshot(target.snapshot)
+      if (!snapshot) {
         throw new Error(`Snapshot release v${target.version} tidak bisa dibaca — rollback dibatalkan.`)
       }
 
@@ -404,6 +660,16 @@ export async function rollbackToRelease(params: RollbackParams): Promise<Publish
         select: { id: true, version: true, title: true, status: true, publishedAt: true },
       })
 
+      // The actual restore. Everything above only records that a rollback happened.
+      await restoreSnapshot(
+        tx,
+        snapshot,
+        target.version,
+        release.id,
+        { id: params.actorId, name: params.actorName },
+        params.req
+      )
+
       await writeBotAuditLog(
         {
           action: 'ROLLBACK',
@@ -425,6 +691,7 @@ export async function rollbackToRelease(params: RollbackParams): Promise<Publish
     })
 
     invalidateRuntimeRuleCache()
+    invalidateManagedKnowledgeCache()
     return release
   } catch (error) {
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {

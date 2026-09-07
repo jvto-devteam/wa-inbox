@@ -7,6 +7,7 @@ import {
   rollbackToRelease,
   ReleaseAlreadyActiveError,
   ReleaseNotFoundError,
+  ReleaseNotRestorableError,
   ReleaseVersionConflictError,
 } from '@/lib/bot-control/release'
 
@@ -53,6 +54,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     // 409, not 400: the request was well-formed, the state simply makes it a no-op.
     if (error instanceof ReleaseAlreadyActiveError) return NextResponse.json({ error: error.message }, { status: 409 })
     if (error instanceof ReleaseVersionConflictError) return NextResponse.json({ error: error.message }, { status: 409 })
+    // 409 with the reason spelled out: a snapshot from before rule values were recorded can be
+    // read and listed, but cannot be put back — and the operator needs to know which it is.
+    if (error instanceof ReleaseNotRestorableError) return NextResponse.json({ error: error.message }, { status: 409 })
     console.error('POST /api/bot-control/releases/[id]/rollback gagal', error)
     return NextResponse.json({ error: 'Gagal melakukan rollback' }, { status: 500 })
   }

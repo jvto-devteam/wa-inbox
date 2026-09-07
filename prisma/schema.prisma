@@ -320,25 +320,72 @@ model BotDecisionRun {
 /// `key` memakai path relatif file (mis. "catalog/policy-cards.json") supaya sinkronisasi
 /// berikutnya menemukan kembali baris yang sama alih-alih menumpuk duplikat.
 model KnowledgeSource {
-  id           String           @id @default(cuid())
-  key          String           @unique
+  id           String              @id @default(cuid())
+  key          String              @unique
   title        String
   /// CATALOG_JSON, FAQ, URL, PDF, DOC, MANUAL. Indexer HANYA menyentuh CATALOG_JSON —
   /// sumber yang dibuat manusia tidak boleh ditimpa oleh sinkronisasi (guidebook §10.1).
   type         String
   sourcePath   String?
-  status       String           @default("PUBLISHED")
+  status       String              @default("PUBLISHED")
   summary      String?
   /// Ukuran file, waktu modifikasi, dan daftar key top-level — supaya operator bisa
   /// membandingkan apa yang ter-index dengan file yang ada di disk tanpa membuka JSON-nya.
   metadata     Json?
   lastSyncedAt DateTime?
-  createdAt    DateTime         @default(now())
-  updatedAt    DateTime         @updatedAt
+  /// Siapa yang bertanggung jawab atas isi sumber ini. Hanya terisi untuk sumber yang
+  /// dikelola operator (type != CATALOG_JSON); mirror dari disk tidak punya pemilik manusia.
+  ownerId      String?
+  createdBy    String?
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
   chunks       KnowledgeChunk[]
+  revisions    KnowledgeRevision[]
 
   @@index([type])
   @@index([status])
+  @@index([ownerId])
+}
+
+/// Satu versi isi dari sebuah KnowledgeSource yang dikelola operator. SDD Manage Second §7.4.
+///
+/// Model terpisah, bukan kolom tambahan di KnowledgeSource, karena yang dibutuhkan adalah
+/// RIWAYAT: "apa yang bot ketahui pada tanggal itu" tidak bisa dijawab tabel yang hanya
+/// menyimpan keadaan terakhir. Menaruh draft di kolom KnowledgeSource juga akan membatasi
+/// sumber pada satu draft sekaligus, dan menghapus jejak revisi yang pernah ditolak — padahal
+/// revisi yang ditolak justru sering menjelaskan kenapa jawaban bot berbentuk seperti sekarang.
+///
+/// `version` naik satu per satu per sumber, bukan global: nomor yang bisa diucapkan
+/// ("kembalikan FAQ harga ke versi 3") jauh lebih berguna saat insiden daripada cuid.
+///
+/// PUBLISHED tidak bisa diedit. Mengubah revisi yang sudah terbit akan mengubah masa lalu —
+/// snapshot release yang menunjuk versi itu akan mendeskripsikan isi yang berbeda dari yang
+/// benar-benar dipakai bot saat itu. Perubahan selalu berarti revisi baru.
+model KnowledgeRevision {
+  id                String          @id @default(cuid())
+  knowledgeSourceId String
+  knowledgeSource   KnowledgeSource @relation(fields: [knowledgeSourceId], references: [id], onDelete: Cascade)
+  version           Int
+  title             String
+  /// Bentuknya didefinisikan di src/lib/bot-control/knowledge-body.ts (ManagedKnowledgeBody).
+  body              Json
+  summary           String?
+  /// DRAFT, REVIEW, APPROVED, PUBLISHED, ARCHIVED, REJECTED.
+  status            String          @default("DRAFT")
+  changeReason      String?
+  createdBy         String?
+  reviewedBy        String?
+  reviewedAt        DateTime?
+  publishedBy       String?
+  publishedAt       DateTime?
+  releaseId         String?
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  @@unique([knowledgeSourceId, version])
+  @@index([knowledgeSourceId])
+  @@index([status])
+  @@index([releaseId])
 }
 
 /// Satu potongan knowledge yang bisa dicari, ditampilkan, dan nanti dikutip oleh trace.

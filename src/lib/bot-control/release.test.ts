@@ -15,6 +15,7 @@ import {
   ReleaseAlreadyActiveError,
   ReleaseNotFoundError,
   ReleaseBlockedError,
+  ReleaseNotRestorableError,
   ReleaseVersionConflictError,
   RELEASE_SNAPSHOT_SCHEMA_VERSION,
 } from './release'
@@ -71,6 +72,13 @@ beforeEach(() => {
   mockTx.botRuleSetting.findMany.mockResolvedValue([] as never)
   mockTx.botRuleSetting.update.mockResolvedValue({ enabled: true, config: null, status: 'PUBLISHED' } as never)
   mockPrisma.botRuleSetting.findMany.mockResolvedValue([] as never)
+  // No approved knowledge by default either; the knowledge tests opt in.
+  mockTx.knowledgeRevision.findMany.mockResolvedValue([] as never)
+  mockTx.knowledgeRevision.findUnique.mockResolvedValue(null as never)
+  mockTx.knowledgeRevision.updateMany.mockResolvedValue({ count: 0 } as never)
+  mockTx.knowledgeRevision.update.mockResolvedValue({ version: 1, status: 'PUBLISHED' } as never)
+  mockTx.knowledgeSource.update.mockResolvedValue({ id: 'ks_1' } as never)
+  mockPrisma.knowledgeRevision.findMany.mockResolvedValue([] as never)
   mockTx.botRelease.create.mockResolvedValue({
     id: 'rel_new',
     version: 1,
@@ -99,12 +107,41 @@ describe('createReleaseSnapshot', () => {
   it('records every published rule, with a null version', async () => {
     // A rule is configuration, not a versioned document — there is no version to record.
     mockPrisma.botRuleSetting.findMany.mockResolvedValue([
-      { id: 'brs_1', key: 'bot.handoff_on_human_request', name: 'Handoff' },
+      { id: 'brs_1', key: 'bot.handoff_on_human_request', name: 'Handoff', enabled: true, config: null },
     ] as never)
 
     const snapshot = await createReleaseSnapshot()
     expect(snapshot.rules).toEqual([
-      { id: 'brs_1', key: 'bot.handoff_on_human_request', name: 'Handoff', version: null },
+      { id: 'brs_1', key: 'bot.handoff_on_human_request', name: 'Handoff', version: null, enabled: true, config: null },
+    ])
+  })
+
+  it('carries each rule VALUE, which is what makes a rollback able to restore it', async () => {
+    // Schema v1 recorded only which rules were published. A rollback could name the
+    // configuration to return to but had nothing to put back — the button was decorative.
+    mockPrisma.botRuleSetting.findMany.mockResolvedValue([
+      {
+        id: 'brs_1',
+        key: 'channel.unofficial_outbound_default',
+        name: 'Default outbound',
+        enabled: true,
+        config: { liveDefaultChannel: 'UNOFFICIAL' },
+      },
+    ] as never)
+
+    const snapshot = await createReleaseSnapshot()
+    expect(snapshot.schemaVersion).toBe(2)
+    expect(snapshot.rules[0]).toMatchObject({ enabled: true, config: { liveDefaultChannel: 'UNOFFICIAL' } })
+  })
+
+  it('records published knowledge by REVISION, so the version is what gets restored', async () => {
+    mockPrisma.knowledgeRevision.findMany.mockResolvedValue([
+      { id: 'krev_9', version: 3, title: 'FAQ Harga ATV', knowledgeSourceId: 'ks_1', knowledgeSource: { key: 'managed/abc' } },
+    ] as never)
+
+    const snapshot = await createReleaseSnapshot()
+    expect(snapshot.knowledge).toEqual([
+      { id: 'krev_9', key: 'managed/abc', name: 'FAQ Harga ATV', version: 3 },
     ])
   })
 
@@ -112,7 +149,7 @@ describe('createReleaseSnapshot', () => {
     // It describes behaviour the code no longer implements; restoring it later would resurrect
     // nothing, and listing it would promise otherwise.
     mockPrisma.botRuleSetting.findMany.mockResolvedValue([
-      { id: 'brs_1', key: 'bot.aturan_yang_sudah_dihapus', name: 'Sudah tidak ada' },
+      { id: 'brs_1', key: 'bot.aturan_yang_sudah_dihapus', name: 'Sudah tidak ada', enabled: true, config: null },
     ] as never)
 
     expect((await createReleaseSnapshot()).rules).toEqual([])
@@ -414,5 +451,147 @@ describe('rollbackToRelease', () => {
   it('does everything in one transaction', async () => {
     await rollbackToRelease({ targetReleaseId: 'rel_1', reason: 'apa pun' })
     expect(mockPrisma.$transaction).toHaveBeenCalledTimes(1)
+  })
+
+  it('actually puts the snapshot rule values back', async () => {
+    // Creating a release row that NAMES an earlier configuration without restoring it is worse
+    // than having no rollback button: the operator presses it, sees the entry appear, and walks
+    // away believing the bot changed.
+    mockTx.botRelease.findUnique.mockResolvedValue(
+      release({
+        snapshot: {
+          schemaVersion: 2,
+          capturedAt: 'x',
+          rules: [
+            {
+              id: 'brs_1',
+              key: 'channel.unofficial_outbound_default',
+              name: 'Default outbound',
+              version: null,
+              enabled: true,
+              config: { liveDefaultChannel: 'UNOFFICIAL' },
+            },
+          ],
+          knowledge: [],
+          flows: [],
+          channelPolicy: null,
+          testSummary: null,
+        },
+      })
+    )
+    mockTx.botRuleSetting.findUnique.mockResolvedValue({
+      id: 'brs_1',
+      enabled: true,
+      config: { liveDefaultChannel: 'OFFICIAL' },
+    } as never)
+
+    await rollbackToRelease({ targetReleaseId: 'rel_1', reason: 'Default salah arah' })
+
+    expect(mockTx.botRuleSetting.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { key: 'channel.unofficial_outbound_default' },
+        data: expect.objectContaining({ enabled: true, config: { liveDefaultChannel: 'UNOFFICIAL' } }),
+      })
+    )
+  })
+
+  it('skips a rule whose value is already what the snapshot says', async () => {
+    // Rewriting an unchanged row would fill the audit log with rollbacks that changed nothing.
+    mockTx.botRelease.findUnique.mockResolvedValue(
+      release({
+        snapshot: {
+          schemaVersion: 2,
+          capturedAt: 'x',
+          rules: [
+            { id: 'brs_1', key: 'bot.handoff_on_human_request', name: 'H', version: null, enabled: false, config: null },
+          ],
+          knowledge: [],
+          flows: [],
+          channelPolicy: null,
+          testSummary: null,
+        },
+      })
+    )
+    mockTx.botRuleSetting.findUnique.mockResolvedValue({ id: 'brs_1', enabled: false, config: null } as never)
+
+    await rollbackToRelease({ targetReleaseId: 'rel_1', reason: 'apa pun' })
+    expect(mockTx.botRuleSetting.update).not.toHaveBeenCalled()
+  })
+
+  it('refuses a v1 snapshot rather than restoring it from whatever the rows hold now', async () => {
+    // v1 recorded which rules were published but never their values. "Restoring" from it would
+    // set every rule to the state being rolled back FROM.
+    mockTx.botRelease.findUnique.mockResolvedValue(
+      release({
+        snapshot: {
+          schemaVersion: 1,
+          capturedAt: 'x',
+          rules: [{ id: 'brs_1', key: 'bot.handoff_on_human_request', name: 'H', version: null }],
+          knowledge: [],
+          flows: [],
+          channelPolicy: null,
+          testSummary: null,
+        },
+      })
+    )
+
+    await expect(rollbackToRelease({ targetReleaseId: 'rel_1', reason: 'apa pun' })).rejects.toBeInstanceOf(
+      ReleaseNotRestorableError
+    )
+  })
+
+  it('republishes the knowledge revision the snapshot names, archiving whatever superseded it', async () => {
+    mockTx.botRelease.findUnique.mockResolvedValue(
+      release({
+        snapshot: {
+          schemaVersion: 2,
+          capturedAt: 'x',
+          rules: [],
+          knowledge: [{ id: 'krev_3', key: 'managed/abc', name: 'FAQ ATV', version: 3 }],
+          flows: [],
+          channelPolicy: null,
+          testSummary: null,
+        },
+      })
+    )
+    mockTx.knowledgeRevision.findUnique.mockResolvedValue({
+      id: 'krev_3',
+      knowledgeSourceId: 'ks_1',
+      version: 3,
+      status: 'ARCHIVED',
+      title: 'FAQ ATV',
+      summary: null,
+    } as never)
+
+    await rollbackToRelease({ targetReleaseId: 'rel_1', reason: 'Versi 4 salah harga' })
+
+    // The newer one steps aside first, so a source never has two published revisions at once.
+    expect(mockTx.knowledgeRevision.updateMany).toHaveBeenCalledWith({
+      where: { knowledgeSourceId: 'ks_1', status: 'PUBLISHED' },
+      data: { status: 'ARCHIVED' },
+    })
+    expect(mockTx.knowledgeRevision.update).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: 'krev_3' }, data: expect.objectContaining({ status: 'PUBLISHED' }) })
+    )
+  })
+
+  it('skips a snapshot revision that no longer exists rather than failing the whole rollback', async () => {
+    mockTx.botRelease.findUnique.mockResolvedValue(
+      release({
+        snapshot: {
+          schemaVersion: 2,
+          capturedAt: 'x',
+          rules: [],
+          knowledge: [{ id: 'krev_hilang', key: 'managed/abc', name: 'FAQ', version: 3 }],
+          flows: [],
+          channelPolicy: null,
+          testSummary: null,
+        },
+      })
+    )
+    mockTx.knowledgeRevision.findUnique.mockResolvedValue(null as never)
+
+    await rollbackToRelease({ targetReleaseId: 'rel_1', reason: 'apa pun' })
+    expect(mockTx.knowledgeRevision.update).not.toHaveBeenCalled()
   })
 })
