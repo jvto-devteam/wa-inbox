@@ -14,6 +14,7 @@ import {
   rollbackToRelease,
   ReleaseAlreadyActiveError,
   ReleaseNotFoundError,
+  ReleaseBlockedError,
   ReleaseVersionConflictError,
   RELEASE_SNAPSHOT_SCHEMA_VERSION,
 } from './release'
@@ -65,6 +66,11 @@ beforeEach(() => {
   vi.mocked(writeBotAuditLog).mockResolvedValue('audit_1')
   mockTx.botRelease.findFirst.mockResolvedValue(null as never)
   mockTx.botRelease.updateMany.mockResolvedValue({ count: 0 } as never)
+  mockTx.botRelease.update.mockResolvedValue({ id: 'rel_new' } as never)
+  // No approved rules by default; the rule-publishing tests below opt in.
+  mockTx.botRuleSetting.findMany.mockResolvedValue([] as never)
+  mockTx.botRuleSetting.update.mockResolvedValue({ enabled: true, config: null, status: 'PUBLISHED' } as never)
+  mockPrisma.botRuleSetting.findMany.mockResolvedValue([] as never)
   mockTx.botRelease.create.mockResolvedValue({
     id: 'rel_new',
     version: 1,
@@ -89,6 +95,28 @@ describe('createReleaseSnapshot', () => {
     const summary = { testRunId: 'run_1', status: 'PASSED', total: 10, passed: 10, failed: 0 }
     expect((await createReleaseSnapshot(summary)).testSummary).toEqual(summary)
   })
+
+  it('records every published rule, with a null version', async () => {
+    // A rule is configuration, not a versioned document — there is no version to record.
+    mockPrisma.botRuleSetting.findMany.mockResolvedValue([
+      { id: 'brs_1', key: 'bot.handoff_on_human_request', name: 'Handoff' },
+    ] as never)
+
+    const snapshot = await createReleaseSnapshot()
+    expect(snapshot.rules).toEqual([
+      { id: 'brs_1', key: 'bot.handoff_on_human_request', name: 'Handoff', version: null },
+    ])
+  })
+
+  it('leaves out a stored rule the registry no longer knows about', async () => {
+    // It describes behaviour the code no longer implements; restoring it later would resurrect
+    // nothing, and listing it would promise otherwise.
+    mockPrisma.botRuleSetting.findMany.mockResolvedValue([
+      { id: 'brs_1', key: 'bot.aturan_yang_sudah_dihapus', name: 'Sudah tidak ada' },
+    ] as never)
+
+    expect((await createReleaseSnapshot()).rules).toEqual([])
+  })
 })
 
 describe('readReleaseSnapshot', () => {
@@ -111,14 +139,37 @@ describe('readReleaseSnapshot', () => {
 })
 
 describe('previewRelease', () => {
-  it('reports nothing to publish and nothing blocking, in this phase', async () => {
-    // Empty blockingIssues here means "nothing to check", not "everything checked out" — the
-    // real gates land alongside the entities they are about, in Phases C through H.
+  it('reports nothing to publish when no rule is approved', async () => {
     expect(await previewRelease()).toEqual({
       changes: { rules: 0, knowledge: 0, flows: 0, channelPolicy: 0 },
       requiresTestRun: false,
       blockingIssues: [],
     })
+  })
+
+  it('counts only APPROVED rules', async () => {
+    // A draft still in DRAFT or REVIEW is deliberately invisible: showing it would tell an
+    // operator that pressing Publish ships it, and it does not.
+    mockPrisma.botRuleSetting.findMany.mockResolvedValue([
+      { key: 'bot.handoff_on_human_request', name: 'Handoff' },
+    ] as never)
+
+    const preview = await previewRelease()
+    expect(mockPrisma.botRuleSetting.findMany.mock.calls[0][0]?.where).toEqual({ status: 'APPROVED' })
+    expect(preview.changes.rules).toBe(1)
+    expect(preview.blockingIssues).toEqual([])
+  })
+
+  it('blocks an approved draft whose rule the registry has since locked', async () => {
+    // SDD section 11 blocking condition 2, and not hypothetical: a deploy can flip a rule to
+    // editable:false and strand an already-approved draft.
+    mockPrisma.botRuleSetting.findMany.mockResolvedValue([
+      { key: 'bot.no_invented_price', name: 'Tidak mengarang harga' },
+    ] as never)
+
+    const preview = await previewRelease()
+    expect(preview.blockingIssues).toHaveLength(1)
+    expect(preview.blockingIssues[0]).toContain('bot.no_invented_price')
   })
 })
 
@@ -150,10 +201,17 @@ describe('publishRelease', () => {
     })
   })
 
-  it('stores a snapshot on the release', async () => {
+  it('takes the snapshot AFTER the entities move, so it records what the release created', async () => {
+    // The row is created with a placeholder and the real snapshot written back, because the
+    // entities need the release id to point at and the snapshot needs their post-publish state.
     await publishRelease({ title: 'x' })
-    const snapshot = mockTx.botRelease.create.mock.calls[0][0].data.snapshot as Record<string, unknown>
+
+    const snapshot = mockTx.botRelease.update.mock.calls[0][0].data.snapshot as Record<string, unknown>
     expect(snapshot.schemaVersion).toBe(RELEASE_SNAPSHOT_SCHEMA_VERSION)
+    // Read through the transaction client, so it sees the rules this transaction just published.
+    expect(mockTx.botRuleSetting.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { status: 'PUBLISHED' } })
+    )
   })
 
   it('writes the audit row through the transaction client', async () => {
@@ -170,6 +228,95 @@ describe('publishRelease', () => {
   it('does everything in one transaction', async () => {
     await publishRelease({ title: 'x' })
     expect(mockPrisma.$transaction).toHaveBeenCalledTimes(1)
+  })
+
+  it('moves an approved rule to PUBLISHED with its draft values', async () => {
+    mockTx.botRuleSetting.findMany.mockResolvedValue([
+      {
+        id: 'brs_1',
+        key: 'bot.handoff_on_human_request',
+        enabled: true,
+        config: null,
+        status: 'APPROVED',
+        draftEnabled: false,
+        draftConfig: { catatan: 'baru' },
+      },
+    ] as never)
+
+    await publishRelease({ title: 'x', actorId: 'acc_1' })
+
+    const data = mockTx.botRuleSetting.update.mock.calls[0][0].data
+    expect(data).toMatchObject({
+      status: 'PUBLISHED',
+      enabled: false,
+      config: { catatan: 'baru' },
+      runtimeSource: 'database',
+      releaseId: 'rel_new',
+    })
+  })
+
+  it('clears the draft columns as the values move across', async () => {
+    // A row that is published AND still carries an identical draft reads as unfinished work to
+    // the next person who opens the page.
+    mockTx.botRuleSetting.findMany.mockResolvedValue([
+      {
+        id: 'brs_1',
+        key: 'bot.handoff_on_human_request',
+        enabled: true,
+        config: null,
+        status: 'APPROVED',
+        draftEnabled: false,
+        draftConfig: {},
+      },
+    ] as never)
+
+    await publishRelease({ title: 'x' })
+
+    const data = mockTx.botRuleSetting.update.mock.calls[0][0].data
+    expect(data).toMatchObject({ draftEnabled: null, draftUpdatedAt: null, draftUpdatedBy: null })
+  })
+
+  it('keeps the current enabled state for a config-only draft', async () => {
+    // `draftEnabled` is legitimately null when only the config changed; reading it as `false`
+    // would silently switch the rule off.
+    mockTx.botRuleSetting.findMany.mockResolvedValue([
+      {
+        id: 'brs_1',
+        key: 'channel.unofficial_outbound_default',
+        enabled: true,
+        config: null,
+        status: 'APPROVED',
+        draftEnabled: null,
+        draftConfig: { liveDefaultChannel: 'UNOFFICIAL' },
+      },
+    ] as never)
+
+    await publishRelease({ title: 'x' })
+    expect(mockTx.botRuleSetting.update.mock.calls[0][0].data.enabled).toBe(true)
+  })
+
+  it('audits each published rule against the release', async () => {
+    mockTx.botRuleSetting.findMany.mockResolvedValue([
+      { id: 'brs_1', key: 'bot.handoff_on_human_request', enabled: true, config: null, status: 'APPROVED', draftEnabled: false, draftConfig: {} },
+    ] as never)
+
+    await publishRelease({ title: 'x', actorId: 'acc_1' })
+
+    expect(writeBotAuditLog).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'PUBLISH', entityType: 'RULE', entityKey: 'bot.handoff_on_human_request', releaseId: 'rel_new' }),
+      mockTx
+    )
+  })
+
+  it('refuses to publish a rule the registry has locked since it was approved', async () => {
+    // Re-checked here and not only in preview: preview and publish are separate requests, and
+    // a deploy between them can change what the registry allows.
+    mockTx.botRuleSetting.findMany.mockResolvedValue([
+      { id: 'brs_1', key: 'bot.no_invented_price', enabled: true, config: null, status: 'APPROVED', draftEnabled: false, draftConfig: {} },
+    ] as never)
+
+    await expect(publishRelease({ title: 'x' })).rejects.toBeInstanceOf(ReleaseBlockedError)
+    expect(mockTx.botRuleSetting.update).not.toHaveBeenCalled()
   })
 
   it('turns a version collision into a typed conflict the route can answer 409 with', async () => {

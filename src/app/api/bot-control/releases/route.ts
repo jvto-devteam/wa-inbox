@@ -9,6 +9,7 @@ import { readPaging } from '@/lib/bot-control/paging'
 import {
   publishRelease,
   readReleaseSnapshot,
+  ReleaseBlockedError,
   ReleaseVersionConflictError,
   RELEASE_STATUSES,
 } from '@/lib/bot-control/release'
@@ -132,6 +133,11 @@ export async function POST(req: Request) {
   } catch (error) {
     if (error instanceof ReleaseVersionConflictError) {
       return NextResponse.json({ error: error.message }, { status: 409 })
+    }
+    // 409, not 400: the request was well-formed, but something in the pending set may not
+    // ship. The issues are returned so the operator sees WHICH ones without re-running preview.
+    if (error instanceof ReleaseBlockedError) {
+      return NextResponse.json({ error: error.message, blockingIssues: error.issues }, { status: 409 })
     }
     console.error('POST /api/bot-control/releases gagal', error)
     return NextResponse.json({ error: 'Gagal mempublish release' }, { status: 500 })

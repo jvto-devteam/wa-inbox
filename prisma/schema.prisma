@@ -590,3 +590,49 @@ model BotRelease {
   @@index([status])
   @@index([publishedAt])
 }
+
+/// Rule bot yang bisa dikontrol dari database, bukan hanya dibaca dari kode. SDD Manage Second §7.3.
+///
+/// Baris ini TIDAK menggantikan `src/lib/bot-control/rule-registry.ts`. Registry tetap sumber
+/// kebenaran untuk apa saja rule yang ada, di file mana ia ditegakkan, dan — yang paling
+/// penting — apakah ia `editable`. Tabel ini hanya menyimpan bagian yang boleh berubah tanpa
+/// deploy. Kalau tabel ini hilang atau tidak terbaca, bot tetap jalan dengan nilai statis;
+/// lihat runtime-rules.ts.
+///
+/// `editable` disalin ke sini supaya bisa dibaca tanpa memuat registry, tapi registry-lah yang
+/// menang: seed menimpanya setiap kali, dan API draft memeriksa registry, bukan kolom ini.
+/// Baris database yang bisa mengangkat `editable`-nya sendiri akan menjadikan tabel ini jalan
+/// pintas untuk mematikan aturan yang justru tidak boleh dimatikan lewat form web.
+///
+/// Draft hidup di kolomnya sendiri (`draftConfig`, `draftEnabled`) berdampingan dengan nilai
+/// yang sedang berlaku (`config`, `enabled`), bukan menimpanya. Itu yang membuat "draft belum
+/// mengubah runtime" jadi sifat struktur datanya, bukan sesuatu yang harus diingat setiap
+/// pembaca — dan yang membuat reject cukup membuang kolom draft tanpa perlu memulihkan apa pun.
+model BotRuleSetting {
+  id             String    @id @default(cuid())
+  key            String    @unique
+  name           String
+  category       String
+  description    String
+  severity       String
+  editable       Boolean   @default(false)
+  enabled        Boolean   @default(true)
+  config         Json?
+  /// Dari mana nilai yang berlaku sekarang berasal: "code" (registry statis) atau "database".
+  runtimeSource  String?
+  /// PUBLISHED, DRAFT, REVIEW, APPROVED, REJECTED.
+  status         String    @default("PUBLISHED")
+  draftConfig    Json?
+  draftEnabled   Boolean?
+  draftUpdatedBy String?
+  draftUpdatedAt DateTime?
+  publishedBy    String?
+  publishedAt    DateTime?
+  releaseId      String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([category])
+  @@index([severity])
+  @@index([status])
+}

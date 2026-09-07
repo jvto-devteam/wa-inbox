@@ -24,6 +24,28 @@ type RuleBody = {
   sourceFile: string
   config?: Record<string, unknown>
   liveStateUnavailable?: true
+  status: string
+  hasDraft: boolean
+  draftConfig: Record<string, unknown> | null
+  editSurface: { canToggleEnabled: boolean; fields: string[] } | null
+}
+
+function storedRule(overrides: Record<string, unknown> = {}) {
+  return {
+    id: 'brs_1',
+    key: 'bot.handoff_on_human_request',
+    status: 'PUBLISHED',
+    enabled: true,
+    config: null,
+    draftConfig: null,
+    draftEnabled: null,
+    draftUpdatedBy: null,
+    draftUpdatedAt: null,
+    publishedAt: null,
+    releaseId: null,
+    runtimeSource: 'code',
+    ...overrides,
+  } as never
 }
 
 function settingsRow(overrides: Partial<Record<string, unknown>> = {}) {
@@ -49,6 +71,7 @@ beforeEach(() => {
   mockReset(mockPrisma)
   vi.mocked(verifySessionToken).mockResolvedValue({ accountId: 'acc_1', role: 'AGENT', tokenVersion: 0 })
   mockPrisma.settings.findUnique.mockResolvedValue(settingsRow())
+  mockPrisma.botRuleSetting.findMany.mockResolvedValue([] as never)
 })
 
 describe('GET /api/bot-control/rules', () => {
@@ -120,6 +143,73 @@ describe('GET /api/bot-control/rules', () => {
 
     const rules = await rulesFrom(await GET(withCookie))
     expect(rules.find((r) => r.key === 'bot.skip_indonesian_numbers')?.liveStateUnavailable).toBe(true)
+  })
+
+  it('layers a published database row over the static default', async () => {
+    mockPrisma.botRuleSetting.findMany.mockResolvedValue([storedRule({ enabled: false })] as never)
+
+    const rule = (await rulesFrom(await GET(withCookie))).find((r) => r.key === 'bot.handoff_on_human_request')
+    expect(rule?.enabled).toBe(false)
+  })
+
+  it('lets the Settings column win over the database row for the rules that still live there', async () => {
+    // That column is what the RUNNING code reads (src/lib/inbound.ts). Showing anything else is
+    // the exact lie this page exists to prevent.
+    mockPrisma.settings.findUnique.mockResolvedValue(settingsRow({ skipBotForIndonesianNumbers: true }))
+    mockPrisma.botRuleSetting.findMany.mockResolvedValue([
+      storedRule({ key: 'bot.skip_indonesian_numbers', enabled: false }),
+    ] as never)
+
+    const rule = (await rulesFrom(await GET(withCookie))).find((r) => r.key === 'bot.skip_indonesian_numbers')
+    expect(rule?.enabled).toBe(true)
+  })
+
+  it('never lets a stored row raise its own editable flag', async () => {
+    // The registry is the safety boundary; a row that could unlock itself would make this table
+    // a way around exactly the rules that were deliberately locked.
+    mockPrisma.botRuleSetting.findMany.mockResolvedValue([
+      storedRule({ key: 'bot.no_invented_price', enabled: false }),
+    ] as never)
+
+    const rule = (await rulesFrom(await GET(withCookie))).find((r) => r.key === 'bot.no_invented_price')
+    expect(rule?.editable).toBe(false)
+    expect(rule?.editSurface).toBeNull()
+  })
+
+  it('reports a pending draft, and reports a rejected one as not pending', async () => {
+    mockPrisma.botRuleSetting.findMany.mockResolvedValue([
+      storedRule({ status: 'REVIEW', draftEnabled: false, draftConfig: {} }),
+    ] as never)
+    let rule = (await rulesFrom(await GET(withCookie))).find((r) => r.key === 'bot.handoff_on_human_request')
+    expect(rule?.hasDraft).toBe(true)
+    expect(rule?.status).toBe('REVIEW')
+
+    // A rejected draft is discarded, so nothing is pending on the rule any more.
+    mockPrisma.botRuleSetting.findMany.mockResolvedValue([storedRule({ status: 'REJECTED' })] as never)
+    rule = (await rulesFrom(await GET(withCookie))).find((r) => r.key === 'bot.handoff_on_human_request')
+    expect(rule?.hasDraft).toBe(false)
+  })
+
+  it('tells the UI what each editable rule may actually change', async () => {
+    const rules = await rulesFrom(await GET(withCookie))
+
+    const channel = rules.find((r) => r.key === 'channel.unofficial_outbound_default')
+    // CRITICAL and editable: the DEFAULT may change, the rule may not be switched off.
+    expect(channel?.editSurface).toEqual({ canToggleEnabled: false, fields: ['liveDefaultChannel'] })
+
+    const handoff = rules.find((r) => r.key === 'bot.handoff_on_human_request')
+    expect(handoff?.editSurface).toEqual({ canToggleEnabled: true, fields: [] })
+  })
+
+  it('flags every rule when the rule table cannot be read', async () => {
+    // Any rule's live state could have been overridden by a row that could not be fetched, so
+    // the uncertainty is genuinely account-wide this time.
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    mockPrisma.botRuleSetting.findMany.mockRejectedValue(new Error('db down'))
+
+    const rules = await rulesFrom(await GET(withCookie))
+    expect(rules).toHaveLength(10)
+    expect(rules.every((r) => r.liveStateUnavailable === true)).toBe(true)
   })
 
   it('never returns a rule whose source file field is missing', async () => {
