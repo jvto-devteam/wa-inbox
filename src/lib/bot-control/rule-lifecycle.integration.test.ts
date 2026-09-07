@@ -30,6 +30,8 @@ const store = {
   // Phase E put flows in the same publish transaction, for the same reason.
   flowVersions: [] as Row[],
   flowDefinitions: [] as Row[],
+  // Phase F put a test gate in front of publish; the store has to answer it.
+  testRuns: [{ id: 'run_pass', status: 'PASSED', total: 3, passed: 3, failed: 0 }] as Row[],
 }
 
 function matches(row: Row, where: Row | undefined): boolean {
@@ -126,6 +128,12 @@ const db = {
       return row ?? {}
     },
   },
+  botTestRun: {
+    findUnique: async ({ where }: { where: { id: string } }) => store.testRuns.find((r) => r.id === where.id) ?? null,
+  },
+  botTestCase: {
+    count: async () => 3,
+  },
   botControlAuditLog: {
     create: async ({ data }: { data: Row }) => {
       const row = { id: `audit_${store.audits.length + 1}`, ...data }
@@ -192,7 +200,7 @@ describe('rule lifecycle', () => {
     expect((await getRuntimeRuleConfig()).rules[EDITABLE_KEY].enabled).toBe(true)
 
     // Step 4: publish. The change reaches the bot.
-    await publishRelease({ title: 'Matikan klasifikasi handoff', actorId: actor.id, actorName: actor.name })
+    await publishRelease({ testRunId: 'run_pass', title: 'Matikan klasifikasi handoff', actorId: actor.id, actorName: actor.name })
     const runtime = await getRuntimeRuleConfig()
     expect(runtime.rules[EDITABLE_KEY].enabled).toBe(false)
     expect(runtime.source).toBe('database')
@@ -202,7 +210,7 @@ describe('rule lifecycle', () => {
     await saveRuleDraft(EDITABLE_KEY, { enabled: false, reason: REASON }, actor)
     await transitionRule(EDITABLE_KEY, 'REVIEW', actor, null)
     await transitionRule(EDITABLE_KEY, 'APPROVE', actor, null)
-    await publishRelease({ title: 'x', actorId: actor.id })
+    await publishRelease({ testRunId: 'run_pass', title: 'x', actorId: actor.id })
 
     const row = store.rules.get(EDITABLE_KEY)
     expect(row?.status).toBe('PUBLISHED')
@@ -215,7 +223,7 @@ describe('rule lifecycle', () => {
     await saveRuleDraft(EDITABLE_KEY, { enabled: false, reason: REASON }, actor)
     await transitionRule(EDITABLE_KEY, 'REVIEW', actor, null)
     await transitionRule(EDITABLE_KEY, 'APPROVE', actor, null)
-    await publishRelease({ title: 'x', actorId: actor.id })
+    await publishRelease({ testRunId: 'run_pass', title: 'x', actorId: actor.id })
 
     const release = store.releases[0]
     expect(store.rules.get(EDITABLE_KEY)?.releaseId).toBe(release.id)
@@ -232,7 +240,7 @@ describe('rule lifecycle', () => {
     await transitionRule(EDITABLE_KEY, 'REJECT', actor, 'Belum ada bukti modelnya bermasalah')
 
     expect((await previewRelease()).changes.rules).toBe(0)
-    await publishRelease({ title: 'x', actorId: actor.id })
+    await publishRelease({ testRunId: 'run_pass', title: 'x', actorId: actor.id })
 
     // The bot is exactly where it started.
     expect((await getRuntimeRuleConfig()).rules[EDITABLE_KEY].enabled).toBe(true)
@@ -243,7 +251,7 @@ describe('rule lifecycle', () => {
     await saveRuleDraft(key, { enabled: true, config: { liveDefaultChannel: 'OFFICIAL' }, reason: REASON }, actor)
     await transitionRule(key, 'REVIEW', actor, null)
     await transitionRule(key, 'APPROVE', actor, null)
-    await publishRelease({ title: 'x', actorId: actor.id })
+    await publishRelease({ testRunId: 'run_pass', title: 'x', actorId: actor.id })
 
     const rule = (await getRuntimeRuleConfig()).rules[key]
     expect(rule.config).toEqual({ liveDefaultChannel: 'OFFICIAL' })
@@ -264,12 +272,56 @@ describe('rule lifecycle', () => {
     await saveRuleDraft(EDITABLE_KEY, { enabled: false, reason: REASON }, actor)
     await transitionRule(EDITABLE_KEY, 'REVIEW', actor, null)
     await transitionRule(EDITABLE_KEY, 'APPROVE', actor, null)
-    await publishRelease({ title: 'x', actorId: actor.id })
+    await publishRelease({ testRunId: 'run_pass', title: 'x', actorId: actor.id })
 
     const actions = store.audits.slice(before).map((row) => row.action)
     expect(actions).toEqual(['CREATE_DRAFT', 'REQUEST_REVIEW', 'APPROVE', 'PUBLISH', 'PUBLISH'])
     // Two PUBLISH rows: one for the rule, one for the release itself.
     const ruleEntities = store.audits.slice(before).map((row) => row.entityType)
     expect(ruleEntities).toEqual(['RULE', 'RULE', 'RULE', 'RULE', 'RELEASE'])
+  })
+
+  it('refuses to publish behind a failing test run, and lets a passing one through', async () => {
+    // The gate is the whole point of Phase F: an approved change still does not ship until the
+    // suite says the bot still works.
+    store.testRuns.push({ id: 'run_fail', status: 'FAILED', total: 3, passed: 2, failed: 1 })
+
+    await saveRuleDraft(EDITABLE_KEY, { enabled: false, reason: REASON }, actor)
+    await transitionRule(EDITABLE_KEY, 'REVIEW', actor, null)
+    await transitionRule(EDITABLE_KEY, 'APPROVE', actor, null)
+
+    await expect(
+      publishRelease({ testRunId: 'run_fail', title: 'x', actorId: actor.id })
+    ).rejects.toThrow('gagal')
+
+    // Nothing moved: the rule is still APPROVED, waiting.
+    expect(store.rules.get(EDITABLE_KEY)?.status).toBe('APPROVED')
+    invalidateRuntimeRuleCache()
+    expect((await getRuntimeRuleConfig()).rules[EDITABLE_KEY].enabled).toBe(true)
+
+    // The same change, behind a passing run, ships.
+    await publishRelease({ testRunId: 'run_pass', title: 'x', actorId: actor.id })
+    invalidateRuntimeRuleCache()
+    expect((await getRuntimeRuleConfig()).rules[EDITABLE_KEY].enabled).toBe(false)
+  })
+
+  it('refuses a publish that names no test run at all', async () => {
+    // A gate that only checks runs it is given is a gate anyone walks around by not mentioning
+    // one.
+    await expect(publishRelease({ title: 'x', actorId: actor.id })).rejects.toThrow('test run')
+    expect(store.releases).toHaveLength(0)
+  })
+
+  it('freezes the passing run counts into the release snapshot', async () => {
+    await publishRelease({ testRunId: 'run_pass', title: 'x', actorId: actor.id })
+
+    const snapshot = store.releases[0].snapshot as { testSummary: unknown }
+    expect(snapshot.testSummary).toEqual({
+      testRunId: 'run_pass',
+      status: 'PASSED',
+      total: 3,
+      passed: 3,
+      failed: 0,
+    })
   })
 })

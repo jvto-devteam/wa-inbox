@@ -16,6 +16,7 @@ import {
   ReleaseNotFoundError,
   ReleaseBlockedError,
   ReleaseNotRestorableError,
+  ReleaseTestGateError,
   ReleaseVersionConflictError,
   RELEASE_SNAPSHOT_SCHEMA_VERSION,
 } from './release'
@@ -24,6 +25,9 @@ vi.mock('@/lib/db', () => ({ prisma: mockDeep<PrismaClient>() }))
 vi.mock('@/lib/bot-control/audit', () => ({ writeBotAuditLog: vi.fn() }))
 
 const mockPrisma = prisma as unknown as DeepMockProxy<PrismaClient>
+/** Publish is gated on a passing run now, so every publish test supplies one. */
+const TEST_RUN_ID = 'run_1'
+
 /** Stands in for what `$transaction` really hands the callback: a DIFFERENT client object. */
 const mockTx = mockDeep<Prisma.TransactionClient>()
 
@@ -80,6 +84,15 @@ beforeEach(() => {
   mockTx.botFlowDefinition.update.mockResolvedValue({ id: 'flow_1' } as never)
   mockPrisma.botFlowVersion.findMany.mockResolvedValue([] as never)
   mockTx.knowledgeRevision.findMany.mockResolvedValue([] as never)
+  mockPrisma.botTestCase.count.mockResolvedValue(3 as never)
+  // A passing run by default; the gate tests below opt into the failures.
+  mockPrisma.botTestRun.findUnique.mockResolvedValue({
+    id: 'run_1',
+    status: 'PASSED',
+    total: 3,
+    passed: 3,
+    failed: 0,
+  } as never)
   mockTx.knowledgeRevision.findUnique.mockResolvedValue(null as never)
   mockTx.knowledgeRevision.updateMany.mockResolvedValue({ count: 0 } as never)
   mockTx.knowledgeRevision.update.mockResolvedValue({ version: 1, status: 'PUBLISHED' } as never)
@@ -182,12 +195,21 @@ describe('readReleaseSnapshot', () => {
 })
 
 describe('previewRelease', () => {
-  it('reports nothing to publish when no rule is approved', async () => {
+  it('reports nothing to publish when no rule is approved, and still requires a test run', async () => {
     expect(await previewRelease()).toEqual({
       changes: { rules: 0, knowledge: 0, flows: 0, channelPolicy: 0 },
-      requiresTestRun: false,
+      requiresTestRun: true,
       blockingIssues: [],
     })
+  })
+
+  it('warns when the suite has no enabled cases, so the gate is not silently vacuous', async () => {
+    // An advisory, not a hard block: refusing to publish because an account has not written
+    // tests yet would make the gate impossible to adopt.
+    mockPrisma.botTestCase.count.mockResolvedValue(0 as never)
+
+    const preview = await previewRelease()
+    expect(preview.blockingIssues.some((issue) => issue.includes('kasus uji aktif'))).toBe(true)
   })
 
   it('counts only APPROVED rules', async () => {
@@ -218,26 +240,26 @@ describe('previewRelease', () => {
 
 describe('publishRelease', () => {
   it('numbers the first release v1', async () => {
-    await publishRelease({ title: 'Release pertama' })
+    await publishRelease({ testRunId: TEST_RUN_ID, title: 'Release pertama' })
     expect(mockTx.botRelease.create.mock.calls[0][0].data.version).toBe(1)
   })
 
   it('continues from the highest existing version', async () => {
     mockTx.botRelease.findFirst.mockResolvedValue({ version: 12 } as never)
-    await publishRelease({ title: 'Release ke-13' })
+    await publishRelease({ testRunId: TEST_RUN_ID, title: 'Release ke-13' })
     expect(mockTx.botRelease.create.mock.calls[0][0].data.version).toBe(13)
   })
 
   it('reads the version inside the transaction, not before it', async () => {
     // Reading outside would let two publishes see the same number and both believe they won.
-    await publishRelease({ title: 'x' })
+    await publishRelease({ testRunId: TEST_RUN_ID, title: 'x' })
     expect(mockTx.botRelease.findFirst).toHaveBeenCalled()
     expect(mockPrisma.botRelease.findFirst).not.toHaveBeenCalled()
   })
 
   it('steps the previous release down to SUPERSEDED', async () => {
     // Exactly one release is PUBLISHED at a time; the rest are history.
-    await publishRelease({ title: 'x' })
+    await publishRelease({ testRunId: TEST_RUN_ID, title: 'x' })
     expect(mockTx.botRelease.updateMany).toHaveBeenCalledWith({
       where: { status: 'PUBLISHED' },
       data: { status: 'SUPERSEDED' },
@@ -247,7 +269,7 @@ describe('publishRelease', () => {
   it('takes the snapshot AFTER the entities move, so it records what the release created', async () => {
     // The row is created with a placeholder and the real snapshot written back, because the
     // entities need the release id to point at and the snapshot needs their post-publish state.
-    await publishRelease({ title: 'x' })
+    await publishRelease({ testRunId: TEST_RUN_ID, title: 'x' })
 
     const snapshot = mockTx.botRelease.update.mock.calls[0][0].data.snapshot as Record<string, unknown>
     expect(snapshot.schemaVersion).toBe(RELEASE_SNAPSHOT_SCHEMA_VERSION)
@@ -260,7 +282,7 @@ describe('publishRelease', () => {
   it('writes the audit row through the transaction client', async () => {
     // Second argument is `tx`: an audit write that fails has to take the publish with it, or
     // the system ends up with a publish nobody can attribute.
-    await publishRelease({ title: 'x', actorId: 'acc_1', actorName: 'Budi' })
+    await publishRelease({ testRunId: TEST_RUN_ID, title: 'x', actorId: 'acc_1', actorName: 'Budi' })
 
     expect(writeBotAuditLog).toHaveBeenCalledWith(
       expect.objectContaining({ action: 'PUBLISH', entityType: 'RELEASE', actorId: 'acc_1' }),
@@ -269,7 +291,7 @@ describe('publishRelease', () => {
   })
 
   it('does everything in one transaction', async () => {
-    await publishRelease({ title: 'x' })
+    await publishRelease({ testRunId: TEST_RUN_ID, title: 'x' })
     expect(mockPrisma.$transaction).toHaveBeenCalledTimes(1)
   })
 
@@ -286,7 +308,7 @@ describe('publishRelease', () => {
       },
     ] as never)
 
-    await publishRelease({ title: 'x', actorId: 'acc_1' })
+    await publishRelease({ testRunId: TEST_RUN_ID, title: 'x', actorId: 'acc_1' })
 
     const data = mockTx.botRuleSetting.update.mock.calls[0][0].data
     expect(data).toMatchObject({
@@ -313,7 +335,7 @@ describe('publishRelease', () => {
       },
     ] as never)
 
-    await publishRelease({ title: 'x' })
+    await publishRelease({ testRunId: TEST_RUN_ID, title: 'x' })
 
     const data = mockTx.botRuleSetting.update.mock.calls[0][0].data
     expect(data).toMatchObject({ draftEnabled: null, draftUpdatedAt: null, draftUpdatedBy: null })
@@ -334,7 +356,7 @@ describe('publishRelease', () => {
       },
     ] as never)
 
-    await publishRelease({ title: 'x' })
+    await publishRelease({ testRunId: TEST_RUN_ID, title: 'x' })
     expect(mockTx.botRuleSetting.update.mock.calls[0][0].data.enabled).toBe(true)
   })
 
@@ -343,7 +365,7 @@ describe('publishRelease', () => {
       { id: 'brs_1', key: 'bot.handoff_on_human_request', enabled: true, config: null, status: 'APPROVED', draftEnabled: false, draftConfig: {} },
     ] as never)
 
-    await publishRelease({ title: 'x', actorId: 'acc_1' })
+    await publishRelease({ testRunId: TEST_RUN_ID, title: 'x', actorId: 'acc_1' })
 
     expect(writeBotAuditLog).toHaveBeenCalledWith(
       expect.objectContaining({ action: 'PUBLISH', entityType: 'RULE', entityKey: 'bot.handoff_on_human_request', releaseId: 'rel_new' }),
@@ -358,7 +380,7 @@ describe('publishRelease', () => {
       { id: 'brs_1', key: 'bot.no_invented_price', enabled: true, config: null, status: 'APPROVED', draftEnabled: false, draftConfig: {} },
     ] as never)
 
-    await expect(publishRelease({ title: 'x' })).rejects.toBeInstanceOf(ReleaseBlockedError)
+    await expect(publishRelease({ testRunId: TEST_RUN_ID, title: 'x' })).rejects.toBeInstanceOf(ReleaseBlockedError)
     expect(mockTx.botRuleSetting.update).not.toHaveBeenCalled()
   })
 
@@ -373,7 +395,7 @@ describe('publishRelease', () => {
       },
     ] as never)
 
-    await publishRelease({ title: 'x', actorId: 'acc_1' })
+    await publishRelease({ testRunId: TEST_RUN_ID, title: 'x', actorId: 'acc_1' })
 
     // The previous one steps aside first: two PUBLISHED versions on one flow would make "which
     // config is the bot reading" unanswerable.
@@ -398,7 +420,7 @@ describe('publishRelease', () => {
       },
     ] as never)
 
-    await expect(publishRelease({ title: 'x' })).rejects.toBeInstanceOf(ReleaseBlockedError)
+    await expect(publishRelease({ testRunId: TEST_RUN_ID, title: 'x' })).rejects.toBeInstanceOf(ReleaseBlockedError)
   })
 
   it('refuses to publish a flow whose key the registry no longer has', async () => {
@@ -406,7 +428,7 @@ describe('publishRelease', () => {
       { id: 'ver_2', flowId: 'flow_1', version: 2, status: 'APPROVED', flow: { key: 'flow-hantu', editableLevel: 'SAFE_CONFIG' } },
     ] as never)
 
-    await expect(publishRelease({ title: 'x' })).rejects.toBeInstanceOf(ReleaseBlockedError)
+    await expect(publishRelease({ testRunId: TEST_RUN_ID, title: 'x' })).rejects.toBeInstanceOf(ReleaseBlockedError)
   })
 
   it('records published flows in the snapshot by version', async () => {
@@ -420,6 +442,115 @@ describe('publishRelease', () => {
     ])
   })
 
+  it('refuses a publish with no test run at all', async () => {
+    // A gate that only checks runs it is GIVEN is a gate anyone walks around by not mentioning
+    // one.
+    await expect(publishRelease({ title: 'x' })).rejects.toBeInstanceOf(ReleaseTestGateError)
+    expect(mockPrisma.$transaction).not.toHaveBeenCalled()
+  })
+
+  it('refuses a failing test run', async () => {
+    mockPrisma.botTestRun.findUnique.mockResolvedValue({
+      id: TEST_RUN_ID,
+      status: 'FAILED',
+      total: 5,
+      passed: 3,
+      failed: 2,
+    } as never)
+
+    await expect(publishRelease({ testRunId: TEST_RUN_ID, title: 'x' })).rejects.toThrow('gagal')
+  })
+
+  it('refuses a run that is still going', async () => {
+    // A RUNNING run is not PASSED, so a process that died mid-suite cannot gate anything.
+    mockPrisma.botTestRun.findUnique.mockResolvedValue({
+      id: TEST_RUN_ID,
+      status: 'RUNNING',
+      total: 5,
+      passed: 0,
+      failed: 0,
+    } as never)
+
+    await expect(publishRelease({ testRunId: TEST_RUN_ID, title: 'x' })).rejects.toThrow('masih berjalan')
+  })
+
+  it('refuses a test run id that does not exist', async () => {
+    mockPrisma.botTestRun.findUnique.mockResolvedValue(null as never)
+    await expect(publishRelease({ testRunId: 'run_hantu', title: 'x' })).rejects.toBeInstanceOf(ReleaseTestGateError)
+  })
+
+  it('refuses an ADMIN trying to override a failed run', async () => {
+    // §13 reserves the override for OWNER. An ADMIN who could wave away a failing test would
+    // make the gate advisory.
+    mockPrisma.botTestRun.findUnique.mockResolvedValue({
+      id: TEST_RUN_ID,
+      status: 'FAILED',
+      total: 2,
+      passed: 1,
+      failed: 1,
+    } as never)
+
+    await expect(
+      publishRelease({
+        testRunId: TEST_RUN_ID,
+        title: 'x',
+        actorRole: 'ADMIN',
+        overrideFailedTest: true,
+        reason: 'Perlu terbit sekarang juga',
+      })
+    ).rejects.toThrow('Hanya OWNER')
+  })
+
+  it('requires a reason from an OWNER who overrides', async () => {
+    // An override with no explanation is worse than the override: nobody reading the audit log
+    // later can tell whether it was justified.
+    mockPrisma.botTestRun.findUnique.mockResolvedValue({
+      id: TEST_RUN_ID,
+      status: 'FAILED',
+      total: 2,
+      passed: 1,
+      failed: 1,
+    } as never)
+
+    await expect(
+      publishRelease({ testRunId: TEST_RUN_ID, title: 'x', actorRole: 'OWNER', overrideFailedTest: true })
+    ).rejects.toThrow('alasan')
+  })
+
+  it('lets an OWNER with a reason through, and records the override separately', async () => {
+    mockPrisma.botTestRun.findUnique.mockResolvedValue({
+      id: TEST_RUN_ID,
+      status: 'FAILED',
+      total: 2,
+      passed: 1,
+      failed: 1,
+    } as never)
+
+    await publishRelease({
+      testRunId: TEST_RUN_ID,
+      title: 'x',
+      actorRole: 'OWNER',
+      overrideFailedTest: true,
+      reason: 'Perbaikan darurat, kasus ujinya sendiri yang salah',
+    })
+
+    // Its own filterable row: auditing "were tests ever bypassed" must not mean reading every
+    // PUBLISH row.
+    expect(writeBotAuditLog).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'OVERRIDE_TEST_FAILURE', entityType: 'RELEASE' }),
+      mockTx
+    )
+  })
+
+  it('freezes the test counts into the snapshot', async () => {
+    // Read from the run's stored columns, so the numbers that gated this publish keep saying
+    // what they said even after the cases behind them change.
+    await publishRelease({ testRunId: TEST_RUN_ID, title: 'x' })
+
+    const snapshot = mockTx.botRelease.update.mock.calls[0][0].data.snapshot as { testSummary: unknown }
+    expect(snapshot.testSummary).toEqual({ testRunId: TEST_RUN_ID, status: 'PASSED', total: 3, passed: 3, failed: 0 })
+  })
+
   it('turns a version collision into a typed conflict the route can answer 409 with', async () => {
     // `version` is unique, so the publish that loses a race fails its insert rather than
     // quietly reusing a number.
@@ -427,12 +558,12 @@ describe('publishRelease', () => {
       new Prisma.PrismaClientKnownRequestError('duplicate', { code: 'P2002', clientVersion: '7' })
     )
 
-    await expect(publishRelease({ title: 'x' })).rejects.toBeInstanceOf(ReleaseVersionConflictError)
+    await expect(publishRelease({ testRunId: TEST_RUN_ID, title: 'x' })).rejects.toBeInstanceOf(ReleaseVersionConflictError)
   })
 
   it('lets an unrelated database error through unchanged', async () => {
     mockTx.botRelease.create.mockRejectedValue(new Error('db down'))
-    await expect(publishRelease({ title: 'x' })).rejects.toThrow('db down')
+    await expect(publishRelease({ testRunId: TEST_RUN_ID, title: 'x' })).rejects.toThrow('db down')
   })
 })
 

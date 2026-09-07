@@ -758,3 +758,99 @@ model BotFlowVersion {
   @@index([status])
   @@index([releaseId])
 }
+
+/// Satu kasus uji untuk bot. SDD Manage Second §7.7.
+///
+/// Ekspektasinya sengaja berupa beberapa kolom sempit, bukan satu ekspektasi bebas: yang
+/// menjadikan sebuah test berguna adalah ia gagal karena satu alasan yang bisa dibaca. "Balasan
+/// tidak sesuai" tidak memberi tahu siapa pun apa yang harus diperbaiki; "status WOULD_HANDOFF,
+/// diharapkan WOULD_REPLY" memberi tahu.
+///
+/// Semua kolom ekspektasi nullable karena masing-masing opsional: sebuah kasus boleh hanya
+/// memeriksa bahwa bot TIDAK mengalihkan ke agent, tanpa peduli kalimat persisnya.
+model BotTestCase {
+  id                    String   @id @default(cuid())
+  name                  String
+  description           String?
+  category              String?
+  inputText             String
+  /// Konteks percakapan yang disiapkan sebelum simulasi (nama kontak, dsb).
+  conversationSeed      Json?
+  /// WOULD_REPLY, WOULD_CLARIFY, WOULD_HANDOFF, FAILED — nilai SimulationStatus.
+  expectedStatus        String?
+  expectedFlowKey       String?
+  expectedContains      String?
+  expectedNotContains   String?
+  expectedHandoff       Boolean?
+  requiredKnowledgeKeys Json?
+  /// Nonaktif berarti dilewati, bukan dihapus: kasus yang dimatikan tetap menjelaskan apa yang
+  /// pernah dianggap penting, dan bisa dihidupkan lagi tanpa ditulis ulang.
+  enabled               Boolean  @default(true)
+  createdBy             String?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@index([category])
+  @@index([enabled])
+}
+
+/// Satu kali eksekusi sekumpulan kasus uji. SDD Manage Second §7.8.
+///
+/// `status` di sini adalah gerbang publish (§11): sebuah release hanya boleh terbit bila run
+/// yang ditunjuknya PASSED. Karena itu jumlahnya (`total`, `passed`, `failed`, `skipped`)
+/// disimpan sebagai kolom, bukan dihitung ulang dari `BotTestResult` saat dibaca — angka yang
+/// menggerbangi publish harus tetap sama persis dengan angka saat gerbang itu diputuskan,
+/// meskipun kasus ujinya kemudian diubah atau dihapus.
+model BotTestRun {
+  id         String          @id @default(cuid())
+  name       String?
+  /// PRE_RELEASE atau MANUAL.
+  scope      String
+  /// RUNNING, PASSED, FAILED.
+  status     String
+  total      Int             @default(0)
+  passed     Int             @default(0)
+  failed     Int             @default(0)
+  skipped    Int             @default(0)
+  releaseId  String?
+  startedBy  String?
+  startedAt  DateTime        @default(now())
+  finishedAt DateTime?
+  summary    Json?
+  createdAt  DateTime        @default(now())
+  results    BotTestResult[]
+
+  @@index([scope])
+  @@index([status])
+  @@index([releaseId])
+}
+
+/// Hasil satu kasus uji dalam satu run. SDD Manage Second §7.9.
+///
+/// `inputText` disalin ke sini, tidak dibaca lewat relasi ke BotTestCase, dengan alasan yang
+/// sama seperti BotDecisionRun: catatan harus tetap bisa dibaca meski hal yang dicatatnya
+/// berubah. Kasus uji yang diedit setelah run tidak boleh mengubah apa yang tertulis pernah
+/// dijalankan.
+model BotTestResult {
+  id            String     @id @default(cuid())
+  testRunId     String
+  testRun       BotTestRun @relation(fields: [testRunId], references: [id], onDelete: Cascade)
+  /// Kolom string biasa, BUKAN relasi ber-foreign-key — alasan yang sama seperti
+  /// BotDecisionRun: catatan harus tetap hidup melebihi hal yang dicatatnya. Kasus uji yang
+  /// dihapus tidak boleh menghapus bukti bahwa ia pernah gagal sebelum sebuah publish.
+  testCaseId    String
+  /// PASSED, FAILED, SKIPPED.
+  status        String
+  inputText     String
+  actualStatus  String?
+  actualFlowKey String?
+  actualReply   String?
+  actualTrace   Json?
+  failureReason String?
+  latencyMs     Int?
+  createdAt     DateTime   @default(now())
+
+  @@index([testRunId])
+  @@index([testCaseId])
+  @@index([status])
+}

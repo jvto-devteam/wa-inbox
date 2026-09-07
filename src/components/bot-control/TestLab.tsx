@@ -32,7 +32,19 @@ const STATUS_VARIANT: Record<string, 'success' | 'warning' | 'destructive'> = {
   FAILED: 'destructive',
 }
 
-export function TestLab({ conversations = [] }: { conversations?: ConversationOption[] }) {
+/**
+ * `onResult` lets the page offer "save this as a test case" once a simulation has run. It is
+ * optional so the component keeps working exactly as before wherever it is rendered without
+ * one — the one-off simulator is the thing this page has always been, and Phase F adds to it
+ * rather than replacing it.
+ */
+export function TestLab({
+  conversations = [],
+  onResult,
+}: {
+  conversations?: ConversationOption[]
+  onResult?: (input: string, result: SimulationResult) => void
+}) {
   const [message, setMessage] = useState('')
   const [context, setContext] = useState<ContextChoice>('none')
   const [conversationId, setConversationId] = useState('')
@@ -54,13 +66,16 @@ export function TestLab({ conversations = [] }: { conversations?: ConversationOp
         body.conversationId = conversationId
         body.useExistingHistory = false
       }
-      setResult(
-        await fetchJson<SimulationResult>('/api/bot-control/simulate', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(body),
-        })
-      )
+      const simulated = await fetchJson<SimulationResult>('/api/bot-control/simulate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      setResult(simulated)
+      // The message is handed back alongside the result: turning a simulation into a test case
+      // needs the exact input that produced it, and re-reading the textarea later would pick up
+      // whatever the operator has typed since.
+      onResult?.(message.trim(), simulated)
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Simulasi gagal')
     } finally {

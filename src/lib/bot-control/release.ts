@@ -33,6 +33,7 @@ import { invalidateRuntimeRuleCache } from '@/lib/bot-control/runtime-rules'
 import { invalidateManagedKnowledgeCache } from '@/lib/bot/managed-knowledge'
 import { invalidateRuntimeFlowCache } from '@/lib/bot-control/runtime-flows'
 import { getExistingFlow } from '@/lib/bot-control/existing-flow-registry'
+import { roleCan, type BotControlRole } from '@/lib/bot-control/permissions'
 
 /**
  * 2, not 1. Version 1 recorded only WHICH rules were published, never their values — which
@@ -244,6 +245,14 @@ export async function previewRelease(): Promise<ReleasePreview> {
     }
   }
 
+  // A suite with no enabled cases would make the gate vacuous, so it is said out loud rather
+  // than passing silently. It is an ADVISORY, not a hard block: refusing to publish because an
+  // account has not written tests yet would make the gate impossible to adopt.
+  const enabledCases = await prisma.botTestCase.count({ where: { enabled: true } })
+  if (enabledCases === 0) {
+    blockingIssues.push('Belum ada kasus uji aktif — test run akan lulus tanpa memeriksa apa pun.')
+  }
+
   return {
     changes: {
       rules: approvedRules.length,
@@ -251,8 +260,7 @@ export async function previewRelease(): Promise<ReleasePreview> {
       flows: approvedFlows.length,
       channelPolicy: 0,
     },
-    // Flips to true in Phase F, when BotTestRun exists and a publish can actually be gated on one.
-    requiresTestRun: false,
+    requiresTestRun: true,
     blockingIssues,
   }
 }
@@ -394,6 +402,9 @@ export type PublishReleaseParams = {
   testRunId?: string | null
   actorId?: string | null
   actorName?: string | null
+  actorRole?: BotControlRole | null
+  /** Ship despite a failing or missing test run. OWNER only, and requires a reason. */
+  overrideFailedTest?: boolean
   reason?: string | null
   req?: Request | null
 }
@@ -421,6 +432,66 @@ export class ReleaseNotFoundError extends Error {
   }
 }
 
+/** Raised when the test gate refuses a publish. The caller answers 409. */
+export class ReleaseTestGateError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'ReleaseTestGateError'
+  }
+}
+
+/**
+ * Checks the test gate. SDD Manage Second §8.5 and §11.
+ *
+ * Three outcomes, and the middle one is the point: a MISSING run is refused just as firmly as a
+ * failed one. A gate that only checks runs it is given is a gate anyone can walk around by not
+ * mentioning a run at all.
+ *
+ * The override is OWNER-only per §13, and today NO ACCOUNT CAN HOLD THAT ROLE — `AccountRole`
+ * has only ADMIN and AGENT. So in practice the escape hatch is closed, and the way past a red
+ * suite is to fix the bot or fix the case. That is the correct default; it is also a deadlock
+ * if the failing case is itself wrong and the fix needs publishing, which is why the message
+ * names the alternatives instead of just saying no.
+ */
+async function assertTestGate(params: PublishReleaseParams): Promise<{ testRunId: string | null; overridden: boolean }> {
+  const run = params.testRunId
+    ? await prisma.botTestRun.findUnique({
+        where: { id: params.testRunId },
+        select: { id: true, status: true, failed: true, total: true },
+      })
+    : null
+
+  if (params.testRunId && !run) {
+    throw new ReleaseTestGateError('Test run yang dirujuk tidak ditemukan.')
+  }
+  if (run?.status === 'PASSED') return { testRunId: run.id, overridden: false }
+
+  const problem = !run
+    ? 'Publish membutuhkan test run yang lulus, dan belum ada yang dilampirkan.'
+    : run.status === 'RUNNING'
+      ? `Test run ${run.id} masih berjalan.`
+      : `Test run ${run.id} gagal (${run.failed} dari ${run.total} kasus).`
+
+  if (!params.overrideFailedTest) {
+    throw new ReleaseTestGateError(
+      `${problem} Jalankan ulang setelah memperbaiki bot atau kasus ujinya, atau nonaktifkan kasus yang sudah tidak relevan.`
+    )
+  }
+
+  if (!params.actorRole || !roleCan(params.actorRole, 'OVERRIDE_FAILED_TEST')) {
+    throw new ReleaseTestGateError(
+      `${problem} Hanya OWNER yang boleh menerbitkan tanpa test run yang lulus, dan peran itu belum ada di sistem ini.`
+    )
+  }
+  // An override with no explanation is the one thing worse than the override itself: nobody
+  // reading the audit log later can tell whether it was justified.
+  if (!params.reason || params.reason.trim().length < 10) {
+    throw new ReleaseTestGateError('Override test yang gagal wajib disertai alasan minimal 10 karakter.')
+  }
+
+  return { testRunId: run?.id ?? null, overridden: true }
+}
+
 /** Raised when a snapshot is readable but predates the values a restore needs. */
 export class ReleaseNotRestorableError extends Error {
   constructor(message: string) {
@@ -445,6 +516,10 @@ export class ReleaseAlreadyActiveError extends Error {
  * published release; a crash before the third would leave a publish nobody can attribute.
  */
 export async function publishRelease(params: PublishReleaseParams): Promise<PublishedRelease> {
+  // Outside the transaction, and first: refusing a publish is cheaper than opening one, and the
+  // gate reads rows the transaction is about to change.
+  const gate = await assertTestGate(params)
+
   try {
     const release = await prisma.$transaction(async (tx) => {
       // Read inside the transaction, not before it. `version` is unique, so a concurrent
@@ -463,7 +538,7 @@ export async function publishRelease(params: PublishReleaseParams): Promise<Publ
           description: params.description ?? null,
           status: 'PUBLISHED',
           publishedBy: params.actorId ?? null,
-          testRunId: params.testRunId ?? null,
+          testRunId: gate.testRunId,
           // Placeholder, replaced below. The release row has to exist first so the entities it
           // publishes can point at its id, and the snapshot has to be taken after they move so
           // it records what this release actually created rather than what preceded it.
@@ -479,7 +554,7 @@ export async function publishRelease(params: PublishReleaseParams): Promise<Publ
       await publishApprovedKnowledge(tx, release.id, actor, params.req)
       await publishApprovedFlows(tx, release.id, actor, params.req)
 
-      const snapshot = await createReleaseSnapshot(null, tx)
+      const snapshot = await createReleaseSnapshot(await readTestSummary(gate.testRunId), tx)
       await tx.botRelease.update({
         where: { id: release.id },
         data: { snapshot: snapshot as unknown as Prisma.InputJsonValue },
@@ -494,13 +569,41 @@ export async function publishRelease(params: PublishReleaseParams): Promise<Publ
           entityKey: `release:${release.version}`,
           actorId: params.actorId,
           actorName: params.actorName,
-          after: { version: release.version, title: release.title, status: release.status },
+          after: {
+            version: release.version,
+            title: release.title,
+            status: release.status,
+            testRunId: gate.testRunId,
+            // Recorded on the release audit row, not only on a separate one: an override is
+            // the single most important fact about how a release got out.
+            overrodeFailedTest: gate.overridden,
+          },
           reason: params.reason,
           releaseId: release.id,
           req: params.req,
         },
         tx
       )
+
+      if (gate.overridden) {
+        // A second, separately filterable row. Somebody auditing "were tests ever bypassed"
+        // should not have to read every PUBLISH row to find out.
+        await writeBotAuditLog(
+          {
+            action: 'OVERRIDE_TEST_FAILURE',
+            entityType: 'RELEASE',
+            entityId: release.id,
+            entityKey: `release:${release.version}`,
+            actorId: params.actorId,
+            actorName: params.actorName,
+            after: { testRunId: gate.testRunId },
+            reason: params.reason,
+            releaseId: release.id,
+            req: params.req,
+          },
+          tx
+        )
+      }
 
       return release
     })
@@ -719,6 +822,23 @@ async function restoreSnapshot(
       tx
     )
   }
+}
+
+/**
+ * The counts to freeze into the snapshot.
+ *
+ * Read from the run's own stored columns rather than recounted from `BotTestResult`, for the
+ * same reason those columns exist: the numbers that gated a publish must keep saying what they
+ * said, even after the cases behind them are edited or deleted.
+ */
+async function readTestSummary(testRunId: string | null): Promise<ReleaseTestSummary | null> {
+  if (!testRunId) return null
+  const run = await prisma.botTestRun.findUnique({
+    where: { id: testRunId },
+    select: { id: true, status: true, total: true, passed: true, failed: true },
+  })
+  if (!run) return null
+  return { testRunId: run.id, status: run.status, total: run.total, passed: run.passed, failed: run.failed }
 }
 
 /** Key-order-insensitive comparison, so a rebuilt object is not treated as a change. */

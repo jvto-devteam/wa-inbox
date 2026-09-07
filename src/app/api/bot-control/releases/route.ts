@@ -10,9 +10,11 @@ import {
   publishRelease,
   readReleaseSnapshot,
   ReleaseBlockedError,
+  ReleaseTestGateError,
   ReleaseVersionConflictError,
   RELEASE_STATUSES,
 } from '@/lib/bot-control/release'
+import { roleFromAccount } from '@/lib/bot-control/permissions'
 
 /**
  * GET /api/bot-control/releases — the publish history.
@@ -102,6 +104,9 @@ const publishSchema = z.object({
   approvedEntityIds: z.array(z.string()).optional(),
   testRunId: z.string().optional(),
   notes: z.string().trim().max(2000).optional(),
+  /** Ship despite a failing or missing test run. OWNER only — see assertTestGate. */
+  overrideFailedTest: z.boolean().optional(),
+  reason: z.string().trim().max(2000).optional(),
 })
 
 export async function POST(req: Request) {
@@ -120,6 +125,9 @@ export async function POST(req: Request) {
       testRunId: parsed.data.testRunId ?? null,
       actorId: admin.accountId,
       actorName: actor?.name ?? null,
+      actorRole: roleFromAccount(admin.role),
+      overrideFailedTest: parsed.data.overrideFailedTest,
+      reason: parsed.data.reason ?? null,
       req,
     })
 
@@ -138,6 +146,10 @@ export async function POST(req: Request) {
     // ship. The issues are returned so the operator sees WHICH ones without re-running preview.
     if (error instanceof ReleaseBlockedError) {
       return NextResponse.json({ error: error.message, blockingIssues: error.issues }, { status: 409 })
+    }
+    // 409, not 403: the operator is permitted to publish, the SUITE is what is refusing.
+    if (error instanceof ReleaseTestGateError) {
+      return NextResponse.json({ error: error.message }, { status: 409 })
     }
     console.error('POST /api/bot-control/releases gagal', error)
     return NextResponse.json({ error: 'Gagal mempublish release' }, { status: 500 })

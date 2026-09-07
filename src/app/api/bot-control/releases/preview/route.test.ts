@@ -29,6 +29,7 @@ beforeEach(() => {
   // previewRelease asks twice: APPROVED knowledge to count, REVIEW knowledge to warn about.
   mockPrisma.knowledgeRevision.findMany.mockResolvedValue([] as never)
   mockPrisma.botFlowVersion.findMany.mockResolvedValue([] as never)
+  mockPrisma.botTestCase.count.mockResolvedValue(3 as never)
 })
 
 describe('POST /api/bot-control/releases/preview', () => {
@@ -37,7 +38,7 @@ describe('POST /api/bot-control/releases/preview', () => {
     expect(res.status).toBe(200)
     expect(await res.json()).toEqual({
       changes: { rules: 0, knowledge: 0, flows: 0, channelPolicy: 0 },
-      requiresTestRun: false,
+      requiresTestRun: true,
       blockingIssues: [],
     })
   })
