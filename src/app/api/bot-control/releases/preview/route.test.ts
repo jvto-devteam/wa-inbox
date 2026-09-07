@@ -40,6 +40,7 @@ describe('POST /api/bot-control/releases/preview', () => {
       changes: { rules: 0, knowledge: 0, flows: 0, channelPolicy: 0 },
       requiresTestRun: true,
       blockingIssues: [],
+      candidate: { ruleDraftKeys: [], knowledgeRevisionIds: [], flowVersionIds: [] },
     })
   })
 

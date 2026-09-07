@@ -46,6 +46,8 @@ type Preview = {
   changes: { rules: number; knowledge: number; flows: number; channelPolicy: number }
   requiresTestRun: boolean
   blockingIssues: string[]
+  /** Exactly what publishing would ship — what a pre-release run must be tested against. */
+  candidate: { ruleDraftKeys: string[]; knowledgeRevisionIds: string[]; flowVersionIds: string[] }
 }
 type Session = { role: AccountRoleName }
 
@@ -85,6 +87,7 @@ export default function ReleasesPage() {
   const [loadingTestRuns, setLoadingTestRuns] = useState(true)
   const [override, setOverride] = useState(false)
   const [overrideReason, setOverrideReason] = useState('')
+  const [runningTests, setRunningTests] = useState(false)
 
   const [rollbackTarget, setRollbackTarget] = useState<ReleaseRow | null>(null)
   const [reason, setReason] = useState('')
@@ -153,6 +156,49 @@ export default function ReleasesPage() {
     })
       .then(setPreview)
       .catch((err: unknown) => setPreviewError(err instanceof Error ? err.message : 'Gagal membuat preview'))
+  }
+
+  /**
+   * Runs the suite against the DRAFTS this publish would ship, then attaches the result.
+   *
+   * Without the candidate, the run exercises configuration that is already live and the gate in
+   * front of publish proves nothing about what is being published — which was the finding.
+   */
+  async function runPreReleaseTests() {
+    if (runningTests || !preview) return
+    setRunningTests(true)
+    setActionError(null)
+    try {
+      const suite = await fetchJson<{ items: Array<{ id: string }> }>(
+        '/api/bot-control/test-cases?enabled=true&limit=50'
+      )
+      if (suite.items.length === 0) {
+        setActionError('Belum ada kasus uji aktif — test run tidak akan memeriksa apa pun.')
+        return
+      }
+      const run = await fetchJson<{ testRunId: string; status: string; failed: number; total: number }>(
+        '/api/bot-control/test-runs',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            scope: 'PRE_RELEASE',
+            name: `Pra-release ${new Date().toLocaleString('id-ID')}`,
+            testCaseIds: suite.items.map((item) => item.id),
+            candidate: preview.candidate,
+          }),
+        }
+      )
+      await loadTestRuns()
+      // Only a passing run is attached. A failed one is reported instead of silently selected,
+      // because the gate would refuse it and the operator needs to know why.
+      if (run.status === 'PASSED') setTestRunId(run.testRunId)
+      else setActionError(`Test run gagal: ${run.failed} dari ${run.total} kasus. Perbaiki dulu sebelum publish.`)
+    } catch (err: unknown) {
+      setActionError(err instanceof Error ? err.message : 'Gagal menjalankan test pra-release')
+    } finally {
+      setRunningTests(false)
+    }
   }
 
   async function publish() {
@@ -279,17 +325,25 @@ export default function ReleasesPage() {
               <label htmlFor="test-run" className="text-xs font-semibold text-navy">
                 Test run yang dilampirkan
               </label>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  setLoadingTestRuns(true)
-                  void loadTestRuns()
-                }}
-              >
-                {loadingTestRuns ? 'Memuat...' : 'Muat ulang'}
-              </Button>
+              <div className="flex items-center gap-2">
+                {/* Offered only after a preview, because the candidate ids come from it. */}
+                {preview && (
+                  <Button type="button" size="sm" onClick={runPreReleaseTests} disabled={runningTests}>
+                    {runningTests ? 'Menjalankan...' : 'Jalankan test pra-release'}
+                  </Button>
+                )}
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setLoadingTestRuns(true)
+                    void loadTestRuns()
+                  }}
+                >
+                  {loadingTestRuns ? 'Memuat...' : 'Muat ulang'}
+                </Button>
+              </div>
             </div>
 
             {testRunsError && <p className="text-xs text-destructive">{testRunsError}</p>}
@@ -298,9 +352,10 @@ export default function ReleasesPage() {
               <p className="text-xs text-muted-foreground">Memuat daftar test run...</p>
             ) : testRuns.length === 0 && !testRunsError ? (
               <p className="text-xs text-muted-foreground">
-                Belum ada test run yang lulus.{' '}
+                Belum ada test run yang lulus. Tekan &quot;Preview perubahan&quot; lalu &quot;Jalankan test
+                pra-release&quot; untuk menguji justru yang akan diterbitkan, atau{' '}
                 <Link href="/bot-control/test-lab" className="text-brand hover:underline">
-                  Jalankan suite di Test Lab
+                  jalankan suite di Test Lab
                 </Link>{' '}
                 lalu tekan Muat ulang.
               </p>

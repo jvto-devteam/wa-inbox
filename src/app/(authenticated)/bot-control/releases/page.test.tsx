@@ -28,7 +28,19 @@ const PASSED_RUN = {
 
 let calls: Array<{ url: string; init?: RequestInit }> = []
 
-type Opts = { role?: string; runs?: (typeof PASSED_RUN)[] }
+const PREVIEW = {
+  changes: { rules: 1, knowledge: 0, flows: 1, channelPolicy: 0 },
+  requiresTestRun: true,
+  blockingIssues: [],
+  candidate: { ruleDraftKeys: ['bot.skip_indonesian_numbers'], knowledgeRevisionIds: [], flowVersionIds: ['ver_9'] },
+}
+
+type Opts = {
+  role?: string
+  runs?: (typeof PASSED_RUN)[]
+  cases?: Array<{ id: string }>
+  runStatus?: string
+}
 
 /** Mirrors assertTestGate: a publish naming no run (and not overriding) is a 409, not a 200. */
 function mockFetch(opts: Opts = {}) {
@@ -41,9 +53,22 @@ function mockFetch(opts: Opts = {}) {
       if (url.startsWith('/api/session')) {
         return Promise.resolve({ ok: true, status: 200, json: async () => ({ role: opts.role ?? 'ADMIN' }) })
       }
+      if (url === '/api/bot-control/test-runs' && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: async () => ({ testRunId: PASSED_RUN.id, status: opts.runStatus ?? 'PASSED', failed: 0, total: 12 }),
+        })
+      }
       if (url.startsWith('/api/bot-control/test-runs')) {
         const items = opts.runs ?? [PASSED_RUN]
         return Promise.resolve({ ok: true, status: 200, json: async () => ({ items, page: 1, limit: 20, total: items.length }) })
+      }
+      if (url.startsWith('/api/bot-control/test-cases')) {
+        return Promise.resolve({ ok: true, status: 200, json: async () => ({ items: opts.cases ?? [{ id: 'case_1' }] }) })
+      }
+      if (url === '/api/bot-control/releases/preview') {
+        return Promise.resolve({ ok: true, status: 200, json: async () => PREVIEW })
       }
       if (url.startsWith('/api/bot-control/releases?')) {
         return Promise.resolve({ ok: true, status: 200, json: async () => ({ items: [], page: 1, limit: 50, total: 0 }) })
@@ -132,7 +157,7 @@ describe('ReleasesPage — gerbang test run (regresi Temuan 1)', () => {
     render(<ReleasesPage />)
 
     await waitFor(() => expect(screen.getByText(/Belum ada test run yang lulus/)).toBeInTheDocument())
-    expect(screen.getByRole('link', { name: 'Jalankan suite di Test Lab' })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: 'jalankan suite di Test Lab' })).toHaveAttribute(
       'href',
       '/bot-control/test-lab'
     )
@@ -175,5 +200,62 @@ describe('ReleasesPage — override OWNER', () => {
 
     expect(screen.getByRole('button', { name: 'Publish' })).toBeDisabled()
     expect(screen.getByText('Alasan override minimal 10 karakter.')).toBeInTheDocument()
+  })
+})
+
+/**
+ * Regression cover for the audit finding "Test run tidak bisa menguji versi draft".
+ *
+ * Finding 1 made publish require a passing run; without these, the only run an operator could
+ * attach from this page would have exercised the configuration already live — so the gate would
+ * be satisfied by a run that proved nothing about what was being shipped.
+ */
+describe('ReleasesPage — test pra-release (regresi Temuan 4)', () => {
+  async function openPreview() {
+    render(<ReleasesPage />)
+    await waitFor(() => expect(screen.getByLabelText('Test run yang dilampirkan')).toBeInTheDocument())
+    fireEvent.click(screen.getByRole('button', { name: 'Preview perubahan' }))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Jalankan test pra-release' })).toBeInTheDocument())
+  }
+
+  it('mengirim candidate dari preview, bukan menjalankan suite terhadap versi yang sudah live', async () => {
+    await openPreview()
+    fireEvent.click(screen.getByRole('button', { name: 'Jalankan test pra-release' }))
+
+    await waitFor(() => {
+      const post = calls.find((c) => c.url === '/api/bot-control/test-runs' && c.init?.method === 'POST')
+      expect(post).toBeDefined()
+    })
+    const post = calls.find((c) => c.url === '/api/bot-control/test-runs' && c.init?.method === 'POST')
+    const body = JSON.parse(String(post?.init?.body)) as Record<string, unknown>
+    expect(body.scope).toBe('PRE_RELEASE')
+    expect(body.candidate).toEqual(PREVIEW.candidate)
+    expect(body.testCaseIds).toEqual(['case_1'])
+  })
+
+  it('melampirkan run yang lulus, sehingga Publish langsung siap', async () => {
+    await openPreview()
+    fireEvent.click(screen.getByRole('button', { name: 'Jalankan test pra-release' }))
+    fireEvent.change(screen.getByLabelText('Judul release'), { target: { value: 'Release uji' } })
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Publish' })).not.toBeDisabled())
+  })
+
+  it('tidak melampirkan run yang gagal, dan mengatakan kenapa', async () => {
+    // Attaching it would only produce a 409 at publish; saying so here is the useful answer.
+    mockFetch({ runStatus: 'FAILED' })
+    await openPreview()
+    fireEvent.click(screen.getByRole('button', { name: 'Jalankan test pra-release' }))
+
+    await waitFor(() => expect(screen.getByText(/Test run gagal/)).toBeInTheDocument())
+    expect(screen.getByRole('button', { name: 'Publish' })).toBeDisabled()
+  })
+
+  it('menolak menjalankan suite kosong, yang akan lulus tanpa memeriksa apa pun', async () => {
+    mockFetch({ cases: [] })
+    await openPreview()
+    fireEvent.click(screen.getByRole('button', { name: 'Jalankan test pra-release' }))
+
+    await waitFor(() => expect(screen.getByText(/Belum ada kasus uji aktif/)).toBeInTheDocument())
   })
 })

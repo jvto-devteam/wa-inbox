@@ -28,6 +28,7 @@
  * protocol between processes.
  */
 import { prisma } from '@/lib/db'
+import { getCandidateVersions } from '@/lib/bot-control/candidate-context'
 import { listBotRules, type BotRule } from '@/lib/bot-control/rule-registry'
 
 /** SDD Manage Second §18.1: "cache pendek, misalnya 30-60 detik". */
@@ -93,7 +94,12 @@ function asConfigRecord(value: unknown): Record<string, unknown> | null {
  * behaviour the code no longer implements.
  */
 export async function getRuntimeRuleConfig(now: number = Date.now()): Promise<RuntimeRuleConfig> {
-  if (cache && cache.expiresAt > now) return cache.value
+  // A candidate run must neither READ the cache (it would ignore the drafts under test) nor
+  // WRITE to it (a draft config left in a 30-second process cache would be served to real
+  // customers by every other request). See candidate-context.ts.
+  const candidate = getCandidateVersions()
+  const draftKeys = candidate?.ruleDraftKeys ?? []
+  if (cache && cache.expiresAt > now && draftKeys.length === 0) return cache.value
 
   const fallback = staticConfig()
 
@@ -103,15 +109,15 @@ export async function getRuntimeRuleConfig(now: number = Date.now()): Promise<Ru
   // `.length` threw straight through the decision path.
   try {
     const published = await prisma.botRuleSetting.findMany({
-      where: { status: 'PUBLISHED' },
-      select: { key: true, enabled: true, config: true },
+      where: draftKeys.length > 0 ? { OR: [{ status: 'PUBLISHED' }, { key: { in: draftKeys } }] } : { status: 'PUBLISHED' },
+      select: { key: true, enabled: true, config: true, draftEnabled: true, draftConfig: true },
     })
 
     // An empty table is the un-seeded state, not "every rule is off". Treating it as data would
     // silently drop every rule the moment this shipped ahead of its seed. A non-array is the
     // same situation seen through a broken client: fall back rather than guess.
     if (!Array.isArray(published) || published.length === 0) {
-      cache = { value: fallback, expiresAt: now + RULE_CACHE_TTL_MS }
+      if (draftKeys.length === 0) cache = { value: fallback, expiresAt: now + RULE_CACHE_TTL_MS }
       return fallback
     }
 
@@ -119,12 +125,21 @@ export async function getRuntimeRuleConfig(now: number = Date.now()): Promise<Ru
     for (const row of published) {
       const base = rules[row.key]
       if (!base) continue
-      const config = asConfigRecord(row.config)
-      rules[row.key] = { ...base, enabled: row.enabled, config: config ?? base.config }
+      // Under test, the draft stands in for the published value. `draftEnabled` is legitimately
+      // null on a config-only draft, so it falls back to the published flag rather than to
+      // `false` — reading null as off would silently switch a rule off mid-test and report a
+      // failure that has nothing to do with the change being tested.
+      const useDraft = draftKeys.includes(row.key)
+      const config = asConfigRecord(useDraft ? row.draftConfig : row.config)
+      rules[row.key] = {
+        ...base,
+        enabled: useDraft ? row.draftEnabled ?? row.enabled : row.enabled,
+        config: config ?? base.config,
+      }
     }
 
     const value: RuntimeRuleConfig = { rules, source: 'database', loadedAt: now }
-    cache = { value, expiresAt: now + RULE_CACHE_TTL_MS }
+    if (draftKeys.length === 0) cache = { value, expiresAt: now + RULE_CACHE_TTL_MS }
     return value
   } catch (error) {
     // Logged, not thrown, and NOT cached: a database blip must not pin the process to static

@@ -25,6 +25,10 @@
  */
 import type { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db'
+import {
+  runWithCandidateVersions,
+  type CandidateVersions,
+} from '@/lib/bot-control/candidate-context'
 import { runSimulation, type SimulationResult, type SimulationStatus } from '@/lib/bot-control/simulator'
 import { loadPublishedManagedKnowledge } from '@/lib/bot/managed-knowledge'
 
@@ -163,6 +167,14 @@ export type RunTestCasesParams = {
   testCaseIds: string[]
   name?: string | null
   actorId?: string | null
+  /**
+   * Draft versions to test INSTEAD of what is currently published.
+   *
+   * Without this the suite ran against configuration that was already live, so the gate in
+   * front of every publish verified the thing being replaced rather than the thing being
+   * shipped. See candidate-context.ts.
+   */
+  candidate?: CandidateVersions | null
 }
 
 export type TestRunSummary = {
@@ -202,6 +214,10 @@ export async function runTestCases(params: RunTestCasesParams): Promise<TestRunS
   let failed = 0
   let skipped = 0
 
+  // The whole loop runs inside the candidate scope, not each case: the loaders cache-bypass
+  // per call, and re-entering the scope per case would buy nothing while making a partially
+  // applied candidate possible if one case threw.
+  await runWithCandidateVersions(params.candidate, async () => {
   for (const testCase of cases) {
     const input: TestCaseInput = {
       id: testCase.id,
@@ -222,6 +238,7 @@ export async function runTestCases(params: RunTestCasesParams): Promise<TestRunS
     else if (outcome === 'FAILED') failed += 1
     else skipped += 1
   }
+  })
 
   // A run with nothing to check is PASSED, and says so in the summary. Blocking publish because
   // an account has not written tests yet would make the gate impossible to adopt.
@@ -241,6 +258,9 @@ export async function runTestCases(params: RunTestCasesParams): Promise<TestRunS
         // silently reporting a smaller total than was requested.
         missingCaseIds: ids.filter((id) => !cases.some((row) => row.id === id)),
         emptySuite: cases.length === 0,
+        // Recorded so a reader can tell a run that proved the DRAFT from one that only proved
+        // what was already live -- the distinction the publish gate depends on.
+        candidate: params.candidate ?? null,
       } as Prisma.InputJsonValue,
     },
     select: { id: true, scope: true, status: true, total: true, passed: true, failed: true, skipped: true },

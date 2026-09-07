@@ -64,9 +64,9 @@ const bodySchema = z.object({
   // Capped here as well as in the runner: rejecting an over-large request outright is clearer
   // than silently running the first fifty and reporting a total the caller did not ask for.
   testCaseIds: z.array(z.string().min(1)).min(1).max(MAX_TEST_CASES_PER_RUN),
-  // Accepted and ignored for now — the candidate-versions dry run it describes needs the
-  // runtime loaders to be reading from the database, which is the post-Phase-H integration
-  // pass. Taking it now means the client contract does not change when that lands.
+  // The draft versions to run AGAINST, instead of what is currently published. Without this
+  // the suite verified configuration that was already live, so the gate in front of a publish
+  // proved nothing about the thing being published. See candidate-context.ts.
   candidate: z
     .object({
       ruleDraftKeys: z.array(z.string()).optional(),
@@ -96,6 +96,7 @@ export async function POST(req: Request) {
       testCaseIds: parsed.data.testCaseIds,
       name: parsed.data.name ?? null,
       actorId: session.accountId,
+      candidate: parsed.data.candidate ?? null,
     })
 
     return NextResponse.json({ testRunId: run.id, ...run })

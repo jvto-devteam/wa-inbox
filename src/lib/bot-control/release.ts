@@ -203,6 +203,11 @@ export type ReleasePreview = {
   changes: { rules: number; knowledge: number; flows: number; channelPolicy: number }
   requiresTestRun: boolean
   blockingIssues: string[]
+  /**
+   * Exactly what a publish would ship, named so a pre-release run can test THAT rather than
+   * what is already live. Feeds `candidate` on POST /api/bot-control/test-runs.
+   */
+  candidate: { ruleDraftKeys: string[]; knowledgeRevisionIds: string[]; flowVersionIds: string[] }
 }
 
 /**
@@ -289,6 +294,11 @@ export async function previewRelease(): Promise<ReleasePreview> {
     },
     requiresTestRun: true,
     blockingIssues,
+    candidate: {
+      ruleDraftKeys: approvedRules.map((row) => row.key),
+      knowledgeRevisionIds: approvedKnowledge.map((row) => row.id),
+      flowVersionIds: approvedFlows.map((row) => row.id),
+    },
   }
 }
 

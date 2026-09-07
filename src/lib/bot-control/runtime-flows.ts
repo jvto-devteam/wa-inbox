@@ -15,6 +15,7 @@
  * a flow deleted from the code, and honouring its config would configure nothing.
  */
 import { prisma } from '@/lib/db'
+import { getCandidateVersions } from '@/lib/bot-control/candidate-context'
 import { getExistingFlow, listExistingFlows } from '@/lib/bot-control/existing-flow-registry'
 import { readFlowSafeConfig, type FlowSafeConfig } from '@/lib/bot-control/flow-config'
 
@@ -58,7 +59,10 @@ function staticFlows(): Map<string, RuntimeFlow> {
 }
 
 async function loadFlows(now: number): Promise<Map<string, RuntimeFlow>> {
-  if (cache && cache.expiresAt > now) return cache.value
+  // Neither read nor written while a candidate is in scope: a draft flow config left in the
+  // process cache would be answered to real customers. See candidate-context.ts.
+  const candidateVersionIds = getCandidateVersions()?.flowVersionIds ?? []
+  if (cache && cache.expiresAt > now && candidateVersionIds.length === 0) return cache.value
 
   const fallback = staticFlows()
 
@@ -74,10 +78,15 @@ async function loadFlows(now: number): Promise<Map<string, RuntimeFlow>> {
         // Only the published one. A draft reaching the bot is the failure this whole workflow
         // exists to prevent.
         versions: {
-          where: { status: 'PUBLISHED' },
+          where:
+            candidateVersionIds.length > 0
+              ? { OR: [{ status: 'PUBLISHED' }, { id: { in: candidateVersionIds } }] }
+              : { status: 'PUBLISHED' },
           orderBy: { version: 'desc' },
-          take: 1,
-          select: { id: true, version: true, nodeConfig: true },
+          // More than one only when a candidate is being tested alongside the published
+          // version; the pick below prefers the candidate.
+          take: candidateVersionIds.length > 0 ? 10 : 1,
+          select: { id: true, version: true, nodeConfig: true, status: true },
         },
       },
     })
@@ -89,7 +98,14 @@ async function loadFlows(now: number): Promise<Map<string, RuntimeFlow>> {
       // A flow the registry no longer knows about: its config would configure nothing.
       if (!base) continue
 
-      const published = row.versions?.[0]
+      // The candidate wins over the published version for the same flow — that is the whole
+      // point of a pre-release run.
+      const versions = row.versions ?? []
+      // With no candidate the query already returned only PUBLISHED rows, so the first is the
+      // published one; the `status` check only matters when a candidate widened the query.
+      const published =
+        versions.find((version) => candidateVersionIds.includes(version.id)) ??
+        (candidateVersionIds.length > 0 ? versions.find((v) => v.status === 'PUBLISHED') : versions[0])
       // A config this build cannot read falls back to the code's values rather than being passed
       // through half-understood.
       const config = published ? readFlowSafeConfig(published.nodeConfig) : null
@@ -104,7 +120,7 @@ async function loadFlows(now: number): Promise<Map<string, RuntimeFlow>> {
       })
     }
 
-    cache = { value: flows, expiresAt: now + FLOW_CACHE_TTL_MS }
+    if (candidateVersionIds.length === 0) cache = { value: flows, expiresAt: now + FLOW_CACHE_TTL_MS }
     return flows
   } catch (error) {
     // Not cached, so recovery is immediate once the database is back.
