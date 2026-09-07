@@ -102,6 +102,29 @@ describe('duplicate suppression', () => {
     await checkOutboundSafety({ ...base, purpose: 'ONE_TO_ONE' })
     expect(mockPrisma.message.findFirst).not.toHaveBeenCalled()
   })
+
+  it("excludes the send's own message row from the duplicate query", async () => {
+    // The queued path writes the Message BEFORE enqueueing (send.ts creates the bubble first so
+    // a provider outage cannot lose it), so without this exclusion the query finds that very
+    // row and every first Unofficial send reports itself as a repeat.
+    await checkOutboundSafety({ ...base, currentMessageId: 'msg_1', messageText: 'Halo', purpose: 'ONE_TO_ONE' })
+    expect(mockPrisma.message.findFirst.mock.calls[0][0]?.where).toMatchObject({ id: { not: 'msg_1' } })
+  })
+
+  it('still blocks a campaign repeating a message some OTHER row already carries', async () => {
+    // The exclusion must be exactly one row wide: excluding the current message may not turn
+    // the duplicate rule off.
+    mockPrisma.message.findFirst.mockResolvedValue({ id: 'msg_earlier' } as never)
+
+    const result = await checkOutboundSafety({
+      ...base,
+      currentMessageId: 'msg_2',
+      messageText: 'Promo!',
+      purpose: 'CAMPAIGN',
+    })
+    expect(result.allowed).toBe(false)
+    expect(result.blockingReason).toContain('identik')
+  })
 })
 
 describe('campaign throttling', () => {

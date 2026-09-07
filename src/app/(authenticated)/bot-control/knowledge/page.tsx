@@ -122,10 +122,12 @@ export default function KnowledgeExplorerPage() {
     try {
       const result = await fetchJson<SyncResult>('/api/bot-control/knowledge/sync', { method: 'POST' })
       setSyncMessage(`${result.sourcesIndexed} sumber, ${result.chunksIndexed} chunk ter-index.`)
-      // Files that failed to parse are surfaced by name. A count alone would leave an operator
-      // unable to act on it.
+      // Path AND reason, not a count and not a path alone. The two things that land here are a
+      // file that would not parse and a whole run that refused to touch anything (a missing
+      // catalog/ directory, see knowledge-indexer.ts) — and "1 file bermasalah: catalog" would
+      // describe the second one as though one JSON file were broken.
       if (result.errors.length > 0) {
-        setSyncError(`${result.errors.length} file bermasalah: ${result.errors.map((e) => e.sourcePath).join(', ')}`)
+        setSyncError(result.errors.map((e) => `${e.sourcePath}: ${e.message}`).join(' • '))
       }
       await loadSources()
     } catch (err: unknown) {

@@ -9,7 +9,7 @@ import { sendCoexistText, sendCoexistMedia } from '@/lib/coexist/client'
 import { sendMetaMedia } from '@/lib/meta/messages'
 import { uploadMetaMediaFromUrl } from '@/lib/meta/media-upload'
 import { broadcast } from '@/lib/realtime'
-import { processOutboundJob, processDueOutboundJobs } from './worker'
+import { processOutboundJob, processDueOutboundJobs, recoverStuckOutboundJobs, STUCK_SENDING_MS } from './worker'
 
 vi.mock('@/lib/db', () => ({ prisma: mockDeep<PrismaClient>() }))
 vi.mock('@/lib/coexist/client', () => ({ sendCoexistText: vi.fn(), sendCoexistMedia: vi.fn() }))
@@ -36,9 +36,21 @@ function job(overrides: Record<string, unknown> = {}) {
   } as never
 }
 
+/**
+ * processDueOutboundJobs makes TWO findMany calls: stale-SENDING recovery first, then the due
+ * list. Routing on the status filter keeps a test's `due` fixture from also being handed to
+ * recovery and counted as a pile of abandoned jobs.
+ */
+function stubJobQueries({ stale = [], due = [] }: { stale?: unknown[]; due?: unknown[] } = {}) {
+  mockPrisma.outboundJob.findMany.mockImplementation(
+    (args: { where?: { status?: unknown } } = {}) => (args.where?.status === 'SENDING' ? stale : due) as never
+  )
+}
+
 beforeEach(() => {
   mockReset(mockPrisma)
   vi.clearAllMocks()
+  stubJobQueries()
   mockPrisma.outboundJob.updateMany.mockResolvedValue({ count: 1 } as never)
   mockPrisma.outboundJob.findUnique.mockResolvedValue(job())
   mockPrisma.outboundJob.update.mockResolvedValue({ id: 'job_1' } as never)
@@ -118,6 +130,16 @@ describe('successful dispatch', () => {
     expect(mockPrisma.message.update.mock.calls[0][0].data).toMatchObject({ externalId: 'wamid.OUT' })
   })
 
+  it('refuses a job whose provider contradicts its channel', async () => {
+    // Dispatching on the channel alone made `provider` decorative: an UNOFFICIAL/META row went
+    // out over wa-coexist anyway, so the audit trail described a path the send never took.
+    mockPrisma.outboundJob.findUnique.mockResolvedValue(job({ channel: 'UNOFFICIAL', provider: 'META' }))
+
+    expect(await processOutboundJob('job_1')).toBe('retrying')
+    expect(sendCoexistText).not.toHaveBeenCalled()
+    expect(mockPrisma.outboundJob.update.mock.calls[0][0].data.lastError).toContain('tidak cocok')
+  })
+
   it('reads credentials at dispatch time, never from the stored payload', async () => {
     // A payload row that outlived a token rotation would otherwise carry a dead secret.
     await processOutboundJob('job_1')
@@ -175,28 +197,123 @@ describe('failure and retry', () => {
 
 describe('processDueOutboundJobs', () => {
   it('tallies the outcome of every due job', async () => {
-    mockPrisma.outboundJob.findMany.mockResolvedValue([{ id: 'job_1' }, { id: 'job_2' }] as never)
+    stubJobQueries({ due: [{ id: 'job_1' }, { id: 'job_2' }] })
     mockPrisma.outboundJob.findUnique
       .mockResolvedValueOnce(job({ id: 'job_1' }))
       .mockResolvedValueOnce(job({ id: 'job_2' }))
     vi.mocked(sendCoexistText).mockResolvedValueOnce({}).mockRejectedValueOnce(new Error('down'))
 
-    expect(await processDueOutboundJobs()).toEqual({ processed: 2, sent: 1, failed: 0, retrying: 1 })
+    expect(await processDueOutboundJobs()).toEqual({ processed: 2, sent: 1, failed: 0, retrying: 1, recovered: 0 })
   })
 
   it('does not count a job another worker had already claimed', async () => {
-    mockPrisma.outboundJob.findMany.mockResolvedValue([{ id: 'job_1' }] as never)
+    stubJobQueries({ due: [{ id: 'job_1' }] })
     mockPrisma.outboundJob.updateMany.mockResolvedValue({ count: 0 } as never)
 
-    expect(await processDueOutboundJobs()).toEqual({ processed: 0, sent: 0, failed: 0, retrying: 0 })
+    expect(await processDueOutboundJobs()).toEqual({ processed: 0, sent: 0, failed: 0, retrying: 0, recovered: 0 })
   })
 
   it('only picks up jobs that are actually due', async () => {
-    mockPrisma.outboundJob.findMany.mockResolvedValue([] as never)
     await processDueOutboundJobs(5)
 
-    const call = mockPrisma.outboundJob.findMany.mock.calls[0][0]
+    const call = mockPrisma.outboundJob.findMany.mock.calls.find(
+      ([args]) => typeof args?.where?.status === 'object'
+    )?.[0]
     expect(call?.where).toMatchObject({ status: { in: ['QUEUED', 'RETRYING'] } })
     expect(call?.take).toBe(5)
+  })
+
+  it('recovers abandoned claims on every drain, before looking for due jobs', async () => {
+    // Nothing else in the system reads a SENDING row, so if a drain can skip recovery the job
+    // is invisible forever. It re-enters the ladder at its backoff delay and is dispatched on
+    // a later tick, not in this same batch.
+    stubJobQueries({ stale: [{ id: 'job_stale', attempts: 0, maxAttempts: 4, messageId: null, conversationId: 'conv_1' }] })
+
+    const result = await processDueOutboundJobs()
+
+    expect(result.recovered).toBe(1)
+    const statuses = mockPrisma.outboundJob.findMany.mock.calls.map(([args]) => args?.where?.status)
+    expect(statuses[0]).toBe('SENDING')
+  })
+})
+
+describe('recoverStuckOutboundJobs', () => {
+  const stale = (overrides: Record<string, unknown> = {}) => ({
+    id: 'job_stale',
+    attempts: 0,
+    maxAttempts: 4,
+    messageId: 'msg_1',
+    conversationId: 'conv_1',
+    ...overrides,
+  })
+
+  it('puts a job abandoned in SENDING back on the retry ladder', async () => {
+    // Without this the row sits in SENDING forever: the due query only reads QUEUED/RETRYING,
+    // so nothing ever comes back for it and the customer never gets the message.
+    stubJobQueries({ stale: [stale()] })
+
+    expect(await recoverStuckOutboundJobs()).toEqual({ requeued: 1, failed: 0 })
+    expect(mockPrisma.outboundJob.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ status: 'RETRYING', attempts: 1 }),
+      })
+    )
+  })
+
+  it('uses the five-minute window the SDD pins it to', async () => {
+    // SDD Manage Second §8.7. Shortening it re-dispatches attempts that were merely slow and
+    // double-messages the customer; lengthening it makes them wait for a message the system
+    // already knows is not coming. Pinned here so a casual edit has to argue with the spec.
+    expect(STUCK_SENDING_MS).toBe(5 * 60_000)
+  })
+
+  it('only looks at jobs whose claim is older than the stuck window', async () => {
+    const now = new Date('2026-09-07T10:00:00Z')
+    await recoverStuckOutboundJobs(now)
+
+    const call = mockPrisma.outboundJob.findMany.mock.calls[0][0]
+    expect(call?.where).toMatchObject({ status: 'SENDING' })
+    expect(call?.where?.updatedAt).toEqual({ lt: new Date(now.getTime() - STUCK_SENDING_MS) })
+  })
+
+  it('counts the crashed attempt, so a job that kills its worker eventually fails', async () => {
+    // The alternative is an infinite loop: recover, crash, recover, forever, with nothing
+    // anywhere telling an operator the message is never going out.
+    stubJobQueries({ stale: [stale({ attempts: 3, maxAttempts: 4 })] })
+
+    expect(await recoverStuckOutboundJobs()).toEqual({ requeued: 0, failed: 1 })
+    expect(mockPrisma.outboundJob.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ status: 'FAILED', attempts: 4 }) })
+    )
+    expect(mockPrisma.message.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ deliveryStatus: 'FAILED' }) })
+    )
+  })
+
+  it('leaves the bubble PENDING while the job is still on the ladder', async () => {
+    stubJobQueries({ stale: [stale()] })
+
+    await recoverStuckOutboundJobs()
+
+    expect(mockPrisma.message.update).not.toHaveBeenCalled()
+  })
+
+  it('re-checks the claim, so a slow-but-alive worker is never dragged back', async () => {
+    // A worker that finished between the query and the write has already recorded SENT. Moving
+    // that row onto the ladder would send the customer a second copy of a message that arrived.
+    stubJobQueries({ stale: [stale()] })
+    mockPrisma.outboundJob.updateMany.mockResolvedValue({ count: 0 } as never)
+
+    expect(await recoverStuckOutboundJobs()).toEqual({ requeued: 0, failed: 0 })
+    expect(mockPrisma.outboundJob.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ status: 'SENDING' }) })
+    )
+  })
+
+  it('never stops the queue when the recovery query itself fails', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    mockPrisma.outboundJob.findMany.mockRejectedValue(new Error('db down'))
+
+    expect(await recoverStuckOutboundJobs()).toEqual({ requeued: 0, failed: 0 })
   })
 })

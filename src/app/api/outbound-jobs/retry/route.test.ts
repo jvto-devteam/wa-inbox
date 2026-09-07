@@ -8,12 +8,14 @@ import { prisma } from '@/lib/db'
 import { verifySessionToken } from '@/lib/auth/session'
 import { requeueJob } from '@/lib/outbound/queue'
 import { processOutboundJob } from '@/lib/outbound/worker'
+import { broadcast } from '@/lib/realtime'
 import { POST } from './route'
 
 vi.mock('@/lib/db', () => ({ prisma: mockDeep<PrismaClient>() }))
 vi.mock('@/lib/auth/session', () => ({ verifySessionToken: vi.fn() }))
 vi.mock('@/lib/outbound/queue', () => ({ requeueJob: vi.fn() }))
 vi.mock('@/lib/outbound/worker', () => ({ processOutboundJob: vi.fn() }))
+vi.mock('@/lib/realtime', () => ({ broadcast: vi.fn() }))
 
 const mockPrisma = prisma as unknown as DeepMockProxy<PrismaClient>
 
@@ -32,7 +34,7 @@ beforeEach(() => {
   vi.mocked(requeueJob).mockResolvedValue(true)
   vi.mocked(processOutboundJob).mockResolvedValue('sent')
   mockPrisma.outboundJob.findFirst.mockResolvedValue({ id: 'job_1', status: 'FAILED' } as never)
-  mockPrisma.message.update.mockResolvedValue({ id: 'msg_1' } as never)
+  mockPrisma.message.update.mockResolvedValue({ id: 'msg_1', conversationId: 'conv_1', deliveryStatus: 'PENDING' } as never)
 })
 
 describe('POST /api/outbound-jobs/retry', () => {
@@ -53,10 +55,24 @@ describe('POST /api/outbound-jobs/retry', () => {
 
   it('puts the bubble back to PENDING so the agent sees the retry take effect', async () => {
     await POST(req({ messageId: 'msg_1' }))
-    expect(mockPrisma.message.update).toHaveBeenCalledWith({
-      where: { id: 'msg_1' },
-      data: { deliveryStatus: 'PENDING' },
-    })
+    expect(mockPrisma.message.update).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: 'msg_1' }, data: { deliveryStatus: 'PENDING' } })
+    )
+  })
+
+  it('broadcasts the PENDING status, so the open thread stops showing FAILED', async () => {
+    // Writing PENDING to the row alone left the bubble red until the worker finished or the
+    // page was reloaded — so the button looked broken, and an agent who thinks a retry did not
+    // register sends the customer the message a second time by hand.
+    await POST(req({ messageId: 'msg_1' }))
+
+    expect(broadcast).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'message.updated',
+        conversationId: 'conv_1',
+        message: expect.objectContaining({ deliveryStatus: 'PENDING' }),
+      })
+    )
   })
 
   it('picks the newest job when a message has been retried before', async () => {

@@ -46,6 +46,39 @@ const BOOKING_SUMMARY_FIELDS = ['bookingCode', 'booking_code', 'orderChannel', '
 /** Keys whose value is a booking blob rather than a scalar. */
 const BOOKING_KEY_HINTS = ['bookingdata', 'booking_data', 'booking']
 
+/**
+ * Secrets that appear INSIDE a string value rather than under a telltale key.
+ *
+ * Key-name matching alone covers `{ accessToken: "..." }` and nothing else. The way a token
+ * actually reaches a trace is embedded in prose: a fetch rejection carrying the request URL
+ * (`...?access_token=EAA...`), a Graph error echoing the header it did not like, a caught
+ * error whose message quotes the whole request. All of those land in a plainly-named field
+ * like `error` or `detail`, sail past the key list, and are then permanent.
+ *
+ * Every pattern requires structure a secret has and ordinary Indonesian customer text does
+ * not — a scheme word plus a long opaque token, a known key prefix, or an explicit
+ * `key=value` assignment — so a customer writing "token saya hilang" is left alone.
+ */
+const SECRET_VALUE_PATTERNS: Array<[RegExp, string]> = [
+  // `Authorization: Bearer <token>`, and the bare `Bearer <token>` inside an error message.
+  [/\bbearer\s+[A-Za-z0-9._~+/=-]{8,}/gi, `Bearer ${REDACTED}`],
+  // Meta Graph access tokens: the EAA prefix plus a long body is unmistakable, and this is the
+  // credential this app actually holds (WaAccount/WaNumber), so it is the one most likely to leak.
+  [/\bEAA[A-Za-z0-9]{20,}/g, REDACTED],
+  // OpenAI-style keys, for anything that ends up talking to a hosted model.
+  [/\bsk-[A-Za-z0-9_-]{16,}/g, REDACTED],
+  // The query-string / assignment form: `?access_token=...`, `api_key: "..."`, `client_secret=...`.
+  [
+    /\b((?:access[_-]?token|api[_-]?key|auth[_-]?token|client[_-]?secret|refresh[_-]?token|signature)["']?\s*[=:]\s*["']?)[A-Za-z0-9._~+/=-]{8,}/gi,
+    `$1${REDACTED}`,
+  ],
+]
+
+/** Applies every value-level pattern above. Exported so the patterns can be tested directly. */
+export function redactSecretPatterns(text: string): string {
+  return SECRET_VALUE_PATTERNS.reduce((acc, [pattern, replacement]) => acc.replace(pattern, replacement), text)
+}
+
 /** Long free text is truncated so one runaway field cannot bloat every audit row. */
 const MAX_STRING_LENGTH = 2000
 
@@ -84,7 +117,10 @@ function summarizeBooking(value: JsonLike): JsonLike {
 
 function sanitizeValue(value: JsonLike): JsonLike {
   if (typeof value === 'string') {
-    return value.length > MAX_STRING_LENGTH ? `${value.slice(0, MAX_STRING_LENGTH)}…` : value
+    // Redact BEFORE truncating: truncating first could cut a token in half and leave the
+    // leading, still-useful part of it stored in the clear.
+    const redacted = redactSecretPatterns(value)
+    return redacted.length > MAX_STRING_LENGTH ? `${redacted.slice(0, MAX_STRING_LENGTH)}…` : redacted
   }
   if (Array.isArray(value)) return value.map(sanitizeValue)
   if (isRecord(value)) {

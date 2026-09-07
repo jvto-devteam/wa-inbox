@@ -99,7 +99,7 @@ function variablePositionsFor(body: string): { position: number; label: string }
   return Array.from({ length: count }, (_, i) => ({ position: i + 1, label: `{{${i + 1}}}` }))
 }
 
-// Same "COPY_CODE dropped, everything else kept" rule useLibraryTemplate applies when
+// Same "COPY_CODE dropped, everything else kept" rule applyLibraryTemplate applies when
 // pre-filling the form -- the preview must show exactly what picking a result will actually
 // produce, not the full raw library button set.
 function toLibraryPreview(t: LibraryTemplate): TemplatePreviewData {
@@ -390,7 +390,7 @@ export default function TemplatesPage() {
   // Only QUICK_REPLY/URL/PHONE_NUMBER map onto ButtonsField's draft shape -- a library result's
   // rare COPY_CODE button is dropped rather than guessed into the unrelated COUPON format's own
   // dedicated fields.
-  function useLibraryTemplate(t: LibraryTemplate) {
+  function applyLibraryTemplate(t: LibraryTemplate) {
     setName(t.name)
     setCategory(t.category)
     setBody(t.body)
@@ -557,7 +557,7 @@ export default function TemplatesPage() {
               )}
               <div className="grid max-h-96 grid-cols-2 gap-2 overflow-y-auto sm:grid-cols-3">
                 {libraryTemplates.map((t) => (
-                  <TemplatePreviewBubble key={t.id} template={toLibraryPreview(t)} onClick={() => useLibraryTemplate(t)} />
+                  <TemplatePreviewBubble key={t.id} template={toLibraryPreview(t)} onClick={() => applyLibraryTemplate(t)} />
                 ))}
               </div>
             </div>

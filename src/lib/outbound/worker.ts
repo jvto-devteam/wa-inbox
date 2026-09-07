@@ -23,25 +23,49 @@ import { sendCoexistText, sendCoexistMedia } from '@/lib/coexist/client'
 import { broadcast } from '@/lib/realtime'
 import { withMediaUrl } from '@/lib/serialize-message'
 import { canRetry, nextAttemptAt } from '@/lib/outbound/retry-policy'
-import type { OutboundJobPayload } from '@/lib/outbound/queue'
+import { findDueJobs, type OutboundJobPayload } from '@/lib/outbound/queue'
 
-export type ProcessResult = { processed: number; sent: number; failed: number; retrying: number }
+export type ProcessResult = { processed: number; sent: number; failed: number; retrying: number; recovered: number }
 
 const DEFAULT_BATCH = 25
 
+/**
+ * How long a job may sit in SENDING before the worker holding it is presumed dead.
+ *
+ * The claim below is what makes concurrent workers safe, but it is also a one-way door: a
+ * process that is killed between the claim and the outcome write (a deploy, an OOM, a
+ * function timeout, a crashed dispatch) leaves the row in SENDING forever, and the due-jobs
+ * query only ever looks at QUEUED/RETRYING. Nothing would come back for it — the customer
+ * never gets the message, the bubble stays PENDING, and no error is recorded anywhere.
+ *
+ * Five minutes, per SDD Manage Second §8.7. The number trades two failures against each
+ * other: too short re-dispatches an attempt that was merely slow, sending the customer the
+ * message twice (the exact failure the atomic claim exists to prevent); too long just makes
+ * them wait for a message the system already knows nothing is coming for. A wa-coexist or
+ * Graph call plus a media upload is seconds, so five minutes is far outside normal and still
+ * inside a single scheduler tick's patience.
+ */
+export const STUCK_SENDING_MS = 5 * 60_000
+
+const STUCK_SENDING_ERROR = 'Worker berhenti saat job masih SENDING — dipulihkan otomatis.'
+
+export type RecoveryResult = { requeued: number; failed: number }
+
 /** Attempts every job that is currently due. Safe to call concurrently; jobs are claimed atomically. */
 export async function processDueOutboundJobs(limit: number = DEFAULT_BATCH): Promise<ProcessResult> {
-  const result: ProcessResult = { processed: 0, sent: 0, failed: 0, retrying: 0 }
+  const result: ProcessResult = { processed: 0, sent: 0, failed: 0, retrying: 0, recovered: 0 }
 
-  const due = await prisma.outboundJob.findMany({
-    where: {
-      status: { in: ['QUEUED', 'RETRYING'] },
-      OR: [{ nextAttemptAt: null }, { nextAttemptAt: { lte: new Date() } }],
-    },
-    orderBy: { createdAt: 'asc' },
-    take: limit,
-    select: { id: true },
-  })
+  // Runs on every drain, ahead of the due query, because nothing else in the system ever looks
+  // at a SENDING row. A recovered job re-enters the normal ladder (so it comes back on a later
+  // tick at its backoff delay, not in this same batch) — the point is that it comes back at
+  // all instead of sitting in SENDING until someone notices by hand.
+  const recovery = await recoverStuckOutboundJobs()
+  result.recovered = recovery.requeued + recovery.failed
+
+  // findDueJobs, not a second copy of the same where-clause: "due" has to mean one thing.
+  // Two definitions drift the moment either grows a priority, a per-provider partition, or a
+  // campaign throttle — and the copy the worker does NOT use is the one that silently rots.
+  const due = await findDueJobs(limit)
 
   for (const { id } of due) {
     const outcome = await processOutboundJob(id)
@@ -50,6 +74,72 @@ export async function processDueOutboundJobs(limit: number = DEFAULT_BATCH): Pro
     if (outcome === 'sent') result.sent += 1
     else if (outcome === 'failed') result.failed += 1
     else result.retrying += 1
+  }
+
+  return result
+}
+
+/**
+ * Returns jobs abandoned mid-flight to the retry ladder (see STUCK_SENDING_MS).
+ *
+ * The crashed attempt is COUNTED, not forgiven. Recovering a job without incrementing
+ * `attempts` would give a payload whose dispatch reliably kills its worker — a malformed media
+ * URL that OOMs the upload, say — an unbounded supply of new claims, and it would be picked up,
+ * crash, and be recovered forever. Counting it means such a job walks the same ladder every
+ * other failure walks and ends up FAILED, where an operator can see it.
+ */
+export async function recoverStuckOutboundJobs(now: Date = new Date()): Promise<RecoveryResult> {
+  const result: RecoveryResult = { requeued: 0, failed: 0 }
+  const stuckBefore = new Date(now.getTime() - STUCK_SENDING_MS)
+
+  let stuck: { id: string; attempts: number; maxAttempts: number; messageId: string | null; conversationId: string }[]
+  try {
+    stuck = await prisma.outboundJob.findMany({
+      // `updatedAt` is the claim's own timestamp: flipping the row to SENDING is the last
+      // write it received, so "not touched since stuckBefore" is exactly "claimed that long
+      // ago and never finished".
+      where: { status: 'SENDING', updatedAt: { lt: stuckBefore } },
+      orderBy: { updatedAt: 'asc' },
+      take: DEFAULT_BATCH,
+      select: { id: true, attempts: true, maxAttempts: true, messageId: true, conversationId: true },
+    })
+  } catch (error) {
+    // Recovery runs at the top of every queue drain, so it must never be able to stop one:
+    // a job stuck in SENDING is bad, but no jobs moving at all is worse.
+    console.error('worker: gagal mencari job SENDING yang menggantung', { error })
+    return result
+  }
+
+  for (const job of stuck) {
+    const attempts = job.attempts + 1
+    const retryAt = canRetry(attempts, job.maxAttempts) ? nextAttemptAt(attempts, job.maxAttempts, now) : null
+
+    try {
+      // Conditional, not a plain update, and re-checking BOTH the status and the staleness
+      // window: a worker that was merely slow rather than dead may have written SENT in the
+      // moment between the query above and this line. Dragging that row back onto the ladder
+      // would send the customer a second copy of a message that did arrive — the precise
+      // failure the atomic claim exists to prevent.
+      const moved = await prisma.outboundJob.updateMany({
+        where: { id: job.id, status: 'SENDING', updatedAt: { lt: stuckBefore } },
+        data: retryAt
+          ? { status: 'RETRYING', attempts, nextAttemptAt: retryAt, lastError: STUCK_SENDING_ERROR }
+          : { status: 'FAILED', attempts, nextAttemptAt: null, lastError: STUCK_SENDING_ERROR },
+      })
+      if (moved.count === 0) continue
+
+      if (retryAt) {
+        result.requeued += 1
+        continue
+      }
+
+      result.failed += 1
+      // Only now does the bubble go red. While the job is still on the ladder the message
+      // stays PENDING, matching what processOutboundJob does with an ordinary failure.
+      if (job.messageId) await updateMessage(job.messageId, job.conversationId, { deliveryStatus: 'FAILED' })
+    } catch (error) {
+      console.error('worker: gagal memulihkan job SENDING', { jobId: job.id, error })
+    }
   }
 
   return result
@@ -73,7 +163,7 @@ export async function processOutboundJob(jobId: string): Promise<JobOutcome> {
   const attempts = job.attempts + 1
 
   try {
-    const externalId = await dispatch(job.channel, payload)
+    const externalId = await dispatch(job.channel, job.provider, payload)
 
     await prisma.outboundJob.update({
       where: { id: jobId },
@@ -113,7 +203,17 @@ export async function processOutboundJob(jobId: string): Promise<JobOutcome> {
   }
 }
 
-async function dispatch(channel: string, payload: OutboundJobPayload): Promise<string | undefined> {
+async function dispatch(channel: string, provider: string, payload: OutboundJobPayload): Promise<string | undefined> {
+  // The job carries both a channel and a provider, and they have to agree. Dispatching on the
+  // channel alone made `provider` decorative: a row saying UNOFFICIAL/META would still go out
+  // over wa-coexist, so the audit trail would describe a send that never happened down the
+  // path it names. Disagreement is a bug in whatever enqueued the job, so it is raised rather
+  // than resolved by guessing which of the two fields was meant.
+  const expectedProvider = channel === 'OFFICIAL' ? 'META' : 'COEXIST'
+  if (provider !== expectedProvider) {
+    throw new Error(`Provider ${provider} tidak cocok dengan channel ${channel} (seharusnya ${expectedProvider}).`)
+  }
+
   // Credentials are read here, at dispatch time, and never stored on the job — a payload row
   // that outlived a token rotation would otherwise carry a dead secret in the database.
   const waNumber = await prisma.waNumber.findFirstOrThrow()

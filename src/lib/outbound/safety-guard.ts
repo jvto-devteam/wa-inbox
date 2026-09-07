@@ -40,6 +40,17 @@ export type OutboundPurpose = 'ONE_TO_ONE' | 'BOT_REPLY' | 'CAMPAIGN'
 export type SafetyCheckParams = {
   conversationId: string
   contactId: string
+  /**
+   * The Message this send is FOR, when one already exists.
+   *
+   * The queued path writes its Message row before enqueueing (send.ts creates the bubble
+   * first so a provider outage can never lose it), so by the time this guard runs, the very
+   * message being checked is already sitting in the table with the text being checked
+   * against. Without this exclusion the duplicate query matches that row and every first
+   * Unofficial send reports itself as a repeat — a warning on every reply, and, once
+   * campaigns exist, a campaign blocked by its own not-yet-sent message.
+   */
+  currentMessageId?: string
   messageText?: string
   sentBy: 'BOT' | 'AGENT'
   purpose: OutboundPurpose
@@ -99,6 +110,7 @@ export async function checkOutboundSafety(params: SafetyCheckParams): Promise<Sa
           direction: 'OUTBOUND',
           content: params.messageText,
           createdAt: { gte: new Date(Date.now() - DUPLICATE_WINDOW_MS) },
+          ...(params.currentMessageId ? { id: { not: params.currentMessageId } } : {}),
         },
         select: { id: true },
       })

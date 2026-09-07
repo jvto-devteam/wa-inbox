@@ -22,7 +22,7 @@
     "dotenv": "^17.4.2",
     "jose": "^6.2.4",
     "lucide-react": "^1.27.0",
-    "next": "16.2.12",
+    "next": "16.3.4",
     "pg": "^8.22.0",
     "react": "19.2.4",
     "react-dom": "19.2.4",
@@ -44,12 +44,16 @@
     "@types/react-dom": "^19",
     "@vitejs/plugin-react": "^6.0.4",
     "eslint": "^9",
-    "eslint-config-next": "16.2.12",
+    "eslint-config-next": "16.3.4",
     "jsdom": "^29.1.1",
     "prisma": "^7.9.0",
     "tailwindcss": "^4",
     "typescript": "^5",
     "vitest": "^4.1.10",
     "vitest-mock-extended": "^5.1.0"
+  },
+  "overrides": {
+    "deepmerge-ts": "^8.0.2",
+    "mysql2": "^3.24.3"
   }
 }

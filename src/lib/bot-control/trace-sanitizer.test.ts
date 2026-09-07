@@ -2,7 +2,7 @@
  * @vitest-environment node
  */
 import { describe, it, expect } from 'vitest'
-import { sanitizeTrace, REDACTED } from './trace-sanitizer'
+import { sanitizeTrace, redactSecretPatterns, REDACTED } from './trace-sanitizer'
 
 describe('sanitizeTrace', () => {
   it('redacts anything whose key looks like a secret, at any depth', () => {
@@ -77,5 +77,39 @@ describe('sanitizeTrace', () => {
     const circular: Record<string, unknown> = { mode: 'faq' }
     circular.self = circular
     expect(sanitizeTrace(circular)).toEqual({ _error: 'Trace tidak bisa diserialisasi' })
+  })
+
+  it('redacts a secret sitting inside a value under an innocent key', () => {
+    // How a token actually reaches a trace: not as `{ accessToken: ... }`, but quoted inside
+    // the text of a caught error, under a key like `error` that the key list never inspects.
+    const out = sanitizeTrace({
+      error: 'Request failed: GET https://graph.facebook.com/v21.0/me?access_token=EAAGxyz1234567890abcdefghij',
+      detail: 'header was Authorization: Bearer abcdef1234567890',
+    }) as Record<string, string>
+
+    expect(out.error).not.toContain('EAAGxyz1234567890abcdefghij')
+    expect(out.error).toContain(REDACTED)
+    expect(out.detail).not.toContain('abcdef1234567890')
+    expect(out.detail).toContain(REDACTED)
+  })
+})
+
+describe('redactSecretPatterns', () => {
+  it('leaves ordinary customer text alone', () => {
+    // The guard is worthless if it mangles the inbound message an agent is auditing. Every
+    // pattern demands structure a secret has and prose does not.
+    const text = 'Mas, token pembayaran saya belum masuk. Ini bearer apa ya? sk- itu apa?'
+    expect(redactSecretPatterns(text)).toBe(text)
+  })
+
+  it('redacts every occurrence in one string, not just the first', () => {
+    const out = redactSecretPatterns('a=EAAaaaaaaaaaaaaaaaaaaaaaa b=EAAbbbbbbbbbbbbbbbbbbbbbb')
+    expect(out).not.toContain('EAAaaaaaaaaaaaaaaaaaaaaaa')
+    expect(out).not.toContain('EAAbbbbbbbbbbbbbbbbbbbbbb')
+  })
+
+  it('keeps the key name visible while replacing the value', () => {
+    // An operator still needs to see WHICH credential appeared, so the field name survives.
+    expect(redactSecretPatterns('client_secret=abcdef1234567890')).toBe(`client_secret=${REDACTED}`)
   })
 })

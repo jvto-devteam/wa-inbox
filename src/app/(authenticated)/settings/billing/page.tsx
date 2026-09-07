@@ -38,17 +38,30 @@ function formatCost(value: number, currency: string | null): string {
  */
 export default function BillingPage() {
   const [days, setDays] = useState(30)
-  const [report, setReport] = useState<CostReport | null>(null)
-  const [error, setError] = useState<string | null>(null)
-  const [loading, setLoading] = useState(true)
+  // The loaded result carries the range it was fetched for, so `loading` is DERIVED from a
+  // mismatch instead of being set synchronously at the top of the effect. Same rendering
+  // behaviour -- picking a new range shows "Memuat..." on that very render -- without the
+  // cascading re-render React's set-state-in-effect rule (correctly) flags.
+  const [loaded, setLoaded] = useState<{ days: number; report: CostReport | null; error: string | null } | null>(null)
+  const loading = loaded?.days !== days
+  // The previous range's numbers stay on screen while the next ones load; a stale error does
+  // not, because it describes a request that is no longer the one being made.
+  const report = loaded?.report ?? null
+  const error = loaded && loaded.days === days ? loaded.error : null
 
   useEffect(() => {
-    setLoading(true)
-    setError(null)
+    // A slow request for an abandoned range must not overwrite the range the user is now on.
+    let cancelled = false
     fetchJson<CostReport>(`/api/analytics/conversation-cost?days=${days}`)
-      .then(setReport)
-      .catch(() => setError('Gagal memuat histori biaya dari Meta'))
-      .finally(() => setLoading(false))
+      .then((next) => {
+        if (!cancelled) setLoaded({ days, report: next, error: null })
+      })
+      .catch(() => {
+        if (!cancelled) setLoaded({ days, report: null, error: 'Gagal memuat histori biaya dari Meta' })
+      })
+    return () => {
+      cancelled = true
+    }
   }, [days])
 
   return (

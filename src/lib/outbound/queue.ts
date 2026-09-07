@@ -52,6 +52,10 @@ export async function enqueueOutboundJob(params: EnqueueParams): Promise<Enqueue
   const safety = await checkOutboundSafety({
     conversationId: params.conversationId,
     contactId: params.contactId,
+    // The message row already exists at this point — it is created before the enqueue so the
+    // bubble survives a provider outage — so the guard has to be told which row is this send's
+    // own, or it finds it and calls the message a duplicate of itself.
+    currentMessageId: params.messageId,
     messageText: params.payload.text || undefined,
     sentBy: params.sentBy,
     purpose,

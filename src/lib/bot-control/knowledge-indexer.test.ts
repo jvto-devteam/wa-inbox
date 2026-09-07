@@ -370,12 +370,36 @@ describe('indexCatalogKnowledge', () => {
     expect(call?.where).toMatchObject({ type: 'CATALOG_JSON' })
   })
 
-  it('does nothing at all when there is no catalog directory', async () => {
-    mockPrisma.knowledgeSource.findMany.mockResolvedValue([] as never)
+  it('aborts, and archives nothing, when there is no catalog directory at all', async () => {
+    // The destructive case this guards: run the sync from the wrong cwd, or from a deploy
+    // artifact that does not ship catalog/, and an unguarded run would see zero files, decide
+    // every indexed source had disappeared, and archive the entire knowledge index.
+    mockPrisma.knowledgeSource.findMany.mockResolvedValue([{ id: 'src_1' }] as never)
+
+    const result = await indexCatalogKnowledge(root)
+
+    expect(result).toMatchObject({ sourcesIndexed: 0, chunksIndexed: 0 })
+    expect(result.errors).toHaveLength(1)
+    expect(result.errors[0].sourcePath).toBe('catalog')
+    expect(result.errors[0].message).toContain('tidak ditemukan')
+    expect(mockPrisma.knowledgeSource.upsert).not.toHaveBeenCalled()
+    // The three writes archiveMissingSources would have made, none of which may happen here.
+    expect(mockPrisma.knowledgeSource.findMany).not.toHaveBeenCalled()
+    expect(mockPrisma.knowledgeSource.updateMany).not.toHaveBeenCalled()
+    expect(mockPrisma.knowledgeChunk.deleteMany).not.toHaveBeenCalled()
+  })
+
+  it('still archives when catalog/ exists but holds nothing indexable', async () => {
+    // The other half of the same distinction: here the emptiness is the real state of the
+    // release, so a source that is no longer on disk genuinely should be archived.
+    writeCatalog({ 'catalog/notes.md': '# bukan knowledge' })
+    mockPrisma.knowledgeSource.findMany.mockResolvedValue([{ id: 'src_1' }] as never)
 
     const result = await indexCatalogKnowledge(root)
 
     expect(result).toMatchObject({ sourcesIndexed: 0, chunksIndexed: 0, errors: [] })
-    expect(mockPrisma.knowledgeSource.upsert).not.toHaveBeenCalled()
+    expect(mockPrisma.knowledgeSource.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { status: 'ARCHIVED' } })
+    )
   })
 })

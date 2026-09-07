@@ -385,6 +385,35 @@ export type IndexResult = {
  * mistake an explorer must not make.
  */
 export async function indexCatalogKnowledge(repoRoot: string = process.cwd()): Promise<IndexResult> {
+  // A catalog/ that is MISSING is not a catalog/ that is EMPTY, and the difference is
+  // destructive. `discoverCatalogFiles` returns [] for both, and an empty file list means
+  // `seenKeys` is empty, which makes `archiveMissingSources` archive every catalog source in
+  // the database and delete all of their chunks. A sync run from the wrong cwd, or from a
+  // deploy artifact that does not ship catalog/ (it is data, not build output), would
+  // therefore wipe the whole index and leave the Knowledge Explorer looking as though the bot
+  // knows nothing — with no error anywhere saying why.
+  //
+  // So absence of the directory aborts the run and changes nothing. An existing but empty
+  // catalog/ still archives, because there the emptiness is the actual state of the release.
+  let catalogIsDirectory = false
+  try {
+    catalogIsDirectory = statSync(path.join(repoRoot, CATALOG_DIR)).isDirectory()
+  } catch {
+    catalogIsDirectory = false
+  }
+  if (!catalogIsDirectory) {
+    return {
+      sourcesIndexed: 0,
+      chunksIndexed: 0,
+      errors: [
+        {
+          sourcePath: CATALOG_DIR,
+          message: `Folder ${CATALOG_DIR}/ tidak ditemukan di ${repoRoot} — index knowledge tidak diubah.`,
+        },
+      ],
+    }
+  }
+
   const files = discoverCatalogFiles(repoRoot)
   const errors: IndexResult['errors'] = []
   let sourcesIndexed = 0

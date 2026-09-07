@@ -53,16 +53,44 @@ export function ConversationList({
   }, [conversations])
   useEffect(() => {
     selectedIdRef.current = selectedId
-    // Opening a conversation is an immediate "I've seen this" signal, ahead of ThreadView's
-    // own PATCH landing — without this the badge would linger for the length of that request.
-    if (selectedId) setConversations((prev) => prev.map((c) => (c.id === selectedId ? { ...c, unreadCount: 0 } : c)))
   }, [selectedId])
+
+  // Opening a conversation is an immediate "I've seen this" signal, ahead of ThreadView's own
+  // PATCH landing — without it the badge lingers for the length of that request.
+  //
+  // Adjusting state DURING RENDER on a changed prop, rather than from an effect watching it:
+  // react.dev's own "adjusting state when a prop changes" pattern. React re-runs this
+  // component immediately, before touching the DOM, so nothing intermediate is ever painted —
+  // which is exactly why the effect form (setState in an effect body, then a second commit)
+  // is the one the lint rule rejects.
+  //
+  // Zeroing it in the state itself rather than masking it at render time is load-bearing: the
+  // SSE handler below increments `unreadCount` from whatever the row currently holds, so a
+  // render-time mask would let a stale server count reappear the moment the next message
+  // arrived for a conversation the agent had already read.
+  const [readSelectedId, setReadSelectedId] = useState(selectedId)
+  if (selectedId !== readSelectedId) {
+    setReadSelectedId(selectedId)
+    if (selectedId) {
+      setConversations((prev) => prev.map((c) => (c.id === selectedId ? { ...c, unreadCount: 0 } : c)))
+    }
+  }
 
   const loadConversations = useCallback((q: string) => {
     // On a rejection the list simply keeps whatever it already had: a 401 has already sent
     // the browser to /login, and a 500 must not blank out the agent's inbox.
+    //
+    // The deep-link case (/inbox?conversation=<id>) is why the selected row is cleared here
+    // too: there the id is already selected on mount, so the adjustment above has nothing to
+    // react to by the time the list itself arrives.
     fetchJson<ConversationSummary[]>(conversationsUrl(q))
-      .then(setConversations)
+      .then((list) =>
+        setConversations(
+          selectedIdRef.current
+            ? list.map((c) => (c.id === selectedIdRef.current ? { ...c, unreadCount: 0 } : c))
+            : list
+        )
+      )
       .catch(() => {})
   }, [])
 

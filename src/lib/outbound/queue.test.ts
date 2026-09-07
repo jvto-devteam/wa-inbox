@@ -42,6 +42,13 @@ describe('enqueueOutboundJob', () => {
     expect(data.nextAttemptAt).toBeInstanceOf(Date)
   })
 
+  it("tells the safety guard which message row is this send's own", async () => {
+    // The Message already exists when the enqueue runs (send.ts writes the bubble first), so
+    // without this the duplicate check finds it and calls every first send a repeat of itself.
+    await enqueueOutboundJob(params)
+    expect(checkOutboundSafety).toHaveBeenCalledWith(expect.objectContaining({ currentMessageId: 'msg_1' }))
+  })
+
   it('stores the resolved destination in the payload', async () => {
     // A retry ten minutes later must send to the number this message was addressed to, not to
     // whatever the contact row says by then.

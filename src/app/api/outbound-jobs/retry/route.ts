@@ -5,6 +5,8 @@ import { getSession } from '@/lib/auth/get-session'
 import { parseJsonBody } from '@/lib/parse-json'
 import { requeueJob } from '@/lib/outbound/queue'
 import { processOutboundJob } from '@/lib/outbound/worker'
+import { broadcast } from '@/lib/realtime'
+import { withMediaUrl } from '@/lib/serialize-message'
 
 /**
  * POST /api/outbound-jobs/retry — re-send a message whose delivery failed.
@@ -49,7 +51,18 @@ export async function POST(req: Request) {
 
     // Put the bubble back to PENDING immediately so the agent sees the retry take effect
     // rather than staring at a red FAILED badge while the attempt runs.
-    await prisma.message.update({ where: { id: parsed.data.messageId }, data: { deliveryStatus: 'PENDING' } })
+    //
+    // The broadcast is what actually makes that visible. Writing PENDING to the row alone left
+    // the open thread still rendering FAILED until the worker finished (or the page was
+    // reloaded), so pressing "Kirim Ulang" looked like it had done nothing — and an agent who
+    // believes a retry did not register presses it again, or sends the message a second time
+    // by hand. Same `message.updated` event the worker uses when the attempt resolves.
+    const pending = await prisma.message.update({
+      where: { id: parsed.data.messageId },
+      data: { deliveryStatus: 'PENDING' },
+      include: { replyTo: true },
+    })
+    broadcast({ type: 'message.updated', conversationId: pending.conversationId, message: withMediaUrl(pending) })
 
     // Fire the attempt without awaiting, for the same reason sendMessage does: the response
     // should not block on a provider round-trip.
