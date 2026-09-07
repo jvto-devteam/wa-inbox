@@ -42,6 +42,12 @@ const SECTIONS = [
     ready: true,
   },
   {
+    href: '/bot-control/channel-policy',
+    title: 'Channel Policy',
+    description: 'Channel mana yang membawa apa, dan seberapa ketat pengaman outbound — dibaca langsung saat mengirim.',
+    ready: true,
+  },
+  {
     href: '/bot-control/releases',
     title: 'Releases',
     description: 'Riwayat publish beserta snapshot-nya, dan rollback ke keadaan sebelumnya tanpa menghapus apa pun.',

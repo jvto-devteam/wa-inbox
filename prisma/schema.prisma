@@ -6,9 +6,16 @@ datasource db {
   provider = "postgresql"
 }
 
+/// OWNER dan BOT_MANAGER ditambahkan di AKHIR, bukan disisipkan sesuai hierarki, dan itu
+/// disengaja: menyisipkan di tengah membuat Prisma menghasilkan migrasi tukar-tipe
+/// (CREATE TYPE baru, ALTER COLUMN, DROP TYPE lama) yang mengunci tabel Account. Menambah di
+/// akhir menghasilkan ALTER TYPE ... ADD VALUE yang aditif murni. Urutan di sini tidak punya
+/// makna apa pun — hierarki peran hidup di src/lib/bot-control/permissions.ts.
 enum AccountRole {
   ADMIN
   AGENT
+  OWNER
+  BOT_MANAGER
 }
 
 model Account {
@@ -895,4 +902,47 @@ model BotDecisionTriage {
   @@index([issueType])
   @@index([severity])
   @@index([assignedTo])
+}
+
+/// Kebijakan channel yang bisa dikelola. SDD Manage Second §7.11.
+///
+/// Satu baris per kebijakan, dengan `key` sebagai namanya ("whatsapp.default"). Dibuat
+/// berbaris, bukan sebagai kolom di Settings, karena kebijakan ini punya siklus draft → review
+/// → approve → publish sendiri seperti rule dan flow — dan Settings adalah baris tunggal yang
+/// ditulis langsung oleh halaman Pengaturan tanpa review sama sekali.
+///
+/// `capabilityRules` memetakan kemampuan ke channel yang boleh membawanya. Ini menggantikan
+/// tabel statis di channel-capabilities.ts SEBAGAI SUMBER, bukan sebagai kebenaran: file itu
+/// tetap memutuskan kemampuan apa yang ADA, karena tiap entri menggambarkan endpoint yang
+/// benar-benar diimplementasikan kode. Baris database hanya boleh mengubah channel mana yang
+/// dipakai untuk kemampuan yang sudah ada.
+///
+/// `safetyConfig` menggantikan konstanta di safety-guard.ts dengan cara yang sama, dan
+/// batas-batasnya divalidasi di src/lib/bot-control/channel-policy-config.ts — nilai nol pada
+/// campaign rate akan mematikan seluruh gerbang campaign, yang merupakan perubahan perilaku
+/// yang menyamar sebagai setelan.
+model ChannelPolicySetting {
+  id              String    @id @default(cuid())
+  key             String    @unique
+  /// OFFICIAL atau UNOFFICIAL. Kebijakan tertulis di CLAUDE.md adalah UNOFFICIAL.
+  defaultOutbound String    @default("UNOFFICIAL")
+  officialMode    String    @default("INBOUND_AND_CAPABILITY")
+  unofficialMode  String    @default("PRIMARY_OUTBOUND")
+  capabilityRules Json
+  safetyConfig    Json
+  /// PUBLISHED, DRAFT, REVIEW, APPROVED, REJECTED.
+  status          String    @default("PUBLISHED")
+  /// Draft hidup berdampingan dengan nilai yang berlaku, bukan menimpanya — sama seperti
+  /// BotRuleSetting. Itu yang membuat "draft belum mengubah runtime" jadi sifat struktur
+  /// datanya, bukan sesuatu yang harus diingat setiap pembaca.
+  draftConfig     Json?
+  draftUpdatedBy  String?
+  draftUpdatedAt  DateTime?
+  publishedBy     String?
+  publishedAt     DateTime?
+  releaseId       String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([status])
 }

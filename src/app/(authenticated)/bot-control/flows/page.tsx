@@ -7,6 +7,8 @@ import { Button } from '@/components/ui/button'
 import { FlowStepList } from '@/components/bot-control/FlowStepList'
 import { FLOW_NODE_TYPE_LABEL } from '@/components/bot-control/FlowStepCard'
 import { FlowSafeConfigEditor } from '@/components/bot-control/FlowSafeConfigEditor'
+import { roleNameCan } from '@/lib/bot-control/permissions'
+import type { AccountRoleName } from '@/lib/auth/session'
 import { fetchJson } from '@/lib/fetch-json'
 import type { ExistingFlowDefinition, ExistingFlowNode } from '@/lib/bot-control/existing-flow-registry'
 import type { FlowSafeConfig, SafeConfigField } from '@/lib/bot-control/flow-config'
@@ -34,7 +36,7 @@ type FlowDetail = ExistingFlowDefinition & {
   draftVersion: { id: string; version: number; status: string; config: FlowSafeConfig | null } | null
 }
 
-type Session = { role: 'ADMIN' | 'AGENT' }
+type Session = { role: AccountRoleName }
 
 const DRAFT_STATUS_VARIANT: Record<string, 'brand' | 'warning' | 'success'> = {
   DRAFT: 'brand',
@@ -140,6 +142,11 @@ export default function FlowMapPage() {
     }
   }
 
+  // The matrix, not admin-equality: a BOT_MANAGER writes and sends to review, and must not
+  // see Approve or Reject.
+  const canEditFlow = roleNameCan(role, 'EDIT_FLOW_CONFIG')
+  const canApproveFlow = roleNameCan(role, 'APPROVE')
+
   const selectedNode: ExistingFlowNode | null = flow?.nodes.find((n) => n.id === selectedNodeId) ?? null
   const outgoingEdges = flow?.edges.filter((e) => e.from === selectedNodeId) ?? []
 
@@ -212,24 +219,24 @@ export default function FlowMapPage() {
                   </p>
                 ) : (
                   <div className="flex flex-wrap gap-2">
-                    {role === 'ADMIN' && (
+                    {canEditFlow && (
                       <Button variant="outline" size="sm" onClick={() => setEditing(true)}>
                         {flow.draftVersion ? 'Ubah draft' : 'Buat draft'}
                       </Button>
                     )}
                     {/* Each control follows the draft's STATE, not just the role: a button that
                         always 409s teaches an operator to stop trusting the page. */}
-                    {role === 'ADMIN' && flow.draftVersion?.status === 'DRAFT' && (
+                    {canEditFlow && flow.draftVersion?.status === 'DRAFT' && (
                       <Button variant="outline" size="sm" onClick={() => runTransition('request-review')}>
                         Kirim ke review
                       </Button>
                     )}
-                    {role === 'ADMIN' && flow.draftVersion?.status === 'REVIEW' && (
+                    {canApproveFlow && flow.draftVersion?.status === 'REVIEW' && (
                       <Button variant="outline" size="sm" onClick={() => runTransition('approve')}>
                         Approve
                       </Button>
                     )}
-                    {role === 'ADMIN' && flow.draftVersion && (
+                    {canApproveFlow && flow.draftVersion && (
                       <Button variant="outline" size="sm" onClick={() => runTransition('reject')}>
                         Reject
                       </Button>

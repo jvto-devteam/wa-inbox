@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { prisma } from '@/lib/db'
 import { getSession } from '@/lib/auth/get-session'
 import { parseJsonBody } from '@/lib/parse-json'
+import { sessionCan } from '@/lib/bot-control/permissions'
 import {
   upsertTriage,
   DecisionNotFoundError,
@@ -49,7 +50,10 @@ async function handle(req: Request, params: Promise<{ id: string }>) {
     const triage = await upsertTriage(
       id,
       parsed.data as Parameters<typeof upsertTriage>[1],
-      { id: session.accountId, name: actor?.name ?? null, isAdmin: session.role === 'ADMIN' },
+      // The question is "may this person assign work to others and close a triage", which is
+      // the APPROVE cell of the matrix — not "is their role literally ADMIN". A BOT_MANAGER is
+      // privileged but must NOT close a triage; an OWNER must.
+      { id: session.accountId, name: actor?.name ?? null, isAdmin: sessionCan(session, 'APPROVE') },
       req
     )
 

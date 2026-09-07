@@ -62,16 +62,9 @@ async function loadFlows(now: number): Promise<Map<string, RuntimeFlow>> {
 
   const fallback = staticFlows()
 
-  let rows: {
-    key: string
-    name: string
-    editableLevel: string
-    activeVersionId: string | null
-    versions: { id: string; version: number; nodeConfig: unknown }[]
-  }[]
-
+  // Whole body guarded — see runtime-rules.ts for what a partially-guarded loader did to a turn.
   try {
-    rows = await prisma.botFlowDefinition.findMany({
+    const rows = await prisma.botFlowDefinition.findMany({
       where: { status: { not: 'ARCHIVED' } },
       select: {
         key: true,
@@ -88,35 +81,36 @@ async function loadFlows(now: number): Promise<Map<string, RuntimeFlow>> {
         },
       },
     })
+    if (!Array.isArray(rows)) return fallback
+
+    const flows = new Map(fallback)
+    for (const row of rows) {
+      const base = flows.get(row.key)
+      // A flow the registry no longer knows about: its config would configure nothing.
+      if (!base) continue
+
+      const published = row.versions?.[0]
+      // A config this build cannot read falls back to the code's values rather than being passed
+      // through half-understood.
+      const config = published ? readFlowSafeConfig(published.nodeConfig) : null
+
+      flows.set(row.key, {
+        ...base,
+        name: row.name,
+        editableLevel: row.editableLevel,
+        config: config ?? {},
+        activeVersion: published?.version ?? null,
+        source: config ? 'database' : 'code',
+      })
+    }
+
+    cache = { value: flows, expiresAt: now + FLOW_CACHE_TTL_MS }
+    return flows
   } catch (error) {
     // Not cached, so recovery is immediate once the database is back.
     console.error('runtime-flows: gagal membaca BotFlowDefinition, memakai registry statis', { error })
     return fallback
   }
-
-  const flows = new Map(fallback)
-  for (const row of rows) {
-    const base = flows.get(row.key)
-    // A flow the registry no longer knows about: its config would configure nothing.
-    if (!base) continue
-
-    const published = row.versions[0]
-    // A config this build cannot read falls back to the code's values rather than being passed
-    // through half-understood.
-    const config = published ? readFlowSafeConfig(published.nodeConfig) : null
-
-    flows.set(row.key, {
-      ...base,
-      name: row.name,
-      editableLevel: row.editableLevel,
-      config: config ?? {},
-      activeVersion: published?.version ?? null,
-      source: config ? 'database' : 'code',
-    })
-  }
-
-  cache = { value: flows, expiresAt: now + FLOW_CACHE_TTL_MS }
-  return flows
 }
 
 /** Every flow, merged. */

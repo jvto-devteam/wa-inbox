@@ -7,6 +7,8 @@ import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table'
+import { hasAdminPowers } from '@/lib/bot-control/permissions'
+import type { AccountRoleName } from '@/lib/auth/session'
 import { fetchJson } from '@/lib/fetch-json'
 
 type Settings = {
@@ -153,7 +155,7 @@ export default function ChatbotPage() {
             <Badge variant={settings.botAutoReplyAll ? 'success' : 'warning'}>
               Bot: {settings.botAutoReplyAll ? 'On (Semua Chat)' : 'Off (Manual per Chat)'}
             </Badge>
-            {role === 'ADMIN' && (
+            {hasAdminPowers(role) && (
               <Button
                 onClick={toggleBotMode}
                 variant={settings.botAutoReplyAll ? 'destructive' : 'default'}
@@ -174,7 +176,7 @@ export default function ChatbotPage() {
             <Badge variant={settings.skipBotForIndonesianNumbers ? 'warning' : 'success'}>
               Nomor Indonesia: {settings.skipBotForIndonesianNumbers ? 'Tidak dibalas bot' : 'Dibalas bot'}
             </Badge>
-            {role === 'ADMIN' && (
+            {hasAdminPowers(role) && (
               <Button
                 onClick={toggleIndonesiaFilter}
                 variant={settings.skipBotForIndonesianNumbers ? 'default' : 'destructive'}
@@ -218,7 +220,7 @@ export default function ChatbotPage() {
               type="time"
               value={workingHoursStart}
               onChange={(e) => setWorkingHoursStart(e.target.value)}
-              disabled={role !== 'ADMIN'}
+              disabled={!hasAdminPowers(role)}
             />
           </div>
           <div className="space-y-1">
@@ -230,7 +232,7 @@ export default function ChatbotPage() {
               type="time"
               value={workingHoursEnd}
               onChange={(e) => setWorkingHoursEnd(e.target.value)}
-              disabled={role !== 'ADMIN'}
+              disabled={!hasAdminPowers(role)}
             />
           </div>
         </div>
@@ -243,11 +245,11 @@ export default function ChatbotPage() {
             rows={3}
             value={offHoursAutoReply}
             onChange={(e) => setOffHoursAutoReply(e.target.value)}
-            disabled={role !== 'ADMIN'}
+            disabled={!hasAdminPowers(role)}
             placeholder="Contoh: Terima kasih sudah menghubungi kami, tim kami akan membalas pada jam kerja."
           />
         </div>
-        {role === 'ADMIN' && (
+        {hasAdminPowers(role) && (
           <Button onClick={saveWorkingHours} size="sm" disabled={savingHours}>
             {savingHours ? 'Menyimpan...' : 'Simpan'}
           </Button>
@@ -270,10 +272,10 @@ export default function ChatbotPage() {
             id="ollama-model"
             value={ollamaModel}
             onChange={(e) => setOllamaModel(e.target.value)}
-            disabled={role !== 'ADMIN'}
+            disabled={!hasAdminPowers(role)}
           />
         </div>
-        {role === 'ADMIN' && (
+        {hasAdminPowers(role) && (
           <Button onClick={saveModels} size="sm" disabled={savingModels || !ollamaModel.trim()}>
             {savingModels ? 'Menyimpan...' : 'Simpan'}
           </Button>
@@ -287,7 +289,7 @@ export default function ChatbotPage() {
           <span className="text-sm text-muted-foreground">
             Terakhir disinkron: {catalogSummary.syncedAt ? new Date(catalogSummary.syncedAt).toLocaleString('id-ID') : 'Belum pernah'}
           </span>
-          {role === 'ADMIN' && (
+          {hasAdminPowers(role) && (
             <Button onClick={syncCatalog} variant="outline" size="sm" disabled={syncing}>
               {syncing ? 'Menyinkron...' : 'Sinkron Sekarang'}
             </Button>

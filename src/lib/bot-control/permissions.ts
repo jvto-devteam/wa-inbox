@@ -11,15 +11,15 @@
  *
  * --- What is actually enforceable today, and what is not ---
  *
- * `AccountRole` in prisma/schema.prisma currently has two members: ADMIN and AGENT. OWNER,
- * BOT_MANAGER and VIEWER are named in the SDD but nobody can hold them yet, so the matrix
- * below is written in full and `roleFromAccount` maps today's two onto it.
+ * `AccountRole` in prisma/schema.prisma now has OWNER, ADMIN, BOT_MANAGER and AGENT. VIEWER is
+ * described by the SDD and nobody can hold it yet; its row is written anyway, so it is already
+ * correct when it lands.
  *
- * The consequence is worth stating rather than hiding: with only ADMIN, the person who writes
- * a rule draft is also the person who approves it. The draft → review → approve workflow is
- * real and audited, but the SEPARATION OF DUTIES it exists to create does not exist until
- * BOT_MANAGER does. Adding the enum members is what turns this file from documentation into
- * enforcement; nothing else here has to change when that happens.
+ * Phase H is where this file stopped being documentation and became enforcement. Until then
+ * every privileged role collapsed onto ADMIN, which meant the person who wrote a draft was
+ * also the person who approved it — the workflow was real and audited, but the SEPARATION OF
+ * DUTIES it exists to create was not. A BOT_MANAGER can now write and send to review and go no
+ * further; an OWNER, and only an OWNER, can publish over a failing test suite.
  */
 import type { SessionPayload } from '@/lib/auth/session'
 
@@ -66,15 +66,22 @@ const MATRIX: Record<BotControlAction, readonly BotControlRole[]> = {
 /**
  * Maps a stored account role onto the matrix.
  *
- * Written as an exhaustive switch on the CURRENT enum so that adding OWNER, BOT_MANAGER or
- * VIEWER to `AccountRole` makes TypeScript fail here — a loud compile error at the one place
- * that has to be updated, rather than a silent fall-through that quietly denies a new role
- * everything or grants it too much.
+ * Still written as an exhaustive switch: adding a further member to `AccountRole` must fail
+ * compilation here rather than fall through and silently deny the new role everything, or
+ * grant it too much. That is exactly what happened when OWNER and BOT_MANAGER were added in
+ * Phase H — the compiler pointed at this function and at nothing else.
+ *
+ * VIEWER is in the matrix but not in the enum: it is described by the SDD and nobody can hold
+ * it yet. Listing it costs nothing and means the row is already written when it lands.
  */
 export function roleFromAccount(role: SessionPayload['role']): BotControlRole {
   switch (role) {
+    case 'OWNER':
+      return 'OWNER'
     case 'ADMIN':
       return 'ADMIN'
+    case 'BOT_MANAGER':
+      return 'BOT_MANAGER'
     case 'AGENT':
       return 'AGENT'
   }
@@ -93,4 +100,32 @@ export function sessionCan(session: SessionPayload | null, action: BotControlAct
 /** Roles allowed to perform an action — used by tests and by error copy. */
 export function rolesAllowedTo(action: BotControlAction): readonly BotControlRole[] {
   return MATRIX[action]
+}
+
+/**
+ * The matrix check, for callers holding a role name rather than a session.
+ *
+ * Client components need this: they know the role from `/api/session` and have no
+ * `SessionPayload`. Asking them to reconstruct one, or to fall back to `hasAdminPowers`, is how
+ * a BOT_MANAGER ends up looking at a page with no edit controls on it even though the API would
+ * accept every one of their requests.
+ */
+export function roleNameCan(role: SessionPayload['role'] | null | undefined, action: BotControlAction): boolean {
+  if (!role) return false
+  return roleCan(roleFromAccount(role), action)
+}
+
+/**
+ * Whether a role carries administrative authority over the whole app.
+ *
+ * Exists because `role === 'ADMIN'` was, until Phase H, a correct spelling of that question and
+ * is now a WRONG one: an OWNER outranks an ADMIN everywhere in the matrix, so a literal
+ * equality check would lock the most privileged account out of settings, account management and
+ * every admin-only route. Every such site reads this instead.
+ *
+ * Deliberately not derived from the matrix: the matrix is about Bot Control, and this answers a
+ * broader question about the rest of the app, where there is no matrix to consult.
+ */
+export function hasAdminPowers(role: SessionPayload['role'] | null | undefined): boolean {
+  return role === 'ADMIN' || role === 'OWNER'
 }

@@ -2,7 +2,15 @@
  * @vitest-environment node
  */
 import { describe, it, expect } from 'vitest'
-import { roleCan, rolesAllowedTo, roleFromAccount, sessionCan, BOT_CONTROL_ACTIONS } from './permissions'
+import {
+  roleCan,
+  rolesAllowedTo,
+  roleFromAccount,
+  roleNameCan,
+  hasAdminPowers,
+  sessionCan,
+  BOT_CONTROL_ACTIONS,
+} from './permissions'
 
 describe('permission matrix', () => {
   it('covers every action', () => {
@@ -42,8 +50,12 @@ describe('permission matrix', () => {
     }
   })
 
-  it('maps the two roles an account can actually hold today', () => {
+  it('maps every role an account can hold', () => {
+    // Phase H added OWNER and BOT_MANAGER to the enum; the exhaustive switch is what made the
+    // compiler point at that mapping and at nothing else.
+    expect(roleFromAccount('OWNER')).toBe('OWNER')
     expect(roleFromAccount('ADMIN')).toBe('ADMIN')
+    expect(roleFromAccount('BOT_MANAGER')).toBe('BOT_MANAGER')
     expect(roleFromAccount('AGENT')).toBe('AGENT')
   })
 
@@ -58,5 +70,54 @@ describe('permission matrix', () => {
     const agent = { accountId: 'b', role: 'AGENT' as const, tokenVersion: 0 }
     expect(sessionCan(admin, 'EDIT_RULE_DRAFT')).toBe(true)
     expect(sessionCan(agent, 'EDIT_RULE_DRAFT')).toBe(false)
+  })
+
+  it('lets a BOT_MANAGER write every kind of draft and approve none of them', () => {
+    // The separation of duties the review step exists to create, now actually enforceable.
+    for (const action of ['EDIT_RULE_DRAFT', 'EDIT_KNOWLEDGE_DRAFT', 'EDIT_FLOW_CONFIG'] as const) {
+      expect(roleCan('BOT_MANAGER', action), action).toBe(true)
+    }
+    for (const action of ['APPROVE', 'PUBLISH', 'ROLLBACK', 'OVERRIDE_FAILED_TEST'] as const) {
+      expect(roleCan('BOT_MANAGER', action), action).toBe(false)
+    }
+  })
+
+  it('gives OWNER everything ADMIN has, plus the test override', () => {
+    for (const action of BOT_CONTROL_ACTIONS) {
+      if (roleCan('ADMIN', action)) expect(roleCan('OWNER', action), action).toBe(true)
+    }
+    expect(roleCan('OWNER', 'OVERRIDE_FAILED_TEST')).toBe(true)
+    expect(roleCan('ADMIN', 'OVERRIDE_FAILED_TEST')).toBe(false)
+  })
+})
+
+describe('hasAdminPowers', () => {
+  it('is true for OWNER as well as ADMIN', () => {
+    // `role === 'ADMIN'` was a correct spelling of this question until Phase H and is now a
+    // wrong one: an OWNER outranks an ADMIN everywhere, so a literal check would lock the most
+    // privileged account out of settings, account management and every admin-only route.
+    expect(hasAdminPowers('OWNER')).toBe(true)
+    expect(hasAdminPowers('ADMIN')).toBe(true)
+  })
+
+  it('is false for the roles that do not administer the app', () => {
+    expect(hasAdminPowers('BOT_MANAGER')).toBe(false)
+    expect(hasAdminPowers('AGENT')).toBe(false)
+    expect(hasAdminPowers(null)).toBe(false)
+    expect(hasAdminPowers(undefined)).toBe(false)
+  })
+})
+
+describe('roleNameCan', () => {
+  it('resolves a bare role name through the matrix', () => {
+    // Client components know the role from /api/session and hold no SessionPayload; without
+    // this they fall back to admin-equality, and a BOT_MANAGER sees a page with no controls.
+    expect(roleNameCan('BOT_MANAGER', 'EDIT_RULE_DRAFT')).toBe(true)
+    expect(roleNameCan('BOT_MANAGER', 'APPROVE')).toBe(false)
+  })
+
+  it('permits nothing for a role that is not known yet', () => {
+    expect(roleNameCan(null, 'VIEW_BOT_CONTROL')).toBe(false)
+    expect(roleNameCan(undefined, 'EDIT_RULE_DRAFT')).toBe(false)
   })
 })

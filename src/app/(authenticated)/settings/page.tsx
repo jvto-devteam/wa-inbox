@@ -6,6 +6,8 @@ import { Badge } from '@/components/ui/badge'
 import { Card } from '@/components/ui/card'
 import { UserManagementSection } from '@/components/settings/UserManagementSection'
 import { WebhookCredentialsPanel } from '@/components/settings/WebhookCredentialsPanel'
+import { hasAdminPowers } from '@/lib/bot-control/permissions'
+import type { AccountRoleName } from '@/lib/auth/session'
 import { fetchJson } from '@/lib/fetch-json'
 
 type Settings = {
@@ -61,7 +63,7 @@ export default function SettingsPage() {
           value={settings.defaultChannel}
           onChange={(e) => updateDefaultChannel(e.target.value as 'OFFICIAL' | 'UNOFFICIAL')}
           className="w-auto"
-          disabled={role !== 'ADMIN'}
+          disabled={!hasAdminPowers(role)}
         >
           <option value="OFFICIAL">Official</option>
           <option value="UNOFFICIAL">Unofficial</option>
@@ -82,7 +84,7 @@ export default function SettingsPage() {
             not from here (see src/lib/coexist/client.ts). */}
       </Card>
 
-      {role === 'ADMIN' && (
+      {hasAdminPowers(role) && (
         <Card className="space-y-1 p-4">
           <h2 className="font-medium text-navy">Biaya percakapan</h2>
           <p className="text-sm text-muted-foreground">
@@ -94,7 +96,7 @@ export default function SettingsPage() {
         </Card>
       )}
 
-      {role === 'ADMIN' && (
+      {hasAdminPowers(role) && (
         <Card className="space-y-1 p-4">
           <h2 className="font-medium text-navy">Profil bisnis WhatsApp</h2>
           <p className="text-sm text-muted-foreground">
@@ -106,8 +108,8 @@ export default function SettingsPage() {
         </Card>
       )}
 
-      {role === 'ADMIN' && <UserManagementSection />}
-      {role === 'ADMIN' && <WebhookCredentialsPanel />}
+      {hasAdminPowers(role) && <UserManagementSection />}
+      {hasAdminPowers(role) && <WebhookCredentialsPanel />}
     </main>
   )
 }

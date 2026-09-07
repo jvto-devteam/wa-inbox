@@ -32,6 +32,8 @@ const store = {
   flowDefinitions: [] as Row[],
   // Phase F put a test gate in front of publish; the store has to answer it.
   testRuns: [{ id: 'run_pass', status: 'PASSED', total: 3, passed: 3, failed: 0 }] as Row[],
+  // Phase H put the channel policy in the same publish transaction and the same snapshot.
+  channelPolicy: null as Row | null,
 }
 
 function matches(row: Row, where: Row | undefined): boolean {
@@ -126,6 +128,13 @@ const db = {
       const row = store.flowDefinitions.find((r) => r.id === where.id)
       if (row) Object.assign(row, normalise(data))
       return row ?? {}
+    },
+  },
+  channelPolicySetting: {
+    findUnique: async () => store.channelPolicy,
+    update: async ({ data }: { data: Row }) => {
+      if (store.channelPolicy) Object.assign(store.channelPolicy, normalise(data))
+      return store.channelPolicy ?? {}
     },
   },
   botTestRun: {

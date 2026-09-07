@@ -9,6 +9,8 @@ import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Modal } from '@/components/ui/modal'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { roleNameCan } from '@/lib/bot-control/permissions'
+import type { AccountRoleName } from '@/lib/auth/session'
 import { fetchJson } from '@/lib/fetch-json'
 
 type ReleaseRow = {
@@ -33,7 +35,7 @@ type Preview = {
   requiresTestRun: boolean
   blockingIssues: string[]
 }
-type Session = { role: 'ADMIN' | 'AGENT' }
+type Session = { role: AccountRoleName }
 
 const STATUS_VARIANT: Record<string, 'success' | 'muted' | 'warning'> = {
   PUBLISHED: 'success',
@@ -168,7 +170,7 @@ export default function ReleasesPage() {
         </p>
       </div>
 
-      {role === 'ADMIN' && (
+      {roleNameCan(role, 'PUBLISH') && (
         <Card className="space-y-3 p-4">
           <div className="flex items-center justify-between gap-2">
             <h2 className="text-sm font-semibold text-navy">Publish release baru</h2>
@@ -293,7 +295,7 @@ export default function ReleasesPage() {
                     <TableCell>
                       {/* Rolling back to what is already live changes nothing, so the button is
                           not offered for it -- the API refuses it too. */}
-                      {role === 'ADMIN' && row.status !== 'PUBLISHED' && (
+                      {roleNameCan(role, 'ROLLBACK') && row.status !== 'PUBLISHED' && (
                         <Button variant="outline" size="sm" onClick={() => setRollbackTarget(row)}>
                           Rollback
                         </Button>

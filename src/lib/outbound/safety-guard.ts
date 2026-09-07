@@ -34,6 +34,7 @@
  *   pathology itself.
  */
 import { prisma } from '@/lib/db'
+import { getSafetyConfig } from '@/lib/bot-control/runtime-channel-policy'
 
 export type OutboundPurpose = 'ONE_TO_ONE' | 'BOT_REPLY' | 'CAMPAIGN'
 
@@ -62,18 +63,54 @@ export type SafetyCheckResult = {
   blockingReason?: string
 }
 
-/** How far back an identical message counts as a duplicate. */
+/**
+ * The code's own numbers. Since Phase H these are the DEFAULTS, not the values: a published
+ * `ChannelPolicySetting.safetyConfig` overrides each of them, and this is what the guard uses
+ * when no policy is published or the policy row cannot be read.
+ *
+ * They are still exported, and still the fallback, deliberately. A guard whose thresholds exist
+ * only in a database row stops working the moment that row is unreadable — and "stops working"
+ * here means the duplicate check and the campaign rate limit silently pass everything.
+ */
 export const DUPLICATE_WINDOW_MS = 60_000
-
-/** Campaign sends allowed per rolling minute, across the whole account. */
 export const CAMPAIGN_RATE_PER_MINUTE = 20
-
-/** Failed jobs in the recent window past which campaigns are paused. */
 export const PROVIDER_FAILURE_THRESHOLD = 5
 export const PROVIDER_FAILURE_WINDOW_MS = 5 * 60_000
 
+/**
+ * Reads the live thresholds, falling back to the constants above.
+ *
+ * Never throws: this is inside the send path, and a configuration read that could stop a
+ * customer's message from going out would be a worse failure than running on the defaults.
+ */
+async function thresholds(): Promise<{
+  duplicateWindowMs: number
+  campaignRatePerMinute: number
+  providerFailureThreshold: number
+  providerFailureWindowMs: number
+}> {
+  try {
+    const config = await getSafetyConfig()
+    return {
+      duplicateWindowMs: config.duplicateWindowMs,
+      campaignRatePerMinute: config.campaignRatePerMinute,
+      providerFailureThreshold: config.providerFailureThreshold,
+      providerFailureWindowMs: config.providerFailureWindowMs,
+    }
+  } catch (error) {
+    console.error('safety-guard: gagal membaca safetyConfig, memakai default kode', { error })
+    return {
+      duplicateWindowMs: DUPLICATE_WINDOW_MS,
+      campaignRatePerMinute: CAMPAIGN_RATE_PER_MINUTE,
+      providerFailureThreshold: PROVIDER_FAILURE_THRESHOLD,
+      providerFailureWindowMs: PROVIDER_FAILURE_WINDOW_MS,
+    }
+  }
+}
+
 export async function checkOutboundSafety(params: SafetyCheckParams): Promise<SafetyCheckResult> {
   const warnings: string[] = []
+  const limits = await thresholds()
 
   // Every check is wrapped: a guard that throws would take down the send it was supposed to
   // protect. On an internal failure it fails OPEN, with a warning, because the alternative —
@@ -109,7 +146,7 @@ export async function checkOutboundSafety(params: SafetyCheckParams): Promise<Sa
           conversationId: params.conversationId,
           direction: 'OUTBOUND',
           content: params.messageText,
-          createdAt: { gte: new Date(Date.now() - DUPLICATE_WINDOW_MS) },
+          createdAt: { gte: new Date(Date.now() - limits.duplicateWindowMs) },
           ...(params.currentMessageId ? { id: { not: params.currentMessageId } } : {}),
         },
         select: { id: true },
@@ -126,18 +163,18 @@ export async function checkOutboundSafety(params: SafetyCheckParams): Promise<Sa
       const recentCampaignSends = await prisma.outboundJob.count({
         where: { createdAt: { gte: new Date(Date.now() - 60_000) } },
       })
-      if (recentCampaignSends >= CAMPAIGN_RATE_PER_MINUTE) {
+      if (recentCampaignSends >= limits.campaignRatePerMinute) {
         return {
           allowed: false,
           warnings,
-          blockingReason: `Batas ${CAMPAIGN_RATE_PER_MINUTE} pengiriman per menit tercapai — campaign dijeda sementara.`,
+          blockingReason: `Batas ${limits.campaignRatePerMinute} pengiriman per menit tercapai — campaign dijeda sementara.`,
         }
       }
 
       const recentFailures = await prisma.outboundJob.count({
-        where: { status: 'FAILED', updatedAt: { gte: new Date(Date.now() - PROVIDER_FAILURE_WINDOW_MS) } },
+        where: { status: 'FAILED', updatedAt: { gte: new Date(Date.now() - limits.providerFailureWindowMs) } },
       })
-      if (recentFailures >= PROVIDER_FAILURE_THRESHOLD) {
+      if (recentFailures >= limits.providerFailureThreshold) {
         return {
           allowed: false,
           warnings,

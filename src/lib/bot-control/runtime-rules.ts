@@ -97,37 +97,41 @@ export async function getRuntimeRuleConfig(now: number = Date.now()): Promise<Ru
 
   const fallback = staticConfig()
 
-  let published: { key: string; enabled: boolean; config: unknown }[]
+  // The WHOLE body is guarded, not just the query. This module's contract is "never throws",
+  // and a try that covers only the await leaves every line after it able to break a bot turn —
+  // which is exactly what happened when `findMany` returned something other than an array and
+  // `.length` threw straight through the decision path.
   try {
-    published = await prisma.botRuleSetting.findMany({
+    const published = await prisma.botRuleSetting.findMany({
       where: { status: 'PUBLISHED' },
       select: { key: true, enabled: true, config: true },
     })
+
+    // An empty table is the un-seeded state, not "every rule is off". Treating it as data would
+    // silently drop every rule the moment this shipped ahead of its seed. A non-array is the
+    // same situation seen through a broken client: fall back rather than guess.
+    if (!Array.isArray(published) || published.length === 0) {
+      cache = { value: fallback, expiresAt: now + RULE_CACHE_TTL_MS }
+      return fallback
+    }
+
+    const rules = { ...fallback.rules }
+    for (const row of published) {
+      const base = rules[row.key]
+      if (!base) continue
+      const config = asConfigRecord(row.config)
+      rules[row.key] = { ...base, enabled: row.enabled, config: config ?? base.config }
+    }
+
+    const value: RuntimeRuleConfig = { rules, source: 'database', loadedAt: now }
+    cache = { value, expiresAt: now + RULE_CACHE_TTL_MS }
+    return value
   } catch (error) {
     // Logged, not thrown, and NOT cached: a database blip must not pin the process to static
     // config for the next thirty seconds after the database comes back.
     console.error('getRuntimeRuleConfig: gagal membaca BotRuleSetting, memakai registry statis', { error })
     return fallback
   }
-
-  // An empty table is the un-seeded state, not "every rule is off". Treating it as data would
-  // silently drop every rule the moment this shipped ahead of its seed.
-  if (published.length === 0) {
-    cache = { value: fallback, expiresAt: now + RULE_CACHE_TTL_MS }
-    return fallback
-  }
-
-  const rules = { ...fallback.rules }
-  for (const row of published) {
-    const base = rules[row.key]
-    if (!base) continue
-    const config = asConfigRecord(row.config)
-    rules[row.key] = { ...base, enabled: row.enabled, config: config ?? base.config }
-  }
-
-  const value: RuntimeRuleConfig = { rules, source: 'database', loadedAt: now }
-  cache = { value, expiresAt: now + RULE_CACHE_TTL_MS }
-  return value
 }
 
 /** One rule, or null when the key is not in the registry. */

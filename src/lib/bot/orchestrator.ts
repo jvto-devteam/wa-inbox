@@ -154,6 +154,10 @@ import {
   GENERAL_FAQ_FALLBACK,
 } from './knowledge'
 import { callLLM, type LLMOptions } from './llm'
+// Phase H integration pass: where configuration published through Bot Control reaches the
+// decision path. Every function there falls back to what this file did before, so an
+// un-seeded or unreadable database produces exactly the previous behaviour.
+import { shouldRunEscalationClassifier, fallbackReplyText, managedFactsFor } from './runtime-integration'
 import { verifyReply, buildVerificationRetryInstruction, extractRupiahAmounts, extractUrls, isDerivableAmount } from './reply-verifier'
 import { loadCatalog } from './catalog'
 import { checkDeploymentGate } from './deployment-gate'
@@ -909,7 +913,7 @@ async function runNoDestinationBranch(
   // practice, an operator-side sync problem, not this customer's problem to escalate.
   if (options.length === 0) {
     trace.push('Destinasi tidak diketahui, katalog kosong', 'Tidak ada destinasi terdaftar di katalog untuk ditawarkan -- tetap dijawab dengan pesan cadangan, bot tetap aktif.')
-    return { mode: 'clarify', reply: TECHNICAL_HICCUP_REPLY, steps: trace.steps }
+    return { mode: 'clarify', reply: await fallbackReplyText(TECHNICAL_HICCUP_REPLY), steps: trace.steps }
   }
   trace.push(
     'Destinasi tidak diketahui',
@@ -996,8 +1000,15 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
     // failure is re-thrown immediately afterwards so every non-escalating path keeps exactly the
     // technical-hiccup behavior it had before these two were ever paired.
     trace.push('Mencari data booking', 'Mengecek data booking dan sinyal eskalasi tambahan secara paralel.')
+    // `bot.handoff_on_human_request`, read from the published rule config. ONLY the LLM layer is
+    // gated: the explicit keyword gate above already ran unconditionally and already won, which
+    // is exactly why rule-registry.ts marks this rule editable. A customer asking for a human in
+    // plain words still reaches one no matter what anyone publishes.
+    const escalationClassifierEnabled = await shouldRunEscalationClassifier()
     const [additionalEscalation, bookingResult] = await Promise.all([
-      detectsAdditionalEscalationSignal(inboundText, settings.ollamaModel),
+      escalationClassifierEnabled
+        ? detectsAdditionalEscalationSignal(inboundText, settings.ollamaModel)
+        : Promise.resolve(false),
       ensureFreshBookingData(conversation).then(
         (data) => ({ ok: true as const, data }),
         (error: unknown) => ({ ok: false as const, error })
@@ -1007,7 +1018,12 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
       trace.push('Eskalasi terdeteksi (LLM)', 'Model LLM mendeteksi sinyal komplain/permintaan manusia/kemitraan B2B yang tidak tertangkap kata kunci -- diserahkan ke agen.')
       return { mode: 'handoff', reason: 'Sinyal eskalasi terdeteksi oleh model LLM', steps: trace.steps }
     }
-    trace.push('Tidak ada eskalasi', 'Tidak ditemukan kata kunci maupun sinyal eskalasi lain pada pesan ini.')
+    trace.push(
+      'Tidak ada eskalasi',
+      escalationClassifierEnabled
+        ? 'Tidak ditemukan kata kunci maupun sinyal eskalasi lain pada pesan ini.'
+        : 'Tidak ditemukan kata kunci eskalasi. Lapisan klasifikasi LLM sedang dinonaktifkan lewat Bot Control.'
+    )
     // Only the escalation verdict above is immune to a booking failure; from here on it is an
     // ordinary technical failure again, handled by the outer catch exactly as it always was.
     // Re-thrown below the trace push so a failed lookup still leaves the same trace behind it
@@ -1346,7 +1362,8 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
       // more handoff on a content gap") that no longer disables the bot either; it stays
       // active with a generic apology instead.
       trace.push('Paket ditolak', `${routeResult.reason} -- tetap dijawab dengan pesan cadangan, bot tetap aktif.`)
-      return { mode: 'clarify', reply: TECHNICAL_HICCUP_REPLY, steps: trace.steps }
+      // Wording from the flow's published safe config when there is one; the constant otherwise.
+      return { mode: 'clarify', reply: await fallbackReplyText(TECHNICAL_HICCUP_REPLY), steps: trace.steps }
     }
     trace.push(
       'Paket valid',
@@ -1413,10 +1430,31 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
     // (see knowledge.ts's header) -- resolves real facts/links/disclosures for all 14 real
     // topics from general-modules.json, not just the 4 CatalogPackage itself can answer.
     const knowledge = resolveKnowledgeForTopic(resolverTopic, inboundText, destination, keywordModuleIds)
+
+    // Managed knowledge is ADDED to what the catalog resolved, never substituted for it. The
+    // catalog is released data; this is what an operator wrote between releases, and letting it
+    // replace anything would let a web form silently contradict the released packages with no
+    // way to see which one answered. Only entries whose question or tags share a word with this
+    // message are folded in — see managedFactsFor for why a crude match is the right one here.
+    const managed = await managedFactsFor(inboundText)
+    if (managed.lines.length > 0) {
+      knowledge.factualLines.push(...managed.lines)
+      trace.push(
+        'Knowledge terkelola dipakai',
+        `${managed.refs.length} sumber knowledge yang dikelola operator ikut menjadi dasar jawaban: ${managed.refs
+          .map((ref) => `${ref.title} (v${ref.version})`)
+          .join(', ')}.`
+      )
+    }
+
     // Task 11 (KnowledgeGapLog): the catalog had nothing for this classified topic -- one
     // of the two signals that need no cooperation from the model (the other is Task 10's
     // verification-failed branch, recorded from composeVerifiedReply). 'greeting' resolving
     // to nothing is correct, not a gap -- there was no question to answer.
+    //
+    // Checked AFTER managed knowledge is folded in: a gap an operator has already closed by
+    // hand is no longer a gap, and re-filing it would keep sending them back to a question they
+    // already answered.
     if (knowledge.factualLines.length === 0 && resolverTopic !== 'greeting') {
       void recordKnowledgeGap(conversationId, resolverTopic, 'no_facts_resolved', inboundText)
     }

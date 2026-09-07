@@ -34,6 +34,8 @@ import { invalidateManagedKnowledgeCache } from '@/lib/bot/managed-knowledge'
 import { invalidateRuntimeFlowCache } from '@/lib/bot-control/runtime-flows'
 import { getExistingFlow } from '@/lib/bot-control/existing-flow-registry'
 import { roleCan, type BotControlRole } from '@/lib/bot-control/permissions'
+import { invalidateChannelPolicyCache } from '@/lib/bot-control/runtime-channel-policy'
+import { policyWarnings, readChannelPolicy, DEFAULT_CHANNEL_POLICY_KEY } from '@/lib/bot-control/channel-policy-config'
 
 /**
  * 2, not 1. Version 1 recorded only WHICH rules were published, never their values — which
@@ -131,6 +133,17 @@ export async function createReleaseSnapshot(
     orderBy: [{ flowId: 'asc' }],
   })
 
+  const policyRow = await client.channelPolicySetting.findUnique({ where: { key: DEFAULT_CHANNEL_POLICY_KEY } })
+  const storedPolicy = policyRow
+    ? readChannelPolicy({
+        defaultOutbound: policyRow.defaultOutbound,
+        officialMode: policyRow.officialMode,
+        unofficialMode: policyRow.unofficialMode,
+        capabilityRules: policyRow.capabilityRules,
+        safetyConfig: policyRow.safetyConfig,
+      })
+    : null
+
   const snapshot: ReleaseSnapshot = {
     schemaVersion: RELEASE_SNAPSHOT_SCHEMA_VERSION,
     capturedAt: new Date().toISOString(),
@@ -158,7 +171,9 @@ export async function createReleaseSnapshot(
     flows: storedFlows
       .filter((row) => getExistingFlow(row.flow.key) !== null)
       .map((row) => ({ id: row.id, key: row.flow.key, name: row.flow.name, version: row.version })),
-    channelPolicy: null,
+    // The policy VALUES, not a pointer: like a rule, it is configuration held in one row, so a
+    // snapshot that only named it would leave rollback with nothing to put back.
+    channelPolicy: storedPolicy,
     testSummary,
   }
   return sanitizeTrace(snapshot) as unknown as ReleaseSnapshot
@@ -202,7 +217,7 @@ export type ReleasePreview = {
  * further to check", not "everything checked out".
  */
 export async function previewRelease(): Promise<ReleasePreview> {
-  const [approvedRules, approvedKnowledge, unreviewedKnowledge, approvedFlows] = await Promise.all([
+  const [approvedRules, approvedKnowledge, unreviewedKnowledge, approvedFlows, policyRow] = await Promise.all([
     prisma.botRuleSetting.findMany({ where: { status: 'APPROVED' }, select: { key: true, name: true } }),
     prisma.knowledgeRevision.findMany({
       where: { status: 'APPROVED', knowledgeSource: { status: { not: 'ARCHIVED' } } },
@@ -219,7 +234,14 @@ export async function previewRelease(): Promise<ReleasePreview> {
       where: { status: 'APPROVED', flow: { status: { not: 'ARCHIVED' } } },
       select: { id: true, version: true, flow: { select: { key: true, name: true, editableLevel: true } } },
     }),
+    prisma.channelPolicySetting.findUnique({ where: { key: DEFAULT_CHANNEL_POLICY_KEY } }),
   ])
+
+  // A policy is only publishable once approved, like everything else. Its warnings are surfaced
+  // here rather than at publish because they are the point of the preview: an operator about to
+  // route every reply through Meta should read that sentence BEFORE pressing the button.
+  const policyApproved = policyRow?.status === 'APPROVED'
+  const policyDraft = policyApproved ? readChannelPolicy(policyRow?.draftConfig) : null
 
   // SDD §11 blocking condition 2. This is not hypothetical: a deploy that flips a rule to
   // `editable: false` in the registry can strand an already-approved draft, and publishing it
@@ -253,12 +275,17 @@ export async function previewRelease(): Promise<ReleasePreview> {
     blockingIssues.push('Belum ada kasus uji aktif — test run akan lulus tanpa memeriksa apa pun.')
   }
 
+  if (policyApproved && !policyDraft) {
+    blockingIssues.push('Draft kebijakan channel tidak bisa dibaca oleh versi aplikasi ini — tolak dan buat ulang.')
+  }
+  if (policyDraft) blockingIssues.push(...policyWarnings(policyDraft))
+
   return {
     changes: {
       rules: approvedRules.length,
       knowledge: approvedKnowledge.length,
       flows: approvedFlows.length,
-      channelPolicy: 0,
+      channelPolicy: policyDraft ? 1 : 0,
     },
     requiresTestRun: true,
     blockingIssues,
@@ -553,6 +580,7 @@ export async function publishRelease(params: PublishReleaseParams): Promise<Publ
       await publishApprovedRules(tx, release.id, actor, params.req)
       await publishApprovedKnowledge(tx, release.id, actor, params.req)
       await publishApprovedFlows(tx, release.id, actor, params.req)
+      await publishApprovedChannelPolicy(tx, release.id, actor, params.req)
 
       const snapshot = await createReleaseSnapshot(await readTestSummary(gate.testRunId), tx)
       await tx.botRelease.update({
@@ -614,6 +642,7 @@ export async function publishRelease(params: PublishReleaseParams): Promise<Publ
     invalidateRuntimeRuleCache()
     invalidateManagedKnowledgeCache()
     invalidateRuntimeFlowCache()
+    invalidateChannelPolicyCache()
     return release
   } catch (error) {
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
@@ -684,6 +713,65 @@ async function publishApprovedFlows(
   }
 
   return approved.length
+}
+
+/**
+ * Moves an APPROVED channel policy into effect, inside the transaction.
+ *
+ * The draft columns are cleared as the values move, for the same reason they are on a rule: a
+ * row that is published AND still carries an identical draft reads as unfinished work.
+ */
+async function publishApprovedChannelPolicy(
+  tx: Prisma.TransactionClient,
+  releaseId: string,
+  actor: { id?: string | null; name?: string | null },
+  req?: Request | null
+): Promise<number> {
+  const row = await tx.channelPolicySetting.findUnique({ where: { key: DEFAULT_CHANNEL_POLICY_KEY } })
+  if (!row || row.status !== 'APPROVED') return 0
+
+  const draft = readChannelPolicy(row.draftConfig)
+  // Re-checked here and not only in preview: preview and publish are separate requests, and a
+  // shape this build cannot read must never become the live routing policy.
+  if (!draft) {
+    throw new ReleaseBlockedError(['Draft kebijakan channel tidak bisa dibaca — publish dibatalkan.'])
+  }
+
+  const updated = await tx.channelPolicySetting.update({
+    where: { key: DEFAULT_CHANNEL_POLICY_KEY },
+    data: {
+      status: 'PUBLISHED',
+      defaultOutbound: draft.defaultOutbound,
+      officialMode: draft.officialMode,
+      unofficialMode: draft.unofficialMode,
+      capabilityRules: draft.capabilityRules as Prisma.InputJsonValue,
+      safetyConfig: draft.safetyConfig as Prisma.InputJsonValue,
+      publishedBy: actor.id ?? null,
+      publishedAt: new Date(),
+      releaseId,
+      draftConfig: Prisma.DbNull,
+      draftUpdatedAt: null,
+      draftUpdatedBy: null,
+    },
+  })
+
+  await writeBotAuditLog(
+    {
+      action: 'PUBLISH',
+      entityType: 'CHANNEL_POLICY',
+      entityId: row.id,
+      entityKey: row.key,
+      actorId: actor.id,
+      actorName: actor.name,
+      before: { defaultOutbound: row.defaultOutbound, status: row.status },
+      after: { defaultOutbound: updated.defaultOutbound, status: updated.status },
+      releaseId,
+      req,
+    },
+    tx
+  )
+
+  return 1
 }
 
 /**
@@ -822,6 +910,46 @@ async function restoreSnapshot(
       tx
     )
   }
+
+  // The policy is configuration, so the snapshot carries its VALUES and the restore writes them
+  // back. A v1 snapshot has `channelPolicy: null` and is simply skipped — there is nothing to
+  // put back, which is honest rather than a silent no-op on a value that was never captured.
+  const snapshotPolicy = readChannelPolicy(snapshot.channelPolicy)
+  if (snapshotPolicy) {
+    const current = await tx.channelPolicySetting.findUnique({ where: { key: DEFAULT_CHANNEL_POLICY_KEY } })
+    if (current) {
+      await tx.channelPolicySetting.update({
+        where: { key: DEFAULT_CHANNEL_POLICY_KEY },
+        data: {
+          status: 'PUBLISHED',
+          defaultOutbound: snapshotPolicy.defaultOutbound,
+          officialMode: snapshotPolicy.officialMode,
+          unofficialMode: snapshotPolicy.unofficialMode,
+          capabilityRules: snapshotPolicy.capabilityRules as Prisma.InputJsonValue,
+          safetyConfig: snapshotPolicy.safetyConfig as Prisma.InputJsonValue,
+          releaseId,
+          publishedBy: actor.id ?? null,
+          publishedAt: new Date(),
+        },
+      })
+
+      await writeBotAuditLog(
+        {
+          action: 'ROLLBACK',
+          entityType: 'CHANNEL_POLICY',
+          entityId: current.id,
+          entityKey: current.key,
+          actorId: actor.id,
+          actorName: actor.name,
+          before: { defaultOutbound: current.defaultOutbound },
+          after: { defaultOutbound: snapshotPolicy.defaultOutbound },
+          releaseId,
+          req,
+        },
+        tx
+      )
+    }
+  }
 }
 
 /**
@@ -942,6 +1070,7 @@ export async function rollbackToRelease(params: RollbackParams): Promise<Publish
     invalidateRuntimeRuleCache()
     invalidateManagedKnowledgeCache()
     invalidateRuntimeFlowCache()
+    invalidateChannelPolicyCache()
     return release
   } catch (error) {
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {

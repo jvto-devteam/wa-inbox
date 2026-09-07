@@ -5,7 +5,15 @@ import { SignJWT, jwtVerify } from 'jose'
 // the column (password reset, role change) instantly invalidates every token
 // already in the wild. The comparison itself happens in src/middleware.ts,
 // which is the one place every request passes through.
-export type SessionPayload = { accountId: string; role: 'ADMIN' | 'AGENT'; tokenVersion: number }
+/**
+ * Roles a session can carry. Mirrors `AccountRole` in prisma/schema.prisma.
+ *
+ * Kept as a union rather than importing the Prisma enum so this module stays importable from
+ * src/middleware.ts, which runs before any database client exists.
+ */
+export type AccountRoleName = 'OWNER' | 'ADMIN' | 'BOT_MANAGER' | 'AGENT'
+
+export type SessionPayload = { accountId: string; role: AccountRoleName; tokenVersion: number }
 
 function secretKey() {
   const secret = process.env.SESSION_SECRET
@@ -34,7 +42,7 @@ export async function verifySessionToken(token: string): Promise<SessionPayload 
     if (typeof payload.tokenVersion !== 'number') return null
     return {
       accountId: payload.accountId as string,
-      role: payload.role as 'ADMIN' | 'AGENT',
+      role: payload.role as AccountRoleName,
       tokenVersion: payload.tokenVersion,
     }
   } catch {

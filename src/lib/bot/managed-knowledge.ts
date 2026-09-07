@@ -68,17 +68,10 @@ const EMPTY: ManagedKnowledge = { entries: [], available: true, loadedAt: 0 }
 export async function loadPublishedManagedKnowledge(now: number = Date.now()): Promise<ManagedKnowledge> {
   if (cache && cache.expiresAt > now) return cache.value
 
-  let rows: {
-    id: string
-    knowledgeSourceId: string
-    version: number
-    title: string
-    body: unknown
-    knowledgeSource: { key: string; status: string }
-  }[]
-
+  // The whole body is guarded, not just the query: this module's contract is "never throws", and
+  // a try that covers only the await leaves every line after it able to end a customer's turn.
   try {
-    rows = await prisma.knowledgeRevision.findMany({
+    const rows = await prisma.knowledgeRevision.findMany({
       where: { status: 'PUBLISHED', knowledgeSource: { status: { not: 'ARCHIVED' } } },
       orderBy: [{ knowledgeSourceId: 'asc' }, { version: 'desc' }],
       select: {
@@ -90,40 +83,41 @@ export async function loadPublishedManagedKnowledge(now: number = Date.now()): P
         knowledgeSource: { select: { key: true, status: true } },
       },
     })
+    if (!Array.isArray(rows)) return { ...EMPTY, available: false, loadedAt: now }
+
+    const entries: ManagedKnowledgeEntry[] = []
+    for (const row of rows) {
+      // A body this build cannot read is SKIPPED, not passed through. Handing the bot a shape it
+      // will dereference blindly mid-turn is how a malformed row becomes a customer seeing
+      // "undefined" — or a thrown turn.
+      const body = readKnowledgeBody(row.body)
+      if (!body) {
+        console.error('loadPublishedManagedKnowledge: isi revisi tidak terbaca, dilewati', {
+          revisionId: row.id,
+          version: row.version,
+        })
+        continue
+      }
+
+      entries.push({
+        sourceId: row.knowledgeSourceId,
+        sourceKey: row.knowledgeSource.key,
+        sourceTitle: row.title,
+        revisionId: row.id,
+        version: row.version,
+        items: body.items,
+      })
+    }
+
+    const value: ManagedKnowledge = { entries, available: true, loadedAt: now }
+    cache = { value, expiresAt: now + MANAGED_KNOWLEDGE_CACHE_TTL_MS }
+    return value
   } catch (error) {
     // Not cached, so recovery is immediate once the database is back — and NOT rethrown, so a
     // configuration read cannot end a customer's conversation.
     console.error('loadPublishedManagedKnowledge: gagal membaca knowledge terkelola', { error })
     return { ...EMPTY, available: false, loadedAt: now }
   }
-
-  const entries: ManagedKnowledgeEntry[] = []
-  for (const row of rows) {
-    // A body this build cannot read is SKIPPED, not passed through. Handing the bot a shape it
-    // will dereference blindly mid-turn is how a malformed row becomes a customer seeing
-    // "undefined" — or a thrown turn.
-    const body = readKnowledgeBody(row.body)
-    if (!body) {
-      console.error('loadPublishedManagedKnowledge: isi revisi tidak terbaca, dilewati', {
-        revisionId: row.id,
-        version: row.version,
-      })
-      continue
-    }
-
-    entries.push({
-      sourceId: row.knowledgeSourceId,
-      sourceKey: row.knowledgeSource.key,
-      sourceTitle: row.title,
-      revisionId: row.id,
-      version: row.version,
-      items: body.items,
-    })
-  }
-
-  const value: ManagedKnowledge = { entries, available: true, loadedAt: now }
-  cache = { value, expiresAt: now + MANAGED_KNOWLEDGE_CACHE_TTL_MS }
-  return value
 }
 
 /** One entry in a decision trace's `knowledgeRefs`, labelled with where it came from. */

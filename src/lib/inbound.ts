@@ -7,6 +7,7 @@ import { sendMessage } from '@/lib/send'
 import { withMediaUrl } from '@/lib/serialize-message'
 import { isIndonesianNumber } from '@/lib/phone'
 import { recordBotDecisionRun, attachMessageToDecisionRun } from '@/lib/bot-control/decision-recorder'
+import { isRuleEnabled } from '@/lib/bot-control/runtime-rules'
 import type { BotDecision } from '@/lib/bot/types'
 
 type MetaMediaObject = { id: string; mime_type: string; caption?: string; filename?: string }
@@ -38,9 +39,24 @@ export type MetaInboundMessage = {
 // src/app/api/bot/indonesia-filter/route.ts, src/lib/phone.ts): an Indonesian-number
 // contact's very first conversation must start inactive too when that filter is on, not
 // just existing ones caught by the toggle's own bulk write.
+/**
+ * Whether the bot should answer this contact by default.
+ *
+ * `bot.skip_indonesian_numbers` is read from the published rule config first, and
+ * `Settings.skipBotForIndonesianNumbers` remains the fallback rather than being deleted: the
+ * Settings page still writes that column, and removing it would silently strip a control an
+ * operator already uses. Either switch being on skips the bot — the safe direction, since both
+ * express the same intent and disagreement between them should not quietly enable auto-replies
+ * to a market somebody meant to reserve for humans.
+ */
 async function defaultBotEnabled(phone: string): Promise<boolean> {
   const settings = await prisma.settings.findUniqueOrThrow({ where: { id: 1 } })
-  if (settings.skipBotForIndonesianNumbers && isIndonesianNumber(phone)) return false
+
+  if (isIndonesianNumber(phone)) {
+    const skipViaRule = await isRuleEnabled('bot.skip_indonesian_numbers').catch(() => false)
+    if (settings.skipBotForIndonesianNumbers || skipViaRule) return false
+  }
+
   return settings.botAutoReplyAll
 }
 

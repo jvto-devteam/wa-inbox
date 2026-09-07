@@ -8,9 +8,11 @@ import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { Modal } from '@/components/ui/modal'
 import { RuleRegistryTable, type RuleRow, type RuleAction } from '@/components/bot-control/RuleRegistryTable'
+import { roleNameCan } from '@/lib/bot-control/permissions'
+import type { AccountRoleName } from '@/lib/auth/session'
 import { fetchJson } from '@/lib/fetch-json'
 
-type Session = { role: 'ADMIN' | 'AGENT' }
+type Session = { role: AccountRoleName }
 
 /** SDD Manage Second §8.1: a rule change with no stated reason answers nothing later. */
 const MIN_REASON_LENGTH = 10
@@ -145,8 +147,10 @@ export default function RulesRegistryPage() {
     }
   }
 
-  const canEdit = role === 'ADMIN'
-  const canApprove = role === 'ADMIN'
+  // The matrix, not admin-equality: a BOT_MANAGER may write a draft and send it to review,
+  // and must not see Approve or Reject.
+  const canEdit = roleNameCan(role, 'EDIT_RULE_DRAFT')
+  const canApprove = roleNameCan(role, 'APPROVE')
 
   return (
     <main className="mx-auto max-w-6xl space-y-4 p-6">

@@ -11,6 +11,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { DecisionTracePanel, STATUS_VARIANT, type DecisionRunDetail } from '@/components/bot-control/DecisionTracePanel'
 import { TriagePanel, TriageBadge, TRIAGE_ISSUE_LABEL, type TriageRow, type TriageDraft } from '@/components/bot-control/TriagePanel'
 import { TRIAGE_ISSUE_TYPES, TRIAGE_STATUSES } from '@/lib/bot-control/triage-types'
+import { roleNameCan } from '@/lib/bot-control/permissions'
+import type { AccountRoleName } from '@/lib/auth/session'
 import { fetchJson } from '@/lib/fetch-json'
 
 type DecisionRow = {
@@ -29,7 +31,7 @@ type DecisionRow = {
 }
 
 type Paged<T> = { items: T[]; page: number; limit: number; total: number }
-type Session = { accountId?: string; role: 'ADMIN' | 'AGENT' }
+type Session = { accountId?: string; role: AccountRoleName }
 type TriageListRow = TriageRow & { decisionRunId: string }
 
 // SIMULATED is included so Test Lab runs are filterable -- and, more importantly, so an
@@ -120,7 +122,7 @@ export default function DecisionLogsPage() {
 
   // Only an admin can assign to somebody else, so only an admin needs the roster.
   useEffect(() => {
-    if (role !== 'ADMIN') return
+    if (!roleNameCan(role, 'APPROVE')) return
     fetchJson<{ id: string; name: string }[]>('/api/accounts')
       .then(setAccounts)
       .catch(() => {})
@@ -404,8 +406,8 @@ export default function DecisionLogsPage() {
           existing={editingTriage.existing}
           currentUserId={currentUserId}
           accounts={accounts}
-          canAssignOthers={role === 'ADMIN'}
-          canClose={role === 'ADMIN'}
+          canAssignOthers={roleNameCan(role, 'APPROVE')}
+          canClose={roleNameCan(role, 'APPROVE')}
           saving={triageSaving}
           error={actionError}
           onCancel={() => setEditingTriage(null)}

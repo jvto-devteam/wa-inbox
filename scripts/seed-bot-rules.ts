@@ -1,5 +1,5 @@
 /**
- * Seeds `BotRuleSetting` and `BotFlowDefinition` from their static registries.
+ * Seeds `BotRuleSetting`, `BotFlowDefinition` and the default `ChannelPolicySetting`.
  *
  * Safe to re-run: the registry's metadata is re-asserted every time, but an operator's
  * published `config`/`enabled` is never touched. See src/lib/bot-control/rule-seed.ts for why
@@ -14,6 +14,7 @@
 import 'dotenv/config'
 import { seedBotRuleSettings } from '../src/lib/bot-control/rule-seed'
 import { seedBotFlowDefinitions } from '../src/lib/bot-control/flow-seed'
+import { seedChannelPolicy } from '../src/lib/bot-control/channel-policy-workflow'
 import { prisma } from '../src/lib/db'
 
 async function main() {
@@ -25,6 +26,13 @@ async function main() {
   const flows = await seedBotFlowDefinitions()
   console.log(
     `Seed flow selesai: ${flows.created} dibuat, ${flows.updated} disinkronkan, ${flows.unchanged} tidak berubah.`
+  )
+
+  const policy = await seedChannelPolicy()
+  console.log(
+    policy.created
+      ? 'Seed channel policy selesai: baris default dibuat.'
+      : 'Seed channel policy dilewati: baris sudah ada dan tidak ditimpa.'
   )
 }
 

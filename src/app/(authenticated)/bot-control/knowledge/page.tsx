@@ -14,6 +14,8 @@ import { KnowledgeChunkPanel, type KnowledgeChunkRow } from '@/components/bot-co
 import { KnowledgeEditor, type KnowledgeDraft } from '@/components/bot-control/KnowledgeEditor'
 import { KnowledgeRevisionPanel, type RevisionRow } from '@/components/bot-control/KnowledgeRevisionPanel'
 import type { KnowledgeItem } from '@/lib/bot-control/knowledge-body'
+import { hasAdminPowers, roleNameCan } from '@/lib/bot-control/permissions'
+import type { AccountRoleName } from '@/lib/auth/session'
 import { fetchJson } from '@/lib/fetch-json'
 
 type Paged<T> = { items: T[]; page: number; limit: number; total: number }
@@ -37,7 +39,7 @@ type SourceDetail = {
 /** SDD Manage Second §8.2: a change with no stated reason answers nothing later. */
 const MIN_REASON_LENGTH = 10
 
-type Session = { role: 'ADMIN' | 'AGENT' }
+type Session = { role: AccountRoleName }
 
 export default function KnowledgeExplorerPage() {
   const [sources, setSources] = useState<KnowledgeSourceRow[]>([])
@@ -319,14 +321,16 @@ export default function KnowledgeExplorerPage() {
           <option value="ARCHIVED">ARCHIVED</option>
         </Select>
 
-        {role === 'ADMIN' && (
-          <div className="ml-auto flex gap-2">
-            <Button onClick={openCreate}>Buat knowledge baru</Button>
+        <div className="ml-auto flex gap-2">
+          {roleNameCan(role, 'EDIT_KNOWLEDGE_DRAFT') && <Button onClick={openCreate}>Buat knowledge baru</Button>}
+          {/* Re-indexing walks the filesystem and rewrites the catalog mirror; it is an admin
+              operation on the deployment, not a Bot Control edit, so it keeps the admin gate. */}
+          {hasAdminPowers(role) && (
             <Button variant="outline" onClick={runSync} disabled={syncing}>
               {syncing ? 'Meng-index...' : 'Index ulang katalog'}
             </Button>
-          </div>
-        )}
+          )}
+        </div>
       </div>
 
       {syncMessage && <p className="text-sm text-emerald-700">{syncMessage}</p>}
@@ -341,8 +345,8 @@ export default function KnowledgeExplorerPage() {
             sources={sources}
             selectedId={selectedSourceId}
             onSelect={(id) => changeSelectedSource(id === selectedSourceId ? null : id)}
-            canEdit={role === 'ADMIN'}
-            canApprove={role === 'ADMIN'}
+            canEdit={roleNameCan(role, 'EDIT_KNOWLEDGE_DRAFT')}
+            canApprove={roleNameCan(role, 'APPROVE')}
             onAction={handleAction}
           />
         )}
