@@ -40,7 +40,10 @@ const ACTIONS = [
   'OVERRIDE_TEST_FAILURE',
 ]
 
-const ENTITY_TYPES = ['RELEASE', 'RULE', 'KNOWLEDGE', 'FLOW', 'CHANNEL_POLICY']
+// Every entityType `writeBotAuditLog` is actually called with. DECISION_TRIAGE was missing
+// until the Phase A-H review: triage changes were audited but unfilterable, which makes the
+// rows effectively invisible on a busy log.
+const ENTITY_TYPES = ['RELEASE', 'RULE', 'KNOWLEDGE', 'FLOW', 'CHANNEL_POLICY', 'DECISION_TRIAGE']
 
 // Actions that change what the bot does get visual weight; the rest stay quiet. An audit log
 // where every row shouts is one where the ROLLBACK at 03:00 does not stand out.

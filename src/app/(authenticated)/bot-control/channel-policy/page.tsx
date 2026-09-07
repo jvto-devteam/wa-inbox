@@ -211,10 +211,19 @@ export default function ChannelPolicyPage() {
           </Card>
 
           <Card className="p-0">
-            <div className="p-3">
+            <div className="space-y-1 p-3">
               <h2 className="text-sm font-semibold text-navy">Matrix kemampuan</h2>
               <p className="text-xs text-muted-foreground">
                 Channel mana yang membawa tiap kemampuan. Kemampuan yang ada ditentukan kode; di sini hanya channelnya.
+              </p>
+              {/* Said out loud rather than left for an operator to discover. The matrix is stored,
+                  divalidasi, dan masuk snapshot release — tapi jalur kirim belum membacanya, jadi
+                  mengubahnya di sini tidak mengubah ke mana pesan pergi. Sebuah saklar mati yang
+                  tampak bekerja lebih buruk daripada tidak ada saklar sama sekali. */}
+              <p className="rounded bg-amber-50 p-2 text-xs text-amber-900">
+                Belum ditegakkan saat mengirim. Nilai di sini tersimpan, ikut ter-audit, dan masuk snapshot release,
+                tetapi <span className="font-mono">send.ts</span> belum membacanya — routing sebenarnya masih
+                ditentukan Default outbound di atas. Penegakannya menyusul di Extend Third.
               </p>
             </div>
             <Table>
@@ -300,6 +309,12 @@ export default function ChannelPolicyPage() {
               />
               Aktifkan jam tenang
             </label>
+            {/* Same honesty as the capability matrix: the flag is stored and audited, but no send
+                path consults it yet. */}
+            <p className="text-xs text-amber-900">
+              Jam tenang belum ditegakkan saat mengirim — jendelanya sendiri belum ada di model data. Menyusul di
+              Extend Third.
+            </p>
           </Card>
 
           {canEdit && (

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { getSession } from '@/lib/auth/get-session'
+import { readPaging } from '@/lib/bot-control/paging'
 
 /**
  * GET /api/bot-control/knowledge/sources/[id]/revisions — the source's full history.
@@ -18,6 +19,9 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   if (!session) return NextResponse.json({ error: 'Tidak terautentikasi' }, { status: 401 })
 
   const { id } = await params
+  // Capped like every other list. A source edited two hundred times would otherwise return two
+  // hundred rows in one response, and the panel that renders them grows without bound.
+  const { page, limit, skip } = readPaging(new URL(req.url))
 
   try {
     const source = await prisma.knowledgeSource.findUnique({
@@ -29,6 +33,8 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     const revisions = await prisma.knowledgeRevision.findMany({
       where: { knowledgeSourceId: id },
       orderBy: { version: 'desc' },
+      skip,
+      take: limit,
       select: {
         id: true,
         version: true,
@@ -56,8 +62,13 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
         : await prisma.account.findMany({ where: { id: { in: actorIds } }, select: { id: true, name: true } })
     const nameById = new Map(accounts.map((a) => [a.id, a.name]))
 
+    const total = await prisma.knowledgeRevision.count({ where: { knowledgeSourceId: id } })
+
     return NextResponse.json({
       source,
+      page,
+      limit,
+      total,
       revisions: revisions.map((revision) => ({
         id: revision.id,
         version: revision.version,
