@@ -255,18 +255,16 @@ describe('rule lifecycle', () => {
     expect((await getRuntimeRuleConfig()).rules[EDITABLE_KEY].enabled).toBe(true)
   })
 
-  it('publishes a config change on a rule that may be reconfigured but not switched off', async () => {
-    const key = 'channel.unofficial_outbound_default'
-    await saveRuleDraft(key, { enabled: true, config: { liveDefaultChannel: 'OFFICIAL' }, reason: REASON }, actor)
-    await transitionRule(key, 'REVIEW', actor, null)
-    await transitionRule(key, 'APPROVE', actor, null)
-    await publishRelease({ testRunId: 'run_pass', title: 'x', actorId: actor.id })
-
-    const rule = (await getRuntimeRuleConfig()).rules[key]
-    expect(rule.config).toEqual({ liveDefaultChannel: 'OFFICIAL' })
-    // A config-only draft leaves draftEnabled null; reading that as `false` would silently
-    // switch off a CRITICAL channel rule.
-    expect(rule.enabled).toBe(true)
+  it('menolak rule Channel Policy yang dikunci sejak awal lifecycle (regresi Temuan 3)', async () => {
+    // Dulu rule ini bisa didraft, di-review, di-approve, dan dipublish -- lalu tidak mengubah
+    // apa pun, karena `resolveChannel` membaca ChannelPolicySetting.defaultOutbound dan bukan
+    // config rule ini. Sekarang ditolak di pintu pertama, bukan setelah lima langkah.
+    for (const key of ['channel.unofficial_outbound_default', 'channel.official_reserved_for_capabilities']) {
+      await expect(
+        saveRuleDraft(key, { enabled: true, config: {}, reason: REASON }, actor),
+        key
+      ).rejects.toThrow()
+    }
   })
 
   it('refuses the whole way through for a rule the registry locked', async () => {

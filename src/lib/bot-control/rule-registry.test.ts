@@ -11,8 +11,10 @@ import { BOT_RULES, getBotRule, listBotRules, listRuleCategories } from './rule-
 // its CRITICAL severity — or, worse, becomes editable — fails here.
 const REQUIRED_RULES: Array<{ key: string; severity: string; editable: boolean; category: string }> = [
   { key: 'channel.official_inbound_only', severity: 'CRITICAL', editable: false, category: 'Channel Policy' },
-  { key: 'channel.unofficial_outbound_default', severity: 'CRITICAL', editable: true, category: 'Channel Policy' },
-  { key: 'channel.official_reserved_for_capabilities', severity: 'HIGH', editable: true, category: 'Channel Policy' },
+  // Keduanya dikunci sejak Temuan 3: perilakunya dikelola di halaman Channel Policy, yang
+  // benar-benar dibaca resolveChannel dan resolveChannelForCapability.
+  { key: 'channel.unofficial_outbound_default', severity: 'CRITICAL', editable: false, category: 'Channel Policy' },
+  { key: 'channel.official_reserved_for_capabilities', severity: 'HIGH', editable: false, category: 'Channel Policy' },
   { key: 'bot.no_invented_price', severity: 'CRITICAL', editable: false, category: 'Safety' },
   { key: 'bot.no_invented_url', severity: 'CRITICAL', editable: false, category: 'Safety' },
   { key: 'bot.handoff_on_human_request', severity: 'HIGH', editable: true, category: 'Handoff' },

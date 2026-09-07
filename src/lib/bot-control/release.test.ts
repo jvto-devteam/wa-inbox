@@ -141,7 +141,7 @@ describe('createReleaseSnapshot', () => {
     mockPrisma.botRuleSetting.findMany.mockResolvedValue([
       {
         id: 'brs_1',
-        key: 'channel.unofficial_outbound_default',
+        key: 'bot.handoff_on_human_request',
         name: 'Default outbound',
         enabled: true,
         config: { liveDefaultChannel: 'UNOFFICIAL' },
@@ -347,7 +347,7 @@ describe('publishRelease', () => {
     mockTx.botRuleSetting.findMany.mockResolvedValue([
       {
         id: 'brs_1',
-        key: 'channel.unofficial_outbound_default',
+        key: 'bot.handoff_on_human_request',
         enabled: true,
         config: null,
         status: 'APPROVED',
@@ -660,7 +660,7 @@ describe('rollbackToRelease', () => {
           rules: [
             {
               id: 'brs_1',
-              key: 'channel.unofficial_outbound_default',
+              key: 'bot.handoff_on_human_request',
               name: 'Default outbound',
               version: null,
               enabled: true,
@@ -684,7 +684,7 @@ describe('rollbackToRelease', () => {
 
     expect(mockTx.botRuleSetting.update).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { key: 'channel.unofficial_outbound_default' },
+        where: { key: 'bot.handoff_on_human_request' },
         data: expect.objectContaining({ enabled: true, config: { liveDefaultChannel: 'UNOFFICIAL' } }),
       })
     )

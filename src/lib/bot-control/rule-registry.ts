@@ -52,6 +52,16 @@ export type BotRule = {
    * not what the policy wishes were configured.
    */
   configFromSettingsKey?: 'defaultChannel'
+  /**
+   * Where this rule's behaviour is actually managed, when it is not managed here.
+   *
+   * Two Channel Policy rules used to be `editable: true` with edit surfaces that wrote rows
+   * nothing read: `liveDefaultChannel` was overridden by `ChannelPolicySetting.defaultOutbound`
+   * before it could matter, and the Official-capability toggle had no reader at all. Rather
+   * than give the same behaviour a second writer that would silently disagree with the first,
+   * they are locked here and this points at the page that does control them.
+   */
+  managedIn?: { href: string; label: string }
 }
 
 export const BOT_RULES: BotRule[] = [
@@ -76,11 +86,13 @@ export const BOT_RULES: BotRule[] = [
     sourceFile: 'src/lib/channel-router.ts',
     sourceRef: 'resolveChannel',
     severity: 'CRITICAL',
-    // Editable per guidebook §9: yang boleh diubah adalah PILIHAN default-nya (lewat
-    // Settings.defaultChannel), bukan keberadaan aturannya. UI mengubah nilai default,
-    // tidak menghapus kebijakan channel.
-    editable: true,
+    // Dulu `editable: true`, dan itu keliru sejak Phase H: `resolveChannel` membaca
+    // `ChannelPolicySetting.defaultOutbound` (layer 2) SEBELUM `Settings.defaultChannel`
+    // (layer 3), jadi `liveDefaultChannel` yang diedit di sini ditimpa sebelum sempat berarti.
+    // Dikunci supaya default outbound hanya punya satu penulis, yaitu halaman Channel Policy.
+    editable: false,
     enabled: true,
+    managedIn: { href: '/bot-control/channel-policy', label: 'Channel Policy' },
     // Nilai kebijakan, bukan nilai runtime. Route API melapisi Settings.defaultChannel yang
     // sebenarnya ke sini, dan keduanya bisa BERBEDA: kolom itu default-nya OFFICIAL di skema,
     // sementara kebijakan yang tertulis adalah UNOFFICIAL. Perbedaan itu justru yang perlu
@@ -96,8 +108,12 @@ export const BOT_RULES: BotRule[] = [
       'Official send hanya dipakai untuk template official, campaign legal, utility/auth, atau fallback tertentu — bukan jalur balasan harian. Fitur official-only tidak boleh dipaksa lewat Unofficial; bila provider tidak mendukung, UI harus fallback ke teks.',
     sourceFile: 'src/lib/meta/messages.ts',
     severity: 'HIGH',
-    editable: true,
+    // Dulu `editable: true` dengan toggle yang tidak dibaca siapa pun. Perilakunya sekarang
+    // benar-benar ditegakkan lewat `capabilityRules` di Channel Policy, yang dibaca
+    // `resolveChannelForCapability` di setiap pengiriman -- jadi di sini dikunci.
+    editable: false,
     enabled: true,
+    managedIn: { href: '/bot-control/channel-policy', label: 'Channel Policy' },
   },
   {
     key: 'bot.no_invented_price',

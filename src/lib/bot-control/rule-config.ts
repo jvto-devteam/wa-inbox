@@ -40,21 +40,13 @@ const NO_CONFIG = z.object({}).strict()
  * correct default — adding an entry is a deliberate act, forgetting one fails closed.
  */
 export const RULE_CONFIG_SPECS: Record<string, RuleConfigSpec> = {
-  'channel.unofficial_outbound_default': {
-    // `liveDefaultChannel` is the value that actually decides routing. `policyDefaultChannel`
-    // is the WRITTEN policy and is deliberately NOT editable here: the gap between what the
-    // policy says and what the system does is the finding an operator needs to see, and
-    // letting a form rewrite the policy side would erase the discrepancy instead of fixing it.
-    schema: z.object({ liveDefaultChannel: z.enum(['OFFICIAL', 'UNOFFICIAL']) }).strict(),
-    // CLAUDE.md's channel policy is not something a web form may repeal.
-    canToggleEnabled: false,
-    fields: ['liveDefaultChannel'],
-  },
-  'channel.official_reserved_for_capabilities': {
-    schema: NO_CONFIG,
-    canToggleEnabled: true,
-    fields: [],
-  },
+  // The two Channel Policy rules that used to live here are gone on purpose. Their edit
+  // surfaces wrote rows the runtime never read -- `liveDefaultChannel` was overridden by
+  // `ChannelPolicySetting.defaultOutbound` before it could matter, and the Official-capability
+  // toggle had no reader at all. Both behaviours are now genuinely enforced from the Channel
+  // Policy page (`resolveChannel` and `resolveChannelForCapability`), so they are `editable:
+  // false` in the registry and need no spec: `ruleEditSurface` returns null before it gets
+  // here, and `validateRuleDraft` refuses a draft for them.
   'bot.handoff_on_human_request': {
     // Only the extra LLM classifier layer can be switched off. The explicit keyword gate in
     // escalation-classifier.ts runs unconditionally and is not reachable from here.

@@ -23,16 +23,26 @@ describe('editable boundary', () => {
     }
   })
 
-  it('opens exactly the rules the SDD says may be edited', () => {
-    const open = [
-      'channel.unofficial_outbound_default',
-      'channel.official_reserved_for_capabilities',
-      'bot.handoff_on_human_request',
-      'bot.skip_indonesian_numbers',
-    ]
+  it('opens exactly the rules that have a runtime consumer', () => {
+    const open = ['bot.handoff_on_human_request', 'bot.skip_indonesian_numbers']
     for (const key of open) {
       expect(listBotRules().find((r) => r.key === key)?.editable, key).toBe(true)
       expect(ruleEditSurface(key), key).not.toBeNull()
+    }
+  })
+
+  it('mengunci dua rule Channel Policy yang tidak punya pembaca (regresi Temuan 3)', () => {
+    // Keduanya dulu `editable: true` dengan permukaan edit yang menulis baris yang tidak
+    // dibaca siapa pun: `liveDefaultChannel` ditimpa ChannelPolicySetting.defaultOutbound
+    // sebelum sempat berarti, dan toggle kapabilitas Official tidak punya pembaca sama sekali.
+    // Sekarang perilakunya benar-benar ditegakkan dari halaman Channel Policy.
+    for (const key of ['channel.unofficial_outbound_default', 'channel.official_reserved_for_capabilities']) {
+      const rule = listBotRules().find((r) => r.key === key)
+      expect(rule?.editable, key).toBe(false)
+      expect(ruleEditSurface(key), key).toBeNull()
+      expect(validateRuleDraft(key, { enabled: true }).ok, key).toBe(false)
+      // Operator harus tahu ke mana perginya, bukan cuma melihat gembok.
+      expect(rule?.managedIn?.href, key).toBe('/bot-control/channel-policy')
     }
   })
 
@@ -49,40 +59,14 @@ describe('editable boundary', () => {
 })
 
 describe('validateRuleDraft', () => {
-  it('accepts a valid channel default', () => {
-    const result = validateRuleDraft('channel.unofficial_outbound_default', {
-      enabled: true,
-      config: { liveDefaultChannel: 'OFFICIAL' },
-    })
-    expect(result).toEqual({ ok: true, enabled: true, config: { liveDefaultChannel: 'OFFICIAL' } })
-  })
-
-  it('rejects a channel value outside the enum', () => {
-    const result = validateRuleDraft('channel.unofficial_outbound_default', {
-      enabled: true,
-      config: { liveDefaultChannel: 'TELEGRAM' },
-    })
-    expect(result.ok).toBe(false)
-  })
-
   it('rejects an unknown config key instead of storing it and ignoring it', () => {
     // A stored key that does nothing is indistinguishable, from the UI, from one that works.
-    const result = validateRuleDraft('channel.unofficial_outbound_default', {
+    const result = validateRuleDraft('bot.handoff_on_human_request', {
       enabled: true,
-      config: { liveDefaultChannel: 'UNOFFICIAL', policyDefaultChannel: 'OFFICIAL' },
+      config: { adaKunciAsing: true },
     })
     expect(result.ok).toBe(false)
-    if (!result.ok) expect(result.error).toContain('policyDefaultChannel')
-  })
-
-  it('refuses to switch off a rule whose enabled flag is not editable', () => {
-    // CLAUDE.md's channel policy is not something a web form may repeal — only reconfigure.
-    const result = validateRuleDraft('channel.unofficial_outbound_default', {
-      enabled: false,
-      config: { liveDefaultChannel: 'UNOFFICIAL' },
-    })
-    expect(result.ok).toBe(false)
-    if (!result.ok) expect(result.error).toContain('dinyalakan atau dimatikan')
+    if (!result.ok) expect(result.error).toContain('adaKunciAsing')
   })
 
   it('allows toggling the rules whose whole edit surface is on/off', () => {

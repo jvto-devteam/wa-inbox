@@ -28,6 +28,7 @@ type RuleBody = {
   hasDraft: boolean
   draftConfig: Record<string, unknown> | null
   editSurface: { canToggleEnabled: boolean; fields: string[] } | null
+  managedIn?: { href: string; label: string }
 }
 
 function storedRule(overrides: Record<string, unknown> = {}) {
@@ -194,8 +195,10 @@ describe('GET /api/bot-control/rules', () => {
     const rules = await rulesFrom(await GET(withCookie))
 
     const channel = rules.find((r) => r.key === 'channel.unofficial_outbound_default')
-    // CRITICAL and editable: the DEFAULT may change, the rule may not be switched off.
-    expect(channel?.editSurface).toEqual({ canToggleEnabled: false, fields: ['liveDefaultChannel'] })
+    // Dikunci sejak Temuan 3: tidak ada permukaan edit sama sekali, dan UI diberi tahu ke mana
+    // perilakunya dikelola sekarang supaya "Terkunci" tidak terbaca sebagai jalan buntu.
+    expect(channel?.editSurface).toBeNull()
+    expect(channel?.managedIn).toEqual({ href: '/bot-control/channel-policy', label: 'Channel Policy' })
 
     const handoff = rules.find((r) => r.key === 'bot.handoff_on_human_request')
     expect(handoff?.editSurface).toEqual({ canToggleEnabled: true, fields: [] })

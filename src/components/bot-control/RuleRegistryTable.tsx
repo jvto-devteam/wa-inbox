@@ -1,4 +1,5 @@
 'use client'
+import Link from 'next/link'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
@@ -113,6 +114,16 @@ export function RuleRegistryTable({
                   yang boleh diubah adalah nilainya, bukan keberadaan aturannya. */}
               {rule.editSurface?.canToggleEnabled === false && (
                 <p className="mt-1 text-xs text-muted-foreground">Hanya nilainya</p>
+              )}
+              {/* "Terkunci" sendirian membuat operator mencari tombol yang tidak ada. Aturan
+                  yang pindah tempat kelolanya harus menyebut ke mana ia pindah. */}
+              {rule.managedIn && (
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Dikelola di{' '}
+                  <Link href={rule.managedIn.href} className="text-brand hover:underline">
+                    {rule.managedIn.label}
+                  </Link>
+                </p>
               )}
             </TableCell>
             <TableCell className="align-top">
