@@ -854,3 +854,45 @@ model BotTestResult {
   @@index([testCaseId])
   @@index([status])
 }
+
+/// Tindak lanjut manual atas satu keputusan bot. SDD Manage Second §7.10.
+///
+/// Tabel terpisah dari BotDecisionRun, bukan kolom tambahan di sana, karena keduanya menjawab
+/// pertanyaan berbeda dan berumur berbeda. BotDecisionRun adalah catatan apa yang TERJADI dan
+/// tidak boleh berubah setelah ditulis; triage adalah catatan apa yang manusia PUTUSKAN
+/// tentangnya, dan itu berubah terus — dibuka, ditugaskan, diselesaikan. Menaruhnya di satu
+/// baris berarti setiap penugasan menulis ulang baris audit.
+///
+/// `decisionRunId` unik: satu keputusan hanya punya satu tindak lanjut. Dua triage untuk
+/// keputusan yang sama akan membuat "sudah ditangani belum?" tidak bisa dijawab, yang justru
+/// satu-satunya guna daftar ini.
+///
+/// Kolom identitas sengaja string biasa tanpa foreign key, mengikuti BotDecisionRun sendiri:
+/// `/api/conversations/[id]/clear` menjalankan message.deleteMany, dan catatan tindak lanjut
+/// harus tetap hidup melebihi percakapan yang memicunya.
+model BotDecisionTriage {
+  id               String    @id @default(cuid())
+  decisionRunId    String    @unique
+  /// OPEN, ASSIGNED, RESOLVED, IGNORED. Tidak ada yang dihapus — RESOLVED dan IGNORED tetap
+  /// tersimpan, karena "pernah diputuskan tidak perlu diapa-apakan" adalah informasi.
+  status           String    @default("OPEN")
+  /// KNOWLEDGE_GAP, WRONG_FLOW, BAD_REPLY, HALLUCINATION_BLOCKED, UNNECESSARY_HANDOFF,
+  /// MISSED_HANDOFF, PROVIDER_FAILURE, OTHER.
+  issueType        String?
+  severity         String    @default("NORMAL")
+  assignedTo       String?
+  note             String?
+  /// Menghubungkan tindak lanjut ke perbaikan yang dibuat karenanya (knowledge, rule, flow).
+  /// Diisi manual; sistem tidak pernah menebaknya.
+  linkedEntityType String?
+  linkedEntityId   String?
+  resolvedBy       String?
+  resolvedAt       DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  @@index([status])
+  @@index([issueType])
+  @@index([severity])
+  @@index([assignedTo])
+}
