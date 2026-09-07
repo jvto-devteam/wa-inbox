@@ -454,6 +454,20 @@ export type PublishedRelease = {
   publishedAt: Date
 }
 
+/**
+ * An entity a rollback archived because it was published AFTER the release being restored.
+ *
+ * Reported rather than done silently: an operator rolling back to fix one bad FAQ must be able
+ * to see that three unrelated ones were withdrawn with it, and know which.
+ */
+export type ArchivedByRollback = {
+  entityType: 'KNOWLEDGE' | 'FLOW'
+  key: string
+  version: number
+}
+
+export type RolledBackRelease = PublishedRelease & { archived: ArchivedByRollback[] }
+
 /** Raised when two publishes race for the same version number. The caller answers 409. */
 export class ReleaseVersionConflictError extends Error {
   constructor() {
@@ -802,7 +816,8 @@ async function restoreSnapshot(
   releaseId: string,
   actor: { id?: string | null; name?: string | null },
   req?: Request | null
-): Promise<void> {
+): Promise<ArchivedByRollback[]> {
+  const archived: ArchivedByRollback[] = []
   const rulesCarryValues = snapshot.rules.every((rule) => typeof rule.enabled === 'boolean')
   if (snapshot.rules.length > 0 && !rulesCarryValues) {
     throw new ReleaseNotRestorableError(
@@ -884,6 +899,61 @@ async function restoreSnapshot(
     )
   }
 
+  // Entities the snapshot never named are entities that did not exist when the target release
+  // was published. Restoring pointers alone left them live, so a rollback prompted by "the new
+  // FAQ makes the bot quote the wrong price" -- SDD §8.5's own example -- produced a release row
+  // saying the old configuration was back while the offending FAQ kept answering customers.
+  //
+  // A source that DID exist and merely gained a newer revision is already handled by the loop
+  // above, which archives every published revision of that source before restoring the named
+  // one. The gap is only entities with no snapshot entry at all.
+  //
+  // ARCHIVED, never deleted: the same rule as everywhere else here. Bringing one back is a
+  // normal publish, and every withdrawal is audited and reported to the operator.
+  const snapshotRevisions = await tx.knowledgeRevision.findMany({
+    where: { id: { in: snapshot.knowledge.map((entry) => entry.id) } },
+    select: { knowledgeSourceId: true },
+  })
+  const restoredSourceIds = [...new Set(snapshotRevisions.map((row) => row.knowledgeSourceId))]
+
+  const newerKnowledge = await tx.knowledgeRevision.findMany({
+    where: {
+      status: 'PUBLISHED',
+      knowledgeSourceId: { notIn: restoredSourceIds },
+      knowledgeSource: { status: { not: 'ARCHIVED' } },
+    },
+    select: {
+      id: true,
+      version: true,
+      knowledgeSourceId: true,
+      knowledgeSource: { select: { key: true } },
+    },
+  })
+
+  for (const row of newerKnowledge) {
+    await tx.knowledgeRevision.update({ where: { id: row.id }, data: { status: 'ARCHIVED' } })
+    // The source goes with it. Leaving the source PUBLISHED with no published revision would
+    // show the operator an active entry the bot can no longer read.
+    await tx.knowledgeSource.update({ where: { id: row.knowledgeSourceId }, data: { status: 'ARCHIVED' } })
+    archived.push({ entityType: 'KNOWLEDGE', key: row.knowledgeSource.key, version: row.version })
+
+    await writeBotAuditLog(
+      {
+        action: 'ROLLBACK',
+        entityType: 'KNOWLEDGE',
+        entityId: row.knowledgeSourceId,
+        entityKey: row.knowledgeSource.key,
+        actorId: actor.id,
+        actorName: actor.name,
+        before: { version: row.version, status: 'PUBLISHED' },
+        after: { status: 'ARCHIVED', reason: `Dibuat setelah release v${targetVersion}` },
+        releaseId,
+        req,
+      },
+      tx
+    )
+  }
+
   for (const entry of snapshot.flows) {
     // Same shape as knowledge: `id` is the VERSION the snapshot named, still present because
     // publishing a newer one archives the old rather than deleting it.
@@ -913,6 +983,46 @@ async function restoreSnapshot(
         actorId: actor.id,
         actorName: actor.name,
         after: { version: version.version, status: 'PUBLISHED' },
+        releaseId,
+        req,
+      },
+      tx
+    )
+  }
+
+  // Same rule for flows. A flow whose definition existed but gained a newer VERSION is handled
+  // by the loop above; this covers flows the target release never knew about at all.
+  const snapshotFlowVersions = await tx.botFlowVersion.findMany({
+    where: { id: { in: snapshot.flows.map((entry) => entry.id) } },
+    select: { flowId: true },
+  })
+  const restoredFlowIds = [...new Set(snapshotFlowVersions.map((row) => row.flowId))]
+
+  const newerFlows = await tx.botFlowVersion.findMany({
+    where: { status: 'PUBLISHED', flowId: { notIn: restoredFlowIds } },
+    select: { id: true, version: true, flowId: true, flow: { select: { key: true } } },
+  })
+
+  for (const row of newerFlows) {
+    await tx.botFlowVersion.update({ where: { id: row.id }, data: { status: 'ARCHIVED' } })
+    // Back to the code's own registry values: with no published version, `runtime-flows` must
+    // fall back rather than keep pointing at a version it may no longer read.
+    await tx.botFlowDefinition.update({
+      where: { id: row.flowId },
+      data: { activeVersionId: null, runtimeSource: 'code' },
+    })
+    archived.push({ entityType: 'FLOW', key: row.flow.key, version: row.version })
+
+    await writeBotAuditLog(
+      {
+        action: 'ROLLBACK',
+        entityType: 'FLOW',
+        entityId: row.flowId,
+        entityKey: row.flow.key,
+        actorId: actor.id,
+        actorName: actor.name,
+        before: { version: row.version, status: 'PUBLISHED' },
+        after: { status: 'ARCHIVED', reason: `Dibuat setelah release v${targetVersion}` },
         releaseId,
         req,
       },
@@ -959,6 +1069,8 @@ async function restoreSnapshot(
       )
     }
   }
+
+  return archived
 }
 
 /**
@@ -1005,7 +1117,7 @@ export type RollbackParams = {
  * target's snapshot and a `rollbackOfId` pointing at it. The history therefore reads forwards
  * — v12, v13, then "v14: rollback to v12" — instead of a v13 that mysteriously stops existing.
  */
-export async function rollbackToRelease(params: RollbackParams): Promise<PublishedRelease> {
+export async function rollbackToRelease(params: RollbackParams): Promise<RolledBackRelease> {
   try {
     const release = await prisma.$transaction(async (tx) => {
       const target = await tx.botRelease.findUnique({ where: { id: params.targetReleaseId } })
@@ -1047,7 +1159,7 @@ export async function rollbackToRelease(params: RollbackParams): Promise<Publish
       })
 
       // The actual restore. Everything above only records that a rollback happened.
-      await restoreSnapshot(
+      const archived = await restoreSnapshot(
         tx,
         snapshot,
         target.version,
@@ -1065,7 +1177,13 @@ export async function rollbackToRelease(params: RollbackParams): Promise<Publish
           actorId: params.actorId,
           actorName: params.actorName,
           before: { activeVersion: current?.version ?? null },
-          after: { activeVersion: release.version, restoredFromVersion: target.version },
+          after: {
+            activeVersion: release.version,
+            restoredFromVersion: target.version,
+            // Named in the release's own audit row, so "why did this FAQ stop answering" is
+            // answerable from the rollback entry alone.
+            archived,
+          },
           reason: params.reason,
           releaseId: release.id,
           req: params.req,
@@ -1073,7 +1191,7 @@ export async function rollbackToRelease(params: RollbackParams): Promise<Publish
         tx
       )
 
-      return release
+      return { ...release, archived }
     })
 
     invalidateRuntimeRuleCache()

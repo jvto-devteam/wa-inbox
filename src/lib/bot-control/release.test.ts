@@ -822,3 +822,113 @@ describe('rollbackToRelease', () => {
     expect(mockTx.knowledgeRevision.update).not.toHaveBeenCalled()
   })
 })
+
+/**
+ * Regression cover for the audit finding "Rollback tidak mencabut knowledge/flow yang dibuat
+ * SETELAH release target".
+ *
+ * `restoreSnapshot` iterated only the entries INSIDE the snapshot, so a KnowledgeSource created
+ * after the target release kept its PUBLISHED revision and kept being read by the bot. An
+ * operator rolling back because "the new FAQ makes the bot quote the wrong price" -- SDD §8.5's
+ * literal example -- got a release row saying the old configuration was back while the
+ * offending FAQ carried on answering customers.
+ *
+ * Decision recorded 2026-09-07: auto-archive the newer entities and report them, rather than
+ * only listing them for the operator to deal with afterwards.
+ */
+describe('rollbackToRelease — entity yang lebih baru (regresi Temuan 5a)', () => {
+  const snapshot = {
+    schemaVersion: RELEASE_SNAPSHOT_SCHEMA_VERSION,
+    capturedAt: '2026-09-01T00:00:00.000Z',
+    rules: [],
+    knowledge: [{ id: 'rev_old', key: 'faq-lama', version: 1, title: 'FAQ lama' }],
+    flows: [],
+    channelPolicy: null,
+    testSummary: null,
+  }
+
+  beforeEach(() => {
+    mockTx.botRelease.findUnique.mockResolvedValue(
+      release({ id: 'rel_1', version: 3, status: 'SUPERSEDED', snapshot }) as never
+    )
+    mockTx.botRelease.findFirst.mockResolvedValue(release({ id: 'rel_live', version: 5 }) as never)
+    mockTx.botRelease.create.mockResolvedValue({
+      id: 'rel_new',
+      version: 6,
+      title: 'Rollback ke versi 3',
+      status: 'PUBLISHED',
+      publishedAt: new Date('2026-09-07T00:00:00.000Z'),
+    } as never)
+    // The revision the snapshot names, and the source it belongs to.
+    mockTx.knowledgeRevision.findUnique.mockResolvedValue({
+      id: 'rev_old',
+      knowledgeSourceId: 'ks_old',
+      version: 1,
+      status: 'ARCHIVED',
+      title: 'FAQ lama',
+      summary: null,
+    } as never)
+    mockTx.knowledgeRevision.findMany.mockImplementation((async (args: { where?: Record<string, unknown> }) => {
+      // First call resolves the snapshot's own revisions; second looks for newer ones.
+      if (args?.where && 'id' in args.where) return [{ knowledgeSourceId: 'ks_old' }] as never
+      return [
+        {
+          id: 'rev_new',
+          version: 1,
+          knowledgeSourceId: 'ks_new',
+          knowledgeSource: { key: 'faq-baru' },
+        },
+      ] as never
+    }) as never)
+    mockTx.botFlowVersion.findMany.mockResolvedValue([] as never)
+  })
+
+  it('mengarsipkan knowledge yang dipublish setelah release target', async () => {
+    const result = await rollbackToRelease({ targetReleaseId: 'rel_1', reason: 'FAQ baru bikin harga salah' })
+
+    expect(mockTx.knowledgeRevision.update).toHaveBeenCalledWith({
+      where: { id: 'rev_new' },
+      data: { status: 'ARCHIVED' },
+    })
+    expect(mockTx.knowledgeSource.update).toHaveBeenCalledWith({
+      where: { id: 'ks_new' },
+      data: { status: 'ARCHIVED' },
+    })
+    expect(result.archived).toEqual([{ entityType: 'KNOWLEDGE', key: 'faq-baru', version: 1 }])
+  })
+
+  it('mengecualikan source yang memang ada di snapshot, supaya yang lama tidak ikut jadi korban', async () => {
+    await rollbackToRelease({ targetReleaseId: 'rel_1', reason: 'FAQ baru bikin harga salah' })
+
+    // The "find the newer ones" query must exclude every source the snapshot restored; without
+    // this the rollback would archive the very revision it had just put back.
+    const newerQuery = mockTx.knowledgeRevision.findMany.mock.calls
+      .map((call) => call[0] as { where?: Record<string, unknown> })
+      .find((args) => args?.where && 'status' in args.where)
+    expect(newerQuery?.where).toMatchObject({
+      status: 'PUBLISHED',
+      knowledgeSourceId: { notIn: ['ks_old'] },
+    })
+  })
+
+  it('mencatat setiap pencabutan di audit log dengan alasannya', async () => {
+    await rollbackToRelease({ targetReleaseId: 'rel_1', reason: 'FAQ baru bikin harga salah' })
+
+    expect(writeBotAuditLog).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'ROLLBACK',
+        entityType: 'KNOWLEDGE',
+        entityKey: 'faq-baru',
+        after: expect.objectContaining({ status: 'ARCHIVED', reason: 'Dibuat setelah release v3' }),
+      }),
+      mockTx
+    )
+  })
+
+  it('tidak menghapus apa pun — hanya mengubah status', async () => {
+    await rollbackToRelease({ targetReleaseId: 'rel_1', reason: 'FAQ baru bikin harga salah' })
+
+    expect(mockTx.knowledgeRevision.delete).not.toHaveBeenCalled()
+    expect(mockTx.knowledgeSource.delete).not.toHaveBeenCalled()
+  })
+})

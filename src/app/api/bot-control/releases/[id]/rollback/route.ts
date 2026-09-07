@@ -48,6 +48,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       title: release.title,
       status: release.status,
       publishedAt: release.publishedAt.toISOString(),
+      // Entities withdrawn because they postdate the restored release. Returned so the operator
+      // sees what a rollback took with it, instead of finding out from a customer.
+      archived: release.archived,
     })
   } catch (error) {
     if (error instanceof ReleaseNotFoundError) return NextResponse.json({ error: error.message }, { status: 404 })

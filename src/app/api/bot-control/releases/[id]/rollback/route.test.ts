@@ -46,6 +46,7 @@ beforeEach(() => {
     title: 'Rollback ke versi 3',
     status: 'PUBLISHED',
     publishedAt: new Date('2026-09-07T04:00:00.000Z'),
+    archived: [],
   })
 })
 

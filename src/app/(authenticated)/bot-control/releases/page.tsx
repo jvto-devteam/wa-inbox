@@ -49,6 +49,9 @@ type Preview = {
   /** Exactly what publishing would ship — what a pre-release run must be tested against. */
   candidate: { ruleDraftKeys: string[]; knowledgeRevisionIds: string[]; flowVersionIds: string[] }
 }
+/** An entity the rollback withdrew because it postdates the release being restored. */
+type ArchivedEntity = { entityType: 'KNOWLEDGE' | 'FLOW'; key: string; version: number }
+
 type Session = { role: AccountRoleName }
 
 const STATUS_VARIANT: Record<string, 'success' | 'muted' | 'warning'> = {
@@ -92,6 +95,7 @@ export default function ReleasesPage() {
   const [rollbackTarget, setRollbackTarget] = useState<ReleaseRow | null>(null)
   const [reason, setReason] = useState('')
   const [rollingBack, setRollingBack] = useState(false)
+  const [archived, setArchived] = useState<ArchivedEntity[] | null>(null)
 
   const load = useCallback(() => {
     const params = new URLSearchParams({ page: String(page) })
@@ -240,13 +244,19 @@ export default function ReleasesPage() {
     setRollingBack(true)
     setActionError(null)
     try {
-      await fetchJson(`/api/bot-control/releases/${rollbackTarget.id}/rollback`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ reason: reason.trim() }),
-      })
+      const result = await fetchJson<{ archived: ArchivedEntity[] }>(
+        `/api/bot-control/releases/${rollbackTarget.id}/rollback`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ reason: reason.trim() }),
+        }
+      )
       setRollbackTarget(null)
       setReason('')
+      // Shown after the modal closes rather than inside it: this is the answer to "what did
+      // that just take with it", and it must survive the dialog it came from.
+      setArchived(result.archived ?? [])
       setPage(1)
       await load()
     } catch (err: unknown) {
@@ -435,6 +445,35 @@ export default function ReleasesPage() {
         </Select>
       </div>
 
+      {archived !== null && (
+        <Card className="space-y-1 border-amber-300 p-3">
+          <div className="flex items-start justify-between gap-2">
+            <h2 className="text-sm font-semibold text-navy">Rollback selesai</h2>
+            <Button type="button" variant="outline" size="sm" onClick={() => setArchived(null)}>
+              Tutup
+            </Button>
+          </div>
+          {archived.length === 0 ? (
+            <p className="text-xs text-muted-foreground">
+              Tidak ada entity yang lebih baru, jadi tidak ada yang perlu diarsipkan.
+            </p>
+          ) : (
+            <>
+              <p className="text-xs text-muted-foreground">
+                {archived.length} entity diarsipkan karena dibuat setelah release yang dipulihkan:
+              </p>
+              <ul className="list-inside list-disc text-xs text-muted-foreground">
+                {archived.map((entity) => (
+                  <li key={`${entity.entityType}:${entity.key}:${entity.version}`}>
+                    <span className="font-mono">{entity.key}</span> v{entity.version} ({entity.entityType})
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+        </Card>
+      )}
+
       {loading && <p className="text-sm text-muted-foreground">Memuat...</p>}
       {error && <p className="text-sm text-destructive">{error}</p>}
 
@@ -531,6 +570,14 @@ export default function ReleasesPage() {
           <p className="text-xs text-muted-foreground">
             Tidak ada data yang dihapus. Sistem membuat release baru berisi snapshot v{rollbackTarget.version}, dan
             release yang sekarang aktif ditandai <span className="font-mono">ROLLED_BACK</span>.
+          </p>
+          {/* Said before the button, not after: withdrawing entities the operator did not name
+              is the surprising half of a rollback, and finding out afterwards is finding out
+              from a customer. */}
+          <p className="text-xs text-amber-900">
+            Knowledge dan flow yang dipublish SETELAH v{rollbackTarget.version} akan ikut diarsipkan, supaya bot
+            benar-benar kembali ke keadaan itu. Semuanya tercatat di audit log dan bisa diterbitkan lagi lewat
+            publish biasa.
           </p>
           <Textarea
             value={reason}
