@@ -1,6 +1,7 @@
 import { prisma } from '@/lib/db'
 import { getChannelPolicy } from '@/lib/bot-control/runtime-channel-policy'
 import type { ChannelCapabilityKey } from '@/lib/bot-control/channel-policy-config'
+import { channelForCapability, supportsCapability } from '@/lib/bot-control/channel-capabilities'
 
 /**
  * Decides which channel a message goes out on.
@@ -61,4 +62,61 @@ export async function channelForCapabilityPolicy(
 /** Whether the policy has switched a capability off entirely. */
 export async function isCapabilityDisabled(capability: ChannelCapabilityKey): Promise<boolean> {
   return (await getChannelPolicy()).capabilityRules[capability] === 'DISABLED'
+}
+
+/** What the policy decided for one capability, and whether it may be sent at all. */
+export type CapabilityRouting = {
+  channel: 'OFFICIAL' | 'UNOFFICIAL'
+  /** The policy switched this capability off entirely; the caller must not dispatch. */
+  disabled: boolean
+  /** Set when the policy named a channel that physically cannot carry the capability. */
+  clampedFrom: 'OFFICIAL' | 'UNOFFICIAL' | null
+}
+
+/**
+ * The single entry point a send path should use. SDD Manage Second §15 Phase H task 4.
+ *
+ * `channelForCapabilityPolicy` and `isCapabilityDisabled` above answer half the question each,
+ * and having two of them is why neither was ever called: a send path wants one answer. This
+ * composes them, and adds the two rules that make the policy safe to obey.
+ *
+ * --- DISABLED outranks an explicit channel ---
+ *
+ * Everywhere else an explicit channel wins, because an agent picking one by hand must not be
+ * second-guessed. "Off" is different in kind: it is not a routing preference the operator might
+ * want overridden, it is the operator saying this must not go out. A DISABLED capability that an
+ * explicit channel could walk past would be a switch that does nothing whenever it matters.
+ *
+ * --- The physical matrix clamps the policy ---
+ *
+ * `channel-capabilities.ts` describes endpoints that exist; the policy only says which channel
+ * should carry them. So a policy routing `send_template` to Unofficial — where wa-coexist has no
+ * template endpoint at all — is corrected to the channel that can actually carry it rather than
+ * obeyed into a guaranteed delivery failure. The correction is logged, because a policy quietly
+ * not doing what it says is its own kind of lie.
+ */
+export async function resolveChannelForCapability(
+  capability: ChannelCapabilityKey,
+  explicit?: 'OFFICIAL' | 'UNOFFICIAL'
+): Promise<CapabilityRouting> {
+  if (await isCapabilityDisabled(capability)) {
+    return { channel: explicit ?? 'UNOFFICIAL', disabled: true, clampedFrom: null }
+  }
+
+  if (explicit) return { channel: explicit, disabled: false, clampedFrom: null }
+
+  const preferred = await channelForCapabilityPolicy(capability)
+  if (preferred === null) return { channel: await resolveChannel(), disabled: false, clampedFrom: null }
+
+  if (supportsCapability(preferred, capability)) {
+    return { channel: preferred, disabled: false, clampedFrom: null }
+  }
+
+  const corrected = channelForCapability(capability)
+  console.warn('resolveChannelForCapability: kebijakan menunjuk channel yang tidak mendukung kemampuan ini', {
+    capability,
+    policyTarget: preferred,
+    usedInstead: corrected,
+  })
+  return { channel: corrected, disabled: false, clampedFrom: preferred }
 }

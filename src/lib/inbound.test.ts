@@ -7,11 +7,16 @@ import { decideAndRespond } from '@/lib/bot/orchestrator'
 import { __resetRateLimiterForTests } from '@/lib/bot/rate-limiter'
 import { sendMessage } from '@/lib/send'
 import { broadcast } from '@/lib/realtime'
+// Deliberately NOT mocked: runtime-flows runs for real against the mocked Prisma, which is the
+// whole point of the handoffReply tests below -- a stubbed loader could not prove the wiring.
+import { invalidateRuntimeFlowCache } from '@/lib/bot-control/runtime-flows'
+import { EXISTING_BOT_FLOW_KEY } from '@/lib/bot-control/existing-flow-registry'
 
 vi.mock('@/lib/db', () => ({ prisma: mockDeep<PrismaClient>() }))
 vi.mock('@/lib/bot/orchestrator', () => ({ decideAndRespond: vi.fn() }))
 vi.mock('@/lib/send', () => ({ sendMessage: vi.fn() }))
 vi.mock('@/lib/realtime', () => ({ broadcast: vi.fn() }))
+
 const mockPrisma = prisma as unknown as DeepMockProxy<PrismaClient>
 
 beforeEach(() => {
@@ -598,6 +603,54 @@ describe('ingestMetaMessage bot dispatch', () => {
     // back to the customer who triggered them.
     const [call] = vi.mocked(sendMessage).mock.calls
     expect(call[0].text).not.toContain('Kata kunci eskalasi terdeteksi')
+  })
+
+  /**
+   * Regression cover for the audit finding "6 dari 7 field safe-config flow tidak dibaca
+   * orchestrator". `handoffReply` is the one that had a real sentence to override, and this is
+   * the proof it is now genuinely wired: the SAME handoff, with a published flow config, says
+   * the operator's words instead of the constant.
+   *
+   * Deliberately asserted through ingestMetaMessage rather than the Test Lab simulator: the
+   * simulator stops at the decision and never sends, so the handoff sentence does not exist on
+   * that path at all. This is the level the behaviour actually lives at.
+   */
+  it('memakai handoffReply yang dipublish, bukan konstanta kode (regresi Temuan 2)', async () => {
+    stubHappyPath()
+    invalidateRuntimeFlowCache()
+    mockPrisma.botFlowDefinition.findMany.mockResolvedValue([
+      {
+        key: EXISTING_BOT_FLOW_KEY,
+        name: 'WhatsApp Existing Bot',
+        editableLevel: 'SAFE_CONFIG',
+        activeVersionId: 'ver_1',
+        versions: [
+          { id: 'ver_1', version: 3, nodeConfig: { handoffReply: 'Mohon tunggu, tim kami segera membalas ya.' } },
+        ],
+      },
+    ] as never)
+    vi.mocked(decideAndRespond).mockResolvedValue({ mode: 'handoff', reason: 'Kata kunci eskalasi terdeteksi' })
+
+    await ingestMetaMessage(samplePayload)
+    await vi.advanceTimersByTimeAsync(5000)
+
+    expect(vi.mocked(sendMessage).mock.calls[0][0].text).toBe('Mohon tunggu, tim kami segera membalas ya.')
+    invalidateRuntimeFlowCache()
+  })
+
+  it('kembali ke konstanta kode saat tidak ada flow yang dipublish', async () => {
+    // The other half of the same guarantee: an un-seeded or unreadable row must still send a
+    // real sentence, never an empty message.
+    stubHappyPath()
+    invalidateRuntimeFlowCache()
+    mockPrisma.botFlowDefinition.findMany.mockResolvedValue([] as never)
+    vi.mocked(decideAndRespond).mockResolvedValue({ mode: 'handoff', reason: 'x' })
+
+    await ingestMetaMessage(samplePayload)
+    await vi.advanceTimersByTimeAsync(5000)
+
+    expect(vi.mocked(sendMessage).mock.calls[0][0].text).toContain('connecting you with a member of our team')
+    invalidateRuntimeFlowCache()
   })
 
   it('turns the bot off on the conversation when it hands off to a human', async () => {

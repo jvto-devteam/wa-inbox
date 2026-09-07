@@ -37,6 +37,34 @@ export const SAFE_CONFIG_FIELDS = [
 
 export type SafeConfigField = (typeof SAFE_CONFIG_FIELDS)[number]
 
+/**
+ * The fields the running bot actually reads. Everything else is stored-but-inert.
+ *
+ * An audit found six of these seven fields had no reader anywhere on the decision path: an
+ * operator could edit `workingHoursReply`, send it to review, get it approved, publish it in a
+ * release, and change nothing whatsoever about what the bot says. That is worse than the field
+ * not existing, because the release history then records a change that never happened.
+ *
+ * So the list below is the whitelist, and each entry names its caller so this file can be
+ * checked against the code rather than trusted:
+ *
+ *   fallbackReply  -> orchestrator.ts (two branches) via runtime-integration.fallbackReplyText
+ *   handoffReply   -> inbound.ts, the one sentence every handoff sends, via handoffReplyText
+ *
+ * The five that are gone from the form are not oversights, they are concepts this bot does not
+ * have. `greetingText`: replies are composed by the LLM, which is instructed to open with its
+ * own greeting — there is no fixed sentence to override. `clarificationPrompt`: clarify wording
+ * is built per branch from the destination list or the funnel's missing fields, not from one
+ * string. `workingHoursReply`: there is no working-hours concept in the pipeline at all.
+ * `maxClarificationAttempts`: nothing counts clarification attempts. `leadFields`: the funnel
+ * reads `REQUIRED_FIELDS_BY_JOB` in sales-classifier.ts, typed to `TripBrief` keys, which
+ * free-typed strings cannot safely drive.
+ *
+ * Connecting any of them means BUILDING that behaviour first. When one is built, add it here
+ * and the form grows the field back.
+ */
+export const RUNTIME_CONNECTED_FIELDS: readonly SafeConfigField[] = ['fallbackReply', 'handoffReply']
+
 /** Editable levels, weakest first. SDD Manage Second §7.5. */
 export const FLOW_EDITABLE_LEVELS = ['READ_ONLY', 'TEXT_ONLY', 'SAFE_CONFIG', 'FLOW_BUILDER_V1'] as const
 export type FlowEditableLevel = (typeof FLOW_EDITABLE_LEVELS)[number]
@@ -91,8 +119,15 @@ export type FlowConfigValidation =
   | { ok: true; config: FlowSafeConfig }
   | { ok: false; error: string }
 
-/** Whether this level may edit this field at all. */
+/**
+ * Whether this level may edit this field at all.
+ *
+ * Two gates, and the order matters: a field nothing reads is refused at EVERY level, including
+ * FLOW_BUILDER_V1, because "this level may change anything" must not include changing something
+ * that has no effect.
+ */
 export function canEditField(level: string, field: SafeConfigField): boolean {
+  if (!RUNTIME_CONNECTED_FIELDS.includes(field)) return false
   if (!LEVELS_WITH_SAFE_CONFIG.includes(level as FlowEditableLevel)) return false
   if (level === 'TEXT_ONLY') return TEXT_ONLY_FIELDS.includes(field)
   return true
@@ -122,6 +157,18 @@ export function validateFlowSafeConfig(level: string, value: unknown): FlowConfi
       issue.code === 'unrecognized_keys' ? issue.keys : [issue.path.join('.') || '(konfigurasi)']
     )
     return { ok: false, error: `Konfigurasi flow tidak valid pada: ${[...new Set(fields)].join(', ')}.` }
+  }
+
+  // Separated so the message names the real reason. "Level SAFE_CONFIG tidak boleh mengubah
+  // workingHoursReply" would be misleading — no level may, because nothing reads it.
+  const inert = Object.keys(parsed.data).filter(
+    (key) => !RUNTIME_CONNECTED_FIELDS.includes(key as SafeConfigField)
+  )
+  if (inert.length > 0) {
+    return {
+      ok: false,
+      error: `Field berikut belum tersambung ke runtime dan tidak bisa diubah: ${inert.join(', ')}.`,
+    }
   }
 
   const forbidden = Object.keys(parsed.data).filter(

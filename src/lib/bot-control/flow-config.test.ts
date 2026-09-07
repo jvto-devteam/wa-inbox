@@ -7,7 +7,9 @@ import {
   editableFieldsFor,
   canEditField,
   SAFE_CONFIG_FIELDS,
+  RUNTIME_CONNECTED_FIELDS,
   MAX_CLARIFICATION_ATTEMPTS,
+  flowSafeConfigSchema,
 } from './flow-config'
 
 describe('editable levels', () => {
@@ -40,23 +42,36 @@ describe('editable levels', () => {
     if (!result.ok) expect(result.error).toContain('maxClarificationAttempts')
   })
 
-  it('gives SAFE_CONFIG every field in the list', () => {
-    expect(editableFieldsFor('SAFE_CONFIG')).toEqual([...SAFE_CONFIG_FIELDS])
+  it('hanya menawarkan field yang benar-benar dibaca runtime, bukan seluruh daftar', () => {
+    // Berubah dengan sengaja (regresi Temuan 2): sebelumnya SAFE_CONFIG menawarkan ketujuh
+    // field, dan lima di antaranya tidak dibaca siapa pun di jalur keputusan bot.
+    expect(editableFieldsFor('SAFE_CONFIG')).toEqual([...RUNTIME_CONNECTED_FIELDS])
+    expect(editableFieldsFor('SAFE_CONFIG').length).toBeLessThan(SAFE_CONFIG_FIELDS.length)
   })
 })
 
 describe('validateFlowSafeConfig', () => {
-  it('accepts the seven safe fields', () => {
-    const config = {
-      greetingText: 'Halo!',
-      clarificationPrompt: 'Boleh dijelaskan lagi?',
-      maxClarificationAttempts: 2,
-      fallbackReply: 'Saya cek dulu ya.',
-      handoffReply: 'Saya sambungkan ke agent.',
-      workingHoursReply: 'Kami balas jam kerja.',
-      leadFields: ['nama', 'tanggal'],
-    }
+  it('menerima field yang tersambung ke runtime', () => {
+    const config = { fallbackReply: 'Saya cek dulu ya.', handoffReply: 'Saya sambungkan ke agent.' }
     expect(validateFlowSafeConfig('SAFE_CONFIG', config)).toEqual({ ok: true, config })
+  })
+
+  it('menolak field yang belum tersambung, dan menyebut alasannya (regresi Temuan 2)', () => {
+    // Sebelumnya kelima field ini diterima, disimpan, di-review, di-approve, dan dipublish
+    // tanpa mengubah apa pun yang dikatakan bot -- perubahan yang tercatat di riwayat release
+    // padahal tidak pernah terjadi.
+    for (const field of ['greetingText', 'clarificationPrompt', 'workingHoursReply', 'leadFields'] as const) {
+      const value = field === 'leadFields' ? ['nama'] : 'teks'
+      const result = validateFlowSafeConfig('SAFE_CONFIG', { [field]: value })
+      expect(result.ok, field).toBe(false)
+      if (!result.ok) expect(result.error, field).toContain('belum tersambung')
+    }
+  })
+
+  it('menolaknya di level tertinggi sekalipun', () => {
+    // "Level ini boleh mengubah apa saja" tidak boleh mencakup mengubah sesuatu yang tidak
+    // berefek.
+    expect(validateFlowSafeConfig('FLOW_BUILDER_V1', { workingHoursReply: 'x' }).ok).toBe(false)
   })
 
   it('rejects a field that is not on the list, rather than storing it and ignoring it', () => {
@@ -71,11 +86,14 @@ describe('validateFlowSafeConfig', () => {
     expect(validateFlowSafeConfig('SAFE_CONFIG', { maxClarificationAttempts: 0 }).ok).toBe(false)
   })
 
-  it('caps clarification attempts, so a confused customer can still reach a human', () => {
-    expect(validateFlowSafeConfig('SAFE_CONFIG', { maxClarificationAttempts: MAX_CLARIFICATION_ATTEMPTS }).ok).toBe(true)
-    expect(
-      validateFlowSafeConfig('SAFE_CONFIG', { maxClarificationAttempts: MAX_CLARIFICATION_ATTEMPTS + 1 }).ok
-    ).toBe(false)
+  it('mempertahankan batas attempt di skema, siap dipakai kalau nanti disambungkan', () => {
+    // Bound-nya tetap diuji lewat skema: field-nya belum tersambung, jadi validator menolaknya
+    // lebih dulu, tapi batasnya tidak boleh hilang diam-diam sebelum fiturnya dibangun.
+    expect(flowSafeConfigSchema.safeParse({ maxClarificationAttempts: MAX_CLARIFICATION_ATTEMPTS }).success).toBe(true)
+    expect(flowSafeConfigSchema.safeParse({ maxClarificationAttempts: MAX_CLARIFICATION_ATTEMPTS + 1 }).success).toBe(
+      false
+    )
+    expect(flowSafeConfigSchema.safeParse({ maxClarificationAttempts: 0 }).success).toBe(false)
   })
 
   it('accepts an empty string, which means "keep the code wording"', () => {

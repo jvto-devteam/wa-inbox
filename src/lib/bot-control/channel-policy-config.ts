@@ -36,6 +36,24 @@ export const CHANNEL_CAPABILITY_KEYS = [
 
 export type ChannelCapabilityKey = (typeof CHANNEL_CAPABILITY_KEYS)[number]
 
+/**
+ * Capabilities a send path actually consults, and where.
+ *
+ * An audit found none of the nine were read anywhere: an operator could route `send_template`
+ * to Unofficial, publish it, and nothing changed. Seven now bite, and the two that do not are
+ * listed here rather than quietly left looking identical to the rest:
+ *
+ *   send_text/send_media/send_document/send_audio -> src/lib/send.ts, via
+ *     resolveChannelForCapability, on every agent and bot message.
+ *   send_template/send_carousel/send_buttons -> src/app/api/send/template/route.ts.
+ *   send_list -> NOT ENFORCED. Nothing in the app sends a WhatsApp list message.
+ *   campaign  -> NOT ENFORCED. There is no campaign sender yet; the safety guard's CAMPAIGN
+ *     purpose exists but no caller passes it.
+ *
+ * Kept as data so the editor can label them, instead of the operator having to know.
+ */
+export const UNENFORCED_CAPABILITY_KEYS: readonly ChannelCapabilityKey[] = ['send_list', 'campaign']
+
 /** Where a capability may be carried. UNOFFICIAL_LIMITED means "allowed, but rate-limited". */
 export const CAPABILITY_TARGETS = ['OFFICIAL', 'UNOFFICIAL', 'UNOFFICIAL_LIMITED', 'DISABLED'] as const
 
@@ -82,6 +100,13 @@ export const safetyConfigSchema = z
       .int()
       .min(SAFETY_BOUNDS.providerFailureWindowMs.min)
       .max(SAFETY_BOUNDS.providerFailureWindowMs.max),
+    // NOT CONNECTED TO ANY SEND PATH. Kept in the schema because published rows already carry
+    // it and dropping it would make every one of them fail to parse -- which, per
+    // readChannelPolicy, would silently fall the whole policy back to code defaults. The
+    // control is removed from the editor instead (channel-policy/page.tsx), so nobody can
+    // publish a change to it and believe it did something. Connecting it needs the window
+    // itself -- start, end, timezone, and what happens to already-queued jobs -- none of which
+    // exist in the model. `grep -rn "quietHours" src/lib/outbound/` returns nothing.
     quietHoursEnabled: z.boolean(),
   })
   .strict()

@@ -8,14 +8,19 @@ import { sendMessage } from './send'
 import { sendMetaText, sendMetaMedia } from '@/lib/meta/messages'
 import { uploadMetaMediaFromUrl } from '@/lib/meta/media-upload'
 import { sendCoexistText, sendCoexistMedia } from '@/lib/coexist/client'
-import { resolveChannel } from '@/lib/channel-router'
+import { resolveChannelForCapability } from '@/lib/channel-router'
 import { enqueueOutboundJob } from '@/lib/outbound/queue'
 import { processOutboundJob } from '@/lib/outbound/worker'
 
 vi.mock('@/lib/db', () => ({ prisma: mockDeep<PrismaClient>() }))
 vi.mock('@/lib/meta/messages', () => ({ sendMetaText: vi.fn(), sendMetaMedia: vi.fn() }))
 vi.mock('@/lib/meta/media-upload', () => ({ uploadMetaMediaFromUrl: vi.fn() }))
-vi.mock('@/lib/channel-router', () => ({ resolveChannel: vi.fn() }))
+vi.mock('@/lib/channel-router', () => ({ resolveChannelForCapability: vi.fn() }))
+
+/** sendMessage now asks the policy per capability; these tests only care about the channel. */
+function routeTo(channel: 'OFFICIAL' | 'UNOFFICIAL', disabled = false) {
+  vi.mocked(resolveChannelForCapability).mockResolvedValue({ channel, disabled, clampedFrom: null })
+}
 vi.mock('@/lib/coexist/client', () => ({ sendCoexistText: vi.fn(), sendCoexistMedia: vi.fn() }))
 // Phase 6: Unofficial sends now go through the outbound queue. The queue and worker have their
 // own suites (src/lib/outbound/*.test.ts); mocked here so these tests stay about what
@@ -34,7 +39,8 @@ beforeEach(() => {
   // resolveChannel/sendMetaText/sendCoexistText are plain vi.fn() module mocks, not reset by
   // mockReset(mockPrisma) above -- without this, a mockResolvedValue('UNOFFICIAL') set by one
   // test (or a stale call history) leaks into every test that runs after it in this file.
-  vi.mocked(resolveChannel).mockReset().mockResolvedValue('OFFICIAL')
+  vi.mocked(resolveChannelForCapability).mockReset()
+  routeTo('OFFICIAL')
   vi.mocked(sendMetaText).mockReset()
   vi.mocked(sendMetaMedia).mockReset()
   vi.mocked(uploadMetaMediaFromUrl).mockReset()
@@ -87,7 +93,7 @@ describe('sendMessage', () => {
   it('queues an Unofficial send instead of firing at wa-coexist inline', async () => {
     // Phase 6 behaviour change: the message row is stored FIRST, as PENDING, so a provider
     // outage can no longer destroy it. The provider call itself moved to the worker.
-    vi.mocked(resolveChannel).mockResolvedValue('UNOFFICIAL')
+    routeTo('UNOFFICIAL')
     mockPrisma.message.create.mockResolvedValue({ id: 'msg_3', deliveryStatus: 'PENDING' } as never)
 
     const result = await sendMessage({ conversationId: 'conv_1', text: 'Halo!', sentBy: 'AGENT' })
@@ -107,7 +113,7 @@ describe('sendMessage', () => {
   })
 
   it('fires the first attempt immediately, so a healthy queued send is no slower than before', async () => {
-    vi.mocked(resolveChannel).mockResolvedValue('UNOFFICIAL')
+    routeTo('UNOFFICIAL')
     mockPrisma.message.create.mockResolvedValue({ id: 'msg_3b', deliveryStatus: 'PENDING' } as never)
 
     await sendMessage({ conversationId: 'conv_1', text: 'Halo!', sentBy: 'AGENT' })
@@ -118,7 +124,7 @@ describe('sendMessage', () => {
   it('marks the message FAILED when the safety guard blocks the send', async () => {
     // Left PENDING it would be a message that silently never arrives; the reason lives on the
     // cancelled job row and the bubble shows FAILED with a retry button.
-    vi.mocked(resolveChannel).mockResolvedValue('UNOFFICIAL')
+    routeTo('UNOFFICIAL')
     vi.mocked(enqueueOutboundJob).mockResolvedValue({
       jobId: 'job_blocked', blocked: true, blockingReason: 'Kontak opt-out', warnings: [],
     })
@@ -154,7 +160,7 @@ describe('sendMessage', () => {
   it('stores replyToId locally but never puts a reply context in the queued payload', async () => {
     // wa-coexist's send API has no context/reply parameter, so the quote is a local-only
     // concept. The queued payload must not carry one either, or a worker would try to use it.
-    vi.mocked(resolveChannel).mockResolvedValue('UNOFFICIAL')
+    routeTo('UNOFFICIAL')
     mockPrisma.message.findUnique.mockResolvedValue({ id: 'msg_parent', externalId: 'wamid.PARENT' } as never)
     mockPrisma.message.create.mockResolvedValue({ id: 'msg_5', deliveryStatus: 'PENDING' } as never)
 
@@ -255,7 +261,7 @@ describe('sendMessage — media attachments', () => {
   })
 
   it('queues an Unofficial media send with the raw upload URL, and never deletes the local upload', async () => {
-    vi.mocked(resolveChannel).mockResolvedValue('UNOFFICIAL')
+    routeTo('UNOFFICIAL')
     mockPrisma.message.create.mockResolvedValue({ id: 'msg_m2', deliveryStatus: 'PENDING' } as never)
 
     await sendMessage({ conversationId: 'conv_1', text: '', sentBy: 'AGENT', media })
@@ -274,7 +280,7 @@ describe('sendMessage — media attachments', () => {
   it('keeps Message.type as audio and passes the audio type through to the queue', async () => {
     // The audio -> document mapping wa-coexist needs now happens in the worker's dispatch (see
     // outbound/worker.test.ts); the payload must carry the TRUE type so the worker can decide.
-    vi.mocked(resolveChannel).mockResolvedValue('UNOFFICIAL')
+    routeTo('UNOFFICIAL')
     mockPrisma.message.create.mockResolvedValue({ id: 'msg_m3', deliveryStatus: 'PENDING' } as never)
 
     await sendMessage({
@@ -296,5 +302,74 @@ describe('sendMessage — media attachments', () => {
     expect(result.deliveryStatus).toBe('FAILED')
     expect(sendMetaMedia).not.toHaveBeenCalled()
     consoleErrorSpy.mockRestore()
+  })
+})
+
+/**
+ * Regression cover for the audit finding "capabilityRules tidak punya caller".
+ *
+ * Before this, nine dropdowns on the Channel Policy page could be edited, reviewed, approved,
+ * published, snapshotted and rolled back without changing a single byte of send behaviour.
+ * These pin the two things that make them real: the capability is DERIVED from the payload (so
+ * no caller can forget to declare it), and DISABLED actually stops the dispatch.
+ */
+describe('sendMessage — kebijakan kemampuan channel (regresi Temuan 2)', () => {
+  it('menanyakan kemampuan yang tepat sesuai isi pesan', async () => {
+    mockPrisma.message.create.mockResolvedValue({ id: 'msg_1' } as never)
+
+    await sendMessage({ conversationId: 'conv_1', text: 'halo', sentBy: 'AGENT' })
+    expect(vi.mocked(resolveChannelForCapability).mock.calls[0][0]).toBe('send_text')
+
+    for (const [type, expected] of [
+      ['image', 'send_media'],
+      ['video', 'send_media'],
+      ['audio', 'send_audio'],
+      ['document', 'send_document'],
+    ] as const) {
+      vi.mocked(resolveChannelForCapability).mockClear()
+      await sendMessage({
+        conversationId: 'conv_1',
+        text: '',
+        sentBy: 'AGENT',
+        media: { url: 'https://x/f', type, mimeType: 'application/octet-stream' },
+      })
+      expect(vi.mocked(resolveChannelForCapability).mock.calls[0][0], type).toBe(expected)
+    }
+  })
+
+  it('meneruskan channel eksplisit apa adanya, jadi pilihan agent tetap menang', async () => {
+    mockPrisma.message.create.mockResolvedValue({ id: 'msg_1' } as never)
+
+    await sendMessage({ conversationId: 'conv_1', text: 'halo', sentBy: 'AGENT', channel: 'OFFICIAL' })
+
+    expect(vi.mocked(resolveChannelForCapability).mock.calls[0][1]).toBe('OFFICIAL')
+  })
+
+  it('tidak mengirim apa pun saat kemampuan dimatikan kebijakan, dan mencatatnya FAILED', async () => {
+    routeTo('OFFICIAL', true)
+    mockPrisma.message.create.mockResolvedValue({ id: 'msg_blocked', deliveryStatus: 'FAILED' } as never)
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    await sendMessage({ conversationId: 'conv_1', text: 'halo', sentBy: 'AGENT' })
+
+    // The whole point: no provider call on any path.
+    expect(sendMetaText).not.toHaveBeenCalled()
+    expect(sendCoexistText).not.toHaveBeenCalled()
+    expect(enqueueOutboundJob).not.toHaveBeenCalled()
+    // Visible to the agent rather than silently dropped.
+    expect(mockPrisma.message.create.mock.calls[0][0].data).toMatchObject({ deliveryStatus: 'FAILED' })
+    warn.mockRestore()
+  })
+
+  it('tetap tidak mengirim saat dimatikan meski agent memilih channel sendiri', async () => {
+    routeTo('UNOFFICIAL', true)
+    mockPrisma.message.create.mockResolvedValue({ id: 'msg_blocked' } as never)
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    await sendMessage({ conversationId: 'conv_1', text: 'halo', sentBy: 'AGENT', channel: 'UNOFFICIAL' })
+
+    expect(sendCoexistText).not.toHaveBeenCalled()
+    expect(enqueueOutboundJob).not.toHaveBeenCalled()
+    warn.mockRestore()
   })
 })

@@ -10,7 +10,11 @@ import { Textarea } from '@/components/ui/textarea'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { roleNameCan } from '@/lib/bot-control/permissions'
 import type { AccountRoleName } from '@/lib/auth/session'
-import type { ChannelPolicyDraft } from '@/lib/bot-control/channel-policy-config'
+import {
+  UNENFORCED_CAPABILITY_KEYS,
+  type ChannelPolicyDraft,
+  type ChannelCapabilityKey,
+} from '@/lib/bot-control/channel-policy-config'
 import { fetchJson } from '@/lib/fetch-json'
 
 type Session = { role: AccountRoleName }
@@ -237,7 +241,16 @@ export default function ChannelPolicyPage() {
               <TableBody>
                 {data.capabilityKeys.map((key) => (
                   <TableRow key={key}>
-                    <TableCell className="font-mono text-xs text-navy">{key}</TableCell>
+                    <TableCell className="font-mono text-xs text-navy">
+                      {key}
+                      {/* Said on the row itself: an unenforced rule that looks exactly like an
+                          enforced one is the shape the whole finding was about. */}
+                      {UNENFORCED_CAPABILITY_KEYS.includes(key as ChannelCapabilityKey) && (
+                        <span className="ml-2 font-sans text-amber-900" title="Belum ada jalur kirim yang membacanya">
+                          belum ditegakkan
+                        </span>
+                      )}
+                    </TableCell>
                     <TableCell className="text-xs text-muted-foreground">
                       {data.active.capabilityRules[key as keyof typeof data.active.capabilityRules] ?? '—'}
                     </TableCell>
@@ -297,23 +310,14 @@ export default function ChannelPolicyPage() {
               </label>
             ))}
 
-            <label className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={draft.safetyConfig.quietHoursEnabled}
-                onChange={(e) =>
-                  setDraft({ ...draft, safetyConfig: { ...draft.safetyConfig, quietHoursEnabled: e.target.checked } })
-                }
-                disabled={!canEdit}
-                aria-label="Aktifkan jam tenang"
-              />
-              Aktifkan jam tenang
-            </label>
-            {/* Same honesty as the capability matrix: the flag is stored and audited, but no send
-                path consults it yet. */}
+            {/* The control is GONE rather than disabled-with-a-note. A note under a working
+                checkbox still lets an operator tick it, publish it, and see it in the release
+                diff — which reads as a change that took effect. Nothing in src/lib/outbound/
+                reads this flag, so there is nothing to offer yet. */}
             <p className="text-xs text-amber-900">
-              Jam tenang belum ditegakkan saat mengirim — jendelanya sendiri belum ada di model data. Menyusul di
-              Extend Third.
+              Jam tenang belum bisa diatur di sini: jendela jamnya sendiri belum ada di model data, jadi tidak ada
+              yang bisa ditegakkan saat mengirim. Kontrolnya sengaja dihilangkan supaya tidak terlihat seperti
+              pengaturan yang berpengaruh.
             </p>
           </Card>
 

@@ -4,7 +4,8 @@ import { prisma } from '@/lib/db'
 import { sendMetaText, sendMetaMedia } from '@/lib/meta/messages'
 import { uploadMetaMediaFromUrl } from '@/lib/meta/media-upload'
 import { sendCoexistText, sendCoexistMedia } from '@/lib/coexist/client'
-import { resolveChannel } from '@/lib/channel-router'
+import { resolveChannelForCapability } from '@/lib/channel-router'
+import type { ChannelCapabilityKey } from '@/lib/bot-control/channel-policy-config'
 import { broadcast } from '@/lib/realtime'
 import { withMediaUrl } from '@/lib/serialize-message'
 import { enqueueOutboundJob } from '@/lib/outbound/queue'
@@ -29,6 +30,21 @@ async function deleteLocalUpload(url: string): Promise<void> {
   }
 }
 
+/**
+ * Which published capability rule governs this particular send.
+ *
+ * Derived from the payload rather than passed in, so no caller can forget it and quietly opt
+ * out of the policy. Audio and document are their own rows in the matrix because Unofficial
+ * carries them differently (see channel-capabilities.ts), and an operator may reasonably want
+ * one routed differently from a plain image.
+ */
+function capabilityForSend(media?: { type: 'image' | 'video' | 'audio' | 'document' }): ChannelCapabilityKey {
+  if (!media) return 'send_text'
+  if (media.type === 'document') return 'send_document'
+  if (media.type === 'audio') return 'send_audio'
+  return 'send_media'
+}
+
 export type OutboundMedia = {
   // Wherever /api/uploads just stored the agent's file -- a normal https URL, fetchable by
   // both Meta (uploadMetaMediaFromUrl downloads it before re-uploading to Meta's Media API)
@@ -49,11 +65,45 @@ export async function sendMessage(params: {
   replyToId?: string
   media?: OutboundMedia
 }) {
-  const channel = await resolveChannel(params.channel)
+  // The published channel policy decides both WHICH channel carries this capability and
+  // whether it may go out at all. SDD Manage Second §15 Phase H task 4.
+  const capability = capabilityForSend(params.media)
+  const routing = await resolveChannelForCapability(capability, params.channel)
+  const channel = routing.channel
   const conversation = await prisma.conversation.findUniqueOrThrow({
     where: { id: params.conversationId },
     include: { contact: true },
   })
+
+  // A capability the operator switched off is recorded as a FAILED message rather than thrown:
+  // the bubble then shows what was attempted, with the retry button, instead of the send
+  // vanishing with only a server log to show for it.
+  if (routing.disabled) {
+    console.warn('sendMessage: kemampuan dimatikan oleh kebijakan channel', {
+      conversationId: params.conversationId,
+      capability,
+    })
+    const blocked = await prisma.message.create({
+      data: {
+        conversationId: params.conversationId,
+        direction: 'OUTBOUND',
+        type: params.media?.type ?? 'text',
+        content: params.text || null,
+        mediaUrl: params.media?.url ?? null,
+        mimeType: params.media?.mimeType ?? null,
+        fileName: params.media?.fileName ?? null,
+        channel,
+        sentBy: params.sentBy,
+        agentId: params.agentId,
+        botTrace: params.botTrace as never,
+        deliveryStatus: 'FAILED',
+        replyToId: params.replyToId,
+      },
+      include: { replyTo: true },
+    })
+    broadcast({ type: 'message.created', conversationId: params.conversationId, message: withMediaUrl(blocked) })
+    return blocked
+  }
 
   // --- Phase 6: Unofficial goes through the outbound queue ---
   //

@@ -8,6 +8,8 @@ import { uploadMetaMediaFromUrl } from '@/lib/meta/media-upload'
 import { broadcast } from '@/lib/realtime'
 import { withMediaUrl } from '@/lib/serialize-message'
 import type { CarouselCardDef, SentTemplatePayload, TemplateHeaderDef } from '@/lib/meta/carousel-types'
+import { isCapabilityDisabled } from '@/lib/channel-router'
+import type { ChannelCapabilityKey } from '@/lib/bot-control/channel-policy-config'
 
 const bodySchema = z.object({
   conversationId: z.string(),
@@ -58,6 +60,24 @@ export async function POST(req: Request) {
   const bodyParams = parsed.data.bodyParams ?? []
   const cardDefs = (template.cards as CarouselCardDef[] | null) ?? []
   const headerDef = template.header as TemplateHeaderDef | null
+
+  // The published channel policy may switch any of these off. Checked per send rather than per
+  // template, because a carousel template only exercises send_carousel when it actually carries
+  // cards -- refusing a plain-body template for a disabled carousel rule would be wrong.
+  // SDD Manage Second §15 Phase H task 4.
+  const required: ChannelCapabilityKey[] = ['send_template']
+  if (cardDefs.length > 0) {
+    required.push('send_carousel')
+    if (cardDefs.some((card) => (card.buttons ?? []).length > 0)) required.push('send_buttons')
+  }
+  for (const capability of required) {
+    if (await isCapabilityDisabled(capability)) {
+      return NextResponse.json(
+        { error: `Kemampuan "${capability}" dimatikan oleh kebijakan channel yang sedang aktif.` },
+        { status: 409 }
+      )
+    }
+  }
 
   // Every card's source media is re-uploaded fresh on every send: Meta's ids/handles from
   // template-submission time are short-lived and cannot be reused (see media-upload.ts).

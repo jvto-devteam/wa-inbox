@@ -39,9 +39,16 @@ export async function fallbackReplyText(codeDefault: string): Promise<string> {
   return getFlowText(EXISTING_BOT_FLOW_KEY, 'fallbackReply', codeDefault)
 }
 
-/** The published clarification wording, or the caller's own constant. */
-export async function clarificationText(codeDefault: string): Promise<string> {
-  return getFlowText(EXISTING_BOT_FLOW_KEY, 'clarificationPrompt', codeDefault)
+/**
+ * The published handoff wording, or the caller's own constant.
+ *
+ * Replaces `clarificationText`, which was exported here with a docstring and never called by
+ * anything: `clarificationPrompt` has no single sentence to override, since clarify replies are
+ * composed per branch. `handoffReply` does — inbound.ts says one fixed sentence on every
+ * handoff — so this is the one that can honestly exist.
+ */
+export async function handoffReplyText(codeDefault: string): Promise<string> {
+  return getFlowText(EXISTING_BOT_FLOW_KEY, 'handoffReply', codeDefault)
 }
 
 export type ManagedFacts = {

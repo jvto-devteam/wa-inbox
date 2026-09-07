@@ -8,6 +8,7 @@ import { withMediaUrl } from '@/lib/serialize-message'
 import { isIndonesianNumber } from '@/lib/phone'
 import { recordBotDecisionRun, attachMessageToDecisionRun } from '@/lib/bot-control/decision-recorder'
 import { isRuleEnabled } from '@/lib/bot-control/runtime-rules'
+import { handoffReplyText } from '@/lib/bot/runtime-integration'
 import type { BotDecision } from '@/lib/bot/types'
 
 type MetaMediaObject = { id: string; mime_type: string; caption?: string; filename?: string }
@@ -418,7 +419,12 @@ export async function runBotForConversation(
     // The specific reason stays in botTrace for the agent (bot-log page); it is never the
     // customer's own reply text, since none of the handoff reasons are meant to be surfaced
     // verbatim (some -- e.g. an escalation keyword match -- would read oddly quoted back).
-    const handoffReply = "Thank you for your message! I'm connecting you with a member of our team, and they'll follow up with you shortly."
+    // Wording from the flow's published safe config when there is one; this constant otherwise.
+    // The default stays here rather than in the database so a wiped or unreadable row still
+    // sends a real sentence instead of nothing.
+    const handoffReply = await handoffReplyText(
+      "Thank you for your message! I'm connecting you with a member of our team, and they'll follow up with you shortly."
+    )
     const sent = await sendMessage({ conversationId: conversation.id, text: handoffReply, sentBy: 'BOT', botTrace: decision })
     await attachMessageToDecisionRun(decisionRunId, sent?.id)
 

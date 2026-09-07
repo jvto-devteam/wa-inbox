@@ -4,7 +4,12 @@ import type { PrismaClient } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { DEFAULT_CHANNEL_POLICY } from '@/lib/bot-control/channel-policy-config'
 import { invalidateChannelPolicyCache } from '@/lib/bot-control/runtime-channel-policy'
-import { resolveChannel, channelForCapabilityPolicy, isCapabilityDisabled } from './channel-router'
+import {
+  resolveChannel,
+  channelForCapabilityPolicy,
+  isCapabilityDisabled,
+  resolveChannelForCapability,
+} from './channel-router'
 
 vi.mock('@/lib/db', () => ({ prisma: mockDeep<PrismaClient>() }))
 const mockPrisma = prisma as unknown as DeepMockProxy<PrismaClient>
@@ -102,5 +107,94 @@ describe('isCapabilityDisabled', () => {
       policyRow({ capabilityRules: { ...DEFAULT_CHANNEL_POLICY.capabilityRules, send_carousel: 'DISABLED' } })
     )
     expect(await isCapabilityDisabled('send_carousel')).toBe(true)
+  })
+})
+
+/**
+ * Regression cover for the audit finding "9 capabilityRules di Channel Policy tidak punya
+ * caller" — `channelForCapabilityPolicy` and `isCapabilityDisabled` existed, were published,
+ * snapshotted and rolled back correctly, and were read by nothing on any send path.
+ *
+ * These pin the composed entry point the send paths now call. The two rules worth stating are
+ * that DISABLED outranks an explicit channel, and that the physical matrix clamps the policy.
+ */
+describe('resolveChannelForCapability (regresi Temuan 2)', () => {
+  it('mengikuti channel yang ditunjuk kebijakan', async () => {
+    mockPrisma.channelPolicySetting.findUnique.mockResolvedValue(
+      policyRow({
+        capabilityRules: { ...DEFAULT_CHANNEL_POLICY.capabilityRules, send_media: 'OFFICIAL' },
+      })
+    )
+
+    expect(await resolveChannelForCapability('send_media')).toEqual({
+      channel: 'OFFICIAL',
+      disabled: false,
+      clampedFrom: null,
+    })
+  })
+
+  it('menandai kemampuan yang dimatikan, dan itu mengalahkan channel eksplisit', async () => {
+    // "Off" is not a routing preference an explicit channel may walk past — otherwise the
+    // switch would do nothing precisely when an operator reached for it.
+    mockPrisma.channelPolicySetting.findUnique.mockResolvedValue(
+      policyRow({ capabilityRules: { ...DEFAULT_CHANNEL_POLICY.capabilityRules, send_media: 'DISABLED' } })
+    )
+
+    expect((await resolveChannelForCapability('send_media')).disabled).toBe(true)
+    expect((await resolveChannelForCapability('send_media', 'OFFICIAL')).disabled).toBe(true)
+  })
+
+  it('menghormati channel eksplisit untuk kemampuan yang tidak dimatikan', async () => {
+    mockPrisma.channelPolicySetting.findUnique.mockResolvedValue(policyRow())
+
+    expect(await resolveChannelForCapability('send_text', 'OFFICIAL')).toEqual({
+      channel: 'OFFICIAL',
+      disabled: false,
+      clampedFrom: null,
+    })
+  })
+
+  it('mengoreksi kebijakan yang menunjuk channel yang tidak bisa membawanya', async () => {
+    // wa-coexist has no template endpoint at all, so obeying this literally would guarantee a
+    // delivery failure. The correction is reported, not silent.
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    mockPrisma.channelPolicySetting.findUnique.mockResolvedValue(
+      policyRow({ capabilityRules: { ...DEFAULT_CHANNEL_POLICY.capabilityRules, send_template: 'UNOFFICIAL' } })
+    )
+
+    expect(await resolveChannelForCapability('send_template')).toEqual({
+      channel: 'OFFICIAL',
+      disabled: false,
+      clampedFrom: 'UNOFFICIAL',
+    })
+    expect(warn).toHaveBeenCalled()
+    warn.mockRestore()
+  })
+
+  it('memakai default outbound kebijakan saat kemampuan tidak dirutekan khusus', async () => {
+    mockPrisma.channelPolicySetting.findUnique.mockResolvedValue(
+      policyRow({
+        defaultOutbound: 'OFFICIAL',
+        // `campaign` sengaja tidak menunjuk channel: UNOFFICIAL_LIMITED tetap Unofficial, jadi
+        // yang diuji di sini adalah send_text yang memang mengikuti default.
+        capabilityRules: { ...DEFAULT_CHANNEL_POLICY.capabilityRules, send_text: 'OFFICIAL' },
+      })
+    )
+
+    expect((await resolveChannelForCapability('send_text')).channel).toBe('OFFICIAL')
+  })
+
+  it('menolak capabilityRules yang tidak lengkap dan memakai default kode, bukan separuh kebijakan', async () => {
+    // Zod 4 mewajibkan SELURUH key enum ada pada z.record, jadi baris yang kehilangan satu
+    // kemampuan gagal parse seluruhnya. Itu perilaku yang benar -- kebijakan setengah terbaca
+    // di depan setiap pengiriman lebih berbahaya daripada kembali ke konstanta kode -- tetapi
+    // sebelumnya tidak terpaku di test mana pun.
+    mockPrisma.channelPolicySetting.findUnique.mockResolvedValue(
+      policyRow({ defaultOutbound: 'OFFICIAL', capabilityRules: { send_text: 'OFFICIAL' } })
+    )
+
+    expect((await resolveChannelForCapability('send_text')).channel).toBe(
+      DEFAULT_CHANNEL_POLICY.defaultOutbound
+    )
   })
 })
