@@ -24,8 +24,17 @@ import { broadcast } from '@/lib/realtime'
 import { withMediaUrl } from '@/lib/serialize-message'
 import { canRetry, nextAttemptAt } from '@/lib/outbound/retry-policy'
 import { findDueJobs, type OutboundJobPayload } from '@/lib/outbound/queue'
+import { getPausedProviders, isProviderPaused } from '@/lib/outbound/provider-pause'
 
-export type ProcessResult = { processed: number; sent: number; failed: number; retrying: number; recovered: number }
+export type ProcessResult = {
+  processed: number
+  sent: number
+  failed: number
+  retrying: number
+  recovered: number
+  /** Jobs left untouched because their provider is paused. Counted, not hidden. */
+  pausedSkipped: number
+}
 
 const DEFAULT_BATCH = 25
 
@@ -53,7 +62,7 @@ export type RecoveryResult = { requeued: number; failed: number }
 
 /** Attempts every job that is currently due. Safe to call concurrently; jobs are claimed atomically. */
 export async function processDueOutboundJobs(limit: number = DEFAULT_BATCH): Promise<ProcessResult> {
-  const result: ProcessResult = { processed: 0, sent: 0, failed: 0, retrying: 0, recovered: 0 }
+  const result: ProcessResult = { processed: 0, sent: 0, failed: 0, retrying: 0, recovered: 0, pausedSkipped: 0 }
 
   // Runs on every drain, ahead of the due query, because nothing else in the system ever looks
   // at a SENDING row. A recovered job re-enters the normal ladder (so it comes back on a later
@@ -67,7 +76,16 @@ export async function processDueOutboundJobs(limit: number = DEFAULT_BATCH): Pro
   // campaign throttle — and the copy the worker does NOT use is the one that silently rots.
   const due = await findDueJobs(limit)
 
-  for (const { id } of due) {
+  // Read once per drain, not per job. A paused job is SKIPPED, never failed: a pause exists to
+  // protect messages from a misbehaving provider, and failing them would destroy exactly what
+  // the operator was trying to save. They stay QUEUED and go out on resume.
+  const paused = await getPausedProviders()
+
+  for (const { id, provider } of due) {
+    if (paused.includes(provider as (typeof paused)[number])) {
+      result.pausedSkipped += 1
+      continue
+    }
     const outcome = await processOutboundJob(id)
     if (outcome === 'skipped') continue
     result.processed += 1
@@ -158,6 +176,17 @@ export async function processOutboundJob(jobId: string): Promise<JobOutcome> {
 
   const job = await prisma.outboundJob.findUnique({ where: { id: jobId } })
   if (!job) return 'skipped'
+
+  // Re-checked here as well as in the drain, because the retry endpoint calls this directly. A
+  // pause that a manual retry could walk straight past would not be a pause. The claim is
+  // released back to QUEUED so the job is picked up normally once the provider resumes.
+  if (await isProviderPaused(job.provider)) {
+    await prisma.outboundJob.update({
+      where: { id: jobId },
+      data: { status: 'QUEUED', lastError: `Provider ${job.provider} sedang dijeda operator.` },
+    })
+    return 'skipped'
+  }
 
   const payload = job.payload as unknown as OutboundJobPayload
   const attempts = job.attempts + 1

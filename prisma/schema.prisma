@@ -930,6 +930,14 @@ model ChannelPolicySetting {
   unofficialMode  String    @default("PRIMARY_OUTBOUND")
   capabilityRules Json
   safetyConfig    Json
+  /// Provider yang sedang dijeda darurat, mis. ["COEXIST"].
+  ///
+  /// SENGAJA kolom sendiri, BUKAN bagian dari `safetyConfig`. Jeda provider adalah tindakan
+  /// operasional darurat, bukan konfigurasi yang direview: menaruhnya di safetyConfig berarti ia
+  /// ikut draft, ikut approve, dan — yang paling berbahaya — ikut ditimpa oleh publish release
+  /// yang tidak ada hubungannya, sehingga jeda yang dipasang saat insiden bisa terangkat
+  /// diam-diam oleh orang lain yang kebetulan menerbitkan perubahan knowledge.
+  pausedProviders Json?
   /// PUBLISHED, DRAFT, REVIEW, APPROVED, REJECTED.
   status          String    @default("PUBLISHED")
   /// Draft hidup berdampingan dengan nilai yang berlaku, bukan menimpanya — sama seperti

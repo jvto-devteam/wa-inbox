@@ -48,6 +48,18 @@ const SECTIONS = [
     ready: true,
   },
   {
+    href: '/bot-control/outbound-queue',
+    title: 'Outbound Queue',
+    description: 'Antrean pengiriman pesan — retry, batalkan, pulihkan job menggantung, dan jeda provider.',
+    ready: true,
+  },
+  {
+    href: '/bot-control/triage-queue',
+    title: 'Triage Queue',
+    description: 'Keputusan bot yang perlu ditindaklanjuti, dari seluruh riwayat — bukan hanya halaman yang terbuka.',
+    ready: true,
+  },
+  {
     href: '/bot-control/releases',
     title: 'Releases',
     description: 'Riwayat publish beserta snapshot-nya, dan rollback ke keadaan sebelumnya tanpa menghapus apa pun.',

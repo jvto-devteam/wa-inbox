@@ -35,14 +35,14 @@ beforeEach(() => {
   vi.clearAllMocks()
   process.env[CRON_SECRET_ENV] = SECRET
   vi.mocked(verifySessionToken).mockResolvedValue({ accountId: 'acc_admin', role: 'ADMIN', tokenVersion: 0 })
-  vi.mocked(processDueOutboundJobs).mockResolvedValue({ processed: 3, sent: 2, failed: 0, retrying: 1, recovered: 1 })
+  vi.mocked(processDueOutboundJobs).mockResolvedValue({ processed: 3, sent: 2, failed: 0, retrying: 1, recovered: 1, pausedSkipped: 0 })
 })
 
 describe('POST /api/outbound-jobs/process', () => {
   it('runs the due jobs and returns the tally', async () => {
     const res = await POST(req)
     expect(res.status).toBe(200)
-    expect(await res.json()).toEqual({ processed: 3, sent: 2, failed: 0, retrying: 1, recovered: 1 })
+    expect(await res.json()).toEqual({ processed: 3, sent: 2, failed: 0, retrying: 1, recovered: 1, pausedSkipped: 0 })
   })
 
   it('refuses an AGENT', async () => {

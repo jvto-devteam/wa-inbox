@@ -81,12 +81,22 @@ Tidak ada di SDD Manage Second yang mencabutnya.
   Ini termasuk `BotRelease.snapshot` dan `BotControlAuditLog` before/after diff.
 - **Jangan overwrite** `KnowledgeSource` yang `type=MANUAL`.
 - **Dilarang** menggunakan `any`; gunakan `unknown` atau buat tipe yang sesuai.
+- **Dilarang** menjalankan `npx prisma migrate dev` terhadap database produksi. Perintah itu
+  bisa **me-reset database** saat mendeteksi drift, dan `DATABASE_URL` di repo ini menunjuk VPS
+  produksi. Pakai `migrate diff` + `migrate deploy`, seperti seluruh fase A–H.
 
 ## Checklist Sebelum Commit per PR
 1. `npm test`
 2. `npx tsc --noEmit`
 3. `npx eslint .` (0 error, warning boleh)
-4. Jika ada migration, `npx prisma migrate dev` sudah dijalankan.
+4. Jika ada perubahan skema Prisma:
+   - **Development lokal:** `npx prisma migrate dev`.
+   - **Production (VPS):** buat migrasi offline dengan
+     `npx prisma migrate diff --from-schema <schema lama> --to-schema prisma/schema.prisma --script`,
+     simpan ke `prisma/migrations/<timestamp>_<nama>/migration.sql`, lalu terapkan dengan
+     `npx prisma migrate deploy`.
+   - Periksa SQL-nya sebelum menerapkan: `DROP`, `TRUNCATE`, dan `ALTER TABLE` non-aditif harus
+     didiskusikan lebih dulu.
 
 ## Referensi Final
 - SDD Manage Second: `.claude/docs/bot-control-manage-second-spec.md`

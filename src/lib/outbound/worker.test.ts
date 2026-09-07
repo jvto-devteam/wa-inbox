@@ -51,6 +51,8 @@ beforeEach(() => {
   mockReset(mockPrisma)
   vi.clearAllMocks()
   stubJobQueries()
+  // Nothing paused by default; the pause tests opt in.
+  mockPrisma.channelPolicySetting.findUnique.mockResolvedValue({ pausedProviders: [] } as never)
   mockPrisma.outboundJob.updateMany.mockResolvedValue({ count: 1 } as never)
   mockPrisma.outboundJob.findUnique.mockResolvedValue(job())
   mockPrisma.outboundJob.update.mockResolvedValue({ id: 'job_1' } as never)
@@ -140,6 +142,16 @@ describe('successful dispatch', () => {
     expect(mockPrisma.outboundJob.update.mock.calls[0][0].data.lastError).toContain('tidak cocok')
   })
 
+  it('releases the claim instead of sending when the provider is paused mid-flight', async () => {
+    // The retry endpoint calls processOutboundJob directly, bypassing the drain's check — a
+    // pause a manual retry could walk past would not be a pause.
+    mockPrisma.channelPolicySetting.findUnique.mockResolvedValue({ pausedProviders: ['COEXIST'] } as never)
+
+    expect(await processOutboundJob('job_1')).toBe('skipped')
+    expect(sendCoexistText).not.toHaveBeenCalled()
+    expect(mockPrisma.outboundJob.update.mock.calls[0][0].data).toMatchObject({ status: 'QUEUED' })
+  })
+
   it('reads credentials at dispatch time, never from the stored payload', async () => {
     // A payload row that outlived a token rotation would otherwise carry a dead secret.
     await processOutboundJob('job_1')
@@ -203,14 +215,28 @@ describe('processDueOutboundJobs', () => {
       .mockResolvedValueOnce(job({ id: 'job_2' }))
     vi.mocked(sendCoexistText).mockResolvedValueOnce({}).mockRejectedValueOnce(new Error('down'))
 
-    expect(await processDueOutboundJobs()).toEqual({ processed: 2, sent: 1, failed: 0, retrying: 1, recovered: 0 })
+    expect(await processDueOutboundJobs()).toEqual({
+      processed: 2,
+      sent: 1,
+      failed: 0,
+      retrying: 1,
+      recovered: 0,
+      pausedSkipped: 0,
+    })
   })
 
   it('does not count a job another worker had already claimed', async () => {
     stubJobQueries({ due: [{ id: 'job_1' }] })
     mockPrisma.outboundJob.updateMany.mockResolvedValue({ count: 0 } as never)
 
-    expect(await processDueOutboundJobs()).toEqual({ processed: 0, sent: 0, failed: 0, retrying: 0, recovered: 0 })
+    expect(await processDueOutboundJobs()).toEqual({
+      processed: 0,
+      sent: 0,
+      failed: 0,
+      retrying: 0,
+      recovered: 0,
+      pausedSkipped: 0,
+    })
   })
 
   it('only picks up jobs that are actually due', async () => {
@@ -221,6 +247,24 @@ describe('processDueOutboundJobs', () => {
     )?.[0]
     expect(call?.where).toMatchObject({ status: { in: ['QUEUED', 'RETRYING'] } })
     expect(call?.take).toBe(5)
+  })
+
+  it('skips a job whose provider is paused, and never fails it', async () => {
+    // A pause exists to protect messages from a misbehaving provider; failing them would destroy
+    // exactly what the operator was trying to save.
+    stubJobQueries({ due: [{ id: 'job_1', provider: 'COEXIST' }] })
+    mockPrisma.channelPolicySetting.findUnique.mockResolvedValue({ pausedProviders: ['COEXIST'] } as never)
+
+    const result = await processDueOutboundJobs()
+    expect(result).toMatchObject({ pausedSkipped: 1, processed: 0, failed: 0 })
+    expect(sendCoexistText).not.toHaveBeenCalled()
+  })
+
+  it('still sends for a provider that is not paused', async () => {
+    stubJobQueries({ due: [{ id: 'job_1', provider: 'COEXIST' }] })
+    mockPrisma.channelPolicySetting.findUnique.mockResolvedValue({ pausedProviders: ['META'] } as never)
+
+    expect((await processDueOutboundJobs()).sent).toBe(1)
   })
 
   it('recovers abandoned claims on every drain, before looking for due jobs', async () => {

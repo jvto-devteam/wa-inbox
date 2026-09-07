@@ -4,6 +4,7 @@ import { prisma } from '@/lib/db'
 import { getSession } from '@/lib/auth/get-session'
 import { readPaging } from '@/lib/bot-control/paging'
 import { STUCK_SENDING_MS } from '@/lib/outbound/worker'
+import { getPausedProviders } from '@/lib/outbound/provider-pause'
 
 /**
  * GET /api/outbound-jobs — the outbound queue, as an operator can actually see it.
@@ -95,6 +96,11 @@ export async function GET(req: Request) {
     )
     const summary = Object.fromEntries(JOB_STATUSES.map((s, i) => [s, statusCounts[i]])) as Record<JobStatus, number>
 
+    // Carried on the list response so the page can show a paused provider without a second
+    // request — and so the pause is visible to anyone reading the queue, not only to whoever
+    // pressed the button.
+    const pausedProviders = await getPausedProviders()
+
     const conversationIds = [...new Set(jobs.map((job) => job.conversationId))]
     const conversations =
       conversationIds.length === 0
@@ -128,6 +134,7 @@ export async function GET(req: Request) {
         }
       }),
       summary,
+      pausedProviders,
       page,
       limit,
       total,
