@@ -29,6 +29,18 @@ type ReleaseRow = {
   testSummary: { testRunId: string | null; status: string; total: number; passed: number; failed: number } | null
 }
 
+/** A run the operator may attach to a publish. Only PASSED runs are ever fetched. */
+type TestRunRow = {
+  id: string
+  name: string | null
+  scope: string
+  status: string
+  total: number
+  passed: number
+  failed: number
+  finishedAt: string | null
+}
+
 type Paged<T> = { items: T[]; page: number; limit: number; total: number }
 type Preview = {
   changes: { rules: number; knowledge: number; flows: number; channelPolicy: number }
@@ -64,6 +76,16 @@ export default function ReleasesPage() {
   const [description, setDescription] = useState('')
   const [actionError, setActionError] = useState<string | null>(null)
 
+  // The test gate is server-side and refuses a publish that names no run (see assertTestGate).
+  // The picker exists so the operator can satisfy it; without one the Publish button was a
+  // button that could only ever return 409.
+  const [testRuns, setTestRuns] = useState<TestRunRow[]>([])
+  const [testRunId, setTestRunId] = useState('')
+  const [testRunsError, setTestRunsError] = useState<string | null>(null)
+  const [loadingTestRuns, setLoadingTestRuns] = useState(true)
+  const [override, setOverride] = useState(false)
+  const [overrideReason, setOverrideReason] = useState('')
+
   const [rollbackTarget, setRollbackTarget] = useState<ReleaseRow | null>(null)
   const [reason, setReason] = useState('')
   const [rollingBack, setRollingBack] = useState(false)
@@ -94,6 +116,33 @@ export default function ReleasesPage() {
       .catch(() => {})
   }, [])
 
+  // Only PASSED runs are offered. A RUNNING or FAILED run would be refused by the gate anyway,
+  // and listing it invites the operator to pick the one thing that cannot work.
+  const loadTestRuns = useCallback(() => {
+    return fetchJson<Paged<TestRunRow>>('/api/bot-control/test-runs?status=PASSED&limit=20')
+      .then((data) => {
+        setTestRuns(data.items)
+        setTestRunsError(null)
+      })
+      .catch((err: unknown) =>
+        setTestRunsError(err instanceof Error ? err.message : 'Gagal memuat daftar test run')
+      )
+      .finally(() => setLoadingTestRuns(false))
+  }, [])
+
+  const canPublish = roleNameCan(role, 'PUBLISH')
+  const canOverride = roleNameCan(role, 'OVERRIDE_FAILED_TEST')
+
+  useEffect(() => {
+    if (canPublish) void loadTestRuns()
+  }, [canPublish, loadTestRuns])
+
+  // An override only counts when the role is allowed one AND a reason long enough to be useful
+  // is present -- the same two conditions the server re-checks, so the button does not promise
+  // something the API will refuse.
+  const usingOverride = canOverride && override && overrideReason.trim().length >= MIN_REASON_LENGTH
+  const publishReady = title.trim().length > 0 && (testRunId !== '' || usingOverride)
+
   function runPreview() {
     setPreviewError(null)
     setActionError(null)
@@ -107,20 +156,32 @@ export default function ReleasesPage() {
   }
 
   async function publish() {
-    if (publishing || title.trim().length === 0) return
+    if (publishing || !publishReady) return
     setPublishing(true)
     setActionError(null)
     try {
+      // testRunId is what the server's gate actually looks for. Sending the override instead is
+      // the OWNER-only escape hatch, and it carries its reason so the audit row can be read
+      // months later by someone asking why a release shipped on a red suite.
       await fetchJson('/api/bot-control/releases', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title: title.trim(), description: description.trim() || undefined }),
+        body: JSON.stringify({
+          title: title.trim(),
+          description: description.trim() || undefined,
+          testRunId: testRunId || undefined,
+          overrideFailedTest: usingOverride ? true : undefined,
+          reason: usingOverride ? overrideReason.trim() : undefined,
+        }),
       })
       setTitle('')
       setDescription('')
+      setTestRunId('')
+      setOverride(false)
+      setOverrideReason('')
       setPreview(null)
       setPage(1)
-      await load()
+      await Promise.all([load(), loadTestRuns()])
     } catch (err: unknown) {
       setActionError(err instanceof Error ? err.message : 'Gagal mempublish release')
     } finally {
@@ -162,15 +223,16 @@ export default function ReleasesPage() {
           Setiap publish tersimpan sebagai snapshot lengkap, jadi &quot;kembalikan ke keadaan tanggal sekian&quot;
           bisa dijalankan, bukan cuma diharapkan.
         </p>
-        {/* Said plainly, because a page that looks like a control panel but controls nothing yet
-            is worse than one that admits it. */}
         <p className="text-xs text-muted-foreground">
-          Fase ini baru fondasinya: snapshot masih kosong karena rule, knowledge, flow, dan channel policy yang bisa
-          dipublish baru dibuat di fase berikutnya.
+          Publish membutuhkan test run yang lulus. Jalankan suite di{' '}
+          <Link href="/bot-control/test-lab" className="text-brand hover:underline">
+            Test Lab
+          </Link>{' '}
+          lebih dulu, lalu lampirkan hasilnya di bawah.
         </p>
       </div>
 
-      {roleNameCan(role, 'PUBLISH') && (
+      {canPublish && (
         <Card className="space-y-3 p-4">
           <div className="flex items-center justify-between gap-2">
             <h2 className="text-sm font-semibold text-navy">Publish release baru</h2>
@@ -187,7 +249,7 @@ export default function ReleasesPage() {
                 {preview.changes.flows} &middot; Channel policy {preview.changes.channelPolicy}
               </p>
               <p className="text-muted-foreground">
-                {preview.requiresTestRun ? 'Butuh test run sebelum publish.' : 'Belum ada gate test run di fase ini.'}
+                {preview.requiresTestRun ? 'Butuh test run yang lulus sebelum publish.' : 'Tidak ada gate test run.'}
               </p>
               {preview.blockingIssues.length > 0 && (
                 <ul className="list-inside list-disc text-destructive">
@@ -212,8 +274,87 @@ export default function ReleasesPage() {
             aria-label="Deskripsi release"
             rows={2}
           />
+          <div className="space-y-2 rounded border border-dashed p-2">
+            <div className="flex items-center justify-between gap-2">
+              <label htmlFor="test-run" className="text-xs font-semibold text-navy">
+                Test run yang dilampirkan
+              </label>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setLoadingTestRuns(true)
+                  void loadTestRuns()
+                }}
+              >
+                {loadingTestRuns ? 'Memuat...' : 'Muat ulang'}
+              </Button>
+            </div>
+
+            {testRunsError && <p className="text-xs text-destructive">{testRunsError}</p>}
+
+            {loadingTestRuns ? (
+              <p className="text-xs text-muted-foreground">Memuat daftar test run...</p>
+            ) : testRuns.length === 0 && !testRunsError ? (
+              <p className="text-xs text-muted-foreground">
+                Belum ada test run yang lulus.{' '}
+                <Link href="/bot-control/test-lab" className="text-brand hover:underline">
+                  Jalankan suite di Test Lab
+                </Link>{' '}
+                lalu tekan Muat ulang.
+              </p>
+            ) : (
+              <Select
+                id="test-run"
+                value={testRunId}
+                onChange={(e) => setTestRunId(e.target.value)}
+                aria-label="Test run yang dilampirkan"
+              >
+                <option value="">Pilih test run yang lulus...</option>
+                {testRuns.map((run) => (
+                  <option key={run.id} value={run.id}>
+                    {run.name ?? run.id} &middot; {run.passed}/{run.total} lulus &middot;{' '}
+                    {run.finishedAt ? new Date(run.finishedAt).toLocaleString('id-ID') : 'belum selesai'}
+                  </option>
+                ))}
+              </Select>
+            )}
+
+            {/* OWNER-only, per the permission matrix. Rendering it for an ADMIN would offer an
+                escape hatch the API refuses, which reads as a bug rather than as a policy. */}
+            {canOverride && (
+              <div className="space-y-2 border-t pt-2">
+                <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <input type="checkbox" checked={override} onChange={(e) => setOverride(e.target.checked)} />
+                  Publish tanpa test run yang lulus (khusus OWNER)
+                </label>
+                {override && (
+                  <Textarea
+                    value={overrideReason}
+                    onChange={(e) => setOverrideReason(e.target.value)}
+                    placeholder={`Alasan override, minimal ${MIN_REASON_LENGTH} karakter`}
+                    aria-label="Alasan override test"
+                    rows={2}
+                  />
+                )}
+              </div>
+            )}
+          </div>
+
           {actionError && <p className="text-xs text-destructive">{actionError}</p>}
-          <Button type="button" onClick={publish} disabled={publishing || title.trim().length === 0}>
+          {/* Spelled out rather than left to a greyed-out button, so the operator knows WHICH of
+              the two conditions is missing. */}
+          {!publishReady && (
+            <p className="text-xs text-muted-foreground">
+              {title.trim().length === 0
+                ? 'Isi judul release untuk melanjutkan.'
+                : override
+                  ? `Alasan override minimal ${MIN_REASON_LENGTH} karakter.`
+                  : 'Pilih test run yang lulus untuk melanjutkan.'}
+            </p>
+          )}
+          <Button type="button" onClick={publish} disabled={publishing || !publishReady}>
             {publishing ? 'Mempublish...' : 'Publish'}
           </Button>
         </Card>

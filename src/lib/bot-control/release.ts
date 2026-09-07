@@ -474,11 +474,10 @@ export class ReleaseTestGateError extends Error {
  * failed one. A gate that only checks runs it is given is a gate anyone can walk around by not
  * mentioning a run at all.
  *
- * The override is OWNER-only per §13, and today NO ACCOUNT CAN HOLD THAT ROLE — `AccountRole`
- * has only ADMIN and AGENT. So in practice the escape hatch is closed, and the way past a red
- * suite is to fix the bot or fix the case. That is the correct default; it is also a deadlock
- * if the failing case is itself wrong and the fix needs publishing, which is why the message
- * names the alternatives instead of just saying no.
+ * The override is OWNER-only per §13. `AccountRole` gained OWNER in migration
+ * 20260907024108, so the escape hatch is real but narrow: an ADMIN cannot take it, and an OWNER
+ * who does must leave a reason. The default way past a red suite is still to fix the bot or fix
+ * the case, which is why the message names those alternatives instead of just saying no.
  */
 async function assertTestGate(params: PublishReleaseParams): Promise<{ testRunId: string | null; overridden: boolean }> {
   const run = params.testRunId
@@ -507,7 +506,7 @@ async function assertTestGate(params: PublishReleaseParams): Promise<{ testRunId
 
   if (!params.actorRole || !roleCan(params.actorRole, 'OVERRIDE_FAILED_TEST')) {
     throw new ReleaseTestGateError(
-      `${problem} Hanya OWNER yang boleh menerbitkan tanpa test run yang lulus, dan peran itu belum ada di sistem ini.`
+      `${problem} Hanya OWNER yang boleh menerbitkan tanpa test run yang lulus.`
     )
   }
   // An override with no explanation is the one thing worse than the override itself: nobody
