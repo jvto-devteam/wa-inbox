@@ -7,6 +7,7 @@ import { ContactAvatar } from '@/components/ContactAvatar'
 import { BookingSummary, type BookingData, type TripBrief } from '@/components/contacts/BookingSummary'
 import { ensureFreshBookingData } from '@/lib/booking/client'
 import { ContactLabels } from '@/components/contacts/ContactLabels'
+import { ConsentSection } from '@/components/contacts/ConsentSection'
 import { NotesSection } from '@/components/inbox/NotesSection'
 import { RemindersSection } from '@/components/inbox/RemindersSection'
 import { STAGE_LABELS, STAGE_VARIANTS } from '@/lib/pipeline'
@@ -79,6 +80,8 @@ export default async function ContactDetailPage({ params }: { params: Promise<{ 
           <p className="text-sm text-muted-foreground">Percakapan belum dibuat untuk kontak ini.</p>
         </div>
       )}
+
+      <ConsentSection contactId={contact.id} />
 
       <RemindersSection contactId={contact.id} />
 

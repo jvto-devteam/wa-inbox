@@ -158,7 +158,15 @@ import { callLLM, type LLMOptions } from './llm'
 // decision path. Every function there falls back to what this file did before, so an
 // un-seeded or unreadable database produces exactly the previous behaviour.
 import { shouldRunEscalationClassifier, fallbackReplyText, managedFactsFor } from './runtime-integration'
-import { verifyReply, buildVerificationRetryInstruction, extractRupiahAmounts, extractUrls, isDerivableAmount } from './reply-verifier'
+import {
+  verifyReply,
+  buildVerificationRetryInstruction,
+  extractRupiahAmounts,
+  extractUrls,
+  isDerivableAmount,
+  type VerificationResult,
+  type ReplyVerification,
+} from './reply-verifier'
 import { loadCatalog } from './catalog'
 import { checkDeploymentGate } from './deployment-gate'
 import type { BotDecision, Catalog, TraceStep, TripBrief } from './types'
@@ -562,7 +570,11 @@ function bookingAmountsIn(value: unknown): number[] {
   return []
 }
 
-type ComposedReply = { ok: true; reply: string } | { ok: false; decision: BotDecision }
+type ComposedReply =
+  // `verification` travels with the reply so the caller can put it on the decision it builds,
+  // which is what finally gives BotDecisionRun.verification a writer.
+  | { ok: true; reply: string; verification: ReplyVerification }
+  | { ok: false; decision: BotDecision }
 
 /**
  * The composition step EVERY LLM-grounded branch goes through: ask the model,
@@ -618,7 +630,9 @@ async function composeVerifiedReply(params: {
   // shipped 18 broken "existing" URLs once (see knowledge.ts). One corrective
   // retry, then a safe deferral: never a fabricated number, never a dead link.
   let verdict = verifyReply({ replyText: reply, groundedAmounts, groundedUrls })
+  let attempts = 1
   if (verdict.fabricatedPrices.length > 0 || verdict.unknownUrls.length > 0) {
+    attempts = 2
     trace.push(
       'Verifikasi gagal',
       `Balasan menyebut harga/link yang tidak ada di data: ${[...verdict.fabricatedPrices, ...verdict.unknownUrls].join(', ')} -- model diminta menulis ulang.`
@@ -644,7 +658,21 @@ async function composeVerifiedReply(params: {
       // past them anyway. Opposite failure mode from 'no_facts_resolved' below, needing
       // an opposite fix (see KnowledgeGapLog's own schema comment).
       void recordKnowledgeGap(conversationId, topic, 'verification_failed', inboundText)
-      return { ok: false, decision: { mode: 'handoff', reason: 'Balasan gagal verifikasi harga/link dua kali berturut-turut', steps: trace.steps } }
+      return {
+        ok: false,
+        decision: {
+          mode: 'handoff',
+          reason: 'Balasan gagal verifikasi harga/link dua kali berturut-turut',
+          steps: trace.steps,
+          // The verdict of the SECOND attempt when there was one: it is the reply that was
+          // actually withheld, so it is the one an operator needs to see.
+          verification: {
+            status: 'BLOCKED',
+            attempts: 2,
+            ...summariseVerdict(retriedVerdict ?? verdict),
+          },
+        },
+      }
     }
   }
   // Read off the FINAL verdict, so a figure in an accepted REWRITE is recorded too
@@ -684,7 +712,24 @@ async function composeVerifiedReply(params: {
   }
 
   trace.push('Jawaban siap dikirim', previewText(reply))
-  return { ok: true, reply }
+  return {
+    ok: true,
+    reply,
+    verification: {
+      status: attempts === 1 ? 'PASSED' : 'PASSED_AFTER_RETRY',
+      attempts,
+      ...summariseVerdict(verdict),
+    },
+  }
+}
+
+/** The verdict's findings, in the shape stored on BotDecisionRun.verification. */
+function summariseVerdict(verdict: VerificationResult) {
+  return {
+    fabricatedPrices: verdict.fabricatedPrices,
+    unverifiedPrices: verdict.unverifiedPrices,
+    unknownUrls: verdict.unknownUrls,
+  }
 }
 
 /**
@@ -795,7 +840,12 @@ async function runBookingContextMode(
     trace,
   })
   if (!composed.ok) return composed.decision
-  return { mode: 'booking_context', reply: composed.reply, steps: trace.steps }
+  return {
+    mode: 'booking_context',
+    reply: composed.reply,
+    steps: trace.steps,
+    verification: composed.verification,
+  }
 }
 
 /**
@@ -884,7 +934,13 @@ async function runNoDestinationBranch(
         trace,
       })
       if (!composed.ok) return composed.decision
-      return { mode: 'faq', draft: composed.reply, sourceTopic: resolverTopic, steps: trace.steps }
+      return {
+        mode: 'faq',
+        draft: composed.reply,
+        sourceTopic: resolverTopic,
+        steps: trace.steps,
+        verification: composed.verification,
+      }
     }
     // Task 11 (KnowledgeGapLog): the branch above WAS entered -- the topic is
     // destination-independent, or a keyword module fired -- but the catalog had nothing
@@ -1773,7 +1829,13 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
       trace,
     })
     if (!composed.ok) return composed.decision
-    return { mode: 'faq', draft: composed.reply, sourceTopic: resolverTopic, steps: trace.steps }
+    return {
+      mode: 'faq',
+      draft: composed.reply,
+      sourceTopic: resolverTopic,
+      steps: trace.steps,
+      verification: composed.verification,
+    }
   } catch (error) {
     // Log before failing safe: without this, the single most likely production
     // failure surfaces in the bot audit log as an identical, uninformative generic

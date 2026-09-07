@@ -11,6 +11,7 @@ import {
   statusForDecision,
   replyTextForDecision,
   knowledgeRefsForDecision,
+  verificationForDecision,
 } from './decision-recorder'
 
 vi.mock('@/lib/db', () => ({ prisma: mockDeep<PrismaClient>() }))
@@ -158,5 +159,59 @@ describe('attachMessageToDecisionRun', () => {
   it('swallows a failed update rather than throwing into the send path', async () => {
     mockPrisma.botDecisionRun.update.mockRejectedValue(new Error('db down'))
     await expect(attachMessageToDecisionRun('run_1', 'msg_1')).resolves.toBeUndefined()
+  })
+})
+
+/**
+ * Regression cover for the audit finding "BotDecisionRun.verification tidak pernah ditulis
+ * meski 3 tempat membacanya".
+ *
+ * The column shipped with three readers — `hasVerification` on the Decision Logs list, the
+ * trace panel's verification block, and the Test Lab's result panel — and no writer at all, so
+ * all three were permanently empty and nobody could tell that from "this bot never fabricates
+ * a price".
+ */
+describe('verification (regresi Temuan 5b)', () => {
+  const verification = {
+    status: 'PASSED_AFTER_RETRY',
+    attempts: 2,
+    fabricatedPrices: [1_500_000],
+    unverifiedPrices: [],
+    unknownUrls: [],
+  }
+
+  it('menulis verdict verifikasi ke kolom yang selama ini kosong', async () => {
+    await recordBotDecisionRun({
+      conversationId: 'conv_1',
+      messageId: 'msg_1',
+      inboundText: 'berapa harga paket Bromo?',
+      decision: { mode: 'faq', draft: 'Rp1.000.000', sourceTopic: 'pricing', verification },
+      startedAt,
+      finishedAt,
+    })
+
+    expect(createdData().verification).toEqual(verification)
+  })
+
+  it('membiarkan kolom kosong untuk cabang yang memang tidak memverifikasi apa pun', async () => {
+    // A static destination question never calls the LLM, so there is nothing to verify.
+    // Claiming a verification it never ran would be worse than an empty column.
+    await recordBotDecisionRun({
+      conversationId: 'conv_1',
+      messageId: 'msg_1',
+      inboundText: 'halo',
+      decision: { mode: 'clarify', reply: 'Mau ke mana?' },
+      startedAt,
+      finishedAt,
+    })
+
+    expect(createdData().verification).toBeUndefined()
+  })
+
+  it('mengabaikan bentuk yang tidak bisa dibaca, bukan menuliskannya mentah-mentah', () => {
+    expect(verificationForDecision({ verification: 'lulus' })).toBeUndefined()
+    expect(verificationForDecision({ verification: null })).toBeUndefined()
+    expect(verificationForDecision(null)).toBeUndefined()
+    expect(verificationForDecision({ verification })).toEqual(verification)
   })
 })

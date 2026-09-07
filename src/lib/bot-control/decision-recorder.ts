@@ -50,6 +50,7 @@ type DecisionLike = {
   reply?: unknown
   sourceTopic?: unknown
   steps?: unknown
+  verification?: unknown
 }
 
 function asDecision(value: unknown): DecisionLike {
@@ -114,6 +115,21 @@ export function knowledgeRefsForDecision(decision: unknown): Prisma.InputJsonVal
 }
 
 /**
+ * The price/URL verdict the orchestrator reached, when this turn ran one.
+ *
+ * `BotDecisionRun.verification` shipped with three readers and no writer: the Decision Logs
+ * list's `hasVerification` flag, the trace panel's verification block, and the Test Lab's
+ * result panel were all permanently empty because nothing ever set the column. This is the
+ * writer. Returns undefined — not an empty object — for the branches that never verify
+ * anything, so "no verification ran" stays distinguishable from "verification found nothing".
+ */
+export function verificationForDecision(decision: unknown): Prisma.InputJsonValue | undefined {
+  const value = asDecision(decision).verification
+  if (!value || typeof value !== 'object') return undefined
+  return value as Prisma.InputJsonValue
+}
+
+/**
  * Writes one run. Returns the new row's id so the caller can attach a messageId once the reply
  * has actually been stored, or null when recording failed.
  *
@@ -128,6 +144,7 @@ export async function recordBotDecisionRun(params: RecordDecisionRunParams): Pro
     })
     const mode = asDecision(params.decision).mode
     const knowledgeRefs = knowledgeRefsForDecision(params.decision)
+    const verification = verificationForDecision(params.decision)
     // `trace` is a non-nullable Json column. sanitizeTrace returns JSON null for a run that had
     // no decision at all (an exception before the orchestrator returned), and Prisma rejects a
     // bare `null` there — it has to be the explicit Prisma.JsonNull sentinel. Writing `{}`
@@ -155,6 +172,7 @@ export async function recordBotDecisionRun(params: RecordDecisionRunParams): Pro
         // one filtered at render time is still sitting there for anyone with database access.
         trace: sanitized === null ? Prisma.JsonNull : sanitized,
         knowledgeRefs,
+        verification,
         error: params.error,
       },
       select: { id: true },

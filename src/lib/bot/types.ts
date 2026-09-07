@@ -1,3 +1,5 @@
+import type { ReplyVerification } from '@/lib/bot/reply-verifier'
+
 export type TripBrief = {
   destination?: string
   dateRange?: string
@@ -79,11 +81,18 @@ export type SalesClassification = {
 // existed still renders (falls back to the old terse summary).
 export type TraceStep = { label: string; detail: string }
 
+/**
+ * The price/URL verdict for this turn, when the reply went through verification.
+ *
+ * Optional on every variant: the branches that never call the LLM (a static destination
+ * question, a technical-hiccup fallback) have nothing to verify, and claiming a verification
+ * they never ran would be worse than an empty column. See ReplyVerification in reply-verifier.
+ */
 export type BotDecision =
-  | { mode: 'handoff'; reason: string; steps?: TraceStep[] }
-  | { mode: 'faq'; draft: string; sourceTopic: string; steps?: TraceStep[] }
-  | { mode: 'booking_context'; reply: string; steps?: TraceStep[] }
-  | { mode: 'clarify'; reply: string; steps?: TraceStep[] }
+  | { mode: 'handoff'; reason: string; steps?: TraceStep[]; verification?: ReplyVerification }
+  | { mode: 'faq'; draft: string; sourceTopic: string; steps?: TraceStep[]; verification?: ReplyVerification }
+  | { mode: 'booking_context'; reply: string; steps?: TraceStep[]; verification?: ReplyVerification }
+  | { mode: 'clarify'; reply: string; steps?: TraceStep[]; verification?: ReplyVerification }
 
 export type CatalogPackage = {
   packageKey: string

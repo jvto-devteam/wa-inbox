@@ -188,11 +188,11 @@ export async function runSimulation(request: SimulationRequest): Promise<Simulat
     status: statusForSimulation(decision),
     flowSteps: decision?.steps ?? [],
     knowledgeRefs: decision?.mode === 'faq' ? { sourceTopic: decision.sourceTopic } : null,
-    // The orchestrator does not hand back a separate verification object today; reply
-    // verification happens inside composeVerifiedReply and only its OUTCOME reaches the trace.
-    // Returning null is honest — inventing a shape here would show the operator a verification
-    // result the engine never produced.
-    verification: null,
+    // The orchestrator now hands the verdict back on the decision itself, so the Test Lab's
+    // verification panel finally has something to render. Still null for the branches that
+    // never verify anything (a static reply, a technical-hiccup fallback) — claiming a
+    // verification that never ran would be the same lie as inventing its contents.
+    verification: (decision as { verification?: Record<string, unknown> } | null)?.verification ?? null,
     warnings,
     wouldSendViaChannel,
     decisionRunId,

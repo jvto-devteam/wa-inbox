@@ -140,6 +140,26 @@ export type VerificationResult = {
   unknownUrls: string[]
 }
 
+/**
+ * What the price/URL check concluded for one turn, in the shape stored on
+ * `BotDecisionRun.verification`.
+ *
+ * That column existed with three readers (the Decision Logs list's `hasVerification`, the trace
+ * panel's verification block, and the Test Lab's result panel) and NO writer, so all three were
+ * permanently empty. This is the record they were waiting for.
+ *
+ * `attempts` is 1 for a reply that passed first time and 2 whenever the corrective retry ran —
+ * "the bot needed a second go before it stopped inventing prices" is the single most useful
+ * thing this column can tell an operator scanning a day of runs.
+ */
+export type ReplyVerification = {
+  status: 'PASSED' | 'PASSED_AFTER_RETRY' | 'BLOCKED'
+  attempts: number
+  fabricatedPrices: number[]
+  unverifiedPrices: number[]
+  unknownUrls: string[]
+}
+
 export function verifyReply(params: { replyText: string; groundedAmounts: number[]; groundedUrls: string[] }): VerificationResult {
   const { replyText, groundedAmounts, groundedUrls } = params
   const fabricatedPrices: number[] = []
