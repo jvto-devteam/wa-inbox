@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge'
 import { Field, FieldError } from '@/components/ui/label'
 import { PageHeader } from '@/components/ui/page-header'
 import { Skeleton, SkeletonText } from '@/components/ui/skeleton'
+import { SectionNav, SectionNavLayout, SectionNavPane } from '@/components/ui/section-nav'
 import { FormSection } from '@/components/settings/section'
 import { UserManagementSection } from '@/components/settings/UserManagementSection'
 import { WebhookCredentialsPanel } from '@/components/settings/WebhookCredentialsPanel'
@@ -24,6 +25,28 @@ type Settings = {
 } & SafetyThresholds
 
 const SAFETY_FIELDS = Object.keys(SAFETY_BOUNDS) as SafetyBoundKey[]
+
+type SettingsSectionId = 'jalur' | 'nomor' | 'pengaman' | 'halaman-lain' | 'pengguna' | 'webhook'
+
+/**
+ * Bagian-bagian halaman ini, dan urutannya di sidebar kedua.
+ *
+ * Diturunkan dari isi halaman apa adanya: satu item untuk satu panel, dengan label yang sama
+ * persis dengan judul panelnya. Nav yang menyebut nama lain dari yang tertulis di panelnya
+ * adalah dua sumber kebenaran untuk satu hal, dan yang kedua selalu yang basi.
+ *
+ * Urutannya urutan halaman sebelumnya: dua bagian yang dilihat semua orang lebih dulu, lalu
+ * empat bagian administratif.
+ */
+const SETTINGS_SECTIONS: ReadonlyArray<{ id: SettingsSectionId; label: string; adminOnly?: boolean }> = [
+  { id: 'jalur', label: 'Default jalur kirim' },
+  { id: 'nomor', label: 'Status nomor' },
+  { id: 'pengaman', label: 'Pengaman outbound', adminOnly: true },
+  { id: 'halaman-lain', label: 'Kelola di halaman lain', adminOnly: true },
+  { id: 'pengguna', label: 'Manajemen pengguna', adminOnly: true },
+  { id: 'webhook', label: 'Webhook & kredensial', adminOnly: true },
+]
+
 type NumberStatus = { officialTokenValid: boolean; unofficialConfigured: boolean }
 type Role = 'ADMIN' | 'AGENT' | null
 
@@ -62,6 +85,7 @@ export default function SettingsPage() {
   // behind the input's `key` did not change — and a box showing a number that was refused is
   // the exact "setting that looks applied" failure these bounds exist to prevent.
   const [safetyNonce, setSafetyNonce] = useState(0)
+  const [active, setActive] = useState<SettingsSectionId>('jalur')
 
   useEffect(() => {
     // Each rejection is swallowed: the page renders its skeleton until both land, which
@@ -128,6 +152,11 @@ export default function SettingsPage() {
   }
 
   const admin = hasAdminPowers(role)
+  // Empat dari enam bagian hanya untuk admin, dan daftar inilah SATU-SATUNYA gerbangnya:
+  // `activeId` selalu dipilih dari daftar yang sudah disaring, jadi tidak ada panel admin yang
+  // bisa terbuka lewat state yang tertinggal saat peran berubah di tengah jalan.
+  const sections = SETTINGS_SECTIONS.filter((s) => admin || !s.adminOnly)
+  const activeId = sections.some((s) => s.id === active) ? active : sections[0].id
 
   return (
     <main className="mx-auto w-full max-w-[1400px] p-6">
@@ -136,114 +165,123 @@ export default function SettingsPage() {
         description="Jalur kirim, kesehatan kedua nomor, pengaman outbound, dan akun tim. Setelan bot sendiri ada di halaman Chatbot."
       />
 
-      {/* Dua kolom mulai xl. Empat dari enam bagian di halaman ini isinya satu select, dua
-          lencana, atau empat kotak angka — menumpuknya dalam satu lajur 768px adalah bentuk
-          paling boros dari halaman yang isinya sesedikit ini. */}
-      <div className="mt-6 grid gap-x-10 gap-y-8 xl:grid-cols-2 xl:items-start">
-        <FormSection
-          title="Default jalur kirim"
-          description="Jalur yang dipakai saat pesan keluar tidak menyebut jalurnya sendiri — campaign, balasan bot, dan kiriman dari Inbox."
-        >
-          <Field label="Jalur default" htmlFor="default-channel" className="max-w-xs">
-            <Select
-              id="default-channel"
-              value={settings.defaultChannel}
-              onChange={(e) => updateDefaultChannel(e.target.value as 'OFFICIAL' | 'UNOFFICIAL')}
-              className="w-full"
-              disabled={!admin}
+      {/* Sidebar kedua, di dalam halaman — komponen dan bentuk yang sama dengan /chatbot dan
+          /bot-control. Sebelumnya keenam bagian ini adalah grid dua kolom, dan grid itu tidak
+          pernah sejajar: "Default jalur kirim" (satu <select>) berdiri di sebelah "Pengaman
+          outbound" (empat kotak angka), jadi setiap barisnya setinggi bagian terpanjang dan
+          separuh halaman jadi ruang kosong. */}
+      <SectionNavLayout className="mt-6">
+        <SectionNav
+          label="Bagian Pengaturan"
+          items={sections.map((s) => ({ id: s.id, label: s.label, onSelect: () => setActive(s.id) }))}
+          activeId={activeId}
+        />
+
+        <SectionNavPane>
+          {activeId === 'jalur' && (
+            <FormSection
+              title="Default jalur kirim"
+              description="Jalur yang dipakai saat pesan keluar tidak menyebut jalurnya sendiri — campaign, balasan bot, dan kiriman dari Inbox."
             >
-              <option value="OFFICIAL">Official</option>
-              <option value="UNOFFICIAL">Unofficial</option>
-            </Select>
-          </Field>
-        </FormSection>
-
-        {/* Unofficial is send-only -- its own connect/relink is managed on wa-dashboard directly,
-            not from here (see src/lib/coexist/client.ts). */}
-        {/* Tetangga kanan di baris pertama: garis rambut atasnya hanya benar di bawah xl,
-            ketika bagian ini memang berada di bawah "Default jalur kirim". */}
-        <FormSection
-          className="xl:border-t-0 xl:pt-0"
-          title="Status nomor"
-          description="Kesehatan kedua nomor seperti yang dilihat aplikasi ini. Nomor Unofficial disambungkan dari wa-dashboard, bukan dari sini."
-        >
-          <div className="flex flex-wrap items-center gap-2">
-            <Badge variant={status.officialTokenValid ? 'success' : 'destructive'}>
-              Official: {status.officialTokenValid ? 'Valid' : 'Tidak valid'}
-            </Badge>
-            <Badge variant={status.unofficialConfigured ? 'success' : 'destructive'}>
-              Unofficial: {status.unofficialConfigured ? 'Terkonfigurasi' : 'Belum diatur'}
-            </Badge>
-          </div>
-        </FormSection>
-
-        {admin && (
-          <FormSection
-            className="xl:col-span-2"
-            title="Pengaman outbound"
-            description={
-              <>
-                Angka-angka ini dibaca safety guard tepat sebelum sebuah pesan keluar. Batas bawahnya bukan hiasan: nol
-                pada batas campaign tidak melonggarkan limit, ia mematikan gerbangnya. Setiap kotak disimpan saat kursor
-                meninggalkannya. Jeda provider darurat tidak ada di sini — tombolnya di{' '}
-                <Link href="/bot-control/outbound-queue" className="focus-ring rounded-sm underline underline-offset-2 hover:text-ink">
-                  Outbound Queue
-                </Link>
-                , supaya menyimpan halaman ini tidak pernah bisa mengangkat jeda yang dipasang saat insiden.
-              </>
-            }
-          >
-            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-              {SAFETY_FIELDS.map((field) => (
-                <Field
-                  key={field}
-                  label={SAFETY_FIELD_LABELS[field]}
-                  htmlFor={`safety-${field}`}
-                  hint={`Antara ${SAFETY_BOUNDS[field].min} dan ${SAFETY_BOUNDS[field].max}.`}
+              <Field label="Jalur default" htmlFor="default-channel" className="max-w-xs">
+                <Select
+                  id="default-channel"
+                  value={settings.defaultChannel}
+                  onChange={(e) => updateDefaultChannel(e.target.value as 'OFFICIAL' | 'UNOFFICIAL')}
+                  className="w-full"
+                  disabled={!admin}
                 >
-                  <Input
-                    id={`safety-${field}`}
-                    type="number"
-                    min={SAFETY_BOUNDS[field].min}
-                    max={SAFETY_BOUNDS[field].max}
-                    defaultValue={settings[field]}
-                    key={`${field}-${settings[field]}-${safetyNonce}`}
-                    onBlur={(e) => updateSafetyField(field, e.target.value)}
-                    className="max-w-56 font-mono"
-                  />
-                </Field>
-              ))}
-            </div>
-            {safetyError && <FieldError className="mt-3 text-sm">{safetyError}</FieldError>}
-          </FormSection>
-        )}
+                  <option value="OFFICIAL">Official</option>
+                  <option value="UNOFFICIAL">Unofficial</option>
+                </Select>
+              </Field>
+            </FormSection>
+          )}
 
-        {admin && (
-          <FormSection
-            className="xl:col-span-2"
-            title="Kelola di halaman lain"
-            description="Data yang datang dari Meta, dibaca dan diubah di halamannya sendiri."
-          >
-            <div className="grid gap-x-10 sm:grid-cols-2">
-              <LinkRow
-                title="Biaya percakapan"
-                description="Histori biaya WhatsApp berdasarkan kategori percakapan (dari Meta)."
-                href="/settings/billing"
-                linkLabel="Lihat histori biaya"
-              />
-              <LinkRow
-                title="Profil bisnis WhatsApp"
-                description="Info bisnis yang dilihat pelanggan, status akun, dan pengaturan commerce (dari Meta)."
-                href="/settings/business-profile"
-                linkLabel="Kelola profil bisnis"
-              />
-            </div>
-          </FormSection>
-        )}
+          {/* Unofficial is send-only -- its own connect/relink is managed on wa-dashboard
+              directly, not from here (see src/lib/coexist/client.ts). */}
+          {activeId === 'nomor' && (
+            <FormSection
+              title="Status nomor"
+              description="Kesehatan kedua nomor seperti yang dilihat aplikasi ini. Nomor Unofficial disambungkan dari wa-dashboard, bukan dari sini."
+            >
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge variant={status.officialTokenValid ? 'success' : 'destructive'}>
+                  Official: {status.officialTokenValid ? 'Valid' : 'Tidak valid'}
+                </Badge>
+                <Badge variant={status.unofficialConfigured ? 'success' : 'destructive'}>
+                  Unofficial: {status.unofficialConfigured ? 'Terkonfigurasi' : 'Belum diatur'}
+                </Badge>
+              </div>
+            </FormSection>
+          )}
 
-        {admin && <UserManagementSection className="xl:col-span-2" />}
-        {admin && <WebhookCredentialsPanel className="xl:col-span-2" />}
-      </div>
+          {activeId === 'pengaman' && (
+            <FormSection
+              title="Pengaman outbound"
+              description={
+                <>
+                  Angka-angka ini dibaca safety guard tepat sebelum sebuah pesan keluar. Batas bawahnya bukan hiasan: nol
+                  pada batas campaign tidak melonggarkan limit, ia mematikan gerbangnya. Setiap kotak disimpan saat kursor
+                  meninggalkannya. Jeda provider darurat tidak ada di sini — tombolnya di{' '}
+                  <Link href="/bot-control/outbound-queue" className="focus-ring rounded-sm underline underline-offset-2 hover:text-ink">
+                    Outbound Queue
+                  </Link>
+                  , supaya menyimpan halaman ini tidak pernah bisa mengangkat jeda yang dipasang saat insiden.
+                </>
+              }
+            >
+              <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                {SAFETY_FIELDS.map((field) => (
+                  <Field
+                    key={field}
+                    label={SAFETY_FIELD_LABELS[field]}
+                    htmlFor={`safety-${field}`}
+                    hint={`Antara ${SAFETY_BOUNDS[field].min} dan ${SAFETY_BOUNDS[field].max}.`}
+                  >
+                    <Input
+                      id={`safety-${field}`}
+                      type="number"
+                      min={SAFETY_BOUNDS[field].min}
+                      max={SAFETY_BOUNDS[field].max}
+                      defaultValue={settings[field]}
+                      key={`${field}-${settings[field]}-${safetyNonce}`}
+                      onBlur={(e) => updateSafetyField(field, e.target.value)}
+                      className="max-w-56 font-mono"
+                    />
+                  </Field>
+                ))}
+              </div>
+              {safetyError && <FieldError className="mt-3 text-sm">{safetyError}</FieldError>}
+            </FormSection>
+          )}
+
+          {activeId === 'halaman-lain' && (
+            <FormSection
+              title="Kelola di halaman lain"
+              description="Data yang datang dari Meta, dibaca dan diubah di halamannya sendiri."
+            >
+              <div className="grid gap-x-10 sm:grid-cols-2">
+                <LinkRow
+                  title="Biaya percakapan"
+                  description="Histori biaya WhatsApp berdasarkan kategori percakapan (dari Meta)."
+                  href="/settings/billing"
+                  linkLabel="Lihat histori biaya"
+                />
+                <LinkRow
+                  title="Profil bisnis WhatsApp"
+                  description="Info bisnis yang dilihat pelanggan, status akun, dan pengaturan commerce (dari Meta)."
+                  href="/settings/business-profile"
+                  linkLabel="Kelola profil bisnis"
+                />
+              </div>
+            </FormSection>
+          )}
+
+          {activeId === 'pengguna' && <UserManagementSection />}
+          {activeId === 'webhook' && <WebhookCredentialsPanel />}
+        </SectionNavPane>
+      </SectionNavLayout>
     </main>
   )
 }

@@ -101,7 +101,7 @@ export default function BillingPage() {
       {/* Dua tabel sempit — tiga kolom dan dua kolom — yang sendiri-sendiri tidak punya apa pun
           untuk dibelanjakan pada lebar 1300px, jadi keduanya berdampingan. */}
       {report && (
-        <div className="mt-6 grid gap-x-10 gap-y-8 xl:grid-cols-2 xl:items-start">
+        <div className="mt-6 grid gap-4 xl:grid-cols-2 xl:items-start">
           <FormSection className="xl:col-span-2" title="Total biaya" description={`Seluruh percakapan berbayar pada ${days} hari terakhir.`}>
             <p className="font-mono text-xl font-semibold text-ink tabular-nums">
               {formatCost(report.totalCost, report.currency)}

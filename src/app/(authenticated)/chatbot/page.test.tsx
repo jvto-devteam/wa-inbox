@@ -50,6 +50,17 @@ function mockFetch(overrides: Record<string, unknown> = {}) {
 beforeEach(() => vi.unstubAllGlobals())
 afterEach(() => cleanup())
 
+/**
+ * Halaman Chatbot sekarang punya sidebar kedua: satu bagian tampil pada satu waktu, bukan
+ * kelima-limanya sekaligus. Test yang menyentuh bagian selain "Kapan bot menjawab" (bagian
+ * bawaan) harus membukanya dulu, persis seperti operator.
+ */
+async function openSection(name: string) {
+  // `findByRole` sekaligus barrier muatnya halaman: sidebar-nya baru ada setelah ketiga fetch
+  // pertama menjawab, jadi menunggunya di sini menghapus kebutuhan menunggu terpisah.
+  fireEvent.click(await screen.findByRole('button', { name }))
+}
+
 describe('ChatbotPage', () => {
   it('shows the bot On/Off status and toggles the global mode', async () => {
     mockFetch()
@@ -111,7 +122,8 @@ describe('ChatbotPage', () => {
     mockFetch()
     render(<ChatbotPage />)
 
-    expect(await screen.findByText('Siap')).toBeInTheDocument()
+    await openSection('Katalog paket')
+    expect(screen.getByText('Siap')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Lihat pertanyaan tak terjawab' })).toHaveAttribute(
       'href',
       '/settings/knowledge-gaps',
@@ -124,7 +136,7 @@ describe('ChatbotPage', () => {
     vi.stubGlobal('fetch', vi.mocked(fetch))
     render(<ChatbotPage />)
 
-    await screen.findByLabelText('Mulai')
+    await openSection('Jam kerja tim')
     fireEvent.change(screen.getByLabelText('Mulai'), { target: { value: '08:00' } })
     fireEvent.change(screen.getByLabelText('Selesai'), { target: { value: '17:00' } })
     fireEvent.change(screen.getByLabelText('Kalimat tambahan saat handoff di luar jam kerja'), { target: { value: 'Balas di luar jam kerja' } })
@@ -146,7 +158,8 @@ describe('ChatbotPage', () => {
     mockFetch()
     render(<ChatbotPage />)
 
-    const ollamaInput = await screen.findByLabelText('Model Ollama')
+    await openSection('Model LLM')
+    const ollamaInput = screen.getByLabelText('Model Ollama')
     expect(ollamaInput).toHaveValue('gemma4:31b-cloud')
 
     fireEvent.change(ollamaInput, { target: { value: 'mistral' } })
@@ -164,7 +177,8 @@ describe('ChatbotPage', () => {
     mockFetch()
     render(<ChatbotPage />)
 
-    fireEvent.change(await screen.findByLabelText('Balasan saat bot tidak tahu jawabannya'), {
+    await openSection('Kalimat bot')
+    fireEvent.change(screen.getByLabelText('Balasan saat bot tidak tahu jawabannya'), {
       target: { value: 'Maaf, saya belum tahu. Saya cek dulu ya.' },
     })
     fireEvent.change(screen.getByLabelText('Kalimat saat percakapan dialihkan ke manusia'), {
@@ -192,7 +206,8 @@ describe('ChatbotPage', () => {
     mockFetch()
     render(<ChatbotPage />)
 
-    expect(await screen.findByLabelText('Balasan saat bot tidak tahu jawabannya')).toHaveValue('')
+    await openSection('Kalimat bot')
+    expect(screen.getByLabelText('Balasan saat bot tidak tahu jawabannya')).toHaveValue('')
     expect(screen.getAllByText('Kosongkan untuk memakai kalimat bawaan.')).toHaveLength(2)
   })
 
@@ -200,7 +215,8 @@ describe('ChatbotPage', () => {
     mockFetch()
     render(<ChatbotPage />)
 
-    expect(await screen.findByText('Ijen Bromo 3D2N')).toBeInTheDocument()
+    await openSection('Katalog paket')
+    expect(screen.getByText('Ijen Bromo 3D2N')).toBeInTheDocument()
     expect(screen.getByText('ijen, bromo')).toBeInTheDocument()
     expect(screen.getByText('Rp 1.500.000')).toBeInTheDocument()
   })
@@ -209,7 +225,8 @@ describe('ChatbotPage', () => {
     mockFetch()
     render(<ChatbotPage />)
 
-    fireEvent.click(await screen.findByText('Sinkron Sekarang'))
+    await openSection('Katalog paket')
+    fireEvent.click(screen.getByText('Sinkron Sekarang'))
 
     await waitFor(() =>
       expect(vi.mocked(fetch).mock.calls.filter(([url]) => url === '/api/bot/catalog-summary')).toHaveLength(2)
@@ -231,8 +248,13 @@ describe('ChatbotPage', () => {
 
     await screen.findByText('Bot: On (Semua Chat)')
     expect(screen.queryByText('Matikan (Off)')).not.toBeInTheDocument()
-    expect(screen.queryByText('Sinkron Sekarang')).not.toBeInTheDocument()
+    await openSection('Jam kerja tim')
     expect(screen.getByLabelText('Mulai')).toBeDisabled()
+    await openSection('Model LLM')
     expect(screen.getByLabelText('Model Ollama')).toBeDisabled()
+    // Dibuka dulu, baru diperiksa: sebuah bagian yang tidak dirender akan membuat assertion ini
+    // lulus tanpa pernah melihat tombolnya, yang bukan janji yang dimaksud test ini.
+    await openSection('Katalog paket')
+    expect(screen.queryByText('Sinkron Sekarang')).not.toBeInTheDocument()
   })
 })

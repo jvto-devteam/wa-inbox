@@ -1,22 +1,26 @@
 'use client'
-import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { isActivePath } from '@/components/AppRail'
-import { cn } from '@/lib/utils'
+import { SectionNav } from '@/components/ui/section-nav'
 
 // Sub-navigasi Bot Control.
 //
 // /bot-control dulu adalah halaman kartu yang seluruh isinya link: satu klik untuk masuk, satu
 // klik lagi untuk pindah bagian, dan setiap perpindahan antar-bagian harus kembali dulu ke
 // indeks. Setelah kartu Documentation, Triage Queue, dan Releases dihapus, yang tersisa adalah
-// delapan halaman — sembilan tab dengan Ringkasan sendiri. Daftar sependek itu muat sebagai
-// baris tab yang selalu terlihat, sehingga operator pindah bagian langsung dari mana pun di
-// dalam Bot Control.
+// delapan halaman — sembilan bagian dengan Ringkasan sendiri. Daftar sependek itu muat
+// seluruhnya sebagai menu yang selalu terlihat, sehingga operator pindah bagian langsung dari
+// mana pun di dalam Bot Control.
 //
-// Bentuknya sengaja meniru <AppRail>: satu <nav aria-label>, <Link> asli (bukan tombol yang
-// tidak menavigasi), aria-current="page" pada yang aktif, dan garis brand di bawahnya. Ini
-// satu-satunya pola navigasi di repo ini; menambah pola kedua hanya membuat dua hal yang
-// terlihat mirip berperilaku beda.
+// Sejak sidebar kedua, bentuknya BUKAN lagi baris tab melainkan kolom di kiri isi halaman,
+// dan rupanya datang dari <SectionNav> — komponen yang sama yang dipakai /chatbot dan
+// /settings. Baris tab horizontal masih terpakai di layar sempit, karena itu memang bentuk
+// yang sama saat dilipat. Yang berubah hanya rupanya: daftar tujuan, aturan aktif, dan
+// <Link> aslinya sama persis seperti sebelumnya.
+//
+// Yang TIDAK boleh berubah: item di sini adalah rute sungguhan, jadi ia <a href> — bisa
+// dibuka di tab baru dan diprefetch. <SectionNav> menyediakan varian tautan tepat untuk itu;
+// lihat komentar di src/components/ui/section-nav.tsx.
 
 export const BOT_CONTROL_ROOT = '/bot-control'
 
@@ -55,43 +59,19 @@ export function isActiveSection(pathname: string, href: string): boolean {
 
 export function BotControlNav() {
   const pathname = usePathname()
+  const activeHref = BOT_CONTROL_SECTIONS.find((section) => isActiveSection(pathname, section.href))?.href ?? null
 
   return (
-    // `sticky top-0` sejak Tahap 1B: cangkangnya sekarang menyerahkan gulungan ke area konten,
-    // jadi tanpa ini baris tab ikut tergulung ke atas dan operator kehilangan satu-satunya jalan
-    // antar-bagian tepat ketika ia sedang jauh di dalam sebuah tabel panjang.
-    // Garis bawahnya membentang selebar layar (ia memisahkan bar dari halaman), tetapi TAB-nya
-    // dipusatkan pada lebar yang sama dengan isi halaman di bawahnya. Tanpa itu, di layar 2880px
-    // tab pertama berdiri ratusan piksel di kiri judul halaman yang seharusnya ia tandai.
-    <nav
-      aria-label="Menu Bot Control"
-      className="sticky top-0 z-10 border-b border-line bg-surface"
-    >
-      <div className="mx-auto flex w-full max-w-[1600px] items-center gap-1 overflow-x-auto px-6">
-        {BOT_CONTROL_SECTIONS.map((section) => {
-          const active = isActiveSection(pathname, section.href)
-          return (
-            <Link
-              key={section.href}
-              href={section.href}
-              aria-current={active ? 'page' : undefined}
-              className={cn(
-                // `.focus-ring` adalah cincin fokus tunggal sistem desain Tahap 1A. Sebelumnya
-                // tab ini memakai cincin brand buatannya sendiri (focus-visible:ring-3); dua
-                // bentuk fokus yang berbeda di dua bar navigasi yang berdampingan adalah persis
-                // jenis ketidakkonsistenan yang dihapus 1A.
-                'focus-ring relative shrink-0 rounded-md px-3 py-2.5 text-sm transition-colors',
-                active
-                  ? 'font-semibold text-accent'
-                  : 'font-medium text-ink-muted hover:bg-surface-sunken hover:text-ink'
-              )}
-            >
-              {section.label}
-              {active && <span className="absolute right-3 bottom-0 left-3 h-0.5 rounded-full bg-accent" />}
-            </Link>
-          )
-        })}
-      </div>
-    </nav>
+    <SectionNav
+      label="Menu Bot Control"
+      // `id` = `href` dengan sengaja: rute ITU identitas bagian di sini, jadi tidak ada kunci
+      // kedua yang bisa berpisah dari daftar yang dijaga layout.test.tsx.
+      items={BOT_CONTROL_SECTIONS.map((section) => ({ id: section.href, label: section.label, href: section.href }))}
+      activeId={activeHref}
+      // `lg:sticky top-0`: cangkangnya menyerahkan gulungan ke area konten, jadi tanpa ini
+      // sidebar ikut tergulung ke atas dan operator kehilangan satu-satunya jalan antar-bagian
+      // tepat ketika ia sedang jauh di dalam sebuah tabel panjang.
+      className="px-3 pt-4 lg:sticky lg:top-0 lg:py-6 lg:pr-0"
+    />
   )
 }

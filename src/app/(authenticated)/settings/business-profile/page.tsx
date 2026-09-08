@@ -179,7 +179,7 @@ export default function BusinessProfilePage() {
 
       {/* Status akun membentang penuh — ia cuma dua lencana. Info bisnis dan Commerce
           berdampingan: keduanya formulir pendek yang tidak butuh 1300px sendirian. */}
-      <div className="mt-6 grid gap-x-10 gap-y-8 xl:grid-cols-2 xl:items-start">
+      <div className="mt-6 grid gap-4 xl:grid-cols-2 xl:items-start">
         {account && (
           <FormSection
             className="xl:col-span-2"

@@ -1,6 +1,7 @@
 'use client'
 import { ChannelCapabilityTable } from '@/components/bot-control/ChannelCapabilityTable'
 import { PageHeader } from '@/components/ui/page-header'
+import { FormSection } from '@/components/settings/section'
 
 // Ringkasan Bot Control.
 //
@@ -30,19 +31,21 @@ export default function BotControlPage() {
       {/* Guidebook §15 acceptance 2: the channel policy has to be VISIBLE in Bot Control, not
           just enforced in code, so an operator knows which features are Official-only before
           they try to use one. */}
-      {/* Judul + penjelas di kiri, matriksnya di kanan. Matriks empat kolom ini tidak punya
-          apa pun untuk dibelanjakan pada lebar penuh, jadi ruang lebihnya dipakai untuk
-          menaruh keterangannya BERDAMPINGAN alih-alih menumpuknya di atas tabel. */}
-      <section className="grid gap-x-10 gap-y-3 border-t border-line pt-5 xl:grid-cols-[minmax(0,26rem)_minmax(0,1fr)] xl:items-start">
-        <div className="space-y-0.5">
-          <h2 className="text-base font-semibold text-ink">Kemampuan per channel</h2>
-          <p className="text-sm text-ink-muted">
-            Pengiriman default lewat <strong className="font-medium text-ink">Unofficial</strong>. Official dipakai
-            hanya untuk kemampuan yang memang tidak bisa lewat Unofficial.
-          </p>
-        </div>
+      {/* Dulu seksi tanpa wadah dengan judul di kiri dan tabel di kanan. Diganti panel berbatas
+          supaya sekata dengan Beranda, Kontak, dan halaman pengaturan — pemilik menandai bahwa
+          halaman yang memakai pemisah garis-atas terbaca "asal taruh" di sebelah halaman yang
+          isinya ada di dalam permukaan berbatas. */}
+      <FormSection
+        title="Kemampuan per channel"
+        description={
+          <>
+            Pengiriman default lewat <strong className="font-medium text-ink">Unofficial</strong>. Official
+            dipakai hanya untuk kemampuan yang memang tidak bisa lewat Unofficial.
+          </>
+        }
+      >
         <ChannelCapabilityTable />
-      </section>
+      </FormSection>
     </main>
   )
 }
