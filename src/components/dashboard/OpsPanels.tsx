@@ -44,7 +44,6 @@ export function FunnelPanel({
   onRetry?: () => void
   className?: string
 }) {
-  const max = funnel.reduce((m, f) => Math.max(m, f.count), 0)
 
   return (
     <Panel
@@ -74,7 +73,11 @@ export function FunnelPanel({
                 </span>
               </div>
               <div className="mt-1">
-                <HBar value={f.count} max={max} tone="ink" />
+                {/* Diskalakan terhadap `total`, BUKAN terhadap tahap terbesar. Dulu ia memakai
+                    max, sehingga tahap terbesar selalu penuh 100% padahal labelnya menulis 51%
+                    -- angka dan gambarnya membantah satu sama lain di baris yang sama. Bar dan
+                    persentase sekarang mengukur hal yang sama persis. */}
+                <HBar value={f.count} max={total} tone="ink" />
               </div>
             </li>
           ))}

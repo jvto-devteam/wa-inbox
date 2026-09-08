@@ -43,12 +43,17 @@ import { fetchJson, FetchJsonError } from '@/lib/fetch-json'
  *     di grafik volume yang membuka angka satu hari tertentu. Tidak ada animasi yang tidak
  *     menjawab pertanyaan.
  *
- * URUTAN PANEL = URUTAN MENDESAKNYA, bukan urutan menu:
+ * URUTAN PANEL, bukan urutan menu:
  *   0. Peringatan saluran — HANYA kalau rusak. Kalau pesan tidak bisa keluar, semua di bawahnya
  *      tidak bisa dikerjakan.
- *   1. Antrean chat menunggu (dua kolom) + reminder + antrean outbound. Ini pekerjaan hari ini.
- *   2. Funnel, volume, kesehatan bot. Ini keadaan bisnis dan mesinnya.
- *   3. Pertanyaan tak terjawab + ringkasan inbox. Ini pekerjaan minggu depan.
+ *   1. Funnel, volume, kesehatan bot. Keadaan bisnis dan mesinnya.
+ *   2. Antrean chat menunggu (dua kolom) + reminder + antrean outbound. Pekerjaan hari ini.
+ *   3. Pertanyaan tak terjawab + ringkasan inbox. Pekerjaan minggu depan.
+ *
+ * Baris 1 dan 2 SENGAJA dibalik dari urutan mendesaknya, atas permintaan pemilik. Alasannya
+ * masuk akal untuk peran yang membuka layar ini: "siapa yang menunggu" sudah dijawab sidebar
+ * Inbox sepanjang hari, sedangkan "di mana pelanggan menumpuk" tidak dijawab layar mana pun
+ * selain di sini. Antrean tetap di paruh atas, jadi tidak ada yang tenggelam.
  *
  * EMPAT SUMBER DATA YANG BERDIRI SENDIRI. Setiap panel gagal sendirian dan mengaku sendiri;
  * satu endpoint yang 500 tidak boleh mengosongkan tujuh panel yang datanya baik-baik saja.
@@ -247,7 +252,34 @@ export default function DashboardPage() {
             </Link>
           )}
 
-          {/* BARIS 1 — pekerjaan hari ini. Antrean mendapat dua pertiga lebar karena ia satu-satunya
+          {/* BARIS 1 — keadaan bisnis dan mesinnya. Dinaikkan ke atas atas permintaan pemilik:
+              pertanyaan pertama yang ia bawa ke layar ini adalah "di mana pelanggan menumpuk",
+              bukan "siapa yang menunggu" — yang sudah dijawab sidebar Inbox sepanjang hari. */}
+          <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
+            <FunnelPanel
+              funnel={operations.data?.funnel ?? []}
+              total={operations.data?.conversationTotal ?? 0}
+              error={operations.error}
+              loading={operations.loading}
+              onRetry={operations.reload}
+            />
+            <VolumePanel
+              days={activity.data?.volume ?? []}
+              rangeDays={range}
+              error={activity.error}
+              loading={activity.loading}
+              onRetry={activity.reload}
+            />
+            <BotHealthPanel
+              decisions={activity.data?.decisions ?? null}
+              rangeDays={range}
+              error={activity.error}
+              loading={activity.loading}
+              onRetry={activity.reload}
+            />
+          </div>
+
+          {/* BARIS 2 — pekerjaan hari ini. Antrean mendapat dua pertiga lebar karena ia satu-satunya
               panel yang isinya orang, bukan angka. */}
           <div className="grid gap-4 xl:grid-cols-3">
             <WaitingQueuePanel
@@ -274,31 +306,6 @@ export default function DashboardPage() {
                 onRetry={operations.reload}
               />
             </div>
-          </div>
-
-          {/* BARIS 2 — keadaan bisnis dan mesinnya. */}
-          <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
-            <FunnelPanel
-              funnel={operations.data?.funnel ?? []}
-              total={operations.data?.conversationTotal ?? 0}
-              error={operations.error}
-              loading={operations.loading}
-              onRetry={operations.reload}
-            />
-            <VolumePanel
-              days={activity.data?.volume ?? []}
-              rangeDays={range}
-              error={activity.error}
-              loading={activity.loading}
-              onRetry={activity.reload}
-            />
-            <BotHealthPanel
-              decisions={activity.data?.decisions ?? null}
-              rangeDays={range}
-              error={activity.error}
-              loading={activity.loading}
-              onRetry={activity.reload}
-            />
           </div>
 
           {/* BARIS 3 — pekerjaan minggu depan, dan konteks yang tenang. */}
@@ -337,17 +344,17 @@ export default function DashboardPage() {
 function DashboardBodySkeleton() {
   return (
     <div role="status" aria-label="Memuat beranda" className="space-y-4">
+      <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
+        <SkeletonPanel rows={5} />
+        <SkeletonPanel rows={5} />
+        <SkeletonPanel rows={5} />
+      </div>
       <div className="grid gap-4 xl:grid-cols-3">
         <SkeletonPanel rows={6} className="xl:col-span-2" />
         <div className="flex flex-col gap-4">
           <SkeletonPanel rows={3} />
           <SkeletonPanel rows={2} />
         </div>
-      </div>
-      <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
-        <SkeletonPanel rows={5} />
-        <SkeletonPanel rows={5} />
-        <SkeletonPanel rows={5} />
       </div>
       <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
         <SkeletonPanel rows={4} className="xl:col-span-2" />
