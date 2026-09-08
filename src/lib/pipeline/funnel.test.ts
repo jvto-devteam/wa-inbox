@@ -20,8 +20,8 @@ describe('daftar tahap funnel', () => {
       'MASUK',
       'TANYA',
       'ADA_TUJUAN',
-      'ADA_ROMBONGAN',
-      'ADA_TANGGAL',
+      'ADA_ASAL_LAMA',
+      'ADA_KOTA_AKHIR',
       'DITERUSKAN',
     ])
   })
@@ -36,7 +36,7 @@ describe('daftar tahap funnel', () => {
 
   it('funnelStageIndex mengembalikan posisi urut', () => {
     expect(funnelStageIndex('MASUK')).toBe(0)
-    expect(funnelStageIndex('ADA_TANGGAL')).toBe(4)
+    expect(funnelStageIndex('ADA_KOTA_AKHIR')).toBe(4)
     expect(funnelStageIndex('DITERUSKAN')).toBe(FUNNEL_STAGES.length - 1)
   })
 })
@@ -53,31 +53,47 @@ describe('resolveFunnelStage — tiap tahap', () => {
   it('TANYA saat percakapan sudah berjalan tapi tujuan belum diketahui', () => {
     expect(stage({ lastTopic: 'price' } satisfies TripBrief)).toBe('TANYA')
     expect(stage({ askedTripPreferences: true } satisfies TripBrief)).toBe('TANYA')
+    expect(stage({ declinedTripPreferences: true } satisfies TripBrief)).toBe('TANYA')
+    expect(stage({ awaitingTripPreferencesAnswer: true } satisfies TripBrief)).toBe('TANYA')
     expect(stage({ origin: 'Surabaya', dayCount: 3 } satisfies TripBrief)).toBe('TANYA')
+    expect(stage({ finishCity: 'bali' } satisfies TripBrief)).toBe('TANYA')
     expect(stage({ requestedTokens: ['bromo'] } satisfies TripBrief)).toBe('TANYA')
-    expect(stage({ pax: 4 } satisfies TripBrief)).toBe('TANYA')
-    expect(stage({ dateRange: '12-15 Sep' } satisfies TripBrief)).toBe('TANYA')
   })
 
   it('ADA_TUJUAN saat destination terisi', () => {
     expect(stage({ destination: 'bromo' } satisfies TripBrief)).toBe('ADA_TUJUAN')
   })
 
-  it('ADA_ROMBONGAN saat destination + pax terisi', () => {
-    expect(stage({ destination: 'bromo', pax: 4 } satisfies TripBrief)).toBe('ADA_ROMBONGAN')
+  it('ADA_ASAL_LAMA saat destination + origin + dayCount terisi', () => {
+    expect(
+      stage({ destination: 'bromo', origin: 'Surabaya', dayCount: 3 } satisfies TripBrief)
+    ).toBe('ADA_ASAL_LAMA')
   })
 
-  it('ADA_TANGGAL saat destination + pax + dateRange lengkap', () => {
+  it('ADA_KOTA_AKHIR saat destination + origin + dayCount + finishCity lengkap', () => {
     expect(
-      stage({ destination: 'bromo', pax: 4, dateRange: '12-15 Sep 2026' } satisfies TripBrief)
-    ).toBe('ADA_TANGGAL')
+      stage({
+        destination: 'bromo',
+        origin: 'Surabaya',
+        dayCount: 3,
+        finishCity: 'bali',
+      } satisfies TripBrief)
+    ).toBe('ADA_KOTA_AKHIR')
   })
 
   it('DITERUSKAN menang atas tahap kelengkapan apa pun', () => {
     expect(stage({}, true)).toBe('DITERUSKAN')
     expect(stage({ destination: 'ijen' } satisfies TripBrief, true)).toBe('DITERUSKAN')
     expect(
-      stage({ destination: 'ijen', pax: 2, dateRange: '1 Okt' } satisfies TripBrief, true)
+      stage(
+        {
+          destination: 'ijen',
+          origin: 'Bali',
+          dayCount: 2,
+          finishCity: 'surabaya',
+        } satisfies TripBrief,
+        true
+      )
     ).toBe('DITERUSKAN')
   })
 
@@ -90,6 +106,35 @@ describe('resolveFunnelStage — tiap tahap', () => {
   it('handedOff false/undefined tidak mengubah apa pun', () => {
     expect(stage({ destination: 'bromo' } satisfies TripBrief, false)).toBe('ADA_TUJUAN')
     expect(stage({ destination: 'bromo' } satisfies TripBrief, undefined)).toBe('ADA_TUJUAN')
+  })
+})
+
+describe('resolveFunnelStage — anak tangga tidak bisa dilompati', () => {
+  // Anak tangga ADA_ASAL_LAMA menuntut KEDUANYA. Satu saja tidak cukup: kalau `origin` sendirian
+  // sudah menaikkan tahap, funnel akan mengklaim tahu lama perjalanan yang belum pernah disebut.
+  it('origin terisi tapi dayCount kosong tetap ADA_TUJUAN', () => {
+    expect(stage({ destination: 'bromo', origin: 'Surabaya' } satisfies TripBrief)).toBe(
+      'ADA_TUJUAN'
+    )
+  })
+
+  it('dayCount terisi tapi origin kosong tetap ADA_TUJUAN', () => {
+    expect(stage({ destination: 'bromo', dayCount: 3 } satisfies TripBrief)).toBe('ADA_TUJUAN')
+  })
+
+  it('finishCity tanpa origin/dayCount tidak melompati ADA_ASAL_LAMA', () => {
+    expect(stage({ destination: 'bromo', finishCity: 'bali' } satisfies TripBrief)).toBe(
+      'ADA_TUJUAN'
+    )
+    expect(
+      stage({ destination: 'bromo', origin: 'Surabaya', finishCity: 'bali' } satisfies TripBrief)
+    ).toBe('ADA_TUJUAN')
+  })
+
+  it('tanpa destination, sekelengkap apa pun sisanya tetap TANYA', () => {
+    expect(
+      stage({ origin: 'Surabaya', dayCount: 3, finishCity: 'bali' } satisfies TripBrief)
+    ).toBe('TANYA')
   })
 })
 
@@ -114,19 +159,38 @@ describe('resolveFunnelStage — bentuk data rusak, tidak boleh melempar', () =>
     expect(resolveFunnelStage({ tripBrief: value })).toBe('MASUK')
   })
 
+  const withOriginDay = { destination: 'bromo', origin: 'Surabaya', dayCount: 3 }
   const wrongTypes: Array<[string, unknown, FunnelStage]> = [
     ['destination berupa angka', { destination: 12 }, 'MASUK'],
     ['destination berupa array', { destination: ['bromo'] }, 'MASUK'],
     ['destination berupa null', { destination: null }, 'MASUK'],
     ['destination string kosong', { destination: '   ' }, 'MASUK'],
-    ['pax berupa string angka', { destination: 'bromo', pax: '4' }, 'ADA_TUJUAN'],
-    ['pax nol', { destination: 'bromo', pax: 0 }, 'ADA_TUJUAN'],
-    ['pax negatif', { destination: 'bromo', pax: -2 }, 'ADA_TUJUAN'],
-    ['pax NaN', { destination: 'bromo', pax: Number.NaN }, 'ADA_TUJUAN'],
-    ['pax Infinity', { destination: 'bromo', pax: Number.POSITIVE_INFINITY }, 'ADA_TUJUAN'],
-    ['dateRange berupa objek', { destination: 'bromo', pax: 2, dateRange: { from: 'x' } }, 'ADA_ROMBONGAN'],
-    ['dateRange string kosong', { destination: 'bromo', pax: 2, dateRange: '' }, 'ADA_ROMBONGAN'],
-    ['dateRange null', { destination: 'bromo', pax: 2, dateRange: null }, 'ADA_ROMBONGAN'],
+    ['origin berupa angka', { destination: 'bromo', origin: 12, dayCount: 3 }, 'ADA_TUJUAN'],
+    ['origin string kosong', { destination: 'bromo', origin: '  ', dayCount: 3 }, 'ADA_TUJUAN'],
+    ['origin null', { destination: 'bromo', origin: null, dayCount: 3 }, 'ADA_TUJUAN'],
+    [
+      'dayCount berupa string angka',
+      { destination: 'bromo', origin: 'Surabaya', dayCount: '3' },
+      'ADA_TUJUAN',
+    ],
+    ['dayCount nol', { destination: 'bromo', origin: 'Surabaya', dayCount: 0 }, 'ADA_TUJUAN'],
+    ['dayCount negatif', { destination: 'bromo', origin: 'Surabaya', dayCount: -2 }, 'ADA_TUJUAN'],
+    [
+      'dayCount NaN',
+      { destination: 'bromo', origin: 'Surabaya', dayCount: Number.NaN },
+      'ADA_TUJUAN',
+    ],
+    [
+      'dayCount Infinity',
+      { destination: 'bromo', origin: 'Surabaya', dayCount: Number.POSITIVE_INFINITY },
+      'ADA_TUJUAN',
+    ],
+    ['finishCity berupa objek', { ...withOriginDay, finishCity: { city: 'bali' } }, 'ADA_ASAL_LAMA'],
+    ['finishCity string kosong', { ...withOriginDay, finishCity: '' }, 'ADA_ASAL_LAMA'],
+    ['finishCity null', { ...withOriginDay, finishCity: null }, 'ADA_ASAL_LAMA'],
+    ['requestedTokens berisi non-string', { requestedTokens: [1, 2] }, 'MASUK'],
+    ['requestedTokens array kosong', { requestedTokens: [] }, 'MASUK'],
+    ['flag preferensi bernilai false', { askedTripPreferences: false }, 'MASUK'],
   ]
 
   it.each(wrongTypes)('%s → %s', (_name, value, expected) => {
@@ -136,17 +200,15 @@ describe('resolveFunnelStage — bentuk data rusak, tidak boleh melempar', () =>
 })
 
 describe('resolveFunnelStage — monotonisitas terhadap kelengkapan', () => {
-  // Nilai yang sah untuk setiap field TripBrief yang bisa menaikkan tahap. Setiap subset
-  // dibandingkan dengan setiap subset yang memuatnya: menambah field tidak boleh menurunkan tahap.
+  // Setiap field TripBrief yang benar-benar ditulis orchestrator lewat `persistTripBrief` dan
+  // bisa menaikkan tahap, dengan satu nilai yang sah. Setiap subset dibandingkan dengan setiap
+  // subset yang memuatnya: menambah field tidak boleh menurunkan tahap.
   const fields: Array<[keyof TripBrief, unknown]> = [
     ['destination', 'bromo'],
-    ['pax', 4],
-    ['dateRange', '12-15 Sep 2026'],
     ['origin', 'Surabaya'],
     ['dayCount', 3],
     ['finishCity', 'bali'],
     ['lastTopic', 'price'],
-    ['notes', 'honeymoon'],
     ['requestedTokens', ['bromo', 'ijen']],
     ['askedTripPreferences', true],
     ['declinedTripPreferences', true],
@@ -163,7 +225,7 @@ describe('resolveFunnelStage — monotonisitas terhadap kelengkapan', () => {
   }
 
   it(`menguji ${subsets.length} kombinasi field`, () => {
-    expect(subsets).toHaveLength(4096)
+    expect(subsets).toHaveLength(512)
   })
 
   it('menambah satu field tidak pernah menurunkan tahap', () => {
@@ -183,12 +245,21 @@ describe('resolveFunnelStage — monotonisitas terhadap kelengkapan', () => {
 
   it('brief terlengkap menghasilkan tahap tertinggi selain DITERUSKAN', () => {
     const fullest = Object.fromEntries(fields)
-    expect(resolveFunnelStage({ tripBrief: fullest })).toBe('ADA_TANGGAL')
+    expect(resolveFunnelStage({ tripBrief: fullest })).toBe('ADA_KOTA_AKHIR')
   })
 
   it('tahap tidak pernah melompati DITERUSKAN tanpa handoff', () => {
     for (const { brief } of subsets) {
       expect(resolveFunnelStage({ tripBrief: brief })).not.toBe('DITERUSKAN')
     }
+  })
+
+  it('setiap tahap selain DITERUSKAN benar-benar terjangkau oleh kombinasi field', () => {
+    const reached = new Set(
+      subsets.map(({ brief }) => resolveFunnelStage({ tripBrief: brief }))
+    )
+    expect([...reached].sort()).toEqual(
+      ['ADA_ASAL_LAMA', 'ADA_KOTA_AKHIR', 'ADA_TUJUAN', 'MASUK', 'TANYA'].sort()
+    )
   })
 })
