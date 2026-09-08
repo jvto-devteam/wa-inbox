@@ -38,3 +38,38 @@ describe('realtime pub/sub', () => {
     unsubscribe()
   })
 })
+
+describe('isolasi listener saat broadcast', () => {
+  it('tetap mengirim ke listener berikutnya walau satu listener melempar', () => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const diterima: string[] = []
+    const lepas1 = subscribe(() => {
+      throw new Error('controller sudah ditutup')
+    })
+    const lepas2 = subscribe((event) => diterima.push(event.type))
+
+    broadcast({ type: 'handoff.alert', conversationId: 'conv_1', contactName: null })
+
+    // Tanpa isolasi, listener kedua tidak pernah dipanggil sama sekali.
+    expect(diterima).toEqual(['handoff.alert'])
+    expect(spy).toHaveBeenCalled()
+    lepas1()
+    lepas2()
+    spy.mockRestore()
+  })
+
+  it('tidak melempar ke pemanggil walau SEMUA listener melempar', () => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const lepas = subscribe(() => {
+      throw new Error('rusak')
+    })
+
+    // Pemanggilnya adalah jalur pesan pelanggan; ia tidak boleh ikut mati.
+    expect(() =>
+      broadcast({ type: 'conversation.cleared', conversationId: 'conv_1' }),
+    ).not.toThrow()
+
+    lepas()
+    spy.mockRestore()
+  })
+})

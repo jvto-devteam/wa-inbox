@@ -546,7 +546,7 @@ describe('ingestMetaMessage bot dispatch', () => {
     await ingestMetaMessage(samplePayload)
     await vi.advanceTimersByTimeAsync(5000)
 
-    expect(decideAndRespond).toHaveBeenCalledWith('conv_1', 'Halo, mau tanya paket Ijen')
+    expect(decideAndRespond).toHaveBeenCalledWith('conv_1', 'Halo, mau tanya paket Ijen', expect.anything())
     expect(sendMessage).toHaveBeenCalledWith(expect.objectContaining({ conversationId: 'conv_1', text: 'Info paket...', sentBy: 'BOT' }))
   })
 
@@ -628,7 +628,7 @@ describe('ingestMetaMessage bot dispatch', () => {
     await ingestMetaMessage(samplePayload)
     await vi.advanceTimersByTimeAsync(5000)
 
-    expect(decideAndRespond).toHaveBeenCalledWith('conv_1', 'Halo, mau tanya paket Ijen')
+    expect(decideAndRespond).toHaveBeenCalledWith('conv_1', 'Halo, mau tanya paket Ijen', expect.anything())
     expect(sendMessage).toHaveBeenCalledWith({
       conversationId: 'conv_1',
       text: "Thank you for your message! I'm connecting you with a member of our team, and they'll follow up with you shortly.",
@@ -818,7 +818,7 @@ describe('ingestMetaMessage bot dispatch', () => {
     await vi.advanceTimersByTimeAsync(5000)
 
     expect(decideAndRespond).toHaveBeenCalledTimes(1)
-    expect(decideAndRespond).toHaveBeenCalledWith('conv_1', 'halo\nis ijen safe?')
+    expect(decideAndRespond).toHaveBeenCalledWith('conv_1', 'halo\nis ijen safe?', expect.anything())
     expect(mockPrisma.conversation.update).toHaveBeenCalledTimes(1)
     // Exactly one handoff alert for the merged decision, not one per fragment.
     const alerts = vi.mocked(broadcast).mock.calls.filter(([e]) => e.type === 'handoff.alert')
@@ -914,7 +914,7 @@ describe('scheduleBotRun burst batching', () => {
 
     await vi.advanceTimersByTimeAsync(1000)
     expect(decideAndRespond).toHaveBeenCalledTimes(1)
-    expect(decideAndRespond).toHaveBeenCalledWith('conv_1', 'halo\nis ijen safe?')
+    expect(decideAndRespond).toHaveBeenCalledWith('conv_1', 'halo\nis ijen safe?', expect.anything())
   })
 
   it('joins three or more fragments in arrival order', async () => {
@@ -924,7 +924,7 @@ describe('scheduleBotRun burst batching', () => {
     await vi.advanceTimersByTimeAsync(5000)
 
     expect(decideAndRespond).toHaveBeenCalledTimes(1)
-    expect(decideAndRespond).toHaveBeenCalledWith('conv_1', 'halo\nis ijen safe?\ni want to go there')
+    expect(decideAndRespond).toHaveBeenCalledWith('conv_1', 'halo\nis ijen safe?\ni want to go there', expect.anything())
   })
 
   it('buffers different conversations independently, without cross-contaminating their text', async () => {
@@ -933,8 +933,8 @@ describe('scheduleBotRun burst batching', () => {
     await vi.advanceTimersByTimeAsync(5000)
 
     expect(decideAndRespond).toHaveBeenCalledTimes(2)
-    expect(decideAndRespond).toHaveBeenCalledWith('conv_1', 'halo dari conv 1')
-    expect(decideAndRespond).toHaveBeenCalledWith('conv_2', 'halo dari conv 2')
+    expect(decideAndRespond).toHaveBeenCalledWith('conv_1', 'halo dari conv 1', expect.anything())
+    expect(decideAndRespond).toHaveBeenCalledWith('conv_2', 'halo dari conv 2', expect.anything())
   })
 
   it('skips running the bot entirely if botEnabled turned false before the window elapsed', async () => {
@@ -1367,7 +1367,10 @@ describe('runBotForConversation decision recording', () => {
 
     expect(mockPrisma.botDecisionRun.update).toHaveBeenCalledWith({
       where: { id: 'run_1' },
-      data: { messageId: 'msg_42' },
+      // `data` diperiksa dengan objectContaining, bukan sama-persis: penulisan yang sama kini
+      // juga membawa kolom `steps` (jejak langkah pipeline, lihat pipeline/tracer.ts). Yang
+      // ditegakkan test ini -- run tertaut ke pesan yang membawa balasannya -- tidak berubah.
+      data: expect.objectContaining({ messageId: 'msg_42' }),
     })
   })
 

@@ -25,6 +25,16 @@ import { EXISTING_BOT_FLOW_KEY, WHATSAPP_EXISTING_BOT_FLOW } from '@/lib/bot-con
 export type DecisionRunStatus = 'REPLIED' | 'CLARIFIED' | 'HANDOFF' | 'FAILED' | 'SKIPPED' | 'SIMULATED'
 
 export type RecordDecisionRunParams = {
+  /**
+   * Id yang sudah dibuat pemanggil di AWAL penanganan pesan (src/lib/pipeline/tracer.ts),
+   * bukan yang dibuat Prisma di akhir. Kanvas pipeline menyiarkan batas step secara live
+   * dengan id itu; kalau baris ini lahir dengan id lain, tampilan live dan Decision Logs
+   * merujuk dua run yang berbeda dan tidak ada cara menjahitnya.
+   *
+   * Opsional dan default-nya tetap `cuid()` milik Prisma: simulator Test Lab dan pemanggil
+   * lama tidak punya tracer dan tidak boleh dipaksa membuatnya.
+   */
+  id?: string
   conversationId: string
   messageId?: string
   inboundText: string
@@ -40,6 +50,13 @@ export type RecordDecisionRunParams = {
   skipped?: boolean
   /** Marks a Test Lab run (simulator.ts) so it can never be mistaken for production traffic. */
   simulated?: boolean
+  /**
+   * Jejak langkah pipeline sejauh run ini berjalan (`PipelineTracer.snapshot()`). Sudah lewat
+   * sanitizer di tracer, dan ditulis pada `create` yang memang sudah terjadi — bukan query
+   * tambahan. Dua step terakhir (serahkan-agen / kirim-balasan) terjadi SETELAH baris ini
+   * dibuat dan menyusul lewat `attachMessageToDecisionRun`.
+   */
+  steps?: unknown
 }
 
 /** Shape the orchestrator's BotDecision union takes once narrowed for reading. */
@@ -150,9 +167,20 @@ export async function recordBotDecisionRun(params: RecordDecisionRunParams): Pro
     // bare `null` there — it has to be the explicit Prisma.JsonNull sentinel. Writing `{}`
     // instead would claim an empty decision was made, which is a different and false fact.
     const sanitized = sanitizeTrace(params.decision)
+    // Dibersihkan lagi di sini walaupun tracer sudah membersihkan setiap `detail`: ini
+    // pertahanan berlapis untuk kolom yang, sekali tercemar, permanen — dan pemanggil
+    // `steps` tidak harus tracer (tipenya `unknown`).
+    const sanitizedSteps = ((): Prisma.InputJsonValue | undefined => {
+      if (params.steps === undefined) return undefined
+      const value = sanitizeTrace(params.steps)
+      return value === null ? undefined : (value as Prisma.InputJsonValue)
+    })()
 
     const created = await prisma.botDecisionRun.create({
       data: {
+        // Hanya disertakan bila pemanggil benar-benar punya id, supaya `@default(cuid())`
+        // tetap yang berlaku untuk setiap pemanggil lama.
+        ...(params.id ? { id: params.id } : {}),
         conversationId: params.conversationId,
         messageId: params.messageId,
         // A failed or skipped run has no mode of its own; recording the status word keeps the
@@ -173,6 +201,9 @@ export async function recordBotDecisionRun(params: RecordDecisionRunParams): Pro
         trace: sanitized === null ? Prisma.JsonNull : sanitized,
         knowledgeRefs,
         verification,
+        // `undefined` (bukan JsonNull) untuk run tanpa tracer: kolomnya tetap NULL, yang di
+        // sini berarti "run ini tidak diinstrumentasi", bukan "run ini tidak punya langkah".
+        steps: sanitizedSteps,
         error: params.error,
       },
       select: { id: true },
@@ -191,14 +222,23 @@ export async function recordBotDecisionRun(params: RecordDecisionRunParams): Pro
  * after the orchestrator returns (so a turn that never sends anything is still audited), but
  * the Message row does not exist until `sendMessage` has run. Also never throws.
  */
-export async function attachMessageToDecisionRun(runId: string | null, messageId?: string): Promise<void> {
+export async function attachMessageToDecisionRun(runId: string | null, messageId?: string, steps?: unknown): Promise<void> {
   // Both arguments are treated as optional at runtime. Audit code sits directly in the bot's
   // send path, so it must be incapable of throwing there: if the run was never recorded, or
   // the caller could not produce a message id, the link is simply skipped and the customer
   // still gets their reply.
+  //
+  // `steps` menumpang UPDATE yang memang sudah terjadi di sini, bukan query kedua. Ini
+  // satu-satunya penulisan `BotDecisionRun` yang berjalan SETELAH pesan benar-benar terkirim,
+  // jadi ini satu-satunya tempat dua langkah terakhir (serahkan-agen, kirim-balasan) bisa ikut
+  // tersimpan. Kalau `messageId` tidak ada, tidak ada UPDATE sama sekali dan yang tersimpan
+  // tetap snapshot dari `create` — lengkap sampai keputusan, hanya tanpa dua langkah kirim.
   if (!runId || !messageId) return
   try {
-    await prisma.botDecisionRun.update({ where: { id: runId }, data: { messageId } })
+    await prisma.botDecisionRun.update({
+      where: { id: runId },
+      data: { messageId, ...(Array.isArray(steps) ? { steps: sanitizeTrace(steps) as Prisma.InputJsonValue } : {}) },
+    })
   } catch (error) {
     console.error('attachMessageToDecisionRun gagal', { runId, messageId, error })
   }
