@@ -10,9 +10,22 @@ Dibuat 2026-09-08. Menyertai branch `refactor/right-size-bot-control`.
 | SELECT verifikasi | ✅ dijalankan — hasilnya membatalkan kedua "jebakan", lihat di bawah |
 | Migrasi aditif `20260908110000` | ✅ **SUDAH DITERAPKAN** ke produksi |
 | Pemindahan data | ✅ **tidak diperlukan** — terbukti no-op, 6/6 perbandingan `true` |
-| Deploy kode ke VPS | ⏳ **belum** |
-| Migrasi destruktif `20260908120000` | ⏳ **ditahan** sampai deploy selesai |
-| Migrasi `20260908130000_add_pipeline_steps` | ⏳ menyusul, aditif, ikut `migrate deploy` yang sama |
+| Deploy kode ke VPS | ✅ **selesai** — `916dcb3`, PM2 online, `/login` 200 lokal & publik |
+| Migrasi destruktif `20260908120000` | ✅ **diterapkan** |
+| Migrasi `20260908130000_add_pipeline_steps` | ✅ **diterapkan** |
+| Bersih-bersih mirror katalog | ✅ 33 baris `CATALOG_JSON` dihapus |
+
+**SELURUH MIGRASI SELESAI 2026-09-08.** Diverifikasi lewat
+`scripts/verify-after-destructive.ts`: 10 tabel hilang, tabel inti utuh, kolom baru ada,
+dan data bertahan (339 percakapan, 8.637 pesan, 12 baris audit). Nol error baru di log PM2
+setelah migrasi.
+
+Satu langkah yang **tidak** ada di file migrasi dan hampir terlewat: `GET
+/api/bot-control/knowledge/sources` tidak menyaring `type`, padahal komentarnya menyatakan
+"every row here is MANUAL now". Ke-33 baris `CATALOG_JSON` yatim (tabel chunk-nya sudah
+di-DROP) akan tampil di UI seolah sumber managed. Dibersihkan dengan
+`scripts/cleanup-catalog-mirror.ts` — predikat positif, jumlah `MANUAL` dicek sebelum dan
+sesudah di dalam satu transaksi.
 
 **Kedua jebakan di bawah ternyata TIDAK BERLAKU di data produksi** — dipertahankan di dokumen
 ini sebagai catatan mengapa keduanya diperiksa, bukan sebagai pekerjaan yang tersisa. Yang
