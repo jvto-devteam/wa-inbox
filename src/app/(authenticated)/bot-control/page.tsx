@@ -1,84 +1,21 @@
 'use client'
-import Link from 'next/link'
 import { Card } from '@/components/ui/card'
 import { ChannelCapabilityTable } from '@/components/bot-control/ChannelCapabilityTable'
 
-// Overview versi Phase 1: hanya pintu masuk ke yang sudah nyata ada.
+// Ringkasan Bot Control.
 //
-// Guidebook §18.1 mendaftar sembilan kartu metrik untuk halaman ini, dan delapan di antaranya
-// membaca data yang tabelnya belum dibuat (BotDecisionRun, KnowledgeSource, OutboundJob) —
-// tabel-tabel yang memang belum boleh dibuat, karena Phase 1 dilarang membuat migration.
-// Menampilkan kartu "Bot runs hari ini: 0" yang angkanya tidak pernah bisa benar akan
-// merusak kepercayaan pada halaman yang seluruh gunanya adalah dipercaya.
-const SECTIONS = [
-  {
-    href: '/bot-control/flows',
-    title: 'Flow Map',
-    description: 'Seluruh langkah yang dilalui satu pesan customer, dari webhook Meta sampai balasan terkirim.',
-    ready: true,
-  },
-  {
-    href: '/bot-control/rules',
-    title: 'Rules Registry',
-    description: 'Aturan yang mengikat bot: kebijakan channel, larangan mengarang harga/URL, handoff, rate limit.',
-    ready: true,
-  },
-  {
-    href: '/bot-control/knowledge',
-    title: 'Knowledge Explorer',
-    description: 'Isi catalog/*.json yang dipakai bot, bisa dicari per topik dan per file.',
-    ready: true,
-  },
-  {
-    href: '/bot-control/decisions',
-    title: 'Decision Logs',
-    description: 'Riwayat keputusan bot beserta alasannya, dapat difilter dan dibuka satu per satu.',
-    ready: true,
-  },
-  {
-    href: '/bot-control/test-lab',
-    title: 'Test Lab',
-    description: 'Menguji pesan customer terhadap decision engine tanpa mengirim WhatsApp.',
-    ready: true,
-  },
-  {
-    href: '/bot-control/channel-policy',
-    title: 'Channel Policy',
-    description: 'Channel mana yang membawa apa, dan seberapa ketat pengaman outbound — dibaca langsung saat mengirim.',
-    ready: true,
-  },
-  {
-    href: '/bot-control/outbound-queue',
-    title: 'Outbound Queue',
-    description: 'Antrean pengiriman pesan — retry, batalkan, pulihkan job menggantung, dan jeda provider.',
-    ready: true,
-  },
-  {
-    href: '/bot-control/triage-queue',
-    title: 'Triage Queue',
-    description: 'Keputusan bot yang perlu ditindaklanjuti, dari seluruh riwayat — bukan hanya halaman yang terbuka.',
-    ready: true,
-  },
-  {
-    href: '/bot-control/releases',
-    title: 'Releases',
-    description: 'Riwayat publish beserta snapshot-nya, dan rollback ke keadaan sebelumnya tanpa menghapus apa pun.',
-    ready: true,
-  },
-  {
-    href: '/bot-control/audit-logs',
-    title: 'Audit Logs',
-    description: 'Siapa mengubah apa, kapan, dan mengapa — termasuk before/after tiap field yang berubah.',
-    ready: true,
-  },
-  {
-    href: '/bot-control/docs',
-    title: 'Documentation',
-    description: 'Dokumentasi hidup dari flow, rules, knowledge, dan settings — dapat diunduh sebagai Markdown.',
-    ready: true,
-  },
-] as const
-
+// Halaman ini dulu berisi kartu-kartu yang seluruh isinya adalah link ke bagian lain — sebuah
+// papan penunjuk arah yang harus dilewati sebelum sampai ke tempat tujuan, dan harus didatangi
+// lagi setiap kali operator ingin pindah bagian. Papan penunjuk itu sekarang menjadi baris tab
+// di `layout.tsx`, yang terlihat dari SEMUA halaman Bot Control, bukan cuma dari sini.
+//
+// Yang tersisa di sini adalah satu-satunya isi halaman ini yang bukan tautan: tabel kemampuan
+// per channel. Karena itu /bot-control tetap menjadi halaman, bukan redirect ke bagian pertama:
+// tabel ini tidak punya rumah lain (halaman /bot-control/channel-policy sudah dihapus), dan
+// redirect berarti menghapus jawaban "fitur mana yang Official-only" dari UI — padahal
+// guidebook §15 acceptance 2 mensyaratkan kebijakan channel TERLIHAT di Bot Control, bukan
+// hanya ditegakkan di kode. Tetap sebagai halaman juga membuat tautan "Bot Control" di AppNav
+// mendarat di sesuatu yang nyata, tanpa lompatan yang bisa berputar.
 export default function BotControlPage() {
   return (
     <main className="mx-auto max-w-4xl space-y-5 p-6">
@@ -86,31 +23,8 @@ export default function BotControlPage() {
         <h1 className="text-xl font-semibold text-navy">Bot Control</h1>
         <p className="text-sm text-muted-foreground">
           Membuka logika bot yang selama ini hanya ada di kode, JSON, dan trace database — supaya bisa diaudit
-          sebelum dipercaya.
+          sebelum dipercaya. Pilih bagiannya di menu atas.
         </p>
-      </div>
-
-      <div className="grid gap-3 sm:grid-cols-2">
-        {SECTIONS.map((section) =>
-          section.ready ? (
-            <Link key={section.href} href={section.href} className="block">
-              <Card className="h-full p-4 transition-colors hover:border-brand">
-                <p className="text-sm font-semibold text-navy">{section.title}</p>
-                <p className="mt-1 text-xs text-muted-foreground">{section.description}</p>
-              </Card>
-            </Link>
-          ) : (
-            // Bukan link. Halaman-halaman ini belum ada; menautkannya berarti mengirim
-            // operator ke 404 dan mengajarkan bahwa menu ini tidak bisa dipercaya.
-            <Card key={section.href} className="h-full bg-muted/30 p-4">
-              <div className="flex items-center gap-2">
-                <p className="text-sm font-semibold text-muted-foreground">{section.title}</p>
-                <span className="badge bg-slate-100 text-slate-600">Belum tersedia</span>
-              </div>
-              <p className="mt-1 text-xs text-muted-foreground">{section.description}</p>
-            </Card>
-          )
-        )}
       </div>
 
       {/* Guidebook §15 acceptance 2: the channel policy has to be VISIBLE in Bot Control, not

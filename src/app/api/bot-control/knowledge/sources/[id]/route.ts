@@ -8,9 +8,9 @@ import { MANAGED_SOURCE_TYPE } from '@/lib/bot-control/knowledge-workflow'
  * GET /api/bot-control/knowledge/sources/[id] — one source with the content of its latest
  * revision, which is what the editor opens.
  *
- * The body is served only for MANAGED sources. A catalog mirror's content lives in its chunks
- * (and on disk); it has no revision to open, and pretending otherwise would offer an editor for
- * something the next `sync` would overwrite.
+ * The body is served only for MANAGED sources — the only kind that has revisions. Catalog
+ * content is not served here at all: it lives in `catalog/*.json` and is read from disk by
+ * `/api/bot-control/knowledge/catalog`.
  */
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await getSession(req)
@@ -39,7 +39,6 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
       managed: source.type === MANAGED_SOURCE_TYPE,
       status: source.status,
       summary: source.summary,
-      sourcePath: source.sourcePath,
       ownerId: source.ownerId,
       latestRevision: latest
         ? {

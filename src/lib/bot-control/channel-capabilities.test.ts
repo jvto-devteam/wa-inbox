@@ -8,6 +8,9 @@ import {
   supportsCapability,
   officialOnlyCapabilities,
   channelForCapability,
+  CHANNEL_CAPABILITY_KEYS,
+  preferredChannelForCapability,
+  type ChannelCapability,
 } from './channel-capabilities'
 
 describe('CHANNEL_CAPABILITIES', () => {
@@ -75,5 +78,62 @@ describe('channelForCapability', () => {
   it('routes an official-only capability to Official, and only that capability', () => {
     expect(channelForCapability('send_template')).toBe('OFFICIAL')
     expect(channelForCapability('send_carousel')).toBe('OFFICIAL')
+  })
+})
+
+/**
+ * The nine keys a send path may route, and the channel each one lands on.
+ *
+ * These used to be an editable per-capability table on the Channel Policy page — a form whose
+ * default row said exactly what the matrix above says, and whose only other possible use was to
+ * contradict a provider's API. The form is gone and the matrix answers directly, so these tests
+ * are what stands between "the editable layer was removed" and "messages started going out over
+ * a different channel".
+ */
+describe('CHANNEL_CAPABILITY_KEYS', () => {
+  it('names only capabilities the matrix actually describes', () => {
+    const known = new Set(Object.keys(CHANNEL_CAPABILITIES.OFFICIAL))
+    for (const key of CHANNEL_CAPABILITY_KEYS) expect(known.has(key), key).toBe(true)
+  })
+
+  it('leaves out the capabilities a caller cannot dispatch', () => {
+    // receive_webhook/delivery_status/read_receipt describe what a channel does to us. Routing
+    // them would be meaningless, and offering them would imply a send path that does not exist.
+    const keys: readonly string[] = CHANNEL_CAPABILITY_KEYS
+    expect(keys).not.toContain('receive_webhook')
+    expect(keys).not.toContain('delivery_status')
+    expect(keys).not.toContain('read_receipt')
+  })
+})
+
+describe('preferredChannelForCapability', () => {
+  it('counts LIMITED as capable, which is the only place it differs from channelForCapability', () => {
+    // The whole reason this function exists. `supportsCapability` answers false for a LIMITED
+    // capability, so `channelForCapability` promotes campaign to Official; the published policy
+    // row said UNOFFICIAL_LIMITED, which resolved to Unofficial. Keeping both answers separate
+    // is what let the editable layer be removed without moving any traffic.
+    expect(preferredChannelForCapability('campaign')).toBe('UNOFFICIAL')
+    expect(channelForCapability('campaign')).toBe('OFFICIAL')
+  })
+
+  it('keeps ordinary sends on Unofficial and official-only features on Official', () => {
+    expect(preferredChannelForCapability('send_text')).toBe('UNOFFICIAL')
+    expect(preferredChannelForCapability('send_media')).toBe('UNOFFICIAL')
+    expect(preferredChannelForCapability('send_document')).toBe('UNOFFICIAL')
+    expect(preferredChannelForCapability('send_audio')).toBe('UNOFFICIAL')
+    expect(preferredChannelForCapability('send_template')).toBe('OFFICIAL')
+    expect(preferredChannelForCapability('send_buttons')).toBe('OFFICIAL')
+    expect(preferredChannelForCapability('send_list')).toBe('OFFICIAL')
+    expect(preferredChannelForCapability('send_carousel')).toBe('OFFICIAL')
+  })
+
+  it('has no capability that both channels refuse, so it never returns null today', () => {
+    // Null is the "cannot be sent at all" answer `isCapabilityDisabled` reads. Under the old
+    // policy row that state was reachable by an operator picking DISABLED in a dropdown; nothing
+    // else ever produced it, and production never did. Pinned so the day a capability arrives
+    // that Official cannot carry either, this test is what says the refusal branch went live.
+    for (const capability of Object.keys(CHANNEL_CAPABILITIES.OFFICIAL) as ChannelCapability[]) {
+      expect(preferredChannelForCapability(capability), capability).not.toBeNull()
+    }
   })
 })

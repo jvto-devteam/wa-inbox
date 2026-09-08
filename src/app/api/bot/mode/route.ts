@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { requireAdmin } from '@/lib/auth/require-admin'
+import { writeBotAuditLog } from '@/lib/bot-control/audit'
 
 // Flipping the global bot mode reaches every conversation company-wide.
 // That is an emergency-scale lever, not something any agent should be able to pull.
@@ -31,6 +32,20 @@ export async function POST(req: Request) {
   } else {
     await prisma.conversation.updateMany({ data: { botEnabled: next } })
   }
+
+  // The single biggest lever in the product: On or Off here decides whether EVERY customer gets
+  // answered by the bot. Settings itself only shows the position the switch is in now, so this
+  // row is the only place that records who last moved it and when — the first question asked
+  // when somebody notices the bot went quiet overnight.
+  const actor = await prisma.account.findUnique({ where: { id: admin.accountId }, select: { name: true } })
+  await writeBotAuditLog({
+    action: next ? 'ENABLE' : 'DISABLE',
+    entityType: 'BOT_SETTING',
+    entityKey: 'botAutoReplyAll',
+    actorId: admin.accountId,
+    // Denormalised now so the row still names somebody after the account is deleted.
+    actorName: actor?.name ?? null,
+  })
 
   return NextResponse.json({ botAutoReplyAll: updated.botAutoReplyAll })
 }

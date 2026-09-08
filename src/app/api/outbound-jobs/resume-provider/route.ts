@@ -1,10 +1,11 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
+import { prisma } from '@/lib/db'
 import { getSession } from '@/lib/auth/get-session'
 import { requireAdmin } from '@/lib/auth/require-admin'
 import { parseJsonBody } from '@/lib/parse-json'
 import { writeBotAuditLog } from '@/lib/bot-control/audit'
-import { resumeProvider, getPausedProviders, PAUSABLE_PROVIDERS } from '@/lib/outbound/provider-pause'
+import { resumeProvider, PAUSABLE_PROVIDERS } from '@/lib/outbound/provider-pause'
 
 /**
  * POST /api/outbound-jobs/resume-provider — melanjutkan pengiriman lewat satu provider.
@@ -35,18 +36,16 @@ export async function POST(req: Request) {
   if (!parsed.success) return NextResponse.json({ error: parsed.error }, { status: 400 })
 
   try {
-    const before = await getPausedProviders()
     const paused = await resumeProvider(parsed.data.provider)
 
+    const actor = await prisma.account.findUnique({ where: { id: admin.accountId }, select: { name: true } })
     await writeBotAuditLog({
       action: 'ENABLE',
       entityType: 'OUTBOUND_PROVIDER',
       entityKey: parsed.data.provider,
       actorId: admin.accountId,
-      before: { pausedProviders: before },
-      after: { pausedProviders: paused },
+      actorName: actor?.name ?? null,
       reason: parsed.data.reason,
-      req,
     })
 
     return NextResponse.json({ provider: parsed.data.provider, pausedProviders: paused })

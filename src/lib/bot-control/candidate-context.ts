@@ -3,26 +3,30 @@
  *
  * --- The problem this solves ---
  *
- * `POST /api/bot-control/test-runs` has always accepted a `candidate` body — the rule drafts,
- * knowledge revisions and flow versions a publish is about to ship — and always discarded it.
- * The suite therefore ran against configuration that was ALREADY LIVE, so the gate in front of
- * every publish verified the thing being replaced rather than the thing being shipped.
+ * Anything that wants to exercise the bot against configuration that is approved but not yet
+ * live — a pre-publish dry run, a preview — otherwise reads whatever is ALREADY LIVE, and so
+ * describes the thing being replaced rather than the thing being shipped.
+ *
+ * The batch test runner that first needed this is gone (its cases were never written, so every
+ * run passed without checking anything). This stays because the loaders below are built around
+ * it: removing the hook would mean editing them to prove nothing, and the next caller that
+ * needs a candidate would have to put it back.
  *
  * --- Why AsyncLocalStorage and not a parameter ---
  *
- * The three loaders that decide what the bot reads (`runtime-rules`, `runtime-flows`,
- * `managed-knowledge`) are called from inside `orchestrator.ts`, several layers below the test
- * runner and behind a 1,700-line control flow whose shape is the product. Threading a candidate
- * through every frame would mean touching all of it. A module-level variable would be worse
- * than useless: Node serves requests concurrently in one process, so a candidate set for a test
- * run would apply to any customer message that happened to be mid-turn.
+ * The loader that decides what the bot reads (`managed-knowledge`) is called from inside
+ * `orchestrator.ts`, several layers below any caller and behind a 1,700-line control flow whose
+ * shape is the product. Threading a candidate through every frame would mean touching all of
+ * it. A module-level variable would be worse than useless: Node serves requests concurrently in
+ * one process, so a candidate set for one dry run would apply to any customer message that
+ * happened to be mid-turn.
  *
  * AsyncLocalStorage scopes the override to one async call tree. A concurrent customer turn is a
  * different tree and sees nothing.
  *
  * --- The caching rule, which is the safety-critical part ---
  *
- * Every loader here MUST bypass its cache in both directions while a candidate is active: it
+ * Every loader MUST bypass its cache in both directions while a candidate is active: it
  * must not read a cached published value (that would silently ignore the candidate), and above
  * all it must not WRITE what it computed. A candidate config written into a 30-second cache
  * would be served to real customers by every other request in the process. Each loader states
@@ -31,22 +35,14 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
 
 export type CandidateVersions = {
-  /** Rule keys whose DRAFT values should stand in for their published ones. */
-  ruleDraftKeys?: string[]
   /** KnowledgeRevision ids to use instead of the published revision of the same source. */
   knowledgeRevisionIds?: string[]
-  /** BotFlowVersion ids to use instead of the published version of the same flow. */
-  flowVersionIds?: string[]
 }
 
 const storage = new AsyncLocalStorage<CandidateVersions>()
 
 function isEmpty(candidate: CandidateVersions): boolean {
-  return (
-    (candidate.ruleDraftKeys?.length ?? 0) === 0 &&
-    (candidate.knowledgeRevisionIds?.length ?? 0) === 0 &&
-    (candidate.flowVersionIds?.length ?? 0) === 0
-  )
+  return (candidate.knowledgeRevisionIds?.length ?? 0) === 0
 }
 
 /**

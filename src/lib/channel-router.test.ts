@@ -2,8 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mockDeep, mockReset, type DeepMockProxy } from 'vitest-mock-extended'
 import type { PrismaClient } from '@prisma/client'
 import { prisma } from '@/lib/db'
-import { DEFAULT_CHANNEL_POLICY } from '@/lib/bot-control/channel-policy-config'
-import { invalidateChannelPolicyCache } from '@/lib/bot-control/runtime-channel-policy'
+import { CHANNEL_CAPABILITY_KEYS, type ChannelCapabilityKey } from '@/lib/bot-control/channel-capabilities'
 import {
   resolveChannel,
   channelForCapabilityPolicy,
@@ -14,49 +13,28 @@ import {
 vi.mock('@/lib/db', () => ({ prisma: mockDeep<PrismaClient>() }))
 const mockPrisma = prisma as unknown as DeepMockProxy<PrismaClient>
 
-function policyRow(overrides: Record<string, unknown> = {}) {
-  return {
-    defaultOutbound: 'UNOFFICIAL',
-    officialMode: 'INBOUND_AND_CAPABILITY',
-    unofficialMode: 'PRIMARY_OUTBOUND',
-    capabilityRules: DEFAULT_CHANNEL_POLICY.capabilityRules,
-    safetyConfig: DEFAULT_CHANNEL_POLICY.safetyConfig,
-    ...overrides,
-  } as never
-}
-
 beforeEach(() => {
   mockReset(mockPrisma)
   vi.clearAllMocks()
-  invalidateChannelPolicyCache()
-  // Un-seeded by default, so the pre-Phase-H behaviour is what the first tests exercise.
-  mockPrisma.channelPolicySetting.findUnique.mockResolvedValue(null as never)
+  mockPrisma.settings.findUnique.mockResolvedValue({ defaultChannel: 'UNOFFICIAL' } as never)
 })
 
 describe('resolveChannel', () => {
   it('returns the explicit channel unchanged when provided', async () => {
-    // An agent who picked a channel by hand must not be overridden by a policy, or the picker
-    // is a suggestion box.
+    // An agent who picked a channel by hand must not be overridden, or the picker is a
+    // suggestion box.
     expect(await resolveChannel('UNOFFICIAL')).toBe('UNOFFICIAL')
     expect(await resolveChannel('OFFICIAL')).toBe('OFFICIAL')
-    expect(mockPrisma.channelPolicySetting.findUnique).not.toHaveBeenCalled()
     expect(mockPrisma.settings.findUnique).not.toHaveBeenCalled()
   })
 
-  it('falls back to Settings.defaultChannel when no policy is published', async () => {
-    // The Settings page still writes that column; removing the fallback would silently strip a
-    // control an operator already uses.
+  it('reads Settings.defaultChannel, the only stored default there is', async () => {
+    // There used to be three stored answers to this question — a rule's `liveDefaultChannel`, a
+    // channel-policy row, and this column — and the honest reply to "which channel does a reply
+    // go out on" was "whichever was written last". This is the one that remains.
     mockPrisma.settings.findUnique.mockResolvedValue({ defaultChannel: 'OFFICIAL' } as never)
     expect(await resolveChannel()).toBe('OFFICIAL')
-  })
-
-  it('lets a published policy win over Settings', async () => {
-    mockPrisma.channelPolicySetting.findUnique.mockResolvedValue(policyRow({ defaultOutbound: 'OFFICIAL' }))
-    mockPrisma.settings.findUnique.mockResolvedValue({ defaultChannel: 'UNOFFICIAL' } as never)
-
-    expect(await resolveChannel()).toBe('OFFICIAL')
-    // Settings is not even consulted once a policy exists.
-    expect(mockPrisma.settings.findUnique).not.toHaveBeenCalled()
+    expect(mockPrisma.settings.findUnique.mock.calls[0][0]?.where).toEqual({ id: 1 })
   })
 
   it('still returns a channel when Settings cannot be read', async () => {
@@ -74,79 +52,96 @@ describe('resolveChannel', () => {
   })
 })
 
+/**
+ * The answers the published default channel-policy row used to give, per capability.
+ *
+ * Written out literally rather than derived, because "derived from the same matrix the code
+ * reads" would prove nothing. This is the transcript of that row's per-capability table as it
+ * was seeded and as it stood in production, and every value below has to survive the removal of
+ * the editable layer that produced it.
+ */
+const POLICY_ROW_ANSWERS: Record<ChannelCapabilityKey, 'OFFICIAL' | 'UNOFFICIAL'> = {
+  send_text: 'UNOFFICIAL',
+  send_media: 'UNOFFICIAL',
+  send_document: 'UNOFFICIAL',
+  send_audio: 'UNOFFICIAL',
+  send_template: 'OFFICIAL',
+  send_buttons: 'OFFICIAL',
+  send_list: 'OFFICIAL',
+  send_carousel: 'OFFICIAL',
+  // The row said UNOFFICIAL_LIMITED, which `channelForCapabilityPolicy` resolved to Unofficial:
+  // "limited" is a rate concern the safety guard applies, not a different channel.
+  campaign: 'UNOFFICIAL',
+}
+
 describe('channelForCapabilityPolicy', () => {
-  it('routes a template to OFFICIAL and plain text to UNOFFICIAL, per the default policy', async () => {
-    mockPrisma.channelPolicySetting.findUnique.mockResolvedValue(policyRow())
-    expect(await channelForCapabilityPolicy('send_template')).toBe('OFFICIAL')
-    expect(await channelForCapabilityPolicy('send_text')).toBe('UNOFFICIAL')
+  it('routes a template to OFFICIAL and plain text to UNOFFICIAL', () => {
+    expect(channelForCapabilityPolicy('send_template')).toBe('OFFICIAL')
+    expect(channelForCapabilityPolicy('send_text')).toBe('UNOFFICIAL')
   })
 
-  it('treats UNOFFICIAL_LIMITED as Unofficial, because "limited" is a rate concern', async () => {
-    mockPrisma.channelPolicySetting.findUnique.mockResolvedValue(policyRow())
-    expect(await channelForCapabilityPolicy('campaign')).toBe('UNOFFICIAL')
+  it('treats a LIMITED capability as Unofficial, because "limited" is a rate concern', () => {
+    expect(channelForCapabilityPolicy('campaign')).toBe('UNOFFICIAL')
   })
 
-  it('returns null for a disabled capability rather than a channel', async () => {
-    // "Do not send this" is not a routing answer, and every caller here is already committed to
-    // sending something.
-    mockPrisma.channelPolicySetting.findUnique.mockResolvedValue(
-      policyRow({ capabilityRules: { ...DEFAULT_CHANNEL_POLICY.capabilityRules, send_media: 'DISABLED' } })
-    )
-    expect(await channelForCapabilityPolicy('send_media')).toBeNull()
+  it('gives exactly the answers the published default policy row gave, for all nine capabilities', () => {
+    // The point of this file. The editable per-capability table was deleted; if any one of these
+    // nine moved, a message that used to go out over one channel now goes out over the other.
+    for (const capability of CHANNEL_CAPABILITY_KEYS) {
+      expect(channelForCapabilityPolicy(capability), capability).toBe(POLICY_ROW_ANSWERS[capability])
+    }
+  })
+
+  it('never consults the database', () => {
+    // It used to read a cached policy row. Which channel can carry a template is a fact about
+    // wa-coexist's API, not a lookup that can be stale, fail, or be edited between two sends.
+    for (const capability of CHANNEL_CAPABILITY_KEYS) channelForCapabilityPolicy(capability)
+    expect(mockPrisma.settings.findUnique).not.toHaveBeenCalled()
+  })
+
+  it('returns null only when no channel can carry a capability, which no send capability is today', () => {
+    // Null used to mean "an operator set this capability to DISABLED on the Channel Policy
+    // page". That form is gone, and the matrix has no capability both channels refuse — Official
+    // carries all nine — so null is currently unreachable. Pinned rather than left implicit,
+    // because the day it stops being true is the day the refusal branch below starts firing.
+    for (const capability of CHANNEL_CAPABILITY_KEYS) {
+      expect(channelForCapabilityPolicy(capability), capability).not.toBeNull()
+    }
   })
 })
 
 describe('isCapabilityDisabled', () => {
-  it('is false for everything under the default policy', async () => {
-    mockPrisma.channelPolicySetting.findUnique.mockResolvedValue(policyRow())
-    expect(await isCapabilityDisabled('send_text')).toBe(false)
+  it('is false for every send capability, exactly as it was under the default policy row', () => {
+    for (const capability of CHANNEL_CAPABILITY_KEYS) {
+      expect(isCapabilityDisabled(capability), capability).toBe(false)
+    }
   })
 
-  it('is true once a capability is switched off', async () => {
-    mockPrisma.channelPolicySetting.findUnique.mockResolvedValue(
-      policyRow({ capabilityRules: { ...DEFAULT_CHANNEL_POLICY.capabilityRules, send_carousel: 'DISABLED' } })
-    )
-    expect(await isCapabilityDisabled('send_carousel')).toBe(true)
+  it('never consults the database', () => {
+    isCapabilityDisabled('send_text')
+    expect(mockPrisma.settings.findUnique).not.toHaveBeenCalled()
   })
 })
 
 /**
- * Regression cover for the audit finding "9 capabilityRules di Channel Policy tidak punya
+ * Regression cover for the audit finding "9 capability rules di Channel Policy tidak punya
  * caller" — `channelForCapabilityPolicy` and `isCapabilityDisabled` existed, were published,
  * snapshotted and rolled back correctly, and were read by nothing on any send path.
  *
- * These pin the composed entry point the send paths now call. The two rules worth stating are
- * that DISABLED outranks an explicit channel, and that the physical matrix clamps the policy.
+ * These pin the composed entry point the send paths call. The rule worth stating is that the
+ * physical matrix clamps the preference: a capability may PREFER a channel that cannot actually
+ * carry it, and obeying that literally would be a guaranteed delivery failure.
  */
 describe('resolveChannelForCapability (regresi Temuan 2)', () => {
-  it('mengikuti channel yang ditunjuk kebijakan', async () => {
-    mockPrisma.channelPolicySetting.findUnique.mockResolvedValue(
-      policyRow({
-        capabilityRules: { ...DEFAULT_CHANNEL_POLICY.capabilityRules, send_media: 'OFFICIAL' },
-      })
-    )
-
-    expect(await resolveChannelForCapability('send_media')).toEqual({
+  it('mengikuti channel yang ditunjuk matriks', async () => {
+    expect(await resolveChannelForCapability('send_template')).toEqual({
       channel: 'OFFICIAL',
       disabled: false,
       clampedFrom: null,
     })
   })
 
-  it('menandai kemampuan yang dimatikan, dan itu mengalahkan channel eksplisit', async () => {
-    // "Off" is not a routing preference an explicit channel may walk past — otherwise the
-    // switch would do nothing precisely when an operator reached for it.
-    mockPrisma.channelPolicySetting.findUnique.mockResolvedValue(
-      policyRow({ capabilityRules: { ...DEFAULT_CHANNEL_POLICY.capabilityRules, send_media: 'DISABLED' } })
-    )
-
-    expect((await resolveChannelForCapability('send_media')).disabled).toBe(true)
-    expect((await resolveChannelForCapability('send_media', 'OFFICIAL')).disabled).toBe(true)
-  })
-
-  it('menghormati channel eksplisit untuk kemampuan yang tidak dimatikan', async () => {
-    mockPrisma.channelPolicySetting.findUnique.mockResolvedValue(policyRow())
-
+  it('menghormati channel eksplisit', async () => {
     expect(await resolveChannelForCapability('send_text', 'OFFICIAL')).toEqual({
       channel: 'OFFICIAL',
       disabled: false,
@@ -154,15 +149,14 @@ describe('resolveChannelForCapability (regresi Temuan 2)', () => {
     })
   })
 
-  it('mengoreksi kebijakan yang menunjuk channel yang tidak bisa membawanya', async () => {
-    // wa-coexist has no template endpoint at all, so obeying this literally would guarantee a
-    // delivery failure. The correction is reported, not silent.
+  it('mengoreksi kemampuan yang channel pilihannya tidak bisa membawanya', async () => {
+    // `campaign` is 'LIMITED' on Unofficial: technically possible, and exactly what gets a
+    // number banned without a throttle in front of it. The preference is honest about the
+    // former; the clamp is honest about the latter. The correction is reported, not silent —
+    // routing that quietly does not do what it says is its own kind of lie.
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
-    mockPrisma.channelPolicySetting.findUnique.mockResolvedValue(
-      policyRow({ capabilityRules: { ...DEFAULT_CHANNEL_POLICY.capabilityRules, send_template: 'UNOFFICIAL' } })
-    )
 
-    expect(await resolveChannelForCapability('send_template')).toEqual({
+    expect(await resolveChannelForCapability('campaign')).toEqual({
       channel: 'OFFICIAL',
       disabled: false,
       clampedFrom: 'UNOFFICIAL',
@@ -171,30 +165,26 @@ describe('resolveChannelForCapability (regresi Temuan 2)', () => {
     warn.mockRestore()
   })
 
-  it('memakai default outbound kebijakan saat kemampuan tidak dirutekan khusus', async () => {
-    mockPrisma.channelPolicySetting.findUnique.mockResolvedValue(
-      policyRow({
-        defaultOutbound: 'OFFICIAL',
-        // `campaign` sengaja tidak menunjuk channel: UNOFFICIAL_LIMITED tetap Unofficial, jadi
-        // yang diuji di sini adalah send_text yang memang mengikuti default.
-        capabilityRules: { ...DEFAULT_CHANNEL_POLICY.capabilityRules, send_text: 'OFFICIAL' },
-      })
-    )
+  it('menghasilkan routing yang identik dengan baris kebijakan default untuk kesembilan kemampuan', async () => {
+    // The composed answer, not just the preference: `campaign` is the one capability where the
+    // two differ, and it differed in exactly the same way before this table was removed.
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
 
-    expect((await resolveChannelForCapability('send_text')).channel).toBe('OFFICIAL')
+    for (const capability of CHANNEL_CAPABILITY_KEYS) {
+      const routing = await resolveChannelForCapability(capability)
+      const expected = capability === 'campaign' ? 'OFFICIAL' : POLICY_ROW_ANSWERS[capability]
+      expect(routing.channel, capability).toBe(expected)
+      expect(routing.disabled, capability).toBe(false)
+    }
+
+    warn.mockRestore()
   })
 
-  it('menolak capabilityRules yang tidak lengkap dan memakai default kode, bukan separuh kebijakan', async () => {
-    // Zod 4 mewajibkan SELURUH key enum ada pada z.record, jadi baris yang kehilangan satu
-    // kemampuan gagal parse seluruhnya. Itu perilaku yang benar -- kebijakan setengah terbaca
-    // di depan setiap pengiriman lebih berbahaya daripada kembali ke konstanta kode -- tetapi
-    // sebelumnya tidak terpaku di test mana pun.
-    mockPrisma.channelPolicySetting.findUnique.mockResolvedValue(
-      policyRow({ defaultOutbound: 'OFFICIAL', capabilityRules: { send_text: 'OFFICIAL' } })
-    )
-
-    expect((await resolveChannelForCapability('send_text')).channel).toBe(
-      DEFAULT_CHANNEL_POLICY.defaultOutbound
-    )
+  it('tidak menyentuh database untuk kemampuan yang sudah punya channel', async () => {
+    // Every capability has one, so `resolveChannel`'s Settings read is never reached from here.
+    // That was already true when the policy row existed — its per-capability table outranked
+    // Settings too — so this pins that nothing about the send path's query count moved.
+    await resolveChannelForCapability('send_text')
+    expect(mockPrisma.settings.findUnique).not.toHaveBeenCalled()
   })
 })

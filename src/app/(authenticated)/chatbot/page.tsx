@@ -17,7 +17,10 @@ type Settings = {
   offHoursAutoReply: string | null
   botAutoReplyAll: boolean
   skipBotForIndonesianNumbers: boolean
+  handoffOnHumanRequest: boolean
   catalogSyncedAt: string | null
+  fallbackReply: string | null
+  handoffReply: string | null
   ollamaModel: string
 }
 type GateStatus = { readyForApproval: boolean; blocking: string[] }
@@ -43,6 +46,11 @@ export default function ChatbotPage() {
   const [offHoursAutoReply, setOffHoursAutoReply] = useState('')
   const [savingHours, setSavingHours] = useState(false)
 
+  const [fallbackReply, setFallbackReply] = useState('')
+  const [handoffReply, setHandoffReply] = useState('')
+  const [savingSentences, setSavingSentences] = useState(false)
+  const [sentenceError, setSentenceError] = useState<string | null>(null)
+
   const [ollamaModel, setOllamaModel] = useState('')
   const [savingModels, setSavingModels] = useState(false)
   const [modelError, setModelError] = useState<string | null>(null)
@@ -67,6 +75,10 @@ export default function ChatbotPage() {
     setWorkingHoursStart(settings.workingHoursStart ?? '')
     setWorkingHoursEnd(settings.workingHoursEnd ?? '')
     setOffHoursAutoReply(settings.offHoursAutoReply ?? '')
+    // '' for null on purpose: an empty box IS "pakai kalimat bawaan", the same state the
+    // server stores as NULL, so the two round-trip into each other without a special case.
+    setFallbackReply(settings.fallbackReply ?? '')
+    setHandoffReply(settings.handoffReply ?? '')
     setOllamaModel(settings.ollamaModel)
   }
 
@@ -91,6 +103,27 @@ export default function ChatbotPage() {
     }
   }
 
+  /**
+   * The escalation-classifier switch, saved the moment it is pressed.
+   *
+   * Deliberately the same edit-save-live pattern as the two switches above it, and deliberately
+   * not the draft/review/approve/publish cycle this used to sit behind as a versioned rule
+   * row. It is one boolean with two states; the approval round-trip was longer than the change.
+   */
+  async function toggleHandoffClassifier() {
+    if (!settings) return
+    try {
+      setSettings(
+        await fetchJson<Settings>('/api/settings', {
+          method: 'PATCH',
+          body: JSON.stringify({ handoffOnHumanRequest: !settings.handoffOnHumanRequest }),
+        })
+      )
+    } catch {
+      // Badge keeps showing the last confirmed state — never a guessed one.
+    }
+  }
+
   async function saveWorkingHours() {
     setSavingHours(true)
     try {
@@ -104,6 +137,28 @@ export default function ChatbotPage() {
       // Leaves the form on the values the server last confirmed.
     } finally {
       setSavingHours(false)
+    }
+  }
+
+  /**
+   * Edit, save, live -- the same pattern as the bot On/Off switch above, and deliberately not a
+   * draft/review/publish cycle. These are two sentences; the round trip that would have to be
+   * approved is longer than the sentences themselves.
+   */
+  async function saveSentences() {
+    setSentenceError(null)
+    setSavingSentences(true)
+    try {
+      setSettings(
+        await fetchJson<Settings>('/api/settings', {
+          method: 'PATCH',
+          body: JSON.stringify({ fallbackReply, handoffReply }),
+        })
+      )
+    } catch {
+      setSentenceError('Gagal menyimpan kalimat bot')
+    } finally {
+      setSavingSentences(false)
     }
   }
 
@@ -195,12 +250,33 @@ export default function ChatbotPage() {
 
         <div className="space-y-1.5">
           <div className="flex items-center gap-3">
+            <Badge variant={settings.handoffOnHumanRequest ? 'success' : 'warning'}>
+              Alihkan ke manusia: {settings.handoffOnHumanRequest ? 'Aktif' : 'Hanya kata kunci'}
+            </Badge>
+            {hasAdminPowers(role) && (
+              <Button
+                onClick={toggleHandoffClassifier}
+                variant={settings.handoffOnHumanRequest ? 'destructive' : 'default'}
+                size="sm"
+              >
+                {settings.handoffOnHumanRequest ? 'Matikan Deteksi Tambahan' : 'Alihkan ke manusia saat customer memintanya'}
+              </Button>
+            )}
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Saat aktif, bot juga memakai LLM untuk menangkap permintaan bicara dengan manusia
+            yang tidak memakai kata kunci baku — komplain, frustrasi, kalimat berputar. Saat
+            dimatikan, hanya kata kunci eksplisit (&ldquo;mau bicara dengan manusia&rdquo; dan
+            sejenisnya) yang memicu handoff; kata kunci itu tidak pernah bisa dimatikan dari
+            sini.
+          </p>
+        </div>
+
+        <div className="space-y-1.5">
+          <div className="flex items-center gap-3">
             <Badge variant={gateStatus.readyForApproval ? 'success' : 'warning'}>
               {gateStatus.readyForApproval ? 'Siap' : `Terkunci: ${gateStatus.blocking.join(', ')}`}
             </Badge>
-            <Link href="/settings/bot-log" className="text-sm text-brand hover:underline">
-              Lihat log bot
-            </Link>
             <Link href="/settings/knowledge-gaps" className="text-sm text-brand hover:underline">
               Lihat pertanyaan tak terjawab
             </Link>
@@ -209,7 +285,12 @@ export default function ChatbotPage() {
       </Card>
 
       <Card className="space-y-3 p-4">
-        <h2 className="font-medium text-navy">Jam kerja & auto-reply</h2>
+        <h2 className="font-medium text-navy">Jam kerja tim</h2>
+        <p className="text-xs text-muted-foreground">
+          Bot tetap menjawab 24 jam, di dalam maupun di luar jam ini. Yang berubah hanya satu: di luar jam ini,
+          pelanggan yang dialihkan ke tim (handoff) ikut diberi tahu kapan tim membalas. Jam dihitung menurut waktu
+          Indonesia Barat (WIB), bukan jam server.
+        </p>
         <div className="grid grid-cols-2 gap-2">
           <div className="space-y-1">
             <label htmlFor="working-hours-start" className="text-xs text-muted-foreground">
@@ -238,7 +319,7 @@ export default function ChatbotPage() {
         </div>
         <div className="space-y-1">
           <label htmlFor="off-hours-auto-reply" className="text-xs text-muted-foreground">
-            Auto-reply di luar jam kerja
+            Kalimat tambahan saat handoff di luar jam kerja
           </label>
           <Textarea
             id="off-hours-auto-reply"
@@ -246,14 +327,60 @@ export default function ChatbotPage() {
             value={offHoursAutoReply}
             onChange={(e) => setOffHoursAutoReply(e.target.value)}
             disabled={!hasAdminPowers(role)}
-            placeholder="Contoh: Terima kasih sudah menghubungi kami, tim kami akan membalas pada jam kerja."
+            placeholder="Contoh: Saat ini di luar jam operasional kami. Tim akan membalas pada jam kerja berikutnya."
           />
+          <p className="text-xs text-muted-foreground">
+            Ditambahkan setelah kalimat handoff, bukan menggantikannya. Kosongkan kalau tidak ingin menambah apa-apa
+            &mdash; dan kalau salah satu jam di atas kosong, kalimat ini tidak pernah dikirim.
+          </p>
         </div>
         {hasAdminPowers(role) && (
           <Button onClick={saveWorkingHours} size="sm" disabled={savingHours}>
             {savingHours ? 'Menyimpan...' : 'Simpan'}
           </Button>
         )}
+      </Card>
+
+      <Card className="space-y-3 p-4">
+        <h2 className="font-medium text-navy">Kalimat bot</h2>
+        <p className="text-xs text-muted-foreground">
+          Dua kalimat yang diucapkan bot apa adanya. Disimpan langsung &mdash; begitu ditekan Simpan, percakapan
+          berikutnya sudah memakainya.
+        </p>
+        <div className="space-y-1">
+          <label htmlFor="fallback-reply" className="text-xs text-muted-foreground">
+            Balasan saat bot tidak tahu jawabannya
+          </label>
+          <Textarea
+            id="fallback-reply"
+            rows={3}
+            value={fallbackReply}
+            onChange={(e) => setFallbackReply(e.target.value)}
+            disabled={!hasAdminPowers(role)}
+            placeholder="Contoh: Maaf, saya belum punya jawabannya. Saya cek dulu ya."
+          />
+          <p className="text-xs text-muted-foreground">Kosongkan untuk memakai kalimat bawaan.</p>
+        </div>
+        <div className="space-y-1">
+          <label htmlFor="handoff-reply" className="text-xs text-muted-foreground">
+            Kalimat saat percakapan dialihkan ke manusia
+          </label>
+          <Textarea
+            id="handoff-reply"
+            rows={3}
+            value={handoffReply}
+            onChange={(e) => setHandoffReply(e.target.value)}
+            disabled={!hasAdminPowers(role)}
+            placeholder="Contoh: Terima kasih! Saya hubungkan dengan tim kami, mereka akan segera membalas."
+          />
+          <p className="text-xs text-muted-foreground">Kosongkan untuk memakai kalimat bawaan.</p>
+        </div>
+        {hasAdminPowers(role) && (
+          <Button onClick={saveSentences} size="sm" disabled={savingSentences}>
+            {savingSentences ? 'Menyimpan...' : 'Simpan'}
+          </Button>
+        )}
+        {sentenceError && <p className="text-xs text-destructive">{sentenceError}</p>}
       </Card>
 
       <Card className="space-y-3 p-4">

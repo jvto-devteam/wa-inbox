@@ -305,48 +305,58 @@ model BotDecisionRun {
   knowledgeRefs  Json?
   verification   Json?
   error          String?
+  /// Tanda "keputusan ini perlu diperbaiki", diisi manusia. Dua kolom, bukan tabel sendiri:
+  /// relasinya memang 1:1 dan tanpa foreign key, jadi tabel terpisah hanya memaksa halaman
+  /// Decision Logs mengambil daftar kedua yang tidak bisa di-join — dan badge untuk keputusan
+  /// di halaman ke-5 tidak pernah muncul karena daftar kedua itu dibatasi 200 baris.
+  ///
+  /// NULL berarti tidak ditandai. Membatalkan tanda mengosongkan keduanya, bukan menulis
+  /// status 'RESOLVED': "pernah ditandai lalu dicabut" bukan informasi yang pernah dibaca
+  /// siapa pun di sini, sementara jejaknya tetap ada di BotControlAuditLog.
+  flaggedAt      DateTime?
+  flagNote       String?
 
   @@index([conversationId])
   @@index([startedAt])
   @@index([status])
+  /// Filter "hanya yang ditandai" dikerjakan di database, bukan di klien. Tanpa index, filter
+  /// itu memindai seluruh tabel untuk menemukan segelintir baris yang biasanya ditandai.
+  @@index([flaggedAt])
   /// Tidak ada di guidebook, tapi wajib: popover trace di inbox mencari baris ini BERDASARKAN
   /// messageId untuk setiap bubble bot. Tanpa index, itu sequential scan pada tabel yang
   /// tumbuh satu baris per balasan bot.
   @@index([messageId])
 }
 
-/// Satu file knowledge yang dibaca bot, dibungkus menjadi baris yang bisa dilihat operator.
+/// Satu badan knowledge yang ditulis operator dan dibaca bot lewat KnowledgeRevision.
 ///
-/// Untuk sekarang isinya HANYA cerminan dari `catalog/*.json` — tabel ini tidak pernah dibaca
-/// saat bot menjawab. Bot tetap membaca file JSON di disk lewat src/lib/bot/catalog.ts dan
-/// knowledge.ts, persis seperti sebelumnya. Menjadikan tabel ini sumber runtime akan mengubah
-/// perilaku bot, dan guidebook §24 (Risiko 2) secara khusus melarangnya di fase ini: index
-/// bisa basi terhadap disk, dan bot yang menjawab dari data basi lebih buruk daripada bot yang
-/// tidak punya explorer sama sekali.
+/// Tabel ini DULU juga berisi cerminan `catalog/*.json` (32 baris bertipe katalog beserta
+/// chunk-nya, ditulis sebuah indexer dan disegarkan lewat tombol "Index ulang katalog").
+/// Cerminan itu dihapus: bot tidak pernah membacanya sekali pun — src/lib/bot/catalog.ts dan
+/// knowledge.ts membuka file JSON-nya langsung dari disk dan tidak menyentuh prisma sama
+/// sekali — jadi yang tersisa hanyalah salinan kedua dari data yang sudah ada, plus satu
+/// langkah manual yang harus diingat supaya salinan itu tidak berbohong. Halaman Knowledge
+/// Explorer sekarang membaca `catalog/` langsung (src/lib/bot-control/catalog-explorer.ts).
 ///
-/// `key` memakai path relatif file (mis. "catalog/policy-cards.json") supaya sinkronisasi
-/// berikutnya menemukan kembali baris yang sama alih-alih menumpuk duplikat.
+/// Kolom yang ikut hilang bersama cerminan itu: `sourcePath`, `metadata`, `lastSyncedAt`, dan
+/// relasi `chunks` (model KnowledgeChunk dihapus seluruhnya — tidak ada pemakainya selain
+/// indexer; managed knowledge menyimpan isinya di KnowledgeRevision.body).
 model KnowledgeSource {
   id           String              @id @default(cuid())
   key          String              @unique
   title        String
-  /// CATALOG_JSON, FAQ, URL, PDF, DOC, MANUAL. Indexer HANYA menyentuh CATALOG_JSON —
-  /// sumber yang dibuat manusia tidak boleh ditimpa oleh sinkronisasi (guidebook §10.1).
+  /// Selalu 'MANUAL' sejak cerminan katalog dihapus. Kolomnya dipertahankan karena SETIAP
+  /// penjaga di knowledge-workflow.ts memakainya: mutation menolak baris bertipe lain, yang
+  /// membuat penulis baru berbasis file gagal keras alih-alih diam-diam menimpa tulisan
+  /// operator (larangan mutlak di CLAUDE.md).
   type         String
-  sourcePath   String?
   status       String              @default("PUBLISHED")
   summary      String?
-  /// Ukuran file, waktu modifikasi, dan daftar key top-level — supaya operator bisa
-  /// membandingkan apa yang ter-index dengan file yang ada di disk tanpa membuka JSON-nya.
-  metadata     Json?
-  lastSyncedAt DateTime?
-  /// Siapa yang bertanggung jawab atas isi sumber ini. Hanya terisi untuk sumber yang
-  /// dikelola operator (type != CATALOG_JSON); mirror dari disk tidak punya pemilik manusia.
+  /// Siapa yang bertanggung jawab atas isi sumber ini.
   ownerId      String?
   createdBy    String?
   createdAt    DateTime            @default(now())
   updatedAt    DateTime            @updatedAt
-  chunks       KnowledgeChunk[]
   revisions    KnowledgeRevision[]
 
   @@index([type])
@@ -358,16 +368,15 @@ model KnowledgeSource {
 ///
 /// Model terpisah, bukan kolom tambahan di KnowledgeSource, karena yang dibutuhkan adalah
 /// RIWAYAT: "apa yang bot ketahui pada tanggal itu" tidak bisa dijawab tabel yang hanya
-/// menyimpan keadaan terakhir. Menaruh draft di kolom KnowledgeSource juga akan membatasi
-/// sumber pada satu draft sekaligus, dan menghapus jejak revisi yang pernah ditolak — padahal
-/// revisi yang ditolak justru sering menjelaskan kenapa jawaban bot berbentuk seperti sekarang.
+/// menyimpan keadaan terakhir. Riwayat itu bukan teori — audit 870 pesan bulan Agustus
+/// dikerjakan dengan menelusuri persis pertanyaan semacam itu.
 ///
 /// `version` naik satu per satu per sumber, bukan global: nomor yang bisa diucapkan
 /// ("kembalikan FAQ harga ke versi 3") jauh lebih berguna saat insiden daripada cuid.
 ///
-/// PUBLISHED tidak bisa diedit. Mengubah revisi yang sudah terbit akan mengubah masa lalu —
-/// snapshot release yang menunjuk versi itu akan mendeskripsikan isi yang berbeda dari yang
-/// benar-benar dipakai bot saat itu. Perubahan selalu berarti revisi baru.
+/// PUBLISHED tidak bisa diedit. Mengubah revisi yang sudah terbit akan mengubah masa lalu, dan
+/// riwayat yang menunjuk versi itu akan mendeskripsikan isi yang berbeda dari yang benar-benar
+/// dipakai bot saat itu. Perubahan selalu berarti revisi baru.
 model KnowledgeRevision {
   id                String          @id @default(cuid())
   knowledgeSourceId String
@@ -377,50 +386,22 @@ model KnowledgeRevision {
   /// Bentuknya didefinisikan di src/lib/bot-control/knowledge-body.ts (ManagedKnowledgeBody).
   body              Json
   summary           String?
-  /// DRAFT, REVIEW, APPROVED, PUBLISHED, ARCHIVED, REJECTED.
+  /// DRAFT atau PUBLISHED — dua status yang dipilih operator, lewat "Simpan draft" dan
+  /// "Aktifkan". ARCHIVED ada sebagai status ketiga tapi tidak pernah dipilih siapa pun: dia
+  /// ditulis otomatis ke revisi lama saat revisi baru diaktifkan, karena loader runtime
+  /// (src/lib/bot/managed-knowledge.ts) membaca SEMUA baris PUBLISHED dan dua revisi aktif
+  /// pada satu sumber akan membuat bot mengutip jawaban lama dan barunya sekaligus.
   status            String          @default("DRAFT")
   changeReason      String?
   createdBy         String?
-  reviewedBy        String?
-  reviewedAt        DateTime?
   publishedBy       String?
   publishedAt       DateTime?
-  releaseId         String?
   createdAt         DateTime        @default(now())
   updatedAt         DateTime        @updatedAt
 
   @@unique([knowledgeSourceId, version])
   @@index([knowledgeSourceId])
   @@index([status])
-  @@index([releaseId])
-}
-
-/// Satu potongan knowledge yang bisa dicari, ditampilkan, dan nanti dikutip oleh trace.
-///
-/// `hash` adalah SHA-256 dari isi record yang dinormalisasi. Keunikannya di-scope ke
-/// knowledgeSourceId, BUKAN global: fakta yang sama bisa muncul sah di dua file berbeda
-/// (mis. catatan kebijakan yang sama di policy-cards.json dan general-modules.json), dan
-/// menggabungkannya secara global akan menyembunyikan file mana yang sebenarnya dibaca bot —
-/// justru pertanyaan yang halaman ini ada untuk menjawabnya.
-model KnowledgeChunk {
-  id                String          @id @default(cuid())
-  knowledgeSourceId String
-  knowledgeSource   KnowledgeSource @relation(fields: [knowledgeSourceId], references: [id], onDelete: Cascade)
-  topic             String?
-  title             String?
-  body              String
-  facts             Json?
-  links             Json?
-  prices            Json?
-  tags              Json?
-  hash              String
-  createdAt         DateTime        @default(now())
-  updatedAt         DateTime        @updatedAt
-
-  @@unique([knowledgeSourceId, hash])
-  @@index([knowledgeSourceId])
-  @@index([topic])
-  @@index([hash])
 }
 
 model Label {
@@ -548,8 +529,20 @@ model Template {
 model Settings {
   id                          Int            @id @default(1)
   defaultChannel              MessageChannel @default(OFFICIAL)
+  // The team's working-hours window, "HH:MM" on a 24-hour clock, always read in Asia/Jakarta
+  // (never the server's zone -- the VPS runs UTC). An end before the start is a night shift
+  // and wraps midnight. Either one null, blank, or unparseable turns the feature off.
+  //
+  // This window does exactly ONE thing, and deliberately only one: when a conversation is
+  // handed off to a human outside it, offHoursAutoReply is appended to the handoff message so
+  // the customer knows when the team is back. It never stops the bot answering -- the bot
+  // replies 24/7 through the LLM, and swapping a real answer for "we are closed" at 2am would
+  // be a worse service, not a safer one. See offHoursHandoffNotice in
+  // src/lib/bot/runtime-integration.ts and the handoff branch of src/lib/inbound.ts.
   workingHoursStart           String?
   workingHoursEnd             String?
+  // Blank/null appends nothing. Unlike fallbackReply/handoffReply there is no code default to
+  // fall back to: only the operator knows when their own team is back.
   offHoursAutoReply           String?
   // The bot's global mode. true ("On") = active for all chats -- every conversation's
   // botEnabled is bulk-set true on the OFF->ON toggle, and every new conversation defaults
@@ -563,394 +556,94 @@ model Settings {
   // agents handle domestic customers directly, letting the bot serve everyone else. See
   // src/lib/phone.ts's isIndonesianNumber and src/app/api/bot/indonesia-filter/route.ts.
   skipBotForIndonesianNumbers Boolean        @default(false)
+  // Whether the LLM escalation layer runs on top of the explicit keyword gate. True is the
+  // behaviour this column replaced: the rule `bot.handoff_on_human_request` shipped enabled,
+  // was seeded enabled, and an unreadable rule row defaulted to enabled too -- so anything
+  // other than @default(true) would silently turn a handoff path off on the day it migrated.
+  // The keyword gate in src/lib/bot/escalation-classifier.ts is NOT behind this switch: a
+  // customer who types "saya mau bicara dengan manusia" reaches a human either way. Read by
+  // src/lib/bot/runtime-integration.ts, which falls back to true on any read failure.
+  handoffOnHumanRequest       Boolean        @default(true)
   catalogSyncedAt             DateTime?
+  // The two sentences the bot says that an operator may reword without a deploy, edited on
+  // /chatbot. NULL or empty means "use the wording in the code" -- never "say nothing": an
+  // operator who clears the box is reverting to the default, and forcing them to retype the
+  // original sentence to do that is how a typo ends up permanently in the bot's mouth.
+  // fallbackReply is read by src/lib/bot/orchestrator.ts on both of its give-up branches;
+  // handoffReply by src/lib/inbound.ts, the one sentence every handoff sends. Both go through
+  // src/lib/bot/runtime-integration.ts, which falls back to the code's constant on any failure.
+  fallbackReply               String?
+  handoffReply                String?
   // Which Ollama model src/lib/bot/llm.ts asks for. Local-only (no hosted-API fallback) --
   // customer text and booking data never leave the VPS's own Ollama daemon.
   ollamaModel                 String         @default("gemma4:31b-cloud")
+  // --- Pengaman outbound (dulu kolom Json `safetyConfig` di tabel kebijakan channel) ---
+  //
+  // Empat angka yang dibaca src/lib/outbound/safety-guard.ts sebelum sebuah pesan benar-benar
+  // keluar. Dulu satu kolom Json pada tabel tersendiri dengan siklus draft/review/approve/
+  // publish; sekarang kolom biasa, disimpan langsung dari halaman Pengaturan.
+  //
+  // Batas bawahnya BUKAN hiasan dan tetap ditegakkan sebagai Zod di /api/settings (lihat
+  // SAFETY_BOUNDS di safety-guard.ts): nol pada campaignRatePerMinute tidak "melonggarkan"
+  // limit, ia mematikan gerbangnya; duplicateWindowMs 0 mematikan deteksi duplikat. Keduanya
+  // perubahan perilaku yang menyamar sebagai setelan, dan satu ketikan jauhnya tanpa lantai.
+  //
+  // Default-nya persis konstanta yang sudah dipakai kode sejak sebelum tabel itu ada, sehingga
+  // baris yang belum pernah disunting berperilaku sama seperti sebelum migrasi.
+  campaignRatePerMinute       Int            @default(20)
+  duplicateWindowMs           Int            @default(60000)
+  providerFailureThreshold    Int            @default(5)
+  providerFailureWindowMs     Int            @default(300000)
+  /// Provider yang sedang dijeda darurat, mis. ["COEXIST"].
+  ///
+  /// SENGAJA kolomnya sendiri dan SENGAJA tidak ikut PATCH /api/settings. Jeda provider adalah
+  /// tindakan operasional darurat, bukan konfigurasi yang direview: menaruhnya di jalur simpan
+  /// yang sama dengan angka-angka di atas berarti sebuah penyimpanan yang tidak berhubungan
+  /// bisa mengangkat jeda yang dipasang orang lain saat insiden. Satu-satunya yang menulisnya
+  /// adalah /api/outbound-jobs/pause-provider dan resume-provider, langsung berlaku tanpa
+  /// publish apa pun.
+  pausedProviders             String[]       @default([])
 }
 
 /// Catatan setiap perubahan penting di Bot Control. SDD Manage Second §7.1.
 ///
 /// Alasan ini ada sebagai tabel sendiri, bukan kolom di entitas yang berubah: pertanyaan yang
 /// harus dijawab adalah "siapa mengubah apa, kapan, dan mengapa", dan pertanyaan itu melintasi
-/// rule, knowledge, flow, channel policy, dan release sekaligus. Kolom `updatedBy` pada
-/// masing-masing entitas hanya menyimpan penulis TERAKHIR — perubahan sebelumnya hilang, dan
-/// justru perubahan sebelumnya itu yang dicari orang saat bot mulai menjawab salah.
+/// knowledge, Settings, dan decision log sekaligus. Kolom `updatedBy` pada masing-masing
+/// entitas hanya menyimpan penulis TERAKHIR — perubahan sebelumnya hilang, dan justru
+/// perubahan sebelumnya itu yang dicari orang saat bot mulai menjawab salah.
 ///
 /// Semua kolom identitas sengaja string biasa, BUKAN relasi ber-foreign-key, dengan alasan yang
 /// sama seperti BotDecisionRun di atas: catatan audit harus tetap hidup melebihi hal yang
 /// dicatatnya. Akun yang dihapus tidak boleh menghapus jejak apa yang pernah ia publish.
 ///
-/// `before`/`after` HANYA berisi field yang benar-benar berubah dan sudah melewati
-/// sanitizeTrace (lihat src/lib/bot-control/audit.ts). Menyimpan objek utuh akan membuat
-/// setiap baris audit menggandakan konfigurasi lengkap, dan cepat atau lambat menggandakan
-/// sebuah token bersamanya.
+/// Ini RIWAYAT, bukan diff. Tidak ada `before`/`after`: menyimpan nilai lama dan nilai baru
+/// menjawab "buktikan ke pihak ketiga siapa mengubah apa" — masalah SaaS multi-tenant, bukan
+/// masalah JVTO, di mana pelakunya selalu orang yang sama dan setiap entitas sudah menyimpan
+/// nilainya sendiri yang sekarang berlaku. Yang tersisa adalah pertanyaan yang benar-benar
+/// ditanyakan: kapan saya terakhir mengubah ini, dan kenapa.
+///
+/// Alamat jaringan dan identitas perangkat pemanggil juga tidak disimpan, dengan alasan yang
+/// sama: satu tim kecil di satu kantor, dan tidak seorang pun pernah membukanya. Yang tersisa
+/// hanyalah data lokasi dan perangkat rekan kerja yang tersimpan selamanya tanpa menjawab apa pun.
+///
+/// Baris dipangkas otomatis setelah satu tahun (pruneBotAuditLogs, dipanggil dari cron
+/// outbound) — tanpa itu tabel ini tumbuh selamanya.
 model BotControlAuditLog {
   id         String   @id @default(cuid())
   actorId    String?
   actorName  String?
-  /// CREATE_DRAFT, UPDATE_DRAFT, REQUEST_REVIEW, APPROVE, REJECT, PUBLISH, ROLLBACK, ENABLE,
-  /// DISABLE, RUN_TEST, OVERRIDE_TEST_FAILURE.
+  /// UPDATE, PUBLISH, ENABLE, DISABLE.
   action     String
   entityType String
   entityId   String?
   entityKey  String?
-  before     Json?
-  after      Json?
+  /// Alasan yang ditulis operator. Dibersihkan lewat sanitizeTrace sebelum disimpan — teks
+  /// bebas bisa memuat token yang di-paste, dan audit log tidak boleh jadi tempat rahasia.
   reason     String?
-  releaseId  String?
-  ipAddress  String?
-  userAgent  String?
   createdAt  DateTime @default(now())
 
   @@index([entityType, entityId])
-  @@index([entityKey])
   @@index([action])
-  @@index([releaseId])
   @@index([createdAt])
-}
-
-/// Satu publish, dengan snapshot lengkap dari apa yang aktif saat itu. SDD Manage Second §7.2.
-///
-/// Snapshot disimpan sebagai salinan, bukan sebagai daftar pointer ke baris lain, karena
-/// itulah yang membuat rollback mungkin. Kalau release hanya menyimpan id versi, rollback
-/// harus berharap baris-baris itu masih ada dan masih berisi hal yang sama — padahal fase
-/// berikutnya justru akan mengeditnya. Salinan membuat "kembalikan ke keadaan tanggal sekian"
-/// jadi pernyataan yang bisa dipenuhi, bukan harapan.
-///
-/// `version` naik satu per satu dan unik, dihitung di dalam transaksi publish. Nomor yang bisa
-/// diucapkan ("rollback ke versi 12") jauh lebih berguna saat insiden daripada cuid.
-///
-/// `rollbackOfId` menunjuk release yang DIPULIHKAN, bukan release yang ditinggalkan. Rollback
-/// tidak pernah menghapus apa pun: ia membuat release baru dan hanya memindahkan pointer.
-model BotRelease {
-  id           String   @id @default(cuid())
-  version      Int      @unique
-  title        String
-  description  String?
-  /// PUBLISHED, ROLLED_BACK, SUPERSEDED.
-  status       String   @default("PUBLISHED")
-  publishedBy  String?
-  publishedAt  DateTime @default(now())
-  rollbackOfId String?
-  testRunId    String?
-  /// Bentuknya didefinisikan di src/lib/bot-control/release.ts (ReleaseSnapshot).
-  /// Tidak boleh memuat token/API key — lihat CLAUDE.md "Larangan Mutlak".
-  snapshot     Json
-  notes        String?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-
-  @@index([status])
-  @@index([publishedAt])
-}
-
-/// Rule bot yang bisa dikontrol dari database, bukan hanya dibaca dari kode. SDD Manage Second §7.3.
-///
-/// Baris ini TIDAK menggantikan `src/lib/bot-control/rule-registry.ts`. Registry tetap sumber
-/// kebenaran untuk apa saja rule yang ada, di file mana ia ditegakkan, dan — yang paling
-/// penting — apakah ia `editable`. Tabel ini hanya menyimpan bagian yang boleh berubah tanpa
-/// deploy. Kalau tabel ini hilang atau tidak terbaca, bot tetap jalan dengan nilai statis;
-/// lihat runtime-rules.ts.
-///
-/// `editable` disalin ke sini supaya bisa dibaca tanpa memuat registry, tapi registry-lah yang
-/// menang: seed menimpanya setiap kali, dan API draft memeriksa registry, bukan kolom ini.
-/// Baris database yang bisa mengangkat `editable`-nya sendiri akan menjadikan tabel ini jalan
-/// pintas untuk mematikan aturan yang justru tidak boleh dimatikan lewat form web.
-///
-/// Draft hidup di kolomnya sendiri (`draftConfig`, `draftEnabled`) berdampingan dengan nilai
-/// yang sedang berlaku (`config`, `enabled`), bukan menimpanya. Itu yang membuat "draft belum
-/// mengubah runtime" jadi sifat struktur datanya, bukan sesuatu yang harus diingat setiap
-/// pembaca — dan yang membuat reject cukup membuang kolom draft tanpa perlu memulihkan apa pun.
-model BotRuleSetting {
-  id             String    @id @default(cuid())
-  key            String    @unique
-  name           String
-  category       String
-  description    String
-  severity       String
-  editable       Boolean   @default(false)
-  enabled        Boolean   @default(true)
-  config         Json?
-  /// Dari mana nilai yang berlaku sekarang berasal: "code" (registry statis) atau "database".
-  runtimeSource  String?
-  /// PUBLISHED, DRAFT, REVIEW, APPROVED, REJECTED.
-  status         String    @default("PUBLISHED")
-  draftConfig    Json?
-  draftEnabled   Boolean?
-  draftUpdatedBy String?
-  draftUpdatedAt DateTime?
-  publishedBy    String?
-  publishedAt    DateTime?
-  releaseId      String?
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
-
-  @@index([category])
-  @@index([severity])
-  @@index([status])
-}
-
-/// Satu flow bot yang bisa dikelola. SDD Manage Second §7.5.
-///
-/// Sama seperti BotRuleSetting terhadap rule-registry.ts: baris ini TIDAK menggantikan
-/// `existing-flow-registry.ts`. Registry tetap memutuskan flow apa yang ADA, node apa saja di
-/// dalamnya, dan file mana yang menjalankannya — semua itu control flow di kode, bukan data.
-/// Tabel ini hanya menyimpan bagian yang boleh berubah tanpa deploy.
-///
-/// `editableLevel` adalah batas keamanannya, dan disalin dari seed, bukan ditentukan baris ini
-/// sendiri. READ_ONLY, TEXT_ONLY, SAFE_CONFIG, FLOW_BUILDER_V1. Fase ini berhenti di
-/// SAFE_CONFIG: yang boleh diubah hanyalah teks dan ambang yang sudah dibaca kode apa adanya,
-/// bukan percabangannya. Percabangan adalah `if` di orchestrator.ts — mengubahnya dari form web
-/// berarti membangun interpreter, dan interpreter setengah jadi yang menjalankan produksi jauh
-/// lebih berbahaya daripada flow yang belum bisa diedit.
-///
-/// `activeVersionId` adalah pointer, bukan sumber kebenaran kedua: versi yang aktif tetap
-/// baris BotFlowVersion berstatus PUBLISHED. Pointer ini ada supaya loader runtime tidak perlu
-/// memindai seluruh versi pada setiap giliran bot.
-model BotFlowDefinition {
-  id              String           @id @default(cuid())
-  key             String           @unique
-  name            String
-  description     String?
-  category        String?
-  /// "code" selama perilaku masih sepenuhnya dari kode, "database" setelah ada versi terbit.
-  runtimeSource   String?
-  editableLevel   String           @default("READ_ONLY")
-  activeVersionId String?
-  status          String           @default("PUBLISHED")
-  createdAt       DateTime         @default(now())
-  updatedAt       DateTime         @updatedAt
-  versions        BotFlowVersion[]
-
-  @@index([category])
-  @@index([status])
-}
-
-/// Satu versi konfigurasi flow. SDD Manage Second §7.6.
-///
-/// `nodeConfig` di fase ini HANYA memuat safe config (teks sapaan, balasan fallback, ambang
-/// klarifikasi, dan seterusnya) — bukan definisi node. Node-nya tetap di registry statis,
-/// karena node adalah kode. Nama kolomnya mengikuti SDD supaya Flow Builder V1 nanti bisa
-/// mengisinya tanpa migrasi lagi.
-///
-/// PUBLISHED tidak bisa diedit, alasan yang sama dengan KnowledgeRevision: snapshot release
-/// yang menunjuk versi ini harus tetap mendeskripsikan konfigurasi yang benar-benar dipakai bot
-/// saat itu. Perubahan selalu berarti versi baru.
-model BotFlowVersion {
-  id             String            @id @default(cuid())
-  flowId         String
-  flow           BotFlowDefinition @relation(fields: [flowId], references: [id], onDelete: Cascade)
-  version        Int
-  /// DRAFT, REVIEW, APPROVED, PUBLISHED, ARCHIVED, REJECTED.
-  status         String            @default("DRAFT")
-  triggerConfig  Json?
-  /// Bentuknya didefinisikan di src/lib/bot-control/flow-config.ts (FlowSafeConfig).
-  nodeConfig     Json
-  edgeConfig     Json?
-  fallbackConfig Json?
-  handoffConfig  Json?
-  changeReason   String?
-  createdBy      String?
-  reviewedBy     String?
-  reviewedAt     DateTime?
-  publishedBy    String?
-  publishedAt    DateTime?
-  releaseId      String?
-  createdAt      DateTime          @default(now())
-  updatedAt      DateTime          @updatedAt
-
-  @@unique([flowId, version])
-  @@index([flowId])
-  @@index([status])
-  @@index([releaseId])
-}
-
-/// Satu kasus uji untuk bot. SDD Manage Second §7.7.
-///
-/// Ekspektasinya sengaja berupa beberapa kolom sempit, bukan satu ekspektasi bebas: yang
-/// menjadikan sebuah test berguna adalah ia gagal karena satu alasan yang bisa dibaca. "Balasan
-/// tidak sesuai" tidak memberi tahu siapa pun apa yang harus diperbaiki; "status WOULD_HANDOFF,
-/// diharapkan WOULD_REPLY" memberi tahu.
-///
-/// Semua kolom ekspektasi nullable karena masing-masing opsional: sebuah kasus boleh hanya
-/// memeriksa bahwa bot TIDAK mengalihkan ke agent, tanpa peduli kalimat persisnya.
-model BotTestCase {
-  id                    String   @id @default(cuid())
-  name                  String
-  description           String?
-  category              String?
-  inputText             String
-  /// Konteks percakapan yang disiapkan sebelum simulasi (nama kontak, dsb).
-  conversationSeed      Json?
-  /// WOULD_REPLY, WOULD_CLARIFY, WOULD_HANDOFF, FAILED — nilai SimulationStatus.
-  expectedStatus        String?
-  expectedFlowKey       String?
-  expectedContains      String?
-  expectedNotContains   String?
-  expectedHandoff       Boolean?
-  requiredKnowledgeKeys Json?
-  /// Nonaktif berarti dilewati, bukan dihapus: kasus yang dimatikan tetap menjelaskan apa yang
-  /// pernah dianggap penting, dan bisa dihidupkan lagi tanpa ditulis ulang.
-  enabled               Boolean  @default(true)
-  createdBy             String?
-  createdAt             DateTime @default(now())
-  updatedAt             DateTime @updatedAt
-
-  @@index([category])
-  @@index([enabled])
-}
-
-/// Satu kali eksekusi sekumpulan kasus uji. SDD Manage Second §7.8.
-///
-/// `status` di sini adalah gerbang publish (§11): sebuah release hanya boleh terbit bila run
-/// yang ditunjuknya PASSED. Karena itu jumlahnya (`total`, `passed`, `failed`, `skipped`)
-/// disimpan sebagai kolom, bukan dihitung ulang dari `BotTestResult` saat dibaca — angka yang
-/// menggerbangi publish harus tetap sama persis dengan angka saat gerbang itu diputuskan,
-/// meskipun kasus ujinya kemudian diubah atau dihapus.
-model BotTestRun {
-  id         String          @id @default(cuid())
-  name       String?
-  /// PRE_RELEASE atau MANUAL.
-  scope      String
-  /// RUNNING, PASSED, FAILED.
-  status     String
-  total      Int             @default(0)
-  passed     Int             @default(0)
-  failed     Int             @default(0)
-  skipped    Int             @default(0)
-  releaseId  String?
-  startedBy  String?
-  startedAt  DateTime        @default(now())
-  finishedAt DateTime?
-  summary    Json?
-  createdAt  DateTime        @default(now())
-  results    BotTestResult[]
-
-  @@index([scope])
-  @@index([status])
-  @@index([releaseId])
-}
-
-/// Hasil satu kasus uji dalam satu run. SDD Manage Second §7.9.
-///
-/// `inputText` disalin ke sini, tidak dibaca lewat relasi ke BotTestCase, dengan alasan yang
-/// sama seperti BotDecisionRun: catatan harus tetap bisa dibaca meski hal yang dicatatnya
-/// berubah. Kasus uji yang diedit setelah run tidak boleh mengubah apa yang tertulis pernah
-/// dijalankan.
-model BotTestResult {
-  id            String     @id @default(cuid())
-  testRunId     String
-  testRun       BotTestRun @relation(fields: [testRunId], references: [id], onDelete: Cascade)
-  /// Kolom string biasa, BUKAN relasi ber-foreign-key — alasan yang sama seperti
-  /// BotDecisionRun: catatan harus tetap hidup melebihi hal yang dicatatnya. Kasus uji yang
-  /// dihapus tidak boleh menghapus bukti bahwa ia pernah gagal sebelum sebuah publish.
-  testCaseId    String
-  /// PASSED, FAILED, SKIPPED.
-  status        String
-  inputText     String
-  actualStatus  String?
-  actualFlowKey String?
-  actualReply   String?
-  actualTrace   Json?
-  failureReason String?
-  latencyMs     Int?
-  createdAt     DateTime   @default(now())
-
-  @@index([testRunId])
-  @@index([testCaseId])
-  @@index([status])
-}
-
-/// Tindak lanjut manual atas satu keputusan bot. SDD Manage Second §7.10.
-///
-/// Tabel terpisah dari BotDecisionRun, bukan kolom tambahan di sana, karena keduanya menjawab
-/// pertanyaan berbeda dan berumur berbeda. BotDecisionRun adalah catatan apa yang TERJADI dan
-/// tidak boleh berubah setelah ditulis; triage adalah catatan apa yang manusia PUTUSKAN
-/// tentangnya, dan itu berubah terus — dibuka, ditugaskan, diselesaikan. Menaruhnya di satu
-/// baris berarti setiap penugasan menulis ulang baris audit.
-///
-/// `decisionRunId` unik: satu keputusan hanya punya satu tindak lanjut. Dua triage untuk
-/// keputusan yang sama akan membuat "sudah ditangani belum?" tidak bisa dijawab, yang justru
-/// satu-satunya guna daftar ini.
-///
-/// Kolom identitas sengaja string biasa tanpa foreign key, mengikuti BotDecisionRun sendiri:
-/// `/api/conversations/[id]/clear` menjalankan message.deleteMany, dan catatan tindak lanjut
-/// harus tetap hidup melebihi percakapan yang memicunya.
-model BotDecisionTriage {
-  id               String    @id @default(cuid())
-  decisionRunId    String    @unique
-  /// OPEN, ASSIGNED, RESOLVED, IGNORED. Tidak ada yang dihapus — RESOLVED dan IGNORED tetap
-  /// tersimpan, karena "pernah diputuskan tidak perlu diapa-apakan" adalah informasi.
-  status           String    @default("OPEN")
-  /// KNOWLEDGE_GAP, WRONG_FLOW, BAD_REPLY, HALLUCINATION_BLOCKED, UNNECESSARY_HANDOFF,
-  /// MISSED_HANDOFF, PROVIDER_FAILURE, OTHER.
-  issueType        String?
-  severity         String    @default("NORMAL")
-  assignedTo       String?
-  note             String?
-  /// Menghubungkan tindak lanjut ke perbaikan yang dibuat karenanya (knowledge, rule, flow).
-  /// Diisi manual; sistem tidak pernah menebaknya.
-  linkedEntityType String?
-  linkedEntityId   String?
-  resolvedBy       String?
-  resolvedAt       DateTime?
-  createdAt        DateTime  @default(now())
-  updatedAt        DateTime  @updatedAt
-
-  @@index([status])
-  @@index([issueType])
-  @@index([severity])
-  @@index([assignedTo])
-}
-
-/// Kebijakan channel yang bisa dikelola. SDD Manage Second §7.11.
-///
-/// Satu baris per kebijakan, dengan `key` sebagai namanya ("whatsapp.default"). Dibuat
-/// berbaris, bukan sebagai kolom di Settings, karena kebijakan ini punya siklus draft → review
-/// → approve → publish sendiri seperti rule dan flow — dan Settings adalah baris tunggal yang
-/// ditulis langsung oleh halaman Pengaturan tanpa review sama sekali.
-///
-/// `capabilityRules` memetakan kemampuan ke channel yang boleh membawanya. Ini menggantikan
-/// tabel statis di channel-capabilities.ts SEBAGAI SUMBER, bukan sebagai kebenaran: file itu
-/// tetap memutuskan kemampuan apa yang ADA, karena tiap entri menggambarkan endpoint yang
-/// benar-benar diimplementasikan kode. Baris database hanya boleh mengubah channel mana yang
-/// dipakai untuk kemampuan yang sudah ada.
-///
-/// `safetyConfig` menggantikan konstanta di safety-guard.ts dengan cara yang sama, dan
-/// batas-batasnya divalidasi di src/lib/bot-control/channel-policy-config.ts — nilai nol pada
-/// campaign rate akan mematikan seluruh gerbang campaign, yang merupakan perubahan perilaku
-/// yang menyamar sebagai setelan.
-model ChannelPolicySetting {
-  id              String    @id @default(cuid())
-  key             String    @unique
-  /// OFFICIAL atau UNOFFICIAL. Kebijakan tertulis di CLAUDE.md adalah UNOFFICIAL.
-  defaultOutbound String    @default("UNOFFICIAL")
-  officialMode    String    @default("INBOUND_AND_CAPABILITY")
-  unofficialMode  String    @default("PRIMARY_OUTBOUND")
-  capabilityRules Json
-  safetyConfig    Json
-  /// Provider yang sedang dijeda darurat, mis. ["COEXIST"].
-  ///
-  /// SENGAJA kolom sendiri, BUKAN bagian dari `safetyConfig`. Jeda provider adalah tindakan
-  /// operasional darurat, bukan konfigurasi yang direview: menaruhnya di safetyConfig berarti ia
-  /// ikut draft, ikut approve, dan — yang paling berbahaya — ikut ditimpa oleh publish release
-  /// yang tidak ada hubungannya, sehingga jeda yang dipasang saat insiden bisa terangkat
-  /// diam-diam oleh orang lain yang kebetulan menerbitkan perubahan knowledge.
-  pausedProviders Json?
-  /// PUBLISHED, DRAFT, REVIEW, APPROVED, REJECTED.
-  status          String    @default("PUBLISHED")
-  /// Draft hidup berdampingan dengan nilai yang berlaku, bukan menimpanya — sama seperti
-  /// BotRuleSetting. Itu yang membuat "draft belum mengubah runtime" jadi sifat struktur
-  /// datanya, bukan sesuatu yang harus diingat setiap pembaca.
-  draftConfig     Json?
-  draftUpdatedBy  String?
-  draftUpdatedAt  DateTime?
-  publishedBy     String?
-  publishedAt     DateTime?
-  releaseId       String?
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
-
-  @@index([status])
 }

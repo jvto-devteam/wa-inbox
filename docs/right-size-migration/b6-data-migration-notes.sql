@@ -1,0 +1,365 @@
+-- ============================================================================
+-- ITEM b6 — catatan migrasi data: audit log jadi riwayat tanpa diff
+-- ============================================================================
+-- TIDAK DIJALANKAN. Semua pernyataan di bawah ini sengaja berupa komentar.
+-- DATABASE_URL repo ini menunjuk VPS PRODUKSI; keputusan penerapan ada di tangan
+-- operator, bukan agent. Agent yang menulis file ini TIDAK menyentuh database
+-- sama sekali — termasuk SELECT di LANGKAH 1, yang ditulis untuk dijalankan
+-- operator, bukan dijalankan lebih dulu lalu dilaporkan angkanya.
+--
+--
+-- Konteks
+-- -------
+-- "BotControlAuditLog" TETAP ADA, berikut halaman /bot-control/audit-logs.
+-- Tabelnya murah, indexnya rapi, dan "kapan saya terakhir mengubah ini" tetap
+-- pertanyaan yang berguna. Yang dicabut item ini adalah bagian tabel yang
+-- menjawab pertanyaan yang tidak dipunyai JVTO:
+--
+--   * "before"/"after" — diff nilai lama vs nilai baru. Diff itu menjawab
+--     "buktikan ke pihak ketiga siapa yang mengubah apa": masalah SaaS
+--     multi-tenant. Item a4 sudah membuktikan tidak seorang pun di JVTO bisa
+--     memegang peran selain ADMIN/AGENT, jadi penulis dan penyetuju SELALU
+--     orang yang sama, dan nilai yang BERLAKU SEKARANG selalu terlihat di
+--     halaman entitasnya sendiri ("Settings", "KnowledgeRevision").
+--
+--   * "ipAddress"/"userAgent" — TIDAK PERNAH dikembalikan oleh API dan TIDAK
+--     PERNAH ditampilkan di UI (lihat komentar lama di
+--     src/app/api/bot-control/audit-logs/route.ts). Isinya hanya catatan lokasi
+--     dan perangkat rekan sekantor yang tersimpan selamanya tanpa pernah
+--     menjawab apa pun.
+--
+--   * index "BotControlAuditLog_entityKey_idx" — tidak ada satu pun query yang
+--     memfilter berdasarkan "entityKey". Filter yang benar-benar dipakai
+--     halaman audit-logs adalah action, entityType (+entityId lewat API), dan
+--     rentang "createdAt" — ketiganya tetap punya index.
+--
+-- ("releaseId" dan index-nya sudah dicabut item a8. Kalau kolom itu masih ada
+-- di produksi, berarti migrasi a8 belum diterapkan — selesaikan dulu, jangan
+-- digabung ke sini.)
+--
+-- Yang DITAMBAHKAN item ini di sisi aplikasi (bukan DDL):
+--
+--   * Pemangkasan otomatis > 1 tahun (`pruneBotAuditLogs` di
+--     src/lib/bot-control/audit.ts), dipanggil dari POST /api/outbound-jobs/process
+--     — satu-satunya endpoint yang memang sudah dipanggil scheduler. Sebelumnya
+--     tabel ini TANPA retensi sama sekali: ia tumbuh selamanya.
+--
+--     KONSEKUENSI YANG HARUS DIBACA SEBELUM DEPLOY: pada tick cron PERTAMA
+--     setelah deploy, setiap baris yang lebih tua dari 1 tahun akan DIHAPUS
+--     PERMANEN. Lihat LANGKAH 1b — hitung dulu berapa barisnya, dan kalau
+--     jumlahnya bukan 0, ambil `pg_dump` sebelum deploy aplikasi, bukan sebelum
+--     `migrate deploy`. (Dua momen yang berbeda: DDL menghapus KOLOM, kode baru
+--     menghapus BARIS.)
+--
+--   * Titik penulisan audit dikurangi dari 9 menjadi 8 (35 di `main`, sebelum
+--     item a1–b5 mencabut release/rule/flow/channel-policy), dan yang tersisa
+--     hanya yang mengubah perilaku bot. Tidak ada implikasi DDL; baris lama dengan
+--     action 'CREATE_DRAFT'/'UPDATE_DRAFT'/'REQUEST_REVIEW'/'APPROVE'/'REJECT'
+--     TIDAK dihapus dan TIDAK ditulis ulang — lihat asumsi 4.
+--
+--
+-- Asumsi
+-- ------
+-- 1. **"BotControlAuditLog" diperkirakan berisi 0 baris di produksi** menurut
+--    audit produk. ANGKA ITU TIDAK DIPERCAYA BEGITU SAJA — LANGKAH 1 adalah
+--    SELECT read-only yang membuktikannya, dan LANGKAH 2/3 ditulis supaya benar
+--    juga kalau ternyata ADA baris.
+--
+-- 2. **DROP COLUMN itu destruktif dan tidak bisa dibalik.** Isi "before"/"after"
+--    tidak bisa direkonstruksi dari mana pun: tidak dari entitasnya (yang hanya
+--    menyimpan nilai yang berlaku SEKARANG), tidak dari "BotRelease" (sudah
+--    hilang di item a8), tidak dari log aplikasi. Kalau LANGKAH 1a menemukan
+--    baris ber-"before"/"after" non-null, LANGKAH 1c (pg_dump) menjadi WAJIB
+--    dan operator harus menerima bahwa isinya HILANG PERMANEN setelah DROP.
+--
+-- 3. **Tidak ada pemetaan data.** Beda dari item a7/b1/b2/b3/b4: di sana isi
+--    tabel lama punya rumah baru. Di sini tidak, dan itu disengaja. Nilai lama
+--    sebuah setting bukan sesuatu yang dipindahkan ke kolom lain — ia memang
+--    berhenti disimpan. Yang tersisa per baris: waktu, siapa, aksi, entitas,
+--    alasan.
+--
+-- 4. **Baris lama TIDAK dihapus atau ditulis ulang oleh migrasi ini.** Baris
+--    dengan action lama ('CREATE_DRAFT', 'UPDATE_DRAFT', 'REQUEST_REVIEW',
+--    'APPROVE', 'REJECT') dan entityType lama ('RELEASE', 'RULE', 'FLOW',
+--    'CHANNEL_POLICY', 'DECISION', 'TEST_CASE') tetap tersimpan dan tetap
+--    tampil di halaman. Konsekuensinya: baris seperti itu tidak bisa dipilih
+--    dari dropdown filter (dropdown hanya memuat 4 action dan 4 entityType yang
+--    masih ditulis) — tapi ia tetap muncul di daftar "Semua aksi". Menghapusnya
+--    akan menghapus riwayat yang benar-benar pernah terjadi; membiarkannya
+--    hanya membuat satu opsi filter tidak tersedia untuknya. Riwayat menang.
+--    Lihat LANGKAH 5 kalau operator TETAP ingin membersihkannya.
+--
+-- 5. Tidak ada FOREIGN KEY dari mana pun ke "BotControlAuditLog", dan tidak
+--    pernah ada. Semua kolom identitas ("actorId", "entityId") adalah TEXT
+--    biasa tanpa constraint — memang disengaja, supaya catatan audit tetap
+--    hidup melebihi hal yang dicatatnya. Jadi DROP COLUMN di sini tidak
+--    berantai ke tabel mana pun.
+--
+--
+-- ----------------------------------------------------------------------------
+-- LANGKAH 1 — VERIFIKASI. Read-only, jalankan lebih dulu, jangan dilewati.
+--             Seluruh keputusan di bawah bergantung pada hasilnya.
+-- ----------------------------------------------------------------------------
+--
+-- 1a. Berapa baris, dan berapa yang benar-benar akan kehilangan sesuatu?
+--
+-- SELECT COUNT(*)                                                  AS total,
+--        COUNT(*) FILTER (WHERE "before" IS NOT NULL)               AS punya_before,
+--        COUNT(*) FILTER (WHERE "after"  IS NOT NULL)               AS punya_after,
+--        COUNT(*) FILTER (WHERE "ipAddress" IS NOT NULL)            AS punya_ip,
+--        COUNT(*) FILTER (WHERE "userAgent" IS NOT NULL)            AS punya_ua,
+--        MIN("createdAt")                                           AS baris_tertua,
+--        MAX("createdAt")                                           AS baris_terbaru
+-- FROM "BotControlAuditLog";
+--
+--     Diharapkan: total = 0, dan seluruh kolom lain 0/NULL.
+--
+--     Kalau total = 0        -> lanjut ke LANGKAH 2. Tidak ada backup yang perlu
+--                               diambil dan tidak ada data yang hilang. Migrasi
+--                               ini murni DDL.
+--     Kalau punya_before = 0
+--       dan punya_after = 0  -> DROP tetap aman: kolomnya ada tapi kosong.
+--                               Ambil 1c saja kalau ingin berhati-hati.
+--     Kalau punya_before > 0
+--       atau punya_after > 0 -> JANGAN LANJUT. Kerjakan 1c dulu, lalu baca
+--                               asumsi 2 sekali lagi. Isi kedua kolom itu
+--                               HILANG PERMANEN setelah LANGKAH 4.
+--
+-- 1b. Berapa baris yang akan dihapus oleh RETENSI 1 TAHUN pada tick cron
+--     pertama setelah deploy? Ini pertanyaan yang TERPISAH dari DROP COLUMN:
+--     yang ini menghapus BARIS, bukan kolom, dan dilakukan oleh kode aplikasi,
+--     bukan oleh `migrate deploy`.
+--
+-- SELECT COUNT(*) FILTER (WHERE "createdAt" <  now() - interval '1 year') AS akan_dihapus,
+--        COUNT(*) FILTER (WHERE "createdAt" >= now() - interval '1 year') AS akan_tetap,
+--        MIN("createdAt") FILTER (WHERE "createdAt" < now() - interval '1 year') AS tertua_yang_hilang
+-- FROM "BotControlAuditLog";
+--
+--     Diharapkan: akan_dihapus = 0 (tabelnya masih jauh lebih muda dari 1 tahun;
+--     fitur audit log ini sendiri baru dibuat di fase Manage Second).
+--
+--     Kalau akan_dihapus > 0 -> putuskan SEBELUM deploy aplikasi: ambil dump
+--                               (1c), atau naikkan AUDIT_RETENTION_MS di
+--                               src/lib/bot-control/audit.ts. Setelah tick cron
+--                               berjalan, baris itu tidak bisa dikembalikan.
+--
+-- 1c. Kalau ADA baris yang isinya akan hilang: SIMPAN TABELNYA LEBIH DULU.
+--     `pg_dump` satu tabel, bukan SELECT — supaya yang tersimpan bisa
+--     di-restore apa adanya, bukan CSV yang harus ditafsirkan ulang.
+--
+--     pg_dump "$DATABASE_URL" \
+--       --table='"BotControlAuditLog"' \
+--       --format=plain --no-owner --no-privileges \
+--       --file=b6-botcontrolauditlog-backup.sql
+--
+--     Simpan file itu DI LUAR VPS. Verifikasi hasilnya sebelum lanjut — dump
+--     kosong lebih berbahaya daripada tidak ada dump, karena ia terasa aman:
+--
+--       grep -c "INSERT INTO\|COPY " b6-botcontrolauditlog-backup.sql
+--
+--     Kalau yang dibutuhkan hanya isi diff-nya (bukan seluruh tabel), ini
+--     read-only dan cukup untuk diarsipkan sebagai JSON:
+--
+-- SELECT "id", "createdAt", "actorName", "action", "entityType", "entityKey",
+--        "before", "after"
+-- FROM "BotControlAuditLog"
+-- WHERE "before" IS NOT NULL OR "after" IS NOT NULL
+-- ORDER BY "createdAt";
+--
+--     PERIKSA ISINYA SEBELUM DISIMPAN KE MANA PUN. Kolom itu memang sudah
+--     melewati sanitizeTrace saat ditulis, tapi arsip di luar sistem tidak
+--     punya penjaga apa pun — jangan letakkan di tempat yang lebih longgar
+--     daripada database aslinya.
+--
+-- 1d. Kalau ADA baris: berapa yang memakai kosakata lama? Angka ini TIDAK
+--     mengubah apa pun; ia hanya memberi tahu operator apa yang akan terlihat
+--     "aneh" di halaman setelah migrasi (asumsi 4).
+--
+-- SELECT "action", "entityType", COUNT(*) AS jumlah
+-- FROM "BotControlAuditLog"
+-- GROUP BY "action", "entityType"
+-- ORDER BY jumlah DESC;
+--
+--     Action yang MASIH ditulis kode baru : UPDATE, PUBLISH, ENABLE, DISABLE.
+--     entityType yang MASIH ditulis       : KNOWLEDGE, BOT_SETTING,
+--                                           OUTBOUND_PROVIDER, OUTBOUND_JOB.
+--     Selain itu = baris sejarah dari fase sebelumnya. Dibiarkan.
+--
+--
+-- ----------------------------------------------------------------------------
+-- LANGKAH 2 — Buat file migrasi OFFLINE. Jangan `prisma migrate dev`.
+-- ----------------------------------------------------------------------------
+-- CLAUDE.md: `migrate dev` bisa me-reset database saat mendeteksi drift, dan
+-- DATABASE_URL di repo ini menunjuk VPS produksi.
+--
+--   npx prisma migrate diff \
+--     --from-schema-datamodel <schema sebelum item b6> \
+--     --to-schema-datamodel prisma/schema.prisma \
+--     --script > prisma/migrations/<timestamp>_slim_bot_control_audit_log/migration.sql
+--
+-- Schema sebelum item b6 tersedia di
+--   scratchpad/schema-baseline-before-refactor.prisma  (baseline seluruh refactor)
+-- atau `git show HEAD:prisma/schema.prisma` untuk baseline sebelum branch ini.
+--
+-- SQL yang diharapkan keluar — periksa, jangan langsung percaya:
+--
+-- -- (2a) Index yang tidak melayani query apa pun lagi.
+-- DROP INDEX "BotControlAuditLog_entityKey_idx";
+--
+-- -- (2b) Empat kolom. DESTRUKTIF DAN TIDAK BISA DIBALIK.
+-- ALTER TABLE "BotControlAuditLog" DROP COLUMN "before";
+-- ALTER TABLE "BotControlAuditLog" DROP COLUMN "after";
+-- ALTER TABLE "BotControlAuditLog" DROP COLUMN "ipAddress";
+-- ALTER TABLE "BotControlAuditLog" DROP COLUMN "userAgent";
+--
+-- Empat DROP COLUMN ini TIDAK perlu dipecah menjadi beberapa direktori migrasi:
+-- tidak ada langkah pemindahan data di antaranya yang membutuhkan kolom lama
+-- masih hidup (asumsi 3). Satu file cukup, dengan syarat LANGKAH 1 sudah bersih.
+--
+-- **Yang harus DIPERIKSA di file hasil `migrate diff`, dan ditolak kalau muncul:**
+--
+--   * `DROP TABLE "BotControlAuditLog"`      -> SALAH. Tabelnya DIPERTAHANKAN.
+--   * `DROP COLUMN` untuk "reason", "actorId", "actorName", "action",
+--     "entityType", "entityId", "entityKey", "createdAt"
+--                                            -> SALAH. Itu lima hal yang justru
+--                                               disisakan.
+--   * `DROP INDEX "BotControlAuditLog_action_idx"`,
+--     `..._createdAt_idx`, `..._entityType_entityId_idx`
+--                                            -> SALAH. Ketiganya masih melayani
+--                                               filter halaman audit-logs dan
+--                                               ORDER BY "createdAt" DESC. Yang
+--                                               "createdAt" juga dipakai
+--                                               pruning; menghapusnya membuat
+--                                               DELETE retensi jadi full scan.
+--   * `DROP COLUMN "releaseId"`              -> berarti migrasi item a8 BELUM
+--                                               diterapkan. Selesaikan a8 dulu,
+--                                               jangan digabung.
+--   * DDL untuk tabel selain "BotControlAuditLog"
+--                                            -> baseline yang dipakai di
+--                                               `--from-schema-datamodel` lebih
+--                                               tua daripada item a1–b5.
+--                                               Selesaikan migrasi item-item itu
+--                                               lebih dulu.
+--
+-- `ALTER TABLE ... DROP COLUMN` termasuk operasi non-aditif yang menurut
+-- CLAUDE.md wajib didiskusikan lebih dulu. Konteks diskusinya: tabel
+-- diperkirakan kosong (LANGKAH 1a membuktikannya), tidak ada foreign key ke
+-- tabel ini (asumsi 5), dua dari empat kolom tidak pernah sekali pun
+-- ditampilkan ke siapa pun, dan tabel + halamannya sendiri tetap hidup.
+--
+--
+-- ----------------------------------------------------------------------------
+-- LANGKAH 3 — PEMETAAN DATA: TIDAK ADA.
+-- ----------------------------------------------------------------------------
+-- Langkah ini ada hanya untuk menegaskan bahwa ketiadaannya DISENGAJA, bukan
+-- terlewat. Tidak ada UPDATE, tidak ada INSERT, tidak ada kolom tujuan.
+--
+-- Alasannya di asumsi 3: nilai lama sebuah konfigurasi tidak dipindahkan ke
+-- mana-mana, ia berhenti disimpan. Nilai yang BERLAKU dijawab oleh entitasnya
+-- sendiri ("Settings" untuk sakelar /chatbot dan ambang pengaman outbound,
+-- "KnowledgeRevision" untuk isi knowledge), dan itu tidak pernah ada di sini.
+--
+--
+-- ----------------------------------------------------------------------------
+-- LANGKAH 4 — Terapkan migrasi.
+-- ----------------------------------------------------------------------------
+-- npx prisma migrate deploy
+--
+-- (Node 22 lewat nvm; Prisma 7 tidak jalan di Node 18 bawaan VPS.)
+--
+-- Setelah ini:
+--   * "BotControlAuditLog"."before", ."after", ."ipAddress", ."userAgent"
+--     hilang permanen;
+--   * "BotControlAuditLog_entityKey_idx" hilang;
+--   * "BotControlAuditLog_pkey", "..._entityType_entityId_idx",
+--     "..._action_idx" dan "..._createdAt_idx" TETAP;
+--   * seluruh BARIS tetap ada — DDL ini tidak menghapus satu baris pun.
+--
+-- URUTAN DEPLOY — DEPLOY KODE DULU, BARU `migrate deploy`. Bukan sebaliknya.
+--
+--   deploy kode  ->  migrate deploy      (tanpa jendela gagal sama sekali)
+--
+-- Kode BARU tidak pernah menyentuh keempat kolom itu, jadi selama jendela di
+-- antara dua langkah, kolom yang masih ada hanya diam berisi NULL dan tidak ada
+-- satu pun penulisan yang gagal.
+--
+-- Urutan sebaliknya (DDL dulu) PUNYA jendela gagal: kode LAMA masih menulis
+-- "before"/"after"/"ipAddress"/"userAgent", dan kalau kolomnya sudah hilang,
+-- setiap penulisan audit dari kode lama akan error. Untuk pemanggilan biasa
+-- error itu di-swallow (writeBotAuditLog mengembalikan null dan hanya
+-- console.error), TAPI di dalam transaksi ia DILEMPAR ULANG — artinya publish
+-- knowledge dari kode lama gagal total sampai kode baru naik. Gagalnya bersih
+-- (transaksi di-rollback, tidak ada setengah publish), tapi tidak ada alasan
+-- untuk memilih jendela itu ketika urutan yang satunya tidak punya jendela.
+--
+-- CATATAN PRUNING: dengan urutan yang benar, kode baru sudah hidup SEBELUM
+-- kolomnya hilang — jadi tick cron pertama (dan penghapusan baris > 1 tahun di
+-- LANGKAH 1b) bisa terjadi sebelum `migrate deploy`. Pastikan 1b sudah dijawab
+-- dan dump 1c sudah diambil SEBELUM kode di-deploy, bukan sebelum DDL.
+--
+--
+-- ----------------------------------------------------------------------------
+-- LANGKAH 5 — OPSIONAL, dan defaultnya JANGAN.
+-- ----------------------------------------------------------------------------
+-- Membersihkan baris berkosakata lama (asumsi 4). Ini menghapus RIWAYAT YANG
+-- BENAR-BENAR PERNAH TERJADI, dan tidak ada satu pun alasan teknis untuk
+-- melakukannya: baris itu tidak memperlambat apa pun, dan pemangkasan 1 tahun
+-- akan menghabiskannya sendiri pada waktunya.
+--
+-- Kalau operator tetap meminta, hitung dulu, jangan langsung hapus:
+--
+-- SELECT COUNT(*) FROM "BotControlAuditLog"
+-- WHERE "action" NOT IN ('UPDATE', 'PUBLISH', 'ENABLE', 'DISABLE');
+--
+-- DELETE FROM "BotControlAuditLog"
+-- WHERE "action" NOT IN ('UPDATE', 'PUBLISH', 'ENABLE', 'DISABLE');
+--
+--
+-- ----------------------------------------------------------------------------
+-- LANGKAH 6 — VERIFIKASI SETELAH DEPLOY. Read-only.
+-- ----------------------------------------------------------------------------
+--
+-- 6a. Kolomnya benar-benar tinggal yang disisakan?
+--
+-- SELECT column_name, data_type, is_nullable
+-- FROM information_schema.columns
+-- WHERE table_name = 'BotControlAuditLog'
+-- ORDER BY ordinal_position;
+--
+--     Diharapkan PERSIS: id, actorId, actorName, action, entityType, entityId,
+--     entityKey, reason, createdAt. Tidak lebih.
+--
+-- 6b. Index yang tersisa?
+--
+-- SELECT indexname FROM pg_indexes WHERE tablename = 'BotControlAuditLog';
+--
+--     Diharapkan: "BotControlAuditLog_pkey",
+--                 "BotControlAuditLog_entityType_entityId_idx",
+--                 "BotControlAuditLog_action_idx",
+--                 "BotControlAuditLog_createdAt_idx".
+--
+-- 6c. Retensi benar-benar bekerja, dan tidak kebablasan?
+--     Jalankan setelah cron menyentuh POST /api/outbound-jobs/process
+--     setidaknya sekali.
+--
+-- SELECT COUNT(*)                                                            AS total,
+--        COUNT(*) FILTER (WHERE "createdAt" < now() - interval '1 year')     AS sisa_yang_kedaluwarsa,
+--        MIN("createdAt")                                                    AS tertua
+-- FROM "BotControlAuditLog";
+--
+--     Diharapkan: sisa_yang_kedaluwarsa = 0, dan `tertua` tidak lebih tua dari
+--     satu tahun. Kalau total tiba-tiba 0 padahal 1a menemukan baris muda,
+--     ITU BUG — cutoff-nya salah arah. Matikan cron dan restore dari dump 1c.
+--
+-- 6d. Baris baru memang tidak lagi memuat rahasia dan memang berisi lima hal?
+--
+-- SELECT "createdAt", "actorName", "action", "entityType", "entityKey", "reason"
+-- FROM "BotControlAuditLog"
+-- ORDER BY "createdAt" DESC
+-- LIMIT 20;
+--
+--     Periksa kolom "reason": tidak boleh ada token, API key, atau header
+--     Authorization di dalamnya. Kalau ada, sanitizer-nya lolos — laporkan,
+--     jangan dibiarkan. (Pembersihan dilakukan saat MENULIS lewat sanitizeTrace
+--     di src/lib/bot-control/audit.ts; file trace-sanitizer.ts sendiri tidak
+--     disentuh item ini.)

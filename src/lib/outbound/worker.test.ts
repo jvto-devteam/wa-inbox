@@ -9,7 +9,8 @@ import { sendCoexistText, sendCoexistMedia } from '@/lib/coexist/client'
 import { sendMetaMedia } from '@/lib/meta/messages'
 import { uploadMetaMediaFromUrl } from '@/lib/meta/media-upload'
 import { broadcast } from '@/lib/realtime'
-import { processOutboundJob, processDueOutboundJobs, recoverStuckOutboundJobs, STUCK_SENDING_MS } from './worker'
+import { processOutboundJob, processDueOutboundJobs, recoverStuckOutboundJobs } from './worker'
+import { STUCK_SENDING_MS } from './stuck'
 
 vi.mock('@/lib/db', () => ({ prisma: mockDeep<PrismaClient>() }))
 vi.mock('@/lib/coexist/client', () => ({ sendCoexistText: vi.fn(), sendCoexistMedia: vi.fn() }))
@@ -52,7 +53,7 @@ beforeEach(() => {
   vi.clearAllMocks()
   stubJobQueries()
   // Nothing paused by default; the pause tests opt in.
-  mockPrisma.channelPolicySetting.findUnique.mockResolvedValue({ pausedProviders: [] } as never)
+  mockPrisma.settings.findUnique.mockResolvedValue({ pausedProviders: [] } as never)
   mockPrisma.outboundJob.updateMany.mockResolvedValue({ count: 1 } as never)
   mockPrisma.outboundJob.findUnique.mockResolvedValue(job())
   mockPrisma.outboundJob.update.mockResolvedValue({ id: 'job_1' } as never)
@@ -145,7 +146,7 @@ describe('successful dispatch', () => {
   it('releases the claim instead of sending when the provider is paused mid-flight', async () => {
     // The retry endpoint calls processOutboundJob directly, bypassing the drain's check — a
     // pause a manual retry could walk past would not be a pause.
-    mockPrisma.channelPolicySetting.findUnique.mockResolvedValue({ pausedProviders: ['COEXIST'] } as never)
+    mockPrisma.settings.findUnique.mockResolvedValue({ pausedProviders: ['COEXIST'] } as never)
 
     expect(await processOutboundJob('job_1')).toBe('skipped')
     expect(sendCoexistText).not.toHaveBeenCalled()
@@ -253,7 +254,7 @@ describe('processDueOutboundJobs', () => {
     // A pause exists to protect messages from a misbehaving provider; failing them would destroy
     // exactly what the operator was trying to save.
     stubJobQueries({ due: [{ id: 'job_1', provider: 'COEXIST' }] })
-    mockPrisma.channelPolicySetting.findUnique.mockResolvedValue({ pausedProviders: ['COEXIST'] } as never)
+    mockPrisma.settings.findUnique.mockResolvedValue({ pausedProviders: ['COEXIST'] } as never)
 
     const result = await processDueOutboundJobs()
     expect(result).toMatchObject({ pausedSkipped: 1, processed: 0, failed: 0 })
@@ -262,7 +263,7 @@ describe('processDueOutboundJobs', () => {
 
   it('still sends for a provider that is not paused', async () => {
     stubJobQueries({ due: [{ id: 'job_1', provider: 'COEXIST' }] })
-    mockPrisma.channelPolicySetting.findUnique.mockResolvedValue({ pausedProviders: ['META'] } as never)
+    mockPrisma.settings.findUnique.mockResolvedValue({ pausedProviders: ['META'] } as never)
 
     expect((await processDueOutboundJobs()).sent).toBe(1)
   })

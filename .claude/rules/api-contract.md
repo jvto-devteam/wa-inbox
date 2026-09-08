@@ -6,4 +6,6 @@ paths:
 
 - Semua response error harus berbentuk `{ error: string }` dengan status HTTP yang sesuai.
 - Gunakan `try-catch` di setiap route handler; jangan tampilkan pesan error mentah ke client.
-- Patuhi request/response yang sudah ditentukan di SDD (section 20).
+- Urutan wajib untuk setiap mutation ada di `CLAUDE.md` section 6 (auth → `hasAdminPowers`
+  → Zod → audit log bila perlu → transaksi bila perlu).
+- Tidak ada matriks izin per-peran. Otorisasi = `hasAdminPowers()`.

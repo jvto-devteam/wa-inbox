@@ -48,8 +48,8 @@ beforeEach(() => {
   mockPrisma.outboundJob.findUnique.mockResolvedValue(job())
   mockPrisma.outboundJob.updateMany.mockResolvedValue({ count: 1 } as never)
   mockPrisma.message.update.mockResolvedValue({ id: 'msg_1', conversationId: 'conv_1' } as never)
-  mockPrisma.channelPolicySetting.findUnique.mockResolvedValue({ pausedProviders: [] } as never)
-  mockPrisma.channelPolicySetting.update.mockResolvedValue({ id: 'cp_1' } as never)
+  mockPrisma.settings.findUnique.mockResolvedValue({ pausedProviders: [] } as never)
+  mockPrisma.settings.update.mockResolvedValue({ id: 1 } as never)
 })
 
 describe('POST /api/outbound-jobs/[id]/cancel', () => {
@@ -111,7 +111,7 @@ describe('pause and resume provider', () => {
   })
 
   it('resumes a provider and audits it as an ENABLE', async () => {
-    mockPrisma.channelPolicySetting.findUnique.mockResolvedValue({ pausedProviders: ['COEXIST'] } as never)
+    mockPrisma.settings.findUnique.mockResolvedValue({ pausedProviders: ['COEXIST'] } as never)
 
     const res = await resume(req({ provider: 'COEXIST', reason: REASON }))
     expect(await res.json()).toEqual({ provider: 'COEXIST', pausedProviders: [] })
@@ -121,13 +121,13 @@ describe('pause and resume provider', () => {
   it('is idempotent both ways', async () => {
     // An operator hammering the button during an incident should not be told they did something
     // wrong.
-    mockPrisma.channelPolicySetting.findUnique.mockResolvedValue({ pausedProviders: ['COEXIST'] } as never)
+    mockPrisma.settings.findUnique.mockResolvedValue({ pausedProviders: ['COEXIST'] } as never)
     expect((await pause(req({ provider: 'COEXIST', reason: REASON }))).status).toBe(200)
-    expect(mockPrisma.channelPolicySetting.update).not.toHaveBeenCalled()
+    expect(mockPrisma.settings.update).not.toHaveBeenCalled()
 
-    mockPrisma.channelPolicySetting.findUnique.mockResolvedValue({ pausedProviders: [] } as never)
+    mockPrisma.settings.findUnique.mockResolvedValue({ pausedProviders: [] } as never)
     expect((await resume(req({ provider: 'COEXIST', reason: REASON }))).status).toBe(200)
-    expect(mockPrisma.channelPolicySetting.update).not.toHaveBeenCalled()
+    expect(mockPrisma.settings.update).not.toHaveBeenCalled()
   })
 
   it('rejects a provider outside the known set', async () => {

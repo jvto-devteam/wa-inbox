@@ -5,10 +5,12 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { verifySessionToken } from '@/lib/auth/session'
 import { processDueOutboundJobs } from '@/lib/outbound/worker'
 import { CRON_SECRET_ENV, CRON_SECRET_HEADER } from '@/lib/outbound/cron-auth'
+import { pruneBotAuditLogs } from '@/lib/bot-control/audit'
 import { POST } from './route'
 
 vi.mock('@/lib/auth/session', () => ({ verifySessionToken: vi.fn() }))
 vi.mock('@/lib/outbound/worker', () => ({ processDueOutboundJobs: vi.fn() }))
+vi.mock('@/lib/bot-control/audit', () => ({ pruneBotAuditLogs: vi.fn() }))
 
 const SECRET = 'c'.repeat(40)
 
@@ -36,6 +38,7 @@ beforeEach(() => {
   process.env[CRON_SECRET_ENV] = SECRET
   vi.mocked(verifySessionToken).mockResolvedValue({ accountId: 'acc_admin', role: 'ADMIN', tokenVersion: 0 })
   vi.mocked(processDueOutboundJobs).mockResolvedValue({ processed: 3, sent: 2, failed: 0, retrying: 1, recovered: 1, pausedSkipped: 0 })
+  vi.mocked(pruneBotAuditLogs).mockResolvedValue({ deleted: 0 })
 })
 
 describe('POST /api/outbound-jobs/process', () => {
@@ -80,6 +83,33 @@ describe('POST /api/outbound-jobs/process', () => {
     const res = await POST(cronReq('anything'))
     expect(res.status).toBe(403)
     expect(processDueOutboundJobs).not.toHaveBeenCalled()
+  })
+
+  it('prunes audit history older than a year on the same scheduled tick', async () => {
+    // The only endpoint a scheduler already calls, so the only recurring beat the app has. A
+    // separate cron entry for the retention would be a second secret and a second thing to
+    // forget to configure, for a DELETE that is an indexed no-op on almost every tick.
+    await POST(cronReq(SECRET))
+    expect(pruneBotAuditLogs).toHaveBeenCalledTimes(1)
+  })
+
+  it('still drains the queue when pruning the audit history fails', async () => {
+    // Housekeeping must never be the reason customers stop getting their messages.
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    vi.mocked(pruneBotAuditLogs).mockRejectedValue(new Error('db down'))
+
+    const res = await POST(cronReq(SECRET))
+
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ processed: 3, sent: 2, failed: 0, retrying: 1, recovered: 1, pausedSkipped: 0 })
+    expect(processDueOutboundJobs).toHaveBeenCalled()
+  })
+
+  it('does not prune for a caller it refuses', async () => {
+    vi.mocked(verifySessionToken).mockResolvedValue({ accountId: 'acc_1', role: 'AGENT', tokenVersion: 0 })
+
+    expect((await POST(req)).status).toBe(403)
+    expect(pruneBotAuditLogs).not.toHaveBeenCalled()
   })
 
   it('returns 500 with the mandated { error } shape when the worker throws', async () => {

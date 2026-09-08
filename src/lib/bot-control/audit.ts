@@ -1,68 +1,62 @@
 /**
- * The Bot Control audit trail: who changed what, when, and why.
+ * The Bot Control history: who changed what the bot does, when, and why.
  *
- * Every entity in this phase carries an `updatedBy` of its own, and that is exactly the gap
- * this fills. `updatedBy` records the LAST writer and nothing else — the change before it is
- * gone, and the change before it is precisely what somebody goes looking for when the bot
- * starts answering wrongly on a Tuesday and nobody remembers what shipped on Monday.
+ * --- Why this is a history and not a diff ---
  *
- * --- Why the diff is narrowed, and why it is sanitized ---
+ * This used to store `before`/`after` for every change. That pair answers "prove to a third
+ * party which of you changed this" — a multi-tenant SaaS question. wa-inbox is one business
+ * with one small team where nobody can hold a role other than ADMIN or AGENT, so the writer and
+ * the approver are always the same person and there is no third party to prove anything to.
+ * The value that matters now lives on the entity itself (Settings, KnowledgeRevision), and the
+ * question this table is actually opened for is narrower: when did I last turn this on, and why.
  *
- * `before`/`after` hold ONLY the fields that actually changed. Storing whole objects would make
- * every audit row a second copy of the full configuration, and sooner or later a second copy of
- * a token along with it. On top of that, both sides go through `sanitizeTrace`, the same
- * redactor the decision recorder uses: it strips secret-looking keys AND secrets embedded in
- * string values, at WRITE time. Redacting at render time instead would mean the secret is
- * already in the database and merely hidden by whichever component happens to draw it.
+ * The operator's network address and browser string left for the same reason. They were never
+ * returned by the API and never rendered; all they did was keep a permanent record of
+ * colleagues' locations and devices.
+ *
+ * --- Why `reason` is still sanitized ---
+ *
+ * `reason` is FREE TEXT typed by an operator during an incident, and an incident is exactly when
+ * somebody pastes the thing that broke: "jeda META, token EAAG… ditolak". Dropping the diff
+ * removed the structured places a secret could hide, not the unstructured one. So every stored
+ * string still goes through `sanitizeTrace` — at WRITE time, so a secret never lands in the
+ * database rather than merely being hidden by whichever component happens to draw it.
+ *
+ * --- What gets written here at all ---
+ *
+ * Only changes to what the bot DOES: activating or archiving knowledge, the global switches on
+ * /chatbot, the outbound safety thresholds, pausing a provider, cancelling a queued message.
+ * Drafts, flags and other work-in-progress are not written: a draft nobody published changed
+ * nothing for a customer, and the draft row already records its own author and reason.
  *
  * --- Failure behaviour, and why it depends on the caller ---
  *
  * Called standalone, a failed audit write is logged and swallowed: losing the record of a
  * successful action is bad, but undoing the action itself because its footnote failed is worse.
  *
- * Called with a transaction client, it rethrows. A publish that records no audit row is not a
- * publish this system is willing to have happened, and the caller passing `tx` is asking for
- * exactly that all-or-nothing guarantee (SDD Manage Second §11).
+ * Called with a transaction client, it rethrows. An activation that records no audit row is not
+ * an activation this system is willing to have happened, and the caller passing `tx` is asking
+ * for exactly that all-or-nothing guarantee.
  */
 import type { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db'
-import { sanitizeTrace, type JsonLike } from '@/lib/bot-control/trace-sanitizer'
+import { sanitizeTrace } from '@/lib/bot-control/trace-sanitizer'
 
-/** SDD Manage Second §7.1. */
-export const AUDIT_ACTIONS = [
-  'CREATE_DRAFT',
-  'UPDATE_DRAFT',
-  'REQUEST_REVIEW',
-  'APPROVE',
-  'REJECT',
-  'PUBLISH',
-  'ROLLBACK',
-  'ENABLE',
-  'DISABLE',
-  'RUN_TEST',
-  'OVERRIDE_TEST_FAILURE',
-] as const
+/** The four verbs left, one per kind of change the bot's behaviour can undergo. */
+export const AUDIT_ACTIONS = ['UPDATE', 'PUBLISH', 'ENABLE', 'DISABLE'] as const
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[number]
 
-/** A plain record of field values — what an entity looked like at one moment. */
-export type AuditFields = Record<string, unknown>
-
 export type WriteAuditParams = {
   action: AuditAction
-  /** What kind of thing changed: 'RULE', 'KNOWLEDGE', 'FLOW', 'CHANNEL_POLICY', 'RELEASE'. */
+  /** What kind of thing changed: 'KNOWLEDGE', 'BOT_SETTING', 'OUTBOUND_PROVIDER', 'OUTBOUND_JOB'. */
   entityType: string
   entityId?: string | null
-  /** The human-readable key where one exists, e.g. a rule's `channel.unofficial_outbound_default`. */
+  /** The human-readable key where one exists, e.g. a provider's `META` or a source's key. */
   entityKey?: string | null
   actorId?: string | null
   actorName?: string | null
-  before?: AuditFields | null
-  after?: AuditFields | null
   reason?: string | null
-  releaseId?: string | null
-  /** The originating request, read only for its IP and user-agent headers. */
-  req?: Request | null
 }
 
 /**
@@ -72,81 +66,42 @@ export type WriteAuditParams = {
 export type AuditWriter = Prisma.TransactionClient | typeof prisma
 
 /**
- * Reduces a before/after pair to the fields that actually differ.
+ * Redacts and length-caps one stored string.
  *
- * Comparison is by serialised value, so a nested config object counts as changed only when its
- * contents changed — not merely because a new object identity was constructed on the way in.
- * A key present on one side and absent on the other is a change; its missing side is recorded
- * as `null` rather than dropped, because "this field did not exist before" is information.
+ * `sanitizeTrace` returns a `JsonLike`; handed a string it returns a string, and the cast is
+ * narrowing that fact rather than assuming it — a non-string can only come back if a non-string
+ * went in, and the only call sites pass `string`.
  */
-export function diffAuditFields(
-  before: AuditFields | null | undefined,
-  after: AuditFields | null | undefined
-): { before: AuditFields; after: AuditFields } {
-  const from = before ?? {}
-  const to = after ?? {}
-  const changedBefore: AuditFields = {}
-  const changedAfter: AuditFields = {}
-
-  for (const key of new Set([...Object.keys(from), ...Object.keys(to)])) {
-    if (stableStringify(from[key]) === stableStringify(to[key])) continue
-    changedBefore[key] = key in from ? from[key] : null
-    changedAfter[key] = key in to ? to[key] : null
-  }
-
-  return { before: changedBefore, after: changedAfter }
+function clean(value: string | null | undefined): string | null {
+  if (value === null || value === undefined) return null
+  const trimmed = value.trim()
+  if (trimmed.length === 0) return null
+  return sanitizeTrace(trimmed) as string
 }
 
 /**
- * JSON with object keys sorted, so `{a:1,b:2}` and `{b:2,a:1}` compare equal.
+ * Writes one history row. Returns its id, or null when a standalone write failed.
  *
- * Without the sort, a config rebuilt in a different key order would be reported as a change on
- * every save, and an audit log full of no-op entries is an audit log nobody reads.
- */
-function stableStringify(value: unknown): string {
-  if (value === undefined) return '__undefined__'
-  return JSON.stringify(value, (_key, inner: unknown) => {
-    if (inner === null || typeof inner !== 'object' || Array.isArray(inner)) return inner
-    const record = inner as Record<string, unknown>
-    return Object.fromEntries(Object.keys(record).sort().map((k) => [k, record[k]]))
-  })
-}
-
-/** Never store an empty `{}`: a diff with no changed fields is better recorded as absent. */
-function orNull(fields: AuditFields): Prisma.InputJsonValue | undefined {
-  if (Object.keys(fields).length === 0) return undefined
-  return sanitizeTrace(fields) as Prisma.InputJsonValue
-}
-
-/**
- * Writes one audit row. Returns its id, or null when a standalone write failed.
- *
- * `client` defaults to the shared Prisma client. Pass a transaction client to make the audit
- * row part of a larger all-or-nothing operation — see the note at the top of this file.
+ * `client` defaults to the shared Prisma client. Pass a transaction client to make the row part
+ * of a larger all-or-nothing operation — see the note at the top of this file.
  */
 export async function writeBotAuditLog(
   params: WriteAuditParams,
   client: AuditWriter = prisma
 ): Promise<string | null> {
-  const { before, after } = diffAuditFields(params.before, params.after)
-
   try {
     const row = await client.botControlAuditLog.create({
       data: {
         action: params.action,
         entityType: params.entityType,
         entityId: params.entityId ?? null,
-        entityKey: params.entityKey ?? null,
+        // Sanitized as well as `reason`: today every key is machine-generated, but the column
+        // is documented as "the human-readable key" and a future caller putting operator text
+        // in it must not be the moment redaction stops happening.
+        entityKey: clean(params.entityKey),
         actorId: params.actorId ?? null,
         actorName: params.actorName ?? null,
-        before: orNull(before),
-        after: orNull(after),
-        reason: params.reason ?? null,
-        releaseId: params.releaseId ?? null,
-        // Behind a proxy the socket address is the proxy's, so the forwarded header is the
-        // only thing that names the actual operator. Its first hop is the client.
-        ipAddress: readIpAddress(params.req),
-        userAgent: params.req?.headers.get('user-agent')?.slice(0, USER_AGENT_MAX) ?? null,
+        reason: clean(params.reason),
       },
       select: { id: true },
     })
@@ -160,27 +115,42 @@ export async function writeBotAuditLog(
   }
 }
 
-const USER_AGENT_MAX = 500
+/**
+ * How long a history row is kept.
+ *
+ * A year, because the question this table answers is seasonal — "what did we change before last
+ * dry season" — and because nothing here is a legal record anybody is required to retain. The
+ * table had no retention at all before, which is not a policy of keeping everything forever so
+ * much as never having chosen one; a row from 2031 answers nothing and is still being paged
+ * through by every query that scans this table.
+ */
+export const AUDIT_RETENTION_MS = 365 * 24 * 60 * 60 * 1000
 
-function readIpAddress(req: Request | null | undefined): string | null {
-  if (!req) return null
-  const forwarded = req.headers.get('x-forwarded-for')
-  if (forwarded) return forwarded.split(',')[0]?.trim() || null
-  return req.headers.get('x-real-ip')
-}
+export type PruneResult = { deleted: number }
 
-/** Shape returned to the Audit Logs UI. The Json columns stay opaque; the page renders them. */
-export type AuditLogRow = {
-  id: string
-  actorId: string | null
-  actorName: string | null
-  action: string
-  entityType: string
-  entityId: string | null
-  entityKey: string | null
-  before: JsonLike | null
-  after: JsonLike | null
-  reason: string | null
-  releaseId: string | null
-  createdAt: string
+/**
+ * Deletes history rows older than a year. Returns how many went.
+ *
+ * Idempotent: it deletes by age, so a second run in the same minute finds nothing left to
+ * delete and returns 0. Concurrent runs are safe for the same reason — the losing DELETE simply
+ * matches no rows.
+ *
+ * NEVER throws. This is housekeeping riding along on somebody else's job (the outbound cron
+ * tick), and the same rule `recoverStuckOutboundJobs` follows applies here with more force: an
+ * un-pruned audit table is untidy, an outbound queue that stopped draining because tidying
+ * failed is customers not getting their messages.
+ */
+export async function pruneBotAuditLogs(now: Date = new Date()): Promise<PruneResult> {
+  const cutoff = new Date(now.getTime() - AUDIT_RETENTION_MS)
+
+  try {
+    // Indexed on `createdAt`, so the common case (nothing old enough) is a cheap index probe
+    // rather than a scan — which is what makes running this on every tick affordable.
+    const { count } = await prisma.botControlAuditLog.deleteMany({ where: { createdAt: { lt: cutoff } } })
+    if (count > 0) console.info('pruneBotAuditLogs: menghapus riwayat lama', { deleted: count, cutoff })
+    return { deleted: count }
+  } catch (error) {
+    console.error('pruneBotAuditLogs gagal', { error })
+    return { deleted: 0 }
+  }
 }

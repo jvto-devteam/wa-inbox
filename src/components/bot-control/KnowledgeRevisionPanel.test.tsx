@@ -13,10 +13,8 @@ function revision(overrides: Partial<RevisionRow> = {}): RevisionRow {
     status: 'PUBLISHED',
     changeReason: 'Menutup knowledge gap harga ATV',
     createdByName: 'Budi',
-    reviewedByName: null,
-    reviewedAt: null,
+    publishedByName: null,
     publishedAt: null,
-    releaseId: null,
     createdAt: '2026-09-07T02:00:00.000Z',
     updatedAt: '2026-09-07T02:00:00.000Z',
     ...overrides,
@@ -51,10 +49,16 @@ describe('KnowledgeRevisionPanel', () => {
     expect(screen.getByText(/Menutup knowledge gap harga ATV/)).toBeInTheDocument()
   })
 
-  it('shows rejected revisions rather than hiding them', () => {
-    // A rejected revision usually explains why the current answer is worded the way it is.
-    renderPanel({ revisions: [revision({ status: 'REJECTED', version: 2 })] })
-    expect(screen.getByText('REJECTED')).toBeInTheDocument()
+  it('shows superseded revisions rather than hiding them', () => {
+    // A version the bot no longer reads usually explains why the current one is worded the way
+    // it is — filtering it out would remove the most useful row on the page.
+    renderPanel({ revisions: [revision({ status: 'ARCHIVED', version: 2 })] })
+    expect(screen.getByText('ARCHIVED')).toBeInTheDocument()
+  })
+
+  it('names who activated a revision, which is what survived reviewer and approver', () => {
+    renderPanel({ revisions: [revision({ publishedByName: 'Sinta', publishedAt: '2026-09-08T02:00:00.000Z' })] })
+    expect(screen.getByText(/diaktifkan Sinta/)).toBeInTheDocument()
   })
 
   it('says so when the account that wrote a revision is gone', () => {

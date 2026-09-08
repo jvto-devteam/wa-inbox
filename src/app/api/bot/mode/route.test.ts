@@ -3,10 +3,12 @@ import { mockDeep, mockReset, type DeepMockProxy } from 'vitest-mock-extended'
 import type { PrismaClient } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { verifySessionToken } from '@/lib/auth/session'
+import { writeBotAuditLog } from '@/lib/bot-control/audit'
 import { POST } from './route'
 
 vi.mock('@/lib/db', () => ({ prisma: mockDeep<PrismaClient>() }))
 vi.mock('@/lib/auth/session', () => ({ verifySessionToken: vi.fn() }))
+vi.mock('@/lib/bot-control/audit', () => ({ writeBotAuditLog: vi.fn() }))
 
 const mockPrisma = prisma as unknown as DeepMockProxy<PrismaClient>
 
@@ -19,8 +21,11 @@ function request(withCookie = true) {
 
 beforeEach(() => {
   mockReset(mockPrisma)
+  vi.clearAllMocks()
   vi.mocked(verifySessionToken).mockResolvedValue({ accountId: 'acc_admin', role: 'ADMIN', tokenVersion: 0 })
+  vi.mocked(writeBotAuditLog).mockResolvedValue('audit_1')
   mockPrisma.conversation.updateMany.mockResolvedValue({ count: 0 } as never)
+  mockPrisma.account.findUnique.mockResolvedValue({ name: 'Admin Satu' } as never)
 })
 
 describe('POST /api/bot/mode', () => {
@@ -82,12 +87,42 @@ describe('POST /api/bot/mode', () => {
     expect(mockPrisma.conversation.updateMany).toHaveBeenCalledTimes(1)
   })
 
+  it('records who turned the global bot switch off, and when', async () => {
+    // The single biggest lever in the product: Off here stops EVERY customer being answered.
+    // Settings shows only the position the switch is in now, so this row is the only thing that
+    // answers "who did that, and when" the morning after.
+    mockPrisma.settings.findUniqueOrThrow.mockResolvedValue({ botAutoReplyAll: true } as never)
+    mockPrisma.settings.update.mockResolvedValue({ botAutoReplyAll: false } as never)
+
+    await POST(request())
+
+    expect(writeBotAuditLog).toHaveBeenCalledTimes(1)
+    expect(writeBotAuditLog).toHaveBeenCalledWith({
+      action: 'DISABLE',
+      entityType: 'BOT_SETTING',
+      entityKey: 'botAutoReplyAll',
+      actorId: 'acc_admin',
+      actorName: 'Admin Satu',
+    })
+  })
+
+  it('records the switch going back on as ENABLE', async () => {
+    mockPrisma.settings.findUniqueOrThrow.mockResolvedValue({ botAutoReplyAll: false } as never)
+    mockPrisma.settings.update.mockResolvedValue({ botAutoReplyAll: true } as never)
+
+    await POST(request())
+
+    expect(writeBotAuditLog).toHaveBeenCalledWith(expect.objectContaining({ action: 'ENABLE' }))
+  })
+
   it('rejects when the caller is not an admin — an agent must not be able to halt all bot automation', async () => {
     vi.mocked(verifySessionToken).mockResolvedValue({ accountId: 'acc_agent', role: 'AGENT', tokenVersion: 0 })
     const res = await POST(request())
     expect(res.status).toBe(403)
     expect(mockPrisma.settings.update).not.toHaveBeenCalled()
     expect(mockPrisma.conversation.updateMany).not.toHaveBeenCalled()
+    // Nothing happened, so nothing is recorded as having happened.
+    expect(writeBotAuditLog).not.toHaveBeenCalled()
   })
 
   it('rejects when there is no session cookie at all', async () => {

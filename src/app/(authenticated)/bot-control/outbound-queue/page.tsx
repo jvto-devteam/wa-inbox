@@ -4,7 +4,6 @@ import Link from 'next/link'
 import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
 import {
   OutboundQueueTable,
@@ -27,8 +26,9 @@ type QueueResponse = {
 }
 
 const STATUSES = ['QUEUED', 'SENDING', 'RETRYING', 'SENT', 'FAILED', 'CANCELLED']
+
+/** Not a filter — the providers that can be paused, one button each. Mirrors PAUSABLE_PROVIDERS. */
 const PROVIDERS = ['COEXIST', 'META']
-const CHANNELS = ['UNOFFICIAL', 'OFFICIAL']
 
 /** Cancel and pause both take something away, so both ask why. */
 const MIN_REASON_LENGTH = 10
@@ -43,15 +43,18 @@ const MIN_REASON_LENGTH = 10
  *
  * The summary cards count the WHOLE queue, never the filtered page — an operator who has filtered
  * to FAILED still needs to see how many are queued behind it.
+ *
+ * TWO filters, not six. This page gets opened in a panic — a provider is misbehaving and somebody
+ * wants to see what is held up and press retry — and that state asks only two questions: what
+ * status is it in, and what stopped moving. Provider and channel each had exactly two values and
+ * are already printed on every row; a created-at range answers a reporting question nobody has
+ * about a queue that drains itself. Both remaining filters are applied by the API inside its
+ * `where`, so the count, the rows and the paging all agree.
  */
 export default function OutboundQueuePage() {
   const [data, setData] = useState<QueueResponse | null>(null)
   const [page, setPage] = useState(1)
   const [status, setStatus] = useState('')
-  const [provider, setProvider] = useState('')
-  const [channel, setChannel] = useState('')
-  const [dateFrom, setDateFrom] = useState('')
-  const [dateTo, setDateTo] = useState('')
   const [stuckOnly, setStuckOnly] = useState(false)
 
   const [loading, setLoading] = useState(true)
@@ -61,14 +64,10 @@ export default function OutboundQueuePage() {
   const [role, setRole] = useState<Session['role'] | null>(null)
 
   const load = useCallback(() => {
+    // Both filters go to the server as query params and land in the API's `where`. Fetching a
+    // page of rows and hiding some of them here would break the count and the paging with it.
     const params = new URLSearchParams({ page: String(page) })
     if (status) params.set('status', status)
-    if (provider) params.set('provider', provider)
-    if (channel) params.set('channel', channel)
-    if (dateFrom) params.set('dateFrom', dateFrom)
-    // The picker gives a date; the column is a timestamp. Without pushing the upper bound to the
-    // end of the day, "sampai 7 Sep" silently excludes everything that happened on 7 Sep.
-    if (dateTo) params.set('dateTo', `${dateTo}T23:59:59.999Z`)
     if (stuckOnly) params.set('stuck', 'true')
 
     return fetchJson<QueueResponse>(`/api/outbound-jobs?${params}`)
@@ -78,7 +77,7 @@ export default function OutboundQueuePage() {
       })
       .catch((err: unknown) => setError(err instanceof Error ? err.message : 'Gagal memuat antrean'))
       .finally(() => setLoading(false))
-  }, [page, status, provider, channel, dateFrom, dateTo, stuckOnly])
+  }, [page, status, stuckOnly])
 
   useEffect(() => {
     void load()
@@ -219,46 +218,6 @@ export default function OutboundQueuePage() {
             </option>
           ))}
         </Select>
-        <Select
-          value={provider}
-          onChange={(e) => applyFilter(() => setProvider(e.target.value))}
-          className="w-auto"
-          aria-label="Filter provider"
-        >
-          <option value="">Semua provider</option>
-          {PROVIDERS.map((p) => (
-            <option key={p} value={p}>
-              {p}
-            </option>
-          ))}
-        </Select>
-        <Select
-          value={channel}
-          onChange={(e) => applyFilter(() => setChannel(e.target.value))}
-          className="w-auto"
-          aria-label="Filter channel"
-        >
-          <option value="">Semua channel</option>
-          {CHANNELS.map((c) => (
-            <option key={c} value={c}>
-              {c}
-            </option>
-          ))}
-        </Select>
-        <Input
-          type="date"
-          value={dateFrom}
-          onChange={(e) => applyFilter(() => setDateFrom(e.target.value))}
-          aria-label="Dari tanggal"
-          className="w-40"
-        />
-        <Input
-          type="date"
-          value={dateTo}
-          onChange={(e) => applyFilter(() => setDateTo(e.target.value))}
-          aria-label="Sampai tanggal"
-          className="w-40"
-        />
         <label className="flex items-center gap-1 text-xs text-muted-foreground">
           <input
             type="checkbox"

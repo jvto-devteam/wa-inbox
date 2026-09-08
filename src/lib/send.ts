@@ -5,7 +5,7 @@ import { sendMetaText, sendMetaMedia } from '@/lib/meta/messages'
 import { uploadMetaMediaFromUrl } from '@/lib/meta/media-upload'
 import { sendCoexistText, sendCoexistMedia } from '@/lib/coexist/client'
 import { resolveChannelForCapability } from '@/lib/channel-router'
-import type { ChannelCapabilityKey } from '@/lib/bot-control/channel-policy-config'
+import type { ChannelCapabilityKey } from '@/lib/bot-control/channel-capabilities'
 import { broadcast } from '@/lib/realtime'
 import { withMediaUrl } from '@/lib/serialize-message'
 import { enqueueOutboundJob } from '@/lib/outbound/queue'
@@ -65,8 +65,8 @@ export async function sendMessage(params: {
   replyToId?: string
   media?: OutboundMedia
 }) {
-  // The published channel policy decides both WHICH channel carries this capability and
-  // whether it may go out at all. SDD Manage Second §15 Phase H task 4.
+  // The capability matrix decides both WHICH channel carries this send and whether it may go
+  // out at all. SDD Manage Second §15 Phase H task 4.
   const capability = capabilityForSend(params.media)
   const routing = await resolveChannelForCapability(capability, params.channel)
   const channel = routing.channel
@@ -75,11 +75,11 @@ export async function sendMessage(params: {
     include: { contact: true },
   })
 
-  // A capability the operator switched off is recorded as a FAILED message rather than thrown:
-  // the bubble then shows what was attempted, with the retry button, instead of the send
-  // vanishing with only a server log to show for it.
+  // A capability no channel can carry is recorded as a FAILED message rather than thrown: the
+  // bubble then shows what was attempted, with the retry button, instead of the send vanishing
+  // with only a server log to show for it.
   if (routing.disabled) {
-    console.warn('sendMessage: kemampuan dimatikan oleh kebijakan channel', {
+    console.warn('sendMessage: kemampuan tidak didukung channel mana pun', {
       conversationId: params.conversationId,
       capability,
     })

@@ -40,7 +40,7 @@ type Session = { role: 'ADMIN' | 'AGENT'; name: string }
 
 /**
  * A menu is active for its own path and for anything nested beneath it — /contacts/<id>
- * keeps "Kontak" lit, /settings/bot-log keeps "Pengaturan" lit.
+ * keeps "Kontak" lit, /settings/knowledge-gaps keeps "Pengaturan" lit.
  *
  * The nesting test is `startsWith(href + '/')`, not a bare `startsWith(href)`: the bare form
  * matches on any shared character prefix, so a future /contacts-import or /settings-v2 route

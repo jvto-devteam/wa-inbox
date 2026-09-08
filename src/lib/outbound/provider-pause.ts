@@ -14,12 +14,16 @@
  * and it is worst here — the one control whose entire purpose is to be trusted in an emergency.
  * So it is a row, shared by every process and surviving restarts.
  *
- * --- Why it is NOT part of safetyConfig ---
+ * --- Why it is its own column, and not part of anything that gets saved wholesale ---
  *
- * A pause is an operational action, not reviewed configuration. Inside `safetyConfig` it would
- * ride the draft → review → approve → publish lifecycle, and — the dangerous part — a publish of
- * some unrelated knowledge change would overwrite `safetyConfig` from the draft and silently
- * lift a pause somebody set during an incident. Its own column keeps it out of that lifecycle.
+ * A pause is an operational action, not configuration. It used to live on a policy row that had
+ * a draft → review → approve → publish lifecycle, and the dangerous part was that a publish of
+ * some unrelated knowledge change rewrote that row's config from the draft — so a pause set
+ * during an incident could be lifted silently by somebody publishing something else. Its own
+ * column kept it out of that lifecycle then, and keeps it out of the Settings form now:
+ * `pausedProviders` is deliberately NOT in the PATCH /api/settings schema, so saving the safety
+ * numbers, the default channel, or a bot sentence cannot touch a pause. The two pause routes
+ * are the only writers, and they write straight through — there is nothing to publish.
  *
  * --- Why a paused job is delayed, never failed ---
  *
@@ -27,9 +31,7 @@
  * destroy exactly what the operator was trying to save, and a customer would never get their
  * reply. Paused jobs simply stay in the queue and go out when the provider is resumed.
  */
-import type { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db'
-import { DEFAULT_CHANNEL_POLICY_KEY } from '@/lib/bot-control/channel-policy-config'
 
 /** Providers that can be paused. Mirrors OutboundJob.provider. */
 export const PAUSABLE_PROVIDERS = ['COEXIST', 'META'] as const
@@ -55,10 +57,7 @@ function asProviders(value: unknown): PausableProvider[] {
  */
 export async function getPausedProviders(): Promise<PausableProvider[]> {
   try {
-    const row = await prisma.channelPolicySetting.findUnique({
-      where: { key: DEFAULT_CHANNEL_POLICY_KEY },
-      select: { pausedProviders: true },
-    })
+    const row = await prisma.settings.findUnique({ where: { id: 1 }, select: { pausedProviders: true } })
     return asProviders(row?.pausedProviders)
   } catch (error) {
     console.error('getPausedProviders: gagal membaca jeda provider, dianggap tidak ada', { error })
@@ -76,10 +75,7 @@ export async function pauseProvider(provider: PausableProvider): Promise<Pausabl
   if (current.includes(provider)) return current
 
   const next = [...current, provider]
-  await prisma.channelPolicySetting.update({
-    where: { key: DEFAULT_CHANNEL_POLICY_KEY },
-    data: { pausedProviders: next as unknown as Prisma.InputJsonValue },
-  })
+  await prisma.settings.update({ where: { id: 1 }, data: { pausedProviders: next } })
   return next
 }
 
@@ -89,9 +85,6 @@ export async function resumeProvider(provider: PausableProvider): Promise<Pausab
   if (!current.includes(provider)) return current
 
   const next = current.filter((item) => item !== provider)
-  await prisma.channelPolicySetting.update({
-    where: { key: DEFAULT_CHANNEL_POLICY_KEY },
-    data: { pausedProviders: next as unknown as Prisma.InputJsonValue },
-  })
+  await prisma.settings.update({ where: { id: 1 }, data: { pausedProviders: next } })
   return next
 }

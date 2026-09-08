@@ -4,7 +4,7 @@ import { prisma } from '@/lib/db'
 // No in-route session guard, deliberately -- like every other route under
 // /api/bot, this relies on src/middleware.ts for auth. A lone guarded route
 // in an otherwise middleware-guarded group would be a second pattern, not
-// extra safety (see src/app/api/bot/decisions/route.ts).
+// extra safety.
 export async function GET(request: Request) {
   const reason = new URL(request.url).searchParams.get('reason') ?? undefined
 

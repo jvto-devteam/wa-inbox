@@ -37,7 +37,30 @@ describe('KnowledgeEditor', () => {
     // A draft that looks applied is the failure mode of this whole workflow: an operator who
     // thinks they fixed an answer walks away.
     renderEditor()
-    expect(screen.getByText(/belum membacanya sampai dipublish/i)).toBeInTheDocument()
+    expect(screen.getByText(/bot belum membacanya/i)).toBeInTheDocument()
+  })
+
+  it('offers exactly two ways forward: save it, or save it and turn it on', () => {
+    // The six-state workflow this replaces put three more buttons between writing a fact and
+    // the bot using it, and knowledge routinely stopped at the first of them.
+    renderEditor()
+
+    expect(screen.getByRole('button', { name: 'Simpan draft' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Simpan & aktifkan' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /review/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /approve/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /reject/i })).not.toBeInTheDocument()
+  })
+
+  it('flags the activate button as activating, and the draft button as not', () => {
+    const { onSave } = renderEditor()
+    fireEvent.change(screen.getByLabelText('Alasan perubahan'), { target: { value: REASON } })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Simpan draft' }))
+    expect(onSave).toHaveBeenLastCalledWith(expect.anything(), REASON, false)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Simpan & aktifkan' }))
+    expect(onSave).toHaveBeenLastCalledWith(expect.anything(), REASON, true)
   })
 
   it('opens with one empty item rather than no fields at all', () => {
@@ -56,7 +79,7 @@ describe('KnowledgeEditor', () => {
     fireEvent.change(screen.getByLabelText('Alasan perubahan'), { target: { value: REASON } })
     expect(save).toBeEnabled()
     fireEvent.click(save)
-    expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ title: 'FAQ Harga ATV' }), REASON)
+    expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ title: 'FAQ Harga ATV' }), REASON, false)
   })
 
   it('will not save an item missing its answer', () => {

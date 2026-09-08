@@ -1,0 +1,308 @@
+-- ============================================================================
+-- ITEM a8 — catatan migrasi data: menghapus BotRelease dan rollback
+-- ============================================================================
+-- TIDAK DIJALANKAN. Semua pernyataan di bawah ini sengaja berupa komentar.
+-- DATABASE_URL repo ini menunjuk VPS PRODUKSI; keputusan penerapan ada di tangan
+-- operator, bukan agent. Agent yang menulis file ini TIDAK menyentuh database
+-- sama sekali — termasuk SELECT di LANGKAH 1, yang ditulis untuk dijalankan
+-- operator, bukan dijalankan lebih dulu lalu dilaporkan angkanya.
+--
+--
+-- Konteks
+-- -------
+-- Release ada untuk MENGOORDINASI banyak perubahan dari banyak orang: satu
+-- publish memindahkan rule, flow, channel policy dan knowledge bersama-sama,
+-- dan "BotRelease"."snapshot" menyimpan salinan hasilnya supaya rollback bisa
+-- mengembalikannya.
+--
+-- Empat hal membuat koordinasi itu tidak punya isi lagi:
+--
+--   * Item a4 sudah membuktikan tidak ada peran selain ADMIN/AGENT yang bisa
+--     dipegang siapa pun di JVTO — jadi penulis dan penyetuju SELALU orang yang
+--     sama. Tidak ada yang dikoordinasikan antara dua pihak.
+--
+--   * Item a7 (flow), b1 (rule), b2 (channel policy) dan b3 (knowledge) sudah
+--     mencabut entitasnya masing-masing. Setelah keempatnya pergi,
+--     "ReleaseSnapshot" tinggal { schemaVersion, capturedAt } — release
+--     menomori KEKOSONGAN.
+--
+--   * Tombol Publish-nya terbukti TIDAK PERNAH berhasil ditekan: UI mengirim
+--     body tanpa "testRunId" sementara gerbang test mewajibkannya, jadi setiap
+--     penekanan dijamin berakhir 409. Ditemukan oleh review, bukan oleh pemakai.
+--
+--   * Tabelnya diperkirakan 0 baris (lihat LANGKAH 1). Nol release pernah
+--     terjadi; nol rollback pernah terjadi.
+--
+-- Pembandingnya: sakelar bot on/off global — yang kalau salah tekan membuat
+-- SETIAP customer JVTO berhenti dibalas — hidup di /chatbot dengan pola
+-- edit-simpan-langsung-aktif, dan bekerja baik. Kalau pola draft/review/publish/
+-- rollback benar-benar dibutuhkan, ia dibutuhkan lebih dulu oleh sakelar itu.
+--
+-- Yang DIHAPUS item ini di database:
+--
+--   * tabel "BotRelease" seluruhnya (termasuk kolom "rollbackOfId" dan
+--     "snapshot");
+--   * kolom "BotControlAuditLog"."releaseId" dan index-nya.
+--
+-- Yang TETAP, dan sengaja:
+--
+--   * **Tabel "BotControlAuditLog" TETAP UTUH**, berikut seluruh barisnya.
+--     Audit log tidak dihapus item ini; ia disederhanakan di item b6. Yang
+--     dicabut di sini hanya kolom yang khusus milik release.
+--
+--   * Baris audit lama dengan action = 'ROLLBACK' atau entityType = 'RELEASE'
+--     TIDAK dihapus dan TIDAK ditulis ulang. Lihat asumsi 3.
+--
+--   * "Settings" tidak disentuh sama sekali. Seluruh konfigurasi yang dulu
+--     "dipublish" sekarang tinggal di sana dan berlaku saat disimpan.
+--
+--   * Gerbang deployment KATALOG (catalog/release-manifest.json +
+--     catalog/deployment-approval.json, src/lib/bot/deployment-gate.ts,
+--     scripts/approve-deployment.ts) TIDAK ADA HUBUNGANNYA dengan "BotRelease".
+--     Ia memakai kata "release" untuk hal yang sama sekali berbeda — versi
+--     katalog JSON — dan tidak menyimpan apa pun di database. JANGAN ikut
+--     dihapus.
+--
+--
+-- Asumsi
+-- ------
+-- 1. **"BotRelease" diperkirakan berisi 0 baris di produksi.** TAPI ANGKA ITU
+--    TIDAK DIPERCAYA BEGITU SAJA — LANGKAH 1 adalah SELECT read-only yang
+--    membuktikannya, dan LANGKAH 2 ditulis supaya benar juga kalau ternyata ADA
+--    baris.
+--
+-- 2. Kalau LANGKAH 1a mengembalikan 0, migrasi ini murni DDL: tidak ada satu pun
+--    baris yang perlu dipindahkan ke mana pun, karena tidak ada tempat tujuan.
+--    Bentuk baru dari release BUKAN sebuah kolom — melainkan ketiadaan.
+--
+-- 3. **TIDAK ADA pemetaan data.** Ini beda dari item a7/b1/b2/b3/b4, dan
+--    perbedaannya penting: di sana isi tabel lama punya rumah baru (kolom di
+--    "Settings", di "BotDecisionRun", dsb). Di sini tidak ada. Sebuah release
+--    adalah catatan bahwa seseorang menandai satu titik waktu; setelah keempat
+--    koleksi di snapshot-nya pergi, tidak ada konfigurasi di dalamnya yang bisa
+--    dipindahkan. Yang hilang saat DROP adalah catatan bahwa publish itu pernah
+--    terjadi — dan catatan itu sudah punya salinan di "BotControlAuditLog"
+--    (action 'PUBLISH'/'ROLLBACK', entityType 'RELEASE'), yang TIDAK dihapus.
+--
+-- 4. **Kalau LANGKAH 1a ternyata > 0, BACA INI SEBELUM DROP.** Kolom "snapshot"
+--    adalah SATU-SATUNYA tempat konfigurasi lama tersimpan — rule, flow,
+--    channel policy dan knowledge versi lama yang tabelnya sudah ikut dihapus
+--    oleh item a7/b1/b2/b3. Setelah DROP TABLE isinya HILANG PERMANEN dan tidak
+--    bisa direkonstruksi dari mana pun, termasuk dari audit log (audit hanya
+--    menyimpan field yang BERUBAH, bukan konfigurasi utuh). Ambil `pg_dump`
+--    tabelnya lebih dulu — LANGKAH 1c.
+--
+-- 5. Tidak ada FOREIGN KEY dari mana pun ke "BotRelease", dan tidak pernah ada.
+--    "BotControlAuditLog"."releaseId", "KnowledgeRevision"."releaseId",
+--    "BotRuleSetting"."releaseId", "BotFlowVersion"."releaseId",
+--    "BotTestRun"."releaseId" dan "ChannelPolicySetting"."releaseId" semuanya
+--    kolom TEXT biasa tanpa constraint. Empat yang terakhir sudah ikut hilang
+--    bersama tabelnya di item b1/a7/f/b2; "KnowledgeRevision"."releaseId" sudah
+--    dicabut item b3. Jadi DROP di sini tidak berantai ke tabel mana pun.
+--
+--
+-- ----------------------------------------------------------------------------
+-- LANGKAH 1 — VERIFIKASI. Read-only, jalankan lebih dulu, jangan dilewati.
+--             Seluruh keputusan di bawah bergantung pada hasilnya.
+-- ----------------------------------------------------------------------------
+--
+-- 1a. Berapa baris, dan seperti apa isinya?
+--
+-- SELECT COUNT(*)                                          AS total,
+--        COUNT(*) FILTER (WHERE "status" = 'PUBLISHED')    AS aktif,
+--        COUNT(*) FILTER (WHERE "status" = 'SUPERSEDED')   AS digantikan,
+--        COUNT(*) FILTER (WHERE "status" = 'ROLLED_BACK')  AS ditarik,
+--        COUNT(*) FILTER (WHERE "rollbackOfId" IS NOT NULL) AS hasil_rollback,
+--        MIN("publishedAt")                                AS publish_pertama,
+--        MAX("publishedAt")                                AS publish_terakhir
+-- FROM "BotRelease";
+--
+--     Diharapkan: total = 0, dan seluruh kolom lain 0/NULL.
+--
+--     Kalau total = 0  -> lanjut langsung ke LANGKAH 2. Tidak ada backup yang
+--                         perlu diambil dan tidak ada data yang hilang.
+--     Kalau total > 0  -> JANGAN LANJUT. Kerjakan 1b dan 1c dulu, lalu baca
+--                         asumsi 4 sekali lagi.
+--
+-- 1b. Kalau ADA baris: apa sebenarnya yang tersimpan di snapshot-nya? Ini
+--     menentukan seberapa mahal DROP-nya. Snapshot yang hanya berisi
+--     schemaVersion + capturedAt tidak memuat konfigurasi apa pun; snapshot yang
+--     masih memuat "rules"/"flows"/"channelPolicy"/"knowledge" adalah salinan
+--     konfigurasi lama yang tabel aslinya SUDAH TIDAK ADA.
+--
+-- SELECT "version",
+--        "title",
+--        "status",
+--        "publishedAt",
+--        jsonb_object_keys("snapshot"::jsonb) AS kunci_snapshot
+-- FROM "BotRelease"
+-- ORDER BY "version";
+--
+--     Kalau kunci yang muncul hanya 'schemaVersion' dan 'capturedAt':
+--     isinya memang kosong, dan DROP tidak menghilangkan konfigurasi apa pun.
+--
+--     Kalau muncul 'rules', 'flows', 'channelPolicy' atau 'knowledge':
+--     itu konfigurasi lama, dan 1c menjadi WAJIB.
+--
+-- 1c. Kalau ADA baris: SIMPAN TABELNYA SEBELUM APA PUN DIHAPUS.
+--     Ini `pg_dump` satu tabel, bukan SELECT — supaya yang tersimpan adalah
+--     struktur + isi yang bisa di-restore apa adanya, bukan CSV yang harus
+--     ditafsirkan ulang.
+--
+--     pg_dump "$DATABASE_URL" \
+--       --table='"BotRelease"' \
+--       --format=plain --no-owner --no-privileges \
+--       --file=a8-botrelease-backup.sql
+--
+--     Simpan file itu DI LUAR VPS. Setelah LANGKAH 4 tabelnya tidak ada lagi,
+--     dan tidak ada satu pun tempat lain di sistem yang memuat isi "snapshot".
+--
+--     Verifikasi hasilnya sebelum lanjut — dump yang kosong lebih berbahaya
+--     daripada tidak ada dump sama sekali, karena ia terasa aman:
+--
+--       grep -c "INSERT INTO\|COPY " a8-botrelease-backup.sql
+--
+-- 1d. Berapa baris audit yang menyebut release? Baris-baris ini TIDAK dihapus —
+--     angka ini diambil hanya supaya operator tahu apa yang akan tetap terlihat
+--     di halaman Audit Logs setelah migrasi.
+--
+-- SELECT COUNT(*)                                              AS total_baris_release,
+--        COUNT(*) FILTER (WHERE "action" = 'PUBLISH')          AS publish,
+--        COUNT(*) FILTER (WHERE "action" = 'ROLLBACK')         AS rollback,
+--        COUNT(*) FILTER (WHERE "releaseId" IS NOT NULL)       AS punya_release_id
+-- FROM "BotControlAuditLog"
+-- WHERE "entityType" = 'RELEASE' OR "releaseId" IS NOT NULL;
+--
+--     Diharapkan: 0, konsisten dengan 1a. Berapa pun hasilnya, barisnya tetap
+--     dibiarkan — lihat asumsi 3 dan catatan di LANGKAH 5.
+--
+--
+-- ----------------------------------------------------------------------------
+-- LANGKAH 2 — Buat file migrasi OFFLINE. Jangan `prisma migrate dev`.
+-- ----------------------------------------------------------------------------
+-- CLAUDE.md: `migrate dev` bisa me-reset database saat mendeteksi drift, dan
+-- DATABASE_URL di repo ini menunjuk VPS produksi.
+--
+--   npx prisma migrate diff \
+--     --from-schema-datamodel <schema sebelum item a8> \
+--     --to-schema-datamodel prisma/schema.prisma \
+--     --script > prisma/migrations/<timestamp>_drop_bot_release/migration.sql
+--
+-- Schema sebelum item a8 tersedia di
+--   scratchpad/schema-baseline-before-refactor.prisma  (baseline seluruh refactor)
+-- atau `git show HEAD:prisma/schema.prisma` untuk baseline sebelum branch ini.
+--
+-- SQL yang diharapkan keluar untuk BAGIAN RELEASE — periksa, jangan langsung
+-- percaya, dan pastikan tidak ada DROP/ALTER lain yang ikut terbawa:
+--
+-- -- (2a) Kolom release di audit log. DESTRUKTIF tapi terbatas pada satu kolom.
+-- DROP INDEX "BotControlAuditLog_releaseId_idx";
+-- ALTER TABLE "BotControlAuditLog" DROP COLUMN "releaseId";
+--
+-- -- (2b) Tabelnya sendiri. DESTRUKTIF — ini yang menghapus "snapshot".
+-- DROP TABLE "BotRelease";
+--
+-- Berbeda dari item b4, kedua bagian ini TIDAK perlu dipecah menjadi dua
+-- direktori migrasi: tidak ada langkah pemindahan data di antaranya yang
+-- membutuhkan kolom lama masih hidup (asumsi 3). Satu file cukup, dengan syarat
+-- LANGKAH 1 sudah bersih.
+--
+-- **Yang harus DIPERIKSA di file hasil `migrate diff`, dan ditolak kalau muncul:**
+--
+--   * `DROP TABLE "BotControlAuditLog"`         -> SALAH. Audit log dipertahankan.
+--   * `DROP COLUMN` apa pun di "BotControlAuditLog" selain "releaseId"
+--                                               -> SALAH. Milik item b6, bukan a8.
+--   * `DROP TABLE` untuk "Settings", "KnowledgeSource", "KnowledgeRevision",
+--     "KnowledgeChunk", "BotDecisionRun", "OutboundJob"
+--                                               -> SALAH. Bukan bagian item ini.
+--   * `DROP TABLE` untuk "BotRuleSetting", "BotFlowDefinition", "BotFlowVersion",
+--     "BotTestCase", "BotTestRun", "BotTestResult", "BotDecisionTriage",
+--     "ChannelPolicySetting"
+--                                               -> BUKAN salah, tapi BUKAN milik
+--     item a8 juga. Kalau muncul, artinya baseline yang dipakai di `--from-schema-
+--     datamodel` lebih tua daripada item a7/b1/b2/b3/b4 dan migrasi mereka belum
+--     diterapkan. Selesaikan migrasi item-item itu lebih dulu; jangan gabungkan.
+--
+-- DROP TABLE termasuk operasi yang menurut CLAUDE.md wajib didiskusikan lebih
+-- dulu. Konteks diskusinya: tabelnya diperkirakan kosong (LANGKAH 1a
+-- membuktikannya), tidak ada foreign key dari mana pun ke tabel ini (asumsi 5),
+-- fitur yang memakainya terbukti tidak pernah berhasil dijalankan sekali pun,
+-- dan jejak perubahan tetap hidup di "BotControlAuditLog" (asumsi 3).
+--
+--
+-- ----------------------------------------------------------------------------
+-- LANGKAH 3 — PEMETAAN DATA: TIDAK ADA.
+-- ----------------------------------------------------------------------------
+-- Langkah ini ada hanya untuk menegaskan bahwa ketiadaannya DISENGAJA, bukan
+-- terlewat. Tidak ada UPDATE, tidak ada INSERT, tidak ada tabel tujuan.
+--
+-- Alasannya sudah di asumsi 3: release bukan konfigurasi, melainkan nomor yang
+-- menandai konfigurasi — dan konfigurasi yang ditandainya sudah pindah ke
+-- "Settings" (a7/b1/b2) dan ke "KnowledgeRevision" (b3) oleh item-item itu
+-- sendiri, bukan oleh item ini.
+--
+--
+-- ----------------------------------------------------------------------------
+-- LANGKAH 4 — Terapkan migrasi.
+-- ----------------------------------------------------------------------------
+-- npx prisma migrate deploy
+--
+-- (Node 22 lewat nvm; Prisma 7 tidak jalan di Node 18 bawaan VPS.)
+--
+-- Setelah ini:
+--   * "BotRelease" hilang permanen, berikut "BotRelease_pkey",
+--     "BotRelease_version_key", "BotRelease_status_idx" dan
+--     "BotRelease_publishedAt_idx";
+--   * "BotControlAuditLog"."releaseId" hilang, berikut
+--     "BotControlAuditLog_releaseId_idx". Empat index lain di tabel itu
+--     ("..._entityType_entityId_idx", "..._entityKey_idx", "..._action_idx",
+--     "..._createdAt_idx") TETAP.
+--
+-- Urutan penerapan, sekali lagi:
+--
+--   LANGKAH 1 (SELECT + pg_dump kalau perlu) -> LANGKAH 4 (migrate deploy)
+--
+--
+-- ----------------------------------------------------------------------------
+-- LANGKAH 5 — Sesudahnya: apa yang berubah di layar
+-- ----------------------------------------------------------------------------
+-- * Halaman /bot-control/releases sudah tidak ada, dan kartunya sudah dicabut
+--   dari halaman Overview. Tidak ada link menggantung ke sana.
+--
+-- * Halaman /bot-control/audit-logs TETAP ADA dan tetap berfungsi. Yang hilang
+--   dari halaman itu hanya link "release terkait" di bawah nama aktor, pilihan
+--   'ROLLBACK' di dropdown Aksi, dan pilihan 'RELEASE' di dropdown Entitas.
+--
+-- * Baris audit lama dengan action = 'ROLLBACK' atau entityType = 'RELEASE'
+--   MASIH ADA di database dan MASIH TERBACA di halaman tanpa filter — hanya
+--   tidak bisa lagi dipilih lewat dropdown. Itu disengaja, dengan alasan yang
+--   sama seperti item b4: menulis ulang catatan audit lama supaya cocok dengan
+--   kosakata baru justru merusak arti sebuah catatan audit. Kalau operator ingin
+--   dropdown-nya lengkap, tambahkan nilainya kembali ke ACTIONS/ENTITY_TYPES di
+--   src/app/(authenticated)/bot-control/audit-logs/page.tsx — itu keputusan UI,
+--   bukan migrasi data. (Untuk 'ROLLBACK' perlu juga dikembalikan ke
+--   AUDIT_ACTIONS di src/lib/bot-control/audit.ts, karena route audit-logs
+--   memvalidasi filter action terhadap daftar itu.)
+--
+--
+-- ----------------------------------------------------------------------------
+-- Kalau LANGKAH 4 dijalankan padahal LANGKAH 1a mengembalikan > 0
+-- ---------------------------------------------------------------
+-- Yang hilang BUKAN perilaku bot. Tidak ada satu pun jalur runtime yang membaca
+-- "BotRelease": bot membaca "Settings" dan "KnowledgeRevision" langsung, dan
+-- keduanya tidak disentuh migrasi ini. Bot tetap menjawab persis seperti
+-- sebelumnya, detik itu juga.
+--
+-- Yang hilang adalah RIWAYAT: nomor versi, judul, catatan, waktu publish, dan —
+-- yang paling mahal — isi "snapshot". Kalau ada snapshot yang masih memuat
+-- 'rules'/'flows'/'channelPolicy'/'knowledge' (LANGKAH 1b), itulah satu-satunya
+-- salinan konfigurasi lama yang tersisa di sistem, karena tabel aslinya sudah
+-- dihapus item a7/b1/b2/b3. Setelah DROP TABLE tidak ada cara mengambilnya
+-- kembali: audit log hanya menyimpan field yang BERUBAH, bukan konfigurasi utuh.
+--
+-- Pemulihannya hanya lewat backup LANGKAH 1c. Itulah alasan 1c ditulis sebagai
+-- langkah WAJIB kalau 1a > 0, bukan saran.
+--
+-- Kalau 1a memang 0 — dan itu yang diperkirakan — tidak ada apa pun yang hilang,
+-- karena tidak pernah ada apa pun di sana.
+-- ----------------------------------------------------------------------------

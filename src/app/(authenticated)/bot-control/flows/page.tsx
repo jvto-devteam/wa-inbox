@@ -1,154 +1,45 @@
 'use client'
-import { useCallback, useEffect, useState } from 'react'
+import { useState } from 'react'
 import Link from 'next/link'
 import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
 import { FlowStepList } from '@/components/bot-control/FlowStepList'
 import { FLOW_NODE_TYPE_LABEL } from '@/components/bot-control/FlowStepCard'
-import { FlowSafeConfigEditor } from '@/components/bot-control/FlowSafeConfigEditor'
-import { roleNameCan } from '@/lib/bot-control/permissions'
-import type { AccountRoleName } from '@/lib/auth/session'
-import { fetchJson } from '@/lib/fetch-json'
-import type { ExistingFlowDefinition, ExistingFlowNode } from '@/lib/bot-control/existing-flow-registry'
-import type { FlowSafeConfig, SafeConfigField } from '@/lib/bot-control/flow-config'
+import {
+  EXISTING_FLOWS,
+  type ExistingFlowDefinition,
+  type ExistingFlowNode,
+} from '@/lib/bot-control/existing-flow-registry'
 import { getBotRule } from '@/lib/bot-control/rule-registry'
 
-type FlowSummary = {
-  key: string
-  name: string
-  version: number
-  description: string
-  nodesCount: number
-  status: string
-  editableLevel: string
-  editableFields: SafeConfigField[]
-  runtimeSource: string
-  activeVersion: number | null
-  draftVersion: { id: string; version: number; status: string } | null
-  managementUnavailable?: true
-}
-
-type FlowDetail = ExistingFlowDefinition & {
-  editableLevel: string
-  editableFields: SafeConfigField[]
-  activeVersion: { id: string; version: number; config: FlowSafeConfig | null } | null
-  draftVersion: { id: string; version: number; status: string; config: FlowSafeConfig | null } | null
-}
-
-type Session = { role: AccountRoleName }
-
-const DRAFT_STATUS_VARIANT: Record<string, 'brand' | 'warning' | 'success'> = {
-  DRAFT: 'brand',
-  REVIEW: 'warning',
-  APPROVED: 'success',
-}
-
-/** SDD Manage Second §8.3. */
-const MIN_REASON_LENGTH = 10
-
+/**
+ * The pipeline, as a map. Nothing on this page changes anything.
+ *
+ * It reads `existing-flow-registry.ts` directly rather than through an API, because that file
+ * IS the answer: a hand-written description of control flow in `orchestrator.ts` and
+ * `inbound.ts`, kept honest by `existing-flow-registry.test.ts` asserting every `sourceFile`
+ * still exists. There is no database row that could add anything to it.
+ *
+ * There used to be an editor here — a draft/review/approve/publish cycle over a versioned flow
+ * table, for one row holding two sentences. Those two sentences now live in `Settings` and are
+ * edited on /chatbot with the same save-and-it-is-live pattern as the bot on/off switch. What
+ * is left is the part that was always worth having: documentation of what the bot actually does.
+ */
 export default function FlowMapPage() {
-  const [flows, setFlows] = useState<FlowSummary[]>([])
-  const [activeKey, setActiveKey] = useState<string | null>(null)
-  const [flow, setFlow] = useState<FlowDetail | null>(null)
-  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null)
-  const [error, setError] = useState<string | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [role, setRole] = useState<Session['role'] | null>(null)
-  const [editing, setEditing] = useState(false)
-  const [saving, setSaving] = useState(false)
-  const [actionError, setActionError] = useState<string | null>(null)
-  const [reloadToken, setReloadToken] = useState(0)
-
-  const reload = useCallback(() => setReloadToken((n) => n + 1), [])
-
-  useEffect(() => {
-    fetchJson<{ flows: FlowSummary[] }>('/api/bot-control/flows')
-      .then((data) => {
-        setFlows(data.flows)
-        setActiveKey((current) => current ?? data.flows[0]?.key ?? null)
-      })
-      .catch((err: unknown) => setError(err instanceof Error ? err.message : 'Gagal memuat daftar flow'))
-      .finally(() => setLoading(false))
-  }, [reloadToken])
-
-  // The API enforces the permission matrix; this only avoids showing an AGENT controls whose
-  // every press would 403.
-  useEffect(() => {
-    fetchJson<Session>('/api/session')
-      .then((s) => setRole(s.role))
-      .catch(() => {})
-  }, [])
-
-  useEffect(() => {
-    if (!activeKey) return
-    let cancelled = false
-    fetchJson<FlowDetail>(`/api/bot-control/flows/${encodeURIComponent(activeKey)}`)
-      .then((data) => {
-        if (cancelled) return
-        setFlow(data)
-        // Langkah pertama dipilih otomatis supaya panel kanan tidak pernah kosong saat
-        // halaman dibuka. Pilihan sebelumnya dibuang, bukan dipertahankan: id node dari flow
-        // lain akan menghasilkan panel detail yang tidak cocok dengan daftar di sebelahnya.
-        setSelectedNodeId(data.nodes[0]?.id ?? null)
-      })
-      .catch((err: unknown) => {
-        if (cancelled) return
-        setError(err instanceof Error ? err.message : 'Gagal memuat flow')
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [activeKey, reloadToken])
-
-  async function saveDraft(config: FlowSafeConfig, reason: string) {
-    if (!activeKey || saving) return
-    setSaving(true)
-    setActionError(null)
-    try {
-      await fetchJson(`/api/bot-control/flows/${encodeURIComponent(activeKey)}/draft`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ config, reason }),
-      })
-      setEditing(false)
-      reload()
-    } catch (err: unknown) {
-      setActionError(err instanceof Error ? err.message : 'Gagal menyimpan draft flow')
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  async function runTransition(action: 'request-review' | 'approve' | 'reject') {
-    if (!activeKey) return
-    const body: { reason?: string } = {}
-    if (action === 'reject') {
-      const typed = window.prompt(`Alasan menolak draft ini? (minimal ${MIN_REASON_LENGTH} karakter)`)?.trim()
-      if (!typed || typed.length < MIN_REASON_LENGTH) return
-      body.reason = typed
-    }
-
-    setActionError(null)
-    try {
-      await fetchJson(`/api/bot-control/flows/${encodeURIComponent(activeKey)}/${action}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      })
-      reload()
-    } catch (err: unknown) {
-      setActionError(err instanceof Error ? err.message : 'Gagal memproses permintaan')
-    }
-  }
-
-  // The matrix, not admin-equality: a BOT_MANAGER writes and sends to review, and must not
-  // see Approve or Reject.
-  const canEditFlow = roleNameCan(role, 'EDIT_FLOW_CONFIG')
-  const canApproveFlow = roleNameCan(role, 'APPROVE')
+  const [activeKey, setActiveKey] = useState<string>(EXISTING_FLOWS[0]?.key ?? '')
+  const flow: ExistingFlowDefinition | null = EXISTING_FLOWS.find((f) => f.key === activeKey) ?? null
+  // Never null while a flow is selected, so the detail panel is never empty on first paint.
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(EXISTING_FLOWS[0]?.nodes[0]?.id ?? null)
 
   const selectedNode: ExistingFlowNode | null = flow?.nodes.find((n) => n.id === selectedNodeId) ?? null
   const outgoingEdges = flow?.edges.filter((e) => e.from === selectedNodeId) ?? []
+
+  function selectFlow(key: string) {
+    setActiveKey(key)
+    // The previous selection is dropped rather than kept: a node id from another flow would
+    // render a detail panel that does not match the list beside it.
+    setSelectedNodeId(EXISTING_FLOWS.find((f) => f.key === key)?.nodes[0]?.id ?? null)
+  }
 
   return (
     <main className="mx-auto max-w-6xl space-y-4 p-6">
@@ -158,185 +49,107 @@ export default function FlowMapPage() {
         </Link>
         <h1 className="text-xl font-semibold text-navy">Flow Map</h1>
         <p className="text-sm text-muted-foreground">
-          Langkah-langkah pipeline bot yang berjalan hari ini. Peta langkahnya read-only &mdash; itu control flow di
-          kode, bukan data. Yang bisa diubah dari sini hanyalah teks dan ambang yang dibaca kode apa adanya.
+          Langkah-langkah pipeline bot yang berjalan hari ini. Seluruh halaman ini read-only &mdash; percabangannya
+          adalah control flow di kode, bukan data. Dua kalimat bot yang bisa diubah tanpa deploy (balasan saat bot
+          tidak tahu jawabannya dan kalimat saat percakapan dialihkan ke manusia) ada di halaman{' '}
+          <Link href="/chatbot" className="text-brand hover:underline">
+            Chatbot
+          </Link>
+          .
         </p>
       </div>
 
-      {loading && <p className="text-sm text-muted-foreground">Memuat...</p>}
-      {error && <p className="text-sm text-destructive">{error}</p>}
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,14rem)_minmax(0,1fr)_minmax(0,20rem)]">
+        <Card className="h-fit space-y-2 p-3">
+          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Flow</p>
+          {EXISTING_FLOWS.map((f) => (
+            <button
+              key={f.key}
+              type="button"
+              onClick={() => selectFlow(f.key)}
+              aria-pressed={f.key === activeKey}
+              className={`w-full rounded-lg border p-2 text-left text-sm ${
+                f.key === activeKey ? 'border-brand bg-brand/5 font-medium text-navy' : 'border-border hover:bg-muted/50'
+              }`}
+            >
+              {f.name}
+              <span className="block text-xs text-muted-foreground">
+                v{f.version} &middot; {f.nodes.length} langkah
+              </span>
+            </button>
+          ))}
+        </Card>
 
-      {!loading && !error && (
-        <div className="grid gap-4 lg:grid-cols-[minmax(0,14rem)_minmax(0,1fr)_minmax(0,20rem)]">
-          <Card className="h-fit space-y-2 p-3">
-            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Flow</p>
-            {flows.map((f) => (
-              <button
-                key={f.key}
-                type="button"
-                onClick={() => setActiveKey(f.key)}
-                aria-pressed={f.key === activeKey}
-                className={`w-full rounded-lg border p-2 text-left text-sm ${
-                  f.key === activeKey ? 'border-brand bg-brand/5 font-medium text-navy' : 'border-border hover:bg-muted/50'
-                }`}
-              >
-                {f.name}
-                <span className="block text-xs text-muted-foreground">
-                  v{f.version} &middot; {f.nodesCount} langkah &middot; {f.status}
-                </span>
-                <span className="block text-xs text-muted-foreground">
-                  {f.activeVersion ? `Config v${f.activeVersion}` : 'Config dari kode'}
-                  {f.draftVersion && ` · draft v${f.draftVersion.version} (${f.draftVersion.status})`}
-                </span>
-              </button>
-            ))}
-          </Card>
+        <Card className="p-3">
+          {flow ? (
+            <FlowStepList nodes={flow.nodes} selectedId={selectedNodeId} onSelect={setSelectedNodeId} />
+          ) : (
+            <p className="text-sm text-muted-foreground">Pilih flow untuk melihat langkahnya.</p>
+          )}
+        </Card>
 
-          <div className="space-y-3">
-            {flow && (
-              <Card className="space-y-2 p-3">
-                <div className="flex flex-wrap items-center gap-2">
-                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Konfigurasi aman</p>
-                  <Badge variant="muted">{flow.editableLevel}</Badge>
-                  {flow.draftVersion && (
-                    <Badge variant={DRAFT_STATUS_VARIANT[flow.draftVersion.status] ?? 'muted'}>
-                      draft v{flow.draftVersion.version}: {flow.draftVersion.status}
-                    </Badge>
-                  )}
-                </div>
+        <Card className="h-fit space-y-3 p-4">
+          {selectedNode ? (
+            <>
+              <div>
+                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Langkah</p>
+                <p className="text-sm font-semibold text-navy">{selectedNode.name}</p>
+                <Badge variant="muted" className="mt-1">{FLOW_NODE_TYPE_LABEL[selectedNode.type]}</Badge>
+              </div>
 
-                <p className="text-xs text-muted-foreground">
-                  {flow.activeVersion
-                    ? `Berjalan dengan konfigurasi v${flow.activeVersion.version}.`
-                    : 'Berjalan dengan kalimat bawaan dari kode.'}
-                </p>
+              <p className="text-sm text-foreground">{selectedNode.description}</p>
 
-                {/* No controls at all when the level permits nothing. An inert form is worse
-                    than none: an operator will believe they changed the bot. */}
-                {flow.editableFields.length === 0 ? (
-                  <p className="text-xs text-muted-foreground">
-                    Flow ini belum bisa dikonfigurasi dari UI (level {flow.editableLevel}).
-                  </p>
-                ) : (
-                  <div className="flex flex-wrap gap-2">
-                    {canEditFlow && (
-                      <Button variant="outline" size="sm" onClick={() => setEditing(true)}>
-                        {flow.draftVersion ? 'Ubah draft' : 'Buat draft'}
-                      </Button>
-                    )}
-                    {/* Each control follows the draft's STATE, not just the role: a button that
-                        always 409s teaches an operator to stop trusting the page. */}
-                    {canEditFlow && flow.draftVersion?.status === 'DRAFT' && (
-                      <Button variant="outline" size="sm" onClick={() => runTransition('request-review')}>
-                        Kirim ke review
-                      </Button>
-                    )}
-                    {canApproveFlow && flow.draftVersion?.status === 'REVIEW' && (
-                      <Button variant="outline" size="sm" onClick={() => runTransition('approve')}>
-                        Approve
-                      </Button>
-                    )}
-                    {canApproveFlow && flow.draftVersion && (
-                      <Button variant="outline" size="sm" onClick={() => runTransition('reject')}>
-                        Reject
-                      </Button>
-                    )}
-                    {flow.draftVersion?.status === 'APPROVED' && (
-                      <span className="text-xs text-muted-foreground">Menunggu publish lewat Releases</span>
-                    )}
-                  </div>
+              <div>
+                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Sumber kode</p>
+                <p className="font-mono text-xs break-all text-foreground">{selectedNode.sourceFile}</p>
+                {selectedNode.sourceRef && (
+                  <p className="font-mono text-xs text-muted-foreground">{selectedNode.sourceRef}()</p>
                 )}
+              </div>
 
-                {actionError && <p className="text-xs text-destructive">{actionError}</p>}
-              </Card>
-            )}
+              <div>
+                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Kemungkinan hasil</p>
+                <ul className="mt-1 list-disc space-y-0.5 pl-4 text-xs text-foreground">
+                  {selectedNode.possibleOutputs.map((output) => (
+                    <li key={output}>{output}</li>
+                  ))}
+                </ul>
+              </div>
 
-            <Card className="p-3">
-              {flow ? (
-                <FlowStepList nodes={flow.nodes} selectedId={selectedNodeId} onSelect={setSelectedNodeId} />
-              ) : (
-                <p className="text-sm text-muted-foreground">Pilih flow untuk melihat langkahnya.</p>
-              )}
-            </Card>
-          </div>
-
-          <Card className="h-fit space-y-3 p-4">
-            {selectedNode ? (
-              <>
+              {outgoingEdges.length > 0 && (
                 <div>
-                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Langkah</p>
-                  <p className="text-sm font-semibold text-navy">{selectedNode.name}</p>
-                  <Badge variant="muted" className="mt-1">{FLOW_NODE_TYPE_LABEL[selectedNode.type]}</Badge>
-                </div>
-
-                <p className="text-sm text-foreground">{selectedNode.description}</p>
-
-                <div>
-                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Sumber kode</p>
-                  <p className="font-mono text-xs break-all text-foreground">{selectedNode.sourceFile}</p>
-                  {selectedNode.sourceRef && (
-                    <p className="font-mono text-xs text-muted-foreground">{selectedNode.sourceRef}()</p>
-                  )}
-                </div>
-
-                <div>
-                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Kemungkinan hasil</p>
-                  <ul className="mt-1 list-disc space-y-0.5 pl-4 text-xs text-foreground">
-                    {selectedNode.possibleOutputs.map((output) => (
-                      <li key={output}>{output}</li>
+                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Lanjut ke</p>
+                  <ul className="mt-1 space-y-0.5 text-xs text-foreground">
+                    {outgoingEdges.map((edge) => (
+                      <li key={`${edge.from}-${edge.to}-${edge.condition ?? ''}`}>
+                        <span className="font-mono">{edge.to}</span>
+                        {edge.condition && <span className="text-muted-foreground"> — {edge.condition}</span>}
+                      </li>
                     ))}
                   </ul>
                 </div>
+              )}
 
-                {outgoingEdges.length > 0 && (
-                  <div>
-                    <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Lanjut ke</p>
-                    <ul className="mt-1 space-y-0.5 text-xs text-foreground">
-                      {outgoingEdges.map((edge) => (
-                        <li key={`${edge.from}-${edge.to}-${edge.condition ?? ''}`}>
-                          <span className="font-mono">{edge.to}</span>
-                          {edge.condition && <span className="text-muted-foreground"> — {edge.condition}</span>}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-
-                {selectedNode.relatedRuleKeys && selectedNode.relatedRuleKeys.length > 0 && (
-                  <div>
-                    <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Aturan terkait</p>
-                    <ul className="mt-1 space-y-0.5 text-xs">
-                      {selectedNode.relatedRuleKeys.map((key) => (
-                        <li key={key}>
-                          <Link href="/bot-control/rules" className="text-brand hover:underline">
-                            {getBotRule(key)?.name ?? key}
-                          </Link>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-              </>
-            ) : (
-              <p className="text-sm text-muted-foreground">Pilih satu langkah untuk melihat detailnya.</p>
-            )}
-          </Card>
-        </div>
-      )}
-
-      {editing && flow && (
-        <FlowSafeConfigEditor
-          flowName={flow.name}
-          fields={flow.editableFields}
-          // Seeds from the pending draft when there is one, otherwise from what is live, so
-          // changing one field does not silently reset the others.
-          initial={flow.draftVersion?.config ?? flow.activeVersion?.config ?? {}}
-          saving={saving}
-          error={actionError}
-          onCancel={() => setEditing(false)}
-          onSave={saveDraft}
-        />
-      )}
+              {selectedNode.relatedRuleKeys && selectedNode.relatedRuleKeys.length > 0 && (
+                <div>
+                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Aturan terkait</p>
+                  <ul className="mt-1 space-y-0.5 text-xs">
+                    {selectedNode.relatedRuleKeys.map((key) => (
+                      <li key={key}>
+                        <Link href="/bot-control/rules" className="text-brand hover:underline">
+                          {getBotRule(key)?.name ?? key}
+                        </Link>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </>
+          ) : (
+            <p className="text-sm text-muted-foreground">Pilih satu langkah untuk melihat detailnya.</p>
+          )}
+        </Card>
+      </div>
     </main>
   )
 }

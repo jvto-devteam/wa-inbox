@@ -17,7 +17,30 @@ const INBOUND_PREVIEW_LENGTH = 140
  * cannot be `include`d. It is fetched in ONE extra query keyed by the conversation ids on this
  * page, not one query per row: at 50 rows a per-row lookup would be 50 round-trips for a
  * column that only decorates the table.
+ *
+ * NOTE on the explicit `select`: `trace` is the largest column in the table — the full
+ * reasoning JSON for one bot turn — and this list renders none of it, only a 140-character
+ * preview of the inbound text. Selecting the whole row pulled 50 traces across the wire per
+ * page for nothing. The detail route (`[id]/route.ts`) still reads the row in full, which is
+ * where the trace is genuinely wanted.
  */
+
+/** Exactly the columns this list renders. `trace` is deliberately absent — see above. */
+const LIST_SELECT = {
+  id: true,
+  conversationId: true,
+  messageId: true,
+  mode: true,
+  status: true,
+  inboundText: true,
+  latencyMs: true,
+  knowledgeRefs: true,
+  verification: true,
+  error: true,
+  startedAt: true,
+  flaggedAt: true,
+  flagNote: true,
+} as const
 export async function GET(req: Request) {
   const session = await getSession(req)
   if (!session) return NextResponse.json({ error: 'Tidak terautentikasi' }, { status: 401 })
@@ -32,12 +55,17 @@ export async function GET(req: Request) {
   const messageId = url.searchParams.get('messageId')?.trim()
   const dateFrom = url.searchParams.get('dateFrom')?.trim()
   const dateTo = url.searchParams.get('dateTo')?.trim()
+  const flagged = url.searchParams.get('flagged')?.trim()
 
   if (status) where.status = status
   if (mode) where.mode = mode
   if (conversationId) where.conversationId = conversationId
   // Used by the inbox trace popover to find the run behind one bot bubble.
   if (messageId) where.messageId = messageId
+  // "Hanya yang ditandai" is a `where` clause, not a filter the page applies after the fact.
+  // Filtering in the browser would hide every flagged decision that happens to fall on another
+  // page — the failure this column replaced a whole triage table to be rid of.
+  if (flagged === 'true') where.flaggedAt = { not: null }
 
   // An unparseable date is ignored rather than 400'd: a half-typed date in a date picker
   // should show unfiltered results, not an error banner. `Invalid Date` reaching Prisma would
@@ -51,7 +79,7 @@ export async function GET(req: Request) {
 
   try {
     const [runs, total] = await Promise.all([
-      prisma.botDecisionRun.findMany({ where, orderBy: { startedAt: 'desc' }, skip, take: limit }),
+      prisma.botDecisionRun.findMany({ where, orderBy: { startedAt: 'desc' }, skip, take: limit, select: LIST_SELECT }),
       prisma.botDecisionRun.count({ where }),
     ])
 
@@ -84,6 +112,8 @@ export async function GET(req: Request) {
           hasVerification: run.verification != null,
           error: run.error,
           startedAt: run.startedAt.toISOString(),
+          flaggedAt: run.flaggedAt?.toISOString() ?? null,
+          flagNote: run.flagNote,
         }
       }),
       page,

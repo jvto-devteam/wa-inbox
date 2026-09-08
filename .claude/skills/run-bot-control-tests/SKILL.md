@@ -1,5 +1,5 @@
 ---
-description: Menjalankan seluruh test suite untuk Bot Control (unit, route, component) sesuai section 21 SDD.
+description: Menjalankan seluruh test suite untuk Bot Control (unit, route, component).
 ---
 # Run Bot Control Tests
 
@@ -8,3 +8,6 @@ Langkah:
 2. Jalankan `npm test -- src/app/api/bot-control/` (route tests).
 3. Jalankan `npm test -- src/components/bot-control/` (component tests).
 4. Laporkan hasil dan jika ada yang gagal, identifikasi file yang bermasalah.
+
+Catatan: ini hanya subset. Gate sebelum commit tetap `npm test` penuh, `npx tsc --noEmit`,
+dan `npx eslint .` (lihat `CLAUDE.md` section 8).

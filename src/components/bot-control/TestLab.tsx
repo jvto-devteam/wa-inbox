@@ -32,19 +32,7 @@ const STATUS_VARIANT: Record<string, 'success' | 'warning' | 'destructive'> = {
   FAILED: 'destructive',
 }
 
-/**
- * `onResult` lets the page offer "save this as a test case" once a simulation has run. It is
- * optional so the component keeps working exactly as before wherever it is rendered without
- * one — the one-off simulator is the thing this page has always been, and Phase F adds to it
- * rather than replacing it.
- */
-export function TestLab({
-  conversations = [],
-  onResult,
-}: {
-  conversations?: ConversationOption[]
-  onResult?: (input: string, result: SimulationResult) => void
-}) {
+export function TestLab({ conversations = [] }: { conversations?: ConversationOption[] }) {
   const [message, setMessage] = useState('')
   const [context, setContext] = useState<ContextChoice>('none')
   const [conversationId, setConversationId] = useState('')
@@ -72,10 +60,6 @@ export function TestLab({
         body: JSON.stringify(body),
       })
       setResult(simulated)
-      // The message is handed back alongside the result: turning a simulation into a test case
-      // needs the exact input that produced it, and re-reading the textarea later would pick up
-      // whatever the operator has typed since.
-      onResult?.(message.trim(), simulated)
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Simulasi gagal')
     } finally {

@@ -11,16 +11,14 @@ import { prisma } from '@/lib/db'
 import { verifySessionToken } from '@/lib/auth/session'
 import {
   archiveKnowledgeSource,
+  publishKnowledgeRevision,
   saveKnowledgeDraft,
-  transitionKnowledge,
   KnowledgeNotEditableError,
   KnowledgeNotFoundError,
   KnowledgeTransitionError,
 } from '@/lib/bot-control/knowledge-workflow'
 import { PATCH as saveDraft } from './draft/route'
-import { POST as requestReview } from './request-review/route'
-import { POST as approve } from './approve/route'
-import { POST as reject } from './reject/route'
+import { POST as publish } from './publish/route'
 import { POST as archive } from './archive/route'
 import { GET as getRevisions } from './revisions/route'
 import { GET as getSource } from './route'
@@ -32,7 +30,7 @@ vi.mock('@/lib/bot-control/knowledge-workflow', async (importOriginal) => {
   return {
     ...actual,
     saveKnowledgeDraft: vi.fn(),
-    transitionKnowledge: vi.fn(),
+    publishKnowledgeRevision: vi.fn(),
     archiveKnowledgeSource: vi.fn(),
   }
 })
@@ -70,11 +68,11 @@ beforeEach(() => {
     status: 'DRAFT',
     title: 'FAQ',
   })
-  vi.mocked(transitionKnowledge).mockResolvedValue({
+  vi.mocked(publishKnowledgeRevision).mockResolvedValue({
     sourceId: 'ks_1',
     revisionId: 'krev_1',
     version: 1,
-    status: 'REVIEW',
+    status: 'PUBLISHED',
     title: 'FAQ',
   })
   vi.mocked(archiveKnowledgeSource).mockResolvedValue({ sourceId: 'ks_1', status: 'ARCHIVED' })
@@ -87,8 +85,7 @@ describe('PATCH /draft', () => {
     expect(saveKnowledgeDraft).toHaveBeenCalledWith(
       'ks_1',
       expect.objectContaining({ reason: REASON }),
-      { id: 'acc_admin', name: 'Admin Satu' },
-      expect.anything()
+      { id: 'acc_admin', name: 'Admin Satu' }
     )
   })
 
@@ -113,34 +110,44 @@ describe('PATCH /draft', () => {
   })
 })
 
-describe('transition routes', () => {
-  it('each asks for its own transition', async () => {
-    await requestReview(req(), { params })
-    expect(transitionKnowledge).toHaveBeenCalledWith('ks_1', 'REVIEW', expect.anything(), null, expect.anything())
-
-    await approve(req(), { params })
-    expect(transitionKnowledge).toHaveBeenCalledWith('ks_1', 'APPROVE', expect.anything(), null, expect.anything())
-
-    await reject(req({ reason: REASON }), { params })
-    expect(transitionKnowledge).toHaveBeenCalledWith('ks_1', 'REJECT', expect.anything(), REASON, expect.anything())
+describe('POST /publish', () => {
+  it('activates the draft and names the acting operator', async () => {
+    // One step from DRAFT to PUBLISHED. There is no review hop in between and no release
+    // afterwards, so this endpoint is the whole distance between writing a fact and the bot
+    // using it.
+    const res = await publish(req(), { params })
+    expect(res.status).toBe(200)
+    expect(publishKnowledgeRevision).toHaveBeenCalledWith(
+      'ks_1',
+      { id: 'acc_admin', name: 'Admin Satu' },
+      null
+    )
   })
 
-  it('lets a drafter send to review but not approve', async () => {
-    // The separation the review step exists to create. With only ADMIN today both collapse,
-    // but the matrix is what will make them differ once BOT_MANAGER exists.
+  it('passes an optional reason through', async () => {
+    await publish(req({ reason: REASON }), { params })
+    expect(publishKnowledgeRevision).toHaveBeenCalledWith('ks_1', expect.anything(), REASON)
+  })
+
+  it('refuses an AGENT and a request with no session', async () => {
+    expect((await publish(req({}, 'POST', false), { params })).status).toBe(401)
+
     vi.mocked(verifySessionToken).mockResolvedValue({ accountId: 'acc_1', role: 'AGENT', tokenVersion: 0 })
-    expect((await requestReview(req(), { params })).status).toBe(403)
-    expect((await approve(req(), { params })).status).toBe(403)
+    expect((await publish(req(), { params })).status).toBe(403)
+    expect(publishKnowledgeRevision).not.toHaveBeenCalled()
   })
 
-  it('requires a reason to reject but not to approve', async () => {
-    expect((await reject(req({}), { params })).status).toBe(400)
-    expect((await approve(req({}), { params })).status).toBe(200)
+  it('answers 409 when there is no draft to activate', async () => {
+    vi.mocked(publishKnowledgeRevision).mockRejectedValue(new KnowledgeTransitionError('berstatus PUBLISHED'))
+    expect((await publish(req(), { params })).status).toBe(409)
   })
 
-  it('answers 409 when the revision is in the wrong state', async () => {
-    vi.mocked(transitionKnowledge).mockRejectedValue(new KnowledgeTransitionError('berstatus DRAFT'))
-    expect((await approve(req(), { params })).status).toBe(409)
+  it('answers 403 for a catalog mirror and 404 for a missing source', async () => {
+    vi.mocked(publishKnowledgeRevision).mockRejectedValue(new KnowledgeNotEditableError('Sumber katalog'))
+    expect((await publish(req(), { params })).status).toBe(403)
+
+    vi.mocked(publishKnowledgeRevision).mockRejectedValue(new KnowledgeNotFoundError())
+    expect((await publish(req(), { params })).status).toBe(404)
   })
 })
 
@@ -150,9 +157,8 @@ describe('POST /archive', () => {
     expect((await archive(req({ reason: 'x' }), { params })).status).toBe(400)
   })
 
-  it('needs APPROVE, not merely edit rights', async () => {
-    // Archiving takes knowledge away from the bot at the next cache expiry without going
-    // through a release — closer to publishing than to drafting.
+  it('refuses an AGENT', async () => {
+    // Archiving takes knowledge away from the bot at the next cache expiry.
     vi.mocked(verifySessionToken).mockResolvedValue({ accountId: 'acc_1', role: 'AGENT', tokenVersion: 0 })
     expect((await archive(req({ reason: REASON }), { params })).status).toBe(403)
   })
@@ -169,7 +175,7 @@ describe('GET /revisions', () => {
     // make the panel grow without bound on a source edited fifty times.
     mockPrisma.knowledgeSource.findUnique.mockResolvedValue({ id: 'ks_1', key: 'managed/abc' } as never)
     mockPrisma.knowledgeRevision.findMany.mockResolvedValue([
-      { id: 'krev_2', version: 2, title: 'v2', summary: null, status: 'PUBLISHED', changeReason: null, createdBy: null, reviewedBy: null, reviewedAt: null, publishedAt: null, releaseId: null, createdAt: new Date(), updatedAt: new Date() },
+      { id: 'krev_2', version: 2, title: 'v2', summary: null, status: 'PUBLISHED', changeReason: null, createdBy: null, publishedBy: null, publishedAt: null, createdAt: new Date(), updatedAt: new Date() },
     ] as never)
 
     const body = await (await getRevisions(getReq(), { params })).json()
@@ -199,7 +205,6 @@ describe('GET /sources/[id]', () => {
       type: 'MANUAL',
       status: 'DRAFT',
       summary: null,
-      sourcePath: null,
       ownerId: 'acc_1',
       revisions: [{ id: 'krev_1', version: 1, status: 'DRAFT', title: 'FAQ', summary: null, changeReason: null, body: BODY }],
     } as never)
@@ -220,7 +225,6 @@ describe('GET /sources/[id]', () => {
       type: 'MANUAL',
       status: 'DRAFT',
       summary: null,
-      sourcePath: null,
       ownerId: null,
       revisions: [{ id: 'krev_1', version: 1, status: 'DRAFT', title: 'FAQ', summary: null, changeReason: null, body: { bentuk: 'asing' } }],
     } as never)

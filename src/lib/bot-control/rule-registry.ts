@@ -1,33 +1,40 @@
 /**
  * The bot's operating rules, written down.
  *
+ * --- This file is documentation, and that is the whole of its job ---
+ *
  * Every rule here already governs production behaviour — it is enforced by the code named in
  * `sourceFile`/`sourceRef`, not by this file. What was missing was any way for an operator to
  * SEE the rules: "does the bot invent prices?" and "why did it hand off?" were questions only
  * answerable by reading `orchestrator.ts`.
  *
- * `editable` is the load-bearing field, and it is a safety boundary rather than a UI hint.
- * A rule is `editable: false` when flipping it from a web form would either break a promise we
- * have made to customers (the bot may not quote a price it cannot source) or would require code
- * changes to mean anything at all (the debounce window is not read from a settings row). The
- * Rules page must not render a toggle for those — an inert switch that appears to work is worse
- * than no switch, because an operator will believe they turned something off.
+ * Eight of the ten rules below are hardcoded behaviour with no switch anywhere. They used to
+ * carry an `editable` flag, a database row each, six API routes and a
+ * draft → review → approve → publish state machine — for ten rows that will never become
+ * eleven, eight of which nothing could change anyway. All of that is gone. A list of ten
+ * sentences describing hardcoded behaviour is best kept as exactly that: a list of ten
+ * sentences.
  *
- * `enabled` reflects what is true TODAY. For the three rules whose state genuinely lives in the
- * database (`bot.skip_indonesian_numbers` above all), the value here is the static default; the
- * live value comes from Settings and is layered on by the API route, which is why
- * `enabledFromSettingsKey` exists.
+ * --- The two that really are switches ---
+ *
+ * `bot.skip_indonesian_numbers` and `bot.handoff_on_human_request` are the only two rules that
+ * reach the runtime as a decision rather than as prose. Each is one boolean column on
+ * `Settings`, named in `settingsKey`, flipped on /chatbot with the same edit-save-live pattern
+ * as every other bot setting. The Rules page reads that column to show the live state; it does
+ * not offer to change it, because there is exactly one place that does and a second writer
+ * would only let the two disagree.
  */
 
 export type RuleSeverity = 'LOW' | 'NORMAL' | 'HIGH' | 'CRITICAL'
 
 /**
- * Settings columns a rule's `enabled` may be read from. Narrowed to a union rather than
- * `string` on purpose: a typo'd column name would otherwise sail through review and silently
- * leave the rule stuck on its static default forever, which is exactly the class of "the UI
- * says it is off but it is on" bug this whole page exists to prevent.
+ * `Settings` columns that switch a rule on and off.
+ *
+ * Narrowed to a union rather than `string` on purpose: a typo'd column name would otherwise
+ * sail through review and leave the Rules page reporting a state that belongs to no column at
+ * all — exactly the "the UI says it is off but it is on" bug this page exists to prevent.
  */
-export type SettingsBooleanKey = 'botAutoReplyAll' | 'skipBotForIndonesianNumbers'
+export type RuleSettingsKey = 'skipBotForIndonesianNumbers' | 'handoffOnHumanRequest'
 
 export type BotRule = {
   key: string
@@ -37,29 +44,18 @@ export type BotRule = {
   sourceFile: string
   sourceRef?: string
   severity: RuleSeverity
-  editable: boolean
-  enabled: boolean
   /**
-   * Name of the `Settings` column that actually decides this rule's live state, when one
-   * exists. Rules without it are enforced unconditionally by code, and their `enabled` is
-   * always true — there is no switch anywhere that turns them off.
+   * The `Settings` column that decides this rule's live state, for the two rules that have
+   * one. Absent means the rule is enforced unconditionally by code — there is no switch
+   * anywhere, and the page says so rather than implying one exists somewhere off-screen.
    */
-  enabledFromSettingsKey?: SettingsBooleanKey
-  config?: Record<string, unknown>
+  settingsKey?: RuleSettingsKey
   /**
-   * Name of the `Settings` column carrying this rule's live configured VALUE (as opposed to
-   * an on/off state). The route merges it into `config` so the UI shows what is configured,
-   * not what the policy wishes were configured.
-   */
-  configFromSettingsKey?: 'defaultChannel'
-  /**
-   * Where this rule's behaviour is actually managed, when it is not managed here.
+   * Where this rule's behaviour is actually managed, when it is not a `Settings` column.
    *
-   * Two Channel Policy rules used to be `editable: true` with edit surfaces that wrote rows
-   * nothing read: `liveDefaultChannel` was overridden by `ChannelPolicySetting.defaultOutbound`
-   * before it could matter, and the Official-capability toggle had no reader at all. Rather
-   * than give the same behaviour a second writer that would silently disagree with the first,
-   * they are locked here and this points at the page that does control them.
+   * Only one rule has one now: the default outbound channel, which is `Settings.defaultChannel`
+   * on /settings. Pointing at that page is the difference between "terkunci" and "terkunci, and
+   * here is who holds the key".
    */
   managedIn?: { href: string; label: string }
 }
@@ -74,46 +70,27 @@ export const BOT_RULES: BotRule[] = [
     sourceFile: 'src/app/api/webhooks/meta/route.ts',
     sourceRef: 'POST',
     severity: 'CRITICAL',
-    editable: false,
-    enabled: true,
   },
   {
     key: 'channel.unofficial_outbound_default',
     name: 'Unofficial sebagai outbound default',
     category: 'Channel Policy',
     description:
-      'Pesan agent dan bot dikirim melalui Unofficial/coexistence secara default. Official dipilih hanya bila pemanggil memintanya secara eksplisit.',
+      'Pesan agent dan bot dikirim melalui Unofficial/coexistence secara default. Official dipilih hanya bila pemanggil memintanya secara eksplisit, atau bila kemampuannya memang hanya ada di Official. Nilai defaultnya dibaca dari Settings.defaultChannel oleh resolveChannel, bukan dari halaman ini.',
     sourceFile: 'src/lib/channel-router.ts',
     sourceRef: 'resolveChannel',
     severity: 'CRITICAL',
-    // Dulu `editable: true`, dan itu keliru sejak Phase H: `resolveChannel` membaca
-    // `ChannelPolicySetting.defaultOutbound` (layer 2) SEBELUM `Settings.defaultChannel`
-    // (layer 3), jadi `liveDefaultChannel` yang diedit di sini ditimpa sebelum sempat berarti.
-    // Dikunci supaya default outbound hanya punya satu penulis, yaitu halaman Channel Policy.
-    editable: false,
-    enabled: true,
-    managedIn: { href: '/bot-control/channel-policy', label: 'Channel Policy' },
-    // Nilai kebijakan, bukan nilai runtime. Route API melapisi Settings.defaultChannel yang
-    // sebenarnya ke sini, dan keduanya bisa BERBEDA: kolom itu default-nya OFFICIAL di skema,
-    // sementara kebijakan yang tertulis adalah UNOFFICIAL. Perbedaan itu justru yang perlu
-    // dilihat operator, jadi jangan disamarkan dengan menampilkan angan-angan.
-    config: { policyDefaultChannel: 'UNOFFICIAL' },
-    configFromSettingsKey: 'defaultChannel',
+    managedIn: { href: '/settings', label: 'Pengaturan' },
   },
   {
     key: 'channel.official_reserved_for_capabilities',
     name: 'Official khusus kapabilitas resmi',
     category: 'Channel Policy',
     description:
-      'Official send hanya dipakai untuk template official, campaign legal, utility/auth, atau fallback tertentu — bukan jalur balasan harian. Fitur official-only tidak boleh dipaksa lewat Unofficial; bila provider tidak mendukung, UI harus fallback ke teks.',
-    sourceFile: 'src/lib/meta/messages.ts',
+      'Official send hanya dipakai untuk template official, campaign legal, utility/auth, atau fallback tertentu — bukan jalur balasan harian. Fitur official-only tidak boleh dipaksa lewat Unofficial; bila provider tidak mendukung, UI harus fallback ke teks. Matriksnya statis di channel-capabilities.ts dan tidak bisa disunting lewat form: kemampuan mana yang ada adalah fakta tentang API provider, bukan pilihan.',
+    sourceFile: 'src/lib/bot-control/channel-capabilities.ts',
+    sourceRef: 'preferredChannelForCapability',
     severity: 'HIGH',
-    // Dulu `editable: true` dengan toggle yang tidak dibaca siapa pun. Perilakunya sekarang
-    // benar-benar ditegakkan lewat `capabilityRules` di Channel Policy, yang dibaca
-    // `resolveChannelForCapability` di setiap pengiriman -- jadi di sini dikunci.
-    editable: false,
-    enabled: true,
-    managedIn: { href: '/bot-control/channel-policy', label: 'Channel Policy' },
   },
   {
     key: 'bot.no_invented_price',
@@ -124,10 +101,6 @@ export const BOT_RULES: BotRule[] = [
     sourceFile: 'src/lib/bot/reply-verifier.ts',
     sourceRef: 'verifyReply',
     severity: 'CRITICAL',
-    // Tidak akan pernah editable. Mematikan ini berarti mengizinkan bot mengutip angka yang
-    // tidak bisa dipertanggungjawabkan ke customer yang akan membayarnya.
-    editable: false,
-    enabled: true,
   },
   {
     key: 'bot.no_invented_url',
@@ -138,22 +111,17 @@ export const BOT_RULES: BotRule[] = [
     sourceFile: 'src/lib/bot/reply-verifier.ts',
     sourceRef: 'verifyReply',
     severity: 'CRITICAL',
-    editable: false,
-    enabled: true,
   },
   {
     key: 'bot.handoff_on_human_request',
     name: 'Handoff saat customer minta manusia',
     category: 'Handoff',
     description:
-      'Jika customer meminta bicara dengan manusia/agent atau menunjukkan komplain/frustrasi, bot melakukan handoff: mengirim satu pengakuan generik, mematikan botEnabled percakapan itu, lalu menyiarkan handoff.alert ke agent.',
+      'Jika customer meminta bicara dengan manusia/agent atau menunjukkan komplain/frustrasi, bot melakukan handoff: mengirim satu pengakuan generik, mematikan botEnabled percakapan itu, lalu menyiarkan handoff.alert ke agent. Sakelarnya hanya mematikan lapisan LLM tambahan — gerbang kata kunci eksplisit tetap jalan tanpa syarat.',
     sourceFile: 'src/lib/bot/escalation-classifier.ts',
     sourceRef: 'detectsAdditionalEscalationSignal',
     severity: 'HIGH',
-    // Editable menyangkut lapisan LLM tambahannya (bisa dimatikan bila model bermasalah).
-    // Gerbang kata kunci eksplisit tetap jalan tanpa syarat.
-    editable: true,
-    enabled: true,
+    settingsKey: 'handoffOnHumanRequest',
   },
   {
     key: 'bot.booking_context_first',
@@ -164,8 +132,6 @@ export const BOT_RULES: BotRule[] = [
     sourceFile: 'src/lib/bot/orchestrator.ts',
     sourceRef: 'runBookingContextMode',
     severity: 'HIGH',
-    editable: false,
-    enabled: true,
   },
   {
     key: 'bot.skip_indonesian_numbers',
@@ -176,25 +142,17 @@ export const BOT_RULES: BotRule[] = [
     sourceFile: 'src/lib/inbound.ts',
     sourceRef: 'defaultBotEnabled',
     severity: 'NORMAL',
-    editable: true,
-    // Nilai default statis. Keadaan sebenarnya dibaca dari Settings oleh route API — lihat
-    // enabledFromSettingsKey.
-    enabled: false,
-    enabledFromSettingsKey: 'skipBotForIndonesianNumbers',
+    settingsKey: 'skipBotForIndonesianNumbers',
   },
   {
     key: 'bot.burst_debounce',
     name: 'Gabungkan pesan beruntun',
     category: 'Delivery Quality',
     description:
-      'Pesan customer yang datang beruntun ditahan sampai jeda tenang habis lalu digabung menjadi satu input, sehingga bot menjawab satu pikiran utuh alih-alih membalas tiap potongan kalimat.',
+      'Pesan customer yang datang beruntun ditahan sampai jeda tenang habis lalu digabung menjadi satu input, sehingga bot menjawab satu pikiran utuh alih-alih membalas tiap potongan kalimat. Jendela jedanya konstanta modul, bukan setelan.',
     sourceFile: 'src/lib/inbound.ts',
     sourceRef: 'scheduleBotRun',
     severity: 'NORMAL',
-    // Jendela debounce adalah konstanta modul, bukan baris settings. Toggle di UI tidak akan
-    // mengubah apa pun sampai nilainya dipindahkan ke database — itu pekerjaan fase lain.
-    editable: false,
-    enabled: true,
   },
   {
     key: 'bot.rate_limit',
@@ -205,15 +163,12 @@ export const BOT_RULES: BotRule[] = [
     sourceFile: 'src/lib/bot/rate-limiter.ts',
     sourceRef: 'checkAndRecordRateLimit',
     severity: 'HIGH',
-    editable: false,
-    enabled: true,
   },
 ]
 
 export function listBotRules(): BotRule[] {
-  // Salinan dangkal supaya konsumen (route API yang melapisi nilai Settings) tidak bisa
-  // memutasi registry modul ini dan membocorkan perubahan ke request berikutnya di server
-  // yang berumur panjang.
+  // Salinan dangkal supaya konsumen tidak bisa memutasi registry modul ini dan membocorkan
+  // perubahan ke request berikutnya di server yang berumur panjang.
   return BOT_RULES.map((rule) => ({ ...rule }))
 }
 

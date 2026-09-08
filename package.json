@@ -11,8 +11,7 @@
     "test:watch": "vitest",
     "sync:knowledge": "tsx scripts/sync-agent-catalog.ts",
     "approve:deployment": "tsx scripts/approve-deployment.ts",
-    "eval": "tsx src/lib/bot/eval/run-eval.ts",
-    "seed:rules": "tsx scripts/seed-bot-rules.ts"
+    "eval": "tsx src/lib/bot/eval/run-eval.ts"
   },
   "dependencies": {
     "@prisma/adapter-pg": "^7.9.0",

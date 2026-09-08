@@ -1,19 +1,19 @@
 'use client'
 import Link from 'next/link'
 import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import type { BotRule, RuleSeverity } from '@/lib/bot-control/rule-registry'
 
 export type RuleRow = BotRule & {
-  liveStateUnavailable?: true
-  status: string
-  hasDraft: boolean
-  draftEnabled: boolean | null
-  draftConfig: Record<string, unknown> | null
-  draftUpdatedAt: string | null
-  runtimeSource: string | null
-  editSurface: { canToggleEnabled: boolean; fields: readonly string[] } | null
+  /**
+   * The rule's live on/off state.
+   *
+   * `null` means the rule has no switch anywhere — it is enforced unconditionally by the code in
+   * `sourceFile`, and the row says "Selalu aktif" rather than showing a state that could be
+   * mistaken for something an operator chose. `undefined` means the rule DOES have a switch but
+   * its `Settings` column could not be read; that is shown as unreadable, never as off.
+   */
+  enabled: boolean | null | undefined
 }
 
 const SEVERITY_VARIANT: Record<RuleSeverity, 'muted' | 'default' | 'warning' | 'destructive'> = {
@@ -23,45 +23,19 @@ const SEVERITY_VARIANT: Record<RuleSeverity, 'muted' | 'default' | 'warning' | '
   CRITICAL: 'destructive',
 }
 
-const STATUS_VARIANT: Record<string, 'success' | 'brand' | 'warning' | 'destructive' | 'muted'> = {
-  PUBLISHED: 'success',
-  DRAFT: 'brand',
-  REVIEW: 'warning',
-  APPROVED: 'brand',
-  REJECTED: 'destructive',
-}
-
-export type RuleAction = 'edit' | 'request-review' | 'approve' | 'reject'
-
 /**
- * Tabel aturan bot, dengan kontrol draft untuk baris yang memang boleh diubah.
+ * The bot's rules, read-only.
  *
- * Kontrol muncul HANYA kalau `editSurface` tidak null — dan `editSurface` diturunkan dari
- * registry statis di server, bukan dari baris database. Menampilkan saklar untuk aturan
- * terkunci jauh lebih buruk daripada tidak menampilkan apa-apa: operator akan percaya mereka
- * sudah mematikan sesuatu, padahal kodenya tidak pernah membacanya.
- *
- * Tombolnya juga mengikuti status, bukan sekadar peran. "Kirim ke review" pada baris yang
- * belum punya draft, atau "Approve" pada baris yang belum direview, hanya akan ditolak API
- * dengan 409 — dan tombol yang selalu gagal mengajarkan operator untuk berhenti mempercayai
- * halaman ini.
+ * There is no edit control here and that is the design, not an omission. Eight of these ten
+ * rules are hardcoded behaviour: a toggle for them would be an inert switch that an operator
+ * presses, believes, and walks away from — worse than no switch at all. The two that are real
+ * switches are single `Settings` columns edited on /chatbot, and this table links there rather
+ * than becoming a second writer that could disagree with the first.
  */
-export function RuleRegistryTable({
-  rules,
-  canEdit = false,
-  canApprove = false,
-  onAction,
-}: {
-  rules: RuleRow[]
-  canEdit?: boolean
-  canApprove?: boolean
-  onAction?: (rule: RuleRow, action: RuleAction) => void
-}) {
+export function RuleRegistryTable({ rules }: { rules: RuleRow[] }) {
   if (rules.length === 0) {
     return <p className="text-sm text-muted-foreground">Tidak ada aturan yang cocok dengan filter.</p>
   }
-
-  const showActions = (canEdit || canApprove) && onAction !== undefined
 
   return (
     <Table>
@@ -71,9 +45,8 @@ export function RuleRegistryTable({
           <TableHead>Kategori</TableHead>
           <TableHead>Tingkat</TableHead>
           <TableHead>Status</TableHead>
-          <TableHead>Dapat diubah</TableHead>
+          <TableHead>Dikelola di</TableHead>
           <TableHead>Sumber</TableHead>
-          {showActions && <TableHead>Aksi</TableHead>}
         </TableRow>
       </TableHeader>
       <TableBody>
@@ -89,80 +62,38 @@ export function RuleRegistryTable({
               <Badge variant={SEVERITY_VARIANT[rule.severity]}>{rule.severity}</Badge>
             </TableCell>
             <TableCell className="align-top">
-              <Badge variant={rule.enabled ? 'success' : 'muted'}>{rule.enabled ? 'Aktif' : 'Nonaktif'}</Badge>
-              {/* Status yang tidak terbaca ditampilkan sebagai tidak terbaca. Menampilkan
-                  default statis seolah-olah itu keadaan sebenarnya adalah kegagalan diam
-                  yang paling berbahaya di halaman ini. */}
-              {rule.liveStateUnavailable && (
-                <p className="mt-1 text-xs text-destructive">Status live tidak terbaca</p>
-              )}
-              {/* Status draft dipisahkan dari status aktif: yang satu menjawab "apa yang bot
-                  lakukan sekarang", yang lain "apa yang sedang diusulkan". Menggabungkannya
-                  akan membuat draft terbaca seolah sudah berlaku. */}
-              {rule.hasDraft && (
-                <p className="mt-1">
-                  <Badge variant={STATUS_VARIANT[rule.status] ?? 'muted'}>Draft: {rule.status}</Badge>
-                </p>
-              )}
-              {rule.runtimeSource === 'database' && (
-                <p className="mt-1 text-xs text-muted-foreground">Dikelola dari Bot Control</p>
+              {rule.enabled === null ? (
+                <>
+                  <Badge variant="success">Selalu aktif</Badge>
+                  <p className="mt-1 text-xs text-muted-foreground">Tidak ada sakelarnya</p>
+                </>
+              ) : rule.enabled === undefined ? (
+                // A state that could not be read is shown as unread. Showing a default as if it
+                // were the truth is the most dangerous silent failure this page can have.
+                <p className="text-xs text-destructive">Status tidak terbaca</p>
+              ) : (
+                <Badge variant={rule.enabled ? 'success' : 'muted'}>{rule.enabled ? 'Aktif' : 'Nonaktif'}</Badge>
               )}
             </TableCell>
-            <TableCell className="align-top">
-              <Badge variant={rule.editable ? 'brand' : 'muted'}>{rule.editable ? 'Ya' : 'Terkunci'}</Badge>
-              {/* Aturan CRITICAL yang tetap editable perlu dijelaskan, bukan sekadar ditandai:
-                  yang boleh diubah adalah nilainya, bukan keberadaan aturannya. */}
-              {rule.editSurface?.canToggleEnabled === false && (
-                <p className="mt-1 text-xs text-muted-foreground">Hanya nilainya</p>
-              )}
-              {/* "Terkunci" sendirian membuat operator mencari tombol yang tidak ada. Aturan
-                  yang pindah tempat kelolanya harus menyebut ke mana ia pindah. */}
-              {rule.managedIn && (
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Dikelola di{' '}
-                  <Link href={rule.managedIn.href} className="text-brand hover:underline">
-                    {rule.managedIn.label}
-                  </Link>
-                </p>
+            <TableCell className="align-top text-xs text-muted-foreground">
+              {rule.settingsKey ? (
+                <Link href="/chatbot" className="text-brand hover:underline">
+                  Chatbot
+                </Link>
+              ) : rule.managedIn ? (
+                <Link href={rule.managedIn.href} className="text-brand hover:underline">
+                  {rule.managedIn.label}
+                </Link>
+              ) : (
+                // "Kode" sendirian membuat operator mencari tombol yang tidak ada. Menyebut
+                // bahwa perubahannya butuh deploy menutup pencarian itu.
+                <span>Kode — perlu deploy</span>
               )}
             </TableCell>
             <TableCell className="align-top">
               <p className="font-mono text-xs text-muted-foreground">{rule.sourceFile}</p>
               {rule.sourceRef && <p className="font-mono text-xs text-muted-foreground">{rule.sourceRef}()</p>}
             </TableCell>
-            {showActions && (
-              <TableCell className="align-top">
-                {rule.editSurface === null ? (
-                  <span className="text-xs text-muted-foreground">—</span>
-                ) : (
-                  <div className="flex flex-col items-start gap-1">
-                    {canEdit && (
-                      <Button variant="outline" size="sm" onClick={() => onAction?.(rule, 'edit')}>
-                        {rule.hasDraft ? 'Ubah draft' : 'Buat draft'}
-                      </Button>
-                    )}
-                    {canEdit && rule.status === 'DRAFT' && (
-                      <Button variant="outline" size="sm" onClick={() => onAction?.(rule, 'request-review')}>
-                        Kirim ke review
-                      </Button>
-                    )}
-                    {canApprove && rule.status === 'REVIEW' && (
-                      <Button variant="outline" size="sm" onClick={() => onAction?.(rule, 'approve')}>
-                        Approve
-                      </Button>
-                    )}
-                    {canApprove && rule.hasDraft && (
-                      <Button variant="outline" size="sm" onClick={() => onAction?.(rule, 'reject')}>
-                        Reject
-                      </Button>
-                    )}
-                    {rule.status === 'APPROVED' && (
-                      <span className="text-xs text-muted-foreground">Menunggu publish lewat Releases</span>
-                    )}
-                  </div>
-                )}
-              </TableCell>
-            )}
           </TableRow>
         ))}
       </TableBody>

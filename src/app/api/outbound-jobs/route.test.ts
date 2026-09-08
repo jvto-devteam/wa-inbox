@@ -6,7 +6,7 @@ import { mockDeep, mockReset, type DeepMockProxy } from 'vitest-mock-extended'
 import type { PrismaClient } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { verifySessionToken } from '@/lib/auth/session'
-import { STUCK_SENDING_MS } from '@/lib/outbound/worker'
+import { STUCK_SENDING_MS } from '@/lib/outbound/stuck'
 import { GET } from './route'
 
 vi.mock('@/lib/db', () => ({ prisma: mockDeep<PrismaClient>() }))
@@ -123,30 +123,38 @@ describe('GET /api/outbound-jobs', () => {
     }
   })
 
-  it('filters by date range on createdAt', async () => {
-    // SDD Manage Second §18.6.
-    await GET(req('?dateFrom=2026-09-01&dateTo=2026-09-07'))
-    expect(mockPrisma.outboundJob.findMany.mock.calls[0][0]?.where?.createdAt).toEqual({
-      gte: new Date('2026-09-01'),
-      lte: new Date('2026-09-07'),
-    })
+  it('menyaring status di dalam query, bukan setelah baris diambil', async () => {
+    // The filter has to be part of the `where` Postgres runs. Fetching a page and hiding rows
+    // in the browser would make "50 job" mean whatever survived the hiding, and page two would
+    // start in the wrong place.
+    await GET(req('?status=QUEUED'))
+
+    const call = mockPrisma.outboundJob.findMany.mock.calls[0][0]
+    expect(call?.where).toEqual({ status: 'QUEUED' })
+    // ...and only one page of rows was asked for, so there is nothing to post-filter with.
+    expect(call?.take).toBe(50)
   })
 
-  it('ignores an unparseable date instead of 500-ing on Invalid Date', async () => {
-    // What a date picker sends mid-edit. Passing `Invalid Date` to Prisma turns a half-typed
-    // filter into a 500; dropping it just shows unfiltered rows.
-    await GET(req('?dateFrom=bukan-tanggal'))
-    expect(mockPrisma.outboundJob.findMany.mock.calls[0][0]?.where).not.toHaveProperty('createdAt')
+  it('menghitung dan mengambil dengan where yang sama, supaya paging tidak bohong', async () => {
+    // `total` drives the page count. If the count saw a different filter from the list, the
+    // operator would be offered a page three that renders empty — or, worse, page two would
+    // skip past rows nobody ever sees.
+    await GET(req('?status=FAILED&page=2'))
+
+    const listWhere = mockPrisma.outboundJob.findMany.mock.calls[0][0]?.where
+    // Call 0 is the filtered total; calls 1-6 are the unfiltered summary cards.
+    const countWhere = mockPrisma.outboundJob.count.mock.calls[0][0]?.where
+    expect(countWhere).toEqual(listWhere)
+    expect(mockPrisma.outboundJob.findMany.mock.calls[0][0]?.skip).toBe(50)
   })
 
-  it('filters by status, channel, provider and conversation', async () => {
-    await GET(req('?status=QUEUED&channel=UNOFFICIAL&provider=COEXIST&conversationId=conv_9'))
-    expect(mockPrisma.outboundJob.findMany.mock.calls[0][0]?.where).toMatchObject({
-      status: 'QUEUED',
-      channel: 'UNOFFICIAL',
-      provider: 'COEXIST',
-      conversationId: 'conv_9',
-    })
+  it('mengabaikan filter yang sudah dibuang dari halaman', async () => {
+    // Provider, channel and a created-at range were dropped: two-value filters that every row
+    // already prints, and a reporting question nobody asks of a queue that drains itself. A
+    // stale bookmark carrying them must not silently narrow the queue an operator is staring at
+    // during an incident.
+    await GET(req('?provider=COEXIST&channel=UNOFFICIAL&dateFrom=2026-09-01&dateTo=2026-09-07&conversationId=conv_9'))
+    expect(mockPrisma.outboundJob.findMany.mock.calls[0][0]?.where).toEqual({})
   })
 
   it('ignores an unknown status instead of silently returning nothing', async () => {
@@ -154,12 +162,6 @@ describe('GET /api/outbound-jobs', () => {
     // misleading thing this page could say.
     await GET(req('?status=BUKAN_STATUS'))
     expect(mockPrisma.outboundJob.findMany.mock.calls[0][0]?.where).not.toHaveProperty('status')
-  })
-
-  it('ignores a channel value the enum has no member for', async () => {
-    // Passing it through would hand Postgres a value outside MessageChannel and 500 the page.
-    await GET(req('?channel=TELEGRAM'))
-    expect(mockPrisma.outboundJob.findMany.mock.calls[0][0]?.where).not.toHaveProperty('channel')
   })
 
   it('exposes stuck jobs as a filter, so recovery can be inspected before it is run', async () => {

@@ -1,3 +1,41 @@
+> # ⚠️ STATUS DOKUMEN: SEBAGIAN DIBATALKAN (2026-09-08)
+>
+> **Ini dokumen desain historis (fase "Expose", 2026-09-04). Jangan dipakai sebagai instruksi
+> implementasi.** Sumber kebenaran adalah [`CLAUDE.md`](../../CLAUDE.md) dan kode itu sendiri.
+>
+> Inti fase Expose **berhasil dan masih hidup**: Flow Map, Rules, Knowledge, Decision Logs +
+> trace viewer, Test Lab/simulator, Outbound Queue, dan halaman knowledge-gaps semuanya ada.
+> Yang dibatalkan adalah fase lanjutannya ("Manage Second", lihat
+> `bot-control-manage-second-spec.md`) beserta beberapa bagian dari dokumen ini yang
+> mengasumsikan lapisan itu.
+>
+> ## Yang SUDAH TIDAK BERLAKU dari dokumen ini
+>
+> - **`KnowledgeChunk`** (§6.4) dan seluruh chunking — model dan `KnowledgeChunkPanel.tsx`
+>   dihapus.
+> - **`knowledge-indexer.ts`** (§ file list, §17) — indexer yang mencerminkan `catalog/*.json`
+>   ke tabel `KnowledgeSource` dihapus. Bot selalu membaca file katalog langsung, jadi
+>   cerminannya tidak melayani siapa pun; katalog dan managed knowledge digabung **saat baca**
+>   di `src/lib/bot/managed-knowledge.ts`, tidak pernah di tabel. `KnowledgeSource` sekarang
+>   selalu `type='MANUAL'`.
+> - **`GET /api/bot-control/export-docs`** (§20.9) dan Documentation Export — dihapus.
+> - **`BotFlowDefinition`** (§6.1) — flow tidak pernah jadi baris database. Flow existing
+>   dideskripsikan oleh registry statis `src/lib/bot-control/existing-flow-registry.ts`
+>   (28 node) dan Flow Map bersifat read-only.
+> - Setiap penyebutan draft/review/approve/publish/rollback, release, peran `BOT_MANAGER` atau
+>   `OWNER`, dan permission matrix — lihat catatan status di
+>   `bot-control-manage-second-spec.md`.
+>
+> ## Yang MASIH BERLAKU
+>
+> Struktur navigasi Bot Control, `KnowledgeSource`, `BotDecisionRun`, `OutboundJob`,
+> `ContactConsent`, retry ladder, safety guard, simulator (dry-run, dilarang mengirim),
+> trace sanitizer, dan posisi WhatsApp Official sebagai inbound webhook + capability layer
+> dengan Unofficial/coexist sebagai jalur kirim utama.
+>
+> Kalau dokumen ini bertentangan dengan kode atau dengan `CLAUDE.md`, **kode dan `CLAUDE.md`
+> yang berlaku.**
+
 # Guidebook Eksekusi: Wa-Inbox Chatbot Control Center
 
 Tanggal dokumen: 2026-09-04

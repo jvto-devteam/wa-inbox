@@ -15,10 +15,9 @@ import { hasAdminPowers } from '@/lib/bot-control/permissions'
 // role change bumps Account.tokenVersion, and src/middleware.ts rejects any
 // request whose token carries a tokenVersion other than the account's current
 // one. A demoted admin's token is therefore dead before it ever reaches here.
-// OWNER passes too, and that is not a widening of what "admin-only" means — it is the fix for
-// what adding OWNER broke. An OWNER outranks an ADMIN in every row of the permission matrix, so
-// a literal `role === 'ADMIN'` here would lock the most privileged account in the system out of
-// account management, settings, and publish. See hasAdminPowers.
+// OWNER passes too, and that is not a widening of what "admin-only" means: an OWNER outranks an
+// ADMIN, so a literal `role === 'ADMIN'` here would lock the most privileged account in the
+// system out of account management, settings, and publish. See hasAdminPowers.
 export async function requireAdmin(req: Request): Promise<SessionPayload | null> {
   const session = await getSession(req)
   return hasAdminPowers(session?.role) ? session : null

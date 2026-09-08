@@ -25,15 +25,10 @@ function log(overrides: Record<string, unknown> = {}) {
     actorId: 'acc_1',
     actorName: 'Budi',
     action: 'PUBLISH',
-    entityType: 'RELEASE',
-    entityId: 'rel_1',
-    entityKey: 'release:4',
-    before: null,
-    after: { version: 4 },
-    reason: null,
-    releaseId: 'rel_1',
-    ipAddress: '203.0.113.9',
-    userAgent: 'Firefox',
+    entityType: 'KNOWLEDGE',
+    entityId: 'know_1',
+    entityKey: 'knowledge:know_1',
+    reason: 'Harga ATV naik mulai Oktober',
     createdAt: new Date('2026-09-07T02:00:00.000Z'),
     ...overrides,
   } as never
@@ -49,8 +44,8 @@ beforeEach(() => {
 
 describe('GET /api/bot-control/audit-logs', () => {
   it('refuses an AGENT, per the permission matrix', async () => {
-    // These rows carry actor identity and before/after values for every configuration change
-    // in the account — a narrower audience than the rest of Bot Control by design.
+    // These rows name the operator behind every change to what the bot does — a narrower
+    // audience than the rest of Bot Control by design.
     vi.mocked(verifySessionToken).mockResolvedValue({ accountId: 'acc_1', role: 'AGENT', tokenVersion: 0 })
 
     const res = await route.GET(req())
@@ -68,15 +63,25 @@ describe('GET /api/bot-control/audit-logs', () => {
     expect(mockPrisma.botControlAuditLog.findMany.mock.calls[0][0]?.orderBy).toEqual({ createdAt: 'desc' })
 
     const body = await res.json()
-    expect(body.items[0]).toMatchObject({ action: 'PUBLISH', entityType: 'RELEASE', actorName: 'Budi' })
+    expect(body.items[0]).toMatchObject({ action: 'PUBLISH', entityType: 'KNOWLEDGE', actorName: 'Budi' })
   })
 
-  it('never returns the stored IP or user-agent', async () => {
-    // They exist so a specific incident can be investigated deliberately, not so every admin
-    // opening a page gets a running feed of their colleagues' locations and devices.
+  it('returns a row as the five things it is, and nothing else', async () => {
+    // No diff, no IP, no user-agent: none of them exist any more, and this is the boundary
+    // where their absence is visible to anything outside the server.
     const body = await (await route.GET(req())).json()
-    expect(body.items[0]).not.toHaveProperty('ipAddress')
-    expect(body.items[0]).not.toHaveProperty('userAgent')
+
+    expect(Object.keys(body.items[0]).sort()).toEqual([
+      'action',
+      'actorId',
+      'actorName',
+      'createdAt',
+      'entityId',
+      'entityKey',
+      'entityType',
+      'id',
+      'reason',
+    ])
   })
 
   it('exposes no way to write, edit or delete a row', () => {
@@ -87,15 +92,21 @@ describe('GET /api/bot-control/audit-logs', () => {
     expect(route).not.toHaveProperty('DELETE')
   })
 
-  it('filters by action, entity and release', async () => {
-    await route.GET(req('?action=ROLLBACK&entityType=RULE&entityId=r1&actorId=acc_9&releaseId=rel_2'))
+  it('filters by action, entity and actor', async () => {
+    await route.GET(req('?action=PUBLISH&entityType=KNOWLEDGE&entityId=know_1&actorId=acc_9'))
     expect(mockPrisma.botControlAuditLog.findMany.mock.calls[0][0]?.where).toMatchObject({
-      action: 'ROLLBACK',
-      entityType: 'RULE',
-      entityId: 'r1',
+      action: 'PUBLISH',
+      entityType: 'KNOWLEDGE',
+      entityId: 'know_1',
       actorId: 'acc_9',
-      releaseId: 'rel_2',
     })
+  })
+
+  it('ignores an unknown query param instead of building a where clause from it', async () => {
+    // An old bookmark can still carry a filter this route no longer has. It must read as an
+    // unfiltered request, not as a `where` clause against a column that is gone.
+    await route.GET(req('?tidakDikenal=apa'))
+    expect(Object.keys(mockPrisma.botControlAuditLog.findMany.mock.calls[0][0]?.where ?? {})).toEqual([])
   })
 
   it('ignores an action outside the known set', async () => {
