@@ -1,7 +1,9 @@
 'use client'
 import { useEffect, useState } from 'react'
 import { Select } from '@/components/ui/select'
+import { Skeleton, SkeletonText } from '@/components/ui/skeleton'
 import { ContactAvatar } from '@/components/ContactAvatar'
+import { cn } from '@/lib/utils'
 import { LabelPicker, type LabelOption } from './LabelPicker'
 import { NotesSection } from './NotesSection'
 import { RemindersSection } from './RemindersSection'
@@ -21,7 +23,37 @@ type ContactDetail = {
   pipelineStage: string
 }
 
-export function ContactPanel({ conversationId }: { conversationId: string }) {
+/**
+ * Judul bagian di panel kanan. Empat berkas (panel ini, LabelPicker, NotesSection,
+ * RemindersSection) sebelumnya menulis `<h3 className="text-xs font-medium uppercase
+ * tracking-wide text-muted-foreground">` masing-masing; empat salinan dari satu keputusan
+ * berarti empat kesempatan untuk berbeda.
+ */
+export function PanelSectionTitle({ children }: { children: React.ReactNode }) {
+  return <h3 className="text-xs font-semibold tracking-wide text-ink-subtle uppercase">{children}</h3>
+}
+
+function ContactPanelSkeleton({ className }: { className?: string }) {
+  return (
+    <aside
+      aria-label="Info kontak"
+      aria-busy="true"
+      className={cn('flex h-full min-h-0 flex-col gap-4 border-l border-line bg-surface p-4', className)}
+    >
+      <div className="flex items-center gap-2.5">
+        <Skeleton className="size-10 shrink-0 rounded-full" />
+        <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+          <Skeleton className="h-3.5 w-2/3" />
+          <Skeleton className="h-3 w-1/3" />
+        </div>
+      </div>
+      <SkeletonText lines={4} />
+      <SkeletonText lines={3} />
+    </aside>
+  )
+}
+
+export function ContactPanel({ conversationId, className }: { conversationId: string; className?: string }) {
   const [detail, setDetail] = useState<ContactDetail | null>(null)
   const [allLabels, setAllLabels] = useState<LabelOption[]>([])
   const [pipelineError, setPipelineError] = useState<string | null>(null)
@@ -52,27 +84,36 @@ export function ContactPanel({ conversationId }: { conversationId: string }) {
     }
   }
 
-  if (!detail) return <div className="border-l border-border p-4 text-sm text-muted-foreground">Memuat...</div>
+  if (!detail) return <ContactPanelSkeleton className={className} />
 
   return (
-    <div className="flex h-full min-h-0 flex-col gap-4 overflow-y-auto border-l border-border bg-white p-4">
-      <div className="flex items-center gap-3">
+    // Kolom ketiga menggulung sendiri, sama seperti dua yang lain. `className` datang dari
+    // /inbox dan hanya pernah berisi aturan tampil/sembunyi per lebar layar -- itulah sebabnya
+    // `flex` ada di sana dan bukan di sini.
+    <aside
+      aria-label="Info kontak"
+      className={cn(
+        'flex h-full min-h-0 flex-col gap-4 overflow-y-auto overscroll-contain border-l border-line bg-surface p-4',
+        className
+      )}
+    >
+      <div className="flex items-center gap-2.5">
         <ContactAvatar name={detail.contactName} avatarUrl={detail.avatarUrl} />
-        <div>
-          <p className="font-medium text-navy">{detail.contactName ?? 'Tanpa nama'}</p>
-          {detail.source && <p className="text-xs text-muted-foreground">{detail.source}</p>}
+        <div className="min-w-0">
+          <p className="truncate text-base font-semibold text-ink">{detail.contactName ?? 'Tanpa nama'}</p>
+          {detail.source && <p className="truncate text-xs text-ink-muted">{detail.source}</p>}
         </div>
       </div>
 
       <BookingSummary bookingData={detail.bookingData} tripBrief={detail.tripBrief} />
 
       <div className="space-y-2">
-        <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Tahap Pipeline</h3>
+        <PanelSectionTitle>Tahap Pipeline</PanelSectionTitle>
         <Select
           aria-label="Tahap pipeline"
           value={detail.pipelineStage}
           onChange={(e) => changePipelineStage(e.target.value)}
-          className="w-auto"
+          className="w-full"
         >
           {PIPELINE_STAGES.map((s) => (
             <option key={s.value} value={s.value}>
@@ -80,7 +121,11 @@ export function ContactPanel({ conversationId }: { conversationId: string }) {
             </option>
           ))}
         </Select>
-        {pipelineError && <p className="text-xs text-destructive">{pipelineError}</p>}
+        {pipelineError && (
+          <p role="alert" className="text-xs text-danger">
+            {pipelineError}
+          </p>
+        )}
       </div>
 
       <LabelPicker
@@ -93,6 +138,6 @@ export function ContactPanel({ conversationId }: { conversationId: string }) {
       <RemindersSection contactId={detail.contactId} />
 
       <NotesSection contactId={detail.contactId} />
-    </div>
+    </aside>
   )
 }

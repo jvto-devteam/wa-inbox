@@ -449,7 +449,8 @@ describe('MessageBubble retry (Phase 6)', () => {
     fireEvent.click(screen.getByLabelText('Kirim ulang'))
 
     // The bubble is replaced from the `message.updated` event, not optimistically here.
-    await waitFor(() => expect(screen.getByText('FAILED')).toBeInTheDocument())
+    // Tahap 1C: kalimatnya "Gagal terkirim", bukan nama kolom database 'FAILED'.
+    await waitFor(() => expect(screen.getByText('Gagal terkirim')).toBeInTheDocument())
   })
 
   it('surfaces a retry failure instead of failing silently', async () => {
@@ -467,5 +468,71 @@ describe('MessageBubble retry (Phase 6)', () => {
   it('shows no retry control on a message that did not fail', () => {
     render(<MessageBubble message={{ ...failed, deliveryStatus: 'SENT' }} />)
     expect(screen.queryByLabelText('Kirim ulang')).toBeNull()
+  })
+})
+
+// Tahap 1C. Status kirim harus terbaca tanpa menebak ikon, dan isi pesan harus dibedakan dari
+// meta di sekitarnya oleh ukuran, bukan hanya oleh posisi.
+describe('MessageBubble — status kirim yang terbaca', () => {
+  const outbound = {
+    id: 'm_status',
+    direction: 'OUTBOUND' as const,
+    content: 'Halo kak',
+    channel: 'OFFICIAL',
+    sentBy: 'AGENT',
+    deliveryStatus: 'SENT',
+    createdAt: new Date().toISOString(),
+    botTrace: null,
+  }
+
+  it('menuliskan kata statusnya di samping centang, untuk ketiga keadaan berhasil', () => {
+    const { rerender } = render(<MessageBubble message={outbound} />)
+    expect(screen.getByText('Terkirim')).toBeInTheDocument()
+
+    rerender(<MessageBubble message={{ ...outbound, deliveryStatus: 'DELIVERED' }} />)
+    expect(screen.getByText('Diterima')).toBeInTheDocument()
+
+    rerender(<MessageBubble message={{ ...outbound, deliveryStatus: 'READ' }} />)
+    expect(screen.getByText('Dibaca')).toBeInTheDocument()
+  })
+
+  it('mengakui pesan yang masih mengantre alih-alih tidak menampilkan status apa pun', () => {
+    // Sebelumnya PENDING merender null: gelembungnya muncul tanpa satu pun tanda, tidak bisa
+    // dibedakan dari pesan yang gagal diam-diam.
+    render(<MessageBubble message={{ ...outbound, deliveryStatus: 'PENDING' }} />)
+    expect(screen.getByText('Mengantre')).toBeInTheDocument()
+  })
+
+  it('menyebut kegagalan dengan kalimat, bukan dengan nama kolom database', () => {
+    render(<MessageBubble message={{ ...outbound, deliveryStatus: 'FAILED' }} />)
+
+    expect(screen.getByText('Gagal terkirim')).toBeInTheDocument()
+    expect(screen.queryByText('FAILED')).not.toBeInTheDocument()
+    expect(screen.getByLabelText('Kirim ulang')).toBeInTheDocument()
+  })
+
+  it('tidak menempelkan status kirim pada pesan masuk — kita tidak mengirimnya', () => {
+    render(<MessageBubble message={{ ...outbound, direction: 'INBOUND', sentBy: 'CUSTOMER' }} />)
+
+    expect(screen.queryByText('Terkirim')).not.toBeInTheDocument()
+    expect(screen.queryByRole('img')).not.toBeInTheDocument()
+  })
+
+  it('menaikkan isi pesan ke ukuran baca (15px), bukan ukuran UI', () => {
+    // Isi pesan adalah satu-satunya teks di aplikasi ini yang dibaca berjam-jam setiap hari.
+    render(<MessageBubble message={outbound} />)
+
+    const bubble = screen.getByText('Halo kak').closest('.text-md')
+    expect(bubble).toBeInTheDocument()
+    // dan ukuran itu memang milik gelembungnya, bukan milik meta 11px di bawahnya
+    expect(bubble?.className).toContain('whitespace-pre-wrap')
+  })
+
+  it('memisahkan gelembung dengan warna dan garis, tanpa bayangan', () => {
+    const { container, rerender } = render(<MessageBubble message={outbound} />)
+    expect(container.innerHTML).not.toContain('shadow-sm')
+
+    rerender(<MessageBubble message={{ ...outbound, direction: 'INBOUND', sentBy: 'CUSTOMER' }} />)
+    expect(container.innerHTML).not.toContain('shadow-sm')
   })
 })

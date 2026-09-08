@@ -4,7 +4,7 @@ import { readFileSync, readdirSync, existsSync } from 'node:fs'
 import path from 'node:path'
 import BotControlLayout from './layout'
 import BotControlPage from './page'
-import { AppNav } from '@/components/AppNav'
+import { AppRail } from '@/components/AppRail'
 import { BOT_CONTROL_SECTIONS } from '@/components/bot-control/BotControlNav'
 
 const pathname = vi.fn(() => '/bot-control')
@@ -97,7 +97,7 @@ describe('/bot-control itu sendiri', () => {
   })
 })
 
-describe('tautan Bot Control di AppNav', () => {
+describe('tautan Bot Control di AppRail', () => {
   it('masih mengarah ke /bot-control dan tetap menyala di rute bersarang', async () => {
     pathname.mockReturnValue('/bot-control/rules')
     vi.stubGlobal(
@@ -111,9 +111,9 @@ describe('tautan Bot Control di AppNav', () => {
             : { role: 'ADMIN', name: 'Admin Demo' },
       }))
     )
-    render(<AppNav />)
+    render(<AppRail />)
 
-    // Tunggu kedua probe AppNav selesai supaya ini render yang sudah settle.
+    // Tunggu kedua probe AppRail selesai supaya ini render yang sudah settle.
     await screen.findByRole('button', { name: 'Akun Admin Demo' })
     const link = screen.getByRole('link', { name: 'Bot Control' })
     expect(link).toHaveAttribute('href', '/bot-control')

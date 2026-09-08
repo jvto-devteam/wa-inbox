@@ -59,7 +59,7 @@ export function BodyField({
         <Button type="button" variant="outline" size="sm" onClick={insertVariable}>
           + Variabel
         </Button>
-        <span className="text-xs text-muted-foreground">
+        <span className="font-mono text-xs text-ink-subtle tabular-nums">
           {value.length}/{maxLength}
         </span>
       </div>

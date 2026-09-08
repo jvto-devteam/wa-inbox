@@ -11,7 +11,7 @@ import { prisma } from '@/lib/db'
 // tests. Cookie parsing is shared via getSession() (src/lib/auth/get-session.ts).
 //
 // `name` is served alongside `role` for the account avatar in the global nav bar
-// (src/components/AppNav.tsx). It is not in the JWT — the token carries only accountId, role
+// (src/components/AppRail.tsx). It is not in the JWT — the token carries only accountId, role
 // and tokenVersion — so it costs one indexed primary-key lookup, the same query middleware
 // already runs on every request. The alternative was initials derived from the role ("AD" for
 // every admin in the company), which is not an identity. Purely additive: the Settings page's

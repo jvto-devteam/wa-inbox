@@ -1,12 +1,12 @@
 'use client'
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
-import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
 import { RuleRegistryTable, type RuleRow } from '@/components/bot-control/RuleRegistryTable'
 import { listBotRules, listRuleCategories, type RuleSettingsKey } from '@/lib/bot-control/rule-registry'
 import { fetchJson } from '@/lib/fetch-json'
+import { PageHeader } from '@/components/ui/page-header'
 
 /** Only the two columns any rule is switched by. */
 type SettingsFlags = Record<RuleSettingsKey, boolean>
@@ -71,31 +71,33 @@ export default function RulesRegistryPage() {
   }, [rules, query, category])
 
   return (
-    <main className="mx-auto max-w-6xl space-y-4 p-6">
-      <div className="space-y-1">
-        <Link href="/bot-control" className="text-sm text-brand hover:underline">
-          &larr; Kembali ke Bot Control
-        </Link>
-        <h1 className="text-xl font-semibold text-navy">Rules Registry</h1>
-        <p className="text-sm text-muted-foreground">
-          Aturan yang benar-benar mengikat bot hari ini, beserta file yang menegakkannya. Daftar ini hanya untuk dibaca.
-        </p>
-        {/* Said plainly, because "kenapa tidak ada tombolnya" is the first question this page
-            raises, and an operator who goes looking for a switch that does not exist will
-            eventually convince themselves they found one. */}
-        <p className="text-xs text-muted-foreground">
-          Delapan aturan di bawah ditegakkan langsung oleh kode dan hanya berubah lewat deploy. Dua sisanya punya
-          sakelar di{' '}
-          <Link href="/chatbot" className="text-brand hover:underline">
-            Chatbot
-          </Link>
-          , dan default jalur kirim diatur di{' '}
-          <Link href="/settings" className="text-brand hover:underline">
-            Pengaturan
-          </Link>
-          .
-        </p>
-      </div>
+    <main className="mx-auto w-full max-w-[1600px] space-y-5 p-6">
+      <PageHeader
+        title="Rules Registry"
+        description={
+          <>
+            <p>
+              Aturan yang benar-benar mengikat bot hari ini, beserta file yang menegakkannya. Daftar ini hanya untuk
+              dibaca.
+            </p>
+            {/* Said plainly, because "kenapa tidak ada tombolnya" is the first question this
+                page raises, and an operator who goes looking for a switch that does not exist
+                will eventually convince themselves they found one. */}
+            <p className="mt-1 text-xs">
+              Delapan aturan di bawah ditegakkan langsung oleh kode dan hanya berubah lewat deploy. Dua sisanya punya
+              sakelar di{' '}
+              <Link href="/chatbot" className="text-accent hover:underline">
+                Chatbot
+              </Link>
+              , dan default jalur kirim diatur di{' '}
+              <Link href="/settings" className="text-accent hover:underline">
+                Pengaturan
+              </Link>
+              .
+            </p>
+          </>
+        }
+      />
 
       <div className="flex flex-wrap items-center gap-2">
         <Input
@@ -115,9 +117,7 @@ export default function RulesRegistryPage() {
         </Select>
       </div>
 
-      <Card className="p-3">
-        <RuleRegistryTable rules={visible} />
-      </Card>
+      <RuleRegistryTable rules={visible} />
     </main>
   )
 }

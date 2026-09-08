@@ -146,6 +146,61 @@ describe('ensureFreshBookingData', () => {
 
     expect(result).toEqual({ id: 'B1', guest: 'Bruno' })
     expect(fetch).not.toHaveBeenCalled()
+    // Cache hit TIDAK memperpanjang stempel waktunya: kalau `bookingCheckedAt` ikut ditulis di
+    // sini, cache-nya diperbarui tanpa pernah benar-benar memanggil API booking.
+    const written = mockPrisma.conversation.update.mock.calls[0]?.[0]?.data ?? {}
+    expect(written).not.toHaveProperty('bookingCheckedAt')
+    expect(written).not.toHaveProperty('bookingData')
+  })
+
+  it('menaikkan tahap dari data yang SUDAH ter-cache, tanpa memanggil API booking', async () => {
+    // Regresi bug yang dilaporkan: percakapan yang jelas punya booking tetap berlencana "Baru".
+    // Dulu penurunan tahap ada di dalam `if (stale)`, jadi percakapan yang datanya masih segar
+    // tidak pernah dinilai ulang -- padahal `deriveStageFromBooking` sebagian bergantung waktu.
+    const conversation = {
+      id: 'conv_1',
+      bookingData: { id: 'B1', guest: 'Bruno', financial: { balance: 0 } },
+      bookingCheckedAt: new Date(),
+      pipelineStage: 'new',
+      contact: { phone: '6281234567890' },
+    }
+
+    await ensureFreshBookingData(conversation)
+
+    expect(fetch).not.toHaveBeenCalled()
+    expect(mockPrisma.conversation.update).toHaveBeenCalledWith({
+      where: { id: 'conv_1' },
+      data: { pipelineStage: 'lunas' },
+    })
+  })
+
+  it('tidak menulis apa pun saat tahapnya sudah benar', async () => {
+    const conversation = {
+      id: 'conv_1',
+      bookingData: { id: 'B1', guest: 'Bruno', financial: { balance: 0 } },
+      bookingCheckedAt: new Date(),
+      pipelineStage: 'lunas',
+      orderChannel: 'JVTO',
+      contact: { phone: '6281234567890' },
+    }
+
+    await ensureFreshBookingData(conversation)
+
+    expect(mockPrisma.conversation.update).not.toHaveBeenCalled()
+  })
+
+  it('tidak pernah memundurkan tahap yang sudah disetel agen lebih maju', async () => {
+    const conversation = {
+      id: 'conv_1',
+      bookingData: { id: 'B1', guest: 'Bruno', financial: { balance: 500000 } },
+      bookingCheckedAt: new Date(),
+      pipelineStage: 'selesai',
+      orderChannel: 'JVTO',
+      contact: { phone: '6281234567890' },
+    }
+
+    await ensureFreshBookingData(conversation)
+
     expect(mockPrisma.conversation.update).not.toHaveBeenCalled()
   })
 

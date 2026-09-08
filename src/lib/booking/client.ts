@@ -1,6 +1,7 @@
 import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { PIPELINE_STAGE_RANK } from '@/lib/pipeline'
+import { broadcast } from '@/lib/realtime'
 
 // Ported from chatbot-web's src/bookingApiClient.js (lookupByPhone) — the
 // proven, currently-live booking-lookup client for the JVTO booking API.
@@ -187,9 +188,11 @@ function deriveStageFromBooking(bookingData: BookingData): string {
  * of whether the bot ever actually ran for this conversation -- e.g. while the kill switch is
  * on, which stops the bot but has no bearing on whether a customer has a real booking).
  *
- * Also auto-advances Conversation.pipelineStage from what the fresh booking data itself
- * implies (booked / lunas / selesai) -- never backward past whatever an agent already set by
- * hand (see PIPELINE_STAGE_RANK), and only on a genuine refresh, not on every cache hit.
+ * Also auto-advances Conversation.pipelineStage from what the booking data implies
+ * (booked / lunas / selesai) -- never backward past whatever an agent already set by hand
+ * (see PIPELINE_STAGE_RANK). Dinilai pada SETIAP pemanggilan, bukan hanya saat cache miss:
+ * jawabannya sebagian bergantung waktu, jadi ia bisa berubah walau datanya tidak.
+ * Penulisan tetap hanya terjadi kalau hasilnya benar-benar berbeda.
  *
  * Takes an already-fetched conversation (not just an id) so a caller that already has one on
  * hand for other reasons doesn't pay for a second query.
@@ -213,36 +216,167 @@ export async function ensureFreshBookingData(conversation: {
   let bookingData = conversation.bookingData as BookingData | null
   const stale =
     !conversation.bookingCheckedAt || Date.now() - conversation.bookingCheckedAt.getTime() > BOOKING_CACHE_MS
-  if (stale) {
-    bookingData = await lookupBooking(conversation.contact.phone)
+  if (stale) bookingData = await lookupBooking(conversation.contact.phone)
 
-    let pipelineStage: string | undefined
-    if (bookingData) {
-      const derived = deriveStageFromBooking(bookingData)
-      const currentRank = PIPELINE_STAGE_RANK[conversation.pipelineStage] ?? -1
-      if (PIPELINE_STAGE_RANK[derived] > currentRank) pipelineStage = derived
-    }
+  // Tahap diturunkan dari SETIAP pemanggilan, bukan hanya saat cache miss.
+  //
+  // Dulu blok ini ada di dalam `if (stale)`, dan itu bug: `deriveStageFromBooking` sebagian
+  // bergantung waktu (`end_ymd < hari ini` => selesai), jadi jawabannya berubah walau data
+  // bookingnya tidak. Percakapan yang datanya masih segar tidak pernah dinilai ulang, dan
+  // sebuah audit menemukan 33 dari 35 percakapan ber-booking tertinggal tahapnya --
+  // trip yang sudah lewat masih berdiri di `booked`/`lunas`.
+  //
+  // Menurunkannya di sini gratis: tidak ada panggilan API, dan penulisan hanya terjadi saat
+  // hasilnya benar-benar berbeda. Arahnya tetap satu arah lewat PIPELINE_STAGE_RANK --
+  // tidak pernah mundur melewati yang sudah disetel agen dengan tangan.
+  let pipelineStage: string | undefined
+  if (bookingData) {
+    const derived = deriveStageFromBooking(bookingData)
+    const currentRank = PIPELINE_STAGE_RANK[conversation.pipelineStage] ?? -1
+    if (PIPELINE_STAGE_RANK[derived] > currentRank) pipelineStage = derived
+  }
 
-    // Snapshotted once and never overwritten afterward -- see the column comment in
-    // schema.prisma. `conversation.orderChannel` already being set (from a previous refresh)
-    // wins even if a later API response's orderChannel ever came back different/missing.
-    const orderChannel =
-      !conversation.orderChannel && bookingData?.orderChannel ? bookingData.orderChannel : undefined
+  // Snapshotted once and never overwritten afterward -- see the column comment in
+  // schema.prisma. `conversation.orderChannel` already being set (from a previous refresh)
+  // wins even if a later API response's orderChannel ever came back different/missing.
+  const orderChannel =
+    !conversation.orderChannel && bookingData?.orderChannel ? bookingData.orderChannel : undefined
 
+  if (stale || pipelineStage || orderChannel) {
     await prisma.conversation.update({
       where: { id: conversation.id },
       data: {
-        // `Conversation.bookingData` is `Json?`. Prisma requires the explicit `Prisma.DbNull`
-        // sentinel to write SQL NULL to a nullable Json column -- plain JS `null` is rejected
-        // at runtime. See the orchestrator's original comment (git history) for the incident
-        // this caused when that was missed: it silently disabled Modes 1/2 for every
-        // not-yet-booked customer's first message. Do not reintroduce `as never` here.
-        bookingData: bookingData === null ? Prisma.DbNull : (bookingData as Prisma.InputJsonValue),
-        bookingCheckedAt: new Date(),
+        // Hanya ditulis saat benar-benar di-refresh. Pada pemanggilan cache-hit yang hanya
+        // menaikkan tahap, `bookingData`/`bookingCheckedAt` sengaja tidak disentuh -- menulis
+        // ulang stempel waktunya akan memperpanjang cache tanpa pernah memanggil API.
+        ...(stale
+          ? {
+              // `Conversation.bookingData` is `Json?`. Prisma requires the explicit
+              // `Prisma.DbNull` sentinel to write SQL NULL to a nullable Json column -- plain
+              // JS `null` is rejected at runtime. See the orchestrator's original comment (git
+              // history) for the incident this caused when that was missed: it silently
+              // disabled Modes 1/2 for every not-yet-booked customer's first message. Do not
+              // reintroduce `as never` here.
+              bookingData:
+                bookingData === null ? Prisma.DbNull : (bookingData as Prisma.InputJsonValue),
+              bookingCheckedAt: new Date(),
+            }
+          : {}),
         ...(pipelineStage ? { pipelineStage } : {}),
         ...(orderChannel ? { orderChannel } : {}),
       },
     })
+
+    // Daftar percakapan yang sedang terbuka memegang salinannya sendiri dan tidak punya cara
+    // tahu tahap/kanal baru saja berubah di sini -- sebelum ini, badge-nya baru benar setelah
+    // seluruh halaman dimuat ulang. Disiarkan hanya kalau memang ada yang berubah.
+    if (pipelineStage || orderChannel) {
+      broadcast({ type: 'conversation.updated', conversationId: conversation.id })
+    }
   }
   return bookingData
+}
+
+/**
+ * Menaikkan tahap pipeline setiap percakapan yang datanya sudah menyiratkan tahap lebih maju,
+ * tanpa memanggil API booking sama sekali.
+ *
+ * Kenapa ini perlu ada terpisah dari `ensureFreshBookingData`: fungsi itu hanya berjalan saat
+ * ada yang MEMBUKA percakapan atau bot membalasnya. Sementara `deriveStageFromBooking`
+ * sebagian bergantung waktu -- sebuah trip menjadi `selesai` karena tanggalnya lewat, bukan
+ * karena ada yang mengetik. Sebuah audit menemukan 33 dari 35 percakapan ber-booking
+ * tertinggal tahapnya justru karena tidak ada yang membukanya lagi setelah tripnya berakhir.
+ *
+ * Murni membaca kolom `bookingData` yang sudah tersimpan, jadi aman dijalankan sesering cron
+ * antrean outbound. Idempoten: percakapan yang sudah benar tidak ditulis ulang. Arahnya tetap
+ * satu arah lewat PIPELINE_STAGE_RANK -- tidak pernah mundur melewati setelan tangan agen.
+ *
+ * Menelan errornya sendiri dengan alasan yang sama seperti `recoverStuckOutboundJobs`:
+ * pekerjaan kebersihan tidak boleh menjatuhkan pekerjaan yang menampunginya.
+ */
+export async function advancePipelineStagesFromBooking(): Promise<{ diperbarui: number }> {
+  try {
+    const rows = await prisma.conversation.findMany({
+      where: { bookingData: { not: Prisma.DbNull }, isTest: false },
+      select: { id: true, pipelineStage: true, bookingData: true },
+    })
+
+    let diperbarui = 0
+    for (const row of rows) {
+      const bookingData = row.bookingData as BookingData | null
+      if (!bookingData) continue
+      const derived = deriveStageFromBooking(bookingData)
+      const currentRank = PIPELINE_STAGE_RANK[row.pipelineStage] ?? -1
+      if ((PIPELINE_STAGE_RANK[derived] ?? -1) <= currentRank) continue
+
+      await prisma.conversation.update({ where: { id: row.id }, data: { pipelineStage: derived } })
+      broadcast({ type: 'conversation.updated', conversationId: row.id })
+      diperbarui += 1
+    }
+
+    if (diperbarui > 0) console.info('advancePipelineStagesFromBooking', { diperbarui })
+    return { diperbarui }
+  } catch (error) {
+    console.error('advancePipelineStagesFromBooking gagal', { error })
+    return { diperbarui: 0 }
+  }
+}
+
+/**
+ * Mengambil data booking untuk sejumlah percakapan yang BELUM PERNAH dicek atau cache-nya
+ * sudah basi, lalu menaikkan tahapnya lewat `ensureFreshBookingData`.
+ *
+ * Kenapa ini terpisah dari `advancePipelineStagesFromBooking`: fungsi itu hanya menilai ulang
+ * percakapan yang SUDAH punya `bookingData` tersimpan. Percakapan yang datanya belum pernah
+ * diambil sama sekali tidak tertolong olehnya -- dan sebuah audit menemukan 269 dari 340
+ * percakapan ada di keadaan itu, semuanya berlencana "Baru" terlepas dari apakah pelanggannya
+ * benar-benar punya booking. Operator tidak seharusnya menemukan itu dengan mengklik satu per
+ * satu.
+ *
+ * DIBATASI JUMLAHNYA per pemanggilan karena setiap percakapan berarti satu panggilan HTTP ke
+ * API booking. Cron antrean outbound berjalan sering; menyapu 340 percakapan tiap tick akan
+ * membanjiri API itu tanpa alasan. Dengan batas kecil, tumpukan lama terkejar dalam beberapa
+ * tick dan sesudahnya hampir selalu tidak ada pekerjaan.
+ *
+ * Yang paling lama tidak dicek dikerjakan lebih dulu (NULL lebih dulu). Berurutan, bukan
+ * paralel: mengalirkan puluhan permintaan serentak ke API pihak ketiga adalah cara membuatnya
+ * membatasi kita.
+ */
+export async function refreshStaleBookingData(limit = 25): Promise<{ diperiksa: number }> {
+  try {
+    const kandidat = await prisma.conversation.findMany({
+      where: {
+        isTest: false,
+        OR: [
+          { bookingCheckedAt: null },
+          { bookingCheckedAt: { lt: new Date(Date.now() - BOOKING_CACHE_MS) } },
+        ],
+      },
+      select: {
+        id: true,
+        bookingData: true,
+        bookingCheckedAt: true,
+        pipelineStage: true,
+        orderChannel: true,
+        isTest: true,
+        contact: { select: { phone: true } },
+      },
+      orderBy: { bookingCheckedAt: { sort: 'asc', nulls: 'first' } },
+      take: limit,
+    })
+
+    for (const conversation of kandidat) {
+      // `ensureFreshBookingData` sudah menelan errornya sendiri lewat `lookupBooking`, tapi
+      // penulisan Prisma-nya tidak -- satu baris bermasalah tidak boleh menghentikan sisanya.
+      await ensureFreshBookingData(conversation).catch((error: unknown) => {
+        console.error('refreshStaleBookingData: satu percakapan gagal', { id: conversation.id, error })
+      })
+    }
+
+    if (kandidat.length > 0) console.info('refreshStaleBookingData', { diperiksa: kandidat.length })
+    return { diperiksa: kandidat.length }
+  } catch (error) {
+    console.error('refreshStaleBookingData gagal', { error })
+    return { diperiksa: 0 }
+  }
 }

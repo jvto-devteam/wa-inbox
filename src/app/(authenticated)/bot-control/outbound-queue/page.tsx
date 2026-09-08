@@ -1,10 +1,10 @@
 'use client'
 import { useCallback, useEffect, useState } from 'react'
-import Link from 'next/link'
-import { Card } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
+import { AlertTriangle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Select } from '@/components/ui/select'
+import { Skeleton } from '@/components/ui/skeleton'
+import { TableContainer } from '@/components/ui/table'
 import {
   OutboundQueueTable,
   type OutboundJobRow,
@@ -13,6 +13,7 @@ import {
 import { hasAdminPowers } from '@/lib/bot-control/permissions'
 import type { AccountRoleName } from '@/lib/auth/session'
 import { fetchJson } from '@/lib/fetch-json'
+import { PageHeader } from '@/components/ui/page-header'
 
 type Session = { role: AccountRoleName }
 
@@ -170,38 +171,37 @@ export default function OutboundQueuePage() {
   const lastPage = Math.max(1, Math.ceil((data?.total ?? 0) / 50))
 
   return (
-    <main className="mx-auto max-w-7xl space-y-4 p-6">
-      <div className="space-y-1">
-        <Link href="/bot-control" className="text-sm text-brand hover:underline">
-          &larr; Kembali ke Bot Control
-        </Link>
-        <h1 className="text-xl font-semibold text-navy">Outbound Queue</h1>
-        <p className="text-sm text-muted-foreground">
-          Setiap pengiriman yang masih harus terjadi, beserta alasan kegagalannya. Sebelumnya satu-satunya jendela ke
-          sini adalah badge pengiriman pada satu bubble di satu percakapan.
-        </p>
-      </div>
+    <main className="mx-auto w-full max-w-[1600px] space-y-4 p-6">
+      <PageHeader
+        title="Outbound Queue"
+        description="Setiap pengiriman yang masih harus terjadi, beserta alasan kegagalannya. Sebelumnya satu-satunya jendela ke sini adalah badge pengiriman pada satu bubble di satu percakapan."
+      />
 
       {data && data.pausedProviders.length > 0 && (
         // Shown to everyone who opens the page, not only to whoever pressed the button: a queue
         // that looks stalled for no reason is how an operator starts retrying by hand.
-        <Card className="border-amber-300 bg-amber-50 p-3">
-          <p className="text-xs text-amber-900">
-            Provider dijeda: <strong>{data.pausedProviders.join(', ')}</strong>. Job untuk provider itu tetap di
-            antrean dan tidak dikirim sampai dilanjutkan — tidak ada yang gagal karenanya.
+        <div className="flex items-start gap-2 rounded-md border border-warning/30 bg-warning-subtle px-3 py-2">
+          <AlertTriangle aria-hidden="true" strokeWidth={1.75} className="mt-0.5 size-4 shrink-0 text-warning" />
+          <p className="text-sm text-warning">
+            Provider dijeda: <strong className="font-semibold">{data.pausedProviders.join(', ')}</strong>. Job untuk
+            provider itu tetap di antrean dan tidak dikirim sampai dilanjutkan — tidak ada yang gagal karenanya.
           </p>
-        </Card>
+        </div>
       )}
 
+      {/* Angka di sini menghitung SELURUH antrean, bukan halaman yang tampil: operator yang sudah
+          menyaring ke FAILED tetap perlu tahu berapa yang mengantre di belakangnya. Sengaja satu
+          baris berpembatas garis rambut, bukan enam kartu — enam kotak untuk enam angka adalah
+          lima kotak lebih banyak daripada yang dibutuhkan. */}
       {data && (
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
-          {['QUEUED', 'SENDING', 'RETRYING', 'SENT', 'FAILED', 'CANCELLED'].map((key) => (
-            <Card key={key} className="p-3">
-              <p className="text-xs uppercase tracking-wide text-muted-foreground">{key}</p>
-              <p className="text-lg font-semibold text-navy tabular-nums">{data.summary[key] ?? 0}</p>
-            </Card>
+        <dl className="flex flex-wrap items-stretch divide-x divide-line rounded-md border border-line bg-surface">
+          {STATUSES.map((key) => (
+            <div key={key} className="min-w-24 flex-1 px-3 py-2">
+              <dt className="text-xs text-ink-muted">{key}</dt>
+              <dd className="text-lg leading-tight font-semibold text-ink tabular-nums">{data.summary[key] ?? 0}</dd>
+            </div>
           ))}
-        </div>
+        </dl>
       )}
 
       <div className="flex flex-wrap items-center gap-2">
@@ -218,47 +218,64 @@ export default function OutboundQueuePage() {
             </option>
           ))}
         </Select>
-        <label className="flex items-center gap-1 text-xs text-muted-foreground">
+        <label className="flex items-center gap-1.5 text-sm text-ink-muted">
           <input
             type="checkbox"
             checked={stuckOnly}
             onChange={(e) => applyFilter(() => setStuckOnly(e.target.checked))}
             aria-label="Hanya job menggantung"
+            className="size-3.5"
           />
           Hanya yang menggantung
         </label>
+
+        {isAdmin && (
+          <div className="ml-auto flex flex-wrap items-center gap-2">
+            <Button variant="outline" size="sm" onClick={recoverStuck}>
+              Pulihkan job menggantung
+            </Button>
+            {PROVIDERS.map((target) => {
+              const paused = data?.pausedProviders.includes(target) ?? false
+              return (
+                <Button key={target} variant="outline" size="sm" onClick={() => toggleProvider(target, paused)}>
+                  {paused ? `Lanjutkan ${target}` : `Jeda ${target}`}
+                </Button>
+              )
+            })}
+          </div>
+        )}
       </div>
 
-      {isAdmin && (
-        <div className="flex flex-wrap items-center gap-2">
-          <Button variant="outline" size="sm" onClick={recoverStuck}>
-            Pulihkan job menggantung
-          </Button>
-          {PROVIDERS.map((target) => {
-            const paused = data?.pausedProviders.includes(target) ?? false
-            return (
-              <Button key={target} variant="outline" size="sm" onClick={() => toggleProvider(target, paused)}>
-                {paused ? `Lanjutkan ${target}` : `Jeda ${target}`}
-              </Button>
-            )
-          })}
-        </div>
+      {error && <p className="text-base text-danger">{error}</p>}
+      {notice && <p className="text-base text-success">{notice}</p>}
+
+      {/* Wadah yang sama dengan tabelnya: halaman ini dibuka saat panik, dan kotak yang
+          melompat masuk-keluar antara memuat dan terisi membuat antrean terlihat berubah
+          padahal yang berubah hanya keadaan pemuatannya. */}
+      {loading && (
+        <TableContainer>
+          <div aria-hidden="true" className="divide-y divide-line">
+            {Array.from({ length: 8 }, (_, i) => (
+              <div key={i} className="flex h-9 items-center gap-3 px-3">
+                <Skeleton className="h-3 w-16" />
+                <Skeleton className="h-3 w-28" />
+                <Skeleton className="h-3 w-20" />
+                <Skeleton className="h-3 w-10" />
+                <Skeleton className="h-3 w-2/5" />
+              </div>
+            ))}
+          </div>
+        </TableContainer>
       )}
 
-      {loading && <p className="text-sm text-muted-foreground">Memuat...</p>}
-      {error && <p className="text-sm text-destructive">{error}</p>}
-      {notice && <p className="text-sm text-emerald-700">{notice}</p>}
-
       {!loading && !error && data && (
-        <Card className="p-0">
-          <OutboundQueueTable
-            jobs={data.items}
-            canRetry={role !== null}
-            canCancel={isAdmin}
-            busyId={busyId}
-            onAction={handleJobAction}
-          />
-        </Card>
+        <OutboundQueueTable
+          jobs={data.items}
+          canRetry={role !== null}
+          canCancel={isAdmin}
+          busyId={busyId}
+          onAction={handleJobAction}
+        />
       )}
 
       {!loading && !error && (data?.total ?? 0) > 50 && (
@@ -266,7 +283,7 @@ export default function OutboundQueuePage() {
           <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>
             Sebelumnya
           </Button>
-          <span className="text-muted-foreground">
+          <span className="text-ink-muted tabular-nums">
             Halaman {page} dari {lastPage} &middot; {data?.total} job
           </span>
           <Button variant="outline" size="sm" disabled={page >= lastPage} onClick={() => setPage((p) => p + 1)}>
@@ -275,9 +292,8 @@ export default function OutboundQueuePage() {
         </div>
       )}
 
-      <p className="text-xs text-muted-foreground">
-        <Badge variant="muted">Catatan</Badge> Membatalkan job menandai bubble-nya gagal — dari sisi customer memang
-        tidak ada yang sampai.
+      <p className="border-t border-line pt-3 text-sm text-ink-muted">
+        Membatalkan job menandai bubble-nya gagal — dari sisi customer memang tidak ada yang sampai.
       </p>
     </main>
   )

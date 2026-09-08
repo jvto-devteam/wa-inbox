@@ -528,7 +528,7 @@ describe('TemplatesPage — live preview', () => {
 describe('TemplatesPage — template list', () => {
   it('shows an empty state when there are no templates', async () => {
     render(<TemplatesPage />)
-    expect(await screen.findByText('Belum ada template.')).toBeInTheDocument()
+    expect(await screen.findByText('Belum ada template')).toBeInTheDocument()
   })
 
   it('shows each template as a live preview card, filtered to the active tab', async () => {
@@ -585,10 +585,10 @@ describe('TemplatesPage — template library', () => {
     render(<TemplatesPage />)
     await waitFor(() => expect(screen.getByLabelText('Nama template')).toBeInTheDocument())
 
-    expect(screen.getByText('📚 Template Siap Pakai (Meta)')).toBeInTheDocument()
+    expect(screen.getByText('Template siap pakai dari Meta')).toBeInTheDocument()
 
     fireEvent.click(screen.getByText('Balasan Cepat'))
-    expect(screen.queryByText('📚 Template Siap Pakai (Meta)')).not.toBeInTheDocument()
+    expect(screen.queryByText('Template siap pakai dari Meta')).not.toBeInTheDocument()
   })
 
   it('fetches and lists library results when opened', async () => {
@@ -690,10 +690,10 @@ describe('TemplatesPage — AI template suggestions', () => {
     render(<TemplatesPage />)
     await waitFor(() => expect(screen.getByLabelText('Nama template')).toBeInTheDocument())
 
-    expect(screen.queryByText('✨ Rekomendasi Template (AI)')).not.toBeInTheDocument()
+    expect(screen.queryByText('Rekomendasi template dari AI')).not.toBeInTheDocument()
 
     fireEvent.click(screen.getByText('Balasan Cepat'))
-    expect(screen.getByText('✨ Rekomendasi Template (AI)')).toBeInTheDocument()
+    expect(screen.getByText('Rekomendasi template dari AI')).toBeInTheDocument()
   })
 
   it('fetches and shows suggestions with their variables, bindings, and reason', async () => {

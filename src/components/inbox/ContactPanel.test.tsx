@@ -189,3 +189,38 @@ describe('ContactPanel', () => {
     expect(screen.getByLabelText('Tahap pipeline')).toHaveValue('new')
   })
 })
+
+// Tahap 1C. Panel kanan: nama kolom, kerangka saat memuat, dan gulungan sendiri.
+describe('ContactPanel — kolom, memuat, dan gulungan', () => {
+  it('menunjukkan kerangka selagi detail kontak dimuat, bukan kata "Memuat..." telanjang', () => {
+    // Sengaja tidak pernah selesai: inilah jendela waktu yang sedang diuji.
+    vi.stubGlobal('fetch', vi.fn(() => new Promise(() => {})))
+    const { container } = render(<ContactPanel conversationId="conv_1" />)
+
+    const column = container.firstElementChild as HTMLElement
+    expect(column).toHaveAttribute('aria-busy', 'true')
+    expect(container.querySelectorAll('.animate-pulse').length).toBeGreaterThan(0)
+  })
+
+  it('memberi kolomnya nama dan menggulung di dalam dirinya sendiri', async () => {
+    mockFetchWith(baseDetail)
+    const { container } = render(<ContactPanel conversationId="conv_1" />)
+    await screen.findByText('Bruno Figarola')
+
+    const column = container.firstElementChild as HTMLElement
+    expect(column).toHaveAttribute('aria-label', 'Info kontak')
+    expect(column).toHaveClass('h-full', 'min-h-0', 'overflow-y-auto')
+  })
+
+  it('meneruskan aturan tampil/sembunyi dari halaman tanpa menambah pembungkus sendiri', async () => {
+    mockFetchWith(baseDetail)
+    const { container } = render(<ContactPanel conversationId="conv_1" className="hidden xl:flex" />)
+    await screen.findByText('Bruno Figarola')
+
+    const column = container.firstElementChild as HTMLElement
+    expect(column).toHaveClass('hidden', 'xl:flex')
+    // twMerge harus membuang `flex` bawaan komponen, kalau tidak panel tetap terlihat di layar
+    // sedang justru saat halaman menyuruhnya sembunyi.
+    expect(column.className.split(/\s+/)).not.toContain('flex')
+  })
+})

@@ -1,7 +1,10 @@
 'use client'
 import { useState } from 'react'
+import { Bot, Brain, CornerUpLeft, Film, Image as ImageIcon, Paperclip } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { IconButton } from '@/components/ui/icon-button'
+import { cn } from '@/lib/utils'
 import { BotTracePopover } from './BotTracePopover'
 import { isHandoffLogMessage, HANDOFF_LOG_SUMMARY } from '@/lib/message-display'
 import { formatWhatsAppText } from '@/lib/whatsapp-format'
@@ -52,9 +55,9 @@ function quotedPreviewLabel(replyTo: NonNullable<MessageView['replyTo']>): strin
 /** The small quoted-message box WhatsApp shows atop a reply, sourced from Message.replyTo. */
 function QuotedPreview({ replyTo }: { replyTo: NonNullable<MessageView['replyTo']> }) {
   return (
-    <div className="mb-1.5 rounded border-l-2 border-brand bg-black/5 px-2 py-1 text-xs">
-      <p className="font-medium text-brand">{SENDER_LABEL[replyTo.sentBy] ?? replyTo.sentBy}</p>
-      <p className="truncate text-muted-foreground">{formatWhatsAppText(quotedPreviewLabel(replyTo))}</p>
+    <div className="mb-1.5 rounded-sm border-l-2 border-ink/25 bg-ink/5 px-2 py-1 text-xs">
+      <p className="font-medium text-ink">{SENDER_LABEL[replyTo.sentBy] ?? replyTo.sentBy}</p>
+      <p className="truncate text-ink-muted">{formatWhatsAppText(quotedPreviewLabel(replyTo))}</p>
     </div>
   )
 }
@@ -82,9 +85,13 @@ function LazyMedia({ url, alt, kind }: { url: string; alt: string; kind: 'image'
     <button
       type="button"
       onClick={() => setRevealed(true)}
-      className="flex aspect-4/3 w-full flex-col items-center justify-center gap-1 rounded-md bg-black/5 text-sm text-muted-foreground hover:bg-black/10"
+      className="focus-ring flex aspect-4/3 w-full flex-col items-center justify-center gap-1.5 rounded-md border border-dashed border-line-strong bg-surface-sunken text-sm text-ink-muted transition-colors hover:border-accent hover:text-ink"
     >
-      <span className="text-2xl">{kind === 'image' ? '🖼️' : '🎞️'}</span>
+      {kind === 'image' ? (
+        <ImageIcon aria-hidden="true" className="size-5" strokeWidth={1.5} />
+      ) : (
+        <Film aria-hidden="true" className="size-5" strokeWidth={1.5} />
+      )}
       <span>Ketuk untuk memuat {kind === 'image' ? 'gambar' : 'video'}</span>
     </button>
   )
@@ -106,9 +113,10 @@ function MediaContent({ message }: { message: MessageView }) {
           href={message.mediaUrl}
           target="_blank"
           rel="noreferrer"
-          className="flex items-center gap-1.5 text-brand underline"
+          className="focus-ring flex items-center gap-1.5 rounded-sm border border-line bg-surface px-2 py-1.5 text-sm text-ink hover:border-line-strong hover:bg-surface-sunken"
         >
-          📎 {message.fileName ?? 'Dokumen'}
+          <Paperclip aria-hidden="true" className="size-4 shrink-0 text-ink-subtle" strokeWidth={1.75} />
+          <span className="min-w-0 truncate">{message.fileName ?? 'Dokumen'}</span>
         </a>
       )
     default:
@@ -129,14 +137,14 @@ function CarouselContent({ cards }: { cards: CarouselCards }) {
   return (
     <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1">
       {cards.map((card, i) => (
-        <div key={i} className="w-48 shrink-0 overflow-hidden rounded-md border border-border bg-white shadow-sm">
+        <div key={i} className="w-48 shrink-0 overflow-hidden rounded-md border border-line bg-surface">
           {card.mediaType === 'VIDEO' ? (
             <video src={card.mediaUrl} controls className="h-28 w-full object-cover" />
           ) : (
             <img src={card.mediaUrl} alt={card.bodyText} className="h-28 w-full object-cover" />
           )}
           <div className="flex flex-col gap-2 p-2">
-            <p className="text-xs text-foreground">{formatWhatsAppText(card.bodyText)}</p>
+            <p className="text-xs text-ink">{formatWhatsAppText(card.bodyText)}</p>
             {card.buttons.length > 0 && (
               <div className="flex flex-col gap-1">
                 {card.buttons.map((b, bi) =>
@@ -146,12 +154,12 @@ function CarouselContent({ cards }: { cards: CarouselCards }) {
                       href={b.url}
                       target="_blank"
                       rel="noreferrer"
-                      className="rounded border border-border py-1 text-center text-[11px] text-brand hover:bg-secondary"
+                      className="focus-ring rounded-sm border border-line py-1 text-center text-[11px] font-medium text-accent hover:bg-surface-sunken"
                     >
                       {b.text}
                     </a>
                   ) : (
-                    <span key={bi} className="rounded border border-border py-1 text-center text-[11px] text-muted-foreground">
+                    <span key={bi} className="rounded-sm border border-line py-1 text-center text-[11px] text-ink-subtle">
                       {b.text}
                     </span>
                   )
@@ -169,8 +177,8 @@ function CarouselContent({ cards }: { cards: CarouselCards }) {
 function LimitedTimeOfferBanner({ offer }: { offer: NonNullable<NonNullable<MessageView['templatePayload']>['limitedTimeOffer']> }) {
   const expires = new Date(offer.expirationTimeMs).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' })
   return (
-    <div className="rounded-md bg-amber-50 px-2.5 py-1.5 text-xs font-medium text-amber-700">
-      ⏳ {offer.text} — berakhir {expires}
+    <div className="rounded-sm bg-warning-subtle px-2.5 py-1.5 text-xs font-medium text-warning">
+      {offer.text} — berakhir {expires}
     </div>
   )
 }
@@ -178,9 +186,9 @@ function LimitedTimeOfferBanner({ offer }: { offer: NonNullable<NonNullable<Mess
 /** The coupon code chip WhatsApp shows on a COPY_CODE button template, sourced from Message.templatePayload. */
 function CouponChip({ coupon }: { coupon: NonNullable<NonNullable<MessageView['templatePayload']>['coupon']> }) {
   return (
-    <div className="flex items-center justify-between rounded-md border border-dashed border-brand/40 bg-brand/5 px-2.5 py-1.5 text-xs">
-      <span className="font-mono font-semibold tracking-wide text-brand">{coupon.code}</span>
-      <span className="text-muted-foreground">{coupon.buttonText}</span>
+    <div className="flex items-center justify-between gap-2 rounded-sm border border-dashed border-line-strong bg-surface px-2.5 py-1.5 text-xs">
+      <span className="font-mono font-semibold tracking-wide text-ink">{coupon.code}</span>
+      <span className="text-ink-muted">{coupon.buttonText}</span>
     </div>
   )
 }
@@ -194,14 +202,25 @@ function formatTime(iso: string): string {
 // WhatsApp-style receipt ticks for an OUTBOUND message's current deliveryStatus.
 // A single tick means Meta/wa-coexist has accepted the send (SENT); a second tick
 // means the recipient's device got it (DELIVERED); both tick blue once the
-// recipient has actually opened it (READ). FAILED and the initial PENDING state
-// are handled by the caller (a destructive badge + retry button, not a tick) so
-// this only ever needs to render for the three "in flight or done" states.
+// recipient has actually opened it (READ). FAILED is handled by the caller
+// (a destructive badge + retry button, not a tick).
+//
+// Ikonnya SELALU didampingi katanya (lihat DELIVERY_LABEL di bawah). Satu centang, dua
+// centang, dan dua centang biru adalah konvensi WhatsApp yang dihafal, bukan yang dibaca --
+// dan "dihafal" berarti setiap operator baru menebak selama beberapa hari pertama. Kata di
+// sebelahnya menghapus tebakan itu tanpa mengubah ikon yang sudah dikenal orang lama.
+const DELIVERY_LABEL: Record<string, string> = {
+  PENDING: 'Mengantre',
+  SENT: 'Terkirim',
+  DELIVERED: 'Diterima',
+  READ: 'Dibaca',
+}
+
 function DeliveryTicks({ status }: { status: string }) {
   if (status === 'PENDING') return null
   const isRead = status === 'READ'
   const isDouble = status === 'DELIVERED' || status === 'READ'
-  const label = status === 'SENT' ? 'Terkirim' : status === 'DELIVERED' ? 'Diterima' : 'Dibaca'
+  const label = DELIVERY_LABEL[status] ?? status
   return (
     <svg
       role="img"
@@ -209,7 +228,11 @@ function DeliveryTicks({ status }: { status: string }) {
       width={isDouble ? 18 : 12}
       height="12"
       viewBox={`0 0 ${isDouble ? 18 : 12} 12`}
-      className={isRead ? 'text-sky-500' : 'text-muted-foreground'}
+      // READ memakai aksen, bukan biru langit dari palet lain. Ini satu-satunya pemakaian
+      // aksen di luar tiga yang disebut sistem desain, dan disengaja: centang biru "sudah
+      // dibaca" adalah satu-satunya tanda di layar ini yang sudah punya arti bawaan bagi
+      // siapa pun yang pernah memakai WhatsApp.
+      className={isRead ? 'text-accent' : 'text-ink-subtle'}
       fill="none"
     >
       <path d="M1 6.5L4 9.5L11 2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
@@ -217,6 +240,18 @@ function DeliveryTicks({ status }: { status: string }) {
         <path d="M6 6.5L9 9.5L16 2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
       )}
     </svg>
+  )
+}
+
+/** Ikon + kata, untuk semua status non-gagal sebuah pesan keluar. */
+function DeliveryStatus({ status }: { status: string }) {
+  const label = DELIVERY_LABEL[status]
+  if (!label) return null
+  return (
+    <span className={cn('flex items-center gap-1', status === 'READ' ? 'text-accent' : 'text-ink-subtle')}>
+      <DeliveryTicks status={status} />
+      {label}
+    </span>
   )
 }
 
@@ -260,12 +295,16 @@ export function MessageBubble({ message, onReply }: { message: MessageView; onRe
   if (isHandoffLogMessage(message)) {
     return (
       <div className="flex w-full flex-col items-center gap-1">
-        <div className="flex w-full items-center gap-2 text-xs font-medium text-muted-foreground">
-          <div className="h-px flex-1 bg-border" />
-          <button type="button" onClick={() => setShowTrace((prev) => !prev)} className="cursor-pointer hover:underline">
+        <div className="flex w-full items-center gap-2">
+          <div className="h-px flex-1 bg-line" />
+          <button
+            type="button"
+            onClick={() => setShowTrace((prev) => !prev)}
+            className="focus-ring cursor-pointer rounded-sm border border-line bg-surface px-2 py-0.5 text-xs font-medium text-ink-muted hover:border-line-strong hover:text-ink"
+          >
             {HANDOFF_LOG_SUMMARY}
           </button>
-          <div className="h-px flex-1 bg-border" />
+          <div className="h-px flex-1 bg-line" />
         </div>
         {showTrace && (
           <BotTracePopover
@@ -289,13 +328,23 @@ export function MessageBubble({ message, onReply }: { message: MessageView; onRe
   const cards = message.templatePayload?.cards
 
   return (
-    <div className={`flex flex-col gap-1 ${isOutbound ? 'items-end' : 'items-start'}`}>
+    // `group`: aksi balas hanya muncul saat baris ini di-hover atau salah satu kontrolnya
+    // menerima fokus keyboard. Sebuah tombol tetap di bawah setiap gelembung mengubah riwayat
+    // percakapan jadi daftar tombol; di layar sentuh (yang tidak punya hover) ia tetap terlihat.
+    <div className={cn('group flex flex-col gap-1', isOutbound ? 'items-end' : 'items-start')}>
       <div
-        className={
-          (cards?.length ? 'max-w-lg' : 'max-w-md') +
-          ' overflow-hidden whitespace-pre-wrap rounded-lg px-3.5 py-2.5 ring-1 ' +
-          (isOutbound ? 'rounded-tr-none bg-accent ring-brand/10' : 'rounded-tl-none bg-white shadow-sm ring-border')
-        }
+        className={cn(
+          cards?.length ? 'max-w-lg' : 'max-w-md',
+          // text-md (15px), bukan ukuran UI 13.5px: isi pesan adalah satu-satunya teks di
+          // aplikasi ini yang dibaca berparagraf-paragraf, berjam-jam, setiap hari.
+          'overflow-hidden rounded-lg border px-3.5 py-2.5 text-md whitespace-pre-wrap',
+          // Masuk vs keluar dibedakan oleh warna dan sudut yang dipangkas, bukan oleh bayangan:
+          // keluar = tint aksen dengan sudut kanan atas rata, masuk = putih dengan sudut kiri
+          // atas rata. Dua-duanya bergaris rambut, jadi keduanya tetap terbaca di atas canvas.
+          isOutbound
+            ? 'rounded-tr-none border-accent/20 bg-accent-subtle text-ink'
+            : 'rounded-tl-none border-line bg-surface text-ink'
+        )}
       >
         {message.replyTo && <QuotedPreview replyTo={message.replyTo} />}
         <div className="flex flex-col gap-1.5">
@@ -319,57 +368,63 @@ export function MessageBubble({ message, onReply }: { message: MessageView; onRe
           onClose={() => setShowTrace(false)}
         />
       )}
-      <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
-        {message.sentBy === 'BOT' && <Badge variant="brand">Bot</Badge>}
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-ink-subtle">
+        {message.sentBy === 'BOT' && (
+          <Badge variant="default" className="gap-1">
+            <Bot aria-hidden="true" className="size-3" strokeWidth={1.75} />
+            Bot
+          </Badge>
+        )}
         {/* Dedicated trigger for the reasoning trace, separate from the bubble itself -- clicking
             the message text/media should never be overloaded with an unrelated toggle. */}
         {isBotMessage && (
-          <button
-            type="button"
-            onClick={() => setShowTrace((prev) => !prev)}
-            aria-label={showTrace ? 'Sembunyikan alasan bot' : 'Lihat alasan bot'}
+          <IconButton
+            size="sm"
+            label={showTrace ? 'Sembunyikan alasan bot' : 'Lihat alasan bot'}
+            icon={<Brain strokeWidth={1.75} />}
             aria-pressed={showTrace}
-            className="text-sm hover:opacity-70"
-          >
-            🧠
-          </button>
+            onClick={() => setShowTrace((prev) => !prev)}
+            className="-my-1"
+          />
         )}
         {message.sentBy === 'AGENT' && <span>Agen</span>}
         {message.templatePayload && <Badge variant="muted">Template</Badge>}
         {/* Only outbound: which channel WE sent through is useful to an agent; which channel a
             customer's own inbound message happened to arrive on is not. */}
         {isOutbound && CHANNEL_LABEL[message.channel] && <Badge variant="muted">{CHANNEL_LABEL[message.channel]}</Badge>}
-        <span>{formatTime(message.createdAt)}</span>
+        <time dateTime={message.createdAt}>{formatTime(message.createdAt)}</time>
         {isFailed ? (
           <>
-            <Badge variant="destructive">{message.deliveryStatus}</Badge>
+            {/* "FAILED" adalah nama kolom database, bukan kalimat. Operator yang melihat baris
+                merah ini sedang memutuskan apakah pelanggannya menerima pesan itu atau tidak. */}
+            <Badge variant="destructive">Gagal terkirim</Badge>
             <Button
               type="button"
-              variant="ghost"
+              variant="outline"
               size="sm"
               onClick={retrySend}
               disabled={retrying}
               aria-label="Kirim ulang"
-              className="h-auto px-0 text-brand hover:bg-transparent hover:underline"
             >
-              {retrying ? 'Mengirim...' : 'Kirim Ulang'}
+              {retrying ? 'Mengirim ulang...' : 'Kirim ulang'}
             </Button>
-            {retryError && <span className="text-destructive">{retryError}</span>}
+            {retryError && (
+              <span role="alert" className="text-danger">
+                {retryError}
+              </span>
+            )}
           </>
         ) : (
-          isOutbound && <DeliveryTicks status={message.deliveryStatus} />
+          isOutbound && <DeliveryStatus status={message.deliveryStatus} />
         )}
         {onReply && (
-          <Button
-            type="button"
-            variant="ghost"
+          <IconButton
             size="sm"
-            aria-label="Balas pesan ini"
-            className="h-auto px-0 text-muted-foreground hover:bg-transparent hover:text-brand hover:underline"
+            label="Balas pesan ini"
+            icon={<CornerUpLeft strokeWidth={1.75} />}
             onClick={() => onReply(message)}
-          >
-            Balas
-          </Button>
+            className="-my-1 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 max-md:opacity-100"
+          />
         )}
       </div>
     </div>

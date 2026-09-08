@@ -1,14 +1,22 @@
 import { cn } from '@/lib/utils'
+import { forwardRef } from 'react'
 import type { InputHTMLAttributes } from 'react'
 
-export function Input({ className, ...props }: InputHTMLAttributes<HTMLInputElement>) {
-  return (
-    <input
-      className={cn(
-        'h-8 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none placeholder:text-muted-foreground focus-visible:border-brand focus-visible:ring-3 focus-visible:ring-brand/20 disabled:opacity-50',
-        className
-      )}
-      {...props}
-    />
-  )
-}
+export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputElement>>(
+  function Input({ className, ...props }, ref) {
+    return (
+      <input
+        ref={ref}
+        className={cn(
+          'field-focus h-8 w-full rounded-md border border-line-strong bg-surface px-2.5 text-base text-ink outline-none',
+          'placeholder:text-ink-subtle',
+          'disabled:cursor-not-allowed disabled:border-line disabled:bg-surface-sunken disabled:text-ink-subtle',
+          'read-only:bg-surface-sunken',
+          'aria-[invalid=true]:border-danger',
+          className
+        )}
+        {...props}
+      />
+    )
+  }
+)

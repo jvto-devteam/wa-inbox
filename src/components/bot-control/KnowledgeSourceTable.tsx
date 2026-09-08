@@ -1,7 +1,17 @@
 'use client'
+import { BookOpen } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { EmptyState } from '@/components/ui/empty-state'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table'
 
 export type KnowledgeSourceRow = {
   id: string
@@ -15,9 +25,9 @@ export type KnowledgeSourceRow = {
 
 export type KnowledgeAction = 'edit' | 'history' | 'publish' | 'archive'
 
-const STATUS_VARIANT: Record<string, 'success' | 'muted' | 'brand'> = {
+const STATUS_VARIANT: Record<string, 'success' | 'muted' | 'default'> = {
   PUBLISHED: 'success',
-  DRAFT: 'brand',
+  DRAFT: 'default',
   ARCHIVED: 'muted',
 }
 
@@ -45,75 +55,83 @@ export function KnowledgeSourceTable({
   canEdit?: boolean
   onAction?: (source: KnowledgeSourceRow, action: KnowledgeAction) => void
 }) {
+  // Wadahnya sama di kedua keadaan: kotak yang hilang saat daftarnya kosong membuat bagian ini
+  // terlihat gagal dimuat, bukan kosong.
   if (sources.length === 0) {
     return (
-      <p className="p-3 text-sm text-muted-foreground">
-        Belum ada knowledge terkelola. Pakai &ldquo;Buat knowledge baru&rdquo; untuk menulis jawaban yang tidak ada di{' '}
-        <span className="font-mono">catalog/</span>.
-      </p>
+      <TableContainer>
+        <EmptyState
+          icon={<BookOpen strokeWidth={1.75} />}
+          title="Belum ada knowledge terkelola."
+          description="Pakai “Buat knowledge baru” untuk menulis jawaban yang tidak ada di catalog/. Katalog di atas tetap dibaca bot walaupun daftar ini kosong."
+        />
+      </TableContainer>
     )
   }
 
   return (
-    <Table>
-      <TableHeader>
-        <TableRow>
-          <TableHead>Judul</TableHead>
-          <TableHead>Status</TableHead>
-          <TableHead />
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {sources.map((source) => (
-          <TableRow key={source.id}>
-            <TableCell>
-              <p className="font-medium text-navy">{source.title}</p>
-              {source.summary && <p className="text-xs text-muted-foreground">{source.summary}</p>}
-            </TableCell>
-            <TableCell>
-              <Badge variant={STATUS_VARIANT[source.status] ?? 'default'}>{source.status}</Badge>
-              {/* The revision's state is shown separately from the source's. One answers "is
-                  the bot using this", the other "is there something written but not yet
-                  activated" — merging them would make a draft read as though it were live. */}
-              {source.latestRevision && source.hasDraft && (
-                <p className="mt-1">
-                  <Badge variant={STATUS_VARIANT[source.latestRevision.status] ?? 'muted'}>
-                    v{source.latestRevision.version}: {source.latestRevision.status}
-                  </Badge>
-                </p>
-              )}
-            </TableCell>
-            <TableCell>
-              <div className="flex flex-col items-start gap-1">
-                {onAction && (
-                  <>
-                    <Button variant="outline" size="sm" onClick={() => onAction(source, 'history')}>
-                      Riwayat
-                    </Button>
-                    {canEdit && source.status !== 'ARCHIVED' && (
-                      <Button variant="outline" size="sm" onClick={() => onAction(source, 'edit')}>
-                        Edit isi
-                      </Button>
-                    )}
-                    {/* The control follows the revision's STATE, not just the role: a button
-                        that always 409s teaches an operator to stop trusting the page. */}
-                    {canEdit && source.status !== 'ARCHIVED' && source.latestRevision?.status === 'DRAFT' && (
-                      <Button variant="outline" size="sm" onClick={() => onAction(source, 'publish')}>
-                        Aktifkan
-                      </Button>
-                    )}
-                    {canEdit && source.status !== 'ARCHIVED' && (
-                      <Button variant="outline" size="sm" onClick={() => onAction(source, 'archive')}>
-                        Arsipkan
-                      </Button>
-                    )}
-                  </>
-                )}
-              </div>
-            </TableCell>
+    <TableContainer>
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>Judul</TableHead>
+            <TableHead className="w-48">Status</TableHead>
+            <TableHead className="w-36">Aksi</TableHead>
           </TableRow>
-        ))}
-      </TableBody>
-    </Table>
+        </TableHeader>
+        <TableBody>
+          {sources.map((source) => (
+            <TableRow key={source.id} className="h-auto align-top">
+              <TableCell className="py-2.5">
+                <p className="font-medium text-ink">{source.title}</p>
+                {/* Ringkasannya prosa: kolomnya boleh selebar apa pun, barisnya tidak. */}
+                {source.summary && <p className="max-w-4xl text-sm text-ink-muted">{source.summary}</p>}
+              </TableCell>
+              <TableCell className="py-2.5">
+                <Badge variant={STATUS_VARIANT[source.status] ?? 'default'}>{source.status}</Badge>
+                {/* The revision's state is shown separately from the source's. One answers "is
+                    the bot using this", the other "is there something written but not yet
+                    activated" — merging them would make a draft read as though it were live. */}
+                {source.latestRevision && source.hasDraft && (
+                  <p className="mt-1">
+                    <Badge variant={STATUS_VARIANT[source.latestRevision.status] ?? 'muted'}>
+                      v{source.latestRevision.version}: {source.latestRevision.status}
+                    </Badge>
+                  </p>
+                )}
+              </TableCell>
+              <TableCell className="py-2">
+                <div className="flex flex-col items-start gap-0.5">
+                  {onAction && (
+                    <>
+                      <Button variant="ghost" size="sm" onClick={() => onAction(source, 'history')}>
+                        Riwayat
+                      </Button>
+                      {canEdit && source.status !== 'ARCHIVED' && (
+                        <Button variant="ghost" size="sm" onClick={() => onAction(source, 'edit')}>
+                          Edit isi
+                        </Button>
+                      )}
+                      {/* The control follows the revision's STATE, not just the role: a button
+                          that always 409s teaches an operator to stop trusting the page. */}
+                      {canEdit && source.status !== 'ARCHIVED' && source.latestRevision?.status === 'DRAFT' && (
+                        <Button variant="ghost" size="sm" onClick={() => onAction(source, 'publish')}>
+                          Aktifkan
+                        </Button>
+                      )}
+                      {canEdit && source.status !== 'ARCHIVED' && (
+                        <Button variant="ghost" size="sm" onClick={() => onAction(source, 'archive')}>
+                          Arsipkan
+                        </Button>
+                      )}
+                    </>
+                  )}
+                </div>
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </TableContainer>
   )
 }

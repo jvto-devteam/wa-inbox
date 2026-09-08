@@ -3,6 +3,7 @@ import { requireAdmin } from '@/lib/auth/require-admin'
 import { hasValidCronSecret } from '@/lib/outbound/cron-auth'
 import { processDueOutboundJobs } from '@/lib/outbound/worker'
 import { pruneBotAuditLogs } from '@/lib/bot-control/audit'
+import { advancePipelineStagesFromBooking, refreshStaleBookingData } from '@/lib/booking/client'
 
 /**
  * POST /api/outbound-jobs/process — run every outbound job that is currently due.
@@ -42,6 +43,26 @@ export async function POST(req: Request) {
   // able to take the queue down with it.
   await pruneBotAuditLogs().catch((error: unknown) => {
     console.error('POST /api/outbound-jobs/process: pruning audit log gagal', error)
+  })
+
+  // Menumpang tick yang sama, dan dengan alasan yang sama seperti pruning: ia butuh dijalankan
+  // berkala, tapi tidak sepadan dengan cron entry sendiri (berarti secret kedua, path middleware
+  // kedua, dan satu hal lagi yang bisa lupa dikonfigurasi).
+  //
+  // Kenapa berkala: tahap `selesai` datang dari tanggal trip yang lewat, bukan dari ada yang
+  // mengetik. Tanpa penyapu ini tahap hanya naik saat percakapan dibuka atau bot membalas, dan
+  // percakapan yang tripnya sudah selesai justru percakapan yang tidak ada lagi yang membukanya.
+  await advancePipelineStagesFromBooking().catch((error: unknown) => {
+    console.error('POST /api/outbound-jobs/process: menaikkan tahap pipeline gagal', error)
+  })
+
+  // Menyusul yang di atas, dan menutup lubang yang tidak bisa ditutup olehnya: fungsi itu hanya
+  // menilai ulang percakapan yang SUDAH punya bookingData. Yang datanya belum pernah diambil
+  // sama sekali tetap berlencana "Baru" selamanya sampai ada yang membukanya -- 269 dari 340
+  // percakapan ada di keadaan itu saat ditemukan. Dibatasi 25 per tick karena tiap percakapan
+  // berarti satu panggilan HTTP ke API booking.
+  await refreshStaleBookingData().catch((error: unknown) => {
+    console.error('POST /api/outbound-jobs/process: menyegarkan data booking gagal', error)
   })
 
   try {

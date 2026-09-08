@@ -1,10 +1,14 @@
 'use client'
 import { useEffect, useRef, useState } from 'react'
+import { ArrowLeft, PanelRight, PanelRightClose } from 'lucide-react'
 import { MessageBubble, type MessageView } from './MessageBubble'
 import { ComposeBox } from './ComposeBox'
 import { Select } from '@/components/ui/select'
 import { Button } from '@/components/ui/button'
+import { IconButton } from '@/components/ui/icon-button'
+import { SkeletonText } from '@/components/ui/skeleton'
 import { ContactAvatar } from '@/components/ContactAvatar'
+import { cn } from '@/lib/utils'
 import { fetchJson } from '@/lib/fetch-json'
 import type { BookingData } from '@/lib/booking/client'
 
@@ -44,7 +48,53 @@ function dayDividerLabel(iso: string): string {
   return date.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })
 }
 
-export function ThreadView({ conversationId }: { conversationId: string }) {
+/**
+ * Pembatas mendatar di dalam thread: garis - teks - garis.
+ *
+ * Dua pemakaiannya sengaja terlihat berbeda. Pembatas hari adalah orientasi (netral, kalem);
+ * "Pesan belum dibaca" adalah penanda belum dibaca -- salah satu dari tiga tempat aksen boleh
+ * dibelanjakan di sistem ini -- dan ia memang harus bisa ditemukan mata saat menggulung.
+ */
+function ThreadDivider({
+  label,
+  tone = 'neutral',
+  innerRef,
+}: {
+  label: string
+  tone?: 'neutral' | 'accent'
+  innerRef?: React.Ref<HTMLDivElement>
+}) {
+  const accent = tone === 'accent'
+  return (
+    <div ref={innerRef} className="mb-3 flex items-center gap-2">
+      <div className={cn('h-px flex-1', accent ? 'bg-accent/35' : 'bg-line')} />
+      <span
+        className={cn(
+          'rounded-sm px-2 py-0.5 text-xs font-medium',
+          accent ? 'bg-accent-subtle text-accent' : 'border border-line bg-surface text-ink-muted'
+        )}
+      >
+        {label}
+      </span>
+      <div className={cn('h-px flex-1', accent ? 'bg-accent/35' : 'bg-line')} />
+    </div>
+  )
+}
+
+export function ThreadView({
+  conversationId,
+  onBack,
+  contactPanelOpen,
+  onToggleContactPanel,
+  className,
+}: {
+  conversationId: string
+  /** Hanya dirender di bawah md, tempat tiga kolom menjadi satu kolom bertingkat. */
+  onBack?: () => void
+  contactPanelOpen?: boolean
+  onToggleContactPanel?: () => void
+  className?: string
+}) {
   const [messages, setMessages] = useState<MessageView[]>([])
   const [botEnabled, setBotEnabled] = useState(false)
   const [isTest, setIsTest] = useState(false)
@@ -205,32 +255,47 @@ export function ThreadView({ conversationId }: { conversationId: string }) {
     : -1
 
   return (
-    <div className="flex h-full min-h-0 flex-col bg-slate-50">
-      <div className="flex items-center justify-between gap-2 border-b border-border bg-white px-4 py-2">
-        <div className="flex min-w-0 items-center gap-2.5">
-          <ContactAvatar name={contactName} avatarUrl={avatarUrl} size="size-8" />
-          <span className="truncate font-medium text-navy">{contactName ?? 'Tanpa nama'}</span>
+    // Kolom tengah: kepala tetap, riwayat yang menggulung sendiri, kotak tulis menempel di
+    // bawah. min-h-0 wajib supaya scroller di tengah yang menyusut, bukan kolomnya yang tumbuh.
+    <section
+      aria-label="Percakapan"
+      className={cn('flex h-full min-h-0 flex-col bg-canvas', className)}
+    >
+      <header className="flex shrink-0 items-center gap-2 border-b border-line bg-surface px-3 py-2">
+        {onBack && (
+          // Hanya ada di layar sempit: di sana daftar percakapan tergantikan oleh thread ini,
+          // jadi tanpa tombol ini tidak ada jalan kembali ke daftar.
+          <IconButton
+            label="Kembali ke daftar percakapan"
+            icon={<ArrowLeft strokeWidth={1.75} />}
+            onClick={onBack}
+            className="md:hidden"
+          />
+        )}
+        <ContactAvatar name={contactName} avatarUrl={avatarUrl} size="size-8" />
+        <div className="flex min-w-0 flex-1 flex-col">
+          <span className="truncate text-base font-semibold text-ink">{contactName ?? 'Tanpa nama'}</span>
           {isTest && (
-            <span className="shrink-0 rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700">
-              Room Tes -- tidak terkirim ke WhatsApp
-            </span>
+            <span className="truncate text-xs text-warning">Room Tes -- tidak terkirim ke WhatsApp</span>
           )}
         </div>
-        <div className="flex shrink-0 items-center gap-2">
+        <div className="flex shrink-0 items-center gap-1.5">
           {isTest && (
             <Button type="button" variant="destructive" size="sm" onClick={clearChat} disabled={clearingChat}>
               {clearingChat ? 'Menghapus...' : 'Hapus Chat'}
             </Button>
           )}
-          <label htmlFor="assign-agent" className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-            Ditugaskan ke
-          </label>
+          {/* Label "Ditugaskan ke" tidak lagi ditulis di layar: nilainya sendiri sudah berbunyi
+              "Belum ditugaskan" atau sebuah nama, dan dua kata tetap di kepala yang sempit
+              memakan ruang yang seharusnya milik nama pelanggan. Namanya untuk pembaca layar
+              tetap ada lewat aria-label. */}
           <Select
             id="assign-agent"
             aria-label="Ditugaskan ke"
+            title="Ditugaskan ke"
             value={assignedAgentId ?? ''}
             onChange={(e) => changeAssignedAgent(e.target.value === '' ? null : e.target.value)}
-            className="w-auto"
+            className="w-auto max-w-40 text-sm"
           >
             <option value="">Belum ditugaskan</option>
             {agents.map((agent) => (
@@ -239,25 +304,49 @@ export function ThreadView({ conversationId }: { conversationId: string }) {
               </option>
             ))}
           </Select>
+          {onToggleContactPanel && (
+            // Hanya dari xl ke atas: di bawah itu panel kontak memang tidak punya kolom untuk
+            // ditempati, jadi tombol yang tidak bisa menampilkan apa-apa lebih baik tidak ada.
+            <IconButton
+              label={contactPanelOpen ? 'Sembunyikan panel kontak' : 'Tampilkan panel kontak'}
+              icon={contactPanelOpen ? <PanelRightClose strokeWidth={1.75} /> : <PanelRight strokeWidth={1.75} />}
+              aria-pressed={contactPanelOpen}
+              onClick={onToggleContactPanel}
+              className="hidden xl:inline-flex"
+            />
+          )}
         </div>
-        {assignError && <p className="text-xs text-destructive">{assignError}</p>}
-      </div>
-      <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4">
+      </header>
+      {assignError && (
+        <p role="alert" className="shrink-0 border-b border-line bg-danger-subtle px-3 py-1.5 text-xs text-danger">
+          {assignError}
+        </p>
+      )}
+      {/* role="log": riwayat yang bertambah sendiri lewat SSE. Pembaca layar butuh tahu bahwa
+          kotak ini bertambah, bukan sekadar sebuah div yang menggulung. */}
+      <div
+        role="log"
+        aria-label="Riwayat pesan"
+        className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain px-3 py-4 sm:px-4"
+      >
+        {!messagesLoaded ? (
+          <div className="space-y-4" aria-hidden="true">
+            <SkeletonText lines={2} className="max-w-md" />
+            <SkeletonText lines={1} className="ml-auto max-w-xs" />
+            <SkeletonText lines={3} className="max-w-md" />
+          </div>
+        ) : messages.length === 0 ? (
+          <p className="py-8 text-center text-sm text-ink-muted">
+            Belum ada pesan di percakapan ini. Tulis yang pertama di bawah.
+          </p>
+        ) : null}
         {messages.map((m, i) => (
           <div key={m.id}>
             {(i === 0 || !isSameDay(new Date(m.createdAt), new Date(messages[i - 1].createdAt))) && (
-              <div className="mb-3 flex items-center gap-2 text-xs font-medium text-muted-foreground">
-                <div className="h-px flex-1 bg-border" />
-                <span>{dayDividerLabel(m.createdAt)}</span>
-                <div className="h-px flex-1 bg-border" />
-              </div>
+              <ThreadDivider label={dayDividerLabel(m.createdAt)} />
             )}
             {i === firstUnreadIndex && (
-              <div ref={unreadDividerRef} className="mb-3 flex items-center gap-2 text-xs font-medium text-muted-foreground">
-                <div className="h-px flex-1 bg-border" />
-                <span>Pesan belum dibaca</span>
-                <div className="h-px flex-1 bg-border" />
-              </div>
+              <ThreadDivider label="Pesan belum dibaca" tone="accent" innerRef={unreadDividerRef} />
             )}
             <MessageBubble message={m} onReply={setReplyingTo} />
           </div>
@@ -282,6 +371,6 @@ export function ThreadView({ conversationId }: { conversationId: string }) {
         }}
         onBotToggled={setBotEnabled}
       />
-    </div>
+    </section>
   )
 }

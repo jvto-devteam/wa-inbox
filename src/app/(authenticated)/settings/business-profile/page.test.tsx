@@ -55,7 +55,7 @@ describe('BusinessProfilePage', () => {
 
     await screen.findByLabelText('About (maks. 139 karakter)')
     fireEvent.change(screen.getByLabelText('About (maks. 139 karakter)'), { target: { value: 'Halo baru!' } })
-    fireEvent.click(screen.getByText('Simpan Profil'))
+    fireEvent.click(screen.getByRole('button', { name: 'Simpan profil bisnis' }))
 
     await waitFor(() => expect(screen.getByText('Profil bisnis tersimpan.')).toBeInTheDocument())
     expect(fetch).toHaveBeenCalledWith(
@@ -78,8 +78,8 @@ describe('BusinessProfilePage', () => {
     )
     render(<BusinessProfilePage />)
 
-    await screen.findByText('Simpan Profil')
-    fireEvent.click(screen.getByText('Simpan Profil'))
+    await screen.findByRole('button', { name: 'Simpan profil bisnis' })
+    fireEvent.click(screen.getByRole('button', { name: 'Simpan profil bisnis' }))
 
     expect(await screen.findByText('Invalid parameter')).toBeInTheDocument()
   })

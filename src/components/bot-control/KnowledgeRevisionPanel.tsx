@@ -2,6 +2,7 @@
 import { Badge } from '@/components/ui/badge'
 import { Modal } from '@/components/ui/modal'
 import { Button } from '@/components/ui/button'
+import { SkeletonText } from '@/components/ui/skeleton'
 
 export type RevisionRow = {
   id: string
@@ -17,9 +18,9 @@ export type RevisionRow = {
   updatedAt: string
 }
 
-const STATUS_VARIANT: Record<string, 'success' | 'muted' | 'brand'> = {
+const STATUS_VARIANT: Record<string, 'success' | 'muted' | 'default'> = {
   PUBLISHED: 'success',
-  DRAFT: 'brand',
+  DRAFT: 'default',
   // Written by the system, never chosen: the revision a newer one replaced.
   ARCHIVED: 'muted',
 }
@@ -50,38 +51,38 @@ export function KnowledgeRevisionPanel({
 }) {
   return (
     <Modal onClose={onClose} className="max-h-[85vh] w-full max-w-2xl space-y-3 overflow-y-auto p-4">
-      <div className="space-y-1">
-        <h2 className="text-sm font-semibold text-navy">Riwayat revisi</h2>
-        <p className="text-xs text-muted-foreground">{sourceTitle}</p>
+      <div className="space-y-0.5 border-b border-line pb-3">
+        <h2 className="text-base font-semibold text-ink">Riwayat revisi</h2>
+        <p className="text-sm text-ink-muted">{sourceTitle}</p>
       </div>
 
-      {loading && <p className="text-sm text-muted-foreground">Memuat riwayat...</p>}
-      {error && <p className="text-sm text-destructive">{error}</p>}
+      {loading && <SkeletonText lines={4} />}
+      {error && <p className="text-base text-danger">{error}</p>}
 
       {!loading && !error && revisions.length === 0 && (
-        <p className="text-sm text-muted-foreground">Sumber ini belum punya revisi.</p>
+        <p className="text-base text-ink-muted">Sumber ini belum punya revisi.</p>
       )}
 
       {!loading && !error && revisions.length > 0 && (
-        <ol className="space-y-2">
+        <ol className="divide-y divide-line border-b border-line">
           {revisions.map((revision) => (
-            <li key={revision.id} className="space-y-1 rounded border p-3">
+            <li key={revision.id} className="space-y-1 py-3 first:pt-0">
               <div className="flex flex-wrap items-center gap-2">
-                <span className="font-mono text-xs text-navy">v{revision.version}</span>
+                <span className="font-mono text-xs text-ink">v{revision.version}</span>
                 <Badge variant={STATUS_VARIANT[revision.status] ?? 'default'}>{revision.status}</Badge>
-                <span className="ml-auto text-xs text-muted-foreground">
+                <time dateTime={revision.createdAt} className="ml-auto text-xs text-ink-muted">
                   {new Date(revision.createdAt).toLocaleString('id-ID')}
-                </span>
+                </time>
               </div>
 
-              <p className="text-sm text-navy">{revision.title}</p>
-              {revision.summary && <p className="text-xs text-muted-foreground">{revision.summary}</p>}
+              <p className="text-base font-medium text-ink">{revision.title}</p>
+              {revision.summary && <p className="text-sm text-ink-muted">{revision.summary}</p>}
 
               {revision.changeReason && (
-                <p className="text-xs text-navy">Alasan: {revision.changeReason}</p>
+                <p className="text-sm text-ink">Alasan: {revision.changeReason}</p>
               )}
 
-              <p className="text-xs text-muted-foreground">
+              <p className="text-xs text-ink-subtle">
                 {/* Null when the account is gone. The revision outlives whoever wrote it, and an
                     empty name is more honest than inventing one. */}
                 Ditulis {revision.createdByName ?? '(akun terhapus)'}
@@ -93,9 +94,11 @@ export function KnowledgeRevisionPanel({
         </ol>
       )}
 
-      <Button type="button" variant="outline" onClick={onClose}>
-        Tutup
-      </Button>
+      <div className="flex justify-end">
+        <Button type="button" variant="outline" onClick={onClose}>
+          Tutup
+        </Button>
+      </div>
     </Modal>
   )
 }

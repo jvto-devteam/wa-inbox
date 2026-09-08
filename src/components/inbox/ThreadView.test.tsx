@@ -331,7 +331,10 @@ describe('ThreadView live delivery-status updates', () => {
       })
     })
 
-    await waitFor(() => expect(screen.getByText('FAILED')).toBeInTheDocument())
+    // Tahap 1C: lencana ini menampilkan kalimat ("Gagal terkirim"), bukan nama status
+    // mentah dari database. Perilaku yang ditegakkan tidak berubah: gelembungnya diganti
+    // di tempat, dan centang "Terkirim"-nya hilang.
+    await waitFor(() => expect(screen.getByText('Gagal terkirim')).toBeInTheDocument())
     expect(screen.queryByRole('img', { name: 'Terkirim' })).not.toBeInTheDocument()
     expect(screen.getAllByText('Penawaran paket Ijen')).toHaveLength(1)
   })
@@ -750,7 +753,7 @@ describe('ThreadView template variable data', () => {
 
     fireEvent.change(screen.getByLabelText('Channel'), { target: { value: 'UNOFFICIAL' } })
     fireEvent.click(screen.getByLabelText('Tambah lampiran atau template'))
-    fireEvent.click(await screen.findByText('📋 Template'))
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Template' }))
     fireEvent.click(await screen.findByText('Konfirmasi'))
 
     const picker = await screen.findByLabelText('Isi dari data booking/kontak')
@@ -926,5 +929,90 @@ describe('ThreadView date dividers', () => {
     await waitFor(() => expect(screen.getByText('Pesan hari ini')).toBeInTheDocument())
     expect(screen.getByText('Kemarin')).toBeInTheDocument()
     expect(screen.getByText('Hari ini')).toBeInTheDocument()
+  })
+})
+
+// Tahap 1C. Kepala percakapan, bentuk layar sempit, dan aturan gulungan kolom tengah.
+describe('ThreadView — kepala, layar sempit, dan gulungan', () => {
+  function mockBasic() {
+    vi.mocked(fetch).mockImplementation((url) => {
+      const s = String(url)
+      if (s.endsWith('/api/accounts')) return Promise.resolve({ ok: true, json: () => Promise.resolve([]) } as Response)
+      if (s.endsWith('/messages')) return Promise.resolve({ ok: true, json: () => Promise.resolve([]) } as Response)
+      return Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({ botEnabled: false, contactName: 'Bruno Figarola' }),
+      } as Response)
+    })
+  }
+
+  it('memberi kolomnya nama, dan riwayat pesannya diumumkan sebagai log yang bertambah', async () => {
+    mockBasic()
+    render(<ThreadView conversationId="conv_1" />)
+
+    expect(await screen.findByRole('region', { name: 'Percakapan' })).toBeInTheDocument()
+    expect(screen.getByRole('log', { name: 'Riwayat pesan' })).toBeInTheDocument()
+  })
+
+  it('menggulung di dalam riwayatnya sendiri; kolomnya tidak pernah menggulung utuh', async () => {
+    mockBasic()
+    const { container } = render(<ThreadView conversationId="conv_1" />)
+    await screen.findByRole('log', { name: 'Riwayat pesan' })
+
+    const column = container.firstElementChild as HTMLElement
+    expect(column).toHaveClass('h-full', 'min-h-0')
+    expect(column.className).not.toContain('overflow-y-auto')
+
+    const log = screen.getByRole('log', { name: 'Riwayat pesan' })
+    expect(log).toHaveClass('overflow-y-auto', 'min-h-0', 'flex-1')
+  })
+
+  it('tidak menampilkan tombol kembali kalau tidak ada tempat untuk kembali', async () => {
+    mockBasic()
+    render(<ThreadView conversationId="conv_1" />)
+    await screen.findByRole('log', { name: 'Riwayat pesan' })
+
+    expect(screen.queryByLabelText('Kembali ke daftar percakapan')).not.toBeInTheDocument()
+  })
+
+  it('menawarkan jalan kembali ke daftar saat halaman memberinya satu', async () => {
+    mockBasic()
+    const onBack = vi.fn()
+    render(<ThreadView conversationId="conv_1" onBack={onBack} />)
+
+    fireEvent.click(await screen.findByLabelText('Kembali ke daftar percakapan'))
+    expect(onBack).toHaveBeenCalled()
+  })
+
+  it('menamai tombol panel kontak menurut apa yang akan terjadi, bukan menurut keadaan sekarang', async () => {
+    mockBasic()
+    const onToggle = vi.fn()
+    const { rerender } = render(
+      <ThreadView conversationId="conv_1" contactPanelOpen onToggleContactPanel={onToggle} />
+    )
+
+    const hide = await screen.findByLabelText('Sembunyikan panel kontak')
+    expect(hide).toHaveAttribute('aria-pressed', 'true')
+    fireEvent.click(hide)
+    expect(onToggle).toHaveBeenCalled()
+
+    rerender(<ThreadView conversationId="conv_1" contactPanelOpen={false} onToggleContactPanel={onToggle} />)
+    expect(screen.getByLabelText('Tampilkan panel kontak')).toHaveAttribute('aria-pressed', 'false')
+  })
+
+  it('menjaga nama pilihan agen tetap bisa ditemukan pembaca layar meski labelnya tidak lagi di layar', async () => {
+    mockBasic()
+    render(<ThreadView conversationId="conv_1" />)
+
+    // Label "Ditugaskan ke" dilepas dari layar di Tahap 1C (nilainya sendiri sudah berbunyi),
+    // tapi namanya WAJIB tetap ada -- sebuah <select> tanpa nama adalah kontrol tanpa arti.
+    expect(await screen.findByLabelText('Ditugaskan ke')).toBeInTheDocument()
+  })
+
+  it('mengatakan percakapan ini masih kosong, alih-alih memperlihatkan area kosong tanpa penjelasan', async () => {
+    mockBasic()
+    render(<ThreadView conversationId="conv_1" />)
+
+    expect(await screen.findByText(/Belum ada pesan di percakapan ini/)).toBeInTheDocument()
   })
 })

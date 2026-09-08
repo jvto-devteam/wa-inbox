@@ -1,12 +1,12 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, cleanup, screen } from '@testing-library/react'
-import { readFileSync, existsSync } from 'node:fs'
+import { readFileSync, existsSync, readdirSync } from 'node:fs'
 import path from 'node:path'
 import AuthenticatedLayout from './layout'
 
-// The layout now renders <AppNav>, which reads usePathname() and fetches its own data.
-// Mocked here so these tests stay about the route group's structure; AppNav's own behaviour
-// (active menu, badges, logout) is covered in src/components/AppNav.test.tsx.
+// The layout now renders <AppRail>, which reads usePathname() and fetches its own data.
+// Mocked here so these tests stay about the route group's structure; AppRail's own behaviour
+// (active menu, badges, logout) is covered in src/components/AppRail.test.tsx.
 vi.mock('next/navigation', () => ({ usePathname: () => '/inbox' }))
 
 class FakeEventSource {
@@ -95,16 +95,21 @@ describe('authenticated route group', () => {
 // Until this wave, /dashboard, /inbox, /contacts, /templates and /settings had no links
 // between them anywhere in the UI — the only way to reach one was to type its URL — and there
 // was no logout control in the app at all. The group layout is where the shell belongs,
-// because "wrapped by this layout" and "should show the five menus" are the same set of pages.
+// because "wrapped by this layout" and "should show the top-level menus" are the same set of
+// pages. Tahap 1B mengganti bentuk shell itu (bar atas -> rail ikon), bukan isinya.
 describe('global navigation shell', () => {
-  it('gives every authenticated page the five top-level menus', () => {
+  it('gives every authenticated page every top-level menu', () => {
     render(<AuthenticatedLayout>{<div>halaman</div>}</AuthenticatedLayout>)
 
+    // Daftarnya ditulis penuh di sini — tujuh, bukan lima seperti sebelumnya. Chatbot dan Bot
+    // Control sudah lama ada di bar atas tapi tidak pernah ikut dijaga test ini.
     for (const [label, href] of [
       ['Beranda', '/dashboard'],
-      ['Chat / Inbox', '/inbox'],
+      ['Inbox', '/inbox'],
       ['Kontak', '/contacts'],
       ['Template Pesan', '/templates'],
+      ['Chatbot', '/chatbot'],
+      ['Bot Control', '/bot-control'],
       ['Pengaturan', '/settings'],
     ]) {
       expect(screen.getByRole('link', { name: label })).toHaveAttribute('href', href)
@@ -122,16 +127,56 @@ describe('global navigation shell', () => {
     // /login is outside the group, so it cannot inherit this layout. Guard the other half of
     // that too: the root layout must not grow its own copy of the nav.
     const rootLayout = readFileSync(path.join(appDir, 'layout.tsx'), 'utf-8')
-    expect(rootLayout).not.toMatch(/<AppNav/)
+    expect(rootLayout).not.toMatch(/<AppRail/)
   })
 
-  it('owns the viewport height so a full-height page cannot push the bar off screen', () => {
+  it('owns the viewport height so a full-height page cannot push the rail off screen', () => {
     // /inbox is a three-pane h-full grid. If the shell did not cap the height, the document
-    // would be nav + 100vh tall and the bar would scroll away.
+    // would be nav + 100vh tall and the rail would scroll away.
     const layout = readFileSync(path.join(appDir, '(authenticated)', 'layout.tsx'), 'utf-8')
     expect(layout).toMatch(/className="[^"]*\bh-screen\b/)
 
     const inbox = readFileSync(path.join(appDir, '(authenticated)', 'inbox', 'page.tsx'), 'utf-8')
     expect(inbox).not.toMatch(/className="[^"]*\bh-screen\b/)
+  })
+
+  it('menaruh rail di kiri pada layar lebar dan di bawah pada layar sempit, dari satu susunan', () => {
+    const layout = readFileSync(path.join(appDir, '(authenticated)', 'layout.tsx'), 'utf-8')
+
+    // flex-col-reverse menaruh anak PERTAMA (rail) di bawah; md:flex-row menaruhnya di kiri.
+    // Satu susunan DOM untuk dua bentuk: kalau ini pernah dipecah jadi dua salinan yang
+    // di-hide bergantian, setiap tujuan akan ada dua kali di DOM dan pembaca layar akan
+    // mengumumkan menu ganda di setiap halaman.
+    expect(layout).toMatch(/flex-col-reverse/)
+    expect(layout).toMatch(/md:flex-row/)
+  })
+
+  it('menyerahkan judul halaman ke satu komponen, jadi tidak ada halaman yang menulis <h1> sendiri', () => {
+    // Sebelum Tahap 1B, 17 halaman menyalin `<h1 className="text-xl font-semibold text-navy">`
+    // tangan demi tangan — dan sebagian sudah mulai berbeda (ada yang punya `mb-4`, ada yang
+    // dibungkus space-y-1, ada yang tidak). Yang menjaga mereka tetap sama bukan disiplin,
+    // tapi test ini: satu <h1> hidup di <PageHeader>, dan halaman memanggilnya.
+    function pagesUnder(dir: string): string[] {
+      const out: string[] = []
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const full = path.join(dir, entry.name)
+        if (entry.isDirectory()) out.push(...pagesUnder(full))
+        else if (entry.name === 'page.tsx') out.push(full)
+      }
+      return out
+    }
+
+    for (const file of pagesUnder(path.join(appDir, '(authenticated)'))) {
+      expect(readFileSync(file, 'utf-8'), `${file} menulis <h1> sendiri`).not.toMatch(/<h1[\s>]/)
+    }
+  })
+
+  it('menyerahkan gulungan ke area konten, bukan ke dokumen', () => {
+    // Halaman biasa menggulung di kotak ini; halaman setinggi penuh memakai h-full dan
+    // scroller-nya sendiri, sehingga kotak ini tidak pernah aktif — tidak ada gulungan ganda.
+    // `min-h-0`/`min-w-0` wajib: default min-size:auto pada flex item mendorong overflow-nya
+    // balik ke dokumen dan rail ikut tergulung keluar layar.
+    const layout = readFileSync(path.join(appDir, '(authenticated)', 'layout.tsx'), 'utf-8')
+    expect(layout).toMatch(/className="min-h-0 min-w-0 flex-1 overflow-y-auto"/)
   })
 })

@@ -20,15 +20,15 @@ export function FlowStepList({
   onSelect: (id: string) => void
 }) {
   if (nodes.length === 0) {
-    return <p className="text-sm text-muted-foreground">Flow ini belum punya langkah.</p>
+    return <p className="p-2 text-base text-ink-muted">Flow ini belum punya langkah.</p>
   }
 
   const ordered = [...nodes].sort((a, b) => a.order - b.order)
 
   return (
-    <ol aria-label="Langkah flow bot" className="space-y-2">
+    <ol aria-label="Langkah flow bot" className="divide-y divide-line">
       {ordered.map((node) => (
-        <li key={node.id}>
+        <li key={node.id} className="py-0.5 first:pt-0 last:pb-0">
           <FlowStepCard node={node} selected={node.id === selectedId} onSelect={onSelect} />
         </li>
       ))}

@@ -1,8 +1,8 @@
 'use client'
 import { useEffect, useState } from 'react'
-import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
+import { PanelSectionTitle } from './ContactPanel'
 import { fetchJson } from '@/lib/fetch-json'
 
 export type Reminder = { id: string; dueAt: string; note: string; done: boolean }
@@ -71,30 +71,30 @@ export function RemindersSection({ contactId }: { contactId: string }) {
 
   return (
     <div className="space-y-2">
-      <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Reminder</h3>
-      <Card className="space-y-2 p-3">
-        {reminders.length === 0 ? (
-          <p className="text-sm text-muted-foreground">Belum ada reminder.</p>
-        ) : (
-          <ul className="space-y-2">
-            {reminders.map((r) => (
-              <li key={r.id} className="flex items-start gap-2 border-b border-border pb-2 last:border-0 last:pb-0">
-                <input
-                  type="checkbox"
-                  aria-label={r.done ? `Tandai "${r.note}" belum selesai` : `Tandai "${r.note}" selesai`}
-                  checked={r.done}
-                  onChange={() => toggleDone(r)}
-                  className="mt-1 size-3.5 accent-brand"
-                />
-                <div className="flex-1 space-y-0.5">
-                  <p className={r.done ? 'text-sm text-muted-foreground line-through' : 'text-sm text-navy'}>{r.note}</p>
-                  <p className="text-xs text-muted-foreground">{formatDueDate(r.dueAt)}</p>
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
-      </Card>
+      <PanelSectionTitle>Reminder</PanelSectionTitle>
+      {reminders.length === 0 ? (
+        <p className="text-sm text-ink-muted">Belum ada reminder.</p>
+      ) : (
+        <ul className="divide-y divide-line border-y border-line">
+          {reminders.map((r) => (
+            <li key={r.id} className="flex items-start gap-2 py-2">
+              <input
+                type="checkbox"
+                aria-label={r.done ? `Tandai "${r.note}" belum selesai` : `Tandai "${r.note}" selesai`}
+                checked={r.done}
+                onChange={() => toggleDone(r)}
+                className="focus-ring mt-1 size-3.5 shrink-0 rounded-xs"
+              />
+              <div className="min-w-0 flex-1 space-y-0.5">
+                <p className={r.done ? 'text-sm break-words text-ink-subtle line-through' : 'text-sm break-words text-ink'}>
+                  {r.note}
+                </p>
+                <p className="text-xs text-ink-subtle">{formatDueDate(r.dueAt)}</p>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
       <div className="space-y-2">
         <Input
           type="date"
@@ -109,11 +109,15 @@ export function RemindersSection({ contactId }: { contactId: string }) {
           onChange={(e) => setNote(e.target.value)}
           placeholder="Contoh: follow up pembayaran DP"
         />
-        <Button type="button" onClick={addReminder} disabled={!note.trim() || !dueDate || submitting}>
+        <Button type="button" variant="outline" onClick={addReminder} disabled={!note.trim() || !dueDate || submitting}>
           Tambah Reminder
         </Button>
       </div>
-      {error && <p className="text-xs text-destructive">{error}</p>}
+      {error && (
+        <p role="alert" className="text-xs text-danger">
+          {error}
+        </p>
+      )}
     </div>
   )
 }

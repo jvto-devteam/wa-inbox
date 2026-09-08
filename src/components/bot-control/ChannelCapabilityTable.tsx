@@ -40,16 +40,19 @@ export function ChannelCapabilityTable() {
     <Table>
       <TableHeader>
         <TableRow>
+          {/* Lebar tetap, bukan pecahan: tabel ini sekarang duduk di kolom yang lebarnya
+              berubah-ubah, dan `w-1/2` membuat kolom nama tumbuh mengikuti wadah sementara
+              tiga kolom lencana di sebelahnya justru makin renggang. */}
           <TableHead>Kemampuan</TableHead>
-          <TableHead>Official</TableHead>
-          <TableHead>Unofficial</TableHead>
-          <TableHead />
+          <TableHead className="w-32">Official</TableHead>
+          <TableHead className="w-32">Unofficial</TableHead>
+          <TableHead className="w-44">Catatan</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
         {capabilities.map((capability) => (
           <TableRow key={capability}>
-            <TableCell className="text-sm text-foreground">{LABELS[capability]}</TableCell>
+            <TableCell className="text-base font-medium text-ink">{LABELS[capability]}</TableCell>
             <TableCell>
               <CapabilityCell value={CHANNEL_CAPABILITIES.OFFICIAL[capability]} />
             </TableCell>
@@ -57,7 +60,13 @@ export function ChannelCapabilityTable() {
               <CapabilityCell value={CHANNEL_CAPABILITIES.UNOFFICIAL[capability]} />
             </TableCell>
             <TableCell>
-              {officialOnly.has(capability) && <Badge variant="brand">Official only</Badge>}
+              {/* "-" alih-alih sel kosong, sama seperti tabel Kontak: sel yang benar-benar
+                  kosong tidak bisa dibedakan dari sel yang gagal dirender. */}
+              {officialOnly.has(capability) ? (
+                <Badge variant="warning">Official only</Badge>
+              ) : (
+                <span className="text-ink-subtle">-</span>
+              )}
             </TableCell>
           </TableRow>
         ))}

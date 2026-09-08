@@ -442,3 +442,135 @@ function conversationRow() {
     labels: [],
   }
 }
+
+// Tahap 1C. Dua hal yang tidak punya penjaga sebelumnya: apakah daftar ini bisa dipakai tanpa
+// tetikus, dan apakah ia menggulung SENDIRI (bukan mendorong overflow-nya ke pembungkus
+// halaman, yang menghasilkan gulungan ganda).
+describe('ConversationList — aksesibilitas dan gulungan', () => {
+  function row(id: string, overrides: Record<string, unknown> = {}) {
+    return {
+      id,
+      contactName: `Kontak ${id}`,
+      contactPhone: `62812000${id}`,
+      avatarUrl: null,
+      lastMessage: `Pesan ${id}`,
+      lastMessageSentBy: 'CUSTOMER',
+      lastMessageAt: '2026-07-20T10:00:00.000Z',
+      botEnabled: true,
+      status: 'OPEN',
+      isPinned: false,
+      orderChannel: null,
+      pipelineStage: 'new',
+      unreadCount: 0,
+      labels: [],
+      ...overrides,
+    }
+  }
+
+  it('memberi kolomnya nama yang bisa dibaca pembaca layar', async () => {
+    render(<ConversationList selectedId={null} onSelect={() => {}} />)
+    await advanceTimers(0)
+
+    expect(screen.getByRole('complementary', { name: 'Daftar percakapan' })).toBeInTheDocument()
+  })
+
+  it('memberi kotak pencarian nama sendiri, bukan hanya placeholder', async () => {
+    render(<ConversationList selectedId={null} onSelect={() => {}} />)
+    await advanceTimers(0)
+
+    expect(screen.getByLabelText('Cari percakapan')).toBeInTheDocument()
+  })
+
+  it('menyusun barisnya sebagai daftar sungguhan, dan tiap baris adalah tombol yang bisa di-Tab', async () => {
+    vi.mocked(fetch).mockImplementation(() => Promise.resolve(jsonResponse([row('a'), row('b')])))
+    render(<ConversationList selectedId={null} onSelect={() => {}} />)
+    await advanceTimers(0)
+
+    const items = screen.getAllByRole('listitem')
+    expect(items).toHaveLength(2)
+    // Tombol native: fokus keyboard, Enter dan Spasi datang gratis dan benar. Sebuah <div
+    // onClick> akan terlihat sama persis dan tidak bisa dicapai tanpa tetikus sama sekali.
+    for (const item of items) {
+      const button = item.querySelector('button')
+      expect(button).toBeInTheDocument()
+      expect(button).not.toHaveAttribute('disabled')
+      expect(button?.tabIndex).not.toBe(-1)
+    }
+  })
+
+  it('menandai percakapan yang sedang dibuka dengan aria-current, bukan hanya dengan warna', async () => {
+    vi.mocked(fetch).mockImplementation(() => Promise.resolve(jsonResponse([row('a'), row('b')])))
+    render(<ConversationList selectedId="b" onSelect={() => {}} />)
+    await advanceTimers(0)
+
+    const buttons = screen.getAllByRole('button')
+    expect(buttons.find((b) => b.textContent?.includes('Kontak b'))).toHaveAttribute('aria-current', 'true')
+    expect(buttons.find((b) => b.textContent?.includes('Kontak a'))).not.toHaveAttribute('aria-current')
+  })
+
+  it('memilih percakapan lewat Enter di baris yang sedang difokus', async () => {
+    vi.mocked(fetch).mockImplementation(() => Promise.resolve(jsonResponse([row('a')])))
+    const onSelect = vi.fn()
+    render(<ConversationList selectedId={null} onSelect={onSelect} />)
+    await advanceTimers(0)
+
+    const button = screen.getAllByRole('button')[0]
+    button.focus()
+    expect(document.activeElement).toBe(button)
+    // fireEvent.click adalah apa yang dikirim browser untuk Enter/Spasi pada <button>.
+    fireEvent.click(button)
+
+    expect(onSelect).toHaveBeenCalledWith('a')
+  })
+
+  it('menggulung di dalam kolomnya sendiri, dan kolomnya tidak boleh tumbuh melewati tingginya', async () => {
+    const { container } = render(<ConversationList selectedId={null} onSelect={() => {}} />)
+    await advanceTimers(0)
+
+    const column = container.firstElementChild as HTMLElement
+    expect(column).toHaveClass('h-full', 'min-h-0')
+    // Kolomnya sendiri TIDAK menggulung; scroller-nya ada di dalam, jadi kepala pencarian tetap
+    // di tempat dan tidak ada dua bilah gulung yang bertumpuk.
+    expect(column.className).not.toContain('overflow-y-auto')
+
+    const scroller = column.querySelector('.overflow-y-auto')
+    expect(scroller).toBeInTheDocument()
+    expect(scroller).toHaveClass('min-h-0', 'flex-1')
+  })
+})
+
+// Keadaan memuat dan keadaan kosong: dirancang, bukan kebetulan.
+describe('ConversationList — keadaan memuat dan kosong', () => {
+  it('menunjukkan kerangka baris selagi permintaan pertama berjalan, bukan daftar kosong', () => {
+    // Sengaja tidak pernah selesai: inilah jendela waktu yang sedang diuji.
+    vi.mocked(fetch).mockImplementation(() => new Promise(() => {}))
+    const { container } = render(<ConversationList selectedId={null} onSelect={() => {}} />)
+
+    expect(container.querySelectorAll('.animate-pulse').length).toBeGreaterThan(0)
+  })
+
+  it('mengganti kerangka dengan ajakan yang jelas ketika memang belum ada percakapan', async () => {
+    render(<ConversationList selectedId={null} onSelect={() => {}} />)
+    await advanceTimers(0)
+
+    expect(screen.getByText('Belum ada percakapan')).toBeInTheDocument()
+    expect(screen.getByText(/pelanggan mengirim pesan pertama/)).toBeInTheDocument()
+  })
+
+  it('membedakan "pencarian tidak ketemu" dari "memang belum ada apa-apa", dan menawarkan jalan keluar', async () => {
+    render(<ConversationList selectedId={null} onSelect={() => {}} />)
+    await advanceTimers(0)
+
+    fireEvent.change(screen.getByPlaceholderText(SEARCH_INPUT_PLACEHOLDER), { target: { value: 'ijen' } })
+    await advanceTimers(300)
+
+    expect(screen.getByText('Tidak ada yang cocok')).toBeInTheDocument()
+    expect(screen.getByText(/"ijen"/)).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Hapus pencarian' }))
+    await advanceTimers(300)
+
+    expect(screen.getByText('Belum ada percakapan')).toBeInTheDocument()
+    expect(screen.getByPlaceholderText(SEARCH_INPUT_PLACEHOLDER)).toHaveValue('')
+  })
+})

@@ -1,10 +1,12 @@
 'use client'
 import { useEffect, useRef, useState, type ChangeEvent } from 'react'
+import { Bot, BotOff, FileText, Film, Image as ImageIcon, Music, Paperclip, Plus, SendHorizontal, X } from 'lucide-react'
 import { SENDER_LABEL, type MessageView } from './MessageBubble'
 import { Select } from '@/components/ui/select'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Button } from '@/components/ui/button'
+import { IconButton } from '@/components/ui/icon-button'
 import { Card } from '@/components/ui/card'
 import { fetchJson } from '@/lib/fetch-json'
 import { formatWhatsAppText } from '@/lib/whatsapp-format'
@@ -41,7 +43,19 @@ type UploadedMedia = { url: string; type: MediaKind; mimeType: string; fileName:
 type PendingFile = { file: File; previewUrl: string; kind: MediaKind }
 
 const UNCATEGORIZED_LABEL = 'Lainnya'
-const ATTACHMENT_ICON: Record<MediaKind, string> = { image: '🖼️', video: '🎞️', audio: '🎵', document: '📎' }
+const ATTACHMENT_ICON: Record<MediaKind, typeof ImageIcon> = {
+  image: ImageIcon,
+  video: Film,
+  audio: Music,
+  document: FileText,
+}
+// Placeholder kotak tulis. Bentuk lamanya 'Reply on WhatsApp...' -- satu-satunya kalimat
+// berbahasa Inggris di layar yang seluruhnya berbahasa Indonesia, dan ia menyebut aplikasi
+// lain, bukan pekerjaan yang sedang dilakukan di sini.
+export const COMPOSER_PLACEHOLDER = 'Tulis balasan ke pelanggan...'
+// Batas tumbuh kotak tulis, dalam piksel. Di atas ini ia menggulung sendiri alih-alih terus
+// mendorong riwayat percakapan keluar layar -- kira-kira enam baris di 15px/22px.
+const COMPOSER_MAX_HEIGHT = 132
 
 function mediaKindFromMime(mime: string): MediaKind {
   if (mime.startsWith('image/')) return 'image'
@@ -73,7 +87,7 @@ function VariableSourceSelect({ fields, onPick }: { fields: VariableField[]; onP
         if (e.target.value) onPick(e.target.value)
         e.target.value = ''
       }}
-      className="shrink-0 rounded border border-border bg-secondary px-1.5 py-1.5 text-xs text-muted-foreground"
+      className="field-focus select-chevron h-8 shrink-0 rounded-md border border-line-strong bg-surface pr-6 pl-2 text-xs text-ink-muted outline-none"
     >
       <option value="">Isi dari data...</option>
       {fields.map((f, i) => (
@@ -136,6 +150,7 @@ export function ComposeBox({
   const [attachMenuOpen, setAttachMenuOpen] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const attachMenuRef = useRef<HTMLDivElement>(null)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
   // The OFFICIAL template currently being filled in (its variables need values before it can
   // be dispatched) -- null means the picker is just showing the list, not a param form.
   const [templateForm, setTemplateForm] = useState<OfficialTemplate | null>(null)
@@ -181,6 +196,19 @@ export function ComposeBox({
     channelTouched.current = true
     setChannel(value)
   }
+
+  // Kotak tulis tumbuh mengikuti isinya, bukan mengikuti jumlah baris baru. Bentuk sebelumnya
+  // menghitung '\n' (rows={text.split('\n').length}), jadi satu paragraf panjang yang
+  // membungkus ke lima baris di layar tetap ditampilkan setinggi satu baris dan operator
+  // menulis ke dalam lubang intip. Diukur dari scrollHeight sesudah tinggi dikembalikan ke
+  // auto -- satu-satunya cara membaca tinggi konten sebenarnya yang sudah menyusut.
+  useEffect(() => {
+    const el = textareaRef.current
+    if (!el) return
+    el.style.height = 'auto'
+    // jsdom melaporkan scrollHeight 0; jangan menulis tinggi 0px ke elemen sungguhan.
+    if (el.scrollHeight > 0) el.style.height = `${Math.min(el.scrollHeight, COMPOSER_MAX_HEIGHT)}px`
+  }, [text])
 
   // Same dismiss-on-outside-click/Escape pattern as AppNav's account menu.
   useEffect(() => {
@@ -470,49 +498,48 @@ export function ComposeBox({
   }, {})
 
   return (
-    <div className="flex flex-col gap-2 border-t border-border bg-white p-3">
+    // Menempel di dasar kolom thread. `shrink-0` supaya ia tidak pernah diperas oleh riwayat
+    // di atasnya: kotak tulis adalah alat kerja, bukan sisa ruang.
+    <div className="flex shrink-0 flex-col gap-2 border-t border-line bg-surface p-2.5">
       {replyingTo && (
-        <div className="flex items-center justify-between gap-2 rounded border-l-2 border-brand bg-secondary px-2.5 py-1.5 text-xs">
+        <div className="flex items-center justify-between gap-2 rounded-sm border-l-2 border-accent bg-surface-sunken px-2.5 py-1.5 text-xs">
           <div className="min-w-0">
-            <p className="font-medium text-brand">Membalas {SENDER_LABEL[replyingTo.sentBy] ?? replyingTo.sentBy}</p>
-            <p className="truncate text-muted-foreground">
+            <p className="font-medium text-ink">Membalas {SENDER_LABEL[replyingTo.sentBy] ?? replyingTo.sentBy}</p>
+            <p className="truncate text-ink-muted">
               {replyingTo.content ? formatWhatsAppText(replyingTo.content) : replyingTo.type && replyingTo.type !== 'text' ? `[${replyingTo.type}]` : ''}
             </p>
           </div>
-          <button
-            type="button"
+          <IconButton
+            size="sm"
+            label="Batalkan balasan"
+            icon={<X strokeWidth={2} />}
             onClick={onCancelReply}
-            aria-label="Batalkan balasan"
-            className="shrink-0 text-muted-foreground hover:text-foreground"
-          >
-            ✕
-          </button>
+          />
         </div>
       )}
-      {botEnabled ? (
-        <button
-          type="button"
-          onClick={toggleBot}
-          className="badge self-start cursor-pointer bg-amber-50 text-amber-700"
-        >
-          Ambil Alih dari Bot
-        </button>
-      ) : (
-        // Bidirectional: when the bot is off for this chat -- either because an agent took
-        // over above, or because the global mode is Off ("aktifkan manual per chat") and this
-        // conversation was never opted in -- an agent can flip it back on for just this one
-        // chat via the same toggle-bot endpoint.
-        <button
-          type="button"
-          onClick={toggleBot}
-          className="badge self-start cursor-pointer bg-emerald-50 text-emerald-700"
-        >
-          Aktifkan Bot untuk Chat Ini
-        </button>
+      {/* Siapa yang menjawab chat ini, dan tombol untuk menukarnya. Sebelumnya dua tombol pil
+          berwarna kuning/hijau tanpa kalimat apa pun di sebelahnya, jadi keadaan sekarang
+          harus disimpulkan dari tombolnya sendiri -- yang justru menyebut keadaan BERIKUTNYA. */}
+      <div className="flex items-center gap-2 text-xs text-ink-muted">
+        {botEnabled ? (
+          <Bot aria-hidden="true" className="size-3.5 shrink-0 text-ink-subtle" strokeWidth={1.75} />
+        ) : (
+          <BotOff aria-hidden="true" className="size-3.5 shrink-0 text-ink-subtle" strokeWidth={1.75} />
+        )}
+        <span className="min-w-0 truncate">
+          {botEnabled ? 'Bot menjawab chat ini otomatis' : 'Chat ini dijawab agen'}
+        </span>
+        <Button type="button" variant="outline" size="sm" onClick={toggleBot} className="ml-auto">
+          {botEnabled ? 'Ambil Alih dari Bot' : 'Aktifkan Bot untuk Chat Ini'}
+        </Button>
+      </div>
+      {attachmentError && (
+        <p role="alert" className="text-xs text-danger">
+          {attachmentError}
+        </p>
       )}
-      {attachmentError && <p className="text-xs text-destructive">{attachmentError}</p>}
       {pendingFile && (
-        <div className="relative w-fit max-w-40 rounded border border-border bg-secondary p-1.5">
+        <div className="relative w-fit max-w-40 rounded-md border border-line bg-surface-sunken p-1.5">
           <button
             type="button"
             onClick={() => {
@@ -520,9 +547,9 @@ export function ComposeBox({
               setAttachment(null)
             }}
             aria-label="Batalkan lampiran"
-            className="absolute -right-1.5 -top-1.5 flex size-5 items-center justify-center rounded-full bg-navy text-xs text-white shadow"
+            className="focus-ring absolute -top-2 -right-2 flex size-5 items-center justify-center rounded-full bg-ink text-white hover:bg-ink/85"
           >
-            ✕
+            <X aria-hidden="true" className="size-3" strokeWidth={2.5} />
           </button>
           {pendingFile.kind === 'image' ? (
             <img src={pendingFile.previewUrl} alt={pendingFile.file.name} className="h-28 w-full rounded object-cover" />
@@ -531,20 +558,23 @@ export function ComposeBox({
             // the first frame by default with no autoplay/interaction needed.
             <video src={pendingFile.previewUrl} className="h-28 w-full rounded object-cover" muted />
           ) : (
-            <div className="flex items-center gap-1.5 px-1 py-6 text-xs">
-              <span className="text-lg">{ATTACHMENT_ICON[pendingFile.kind]}</span>
+            <div className="flex items-center gap-1.5 px-1 py-6 text-xs text-ink">
+              {(() => {
+                const Icon = ATTACHMENT_ICON[pendingFile.kind]
+                return <Icon aria-hidden="true" className="size-4 shrink-0 text-ink-subtle" strokeWidth={1.75} />
+              })()}
               <span className="min-w-0 truncate">{pendingFile.file.name}</span>
             </div>
           )}
-          {uploading && <p className="mt-1 text-center text-[10px] text-muted-foreground">Mengunggah...</p>}
+          {uploading && <p className="mt-1 text-center text-[10px] text-ink-muted">Mengunggah...</p>}
         </div>
       )}
       {pickerOpen && templateForm && (
         <Card className="space-y-3 p-3">
-          <h4 className="text-sm font-medium">Kirim Template: {templateForm.name}</h4>
+          <h4 className="text-base font-semibold text-ink">Kirim Template: {templateForm.name}</h4>
           {templateForm.variables?.map((varName, i) => (
             <div key={varName} className="space-y-1">
-              <label htmlFor={`tpl-param-${i}`} className="text-xs text-muted-foreground">
+              <label htmlFor={`tpl-param-${i}`} className="text-xs font-medium text-ink-muted">
                 {varName}
               </label>
               <div className="flex gap-1.5">
@@ -565,7 +595,7 @@ export function ComposeBox({
           ))}
           {templateForm.format === 'LTO' && (
             <div className="space-y-1">
-              <label htmlFor="tpl-lto-expiration" className="text-xs text-muted-foreground">
+              <label htmlFor="tpl-lto-expiration" className="text-xs font-medium text-ink-muted">
                 Waktu kadaluarsa penawaran
               </label>
               <Input
@@ -579,7 +609,7 @@ export function ComposeBox({
           )}
           {templateForm.format === 'COUPON' && (
             <div className="space-y-1">
-              <label htmlFor="tpl-coupon-code" className="text-xs text-muted-foreground">
+              <label htmlFor="tpl-coupon-code" className="text-xs font-medium text-ink-muted">
                 Kode kupon
               </label>
               <Input
@@ -611,10 +641,10 @@ export function ComposeBox({
       )}
       {pickerOpen && quickReplyForm && (
         <Card className="space-y-3 p-3">
-          <h4 className="text-sm font-medium">Balasan Cepat: {quickReplyForm.template.name}</h4>
+          <h4 className="text-base font-semibold text-ink">Balasan Cepat: {quickReplyForm.template.name}</h4>
           {quickReplyForm.varNumbers.map((n, i) => (
             <div key={n} className="space-y-1">
-              <label htmlFor={`qr-param-${i}`} className="text-xs text-muted-foreground">
+              <label htmlFor={`qr-param-${i}`} className="text-xs font-medium text-ink-muted">
                 {`{{${n}}}`}
               </label>
               <div className="flex gap-1.5">
@@ -653,18 +683,16 @@ export function ComposeBox({
       )}
       {pickerOpen && !templateForm && !quickReplyForm && (
         <Card className="max-h-80 space-y-3 overflow-y-auto p-3">
-          <div className="flex items-center justify-between">
-            <h4 className="text-[11px] font-semibold tracking-wide text-muted-foreground">
+          <div className="flex items-center justify-between gap-2">
+            <h4 className="text-xs font-semibold tracking-wide text-ink-subtle uppercase">
               {channel === 'OFFICIAL' ? 'TEMPLATE RESMI (META)' : 'BALASAN CEPAT'}
             </h4>
-            <button
-              type="button"
+            <IconButton
+              size="sm"
+              label="Tutup daftar template"
+              icon={<X strokeWidth={2} />}
               onClick={() => setPickerOpen(false)}
-              aria-label="Tutup daftar template"
-              className="text-muted-foreground hover:text-foreground"
-            >
-              ✕
-            </button>
+            />
           </div>
           {/* Only the templates sendable on whichever channel is currently selected: an
               OFFICIAL template is a real Cloud API dispatch (see sendTemplate) that has no
@@ -673,7 +701,7 @@ export function ComposeBox({
               the channel actually selected below. */}
           {channel === 'OFFICIAL' ? (
             officialTemplates.length === 0 ? (
-              <p className="text-sm text-muted-foreground">Belum ada template resmi yang disetujui.</p>
+              <p className="py-4 text-center text-sm text-ink-muted">Belum ada template resmi yang disetujui.</p>
             ) : (
               <div className="grid grid-cols-2 gap-2">
                 {officialTemplates.map((t) => (
@@ -682,7 +710,7 @@ export function ComposeBox({
               </div>
             )
           ) : templates.length === 0 ? (
-            <p className="text-sm text-muted-foreground">Belum ada balasan cepat.</p>
+            <p className="py-4 text-center text-sm text-ink-muted">Belum ada balasan cepat.</p>
           ) : (
             Object.entries(templatesByCategory).map(([category, items]) => (
               <div key={category} className="space-y-1.5">
@@ -690,7 +718,7 @@ export function ComposeBox({
                     so a category heading can never collide with an item's own `name` text when
                     they happen to be the same string — RTL's getByText/findByText would otherwise
                     throw on the ambiguous match. */}
-                <h5 className="text-[10px] font-semibold tracking-wide text-muted-foreground">
+                <h5 className="text-[10px] font-semibold tracking-wide text-ink-subtle">
                   {category.toUpperCase()}
                 </h5>
                 <div className="grid grid-cols-2 gap-2">
@@ -703,64 +731,82 @@ export function ComposeBox({
           )}
         </Card>
       )}
-      {templateError && <p className="text-xs text-destructive">{templateError}</p>}
-      {sendError && <p className="text-xs text-destructive">{sendError}</p>}
-      <div className="flex items-end gap-2">
+      {templateError && (
+        <p role="alert" className="text-xs text-danger">
+          {templateError}
+        </p>
+      )}
+      {sendError && (
+        <p role="alert" className="text-xs text-danger">
+          {sendError}
+        </p>
+      )}
+      {/* Satu baris alat: jalur kirim, lampiran/template, kotak tulis, kirim. items-end supaya
+          tombol tetap sejajar dasar kotak tulis saat kotaknya tumbuh, bukan melompat ke tengah. */}
+      <div className="flex items-end gap-1.5">
         {!isTest && (
           <>
             <Select
               value={channel}
               onChange={(e) => selectChannel(e.target.value as 'OFFICIAL' | 'UNOFFICIAL')}
-              className="w-auto"
+              className="w-auto shrink-0 text-sm"
               aria-label="Channel"
             >
               <option value="OFFICIAL">Official</option>
               <option value="UNOFFICIAL">Unofficial</option>
             </Select>
             <input ref={fileInputRef} type="file" className="hidden" onChange={handleAttachmentSelected} />
-            <div ref={attachMenuRef} className="relative">
+            <div ref={attachMenuRef} className="relative shrink-0">
               {/* A single "+" trigger for everything besides plain text -- Foto & Video, Dokumen,
                   and Template are three peers in the same menu, not a separate standalone
                   "Template" button living outside it. */}
-              <Button
-                type="button"
+              <IconButton
                 variant="outline"
-                size="sm"
-                aria-label="Tambah lampiran atau template"
+                label="Tambah lampiran atau template"
+                icon={<Plus strokeWidth={2} />}
+                aria-expanded={attachMenuOpen}
+                aria-haspopup="menu"
                 onClick={() => setAttachMenuOpen((prev) => !prev)}
                 disabled={uploading}
-              >
-                +
-              </Button>
+              />
               {attachMenuOpen && (
-                <Card className="absolute bottom-full left-0 z-10 mb-1 w-44 space-y-0.5 p-1">
+                <Card role="menu" className="absolute bottom-full left-0 z-10 mb-1.5 w-48 space-y-0.5 p-1 shadow-popover">
                   <button
                     type="button"
+                    role="menuitem"
                     onClick={() => pickAttachment('media')}
-                    className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-muted"
+                    className="focus-ring flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-base text-ink hover:bg-surface-sunken"
                   >
-                    🖼️ Foto &amp; Video
+                    <ImageIcon aria-hidden="true" className="size-4 shrink-0 text-ink-subtle" strokeWidth={1.75} />
+                    Foto &amp; Video
                   </button>
                   <button
                     type="button"
+                    role="menuitem"
                     onClick={() => pickAttachment('document')}
-                    className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-muted"
+                    className="focus-ring flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-base text-ink hover:bg-surface-sunken"
                   >
-                    📄 Dokumen
+                    <Paperclip aria-hidden="true" className="size-4 shrink-0 text-ink-subtle" strokeWidth={1.75} />
+                    Dokumen
                   </button>
                   <button
                     type="button"
+                    role="menuitem"
                     onClick={openTemplatePicker}
-                    className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-muted"
+                    className="focus-ring flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-base text-ink hover:bg-surface-sunken"
                   >
-                    📋 Template
+                    <FileText aria-hidden="true" className="size-4 shrink-0 text-ink-subtle" strokeWidth={1.75} />
+                    Template
                   </button>
                 </Card>
               )}
             </div>
           </>
         )}
+        {/* max-h-33 = 33 x 4px = 132px = COMPOSER_MAX_HEIGHT di atas. Kelas literal, bukan
+            dirangkai dari konstanta, supaya pemindai kelas Tailwind melihatnya. */}
         <Textarea
+          ref={textareaRef}
           value={text}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => {
@@ -771,15 +817,19 @@ export function ComposeBox({
               send()
             }
           }}
-          placeholder={isTest ? 'Ketik sebagai customer untuk menguji bot...' : 'Reply on WhatsApp...'}
+          placeholder={isTest ? 'Ketik sebagai customer untuk menguji bot...' : COMPOSER_PLACEHOLDER}
           aria-label="Pesan"
-          rows={Math.min(5, Math.max(1, text.split('\n').length))}
-          className="resize-none py-1.5"
+          rows={1}
+          className="max-h-33 min-h-8 resize-none py-1.5 text-md leading-snug"
         />
-        <Button onClick={send} disabled={sending || uploading}>
+        <Button onClick={send} disabled={sending || uploading} className="shrink-0">
+          <SendHorizontal aria-hidden="true" className="size-4" strokeWidth={1.75} />
           Kirim
         </Button>
       </div>
+      <p className="text-[11px] text-ink-subtle">
+        Enter mengirim. Shift + Enter membuat baris baru.
+      </p>
     </div>
   )
 }

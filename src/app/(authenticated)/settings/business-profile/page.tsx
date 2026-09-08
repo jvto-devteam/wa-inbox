@@ -1,10 +1,12 @@
 'use client'
 import { useEffect, useState } from 'react'
-import Link from 'next/link'
-import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { Field, FieldError } from '@/components/ui/label'
+import { Skeleton, SkeletonText } from '@/components/ui/skeleton'
+import { PageHeader } from '@/components/ui/page-header'
+import { FormSection } from '@/components/settings/section'
 import { fetchJson } from '@/lib/fetch-json'
 
 type BusinessProfile = {
@@ -31,6 +33,40 @@ const REVIEW_STATUS_VARIANT: Record<string, 'success' | 'warning' | 'destructive
   APPROVED: 'success',
   PENDING: 'warning',
   REJECTED: 'destructive',
+}
+
+/** Satu sakelar commerce: apa yang dilihat pelanggan kalau dinyalakan, lalu kotak centangnya. */
+function CommerceRow({
+  title,
+  description,
+  ariaLabel,
+  checked,
+  disabled,
+  onToggle,
+}: {
+  title: string
+  description: string
+  ariaLabel: string
+  checked: boolean
+  disabled: boolean
+  onToggle: () => void
+}) {
+  return (
+    <label className="flex cursor-pointer items-start justify-between gap-4 border-b border-line py-3 first:pt-0 last:border-b-0 last:pb-0">
+      <span className="min-w-0 flex-1">
+        <span className="block text-base font-medium text-ink">{title}</span>
+        <span className="mt-0.5 block text-sm text-ink-muted">{description}</span>
+      </span>
+      <input
+        type="checkbox"
+        aria-label={ariaLabel}
+        className="focus-ring mt-1 size-4 shrink-0"
+        checked={checked}
+        disabled={disabled}
+        onChange={onToggle}
+      />
+    </label>
+  )
 }
 
 /**
@@ -124,115 +160,129 @@ export default function BusinessProfilePage() {
   }
 
   return (
-    <main className="mx-auto max-w-2xl space-y-4 p-6">
-      <div className="space-y-1">
-        <Link href="/settings" className="text-sm text-brand hover:underline">
-          &larr; Kembali ke Pengaturan
-        </Link>
-        <h1 className="text-xl font-semibold text-navy">Profil Bisnis WhatsApp</h1>
-      </div>
+    <main className="mx-auto w-full max-w-[1400px] p-6" aria-busy={loading}>
+      <PageHeader
+        backHref="/settings"
+        backLabel="Kembali ke Pengaturan"
+        title="Profil Bisnis WhatsApp"
+        description="Info yang dilihat pelanggan di profil WhatsApp bisnis, status akun, dan sakelar commerce. Semuanya dibaca dan ditulis langsung ke Meta."
+      />
 
-      {loading && <p className="text-sm text-muted-foreground">Memuat...</p>}
-      {loadError && <p className="text-sm text-destructive">{loadError}</p>}
-
-      {account && (
-        <Card className="space-y-2 p-4">
-          <h2 className="font-medium text-navy">{account.name ?? 'Akun WhatsApp Business'}</h2>
-          <div className="flex flex-wrap items-center gap-1.5">
-            {account.accountReviewStatus && (
-              <Badge variant={REVIEW_STATUS_VARIANT[account.accountReviewStatus] ?? 'muted'}>
-                Review: {account.accountReviewStatus}
-              </Badge>
-            )}
-            {account.businessVerificationStatus && (
-              <Badge variant="muted">Verifikasi: {account.businessVerificationStatus}</Badge>
-            )}
-          </div>
-        </Card>
+      {loading && (
+        <div className="mt-8 flex flex-col gap-8">
+          <Skeleton className="h-5 w-56" />
+          <SkeletonText lines={5} />
+          <SkeletonText lines={3} />
+        </div>
       )}
+      {loadError && <FieldError className="mt-4 text-sm">{loadError}</FieldError>}
 
-      {profile && (
-        <Card className="space-y-3 p-4">
-          <h2 className="font-medium text-navy">Info Bisnis</h2>
-          <div className="space-y-1">
-            <label htmlFor="bp-about" className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              About (maks. 139 karakter)
-            </label>
-            <Input id="bp-about" value={profile.about ?? ''} maxLength={139} onChange={(e) => updateField('about', e.target.value)} />
-          </div>
-          <div className="space-y-1">
-            <label htmlFor="bp-description" className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              Deskripsi
-            </label>
-            <Input
-              id="bp-description"
-              value={profile.description ?? ''}
-              maxLength={256}
-              onChange={(e) => updateField('description', e.target.value)}
-            />
-          </div>
-          <div className="space-y-1">
-            <label htmlFor="bp-address" className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              Alamat
-            </label>
-            <Input id="bp-address" value={profile.address ?? ''} maxLength={256} onChange={(e) => updateField('address', e.target.value)} />
-          </div>
-          <div className="grid gap-2 sm:grid-cols-2">
-            <div className="space-y-1">
-              <label htmlFor="bp-email" className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                Email
-              </label>
-              <Input id="bp-email" value={profile.email ?? ''} maxLength={128} onChange={(e) => updateField('email', e.target.value)} />
+      {/* Status akun membentang penuh — ia cuma dua lencana. Info bisnis dan Commerce
+          berdampingan: keduanya formulir pendek yang tidak butuh 1300px sendirian. */}
+      <div className="mt-6 grid gap-4 xl:grid-cols-2 xl:items-start">
+        {account && (
+          <FormSection
+            className="xl:col-span-2"
+            title={account.name ?? 'Akun WhatsApp Business'}
+            description="Status akun menurut Meta. Hanya bisa diubah dari Meta Business Manager, bukan dari sini."
+          >
+            <div className="flex flex-wrap items-center gap-2">
+              {account.accountReviewStatus && (
+                <Badge variant={REVIEW_STATUS_VARIANT[account.accountReviewStatus] ?? 'muted'}>
+                  Review: {account.accountReviewStatus}
+                </Badge>
+              )}
+              {account.businessVerificationStatus && (
+                <Badge variant="muted">Verifikasi: {account.businessVerificationStatus}</Badge>
+              )}
             </div>
-            <div className="space-y-1">
-              <label htmlFor="bp-website" className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                Website
-              </label>
-              <Input
-                id="bp-website"
-                value={profile.websites[0] ?? ''}
-                onChange={(e) => updateField('websites', [e.target.value, ...profile.websites.slice(1)])}
-              />
+          </FormSection>
+        )}
+
+        {profile && (
+          <FormSection
+            title="Info bisnis"
+            description="Teks ini muncul di halaman profil bisnis yang dibuka pelanggan dari dalam chat."
+          >
+            <div className="space-y-4">
+              <Field label="About (maks. 139 karakter)" htmlFor="bp-about">
+                <Input
+                  id="bp-about"
+                  value={profile.about ?? ''}
+                  maxLength={139}
+                  onChange={(e) => updateField('about', e.target.value)}
+                />
+              </Field>
+              <Field label="Deskripsi" htmlFor="bp-description">
+                <Input
+                  id="bp-description"
+                  value={profile.description ?? ''}
+                  maxLength={256}
+                  onChange={(e) => updateField('description', e.target.value)}
+                />
+              </Field>
+              <Field label="Alamat" htmlFor="bp-address">
+                <Input
+                  id="bp-address"
+                  value={profile.address ?? ''}
+                  maxLength={256}
+                  onChange={(e) => updateField('address', e.target.value)}
+                />
+              </Field>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Field label="Email" htmlFor="bp-email">
+                  <Input
+                    id="bp-email"
+                    value={profile.email ?? ''}
+                    maxLength={128}
+                    onChange={(e) => updateField('email', e.target.value)}
+                  />
+                </Field>
+                <Field label="Website" htmlFor="bp-website">
+                  <Input
+                    id="bp-website"
+                    value={profile.websites[0] ?? ''}
+                    onChange={(e) => updateField('websites', [e.target.value, ...profile.websites.slice(1)])}
+                  />
+                </Field>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-3">
+                <Button type="button" onClick={saveProfile} disabled={saving}>
+                  {saving ? 'Menyimpan...' : 'Simpan profil bisnis'}
+                </Button>
+                {saved && <p className="text-sm text-success">Profil bisnis tersimpan.</p>}
+              </div>
+              {saveError && <FieldError className="text-sm">{saveError}</FieldError>}
             </div>
-          </div>
+          </FormSection>
+        )}
 
-          <Button type="button" onClick={saveProfile} disabled={saving}>
-            {saving ? 'Menyimpan...' : 'Simpan Profil'}
-          </Button>
-          {saveError && <p className="text-xs text-destructive">{saveError}</p>}
-          {saved && <p className="text-xs text-emerald-600">Profil bisnis tersimpan.</p>}
-        </Card>
-      )}
-
-      {commerce && (
-        <Card className="space-y-2 p-4">
-          <h2 className="font-medium text-navy">Commerce</h2>
-          <p className="text-xs text-muted-foreground">
-            Mengatur apakah pelanggan bisa lihat keranjang belanja dan katalog produk langsung di WhatsApp.
-          </p>
-          <label className="flex cursor-pointer items-center justify-between gap-2 rounded-lg border border-border p-2.5">
-            <span className="text-sm text-navy">Keranjang Belanja</span>
-            <input
-              type="checkbox"
-              aria-label="Aktifkan keranjang belanja"
+        {commerce && (
+          <FormSection
+            title="Commerce"
+            description="Mengatur apakah pelanggan bisa lihat keranjang belanja dan katalog produk langsung di WhatsApp. Perubahan berlaku begitu kotak dicentang."
+          >
+            <CommerceRow
+              title="Keranjang belanja"
+              description="Pelanggan bisa mengumpulkan item katalog jadi satu keranjang lalu mengirimkannya sebagai pesanan."
+              ariaLabel="Aktifkan keranjang belanja"
               checked={commerce.isCartEnabled}
               disabled={commerceSaving}
-              onChange={() => toggleCommerce('isCartEnabled')}
+              onToggle={() => toggleCommerce('isCartEnabled')}
             />
-          </label>
-          <label className="flex cursor-pointer items-center justify-between gap-2 rounded-lg border border-border p-2.5">
-            <span className="text-sm text-navy">Katalog Produk Terlihat</span>
-            <input
-              type="checkbox"
-              aria-label="Aktifkan katalog produk terlihat"
+            <CommerceRow
+              title="Katalog produk terlihat"
+              description="Katalog muncul di profil bisnis WhatsApp dan bisa dibuka pelanggan sendiri."
+              ariaLabel="Aktifkan katalog produk terlihat"
               checked={commerce.isCatalogVisible}
               disabled={commerceSaving}
-              onChange={() => toggleCommerce('isCatalogVisible')}
+              onToggle={() => toggleCommerce('isCatalogVisible')}
             />
-          </label>
-          {commerceError && <p className="text-xs text-destructive">{commerceError}</p>}
-        </Card>
-      )}
+            {commerceError && <FieldError className="mt-3 text-sm">{commerceError}</FieldError>}
+          </FormSection>
+        )}
+      </div>
     </main>
   )
 }

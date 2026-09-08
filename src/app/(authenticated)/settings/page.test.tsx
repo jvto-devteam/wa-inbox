@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, cleanup } from '@testing-library/react'
+import { render, screen, cleanup, fireEvent } from '@testing-library/react'
 import { SAFETY_BOUNDS, SAFETY_FIELD_LABELS } from '@/lib/outbound/safety-bounds'
 import SettingsPage from './page'
 
@@ -37,19 +37,35 @@ function mockFetch(role: 'ADMIN' | 'AGENT', unofficialConfigured = true) {
 beforeEach(() => vi.unstubAllGlobals())
 afterEach(() => cleanup())
 
+/**
+ * Halaman Pengaturan sekarang punya sidebar kedua: satu bagian tampil pada satu waktu. Test
+ * yang menyentuh bagian selain "Default jalur kirim" (bagian bawaan) membukanya lebih dulu,
+ * persis seperti operator — bukan dengan melonggarkan assertion-nya.
+ *
+ * `findByRole` sekaligus menjadi barrier muatnya halaman: item admin baru muncul setelah
+ * /api/session menjawab, jadi menunggunya di sini menghapus kebutuhan menunggu terpisah.
+ */
+async function openSection(name: string) {
+  fireEvent.click(await screen.findByRole('button', { name }))
+}
+
 describe('SettingsPage — billing link', () => {
   it('shows a link to the conversation-cost history page for an admin', async () => {
     mockFetch('ADMIN')
     render(<SettingsPage />)
 
-    expect(await screen.findByRole('link', { name: 'Lihat histori biaya' })).toHaveAttribute('href', '/settings/billing')
+    await openSection('Kelola di halaman lain')
+    expect(screen.getByRole('link', { name: 'Lihat histori biaya' })).toHaveAttribute('href', '/settings/billing')
   })
 
   it('hides the billing link for a non-admin', async () => {
     mockFetch('AGENT')
     render(<SettingsPage />)
 
-    await screen.findByText('Status nomor')
+    await screen.findByRole('heading', { name: 'Default jalur kirim' })
+    // Bagi non-admin bagiannya tidak ada DI SIDEBAR sama sekali, bukan sekadar panelnya kosong:
+    // item nav yang membuka panel kosong mengajarkan menu ini tidak bisa dipercaya.
+    expect(screen.queryByRole('button', { name: 'Kelola di halaman lain' })).not.toBeInTheDocument()
     expect(screen.queryByRole('link', { name: 'Lihat histori biaya' })).not.toBeInTheDocument()
   })
 })
@@ -59,7 +75,8 @@ describe('SettingsPage — Status nomor', () => {
     mockFetch('ADMIN', true)
     render(<SettingsPage />)
 
-    expect(await screen.findByText(/Unofficial: Terkonfigurasi/)).toBeInTheDocument()
+    await openSection('Status nomor')
+    expect(screen.getByText(/Unofficial: Terkonfigurasi/)).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Sambungkan Ulang/ })).not.toBeInTheDocument()
   })
 
@@ -67,7 +84,8 @@ describe('SettingsPage — Status nomor', () => {
     mockFetch('ADMIN', false)
     render(<SettingsPage />)
 
-    expect(await screen.findByText(/Unofficial: Belum diatur/)).toBeInTheDocument()
+    await openSection('Status nomor')
+    expect(screen.getByText(/Unofficial: Belum diatur/)).toBeInTheDocument()
   })
 })
 
@@ -79,7 +97,8 @@ describe('SettingsPage — Pengaman outbound', () => {
     mockFetch('ADMIN')
     render(<SettingsPage />)
 
-    const campaign = await screen.findByLabelText(SAFETY_FIELD_LABELS.campaignRatePerMinute)
+    await openSection('Pengaman outbound')
+    const campaign = screen.getByLabelText(SAFETY_FIELD_LABELS.campaignRatePerMinute)
     expect(campaign).toHaveAttribute('min', String(SAFETY_BOUNDS.campaignRatePerMinute.min))
     expect(campaign).toHaveAttribute('max', String(SAFETY_BOUNDS.campaignRatePerMinute.max))
     expect(campaign).toHaveValue(20)
@@ -91,7 +110,8 @@ describe('SettingsPage — Pengaman outbound', () => {
     mockFetch('ADMIN')
     render(<SettingsPage />)
 
-    await screen.findByText('Pengaman outbound')
+    await openSection('Pengaman outbound')
+    expect(screen.getByRole('heading', { name: 'Pengaman outbound' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Jeda/ })).not.toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Outbound Queue' })).toHaveAttribute(
       'href',
@@ -103,7 +123,8 @@ describe('SettingsPage — Pengaman outbound', () => {
     mockFetch('AGENT')
     render(<SettingsPage />)
 
-    await screen.findByText('Status nomor')
+    await screen.findByRole('heading', { name: 'Default jalur kirim' })
+    // Tidak ada panelnya, dan tidak ada pintunya di sidebar.
     expect(screen.queryByText('Pengaman outbound')).not.toBeInTheDocument()
   })
 })

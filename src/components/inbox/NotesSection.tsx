@@ -1,8 +1,8 @@
 'use client'
 import { useEffect, useState } from 'react'
-import { Card } from '@/components/ui/card'
 import { Textarea } from '@/components/ui/textarea'
 import { Button } from '@/components/ui/button'
+import { PanelSectionTitle } from './ContactPanel'
 import { fetchJson } from '@/lib/fetch-json'
 
 export type Note = { id: string; body: string; authorName: string | null; createdAt: string }
@@ -51,24 +51,23 @@ export function NotesSection({ contactId }: { contactId: string }) {
   }
 
   return (
+    // Daftar dengan garis rambut, bukan kartu di dalam panel yang sudah menjadi kartu.
     <div className="space-y-2">
-      <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Catatan</h3>
-      <Card className="space-y-2 p-3">
-        {notes.length === 0 ? (
-          <p className="text-sm text-muted-foreground">Belum ada catatan.</p>
-        ) : (
-          <ul className="space-y-2">
-            {notes.map((n) => (
-              <li key={n.id} className="space-y-0.5 border-b border-border pb-2 last:border-0 last:pb-0">
-                <p className="text-sm text-navy">{n.body}</p>
-                <p className="text-xs text-muted-foreground">
-                  {n.authorName ?? 'Agen'} &middot; {formatNoteDate(n.createdAt)}
-                </p>
-              </li>
-            ))}
-          </ul>
-        )}
-      </Card>
+      <PanelSectionTitle>Catatan</PanelSectionTitle>
+      {notes.length === 0 ? (
+        <p className="text-sm text-ink-muted">Belum ada catatan.</p>
+      ) : (
+        <ul className="divide-y divide-line border-y border-line">
+          {notes.map((n) => (
+            <li key={n.id} className="space-y-0.5 py-2">
+              <p className="text-sm break-words text-ink">{n.body}</p>
+              <p className="text-xs text-ink-subtle">
+                {n.authorName ?? 'Agen'} &middot; {formatNoteDate(n.createdAt)}
+              </p>
+            </li>
+          ))}
+        </ul>
+      )}
       <Textarea
         aria-label="Catatan baru"
         value={draft}
@@ -76,10 +75,14 @@ export function NotesSection({ contactId }: { contactId: string }) {
         placeholder="Tulis catatan tentang kontak ini..."
         rows={2}
       />
-      <Button type="button" onClick={addNote} disabled={!draft.trim() || submitting}>
+      <Button type="button" variant="outline" onClick={addNote} disabled={!draft.trim() || submitting}>
         Tambah Catatan
       </Button>
-      {error && <p className="text-xs text-destructive">{error}</p>}
+      {error && (
+        <p role="alert" className="text-xs text-danger">
+          {error}
+        </p>
+      )}
     </div>
   )
 }

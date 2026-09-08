@@ -30,8 +30,8 @@ export function PipelineStepDetail({ step, records, runLabel, runUnrecorded }: P
   if (!step) {
     return (
       <div className="space-y-1">
-        <p className="text-sm font-semibold text-navy">Detail step</p>
-        <p className="text-sm text-muted-foreground">Klik salah satu kotak di kanvas untuk melihat isinya.</p>
+        <p className="text-base font-semibold text-ink">Detail step</p>
+        <p className="text-sm text-ink-muted">Klik salah satu kotak di kanvas untuk melihat isinya.</p>
       </div>
     )
   }
@@ -39,28 +39,28 @@ export function PipelineStepDetail({ step, records, runLabel, runUnrecorded }: P
   return (
     <div className="space-y-3">
       <div className="space-y-1">
-        <p className="text-sm font-semibold text-navy">{step.label}</p>
-        <p className="text-xs leading-relaxed text-muted-foreground">{step.summary}</p>
-        <p className="font-mono text-[11px] text-muted-foreground">
+        <p className="text-base font-semibold text-ink">{step.label}</p>
+        <p className="text-sm leading-relaxed text-ink-muted">{step.summary}</p>
+        <p className="font-mono text-xs break-all text-ink-subtle">
           {step.sourceRef.file} · {step.sourceRef.symbol}
         </p>
       </div>
 
       <div className="space-y-1">
-        <p className="text-xs font-semibold text-navy">Sub-langkah</p>
+        <p className="text-xs font-medium text-ink-subtle">Sub-langkah</p>
         <ul className="space-y-1">
           {step.subSteps.map((subStep) => {
             const rare = RARE_SUB_STEPS[subStep.id]
             return (
-              <li key={subStep.id} className="rounded border border-border bg-white p-1.5">
+              <li key={subStep.id} className="rounded-md border border-line bg-surface p-1.5">
                 <span className="flex flex-wrap items-center gap-1.5">
-                  <span className="text-xs font-medium">{subStep.label}</span>
+                  <span className="text-sm font-medium text-ink">{subStep.label}</span>
                   {rare && <Badge variant="muted">jarang dipakai</Badge>}
                 </span>
-                <span className="block font-mono text-[10px] text-muted-foreground">
+                <span className="block font-mono text-xs break-all text-ink-muted">
                   {subStep.sourceRef.file} · {subStep.sourceRef.symbol}
                 </span>
-                {rare && <span className="block text-[10px] text-muted-foreground">{rare}</span>}
+                {rare && <span className="block text-xs text-ink-muted">{rare}</span>}
               </li>
             )
           })}
@@ -68,26 +68,26 @@ export function PipelineStepDetail({ step, records, runLabel, runUnrecorded }: P
       </div>
 
       <div className="space-y-1">
-        <p className="text-xs font-semibold text-navy">Yang terjadi pada run terpilih</p>
-        {!runLabel && <p className="text-xs text-muted-foreground">Belum ada run yang dipilih.</p>}
+        <p className="text-xs font-medium text-ink-subtle">Yang terjadi pada run terpilih</p>
+        {!runLabel && <p className="text-sm text-ink-muted">Belum ada run yang dipilih.</p>}
         {runLabel && runUnrecorded && (
           // Bukan kegagalan. Run ini berjalan sebelum instrumentasi ada (atau lewat jalur tanpa
           // tracer), dan mengatakannya apa adanya lebih jujur daripada kanvas kosong yang
           // terbaca sebagai "bot tidak melakukan apa-apa".
-          <p className="text-xs text-muted-foreground">
+          <p className="text-sm text-ink-muted">
             Jejak run ini <span className="font-semibold">tidak terekam</span> — run berjalan sebelum instrumentasi ada,
             atau lewat jalur tanpa tracer. Bukan berarti run-nya gagal.
           </p>
         )}
         {runLabel && !runUnrecorded && records.length === 0 && (
-          <p className="text-xs text-muted-foreground">Run {runLabel} tidak melewati step ini.</p>
+          <p className="text-sm text-ink-muted">Run {runLabel} tidak melewati step ini.</p>
         )}
         {records.map((record, index) => (
-          <div key={`${record.stepId}-${index}`} className="rounded border border-border bg-white p-1.5">
-            <span className="text-xs font-medium">{STEP_STATUS_LABEL[record.status]}</span>
-            {record.at && <span className="ml-1.5 text-[10px] text-muted-foreground">{record.at}</span>}
+          <div key={`${record.stepId}-${index}`} className="rounded-md border border-line bg-surface p-1.5">
+            <span className="text-sm font-medium text-ink">{STEP_STATUS_LABEL[record.status]}</span>
+            {record.at && <span className="ml-1.5 font-mono text-xs text-ink-muted">{record.at}</span>}
             {record.detail !== undefined && (
-              <pre className="mt-1 overflow-x-auto whitespace-pre-wrap break-words text-[10px] text-muted-foreground">
+              <pre className="mt-1 overflow-x-auto text-xs break-words whitespace-pre-wrap text-ink-muted">
                 {safeDetail(record.detail)}
               </pre>
             )}

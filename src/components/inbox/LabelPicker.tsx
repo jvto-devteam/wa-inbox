@@ -2,6 +2,7 @@
 import { useState } from 'react'
 import { Badge } from '@/components/ui/badge'
 import { Select } from '@/components/ui/select'
+import { PanelSectionTitle } from './ContactPanel'
 
 export type LabelOption = { id: string; name: string; color: string }
 
@@ -61,8 +62,8 @@ export function LabelPicker({
 
   return (
     <div className="space-y-2">
-      <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Label</h3>
-      <div className="flex flex-wrap gap-1.5">
+      <PanelSectionTitle>Label</PanelSectionTitle>
+      <div className="flex flex-wrap gap-1.5 empty:hidden">
         {attachedLabels.map((l) => (
           <Badge key={l.id} style={{ backgroundColor: l.color + '22', color: l.color }} className="gap-1">
             {l.name}
@@ -70,7 +71,7 @@ export function LabelPicker({
               type="button"
               aria-label={`Hapus label ${l.name}`}
               onClick={() => detach(l.id)}
-              className="ml-0.5 leading-none"
+              className="focus-ring -mr-0.5 ml-0.5 rounded-xs leading-none opacity-70 hover:opacity-100"
             >
               ×
             </button>
@@ -84,7 +85,7 @@ export function LabelPicker({
           onChange={(e) => {
             if (e.target.value) attach(e.target.value)
           }}
-          className="w-auto"
+          className="w-full"
         >
           <option value="">+ Tambah label</option>
           {availableLabels.map((l) => (
@@ -94,7 +95,11 @@ export function LabelPicker({
           ))}
         </Select>
       )}
-      {error && <p className="text-xs text-destructive">{error}</p>}
+      {error && (
+        <p role="alert" className="text-xs text-danger">
+          {error}
+        </p>
+      )}
     </div>
   )
 }

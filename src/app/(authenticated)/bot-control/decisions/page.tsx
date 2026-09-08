@@ -1,14 +1,25 @@
 'use client'
 import { useEffect, useState } from 'react'
-import Link from 'next/link'
-import { Card } from '@/components/ui/card'
+import { ScrollText } from 'lucide-react'
+import { Card, CardHeader, CardTitle } from '@/components/ui/card'
+import { EmptyState } from '@/components/ui/empty-state'
+import { Skeleton, SkeletonText } from '@/components/ui/skeleton'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table'
 import { DecisionTracePanel, STATUS_VARIANT, type DecisionRunDetail } from '@/components/bot-control/DecisionTracePanel'
 import { fetchJson } from '@/lib/fetch-json'
+import { PageHeader } from '@/components/ui/page-header'
 
 type DecisionRow = {
   id: string
@@ -186,17 +197,11 @@ export default function DecisionLogsPage() {
   const lastPage = Math.max(1, Math.ceil(total / 50))
 
   return (
-    <main className="mx-auto max-w-7xl space-y-4 p-6">
-      <div className="space-y-1">
-        <Link href="/bot-control" className="text-sm text-brand hover:underline">
-          &larr; Kembali ke Bot Control
-        </Link>
-        <h1 className="text-xl font-semibold text-navy">Decision Logs</h1>
-        <p className="text-sm text-muted-foreground">
-          Setiap putaran keputusan bot, termasuk yang tidak menghasilkan pesan sama sekali — agent mengambil alih di
-          tengah jalan, atau orchestrator gagal.
-        </p>
-      </div>
+    <main className="mx-auto w-full max-w-[1600px] space-y-4 p-6">
+      <PageHeader
+        title="Decision Logs"
+        description="Setiap putaran keputusan bot, termasuk yang tidak menghasilkan pesan sama sekali — agent mengambil alih di tengah jalan, atau orchestrator gagal."
+      />
 
       <div className="flex flex-wrap items-center gap-2">
         <Select value={status} onChange={(e) => applyFilter(() => setStatus(e.target.value))} className="w-auto" aria-label="Filter status">
@@ -236,69 +241,91 @@ export default function DecisionLogsPage() {
         </Select>
       </div>
 
-      {actionError && <p className="text-sm text-destructive">{actionError}</p>}
-      {actionNotice && <p className="text-sm text-emerald-700">{actionNotice}</p>}
+      {actionError && <p className="text-base text-danger">{actionError}</p>}
+      {actionNotice && <p className="text-base text-success">{actionNotice}</p>}
+      {error && <p className="text-base text-danger">{error}</p>}
 
-      {loading && <p className="text-sm text-muted-foreground">Memuat...</p>}
-      {error && <p className="text-sm text-destructive">{error}</p>}
+      {/* Kerangka memuat memakai wadah yang sama dengan tabelnya, jadi kotaknya tidak muncul
+          begitu baris pertama sampai — halaman tidak melompat setiap kali filternya diubah. */}
+      {loading && (
+        <TableContainer>
+          <div aria-hidden="true" className="divide-y divide-line">
+            {Array.from({ length: 10 }, (_, i) => (
+              <div key={i} className="flex h-9 items-center gap-3 px-3">
+                <Skeleton className="h-3 w-32" />
+                <Skeleton className="h-3 w-28" />
+                <Skeleton className="h-3 w-2/5" />
+                <Skeleton className="h-3 w-16" />
+                <Skeleton className="h-3 w-14" />
+              </div>
+            ))}
+          </div>
+        </TableContainer>
+      )}
 
       {!loading && !error && (
-        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,24rem)]">
-          <Card className="p-0">
+        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,26rem)] lg:items-start">
+          <TableContainer className="min-w-0">
             {rows.length === 0 ? (
-              <p className="p-3 text-sm text-muted-foreground">Belum ada keputusan bot yang cocok dengan filter.</p>
+              <EmptyState
+                icon={<ScrollText strokeWidth={1.75} />}
+                title="Belum ada keputusan bot yang cocok dengan filter."
+                description="Setiap pesan masuk yang diproses bot menuliskan satu baris di sini. Kosong berarti belum ada yang cocok dengan filter di atas, bukan bahwa bot berhenti mencatat."
+              />
             ) : (
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Waktu</TableHead>
-                    <TableHead>Kontak</TableHead>
+                    <TableHead className="w-40">Waktu</TableHead>
+                    <TableHead className="w-36">Kontak</TableHead>
                     <TableHead>Pesan masuk</TableHead>
-                    <TableHead>Mode</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead className="text-right">Latensi</TableHead>
-                    <TableHead className="text-right">Knowledge</TableHead>
-                    <TableHead>Tanda</TableHead>
-                    <TableHead />
+                    <TableHead className="w-28">Mode</TableHead>
+                    <TableHead className="w-24">Status</TableHead>
+                    <TableHead className="w-20 text-right">Latensi</TableHead>
+                    <TableHead className="w-20 text-right">Knowledge</TableHead>
+                    <TableHead className="w-36">Tanda</TableHead>
+                    <TableHead className="w-28">Aksi</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {rows.map((row) => (
-                    <TableRow key={row.id}>
-                      <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
-                        {new Date(row.startedAt).toLocaleString('id-ID')}
+                    <TableRow key={row.id} className="h-auto align-top">
+                      <TableCell className="py-2.5 text-sm whitespace-nowrap text-ink-muted">
+                        <time dateTime={row.startedAt}>{new Date(row.startedAt).toLocaleString('id-ID')}</time>
                       </TableCell>
-                      <TableCell className="text-xs">
+                      <TableCell className="py-2.5 text-sm text-ink">
                         {/* A deleted conversation leaves the audit row alive but nameless. Saying
                             so beats an empty cell that looks like a rendering bug. */}
-                        {row.contactName ?? row.contactPhone ?? <span className="text-muted-foreground">(kontak terhapus)</span>}
+                        {row.contactName ?? row.contactPhone ?? <span className="text-ink-subtle">(kontak terhapus)</span>}
                       </TableCell>
-                      <TableCell className="max-w-xs truncate text-xs">{row.inboundPreview}</TableCell>
-                      <TableCell className="font-mono text-xs uppercase text-brand">{row.mode}</TableCell>
-                      <TableCell>
+                      <TableCell className="max-w-md truncate py-2.5 text-sm text-ink">{row.inboundPreview}</TableCell>
+                      <TableCell className="py-2.5 font-mono text-xs text-ink-muted uppercase">{row.mode}</TableCell>
+                      <TableCell className="py-2.5">
                         <Badge variant={STATUS_VARIANT[row.status] ?? 'default'}>{row.status}</Badge>
                       </TableCell>
-                      <TableCell className="text-right text-xs tabular-nums">
-                        {row.latencyMs != null ? `${row.latencyMs} ms` : '—'}
+                      <TableCell className="py-2.5 text-right font-mono text-xs text-ink-muted">
+                        {row.latencyMs != null ? `${row.latencyMs} ms` : '-'}
                       </TableCell>
-                      <TableCell className="text-right text-xs tabular-nums">{row.knowledgeRefsCount}</TableCell>
-                      <TableCell>
+                      <TableCell className="py-2.5 text-right font-mono text-xs text-ink-muted">
+                        {row.knowledgeRefsCount}
+                      </TableCell>
+                      <TableCell className="py-2.5">
                         {row.flaggedAt ? (
                           <span className="flex flex-col items-start gap-0.5">
                             <Badge variant="warning">Perlu diperbaiki</Badge>
-                            {row.flagNote && <span className="text-xs text-muted-foreground">{row.flagNote}</span>}
+                            {row.flagNote && <span className="text-xs text-ink-muted">{row.flagNote}</span>}
                           </span>
                         ) : (
-                          <span className="text-xs text-muted-foreground">—</span>
+                          <span className="text-sm text-ink-subtle">-</span>
                         )}
                       </TableCell>
-                      <TableCell>
-                        <div className="flex flex-col items-start gap-1">
-                          <Button variant="outline" size="sm" onClick={() => openDetail(row.id)}>
+                      <TableCell className="py-2">
+                        <div className="flex flex-col items-start gap-0.5">
+                          <Button variant="ghost" size="sm" onClick={() => openDetail(row.id)}>
                             Detail
                           </Button>
                           <Button
-                            variant="outline"
+                            variant="ghost"
                             size="sm"
                             disabled={flagSaving === row.id}
                             onClick={() => toggleFlag(row)}
@@ -312,39 +339,43 @@ export default function DecisionLogsPage() {
                 </TableBody>
               </Table>
             )}
-          </Card>
+          </TableContainer>
 
-          <Card className="h-fit space-y-2 p-4">
-            <p className="text-sm font-semibold text-navy">Detail keputusan</p>
-            {detailLoading && <p className="text-sm text-muted-foreground">Memuat detail...</p>}
-            {detailError && <p className="text-sm text-destructive">{detailError}</p>}
-            {!detailLoading && !detailError && !selected && (
-              <p className="text-sm text-muted-foreground">Pilih satu baris untuk melihat alasan lengkapnya.</p>
-            )}
-            {!detailLoading && !detailError && selected && (
-              <>
-                <DecisionTracePanel run={selected} />
+          <Card className="h-fit">
+            <CardHeader>
+              <CardTitle className="text-sm">Detail keputusan</CardTitle>
+            </CardHeader>
+            <div className="space-y-3 p-4">
+              {detailLoading && <SkeletonText lines={5} />}
+              {detailError && <p className="text-base text-danger">{detailError}</p>}
+              {!detailLoading && !detailError && !selected && (
+                <p className="text-base text-ink-muted">Pilih satu baris untuk melihat alasan lengkapnya.</p>
+              )}
+              {!detailLoading && !detailError && selected && (
+                <>
+                  <DecisionTracePanel run={selected} />
 
-                {/* Turning a bad turn into a fix is the point of reading this page at all, so
-                    the route out of it sits on the decision itself rather than somewhere the
-                    operator has to navigate to and retype the question from memory. */}
-                <div className="flex flex-col gap-2 border-t pt-3">
-                  <Button variant="outline" size="sm" onClick={() => createKnowledgeDraft(selected)}>
-                    Buat knowledge draft dari keputusan ini
-                  </Button>
-                </div>
-              </>
-            )}
+                  {/* Turning a bad turn into a fix is the point of reading this page at all, so
+                      the route out of it sits on the decision itself rather than somewhere the
+                      operator has to navigate to and retype the question from memory. */}
+                  <div className="border-t border-line pt-3">
+                    <Button variant="outline" size="sm" onClick={() => createKnowledgeDraft(selected)}>
+                      Buat knowledge draft dari keputusan ini
+                    </Button>
+                  </div>
+                </>
+              )}
+            </div>
           </Card>
         </div>
       )}
 
       {!loading && !error && total > 0 && (
-        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+        <div className="flex items-center gap-2 text-sm text-ink-muted">
           <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>
             Sebelumnya
           </Button>
-          <span>
+          <span className="tabular-nums">
             Halaman {page} dari {lastPage} · {total} keputusan
           </span>
           <Button variant="outline" size="sm" disabled={page >= lastPage} onClick={() => setPage((p) => p + 1)}>

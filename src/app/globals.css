@@ -1,57 +1,264 @@
 @import "tailwindcss";
 
-@theme {
-  --color-navy: #0B1B3D;
-  --color-navy-light: #162C5A;
-  --color-brand: #2563EB;
-  --color-brand-light: #3B82F6;
-  --color-brand-dark: #1D4ED8;
-  --font-sans: var(--font-plus-jakarta-sans);
+/* ===========================================================================
+   wa-inbox — sistem desain (Tahap 1A)
+   ---------------------------------------------------------------------------
+   Arah: tenang & rapat (respond.io / Linear). Terang saja, TIDAK ADA mode gelap.
+
+   Tiga aturan yang mengikat seluruh aplikasi:
+     1. Garis rambut memisahkan, bukan bayangan. Hanya ada dua bayangan di sistem
+        ini (--shadow-popover, --shadow-modal) dan keduanya untuk overlay
+        sungguhan. Semua skala bayangan Tailwind sengaja dimatikan (: none) supaya
+        `shadow-sm` yang terlanjur tersebar di kode tidak menghidupkan kedalaman
+        lagi. Kalau butuh kedalaman, artinya butuh overlay.
+     2. Satu aksen (--color-accent). Dibelanjakan HANYA untuk: state nav aktif,
+        aksi utama, dan penanda belum dibaca. Warna semantik (success/warning/
+        danger) terpisah dan tidak dihitung sebagai aksen.
+     3. Radius kecil. 4 / 6 / 8. Tidak ada radius besar di mana pun; skala xl/2xl
+        Tailwind ikut dipangkas supaya tidak bisa dipakai tanpa sengaja.
+
+   `@theme static` dipakai (bukan `@theme`) supaya SEMUA variabel selalu
+   diemit ke :root. Alias lama di bawah menunjuk token baru lewat var(), jadi
+   token yang ditunjuk harus ada walau tidak dipakai utility mana pun.
+   =========================================================================== */
+
+@theme static {
+  /* ---------- Huruf ------------------------------------------------------
+     Poppins untuk UI, IBM Plex Mono untuk data (nomor telepon, id,
+     timestamp, angka tabel). Dimuat di src/app/layout.tsx lewat next/font.
+     Angka Poppins proporsional, jadi kolom angka tidak berjajar lurus; mono
+     dipakai HANYA di sana, tidak untuk teks yang dibaca. */
+  --font-sans: var(--font-poppins), ui-sans-serif, system-ui, -apple-system,
+    "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif;
+  --font-mono: var(--font-ibm-plex-mono), ui-monospace, SFMono-Regular, "SF Mono",
+    Menlo, Consolas, "Liberation Mono", monospace;
+
+  /* ---------- Skala tipografi (basis 14px) -------------------------------
+     Dinaikkan ~0.5-1px dari skala Plex sebelumnya. Poppins geometris: bentuk
+     hurufnya berbasis lingkaran dan tinggi-x-nya relatif lebih rendah, jadi
+     pada ukuran piksel yang sama ia terbaca lebih kecil dan lebih rapat
+     ketimbang grotesk. Tinggi baris ikut naik karena Poppins juga lebih lebar,
+     sehingga baris yang sama memakan lebih banyak kolom. */
+  --text-xs: 11.5px; /* meta, timestamp */
+  --text-xs--line-height: 16px;
+  --text-sm: 13px; /* label, sel tabel */
+  --text-sm--line-height: 19px;
+  --text-base: 14px; /* default UI */
+  --text-base--line-height: 21px;
+  --text-md: 15.5px; /* isi pesan, teks yang dibaca lama */
+  --text-md--line-height: 23px;
+  --text-lg: 17.5px; /* judul halaman */
+  --text-lg--line-height: 25px;
+  --text-xl: 21px; /* jarang */
+  --text-xl--line-height: 29px;
+
+  /* Bobot hanya 400 / 500 / 600. Sisanya dipangkas ke 600 supaya `font-bold`
+     yang terlanjur ada tidak melompat ke 700/800 yang tidak diunduh. */
+  --font-weight-bold: 600;
+  --font-weight-extrabold: 600;
+  --font-weight-black: 600;
+
+  /* ---------- Permukaan & tinta ------------------------------------------
+     Netral condong dingin. `ink` sengaja memakai navy JVTO yang sudah ada,
+     bukan slate generik. */
+  --color-canvas: #f6f8fa; /* latar aplikasi */
+  --color-surface: #ffffff; /* panel, permukaan utama */
+  --color-surface-sunken: #f1f4f8; /* area inset, hover di atas canvas */
+  --color-line: #e1e6ed; /* garis rambut */
+  --color-line-strong: #cbd3de; /* pembatas yang ditegaskan */
+  --color-ink: #0b1b3d; /* teks utama (navy JVTO) */
+  --color-ink-muted: #5a6a83; /* teks sekunder */
+  --color-ink-subtle: #8a96ab; /* tersier, placeholder */
+
+  /* ---------- Aksen tunggal ---------------------------------------------- */
+  --color-accent: #1e56c8;
+  --color-accent-hover: #1a4aac;
+  --color-accent-subtle: #eaf0fc;
+
+  /* ---------- Warna semantik (bukan aksen) -------------------------------- */
+  --color-success: #17795e;
+  --color-success-subtle: #e6f4ef;
+  --color-warning: #9a6510;
+  --color-warning-subtle: #fdf3e3;
+  --color-danger: #b3261e;
+  --color-danger-subtle: #fcedec;
+
+  /* ---------- Alias token lama --------------------------------------------
+     19 halaman masih merujuk nama-nama ini (text-muted-foreground dipakai 274
+     kali, text-navy 94, text-brand 56, border-border 48, text-destructive 45).
+     Dipetakan ke nilai baru, bukan dihapus, supaya Tahap 1A tidak memecah
+     seluruh aplikasi sekaligus. Tahap 1B/1C yang membersihkan pemakaiannya. */
+  --color-navy: var(--color-ink);
+  --color-navy-light: #162c5a;
+  --color-brand: var(--color-accent);
+  --color-brand-dark: var(--color-accent-hover);
+  --color-brand-light: #4b7ada;
+  --color-background: var(--color-surface);
+  --color-foreground: var(--color-ink);
+  --color-border: var(--color-line);
+  --color-input: var(--color-line);
+  --color-muted: var(--color-surface-sunken);
+  --color-muted-foreground: var(--color-ink-muted);
+  --color-secondary: var(--color-surface-sunken);
+  --color-secondary-foreground: var(--color-ink);
+  --color-destructive: var(--color-danger);
+
+  /* ---------- Bentuk ------------------------------------------------------ */
+  --radius-xs: 2px;
+  --radius-sm: 4px;
+  --radius: 6px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  /* dipangkas: tidak ada radius besar di sistem ini */
+  --radius-xl: 8px;
+  --radius-2xl: 8px;
+  --radius-3xl: 8px;
+  --radius-4xl: 8px;
+
+  /* ---------- Kedalaman ---------------------------------------------------
+     Dua-duanya untuk overlay sungguhan saja. Sisanya dimatikan. */
+  --shadow-popover: 0 1px 2px rgb(11 27 61 / 0.06), 0 6px 16px -4px rgb(11 27 61 / 0.14);
+  --shadow-modal: 0 2px 4px rgb(11 27 61 / 0.06), 0 18px 44px -10px rgb(11 27 61 / 0.22);
+  --shadow-2xs: none;
+  --shadow-xs: none;
+  --shadow-sm: none;
+  --shadow-md: none;
+  --shadow-lg: none;
+  --shadow-xl: none;
+  --shadow-2xl: none;
+
+  /* ---------- Ritme ------------------------------------------------------- */
+  --spacing: 4px; /* grid 4px: p-2 = 8px, p-3 = 12px, h-8 = 32px */
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --color-border: var(--border);
-  --color-input: var(--input);
-  --color-muted: var(--muted);
-  --color-muted-foreground: var(--muted-foreground);
-  --color-secondary: var(--secondary);
-  --color-secondary-foreground: var(--secondary-foreground);
-  --color-accent: var(--accent);
-  --color-accent-foreground: var(--accent-foreground);
-  --color-destructive: var(--destructive);
-  --radius-lg: 0.625rem;
-}
-
+/* ---------------------------------------------------------------------------
+   Kepadatan — angka target, bukan saran. Dipakai lewat kelas Tailwind di
+   src/components/ui/* (h-7 / h-8 / h-9) dan tersedia sebagai variabel supaya
+   Tahap 1B/1C punya satu sumber angka.
+   --------------------------------------------------------------------------- */
 :root {
-  --background: #FFFFFF;
-  --foreground: #0B1B3D;
-  --border: #E5E7EB;
-  --input: #E5E7EB;
-  --muted: #F1F5F9;
-  --muted-foreground: #64748B;
-  --secondary: #F1F5F9;
-  --secondary-foreground: #0B1B3D;
-  --accent: #EFF6FF;
-  --accent-foreground: #1D4ED8;
-  --destructive: #DC2626;
+  --control-h-sm: 28px;
+  --control-h: 32px;
+  --control-h-lg: 36px;
+  --row-h: 36px;
+  --cell-pad-y: 8px;
+  --cell-pad-x: 12px;
 }
 
 @layer base {
-  * { border-color: var(--border); }
-  body { @apply bg-slate-50 text-navy antialiased; }
-  html { @apply font-sans; }
+  *,
+  ::before,
+  ::after {
+    border-color: var(--color-line);
+  }
+
+  html {
+    font-family: var(--font-sans);
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    background-color: var(--color-canvas);
+    color: var(--color-ink);
+    font-size: var(--text-base);
+    line-height: var(--text-base--line-height);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* Angka yang berjajar harus sejajar. Wajib di tabel, di teks mono, dan di
+     apa pun yang menandai dirinya numerik lewat data-numeric. */
+  table,
+  .font-mono,
+  time,
+  [data-numeric] {
+    font-variant-numeric: tabular-nums;
+  }
+
+  input,
+  select,
+  textarea,
+  button {
+    font: inherit;
+    color: inherit;
+  }
+
+  /* Menaikkan 5 checkbox native yang tersebar di halaman tanpa menyentuh
+     halamannya (settings/business-profile, templates, outbound-queue,
+     RemindersSection). */
+  input[type="checkbox"],
+  input[type="radio"] {
+    accent-color: var(--color-accent);
+  }
+
+  ::placeholder {
+    color: var(--color-ink-subtle);
+    opacity: 1;
+  }
+
+  ::selection {
+    background-color: var(--color-accent-subtle);
+    color: var(--color-ink);
+  }
+
+  /* Sisa scrollbar mengikuti netral dingin, bukan abu-abu default OS. */
+  * {
+    scrollbar-color: var(--color-line-strong) transparent;
+  }
 }
 
-.badge {
-  display: inline-flex;
-  align-items: center;
-  height: 1.25rem;
-  padding: 0 0.5rem;
-  border-radius: 2rem;
-  font-size: 0.75rem;
-  font-weight: 500;
-  gap: 0.25rem;
-  white-space: nowrap;
+@layer components {
+  /* Fokus keyboard SELALU terlihat, dan bentuknya sama di semua kontrol.
+     Dipakai oleh setiap primitif di src/components/ui/*. */
+  .focus-ring:focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 1px;
+  }
+
+  /* Versi terang dari cincin fokus, untuk kontrol yang duduk DI ATAS permukaan gelap
+     (hari ini: rail navigasi kiri, satu-satunya permukaan --color-ink di aplikasi ini).
+     Bukan preferensi gaya: --color-accent (#1E56C8) di atas --color-ink (#0B1B3D) hanya
+     mencapai kontras 2.6:1, di bawah ambang 3:1 untuk komponen non-teks, jadi .focus-ring
+     di sana adalah penanda fokus yang praktis tidak terlihat. Putih mencapai 17:1.
+     Bentuk dan offset-nya sengaja identik dengan .focus-ring supaya fokus terasa sama
+     di seluruh aplikasi; yang berubah hanya warnanya. */
+  .focus-ring-inverse:focus-visible {
+    outline: 2px solid #ffffff;
+    outline-offset: 1px;
+  }
+
+  /* Field teks: fokus menegaskan border lalu menambah cincin lembut di luarnya.
+     Sengaja outline, bukan box-shadow, supaya tidak menabrak aturan bayangan. */
+  .field-focus:focus,
+  .field-focus:focus-visible {
+    border-color: var(--color-accent);
+    outline: 3px solid color-mix(in srgb, var(--color-accent) 16%, transparent);
+    outline-offset: 0;
+  }
+
+  /* Panah <select> milik sistem desain ini, bukan milik OS. Panah bawaan berbeda tinggi
+     dan warnanya di macOS/Windows/Linux dan merusak baris form yang seharusnya rata. */
+  .select-chevron {
+    appearance: none;
+    background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12' fill='none' stroke='%235A6A83' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 4.5 6 7.5 9 4.5'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 8px center;
+    background-size: 12px 12px;
+  }
+
+  .select-chevron:disabled {
+    background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12' fill='none' stroke='%238A96AB' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 4.5 6 7.5 9 4.5'/%3E%3C/svg%3E");
+  }
+}
+
+/* prefers-reduced-motion dihormati di seluruh aplikasi, bukan per komponen. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  ::before,
+  ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

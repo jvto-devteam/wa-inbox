@@ -61,7 +61,7 @@ describe('DecisionTracePanel', () => {
     render(<DecisionTracePanel run={run({ status: 'FAILED', error: 'Ollama timeout', trace: null })} />)
     const error = screen.getByText('Ollama timeout')
     expect(error).toBeInTheDocument()
-    expect(error.className).toContain('text-destructive')
+    expect(error.className).toContain('text-danger')
   })
 
   it('says the trace is unavailable rather than rendering an empty panel', () => {

@@ -1,12 +1,12 @@
 'use client'
 import { useEffect, useState } from 'react'
-import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+import { FormSection } from '@/components/settings/section'
 import { fetchJson } from '@/lib/fetch-json'
 
 type CredentialsStatus = { coexistBaseUrl: string; accessTokenSet: boolean; coexistApiKeySet: boolean }
 
-export function WebhookCredentialsPanel() {
+export function WebhookCredentialsPanel({ className }: { className?: string }) {
   const [status, setStatus] = useState<CredentialsStatus | null>(null)
 
   // There is no `deployedBaseUrl` concept anywhere in this codebase (no env
@@ -30,20 +30,23 @@ export function WebhookCredentialsPanel() {
   if (!status) return null
 
   return (
-    <Card className="space-y-3 p-4">
-      <h2 className="font-medium text-navy">Webhook & kredensial</h2>
+    <FormSection
+      className={className}
+      title="Webhook & kredensial"
+      description="Alamat yang harus terdaftar di Meta, dan apakah kedua kunci sudah terpasang. Nilai kuncinya sendiri tidak pernah ditampilkan di sini."
+    >
+      <dl className="grid gap-3 sm:grid-cols-2">
+        <div className="space-y-0.5">
+          <dt className="text-sm font-medium text-ink">Meta webhook URL</dt>
+          <dd className="font-mono text-sm break-all text-ink-muted">{webhookUrl}</dd>
+        </div>
+        <div className="space-y-0.5">
+          <dt className="text-sm font-medium text-ink">wa-coexist base URL</dt>
+          <dd className="font-mono text-sm break-all text-ink-muted">{status.coexistBaseUrl}</dd>
+        </div>
+      </dl>
 
-      <div className="space-y-1">
-        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Meta webhook URL</p>
-        <p className="break-all text-sm text-navy">{webhookUrl}</p>
-      </div>
-
-      <div className="space-y-1">
-        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">wa-coexist base URL</p>
-        <p className="break-all text-sm text-navy">{status.coexistBaseUrl}</p>
-      </div>
-
-      <div className="flex items-center gap-3">
+      <div className="mt-4 flex flex-wrap items-center gap-2">
         <Badge variant={status.accessTokenSet ? 'success' : 'destructive'}>
           Access token: {status.accessTokenSet ? 'Diset' : 'Belum diset'}
         </Badge>
@@ -51,6 +54,6 @@ export function WebhookCredentialsPanel() {
           Coexist API key: {status.coexistApiKeySet ? 'Diset' : 'Belum diset'}
         </Badge>
       </div>
-    </Card>
+    </FormSection>
   )
 }
