@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { prisma } from '@/lib/db'
 import { getSession } from '@/lib/auth/get-session'
 import { parseJsonBody } from '@/lib/parse-json'
-import { sessionCan } from '@/lib/bot-control/permissions'
+import { hasAdminPowers } from '@/lib/bot-control/permissions'
 import {
   saveKnowledgeDraft,
   KnowledgeNotEditableError,
@@ -28,7 +28,7 @@ const bodySchema = z.object({
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await getSession(req)
   if (!session) return NextResponse.json({ error: 'Tidak terautentikasi' }, { status: 401 })
-  if (!sessionCan(session, 'EDIT_KNOWLEDGE_DRAFT')) {
+  if (!hasAdminPowers(session.role)) {
     return NextResponse.json({ error: 'Peran Anda tidak boleh mengubah knowledge' }, { status: 403 })
   }
 
@@ -46,8 +46,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
         body: parsed.data.body,
         reason: parsed.data.reason,
       },
-      { id: session.accountId, name: actor?.name ?? null },
-      req
+      { id: session.accountId, name: actor?.name ?? null }
     )
     return NextResponse.json(result)
   } catch (error) {

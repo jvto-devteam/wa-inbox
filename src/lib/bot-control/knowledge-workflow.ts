@@ -1,49 +1,71 @@
 /**
- * Creating and moving managed knowledge through draft → review → approve → publish.
+ * Creating managed knowledge, saving it as a draft, and activating it.
  *
- * --- Managed knowledge sits BESIDE the catalog mirror, never on top of it ---
+ * --- Two states, because there are not two people ---
  *
- * `KnowledgeSource` already holds one row per `catalog/*.json` file, written by the indexer.
- * Those rows are a mirror of disk and must stay that way: the indexer overwrites them on every
- * sync, and `type=MANUAL` is explicitly protected from it by CLAUDE.md. So everything here
- * creates rows with `type='MANUAL'` and never touches a `CATALOG_JSON` row. The two sources
- * are merged at read time (src/lib/bot/managed-knowledge.ts), not merged in the table.
+ * This used to be a six-state workflow: DRAFT → REVIEW → APPROVED → PUBLISHED, plus REJECTED
+ * and a release to actually ship it. The separation of duties that shape existed to enforce
+ * never existed here: wa-inbox runs one business with one small team, and the person who
+ * writes a fact is the person who decides it is true. Every "approval" was somebody approving
+ * their own paragraph, one click after writing it, and the only thing the ceremony reliably
+ * produced was knowledge sitting unpublished because the author did not realise there were
+ * three more buttons.
+ *
+ * What is left is what an operator actually does: write it down (`saveKnowledgeDraft`), and
+ * turn it on (`publishKnowledgeRevision`).
+ *
+ * --- Managed knowledge sits BESIDE the catalog, never on top of it ---
+ *
+ * `KnowledgeSource` used to also hold one row per `catalog/*.json` file, written by an indexer
+ * that overwrote them on every sync. That mirror is gone — the bot always read the files
+ * themselves, so the copy served nobody — and with it the only code in the repo that could
+ * ever have overwritten an operator's row, which CLAUDE.md forbids absolutely.
+ *
+ * Everything here still creates and edits rows with `type='MANUAL'` ONLY, and every mutation
+ * still refuses a row of any other type. That guard is now belt-and-braces rather than
+ * load-bearing, and it stays exactly for that reason: it is what makes reintroducing a
+ * filesystem-driven writer fail loudly instead of silently eating somebody's paragraph. The
+ * two bodies of knowledge are merged at read time (src/lib/bot/managed-knowledge.ts), never in
+ * the table.
  *
  * --- Why a published revision is immutable ---
  *
- * Editing a PUBLISHED revision would change the past. A release snapshot naming version 3
- * would then describe content different from what the bot actually used when that release was
- * live, and the audit trail would be quietly wrong precisely where somebody is relying on it.
- * Every change therefore creates a NEW revision, and the version number goes up.
+ * Editing a PUBLISHED revision would change the past. The history panel showing version 3
+ * would then describe content different from what the bot actually used while v3 was live, and
+ * the trail would be quietly wrong precisely where somebody is relying on it. Every change
+ * therefore creates a NEW revision, and the version number goes up.
  */
 import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db'
-import { writeBotAuditLog, type AuditAction } from '@/lib/bot-control/audit'
-import { validateKnowledgeBody, type ManagedKnowledgeBody } from '@/lib/bot-control/knowledge-body'
+import { writeBotAuditLog } from '@/lib/bot-control/audit'
+import { validateKnowledgeBody } from '@/lib/bot-control/knowledge-body'
+import { invalidateManagedKnowledgeCache } from '@/lib/bot/managed-knowledge'
 
-export const REVISION_STATUSES = ['DRAFT', 'REVIEW', 'APPROVED', 'PUBLISHED', 'ARCHIVED', 'REJECTED'] as const
+/**
+ * The states a revision can be in.
+ *
+ * Only two of them are chosen by anybody: DRAFT (written, not live) and PUBLISHED (what the bot
+ * reads). ARCHIVED is written by the system alone, to the revision a newer one just replaced.
+ *
+ * That third value is not ceremony, it is a runtime requirement: the loader in
+ * `src/lib/bot/managed-knowledge.ts` selects every row with `status='PUBLISHED'` and does not
+ * deduplicate by source, so leaving v3 published while v4 goes live would feed the bot both
+ * the old answer and the new one. Demoting v3 to DRAFT instead would be worse — the history
+ * panel would then claim a version that answered customers for a month was never live.
+ */
+export const REVISION_STATUSES = ['DRAFT', 'PUBLISHED', 'ARCHIVED'] as const
 export type RevisionStatus = (typeof REVISION_STATUSES)[number]
 
 /** The only source type this module ever creates or edits. */
 export const MANAGED_SOURCE_TYPE = 'MANUAL'
 
-/** Lifecycle values on the SOURCE, reusing its existing `status` column. */
-export const SOURCE_LIFECYCLES = ['PUBLISHED', 'DRAFT', 'ARCHIVED'] as const
-
 /**
- * Which statuses each transition may start from.
+ * Lifecycle values on the SOURCE, reusing its existing `status` column.
  *
- * A revision may be re-edited from DRAFT, REVIEW, APPROVED or REJECTED. Re-editing an APPROVED
- * revision sends it back to DRAFT for the same reason it does for rules: approval attaches to
- * particular content, and carrying it silently onto different content publishes something
- * nobody read.
+ * ARCHIVED stays: retiring a body of knowledge that no longer applies is a real operation with
+ * a real answer ("stop using this"), and has nothing to do with the review flow that left.
  */
-const ALLOWED_FROM: Record<'DRAFT' | 'REVIEW' | 'APPROVE' | 'REJECT', readonly RevisionStatus[]> = {
-  DRAFT: ['DRAFT', 'REVIEW', 'APPROVED', 'REJECTED'],
-  REVIEW: ['DRAFT', 'REJECTED'],
-  APPROVE: ['REVIEW'],
-  REJECT: ['DRAFT', 'REVIEW', 'APPROVED'],
-}
+export const SOURCE_LIFECYCLES = ['PUBLISHED', 'DRAFT', 'ARCHIVED'] as const
 
 export class KnowledgeNotFoundError extends Error {
   constructor(message = 'Knowledge tidak ditemukan.') {
@@ -76,12 +98,7 @@ export type RevisionResult = {
   title: string
 }
 
-/** Audit-sized description of a revision. Never the whole body — see audit.ts. */
-function revisionFields(row: { version: number; title: string; status: string; summary: string | null }) {
-  return { version: row.version, title: row.title, status: row.status, summary: row.summary }
-}
-
-/** A key that cannot collide with the indexer's, which uses the file path. */
+/** A key nothing else mints, kept path-shaped so old `managed/...` keys still read the same. */
 function managedKey(): string {
   return `managed/${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
 }
@@ -101,11 +118,7 @@ export type CreateSourceParams = {
  * in the explorer and in every count, and answer nothing. The two are created together or not
  * at all.
  */
-export async function createManagedKnowledge(
-  params: CreateSourceParams,
-  actor: Actor,
-  req?: Request
-): Promise<RevisionResult> {
+export async function createManagedKnowledge(params: CreateSourceParams, actor: Actor): Promise<RevisionResult> {
   const validated = validateKnowledgeBody(params.body)
   if (!validated.ok) throw new KnowledgeNotEditableError(validated.error)
 
@@ -114,10 +127,10 @@ export async function createManagedKnowledge(
       data: {
         key: managedKey(),
         title: params.title,
-        // Always MANUAL: the indexer is contractually forbidden from touching these rows, and
-        // that protection is keyed on the type.
+        // Always MANUAL. Every guard in this module that protects operator-written knowledge
+        // is keyed on this value, so a row created with anything else would be unprotected.
         type: MANAGED_SOURCE_TYPE,
-        // The SOURCE is a draft until its first revision is published. Listing it as PUBLISHED
+        // The SOURCE is a draft until its first revision is activated. Listing it as PUBLISHED
         // straight away would put unpublished content in front of an operator as though the
         // bot were already using it.
         status: 'DRAFT',
@@ -140,21 +153,9 @@ export async function createManagedKnowledge(
       },
     })
 
-    await writeBotAuditLog(
-      {
-        action: 'CREATE_DRAFT',
-        entityType: 'KNOWLEDGE',
-        entityId: source.id,
-        entityKey: source.key,
-        actorId: actor.id,
-        actorName: actor.name,
-        after: revisionFields(revision),
-        reason: params.reason,
-        req,
-      },
-      tx
-    )
-
+    // No audit row: a draft is not knowledge the bot reads. The revision itself already
+    // records `createdBy` and `changeReason`, and the history entry is written when somebody
+    // ACTIVATES it — which is the moment a customer can notice.
     return { source, revision }
   })
 
@@ -175,7 +176,7 @@ export type SaveDraftParams = {
 }
 
 /**
- * Writes the source's editable revision, creating a new one when the last is published.
+ * Writes the source's editable revision, creating a new one when the last is already live.
  *
  * The version number only goes up, and only when a published revision is superseded. Editing a
  * draft repeatedly reuses its version — otherwise a source would reach v40 through nothing but
@@ -184,8 +185,7 @@ export type SaveDraftParams = {
 export async function saveKnowledgeDraft(
   sourceId: string,
   params: SaveDraftParams,
-  actor: Actor,
-  req?: Request
+  actor: Actor
 ): Promise<RevisionResult> {
   const validated = validateKnowledgeBody(params.body)
   if (!validated.ok) throw new KnowledgeNotEditableError(validated.error)
@@ -193,11 +193,11 @@ export async function saveKnowledgeDraft(
   const source = await prisma.knowledgeSource.findUnique({ where: { id: sourceId } })
   if (!source) throw new KnowledgeNotFoundError()
 
-  // The catalog mirror is written by the indexer from files on disk. Editing one here would be
-  // overwritten by the next sync, so the edit would silently disappear — worse than refusing.
+  // Only operator-written knowledge is editable here. Anything else came from somewhere this
+  // form does not own, and writing to it would put the edit somewhere its own source overwrites.
   if (source.type !== MANAGED_SOURCE_TYPE) {
     throw new KnowledgeNotEditableError(
-      `Sumber ini dicerminkan dari ${source.sourcePath ?? 'catalog/'} dan hanya bisa diubah dengan mengedit filenya.`
+      `Sumber ini bertipe ${source.type} dan tidak dikelola dari halaman ini; ubah di sumber aslinya.`
     )
   }
   if (source.status === 'ARCHIVED') {
@@ -210,44 +210,27 @@ export async function saveKnowledgeDraft(
   })
   if (!latest) throw new KnowledgeNotFoundError('Sumber ini belum punya revisi sama sekali.')
 
-  const editable = ALLOWED_FROM.DRAFT.includes(latest.status as RevisionStatus)
   const title = params.title ?? latest.title
   const summary = params.summary === undefined ? latest.summary : params.summary
 
-  if (editable) {
+  // A DRAFT is the only thing that can be written over. Everything else is history.
+  if (latest.status === 'DRAFT') {
     const updated = await prisma.knowledgeRevision.update({
       where: { id: latest.id },
       data: {
         title,
         summary,
         body: validated.body as unknown as Prisma.InputJsonValue,
-        // Back to DRAFT even from APPROVED: see the note on ALLOWED_FROM.
-        status: 'DRAFT',
         changeReason: params.reason,
         createdBy: actor.id,
-        reviewedBy: null,
-        reviewedAt: null,
       },
-    })
-
-    await writeBotAuditLog({
-      action: 'UPDATE_DRAFT',
-      entityType: 'KNOWLEDGE',
-      entityId: sourceId,
-      entityKey: source.key,
-      actorId: actor.id,
-      actorName: actor.name,
-      before: revisionFields(latest),
-      after: revisionFields(updated),
-      reason: params.reason,
-      req,
     })
 
     return { sourceId, revisionId: updated.id, version: updated.version, status: updated.status, title: updated.title }
   }
 
   // The latest revision is PUBLISHED or ARCHIVED, so it is history now. A change means a new
-  // version, which is what keeps a release snapshot naming v3 describing what v3 actually was.
+  // version, which is what keeps "what did the bot know in August" answerable.
   const created = await prisma.knowledgeRevision.create({
     data: {
       knowledgeSourceId: sourceId,
@@ -261,97 +244,121 @@ export async function saveKnowledgeDraft(
     },
   })
 
-  await writeBotAuditLog({
-    action: 'CREATE_DRAFT',
-    entityType: 'KNOWLEDGE',
-    entityId: sourceId,
-    entityKey: source.key,
-    actorId: actor.id,
-    actorName: actor.name,
-    before: revisionFields(latest),
-    after: revisionFields(created),
-    reason: params.reason,
-    req,
-  })
-
   return { sourceId, revisionId: created.id, version: created.version, status: created.status, title: created.title }
 }
 
-/** Moves the source's pending revision between review states. */
-export async function transitionKnowledge(
+/**
+ * Turns the source's draft revision into the one the bot reads. The other half of the feature.
+ *
+ * One transaction, because three writes are meaningless apart: the previously live revision
+ * stepping aside, the draft becoming live, and the source itself leaving DRAFT. A crash between
+ * the first two would leave a source with NO published revision — knowledge that silently
+ * stopped answering.
+ *
+ * `publishedBy` and `publishedAt` are kept from the old workflow. "Who turned this on, and
+ * when" survives the removal of reviewer and approver because it is the question that actually
+ * gets asked when the bot starts saying something new.
+ */
+export async function publishKnowledgeRevision(
   sourceId: string,
-  transition: 'REVIEW' | 'APPROVE' | 'REJECT',
   actor: Actor,
-  reason: string | null,
-  req?: Request
+  reason: string | null
 ): Promise<RevisionResult> {
   const source = await prisma.knowledgeSource.findUnique({ where: { id: sourceId } })
   if (!source) throw new KnowledgeNotFoundError()
+
+  // Only operator-written knowledge has revisions to activate.
+  if (source.type !== MANAGED_SOURCE_TYPE) {
+    throw new KnowledgeNotEditableError(
+      `Sumber ini bertipe ${source.type} dan tidak punya revisi untuk diaktifkan.`
+    )
+  }
+  if (source.status === 'ARCHIVED') {
+    throw new KnowledgeTransitionError('Sumber ini sudah diarsipkan. Buat knowledge baru bila masih diperlukan.')
+  }
 
   const latest = await prisma.knowledgeRevision.findFirst({
     where: { knowledgeSourceId: sourceId },
     orderBy: { version: 'desc' },
   })
   if (!latest) throw new KnowledgeNotFoundError('Sumber ini belum punya revisi sama sekali.')
-
-  if (!ALLOWED_FROM[transition].includes(latest.status as RevisionStatus)) {
-    throw new KnowledgeTransitionError(
-      `Revisi v${latest.version} berstatus ${latest.status}; transisi ${transition} tidak diizinkan dari sana.`
-    )
+  if (latest.status !== 'DRAFT') {
+    throw new KnowledgeTransitionError(`Revisi v${latest.version} berstatus ${latest.status}; tidak ada draft untuk diaktifkan.`)
   }
 
-  const nextStatus: RevisionStatus =
-    transition === 'REVIEW' ? 'REVIEW' : transition === 'APPROVE' ? 'APPROVED' : 'REJECTED'
+  const updated = await prisma.$transaction(async (tx) => {
+    // Whatever this source had live steps aside FIRST. Two PUBLISHED revisions on one source
+    // would make "what is the bot reading" unanswerable, and the loader would feed it both.
+    await tx.knowledgeRevision.updateMany({
+      where: { knowledgeSourceId: sourceId, status: 'PUBLISHED' },
+      data: { status: 'ARCHIVED' },
+    })
 
-  const updated = await prisma.knowledgeRevision.update({
-    where: { id: latest.id },
-    data:
-      transition === 'APPROVE'
-        ? { status: nextStatus, reviewedBy: actor.id, reviewedAt: new Date() }
-        : // A rejected revision is KEPT, unlike a rejected rule draft. Rules hold a handful of
-          // settings that can be retyped in seconds; a knowledge revision is written prose, and
-          // throwing away somebody's afternoon because a reviewer disagreed with one paragraph
-          // is a good way to make nobody write knowledge again. It stays as history, and the
-          // next edit supersedes it.
-          { status: nextStatus, changeReason: reason ?? latest.changeReason },
+    const published = await tx.knowledgeRevision.update({
+      where: { id: latest.id },
+      data: { status: 'PUBLISHED', publishedBy: actor.id, publishedAt: new Date() },
+    })
+
+    // The source's own row follows the revision that is now live. Its title and summary are
+    // what the list and the explorer show, and they would otherwise still describe v1.
+    //
+    // This writes a MANUAL source — the row CLAUDE.md forbids anything else to overwrite.
+    // Nothing else writes KnowledgeSource at all any more: the catalog reader
+    // (src/lib/bot-control/catalog-explorer.ts) does not import prisma, and its own test
+    // asserts that.
+    await tx.knowledgeSource.update({
+      where: { id: sourceId },
+      data: { status: 'PUBLISHED', title: published.title, summary: published.summary },
+    })
+
+    // The history entry rides inside the transaction: an activation that recorded nothing is
+    // not an activation this system is willing to have happened.
+    await writeBotAuditLog(
+      {
+        action: 'PUBLISH',
+        entityType: 'KNOWLEDGE',
+        entityId: sourceId,
+        entityKey: source.key,
+        actorId: actor.id,
+        actorName: actor.name,
+        reason,
+      },
+      tx
+    )
+
+    return published
   })
 
-  const action: AuditAction =
-    transition === 'REVIEW' ? 'REQUEST_REVIEW' : transition === 'APPROVE' ? 'APPROVE' : 'REJECT'
+  // The runtime reads managed knowledge through a 30-second cache. Dropping it here is what
+  // makes "Aktifkan" take effect while the operator is still looking at the screen — without
+  // it, a change that appears not to have worked gets typed in again.
+  invalidateManagedKnowledgeCache()
 
-  await writeBotAuditLog({
-    action,
-    entityType: 'KNOWLEDGE',
-    entityId: sourceId,
-    entityKey: source.key,
-    actorId: actor.id,
-    actorName: actor.name,
-    before: revisionFields(latest),
-    after: revisionFields(updated),
-    reason,
-    req,
-  })
-
-  return { sourceId, revisionId: updated.id, version: updated.version, status: updated.status, title: updated.title }
+  return {
+    sourceId,
+    revisionId: updated.id,
+    version: updated.version,
+    status: updated.status,
+    title: updated.title,
+  }
 }
 
 /**
  * Archives a source. Nothing is deleted (SDD Manage Second §8.2).
  *
- * The revisions stay exactly as they are, including the published one, so a release snapshot
- * that names a version still resolves. What changes is that the runtime loader stops reading
- * it — archiving answers "stop using this", not "pretend it never existed".
+ * The revisions stay exactly as they are, including the published one, so the history still
+ * reads. What changes is that the runtime loader stops reading it — archiving answers "stop
+ * using this", not "pretend it never existed".
  */
 export async function archiveKnowledgeSource(
   sourceId: string,
   reason: string,
-  actor: Actor,
-  req?: Request
+  actor: Actor
 ): Promise<{ sourceId: string; status: string }> {
   const source = await prisma.knowledgeSource.findUnique({ where: { id: sourceId } })
   if (!source) throw new KnowledgeNotFoundError()
   if (source.type !== MANAGED_SOURCE_TYPE) {
-    throw new KnowledgeNotEditableError('Sumber katalog diarsipkan otomatis saat filenya hilang, bukan dari sini.')
+    throw new KnowledgeNotEditableError(`Sumber bertipe ${source.type} tidak diarsipkan dari sini.`)
   }
   if (source.status === 'ARCHIVED') {
     throw new KnowledgeTransitionError('Sumber ini sudah diarsipkan.')
@@ -369,11 +376,12 @@ export async function archiveKnowledgeSource(
     entityKey: source.key,
     actorId: actor.id,
     actorName: actor.name,
-    before: { status: source.status },
-    after: { status: updated.status },
     reason,
-    req,
   })
+
+  // Archiving takes knowledge AWAY from the bot; the same cache stands between that decision
+  // and the next customer turn.
+  invalidateManagedKnowledgeCache()
 
   return { sourceId, status: updated.status }
 }

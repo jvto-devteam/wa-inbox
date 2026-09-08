@@ -1,4 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { readFileSync } from 'node:fs'
+import path from 'node:path'
 import { mockDeep, mockReset, type DeepMockProxy } from 'vitest-mock-extended'
 import { Prisma, type PrismaClient } from '@prisma/client'
 import { prisma } from '@/lib/db'
@@ -7,10 +9,6 @@ import { decideAndRespond } from '@/lib/bot/orchestrator'
 import { __resetRateLimiterForTests } from '@/lib/bot/rate-limiter'
 import { sendMessage } from '@/lib/send'
 import { broadcast } from '@/lib/realtime'
-// Deliberately NOT mocked: runtime-flows runs for real against the mocked Prisma, which is the
-// whole point of the handoffReply tests below -- a stubbed loader could not prove the wiring.
-import { invalidateRuntimeFlowCache } from '@/lib/bot-control/runtime-flows'
-import { EXISTING_BOT_FLOW_KEY } from '@/lib/bot-control/existing-flow-registry'
 
 vi.mock('@/lib/db', () => ({ prisma: mockDeep<PrismaClient>() }))
 vi.mock('@/lib/bot/orchestrator', () => ({ decideAndRespond: vi.fn() }))
@@ -31,6 +29,9 @@ beforeEach(() => {
   // Read by defaultBotEnabled() whenever a new conversation is created, so a brand-new
   // conversation starts in whatever state the global bot mode currently dictates.
   mockPrisma.settings.findUniqueOrThrow.mockResolvedValue({ botAutoReplyAll: true, skipBotForIndonesianNumbers: false } as never)
+  // The two operator-editable bot sentences (runtime-integration.ts). Null by default so every
+  // pre-existing test sees the code's own wording, which is what they were written against.
+  mockPrisma.settings.findUnique.mockResolvedValue({ fallbackReply: null, handoffReply: null } as never)
   // flushBurst's own fresh re-check (see scheduleBotRun's header) -- default to "still on" so
   // every existing botEnabled:true test doesn't have to know this second read exists.
   mockPrisma.conversation.findUnique.mockResolvedValue({ botEnabled: true } as never)
@@ -197,6 +198,42 @@ describe('defaultBotEnabled (new conversation creation)', () => {
     expect(mockPrisma.conversation.upsert).toHaveBeenCalledWith(expect.objectContaining({
       create: expect.objectContaining({ botEnabled: true }),
     }))
+  })
+
+  // --- The OR that used to be here ---
+  //
+  // `defaultBotEnabled` used to read `settings.skipBotForIndonesianNumbers || skipViaRule`,
+  // where `skipViaRule` came from a published rule row. Either switch being on won,
+  // which made the whole draft -> review -> approve -> publish cycle for that rule a no-op in
+  // the direction that mattered: publishing it as DISABLED changed nothing while the Settings
+  // toggle was on. These two tests pin the column as the single writer, both ways.
+  it('answers an Indonesian number as soon as the column is false — nothing else can force a skip', async () => {
+    mockPrisma.settings.findUniqueOrThrow.mockResolvedValue({ botAutoReplyAll: true, skipBotForIndonesianNumbers: false } as never)
+    stubHappyPath()
+
+    await ingestMetaMessage(samplePayload) // 6281234567890 -- Indonesian
+
+    expect(mockPrisma.conversation.upsert).toHaveBeenCalledWith(expect.objectContaining({
+      create: expect.objectContaining({ botEnabled: true }),
+    }))
+    // One read, of one row. A second source consulted here is exactly the bug being pinned.
+    expect(mockPrisma.settings.findUniqueOrThrow).toHaveBeenCalledWith({ where: { id: 1 } })
+  })
+
+  it('has no second source to OR the skip decision against, in the source itself', () => {
+    // Asserted against the file because the failure mode is a re-added fallback that no
+    // behavioural test would catch: a second reader that agrees with the column today and
+    // silently overrides it the day somebody turns the column off.
+    const source = readFileSync(path.resolve(__dirname, 'inbound.ts'), 'utf8')
+    const start = source.indexOf('async function defaultBotEnabled')
+    const body = source.slice(start, source.indexOf('\n}', start))
+
+    expect(start).toBeGreaterThan(-1)
+    expect(body).not.toContain('||')
+    // The import list is the complete set of Bot Control modules that could influence the
+    // decision, so pinning it to the audit recorder alone is what says "no rule loader here".
+    const botControlImports = [...source.matchAll(/from '@\/lib\/bot-control\/([\w-]+)'/g)].map((m) => m[1])
+    expect(botControlImports).toEqual(['decision-recorder'])
   })
 
   it('the Indonesia filter never overrides botAutoReplyAll being off -- both must independently allow the bot', async () => {
@@ -615,42 +652,130 @@ describe('ingestMetaMessage bot dispatch', () => {
    * simulator stops at the decision and never sends, so the handoff sentence does not exist on
    * that path at all. This is the level the behaviour actually lives at.
    */
-  it('memakai handoffReply yang dipublish, bukan konstanta kode (regresi Temuan 2)', async () => {
+  it('memakai handoffReply dari Settings, bukan konstanta kode (regresi Temuan 2)', async () => {
     stubHappyPath()
-    invalidateRuntimeFlowCache()
-    mockPrisma.botFlowDefinition.findMany.mockResolvedValue([
-      {
-        key: EXISTING_BOT_FLOW_KEY,
-        name: 'WhatsApp Existing Bot',
-        editableLevel: 'SAFE_CONFIG',
-        activeVersionId: 'ver_1',
-        versions: [
-          { id: 'ver_1', version: 3, nodeConfig: { handoffReply: 'Mohon tunggu, tim kami segera membalas ya.' } },
-        ],
-      },
-    ] as never)
+    mockPrisma.settings.findUnique.mockResolvedValue({
+      fallbackReply: null,
+      handoffReply: 'Mohon tunggu, tim kami segera membalas ya.',
+    } as never)
     vi.mocked(decideAndRespond).mockResolvedValue({ mode: 'handoff', reason: 'Kata kunci eskalasi terdeteksi' })
 
     await ingestMetaMessage(samplePayload)
     await vi.advanceTimersByTimeAsync(5000)
 
     expect(vi.mocked(sendMessage).mock.calls[0][0].text).toBe('Mohon tunggu, tim kami segera membalas ya.')
-    invalidateRuntimeFlowCache()
   })
 
-  it('kembali ke konstanta kode saat tidak ada flow yang dipublish', async () => {
-    // The other half of the same guarantee: an un-seeded or unreadable row must still send a
-    // real sentence, never an empty message.
+  it('kembali ke konstanta kode saat kolom Settings kosong', async () => {
+    // The other half of the same guarantee: an operator who clears the box is reverting to the
+    // code's wording, so the handoff must still send a real sentence, never an empty message.
     stubHappyPath()
-    invalidateRuntimeFlowCache()
-    mockPrisma.botFlowDefinition.findMany.mockResolvedValue([] as never)
+    mockPrisma.settings.findUnique.mockResolvedValue({ fallbackReply: null, handoffReply: '' } as never)
     vi.mocked(decideAndRespond).mockResolvedValue({ mode: 'handoff', reason: 'x' })
 
     await ingestMetaMessage(samplePayload)
     await vi.advanceTimersByTimeAsync(5000)
 
     expect(vi.mocked(sendMessage).mock.calls[0][0].text).toContain('connecting you with a member of our team')
-    invalidateRuntimeFlowCache()
+  })
+
+  it('tetap membalas walau pembacaan Settings gagal', async () => {
+    // Fail open, asserted at the level the behaviour lives at: a database hiccup must not turn
+    // a handoff into a thrown turn and a customer left with no reply at all.
+    stubHappyPath()
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    mockPrisma.settings.findUnique.mockRejectedValue(new Error('db down'))
+    vi.mocked(decideAndRespond).mockResolvedValue({ mode: 'handoff', reason: 'x' })
+
+    await ingestMetaMessage(samplePayload)
+    await vi.advanceTimersByTimeAsync(5000)
+
+    expect(vi.mocked(sendMessage).mock.calls[0][0].text).toContain('connecting you with a member of our team')
+  })
+
+  /**
+   * The off-hours handoff note (item b5), asserted end to end.
+   *
+   * `Settings.workingHoursStart/End/offHoursAutoReply` had a card on /chatbot and no reader
+   * anywhere in the message path: an operator could fill all three in and nothing whatsoever
+   * changed. These tests are the whole of what those columns now do -- one extra sentence on
+   * one branch -- and the boundary of it.
+   *
+   * Asia/Jakarta is UTC+7, so 19:00Z below is 02:00 WIB: outside 09:00-17:00 by any reading.
+   */
+  it('(b) menambahkan catatan jam kerja pada handoff di luar jam kerja TANPA membuang handoffReply', async () => {
+    stubHappyPath()
+    vi.setSystemTime(new Date('2026-09-08T19:00:00Z')) // 02:00 WIB
+    mockPrisma.settings.findUnique.mockResolvedValue({
+      fallbackReply: null,
+      handoffReply: 'Mohon tunggu, tim kami segera membalas ya.',
+      workingHoursStart: '09:00',
+      workingHoursEnd: '17:00',
+      offHoursAutoReply: 'Saat ini di luar jam operasional kami. Tim membalas mulai pukul 09:00 WIB.',
+    } as never)
+    vi.mocked(decideAndRespond).mockResolvedValue({ mode: 'handoff', reason: 'Kata kunci eskalasi terdeteksi' })
+
+    await ingestMetaMessage(samplePayload)
+    await vi.advanceTimersByTimeAsync(5000)
+
+    // One message, both sentences: the note ADDS to the handoff wording, it never replaces it.
+    // A customer told "someone will follow up" and nothing else at 2am cannot tell an
+    // out-of-hours wait from a broken bot.
+    expect(vi.mocked(sendMessage)).toHaveBeenCalledTimes(1)
+    const text = vi.mocked(sendMessage).mock.calls[0][0].text
+    expect(text).toContain('Mohon tunggu, tim kami segera membalas ya.')
+    expect(text).toContain('Saat ini di luar jam operasional kami. Tim membalas mulai pukul 09:00 WIB.')
+  })
+
+  it('(a) mengirim handoff apa adanya, tanpa catatan tambahan, saat masih di dalam jam kerja', async () => {
+    stubHappyPath()
+    vi.setSystemTime(new Date('2026-09-08T05:00:00Z')) // 12:00 WIB, tengah hari kerja
+    mockPrisma.settings.findUnique.mockResolvedValue({
+      fallbackReply: null,
+      handoffReply: null,
+      workingHoursStart: '09:00',
+      workingHoursEnd: '17:00',
+      offHoursAutoReply: 'Saat ini di luar jam operasional kami.',
+    } as never)
+    vi.mocked(decideAndRespond).mockResolvedValue({ mode: 'handoff', reason: 'x' })
+
+    await ingestMetaMessage(samplePayload)
+    await vi.advanceTimersByTimeAsync(5000)
+
+    const text = vi.mocked(sendMessage).mock.calls[0][0].text
+    expect(text).toBe("Thank you for your message! I'm connecting you with a member of our team, and they'll follow up with you shortly.")
+    expect(text).not.toContain('di luar jam operasional')
+  })
+
+  /**
+   * The invariant this whole feature is bounded by: working hours must never silence the bot.
+   *
+   * The bot answers 24/7 through the LLM and that is its main value -- replacing a real answer
+   * with "we are closed" at 2am would be a worse service, not a safer one. So an ordinary FAQ
+   * turn outside working hours has to be byte-for-byte the turn it was before this existed:
+   * the answer, nothing appended, botEnabled untouched, no handoff alert.
+   */
+  it('membiarkan bot menjawab 24/7 -- pesan biasa di luar jam kerja dijawab persis seperti sebelumnya', async () => {
+    stubHappyPath()
+    vi.setSystemTime(new Date('2026-09-08T19:00:00Z')) // 02:00 WIB
+    mockPrisma.settings.findUnique.mockResolvedValue({
+      fallbackReply: null,
+      handoffReply: null,
+      workingHoursStart: '09:00',
+      workingHoursEnd: '17:00',
+      offHoursAutoReply: 'Saat ini di luar jam operasional kami.',
+    } as never)
+    vi.mocked(decideAndRespond).mockResolvedValue({ mode: 'faq', draft: 'Info paket...', sourceTopic: 'inclusions' })
+
+    await ingestMetaMessage(samplePayload)
+    await vi.advanceTimersByTimeAsync(5000)
+
+    expect(sendMessage).toHaveBeenCalledWith(expect.objectContaining({ text: 'Info paket...', sentBy: 'BOT' }))
+    expect(vi.mocked(sendMessage).mock.calls[0][0].text).not.toContain('di luar jam operasional')
+    expect(mockPrisma.conversation.update).not.toHaveBeenCalledWith(
+      expect.objectContaining({ data: { botEnabled: false } })
+    )
+    expect(broadcast).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'handoff.alert' }))
   })
 
   it('turns the bot off on the conversation when it hands off to a human', async () => {

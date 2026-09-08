@@ -9,8 +9,8 @@ import { writeBotAuditLog } from '@/lib/bot-control/audit'
 import {
   archiveKnowledgeSource,
   createManagedKnowledge,
+  publishKnowledgeRevision,
   saveKnowledgeDraft,
-  transitionKnowledge,
   KnowledgeNotEditableError,
   KnowledgeNotFoundError,
   KnowledgeTransitionError,
@@ -35,7 +35,6 @@ function source(overrides: Record<string, unknown> = {}) {
     type: MANAGED_SOURCE_TYPE,
     status: 'PUBLISHED',
     summary: null,
-    sourcePath: null,
     ...overrides,
   } as never
 }
@@ -69,6 +68,9 @@ beforeEach(() => {
   mockPrisma.knowledgeRevision.update.mockResolvedValue(revision())
   mockPrisma.knowledgeRevision.create.mockResolvedValue(revision({ id: 'krev_2', version: 2 }))
   mockPrisma.knowledgeSource.update.mockResolvedValue(source({ status: 'ARCHIVED' }))
+  mockTx.knowledgeRevision.updateMany.mockResolvedValue({ count: 0 } as never)
+  mockTx.knowledgeRevision.update.mockResolvedValue(revision({ status: 'PUBLISHED' }))
+  mockTx.knowledgeSource.update.mockResolvedValue(source())
 })
 
 describe('createManagedKnowledge', () => {
@@ -82,7 +84,7 @@ describe('createManagedKnowledge', () => {
     expect(mockTx.knowledgeRevision.create).toHaveBeenCalled()
   })
 
-  it('always creates it as MANUAL, which the indexer is forbidden to touch', async () => {
+  it('always creates it as MANUAL, the type every guard in this module keys on', async () => {
     await createManagedKnowledge({ title: 'x', body: BODY, reason: REASON }, actor)
     expect(mockTx.knowledgeSource.create.mock.calls[0][0].data.type).toBe(MANAGED_SOURCE_TYPE)
   })
@@ -107,16 +109,21 @@ describe('createManagedKnowledge', () => {
     expect(mockPrisma.$transaction).not.toHaveBeenCalled()
   })
 
-  it('audits the creation through the transaction client', async () => {
+  it('writes no history row for a draft nobody can read yet', async () => {
+    // BotControlAuditLog is the history of what the BOT does. A draft is not published, so no
+    // customer can be answered from it, and the revision row already carries `createdBy` and
+    // `changeReason` for whoever wants to know who typed it.
     await createManagedKnowledge({ title: 'x', body: BODY, reason: REASON }, actor)
-    expect(writeBotAuditLog).toHaveBeenCalledWith(
-      expect.objectContaining({ action: 'CREATE_DRAFT', entityType: 'KNOWLEDGE', reason: REASON }),
-      mockTx
-    )
+    expect(writeBotAuditLog).not.toHaveBeenCalled()
   })
 })
 
 describe('saveKnowledgeDraft', () => {
+  it('writes no history row either, for the same reason a new draft does not', async () => {
+    await saveKnowledgeDraft('ks_1', { body: BODY, reason: REASON }, actor)
+    expect(writeBotAuditLog).not.toHaveBeenCalled()
+  })
+
   it('edits the existing revision in place while it is still a draft', async () => {
     // Bumping the version on every typo fix would take a source to v40 through nothing but
     // corrections, and the numbers operators use to talk about it would stop meaning anything.
@@ -129,8 +136,8 @@ describe('saveKnowledgeDraft', () => {
   })
 
   it('creates a NEW version when the latest revision is published', async () => {
-    // Editing a published revision would change the past: a release snapshot naming v1 would
-    // describe content the bot never actually used.
+    // Editing a published revision would change the past: the history panel would show a v1
+    // describing content the bot never actually used while v1 was live.
     mockPrisma.knowledgeRevision.findFirst.mockResolvedValue(revision({ status: 'PUBLISHED' }))
 
     await saveKnowledgeDraft('ks_1', { body: BODY, reason: REASON }, actor)
@@ -139,21 +146,19 @@ describe('saveKnowledgeDraft', () => {
     expect(mockPrisma.knowledgeRevision.create.mock.calls[0][0].data).toMatchObject({ version: 2, status: 'DRAFT' })
   })
 
-  it('sends an already-APPROVED revision back to DRAFT when it is edited', async () => {
-    mockPrisma.knowledgeRevision.findFirst.mockResolvedValue(revision({ status: 'APPROVED' }))
+  it('creates a NEW version when the latest revision was archived by a newer publish', async () => {
+    // ARCHIVED is history too. Writing over it would rewrite a version somebody can still see
+    // in the panel, and the version numbers would stop lining up with what the bot ever said.
+    mockPrisma.knowledgeRevision.findFirst.mockResolvedValue(revision({ status: 'ARCHIVED' }))
     await saveKnowledgeDraft('ks_1', { body: BODY, reason: REASON }, actor)
-    expect(mockPrisma.knowledgeRevision.update.mock.calls[0][0].data).toMatchObject({
-      status: 'DRAFT',
-      reviewedBy: null,
-      reviewedAt: null,
-    })
+    expect(mockPrisma.knowledgeRevision.update).not.toHaveBeenCalled()
+    expect(mockPrisma.knowledgeRevision.create.mock.calls[0][0].data).toMatchObject({ version: 2, status: 'DRAFT' })
   })
 
-  it('refuses a catalog mirror, whose next sync would overwrite the edit anyway', async () => {
-    // Silently losing an operator's edit at the next sync is worse than refusing it now.
-    mockPrisma.knowledgeSource.findUnique.mockResolvedValue(
-      source({ type: 'CATALOG_JSON', sourcePath: 'catalog/policy-cards.json' })
-    )
+  it('refuses a source it did not create, whatever wrote that row', async () => {
+    // The MANUAL guard, from the editing side: a row this module does not own belongs to some
+    // other writer, and writing over it would silently lose one of the two.
+    mockPrisma.knowledgeSource.findUnique.mockResolvedValue(source({ type: 'IMPORTED' }))
 
     await expect(saveKnowledgeDraft('ks_1', { body: BODY, reason: REASON }, actor)).rejects.toBeInstanceOf(
       KnowledgeNotEditableError
@@ -187,47 +192,103 @@ describe('saveKnowledgeDraft', () => {
   })
 })
 
-describe('transitionKnowledge', () => {
-  it('sends a draft to review', async () => {
-    mockPrisma.knowledgeRevision.update.mockResolvedValue(revision({ status: 'REVIEW' }))
-    await transitionKnowledge('ks_1', 'REVIEW', actor, null)
-    expect(writeBotAuditLog).toHaveBeenCalledWith(expect.objectContaining({ action: 'REQUEST_REVIEW' }))
+describe('publishKnowledgeRevision', () => {
+  it('turns the draft into the revision the bot reads, recording who and when', async () => {
+    await publishKnowledgeRevision('ks_1', actor, null)
+
+    expect(mockTx.knowledgeRevision.update.mock.calls[0][0]).toMatchObject({
+      where: { id: 'krev_1' },
+      data: { status: 'PUBLISHED', publishedBy: 'acc_1' },
+    })
+    expect(mockTx.knowledgeRevision.update.mock.calls[0][0].data.publishedAt).toBeInstanceOf(Date)
   })
 
-  it('records who reviewed it, and when, on approve', async () => {
-    mockPrisma.knowledgeRevision.findFirst.mockResolvedValue(revision({ status: 'REVIEW' }))
-    mockPrisma.knowledgeRevision.update.mockResolvedValue(revision({ status: 'APPROVED' }))
+  it('archives the revision that was live BEFORE the new one lands', async () => {
+    // Two PUBLISHED revisions on one source would both be handed to the bot: the loader in
+    // managed-knowledge.ts selects every PUBLISHED row and does not deduplicate by source.
+    await publishKnowledgeRevision('ks_1', actor, null)
 
-    await transitionKnowledge('ks_1', 'APPROVE', actor, null)
-    expect(mockPrisma.knowledgeRevision.update.mock.calls[0][0].data).toMatchObject({
-      status: 'APPROVED',
-      reviewedBy: 'acc_1',
+    expect(mockTx.knowledgeRevision.updateMany).toHaveBeenCalledWith({
+      where: { knowledgeSourceId: 'ks_1', status: 'PUBLISHED' },
+      data: { status: 'ARCHIVED' },
+    })
+    const order = mockTx.knowledgeRevision.updateMany.mock.invocationCallOrder[0]
+    expect(order).toBeLessThan(mockTx.knowledgeRevision.update.mock.invocationCallOrder[0])
+  })
+
+  it('brings the source out of DRAFT so the list stops calling it unpublished', async () => {
+    await publishKnowledgeRevision('ks_1', actor, null)
+    expect(mockTx.knowledgeSource.update).toHaveBeenCalledWith({
+      where: { id: 'ks_1' },
+      data: { status: 'PUBLISHED', title: 'FAQ Harga ATV', summary: null },
     })
   })
 
-  it('approves only from REVIEW', async () => {
-    await expect(transitionKnowledge('ks_1', 'APPROVE', actor, null)).rejects.toBeInstanceOf(
-      KnowledgeTransitionError
+  it('does all three writes in one transaction', async () => {
+    await publishKnowledgeRevision('ks_1', actor, null)
+    expect(mockPrisma.$transaction).toHaveBeenCalledTimes(1)
+    expect(writeBotAuditLog).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'PUBLISH', entityType: 'KNOWLEDGE' }),
+      mockTx
     )
   })
 
-  it('KEEPS a rejected revision, unlike a rejected rule draft', async () => {
-    // A rule draft is a handful of settings that can be retyped in seconds. A knowledge
-    // revision is written prose, and throwing away somebody's afternoon because a reviewer
-    // disagreed with one paragraph is a good way to make nobody write knowledge again.
-    mockPrisma.knowledgeRevision.findFirst.mockResolvedValue(revision({ status: 'REVIEW' }))
-    mockPrisma.knowledgeRevision.update.mockResolvedValue(revision({ status: 'REJECTED' }))
+  it('records exactly one history row naming who, which entity, the action and the reason', async () => {
+    // Activating knowledge is the moment a customer starts getting a different answer, which is
+    // the whole reason this table still exists. `createdAt` is the column default, so "when"
+    // comes from the database rather than from anything a caller could get wrong.
+    await publishKnowledgeRevision('ks_1', actor, 'Harga ATV naik mulai Oktober')
 
-    await transitionKnowledge('ks_1', 'REJECT', actor, 'Harga di jawabannya sudah tidak berlaku')
+    expect(writeBotAuditLog).toHaveBeenCalledTimes(1)
+    expect(writeBotAuditLog).toHaveBeenCalledWith(
+      {
+        action: 'PUBLISH',
+        entityType: 'KNOWLEDGE',
+        entityId: 'ks_1',
+        entityKey: 'managed/abc',
+        actorId: 'acc_1',
+        actorName: 'Budi',
+        reason: 'Harga ATV naik mulai Oktober',
+      },
+      mockTx
+    )
+    // No diff, and nothing that could carry one: the row says what happened, not what the value
+    // used to be. The value in force is on the revision itself.
+    const written = vi.mocked(writeBotAuditLog).mock.calls[0][0] as Record<string, unknown>
+    expect(Object.keys(written).sort()).toEqual([
+      'action',
+      'actorId',
+      'actorName',
+      'entityId',
+      'entityKey',
+      'entityType',
+      'reason',
+    ])
+  })
 
-    const data = mockPrisma.knowledgeRevision.update.mock.calls[0][0].data
-    expect(data).toMatchObject({ status: 'REJECTED' })
-    expect(data).not.toHaveProperty('body')
+  it('refuses when the latest revision is already live', async () => {
+    // Nothing to activate, and re-publishing would archive the live revision and then restore
+    // it — an audit trail full of events that did not happen.
+    mockPrisma.knowledgeRevision.findFirst.mockResolvedValue(revision({ status: 'PUBLISHED' }))
+    await expect(publishKnowledgeRevision('ks_1', actor, null)).rejects.toBeInstanceOf(KnowledgeTransitionError)
+    expect(mockPrisma.$transaction).not.toHaveBeenCalled()
+  })
+
+  it('never activates a source it did not create', async () => {
+    // CLAUDE.md: this module owns MANUAL rows and refuses every other type.
+    mockPrisma.knowledgeSource.findUnique.mockResolvedValue(source({ type: 'IMPORTED' }))
+    await expect(publishKnowledgeRevision('ks_1', actor, null)).rejects.toBeInstanceOf(KnowledgeNotEditableError)
+    expect(mockPrisma.$transaction).not.toHaveBeenCalled()
+  })
+
+  it('refuses an archived source', async () => {
+    mockPrisma.knowledgeSource.findUnique.mockResolvedValue(source({ status: 'ARCHIVED' }))
+    await expect(publishKnowledgeRevision('ks_1', actor, null)).rejects.toBeInstanceOf(KnowledgeTransitionError)
   })
 
   it('refuses a source with no revision at all', async () => {
     mockPrisma.knowledgeRevision.findFirst.mockResolvedValue(null as never)
-    await expect(transitionKnowledge('ks_1', 'REVIEW', actor, null)).rejects.toBeInstanceOf(KnowledgeNotFoundError)
+    await expect(publishKnowledgeRevision('ks_1', actor, null)).rejects.toBeInstanceOf(KnowledgeNotFoundError)
   })
 })
 
@@ -245,8 +306,22 @@ describe('archiveKnowledgeSource', () => {
     expect(mockPrisma.knowledgeSource.delete).not.toHaveBeenCalled()
   })
 
-  it('refuses a catalog mirror, which the indexer archives on its own', async () => {
-    mockPrisma.knowledgeSource.findUnique.mockResolvedValue(source({ type: 'CATALOG_JSON' }))
+  it('records the row that says the bot stopped using this, and why', async () => {
+    await archiveKnowledgeSource('ks_1', 'Sudah digantikan paket baru', actor)
+
+    expect(writeBotAuditLog).toHaveBeenCalledWith({
+      action: 'DISABLE',
+      entityType: 'KNOWLEDGE',
+      entityId: 'ks_1',
+      entityKey: 'managed/abc',
+      actorId: 'acc_1',
+      actorName: 'Budi',
+      reason: 'Sudah digantikan paket baru',
+    })
+  })
+
+  it('refuses to archive a source it did not create', async () => {
+    mockPrisma.knowledgeSource.findUnique.mockResolvedValue(source({ type: 'IMPORTED' }))
     await expect(archiveKnowledgeSource('ks_1', 'apa pun sepuluh', actor)).rejects.toBeInstanceOf(
       KnowledgeNotEditableError
     )

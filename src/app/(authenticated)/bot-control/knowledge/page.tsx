@@ -10,16 +10,16 @@ import {
   type KnowledgeSourceRow,
   type KnowledgeAction,
 } from '@/components/bot-control/KnowledgeSourceTable'
-import { KnowledgeChunkPanel, type KnowledgeChunkRow } from '@/components/bot-control/KnowledgeChunkPanel'
+import { CatalogEntryPanel, type CatalogEntryRow } from '@/components/bot-control/CatalogEntryPanel'
 import { KnowledgeEditor, type KnowledgeDraft } from '@/components/bot-control/KnowledgeEditor'
 import { KnowledgeRevisionPanel, type RevisionRow } from '@/components/bot-control/KnowledgeRevisionPanel'
 import type { KnowledgeItem } from '@/lib/bot-control/knowledge-body'
-import { hasAdminPowers, roleNameCan } from '@/lib/bot-control/permissions'
+import { hasAdminPowers } from '@/lib/bot-control/permissions'
 import type { AccountRoleName } from '@/lib/auth/session'
 import { fetchJson } from '@/lib/fetch-json'
 
 type Paged<T> = { items: T[]; page: number; limit: number; total: number }
-type SyncResult = { sourcesIndexed: number; chunksIndexed: number; errors: Array<{ sourcePath: string; message: string }> }
+type CatalogPage = Paged<CatalogEntryRow> & { syncedAt: string | null; topics: string[] }
 type SourceDetail = {
   id: string
   title: string
@@ -41,37 +41,48 @@ const MIN_REASON_LENGTH = 10
 
 type Session = { role: AccountRoleName }
 
+/**
+ * Two piles of knowledge, shown side by side and never merged.
+ *
+ * The catalog half is read straight from `catalog/*.json` on every request (see
+ * src/lib/bot-control/catalog-explorer.ts). It used to be a database mirror kept in step by an
+ * "Index ulang katalog" button; the bot never read that mirror, so the button existed only to
+ * stop this page lying about files it was already free to open. It is gone, and with it the
+ * possibility of the page and the bot disagreeing.
+ *
+ * The managed half is operator-written knowledge (`KnowledgeSource` rows of `type='MANUAL'`
+ * with their revisions), which the bot DOES read from the database. Those are editable here;
+ * the catalog is not — the way to change the catalog is to edit the file and deploy.
+ */
 export default function KnowledgeExplorerPage() {
   const [sources, setSources] = useState<KnowledgeSourceRow[]>([])
   const [sourceQuery, setSourceQuery] = useState('')
-  const [typeFilter, setTypeFilter] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
   const [sourcesLoading, setSourcesLoading] = useState(true)
   const [sourcesError, setSourcesError] = useState<string | null>(null)
 
-  const [selectedSourceId, setSelectedSourceId] = useState<string | null>(null)
-  const [chunks, setChunks] = useState<KnowledgeChunkRow[]>([])
-  const [chunkTotal, setChunkTotal] = useState(0)
-  const [chunkQuery, setChunkQuery] = useState('')
-  const [chunksLoading, setChunksLoading] = useState(false)
-  const [chunksError, setChunksError] = useState<string | null>(null)
+  const [entries, setEntries] = useState<CatalogEntryRow[]>([])
+  const [entryTotal, setEntryTotal] = useState(0)
+  const [topics, setTopics] = useState<string[]>([])
+  const [syncedAt, setSyncedAt] = useState<string | null>(null)
+  const [catalogQuery, setCatalogQuery] = useState('')
+  const [topicFilter, setTopicFilter] = useState('')
+  const [catalogLoading, setCatalogLoading] = useState(true)
+  const [catalogError, setCatalogError] = useState<string | null>(null)
 
   const [role, setRole] = useState<Session['role'] | null>(null)
-  const [syncing, setSyncing] = useState(false)
 
-  // Managed-knowledge editing state. Kept beside the existing explorer state rather than in a
-  // separate page: an operator finding a gap in the catalog is one click from writing the
-  // answer, which is the whole reason this feature exists.
+  // Managed-knowledge editing state. Kept beside the catalog view rather than on a separate
+  // page: an operator finding a gap in the catalog is one click from writing the answer, which
+  // is the whole reason this feature exists.
   const [editing, setEditing] = useState<{ sourceId: string | null; title: string; draft: KnowledgeDraft } | null>(null)
   const [saving, setSaving] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
   const [historyFor, setHistoryFor] = useState<{ title: string; revisions: RevisionRow[] } | null>(null)
   const [historyLoading, setHistoryLoading] = useState(false)
   const [historyError, setHistoryError] = useState<string | null>(null)
-  const [syncMessage, setSyncMessage] = useState<string | null>(null)
-  const [syncError, setSyncError] = useState<string | null>(null)
 
-  // Role decides whether the sync button renders at all. The API enforces it too — this only
+  // Role decides whether the write controls render at all. The API enforces it too — this only
   // avoids showing an AGENT a button whose every press would 403.
   useEffect(() => {
     fetchJson<Session>('/api/session').then((s) => setRole(s.role)).catch(() => {})
@@ -80,7 +91,6 @@ export default function KnowledgeExplorerPage() {
   const loadSources = useCallback(() => {
     const params = new URLSearchParams()
     if (sourceQuery.trim()) params.set('q', sourceQuery.trim())
-    if (typeFilter) params.set('type', typeFilter)
     if (statusFilter) params.set('status', statusFilter)
 
     return fetchJson<Paged<KnowledgeSourceRow>>(`/api/bot-control/knowledge/sources?${params}`)
@@ -90,66 +100,56 @@ export default function KnowledgeExplorerPage() {
       })
       .catch((err: unknown) => setSourcesError(err instanceof Error ? err.message : 'Gagal memuat sumber knowledge'))
       .finally(() => setSourcesLoading(false))
-  }, [sourceQuery, typeFilter, statusFilter])
+  }, [sourceQuery, statusFilter])
 
   useEffect(() => {
     void loadSources()
   }, [loadSources])
 
-  // Chunk state is reset and marked loading HERE, in the handlers, not inside the effect.
-  // Calling setState synchronously in an effect body triggers cascading renders and is
-  // rejected by react-hooks/set-state-in-effect; driving it from the interaction that
-  // actually changed the filter is the idiomatic form and shows "Memuat..." at the same
-  // moment either way.
-  function resetChunks() {
-    setChunks([])
-    setChunkTotal(0)
-    setChunksError(null)
-    setChunksLoading(false)
+  // "Memuat..." is flipped on HERE, in the handler that changed the filter, not inside the
+  // effect below: calling setState synchronously in an effect body triggers cascading renders
+  // and is rejected by react-hooks/set-state-in-effect. The user sees the same thing either way.
+  function changeCatalogQuery(next: string) {
+    setCatalogQuery(next)
+    setCatalogLoading(true)
   }
 
-  function changeSelectedSource(id: string | null) {
-    setSelectedSourceId(id)
-    if (!id && !chunkQuery.trim()) resetChunks()
-    else setChunksLoading(true)
+  function changeTopicFilter(next: string) {
+    setTopicFilter(next)
+    setCatalogLoading(true)
   }
 
-  function changeChunkQuery(next: string) {
-    setChunkQuery(next)
-    if (!selectedSourceId && !next.trim()) resetChunks()
-    else setChunksLoading(true)
-  }
-
+  // The catalog is loaded unconditionally, unlike the mirror it replaced: reading 22 JSON
+  // files off a cached fingerprint costs nothing, and an explorer that shows an empty panel
+  // until you type is an explorer nobody explores with.
   useEffect(() => {
-    // No source picked and no search term means there is nothing specific to show yet; asking
-    // the server for every chunk in the catalog to fill a panel nobody is reading is waste.
-    if (!selectedSourceId && !chunkQuery.trim()) return
-
     let cancelled = false
 
     const params = new URLSearchParams()
-    if (selectedSourceId) params.set('sourceId', selectedSourceId)
-    if (chunkQuery.trim()) params.set('q', chunkQuery.trim())
+    if (catalogQuery.trim()) params.set('q', catalogQuery.trim())
+    if (topicFilter) params.set('topic', topicFilter)
 
-    fetchJson<Paged<KnowledgeChunkRow>>(`/api/bot-control/knowledge/chunks?${params}`)
+    fetchJson<CatalogPage>(`/api/bot-control/knowledge/catalog?${params}`)
       .then((data) => {
         if (cancelled) return
-        setChunks(data.items)
-        setChunkTotal(data.total)
-        setChunksError(null)
+        setEntries(data.items)
+        setEntryTotal(data.total)
+        setTopics(data.topics)
+        setSyncedAt(data.syncedAt)
+        setCatalogError(null)
       })
       .catch((err: unknown) => {
         if (cancelled) return
-        setChunksError(err instanceof Error ? err.message : 'Gagal memuat isi knowledge')
+        setCatalogError(err instanceof Error ? err.message : 'Gagal memuat isi katalog')
       })
       .finally(() => {
-        if (!cancelled) setChunksLoading(false)
+        if (!cancelled) setCatalogLoading(false)
       })
 
     return () => {
       cancelled = true
     }
-  }, [selectedSourceId, chunkQuery])
+  }, [catalogQuery, topicFilter])
 
   function openCreate() {
     setActionError(null)
@@ -196,7 +196,7 @@ export default function KnowledgeExplorerPage() {
     }
   }
 
-  async function saveDraft(draft: KnowledgeDraft, reason: string) {
+  async function saveDraft(draft: KnowledgeDraft, reason: string, activate: boolean) {
     if (!editing || saving) return
     setSaving(true)
     setActionError(null)
@@ -207,17 +207,29 @@ export default function KnowledgeExplorerPage() {
         body: { items: draft.items },
         reason,
       }
-      if (editing.sourceId) {
-        await fetchJson(`/api/bot-control/knowledge/sources/${editing.sourceId}/draft`, {
+      let sourceId = editing.sourceId
+      if (sourceId) {
+        await fetchJson(`/api/bot-control/knowledge/sources/${sourceId}/draft`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload),
         })
       } else {
-        await fetchJson('/api/bot-control/knowledge/sources', {
+        // A brand-new source has no id until the server gives it one, and activating needs it.
+        const created = await fetchJson<{ sourceId: string }>('/api/bot-control/knowledge/sources', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload),
+        })
+        sourceId = created.sourceId
+      }
+      // Two calls rather than one endpoint that does both: the draft is saved either way, so a
+      // failure to activate leaves the operator's text on disk instead of losing it.
+      if (activate) {
+        await fetchJson(`/api/bot-control/knowledge/sources/${sourceId}/publish`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ reason }),
         })
       }
       setEditing(null)
@@ -230,11 +242,12 @@ export default function KnowledgeExplorerPage() {
   }
 
   async function runAction(source: KnowledgeSourceRow, action: Exclude<KnowledgeAction, 'edit' | 'history'>) {
-    // Reject and archive both take something away, so both ask why before doing it.
+    // Archiving takes knowledge away from the bot, so it asks why before doing it.
     const body: { reason?: string } = {}
-    if (action === 'reject' || action === 'archive') {
-      const prompt = action === 'reject' ? 'Alasan menolak revisi ini?' : 'Alasan mengarsipkan knowledge ini?'
-      const typed = window.prompt(`${prompt} (minimal ${MIN_REASON_LENGTH} karakter)`)?.trim()
+    if (action === 'archive') {
+      const typed = window
+        .prompt(`Alasan mengarsipkan knowledge ini? (minimal ${MIN_REASON_LENGTH} karakter)`)
+        ?.trim()
       if (!typed || typed.length < MIN_REASON_LENGTH) return
       body.reason = typed
     }
@@ -258,31 +271,8 @@ export default function KnowledgeExplorerPage() {
     void runAction(source, action)
   }
 
-  async function runSync() {
-    if (syncing) return
-    setSyncing(true)
-    setSyncMessage(null)
-    setSyncError(null)
-    try {
-      const result = await fetchJson<SyncResult>('/api/bot-control/knowledge/sync', { method: 'POST' })
-      setSyncMessage(`${result.sourcesIndexed} sumber, ${result.chunksIndexed} chunk ter-index.`)
-      // Path AND reason, not a count and not a path alone. The two things that land here are a
-      // file that would not parse and a whole run that refused to touch anything (a missing
-      // catalog/ directory, see knowledge-indexer.ts) — and "1 file bermasalah: catalog" would
-      // describe the second one as though one JSON file were broken.
-      if (result.errors.length > 0) {
-        setSyncError(result.errors.map((e) => `${e.sourcePath}: ${e.message}`).join(' • '))
-      }
-      await loadSources()
-    } catch (err: unknown) {
-      setSyncError(err instanceof Error ? err.message : 'Index knowledge gagal')
-    } finally {
-      setSyncing(false)
-    }
-  }
-
   return (
-    <main className="mx-auto max-w-6xl space-y-4 p-6">
+    <main className="mx-auto max-w-6xl space-y-6 p-6">
       <div className="space-y-1">
         <Link href="/bot-control" className="text-sm text-brand hover:underline">
           &larr; Kembali ke Bot Control
@@ -290,93 +280,90 @@ export default function KnowledgeExplorerPage() {
         <h1 className="text-xl font-semibold text-navy">Knowledge Explorer</h1>
         <p className="text-sm text-muted-foreground">
           Isi <span className="font-mono">catalog/</span> yang dipakai bot, dibuka supaya bisa dibaca dan dicari tanpa
-          membuka JSON.
-        </p>
-        {/* Stated plainly, because guidebook §24 (Risiko 2) makes this the page's main hazard:
-            an operator must not read the explorer as the bot's live memory. */}
-        <p className="text-xs text-muted-foreground">
-          Ini cerminan dari file di disk, bukan sumber jawaban bot. Bot tetap membaca file aslinya secara langsung.
+          membuka JSON — plus knowledge yang ditulis operator sendiri.
         </p>
       </div>
 
-      <div className="flex flex-wrap items-center gap-2">
-        <Input
-          value={sourceQuery}
-          onChange={(e) => setSourceQuery(e.target.value)}
-          placeholder="Cari sumber..."
-          aria-label="Cari sumber"
-          className="w-56"
-        />
-        <Select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)} className="w-auto" aria-label="Filter tipe">
-          <option value="">Semua tipe</option>
-          <option value="CATALOG_JSON">CATALOG_JSON</option>
-          <option value="FAQ">FAQ</option>
-          <option value="MANUAL">MANUAL</option>
-        </Select>
-        <Select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="w-auto" aria-label="Filter status">
-          <option value="">Semua status</option>
-          <option value="PUBLISHED">PUBLISHED</option>
-          <option value="DRAFT">DRAFT</option>
-          <option value="REVIEW">REVIEW</option>
-          <option value="ARCHIVED">ARCHIVED</option>
-        </Select>
-
-        <div className="ml-auto flex gap-2">
-          {roleNameCan(role, 'EDIT_KNOWLEDGE_DRAFT') && <Button onClick={openCreate}>Buat knowledge baru</Button>}
-          {/* Re-indexing walks the filesystem and rewrites the catalog mirror; it is an admin
-              operation on the deployment, not a Bot Control edit, so it keeps the admin gate. */}
-          {hasAdminPowers(role) && (
-            <Button variant="outline" onClick={runSync} disabled={syncing}>
-              {syncing ? 'Meng-index...' : 'Index ulang katalog'}
-            </Button>
-          )}
+      <section className="space-y-2">
+        <div className="space-y-1">
+          <h2 className="text-sm font-semibold text-navy">Isi katalog</h2>
+          <p className="text-xs text-muted-foreground">
+            Dibaca langsung dari file di <span className="font-mono">catalog/</span> setiap kali halaman ini dibuka —
+            persis file yang dibaca bot. Tidak ada langkah sinkronisasi: mengubah filenya langsung terlihat di sini.
+            {syncedAt && ` File terakhir disinkronkan dari agent-runtime: ${new Date(syncedAt).toLocaleString('id-ID')}.`}
+          </p>
         </div>
-      </div>
 
-      {syncMessage && <p className="text-sm text-emerald-700">{syncMessage}</p>}
-      {syncError && <p className="text-sm text-destructive">{syncError}</p>}
-      {actionError && <p className="text-sm text-destructive">{actionError}</p>}
-
-      <Card className="p-0">
-        {sourcesLoading && <p className="p-3 text-sm text-muted-foreground">Memuat sumber...</p>}
-        {sourcesError && <p className="p-3 text-sm text-destructive">{sourcesError}</p>}
-        {!sourcesLoading && !sourcesError && (
-          <KnowledgeSourceTable
-            sources={sources}
-            selectedId={selectedSourceId}
-            onSelect={(id) => changeSelectedSource(id === selectedSourceId ? null : id)}
-            canEdit={roleNameCan(role, 'EDIT_KNOWLEDGE_DRAFT')}
-            canApprove={roleNameCan(role, 'APPROVE')}
-            onAction={handleAction}
-          />
-        )}
-      </Card>
-
-      <div className="space-y-2">
         <div className="flex flex-wrap items-center gap-2">
-          <h2 className="text-sm font-semibold text-navy">Isi knowledge</h2>
           <Input
-            value={chunkQuery}
-            onChange={(e) => changeChunkQuery(e.target.value)}
-            placeholder="Cari isi knowledge (mis. masker, ijen, harga)..."
-            aria-label="Cari isi knowledge"
+            value={catalogQuery}
+            onChange={(e) => changeCatalogQuery(e.target.value)}
+            placeholder="Cari isi katalog (mis. masker, ijen, harga)..."
+            aria-label="Cari isi katalog"
             className="w-80"
           />
-          {selectedSourceId && (
-            <Button variant="outline" size="sm" onClick={() => changeSelectedSource(null)}>
-              Hapus filter sumber
-            </Button>
-          )}
+          <Select
+            value={topicFilter}
+            onChange={(e) => changeTopicFilter(e.target.value)}
+            className="w-auto"
+            aria-label="Filter topik katalog"
+          >
+            <option value="">Semua topik</option>
+            {topics.map((topic) => (
+              <option key={topic} value={topic}>
+                {topic}
+              </option>
+            ))}
+          </Select>
         </div>
 
-        {!selectedSourceId && !chunkQuery.trim() ? (
-          <p className="text-sm text-muted-foreground">
-            Pilih satu sumber di atas, atau ketik kata kunci, untuk melihat isinya.
+        <CatalogEntryPanel entries={entries} total={entryTotal} loading={catalogLoading} error={catalogError} />
+      </section>
+
+      <section className="space-y-2">
+        <div className="space-y-1">
+          <h2 className="text-sm font-semibold text-navy">Knowledge terkelola</h2>
+          <p className="text-xs text-muted-foreground">
+            Jawaban yang ditulis operator dan dibaca bot berdampingan dengan katalog. Disimpan sebagai draft dulu; bot
+            baru memakainya setelah diaktifkan.
           </p>
-        ) : (
-          <KnowledgeChunkPanel chunks={chunks} total={chunkTotal} loading={chunksLoading} error={chunksError} />
-        )}
-      </div>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <Input
+            value={sourceQuery}
+            onChange={(e) => setSourceQuery(e.target.value)}
+            placeholder="Cari knowledge terkelola..."
+            aria-label="Cari knowledge terkelola"
+            className="w-56"
+          />
+          <Select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+            className="w-auto"
+            aria-label="Filter status"
+          >
+            <option value="">Semua status</option>
+            <option value="PUBLISHED">PUBLISHED</option>
+            <option value="DRAFT">DRAFT</option>
+            <option value="ARCHIVED">ARCHIVED</option>
+          </Select>
+
+          <div className="ml-auto flex gap-2">
+            {hasAdminPowers(role) && <Button onClick={openCreate}>Buat knowledge baru</Button>}
+          </div>
+        </div>
+
+        {actionError && <p className="text-sm text-destructive">{actionError}</p>}
+
+        <Card className="p-0">
+          {sourcesLoading && <p className="p-3 text-sm text-muted-foreground">Memuat knowledge terkelola...</p>}
+          {sourcesError && <p className="p-3 text-sm text-destructive">{sourcesError}</p>}
+          {!sourcesLoading && !sourcesError && (
+            <KnowledgeSourceTable sources={sources} canEdit={hasAdminPowers(role)} onAction={handleAction} />
+          )}
+        </Card>
+      </section>
 
       {editing && (
         <KnowledgeEditor

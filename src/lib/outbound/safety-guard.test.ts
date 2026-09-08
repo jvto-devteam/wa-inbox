@@ -5,7 +5,13 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mockDeep, mockReset, type DeepMockProxy } from 'vitest-mock-extended'
 import type { PrismaClient } from '@prisma/client'
 import { prisma } from '@/lib/db'
-import { checkOutboundSafety, CAMPAIGN_RATE_PER_MINUTE, PROVIDER_FAILURE_THRESHOLD } from './safety-guard'
+import {
+  checkOutboundSafety,
+  CAMPAIGN_RATE_PER_MINUTE,
+  DUPLICATE_WINDOW_MS,
+  PROVIDER_FAILURE_THRESHOLD,
+  PROVIDER_FAILURE_WINDOW_MS,
+} from './safety-guard'
 
 vi.mock('@/lib/db', () => ({ prisma: mockDeep<PrismaClient>() }))
 const mockPrisma = prisma as unknown as DeepMockProxy<PrismaClient>
@@ -19,6 +25,14 @@ beforeEach(() => {
   mockPrisma.conversation.findUnique.mockResolvedValue({ botEnabled: true } as never)
   mockPrisma.message.findFirst.mockResolvedValue(null as never)
   mockPrisma.outboundJob.count.mockResolvedValue(0 as never)
+  // The four thresholds now live on Settings. Seeded here with the code's own numbers so every
+  // test above this line keeps asserting against the constants it always did.
+  mockPrisma.settings.findUnique.mockResolvedValue({
+    duplicateWindowMs: DUPLICATE_WINDOW_MS,
+    campaignRatePerMinute: CAMPAIGN_RATE_PER_MINUTE,
+    providerFailureThreshold: PROVIDER_FAILURE_THRESHOLD,
+    providerFailureWindowMs: PROVIDER_FAILURE_WINDOW_MS,
+  } as never)
 })
 
 describe('consent', () => {
@@ -166,5 +180,78 @@ describe('failure handling', () => {
     const result = await checkOutboundSafety({ ...base, purpose: 'ONE_TO_ONE' })
     expect(result.allowed).toBe(true)
     expect(result.warnings.some((w) => w.includes('tidak bisa dijalankan'))).toBe(true)
+  })
+})
+
+/**
+ * Where the thresholds come from since the channel-policy table was removed.
+ *
+ * They were a Json column on a row with a draft → review → approve → publish cycle; they are
+ * four plain columns on `Settings` now, saved straight from the Pengaturan form. What must NOT
+ * change is the failure mode: a guard whose numbers exist only in a database row stops guarding
+ * the moment that row cannot be read, and "stops guarding" here means the duplicate check and
+ * the campaign rate limit silently pass everything.
+ */
+describe('ambang dari Settings', () => {
+  it('memakai angka yang disimpan operator, bukan konstanta kode', async () => {
+    mockPrisma.settings.findUnique.mockResolvedValue({
+      duplicateWindowMs: DUPLICATE_WINDOW_MS,
+      campaignRatePerMinute: 3,
+      providerFailureThreshold: PROVIDER_FAILURE_THRESHOLD,
+      providerFailureWindowMs: PROVIDER_FAILURE_WINDOW_MS,
+    } as never)
+    mockPrisma.outboundJob.count.mockResolvedValue(3 as never)
+
+    const result = await checkOutboundSafety({ ...base, purpose: 'CAMPAIGN' })
+    expect(result.allowed).toBe(false)
+    expect(result.blockingReason).toContain('Batas 3 pengiriman per menit')
+  })
+
+  it('memakai duplicateWindowMs dari Settings saat mencari pesan kembar', async () => {
+    const now = Date.now()
+    mockPrisma.settings.findUnique.mockResolvedValue({
+      duplicateWindowMs: 5 * 60_000,
+      campaignRatePerMinute: CAMPAIGN_RATE_PER_MINUTE,
+      providerFailureThreshold: PROVIDER_FAILURE_THRESHOLD,
+      providerFailureWindowMs: PROVIDER_FAILURE_WINDOW_MS,
+    } as never)
+
+    await checkOutboundSafety({ ...base, messageText: 'Halo', purpose: 'ONE_TO_ONE' })
+
+    const where = mockPrisma.message.findFirst.mock.calls[0][0]?.where as { createdAt: { gte: Date } }
+    // Five minutes back, not one. A window read from the wrong place is invisible in every
+    // assertion that only checks allowed/blocked.
+    expect(now - where.createdAt.gte.getTime()).toBeGreaterThanOrEqual(5 * 60_000 - 1_000)
+  })
+
+  it('fail-open ke konstanta kode saat Settings tidak bisa dibaca', async () => {
+    // The important half. Failing closed would stop every campaign on a database blip; failing
+    // onto *no* limit would be worse still — it would pass everything silently, which is exactly
+    // the state the guard exists to prevent.
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    mockPrisma.settings.findUnique.mockRejectedValue(new Error('db down'))
+    mockPrisma.outboundJob.count.mockResolvedValue(CAMPAIGN_RATE_PER_MINUTE as never)
+
+    const result = await checkOutboundSafety({ ...base, purpose: 'CAMPAIGN' })
+    expect(result.allowed).toBe(false)
+    expect(result.blockingReason).toContain(`Batas ${CAMPAIGN_RATE_PER_MINUTE} pengiriman per menit`)
+  })
+
+  it('fail-open ke konstanta kode saat baris Settings belum ada', async () => {
+    // The un-seeded state is not "no limits" either.
+    mockPrisma.settings.findUnique.mockResolvedValue(null as never)
+    mockPrisma.outboundJob.count.mockResolvedValue(CAMPAIGN_RATE_PER_MINUTE as never)
+
+    expect((await checkOutboundSafety({ ...base, purpose: 'CAMPAIGN' })).allowed).toBe(false)
+  })
+
+  it('tetap meloloskan pengiriman saat Settings gagal dibaca dan tidak ada pelanggaran lain', async () => {
+    // Fail-open means the send still goes out; it must not turn a config read failure into a
+    // blocked reply to a real customer.
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    mockPrisma.settings.findUnique.mockRejectedValue(new Error('db down'))
+
+    const result = await checkOutboundSafety({ ...base, messageText: 'Halo', purpose: 'ONE_TO_ONE' })
+    expect(result.allowed).toBe(true)
   })
 })

@@ -7,8 +7,7 @@ import { sendMessage } from '@/lib/send'
 import { withMediaUrl } from '@/lib/serialize-message'
 import { isIndonesianNumber } from '@/lib/phone'
 import { recordBotDecisionRun, attachMessageToDecisionRun } from '@/lib/bot-control/decision-recorder'
-import { isRuleEnabled } from '@/lib/bot-control/runtime-rules'
-import { handoffReplyText } from '@/lib/bot/runtime-integration'
+import { handoffReplyText, offHoursHandoffNotice } from '@/lib/bot/runtime-integration'
 import type { BotDecision } from '@/lib/bot/types'
 
 type MetaMediaObject = { id: string; mime_type: string; caption?: string; filename?: string }
@@ -43,20 +42,18 @@ export type MetaInboundMessage = {
 /**
  * Whether the bot should answer this contact by default.
  *
- * `bot.skip_indonesian_numbers` is read from the published rule config first, and
- * `Settings.skipBotForIndonesianNumbers` remains the fallback rather than being deleted: the
- * Settings page still writes that column, and removing it would silently strip a control an
- * operator already uses. Either switch being on skips the bot — the safe direction, since both
- * express the same intent and disagreement between them should not quietly enable auto-replies
- * to a market somebody meant to reserve for humans.
+ * `Settings.skipBotForIndonesianNumbers` is the ONLY thing that decides this, and that is the
+ * point of it being one column. It used to be OR'd with a published rule row for
+ * `bot.skip_indonesian_numbers`, which made the entire draft → approve → publish ceremony for
+ * that rule a no-op in the direction that mattered: an operator could publish the rule as
+ * disabled and the bot would still skip every +62 number, because the Settings toggle was on
+ * and either switch being on won. One writer means the switch on /chatbot is the answer, both
+ * ways.
  */
 async function defaultBotEnabled(phone: string): Promise<boolean> {
   const settings = await prisma.settings.findUniqueOrThrow({ where: { id: 1 } })
 
-  if (isIndonesianNumber(phone)) {
-    const skipViaRule = await isRuleEnabled('bot.skip_indonesian_numbers').catch(() => false)
-    if (settings.skipBotForIndonesianNumbers || skipViaRule) return false
-  }
+  if (isIndonesianNumber(phone) && settings.skipBotForIndonesianNumbers) return false
 
   return settings.botAutoReplyAll
 }
@@ -416,7 +413,7 @@ export async function runBotForConversation(
     // request) now sends this one honest, generic acknowledgment before going silent --
     // leaving the customer with zero reply while waiting for a human agent to notice reads as
     // the bot having failed or gone unresponsive, not as "a person will help you shortly".
-    // The specific reason stays in botTrace for the agent (bot-log page); it is never the
+    // The specific reason stays in botTrace for the agent (Inbox trace popover); it is never the
     // customer's own reply text, since none of the handoff reasons are meant to be surfaced
     // verbatim (some -- e.g. an escalation keyword match -- would read oddly quoted back).
     // Wording from the flow's published safe config when there is one; this constant otherwise.
@@ -425,7 +422,17 @@ export async function runBotForConversation(
     const handoffReply = await handoffReplyText(
       "Thank you for your message! I'm connecting you with a member of our team, and they'll follow up with you shortly."
     )
-    const sent = await sendMessage({ conversationId: conversation.id, text: handoffReply, sentBy: 'BOT', botTrace: decision })
+    // The one place `Settings.workingHoursStart/End/offHoursAutoReply` reaches a customer. The
+    // sentence above promises a human will follow up shortly; at 2am that promise is silence
+    // until morning, and the customer has no way to tell the difference between "outside
+    // office hours" and "the bot broke". This appends the operator's own wording for when the
+    // team is back -- and ONLY here, on the branch that has already given up on answering.
+    // Ordinary bot replies are untouched: the bot answers 24/7, which is the whole point of it.
+    // Null whenever the window is unset, unreadable, or it is a working hour, so the previous
+    // single-sentence handoff is exactly what still goes out.
+    const offHoursNotice = await offHoursHandoffNotice()
+    const handoffText = offHoursNotice ? `${handoffReply}\n\n${offHoursNotice}` : handoffReply
+    const sent = await sendMessage({ conversationId: conversation.id, text: handoffText, sentBy: 'BOT', botTrace: decision })
     await attachMessageToDecisionRun(decisionRunId, sent?.id)
 
     // A handoff has to actually hand off: without flipping botEnabled the conversation
@@ -515,7 +522,7 @@ async function ingestSingleMessage(message: MetaInboundMessage, contacts: MetaCo
   // empty prompt -- an automated answer to a message nobody read. They are deliberately
   // NOT routed through the handoff branch either: a customer sending a photo is not a
   // bot failure, and firing handoff.alert (plus flipping botEnabled off) for it would
-  // both misreport the bot-log/dashboard handoff counters and bury the real handoffs in
+  // both misreport the dashboard handoff counters and bury the real handoffs in
   // noise. The inbound message itself still broadcasts message.created and bumps the
   // conversation to the top of the inbox, which is the existing "a human should look at
   // this" signal.

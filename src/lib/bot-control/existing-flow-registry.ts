@@ -431,7 +431,7 @@ export const WHATSAPP_EXISTING_BOT_FLOW: ExistingFlowDefinition = {
 
 export const EXISTING_FLOWS: ExistingFlowDefinition[] = [WHATSAPP_EXISTING_BOT_FLOW]
 
-/** Ringkasan untuk daftar flow (GET /api/bot-control/flows) — tanpa nodes/edges yang berat. */
+/** Ringkasan untuk daftar flow di halaman Flow Map — tanpa nodes/edges yang berat. */
 export type ExistingFlowSummary = {
   key: string
   name: string
@@ -449,8 +449,8 @@ export function listExistingFlows(): ExistingFlowSummary[] {
     description: flow.description,
     nodesCount: flow.nodes.length,
     // Hardcoded ACTIVE, and deliberately not a field on the definition: every flow in this
-    // registry is by construction the code that is running right now. DRAFT/ARCHIVED become
-    // meaningful only in Phase 2+, when BotFlowDefinition rows can hold flows that are not.
+    // registry is by construction the code that is running right now. There is no other kind
+    // of flow to distinguish it from — the table that once held drafts is gone.
     status: 'ACTIVE',
   }))
 }

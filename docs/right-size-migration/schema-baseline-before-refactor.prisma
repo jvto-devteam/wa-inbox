@@ -1,0 +1,956 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+/// OWNER dan BOT_MANAGER ditambahkan di AKHIR, bukan disisipkan sesuai hierarki, dan itu
+/// disengaja: menyisipkan di tengah membuat Prisma menghasilkan migrasi tukar-tipe
+/// (CREATE TYPE baru, ALTER COLUMN, DROP TYPE lama) yang mengunci tabel Account. Menambah di
+/// akhir menghasilkan ALTER TYPE ... ADD VALUE yang aditif murni. Urutan di sini tidak punya
+/// makna apa pun — hierarki peran hidup di src/lib/bot-control/permissions.ts.
+enum AccountRole {
+  ADMIN
+  AGENT
+  OWNER
+  BOT_MANAGER
+}
+
+model Account {
+  id                    String         @id @default(cuid())
+  email                 String         @unique
+  passwordHash          String
+  name                  String
+  role                  AccountRole    @default(AGENT)
+  // Bumped whenever an account's credentials or privileges change (password
+  // reset, role change). Every issued JWT carries the tokenVersion it was
+  // minted with; the session check in src/middleware.ts compares it against
+  // this column and rejects the request if they differ. Without it, JWT
+  // sessions are fully stateless and survive password resets and demotions
+  // for up to their 30-day expiry.
+  tokenVersion          Int            @default(0)
+  createdAt             DateTime       @default(now())
+  assignedConversations Conversation[] @relation("AssignedAgent")
+  notes                 Note[]
+}
+
+model WaNumber {
+  id               String   @id @default(cuid())
+  phoneNumber      String   @unique
+  phoneNumberId    String
+  wabaId           String
+  accessToken      String
+  coexistBaseUrl   String
+  coexistApiKey    String
+  coexistNumberKey String
+  createdAt        DateTime @default(now())
+}
+
+model Contact {
+  id              String        @id @default(cuid())
+  phone           String        @unique
+  name            String?
+  avatarUrl       String?
+  // Negative cache for avatar enrichment, mirroring Conversation.bookingCheckedAt.
+  // Without it, `avatarUrl == null` cannot distinguish "never looked" from "looked,
+  // and this contact genuinely has no profile photo" -- so every single inbound
+  // message from a photo-less contact would re-fire a wa-coexist HTTP round-trip
+  // forever. Stamped on every enrichment attempt, successful or not.
+  avatarCheckedAt DateTime?
+  source          String?
+  createdAt       DateTime      @default(now())
+  conversation    Conversation?
+  notes           Note[]
+  reminders       Reminder[]
+}
+
+enum ConversationStatus {
+  OPEN
+  PENDING
+  CLOSED
+}
+
+model Conversation {
+  id               String                @id @default(cuid())
+  contactId        String                @unique
+  contact          Contact               @relation(fields: [contactId], references: [id])
+  botEnabled       Boolean               @default(true)
+  assignedAgentId  String?
+  assignedAgent    Account?              @relation("AssignedAgent", fields: [assignedAgentId], references: [id])
+  status           ConversationStatus    @default(OPEN)
+  pipelineStage    String                @default("new")
+  bookingData      Json?
+  bookingCheckedAt DateTime?
+  // Snapshotted once from bookingData.orderChannel the first time a booking is found, then
+  // never overwritten -- unlike the rest of bookingData (payment/hotel/etc., which keep
+  // refreshing on ensureFreshBookingData's normal 24h cycle since they can genuinely change),
+  // which platform a booking originated from is a permanent fact about it. Kept as its own
+  // column (not read out of the bookingData JSON on every request) so the sidebar list's
+  // badge doesn't depend on bookingData's freshness/shape at all.
+  orderChannel     String?
+  tripBrief        Json?
+  lastMessageAt    DateTime              @default(now())
+  // Null means "never opened" -- every inbound message counts as unread. Set to
+  // now() whenever an agent opens this conversation's thread (see
+  // src/app/api/conversations/[id]/read/route.ts) or a new inbound message
+  // arrives while the thread is already open, so the sidebar's unread badge
+  // (src/components/inbox/ConversationListItem.tsx) reflects what the agent has
+  // actually seen rather than every message ever received.
+  lastReadAt       DateTime?
+  // Pins this conversation to the top of the inbox list, above the normal
+  // lastMessageAt ordering -- currently only ever set on the one isTest sandbox
+  // conversation (see isTest below), but kept as its own general-purpose flag
+  // rather than folded into isTest so a real conversation could be pinned later
+  // without overloading what isTest means.
+  isPinned         Boolean               @default(false)
+  // Marks the single sandbox conversation an admin talks to as if they were the
+  // customer, to exercise the bot without ever reaching a real WhatsApp number.
+  // Gates two things: sendMessage() skips the real Meta/wa-coexist dispatch
+  // entirely for this conversation (see src/lib/send.ts), and
+  // /api/conversations/[id]/test-message is the only route allowed to create an
+  // INBOUND CUSTOMER message here instead of the real webhook.
+  isTest           Boolean               @default(false)
+  createdAt        DateTime              @default(now())
+  messages         Message[]
+  labels           LabelOnConversation[]
+  knowledgeGaps    KnowledgeGapLog[]
+}
+
+enum MessageDirection {
+  INBOUND
+  OUTBOUND
+}
+
+enum MessageChannel {
+  OFFICIAL
+  UNOFFICIAL
+}
+
+enum SentBy {
+  BOT
+  AGENT
+  CUSTOMER
+}
+
+enum DeliveryStatus {
+  PENDING
+  SENT
+  DELIVERED
+  READ
+  FAILED
+}
+
+model Message {
+  id              String           @id @default(cuid())
+  conversationId  String
+  conversation    Conversation     @relation(fields: [conversationId], references: [id])
+  externalId      String?          @unique
+  direction       MessageDirection
+  type            String
+  content         String?
+  mediaUrl        String?
+  // Meta's own id for an inbound image/audio/video/document/sticker. Meta's
+  // media URLs expire (~5 min) and require an Authorization header, so the
+  // raw URL can't be stored for later display -- mediaUrl is instead computed
+  // at read time as a proxy path (/api/media/{message.id}) that re-resolves
+  // this id through the Graph API on each request. See src/lib/inbound.ts and
+  // src/app/api/media/[messageId]/route.ts.
+  mediaId         String?
+  mimeType        String?
+  // Only set for `document` messages, where Meta supplies the original filename.
+  fileName        String?
+  // The local Message this one quotes/replies to (WhatsApp's "reply" feature). Set from
+  // Meta's inbound `context.id` (matched against the parent's externalId) or from the
+  // agent's chosen reply target on send. Deliberately a self-relation to OUR row, not a
+  // raw wamid column: it survives even if the parent's own wamid becomes unresolvable,
+  // and lets the UI join straight to the parent's content/type/sender.
+  replyToId       String?
+  replyTo         Message?         @relation("MessageReplyTo", fields: [replyToId], references: [id])
+  replies         Message[]        @relation("MessageReplyTo")
+  // Set only when this OUTBOUND message was dispatched as a real Cloud API template message
+  // (type: 'template', sent via sendTemplateMessage) -- the exact resolved structure at send
+  // time: template name, substituted body text, and for a carousel, each card's real display
+  // URL/body/buttons (see src/lib/meta/carousel-types.ts's SentTemplatePayload). Stored rather
+  // than re-derived from the Template row so the bubble keeps rendering the message exactly as
+  // sent even if that Template is later edited or deleted.
+  templatePayload Json?
+  channel         MessageChannel
+  sentBy          SentBy
+  agentId         String?
+  botTrace        Json?
+  deliveryStatus  DeliveryStatus   @default(PENDING)
+  createdAt       DateTime         @default(now())
+
+  // NOTE: there is deliberately no index on `content`. A plain btree index there
+  // was actively harmful: Postgres caps a btree index entry at ~2704 bytes, but a
+  // WhatsApp text message can be 4096 characters, so ingesting a long message
+  // (a pasted itinerary, a long complaint) made prisma.message.create throw
+  // "index row size ... exceeds btree version 4 maximum" and dropped a real
+  // customer message. It also bought nothing: the search it was added for
+  // (GET /api/conversations?q=...) is a `contains` / ILIKE '%q%' substring match,
+  // which a default-opclass btree cannot serve at all. Search therefore falls back
+  // to a sequential scan -- correct, and fine at one tour operator's message
+  // volume. If that ever stops being true, the right fix is a GIN + pg_trgm
+  // trigram index (needs the pg_trgm extension enabled), not a btree.
+  @@index([conversationId, createdAt])
+}
+
+// What the bot could not answer, recorded as it happens. Until this existed
+// the only way to learn the bot's blind spots was a manual read of the whole
+// message history -- the 2026-08-06 audit of 870 messages that produced most
+// of orchestrator.ts's branches. That does not repeat and does not scale.
+// `reason` is deliberately a small closed set, not free text, so the settings
+// page can group by it: 'no_facts_resolved' means the catalog had nothing for
+// the classified topic, 'verification_failed' means it had something and the
+// model reached past it anyway. Those need opposite fixes.
+model KnowledgeGapLog {
+  id             String       @id @default(cuid())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  topic          String
+  reason         String
+  messageText    String
+  createdAt      DateTime     @default(now())
+
+  @@index([createdAt])
+}
+
+/// Satu pengiriman keluar yang tertunda, sedang diproses, atau gagal.
+///
+/// Sebelum ini, `sendMessage` menembak provider langsung dan sekali saja: provider down lima
+/// detik berarti pesan itu hilang selamanya, dan satu-satunya jejaknya adalah satu baris
+/// Message berstatus FAILED yang tidak bisa dicoba ulang oleh siapa pun. Karena Unofficial
+/// adalah jalur kirim utama, itu tidak memadai untuk pemakaian nyata.
+///
+/// `maxAttempts` default 4, BUKAN 3 seperti tertulis di guidebook §6.6. Tangga retry di §16.1
+/// mendaftarkan empat percobaan (segera, +30 detik, +2 menit, +10 menit) sebelum FAILED;
+/// dengan maxAttempts 3, percobaan +10 menit tidak akan pernah tercapai dan tangga yang
+/// didokumentasikan itu tinggal separuh. Angka di sini mengikuti tangga yang operasional.
+model OutboundJob {
+  id             String         @id @default(cuid())
+  conversationId String
+  messageId      String?
+  channel        MessageChannel
+  /// COEXIST (Unofficial) atau META (Official).
+  provider       String
+  /// Semua yang dibutuhkan worker untuk mengirim ulang tanpa membaca ulang state apa pun:
+  /// nomor tujuan, teks, dan media. Tidak pernah memuat kredensial — worker mengambilnya
+  /// sendiri dari WaNumber saat memproses.
+  payload        Json
+  /// QUEUED, SENDING, SENT, FAILED, RETRYING, CANCELLED.
+  status         String         @default("QUEUED")
+  attempts       Int            @default(0)
+  maxAttempts    Int            @default(4)
+  nextAttemptAt  DateTime?
+  lastError      String?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  @@index([status, nextAttemptAt])
+  @@index([conversationId])
+  /// Dipakai UI retry untuk menemukan job di balik satu bubble yang gagal.
+  @@index([messageId])
+}
+
+/// Opt-in/opt-out per kontak, dasar campaign yang aman.
+///
+/// Baris yang TIDAK ADA berarti "belum pernah ditanya", dan diperlakukan sebagai opt-in
+/// (lihat safety-guard.ts) — sama seperti perilaku hari ini, di mana consent belum pernah
+/// dicatat sama sekali. Menjadikan ketiadaan baris sebagai opt-out akan langsung memblokir
+/// setiap kontak yang sudah ada.
+model ContactConsent {
+  id        String   @id @default(cuid())
+  contactId String   @unique
+  optIn     Boolean  @default(true)
+  optOut    Boolean  @default(false)
+  source    String?
+  note      String?
+  updatedBy String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+/// Satu putaran keputusan bot, disimpan sebagai entitas tersendiri agar bisa diaudit.
+///
+/// `Message.botTrace` TETAP ditulis seperti sebelumnya dan tidak digantikan — bubble bot di
+/// inbox masih membacanya, dan ribuan baris lama hanya punya itu. Tabel ini menjawab hal yang
+/// tidak bisa dijawab kolom JSON pada pesan: putaran yang TIDAK PERNAH menghasilkan pesan sama
+/// sekali (agent mengambil alih di tengah jalan, atau orchestrator melempar exception) dulu
+/// tidak meninggalkan jejak apa pun.
+///
+/// `conversationId` dan `messageId` sengaja kolom string biasa, BUKAN relasi ber-foreign-key —
+/// mengikuti guidebook §6.5. Alasannya konkret: src/app/api/conversations/[id]/clear
+/// menjalankan message.deleteMany, jadi FK ke Message akan memaksa memilih antara memblokir
+/// clear (RESTRICT) atau menghapus jejak audit (CASCADE). Keduanya salah untuk tabel audit —
+/// catatan harus tetap hidup melebihi hal yang dicatatnya.
+model BotDecisionRun {
+  id             String    @id @default(cuid())
+  conversationId String
+  messageId      String?
+  mode           String
+  inboundText    String
+  replyText      String?
+  /// REPLIED, CLARIFIED, HANDOFF, FAILED, SKIPPED — pemetaan di decision-recorder.ts.
+  status         String
+  flowKey        String?
+  flowVersion    Int?
+  startedAt      DateTime  @default(now())
+  finishedAt     DateTime?
+  latencyMs      Int?
+  /// Sudah melewati sanitizer sebelum ditulis (lihat trace-sanitizer.ts) — rahasia tidak
+  /// pernah mendarat di database, bukan sekadar disembunyikan saat render.
+  trace          Json
+  knowledgeRefs  Json?
+  verification   Json?
+  error          String?
+
+  @@index([conversationId])
+  @@index([startedAt])
+  @@index([status])
+  /// Tidak ada di guidebook, tapi wajib: popover trace di inbox mencari baris ini BERDASARKAN
+  /// messageId untuk setiap bubble bot. Tanpa index, itu sequential scan pada tabel yang
+  /// tumbuh satu baris per balasan bot.
+  @@index([messageId])
+}
+
+/// Satu file knowledge yang dibaca bot, dibungkus menjadi baris yang bisa dilihat operator.
+///
+/// Untuk sekarang isinya HANYA cerminan dari `catalog/*.json` — tabel ini tidak pernah dibaca
+/// saat bot menjawab. Bot tetap membaca file JSON di disk lewat src/lib/bot/catalog.ts dan
+/// knowledge.ts, persis seperti sebelumnya. Menjadikan tabel ini sumber runtime akan mengubah
+/// perilaku bot, dan guidebook §24 (Risiko 2) secara khusus melarangnya di fase ini: index
+/// bisa basi terhadap disk, dan bot yang menjawab dari data basi lebih buruk daripada bot yang
+/// tidak punya explorer sama sekali.
+///
+/// `key` memakai path relatif file (mis. "catalog/policy-cards.json") supaya sinkronisasi
+/// berikutnya menemukan kembali baris yang sama alih-alih menumpuk duplikat.
+model KnowledgeSource {
+  id           String              @id @default(cuid())
+  key          String              @unique
+  title        String
+  /// CATALOG_JSON, FAQ, URL, PDF, DOC, MANUAL. Indexer HANYA menyentuh CATALOG_JSON —
+  /// sumber yang dibuat manusia tidak boleh ditimpa oleh sinkronisasi (guidebook §10.1).
+  type         String
+  sourcePath   String?
+  status       String              @default("PUBLISHED")
+  summary      String?
+  /// Ukuran file, waktu modifikasi, dan daftar key top-level — supaya operator bisa
+  /// membandingkan apa yang ter-index dengan file yang ada di disk tanpa membuka JSON-nya.
+  metadata     Json?
+  lastSyncedAt DateTime?
+  /// Siapa yang bertanggung jawab atas isi sumber ini. Hanya terisi untuk sumber yang
+  /// dikelola operator (type != CATALOG_JSON); mirror dari disk tidak punya pemilik manusia.
+  ownerId      String?
+  createdBy    String?
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
+  chunks       KnowledgeChunk[]
+  revisions    KnowledgeRevision[]
+
+  @@index([type])
+  @@index([status])
+  @@index([ownerId])
+}
+
+/// Satu versi isi dari sebuah KnowledgeSource yang dikelola operator. SDD Manage Second §7.4.
+///
+/// Model terpisah, bukan kolom tambahan di KnowledgeSource, karena yang dibutuhkan adalah
+/// RIWAYAT: "apa yang bot ketahui pada tanggal itu" tidak bisa dijawab tabel yang hanya
+/// menyimpan keadaan terakhir. Menaruh draft di kolom KnowledgeSource juga akan membatasi
+/// sumber pada satu draft sekaligus, dan menghapus jejak revisi yang pernah ditolak — padahal
+/// revisi yang ditolak justru sering menjelaskan kenapa jawaban bot berbentuk seperti sekarang.
+///
+/// `version` naik satu per satu per sumber, bukan global: nomor yang bisa diucapkan
+/// ("kembalikan FAQ harga ke versi 3") jauh lebih berguna saat insiden daripada cuid.
+///
+/// PUBLISHED tidak bisa diedit. Mengubah revisi yang sudah terbit akan mengubah masa lalu —
+/// snapshot release yang menunjuk versi itu akan mendeskripsikan isi yang berbeda dari yang
+/// benar-benar dipakai bot saat itu. Perubahan selalu berarti revisi baru.
+model KnowledgeRevision {
+  id                String          @id @default(cuid())
+  knowledgeSourceId String
+  knowledgeSource   KnowledgeSource @relation(fields: [knowledgeSourceId], references: [id], onDelete: Cascade)
+  version           Int
+  title             String
+  /// Bentuknya didefinisikan di src/lib/bot-control/knowledge-body.ts (ManagedKnowledgeBody).
+  body              Json
+  summary           String?
+  /// DRAFT, REVIEW, APPROVED, PUBLISHED, ARCHIVED, REJECTED.
+  status            String          @default("DRAFT")
+  changeReason      String?
+  createdBy         String?
+  reviewedBy        String?
+  reviewedAt        DateTime?
+  publishedBy       String?
+  publishedAt       DateTime?
+  releaseId         String?
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  @@unique([knowledgeSourceId, version])
+  @@index([knowledgeSourceId])
+  @@index([status])
+  @@index([releaseId])
+}
+
+/// Satu potongan knowledge yang bisa dicari, ditampilkan, dan nanti dikutip oleh trace.
+///
+/// `hash` adalah SHA-256 dari isi record yang dinormalisasi. Keunikannya di-scope ke
+/// knowledgeSourceId, BUKAN global: fakta yang sama bisa muncul sah di dua file berbeda
+/// (mis. catatan kebijakan yang sama di policy-cards.json dan general-modules.json), dan
+/// menggabungkannya secara global akan menyembunyikan file mana yang sebenarnya dibaca bot —
+/// justru pertanyaan yang halaman ini ada untuk menjawabnya.
+model KnowledgeChunk {
+  id                String          @id @default(cuid())
+  knowledgeSourceId String
+  knowledgeSource   KnowledgeSource @relation(fields: [knowledgeSourceId], references: [id], onDelete: Cascade)
+  topic             String?
+  title             String?
+  body              String
+  facts             Json?
+  links             Json?
+  prices            Json?
+  tags              Json?
+  hash              String
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  @@unique([knowledgeSourceId, hash])
+  @@index([knowledgeSourceId])
+  @@index([topic])
+  @@index([hash])
+}
+
+model Label {
+  id            String                @id @default(cuid())
+  name          String                @unique
+  color         String
+  conversations LabelOnConversation[]
+}
+
+model LabelOnConversation {
+  labelId        String
+  conversationId String
+  label          Label        @relation(fields: [labelId], references: [id])
+  conversation   Conversation @relation(fields: [conversationId], references: [id])
+
+  @@id([labelId, conversationId])
+}
+
+model Note {
+  id        String   @id @default(cuid())
+  contactId String
+  contact   Contact  @relation(fields: [contactId], references: [id])
+  authorId  String
+  author    Account  @relation(fields: [authorId], references: [id])
+  body      String
+  createdAt DateTime @default(now())
+}
+
+model Reminder {
+  id        String   @id @default(cuid())
+  contactId String
+  contact   Contact  @relation(fields: [contactId], references: [id])
+  dueAt     DateTime
+  note      String
+  done      Boolean  @default(false)
+  createdAt DateTime @default(now())
+}
+
+enum TemplateType {
+  OFFICIAL
+  QUICK_REPLY
+}
+
+enum TemplateMetaStatus {
+  APPROVED
+  PENDING
+  REJECTED
+  NOT_APPLICABLE
+}
+
+// TEXT is every template this app supported before carousels: a single BODY component,
+// dispatched today by pasting its text into the compose box. CAROUSEL adds up to 10 media
+// cards (see Template.cards) and is only ever submitted/sent through the real Cloud API
+// template pipeline (src/lib/meta/templates.ts, src/lib/meta/messages.ts) -- there is no
+// "paste it as plain text" fallback for a carousel.
+enum TemplateFormat {
+  TEXT
+  CAROUSEL
+  // Meta's real LIMITED_TIME_OFFER component (a countdown banner) -- category is always
+  // forced to MARKETING (a Meta requirement for this component). The actual expiration
+  // timestamp is supplied per-send (see /api/send/template), not stored here.
+  LTO
+  // Not a distinct Meta component -- structurally just a BODY + a BUTTONS component
+  // containing one COPY_CODE button. Modeled as its own format for the same reason the UI
+  // presents it as its own template type: the real coupon code is a per-send runtime value,
+  // never the submission-time example.
+  COUPON
+  // Same component shape as TEXT (optional HEADER/BODY/FOOTER/BUTTONS) -- Meta only
+  // distinguishes it by locking category to AUTHENTICATION (OTP-style templates).
+  AUTH
+}
+
+model Template {
+  id                String             @id @default(cuid())
+  name              String
+  type              TemplateType
+  format            TemplateFormat     @default(TEXT)
+  // Meta's own id for this template, returned by the create-template Graph call.
+  // Meta reviews templates asynchronously (often hours later) and reports the
+  // outcome through the message_template_status_update webhook, keyed by this id
+  // -- without storing it there is no way to ever reconcile the local metaStatus
+  // back to what Meta actually decided, so it would stay stuck at PENDING forever.
+  // Null for QUICK_REPLY templates, which never go to Meta.
+  metaId            String?
+  metaStatus        TemplateMetaStatus @default(NOT_APPLICABLE)
+  category          String?
+  body              String
+  // Auto-derived at submission time from how many {{n}} placeholders the body actually
+  // contains (see src/components/templates/BodyField.tsx's cursor-insert button) -- never
+  // manually named by the admin. Each entry is a display label only (the bound field's own
+  // label when variableBindings covers that position, else a generic "Variabel N"), read by
+  // ComposeBox to label each fill-in input at send time.
+  variables         Json?
+  // Maps a variable's 1-indexed position (as a string, e.g. "1", "2" -- {{1}}, {{2}}) to a
+  // src/lib/booking/variable-fields.ts field key (e.g. "package", "financialBalance"), chosen
+  // once here at template-creation time. A position missing from this map is unbound -- the
+  // agent fills it manually at send time (see ComposeBox's per-variable "Isi dari data..."
+  // fallback picker). Applies to both OFFICIAL and QUICK_REPLY templates.
+  variableBindings  Json?
+  // TEXT/AUTH only: TemplateHeaderDef (see src/lib/meta/carousel-types.ts) -- None/Text/Image
+  // URL/Video URL/Document URL. Media variants are uploaded via the Resumable Upload API at
+  // submission time (same mechanism CAROUSEL cards use), never stored as a Meta handle here.
+  header            Json?
+  // TEXT/AUTH/COUPON only: a fixed footer line under the body (Meta caps this at 60
+  // characters, and forbids variables in it).
+  footer            String?
+  // Only set when format is CAROUSEL: CarouselCardDef[] (see src/lib/meta/carousel-types.ts)
+  // -- each card's own source media URL, body text, and buttons, exactly as submitted. The
+  // source URL is re-uploaded to Meta fresh on every send (see uploadMetaMediaFromUrl):
+  // Meta's own asset handles/ids from submission time are short-lived and cannot be reused.
+  cards             Json?
+  // LTO only: the countdown banner's fixed text (Meta caps this at 16 characters).
+  offerTitle        String?
+  // TEXT/AUTH/LTO only: optional top-level buttons (CarouselButtonDef[] -- same shape
+  // carousel cards use, since Meta allows the same QUICK_REPLY/URL/PHONE_NUMBER types here).
+  buttons           Json?
+  // COUPON only: the button's fixed label and the placeholder code Meta needs to approve the
+  // submission. The real, live code is supplied per-send instead (see /api/send/template) --
+  // never this column, which would otherwise go stale the moment it's reused.
+  couponButtonText  String?
+  couponExampleCode String?
+  createdAt         DateTime           @default(now())
+}
+
+model Settings {
+  id                          Int            @id @default(1)
+  defaultChannel              MessageChannel @default(OFFICIAL)
+  workingHoursStart           String?
+  workingHoursEnd             String?
+  offHoursAutoReply           String?
+  // The bot's global mode. true ("On") = active for all chats -- every conversation's
+  // botEnabled is bulk-set true on the OFF->ON toggle, and every new conversation defaults
+  // to true while this is on. false ("Off") = inactive by default everywhere -- bulk-set
+  // false on toggle, and an agent must manually flip a specific conversation's botEnabled
+  // back on (src/app/api/conversations/[id]/toggle-bot) to activate the bot in just that
+  // one chat. See src/app/api/bot/mode/route.ts.
+  botAutoReplyAll             Boolean        @default(true)
+  // When true, the bot never auto-replies to a contact whose phone is an Indonesian number
+  // (country code 62) regardless of botAutoReplyAll -- an operator policy choice to have
+  // agents handle domestic customers directly, letting the bot serve everyone else. See
+  // src/lib/phone.ts's isIndonesianNumber and src/app/api/bot/indonesia-filter/route.ts.
+  skipBotForIndonesianNumbers Boolean        @default(false)
+  catalogSyncedAt             DateTime?
+  // Which Ollama model src/lib/bot/llm.ts asks for. Local-only (no hosted-API fallback) --
+  // customer text and booking data never leave the VPS's own Ollama daemon.
+  ollamaModel                 String         @default("gemma4:31b-cloud")
+}
+
+/// Catatan setiap perubahan penting di Bot Control. SDD Manage Second §7.1.
+///
+/// Alasan ini ada sebagai tabel sendiri, bukan kolom di entitas yang berubah: pertanyaan yang
+/// harus dijawab adalah "siapa mengubah apa, kapan, dan mengapa", dan pertanyaan itu melintasi
+/// rule, knowledge, flow, channel policy, dan release sekaligus. Kolom `updatedBy` pada
+/// masing-masing entitas hanya menyimpan penulis TERAKHIR — perubahan sebelumnya hilang, dan
+/// justru perubahan sebelumnya itu yang dicari orang saat bot mulai menjawab salah.
+///
+/// Semua kolom identitas sengaja string biasa, BUKAN relasi ber-foreign-key, dengan alasan yang
+/// sama seperti BotDecisionRun di atas: catatan audit harus tetap hidup melebihi hal yang
+/// dicatatnya. Akun yang dihapus tidak boleh menghapus jejak apa yang pernah ia publish.
+///
+/// `before`/`after` HANYA berisi field yang benar-benar berubah dan sudah melewati
+/// sanitizeTrace (lihat src/lib/bot-control/audit.ts). Menyimpan objek utuh akan membuat
+/// setiap baris audit menggandakan konfigurasi lengkap, dan cepat atau lambat menggandakan
+/// sebuah token bersamanya.
+model BotControlAuditLog {
+  id         String   @id @default(cuid())
+  actorId    String?
+  actorName  String?
+  /// CREATE_DRAFT, UPDATE_DRAFT, REQUEST_REVIEW, APPROVE, REJECT, PUBLISH, ROLLBACK, ENABLE,
+  /// DISABLE, RUN_TEST, OVERRIDE_TEST_FAILURE.
+  action     String
+  entityType String
+  entityId   String?
+  entityKey  String?
+  before     Json?
+  after      Json?
+  reason     String?
+  releaseId  String?
+  ipAddress  String?
+  userAgent  String?
+  createdAt  DateTime @default(now())
+
+  @@index([entityType, entityId])
+  @@index([entityKey])
+  @@index([action])
+  @@index([releaseId])
+  @@index([createdAt])
+}
+
+/// Satu publish, dengan snapshot lengkap dari apa yang aktif saat itu. SDD Manage Second §7.2.
+///
+/// Snapshot disimpan sebagai salinan, bukan sebagai daftar pointer ke baris lain, karena
+/// itulah yang membuat rollback mungkin. Kalau release hanya menyimpan id versi, rollback
+/// harus berharap baris-baris itu masih ada dan masih berisi hal yang sama — padahal fase
+/// berikutnya justru akan mengeditnya. Salinan membuat "kembalikan ke keadaan tanggal sekian"
+/// jadi pernyataan yang bisa dipenuhi, bukan harapan.
+///
+/// `version` naik satu per satu dan unik, dihitung di dalam transaksi publish. Nomor yang bisa
+/// diucapkan ("rollback ke versi 12") jauh lebih berguna saat insiden daripada cuid.
+///
+/// `rollbackOfId` menunjuk release yang DIPULIHKAN, bukan release yang ditinggalkan. Rollback
+/// tidak pernah menghapus apa pun: ia membuat release baru dan hanya memindahkan pointer.
+model BotRelease {
+  id           String   @id @default(cuid())
+  version      Int      @unique
+  title        String
+  description  String?
+  /// PUBLISHED, ROLLED_BACK, SUPERSEDED.
+  status       String   @default("PUBLISHED")
+  publishedBy  String?
+  publishedAt  DateTime @default(now())
+  rollbackOfId String?
+  testRunId    String?
+  /// Bentuknya didefinisikan di src/lib/bot-control/release.ts (ReleaseSnapshot).
+  /// Tidak boleh memuat token/API key — lihat CLAUDE.md "Larangan Mutlak".
+  snapshot     Json
+  notes        String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([status])
+  @@index([publishedAt])
+}
+
+/// Rule bot yang bisa dikontrol dari database, bukan hanya dibaca dari kode. SDD Manage Second §7.3.
+///
+/// Baris ini TIDAK menggantikan `src/lib/bot-control/rule-registry.ts`. Registry tetap sumber
+/// kebenaran untuk apa saja rule yang ada, di file mana ia ditegakkan, dan — yang paling
+/// penting — apakah ia `editable`. Tabel ini hanya menyimpan bagian yang boleh berubah tanpa
+/// deploy. Kalau tabel ini hilang atau tidak terbaca, bot tetap jalan dengan nilai statis;
+/// lihat runtime-rules.ts.
+///
+/// `editable` disalin ke sini supaya bisa dibaca tanpa memuat registry, tapi registry-lah yang
+/// menang: seed menimpanya setiap kali, dan API draft memeriksa registry, bukan kolom ini.
+/// Baris database yang bisa mengangkat `editable`-nya sendiri akan menjadikan tabel ini jalan
+/// pintas untuk mematikan aturan yang justru tidak boleh dimatikan lewat form web.
+///
+/// Draft hidup di kolomnya sendiri (`draftConfig`, `draftEnabled`) berdampingan dengan nilai
+/// yang sedang berlaku (`config`, `enabled`), bukan menimpanya. Itu yang membuat "draft belum
+/// mengubah runtime" jadi sifat struktur datanya, bukan sesuatu yang harus diingat setiap
+/// pembaca — dan yang membuat reject cukup membuang kolom draft tanpa perlu memulihkan apa pun.
+model BotRuleSetting {
+  id             String    @id @default(cuid())
+  key            String    @unique
+  name           String
+  category       String
+  description    String
+  severity       String
+  editable       Boolean   @default(false)
+  enabled        Boolean   @default(true)
+  config         Json?
+  /// Dari mana nilai yang berlaku sekarang berasal: "code" (registry statis) atau "database".
+  runtimeSource  String?
+  /// PUBLISHED, DRAFT, REVIEW, APPROVED, REJECTED.
+  status         String    @default("PUBLISHED")
+  draftConfig    Json?
+  draftEnabled   Boolean?
+  draftUpdatedBy String?
+  draftUpdatedAt DateTime?
+  publishedBy    String?
+  publishedAt    DateTime?
+  releaseId      String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([category])
+  @@index([severity])
+  @@index([status])
+}
+
+/// Satu flow bot yang bisa dikelola. SDD Manage Second §7.5.
+///
+/// Sama seperti BotRuleSetting terhadap rule-registry.ts: baris ini TIDAK menggantikan
+/// `existing-flow-registry.ts`. Registry tetap memutuskan flow apa yang ADA, node apa saja di
+/// dalamnya, dan file mana yang menjalankannya — semua itu control flow di kode, bukan data.
+/// Tabel ini hanya menyimpan bagian yang boleh berubah tanpa deploy.
+///
+/// `editableLevel` adalah batas keamanannya, dan disalin dari seed, bukan ditentukan baris ini
+/// sendiri. READ_ONLY, TEXT_ONLY, SAFE_CONFIG, FLOW_BUILDER_V1. Fase ini berhenti di
+/// SAFE_CONFIG: yang boleh diubah hanyalah teks dan ambang yang sudah dibaca kode apa adanya,
+/// bukan percabangannya. Percabangan adalah `if` di orchestrator.ts — mengubahnya dari form web
+/// berarti membangun interpreter, dan interpreter setengah jadi yang menjalankan produksi jauh
+/// lebih berbahaya daripada flow yang belum bisa diedit.
+///
+/// `activeVersionId` adalah pointer, bukan sumber kebenaran kedua: versi yang aktif tetap
+/// baris BotFlowVersion berstatus PUBLISHED. Pointer ini ada supaya loader runtime tidak perlu
+/// memindai seluruh versi pada setiap giliran bot.
+model BotFlowDefinition {
+  id              String           @id @default(cuid())
+  key             String           @unique
+  name            String
+  description     String?
+  category        String?
+  /// "code" selama perilaku masih sepenuhnya dari kode, "database" setelah ada versi terbit.
+  runtimeSource   String?
+  editableLevel   String           @default("READ_ONLY")
+  activeVersionId String?
+  status          String           @default("PUBLISHED")
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  versions        BotFlowVersion[]
+
+  @@index([category])
+  @@index([status])
+}
+
+/// Satu versi konfigurasi flow. SDD Manage Second §7.6.
+///
+/// `nodeConfig` di fase ini HANYA memuat safe config (teks sapaan, balasan fallback, ambang
+/// klarifikasi, dan seterusnya) — bukan definisi node. Node-nya tetap di registry statis,
+/// karena node adalah kode. Nama kolomnya mengikuti SDD supaya Flow Builder V1 nanti bisa
+/// mengisinya tanpa migrasi lagi.
+///
+/// PUBLISHED tidak bisa diedit, alasan yang sama dengan KnowledgeRevision: snapshot release
+/// yang menunjuk versi ini harus tetap mendeskripsikan konfigurasi yang benar-benar dipakai bot
+/// saat itu. Perubahan selalu berarti versi baru.
+model BotFlowVersion {
+  id             String            @id @default(cuid())
+  flowId         String
+  flow           BotFlowDefinition @relation(fields: [flowId], references: [id], onDelete: Cascade)
+  version        Int
+  /// DRAFT, REVIEW, APPROVED, PUBLISHED, ARCHIVED, REJECTED.
+  status         String            @default("DRAFT")
+  triggerConfig  Json?
+  /// Bentuknya didefinisikan di src/lib/bot-control/flow-config.ts (FlowSafeConfig).
+  nodeConfig     Json
+  edgeConfig     Json?
+  fallbackConfig Json?
+  handoffConfig  Json?
+  changeReason   String?
+  createdBy      String?
+  reviewedBy     String?
+  reviewedAt     DateTime?
+  publishedBy    String?
+  publishedAt    DateTime?
+  releaseId      String?
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  @@unique([flowId, version])
+  @@index([flowId])
+  @@index([status])
+  @@index([releaseId])
+}
+
+/// Satu kasus uji untuk bot. SDD Manage Second §7.7.
+///
+/// Ekspektasinya sengaja berupa beberapa kolom sempit, bukan satu ekspektasi bebas: yang
+/// menjadikan sebuah test berguna adalah ia gagal karena satu alasan yang bisa dibaca. "Balasan
+/// tidak sesuai" tidak memberi tahu siapa pun apa yang harus diperbaiki; "status WOULD_HANDOFF,
+/// diharapkan WOULD_REPLY" memberi tahu.
+///
+/// Semua kolom ekspektasi nullable karena masing-masing opsional: sebuah kasus boleh hanya
+/// memeriksa bahwa bot TIDAK mengalihkan ke agent, tanpa peduli kalimat persisnya.
+model BotTestCase {
+  id                    String   @id @default(cuid())
+  name                  String
+  description           String?
+  category              String?
+  inputText             String
+  /// Konteks percakapan yang disiapkan sebelum simulasi (nama kontak, dsb).
+  conversationSeed      Json?
+  /// WOULD_REPLY, WOULD_CLARIFY, WOULD_HANDOFF, FAILED — nilai SimulationStatus.
+  expectedStatus        String?
+  expectedFlowKey       String?
+  expectedContains      String?
+  expectedNotContains   String?
+  expectedHandoff       Boolean?
+  requiredKnowledgeKeys Json?
+  /// Nonaktif berarti dilewati, bukan dihapus: kasus yang dimatikan tetap menjelaskan apa yang
+  /// pernah dianggap penting, dan bisa dihidupkan lagi tanpa ditulis ulang.
+  enabled               Boolean  @default(true)
+  createdBy             String?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@index([category])
+  @@index([enabled])
+}
+
+/// Satu kali eksekusi sekumpulan kasus uji. SDD Manage Second §7.8.
+///
+/// `status` di sini adalah gerbang publish (§11): sebuah release hanya boleh terbit bila run
+/// yang ditunjuknya PASSED. Karena itu jumlahnya (`total`, `passed`, `failed`, `skipped`)
+/// disimpan sebagai kolom, bukan dihitung ulang dari `BotTestResult` saat dibaca — angka yang
+/// menggerbangi publish harus tetap sama persis dengan angka saat gerbang itu diputuskan,
+/// meskipun kasus ujinya kemudian diubah atau dihapus.
+model BotTestRun {
+  id         String          @id @default(cuid())
+  name       String?
+  /// PRE_RELEASE atau MANUAL.
+  scope      String
+  /// RUNNING, PASSED, FAILED.
+  status     String
+  total      Int             @default(0)
+  passed     Int             @default(0)
+  failed     Int             @default(0)
+  skipped    Int             @default(0)
+  releaseId  String?
+  startedBy  String?
+  startedAt  DateTime        @default(now())
+  finishedAt DateTime?
+  summary    Json?
+  createdAt  DateTime        @default(now())
+  results    BotTestResult[]
+
+  @@index([scope])
+  @@index([status])
+  @@index([releaseId])
+}
+
+/// Hasil satu kasus uji dalam satu run. SDD Manage Second §7.9.
+///
+/// `inputText` disalin ke sini, tidak dibaca lewat relasi ke BotTestCase, dengan alasan yang
+/// sama seperti BotDecisionRun: catatan harus tetap bisa dibaca meski hal yang dicatatnya
+/// berubah. Kasus uji yang diedit setelah run tidak boleh mengubah apa yang tertulis pernah
+/// dijalankan.
+model BotTestResult {
+  id            String     @id @default(cuid())
+  testRunId     String
+  testRun       BotTestRun @relation(fields: [testRunId], references: [id], onDelete: Cascade)
+  /// Kolom string biasa, BUKAN relasi ber-foreign-key — alasan yang sama seperti
+  /// BotDecisionRun: catatan harus tetap hidup melebihi hal yang dicatatnya. Kasus uji yang
+  /// dihapus tidak boleh menghapus bukti bahwa ia pernah gagal sebelum sebuah publish.
+  testCaseId    String
+  /// PASSED, FAILED, SKIPPED.
+  status        String
+  inputText     String
+  actualStatus  String?
+  actualFlowKey String?
+  actualReply   String?
+  actualTrace   Json?
+  failureReason String?
+  latencyMs     Int?
+  createdAt     DateTime   @default(now())
+
+  @@index([testRunId])
+  @@index([testCaseId])
+  @@index([status])
+}
+
+/// Tindak lanjut manual atas satu keputusan bot. SDD Manage Second §7.10.
+///
+/// Tabel terpisah dari BotDecisionRun, bukan kolom tambahan di sana, karena keduanya menjawab
+/// pertanyaan berbeda dan berumur berbeda. BotDecisionRun adalah catatan apa yang TERJADI dan
+/// tidak boleh berubah setelah ditulis; triage adalah catatan apa yang manusia PUTUSKAN
+/// tentangnya, dan itu berubah terus — dibuka, ditugaskan, diselesaikan. Menaruhnya di satu
+/// baris berarti setiap penugasan menulis ulang baris audit.
+///
+/// `decisionRunId` unik: satu keputusan hanya punya satu tindak lanjut. Dua triage untuk
+/// keputusan yang sama akan membuat "sudah ditangani belum?" tidak bisa dijawab, yang justru
+/// satu-satunya guna daftar ini.
+///
+/// Kolom identitas sengaja string biasa tanpa foreign key, mengikuti BotDecisionRun sendiri:
+/// `/api/conversations/[id]/clear` menjalankan message.deleteMany, dan catatan tindak lanjut
+/// harus tetap hidup melebihi percakapan yang memicunya.
+model BotDecisionTriage {
+  id               String    @id @default(cuid())
+  decisionRunId    String    @unique
+  /// OPEN, ASSIGNED, RESOLVED, IGNORED. Tidak ada yang dihapus — RESOLVED dan IGNORED tetap
+  /// tersimpan, karena "pernah diputuskan tidak perlu diapa-apakan" adalah informasi.
+  status           String    @default("OPEN")
+  /// KNOWLEDGE_GAP, WRONG_FLOW, BAD_REPLY, HALLUCINATION_BLOCKED, UNNECESSARY_HANDOFF,
+  /// MISSED_HANDOFF, PROVIDER_FAILURE, OTHER.
+  issueType        String?
+  severity         String    @default("NORMAL")
+  assignedTo       String?
+  note             String?
+  /// Menghubungkan tindak lanjut ke perbaikan yang dibuat karenanya (knowledge, rule, flow).
+  /// Diisi manual; sistem tidak pernah menebaknya.
+  linkedEntityType String?
+  linkedEntityId   String?
+  resolvedBy       String?
+  resolvedAt       DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  @@index([status])
+  @@index([issueType])
+  @@index([severity])
+  @@index([assignedTo])
+}
+
+/// Kebijakan channel yang bisa dikelola. SDD Manage Second §7.11.
+///
+/// Satu baris per kebijakan, dengan `key` sebagai namanya ("whatsapp.default"). Dibuat
+/// berbaris, bukan sebagai kolom di Settings, karena kebijakan ini punya siklus draft → review
+/// → approve → publish sendiri seperti rule dan flow — dan Settings adalah baris tunggal yang
+/// ditulis langsung oleh halaman Pengaturan tanpa review sama sekali.
+///
+/// `capabilityRules` memetakan kemampuan ke channel yang boleh membawanya. Ini menggantikan
+/// tabel statis di channel-capabilities.ts SEBAGAI SUMBER, bukan sebagai kebenaran: file itu
+/// tetap memutuskan kemampuan apa yang ADA, karena tiap entri menggambarkan endpoint yang
+/// benar-benar diimplementasikan kode. Baris database hanya boleh mengubah channel mana yang
+/// dipakai untuk kemampuan yang sudah ada.
+///
+/// `safetyConfig` menggantikan konstanta di safety-guard.ts dengan cara yang sama, dan
+/// batas-batasnya divalidasi di src/lib/bot-control/channel-policy-config.ts — nilai nol pada
+/// campaign rate akan mematikan seluruh gerbang campaign, yang merupakan perubahan perilaku
+/// yang menyamar sebagai setelan.
+model ChannelPolicySetting {
+  id              String    @id @default(cuid())
+  key             String    @unique
+  /// OFFICIAL atau UNOFFICIAL. Kebijakan tertulis di CLAUDE.md adalah UNOFFICIAL.
+  defaultOutbound String    @default("UNOFFICIAL")
+  officialMode    String    @default("INBOUND_AND_CAPABILITY")
+  unofficialMode  String    @default("PRIMARY_OUTBOUND")
+  capabilityRules Json
+  safetyConfig    Json
+  /// Provider yang sedang dijeda darurat, mis. ["COEXIST"].
+  ///
+  /// SENGAJA kolom sendiri, BUKAN bagian dari `safetyConfig`. Jeda provider adalah tindakan
+  /// operasional darurat, bukan konfigurasi yang direview: menaruhnya di safetyConfig berarti ia
+  /// ikut draft, ikut approve, dan — yang paling berbahaya — ikut ditimpa oleh publish release
+  /// yang tidak ada hubungannya, sehingga jeda yang dipasang saat insiden bisa terangkat
+  /// diam-diam oleh orang lain yang kebetulan menerbitkan perubahan knowledge.
+  pausedProviders Json?
+  /// PUBLISHED, DRAFT, REVIEW, APPROVED, REJECTED.
+  status          String    @default("PUBLISHED")
+  /// Draft hidup berdampingan dengan nilai yang berlaku, bukan menimpanya — sama seperti
+  /// BotRuleSetting. Itu yang membuat "draft belum mengubah runtime" jadi sifat struktur
+  /// datanya, bukan sesuatu yang harus diingat setiap pembaca.
+  draftConfig     Json?
+  draftUpdatedBy  String?
+  draftUpdatedAt  DateTime?
+  publishedBy     String?
+  publishedAt     DateTime?
+  releaseId       String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([status])
+}

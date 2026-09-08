@@ -43,7 +43,7 @@ describe('isActivePath', () => {
 
   it('matches nested routes so /contacts/<id> keeps Kontak lit', () => {
     expect(isActivePath('/contacts/abc123', '/contacts')).toBe(true)
-    expect(isActivePath('/settings/bot-log', '/settings')).toBe(true)
+    expect(isActivePath('/settings/knowledge-gaps', '/settings')).toBe(true)
   })
 
   it('does not match an unrelated route that merely shares a character prefix', () => {

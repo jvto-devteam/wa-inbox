@@ -74,16 +74,17 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       }
     }
 
+    // Kept even though it is one message rather than a setting: cancelling is irreversible and
+    // the customer is never told, and the job row records the reason but not who decided.
+    const actor = await prisma.account.findUnique({ where: { id: admin.accountId }, select: { name: true } })
     await writeBotAuditLog({
       action: 'DISABLE',
       entityType: 'OUTBOUND_JOB',
       entityId: job.id,
       entityKey: job.messageId ? `message:${job.messageId}` : `job:${job.id}`,
       actorId: admin.accountId,
-      before: { status: job.status },
-      after: { status: 'CANCELLED' },
+      actorName: actor?.name ?? null,
       reason: parsed.data.reason,
-      req,
     })
 
     return NextResponse.json({ id: job.id, status: 'CANCELLED' })

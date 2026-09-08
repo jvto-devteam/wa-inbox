@@ -1,0 +1,264 @@
+-- ============================================================================
+-- ITEM b3 — catatan migrasi data: KnowledgeRevision jadi draft/live
+-- ============================================================================
+-- TIDAK DIJALANKAN. Semua pernyataan di bawah ini sengaja berupa komentar.
+-- DATABASE_URL repo ini menunjuk VPS PRODUKSI; keputusan penerapan ada di tangan
+-- operator, bukan agent. Agent yang menulis file ini TIDAK menyentuh database
+-- sama sekali — termasuk SELECT di LANGKAH 1, yang ditulis untuk dijalankan
+-- operator, bukan dijalankan lebih dulu lalu dilaporkan angkanya.
+--
+--
+-- Konteks
+-- -------
+-- Alur managed knowledge dulu punya ENAM status revisi
+--
+--     DRAFT → REVIEW → APPROVED → PUBLISHED, plus ARCHIVED dan REJECTED
+--
+-- dengan matriks transisi (ALLOWED_FROM), kolom reviewer, dan publish yang hanya
+-- bisa terjadi lewat sebuah BotRelease. Pemisahan tugas yang jadi alasan bentuk
+-- itu tidak pernah ada di sini: penulis draft dan penyetujunya orang yang sama,
+-- dan item a4 sudah membuktikan tidak seorang pun bisa memegang peran selain
+-- ADMIN/AGENT. Sekarang tinggal dua tombol — "Simpan draft" dan "Aktifkan".
+--
+-- Yang berubah di tabel "KnowledgeRevision":
+--
+--   1. "status"      -> nilai yang dipakai tinggal 'DRAFT', 'PUBLISHED', dan
+--                       'ARCHIVED'. 'REVIEW', 'APPROVED', 'REJECTED' tidak pernah
+--                       ditulis lagi. Lihat LANGKAH 3 untuk pemetaan.
+--   2. "reviewedBy"  -> DIHAPUS (kolom). Tidak dipindahkan ke mana pun; peran
+--   3. "reviewedAt"  -> DIHAPUS (kolom). reviewer memang tidak pernah ada.
+--   4. "releaseId"   -> DIHAPUS (kolom), berikut index "KnowledgeRevision_releaseId_idx".
+--                       Publish tidak lagi lewat release, jadi kolom ini tidak
+--                       akan pernah terisi lagi. Lihat asumsi 4 sebelum DROP.
+--
+-- Yang TIDAK berubah, dan sengaja:
+--
+--   * "version" dan @@unique([knowledgeSourceId, version]) TETAP. Versioning itu
+--     murah dan menjawab "apa yang bot tahu bulan lalu" — pertanyaan nyata di
+--     JVTO (audit 870 pesan bulan Agustus dikerjakan persis dengan menelusuri
+--     hal semacam ini).
+--   * "publishedBy" / "publishedAt" TETAP. "Siapa mengaktifkan ini dan kapan"
+--     tetap berguna justru setelah reviewer dan approver hilang.
+--   * "KnowledgeSource"."status" TETAP boleh 'PUBLISHED' / 'DRAFT' / 'ARCHIVED'.
+--     Mengarsipkan SUMBER pengetahuan yang sudah tidak berlaku itu operasi nyata
+--     dan tidak ada hubungannya dengan alur review yang dibuang.
+--
+--
+-- Asumsi
+-- ------
+-- 1. **"KnowledgeRevision" diperkirakan berisi 0 baris di produksi.** Fitur ini
+--    belum pernah dipakai: satu-satunya jalan membuat revisi adalah halaman
+--    Knowledge Explorer, dan satu-satunya jalan mem-publish-nya adalah Release,
+--    yang keduanya baru ada beberapa hari. TAPI ANGKA ITU TIDAK DIPERCAYA BEGITU
+--    SAJA — LANGKAH 1 adalah SELECT read-only yang membuktikannya, dan LANGKAH 3
+--    ditulis supaya benar juga kalau ternyata ADA baris.
+--
+-- 2. Kalau LANGKAH 1 mengembalikan 0 baris, LANGKAH 3 boleh dilewati seluruhnya
+--    dan migrasi ini murni DDL (LANGKAH 2 + LANGKAH 4).
+--
+-- 3. 'ARCHIVED' PADA REVISI DIPERTAHANKAN, bukan dihapus. Keputusannya diambil di
+--    item ini dan alasannya teknis, bukan selera:
+--
+--        src/lib/bot/managed-knowledge.ts memilih SEMUA baris `status =
+--        'PUBLISHED'` dan TIDAK men-deduplikasi per sumber.
+--
+--    Jadi kalau v4 diaktifkan sementara v3 dibiarkan PUBLISHED, bot akan diberi
+--    jawaban lama DAN jawaban baru sekaligus untuk pertanyaan yang sama. Loader
+--    itu tidak boleh diubah di item ini (dan memang tidak diubah), jadi revisi
+--    yang tergantikan harus pindah ke status lain. Menurunkannya ke 'DRAFT' akan
+--    lebih buruk: panel riwayat lalu mengklaim versi yang sempat menjawab
+--    customer selama sebulan tidak pernah aktif. 'ARCHIVED' adalah satu-satunya
+--    pilihan yang jujur, dan tidak pernah dipilih manusia — hanya ditulis sistem.
+--
+-- 4. "releaseId" hilang tanpa penggantinya. Kalau ternyata ADA baris terisi
+--    (LANGKAH 1c), nilainya adalah satu-satunya penghubung antara sebuah revisi
+--    dan release yang menerbitkannya. Setelah DROP, hubungan itu hanya tersisa di
+--    "BotControlAuditLog" (action = 'PUBLISH', entityType = 'KNOWLEDGE', kolom
+--    "releaseId"), yang tidak ikut dihapus. Simpan hasil SELECT di LANGKAH 1c
+--    sebelum DROP kalau nilainya ternyata tidak nol.
+--
+--
+-- ----------------------------------------------------------------------------
+-- LANGKAH 1 — VERIFIKASI. Read-only, jalankan lebih dulu, jangan dilewati.
+--             Seluruh keputusan di bawah bergantung pada hasilnya.
+-- ----------------------------------------------------------------------------
+--
+-- 1a. Berapa baris, dan status apa saja yang benar-benar ada?
+--
+-- SELECT "status", COUNT(*) AS jumlah
+-- FROM "KnowledgeRevision"
+-- GROUP BY "status"
+-- ORDER BY "status";
+--
+--     Diharapkan: 0 baris hasil (tabel kosong).
+--     Kalau ada hasil, lanjutkan ke 1b dan LANGKAH 3.
+--
+-- 1b. Kalau ADA baris: apakah ada sumber dengan LEBIH DARI SATU revisi
+--     PUBLISHED? Ini satu-satunya keadaan yang bisa membuat bot mengutip dua
+--     jawaban sekaligus, dan harus dibereskan sebelum apa pun yang lain.
+--
+-- SELECT "knowledgeSourceId", COUNT(*) AS published
+-- FROM "KnowledgeRevision"
+-- WHERE "status" = 'PUBLISHED'
+-- GROUP BY "knowledgeSourceId"
+-- HAVING COUNT(*) > 1;
+--
+--     Diharapkan: 0 baris. Kalau tidak, lihat LANGKAH 3d.
+--
+-- 1c. Kalau ADA baris: catat hubungan revisi -> release sebelum kolomnya hilang.
+--     Simpan hasilnya (mis. ke file) — setelah LANGKAH 4 tidak bisa diambil lagi.
+--
+-- SELECT r."id", r."knowledgeSourceId", r."version", r."status", r."releaseId",
+--        r."reviewedBy", r."reviewedAt", r."publishedBy", r."publishedAt"
+-- FROM "KnowledgeRevision" r
+-- WHERE r."releaseId" IS NOT NULL OR r."reviewedBy" IS NOT NULL
+-- ORDER BY r."knowledgeSourceId", r."version";
+--
+-- 1d. Sumber yang statusnya ikut terpengaruh (hanya untuk dibaca, tidak diubah
+--     oleh migrasi ini): sumber MANUAL yang tidak punya revisi PUBLISHED sama
+--     sekali seharusnya berstatus 'DRAFT', bukan 'PUBLISHED'.
+--
+-- SELECT s."id", s."key", s."status",
+--        (SELECT COUNT(*) FROM "KnowledgeRevision" r
+--          WHERE r."knowledgeSourceId" = s."id" AND r."status" = 'PUBLISHED') AS published_revisi
+-- FROM "KnowledgeSource" s
+-- WHERE s."type" = 'MANUAL'
+-- ORDER BY s."key";
+--
+--
+-- ----------------------------------------------------------------------------
+-- LANGKAH 2 — Buat file migrasi OFFLINE. Jangan `prisma migrate dev`.
+-- ----------------------------------------------------------------------------
+-- CLAUDE.md: `migrate dev` bisa me-reset database saat mendeteksi drift, dan
+-- DATABASE_URL di repo ini menunjuk VPS produksi.
+--
+--   npx prisma migrate diff \
+--     --from-schema-datamodel <schema sebelum item b3> \
+--     --to-schema-datamodel prisma/schema.prisma \
+--     --script > prisma/migrations/<timestamp>_knowledge_draft_live/migration.sql
+--
+-- Schema sebelum item b3 tersedia di
+--   scratchpad/schema-baseline-before-refactor.prisma  (baseline seluruh refactor)
+-- atau `git show HEAD:prisma/schema.prisma` untuk baseline sebelum branch ini.
+--
+-- SQL yang diharapkan keluar untuk BAGIAN KNOWLEDGE — periksa, jangan langsung
+-- percaya, dan pastikan tidak ada DROP/ALTER lain yang ikut terbawa:
+--
+-- DROP INDEX "KnowledgeRevision_releaseId_idx";
+-- ALTER TABLE "KnowledgeRevision" DROP COLUMN "reviewedBy";
+-- ALTER TABLE "KnowledgeRevision" DROP COLUMN "reviewedAt";
+-- ALTER TABLE "KnowledgeRevision" DROP COLUMN "releaseId";
+--
+-- Ketiganya ALTER TABLE non-aditif (DROP COLUMN), jadi menurut CLAUDE.md wajib
+-- didiskusikan lebih dulu. Konteks diskusi ada di asumsi 4: yang hilang permanen
+-- hanya hubungan revisi -> release, dan itu masih tercatat di audit log.
+--
+--
+-- ----------------------------------------------------------------------------
+-- LANGKAH 3 — PEMETAAN STATUS. HANYA kalau LANGKAH 1a mengembalikan baris.
+--             Jalankan SEBELUM LANGKAH 4 (DROP kolom), karena 3b memakai
+--             "reviewedBy"/"reviewedAt" yang akan hilang.
+-- ----------------------------------------------------------------------------
+--
+-- Pemetaannya, dan alasannya satu per satu:
+--
+--   'REVIEW'   -> 'DRAFT'   : ditulis, belum aktif. Bot tidak pernah membacanya.
+--   'APPROVED' -> 'DRAFT'   : disetujui TAPI belum pernah dipublish, jadi bot
+--                             juga tidak pernah membacanya. Menjadikannya
+--                             'PUBLISHED' sama saja dengan menerbitkan sesuatu
+--                             yang tidak pernah diterbitkan siapa pun — persis
+--                             perubahan perilaku yang migrasi ini tidak boleh
+--                             melakukannya diam-diam. Operator bisa menekan
+--                             "Aktifkan" sendiri setelahnya, satu klik.
+--   'REJECTED' -> 'DRAFT'   : isinya prosa yang pernah ditulis orang dan sengaja
+--                             tidak dibuang. Sebagai DRAFT ia tetap terbaca di
+--                             panel riwayat dan bisa disunting jadi revisi
+--                             berikutnya. Tidak pernah dibaca bot, sama seperti
+--                             sebelumnya.
+--   'PUBLISHED'-> tetap     : ini yang sedang dibaca bot. Jangan disentuh.
+--   'ARCHIVED' -> tetap     : lihat asumsi 3 — statusnya dipertahankan persis
+--                             untuk arti yang sudah dipakainya sekarang, yaitu
+--                             "revisi ini digantikan yang lebih baru".
+--
+-- 3a. Turunkan REVIEW / APPROVED / REJECTED jadi DRAFT.
+--
+-- UPDATE "KnowledgeRevision"
+-- SET "status" = 'DRAFT'
+-- WHERE "status" IN ('REVIEW', 'APPROVED', 'REJECTED');
+--
+-- 3b. Bersihkan jejak reviewer SEBELUM kolomnya di-drop. Tidak wajib secara
+--     teknis (LANGKAH 4 menghapus kolomnya), tapi berguna kalau operator memilih
+--     menunda LANGKAH 4: revisi yang sudah turun ke DRAFT tidak boleh terlihat
+--     seperti masih punya reviewer.
+--
+-- UPDATE "KnowledgeRevision"
+-- SET "reviewedBy" = NULL, "reviewedAt" = NULL
+-- WHERE "status" = 'DRAFT';
+--
+-- 3c. Sumber yang tidak punya revisi PUBLISHED sama sekali harus kembali ke
+--     'DRAFT', supaya daftar tidak menampilkannya sebagai sesuatu yang sedang
+--     dipakai bot padahal loader tidak menemukan apa pun untuknya.
+--     JANGAN menyentuh sumber non-MANUAL: baris CATALOG_JSON milik indexer, dan
+--     CLAUDE.md melarang menimpanya dari sisi mana pun.
+--
+-- UPDATE "KnowledgeSource" s
+-- SET "status" = 'DRAFT'
+-- WHERE s."type" = 'MANUAL'
+--   AND s."status" = 'PUBLISHED'
+--   AND NOT EXISTS (
+--     SELECT 1 FROM "KnowledgeRevision" r
+--     WHERE r."knowledgeSourceId" = s."id" AND r."status" = 'PUBLISHED'
+--   );
+--
+-- 3d. HANYA kalau LANGKAH 1b menemukan sumber dengan >1 revisi PUBLISHED.
+--     Ini keadaan yang tidak seharusnya ada (publish lama pun mengarsipkan yang
+--     tergantikan lebih dulu), jadi perbaikannya sengaja konservatif: pertahankan
+--     versi TERTINGGI, arsipkan sisanya. Baca dulu hasil 1b dan pastikan versi
+--     tertinggi memang isi yang diinginkan sebelum menjalankan ini.
+--
+-- UPDATE "KnowledgeRevision" r
+-- SET "status" = 'ARCHIVED'
+-- WHERE r."status" = 'PUBLISHED'
+--   AND r."version" < (
+--     SELECT MAX(r2."version") FROM "KnowledgeRevision" r2
+--     WHERE r2."knowledgeSourceId" = r."knowledgeSourceId" AND r2."status" = 'PUBLISHED'
+--   );
+--
+-- 3e. Verifikasi sebelum lanjut ke LANGKAH 4:
+--
+-- SELECT "status", COUNT(*) FROM "KnowledgeRevision" GROUP BY "status";
+--     -> hanya boleh berisi 'DRAFT', 'PUBLISHED', 'ARCHIVED'.
+--
+-- SELECT "knowledgeSourceId", COUNT(*) FROM "KnowledgeRevision"
+-- WHERE "status" = 'PUBLISHED' GROUP BY "knowledgeSourceId" HAVING COUNT(*) > 1;
+--     -> harus kosong.
+--
+--
+-- ----------------------------------------------------------------------------
+-- LANGKAH 4 — Terapkan DDL dari LANGKAH 2.
+-- ----------------------------------------------------------------------------
+-- npx prisma migrate deploy
+--
+-- (Node 22 lewat nvm; Prisma 7 tidak jalan di Node 18 bawaan VPS.)
+--
+--
+-- ----------------------------------------------------------------------------
+-- Kalau LANGKAH 3 dilewati padahal ada baris
+-- ------------------------------------------
+-- Tidak ada yang rusak seketika, dan bot TIDAK berubah perilakunya: loader hanya
+-- membaca `status = 'PUBLISHED'`, dan baris 'REVIEW'/'APPROVED'/'REJECTED' tetap
+-- tidak terbaca olehnya, persis seperti sebelum item ini.
+--
+-- Yang rusak adalah antarmukanya. Baris berstatus lama akan:
+--   * muncul di panel riwayat dengan badge tanpa warna (STATUS_VARIANT hanya
+--     mengenal tiga nilai sekarang) — kosmetik;
+--   * TIDAK terhitung sebagai draft oleh daftar sumber, karena filternya kini
+--     `status = 'DRAFT'` — jadi tombol "Aktifkan" tidak muncul untuknya;
+--   * ditolak "Aktifkan" dengan 409 kalau seseorang sampai ke sana, karena
+--     publishKnowledgeRevision hanya menerima revisi berstatus DRAFT.
+--
+-- Artinya: melewatkan LANGKAH 3 membuat revisi lama TIDAK BISA DIAKTIFKAN dan
+-- praktis tidak terlihat, bukan membuat bot mengatakan sesuatu yang salah.
+-- Perbaikannya adalah menjalankan LANGKAH 3 kapan saja setelahnya — 3a saja
+-- sudah cukup untuk mengembalikannya ke jalur.
+-- ----------------------------------------------------------------------------

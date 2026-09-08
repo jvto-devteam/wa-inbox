@@ -69,6 +69,34 @@ export const CHANNEL_CAPABILITIES: Record<OutboundChannel, Record<ChannelCapabil
   },
 }
 
+/**
+ * The capabilities a SEND path can ask to route.
+ *
+ * A subset of `ChannelCapability`: `receive_webhook`, `delivery_status` and `read_receipt`
+ * describe what a channel does to us, not something a caller can dispatch, so routing them
+ * would be meaningless. The list is pinned by channel-capabilities.test.ts against the matrix
+ * above, so a key that no channel describes cannot be added here.
+ *
+ * These nine used to be an editable per-capability channel table in the channel policy row —
+ * a form where an operator picked a channel per capability. The form is gone: which channel
+ * can carry a template is a fact about wa-coexist's API, not an opinion, and the one shape it
+ * could take that the matrix cannot ("route this to a channel that cannot carry it") was
+ * corrected back by `resolveChannelForCapability` anyway.
+ */
+export const CHANNEL_CAPABILITY_KEYS = [
+  'send_text',
+  'send_media',
+  'send_document',
+  'send_audio',
+  'send_template',
+  'send_buttons',
+  'send_list',
+  'send_carousel',
+  'campaign',
+] as const
+
+export type ChannelCapabilityKey = (typeof CHANNEL_CAPABILITY_KEYS)[number]
+
 export function capabilityOf(channel: OutboundChannel, capability: ChannelCapability): CapabilityValue {
   return CHANNEL_CAPABILITIES[channel][capability]
 }
@@ -95,4 +123,34 @@ export function officialOnlyCapabilities(): ChannelCapability[] {
  */
 export function channelForCapability(capability: ChannelCapability): OutboundChannel {
   return supportsCapability('UNOFFICIAL', capability) ? 'UNOFFICIAL' : 'OFFICIAL'
+}
+
+/**
+ * Which channel SHOULD carry a capability, counting 'LIMITED' as capable.
+ *
+ * The difference from `channelForCapability` above is `campaign`, and it is the whole reason
+ * this function exists rather than reusing that one. `campaign` is 'LIMITED' on Unofficial:
+ * bulk sending over an unofficial number is possible but is exactly what gets the number
+ * banned. `supportsCapability` deliberately answers false for it, so `channelForCapability`
+ * would promote every campaign to Official — a different answer from the one this app has
+ * actually been giving.
+ *
+ * This reproduces, from the matrix alone, the nine routing answers the default channel-policy
+ * row gave before that table was removed:
+ *
+ *   send_text / send_media / send_document / send_audio -> UNOFFICIAL
+ *   send_template / send_buttons / send_list / send_carousel -> OFFICIAL
+ *   campaign -> UNOFFICIAL   (the row said UNOFFICIAL_LIMITED; "limited" is a rate concern
+ *                             the safety guard applies, not a different channel)
+ *
+ * Returns null when NEITHER channel can carry it. That is not a routing answer, and every
+ * caller is already committed to sending something — see `channelForCapabilityPolicy`. No
+ * entry in the matrix is false on both channels today, so the branch is defensive: it exists
+ * so that adding a capability nothing implements produces "do not send" rather than a
+ * confident wrong channel.
+ */
+export function preferredChannelForCapability(capability: ChannelCapability): OutboundChannel | null {
+  if (CHANNEL_CAPABILITIES.UNOFFICIAL[capability] !== false) return 'UNOFFICIAL'
+  if (CHANNEL_CAPABILITIES.OFFICIAL[capability] !== false) return 'OFFICIAL'
+  return null
 }

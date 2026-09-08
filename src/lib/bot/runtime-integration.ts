@@ -14,41 +14,106 @@
  * that makes turning this on at all defensible — the worst case is Phase G's bot, not an
  * unpredictable one.
  */
-import { isRuleEnabled } from '@/lib/bot-control/runtime-rules'
-import { getFlowText } from '@/lib/bot-control/runtime-flows'
-import { EXISTING_BOT_FLOW_KEY } from '@/lib/bot-control/existing-flow-registry'
+import { prisma } from '@/lib/db'
 import { loadPublishedManagedKnowledge, type KnowledgeRef } from '@/lib/bot/managed-knowledge'
 
 /**
  * Whether the LLM escalation layer should run.
  *
  * Only the LLM layer. The explicit keyword gate in `escalation-classifier.ts` runs
- * unconditionally and is not reachable from any form — `rule-registry.ts` says exactly this, and
- * it is the reason `bot.handoff_on_human_request` is editable at all. A customer who types
- * "saya mau bicara dengan manusia" still reaches a human whatever anyone publishes.
+ * unconditionally and is not reachable from any form — `rule-registry.ts` says exactly this,
+ * and it is the reason this switch can exist at all. A customer who types "saya mau bicara
+ * dengan manusia" still reaches a human whatever anyone sets here.
  *
- * Defaults to TRUE on any failure: every rule in this system is a restriction on the bot, so an
- * unreadable one must leave the restriction in place.
+ * Read from `Settings.handoffOnHumanRequest`, edited on /chatbot. It used to come from a
+ * published rule row behind a draft/review/approve/publish cycle — for one boolean
+ * whose only two states are "run the extra classifier" and "don't".
+ *
+ * Defaults to TRUE on any failure: this rule is a restriction on the bot, so an unreadable one
+ * must leave the restriction in place.
  */
 export async function shouldRunEscalationClassifier(): Promise<boolean> {
-  return isRuleEnabled('bot.handoff_on_human_request')
-}
-
-/** The published fallback wording, or the caller's own constant. */
-export async function fallbackReplyText(codeDefault: string): Promise<string> {
-  return getFlowText(EXISTING_BOT_FLOW_KEY, 'fallbackReply', codeDefault)
+  return settingsFlag('handoffOnHumanRequest', true)
 }
 
 /**
- * The published handoff wording, or the caller's own constant.
+ * One operator-editable sentence from `Settings`, or the caller's own constant.
+ *
+ * --- Why `Settings` and not a versioned flow table ---
+ *
+ * These two strings used to live in a versioned flow table, behind a full draft/review/
+ * approve/publish/rollback cycle and five API routes — for one row holding two sentences. The
+ * branching those tables claimed to configure is `if` statements in `orchestrator.ts`, so the
+ * versioning never had a second flow to version. Two nullable columns and the /chatbot page's
+ * existing edit-save-live pattern say the same thing without the machinery.
+ *
+ * --- Empty means "use the code's wording", never "say nothing" ---
+ *
+ * A blank box is how an operator reverts. Making them retype the original sentence to get back
+ * to it is how a typo becomes permanent, so null, "" and whitespace all fall through to
+ * `codeDefault`.
+ *
+ * --- Fail open ---
+ *
+ * This is read inside a bot turn. A database outage returns the code's own wording, logged: the
+ * bot has always run on those constants, and a turn that dies because a CONFIGURATION lookup
+ * failed is a far worse outcome than one running on last week's wording.
+ *
+ * Deliberately uncached, unlike the rule and knowledge loaders. It is one indexed lookup of a
+ * single row on a path that already does several, and the /chatbot page promises "save and it
+ * is live" — a 30-second cache would make an operator press Simpan twice.
+ */
+async function settingsText(field: 'fallbackReply' | 'handoffReply', codeDefault: string): Promise<string> {
+  try {
+    const row = await prisma.settings.findUnique({
+      where: { id: 1 },
+      select: { fallbackReply: true, handoffReply: true },
+    })
+    const value = row?.[field]
+    return typeof value === 'string' && value.trim().length > 0 ? value : codeDefault
+  } catch (error) {
+    console.error('runtime-integration: gagal membaca Settings, memakai kalimat bawaan kode', { field, error })
+    return codeDefault
+  }
+}
+
+/**
+ * One operator-editable boolean from `Settings`, or the code's own default.
+ *
+ * Same shape and the same fail-open contract as `settingsText` above, and here for the same
+ * reason: this is read inside a bot turn, so a database outage has to produce the behaviour the
+ * bot had before anyone configured anything — never an exception that kills the turn, and never
+ * the opposite of what the operator set.
+ */
+async function settingsFlag(field: 'handoffOnHumanRequest', codeDefault: boolean): Promise<boolean> {
+  try {
+    const row = await prisma.settings.findUnique({
+      where: { id: 1 },
+      select: { handoffOnHumanRequest: true },
+    })
+    const value = row?.[field]
+    return typeof value === 'boolean' ? value : codeDefault
+  } catch (error) {
+    console.error('runtime-integration: gagal membaca Settings, memakai default kode', { field, error })
+    return codeDefault
+  }
+}
+
+/** The operator's fallback wording, or the caller's own constant. */
+export async function fallbackReplyText(codeDefault: string): Promise<string> {
+  return settingsText('fallbackReply', codeDefault)
+}
+
+/**
+ * The operator's handoff wording, or the caller's own constant.
  *
  * Replaces `clarificationText`, which was exported here with a docstring and never called by
- * anything: `clarificationPrompt` has no single sentence to override, since clarify replies are
- * composed per branch. `handoffReply` does — inbound.ts says one fixed sentence on every
+ * anything: clarify replies are composed per branch, so there was no single sentence to
+ * override. `handoffReply` does have one — inbound.ts says the same fixed sentence on every
  * handoff — so this is the one that can honestly exist.
  */
 export async function handoffReplyText(codeDefault: string): Promise<string> {
-  return getFlowText(EXISTING_BOT_FLOW_KEY, 'handoffReply', codeDefault)
+  return settingsText('handoffReply', codeDefault)
 }
 
 export type ManagedFacts = {
@@ -147,4 +212,123 @@ export async function managedFactsFor(message: string): Promise<ManagedFacts> {
   }
 
   return { lines, refs }
+}
+
+/**
+ * The timezone every working-hours comparison is made in.
+ *
+ * Hardcoded, and deliberately not `Intl.DateTimeFormat().resolvedOptions().timeZone`: the
+ * operator sets "08:00" meaning eight in the morning where the team actually is, and the
+ * server this runs on is a VPS whose clock is UTC. Reading the process timezone would make the
+ * same saved window mean something different after a redeploy or a host move — a silent,
+ * invisible seven-hour shift.
+ *
+ * JVTO is a single-tenant Java-based operator (see CLAUDE.md), so there is exactly one
+ * business timezone and it is WIB. The repo had no existing timezone constant to follow — only
+ * `toLocaleString('id-ID')` calls, which are browser-side display formatting and pick up the
+ * VIEWER's zone, not the business's — so this is the first one, and it belongs here rather
+ * than in a shared module until something outside this feature needs it.
+ */
+const OPERATING_TIME_ZONE = 'Asia/Jakarta'
+
+/** "HH:MM" on a 24-hour clock, which is exactly what an `<input type="time">` produces. */
+const TIME_OF_DAY = /^([01]\d|2[0-3]):([0-5]\d)$/
+
+/** Minutes since midnight for an "HH:MM" string, or null for anything unusable. */
+function minutesOfDay(value: string | null | undefined): number | null {
+  if (typeof value !== 'string') return null
+  const match = TIME_OF_DAY.exec(value.trim())
+  if (!match) return null
+  return Number(match[1]) * 60 + Number(match[2])
+}
+
+/**
+ * Built once with an explicit `timeZone`, so it answers the same wherever the process runs and
+ * whatever `TZ` is set to — including changed after this module was loaded.
+ */
+const OPERATING_CLOCK = new Intl.DateTimeFormat('en-GB', {
+  timeZone: OPERATING_TIME_ZONE,
+  hour: '2-digit',
+  minute: '2-digit',
+  hourCycle: 'h23',
+})
+
+/** Minutes since midnight of `now`, read on the operating timezone's clock. */
+function minutesOfDayInOperatingZone(now: Date): number | null {
+  const parts = OPERATING_CLOCK.formatToParts(now)
+  const hour = Number(parts.find((part) => part.type === 'hour')?.value)
+  const minute = Number(parts.find((part) => part.type === 'minute')?.value)
+  if (!Number.isFinite(hour) || !Number.isFinite(minute)) return null
+  return hour * 60 + minute
+}
+
+/**
+ * Whether `now` falls outside the operator's working-hours window.
+ *
+ * Returns FALSE — "treat this as inside working hours", i.e. say nothing extra — for every
+ * window it cannot read: either bound missing, blank, or not "HH:MM", and also a zero-length
+ * window (start === end) which is far more likely a half-filled form than a genuine request for
+ * "closed 24 hours a day". A configuration nobody can parse must not start appending sentences
+ * to customer messages.
+ *
+ * A window whose end is before its start wraps midnight (22:00–06:00 is a real night shift),
+ * so the comparison is an OR rather than an AND in that case. The end bound is exclusive: with
+ * 09:00–17:00, 17:00 sharp is already outside, which is how a human reads "sampai jam 5".
+ */
+function isOutsideWorkingHours(start: string | null, end: string | null, now: Date): boolean {
+  const opensAt = minutesOfDay(start)
+  const closesAt = minutesOfDay(end)
+  if (opensAt === null || closesAt === null || opensAt === closesAt) return false
+
+  const current = minutesOfDayInOperatingZone(now)
+  if (current === null) return false
+
+  const inside =
+    opensAt < closesAt
+      ? current >= opensAt && current < closesAt
+      : current >= opensAt || current < closesAt
+  return !inside
+}
+
+/**
+ * The one extra sentence a handoff carries when it happens outside working hours, or null.
+ *
+ * --- What this is NOT ---
+ *
+ * It is not an off-hours autoresponder and it does not stop the bot answering. The bot replies
+ * 24/7 through the LLM and that is the point of it; swapping a real answer for "we are closed"
+ * at 2am would be a WORSE service, not a safer one. This sentence is appended only on the
+ * handoff branch in `inbound.ts` — the one case where the bot has just told a customer a human
+ * will follow up, and no human is going to see the message for another seven hours. Without
+ * it, that promise is silence.
+ *
+ * --- Empty means off, as everywhere else in this file ---
+ *
+ * A blank `offHoursAutoReply` appends nothing, matching `fallbackReply`/`handoffReply` above:
+ * clearing the box is how an operator turns something off. Unlike those two there is no code
+ * default to fall back to, because there is no sentence the code could honestly invent — only
+ * the operator knows when their team is back.
+ *
+ * --- Fail open, and open here means silent ---
+ *
+ * Every failure path returns null: unreadable Settings, an unparseable window, a missing row.
+ * The handoff itself must survive a database hiccup, and an extra sentence is the part of it
+ * that is safe to lose.
+ */
+export async function offHoursHandoffNotice(now: Date = new Date()): Promise<string | null> {
+  try {
+    const row = await prisma.settings.findUnique({
+      where: { id: 1 },
+      select: { workingHoursStart: true, workingHoursEnd: true, offHoursAutoReply: true },
+    })
+    const notice = typeof row?.offHoursAutoReply === 'string' ? row.offHoursAutoReply.trim() : ''
+    if (notice.length === 0) return null
+
+    return isOutsideWorkingHours(row?.workingHoursStart ?? null, row?.workingHoursEnd ?? null, now)
+      ? notice
+      : null
+  } catch (error) {
+    console.error('runtime-integration: gagal membaca jam kerja dari Settings, handoff tanpa catatan jam', { error })
+    return null
+  }
 }

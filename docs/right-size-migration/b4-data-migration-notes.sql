@@ -1,0 +1,278 @@
+-- ============================================================================
+-- ITEM b4 — catatan migrasi data: BotDecisionTriage jadi dua kolom di
+--           BotDecisionRun
+-- ============================================================================
+-- TIDAK DIJALANKAN. Semua pernyataan di bawah ini sengaja berupa komentar.
+-- DATABASE_URL repo ini menunjuk VPS PRODUKSI; keputusan penerapan ada di tangan
+-- operator, bukan agent. Agent yang menulis file ini TIDAK menyentuh database
+-- sama sekali — termasuk SELECT di LANGKAH 1, yang ditulis untuk dijalankan
+-- operator, bukan dijalankan lebih dulu lalu dilaporkan angkanya.
+--
+--
+-- Konteks
+-- -------
+-- "Tindak lanjut atas satu keputusan bot" dulu berupa tabel tersendiri dengan
+--
+--     8 issueType  ×  4 status  ×  4 severity  +  assignedTo + resolvedBy
+--                                              +  linkedEntityType/-Id
+--
+-- yaitu sebuah Jira mini untuk tim satu-dua orang. Relasinya ke "BotDecisionRun"
+-- 1:1 ("decisionRunId" UNIQUE) dan TANPA foreign key sama sekali — jadi secara
+-- struktural ia memang kolom yang dipisah, tanpa satu pun keuntungan pemisahan.
+--
+-- Ongkos pemisahan itu nyata dan terlihat di halaman Decision Logs: karena tidak
+-- bisa di-join, halaman memanggil GET /api/bot-control/decisions/triage?limit=200
+-- SETIAP KALI filter berubah — termasuk saat yang berubah cuma filter triage,
+-- yang toh disaring di klien. Dua akibatnya:
+--
+--   * satu request tambahan per perubahan filter, untuk data yang seharusnya
+--     ikut di baris keputusan itu sendiri; dan
+--   * batas 200 baris: badge tindak lanjut untuk keputusan di halaman ke-5
+--     BISA TIDAK MUNCUL SAMA SEKALI, karena triage-nya tidak ada di 200 teratas.
+--
+-- Bentuk barunya dua kolom di "BotDecisionRun":
+--
+--   "flaggedAt" TIMESTAMP(3) NULL   -- NULL = tidak ditandai
+--   "flagNote"  TEXT NULL           -- catatan bebas, boleh NULL
+--
+-- plus index "BotDecisionRun_flaggedAt_idx" untuk filter "hanya yang ditandai",
+-- yang sekarang dikerjakan di database (bagian dari `where`), bukan di klien.
+--
+-- Tabel "BotDecisionTriage" DIHAPUS seluruhnya.
+--
+-- Yang TIDAK berubah, dan sengaja:
+--
+--   * "BotDecisionRun" dan seluruh pipeline Decision Logs TETAP. Pertanyaan
+--     "kenapa bot menjawab begitu" benar-benar ditanyakan di JVTO.
+--   * "trace" TETAP, berikut sanitizer-nya (trace-sanitizer.ts membersihkan
+--     rahasia SEBELUM menulis ke database — tidak disentuh item ini).
+--   * index "BotDecisionRun_messageId_idx" TETAP: popover trace di inbox mencari
+--     baris berdasarkan messageId untuk setiap bubble bot.
+--   * "BotControlAuditLog" TETAP UTUH, termasuk baris lama dengan
+--     entityType = 'DECISION_TRIAGE'. Lihat asumsi 3.
+--
+--
+-- Asumsi
+-- ------
+-- 1. **"BotDecisionTriage" diperkirakan berisi 0 baris di produksi.** TAPI ANGKA
+--    ITU TIDAK DIPERCAYA BEGITU SAJA — LANGKAH 1 adalah SELECT read-only yang
+--    membuktikannya, dan LANGKAH 3 ditulis supaya benar juga kalau ternyata ADA
+--    baris.
+--
+-- 2. Kalau LANGKAH 1a mengembalikan 0, LANGKAH 3 boleh dilewati seluruhnya dan
+--    migrasi ini murni DDL (LANGKAH 2a + LANGKAH 4).
+--
+-- 3. Baris audit lama tidak diubah. "BotControlAuditLog" masih memuat baris
+--    dengan entityType = 'DECISION_TRIAGE' dari alur lama; halaman Audit Logs
+--    sekarang menawarkan 'DECISION' di dropdown filternya, bukan
+--    'DECISION_TRIAGE'. Konsekuensinya: baris lama itu masih ada dan masih
+--    terbaca tanpa filter, hanya tidak bisa dipilih lewat dropdown. Itu disengaja
+--    — menulis ulang catatan audit lama supaya cocok dengan kosakata baru justru
+--    merusak arti sebuah catatan audit. Kalau operator ingin dropdown-nya
+--    lengkap, tambahkan 'DECISION_TRIAGE' kembali ke ENTITY_TYPES di
+--    src/app/(authenticated)/bot-control/audit-logs/page.tsx; itu keputusan UI,
+--    bukan migrasi data.
+--
+-- 4. Pemetaan di LANGKAH 3 membuang informasi, dan itu memang maksudnya.
+--    "assignedTo", "resolvedBy", "linkedEntityType"/"linkedEntityId", dan
+--    perbedaan antara OPEN dan ASSIGNED semuanya menghilang. Yang tersisa dari
+--    mereka hanya teks di "flagNote". Kalau isi tabel ternyata TIDAK kosong dan
+--    nilainya masih dianggap penting, SIMPAN dulu hasil SELECT di LANGKAH 1b ke
+--    file sebelum LANGKAH 5 — setelah DROP TABLE tidak bisa diambil lagi.
+--
+--
+-- ----------------------------------------------------------------------------
+-- LANGKAH 1 — VERIFIKASI. Read-only, jalankan lebih dulu, jangan dilewati.
+--             Seluruh keputusan di bawah bergantung pada hasilnya.
+-- ----------------------------------------------------------------------------
+--
+-- 1a. Berapa baris, dan status apa saja yang benar-benar ada?
+--
+-- SELECT COUNT(*) AS total,
+--        COUNT(*) FILTER (WHERE "status" IN ('OPEN', 'ASSIGNED')) AS belum_selesai,
+--        COUNT(*) FILTER (WHERE "status" = 'RESOLVED')            AS selesai,
+--        COUNT(*) FILTER (WHERE "status" = 'IGNORED')             AS diabaikan
+-- FROM "BotDecisionTriage";
+--
+--     Diharapkan: total = 0.
+--     Kalau total = 0, LANGKAH 3 dilewati seluruhnya.
+--     Kalau total > 0, lanjutkan ke 1b dan kerjakan LANGKAH 3.
+--
+-- 1b. Kalau ADA baris: salin isinya sebelum apa pun dihapus. Simpan hasilnya ke
+--     file (mis. `\copy (...) TO 'b4-triage-backup.csv' CSV HEADER`). Setelah
+--     LANGKAH 5 tabelnya tidak ada lagi.
+--
+-- SELECT t."id", t."decisionRunId", t."status", t."issueType", t."severity",
+--        t."assignedTo", t."note", t."linkedEntityType", t."linkedEntityId",
+--        t."resolvedBy", t."resolvedAt", t."createdAt", t."updatedAt"
+-- FROM "BotDecisionTriage" t
+-- ORDER BY t."createdAt";
+--
+-- 1c. Kalau ADA baris: adakah triage yang menunjuk keputusan yang sudah tidak
+--     ada? Tidak ada foreign key, jadi ini mungkin. Baris seperti itu tidak bisa
+--     dipindahkan ke mana pun (kolom tujuannya ada di baris keputusan yang sudah
+--     hilang) dan akan ikut terhapus di LANGKAH 5 — pastikan 1b sudah disimpan.
+--
+-- SELECT t."id", t."decisionRunId", t."status", t."note"
+-- FROM "BotDecisionTriage" t
+-- WHERE NOT EXISTS (SELECT 1 FROM "BotDecisionRun" r WHERE r."id" = t."decisionRunId");
+--
+--     Diharapkan: 0 baris.
+--
+--
+-- ----------------------------------------------------------------------------
+-- LANGKAH 2 — Buat file migrasi OFFLINE. Jangan `prisma migrate dev`.
+-- ----------------------------------------------------------------------------
+-- CLAUDE.md: `migrate dev` bisa me-reset database saat mendeteksi drift, dan
+-- DATABASE_URL di repo ini menunjuk VPS produksi.
+--
+--   npx prisma migrate diff \
+--     --from-schema-datamodel <schema sebelum item b4> \
+--     --to-schema-datamodel prisma/schema.prisma \
+--     --script > prisma/migrations/<timestamp>_decision_flag/migration.sql
+--
+-- Schema sebelum item b4 tersedia di
+--   scratchpad/schema-baseline-before-refactor.prisma  (baseline seluruh refactor)
+-- atau `git show HEAD:prisma/schema.prisma` untuk baseline sebelum branch ini.
+--
+-- SQL yang diharapkan keluar untuk BAGIAN DECISION — periksa, jangan langsung
+-- percaya, dan pastikan tidak ada DROP/ALTER lain yang ikut terbawa:
+--
+-- -- (2a) ADITIF — aman dijalankan kapan saja:
+-- ALTER TABLE "BotDecisionRun" ADD COLUMN "flaggedAt" TIMESTAMP(3);
+-- ALTER TABLE "BotDecisionRun" ADD COLUMN "flagNote" TEXT;
+-- CREATE INDEX "BotDecisionRun_flaggedAt_idx" ON "BotDecisionRun"("flaggedAt");
+--
+-- -- (2b) DESTRUKTIF — tunda sampai LANGKAH 5:
+-- DROP TABLE "BotDecisionTriage";
+--
+-- **PISAHKAN KEDUANYA.** `migrate diff` menaruh semuanya dalam satu file, dan
+-- urutannya salah untuk kasus ini: kolom tujuan harus ADA (2a) sebelum LANGKAH 3
+-- menyalin data, dan tabel sumber harus MASIH ADA saat LANGKAH 3 berjalan.
+-- Pecah menjadi dua direktori migrasi:
+--
+--   <timestamp>_decision_flag_add        -> hanya (2a)
+--   <timestamp+n>_decision_triage_drop   -> hanya (2b)
+--
+-- Kalau LANGKAH 1a memang mengembalikan 0, keduanya boleh tetap satu file.
+--
+-- DROP TABLE termasuk operasi yang menurut CLAUDE.md wajib didiskusikan lebih
+-- dulu. Konteks diskusinya: tabelnya diperkirakan kosong (LANGKAH 1a
+-- membuktikannya), tidak ada foreign key dari mana pun ke tabel ini, dan jejak
+-- perubahannya tetap hidup di "BotControlAuditLog" (asumsi 3).
+--
+--
+-- ----------------------------------------------------------------------------
+-- LANGKAH 3 — PEMETAAN DATA. HANYA kalau LANGKAH 1a mengembalikan > 0.
+--             Jalankan SETELAH LANGKAH 2a (kolom sudah ada) dan SEBELUM
+--             LANGKAH 5 (tabel sumber masih ada).
+-- ----------------------------------------------------------------------------
+--
+-- Pemetaannya, dan alasannya satu per satu:
+--
+--   OPEN / ASSIGNED  -> "flaggedAt" = "createdAt" triage-nya.
+--                       Keduanya berarti "masih perlu diperbaiki", dan itulah
+--                       satu-satunya arti tanda yang baru. Dipakai "createdAt",
+--                       BUKAN now(), supaya "sejak kapan ini ditandai" tetap
+--                       jujur. Perbedaan OPEN vs ASSIGNED hilang — memang tidak
+--                       ada lagi yang bisa ditugaskan kepada siapa pun.
+--
+--   RESOLVED         -> "flaggedAt" = NULL. Sudah selesai; membiarkannya
+--                       tertandai akan membuat filter "hanya yang ditandai"
+--                       menampilkan pekerjaan yang sudah beres, dan daftar
+--                       semacam itu adalah daftar yang berhenti dibuka orang.
+--
+--   IGNORED          -> "flaggedAt" = NULL. Sama: sudah diputuskan tidak perlu
+--                       diapa-apakan. Jejak keputusannya ada di backup LANGKAH 1b
+--                       dan di audit log.
+--
+--   "flagNote"       -> gabungan "issueType" / "severity" / "note", karena tiga
+--                       kolom itu tidak punya rumah lagi dan isinya ditulis
+--                       manusia. Formatnya sengaja teks biasa yang bisa dibaca
+--                       apa adanya di kolom "Tanda" halaman Decision Logs, mis.
+--
+--                           [BAD_REPLY/HIGH] Harga ATV yang disebut salah
+--
+--                       Kalau ketiganya kosong, "flagNote" jadi NULL — badge
+--                       "Perlu diperbaiki" tetap muncul tanpa catatan.
+--
+-- 3a. Pindahkan triage yang BELUM selesai.
+--
+-- UPDATE "BotDecisionRun" r
+-- SET "flaggedAt" = t."createdAt",
+--     "flagNote"  = NULLIF(
+--       TRIM(
+--         CASE
+--           WHEN t."issueType" IS NOT NULL
+--             THEN '[' || t."issueType" || '/' || t."severity" || '] '
+--           WHEN t."severity" <> 'NORMAL'
+--             THEN '[' || t."severity" || '] '
+--           ELSE ''
+--         END || COALESCE(t."note", '')
+--       ),
+--       ''
+--     )
+-- FROM "BotDecisionTriage" t
+-- WHERE t."decisionRunId" = r."id"
+--   AND t."status" IN ('OPEN', 'ASSIGNED');
+--
+-- 3b. RESOLVED dan IGNORED sengaja TIDAK dipindahkan. Tidak ada UPDATE untuk
+--     mereka: kolomnya sudah NULL sejak LANGKAH 2a, dan NULL persis berarti
+--     "tidak ditandai". Pernyataan ini ditulis hanya untuk menegaskan bahwa
+--     ketiadaannya disengaja, bukan terlewat.
+--
+-- 3c. Verifikasi sebelum lanjut ke LANGKAH 5:
+--
+-- SELECT
+--   (SELECT COUNT(*) FROM "BotDecisionTriage" WHERE "status" IN ('OPEN','ASSIGNED')) AS harus_pindah,
+--   (SELECT COUNT(*) FROM "BotDecisionRun" WHERE "flaggedAt" IS NOT NULL)            AS sudah_ditandai;
+--
+--     Kedua angka harus SAMA — kecuali kalau LANGKAH 1c menemukan triage yatim,
+--     yang tidak punya baris keputusan untuk ditulisi; kurangi jumlah itu.
+--
+--
+-- ----------------------------------------------------------------------------
+-- LANGKAH 4 — Terapkan DDL aditif (2a).
+-- ----------------------------------------------------------------------------
+-- npx prisma migrate deploy
+--
+-- (Node 22 lewat nvm; Prisma 7 tidak jalan di Node 18 bawaan VPS.)
+--
+-- Urutan penerapan seluruhnya, sekali lagi, karena inilah bagian yang mudah
+-- terbalik:
+--
+--   LANGKAH 1  (SELECT)      -> LANGKAH 4 = migrasi 2a (ADD COLUMN + INDEX)
+--   -> LANGKAH 3 (UPDATE, kalau ada baris)
+--   -> LANGKAH 5 = migrasi 2b (DROP TABLE)
+--
+--
+-- ----------------------------------------------------------------------------
+-- LANGKAH 5 — Terapkan DROP TABLE (2b). Terakhir, dan hanya setelah 3c bersih.
+-- ----------------------------------------------------------------------------
+-- npx prisma migrate deploy
+--
+-- Setelah ini "BotDecisionTriage" hilang permanen berikut keempat index-nya
+-- ("..._status_idx", "..._issueType_idx", "..._severity_idx",
+--  "..._assignedTo_idx") dan constraint unik "decisionRunId". Tidak ada foreign
+-- key yang menunjuk ke tabel ini dari mana pun, jadi DROP tidak berantai ke
+-- tabel lain.
+--
+--
+-- ----------------------------------------------------------------------------
+-- Kalau LANGKAH 3 dilewati padahal ada baris
+-- ------------------------------------------
+-- Yang hilang adalah daftar pekerjaan, bukan data keputusan. "BotDecisionRun"
+-- tidak berubah sedikit pun oleh LANGKAH 3 yang dilewati — trace, status, dan
+-- seluruh Decision Logs tetap lengkap dan bot tidak berubah perilakunya sama
+-- sekali (tidak ada satu pun jalur runtime yang membaca "flaggedAt").
+--
+-- Akibat konkretnya cuma satu: keputusan yang dulu punya triage OPEN/ASSIGNED
+-- akan muncul sebagai TIDAK ditandai, jadi filter "hanya yang ditandai"
+-- mengembalikan daftar kosong dan pekerjaan yang belum selesai perlu ditandai
+-- ulang dengan tangan.
+--
+-- Kalau LANGKAH 5 sudah terlanjur dijalankan lebih dulu, tabelnya sudah tidak
+-- ada dan LANGKAH 3 tidak bisa diulang — pemulihannya lewat backup CSV LANGKAH
+-- 1b, atau ditandai ulang manual di halaman Decision Logs. Itulah alasan
+-- LANGKAH 1b ditulis sebagai langkah wajib, bukan saran.
+-- ----------------------------------------------------------------------------

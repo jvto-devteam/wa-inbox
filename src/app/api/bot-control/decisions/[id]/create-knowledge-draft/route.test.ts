@@ -57,7 +57,6 @@ describe('POST /api/bot-control/decisions/[id]/create-knowledge-draft', () => {
       expect.objectContaining({
         body: { items: [{ question: 'Berapa harga paket ATV untuk 4 orang?', answer: 'Rp350.000 per orang.' }] },
       }),
-      expect.anything(),
       expect.anything()
     )
   })
@@ -76,7 +75,6 @@ describe('POST /api/bot-control/decisions/[id]/create-knowledge-draft', () => {
       expect.objectContaining({
         body: { items: [{ question: expect.any(String), answer: 'Maaf, saya belum punya informasinya.' }] },
       }),
-      expect.anything(),
       expect.anything()
     )
   })

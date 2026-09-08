@@ -6,7 +6,7 @@ import { mockDeep, mockReset, type DeepMockProxy } from 'vitest-mock-extended'
 import type { Prisma, PrismaClient } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { REDACTED } from '@/lib/bot-control/trace-sanitizer'
-import { diffAuditFields, writeBotAuditLog, AUDIT_ACTIONS } from './audit'
+import { writeBotAuditLog, pruneBotAuditLogs, AUDIT_ACTIONS, AUDIT_RETENTION_MS } from './audit'
 
 vi.mock('@/lib/db', () => ({ prisma: mockDeep<PrismaClient>() }))
 
@@ -14,12 +14,8 @@ const mockPrisma = prisma as unknown as DeepMockProxy<PrismaClient>
 /** A distinct object, as `$transaction` really hands the caller — never the shared client. */
 const mockTx = mockDeep<Prisma.TransactionClient>()
 
-function req(headers: Record<string, string> = {}) {
-  return new Request('http://localhost/api/bot-control/releases', { method: 'POST', headers })
-}
-
 /** The fields every write needs, so each test only states what it is actually about. */
-const base = { action: 'UPDATE_DRAFT' as const, entityType: 'RULE' }
+const base = { action: 'PUBLISH' as const, entityType: 'KNOWLEDGE' }
 
 beforeEach(() => {
   mockReset(mockPrisma)
@@ -30,128 +26,96 @@ beforeEach(() => {
 })
 
 describe('AUDIT_ACTIONS', () => {
-  it('carries exactly the eleven actions the SDD lists', () => {
-    // Pinned because the audit log's filter UI and every writer read from this list; a
-    // silently-added twelfth action would be unfilterable and effectively invisible.
-    expect(AUDIT_ACTIONS).toHaveLength(11)
-    expect(AUDIT_ACTIONS).toContain('PUBLISH')
-    expect(AUDIT_ACTIONS).toContain('ROLLBACK')
-    expect(AUDIT_ACTIONS).toContain('OVERRIDE_TEST_FAILURE')
-  })
-})
-
-describe('diffAuditFields', () => {
-  it('keeps only the fields that actually changed', () => {
-    // Storing whole objects would make every audit row a second copy of the full config —
-    // and sooner or later a second copy of a token with it.
-    const { before, after } = diffAuditFields(
-      { enabled: true, severity: 'HIGH', name: 'Tetap sama' },
-      { enabled: false, severity: 'HIGH', name: 'Tetap sama' }
-    )
-    expect(before).toEqual({ enabled: true })
-    expect(after).toEqual({ enabled: false })
-  })
-
-  it('records an added field as null on the missing side', () => {
-    // "This field did not exist before" is information; dropping it loses that.
-    const { before, after } = diffAuditFields({}, { note: 'baru' })
-    expect(before).toEqual({ note: null })
-    expect(after).toEqual({ note: 'baru' })
-  })
-
-  it('records a removed field the same way', () => {
-    const { before, after } = diffAuditFields({ note: 'lama' }, {})
-    expect(before).toEqual({ note: 'lama' })
-    expect(after).toEqual({ note: null })
-  })
-
-  it('does not call a nested object changed just because its keys are in a different order', () => {
-    // A config rebuilt in another key order would otherwise be reported as changed on every
-    // save, and an audit log full of no-op rows is one nobody reads.
-    const { before, after } = diffAuditFields(
-      { config: { a: 1, b: { c: 2, d: 3 } } },
-      { config: { b: { d: 3, c: 2 }, a: 1 } }
-    )
-    expect(before).toEqual({})
-    expect(after).toEqual({})
-  })
-
-  it('does report a nested object whose contents really changed', () => {
-    const { after } = diffAuditFields({ config: { rate: 20 } }, { config: { rate: 40 } })
-    expect(after).toEqual({ config: { rate: 40 } })
-  })
-
-  it('treats a null before or after as an empty side', () => {
-    const { before, after } = diffAuditFields(null, { enabled: true })
-    expect(before).toEqual({ enabled: null })
-    expect(after).toEqual({ enabled: true })
+  it('carries exactly the four actions still written anywhere', () => {
+    // Pinned because the audit page's filter reads the same list; an action nobody writes is a
+    // filter option that always returns nothing, and one written but missing here is
+    // unfilterable and so effectively invisible. CREATE_DRAFT/UPDATE_DRAFT left with the draft
+    // write points (a draft changes nothing a customer sees), and REQUEST_REVIEW/APPROVE/REJECT
+    // left with the review cycle that had one person on both ends of it.
+    expect(AUDIT_ACTIONS).toEqual(['UPDATE', 'PUBLISH', 'ENABLE', 'DISABLE'])
   })
 })
 
 describe('writeBotAuditLog', () => {
-  it('stores only the changed fields, not the whole object', async () => {
+  it('stores the five things a history row is: when, who, what action, which entity, and why', async () => {
     await writeBotAuditLog({
-      ...base,
-      before: { enabled: true, name: 'Tetap' },
-      after: { enabled: false, name: 'Tetap' },
+      action: 'PUBLISH',
+      entityType: 'KNOWLEDGE',
+      entityId: 'ks_1',
+      entityKey: 'managed/faq-atv',
+      actorId: 'acc_1',
+      actorName: 'Admin Satu',
+      reason: 'Harga ATV naik mulai Oktober',
     })
 
     const data = mockPrisma.botControlAuditLog.create.mock.calls[0][0].data
-    expect(data.before).toEqual({ enabled: true })
-    expect(data.after).toEqual({ enabled: false })
+    expect(data).toEqual({
+      action: 'PUBLISH',
+      entityType: 'KNOWLEDGE',
+      entityId: 'ks_1',
+      entityKey: 'managed/faq-atv',
+      actorId: 'acc_1',
+      actorName: 'Admin Satu',
+      reason: 'Harga ATV naik mulai Oktober',
+    })
+    // `createdAt` is the database's default, which is what makes "when" untouchable by a caller.
+    expect(data).not.toHaveProperty('createdAt')
   })
 
-  it('leaves before/after unset when nothing changed', async () => {
-    // A row whose diff is `{}` is noise; absent is the honest representation.
-    await writeBotAuditLog({ ...base, before: { enabled: true }, after: { enabled: true } })
+  it('has nowhere to put a before/after value at all', async () => {
+    // The narrowing is the point of this table's shape: proving which of two people changed a
+    // value is a question one team does not have, and the value in force is on the entity.
+    const params = { ...base, before: { enabled: true }, after: { enabled: false } }
+    await writeBotAuditLog(params as unknown as Parameters<typeof writeBotAuditLog>[0])
 
+    // The whole stored shape, so nothing can quietly come back: not the diff, and not the
+    // operator's network address or device either.
     const data = mockPrisma.botControlAuditLog.create.mock.calls[0][0].data
-    expect(data.before).toBeUndefined()
-    expect(data.after).toBeUndefined()
+    expect(Object.keys(data).sort()).toEqual([
+      'action',
+      'actorId',
+      'actorName',
+      'entityId',
+      'entityKey',
+      'entityType',
+      'reason',
+    ])
   })
 
-  it('redacts a secret before it reaches the database', async () => {
-    // Redacting at render time would mean the secret is already stored and merely hidden by
-    // whichever component happens to draw it.
+  it('redacts a token pasted into the reason before it reaches the database', async () => {
+    // The diff is gone, the free text is not: an operator pausing a provider at 2am pastes the
+    // thing that broke. Redacting at render time would mean the secret is already stored and
+    // merely hidden by whichever component happens to draw it.
     await writeBotAuditLog({
       ...base,
-      before: { accessToken: 'lama' },
-      after: { accessToken: 'EAAGxyz1234567890abcdefghij' },
+      action: 'DISABLE',
+      reason: 'Jeda META, token EAAGxyz1234567890abcdefghij ditolak Graph',
     })
 
-    const data = mockPrisma.botControlAuditLog.create.mock.calls[0][0].data
-    expect(JSON.stringify(data.after)).not.toContain('EAAGxyz1234567890abcdefghij')
-    expect(JSON.stringify(data.after)).toContain(REDACTED)
+    const { reason } = mockPrisma.botControlAuditLog.create.mock.calls[0][0].data
+    expect(reason).not.toContain('EAAGxyz1234567890abcdefghij')
+    expect(reason).toContain(REDACTED)
   })
 
-  it('redacts a secret embedded in a plain string value too', async () => {
-    await writeBotAuditLog({
-      ...base,
-      before: { note: 'kosong' },
-      after: { note: 'gagal memanggil dengan Authorization: Bearer abcdef1234567890' },
-    })
+  it('redacts an Authorization header quoted into the reason too', async () => {
+    await writeBotAuditLog({ ...base, reason: 'gagal: Authorization: Bearer abcdef1234567890' })
 
-    const data = mockPrisma.botControlAuditLog.create.mock.calls[0][0].data
-    expect(JSON.stringify(data.after)).not.toContain('abcdef1234567890')
+    const { reason } = mockPrisma.botControlAuditLog.create.mock.calls[0][0].data
+    expect(reason).not.toContain('abcdef1234567890')
   })
 
-  it('records the operator behind a proxy from the forwarded header', async () => {
-    await writeBotAuditLog(
-      { ...base, req: req({ 'x-forwarded-for': '203.0.113.9, 10.0.0.1', 'user-agent': 'Firefox' }) }
-    )
+  it('redacts the entity key on the same terms', async () => {
+    // Every key written today is machine-generated. The column is documented as human-readable,
+    // and the first caller to put operator text in it must not be the moment redaction stops.
+    await writeBotAuditLog({ ...base, entityKey: 'api_key=abcdef1234567890' })
 
-    const data = mockPrisma.botControlAuditLog.create.mock.calls[0][0].data
-    // The first hop is the client; the rest are proxies.
-    expect(data.ipAddress).toBe('203.0.113.9')
-    expect(data.userAgent).toBe('Firefox')
+    const { entityKey } = mockPrisma.botControlAuditLog.create.mock.calls[0][0].data
+    expect(entityKey).not.toContain('abcdef1234567890')
   })
 
-  it('falls back to x-real-ip, and to null when neither header is present', async () => {
-    await writeBotAuditLog({ ...base, req: req({ 'x-real-ip': '198.51.100.4' }) })
-    expect(mockPrisma.botControlAuditLog.create.mock.calls[0][0].data.ipAddress).toBe('198.51.100.4')
-
-    await writeBotAuditLog({ ...base, req: req() })
-    expect(mockPrisma.botControlAuditLog.create.mock.calls[1][0].data.ipAddress).toBeNull()
+  it('stores a blank reason as null rather than an empty string', async () => {
+    await writeBotAuditLog({ ...base, reason: '   ' })
+    expect(mockPrisma.botControlAuditLog.create.mock.calls[0][0].data.reason).toBeNull()
   })
 
   it('returns the new row id', async () => {
@@ -167,8 +131,8 @@ describe('writeBotAuditLog', () => {
     await expect(writeBotAuditLog(base)).resolves.toBeNull()
   })
 
-  it('rethrows inside a transaction, so a publish with no audit row never lands', async () => {
-    // Passing `tx` is the caller asking for all-or-nothing (SDD Manage Second §11).
+  it('rethrows inside a transaction, so an activation with no history row never lands', async () => {
+    // Passing `tx` is the caller asking for all-or-nothing.
     mockTx.botControlAuditLog.create.mockRejectedValue(new Error('db down'))
 
     await expect(writeBotAuditLog(base, mockTx)).rejects.toThrow('db down')
@@ -179,5 +143,50 @@ describe('writeBotAuditLog', () => {
 
     expect(mockTx.botControlAuditLog.create).toHaveBeenCalled()
     expect(mockPrisma.botControlAuditLog.create).not.toHaveBeenCalled()
+  })
+})
+
+describe('pruneBotAuditLogs', () => {
+  const now = new Date('2027-09-08T00:00:00.000Z')
+
+  beforeEach(() => {
+    mockPrisma.botControlAuditLog.deleteMany.mockResolvedValue({ count: 0 } as never)
+  })
+
+  it('deletes rows older than a year and leaves younger ones alone', async () => {
+    vi.spyOn(console, 'info').mockImplementation(() => {})
+    mockPrisma.botControlAuditLog.deleteMany.mockResolvedValue({ count: 12 } as never)
+
+    expect(await pruneBotAuditLogs(now)).toEqual({ deleted: 12 })
+
+    const where = mockPrisma.botControlAuditLog.deleteMany.mock.calls[0][0]?.where
+    const cutoff = (where?.createdAt as { lt: Date }).lt
+    expect(cutoff).toEqual(new Date(now.getTime() - AUDIT_RETENTION_MS))
+    // The bound is `lt` on the cutoff and nothing else: a row from yesterday, and a row from
+    // 364 days ago, both fail that test and stay. Anything wider would delete history somebody
+    // is still using to answer "what did we change last season".
+    expect(Object.keys(where ?? {})).toEqual(['createdAt'])
+    expect(where?.createdAt).toEqual({ lt: cutoff })
+    expect(new Date(now.getTime() - 364 * 24 * 60 * 60 * 1000) >= cutoff).toBe(true)
+  })
+
+  it('is safe to run twice: the second run simply matches nothing', async () => {
+    await pruneBotAuditLogs(now)
+    expect(await pruneBotAuditLogs(now)).toEqual({ deleted: 0 })
+
+    // Deleting by age, never by a captured list of ids, is what makes a repeat run a no-op
+    // instead of a second attempt at rows that are already gone.
+    const first = mockPrisma.botControlAuditLog.deleteMany.mock.calls[0][0]
+    const second = mockPrisma.botControlAuditLog.deleteMany.mock.calls[1][0]
+    expect(first).toEqual(second)
+  })
+
+  it('never throws, so the job it rides along on keeps going', async () => {
+    // Housekeeping on the outbound cron tick: an un-pruned table is untidy, a queue that stopped
+    // draining because tidying failed is customers not getting their messages.
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    mockPrisma.botControlAuditLog.deleteMany.mockRejectedValue(new Error('db down'))
+
+    await expect(pruneBotAuditLogs(now)).resolves.toEqual({ deleted: 0 })
   })
 })

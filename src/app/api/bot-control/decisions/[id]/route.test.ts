@@ -66,6 +66,13 @@ describe('GET /api/bot-control/decisions/[id]', () => {
     expect(body.trace.steps).toHaveLength(1)
   })
 
+  it('reads the row in full — the list route narrows away trace, this one must not', async () => {
+    // The counterpart of the list route's explicit select: the detail pane is the ONE place the
+    // full reasoning trace is genuinely wanted, so a narrowing select here would break it.
+    await GET(req('run_1'), params('run_1'))
+    expect(mockPrisma.botDecisionRun.findUnique.mock.calls[0][0]?.select).toBeUndefined()
+  })
+
   it('returns 404 with the mandated { error } shape for an unknown id', async () => {
     mockPrisma.botDecisionRun.findUnique.mockResolvedValue(null as never)
     const res = await GET(req('nope'), params('nope'))

@@ -1,0 +1,133 @@
+-- ============================================================================
+-- ITEM a7 — catatan migrasi data: BotFlowVersion.nodeConfig -> Settings
+-- ============================================================================
+-- TIDAK DIJALANKAN. Semua pernyataan di bawah ini sengaja berupa komentar.
+-- DATABASE_URL repo ini menunjuk VPS PRODUKSI; keputusan penerapan ada di tangan
+-- operator, bukan agent.
+--
+-- Konteks
+-- -------
+-- Tabel "BotFlowDefinition" berisi 1 baris (flow 'whatsapp-existing-bot-v1').
+-- Konfigurasi yang benar-benar dibaca runtime hanya dua string di kolom JSON
+-- "BotFlowVersion"."nodeConfig", yaitu 'fallbackReply' dan 'handoffReply', dan
+-- hanya dari versi ber-status 'PUBLISHED'. Lima field lain (greetingText,
+-- clarificationPrompt, maxClarificationAttempts, workingHoursReply, leadFields)
+-- tidak pernah punya pembaca; nilainya tidak perlu dipindahkan ke mana pun.
+--
+-- Setelah item a7, dua string itu tinggal di "Settings"."fallbackReply" dan
+-- "Settings"."handoffReply" (keduanya nullable).
+--
+-- Asumsi
+-- ------
+-- 1. Baris "Settings" dengan id = 1 SUDAH ADA (seluruh aplikasi memakai
+--    findUniqueOrThrow({ where: { id: 1 } }), jadi kalau tidak ada, aplikasi
+--    sudah rusak jauh sebelum ini). Karena itu langkah pemindahan adalah UPDATE,
+--    bukan INSERT. Pernyataan INSERT disertakan di bagian 4 hanya untuk kasus
+--    database yang belum pernah di-seed sama sekali.
+-- 2. String kosong dan NULL bermakna sama: "pakai kalimat bawaan kode". Jadi
+--    nilai kosong sengaja TIDAK dipindahkan — memindahkannya hanya mengubah NULL
+--    jadi '' tanpa mengubah perilaku apa pun.
+-- 3. Hanya versi 'PUBLISHED' yang dipindahkan. Draft/review/approved yang belum
+--    terbit memang belum pernah dibaca bot, dan memindahkannya sama saja dengan
+--    mem-publish sesuatu yang belum di-approve.
+-- 4. Kalau ada lebih dari satu versi 'PUBLISHED' per flow (seharusnya tidak
+--    mungkin — publishApprovedFlows selalu mengarsipkan yang lama lebih dulu),
+--    yang dipakai adalah "version" terbesar.
+--
+-- Urutan penerapan
+-- ----------------
+-- Langkah 1 (cek) dan 2 (pindah) HARUS dijalankan SEBELUM migrasi skema yang
+-- men-DROP tabel. Langkah 3 (drop) sesudahnya. Setelah tabel di-drop, nilainya
+-- tidak bisa diambil lagi.
+-- ============================================================================
+
+
+-- ----------------------------------------------------------------------------
+-- LANGKAH 1 — Lihat dulu apa yang sebenarnya tersimpan (read-only, aman).
+--             Jalankan ini lebih dulu dan baca hasilnya. Kalau kedua kolom
+--             hasilnya NULL atau '', TIDAK ADA yang perlu dipindahkan dan
+--             langkah 2 boleh dilewati seluruhnya.
+-- ----------------------------------------------------------------------------
+-- SELECT d."key",
+--        v."version",
+--        v."status",
+--        v."nodeConfig" ->> 'fallbackReply' AS fallback_reply,
+--        v."nodeConfig" ->> 'handoffReply'  AS handoff_reply,
+--        v."nodeConfig"                     AS seluruh_node_config
+-- FROM "BotFlowVersion" v
+-- JOIN "BotFlowDefinition" d ON d."id" = v."flowId"
+-- ORDER BY d."key", v."version" DESC;
+
+
+-- ----------------------------------------------------------------------------
+-- LANGKAH 2 — Pindahkan dua string itu ke Settings.
+--             Idempoten: aman dijalankan dua kali. COALESCE + NULLIF membuat
+--             nilai kosong tidak menimpa apa pun, dan kolom Settings yang sudah
+--             diisi manual lewat /chatbot tidak ditimpa oleh nilai lama.
+--             Hapus "AND s.\"fallbackReply\" IS NULL" kalau memang ingin nilai
+--             dari flow menang atas apa pun yang sudah ada di Settings.
+-- ----------------------------------------------------------------------------
+-- UPDATE "Settings" s
+-- SET "fallbackReply" = COALESCE(s."fallbackReply", src.fallback_reply),
+--     "handoffReply"  = COALESCE(s."handoffReply",  src.handoff_reply)
+-- FROM (
+--   SELECT NULLIF(btrim(v."nodeConfig" ->> 'fallbackReply'), '') AS fallback_reply,
+--          NULLIF(btrim(v."nodeConfig" ->> 'handoffReply'),  '') AS handoff_reply
+--   FROM "BotFlowVersion" v
+--   JOIN "BotFlowDefinition" d ON d."id" = v."flowId"
+--   WHERE v."status" = 'PUBLISHED'
+--     AND d."status" <> 'ARCHIVED'
+--     AND d."key" = 'whatsapp-existing-bot-v1'
+--   ORDER BY v."version" DESC
+--   LIMIT 1
+-- ) AS src
+-- WHERE s."id" = 1;
+--
+-- -- Verifikasi hasilnya sebelum lanjut:
+-- -- SELECT "id", "fallbackReply", "handoffReply" FROM "Settings" WHERE "id" = 1;
+
+
+-- ----------------------------------------------------------------------------
+-- LANGKAH 3 — Migrasi skema. JANGAN ditulis tangan.
+--             Buat file migrasinya secara offline dengan cara yang sama seperti
+--             seluruh fase A–H (CLAUDE.md):
+--
+--               npx prisma migrate diff \
+--                 --from-schema-datasource prisma/schema.prisma \
+--                 --to-schema-datamodel   prisma/schema.prisma \
+--                 --script > prisma/migrations/<timestamp>_drop_bot_flow_tables/migration.sql
+--
+--             lalu BACA SQL-nya sebelum `npx prisma migrate deploy`. Isinya akan
+--             mengandung dua DROP TABLE dan dua ALTER TABLE aditif, kira-kira:
+--
+--               ALTER TABLE "Settings" ADD COLUMN "fallbackReply" TEXT;
+--               ALTER TABLE "Settings" ADD COLUMN "handoffReply"  TEXT;
+--               DROP TABLE "BotFlowVersion";
+--               DROP TABLE "BotFlowDefinition";
+--
+--             Kedua ALTER-nya aditif dan aman. Kedua DROP-nya TIDAK bisa
+--             dibatalkan — pastikan langkah 1 dan 2 sudah selesai dan sudah
+--             diverifikasi lebih dulu. Kalau ragu, ambil dump dua tabel itu:
+--
+--               pg_dump --data-only \
+--                 --table='"BotFlowDefinition"' --table='"BotFlowVersion"' \
+--                 "$DATABASE_URL" > /tmp/bot-flow-backup.sql
+
+
+-- ----------------------------------------------------------------------------
+-- LANGKAH 4 — Hanya untuk database yang belum pernah di-seed (Settings id=1
+--             belum ada). Di produksi baris ini sudah pasti ada, jadi biasanya
+--             pernyataan ini TIDAK diperlukan.
+-- ----------------------------------------------------------------------------
+-- INSERT INTO "Settings" ("id", "fallbackReply", "handoffReply")
+-- VALUES (1, NULL, NULL)
+-- ON CONFLICT ("id") DO NOTHING;
+
+
+-- ----------------------------------------------------------------------------
+-- Kalau langkah 2 dilewati atau gagal: tidak ada kerusakan diam-diam.
+-- Kolom Settings tetap NULL, dan src/lib/bot/runtime-integration.ts membaca NULL
+-- sebagai "pakai kalimat bawaan kode" — bot tetap menjawab dengan konstanta yang
+-- sama seperti sebelum fase Manage Second. Yang hilang hanya kata-kata hasil
+-- suntingan operator, dan itu bisa diketik ulang di /chatbot.
+-- ----------------------------------------------------------------------------

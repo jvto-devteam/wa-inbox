@@ -1,0 +1,212 @@
+-- ============================================================================
+-- ITEM b1 — catatan migrasi data: BotRuleSetting -> Settings
+-- ============================================================================
+-- TIDAK DIJALANKAN. Semua pernyataan di bawah ini sengaja berupa komentar.
+-- DATABASE_URL repo ini menunjuk VPS PRODUKSI; keputusan penerapan ada di tangan
+-- operator, bukan agent.
+--
+-- Konteks
+-- -------
+-- Tabel "BotRuleSetting" berisi 10 baris, satu per rule di
+-- src/lib/bot-control/rule-registry.ts. Delapan di antaranya hanya menggambarkan
+-- perilaku hardcoded: tidak ada kode yang pernah membaca kolom `enabled`-nya,
+-- jadi nilainya TIDAK perlu dipindahkan ke mana pun.
+--
+-- Hanya DUA rule yang benar-benar sampai runtime:
+--
+--   1. 'bot.skip_indonesian_numbers'  -> src/lib/inbound.ts, defaultBotEnabled()
+--   2. 'bot.handoff_on_human_request' -> src/lib/bot/runtime-integration.ts,
+--                                        shouldRunEscalationClassifier()
+--
+-- Setelah item b1 keduanya jadi kolom boolean di "Settings":
+--
+--   1. "Settings"."skipBotForIndonesianNumbers"  (SUDAH ADA, boolean not null)
+--   2. "Settings"."handoffOnHumanRequest"        (BARU, boolean not null default true)
+--
+--
+-- Asumsi
+-- ------
+-- 1. Baris "Settings" dengan id = 1 SUDAH ADA (seluruh aplikasi memakai
+--    findUniqueOrThrow({ where: { id: 1 } }), jadi kalau tidak ada, aplikasi
+--    sudah rusak jauh sebelum ini). Karena itu langkah pemindahan adalah UPDATE,
+--    bukan INSERT. Pernyataan INSERT disertakan di LANGKAH 5 hanya untuk kasus
+--    database yang belum pernah di-seed sama sekali.
+--
+-- 2. Hanya baris ber-status 'PUBLISHED' yang bermakna. Loader lama
+--    (runtime-rules.ts) membaca `where: { status: 'PUBLISHED' }`; draft, review,
+--    approved dan rejected belum pernah dibaca bot. Memindahkan draft sama saja
+--    dengan mem-publish sesuatu yang belum di-approve.
+--
+-- 3. **Yang paling penting.** Kode lama untuk nomor Indonesia berbunyi:
+--
+--        if (settings.skipBotForIndonesianNumbers || skipViaRule) return false
+--
+--    Di-OR. Artinya perilaku yang BERLAKU hari ini adalah gabungan keduanya:
+--    kalau rule 'bot.skip_indonesian_numbers' dipublish `enabled = true`,
+--    bot MELEWATI nomor +62 walaupun toggle di /chatbot mati. Karena itu kolom
+--    barunya harus diisi hasil OR, bukan disalin dari salah satu sisi saja —
+--    menyalin sebelah kiri akan menyalakan bot untuk pasar domestik yang
+--    sengaja dicadangkan untuk agent, dan itu terlihat sebagai bot yang tiba-tiba
+--    membalas customer Indonesia. Ini satu-satunya bagian migrasi yang bisa
+--    mengubah perilaku kalau dilewatkan.
+--
+-- 4. Untuk 'bot.handoff_on_human_request' tidak ada OR: loader lama
+--    mengembalikan `true` untuk rule yang tidak ditemukan ATAU gagal dibaca, dan
+--    seed-nya membuat baris dengan `enabled = true`. Jadi default kolom barunya
+--    `true`, dan baris yang hilang/tidak PUBLISHED berarti "biarkan true".
+--    Hanya baris PUBLISHED dengan `enabled = false` yang benar-benar perlu
+--    dipindahkan.
+--
+-- 5. Kolom `config` pada kedua rule ini tidak pernah dibaca runtime (yang pernah
+--    ada hanya 'liveDefaultChannel' pada rule channel, dan itu sudah ditimpa
+--    "ChannelPolicySetting"."defaultOutbound" sebelum sempat berarti). Tidak ada
+--    yang perlu dipindahkan dari `config`.
+--
+--
+-- Urutan penerapan
+-- ----------------
+-- BERBEDA dari catatan a7: kolom "handoffOnHumanRequest" BELUM ADA di produksi,
+-- jadi ALTER TABLE-nya harus jalan LEBIH DULU sebelum UPDATE-nya bisa menulis
+-- ke sana. Urutannya:
+--
+--   LANGKAH 1  — SELECT (read-only), lihat apa yang tersimpan.
+--   LANGKAH 2  — ALTER TABLE ... ADD COLUMN (aditif, aman, reversible).
+--   LANGKAH 3  — UPDATE, pindahkan nilainya.
+--   LANGKAH 4  — DROP TABLE "BotRuleSetting" (TIDAK bisa dibatalkan).
+--
+-- Setelah LANGKAH 4, nilainya tidak bisa diambil lagi. Jangan jalankan sebelum
+-- LANGKAH 3 diverifikasi.
+-- ============================================================================
+
+
+-- ----------------------------------------------------------------------------
+-- LANGKAH 1 — Lihat dulu apa yang sebenarnya tersimpan (read-only, aman).
+--             Jalankan ini lebih dulu dan baca hasilnya. Kolom
+--             `perlu_dipindahkan` menjawab langsung apakah LANGKAH 3 ada
+--             gunanya: kalau kedua barisnya FALSE, LANGKAH 3 boleh dilewati.
+-- ----------------------------------------------------------------------------
+-- SELECT r."key",
+--        r."status",
+--        r."enabled"        AS enabled_di_rule,
+--        r."config",
+--        s."skipBotForIndonesianNumbers" AS skip_di_settings,
+--        CASE
+--          WHEN r."key" = 'bot.skip_indonesian_numbers'
+--            THEN (r."status" = 'PUBLISHED' AND r."enabled")
+--                 AND NOT s."skipBotForIndonesianNumbers"
+--          WHEN r."key" = 'bot.handoff_on_human_request'
+--            THEN (r."status" = 'PUBLISHED' AND NOT r."enabled")
+--          ELSE FALSE
+--        END AS perlu_dipindahkan
+-- FROM "BotRuleSetting" r
+-- CROSS JOIN "Settings" s
+-- WHERE s."id" = 1
+--   AND r."key" IN ('bot.skip_indonesian_numbers', 'bot.handoff_on_human_request')
+-- ORDER BY r."key";
+--
+-- -- Untuk arsip, lihat juga delapan rule lainnya sebelum tabelnya hilang.
+-- -- Tidak satu pun nilainya dipakai kode mana pun; ini murni catatan.
+-- -- SELECT "key", "status", "enabled", "config", "publishedAt", "publishedBy"
+-- -- FROM "BotRuleSetting" ORDER BY "key";
+
+
+-- ----------------------------------------------------------------------------
+-- LANGKAH 2 — Migrasi skema, bagian ADITIF. JANGAN ditulis tangan.
+--             Buat file migrasinya secara offline seperti seluruh fase A–H
+--             (CLAUDE.md):
+--
+--               npx prisma migrate diff \
+--                 --from-schema-datasource prisma/schema.prisma \
+--                 --to-schema-datamodel   prisma/schema.prisma \
+--                 --script > prisma/migrations/<timestamp>_drop_bot_rule_setting/migration.sql
+--
+--             BACA SQL-nya sebelum `npx prisma migrate deploy`. Isinya akan
+--             mengandung satu ALTER aditif dan satu DROP:
+--
+--               ALTER TABLE "Settings"
+--                 ADD COLUMN "handoffOnHumanRequest" BOOLEAN NOT NULL DEFAULT true;
+--               DROP TABLE "BotRuleSetting";
+--
+--             ALTER-nya aman; DROP-nya tidak bisa dibatalkan.
+--
+--             KALAU ingin memisahkan keduanya (disarankan, supaya LANGKAH 3 bisa
+--             jalan di antaranya), potong file migrasinya jadi dua: yang pertama
+--             hanya ALTER, yang kedua hanya DROP. Terapkan yang pertama, jalankan
+--             LANGKAH 3, verifikasi, baru terapkan yang kedua.
+--
+--             Kalau ragu, ambil dump tabelnya lebih dulu:
+--
+--               pg_dump --data-only --table='"BotRuleSetting"' \
+--                 "$DATABASE_URL" > /tmp/bot-rule-setting-backup.sql
+
+
+-- ----------------------------------------------------------------------------
+-- LANGKAH 3a — Nomor Indonesia. INI YANG BISA MENGUBAH PERILAKU KALAU DILEWATI.
+--              OR, bukan salin: lihat asumsi 3 di atas. Idempoten — menjalankan
+--              dua kali tidak mengubah apa pun, dan tidak pernah MEMATIKAN
+--              toggle yang sudah menyala.
+-- ----------------------------------------------------------------------------
+-- UPDATE "Settings" s
+-- SET "skipBotForIndonesianNumbers" = TRUE
+-- WHERE s."id" = 1
+--   AND s."skipBotForIndonesianNumbers" = FALSE
+--   AND EXISTS (
+--     SELECT 1 FROM "BotRuleSetting" r
+--     WHERE r."key" = 'bot.skip_indonesian_numbers'
+--       AND r."status" = 'PUBLISHED'
+--       AND r."enabled" = TRUE
+--   );
+
+
+-- ----------------------------------------------------------------------------
+-- LANGKAH 3b — Handoff. Hanya baris PUBLISHED yang enabled = false yang perlu
+--              dipindahkan; sisanya sudah benar lewat default kolom (true).
+--              Idempoten dengan alasan yang sama.
+-- ----------------------------------------------------------------------------
+-- UPDATE "Settings" s
+-- SET "handoffOnHumanRequest" = FALSE
+-- WHERE s."id" = 1
+--   AND s."handoffOnHumanRequest" = TRUE
+--   AND EXISTS (
+--     SELECT 1 FROM "BotRuleSetting" r
+--     WHERE r."key" = 'bot.handoff_on_human_request'
+--       AND r."status" = 'PUBLISHED'
+--       AND r."enabled" = FALSE
+--   );
+--
+-- -- Verifikasi sebelum lanjut ke DROP:
+-- -- SELECT "id", "skipBotForIndonesianNumbers", "handoffOnHumanRequest"
+-- -- FROM "Settings" WHERE "id" = 1;
+
+
+-- ----------------------------------------------------------------------------
+-- LANGKAH 4 — DROP TABLE "BotRuleSetting". Bagian kedua dari migrasi LANGKAH 2.
+--             Setelah ini nilainya tidak bisa diambil lagi. Pastikan LANGKAH 1
+--             dan 3 sudah selesai DAN sudah diverifikasi.
+-- ----------------------------------------------------------------------------
+-- (dijalankan oleh `npx prisma migrate deploy` atas file migrasi di LANGKAH 2)
+
+
+-- ----------------------------------------------------------------------------
+-- LANGKAH 5 — Hanya untuk database yang belum pernah di-seed (Settings id = 1
+--             belum ada). Di produksi baris ini sudah pasti ada, jadi biasanya
+--             pernyataan ini TIDAK diperlukan.
+-- ----------------------------------------------------------------------------
+-- INSERT INTO "Settings" ("id")
+-- VALUES (1)
+-- ON CONFLICT ("id") DO NOTHING;
+
+
+-- ----------------------------------------------------------------------------
+-- Kalau LANGKAH 3 dilewati atau gagal
+-- -----------------------------------
+-- 3b (handoff) aman dilewati: kolomnya default true, dan true adalah persis
+-- perilaku yang dipakai bot selama ini untuk rule yang tidak terbaca. Yang
+-- hilang hanya "pernah dimatikan oleh operator", dan itu satu klik di /chatbot.
+--
+-- 3a (nomor Indonesia) TIDAK aman dilewati kalau rule-nya dipublish enabled
+-- sementara toggle Settings-nya mati: bot akan mulai membalas otomatis nomor +62
+-- yang selama ini sengaja diserahkan ke agent. Gejalanya terlihat di inbox dalam
+-- hitungan menit, dan perbaikannya juga satu klik di /chatbot — tapi lebih baik
+-- LANGKAH 1 dibaca lebih dulu supaya tidak perlu kaget.
+-- ----------------------------------------------------------------------------

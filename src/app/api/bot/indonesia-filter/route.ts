@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { requireAdmin } from '@/lib/auth/require-admin'
+import { writeBotAuditLog } from '@/lib/bot-control/audit'
 
 // Same "emergency-scale lever" reasoning as /api/bot/mode -- this reaches every Indonesian
 // conversation company-wide, so only an admin may flip it.
@@ -20,6 +21,17 @@ export async function POST(req: Request) {
   await prisma.conversation.updateMany({
     where: { contact: { phone: { startsWith: '62' } } },
     data: { botEnabled: next ? false : current.botAutoReplyAll },
+  })
+
+  // Same reasoning as /api/bot/mode: this silently changes who the bot answers, and the switch
+  // position alone never says who last flipped it.
+  const actor = await prisma.account.findUnique({ where: { id: admin.accountId }, select: { name: true } })
+  await writeBotAuditLog({
+    action: next ? 'ENABLE' : 'DISABLE',
+    entityType: 'BOT_SETTING',
+    entityKey: 'skipBotForIndonesianNumbers',
+    actorId: admin.accountId,
+    actorName: actor?.name ?? null,
   })
 
   return NextResponse.json({ skipBotForIndonesianNumbers: updated.skipBotForIndonesianNumbers })

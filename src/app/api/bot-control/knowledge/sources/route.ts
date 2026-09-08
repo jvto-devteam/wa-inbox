@@ -5,7 +5,7 @@ import { prisma } from '@/lib/db'
 import { getSession } from '@/lib/auth/get-session'
 import { parseJsonBody } from '@/lib/parse-json'
 import { readPaging } from '@/lib/bot-control/paging'
-import { sessionCan } from '@/lib/bot-control/permissions'
+import { hasAdminPowers } from '@/lib/bot-control/permissions'
 import {
   createManagedKnowledge,
   KnowledgeNotEditableError,
@@ -14,13 +14,19 @@ import {
 } from '@/lib/bot-control/knowledge-workflow'
 
 /**
- * GET /api/bot-control/knowledge/sources — the indexed catalog files.
+ * GET /api/bot-control/knowledge/sources — the operator-written knowledge sources.
  *
  * Read-only for any signed-in user (guidebook §19: AGENT read-only across Bot Control).
  *
+ * Every row here is `type='MANUAL'` now. This list used to also carry one row per
+ * `catalog/*.json` file — a mirror the bot never read — together with its chunk count, file
+ * path and last-sync time. The catalog is read straight from disk by
+ * `/api/bot-control/knowledge/catalog`, so those columns and the `type`/`topic` filters that
+ * only made sense against the mirror are gone.
+ *
  * Every filter is a `where` clause, never a `.filter()` after the query. Filtering after
  * `take` means "the first 50 rows, of which the matching ones", which is legitimately empty
- * while matching rows exist — the same bug src/app/api/bot/decisions/route.ts documents.
+ * while matching rows exist, so every filter has to reach the database.
  */
 export async function GET(req: Request) {
   const session = await getSession(req)
@@ -29,26 +35,23 @@ export async function GET(req: Request) {
   const url = new URL(req.url)
   const { page, limit, skip } = readPaging(url)
   const q = url.searchParams.get('q')?.trim()
-  const type = url.searchParams.get('type')?.trim()
   const status = url.searchParams.get('status')?.trim()
-  const topic = url.searchParams.get('topic')?.trim()
   const lifecycle = url.searchParams.get('lifecycle')?.trim()
   const ownerId = url.searchParams.get('ownerId')?.trim()
   const hasDraft = url.searchParams.get('hasDraft')
 
   const where: Prisma.KnowledgeSourceWhereInput = {}
-  if (type) where.type = type
   if (status) where.status = status
   // `lifecycle` and `status` are the SAME column, deliberately. The SDD sketches lifecycle as a
-  // new field, but KnowledgeSource.status already holds exactly these values and is already
-  // written by the indexer's archiving. A second state column would give every row two
-  // opinions about whether it is live, and they would drift the first time one writer forgot
-  // the other. `lifecycle` is kept as the query name because that is what the SDD's UI asks for.
+  // new field, but KnowledgeSource.status already holds exactly these values. A second state
+  // column would give every row two opinions about whether it is live, and they would drift the
+  // first time one writer forgot the other. `lifecycle` is kept as the query name because that
+  // is what the SDD's UI asks for.
   if (lifecycle && (SOURCE_LIFECYCLES as readonly string[]).includes(lifecycle)) where.status = lifecycle
   if (ownerId) where.ownerId = ownerId
-  // "Has something pending" means a revision that is not yet published and not yet discarded.
-  if (hasDraft === 'true') where.revisions = { some: { status: { in: ['DRAFT', 'REVIEW', 'APPROVED'] } } }
-  if (hasDraft === 'false') where.revisions = { none: { status: { in: ['DRAFT', 'REVIEW', 'APPROVED'] } } }
+  // "Has something pending" means a revision written but not yet activated.
+  if (hasDraft === 'true') where.revisions = { some: { status: 'DRAFT' } }
+  if (hasDraft === 'false') where.revisions = { none: { status: 'DRAFT' } }
   if (q) {
     where.OR = [
       { title: { contains: q, mode: 'insensitive' } },
@@ -56,9 +59,6 @@ export async function GET(req: Request) {
       { summary: { contains: q, mode: 'insensitive' } },
     ]
   }
-  // Filtering sources by topic means "sources that own at least one chunk on this topic" —
-  // a relation filter, because topic lives on the chunk, not the source.
-  if (topic) where.chunks = { some: { topic } }
 
   try {
     const [items, total] = await Promise.all([
@@ -68,7 +68,6 @@ export async function GET(req: Request) {
         skip,
         take: limit,
         include: {
-          _count: { select: { chunks: true } },
           // Newest first: the row's headline state is its latest revision, not its first.
           revisions: { orderBy: { version: 'desc' }, take: 1, select: { id: true, version: true, status: true } },
         },
@@ -82,15 +81,12 @@ export async function GET(req: Request) {
         key: source.key,
         title: source.title,
         type: source.type,
-        sourcePath: source.sourcePath,
         status: source.status,
         summary: source.summary,
-        metadata: source.metadata,
-        chunkCount: source._count.chunks,
-        lastSyncedAt: source.lastSyncedAt?.toISOString() ?? null,
         ownerId: source.ownerId,
-        // A catalog mirror has no revisions and never will; saying so lets the UI render the
-        // right controls without having to infer it from the type string.
+        // Kept even though every row is managed today: the guard in knowledge-workflow.ts keys
+        // on the type, and a client that infers "editable" from the row's mere presence would
+        // stop agreeing with the API the moment a second type exists again.
         managed: source.type === MANAGED_SOURCE_TYPE,
         latestRevision: source.revisions[0]
           ? {
@@ -99,9 +95,7 @@ export async function GET(req: Request) {
               status: source.revisions[0].status,
             }
           : null,
-        hasDraft: source.revisions[0]
-          ? ['DRAFT', 'REVIEW', 'APPROVED'].includes(source.revisions[0].status)
-          : false,
+        hasDraft: source.revisions[0]?.status === 'DRAFT',
       })),
       page,
       limit,
@@ -125,13 +119,13 @@ const createSchema = z.object({
 /**
  * POST /api/bot-control/knowledge/sources — create a managed knowledge source.
  *
- * Always creates it as a DRAFT with a first revision, never published. The bot does not read
- * it until a release publishes it, which is the same path rules take (SDD Manage Second §11).
+ * Always creates it as a DRAFT with a first revision, never live. The bot does not read it
+ * until somebody presses Aktifkan (`POST .../[id]/publish`).
  */
 export async function POST(req: Request) {
   const session = await getSession(req)
   if (!session) return NextResponse.json({ error: 'Tidak terautentikasi' }, { status: 401 })
-  if (!sessionCan(session, 'EDIT_KNOWLEDGE_DRAFT')) {
+  if (!hasAdminPowers(session.role)) {
     return NextResponse.json({ error: 'Peran Anda tidak boleh membuat knowledge' }, { status: 403 })
   }
 
@@ -147,8 +141,7 @@ export async function POST(req: Request) {
         body: parsed.data.body,
         reason: parsed.data.reason,
       },
-      { id: session.accountId, name: actor?.name ?? null },
-      req
+      { id: session.accountId, name: actor?.name ?? null }
     )
     return NextResponse.json(result)
   } catch (error) {

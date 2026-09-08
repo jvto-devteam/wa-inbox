@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { requireAdmin } from '@/lib/auth/require-admin'
 import { hasValidCronSecret } from '@/lib/outbound/cron-auth'
 import { processDueOutboundJobs } from '@/lib/outbound/worker'
+import { pruneBotAuditLogs } from '@/lib/bot-control/audit'
 
 /**
  * POST /api/outbound-jobs/process — run every outbound job that is currently due.
@@ -20,12 +21,28 @@ import { processDueOutboundJobs } from '@/lib/outbound/worker'
  *
  * Safe to call concurrently: the worker claims each job atomically, so two overlapping runs
  * cannot dispatch the same message twice.
+ *
+ * --- Why the audit-log pruning rides along here ---
+ *
+ * This is the ONLY endpoint a scheduler already calls, so it is the only recurring beat the app
+ * has. Giving the one-year audit retention its own cron entry would mean a second secret, a
+ * second middleware path, and a job an operator has to remember to configure — for a DELETE
+ * that is an indexed no-op on almost every tick. Attaching it here costs nothing and cannot be
+ * forgotten. It runs OUTSIDE the try/catch below and swallows its own errors, so tidying the
+ * history can never be the reason a queue stops draining.
  */
 export async function POST(req: Request) {
   const authorized = hasValidCronSecret(req) || (await requireAdmin(req)) !== null
   if (!authorized) {
     return NextResponse.json({ error: 'Hanya admin atau scheduler yang bisa memproses antrean' }, { status: 403 })
   }
+
+  // Housekeeping first and unguarded-by-the-tally: `pruneBotAuditLogs` never throws, and the
+  // `.catch` is the belt to that braces — a future edit that makes it throw must still not be
+  // able to take the queue down with it.
+  await pruneBotAuditLogs().catch((error: unknown) => {
+    console.error('POST /api/outbound-jobs/process: pruning audit log gagal', error)
+  })
 
   try {
     return NextResponse.json(await processDueOutboundJobs())

@@ -6,7 +6,6 @@ import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { AuditDiff, type AuditDiffSide } from '@/components/bot-control/AuditDiff'
 import { fetchJson } from '@/lib/fetch-json'
 
 type AuditRow = {
@@ -17,42 +16,26 @@ type AuditRow = {
   entityType: string
   entityId: string | null
   entityKey: string | null
-  before: AuditDiffSide
-  after: AuditDiffSide
   reason: string | null
-  releaseId: string | null
   createdAt: string
 }
 
 type Paged<T> = { items: T[]; page: number; limit: number; total: number }
 
-const ACTIONS = [
-  'CREATE_DRAFT',
-  'UPDATE_DRAFT',
-  'REQUEST_REVIEW',
-  'APPROVE',
-  'REJECT',
-  'PUBLISH',
-  'ROLLBACK',
-  'ENABLE',
-  'DISABLE',
-  'RUN_TEST',
-  'OVERRIDE_TEST_FAILURE',
-]
+// Mirrors AUDIT_ACTIONS in src/lib/bot-control/audit.ts. An option nobody ever writes is a
+// filter that always returns nothing, so the two lists move together.
+const ACTIONS = ['UPDATE', 'PUBLISH', 'ENABLE', 'DISABLE']
 
-// Every entityType `writeBotAuditLog` is actually called with. DECISION_TRIAGE was missing
-// until the Phase A-H review: triage changes were audited but unfilterable, which makes the
-// rows effectively invisible on a busy log.
-const ENTITY_TYPES = ['RELEASE', 'RULE', 'KNOWLEDGE', 'FLOW', 'CHANNEL_POLICY', 'DECISION_TRIAGE']
+// Every entityType `writeBotAuditLog` is actually called with. BOT_SETTING covers the global
+// switches on /chatbot and the outbound safety thresholds.
+const ENTITY_TYPES = ['KNOWLEDGE', 'BOT_SETTING', 'OUTBOUND_PROVIDER', 'OUTBOUND_JOB']
 
-// Actions that change what the bot does get visual weight; the rest stay quiet. An audit log
-// where every row shouts is one where the ROLLBACK at 03:00 does not stand out.
+// Turning something OFF gets visual weight: it is the row somebody is looking for when the bot
+// stopped answering. A log where every row shouts is one where that row does not stand out.
 const ACTION_VARIANT: Record<string, 'brand' | 'success' | 'warning' | 'destructive' | 'muted'> = {
   PUBLISH: 'brand',
-  ROLLBACK: 'warning',
-  APPROVE: 'success',
-  REJECT: 'destructive',
-  OVERRIDE_TEST_FAILURE: 'destructive',
+  ENABLE: 'success',
+  DISABLE: 'warning',
 }
 
 /**
@@ -60,7 +43,11 @@ const ACTION_VARIANT: Record<string, 'brand' | 'success' | 'warning' | 'destruct
  *
  * The question this page answers is "what happened, in order" — reconstructing a sequence from
  * rows an operator has to click open one at a time is the thing that makes an audit log go
- * unread. The diff is inline for the same reason.
+ * unread.
+ *
+ * There is no before/after diff, deliberately. Proving which of two people changed a value is a
+ * question wa-inbox does not have (one team, and every entity already shows the value in force);
+ * what an operator comes here for is when a switch was last flipped, by whom, and why.
  *
  * There is deliberately no edit or delete control anywhere on this page, and no API behind one
  * (SDD Manage Second §9.9). An audit log an operator can edit is not an audit log.
@@ -124,11 +111,12 @@ export default function AuditLogsPage() {
         </Link>
         <h1 className="text-xl font-semibold text-navy">Audit Logs</h1>
         <p className="text-sm text-muted-foreground">
-          Siapa mengubah apa, kapan, dan mengapa. Kolom <span className="font-mono">updatedBy</span> di tiap entitas
-          hanya menyimpan penulis terakhir — dan justru perubahan sebelumnya yang dicari saat bot mulai menjawab
-          salah.
+          Riwayat perubahan perilaku bot: kapan, siapa, apa, dan alasannya. Nilai yang berlaku sekarang selalu
+          terlihat di halaman entitasnya sendiri — di sini yang dicatat adalah kapan ia terakhir diubah.
         </p>
-        <p className="text-xs text-muted-foreground">Catatan di sini tidak bisa diubah atau dihapus dari UI.</p>
+        <p className="text-xs text-muted-foreground">
+          Catatan di sini tidak bisa diubah atau dihapus dari UI, dan dipangkas otomatis setelah satu tahun.
+        </p>
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
@@ -200,19 +188,9 @@ export default function AuditLogsPage() {
                 <p className="text-xs text-muted-foreground">
                   {/* Denormalised at write time, so it survives the account being deleted. */}
                   oleh {row.actorName ?? <span className="italic">(akun terhapus)</span>}
-                  {row.releaseId && (
-                    <>
-                      {' · '}
-                      <Link href="/bot-control/releases" className="text-brand hover:underline">
-                        release terkait
-                      </Link>
-                    </>
-                  )}
                 </p>
 
                 {row.reason && <p className="text-xs text-navy">Alasan: {row.reason}</p>}
-
-                <AuditDiff before={row.before} after={row.after} />
               </Card>
             </li>
           ))}

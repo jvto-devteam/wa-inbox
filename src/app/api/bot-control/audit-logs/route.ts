@@ -9,17 +9,16 @@ import { AUDIT_ACTIONS } from '@/lib/bot-control/audit'
  * GET /api/bot-control/audit-logs — the Bot Control change timeline.
  *
  * Admin-only, per the permission matrix (SDD Manage Second §13: AGENT is "No" for audit logs).
- * The rows carry actor identity, IP and user-agent, and before/after values for every
- * configuration change in the account — that is a narrower audience than the rest of Bot
- * Control by design.
+ * The rows name the operator behind every change to what the bot does — a narrower audience
+ * than the rest of Bot Control by design.
  *
  * READ-ONLY, and there is deliberately no POST, PATCH or DELETE anywhere under this path. An
  * audit log an operator can edit is not an audit log; §9.9 states the same. Rows are written
- * only by `writeBotAuditLog`, from the code path performing the action being recorded.
+ * only by `writeBotAuditLog`, from the code path performing the action being recorded, and are
+ * removed only by `pruneBotAuditLogs` on age.
  *
- * `ipAddress` and `userAgent` are stored but NOT returned. They exist so a specific incident
- * can be investigated deliberately, not so every admin opening a page gets a running feed of
- * their colleagues' locations and devices.
+ * There are no before/after values to return any more: the row is a history entry, not a diff
+ * (see src/lib/bot-control/audit.ts).
  */
 export async function GET(req: Request) {
   if (!(await requireAdmin(req))) {
@@ -34,13 +33,11 @@ export async function GET(req: Request) {
   const entityType = url.searchParams.get('entityType')?.trim()
   const entityId = url.searchParams.get('entityId')?.trim()
   const actorId = url.searchParams.get('actorId')?.trim()
-  const releaseId = url.searchParams.get('releaseId')?.trim()
 
   if (action && (AUDIT_ACTIONS as readonly string[]).includes(action)) where.action = action
   if (entityType) where.entityType = entityType
   if (entityId) where.entityId = entityId
   if (actorId) where.actorId = actorId
-  if (releaseId) where.releaseId = releaseId
 
   // An unparseable date is ignored rather than 400'd, matching the decisions endpoint: a
   // half-typed value in a date picker should show unfiltered rows, and an `Invalid Date`
@@ -71,12 +68,9 @@ export async function GET(req: Request) {
         entityType: log.entityType,
         entityId: log.entityId,
         entityKey: log.entityKey,
-        // Already narrowed to changed fields and already sanitised at write time (audit.ts),
-        // so they are served as stored rather than filtered again on the way out.
-        before: log.before,
-        after: log.after,
+        // Free text, but already redacted at write time (audit.ts), so it is served as stored
+        // rather than filtered again on the way out.
         reason: log.reason,
-        releaseId: log.releaseId,
         createdAt: log.createdAt.toISOString(),
       })),
       page,

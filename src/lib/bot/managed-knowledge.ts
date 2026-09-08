@@ -19,8 +19,9 @@
  *
  * A failure here returns an empty list, logged. The bot has always run on the catalog alone;
  * losing the managed additions degrades an answer, whereas throwing would end the turn. This
- * is the same reasoning as runtime-rules.ts, and the same short cache for the same reason —
- * this is read inside a bot turn, and a turn already spends its budget on LLM calls.
+ * is the same reasoning as runtime-integration.ts's Settings reads, and the cache is short for
+ * the same reason — this is read inside a bot turn, and a turn already spends its budget on
+ * LLM calls.
  */
 import { prisma } from '@/lib/db'
 import { getCandidateVersions } from '@/lib/bot-control/candidate-context'

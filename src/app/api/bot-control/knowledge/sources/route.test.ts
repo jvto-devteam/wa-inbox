@@ -27,17 +27,13 @@ function req(query = '', withSession = true) {
 function sourceRow(overrides: Record<string, unknown> = {}) {
   return {
     id: 'src_1',
-    key: 'catalog/policy-cards.json',
-    title: 'Policy Cards',
-    type: 'CATALOG_JSON',
-    sourcePath: 'catalog/policy-cards.json',
+    key: 'managed/abc123',
+    title: 'FAQ Harga ATV',
+    type: 'MANUAL',
     status: 'PUBLISHED',
-    summary: '10 record dari policy-cards.json',
-    metadata: { fileSize: 11499, rootShape: 'array' },
-    lastSyncedAt: new Date('2026-09-05T03:00:00.000Z'),
-    ownerId: null,
-    _count: { chunks: 10 },
-    // A catalog mirror has none and never will; managed sources carry their latest first.
+    summary: 'Jawaban harga ATV Bromo',
+    ownerId: 'acc_1',
+    // Newest first; a source with nothing written yet has none.
     revisions: [],
     ...overrides,
   } as never
@@ -80,10 +76,11 @@ describe('GET /api/bot-control/knowledge/sources', () => {
     expect(res.status).toBe(200)
     expect(body).toMatchObject({ page: 1, limit: 50, total: 1 })
     expect(body.items[0]).toMatchObject({
-      key: 'catalog/policy-cards.json',
-      sourcePath: 'catalog/policy-cards.json',
-      chunkCount: 10,
-      lastSyncedAt: '2026-09-05T03:00:00.000Z',
+      key: 'managed/abc123',
+      title: 'FAQ Harga ATV',
+      managed: true,
+      hasDraft: false,
+      latestRevision: null,
     })
   })
 
@@ -111,24 +108,21 @@ describe('GET /api/bot-control/knowledge/sources', () => {
     expect(mockPrisma.knowledgeSource.count.mock.calls[0][0]?.where).toEqual(where)
   })
 
-  it('filters by type and status', async () => {
-    await GET(req('?type=CATALOG_JSON&status=ARCHIVED'))
-    expect(mockPrisma.knowledgeSource.findMany.mock.calls[0][0]?.where).toMatchObject({
-      type: 'CATALOG_JSON',
-      status: 'ARCHIVED',
-    })
-  })
-
-  it('filters by topic through the chunk relation, since topic lives on the chunk', async () => {
-    await GET(req('?topic=policy-cards'))
-    expect(mockPrisma.knowledgeSource.findMany.mock.calls[0][0]?.where).toMatchObject({
-      chunks: { some: { topic: 'policy-cards' } },
-    })
+  it('filters by status', async () => {
+    await GET(req('?status=ARCHIVED'))
+    expect(mockPrisma.knowledgeSource.findMany.mock.calls[0][0]?.where).toMatchObject({ status: 'ARCHIVED' })
   })
 
   it('applies no filter at all when the query params are blank', async () => {
-    await GET(req('?q=&type=&status=&topic='))
+    await GET(req('?q=&status='))
     expect(mockPrisma.knowledgeSource.findMany.mock.calls[0][0]?.where).toEqual({})
+  })
+
+  it('does not ask the database for a chunk count that no longer exists', async () => {
+    // The catalog mirror this list used to carry is gone; a stray `_count` include here would
+    // reference a relation the schema no longer has and fail at runtime, not at build.
+    await GET(req())
+    expect(mockPrisma.knowledgeSource.findMany.mock.calls[0][0]).not.toHaveProperty('include._count')
   })
 
   it('pages with skip/take derived from page and limit', async () => {
@@ -155,9 +149,9 @@ describe('GET /api/bot-control/knowledge/sources', () => {
   })
 
   it('filters by lifecycle onto the status column, not a second one', async () => {
-    // KnowledgeSource.status already holds exactly these values and is already written by the
-    // indexer's archiving. A second state column would give every row two opinions about
-    // whether it is live, and they would drift the first time one writer forgot the other.
+    // KnowledgeSource.status already holds exactly these values. A second state column would
+    // give every row two opinions about whether it is live, and they would drift the first time
+    // one writer forgot the other.
     await GET(req('?lifecycle=ARCHIVED'))
     expect(mockPrisma.knowledgeSource.findMany.mock.calls[0][0]?.where).toMatchObject({ status: 'ARCHIVED' })
   })
@@ -173,18 +167,23 @@ describe('GET /api/bot-control/knowledge/sources', () => {
   })
 
   it('filters by whether something is pending, both ways', async () => {
+    // "Pending" is one status now, not three: a revision is either written (DRAFT) or live.
     await GET(req('?hasDraft=true'))
     expect(mockPrisma.knowledgeSource.findMany.mock.calls[0][0]?.where?.revisions).toEqual({
-      some: { status: { in: ['DRAFT', 'REVIEW', 'APPROVED'] } },
+      some: { status: 'DRAFT' },
     })
 
     await GET(req('?hasDraft=false'))
     expect(mockPrisma.knowledgeSource.findMany.mock.calls[1][0]?.where?.revisions).toEqual({
-      none: { status: { in: ['DRAFT', 'REVIEW', 'APPROVED'] } },
+      none: { status: 'DRAFT' },
     })
   })
 
-  it('reports a catalog mirror as unmanaged, with no revision', async () => {
+  it('reports a row of any other type as unmanaged, so the UI hides controls the API would 400', async () => {
+    // Nothing writes a non-MANUAL row today — the catalog mirror that used to is gone — but the
+    // flag stays keyed on the type, exactly as knowledge-workflow.ts's guard is.
+    mockPrisma.knowledgeSource.findMany.mockResolvedValue([sourceRow({ type: 'IMPORTED' })] as never)
+
     const body = await (await GET(req())).json()
     expect(body.items[0].managed).toBe(false)
     expect(body.items[0].latestRevision).toBeNull()
@@ -194,8 +193,7 @@ describe('GET /api/bot-control/knowledge/sources', () => {
   it('surfaces a managed source latest revision and pending state', async () => {
     mockPrisma.knowledgeSource.findMany.mockResolvedValue([
       sourceRow({
-        type: 'MANUAL',
-        revisions: [{ id: 'krev_2', version: 2, status: 'REVIEW' }],
+        revisions: [{ id: 'krev_2', version: 2, status: 'DRAFT' }],
       }),
     ] as never)
 
@@ -203,7 +201,7 @@ describe('GET /api/bot-control/knowledge/sources', () => {
     expect(body.items[0]).toMatchObject({
       managed: true,
       hasDraft: true,
-      latestRevision: { id: 'krev_2', version: 2, status: 'REVIEW' },
+      latestRevision: { id: 'krev_2', version: 2, status: 'DRAFT' },
     })
   })
 

@@ -43,10 +43,8 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
         status: true,
         changeReason: true,
         createdBy: true,
-        reviewedBy: true,
-        reviewedAt: true,
+        publishedBy: true,
         publishedAt: true,
-        releaseId: true,
         createdAt: true,
         updatedAt: true,
       },
@@ -54,7 +52,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
 
     // One lookup for every actor on the page, not one per row.
     const actorIds = [
-      ...new Set(revisions.flatMap((r) => [r.createdBy, r.reviewedBy]).filter((v): v is string => v !== null)),
+      ...new Set(revisions.flatMap((r) => [r.createdBy, r.publishedBy]).filter((v): v is string => v !== null)),
     ]
     const accounts =
       actorIds.length === 0
@@ -78,10 +76,9 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
         changeReason: revision.changeReason,
         // Null when the account is gone. The revision outlives whoever wrote it.
         createdByName: revision.createdBy ? nameById.get(revision.createdBy) ?? null : null,
-        reviewedByName: revision.reviewedBy ? nameById.get(revision.reviewedBy) ?? null : null,
-        reviewedAt: revision.reviewedAt?.toISOString() ?? null,
+        // "Who turned this on, and when" is what survived the removal of reviewer and approver.
+        publishedByName: revision.publishedBy ? nameById.get(revision.publishedBy) ?? null : null,
         publishedAt: revision.publishedAt?.toISOString() ?? null,
-        releaseId: revision.releaseId,
         createdAt: revision.createdAt.toISOString(),
         updatedAt: revision.updatedAt.toISOString(),
       })),

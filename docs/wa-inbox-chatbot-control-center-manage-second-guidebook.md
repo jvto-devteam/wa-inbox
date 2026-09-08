@@ -1,3 +1,56 @@
+> # ⚠️ STATUS DOKUMEN: SEBAGIAN BESAR DIBATALKAN (2026-09-08)
+>
+> **Ini dokumen desain historis. Jangan dipakai sebagai instruksi implementasi.**
+> Sumber kebenaran adalah [`CLAUDE.md`](../CLAUDE.md) dan kode itu sendiri.
+>
+> Dokumen ini ditulis 2026-09-07 dan diimplementasikan sebagai fase A–H. Pada **2026-09-08**
+> sebuah audit produk membatalkan sebagian besar isinya lewat refactor right-sizing, dan
+> kode yang dijelaskan di bawah **sudah dihapus dari repo**.
+>
+> ## Kenapa dibatalkan
+>
+> Lapisan draft → review → approve → publish → rollback per entitas menjawab masalah SaaS
+> multi-tenant. wa-inbox adalah alat internal **satu bisnis** (JVTO), single-tenant, satu tim
+> kecil. Dua bukti yang menentukan:
+>
+> 1. Tak seorang pun bisa memegang peran selain `ADMIN` atau `AGENT`, sehingga penulis draft
+>    selalu sama dengan penyetujunya. Matriks izin lima peran di section 13 mendeskripsikan
+>    akun yang tidak bisa dibuat siapa pun.
+> 2. Tombol Publish terbukti mengembalikan **409 di setiap penekanan** — fitur inti dari
+>    seluruh fase ini tidak pernah sekali pun berhasil dijalankan, dan tidak ada yang
+>    melaporkannya.
+>
+> ## Yang SUDAH TIDAK BERLAKU dari dokumen ini
+>
+> - Seluruh siklus draft → review → approve → publish → rollback, untuk semua entitas.
+> - Model: `BotRelease`, `BotRuleSetting`, `BotFlowDefinition`, `BotFlowVersion`,
+>   `BotTestCase`, `BotTestRun`, `BotTestResult`, `BotDecisionTriage`, `ChannelPolicySetting`.
+> - Permission matrix (section 13) dan peran `BOT_MANAGER` / `OWNER`. Otorisasi sekarang satu
+>   fungsi: `hasAdminPowers()`.
+> - Test suite sebagai gate publish, dan override Owner atas test yang gagal.
+> - Documentation Export, halaman Triage Queue, `/settings/bot-log`,
+>   `/bot-control/channel-policy`, `/bot-control/releases`, `/bot-control/docs`.
+> - Audit log `before`/`after` diff, `ipAddress`, `userAgent`.
+> - Knowledge workflow enam status. Sekarang `DRAFT` / `PUBLISHED` (+ `ARCHIVED` yang ditulis
+>   sistem, bukan dipilih operator).
+>
+> ## Yang MASIH BERLAKU, dalam bentuk yang disederhanakan
+>
+> - `BotControlAuditLog` — tinggal lima kolom (waktu, siapa, aksi, entitas, alasan), `reason`
+>   tetap lewat `sanitizeTrace`, dipangkas 365 hari.
+> - `KnowledgeRevision` — versioning dipertahankan penuh; revisi `PUBLISHED` immutable.
+> - Rule, flow safe config, dan channel policy — jadi kolom biasa di `Settings`, diedit di
+>   `/chatbot` dan `/settings` dengan pola **edit → simpan → aktif**. Batas min/max pengaman
+>   outbound dipertahankan (`src/lib/outbound/safety-bounds.ts`).
+> - Triage — dua kolom `BotDecisionRun.flaggedAt` / `flagNote`.
+> - Stuck outbound recovery (§8.7, ambang 5 menit) — dipertahankan, definisinya diekstrak ke
+>   `src/lib/outbound/stuck.ts`.
+> - Outbound queue, worker, retry, safety guard, decision logs, trace viewer, simulator,
+>   Test Lab, `npm run eval`, registry statis.
+>
+> **Jangan bangun ulang apa pun dari daftar "sudah tidak berlaku" di atas.** Alasannya ada di
+> `CLAUDE.md` section 3.
+
 # Technical Design Document: Wa-Inbox Chatbot Control Center - Manage Second
 
 Tanggal dokumen: 2026-09-07

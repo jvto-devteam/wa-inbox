@@ -1,6 +1,7 @@
 'use client'
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
+import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
 import { Card } from '@/components/ui/card'
@@ -9,10 +10,18 @@ import { WebhookCredentialsPanel } from '@/components/settings/WebhookCredential
 import { hasAdminPowers } from '@/lib/bot-control/permissions'
 import type { AccountRoleName } from '@/lib/auth/session'
 import { fetchJson } from '@/lib/fetch-json'
+import {
+  SAFETY_BOUNDS,
+  SAFETY_FIELD_LABELS,
+  type SafetyBoundKey,
+  type SafetyThresholds,
+} from '@/lib/outbound/safety-bounds'
 
 type Settings = {
   defaultChannel: 'OFFICIAL' | 'UNOFFICIAL'
-}
+} & SafetyThresholds
+
+const SAFETY_FIELDS = Object.keys(SAFETY_BOUNDS) as SafetyBoundKey[]
 type NumberStatus = { officialTokenValid: boolean; unofficialConfigured: boolean }
 type Role = 'ADMIN' | 'AGENT' | null
 
@@ -24,6 +33,12 @@ export default function SettingsPage() {
   const [settings, setSettings] = useState<Settings | null>(null)
   const [status, setStatus] = useState<NumberStatus | null>(null)
   const [role, setRole] = useState<Role>(null)
+  const [safetyError, setSafetyError] = useState<string | null>(null)
+  // Bumped only when a save is rejected, to force the number inputs to remount and show the
+  // server's value again. Without it the rejected number stays in the box, because the value
+  // behind the input's `key` did not change — and a box showing a number that was refused is
+  // the exact "setting that looks applied" failure these bounds exist to prevent.
+  const [safetyNonce, setSafetyNonce] = useState(0)
 
   useEffect(() => {
     // Each rejection is swallowed: the page renders "Memuat..." until both land, which
@@ -48,6 +63,31 @@ export default function SettingsPage() {
       setSettings(await fetchJson<Settings>('/api/settings', { method: 'PATCH', body: JSON.stringify({ defaultChannel }) }))
     } catch {
       // Leaves the select showing the last server-confirmed value.
+    }
+  }
+
+  /**
+   * Saves one safety threshold, on blur rather than on every keystroke.
+   *
+   * The route rejects anything outside SAFETY_BOUNDS, and saving per character would reject
+   * every intermediate value an operator types on the way to a valid one ("2" while typing
+   * "20"). A rejected save is swallowed the same way the channel select swallows one: the field
+   * snaps back to the last value the server confirmed, which is the value actually in force.
+   */
+  async function updateSafetyField(field: SafetyBoundKey, raw: string) {
+    const value = Number(raw)
+    if (!Number.isInteger(value) || value === settings?.[field]) {
+      setSafetyError(null)
+      return
+    }
+    try {
+      setSettings(await fetchJson<Settings>('/api/settings', { method: 'PATCH', body: JSON.stringify({ [field]: value }) }))
+      setSafetyError(null)
+    } catch (err: unknown) {
+      // Named, not silent: an out-of-range number is exactly the case where an operator has to
+      // be told the guard kept its floor, or they will believe the value was accepted.
+      setSafetyError(err instanceof Error ? err.message : 'Nilai ditolak; pengaman tetap memakai nilai sebelumnya.')
+      setSafetyNonce((n) => n + 1)
     }
   }
 
@@ -83,6 +123,42 @@ export default function SettingsPage() {
         {/* Unofficial is send-only -- its own connect/relink is managed on wa-dashboard directly,
             not from here (see src/lib/coexist/client.ts). */}
       </Card>
+
+      {hasAdminPowers(role) && (
+        <Card className="space-y-3 p-4">
+          <div>
+            <h2 className="font-medium text-navy">Pengaman outbound</h2>
+            <p className="text-xs text-muted-foreground">
+              Angka-angka ini dibaca safety guard tepat sebelum sebuah pesan keluar. Batas bawahnya bukan hiasan: nol
+              pada batas campaign tidak melonggarkan limit, ia mematikan gerbangnya. Jeda provider darurat tidak ada di
+              sini — tombolnya di{' '}
+              <Link href="/bot-control/outbound-queue" className="text-brand hover:underline">
+                Outbound Queue
+              </Link>
+              , supaya menyimpan halaman ini tidak pernah bisa mengangkat jeda yang dipasang saat insiden.
+            </p>
+          </div>
+          {SAFETY_FIELDS.map((field) => (
+            <label key={field} className="block space-y-1 text-sm">
+              <span className="text-xs text-muted-foreground">{SAFETY_FIELD_LABELS[field]}</span>
+              <Input
+                type="number"
+                min={SAFETY_BOUNDS[field].min}
+                max={SAFETY_BOUNDS[field].max}
+                defaultValue={settings[field]}
+                key={`${field}-${settings[field]}-${safetyNonce}`}
+                onBlur={(e) => updateSafetyField(field, e.target.value)}
+                aria-label={SAFETY_FIELD_LABELS[field]}
+                className="w-56"
+              />
+              <span className="block text-xs text-muted-foreground">
+                Antara {SAFETY_BOUNDS[field].min} dan {SAFETY_BOUNDS[field].max}.
+              </span>
+            </label>
+          ))}
+          {safetyError && <p className="text-sm text-destructive">{safetyError}</p>}
+        </Card>
+      )}
 
       {hasAdminPowers(role) && (
         <Card className="space-y-1 p-4">

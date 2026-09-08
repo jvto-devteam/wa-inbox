@@ -26,8 +26,11 @@ const EMPTY_ITEM: KnowledgeItem = { question: '', answer: '' }
  * the bot may only state a price or URL it can SOURCE. A figure buried in a sentence is
  * indistinguishable, to the verifier, from one the model made up.
  *
- * Everything here is a draft. Nothing on this form reaches the bot until a release publishes
- * it, and the copy says so rather than leaving the operator to infer it.
+ * Two buttons, because there are two things an operator means. "Simpan draft" writes the text
+ * down without changing what the bot says — the half-finished answer, the price waiting on a
+ * confirmation. "Simpan & aktifkan" does the same write and then turns it on, which is what
+ * somebody fixing a wrong answer at 9pm actually wants. There is no third state in between,
+ * and no release to remember afterwards.
  */
 export function KnowledgeEditor({
   initial,
@@ -42,7 +45,8 @@ export function KnowledgeEditor({
   saving: boolean
   error: string | null
   onCancel: () => void
-  onSave: (draft: KnowledgeDraft, reason: string) => void
+  /** `activate` distinguishes "Simpan draft" from "Simpan & aktifkan". */
+  onSave: (draft: KnowledgeDraft, reason: string, activate: boolean) => void
 }) {
   const [draft, setDraft] = useState<KnowledgeDraft>({
     ...initial,
@@ -77,7 +81,8 @@ export function KnowledgeEditor({
       <div className="space-y-1">
         <h2 className="text-sm font-semibold text-navy">{title}</h2>
         <p className="text-xs text-muted-foreground">
-          Perubahan disimpan sebagai draft. Bot belum membacanya sampai dipublish lewat Releases.
+          Disimpan sebagai draft, bot belum membacanya. Tekan &ldquo;Simpan &amp; aktifkan&rdquo; kalau isinya sudah
+          boleh dipakai menjawab customer.
         </p>
       </div>
 
@@ -173,10 +178,18 @@ export function KnowledgeEditor({
       <div className="flex items-center gap-2">
         <Button
           type="button"
-          onClick={() => onSave(draft, reason.trim())}
+          variant="outline"
+          onClick={() => onSave(draft, reason.trim(), false)}
           disabled={saving || !complete || reason.trim().length < MIN_REASON_LENGTH}
         >
           {saving ? 'Menyimpan...' : 'Simpan draft'}
+        </Button>
+        <Button
+          type="button"
+          onClick={() => onSave(draft, reason.trim(), true)}
+          disabled={saving || !complete || reason.trim().length < MIN_REASON_LENGTH}
+        >
+          {saving ? 'Menyimpan...' : 'Simpan & aktifkan'}
         </Button>
         <Button type="button" variant="outline" onClick={onCancel}>
           Batal

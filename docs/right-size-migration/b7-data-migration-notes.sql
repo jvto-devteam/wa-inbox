@@ -1,0 +1,343 @@
+-- ============================================================================
+-- ITEM b7 — catatan migrasi data: cerminan katalog di database dibuang
+-- ============================================================================
+-- TIDAK DIJALANKAN. Semua pernyataan di bawah ini sengaja berupa komentar.
+-- DATABASE_URL repo ini menunjuk VPS PRODUKSI; keputusan penerapan ada di tangan
+-- operator, bukan agent. Agent yang menulis file ini TIDAK menyentuh database
+-- sama sekali — termasuk SELECT di LANGKAH 1, yang ditulis untuk dijalankan
+-- operator, bukan dijalankan lebih dulu lalu dilaporkan angkanya.
+--
+--
+-- Konteks
+-- -------
+-- Halaman Knowledge Explorer dulu dilayani sebuah CERMINAN katalog di Postgres:
+--
+--     32 baris "KnowledgeSource" bertipe katalog (satu per file catalog/*.json)
+--     + seluruh "KnowledgeChunk" miliknya
+--
+-- ditulis oleh src/lib/bot-control/knowledge-indexer.ts, disegarkan lewat tombol
+-- "Index ulang katalog" (POST /api/bot-control/knowledge/sync).
+--
+-- Cerminan itu TIDAK PERNAH DIBACA BOT sekali pun. src/lib/bot/knowledge.ts dan
+-- src/lib/bot/catalog.ts membuka file JSON-nya langsung dari disk dan tidak
+-- memuat prisma sama sekali. Jadi yang tersisa hanyalah salinan kedua dari data
+-- yang sudah ada di disk, ditambah satu langkah manual yang harus diingat supaya
+-- salinan itu tidak berbohong. Data katalog yang nyata pun berhenti berubah
+-- 2026-08-07, sebulan sebelum control plane-nya ditulis.
+--
+-- Sekarang halaman itu membaca `catalog/` langsung lewat
+-- src/lib/bot-control/catalog-explorer.ts (yang memakai loadCatalog() beserta
+-- cache ber-mtime-nya), jadi mengubah file di disk langsung terlihat tanpa
+-- langkah sinkronisasi apa pun.
+--
+-- Yang berubah di database:
+--
+--   1. "KnowledgeChunk"  -> TABEL DIHAPUS SELURUHNYA. Pemakainya hanya indexer
+--                           katalog dan panel yang menampilkannya. Managed
+--                           knowledge (item b3) menyimpan isinya di
+--                           "KnowledgeRevision"."body" (Json), BUKAN di chunk —
+--                           diperiksa, bukan diasumsikan; lihat asumsi 2.
+--   2. "KnowledgeSource" -> baris bertipe katalog DIHAPUS (32 baris). Model dan
+--                           tabelnya TETAP ADA: ia masih melayani managed
+--                           knowledge bertipe 'MANUAL'.
+--   3. "KnowledgeSource"."sourcePath"   -> DIHAPUS (kolom). Khusus cerminan.
+--   4. "KnowledgeSource"."metadata"     -> DIHAPUS (kolom). Khusus cerminan
+--                                          (ukuran file, mtime, daftar key JSON).
+--   5. "KnowledgeSource"."lastSyncedAt" -> DIHAPUS (kolom). Tidak ada lagi yang
+--                                          namanya "sinkronisasi terakhir".
+--
+-- Yang TIDAK berubah, dan sengaja:
+--
+--   * "KnowledgeSource"."type" TETAP ADA, walaupun sesudah migrasi ini SELURUH
+--     barisnya bernilai 'MANUAL'. Kolom itu yang dipakai SETIAP penjaga di
+--     src/lib/bot-control/knowledge-workflow.ts: saveKnowledgeDraft,
+--     publishKnowledgeRevision, dan archiveKnowledgeSource semuanya MENOLAK baris
+--     yang tipenya bukan 'MANUAL'. Menghapus kolomnya akan menghapus penjaga itu
+--     juga, dan larangan mutlak CLAUDE.md ("jangan overwrite KnowledgeSource yang
+--     type = MANUAL") jadi tidak punya pegangan teknis lagi kalau suatu hari ada
+--     penulis berbasis file yang dihidupkan kembali.
+--   * "KnowledgeRevision" TETAP UTUH — itu managed knowledge dari item b3, dan
+--     itulah satu-satunya knowledge di database yang benar-benar dibaca bot
+--     (src/lib/bot/managed-knowledge.ts).
+--   * "KnowledgeGapLog", "BotDecisionRun", dan audit log tidak disentuh.
+--
+--
+-- Asumsi
+-- ------
+-- 1. DATANYA TIDAK HILANG SECARA BERMAKNA. Sumber dari 32 baris itu adalah file
+--    `catalog/*.json` yang masih ada di disk, ikut ke-commit ke repo, dan ikut
+--    ter-deploy. Menghapus barisnya menghapus SALINAN, bukan aslinya. Kalau
+--    seseorang ingin arsip cerminan itu sebelum dibuang, LANGKAH 1e adalah SELECT
+--    read-only yang menghasilkannya.
+--
+-- 2. "KnowledgeChunk" HANYA DIPAKAI CERMINAN KATALOG — DIPERIKSA, BUKAN DITEBAK.
+--    Seluruh repo di-grep untuk `chunk`:
+--
+--      - knowledge-indexer.ts        -> satu-satunya PENULIS (dihapus di item ini)
+--      - api/.../knowledge/chunks/   -> satu-satunya PEMBACA (dihapus di item ini)
+--      - api/.../knowledge/sources/  -> `_count.chunks` + filter `topic` lewat
+--                                       relasi chunk (dihapus di item ini)
+--      - KnowledgeChunkPanel.tsx     -> tampilannya (dihapus di item ini)
+--      - paging.ts, decision-recorder.ts -> kata "chunk" hanya di KOMENTAR
+--
+--    src/lib/bot/managed-knowledge.ts dan knowledge-workflow.ts TIDAK menyentuh
+--    KnowledgeChunk sama sekali; managed knowledge memuat isinya dari
+--    "KnowledgeRevision"."body". Karena itu tabelnya boleh dihapus seluruhnya.
+--
+-- 3. Diperkirakan ADA sekitar 32 baris bertipe katalog + beberapa ratus chunk di
+--    produksi (angka 32/410 muncul di test lama sebagai contoh). ANGKA ITU TIDAK
+--    DIPERCAYA BEGITU SAJA — LANGKAH 1 menghitungnya, dan LANGKAH 3 ditulis
+--    supaya benar berapa pun hasilnya, termasuk nol.
+--
+-- 4. RISIKO TERBESAR ITEM INI ADALAH PREDIKAT DELETE-NYA. Sebuah DELETE yang
+--    salah sasaran akan menghapus knowledge yang DITULIS OPERATOR — satu-satunya
+--    knowledge di tabel ini yang benar-benar dibaca bot, dan yang CLAUDE.md
+--    lindungi secara mutlak. Karena itu:
+--
+--      * predikatnya POSITIF terhadap tipe katalog (`"type" = 'CATALOG_JSON'`),
+--        BUKAN negatif terhadap 'MANUAL' (`"type" <> 'MANUAL'`). Predikat negatif
+--        akan ikut menyapu tipe lain yang tidak diketahui — 'FAQ', 'URL', 'PDF',
+--        'DOC' semuanya pernah disebut di schema lama — dan sebuah baris ber-type
+--        NULL/salah ketik akan ikut terhapus tanpa ada yang menyadari;
+--      * LANGKAH 1c menghitung baris MANUAL SEBELUM dan LANGKAH 3c menghitungnya
+--        SESUDAH, dan keduanya harus sama;
+--      * LANGKAH 3a dibungkus transaksi eksplisit, supaya hitungan sesudah yang
+--        tidak cocok bisa di-ROLLBACK alih-alih hanya disesali.
+--
+-- 5. NILAI TIPE YANG DICARI ADALAH LITERAL 'CATALOG_JSON'. Itu string yang
+--    ditulis indexer lama (konstanta CATALOG_SOURCE_TYPE). Nama itu sudah tidak
+--    ada lagi di kode mana pun — dia hanya hidup sebagai data di baris-baris yang
+--    hendak dihapus ini. LANGKAH 1b membuktikan nilai apa saja yang BENAR-BENAR
+--    ada di kolom itu di produksi sebelum satu baris pun dihapus.
+--
+--
+-- ----------------------------------------------------------------------------
+-- LANGKAH 1 — VERIFIKASI. Read-only, jalankan lebih dulu, jangan dilewati.
+--             Seluruh keputusan di bawah bergantung pada hasilnya.
+-- ----------------------------------------------------------------------------
+--
+-- 1a. Berapa baris sumber dan chunk yang ada seluruhnya?
+--
+-- SELECT
+--   (SELECT COUNT(*) FROM "KnowledgeSource")   AS sumber_total,
+--   (SELECT COUNT(*) FROM "KnowledgeChunk")    AS chunk_total,
+--   (SELECT COUNT(*) FROM "KnowledgeRevision") AS revisi_total;
+--
+-- 1b. NILAI APA SAJA yang benar-benar ada di kolom "type"? Ini yang menentukan
+--     apakah predikat di LANGKAH 3 tepat sasaran. Jangan lewati langkah ini.
+--
+-- SELECT COALESCE("type", '<NULL>') AS tipe, COUNT(*) AS jumlah
+-- FROM "KnowledgeSource"
+-- GROUP BY "type"
+-- ORDER BY jumlah DESC;
+--
+--     Diharapkan: 'CATALOG_JSON' (~32) dan 'MANUAL' (0..n).
+--     Kalau muncul nilai LAIN ('FAQ', 'URL', 'PDF', 'DOC', NULL, atau apa pun),
+--     BERHENTI dan diskusikan: baris itu bukan cerminan katalog, tidak dihapus
+--     oleh LANGKAH 3, dan halaman Knowledge Explorer akan menampilkannya sebagai
+--     sumber yang tidak bisa diedit (managed = false). Itu keadaan yang aman,
+--     tapi harus disadari, bukan ditemukan belakangan.
+--
+-- 1c. PENGAMAN UTAMA — berapa baris MANUAL yang ada SEBELUM penghapusan?
+--     Catat angkanya. LANGKAH 3c membandingkannya sesudah.
+--
+-- SELECT COUNT(*) AS manual_sebelum
+-- FROM "KnowledgeSource"
+-- WHERE "type" = 'MANUAL';
+--
+-- 1d. PENGAMAN UTAMA — buktikan bahwa predikat DELETE tidak menyentuh satu pun
+--     baris MANUAL. Query ini adalah predikat yang sama persis dengan LANGKAH 3a,
+--     hanya diputar jadi SELECT.
+--
+-- SELECT COUNT(*) AS manual_ikut_terhapus
+-- FROM "KnowledgeSource"
+-- WHERE "type" = 'CATALOG_JSON'
+--   AND "type" = 'MANUAL';
+--
+--     Diharapkan: 0. Angka ini HARUS nol secara logika (satu kolom tidak bisa
+--     bernilai dua hal sekaligus) — dijalankan justru untuk itu: kalau ia tidak
+--     nol, yang salah bukan asumsinya melainkan pemahaman kita tentang tabelnya,
+--     dan tidak ada yang boleh dihapus sampai itu dijelaskan.
+--
+--     Pengaman keduanya, yang lebih berguna dalam praktik — daftar SETIAP baris
+--     yang akan dihapus, untuk dibaca mata manusia sebelum dihapus:
+--
+-- SELECT "id", "key", "type", "status", "sourcePath", "ownerId", "createdBy"
+-- FROM "KnowledgeSource"
+-- WHERE "type" = 'CATALOG_JSON'
+-- ORDER BY "key";
+--
+--     Setiap baris di daftar itu harus: "key"/"sourcePath" menunjuk file di
+--     `catalog/`, "ownerId" dan "createdBy" NULL (indexer tidak punya manusia),
+--     dan TIDAK ADA satu pun yang dikenali sebagai tulisan operator. Kalau ada
+--     satu saja yang meragukan, BERHENTI.
+--
+-- 1e. Punya revisi? Baris cerminan seharusnya TIDAK punya satu pun — revisi
+--     hanya dibuat lewat editor managed knowledge. Kalau ternyata ada, itu
+--     berarti sebuah sumber pernah berpindah tipe, dan DELETE cascade akan ikut
+--     menghapus riwayat tulisan orang.
+--
+-- SELECT s."id", s."key", COUNT(r."id") AS revisi
+-- FROM "KnowledgeSource" s
+-- LEFT JOIN "KnowledgeRevision" r ON r."knowledgeSourceId" = s."id"
+-- WHERE s."type" = 'CATALOG_JSON'
+-- GROUP BY s."id", s."key"
+-- HAVING COUNT(r."id") > 0;
+--
+--     Diharapkan: 0 baris. Kalau TIDAK 0 baris: BERHENTI, jangan jalankan
+--     LANGKAH 3 sama sekali. Selamatkan revisi itu dulu (pindahkan ke sumber
+--     MANUAL baru), karena "KnowledgeRevision" ber-onDelete: Cascade terhadap
+--     "KnowledgeSource" — menghapus sumbernya akan menghapus revisinya diam-diam.
+--
+-- 1f. Arsip opsional isi cerminan sebelum dibuang. Tidak wajib (aslinya ada di
+--     disk), tapi murah. Simpan keluarannya ke file kalau diinginkan.
+--
+-- SELECT s."key", s."sourcePath", c."topic", c."title", c."body", c."hash"
+-- FROM "KnowledgeChunk" c
+-- JOIN "KnowledgeSource" s ON s."id" = c."knowledgeSourceId"
+-- WHERE s."type" = 'CATALOG_JSON'
+-- ORDER BY s."key", c."topic", c."title";
+--
+--
+-- ----------------------------------------------------------------------------
+-- LANGKAH 2 — Buat file migrasi OFFLINE. Jangan `prisma migrate dev`.
+-- ----------------------------------------------------------------------------
+-- CLAUDE.md: `migrate dev` bisa me-reset database saat mendeteksi drift, dan
+-- DATABASE_URL di repo ini menunjuk VPS produksi.
+--
+--   npx prisma migrate diff \
+--     --from-schema-datamodel <schema sebelum item b7> \
+--     --to-schema-datamodel prisma/schema.prisma \
+--     --script > prisma/migrations/<timestamp>_drop_catalog_knowledge_mirror/migration.sql
+--
+-- Schema sebelum refactor tersedia di
+--   scratchpad/schema-baseline-before-refactor.prisma  (baseline seluruh refactor)
+-- atau `git show HEAD:prisma/schema.prisma` untuk baseline sebelum branch ini.
+--
+-- SQL yang diharapkan keluar untuk BAGIAN KNOWLEDGE — periksa, jangan langsung
+-- percaya, dan pastikan tidak ada DROP/ALTER lain yang ikut terbawa:
+--
+-- DROP TABLE "KnowledgeChunk";
+-- ALTER TABLE "KnowledgeSource" DROP COLUMN "sourcePath";
+-- ALTER TABLE "KnowledgeSource" DROP COLUMN "metadata";
+-- ALTER TABLE "KnowledgeSource" DROP COLUMN "lastSyncedAt";
+--
+-- (Prisma biasanya menuliskan DROP TABLE-nya lengkap dengan
+--  `DROP CONSTRAINT "KnowledgeChunk_knowledgeSourceId_fkey"` lebih dulu; index
+--  "KnowledgeChunk_*" ikut hilang bersama tabelnya dan tidak perlu di-drop
+--  terpisah.)
+--
+-- SATU DROP TABLE dan TIGA ALTER TABLE non-aditif. CLAUDE.md mewajibkan keduanya
+-- didiskusikan lebih dulu. Konteks diskusinya ada di asumsi 1 dan 2: isi tabel
+-- yang di-drop adalah salinan file yang masih ada di disk, dan tidak ada satu
+-- pun pembaca yang tersisa.
+--
+-- URUTAN PENERAPAN YANG BENAR: LANGKAH 3 (hapus BARIS) dijalankan LEBIH DULU,
+-- baru LANGKAH 4 (terapkan DDL). Terbalik pun tidak merusak apa-apa — DROP TABLE
+-- membawa serta isinya — tapi urutan ini membuat setiap penghapusan baris masih
+-- bisa dihitung dan diperiksa dengan kolom "sourcePath" yang belum hilang.
+--
+--
+-- ----------------------------------------------------------------------------
+-- LANGKAH 3 — HAPUS BARIS CERMINAN. Jalankan SESUDAH LANGKAH 1 bersih,
+--             SEBELUM LANGKAH 4.
+-- ----------------------------------------------------------------------------
+--
+-- 3a. Satu transaksi. Hapus chunk-nya lebih dulu, lalu sumbernya.
+--
+--     Catatan: "KnowledgeChunk" sudah ber-onDelete: Cascade terhadap
+--     "KnowledgeSource", jadi DELETE kedua sebenarnya sudah cukup sendirian.
+--     DELETE chunk yang eksplisit tetap ditulis supaya jumlah baris yang hilang
+--     TERLIHAT di keluaran psql, bukan terjadi diam-diam di dalam cascade.
+--
+-- BEGIN;
+--
+-- DELETE FROM "KnowledgeChunk"
+-- WHERE "knowledgeSourceId" IN (
+--   SELECT "id" FROM "KnowledgeSource" WHERE "type" = 'CATALOG_JSON'
+-- );
+--
+-- DELETE FROM "KnowledgeSource"
+-- WHERE "type" = 'CATALOG_JSON';
+--
+-- 3b. MASIH DI DALAM TRANSAKSI — tidak boleh ada baris cerminan tersisa.
+--
+-- SELECT COUNT(*) AS cerminan_tersisa
+-- FROM "KnowledgeSource"
+-- WHERE "type" = 'CATALOG_JSON';
+--
+--     Diharapkan: 0.
+--
+-- 3c. MASIH DI DALAM TRANSAKSI — PENGAMAN UTAMA. Angka ini WAJIB sama persis
+--     dengan `manual_sebelum` dari LANGKAH 1c.
+--
+-- SELECT COUNT(*) AS manual_sesudah
+-- FROM "KnowledgeSource"
+-- WHERE "type" = 'MANUAL';
+--
+--     SAMA dengan LANGKAH 1c  -> COMMIT;
+--     BEDA (berapa pun)       -> ROLLBACK; lalu berhenti dan diskusikan.
+--                                Jangan mencoba "memperbaiki" dengan DELETE lain.
+--
+-- 3d. Dan revisi tidak boleh berkurang sama sekali — itu managed knowledge yang
+--     dibaca bot. Bandingkan dengan `revisi_total` dari LANGKAH 1a.
+--
+-- SELECT COUNT(*) AS revisi_sesudah FROM "KnowledgeRevision";
+--
+--     SAMA -> COMMIT;   BEDA -> ROLLBACK; (cascade menyentuh sesuatu yang
+--                       seharusnya tidak; lihat LANGKAH 1e.)
+--
+-- COMMIT;
+--
+--
+-- ----------------------------------------------------------------------------
+-- LANGKAH 4 — Terapkan DDL-nya.
+-- ----------------------------------------------------------------------------
+--
+--   npx prisma migrate deploy
+--
+-- BUKAN `migrate dev`, BUKAN `db push`, BUKAN `migrate reset`.
+--
+-- Catatan Node: perintah Prisma 7 apa pun di VPS harus dijalankan dengan Node 22
+-- (export PATH nvm-nya lebih dulu); Node 18 bawaan akan gagal.
+--
+--
+-- ----------------------------------------------------------------------------
+-- LANGKAH 5 — Verifikasi sesudah deploy. Read-only.
+-- ----------------------------------------------------------------------------
+--
+-- 5a. Tabel chunk sudah tidak ada, tabel sumber masih ada.
+--
+-- SELECT table_name
+-- FROM information_schema.tables
+-- WHERE table_schema = 'public'
+--   AND table_name IN ('KnowledgeSource', 'KnowledgeChunk', 'KnowledgeRevision')
+-- ORDER BY table_name;
+--
+--     Diharapkan: "KnowledgeRevision" dan "KnowledgeSource" saja.
+--
+-- 5b. Kolom cerminan sudah hilang, kolom penjaga masih ada.
+--
+-- SELECT column_name
+-- FROM information_schema.columns
+-- WHERE table_schema = 'public' AND table_name = 'KnowledgeSource'
+-- ORDER BY column_name;
+--
+--     HARUS masih ada: "type"  (penjaga MANUAL — lihat bagian "Yang TIDAK berubah")
+--     HARUS sudah hilang: "sourcePath", "metadata", "lastSyncedAt"
+--
+-- 5c. Managed knowledge masih utuh dan masih terbaca bot.
+--
+-- SELECT s."key", s."status" AS sumber, r."version", r."status" AS revisi
+-- FROM "KnowledgeSource" s
+-- JOIN "KnowledgeRevision" r ON r."knowledgeSourceId" = s."id"
+-- WHERE s."type" = 'MANUAL'
+-- ORDER BY s."key", r."version";
+--
+--     Setiap sumber yang sebelum migrasi punya satu revisi 'PUBLISHED' harus
+--     masih punya persis satu.
+--
+-- 5d. Pemeriksaan di aplikasi, bukan di SQL: buka /bot-control/knowledge.
+--     Bagian "Isi katalog" harus terisi dari file di disk (tanpa tombol index
+--     ulang, tanpa langkah sinkronisasi), dan bagian "Knowledge terkelola" harus
+--     menampilkan sumber MANUAL beserta tombol Edit/Aktifkan/Arsipkan-nya.

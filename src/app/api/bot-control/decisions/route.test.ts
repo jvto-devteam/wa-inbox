@@ -37,6 +37,8 @@ function runRow(overrides: Record<string, unknown> = {}) {
     error: null,
     startedAt: new Date('2026-09-05T03:00:00.000Z'),
     finishedAt: new Date('2026-09-05T03:00:02.500Z'),
+    flaggedAt: null,
+    flagNote: null,
     ...overrides,
   } as never
 }
@@ -106,6 +108,51 @@ describe('GET /api/bot-control/decisions', () => {
     const where = mockPrisma.botDecisionRun.findMany.mock.calls[0][0]?.where
     expect(where).toMatchObject({ status: 'HANDOFF', mode: 'handoff', conversationId: 'conv_9' })
     expect(mockPrisma.botDecisionRun.count.mock.calls[0][0]?.where).toEqual(where)
+  })
+
+  it('does NOT read the trace column for the list', async () => {
+    // `trace` is the biggest column in the table and this list renders none of it. Without an
+    // explicit select, one page dragged 50 full reasoning traces across the wire for a table
+    // that shows a 140-character preview. The detail route still reads the row in full.
+    await GET(req())
+
+    const listSelect = mockPrisma.botDecisionRun.findMany.mock.calls[0][0]?.select
+    expect(listSelect).toBeDefined()
+    expect(listSelect).not.toHaveProperty('trace')
+    expect(listSelect).not.toHaveProperty('replyText')
+    // Everything the rendered row actually needs is still asked for.
+    expect(listSelect).toMatchObject({
+      id: true,
+      conversationId: true,
+      inboundText: true,
+      knowledgeRefs: true,
+      startedAt: true,
+      flaggedAt: true,
+      flagNote: true,
+    })
+  })
+
+  it('filters "hanya yang ditandai" in the database query, not on the client', async () => {
+    // A client-side filter over one 50-row page would hide every flagged decision sitting on
+    // another page — the exact failure the separate triage table produced with its limit=200.
+    await GET(req('?flagged=true'))
+    const where = mockPrisma.botDecisionRun.findMany.mock.calls[0][0]?.where
+    expect(where).toMatchObject({ flaggedAt: { not: null } })
+    expect(mockPrisma.botDecisionRun.count.mock.calls[0][0]?.where).toEqual(where)
+  })
+
+  it('leaves the flag filter off unless it is explicitly asked for', async () => {
+    await GET(req('?flagged=false'))
+    expect(mockPrisma.botDecisionRun.findMany.mock.calls[0][0]?.where?.flaggedAt).toBeUndefined()
+  })
+
+  it('carries the flag onto each row so the page needs no second request', async () => {
+    mockPrisma.botDecisionRun.findMany.mockResolvedValue([
+      runRow({ flaggedAt: new Date('2026-09-08T02:00:00.000Z'), flagNote: 'Harga ATV salah' }),
+    ] as never)
+
+    const body = await (await GET(req())).json()
+    expect(body.items[0]).toMatchObject({ flaggedAt: '2026-09-08T02:00:00.000Z', flagNote: 'Harga ATV salah' })
   })
 
   it('filters by messageId, which is how the inbox popover finds a run', async () => {

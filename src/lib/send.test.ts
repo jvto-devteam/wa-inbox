@@ -306,7 +306,7 @@ describe('sendMessage — media attachments', () => {
 })
 
 /**
- * Regression cover for the audit finding "capabilityRules tidak punya caller".
+ * Regression cover for the audit finding "aturan kemampuan channel tidak punya caller".
  *
  * Before this, nine dropdowns on the Channel Policy page could be edited, reviewed, approved,
  * published, snapshotted and rolled back without changing a single byte of send behaviour.

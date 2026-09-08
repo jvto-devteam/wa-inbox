@@ -6,22 +6,35 @@ import { existsSync } from 'node:fs'
 import path from 'node:path'
 import { BOT_RULES, getBotRule, listBotRules, listRuleCategories } from './rule-registry'
 
-// The ten rules the guidebook (section 9) makes mandatory, with the severity and editability it
-// specifies for each. Written out independently of the registry so a rule that silently loses
-// its CRITICAL severity — or, worse, becomes editable — fails here.
-const REQUIRED_RULES: Array<{ key: string; severity: string; editable: boolean; category: string }> = [
-  { key: 'channel.official_inbound_only', severity: 'CRITICAL', editable: false, category: 'Channel Policy' },
-  // Keduanya dikunci sejak Temuan 3: perilakunya dikelola di halaman Channel Policy, yang
-  // benar-benar dibaca resolveChannel dan resolveChannelForCapability.
-  { key: 'channel.unofficial_outbound_default', severity: 'CRITICAL', editable: false, category: 'Channel Policy' },
-  { key: 'channel.official_reserved_for_capabilities', severity: 'HIGH', editable: false, category: 'Channel Policy' },
-  { key: 'bot.no_invented_price', severity: 'CRITICAL', editable: false, category: 'Safety' },
-  { key: 'bot.no_invented_url', severity: 'CRITICAL', editable: false, category: 'Safety' },
-  { key: 'bot.handoff_on_human_request', severity: 'HIGH', editable: true, category: 'Handoff' },
-  { key: 'bot.booking_context_first', severity: 'HIGH', editable: false, category: 'Decision' },
-  { key: 'bot.skip_indonesian_numbers', severity: 'NORMAL', editable: true, category: 'Market Policy' },
-  { key: 'bot.burst_debounce', severity: 'NORMAL', editable: false, category: 'Delivery Quality' },
-  { key: 'bot.rate_limit', severity: 'HIGH', editable: false, category: 'Abuse Protection' },
+// The ten rules the guidebook (section 9) makes mandatory, with the severity it specifies for
+// each and the Settings column (if any) that switches it. Written out independently of the
+// registry so a rule that silently loses its CRITICAL severity — or, worse, quietly acquires a
+// switch — fails here.
+type Required = { key: string; severity: string; category: string; settingsKey?: string }
+const REQUIRED_RULES: Required[] = [
+  { key: 'channel.official_inbound_only', severity: 'CRITICAL', category: 'Channel Policy' },
+  // Default jalur kirim diatur di Pengaturan (Settings.defaultChannel, dibaca resolveChannel);
+  // rute per-kemampuan adalah matriks statis di channel-capabilities.ts. Tidak satu pun dari
+  // halaman Rules.
+  { key: 'channel.unofficial_outbound_default', severity: 'CRITICAL', category: 'Channel Policy' },
+  { key: 'channel.official_reserved_for_capabilities', severity: 'HIGH', category: 'Channel Policy' },
+  { key: 'bot.no_invented_price', severity: 'CRITICAL', category: 'Safety' },
+  { key: 'bot.no_invented_url', severity: 'CRITICAL', category: 'Safety' },
+  {
+    key: 'bot.handoff_on_human_request',
+    severity: 'HIGH',
+    category: 'Handoff',
+    settingsKey: 'handoffOnHumanRequest',
+  },
+  { key: 'bot.booking_context_first', severity: 'HIGH', category: 'Decision' },
+  {
+    key: 'bot.skip_indonesian_numbers',
+    severity: 'NORMAL',
+    category: 'Market Policy',
+    settingsKey: 'skipBotForIndonesianNumbers',
+  },
+  { key: 'bot.burst_debounce', severity: 'NORMAL', category: 'Delivery Quality' },
+  { key: 'bot.rate_limit', severity: 'HIGH', category: 'Abuse Protection' },
 ]
 
 describe('rule registry', () => {
@@ -29,24 +42,34 @@ describe('rule registry', () => {
     expect(BOT_RULES.map((r) => r.key)).toEqual(REQUIRED_RULES.map((r) => r.key))
   })
 
-  it('gives each rule the mandated severity, editability and category', () => {
+  it('gives each rule the mandated severity, category and switch', () => {
     for (const required of REQUIRED_RULES) {
       const rule = getBotRule(required.key)
       expect(rule, required.key).not.toBeNull()
       expect(rule?.severity, `${required.key} severity`).toBe(required.severity)
-      expect(rule?.editable, `${required.key} editable`).toBe(required.editable)
       expect(rule?.category, `${required.key} category`).toBe(required.category)
+      expect(rule?.settingsKey, `${required.key} settingsKey`).toBe(required.settingsKey)
     }
   })
 
-  it('keeps the two anti-fabrication safety rules permanently locked', () => {
+  it('gives exactly two rules a switch, and no others', () => {
+    // The count is the assertion. Eight of these rules are hardcoded behaviour; a ninth
+    // `settingsKey` appearing means somebody wired a column to a rule the code does not
+    // actually consult, which is the "the UI says it is off but it is on" bug this file's
+    // whole shape exists to prevent.
+    expect(BOT_RULES.filter((r) => r.settingsKey !== undefined).map((r) => r.key)).toEqual([
+      'bot.handoff_on_human_request',
+      'bot.skip_indonesian_numbers',
+    ])
+  })
+
+  it('keeps the two anti-fabrication safety rules unswitchable', () => {
     // These two are the promise the bot makes to a customer who is about to pay money. A
-    // future refactor that flips either to editable — exposing a toggle that lets an operator
-    // turn off price/URL verification from a web form — must not pass review silently.
+    // future refactor that gives either one a settings column — exposing a switch that lets an
+    // operator turn off price/URL verification — must not pass review silently.
     for (const key of ['bot.no_invented_price', 'bot.no_invented_url']) {
       const rule = getBotRule(key)
-      expect(rule?.editable, key).toBe(false)
-      expect(rule?.enabled, key).toBe(true)
+      expect(rule?.settingsKey, key).toBeUndefined()
       expect(rule?.severity, key).toBe('CRITICAL')
     }
   })
@@ -63,32 +86,34 @@ describe('rule registry', () => {
     expect(new Set(BOT_RULES.map((r) => r.key)).size).toBe(BOT_RULES.length)
   })
 
-  it('marks a settings-backed rule so the API knows to read its live state', () => {
-    // Without this pointer the Rules page would show the static default and tell an operator
-    // the Indonesian-number filter is off while it is actually on.
-    expect(getBotRule('bot.skip_indonesian_numbers')?.enabledFromSettingsKey).toBe('skipBotForIndonesianNumbers')
-    expect(getBotRule('channel.unofficial_outbound_default')?.configFromSettingsKey).toBe('defaultChannel')
+  it('points every rule an operator cannot change at the page that does control it', () => {
+    // "Terkunci" on its own sends an operator hunting for a button that does not exist. A rule
+    // with neither a switch nor a `managedIn` is code-enforced and says so; one that IS managed
+    // elsewhere has to name where.
+    expect(getBotRule('channel.unofficial_outbound_default')?.managedIn?.href).toBe('/settings')
+    // And the capability rule points nowhere on purpose: which channel carries a template is a
+    // static fact about the provider's API (channel-capabilities.ts), not a form an operator can
+    // open. Naming a page for it would be inventing a key nobody holds.
+    expect(getBotRule('channel.official_reserved_for_capabilities')?.managedIn).toBeUndefined()
   })
 
-  it('never points a code-enforced rule at a settings column', () => {
-    // A rule with no settings key is enforced unconditionally, so claiming it is disabled
-    // would be false. Enforced here rather than trusted.
+  it('never gives one rule both a switch and another page that manages it', () => {
+    // Two writers for one behaviour is how the old rule layer went wrong: whichever wrote last
+    // won, and the page showed the other one.
     for (const rule of BOT_RULES) {
-      if (rule.enabledFromSettingsKey === undefined) {
-        expect(rule.enabled, `${rule.key} enabled`).toBe(true)
-      }
+      expect(rule.settingsKey !== undefined && rule.managedIn !== undefined, rule.key).toBe(false)
     }
   })
 })
 
 describe('listBotRules', () => {
   it('returns copies, so a caller cannot mutate the shared registry', () => {
-    // The route layers live Settings values onto these objects. On a long-lived server a
-    // mutation would leak into every later request.
+    // The Rules page layers each rule's live Settings state onto these objects. On a
+    // long-lived server a mutation would leak into every later request.
     const first = listBotRules()
-    first[0].enabled = false
-    expect(listBotRules()[0].enabled).toBe(true)
-    expect(BOT_RULES[0].enabled).toBe(true)
+    first[0].name = 'diubah'
+    expect(listBotRules()[0].name).not.toBe('diubah')
+    expect(BOT_RULES[0].name).not.toBe('diubah')
   })
 })
 

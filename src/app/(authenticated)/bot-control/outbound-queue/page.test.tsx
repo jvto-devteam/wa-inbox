@@ -79,20 +79,69 @@ describe('OutboundQueuePage', () => {
     mockFetch({ queue: { pausedProviders: ['COEXIST'] } })
     render(<OutboundQueuePage />)
 
-    expect(await screen.findByText('COEXIST')).toBeInTheDocument()
-    expect(screen.getByText(/tidak ada yang gagal karenanya/)).toBeInTheDocument()
+    // Asserted INSIDE the banner. A bare findByText('COEXIST') used to resolve on the provider
+    // filter's own <option> on the very first poll, before the fetch had even landed — so it
+    // passed whether or not the banner ever rendered. The filter is gone; the assertion now
+    // names the element it was always meant to be about.
+    const banner = await screen.findByText(/tidak ada yang gagal karenanya/)
+    expect(within(banner).getByText('COEXIST')).toBeInTheDocument()
     expect(await screen.findByRole('button', { name: 'Lanjutkan COEXIST' })).toBeInTheDocument()
   })
 
-  it('stretches the "sampai" date to the end of that day', async () => {
-    // The picker gives a date and the column is a timestamp, so a bare bound silently excludes
-    // everything that happened on the day the operator asked about.
+  it('hanya menyisakan filter status dan "hanya yang menggantung"', async () => {
+    // Six filters on a page people open in a panic. Provider and channel had two values each and
+    // are printed on every row already; a created-at range answers a reporting question nobody
+    // asks of a queue that empties itself. What is left is the two questions an incident asks.
     mockFetch()
     render(<OutboundQueuePage />)
     await screen.findByText('480')
 
-    fireEvent.change(screen.getByLabelText('Sampai tanggal'), { target: { value: '2026-09-07' } })
-    await waitFor(() => expect(queueRequests().some((u) => u.includes('2026-09-07T23%3A59%3A59.999Z'))).toBe(true))
+    expect(screen.getByLabelText('Filter status')).toBeInTheDocument()
+    expect(screen.getByLabelText('Hanya job menggantung')).toBeInTheDocument()
+    expect(screen.queryByLabelText('Filter provider')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Filter channel')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Dari tanggal')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Sampai tanggal')).not.toBeInTheDocument()
+  })
+
+  it('mengirim kedua filter ke server, tidak menyaring baris di klien', async () => {
+    // The rows on screen are a page out of a filtered query. Filtering them here instead would
+    // make the total, and therefore the paging, describe a different set from the one displayed.
+    mockFetch()
+    render(<OutboundQueuePage />)
+    await screen.findByText('480')
+
+    fireEvent.change(screen.getByLabelText('Filter status'), { target: { value: 'SENDING' } })
+    await waitFor(() => expect(queueRequests().some((u) => u.includes('status=SENDING'))).toBe(true))
+
+    fireEvent.click(screen.getByLabelText('Hanya job menggantung'))
+    await waitFor(() => expect(queueRequests().some((u) => u.includes('stuck=true'))).toBe(true))
+  })
+
+  it('masih bisa kirim ulang, batalkan, pulihkan yang menggantung, dan jeda provider', async () => {
+    // The filters were trimmed; the four things an operator actually DOES here were not. Each
+    // one is the only way out of a different failure, so all four are checked in one place.
+    mockFetch({ queue: { items: [job, { ...job, id: 'job_2', status: 'QUEUED' }] } })
+    render(<OutboundQueuePage />)
+    await screen.findByText('480')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Kirim ulang' }))
+    await waitFor(() => {
+      const call = calls.find((c) => c.url === '/api/outbound-jobs/retry')
+      expect(JSON.parse(String(call?.init?.body))).toEqual({ messageId: 'msg_1' })
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Batalkan' }))
+    await waitFor(() => expect(calls.some((c) => c.url === '/api/outbound-jobs/job_2/cancel')).toBe(true))
+
+    fireEvent.click(screen.getByRole('button', { name: 'Pulihkan job menggantung' }))
+    await waitFor(() => expect(calls.some((c) => c.url === '/api/outbound-jobs/recover-stuck')).toBe(true))
+
+    fireEvent.click(screen.getByRole('button', { name: 'Jeda META' }))
+    await waitFor(() => {
+      const call = calls.find((c) => c.url === '/api/outbound-jobs/pause-provider')
+      expect(JSON.parse(String(call?.init?.body))).toMatchObject({ provider: 'META' })
+    })
   })
 
   it('returns to page one whenever a filter changes', async () => {

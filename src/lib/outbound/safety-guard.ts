@@ -34,7 +34,7 @@
  *   pathology itself.
  */
 import { prisma } from '@/lib/db'
-import { getSafetyConfig } from '@/lib/bot-control/runtime-channel-policy'
+import { DEFAULT_SAFETY_THRESHOLDS, type SafetyThresholds } from '@/lib/outbound/safety-bounds'
 
 export type OutboundPurpose = 'ONE_TO_ONE' | 'BOT_REPLY' | 'CAMPAIGN'
 
@@ -64,47 +64,53 @@ export type SafetyCheckResult = {
 }
 
 /**
- * The code's own numbers. Since Phase H these are the DEFAULTS, not the values: a published
- * `ChannelPolicySetting.safetyConfig` overrides each of them, and this is what the guard uses
- * when no policy is published or the policy row cannot be read.
- *
- * They are still exported, and still the fallback, deliberately. A guard whose thresholds exist
- * only in a database row stops working the moment that row is unreadable — and "stops working"
- * here means the duplicate check and the campaign rate limit silently pass everything.
+ * Re-exported so the guard's callers and tests keep one import for "the number the code uses".
+ * They live in safety-bounds.ts because the Settings form needs them too and must not import a
+ * module that pulls in Prisma — see that file's header.
  */
-export const DUPLICATE_WINDOW_MS = 60_000
-export const CAMPAIGN_RATE_PER_MINUTE = 20
-export const PROVIDER_FAILURE_THRESHOLD = 5
-export const PROVIDER_FAILURE_WINDOW_MS = 5 * 60_000
+export {
+  CAMPAIGN_RATE_PER_MINUTE,
+  DUPLICATE_WINDOW_MS,
+  PROVIDER_FAILURE_THRESHOLD,
+  PROVIDER_FAILURE_WINDOW_MS,
+  SAFETY_BOUNDS,
+} from '@/lib/outbound/safety-bounds'
 
 /**
- * Reads the live thresholds, falling back to the constants above.
+ * Reads the live thresholds from `Settings`, falling back to the constants above.
  *
- * Never throws: this is inside the send path, and a configuration read that could stop a
- * customer's message from going out would be a worse failure than running on the defaults.
+ * Never throws, and fails OPEN onto the code's own numbers: this is inside the send path, and a
+ * configuration read that could stop a customer's message from going out would be a worse
+ * failure than running on the defaults.
+ *
+ * Uncached, like every other `Settings` read in this app. It used to sit behind a
+ * thirty-second cache belonging to the policy loader; one indexed lookup of a single row on a
+ * path that already runs several queries is not worth an operator pressing Simpan twice and
+ * watching nothing change.
  */
-async function thresholds(): Promise<{
-  duplicateWindowMs: number
-  campaignRatePerMinute: number
-  providerFailureThreshold: number
-  providerFailureWindowMs: number
-}> {
+async function thresholds(): Promise<SafetyThresholds> {
   try {
-    const config = await getSafetyConfig()
+    const row = await prisma.settings.findUnique({
+      where: { id: 1 },
+      select: {
+        duplicateWindowMs: true,
+        campaignRatePerMinute: true,
+        providerFailureThreshold: true,
+        providerFailureWindowMs: true,
+      },
+    })
+    // No row is the un-seeded state, not "no limits". Reading it as data would leave the guard
+    // with undefined windows and every comparison silently false.
+    if (!row) return DEFAULT_SAFETY_THRESHOLDS
     return {
-      duplicateWindowMs: config.duplicateWindowMs,
-      campaignRatePerMinute: config.campaignRatePerMinute,
-      providerFailureThreshold: config.providerFailureThreshold,
-      providerFailureWindowMs: config.providerFailureWindowMs,
+      duplicateWindowMs: row.duplicateWindowMs,
+      campaignRatePerMinute: row.campaignRatePerMinute,
+      providerFailureThreshold: row.providerFailureThreshold,
+      providerFailureWindowMs: row.providerFailureWindowMs,
     }
   } catch (error) {
-    console.error('safety-guard: gagal membaca safetyConfig, memakai default kode', { error })
-    return {
-      duplicateWindowMs: DUPLICATE_WINDOW_MS,
-      campaignRatePerMinute: CAMPAIGN_RATE_PER_MINUTE,
-      providerFailureThreshold: PROVIDER_FAILURE_THRESHOLD,
-      providerFailureWindowMs: PROVIDER_FAILURE_WINDOW_MS,
-    }
+    console.error('safety-guard: gagal membaca Settings, memakai default kode', { error })
+    return DEFAULT_SAFETY_THRESHOLDS
   }
 }
 

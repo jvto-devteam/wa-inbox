@@ -11,20 +11,16 @@ export type RevisionRow = {
   status: string
   changeReason: string | null
   createdByName: string | null
-  reviewedByName: string | null
-  reviewedAt: string | null
+  publishedByName: string | null
   publishedAt: string | null
-  releaseId: string | null
   createdAt: string
   updatedAt: string
 }
 
-const STATUS_VARIANT: Record<string, 'success' | 'muted' | 'warning' | 'brand' | 'destructive'> = {
+const STATUS_VARIANT: Record<string, 'success' | 'muted' | 'brand'> = {
   PUBLISHED: 'success',
   DRAFT: 'brand',
-  REVIEW: 'warning',
-  APPROVED: 'brand',
-  REJECTED: 'destructive',
+  // Written by the system, never chosen: the revision a newer one replaced.
   ARCHIVED: 'muted',
 }
 
@@ -36,9 +32,8 @@ const STATUS_VARIANT: Record<string, 'success' | 'muted' | 'warning' | 'brand' |
  * same reason it is required on every write: the version numbers say WHAT changed and the
  * reason says why, and only the pair is any use months later.
  *
- * Rejected revisions are shown, not hidden. A rejected revision usually explains why the
- * current answer is worded the way it is — filtering it out would remove the most useful row
- * on the page.
+ * Every revision is shown, including drafts that were superseded before anyone activated them.
+ * A version that never went live still explains why the one that did is worded the way it is.
  */
 export function KnowledgeRevisionPanel({
   sourceTitle,
@@ -90,7 +85,7 @@ export function KnowledgeRevisionPanel({
                 {/* Null when the account is gone. The revision outlives whoever wrote it, and an
                     empty name is more honest than inventing one. */}
                 Ditulis {revision.createdByName ?? '(akun terhapus)'}
-                {revision.reviewedByName && ` · direview ${revision.reviewedByName}`}
+                {revision.publishedByName && ` · diaktifkan ${revision.publishedByName}`}
                 {revision.publishedAt && ` · terbit ${new Date(revision.publishedAt).toLocaleString('id-ID')}`}
               </p>
             </li>

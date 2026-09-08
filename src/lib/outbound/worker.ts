@@ -25,6 +25,7 @@ import { withMediaUrl } from '@/lib/serialize-message'
 import { canRetry, nextAttemptAt } from '@/lib/outbound/retry-policy'
 import { findDueJobs, type OutboundJobPayload } from '@/lib/outbound/queue'
 import { getPausedProviders, isProviderPaused } from '@/lib/outbound/provider-pause'
+import { stuckOutboundJobWhere } from '@/lib/outbound/stuck'
 
 export type ProcessResult = {
   processed: number
@@ -37,24 +38,6 @@ export type ProcessResult = {
 }
 
 const DEFAULT_BATCH = 25
-
-/**
- * How long a job may sit in SENDING before the worker holding it is presumed dead.
- *
- * The claim below is what makes concurrent workers safe, but it is also a one-way door: a
- * process that is killed between the claim and the outcome write (a deploy, an OOM, a
- * function timeout, a crashed dispatch) leaves the row in SENDING forever, and the due-jobs
- * query only ever looks at QUEUED/RETRYING. Nothing would come back for it — the customer
- * never gets the message, the bubble stays PENDING, and no error is recorded anywhere.
- *
- * Five minutes, per SDD Manage Second §8.7. The number trades two failures against each
- * other: too short re-dispatches an attempt that was merely slow, sending the customer the
- * message twice (the exact failure the atomic claim exists to prevent); too long just makes
- * them wait for a message the system already knows nothing is coming for. A wa-coexist or
- * Graph call plus a media upload is seconds, so five minutes is far outside normal and still
- * inside a single scheduler tick's patience.
- */
-export const STUCK_SENDING_MS = 5 * 60_000
 
 const STUCK_SENDING_ERROR = 'Worker berhenti saat job masih SENDING — dipulihkan otomatis.'
 
@@ -98,7 +81,7 @@ export async function processDueOutboundJobs(limit: number = DEFAULT_BATCH): Pro
 }
 
 /**
- * Returns jobs abandoned mid-flight to the retry ladder (see STUCK_SENDING_MS).
+ * Returns jobs abandoned mid-flight to the retry ladder (see stuckOutboundJobWhere).
  *
  * The crashed attempt is COUNTED, not forgiven. Recovering a job without incrementing
  * `attempts` would give a payload whose dispatch reliably kills its worker — a malformed media
@@ -108,15 +91,14 @@ export async function processDueOutboundJobs(limit: number = DEFAULT_BATCH): Pro
  */
 export async function recoverStuckOutboundJobs(now: Date = new Date()): Promise<RecoveryResult> {
   const result: RecoveryResult = { requeued: 0, failed: 0 }
-  const stuckBefore = new Date(now.getTime() - STUCK_SENDING_MS)
+  // The SAME clause the queue page's "hanya yang menggantung" filter runs, imported rather
+  // than restated: a copy would let the list and this button disagree about which rows exist.
+  const stuckWhere = stuckOutboundJobWhere(now)
 
   let stuck: { id: string; attempts: number; maxAttempts: number; messageId: string | null; conversationId: string }[]
   try {
     stuck = await prisma.outboundJob.findMany({
-      // `updatedAt` is the claim's own timestamp: flipping the row to SENDING is the last
-      // write it received, so "not touched since stuckBefore" is exactly "claimed that long
-      // ago and never finished".
-      where: { status: 'SENDING', updatedAt: { lt: stuckBefore } },
+      where: stuckWhere,
       orderBy: { updatedAt: 'asc' },
       take: DEFAULT_BATCH,
       select: { id: true, attempts: true, maxAttempts: true, messageId: true, conversationId: true },
@@ -139,7 +121,7 @@ export async function recoverStuckOutboundJobs(now: Date = new Date()): Promise<
       // would send the customer a second copy of a message that did arrive — the precise
       // failure the atomic claim exists to prevent.
       const moved = await prisma.outboundJob.updateMany({
-        where: { id: job.id, status: 'SENDING', updatedAt: { lt: stuckBefore } },
+        where: { id: job.id, ...stuckWhere },
         data: retryAt
           ? { status: 'RETRYING', attempts, nextAttemptAt: retryAt, lastError: STUCK_SENDING_ERROR }
           : { status: 'FAILED', attempts, nextAttemptAt: null, lastError: STUCK_SENDING_ERROR },

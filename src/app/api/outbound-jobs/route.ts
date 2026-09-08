@@ -3,7 +3,7 @@ import type { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { getSession } from '@/lib/auth/get-session'
 import { readPaging } from '@/lib/bot-control/paging'
-import { STUCK_SENDING_MS } from '@/lib/outbound/worker'
+import { stuckOutboundJobWhere } from '@/lib/outbound/stuck'
 import { getPausedProviders } from '@/lib/outbound/provider-pause'
 
 /**
@@ -24,15 +24,8 @@ import { getPausedProviders } from '@/lib/outbound/provider-pause'
 
 /** Statuses a job can hold. Anything else in the query string is a typo, not a filter. */
 const JOB_STATUSES = ['QUEUED', 'SENDING', 'RETRYING', 'SENT', 'FAILED', 'CANCELLED'] as const
-const JOB_CHANNELS = ['OFFICIAL', 'UNOFFICIAL'] as const
-const JOB_PROVIDERS = ['COEXIST', 'META'] as const
 
 type JobStatus = (typeof JOB_STATUSES)[number]
-type JobChannel = (typeof JOB_CHANNELS)[number]
-
-function isChannel(value: string): value is JobChannel {
-  return (JOB_CHANNELS as readonly string[]).includes(value)
-}
 
 export async function GET(req: Request) {
   const session = await getSession(req)
@@ -41,42 +34,28 @@ export async function GET(req: Request) {
   const url = new URL(req.url)
   const { page, limit, skip } = readPaging(url)
 
+  // Two filters, both server-side, both narrowing the SAME `where` that the count below uses.
+  //
+  // There were six: provider and channel (two values each, so neither one ever excluded
+  // anything an operator could not read off the rows in front of them) and a created-at range.
+  // None of them answered the question people actually bring to this page, which they open
+  // mid-incident: "what is stuck right now, and can I send it again?" A date range answers a
+  // reporting question, and nobody reports on a queue that empties itself.
   const where: Prisma.OutboundJobWhereInput = {}
   const status = url.searchParams.get('status')?.trim()
-  const channel = url.searchParams.get('channel')?.trim()
-  const provider = url.searchParams.get('provider')?.trim()
-  const conversationId = url.searchParams.get('conversationId')?.trim()
 
   // Validated against the known set rather than passed through: an unknown status would
   // silently return zero rows, which reads as "the queue is empty" — the single most
   // misleading thing this page could say.
   if (status && (JOB_STATUSES as readonly string[]).includes(status)) where.status = status
-  // A type guard, not a cast: `channel` is a Prisma enum column, and asserting an arbitrary
-  // query-string value into it would hand Postgres a value the enum has no member for.
-  if (channel && isChannel(channel)) where.channel = channel
-  if (provider && (JOB_PROVIDERS as readonly string[]).includes(provider)) where.provider = provider
-  if (conversationId) where.conversationId = conversationId
-
-  // SDD Manage Second §18.6 asks for a date filter alongside status. An unparseable date is
-  // IGNORED rather than 400'd, matching the decisions endpoint: a half-typed value in a date
-  // picker should show unfiltered rows, and an `Invalid Date` reaching Prisma would 500.
-  const from = url.searchParams.get('dateFrom')?.trim()
-  const to = url.searchParams.get('dateTo')?.trim()
-  const range: Prisma.DateTimeFilter = {}
-  const parsedFrom = from ? new Date(from) : null
-  const parsedTo = to ? new Date(to) : null
-  if (parsedFrom && !Number.isNaN(parsedFrom.getTime())) range.gte = parsedFrom
-  if (parsedTo && !Number.isNaN(parsedTo.getTime())) range.lte = parsedTo
-  if (range.gte !== undefined || range.lte !== undefined) where.createdAt = range
 
   // "Stuck" is not a stored status — it is a SENDING row that stopped moving. Surfacing it as
   // a filter is what lets an operator find the jobs that recover-stuck would act on BEFORE
-  // pressing the button, rather than pressing it blind.
-  const stuckOnly = url.searchParams.get('stuck') === 'true'
-  if (stuckOnly) {
-    where.status = 'SENDING'
-    where.updatedAt = { lt: new Date(Date.now() - STUCK_SENDING_MS) }
-  }
+  // pressing the button, rather than pressing it blind. The clause is IMPORTED from the same
+  // module `recoverStuckOutboundJobs` reads, so the list and the button can never come to
+  // describe different rows; it deliberately overrides any status the operator also picked,
+  // because a stuck job is SENDING by definition.
+  if (url.searchParams.get('stuck') === 'true') Object.assign(where, stuckOutboundJobWhere())
 
   try {
     const [jobs, total] = await Promise.all([

@@ -1,0 +1,399 @@
+-- ============================================================================
+-- ITEM b2 — catatan migrasi data: ChannelPolicySetting -> Settings
+-- ============================================================================
+-- TIDAK DIJALANKAN. Semua pernyataan di bawah ini sengaja berupa komentar.
+-- DATABASE_URL repo ini menunjuk VPS PRODUKSI; keputusan penerapan ada di tangan
+-- operator, bukan agent.
+--
+-- Konteks
+-- -------
+-- Tabel "ChannelPolicySetting" berisi 1 baris (key = 'whatsapp.default') dengan
+-- siklus draft → review → approve → publish sendiri, 5 route, dan satu halaman.
+-- Isinya lima hal, dan nasibnya berbeda-beda:
+--
+--   1. "defaultOutbound"  -> PINDAH ke "Settings"."defaultChannel".
+--                            INI YANG PALING BISA MENGUBAH PERILAKU. Lihat
+--                            asumsi 3 dan LANGKAH 3a.
+--   2. "safetyConfig"     -> PINDAH ke empat kolom Int baru di "Settings".
+--                            Kecuali `quietHoursEnabled` — lihat asumsi 5.
+--   3. "pausedProviders"  -> PINDAH ke "Settings"."pausedProviders" (text[]).
+--                            WAJIB ikut. Lihat asumsi 4.
+--   4. "capabilityRules"  -> DIHAPUS, diganti matriks statis di
+--                            src/lib/bot-control/channel-capabilities.ts.
+--                            Tidak dipindahkan, TAPI harus DIPERIKSA lebih dulu:
+--                            lihat LANGKAH 1b. Kalau produksi pernah menyuntingnya,
+--                            penghapusan lapisan ini MENGUBAH ke channel mana pesan
+--                            dikirim, dan itu keputusan manusia, bukan migrasi.
+--   5. "officialMode" /
+--      "unofficialMode"   -> DIHAPUS. Keduanya string bebas yang tidak pernah
+--                            dibaca kode mana pun; hanya ditampilkan di halaman
+--                            yang ikut dihapus. Tidak ada yang perlu dipindahkan.
+--
+-- Kolom siklus ("status", "draftConfig", "draftUpdatedBy", "draftUpdatedAt",
+-- "publishedBy", "publishedAt", "releaseId") ikut hilang bersama tabelnya. Draft
+-- yang belum di-publish memang belum pernah dibaca runtime; memindahkannya sama
+-- saja dengan mem-publish sesuatu yang belum di-approve.
+--
+--
+-- Asumsi
+-- ------
+-- 1. Baris "Settings" dengan id = 1 SUDAH ADA (seluruh aplikasi memakai
+--    findUniqueOrThrow({ where: { id: 1 } }), jadi kalau tidak ada, aplikasi
+--    sudah rusak jauh sebelum ini). Karena itu langkah pemindahan adalah UPDATE,
+--    bukan INSERT. Pernyataan INSERT disertakan di LANGKAH 6 hanya untuk kasus
+--    database yang belum pernah di-seed sama sekali.
+--
+-- 2. Hanya nilai BERLAKU yang dipindahkan, yaitu kolom-kolom di baris itu sendiri
+--    (bukan "draftConfig"). Loader lama (runtime-channel-policy.ts) membaca kolom,
+--    bukan draft; draft baru berlaku setelah publish memindahkannya ke kolom.
+--
+-- 3. **Yang paling penting.** Kode lama berbunyi, di resolveChannel:
+--
+--        const policy = await getChannelPolicy()
+--        if (policy.source === 'database') return policy.defaultOutbound
+--        // baru sesudah itu: Settings.defaultChannel
+--
+--    Artinya selama baris "ChannelPolicySetting" ADA dan bisa di-parse,
+--    "defaultOutbound" MENANG atas "Settings"."defaultChannel", dan
+--    "Settings"."defaultChannel" tidak pernah dibaca sama sekali. Default kolom
+--    "Settings"."defaultChannel" di skema adalah OFFICIAL, sedangkan kebijakan
+--    tertulis (CLAUDE.md) dan nilai default baris kebijakan adalah UNOFFICIAL.
+--
+--    Jadi kalau LANGKAH 3a dilewati dan produksi masih memakai default kolom
+--    Settings (OFFICIAL) sementara baris kebijakannya UNOFFICIAL, maka setelah
+--    tabelnya di-drop SETIAP balasan agent dan bot yang tidak menyebut channel
+--    secara eksplisit berpindah dari Unofficial ke Official — dengan biaya
+--    percakapan Meta dan jendela 24 jam yang mengikutinya. Ini satu-satunya
+--    bagian migrasi yang bisa menaikkan tagihan.
+--
+--    (Rute per-kemampuan TIDAK terpengaruh: send_template dan kawan-kawannya
+--    tetap lewat Official, send_text dan kawan-kawannya tetap lewat Unofficial,
+--    karena itu ditentukan matriks statis. Yang berpindah hanya "default" —
+--    yaitu jawaban resolveChannel untuk pemanggil yang tidak menyebut channel,
+--    termasuk simulator dan seed awal pilihan channel di ComposeBox.)
+--
+-- 4. **pausedProviders WAJIB ikut pindah.** Kalau saat migrasi ada provider yang
+--    sedang dijeda (mis. ["COEXIST"] karena wa-coexist bermasalah), kehilangan
+--    jeda itu berarti antrean langsung mengalir lagi ke provider yang sedang
+--    rusak: job yang seharusnya menunggu akan dicoba, gagal, dan sebagian
+--    berakhir FAILED — persis hal yang dicegah operator saat menekan tombolnya.
+--    Karena itu LANGKAH 3c bukan opsional, dan urutannya penting: pindahkan
+--    SEBELUM deploy kode baru, atau jeda akan "hilang" selama jeda antara deploy
+--    dan UPDATE. Kalau ragu, jeda ulang lewat tombol di /bot-control/outbound-queue
+--    setelah deploy — satu klik, dan idempoten.
+--
+-- 5. `quietHoursEnabled` SENGAJA TIDAK dipindahkan. Tidak ada satu pun pembaca:
+--    `grep -rn "quietHours" src/lib/outbound/` tidak menghasilkan apa pun, dan
+--    jendela jamnya sendiri (mulai, selesai, timezone, nasib job yang sudah
+--    antre) tidak pernah ada di model data. Memindahkannya hanya akan membuat
+--    kolom baru yang sama matinya. Nasib konsep jam kerja diputuskan terpisah.
+--
+-- 6. Empat angka "safetyConfig" divalidasi Zod sebelum bisa tersimpan, jadi
+--    seharusnya semuanya sudah di dalam batas. LANGKAH 1a tetap menampilkannya
+--    beserta kolom `di_luar_batas`, dan LANGKAH 3b sengaja hanya memindahkan
+--    nilai yang berada di dalam batas — nilai di luar batas dibiarkan memakai
+--    default kolom, yang persis konstanta yang dipakai kode sebelum tabel ini ada.
+--
+--
+-- Urutan penerapan
+-- ----------------
+-- Sama seperti catatan b1: kolom barunya BELUM ADA di produksi, jadi ALTER TABLE
+-- harus jalan LEBIH DULU sebelum UPDATE bisa menulis ke sana.
+--
+--   LANGKAH 1a — SELECT (read-only): apa yang tersimpan, dan apa yang berubah.
+--   LANGKAH 1b — SELECT (read-only): pembanding capabilityRules vs default.
+--                ***BACA INI SEBELUM MEMUTUSKAN APA PUN.***
+--   LANGKAH 2  — ALTER TABLE ... ADD COLUMN (aditif, aman, reversible).
+--   LANGKAH 3  — UPDATE: 3a defaultChannel, 3b safetyConfig, 3c pausedProviders.
+--   LANGKAH 4  — verifikasi.
+--   LANGKAH 5  — DROP TABLE "ChannelPolicySetting" (TIDAK bisa dibatalkan).
+--
+-- Setelah LANGKAH 5, nilainya tidak bisa diambil lagi. Jangan jalankan sebelum
+-- LANGKAH 4 diverifikasi.
+-- ============================================================================
+
+
+-- ----------------------------------------------------------------------------
+-- LANGKAH 1a — Lihat dulu apa yang sebenarnya tersimpan (read-only, aman).
+--              Kolom `default_channel_berubah` menjawab langsung pertanyaan
+--              paling mahal di catatan ini: apakah channel default akan
+--              berpindah kalau LANGKAH 3a dilewati.
+-- ----------------------------------------------------------------------------
+-- SELECT c."key",
+--        c."status",
+--        c."defaultOutbound"                            AS default_di_kebijakan,
+--        s."defaultChannel"::text                       AS default_di_settings,
+--        (c."defaultOutbound" IS DISTINCT FROM s."defaultChannel"::text)
+--                                                       AS default_channel_berubah,
+--        c."pausedProviders"                            AS jeda_provider_sekarang,
+--        c."safetyConfig" ->> 'campaignRatePerMinute'    AS campaign_rate,
+--        c."safetyConfig" ->> 'duplicateWindowMs'        AS duplicate_window_ms,
+--        c."safetyConfig" ->> 'providerFailureThreshold' AS failure_threshold,
+--        c."safetyConfig" ->> 'providerFailureWindowMs'  AS failure_window_ms,
+--        c."safetyConfig" ->> 'quietHoursEnabled'        AS quiet_hours_TIDAK_dipindahkan,
+--        -- TRUE berarti ada angka di luar batas yang ditegakkan Zod di
+--        -- /api/settings. Seharusnya tidak pernah terjadi; kalau terjadi,
+--        -- LANGKAH 3b akan melewatinya dan kolomnya memakai default kode.
+--        (   (c."safetyConfig" ->> 'campaignRatePerMinute')::int    NOT BETWEEN 1 AND 600
+--         OR (c."safetyConfig" ->> 'duplicateWindowMs')::int        NOT BETWEEN 1000 AND 86400000
+--         OR (c."safetyConfig" ->> 'providerFailureThreshold')::int NOT BETWEEN 1 AND 1000
+--         OR (c."safetyConfig" ->> 'providerFailureWindowMs')::int  NOT BETWEEN 10000 AND 86400000
+--        )                                              AS di_luar_batas,
+--        c."officialMode"                               AS mode_official_TIDAK_dipakai_kode,
+--        c."unofficialMode"                             AS mode_unofficial_TIDAK_dipakai_kode,
+--        c."draftConfig"                                AS draft_TIDAK_dipindahkan
+-- FROM "ChannelPolicySetting" c
+-- CROSS JOIN "Settings" s
+-- WHERE s."id" = 1;
+
+
+-- ----------------------------------------------------------------------------
+-- LANGKAH 1b — PEMBANDING capabilityRules (read-only, aman).
+--              ***INI YANG HARUS DIBACA MANUSIA SEBELUM MELANJUTKAN.***
+--
+--              Lapisan override kapabilitas yang bisa disunting DIHAPUS oleh
+--              item b2. Penggantinya adalah matriks statis di
+--              src/lib/bot-control/channel-capabilities.ts, yang menghasilkan
+--              PERSIS sembilan jawaban di bawah ini — jawaban baris default.
+--
+--              Kalau `sama_dengan_default` = TRUE untuk kesembilan barisnya,
+--              penghapusan lapisan itu TIDAK mengubah routing sama sekali dan
+--              migrasi boleh lanjut.
+--
+--              Kalau ada satu saja yang FALSE, produksi pernah menyunting rute
+--              kapabilitas, dan menghapus lapisan ini AKAN mengubah ke channel
+--              mana pesan jenis itu dikirim. BERHENTI dan putuskan dulu:
+--                - kalau suntingannya memang disengaja dan masih diinginkan,
+--                  ia harus dikodekan ke channel-capabilities.ts (atau ke kode
+--                  pemanggilnya) SEBELUM tabel ini di-drop;
+--                - kalau tidak, catat perbedaannya lalu lanjutkan.
+--
+--              Catatan pembacaan: 'UNOFFICIAL_LIMITED' pada `campaign` adalah
+--              nilai DEFAULT, dan setara 'UNOFFICIAL' dari sisi routing
+--              ("limited" adalah urusan rate limit, bukan channel lain).
+--              'DISABLED' pada kolom mana pun berarti kemampuan itu pernah
+--              dimatikan sepenuhnya — itu SATU-SATUNYA cara nilai "tidak boleh
+--              dikirim" bisa muncul, dan lapisan itulah yang hilang. Kalau ada
+--              'DISABLED' di produksi, JANGAN lanjut tanpa keputusan.
+-- ----------------------------------------------------------------------------
+-- WITH bawaan(kemampuan, target_default) AS (
+--   VALUES ('send_text',     'UNOFFICIAL'),
+--          ('send_media',    'UNOFFICIAL'),
+--          ('send_document', 'UNOFFICIAL'),
+--          ('send_audio',    'UNOFFICIAL'),
+--          ('send_template', 'OFFICIAL'),
+--          ('send_buttons',  'OFFICIAL'),
+--          ('send_list',     'OFFICIAL'),
+--          ('send_carousel', 'OFFICIAL'),
+--          ('campaign',      'UNOFFICIAL_LIMITED')
+-- )
+-- SELECT b.kemampuan,
+--        b.target_default,
+--        c."capabilityRules" ->> b.kemampuan AS target_di_produksi,
+--        (c."capabilityRules" ->> b.kemampuan) IS NOT DISTINCT FROM b.target_default
+--                                            AS sama_dengan_default,
+--        CASE
+--          WHEN (c."capabilityRules" ->> b.kemampuan) IS NULL          THEN 'HILANG — baris tidak lengkap, loader lama menolaknya dan memakai default kode'
+--          WHEN (c."capabilityRules" ->> b.kemampuan) = 'DISABLED'     THEN 'DIMATIKAN — perilaku ini TIDAK bisa dipertahankan tanpa lapisan editable. BERHENTI.'
+--          WHEN (c."capabilityRules" ->> b.kemampuan) IS DISTINCT FROM b.target_default
+--                                                                     THEN 'DISUNTING — routing akan berubah setelah lapisan ini dihapus. Putuskan dulu.'
+--          ELSE 'sama dengan default — aman'
+--        END AS keterangan
+-- FROM "ChannelPolicySetting" c
+-- CROSS JOIN bawaan b
+-- WHERE c."key" = 'whatsapp.default'
+-- ORDER BY b.kemampuan;
+--
+-- -- Sekalian lihat kunci asing yang tidak dikenal build ini (seharusnya tidak ada;
+-- -- kalau ada, loader lama menolak SELURUH baris dan diam-diam memakai default kode):
+-- -- SELECT jsonb_object_keys(c."capabilityRules"::jsonb) AS kunci
+-- -- FROM "ChannelPolicySetting" c WHERE c."key" = 'whatsapp.default';
+
+
+-- ----------------------------------------------------------------------------
+-- LANGKAH 2 — Migrasi skema, bagian ADITIF. JANGAN ditulis tangan.
+--             Buat file migrasinya secara offline seperti seluruh fase A–H
+--             (CLAUDE.md):
+--
+--               npx prisma migrate diff \
+--                 --from-schema-datasource prisma/schema.prisma \
+--                 --to-schema-datamodel   prisma/schema.prisma \
+--                 --script > prisma/migrations/<timestamp>_drop_channel_policy_setting/migration.sql
+--
+--             BACA SQL-nya sebelum `npx prisma migrate deploy`. Isinya akan
+--             mengandung lima ALTER aditif dan satu DROP:
+--
+--               ALTER TABLE "Settings"
+--                 ADD COLUMN "campaignRatePerMinute"    INTEGER NOT NULL DEFAULT 20,
+--                 ADD COLUMN "duplicateWindowMs"        INTEGER NOT NULL DEFAULT 60000,
+--                 ADD COLUMN "providerFailureThreshold" INTEGER NOT NULL DEFAULT 5,
+--                 ADD COLUMN "providerFailureWindowMs"  INTEGER NOT NULL DEFAULT 300000,
+--                 ADD COLUMN "pausedProviders"          TEXT[] DEFAULT ARRAY[]::TEXT[];
+--               DROP TABLE "ChannelPolicySetting";
+--
+--             Semua ALTER-nya aditif dan aman; default keempat angkanya persis
+--             konstanta yang dipakai safety-guard.ts sebelum tabel ini ada, dan
+--             default "pausedProviders" adalah array kosong (= tidak ada yang
+--             dijeda) — jadi database yang belum sempat dijalankan LANGKAH 3-nya
+--             tetap berperilaku benar, hanya kehilangan suntingan operator.
+--             DROP-nya tidak bisa dibatalkan.
+--
+--             POTONG file migrasinya jadi dua (disarankan, dan lebih penting di
+--             sini daripada di a7/b1): yang pertama hanya ALTER, yang kedua hanya
+--             DROP. Terapkan yang pertama, jalankan LANGKAH 3, verifikasi di
+--             LANGKAH 4, baru terapkan yang kedua.
+--
+--             Kalau ragu, ambil dump tabelnya lebih dulu:
+--
+--               pg_dump --data-only --table='"ChannelPolicySetting"' \
+--                 "$DATABASE_URL" > /tmp/channel-policy-setting-backup.sql
+
+
+-- ----------------------------------------------------------------------------
+-- LANGKAH 3a — DEFAULT CHANNEL. INI YANG BISA MENGUBAH PERILAKU DAN BIAYA.
+--              Menyalin nilai yang BENAR-BENAR BERLAKU hari ini (kolom
+--              kebijakan) ke kolom yang mulai besok jadi satu-satunya sumber.
+--              Idempoten; aman dijalankan dua kali.
+--
+--              Jalankan ini SEBELUM tabelnya di-drop, dan sebaiknya sebelum
+--              deploy kode baru — supaya tidak ada jendela waktu di mana kode
+--              baru sudah membaca "Settings"."defaultChannel" yang belum diisi.
+-- ----------------------------------------------------------------------------
+-- UPDATE "Settings" s
+-- SET "defaultChannel" = c."defaultOutbound"::"MessageChannel"
+-- FROM "ChannelPolicySetting" c
+-- WHERE s."id" = 1
+--   AND c."key" = 'whatsapp.default'
+--   AND c."defaultOutbound" IN ('OFFICIAL', 'UNOFFICIAL')
+--   AND s."defaultChannel"::text IS DISTINCT FROM c."defaultOutbound";
+
+
+-- ----------------------------------------------------------------------------
+-- LANGKAH 3b — Empat angka pengaman.
+--              `quietHoursEnabled` sengaja tidak ada di sini (asumsi 5).
+--              Setiap kolom hanya diisi kalau nilainya ADA dan berada di dalam
+--              batas yang ditegakkan /api/settings; kalau tidak, kolomnya tetap
+--              memakai default-nya, yang persis konstanta di safety-guard.ts.
+--              Idempoten.
+-- ----------------------------------------------------------------------------
+-- UPDATE "Settings" s
+-- SET "campaignRatePerMinute" = CASE
+--       WHEN (c."safetyConfig" ->> 'campaignRatePerMinute')::int BETWEEN 1 AND 600
+--         THEN (c."safetyConfig" ->> 'campaignRatePerMinute')::int
+--       ELSE s."campaignRatePerMinute" END,
+--     "duplicateWindowMs" = CASE
+--       WHEN (c."safetyConfig" ->> 'duplicateWindowMs')::int BETWEEN 1000 AND 86400000
+--         THEN (c."safetyConfig" ->> 'duplicateWindowMs')::int
+--       ELSE s."duplicateWindowMs" END,
+--     "providerFailureThreshold" = CASE
+--       WHEN (c."safetyConfig" ->> 'providerFailureThreshold')::int BETWEEN 1 AND 1000
+--         THEN (c."safetyConfig" ->> 'providerFailureThreshold')::int
+--       ELSE s."providerFailureThreshold" END,
+--     "providerFailureWindowMs" = CASE
+--       WHEN (c."safetyConfig" ->> 'providerFailureWindowMs')::int BETWEEN 10000 AND 86400000
+--         THEN (c."safetyConfig" ->> 'providerFailureWindowMs')::int
+--       ELSE s."providerFailureWindowMs" END
+-- FROM "ChannelPolicySetting" c
+-- WHERE s."id" = 1 AND c."key" = 'whatsapp.default';
+--
+-- -- CASE, bukan FILTER: FILTER hanya sah pada agregat, dan sebuah UPDATE yang
+-- -- gagal parse di tengah migrasi produksi bukan tempat untuk mengetahuinya.
+-- -- Sebuah kunci yang hilang membuat `->> ... ::int` menghasilkan NULL, dan
+-- -- BETWEEN atas NULL bernilai NULL — yang jatuh ke cabang ELSE, yaitu nilai
+-- -- yang sudah ada. Itu perilaku yang diinginkan.
+
+-- ----------------------------------------------------------------------------
+-- LANGKAH 3c — JEDA PROVIDER. WAJIB. Lihat asumsi 4.
+--              Kalau ada provider yang sedang dijeda saat migrasi, jeda itu harus
+--              ikut pindah; kehilangannya berarti antrean mengalir lagi ke
+--              provider yang sedang bermasalah.
+--
+--              Json array -> text[]. Nilai yang bukan 'COEXIST'/'META' dibuang,
+--              persis seperti yang dilakukan asProviders() di provider-pause.ts —
+--              baris yang aneh tidak boleh menjeda apa pun secara tidak sengaja.
+--              Idempoten.
+-- ----------------------------------------------------------------------------
+-- UPDATE "Settings" s
+-- SET "pausedProviders" = COALESCE(src.providers, ARRAY[]::text[])
+-- FROM (
+--   SELECT ARRAY(
+--            SELECT elem
+--            FROM "ChannelPolicySetting" c,
+--                 LATERAL jsonb_array_elements_text(
+--                   CASE WHEN jsonb_typeof(c."pausedProviders"::jsonb) = 'array'
+--                        THEN c."pausedProviders"::jsonb
+--                        ELSE '[]'::jsonb END
+--                 ) AS elem
+--            WHERE c."key" = 'whatsapp.default'
+--              AND elem IN ('COEXIST', 'META')
+--          ) AS providers
+-- ) AS src
+-- WHERE s."id" = 1;
+--
+-- -- Kalau LANGKAH 3c terlewat dan ternyata ada provider yang sedang dijeda:
+-- -- jangan panik dan jangan menulis SQL. Buka /bot-control/outbound-queue dan
+-- -- tekan "Jeda COEXIST" (atau META) lagi. Tombolnya idempoten, berlaku langsung
+-- -- tanpa publish, dan menulis audit log seperti biasa. Job yang sempat mengalir
+-- -- selama jeda hilang akan terlihat sebagai FAILED di halaman yang sama dan bisa
+-- -- di-retry dari sana — tidak ada pesan yang lenyap tanpa jejak.
+
+
+-- ----------------------------------------------------------------------------
+-- LANGKAH 4 — Verifikasi SEBELUM DROP. Semua kolom kanan harus cocok dengan
+--             kolom kiri (kecuali quietHoursEnabled, yang memang tidak pindah).
+-- ----------------------------------------------------------------------------
+-- SELECT c."defaultOutbound"                             AS asal_default,
+--        s."defaultChannel"::text                        AS hasil_default,
+--        c."safetyConfig" ->> 'campaignRatePerMinute'     AS asal_campaign_rate,
+--        s."campaignRatePerMinute"                        AS hasil_campaign_rate,
+--        c."safetyConfig" ->> 'duplicateWindowMs'         AS asal_duplicate_window,
+--        s."duplicateWindowMs"                            AS hasil_duplicate_window,
+--        c."safetyConfig" ->> 'providerFailureThreshold'  AS asal_failure_threshold,
+--        s."providerFailureThreshold"                     AS hasil_failure_threshold,
+--        c."safetyConfig" ->> 'providerFailureWindowMs'   AS asal_failure_window,
+--        s."providerFailureWindowMs"                      AS hasil_failure_window,
+--        c."pausedProviders"                              AS asal_jeda,
+--        s."pausedProviders"                              AS hasil_jeda
+-- FROM "ChannelPolicySetting" c
+-- CROSS JOIN "Settings" s
+-- WHERE s."id" = 1 AND c."key" = 'whatsapp.default';
+
+
+-- ----------------------------------------------------------------------------
+-- LANGKAH 5 — DROP TABLE "ChannelPolicySetting". Bagian kedua dari migrasi
+--             LANGKAH 2. Setelah ini nilainya tidak bisa diambil lagi. Pastikan
+--             LANGKAH 1a, 1b, 3 dan 4 sudah selesai DAN sudah diverifikasi.
+-- ----------------------------------------------------------------------------
+-- (dijalankan oleh `npx prisma migrate deploy` atas file migrasi di LANGKAH 2)
+
+
+-- ----------------------------------------------------------------------------
+-- LANGKAH 6 — Hanya untuk database yang belum pernah di-seed (Settings id = 1
+--             belum ada). Di produksi baris ini sudah pasti ada, jadi biasanya
+--             pernyataan ini TIDAK diperlukan.
+-- ----------------------------------------------------------------------------
+-- INSERT INTO "Settings" ("id")
+-- VALUES (1)
+-- ON CONFLICT ("id") DO NOTHING;
+
+
+-- ----------------------------------------------------------------------------
+-- Kalau LANGKAH 3 dilewati atau gagal
+-- -----------------------------------
+-- 3b (angka pengaman) aman dilewati: default kolomnya persis konstanta yang
+-- dipakai safety-guard.ts sejak sebelum tabel ini ada — 20/menit, jendela
+-- duplikat 60 detik, 5 kegagalan dalam 5 menit. Yang hilang hanya suntingan
+-- operator, dan itu bisa diketik ulang di /settings.
+--
+-- 3c (jeda provider) TIDAK aman dilewati kalau sedang ada jeda aktif: pesan akan
+-- mengalir lagi ke provider yang sedang bermasalah dalam hitungan detik setelah
+-- drain berikutnya. Perbaikannya satu klik (lihat catatan di LANGKAH 3c), tapi
+-- lebih baik tidak perlu.
+--
+-- 3a (default channel) TIDAK aman dilewati kalau LANGKAH 1a menunjukkan
+-- `default_channel_berubah` = TRUE: setiap balasan yang tidak menyebut channel
+-- akan berpindah jalur, dengan biaya percakapan Meta dan jendela 24 jam yang
+-- mengikutinya. Gejalanya terlihat di inbox dan di /settings/billing dalam
+-- hitungan jam, dan perbaikannya satu pilihan di /settings — tapi LANGKAH 1a
+-- ada supaya tidak perlu kaget.
+-- ----------------------------------------------------------------------------
