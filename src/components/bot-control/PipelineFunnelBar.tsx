@@ -30,28 +30,28 @@ export function PipelineFunnelBar({ stages, total, windowSize }: PipelineFunnelB
   return (
     <div className="space-y-2">
       <div className="space-y-0.5">
-        <p className="text-sm font-semibold text-navy">Funnel penjualan</p>
-        <p className="text-xs text-muted-foreground">
+        <p className="text-base font-semibold text-ink">Funnel penjualan</p>
+        <p className="text-xs text-ink-muted">
           {total} percakapan terakhir (jendela {windowSize}, tanpa percakapan sandbox). Tahap dihitung dari kelengkapan
           TripBrief; percakapan yang bot-nya mati dihitung sudah diteruskan ke tim.
         </p>
       </div>
 
       {total === 0 ? (
-        <p className="text-xs text-muted-foreground">Belum ada percakapan yang bisa dipetakan ke funnel.</p>
+        <p className="text-sm text-ink-muted">Belum ada percakapan yang bisa dipetakan ke funnel.</p>
       ) : (
         <ul className="space-y-1.5">
           {FUNNEL_STAGES.map((stage) => {
             const count = countById.get(stage.id) ?? 0
             return (
               <li key={stage.id} className="space-y-0.5" title={stage.description}>
-                <span className="flex items-baseline justify-between gap-2 text-xs">
-                  <span className="font-medium text-foreground">{FUNNEL_STAGE_LABELS[stage.id]}</span>
-                  <span className="tabular-nums text-muted-foreground">{count}</span>
+                <span className="flex items-baseline justify-between gap-2 text-sm">
+                  <span className="font-medium text-ink">{FUNNEL_STAGE_LABELS[stage.id]}</span>
+                  <span className="font-mono text-xs text-ink-muted">{count}</span>
                 </span>
-                <span className="block h-1.5 w-full overflow-hidden rounded-full bg-muted">
+                <span className="block h-1.5 w-full overflow-hidden rounded-full bg-surface-sunken">
                   <span
-                    className={cn('block h-full rounded-full', count > 0 ? 'bg-brand' : 'bg-transparent')}
+                    className={cn('block h-full rounded-full', count > 0 ? 'bg-accent' : 'bg-transparent')}
                     style={{ width: `${Math.round((count / max) * 100)}%` }}
                   />
                 </span>

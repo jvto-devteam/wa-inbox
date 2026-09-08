@@ -1,15 +1,18 @@
 'use client'
 import { useEffect, useState } from 'react'
+import type { ReactNode } from 'react'
 import Link from 'next/link'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Card } from '@/components/ui/card'
+import { EmptyState } from '@/components/ui/empty-state'
+import { Field, FieldError } from '@/components/ui/label'
 import { PageHeader } from '@/components/ui/page-header'
 import { Input } from '@/components/ui/input'
+import { Skeleton, SkeletonText } from '@/components/ui/skeleton'
 import { Textarea } from '@/components/ui/textarea'
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table'
+import { FormSection } from '@/components/settings/section'
 import { hasAdminPowers } from '@/lib/bot-control/permissions'
-import type { AccountRoleName } from '@/lib/auth/session'
 import { fetchJson } from '@/lib/fetch-json'
 
 type Settings = {
@@ -28,6 +31,27 @@ type GateStatus = { readyForApproval: boolean; blocking: string[] }
 type CatalogPackageSummary = { packageKey: string; title: string; destinationTokens: string[]; priceIdr: number | null }
 type CatalogSummary = { syncedAt: string | null; packageCount: number; packages: CatalogPackageSummary[] }
 type Role = 'ADMIN' | 'AGENT' | null
+
+/**
+ * Satu baris sakelar: keadaan yang berlaku sekarang (lencana), akibatnya kalau dibiarkan
+ * begitu, lalu tombol yang membaliknya.
+ *
+ * Urutannya sengaja begitu. Sakelar-sakelar di halaman ini yang paling mahal kalau salah
+ * ditekan — bot diam ke semua orang, atau bot mulai membalas nomor yang seharusnya dipegang
+ * agen — jadi kalimat akibatnya harus sudah terbaca sebelum jari sampai ke tombolnya, bukan
+ * setelahnya.
+ */
+function SwitchRow({ badge, action, children }: { badge: ReactNode; action?: ReactNode; children: ReactNode }) {
+  return (
+    <div className="flex flex-wrap items-start justify-between gap-3 border-b border-line py-3 first:pt-0 last:border-b-0 last:pb-0">
+      <div className="min-w-0 max-w-xl space-y-1.5">
+        <div>{badge}</div>
+        <p className="text-sm text-ink-muted">{children}</p>
+      </div>
+      {action}
+    </div>
+  )
+}
 
 /**
  * Everything about the bot itself, in one place -- previously split between Pengaturan's
@@ -197,262 +221,297 @@ export default function ChatbotPage() {
     }
   }
 
-  if (!settings || !gateStatus || !catalogSummary) return <div className="p-6 text-sm text-muted-foreground">Memuat...</div>
+  if (!settings || !gateStatus || !catalogSummary) {
+    return (
+      <main aria-busy="true" className="mx-auto max-w-3xl p-6">
+        <Skeleton className="h-6 w-32" />
+        <div className="mt-8 flex flex-col gap-8">
+          <SkeletonText lines={4} />
+          <SkeletonText lines={3} />
+          <SkeletonText lines={3} />
+        </div>
+      </main>
+    )
+  }
+
+  const admin = hasAdminPowers(role)
 
   return (
-    <main className="mx-auto max-w-2xl space-y-8 p-6">
-      <PageHeader title="Chatbot" />
+    <main className="mx-auto max-w-3xl p-6">
+      <PageHeader
+        title="Chatbot"
+        description="Apa yang bot lakukan, dan kalimat apa yang diucapkannya. Setiap perubahan di halaman ini berlaku begitu disimpan — tidak ada antrean persetujuan."
+      />
 
-      <Card className="space-y-4 p-4">
-        <h2 className="font-medium text-navy">Status</h2>
+      <div className="mt-6 flex flex-col gap-8">
+        <FormSection
+          title="Kapan bot menjawab"
+          description="Tiga sakelar yang menentukan percakapan mana yang dijawab bot dan kapan percakapan diserahkan ke agen."
+        >
+          <SwitchRow
+            badge={
+              <Badge variant={settings.botAutoReplyAll ? 'success' : 'warning'}>
+                Bot: {settings.botAutoReplyAll ? 'On (Semua Chat)' : 'Off (Manual per Chat)'}
+              </Badge>
+            }
+            action={
+              /* Tombol sakelar di bagian ini BUKAN aksen. Keadaannya sudah dibawa oleh <Badge>
+                 di sebelahnya; tombolnya hanya membalik keadaan itu, dan tiga tombol aksen
+                 berjajar membuat tidak ada satu pun yang terbaca sebagai aksi utama halaman.
+                 Arah "matikan" tetap memakai destructive karena akibatnya memang berbeda. */
+              admin ? (
+                <Button
+                  onClick={toggleBotMode}
+                  variant={settings.botAutoReplyAll ? 'destructive' : 'outline'}
+                  size="sm"
+                >
+                  {settings.botAutoReplyAll ? 'Matikan (Off)' : 'Aktifkan untuk Semua Chat (On)'}
+                </Button>
+              ) : undefined
+            }
+          >
+            On: bot balas otomatis di semua percakapan. Off: bot nonaktif secara default — agen bisa mengaktifkan bot
+            secara manual per percakapan lewat tombol di dalam chat.
+          </SwitchRow>
 
-        <div className="space-y-1.5">
-          <div className="flex items-center gap-3">
-            <Badge variant={settings.botAutoReplyAll ? 'success' : 'warning'}>
-              Bot: {settings.botAutoReplyAll ? 'On (Semua Chat)' : 'Off (Manual per Chat)'}
-            </Badge>
-            {/* Tombol-tombol sakelar di kartu ini BUKAN aksen. Keadaannya sudah dibawa oleh
-                <Badge> di sebelahnya; tombolnya hanya membalik keadaan itu, dan tiga tombol
-                aksen berjajar di satu kartu Status membuat tidak ada satu pun yang terbaca
-                sebagai aksi utama halaman. Arah "matikan" tetap memakai destructive karena
-                konsekuensinya memang berbeda. */}
-            {hasAdminPowers(role) && (
-              <Button
-                onClick={toggleBotMode}
-                variant={settings.botAutoReplyAll ? 'destructive' : 'outline'}
-                size="sm"
-              >
-                {settings.botAutoReplyAll ? 'Matikan (Off)' : 'Aktifkan untuk Semua Chat (On)'}
-              </Button>
+          <SwitchRow
+            badge={
+              <Badge variant={settings.skipBotForIndonesianNumbers ? 'warning' : 'success'}>
+                Nomor Indonesia: {settings.skipBotForIndonesianNumbers ? 'Tidak dibalas bot' : 'Dibalas bot'}
+              </Badge>
+            }
+            action={
+              admin ? (
+                <Button
+                  onClick={toggleIndonesiaFilter}
+                  variant={settings.skipBotForIndonesianNumbers ? 'outline' : 'destructive'}
+                  size="sm"
+                >
+                  {settings.skipBotForIndonesianNumbers
+                    ? 'Aktifkan Bot untuk Nomor Indonesia'
+                    : 'Nonaktifkan Bot untuk Nomor Indonesia'}
+                </Button>
+              ) : undefined
+            }
+          >
+            Saat aktif, bot tidak pernah membalas otomatis ke nomor WhatsApp Indonesia (kode +62) — percakapan langsung
+            diam, agen yang menangani manual. Nomor negara lain tetap dibalas bot seperti biasa.
+          </SwitchRow>
+
+          <SwitchRow
+            badge={
+              <Badge variant={settings.handoffOnHumanRequest ? 'success' : 'warning'}>
+                Alihkan ke manusia: {settings.handoffOnHumanRequest ? 'Aktif' : 'Hanya kata kunci'}
+              </Badge>
+            }
+            action={
+              admin ? (
+                <Button
+                  onClick={toggleHandoffClassifier}
+                  variant={settings.handoffOnHumanRequest ? 'destructive' : 'outline'}
+                  size="sm"
+                >
+                  {settings.handoffOnHumanRequest
+                    ? 'Matikan Deteksi Tambahan'
+                    : 'Alihkan ke manusia saat customer memintanya'}
+                </Button>
+              ) : undefined
+            }
+          >
+            Saat aktif, bot juga memakai LLM untuk menangkap permintaan bicara dengan manusia yang tidak memakai kata
+            kunci baku — komplain, frustrasi, kalimat berputar. Saat dimatikan, hanya kata kunci eksplisit
+            (&ldquo;mau bicara dengan manusia&rdquo; dan sejenisnya) yang memicu handoff; kata kunci itu tidak pernah
+            bisa dimatikan dari sini.
+          </SwitchRow>
+        </FormSection>
+
+        <FormSection
+          title="Jam kerja tim"
+          description="Bot tetap menjawab 24 jam, di dalam maupun di luar jam ini. Yang berubah hanya satu: di luar jam ini, pelanggan yang dialihkan ke tim (handoff) ikut diberi tahu kapan tim membalas. Jam dihitung menurut waktu Indonesia Barat (WIB), bukan jam server."
+        >
+          <div className="space-y-4">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Field label="Mulai" htmlFor="working-hours-start">
+                <Input
+                  id="working-hours-start"
+                  type="time"
+                  value={workingHoursStart}
+                  onChange={(e) => setWorkingHoursStart(e.target.value)}
+                  disabled={!admin}
+                />
+              </Field>
+              <Field label="Selesai" htmlFor="working-hours-end">
+                <Input
+                  id="working-hours-end"
+                  type="time"
+                  value={workingHoursEnd}
+                  onChange={(e) => setWorkingHoursEnd(e.target.value)}
+                  disabled={!admin}
+                />
+              </Field>
+            </div>
+            <Field
+              label="Kalimat tambahan saat handoff di luar jam kerja"
+              htmlFor="off-hours-auto-reply"
+              hint="Ditambahkan setelah kalimat handoff, bukan menggantikannya. Kosongkan kalau tidak ingin menambah apa-apa — dan kalau salah satu jam di atas kosong, kalimat ini tidak pernah dikirim."
+            >
+              <Textarea
+                id="off-hours-auto-reply"
+                rows={3}
+                value={offHoursAutoReply}
+                onChange={(e) => setOffHoursAutoReply(e.target.value)}
+                disabled={!admin}
+                placeholder="Contoh: Saat ini di luar jam operasional kami. Tim akan membalas pada jam kerja berikutnya."
+              />
+            </Field>
+            {admin && (
+              <div>
+                <Button onClick={saveWorkingHours} size="sm" disabled={savingHours}>
+                  {savingHours ? 'Menyimpan...' : 'Simpan jam kerja'}
+                </Button>
+              </div>
             )}
           </div>
-          <p className="text-xs text-muted-foreground">
-            On: bot balas otomatis di semua percakapan. Off: bot nonaktif secara default —
-            agen bisa mengaktifkan bot secara manual per percakapan lewat tombol di dalam chat.
-          </p>
-        </div>
+        </FormSection>
 
-        <div className="space-y-1.5">
-          <div className="flex items-center gap-3">
-            <Badge variant={settings.skipBotForIndonesianNumbers ? 'warning' : 'success'}>
-              Nomor Indonesia: {settings.skipBotForIndonesianNumbers ? 'Tidak dibalas bot' : 'Dibalas bot'}
-            </Badge>
-            {hasAdminPowers(role) && (
-              <Button
-                onClick={toggleIndonesiaFilter}
-                variant={settings.skipBotForIndonesianNumbers ? 'outline' : 'destructive'}
-                size="sm"
-              >
-                {settings.skipBotForIndonesianNumbers ? 'Aktifkan Bot untuk Nomor Indonesia' : 'Nonaktifkan Bot untuk Nomor Indonesia'}
+        <FormSection
+          title="Kalimat bot"
+          description="Dua kalimat yang diucapkan bot apa adanya. Disimpan langsung — begitu ditekan Simpan, percakapan berikutnya sudah memakainya."
+        >
+          <div className="space-y-4">
+            <Field
+              label="Balasan saat bot tidak tahu jawabannya"
+              htmlFor="fallback-reply"
+              hint="Kosongkan untuk memakai kalimat bawaan."
+            >
+              <Textarea
+                id="fallback-reply"
+                rows={3}
+                value={fallbackReply}
+                onChange={(e) => setFallbackReply(e.target.value)}
+                disabled={!admin}
+                placeholder="Contoh: Maaf, saya belum punya jawabannya. Saya cek dulu ya."
+              />
+            </Field>
+            <Field
+              label="Kalimat saat percakapan dialihkan ke manusia"
+              htmlFor="handoff-reply"
+              hint="Kosongkan untuk memakai kalimat bawaan."
+            >
+              <Textarea
+                id="handoff-reply"
+                rows={3}
+                value={handoffReply}
+                onChange={(e) => setHandoffReply(e.target.value)}
+                disabled={!admin}
+                placeholder="Contoh: Terima kasih! Saya hubungkan dengan tim kami, mereka akan segera membalas."
+              />
+            </Field>
+            {admin && (
+              <div>
+                <Button onClick={saveSentences} size="sm" disabled={savingSentences}>
+                  {savingSentences ? 'Menyimpan...' : 'Simpan kalimat bot'}
+                </Button>
+              </div>
+            )}
+            {sentenceError && <FieldError>{sentenceError}</FieldError>}
+          </div>
+        </FormSection>
+
+        <FormSection
+          title="Model LLM"
+          description="Semua balasan bot diproses lokal lewat Ollama di VPS yang sama — tidak ada penyedia hosted (OpenAI dkk) yang pernah dihubungi, jadi teks pelanggan dan data booking tidak pernah keluar server. Model default adalah gemma4:31b-cloud, tag cloud Ollama sendiri (sama seperti yang dipakai chatbot-web)."
+        >
+          <div className="space-y-4">
+            <Field label="Model Ollama" htmlFor="ollama-model" className="max-w-sm">
+              <Input
+                id="ollama-model"
+                value={ollamaModel}
+                onChange={(e) => setOllamaModel(e.target.value)}
+                disabled={!admin}
+              />
+            </Field>
+            {admin && (
+              <div>
+                <Button onClick={saveModels} size="sm" disabled={savingModels || !ollamaModel.trim()}>
+                  {savingModels ? 'Menyimpan...' : 'Simpan model'}
+                </Button>
+              </div>
+            )}
+            {modelError && <FieldError>{modelError}</FieldError>}
+          </div>
+        </FormSection>
+
+        <FormSection
+          title="Pengetahuan (katalog paket)"
+          description="Paket yang boleh disebut bot. Katalog dibaca dari berkas, bukan diketik di sini; sinkron menariknya ulang."
+          actions={
+            admin ? (
+              <Button onClick={syncCatalog} variant="outline" size="sm" disabled={syncing}>
+                {syncing ? 'Menyinkron...' : 'Sinkron Sekarang'}
               </Button>
+            ) : undefined
+          }
+        >
+          <div className="space-y-4">
+            <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
+              <dl className="flex flex-wrap items-center gap-x-6 gap-y-2">
+                <div className="flex items-center gap-2">
+                  <dt className="text-ink-muted">Terakhir disinkron</dt>
+                  <dd className="font-mono text-ink">
+                    {catalogSummary.syncedAt ? new Date(catalogSummary.syncedAt).toLocaleString('id-ID') : 'Belum pernah'}
+                  </dd>
+                </div>
+                <div className="flex items-center gap-2">
+                  <dt className="text-ink-muted">Gerbang penerapan</dt>
+                  <dd>
+                    <Badge variant={gateStatus.readyForApproval ? 'success' : 'warning'}>
+                      {gateStatus.readyForApproval ? 'Siap' : `Terkunci: ${gateStatus.blocking.join(', ')}`}
+                    </Badge>
+                  </dd>
+                </div>
+              </dl>
+              <Link
+                href="/settings/knowledge-gaps"
+                className="focus-ring rounded-sm text-ink-muted underline underline-offset-2 hover:text-ink"
+              >
+                Lihat pertanyaan tak terjawab
+              </Link>
+            </div>
+
+            {catalogSummary.packageCount === 0 ? (
+              <EmptyState
+                title="Belum ada paket tersinkron."
+                description="Bot belum punya satu pun paket untuk disebut. Tekan Sinkron Sekarang setelah katalog diperbarui."
+                className="rounded-lg border border-line bg-surface"
+              />
+            ) : (
+              <div className="rounded-lg border border-line bg-surface">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Paket</TableHead>
+                      <TableHead>Destinasi</TableHead>
+                      <TableHead>Harga</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {catalogSummary.packages.map((p) => (
+                      <TableRow key={p.packageKey}>
+                        <TableCell className="font-medium text-ink">{p.title}</TableCell>
+                        <TableCell className="text-ink-muted">{p.destinationTokens.join(', ')}</TableCell>
+                        <TableCell className="font-mono text-ink-muted">
+                          {p.priceIdr != null ? `Rp ${p.priceIdr.toLocaleString('id-ID')}` : '-'}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
             )}
           </div>
-          <p className="text-xs text-muted-foreground">
-            Saat aktif, bot tidak pernah membalas otomatis ke nomor WhatsApp Indonesia (kode
-            +62) — percakapan langsung diam, agen yang menangani manual. Nomor negara lain
-            tetap dibalas bot seperti biasa.
-          </p>
-        </div>
-
-        <div className="space-y-1.5">
-          <div className="flex items-center gap-3">
-            <Badge variant={settings.handoffOnHumanRequest ? 'success' : 'warning'}>
-              Alihkan ke manusia: {settings.handoffOnHumanRequest ? 'Aktif' : 'Hanya kata kunci'}
-            </Badge>
-            {hasAdminPowers(role) && (
-              <Button
-                onClick={toggleHandoffClassifier}
-                variant={settings.handoffOnHumanRequest ? 'destructive' : 'outline'}
-                size="sm"
-              >
-                {settings.handoffOnHumanRequest ? 'Matikan Deteksi Tambahan' : 'Alihkan ke manusia saat customer memintanya'}
-              </Button>
-            )}
-          </div>
-          <p className="text-xs text-muted-foreground">
-            Saat aktif, bot juga memakai LLM untuk menangkap permintaan bicara dengan manusia
-            yang tidak memakai kata kunci baku — komplain, frustrasi, kalimat berputar. Saat
-            dimatikan, hanya kata kunci eksplisit (&ldquo;mau bicara dengan manusia&rdquo; dan
-            sejenisnya) yang memicu handoff; kata kunci itu tidak pernah bisa dimatikan dari
-            sini.
-          </p>
-        </div>
-
-        <div className="space-y-1.5">
-          <div className="flex items-center gap-3">
-            <Badge variant={gateStatus.readyForApproval ? 'success' : 'warning'}>
-              {gateStatus.readyForApproval ? 'Siap' : `Terkunci: ${gateStatus.blocking.join(', ')}`}
-            </Badge>
-            <Link href="/settings/knowledge-gaps" className="text-sm text-brand hover:underline">
-              Lihat pertanyaan tak terjawab
-            </Link>
-          </div>
-        </div>
-      </Card>
-
-      <Card className="space-y-3 p-4">
-        <h2 className="font-medium text-navy">Jam kerja tim</h2>
-        <p className="text-xs text-muted-foreground">
-          Bot tetap menjawab 24 jam, di dalam maupun di luar jam ini. Yang berubah hanya satu: di luar jam ini,
-          pelanggan yang dialihkan ke tim (handoff) ikut diberi tahu kapan tim membalas. Jam dihitung menurut waktu
-          Indonesia Barat (WIB), bukan jam server.
-        </p>
-        <div className="grid grid-cols-2 gap-2">
-          <div className="space-y-1">
-            <label htmlFor="working-hours-start" className="text-xs text-muted-foreground">
-              Mulai
-            </label>
-            <Input
-              id="working-hours-start"
-              type="time"
-              value={workingHoursStart}
-              onChange={(e) => setWorkingHoursStart(e.target.value)}
-              disabled={!hasAdminPowers(role)}
-            />
-          </div>
-          <div className="space-y-1">
-            <label htmlFor="working-hours-end" className="text-xs text-muted-foreground">
-              Selesai
-            </label>
-            <Input
-              id="working-hours-end"
-              type="time"
-              value={workingHoursEnd}
-              onChange={(e) => setWorkingHoursEnd(e.target.value)}
-              disabled={!hasAdminPowers(role)}
-            />
-          </div>
-        </div>
-        <div className="space-y-1">
-          <label htmlFor="off-hours-auto-reply" className="text-xs text-muted-foreground">
-            Kalimat tambahan saat handoff di luar jam kerja
-          </label>
-          <Textarea
-            id="off-hours-auto-reply"
-            rows={3}
-            value={offHoursAutoReply}
-            onChange={(e) => setOffHoursAutoReply(e.target.value)}
-            disabled={!hasAdminPowers(role)}
-            placeholder="Contoh: Saat ini di luar jam operasional kami. Tim akan membalas pada jam kerja berikutnya."
-          />
-          <p className="text-xs text-muted-foreground">
-            Ditambahkan setelah kalimat handoff, bukan menggantikannya. Kosongkan kalau tidak ingin menambah apa-apa
-            &mdash; dan kalau salah satu jam di atas kosong, kalimat ini tidak pernah dikirim.
-          </p>
-        </div>
-        {hasAdminPowers(role) && (
-          <Button onClick={saveWorkingHours} size="sm" disabled={savingHours}>
-            {savingHours ? 'Menyimpan...' : 'Simpan'}
-          </Button>
-        )}
-      </Card>
-
-      <Card className="space-y-3 p-4">
-        <h2 className="font-medium text-navy">Kalimat bot</h2>
-        <p className="text-xs text-muted-foreground">
-          Dua kalimat yang diucapkan bot apa adanya. Disimpan langsung &mdash; begitu ditekan Simpan, percakapan
-          berikutnya sudah memakainya.
-        </p>
-        <div className="space-y-1">
-          <label htmlFor="fallback-reply" className="text-xs text-muted-foreground">
-            Balasan saat bot tidak tahu jawabannya
-          </label>
-          <Textarea
-            id="fallback-reply"
-            rows={3}
-            value={fallbackReply}
-            onChange={(e) => setFallbackReply(e.target.value)}
-            disabled={!hasAdminPowers(role)}
-            placeholder="Contoh: Maaf, saya belum punya jawabannya. Saya cek dulu ya."
-          />
-          <p className="text-xs text-muted-foreground">Kosongkan untuk memakai kalimat bawaan.</p>
-        </div>
-        <div className="space-y-1">
-          <label htmlFor="handoff-reply" className="text-xs text-muted-foreground">
-            Kalimat saat percakapan dialihkan ke manusia
-          </label>
-          <Textarea
-            id="handoff-reply"
-            rows={3}
-            value={handoffReply}
-            onChange={(e) => setHandoffReply(e.target.value)}
-            disabled={!hasAdminPowers(role)}
-            placeholder="Contoh: Terima kasih! Saya hubungkan dengan tim kami, mereka akan segera membalas."
-          />
-          <p className="text-xs text-muted-foreground">Kosongkan untuk memakai kalimat bawaan.</p>
-        </div>
-        {hasAdminPowers(role) && (
-          <Button onClick={saveSentences} size="sm" disabled={savingSentences}>
-            {savingSentences ? 'Menyimpan...' : 'Simpan'}
-          </Button>
-        )}
-        {sentenceError && <p className="text-xs text-destructive">{sentenceError}</p>}
-      </Card>
-
-      <Card className="space-y-3 p-4">
-        <h2 className="font-medium text-navy">Model LLM</h2>
-        <p className="text-xs text-muted-foreground">
-          Semua balasan bot diproses lokal lewat Ollama di VPS yang sama — tidak ada penyedia
-          hosted (OpenAI dkk) yang pernah dihubungi, jadi teks pelanggan dan data booking tidak
-          pernah keluar server. Model default adalah gemma4:31b-cloud, tag cloud Ollama sendiri
-          (sama seperti yang dipakai chatbot-web).
-        </p>
-        <div className="space-y-1">
-          <label htmlFor="ollama-model" className="text-xs text-muted-foreground">
-            Model Ollama
-          </label>
-          <Input
-            id="ollama-model"
-            value={ollamaModel}
-            onChange={(e) => setOllamaModel(e.target.value)}
-            disabled={!hasAdminPowers(role)}
-          />
-        </div>
-        {hasAdminPowers(role) && (
-          <Button onClick={saveModels} size="sm" disabled={savingModels || !ollamaModel.trim()}>
-            {savingModels ? 'Menyimpan...' : 'Simpan'}
-          </Button>
-        )}
-        {modelError && <p className="text-xs text-destructive">{modelError}</p>}
-      </Card>
-
-      <Card className="space-y-3 p-4">
-        <h2 className="font-medium text-navy">Pengetahuan (katalog paket)</h2>
-        <div className="flex items-center gap-3">
-          <span className="text-sm text-muted-foreground">
-            Terakhir disinkron: {catalogSummary.syncedAt ? new Date(catalogSummary.syncedAt).toLocaleString('id-ID') : 'Belum pernah'}
-          </span>
-          {hasAdminPowers(role) && (
-            <Button onClick={syncCatalog} variant="outline" size="sm" disabled={syncing}>
-              {syncing ? 'Menyinkron...' : 'Sinkron Sekarang'}
-            </Button>
-          )}
-        </div>
-        {catalogSummary.packageCount === 0 ? (
-          <p className="text-sm text-muted-foreground">Belum ada paket tersinkron.</p>
-        ) : (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Paket</TableHead>
-                <TableHead>Destinasi</TableHead>
-                <TableHead>Harga</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {catalogSummary.packages.map((p) => (
-                <TableRow key={p.packageKey}>
-                  <TableCell className="font-medium text-navy">{p.title}</TableCell>
-                  <TableCell className="text-muted-foreground">{p.destinationTokens.join(', ')}</TableCell>
-                  <TableCell className="text-muted-foreground">
-                    {p.priceIdr != null ? `Rp ${p.priceIdr.toLocaleString('id-ID')}` : '-'}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        )}
-      </Card>
+        </FormSection>
+      </div>
     </main>
   )
 }

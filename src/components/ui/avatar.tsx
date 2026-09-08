@@ -37,6 +37,19 @@ export function avatarToneFor(name: string | null): string {
   return AVATAR_TONES[hash % AVATAR_TONES.length]
 }
 
+/**
+ * Satu nada netral, untuk tempat di mana warna deterministik justru merugikan.
+ *
+ * Delapan rona di atas bekerja ketika satu avatar berdiri sendiri sebagai jangkar identitas
+ * (panel kontak, kepala percakapan, /contacts/<id>). Di daftar percakapan yang rapat ia
+ * berubah sifat: empat puluh baris, empat puluh rona acak di kolom paling kiri, di sebelah
+ * lencana pipeline berwarna, lencana kanal pesanan, dan label buatan pengguna yang warnanya
+ * bebas. Rona itu tidak menambah informasi yang tidak sudah dikatakan nama di sebelahnya,
+ * tapi ia melawan satu-satunya tanda yang memang harus menonjol di sana: penanda belum
+ * dibaca. Jadi daftar memakai `tone="neutral"`, sisanya tetap `auto`.
+ */
+const AVATAR_TONE_NEUTRAL = 'bg-surface-sunken text-ink-muted'
+
 /** "bruno figarola" -> "BF" (max 2), atau "B" kalau maxInitials 1. "" -> "?". */
 export function initialsOf(name: string | null, maxInitials = 2): string {
   const words = (name ?? '').trim().split(/\s+/).filter(Boolean)
@@ -52,12 +65,15 @@ export function Avatar({
   src,
   alt,
   maxInitials = 2,
+  tone = 'auto',
   className,
 }: {
   name: string | null
   src?: string | null
   alt?: string
   maxInitials?: number
+  /** 'auto' = rona ditentukan nama (bawaan). 'neutral' = satu abu, untuk daftar yang rapat. */
+  tone?: 'auto' | 'neutral'
   className?: string
 }) {
   if (src) {
@@ -78,7 +94,7 @@ export function Avatar({
       aria-hidden={alt === '' ? true : undefined}
       className={cn(
         'flex size-8 shrink-0 items-center justify-center rounded-full text-sm font-medium select-none',
-        avatarToneFor(name),
+        tone === 'neutral' ? AVATAR_TONE_NEUTRAL : avatarToneFor(name),
         className
       )}
     >

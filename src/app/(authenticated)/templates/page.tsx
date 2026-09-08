@@ -1,10 +1,14 @@
 'use client'
 import { useEffect, useState } from 'react'
+import { BookOpen, Sparkles, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Card } from '@/components/ui/card'
+import { Card, CardBody, CardHeader, CardTitle } from '@/components/ui/card'
+import { IconButton } from '@/components/ui/icon-button'
 import { PageHeader } from '@/components/ui/page-header'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
+import { Skeleton } from '@/components/ui/skeleton'
+import { cn } from '@/lib/utils'
 import { fetchJson } from '@/lib/fetch-json'
 import { VARIABLE_FIELD_DEFS } from '@/lib/booking/variable-fields'
 import type { TemplateSuggestion } from '@/lib/bot/template-suggester'
@@ -409,112 +413,120 @@ export default function TemplatesPage() {
   const filtered = templates.filter((t) => t.type === tab)
 
   return (
-    <main className="mx-auto max-w-5xl space-y-4 p-6">
-      <PageHeader title="Template Pesan" />
+    <main className="mx-auto max-w-5xl space-y-5 p-6">
+      <PageHeader
+        title="Template Pesan"
+        description="Pesan siap kirim: template resmi yang disetujui Meta, dan balasan cepat yang hanya dipakai agen."
+      />
 
-      <div className="flex gap-2">
-        <Button
-          type="button"
-          variant={tab === 'OFFICIAL' ? 'default' : 'outline'}
-          size="sm"
-          onClick={() => setTab('OFFICIAL')}
-        >
-          Resmi (Meta)
-        </Button>
-        <Button
-          type="button"
-          variant={tab === 'QUICK_REPLY' ? 'default' : 'outline'}
-          size="sm"
-          onClick={() => setTab('QUICK_REPLY')}
-        >
-          Balasan Cepat
-        </Button>
+      <div role="tablist" aria-label="Jenis template" className="flex gap-5 border-b border-line">
+        {([
+          ['OFFICIAL', 'Resmi (Meta)'],
+          ['QUICK_REPLY', 'Balasan Cepat'],
+        ] as const).map(([value, label]) => (
+          <button
+            key={value}
+            type="button"
+            role="tab"
+            aria-selected={tab === value}
+            onClick={() => setTab(value)}
+            className={cn(
+              'focus-ring -mb-px border-b-2 px-0.5 pb-2 font-medium transition-colors',
+              tab === value ? 'border-accent text-ink' : 'border-transparent text-ink-muted hover:text-ink'
+            )}
+          >
+            {label}
+          </button>
+        ))}
       </div>
 
       {tab === 'QUICK_REPLY' && (
-        <Card className="space-y-3 p-4">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <h2 className="font-medium text-navy">✨ Rekomendasi Template (AI)</h2>
-              <p className="text-xs text-muted-foreground">
-                Analisis pertanyaan yang sering masuk dari seluruh chat, lalu usulkan balasan cepat baru.
-              </p>
-            </div>
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-1.5">
+              <Sparkles aria-hidden="true" className="size-4 shrink-0 text-ink-subtle" />
+              Rekomendasi template dari AI
+            </CardTitle>
             <Button type="button" variant="outline" size="sm" onClick={openSuggestions} disabled={suggestLoading}>
               {suggestLoading ? 'Menganalisis...' : 'Buat Rekomendasi'}
             </Button>
-          </div>
-          {suggestOpen && (
-            <div className="space-y-2 rounded-lg border border-border p-3">
-              {suggestLoading && (
-                <p className="text-sm text-muted-foreground">Menganalisis pesan masuk dari seluruh chat...</p>
-              )}
-              {suggestError && <p className="text-xs text-destructive">{suggestError}</p>}
-              {!suggestLoading && !suggestError && suggestions.length === 0 && (
-                <p className="text-sm text-muted-foreground">Belum ada pola pertanyaan yang cukup jelas untuk direkomendasikan.</p>
-              )}
-              {!suggestLoading && suggestions.length > 0 && (
-                <>
-                  <div className="space-y-2">
-                    {suggestions.map((s, i) => (
-                      <label
-                        key={i}
-                        className="flex cursor-pointer items-start gap-2 rounded-lg border border-border p-2 hover:bg-muted/50"
-                      >
-                        <input
-                          type="checkbox"
-                          checked={selectedSuggestions.has(i)}
-                          onChange={() => toggleSuggestion(i)}
-                          aria-label={`Pilih rekomendasi ${s.name}`}
-                          className="mt-1"
-                        />
-                        <div className="min-w-0 flex-1 space-y-0.5">
-                          <p className="text-sm font-medium text-navy">{s.name}</p>
-                          <p className="text-xs text-foreground">{s.body}</p>
-                          {s.variables.length > 0 && (
-                            <p className="text-[11px] text-muted-foreground">
-                              Variabel:{' '}
-                              {s.variables
-                                .map(
-                                  (v) =>
-                                    `${v.name} (${
-                                      v.bindingKey
-                                        ? (VARIABLE_FIELD_DEFS.find((f) => f.key === v.bindingKey)?.label ?? v.bindingKey)
-                                        : 'isi manual'
-                                    })`
-                                )
-                                .join(', ')}
-                            </p>
-                          )}
-                          <p className="text-[11px] italic text-muted-foreground">{s.reason}</p>
-                        </div>
-                      </label>
-                    ))}
-                  </div>
-                  <Button
-                    type="button"
-                    size="sm"
-                    onClick={saveSelectedSuggestions}
-                    disabled={selectedSuggestions.size === 0 || savingSuggestions}
-                  >
-                    {savingSuggestions ? 'Menyimpan...' : `Simpan Terpilih (${selectedSuggestions.size})`}
-                  </Button>
-                </>
-              )}
-            </div>
-          )}
+          </CardHeader>
+          <CardBody className="space-y-3">
+            <p className="text-sm text-ink-muted">
+              Analisis pertanyaan yang sering masuk dari seluruh chat, lalu usulkan balasan cepat baru.
+            </p>
+            {suggestOpen && (
+              <div className="space-y-3">
+                {suggestLoading && (
+                  <p className="text-sm text-ink-muted">Menganalisis pesan masuk dari seluruh chat...</p>
+                )}
+                {suggestError && <p className="text-xs font-medium text-danger">{suggestError}</p>}
+                {!suggestLoading && !suggestError && suggestions.length === 0 && (
+                  <p className="text-sm text-ink-muted">
+                    Belum ada pola pertanyaan yang cukup jelas untuk direkomendasikan.
+                  </p>
+                )}
+                {!suggestLoading && suggestions.length > 0 && (
+                  <>
+                    <div className="overflow-hidden rounded-md border border-line">
+                      {suggestions.map((s, i) => (
+                        <label
+                          key={i}
+                          className="flex cursor-pointer items-start gap-2 border-b border-line px-3 py-2 last:border-b-0 hover:bg-surface-sunken"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={selectedSuggestions.has(i)}
+                            onChange={() => toggleSuggestion(i)}
+                            aria-label={`Pilih rekomendasi ${s.name}`}
+                            className="mt-1"
+                          />
+                          <div className="min-w-0 flex-1 space-y-0.5">
+                            <p className="text-sm font-medium text-ink">{s.name}</p>
+                            <p className="text-sm text-ink">{s.body}</p>
+                            {s.variables.length > 0 && (
+                              <p className="text-xs text-ink-muted">
+                                Variabel:{' '}
+                                {s.variables
+                                  .map(
+                                    (v) =>
+                                      `${v.name} (${
+                                        v.bindingKey
+                                          ? (VARIABLE_FIELD_DEFS.find((f) => f.key === v.bindingKey)?.label ?? v.bindingKey)
+                                          : 'isi manual'
+                                      })`
+                                  )
+                                  .join(', ')}
+                              </p>
+                            )}
+                            <p className="text-xs text-ink-subtle italic">{s.reason}</p>
+                          </div>
+                        </label>
+                      ))}
+                    </div>
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={saveSelectedSuggestions}
+                      disabled={selectedSuggestions.size === 0 || savingSuggestions}
+                    >
+                      {savingSuggestions ? 'Menyimpan...' : `Simpan Terpilih (${selectedSuggestions.size})`}
+                    </Button>
+                  </>
+                )}
+              </div>
+            )}
+          </CardBody>
         </Card>
       )}
 
       {tab === 'OFFICIAL' && (
-        <Card className="space-y-3 p-4">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <h2 className="font-medium text-navy">📚 Template Siap Pakai (Meta)</h2>
-              <p className="text-xs text-muted-foreground">
-                Jelajahi template yang sudah divalidasi Meta sebagai titik awal -- lebih cepat disetujui daripada menulis dari nol.
-              </p>
-            </div>
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-1.5">
+              <BookOpen aria-hidden="true" className="size-4 shrink-0 text-ink-subtle" />
+              Template siap pakai dari Meta
+            </CardTitle>
             <Button
               type="button"
               variant="outline"
@@ -526,229 +538,264 @@ export default function TemplatesPage() {
             >
               {libraryOpen ? 'Tutup' : 'Jelajahi'}
             </Button>
-          </div>
-          {libraryOpen && (
-            <div className="space-y-2 rounded-lg border border-border p-3">
-              <div className="grid gap-2 sm:grid-cols-3">
-                <Select aria-label="Filter kategori" value={libraryCategory} onChange={(e) => setLibraryCategory(e.target.value)}>
-                  <option value="">Semua kategori</option>
-                  <option value="MARKETING">Marketing</option>
-                  <option value="UTILITY">Utility</option>
-                  <option value="AUTHENTICATION">Authentication</option>
-                </Select>
-                <Input
-                  aria-label="Filter bahasa"
-                  placeholder="Kode bahasa (mis. en_US)"
-                  value={libraryLanguage}
-                  onChange={(e) => setLibraryLanguage(e.target.value)}
-                />
-                <Input
-                  aria-label="Cari template"
-                  placeholder="Cari nama/isi..."
-                  value={libraryQuery}
-                  onChange={(e) => setLibraryQuery(e.target.value)}
-                />
+          </CardHeader>
+          <CardBody className="space-y-3">
+            <p className="text-sm text-ink-muted">
+              Template yang sudah divalidasi Meta, dipakai sebagai titik awal — lebih cepat disetujui daripada
+              menulis dari nol.
+            </p>
+            {libraryOpen && (
+              <div className="space-y-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Select
+                    aria-label="Filter kategori"
+                    value={libraryCategory}
+                    onChange={(e) => setLibraryCategory(e.target.value)}
+                    className="w-auto"
+                  >
+                    <option value="">Semua kategori</option>
+                    <option value="MARKETING">Marketing</option>
+                    <option value="UTILITY">Utility</option>
+                    <option value="AUTHENTICATION">Authentication</option>
+                  </Select>
+                  <Input
+                    aria-label="Filter bahasa"
+                    placeholder="Kode bahasa (mis. en_US)"
+                    value={libraryLanguage}
+                    onChange={(e) => setLibraryLanguage(e.target.value)}
+                    className="w-44"
+                  />
+                  <Input
+                    aria-label="Cari template"
+                    placeholder="Cari nama/isi..."
+                    value={libraryQuery}
+                    onChange={(e) => setLibraryQuery(e.target.value)}
+                    className="w-52"
+                  />
+                  <Button type="button" variant="outline" size="sm" onClick={searchLibrary} disabled={libraryLoading}>
+                    {libraryLoading ? 'Mencari...' : 'Cari'}
+                  </Button>
+                </div>
+                {libraryError && <p className="text-xs font-medium text-danger">{libraryError}</p>}
+                {!libraryLoading && !libraryError && libraryTemplates.length === 0 && (
+                  <p className="text-sm text-ink-muted">Tidak ada hasil untuk filter ini.</p>
+                )}
+                {libraryTemplates.length > 0 && (
+                  <div className="grid max-h-96 grid-cols-2 gap-2 overflow-y-auto sm:grid-cols-3">
+                    {libraryTemplates.map((t) => (
+                      <TemplatePreviewBubble key={t.id} template={toLibraryPreview(t)} onClick={() => applyLibraryTemplate(t)} />
+                    ))}
+                  </div>
+                )}
               </div>
-              <Button type="button" variant="outline" size="sm" onClick={searchLibrary} disabled={libraryLoading}>
-                {libraryLoading ? 'Mencari...' : 'Cari'}
-              </Button>
-              {libraryError && <p className="text-xs text-destructive">{libraryError}</p>}
-              {!libraryLoading && !libraryError && libraryTemplates.length === 0 && (
-                <p className="text-sm text-muted-foreground">Tidak ada hasil untuk filter ini.</p>
-              )}
-              <div className="grid max-h-96 grid-cols-2 gap-2 overflow-y-auto sm:grid-cols-3">
-                {libraryTemplates.map((t) => (
-                  <TemplatePreviewBubble key={t.id} template={toLibraryPreview(t)} onClick={() => applyLibraryTemplate(t)} />
-                ))}
-              </div>
-            </div>
-          )}
+            )}
+          </CardBody>
         </Card>
       )}
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_320px]">
-        <Card className="space-y-3 p-4">
-          <h2 className="font-medium text-navy">
-            {tab === 'OFFICIAL' ? 'Ajukan Template Resmi Baru' : 'Buat Balasan Cepat Baru'}
-          </h2>
+        <Card>
+          <CardHeader>
+            <CardTitle>{tab === 'OFFICIAL' ? 'Ajukan Template Resmi Baru' : 'Buat Balasan Cepat Baru'}</CardTitle>
+          </CardHeader>
+          <CardBody className="space-y-3">
+            {tab === 'OFFICIAL' && (
+              <>
+                <TypeSelector value={format} onChange={setFormat} />
+                {isLto && <p className="text-xs text-ink-muted">Kategori dikunci ke MARKETING oleh Meta.</p>}
+                {format === 'AUTH' && <p className="text-xs text-ink-muted">Kategori dikunci ke AUTHENTICATION oleh Meta.</p>}
+              </>
+            )}
 
-          {tab === 'OFFICIAL' && (
-            <>
-              <TypeSelector value={format} onChange={setFormat} />
-              {isLto && <p className="text-xs text-muted-foreground">Kategori dikunci ke MARKETING oleh Meta.</p>}
-              {format === 'AUTH' && <p className="text-xs text-muted-foreground">Kategori dikunci ke AUTHENTICATION oleh Meta.</p>}
-            </>
-          )}
-
-          <div className="grid gap-2 sm:grid-cols-2">
-            <Input aria-label="Nama template" placeholder="Nama template" value={name} onChange={(e) => setName(e.target.value)} />
-            <Input aria-label="Kategori" placeholder="Kategori" value={category} onChange={(e) => setCategory(e.target.value)} />
-          </div>
-
-          {isTextOrAuth && <HeaderField value={header} onChange={setHeader} />}
-
-          <BodyField
-            value={body}
-            onChange={setBody}
-            maxLength={isLto ? 600 : 1024}
-            placeholder={
-              tab === 'OFFICIAL'
-                ? isCarousel
-                  ? 'Isi pesan pembuka carousel...'
-                  : 'Isi pesan...'
-                : 'Isi pesan balasan cepat...'
-            }
-          />
-
-          {(isTextOrAuth || isCoupon) && <FooterField value={footer} onChange={setFooter} />}
-
-          {variablePositions.length > 0 && (
-            <div className="space-y-1.5 rounded-lg border border-border p-3">
-              <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Sumber Nilai Variabel</h3>
-              <p className="text-xs text-muted-foreground">
-                Pilih data mana yang otomatis mengisi variabel ini setiap kali template dikirim, mengikuti
-                chat masing-masing. Kosongkan untuk isi manual saat kirim.
-              </p>
-              {variablePositions.map(({ position, label }) => (
-                <div key={position} className="flex items-center gap-2">
-                  <span className="w-16 shrink-0 text-sm text-navy">{label}</span>
-                  <Select
-                    aria-label={`Sumber nilai untuk ${label}`}
-                    value={variableBindings[String(position)] ?? ''}
-                    onChange={(e) =>
-                      setVariableBindings((prev) => ({ ...prev, [String(position)]: e.target.value }))
-                    }
-                    className="w-auto"
-                  >
-                    <option value="">Isi manual</option>
-                    {VARIABLE_FIELD_DEFS.map((f) => (
-                      <option key={f.key} value={f.key}>
-                        {f.label}
-                      </option>
-                    ))}
-                  </Select>
-                </div>
-              ))}
+            <div className="grid gap-2 sm:grid-cols-2">
+              <Input aria-label="Nama template" placeholder="Nama template" value={name} onChange={(e) => setName(e.target.value)} />
+              <Input aria-label="Kategori" placeholder="Kategori" value={category} onChange={(e) => setCategory(e.target.value)} />
             </div>
-          )}
 
-          {isTextOrAuth && (
-            <div className="space-y-1.5 rounded-lg border border-border p-3">
-              <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Tombol (opsional)</h3>
-              <ButtonsField buttons={buttons} onChange={setButtons} max={MAX_BUTTONS} />
-            </div>
-          )}
+            {isTextOrAuth && <HeaderField value={header} onChange={setHeader} />}
 
-          {isCarousel && (
-            <div className="space-y-3 rounded-lg border border-border p-3">
-              <h3 className="text-sm font-medium text-navy">Kartu Carousel ({cards.length}/{MAX_CARDS})</h3>
-              {cards.map((card, i) => (
-                <div key={i} className="space-y-2 rounded-lg border border-border bg-secondary/40 p-3">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-semibold text-muted-foreground">Kartu {i + 1}</span>
-                    {cards.length > 1 && (
-                      <button
-                        type="button"
-                        aria-label={`Hapus kartu ${i + 1}`}
-                        onClick={() => removeCard(i)}
-                        className="text-xs text-destructive hover:underline"
-                      >
-                        Hapus Kartu
-                      </button>
-                    )}
-                  </div>
-                  <div className="grid gap-2 sm:grid-cols-2">
+            <BodyField
+              value={body}
+              onChange={setBody}
+              maxLength={isLto ? 600 : 1024}
+              placeholder={
+                tab === 'OFFICIAL'
+                  ? isCarousel
+                    ? 'Isi pesan pembuka carousel...'
+                    : 'Isi pesan...'
+                  : 'Isi pesan balasan cepat...'
+              }
+            />
+
+            {(isTextOrAuth || isCoupon) && <FooterField value={footer} onChange={setFooter} />}
+
+            {variablePositions.length > 0 && (
+              <div className="space-y-2 rounded-md border border-line p-3">
+                <h3 className="text-sm font-medium text-ink">Sumber Nilai Variabel</h3>
+                <p className="text-xs text-ink-muted">
+                  Pilih data mana yang otomatis mengisi variabel ini setiap kali template dikirim, mengikuti
+                  chat masing-masing. Kosongkan untuk isi manual saat kirim.
+                </p>
+                {variablePositions.map(({ position, label }) => (
+                  <div key={position} className="flex items-center gap-2">
+                    <span className="w-14 shrink-0 font-mono text-sm text-ink-muted">{label}</span>
                     <Select
-                      aria-label={`Tipe media kartu ${i + 1}`}
-                      value={card.mediaType}
-                      onChange={(e) => updateCard(i, { mediaType: e.target.value as 'IMAGE' | 'VIDEO' })}
+                      aria-label={`Sumber nilai untuk ${label}`}
+                      value={variableBindings[String(position)] ?? ''}
+                      onChange={(e) =>
+                        setVariableBindings((prev) => ({ ...prev, [String(position)]: e.target.value }))
+                      }
+                      className="w-auto"
                     >
-                      <option value="IMAGE">Gambar</option>
-                      <option value="VIDEO">Video</option>
+                      <option value="">Isi manual</option>
+                      {VARIABLE_FIELD_DEFS.map((f) => (
+                        <option key={f.key} value={f.key}>
+                          {f.label}
+                        </option>
+                      ))}
                     </Select>
-                    <Input
-                      aria-label={`URL media kartu ${i + 1}`}
-                      placeholder="URL gambar/video (https://...)"
-                      value={card.mediaUrl}
-                      onChange={(e) => updateCard(i, { mediaUrl: e.target.value })}
-                    />
                   </div>
-                  <BodyField
-                    value={card.bodyText}
-                    onChange={(value) => updateCard(i, { bodyText: value })}
-                    label={`Isi kartu ${i + 1}`}
-                    placeholder="Isi kartu..."
-                    maxLength={160}
-                    rows={2}
-                  />
-                  <ButtonsField
-                    buttons={card.buttons}
-                    onChange={(value) => updateCard(i, { buttons: value })}
-                    max={MAX_BUTTONS_PER_CARD}
-                    labelSuffix={` kartu ${i + 1}`}
-                  />
-                </div>
-              ))}
-              {cards.length < MAX_CARDS && (
-                <Button type="button" variant="outline" size="sm" onClick={addCard}>
-                  + Kartu
-                </Button>
-              )}
-            </div>
-          )}
+                ))}
+              </div>
+            )}
 
-          {isLto && (
-            <div className="space-y-3 rounded-lg border border-border p-3">
-              <Input
-                aria-label="Judul penawaran"
-                placeholder="Judul penawaran (maks. 16 karakter)"
-                value={offerTitle}
-                maxLength={16}
-                onChange={(e) => setOfferTitle(e.target.value)}
-              />
-              <div className="space-y-1.5">
-                <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Tombol (opsional)</h3>
+            {isTextOrAuth && (
+              <div className="space-y-2 rounded-md border border-line p-3">
+                <h3 className="text-sm font-medium text-ink">Tombol (opsional)</h3>
                 <ButtonsField buttons={buttons} onChange={setButtons} max={MAX_BUTTONS} />
               </div>
-            </div>
-          )}
+            )}
 
-          {isCoupon && (
-            <div className="grid gap-2 sm:grid-cols-2 rounded-lg border border-border p-3">
-              <Input
-                aria-label="Label tombol kupon"
-                placeholder="Label tombol (mis. Salin Kode)"
-                value={couponButtonText}
-                onChange={(e) => setCouponButtonText(e.target.value)}
-              />
-              <Input
-                aria-label="Contoh kode kupon"
-                placeholder="Contoh kode untuk pengajuan (mis. PROMO25)"
-                value={couponExampleCode}
-                onChange={(e) => setCouponExampleCode(e.target.value)}
-              />
-            </div>
-          )}
+            {isCarousel && (
+              <div className="space-y-3 rounded-md border border-line p-3">
+                <h3 className="text-sm font-medium text-ink">
+                  Kartu Carousel ({cards.length}/{MAX_CARDS})
+                </h3>
+                {cards.map((card, i) => (
+                  <div key={i} className="space-y-2 rounded-md border border-line bg-surface-sunken p-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-medium text-ink-muted">Kartu {i + 1}</span>
+                      {cards.length > 1 && (
+                        <IconButton
+                          size="sm"
+                          variant="destructive"
+                          label={`Hapus kartu ${i + 1}`}
+                          icon={<Trash2 />}
+                          onClick={() => removeCard(i)}
+                        />
+                      )}
+                    </div>
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      <Select
+                        aria-label={`Tipe media kartu ${i + 1}`}
+                        value={card.mediaType}
+                        onChange={(e) => updateCard(i, { mediaType: e.target.value as 'IMAGE' | 'VIDEO' })}
+                      >
+                        <option value="IMAGE">Gambar</option>
+                        <option value="VIDEO">Video</option>
+                      </Select>
+                      <Input
+                        aria-label={`URL media kartu ${i + 1}`}
+                        placeholder="URL gambar/video (https://...)"
+                        value={card.mediaUrl}
+                        onChange={(e) => updateCard(i, { mediaUrl: e.target.value })}
+                      />
+                    </div>
+                    <BodyField
+                      value={card.bodyText}
+                      onChange={(value) => updateCard(i, { bodyText: value })}
+                      label={`Isi kartu ${i + 1}`}
+                      placeholder="Isi kartu..."
+                      maxLength={160}
+                      rows={2}
+                    />
+                    <ButtonsField
+                      buttons={card.buttons}
+                      onChange={(value) => updateCard(i, { buttons: value })}
+                      max={MAX_BUTTONS_PER_CARD}
+                      labelSuffix={` kartu ${i + 1}`}
+                    />
+                  </div>
+                ))}
+                {cards.length < MAX_CARDS && (
+                  <Button type="button" variant="outline" size="sm" onClick={addCard}>
+                    + Kartu
+                  </Button>
+                )}
+              </div>
+            )}
 
-          <Button type="button" onClick={createTemplate} disabled={!name.trim() || !body.trim() || !formValid || submitting}>
-            {submitting ? 'Menyimpan...' : tab === 'OFFICIAL' ? 'Ajukan ke Meta' : 'Simpan Balasan Cepat'}
-          </Button>
-          {error && <p className="text-xs text-destructive">{error}</p>}
+            {isLto && (
+              <div className="space-y-3 rounded-md border border-line p-3">
+                <Input
+                  aria-label="Judul penawaran"
+                  placeholder="Judul penawaran (maks. 16 karakter)"
+                  value={offerTitle}
+                  maxLength={16}
+                  onChange={(e) => setOfferTitle(e.target.value)}
+                />
+                <div className="space-y-2">
+                  <h3 className="text-sm font-medium text-ink">Tombol (opsional)</h3>
+                  <ButtonsField buttons={buttons} onChange={setButtons} max={MAX_BUTTONS} />
+                </div>
+              </div>
+            )}
+
+            {isCoupon && (
+              <div className="grid gap-2 rounded-md border border-line p-3 sm:grid-cols-2">
+                <Input
+                  aria-label="Label tombol kupon"
+                  placeholder="Label tombol (mis. Salin Kode)"
+                  value={couponButtonText}
+                  onChange={(e) => setCouponButtonText(e.target.value)}
+                />
+                <Input
+                  aria-label="Contoh kode kupon"
+                  placeholder="Contoh kode untuk pengajuan (mis. PROMO25)"
+                  value={couponExampleCode}
+                  onChange={(e) => setCouponExampleCode(e.target.value)}
+                />
+              </div>
+            )}
+
+            {error && <p className="text-xs font-medium text-danger">{error}</p>}
+          </CardBody>
+          <div className="flex items-center justify-end border-t border-line px-4 py-3">
+            <Button type="button" onClick={createTemplate} disabled={!name.trim() || !body.trim() || !formValid || submitting}>
+              {submitting ? 'Menyimpan...' : tab === 'OFFICIAL' ? 'Ajukan ke Meta' : 'Simpan Balasan Cepat'}
+            </Button>
+          </div>
         </Card>
 
-        <div className="lg:sticky lg:top-4 lg:self-start" data-testid="template-preview">
-          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Preview</p>
+        <div className="space-y-2 lg:sticky lg:top-4 lg:self-start" data-testid="template-preview">
+          <h2 className="text-sm font-semibold text-ink">Preview</h2>
           <TemplatePreviewBubble template={previewData} />
         </div>
       </div>
 
-      <Card className="p-4">
+      <section className="space-y-2">
+        <h2 className="text-sm font-semibold text-ink">
+          {tab === 'OFFICIAL' ? 'Template resmi tersimpan' : 'Balasan cepat tersimpan'}
+        </h2>
         {loading ? (
-          <p className="text-sm text-muted-foreground">Memuat...</p>
+          <div
+            role="status"
+            aria-label="Memuat daftar template"
+            className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3"
+          >
+            {[0, 1, 2].map((i) => (
+              <div key={i} className="space-y-2 rounded-lg border border-line bg-surface p-2">
+                <Skeleton className="h-24 w-full rounded-md" />
+                <Skeleton className="h-3 w-20" />
+              </div>
+            ))}
+          </div>
         ) : (
-          <TemplateGrid templates={filtered} showStatus={tab === 'OFFICIAL'} onDelete={deleteTemplate} />
+          <div className="rounded-lg border border-line bg-surface p-3">
+            <TemplateGrid templates={filtered} showStatus={tab === 'OFFICIAL'} onDelete={deleteTemplate} />
+          </div>
         )}
-      </Card>
+      </section>
     </main>
   )
 }

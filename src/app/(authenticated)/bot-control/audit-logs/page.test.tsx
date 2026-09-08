@@ -5,8 +5,8 @@ import AuditLogsPage from './page'
 /**
  * The page survived the narrowing; what it shows did not.
  *
- * A row is now five things — when, who, what action, which entity, why — and these tests pin
- * that shape from the reader's side, where the actual promise lives. The negative assertions
+ * A row is now five things — when, who, what action, which entity, why — one per column of one
+ * table, and these tests pin that shape from the reader's side, where the actual promise lives. The negative assertions
  * matter as much as the positive ones: a re-added diff pane would quietly put configuration
  * values back on a screen the retention policy no longer expects to hold any.
  */
@@ -52,9 +52,9 @@ describe('AuditLogsPage', () => {
     mockFetch()
     render(<AuditLogsPage />)
 
-    await screen.findByRole('list')
-    // Scoped to the timeline: KNOWLEDGE also appears as an option in the entity-type filter.
-    const timeline = within(screen.getByRole('list'))
+    await screen.findByRole('table')
+    // Scoped to the table: KNOWLEDGE also appears as an option in the entity-type filter.
+    const timeline = within(screen.getByRole('table'))
 
     expect(timeline.getByText('PUBLISH')).toBeInTheDocument()
     expect(timeline.getByText('KNOWLEDGE')).toBeInTheDocument()
@@ -103,7 +103,7 @@ describe('AuditLogsPage', () => {
     mockFetch([{ ...rows[0], before: { accessToken: 'EAAGrahasia' }, after: { accessToken: 'EAAGbaru' } }])
     render(<AuditLogsPage />)
 
-    await screen.findByRole('list')
+    await screen.findByRole('table')
     expect(screen.queryByText(/EAAG/)).not.toBeInTheDocument()
     expect(screen.queryByText(/Sebelum/)).not.toBeInTheDocument()
     expect(screen.queryByText(/Sesudah/)).not.toBeInTheDocument()

@@ -1,9 +1,9 @@
 'use client'
 import { useEffect, useState } from 'react'
-import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
+import { Skeleton } from '@/components/ui/skeleton'
 import { fetchJson } from '@/lib/fetch-json'
 
 export type Consent = { optOut: boolean; source: string | null; note: string | null; updatedAt: string }
@@ -54,14 +54,17 @@ export function ConsentSection({ contactId }: { contactId: string }) {
   }
 
   return (
-    <div className="space-y-2">
-      <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Consent Campaign</h3>
-      <Card className="space-y-3 p-3">
+    <section className="space-y-2">
+      <h2 className="text-sm font-semibold text-ink">Consent campaign</h2>
+      <div className="space-y-3 rounded-lg border border-line bg-surface p-3">
         {!loaded ? (
-          <p className="text-sm text-muted-foreground">Memuat...</p>
+          <div role="status" aria-label="Memuat status consent" className="space-y-2">
+            <Skeleton className="h-5 w-40" />
+            <Skeleton className="h-3 w-full" />
+          </div>
         ) : (
           <>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               {consent === null ? (
                 <Badge variant="muted">Belum pernah ditanyakan</Badge>
               ) : consent.optOut ? (
@@ -70,15 +73,15 @@ export function ConsentSection({ contactId }: { contactId: string }) {
                 <Badge variant="success">Boleh menerima campaign</Badge>
               )}
               {consent && (
-                <span className="text-xs text-muted-foreground">
-                  Diperbarui {new Date(consent.updatedAt).toLocaleString('id-ID')}
+                <span className="text-xs text-ink-muted">
+                  Diperbarui <time dateTime={consent.updatedAt}>{new Date(consent.updatedAt).toLocaleString('id-ID')}</time>
                 </span>
               )}
             </div>
 
             {/* Said plainly, because the difference decides whether a send is blocked or merely
                 flagged, and an agent needs to know before they click. */}
-            <p className="text-xs text-muted-foreground">
+            <p className="text-xs text-ink-muted">
               Opt-out memblokir campaign ke kontak ini. Balasan 1:1 tetap dikirim, tetapi diberi peringatan agar
               tidak dipakai untuk promosi.
             </p>
@@ -91,9 +94,9 @@ export function ConsentSection({ contactId }: { contactId: string }) {
               rows={2}
             />
 
-            {error && <p className="text-xs text-destructive">{error}</p>}
+            {error && <p className="text-xs font-medium text-danger">{error}</p>}
 
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <Button type="button" variant="outline" size="sm" disabled={saving} onClick={() => save(true)}>
                 Tandai opt-out
               </Button>
@@ -103,7 +106,7 @@ export function ConsentSection({ contactId }: { contactId: string }) {
             </div>
           </>
         )}
-      </Card>
-    </div>
+      </div>
+    </section>
   )
 }

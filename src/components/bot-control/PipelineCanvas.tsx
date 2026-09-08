@@ -56,20 +56,26 @@ export const STEP_STATUS_LABEL: Record<PipelineStepStatus, string> = {
 }
 
 const STEP_STATUS_CLASS: Record<PipelineStepStatus, string> = {
-  mulai: 'border-brand bg-brand/5 text-brand',
-  selesai: 'border-emerald-300 bg-emerald-50 text-emerald-700',
-  dilewati: 'border-slate-300 bg-slate-50 text-slate-500',
-  berhenti: 'border-amber-300 bg-amber-50 text-amber-700',
-  gagal: 'border-red-300 bg-red-50 text-red-700',
+  mulai: 'border-accent bg-accent-subtle text-accent',
+  selesai: 'border-success/35 bg-success-subtle text-success',
+  dilewati: 'border-line-strong bg-surface-sunken text-ink-subtle',
+  berhenti: 'border-warning/35 bg-warning-subtle text-warning',
+  gagal: 'border-danger/35 bg-danger-subtle text-danger',
 }
 
 /**
  * Warna per run yang sedang berjalan. Warnanya SELALU disertai teks (nama kontak / potongan id),
  * tidak pernah menjadi satu-satunya pembeda: dua run yang hanya dibedakan oleh warna adalah dua
  * run yang tidak terbaca oleh siapa pun yang tidak membedakan warna itu.
+ *
+ * Tiga slot terakhir adalah satu-satunya warna di halaman Bot Control yang tidak datang dari
+ * token sistem desain, dan itu disengaja: sistemnya hanya punya satu aksen dan tiga warna
+ * semantik, sedangkan di sini yang dibutuhkan justru empat rona yang tidak berarti apa-apa —
+ * memakai `success`/`warning`/`danger` untuk membedakan run akan membuat run kedua terbaca
+ * seperti peringatan dan run keempat seperti kegagalan.
  */
 export const RUN_COLOR_CLASSES = [
-  'border-brand/40 bg-brand/10 text-brand',
+  'border-accent/40 bg-accent-subtle text-accent',
   'border-violet-300 bg-violet-50 text-violet-700',
   'border-teal-300 bg-teal-50 text-teal-700',
   'border-orange-300 bg-orange-50 text-orange-700',
@@ -151,7 +157,7 @@ export function PipelineCanvas({ replayStatuses, liveMarkers, selectedStepId, on
         Kontainer inilah yang menggulir. `overflow-x-auto` di sini + lebar tetap pada anaknya =
         halaman tidak pernah ikut melebar, berapa pun panjang alurnya.
       */}
-      <div className="overflow-x-auto rounded-lg border border-border bg-slate-50/60" data-pipeline-scroll>
+      <div className="overflow-x-auto rounded-lg border border-line bg-canvas" data-pipeline-scroll>
         <div className="relative" style={{ width: CANVAS_WIDTH, height: CANVAS_HEIGHT }} data-pipeline-canvas>
           <svg
             className="pointer-events-none absolute inset-0"
@@ -165,10 +171,10 @@ export function PipelineCanvas({ replayStatuses, liveMarkers, selectedStepId, on
           >
             <defs>
               <marker id="pipeline-arrow-main" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
-                <path d="M 0 0 L 8 4 L 0 8 z" className="fill-slate-400" />
+                <path d="M 0 0 L 8 4 L 0 8 z" className="fill-ink-subtle" />
               </marker>
               <marker id="pipeline-arrow-branch" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
-                <path d="M 0 0 L 8 4 L 0 8 z" className="fill-amber-400" />
+                <path d="M 0 0 L 8 4 L 0 8 z" className="fill-warning" />
               </marker>
             </defs>
             {edges.map((edge) => {
@@ -183,7 +189,7 @@ export function PipelineCanvas({ replayStatuses, liveMarkers, selectedStepId, on
                   fill="none"
                   strokeWidth={main ? 2 : 1.5}
                   strokeDasharray={main ? undefined : '5 4'}
-                  className={main ? 'stroke-slate-400' : 'stroke-amber-400'}
+                  className={main ? 'stroke-ink-subtle' : 'stroke-warning'}
                   markerEnd={`url(#pipeline-arrow-${main ? 'main' : 'branch'})`}
                   data-edge={`${edge.from}->${edge.to}`}
                   data-edge-kind={main ? 'utama' : 'cabang'}
@@ -217,20 +223,18 @@ export function PipelineCanvas({ replayStatuses, liveMarkers, selectedStepId, on
                   // globals.css Tahap 1A, jadi kelas itu sudah tidak menghasilkan apa pun —
                   // ia hanya berbohong tentang adanya kedalaman. Kotaknya dipisahkan oleh
                   // border-nya sendiri, seperti seluruh permukaan lain di aplikasi ini.
-                  'absolute flex flex-col items-start gap-1 rounded-lg border bg-white p-2 text-left transition-colors',
+                  'absolute flex flex-col items-start gap-1 rounded-md border bg-surface p-2 text-left transition-colors',
                   'focus-ring',
-                  status ? STEP_STATUS_CLASS[status] : 'border-border text-foreground hover:bg-muted',
+                  status ? STEP_STATUS_CLASS[status] : 'border-line text-ink hover:bg-surface-sunken',
                   // Node yang sedang ditempati run live diberi cincin, BUKAN warna latar: warna
                   // latar sudah dipakai status jalur terpilih, dan dua arti pada satu properti
                   // yang sama membuat keduanya tidak terbaca.
-                  markers.length > 0 && 'ring-2 ring-brand/40',
-                  selected && 'ring-2 ring-navy'
+                  markers.length > 0 && 'ring-2 ring-accent/40',
+                  selected && 'ring-2 ring-ink'
                 )}
               >
-                <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-                  {index + 1}
-                </span>
-                <span className="text-xs font-semibold leading-tight">{step.label}</span>
+                <span className="font-mono text-[10px] font-medium text-ink-subtle">{index + 1}</span>
+                <span className="text-xs leading-tight font-semibold">{step.label}</span>
                 {status && <span className="text-[10px] font-medium">{STEP_STATUS_LABEL[status]}</span>}
                 {markers.length > 0 && (
                   <span className="flex flex-wrap gap-1">
@@ -239,7 +243,7 @@ export function PipelineCanvas({ replayStatuses, liveMarkers, selectedStepId, on
                         key={marker.runId}
                         data-live-run={marker.runId}
                         className={cn(
-                          'rounded border px-1 py-px text-[10px] font-medium',
+                          'rounded-sm border px-1 py-px text-[10px] font-medium',
                           RUN_COLOR_CLASSES[marker.colorIndex % RUN_COLOR_CLASSES.length]
                         )}
                       >
@@ -254,12 +258,12 @@ export function PipelineCanvas({ replayStatuses, liveMarkers, selectedStepId, on
         </div>
       </div>
 
-      <p className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-muted-foreground">
+      <p className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-ink-muted">
         <span className="flex items-center gap-1">
-          <span className="inline-block h-0.5 w-6 bg-slate-400" /> jalur utama
+          <span className="inline-block h-0.5 w-6 bg-ink-subtle" /> jalur utama
         </span>
         <span className="flex items-center gap-1">
-          <span className="inline-block h-0.5 w-6 border-t-2 border-dashed border-amber-400" /> cabang (eskalasi,
+          <span className="inline-block h-0.5 w-6 border-t-2 border-dashed border-warning" /> cabang (eskalasi,
           booking ditemukan, clarify, jalan pulang dari handoff)
         </span>
         <span>Klik satu step untuk melihat sub-langkah dan letaknya di kode.</span>

@@ -1,7 +1,9 @@
 'use client'
+import { X } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
 import { Button } from '@/components/ui/button'
+import { IconButton } from '@/components/ui/icon-button'
 
 export type ButtonType = 'QUICK_REPLY' | 'URL' | 'PHONE_NUMBER'
 export type ButtonDraft = { type: ButtonType; text: string; url: string; phoneNumber: string }
@@ -71,14 +73,13 @@ export function ButtonsField({
               onChange={(e) => update(i, { phoneNumber: e.target.value })}
             />
           )}
-          <button
-            type="button"
-            aria-label={`Hapus tombol ${i + 1}${labelSuffix}`}
+          <IconButton
+            size="sm"
+            variant="destructive"
+            label={`Hapus tombol ${i + 1}${labelSuffix}`}
+            icon={<X />}
             onClick={() => remove(i)}
-            className="shrink-0 text-muted-foreground hover:text-destructive"
-          >
-            ✕
-          </button>
+          />
         </div>
       ))}
       {buttons.length < max && (

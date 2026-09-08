@@ -115,11 +115,11 @@ describe('ContactTable filters', () => {
     mockFetch([])
     render(<ContactTable />)
 
-    expect(await screen.findByText('Belum ada kontak.')).toBeInTheDocument()
+    expect(await screen.findByText('Belum ada kontak')).toBeInTheDocument()
 
     fireEvent.change(screen.getByLabelText('Filter tahap pipeline'), { target: { value: 'lunas' } })
 
-    expect(await screen.findByText('Tidak ada kontak untuk filter ini.')).toBeInTheDocument()
+    expect(await screen.findByText('Tidak ada kontak untuk filter ini')).toBeInTheDocument()
   })
 
   it('keeps the table usable when the label list fails to load', async () => {

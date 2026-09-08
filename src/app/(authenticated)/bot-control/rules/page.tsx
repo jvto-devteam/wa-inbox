@@ -1,7 +1,6 @@
 'use client'
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
-import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
 import { RuleRegistryTable, type RuleRow } from '@/components/bot-control/RuleRegistryTable'
@@ -72,7 +71,7 @@ export default function RulesRegistryPage() {
   }, [rules, query, category])
 
   return (
-    <main className="mx-auto max-w-6xl space-y-4 p-6">
+    <main className="mx-auto max-w-6xl space-y-5 p-6">
       <PageHeader
         title="Rules Registry"
         description={
@@ -118,9 +117,7 @@ export default function RulesRegistryPage() {
         </Select>
       </div>
 
-      <Card className="p-3">
-        <RuleRegistryTable rules={visible} />
-      </Card>
+      <RuleRegistryTable rules={visible} />
     </main>
   )
 }

@@ -59,8 +59,11 @@ describe('CatalogEntryPanel', () => {
   it('distinguishes loading, empty and failed instead of collapsing them to "nothing found"', () => {
     // A failure rendered as "no results" would have an operator conclude the bot knows nothing
     // about a topic when in fact the read never completed.
-    const { rerender } = render(<CatalogEntryPanel entries={[]} total={0} loading error={null} />)
-    expect(screen.getByText('Memuat isi katalog...')).toBeInTheDocument()
+    const { container, rerender } = render(<CatalogEntryPanel entries={[]} total={0} loading error={null} />)
+    // Keadaan memuat digambar sebagai skeleton sejak Tahap 1B, bukan kalimat "Memuat...".
+    // Janjinya tidak berubah: memuat tidak boleh terbaca sebagai "tidak ada hasil".
+    expect(container.querySelectorAll('[role="presentation"]').length).toBeGreaterThan(0)
+    expect(screen.queryByText('Tidak ada isi katalog yang cocok.')).toBeNull()
 
     rerender(<CatalogEntryPanel entries={[]} total={0} loading={false} error={null} />)
     expect(screen.getByText('Tidak ada isi katalog yang cocok.')).toBeInTheDocument()

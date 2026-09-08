@@ -1,6 +1,5 @@
 'use client'
 import { useCallback, useEffect, useState } from 'react'
-import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
 import { Button } from '@/components/ui/button'
@@ -15,6 +14,7 @@ import { KnowledgeRevisionPanel, type RevisionRow } from '@/components/bot-contr
 import type { KnowledgeItem } from '@/lib/bot-control/knowledge-body'
 import { hasAdminPowers } from '@/lib/bot-control/permissions'
 import type { AccountRoleName } from '@/lib/auth/session'
+import { Skeleton } from '@/components/ui/skeleton'
 import { fetchJson } from '@/lib/fetch-json'
 import { PageHeader } from '@/components/ui/page-header'
 
@@ -272,7 +272,7 @@ export default function KnowledgeExplorerPage() {
   }
 
   return (
-    <main className="mx-auto max-w-6xl space-y-6 p-6">
+    <main className="mx-auto max-w-6xl space-y-5 p-6">
       <PageHeader
         title="Knowledge Explorer"
         description={
@@ -283,10 +283,10 @@ export default function KnowledgeExplorerPage() {
         }
       />
 
-      <section className="space-y-2">
-        <div className="space-y-1">
-          <h2 className="text-sm font-semibold text-navy">Isi katalog</h2>
-          <p className="text-xs text-muted-foreground">
+      <section className="space-y-3 border-t border-line pt-5">
+        <div className="space-y-0.5">
+          <h2 className="text-base font-semibold text-ink">Isi katalog</h2>
+          <p className="max-w-3xl text-sm text-ink-muted">
             Dibaca langsung dari file di <span className="font-mono">catalog/</span> setiap kali halaman ini dibuka —
             persis file yang dibaca bot. Tidak ada langkah sinkronisasi: mengubah filenya langsung terlihat di sini.
             {syncedAt && ` File terakhir disinkronkan dari agent-runtime: ${new Date(syncedAt).toLocaleString('id-ID')}.`}
@@ -319,10 +319,10 @@ export default function KnowledgeExplorerPage() {
         <CatalogEntryPanel entries={entries} total={entryTotal} loading={catalogLoading} error={catalogError} />
       </section>
 
-      <section className="space-y-2">
-        <div className="space-y-1">
-          <h2 className="text-sm font-semibold text-navy">Knowledge terkelola</h2>
-          <p className="text-xs text-muted-foreground">
+      <section className="space-y-3 border-t border-line pt-5">
+        <div className="space-y-0.5">
+          <h2 className="text-base font-semibold text-ink">Knowledge terkelola</h2>
+          <p className="max-w-3xl text-sm text-ink-muted">
             Jawaban yang ditulis operator dan dibaca bot berdampingan dengan katalog. Disimpan sebagai draft dulu; bot
             baru memakainya setelah diaktifkan.
           </p>
@@ -353,15 +353,23 @@ export default function KnowledgeExplorerPage() {
           </div>
         </div>
 
-        {actionError && <p className="text-sm text-destructive">{actionError}</p>}
+        {actionError && <p className="text-base text-danger">{actionError}</p>}
+        {sourcesError && <p className="text-base text-danger">{sourcesError}</p>}
 
-        <Card className="p-0">
-          {sourcesLoading && <p className="p-3 text-sm text-muted-foreground">Memuat knowledge terkelola...</p>}
-          {sourcesError && <p className="p-3 text-sm text-destructive">{sourcesError}</p>}
-          {!sourcesLoading && !sourcesError && (
-            <KnowledgeSourceTable sources={sources} canEdit={hasAdminPowers(role)} onAction={handleAction} />
-          )}
-        </Card>
+        {sourcesLoading && (
+          <div aria-hidden="true">
+            {Array.from({ length: 4 }, (_, i) => (
+              <div key={i} className="flex h-9 items-center gap-3 border-b border-line">
+                <Skeleton className="h-3 w-2/5" />
+                <Skeleton className="h-3 w-20" />
+                <Skeleton className="h-3 w-24" />
+              </div>
+            ))}
+          </div>
+        )}
+        {!sourcesLoading && !sourcesError && (
+          <KnowledgeSourceTable sources={sources} canEdit={hasAdminPowers(role)} onAction={handleAction} />
+        )}
       </section>
 
       {editing && (

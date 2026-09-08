@@ -1,8 +1,9 @@
 'use client'
 import { useState } from 'react'
 import Link from 'next/link'
-import { Card } from '@/components/ui/card'
+import { Card, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+import { cn } from '@/lib/utils'
 import { FlowStepList } from '@/components/bot-control/FlowStepList'
 import { FLOW_NODE_TYPE_LABEL } from '@/components/bot-control/FlowStepCard'
 import {
@@ -26,6 +27,16 @@ import { PageHeader } from '@/components/ui/page-header'
  * edited on /chatbot with the same save-and-it-is-live pattern as the bot on/off switch. What
  * is left is the part that was always worth having: documentation of what the bot actually does.
  */
+/** Satu blok berlabel di panel detail. Label kalimat biasa, bukan ALL-CAPS. */
+function DetailBlock({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="space-y-1 px-4 py-3">
+      <p className="text-xs font-medium text-ink-subtle">{label}</p>
+      {children}
+    </div>
+  )
+}
+
 export default function FlowMapPage() {
   const [activeKey, setActiveKey] = useState<string>(EXISTING_FLOWS[0]?.key ?? '')
   const flow: ExistingFlowDefinition | null = EXISTING_FLOWS.find((f) => f.key === activeKey) ?? null
@@ -60,93 +71,97 @@ export default function FlowMapPage() {
       />
 
       <div className="grid gap-4 lg:grid-cols-[minmax(0,14rem)_minmax(0,1fr)_minmax(0,20rem)]">
-        <Card className="h-fit space-y-2 p-3">
-          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Flow</p>
-          {EXISTING_FLOWS.map((f) => (
-            <button
-              key={f.key}
-              type="button"
-              onClick={() => selectFlow(f.key)}
-              aria-pressed={f.key === activeKey}
-              className={`w-full rounded-lg border p-2 text-left text-sm ${
-                f.key === activeKey ? 'border-brand bg-brand/5 font-medium text-navy' : 'border-border hover:bg-muted/50'
-              }`}
-            >
-              {f.name}
-              <span className="block text-xs text-muted-foreground">
-                v{f.version} &middot; {f.nodes.length} langkah
-              </span>
-            </button>
-          ))}
+        <Card className="h-fit">
+          <CardHeader>
+            <CardTitle className="text-sm">Flow</CardTitle>
+          </CardHeader>
+          <div className="p-2">
+            {EXISTING_FLOWS.map((f) => (
+              <button
+                key={f.key}
+                type="button"
+                onClick={() => selectFlow(f.key)}
+                aria-pressed={f.key === activeKey}
+                className={cn(
+                  'focus-ring w-full rounded-md px-2 py-1.5 text-left text-base transition-colors',
+                  f.key === activeKey
+                    ? 'bg-accent-subtle font-medium text-accent'
+                    : 'text-ink hover:bg-surface-sunken'
+                )}
+              >
+                {f.name}
+                <span className="block text-xs text-ink-muted tabular-nums">
+                  v{f.version} &middot; {f.nodes.length} langkah
+                </span>
+              </button>
+            ))}
+          </div>
         </Card>
 
-        <Card className="p-3">
+        <Card className="p-2">
           {flow ? (
             <FlowStepList nodes={flow.nodes} selectedId={selectedNodeId} onSelect={setSelectedNodeId} />
           ) : (
-            <p className="text-sm text-muted-foreground">Pilih flow untuk melihat langkahnya.</p>
+            <p className="p-2 text-base text-ink-muted">Pilih flow untuk melihat langkahnya.</p>
           )}
         </Card>
 
-        <Card className="h-fit space-y-3 p-4">
+        <Card className="h-fit">
           {selectedNode ? (
             <>
-              <div>
-                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Langkah</p>
-                <p className="text-sm font-semibold text-navy">{selectedNode.name}</p>
-                <Badge variant="muted" className="mt-1">{FLOW_NODE_TYPE_LABEL[selectedNode.type]}</Badge>
-              </div>
+              <CardHeader className="flex-col items-start gap-1">
+                <CardTitle className="text-sm">{selectedNode.name}</CardTitle>
+                <Badge variant="muted">{FLOW_NODE_TYPE_LABEL[selectedNode.type]}</Badge>
+              </CardHeader>
 
-              <p className="text-sm text-foreground">{selectedNode.description}</p>
+              <div className="divide-y divide-line">
+                <p className="px-4 py-3 text-base text-ink">{selectedNode.description}</p>
 
-              <div>
-                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Sumber kode</p>
-                <p className="font-mono text-xs break-all text-foreground">{selectedNode.sourceFile}</p>
-                {selectedNode.sourceRef && (
-                  <p className="font-mono text-xs text-muted-foreground">{selectedNode.sourceRef}()</p>
+                <DetailBlock label="Sumber kode">
+                  <p className="font-mono text-xs break-all text-ink">{selectedNode.sourceFile}</p>
+                  {selectedNode.sourceRef && (
+                    <p className="font-mono text-xs text-ink-muted">{selectedNode.sourceRef}()</p>
+                  )}
+                </DetailBlock>
+
+                <DetailBlock label="Kemungkinan hasil">
+                  <ul className="list-disc space-y-0.5 pl-4 text-sm text-ink">
+                    {selectedNode.possibleOutputs.map((output) => (
+                      <li key={output}>{output}</li>
+                    ))}
+                  </ul>
+                </DetailBlock>
+
+                {outgoingEdges.length > 0 && (
+                  <DetailBlock label="Lanjut ke">
+                    <ul className="space-y-0.5 text-sm text-ink">
+                      {outgoingEdges.map((edge) => (
+                        <li key={`${edge.from}-${edge.to}-${edge.condition ?? ''}`}>
+                          <span className="font-mono text-xs">{edge.to}</span>
+                          {edge.condition && <span className="text-ink-muted"> — {edge.condition}</span>}
+                        </li>
+                      ))}
+                    </ul>
+                  </DetailBlock>
+                )}
+
+                {selectedNode.relatedRuleKeys && selectedNode.relatedRuleKeys.length > 0 && (
+                  <DetailBlock label="Aturan terkait">
+                    <ul className="space-y-0.5 text-sm">
+                      {selectedNode.relatedRuleKeys.map((key) => (
+                        <li key={key}>
+                          <Link href="/bot-control/rules" className="focus-ring rounded-sm text-accent hover:underline">
+                            {getBotRule(key)?.name ?? key}
+                          </Link>
+                        </li>
+                      ))}
+                    </ul>
+                  </DetailBlock>
                 )}
               </div>
-
-              <div>
-                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Kemungkinan hasil</p>
-                <ul className="mt-1 list-disc space-y-0.5 pl-4 text-xs text-foreground">
-                  {selectedNode.possibleOutputs.map((output) => (
-                    <li key={output}>{output}</li>
-                  ))}
-                </ul>
-              </div>
-
-              {outgoingEdges.length > 0 && (
-                <div>
-                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Lanjut ke</p>
-                  <ul className="mt-1 space-y-0.5 text-xs text-foreground">
-                    {outgoingEdges.map((edge) => (
-                      <li key={`${edge.from}-${edge.to}-${edge.condition ?? ''}`}>
-                        <span className="font-mono">{edge.to}</span>
-                        {edge.condition && <span className="text-muted-foreground"> — {edge.condition}</span>}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-
-              {selectedNode.relatedRuleKeys && selectedNode.relatedRuleKeys.length > 0 && (
-                <div>
-                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Aturan terkait</p>
-                  <ul className="mt-1 space-y-0.5 text-xs">
-                    {selectedNode.relatedRuleKeys.map((key) => (
-                      <li key={key}>
-                        <Link href="/bot-control/rules" className="text-brand hover:underline">
-                          {getBotRule(key)?.name ?? key}
-                        </Link>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
             </>
           ) : (
-            <p className="text-sm text-muted-foreground">Pilih satu langkah untuk melihat detailnya.</p>
+            <p className="p-4 text-base text-ink-muted">Pilih satu langkah untuk melihat detailnya.</p>
           )}
         </Card>
       </div>

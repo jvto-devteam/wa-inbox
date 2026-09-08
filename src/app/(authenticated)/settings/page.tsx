@@ -4,12 +4,13 @@ import Link from 'next/link'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
-import { Card } from '@/components/ui/card'
+import { Field, FieldError } from '@/components/ui/label'
 import { PageHeader } from '@/components/ui/page-header'
+import { Skeleton, SkeletonText } from '@/components/ui/skeleton'
+import { FormSection } from '@/components/settings/section'
 import { UserManagementSection } from '@/components/settings/UserManagementSection'
 import { WebhookCredentialsPanel } from '@/components/settings/WebhookCredentialsPanel'
 import { hasAdminPowers } from '@/lib/bot-control/permissions'
-import type { AccountRoleName } from '@/lib/auth/session'
 import { fetchJson } from '@/lib/fetch-json'
 import {
   SAFETY_BOUNDS,
@@ -25,6 +26,24 @@ type Settings = {
 const SAFETY_FIELDS = Object.keys(SAFETY_BOUNDS) as SafetyBoundKey[]
 type NumberStatus = { officialTokenValid: boolean; unofficialConfigured: boolean }
 type Role = 'ADMIN' | 'AGENT' | null
+
+/** Satu baris "kelola di halaman lain": apa isinya, lalu tautannya. */
+function LinkRow({ title, description, href, linkLabel }: { title: string; description: string; href: string; linkLabel: string }) {
+  return (
+    <div className="flex flex-wrap items-start justify-between gap-3 border-b border-line py-3 first:pt-0 last:border-b-0 last:pb-0">
+      <div className="min-w-0 max-w-xl space-y-1">
+        <p className="text-base font-medium text-ink">{title}</p>
+        <p className="text-sm text-ink-muted">{description}</p>
+      </div>
+      <Link
+        href={href}
+        className="focus-ring rounded-sm text-sm font-medium text-ink underline underline-offset-2 hover:text-ink-muted"
+      >
+        {linkLabel}
+      </Link>
+    </div>
+  )
+}
 
 // Bot-specific configuration (kill switch, working hours/auto-reply, LLM model, knowledge
 // base) lives on its own /chatbot page now, not here -- this page keeps only what isn't
@@ -42,7 +61,7 @@ export default function SettingsPage() {
   const [safetyNonce, setSafetyNonce] = useState(0)
 
   useEffect(() => {
-    // Each rejection is swallowed: the page renders "Memuat..." until both land, which
+    // Each rejection is swallowed: the page renders its skeleton until both land, which
     // is the correct resting state for a failure — feeding an `{ error }` body into these
     // typed states instead would render a Settings screen full of undefined values.
     fetchJson<Settings>('/api/settings').then(setSettings).catch(() => {})
@@ -92,101 +111,123 @@ export default function SettingsPage() {
     }
   }
 
-  if (!settings || !status) return <div className="p-6 text-sm text-muted-foreground">Memuat...</div>
+  if (!settings || !status) {
+    return (
+      <main aria-busy="true" className="mx-auto max-w-3xl p-6">
+        <Skeleton className="h-6 w-32" />
+        <div className="mt-8 flex flex-col gap-8">
+          <SkeletonText lines={3} />
+          <SkeletonText lines={3} />
+          <SkeletonText lines={4} />
+        </div>
+      </main>
+    )
+  }
+
+  const admin = hasAdminPowers(role)
 
   return (
-    <main className="mx-auto max-w-2xl space-y-8 p-6">
-      <PageHeader title="Pengaturan" />
+    <main className="mx-auto max-w-3xl p-6">
+      <PageHeader
+        title="Pengaturan"
+        description="Jalur kirim, kesehatan kedua nomor, pengaman outbound, dan akun tim. Setelan bot sendiri ada di halaman Chatbot."
+      />
 
-      <Card className="space-y-2 p-4">
-        <h2 className="font-medium text-navy">Default jalur kirim</h2>
-        <Select
-          value={settings.defaultChannel}
-          onChange={(e) => updateDefaultChannel(e.target.value as 'OFFICIAL' | 'UNOFFICIAL')}
-          className="w-auto"
-          disabled={!hasAdminPowers(role)}
+      <div className="mt-6 flex flex-col gap-8">
+        <FormSection
+          title="Default jalur kirim"
+          description="Jalur yang dipakai saat pesan keluar tidak menyebut jalurnya sendiri — campaign, balasan bot, dan kiriman dari Inbox."
         >
-          <option value="OFFICIAL">Official</option>
-          <option value="UNOFFICIAL">Unofficial</option>
-        </Select>
-      </Card>
+          <Field label="Jalur default" htmlFor="default-channel" className="max-w-xs">
+            <Select
+              id="default-channel"
+              value={settings.defaultChannel}
+              onChange={(e) => updateDefaultChannel(e.target.value as 'OFFICIAL' | 'UNOFFICIAL')}
+              className="w-full"
+              disabled={!admin}
+            >
+              <option value="OFFICIAL">Official</option>
+              <option value="UNOFFICIAL">Unofficial</option>
+            </Select>
+          </Field>
+        </FormSection>
 
-      <Card className="space-y-2 p-4">
-        <h2 className="font-medium text-navy">Status nomor</h2>
-        <div className="flex items-center gap-3">
-          <Badge variant={status.officialTokenValid ? 'success' : 'destructive'}>
-            Official: {status.officialTokenValid ? 'Valid' : 'Tidak valid'}
-          </Badge>
-          <Badge variant={status.unofficialConfigured ? 'success' : 'destructive'}>
-            Unofficial: {status.unofficialConfigured ? 'Terkonfigurasi' : 'Belum diatur'}
-          </Badge>
-        </div>
         {/* Unofficial is send-only -- its own connect/relink is managed on wa-dashboard directly,
             not from here (see src/lib/coexist/client.ts). */}
-      </Card>
-
-      {hasAdminPowers(role) && (
-        <Card className="space-y-3 p-4">
-          <div>
-            <h2 className="font-medium text-navy">Pengaman outbound</h2>
-            <p className="text-xs text-muted-foreground">
-              Angka-angka ini dibaca safety guard tepat sebelum sebuah pesan keluar. Batas bawahnya bukan hiasan: nol
-              pada batas campaign tidak melonggarkan limit, ia mematikan gerbangnya. Jeda provider darurat tidak ada di
-              sini — tombolnya di{' '}
-              <Link href="/bot-control/outbound-queue" className="text-brand hover:underline">
-                Outbound Queue
-              </Link>
-              , supaya menyimpan halaman ini tidak pernah bisa mengangkat jeda yang dipasang saat insiden.
-            </p>
+        <FormSection
+          title="Status nomor"
+          description="Kesehatan kedua nomor seperti yang dilihat aplikasi ini. Nomor Unofficial disambungkan dari wa-dashboard, bukan dari sini."
+        >
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge variant={status.officialTokenValid ? 'success' : 'destructive'}>
+              Official: {status.officialTokenValid ? 'Valid' : 'Tidak valid'}
+            </Badge>
+            <Badge variant={status.unofficialConfigured ? 'success' : 'destructive'}>
+              Unofficial: {status.unofficialConfigured ? 'Terkonfigurasi' : 'Belum diatur'}
+            </Badge>
           </div>
-          {SAFETY_FIELDS.map((field) => (
-            <label key={field} className="block space-y-1 text-sm">
-              <span className="text-xs text-muted-foreground">{SAFETY_FIELD_LABELS[field]}</span>
-              <Input
-                type="number"
-                min={SAFETY_BOUNDS[field].min}
-                max={SAFETY_BOUNDS[field].max}
-                defaultValue={settings[field]}
-                key={`${field}-${settings[field]}-${safetyNonce}`}
-                onBlur={(e) => updateSafetyField(field, e.target.value)}
-                aria-label={SAFETY_FIELD_LABELS[field]}
-                className="w-56"
-              />
-              <span className="block text-xs text-muted-foreground">
-                Antara {SAFETY_BOUNDS[field].min} dan {SAFETY_BOUNDS[field].max}.
-              </span>
-            </label>
-          ))}
-          {safetyError && <p className="text-sm text-destructive">{safetyError}</p>}
-        </Card>
-      )}
+        </FormSection>
 
-      {hasAdminPowers(role) && (
-        <Card className="space-y-1 p-4">
-          <h2 className="font-medium text-navy">Biaya percakapan</h2>
-          <p className="text-sm text-muted-foreground">
-            Histori biaya WhatsApp berdasarkan kategori percakapan (dari Meta).
-          </p>
-          <Link href="/settings/billing" className="text-sm text-brand hover:underline">
-            Lihat histori biaya
-          </Link>
-        </Card>
-      )}
+        {admin && (
+          <FormSection
+            title="Pengaman outbound"
+            description={
+              <>
+                Angka-angka ini dibaca safety guard tepat sebelum sebuah pesan keluar. Batas bawahnya bukan hiasan: nol
+                pada batas campaign tidak melonggarkan limit, ia mematikan gerbangnya. Setiap kotak disimpan saat kursor
+                meninggalkannya. Jeda provider darurat tidak ada di sini — tombolnya di{' '}
+                <Link href="/bot-control/outbound-queue" className="focus-ring rounded-sm underline underline-offset-2 hover:text-ink">
+                  Outbound Queue
+                </Link>
+                , supaya menyimpan halaman ini tidak pernah bisa mengangkat jeda yang dipasang saat insiden.
+              </>
+            }
+          >
+            <div className="grid gap-4 sm:grid-cols-2">
+              {SAFETY_FIELDS.map((field) => (
+                <Field
+                  key={field}
+                  label={SAFETY_FIELD_LABELS[field]}
+                  htmlFor={`safety-${field}`}
+                  hint={`Antara ${SAFETY_BOUNDS[field].min} dan ${SAFETY_BOUNDS[field].max}.`}
+                >
+                  <Input
+                    id={`safety-${field}`}
+                    type="number"
+                    min={SAFETY_BOUNDS[field].min}
+                    max={SAFETY_BOUNDS[field].max}
+                    defaultValue={settings[field]}
+                    key={`${field}-${settings[field]}-${safetyNonce}`}
+                    onBlur={(e) => updateSafetyField(field, e.target.value)}
+                    className="max-w-56 font-mono"
+                  />
+                </Field>
+              ))}
+            </div>
+            {safetyError && <FieldError className="mt-3 text-sm">{safetyError}</FieldError>}
+          </FormSection>
+        )}
 
-      {hasAdminPowers(role) && (
-        <Card className="space-y-1 p-4">
-          <h2 className="font-medium text-navy">Profil bisnis WhatsApp</h2>
-          <p className="text-sm text-muted-foreground">
-            Info bisnis yang dilihat pelanggan, status akun, dan pengaturan commerce (dari Meta).
-          </p>
-          <Link href="/settings/business-profile" className="text-sm text-brand hover:underline">
-            Kelola profil bisnis
-          </Link>
-        </Card>
-      )}
+        {admin && (
+          <FormSection title="Kelola di halaman lain" description="Data yang datang dari Meta, dibaca dan diubah di halamannya sendiri.">
+            <LinkRow
+              title="Biaya percakapan"
+              description="Histori biaya WhatsApp berdasarkan kategori percakapan (dari Meta)."
+              href="/settings/billing"
+              linkLabel="Lihat histori biaya"
+            />
+            <LinkRow
+              title="Profil bisnis WhatsApp"
+              description="Info bisnis yang dilihat pelanggan, status akun, dan pengaturan commerce (dari Meta)."
+              href="/settings/business-profile"
+              linkLabel="Kelola profil bisnis"
+            />
+          </FormSection>
+        )}
 
-      {hasAdminPowers(role) && <UserManagementSection />}
-      {hasAdminPowers(role) && <WebhookCredentialsPanel />}
+        {admin && <UserManagementSection />}
+        {admin && <WebhookCredentialsPanel />}
+      </div>
     </main>
   )
 }

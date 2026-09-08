@@ -27,12 +27,12 @@ describe('UserManagementSection', () => {
     expect(screen.queryByText(/passwordHash/i)).not.toBeInTheDocument()
   })
 
-  it('disables "Tambah Akun" until name, email, and password are filled', async () => {
+  it('disables "Tambah akun" until name, email, and password are filled', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve([]) }))
     render(<UserManagementSection />)
     await waitFor(() => expect(fetch).toHaveBeenCalledWith('/api/accounts'))
 
-    const button = screen.getByRole('button', { name: 'Tambah Akun' })
+    const button = screen.getByRole('button', { name: 'Tambah akun' })
     expect(button).toBeDisabled()
 
     fireEvent.change(screen.getByLabelText('Nama'), { target: { value: 'Agen Baru' } })
@@ -61,7 +61,7 @@ describe('UserManagementSection', () => {
     fireEvent.change(screen.getByLabelText('Nama'), { target: { value: 'Agen Baru' } })
     fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'agenbaru@jvto.com' } })
     fireEvent.change(screen.getByLabelText('Kata sandi'), { target: { value: 'Rahasia123' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Tambah Akun' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Tambah akun' }))
 
     expect(screen.queryByText('agenbaru@jvto.com')).not.toBeInTheDocument()
 
@@ -84,18 +84,18 @@ describe('UserManagementSection', () => {
     fireEvent.change(screen.getByLabelText('Nama'), { target: { value: 'Agen Baru' } })
     fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'agenbaru@jvto.com' } })
     fireEvent.change(screen.getByLabelText('Kata sandi'), { target: { value: 'Rahasia123' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Tambah Akun' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Tambah akun' }))
 
     await waitFor(() => expect(screen.getByText('Data akun tidak valid')).toBeInTheDocument())
   })
 
-  it('prompts for a new password and PATCHes it on "Reset Kata Sandi"', async () => {
+  it('prompts for a new password and PATCHes it on "Reset kata sandi"', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve(accounts) }))
     vi.stubGlobal('prompt', vi.fn().mockReturnValue('NewPass123'))
     render(<UserManagementSection />)
     await screen.findByText('Rina')
 
-    fireEvent.click(screen.getAllByRole('button', { name: 'Reset Kata Sandi' })[0])
+    fireEvent.click(screen.getAllByRole('button', { name: 'Reset kata sandi' })[0])
 
     await waitFor(() =>
       expect(fetch).toHaveBeenCalledWith('/api/accounts/acc_1', {
@@ -111,7 +111,7 @@ describe('UserManagementSection', () => {
     render(<UserManagementSection />)
     await screen.findByText('Rina')
 
-    fireEvent.click(screen.getAllByRole('button', { name: 'Reset Kata Sandi' })[0])
+    fireEvent.click(screen.getAllByRole('button', { name: 'Reset kata sandi' })[0])
 
     await new Promise((r) => setTimeout(r, 0))
     expect(fetch).not.toHaveBeenCalledWith(expect.stringContaining('/api/accounts/acc_1'), expect.objectContaining({ method: 'PATCH' }))

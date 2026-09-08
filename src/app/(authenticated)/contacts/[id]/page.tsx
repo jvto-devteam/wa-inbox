@@ -1,6 +1,5 @@
 import { notFound } from 'next/navigation'
 import { prisma } from '@/lib/db'
-import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { ContactAvatar } from '@/components/ContactAvatar'
 import { BookingSummary, type BookingData, type TripBrief } from '@/components/contacts/BookingSummary'
@@ -44,7 +43,7 @@ export default async function ContactDetailPage({ params }: { params: Promise<{ 
   const messages = conversation?.messages ?? []
 
   return (
-    <main className="mx-auto max-w-3xl space-y-4 p-6">
+    <main className="mx-auto max-w-3xl space-y-5 p-6">
       <PageHeader
         backHref="/contacts"
         backLabel="Kembali ke Kontak"
@@ -52,7 +51,7 @@ export default async function ContactDetailPage({ params }: { params: Promise<{ 
         title={contact.name ?? contact.phone}
         description={
           <>
-            {contact.phone}
+            <span className="font-mono">{contact.phone}</span>
             {contact.source && ` · ${contact.source}`}
           </>
         }
@@ -75,10 +74,12 @@ export default async function ContactDetailPage({ params }: { params: Promise<{ 
           initialLabels={attachedLabels}
         />
       ) : (
-        <div className="space-y-2">
-          <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Label</h3>
-          <p className="text-sm text-muted-foreground">Percakapan belum dibuat untuk kontak ini.</p>
-        </div>
+        <section className="space-y-1">
+          <h2 className="text-sm font-semibold text-ink">Label</h2>
+          <p className="text-sm text-ink-muted">
+            Label baru bisa dipasang setelah kontak ini mengirim pesan pertamanya.
+          </p>
+        </section>
       )}
 
       <ConsentSection contactId={contact.id} />
@@ -87,27 +88,28 @@ export default async function ContactDetailPage({ params }: { params: Promise<{ 
 
       <NotesSection contactId={contact.id} />
 
-      <div className="space-y-2">
-        <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Riwayat Pesan</h3>
-        <Card className="max-h-96 space-y-2 overflow-y-auto p-3">
+      <section className="space-y-2">
+        <h2 className="text-sm font-semibold text-ink">Riwayat pesan</h2>
+        <div className="max-h-96 overflow-y-auto overflow-x-hidden rounded-lg border border-line bg-surface">
           {messages.length === 0 ? (
-            <p className="text-sm text-muted-foreground">Belum ada pesan.</p>
+            <p className="px-3 py-4 text-sm text-ink-muted">Belum ada pesan dengan kontak ini.</p>
           ) : (
-            <ul className="space-y-2">
+            <ul>
               {messages.map((m) => (
-                <li key={m.id} className="space-y-0.5 border-b border-border pb-2 last:border-0 last:pb-0">
+                <li key={m.id} className="space-y-0.5 border-b border-line px-3 py-2 last:border-b-0">
                   {/* A logged bot handoff has content: null — rendering the raw `[${m.type}]`
                       fallback claimed the bot sent a text message when it never sent anything. */}
-                  <p className="text-sm text-navy">{displayMessageContent(m)}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {m.direction === 'INBOUND' ? 'Masuk' : 'Keluar'} · {formatMessageDate(m.createdAt)}
+                  <p className="text-ink">{displayMessageContent(m)}</p>
+                  <p className="text-xs text-ink-muted">
+                    {m.direction === 'INBOUND' ? 'Masuk' : 'Keluar'} ·{' '}
+                    <time dateTime={m.createdAt.toISOString()}>{formatMessageDate(m.createdAt)}</time>
                   </p>
                 </li>
               ))}
             </ul>
           )}
-        </Card>
-      </div>
+        </div>
+      </section>
     </main>
   )
 }

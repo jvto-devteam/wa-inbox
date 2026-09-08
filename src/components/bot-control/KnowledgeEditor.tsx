@@ -3,6 +3,7 @@ import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
+import { Field, FieldError, Label } from '@/components/ui/label'
 import { Modal } from '@/components/ui/modal'
 import type { KnowledgeItem } from '@/lib/bot-control/knowledge-body'
 
@@ -78,39 +79,37 @@ export function KnowledgeEditor({
 
   return (
     <Modal onClose={onCancel} className="max-h-[85vh] w-full max-w-2xl space-y-3 overflow-y-auto p-4">
-      <div className="space-y-1">
-        <h2 className="text-sm font-semibold text-navy">{title}</h2>
-        <p className="text-xs text-muted-foreground">
+      <div className="space-y-1 border-b border-line pb-3">
+        <h2 className="text-base font-semibold text-ink">{title}</h2>
+        <p className="text-sm text-ink-muted">
           Disimpan sebagai draft, bot belum membacanya. Tekan &ldquo;Simpan &amp; aktifkan&rdquo; kalau isinya sudah
           boleh dipakai menjawab customer.
         </p>
       </div>
 
-      <label className="block space-y-1 text-sm">
-        <span className="text-xs text-muted-foreground">Judul</span>
+      <Field label="Judul">
         <Input
           value={draft.title}
           onChange={(e) => setDraft((prev) => ({ ...prev, title: e.target.value }))}
           aria-label="Judul knowledge"
         />
-      </label>
+      </Field>
 
-      <label className="block space-y-1 text-sm">
-        <span className="text-xs text-muted-foreground">Ringkasan (opsional)</span>
+      <Field label="Ringkasan (opsional)">
         <Input
           value={draft.summary}
           onChange={(e) => setDraft((prev) => ({ ...prev, summary: e.target.value }))}
           aria-label="Ringkasan knowledge"
         />
-      </label>
+      </Field>
 
       <div className="space-y-3">
         {draft.items.map((item, index) => (
-          <div key={index} className="space-y-2 rounded border p-3">
+          <div key={index} className="space-y-2 rounded-md border border-line p-3">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-medium text-muted-foreground">Item {index + 1}</span>
+              <span className="text-sm font-medium text-ink tabular-nums">Item {index + 1}</span>
               {draft.items.length > 1 && (
-                <Button type="button" variant="outline" size="sm" onClick={() => removeItem(index)}>
+                <Button type="button" variant="ghost" size="sm" onClick={() => removeItem(index)}>
                   Hapus item
                 </Button>
               )}
@@ -166,16 +165,27 @@ export function KnowledgeEditor({
         </Button>
       </div>
 
-      <Textarea
-        value={reason}
-        onChange={(e) => setReason(e.target.value)}
-        placeholder="Alasan perubahan, minimal 10 karakter"
-        aria-label="Alasan perubahan"
-        rows={2}
-      />
-      {error && <p className="text-xs text-destructive">{error}</p>}
+      <Field label="Alasan perubahan" hint="Minimal 10 karakter — inilah yang menjelaskan revisi ini berbulan-bulan kemudian.">
+        <Textarea
+          value={reason}
+          onChange={(e) => setReason(e.target.value)}
+          placeholder="Alasan perubahan, minimal 10 karakter"
+          aria-label="Alasan perubahan"
+          rows={2}
+        />
+      </Field>
+      {error && <FieldError>{error}</FieldError>}
 
-      <div className="flex items-center gap-2">
+      {/* Satu aksi utama, dan ia yang berwarna aksen: menyimpan lalu mengaktifkan adalah yang
+          dimaksud orang yang sedang memperbaiki jawaban salah jam sembilan malam. */}
+      <div className="flex items-center gap-2 border-t border-line pt-3">
+        <Button
+          type="button"
+          onClick={() => onSave(draft, reason.trim(), true)}
+          disabled={saving || !complete || reason.trim().length < MIN_REASON_LENGTH}
+        >
+          {saving ? 'Menyimpan...' : 'Simpan & aktifkan'}
+        </Button>
         <Button
           type="button"
           variant="outline"
@@ -184,14 +194,7 @@ export function KnowledgeEditor({
         >
           {saving ? 'Menyimpan...' : 'Simpan draft'}
         </Button>
-        <Button
-          type="button"
-          onClick={() => onSave(draft, reason.trim(), true)}
-          disabled={saving || !complete || reason.trim().length < MIN_REASON_LENGTH}
-        >
-          {saving ? 'Menyimpan...' : 'Simpan & aktifkan'}
-        </Button>
-        <Button type="button" variant="outline" onClick={onCancel}>
+        <Button type="button" variant="ghost" className="ml-auto" onClick={onCancel}>
           Batal
         </Button>
       </div>
@@ -209,8 +212,8 @@ function PriceFields({
   index: number
 }) {
   return (
-    <div className="space-y-1">
-      <span className="text-xs text-muted-foreground">Harga yang boleh dikutip bot</span>
+    <div className="space-y-1.5">
+      <Label>Harga yang boleh dikutip bot</Label>
       {prices.map((price, i) => (
         <div key={i} className="flex flex-wrap gap-1">
           <Input
@@ -239,7 +242,7 @@ function PriceFields({
             aria-label={`Mata uang harga ${i + 1} item ${index + 1}`}
             className="w-20"
           />
-          <Button type="button" variant="outline" size="sm" onClick={() => onChange(prices.filter((_, j) => j !== i))}>
+          <Button type="button" variant="ghost" size="sm" onClick={() => onChange(prices.filter((_, j) => j !== i))}>
             Hapus
           </Button>
         </div>
@@ -266,8 +269,8 @@ function LinkFields({
   index: number
 }) {
   return (
-    <div className="space-y-1">
-      <span className="text-xs text-muted-foreground">Tautan yang boleh dikirim bot</span>
+    <div className="space-y-1.5">
+      <Label>Tautan yang boleh dikirim bot</Label>
       {links.map((link, i) => (
         <div key={i} className="flex flex-wrap gap-1">
           <Input
@@ -284,7 +287,7 @@ function LinkFields({
             aria-label={`URL tautan ${i + 1} item ${index + 1}`}
             className="w-64"
           />
-          <Button type="button" variant="outline" size="sm" onClick={() => onChange(links.filter((_, j) => j !== i))}>
+          <Button type="button" variant="ghost" size="sm" onClick={() => onChange(links.filter((_, j) => j !== i))}>
             Hapus
           </Button>
         </div>

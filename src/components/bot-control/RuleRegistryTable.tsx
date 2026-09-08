@@ -1,6 +1,8 @@
 'use client'
 import Link from 'next/link'
+import { SearchX } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
+import { EmptyState } from '@/components/ui/empty-state'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import type { BotRule, RuleSeverity } from '@/lib/bot-control/rule-registry'
 
@@ -34,7 +36,14 @@ const SEVERITY_VARIANT: Record<RuleSeverity, 'muted' | 'default' | 'warning' | '
  */
 export function RuleRegistryTable({ rules }: { rules: RuleRow[] }) {
   if (rules.length === 0) {
-    return <p className="text-sm text-muted-foreground">Tidak ada aturan yang cocok dengan filter.</p>
+    return (
+      <EmptyState
+        icon={<SearchX strokeWidth={1.75} />}
+        title="Tidak ada aturan yang cocok dengan filter."
+        description="Registry ini berisi sepuluh aturan. Kosongkan pencarian atau pilih ulang kategorinya untuk melihat semuanya."
+        className="border-t border-line"
+      />
+    )
   }
 
   return (
@@ -52,12 +61,12 @@ export function RuleRegistryTable({ rules }: { rules: RuleRow[] }) {
       <TableBody>
         {rules.map((rule) => (
           <TableRow key={rule.key}>
-            <TableCell className="align-top">
-              <p className="font-medium text-navy">{rule.name}</p>
-              <p className="font-mono text-xs text-muted-foreground">{rule.key}</p>
-              <p className="mt-1 max-w-xl text-xs text-muted-foreground">{rule.description}</p>
+            <TableCell className="align-top py-2.5">
+              <p className="font-medium text-ink">{rule.name}</p>
+              <p className="font-mono text-xs text-ink-subtle">{rule.key}</p>
+              <p className="mt-1 max-w-xl text-sm text-ink-muted">{rule.description}</p>
             </TableCell>
-            <TableCell className="align-top text-xs text-muted-foreground">{rule.category}</TableCell>
+            <TableCell className="align-top text-sm whitespace-nowrap text-ink-muted">{rule.category}</TableCell>
             <TableCell className="align-top">
               <Badge variant={SEVERITY_VARIANT[rule.severity]}>{rule.severity}</Badge>
             </TableCell>
@@ -65,23 +74,23 @@ export function RuleRegistryTable({ rules }: { rules: RuleRow[] }) {
               {rule.enabled === null ? (
                 <>
                   <Badge variant="success">Selalu aktif</Badge>
-                  <p className="mt-1 text-xs text-muted-foreground">Tidak ada sakelarnya</p>
+                  <p className="mt-1 text-xs text-ink-subtle">Tidak ada sakelarnya</p>
                 </>
               ) : rule.enabled === undefined ? (
                 // A state that could not be read is shown as unread. Showing a default as if it
                 // were the truth is the most dangerous silent failure this page can have.
-                <p className="text-xs text-destructive">Status tidak terbaca</p>
+                <p className="text-xs text-danger">Status tidak terbaca</p>
               ) : (
                 <Badge variant={rule.enabled ? 'success' : 'muted'}>{rule.enabled ? 'Aktif' : 'Nonaktif'}</Badge>
               )}
             </TableCell>
-            <TableCell className="align-top text-xs text-muted-foreground">
+            <TableCell className="align-top text-sm whitespace-nowrap text-ink-muted">
               {rule.settingsKey ? (
-                <Link href="/chatbot" className="text-brand hover:underline">
+                <Link href="/chatbot" className="focus-ring rounded-sm text-accent hover:underline">
                   Chatbot
                 </Link>
               ) : rule.managedIn ? (
-                <Link href={rule.managedIn.href} className="text-brand hover:underline">
+                <Link href={rule.managedIn.href} className="focus-ring rounded-sm text-accent hover:underline">
                   {rule.managedIn.label}
                 </Link>
               ) : (
@@ -91,8 +100,8 @@ export function RuleRegistryTable({ rules }: { rules: RuleRow[] }) {
               )}
             </TableCell>
             <TableCell className="align-top">
-              <p className="font-mono text-xs text-muted-foreground">{rule.sourceFile}</p>
-              {rule.sourceRef && <p className="font-mono text-xs text-muted-foreground">{rule.sourceRef}()</p>}
+              <p className="font-mono text-xs break-all text-ink-muted">{rule.sourceFile}</p>
+              {rule.sourceRef && <p className="font-mono text-xs text-ink-subtle">{rule.sourceRef}()</p>}
             </TableCell>
           </TableRow>
         ))}

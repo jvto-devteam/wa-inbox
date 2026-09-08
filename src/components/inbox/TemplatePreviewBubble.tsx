@@ -33,14 +33,18 @@ export function TemplatePreviewBubble({ template, onClick }: { template: Templat
     <button
       type="button"
       onClick={onClick}
-      className="block w-full rounded-lg bg-[#e5ddd5] p-2 text-left transition-transform hover:scale-[1.02]"
+      // Latar hangat WhatsApp dipertahankan: ia menandai "beginilah yang dilihat pelanggan",
+      // bukan permukaan aplikasi ini. Yang dibuang: bayangan di gelembungnya (garis yang
+      // memisahkan sekarang) dan hover scale -- kartu yang membesar di bawah kursor adalah
+      // gerakan tanpa makna. Sekarang bingkainya yang menegas ke warna aksen saat dipilih.
+      className="focus-ring block w-full rounded-lg border border-transparent bg-[#e5ddd5] p-2 text-left transition-colors hover:border-accent"
     >
-      <div className="mx-auto max-w-56 overflow-hidden rounded-lg bg-white shadow-sm">
+      <div className="mx-auto max-w-56 overflow-hidden rounded-md border border-black/5 bg-surface">
         {template.format === 'LTO' && template.offerTitle && (
-          <div className="bg-amber-50 px-2.5 py-1 text-[11px] font-medium text-amber-700">⏳ {template.offerTitle}</div>
+          <div className="bg-warning-subtle px-2.5 py-1 text-[11px] font-medium text-warning">{template.offerTitle}</div>
         )}
         {template.header?.type === 'TEXT' && (
-          <p className="px-2.5 pt-2 text-xs font-semibold text-navy">{template.header.text}</p>
+          <p className="px-2.5 pt-2 text-xs font-semibold text-ink">{template.header.text}</p>
         )}
         {template.header && ['IMAGE', 'VIDEO', 'DOCUMENT'].includes(template.header.type) && (
           <div className="p-2.5 pb-0">
@@ -54,12 +58,12 @@ export function TemplatePreviewBubble({ template, onClick }: { template: Templat
           </div>
         )}
         <div className="space-y-1.5 p-2.5">
-          <p className="line-clamp-3 text-xs text-foreground">{formatWhatsAppText(template.body)}</p>
-          {template.footer && <p className="text-[11px] text-muted-foreground">{template.footer}</p>}
+          <p className="line-clamp-3 text-xs text-ink">{formatWhatsAppText(template.body)}</p>
+          {template.footer && <p className="text-[11px] text-ink-subtle">{template.footer}</p>}
           {template.format === 'CAROUSEL' && template.cards && template.cards.length > 0 && (
             <div className="-mx-1 flex gap-1.5 overflow-x-auto px-1 pb-1">
               {template.cards.map((c, i) => (
-                <div key={i} className="w-20 shrink-0 overflow-hidden rounded border border-border">
+                <div key={i} className="w-20 shrink-0 overflow-hidden rounded-sm border border-line">
                   {c.mediaType === 'VIDEO' ? (
                     <video src={c.mediaUrl} className="h-14 w-full object-cover" muted />
                   ) : (
@@ -71,14 +75,14 @@ export function TemplatePreviewBubble({ template, onClick }: { template: Templat
           )}
         </div>
         {template.format === 'COUPON' && template.couponButtonText && (
-          <div className="border-t border-border py-1.5 text-center text-[11px] font-medium text-brand">
-            📋 {template.couponButtonText}
+          <div className="border-t border-line py-1.5 text-center text-[11px] font-medium text-accent">
+            {template.couponButtonText}
           </div>
         )}
         {template.buttons && template.buttons.length > 0 && (
-          <div className="divide-y divide-border border-t border-border">
+          <div className="divide-y divide-line border-t border-line">
             {template.buttons.slice(0, 3).map((b, i) => (
-              <div key={i} className="py-1.5 text-center text-[11px] font-medium text-brand">
+              <div key={i} className="py-1.5 text-center text-[11px] font-medium text-accent">
                 {BUTTON_ICON[b.type]}
                 {b.text}
               </div>
@@ -86,7 +90,7 @@ export function TemplatePreviewBubble({ template, onClick }: { template: Templat
           </div>
         )}
       </div>
-      <p className="mt-1 truncate text-center text-[10px] font-medium text-muted-foreground">{template.name}</p>
+      <p className="mt-1 truncate text-center text-[10px] font-medium text-ink-muted">{template.name}</p>
     </button>
   )
 }

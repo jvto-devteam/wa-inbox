@@ -144,7 +144,7 @@ export default function DesignSystemPage() {
         <Section
           id="tipografi"
           title="Tipografi"
-          note="IBM Plex Sans untuk UI, IBM Plex Mono untuk data. Bobot hanya 400 / 500 / 600."
+          note="Poppins untuk UI, IBM Plex Mono khusus angka agar kolom berjajar lurus. Bobot hanya 400 / 500 / 600."
         >
           <div className="border-t border-line">
             {TYPE_SCALE.map(([name, metric, use, cls]) => (
@@ -375,6 +375,23 @@ export default function DesignSystemPage() {
               <Avatar name="Bruno Figarola" />
               <Avatar name="Bruno Figarola" className="size-10" />
               <Avatar name="Bruno Figarola" className="size-12 text-md" />
+            </div>
+          </div>
+          {/* Ditambahkan di Tahap 1C. Alasannya ada di komentar avatar.tsx: rona deterministik
+              menolong ketika satu avatar berdiri sendiri, dan merugikan di daftar rapat. */}
+          <div className="mt-4 space-y-2 border-t border-line pt-4">
+            <p className="text-sm text-ink-muted">
+              <code className="font-mono text-xs">tone=&quot;neutral&quot;</code> — dipakai di daftar percakapan
+              /inbox. Di daftar 40 baris, 8 rona acak di kolom paling kiri melawan penanda belum dibaca
+              tanpa memberi informasi yang belum dikatakan namanya.
+            </p>
+            <div className="flex flex-wrap items-center gap-3">
+              {['Bruno Figarola', 'Siti Aminah', 'Wayan Sudira', 'Klook Guest'].map((n) => (
+                <div key={n} className="flex flex-col items-center gap-1">
+                  <Avatar name={n} tone="neutral" maxInitials={1} className="size-9" />
+                  <span className="max-w-20 truncate text-xs text-ink-muted">{n}</span>
+                </div>
+              ))}
             </div>
           </div>
         </Section>

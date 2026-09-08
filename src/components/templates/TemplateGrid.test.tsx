@@ -16,7 +16,7 @@ describe('TemplateGrid', () => {
 
   it('shows an empty state when there are no templates', () => {
     render(<TemplateGrid templates={[]} showStatus onDelete={() => {}} />)
-    expect(screen.getByText('Belum ada template.')).toBeInTheDocument()
+    expect(screen.getByText('Belum ada template')).toBeInTheDocument()
   })
 
   it('renders a card per template with its live preview and category', () => {

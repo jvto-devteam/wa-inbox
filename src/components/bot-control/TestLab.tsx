@@ -1,11 +1,12 @@
 'use client'
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { Card } from '@/components/ui/card'
+import { Card, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Select } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
+import { Field } from '@/components/ui/label'
 import { fetchJson } from '@/lib/fetch-json'
 
 type ContextChoice = 'none' | 'conversation' | 'test-room'
@@ -70,8 +71,7 @@ export function TestLab({ conversations = [] }: { conversations?: ConversationOp
   return (
     <div className="space-y-4">
       <Card className="space-y-3 p-4">
-        <label className="block space-y-1">
-          <span className="text-sm font-medium text-navy">Pesan pelanggan</span>
+        <Field label="Pesan pelanggan">
           <Textarea
             value={message}
             onChange={(e) => setMessage(e.target.value)}
@@ -79,11 +79,10 @@ export function TestLab({ conversations = [] }: { conversations?: ConversationOp
             placeholder="berapa harga ijen 3d2n dari bali?"
             aria-label="Pesan pelanggan"
           />
-        </label>
+        </Field>
 
-        <div className="flex flex-wrap items-end gap-2">
-          <label className="space-y-1">
-            <span className="block text-xs font-medium uppercase tracking-wide text-muted-foreground">Konteks</span>
+        <div className="flex flex-wrap items-end gap-3">
+          <Field label="Konteks">
             <Select
               value={context}
               onChange={(e) => setContext(e.target.value as ContextChoice)}
@@ -94,11 +93,10 @@ export function TestLab({ conversations = [] }: { conversations?: ConversationOp
               <option value="conversation">Pakai percakapan existing</option>
               <option value="test-room">Pakai test room</option>
             </Select>
-          </label>
+          </Field>
 
           {context === 'conversation' && (
-            <label className="space-y-1">
-              <span className="block text-xs font-medium uppercase tracking-wide text-muted-foreground">Percakapan</span>
+            <Field label="Percakapan">
               <Select
                 value={conversationId}
                 onChange={(e) => setConversationId(e.target.value)}
@@ -112,7 +110,7 @@ export function TestLab({ conversations = [] }: { conversations?: ConversationOp
                   </option>
                 ))}
               </Select>
-            </label>
+            </Field>
           )}
 
           <Button onClick={run} disabled={running || !message.trim()}>
@@ -121,87 +119,101 @@ export function TestLab({ conversations = [] }: { conversations?: ConversationOp
         </div>
       </Card>
 
-      {error && <p className="text-sm text-destructive">{error}</p>}
+      {error && <p className="text-base text-danger">{error}</p>}
 
       {result && (
-        <Card className="space-y-3 p-4">
-          <div className="flex flex-wrap items-center gap-2">
-            <Badge variant={STATUS_VARIANT[result.status] ?? 'default'}>{result.status}</Badge>
-            <span className="font-mono text-xs uppercase text-brand">{result.mode}</span>
-            <span className="text-xs text-muted-foreground">{result.latencyMs} ms</span>
+        <Card>
+          <CardHeader className="flex-wrap gap-2">
+            <span className="flex flex-wrap items-center gap-2">
+              <Badge variant={STATUS_VARIANT[result.status] ?? 'default'}>{result.status}</Badge>
+              <span className="font-mono text-xs text-ink-muted uppercase">{result.mode}</span>
+              <span className="font-mono text-xs text-ink-muted">{result.latencyMs} ms</span>
+            </span>
             {/* Which channel this WOULD have gone out on -- the answer to guidebook §27's
                 "jalur pengiriman mana yang dipakai", without anything being sent. */}
             <Badge variant="muted">Akan dikirim via {result.wouldSendViaChannel}</Badge>
-          </div>
+          </CardHeader>
 
-          <div className="space-y-1">
-            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Draft balasan</p>
-            {result.reply ? (
-              <p className="whitespace-pre-wrap text-sm text-foreground">{result.reply}</p>
-            ) : (
-              <p className="text-sm text-muted-foreground">
-                Tidak ada draft balasan — bot akan menyerahkan percakapan ini ke agen.
-              </p>
+          <div className="divide-y divide-line">
+            <ResultBlock label="Draft balasan">
+              {result.reply ? (
+                <p className="text-base whitespace-pre-wrap text-ink">{result.reply}</p>
+              ) : (
+                <p className="text-base text-ink-muted">
+                  Tidak ada draft balasan — bot akan menyerahkan percakapan ini ke agen.
+                </p>
+              )}
+            </ResultBlock>
+
+            {result.warnings.length > 0 && (
+              <ResultBlock label="Peringatan">
+                <ul className="list-disc space-y-0.5 pl-4 text-sm text-warning">
+                  {result.warnings.map((warning) => (
+                    <li key={warning}>{warning}</li>
+                  ))}
+                </ul>
+              </ResultBlock>
+            )}
+
+            {result.flowSteps.length > 0 && (
+              <ResultBlock label="Langkah flow">
+                <ol className="space-y-1.5">
+                  {result.flowSteps.map((step, i) => (
+                    <li key={`${step.label}-${i}`} className="flex gap-1.5 text-sm">
+                      <span className="shrink-0 font-mono text-ink-subtle">{i + 1}.</span>
+                      <div className="min-w-0">
+                        <p className="font-medium text-ink">{step.label}</p>
+                        <p className="text-ink-muted">{step.detail}</p>
+                      </div>
+                    </li>
+                  ))}
+                </ol>
+              </ResultBlock>
+            )}
+
+            <ResultBlock label="Knowledge yang dipakai">
+              {result.knowledgeRefs?.sourceTopic ? (
+                <p className="text-base text-ink">{result.knowledgeRefs.sourceTopic}</p>
+              ) : (
+                <p className="text-base text-ink-muted">Tidak ada topik knowledge yang dilaporkan.</p>
+              )}
+            </ResultBlock>
+
+            <ResultBlock label="Verifikasi">
+              {result.verification ? (
+                <pre className="overflow-x-auto rounded-sm border border-line bg-surface-sunken p-2 text-xs text-ink">
+                  {JSON.stringify(result.verification, null, 2)}
+                </pre>
+              ) : (
+                <p className="text-base text-ink-muted">
+                  Decision engine tidak melaporkan hasil verifikasi terpisah untuk putaran ini.
+                </p>
+              )}
+            </ResultBlock>
+
+            {result.decisionRunId && (
+              <div className="px-4 py-3">
+                <Link
+                  href={`/bot-control/decisions?run=${result.decisionRunId}`}
+                  className="focus-ring rounded-sm text-sm text-accent hover:underline"
+                >
+                  Lihat di Decision Logs →
+                </Link>
+              </div>
             )}
           </div>
-
-          {result.warnings.length > 0 && (
-            <div className="space-y-1">
-              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Peringatan</p>
-              <ul className="list-disc space-y-0.5 pl-4 text-xs text-amber-700">
-                {result.warnings.map((warning) => (
-                  <li key={warning}>{warning}</li>
-                ))}
-              </ul>
-            </div>
-          )}
-
-          {result.flowSteps.length > 0 && (
-            <div className="space-y-1">
-              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Langkah flow</p>
-              <ol className="space-y-1.5">
-                {result.flowSteps.map((step, i) => (
-                  <li key={`${step.label}-${i}`} className="flex gap-1.5 text-xs">
-                    <span className="shrink-0 font-mono text-muted-foreground">{i + 1}.</span>
-                    <div>
-                      <p className="font-medium text-navy">{step.label}</p>
-                      <p className="text-muted-foreground">{step.detail}</p>
-                    </div>
-                  </li>
-                ))}
-              </ol>
-            </div>
-          )}
-
-          <div className="space-y-1">
-            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Knowledge yang dipakai</p>
-            {result.knowledgeRefs?.sourceTopic ? (
-              <p className="text-sm text-foreground">{result.knowledgeRefs.sourceTopic}</p>
-            ) : (
-              <p className="text-sm text-muted-foreground">Tidak ada topik knowledge yang dilaporkan.</p>
-            )}
-          </div>
-
-          <div className="space-y-1">
-            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Verifikasi</p>
-            {result.verification ? (
-              <pre className="overflow-x-auto rounded bg-muted p-2 text-xs">
-                {JSON.stringify(result.verification, null, 2)}
-              </pre>
-            ) : (
-              <p className="text-sm text-muted-foreground">
-                Decision engine tidak melaporkan hasil verifikasi terpisah untuk putaran ini.
-              </p>
-            )}
-          </div>
-
-          {result.decisionRunId && (
-            <Link href={`/bot-control/decisions?run=${result.decisionRunId}`} className="block text-xs text-brand hover:underline">
-              Lihat di Decision Logs →
-            </Link>
-          )}
         </Card>
       )}
+    </div>
+  )
+}
+
+/** Satu blok hasil simulasi. Label kalimat biasa, dipisah garis rambut dari blok di atasnya. */
+function ResultBlock({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="space-y-1 px-4 py-3">
+      <p className="text-xs font-medium text-ink-subtle">{label}</p>
+      {children}
     </div>
   )
 }

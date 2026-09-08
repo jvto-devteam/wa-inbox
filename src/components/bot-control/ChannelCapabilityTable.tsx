@@ -40,16 +40,16 @@ export function ChannelCapabilityTable() {
     <Table>
       <TableHeader>
         <TableRow>
-          <TableHead>Kemampuan</TableHead>
+          <TableHead className="w-1/2">Kemampuan</TableHead>
           <TableHead>Official</TableHead>
           <TableHead>Unofficial</TableHead>
-          <TableHead />
+          <TableHead>Catatan</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
         {capabilities.map((capability) => (
           <TableRow key={capability}>
-            <TableCell className="text-sm text-foreground">{LABELS[capability]}</TableCell>
+            <TableCell className="text-base font-medium text-ink">{LABELS[capability]}</TableCell>
             <TableCell>
               <CapabilityCell value={CHANNEL_CAPABILITIES.OFFICIAL[capability]} />
             </TableCell>
@@ -57,7 +57,7 @@ export function ChannelCapabilityTable() {
               <CapabilityCell value={CHANNEL_CAPABILITIES.UNOFFICIAL[capability]} />
             </TableCell>
             <TableCell>
-              {officialOnly.has(capability) && <Badge variant="brand">Official only</Badge>}
+              {officialOnly.has(capability) && <Badge variant="warning">Official only</Badge>}
             </TableCell>
           </TableRow>
         ))}

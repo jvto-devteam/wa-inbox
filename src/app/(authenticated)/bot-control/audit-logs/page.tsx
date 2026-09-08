@@ -1,10 +1,13 @@
 'use client'
 import { useEffect, useState } from 'react'
-import { Card } from '@/components/ui/card'
+import { History } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { EmptyState } from '@/components/ui/empty-state'
+import { Skeleton } from '@/components/ui/skeleton'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { fetchJson } from '@/lib/fetch-json'
 import { PageHeader } from '@/components/ui/page-header'
 
@@ -32,18 +35,20 @@ const ENTITY_TYPES = ['KNOWLEDGE', 'BOT_SETTING', 'OUTBOUND_PROVIDER', 'OUTBOUND
 
 // Turning something OFF gets visual weight: it is the row somebody is looking for when the bot
 // stopped answering. A log where every row shouts is one where that row does not stand out.
-const ACTION_VARIANT: Record<string, 'brand' | 'success' | 'warning' | 'destructive' | 'muted'> = {
-  PUBLISH: 'brand',
+const ACTION_VARIANT: Record<string, 'default' | 'success' | 'warning' | 'destructive' | 'muted'> = {
+  PUBLISH: 'default',
   ENABLE: 'success',
   DISABLE: 'warning',
 }
 
 /**
- * A timeline, not a table with an expandable detail pane.
+ * Satu baris per perubahan, dalam satu tabel — bukan tumpukan kartu, dan bukan tabel dengan
+ * panel detail yang harus dibuka satu per satu.
  *
- * The question this page answers is "what happened, in order" — reconstructing a sequence from
- * rows an operator has to click open one at a time is the thing that makes an audit log go
- * unread.
+ * Pertanyaan yang dijawab halaman ini adalah "apa yang terjadi, berurutan". Menyusun ulang
+ * urutan dari baris-baris yang harus diklik terbuka satu demi satu adalah persis hal yang
+ * membuat sebuah audit log tidak pernah dibaca; begitu juga kartu, yang memakan empat kali
+ * tinggi baris untuk lima potong teks pendek. Kelima potong itu adalah lima kolom.
  *
  * There is no before/after diff, deliberately. Proving which of two people changed a value is a
  * question wa-inbox does not have (one team, and every entity already shows the value in force);
@@ -163,39 +168,68 @@ export default function AuditLogsPage() {
         />
       </div>
 
-      {loading && <p className="text-sm text-muted-foreground">Memuat...</p>}
-      {error && <p className="text-sm text-destructive">{error}</p>}
+      {error && <p className="text-base text-danger">{error}</p>}
+
+      {loading && (
+        <div className="space-y-px" aria-hidden="true">
+          {Array.from({ length: 8 }, (_, i) => (
+            <div key={i} className="flex h-9 items-center gap-3 border-b border-line">
+              <Skeleton className="h-3 w-32" />
+              <Skeleton className="h-3 w-16" />
+              <Skeleton className="h-3 w-28" />
+              <Skeleton className="h-3 w-20" />
+              <Skeleton className="h-3 w-2/5" />
+            </div>
+          ))}
+        </div>
+      )}
 
       {!loading && !error && rows.length === 0 && (
-        <Card className="p-3">
-          <p className="text-sm text-muted-foreground">Belum ada perubahan yang tercatat.</p>
-        </Card>
+        <EmptyState
+          icon={<History strokeWidth={1.75} />}
+          title="Belum ada perubahan yang tercatat."
+          description="Log ini hanya terisi ketika seseorang mengubah apa yang bot lakukan. Kosong berarti belum ada yang diubah dalam rentang ini — bukan berarti pencatatannya mati."
+          className="border-t border-line"
+        />
       )}
 
       {!loading && !error && rows.length > 0 && (
-        <ol className="space-y-3">
-          {rows.map((row) => (
-            <li key={row.id}>
-              <Card className="space-y-2 p-4">
-                <div className="flex flex-wrap items-center gap-2">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead className="w-44">Waktu</TableHead>
+              <TableHead className="w-24">Aksi</TableHead>
+              <TableHead>Entitas</TableHead>
+              <TableHead className="w-40">Oleh</TableHead>
+              <TableHead>Alasan</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {rows.map((row) => (
+              <TableRow key={row.id} className="h-auto align-top">
+                <TableCell className="py-2.5 text-sm whitespace-nowrap text-ink-muted">
+                  <time dateTime={row.createdAt}>{new Date(row.createdAt).toLocaleString('id-ID')}</time>
+                </TableCell>
+                <TableCell className="py-2.5">
                   <Badge variant={ACTION_VARIANT[row.action] ?? 'muted'}>{row.action}</Badge>
-                  <span className="font-mono text-xs text-muted-foreground">{row.entityType}</span>
-                  {row.entityKey && <span className="font-mono text-xs text-navy">{row.entityKey}</span>}
-                  <span className="ml-auto text-xs text-muted-foreground">
-                    {new Date(row.createdAt).toLocaleString('id-ID')}
-                  </span>
-                </div>
-
-                <p className="text-xs text-muted-foreground">
+                </TableCell>
+                <TableCell className="py-2.5">
+                  <span className="font-mono text-xs text-ink-muted">{row.entityType}</span>
+                  {row.entityKey && (
+                    <span className="block font-mono text-xs break-all text-ink">{row.entityKey}</span>
+                  )}
+                </TableCell>
+                <TableCell className="py-2.5 text-sm text-ink">
                   {/* Denormalised at write time, so it survives the account being deleted. */}
-                  oleh {row.actorName ?? <span className="italic">(akun terhapus)</span>}
-                </p>
-
-                {row.reason && <p className="text-xs text-navy">Alasan: {row.reason}</p>}
-              </Card>
-            </li>
-          ))}
-        </ol>
+                  {row.actorName ?? <span className="text-ink-subtle italic">(akun terhapus)</span>}
+                </TableCell>
+                <TableCell className="py-2.5 text-sm text-ink-muted">
+                  {row.reason ?? <span className="text-ink-subtle">—</span>}
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
       )}
 
       {!loading && !error && total > 50 && (
@@ -203,7 +237,7 @@ export default function AuditLogsPage() {
           <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>
             Sebelumnya
           </Button>
-          <span className="text-muted-foreground">
+          <span className="text-ink-muted tabular-nums">
             Halaman {page} dari {lastPage}
           </span>
           <Button variant="outline" size="sm" disabled={page >= lastPage} onClick={() => setPage((p) => p + 1)}>

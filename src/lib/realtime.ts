@@ -9,6 +9,13 @@ type RealtimeEvent =
   // api/conversations/[id]/clear) -- subscribers drop every locally-held message for this
   // conversation rather than waiting for a full page reload.
   | { type: 'conversation.cleared'; conversationId: string }
+  // Kolom pada baris Conversation berubah di server tanpa ada pesan baru -- hari ini hanya
+  // `pipelineStage` dan `orderChannel`, yang dinaikkan sendiri oleh data booking (lihat
+  // ensureFreshBookingData). Sengaja TIDAK membawa nilai barunya: daftar percakapan butuh
+  // beberapa field lain untuk merender satu baris (nama kontak, label, botEnabled), jadi
+  // penerimanya mengambil ulang daftarnya -- persis seperti yang sudah dilakukan saat ada
+  // pesan dari percakapan yang belum dikenal.
+  | { type: 'conversation.updated'; conversationId: string }
   // One step boundary of one bot run, emitted live while the run is still in flight (see
   // src/lib/pipeline/tracer.ts). `stepId` is a PipelineStepId from src/lib/pipeline/steps.ts,
   // never a free-form string. `runId` is the id the run's BotDecisionRun row will be written

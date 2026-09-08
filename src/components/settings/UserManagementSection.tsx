@@ -1,11 +1,13 @@
 'use client'
 import { useEffect, useState } from 'react'
-import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { EmptyState } from '@/components/ui/empty-state'
+import { Field, FieldError } from '@/components/ui/label'
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table'
+import { FormSection } from '@/components/settings/section'
 import { fetchJson } from '@/lib/fetch-json'
 
 type Account = { id: string; name: string; email: string; role: 'ADMIN' | 'AGENT' }
@@ -97,64 +99,92 @@ export function UserManagementSection() {
   const canSubmit = name.trim() && email.trim() && password.trim().length >= 8 && !submitting
 
   return (
-    <Card className="space-y-4 p-4">
-      <h2 className="font-medium text-navy">Manajemen pengguna</h2>
-
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>Nama</TableHead>
-            <TableHead>Email</TableHead>
-            <TableHead>Peran</TableHead>
-            <TableHead />
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {accounts.map((account) => (
-            <TableRow key={account.id}>
-              <TableCell>{account.name}</TableCell>
-              <TableCell className="text-muted-foreground">{account.email}</TableCell>
-              <TableCell>
-                <Badge variant={account.role === 'ADMIN' ? 'brand' : 'muted'}>{account.role}</Badge>
-              </TableCell>
-              <TableCell>
-                <div className="flex justify-end gap-2">
-                  <Button variant="outline" size="sm" onClick={() => resetPassword(account)}>
-                    Reset Kata Sandi
-                  </Button>
-                  <Button variant="destructive" size="sm" onClick={() => deleteAccount(account)}>
-                    Hapus
-                  </Button>
-                </div>
-              </TableCell>
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
-
-      <div className="space-y-2 border-t border-border pt-3">
-        <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Tambah agen baru</h3>
-        <div className="grid grid-cols-2 gap-2">
-          <Input aria-label="Nama" placeholder="Nama" value={name} onChange={(e) => setName(e.target.value)} />
-          <Input aria-label="Email" type="email" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} />
-          <Input
-            aria-label="Kata sandi"
-            type="password"
-            placeholder="Kata sandi (min. 8 karakter)"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-          />
-          <Select aria-label="Peran" value={role} onChange={(e) => setRole(e.target.value as 'ADMIN' | 'AGENT')}>
-            <option value="AGENT">Agent</option>
-            <option value="ADMIN">Admin</option>
-          </Select>
+    <FormSection
+      title="Manajemen pengguna"
+      description="Hanya dua peran yang ada: Admin boleh mengubah setelan dan menghapus akun, Agent hanya membalas percakapan."
+    >
+      <div className="space-y-5">
+        <div className="rounded-lg border border-line bg-surface">
+          {accounts.length === 0 ? (
+            <EmptyState title="Belum ada akun." description="Tambahkan akun pertama lewat formulir di bawah." />
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Nama</TableHead>
+                  <TableHead>Email</TableHead>
+                  <TableHead>Peran</TableHead>
+                  <TableHead />
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {accounts.map((account) => (
+                  <TableRow key={account.id}>
+                    <TableCell className="font-medium text-ink">{account.name}</TableCell>
+                    <TableCell className="text-ink-muted">{account.email}</TableCell>
+                    <TableCell>
+                      <Badge variant={account.role === 'ADMIN' ? 'default' : 'muted'}>{account.role}</Badge>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex justify-end gap-2">
+                        <Button variant="outline" size="sm" onClick={() => resetPassword(account)}>
+                          Reset kata sandi
+                        </Button>
+                        <Button variant="destructive" size="sm" onClick={() => deleteAccount(account)}>
+                          Hapus
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
         </div>
-        <Button type="button" onClick={addAccount} disabled={!canSubmit}>
-          Tambah Akun
-        </Button>
-      </div>
 
-      {error && <p className="text-xs text-destructive">{error}</p>}
-    </Card>
+        <div className="space-y-3 border-t border-line pt-4">
+          <h3 className="text-sm font-semibold text-ink">Tambah agen baru</h3>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Field label="Nama" htmlFor="new-account-name">
+              <Input id="new-account-name" placeholder="Nama" value={name} onChange={(e) => setName(e.target.value)} />
+            </Field>
+            <Field label="Email" htmlFor="new-account-email">
+              <Input
+                id="new-account-email"
+                type="email"
+                placeholder="Email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+              />
+            </Field>
+            <Field label="Kata sandi" htmlFor="new-account-password" hint="Minimal 8 karakter.">
+              <Input
+                id="new-account-password"
+                type="password"
+                placeholder="Kata sandi"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+              />
+            </Field>
+            <Field label="Peran" htmlFor="new-account-role">
+              <Select
+                id="new-account-role"
+                value={role}
+                onChange={(e) => setRole(e.target.value as 'ADMIN' | 'AGENT')}
+                className="w-full"
+              >
+                <option value="AGENT">Agent</option>
+                <option value="ADMIN">Admin</option>
+              </Select>
+            </Field>
+          </div>
+          <Button type="button" onClick={addAccount} disabled={!canSubmit}>
+            Tambah akun
+          </Button>
+        </div>
+
+        {error && <FieldError className="text-sm">{error}</FieldError>}
+      </div>
+    </FormSection>
   )
 }

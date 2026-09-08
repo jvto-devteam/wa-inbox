@@ -1,6 +1,11 @@
 'use client'
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { MessagesSquare, Search, SearchX } from 'lucide-react'
 import { Input } from '@/components/ui/input'
+import { Button } from '@/components/ui/button'
+import { EmptyState } from '@/components/ui/empty-state'
+import { Skeleton } from '@/components/ui/skeleton'
+import { cn } from '@/lib/utils'
 import { ConversationListItem, type ConversationSummary } from './ConversationListItem'
 import { fetchJson } from '@/lib/fetch-json'
 
@@ -28,15 +33,42 @@ type BroadcastMessage = {
   direction: string
 }
 
+/**
+ * Baris palsu selagi permintaan pertama berjalan. Bentuknya sengaja meniru geometri baris
+ * sungguhan (avatar 36px, tiga baris teks) supaya daftar tidak melompat saat datanya tiba --
+ * itulah bedanya keadaan memuat yang dirancang dari kotak abu sembarangan.
+ */
+function ConversationListSkeleton() {
+  return (
+    <div className="divide-y divide-line" aria-hidden="true">
+      {Array.from({ length: 7 }, (_, i) => (
+        <div key={i} className="flex gap-2.5 py-2.5 pr-3 pl-2">
+          <Skeleton className="size-9 shrink-0 rounded-full" />
+          <div className="flex min-w-0 flex-1 flex-col gap-1.5 pt-0.5">
+            <Skeleton className={cn('h-3', i % 3 === 0 ? 'w-2/5' : 'w-3/5')} />
+            <Skeleton className={cn('h-3', i % 2 === 0 ? 'w-4/5' : 'w-3/5')} />
+            <Skeleton className="h-3.5 w-16" />
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 export function ConversationList({
   selectedId,
   onSelect,
+  className,
 }: {
   selectedId: string | null
   onSelect: (id: string) => void
+  className?: string
 }) {
   const [conversations, setConversations] = useState<ConversationSummary[]>([])
   const [query, setQuery] = useState('')
+  // Hanya menandai permintaan PERTAMA. Menyalakan kerangka di setiap pencarian akan membuat
+  // daftar berkedip di setiap ketukan tombol; hasil lama yang tinggal sebentar lebih tenang.
+  const [firstLoadDone, setFirstLoadDone] = useState(false)
   const isFirstRender = useRef(true)
 
   // Latest-value mirrors read by the SSE effect below. Depending on `query`/`conversations`
@@ -92,6 +124,7 @@ export function ConversationList({
         )
       )
       .catch(() => {})
+      .finally(() => setFirstLoadDone(true))
   }, [])
 
   useEffect(() => {
@@ -125,6 +158,22 @@ export function ConversationList({
     const es = new EventSource('/api/sse')
     es.onmessage = (e) => {
       const event = JSON.parse(e.data)
+
+      // Tahap pipeline / kanal pesanan berubah di server tanpa pesan baru -- mis. saat data
+      // booking di-refresh dan trip-nya ternyata sudah lewat. Sebelum ini badge di baris
+      // hanya ikut berubah setelah seluruh halaman dimuat ulang, sehingga percakapan yang
+      // jelas-jelas sudah punya booking masih memakai lencana "Baru".
+      //
+      // Mengambil ulang daftar, bukan menambal satu baris: satu baris butuh nama kontak,
+      // label, dan botEnabled yang tidak dibawa event ini -- alasan yang sama dengan cabang
+      // "percakapan belum dikenal" di bawah.
+      if (event.type === 'conversation.updated') {
+        if (conversationsRef.current.some((c) => c.id === event.conversationId)) {
+          loadConversations(queryRef.current)
+        }
+        return
+      }
+
       if (event.type !== 'message.created') return
 
       // The membership test reads the mirror ref, not the state updater's `prev`: the updater
@@ -161,21 +210,69 @@ export function ConversationList({
     return () => es.close()
   }, [loadConversations])
 
+  const isSearching = query.trim().length > 0
+
   return (
-    <div className="flex h-full min-h-0 flex-col border-r">
-      <div className="shrink-0 border-b p-2">
-        <Input
-          type="text"
-          placeholder="Cari nama, nomor, atau isi pesan..."
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-        />
+    // min-h-0 + h-full: kolom ini menggulung SENDIRI. Tanpa min-h-0 sebuah item flex/grid
+    // menolak menyusut di bawah tinggi isinya, dan overflow-nya terdorong balik ke pembungkus
+    // layout -- yaitu gulungan ganda yang dilarang.
+    <aside
+      aria-label="Daftar percakapan"
+      className={cn('flex h-full min-h-0 flex-col border-r border-line bg-surface', className)}
+    >
+      <div className="shrink-0 border-b border-line p-2">
+        <div className="relative">
+          <Search
+            aria-hidden="true"
+            strokeWidth={1.75}
+            className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-ink-subtle"
+          />
+          <Input
+            type="search"
+            aria-label="Cari percakapan"
+            placeholder="Cari nama, nomor, atau isi pesan..."
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            className="pl-8"
+          />
+        </div>
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto">
-        {conversations.map((c) => (
-          <ConversationListItem key={c.id} conversation={c} active={c.id === selectedId} onClick={() => onSelect(c.id)} />
-        ))}
+
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+        {!firstLoadDone ? (
+          <ConversationListSkeleton />
+        ) : conversations.length === 0 ? (
+          isSearching ? (
+            <EmptyState
+              icon={<SearchX strokeWidth={1.5} />}
+              title="Tidak ada yang cocok"
+              description={`Tidak ada percakapan yang memuat "${query.trim()}". Coba potongan nomor atau satu kata dari isi pesannya.`}
+              action={
+                <Button variant="outline" size="sm" onClick={() => setQuery('')}>
+                  Hapus pencarian
+                </Button>
+              }
+            />
+          ) : (
+            <EmptyState
+              icon={<MessagesSquare strokeWidth={1.5} />}
+              title="Belum ada percakapan"
+              description="Percakapan muncul di sini begitu pelanggan mengirim pesan pertama ke nomor WhatsApp JVTO."
+            />
+          )
+        ) : (
+          <ul>
+            {conversations.map((c) => (
+              <ConversationListItem
+                key={c.id}
+                conversation={c}
+                active={c.id === selectedId}
+                onClick={() => onSelect(c.id)}
+              />
+            ))}
+          </ul>
+        )}
       </div>
-    </div>
+    </aside>
   )
 }

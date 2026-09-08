@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor, fireEvent } from '@testing-library/react'
-import { ComposeBox } from './ComposeBox'
+import { ComposeBox, COMPOSER_PLACEHOLDER } from './ComposeBox'
 import { formatIDR } from '@/lib/contact-format'
 
 beforeEach(() => {
@@ -9,9 +9,13 @@ beforeEach(() => {
 
 // Template is one of three options (alongside Foto & Video / Dokumen) inside the "+"
 // attach menu now, not its own standalone button -- opens the menu, then picks it.
+//
+// Tahap 1C mengganti emoji di label menu ini dengan ikon lucide, jadi teksnya tidak lagi
+// '📋 Template' melainkan 'Template'. Dicari lewat role menuitem, bukan lewat teks telanjang,
+// supaya pencarian ini tidak bisa tertukar dengan kata "Template" lain di layar.
 async function openTemplateMenu() {
   fireEvent.click(await screen.findByLabelText('Tambah lampiran atau template'))
-  fireEvent.click(await screen.findByText('📋 Template'))
+  fireEvent.click(await screen.findByRole('menuitem', { name: 'Template' }))
 }
 
 // The picker now only ever shows the templates sendable on whichever channel is currently
@@ -91,7 +95,7 @@ describe('ComposeBox quick replies', () => {
     await openTemplateMenu()
     fireEvent.click(await screen.findByText('Cara Booking'))
     await waitFor(() => {
-      expect(screen.getByPlaceholderText('Reply on WhatsApp...')).toHaveValue('Ikuti panduan booking di link ini...')
+      expect(screen.getByPlaceholderText(COMPOSER_PLACEHOLDER)).toHaveValue('Ikuti panduan booking di link ini...')
     })
   })
 
@@ -195,7 +199,7 @@ describe('ComposeBox quick reply variables', () => {
     expect(await screen.findByText('Balasan Cepat: Konfirmasi Booking')).toBeInTheDocument()
     expect(screen.getByLabelText('{{1}}')).toBeInTheDocument()
     expect(screen.getByLabelText('{{2}}')).toBeInTheDocument()
-    expect(screen.getByPlaceholderText('Reply on WhatsApp...')).toHaveValue('')
+    expect(screen.getByPlaceholderText(COMPOSER_PLACEHOLDER)).toHaveValue('')
   })
 
   it('interpolates the filled values into the text input on Gunakan Balasan', async () => {
@@ -210,7 +214,7 @@ describe('ComposeBox quick reply variables', () => {
     fireEvent.click(screen.getByText('Gunakan Balasan'))
 
     await waitFor(() => {
-      expect(screen.getByPlaceholderText('Reply on WhatsApp...')).toHaveValue('Halo Bruno, paket Ijen 3D2N sudah dikonfirmasi.')
+      expect(screen.getByPlaceholderText(COMPOSER_PLACEHOLDER)).toHaveValue('Halo Bruno, paket Ijen 3D2N sudah dikonfirmasi.')
     })
     expect(screen.queryByText('Balasan Cepat: Konfirmasi Booking')).not.toBeInTheDocument()
   })
@@ -226,7 +230,7 @@ describe('ComposeBox quick reply variables', () => {
 
     expect(screen.queryByText('Balasan Cepat: Konfirmasi Booking')).not.toBeInTheDocument()
     expect(screen.getByText('Konfirmasi Booking')).toBeInTheDocument()
-    expect(screen.getByPlaceholderText('Reply on WhatsApp...')).toHaveValue('')
+    expect(screen.getByPlaceholderText(COMPOSER_PLACEHOLDER)).toHaveValue('')
   })
 
   it('reuses the same distinct-placeholder number when {{n}} repeats in the body', async () => {
@@ -244,7 +248,7 @@ describe('ComposeBox quick reply variables', () => {
     fireEvent.click(screen.getByText('Gunakan Balasan'))
 
     await waitFor(() => {
-      expect(screen.getByPlaceholderText('Reply on WhatsApp...')).toHaveValue('Halo Bruno, apakah benar Bruno?')
+      expect(screen.getByPlaceholderText(COMPOSER_PLACEHOLDER)).toHaveValue('Halo Bruno, apakah benar Bruno?')
     })
   })
 })
@@ -406,7 +410,7 @@ describe('ComposeBox variable bindings (auto-resolved at selection time)', () =>
 
     fireEvent.click(screen.getByText('Gunakan Balasan'))
     await waitFor(() => {
-      expect(screen.getByPlaceholderText('Reply on WhatsApp...')).toHaveValue(`Sisa tagihan Anda ${balanceValue}.`)
+      expect(screen.getByPlaceholderText(COMPOSER_PLACEHOLDER)).toHaveValue(`Sisa tagihan Anda ${balanceValue}.`)
     })
   })
 
@@ -1039,5 +1043,66 @@ describe('ComposeBox — test room (isTest)', () => {
     await waitFor(() =>
       expect(onSent).toHaveBeenCalledWith(expect.objectContaining({ direction: 'INBOUND', sentBy: 'CUSTOMER', content: 'Halo bot' }))
     )
+  })
+})
+
+// Tahap 1C. Kotak tulis sebagai alat kerja: setiap kontrolnya punya nama, jalur pintasnya
+// tertulis, dan menu lampirannya adalah menu sungguhan.
+describe('ComposeBox — nama kontrol dan pintasan', () => {
+  it('memberi nama pada setiap kontrol yang bisa diklik di kotak tulis', async () => {
+    render(<ComposeBox conversationId="conv_1" botEnabled={false} onSent={() => {}} onBotToggled={() => {}} />)
+
+    expect(screen.getByLabelText('Pesan')).toBeInTheDocument()
+    expect(screen.getByLabelText('Channel')).toBeInTheDocument()
+    expect(await screen.findByLabelText('Tambah lampiran atau template')).toBeInTheDocument()
+    // Tombol kirim menyebut apa yang terjadi, bukan sekadar sebuah ikon panah.
+    expect(screen.getByRole('button', { name: 'Kirim' })).toBeInTheDocument()
+  })
+
+  it('menuliskan pintasan kirim di layar alih-alih membiarkan operator menemukannya sendiri', () => {
+    render(<ComposeBox conversationId="conv_1" botEnabled={false} onSent={() => {}} onBotToggled={() => {}} />)
+
+    expect(screen.getByText(/Enter mengirim/)).toBeInTheDocument()
+    expect(screen.getByText(/Shift \+ Enter/)).toBeInTheDocument()
+  })
+
+  it('menyebutkan siapa yang sedang menjawab chat ini, bukan hanya menawarkan tombol tukar', () => {
+    const { rerender } = render(
+      <ComposeBox conversationId="conv_1" botEnabled={true} onSent={() => {}} onBotToggled={() => {}} />
+    )
+    expect(screen.getByText('Bot menjawab chat ini otomatis')).toBeInTheDocument()
+
+    rerender(<ComposeBox conversationId="conv_1" botEnabled={false} onSent={() => {}} onBotToggled={() => {}} />)
+    expect(screen.getByText('Chat ini dijawab agen')).toBeInTheDocument()
+  })
+
+  it('membuka lampiran/template sebagai menu sungguhan, dengan tiga pilihan yang bernama', async () => {
+    render(<ComposeBox conversationId="conv_1" botEnabled={false} onSent={() => {}} onBotToggled={() => {}} />)
+
+    const trigger = await screen.findByLabelText('Tambah lampiran atau template')
+    expect(trigger).toHaveAttribute('aria-expanded', 'false')
+    fireEvent.click(trigger)
+
+    expect(trigger).toHaveAttribute('aria-expanded', 'true')
+    expect(screen.getByRole('menuitem', { name: 'Foto & Video' })).toBeInTheDocument()
+    expect(screen.getByRole('menuitem', { name: 'Dokumen' })).toBeInTheDocument()
+    expect(screen.getByRole('menuitem', { name: 'Template' })).toBeInTheDocument()
+  })
+
+  it('tetap mengirim dengan Enter dan tetap membuat baris baru dengan Shift+Enter', async () => {
+    // Perilaku ini TIDAK berubah di Tahap 1C -- test ini ada supaya perubahan rupa berikutnya
+    // tidak diam-diam mengambilnya.
+    const fetchMock = vi.fn(async () => ({ ok: true, json: async () => ({ id: 'm1', deliveryStatus: 'SENT', channel: 'OFFICIAL', createdAt: new Date().toISOString() }) }) as Response)
+    vi.stubGlobal('fetch', fetchMock)
+    const onSent = vi.fn()
+    render(<ComposeBox conversationId="conv_1" botEnabled={false} onSent={onSent} onBotToggled={() => {}} />)
+
+    const box = screen.getByLabelText('Pesan')
+    fireEvent.change(box, { target: { value: 'Halo kak' } })
+    fireEvent.keyDown(box, { key: 'Enter', shiftKey: true })
+    expect(fetchMock).not.toHaveBeenCalledWith('/api/send', expect.anything())
+
+    fireEvent.keyDown(box, { key: 'Enter' })
+    await waitFor(() => expect(onSent).toHaveBeenCalled())
   })
 })

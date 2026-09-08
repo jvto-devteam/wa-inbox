@@ -128,7 +128,7 @@ describe('ChatbotPage', () => {
     fireEvent.change(screen.getByLabelText('Mulai'), { target: { value: '08:00' } })
     fireEvent.change(screen.getByLabelText('Selesai'), { target: { value: '17:00' } })
     fireEvent.change(screen.getByLabelText('Kalimat tambahan saat handoff di luar jam kerja'), { target: { value: 'Balas di luar jam kerja' } })
-    fireEvent.click(screen.getAllByText('Simpan')[0])
+    fireEvent.click(screen.getByRole('button', { name: 'Simpan jam kerja' }))
 
     await waitFor(() =>
       expect(fetch).toHaveBeenCalledWith(
@@ -150,7 +150,7 @@ describe('ChatbotPage', () => {
     expect(ollamaInput).toHaveValue('gemma4:31b-cloud')
 
     fireEvent.change(ollamaInput, { target: { value: 'mistral' } })
-    fireEvent.click(screen.getAllByText('Simpan')[2])
+    fireEvent.click(screen.getByRole('button', { name: 'Simpan model' }))
 
     await waitFor(() =>
       expect(fetch).toHaveBeenCalledWith(
@@ -170,7 +170,7 @@ describe('ChatbotPage', () => {
     fireEvent.change(screen.getByLabelText('Kalimat saat percakapan dialihkan ke manusia'), {
       target: { value: 'Tim kami segera membalas.' },
     })
-    fireEvent.click(screen.getAllByText('Simpan')[1])
+    fireEvent.click(screen.getByRole('button', { name: 'Simpan kalimat bot' }))
 
     await waitFor(() =>
       expect(fetch).toHaveBeenCalledWith(

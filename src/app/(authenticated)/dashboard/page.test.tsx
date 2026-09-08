@@ -48,7 +48,8 @@ describe('Beranda dashboard', () => {
 
     await waitFor(() => expect(location.href).toBe('/login'))
     // Stays on the loading state rather than rendering a half-built page off an error object.
-    expect(screen.getByText('Memuat...')).toBeInTheDocument()
+    expect(screen.getByRole('status', { name: 'Memuat beranda' })).toBeInTheDocument()
+    expect(screen.queryByText('Bruno')).not.toBeInTheDocument()
   })
 
   it('does not redirect on a 500, and holds the loading state', async () => {
@@ -62,6 +63,7 @@ describe('Beranda dashboard', () => {
 
     await waitFor(() => expect(fetch).toHaveBeenCalledWith('/api/dashboard/summary'))
     expect(location.href).toBe('http://localhost/dashboard')
-    expect(screen.getByText('Memuat...')).toBeInTheDocument()
+    expect(screen.getByRole('status', { name: 'Memuat beranda' })).toBeInTheDocument()
+    expect(screen.queryByText('Bruno')).not.toBeInTheDocument()
   })
 })

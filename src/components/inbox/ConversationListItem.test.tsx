@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { render, screen } from '@testing-library/react'
-import { ConversationListItem } from './ConversationListItem'
+import { ConversationListItem, formatListTime } from './ConversationListItem'
 
 const summary = {
   id: 'conv_1', contactName: 'Bruno Figarola', contactPhone: '6281234567890', avatarUrl: null,
@@ -92,5 +92,96 @@ describe('ConversationListItem', () => {
   it('shows an initial-letter avatar when there is no avatarUrl', () => {
     render(<ConversationListItem conversation={summary} onClick={() => {}} />)
     expect(screen.getByText('B')).toBeInTheDocument()
+  })
+})
+
+// Tahap 1C: hierarki satu baris. Yang diuji di sini adalah apa yang harus bisa DIPINDAI
+// sekilas -- nama, cuplikan, waktu, belum-dibaca, label, dan status bot -- bukan rupanya.
+describe('ConversationListItem — hierarki satu baris', () => {
+  it('menandai baris yang sedang dibuka dengan aria-current, bukan hanya dengan warna latar', () => {
+    const { rerender } = render(<ConversationListItem conversation={summary} onClick={() => {}} active />)
+    expect(screen.getByRole('button')).toHaveAttribute('aria-current', 'true')
+
+    rerender(<ConversationListItem conversation={summary} onClick={() => {}} />)
+    expect(screen.getByRole('button')).not.toHaveAttribute('aria-current')
+  })
+
+  it('menunjukkan waktu pesan terakhir sebagai <time> yang bisa dibaca mesin', () => {
+    render(<ConversationListItem conversation={summary} onClick={() => {}} />)
+
+    const time = document.querySelector('time')
+    expect(time).toBeInTheDocument()
+    expect(time).toHaveAttribute('dateTime', summary.lastMessageAt)
+    expect(time?.textContent).not.toBe('')
+  })
+
+  it('menandai bot aktif dan bot mati, dua-duanya dengan nama yang terbaca', () => {
+    const { rerender } = render(<ConversationListItem conversation={summary} onClick={() => {}} />)
+    expect(screen.getByLabelText('Bot aktif')).toBeInTheDocument()
+
+    rerender(<ConversationListItem conversation={{ ...summary, botEnabled: false }} onClick={() => {}} />)
+    expect(screen.getByLabelText('Bot mati')).toBeInTheDocument()
+    expect(screen.queryByLabelText('Bot aktif')).not.toBeInTheDocument()
+  })
+
+  it('menyebut siapa yang bicara terakhir kalau itu bukan pelanggan', () => {
+    const { rerender } = render(
+      <ConversationListItem
+        conversation={{ ...summary, lastMessage: 'Sudah saya cek ya', lastMessageSentBy: 'AGENT' }}
+        onClick={() => {}}
+      />
+    )
+    expect(screen.getByText('Agen:')).toBeInTheDocument()
+
+    // Pelanggan adalah suara bawaan sebuah inbox; menuliskannya di setiap baris hanya tinta.
+    rerender(<ConversationListItem conversation={summary} onClick={() => {}} />)
+    expect(screen.queryByText('Pelanggan:')).not.toBeInTheDocument()
+  })
+
+  it('mengatakan "belum ada pesan" alih-alih meninggalkan baris cuplikan kosong', () => {
+    render(
+      <ConversationListItem
+        conversation={{ ...summary, lastMessage: null, lastMessageSentBy: 'CUSTOMER' }}
+        onClick={() => {}}
+      />
+    )
+    expect(screen.getByText('Belum ada pesan')).toBeInTheDocument()
+  })
+
+  it('memakai avatar netral di daftar, bukan salah satu dari delapan rona deterministik', () => {
+    // Keputusan Tahap 1C: rona per-nama menolong di panel kontak (satu avatar, jangkar
+    // identitas) dan merugikan di daftar rapat, tempat ia melawan penanda belum dibaca.
+    render(<ConversationListItem conversation={summary} onClick={() => {}} />)
+
+    const initial = screen.getByText('B')
+    expect(initial).toHaveClass('bg-surface-sunken')
+    expect(initial.className).not.toMatch(/bg-\[#/)
+  })
+})
+
+describe('formatListTime', () => {
+  const now = new Date('2026-07-20T15:00:00.000Z')
+
+  it('memberi jam untuk pesan hari ini', () => {
+    expect(formatListTime('2026-07-20T09:30:00.000Z', now)).toMatch(/^\d{2}[.:]\d{2}$/)
+  })
+
+  it('memberi "Kemarin" untuk pesan kemarin, bukan jam yang menyesatkan', () => {
+    expect(formatListTime('2026-07-19T09:30:00.000Z', now)).toBe('Kemarin')
+  })
+
+  it('memberi nama hari untuk minggu ini', () => {
+    // Tiga hari lalu: cukup dekat untuk dikenali sebagai hari, terlalu jauh untuk sekadar jam.
+    const label = formatListTime('2026-07-17T09:30:00.000Z', now)
+    expect(label).not.toBe('Kemarin')
+    expect(label).not.toMatch(/\d{2}\/\d{2}\/\d{2}/)
+  })
+
+  it('memberi tanggal pendek untuk yang lebih lama dari seminggu', () => {
+    expect(formatListTime('2026-05-02T09:30:00.000Z', now)).toMatch(/\d{2}\/\d{2}\/\d{2}/)
+  })
+
+  it('tidak melempar dan tidak menuliskan "Invalid Date" untuk timestamp rusak', () => {
+    expect(formatListTime('bukan tanggal', now)).toBe('')
   })
 })

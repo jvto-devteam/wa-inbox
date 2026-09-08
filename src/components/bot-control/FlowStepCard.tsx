@@ -6,13 +6,13 @@ import type { ExistingFlowNode, ExistingFlowNodeType } from '@/lib/bot-control/e
 // Warna per tipe node. Tujuannya bukan dekorasi: seorang operator yang men-scan 28 langkah
 // perlu langsung melihat mana gerbang (bisa menghentikan pesan), mana pemanggilan LLM (bisa
 // gagal/lambat), dan mana pengiriman (menyentuh customer sungguhan).
-const TYPE_VARIANT: Record<ExistingFlowNodeType, 'brand' | 'warning' | 'success' | 'muted' | 'destructive'> = {
-  webhook: 'brand',
+const TYPE_VARIANT: Record<ExistingFlowNodeType, 'default' | 'warning' | 'success' | 'muted' | 'destructive'> = {
+  webhook: 'default',
   guard: 'warning',
   classifier: 'muted',
   lookup: 'muted',
   knowledge: 'success',
-  llm: 'brand',
+  llm: 'default',
   verification: 'warning',
   send: 'success',
   handoff: 'destructive',
@@ -47,16 +47,16 @@ export function FlowStepCard({
       // halaman/lokasi navigasi.
       aria-pressed={selected}
       className={cn(
-        'w-full rounded-lg border p-3 text-left transition-colors',
-        selected ? 'border-brand bg-brand/5' : 'border-border bg-white hover:bg-muted/50'
+        'focus-ring w-full rounded-md px-2 py-2 text-left transition-colors',
+        selected ? 'bg-accent-subtle' : 'hover:bg-surface-sunken'
       )}
     >
       <div className="flex items-center gap-2">
-        <span className="w-6 shrink-0 font-mono text-xs text-muted-foreground">{node.order}</span>
-        <span className="flex-1 text-sm font-medium text-navy">{node.name}</span>
+        <span className="w-5 shrink-0 font-mono text-xs text-ink-subtle">{node.order}</span>
+        <span className={cn('flex-1 text-base font-medium', selected ? 'text-accent' : 'text-ink')}>{node.name}</span>
         <Badge variant={TYPE_VARIANT[node.type]}>{TYPE_LABEL[node.type]}</Badge>
       </div>
-      <p className="mt-1 pl-8 font-mono text-xs text-muted-foreground">{node.sourceFile}</p>
+      <p className="pl-7 font-mono text-xs break-all text-ink-muted">{node.sourceFile}</p>
     </button>
   )
 }
