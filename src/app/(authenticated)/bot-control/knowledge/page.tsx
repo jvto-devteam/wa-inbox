@@ -285,48 +285,6 @@ export default function KnowledgeExplorerPage() {
         }
       />
 
-      {/* Dulu <section> telanjang dengan garis rambut di atasnya, mengambang langsung di kanvas.
-          Sekarang panel berbatas yang sama dengan Beranda dan halaman Pengaturan — dua bagian
-          halaman ini adalah dua hal yang benar-benar berbeda (file di disk vs baris database),
-          jadi dua panel di sini adalah pengelompokan sungguhan, bukan pembungkus refleks. */}
-      <FormSection
-        title="Isi katalog"
-        description={
-          <>
-            Dibaca langsung dari file di <span className="font-mono">catalog/</span> setiap kali halaman ini dibuka —
-            persis file yang dibaca bot. Tidak ada langkah sinkronisasi: mengubah filenya langsung terlihat di sini.
-            {syncedAt && ` File terakhir disinkronkan dari agent-runtime: ${new Date(syncedAt).toLocaleString('id-ID')}.`}
-          </>
-        }
-      >
-        <div className="space-y-3">
-          <div className="flex flex-wrap items-center gap-2">
-            <Input
-              value={catalogQuery}
-              onChange={(e) => changeCatalogQuery(e.target.value)}
-              placeholder="Cari isi katalog (mis. masker, ijen, harga)..."
-              aria-label="Cari isi katalog"
-              className="w-80"
-            />
-            <Select
-              value={topicFilter}
-              onChange={(e) => changeTopicFilter(e.target.value)}
-              className="w-auto"
-              aria-label="Filter topik katalog"
-            >
-              <option value="">Semua topik</option>
-              {topics.map((topic) => (
-                <option key={topic} value={topic}>
-                  {topic}
-                </option>
-              ))}
-            </Select>
-          </div>
-
-          <CatalogEntryPanel entries={entries} total={entryTotal} loading={catalogLoading} error={catalogError} />
-        </div>
-      </FormSection>
-
       {/* `actions` — aksi tingkat bagian duduk di kepala panelnya, bukan di ujung baris filter:
           ia membuat sesuatu yang baru, bukan menyaring yang sudah ada. */}
       <FormSection
@@ -377,6 +335,48 @@ export default function KnowledgeExplorerPage() {
           {!sourcesLoading && !sourcesError && (
             <KnowledgeSourceTable sources={sources} canEdit={hasAdminPowers(role)} onAction={handleAction} />
           )}
+        </div>
+      </FormSection>
+
+      {/* Dulu <section> telanjang dengan garis rambut di atasnya, mengambang langsung di kanvas.
+          Sekarang panel berbatas yang sama dengan Beranda dan halaman Pengaturan — dua bagian
+          halaman ini adalah dua hal yang benar-benar berbeda (file di disk vs baris database),
+          jadi dua panel di sini adalah pengelompokan sungguhan, bukan pembungkus refleks. */}
+      <FormSection
+        title="Isi katalog"
+        description={
+          <>
+            Dibaca langsung dari file di <span className="font-mono">catalog/</span> setiap kali halaman ini dibuka —
+            persis file yang dibaca bot. Tidak ada langkah sinkronisasi: mengubah filenya langsung terlihat di sini.
+            {syncedAt && ` File terakhir disinkronkan dari agent-runtime: ${new Date(syncedAt).toLocaleString('id-ID')}.`}
+          </>
+        }
+      >
+        <div className="space-y-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <Input
+              value={catalogQuery}
+              onChange={(e) => changeCatalogQuery(e.target.value)}
+              placeholder="Cari isi katalog (mis. masker, ijen, harga)..."
+              aria-label="Cari isi katalog"
+              className="w-80"
+            />
+            <Select
+              value={topicFilter}
+              onChange={(e) => changeTopicFilter(e.target.value)}
+              className="w-auto"
+              aria-label="Filter topik katalog"
+            >
+              <option value="">Semua topik</option>
+              {topics.map((topic) => (
+                <option key={topic} value={topic}>
+                  {topic}
+                </option>
+              ))}
+            </Select>
+          </div>
+
+          <CatalogEntryPanel entries={entries} total={entryTotal} loading={catalogLoading} error={catalogError} />
         </div>
       </FormSection>
 
