@@ -69,7 +69,11 @@ export function TestLab({ conversations = [] }: { conversations?: ConversationOp
   }
 
   return (
-    <div className="space-y-4">
+    // Formulir di kiri, hasil di kanan, mulai xl. Sebelumnya keduanya bertumpuk: satu kartu
+    // berisi satu textarea dan satu tombol, lalu hasilnya jauh di bawah lipatan — dan pada layar
+    // lebar formulir itu terentang selebar halaman tanpa ada yang mengisinya. Formulirnya
+    // sengaja dikunci 28rem: kotak teks selebar layar penuh lebih buruk daripada yang sempit.
+    <div className="grid gap-4 xl:grid-cols-[minmax(0,28rem)_minmax(0,1fr)] xl:items-start">
       <Card className="space-y-3 p-4">
         <Field label="Pesan pelanggan">
           <Textarea
@@ -119,9 +123,19 @@ export function TestLab({ conversations = [] }: { conversations?: ConversationOp
         </div>
       </Card>
 
-      {error && <p className="text-base text-danger">{error}</p>}
+      <div className="min-w-0 space-y-4">
+        {error && <p className="text-base text-danger">{error}</p>}
 
-      {result && (
+        {/* Kolom kanan tidak dibiarkan menganga saat belum ada yang dijalankan: ia mengatakan
+            apa yang akan muncul di sana. */}
+        {!result && !error && (
+          <div className="rounded-lg border border-dashed border-line px-4 py-6 text-sm text-ink-muted">
+            Hasil simulasi muncul di sini: draft balasan, langkah flow yang dilalui, knowledge yang
+            dipakai, dan jalur kirim yang akan dipakai seandainya pesan ini benar-benar dibalas.
+          </div>
+        )}
+
+        {result && (
         <Card>
           <CardHeader className="flex-wrap gap-2">
             <span className="flex flex-wrap items-center gap-2">
@@ -203,7 +217,8 @@ export function TestLab({ conversations = [] }: { conversations?: ConversationOp
             )}
           </div>
         </Card>
-      )}
+        )}
+      </div>
     </div>
   )
 }

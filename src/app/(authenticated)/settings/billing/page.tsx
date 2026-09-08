@@ -68,7 +68,7 @@ export default function BillingPage() {
   }, [days])
 
   return (
-    <main className="mx-auto max-w-3xl p-6" aria-busy={loading}>
+    <main className="mx-auto w-full max-w-[1400px] p-6" aria-busy={loading}>
       <PageHeader
         backHref="/settings"
         backLabel="Kembali ke Pengaturan"
@@ -98,9 +98,11 @@ export default function BillingPage() {
         </div>
       )}
 
+      {/* Dua tabel sempit — tiga kolom dan dua kolom — yang sendiri-sendiri tidak punya apa pun
+          untuk dibelanjakan pada lebar 1300px, jadi keduanya berdampingan. */}
       {report && (
-        <div className="mt-6 flex flex-col gap-8">
-          <FormSection title="Total biaya" description={`Seluruh percakapan berbayar pada ${days} hari terakhir.`}>
+        <div className="mt-6 grid gap-x-10 gap-y-8 xl:grid-cols-2 xl:items-start">
+          <FormSection className="xl:col-span-2" title="Total biaya" description={`Seluruh percakapan berbayar pada ${days} hari terakhir.`}>
             <p className="font-mono text-xl font-semibold text-ink tabular-nums">
               {formatCost(report.totalCost, report.currency)}
             </p>
@@ -118,16 +120,16 @@ export default function BillingPage() {
                   <TableHeader>
                     <TableRow>
                       <TableHead>Kategori</TableHead>
-                      <TableHead>Jumlah percakapan</TableHead>
-                      <TableHead>Biaya</TableHead>
+                      <TableHead className="w-48 text-right">Jumlah percakapan</TableHead>
+                      <TableHead className="w-40 text-right">Biaya</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {report.byCategory.map((c) => (
                       <TableRow key={c.category}>
                         <TableCell className="font-medium text-ink">{CATEGORY_LABEL[c.category] ?? c.category}</TableCell>
-                        <TableCell className="font-mono text-ink-muted">{c.conversationCount}</TableCell>
-                        <TableCell className="font-mono text-ink-muted">{formatCost(c.cost, report.currency)}</TableCell>
+                        <TableCell className="text-right font-mono text-ink-muted">{c.conversationCount}</TableCell>
+                        <TableCell className="text-right font-mono text-ink-muted">{formatCost(c.cost, report.currency)}</TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
@@ -145,7 +147,7 @@ export default function BillingPage() {
                   <TableHeader>
                     <TableRow>
                       <TableHead>Tanggal</TableHead>
-                      <TableHead>Biaya</TableHead>
+                      <TableHead className="w-40 text-right">Biaya</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -154,7 +156,7 @@ export default function BillingPage() {
                         <TableCell className="font-mono text-ink-muted">
                           {new Date(d.date).toLocaleDateString('id-ID')}
                         </TableCell>
-                        <TableCell className="font-mono text-ink-muted">{formatCost(d.cost, report.currency)}</TableCell>
+                        <TableCell className="text-right font-mono text-ink-muted">{formatCost(d.cost, report.currency)}</TableCell>
                       </TableRow>
                     ))}
                   </TableBody>

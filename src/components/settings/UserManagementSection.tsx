@@ -12,7 +12,7 @@ import { fetchJson } from '@/lib/fetch-json'
 
 type Account = { id: string; name: string; email: string; role: 'ADMIN' | 'AGENT' }
 
-export function UserManagementSection() {
+export function UserManagementSection({ className }: { className?: string }) {
   const [accounts, setAccounts] = useState<Account[]>([])
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
@@ -100,6 +100,7 @@ export function UserManagementSection() {
 
   return (
     <FormSection
+      className={className}
       title="Manajemen pengguna"
       description="Hanya dua peran yang ada: Admin boleh mengubah setelan dan menghapus akun, Agent hanya membalas percakapan."
     >
@@ -111,10 +112,10 @@ export function UserManagementSection() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Nama</TableHead>
+                  <TableHead className="w-64">Nama</TableHead>
                   <TableHead>Email</TableHead>
-                  <TableHead>Peran</TableHead>
-                  <TableHead />
+                  <TableHead className="w-32">Peran</TableHead>
+                  <TableHead className="w-72" />
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -144,7 +145,9 @@ export function UserManagementSection() {
 
         <div className="space-y-3 border-t border-line pt-4">
           <h3 className="text-sm font-semibold text-ink">Tambah agen baru</h3>
-          <div className="grid gap-3 sm:grid-cols-2">
+          {/* Empat kotak pendek: satu baris di layar lebar, bukan dua baris berpasangan yang
+              menyisakan setengah lebar bagian ini kosong. */}
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
             <Field label="Nama" htmlFor="new-account-name">
               <Input id="new-account-name" placeholder="Nama" value={name} onChange={(e) => setName(e.target.value)} />
             </Field>

@@ -17,7 +17,7 @@ export default function TestLabPage() {
   const conversations = useConversationOptions()
 
   return (
-    <main className="mx-auto max-w-4xl space-y-4 p-6">
+    <main className="mx-auto w-full max-w-[1600px] space-y-4 p-6">
       <PageHeader
         title="Test Lab"
         description={

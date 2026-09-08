@@ -321,3 +321,62 @@ export async function advancePipelineStagesFromBooking(): Promise<{ diperbarui: 
     return { diperbarui: 0 }
   }
 }
+
+/**
+ * Mengambil data booking untuk sejumlah percakapan yang BELUM PERNAH dicek atau cache-nya
+ * sudah basi, lalu menaikkan tahapnya lewat `ensureFreshBookingData`.
+ *
+ * Kenapa ini terpisah dari `advancePipelineStagesFromBooking`: fungsi itu hanya menilai ulang
+ * percakapan yang SUDAH punya `bookingData` tersimpan. Percakapan yang datanya belum pernah
+ * diambil sama sekali tidak tertolong olehnya -- dan sebuah audit menemukan 269 dari 340
+ * percakapan ada di keadaan itu, semuanya berlencana "Baru" terlepas dari apakah pelanggannya
+ * benar-benar punya booking. Operator tidak seharusnya menemukan itu dengan mengklik satu per
+ * satu.
+ *
+ * DIBATASI JUMLAHNYA per pemanggilan karena setiap percakapan berarti satu panggilan HTTP ke
+ * API booking. Cron antrean outbound berjalan sering; menyapu 340 percakapan tiap tick akan
+ * membanjiri API itu tanpa alasan. Dengan batas kecil, tumpukan lama terkejar dalam beberapa
+ * tick dan sesudahnya hampir selalu tidak ada pekerjaan.
+ *
+ * Yang paling lama tidak dicek dikerjakan lebih dulu (NULL lebih dulu). Berurutan, bukan
+ * paralel: mengalirkan puluhan permintaan serentak ke API pihak ketiga adalah cara membuatnya
+ * membatasi kita.
+ */
+export async function refreshStaleBookingData(limit = 25): Promise<{ diperiksa: number }> {
+  try {
+    const kandidat = await prisma.conversation.findMany({
+      where: {
+        isTest: false,
+        OR: [
+          { bookingCheckedAt: null },
+          { bookingCheckedAt: { lt: new Date(Date.now() - BOOKING_CACHE_MS) } },
+        ],
+      },
+      select: {
+        id: true,
+        bookingData: true,
+        bookingCheckedAt: true,
+        pipelineStage: true,
+        orderChannel: true,
+        isTest: true,
+        contact: { select: { phone: true } },
+      },
+      orderBy: { bookingCheckedAt: { sort: 'asc', nulls: 'first' } },
+      take: limit,
+    })
+
+    for (const conversation of kandidat) {
+      // `ensureFreshBookingData` sudah menelan errornya sendiri lewat `lookupBooking`, tapi
+      // penulisan Prisma-nya tidak -- satu baris bermasalah tidak boleh menghentikan sisanya.
+      await ensureFreshBookingData(conversation).catch((error: unknown) => {
+        console.error('refreshStaleBookingData: satu percakapan gagal', { id: conversation.id, error })
+      })
+    }
+
+    if (kandidat.length > 0) console.info('refreshStaleBookingData', { diperiksa: kandidat.length })
+    return { diperiksa: kandidat.length }
+  } catch (error) {
+    console.error('refreshStaleBookingData gagal', { error })
+    return { diperiksa: 0 }
+  }
+}

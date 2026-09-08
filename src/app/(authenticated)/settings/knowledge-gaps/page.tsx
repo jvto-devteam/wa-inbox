@@ -48,7 +48,7 @@ export default function KnowledgeGapsPage() {
   }, [filter])
 
   return (
-    <main className="mx-auto max-w-3xl p-6">
+    <main className="mx-auto w-full max-w-[1400px] p-6">
       <PageHeader
         backHref="/settings"
         backLabel="Kembali ke Pengaturan"
@@ -94,7 +94,10 @@ export default function KnowledgeGapsPage() {
                     {new Date(g.createdAt).toLocaleString('id-ID')}
                   </time>
                 </div>
-                <p className="mt-1 text-sm text-ink-muted">{g.messageText}</p>
+                {/* Wadahnya ikut melebar, kalimat pelanggannya tidak: baris teks di atas ~80
+                    karakter melelahkan dibaca, dan ini satu-satunya bagian baris yang berupa
+                    prosa. */}
+                <p className="mt-1 max-w-4xl text-sm text-ink-muted">{g.messageText}</p>
               </li>
             ))}
           </ul>

@@ -71,7 +71,7 @@ export default function RulesRegistryPage() {
   }, [rules, query, category])
 
   return (
-    <main className="mx-auto max-w-6xl space-y-5 p-6">
+    <main className="mx-auto w-full max-w-[1600px] space-y-5 p-6">
       <PageHeader
         title="Rules Registry"
         description={

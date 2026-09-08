@@ -30,8 +30,11 @@ type Role = 'ADMIN' | 'AGENT' | null
 /** Satu baris "kelola di halaman lain": apa isinya, lalu tautannya. */
 function LinkRow({ title, description, href, linkLabel }: { title: string; description: string; href: string; linkLabel: string }) {
   return (
-    <div className="flex flex-wrap items-start justify-between gap-3 border-b border-line py-3 first:pt-0 last:border-b-0 last:pb-0">
-      <div className="min-w-0 max-w-xl space-y-1">
+    // Garis rambut di ATAS, bukan di bawah: baris-baris ini sekarang duduk di petak dua kolom,
+    // dan aturan `last:border-b-0` hanya benar untuk satu lajur — di dua lajur ia menghapus
+    // garis pada satu sel dan menyisakannya pada tetangganya.
+    <div className="flex flex-wrap items-start justify-between gap-3 border-t border-line py-3">
+      <div className="min-w-0 flex-1 space-y-1">
         <p className="text-base font-medium text-ink">{title}</p>
         <p className="text-sm text-ink-muted">{description}</p>
       </div>
@@ -113,7 +116,7 @@ export default function SettingsPage() {
 
   if (!settings || !status) {
     return (
-      <main aria-busy="true" className="mx-auto max-w-3xl p-6">
+      <main aria-busy="true" className="mx-auto w-full max-w-[1400px] p-6">
         <Skeleton className="h-6 w-32" />
         <div className="mt-8 flex flex-col gap-8">
           <SkeletonText lines={3} />
@@ -127,13 +130,16 @@ export default function SettingsPage() {
   const admin = hasAdminPowers(role)
 
   return (
-    <main className="mx-auto max-w-3xl p-6">
+    <main className="mx-auto w-full max-w-[1400px] p-6">
       <PageHeader
         title="Pengaturan"
         description="Jalur kirim, kesehatan kedua nomor, pengaman outbound, dan akun tim. Setelan bot sendiri ada di halaman Chatbot."
       />
 
-      <div className="mt-6 flex flex-col gap-8">
+      {/* Dua kolom mulai xl. Empat dari enam bagian di halaman ini isinya satu select, dua
+          lencana, atau empat kotak angka — menumpuknya dalam satu lajur 768px adalah bentuk
+          paling boros dari halaman yang isinya sesedikit ini. */}
+      <div className="mt-6 grid gap-x-10 gap-y-8 xl:grid-cols-2 xl:items-start">
         <FormSection
           title="Default jalur kirim"
           description="Jalur yang dipakai saat pesan keluar tidak menyebut jalurnya sendiri — campaign, balasan bot, dan kiriman dari Inbox."
@@ -154,7 +160,10 @@ export default function SettingsPage() {
 
         {/* Unofficial is send-only -- its own connect/relink is managed on wa-dashboard directly,
             not from here (see src/lib/coexist/client.ts). */}
+        {/* Tetangga kanan di baris pertama: garis rambut atasnya hanya benar di bawah xl,
+            ketika bagian ini memang berada di bawah "Default jalur kirim". */}
         <FormSection
+          className="xl:border-t-0 xl:pt-0"
           title="Status nomor"
           description="Kesehatan kedua nomor seperti yang dilihat aplikasi ini. Nomor Unofficial disambungkan dari wa-dashboard, bukan dari sini."
         >
@@ -170,6 +179,7 @@ export default function SettingsPage() {
 
         {admin && (
           <FormSection
+            className="xl:col-span-2"
             title="Pengaman outbound"
             description={
               <>
@@ -183,7 +193,7 @@ export default function SettingsPage() {
               </>
             }
           >
-            <div className="grid gap-4 sm:grid-cols-2">
+            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
               {SAFETY_FIELDS.map((field) => (
                 <Field
                   key={field}
@@ -209,24 +219,30 @@ export default function SettingsPage() {
         )}
 
         {admin && (
-          <FormSection title="Kelola di halaman lain" description="Data yang datang dari Meta, dibaca dan diubah di halamannya sendiri.">
-            <LinkRow
-              title="Biaya percakapan"
-              description="Histori biaya WhatsApp berdasarkan kategori percakapan (dari Meta)."
-              href="/settings/billing"
-              linkLabel="Lihat histori biaya"
-            />
-            <LinkRow
-              title="Profil bisnis WhatsApp"
-              description="Info bisnis yang dilihat pelanggan, status akun, dan pengaturan commerce (dari Meta)."
-              href="/settings/business-profile"
-              linkLabel="Kelola profil bisnis"
-            />
+          <FormSection
+            className="xl:col-span-2"
+            title="Kelola di halaman lain"
+            description="Data yang datang dari Meta, dibaca dan diubah di halamannya sendiri."
+          >
+            <div className="grid gap-x-10 sm:grid-cols-2">
+              <LinkRow
+                title="Biaya percakapan"
+                description="Histori biaya WhatsApp berdasarkan kategori percakapan (dari Meta)."
+                href="/settings/billing"
+                linkLabel="Lihat histori biaya"
+              />
+              <LinkRow
+                title="Profil bisnis WhatsApp"
+                description="Info bisnis yang dilihat pelanggan, status akun, dan pengaturan commerce (dari Meta)."
+                href="/settings/business-profile"
+                linkLabel="Kelola profil bisnis"
+              />
+            </div>
           </FormSection>
         )}
 
-        {admin && <UserManagementSection />}
-        {admin && <WebhookCredentialsPanel />}
+        {admin && <UserManagementSection className="xl:col-span-2" />}
+        {admin && <WebhookCredentialsPanel className="xl:col-span-2" />}
       </div>
     </main>
   )

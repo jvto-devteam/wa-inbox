@@ -1,11 +1,14 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, waitFor, cleanup, within } from '@testing-library/react'
-import DashboardPage, { buildWaitingList, formatWait } from './page'
+import DashboardPage from './page'
+import { buildWaitingList, formatWait } from '@/components/dashboard/data'
 
-// Beranda sekarang membaca tiga endpoint (lihat komentar kepala page.tsx): summary tahu
-// percakapan mana yang sudah di-handoff dan belum dipegang siapa pun, /api/conversations
-// membawa timestamp pesan terakhir (satu-satunya sumber "sudah menunggu berapa lama"), dan
-// /api/reminders/due membawa dueAt + contactId supaya reminder bisa diklik.
+// Beranda membaca EMPAT sumber yang berdiri sendiri (lihat komentar kepala page.tsx): summary
+// tahu percakapan mana yang sudah di-handoff dan belum dipegang siapa pun, /api/conversations
+// membawa timestamp pesan terakhir (satu-satunya sumber "sudah menunggu berapa lama"),
+// /api/reminders/due membawa dueAt + contactId supaya reminder bisa diklik, dan dua endpoint
+// agregat (/api/dashboard/operations, /api/dashboard/activity) mengisi panel funnel, outbound,
+// volume, kesehatan bot, dan pertanyaan tak terjawab.
 const HOUR = 60 * 60 * 1000
 
 function isoAgo(ms: number) {
@@ -66,11 +69,49 @@ const reminders = [
   { id: 'rem_1', note: 'Follow up DP', dueAt: isoAgo(2 * HOUR), contactId: 'contact_1', contactName: 'Bruno' },
 ]
 
+const operations = {
+  funnel: [
+    { stage: 'new', label: 'Baru', count: 6 },
+    { stage: 'nego', label: 'Negosiasi', count: 3 },
+    { stage: 'booked', label: 'Booked', count: 2 },
+    { stage: 'lunas', label: 'Lunas', count: 1 },
+    { stage: 'selesai', label: 'Selesai', count: 0 },
+  ],
+  conversationTotal: 12,
+  outbound: {
+    inFlight: { QUEUED: 0, SENDING: 0, RETRYING: 0 },
+    inFlightTotal: 0,
+    failedRecent: 0,
+    stuck: 0,
+    pausedProviders: [],
+  },
+}
+
+const activity = {
+  days: 7,
+  since: isoAgo(7 * 24 * HOUR),
+  decisions: {
+    total: 4,
+    byStatus: { REPLIED: 3, HANDOFF: 1 },
+    flagged: 0,
+    avgLatencyMs: 1200,
+    maxLatencyMs: 3000,
+  },
+  volume: Array.from({ length: 7 }, (_, i) => ({
+    day: `2026-09-0${i + 1}`,
+    inbound: i,
+    outbound: i * 2,
+  })),
+  gaps: { total: 0, byReason: {}, topTopics: [] },
+}
+
 function mockEndpoints(overrides: Partial<Record<string, unknown>> = {}) {
   const bodies: Record<string, unknown> = {
     '/api/dashboard/summary': summary,
     '/api/conversations': conversations,
     '/api/reminders/due': reminders,
+    '/api/dashboard/operations': operations,
+    '/api/dashboard/activity?days=7': activity,
     ...overrides,
   }
   const impl = (url: string) =>
@@ -161,7 +202,12 @@ describe('Beranda dashboard', () => {
     expect(screen.queryByText('Bruno')).not.toBeInTheDocument()
   })
 
-  it('does not redirect on a 500, and holds the loading state', async () => {
+  // Sejak Beranda punya delapan panel di atas empat sumber yang berdiri sendiri, satu endpoint
+  // yang 500 tidak boleh lagi menahan SELURUH halaman di kerangka pemuatan: panel yang datanya
+  // tidak sampai mengaku sendiri, dan panel di sebelahnya tetap benar. Yang tidak berubah adalah
+  // dua hal yang penting: tidak ada redirect (500 bukan sesi mati), dan tidak ada satu pun angka
+  // yang dikarang untuk mengisi kekosongan.
+  it('does not redirect on a 500, and every panel admits its data failed', async () => {
     vi.mocked(fetch).mockResolvedValue({
       ok: false,
       status: 500,
@@ -170,10 +216,10 @@ describe('Beranda dashboard', () => {
 
     render(<DashboardPage />)
 
-    await waitFor(() => expect(fetch).toHaveBeenCalledWith('/api/dashboard/summary'))
+    await waitFor(() => expect(screen.getAllByText('Data tidak bisa dibaca').length).toBeGreaterThan(0))
     expect(location.href).toBe('http://localhost/dashboard')
-    expect(screen.getByRole('status', { name: 'Memuat beranda' })).toBeInTheDocument()
     expect(screen.queryByText('Bruno')).not.toBeInTheDocument()
+    expect(screen.queryByText('Chat menunggu dibalas')).toBeInTheDocument()
   })
 })
 

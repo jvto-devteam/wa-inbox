@@ -3,7 +3,7 @@ import { requireAdmin } from '@/lib/auth/require-admin'
 import { hasValidCronSecret } from '@/lib/outbound/cron-auth'
 import { processDueOutboundJobs } from '@/lib/outbound/worker'
 import { pruneBotAuditLogs } from '@/lib/bot-control/audit'
-import { advancePipelineStagesFromBooking } from '@/lib/booking/client'
+import { advancePipelineStagesFromBooking, refreshStaleBookingData } from '@/lib/booking/client'
 
 /**
  * POST /api/outbound-jobs/process — run every outbound job that is currently due.
@@ -54,6 +54,15 @@ export async function POST(req: Request) {
   // percakapan yang tripnya sudah selesai justru percakapan yang tidak ada lagi yang membukanya.
   await advancePipelineStagesFromBooking().catch((error: unknown) => {
     console.error('POST /api/outbound-jobs/process: menaikkan tahap pipeline gagal', error)
+  })
+
+  // Menyusul yang di atas, dan menutup lubang yang tidak bisa ditutup olehnya: fungsi itu hanya
+  // menilai ulang percakapan yang SUDAH punya bookingData. Yang datanya belum pernah diambil
+  // sama sekali tetap berlencana "Baru" selamanya sampai ada yang membukanya -- 269 dari 340
+  // percakapan ada di keadaan itu saat ditemukan. Dibatasi 25 per tick karena tiap percakapan
+  // berarti satu panggilan HTTP ke API booking.
+  await refreshStaleBookingData().catch((error: unknown) => {
+    console.error('POST /api/outbound-jobs/process: menyegarkan data booking gagal', error)
   })
 
   try {

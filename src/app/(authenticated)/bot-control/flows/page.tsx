@@ -54,7 +54,7 @@ export default function FlowMapPage() {
   }
 
   return (
-    <main className="mx-auto max-w-6xl space-y-4 p-6">
+    <main className="mx-auto w-full max-w-[1600px] space-y-4 p-6">
       <PageHeader
         title="Flow Map"
         description={
@@ -70,7 +70,7 @@ export default function FlowMapPage() {
         }
       />
 
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,14rem)_minmax(0,1fr)_minmax(0,20rem)]">
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,15rem)_minmax(0,1fr)_minmax(0,24rem)] lg:items-start">
         <Card className="h-fit">
           <CardHeader>
             <CardTitle className="text-sm">Flow</CardTitle>

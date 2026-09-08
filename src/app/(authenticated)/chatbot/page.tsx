@@ -44,7 +44,7 @@ type Role = 'ADMIN' | 'AGENT' | null
 function SwitchRow({ badge, action, children }: { badge: ReactNode; action?: ReactNode; children: ReactNode }) {
   return (
     <div className="flex flex-wrap items-start justify-between gap-3 border-b border-line py-3 first:pt-0 last:border-b-0 last:pb-0">
-      <div className="min-w-0 max-w-xl space-y-1.5">
+      <div className="min-w-0 flex-1 space-y-1.5">
         <div>{badge}</div>
         <p className="text-sm text-ink-muted">{children}</p>
       </div>
@@ -223,7 +223,7 @@ export default function ChatbotPage() {
 
   if (!settings || !gateStatus || !catalogSummary) {
     return (
-      <main aria-busy="true" className="mx-auto max-w-3xl p-6">
+      <main aria-busy="true" className="mx-auto w-full max-w-[1400px] p-6">
         <Skeleton className="h-6 w-32" />
         <div className="mt-8 flex flex-col gap-8">
           <SkeletonText lines={4} />
@@ -237,13 +237,17 @@ export default function ChatbotPage() {
   const admin = hasAdminPowers(role)
 
   return (
-    <main className="mx-auto max-w-3xl p-6">
+    <main className="mx-auto w-full max-w-[1400px] p-6">
       <PageHeader
         title="Chatbot"
         description="Apa yang bot lakukan, dan kalimat apa yang diucapkannya. Setiap perubahan di halaman ini berlaku begitu disimpan — tidak ada antrean persetujuan."
       />
 
-      <div className="mt-6 flex flex-col gap-8">
+      {/* Dua kolom mulai xl. Bagian-bagian di halaman ini pendek — tiga sakelar, dua jam, dua
+          kalimat, satu nama model — dan menumpuknya dalam satu lajur 768px membuat halaman
+          setinggi dua layar dengan dua pertiga lebarnya kosong. Yang tetap selebar penuh hanya
+          katalog, karena isinya tabel. */}
+      <div className="mt-6 grid gap-x-10 gap-y-8 xl:grid-cols-2 xl:items-start">
         <FormSection
           title="Kapan bot menjawab"
           description="Tiga sakelar yang menentukan percakapan mana yang dijawab bot dan kapan percakapan diserahkan ke agen."
@@ -325,7 +329,10 @@ export default function ChatbotPage() {
           </SwitchRow>
         </FormSection>
 
+        {/* Tetangga kanan di baris pertama: garis rambut atasnya hanya benar ketika bagian ini
+            memang berada DI BAWAH bagian sebelumnya, yaitu di bawah xl. */}
         <FormSection
+          className="xl:border-t-0 xl:pt-0"
           title="Jam kerja tim"
           description="Bot tetap menjawab 24 jam, di dalam maupun di luar jam ini. Yang berubah hanya satu: di luar jam ini, pelanggan yang dialihkan ke tim (handoff) ikut diberi tahu kapan tim membalas. Jam dihitung menurut waktu Indonesia Barat (WIB), bukan jam server."
         >
@@ -443,6 +450,7 @@ export default function ChatbotPage() {
         </FormSection>
 
         <FormSection
+          className="xl:col-span-2"
           title="Pengetahuan (katalog paket)"
           description="Paket yang boleh disebut bot. Katalog dibaca dari berkas, bukan diketik di sini; sinkron menariknya ulang."
           actions={
@@ -491,8 +499,8 @@ export default function ChatbotPage() {
                   <TableHeader>
                     <TableRow>
                       <TableHead>Paket</TableHead>
-                      <TableHead>Destinasi</TableHead>
-                      <TableHead>Harga</TableHead>
+                      <TableHead className="w-[40%]">Destinasi</TableHead>
+                      <TableHead className="w-44 text-right">Harga</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -500,7 +508,7 @@ export default function ChatbotPage() {
                       <TableRow key={p.packageKey}>
                         <TableCell className="font-medium text-ink">{p.title}</TableCell>
                         <TableCell className="text-ink-muted">{p.destinationTokens.join(', ')}</TableCell>
-                        <TableCell className="font-mono text-ink-muted">
+                        <TableCell className="text-right font-mono whitespace-nowrap text-ink-muted">
                           {p.priceIdr != null ? `Rp ${p.priceIdr.toLocaleString('id-ID')}` : '-'}
                         </TableCell>
                       </TableRow>

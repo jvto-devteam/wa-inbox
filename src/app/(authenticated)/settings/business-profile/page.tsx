@@ -53,7 +53,7 @@ function CommerceRow({
 }) {
   return (
     <label className="flex cursor-pointer items-start justify-between gap-4 border-b border-line py-3 first:pt-0 last:border-b-0 last:pb-0">
-      <span className="min-w-0 max-w-xl">
+      <span className="min-w-0 flex-1">
         <span className="block text-base font-medium text-ink">{title}</span>
         <span className="mt-0.5 block text-sm text-ink-muted">{description}</span>
       </span>
@@ -160,7 +160,7 @@ export default function BusinessProfilePage() {
   }
 
   return (
-    <main className="mx-auto max-w-3xl p-6" aria-busy={loading}>
+    <main className="mx-auto w-full max-w-[1400px] p-6" aria-busy={loading}>
       <PageHeader
         backHref="/settings"
         backLabel="Kembali ke Pengaturan"
@@ -177,9 +177,12 @@ export default function BusinessProfilePage() {
       )}
       {loadError && <FieldError className="mt-4 text-sm">{loadError}</FieldError>}
 
-      <div className="mt-6 flex flex-col gap-8">
+      {/* Status akun membentang penuh — ia cuma dua lencana. Info bisnis dan Commerce
+          berdampingan: keduanya formulir pendek yang tidak butuh 1300px sendirian. */}
+      <div className="mt-6 grid gap-x-10 gap-y-8 xl:grid-cols-2 xl:items-start">
         {account && (
           <FormSection
+            className="xl:col-span-2"
             title={account.name ?? 'Akun WhatsApp Business'}
             description="Status akun menurut Meta. Hanya bisa diubah dari Meta Business Manager, bukan dari sini."
           >

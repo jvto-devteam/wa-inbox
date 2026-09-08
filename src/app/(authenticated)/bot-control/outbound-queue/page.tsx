@@ -170,7 +170,7 @@ export default function OutboundQueuePage() {
   const lastPage = Math.max(1, Math.ceil((data?.total ?? 0) / 50))
 
   return (
-    <main className="mx-auto max-w-7xl space-y-4 p-6">
+    <main className="mx-auto w-full max-w-[1600px] space-y-4 p-6">
       <PageHeader
         title="Outbound Queue"
         description="Setiap pengiriman yang masih harus terjadi, beserta alasan kegagalannya. Sebelumnya satu-satunya jendela ke sini adalah badge pengiriman pada satu bubble di satu percakapan."

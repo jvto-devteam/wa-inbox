@@ -60,33 +60,38 @@ export function BotControlNav() {
     // `sticky top-0` sejak Tahap 1B: cangkangnya sekarang menyerahkan gulungan ke area konten,
     // jadi tanpa ini baris tab ikut tergulung ke atas dan operator kehilangan satu-satunya jalan
     // antar-bagian tepat ketika ia sedang jauh di dalam sebuah tabel panjang.
+    // Garis bawahnya membentang selebar layar (ia memisahkan bar dari halaman), tetapi TAB-nya
+    // dipusatkan pada lebar yang sama dengan isi halaman di bawahnya. Tanpa itu, di layar 2880px
+    // tab pertama berdiri ratusan piksel di kiri judul halaman yang seharusnya ia tandai.
     <nav
       aria-label="Menu Bot Control"
-      className="sticky top-0 z-10 flex items-center gap-1 overflow-x-auto border-b border-line bg-surface px-6"
+      className="sticky top-0 z-10 border-b border-line bg-surface"
     >
-      {BOT_CONTROL_SECTIONS.map((section) => {
-        const active = isActiveSection(pathname, section.href)
-        return (
-          <Link
-            key={section.href}
-            href={section.href}
-            aria-current={active ? 'page' : undefined}
-            className={cn(
-              // `.focus-ring` adalah cincin fokus tunggal sistem desain Tahap 1A. Sebelumnya
-              // tab ini memakai cincin brand buatannya sendiri (focus-visible:ring-3); dua
-              // bentuk fokus yang berbeda di dua bar navigasi yang berdampingan adalah persis
-              // jenis ketidakkonsistenan yang dihapus 1A.
-              'focus-ring relative shrink-0 rounded-md px-3 py-2.5 text-sm transition-colors',
-              active
-                ? 'font-semibold text-accent'
-                : 'font-medium text-ink-muted hover:bg-surface-sunken hover:text-ink'
-            )}
-          >
-            {section.label}
-            {active && <span className="absolute right-3 bottom-0 left-3 h-0.5 rounded-full bg-accent" />}
-          </Link>
-        )
-      })}
+      <div className="mx-auto flex w-full max-w-[1600px] items-center gap-1 overflow-x-auto px-6">
+        {BOT_CONTROL_SECTIONS.map((section) => {
+          const active = isActiveSection(pathname, section.href)
+          return (
+            <Link
+              key={section.href}
+              href={section.href}
+              aria-current={active ? 'page' : undefined}
+              className={cn(
+                // `.focus-ring` adalah cincin fokus tunggal sistem desain Tahap 1A. Sebelumnya
+                // tab ini memakai cincin brand buatannya sendiri (focus-visible:ring-3); dua
+                // bentuk fokus yang berbeda di dua bar navigasi yang berdampingan adalah persis
+                // jenis ketidakkonsistenan yang dihapus 1A.
+                'focus-ring relative shrink-0 rounded-md px-3 py-2.5 text-sm transition-colors',
+                active
+                  ? 'font-semibold text-accent'
+                  : 'font-medium text-ink-muted hover:bg-surface-sunken hover:text-ink'
+              )}
+            >
+              {section.label}
+              {active && <span className="absolute right-3 bottom-0 left-3 h-0.5 rounded-full bg-accent" />}
+            </Link>
+          )
+        })}
+      </div>
     </nav>
   )
 }

@@ -6,7 +6,7 @@ import { fetchJson } from '@/lib/fetch-json'
 
 type CredentialsStatus = { coexistBaseUrl: string; accessTokenSet: boolean; coexistApiKeySet: boolean }
 
-export function WebhookCredentialsPanel() {
+export function WebhookCredentialsPanel({ className }: { className?: string }) {
   const [status, setStatus] = useState<CredentialsStatus | null>(null)
 
   // There is no `deployedBaseUrl` concept anywhere in this codebase (no env
@@ -31,10 +31,11 @@ export function WebhookCredentialsPanel() {
 
   return (
     <FormSection
+      className={className}
       title="Webhook & kredensial"
       description="Alamat yang harus terdaftar di Meta, dan apakah kedua kunci sudah terpasang. Nilai kuncinya sendiri tidak pernah ditampilkan di sini."
     >
-      <dl className="space-y-3">
+      <dl className="grid gap-3 sm:grid-cols-2">
         <div className="space-y-0.5">
           <dt className="text-sm font-medium text-ink">Meta webhook URL</dt>
           <dd className="font-mono text-sm break-all text-ink-muted">{webhookUrl}</dd>

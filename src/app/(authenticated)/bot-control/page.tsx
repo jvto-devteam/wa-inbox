@@ -21,7 +21,7 @@ import { PageHeader } from '@/components/ui/page-header'
 // kotak untuk satu isi; yang memisahkannya dari halaman sudah garis rambutnya sendiri.
 export default function BotControlPage() {
   return (
-    <main className="mx-auto max-w-4xl space-y-6 p-6">
+    <main className="mx-auto w-full max-w-[1600px] space-y-6 p-6">
       <PageHeader
         title="Bot Control"
         description="Membuka logika bot yang selama ini hanya ada di kode, JSON, dan trace database — supaya bisa diaudit sebelum dipercaya. Pilih bagiannya di menu atas."
@@ -30,7 +30,10 @@ export default function BotControlPage() {
       {/* Guidebook §15 acceptance 2: the channel policy has to be VISIBLE in Bot Control, not
           just enforced in code, so an operator knows which features are Official-only before
           they try to use one. */}
-      <section className="space-y-2 border-t border-line pt-5">
+      {/* Judul + penjelas di kiri, matriksnya di kanan. Matriks empat kolom ini tidak punya
+          apa pun untuk dibelanjakan pada lebar penuh, jadi ruang lebihnya dipakai untuk
+          menaruh keterangannya BERDAMPINGAN alih-alih menumpuknya di atas tabel. */}
+      <section className="grid gap-x-10 gap-y-3 border-t border-line pt-5 xl:grid-cols-[minmax(0,26rem)_minmax(0,1fr)] xl:items-start">
         <div className="space-y-0.5">
           <h2 className="text-base font-semibold text-ink">Kemampuan per channel</h2>
           <p className="text-sm text-ink-muted">

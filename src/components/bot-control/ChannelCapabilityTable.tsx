@@ -40,10 +40,13 @@ export function ChannelCapabilityTable() {
     <Table>
       <TableHeader>
         <TableRow>
-          <TableHead className="w-1/2">Kemampuan</TableHead>
-          <TableHead>Official</TableHead>
-          <TableHead>Unofficial</TableHead>
-          <TableHead>Catatan</TableHead>
+          {/* Lebar tetap, bukan pecahan: tabel ini sekarang duduk di kolom yang lebarnya
+              berubah-ubah, dan `w-1/2` membuat kolom nama tumbuh mengikuti wadah sementara
+              tiga kolom lencana di sebelahnya justru makin renggang. */}
+          <TableHead>Kemampuan</TableHead>
+          <TableHead className="w-32">Official</TableHead>
+          <TableHead className="w-32">Unofficial</TableHead>
+          <TableHead className="w-44">Catatan</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>

@@ -117,7 +117,7 @@ export function OutboundQueueTable({
             </TableCell>
             {/* Ditulis penuh, tidak dipotong dan tidak disembunyikan di balik tooltip: inilah
                 satu-satunya alasan orang membuka halaman ini saat provider bermasalah. */}
-            <TableCell className="max-w-md py-2.5 text-sm text-danger">
+            <TableCell className="max-w-2xl py-2.5 text-sm text-danger">
               {job.lastError ?? <span className="text-ink-subtle">—</span>}
             </TableCell>
             <TableCell className="py-2.5 text-sm whitespace-nowrap text-ink-muted">

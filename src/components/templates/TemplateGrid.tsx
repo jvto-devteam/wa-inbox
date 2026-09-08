@@ -53,7 +53,10 @@ export function TemplateGrid({
   }
 
   return (
-    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+    // Auto-fill, bukan jumlah kolom tetap: petak ini sekarang bisa berada di kolom ketiga
+    // yang sempit (2xl) atau membentang selebar halaman (lg), dan `lg:grid-cols-3` menilai
+    // lebarnya dari layar, bukan dari kotak yang benar-benar ditempatinya.
+    <div className="grid grid-cols-[repeat(auto-fill,minmax(15rem,1fr))] gap-3">
       {templates.map((t) => (
         <div key={t.id} className="flex flex-col gap-2 rounded-lg border border-line bg-surface p-2">
           <TemplatePreviewBubble template={t} />

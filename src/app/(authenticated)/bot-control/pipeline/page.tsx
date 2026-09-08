@@ -328,7 +328,7 @@ export default function PipelineLivePage() {
   const nothingYet = !historyLoading && history.length === 0 && liveRuns.length === 0
 
   return (
-    <main className="mx-auto max-w-7xl space-y-4 p-6">
+    <main className="mx-auto w-full max-w-[1600px] space-y-4 p-6">
       <PageHeader
         title="Alur Live"
         description="Perjalanan satu pesan pelanggan, dari webhook masuk sampai balasan terkirim. Kotak menyala saat ada run yang sedang melewatinya; run yang sudah lewat bisa diputar ulang di kanvas yang sama. Antrean kirim, retry, dan safety guard bukan bagian dari peta ini — itu ada di Outbound Queue."
@@ -352,7 +352,7 @@ export default function PipelineLivePage() {
         onSelectStep={(id) => setSelectedStepId(id)}
       />
 
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,22rem)_minmax(0,18rem)]">
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,24rem)_minmax(0,20rem)] lg:items-start">
         <Card className="space-y-3 p-4">
           <div className="flex items-center justify-between gap-2">
             <p className="text-base font-semibold text-ink">Run</p>

@@ -76,60 +76,68 @@ export function CatalogEntryPanel({
           const truncated = entry.body.length > BODY_PREVIEW_LENGTH
 
           return (
-            <li key={entry.id} className="space-y-1.5 py-3">
-              <div className="flex flex-wrap items-center gap-2">
+            // Dua kolom mulai xl: isi entri di kiri, keterangannya (file, harga, link, tag)
+            // di kanan. Sebelumnya semuanya satu lajur, jadi begitu halaman ini memakai lebar
+            // layar, badan teksnya melar sampai ~1400px — panjang baris yang tidak terbaca —
+            // sementara barisan tag di bawahnya menyisakan ruang kosong sepanjang itu juga.
+            <li key={entry.id} className="grid gap-x-8 gap-y-1.5 py-3 xl:grid-cols-[minmax(0,1fr)_minmax(0,22rem)] xl:items-start">
+              <div className="flex flex-wrap items-center gap-2 xl:col-span-2">
                 <p className="flex-1 text-base font-medium text-ink">{entry.title}</p>
                 <Badge variant="muted">{entry.topic}</Badge>
                 {entry.links.length > 0 && <Badge variant="default">{entry.links.length} link</Badge>}
                 {entry.prices.length > 0 && <Badge variant="default">{entry.prices.length} harga</Badge>}
               </div>
 
-              {/* The file, not a database id: the way to change any of this is to edit the file. */}
-              <p className="font-mono text-xs text-ink-subtle">catalog/{entry.sourceFile}</p>
-
-              <p className="text-sm whitespace-pre-wrap text-ink">
-                {expanded || !truncated ? entry.body : entry.body.slice(0, BODY_PREVIEW_LENGTH)}
-                {!expanded && truncated && '…'}
-              </p>
-
-              {truncated && (
-                <button
-                  type="button"
-                  onClick={() => setExpandedId(expanded ? null : entry.id)}
-                  className="focus-ring rounded-sm text-xs text-ink-muted underline underline-offset-2 hover:text-ink"
-                >
-                  {expanded ? 'Ringkas' : 'Tampilkan selengkapnya'}
-                </button>
-              )}
-
-              {entry.prices.length > 0 && (
-                <p className="text-xs">
-                  <span className="text-ink-subtle">Harga: </span>
-                  <span className="font-mono text-ink">
-                    {entry.prices.map((price) => `Rp ${IDR.format(price)}`).join(' · ')}
-                  </span>
+              <div className="min-w-0 space-y-1.5">
+                <p className="max-w-4xl text-sm whitespace-pre-wrap text-ink">
+                  {expanded || !truncated ? entry.body : entry.body.slice(0, BODY_PREVIEW_LENGTH)}
+                  {!expanded && truncated && '…'}
                 </p>
-              )}
 
-              {entry.links.length > 0 && (
-                <p className="text-xs">
-                  <span className="text-ink-subtle">Link: </span>
-                  {/* Deliberately not anchors. These are grounding values the bot may cite, and a
-                      relative path here is not a route in this app — rendering them as links
-                      would send an operator to a 404 inside wa-inbox. */}
-                  <span className="font-mono break-all text-ink">{entry.links.join(' · ')}</span>
-                </p>
-              )}
+                {truncated && (
+                  <button
+                    type="button"
+                    onClick={() => setExpandedId(expanded ? null : entry.id)}
+                    className="focus-ring rounded-sm text-xs text-ink-muted underline underline-offset-2 hover:text-ink"
+                  >
+                    {expanded ? 'Ringkas' : 'Tampilkan selengkapnya'}
+                  </button>
+                )}
+              </div>
 
-              {entry.tags.length > 0 && (
-                <div className="flex flex-wrap gap-1">
-                  {entry.tags.map((tag) => (
-                    <Badge key={tag} variant="muted">
-                      {tag}
-                    </Badge>
-                  ))}
-                </div>
-              )}
+              <div className="min-w-0 space-y-1.5">
+                {/* The file, not a database id: the way to change any of this is to edit the file. */}
+                <p className="font-mono text-xs break-all text-ink-subtle">catalog/{entry.sourceFile}</p>
+
+                {entry.prices.length > 0 && (
+                  <p className="text-xs">
+                    <span className="text-ink-subtle">Harga: </span>
+                    <span className="font-mono text-ink">
+                      {entry.prices.map((price) => `Rp ${IDR.format(price)}`).join(' · ')}
+                    </span>
+                  </p>
+                )}
+
+                {entry.links.length > 0 && (
+                  <p className="text-xs">
+                    <span className="text-ink-subtle">Link: </span>
+                    {/* Deliberately not anchors. These are grounding values the bot may cite, and a
+                        relative path here is not a route in this app — rendering them as links
+                        would send an operator to a 404 inside wa-inbox. */}
+                    <span className="font-mono break-all text-ink">{entry.links.join(' · ')}</span>
+                  </p>
+                )}
+
+                {entry.tags.length > 0 && (
+                  <div className="flex flex-wrap gap-1">
+                    {entry.tags.map((tag) => (
+                      <Badge key={tag} variant="muted">
+                        {tag}
+                      </Badge>
+                    ))}
+                  </div>
+                )}
+              </div>
             </li>
           )
         })}

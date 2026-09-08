@@ -413,7 +413,7 @@ export default function TemplatesPage() {
   const filtered = templates.filter((t) => t.type === tab)
 
   return (
-    <main className="mx-auto max-w-5xl space-y-5 p-6">
+    <main className="mx-auto w-full max-w-[1600px] space-y-5 p-6">
       <PageHeader
         title="Template Pesan"
         description="Pesan siap kirim: template resmi yang disetujui Meta, dan balasan cepat yang hanya dipakai agen."
@@ -581,7 +581,7 @@ export default function TemplatesPage() {
                   <p className="text-sm text-ink-muted">Tidak ada hasil untuk filter ini.</p>
                 )}
                 {libraryTemplates.length > 0 && (
-                  <div className="grid max-h-96 grid-cols-2 gap-2 overflow-y-auto sm:grid-cols-3">
+                  <div className="grid max-h-96 grid-cols-[repeat(auto-fill,minmax(13rem,1fr))] gap-2 overflow-y-auto">
                     {libraryTemplates.map((t) => (
                       <TemplatePreviewBubble key={t.id} template={toLibraryPreview(t)} onClick={() => applyLibraryTemplate(t)} />
                     ))}
@@ -593,7 +593,12 @@ export default function TemplatesPage() {
         </Card>
       )}
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_320px]">
+      {/* Editor, preview, dan daftar tersimpan. Sampai lg semuanya bertumpuk; di lg preview
+          pindah ke samping editor; di 2xl daftar tersimpan naik menjadi kolom ketiga alih-alih
+          menunggu di bawah lipatan. Editor sengaja DIBATASI 46rem di 2xl: formulir satu kolom
+          selebar 1100px lebih buruk daripada yang sempit — ruang sisanya diberikan ke daftar,
+          yang isinya memang tumbuh. */}
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_320px] 2xl:grid-cols-[minmax(0,46rem)_320px_minmax(0,1fr)] 2xl:items-start">
         <Card>
           <CardHeader>
             <CardTitle>{tab === 'OFFICIAL' ? 'Ajukan Template Resmi Baru' : 'Buat Balasan Cepat Baru'}</CardTitle>
@@ -771,31 +776,31 @@ export default function TemplatesPage() {
           <h2 className="text-sm font-semibold text-ink">Preview</h2>
           <TemplatePreviewBubble template={previewData} />
         </div>
-      </div>
 
-      <section className="space-y-2">
-        <h2 className="text-sm font-semibold text-ink">
-          {tab === 'OFFICIAL' ? 'Template resmi tersimpan' : 'Balasan cepat tersimpan'}
-        </h2>
-        {loading ? (
-          <div
-            role="status"
-            aria-label="Memuat daftar template"
-            className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3"
-          >
-            {[0, 1, 2].map((i) => (
-              <div key={i} className="space-y-2 rounded-lg border border-line bg-surface p-2">
-                <Skeleton className="h-24 w-full rounded-md" />
-                <Skeleton className="h-3 w-20" />
-              </div>
-            ))}
-          </div>
-        ) : (
-          <div className="rounded-lg border border-line bg-surface p-3">
-            <TemplateGrid templates={filtered} showStatus={tab === 'OFFICIAL'} onDelete={deleteTemplate} />
-          </div>
-        )}
-      </section>
+        <section className="space-y-2 lg:col-span-2 2xl:col-span-1">
+          <h2 className="text-sm font-semibold text-ink">
+            {tab === 'OFFICIAL' ? 'Template resmi tersimpan' : 'Balasan cepat tersimpan'}
+          </h2>
+          {loading ? (
+            <div
+              role="status"
+              aria-label="Memuat daftar template"
+              className="grid grid-cols-[repeat(auto-fill,minmax(15rem,1fr))] gap-3"
+            >
+              {[0, 1, 2].map((i) => (
+                <div key={i} className="space-y-2 rounded-lg border border-line bg-surface p-2">
+                  <Skeleton className="h-24 w-full rounded-md" />
+                  <Skeleton className="h-3 w-20" />
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-lg border border-line bg-surface p-3">
+              <TemplateGrid templates={filtered} showStatus={tab === 'OFFICIAL'} onDelete={deleteTemplate} />
+            </div>
+          )}
+        </section>
+      </div>
     </main>
   )
 }

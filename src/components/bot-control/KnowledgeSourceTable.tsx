@@ -63,8 +63,8 @@ export function KnowledgeSourceTable({
       <TableHeader>
         <TableRow>
           <TableHead>Judul</TableHead>
-          <TableHead className="w-40">Status</TableHead>
-          <TableHead className="w-32">Aksi</TableHead>
+          <TableHead className="w-48">Status</TableHead>
+          <TableHead className="w-36">Aksi</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
@@ -72,7 +72,8 @@ export function KnowledgeSourceTable({
           <TableRow key={source.id} className="h-auto align-top">
             <TableCell className="py-2.5">
               <p className="font-medium text-ink">{source.title}</p>
-              {source.summary && <p className="text-sm text-ink-muted">{source.summary}</p>}
+              {/* Ringkasannya prosa: kolomnya boleh selebar apa pun, barisnya tidak. */}
+              {source.summary && <p className="max-w-4xl text-sm text-ink-muted">{source.summary}</p>}
             </TableCell>
             <TableCell className="py-2.5">
               <Badge variant={STATUS_VARIANT[source.status] ?? 'default'}>{source.status}</Badge>

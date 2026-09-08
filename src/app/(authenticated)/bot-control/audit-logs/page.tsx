@@ -109,7 +109,7 @@ export default function AuditLogsPage() {
   const lastPage = Math.max(1, Math.ceil(total / 50))
 
   return (
-    <main className="mx-auto max-w-5xl space-y-4 p-6">
+    <main className="mx-auto w-full max-w-[1600px] space-y-4 p-6">
       <PageHeader
         title="Audit Logs"
         description={
@@ -199,8 +199,10 @@ export default function AuditLogsPage() {
             <TableRow>
               <TableHead className="w-44">Waktu</TableHead>
               <TableHead className="w-24">Aksi</TableHead>
-              <TableHead>Entitas</TableHead>
-              <TableHead className="w-40">Oleh</TableHead>
+              {/* Entitas dibatasi: kuncinya pendek dan monospace, sedangkan Alasan adalah teks
+                  bebas — kolom itulah satu-satunya yang layak menerima sisa lebarnya. */}
+              <TableHead className="w-80">Entitas</TableHead>
+              <TableHead className="w-48">Oleh</TableHead>
               <TableHead>Alasan</TableHead>
             </TableRow>
           </TableHeader>
@@ -224,7 +226,11 @@ export default function AuditLogsPage() {
                   {row.actorName ?? <span className="text-ink-subtle italic">(akun terhapus)</span>}
                 </TableCell>
                 <TableCell className="py-2.5 text-sm text-ink-muted">
-                  {row.reason ?? <span className="text-ink-subtle">—</span>}
+                  {row.reason ? (
+                    <span className="block max-w-3xl">{row.reason}</span>
+                  ) : (
+                    <span className="text-ink-subtle">—</span>
+                  )}
                 </TableCell>
               </TableRow>
             ))}

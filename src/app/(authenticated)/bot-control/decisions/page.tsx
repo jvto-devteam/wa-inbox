@@ -189,7 +189,7 @@ export default function DecisionLogsPage() {
   const lastPage = Math.max(1, Math.ceil(total / 50))
 
   return (
-    <main className="mx-auto max-w-7xl space-y-4 p-6">
+    <main className="mx-auto w-full max-w-[1600px] space-y-4 p-6">
       <PageHeader
         title="Decision Logs"
         description="Setiap putaran keputusan bot, termasuk yang tidak menghasilkan pesan sama sekali — agent mengambil alih di tengah jalan, atau orchestrator gagal."
@@ -252,7 +252,7 @@ export default function DecisionLogsPage() {
       )}
 
       {!loading && !error && (
-        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,24rem)]">
+        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,26rem)] lg:items-start">
           <div className="min-w-0">
             {rows.length === 0 ? (
               <EmptyState
@@ -287,7 +287,7 @@ export default function DecisionLogsPage() {
                             so beats an empty cell that looks like a rendering bug. */}
                         {row.contactName ?? row.contactPhone ?? <span className="text-ink-subtle">(kontak terhapus)</span>}
                       </TableCell>
-                      <TableCell className="max-w-xs truncate py-2.5 text-sm text-ink">{row.inboundPreview}</TableCell>
+                      <TableCell className="max-w-md truncate py-2.5 text-sm text-ink">{row.inboundPreview}</TableCell>
                       <TableCell className="py-2.5 font-mono text-xs text-ink-muted uppercase">{row.mode}</TableCell>
                       <TableCell className="py-2.5">
                         <Badge variant={STATUS_VARIANT[row.status] ?? 'default'}>{row.status}</Badge>

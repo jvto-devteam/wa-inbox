@@ -50,12 +50,14 @@ export function RuleRegistryTable({ rules }: { rules: RuleRow[] }) {
     <Table>
       <TableHeader>
         <TableRow>
+          {/* Kolom Aturan memuat nama + kunci + deskripsi; tanpa lebar eksplisit pada lima
+              kolom sisanya ia menelan seluruh tabel begitu halaman ini memakai lebar layar. */}
           <TableHead>Aturan</TableHead>
-          <TableHead>Kategori</TableHead>
-          <TableHead>Tingkat</TableHead>
-          <TableHead>Status</TableHead>
-          <TableHead>Dikelola di</TableHead>
-          <TableHead>Sumber</TableHead>
+          <TableHead className="w-40">Kategori</TableHead>
+          <TableHead className="w-28">Tingkat</TableHead>
+          <TableHead className="w-44">Status</TableHead>
+          <TableHead className="w-44">Dikelola di</TableHead>
+          <TableHead className="w-80">Sumber</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>

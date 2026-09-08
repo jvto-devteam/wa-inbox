@@ -103,11 +103,14 @@ export function ContactTable() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Nama</TableHead>
-                <TableHead>Nomor</TableHead>
+                {/* Lebar kolom disetel eksplisit sejak tabel ini memakai lebar layar penuh:
+                    tanpa itu, satu kolom teks (Nama) menelan sisa ruangnya dan Label — satu-
+                    satunya kolom yang isinya benar-benar tumbuh — tetap terjepit. */}
+                <TableHead className="w-[22%]">Nama</TableHead>
+                <TableHead className="w-44">Nomor</TableHead>
                 <TableHead>Label</TableHead>
-                <TableHead>Kontak terakhir</TableHead>
-                <TableHead>Pipeline</TableHead>
+                <TableHead className="w-40">Kontak terakhir</TableHead>
+                <TableHead className="w-40">Pipeline</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -121,7 +124,7 @@ export function ContactTable() {
                       {c.name ?? c.phone}
                     </Link>
                   </TableCell>
-                  <TableCell className="font-mono text-sm text-ink-muted">{c.phone}</TableCell>
+                  <TableCell className="font-mono text-sm whitespace-nowrap text-ink-muted">{c.phone}</TableCell>
                   <TableCell>
                     <div className="flex flex-wrap gap-1">
                       {c.labels.length === 0 ? (
@@ -135,7 +138,7 @@ export function ContactTable() {
                       )}
                     </div>
                   </TableCell>
-                  <TableCell className="text-sm text-ink-muted">
+                  <TableCell className="text-sm whitespace-nowrap text-ink-muted">
                     {c.lastContactAt ? (
                       <time dateTime={c.lastContactAt}>
                         {new Date(c.lastContactAt).toLocaleDateString('id-ID')}
