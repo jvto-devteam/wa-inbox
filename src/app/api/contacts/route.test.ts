@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mockDeep, mockReset, type DeepMockProxy } from 'vitest-mock-extended'
 import type { PrismaClient } from '@prisma/client'
 import { prisma } from '@/lib/db'
+import { getSession } from '@/lib/auth/get-session'
 import { GET } from './route'
 
 // `vi.mock` factories are hoisted above regular imports and `let`/`const`
@@ -11,10 +12,18 @@ import { GET } from './route'
 // factory throws "Cannot access ... before initialization".
 vi.mock('@/lib/db', () => ({ prisma: mockDeep<PrismaClient>() }))
 
+// Route ini sebelumnya tidak punya cek auth sama sekali. Sekarang butuh sesi, jadi setiap
+// test harus punya satu -- kecuali test yang justru menguji penolakannya.
+vi.mock('@/lib/auth/get-session', () => ({ getSession: vi.fn() }))
+
 const mockPrisma = prisma as unknown as DeepMockProxy<PrismaClient>
 
 beforeEach(() => {
   mockReset(mockPrisma)
+  vi.mocked(getSession).mockResolvedValue({ sub: 'acc_1', role: 'AGENT' } as never)
+  // `count` berjalan bersama `findMany` lewat Promise.all; tanpa ini ia mengembalikan
+  // undefined dan `total` di respons jadi undefined, bukan angka.
+  mockPrisma.contact.count.mockResolvedValue(0 as never)
 })
 
 describe('GET /api/contacts', () => {
@@ -35,7 +44,7 @@ describe('GET /api/contacts', () => {
     const res = await GET(new Request('http://localhost/api/contacts'))
     const body = await res.json()
 
-    expect(body[0]).toEqual(
+    expect(body.rows[0]).toEqual(
       expect.objectContaining({ name: 'Bruno', pipelineStage: 'nego', labels: ['Confirmed Booking'] }),
     )
   })
@@ -48,7 +57,7 @@ describe('GET /api/contacts', () => {
     const res = await GET(new Request('http://localhost/api/contacts'))
     const body = await res.json()
 
-    expect(body[0]).toEqual(
+    expect(body.rows[0]).toEqual(
       expect.objectContaining({ pipelineStage: 'new', lastContactAt: null, labels: [] }),
     )
   })
@@ -89,7 +98,7 @@ describe('GET /api/contacts', () => {
         }),
       }),
     )
-    expect(body[0]).toEqual(expect.objectContaining({ name: 'Bruno', labels: ['Confirmed Booking'] }))
+    expect(body.rows[0]).toEqual(expect.objectContaining({ name: 'Bruno', labels: ['Confirmed Booking'] }))
   })
 
   it('does not return contacts without a matching label when ?labelId= is set', async () => {
@@ -101,6 +110,6 @@ describe('GET /api/contacts', () => {
     const res = await GET(new Request('http://localhost/api/contacts?labelId=lbl_missing'))
     const body = await res.json()
 
-    expect(body).toEqual([])
+    expect(body.rows).toEqual([])
   })
 })

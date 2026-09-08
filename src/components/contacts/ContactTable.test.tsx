@@ -16,10 +16,12 @@ const contacts = [
 const labels = [{ id: 'lbl_1', name: 'Hot Lead', color: '#C4622D' }]
 
 // Routes by URL so the label list and the contact list can be answered independently.
-function mockFetch(rows = contacts) {
+// GET /api/contacts sekarang berhalaman dan mengembalikan { rows, total, page, limit },
+// bukan array telanjang — tabel butuh `total` untuk tahu ada berapa halaman.
+function mockFetch(rows = contacts, total = rows.length) {
   vi.mocked(fetch).mockImplementation((input) => {
     const url = String(input)
-    const body = url.startsWith('/api/labels') ? labels : rows
+    const body = url.startsWith('/api/labels') ? labels : { rows, total, page: 1, limit: 50 }
     return Promise.resolve({ ok: true, status: 200, json: async () => body } as Response)
   })
 }
@@ -47,7 +49,7 @@ describe('ContactTable filters', () => {
     render(<ContactTable />)
 
     expect(await screen.findByText('Bruno Figarola')).toBeInTheDocument()
-    expect(contactRequestUrls()).toEqual(['/api/contacts'])
+    expect(contactRequestUrls()).toEqual(['/api/contacts?page=1&limit=50'])
   })
 
   // GET /api/contacts has implemented ?stage= since the pipeline feature landed, but no
@@ -59,7 +61,7 @@ describe('ContactTable filters', () => {
 
     fireEvent.change(screen.getByLabelText('Filter tahap pipeline'), { target: { value: 'nego' } })
 
-    await waitFor(() => expect(contactRequestUrls()).toContain('/api/contacts?stage=nego'))
+    await waitFor(() => expect(contactRequestUrls()).toContain('/api/contacts?stage=nego&page=1&limit=50'))
   })
 
   it('re-fetches with ?labelId= when a label is selected', async () => {
@@ -69,7 +71,7 @@ describe('ContactTable filters', () => {
 
     fireEvent.change(await screen.findByLabelText('Filter label'), { target: { value: 'lbl_1' } })
 
-    await waitFor(() => expect(contactRequestUrls()).toContain('/api/contacts?labelId=lbl_1'))
+    await waitFor(() => expect(contactRequestUrls()).toContain('/api/contacts?labelId=lbl_1&page=1&limit=50'))
   })
 
   it('combines both filters into a single query', async () => {
@@ -80,7 +82,7 @@ describe('ContactTable filters', () => {
     fireEvent.change(screen.getByLabelText('Filter tahap pipeline'), { target: { value: 'booked' } })
     fireEvent.change(await screen.findByLabelText('Filter label'), { target: { value: 'lbl_1' } })
 
-    await waitFor(() => expect(contactRequestUrls()).toContain('/api/contacts?stage=booked&labelId=lbl_1'))
+    await waitFor(() => expect(contactRequestUrls()).toContain('/api/contacts?stage=booked&labelId=lbl_1&page=1&limit=50'))
   })
 
   it('drops the query again when the filter is reset to "Semua tahap"', async () => {
@@ -90,10 +92,10 @@ describe('ContactTable filters', () => {
 
     const select = screen.getByLabelText('Filter tahap pipeline')
     fireEvent.change(select, { target: { value: 'nego' } })
-    await waitFor(() => expect(contactRequestUrls()).toContain('/api/contacts?stage=nego'))
+    await waitFor(() => expect(contactRequestUrls()).toContain('/api/contacts?stage=nego&page=1&limit=50'))
 
     fireEvent.change(select, { target: { value: '' } })
-    await waitFor(() => expect(contactRequestUrls().filter((u) => u === '/api/contacts')).toHaveLength(2))
+    await waitFor(() => expect(contactRequestUrls().filter((u) => u === '/api/contacts?page=1&limit=50')).toHaveLength(2))
   })
 
   it('offers every pipeline stage as an option', async () => {
@@ -128,7 +130,11 @@ describe('ContactTable filters', () => {
       if (url.startsWith('/api/labels')) {
         return Promise.resolve({ ok: false, status: 500, json: async () => ({ error: 'boom' }) } as Response)
       }
-      return Promise.resolve({ ok: true, status: 200, json: async () => contacts } as Response)
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: async () => ({ rows: contacts, total: contacts.length, page: 1, limit: 50 }),
+      } as Response)
     })
 
     render(<ContactTable />)

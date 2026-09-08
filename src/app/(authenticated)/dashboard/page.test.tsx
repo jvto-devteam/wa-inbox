@@ -145,7 +145,11 @@ describe('Beranda dashboard', () => {
       '/inbox?conversation=conv_2',
     ])
     expect(within(rows[0]).getByText('Bruno')).toBeInTheDocument()
-    expect(within(rows[0]).getByText('Diserahkan bot')).toBeInTheDocument()
+    // Lencana "Diserahkan bot" per baris dihapus atas permintaan pemilik: hampir setiap baris
+    // membawanya, jadi ia berhenti membedakan apa pun. Hitungannya tetap di subjudul panel,
+    // dan itu yang ditegakkan di sini menggantikan lencananya.
+    expect(within(rows[0]).queryByText('Diserahkan bot')).not.toBeInTheDocument()
+    expect(screen.getByText(/diserahkan bot/)).toBeInTheDocument()
     expect(within(rows[0]).getByText('4 jam')).toBeInTheDocument()
     expect(within(rows[1]).getByText('Sinta')).toBeInTheDocument()
 

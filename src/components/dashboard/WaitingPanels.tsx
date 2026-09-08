@@ -2,10 +2,9 @@
 import Link from 'next/link'
 import { ArrowRight, BellOff, CheckCircle2 } from 'lucide-react'
 import { Avatar } from '@/components/ui/avatar'
-import { Badge } from '@/components/ui/badge'
 import { EmptyState } from '@/components/ui/empty-state'
 import { Panel, PanelError, PanelLoading } from './Panel'
-import { formatDue, formatWait, isStale, type DueReminder, type WaitingRow } from './data'
+import { formatDue, formatWait, type DueReminder, type WaitingRow } from './data'
 import { cn } from '@/lib/utils'
 
 /** Delapan baris memenuhi tinggi kolom kanan di sebelahnya; sisanya jadi satu tautan ke Inbox. */
@@ -81,34 +80,32 @@ export function WaitingQueuePanel({
       }
     >
       <ul>
-        {shown.map((row) => {
-          const stale = isStale(row.since, now)
-          return (
-            <li key={row.id} className="border-b border-line last:border-b-0">
-              <Link
-                href={`/inbox?conversation=${row.id}`}
-                className="focus-ring flex items-center gap-3 px-4 py-2.5 transition-colors hover:bg-surface-sunken"
-              >
-                <Avatar name={row.name} src={row.avatarUrl} alt="" tone="neutral" />
-                <span className="min-w-0 flex-1">
-                  <span className="flex items-center gap-2">
-                    <span className="truncate text-base font-medium text-ink">{row.name}</span>
-                    {row.handedOff && <Badge variant="warning">Diserahkan bot</Badge>}
-                  </span>
-                  <span className="block truncate text-sm text-ink-muted">{row.preview}</span>
-                </span>
-                <span
-                  className={cn(
-                    'shrink-0 font-mono text-sm tabular-nums',
-                    stale ? 'font-medium text-danger' : 'text-ink-muted'
-                  )}
-                >
-                  {formatWait(row.since, now)}
-                </span>
-              </Link>
-            </li>
-          )
-        })}
+        {shown.map((row) => (
+          <li key={row.id} className="border-b border-line last:border-b-0">
+            <Link
+              href={`/inbox?conversation=${row.id}`}
+              className="focus-ring flex items-center gap-3 px-4 py-3 transition-colors hover:bg-surface-sunken"
+            >
+              <Avatar name={row.name} src={row.avatarUrl} alt="" tone="neutral" />
+              <span className="min-w-0 flex-1">
+                {/* Lencana "Diserahkan bot" per baris dihapus atas permintaan pemilik: hampir
+                    setiap baris di antrean ini membawanya, jadi ia tidak lagi membedakan apa pun.
+                    Hitungannya tetap ada di subjudul panel, tempat ia masih berarti sebagai
+                    proporsi. */}
+                <span className="block truncate text-base font-medium text-ink">{row.name}</span>
+                <span className="block truncate text-sm text-ink-muted">{row.preview}</span>
+              </span>
+              {/* Waktu tunggu SENGAJA tidak diwarnai merah per baris.
+                  Ambang "basi" adalah 24 jam, sementara antrean nyatanya berumur puluhan hari —
+                  jadi setiap baris menyala merah, dan warna yang menyala di semua baris tidak
+                  menandai apa pun. Ia hanya membuat panel berteriak tanpa memberi tahu mana yang
+                  harus dibuka duluan. Urutannya sendiri sudah menjawab itu: paling lama di atas. */}
+              <span className="shrink-0 font-mono text-sm text-ink-muted tabular-nums">
+                {formatWait(row.since, now)}
+              </span>
+            </Link>
+          </li>
+        ))}
       </ul>
 
       {hidden > 0 && (
