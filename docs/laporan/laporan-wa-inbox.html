@@ -1,0 +1,863 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Laporan Aplikasi wa-inbox — JVTO</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#F6F8FA;
+  --surface:#FFFFFF;
+  --line:#E1E6ED;
+  --ink:#0B1B3D;
+  --ink2:#5A6A83;
+  --accent:#1E56C8;
+  --ok:#17795E;    --ok-bg:#E6F4EF;
+  --warn:#9A6510;  --warn-bg:#FDF3E3;
+  --danger:#B3261E;--danger-bg:#FCEDEC;
+  --radius:8px;
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{
+  margin:0;
+  background:var(--bg);
+  color:var(--ink);
+  font-family:"Poppins","Helvetica Neue",Helvetica,Arial,"Segoe UI",system-ui,sans-serif;
+  font-size:15px;
+  line-height:1.65;
+  font-weight:400;
+}
+.wrap{max-width:1060px;margin:0 auto;padding:40px 24px 96px}
+.prose{max-width:76ch}
+p,li{max-width:76ch}
+
+/* ---------- Kop ---------- */
+.masthead{border-bottom:1px solid var(--line);padding-bottom:28px;margin-bottom:28px}
+.eyebrow{font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink2);font-weight:500;margin:0 0 10px}
+h1{font-size:32px;line-height:1.25;font-weight:600;margin:0 0 10px;letter-spacing:-.01em}
+.subtitle{color:var(--ink2);margin:0;font-size:16px;max-width:70ch}
+.meta{margin-top:16px;font-size:13px;color:var(--ink2)}
+.meta span{display:inline-block;margin-right:18px}
+
+/* ---------- Judul ---------- */
+h2{
+  font-size:22px;font-weight:600;letter-spacing:-.01em;
+  margin:0 0 4px;padding:0;
+}
+h3{font-size:16px;font-weight:600;margin:26px 0 8px}
+h4{font-size:14px;font-weight:600;margin:20px 0 6px;color:var(--ink)}
+.sec-num{color:var(--accent);font-weight:600;font-size:13px;letter-spacing:.08em;display:block;margin-bottom:6px;text-transform:uppercase}
+section{
+  background:var(--surface);
+  border:1px solid var(--line);
+  border-radius:var(--radius);
+  padding:30px 34px 34px;
+  margin:0 0 22px;
+}
+.lede{color:var(--ink2);margin:0 0 22px;padding-bottom:18px;border-bottom:1px solid var(--line);max-width:76ch}
+
+/* ---------- Callout ---------- */
+.callout{
+  border:1px solid var(--line);
+  border-left-width:3px;
+  border-radius:6px;
+  padding:14px 18px;
+  margin:20px 0;
+  font-size:14.5px;
+  max-width:80ch;
+}
+.callout p{margin:0 0 8px;max-width:none}
+.callout p:last-child{margin-bottom:0}
+.callout .tag{font-size:11px;letter-spacing:.1em;text-transform:uppercase;font-weight:600;display:block;margin-bottom:6px}
+.c-danger{background:var(--danger-bg);border-color:#F0C9C6;border-left-color:var(--danger)}
+.c-danger .tag{color:var(--danger)}
+.c-warn{background:var(--warn-bg);border-color:#EFDDBD;border-left-color:var(--warn)}
+.c-warn .tag{color:var(--warn)}
+.c-ok{background:var(--ok-bg);border-color:#C3E3D8;border-left-color:var(--ok)}
+.c-ok .tag{color:var(--ok)}
+.c-note{background:#F2F6FD;border-color:#CFDDF6;border-left-color:var(--accent)}
+.c-note .tag{color:var(--accent)}
+
+/* ---------- Tabel ---------- */
+.tablewrap{overflow-x:auto;margin:20px 0;border:1px solid var(--line);border-radius:6px}
+table{border-collapse:collapse;width:100%;font-size:14px;background:var(--surface)}
+th,td{text-align:left;padding:11px 14px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-weight:600;font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink2);background:#FBFCFD;white-space:nowrap}
+tr:last-child td{border-bottom:none}
+td.num{font-variant-numeric:tabular-nums;white-space:nowrap;font-weight:500}
+.yes{color:var(--ok);font-weight:500}
+.no{color:var(--danger);font-weight:500}
+.part{color:var(--warn);font-weight:500}
+
+/* ---------- Gambar ---------- */
+figure{margin:26px 0;border:1px solid var(--line);border-radius:6px;overflow:hidden;background:var(--surface)}
+figure img{display:block;width:100%;max-width:100%;height:auto;border-bottom:1px solid var(--line)}
+figcaption{padding:12px 16px;font-size:13.5px;color:var(--ink2);line-height:1.6}
+figcaption strong{color:var(--ink);font-weight:600}
+
+/* ---------- Daftar ---------- */
+ul,ol{padding-left:22px;margin:12px 0}
+li{margin:6px 0}
+li::marker{color:var(--ink2)}
+.tight li{margin:3px 0}
+code,.file{font-family:var(--mono);font-size:12.5px;background:#F1F4F8;border:1px solid var(--line);border-radius:4px;padding:1px 5px;color:#33445F;white-space:nowrap}
+
+/* ---------- Daftar isi ---------- */
+.toc{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:26px 32px 30px;margin:0 0 22px}
+.toc h2{font-size:16px;margin-bottom:14px}
+.toc ol{list-style:none;padding:0;margin:0;counter-reset:toc}
+.toc li{counter-increment:toc;margin:0;border-bottom:1px solid var(--line)}
+.toc li:last-child{border-bottom:none}
+.toc a{display:flex;gap:12px;align-items:baseline;padding:9px 0;text-decoration:none;color:var(--ink)}
+.toc a:hover{color:var(--accent)}
+.toc a::before{content:counter(toc,decimal-leading-zero);font-family:var(--mono);font-size:12px;color:var(--ink2);min-width:24px}
+.toc .tdesc{color:var(--ink2);font-size:13px;margin-left:auto;text-align:right}
+
+/* ---------- Temuan ---------- */
+.finding{border-top:1px solid var(--line);padding:20px 0 4px}
+.finding:first-of-type{border-top:none;padding-top:6px}
+.finding h3{margin:0 0 8px;display:flex;gap:12px;align-items:baseline;font-size:16px}
+.fnum{
+  font-family:var(--mono);font-size:12px;font-weight:600;
+  background:var(--danger-bg);color:var(--danger);
+  border:1px solid #F0C9C6;border-radius:4px;
+  padding:2px 7px;flex:0 0 auto;
+}
+.finding.mid .fnum{background:var(--warn-bg);color:var(--warn);border-color:#EFDDBD}
+.finding.low .fnum{background:#F1F4F8;color:var(--ink2);border-color:var(--line)}
+.finding p{margin:0 0 10px;font-size:14.5px}
+
+/* ---------- Kotak angka ---------- */
+.stats{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:1px;background:var(--line);border:1px solid var(--line);border-radius:6px;overflow:hidden;margin:22px 0}
+.stat{background:var(--surface);padding:14px 16px}
+.stat .v{font-size:22px;font-weight:600;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.stat .k{font-size:12px;color:var(--ink2);margin-top:2px;line-height:1.4}
+
+hr.rule{border:0;border-top:1px solid var(--line);margin:26px 0}
+.footer{color:var(--ink2);font-size:13px;border-top:1px solid var(--line);padding-top:20px;margin-top:8px}
+
+/* ---------- Cetak ---------- */
+@media print{
+  body{background:#fff;font-size:11pt}
+  .wrap{max-width:none;padding:0}
+  section,.toc{border:none;border-top:1px solid var(--line);border-radius:0;padding:18px 0 10px;margin:0 0 8px;break-inside:auto}
+  figure{break-inside:avoid;page-break-inside:avoid}
+  h2,h3,h4{break-after:avoid;page-break-after:avoid}
+  .finding,.callout,.stat,tr{break-inside:avoid;page-break-inside:avoid}
+  .tablewrap{overflow:visible}
+  a{color:inherit;text-decoration:none}
+  .toc{break-after:page;page-break-after:always}
+}
+@media (max-width:640px){
+  .wrap{padding:24px 14px 60px}
+  section{padding:22px 18px 26px}
+  h1{font-size:26px}
+  .toc .tdesc{display:none}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<div class="masthead">
+  <p class="eyebrow">Dokumen internal · Java Volcano Tour Operator</p>
+  <h1>Laporan Aplikasi wa-inbox</h1>
+  <p class="subtitle">Apa yang aplikasi ini lakukan hari ini, bagaimana botnya mengambil keputusan, apa yang mengikat jawabannya, dan apa yang belum berjalan.</p>
+  <p class="meta">
+    <span>Disusun 8 September 2026</span>
+    <span>Sumber: kode di branch <code>main</code></span>
+    <span>Untuk pemilik JVTO</span>
+  </p>
+</div>
+
+<div class="callout c-danger" style="max-width:none">
+  <span class="tag">Peringatan — berkas ini memuat data pelanggan</span>
+  <p>Beberapa tangkapan layar di dokumen ini memperlihatkan <strong>nama dan nomor WhatsApp pelanggan sungguhan</strong>, beserta isi percakapan dan status pembayaran mereka. Berkas ini hanya untuk lingkaran internal JVTO. Jangan mengirimkannya ke calon vendor, mitra, konsultan luar, atau grup mana pun di luar tim.</p>
+</div>
+
+<section>
+  <span class="sec-num">Ringkasan eksekutif</span>
+  <h2>Kondisi sistem, apa adanya</h2>
+  <div class="prose">
+    <p>wa-inbox adalah inbox WhatsApp sekaligus chatbot internal milik JVTO — satu tim, satu database, satu server; bukan produk yang dijual ke pihak lain. Bagian yang paling berhasil dari sistem ini adalah pengaman jawabannya: setiap angka rupiah dan setiap tautan yang ditulis AI diperiksa dulu terhadap data katalog sebelum pesannya keluar, dan bila model tetap mengarang setelah satu kali kesempatan menulis ulang, balasannya <em>tidak dikirim</em> dan percakapan diserahkan ke manusia. Sebaliknya, hampir semua "kontrol bot" yang terlihat di layar sebenarnya tidak bisa diubah — delapan dari sepuluh aturan bot adalah perilaku tetap di dalam kode, dan halaman-halaman yang menampilkannya jujur menyebut dirinya read-only.</p>
+    <p>Ada empat hal yang benar-benar butuh keputusan atau pengecekan pemilik. Pertama, <strong>seluruh pekerjaan berkala bergantung pada penjadwal yang tidak ada di dalam repo</strong>; kalau penjadwal itu belum dipasang di server, percobaan kirim ulang untuk pesan yang gagal tidak pernah terjadi dan tahap penjualan tidak pernah naik sendiri. Kedua, <strong>pesan yang dikirim lewat kanal Official melewati seluruh pemeriksaan pengaman</strong> — tanpa cek opt-out, tanpa cek duplikat, tanpa antrean, tanpa retry. Ketiga, <strong>model AI default adalah tag <code>-cloud</code> milik Ollama</strong>, yang berarti klaim "teks pelanggan tidak pernah keluar dari VPS" perlu dikonfirmasi ulang. Keempat, <strong>reminder di aplikasi ini tidak mengingatkan siapa pun</strong> — ia hanya daftar yang menunggu dibuka.</p>
+    <p>Selebihnya sistem ini padat dan terdokumentasi baik: 69 rute API, 192 berkas test, jejak keputusan tersimpan untuk setiap balasan bot, dan hampir setiap keterbatasan yang ditemukan sudah ditulis terbuka oleh kodenya sendiri alih-alih disembunyikan. Daftar lengkap 26 hal yang belum berjalan atau masih terbatas ada di bagian terakhir dokumen ini, diurutkan dari yang paling berdampak pada uang dan pelanggan.</p>
+  </div>
+</section>
+
+<nav class="toc">
+  <h2>Daftar isi</h2>
+  <ol>
+    <li><a href="#s1">Tujuan aplikasi<span class="tdesc">apa ini dan apa yang bukan</span></a></li>
+    <li><a href="#s2">Bagaimana bot berjalan<span class="tdesc">dari pesan masuk sampai balasan terkirim</span></a></li>
+    <li><a href="#s3">Aturan yang mengikat jawaban AI<span class="tdesc">harga, tautan, handoff, batas kirim</span></a></li>
+    <li><a href="#s4">Apakah alurnya bisa dilihat<span class="tdesc">Flow Map vs Alur Live</span></a></li>
+    <li><a href="#s5">Funnel penjualan<span class="tdesc">lima tahap dan cara naiknya</span></a></li>
+    <li><a href="#s6">Pengetahuan bot<span class="tdesc">katalog dan knowledge terkelola</span></a></li>
+    <li><a href="#s7">Kalau jawaban bot salah<span class="tdesc">rantai perbaikan dan batasnya</span></a></li>
+    <li><a href="#s8">Isi Inbox<span class="tdesc">lencana, label, catatan, booking, sakelar bot</span></a></li>
+    <li><a href="#s9">Halaman-halaman lain<span class="tdesc">19 halaman, 9 di antaranya read-only</span></a></li>
+    <li><a href="#s10">Angka-angka nyata<span class="tdesc">ukuran sistem ini</span></a></li>
+    <li><a href="#s11">Yang belum berjalan atau masih terbatas<span class="tdesc">26 temuan</span></a></li>
+  </ol>
+</nav>
+
+<section id="s1">
+  <span class="sec-num">Bagian 1</span>
+  <h2>Tujuan aplikasi</h2>
+  <p class="lede">Satu alat internal untuk satu bisnis: membalas pelanggan WhatsApp, melihat bookingnya, dan mengawasi apa yang dijawab bot.</p>
+  <div class="prose">
+    <p>wa-inbox dibangun untuk satu tujuan: menaruh <strong>semua percakapan pelanggan JVTO di satu layar</strong>, lengkap dengan data booking mereka, dan membiarkan sebuah chatbot menjawab pertanyaan awal supaya tim tidak menghabiskan hari untuk pertanyaan yang sama. Ia single-tenant — satu tim kecil, satu database, satu deployment — dan memang dirancang untuk tidak pernah menjadi produk yang dijual ke bisnis lain.</p>
+    <p>Sistem hanya mengenal <strong>dua jenis akun: ADMIN dan AGENT.</strong> Tidak ada peran ketiga yang bisa dibuat siapa pun. Setiap tindakan istimewa bermuara ke satu pertanyaan yang sama — "apakah orang ini punya wewenang admin?" — bukan ke matriks izin bertingkat.</p>
+    <p>Sama pentingnya, ini yang <strong>bukan</strong> tujuan aplikasi ini:</p>
+    <ul>
+      <li>Bukan sistem multi-perusahaan, bukan platform yang disewakan.</li>
+      <li>Bukan alat gambar-alur visual (<em>flow builder</em>) yang bisa diseret-tempel oleh operator.</li>
+      <li>Bukan sistem persetujuan berlapis. Lapisan draft → review → approve → publish pernah dibangun penuh, lalu dibatalkan pada audit produk 8 September 2026 dengan dua bukti: tidak ada satu pun orang yang bisa memegang peran penyetuju terpisah, dan tombol Publish-nya mengembalikan error setiap kali ditekan tanpa pernah ada yang melapor — karena tidak ada yang benar-benar membutuhkannya.</li>
+    </ul>
+    <p>Pola yang menggantikannya: <strong>edit → simpan → langsung berlaku.</strong> Operator mengubah setelan, menekan simpan, dan perubahannya aktif saat itu juga.</p>
+  </div>
+
+  <figure>
+    <img src="gambar/01-login.png" alt="Halaman masuk wa-inbox">
+    <figcaption><strong>Gambar 1 — Halaman masuk.</strong> Perhatikan kalimat di bawah tombol: "Belum punya akses? Minta admin membuatkan akun di Pengaturan." Tidak ada pendaftaran mandiri, tidak ada pilihan organisasi — akun hanya lahir dari tangan admin JVTO. Label "Alat internal JVTO" di pojok kiri bawah adalah pernyataan cakupan, bukan hiasan.</figcaption>
+  </figure>
+</section>
+
+<section id="s2">
+  <span class="sec-num">Bagian 2</span>
+  <h2>Bagaimana bot berjalan</h2>
+  <p class="lede">Dari pesan pelanggan masuk sampai balasan terkirim — dan setiap titik di mana bot memutuskan untuk tidak menjawab.</p>
+
+  <h3>Rantai utamanya</h3>
+  <div class="prose">
+    <ol>
+      <li><strong>Meta mengirim pesan ke aplikasi.</strong> Tanda tangan digitalnya diperiksa lebih dulu; kalau tidak cocok, permintaan itu ditolak dan pesannya tidak diproses sama sekali. Ini satu-satunya pintu masuk pesan pelanggan — jalur Unofficial tidak menerima pesan masuk.</li>
+      <li><strong>Seluruh isi paket webhook ditelusuri</strong>, bukan hanya pesan pertamanya. Meta memang kadang mengirim beberapa pesan sekaligus; mengambil yang pertama saja berarti pesan pelanggan hilang permanen tanpa bisa diulang.</li>
+      <li><strong>Pesan yang sama tidak diproses dua kali.</strong> Kalau pesan dengan penanda yang sama sudah pernah masuk, ia dilewati diam-diam — bukan dianggap error.</li>
+      <li><strong>Kontak dan percakapan disimpan</strong>, lalu pesannya langsung muncul di layar Inbox secara real-time.</li>
+      <li><strong>Bot tidak langsung menjawab.</strong> Pesan ditahan <strong>5 detik</strong> supaya beberapa pesan beruntun digabung menjadi satu pikiran. Setiap pesan baru me-reset jeda itu, tapi ada plafon keras <strong>25 detik</strong> supaya pelanggan yang mengetik terus-menerus tidak pernah tidak dibalas.</li>
+      <li><strong>Potongan pesan digabung jadi satu teks</strong>, lalu mesin keputusan dijalankan.</li>
+      <li><strong>Balasan disusun dan dikirim.</strong></li>
+    </ol>
+  </div>
+
+  <div class="callout c-warn">
+    <span class="tag">Risiko yang perlu diketahui</span>
+    <p>Antrean jeda 5–25 detik itu disimpan <strong>di memori proses</strong>. Kalau server di-restart tepat di tengah jeda, balasan bot untuk pesan itu hilang. Pesan pelanggannya sendiri sudah tersimpan dan tetap terlihat di Inbox — jadi yang terjadi adalah "bot diam", bukan "pesan hilang".</p>
+  </div>
+
+  <h3>Lima jalan keluar sebelum mesin keputusan dijalankan</h3>
+  <p class="prose">Di kelima titik ini bot <strong>diam sepenuhnya</strong> — tidak ada balasan apa pun, tapi pesan pelanggan tetap masuk Inbox dan menaikkan percakapan ke atas daftar.</p>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>#</th><th>Bot diam ketika…</th><th>Kenapa dirancang begitu</th></tr></thead>
+      <tbody>
+        <tr><td class="num">1</td><td><strong>Pesan bukan teks</strong> — foto, suara, video, dokumen, stiker, lokasi.</td><td>Sengaja tidak diperlakukan sebagai kegagalan bot. Pelanggan mengirim foto bukan alasan membunyikan alarm handoff.</td></tr>
+        <tr><td class="num">2</td><td><strong>Bot dimatikan untuk percakapan itu.</strong></td><td>Keputusan agen selalu menang.</td></tr>
+        <tr><td class="num">3</td><td><strong>Bot dimatikan selama jeda 5–25 detik.</strong></td><td>Status dibaca ulang tepat sebelum bot berjalan, jadi agen yang menekan "Ambil Alih dari Bot" di detik terakhir tetap menang.</td></tr>
+        <tr><td class="num">4</td><td><strong>Batas balasan otomatis terlampaui</strong> — maksimum 20 balasan bot per 10 menit per percakapan.</td><td>Dicek sebelum satu pun panggilan AI, jadi giliran yang diblok tidak berbiaya. Batasnya per percakapan supaya satu nomor spam tidak merusak layanan untuk pelanggan lain.</td></tr>
+        <tr><td class="num">5</td><td><strong>Agen mengambil alih saat bot masih menyusun jawaban</strong> (bisa memakan puluhan detik).</td><td>Status dibaca ulang sekali lagi setelah jawaban jadi; kalau bot sudah dimatikan, balasannya dibatalkan sebelum dikirim.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>Enam titik penyerahan ke manusia</h3>
+  <p class="prose">Berbeda dari kelima titik di atas, di sini bot <strong>mengirim satu kalimat pengakuan, lalu mematikan dirinya sendiri</strong> untuk percakapan itu dan membunyikan alarm ke agen.</p>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>#</th><th>Pemicu</th><th>Catatan</th></tr></thead>
+      <tbody>
+        <tr><td class="num">1</td><td><strong>Kata kunci eskalasi</strong> — daftar 49 frasa: komplain, kecewa, marah, permintaan eksplisit bicara dengan manusia, serta pertanyaan B2B/reseller/kemitraan.</td><td>Dicek paling awal, tidak memakai AI sama sekali, dan <strong>selalu berjalan tanpa syarat</strong> — tidak bisa dimatikan dari form mana pun.</td></tr>
+        <tr><td class="num">2</td><td><strong>Sinyal eskalasi dari AI</strong> — menangkap kalimat baru yang tidak ada dalam daftar kata kunci.</td><td>Ini <strong>satu-satunya</strong> lapisan yang bisa dimatikan operator, lewat sakelar di halaman Chatbot.</td></tr>
+        <tr><td class="num">3</td><td><strong>Gerbang persetujuan katalog tertutup.</strong></td><td>Lihat temuan nomor 3 di bagian terakhir — ini bisa menutup diam-diam.</td></tr>
+        <tr><td class="num">4</td><td><strong>Klasifikasi tambahan mengenali komplain/permintaan manusia.</strong></td><td>Pertahanan berlapis dari daftar kata kunci yang sama.</td></tr>
+        <tr><td class="num">5</td><td><strong>Tidak ada satu pun paket yang cocok</strong> dengan durasi yang diminta untuk destinasi itu.</td><td>Permintaannya terlalu custom — tim menindaklanjuti langsung.</td></tr>
+        <tr><td class="num">6</td><td><strong>Balasan gagal verifikasi harga/tautan dua kali berturut-turut.</strong></td><td>Lihat Bagian 3. Balasannya tidak pernah sampai ke pelanggan.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="callout c-ok">
+    <span class="tag">Tiga keputusan desain yang layak diketahui pemilik</span>
+    <p><strong>Kegagalan teknis tidak mematikan bot.</strong> AI yang timeout, katalog rusak, jawaban kosong, atau error tak terduga semuanya menghasilkan satu kalimat aman ("maaf, ada gangguan teknis kecil") dan bot <strong>tetap aktif</strong> untuk pesan berikutnya. Ini disengaja: gangguan lima detik bukan alasan mendiamkan bot untuk pelanggan itu selamanya.</p>
+    <p><strong>Setiap handoff selalu disertai satu kalimat pengakuan</strong> — pelanggan tidak pernah ditinggal dalam diam. Alasan spesifiknya hanya terlihat oleh agen di jejak keputusan, tidak pernah dikutip ke pelanggan.</p>
+    <p><strong>Jam kerja tidak pernah mendiamkan bot.</strong> Setelan jam kerja tim melakukan <strong>tepat satu hal</strong>: menambahkan kalimat "tim kami kembali jam …" pada pesan handoff bila kejadiannya di luar jam kerja. Bot tetap menjawab 24 jam. Zona waktunya selalu Asia/Jakarta karena servernya berjalan di UTC.</p>
+  </div>
+
+  <figure>
+    <img src="gambar/05-chatbot.png" alt="Halaman Chatbot, bagian Kapan bot menjawab">
+    <figcaption><strong>Gambar 2 — Halaman Chatbot, bagian "Kapan bot menjawab".</strong> Ini seluruh kendali yang dimiliki operator atas kapan bot bicara: tiga sakelar, tidak lebih. Perhatikan status yang terbaca saat tangkapan layar ini diambil — <strong>Bot: Off (Manual per Chat)</strong> dan <strong>Nomor Indonesia: Tidak dibalas bot</strong>, artinya bot saat ini hanya aktif di percakapan yang dinyalakan agen satu per satu. Perhatikan juga kalimat terakhir: kata kunci eksplisit yang memicu handoff "tidak pernah bisa dimatikan dari sini" — sakelar merah itu hanya mematikan lapisan deteksi AI-nya. Sidebar kiri memperlihatkan lima bagian yang bisa diubah tanpa deploy; sisanya ada di dalam kode.</figcaption>
+  </figure>
+</section>
+
+<section id="s3">
+  <span class="sec-num">Bagian 3</span>
+  <h2>Aturan yang mengikat jawaban AI</h2>
+  <p class="lede">Bagaimana jawaban sampai ke pelanggan, dan pagar apa saja yang mengelilinginya sebelum pesannya keluar.</p>
+
+  <h3>Sepuluh aturan — hanya dua yang bisa diubah operator</h3>
+  <p class="prose">Aplikasi punya daftar resmi sepuluh aturan yang membatasi bot. Yang perlu dipahami pemilik: <strong>delapan di antaranya adalah perilaku tetap di dalam kode, tanpa sakelar di mana pun.</strong> Halaman Rules di aplikasi hanya <em>menampilkan</em> daftar ini; ia tidak menyediakan tombol ubah, karena hanya boleh ada satu tempat yang menulis setelan — penulis kedua hanya akan membuat keduanya berselisih.</p>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>#</th><th>Aturan</th><th>Bisa diubah operator?</th></tr></thead>
+      <tbody>
+        <tr><td class="num">1</td><td>Kanal Official hanya untuk pesan masuk</td><td class="no">Tidak</td></tr>
+        <tr><td class="num">2</td><td>Unofficial sebagai jalur kirim default</td><td class="part">Nilainya, ya — di halaman Pengaturan</td></tr>
+        <tr><td class="num">3</td><td>Official khusus untuk kemampuan resmi (template, tombol, list)</td><td class="no">Tidak — kemampuan mana yang ada adalah fakta tentang API provider, bukan pilihan</td></tr>
+        <tr><td class="num">4</td><td><strong>Tidak boleh mengarang harga</strong></td><td class="no">Tidak</td></tr>
+        <tr><td class="num">5</td><td><strong>Tidak boleh mengarang URL</strong></td><td class="no">Tidak</td></tr>
+        <tr><td class="num">6</td><td>Serahkan ke manusia saat pelanggan memintanya</td><td class="part">Sebagian — sakelarnya hanya mematikan lapisan AI; gerbang kata kunci tetap jalan</td></tr>
+        <tr><td class="num">7</td><td>Konteks booking didahulukan</td><td class="no">Tidak</td></tr>
+        <tr><td class="num">8</td><td>Lewati nomor Indonesia</td><td class="yes">Ya</td></tr>
+        <tr><td class="num">9</td><td>Gabungkan pesan beruntun</td><td class="no">Tidak — jendelanya konstanta di kode</td></tr>
+        <tr><td class="num">10</td><td>Batas balasan otomatis per percakapan</td><td class="no">Tidak</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>Verifikasi harga dan tautan — mekanisme paling penting di sistem ini</h3>
+  <p class="prose">Semua balasan yang disusun AI melewati satu pemeriksaan sebelum dikirim. Cara kerjanya:</p>
+  <div class="prose">
+    <ol>
+      <li><strong>Setiap angka rupiah dalam balasan diekstrak</strong> — termasuk format Indonesia seperti "1.500.000", "1,5 juta", "350rb", dan "350k".</li>
+      <li><strong>Setiap angka dibandingkan dengan data yang benar-benar diberikan ke AI pada giliran itu.</strong> Angka dianggap sah kalau ia salah satu harga di data itu, <em>atau</em> hasil hitungan sederhana (harga × jumlah orang, dengan atau tanpa tambahan, sampai 20 orang) — supaya total rombongan yang dihitung benar tidak ikut diblok.</li>
+      <li><strong>Ada tiga tingkat keparahan:</strong>
+        <ul class="tight">
+          <li><em>Harga karangan</em> — data sama sekali tidak memuat harga, tapi balasan menyebut satu. <strong>Diblok.</strong></li>
+          <li><em>Harga tak terverifikasi</em> — data memuat harga, tapi angka ini bukan salah satunya. <strong>Tetap dikirim</strong>, hanya dicatat di jejak; memblokirnya akan mematahkan penawaran nyata yang sah.</li>
+          <li><em>Tautan tidak dikenal</em> — <strong>selalu diblok.</strong> Tidak ada aritmetika yang bisa "menghasilkan" URL yang tidak ada di data.</li>
+        </ul>
+      </li>
+      <li><strong>Kalau AI melanggar, ia diberi tepat satu kesempatan menulis ulang</strong>, dengan instruksi yang menyebut angka atau tautan palsunya. Kalau tulisan kedua <strong>masih</strong> mengarang, balasannya <strong>tidak dikirim sama sekali</strong> — percakapan diserahkan ke manusia dan kasusnya dicatat sebagai kegagalan verifikasi.</li>
+      <li>Hasil pemeriksaannya disimpan di jejak keputusan: lulus, lulus setelah menulis ulang, atau diblok — berikut jumlah percobaannya.</li>
+    </ol>
+  </div>
+
+  <div class="callout c-note">
+    <span class="tag">Kenapa aturan ini yang paling keras</span>
+    <p>Harga JVTO adalah <strong>tier per-pax</strong>, jadi mengutip tier yang salah adalah kesalahan yang halus, tampak masuk akal, dan dibaca pelanggan sebagai penawaran resmi. Untuk tautan, kegagalannya bahkan sudah pernah benar-benar terjadi: daftar tautan pelanggan di katalog pernah berisi <strong>18 URL rusak (404)</strong> yang statusnya tertulis "ada". Tautan yang "diingat setengah" oleh model bukan hipotesis — itu kejadian nyata.</p>
+  </div>
+
+  <p class="prose">Di luar verifikasi angka, prompt sistem juga melarang bot: menjamin Blue Fire, sunrise, atau akses kawah; menyebut harga sebagai final; meramal cuaca; serta mengarang inklusi paket. Persona bot juga dilarang mengaku sebagai AI, bot, atau asisten.</p>
+
+  <h3>Kapan bot menyerahkan percakapan ke manusia</h3>
+  <div class="prose">
+    <ul>
+      <li>Lapisan <strong>kata kunci</strong> (49 frasa) berjalan lebih dulu, tidak berbiaya, <strong>selalu menang</strong>, dan tidak bisa dimatikan dari form mana pun.</li>
+      <li>Lapisan <strong>AI</strong> hanya <em>menambah</em> cakupan untuk tiga kategori yang sama: permintaan eksplisit bicara dengan manusia, komplain/frustrasi tulen, dan pertanyaan B2B/reseller. Ia secara eksplisit dilarang menandai pertanyaan biasa soal pembatalan, refund, reschedule, atau status pembayaran sebagai komplain.</li>
+      <li>Kalau lapisan AI-nya gagal secara teknis, hasilnya dianggap "tidak ada sinyal tambahan" — ia tidak pernah bisa memblokir atau merusak jalur balasan.</li>
+      <li>Pemeriksaan eskalasi dijalankan <strong>sebelum</strong> cabang booking, sehingga pelanggan yang sudah punya booking dan mengeluh tetap sampai ke manusia.</li>
+      <li>Sakelarnya default menyala, dan bahkan bila setelannya tidak terbaca pun tetap dianggap menyala — karena aturan ini adalah pembatas terhadap bot, dan pembatas yang tidak terbaca harus tetap berlaku.</li>
+    </ul>
+  </div>
+
+  <h3>Pengaman terakhir sebelum pesan benar-benar keluar</h3>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Pemeriksaan</th><th>Berlaku untuk</th><th>Akibat</th></tr></thead>
+      <tbody>
+        <tr><td>Kontak sudah opt-out</td><td>Campaign</td><td class="no">Blok</td></tr>
+        <tr><td>Kontak sudah opt-out</td><td>Balasan 1:1 dan balasan bot</td><td class="part">Hanya peringatan</td></tr>
+        <tr><td>Percakapan sudah diambil alih agen</td><td>Balasan bot</td><td class="no">Blok</td></tr>
+        <tr><td>Teks identik baru saja dikirim (default 60 detik)</td><td>Campaign</td><td class="no">Blok</td></tr>
+        <tr><td>Teks identik baru saja dikirim</td><td>Balasan bot / 1:1</td><td class="part">Hanya peringatan</td></tr>
+        <tr><td>Batas kirim per menit (default 20)</td><td>Campaign</td><td class="no">Blok</td></tr>
+        <tr><td>Provider gagal berulang (default 5 kegagalan / 5 menit)</td><td>Campaign</td><td class="no">Blok</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="prose">Pengaman ini sengaja dibuat <strong>gagal-terbuka</strong>: kalau pemeriksaannya sendiri error, pengiriman tetap diteruskan dengan peringatan — karena pengaman yang mati akan mengubah satu gangguan database menjadi pemadaman total pengiriman keluar. Empat angka pengamannya punya batas minimum yang ditegakkan: nol pada angka-angka itu bukan berarti "longgar", nol <strong>mematikan gerbangnya</strong>.</p>
+
+  <div class="callout c-danger">
+    <span class="tag">Dua hal penting tentang tabel di atas</span>
+    <p>Baris bertuliskan "Campaign" mengatur fitur yang <strong>belum ada di aplikasi ini</strong> — tidak ada satu pun bagian aplikasi yang mengirim pesan bertipe campaign. Artinya empat kotak isian pengaman di halaman Pengaturan saat ini tidak mempengaruhi satu pesan pun (temuan 5).</p>
+    <p>Dan seluruh tabel ini <strong>hanya dijalankan pada jalur Unofficial.</strong> Pesan yang keluar lewat kanal Official melewatinya sepenuhnya (temuan 4).</p>
+  </div>
+
+  <h4>Batas-batas lain yang berlaku</h4>
+  <div class="stats">
+    <div class="stat"><div class="v">20</div><div class="k">balasan bot maksimum per percakapan per 10 menit</div></div>
+    <div class="stat"><div class="v">5–25 dtk</div><div class="k">jeda penggabungan pesan beruntun</div></div>
+    <div class="stat"><div class="v">10 dtk</div><div class="k">batas waktu tiap panggilan AI</div></div>
+    <div class="stat"><div class="v">8</div><div class="k">panggilan AI maksimum dalam satu giliran bot</div></div>
+    <div class="stat"><div class="v">8 pesan</div><div class="k">riwayat percakapan yang diberikan ke AI</div></div>
+  </div>
+
+  <figure>
+    <img src="gambar/10-test-lab.png" alt="Halaman Test Lab">
+    <figcaption><strong>Gambar 3 — Test Lab.</strong> Tempat menguji semua aturan di atas tanpa risiko. Perhatikan dua kalimat di bawah judul: simulasi menjalankan mesin keputusan yang <em>sebenarnya</em>, tapi "tidak ada pesan yang dikirim, tidak ada outbound job yang dibuat, dan data percakapan asli tidak diubah". Larangan itu ditegakkan kode, bukan sekadar janji di layar. Batasannya: karena simulasi selalu berjalan di percakapan sandbox yang sengaja tidak pernah punya booking, cabang bot untuk pelanggan yang sudah booking tidak bisa diuji di sini (temuan 25).</figcaption>
+  </figure>
+</section>
+
+<section id="s4">
+  <span class="sec-num">Bagian 4</span>
+  <h2>Apakah alurnya bisa dilihat</h2>
+  <p class="lede">Ada dua halaman yang menggambarkan alur bot, dan keduanya menjawab pertanyaan yang berbeda. Keduanya read-only.</p>
+
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th></th><th>Flow Map</th><th>Alur Live</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Isinya</strong></td><td><strong>28 langkah</strong> tulisan tangan, satu alur</td><td><strong>11 kotak</strong> langkah besar</td></tr>
+        <tr><td><strong>Sumber datanya</strong></td><td>Konstanta di dalam kode — halaman ini tidak memanggil API apa pun</td><td>Peta statis + siaran langsung + riwayat dari database</td></tr>
+        <tr><td><strong>Menampilkan kejadian nyata?</strong></td><td class="no">Tidak. Murni gambar dari kode.</td><td class="yes">Ya — kotaknya menyala saat pesan nyata melewatinya</td></tr>
+        <tr><td><strong>Bisa diedit?</strong></td><td class="no">Tidak. Halaman menyatakannya sendiri.</td><td class="no">Tidak. Ketiga sumber datanya hanya bisa membaca.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="callout c-warn">
+    <span class="tag">Yang penting dipahami</span>
+    <p>Peta di Alur Live <strong>juga statis</strong> — posisi setiap kotak ditulis tangan di kode. Yang benar-benar "live" hanyalah <strong>sorotannya</strong>. Jadi kalau suatu saat alur bot berubah di kode, tidak ada satu pun dari kedua halaman ini yang menyesuaikan dirinya sendiri; keduanya harus ikut diubah manual.</p>
+  </div>
+
+  <figure>
+    <img src="gambar/08-flow-map.png" alt="Halaman Flow Map dengan daftar 28 langkah">
+    <figcaption><strong>Gambar 4 — Flow Map.</strong> Dokumentasi teknis yang bisa dibaca tanpa membuka kode: 28 langkah berurutan, masing-masing menyebut berkas kode yang menjalankannya dan diberi jenis (Gerbang, Klasifikasi, Pencarian, LLM, Knowledge). Perhatikan panel kanan — memilih satu langkah menjelaskan apa yang terjadi, kemungkinan hasilnya, dan aturan mana yang terkait. Perhatikan juga kalimat pembuka: "Seluruh halaman ini read-only — percabangannya adalah control flow di kode, bukan data." Ini bukan tempat mengubah perilaku bot; ini tempat memahaminya.</figcaption>
+  </figure>
+
+  <h3>Sebelas langkah yang benar-benar direkam</h3>
+  <p class="prose">Pesan masuk diterima → Kontak &amp; percakapan disimpan → Kelayakan bot dicek → Pesan beruntun digabung → Cek permintaan bicara ke manusia → Cek booking pelanggan → Pahami kebutuhan &amp; cocokkan paket → Susun balasan dari knowledge → Verifikasi harga &amp; tautan → Diserahkan ke agen manusia → Balasan dikirim ke pelanggan. Kesebelasnya benar-benar terpasang di jalur produksi.</p>
+
+  <h4>Yang tidak terekam</h4>
+  <div class="prose">
+    <ol>
+      <li><strong>28 sub-langkah tidak pernah direkam.</strong> Sub-langkah di panel detail adalah teks penjelasan, bukan kejadian yang terjadi.</li>
+      <li><strong>Status "dilewati" tidak pernah dipakai sekali pun.</strong> Kanvasnya sudah punya warna dan labelnya, tapi tidak ada satu baris pun yang menuliskannya. Akibatnya "sengaja dilewati" tidak bisa dibedakan dari "tidak pernah dijalankan".</li>
+      <li><strong>Empat jalur berhenti-awal berkedip lalu hilang selamanya</strong> — bot nonaktif atau pesan bukan teks, pesan yang digabung ke burst berjalan, bot dimatikan sebelum bot berjalan, dan batas balasan terlampaui. Keempatnya terjadi sebelum baris database ditulis.</li>
+      <li><strong>Antrean kirim, retry, dan pengaman kirim ada di luar peta ini</strong> — halamannya menyatakan hal itu sendiri; semuanya ada di halaman Outbound Queue.</li>
+      <li><strong>Simulasi dari Test Lab tidak menyimpan jejak langkah.</strong></li>
+      <li><strong>Instrumentasi sengaja boleh bolong.</strong> Setiap perekaman dibungkus penangkap error, jadi perekaman yang rusak membuat kanvas kosong tanpa pernah mengubah satu balasan pun. Artinya: <strong>kanvas kosong bukan berarti bot mati.</strong></li>
+    </ol>
+  </div>
+
+  <figure>
+    <img src="gambar/09-alur-live.png" alt="Halaman Alur Live dengan kanvas pipeline dan kartu funnel">
+    <figcaption><strong>Gambar 5 — Alur Live.</strong> Perhatikan tiga hal. Pertama, status di atas kanvas: "Belum ada run yang berjalan — itu keadaan normal saat tidak ada pesan masuk", contoh bagus dari kebiasaan aplikasi ini menjelaskan kekosongan alih-alih membiarkannya membingungkan. Kedua, daftar "Riwayat terakhir" di kiri bawah: dua dari tiga run tertulis <em>"Jejak langkah tidak terekam"</em> — perekaman memang boleh bolong tanpa mempengaruhi balasan. Ketiga, kartu "Funnel penjualan" di kanan: angka <strong>338 pada "Diteruskan ke tim"</strong> versus nol di hampir semua tahap lain — itu bukan 338 percakapan yang bot serahkan, melainkan semua percakapan yang botnya mati, termasuk yang dimatikan manual oleh agen. Kartu itu menyatakan keterbatasan itu sendiri di teks pengantarnya.</figcaption>
+  </figure>
+</section>
+
+<section id="s5">
+  <span class="sec-num">Bagian 5</span>
+  <h2>Funnel penjualan</h2>
+  <p class="lede">Lima tahap yang dipakai agen sehari-hari, dan bagaimana tahap itu bisa naik sendiri dari data booking.</p>
+
+  <p class="prose">Tahapnya: <strong>Baru → Negosiasi → Booked → Lunas → Selesai</strong>, tersimpan pada percakapan itu sendiri. Tahap ini muncul di empat tempat: dropdown di panel kanan Inbox, lencana di daftar percakapan, kolom dan filter di halaman Kontak, serta panel Funnel penjualan di Beranda.</p>
+
+  <h3>Bagaimana tahap naik otomatis</h3>
+  <p class="prose">Aturannya hanya tiga baris, dijalankan berurutan terhadap data booking pelanggan:</p>
+  <div class="prose">
+    <ol>
+      <li>Tanggal <strong>akhir trip</strong> sudah lewat hari ini → <strong>Selesai</strong></li>
+      <li><strong>Sisa tagihan</strong> nol atau kurang → <strong>Lunas</strong></li>
+      <li>Selain itu, kalau ada booking → <strong>Booked</strong></li>
+    </ol>
+    <p>Tidak ada satu pun cabang yang bisa menghasilkan <strong>Baru</strong> atau <strong>Negosiasi</strong> — kedua tahap itu hanya bisa datang dari tangan agen.</p>
+  </div>
+
+  <p class="prose">Ada tiga hal yang bisa menulis tahap: agen lewat dropdown (bebas), pembaruan otomatis saat percakapan dibuka atau bot berjalan (hanya naik), dan penyapu berkala di latar belakang (hanya naik). Penyapu kedua khusus mengejar percakapan yang belum pernah sekali pun diambil data bookingnya, dibatasi 25 percakapan per putaran karena setiap percakapan berarti satu panggilan ke API booking.</p>
+
+  <div class="callout c-note">
+    <span class="tag">Angka audit yang tercatat di kode</span>
+    <p>Saat penyapu ini dibuat, kondisinya: <strong>33 dari 35</strong> percakapan yang punya booking tahapnya tertinggal, dan <strong>269 dari 340</strong> percakapan belum pernah dicek sama sekali. Itu ukuran seberapa besar pekerjaan yang tadinya harus dilakukan manual.</p>
+  </div>
+
+  <div class="callout c-danger">
+    <span class="tag">Koreksi penting — penurunan tahap oleh agen akan ditimpa kembali</span>
+    <p>Sering dikatakan bahwa tahap "tidak pernah mundur melewati setelan agen". Itu <strong>hanya separuh benar</strong>. Yang benar adalah tahap tidak pernah mundur, <em>titik</em> — sistem tidak menyimpan siapa yang menyetel tahap, jadi yang dilindungi adalah <strong>angkanya</strong>, bukan keputusan agennya.</p>
+    <p>Konsekuensi nyatanya: kalau agen sengaja <strong>menurunkan</strong> tahap — misalnya dari Booked kembali ke Negosiasi karena pelanggan membatalkan lewat telepon — penyapu berkala berikutnya akan <strong>menaikkannya kembali ke Booked tanpa pemberitahuan apa pun</strong>.</p>
+  </div>
+
+  <h3>Ada funnel kedua yang berbeda arti</h3>
+  <p class="prose">Aplikasi ini punya <strong>dua sistem tahap yang tidak saling terhubung, dan keduanya disebut "funnel"</strong>. Yang kedua punya enam tahap — Masuk → Tanya-tanya → Ada tujuan → Ada asal &amp; lama hari → Ada kota akhir → Diteruskan ke tim — dan mengukur <strong>kelengkapan informasi perjalanan yang berhasil dikumpulkan bot</strong>, bukan uang dan bukan booking. Ia hanya muncul di satu tempat (kartu kanan halaman Alur Live) dan dihitung atas 500 percakapan terakhir saja. Jangan membandingkan angkanya dengan funnel penjualan di Beranda; keduanya menghitung hal yang berbeda.</p>
+
+  <figure>
+    <img src="gambar/02-beranda.png" alt="Halaman Beranda dengan delapan panel">
+    <figcaption><strong>Gambar 6 — Beranda.</strong> Panel "Funnel penjualan" di kiri atas adalah funnel yang dipakai sehari-hari: <strong>339 percakapan</strong>, dengan Baru 173, Negosiasi <strong>0</strong>, Booked 54, Lunas 26, Selesai 86. Angka nol pada Negosiasi layak diperhatikan — tahap itu hanya bisa disetel manual oleh agen, dan tampaknya belum pernah dipakai. Perhatikan juga panel "Chat menunggu dibalas": <strong>113 chat</strong>, yang paling lama <strong>43 hari</strong>, dengan 7 di antaranya sudah diserahkan bot ke agen. Panel "Kesehatan bot" menunjukkan hanya 4 keputusan bot dalam 7 hari terakhir dengan latensi rata-rata 4,4 detik — konsisten dengan bot yang sedang disetel Off dan hanya dinyalakan per chat. Seluruh halaman ini hanya membaca; tidak ada tombol yang mengubah apa pun.</figcaption>
+  </figure>
+</section>
+
+<section id="s6">
+  <span class="sec-num">Bagian 6</span>
+  <h2>Pengetahuan bot</h2>
+  <p class="lede">Bot punya dua sumber pengetahuan yang terpisah dan berbeda sifat. Keduanya digabung saat menjawab, bukan disatukan di database.</p>
+
+  <h3>1. Katalog — data rilis, dibaca langsung dari berkas</h3>
+  <div class="prose">
+    <ul>
+      <li><strong>22 berkas JSON</strong> di direktori katalog, plus satu subdirektori, yang disinkronkan dari repo saudara <code>jvto-whatsapp-agent-runtime</code>.</li>
+      <li>Aplikasi menggabungkan <strong>16 paket</strong> dari sekitar 10 berkas terpisah: profil paket, tier harga, matriks komponen, kompatibilitas modul, kota finish, aturan akomodasi (nama hotel), aturan kendaraan dan bagasi, serta aturan kru dan bahasa.</li>
+      <li>Bot bisa menjawab <strong>14 topik</strong> dari berkas modul umum, plus satu blok fakta umum yang <strong>selalu tersedia</strong> apa pun topiknya.</li>
+      <li><strong>Katalog tidak pernah disalin ke database.</strong> Dulu ada salinan 32 baris di tabel; salinan itu dihapus karena bot tidak pernah sekali pun membacanya — bot membuka berkasnya langsung.</li>
+    </ul>
+  </div>
+
+  <h3>2. Knowledge terkelola — yang diketik operator lewat web</h3>
+  <div class="prose">
+    <ul>
+      <li>Setiap "sumber" punya riwayat revisi bernomor. Ada tiga status, tapi <strong>hanya dua yang dipilih manusia</strong>: <em>Draft</em> (sudah ditulis, belum hidup) dan <em>Published</em> (yang dibaca bot). Status <em>Archived</em> ditulis sistem sendiri.</li>
+      <li>Alasannya penting: bot membaca <strong>semua</strong> baris berstatus Published tanpa menyaring duplikat. Kalau revisi lama tidak diturunkan otomatis saat yang baru terbit, bot akan memegang jawaban lama <strong>dan</strong> jawaban baru sekaligus.</li>
+      <li>Revisi yang sudah terbit <strong>tidak bisa diedit</strong>; setiap perubahan membuat revisi baru. Mengedit revisi terbit berarti mengubah masa lalu — dan pertanyaan "apa yang bot ketahui pada tanggal itu" jadi tidak bisa dijawab.</li>
+      <li>Mengarsipkan sebuah sumber menyembunyikannya dari bot tanpa menghapus riwayatnya.</li>
+    </ul>
+  </div>
+
+  <h3>Bagaimana keduanya digabung</h3>
+  <p class="prose">Penggabungan terjadi <strong>saat bot menjawab, di dalam prompt</strong>, bukan di tabel database. Katalog di-resolve lebih dulu, lalu baris knowledge terkelola yang relevan <strong>ditambahkan</strong> di atasnya. Knowledge terkelola <strong>tidak pernah menggantikan katalog</strong> — kalau form web bisa menimpa data rilis, kontradiksinya jadi tidak terlihat, karena keduanya sama-sama "pengetahuan" dan tidak ada cara tahu mana yang menjawab. Setiap fakta yang dipakai dilabeli sumbernya (katalog atau terkelola) di jejak keputusan, supaya pertanyaan <em>"jawaban salah ini datang dari data rilis atau dari sesuatu yang diketik orang hari Selasa?"</em> bisa dijawab. Harga dan tautan dari knowledge terkelola sengaja ditulis sebagai baris tersendiri supaya pemeriksa harga mengenalinya sebagai sumber yang sah.</p>
+
+  <div class="callout c-warn">
+    <span class="tag">Tiga batasan yang menentukan seberapa berguna knowledge terkelola</span>
+    <p><strong>Pencocokannya berbasis kata yang sama.</strong> Sebuah entri hanya ikut ke prompt kalau pertanyaan pelanggan berbagi satu kata sepanjang minimal empat huruf dengan pertanyaan atau tag entri itu. Tidak ada pemahaman makna, tidak ada pencocokan konsep. Entri yang benar tapi memakai kosakata berbeda dari pelanggan <strong>tidak akan terpakai</strong>. Ini pilihan sadar, bukan kelalaian — tapi akibatnya nyata: kata-kata dalam knowledge harus menyerupai kata yang benar-benar dipakai pelanggan.</p>
+    <p><strong>Ada jeda sampai 30 detik</strong> sebelum perubahan terpakai, walau cache dibuang segera setelah publish.</p>
+    <p><strong>Knowledge terkelola hanya berlaku di satu cabang dari lima.</strong> Ia tidak dipakai saat pelanggan sudah punya booking aktif, saat bot belum tahu destinasi yang dimaksud, saat bot sedang menanyakan start/finish/durasi, dan pada semua cabang penyerahan ke manusia. Praktisnya: knowledge yang ditulis operator baru berpengaruh <em>setelah</em> bot tahu destinasi pelanggan, gerbang persetujuan terbuka, dan paket yang cocok ditemukan.</p>
+  </div>
+
+  <figure>
+    <img src="gambar/07-knowledge.png" alt="Halaman Knowledge Explorer">
+    <figcaption><strong>Gambar 7 — Knowledge Explorer.</strong> Dua sumber pengetahuan bot ditampilkan bertumpuk, dan urutannya disengaja: knowledge yang ditulis operator di atas, isi katalog di bawah. Perhatikan bahwa panel atas saat ini <strong>kosong</strong> — "Belum ada knowledge terkelola", artinya seluruh jawaban bot hari ini bersandar sepenuhnya pada katalog. Perhatikan juga keterangan di panel bawah: katalog dibaca langsung dari berkas setiap kali halaman dibuka, "tidak ada langkah sinkronisasi", dengan stempel waktu sinkronisasi terakhir dari agent-runtime. Terbaca "Menampilkan 50 dari 93 entri katalog".</figcaption>
+  </figure>
+</section>
+
+<section id="s7">
+  <span class="sec-num">Bagian 7</span>
+  <h2>Kalau jawaban bot salah</h2>
+  <p class="lede">Rantai lengkap dari "seseorang menyadari bot menjawab keliru" sampai "bot berhenti mengulanginya" — beserta tempat di mana rantai itu putus.</p>
+
+  <h3>Lima langkah</h3>
+  <div class="prose">
+    <ol>
+      <li><strong>Melihatnya.</strong> Setiap giliran bot menulis satu baris catatan berisi teks yang masuk, mode yang dipakai, statusnya, balasan yang dihasilkan, jejak langkah, knowledge yang dirujuk, hasil verifikasi, dan latensi. Halaman <strong>Decision Logs</strong> menampilkannya dengan filter status, mode, id percakapan, dan rentang tanggal. Dari Inbox, setiap gelembung balasan bot punya popover jejak dengan tautan langsung ke barisnya.</li>
+      <li><strong>Menandainya.</strong> Tombol tandai menulis dua kolom pada baris yang sama: kapan ditandai dan catatan singkatnya. Ini sengaja <strong>terbuka untuk semua akun yang login, bukan admin saja</strong> — orang yang menyadari bot salah adalah agen yang sedang membaca percakapan; mengharuskan admin adalah cara paling efektif agar laporan itu tidak pernah dibuat. Tidak ada tabel triase terpisah; yang dulu ada (delapan jenis isu, empat status, empat tingkat keparahan, penanggung jawab, penyelesai) dihapus karena isinya nol baris.</li>
+      <li><strong>Mengubahnya jadi knowledge.</strong> Dari baris itu bisa dibuat draft knowledge. <strong>Pertanyaannya terisi otomatis dari apa yang benar-benar ditulis pelanggan</strong>, tapi jawabannya harus diketik operator — jawaban bot yang salah sengaja <em>tidak</em> ikut diisikan, karena mengisi jawaban salah ke dalam draft adalah cara jawaban salah lolos oleh orang yang sekadar membaca sekilas. Alasan wajib diisi minimal 10 karakter, dan langkah ini butuh wewenang admin.</li>
+      <li><strong>Mengedit dan mengaktifkan.</strong> Draft disunting di halaman Knowledge lalu diterbitkan. Dalam satu transaksi, revisi lama diarsipkan, yang baru diterbitkan, dan status sumbernya dinaikkan.</li>
+      <li><strong>Bot memakainya.</strong> Cache dibuang saat publish, dan giliran berikutnya yang pertanyaannya berbagi kata dengan entri itu akan membawanya ke prompt.</li>
+    </ol>
+  </div>
+
+  <h3>Jalur otomatis yang berjalan tanpa diminta</h3>
+  <p class="prose">Bot mencatat sendiri dua jenis kegagalan tanpa menunggu siapa pun menandai: <strong>tidak ada fakta yang bisa dipakai</strong> (katalog tidak punya apa pun untuk topik itu) dan <strong>gagal verifikasi</strong> (dua kali berturut-turut mengarang harga atau tautan). Daftarnya ada di halaman "Pertanyaan Tak Terjawab" dan diringkas di Beranda.</p>
+
+  <div class="callout c-danger">
+    <span class="tag">Di mana rantai ini putus</span>
+    <p><strong>Knowledge baru tidak menjangkau tiga dari lima cabang bot.</strong> Kalau jawaban salahnya terjadi saat pelanggan sudah punya booking, saat destinasi belum diketahui, atau saat bot sedang menanyakan start/finish/durasi, maka <strong>membuat knowledge draft tidak akan memperbaikinya</strong> — perbaikannya harus lewat katalog atau lewat perubahan kode.</p>
+    <p><strong>Cabang booking tidak pernah melaporkan kekurangan pengetahuan</strong>, karena pencatatan kesenjangan hanya dipasang di cabang yang membaca knowledge terkelola.</p>
+    <p><strong>Sisa kata dari alur lama masih muncul.</strong> Setelah draft dibuat, layar berkata "Buka halaman Knowledge untuk mengirimnya ke <em>review</em>" — padahal tahap review sudah tidak ada; yang tersisa hanya Publish. Jawaban dan alasannya juga masih diketik lewat kotak dialog kecil bawaan browser, bukan form yang layak.</p>
+    <p><strong>Tabel Decision Logs tidak pernah dipangkas.</strong> Ia tumbuh satu baris per balasan bot, lengkap dengan jejaknya, selamanya. Hanya audit log yang dibersihkan otomatis setelah 365 hari.</p>
+  </div>
+
+  <figure>
+    <img src="gambar/06-decision-logs.png" alt="Halaman Decision Logs">
+    <figcaption><strong>Gambar 8 — Decision Logs.</strong> Ini titik awal setiap perbaikan. Perhatikan kalimat pembukanya: halaman ini mencatat setiap putaran keputusan bot "termasuk yang tidak menghasilkan pesan sama sekali". Setiap baris menampilkan pesan masuk apa adanya, mode yang dipilih (CLARIFY, FAQ), status hasilnya, latensi dalam milidetik, dan berapa entri knowledge yang dipakai — kolom <strong>Knowledge bernilai 0</strong> pada tiga dari empat baris, konsisten dengan knowledge terkelola yang masih kosong. Dua tombol di kanan setiap baris adalah seluruh alat perbaikan yang tersedia: Detail dan "Tandai perlu diperbaiki".</figcaption>
+  </figure>
+
+  <figure>
+    <img src="gambar/14-knowledge-gaps.png" alt="Halaman Pertanyaan Tak Terjawab">
+    <figcaption><strong>Gambar 9 — Pertanyaan Tak Terjawab.</strong> Daftar yang diisi bot sendiri, tanpa menunggu ada orang yang menandai. Perhatikan definisinya di bawah judul: "Setiap baris adalah satu hal yang belum ada di katalog atau di knowledge base" — inilah daftar belanja untuk knowledge berikutnya. Saat tangkapan layar ini diambil daftarnya kosong, yang wajar mengingat bot baru menghasilkan empat keputusan dalam sepekan terakhir.</figcaption>
+  </figure>
+</section>
+
+<section id="s8">
+  <span class="sec-num">Bagian 8</span>
+  <h2>Isi Inbox</h2>
+  <p class="lede">Tiga kolom: daftar percakapan di kiri, thread dan kotak tulis di tengah, panel kontak di kanan.</p>
+
+  <figure>
+    <img src="gambar/03-inbox.png" alt="Halaman Inbox tiga kolom">
+    <figcaption><strong>Gambar 10 — Inbox.</strong> Perhatikan kolom kiri: setiap baris membawa lencana asal booking (<strong>JVTO</strong> biru, <strong>KLOOK</strong> oranye), lencana tahap penjualan (Baru / Booked / Lunas), jumlah pesan belum dibaca, dan ikon coret yang menandakan bot sedang mati untuk percakapan itu — perhatikan betapa banyak baris yang bot-nya mati. Di tengah, setiap balasan bot diberi label "Bot", ikon jejak keputusan yang bisa diklik, nama kanal pengirim ("Unofficial"), jam, dan status "Terkirim". Di kanan, kartu kuning "Info dari percakapan (belum booking)" adalah apa yang bot berhasil kumpulkan sebelum ada booking, di atas dropdown tahap pipeline, label, reminder, dan catatan. Di bawah kotak tulis: "Bot menjawab chat ini otomatis" beserta tombol "Ambil Alih dari Bot". Percakapan yang terbuka ini adalah percakapan uji internal — perhatikan keterangan "Room Tes — tidak terkirim ke WhatsApp".</figcaption>
+  </figure>
+
+  <h3>Lencana JVTO / KLOOK</h3>
+  <div class="prose">
+    <ul>
+      <li>Nilainya datang dari data booking JVTO dan disimpan di kolomnya sendiri, bukan dibaca ulang dari data mentah setiap kali halaman dibuka.</li>
+      <li><strong>Ditulis tepat sekali</strong>, saat booking pertama kali ditemukan. Nilai yang sudah ada selalu menang, bahkan bila API mengembalikan nilai berbeda kemudian — karena platform asal sebuah booking adalah fakta permanen, tidak seperti pembayaran atau hotel yang memang bisa berubah.</li>
+      <li>Lencananya juga mengubah isi panel booking: untuk KLOOK, kolom Dibayar / Sisa / Hotel disembunyikan dan diganti Kru / Transportasi. Perilaku bot pun ikut menyesuaikan.</li>
+      <li>Tanpa booking = tanpa lencana.</li>
+    </ul>
+  </div>
+
+  <h3>Tahap pipeline, label, catatan, reminder</h3>
+  <div class="prose">
+    <ul>
+      <li><strong>Tahap pipeline</strong> tampil sebagai lencana berwarna di daftar dan sebagai dropdown di panel kanan. Catatan penting: opsi <strong>"Selesai" di dropdown itu selalu gagal</strong> — lihat temuan 9.</li>
+      <li><strong>Label</strong> bisa dipasang dan dilepas dari panel kontak, dengan warna sebagai latar transparan. Tapi <strong>membuat label baru tidak ada layarnya</strong> (temuan 11), dan label tidak bisa dipakai menyaring Inbox (temuan 12).</li>
+      <li><strong>Catatan</strong> bisa ditulis semua akun yang login, dan nama penulisnya diambil dari sesi yang benar-benar berjalan. Tapi catatan <strong>tidak bisa diedit atau dihapus</strong> — salah ketik bersifat permanen (temuan 23).</li>
+      <li><strong>Reminder</strong> bisa dibuat dan dicentang selesai, dan muncul di panel Beranda termasuk yang sudah lewat tanggal. Tapi <strong>tidak ada apa pun yang benar-benar mengingatkan</strong> (temuan 1).</li>
+    </ul>
+  </div>
+
+  <h3>Panel booking</h3>
+  <div class="prose">
+    <ul>
+      <li>Datanya diambil <strong>langsung dari API booking JVTO</strong> dengan batas waktu 10 detik, lalu disimpan dan dipakai ulang selama 24 jam. Pengambilannya dipicu setiap kali percakapan dibuka — jadi tidak bergantung pada bot pernah berjalan.</li>
+      <li>Kalau pelanggan punya beberapa booking, yang ditampilkan adalah yang tanggal mulainya paling baru.</li>
+      <li>Yang tampil: paket, tanggal, jumlah orang, jemput dan antar, dibayar dan sisa, hotel per hari, serta tautan portal pelanggan. Status "Lunas / Belum lunas" <strong>dihitung</strong> dari sisa tagihan, bukan diambil sebagai field dari API.</li>
+      <li>Kalau belum ada booking tapi bot sudah mengumpulkan informasi dari percakapan, yang tampil adalah kartu kuning "Info dari percakapan (belum booking)".</li>
+      <li>Percakapan sandbox sengaja tidak pernah punya booking, untuk mencegah data pelanggan asli bocor ke sesi uji.</li>
+    </ul>
+  </div>
+
+  <h3>Sakelar bot, status kirim, dan alat menulis</h3>
+  <div class="prose">
+    <ul>
+      <li><strong>Sakelar bot per percakapan:</strong> tombol "Ambil Alih dari Bot" / "Aktifkan Bot untuk Chat Ini", dengan ikon status di setiap baris daftar. Bot juga bisa mematikan dirinya sendiri saat handoff, dan layar agen ikut menyesuaikan seketika.</li>
+      <li><strong>Status kirim:</strong> Mengantre → Terkirim → Diterima → Dibaca, selalu ditulis dengan kata pendamping, bukan hanya ikon centang. Statusnya <strong>tidak pernah mundur</strong> meski tanda terima dari Meta datang tidak berurutan. Pesan yang gagal punya tombol "Kirim ulang" yang benar-benar bekerja.</li>
+      <li><strong>Popover jejak bot</strong> di setiap balasan bot menampilkan mode dan langkah keputusan, dengan tautan ke Decision Logs. Kalau jejaknya tidak ada, ia berkata jujur "Trace tidak tersedia untuk pesan ini".</li>
+      <li><strong>Balas pesan</strong> dengan kutipan, <strong>kirim media</strong> (gambar, video, audio, dokumen) dengan pratinjau sebelum kirim.</li>
+      <li><strong>Template:</strong> dua jenis. Balasan cepat internal hanya menempelkan teks ke kotak tulis dan tidak pernah menyentuh Meta. Template resmi hanya menawarkan yang berstatus disetujui Meta dan dikirim sungguhan lewat Cloud API — variabelnya bisa terisi otomatis dari data booking pelanggan.</li>
+    </ul>
+  </div>
+
+  <h3>Official vs Unofficial — dua jalur kirim dengan konsekuensi berbeda</h3>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th></th><th>OFFICIAL (Meta Cloud API)</th><th>UNOFFICIAL (wa-coexist)</th></tr></thead>
+      <tbody>
+        <tr><td>Menerima pesan masuk</td><td class="yes">Ya</td><td class="no">Tidak — semua pesan masuk lewat Meta</td></tr>
+        <tr><td>Teks, gambar, video, dokumen</td><td class="yes">Ya</td><td class="yes">Ya</td></tr>
+        <tr><td>Audio</td><td class="yes">Ya</td><td class="part">Ya, tapi terkirim sebagai dokumen</td></tr>
+        <tr><td>Template, tombol, list, carousel</td><td class="yes">Ya</td><td class="no">Tidak</td></tr>
+        <tr><td>Status Diterima / Dibaca</td><td class="yes">Ya</td><td class="no">Tidak</td></tr>
+        <tr><td>Jalur pengiriman</td><td>Langsung ke Meta</td><td>Lewat antrean + retry</td></tr>
+        <tr><td>Kalau provider mati</td><td class="no">Pesan langsung gagal</td><td class="yes">Disimpan, lalu dicoba ulang: langsung → 30 detik → 2 menit → 10 menit</td></tr>
+        <tr><td>Pemeriksaan pengaman kirim</td><td class="no">Tidak dijalankan</td><td class="yes">Ya</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="prose">Pilihan manual agen per pesan selalu menang atas setelan default. Yang menentukan sehari-hari adalah satu kolom setelan di halaman Pengaturan, dan itu satu-satunya sumber kebenaran default kanal. Pada tangkapan layar Pengaturan di Bagian 9, nilai yang terbaca adalah <strong>Unofficial</strong> — nilai yang lebih aman dari keduanya, karena hanya jalur itu yang melewati pengaman kirim.</p>
+</section>
+
+<section id="s9">
+  <span class="sec-num">Bagian 9</span>
+  <h2>Halaman-halaman lain</h2>
+  <p class="lede">19 halaman di area terkunci login. Sembilan di antaranya read-only — tidak ada tombol yang mengubah apa pun.</p>
+
+  <div class="prose">
+    <ul>
+      <li><strong>Beranda</strong> — 8 panel: Funnel penjualan, Volume pesan, Kesehatan bot, Chat menunggu dibalas, Reminder jatuh tempo, Antrean outbound, Pertanyaan yang bot tidak bisa jawab, dan Ringkasan inbox. Rentangnya bisa diganti 7 / 14 / 30 hari. Ada banner merah "Saluran WhatsApp tidak siap mengirim" yang hanya muncul saat kredensial bermasalah. <em>Read-only.</em></li>
+      <li><strong>Kontak</strong> — cari nama atau nomor, saring per tahap dan per label, berpindah halaman. <em>Read-only.</em></li>
+      <li><strong>Detail Kontak</strong> — di sini justru bisa menulis: label, catatan, reminder, dan status persetujuan/opt-out.</li>
+      <li><strong>Template Pesan</strong> — template resmi Meta dan balasan cepat internal; buat, hapus, minta saran, salin dari pustaka siap pakai, dengan pratinjau langsung.</li>
+      <li><strong>Chatbot</strong> — lima bagian: kapan bot menjawab, jam kerja tim, dua kalimat yang diucapkan bot, model AI, dan sinkronisasi katalog. Setiap perubahan berlaku begitu disimpan.</li>
+      <li><strong>Bot Control</strong> — sembilan sub-halaman: Ringkasan, Flow Map, Alur Live, Rules, Knowledge, Decision Logs, Test Lab, Outbound Queue, dan Audit Logs.</li>
+      <li><strong>Pengaturan</strong> — default jalur kirim, status nomor, pengaman outbound, dan pintasan ke halaman lain. Tiga sub-halaman: <em>Histori Biaya Percakapan</em>, <em>Profil Bisnis WhatsApp</em> (menulis langsung ke Meta), dan <em>Pertanyaan Tak Terjawab</em>.</li>
+    </ul>
+  </div>
+
+  <div class="callout c-note">
+    <span class="tag">Satu keterbatasan yang dinyatakan halaman itu sendiri</span>
+    <p>Halaman Histori Biaya Percakapan menyatakan bahwa <strong>saldo dan limit penagihan WhatsApp Business tidak tersedia lewat API mana pun</strong> dan harus dicek manual di Meta Business Manager. Jadi aplikasi ini bisa menunjukkan biaya percakapan, tapi tidak bisa memperingatkan saat saldo menipis.</p>
+  </div>
+
+  <figure>
+    <img src="gambar/04-kontak.png" alt="Halaman Kontak">
+    <figcaption><strong>Gambar 11 — Kontak.</strong> <strong>340 kontak</strong>, dengan pencarian nama/nomor dan dua filter: tahap dan label. Perhatikan kolom <strong>KANAL</strong> — lencana JVTO dan KLOOK muncul hanya pada kontak yang bookingnya sudah ditemukan; sisanya bertanda strip. Perhatikan juga kolom <strong>LABEL: seluruhnya kosong</strong>, bukti langsung dari temuan 11 — tidak ada layar untuk membuat label, jadi fiturnya tidak pernah bisa dipakai. Tombol "Chat" di setiap baris melompat ke percakapannya di Inbox.</figcaption>
+  </figure>
+
+  <figure>
+    <img src="gambar/12-template.png" alt="Halaman Template Pesan">
+    <figcaption><strong>Gambar 12 — Template Pesan.</strong> Dua tab yang berbeda konsekuensinya: <strong>Resmi (Meta)</strong> harus diajukan dan disetujui Meta sebelum bisa dipakai, sedangkan <strong>Balasan Cepat</strong> murni internal dan tidak pernah menyentuh Meta. Formulir pengajuan mendukung lima bentuk template (Teks, Carousel, Penawaran Waktu Terbatas, Kode Kupon, Autentikasi) dengan pratinjau langsung di sebelah kanan. Saat tangkapan layar ini diambil, panel "Template resmi tersimpan" masih kosong — belum ada template resmi yang disimpan.</figcaption>
+  </figure>
+
+  <figure>
+    <img src="gambar/11-outbound-queue.png" alt="Halaman Outbound Queue">
+    <figcaption><strong>Gambar 13 — Outbound Queue.</strong> Satu-satunya tempat melihat pengiriman yang tertahan beserta alasan kegagalannya — halaman itu menyebut sendiri bahwa sebelumnya satu-satunya jendela ke sini adalah badge kecil di satu bubble. Perhatikan tiga tombol tindakan di kanan: "Pulihkan job menggantung", "Jeda COEXIST", dan "Jeda META" — jeda darurat yang sengaja dibuat tidak bisa terangkat oleh penyimpanan setelan lain. Perhatikan juga kalimat penutup di bawah: membatalkan sebuah job menandai bubble-nya gagal, "dari sisi customer memang tidak ada yang sampai" — layar tidak berpura-pura.</figcaption>
+  </figure>
+
+  <figure>
+    <img src="gambar/13-pengaturan.png" alt="Halaman Pengaturan">
+    <figcaption><strong>Gambar 14 — Pengaturan.</strong> Perhatikan satu nilai yang paling menentukan di seluruh halaman ini: <strong>Jalur default terbaca "Unofficial"</strong>. Ini kabar baik — hanya jalur Unofficial yang melewati antrean, retry, dan pengaman kirim; kalau nilainya OFFICIAL, semua pesan keluar tanpa pengaman apa pun (temuan 4). Nilai ini tetap layak diperiksa langsung di server produksi, karena tangkapan layar hanya membuktikan keadaan pada satu saat. Sidebar kirinya adalah seluruh cakupan halaman ini: jalur kirim, status nomor, pengaman outbound, manajemen pengguna, serta webhook dan kredensial — setelan bot sendiri ada di halaman Chatbot.</figcaption>
+  </figure>
+</section>
+
+<section id="s10">
+  <span class="sec-num">Bagian 10</span>
+  <h2>Angka-angka nyata sistem ini</h2>
+  <p class="lede">Semuanya dihitung dari kode, bukan diperkirakan.</p>
+
+  <div class="stats">
+    <div class="stat"><div class="v">18</div><div class="k">tabel database</div></div>
+    <div class="stat"><div class="v">69</div><div class="k">rute API</div></div>
+    <div class="stat"><div class="v">22</div><div class="k">halaman (19 di area login)</div></div>
+    <div class="stat"><div class="v">28</div><div class="k">langkah di Flow Map (dalam 1 alur)</div></div>
+    <div class="stat"><div class="v">11</div><div class="k">langkah di Alur Live</div></div>
+    <div class="stat"><div class="v">16</div><div class="k">paket di katalog</div></div>
+    <div class="stat"><div class="v">22</div><div class="k">berkas JSON katalog</div></div>
+    <div class="stat"><div class="v">14</div><div class="k">topik yang bisa dijawab bot</div></div>
+    <div class="stat"><div class="v">49</div><div class="k">frasa kata kunci eskalasi</div></div>
+    <div class="stat"><div class="v">12</div><div class="k">kasus uji emas untuk evaluasi bot</div></div>
+    <div class="stat"><div class="v">192</div><div class="k">berkas test</div></div>
+    <div class="stat"><div class="v">±2.247</div><div class="k">kasus test (hitungan statis)</div></div>
+    <div class="stat"><div class="v">66.972</div><div class="k">baris kode di <code>src</code></div></div>
+    <div class="stat"><div class="v">9 / 19</div><div class="k">halaman yang read-only</div></div>
+  </div>
+
+  <div class="callout c-note">
+    <span class="tag">Catatan kejujuran atas angka-angka ini</span>
+    <p>Angka <strong>2.247 kasus test</strong> adalah hitungan statis dari pola kode, bukan jumlah test yang benar-benar lulus — test tidak dijalankan saat penyusunan laporan ini. Angka sebenarnya kemungkinan <em>lebih tinggi</em>, karena 21 blok test berparameter masing-masing mengembang jadi beberapa kasus.</p>
+    <p>Dari 66.972 baris kode, kira-kira <strong>separuhnya adalah test</strong> (33.351 baris produksi berbanding 33.621 baris test). Itu rasio yang tinggi dan merupakan indikator kesehatan yang baik.</p>
+  </div>
+</section>
+
+<section id="s11">
+  <span class="sec-num">Bagian 11</span>
+  <h2>Yang belum berjalan atau masih terbatas</h2>
+  <p class="lede">26 temuan, diurutkan dari yang paling berdampak pada uang dan pelanggan. Bagian ini sengaja tidak diperhalus.</p>
+
+  <div class="finding">
+    <h3><span class="fnum">01</span> Reminder tidak mengingatkan siapa pun — ia hanya daftar pasif</h3>
+    <p>Tidak ada penjadwal, notifikasi, suara, email, atau pesan WhatsApp yang pernah membaca tabel reminder. Satu-satunya pekerjaan terjadwal di aplikasi ini mengurus antrean kirim, pemangkasan audit log, dan tahap pipeline — reminder tidak disebut sama sekali. Notifikasi browser hanya bereaksi pada satu jenis kejadian: alarm handoff bot. <strong>Kalau operator tidak membuka Beranda, reminder yang lewat tanggal tidak akan menagih dirinya sendiri.</strong></p>
+  </div>
+
+  <div class="finding">
+    <h3><span class="fnum">02</span> Semua pekerjaan berkala bergantung pada penjadwal yang tidak ada di dalam repo</h3>
+    <p>Kodenya menyatakannya sendiri: aplikasi ini tidak punya penjalan pekerjaan latar belakang. Tidak ada berkas konfigurasi cron, pm2, atau systemd di repo. Kalau penjadwal di server belum dipasang atau berhenti diam-diam:</p>
+    <ul class="tight">
+      <li><strong>Percobaan kirim ke-2, ke-3, dan ke-4 tidak pernah terjadi</strong> — hanya percobaan pertama yang ditembakkan langsung. Pesan yang gagal karena gangguan lima detik akan berhenti sebagai GAGAL selamanya.</li>
+      <li><strong>Tahap pipeline tidak pernah naik sendiri.</strong></li>
+      <li><strong>Audit log tidak pernah dipangkas.</strong></li>
+    </ul>
+    <p>Ini perlu dikonfirmasi ke pihak yang mengelola VPS: apakah penjadwalnya benar-benar terpasang dan masih hidup.</p>
+  </div>
+
+  <div class="finding">
+    <h3><span class="fnum">03</span> Gerbang persetujuan katalog bisa menutup diam-diam dan mendiamkan bot untuk semua calon pelanggan</h3>
+    <p>Kalau berkas persetujuan katalog di server hilang, rusak, atau tidak lagi cocok dengan isi katalog saat ini, <strong>setiap pelanggan yang belum punya booking langsung diserahkan ke manusia</strong>. Berkas itu tidak ikut disimpan di repo — ia hanya hidup di VPS. Artinya satu langkah deploy yang salah bisa mendiamkan bot untuk seluruh lalu lintas calon pelanggan, dan satu-satunya gejala di layar adalah "semua percakapan tiba-tiba diserahkan ke agen". Tidak ada peringatan khusus untuk kondisi ini.</p>
+  </div>
+
+  <div class="finding">
+    <h3><span class="fnum">04</span> Pesan lewat kanal Official tidak melewati pengaman pengiriman sama sekali</h3>
+    <p>Seluruh pemeriksaan pengaman hanya dijalankan pada jalur Unofficial. Pada kanal Official: <strong>tidak ada cek opt-out, tidak ada deteksi pesan duplikat, tidak ada pemeriksaan ulang bahwa percakapan sudah diambil alih agen, tidak ada antrean, dan tidak ada percobaan kirim ulang.</strong></p>
+    <p>Ini perlu dibaca bersama satu fakta lain: nilai default kanal di skema database adalah <strong>OFFICIAL</strong>, sedangkan default di kode adalah <strong>UNOFFICIAL</strong>. Tangkapan layar Pengaturan pada laporan ini menunjukkan nilai tersimpannya <strong>Unofficial</strong> — kabar baik — tetapi ini tetap <strong>hal yang paling layak diperiksa langsung oleh pemilik di server produksi</strong>, dan diperiksa ulang setiap kali database dipulihkan atau dibuat ulang.</p>
+  </div>
+
+  <div class="finding">
+    <h3><span class="fnum">05</span> Empat angka "pengaman campaign" mengatur fitur yang belum ada</h3>
+    <p>Batas kirim per menit, ambang kegagalan provider, jendela kegagalan provider, dan sebagian besar efek jendela duplikat hanya berlaku untuk pengiriman bertipe campaign — dan <strong>tidak ada satu bagian pun dari aplikasi yang mengirim pesan bertipe itu.</strong> Kodenya mengakuinya terang-terangan: "campaign, yang belum ada sebagai fitur". Jadi empat kotak isian di halaman Pengaturan saat ini tidak mempengaruhi satu pesan pun. Mengubahnya terasa seperti mengencangkan pengaman, padahal tidak mengubah apa-apa.</p>
+  </div>
+
+  <div class="finding">
+    <h3><span class="fnum">06</span> Opt-out kontak tidak memblokir apa pun yang benar-benar dikirim hari ini</h3>
+    <p>Untuk balasan 1:1 dan balasan bot, opt-out hanya menghasilkan <strong>peringatan, bukan blokir</strong>. Blokirnya hanya berlaku untuk campaign — yang belum ada (temuan 5). Lebih jauh, peringatan itu <strong>tidak pernah sampai ke layar operator</strong>: satu-satunya tempat ia dituliskan adalah log server. Satu-satunya tempat peringatan pengaman terlihat manusia adalah Test Lab. Artinya: menandai kontak sebagai opt-out saat ini <strong>tidak menghentikan pesan apa pun</strong>.</p>
+  </div>
+
+  <div class="finding">
+    <h3><span class="fnum">07</span> Knowledge yang ditulis operator hanya berlaku di satu cabang dari lima</h3>
+    <p>Knowledge terkelola <strong>tidak dipakai</strong> saat: pelanggan sudah punya booking aktif, destinasi belum diketahui bot, bot sedang menanyakan start/finish/durasi, dan pada semua cabang penyerahan ke manusia serta pesan cadangan teknis. Praktisnya: kalau jawaban salah terjadi di cabang-cabang itu, <strong>menulis knowledge baru tidak akan memperbaikinya</strong>. Perbaikannya harus lewat katalog atau lewat kode — yang berarti butuh programmer, bukan operator.</p>
+  </div>
+
+  <div class="finding">
+    <h3><span class="fnum">08</span> Pencocokan knowledge terkelola hanya berbasis kata yang sama</h3>
+    <p>Sebuah entri ikut ke prompt hanya kalau pertanyaan pelanggan berbagi satu kata sepanjang minimal empat huruf dengan pertanyaan atau tag entri itu. <strong>Tidak ada pemahaman makna.</strong> Entri yang benar tapi memakai kosakata berbeda dari pelanggan tidak akan terpakai. Ini pilihan sadar yang dijelaskan kodenya, bukan kelalaian — tapi konsekuensinya nyata: <strong>menulis knowledge saja tidak cukup, kata-katanya harus menyerupai kata yang benar-benar dipakai pelanggan.</strong></p>
+  </div>
+
+  <div class="finding mid">
+    <h3><span class="fnum">09</span> Opsi "Selesai" di dropdown tahap selalu gagal</h3>
+    <p>Dropdown menawarkan lima tahap termasuk <strong>Selesai</strong>, tapi bagian yang menyimpannya hanya menerima empat. Memilih "Selesai" selalu menghasilkan pesan merah "Gagal mengubah status pipeline". Tahap Selesai <strong>hanya bisa dicapai otomatis</strong> dari tanggal trip yang sudah lewat. Ini bug kecil dengan gesekan harian yang nyata: agen mencoba, gagal, dan tidak diberi tahu kenapa.</p>
+  </div>
+
+  <div class="finding mid">
+    <h3><span class="fnum">10</span> Penurunan tahap oleh agen akan ditimpa kembali secara otomatis</h3>
+    <p>Database tidak menyimpan siapa yang menyetel tahap, jadi yang dilindungi adalah angka peringkatnya, bukan keputusan agennya. Agen yang menurunkan Booked kembali ke Negosiasi karena pelanggan membatalkan lewat telepon akan mendapati tahapnya naik lagi ke Booked pada penyapuan berikutnya, tanpa pemberitahuan.</p>
+  </div>
+
+  <div class="finding mid">
+    <h3><span class="fnum">11</span> Membuat label baru tidak ada di aplikasi</h3>
+    <p>Bagian belakang untuk membuat label sudah ada, tapi <strong>tidak dipanggil oleh satu layar pun</strong> — aplikasi hanya bisa membaca daftar label yang sudah ada, dan data awal aplikasi tidak mengisi label apa pun. Akibatnya, kalau tabel label kosong (dan tangkapan layar Kontak memperlihatkan kolom Label seluruhnya kosong), <strong>seluruh fitur label tidak bisa dipakai dari aplikasi sama sekali.</strong></p>
+  </div>
+
+  <div class="finding mid">
+    <h3><span class="fnum">12</span> Filter label dan filter tahap tidak ada di Inbox</h3>
+    <p>Keduanya hanya ada di halaman Kontak. Di Inbox, satu-satunya penyaring adalah pencarian teks. Label di Inbox murni penanda visual — tidak bisa dipakai untuk memilah pekerjaan.</p>
+  </div>
+
+  <div class="finding low">
+    <h3><span class="fnum">13</span> "Diterima" dan "Dibaca" tidak akan pernah muncul untuk pesan lewat Unofficial</h3>
+    <p>Penyedia Unofficial tidak mengembalikan penanda pesan, jadi tidak ada yang bisa dicocokkan dengan tanda terima dari Meta. Ini keterbatasan penyedia, bukan bug — tapi jangan disalahartikan sebagai "pesan tidak sampai".</p>
+  </div>
+
+  <div class="finding low">
+    <h3><span class="fnum">14</span> Keterangan pada video dan dokumen hilang di kanal Unofficial</h3>
+    <p>Penyedia Unofficial tidak punya tempat untuk keterangan pada video dan dokumen, jadi teks pendampingnya <strong>dibuang</strong> — bukan salah kirim, tapi hilang. Gambar tetap membawa keterangannya. Artinya: kirim penjelasan penting sebagai pesan teks terpisah, jangan sebagai caption video.</p>
+  </div>
+
+  <div class="finding low">
+    <h3><span class="fnum">15</span> Kutipan balasan lewat Unofficial tidak terlihat oleh pelanggan</h3>
+    <p>Saat agen membalas sambil mengutip pesan tertentu, kutipan itu disimpan lokal untuk tampilan sendiri tapi tidak pernah ikut terkirim. <strong>Operator melihat kutipan; pelanggan tidak.</strong> Untuk percakapan panjang, ini bisa membuat balasan terasa tidak nyambung dari sisi pelanggan.</p>
+  </div>
+
+  <div class="finding mid">
+    <h3><span class="fnum">16</span> Batasan 24 jam WhatsApp tidak ditangani sama sekali</h3>
+    <p>Tidak ada logika jendela sesi di mana pun di aplikasi. Aplikasi <strong>tidak memperingatkan</strong> sebelum agen mengirim pesan bebas lewat Official kepada pelanggan yang sudah lama tidak menulis — pesan itu akan ditolak Meta tanpa peringatan lebih dulu. Mengingat Beranda menunjukkan chat yang menunggu sampai 43 hari, ini kondisi yang mudah terjadi.</p>
+  </div>
+
+  <div class="finding mid">
+    <h3><span class="fnum">17</span> Panel booking tidak membedakan "belum booking" dari "API booking sedang mati"</h3>
+    <p>Semua kegagalan pengambilan data booking ditelan diam-diam, lalu panel menampilkan kartu netral "Belum ada data booking atau brief perjalanan". <strong>Kalau API booking JVTO mati, seluruh pelanggan akan terlihat seperti belum pernah booking</strong> — termasuk yang sudah lunas. Agen bisa salah bicara ke pelanggan berdasarkan layar yang tampak normal.</p>
+  </div>
+
+  <div class="finding mid">
+    <h3><span class="fnum">18</span> Kolom status percakapan (Terbuka / Menunggu / Selesai) mati sebagian</h3>
+    <p>Ketiga statusnya ada dan dikirim ke layar, tapi <strong>tidak ada kode yang pernah menulis "Menunggu" atau "Selesai"</strong>. Semua percakapan selamanya berstatus Terbuka. Beranda memakai status ini untuk menghitung, sehingga angka "percakapan terbuka" di Beranda sebetulnya adalah <strong>hitungan semua percakapan yang pernah ada</strong> — bukan yang benar-benar butuh perhatian.</p>
+  </div>
+
+  <div class="finding mid">
+    <h3><span class="fnum">19</span> Empat jalur berkedip di Alur Live lalu hilang selamanya</h3>
+    <p>Bot nonaktif atau pesan bukan teks, pesan yang digabung ke burst berjalan, bot dimatikan sebelum bot berjalan, dan batas balasan terlampaui — keempatnya terjadi sebelum barisnya ditulis ke database, jadi tidak pernah muncul di riwayat. Alasan "agen mengambil alih saat bot menyusun jawaban" juga tidak tersimpan. Status "dilewati" pada kanvas adalah kode mati — tidak pernah ditulis sekali pun, sehingga "sengaja dilewati" tidak bisa dibedakan dari "tidak pernah dijalankan".</p>
+  </div>
+
+  <div class="finding mid">
+    <h3><span class="fnum">20</span> Tabel Decision Logs tumbuh selamanya</h3>
+    <p>Hanya audit log yang dipangkas otomatis setelah 365 hari. Catatan keputusan bot — satu baris per balasan, lengkap dengan jejak dalam bentuk JSON — <strong>tidak punya pemangkas apa pun.</strong> Selama volume bot masih kecil ini belum terasa; pada volume tinggi, ini akan menjadi masalah ukuran database yang harus ditangani.</p>
+  </div>
+
+  <div class="finding">
+    <h3><span class="fnum">21</span> Model AI default adalah tag "cloud", bukan model lokal murni</h3>
+    <p>Dokumen internal proyek dan komentar di skema database menyatakan bahwa <strong>teks pelanggan dan data booking tidak pernah keluar dari mesin VPS.</strong> Namun model default yang benar-benar dipakai adalah tag berakhiran <code>-cloud</code>, dan komentar di berkas kodenya sendiri menjelaskannya sebagai salah satu tag model milik Ollama yang <strong>diteruskan ke layanan cloud</strong>, dengan autentikasi di level daemon pada VPS. Permintaannya memang dikirim ke alamat lokal, tetapi daemon Ollama-lah yang meneruskannya keluar.</p>
+    <p><strong>Dokumen dan kode tidak sepakat di titik ini, dan ini satu-satunya pertanyaan privasi data di seluruh laporan.</strong> Kalau JVTO pernah menjanjikan ke siapa pun bahwa data pelanggan tidak meninggalkan servernya, ini perlu dikonfirmasi dan diputuskan pemilik: ganti ke model lokal murni, atau perbarui klaimnya.</p>
+  </div>
+
+  <div class="finding low">
+    <h3><span class="fnum">22</span> Sisa kata-kata dari alur lama yang sudah dihapus</h3>
+    <p>Setelah membuat draft knowledge dari Decision Logs, layar berkata "Buka halaman Knowledge untuk mengirimnya ke <em>review</em>" — padahal tahap review sudah tidak ada; yang tersisa hanya Publish. Jawaban dan alasannya juga masih diketik lewat kotak dialog kecil bawaan browser, bukan form. Kecil, tapi ia mengajarkan alur yang salah kepada orang baru.</p>
+  </div>
+
+  <div class="finding low">
+    <h3><span class="fnum">23</span> Catatan tidak bisa diedit atau dihapus</h3>
+    <p>Catatan pada kontak hanya bisa dibuat dan dibaca. <strong>Salah ketik bersifat permanen</strong>, termasuk catatan yang keliru menyebut nama atau angka pelanggan.</p>
+  </div>
+
+  <div class="finding mid">
+    <h3><span class="fnum">24</span> Panel kanan Inbox hilang di layar di bawah 1280 piksel</h3>
+    <p>Di laptop kecil, tablet, dan ponsel, <strong>panel booking, label, catatan, dan reminder tidak dapat diakses dari Inbox sama sekali</strong> — semuanya harus lewat halaman Kontak lalu detail kontak. Untuk tim yang kadang membalas pelanggan dari perangkat kecil, ini keterbatasan yang terasa setiap hari.</p>
+  </div>
+
+  <div class="finding low">
+    <h3><span class="fnum">25</span> Test Lab tidak bisa menguji cabang booking</h3>
+    <p>Simulasi selalu berjalan di percakapan sandbox, dan percakapan sandbox sengaja tidak pernah punya data booking. Akibatnya <strong>perilaku bot terhadap pelanggan yang sudah booking tidak bisa diuji di Test Lab.</strong> Keterbatasan ini dilaporkan terbuka oleh simulatornya sendiri lewat peringatan di layar, tidak disembunyikan.</p>
+  </div>
+
+  <div class="finding low">
+    <h3><span class="fnum">26</span> Dua ketidakcocokan kecil antara dokumen dan kode</h3>
+    <ul class="tight">
+      <li>Dokumen internal menyebut <strong>13</strong> kasus uji emas; jumlah sebenarnya <strong>12</strong>.</li>
+      <li>Satu bagian penyimpan tahap pipeline tidak melakukan pengecekan sesi sendiri, berbeda dari aturan internal proyek. <strong>Ini bukan lubang keamanan terbuka</strong> — lapisan penjaga di depan aplikasi sudah menolak semua permintaan tanpa sesi valid. Yang hilang adalah lapisan kedua, bukan satu-satunya lapisan.</li>
+    </ul>
+  </div>
+</section>
+
+<p class="footer">
+  Laporan ini disusun pada 8 September 2026 dari kode di branch <code>main</code>. Setiap pernyataan di dalamnya berasal dari penelusuran kode yang bisa ditunjuk berkas dan barisnya; hal yang tidak bisa dibuktikan dari kode tidak ditulis. Angka pada tangkapan layar menggambarkan keadaan pada saat tangkapan layar itu diambil, bukan keadaan permanen.
+  <br><br>
+  <strong>Dokumen internal JVTO — memuat data pelanggan. Jangan dibagikan ke luar tim.</strong>
+</p>
+
+</div>
+</body>
+</html>
