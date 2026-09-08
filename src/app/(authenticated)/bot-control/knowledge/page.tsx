@@ -15,6 +15,8 @@ import type { KnowledgeItem } from '@/lib/bot-control/knowledge-body'
 import { hasAdminPowers } from '@/lib/bot-control/permissions'
 import type { AccountRoleName } from '@/lib/auth/session'
 import { Skeleton } from '@/components/ui/skeleton'
+import { TableContainer } from '@/components/ui/table'
+import { FormSection } from '@/components/settings/section'
 import { fetchJson } from '@/lib/fetch-json'
 import { PageHeader } from '@/components/ui/page-header'
 
@@ -283,94 +285,100 @@ export default function KnowledgeExplorerPage() {
         }
       />
 
-      <section className="space-y-3 border-t border-line pt-5">
-        <div className="space-y-0.5">
-          <h2 className="text-base font-semibold text-ink">Isi katalog</h2>
-          <p className="max-w-3xl text-sm text-ink-muted">
+      {/* Dulu <section> telanjang dengan garis rambut di atasnya, mengambang langsung di kanvas.
+          Sekarang panel berbatas yang sama dengan Beranda dan halaman Pengaturan — dua bagian
+          halaman ini adalah dua hal yang benar-benar berbeda (file di disk vs baris database),
+          jadi dua panel di sini adalah pengelompokan sungguhan, bukan pembungkus refleks. */}
+      <FormSection
+        title="Isi katalog"
+        description={
+          <>
             Dibaca langsung dari file di <span className="font-mono">catalog/</span> setiap kali halaman ini dibuka —
             persis file yang dibaca bot. Tidak ada langkah sinkronisasi: mengubah filenya langsung terlihat di sini.
             {syncedAt && ` File terakhir disinkronkan dari agent-runtime: ${new Date(syncedAt).toLocaleString('id-ID')}.`}
-          </p>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2">
-          <Input
-            value={catalogQuery}
-            onChange={(e) => changeCatalogQuery(e.target.value)}
-            placeholder="Cari isi katalog (mis. masker, ijen, harga)..."
-            aria-label="Cari isi katalog"
-            className="w-80"
-          />
-          <Select
-            value={topicFilter}
-            onChange={(e) => changeTopicFilter(e.target.value)}
-            className="w-auto"
-            aria-label="Filter topik katalog"
-          >
-            <option value="">Semua topik</option>
-            {topics.map((topic) => (
-              <option key={topic} value={topic}>
-                {topic}
-              </option>
-            ))}
-          </Select>
-        </div>
-
-        <CatalogEntryPanel entries={entries} total={entryTotal} loading={catalogLoading} error={catalogError} />
-      </section>
-
-      <section className="space-y-3 border-t border-line pt-5">
-        <div className="space-y-0.5">
-          <h2 className="text-base font-semibold text-ink">Knowledge terkelola</h2>
-          <p className="max-w-3xl text-sm text-ink-muted">
-            Jawaban yang ditulis operator dan dibaca bot berdampingan dengan katalog. Disimpan sebagai draft dulu; bot
-            baru memakainya setelah diaktifkan.
-          </p>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2">
-          <Input
-            value={sourceQuery}
-            onChange={(e) => setSourceQuery(e.target.value)}
-            placeholder="Cari knowledge terkelola..."
-            aria-label="Cari knowledge terkelola"
-            className="w-56"
-          />
-          <Select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            className="w-auto"
-            aria-label="Filter status"
-          >
-            <option value="">Semua status</option>
-            <option value="PUBLISHED">PUBLISHED</option>
-            <option value="DRAFT">DRAFT</option>
-            <option value="ARCHIVED">ARCHIVED</option>
-          </Select>
-
-          <div className="ml-auto flex gap-2">
-            {hasAdminPowers(role) && <Button onClick={openCreate}>Buat knowledge baru</Button>}
+          </>
+        }
+      >
+        <div className="space-y-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <Input
+              value={catalogQuery}
+              onChange={(e) => changeCatalogQuery(e.target.value)}
+              placeholder="Cari isi katalog (mis. masker, ijen, harga)..."
+              aria-label="Cari isi katalog"
+              className="w-80"
+            />
+            <Select
+              value={topicFilter}
+              onChange={(e) => changeTopicFilter(e.target.value)}
+              className="w-auto"
+              aria-label="Filter topik katalog"
+            >
+              <option value="">Semua topik</option>
+              {topics.map((topic) => (
+                <option key={topic} value={topic}>
+                  {topic}
+                </option>
+              ))}
+            </Select>
           </div>
+
+          <CatalogEntryPanel entries={entries} total={entryTotal} loading={catalogLoading} error={catalogError} />
         </div>
+      </FormSection>
 
-        {actionError && <p className="text-base text-danger">{actionError}</p>}
-        {sourcesError && <p className="text-base text-danger">{sourcesError}</p>}
+      {/* `actions` — aksi tingkat bagian duduk di kepala panelnya, bukan di ujung baris filter:
+          ia membuat sesuatu yang baru, bukan menyaring yang sudah ada. */}
+      <FormSection
+        title="Knowledge terkelola"
+        description="Jawaban yang ditulis operator dan dibaca bot berdampingan dengan katalog. Disimpan sebagai draft dulu; bot baru memakainya setelah diaktifkan."
+        actions={hasAdminPowers(role) ? <Button onClick={openCreate}>Buat knowledge baru</Button> : undefined}
+      >
+        <div className="space-y-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <Input
+              value={sourceQuery}
+              onChange={(e) => setSourceQuery(e.target.value)}
+              placeholder="Cari knowledge terkelola..."
+              aria-label="Cari knowledge terkelola"
+              className="w-56"
+            />
+            <Select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              className="w-auto"
+              aria-label="Filter status"
+            >
+              <option value="">Semua status</option>
+              <option value="PUBLISHED">PUBLISHED</option>
+              <option value="DRAFT">DRAFT</option>
+              <option value="ARCHIVED">ARCHIVED</option>
+            </Select>
+          </div>
 
-        {sourcesLoading && (
-          <div aria-hidden="true">
-            {Array.from({ length: 4 }, (_, i) => (
-              <div key={i} className="flex h-9 items-center gap-3 border-b border-line">
-                <Skeleton className="h-3 w-2/5" />
-                <Skeleton className="h-3 w-20" />
-                <Skeleton className="h-3 w-24" />
+          {actionError && <p className="text-base text-danger">{actionError}</p>}
+          {sourcesError && <p className="text-base text-danger">{sourcesError}</p>}
+
+          {/* Kerangka memuat duduk di wadah tabel yang sama dengan tabelnya, supaya kotaknya
+              tidak muncul begitu baris pertama sampai. */}
+          {sourcesLoading && (
+            <TableContainer>
+              <div aria-hidden="true" className="divide-y divide-line">
+                {Array.from({ length: 4 }, (_, i) => (
+                  <div key={i} className="flex h-9 items-center gap-3 px-3">
+                    <Skeleton className="h-3 w-2/5" />
+                    <Skeleton className="h-3 w-20" />
+                    <Skeleton className="h-3 w-24" />
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
-        )}
-        {!sourcesLoading && !sourcesError && (
-          <KnowledgeSourceTable sources={sources} canEdit={hasAdminPowers(role)} onAction={handleAction} />
-        )}
-      </section>
+            </TableContainer>
+          )}
+          {!sourcesLoading && !sourcesError && (
+            <KnowledgeSourceTable sources={sources} canEdit={hasAdminPowers(role)} onAction={handleAction} />
+          )}
+        </div>
+      </FormSection>
 
       {editing && (
         <KnowledgeEditor

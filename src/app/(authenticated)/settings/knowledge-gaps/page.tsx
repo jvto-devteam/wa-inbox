@@ -4,6 +4,7 @@ import { Badge } from '@/components/ui/badge'
 import { EmptyState } from '@/components/ui/empty-state'
 import { Select } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
+import { TableContainer } from '@/components/ui/table'
 import { PageHeader } from '@/components/ui/page-header'
 import { fetchJson } from '@/lib/fetch-json'
 
@@ -63,7 +64,10 @@ export default function KnowledgeGapsPage() {
         }
       />
 
-      <div className="mt-6 rounded-lg border border-line bg-surface">
+      {/* Permukaan berbatas yang sama dengan tabel Kontak, lewat satu komponen bersama alih-alih
+          empat kelas yang disalin ulang. Isinya tetap daftar, bukan tabel: satu-satunya kolom
+          yang panjang di sini adalah kalimat pelanggan, dan kalimat tidak berbaris di kolom. */}
+      <TableContainer className="mt-6">
         {loading ? (
           <div aria-busy="true" className="flex flex-col gap-3 p-4">
             {[0, 1, 2].map((i) => (
@@ -102,7 +106,7 @@ export default function KnowledgeGapsPage() {
             ))}
           </ul>
         )}
-      </div>
+      </TableContainer>
     </main>
   )
 }

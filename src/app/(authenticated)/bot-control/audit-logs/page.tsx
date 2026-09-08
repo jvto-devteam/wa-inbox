@@ -7,7 +7,15 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { EmptyState } from '@/components/ui/empty-state'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table'
 import { fetchJson } from '@/lib/fetch-json'
 import { PageHeader } from '@/components/ui/page-header'
 
@@ -170,72 +178,79 @@ export default function AuditLogsPage() {
 
       {error && <p className="text-base text-danger">{error}</p>}
 
+      {/* Ketiga keadaan — memuat, kosong, berisi — duduk di wadah tabel yang sama, supaya
+          kotaknya tidak berkedip masuk-keluar setiap kali rentang tanggalnya diganti. */}
       {loading && (
-        <div className="space-y-px" aria-hidden="true">
-          {Array.from({ length: 8 }, (_, i) => (
-            <div key={i} className="flex h-9 items-center gap-3 border-b border-line">
-              <Skeleton className="h-3 w-32" />
-              <Skeleton className="h-3 w-16" />
-              <Skeleton className="h-3 w-28" />
-              <Skeleton className="h-3 w-20" />
-              <Skeleton className="h-3 w-2/5" />
-            </div>
-          ))}
-        </div>
+        <TableContainer>
+          <div className="divide-y divide-line" aria-hidden="true">
+            {Array.from({ length: 8 }, (_, i) => (
+              <div key={i} className="flex h-9 items-center gap-3 px-3">
+                <Skeleton className="h-3 w-32" />
+                <Skeleton className="h-3 w-16" />
+                <Skeleton className="h-3 w-28" />
+                <Skeleton className="h-3 w-20" />
+                <Skeleton className="h-3 w-2/5" />
+              </div>
+            ))}
+          </div>
+        </TableContainer>
       )}
 
       {!loading && !error && rows.length === 0 && (
-        <EmptyState
-          icon={<History strokeWidth={1.75} />}
-          title="Belum ada perubahan yang tercatat."
-          description="Log ini hanya terisi ketika seseorang mengubah apa yang bot lakukan. Kosong berarti belum ada yang diubah dalam rentang ini — bukan berarti pencatatannya mati."
-          className="border-t border-line"
-        />
+        <TableContainer>
+          <EmptyState
+            icon={<History strokeWidth={1.75} />}
+            title="Belum ada perubahan yang tercatat."
+            description="Log ini hanya terisi ketika seseorang mengubah apa yang bot lakukan. Kosong berarti belum ada yang diubah dalam rentang ini — bukan berarti pencatatannya mati."
+          />
+        </TableContainer>
       )}
 
       {!loading && !error && rows.length > 0 && (
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead className="w-44">Waktu</TableHead>
-              <TableHead className="w-24">Aksi</TableHead>
-              {/* Entitas dibatasi: kuncinya pendek dan monospace, sedangkan Alasan adalah teks
-                  bebas — kolom itulah satu-satunya yang layak menerima sisa lebarnya. */}
-              <TableHead className="w-80">Entitas</TableHead>
-              <TableHead className="w-48">Oleh</TableHead>
-              <TableHead>Alasan</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {rows.map((row) => (
-              <TableRow key={row.id} className="h-auto align-top">
-                <TableCell className="py-2.5 text-sm whitespace-nowrap text-ink-muted">
-                  <time dateTime={row.createdAt}>{new Date(row.createdAt).toLocaleString('id-ID')}</time>
-                </TableCell>
-                <TableCell className="py-2.5">
-                  <Badge variant={ACTION_VARIANT[row.action] ?? 'muted'}>{row.action}</Badge>
-                </TableCell>
-                <TableCell className="py-2.5">
-                  <span className="font-mono text-xs text-ink-muted">{row.entityType}</span>
-                  {row.entityKey && (
-                    <span className="block font-mono text-xs break-all text-ink">{row.entityKey}</span>
-                  )}
-                </TableCell>
-                <TableCell className="py-2.5 text-sm text-ink">
-                  {/* Denormalised at write time, so it survives the account being deleted. */}
-                  {row.actorName ?? <span className="text-ink-subtle italic">(akun terhapus)</span>}
-                </TableCell>
-                <TableCell className="py-2.5 text-sm text-ink-muted">
-                  {row.reason ? (
-                    <span className="block max-w-3xl">{row.reason}</span>
-                  ) : (
-                    <span className="text-ink-subtle">—</span>
-                  )}
-                </TableCell>
+        <TableContainer>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="w-44">Waktu</TableHead>
+                <TableHead className="w-24">Aksi</TableHead>
+                {/* Entitas dibatasi: kuncinya pendek dan monospace, sedangkan Alasan adalah teks
+                    bebas — kolom itulah satu-satunya yang layak menerima sisa lebarnya. */}
+                <TableHead className="w-80">Entitas</TableHead>
+                <TableHead className="w-48">Oleh</TableHead>
+                <TableHead>Alasan</TableHead>
               </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+            </TableHeader>
+            <TableBody>
+              {rows.map((row) => (
+                <TableRow key={row.id} className="h-auto align-top">
+                  <TableCell className="py-2.5 text-sm whitespace-nowrap text-ink-muted">
+                    <time dateTime={row.createdAt}>{new Date(row.createdAt).toLocaleString('id-ID')}</time>
+                  </TableCell>
+                  <TableCell className="py-2.5">
+                    <Badge variant={ACTION_VARIANT[row.action] ?? 'muted'}>{row.action}</Badge>
+                  </TableCell>
+                  <TableCell className="py-2.5">
+                    <span className="font-mono text-xs text-ink-muted">{row.entityType}</span>
+                    {row.entityKey && (
+                      <span className="block font-mono text-xs break-all text-ink">{row.entityKey}</span>
+                    )}
+                  </TableCell>
+                  <TableCell className="py-2.5 text-sm text-ink">
+                    {/* Denormalised at write time, so it survives the account being deleted. */}
+                    {row.actorName ?? <span className="text-ink-subtle italic">(akun terhapus)</span>}
+                  </TableCell>
+                  <TableCell className="py-2.5 text-sm text-ink-muted">
+                    {row.reason ? (
+                      <span className="block max-w-3xl">{row.reason}</span>
+                    ) : (
+                      <span className="text-ink-subtle">-</span>
+                    )}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </TableContainer>
       )}
 
       {!loading && !error && total > 50 && (

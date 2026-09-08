@@ -4,6 +4,7 @@ import { AlertTriangle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Select } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
+import { TableContainer } from '@/components/ui/table'
 import {
   OutboundQueueTable,
   type OutboundJobRow,
@@ -248,18 +249,23 @@ export default function OutboundQueuePage() {
       {error && <p className="text-base text-danger">{error}</p>}
       {notice && <p className="text-base text-success">{notice}</p>}
 
+      {/* Wadah yang sama dengan tabelnya: halaman ini dibuka saat panik, dan kotak yang
+          melompat masuk-keluar antara memuat dan terisi membuat antrean terlihat berubah
+          padahal yang berubah hanya keadaan pemuatannya. */}
       {loading && (
-        <div aria-hidden="true">
-          {Array.from({ length: 8 }, (_, i) => (
-            <div key={i} className="flex h-9 items-center gap-3 border-b border-line">
-              <Skeleton className="h-3 w-16" />
-              <Skeleton className="h-3 w-28" />
-              <Skeleton className="h-3 w-20" />
-              <Skeleton className="h-3 w-10" />
-              <Skeleton className="h-3 w-2/5" />
-            </div>
-          ))}
-        </div>
+        <TableContainer>
+          <div aria-hidden="true" className="divide-y divide-line">
+            {Array.from({ length: 8 }, (_, i) => (
+              <div key={i} className="flex h-9 items-center gap-3 px-3">
+                <Skeleton className="h-3 w-16" />
+                <Skeleton className="h-3 w-28" />
+                <Skeleton className="h-3 w-20" />
+                <Skeleton className="h-3 w-10" />
+                <Skeleton className="h-3 w-2/5" />
+              </div>
+            ))}
+          </div>
+        </TableContainer>
       )}
 
       {!loading && !error && data && (

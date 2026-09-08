@@ -60,7 +60,13 @@ export function ChannelCapabilityTable() {
               <CapabilityCell value={CHANNEL_CAPABILITIES.UNOFFICIAL[capability]} />
             </TableCell>
             <TableCell>
-              {officialOnly.has(capability) && <Badge variant="warning">Official only</Badge>}
+              {/* "-" alih-alih sel kosong, sama seperti tabel Kontak: sel yang benar-benar
+                  kosong tidak bisa dibedakan dari sel yang gagal dirender. */}
+              {officialOnly.has(capability) ? (
+                <Badge variant="warning">Official only</Badge>
+              ) : (
+                <span className="text-ink-subtle">-</span>
+              )}
             </TableCell>
           </TableRow>
         ))}

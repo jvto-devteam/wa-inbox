@@ -35,7 +35,13 @@ export default function BotControlPage() {
           supaya sekata dengan Beranda, Kontak, dan halaman pengaturan — pemilik menandai bahwa
           halaman yang memakai pemisah garis-atas terbaca "asal taruh" di sebelah halaman yang
           isinya ada di dalam permukaan berbatas. */}
+      {/* `bodyClassName="p-0"`: seluruh isi bagian ini adalah satu tabel, jadi tabelnya menempel
+          ke tepi panel dan garis rambut kepala menjadi garis atasnya — satu batas, bukan wadah
+          tabel berbatas di dalam panel berbatas. `overflow-hidden` menjaga baris terakhir tetap
+          di dalam sudut yang dibulatkan. */}
       <FormSection
+        className="overflow-hidden"
+        bodyClassName="p-0"
         title="Kemampuan per channel"
         description={
           <>

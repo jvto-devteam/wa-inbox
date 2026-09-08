@@ -4,7 +4,15 @@ import { EmptyState } from '@/components/ui/empty-state'
 import { FieldError } from '@/components/ui/label'
 import { Select } from '@/components/ui/select'
 import { Skeleton, SkeletonText } from '@/components/ui/skeleton'
-import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table'
+import {
+  Table,
+  TableHeader,
+  TableBody,
+  TableRow,
+  TableHead,
+  TableCell,
+  TableContainer,
+} from '@/components/ui/table'
 import { PageHeader } from '@/components/ui/page-header'
 import { FormSection } from '@/components/settings/section'
 import { fetchJson } from '@/lib/fetch-json'
@@ -108,60 +116,72 @@ export default function BillingPage() {
             </p>
           </FormSection>
 
-          <FormSection title="Berdasarkan kategori" description="Kategori percakapan yang ditagihkan Meta.">
+          {/* Isi bagian ini HANYA tabelnya, jadi ia menempel ke tepi panel (`bodyClassName="p-0"`)
+              dan garis rambut kepala menjadi garis atas tabel — satu batas, bukan kotak berbatas
+              di dalam kotak berbatas seperti sebelumnya. */}
+          <FormSection
+            className="overflow-hidden"
+            bodyClassName="p-0"
+            title="Berdasarkan kategori"
+            description="Kategori percakapan yang ditagihkan Meta."
+          >
             {report.byCategory.length === 0 ? (
-              <EmptyState
-                title="Tidak ada percakapan berbayar pada rentang ini."
-                className="rounded-lg border border-line bg-surface"
-              />
+              <EmptyState title="Tidak ada percakapan berbayar pada rentang ini." />
             ) : (
-              <div className="rounded-lg border border-line bg-surface">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Kategori</TableHead>
-                      <TableHead className="w-48 text-right">Jumlah percakapan</TableHead>
-                      <TableHead className="w-40 text-right">Biaya</TableHead>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Kategori</TableHead>
+                    <TableHead className="w-48 text-right">Jumlah percakapan</TableHead>
+                    <TableHead className="w-40 text-right">Biaya</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {report.byCategory.map((c) => (
+                    <TableRow key={c.category}>
+                      <TableCell className="font-medium text-ink">{CATEGORY_LABEL[c.category] ?? c.category}</TableCell>
+                      <TableCell className="text-right font-mono whitespace-nowrap text-ink-muted">
+                        {c.conversationCount}
+                      </TableCell>
+                      <TableCell className="text-right font-mono whitespace-nowrap text-ink-muted">
+                        {formatCost(c.cost, report.currency)}
+                      </TableCell>
                     </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {report.byCategory.map((c) => (
-                      <TableRow key={c.category}>
-                        <TableCell className="font-medium text-ink">{CATEGORY_LABEL[c.category] ?? c.category}</TableCell>
-                        <TableCell className="text-right font-mono text-ink-muted">{c.conversationCount}</TableCell>
-                        <TableCell className="text-right font-mono text-ink-muted">{formatCost(c.cost, report.currency)}</TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
+                  ))}
+                </TableBody>
+              </Table>
             )}
           </FormSection>
 
-          <FormSection title="Per hari" description="Biaya harian pada rentang yang dipilih.">
+          <FormSection
+            className="overflow-hidden"
+            bodyClassName="p-0"
+            title="Per hari"
+            description="Biaya harian pada rentang yang dipilih."
+          >
             {report.daily.length === 0 ? (
-              <EmptyState title="Tidak ada data pada rentang ini." className="rounded-lg border border-line bg-surface" />
+              <EmptyState title="Tidak ada data pada rentang ini." />
             ) : (
-              <div className="rounded-lg border border-line bg-surface">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Tanggal</TableHead>
-                      <TableHead className="w-40 text-right">Biaya</TableHead>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Tanggal</TableHead>
+                    <TableHead className="w-40 text-right">Biaya</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {report.daily.map((d) => (
+                    <TableRow key={d.date}>
+                      <TableCell className="font-mono whitespace-nowrap text-ink-muted">
+                        <time dateTime={d.date}>{new Date(d.date).toLocaleDateString('id-ID')}</time>
+                      </TableCell>
+                      <TableCell className="text-right font-mono whitespace-nowrap text-ink-muted">
+                        {formatCost(d.cost, report.currency)}
+                      </TableCell>
                     </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {report.daily.map((d) => (
-                      <TableRow key={d.date}>
-                        <TableCell className="font-mono text-ink-muted">
-                          {new Date(d.date).toLocaleDateString('id-ID')}
-                        </TableCell>
-                        <TableCell className="text-right font-mono text-ink-muted">{formatCost(d.cost, report.currency)}</TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
+                  ))}
+                </TableBody>
+              </Table>
             )}
           </FormSection>
         </div>

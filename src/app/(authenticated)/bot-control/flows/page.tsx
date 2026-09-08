@@ -98,12 +98,23 @@ export default function FlowMapPage() {
           </div>
         </Card>
 
-        <Card className="p-2">
-          {flow ? (
-            <FlowStepList nodes={flow.nodes} selectedId={selectedNodeId} onSelect={setSelectedNodeId} />
-          ) : (
-            <p className="p-2 text-base text-ink-muted">Pilih flow untuk melihat langkahnya.</p>
-          )}
+        {/* Kepala yang sama dengan dua kartu di sebelahnya. Sebelumnya kartu ini satu-satunya
+            yang tidak punya kepala, jadi di antara "Flow" dan nama langkah terpilih ia terbaca
+            sebagai kotak tanpa nama, bukan sebagai kolom tengah dari tiga kolom sejenis. */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-sm">Langkah</CardTitle>
+            {flow && (
+              <span className="text-xs text-ink-muted tabular-nums">{flow.nodes.length} langkah</span>
+            )}
+          </CardHeader>
+          <div className="p-2">
+            {flow ? (
+              <FlowStepList nodes={flow.nodes} selectedId={selectedNodeId} onSelect={setSelectedNodeId} />
+            ) : (
+              <p className="p-2 text-base text-ink-muted">Pilih flow untuk melihat langkahnya.</p>
+            )}
+          </div>
         </Card>
 
         <Card className="h-fit">

@@ -8,7 +8,15 @@ import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table'
 import { DecisionTracePanel, STATUS_VARIANT, type DecisionRunDetail } from '@/components/bot-control/DecisionTracePanel'
 import { fetchJson } from '@/lib/fetch-json'
 import { PageHeader } from '@/components/ui/page-header'
@@ -237,29 +245,32 @@ export default function DecisionLogsPage() {
       {actionNotice && <p className="text-base text-success">{actionNotice}</p>}
       {error && <p className="text-base text-danger">{error}</p>}
 
+      {/* Kerangka memuat memakai wadah yang sama dengan tabelnya, jadi kotaknya tidak muncul
+          begitu baris pertama sampai — halaman tidak melompat setiap kali filternya diubah. */}
       {loading && (
-        <div aria-hidden="true">
-          {Array.from({ length: 10 }, (_, i) => (
-            <div key={i} className="flex h-9 items-center gap-3 border-b border-line">
-              <Skeleton className="h-3 w-32" />
-              <Skeleton className="h-3 w-28" />
-              <Skeleton className="h-3 w-2/5" />
-              <Skeleton className="h-3 w-16" />
-              <Skeleton className="h-3 w-14" />
-            </div>
-          ))}
-        </div>
+        <TableContainer>
+          <div aria-hidden="true" className="divide-y divide-line">
+            {Array.from({ length: 10 }, (_, i) => (
+              <div key={i} className="flex h-9 items-center gap-3 px-3">
+                <Skeleton className="h-3 w-32" />
+                <Skeleton className="h-3 w-28" />
+                <Skeleton className="h-3 w-2/5" />
+                <Skeleton className="h-3 w-16" />
+                <Skeleton className="h-3 w-14" />
+              </div>
+            ))}
+          </div>
+        </TableContainer>
       )}
 
       {!loading && !error && (
         <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,26rem)] lg:items-start">
-          <div className="min-w-0">
+          <TableContainer className="min-w-0">
             {rows.length === 0 ? (
               <EmptyState
                 icon={<ScrollText strokeWidth={1.75} />}
                 title="Belum ada keputusan bot yang cocok dengan filter."
                 description="Setiap pesan masuk yang diproses bot menuliskan satu baris di sini. Kosong berarti belum ada yang cocok dengan filter di atas, bukan bahwa bot berhenti mencatat."
-                className="border-t border-line"
               />
             ) : (
               <Table>
@@ -293,7 +304,7 @@ export default function DecisionLogsPage() {
                         <Badge variant={STATUS_VARIANT[row.status] ?? 'default'}>{row.status}</Badge>
                       </TableCell>
                       <TableCell className="py-2.5 text-right font-mono text-xs text-ink-muted">
-                        {row.latencyMs != null ? `${row.latencyMs} ms` : '—'}
+                        {row.latencyMs != null ? `${row.latencyMs} ms` : '-'}
                       </TableCell>
                       <TableCell className="py-2.5 text-right font-mono text-xs text-ink-muted">
                         {row.knowledgeRefsCount}
@@ -305,7 +316,7 @@ export default function DecisionLogsPage() {
                             {row.flagNote && <span className="text-xs text-ink-muted">{row.flagNote}</span>}
                           </span>
                         ) : (
-                          <span className="text-sm text-ink-subtle">—</span>
+                          <span className="text-sm text-ink-subtle">-</span>
                         )}
                       </TableCell>
                       <TableCell className="py-2">
@@ -328,7 +339,7 @@ export default function DecisionLogsPage() {
                 </TableBody>
               </Table>
             )}
-          </div>
+          </TableContainer>
 
           <Card className="h-fit">
             <CardHeader>

@@ -6,7 +6,15 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { EmptyState } from '@/components/ui/empty-state'
 import { Field, FieldError } from '@/components/ui/label'
-import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table'
+import {
+  Table,
+  TableHeader,
+  TableBody,
+  TableRow,
+  TableHead,
+  TableCell,
+  TableContainer,
+} from '@/components/ui/table'
 import { FormSection } from '@/components/settings/section'
 import { fetchJson } from '@/lib/fetch-json'
 
@@ -105,7 +113,10 @@ export function UserManagementSection({ className }: { className?: string }) {
       description="Hanya dua peran yang ada: Admin boleh mengubah setelan dan menghapus akun, Agent hanya membalas percakapan."
     >
       <div className="space-y-5">
-        <div className="rounded-lg border border-line bg-surface">
+        {/* Bagian ini berisi tabel BERSAMA formulir tambah akun, jadi tabelnya memakai wadah
+            tabel sendiri supaya terpisah dari formulir di bawahnya — bentuk yang sama persis
+            dengan tabel Kontak. */}
+        <TableContainer>
           {accounts.length === 0 ? (
             <EmptyState title="Belum ada akun." description="Tambahkan akun pertama lewat formulir di bawah." />
           ) : (
@@ -122,7 +133,7 @@ export function UserManagementSection({ className }: { className?: string }) {
                 {accounts.map((account) => (
                   <TableRow key={account.id}>
                     <TableCell className="font-medium text-ink">{account.name}</TableCell>
-                    <TableCell className="text-ink-muted">{account.email}</TableCell>
+                    <TableCell className="break-all text-ink-muted">{account.email}</TableCell>
                     <TableCell>
                       <Badge variant={account.role === 'ADMIN' ? 'default' : 'muted'}>{account.role}</Badge>
                     </TableCell>
@@ -141,7 +152,7 @@ export function UserManagementSection({ className }: { className?: string }) {
               </TableBody>
             </Table>
           )}
-        </div>
+        </TableContainer>
 
         <div className="space-y-3 border-t border-line pt-4">
           <h3 className="text-sm font-semibold text-ink">Tambah agen baru</h3>

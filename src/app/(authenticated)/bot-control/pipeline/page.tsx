@@ -1,7 +1,7 @@
 'use client'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
-import { Card } from '@/components/ui/card'
+import { Card, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { SkeletonText } from '@/components/ui/skeleton'
 import { Badge } from '@/components/ui/badge'
@@ -353,107 +353,112 @@ export default function PipelineLivePage() {
       />
 
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,24rem)_minmax(0,20rem)] lg:items-start">
-        <Card className="space-y-3 p-4">
-          <div className="flex items-center justify-between gap-2">
-            <p className="text-base font-semibold text-ink">Run</p>
+        {/* Kepala kartu yang sebenarnya, bukan satu baris judul+tombol yang digambar tangan di
+            dalam badannya: bentuknya jadi sama dengan kepala panel di seluruh aplikasi, dan
+            garis rambutnya memisahkan judul dari daftarnya. */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-sm">Run</CardTitle>
             <Button variant="outline" size="sm" onClick={() => void loadHistory()} disabled={historyLoading}>
               Muat ulang riwayat
             </Button>
-          </div>
+          </CardHeader>
 
-          {historyError && <p className="text-base text-danger">{historyError}</p>}
+          <div className="space-y-3 p-4">
+            {historyError && <p className="text-base text-danger">{historyError}</p>}
 
-          <div className="space-y-1">
-            <p className="text-xs font-medium text-ink-subtle">Sedang berjalan</p>
-            {liveRuns.length === 0 ? (
-              <p className="text-sm text-ink-muted">Tidak ada run yang sedang berjalan.</p>
-            ) : (
+            <div className="space-y-1">
+              <p className="text-xs font-medium text-ink-subtle">Sedang berjalan</p>
+              {liveRuns.length === 0 ? (
+                <p className="text-sm text-ink-muted">Tidak ada run yang sedang berjalan.</p>
+              ) : (
+                <ul className="space-y-1">
+                  {liveRuns.map((run) => {
+                    const last = run.steps[run.steps.length - 1]
+                    const step = last ? getPipelineStep(last.stepId) : null
+                    const active = selection?.source === 'live' && selection.runId === run.runId
+                    return (
+                      <li key={run.runId}>
+                        <button
+                          type="button"
+                          aria-pressed={active}
+                          onClick={() => setSelection({ source: 'live', runId: run.runId })}
+                          className={cn(
+                            'focus-ring w-full rounded-md border p-2 text-left text-sm transition-colors',
+                            RUN_COLOR_CLASSES[run.colorIndex % RUN_COLOR_CLASSES.length],
+                            active && 'ring-2 ring-ink'
+                          )}
+                        >
+                          <span className="block font-semibold">{labelForLiveRun(run)}</span>
+                          <span className="block text-xs opacity-80">
+                            {step ? step.label : 'Menunggu langkah pertama'}
+                            {last ? ` · ${STEP_STATUS_LABEL[last.status]}` : ''}
+                          </span>
+                        </button>
+                      </li>
+                    )
+                  })}
+                </ul>
+              )}
+            </div>
+
+            <div className="space-y-1">
+              <p className="text-xs font-medium text-ink-subtle">Riwayat terakhir</p>
+              {historyLoading && <SkeletonText lines={3} />}
+              {!historyLoading && history.length === 0 && (
+                <p className="text-sm text-ink-muted">Belum ada run yang tercatat.</p>
+              )}
               <ul className="space-y-1">
-                {liveRuns.map((run) => {
-                  const last = run.steps[run.steps.length - 1]
-                  const step = last ? getPipelineStep(last.stepId) : null
-                  const active = selection?.source === 'live' && selection.runId === run.runId
+                {history.map((run) => {
+                  const step = run.lastStepId ? getPipelineStep(run.lastStepId) : null
+                  const active = selection?.source === 'riwayat' && selection.runId === run.id
                   return (
-                    <li key={run.runId}>
+                    <li key={run.id}>
                       <button
                         type="button"
                         aria-pressed={active}
-                        onClick={() => setSelection({ source: 'live', runId: run.runId })}
+                        onClick={() => setSelection({ source: 'riwayat', runId: run.id })}
                         className={cn(
-                          'focus-ring w-full rounded-md border p-2 text-left text-sm transition-colors',
-                          RUN_COLOR_CLASSES[run.colorIndex % RUN_COLOR_CLASSES.length],
+                          'focus-ring w-full rounded-md border border-line bg-surface p-2 text-left text-sm transition-colors hover:bg-surface-sunken',
                           active && 'ring-2 ring-ink'
                         )}
                       >
-                        <span className="block font-semibold">{labelForLiveRun(run)}</span>
-                        <span className="block text-xs opacity-80">
-                          {step ? step.label : 'Menunggu langkah pertama'}
-                          {last ? ` · ${STEP_STATUS_LABEL[last.status]}` : ''}
+                        <span className="flex items-center justify-between gap-2">
+                          <span className="font-semibold text-ink">
+                            {run.contactName ?? run.contactPhone ?? `Percakapan ${shortId(run.conversationId)}`}
+                          </span>
+                          <span className="font-mono text-xs text-ink-muted">
+                            {new Date(run.startedAt).toLocaleTimeString('id-ID')}
+                          </span>
+                        </span>
+                        <span className="block truncate text-xs text-ink-muted">{run.inboundPreview}</span>
+                        <span className="mt-0.5 flex flex-wrap items-center gap-1">
+                          <Badge variant="muted">{run.status}</Badge>
+                          {run.stepsRecorded ? (
+                            <span className="text-xs text-ink-muted tabular-nums">
+                              {run.stepCount} langkah{step ? ` · berhenti di ${step.label}` : ''}
+                            </span>
+                          ) : (
+                            // Baris lama, dari sebelum instrumentasi ada. Menampilkannya sebagai
+                            // kegagalan akan membuat seluruh riwayat lama terlihat seperti bot
+                            // yang rusak.
+                            <span className="text-xs text-ink-muted">Jejak langkah tidak terekam</span>
+                          )}
                         </span>
                       </button>
                     </li>
                   )
                 })}
               </ul>
+            </div>
+
+            {nothingYet && (
+              <p className="border-t border-line pt-2 text-sm text-ink-muted">
+                Belum ada satu pun run. Kanvas di atas tetap menampilkan alurnya — sorotan muncul sendiri begitu ada pesan
+                pelanggan yang masuk.
+              </p>
             )}
           </div>
-
-          <div className="space-y-1">
-            <p className="text-xs font-medium text-ink-subtle">Riwayat terakhir</p>
-            {historyLoading && <SkeletonText lines={3} />}
-            {!historyLoading && history.length === 0 && (
-              <p className="text-sm text-ink-muted">Belum ada run yang tercatat.</p>
-            )}
-            <ul className="space-y-1">
-              {history.map((run) => {
-                const step = run.lastStepId ? getPipelineStep(run.lastStepId) : null
-                const active = selection?.source === 'riwayat' && selection.runId === run.id
-                return (
-                  <li key={run.id}>
-                    <button
-                      type="button"
-                      aria-pressed={active}
-                      onClick={() => setSelection({ source: 'riwayat', runId: run.id })}
-                      className={cn(
-                        'focus-ring w-full rounded-md border border-line bg-surface p-2 text-left text-sm transition-colors hover:bg-surface-sunken',
-                        active && 'ring-2 ring-ink'
-                      )}
-                    >
-                      <span className="flex items-center justify-between gap-2">
-                        <span className="font-semibold text-ink">
-                          {run.contactName ?? run.contactPhone ?? `Percakapan ${shortId(run.conversationId)}`}
-                        </span>
-                        <span className="font-mono text-xs text-ink-muted">
-                          {new Date(run.startedAt).toLocaleTimeString('id-ID')}
-                        </span>
-                      </span>
-                      <span className="block truncate text-xs text-ink-muted">{run.inboundPreview}</span>
-                      <span className="mt-0.5 flex flex-wrap items-center gap-1">
-                        <Badge variant="muted">{run.status}</Badge>
-                        {run.stepsRecorded ? (
-                          <span className="text-xs text-ink-muted tabular-nums">
-                            {run.stepCount} langkah{step ? ` · berhenti di ${step.label}` : ''}
-                          </span>
-                        ) : (
-                          // Baris lama, dari sebelum instrumentasi ada. Menampilkannya sebagai
-                          // kegagalan akan membuat seluruh riwayat lama terlihat seperti bot
-                          // yang rusak.
-                          <span className="text-xs text-ink-muted">Jejak langkah tidak terekam</span>
-                        )}
-                      </span>
-                    </button>
-                  </li>
-                )
-              })}
-            </ul>
-          </div>
-
-          {nothingYet && (
-            <p className="border-t border-line pt-2 text-sm text-ink-muted">
-              Belum ada satu pun run. Kanvas di atas tetap menampilkan alurnya — sorotan muncul sendiri begitu ada pesan
-              pelanggan yang masuk.
-            </p>
-          )}
         </Card>
 
         <Card className="space-y-2 p-4">

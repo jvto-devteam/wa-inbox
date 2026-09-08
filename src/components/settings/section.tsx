@@ -23,6 +23,12 @@ import type { ReactNode } from 'react'
  *
  * `actions` untuk aksi tingkat bagian (mis. "Sinkron Sekarang"). Aksi utama tiap bagian
  * cukup satu; sisanya outline atau ghost.
+ *
+ * `bodyClassName` (seperti pada `Panel`) untuk bagian yang ISINYA HANYA satu tabel: diberi
+ * `p-0`, tabelnya menempel ke tepi panel dan garis rambut kepala menjadi garis atas tabelnya —
+ * bentuk yang sama persis dengan tabel Kontak, dengan SATU batas, bukan kotak di dalam kotak.
+ * Bagian yang isinya tabel BERSAMA hal lain tetap memakai padding bawaan dan tabelnya dibungkus
+ * `TableContainer` sendiri, supaya tabel itu terpisah dari formulir di sebelahnya.
  */
 export function FormSection({
   title,
@@ -30,12 +36,14 @@ export function FormSection({
   actions,
   children,
   className,
+  bodyClassName,
 }: {
   title: string
   description?: ReactNode
   actions?: ReactNode
   children?: ReactNode
   className?: string
+  bodyClassName?: string
 }) {
   return (
     <section className={cn('flex min-w-0 flex-col rounded-lg border border-line bg-surface', className)}>
@@ -46,7 +54,7 @@ export function FormSection({
         </div>
         {actions ? <div className="flex shrink-0 items-center gap-2">{actions}</div> : null}
       </div>
-      {children ? <div className="flex-1 p-4">{children}</div> : null}
+      {children ? <div className={cn('flex-1', bodyClassName ?? 'p-4')}>{children}</div> : null}
     </section>
   )
 }

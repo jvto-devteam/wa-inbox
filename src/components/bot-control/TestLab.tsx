@@ -74,52 +74,59 @@ export function TestLab({ conversations = [] }: { conversations?: ConversationOp
     // lebar formulir itu terentang selebar halaman tanpa ada yang mengisinya. Formulirnya
     // sengaja dikunci 28rem: kotak teks selebar layar penuh lebih buruk daripada yang sempit.
     <div className="grid gap-4 xl:grid-cols-[minmax(0,28rem)_minmax(0,1fr)] xl:items-start">
-      <Card className="space-y-3 p-4">
-        <Field label="Pesan pelanggan">
-          <Textarea
-            value={message}
-            onChange={(e) => setMessage(e.target.value)}
-            rows={3}
-            placeholder="berapa harga ijen 3d2n dari bali?"
-            aria-label="Pesan pelanggan"
-          />
-        </Field>
-
-        <div className="flex flex-wrap items-end gap-3">
-          <Field label="Konteks">
-            <Select
-              value={context}
-              onChange={(e) => setContext(e.target.value as ContextChoice)}
-              className="w-auto"
-              aria-label="Pilih konteks"
-            >
-              <option value="none">Tanpa history</option>
-              <option value="conversation">Pakai percakapan existing</option>
-              <option value="test-room">Pakai test room</option>
-            </Select>
+      <Card>
+        {/* Kepala, supaya kolom kiri terbaca sebagai panel yang sama jenisnya dengan kartu hasil
+            di sebelah kanan — bukan kotak tanpa nama di sebelah kotak berjudul. */}
+        <CardHeader>
+          <CardTitle className="text-sm">Pesan uji</CardTitle>
+        </CardHeader>
+        <div className="space-y-3 p-4">
+          <Field label="Pesan pelanggan">
+            <Textarea
+              value={message}
+              onChange={(e) => setMessage(e.target.value)}
+              rows={3}
+              placeholder="berapa harga ijen 3d2n dari bali?"
+              aria-label="Pesan pelanggan"
+            />
           </Field>
 
-          {context === 'conversation' && (
-            <Field label="Percakapan">
+          <div className="flex flex-wrap items-end gap-3">
+            <Field label="Konteks">
               <Select
-                value={conversationId}
-                onChange={(e) => setConversationId(e.target.value)}
-                className="w-64"
-                aria-label="Pilih percakapan"
+                value={context}
+                onChange={(e) => setContext(e.target.value as ContextChoice)}
+                className="w-auto"
+                aria-label="Pilih konteks"
               >
-                <option value="">Pilih percakapan...</option>
-                {conversations.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.contactName ?? c.id}
-                  </option>
-                ))}
+                <option value="none">Tanpa history</option>
+                <option value="conversation">Pakai percakapan existing</option>
+                <option value="test-room">Pakai test room</option>
               </Select>
             </Field>
-          )}
 
-          <Button onClick={run} disabled={running || !message.trim()}>
-            {running ? 'Menjalankan...' : 'Jalankan Simulasi'}
-          </Button>
+            {context === 'conversation' && (
+              <Field label="Percakapan">
+                <Select
+                  value={conversationId}
+                  onChange={(e) => setConversationId(e.target.value)}
+                  className="w-64"
+                  aria-label="Pilih percakapan"
+                >
+                  <option value="">Pilih percakapan...</option>
+                  {conversations.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.contactName ?? c.id}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+            )}
+
+            <Button onClick={run} disabled={running || !message.trim()}>
+              {running ? 'Menjalankan...' : 'Jalankan Simulasi'}
+            </Button>
+          </div>
         </div>
       </Card>
 

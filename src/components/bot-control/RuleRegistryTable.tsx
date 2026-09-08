@@ -3,7 +3,15 @@ import Link from 'next/link'
 import { SearchX } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { EmptyState } from '@/components/ui/empty-state'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table'
 import type { BotRule, RuleSeverity } from '@/lib/bot-control/rule-registry'
 
 export type RuleRow = BotRule & {
@@ -35,79 +43,84 @@ const SEVERITY_VARIANT: Record<RuleSeverity, 'muted' | 'default' | 'warning' | '
  * than becoming a second writer that could disagree with the first.
  */
 export function RuleRegistryTable({ rules }: { rules: RuleRow[] }) {
+  // Wadahnya dirender di kedua keadaan, bukan hanya saat ada baris: sebuah kotak yang muncul
+  // dan hilang mengikuti hasil filter membuat halaman melompat setiap kali filternya diubah.
   if (rules.length === 0) {
     return (
-      <EmptyState
-        icon={<SearchX strokeWidth={1.75} />}
-        title="Tidak ada aturan yang cocok dengan filter."
-        description="Registry ini berisi sepuluh aturan. Kosongkan pencarian atau pilih ulang kategorinya untuk melihat semuanya."
-        className="border-t border-line"
-      />
+      <TableContainer>
+        <EmptyState
+          icon={<SearchX strokeWidth={1.75} />}
+          title="Tidak ada aturan yang cocok dengan filter."
+          description="Registry ini berisi sepuluh aturan. Kosongkan pencarian atau pilih ulang kategorinya untuk melihat semuanya."
+        />
+      </TableContainer>
     )
   }
 
   return (
-    <Table>
-      <TableHeader>
-        <TableRow>
-          {/* Kolom Aturan memuat nama + kunci + deskripsi; tanpa lebar eksplisit pada lima
-              kolom sisanya ia menelan seluruh tabel begitu halaman ini memakai lebar layar. */}
-          <TableHead>Aturan</TableHead>
-          <TableHead className="w-40">Kategori</TableHead>
-          <TableHead className="w-28">Tingkat</TableHead>
-          <TableHead className="w-44">Status</TableHead>
-          <TableHead className="w-44">Dikelola di</TableHead>
-          <TableHead className="w-80">Sumber</TableHead>
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {rules.map((rule) => (
-          <TableRow key={rule.key}>
-            <TableCell className="align-top py-2.5">
-              <p className="font-medium text-ink">{rule.name}</p>
-              <p className="font-mono text-xs text-ink-subtle">{rule.key}</p>
-              <p className="mt-1 max-w-xl text-sm text-ink-muted">{rule.description}</p>
-            </TableCell>
-            <TableCell className="align-top text-sm whitespace-nowrap text-ink-muted">{rule.category}</TableCell>
-            <TableCell className="align-top">
-              <Badge variant={SEVERITY_VARIANT[rule.severity]}>{rule.severity}</Badge>
-            </TableCell>
-            <TableCell className="align-top">
-              {rule.enabled === null ? (
-                <>
-                  <Badge variant="success">Selalu aktif</Badge>
-                  <p className="mt-1 text-xs text-ink-subtle">Tidak ada sakelarnya</p>
-                </>
-              ) : rule.enabled === undefined ? (
-                // A state that could not be read is shown as unread. Showing a default as if it
-                // were the truth is the most dangerous silent failure this page can have.
-                <p className="text-xs text-danger">Status tidak terbaca</p>
-              ) : (
-                <Badge variant={rule.enabled ? 'success' : 'muted'}>{rule.enabled ? 'Aktif' : 'Nonaktif'}</Badge>
-              )}
-            </TableCell>
-            <TableCell className="align-top text-sm whitespace-nowrap text-ink-muted">
-              {rule.settingsKey ? (
-                <Link href="/chatbot" className="focus-ring rounded-sm text-accent hover:underline">
-                  Chatbot
-                </Link>
-              ) : rule.managedIn ? (
-                <Link href={rule.managedIn.href} className="focus-ring rounded-sm text-accent hover:underline">
-                  {rule.managedIn.label}
-                </Link>
-              ) : (
-                // "Kode" sendirian membuat operator mencari tombol yang tidak ada. Menyebut
-                // bahwa perubahannya butuh deploy menutup pencarian itu.
-                <span>Kode — perlu deploy</span>
-              )}
-            </TableCell>
-            <TableCell className="align-top">
-              <p className="font-mono text-xs break-all text-ink-muted">{rule.sourceFile}</p>
-              {rule.sourceRef && <p className="font-mono text-xs text-ink-subtle">{rule.sourceRef}()</p>}
-            </TableCell>
+    <TableContainer>
+      <Table>
+        <TableHeader>
+          <TableRow>
+            {/* Kolom Aturan memuat nama + kunci + deskripsi; tanpa lebar eksplisit pada lima
+                kolom sisanya ia menelan seluruh tabel begitu halaman ini memakai lebar layar. */}
+            <TableHead>Aturan</TableHead>
+            <TableHead className="w-40">Kategori</TableHead>
+            <TableHead className="w-28">Tingkat</TableHead>
+            <TableHead className="w-44">Status</TableHead>
+            <TableHead className="w-44">Dikelola di</TableHead>
+            <TableHead className="w-80">Sumber</TableHead>
           </TableRow>
-        ))}
-      </TableBody>
-    </Table>
+        </TableHeader>
+        <TableBody>
+          {rules.map((rule) => (
+            <TableRow key={rule.key}>
+              <TableCell className="align-top py-2.5">
+                <p className="font-medium text-ink">{rule.name}</p>
+                <p className="font-mono text-xs text-ink-subtle">{rule.key}</p>
+                <p className="mt-1 max-w-xl text-sm text-ink-muted">{rule.description}</p>
+              </TableCell>
+              <TableCell className="align-top text-sm whitespace-nowrap text-ink-muted">{rule.category}</TableCell>
+              <TableCell className="align-top">
+                <Badge variant={SEVERITY_VARIANT[rule.severity]}>{rule.severity}</Badge>
+              </TableCell>
+              <TableCell className="align-top">
+                {rule.enabled === null ? (
+                  <>
+                    <Badge variant="success">Selalu aktif</Badge>
+                    <p className="mt-1 text-xs text-ink-subtle">Tidak ada sakelarnya</p>
+                  </>
+                ) : rule.enabled === undefined ? (
+                  // A state that could not be read is shown as unread. Showing a default as if it
+                  // were the truth is the most dangerous silent failure this page can have.
+                  <p className="text-xs text-danger">Status tidak terbaca</p>
+                ) : (
+                  <Badge variant={rule.enabled ? 'success' : 'muted'}>{rule.enabled ? 'Aktif' : 'Nonaktif'}</Badge>
+                )}
+              </TableCell>
+              <TableCell className="align-top text-sm whitespace-nowrap text-ink-muted">
+                {rule.settingsKey ? (
+                  <Link href="/chatbot" className="focus-ring rounded-sm text-accent hover:underline">
+                    Chatbot
+                  </Link>
+                ) : rule.managedIn ? (
+                  <Link href={rule.managedIn.href} className="focus-ring rounded-sm text-accent hover:underline">
+                    {rule.managedIn.label}
+                  </Link>
+                ) : (
+                  // "Kode" sendirian membuat operator mencari tombol yang tidak ada. Menyebut
+                  // bahwa perubahannya butuh deploy menutup pencarian itu.
+                  <span>Kode — perlu deploy</span>
+                )}
+              </TableCell>
+              <TableCell className="align-top">
+                <p className="font-mono text-xs break-all text-ink-muted">{rule.sourceFile}</p>
+                {rule.sourceRef && <p className="font-mono text-xs text-ink-subtle">{rule.sourceRef}()</p>}
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </TableContainer>
   )
 }
