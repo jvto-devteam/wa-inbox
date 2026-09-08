@@ -19,6 +19,7 @@ import {
 } from '@/components/ui/table'
 import { DecisionTracePanel, STATUS_VARIANT, type DecisionRunDetail } from '@/components/bot-control/DecisionTracePanel'
 import { fetchJson } from '@/lib/fetch-json'
+import { cn } from '@/lib/utils'
 import { PageHeader } from '@/components/ui/page-header'
 
 type DecisionRow = {
@@ -263,8 +264,21 @@ export default function DecisionLogsPage() {
         </TableContainer>
       )}
 
+        {/* Panel detail hanya memakan lebar SETELAH ada baris yang dipilih.
+            Sebelumnya ia selalu berdiri 26rem sambil menulis "Pilih satu baris…", dan itu
+            menyempitkan tabel sembilan kolom sampai kolom Aksi ("Detail"/"Tandai") terpotong
+            separuh — tombolnya ada tapi tidak bisa dibaca, di halaman yang justru dibuka untuk
+            menekan tombol itu. Sekarang tabel memakai lebar penuh sampai benar-benar ada yang
+            perlu ditampilkan di sebelahnya. */}
       {!loading && !error && (
-        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,26rem)] lg:items-start">
+        <div
+          className={cn(
+            'grid gap-4 lg:items-start',
+            selected || detailLoading || detailError
+              ? 'lg:grid-cols-[minmax(0,1fr)_minmax(0,26rem)]'
+              : 'lg:grid-cols-1'
+          )}
+        >
           <TableContainer className="min-w-0">
             {rows.length === 0 ? (
               <EmptyState
@@ -341,6 +355,7 @@ export default function DecisionLogsPage() {
             )}
           </TableContainer>
 
+          {(selected || detailLoading || detailError) && (
           <Card className="h-fit">
             <CardHeader>
               <CardTitle className="text-sm">Detail keputusan</CardTitle>
@@ -348,9 +363,6 @@ export default function DecisionLogsPage() {
             <div className="space-y-3 p-4">
               {detailLoading && <SkeletonText lines={5} />}
               {detailError && <p className="text-base text-danger">{detailError}</p>}
-              {!detailLoading && !detailError && !selected && (
-                <p className="text-base text-ink-muted">Pilih satu baris untuk melihat alasan lengkapnya.</p>
-              )}
               {!detailLoading && !detailError && selected && (
                 <>
                   <DecisionTracePanel run={selected} />
@@ -367,6 +379,7 @@ export default function DecisionLogsPage() {
               )}
             </div>
           </Card>
+          )}
         </div>
       )}
 

@@ -21,7 +21,13 @@ import type { HTMLAttributes, TdHTMLAttributes, ThHTMLAttributes } from 'react'
  */
 export function TableContainer({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
   return (
-    <div className={cn('overflow-hidden rounded-lg border border-line bg-surface', className)} {...props} />
+    // `overflow-x-auto`, BUKAN `overflow-hidden`. Keduanya sama-sama memotong sudut membulatnya,
+    // tapi yang pertama membiarkan tabel yang lebih lebar dari wadahnya digulung; yang kedua
+    // memotongnya diam-diam. Decision Logs menemukan bedanya: tabel 9 kolom di kolom `1fr` di
+    // sebelah panel detail 26rem membuat kolom Aksi ("Detail"/"Tandai") terpotong separuh dan
+    // tombolnya tidak bisa diklik penuh. Menggulung di dalam wadahnya sendiri juga menjaga
+    // halaman tidak pernah menggulung horizontal.
+    <div className={cn('overflow-x-auto rounded-lg border border-line bg-surface', className)} {...props} />
   )
 }
 
