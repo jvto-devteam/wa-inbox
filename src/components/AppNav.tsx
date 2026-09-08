@@ -188,7 +188,7 @@ export function AppNav() {
           {menuOpen && (
             <div
               role="menu"
-              className="absolute right-0 top-10 z-20 w-52 rounded-lg border border-border bg-white p-1 shadow-md"
+              className="absolute right-0 top-10 z-20 w-52 rounded-lg border border-border bg-white p-1 shadow-popover"
             >
               {session && (
                 <div className="px-2.5 py-1.5">

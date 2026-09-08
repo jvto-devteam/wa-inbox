@@ -294,7 +294,7 @@ export function MessageBubble({ message, onReply }: { message: MessageView; onRe
         className={
           (cards?.length ? 'max-w-lg' : 'max-w-md') +
           ' overflow-hidden whitespace-pre-wrap rounded-lg px-3.5 py-2.5 ring-1 ' +
-          (isOutbound ? 'rounded-tr-none bg-accent ring-brand/10' : 'rounded-tl-none bg-white shadow-sm ring-border')
+          (isOutbound ? 'rounded-tr-none bg-accent-subtle ring-brand/10' : 'rounded-tl-none bg-white shadow-sm ring-border')
         }
       >
         {message.replyTo && <QuotedPreview replyTo={message.replyTo} />}
