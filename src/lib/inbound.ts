@@ -8,6 +8,7 @@ import { withMediaUrl } from '@/lib/serialize-message'
 import { isIndonesianNumber } from '@/lib/phone'
 import { recordBotDecisionRun, attachMessageToDecisionRun } from '@/lib/bot-control/decision-recorder'
 import { handoffReplyText, offHoursHandoffNotice } from '@/lib/bot/runtime-integration'
+import { openPipelineRun, traceStep, traceClose, traceSnapshot, traceRunId, type PipelineTracer } from '@/lib/pipeline/tracer'
 import type { BotDecision } from '@/lib/bot/types'
 
 type MetaMediaObject = { id: string; mime_type: string; caption?: string; filename?: string }
@@ -267,6 +268,11 @@ const BURST_MAX_WAIT_MS = 25000
 type PendingBurst = {
   texts: string[]
   timer: ReturnType<typeof setTimeout>
+  // Tracer milik pesan yang MEMBUKA burst ini. Satu burst menghasilkan tepat satu
+  // BotDecisionRun, jadi tepat satu run pipeline yang boleh menempuh sisa jalur; pesan yang
+  // menyusul ke burst yang sama menutup run-nya sendiri di `kumpulkan-burst` (lihat
+  // scheduleBotRun) alih-alih menggantung selamanya tanpa keputusan.
+  tracer: PipelineTracer
   // Wall-clock time the FIRST message of this burst was buffered, so each
   // later message can shorten -- never extend -- the remaining wait.
   firstScheduledAt: number
@@ -286,9 +292,16 @@ const pendingBursts = new Map<string, PendingBurst>()
  * (ingestSingleMessage below) and /api/conversations/[id]/test-message, so the sandbox
  * conversation exhibits the exact same batching behavior an admin is testing for.
  */
-export function scheduleBotRun(conversation: { id: string; contactName: string | null }, inboundText: string): void {
+export function scheduleBotRun(
+  conversation: { id: string; contactName: string | null },
+  inboundText: string,
+  // Instrumentasi saja. Default-nya tracer baru supaya pemanggil lain (route test-message)
+  // tetap menghasilkan run yang bisa dilihat di kanvas tanpa harus tahu tracer itu ada.
+  tracer: PipelineTracer = openPipelineRun(conversation.id)
+): void {
   const existing = pendingBursts.get(conversation.id)
   if (existing) {
+    traceStep(tracer, 'kumpulkan-burst', 'berhenti', { alasan: 'digabung ke burst yang sudah berjalan' })
     existing.texts.push(inboundText)
     clearTimeout(existing.timer)
     // Trailing-quiet wait, clamped to whatever is left of the max-wait budget.
@@ -298,10 +311,12 @@ export function scheduleBotRun(conversation: { id: string; contactName: string |
     existing.timer = setTimeout(() => void flushBurst(conversation), Math.min(BURST_DEBOUNCE_MS, remainingMaxWait))
     return
   }
+  traceStep(tracer, 'kumpulkan-burst', 'mulai')
   pendingBursts.set(conversation.id, {
     texts: [inboundText],
     timer: setTimeout(() => void flushBurst(conversation), BURST_DEBOUNCE_MS),
     firstScheduledAt: Date.now(),
+    tracer,
   })
 }
 
@@ -318,7 +333,10 @@ async function flushBurst(conversation: { id: string; contactName: string | null
     where: { id: conversation.id },
     select: { botEnabled: true, isTest: true },
   })
-  if (!fresh?.botEnabled) return
+  if (!fresh?.botEnabled) {
+    traceStep(burst.tracer, 'kumpulkan-burst', 'berhenti', { alasan: 'bot dinonaktifkan sebelum burst di-flush' })
+    return
+  }
 
   // Cost guard, checked here rather than inside decideAndRespond so a blocked
   // turn costs nothing at all -- not even the escalation classifier. The
@@ -326,12 +344,13 @@ async function flushBurst(conversation: { id: string; contactName: string | null
   // bot behavior is exactly who this must not throttle.
   if (!fresh.isTest && !checkAndRecordRateLimit(conversation.id)) {
     console.warn('flushBurst: rate limit exceeded, skipping bot reply', { conversationId: conversation.id })
+    traceStep(burst.tracer, 'kumpulkan-burst', 'berhenti', { alasan: 'rate limit percakapan terlampaui' })
     return
   }
 
   // Joined in arrival order, one line per fragment -- decideAndRespond sees them as the single
   // combined thought a human reading the thread would.
-  await runBotForConversation(conversation, burst.texts.join('\n'))
+  await runBotForConversation(conversation, burst.texts.join('\n'), burst.tracer)
 }
 
 // Test-only: clears in-memory burst state between test files/cases, and cancels any timer a
@@ -351,7 +370,12 @@ export function __resetPendingBurstsForTests(): void {
  */
 export async function runBotForConversation(
   conversation: { id: string; contactName: string | null },
-  inboundText: string
+  inboundText: string,
+  // Instrumentasi saja. Selalu disentuh lewat helper traceStep/traceClose/traceSnapshot yang
+  // menelan kegagalannya sendiri (lihat pipeline/tracer.ts), jadi tracer serusak apa pun tidak
+  // bisa mengubah satu balasan pun. Id run-nya dipakai sebagai `BotDecisionRun.id` di bawah,
+  // sehingga kanvas live dan Decision Logs menunjuk baris yang sama.
+  tracer: PipelineTracer = openPipelineRun(conversation.id)
 ): Promise<void> {
   // Audit bookkeeping only. Everything added here for BotDecisionRun is failure-isolated and
   // must not alter a single decision the bot makes -- see decision-recorder.ts's header.
@@ -359,29 +383,34 @@ export async function runBotForConversation(
 
   let decision: BotDecision
   try {
-    decision = await decideAndRespond(conversation.id, inboundText)
+    decision = await decideAndRespond(conversation.id, inboundText, tracer)
   } catch (error) {
+    traceClose(tracer, 'gagal', { alasan: 'orchestrator melempar' })
     // Recorded, then RE-THROWN unchanged. Without the rethrow this catch would swallow a
     // genuine orchestrator crash and silently turn a broken turn into a quiet no-op, which is
     // a real behaviour change. With it, the caller sees exactly what it saw before -- the only
     // difference is that the failure is now auditable instead of invisible.
     await recordBotDecisionRun({
+      id: traceRunId(tracer),
       conversationId: conversation.id,
       inboundText,
       decision: null,
       startedAt,
       finishedAt: new Date(),
       error: error instanceof Error ? error.message : String(error),
+      steps: traceSnapshot(tracer),
     })
     throw error
   }
 
   const decisionRunId = await recordBotDecisionRun({
+    id: traceRunId(tracer),
     conversationId: conversation.id,
     inboundText,
     decision,
     startedAt,
     finishedAt: new Date(),
+    steps: traceSnapshot(tracer),
   })
 
   // `botEnabled` was last read before decideAndRespond, which spends up to
@@ -395,18 +424,24 @@ export async function runBotForConversation(
     where: { id: conversation.id },
     select: { botEnabled: true },
   })
-  if (!stillBotDriven?.botEnabled) return
+  if (!stillBotDriven?.botEnabled) {
+    // Step terakhir yang masih terbuka ditutup di sini, bukan dibiarkan menggantung: run ini
+    // memang berakhir -- sah, tanpa kirim apa pun -- karena manusia sudah masuk.
+    traceClose(tracer, 'berhenti', { alasan: 'agent mengambil alih saat bot menyusun jawaban' })
+    return
+  }
 
   if (decision.mode === 'faq' || decision.mode === 'booking_context' || decision.mode === 'clarify') {
     const text = decision.mode === 'faq' ? decision.draft : decision.reply
     // botTrace is still written exactly as before. BotDecisionRun does not replace it: the
     // inbox bubble reads botTrace, and every historical row has nothing else.
     const sent = await sendMessage({ conversationId: conversation.id, text, sentBy: 'BOT', botTrace: decision })
+    traceStep(tracer, 'kirim-balasan', 'selesai')
     // Optional access on purpose. Reading `sent.id` directly would make the bot's send path
     // depend on sendMessage's return value for the first time, so any caller or test double
     // that returns nothing would throw AFTER the customer's message was already dispatched --
     // audit bookkeeping taking down a turn that had actually succeeded.
-    await attachMessageToDecisionRun(decisionRunId, sent?.id)
+    await attachMessageToDecisionRun(decisionRunId, sent?.id, traceSnapshot(tracer))
   } else {
     // Confirmed with the operator 2026-08-06: EVERY handoff (escalation keywords, an explicit
     // human request, the deployment gate being closed, or a genuinely unmatched custom
@@ -430,10 +465,12 @@ export async function runBotForConversation(
     // Ordinary bot replies are untouched: the bot answers 24/7, which is the whole point of it.
     // Null whenever the window is unset, unreadable, or it is a working hour, so the previous
     // single-sentence handoff is exactly what still goes out.
+    traceStep(tracer, 'serahkan-agen', 'mulai')
     const offHoursNotice = await offHoursHandoffNotice()
     const handoffText = offHoursNotice ? `${handoffReply}\n\n${offHoursNotice}` : handoffReply
     const sent = await sendMessage({ conversationId: conversation.id, text: handoffText, sentBy: 'BOT', botTrace: decision })
-    await attachMessageToDecisionRun(decisionRunId, sent?.id)
+    traceStep(tracer, 'kirim-balasan', 'selesai')
+    await attachMessageToDecisionRun(decisionRunId, sent?.id, traceSnapshot(tracer))
 
     // A handoff has to actually hand off: without flipping botEnabled the conversation
     // stays bot-driven, so it never reaches the dashboard's "needs attention" widget
@@ -517,6 +554,16 @@ async function ingestSingleMessage(message: MetaInboundMessage, contacts: MetaCo
     throw error
   }
 
+  // Run pipeline dibuka BARU DI SINI, setelah baris Message benar-benar tersimpan -- bukan di
+  // atas. Dua alasan: pesan duplikat (retry at-least-once Meta) dan yang kalah balapan P2002
+  // sudah kembali lebih dulu, jadi keduanya tidak pernah membuka run yang lalu menggantung
+  // tanpa akhir; dan `conversationId` -- yang ikut di setiap event supaya kanvas bisa
+  // memfilter per-percakapan -- baru diketahui setelah upsert di atas. Dua step pertama
+  // ditandai sekaligus karena keduanya memang sudah tuntas pada titik ini.
+  const tracer = openPipelineRun(conversation.id)
+  traceStep(tracer, 'terima-pesan', 'selesai')
+  traceStep(tracer, 'simpan-percakapan', 'selesai')
+
   // The bot only ever sees text. Images/audio/location/stickers carry no question to
   // answer, and passing '' to decideAndRespond made Mode 3 generate an LLM reply to an
   // empty prompt -- an automated answer to a message nobody read. They are deliberately
@@ -530,10 +577,18 @@ async function ingestSingleMessage(message: MetaInboundMessage, contacts: MetaCo
   const botCanAnswer = inboundText.trim().length > 0
 
   if (conversation.botEnabled && botCanAnswer) {
+    traceStep(tracer, 'gerbang-bot', 'selesai')
     // Not awaited: this buffers the message and (re)starts a debounce timer (see
     // scheduleBotRun's header) rather than running the bot inline, so a burst of messages a
     // few seconds apart is combined into one decision instead of one reply per fragment.
-    scheduleBotRun({ id: conversation.id, contactName: contact.name }, inboundText)
+    scheduleBotRun({ id: conversation.id, contactName: contact.name }, inboundText, tracer)
+  } else {
+    // Dua dari lima jalan keluar pipeline berakhir persis di sini, dan keduanya SAH: pesan
+    // tetap masuk inbox, hanya bot yang tidak dilibatkan. Ditandai `berhenti` supaya run-nya
+    // tertutup di kanvas alih-alih terlihat seperti bot yang macet di tengah jalan.
+    traceStep(tracer, 'gerbang-bot', 'berhenti', {
+      alasan: botCanAnswer ? 'bot nonaktif untuk percakapan ini' : 'pesan bukan teks (tidak ada pertanyaan untuk dijawab)',
+    })
   }
 
   return true

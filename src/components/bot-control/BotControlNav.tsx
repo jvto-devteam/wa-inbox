@@ -8,10 +8,10 @@ import { cn } from '@/lib/utils'
 //
 // /bot-control dulu adalah halaman kartu yang seluruh isinya link: satu klik untuk masuk, satu
 // klik lagi untuk pindah bagian, dan setiap perpindahan antar-bagian harus kembali dulu ke
-// indeks. Setelah kartu Documentation, Triage Queue, dan Releases dihapus, yang tersisa hanya
-// tujuh halaman — delapan tab dengan Ringkasan sendiri. Daftar sependek itu muat sebagai baris
-// tab yang selalu terlihat, sehingga operator pindah bagian langsung dari mana pun di dalam
-// Bot Control.
+// indeks. Setelah kartu Documentation, Triage Queue, dan Releases dihapus, yang tersisa adalah
+// delapan halaman — sembilan tab dengan Ringkasan sendiri. Daftar sependek itu muat sebagai
+// baris tab yang selalu terlihat, sehingga operator pindah bagian langsung dari mana pun di
+// dalam Bot Control.
 //
 // Bentuknya sengaja meniru <AppNav>: satu <nav aria-label>, <Link> asli (bukan tombol yang
 // tidak menavigasi), aria-current="page" pada yang aktif, dan garis brand di bawahnya. Ini
@@ -28,6 +28,7 @@ export const BOT_CONTROL_ROOT = '/bot-control'
 export const BOT_CONTROL_SECTIONS = [
   { href: BOT_CONTROL_ROOT, label: 'Ringkasan' },
   { href: '/bot-control/flows', label: 'Flow Map' },
+  { href: '/bot-control/pipeline', label: 'Alur Live' },
   { href: '/bot-control/rules', label: 'Rules' },
   { href: '/bot-control/knowledge', label: 'Knowledge' },
   { href: '/bot-control/decisions', label: 'Decision Logs' },

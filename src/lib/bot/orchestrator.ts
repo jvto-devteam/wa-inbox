@@ -169,6 +169,7 @@ import {
 } from './reply-verifier'
 import { loadCatalog } from './catalog'
 import { checkDeploymentGate } from './deployment-gate'
+import { createNoopPipelineTracer, traceStep, traceClose, type PipelineTracer } from '@/lib/pipeline/tracer'
 import type { BotDecision, Catalog, TraceStep, TripBrief } from './types'
 
 // Deliberately NOT a list local to this file: see the step-0 note in the header.
@@ -1013,9 +1014,24 @@ async function recordKnowledgeGap(
   }
 }
 
-export async function decideAndRespond(conversationId: string, inboundText: string): Promise<BotDecision> {
+/**
+ * @param pipeline Instrumentasi kanvas pipeline SAJA (src/lib/pipeline/tracer.ts). Berbeda dari
+ * `trace` di bawah, yang adalah narasi untuk agent di popover 🧠 dan ikut tersimpan di
+ * `Message.botTrace`: `pipeline` hanya menandai BATAS step kasar dan menyiarkannya live. Ia
+ * tidak pernah melempar dan tidak pernah mengubah satu pun keputusan di bawah -- default-nya
+ * adalah tracer kosong, jadi setiap pemanggil lama (dan setiap test) berjalan persis seperti
+ * sebelumnya. Hanya `mulai` yang ditandai di sini: tracer menutup step yang terbuka sendiri
+ * begitu step berikutnya ditandai, sehingga selusin early return di bawah tidak perlu masing-
+ * masing menutup step-nya -- dan tidak ada yang menggantung karena sebuah cabang keluar awal.
+ */
+export async function decideAndRespond(
+  conversationId: string,
+  inboundText: string,
+  pipeline: PipelineTracer = createNoopPipelineTracer()
+): Promise<BotDecision> {
   const trace = createTracer()
   try {
+    traceStep(pipeline, 'cek-eskalasi', 'mulai')
     // Settings.botAutoReplyAll (the On/Off bot-mode switch) is enforced entirely by
     // inbound.ts's conversation.botEnabled gate -- On bulk-sets every conversation's
     // botEnabled true, Off bulk-sets it false and leaves per-chat manual re-activation
@@ -1056,6 +1072,7 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
     // failure is re-thrown immediately afterwards so every non-escalating path keeps exactly the
     // technical-hiccup behavior it had before these two were ever paired.
     trace.push('Mencari data booking', 'Mengecek data booking dan sinyal eskalasi tambahan secara paralel.')
+    traceStep(pipeline, 'cek-booking', 'mulai')
     // `bot.handoff_on_human_request`, read from the published rule config. ONLY the LLM layer is
     // gated: the explicit keyword gate above already ran unconditionally and already won, which
     // is exactly why rule-registry.ts marks this rule editable. A customer asking for a human in
@@ -1094,9 +1111,13 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
     // `return runBookingContextMode(...)` would exit the try block immediately, and its
     // eventual rejection would propagate uncaught instead.
     if (bookingData) {
+      // Mode 3 melewati seluruh jalur katalog dan langsung menyusun+memverifikasi jawaban dari
+      // data booking pelanggan -- persis cabang "booking ditemukan" di steps.ts.
+      traceStep(pipeline, 'verifikasi-balasan', 'mulai')
       return await runBookingContextMode(bookingData, inboundText, conversationId, settings.ollamaModel, trace)
     }
     trace.push('Tidak ada booking', 'Kontak ini belum punya booking aktif -- lanjut ke jawaban FAQ berbasis katalog (Mode 1/2).')
+    traceStep(pipeline, 'pahami-kebutuhan', 'mulai')
 
     // Mode 1/2 -- catalog-grounded FAQ, gated by deployment approval + route integrity.
     // Deployment gate governs agent-runtime's catalog/release (what Mode 1/2 is
@@ -1220,6 +1241,7 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
           ? `Diperiksa oleh model LLM lokal -- ${keywordModuleResult.moduleIds.length} modul cocok.`
           : `Model LLM gagal/timeout -- fallback ke pemindaian kata kunci lama, ${keywordModuleResult.moduleIds.length} modul cocok.`
       )
+      traceStep(pipeline, 'susun-balasan', 'mulai')
       return await runNoDestinationBranch(
         inboundText,
         conversationId,
@@ -1485,6 +1507,7 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
     // The module-resolution step catalog.ts's own header names as never having been ported
     // (see knowledge.ts's header) -- resolves real facts/links/disclosures for all 14 real
     // topics from general-modules.json, not just the 4 CatalogPackage itself can answer.
+    traceStep(pipeline, 'susun-balasan', 'mulai')
     const knowledge = resolveKnowledgeForTopic(resolverTopic, inboundText, destination, keywordModuleIds)
 
     // Managed knowledge is ADDED to what the catalog resolved, never substituted for it. The
@@ -1816,6 +1839,7 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
     const pricesShownForPax =
       pax === null ? [] : optionPackages.map((p) => priceForPax(p, pax).priceIdr).filter((n): n is number => n !== null)
 
+    traceStep(pipeline, 'verifikasi-balasan', 'mulai')
     const composed = await composeVerifiedReply({
       conversationId,
       topic: resolverTopic,
@@ -1843,6 +1867,7 @@ export async function decideAndRespond(conversationId: string, inboundText: stri
     // Deliberately does NOT log `inboundText` or `bookingData` -- customer message
     // content and booking details do not belong in application logs.
     console.error('decideAndRespond failed', { conversationId, error })
+    traceClose(pipeline, 'gagal', { alasan: 'kegagalan tak terduga di orchestrator' })
     // Previously handed off outright (mode: 'handoff', disabling the bot). Per this file's
     // header, even an unexpected exception (a down Prisma connection, a malformed catalog
     // file) now gets a graceful, bot-stays-active fallback -- TECHNICAL_HICCUP_REPLY is a

@@ -304,6 +304,16 @@ model BotDecisionRun {
   trace          Json
   knowledgeRefs  Json?
   verification   Json?
+  /// Jejak langkah pipeline (src/lib/pipeline/steps.ts) untuk run ini: satu entri per BATAS
+  /// step yang benar-benar dilewati, dengan status mulai/selesai/dilewati/berhenti/gagal.
+  ///
+  /// Satu KOLOM, bukan tabel sendiri: relasinya 1:1 dengan run, tidak pernah di-query per
+  /// baris, dan selalu dibaca bersama run-nya. Tabel terpisah persis kesalahan yang baru
+  /// dicabut dari repo ini (BotDecisionTriage) — daftar kedua yang tidak bisa di-join.
+  ///
+  /// NULL berarti run ini berjalan sebelum instrumentasi ada, atau lewat jalur yang tidak
+  /// membawa tracer (mis. simulator Test Lab). Sudah lewat sanitizer, sama seperti `trace`.
+  steps          Json?
   error          String?
   /// Tanda "keputusan ini perlu diperbaiki", diisi manusia. Dua kolom, bukan tabel sendiri:
   /// relasinya memang 1:1 dan tanpa foreign key, jadi tabel terpisah hanya memaksa halaman
