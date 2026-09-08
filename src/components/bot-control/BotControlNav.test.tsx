@@ -18,7 +18,7 @@ describe('isActiveSection', () => {
   })
 
   it('tidak menyalakan bagian lain yang kebetulan berbagi awalan karakter', () => {
-    // Aturan segmen ini datang dari isActivePath milik AppNav, yang dipakai ulang di sini
+    // Aturan segmen ini datang dari isActivePath milik AppRail, yang dipakai ulang di sini
     // supaya tidak ada dua logika "halaman aktif" yang bisa berbeda.
     expect(isActiveSection('/bot-control/rules-archive', '/bot-control/rules')).toBe(false)
     expect(isActiveSection('/bot-control/flows', '/bot-control/rules')).toBe(false)
@@ -74,8 +74,11 @@ describe('BotControlNav', () => {
     expect(link).not.toHaveAttribute('tabindex')
     link.focus()
     expect(document.activeElement).toBe(link)
-    // Outline bawaan dimatikan (konvensi Input/Textarea di repo ini), jadi penggantinya harus
-    // ada — kalau tidak, tab ini tidak punya penanda fokus sama sekali.
-    expect(link.className).toMatch(/focus-visible:/)
+    // Penanda fokus harus ada — kalau tidak, tab ini tidak punya penanda fokus sama sekali.
+    // Bentuknya berubah di Tahap 1B: sebelumnya cincin `focus-visible:ring-3` buatan bar ini
+    // sendiri, sekarang `.focus-ring` milik sistem desain Tahap 1A (outline 2px aksen,
+    // didefinisikan di globals.css). Janjinya sama — ada penanda fokus yang terlihat — dan
+    // sekarang ia janji yang sama persis dengan seluruh kontrol lain di aplikasi.
+    expect(link.className).toMatch(/\bfocus-ring\b/)
   })
 })

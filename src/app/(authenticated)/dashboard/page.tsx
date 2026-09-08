@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+import { PageHeader } from '@/components/ui/page-header'
 import { fetchJson } from '@/lib/fetch-json'
 
 type Summary = {
@@ -30,7 +31,7 @@ export default function DashboardPage() {
 
   return (
     <main className="mx-auto max-w-3xl space-y-8 p-6">
-      <h1 className="text-xl font-semibold text-navy">Beranda</h1>
+      <PageHeader title="Beranda" />
 
       <section className="grid grid-cols-3 gap-4">
         <Card className="p-4 text-center">

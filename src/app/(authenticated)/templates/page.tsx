@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
+import { PageHeader } from '@/components/ui/page-header'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
 import { fetchJson } from '@/lib/fetch-json'
@@ -409,7 +410,7 @@ export default function TemplatesPage() {
 
   return (
     <main className="mx-auto max-w-5xl space-y-4 p-6">
-      <h1 className="text-xl font-semibold text-navy">Template Pesan</h1>
+      <PageHeader title="Template Pesan" />
 
       <div className="flex gap-2">
         <Button

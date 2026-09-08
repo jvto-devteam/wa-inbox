@@ -2,7 +2,7 @@ import { BotControlNav } from '@/components/bot-control/BotControlNav'
 
 // Layout Bot Control: satu baris tab di atas setiap halaman di bawah /bot-control.
 //
-// Alasannya struktural, sama seperti (authenticated)/layout.tsx menaruh <AppNav> di grup rute:
+// Alasannya struktural, sama seperti (authenticated)/layout.tsx menaruh <AppRail> di grup rute:
 // "berada di dalam Bot Control" dan "harus melihat menu Bot Control" adalah himpunan halaman
 // yang sama, jadi batasnya didefinisikan sekali di sini alih-alih diingat ulang oleh tiap
 // halaman. Halaman baru yang ditambahkan di direktori ini otomatis mendapatkan navigasinya.

@@ -1,7 +1,7 @@
 'use client'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { isActivePath } from '@/components/AppNav'
+import { isActivePath } from '@/components/AppRail'
 import { cn } from '@/lib/utils'
 
 // Sub-navigasi Bot Control.
@@ -13,7 +13,7 @@ import { cn } from '@/lib/utils'
 // baris tab yang selalu terlihat, sehingga operator pindah bagian langsung dari mana pun di
 // dalam Bot Control.
 //
-// Bentuknya sengaja meniru <AppNav>: satu <nav aria-label>, <Link> asli (bukan tombol yang
+// Bentuknya sengaja meniru <AppRail>: satu <nav aria-label>, <Link> asli (bukan tombol yang
 // tidak menavigasi), aria-current="page" pada yang aktif, dan garis brand di bawahnya. Ini
 // satu-satunya pola navigasi di repo ini; menambah pola kedua hanya membuat dua hal yang
 // terlihat mirip berperilaku beda.
@@ -40,7 +40,7 @@ export const BOT_CONTROL_SECTIONS = [
 /**
  * Penanda aktif untuk satu tab.
  *
- * Rute bersarang memakai `isActivePath` yang sudah dipakai AppNav — /bot-control/decisions/xyz
+ * Rute bersarang memakai `isActivePath` yang sudah dipakai AppRail — /bot-control/decisions/xyz
  * harus tetap menyalakan "Decision Logs", dan aturan segmen di helper itu (`href + '/'`, bukan
  * `startsWith` telanjang) berlaku sama di sini.
  *
@@ -57,9 +57,12 @@ export function BotControlNav() {
   const pathname = usePathname()
 
   return (
+    // `sticky top-0` sejak Tahap 1B: cangkangnya sekarang menyerahkan gulungan ke area konten,
+    // jadi tanpa ini baris tab ikut tergulung ke atas dan operator kehilangan satu-satunya jalan
+    // antar-bagian tepat ketika ia sedang jauh di dalam sebuah tabel panjang.
     <nav
       aria-label="Menu Bot Control"
-      className="flex items-center gap-1 overflow-x-auto border-b border-border bg-white px-6"
+      className="sticky top-0 z-10 flex items-center gap-1 overflow-x-auto border-b border-line bg-surface px-6"
     >
       {BOT_CONTROL_SECTIONS.map((section) => {
         const active = isActiveSection(pathname, section.href)
@@ -69,18 +72,18 @@ export function BotControlNav() {
             href={section.href}
             aria-current={active ? 'page' : undefined}
             className={cn(
-              'relative shrink-0 rounded-lg px-3 py-2.5 text-sm outline-none',
-              // Fokus keyboard memakai cincin brand yang sama dengan Input/Textarea, karena
-              // outline default dimatikan dan tab tanpa penanda fokus adalah jebakan pada bar
-              // yang muncul di setiap halaman.
-              'focus-visible:ring-3 focus-visible:ring-brand/30 focus-visible:text-brand',
+              // `.focus-ring` adalah cincin fokus tunggal sistem desain Tahap 1A. Sebelumnya
+              // tab ini memakai cincin brand buatannya sendiri (focus-visible:ring-3); dua
+              // bentuk fokus yang berbeda di dua bar navigasi yang berdampingan adalah persis
+              // jenis ketidakkonsistenan yang dihapus 1A.
+              'focus-ring relative shrink-0 rounded-md px-3 py-2.5 text-sm transition-colors',
               active
-                ? 'font-semibold text-brand'
-                : 'font-medium text-muted-foreground hover:bg-muted hover:text-foreground'
+                ? 'font-semibold text-accent'
+                : 'font-medium text-ink-muted hover:bg-surface-sunken hover:text-ink'
             )}
           >
             {section.label}
-            {active && <span className="absolute bottom-0 left-3 right-3 h-0.5 rounded-full bg-brand" />}
+            {active && <span className="absolute right-3 bottom-0 left-3 h-0.5 rounded-full bg-accent" />}
           </Link>
         )
       })}

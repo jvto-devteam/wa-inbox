@@ -1,9 +1,10 @@
 import { ContactTable } from '@/components/contacts/ContactTable'
+import { PageHeader } from '@/components/ui/page-header'
 
 export default function ContactsPage() {
   return (
     <main className="p-6">
-      <h1 className="mb-4 text-xl font-semibold text-navy">Kontak</h1>
+      <PageHeader title="Kontak" className="mb-4" />
       <ContactTable />
     </main>
   )

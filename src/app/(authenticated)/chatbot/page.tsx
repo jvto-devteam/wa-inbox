@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
+import { PageHeader } from '@/components/ui/page-header'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table'
@@ -200,7 +201,7 @@ export default function ChatbotPage() {
 
   return (
     <main className="mx-auto max-w-2xl space-y-8 p-6">
-      <h1 className="text-xl font-semibold text-navy">Chatbot</h1>
+      <PageHeader title="Chatbot" />
 
       <Card className="space-y-4 p-4">
         <h2 className="font-medium text-navy">Status</h2>
@@ -210,10 +211,15 @@ export default function ChatbotPage() {
             <Badge variant={settings.botAutoReplyAll ? 'success' : 'warning'}>
               Bot: {settings.botAutoReplyAll ? 'On (Semua Chat)' : 'Off (Manual per Chat)'}
             </Badge>
+            {/* Tombol-tombol sakelar di kartu ini BUKAN aksen. Keadaannya sudah dibawa oleh
+                <Badge> di sebelahnya; tombolnya hanya membalik keadaan itu, dan tiga tombol
+                aksen berjajar di satu kartu Status membuat tidak ada satu pun yang terbaca
+                sebagai aksi utama halaman. Arah "matikan" tetap memakai destructive karena
+                konsekuensinya memang berbeda. */}
             {hasAdminPowers(role) && (
               <Button
                 onClick={toggleBotMode}
-                variant={settings.botAutoReplyAll ? 'destructive' : 'default'}
+                variant={settings.botAutoReplyAll ? 'destructive' : 'outline'}
                 size="sm"
               >
                 {settings.botAutoReplyAll ? 'Matikan (Off)' : 'Aktifkan untuk Semua Chat (On)'}
@@ -234,7 +240,7 @@ export default function ChatbotPage() {
             {hasAdminPowers(role) && (
               <Button
                 onClick={toggleIndonesiaFilter}
-                variant={settings.skipBotForIndonesianNumbers ? 'default' : 'destructive'}
+                variant={settings.skipBotForIndonesianNumbers ? 'outline' : 'destructive'}
                 size="sm"
               >
                 {settings.skipBotForIndonesianNumbers ? 'Aktifkan Bot untuk Nomor Indonesia' : 'Nonaktifkan Bot untuk Nomor Indonesia'}
@@ -256,7 +262,7 @@ export default function ChatbotPage() {
             {hasAdminPowers(role) && (
               <Button
                 onClick={toggleHandoffClassifier}
-                variant={settings.handoffOnHumanRequest ? 'destructive' : 'default'}
+                variant={settings.handoffOnHumanRequest ? 'destructive' : 'outline'}
                 size="sm"
               >
                 {settings.handoffOnHumanRequest ? 'Matikan Deteksi Tambahan' : 'Alihkan ke manusia saat customer memintanya'}

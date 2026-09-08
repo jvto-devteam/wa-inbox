@@ -11,6 +11,7 @@ import {
   type ExistingFlowNode,
 } from '@/lib/bot-control/existing-flow-registry'
 import { getBotRule } from '@/lib/bot-control/rule-registry'
+import { PageHeader } from '@/components/ui/page-header'
 
 /**
  * The pipeline, as a map. Nothing on this page changes anything.
@@ -43,21 +44,20 @@ export default function FlowMapPage() {
 
   return (
     <main className="mx-auto max-w-6xl space-y-4 p-6">
-      <div className="space-y-1">
-        <Link href="/bot-control" className="text-sm text-brand hover:underline">
-          &larr; Kembali ke Bot Control
-        </Link>
-        <h1 className="text-xl font-semibold text-navy">Flow Map</h1>
-        <p className="text-sm text-muted-foreground">
-          Langkah-langkah pipeline bot yang berjalan hari ini. Seluruh halaman ini read-only &mdash; percabangannya
-          adalah control flow di kode, bukan data. Dua kalimat bot yang bisa diubah tanpa deploy (balasan saat bot
-          tidak tahu jawabannya dan kalimat saat percakapan dialihkan ke manusia) ada di halaman{' '}
-          <Link href="/chatbot" className="text-brand hover:underline">
-            Chatbot
-          </Link>
-          .
-        </p>
-      </div>
+      <PageHeader
+        title="Flow Map"
+        description={
+          <>
+            Langkah-langkah pipeline bot yang berjalan hari ini. Seluruh halaman ini read-only &mdash; percabangannya
+            adalah control flow di kode, bukan data. Dua kalimat bot yang bisa diubah tanpa deploy (balasan saat bot
+            tidak tahu jawabannya dan kalimat saat percakapan dialihkan ke manusia) ada di halaman{' '}
+            <Link href="/chatbot" className="text-accent hover:underline">
+              Chatbot
+            </Link>
+            .
+          </>
+        }
+      />
 
       <div className="grid gap-4 lg:grid-cols-[minmax(0,14rem)_minmax(0,1fr)_minmax(0,20rem)]">
         <Card className="h-fit space-y-2 p-3">

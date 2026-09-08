@@ -1,12 +1,12 @@
 'use client'
 import { useEffect, useState } from 'react'
-import Link from 'next/link'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { fetchJson } from '@/lib/fetch-json'
+import { PageHeader } from '@/components/ui/page-header'
 
 type AuditRow = {
   id: string
@@ -105,19 +105,20 @@ export default function AuditLogsPage() {
 
   return (
     <main className="mx-auto max-w-5xl space-y-4 p-6">
-      <div className="space-y-1">
-        <Link href="/bot-control" className="text-sm text-brand hover:underline">
-          &larr; Kembali ke Bot Control
-        </Link>
-        <h1 className="text-xl font-semibold text-navy">Audit Logs</h1>
-        <p className="text-sm text-muted-foreground">
-          Riwayat perubahan perilaku bot: kapan, siapa, apa, dan alasannya. Nilai yang berlaku sekarang selalu
-          terlihat di halaman entitasnya sendiri — di sini yang dicatat adalah kapan ia terakhir diubah.
-        </p>
-        <p className="text-xs text-muted-foreground">
-          Catatan di sini tidak bisa diubah atau dihapus dari UI, dan dipangkas otomatis setelah satu tahun.
-        </p>
-      </div>
+      <PageHeader
+        title="Audit Logs"
+        description={
+          <>
+            <p>
+              Riwayat perubahan perilaku bot: kapan, siapa, apa, dan alasannya. Nilai yang berlaku sekarang selalu
+              terlihat di halaman entitasnya sendiri — di sini yang dicatat adalah kapan ia terakhir diubah.
+            </p>
+            <p className="mt-1 text-xs">
+              Catatan di sini tidak bisa diubah atau dihapus dari UI, dan dipangkas otomatis setelah satu tahun.
+            </p>
+          </>
+        }
+      />
 
       <div className="flex flex-wrap items-center gap-2">
         <Select

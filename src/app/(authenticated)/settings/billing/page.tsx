@@ -1,10 +1,10 @@
 'use client'
 import { useEffect, useState } from 'react'
-import Link from 'next/link'
 import { Card } from '@/components/ui/card'
 import { Select } from '@/components/ui/select'
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table'
 import { fetchJson } from '@/lib/fetch-json'
+import { PageHeader } from '@/components/ui/page-header'
 
 type CostReport = {
   currency: string | null
@@ -66,17 +66,12 @@ export default function BillingPage() {
 
   return (
     <main className="mx-auto max-w-3xl space-y-4 p-6">
-      <div className="space-y-1">
-        <Link href="/settings" className="text-sm text-brand hover:underline">
-          &larr; Kembali ke Pengaturan
-        </Link>
-        <h1 className="text-xl font-semibold text-navy">Histori Biaya Percakapan</h1>
-        <p className="text-sm text-muted-foreground">
-          Diambil langsung dari Conversation Analytics milik Meta. Saldo/limit penagihan WABA
-          sendiri tidak tersedia lewat API apa pun — hanya bisa dicek manual di Meta Business
-          Manager.
-        </p>
-      </div>
+      <PageHeader
+        backHref="/settings"
+        backLabel="Kembali ke Pengaturan"
+        title="Histori Biaya Percakapan"
+        description="Diambil langsung dari Conversation Analytics milik Meta. Saldo/limit penagihan WABA sendiri tidak tersedia lewat API apa pun — hanya bisa dicek manual di Meta Business Manager."
+      />
 
       <div className="flex items-center gap-2">
         <label htmlFor="billing-days" className="text-xs font-medium uppercase tracking-wide text-muted-foreground">

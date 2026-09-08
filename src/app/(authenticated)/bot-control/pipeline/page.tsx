@@ -14,6 +14,7 @@ import { cn } from '@/lib/utils'
 // server; `import type` terhapus saat kompilasi, jadi tidak ada satu byte pun dari modul itu
 // yang ikut ke browser.
 import type { PipelineStepRecord, PipelineStepStatus } from '@/lib/pipeline/tracer'
+import { PageHeader } from '@/components/ui/page-header'
 
 /**
  * Alur Live — kanvas alur pesan masuk sampai balasan terkirim, plus funnel penjualan.
@@ -327,14 +328,10 @@ export default function PipelineLivePage() {
 
   return (
     <main className="mx-auto max-w-7xl space-y-4 p-6">
-      <div className="space-y-1">
-        <h1 className="text-xl font-semibold text-navy">Alur Live</h1>
-        <p className="text-sm text-muted-foreground">
-          Perjalanan satu pesan pelanggan, dari webhook masuk sampai balasan terkirim. Kotak menyala saat ada run yang
-          sedang melewatinya; run yang sudah lewat bisa diputar ulang di kanvas yang sama. Antrean kirim, retry, dan
-          safety guard bukan bagian dari peta ini — itu ada di Outbound Queue.
-        </p>
-      </div>
+      <PageHeader
+        title="Alur Live"
+        description="Perjalanan satu pesan pelanggan, dari webhook masuk sampai balasan terkirim. Kotak menyala saat ada run yang sedang melewatinya; run yang sudah lewat bisa diputar ulang di kanvas yang sama. Antrean kirim, retry, dan safety guard bukan bagian dari peta ini — itu ada di Outbound Queue."
+      />
 
       <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
         <Badge variant={liveConnected ? 'success' : 'muted'}>
@@ -382,7 +379,7 @@ export default function PipelineLivePage() {
                         aria-pressed={active}
                         onClick={() => setSelection({ source: 'live', runId: run.runId })}
                         className={cn(
-                          'w-full rounded-lg border p-2 text-left text-xs outline-none transition-colors focus-visible:ring-3 focus-visible:ring-brand/30',
+                          'focus-ring w-full rounded-lg border p-2 text-left text-xs transition-colors',
                           RUN_COLOR_CLASSES[run.colorIndex % RUN_COLOR_CLASSES.length],
                           active && 'ring-2 ring-navy'
                         )}
@@ -417,7 +414,7 @@ export default function PipelineLivePage() {
                       aria-pressed={active}
                       onClick={() => setSelection({ source: 'riwayat', runId: run.id })}
                       className={cn(
-                        'w-full rounded-lg border border-border bg-white p-2 text-left text-xs outline-none transition-colors hover:bg-muted focus-visible:ring-3 focus-visible:ring-brand/30',
+                        'focus-ring w-full rounded-lg border border-border bg-white p-2 text-left text-xs transition-colors hover:bg-muted',
                         active && 'ring-2 ring-navy'
                       )}
                     >

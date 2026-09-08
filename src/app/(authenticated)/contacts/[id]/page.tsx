@@ -1,4 +1,3 @@
-import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { prisma } from '@/lib/db'
 import { Card } from '@/components/ui/card'
@@ -12,6 +11,7 @@ import { NotesSection } from '@/components/inbox/NotesSection'
 import { RemindersSection } from '@/components/inbox/RemindersSection'
 import { STAGE_LABELS, STAGE_VARIANTS } from '@/lib/pipeline'
 import { displayMessageContent } from '@/lib/message-display'
+import { PageHeader } from '@/components/ui/page-header'
 
 function formatMessageDate(date: Date) {
   return date.toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' })
@@ -45,23 +45,23 @@ export default async function ContactDetailPage({ params }: { params: Promise<{ 
 
   return (
     <main className="mx-auto max-w-3xl space-y-4 p-6">
-      <Link href="/contacts" className="text-sm text-brand hover:underline">
-        &larr; Kembali ke Kontak
-      </Link>
-
-      <div className="flex items-center gap-3">
-        <ContactAvatar name={contact.name} avatarUrl={contact.avatarUrl} size="size-12" />
-        <div>
-          <h1 className="text-xl font-semibold text-navy">{contact.name ?? contact.phone}</h1>
-          <p className="text-sm text-muted-foreground">
+      <PageHeader
+        backHref="/contacts"
+        backLabel="Kembali ke Kontak"
+        leading={<ContactAvatar name={contact.name} avatarUrl={contact.avatarUrl} size="size-10" />}
+        title={contact.name ?? contact.phone}
+        description={
+          <>
             {contact.phone}
             {contact.source && ` · ${contact.source}`}
-          </p>
-        </div>
-        <Badge variant={STAGE_VARIANTS[pipelineStage] ?? 'muted'} className="ml-auto">
-          {STAGE_LABELS[pipelineStage] ?? pipelineStage}
-        </Badge>
-      </div>
+          </>
+        }
+        actions={
+          <Badge variant={STAGE_VARIANTS[pipelineStage] ?? 'muted'}>
+            {STAGE_LABELS[pipelineStage] ?? pipelineStage}
+          </Badge>
+        }
+      />
 
       <BookingSummary
         bookingData={(bookingData as unknown as BookingData | null) ?? null}

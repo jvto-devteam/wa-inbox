@@ -8,7 +8,7 @@ import { Avatar } from '@/components/ui/avatar'
 // Sejak Tahap 1A ini hanya pembungkus tipis di atas <Avatar> supaya logika inisial dan warna
 // hidup di satu tempat. Kontraknya tidak berubah: `size` tetap string kelas Tailwind, dan
 // inisialnya tetap SATU huruf -- nama kontak WhatsApp sering satu untai tak terstruktur, jadi
-// huruf kedua lebih sering jadi sampah daripada informasi (beda dengan Account.name di AppNav,
+// huruf kedua lebih sering jadi sampah daripada informasi (beda dengan Account.name di AppRail,
 // yang diketik admin dan pantas dapat dua huruf).
 export function ContactAvatar({
   name,

@@ -213,8 +213,12 @@ export function PipelineCanvas({ replayStatuses, liveMarkers, selectedStepId, on
                 data-live-count={markers.length}
                 style={{ left: geometry.left, top: geometry.top, width: NODE_W, minHeight: NODE_H }}
                 className={cn(
-                  'absolute flex flex-col items-start gap-1 rounded-lg border bg-white p-2 text-left shadow-sm transition-colors',
-                  'outline-none focus-visible:ring-3 focus-visible:ring-brand/30',
+                  // `shadow-sm` dihapus di Tahap 1B: skala shadow-* Tailwind dimatikan di
+                  // globals.css Tahap 1A, jadi kelas itu sudah tidak menghasilkan apa pun —
+                  // ia hanya berbohong tentang adanya kedalaman. Kotaknya dipisahkan oleh
+                  // border-nya sendiri, seperti seluruh permukaan lain di aplikasi ini.
+                  'absolute flex flex-col items-start gap-1 rounded-lg border bg-white p-2 text-left transition-colors',
+                  'focus-ring',
                   status ? STEP_STATUS_CLASS[status] : 'border-border text-foreground hover:bg-muted',
                   // Node yang sedang ditempati run live diberi cincin, BUKAN warna latar: warna
                   // latar sudah dipakai status jalur terpilih, dan dua arti pada satu properti

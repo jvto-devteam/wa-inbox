@@ -210,6 +210,18 @@
     outline-offset: 1px;
   }
 
+  /* Versi terang dari cincin fokus, untuk kontrol yang duduk DI ATAS permukaan gelap
+     (hari ini: rail navigasi kiri, satu-satunya permukaan --color-ink di aplikasi ini).
+     Bukan preferensi gaya: --color-accent (#1E56C8) di atas --color-ink (#0B1B3D) hanya
+     mencapai kontras 2.6:1, di bawah ambang 3:1 untuk komponen non-teks, jadi .focus-ring
+     di sana adalah penanda fokus yang praktis tidak terlihat. Putih mencapai 17:1.
+     Bentuk dan offset-nya sengaja identik dengan .focus-ring supaya fokus terasa sama
+     di seluruh aplikasi; yang berubah hanya warnanya. */
+  .focus-ring-inverse:focus-visible {
+    outline: 2px solid #ffffff;
+    outline-offset: 1px;
+  }
+
   /* Field teks: fokus menegaskan border lalu menambah cincin lembut di luarnya.
      Sengaja outline, bukan box-shadow, supaya tidak menabrak aturan bayangan. */
   .field-focus:focus,

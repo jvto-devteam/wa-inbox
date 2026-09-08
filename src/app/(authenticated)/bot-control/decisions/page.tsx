@@ -1,6 +1,5 @@
 'use client'
 import { useEffect, useState } from 'react'
-import Link from 'next/link'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
@@ -9,6 +8,7 @@ import { Badge } from '@/components/ui/badge'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { DecisionTracePanel, STATUS_VARIANT, type DecisionRunDetail } from '@/components/bot-control/DecisionTracePanel'
 import { fetchJson } from '@/lib/fetch-json'
+import { PageHeader } from '@/components/ui/page-header'
 
 type DecisionRow = {
   id: string
@@ -187,16 +187,10 @@ export default function DecisionLogsPage() {
 
   return (
     <main className="mx-auto max-w-7xl space-y-4 p-6">
-      <div className="space-y-1">
-        <Link href="/bot-control" className="text-sm text-brand hover:underline">
-          &larr; Kembali ke Bot Control
-        </Link>
-        <h1 className="text-xl font-semibold text-navy">Decision Logs</h1>
-        <p className="text-sm text-muted-foreground">
-          Setiap putaran keputusan bot, termasuk yang tidak menghasilkan pesan sama sekali — agent mengambil alih di
-          tengah jalan, atau orchestrator gagal.
-        </p>
-      </div>
+      <PageHeader
+        title="Decision Logs"
+        description="Setiap putaran keputusan bot, termasuk yang tidak menghasilkan pesan sama sekali — agent mengambil alih di tengah jalan, atau orchestrator gagal."
+      />
 
       <div className="flex flex-wrap items-center gap-2">
         <Select value={status} onChange={(e) => applyFilter(() => setStatus(e.target.value))} className="w-auto" aria-label="Filter status">

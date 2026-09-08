@@ -5,6 +5,7 @@ import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
 import { Card } from '@/components/ui/card'
+import { PageHeader } from '@/components/ui/page-header'
 import { UserManagementSection } from '@/components/settings/UserManagementSection'
 import { WebhookCredentialsPanel } from '@/components/settings/WebhookCredentialsPanel'
 import { hasAdminPowers } from '@/lib/bot-control/permissions'
@@ -95,7 +96,7 @@ export default function SettingsPage() {
 
   return (
     <main className="mx-auto max-w-2xl space-y-8 p-6">
-      <h1 className="text-xl font-semibold text-navy">Pengaturan</h1>
+      <PageHeader title="Pengaturan" />
 
       <Card className="space-y-2 p-4">
         <h2 className="font-medium text-navy">Default jalur kirim</h2>

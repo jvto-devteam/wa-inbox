@@ -1,11 +1,11 @@
 'use client'
 import { useEffect, useState } from 'react'
-import Link from 'next/link'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { fetchJson } from '@/lib/fetch-json'
+import { PageHeader } from '@/components/ui/page-header'
 
 type BusinessProfile = {
   about: string | null
@@ -125,12 +125,7 @@ export default function BusinessProfilePage() {
 
   return (
     <main className="mx-auto max-w-2xl space-y-4 p-6">
-      <div className="space-y-1">
-        <Link href="/settings" className="text-sm text-brand hover:underline">
-          &larr; Kembali ke Pengaturan
-        </Link>
-        <h1 className="text-xl font-semibold text-navy">Profil Bisnis WhatsApp</h1>
-      </div>
+      <PageHeader backHref="/settings" backLabel="Kembali ke Pengaturan" title="Profil Bisnis WhatsApp" />
 
       {loading && <p className="text-sm text-muted-foreground">Memuat...</p>}
       {loadError && <p className="text-sm text-destructive">{loadError}</p>}

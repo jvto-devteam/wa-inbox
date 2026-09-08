@@ -1,9 +1,9 @@
 'use client'
 import { useEffect, useState } from 'react'
-import Link from 'next/link'
 import { Select } from '@/components/ui/select'
 import { Card } from '@/components/ui/card'
 import { fetchJson } from '@/lib/fetch-json'
+import { PageHeader } from '@/components/ui/page-header'
 
 type KnowledgeGap = {
   id: string
@@ -27,12 +27,7 @@ export default function KnowledgeGapsPage() {
 
   return (
     <main className="mx-auto max-w-3xl space-y-4 p-6">
-      <div className="space-y-1">
-        <Link href="/settings" className="text-sm text-brand hover:underline">
-          &larr; Kembali ke Pengaturan
-        </Link>
-        <h1 className="text-xl font-semibold text-navy">Pertanyaan Tak Terjawab</h1>
-      </div>
+      <PageHeader backHref="/settings" backLabel="Kembali ke Pengaturan" title="Pertanyaan Tak Terjawab" />
 
       <Select value={filter} onChange={(e) => setFilter(e.target.value)} className="w-auto">
         <option value="">Semua</option>

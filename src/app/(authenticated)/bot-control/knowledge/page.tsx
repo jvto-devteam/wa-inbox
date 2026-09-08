@@ -1,6 +1,5 @@
 'use client'
 import { useCallback, useEffect, useState } from 'react'
-import Link from 'next/link'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
@@ -17,6 +16,7 @@ import type { KnowledgeItem } from '@/lib/bot-control/knowledge-body'
 import { hasAdminPowers } from '@/lib/bot-control/permissions'
 import type { AccountRoleName } from '@/lib/auth/session'
 import { fetchJson } from '@/lib/fetch-json'
+import { PageHeader } from '@/components/ui/page-header'
 
 type Paged<T> = { items: T[]; page: number; limit: number; total: number }
 type CatalogPage = Paged<CatalogEntryRow> & { syncedAt: string | null; topics: string[] }
@@ -273,16 +273,15 @@ export default function KnowledgeExplorerPage() {
 
   return (
     <main className="mx-auto max-w-6xl space-y-6 p-6">
-      <div className="space-y-1">
-        <Link href="/bot-control" className="text-sm text-brand hover:underline">
-          &larr; Kembali ke Bot Control
-        </Link>
-        <h1 className="text-xl font-semibold text-navy">Knowledge Explorer</h1>
-        <p className="text-sm text-muted-foreground">
-          Isi <span className="font-mono">catalog/</span> yang dipakai bot, dibuka supaya bisa dibaca dan dicari tanpa
-          membuka JSON — plus knowledge yang ditulis operator sendiri.
-        </p>
-      </div>
+      <PageHeader
+        title="Knowledge Explorer"
+        description={
+          <>
+            Isi <span className="font-mono">catalog/</span> yang dipakai bot, dibuka supaya bisa dibaca dan dicari
+            tanpa membuka JSON — plus knowledge yang ditulis operator sendiri.
+          </>
+        }
+      />
 
       <section className="space-y-2">
         <div className="space-y-1">

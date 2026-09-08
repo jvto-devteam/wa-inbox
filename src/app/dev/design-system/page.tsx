@@ -11,6 +11,7 @@ import { IconButton } from '@/components/ui/icon-button'
 import { Input } from '@/components/ui/input'
 import { Field, FieldError, FieldHint, Label } from '@/components/ui/label'
 import { Modal } from '@/components/ui/modal'
+import { PageHeader } from '@/components/ui/page-header'
 import { Select } from '@/components/ui/select'
 import { Skeleton, SkeletonText } from '@/components/ui/skeleton'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
@@ -436,6 +437,42 @@ export default function DesignSystemPage() {
                   ))}
                 </TableBody>
               </Table>
+            </div>
+          </div>
+        </Section>
+
+        <Section
+          id="page-header"
+          title="PageHeader"
+          note="Satu kepala halaman untuk 18 halaman. Judul selalu <h1> 17px; aksi selalu di kanan atas."
+        >
+          <div className="space-y-6">
+            <div className="rounded-lg border border-line bg-surface p-6">
+              <PageHeader title="Kontak" />
+            </div>
+            <div className="rounded-lg border border-line bg-surface p-6">
+              <PageHeader
+                backHref="/settings"
+                backLabel="Kembali ke Pengaturan"
+                title="Histori Biaya Percakapan"
+                description="Diambil langsung dari Conversation Analytics milik Meta."
+                actions={
+                  <>
+                    <Button variant="outline" size="sm">
+                      Muat ulang
+                    </Button>
+                    <Button size="sm">Ekspor</Button>
+                  </>
+                }
+              />
+            </div>
+            <div className="rounded-lg border border-line bg-surface p-6">
+              <PageHeader
+                leading={<Avatar name="Bruno Figarola" className="size-10" />}
+                title="Bruno Figarola"
+                description="+62 821-4340-3501 · WhatsApp"
+                actions={<Badge variant="success">Deal</Badge>}
+              />
             </div>
           </div>
         </Section>

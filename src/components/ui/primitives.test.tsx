@@ -5,6 +5,7 @@ import { Button } from './button'
 import { IconButton } from './icon-button'
 import { Field, FieldError } from './label'
 import { EmptyState } from './empty-state'
+import { PageHeader } from './page-header'
 
 /**
  * Yang diuji di sini hanya PERILAKU primitif yang bisa diam-diam hilang saat tampilannya
@@ -114,5 +115,44 @@ describe('EmptyState', () => {
     )
     expect(screen.getByText('Coba kata kunci lain.')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Hapus filter' })).toBeInTheDocument()
+  })
+})
+
+describe('PageHeader', () => {
+  it('memberi setiap halaman tepat satu <h1>, dan hanya bagian yang diisi', () => {
+    const { rerender } = render(<PageHeader title="Kontak" />)
+
+    // Judul halaman adalah level 1. Sebelum komponen ini ada, 17 halaman menuliskannya
+    // sendiri-sendiri; satu saja yang salah level membuat daftar heading halaman itu bohong.
+    expect(screen.getByRole('heading', { level: 1, name: 'Kontak' })).toBeInTheDocument()
+    expect(screen.queryByRole('link')).not.toBeInTheDocument()
+
+    rerender(
+      <PageHeader
+        title="Histori Biaya"
+        description="Diambil dari Conversation Analytics."
+        backHref="/settings"
+        backLabel="Kembali ke Pengaturan"
+        actions={<button type="button">Muat ulang</button>}
+      />
+    )
+    expect(screen.getByRole('heading', { level: 1, name: 'Histori Biaya' })).toBeInTheDocument()
+    expect(screen.getByText('Diambil dari Conversation Analytics.')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Kembali ke Pengaturan' })).toHaveAttribute('href', '/settings')
+    expect(screen.getByRole('button', { name: 'Muat ulang' })).toBeInTheDocument()
+  })
+
+  it('adalah landmark banner-kurang: satu <header> per halaman, bukan <div> tanpa arti', () => {
+    const { container } = render(<PageHeader title="Beranda" />)
+
+    expect(container.querySelector('header')).not.toBeNull()
+  })
+
+  it('memberi tautan kembali sebuah label bawaan, bukan panah tanpa teks', () => {
+    render(<PageHeader title="Detail" backHref="/contacts" />)
+
+    // Panah sendirian bukan nama aksesibel. Tanpa default ini, sebuah halaman yang lupa
+    // mengisi backLabel akan mengirim tautan tanpa nama ke pembaca layar.
+    expect(screen.getByRole('link', { name: 'Kembali' })).toHaveAttribute('href', '/contacts')
   })
 })

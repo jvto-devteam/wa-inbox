@@ -1,4 +1,4 @@
-import { AppNav } from '@/components/AppNav'
+import { AppRail } from '@/components/AppRail'
 import { NotificationListener } from '@/components/NotificationListener'
 
 // Route group (parentheses => it contributes nothing to the URL) covering every page
@@ -18,26 +18,42 @@ import { NotificationListener } from '@/components/NotificationListener'
 // client-side navigation login does (router.push('/dashboard')), which a pathname read
 // inside a mount-once effect would have missed entirely until a hard reload.
 //
-// It is also where the global nav bar lives, for the same structural reason: "has a session"
-// and "has the five top-level menus" are the same set of pages, so the group defines both at
-// once instead of every page remembering to render a header.
+// It is also where the global nav shell lives, for the same structural reason: "has a session"
+// and "has the seven top-level menus" are the same set of pages, so the group defines both at
+// once instead of every page remembering to render its own navigation.
 //
-// This file stays a SERVER component. The nav needs usePathname() and two client fetches, but
+// This file stays a SERVER component. The rail needs usePathname() and two client fetches, but
 // putting 'use client' here would make every page under the group a client boundary's child —
 // harmless today (they are all 'use client' already) but a constraint the layout has no reason
-// to impose on future server pages. Only <AppNav> is a client component.
+// to impose on future server pages. Only <AppRail> is a client component.
 //
-// The h-screen/flex-col wrapper is load-bearing, not decoration. /inbox is a full-height
-// three-pane grid; with a header stacked above an h-screen child the document would be
-// header + 100vh tall and the whole app would scroll behind a nav bar that scrolled away with
-// it. Instead the shell owns the viewport height and hands the rest to the page, which scrolls
-// inside it. `min-h-0` is required — a flex child's default min-height:auto refuses to shrink
-// below its content, which would push the overflow back out to the document.
+// GEOMETRI CANGKANG (load-bearing, bukan dekorasi)
+//
+// `h-screen` di pembungkus luar: cangkang yang memiliki tinggi viewport, bukan dokumen yang
+// tumbuh melewatinya. Tanpa itu, /inbox (tiga kolom setinggi penuh) membuat dokumen setinggi
+// nav + 100vh dan navigasinya ikut tergulung keluar layar.
+//
+// `flex-col-reverse md:flex-row`: SATU susunan DOM untuk dua bentuk. Rail ditulis lebih dulu
+// (navigasi mendahului konten untuk pembaca layar di kedua bentuk), lalu:
+//   - di bawah md, flex-col-reverse menempatkan anak pertama di BAWAH  -> bar bawah;
+//   - dari md ke atas, flex-row menempatkannya di KIRI                 -> rail.
+// Ini sengaja bukan `position: fixed`: bar yang fixed harus dibayar dengan padding-bottom di
+// area konten yang nilainya wajib sama persis dengan tinggi bar, dan angka kembar seperti itu
+// selalu berpisah suatu hari.
+//
+// Area konten `min-h-0 min-w-0 flex-1 overflow-y-auto`. `min-h-0`/`min-w-0` wajib — default
+// min-size:auto pada flex item menolak menyusut di bawah kontennya, yang akan mendorong
+// overflow-nya balik ke dokumen. `overflow-y-auto` melayani dua jenis halaman sekaligus:
+//   - halaman biasa (18 dari 19) lebih tinggi dari layar dan menggulung di sini;
+//   - halaman setinggi penuh (/inbox, dan apa pun yang menyusul di Tahap 1C) memakai `h-full`
+//     plus scroller-nya sendiri di dalam. Tingginya lalu persis sama dengan kotak ini, jadi
+//     scroller luar tidak pernah aktif dan tidak ada gulungan ganda. Yang TIDAK boleh dilakukan
+//     halaman semacam itu adalah memakai `h-screen`: itu mengabaikan rail dan meluber.
 export default function AuthenticatedLayout({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex h-screen flex-col">
-      <AppNav />
-      <div className="min-h-0 flex-1 overflow-y-auto">{children}</div>
+    <div className="flex h-screen flex-col-reverse md:flex-row">
+      <AppRail />
+      <div className="min-h-0 min-w-0 flex-1 overflow-y-auto">{children}</div>
       <NotificationListener />
     </div>
   )

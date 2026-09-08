@@ -1,6 +1,5 @@
 'use client'
 import { useCallback, useEffect, useState } from 'react'
-import Link from 'next/link'
 import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -13,6 +12,7 @@ import {
 import { hasAdminPowers } from '@/lib/bot-control/permissions'
 import type { AccountRoleName } from '@/lib/auth/session'
 import { fetchJson } from '@/lib/fetch-json'
+import { PageHeader } from '@/components/ui/page-header'
 
 type Session = { role: AccountRoleName }
 
@@ -171,16 +171,10 @@ export default function OutboundQueuePage() {
 
   return (
     <main className="mx-auto max-w-7xl space-y-4 p-6">
-      <div className="space-y-1">
-        <Link href="/bot-control" className="text-sm text-brand hover:underline">
-          &larr; Kembali ke Bot Control
-        </Link>
-        <h1 className="text-xl font-semibold text-navy">Outbound Queue</h1>
-        <p className="text-sm text-muted-foreground">
-          Setiap pengiriman yang masih harus terjadi, beserta alasan kegagalannya. Sebelumnya satu-satunya jendela ke
-          sini adalah badge pengiriman pada satu bubble di satu percakapan.
-        </p>
-      </div>
+      <PageHeader
+        title="Outbound Queue"
+        description="Setiap pengiriman yang masih harus terjadi, beserta alasan kegagalannya. Sebelumnya satu-satunya jendela ke sini adalah badge pengiriman pada satu bubble di satu percakapan."
+      />
 
       {data && data.pausedProviders.length > 0 && (
         // Shown to everyone who opens the page, not only to whoever pressed the button: a queue
