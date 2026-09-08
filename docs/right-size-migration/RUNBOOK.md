@@ -2,8 +2,29 @@
 
 Dibuat 2026-09-08. Menyertai branch `refactor/right-size-bot-control`.
 
-**Status: BELUM DITERAPKAN ke produksi.** Kode sudah selesai dan lulus test; database
-belum disentuh sama sekali. Dokumen ini urutan penerapannya.
+**Status per 2026-09-08:**
+
+| Langkah | Keadaan |
+|---|---|
+| Cadangan 12 tabel | ✅ `backup-2026-09-08.json` (dipindai, tidak ada pola token) |
+| SELECT verifikasi | ✅ dijalankan — hasilnya membatalkan kedua "jebakan", lihat di bawah |
+| Migrasi aditif `20260908110000` | ✅ **SUDAH DITERAPKAN** ke produksi |
+| Pemindahan data | ✅ **tidak diperlukan** — terbukti no-op, 6/6 perbandingan `true` |
+| Deploy kode ke VPS | ⏳ **belum** |
+| Migrasi destruktif `20260908120000` | ⏳ **ditahan** sampai deploy selesai |
+| Migrasi `20260908130000_add_pipeline_steps` | ⏳ menyusul, aditif, ikut `migrate deploy` yang sama |
+
+**Kedua jebakan di bawah ternyata TIDAK BERLAKU di data produksi** — dipertahankan di dokumen
+ini sebagai catatan mengapa keduanya diperiksa, bukan sebagai pekerjaan yang tersisa. Yang
+membuat keduanya tidak berlaku: `defaultOutbound` dan `Settings.defaultChannel` sama-sama
+sudah `UNOFFICIAL`, dan sakelar nomor Indonesia sudah `true` sehingga OR maupun salin
+memberi hasil sama.
+
+⚠️ **Temuan yang tetap penting:** `ChannelPolicySetting.key` di produksi adalah
+`whatsapp.default`, **bukan** `default`. Semua SELECT di `b2-data-migration-notes.sql` yang
+memfilter `key = 'default'` mengembalikan **kosong** — jangan simpulkan "tidak ada yang perlu
+dipindah" dari hasil kosong itu. Pakai `scripts/verify-right-size-migration.ts`, yang tidak
+mengasumsikan key.
 
 `DATABASE_URL` di repo ini menunjuk **VPS produksi**. `prisma migrate dev` DILARANG —
 ia bisa me-reset database saat mendeteksi drift. Hanya `migrate deploy`.
