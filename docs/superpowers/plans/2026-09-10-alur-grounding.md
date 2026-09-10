@@ -781,12 +781,25 @@ Kalau klasifikasi meleset, gerbang bisa membuang **semua** fakta yang benar. Jaw
 
 **Files:**
 - Modify: `src/lib/bot/runtime-integration.ts`
+- Modify: `src/lib/bot/orchestrator.ts` (dua call site — Ruling R41)
 - Test: `src/lib/bot/runtime-integration.test.ts`
+- Test: `src/lib/bot/orchestrator.test.ts` (Ruling R41)
 
 **Interfaces:**
 - Produces: `ManagedFacts.gateBypassed: boolean` — dibaca Task 17 untuk ditampilkan di trace
+- Produces: `managedFactsFor(message, topic, hasCatalogFacts = false)` (Ruling R41)
 
-> **Ruling R25:** dua assertion lama `toEqual({ lines: [], refs: [] })` di `runtime-integration.test.ts` harus diperbarui menyertakan `gateBypassed: false`, kalau tidak keduanya pecah. Pakai pola mock yang ada (`entry()` + `vi.mocked(loadPublishedManagedKnowledge)`), bukan `mockEntries` (Ruling R24).
+> **Ruling R41 — jaring hanya saat memang tidak ada jawaban.** Alasan jaring di task ini sendiri: "jawaban miring lebih baik daripada tidak ada jawaban". Kalau katalog sudah punya fakta untuk giliran ini, jawaban ADA — mengulang tanpa gerbang di situ hanya memasukkan kembali entri yang baru ditolak gerbang, kebalikan tujuan plan (bot tidak membaca semua knowledge), dan membuat test penolakan Task 5 (R40) gagal. Terverifikasi: di kedua call site `resolveKnowledgeForTopic` dipanggil SEBELUM `managedFactsFor` (`orchestrator.ts:879`→`:887` dan `:1531`→`:1538`). Maka:
+> - Tanda tangan: `managedFactsFor(message, topic, hasCatalogFacts = false)`. Default `false` = perilaku jaring asli plan, supaya snippet task lain yang memanggil dengan dua argumen tetap bermakna sama.
+> - Jaring (ulang tanpa gerbang) hanya berjalan bila `!hasCatalogFacts`.
+> - Kedua call site mengirim nilai nyata, dihitung SEBELUM baris managed di-push: `preDestinationKnowledge.factualLines.length > 0` (`:887`) dan `knowledge.factualLines.length > 0` (`:1538`).
+> - Test tambahan di `runtime-integration.test.ts`: fixture yang sama dengan test bypass, `hasCatalogFacts = true` → `lines` kosong dan `gateBypassed: false`.
+> - Test penolakan Task 5 ('menolak entri bertopik payment saat giliran bertopik route_endpoint') dipanggil dengan `true` — `route_endpoint` memang dijawab katalog — supaya ia tetap membuktikan penolakan, bukan berubah jadi kasus bypass.
+> - Dua test di `orchestrator.test.ts`, satu per call site (argumen ketiga opsional, jadi `tsc` tidak menangkap call site yang lupa mengirimnya): fakta katalog termock TIDAK kosong + satu entri managed yang topiknya lain tetapi kata-katanya cocok → system prompt TIDAK memuat jawaban entri itu. Pakai pola test cabang tanpa-destinasi yang ditambahkan Task 5, dan pola cabang katalog yang sudah ada di berkas itu.
+> - Anchor terkini: `ManagedFacts` di `runtime-integration.ts:120`, `EMPTY` di `:127` (snippet di bawah menyebut 119/126).
+> - Biaya kalau salah: giliran yang salah-klasifikasi DAN punya fakta katalog tidak mendapat fakta managed yang benar — tetap terlihat sebagai entri ditolak begitu Task 17 selesai.
+
+> **Ruling R25:** dua assertion lama `toEqual({ lines: [], refs: [] })` di `runtime-integration.test.ts` harus diperbarui menyertakan `gateBypassed: false`, kalau tidak keduanya pecah. `mockEntries` sudah didefinisikan Task 5 (commit 4ea3283, Ruling R24) — pakai helper itu.
 
 - [ ] **Step 1: Tulis test yang gagal**
 
@@ -854,7 +867,7 @@ Expected: PASS.
 
 ```bash
 npm test && npx tsc --noEmit && npx eslint .
-git add src/lib/bot/runtime-integration.ts src/lib/bot/runtime-integration.test.ts
+git add src/lib/bot/runtime-integration.ts src/lib/bot/runtime-integration.test.ts src/lib/bot/orchestrator.ts src/lib/bot/orchestrator.test.ts
 git commit -m "feat(knowledge): jaring saat gerbang topik menghasilkan nol baris, ditandai untuk dihitung"
 ```
 
