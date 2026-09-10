@@ -17,6 +17,7 @@ import { resolveKnowledgeForTopic, resolveKeywordTriggeredFacts, resolveRouteLeg
 import { callLLM, type LLMOptions } from './llm'
 import { loadCatalog } from './catalog'
 import { checkDeploymentGate } from './deployment-gate'
+import { loadPublishedManagedKnowledge } from '@/lib/bot/managed-knowledge'
 import type { CatalogPackage } from './types'
 
 // `vi.mock` factories are hoisted above regular imports and `let`/`const`
@@ -73,6 +74,11 @@ vi.mock('./knowledge', () => ({
 vi.mock('./llm')
 vi.mock('./catalog')
 vi.mock('./deployment-gate')
+// Without this, the real loader reads the (also-mocked) Prisma client, gets `undefined` back,
+// and reports `available: false` on every single test in this file -- harmless today since
+// nothing here asserts on managed knowledge, but Task 12 turns `available: false` into a
+// "technical hiccup" reply, which would flip nearly every test in this file at once.
+vi.mock('@/lib/bot/managed-knowledge', () => ({ loadPublishedManagedKnowledge: vi.fn() }))
 
 const mockPrisma = prisma as unknown as DeepMockProxy<PrismaClient>
 
@@ -159,6 +165,9 @@ beforeEach(() => {
   // Mode 1/2 now composes via the same LLM path as Mode 3 -- default resolved value so
   // ordinary FAQ tests don't each have to mock it themselves.
   ;vi.mocked(callLLM).mockResolvedValue('Every package includes private transport and a driver/guide.')
+  // Empty by default -- matches this file's pre-existing behaviour (nothing managed folded in)
+  // for every test that doesn't specifically mock a managed entry of its own.
+  ;vi.mocked(loadPublishedManagedKnowledge).mockResolvedValue({ entries: [], available: true, loadedAt: 0 })
   // decideAndRespond still reads Settings once, for ollamaModel (see the Mode 3 callLLM call).
   mockPrisma.settings.findUniqueOrThrow.mockResolvedValue({ ollamaModel: 'gemma4:31b-cloud' } as never)
   // Mode 3's history fetch (see HISTORY_LIMIT) -- empty by default so tests that don't care
@@ -671,6 +680,48 @@ describe('decideAndRespond', () => {
     const [, opts] = llmCall(0)
     expect(opts.system).toContain('Every package includes private transport and a driver/guide.')
     expect(opts.system).toContain('has not said which destination')
+  })
+
+  // Ruling R26: the no-destination branch didn't call managedFactsFor at all before this task,
+  // so a question the catalog has nothing for pre-destination -- but a managed FAQ CAN answer --
+  // used to fall through to the generic "which destination?" reply instead of actually
+  // answering. `payment` is in DESTINATION_INDEPENDENT_TOPICS, so this exercises the branch
+  // with the catalog side deliberately empty, proving the managed fact alone is what answers.
+  it('answers a payment question with no destination known from a managed FAQ alone', async () => {
+    ;vi.mocked(ensureFreshBookingData).mockResolvedValue(null)
+    ;vi.mocked(classifySalesNeed).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
+    ;vi.mocked(matchDestination).mockReturnValue(null)
+    ;vi.mocked(listDestinations).mockReturnValue(['Bromo', 'Ijen'])
+    ;vi.mocked(classifyTopicViaLLM).mockResolvedValue({ topic: 'payment', source: 'llm' })
+    ;vi.mocked(resolveKnowledgeForTopic).mockReturnValue({
+      factualLines: [],
+      detailLines: [],
+      primaryLink: null,
+      disclosures: [],
+      handoffRequired: false,
+    })
+    ;vi.mocked(loadPublishedManagedKnowledge).mockResolvedValue({
+      entries: [
+        {
+          sourceId: 'ks_1',
+          sourceKey: 'managed/payment',
+          sourceTitle: 'Kebijakan Pembayaran',
+          revisionId: 'krev_1',
+          version: 3,
+          items: [{ question: 'Berapa deposit?', answer: '20% dari total, dibayar di Surabaya.', topics: ['payment'] }],
+        },
+      ],
+      available: true,
+      loadedAt: 0,
+    })
+
+    const result = await decideAndRespond('conv_1', 'Bagaimana cara pembayaran deposit?')
+
+    expect(result.mode).toBe('faq')
+    const [, opts] = llmCall(0)
+    expect(opts.system).toContain('20% dari total, dibayar di Surabaya.')
+    expect(result.steps?.map((s) => s.label)).toContain('Knowledge terkelola dipakai')
+    expect(result.steps?.find((s) => s.label === 'Knowledge terkelola dipakai')?.detail).toContain('Kebijakan Pembayaran (v3)')
   })
 
   // A dietary/allergy mention has no dedicated topic keyword bucket at all (module-resolver.ts

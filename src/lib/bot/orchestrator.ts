@@ -877,6 +877,24 @@ async function runNoDestinationBranch(
   // keyword hit here the way it can for an already-allowlisted topic below.
   if (DESTINATION_INDEPENDENT_TOPICS.has(resolverTopic) || keywordModuleIds.length > 0) {
     const preDestinationKnowledge = resolveKnowledgeForTopic(resolverTopic, inboundText, undefined, keywordModuleIds)
+
+    // Same addition as the catalog branch below (managedFactsFor's own header explains the
+    // crude match): folded in and checked for BEFORE the `factualLines.length > 0` gate right
+    // below, not after -- otherwise a knowledge-only question with no destination yet (e.g. a
+    // deposit question answered purely by a managed FAQ, with nothing in the catalog for
+    // "payment" pre-destination) falls through to the generic "which destination?" reply
+    // instead of actually answering.
+    const managed = await managedFactsFor(inboundText, resolverTopic)
+    if (managed.lines.length > 0) {
+      preDestinationKnowledge.factualLines.push(...managed.lines)
+      trace.push(
+        'Knowledge terkelola dipakai',
+        `${managed.refs.length} sumber knowledge yang dikelola operator ikut menjadi dasar jawaban: ${managed.refs
+          .map((ref) => `${ref.title} (v${ref.version})`)
+          .join(', ')}.`
+      )
+    }
+
     if (preDestinationKnowledge.factualLines.length > 0) {
       trace.push(
         'Topik tidak butuh destinasi',
@@ -1517,7 +1535,7 @@ export async function decideAndRespond(
     // replace anything would let a web form silently contradict the released packages with no
     // way to see which one answered. Only entries whose question or tags share a word with this
     // message are folded in — see managedFactsFor for why a crude match is the right one here.
-    const managed = await managedFactsFor(inboundText)
+    const managed = await managedFactsFor(inboundText, resolverTopic)
     if (managed.lines.length > 0) {
       knowledge.factualLines.push(...managed.lines)
       trace.push(

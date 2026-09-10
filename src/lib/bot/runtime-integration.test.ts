@@ -31,6 +31,15 @@ function entry(overrides: Record<string, unknown> = {}) {
   }
 }
 
+/** Pasang daftar item sebagai SATU entri managed terbit — di atas helper `entry()` yang sudah ada. */
+function mockEntries(items: Array<Record<string, unknown>>) {
+  vi.mocked(loadPublishedManagedKnowledge).mockResolvedValue({
+    entries: [entry({ items })],
+    available: true,
+    loadedAt: 0,
+  })
+}
+
 beforeEach(() => {
   mockReset(mockPrisma)
   vi.clearAllMocks()
@@ -128,13 +137,13 @@ describe('handoffReplyText', () => {
 
 describe('managedFactsFor', () => {
   it('returns nothing when no managed knowledge is published', async () => {
-    expect(await managedFactsFor('Berapa harga ATV?')).toEqual({ lines: [], refs: [] })
+    expect(await managedFactsFor('Berapa harga ATV?', null)).toEqual({ lines: [], refs: [] })
   })
 
   it('folds in an entry whose question shares a word with the message', async () => {
     vi.mocked(loadPublishedManagedKnowledge).mockResolvedValue({ entries: [entry()], available: true, loadedAt: 0 })
 
-    const facts = await managedFactsFor('berapa harga paket ATV untuk 4 orang?')
+    const facts = await managedFactsFor('berapa harga paket ATV untuk 4 orang?', null)
     expect(facts.lines[0]).toContain('Mulai Rp350.000')
     expect(facts.refs).toEqual([
       { sourceType: 'MANAGED', sourceKey: 'managed/atv', title: 'FAQ Harga ATV', version: 2 },
@@ -145,7 +154,7 @@ describe('managedFactsFor', () => {
     // Folding EVERY published entry into every prompt would bury the catalog facts the answer
     // actually needs, and hand the verifier prices the question never asked about.
     vi.mocked(loadPublishedManagedKnowledge).mockResolvedValue({ entries: [entry()], available: true, loadedAt: 0 })
-    expect((await managedFactsFor('jam berapa pickup dari bandara?')).lines).toEqual([])
+    expect((await managedFactsFor('jam berapa pickup dari bandara?', null)).lines).toEqual([])
   })
 
   it('matches on tags as well as the question', async () => {
@@ -154,7 +163,7 @@ describe('managedFactsFor', () => {
       available: true,
       loadedAt: 0,
     })
-    expect((await managedFactsFor('ada paket snorkeling?')).lines).toHaveLength(1)
+    expect((await managedFactsFor('ada paket snorkeling?', null)).lines).toHaveLength(1)
   })
 
   it('ignores short and common words, so everything does not match everything', async () => {
@@ -163,7 +172,7 @@ describe('managedFactsFor', () => {
       available: true,
       loadedAt: 0,
     })
-    expect((await managedFactsFor('apa yang bisa saya lakukan di ijen?')).lines).toEqual([])
+    expect((await managedFactsFor('apa yang bisa saya lakukan di ijen?', null)).lines).toEqual([])
   })
 
   it('emits prices and links as their own lines, so the verifier can source them', async () => {
@@ -186,7 +195,7 @@ describe('managedFactsFor', () => {
       loadedAt: 0,
     })
 
-    const facts = await managedFactsFor('berapa harga ATV?')
+    const facts = await managedFactsFor('berapa harga ATV?', null)
     expect(facts.lines.some((line) => line.includes('IDR 350000'))).toBe(true)
     expect(facts.lines.some((line) => line.includes('https://example.com/atv'))).toBe(true)
   })
@@ -194,12 +203,45 @@ describe('managedFactsFor', () => {
   it('returns nothing rather than throwing when the loader fails', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => {})
     vi.mocked(loadPublishedManagedKnowledge).mockRejectedValue(new Error('db down'))
-    expect(await managedFactsFor('berapa harga ATV?')).toEqual({ lines: [], refs: [] })
+    expect(await managedFactsFor('berapa harga ATV?', null)).toEqual({ lines: [], refs: [] })
   })
 
   it('returns nothing for a message with no usable words', async () => {
     vi.mocked(loadPublishedManagedKnowledge).mockResolvedValue({ entries: [entry()], available: true, loadedAt: 0 })
-    expect((await managedFactsFor('ok!')).lines).toEqual([])
+    expect((await managedFactsFor('ok!', null)).lines).toEqual([])
+  })
+
+  describe('gerbang topik', () => {
+    it('menolak entri bertopik payment saat giliran bertopik route_endpoint', async () => {
+      mockEntries([
+        { question: 'Berapa deposit?', answer: '20% dari total, dibayar di Surabaya.', topics: ['payment'] },
+      ])
+      const facts = await managedFactsFor('bisa drop off di surabaya?', 'route_endpoint')
+      expect(facts.lines).toEqual([])
+    })
+
+    it('meloloskan entri yang memuat topik aktif', async () => {
+      mockEntries([
+        { question: 'Bisa selesai di Malang?', answer: 'Bisa.', topics: ['route_endpoint', 'price'] },
+      ])
+      const facts = await managedFactsFor('bisa selesai di malang?', 'route_endpoint')
+      expect(facts.lines).toHaveLength(1)
+    })
+
+    it('entri tanpa topics berperilaku seperti sebelumnya — overlap token', async () => {
+      mockEntries([{ question: 'Berapa harga ATV?', answer: 'Rp 300.000.' }])
+      const facts = await managedFactsFor('berapa harga paket ATV?', 'route_endpoint')
+      expect(facts.lines).toHaveLength(1)
+    })
+
+    // Ruling R30: giliran `general` tidak digerbang — entri bertopik tetap lolos lewat overlap kata.
+    it('giliran bertopik general tidak digerbang', async () => {
+      mockEntries([
+        { question: 'Berapa deposit?', answer: '20% dari total, dibayar di Surabaya.', topics: ['payment'] },
+      ])
+      const facts = await managedFactsFor('deposit bisa dibayar di surabaya?', 'general')
+      expect(facts.lines).toHaveLength(1)
+    })
   })
 })
 

@@ -16,6 +16,7 @@
  */
 import { prisma } from '@/lib/db'
 import { loadPublishedManagedKnowledge, type KnowledgeRef } from '@/lib/bot/managed-knowledge'
+import type { ResolverTopic } from './module-resolver'
 
 /**
  * Whether the LLM escalation layer should run.
@@ -168,7 +169,10 @@ function tokens(text: string): Set<string> {
  * would be another model call inside a turn that already spends its budget on several, and
  * would fail in ways nobody could read from a trace.
  */
-export async function managedFactsFor(message: string): Promise<ManagedFacts> {
+export async function managedFactsFor(
+  message: string,
+  topic: ResolverTopic | null,
+): Promise<ManagedFacts> {
   let managed
   try {
     managed = await loadPublishedManagedKnowledge()
@@ -187,6 +191,23 @@ export async function managedFactsFor(message: string): Promise<ManagedFacts> {
 
   for (const entry of managed.entries) {
     const matched = entry.items.filter((item) => {
+      // Lapis 1 -- gerbang topik. `topics` terisi berarti operator (atau classifier)
+      // sudah menyatakan pertanyaan macam apa yang layak dijawab entri ini; kalau topik
+      // giliran ini tidak ada di sana, entri itu tidak relevan berapa pun katanya cocok.
+      //
+      // `topics` KOSONG jatuh ke perilaku sebelum field ini ada. Itu yang membuat migrasi
+      // bisa bertahap dan nol revisi lama rusak.
+      //
+      // Ruling R30 (keputusan operator setelah Gerbang G1, 2026-09-10): giliran tanpa topik
+      // spesifik — `general` atau `null` — TIDAK digerbang. Pengukuran Fase 0: 47% lalu
+      // lintas memang `general` (pesan tanpa pertanyaan), dan 4 dari 6 salah-klasifikasi
+      // melibatkan `general`. Menggerbangnya akan membuang fakta di hampir separuh giliran;
+      // melepasnya membuat giliran itu berperilaku persis seperti sebelum field ini ada.
+      const specificTopic = topic !== null && topic !== 'general'
+      if (specificTopic && item.topics && item.topics.length > 0) {
+        if (!item.topics.includes(topic)) return false
+      }
+      // Lapis 2 -- overlap token. Setelah gerbang, ini alat PERINGKAT, bukan penentu masuk.
       const candidate = tokens(`${item.question} ${(item.tags ?? []).join(' ')}`)
       for (const word of candidate) if (asked.has(word)) return true
       return false
