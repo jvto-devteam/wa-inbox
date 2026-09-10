@@ -450,6 +450,109 @@ describe('managedFactsFor', () => {
         { sourceType: 'MANAGED', sourceKey: 'managed/atv', title: 'FAQ Harga ATV', version: 2 },
       ])
     })
+
+    // Ruling R73 (review fix round 1): setiap test R63 di atas memakai `mockEntries`, yang
+    // memaksa semua item ke SATU entri -- cabang komparator `entryIndex` di `collect` (dipakai
+    // saat dua item dari entri BERBEDA seri pada admittedByTopic dan overlapScore) tidak pernah
+    // teruji. Dua entri terpisah lewat `entry()`/`loadPublishedManagedKnowledge` langsung di
+    // sini, bukan `mockEntries`.
+    it('seri lintas BEBERAPA entri diputus oleh urutan entri, bukan hanya urutan item', async () => {
+      const entryA = entry({
+        sourceId: 'ks_a',
+        sourceKey: 'managed/a',
+        sourceTitle: 'FAQ Entri A',
+        revisionId: 'krev_a',
+        version: 1,
+        items: Array.from({ length: 5 }, (_, i) => ({
+          question: `Entry A pertanyaan nomor ${i}?`,
+          answer: `JawabanA${i}`,
+          topics: ['route_endpoint'],
+        })),
+      })
+      const entryB = entry({
+        sourceId: 'ks_b',
+        sourceKey: 'managed/b',
+        sourceTitle: 'FAQ Entri B',
+        revisionId: 'krev_b',
+        version: 1,
+        items: Array.from({ length: 5 }, (_, i) => ({
+          question: `Entry B pertanyaan nomor ${i}?`,
+          answer: `JawabanB${i}`,
+          topics: ['route_endpoint'],
+        })),
+      })
+      vi.mocked(loadPublishedManagedKnowledge).mockResolvedValue({
+        entries: [entryA, entryB],
+        available: true,
+        loadedAt: 0,
+      })
+
+      // Pesan tidak berbagi kata apa pun dengan pertanyaan item manapun -- semua 10 item lolos
+      // murni lewat topik (admittedByTopic=true, overlapScore=0 untuk semuanya), jadi SATU-
+      // satunya yang bisa memutus seri adalah urutan entri lalu urutan item.
+      const facts = await managedFactsFor('bisa drop off di kota lain?', 'route_endpoint')
+
+      expect(facts.truncated).toBe(2)
+      // Entri A (entryIndex 0) menang penuh -- kelima itemnya masuk -- sebelum entri B
+      // (entryIndex 1) sempat menyumbang satu pun, persis seperti urutan asli entri/item.
+      expect(facts.lines).toEqual([
+        'Entry A pertanyaan nomor 0? — JawabanA0',
+        'Entry A pertanyaan nomor 1? — JawabanA1',
+        'Entry A pertanyaan nomor 2? — JawabanA2',
+        'Entry A pertanyaan nomor 3? — JawabanA3',
+        'Entry A pertanyaan nomor 4? — JawabanA4',
+        'Entry B pertanyaan nomor 0? — JawabanB0',
+        'Entry B pertanyaan nomor 1? — JawabanB1',
+        'Entry B pertanyaan nomor 2? — JawabanB2',
+      ])
+      expect(facts.refs.map((r) => r.sourceKey)).toEqual(['managed/a', 'managed/b'])
+    })
+
+    // Ruling R73 (review fix round 1): `refs` harus MENGECUALIKAN sebuah entri kalau plafon
+    // memotong habis semua itemnya -- entri lain yang sebagian/seluruh itemnya selamat tetap
+    // tercantum. Ini menguji baris skip-kosong di `collect` (`if (!itemIndices ||
+    // itemIndices.size === 0) return`), bukan cuma isi `lines`.
+    it('refs mengecualikan entri yang seluruh itemnya terpangkas plafon, sementara entri lain tetap tercantum', async () => {
+      const entryX = entry({
+        sourceId: 'ks_x',
+        sourceKey: 'managed/x',
+        sourceTitle: 'FAQ Entri X',
+        revisionId: 'krev_x',
+        version: 1,
+        // Persis mengisi plafon sendirian -- tidak menyisakan satu slot pun untuk entri Y.
+        items: Array.from({ length: MAX_MANAGED_ITEMS_PER_TURN }, (_, i) => ({
+          question: `Entry X pertanyaan nomor ${i}?`,
+          answer: `JawabanX${i}`,
+          topics: ['price'],
+        })),
+      })
+      const entryY = entry({
+        sourceId: 'ks_y',
+        sourceKey: 'managed/y',
+        sourceTitle: 'FAQ Entri Y',
+        revisionId: 'krev_y',
+        version: 1,
+        items: Array.from({ length: 3 }, (_, i) => ({
+          question: `Entry Y pertanyaan nomor ${i}?`,
+          answer: `JawabanY${i}`,
+          topics: ['price'],
+        })),
+      })
+      vi.mocked(loadPublishedManagedKnowledge).mockResolvedValue({
+        entries: [entryX, entryY],
+        available: true,
+        loadedAt: 0,
+      })
+
+      const facts = await managedFactsFor('oke, saya mengerti sekarang', 'price')
+
+      expect(facts.truncated).toBe(3)
+      expect(facts.lines).toHaveLength(MAX_MANAGED_ITEMS_PER_TURN)
+      expect(facts.lines.every((line) => line.includes('JawabanX'))).toBe(true)
+      // Entri Y kehilangan SEMUA itemnya ke plafon -- sourceKey-nya tidak boleh nongol di refs
+      // sama sekali, bukan cuma tidak punya baris.
+      expect(facts.refs.map((r) => r.sourceKey)).toEqual(['managed/x'])
+    })
   })
 })
 
