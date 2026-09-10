@@ -137,7 +137,8 @@ describe('handoffReplyText', () => {
 
 describe('managedFactsFor', () => {
   it('returns nothing when no managed knowledge is published', async () => {
-    expect(await managedFactsFor('Berapa harga ATV?', null)).toEqual({ lines: [], refs: [] })
+    // Ruling R25: gateBypassed sekarang bagian dari ManagedFacts -- EMPTY membawanya juga.
+    expect(await managedFactsFor('Berapa harga ATV?', null)).toEqual({ lines: [], refs: [], gateBypassed: false })
   })
 
   it('folds in an entry whose question shares a word with the message', async () => {
@@ -203,7 +204,8 @@ describe('managedFactsFor', () => {
   it('returns nothing rather than throwing when the loader fails', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => {})
     vi.mocked(loadPublishedManagedKnowledge).mockRejectedValue(new Error('db down'))
-    expect(await managedFactsFor('berapa harga ATV?', null)).toEqual({ lines: [], refs: [] })
+    // Ruling R25: gateBypassed sekarang bagian dari ManagedFacts -- EMPTY membawanya juga.
+    expect(await managedFactsFor('berapa harga ATV?', null)).toEqual({ lines: [], refs: [], gateBypassed: false })
   })
 
   it('returns nothing for a message with no usable words', async () => {
@@ -216,10 +218,15 @@ describe('managedFactsFor', () => {
       // Pertanyaan entri sengaja berbagi kata "surabaya" dengan pesan -- tanpa gerbang topik,
       // overlap token sendirian sudah cukup meloloskannya, jadi yang menolaknya di sini murni
       // gerbang topik, bukan kebetulan tidak ada kata yang cocok.
+      //
+      // Ruling R41: `true` dikirim sebagai hasCatalogFacts -- route_endpoint memang dijawab
+      // katalog di giliran nyata, jadi jaring (retry tanpa gerbang) TIDAK boleh menyala di sini.
+      // Tanpa `true`, test ini masih lolos tapi diam-diam berubah jadi kasus bypass (baris balik
+      // lewat jaring), bukan lagi bukti penolakan gerbang.
       mockEntries([
         { question: 'Berapa deposit di Surabaya?', answer: '20% dari total, dibayar di Surabaya.', topics: ['payment'] },
       ])
-      const facts = await managedFactsFor('bisa drop off di surabaya?', 'route_endpoint')
+      const facts = await managedFactsFor('bisa drop off di surabaya?', 'route_endpoint', true)
       expect(facts.lines).toEqual([])
     })
 
@@ -244,6 +251,36 @@ describe('managedFactsFor', () => {
       ])
       const facts = await managedFactsFor('deposit bisa dibayar di surabaya?', 'general')
       expect(facts.lines).toHaveLength(1)
+    })
+  })
+
+  describe('jaring saat gerbang menghasilkan nol (Ruling R41)', () => {
+    it('mengulang tanpa gerbang saat gerbang menghasilkan nol, dan menandainya', async () => {
+      mockEntries([
+        { question: 'Bisa selesai di Malang?', answer: 'Bisa.', topics: ['route_endpoint'] },
+      ])
+      const facts = await managedFactsFor('bisa selesai di malang?', 'price')
+      expect(facts.lines).toHaveLength(1)
+      expect(facts.gateBypassed).toBe(true)
+    })
+
+    it('tidak menandai bypass saat gerbang memang menghasilkan baris', async () => {
+      mockEntries([
+        { question: 'Bisa selesai di Malang?', answer: 'Bisa.', topics: ['route_endpoint'] },
+      ])
+      const facts = await managedFactsFor('bisa selesai di malang?', 'route_endpoint')
+      expect(facts.gateBypassed).toBe(false)
+    })
+
+    // Ruling R41: kalau katalog SUDAH punya fakta untuk giliran ini, jaring tidak boleh
+    // menyala -- fixture sama dengan test bypass di atas, bedanya hanya hasCatalogFacts=true.
+    it('tidak mengulang tanpa gerbang saat katalog sudah punya fakta untuk giliran ini', async () => {
+      mockEntries([
+        { question: 'Bisa selesai di Malang?', answer: 'Bisa.', topics: ['route_endpoint'] },
+      ])
+      const facts = await managedFactsFor('bisa selesai di malang?', 'price', true)
+      expect(facts.lines).toEqual([])
+      expect(facts.gateBypassed).toBe(false)
     })
   })
 })

@@ -724,6 +724,41 @@ describe('decideAndRespond', () => {
     expect(result.steps?.find((s) => s.label === 'Knowledge terkelola dipakai')?.detail).toContain('Kebijakan Pembayaran (v3)')
   })
 
+  // Ruling R41: the safety net (managedFactsFor's ungated retry) must stay OFF on a turn the
+  // catalog already answered -- otherwise it readmits the exact cross-topic entry the topic
+  // gate just rejected, undoing Task 5's whole point. The `hasCatalogFacts` third argument is
+  // optional in managedFactsFor's own signature, so `tsc` cannot catch a call site that forgets
+  // to pass it -- only an assertion against a real, non-empty catalog fact can.
+  it('does not let a rejected cross-topic managed entry back in via the safety net when the catalog already answered (no-destination branch, R41)', async () => {
+    ;vi.mocked(ensureFreshBookingData).mockResolvedValue(null)
+    ;vi.mocked(classifySalesNeed).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
+    ;vi.mocked(matchDestination).mockReturnValue(null)
+    ;vi.mocked(listDestinations).mockReturnValue(['Bromo', 'Ijen'])
+    ;vi.mocked(classifyTopicViaLLM).mockResolvedValue({ topic: 'payment', source: 'llm' })
+    // resolveKnowledgeForTopic keeps the file's default non-empty factualLines -- that IS the
+    // catalog fact this test needs, deliberately not overridden.
+    ;vi.mocked(loadPublishedManagedKnowledge).mockResolvedValue({
+      entries: [
+        {
+          sourceId: 'ks_1',
+          sourceKey: 'managed/route',
+          sourceTitle: 'FAQ Rute',
+          revisionId: 'krev_1',
+          version: 1,
+          items: [{ question: 'Bisa selesai di Malang?', answer: 'Bisa, tanpa biaya tambahan.', topics: ['route_endpoint'] }],
+        },
+      ],
+      available: true,
+      loadedAt: 0,
+    })
+
+    const result = await decideAndRespond('conv_1', 'Bisa selesai di Malang dengan bayar deposit?')
+
+    expect(result.mode).toBe('faq')
+    const [, opts] = llmCall(0)
+    expect(opts.system).not.toContain('Bisa, tanpa biaya tambahan.')
+  })
+
   // A dietary/allergy mention has no dedicated topic keyword bucket at all (module-resolver.ts
   // -- confirmed 2026-08-05), so classifyTopic genuinely falls through to 'general', which is
   // deliberately NOT in DESTINATION_INDEPENDENT_TOPICS. It's only answerable here because
@@ -3117,6 +3152,39 @@ describe('decideAndRespond', () => {
       const [, opts] = llmCall(0)
       expect(opts.system).toContain('Package the customer is asking about: Ijen from Surabaya to Bali')
     })
+  })
+
+  // Ruling R41: same guarantee as the no-destination-branch test above, for the catalog
+  // branch's own managedFactsFor call site. `hasCatalogFacts` is optional in the signature, so
+  // `tsc` cannot catch a call site that forgets to pass it -- only this assertion can.
+  it('does not let a rejected cross-topic managed entry back in via the safety net when the catalog already answered (catalog branch, R41)', async () => {
+    ;vi.mocked(ensureFreshBookingData).mockResolvedValue(null)
+    ;vi.mocked(classifySalesNeed).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
+    ;vi.mocked(matchDestination).mockReturnValue({ destination: 'ijen', matches: [pkg()] })
+    ;vi.mocked(checkRouteGate).mockReturnValue({ status: 'clear' })
+    ;vi.mocked(classifyTopicViaLLM).mockResolvedValue({ topic: 'inclusions', source: 'llm' })
+    // resolveKnowledgeForTopic keeps the file's default non-empty factualLines -- that IS the
+    // catalog fact this test needs, deliberately not overridden.
+    ;vi.mocked(loadPublishedManagedKnowledge).mockResolvedValue({
+      entries: [
+        {
+          sourceId: 'ks_1',
+          sourceKey: 'managed/payment',
+          sourceTitle: 'Kebijakan Pembayaran',
+          revisionId: 'krev_1',
+          version: 1,
+          items: [{ question: 'Fasilitas spa termasuk paket?', answer: 'Ya, sudah termasuk voucher spa gratis.', topics: ['payment'] }],
+        },
+      ],
+      available: true,
+      loadedAt: 0,
+    })
+
+    const result = await decideAndRespond('conv_1', 'Apa saja fasilitas spa yang termasuk di paket Ijen?')
+
+    expect(result.mode).toBe('faq')
+    const [, opts] = llmCall(0)
+    expect(opts.system).not.toContain('Ya, sudah termasuk voucher spa gratis.')
   })
 })
 

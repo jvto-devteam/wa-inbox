@@ -884,7 +884,7 @@ async function runNoDestinationBranch(
     // deposit question answered purely by a managed FAQ, with nothing in the catalog for
     // "payment" pre-destination) falls through to the generic "which destination?" reply
     // instead of actually answering.
-    const managed = await managedFactsFor(inboundText, resolverTopic)
+    const managed = await managedFactsFor(inboundText, resolverTopic, preDestinationKnowledge.factualLines.length > 0)
     if (managed.lines.length > 0) {
       preDestinationKnowledge.factualLines.push(...managed.lines)
       trace.push(
@@ -1535,7 +1535,7 @@ export async function decideAndRespond(
     // replace anything would let a web form silently contradict the released packages with no
     // way to see which one answered. Only entries whose question or tags share a word with this
     // message are folded in — see managedFactsFor for why a crude match is the right one here.
-    const managed = await managedFactsFor(inboundText, resolverTopic)
+    const managed = await managedFactsFor(inboundText, resolverTopic, knowledge.factualLines.length > 0)
     if (managed.lines.length > 0) {
       knowledge.factualLines.push(...managed.lines)
       trace.push(

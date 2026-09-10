@@ -15,7 +15,7 @@
  * unpredictable one.
  */
 import { prisma } from '@/lib/db'
-import { loadPublishedManagedKnowledge, type KnowledgeRef } from '@/lib/bot/managed-knowledge'
+import { loadPublishedManagedKnowledge, type KnowledgeRef, type ManagedKnowledge } from '@/lib/bot/managed-knowledge'
 import type { ResolverTopic } from './module-resolver'
 
 /**
@@ -122,9 +122,17 @@ export type ManagedFacts = {
   lines: string[]
   /** Trace refs, labelled MANAGED so a reader can tell them from catalog facts. */
   refs: KnowledgeRef[]
+  /**
+   * True kalau gerbang topik menghasilkan NOL baris lalu diulang tanpa gerbang.
+   *
+   * Ini gejala klasifikasi meleset, bukan kondisi normal. Dicatat di trace supaya
+   * frekuensinya bisa dihitung -- kalau sering, gerbangnya lebih merugikan daripada
+   * menolong dan harus ditinjau ulang.
+   */
+  gateBypassed: boolean
 }
 
-const EMPTY: ManagedFacts = { lines: [], refs: [] }
+const EMPTY: ManagedFacts = { lines: [], refs: [], gateBypassed: false }
 
 /**
  * Words too common to carry a topic.
@@ -157,35 +165,20 @@ function tokens(text: string): Set<string> {
 }
 
 /**
- * Managed knowledge relevant to one customer message.
+ * The matching core of `managedFactsFor`, factored out so it can be called twice in one turn:
+ * once gated by topic, and -- only when that yields nothing and the catalog itself has no
+ * answer either (Ruling R41) -- once more with `topic` forced to `null` to skip the gate.
  *
- * Matched rather than dumped. Folding EVERY published entry into every prompt would bury the
- * catalog facts the answer actually needs under unrelated ones, and the reply verifier would
- * then have more sourceable prices and URLs than the question ever called for — which is the
- * opposite of what `bot.no_invented_price` is protecting.
- *
- * The match is deliberately crude: a shared word of four letters or more between the customer's
- * message and the entry's question or tags. Something more clever (embeddings, an LLM judge)
- * would be another model call inside a turn that already spends its budget on several, and
- * would fail in ways nobody could read from a trace.
+ * The match itself is deliberately crude: a shared word of four letters or more between the
+ * customer's message and the entry's question or tags. Something more clever (embeddings, an
+ * LLM judge) would be another model call inside a turn that already spends its budget on
+ * several, and would fail in ways nobody could read from a trace.
  */
-export async function managedFactsFor(
-  message: string,
-  topic: ResolverTopic | null,
-): Promise<ManagedFacts> {
-  let managed
-  try {
-    managed = await loadPublishedManagedKnowledge()
-  } catch (error) {
-    // The loader already fails open; this is belt-and-braces because the caller is a bot turn.
-    console.error('managedFactsFor: gagal memuat knowledge terkelola', { error })
-    return EMPTY
-  }
-  if (managed.entries.length === 0) return EMPTY
-
-  const asked = tokens(message)
-  if (asked.size === 0) return EMPTY
-
+function collect(
+  managed: ManagedKnowledge,
+  asked: Set<string>,
+  topic: ResolverTopic | null
+): { lines: string[]; refs: KnowledgeRef[] } {
   const lines: string[] = []
   const refs: KnowledgeRef[] = []
 
@@ -204,9 +197,7 @@ export async function managedFactsFor(
       // melibatkan `general`. Menggerbangnya akan membuang fakta di hampir separuh giliran;
       // melepasnya membuat giliran itu berperilaku persis seperti sebelum field ini ada.
       const specificTopic = topic !== null && topic !== 'general'
-      if (specificTopic && item.topics && item.topics.length > 0) {
-        if (!item.topics.includes(topic)) return false
-      }
+      if (specificTopic && item.topics?.length && !item.topics.includes(topic)) return false
       // Lapis 2 -- overlap token. Setelah gerbang, ini alat PERINGKAT, bukan penentu masuk.
       const candidate = tokens(`${item.question} ${(item.tags ?? []).join(' ')}`)
       for (const word of candidate) if (asked.has(word)) return true
@@ -233,6 +224,61 @@ export async function managedFactsFor(
   }
 
   return { lines, refs }
+}
+
+/**
+ * Managed knowledge relevant to one customer message.
+ *
+ * Matched rather than dumped. Folding EVERY published entry into every prompt would bury the
+ * catalog facts the answer actually needs under unrelated ones, and the reply verifier would
+ * then have more sourceable prices and URLs than the question ever called for — which is the
+ * opposite of what `bot.no_invented_price` is protecting.
+ *
+ * Ruling R41 -- the safety net only runs when the catalog has no facts. When the topic gate
+ * (see `collect`) discards every entry, that can mean two different things: the topic really
+ * has nothing to add (fine), or the topic classifier guessed wrong and just threw away a real
+ * answer (not fine). This function cannot tell those apart, so it resolves the ambiguity with
+ * `hasCatalogFacts`, which the caller computes from what it already resolved BEFORE calling
+ * here: if the catalog already has an answer for this turn, one is not missing, so retrying
+ * ungated would only readmit the exact cross-topic entry the gate just rejected -- the opposite
+ * of the gate's purpose (Task 5) and enough to fail Task 5's own rejection test if it ran on
+ * every turn. Only when the catalog is ALSO silent does a rough, ungated answer beat none at
+ * all -- and even then, it is marked `gateBypassed: true` so how often this fires can be
+ * counted, not hidden.
+ */
+export async function managedFactsFor(
+  message: string,
+  topic: ResolverTopic | null,
+  hasCatalogFacts = false
+): Promise<ManagedFacts> {
+  let managed
+  try {
+    managed = await loadPublishedManagedKnowledge()
+  } catch (error) {
+    // The loader already fails open; this is belt-and-braces because the caller is a bot turn.
+    console.error('managedFactsFor: gagal memuat knowledge terkelola', { error })
+    return EMPTY
+  }
+  if (managed.entries.length === 0) return EMPTY
+
+  const asked = tokens(message)
+  if (asked.size === 0) return EMPTY
+
+  const gated = collect(managed, asked, topic)
+  if (gated.lines.length > 0) return { ...gated, gateBypassed: false }
+
+  // Gerbang menghasilkan nol baris. Jaring (retry tanpa gerbang) HANYA berjalan kalau giliran
+  // ini memang belum punya jawaban dari katalog (Ruling R41) -- kalau katalog sudah menjawab,
+  // mengulang di sini hanya memasukkan kembali entri lintas-topik yang baru saja ditolak
+  // gerbang, kebalikan dari tujuan gerbang itu sendiri.
+  if (hasCatalogFacts) return { ...gated, gateBypassed: false }
+
+  // Ini bisa berarti dua hal: memang tidak ada fakta yang relevan (wajar), atau klasifikasi
+  // meleset dan fakta yang benar baru saja dibuang (tidak wajar). Kita tidak bisa
+  // membedakannya di sini, jadi kita pilih sisi yang lebih murah salahnya -- jawab dengan
+  // bahan seadanya, lalu tandai supaya bisa dihitung.
+  const ungated = collect(managed, asked, null)
+  return { ...ungated, gateBypassed: ungated.lines.length > 0 }
 }
 
 /**
