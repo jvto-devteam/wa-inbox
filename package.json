@@ -10,6 +10,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "sync:knowledge": "tsx scripts/sync-agent-catalog.ts",
+    "verify:revisions": "tsx scripts/verify-published-revisions-parse.ts",
     "approve:deployment": "tsx scripts/approve-deployment.ts",
     "eval": "tsx src/lib/bot/eval/run-eval.ts",
     "measure:topic-accuracy": "tsx scripts/measure-topic-accuracy.ts",

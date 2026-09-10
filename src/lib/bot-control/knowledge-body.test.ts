@@ -75,6 +75,25 @@ describe('validateKnowledgeBody', () => {
     expect(validateKnowledgeBody('teks biasa').ok).toBe(false)
     expect(validateKnowledgeBody([valid.items[0]]).ok).toBe(false)
   })
+
+  it('menerima topics yang valid', () => {
+    const result = validateKnowledgeBody({
+      items: [{ question: 'Berapa deposit?', answer: '20% dari total.', topics: ['payment'] }],
+    })
+    expect(result.ok).toBe(true)
+  })
+
+  it('menolak topik di luar 14 nilai ResolverTopic', () => {
+    const result = validateKnowledgeBody({
+      items: [{ question: 'Q', answer: 'A', topics: ['tidak_ada_topik_ini'] }],
+    })
+    expect(result.ok).toBe(false)
+  })
+
+  it('item tanpa topics tetap valid — nol revisi lama rusak', () => {
+    const result = validateKnowledgeBody({ items: [{ question: 'Q', answer: 'A' }] })
+    expect(result.ok).toBe(true)
+  })
 })
 
 describe('readKnowledgeBody', () => {

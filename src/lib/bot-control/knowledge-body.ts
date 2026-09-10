@@ -16,6 +16,7 @@
  * indistinguishable from one the model made up, and the verifier cannot tell them apart.
  */
 import { z } from 'zod'
+import { RESOLVER_TOPICS } from '@/lib/bot/module-resolver'
 
 /** A price the bot is permitted to quote, with the currency stated rather than assumed. */
 export const knowledgePriceSchema = z
@@ -43,6 +44,17 @@ export const knowledgeItemSchema = z
     question: z.string().trim().min(1).max(1000),
     answer: z.string().trim().min(1).max(5000),
     tags: z.array(z.string().trim().min(1).max(60)).max(20).optional(),
+    /**
+     * Topik yang DILAYANI fakta ini — gerbang relevansi di runtime-integration.ts.
+     *
+     * OPSIONAL dengan sengaja: item tanpa `topics` berperilaku persis seperti sebelum
+     * field ini ada (overlap token), sehingga nol revisi PUBLISHED yang sudah terbit
+     * menjadi tidak terbaca. Jangan pernah menjadikannya wajib tanpa backfill terverifikasi.
+     *
+     * Boleh LEBIH DARI SATU: satu fakta sering melayani beberapa jenis pertanyaan
+     * (drop-off Malang yang memuat surcharge melayani route_endpoint DAN price).
+     */
+    topics: z.array(z.enum(RESOLVER_TOPICS)).max(14).optional(),
     links: z.array(knowledgeLinkSchema).max(20).optional(),
     prices: z.array(knowledgePriceSchema).max(50).optional(),
   })

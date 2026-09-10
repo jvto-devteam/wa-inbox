@@ -18,17 +18,14 @@
  * default" shape.
  */
 import { callLLM } from './llm'
-import { classifyTopic, type ResolverTopic } from './module-resolver'
+import { classifyTopic, RESOLVER_TOPICS, type ResolverTopic } from './module-resolver'
 
 export type TopicClassification = {
   topic: ResolverTopic
   source: 'llm' | 'regex_fallback'
 }
 
-const VALID_TOPICS = new Set<ResolverTopic>([
-  'inclusions', 'price', 'private_tour', 'vehicle', 'rooming', 'hotel', 'route_endpoint',
-  'destination_readiness', 'booking', 'payment', 'cancellation', 'blue_fire', 'greeting', 'general',
-])
+const VALID_TOPICS = new Set<ResolverTopic>(RESOLVER_TOPICS)
 
 const TOPIC_CLASSIFICATION_SYSTEM_PROMPT = `You classify a customer's WhatsApp message to a private tour operator (JVTO) in East Java, Indonesia into exactly ONE of these 14 topics, based on what the message actually means -- not just which literal words it contains.
 

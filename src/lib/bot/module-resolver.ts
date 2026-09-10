@@ -14,21 +14,13 @@
  */
 
 // Real: TOPICS (module_resolver.py:26-30), verbatim.
-export type ResolverTopic =
-  | 'inclusions'
-  | 'price'
-  | 'private_tour'
-  | 'vehicle'
-  | 'rooming'
-  | 'hotel'
-  | 'route_endpoint'
-  | 'destination_readiness'
-  | 'booking'
-  | 'payment'
-  | 'cancellation'
-  | 'blue_fire'
-  | 'greeting'
-  | 'general'
+/** 14 topik, sebagai NILAI — dipakai Zod dan multi-select editor, bukan hanya sebagai tipe. */
+export const RESOLVER_TOPICS = [
+  'inclusions', 'price', 'private_tour', 'vehicle', 'rooming', 'hotel', 'route_endpoint',
+  'destination_readiness', 'booking', 'payment', 'cancellation', 'blue_fire', 'greeting', 'general',
+] as const
+
+export type ResolverTopic = (typeof RESOLVER_TOPICS)[number]
 
 // Real: _TOPIC_KEYWORDS (module_resolver.py:51-65) -- a faithful port EXCEPT for two
 // deviations, both live-tested:
