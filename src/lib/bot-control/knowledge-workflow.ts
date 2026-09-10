@@ -38,8 +38,9 @@
 import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { writeBotAuditLog } from '@/lib/bot-control/audit'
-import { validateKnowledgeBody } from '@/lib/bot-control/knowledge-body'
+import { validateKnowledgeBody, type KnowledgeItem } from '@/lib/bot-control/knowledge-body'
 import { invalidateManagedKnowledgeCache } from '@/lib/bot/managed-knowledge'
+import { classifyFactTopics } from '@/lib/bot/fact-topic-classifier'
 
 /**
  * The states a revision can be in.
@@ -103,6 +104,49 @@ function managedKey(): string {
   return `managed/${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
 }
 
+/**
+ * Isi `topics` untuk item yang belum punya, dari classifier.
+ *
+ * Pilihan operator MENANG: item yang sudah punya `topics` tidak pernah disentuh, dan tidak
+ * pernah dikirim ke classifier. Classifier mengusulkan, manusia memutuskan -- itu yang membuat
+ * "kontrol operator jadi nyata" tetap berlaku sambil bebannya turun dari MENULIS jadi MEMERIKSA.
+ *
+ * Settings HANYA dibaca kalau ada item yang butuh klasifikasi -- query database yang tidak
+ * perlu untuk kasus paling umum (operator sudah mengisi semua topics). Model yang dipakai
+ * adalah `Settings.ollamaModel`, sama seperti yang dipakai orchestrator.ts untuk setiap
+ * classifier lain (lihat orchestrator.ts:1255-1256); tanpa itu classifier fakta diam-diam jatuh
+ * ke DEFAULT_OLLAMA_MODEL di llm.ts, mengabaikan pilihan model operator di /chatbot.
+ *
+ * Dipanggil SESUDAH `validateKnowledgeBody` (butuh `KnowledgeItem[]` yang sudah bertipe) dan
+ * SESUDAH setiap penjaga penolakan (tipe MANUAL, ARCHIVED, revisi terakhir), dan SEBELUM
+ * `prisma.$transaction` atau penulisan apa pun -- panggilan LLM bisa sampai 10 detik per item,
+ * dan menjalankannya di dalam transaksi menahan koneksi database selama model berpikir.
+ *
+ * Membaca Settings gagal-terbuka juga: sama seperti classifier itu sendiri, model yang tidak
+ * terbaca menurunkan mutu (classifier jatuh ke DEFAULT_OLLAMA_MODEL di llm.ts) tapi tidak boleh
+ * memblokir operator menyimpan.
+ */
+async function fillMissingTopics(items: KnowledgeItem[]): Promise<KnowledgeItem[]> {
+  const needsClassification = items.some((item) => !item.topics || item.topics.length === 0)
+  if (!needsClassification) return items
+
+  let model: string | undefined
+  try {
+    const row = await prisma.settings.findUnique({ where: { id: 1 }, select: { ollamaModel: true } })
+    model = row?.ollamaModel
+  } catch (error) {
+    console.error('failed to read Settings.ollamaModel for fact topic classification', { error })
+  }
+
+  return Promise.all(
+    items.map(async (item) => {
+      if (item.topics && item.topics.length > 0) return item
+      const topics = await classifyFactTopics(item.question, item.answer, model)
+      return topics.length > 0 ? { ...item, topics } : item
+    })
+  )
+}
+
 export type CreateSourceParams = {
   title: string
   summary?: string | null
@@ -121,6 +165,9 @@ export type CreateSourceParams = {
 export async function createManagedKnowledge(params: CreateSourceParams, actor: Actor): Promise<RevisionResult> {
   const validated = validateKnowledgeBody(params.body)
   if (!validated.ok) throw new KnowledgeNotEditableError(validated.error)
+
+  const items = await fillMissingTopics(validated.body.items)
+  const body = { ...validated.body, items }
 
   const result = await prisma.$transaction(async (tx) => {
     const source = await tx.knowledgeSource.create({
@@ -145,7 +192,7 @@ export async function createManagedKnowledge(params: CreateSourceParams, actor: 
         knowledgeSourceId: source.id,
         version: 1,
         title: params.title,
-        body: validated.body as unknown as Prisma.InputJsonValue,
+        body: body as unknown as Prisma.InputJsonValue,
         summary: params.summary ?? null,
         status: 'DRAFT',
         changeReason: params.reason,
@@ -213,6 +260,11 @@ export async function saveKnowledgeDraft(
   const title = params.title ?? latest.title
   const summary = params.summary === undefined ? latest.summary : params.summary
 
+  // Sesudah SEMUA penjaga di atas (tipe MANUAL, ARCHIVED, revisi terakhir ada) -- supaya tidak
+  // ada panggilan LLM untuk sumber yang toh akan ditolak -- dan sebelum penulisan apa pun.
+  const items = await fillMissingTopics(validated.body.items)
+  const body = { ...validated.body, items }
+
   // A DRAFT is the only thing that can be written over. Everything else is history.
   if (latest.status === 'DRAFT') {
     const updated = await prisma.knowledgeRevision.update({
@@ -220,7 +272,7 @@ export async function saveKnowledgeDraft(
       data: {
         title,
         summary,
-        body: validated.body as unknown as Prisma.InputJsonValue,
+        body: body as unknown as Prisma.InputJsonValue,
         changeReason: params.reason,
         createdBy: actor.id,
       },
@@ -237,7 +289,7 @@ export async function saveKnowledgeDraft(
       version: latest.version + 1,
       title,
       summary,
-      body: validated.body as unknown as Prisma.InputJsonValue,
+      body: body as unknown as Prisma.InputJsonValue,
       status: 'DRAFT',
       changeReason: params.reason,
       createdBy: actor.id,

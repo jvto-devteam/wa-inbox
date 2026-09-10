@@ -6,6 +6,7 @@ import { mockDeep, mockReset, type DeepMockProxy } from 'vitest-mock-extended'
 import type { Prisma, PrismaClient } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { writeBotAuditLog } from '@/lib/bot-control/audit'
+import { classifyFactTopics } from '@/lib/bot/fact-topic-classifier'
 import {
   archiveKnowledgeSource,
   createManagedKnowledge,
@@ -19,6 +20,7 @@ import {
 
 vi.mock('@/lib/db', () => ({ prisma: mockDeep<PrismaClient>() }))
 vi.mock('@/lib/bot-control/audit', () => ({ writeBotAuditLog: vi.fn() }))
+vi.mock('@/lib/bot/fact-topic-classifier', () => ({ classifyFactTopics: vi.fn() }))
 
 const mockPrisma = prisma as unknown as DeepMockProxy<PrismaClient>
 const mockTx = mockDeep<Prisma.TransactionClient>()
@@ -71,6 +73,10 @@ beforeEach(() => {
   mockTx.knowledgeRevision.updateMany.mockResolvedValue({ count: 0 } as never)
   mockTx.knowledgeRevision.update.mockResolvedValue(revision({ status: 'PUBLISHED' }))
   mockTx.knowledgeSource.update.mockResolvedValue(source())
+  // Default: classifier returns nothing, matching "kegagalan mengembalikan daftar kosong" --
+  // every pre-existing test above wrote items with no `topics` and must stay unaffected.
+  vi.mocked(classifyFactTopics).mockResolvedValue([])
+  mockPrisma.settings.findUnique.mockResolvedValue({ ollamaModel: 'gemma4:31b-cloud' } as never)
 })
 
 describe('createManagedKnowledge', () => {
@@ -115,6 +121,17 @@ describe('createManagedKnowledge', () => {
     // `changeReason` for whoever wants to know who typed it.
     await createManagedKnowledge({ title: 'x', body: BODY, reason: REASON }, actor)
     expect(writeBotAuditLog).not.toHaveBeenCalled()
+  })
+
+  it('mengisi topics dari classifier saat item disimpan tanpa topics', async () => {
+    vi.mocked(classifyFactTopics).mockResolvedValue(['booking'])
+    await createManagedKnowledge(
+      { title: 'x', body: { items: [{ question: 'Bagaimana cara booking?', answer: 'Lewat WhatsApp.' }] }, reason: REASON },
+      actor
+    )
+    expect(mockTx.knowledgeRevision.create.mock.calls[0][0].data.body).toMatchObject({
+      items: [{ topics: ['booking'] }],
+    })
   })
 })
 
@@ -189,6 +206,69 @@ describe('saveKnowledgeDraft', () => {
   it('keeps the existing title and summary when the caller sends neither', async () => {
     await saveKnowledgeDraft('ks_1', { body: BODY, reason: REASON }, actor)
     expect(mockPrisma.knowledgeRevision.update.mock.calls[0][0].data).toMatchObject({ title: 'FAQ Harga ATV' })
+  })
+
+  it('mengisi topics dari classifier saat item disimpan tanpa topics', async () => {
+    vi.mocked(classifyFactTopics).mockResolvedValue(['payment'])
+    await saveKnowledgeDraft(
+      'ks_1',
+      { body: { items: [{ question: 'Berapa deposit?', answer: '20%.' }] }, reason: REASON },
+      actor
+    )
+    expect(mockPrisma.knowledgeRevision.update.mock.calls[0][0].data.body).toMatchObject({
+      items: [{ topics: ['payment'] }],
+    })
+  })
+
+  it('TIDAK menimpa topics yang sudah diisi operator', async () => {
+    vi.mocked(classifyFactTopics).mockResolvedValue(['payment'])
+    await saveKnowledgeDraft(
+      'ks_1',
+      { body: { items: [{ question: 'Q', answer: 'A', topics: ['booking'] }] }, reason: REASON },
+      actor
+    )
+    expect(mockPrisma.knowledgeRevision.update.mock.calls[0][0].data.body).toMatchObject({
+      items: [{ topics: ['booking'] }],
+    })
+    expect(classifyFactTopics).not.toHaveBeenCalled()
+  })
+
+  it('tetap menyimpan saat classifier gagal (mengembalikan daftar kosong)', async () => {
+    vi.mocked(classifyFactTopics).mockResolvedValue([])
+    const result = await saveKnowledgeDraft(
+      'ks_1',
+      { body: { items: [{ question: 'Q', answer: 'A' }] }, reason: REASON },
+      actor
+    )
+    expect(result).toBeDefined()
+    expect(mockPrisma.knowledgeRevision.update).toHaveBeenCalled()
+  })
+
+  it('tidak memanggil classifier untuk sumber non-MANUAL -- penjaga tipe jalan lebih dulu', async () => {
+    mockPrisma.knowledgeSource.findUnique.mockResolvedValue(source({ type: 'IMPORTED' }))
+    await expect(
+      saveKnowledgeDraft('ks_1', { body: { items: [{ question: 'Q', answer: 'A' }] }, reason: REASON }, actor)
+    ).rejects.toBeInstanceOf(KnowledgeNotEditableError)
+    expect(classifyFactTopics).not.toHaveBeenCalled()
+  })
+
+  it('classifier menerima model dari Settings.ollamaModel', async () => {
+    mockPrisma.settings.findUnique.mockResolvedValue({ ollamaModel: 'llama3-local' } as never)
+    await saveKnowledgeDraft(
+      'ks_1',
+      { body: { items: [{ question: 'Q', answer: 'A' }] }, reason: REASON },
+      actor
+    )
+    expect(classifyFactTopics).toHaveBeenCalledWith('Q', 'A', 'llama3-local')
+  })
+
+  it('tidak membaca Settings bila semua item sudah punya topics', async () => {
+    await saveKnowledgeDraft(
+      'ks_1',
+      { body: { items: [{ question: 'Q', answer: 'A', topics: ['booking'] }] }, reason: REASON },
+      actor
+    )
+    expect(mockPrisma.settings.findUnique).not.toHaveBeenCalled()
   })
 })
 
