@@ -1544,6 +1544,61 @@ describe('decideAndRespond', () => {
     consoleError.mockRestore()
   })
 
+  // Ruling R85: the catch block used to return its clarify fallback WITHOUT going through
+  // attachClassification at all, so an unexpected exception that happened AFTER classification
+  // already ran lost topic/job entirely -- Task 16's cluster analysis would see NULL for a
+  // turn that had, in fact, already been classified. `ensureFreshBookingData` throws BEFORE
+  // `classifySalesNeed`/the topic classifier ever run (see the "before classification" test
+  // below for that case), so this test needs the failure to happen LATER: `matchDestination`
+  // already resolved the same destination the conversation already had on file (so the first
+  // `persistTripBrief` call, which runs before topic is set, is skipped because
+  // `destination === tripBrief.destination`), and `extractTripPreferences` reports an origin
+  // that differs from what's on file, forcing the SECOND `persistTripBrief` call -- which runs
+  // AFTER `turnClassification.topic` is set (orchestrator.ts's destination branch) -- to fire.
+  // Rejecting `$executeRaw` (persistTripBrief's own write) throws exactly there.
+  it('R85: carries topic and job when the exception happens AFTER classification already ran', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+    ;vi.mocked(ensureFreshBookingData).mockResolvedValue(null)
+    ;vi.mocked(classifySalesNeed).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
+    ;vi.mocked(matchDestination).mockReturnValue({ destination: 'ijen', matches: [pkg()] })
+    ;vi.mocked(extractTripPreferences).mockResolvedValue({
+      preferences: { origin: 'Bali', dayCount: null, finishCity: null, pax: null },
+      source: 'llm',
+    })
+    mockPrisma.conversation.findUniqueOrThrow.mockResolvedValue({
+      id: 'conv_1',
+      // Same destination matchDestination reports -- skips the FIRST persistTripBrief call
+      // (which runs BEFORE topic is classified), so the only $executeRaw call left is the
+      // SECOND one, which runs after turnClassification.topic is already set.
+      tripBrief: { destination: 'ijen' },
+      bookingData: null,
+      bookingCheckedAt: null,
+      contact: { phone: '6281234567890' },
+    } as never)
+    mockPrisma.$executeRaw.mockRejectedValue(new Error('tripBrief write failed'))
+
+    const result = await decideAndRespond('conv_1', 'saya mau ke ijen, dari Bali')
+
+    expect(result.mode).toBe('clarify')
+    expect(consoleError).toHaveBeenCalled()
+    expect(result).toMatchObject({ topic: 'inclusions', job: 'J1' })
+    expect(result).not.toHaveProperty('knowledge') // no knowledge-assembly site reached yet
+    consoleError.mockRestore()
+  })
+
+  it('R85: carries neither topic nor job when the exception happens BEFORE classification runs', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+    ;vi.mocked(ensureFreshBookingData).mockRejectedValue(new Error('booking api down'))
+
+    const result = await decideAndRespond('conv_1', 'Booking saya sudah lunas belum?')
+
+    expect(result.mode).toBe('clarify')
+    expect(result).not.toHaveProperty('topic')
+    expect(result).not.toHaveProperty('job')
+    expect(result).not.toHaveProperty('knowledge')
+    consoleError.mockRestore()
+  })
+
   it('hands off Mode 1/2 when the deployment gate is not ready for approval, citing the blocking reasons', async () => {
     ;vi.mocked(ensureFreshBookingData).mockResolvedValue(null)
     ;vi.mocked(checkDeploymentGate).mockReturnValue({

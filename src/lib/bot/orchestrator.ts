@@ -1110,6 +1110,18 @@ async function recordKnowledgeGap(
  * `knowledgeSink`, cabang katalog langsung di closure ini), dan ditempel oleh
  * `attachClassification` di titik yang SAMA. Deliberately BUKAN Mode 3 (lihat BotDecision's own
  * header di types.ts) -- knowledge Mode 3 adalah pekerjaan Task 11.
+ *
+ * Ruling R85: `runDecision()` sendiri hanya punya SATU titik tempel, seperti di atas -- tapi
+ * `runDecision()` bisa juga MELEMPAR, dan sebelum ruling ini `catch` di bawah mengembalikan
+ * keputusan clarify cadangannya TANPA memanggil `attachClassification` sama sekali, jadi
+ * kegagalan tak terduga SESUDAH klasifikasi selesai (mis. sebuah `await` lanjutan yang gagal)
+ * tercatat di Task 16 dengan topic/job NULL padahal keduanya sudah diketahui. `catch` sekarang
+ * memanggil `attachClassification` yang SAMA, dengan `turnClassification`/`turnKnowledge` apa
+ * pun yang sempat terisi sampai titik gagal -- persis nilai yang sama yang dipakai titik tempel
+ * di atas, hanya dari cabang lain (gagal, bukan berhasil). Keputusan yang gagal SEBELUM
+ * klasifikasi jalan (gerbang kata kunci eskalasi, kegagalan booking lookup) tetap menemukan
+ * `turnClassification` kosong dan jujur tidak membawa keduanya -- lihat orchestrator.test.ts
+ * untuk kedua kasus ini.
  */
 export async function decideAndRespond(
   conversationId: string,
@@ -2020,7 +2032,16 @@ export async function decideAndRespond(
     // file) now gets a graceful, bot-stays-active fallback -- TECHNICAL_HICCUP_REPLY is a
     // static string, safe to return even when the failure's root cause is unknown.
     trace.push('Terjadi kegagalan', 'Kesalahan tak terduga saat memproses -- tetap dijawab dengan pesan cadangan, bot tetap aktif.')
-    return { mode: 'clarify', reply: TECHNICAL_HICCUP_REPLY, steps: trace.steps }
+    // Ruling R85: SAMA seperti titik tempel di atas -- kalau `turnClassification`/`turnKnowledge`
+    // sudah sempat terisi sebelum kegagalan ini terjadi (exception SESUDAH klasifikasi selesai),
+    // keputusan clarify cadangan ini tetap membawanya, bukan kembali dengan topic/job NULL padahal
+    // sudah diketahui. Kosong (exception SEBELUM klasifikasi) tetap kosong -- lihat
+    // attachClassification's own header untuk kenapa keduanya tidak pernah ditulis sebagai
+    // `undefined` eksplisit.
+    return attachClassification(
+      { mode: 'clarify', reply: TECHNICAL_HICCUP_REPLY, steps: trace.steps },
+      { ...turnClassification, knowledge: turnKnowledge }
+    )
   }
 }
 
