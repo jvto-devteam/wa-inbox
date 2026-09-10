@@ -1649,6 +1649,23 @@ describe('decideAndRespond', () => {
       expect(note?.detail).toContain('Rp3.570.000')
     })
 
+    // Task 14 (reply-verifier.ts's guarantee check): same advisory severity as 'Harga perlu
+    // dicek' above -- recorded, never blocked, never rewritten. blue_fire is one of the two
+    // topics (NO_GUARANTEE_TOPICS) whose guardrail forbids promising anything.
+    it('records but still sends a blue_fire reply that promises a guarantee', async () => {
+      groundedMainPath({ priceIdr: 4050000, priceTiers: [{ minPax: 2, maxPax: 3, priceIdr: 4050000 }] })
+      vi.mocked(classifyTopicViaLLM).mockResolvedValue({ topic: 'blue_fire', source: 'llm' })
+      vi.mocked(callLLM).mockResolvedValue('Blue fire is guaranteed every night in May!')
+
+      const result = await decideAndRespond('conv_1', 'Is blue fire guaranteed if we book in May?')
+
+      expect(result).toMatchObject({ mode: 'faq', draft: 'Blue fire is guaranteed every night in May!' })
+      expect(vi.mocked(callLLM).mock.calls).toHaveLength(1)
+      const note = result.steps?.find((s) => s.label === 'Janji yang dilarang topik ini')
+      expect(note?.detail).toContain('guaranteed')
+      expect(result.verification?.guaranteeViolations).toEqual(['guaranteed'])
+    })
+
     it("stays quiet when the reply quotes this pax count's own tier, or a group total built from it", async () => {
       vi.mocked(ensureFreshBookingData).mockResolvedValue(null)
       vi.mocked(classifySalesNeed).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })

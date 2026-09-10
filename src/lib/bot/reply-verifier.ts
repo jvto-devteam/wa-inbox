@@ -32,6 +32,14 @@
 //
 //   - `unknownUrls` -- always blocked. Unlike a price, there is no arithmetic
 //     that could legitimately produce a URL the grounding never contained.
+//
+// Task 14 added a fourth, unrelated check that piggybacks on the same "verify what the
+// reply actually said" pass: `guaranteeViolations` -- the reply promising something
+// (blue_fire/destination_readiness) the guardrail says can never be promised. Same recorded-
+// not-blocked severity as `unverifiedPrices`, for the same reason: the failure is rare enough,
+// and a false positive expensive enough, that recording beats blocking until Task 15's
+// frequency data says otherwise. See `findGuaranteeViolations`'s own header below for why it
+// keeps its own phrase list instead of reusing knowledge.ts's `GUARANTEE_PHRASES`.
 
 /**
  * Rp-prefixed, or bare-number-with-an-Indonesian-magnitude-suffix.
@@ -124,6 +132,53 @@ export function isDerivableAmount(amount: number, allowed: number[]): boolean {
   return false
 }
 
+/**
+ * Topics whose guardrail forbids promising anything at all. Outside these, "guaranteed" is an
+ * ordinary word -- "your booking is guaranteed once the deposit clears" is not a violation.
+ *
+ * Stated limit (Ruling R37): Mode 3 (booking context, `runBookingContextMode` in
+ * orchestrator.ts) passes a fixed `topic: 'booking_context'` label rather than a real
+ * `ResolverTopic` -- it never classifies one -- so this check can never fire for an already-
+ * booked customer, no matter what the reply says.
+ */
+const NO_GUARANTEE_TOPICS = new Set(['blue_fire', 'destination_readiness'])
+
+/**
+ * The reply side's OWN promise-phrase list -- deliberately NOT knowledge.ts's
+ * `GUARANTEE_PHRASES` (Ruling R49). That list detects a customer DEMANDING a guarantee and is
+ * tuned wide for that job ('100%', 'certain'); run against a REPLY it would flag "All tours are
+ * 100% PRIVATE" (knowledge.ts's own FAQ first line) and "certain conditions" as violations. A
+ * false positive here corrupts the one thing this check exists to measure (how often the
+ * guardrail is actually broken), so this file keeps its own narrower, reply-side list: the
+ * `guarantee` word root and the one phrase that is unambiguously a promise.
+ */
+const GUARANTEE_ROOT = /\bguarantee(?:d|s)?\b/gi
+const DEFINITELY_OPEN_PHRASE = 'definitely be open'
+
+/**
+ * "cannot be guaranteed" / "isn't guaranteed" / "not guaranteed" is COMPLIANCE with the
+ * guardrail, not a violation of it. No `g` flag -- tested fresh per sentence below, never
+ * `.exec`/`.test`-looped, so there is no `lastIndex` state to worry about.
+ */
+const NEGATED_PROMISE = /\b(?:not|never|cannot|can't|can not|isn't|aren't|won't|no)\s+(?:be\s+)?(?:always\s+)?guarante/i
+
+/**
+ * Every promise phrase found in `replyText` that this turn's topic's guardrail forbids making,
+ * evaluated PER SENTENCE rather than across the whole reply -- "Blue fire is guaranteed! Refunds
+ * are not guaranteed." must still flag the first sentence; a negation later in the reply must
+ * never mask an earlier, real violation.
+ */
+function findGuaranteeViolations(replyText: string, topic: string | undefined): string[] {
+  if (!topic || !NO_GUARANTEE_TOPICS.has(topic)) return []
+  const violations: string[] = []
+  for (const sentence of (replyText ?? '').split(/(?<=[.!?])\s+/).filter((s) => s.trim().length > 0)) {
+    if (NEGATED_PROMISE.test(sentence)) continue
+    for (const match of sentence.matchAll(GUARANTEE_ROOT)) violations.push(match[0].toLowerCase())
+    if (sentence.toLowerCase().includes(DEFINITELY_OPEN_PHRASE)) violations.push(DEFINITELY_OPEN_PHRASE)
+  }
+  return [...new Set(violations)]
+}
+
 const URL_PATTERN = /https?:\/\/[^\s<>()"']+/gi
 
 /** Trailing punctuation is sentence formatting, not part of the URL. */
@@ -138,6 +193,12 @@ export type VerificationResult = {
   unverifiedPrices: number[]
   /** Not in the link registry or any package link for this turn -- block. */
   unknownUrls: string[]
+  /**
+   * A reply-side promise phrase (see `findGuaranteeViolations`'s header) on a topic whose
+   * guardrail forbids making one -- recorded, never blocked (Ruling R49). Always `[]` when
+   * `topic` was omitted or is outside `NO_GUARANTEE_TOPICS`.
+   */
+  guaranteeViolations: string[]
 }
 
 /**
@@ -158,10 +219,21 @@ export type ReplyVerification = {
   fabricatedPrices: number[]
   unverifiedPrices: number[]
   unknownUrls: string[]
+  guaranteeViolations: string[]
 }
 
-export function verifyReply(params: { replyText: string; groundedAmounts: number[]; groundedUrls: string[] }): VerificationResult {
-  const { replyText, groundedAmounts, groundedUrls } = params
+export function verifyReply(params: {
+  replyText: string
+  groundedAmounts: number[]
+  groundedUrls: string[]
+  /**
+   * The turn's `ResolverTopic`, when known -- drives the guarantee-violation check only
+   * (Ruling R37). Optional and unused by the price/URL checks above it, which is why every
+   * pre-existing call kept working without it.
+   */
+  topic?: string
+}): VerificationResult {
+  const { replyText, groundedAmounts, groundedUrls, topic } = params
   const fabricatedPrices: number[] = []
   const unverifiedPrices: number[] = []
   for (const amount of extractRupiahAmounts(replyText)) {
@@ -175,7 +247,12 @@ export function verifyReply(params: { replyText: string; groundedAmounts: number
   // routinely adds one and that is formatting, not a different page.
   const allowed = new Set(groundedUrls.map((u) => u.replace(/\/+$/, '')))
   const unknownUrls = [...new Set(extractUrls(replyText).filter((u) => !allowed.has(u.replace(/\/+$/, ''))))]
-  return { fabricatedPrices: [...new Set(fabricatedPrices)], unverifiedPrices: [...new Set(unverifiedPrices)], unknownUrls }
+  return {
+    fabricatedPrices: [...new Set(fabricatedPrices)],
+    unverifiedPrices: [...new Set(unverifiedPrices)],
+    unknownUrls,
+    guaranteeViolations: findGuaranteeViolations(replyText, topic),
+  }
 }
 
 // No replacement reply constant lives here: a twice-failed verification returns

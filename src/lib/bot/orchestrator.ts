@@ -631,7 +631,7 @@ async function composeVerifiedReply(params: {
   // -- the customer treats it as a quote -- and the link registry has already
   // shipped 18 broken "existing" URLs once (see knowledge.ts). One corrective
   // retry, then a safe deferral: never a fabricated number, never a dead link.
-  let verdict = verifyReply({ replyText: reply, groundedAmounts, groundedUrls })
+  let verdict = verifyReply({ replyText: reply, groundedAmounts, groundedUrls, topic })
   let attempts = 1
   if (verdict.fabricatedPrices.length > 0 || verdict.unknownUrls.length > 0) {
     attempts = 2
@@ -644,7 +644,7 @@ async function composeVerifiedReply(params: {
       model,
       history,
     })
-    const retriedVerdict = retried?.trim() ? verifyReply({ replyText: retried, groundedAmounts, groundedUrls }) : null
+    const retriedVerdict = retried?.trim() ? verifyReply({ replyText: retried, groundedAmounts, groundedUrls, topic }) : null
     if (retried?.trim() && retriedVerdict && retriedVerdict.fabricatedPrices.length === 0 && retriedVerdict.unknownUrls.length === 0) {
       reply = retried
       verdict = retriedVerdict
@@ -685,6 +685,18 @@ async function composeVerifiedReply(params: {
     trace.push(
       'Harga perlu dicek',
       `Balasan menyebut ${verdict.unverifiedPrices.map((a) => `Rp${a.toLocaleString('id-ID')}`).join(', ')} yang bukan tier langsung dari katalog (mungkin hasil hitungan) -- tetap dikirim.`
+    )
+  }
+
+  // Task 14 (reply-verifier.ts's guarantee check): same advisory severity as the price check
+  // above it, and read off the same FINAL verdict for the same reason -- a promise that
+  // survives an accepted rewrite must still be recorded, not just one in a reply that passed
+  // first time. Never blocks and never changes `reply`: see reply-verifier.ts's header for why
+  // recording beats blocking here.
+  if (verdict.guaranteeViolations.length > 0) {
+    trace.push(
+      'Janji yang dilarang topik ini',
+      `Balasan memuat kata jaminan (${verdict.guaranteeViolations.join(', ')}) pada topik "${topic}", yang guardrail-nya melarang menjanjikan apa pun -- tetap dikirim, dicatat untuk dipantau.`
     )
   }
 
@@ -731,6 +743,7 @@ function summariseVerdict(verdict: VerificationResult) {
     fabricatedPrices: verdict.fabricatedPrices,
     unverifiedPrices: verdict.unverifiedPrices,
     unknownUrls: verdict.unknownUrls,
+    guaranteeViolations: verdict.guaranteeViolations,
   }
 }
 

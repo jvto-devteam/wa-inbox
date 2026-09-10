@@ -33,7 +33,7 @@ describe('verifyReply', () => {
         groundedAmounts: tiers,
         groundedUrls: urls,
       })
-    ).toEqual({ fabricatedPrices: [], unverifiedPrices: [], unknownUrls: [] })
+    ).toEqual({ fabricatedPrices: [], unverifiedPrices: [], unknownUrls: [], guaranteeViolations: [] })
   })
 
   it('blocks a price when the grounding published none at all', () => {
@@ -76,12 +76,86 @@ describe('verifyReply', () => {
   })
 })
 
+describe('verifyReply guarantee violations', () => {
+  it('menandai balasan yang menjanjikan Blue Fire', () => {
+    const result = verifyReply({ replyText: 'Blue fire is guaranteed in May!', groundedAmounts: [], groundedUrls: [], topic: 'blue_fire' })
+    expect(result.guaranteeViolations).toContain('guaranteed')
+  })
+
+  it('tidak menandai kata jaminan pada topik yang tidak diatur', () => {
+    const result = verifyReply({
+      replyText: 'Your booking is guaranteed once the deposit clears.',
+      groundedAmounts: [],
+      groundedUrls: [],
+      topic: 'payment',
+    })
+    expect(result.guaranteeViolations).toEqual([])
+  })
+
+  it('tidak menandai balasan yang justru menyangkal jaminan', () => {
+    const result = verifyReply({
+      replyText: 'Blue fire cannot be guaranteed — it depends on conditions.',
+      groundedAmounts: [],
+      groundedUrls: [],
+      topic: 'blue_fire',
+    })
+    expect(result.guaranteeViolations).toEqual([])
+  })
+
+  // Ruling R49: reply-verifier owns its OWN reply-side phrase list, deliberately narrower than
+  // knowledge.ts's GUARANTEE_PHRASES (which is tuned to detect a customer DEMANDING a guarantee,
+  // not to judge a reply -- it includes '100%' and 'certain', which would flag "All tours are
+  // 100% PRIVATE" (knowledge.ts's own FAQ first line) and "certain conditions" as violations).
+  it('tidak menandai "100% private" pada topik blue_fire', () => {
+    const result = verifyReply({
+      replyText: 'All tours are 100% PRIVATE, just you and your guide.',
+      groundedAmounts: [],
+      groundedUrls: [],
+      topic: 'blue_fire',
+    })
+    expect(result.guaranteeViolations).toEqual([])
+  })
+
+  it('tidak menandai "certain conditions" pada topik blue_fire', () => {
+    const result = verifyReply({
+      replyText: 'Blue fire is visible under certain conditions.',
+      groundedAmounts: [],
+      groundedUrls: [],
+      topic: 'blue_fire',
+    })
+    expect(result.guaranteeViolations).toEqual([])
+  })
+
+  it('tidak menandai "isn\'t guaranteed"', () => {
+    const result = verifyReply({
+      replyText: "Blue fire isn't guaranteed every night.",
+      groundedAmounts: [],
+      groundedUrls: [],
+      topic: 'blue_fire',
+    })
+    expect(result.guaranteeViolations).toEqual([])
+  })
+
+  // Negasi dinilai PER KALIMAT: negasi di kalimat lain tidak boleh menutupi pelanggaran nyata
+  // di kalimat ini.
+  it('tidak membiarkan negasi di kalimat lain menutupi pelanggaran nyata', () => {
+    const result = verifyReply({
+      replyText: 'Blue fire is guaranteed! Refunds are not guaranteed.',
+      groundedAmounts: [],
+      groundedUrls: [],
+      topic: 'blue_fire',
+    })
+    expect(result.guaranteeViolations).toContain('guaranteed')
+  })
+})
+
 describe('buildVerificationRetryInstruction', () => {
   it('names both the fabricated prices and the unknown links, and never the merely-unverified ones', () => {
     const instruction = buildVerificationRetryInstruction({
       fabricatedPrices: [2000000],
       unverifiedPrices: [9999999],
       unknownUrls: ['https://javavolcano-touroperator.com/tours/made-up-package'],
+      guaranteeViolations: [],
     })
     expect(instruction).toContain('Rp2.000.000')
     expect(instruction).toContain('https://javavolcano-touroperator.com/tours/made-up-package')
