@@ -1,5 +1,6 @@
 import { unlink } from 'fs/promises'
 import path from 'path'
+import type { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { sendMetaText, sendMetaMedia } from '@/lib/meta/messages'
 import { uploadMetaMediaFromUrl } from '@/lib/meta/media-upload'
@@ -10,6 +11,23 @@ import { broadcast } from '@/lib/realtime'
 import { withMediaUrl } from '@/lib/serialize-message'
 import { enqueueOutboundJob } from '@/lib/outbound/queue'
 import { processOutboundJob } from '@/lib/outbound/worker'
+import { sanitizeTrace } from '@/lib/bot-control/trace-sanitizer'
+
+/**
+ * `Message.botTrace` is this app's OTHER botTrace write -- `BotDecisionRun.trace`/
+ * `knowledgeRefs` (decision-recorder.ts) already go through `sanitizeTrace` before the write,
+ * but this column, the popover's primary data source (bot-safety.md: it must stay written),
+ * did not. Sanitized ONCE here, at the one module every send path funnels through (direct,
+ * blocked, and the queued Unofficial path via `sendViaQueue`), rather than at each call site in
+ * inbound.ts -- that covers every current AND future caller, not just today's two. A secret
+ * that reaches the database is permanent (decision-recorder.ts's own header), so this runs
+ * BEFORE the write, exactly like `trace`/`knowledgeRefs` already do.
+ */
+function sanitizedBotTrace(botTrace: unknown): Prisma.InputJsonValue | undefined {
+  if (botTrace === undefined) return undefined
+  const value = sanitizeTrace(botTrace)
+  return value === null ? undefined : (value as Prisma.InputJsonValue)
+}
 
 /**
  * Removes an agent's uploaded attachment from local disk (see POST /api/uploads) once Meta has
@@ -65,6 +83,11 @@ export async function sendMessage(params: {
   replyToId?: string
   media?: OutboundMedia
 }) {
+  // Sanitized ONCE, here, before any of this function's three writes (blocked below, the
+  // direct write further down, and sendViaQueue's own write, which receives this already-
+  // sanitized value rather than the raw params.botTrace).
+  const botTrace = sanitizedBotTrace(params.botTrace)
+
   // The capability matrix decides both WHICH channel carries this send and whether it may go
   // out at all. SDD Manage Second §15 Phase H task 4.
   const capability = capabilityForSend(params.media)
@@ -95,7 +118,7 @@ export async function sendMessage(params: {
         channel,
         sentBy: params.sentBy,
         agentId: params.agentId,
-        botTrace: params.botTrace as never,
+        botTrace: botTrace as never,
         deliveryStatus: 'FAILED',
         replyToId: params.replyToId,
       },
@@ -119,7 +142,9 @@ export async function sendMessage(params: {
   //
   // The sandbox conversation still short-circuits everything, exactly as before.
   if (channel === 'UNOFFICIAL' && !conversation.isTest) {
-    return sendViaQueue({ ...params, conversation, channel })
+    // Already sanitized above -- sendViaQueue's own write must not sanitize a second time
+    // (idempotent, but pointless) or, worse, skip it by reaching for params.botTrace directly.
+    return sendViaQueue({ ...params, botTrace, conversation, channel })
   }
 
   let externalId: string | undefined
@@ -205,7 +230,7 @@ export async function sendMessage(params: {
       channel,
       sentBy: params.sentBy,
       agentId: params.agentId,
-      botTrace: params.botTrace as never,
+      botTrace: botTrace as never,
       deliveryStatus,
       replyToId: params.replyToId,
     },
@@ -250,6 +275,8 @@ async function sendViaQueue(params: {
       channel: params.channel,
       sentBy: params.sentBy,
       agentId: params.agentId,
+      // Already sanitized by sendMessage's own single call to sanitizedBotTrace() before this
+      // function was invoked -- this is the module's only other caller, so no second pass here.
       botTrace: params.botTrace as never,
       deliveryStatus: 'PENDING',
       replyToId: params.replyToId,

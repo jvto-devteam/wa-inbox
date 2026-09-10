@@ -201,6 +201,85 @@ describe('sendMessage', () => {
   })
 })
 
+/**
+ * Fix round 1 (Ruling R79): `Message.botTrace` is the popover's primary data source and was
+ * persisted RAW -- unlike `BotDecisionRun.trace`/`knowledgeRefs` (decision-recorder.ts), which
+ * already go through `sanitizeTrace` before the write. Task 17 made every botTrace carry full
+ * managed-knowledge fact lines (operator-authored free text), widening a gap that already
+ * existed. These pin that sendMessage itself -- not inbound.ts -- is the one place that closes
+ * it, at all three of this module's writes.
+ */
+describe('sendMessage — botTrace disanitasi sebelum ditulis (Ruling R79)', () => {
+  it('mengganti string berbentuk secret di dalam botTrace dengan [REDACTED] sebelum menulis (jalur langsung)', async () => {
+    mockPrisma.message.create.mockResolvedValue({ id: 'msg_1', deliveryStatus: 'SENT' } as never)
+    vi.mocked(sendMetaText).mockResolvedValue({ externalId: 'wamid.OUT1' })
+    const botTrace = {
+      mode: 'faq',
+      draft: 'x',
+      sourceTopic: 'payment',
+      knowledge: {
+        catalogLines: [],
+        managedLines: [{ line: 'Hubungi kami di Bearer abcdefgh12345678', source: 'FAQ (v1)' }],
+        rejected: [],
+        gateBypassed: false,
+      },
+    }
+
+    await sendMessage({ conversationId: 'conv_1', text: 'halo', sentBy: 'BOT', botTrace })
+
+    const written = mockPrisma.message.create.mock.calls[0][0].data.botTrace as {
+      knowledge: { managedLines: Array<{ line: string }> }
+    }
+    expect(written.knowledge.managedLines[0].line).not.toContain('abcdefgh12345678')
+    expect(written.knowledge.managedLines[0].line).toContain('[REDACTED]')
+  })
+
+  it('menulis botTrace sebuah keputusan biasa apa adanya, tanpa perubahan', async () => {
+    mockPrisma.message.create.mockResolvedValue({ id: 'msg_2', deliveryStatus: 'SENT' } as never)
+    vi.mocked(sendMetaText).mockResolvedValue({ externalId: 'wamid.OUT2' })
+    const botTrace = { mode: 'faq', draft: 'Info paket ATV.', sourceTopic: 'inclusions' }
+
+    await sendMessage({ conversationId: 'conv_1', text: 'halo', sentBy: 'BOT', botTrace })
+
+    expect(mockPrisma.message.create.mock.calls[0][0].data.botTrace).toEqual(botTrace)
+  })
+
+  it('mensanitasi botTrace pada penulisan pesan yang diblokir kebijakan kemampuan channel', async () => {
+    routeTo('OFFICIAL', true)
+    mockPrisma.message.create.mockResolvedValue({ id: 'msg_blocked' } as never)
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const botTrace = { mode: 'faq', draft: 'Bearer abcdefgh12345678' }
+
+    await sendMessage({ conversationId: 'conv_1', text: 'halo', sentBy: 'BOT', botTrace })
+
+    const written = mockPrisma.message.create.mock.calls[0][0].data.botTrace as { draft: string }
+    expect(written.draft).toContain('[REDACTED]')
+    expect(written.draft).not.toContain('abcdefgh12345678')
+    warn.mockRestore()
+  })
+
+  it('mensanitasi botTrace pada penulisan pesan yang dikirim lewat antrean (Unofficial)', async () => {
+    routeTo('UNOFFICIAL')
+    mockPrisma.message.create.mockResolvedValue({ id: 'msg_3', deliveryStatus: 'PENDING' } as never)
+    const botTrace = { mode: 'faq', draft: 'Bearer abcdefgh12345678' }
+
+    await sendMessage({ conversationId: 'conv_1', text: 'halo', sentBy: 'BOT', botTrace })
+
+    const written = mockPrisma.message.create.mock.calls[0][0].data.botTrace as { draft: string }
+    expect(written.draft).toContain('[REDACTED]')
+    expect(written.draft).not.toContain('abcdefgh12345678')
+  })
+
+  it('tidak menulis botTrace sama sekali saat tidak ada yang dilewatkan (undefined)', async () => {
+    mockPrisma.message.create.mockResolvedValue({ id: 'msg_4', deliveryStatus: 'SENT' } as never)
+    vi.mocked(sendMetaText).mockResolvedValue({ externalId: 'wamid.OUT4' })
+
+    await sendMessage({ conversationId: 'conv_1', text: 'halo', sentBy: 'AGENT' })
+
+    expect(mockPrisma.message.create.mock.calls[0][0].data.botTrace).toBeUndefined()
+  })
+})
+
 describe('sendMessage — media attachments', () => {
   const media = { url: 'https://wa-inbox.example.com/uploads/x.jpg', type: 'image' as const, mimeType: 'image/jpeg', fileName: 'x.jpg' }
 

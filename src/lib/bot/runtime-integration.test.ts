@@ -206,6 +206,39 @@ describe('managedFactsFor', () => {
     expect(facts.lines.some((line) => line.includes('https://example.com/atv'))).toBe(true)
   })
 
+  // Fix round 1 (R79, reviewer Minor b): `lineSources` (feeds DecisionKnowledge.managedLines'
+  // per-line `source` in orchestrator.ts) must stay aligned 1:1 with `lines` -- the question
+  // line, its price line, and its link line all came from the SAME item, so all three must
+  // carry the SAME source string.
+  it('lineSources sejajar 1:1 dengan lines untuk item yang punya harga dan tautan', async () => {
+    vi.mocked(loadPublishedManagedKnowledge).mockResolvedValue({
+      entries: [
+        entry({
+          sourceTitle: 'FAQ Harga ATV',
+          version: 2,
+          items: [
+            {
+              question: 'Berapa harga ATV?',
+              answer: 'Tergantung paket.',
+              prices: [{ label: 'ATV 1 jam', amount: 350000, currency: 'IDR' }],
+              links: [{ label: 'Detail', url: 'https://example.com/atv' }],
+            },
+          ],
+        }),
+      ],
+      available: true,
+      loadedAt: 0,
+    })
+
+    const facts = await managedFactsFor('berapa harga ATV?', null)
+
+    expect(facts.lines).toHaveLength(3)
+    expect(facts.lines[0]).toContain('Berapa harga ATV?')
+    expect(facts.lines[1]).toContain('IDR 350000')
+    expect(facts.lines[2]).toContain('https://example.com/atv')
+    expect(facts.lineSources).toEqual(['FAQ Harga ATV (v2)', 'FAQ Harga ATV (v2)', 'FAQ Harga ATV (v2)'])
+  })
+
   it('returns nothing rather than throwing when the loader fails -- but flags it as degraded, not silence', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => {})
     vi.mocked(loadPublishedManagedKnowledge).mockRejectedValue(new Error('db down'))
@@ -302,6 +335,30 @@ describe('managedFactsFor', () => {
       // memasukkan kembali entri ini lewat overlap kata ("malang").
       const facts = await managedFactsFor('bisa selesai di malang?', 'route_endpoint', false)
       expect(facts.gateBypassed).toBe(true)
+      expect(facts.lines).toHaveLength(1)
+      expect(facts.rejected).toEqual([])
+    })
+
+    // Fix round 1 (R79, reviewer Minor a): giliran `general` dan giliran `null` TIDAK
+    // digerbang berdasar topik sama sekali (Ruling R30/R41) -- `specificTopic` di
+    // `evaluateItem` adalah false untuk keduanya, jadi Lapis 1 (satu-satunya tempat
+    // `gateRejectedWithOverlap` bisa bernilai true) tidak pernah berjalan. Item bertopik tidak
+    // cocok tetap MASUK lewat overlap kata (Lapis 2) -- bukan "ditolak lalu dimasukkan
+    // kembali" seperti jaring R41, ia tidak pernah ditolak sama sekali.
+    it('giliran general: item topik tidak cocok tapi overlap kata -> masuk, rejected tetap kosong', async () => {
+      mockEntries([
+        { question: 'Berapa deposit di Surabaya?', answer: '20% dari total.', topics: ['payment'] },
+      ])
+      const facts = await managedFactsFor('deposit bisa dibayar di surabaya?', 'general')
+      expect(facts.lines).toHaveLength(1)
+      expect(facts.rejected).toEqual([])
+    })
+
+    it('giliran null: item topik tidak cocok tapi overlap kata -> masuk, rejected tetap kosong', async () => {
+      mockEntries([
+        { question: 'Bisa selesai di Malang?', answer: 'Bisa.', topics: ['payment'] },
+      ])
+      const facts = await managedFactsFor('bisa selesai di malang?', null)
       expect(facts.lines).toHaveLength(1)
       expect(facts.rejected).toEqual([])
     })
