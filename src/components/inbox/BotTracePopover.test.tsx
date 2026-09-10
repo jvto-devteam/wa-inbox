@@ -182,6 +182,32 @@ describe('BotTracePopover', () => {
       )
       expect(screen.queryByText(/lainnya/)).not.toBeInTheDocument()
     })
+
+    // Ruling R91: the test above only ever built a fixture with `rejectedOmitted: 0` -- it
+    // never actually left the key OUT, so the "atau absen" half of its own name was unproven.
+    // `rejectedOmitted` is optional on `DecisionKnowledge` (Ruling R83) precisely so an
+    // older-shaped `knowledge` object -- one that predates this field entirely -- still renders
+    // correctly; this is the fixture that is actually missing the key, not merely zero.
+    it('tidak menampilkan "+N lainnya" saat kunci rejectedOmitted benar-benar absen (bukan hanya 0)', () => {
+      render(
+        <BotTracePopover
+          trace={{
+            mode: 'clarify',
+            reply: 'x',
+            knowledge: {
+              catalogLines: [],
+              managedLines: [],
+              rejected: [{ sourceKey: 'managed/route', itemQuestion: 'Q?', reason: 'topik [payment] tidak memuat route_endpoint' }],
+              // rejectedOmitted deliberately omitted -- see comment above.
+              gateBypassed: false,
+            },
+          }}
+          onClose={() => {}}
+        />
+      )
+      expect(screen.getByText('Fakta yang ditolak')).toBeInTheDocument()
+      expect(screen.queryByText(/lainnya/)).not.toBeInTheDocument()
+    })
   })
 })
 
