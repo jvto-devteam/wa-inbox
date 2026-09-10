@@ -15,7 +15,8 @@
     "eval": "tsx src/lib/bot/eval/run-eval.ts",
     "measure:topic-accuracy": "tsx scripts/measure-topic-accuracy.ts",
     "measure:prompt-size": "tsx scripts/measure-prompt-size.ts",
-    "measure:followup": "tsx scripts/measure-followup-signal.ts"
+    "measure:followup": "tsx scripts/measure-followup-signal.ts",
+    "fixture:from-flagged": "tsx scripts/fixture-from-flagged.ts"
   },
   "dependencies": {
     "@prisma/adapter-pg": "^7.9.0",
