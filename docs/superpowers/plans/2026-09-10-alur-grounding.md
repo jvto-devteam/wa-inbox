@@ -63,12 +63,12 @@ Empat hal yang sebelumnya saya catat sebagai "tertunda", ternyata sudah punya bu
 | `scripts/measure-followup-signal.ts` | Klasifikasi respons pelanggan setelah balasan bot | Create |
 | `src/lib/bot-control/knowledge-body.ts` | Skema body knowledge — tambah `topics` | Modify |
 | `src/lib/bot/fact-topic-classifier.ts` | Klasifikasi **multi-topik** untuk satu fakta | Create |
-| `src/lib/bot/runtime-integration.ts` | Gerbang topik + jaring nol-hasil | Modify |
+| `src/lib/bot/runtime-integration.ts` | Gerbang topik + jaring nol-hasil + `allManagedFacts()` untuk Mode 3 | Modify |
 | `src/lib/bot-control/knowledge-workflow.ts` | Panggil classifier saat simpan | Modify |
 | `src/components/bot-control/KnowledgeEditor.tsx` | Multi-select topik | Modify |
 | `src/components/bot-control/KnowledgeSourceTable.tsx` | Kolom topik | Modify |
 | `src/lib/bot/knowledge.ts` | Hapus `GENERAL_FAQ_FALLBACK`; dedup grounding | Modify |
-| `src/lib/bot/orchestrator.ts` | Hapus blok 8; kerusakan knowledge → hiccup | Modify |
+| `src/lib/bot/orchestrator.ts` | Managed di cabang tanpa-destinasi (R26); FAQ dihapus dari tiga cabang (R27); kerusakan knowledge → hiccup | Modify |
 | `src/lib/bot/reply-verifier.ts` | Deteksi frasa jaminan di balasan | Modify |
 | `prisma/schema.prisma` | Kolom `topic`/`job`/`stage` di `BotDecisionRun` | Modify |
 | `src/lib/bot-control/decision-recorder.ts` | Tulis tiga kolom itu | Modify |
@@ -476,6 +476,7 @@ Hasil `mengulang` + `mengoreksi` dari Task 3 **tidak menghentikan apa pun.** Ia 
 **Files:**
 - Modify: `src/lib/bot-control/knowledge-body.ts:41-49`
 - Modify: `src/lib/bot/module-resolver.ts` (ekspor `RESOLVER_TOPICS`)
+- Modify: `src/lib/bot/topic-classifier.ts` (`VALID_TOPICS` memakai `RESOLVER_TOPICS` — Ruling R22)
 - Create: `scripts/verify-published-revisions-parse.ts`
 - Modify: `package.json` (daftarkan script)
 - Test: `src/lib/bot-control/knowledge-body.test.ts`
@@ -483,6 +484,10 @@ Hasil `mengulang` + `mengoreksi` dari Task 3 **tidak menghentikan apa pun.** Ia 
 **Interfaces:**
 - Consumes: `ResolverTopic` dari `src/lib/bot/module-resolver.ts`
 - Produces: `KnowledgeItem.topics?: ResolverTopic[]` — dibaca Task 5, ditulis Task 8 (workflow) dan Task 9 (UI)
+
+> **Ruling R22:** di commit yang sama, ganti salinan tangan 14 topik di `src/lib/bot/topic-classifier.ts` (`const VALID_TOPICS = new Set<ResolverTopic>([...14 literal])`) dengan `new Set<ResolverTopic>(RESOLVER_TOPICS)`. `RESOLVER_TOPICS` dibuat justru sebagai sumber tunggal; dua daftar tangan adalah bahaya yang sudah pernah terjadi di repo ini (`ATTRACTION_TRIGGER_PHRASES` bergeser dari salinannya). Nol perubahan perilaku; `topic-classifier.test.ts` harus tetap hijau.
+>
+> **Ruling R21:** relasi dari `KnowledgeRevision` ke sumbernya bernama `knowledgeSource` (`schema.prisma`), bukan `source`.
 
 - [ ] **Step 1: Tulis test yang gagal**
 
@@ -584,7 +589,7 @@ async function main() {
 
   const revisions = await prisma.knowledgeRevision.findMany({
     where: { status: 'PUBLISHED' },
-    select: { id: true, version: true, body: true, source: { select: { key: true } } },
+    select: { id: true, version: true, body: true, knowledgeSource: { select: { key: true } } },
   })
 
   let bad = 0
@@ -592,7 +597,7 @@ async function main() {
     const result = validateKnowledgeBody(revision.body)
     if (!result.ok) {
       bad++
-      console.error(`GAGAL  ${revision.source.key} v${revision.version}: ${result.error}`)
+      console.error(`GAGAL  ${revision.knowledgeSource.key} v${revision.version}: ${result.error}`)
     }
   }
 
@@ -619,7 +624,7 @@ Expected: semua lolos. **Kalau ada yang gagal, HENTIKAN plan ini** dan perbaiki 
 ```bash
 npm test && npx tsc --noEmit && npx eslint .
 git add src/lib/bot-control/knowledge-body.ts src/lib/bot-control/knowledge-body.test.ts \
-        src/lib/bot/module-resolver.ts scripts/verify-published-revisions-parse.ts package.json
+        src/lib/bot/module-resolver.ts src/lib/bot/topic-classifier.ts scripts/verify-published-revisions-parse.ts package.json
 git commit -m "feat(knowledge): field topics opsional pada item knowledge, plus verifikasi parse revisi terbit"
 ```
 
@@ -629,12 +634,13 @@ git commit -m "feat(knowledge): field topics opsional pada item knowledge, plus 
 
 **Files:**
 - Modify: `src/lib/bot/runtime-integration.ts:171-215`
-- Modify: `src/lib/bot/orchestrator.ts` (call site `managedFactsFor`)
+- Modify: `src/lib/bot/orchestrator.ts` (dua cabang Mode 1/2: katalog `:1518` dan `runNoDestinationBranch` — Ruling R26)
 - Test: `src/lib/bot/runtime-integration.test.ts`
+- Test: `src/lib/bot/orchestrator.test.ts` (cabang tanpa-destinasi memakai fakta managed)
 
 **Interfaces:**
 - Consumes: `KnowledgeItem.topics` (Task 4), `ResolverTopic`
-- Produces: `managedFactsFor(message: string, topic: ResolverTopic | null): Promise<ManagedFacts>` — dipanggil `orchestrator.ts`
+- Produces: `managedFactsFor(message: string, topic: ResolverTopic | null): Promise<ManagedFacts>` — dipanggil `orchestrator.ts` di cabang katalog dan cabang tanpa-destinasi
 
 - [ ] **Step 1: Tulis test yang gagal**
 
@@ -713,13 +719,33 @@ Expected: PASS.
 
 - [ ] **Step 5: Perbarui call site di orchestrator**
 
-Cari pemanggilan `managedFactsFor(` di `src/lib/bot/orchestrator.ts` dan teruskan topik yang sudah dihitung di giliran itu (`resolverTopic`). Untuk cabang yang belum punya topik, kirim `null`.
+**Ruling R26 — dua cabang, bukan satu.** Knowledge dirakit di tiga cabang orchestrator (rinciannya di Task 11). Dua di antaranya adalah jalur Mode 1/2 yang sudah punya topik, dan keduanya harus memakai gerbang:
+
+1. **Cabang katalog** (`orchestrator.ts:1518`): `managedFactsFor(inboundText)` → `managedFactsFor(inboundText, resolverTopic)`. Grounding verifier cabang ini sudah memuat `managed.lines` lewat `knowledge.factualLines`.
+2. **Cabang tanpa destinasi** (`runNoDestinationBranch` — hari ini **tidak** memanggil `managedFactsFor` sama sekali): panggil `managedFactsFor(inboundText, resolverTopic)`, lalu gabungkan `lines`-nya ke `preDestinationKnowledge.factualLines` **sebelum** cek `factualLines.length > 0`. Kalau digabung sesudahnya, pertanyaan deposit tanpa destinasi yang hanya dijawab knowledge jatuh ke balasan "destinasi mana?". Baris itu juga harus masuk `preDestinationText` supaya verifier bisa menyumber harganya.
+
+Mode 3 **tidak** disentuh di task ini — ia berjalan sebelum klasifikasi sehingga tidak punya topik; lihat Task 11 (Ruling R27).
+
+Tambahkan test di `orchestrator.test.ts`: pertanyaan bertopik `payment` tanpa destinasi, dengan satu entri managed bertopik `payment`, menghasilkan system prompt yang memuat jawaban entri itu.
+
+**Ruling R24:** delapan panggilan test lama `managedFactsFor(msg)` diperbarui ke `managedFactsFor(msg, null)` — entri lama tanpa `topics`, jadi perilakunya identik. Snippet test di Task 5, 6, dan 17 memanggil `mockEntries([...])` — definisikan helper itu SEKALI di `runtime-integration.test.ts`, di atas pola mock yang sudah ada di berkas itu:
+
+```typescript
+/** Pasang daftar item sebagai SATU entri managed terbit — di atas helper `entry()` yang sudah ada. */
+function mockEntries(items: Array<Record<string, unknown>>) {
+  vi.mocked(loadPublishedManagedKnowledge).mockResolvedValue({
+    entries: [entry({ items })],
+    available: true,
+    loadedAt: 0,
+  })
+}
+```
 
 - [ ] **Step 6: Gerbang mutu + commit**
 
 ```bash
 npm test && npx tsc --noEmit && npx eslint .
-git add src/lib/bot/runtime-integration.ts src/lib/bot/runtime-integration.test.ts src/lib/bot/orchestrator.ts
+git add src/lib/bot/runtime-integration.ts src/lib/bot/runtime-integration.test.ts src/lib/bot/orchestrator.ts src/lib/bot/orchestrator.test.ts
 git commit -m "feat(knowledge): gerbang topik pada managed knowledge, token turun jadi alat peringkat"
 ```
 
@@ -735,6 +761,8 @@ Kalau klasifikasi meleset, gerbang bisa membuang **semua** fakta yang benar. Jaw
 
 **Interfaces:**
 - Produces: `ManagedFacts.gateBypassed: boolean` — dibaca Task 17 untuk ditampilkan di trace
+
+> **Ruling R25:** dua assertion lama `toEqual({ lines: [], refs: [] })` di `runtime-integration.test.ts` harus diperbarui menyertakan `gateBypassed: false`, kalau tidak keduanya pecah. Pakai pola mock yang ada (`entry()` + `vi.mocked(loadPublishedManagedKnowledge)`), bukan `mockEntries` (Ruling R24).
 
 - [ ] **Step 1: Tulis test yang gagal**
 
@@ -1165,12 +1193,15 @@ Expected: kosong (berkas itu gitignored). Kalau muncul, **jangan** `git add` —
 
 **Files:**
 - Modify: `src/lib/bot/knowledge.ts:58-127` (hapus konstanta)
-- Modify: `src/lib/bot/orchestrator.ts:1761` (hapus blok 8 dari perakitan prompt)
+- Modify: `src/lib/bot/orchestrator.ts` — TIGA cabang (Ruling R27): Mode 3 prompt `:794` + grounding `:818`/`:822`; tanpa-destinasi prompt `:889` + grounding `:917`; katalog prompt `:1755` + grounding `:1806`
+- Modify: `src/lib/bot/runtime-integration.ts` (fungsi baru `allManagedFacts()` untuk Mode 3)
+- Test: `src/lib/bot/orchestrator.test.ts` (test Mode 3 di sekitar `:357` ditulis ulang)
+- Test: `src/lib/bot/knowledge.test.ts` (hapus `describe('GENERAL_FAQ_FALLBACK')`, sekitar `:375-390`)
 - Data: entri knowledge baru di database
 
 **Interfaces:**
 - Consumes: `topics` (Task 4), gerbang (Task 5)
-- Produces: `GENERAL_FAQ_FALLBACK` tidak lagi diekspor
+- Produces: `GENERAL_FAQ_FALLBACK` tidak lagi diekspor · `allManagedFacts(): Promise<ManagedFacts>` (Mode 3)
 
 - [ ] **Step 1 — 🛑 GERBANG G2: operator meninjau kebenaran tiap blok fakta**
 
@@ -1230,19 +1261,39 @@ Blok GENERAL diberi **seluruh 14 topik** — selalu lolos, tetap bisa diedit. In
 Run: `npm run verify:revisions`
 Expected: semua revisi baru lolos parse.
 
-- [ ] **Step 6: Hapus blok 8 dari perakitan prompt**
+- [ ] **Step 6: Hapus `GENERAL_FAQ_FALLBACK` dari KETIGA cabang — Ruling R27**
 
-Di `src/lib/bot/orchestrator.ts`, hapus baris:
+Konstanta ini dirakit ke prompt di tiga cabang, dan di setiap cabang juga masuk ke grounding reply-verifier (harga dan URL yang boleh dikutip). Menghapusnya di satu cabang saja membuat dua cabang lain kehilangan seluruh fakta umum tanpa pengganti — tsc akan menangkap rujukan yang tertinggal, tapi **tidak** menangkap hilangnya fakta.
+
+| Cabang | Prompt | Grounding verifier | Pengganti |
+| --- | --- | --- | --- |
+| Katalog (destinasi diketahui) | `:1755` | `:1806` (`groundedText`) | sudah ada — `managed.lines` masuk lewat `knowledge.factualLines` (Task 5) |
+| Tanpa destinasi | `:889` | `:917` (`preDestinationText`) | sudah ada — dipasang di Task 5 (Ruling R26) |
+| Mode 3 (booking) | `:794` | `:818` + `:822` | **baru** — `allManagedFacts()` |
+
+Mode 3 berjalan sebelum klasifikasi, jadi tidak punya topik untuk gerbang. Tambahkan di `runtime-integration.ts`:
 
 ```typescript
-      `\n\nGeneral JVTO facts (use these for anything the specific facts above don't cover -- e.g. packing list, best time to visit, physical difficulty, what's included/excluded, payment terms):\n${GENERAL_FAQ_FALLBACK}` +
+/**
+ * SELURUH fakta managed yang terbit — tanpa gerbang topik dan tanpa saringan overlap kata.
+ *
+ * Hanya untuk Mode 3. Mode 3 berjalan sebelum klasifikasi sehingga tidak punya topik, dan sebelum
+ * fakta JVTO pindah ke knowledge ia selalu menerima blok GENERAL_FAQ_FALLBACK utuh. Fungsi ini
+ * menjaga janji itu: pelanggan yang sudah booking tetap menerima semua fakta umum yang dulu
+ * diterimanya — hanya sumbernya yang pindah (E5, "Mode 3 tidak tersentuh", secara perilaku).
+ */
+export async function allManagedFacts(): Promise<ManagedFacts>
 ```
+
+Isi baris dan `refs`-nya memakai format yang sama dengan `managedFactsFor` (termasuk baris harga dan tautan yang berdiri sendiri, supaya verifier bisa menyumbernya). Di Mode 3, baris itu menggantikan `GENERAL_FAQ_FALLBACK` di prompt **dan** di kedua array grounding.
+
+Test Mode 3 yang ada ("gives Mode 3 access to GENERAL_FAQ_FALLBACK and GUARDRAIL_INSTRUCTION…") ditulis ulang untuk menegaskan Mode 3 menerima `allManagedFacts()` dan `GUARDRAIL_INSTRUCTION`.
 
 Hapus juga importnya kalau sudah tidak dipakai berkas itu.
 
 - [ ] **Step 7: Hapus konstantanya**
 
-Di `src/lib/bot/knowledge.ts`, hapus `export const GENERAL_FAQ_FALLBACK` beserta isinya (baris 58-127). Jalankan `npx tsc --noEmit` untuk menemukan pemakai lain.
+Di `src/lib/bot/knowledge.ts`, hapus `export const GENERAL_FAQ_FALLBACK` beserta isinya (baris 58-127). Hapus juga `describe('GENERAL_FAQ_FALLBACK', ...)` di `knowledge.test.ts` — isinya menegaskan fakta bisnis ('Deposit: 20%', 'Revolut', 'gas mask') di konstanta yang sudah tidak ada; jaminan itu pindah ke Gerbang G2, `npm run verify:revisions`, dan `npm run eval`. Jalankan `npx tsc --noEmit` untuk menemukan pemakai lain — **setiap rujukan yang tersisa ditangani per Step 6, bukan sekadar dihapus.**
 
 - [ ] **Step 8: Jalankan eval — GERBANG WAJIB**
 
@@ -1259,7 +1310,7 @@ Buka `/bot-control/test-lab`, jalankan 5 skenario nyata dari riset percakapan. J
 
 ```bash
 npm test && npx tsc --noEmit && npx eslint .
-git add src/lib/bot/knowledge.ts src/lib/bot/orchestrator.ts
+git add src/lib/bot/knowledge.ts src/lib/bot/knowledge.test.ts src/lib/bot/orchestrator.ts src/lib/bot/orchestrator.test.ts src/lib/bot/runtime-integration.ts
 git commit -m "feat(knowledge): fakta JVTO pindah dari kode ke knowledge bertopik, GENERAL_FAQ_FALLBACK dihapus"
 ```
 
