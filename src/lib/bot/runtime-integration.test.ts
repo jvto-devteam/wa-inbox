@@ -364,6 +364,32 @@ describe('managedFactsFor', () => {
     })
   })
 
+  // Ruling R82: dokumentasi test -- BUKAN test untuk kode baru. Membuktikan bahwa item yang
+  // dipotong plafon DI JALUR JARING (retry tanpa gerbang, Ruling R41) terhitung di `truncated`,
+  // bukan di `rejected` -- `rejected` dikosongkan begitu jaring menghasilkan sesuatu, terlepas
+  // dari berapa banyak kandidatnya yang kalah kena plafon. Ini sudah perilaku kode sebelum
+  // ruling ini; ruling ini hanya memperbaiki KOMENTAR yang salah menyatakan "item yang ditolak
+  // gerbang SUDAH pasti ikut dimasukkan kembali oleh jaring" -- salah kalau kandidat jaring
+  // melebihi MAX_MANAGED_ITEMS_PER_TURN. Test ini lulus TANPA perubahan kode apa pun.
+  it('R82: item yang terpotong plafon di jalur jaring terhitung di truncated, bukan rejected', async () => {
+    // 10 item bertopik payment, semuanya berbagi kata "harga" dengan pesan bertopik price --
+    // gerbang menolak semuanya (topik tidak cocok), tapi overlap kata > 0 untuk semuanya jadi
+    // ke-10-nya masuk `gated.rejected`. hasCatalogFacts default (false) supaya jaring menyala.
+    const items = Array.from({ length: 10 }, (_, i) => ({
+      question: `Berapa harga tambahan skenario ${i}?`,
+      answer: `Jawaban ${i}.`,
+      topics: ['payment'],
+    }))
+    mockEntries(items)
+
+    const facts = await managedFactsFor('berapa harga tambahan untuk skenario saya?', 'price')
+
+    expect(facts.gateBypassed).toBe(true)
+    expect(facts.lines).toHaveLength(MAX_MANAGED_ITEMS_PER_TURN)
+    expect(facts.truncated).toBe(2)
+    expect(facts.rejected).toEqual([])
+  })
+
   describe('jaring saat gerbang menghasilkan nol (Ruling R41)', () => {
     it('mengulang tanpa gerbang saat gerbang menghasilkan nol, dan menandainya', async () => {
       mockEntries([

@@ -161,8 +161,13 @@ export type ManagedFacts = {
    * DITOLAK gerbang TETAPI lolos overlap kata (akan masuk kalau gerbang tidak ada). Entri tanpa
    * satu kata pun yang sama dengan pesan tidak akan ikut dengan atau tanpa gerbang, jadi
    * gerbang bukan alasannya -- tidak dicatat. Entri yang kemudian dimasukkan kembali oleh
-   * jaring R41 juga tidak dicatat di sini (lihat `gateBypassed`, yang menceritakan kasus itu) --
-   * kalau sebuah entri akhirnya IKUT dijawab, ia bukan lagi sesuatu yang "ditolak".
+   * jaring R41 juga tidak dicatat di sini (lihat `gateBypassed`) -- tapi "dimasukkan kembali"
+   * BUKAN berarti "pasti terjawab": jaring memanggil `collect` yang sama, jadi kandidatnya
+   * tunduk pada plafon `MAX_MANAGED_ITEMS_PER_TURN` milik `collect` juga (Ruling R63). Kalau
+   * kandidat jaring melebihi plafon itu, kelebihannya terhitung di `truncated` -- BUKAN di sini,
+   * dan BUKAN "ditolak gerbang" (Ruling R54: potongan plafon != penolakan gerbang). Field ini
+   * murni tentang gerbang TOPIK; nasib akhir sebuah entri di jalur jaring (terjawab vs. terpotong
+   * plafon) ada di `truncated`/`lines`, bukan di sini.
    */
   rejected: Array<{ sourceKey: string; itemQuestion: string; reason: string }>
   /**
@@ -476,9 +481,14 @@ export async function managedFactsFor(
   const bypassed = ungated.lines.length > 0
   // Ruling R54: setiap item di `gated.rejected` punya overlapScore > 0 by construction (lihat
   // gateRejectedWithOverlap), dan admisi Lapis 2 di sini (`topic: null`) adalah PERSIS
-  // `overlapScore > 0` -- jadi begitu jaring ini menghasilkan sesuatu (`bypassed`), setiap item
-  // yang ditolak gerbang di atas SUDAH pasti ikut dimasukkan kembali olehnya. `rejected` harus
-  // dikosongkan supaya trace tidak mengaku menolak sesuatu yang sebenarnya baru saja dijawab.
+  // `overlapScore > 0` -- jadi setiap item di `gated.rejected` MENJADI KANDIDAT jaring ini, bukan
+  // otomatis terjawab: `collect` di atas juga menegakkan `MAX_MANAGED_ITEMS_PER_TURN` miliknya
+  // sendiri (Ruling R63), jadi kalau kandidat jaring melebihi plafon itu, kelebihannya terpotong
+  // dan terhitung di `ungated.truncated` -- BUKAN "ditolak gerbang" (Ruling R54: potongan plafon
+  // != penolakan gerbang). `rejected` tetap dikosongkan begitu jaring menghasilkan sesuatu
+  // (`bypassed`) karena field ini murni menjawab "gerbang topik menolak apa" -- nasib akhir
+  // sebuah item di jalur jaring (terjawab vs. terpotong plafon) sudah pindah ke
+  // `truncated`/`lines`, bukan lagi cerita gerbang.
   return { ...ungated, rejected: bypassed ? [] : gated.rejected, gateBypassed: bypassed, degraded: false }
 }
 

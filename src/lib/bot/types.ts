@@ -118,7 +118,10 @@ export type DecisionKnowledge = {
   /**
    * Entries the topic gate turned away THAT WOULD HAVE gone in on word overlap alone -- see
    * `ManagedFacts.rejected` in runtime-integration.ts for the exact definition and what it
-   * deliberately excludes (no-overlap entries, and entries the R41 retry readmitted).
+   * deliberately excludes: entries with no shared word at all, and entries the R41 retry
+   * readmitted OR would have readmitted had `MAX_MANAGED_ITEMS_PER_TURN`'s own ceiling not cut
+   * them first -- that ceiling's casualties are counted in `ManagedFacts.truncated`, not here
+   * (Ruling R54: a plafon cut is not a gate rejection).
    */
   rejected: Array<{ sourceKey: string; itemQuestion: string; reason: string }>
   /** Mirrors `ManagedFacts.gateBypassed` for this turn -- see its own header. */
