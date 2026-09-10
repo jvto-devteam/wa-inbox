@@ -248,6 +248,10 @@ function TopicFields({
           </label>
         ))}
       </div>
+      {/* Ruling R88: mengosongkan semua centang mengirim `topics: undefined` (lihat header
+          komponen ini), lalu classifyFactTopics (Task 8) mengisinya lagi saat disimpan -- tanpa
+          kalimat ini operator tidak tahu kotak kosong tidak berarti "tanpa topik selamanya". */}
+      <p className="text-xs text-ink-muted">Kosongkan semua = topik diisi otomatis saat disimpan.</p>
     </div>
   )
 }

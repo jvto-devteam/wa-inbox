@@ -184,4 +184,12 @@ describe('KnowledgeEditor', () => {
     renderEditor()
     expect(screen.getByRole('checkbox', { name: 'Topik payment item 1' })).toBeInTheDocument()
   })
+
+  // Ruling R88: mengosongkan semua centang topik mengirim `topics: undefined`, lalu
+  // classifyFactTopics (Task 8) mengisinya lagi saat disimpan -- operator perlu diberi tahu
+  // kotak kosong bukan "topik permanen kosong".
+  it('menjelaskan bahwa topik kosong diisi otomatis saat disimpan', () => {
+    renderEditor()
+    expect(screen.getByText('Kosongkan semua = topik diisi otomatis saat disimpan.')).toBeInTheDocument()
+  })
 })
