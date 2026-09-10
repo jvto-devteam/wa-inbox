@@ -10,6 +10,46 @@ import { config } from 'dotenv'
 
 config()
 
+/** Shape of the fields selected from `BotDecisionRun` below -- kept local so the printing
+ * logic can be extracted (and type-checked) without a DB round-trip. */
+type FlaggedRun = {
+  id: string
+  inboundText: string
+  replyText: string | null
+  flagNote: string | null
+}
+
+/**
+ * Renders one flagged run as a pasteable `EvalCase` snippet (plus two lead-in comment lines).
+ *
+ * `flagNote` and `replyText` only ever reach the API's `.trim()` (see
+ * `src/app/api/bot-control/decisions/[id]/flag/route.ts`), so either can carry an embedded
+ * newline. Printed as a bare `//` comment, a newline would end the comment mid-sentence and
+ * leave its second line as invalid bare TypeScript -- so both are whitespace-collapsed and
+ * length-capped here, the same treatment, before they land outside a string literal. Every
+ * other value that reaches the snippet outside `JSON.stringify` (`run.id.slice(0, 8)`) is a
+ * UUID with no whitespace to collapse. Inside `JSON.stringify` (`turns`, `source`) a newline,
+ * backtick, or a comment-close sequence is escaped into a valid string literal regardless, so
+ * those are left as-is.
+ */
+function formatFixtureSnippet(run: FlaggedRun): string {
+  const shortReason = (run.flagNote ?? '(tanpa alasan)').replace(/\s+/g, ' ').slice(0, 120)
+  const shortReply = (run.replyText ?? '').replace(/\s+/g, ' ').slice(0, 120)
+  return [
+    `  // Ditandai agen. Alasan: ${shortReason}`,
+    `  // Balasan yang salah: ${shortReply}`,
+    `  {`,
+    `    id: 'flagged-${run.id.slice(0, 8)}',`,
+    `    turns: [${JSON.stringify(run.inboundText)}],`,
+    `    // ISI SENDIRI: frasa huruf kecil yang WAJIB ada di balasan yang benar`,
+    `    mustContain: [],`,
+    `    // ISI SENDIRI: frasa huruf kecil yang TIDAK BOLEH ada`,
+    `    mustNotContain: [],`,
+    `    source: ${JSON.stringify(`BotDecisionRun ${run.id}, ditandai agen: ${run.flagNote ?? '(tanpa alasan)'}`)},`,
+    `  },`,
+  ].join('\n')
+}
+
 async function main() {
   const { prisma } = await import('@/lib/db')
 
@@ -27,17 +67,7 @@ async function main() {
   }
 
   for (const run of flagged) {
-    console.log(`  // Ditandai agen. Alasan: ${run.flagNote ?? '(tanpa alasan)'}`)
-    console.log(`  // Balasan yang salah: ${(run.replyText ?? '').replace(/\s+/g, ' ').slice(0, 120)}`)
-    console.log(`  {`)
-    console.log(`    id: 'flagged-${run.id.slice(0, 8)}',`)
-    console.log(`    turns: [${JSON.stringify(run.inboundText)}],`)
-    console.log(`    // ISI SENDIRI: frasa huruf kecil yang WAJIB ada di balasan yang benar`)
-    console.log(`    mustContain: [],`)
-    console.log(`    // ISI SENDIRI: frasa huruf kecil yang TIDAK BOLEH ada`)
-    console.log(`    mustNotContain: [],`)
-    console.log(`    source: ${JSON.stringify(`BotDecisionRun ${run.id}, ditandai agen: ${run.flagNote ?? '(tanpa alasan)'}`)},`)
-    console.log(`  },`)
+    console.log(formatFixtureSnippet(run))
   }
 
   console.error(`\n${flagged.length} kandidat. Isi mustContain/mustNotContain, tempel ke EVAL_CASES di fixtures.ts; jalankan npm run eval begitu eval diaktifkan (Ruling R52).`)
