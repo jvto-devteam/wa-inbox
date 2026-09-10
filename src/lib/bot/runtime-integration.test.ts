@@ -282,6 +282,19 @@ describe('managedFactsFor', () => {
       expect(facts.lines).toEqual([])
       expect(facts.gateBypassed).toBe(false)
     })
+
+    // Ruling R47: melengkapi cabang `ungated.lines.length > 0` -> false (runtime-integration.ts,
+    // baris terakhir managedFactsFor) -- gerbang menolak entri (topik tak cocok) DAN jaring
+    // (retry tanpa gerbang) pun tidak menemukan overlap kata apa pun dengan pesan, jadi
+    // keduanya sama-sama nol dan hasilnya TIDAK ditandai bypass.
+    it('tidak menandai bypass saat gerbang DAN jaring sama-sama tidak menemukan apa-apa', async () => {
+      mockEntries([
+        { question: 'Bisa selesai di Malang?', answer: 'Bisa.', topics: ['route_endpoint'] },
+      ])
+      const facts = await managedFactsFor('apakah ada diskon musim hujan?', 'price')
+      expect(facts.lines).toEqual([])
+      expect(facts.gateBypassed).toBe(false)
+    })
   })
 })
 
