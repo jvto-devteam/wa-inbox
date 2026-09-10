@@ -172,12 +172,13 @@ setiap handler; jangan bocorkan pesan error mentah atau secret.
 - Deploy ke VPS: `git checkout` dari `origin/main` di VPS, dan **export PATH nvm Node 22**
   atau semua perintah Prisma 7 mati di Node 18 bawaan.
 
-### Migrasi right-sizing (belum diterapkan ke produksi per 2026-09-08)
+### Migrasi right-sizing (selesai di produksi 2026-09-08)
 
-Kode sudah selesai dan lulus test; **database produksi belum disentuh**. Prosedur
-penerapannya — termasuk dua jebakan yang bisa merugikan (channel default berbalik ke
-`OFFICIAL`, dan bot mulai membalas nomor +62 yang seharusnya dipegang agen) — ada di
-`docs/right-size-migration/RUNBOOK.md`. **Baca itu sebelum menjalankan `migrate deploy`.**
+Kode dan database produksi sudah sinkron sejak commit `90676c2`. Prosedur yang dipakai —
+termasuk dua jebakan yang nyaris merugikan — ada di `docs/right-size-migration/RUNBOOK.md`.
+Urutan yang terbukti aman dan sebaiknya diulang untuk migrasi destruktif berikutnya:
+cadangkan → SELECT verifikasi → migrasi aditif → deploy kode → verifikasi sehat →
+migrasi destruktif.
 
 ## 8. Checklist Sebelum Commit per PR
 
