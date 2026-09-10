@@ -1478,6 +1478,14 @@ Komentar di `knowledge.ts:619-628` mencatat sendiri bahwa screening Ijen dinyata
 
 **Interfaces:**
 - Produces: `ResolvedKnowledge.factualLines` dan `.detailLines` bebas duplikat
+- Produces: `dedupeLines(lines: string[]): string[]` diekspor (Ruling R48)
+
+> **Ruling R48 — kedua test di bawah hampa; diganti kasus yang terukur (dup_check.ts, 2026-09-10):** diukur pada katalog nyata, `destination_readiness`+ijen → `factualLines` 2 baris, 0 kembar; `blue_fire`+ijen → `disclosures` 1 baris, 0 kembar. Kedua test akan lulus TANPA kode dedup. Yang benar-benar kembar hari ini: `blue_fire`+ijen (`'can we see the blue fire at ijen?'`, destinasi `'ijen'`) → `factualLines` 5 baris dengan 1 kembar, dan `detailLines` 4 baris dengan 1 kembar. Maka:
+> - Test integrasi memakai kasus `blue_fire` itu dan menegaskan `factualLines` DAN `detailLines` bebas kembar.
+> - Helper diekspor sebagai fungsi murni `dedupeLines(lines: string[]): string[]` (normalisasi spasi + huruf kecil, urutan kemunculan pertama dipertahankan) dengan unit test sintetis (varian spasi/huruf besar, urutan tetap). Itu yang membuktikan dedup `disclosures` — tidak ada kasus katalog yang punya disclosure kembar, karena `getTopicDisclosures` + penjaga `includes` (`knowledge.ts:692`) sudah mencegahnya. Dedup tetap diterapkan ke ketiga daftar, masing-masing terpisah.
+> - RED dibuktikan: test integrasi gagal di HEAD sebelum dedup (1 kembar), lalu `dup_check.ts` dijalankan ulang sesudahnya dan harus melaporkan 0 kembar di kedua kasus.
+> - **Step 5 (`npm run eval`) tertahan gerbang operator Task 10** — `JVTO_DEPLOYMENT_APPROVAL_KEY` tidak ada di `.env` lokal. Step itu dijalankan begitu Task 10 terbuka; bukan alasan menahan task ini.
+> - Batas yang dilaporkan: baris managed di-push SESUDAH fungsi ini kembali (`orchestrator.ts`), jadi kembar antara katalog dan knowledge terkelola tidak tertangkap di sini.
 
 - [ ] **Step 1: Tulis test yang gagal**
 
@@ -1549,18 +1557,26 @@ git commit -m "feat(bot): dedup baris grounding lintas sumber"
 
 **Files:**
 - Modify: `src/lib/bot/reply-verifier.ts`
-- Modify: `src/lib/bot/knowledge.ts` (ekspor `GUARANTEE_PHRASES`)
+- Modify: `src/lib/bot/orchestrator.ts` (dua call site `verifyReply` + trace advisory + `summariseVerdict` — Ruling R37/R49)
 - Test: `src/lib/bot/reply-verifier.test.ts`
+- Test: `src/lib/bot/orchestrator.test.ts` (Ruling R49)
 
 **Interfaces:**
-- Consumes: `GUARANTEE_PHRASES` di `src/lib/bot/knowledge.ts` (cari dengan nama — barisnya bergeser setelah Task 11 dan 13) — perlu diekspor
+- Consumes: tidak ada dari `knowledge.ts` — daftar frasa sisi balasan milik `reply-verifier.ts` sendiri (Ruling R49)
 - Produces: `VerificationResult.guaranteeViolations: string[]`
 
 > **Ruling R37 — tanda tangan asli, snippet di bawah skematik:** `verifyReply(params: { replyText: string; groundedAmounts: number[]; groundedUrls: string[] })` (`reply-verifier.ts`) — satu objek, bukan argumen posisional, dan tidak punya `groundingLines` maupun `topic`. Tambahkan `topic?: string` opsional ke params-nya. Pemanggil satu-satunya adalah `composeVerifiedReply` (`orchestrator.ts`, dua call site), yang sudah membawa `topic: string` — teruskan `params.topic` di keduanya. Test memanggil `verifyReply({ replyText, groundedAmounts: [], groundedUrls: [], topic: 'blue_fire' })`. Batas yang dinyatakan: Mode 3 memberi label tetap non-topik, jadi cek jaminan tidak pernah menyala untuk pelanggan yang sudah booking.
 
+> **Ruling R49 — daftar frasa sisi balasan, negasi per kalimat, dan pencatatan (terverifikasi):**
+> - `GUARANTEE_PHRASES` (`knowledge.ts`) = `['guarantee', 'guaranteed', '100%', 'certain', 'definitely be open']` — daftar untuk mendeteksi pelanggan yang MENUNTUT jaminan. Dipakai pada balasan, `'100%'` menandai "All tours are 100% PRIVATE" (baris pertama FAQ) dan `'certain'` menandai "certain conditions"/"certainly". Frekuensi pelanggaran inilah yang kelak memutuskan apakah verifier memblokir, jadi positif palsu merusak keputusan itu. Maka reply-verifier memegang daftar sisi-balasan sendiri: akar `guarantee` (`/\bguarantee(?:d|s)?\b/i`) dan `'definitely be open'`. `knowledge.ts` tidak diubah dan `GUARANTEE_PHRASES` tidak diekspor.
+> - Negasi dinilai **per kalimat**, bukan seluruh balasan — "Blue fire is guaranteed! Refunds are not guaranteed." tetap pelanggaran. Pola negasi mencakup `not|never|cannot|can't|can not|isn't|aren't|won't|no`, dengan `be`/`always` opsional.
+> - Dicatat, tidak memblokir: `summariseVerdict` (`orchestrator.ts`) ikut membawa `guaranteeViolations`, sehingga tersimpan di `BotDecisionRun.verification` lewat `verificationForDecision` (`decision-recorder.ts:143`) dan bisa dihitung; ditambah satu langkah trace advisory seperti 'Harga perlu dicek'. `orchestrator.ts` masuk Files (dua call site R37 + trace + `summariseVerdict`).
+> - Test tambahan: "100% private" dan "certain conditions" pada topik `blue_fire` TIDAK ditandai; "isn't guaranteed" tidak ditandai; negasi di kalimat lain tidak menutupi pelanggaran; satu test orkestrator — balasan `blue_fire` yang memuat "guaranteed" → langkah trace advisory muncul dan `verification.guaranteeViolations` terisi.
+> - Biaya kalau salah: janji yang diucapkan dengan kata lain lolos tanpa tercatat — sama dengan hari ini.
+
 - [ ] **Step 1: Ekspor daftar frasa**
 
-Di `src/lib/bot/knowledge.ts`, cari `const GUARANTEE_PHRASES` dengan nama dan ubah jadi `export const GUARANTEE_PHRASES`.
+**Dibatalkan (Ruling R49):** `knowledge.ts` tidak diubah; daftar frasa sisi balasan didefinisikan di `reply-verifier.ts`.
 
 - [ ] **Step 2: Tulis test yang gagal**
 
@@ -1599,7 +1615,7 @@ const NO_GUARANTEE_TOPICS = new Set(['blue_fire', 'destination_readiness'])
 const NEGATED = /\b(not|never|cannot|can't|no)\s+(?:be\s+)?guarante/i
 ```
 
-Tambahkan ke `verifyReply`: kalau topiknya ada di `NO_GUARANTEE_TOPICS` dan balasan memuat frasa dari `GUARANTEE_PHRASES` **tanpa** cocok `NEGATED`, catat pelanggarannya.
+Tambahkan ke `verifyReply`: kalau topiknya ada di `NO_GUARANTEE_TOPICS` dan sebuah kalimat balasan memuat frasa janji sisi-balasan (Ruling R49) **tanpa** cocok negasi di kalimat yang sama, catat pelanggarannya.
 
 **Severity: dicatat, tidak memblokir.** Sama seperti `unverifiedPrices` — memblokir balasan yang sah lebih mahal daripada mencatat pelanggaran yang jarang. Frekuensinya dipantau lewat Task 15 sebelum diputuskan apakah perlu memblokir.
 
@@ -1612,7 +1628,7 @@ Expected: PASS.
 
 ```bash
 npm test && npx tsc --noEmit && npx eslint .
-git add src/lib/bot/reply-verifier.ts src/lib/bot/reply-verifier.test.ts src/lib/bot/knowledge.ts
+git add src/lib/bot/reply-verifier.ts src/lib/bot/reply-verifier.test.ts src/lib/bot/orchestrator.ts src/lib/bot/orchestrator.test.ts
 git commit -m "feat(bot): verifier menandai balasan yang menjanjikan hal yang guardrail larang"
 ```
 
@@ -1624,15 +1640,28 @@ git commit -m "feat(bot): verifier menandai balasan yang menjanjikan hal yang gu
 
 > **Ruling R38 — tanpa kolom `stage`.** Plan ini sendiri mengecualikan `conversationStage`, jadi tidak ada yang pernah menulis kolom `stage`: kolom null permanen adalah skema mati, dan `.claude/rules/prisma-schema.md` melarang menambah field tanpa diskusi. Abaikan setiap `stage` di snippet task ini. Pola berkas `decision-recorder.ts`: setiap kolom diturunkan dari objek `decision` lewat helper `*ForDecision`. `topic` sudah tersedia di keputusan mode `faq` sebagai `sourceTopic` (`types.ts:93`). **`job` belum dibawa keputusan mana pun** — keputusan menambahkannya ke objek keputusan atau melepas kolomnya dicatat di ledger saat pra-dispatch task ini.
 
+> **Ruling R51 — `job` dipertahankan, dan kedua nilai menempel di SETIAP keputusan sesudah klasifikasi (terverifikasi):**
+> - **`job` dipertahankan.** `classifySalesNeed` menghitung `classification.job` (J1–J5) di setiap giliran Mode 1/2 (`orchestrator.ts:1213`) — itu sumbu funnel yang dibahas operator. Melepas kolomnya membuang nilai yang sudah dihitung.
+> - **Topik hanya ada di keputusan `faq` hari ini** (`sourceTopic`, `types.ts:93`); `clarify` dan `handoff` tidak membawa topik sama sekali (`types.ts:91-95`). Padahal pertanyaan Task 16 — "cluster mana yang paling sering gagal" — justru tentang baris `clarify`/`handoff`. Kolom yang hanya terisi pada balasan sukses menjawab pertanyaan yang salah. Maka: tambahkan `topic?: string` dan `job?: string` opsional ke ketiga varian `BotDecision` (`types.ts`); di `decideAndRespond`, catat `job` saat klasifikasi penjualan dan `topic` saat klasifikasi topik ke satu konteks lokal, lalu tempelkan keduanya ke keputusan yang dikembalikan di SATU tempat (misalnya badan `try` dipindah ke fungsi dalam dan hasilnya dihias), bukan di tiap `return` — `decideAndRespond` punya lebih dari sepuluh titik `return`, dan satu yang terlewat berarti satu kelas kegagalan yang tak pernah terhitung. Keputusan sebelum klasifikasi (eskalasi kata kunci, Mode 3) jujur tanpa nilai.
+> - **Recorder** mengikuti pola berkasnya: `topicForDecision` (jatuh ke `sourceTopic` bila `topic` kosong) dan `jobForDecision`, keduanya dari objek `decision` — `RecordDecisionRunParams` tidak berubah. Snippet test `{ ...baseRun, topic, job, stage }` skematik: test memberi `decision` yang membawa nilainya.
+> - **Test tambahan di `orchestrator.test.ts`:** satu keputusan `clarify` sesudah klasifikasi membawa `topic` dan `job`; satu keputusan eskalasi kata kunci tidak membawa keduanya.
+> - **Perintah migrasi Prisma 7:** `migrate diff --help` terpasang hanya mengenal `--from-schema`/`--to-schema` — `--from-schema-datamodel` di snippet tidak ada. Skema lama diambil dari BASE task ini ke workspace SDD, bukan `/tmp`. Jalankan `npx prisma generate` sesudah mengubah skema (lokal, tanpa DB) supaya `tsc` melihat kolom baru.
+> - **Gerbang G4 terjadi saat deploy, bukan di tengah task.** Branch ini tidak menyentuh database produksi sampai di-deploy, jadi implementer meng-commit skema + SQL + kode lalu selesai; `migrate deploy` di VPS dijalankan operator SEBELUM kode ini di-deploy (kode yang menulis kolom yang belum ada akan membuat `recordBotDecisionRun` gagal — ditelan, tapi setiap run hilang). Dicatat di daftar gerbang laporan akhir.
+> - Biaya kalau salah: satu fungsi dalam tambahan di `decideAndRespond`.
+
 Nilai-nilai ini sudah dihitung tiap giliran, hari ini hanya terkubur di `trace` Json sehingga tidak bisa di-`groupBy`.
 
 **Files:**
 - Modify: `prisma/schema.prisma` (model `BotDecisionRun`, sekitar baris 288)
 - Modify: `src/lib/bot-control/decision-recorder.ts`
+- Modify: `src/lib/bot/types.ts` — `topic?`/`job?` di ketiga varian `BotDecision` (Ruling R51)
+- Modify: `src/lib/bot/orchestrator.ts` — tempel `topic`/`job` di satu tempat (Ruling R51)
+- Create: `prisma/migrations/<timestamp>_bot_decision_run_cluster_columns/migration.sql`
 - Test: `src/lib/bot-control/decision-recorder.test.ts`
+- Test: `src/lib/bot/orchestrator.test.ts` (Ruling R51)
 
 **Interfaces:**
-- Produces: tiga kolom `String?` — dibaca Task 16
+- Produces: dua kolom `String?` — `topic` dan `job` — dibaca Task 16 (Ruling R38/R51)
 
 - [ ] **Step 1: Tulis test yang gagal**
 
@@ -1683,12 +1712,12 @@ Dan di blok index:
 `migrate diff` butuh skema **sebelum** perubahan sebagai pembanding, dan berkas itu tidak ada di repo. Ambil dari git, jangan buat manual:
 
 ```bash
-git show HEAD:prisma/schema.prisma > /tmp/schema-sebelum.prisma
+git show HEAD:prisma/schema.prisma > .superpowers/sdd/2026-09-10-alur-grounding/schema-sebelum.prisma
 DIR="prisma/migrations/$(date +%Y%m%d%H%M%S)_bot_decision_run_cluster_columns"
 mkdir -p "$DIR"
 npx prisma migrate diff \
-  --from-schema-datamodel /tmp/schema-sebelum.prisma \
-  --to-schema-datamodel prisma/schema.prisma \
+  --from-schema .superpowers/sdd/2026-09-10-alur-grounding/schema-sebelum.prisma \
+  --to-schema prisma/schema.prisma \
   --script > "$DIR/migration.sql"
 cat "$DIR/migration.sql"
 ```
@@ -1723,8 +1752,8 @@ Urutan aman (terbukti pada right-sizing, commit `90676c2`): cadangkan → SELECT
 
 ```bash
 npm test && npx tsc --noEmit && npx eslint .
-git add prisma/schema.prisma prisma/migrations/ src/lib/bot-control/decision-recorder.ts src/lib/bot-control/decision-recorder.test.ts
-git commit -m "feat(decision-log): kolom topic/job/stage supaya laporan per cluster bisa di-query"
+git add prisma/schema.prisma "$DIR/migration.sql" src/lib/bot/types.ts src/lib/bot/orchestrator.ts src/lib/bot/orchestrator.test.ts src/lib/bot-control/decision-recorder.ts src/lib/bot-control/decision-recorder.test.ts
+git commit -m "feat(decision-log): kolom topic/job supaya laporan per cluster bisa di-query"
 ```
 
 ---
