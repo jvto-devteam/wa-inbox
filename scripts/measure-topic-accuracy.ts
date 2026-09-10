@@ -132,9 +132,17 @@ async function main() {
 
   let same = 0
   let compared = 0
+  let fallbackSkipped = 0
   for (const run of runs) {
     const recorded = topicFromTrace(run.trace)
     const again = await classifyTopicViaLLM(null, run.inboundText, model)
+    // Blok ini informasional, jadi tidak berhenti keras di regex_fallback seperti blok
+    // utama -- tapi baris begini TETAP tidak boleh ikut dihitung: "LLM vs LLM" tidak boleh
+    // diam-diam kemasukan topik hasil regex kalau Ollama sempat degradasi di tengah run.
+    if (again.source === 'regex_fallback') {
+      fallbackSkipped++
+      continue
+    }
     if (recorded) {
       compared++
       if (recorded === again.topic) same++
@@ -143,6 +151,7 @@ async function main() {
 
   console.error(`\n[Sekunder, informasi saja] Konsistensi trace BotDecisionRun: ${same}/${compared}`)
   console.error(`dibandingkan (dari ${runs.length} run BotDecisionRun yang diambil).`)
+  console.error(`${fallbackSkipped} baris dilewati karena regex_fallback -- tidak dihitung.`)
   console.error('CATATAN: sampel BotDecisionRun sangat kecil di produksi (lihat komentar kepala file) --')
   console.error('ini bukan gerbang, dan compared=0 di sini TIDAK mengubah kode keluar skrip ini.')
 
