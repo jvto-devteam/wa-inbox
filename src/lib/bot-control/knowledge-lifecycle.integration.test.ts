@@ -106,12 +106,26 @@ const db = {
       return row
     },
   },
+  // Only read by fillMissingTopics (knowledge-workflow.ts) when an item has no `topics`. This
+  // store never seeds a settings row, so `null` here is the honest answer -- not a stand-in for
+  // "the read failed". A real failure there is already covered by knowledge-workflow.test.ts.
+  settings: {
+    findUnique: async () => null,
+  },
   // The workflow never branches on the transaction client's identity, so handing it the same
   // object is faithful here — atomicity itself is asserted in knowledge-workflow.test.ts.
   $transaction: async (fn: (tx: unknown) => Promise<unknown>) => fn(db),
 }
 
 vi.mock('@/lib/db', () => ({ prisma: db }))
+// This file drives the real workflow functions against a small in-memory store, not per-call
+// mocks -- see the header comment. classifyFactTopics is a real network call to Ollama
+// (fact-topic-classifier.ts -> llm.ts -> fetch), which has no place in a suite that must run
+// offline and fast: unmocked it hits ERR_INVALID_URL here (OLLAMA_URL unset) or, on a machine
+// where it is set, a real request that can take up to 10s per item. Empty topics is exactly
+// what a real classifier failure already degrades to (see fact-topic-classifier.ts's own header
+// comment), so this mock does not change what these tests are proving.
+vi.mock('@/lib/bot/fact-topic-classifier', () => ({ classifyFactTopics: vi.fn().mockResolvedValue([]) }))
 
 const { createManagedKnowledge, saveKnowledgeDraft, publishKnowledgeRevision, archiveKnowledgeSource } = await import(
   './knowledge-workflow'
