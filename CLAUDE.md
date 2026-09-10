@@ -24,8 +24,11 @@ Konsekuensi yang harus dipegang setiap agen:
 ## 2. Stack Teknologi
 
 Next.js 16 App Router, React 19, TypeScript, Prisma 7, PostgreSQL, Tailwind v4, Vitest.
-LLM dijalankan lokal lewat Ollama di VPS yang sama — teks pelanggan dan data booking tidak
-pernah keluar dari mesin itu.
+LLM dipanggil lewat daemon Ollama di VPS yang sama, tanpa penyedia hosted lain (OpenAI dkk).
+**Model produksi saat ini, `gemma4:31b-cloud`, adalah tag cloud:** daemon meneruskan inferensi
+ke server ollama.com, jadi teks pelanggan — dan data booking di Mode 3 — **keluar dari VPS**
+untuk diproses di sana. Hanya tag model lokal (tanpa `-cloud`) yang menjaga inferensi tetap di
+mesin. Terverifikasi 2026-09-10 lewat `/api/tags` produksi (`remote_host: https://ollama.com:443`).
 
 ---
 

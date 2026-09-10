@@ -584,8 +584,10 @@ model Settings {
   // src/lib/bot/runtime-integration.ts, which falls back to the code's constant on any failure.
   fallbackReply               String?
   handoffReply                String?
-  // Which Ollama model src/lib/bot/llm.ts asks for. Local-only (no hosted-API fallback) --
-  // customer text and booking data never leave the VPS's own Ollama daemon.
+  // Which Ollama model src/lib/bot/llm.ts asks for, through the VPS's own Ollama daemon (no
+  // other hosted-API fallback). A `-cloud` tag -- the production default -- makes that daemon
+  // forward inference to ollama.com, so customer text and booking data DO leave the VPS; only a
+  // local tag keeps inference on the machine. Verified 2026-09-10 via /api/tags (remote_host).
   ollamaModel                 String         @default("gemma4:31b-cloud")
   // --- Pengaman outbound (dulu kolom Json `safetyConfig` di tabel kebijakan channel) ---
   //

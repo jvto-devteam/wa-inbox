@@ -32,8 +32,9 @@
 //      genuinely has to answer), just a second, LLM-shaped net under the same keyword one.
 //   1. Booking lookup (Mode 3, "booking_context"): if the customer has an
 //      existing booking, the reply is grounded ONLY in that booking's data
-//      via callLLM (local-only Ollama -- there is no hosted-API fallback to
-//      leak booking data to), bypassing every step below -- a returning
+//      via callLLM (the VPS's Ollama daemon; with the production `-cloud`
+//      model tag that daemon forwards the booking data to ollama.com for
+//      inference -- see llm.ts's header), bypassing every step below -- a returning
 //      customer with a real booking is not a general-enquiry case.
 //   2. No booking -> deployment gate: Mode 1/2 answers are built from
 //      agent-runtime's catalog/release, so they stay off unless that release
@@ -94,7 +95,7 @@
 //      header): resolves real facts/disclosures/a relevant link for the
 //      classified topic straight from `catalog/general-modules.json` (all 14
 //      real topics, not a narrowed subset), then hands them to callLLM
-//      (Ollama, local) as grounding -- the same LLM-composition pattern Mode 3
+//      (Ollama; see llm.ts for where inference runs) as grounding -- the same LLM-composition pattern Mode 3
 //      already used, so a reply reads as one coherent, human-written answer
 //      instead of deterministically-concatenated template fragments. A topic
 //      with no resolvable modules no longer hands off -- knowledge.ts's
@@ -738,7 +739,8 @@ function summariseVerdict(verdict: VerificationResult) {
  * independently-callable step: bypasses the catalog-grounded path entirely, grounding the
  * reply ONLY in the customer's real booking data (plus GENERAL_FAQ_FALLBACK/route-leg facts
  * for anything that data itself doesn't cover, see the inline comment on `system` below) via
- * callLLM (local-only Ollama -- there is no hosted-API fallback to leak booking data to).
+ * callLLM (the VPS's Ollama daemon; with the production -cloud tag the booking data is sent to
+ * ollama.com for inference -- see llm.ts's header).
  * Mutates `trace` (the caller's tracer) as it runs, same as every other step in this file.
  */
 async function runBookingContextMode(

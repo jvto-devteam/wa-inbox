@@ -461,7 +461,7 @@ export default function ChatbotPage() {
           {active === 'model' && (
             <FormSection
               title="Model LLM"
-              description="Semua balasan bot diproses lokal lewat Ollama di VPS yang sama — tidak ada penyedia hosted (OpenAI dkk) yang pernah dihubungi, jadi teks pelanggan dan data booking tidak pernah keluar server. Model default adalah gemma4:31b-cloud, tag cloud Ollama sendiri (sama seperti yang dipakai chatbot-web)."
+              description="Bot memanggil Ollama di VPS yang sama — tidak ada penyedia hosted lain (OpenAI dkk). Model default gemma4:31b-cloud adalah tag cloud Ollama: inferensinya berjalan di server ollama.com, jadi teks pelanggan dan data booking dikirim ke sana. Hanya tag model lokal (tanpa -cloud) yang menjaga semuanya tetap di server."
             >
               <div className="space-y-4">
                 <Field label="Model Ollama" htmlFor="ollama-model" className="max-w-sm">

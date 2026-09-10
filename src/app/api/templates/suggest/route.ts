@@ -6,7 +6,7 @@ import { suggestTemplates } from '@/lib/bot/template-suggester'
 const SAMPLE_SIZE = 200
 
 // Admin-only drafting aid for /templates: analyzes a sample of REAL customer inbound messages
-// across the whole inbox (not one conversation) with the same local Ollama model the bot itself
+// across the whole inbox (not one conversation) with the same Ollama model the bot itself
 // answers with (src/lib/bot/llm.ts), and proposes new QUICK_REPLY template drafts for recurring
 // question patterns. It only ever RETURNS drafts for an admin to review/select/save -- see
 // POST /api/templates for the actual creation, which this never calls itself.

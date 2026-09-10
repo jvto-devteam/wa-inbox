@@ -44,7 +44,7 @@ function stripCodeFence(raw: string): string {
 
 /**
  * Analyzes a sample of real customer inbound messages (across the whole inbox, not one
- * conversation) with the same local Ollama model the bot itself answers with
+ * conversation) with the same Ollama model the bot itself answers with
  * (src/lib/bot/llm.ts), and drafts new QUICK_REPLY template suggestions for recurring
  * question patterns -- each with a suggested body, {{n}} variables, and an optional binding
  * to a real booking/contact data field (src/lib/booking/variable-fields.ts). Purely a drafting

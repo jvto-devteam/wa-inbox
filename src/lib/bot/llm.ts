@@ -1,5 +1,7 @@
-// LLM provider shim. Local-only (Ollama), matching chatbot-web's setup -- no hosted-API
-// fallback, so customer text and booking data never leave the VPS's own Ollama daemon. Two
+// LLM provider shim. Talks only to the VPS's own Ollama daemon, matching chatbot-web's setup --
+// no other hosted-API fallback. Whether customer text leaves the VPS depends on the MODEL TAG,
+// not on this file: a `-cloud` tag (the production default, gemma4:31b-cloud) makes the daemon
+// forward inference to ollama.com; only a local tag keeps it on the machine. Two
 // hard rules live here, both fail-safe rules for the bot brain that calls this file:
 //
 //   1. Every request is bounded by a timeout. `decideAndRespond` is awaited inline
