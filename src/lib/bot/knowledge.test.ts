@@ -6,6 +6,7 @@ import {
   __resetKnowledgeCacheForTests,
   GENERAL_FAQ_FALLBACK,
   GUARDRAIL_INSTRUCTION,
+  dedupeLines,
 } from './knowledge'
 
 vi.mock('./catalog', () => ({ readCatalogFile: vi.fn() }))
@@ -334,6 +335,57 @@ describe('resolveKnowledgeForTopic', () => {
     // Each of loadModules/loadLinkIndex reads its own file once, not once per call.
     const generalModulesCalls = vi.mocked(readCatalogFile).mock.calls.filter(([f]) => f === 'general-modules.json')
     expect(generalModulesCalls).toHaveLength(1)
+  })
+})
+
+// Ruling R48 (2026-09-10, dup_check.ts): the fixture-based tests above don't reproduce a real
+// duplicate -- on the real catalog, `blue_fire`+ijen is the case measured to actually repeat:
+// `resolveKnowledgeForTopic('blue_fire', 'can we see the blue fire at ijen?', 'ijen')` returns
+// factualLines with 5 lines/1 duplicate and detailLines with 4 lines/1 duplicate (the
+// policy_ijen_monthly_closure module's short_answer/detail_summary restating a fact another
+// blue_fire-topic module already states). Swaps `readCatalogFile`'s mock implementation for the
+// real one (reads `catalog/*.json` off disk, same as dup_check.ts) for just this test; beforeEach
+// resets it back to the fixture mock for every other test in this file.
+describe('resolveKnowledgeForTopic (real catalog, measured duplicate case)', () => {
+  it('does not return the same factual or detail line twice for blue_fire+ijen (measured 2026-09-10)', async () => {
+    const actualCatalog = await vi.importActual<typeof import('./catalog')>('./catalog')
+    vi.mocked(readCatalogFile).mockImplementation(actualCatalog.readCatalogFile)
+    __resetKnowledgeCacheForTests()
+
+    const resolved = resolveKnowledgeForTopic('blue_fire', 'can we see the blue fire at ijen?', 'ijen')
+
+    expect(new Set(resolved.factualLines).size).toBe(resolved.factualLines.length)
+    expect(new Set(resolved.detailLines).size).toBe(resolved.detailLines.length)
+  })
+})
+
+describe('dedupeLines', () => {
+  it('drops a later line whose text is identical to an earlier one', () => {
+    expect(dedupeLines(['a', 'b', 'a'])).toEqual(['a', 'b'])
+  })
+
+  it('treats different whitespace runs as the same line', () => {
+    expect(dedupeLines(['one  two', 'one   two'])).toEqual(['one  two'])
+  })
+
+  it('treats leading/trailing whitespace as the same line', () => {
+    expect(dedupeLines(['  padded  ', 'padded'])).toEqual(['  padded  '])
+  })
+
+  it('treats different casing as the same line', () => {
+    expect(dedupeLines(['Ijen Crater', 'ijen crater', 'IJEN CRATER'])).toEqual(['Ijen Crater'])
+  })
+
+  it('keeps first-occurrence order and the original (non-normalized) text', () => {
+    expect(dedupeLines(['Second Text', 'First', 'second text', 'First'])).toEqual(['Second Text', 'First'])
+  })
+
+  it('returns an empty array unchanged', () => {
+    expect(dedupeLines([])).toEqual([])
+  })
+
+  it('keeps distinct lines untouched', () => {
+    expect(dedupeLines(['one', 'two', 'three'])).toEqual(['one', 'two', 'three'])
   })
 })
 

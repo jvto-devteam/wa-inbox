@@ -553,6 +553,24 @@ export function resolveRouteLegFacts(message: string): string[] {
   return facts
 }
 
+/**
+ * Drops later lines whose text is identical to an earlier one, comparing on
+ * whitespace-normalized (collapsed runs, trimmed) + lowercased text rather than on
+ * module_id -- two different modules stating the exact same sentence (the common case, see
+ * `resolveKnowledgeForTopic`'s comment on `policy_ijen_health_screening`) is what this exists to
+ * catch. Keeps first-occurrence order and the ORIGINAL (non-normalized) text of the kept line.
+ * Pure: does not read the module cache, and each call gets its own `seen` set.
+ */
+export function dedupeLines(lines: string[]): string[] {
+  const seen = new Set<string>()
+  return lines.filter((line) => {
+    const key = line.replace(/\s+/g, ' ').trim().toLowerCase()
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+}
+
 export type ResolvedKnowledge = {
   factualLines: string[]
   detailLines: string[]
@@ -662,8 +680,12 @@ export function resolveKnowledgeForTopic(
     .filter((m) => !m.approval_status || m.approval_status.startsWith('approved'))
     .filter((m) => m.customer_visible !== false)
 
-  const factualLines = resolvedModules.map((m) => m.short_answer).filter((v): v is string => Boolean(v))
-  const detailLines = resolvedModules.map((m) => m.detail_summary).filter((v): v is string => Boolean(v))
+  // One fact can enter through four different doors (TOPIC_MODULES, the destination resolver,
+  // a keyword-triggered module, a disclosure) -- deduped independently per list below
+  // (`dedupeLines`), since a fact may legitimately appear once as a factual line and once as a
+  // disclosure if its role genuinely differs there.
+  const factualLines = dedupeLines(resolvedModules.map((m) => m.short_answer).filter((v): v is string => Boolean(v)))
+  const detailLines = dedupeLines(resolvedModules.map((m) => m.detail_summary).filter((v): v is string => Boolean(v)))
 
   // A keyword-triggered module's own link wins over a topic-general module's -- the customer
   // asked specifically about student pricing/escort/ferry, so ISIC's own page is more useful
@@ -687,7 +709,7 @@ export function resolveKnowledgeForTopic(
     }
   }
 
-  const disclosures = getTopicDisclosures(topic, hasIjen)
+  const disclosures = dedupeLines(getTopicDisclosures(topic, hasIjen))
   if (GUARANTEE_PHRASES.some((p) => low.includes(p))) {
     if (!disclosures.includes(DISCLOSURES.noGuaranteeAccess)) disclosures.push(DISCLOSURES.noGuaranteeAccess)
   }
