@@ -171,6 +171,14 @@ export type ManagedFacts = {
    */
   rejected: Array<{ sourceKey: string; itemQuestion: string; reason: string }>
   /**
+   * Berapa entri `rejected` yang DIBUANG oleh plafon `MAX_REJECTED_RECORDED` (Ruling R83) --
+   * BUKAN entri yang tidak pernah masuk `rejected` sama sekali (lihat header field itu untuk
+   * yang sengaja dikecualikan). 0 kalau jumlah entri yang lolos ke `rejected` tidak pernah
+   * melebihi plafon, termasuk pada jalur jaring (Ruling R41) yang mengosongkan `rejected`
+   * sepenuhnya -- tidak ada yang "dibuang" dari daftar yang memang kosong.
+   */
+  rejectedOmitted: number
+  /**
    * True kalau pembacaan knowledge terkelola GAGAL (loader melempar, atau mengembalikan
    * `available: false`) -- BUKAN kondisi "memang tidak ada knowledge yang diterbitkan"
    * (Ruling R46). Sebelum Fase 2 knowledge cuma pelengkap, jadi kedua kondisi itu sama-sama
@@ -182,7 +190,15 @@ export type ManagedFacts = {
   degraded: boolean
 }
 
-const EMPTY: ManagedFacts = { lines: [], refs: [], gateBypassed: false, truncated: 0, rejected: [], degraded: false }
+const EMPTY: ManagedFacts = {
+  lines: [],
+  refs: [],
+  gateBypassed: false,
+  truncated: 0,
+  rejected: [],
+  rejectedOmitted: 0,
+  degraded: false,
+}
 
 /**
  * Words too common to carry a topic.
@@ -227,6 +243,23 @@ function tokens(text: string): Set<string> {
  * dengan data pemakaian nyata (Task 16) alih-alih ditebak dua kali.
  */
 export const MAX_MANAGED_ITEMS_PER_TURN = 8
+
+/**
+ * Plafon berapa entri `ManagedFacts.rejected` yang benar-benar DICATAT per giliran (Ruling
+ * R83), terpisah total dari `MAX_MANAGED_ITEMS_PER_TURN` di atas -- yang itu membatasi apa yang
+ * DIJAWAB, ini membatasi apa yang DICATAT sebagai "ditolak beserta alasannya".
+ *
+ * Kenapa perlu plafon sendiri: review menyeluruh menemukan giliran nyata dengan 150 dari 150
+ * entri topik-lain beririsan kata tercatat di `rejected` sekaligus -- dan entri ini disimpan TIGA
+ * kali per giliran (`BotDecisionRun.trace`, `BotDecisionRun.knowledgeRefs`, `Message.botTrace`),
+ * jadi 150 entri jadi ~450 salinan JSON tanpa retensi apa pun. Angka 20 dipilih supaya trace
+ * tetap bisa menjawab "kenapa fakta ini tidak ikut?" untuk kasus nyata (data hari ini jauh di
+ * bawah 20) tanpa ikut menyimpan setiap entri topik-lain yang kebetulan berbagi satu kata dengan
+ * pesan pelanggan. Entri yang dibuang oleh plafon ini TETAP dihitung lewat `rejectedOmitted`,
+ * bukan hilang tanpa jejak -- hanya isinya (sourceKey/pertanyaan/alasan) yang tidak lagi
+ * tersimpan di luar 20 entri pertama, dalam urutan asli.
+ */
+export const MAX_REJECTED_RECORDED = 20
 
 /** Hasil evaluasi satu item terhadap giliran ini -- lolos lewat topik, lewat overlap, atau tidak sama sekali. */
 type ItemMatch = {
@@ -325,6 +358,7 @@ function collect(
   refs: KnowledgeRef[]
   truncated: number
   rejected: Array<{ sourceKey: string; itemQuestion: string; reason: string }>
+  rejectedOmitted: number
 } {
   type Candidate = {
     entryIndex: number
@@ -410,7 +444,15 @@ function collect(
     })
   })
 
-  return { lines, lineSources, refs, truncated, rejected }
+  // Ruling R83: `rejected` above accumulates EVERY gate-rejected-with-overlap item in original
+  // order, unbounded -- a real turn measured 150 of them, stored three times over
+  // (BotDecisionRun.trace/knowledgeRefs, Message.botTrace). Capped here, once, at the single
+  // place `rejected` is built, so every caller of `collect` gets the same bounded shape; the
+  // excess count travels as `rejectedOmitted` rather than vanishing silently.
+  const rejectedRecorded = rejected.slice(0, MAX_REJECTED_RECORDED)
+  const rejectedOmitted = Math.max(0, rejected.length - MAX_REJECTED_RECORDED)
+
+  return { lines, lineSources, refs, truncated, rejected: rejectedRecorded, rejectedOmitted }
 }
 
 /**
@@ -489,7 +531,16 @@ export async function managedFactsFor(
   // (`bypassed`) karena field ini murni menjawab "gerbang topik menolak apa" -- nasib akhir
   // sebuah item di jalur jaring (terjawab vs. terpotong plafon) sudah pindah ke
   // `truncated`/`lines`, bukan lagi cerita gerbang.
-  return { ...ungated, rejected: bypassed ? [] : gated.rejected, gateBypassed: bypassed, degraded: false }
+  return {
+    ...ungated,
+    rejected: bypassed ? [] : gated.rejected,
+    // Mirrors `rejected` above: cleared alongside it when the net answers something (nothing
+    // left to report as "omitted from a list that is now empty"), otherwise the gate's own
+    // omitted count travels with its own (still-reported) rejected list.
+    rejectedOmitted: bypassed ? 0 : gated.rejectedOmitted,
+    gateBypassed: bypassed,
+    degraded: false,
+  }
 }
 
 /**

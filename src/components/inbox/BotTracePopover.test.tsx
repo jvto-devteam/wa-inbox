@@ -138,6 +138,50 @@ describe('BotTracePopover', () => {
       expect(screen.queryByText('Fakta yang dipakai')).not.toBeInTheDocument()
       expect(screen.getByText('Fakta yang ditolak')).toBeInTheDocument()
     })
+
+    // Ruling R83: `rejected` di runtime-integration.ts sekarang dibatasi MAX_REJECTED_RECORDED
+    // (20) -- popover harus tetap memberi tahu operator ada lebih banyak, bukan diam-diam
+    // menunjukkan daftar yang terlihat lengkap padahal terpotong.
+    it('menampilkan "+N lainnya" saat rejectedOmitted > 0', () => {
+      render(
+        <BotTracePopover
+          trace={{
+            mode: 'clarify',
+            reply: 'x',
+            knowledge: {
+              catalogLines: [],
+              managedLines: [],
+              rejected: [{ sourceKey: 'managed/route', itemQuestion: 'Q?', reason: 'topik [payment] tidak memuat route_endpoint' }],
+              rejectedOmitted: 130,
+              gateBypassed: false,
+            },
+          }}
+          onClose={() => {}}
+        />
+      )
+      expect(screen.getByText('Fakta yang ditolak')).toBeInTheDocument()
+      expect(screen.getByText('+130 lainnya')).toBeInTheDocument()
+    })
+
+    it('tidak menampilkan "+N lainnya" saat rejectedOmitted 0 atau absen', () => {
+      render(
+        <BotTracePopover
+          trace={{
+            mode: 'clarify',
+            reply: 'x',
+            knowledge: {
+              catalogLines: [],
+              managedLines: [],
+              rejected: [{ sourceKey: 'managed/route', itemQuestion: 'Q?', reason: 'topik [payment] tidak memuat route_endpoint' }],
+              rejectedOmitted: 0,
+              gateBypassed: false,
+            },
+          }}
+          onClose={() => {}}
+        />
+      )
+      expect(screen.queryByText(/lainnya/)).not.toBeInTheDocument()
+    })
   })
 })
 

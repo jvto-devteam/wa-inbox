@@ -941,6 +941,7 @@ async function runNoDestinationBranch(
       catalogLines,
       managedLines: managed.lines.map((line, i) => ({ line, source: managed.lineSources?.[i] ?? '' })),
       rejected: managed.rejected,
+      rejectedOmitted: managed.rejectedOmitted,
       gateBypassed: managed.gateBypassed,
     }
 
@@ -1660,6 +1661,7 @@ export async function decideAndRespond(
       catalogLines,
       managedLines: managed.lines.map((line, i) => ({ line, source: managed.lineSources?.[i] ?? '' })),
       rejected: managed.rejected,
+      rejectedOmitted: managed.rejectedOmitted,
       gateBypassed: managed.gateBypassed,
     }
 

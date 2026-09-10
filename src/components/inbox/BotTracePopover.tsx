@@ -128,6 +128,13 @@ export function BotTracePopover({
                 &quot;{item.itemQuestion}&quot; — {item.reason}
               </li>
             ))}
+            {/* Ruling R83: `rejected` di atas sudah dibatasi MAX_REJECTED_RECORDED (20) di
+                sumbernya -- ini yang membuat sisanya terlihat alih-alih hilang diam-diam.
+                `rejectedOmitted` sendiri opsional (lihat header field-nya di types.ts) --
+                absen dibaca sama seperti 0. */}
+            {(knowledge.rejectedOmitted ?? 0) > 0 && (
+              <li className="text-ink-subtle">+{knowledge.rejectedOmitted} lainnya</li>
+            )}
           </ul>
         </div>
       )}

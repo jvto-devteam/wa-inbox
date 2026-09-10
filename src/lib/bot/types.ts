@@ -124,6 +124,20 @@ export type DecisionKnowledge = {
    * (Ruling R54: a plafon cut is not a gate rejection).
    */
   rejected: Array<{ sourceKey: string; itemQuestion: string; reason: string }>
+  /**
+   * Mirrors `ManagedFacts.rejectedOmitted` (Ruling R83) -- how many more entries the topic gate
+   * rejected on this turn beyond the `MAX_REJECTED_RECORDED` (20) actually kept in `rejected`
+   * above. 0 (or absent) means `rejected` is the complete list.
+   *
+   * Optional, same reason and same convention as `lineSources` on `ManagedFacts` above: an
+   * absent key here reads identically to `0` everywhere this is consumed (BotTracePopover.tsx's
+   * `+N lainnya`), which is what lets every pre-R83 test fixture that builds a `knowledge`
+   * object literal (BotTracePopover.test.tsx, orchestrator.test.ts) keep passing unmodified --
+   * only the two ManagedFacts EMPTY-shape `toEqual` assertions in runtime-integration.test.ts
+   * needed updating, because those check the OTHER (required, `EMPTY`-defaulted) field on
+   * `ManagedFacts`, not this one.
+   */
+  rejectedOmitted?: number
   /** Mirrors `ManagedFacts.gateBypassed` for this turn -- see its own header. */
   gateBypassed: boolean
 }

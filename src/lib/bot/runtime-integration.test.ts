@@ -13,6 +13,7 @@ import {
   managedFactsFor,
   offHoursHandoffNotice,
   MAX_MANAGED_ITEMS_PER_TURN,
+  MAX_REJECTED_RECORDED,
 } from './runtime-integration'
 
 vi.mock('@/lib/db', () => ({ prisma: mockDeep<PrismaClient>() }))
@@ -143,7 +144,8 @@ describe('managedFactsFor', () => {
     // Ruling R46: degraded juga bagian dari ManagedFacts -- `available: true` (default beforeEach)
     // dengan nol entri terbit memang berarti "tidak ada knowledge", bukan kerusakan, jadi false.
     // Task 17: rejected juga bagian dari ManagedFacts -- EMPTY membawanya juga ([]).
-    expect(await managedFactsFor('Berapa harga ATV?', null)).toEqual({ lines: [], refs: [], gateBypassed: false, truncated: 0, rejected: [], degraded: false })
+    // Ruling R83: rejectedOmitted juga bagian dari ManagedFacts -- EMPTY membawanya juga (0).
+    expect(await managedFactsFor('Berapa harga ATV?', null)).toEqual({ lines: [], refs: [], gateBypassed: false, truncated: 0, rejected: [], rejectedOmitted: 0, degraded: false })
   })
 
   it('folds in an entry whose question shares a word with the message', async () => {
@@ -248,7 +250,8 @@ describe('managedFactsFor', () => {
     // sendiri gagal (melempar), jadi `degraded` harus TRUE, bukan false: kegagalan pembacaan
     // wajib bisa dibedakan dari "memang tidak ada knowledge" oleh pemanggil (orchestrator.ts).
     // Task 17: rejected juga bagian dari ManagedFacts -- EMPTY membawanya juga ([]).
-    expect(await managedFactsFor('berapa harga ATV?', null)).toEqual({ lines: [], refs: [], gateBypassed: false, truncated: 0, rejected: [], degraded: true })
+    // Ruling R83: rejectedOmitted juga bagian dari ManagedFacts -- EMPTY membawanya juga (0).
+    expect(await managedFactsFor('berapa harga ATV?', null)).toEqual({ lines: [], refs: [], gateBypassed: false, truncated: 0, rejected: [], rejectedOmitted: 0, degraded: true })
   })
 
   it('returns nothing for a message with no usable words', async () => {
@@ -388,6 +391,57 @@ describe('managedFactsFor', () => {
     expect(facts.lines).toHaveLength(MAX_MANAGED_ITEMS_PER_TURN)
     expect(facts.truncated).toBe(2)
     expect(facts.rejected).toEqual([])
+  })
+
+  // Ruling R83: `rejected` sekarang dibatasi MAX_REJECTED_RECORDED (20) entri per giliran --
+  // sebelumnya sebuah giliran nyata mencatat 150 dari 150 entri topik-lain beririsan kata
+  // sekaligus, disimpan tiga kali per giliran (BotDecisionRun.trace/knowledgeRefs,
+  // Message.botTrace) tanpa retensi apa pun.
+  describe('plafon rejected (Ruling R83)', () => {
+    it('mencatat maksimum MAX_REJECTED_RECORDED (20) entri yang ditolak gerbang, sisanya dihitung di rejectedOmitted', async () => {
+      const items = Array.from({ length: 150 }, (_, i) => ({
+        question: `Bisa selesai di Malang nomor ${i}?`,
+        answer: `Jawaban ${i}.`,
+        topics: ['payment'],
+      }))
+      mockEntries(items)
+
+      // hasCatalogFacts=true supaya jaring R41 TIDAK menyala -- kalau menyala, `rejected`
+      // dikosongkan sepenuhnya (Ruling R41/R54) dan test ini tidak lagi menguji plafon R83.
+      const facts = await managedFactsFor('bisa selesai di malang?', 'route_endpoint', true)
+
+      expect(facts.rejected).toHaveLength(MAX_REJECTED_RECORDED)
+      expect(facts.rejectedOmitted).toBe(150 - MAX_REJECTED_RECORDED)
+      // Urutan asli dipertahankan -- 20 pertama, bukan 20 acak/terakhir.
+      expect(facts.rejected.map((r) => r.itemQuestion)).toEqual(
+        Array.from({ length: MAX_REJECTED_RECORDED }, (_, i) => `Bisa selesai di Malang nomor ${i}?`)
+      )
+    })
+
+    it('rejectedOmitted tetap 0 saat jumlah entri yang ditolak di bawah plafon', async () => {
+      mockEntries([{ question: 'Berapa deposit di Malang?', answer: '20%.', topics: ['payment'] }])
+      const facts = await managedFactsFor('bisa selesai di malang?', 'route_endpoint', true)
+      expect(facts.rejected).toHaveLength(1)
+      expect(facts.rejectedOmitted).toBe(0)
+    })
+
+    it('jaring R41 yang menyala mengosongkan rejected DAN rejectedOmitted bersamaan', async () => {
+      // hasCatalogFacts=false -- jaring menyala, memasukkan kembali entri lewat overlap kata,
+      // dan (Ruling R54/R82) mengosongkan `rejected`. rejectedOmitted harus ikut kosong: tidak
+      // ada yang "dibuang dari daftar" kalau daftarnya sendiri sudah dikosongkan.
+      const items = Array.from({ length: 25 }, (_, i) => ({
+        question: `Bisa selesai di Malang nomor ${i}?`,
+        answer: `Jawaban ${i}.`,
+        topics: ['payment'],
+      }))
+      mockEntries(items)
+
+      const facts = await managedFactsFor('bisa selesai di malang?', 'route_endpoint', false)
+
+      expect(facts.gateBypassed).toBe(true)
+      expect(facts.rejected).toEqual([])
+      expect(facts.rejectedOmitted).toBe(0)
+    })
   })
 
   describe('jaring saat gerbang menghasilkan nol (Ruling R41)', () => {
