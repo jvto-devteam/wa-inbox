@@ -813,46 +813,6 @@ describe('decideAndRespond', () => {
     expect(step?.detail).toContain('8')
   })
 
-  // Task 21 (Ruling R65): the no-destination branch's own managedFactsFor call site must pass
-  // classifyTopicViaLLM's `alsoTopics` through -- otherwise a genuinely multi-topic message
-  // ("what's the deposit, and can you drop us off in Malang?") loses the SECOND topic's managed
-  // fact to the same R56 gate the payment-only test above exercises. The managed entry here is
-  // tagged ONLY 'route_endpoint' (the also-topic), never 'payment' (the primary) -- it can only
-  // get in through alsoTopics being threaded through, not through the primary-topic gate alone.
-  //
-  // resolveKnowledgeForTopic keeps the file's default non-empty factualLines (not overridden,
-  // same as the R41 test above) -- hasCatalogFacts is therefore TRUE, so Ruling R41's ungated
-  // safety net never fires here. Without that, this test could pass by accident (the net
-  // matching on the plain word "Malang" shared between message and entry) without alsoTopics
-  // ever being threaded through at all.
-  it('meloloskan fakta terkelola lewat alsoTopics saat pesan multi-topik (no-destination branch, R65)', async () => {
-    ;vi.mocked(ensureFreshBookingData).mockResolvedValue(null)
-    ;vi.mocked(classifySalesNeed).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
-    ;vi.mocked(matchDestination).mockReturnValue(null)
-    ;vi.mocked(listDestinations).mockReturnValue(['Bromo', 'Ijen'])
-    ;vi.mocked(classifyTopicViaLLM).mockResolvedValue({ topic: 'payment', alsoTopics: ['route_endpoint'], source: 'llm' })
-    ;vi.mocked(loadPublishedManagedKnowledge).mockResolvedValue({
-      entries: [
-        {
-          sourceId: 'ks_1',
-          sourceKey: 'managed/route',
-          sourceTitle: 'FAQ Rute',
-          revisionId: 'krev_1',
-          version: 1,
-          items: [{ question: 'Bisa drop off di Malang?', answer: 'Bisa, tanpa biaya tambahan.', topics: ['route_endpoint'] }],
-        },
-      ],
-      available: true,
-      loadedAt: 0,
-    })
-
-    const result = await decideAndRespond('conv_1', 'berapa deposit dan bisa drop off di Malang?')
-
-    expect(result.mode).toBe('faq')
-    const [, opts] = llmCall(0)
-    expect(opts.system).toContain('Bisa, tanpa biaya tambahan.')
-  })
-
   // A dietary/allergy mention has no dedicated topic keyword bucket at all (module-resolver.ts
   // -- confirmed 2026-08-05), so classifyTopic genuinely falls through to 'general', which is
   // deliberately NOT in DESTINATION_INDEPENDENT_TOPICS. It's only answerable here because
@@ -3350,38 +3310,6 @@ describe('decideAndRespond', () => {
     const step = result.steps?.find((s) => s.label === 'Knowledge terkelola dipangkas')
     expect(step?.detail).toContain('1')
     expect(step?.detail).toContain('8')
-  })
-
-  // Task 21 (Ruling R65): same guarantee as the no-destination-branch test above, for the
-  // catalog branch's own managedFactsFor call site. The managed entry is tagged ONLY
-  // 'route_endpoint' (the also-topic), never 'inclusions' (the primary) -- it can only get in
-  // through alsoTopics being threaded through this call site.
-  it('meloloskan fakta terkelola lewat alsoTopics saat pesan multi-topik (catalog branch, R65)', async () => {
-    ;vi.mocked(ensureFreshBookingData).mockResolvedValue(null)
-    ;vi.mocked(classifySalesNeed).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
-    ;vi.mocked(matchDestination).mockReturnValue({ destination: 'ijen', matches: [pkg()] })
-    ;vi.mocked(checkRouteGate).mockReturnValue({ status: 'clear' })
-    ;vi.mocked(classifyTopicViaLLM).mockResolvedValue({ topic: 'inclusions', alsoTopics: ['route_endpoint'], source: 'llm' })
-    ;vi.mocked(loadPublishedManagedKnowledge).mockResolvedValue({
-      entries: [
-        {
-          sourceId: 'ks_1',
-          sourceKey: 'managed/route',
-          sourceTitle: 'FAQ Rute',
-          revisionId: 'krev_1',
-          version: 1,
-          items: [{ question: 'Bisa drop off di Malang?', answer: 'Bisa, tanpa biaya tambahan.', topics: ['route_endpoint'] }],
-        },
-      ],
-      available: true,
-      loadedAt: 0,
-    })
-
-    const result = await decideAndRespond('conv_1', 'apa saja fasilitas termasuk, dan bisa drop off di Malang?')
-
-    expect(result.mode).toBe('faq')
-    const [, opts] = llmCall(0)
-    expect(opts.system).toContain('Bisa, tanpa biaya tambahan.')
   })
 })
 

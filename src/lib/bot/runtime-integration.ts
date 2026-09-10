@@ -208,8 +208,7 @@ type ItemMatch = {
 function evaluateItem(
   item: ManagedKnowledgeEntry['items'][number],
   asked: Set<string>,
-  topic: ResolverTopic | null,
-  alsoTopics: readonly ResolverTopic[]
+  topic: ResolverTopic | null
 ): ItemMatch {
   const specificTopic = topic !== null && topic !== 'general'
   const candidate = tokens(`${item.question} ${(item.tags ?? []).join(' ')}`)
@@ -224,16 +223,10 @@ function evaluateItem(
   // entri walau topiknya sudah cocok -- itu membuang parafrasa persis yang gerbang topik
   // dimaksudkan untuk menangani ("how much do I pay upfront?" vs entri "Berapa deposit?").
   //
-  // Task 21 (Ruling R65): topik UTAMA atau salah satu `alsoTopics` (topik lain yang JUGA
-  // ditanyakan pesan ini, dari classifyTopicViaLLM) sudah cukup meloloskan entri di sini --
-  // sebuah item yang lolos lewat also-topic dihitung admittedByTopic sama seperti lewat topik
-  // utama, jadi ia ikut memenangkan plafon R63 atas item yang cuma lolos lewat overlap kata.
-  //
   // `topics` KOSONG jatuh ke perilaku sebelum field ini ada (baris Lapis 2 di bawah). Itu
   // yang membuat migrasi bisa bertahap dan nol revisi lama rusak.
   if (specificTopic && item.topics?.length) {
-    const itemTopics = item.topics
-    const admitted = itemTopics.includes(topic) || alsoTopics.some((also) => itemTopics.includes(also))
+    const admitted = item.topics.includes(topic)
     return { admitted, admittedByTopic: admitted, overlapScore }
   }
 
@@ -275,8 +268,7 @@ function evaluateItem(
 function collect(
   managed: ManagedKnowledge,
   asked: Set<string>,
-  topic: ResolverTopic | null,
-  alsoTopics: readonly ResolverTopic[]
+  topic: ResolverTopic | null
 ): { lines: string[]; refs: KnowledgeRef[]; truncated: number } {
   type Candidate = {
     entryIndex: number
@@ -288,7 +280,7 @@ function collect(
   const candidates: Candidate[] = []
   managed.entries.forEach((entry, entryIndex) => {
     entry.items.forEach((item, itemIndex) => {
-      const result = evaluateItem(item, asked, topic, alsoTopics)
+      const result = evaluateItem(item, asked, topic)
       if (result.admitted) {
         candidates.push({ entryIndex, itemIndex, admittedByTopic: result.admittedByTopic, overlapScore: result.overlapScore })
       }
@@ -365,12 +357,7 @@ function collect(
 export async function managedFactsFor(
   message: string,
   topic: ResolverTopic | null,
-  hasCatalogFacts = false,
-  // Task 21 (Ruling R65): topik lain yang classifyTopicViaLLM JUGA nyatakan dari pesan yang
-  // sama -- lihat evaluateItem's own header untuk bagaimana ini dipakai di gerbang Lapis 1.
-  // Tidak berefek pada giliran `general`/`null` (R30 tidak berubah) atau jaring R41 (topik
-  // dipaksa `null` di sana, jadi gerbang spesifik tidak pernah dievaluasi).
-  alsoTopics: readonly ResolverTopic[] = []
+  hasCatalogFacts = false
 ): Promise<ManagedFacts> {
   let managed
   try {
@@ -390,7 +377,7 @@ export async function managedFactsFor(
   // entri semacam itu wajar-wajar saja saat `asked` kosong, tanpa perlu jalan pintas di sini.
   const asked = tokens(message)
 
-  const gated = collect(managed, asked, topic, alsoTopics)
+  const gated = collect(managed, asked, topic)
   if (gated.lines.length > 0) return { ...gated, gateBypassed: false }
 
   // Gerbang menghasilkan nol baris. Jaring (retry tanpa gerbang) HANYA berjalan kalau giliran
@@ -403,9 +390,7 @@ export async function managedFactsFor(
   // meleset dan fakta yang benar baru saja dibuang (tidak wajar). Kita tidak bisa
   // membedakannya di sini, jadi kita pilih sisi yang lebih murah salahnya -- jawab dengan
   // bahan seadanya, lalu tandai supaya bisa dihitung.
-  // `alsoTopics` is irrelevant here -- `topic` is forced to `null`, so `evaluateItem`'s
-  // specific-topic branch (the only place `alsoTopics` matters) never runs.
-  const ungated = collect(managed, asked, null, [])
+  const ungated = collect(managed, asked, null)
   return { ...ungated, gateBypassed: ungated.lines.length > 0 }
 }
 

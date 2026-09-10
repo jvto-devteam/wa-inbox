@@ -882,11 +882,7 @@ async function runNoDestinationBranch(
   unsupportedOriginCity: string | null,
   routeLegNote: string,
   keywordModuleIds: string[],
-  trace: Tracer,
-  // Task 21 (Ruling R65): other topics classifyTopicViaLLM says this SAME message also asks
-  // about -- threaded straight into managedFactsFor below, same as the catalog branch's own
-  // call site.
-  alsoTopics: readonly ResolverTopic[] = []
+  trace: Tracer
 ): Promise<BotDecision> {
   // A keyword-triggered module (dietary/ISIC/escort/ferry) can genuinely answer a message
   // regardless of what topic it classified as -- 'general' always has non-empty baseline
@@ -901,7 +897,7 @@ async function runNoDestinationBranch(
     // deposit question answered purely by a managed FAQ, with nothing in the catalog for
     // "payment" pre-destination) falls through to the generic "which destination?" reply
     // instead of actually answering.
-    const managed = await managedFactsFor(inboundText, resolverTopic, preDestinationKnowledge.factualLines.length > 0, alsoTopics)
+    const managed = await managedFactsFor(inboundText, resolverTopic, preDestinationKnowledge.factualLines.length > 0)
     if (managed.lines.length > 0) {
       preDestinationKnowledge.factualLines.push(...managed.lines)
       trace.push(
@@ -1309,14 +1305,6 @@ export async function decideAndRespond(
           ? `Diperiksa oleh model LLM lokal -- ${keywordModuleResult.moduleIds.length} modul cocok.`
           : `Model LLM gagal/timeout -- fallback ke pemindaian kata kunci lama, ${keywordModuleResult.moduleIds.length} modul cocok.`
       )
-      // Task 21 (Ruling R65): only the PRIMARY topic goes into turnClassification.topic/trace
-      // texts above -- this is purely additive, naming the other topic(s) the SAME message also
-      // asked about, so their managed facts (threaded into runNoDestinationBranch below) aren't
-      // a silent surprise in the trace.
-      const noDestAlsoTopics = topicResult.alsoTopics ?? []
-      if (noDestAlsoTopics.length > 0) {
-        trace.push('Topik tambahan terdeteksi', `Pesan ini juga menanyakan: ${noDestAlsoTopics.join(', ')}.`)
-      }
       traceStep(pipeline, 'susun-balasan', 'mulai')
       return await runNoDestinationBranch(
         inboundText,
@@ -1327,8 +1315,7 @@ export async function decideAndRespond(
         unsupportedOriginCity,
         routeLegNote,
         keywordModuleResult.moduleIds,
-        trace,
-        noDestAlsoTopics
+        trace
       )
     }
     trace.push('Destinasi ditemukan', `Destinasi: "${destination}".`)
@@ -1338,7 +1325,7 @@ export async function decideAndRespond(
     // batch rather than five sequential waits, each with its own 10s timeout.
     const [
       { moduleIds: keywordModuleIds, source: keywordModuleSource },
-      { topic: resolverTopic, alsoTopics: resolverAlsoTopicsRaw, source: topicSource },
+      { topic: resolverTopic, source: topicSource },
       { preferences, source: preferencesSource },
       { declined: preferenceDeclineSignal, source: declineSource },
       { isRecommendation: recommendationIntentSignal, source: recommendationSource },
@@ -1371,18 +1358,12 @@ export async function decideAndRespond(
     // Task 15: destination branch's own topic classification site (the no-destination branch
     // above has its own, separate one).
     turnClassification.topic = resolverTopic
-    // Task 21 (Ruling R65): other topics this SAME message also asks about -- threaded into
-    // managedFactsFor below, same as the no-destination branch's own call site.
-    const resolverAlsoTopics = resolverAlsoTopicsRaw ?? []
     trace.push(
       'Memeriksa modul fakta kata kunci',
       keywordModuleSource === 'llm'
         ? `Diperiksa oleh model LLM lokal -- ${keywordModuleIds.length} modul cocok.`
         : `Model LLM gagal/timeout -- fallback ke pemindaian kata kunci lama, ${keywordModuleIds.length} modul cocok.`
     )
-    if (resolverAlsoTopics.length > 0) {
-      trace.push('Topik tambahan terdeteksi', `Pesan ini juga menanyakan: ${resolverAlsoTopics.join(', ')}.`)
-    }
     trace.push(
       'Mengklasifikasi topik',
       `Topik terdeteksi: "${resolverTopic}"${topicSource === 'regex_fallback' ? ' (fallback regex -- model LLM gagal/timeout)' : ''}.`
@@ -1601,7 +1582,7 @@ export async function decideAndRespond(
     // replace anything would let a web form silently contradict the released packages with no
     // way to see which one answered. Only entries whose question or tags share a word with this
     // message are folded in — see managedFactsFor for why a crude match is the right one here.
-    const managed = await managedFactsFor(inboundText, resolverTopic, knowledge.factualLines.length > 0, resolverAlsoTopics)
+    const managed = await managedFactsFor(inboundText, resolverTopic, knowledge.factualLines.length > 0)
     if (managed.lines.length > 0) {
       knowledge.factualLines.push(...managed.lines)
       trace.push(

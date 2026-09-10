@@ -94,10 +94,7 @@ async function main() {
   const limit = Number(process.argv[2] ?? 100)
   const sampled = seededShuffle(eligible, SAMPLE_SEED).slice(0, limit)
 
-  // Task 21 (Ruling R65): kolom `also` (comma-joined, kosong kalau tidak ada) -- topik
-  // TAMBAHAN yang classifyTopicViaLLM juga nyatakan untuk pesan yang sama, di luar `topik`
-  // (kolom utama, tidak berubah).
-  console.log(['message_id', 'topik', 'also', 'pesan'].join('\t'))
+  console.log(['message_id', 'topik', 'pesan'].join('\t'))
   const topicCounts: Record<string, number> = {}
 
   for (const message of sampled) {
@@ -114,9 +111,7 @@ async function main() {
     }
 
     topicCounts[result.topic] = (topicCounts[result.topic] ?? 0) + 1
-    console.log(
-      [message.id, result.topic, (result.alsoTopics ?? []).join(','), message.content.replace(/\s+/g, ' ').slice(0, 80)].join('\t')
-    )
+    console.log([message.id, result.topic, message.content.replace(/\s+/g, ' ').slice(0, 80)].join('\t'))
   }
 
   console.error(`\nPesan masuk memenuhi syarat (non-Indonesia, berteks): ${eligible.length}`)

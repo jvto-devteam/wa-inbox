@@ -350,54 +350,6 @@ describe('managedFactsFor', () => {
     })
   })
 
-  // Task 21 (Ruling R65): sebuah pesan bisa menanyakan lebih dari satu topik sekaligus, dan
-  // sejak gerbang R56, entri bertopik lain dibuang -- kecuali `alsoTopics` (topik tambahan yang
-  // divalidasi classifyTopicViaLLM) memasukkannya kembali. `general`/`null` (R30) tidak
-  // terpengaruh -- `alsoTopics` hanya berlaku di Lapis 1 (gerbang topik spesifik).
-  describe('topik tambahan (alsoTopics, Ruling R65)', () => {
-    it('meloloskan entri yang bertopik salah satu alsoTopics, walau bukan topik utama', async () => {
-      mockEntries([
-        { question: 'Bisa selesai di Malang?', answer: 'Bisa.', topics: ['route_endpoint'] },
-      ])
-      const facts = await managedFactsFor('berapa deposit dan bisa drop off di malang?', 'payment', false, ['route_endpoint'])
-      expect(facts.lines).toHaveLength(1)
-      expect(facts.gateBypassed).toBe(false)
-    })
-
-    it('tetap menolak entri yang bukan topik utama maupun salah satu alsoTopics', async () => {
-      mockEntries([
-        { question: 'Termasuk apa saja di paket?', answer: 'Semua sudah termasuk.', topics: ['inclusions'] },
-      ])
-      const facts = await managedFactsFor(
-        'berapa deposit dan bisa drop off di malang?',
-        'payment',
-        true, // hasCatalogFacts=true supaya jaring R41 tidak menyala dan menyembunyikan penolakan gerbang
-        ['route_endpoint']
-      )
-      expect(facts.lines).toEqual([])
-    })
-
-    it('item yang masuk lewat also-topic dihitung sebagai admittedByTopic untuk plafon R63 -- mengalahkan item overlap saat plafon penuh', async () => {
-      // 8 item bertopik route_endpoint (also-topic giliran ini, bukan topik utama) mengisi
-      // plafon penuh -- item overlap murni (tanpa `topics`) harus kalah persis seperti kalau
-      // ke-8 item itu masuk lewat topik UTAMA (test R63 yang setara di atas).
-      const alsoItems = Array.from({ length: 8 }, (_, i) => ({
-        question: `Also cocok nomor ${i}?`,
-        answer: `Also jawaban ${i}.`,
-        topics: ['route_endpoint'],
-      }))
-      const overlapItem = { question: 'Berapa harga tiket masuk kawah ijen?', answer: 'Overlap jawaban.' }
-      mockEntries([...alsoItems, overlapItem])
-
-      const facts = await managedFactsFor('berapa harga tiket masuk kawah ijen?', 'price', false, ['route_endpoint'])
-
-      expect(facts.truncated).toBe(1)
-      expect(facts.lines).toHaveLength(8)
-      expect(facts.lines.every((line) => line.startsWith('Also cocok'))).toBe(true)
-      expect(facts.lines.some((line) => line.includes('Overlap jawaban.'))).toBe(false)
-    })
-  })
-
   // Ruling R63 (Task 5c): plafon item knowledge terkelola per giliran. `MAX_MANAGED_ITEMS_PER_TURN`
   // dihitung dalam ITEM, bukan baris.
   describe('plafon item per giliran (Ruling R63)', () => {
