@@ -668,6 +668,15 @@ it('entri tanpa topics berperilaku seperti sebelumnya — overlap token', async 
   const facts = await managedFactsFor('berapa harga paket ATV?', 'route_endpoint')
   expect(facts.lines).toHaveLength(1)
 })
+
+// Ruling R30: giliran `general` tidak digerbang — entri bertopik tetap lolos lewat overlap kata.
+it('giliran bertopik general tidak digerbang', async () => {
+  mockEntries([
+    { question: 'Berapa deposit?', answer: '20% dari total, dibayar di Surabaya.', topics: ['payment'] },
+  ])
+  const facts = await managedFactsFor('deposit bisa dibayar di surabaya?', 'general')
+  expect(facts.lines).toHaveLength(1)
+})
 ```
 
 - [ ] **Step 2: Jalankan, pastikan gagal**
@@ -696,8 +705,15 @@ Lalu di dalam loop `for (const entry of managed.entries)`, ganti `entry.items.fi
       //
       // `topics` KOSONG jatuh ke perilaku sebelum field ini ada. Itu yang membuat migrasi
       // bisa bertahap dan nol revisi lama rusak.
-      if (item.topics && item.topics.length > 0) {
-        if (!topic || !item.topics.includes(topic)) return false
+      //
+      // Ruling R30 (keputusan operator setelah Gerbang G1, 2026-09-10): giliran tanpa topik
+      // spesifik — `general` atau `null` — TIDAK digerbang. Pengukuran Fase 0: 47% lalu
+      // lintas memang `general` (pesan tanpa pertanyaan), dan 4 dari 6 salah-klasifikasi
+      // melibatkan `general`. Menggerbangnya akan membuang fakta di hampir separuh giliran;
+      // melepasnya membuat giliran itu berperilaku persis seperti sebelum field ini ada.
+      const specificTopic = topic !== null && topic !== 'general'
+      if (specificTopic && item.topics && item.topics.length > 0) {
+        if (!item.topics.includes(topic)) return false
       }
       // Lapis 2 -- overlap token. Setelah gerbang, ini alat PERINGKAT, bukan penentu masuk.
       const candidate = tokens(`${item.question} ${(item.tags ?? []).join(' ')}`)
