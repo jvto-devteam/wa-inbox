@@ -52,6 +52,10 @@ Empat hal yang sebelumnya saya catat sebagai "tertunda", ternyata sudah punya bu
 - **`hotel` dan `rooming` memetakan ke modul yang sama** → **bukan cacat.** Terverifikasi: blok 6 prompt mengirim `overnights` (nama hotel) dan `roomingAssumption` **tanpa syarat topik**, jadi kedua pertanyaan tetap menerima fakta lengkap. Tidak ada fakta yang hilang. Task-nya dihapus, dan tabel cacat di dokumen rencana ikut dikoreksi di Task 0.
 - **Gerbang eval tertutup** → sudah dibuktikan tertutup dengan menjalankannya, dan `approve:deployment` terverifikasi ada. Langkah "pastikan tertutup" dihapus — itu mengulang verifikasi yang sudah selesai.
 
+### Keputusan operator 2026-09-10: `npm run eval` tidak dieksekusi dulu (Ruling R52)
+
+Eval butuh `JVTO_DEPLOYMENT_APPROVAL_KEY` (tidak ada di `.env` lokal), tunnel ke Ollama produksi, dan menulis baris `eval-*` sementara ke database produksi. Operator memutuskan eval **tidak dijalankan dulu**. Akibatnya: Task 10 ditunda utuh; langkah eval di Task 11 diganti pembanding grounding deterministik (tanpa LLM, tanpa DB); langkah eval di Task 13 dilewati. Eval tercatat sebagai item tertunda di laporan akhir. Batas yang diakui: tidak ada pengukuran balasan model yang nyata sebelum/sesudah pemindahan FAQ.
+
 ---
 
 ## File Structure
@@ -641,6 +645,8 @@ git commit -m "feat(knowledge): field topics opsional pada item knowledge, plus 
 **Interfaces:**
 - Consumes: `KnowledgeItem.topics` (Task 4), `ResolverTopic`
 - Produces: `managedFactsFor(message: string, topic: ResolverTopic | null): Promise<ManagedFacts>` — dipanggil `orchestrator.ts` di cabang katalog dan cabang tanpa-destinasi
+
+> **Ruling R56 (dikoreksi sesudah Task 5 selesai — lihat `.superpowers/sdd/2026-09-10-alur-grounding/task-5b-brief.md`):** snippet gerbang di bawah menjadikan overlap kata SYARAT MASUK untuk setiap entri, bertentangan dengan komentarnya sendiri ("alat PERINGKAT, bukan penentu masuk") dan dengan Task 11 ("GENERAL … selalu lolos"). Semantik yang benar: topik spesifik yang cocok → masuk tanpa syarat overlap; giliran `general` → entri bertopik `general` masuk, sisanya lewat overlap (R30); entri tanpa topik dan giliran `null` → overlap. Diperbaiki di Task 5b.
 
 - [ ] **Step 1: Tulis test yang gagal**
 
@@ -1237,9 +1243,11 @@ git commit -m "feat(ui): pemilih topik di editor knowledge, topik tampil di tabe
 
 ## FASE 2 — Pindahkan fakta keluar dari kode
 
-> **GERBANG G2** berlaku di Task 11 Step 1 saja — kebenaran fakta bisnisnya. Task 10 dan sisa Task 11 berjalan tanpa menunggu apa pun.
+> **GERBANG G2** berlaku di Task 11 Step 1 saja — kebenaran fakta bisnisnya. Task 10 ditunda operator (Ruling R52); sisa Task 11 berjalan tanpa menunggu apa pun.
 
 ### Task 10: Buka gerbang eval di working copy
+
+> **DITUNDA — keputusan operator 2026-09-10 (Ruling R52).** Jangan jalankan task ini. Seluruh langkah di bawah dipertahankan sebagai prosedur untuk saat operator memutuskan eval dijalankan.
 
 `npm run eval` adalah gerbang mutu utama Fase 2. Sudah dibuktikan menolak jalan (`Deployment gate is CLOSED`) karena `catalog/deployment-approval.json` gitignored dan hanya ada di VPS. `approve:deployment` sudah diverifikasi ada di `package.json`.
 
@@ -1278,6 +1286,15 @@ Expected: kosong (berkas itu gitignored). Kalau muncul, **jangan** `git add` —
 **Interfaces:**
 - Consumes: `topics` (Task 4), gerbang (Task 5)
 - Produces: `GENERAL_FAQ_FALLBACK` tidak lagi diekspor · `allManagedFacts(): Promise<ManagedFacts>` (Mode 3)
+- Produces: `scripts/seed-faq-knowledge.ts` (Ruling R57)
+
+> **Ruling R57 — entri tidak bisa ditulis lewat UI produksi sebelum deploy, dan urutan deploy wajib (terverifikasi):**
+> - Produksi menjalankan `main`, yang `knowledgeItemSchema`-nya `.strict()` tanpa `topics` (`git show cad83ee:src/lib/bot-control/knowledge-body.ts`). UI produksi MENOLAK entri bertopik, dan loader `main` MELEWATI revisi yang memuat `topics` (body tak terbaca → dilewati + log). Step 4 "tulis lewat UI" mustahil sebelum deploy, dan menulis lewat build lokal ke database produksi adalah tulisan produksi dari mesin pengembang.
+> - Maka Step 4 menjadi skrip seed `scripts/seed-faq-knowledge.ts` (idempoten: melewati sumber MANUAL yang judulnya sudah ada), berisi teks yang dikonfirmasi di G2 dengan topik dari tabel Step 3, ditulis lewat `createManagedKnowledge` + `publishKnowledgeRevision` (validasi dan audit yang sama dengan UI). Diuji dengan Prisma palsu. Entri `scripts` di package.json mengikuti pola Task 1–4.
+> - **🛑 Gerbang G5 (baru) — menjalankan seed ke produksi, saat deploy.** Urutan WAJIB: G4 `migrate deploy` → G5 seed (kode `main` yang masih berjalan melewati body ini, jadi perilaku bot belum berubah) → `npm run verify:revisions` → deploy kode. Deploy kode SEBELUM seed = bot kehilangan seluruh fakta FAQ sampai seed dijalankan.
+> - Step 2 (dua DRAFT yatim) dan Step 9 (Test Lab) adalah tindakan operator di UI produksi — masuk daftar tindak lanjut, bukan dikerjakan implementer (browser manual bukan bagian pekerjaan agen).
+> - Nomor baris di Files (`:794`, `:889`, `:1755`, …) sudah bergeser oleh Task 5/6 — cari berdasarkan isi.
+> - Bergantung pada R56 (Task 5b): tanpa itu, blok GENERAL "seluruh 14 topik" hanya lolos kalau ada kata yang sama.
 
 - [ ] **Step 1 — 🛑 GERBANG G2: operator meninjau kebenaran tiap blok fakta**
 
@@ -1326,7 +1343,7 @@ Buka `src/lib/bot/knowledge.ts:58-127`. Untuk tiap blok, jawab satu pertanyaan: 
 
 Semua 11 adalah fakta. **`GUARDRAIL_INSTRUCTION` dan `DISCLOSURES` tidak ikut** — keduanya aturan.
 
-- [ ] **Step 4: Tulis entri knowledge lewat UI, terbitkan**
+- [ ] **Step 4: Tulis skrip seed entri knowledge (Ruling R57 — BUKAN lewat UI produksi)**
 
 Untuk tiap blok, buat `KnowledgeSource` baru lewat `/bot-control/knowledge`, isi `question` sebagai kalimat pelanggan (bukan judul internal), `answer` sebagai isi bloknya, dan pilih topiknya. Terbitkan.
 
@@ -1369,12 +1386,11 @@ Hapus juga importnya kalau sudah tidak dipakai berkas itu.
 
 - [ ] **Step 7: Hapus konstantanya**
 
-Di `src/lib/bot/knowledge.ts`, hapus `export const GENERAL_FAQ_FALLBACK` beserta isinya (baris 58-127). Hapus juga `describe('GENERAL_FAQ_FALLBACK', ...)` di `knowledge.test.ts` — isinya menegaskan fakta bisnis ('Deposit: 20%', 'Revolut', 'gas mask') di konstanta yang sudah tidak ada; jaminan itu pindah ke Gerbang G2, `npm run verify:revisions`, dan `npm run eval`. Jalankan `npx tsc --noEmit` untuk menemukan pemakai lain — **setiap rujukan yang tersisa ditangani per Step 6, bukan sekadar dihapus.**
+Di `src/lib/bot/knowledge.ts`, hapus `export const GENERAL_FAQ_FALLBACK` beserta isinya (baris 58-127). Hapus juga `describe('GENERAL_FAQ_FALLBACK', ...)` di `knowledge.test.ts` — isinya menegaskan fakta bisnis ('Deposit: 20%', 'Revolut', 'gas mask') di konstanta yang sudah tidak ada; jaminan itu pindah ke Gerbang G2, `npm run verify:revisions`, dan pembanding grounding Step 8 (Ruling R52). Jalankan `npx tsc --noEmit` untuk menemukan pemakai lain — **setiap rujukan yang tersisa ditangani per Step 6, bukan sekadar dihapus.**
 
-- [ ] **Step 8: Jalankan eval — GERBANG WAJIB**
+- [ ] **Step 8: Pembanding grounding pengganti eval — GERBANG WAJIB (Ruling R52)**
 
-Run: `npm run eval`
-Expected: **13 kasus lulus, tanpa satu pun ekspektasi diubah.**
+Eval ditunda operator. Penggantinya deterministik — tanpa LLM, tanpa DB, dirinci saat pra-dispatch Task 11: untuk setiap giliran di `EVAL_CASES`, bandingkan fakta FAQ yang sampai ke grounding SEBELUM (konstanta `GENERAL_FAQ_FALLBACK`) dan SESUDAH (entri knowledge hasil migrasi, dimuat lewat mock loader). Expected: **setiap fakta yang dulu terjangkau tetap terjangkau.**
 
 Kalau ada yang gagal, itu berarti satu blok mendarat di topik yang salah dan faktanya sekarang tidak terjangkau. **HENTIKAN.** Jangan menyesuaikan ekspektasi — ekspektasi yang berubah berarti perilaku yang berubah, dan itu harus dibahas dengan operator lebih dulu.
 
@@ -1484,7 +1500,7 @@ Komentar di `knowledge.ts:619-628` mencatat sendiri bahwa screening Ijen dinyata
 > - Test integrasi memakai kasus `blue_fire` itu dan menegaskan `factualLines` DAN `detailLines` bebas kembar.
 > - Helper diekspor sebagai fungsi murni `dedupeLines(lines: string[]): string[]` (normalisasi spasi + huruf kecil, urutan kemunculan pertama dipertahankan) dengan unit test sintetis (varian spasi/huruf besar, urutan tetap). Itu yang membuktikan dedup `disclosures` — tidak ada kasus katalog yang punya disclosure kembar, karena `getTopicDisclosures` + penjaga `includes` (`knowledge.ts:692`) sudah mencegahnya. Dedup tetap diterapkan ke ketiga daftar, masing-masing terpisah.
 > - RED dibuktikan: test integrasi gagal di HEAD sebelum dedup (1 kembar), lalu `dup_check.ts` dijalankan ulang sesudahnya dan harus melaporkan 0 kembar di kedua kasus.
-> - **Step 5 (`npm run eval`) tertahan gerbang operator Task 10** — `JVTO_DEPLOYMENT_APPROVAL_KEY` tidak ada di `.env` lokal. Step itu dijalankan begitu Task 10 terbuka; bukan alasan menahan task ini.
+> - **Step 5 (`npm run eval`) dilewati** — keputusan operator 2026-09-10 (Ruling R52).
 > - Batas yang dilaporkan: baris managed di-push SESUDAH fungsi ini kembali (`orchestrator.ts`), jadi kembar antara katalog dan knowledge terkelola tidak tertangkap di sini.
 
 - [ ] **Step 1: Tulis test yang gagal**
@@ -1536,10 +1552,9 @@ Terapkan pada `factualLines`, `detailLines`, dan `disclosures` — masing-masing
 Run: `npx vitest run src/lib/bot/knowledge.test.ts`
 Expected: PASS.
 
-- [ ] **Step 5: Eval tidak boleh berubah**
+- [ ] **Step 5: Eval — dilewati (Ruling R52)**
 
-Run: `npm run eval`
-Expected: 13 lulus, ekspektasi tidak diubah.
+Eval ditunda operator. Bukti task ini: test integrasi `blue_fire`, `dup_check.ts` melaporkan 0 kembar (Ruling R48), dan suite penuh.
 
 - [ ] **Step 6: Gerbang mutu + commit**
 
@@ -1763,10 +1778,21 @@ git commit -m "feat(decision-log): kolom topic/job supaya laporan per cluster bi
 **Files:**
 - Modify: `src/app/api/dashboard/activity/route.ts`
 - Create: `src/app/api/dashboard/activity/route.test.ts` — **berkas ini belum ada**; route-nya saat ini tidak punya test sama sekali. Ikuti pola mock Prisma yang dipakai `src/app/api/bot-control/decisions/route.test.ts`.
+- Modify: `src/components/dashboard/ActivityPanels.tsx` — `DecisionTopicPanel` (Ruling R53)
+- Modify: `src/app/(authenticated)/dashboard/page.tsx` — render panel itu (Ruling R53)
+- Test: `src/app/(authenticated)/dashboard/page.test.tsx` — fixture + satu test panel (Ruling R53)
 
 **Interfaces:**
 - Consumes: kolom dari Task 15
 - Produces: `{ byTopic: Array<{ topic: string; total: number; clarified: number; handoff: number }> }`
+- Produces: `byJob` dengan bentuk yang sama, kunci `job` (Ruling R53)
+
+> **Ruling R53 — laporan harus terlihat, `job` harus terbaca, dan ukur-ulang menunggu deploy (terverifikasi):**
+> - **Terlihat.** `/api/dashboard/activity` hanya dibaca halaman dashboard (`dashboard/page.tsx` → `ActivityPanels.tsx`: `BotHealthPanel`, `KnowledgeGapsPanel`). Field baru di API tanpa panel = laporan yang tak pernah dilihat siapa pun. Tambahkan `DecisionTopicPanel` di `ActivityPanels.tsx`, meniru pola `KnowledgeGapsPanel` (baris per topik dengan hitungan REPLIED / CLARIFIED / HANDOFF, urut total menurun), dan render di `dashboard/page.tsx`.
+> - **`job` terbaca.** R51 mempertahankan kolom `job` sebagai sumbu funnel; kolom yang ditulis tapi tak pernah dibaca tidak menjawab apa pun. Tambahkan `byJob` dengan bentuk yang sama lewat `groupBy` kedua (`by: ['job', 'status']`, `job: { not: null }`), dan tampilkan di panel yang sama sebagai bagian kedua.
+> - **Test route:** beberapa `groupBy` berjalan di satu `Promise.all`, jadi `mockResolvedValue` tunggal memberi hasil yang sama ke semuanya — pakai `mockImplementation` yang membedakan menurut `args.by`. Fixture `activity` di `dashboard/page.test.tsx` (baris ~90) ikut diperbarui karena tipe `DashboardActivity` bertambah, dan satu test menegaskan panel menampilkan satu baris topik.
+> - **Step 5 dipindah ke sesudah deploy.** `measure:followup` membaca run PRODUKSI, yang dihasilkan kode `main` — branch ini belum di-deploy, jadi angka sebelum/sesudah hari ini mengukur kode yang sama. (Baseline Task 3 pun hanya 8 run REPLIED.) Dicatat di daftar tindak lanjut laporan akhir.
+> - Commit menyebut berkas satu per satu (R34), bukan `git add` satu direktori.
 
 - [ ] **Step 1: Tulis test yang gagal**
 
@@ -1808,14 +1834,13 @@ Expected: PASS.
 
 - [ ] **Step 5: Ukur ulang dan bandingkan**
 
-Run: `npm run measure:followup` dan bandingkan dengan hasil Task 3.
-Expected: `mengulang` + `mengoreksi` **turun**. Kalau naik, perubahan ini merugikan — hentikan dan tinjau.
+**Dipindah ke sesudah deploy (Ruling R53).** Setelah branch ini berjalan di produksi cukup lama untuk menghasilkan run baru: `npm run measure:followup`, bandingkan dengan hasil Task 3 — `mengulang` + `mengoreksi` harus **turun**; kalau naik, perubahan ini merugikan dan harus ditinjau.
 
 - [ ] **Step 6: Gerbang mutu + commit**
 
 ```bash
 npm test && npx tsc --noEmit && npx eslint .
-git add src/app/api/dashboard/activity/
+git add src/app/api/dashboard/activity/route.ts src/app/api/dashboard/activity/route.test.ts src/components/dashboard/ActivityPanels.tsx 'src/app/(authenticated)/dashboard/page.tsx' 'src/app/(authenticated)/dashboard/page.test.tsx'
 git commit -m "feat(dashboard): laporan keputusan bot per cluster topik"
 ```
 
@@ -1834,6 +1859,9 @@ Begitu gerbang topik aktif, pertanyaan yang paling sering muncul justru **"kenap
 **Files:**
 - Modify: `src/lib/bot/runtime-integration.ts` — kembalikan juga entri yang DITOLAK beserta alasannya
 - Modify: `src/lib/bot-control/decision-recorder.ts` — simpan ke `BotDecisionRun.knowledgeRefs`
+- Modify: `src/lib/bot/types.ts` — `knowledge?` di varian `BotDecision` (Ruling R54)
+- Modify: `src/lib/bot/orchestrator.ts` — isi `knowledge` di titik perakitan, tempel di satu tempat (Ruling R54)
+- Test: `src/lib/bot-control/decision-recorder.test.ts`, `src/lib/bot/orchestrator.test.ts` (Ruling R54)
 - Modify: `src/components/inbox/BotTracePopover.tsx`
 - Test: `src/components/inbox/BotTracePopover.test.tsx`
 
@@ -1841,16 +1869,24 @@ Begitu gerbang topik aktif, pertanyaan yang paling sering muncul justru **"kenap
 - Consumes: `ManagedFacts.gateBypassed` (Task 6), kolom `topic` (Task 15)
 - Produces: `ManagedFacts.rejected: Array<{ sourceKey: string; itemQuestion: string; reason: string }>`
 
+> **Ruling R54 — jalur datanya lewat objek keputusan, dan "ditolak" harus dibatasi (terverifikasi):**
+> - **Jalur data.** `recordBotDecisionRun` hanya membaca objek `decision` (`knowledgeRefsForDecision`, `decision-recorder.ts:129`), dan `BotTracePopover` merender `trace: BotDecision` dari `Message.botTrace` (`BotTracePopover.tsx:27-33`) — objek keputusan yang sama. `ManagedFacts` hari ini berhenti di orkestrator; tidak ada yang membawanya ke keputusan. Maka: tambahkan `knowledge?: { catalogLines: string[]; managedLines: Array<{ line: string; source: string }>; rejected: …; gateBypassed: boolean }` opsional ke varian `BotDecision` (`types.ts`), isi di titik perakitan knowledge (tanpa-destinasi, katalog, Mode 3) ke konteks giliran yang dibuat Task 15 (R51), dan tempelkan di tempat yang sama dengan `topic`/`job`. Recorder memasukkannya ke Json `knowledgeRefs` (tetap lewat `sanitizeTrace`); popover membacanya dari `trace.knowledge`. `orchestrator.ts` dan `types.ts` masuk Files.
+> - **"Ditolak" = yang benar-benar dikeluarkan gerbang.** Mencatat SEMUA entri yang topiknya tidak cocok akan tumbuh linear dengan knowledge base dan tersimpan di setiap `botTrace` selamanya — padahal entri tanpa satu kata pun yang sama dengan pesan tidak akan ikut dengan atau tanpa gerbang, jadi gerbang bukan alasannya. `rejected` hanya memuat entri yang ditolak gerbang TETAPI lolos overlap kata (akan masuk kalau gerbang tidak ada), dan TIDAK memuat entri yang kemudian dimasukkan kembali oleh jaring (`gateBypassed` yang menceritakan kasus itu).
+> - **Fixture test** disesuaikan dengan definisi itu: pertanyaan entri berbagi kata dengan pesan, dan panggilan memberi `hasCatalogFacts = true` (R41) supaya jaring tidak memasukkannya kembali. Tambah test: entri ditolak tanpa overlap kata TIDAK tercatat; entri yang dimasukkan jaring TIDAK tercatat.
+> - Batas yang dilaporkan: baris katalog tersimpan sebagai teks tanpa id modul — `resolveKnowledgeForTopic` tidak mengembalikan id per baris.
+
 - [ ] **Step 1: Tulis test yang gagal**
 
 ```typescript
 it('mencatat entri yang ditolak gerbang beserta alasannya', async () => {
   mockEntries([
-    { question: 'Berapa deposit?', answer: '20%.', topics: ['payment'] },
+    { question: 'Berapa deposit di Malang?', answer: '20%.', topics: ['payment'] },
   ])
-  const facts = await managedFactsFor('bisa selesai di malang?', 'route_endpoint')
+  // Berbagi kata "malang" dengan pesan: tanpa gerbang entri ini akan ikut. `true` = katalog punya fakta (R41),
+  // jadi jaring tidak memasukkannya kembali.
+  const facts = await managedFactsFor('bisa selesai di malang?', 'route_endpoint', true)
   expect(facts.rejected).toEqual([
-    expect.objectContaining({ itemQuestion: 'Berapa deposit?', reason: 'topik [payment] tidak memuat route_endpoint' }),
+    expect.objectContaining({ itemQuestion: 'Berapa deposit di Malang?', reason: 'topik [payment] tidak memuat route_endpoint' }),
   ])
 })
 ```
@@ -1901,7 +1937,7 @@ Expected: PASS.
 
 ```bash
 npm test && npx tsc --noEmit && npx eslint .
-git add src/lib/bot/runtime-integration.ts src/lib/bot-control/decision-recorder.ts src/components/inbox/BotTracePopover.tsx src/components/inbox/BotTracePopover.test.tsx src/lib/bot/runtime-integration.test.ts
+git add src/lib/bot/runtime-integration.ts src/lib/bot/runtime-integration.test.ts src/lib/bot/types.ts src/lib/bot/orchestrator.ts src/lib/bot/orchestrator.test.ts src/lib/bot-control/decision-recorder.ts src/lib/bot-control/decision-recorder.test.ts src/components/inbox/BotTracePopover.tsx src/components/inbox/BotTracePopover.test.tsx
 git commit -m "feat(trace): tampilkan fakta yang dipakai dan yang ditolak gerbang, per balasan"
 ```
 
@@ -1918,6 +1954,8 @@ git commit -m "feat(trace): tampilkan fakta yang dipakai dan yang ditolak gerban
 **Interfaces:**
 - Consumes: `BotDecisionRun` yang `flaggedAt != null`
 - Produces: potongan TypeScript siap tempel ke `fixtures.ts`
+
+> **Ruling R55 — keluaran harus bisa langsung ditempel (terverifikasi di `src/lib/bot/eval/fixtures.ts:10-20`):** `EvalCase` = `{ id, turns: string[], mustContain, mustNotContain, source }`. Snippet semula mencetak `message`, `topic`, `mustInclude`, `mustNotInclude` — potongan yang ditempel akan gagal `tsc`. Keluaran di bawah sudah memakai bentuk asli; `source` memuat id run dan alasan agen. `topic` tidak dipilih lagi: ia bukan bagian `EvalCase`, dan kolomnya baru ada di produksi setelah G4 (R51) — memilihnya membuat skrip gagal di database yang belum dimigrasi. Jalur "tidak ada yang ditandai" kini juga memanggil `$disconnect()`, sama dengan jalur utama dan skrip Task 4. Entri `scripts` di `package.json` mengikuti pola Task 1–4 dalam plan yang disetujui; tidak ada dependensi baru. Keluaran memuat teks pelanggan asli — hanya tercetak lokal, dan operator yang memilih mana yang ditempel.
 
 - [ ] **Step 1: Tulis skrip**
 
@@ -1939,13 +1977,14 @@ async function main() {
 
   const flagged = await prisma.botDecisionRun.findMany({
     where: { flaggedAt: { not: null } },
-    select: { id: true, inboundText: true, replyText: true, flagNote: true, topic: true },
+    select: { id: true, inboundText: true, replyText: true, flagNote: true },
     orderBy: { flaggedAt: 'desc' },
     take: 20,
   })
 
   if (flagged.length === 0) {
     console.error('Tidak ada keputusan yang ditandai. Tandai jawaban buruk dari inbox dulu.')
+    await prisma.$disconnect()
     return
   }
 
@@ -1954,16 +1993,16 @@ async function main() {
     console.log(`  // Balasan yang salah: ${(run.replyText ?? '').replace(/\s+/g, ' ').slice(0, 120)}`)
     console.log(`  {`)
     console.log(`    id: 'flagged-${run.id.slice(0, 8)}',`)
-    console.log(`    message: ${JSON.stringify(run.inboundText)},`)
-    console.log(`    topic: ${JSON.stringify(run.topic ?? 'general')},`)
-    console.log(`    // ISI SENDIRI: frasa yang WAJIB ada di balasan yang benar`)
-    console.log(`    mustInclude: [],`)
-    console.log(`    // ISI SENDIRI: frasa yang TIDAK BOLEH ada`)
-    console.log(`    mustNotInclude: [],`)
+    console.log(`    turns: [${JSON.stringify(run.inboundText)}],`)
+    console.log(`    // ISI SENDIRI: frasa huruf kecil yang WAJIB ada di balasan yang benar`)
+    console.log(`    mustContain: [],`)
+    console.log(`    // ISI SENDIRI: frasa huruf kecil yang TIDAK BOLEH ada`)
+    console.log(`    mustNotContain: [],`)
+    console.log(`    source: ${JSON.stringify(`BotDecisionRun ${run.id}, ditandai agen: ${run.flagNote ?? '(tanpa alasan)'}`)},`)
     console.log(`  },`)
   }
 
-  console.error(`\n${flagged.length} kandidat. Isi mustInclude/mustNotInclude, tempel ke fixtures.ts, jalankan npm run eval.`)
+  console.error(`\n${flagged.length} kandidat. Isi mustContain/mustNotContain, tempel ke EVAL_CASES di fixtures.ts; jalankan npm run eval begitu eval diaktifkan (Ruling R52).`)
   await prisma.$disconnect()
 }
 
