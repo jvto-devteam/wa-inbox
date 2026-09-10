@@ -1674,6 +1674,8 @@ git commit -m "feat(bot): verifier menandai balasan yang menjanjikan hal yang gu
 > - **Gerbang G4 terjadi saat deploy, bukan di tengah task.** Branch ini tidak menyentuh database produksi sampai di-deploy, jadi implementer meng-commit skema + SQL + kode lalu selesai; `migrate deploy` di VPS dijalankan operator SEBELUM kode ini di-deploy (kode yang menulis kolom yang belum ada akan membuat `recordBotDecisionRun` gagal — ditelan, tapi setiap run hilang). Dicatat di daftar gerbang laporan akhir.
 > - Biaya kalau salah: satu fungsi dalam tambahan di `decideAndRespond`.
 
+> **Ruling R72 — migrasi diuji di database sekali pakai, oleh controller.** `.claude/rules/prisma-schema.md` mewajibkan migrasi diuji di database development, dan `DATABASE_URL` repo ini adalah PRODUKSI. Sesudah implementer meng-commit skema + `migration.sql`, controller menjalankan `.superpowers/sdd/2026-09-10-alur-grounding/test_migration_tmpdb.sh topic job`: cluster Postgres 16 lokal di port 55432, config Prisma sementara dengan URL literal 127.0.0.1 tanpa dotenv, `env -u DATABASE_URL`, penjaga URL, dan cluster dihapus saat keluar. Baseline sudah terbukti: 30 migrasi yang ada berlaku bersih pada database kosong. Implementer TIDAK menjalankan perintah Prisma apa pun yang menyambung ke database (`migrate deploy`, `migrate dev`, `db push`, `migrate status`) — hanya `migrate diff` (offline) dan `generate`.
+
 Nilai-nilai ini sudah dihitung tiap giliran, hari ini hanya terkubur di `trace` Json sehingga tidak bisa di-`groupBy`.
 
 **Files:**
