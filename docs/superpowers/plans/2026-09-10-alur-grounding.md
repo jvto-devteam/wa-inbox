@@ -1305,6 +1305,7 @@ Expected: kosong (berkas itu gitignored). Kalau muncul, **jangan** `git add` —
 > - Step 2 (dua DRAFT yatim) dan Step 9 (Test Lab) adalah tindakan operator di UI produksi — masuk daftar tindak lanjut, bukan dikerjakan implementer (browser manual bukan bagian pekerjaan agen).
 > - Nomor baris di Files (`:794`, `:889`, `:1755`, …) sudah bergeser oleh Task 5/6 — cari berdasarkan isi.
 > - Bergantung pada R56 (Task 5b): tanpa itu, blok GENERAL "seluruh 14 topik" hanya lolos kalau ada kata yang sama.
+> - **Ruling R77 — Task 11 juga menutup bagian Mode 3 dari Task 12 dan 17:** `allManagedFacts()` membawa `degraded` dan Mode 3 memeriksanya sebelum menyusun prompt (R46, dengan test-nya); Mode 3 juga mengisi `knowledge` di objek keputusan (R54).
 
 - [ ] **Step 1 — 🛑 GERBANG G2: operator meninjau kebenaran tiap blok fakta**
 
@@ -1440,6 +1441,8 @@ Sebelum Fase 2 knowledge cuma pelengkap, jadi "ditelan lalu jalan terus" benar. 
 > - **Balasan bisa diatur operator.** Pakai `await fallbackReplyText(TECHNICAL_HICCUP_REPLY)`, sama dengan cabang katalog-kosong di `orchestrator.ts` (`Settings.fallbackReply`; kosong = default di kode) — bukan konstanta langsung.
 > - **Test** memakai tanda tangan asli `decideAndRespond(conversationId, inboundText)` dan skenario yang sudah ada di `orchestrator.test.ts` untuk tiap titik (satu test per titik). Test negatif TIDAK menegaskan `mode !== 'clarify'` (banyak jalur sah berakhir `clarify`), melainkan: tidak ada langkah trace 'Knowledge tidak terbaca' dan balasan bukan teks hiccup. Di `runtime-integration.test.ts`: `available: false` → `degraded: true`, termasuk saat pesan hanya berisi stopword; `available: true` tanpa entri → `degraded: false`.
 > - Biaya kalau salah: saat database knowledge terputus, pelanggan menerima permintaan maaf alih-alih jawaban dari separuh pengetahuan — memang itu tujuan task ini.
+
+> **Ruling R77 — dikerjakan sekarang untuk DUA titik; titik Mode 3 ikut Task 11.** G2 menahan Task 11, dan `allManagedFacts()` (Mode 3) baru lahir di Task 11. Cek `degraded` di cabang tanpa-destinasi dan cabang katalog tidak bergantung pada Task 11, jadi dikerjakan sekarang; Task 11 memasang cek yang sama di Mode 3 saat membuat `allManagedFacts()` (tercatat di Task 11). Test Mode 3 dari R46 ikut pindah ke Task 11.
 
 > **Ruling R32:** Task 5 sudah memasang mock `@/lib/bot/managed-knowledge` di `orchestrator.test.ts` dengan default `{ entries: [], available: true, loadedAt: 0 }`. Test di task ini menyetel `available: false` secara eksplisit lewat `vi.mocked(loadPublishedManagedKnowledge).mockResolvedValue(...)` — nama helper `mockManagedKnowledge` di snippet bersifat skematik. Tanpa default itu, setiap test orkestrator akan melihat `available: false` dan berubah jadi "technical hiccup".
 
@@ -1889,6 +1892,7 @@ Begitu gerbang topik aktif, pertanyaan yang paling sering muncul justru **"kenap
 > - **"Ditolak" = yang benar-benar dikeluarkan gerbang.** Mencatat SEMUA entri yang topiknya tidak cocok akan tumbuh linear dengan knowledge base dan tersimpan di setiap `botTrace` selamanya — padahal entri tanpa satu kata pun yang sama dengan pesan tidak akan ikut dengan atau tanpa gerbang, jadi gerbang bukan alasannya. `rejected` hanya memuat entri yang ditolak gerbang TETAPI lolos overlap kata (akan masuk kalau gerbang tidak ada), dan TIDAK memuat entri yang kemudian dimasukkan kembali oleh jaring (`gateBypassed` yang menceritakan kasus itu).
 > - **Fixture test** disesuaikan dengan definisi itu: pertanyaan entri berbagi kata dengan pesan, dan panggilan memberi `hasCatalogFacts = true` (R41) supaya jaring tidak memasukkannya kembali. Tambah test: entri ditolak tanpa overlap kata TIDAK tercatat; entri yang dimasukkan jaring TIDAK tercatat.
 > - Batas yang dilaporkan: baris katalog tersimpan sebagai teks tanpa id modul — `resolveKnowledgeForTopic` tidak mengembalikan id per baris.
+> - **Ruling R77:** titik tanpa-destinasi dan katalog dikerjakan sekarang; `knowledge` untuk Mode 3 diisi di Task 11 bersama `allManagedFacts()`.
 
 - [ ] **Step 1: Tulis test yang gagal**
 
@@ -2048,6 +2052,8 @@ git commit -m "feat(eval): ubah keputusan yang ditandai jadi kandidat golden cas
 ---
 
 ### Task 21: Topik tambahan untuk pesan yang menanyakan lebih dari satu hal (Ruling R65)
+
+> **Status 2026-09-10 (Ruling R76): gerbang ukur TIDAK LOLOS — commit fefbe22 dibatalkan dengan revert b75bc4f.** Kesepakatan topik utama prompt baru 93/100; kontrol prompt lama pada 100 pesan yang sama 96/100. Empat perubahan sama di keduanya (noise model); tiga hanya di prompt baru (general→greeting ×2, route_endpoint→booking ×1). Manfaat terukur: 1 dari 6 kesalahan ketat berlabel tertutup. Menunggu keputusan operator. Reviewer mencatat keempat contoh lama di prompt ikut berubah (`"also": []` ditambahkan) — kandidat penyebab bila dicoba lagi.
 
 **Kenapa.** Pengukuran G1: 5 dari 30 pesan berlabel punya topik sah kedua, dan classifier memilih salah satunya. Sejak R56, gerbang topik spesifik mengeluarkan entri bertopik lain — jadi "berapa deposit dan bisa drop off di Malang?" kehilangan fakta salah satu topik (kecuali katalog kosong dan jaring R41 berjalan).
 
