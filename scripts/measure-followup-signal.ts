@@ -57,6 +57,11 @@ async function main() {
     console.log(`  ${name.padEnd(18)} ${String(count).padStart(4)}  ${pct}%`)
   }
   console.log('\n"mengulang" dan "mengoreksi" adalah kandidat jawaban GAGAL.')
+  console.log(
+    '"mengulang" adalah BATAS BAWAH: overlap kata (>=60% kata >=4 huruf) menangkap pengulangan ' +
+      'harfiah, tapi pelanggan yang mengulang pertanyaannya dengan kata lain terhitung "lanjut" -- ' +
+      'angka sebenarnya sama atau lebih tinggi dari yang tercetak di atas.'
+  )
   await prisma.$disconnect()
 }
 

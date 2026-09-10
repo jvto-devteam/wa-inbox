@@ -103,6 +103,11 @@ const activity = {
     outbound: i * 2,
   })),
   gaps: { total: 0, byReason: {}, topTopics: [] },
+  byTopic: [
+    { topic: 'route_endpoint', total: 12, replied: 0, clarified: 12, handoff: 0 },
+    { topic: 'payment', total: 8, replied: 8, clarified: 0, handoff: 0 },
+  ],
+  byJob: [{ job: 'book_trip', total: 10, replied: 2, clarified: 0, handoff: 8 }],
 }
 
 function mockEndpoints(overrides: Partial<Record<string, unknown>> = {}) {
@@ -171,6 +176,16 @@ describe('Beranda dashboard', () => {
     expect(screen.getByText(/Tidak resmi — belum diatur/)).toBeInTheDocument()
 
     expect(location.href).toBe('http://localhost/dashboard')
+  })
+
+  it('menampilkan cluster keputusan bot per topik dan per job (R53)', async () => {
+    mockEndpoints()
+
+    render(<DashboardPage />)
+
+    expect(await screen.findByText('Keputusan bot per cluster')).toBeInTheDocument()
+    expect(screen.getByText('route_endpoint')).toBeInTheDocument()
+    expect(screen.getByText('book_trip')).toBeInTheDocument()
   })
 
   it('merayakan antrean kosong alih-alih menampilkan kotak "tidak ada data"', async () => {

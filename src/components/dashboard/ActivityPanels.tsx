@@ -309,3 +309,106 @@ export function KnowledgeGapsPanel({
     </Panel>
   )
 }
+
+/** Satu baris cluster: nama, total, batang, dan pemecahan tiga hasil (R53). */
+type ClusterRow = { total: number; replied: number; clarified: number; handoff: number }
+
+function ClusterRows<T extends ClusterRow>({
+  rows,
+  name,
+}: {
+  rows: T[]
+  name: (row: T) => string
+}) {
+  const max = rows.reduce((m, r) => Math.max(m, r.total), 0)
+  return (
+    <ul className="space-y-2.5">
+      {rows.map((r) => (
+        <li key={name(r)}>
+          <div className="flex items-baseline justify-between gap-3">
+            <span className="truncate text-sm text-ink">{name(r)}</span>
+            <span className="shrink-0 font-mono text-sm text-ink tabular-nums">{formatNumber(r.total)}</span>
+          </div>
+          <div className="mt-1">
+            <HBar value={r.total} max={max} tone="ink" />
+          </div>
+          <p className="mt-1 text-xs text-ink-muted">
+            Dijawab <span className="font-mono text-ink tabular-nums">{formatNumber(r.replied)}</span>
+            {' · '}Klarifikasi <span className="font-mono text-ink tabular-nums">{formatNumber(r.clarified)}</span>
+            {' · '}Diserahkan <span className="font-mono text-ink tabular-nums">{formatNumber(r.handoff)}</span>
+          </p>
+        </li>
+      ))}
+    </ul>
+  )
+}
+
+/**
+ * KEPUTUSAN BOT PER CLUSTER — dua sumbu klasifikasi giliran (`topic`, `job`, lihat komentar
+ * kolomnya di schema) sebagai laporan yang benar-benar bisa dilihat (Ruling R53).
+ *
+ * Tanpa panel ini, `topic` dan `job` adalah kolom yang ditulis tiap giliran dan tidak pernah
+ * dibaca siapa pun — persis kesalahan yang dicatat R53. Dua bagian, bukan digabung jadi satu
+ * daftar: `topic` adalah SUBJEK percakapan (harga, jadwal) dan `job` adalah TUGAS yang sedang
+ * dikerjakan bot untuknya (booking, refund) — sumbu yang berbeda, jadi baris yang sama tidak
+ * bisa digabung tanpa kehilangan salah satunya.
+ */
+export function DecisionTopicPanel({
+  byTopic,
+  byJob,
+  rangeDays,
+  error,
+  loading,
+  onRetry,
+  className,
+}: {
+  byTopic: (ClusterRow & { topic: string })[] | null
+  byJob: (ClusterRow & { job: string })[] | null
+  rangeDays: number
+  error: string | null
+  loading: boolean
+  onRetry?: () => void
+  className?: string
+}) {
+  const hasData = byTopic !== null && byJob !== null
+  const empty = hasData && byTopic.length === 0 && byJob.length === 0
+
+  return (
+    <Panel
+      title="Keputusan bot per cluster"
+      subtitle={loading || error || !hasData ? undefined : `${rangeDays} hari terakhir`}
+      href="/bot-control/decisions"
+      hrefLabel="Semua keputusan"
+      className={className}
+    >
+      {loading ? (
+        <PanelLoading rows={4} />
+      ) : error || !hasData ? (
+        <PanelError message={error ?? 'Cluster keputusan tidak terbaca'} onRetry={onRetry} />
+      ) : empty ? (
+        <p className="text-sm text-ink-muted">
+          Tidak ada keputusan bertopik atau berjob dalam {rangeDays} hari terakhir.
+        </p>
+      ) : (
+        <div className="space-y-4">
+          <div>
+            <p className="mb-2 text-xs font-medium text-ink-muted">Topik percakapan</p>
+            {byTopic.length === 0 ? (
+              <p className="text-sm text-ink-muted">Tidak ada topik tercatat.</p>
+            ) : (
+              <ClusterRows rows={byTopic} name={(r) => r.topic} />
+            )}
+          </div>
+          <div className="border-t border-line pt-3">
+            <p className="mb-2 text-xs font-medium text-ink-muted">Tugas bot (job)</p>
+            {byJob.length === 0 ? (
+              <p className="text-sm text-ink-muted">Tidak ada job tercatat.</p>
+            ) : (
+              <ClusterRows rows={byJob} name={(r) => r.job} />
+            )}
+          </div>
+        </div>
+      )}
+    </Panel>
+  )
+}

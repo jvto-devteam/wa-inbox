@@ -7,7 +7,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { RangeSwitch } from '@/components/dashboard/Panel'
 import { WaitingQueuePanel, RemindersPanel } from '@/components/dashboard/WaitingPanels'
 import { ContextPanel, FunnelPanel, OutboundPanel } from '@/components/dashboard/OpsPanels'
-import { BotHealthPanel, KnowledgeGapsPanel, VolumePanel } from '@/components/dashboard/ActivityPanels'
+import { BotHealthPanel, DecisionTopicPanel, KnowledgeGapsPanel, VolumePanel } from '@/components/dashboard/ActivityPanels'
 import {
   buildWaitingList,
   countBotHeld,
@@ -33,10 +33,11 @@ import { fetchJson, FetchJsonError } from '@/lib/fetch-json'
  *     baris teks selebar dua meter tidak bisa dibaca siapa pun — tapi sekarang ia memuat tiga
  *     kolom panel, bukan satu kolom yang ditarik melar.
  *
- *  2. CAKUPAN. Delapan panel, satu per wilayah aplikasi yang benar-benar punya datanya:
+ *  2. CAKUPAN. Sembilan panel, satu per wilayah aplikasi yang benar-benar punya datanya:
  *     antrean chat (Inbox), reminder (CRM), funnel penjualan (pipeline), antrean outbound,
- *     volume pesan, kesehatan bot, pertanyaan tak terjawab (knowledge), dan ringkasan inbox +
- *     saluran. Tidak ada satu pun angka di halaman ini yang tidak berasal dari tabel nyata.
+ *     volume pesan, kesehatan bot, pertanyaan tak terjawab (knowledge), keputusan bot per
+ *     cluster topik/job (R53), dan ringkasan inbox + saluran. Tidak ada satu pun angka di
+ *     halaman ini yang tidak berasal dari tabel nyata.
  *
  *  3. INTERAKSI YANG BERARTI. Dua saja, dan keduanya mengubah jawaban: pemilih rentang
  *     (7/14/30 hari) yang benar-benar menarik ulang angkanya dari database, dan sorotan kolom
@@ -49,6 +50,9 @@ import { fetchJson, FetchJsonError } from '@/lib/fetch-json'
  *   1. Funnel, volume, kesehatan bot. Keadaan bisnis dan mesinnya.
  *   2. Antrean chat menunggu (dua kolom) + reminder + antrean outbound. Pekerjaan hari ini.
  *   3. Pertanyaan tak terjawab + ringkasan inbox. Pekerjaan minggu depan.
+ *   4. Keputusan bot per cluster topik/job (R53). Sama waktunya dengan baris 1 (activity), tapi
+ *      diturunkan ke bawah karena isinya diagnostik -- berguna saat menyelidiki, bukan setiap
+ *      kali membuka Beranda.
  *
  * Baris 1 dan 2 SENGAJA dibalik dari urutan mendesaknya, atas permintaan pemilik. Alasannya
  * masuk akal untuk peran yang membuka layar ini: "siapa yang menunggu" sudah dijawab sidebar
@@ -56,7 +60,7 @@ import { fetchJson, FetchJsonError } from '@/lib/fetch-json'
  * selain di sini. Antrean tetap di paruh atas, jadi tidak ada yang tenggelam.
  *
  * EMPAT SUMBER DATA YANG BERDIRI SENDIRI. Setiap panel gagal sendirian dan mengaku sendiri;
- * satu endpoint yang 500 tidak boleh mengosongkan tujuh panel yang datanya baik-baik saja.
+ * satu endpoint yang 500 tidak boleh mengosongkan delapan panel yang datanya baik-baik saja.
  * Pengecualiannya adalah 401: fetchJson sudah melempar browser ke /login, dan menulis "gagal"
  * di layar yang sedang ditinggalkan hanya menakuti orang tanpa memberi tahu apa pun.
  */
@@ -326,6 +330,20 @@ export default function DashboardPage() {
               onRetry={inbox.reload}
             />
           </div>
+
+          {/* BARIS 4 — dua sumbu klasifikasi giliran bot (`topic`, `job`), yang tanpa panel ini
+              hanyalah kolom yang ditulis dan tidak pernah dibaca siapa pun (Ruling R53). */}
+          <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
+            <DecisionTopicPanel
+              className="xl:col-span-2"
+              byTopic={activity.data?.byTopic ?? null}
+              byJob={activity.data?.byJob ?? null}
+              rangeDays={range}
+              error={activity.error}
+              loading={activity.loading}
+              onRetry={activity.reload}
+            />
+          </div>
         </>
       )}
     </main>
@@ -335,7 +353,7 @@ export default function DashboardPage() {
 /**
  * Kerangka pemuatan: bentuk halaman jadinya, bukan pemintal.
  *
- * Tiga baris grid yang sama persis dengan yang akan menggantikannya, sehingga isi yang datang
+ * Empat baris grid yang sama persis dengan yang akan menggantikannya, sehingga isi yang datang
  * tidak menggeser apa pun. Ia sengaja HANYA mengganti badan halaman — kepala (judul, tanggal,
  * pemilih rentang) tetap terpasang sepanjang pemuatan, karena menukar seluruh <main> membuat
  * React membongkar dan memasang ulang seluruh pohon, dan judul yang berkedip di setiap muat
@@ -359,6 +377,9 @@ function DashboardBodySkeleton() {
       <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
         <SkeletonPanel rows={4} className="xl:col-span-2" />
         <SkeletonPanel rows={3} />
+      </div>
+      <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
+        <SkeletonPanel rows={5} className="xl:col-span-2" />
       </div>
     </div>
   )

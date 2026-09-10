@@ -49,6 +49,16 @@ export type DashboardActivity = {
     byReason: Record<string, number>
     topTopics: { topic: string; count: number }[]
   }
+  byTopic: ClusterRow<'topic'>[]
+  byJob: ClusterRow<'job'>[]
+}
+
+/** Satu baris cluster: hitungan total dan tiga hasil yang dibedakan, kunci `topic` atau `job`. */
+type ClusterRow<K extends string> = Record<K, string> & {
+  total: number
+  replied: number
+  clarified: number
+  handoff: number
 }
 
 /** "YYYY-MM-DD" pada kalender Jakarta, apa pun zona mesin yang menjalankannya. */
@@ -75,6 +85,32 @@ function jakartaDayRange(days: number): string[] {
   return keys
 }
 
+/**
+ * `byTopic` dan `byJob` (Ruling R53): satu baris per cluster, dari `groupBy(['topic'|'job',
+ * 'status'])` yang baris-barisnya terpecah per status. `total` menjumlahkan SEMUA status yang
+ * ditulis untuk cluster itu (termasuk FAILED/SKIPPED), bukan hanya tiga yang ditampilkan --
+ * kalau tidak, jumlah baris tidak akan cocok dengan "berapa banyak keputusan" yang sebenarnya
+ * terjadi untuk cluster itu. Diurutkan total menurun, DI SINI: baris sudah sedikit (jumlah
+ * cluster yang berbeda), jadi mengurutkan di JS tidak melanggar aturan "urutkan di database".
+ */
+function shapeClusters<K extends string>(
+  rows: (Record<K, string | null> & { status: string; _count: { _all: number } })[],
+  key: K
+): ClusterRow<K>[] {
+  const byKey = new Map<string, ClusterRow<K>>()
+  for (const row of rows) {
+    const value = row[key]
+    if (value === null) continue
+    const existing = byKey.get(value) ?? ({ [key]: value, total: 0, replied: 0, clarified: 0, handoff: 0 } as ClusterRow<K>)
+    existing.total += row._count._all
+    if (row.status === 'REPLIED') existing.replied += row._count._all
+    else if (row.status === 'CLARIFIED') existing.clarified += row._count._all
+    else if (row.status === 'HANDOFF') existing.handoff += row._count._all
+    byKey.set(value, existing)
+  }
+  return Array.from(byKey.values()).sort((a, b) => b.total - a.total)
+}
+
 export async function GET(req: Request) {
   const session = await getSession(req)
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -91,7 +127,7 @@ export async function GET(req: Request) {
     // ketiga bagian, sehingga "30 hari" berarti hal yang persis sama di grafik dan di angkanya.
     const since = new Date(`${dayKeys[0]}T00:00:00+07:00`)
 
-    const [statusGroups, latency, flagged, volumeRows, reasonGroups, topicGroups] = await Promise.all([
+    const [statusGroups, latency, flagged, volumeRows, reasonGroups, topicGroups, topicStatusGroups, jobStatusGroups] = await Promise.all([
       prisma.botDecisionRun.groupBy({
         by: ['status'],
         where: { startedAt: { gte: since } },
@@ -127,6 +163,18 @@ export async function GET(req: Request) {
         orderBy: { _count: { topic: 'desc' } },
         take: 6,
       }),
+      // R53: dua sumbu klasifikasi giliran BotDecisionRun (lihat komentar `topic`/`job` di
+      // schema) -- sama persis dengan groupBy status di atas, hanya sumbunya ditambah satu.
+      prisma.botDecisionRun.groupBy({
+        by: ['topic', 'status'],
+        where: { startedAt: { gte: since }, topic: { not: null } },
+        _count: { _all: true },
+      }),
+      prisma.botDecisionRun.groupBy({
+        by: ['job', 'status'],
+        where: { startedAt: { gte: since }, job: { not: null } },
+        _count: { _all: true },
+      }),
     ])
 
     const byStatus: Record<string, number> = {}
@@ -161,6 +209,8 @@ export async function GET(req: Request) {
         byReason,
         topTopics: topicGroups.map((g) => ({ topic: g.topic, count: g._count.topic })),
       },
+      byTopic: shapeClusters(topicStatusGroups, 'topic'),
+      byJob: shapeClusters(jobStatusGroups, 'job'),
     }
 
     return NextResponse.json(body)
