@@ -296,6 +296,56 @@ describe('managedFactsFor', () => {
       expect(facts.gateBypassed).toBe(false)
     })
   })
+
+  // Ruling R56: topik yang cocok sudah CUKUP untuk masuk -- overlap kata bukan lagi syarat
+  // masuk untuk setiap entri, hanya alat untuk entri yang topiknya tidak bisa memutuskan.
+  describe('topik cocok cukup untuk masuk (Ruling R56)', () => {
+    it('topik spesifik yang cocok meloloskan entri walau tak ada satu kata pun yang sama dengan pesan', async () => {
+      // "upfront" tidak berbagi kata apa pun dengan "Berapa deposit?" -- persis parafrasa yang
+      // tujuan gerbang topik ingin tangani.
+      mockEntries([
+        { question: 'Berapa deposit?', answer: '20% dari total.', topics: ['payment'] },
+      ])
+      const facts = await managedFactsFor('how much do I pay upfront?', 'payment')
+      expect(facts.lines).toHaveLength(1)
+    })
+
+    it('giliran general + item bertopik general tanpa kata yang sama dengan pesan → masuk', async () => {
+      mockEntries([
+        { question: 'Kami buka setiap hari?', answer: 'Ya, kami buka setiap hari termasuk libur.', topics: ['general'] },
+      ])
+      const facts = await managedFactsFor('apakah kalian punya diskon musim hujan?', 'general')
+      expect(facts.lines).toHaveLength(1)
+    })
+
+    it('giliran general + item bertopik payment (bukan general) tanpa kata yang sama → TIDAK masuk', async () => {
+      mockEntries([
+        { question: 'Berapa deposit?', answer: '20% dari total.', topics: ['payment'] },
+      ])
+      const facts = await managedFactsFor('apakah kalian punya diskon musim hujan?', 'general')
+      expect(facts.lines).toEqual([])
+    })
+
+    it('pesan hanya berisi stopword tetap meloloskan entri lewat topik spesifik yang cocok', async () => {
+      // Sebelum perbaikan ini, `managedFactsFor` keluar lebih dulu saat `asked.size === 0` --
+      // entri yang topiknya cocok pun tidak pernah dipertimbangkan.
+      mockEntries([
+        { question: 'Deposit dibayar di mana?', answer: 'Di Surabaya.', topics: ['payment'] },
+      ])
+      const facts = await managedFactsFor('berapa?', 'payment')
+      expect(facts.lines).toHaveLength(1)
+    })
+
+    it('topik null dengan pesan yang hanya berisi stopword tetap kosong', async () => {
+      // Jaring R41 (dan pemanggil tanpa topik) hanya punya overlap kata sebagai dasar -- tanpa
+      // kata bermakna sama sekali, tidak ada dasar apa pun untuk meloloskan entri.
+      mockEntries([
+        { question: 'Deposit dibayar di mana?', answer: 'Di Surabaya.', topics: ['payment'] },
+      ])
+      const facts = await managedFactsFor('berapa?', null)
+      expect(facts.lines).toEqual([])
+    })
+  })
 })
 
 /**

@@ -184,21 +184,33 @@ function collect(
 
   for (const entry of managed.entries) {
     const matched = entry.items.filter((item) => {
-      // Lapis 1 -- gerbang topik. `topics` terisi berarti operator (atau classifier)
-      // sudah menyatakan pertanyaan macam apa yang layak dijawab entri ini; kalau topik
-      // giliran ini tidak ada di sana, entri itu tidak relevan berapa pun katanya cocok.
-      //
-      // `topics` KOSONG jatuh ke perilaku sebelum field ini ada. Itu yang membuat migrasi
-      // bisa bertahap dan nol revisi lama rusak.
-      //
-      // Ruling R30 (keputusan operator setelah Gerbang G1, 2026-09-10): giliran tanpa topik
-      // spesifik — `general` atau `null` — TIDAK digerbang. Pengukuran Fase 0: 47% lalu
-      // lintas memang `general` (pesan tanpa pertanyaan), dan 4 dari 6 salah-klasifikasi
-      // melibatkan `general`. Menggerbangnya akan membuang fakta di hampir separuh giliran;
-      // melepasnya membuat giliran itu berperilaku persis seperti sebelum field ini ada.
       const specificTopic = topic !== null && topic !== 'general'
-      if (specificTopic && item.topics?.length && !item.topics.includes(topic)) return false
-      // Lapis 2 -- overlap token. Setelah gerbang, ini alat PERINGKAT, bukan penentu masuk.
+
+      // Lapis 1 -- gerbang topik untuk topik SPESIFIK. `topics` terisi berarti operator (atau
+      // classifier) sudah menyatakan pertanyaan macam apa yang layak dijawab entri ini: kalau
+      // topik giliran ini spesifik dan tidak ada di sana, entri itu keluar, berapa pun katanya
+      // cocok -- dan sebaliknya, topik yang cocok sudah CUKUP untuk masuk, overlap kata TIDAK
+      // lagi disyaratkan (Ruling R56). Sebelum ruling ini, overlap tetap wajib untuk setiap
+      // entri walau topiknya sudah cocok -- itu membuang parafrasa persis yang gerbang topik
+      // dimaksudkan untuk menangani ("how much do I pay upfront?" vs entri "Berapa deposit?").
+      //
+      // `topics` KOSONG jatuh ke perilaku sebelum field ini ada (baris Lapis 2 di bawah). Itu
+      // yang membuat migrasi bisa bertahap dan nol revisi lama rusak.
+      if (specificTopic && item.topics?.length) return item.topics.includes(topic)
+
+      // Ruling R30 (keputusan operator setelah Gerbang G1, 2026-09-10): giliran tanpa topik
+      // spesifik — `general` atau `null` — TIDAK digerbang berdasar topik semata. Pengukuran
+      // Fase 0: 47% lalu lintas memang `general` (pesan tanpa pertanyaan), dan 4 dari 6
+      // salah-klasifikasi melibatkan `general`. Entri bertopik `general` adalah baseline yang
+      // dikelola operator, jadi topik yang cocok sudah cukup untuk masuk di sini juga; entri
+      // lain pada giliran `general` -- dan SEMUA entri pada giliran `null` -- masih harus lewat
+      // overlap kata di Lapis 2, sama seperti sebelum gerbang topik ada.
+      if (topic === 'general' && item.topics?.includes('general')) return true
+
+      // Lapis 2 -- overlap token. Jalur ini dipakai kalau topik giliran tidak bisa memutuskan
+      // entri ini sendirian: giliran `null` (jaring R41 dan pemanggil tanpa topik), entri tanpa
+      // `topics` sama sekali, atau giliran `general` dengan entri yang topiknya bukan
+      // `general`. Di sinilah -- dan HANYA di sinilah -- overlap kata tetap jadi syarat masuk.
       const candidate = tokens(`${item.question} ${(item.tags ?? []).join(' ')}`)
       for (const word of candidate) if (asked.has(word)) return true
       return false
@@ -261,8 +273,13 @@ export async function managedFactsFor(
   }
   if (managed.entries.length === 0) return EMPTY
 
+  // Ruling R56: `asked.size === 0` dulu jadi early return di sini, sebelum `collect` sempat
+  // jalan sama sekali -- pesan yang cuma berisi stopword (mis. "berapa?") jadi selalu kosong
+  // walau topik giliran itu cocok dengan sebuah entri. Topik yang cocok tidak butuh overlap
+  // kata sama sekali (lihat Lapis 1 di `collect`), jadi early return itu hanya boleh berlaku
+  // untuk entri yang memang bergantung pada overlap -- dan `collect` sendiri sudah menolak
+  // entri semacam itu wajar-wajar saja saat `asked` kosong, tanpa perlu jalan pintas di sini.
   const asked = tokens(message)
-  if (asked.size === 0) return EMPTY
 
   const gated = collect(managed, asked, topic)
   if (gated.lines.length > 0) return { ...gated, gateBypassed: false }
