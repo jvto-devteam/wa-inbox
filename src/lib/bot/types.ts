@@ -88,11 +88,20 @@ export type TraceStep = { label: string; detail: string }
  * question, a technical-hiccup fallback) have nothing to verify, and claiming a verification
  * they never ran would be worse than an empty column. See ReplyVerification in reply-verifier.
  */
+//
+// `topic`/`job` (Task 15): the two classification axes `decideAndRespond` already computes
+// every Mode 1/2 turn (classifySalesNeed's job, the topic classifier's topic), captured onto
+// the decision it returns so BotDecisionRun can store them as queryable columns instead of
+// burying them in `trace` Json. Optional on every variant, and attached in exactly ONE place
+// in decideAndRespond (see that function's own header) -- a decision returned before
+// classification runs (keyword escalation, Mode 3) genuinely carries neither. `faq` keeps its
+// own `sourceTopic` unchanged; decision-recorder.ts's `topicForDecision` falls back to it when
+// `topic` is absent, so an older or Mode-3-shaped decision still gets a topic column.
 export type BotDecision =
-  | { mode: 'handoff'; reason: string; steps?: TraceStep[]; verification?: ReplyVerification }
-  | { mode: 'faq'; draft: string; sourceTopic: string; steps?: TraceStep[]; verification?: ReplyVerification }
-  | { mode: 'booking_context'; reply: string; steps?: TraceStep[]; verification?: ReplyVerification }
-  | { mode: 'clarify'; reply: string; steps?: TraceStep[]; verification?: ReplyVerification }
+  | { mode: 'handoff'; reason: string; steps?: TraceStep[]; verification?: ReplyVerification; topic?: string; job?: string }
+  | { mode: 'faq'; draft: string; sourceTopic: string; steps?: TraceStep[]; verification?: ReplyVerification; topic?: string; job?: string }
+  | { mode: 'booking_context'; reply: string; steps?: TraceStep[]; verification?: ReplyVerification; topic?: string; job?: string }
+  | { mode: 'clarify'; reply: string; steps?: TraceStep[]; verification?: ReplyVerification; topic?: string; job?: string }
 
 export type CatalogPackage = {
   packageKey: string

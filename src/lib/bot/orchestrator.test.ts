@@ -190,6 +190,15 @@ describe('decideAndRespond', () => {
     expect(ensureFreshBookingData).not.toHaveBeenCalled()
   })
 
+  // Task 15: topic/job are captured from classifySalesNeed/the topic classifier, both of which
+  // run well AFTER the keyword-escalation gate above -- a decision returned here is honestly
+  // unclassified on either axis, not silently defaulted to something misleading.
+  it('does not attach topic or job to a keyword-escalation decision — classification never ran', async () => {
+    const result = await decideAndRespond('conv_1', 'Saya mau komplain dan minta refund!')
+    expect(result).not.toHaveProperty('topic')
+    expect(result).not.toHaveProperty('job')
+  })
+
   it('merges tripBrief server-side rather than overwriting the whole column', async () => {
     // A read-modify-write across two round trips is a lost-update race: two
     // turns for the same conversation each hold 30s+ of LLM time, and each
@@ -1994,6 +2003,22 @@ describe('decideAndRespond', () => {
         id: 'conv_1',
         patch: { destination: 'ijen', askedTripPreferences: true, awaitingTripPreferencesAnswer: true },
       })
+    })
+
+    // Task 15: this clarify decision is produced well AFTER both classifySalesNeed (job) and
+    // the topic classifier (topic) have resolved -- see decideAndRespond's own single
+    // attachment point, which decorates whatever runDecision() returned with whatever
+    // turnClassification held by then.
+    it('attaches topic and job to a clarify decision produced after classification', async () => {
+      ;vi.mocked(ensureFreshBookingData).mockResolvedValue(null)
+      ;vi.mocked(classifySalesNeed).mockReturnValue({ job: 'J2', missingInfo: [], needsLiveData: false })
+      ;vi.mocked(matchDestination).mockReturnValue({ destination: 'ijen', matches: [fromBali, fromSurabaya] })
+      ;vi.mocked(classifyTopicViaLLM).mockResolvedValue({ topic: 'price', source: 'llm' })
+
+      const result = await decideAndRespond('conv_1', 'Which package do you recommend for Ijen?')
+
+      expect(result.mode).toBe('clarify')
+      expect(result).toMatchObject({ topic: 'price', job: 'J2' })
     })
 
     // Reported live 2026-08-06: this funnel reply is a static template built BEFORE the LLM

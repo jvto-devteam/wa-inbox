@@ -66,6 +66,8 @@ type DecisionLike = {
   draft?: unknown
   reply?: unknown
   sourceTopic?: unknown
+  topic?: unknown
+  job?: unknown
   steps?: unknown
   verification?: unknown
 }
@@ -147,6 +149,29 @@ export function verificationForDecision(decision: unknown): Prisma.InputJsonValu
 }
 
 /**
+ * The cluster-analysis topic for this turn (Task 15), as a real column instead of buried in
+ * `trace` Json. Falls back to `sourceTopic` (the only place a `faq` decision ever carried a
+ * topic before Task 15 added `topic` to every variant) so neither an older row's shape nor a
+ * decision that only ever set `sourceTopic` ends up NULL here.
+ */
+export function topicForDecision(decision: unknown): string | undefined {
+  const narrowed = asDecision(decision)
+  if (typeof narrowed.topic === 'string') return narrowed.topic
+  if (typeof narrowed.sourceTopic === 'string') return narrowed.sourceTopic
+  return undefined
+}
+
+/**
+ * The sales-funnel job (J1-J5) classified for this turn (Task 15), when the decision carries
+ * one. A decision returned before `classifySalesNeed` ran (keyword escalation, Mode 3) has no
+ * `job` at all -- undefined here is the honest answer, not a value to invent.
+ */
+export function jobForDecision(decision: unknown): string | undefined {
+  const value = asDecision(decision).job
+  return typeof value === 'string' ? value : undefined
+}
+
+/**
  * Writes one run. Returns the new row's id so the caller can attach a messageId once the reply
  * has actually been stored, or null when recording failed.
  *
@@ -201,6 +226,13 @@ export async function recordBotDecisionRun(params: RecordDecisionRunParams): Pro
         trace: sanitized === null ? Prisma.JsonNull : sanitized,
         knowledgeRefs,
         verification,
+        // Task 15: real columns for the two classification axes, derived straight from the
+        // decision object (same pattern every other `*ForDecision` helper in this file uses).
+        // `undefined` here means Prisma simply omits the field on `create`, leaving the nullable
+        // column NULL -- not an error, see this file's header (must never throw on a run whose
+        // decision never carries either).
+        topic: topicForDecision(params.decision),
+        job: jobForDecision(params.decision),
         // `undefined` (bukan JsonNull) untuk run tanpa tracer: kolomnya tetap NULL, yang di
         // sini berarti "run ini tidak diinstrumentasi", bukan "run ini tidak punya langkah".
         steps: sanitizedSteps,

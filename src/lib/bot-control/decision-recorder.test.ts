@@ -12,6 +12,8 @@ import {
   replyTextForDecision,
   knowledgeRefsForDecision,
   verificationForDecision,
+  topicForDecision,
+  jobForDecision,
 } from './decision-recorder'
 
 vi.mock('@/lib/db', () => ({ prisma: mockDeep<PrismaClient>() }))
@@ -132,6 +134,49 @@ describe('recordBotDecisionRun', () => {
     // already produced a perfectly good answer.
     mockPrisma.botDecisionRun.create.mockRejectedValue(new Error('db down'))
     await expect(recordBotDecisionRun({ ...base, decision: { mode: 'faq' } })).resolves.toBeNull()
+  })
+})
+
+/**
+ * Task 15: two axes computed every turn (`classifySalesNeed`'s job, the topic classifier's
+ * topic) were previously buried in `trace` Json, unqueryable without parsing it. `topic`/`job`
+ * are now real columns, derived straight from the `decision` object the same way every other
+ * `*ForDecision` helper in this file already works.
+ */
+describe('topicForDecision / jobForDecision (Task 15)', () => {
+  it('reads topic and job straight off the decision when present', () => {
+    expect(topicForDecision({ mode: 'clarify', topic: 'payment', job: 'J2' })).toBe('payment')
+    expect(jobForDecision({ mode: 'clarify', topic: 'payment', job: 'J2' })).toBe('J2')
+  })
+
+  it('falls back to sourceTopic (faq) when topic is absent', () => {
+    expect(topicForDecision({ mode: 'faq', sourceTopic: 'inclusions' })).toBe('inclusions')
+  })
+
+  it('returns undefined for neither, rather than inventing a value', () => {
+    expect(topicForDecision({ mode: 'handoff' })).toBeUndefined()
+    expect(jobForDecision({ mode: 'handoff' })).toBeUndefined()
+  })
+})
+
+describe('recordBotDecisionRun — topic/job columns (Task 15)', () => {
+  const base = { conversationId: 'conv_1', inboundText: 'berapa harga ijen?', startedAt, finishedAt }
+
+  it('menulis topic dan job sebagai kolom saat keputusan membawa keduanya', async () => {
+    await recordBotDecisionRun({ ...base, decision: { mode: 'clarify', reply: 'Mau ke mana?', topic: 'payment', job: 'J2' } })
+    expect(createdData()).toMatchObject({ topic: 'payment', job: 'J2' })
+  })
+
+  it('menulis topic dari sourceTopic untuk keputusan faq yang hanya membawa itu', async () => {
+    await recordBotDecisionRun({ ...base, decision: { mode: 'faq', draft: 'Rp 1.500.000', sourceTopic: 'price' } })
+    expect(createdData()).toMatchObject({ topic: 'price' })
+    expect(createdData().job).toBeUndefined()
+  })
+
+  it('menerima keputusan tanpa keduanya tanpa melempar, dan tidak menulis kolomnya', async () => {
+    await expect(recordBotDecisionRun({ ...base, decision: { mode: 'handoff', reason: 'x' } })).resolves.not.toThrow()
+    expect(createdData().topic).toBeUndefined()
+    expect(createdData().job).toBeUndefined()
   })
 })
 

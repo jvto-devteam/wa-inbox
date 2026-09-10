@@ -296,6 +296,18 @@ model BotDecisionRun {
   status         String
   flowKey        String?
   flowVersion    Int?
+  /// Tiga sumbu klasifikasi giliran ini, sebagai KOLOM bukan isi `trace`.
+  ///
+  /// Nilainya sudah dihitung tiap giliran sebelum kolom ini ada -- yang berubah hanya
+  /// bahwa ia sekarang bisa di-groupBy tanpa mem-parse Json. Tanpa itu pertanyaan
+  /// "cluster mana yang paling sering gagal" tidak bisa dijawab.
+  ///
+  /// Nullable: baris yang ditulis sebelum migrasi ini tidak punya nilainya, dan
+  /// `recordBotDecisionRun` tidak boleh melempar hanya karena kolomnya kosong. Hanya DUA
+  /// kolom -- `topic` dan `job` -- BUKAN tiga: Ruling R38 membatalkan `stage` karena tidak
+  /// ada yang pernah menulisnya (lihat CLAUDE.md).
+  topic          String?
+  job            String?
   startedAt      DateTime  @default(now())
   finishedAt     DateTime?
   latencyMs      Int?
@@ -329,6 +341,9 @@ model BotDecisionRun {
   @@index([conversationId])
   @@index([startedAt])
   @@index([status])
+  /// Task 16 groups runs by cluster (topic). Tanpa index, itu sequential scan pada tabel yang
+  /// tumbuh satu baris per giliran bot.
+  @@index([topic])
   /// Filter "hanya yang ditandai" dikerjakan di database, bukan di klien. Tanpa index, filter
   /// itu memindai seluruh tabel untuk menemukan segelintir baris yang biasanya ditandai.
   @@index([flaggedAt])

@@ -1065,6 +1065,17 @@ async function recordKnowledgeGap(
  * sebelumnya. Hanya `mulai` yang ditandai di sini: tracer menutup step yang terbuka sendiri
  * begitu step berikutnya ditandai, sehingga selusin early return di bawah tidak perlu masing-
  * masing menutup step-nya -- dan tidak ada yang menggantung karena sebuah cabang keluar awal.
+ *
+ * Task 15: `topic`/`job` menempel ke keputusan yang dikembalikan di SATU tempat -- bukan di
+ * setiap `return` di bawah (lebih dari sepuluh titik). Badan try yang lama sekarang jadi
+ * `runDecision()`, sebuah closure dalam yang menulis kedua sumbu ke `turnClassification`
+ * begitu klasifikasi masing-masing selesai (job saat `classifySalesNeed`, topic saat topic
+ * classifier menyelesaikan -- di kedua cabang, dengan/tanpa destinasi). Setelah `runDecision()`
+ * kembali (dari jalur mana pun -- termasuk `composed.decision` di tengah fungsi), hasilnya
+ * dihias oleh `attachClassification` SEKALI, memakai apa pun yang sudah terisi di
+ * `turnClassification` saat itu. Keputusan yang kembali SEBELUM klasifikasi jalan (gerbang
+ * kata kunci eskalasi, Mode 3) menemukan `turnClassification` masih kosong dan jujur tidak
+ * membawa keduanya -- lihat orchestrator.test.ts untuk kedua kasus ini.
  */
 export async function decideAndRespond(
   conversationId: string,
@@ -1072,7 +1083,11 @@ export async function decideAndRespond(
   pipeline: PipelineTracer = createNoopPipelineTracer()
 ): Promise<BotDecision> {
   const trace = createTracer()
-  try {
+  // Diisi oleh runDecision() di bawah, begitu setiap klasifikasi selesai -- satu-satunya
+  // sumber yang dibaca attachClassification setelah runDecision() kembali.
+  const turnClassification: { topic?: string; job?: string } = {}
+
+  async function runDecision(): Promise<BotDecision> {
     traceStep(pipeline, 'cek-eskalasi', 'mulai')
     // Settings.botAutoReplyAll (the On/Off bot-mode switch) is enforced entirely by
     // inbound.ts's conversation.botEnabled gate -- On bulk-sets every conversation's
@@ -1233,6 +1248,10 @@ export async function decideAndRespond(
         : ''
 
     const classification = classifySalesNeed({ message: inboundText, tripBrief })
+    // Task 15: captured here, read once by attachClassification after runDecision() returns --
+    // see this function's own header for why every return statement below must NOT set this
+    // individually.
+    turnClassification.job = classification.job
     trace.push(
       'Mengklasifikasi kebutuhan pelanggan',
       `Kategori ${classification.job}${classification.needsLiveData ? ' -- butuh data harga/ketersediaan real-time' : ''}.`
@@ -1277,6 +1296,9 @@ export async function decideAndRespond(
         classifyKeywordModulesViaLLM(inboundText, settings.ollamaModel),
         classifyTopicViaLLM(classification.job, inboundText, settings.ollamaModel),
       ])
+      // Task 15: no-destination branch's own topic classification site (the destination branch
+      // below has its own, separate one).
+      turnClassification.topic = topicResult.topic
       trace.push(
         'Memeriksa modul fakta kata kunci',
         keywordModuleResult.source === 'llm'
@@ -1333,6 +1355,9 @@ export async function decideAndRespond(
       // isRecommendationRequest regex only on a genuine technical failure.
       detectsRecommendationIntentViaLLM(inboundText, isRecommendationRequest, settings.ollamaModel),
     ])
+    // Task 15: destination branch's own topic classification site (the no-destination branch
+    // above has its own, separate one).
+    turnClassification.topic = resolverTopic
     trace.push(
       'Memeriksa modul fakta kata kunci',
       keywordModuleSource === 'llm'
@@ -1911,6 +1936,14 @@ export async function decideAndRespond(
       steps: trace.steps,
       verification: composed.verification,
     }
+  }
+
+  try {
+    const decision = await runDecision()
+    // The ONE attachment point (see this function's header) -- whatever runDecision() returned,
+    // from whichever of its own internal return points, decorated with whatever
+    // turnClassification held by the time it returned.
+    return attachClassification(decision, turnClassification)
   } catch (error) {
     // Log before failing safe: without this, the single most likely production
     // failure surfaces in the bot audit log as an identical, uninformative generic
@@ -1925,5 +1958,19 @@ export async function decideAndRespond(
     // static string, safe to return even when the failure's root cause is unknown.
     trace.push('Terjadi kegagalan', 'Kesalahan tak terduga saat memproses -- tetap dijawab dengan pesan cadangan, bot tetap aktif.')
     return { mode: 'clarify', reply: TECHNICAL_HICCUP_REPLY, steps: trace.steps }
+  }
+}
+
+/**
+ * The single Task 15 attachment point. Spreads `topic`/`job` onto whatever `decideAndRespond`'s
+ * `runDecision()` returned -- conditionally, so a key that was never set in `turnClassification`
+ * is never written as `undefined` onto the decision object (an explicit `undefined` property
+ * would still make `'topic' in decision` true, which is not the same fact as "never classified").
+ */
+function attachClassification(decision: BotDecision, ctx: { topic?: string; job?: string }): BotDecision {
+  return {
+    ...decision,
+    ...(ctx.topic !== undefined ? { topic: ctx.topic } : {}),
+    ...(ctx.job !== undefined ? { job: ctx.job } : {}),
   }
 }
