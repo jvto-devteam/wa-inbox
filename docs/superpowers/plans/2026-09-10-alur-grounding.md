@@ -742,7 +742,15 @@ Expected: PASS.
 
 Mode 3 **tidak** disentuh di task ini — ia berjalan sebelum klasifikasi sehingga tidak punya topik; lihat Task 11 (Ruling R27).
 
-Tambahkan test di `orchestrator.test.ts`: pertanyaan bertopik `payment` tanpa destinasi, dengan satu entri managed bertopik `payment`, menghasilkan system prompt yang memuat jawaban entri itu.
+Tambahkan test di `orchestrator.test.ts`: pertanyaan bertopik `payment` tanpa destinasi, dengan satu entri managed bertopik `payment`, menghasilkan system prompt yang memuat jawaban entri itu. Cabang tanpa-destinasi juga meniru langkah trace `'Knowledge terkelola dipakai'` yang sudah ditulis cabang katalog (judul + versi tiap sumber), supaya keputusannya tetap menyebut sumber knowledge.
+
+**Ruling R32:** `orchestrator.test.ts` hari ini tidak memalsukan `managed-knowledge` — loader asli membaca Prisma palsu, mendapat `undefined`, dan melapor `available: false` di setiap test. Tambahkan di berkas itu:
+
+```typescript
+vi.mock('@/lib/bot/managed-knowledge', () => ({ loadPublishedManagedKnowledge: vi.fn() }))
+```
+
+dengan default di `beforeEach`: `vi.mocked(loadPublishedManagedKnowledge).mockResolvedValue({ entries: [], available: true, loadedAt: 0 })` — pola yang sama dengan `runtime-integration.test.ts`. Test lama tidak berubah perilaku (hasilnya kosong di kedua kasus). Tanpa ini, Task 12 — yang mengubah `available: false` menjadi balasan "technical hiccup" — akan membalik hampir semua test orkestrator sekaligus.
 
 **Ruling R24:** delapan panggilan test lama `managedFactsFor(msg)` diperbarui ke `managedFactsFor(msg, null)` — entri lama tanpa `topics`, jadi perilakunya identik. Snippet test di Task 5, 6, dan 17 memanggil `mockEntries([...])` — definisikan helper itu SEKALI di `runtime-integration.test.ts`, di atas pola mock yang sudah ada di berkas itu:
 
@@ -1032,6 +1040,11 @@ git commit -m "feat(knowledge): classifier multi-topik untuk fakta, dijalankan s
 - Consumes: `classifyFactTopics` (Task 7)
 - Produces: revisi tersimpan dengan `topics` terisi
 
+> **Ruling R33 — snippet test di bawah skematik; bentuk aslinya:**
+> - Tanda tangan asli: `saveKnowledgeDraft(sourceId: string, params: SaveDraftParams, actor)` dengan `SaveDraftParams = { title?, summary?, body: unknown, reason: string }`. Jadi panggil `saveKnowledgeDraft('src-1', { body: { items: [...] }, reason: 'uji' }, actor)` — `sourceId` posisional pertama, item di dalam `body`, `reason` wajib. `createManagedKnowledge(params, actor)` sama: item di `params.body`.
+> - `RevisionResult` hanya `{ sourceId, revisionId, version, status, title }` — **tidak ada `revision.body`**. Tegaskan body yang **ditulis**: argumen `data.body` pada penulisan `knowledgeRevision` (create/update, langsung atau di dalam `$transaction`) — cari di fungsinya, jangan menebak.
+> - Test "tidak memblokir penyimpanan" menegaskan penulisan tetap terjadi saat classifier mengembalikan `[]`.
+
 - [ ] **Step 1: Tulis test yang gagal**
 
 ```typescript
@@ -1091,7 +1104,7 @@ async function fillMissingTopics(items: KnowledgeItem[], model?: string): Promis
 }
 ```
 
-Panggil di `createManagedKnowledge` dan `saveKnowledgeDraft`, tepat sebelum body divalidasi dan ditulis.
+Panggil **sesudah** `validateKnowledgeBody` — helper ini butuh `KnowledgeItem[]` yang sudah bertipe, sedangkan `params.body` masih `unknown` sebelum divalidasi. Di `saveKnowledgeDraft`, panggil juga **sesudah** penjaga `type` MANUAL, supaya tidak ada panggilan LLM untuk sumber yang toh akan ditolak. Di kedua fungsi, panggil **sebelum** `prisma.$transaction` atau penulisan apa pun: panggilan LLM bisa sampai 10 detik per item, dan menjalankannya di dalam transaksi menahan koneksi database selama model berpikir. Hasil classifier sudah tervalidasi ke enum 14 topik, jadi body yang terisi tetap sah (Ruling R33).
 
 - [ ] **Step 4: Jalankan test**
 
@@ -1346,6 +1359,8 @@ Sebelum Fase 2 knowledge cuma pelengkap, jadi "ditelan lalu jalan terus" benar. 
 **Interfaces:**
 - Consumes: `ManagedKnowledge.available` (sudah ada di `managed-knowledge.ts:48`)
 - Produces: `ManagedFacts.degraded: boolean`
+
+> **Ruling R32:** Task 5 sudah memasang mock `@/lib/bot/managed-knowledge` di `orchestrator.test.ts` dengan default `{ entries: [], available: true, loadedAt: 0 }`. Test di task ini menyetel `available: false` secara eksplisit lewat `vi.mocked(loadPublishedManagedKnowledge).mockResolvedValue(...)` — nama helper `mockManagedKnowledge` di snippet bersifat skematik. Tanpa default itu, setiap test orkestrator akan melihat `available: false` dan berubah jadi "technical hiccup".
 
 - [ ] **Step 1: Tulis test yang gagal**
 
