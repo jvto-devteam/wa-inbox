@@ -186,7 +186,61 @@ penerapannya — termasuk dua jebakan yang bisa merugikan (channel default berba
 3. `npx eslint .` (0 error, warning boleh)
 4. Kalau ada perubahan skema Prisma: ikuti section 7.
 
-## 9. Referensi
+## 9. Verifikasi Sebelum Menyatakan
+
+**Setiap pernyataan tentang perilaku sistem harus berasal dari _call site_-nya — bukan dari
+spec, diagram, PDF, atau pernyataan sebelumnya, termasuk pernyataan agen itu sendiri di
+percakapan yang sama.**
+
+Empat aturan turunan, semuanya lahir dari kesalahan nyata:
+
+- **Satu file bukan keseluruhan.** `general-modules.json` adalah satu dari **14** file katalog
+  yang dibaca bot; `TOPIC_MODULES` adalah satu dari beberapa resolver yang mengisi prompt.
+  Menyimpulkan cakupan dari satu potongan adalah cara tercepat menghasilkan pernyataan yang
+  salah dengan percaya diri.
+- **Angka dihitung ulang dari kode, tidak pernah disalin.** Angka yang disalin dari pesan
+  sebelumnya membawa kesalahannya ikut, dan pengulangan membuatnya terlihat mapan.
+- **Sebelum menyatakan sesuatu tidak terpakai, cari seluruh pemakainya**, bukan pemakai di
+  modul yang kebetulan sedang dibaca.
+- **Dokumen keluaran diverifikasi mekanis sebelum diserahkan**, tidak dibaca ulang manual.
+  Pembacaan ulang manual gagal persis pada hal yang sudah diyakini benar.
+
+### Bukti historisnya (jangan sampai hilang)
+
+Audit alur grounding **2026-09-10** menghasilkan lima pernyataan salah berturut-turut, semuanya
+dari sebab yang sama — menulis tentang jalur yang belum pernah ditelusuri utuh:
+
+| Dinyatakan | Kenyataannya |
+| --- | --- |
+| `route_endpoint` tidak punya fakta karena `TOPIC_MODULES`-nya kosong | dijawab dari `finishCities`, dikomposisi di `orchestrator.ts` |
+| Katalog = 77 modul | 77 hanya isi `general-modules.json`; bot membaca 14 file |
+| Enam modul `staging` yatim | terpakai penuh lewat `catalog.ts` → `stagingNotes` |
+| `GENERAL_FAQ_FALLBACK` 887 token "dikoreksi" jadi 882 | 887 benar — 882 hasil menjumlahkan per blok dan kehilangan pemisah antar blok |
+| — | `SHARED_PERSONA_INSTRUCTIONS` (402 token, terkirim setiap giliran) tidak pernah disebut sama sekali |
+
+**Tidak satu pun tertangkap oleh pemeriksaan mandiri sebelum dokumen diserahkan.** Tiga muncul di
+audit yang diminta operator, satu dari pertanyaan operator, dan satu dari pemeriksa mekanis —
+yang baru dibuat setelah operator menuntut polanya berhenti. Satu pembacaan `orchestrator.ts` di
+titik komposisi prompt membatalkan tiga pernyataan sekaligus.
+
+Pelajaran yang mengikat: **agen bukan pemeriksa yang andal atas pekerjaannya sendiri kalau
+pemeriksaannya berupa membaca ulang.** Yang menangkap kesalahan di atas adalah pengukuran ulang
+dan perbandingan otomatis, bukan ketelitian.
+
+### Urutan wajib sebelum menyerahkan dokumen, laporan, atau audit
+
+1. Telusuri jalur eksekusinya **sekali, utuh**, dari titik masuk sampai titik pakai.
+2. Hitung ulang setiap angka dari sumbernya.
+3. Pastikan setiap identifier yang dikutip benar-benar ada di repo.
+4. Jalankan pemeriksa mekanis yang **bisa gagal** (keluar dengan kode ≠ 0). Dokumen tidak
+   diserahkan sebelum pemeriksa hijau.
+
+Pemeriksa itu bagian dari keluarannya, bukan tambahan opsional: kalau sebuah dokumen mengklaim
+angka dan nama simbol, harus ada cara menjalankan ulang klaim itu tanpa membacanya lagi.
+
+---
+
+## 10. Referensi
 
 - **`CLAUDE.md` (dokumen ini) adalah sumber kebenaran.**
 - `.claude/docs/bot-control-spec.md` dan `.claude/docs/bot-control-manage-second-spec.md`
