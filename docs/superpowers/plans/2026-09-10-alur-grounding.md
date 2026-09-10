@@ -6,7 +6,7 @@
 
 **Architecture:** Fakta pindah dari konstanta di `knowledge.ts` ke `KnowledgeRevision` yang bertopik, disaring per giliran oleh topik hasil klasifikasi. Aturan (`GUARDRAIL_INSTRUCTION`, `DISCLOSURES`) tetap di kode dan tidak pernah digerbang. Klasifikasi fakta dijalankan **saat simpan**, sekali per revisi, sehingga runtime tetap deterministik.
 
-**Tech Stack:** Next.js 16 App Router · React 19 · TypeScript · Prisma 7 · PostgreSQL · Vitest · Ollama lokal (`gemma4:31b-cloud`)
+**Tech Stack:** Next.js 16 App Router · React 19 · TypeScript · Prisma 7 · PostgreSQL · Vitest · daemon Ollama di VPS dengan model tag cloud `gemma4:31b-cloud` — inferensi di ollama.com (CLAUDE.md §2; Ruling R90)
 
 **Spec:** Artifact "Menyaring Sebelum Menjawab" — https://claude.ai/code/artifact/64208567-c521-4d08-a060-5abb9766cc2f
 
@@ -64,6 +64,33 @@ Teks verbatim: `.superpowers/sdd/2026-09-10-alur-grounding/temuan-eksternal-2026
 - **Sudah beres sebelum temuan masuk:** 1a (R56/Task 5b) · 1c (R40) · 3b (run nyata: konsistensi 7/8) · 4a (`sanitizeTrace` ada) · 4c (katalog koper terlacak git). 1b tidak tepat: `includes()` memakai array milik item.
 - **Ditunda dengan pemicu terukur, bukan dilupakan:** 2b ambang keyakinan (R64 — keyakinan model tak terkalibrasi, eval ditunda; pemicu: data Task 16/17 menunjukkan fakta benar sering ditolak) · 2d dedup semantik (R66 — butuh model embedding; pemicu: data Task 16).
 - **G1 (R67):** diputuskan dengan n=30; interval Wilson 95% untuk 24/30 = 62,7–90,5% disajikan ke operator sebelum keputusan R30 — ambang 85% berada di dalam interval itu, dan keputusan diambil dengan kesadaran tersebut.
+
+---
+
+## Checklist Deploy (Ruling R80/R81 — dari review menyeluruh 2026-09-10)
+
+### Tahap 1 — branch ini (Task 4–18), TANPA Task 11
+
+1. Cadangkan database produksi (`pg_dump`).
+2. Di VPS: export PATH nvm Node 22 (CLAUDE.md §7), lalu `git checkout <sha merge>` dari `origin/main`. **Jangan rsync** — `--delete` menghapus `catalog/deployment-approval.json` yang hanya ada di VPS.
+3. `npx prisma migrate status` → tepat SATU migrasi tertunda: `20260910173649_bot_decision_run_cluster_columns`. Baca SQL-nya: dua `ADD COLUMN` nullable + satu `CREATE INDEX`, tidak ada yang lain.
+4. **🛑 G4:** `npx prisma migrate deploy`. Verifikasi kolom `topic`, `job` dan index `BotDecisionRun_topic_idx` ada. Kalau kode di-deploy SEBELUM langkah ini: setiap `botDecisionRun.create` gagal diam-diam (run hilang), detail keputusan 500, dan seluruh `/api/dashboard/activity` 500. Pengiriman ke pelanggan tetap jalan.
+5. `npx prisma generate` → `npm run build` → restart proses. (`build` adalah `next build` tanpa `postinstall`, jadi `generate` wajib dijalankan sendiri.)
+6. Smoke test HANYA lewat Test Lab atau nomor whitelist: run baru punya `topic`/`job`; detail keputusan terbuka; panel cluster di dashboard termuat; popover inbox menampilkan "Fakta yang dipakai". Lalu `npm run verify:revisions` → exit 0.
+7. Catat peringatan rollback di bawah SEBELUM operator mulai membuat entri bertopik.
+
+**Rollback — kehilangan yang DIAM (R81).** Kembali ke `cad83ee` membuang dari jawaban bot SETIAP revisi yang dibuat atau diedit sesudah deploy: `knowledgeItemSchema` milik `main` adalah `.strict()` tanpa `topics`, jadi loader melewatinya dengan `console.error` saja. Daftar sumber tetap menampilkannya "terbit", pelanggan tidak melihat error, dan mengedit di UI `main` gagal dengan "Isi knowledge tidak valid pada: topics". Baris tidak terhapus, roll-forward memulihkan semuanya, dan kolom baru tidak berbahaya bagi `main`. Kalau rollback diperlukan SETELAH entri bertopik ada, targetnya adalah `cad83ee` + `topics: z.array(z.string()).optional()` di `knowledgeItemSchema` — bukan `cad83ee` mentah.
+
+### Tahap 2 — Task 11 (sesudah G2): 🛑 G5 dengan urutan yang dikoreksi (R80)
+
+Setelah Tahap 1, kode yang berjalan SUDAH membaca body bertopik. Seed yang langsung terbit akan hidup berdampingan dengan `GENERAL_FAQ_FALLBACK` yang masih ada di kode: angka yang dikoreksi di G2 muncul dua versi, dan verifier menerima keduanya (dedup Task 13 hanya untuk baris katalog). Urutan wajib:
+
+1. Seed sebagai **DRAFT** → `npm run verify:revisions`.
+2. Deploy kode Task 11 (`generate` → `build` → restart).
+3. **Terbitkan** draft hasil seed → `npm run verify:revisions` lagi. Jeda antara langkah 2 dan 3 harus hitungan menit: selama jeda itu bot tidak punya fakta FAQ.
+4. Verifikasi dengan satu giliran Mode 3 dan satu giliran Mode 1/2 (nomor whitelist): baris FAQ managed muncul di "Fakta yang dipakai", teks `GENERAL_FAQ_FALLBACK` tidak.
+
+Alternatif — terbitkan tepat sebelum deploy Task 11 — hanya boleh bila G2 tidak mengubah angka apa pun.
 
 ---
 
@@ -1300,8 +1327,8 @@ Expected: kosong (berkas itu gitignored). Kalau muncul, **jangan** `git add` —
 
 > **Ruling R57 — entri tidak bisa ditulis lewat UI produksi sebelum deploy, dan urutan deploy wajib (terverifikasi):**
 > - Produksi menjalankan `main`, yang `knowledgeItemSchema`-nya `.strict()` tanpa `topics` (`git show cad83ee:src/lib/bot-control/knowledge-body.ts`). UI produksi MENOLAK entri bertopik, dan loader `main` MELEWATI revisi yang memuat `topics` (body tak terbaca → dilewati + log). Step 4 "tulis lewat UI" mustahil sebelum deploy, dan menulis lewat build lokal ke database produksi adalah tulisan produksi dari mesin pengembang.
-> - Maka Step 4 menjadi skrip seed `scripts/seed-faq-knowledge.ts` (idempoten: melewati sumber MANUAL yang judulnya sudah ada), berisi teks yang dikonfirmasi di G2 dengan topik dari tabel Step 3, ditulis lewat `createManagedKnowledge` + `publishKnowledgeRevision` (validasi dan audit yang sama dengan UI). Diuji dengan Prisma palsu. Entri `scripts` di package.json mengikuti pola Task 1–4.
-> - **🛑 Gerbang G5 (baru) — menjalankan seed ke produksi, saat deploy.** Urutan WAJIB: G4 `migrate deploy` → G5 seed (kode `main` yang masih berjalan melewati body ini, jadi perilaku bot belum berubah) → `npm run verify:revisions` → deploy kode. Deploy kode SEBELUM seed = bot kehilangan seluruh fakta FAQ sampai seed dijalankan.
+> - Maka Step 4 menjadi skrip seed `scripts/seed-faq-knowledge.ts` (idempoten: melewati sumber MANUAL yang judulnya sudah ada), berisi teks yang dikonfirmasi di G2 dengan topik dari tabel Step 3, ditulis lewat `createManagedKnowledge` sebagai **DRAFT**; penerbitan (`publishKnowledgeRevision`) adalah langkah terpisah skrip yang sama (`--publish`), sesuai urutan G5 yang dikoreksi (R80) — validasi dan audit sama dengan UI. Diuji dengan Prisma palsu. Entri `scripts` di package.json mengikuti pola Task 1–4.
+> - **🛑 Gerbang G5 (baru) — menjalankan seed ke produksi, saat deploy.** Urutannya DIKOREKSI oleh review menyeluruh (R80) — lihat "Checklist Deploy → Tahap 2": seed sebagai DRAFT → `verify:revisions` → deploy kode Task 11 → terbitkan → `verify:revisions`. Urutan lama mengandaikan `main` masih berjalan, padahal Tahap 1 sudah membuat kode yang berjalan membaca body bertopik.
 > - Step 2 (dua DRAFT yatim) dan Step 9 (Test Lab) adalah tindakan operator di UI produksi — masuk daftar tindak lanjut, bukan dikerjakan implementer (browser manual bukan bagian pekerjaan agen).
 > - Nomor baris di Files (`:794`, `:889`, `:1755`, …) sudah bergeser oleh Task 5/6 — cari berdasarkan isi.
 > - Bergantung pada R56 (Task 5b): tanpa itu, blok GENERAL "seluruh 14 topik" hanya lolos kalau ada kata yang sama.
