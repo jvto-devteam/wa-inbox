@@ -6,6 +6,10 @@
  *
  * Ini satu-satunya ukuran kebenaran jawaban yang datanya sudah tersedia hari ini.
  * Klasifikasinya sengaja kasar dan berbasis kata -- tujuannya orde besaran, bukan presisi.
+ *
+ * R19: sebuah pesan INBOUND berikutnya dengan `content: null` (gambar/voice note/stiker
+ * tanpa keterangan) adalah balasan pelanggan SUNGGUHAN, bukan ketiadaan respons -- hanya
+ * ketiadaan pesan INBOUND berikutnya sama sekali yang berarti `tidak_ada_respons`.
  */
 import { config } from 'dotenv'
 
@@ -43,7 +47,7 @@ async function main() {
       select: { content: true },
       orderBy: { createdAt: 'asc' },
     })
-    tally[verdictFor(run.inboundText, next?.content ?? null)]++
+    tally[verdictFor(run.inboundText, next)]++
   }
 
   const total = Object.values(tally).reduce((sum, n) => sum + n, 0)
@@ -57,11 +61,15 @@ async function main() {
 }
 
 /** Seberapa mirip pesan berikutnya dengan pesan sebelumnya -- proksi kasar untuk "diulang". */
-function verdictFor(previous: string, next: string | null): Verdict {
+function verdictFor(previous: string, next: { content: string | null } | null): Verdict {
+  // Tidak ada pesan INBOUND berikutnya sama sekali -- ini satu-satunya kasus "tidak ada respons".
   if (!next) return 'tidak_ada_respons'
-  const low = next.toLowerCase()
+  // Pesan berikutnya ADA tapi tanpa teks (gambar/voice note/stiker) -- balasan sungguhan,
+  // hanya tidak bisa dinilai mengulang/mengoreksi dengan pembanding kata. R19.
+  if (next.content === null) return 'lanjut'
+  const low = next.content.toLowerCase()
   if (CORRECTION_MARKERS.some((marker) => low.includes(marker))) return 'mengoreksi'
-  if (overlapRatio(previous, next) >= 0.6) return 'mengulang'
+  if (overlapRatio(previous, next.content) >= 0.6) return 'mengulang'
   return 'lanjut'
 }
 
