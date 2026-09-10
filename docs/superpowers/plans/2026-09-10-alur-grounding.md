@@ -56,6 +56,15 @@ Empat hal yang sebelumnya saya catat sebagai "tertunda", ternyata sudah punya bu
 
 Eval butuh `JVTO_DEPLOYMENT_APPROVAL_KEY` (tidak ada di `.env` lokal), tunnel ke Ollama produksi, dan menulis baris `eval-*` sementara ke database produksi. Operator memutuskan eval **tidak dijalankan dulu**. Akibatnya: Task 10 ditunda utuh; langkah eval di Task 11 diganti pembanding grounding deterministik (tanpa LLM, tanpa DB); langkah eval di Task 13 dilewati. Eval tercatat sebagai item tertunda di laporan akhir. Batas yang diakui: tidak ada pengukuran balasan model yang nyata sebelum/sesudah pemindahan FAQ.
 
+### Temuan eksternal 2026-09-10 — keputusan per butir (Ruling R62–R69)
+
+Teks verbatim: `.superpowers/sdd/2026-09-10-alur-grounding/temuan-eksternal-2026-09-10.md`. Penilaian dan buktinya: `.superpowers/sdd/2026-09-10-alur-grounding/temuan-eksternal-penilaian.md` (dijalankan ulang oleh `verify_penilaian.py`).
+
+- **Dikerjakan:** 2a → Task 5c (plafon item per giliran, R63) · 2c → Task 21 (topik tambahan, R65) · 3c → Task 16 (R68) · 4b → Task 15 (R69).
+- **Sudah beres sebelum temuan masuk:** 1a (R56/Task 5b) · 1c (R40) · 3b (run nyata: konsistensi 7/8) · 4a (`sanitizeTrace` ada) · 4c (katalog koper terlacak git). 1b tidak tepat: `includes()` memakai array milik item.
+- **Ditunda dengan pemicu terukur, bukan dilupakan:** 2b ambang keyakinan (R64 — keyakinan model tak terkalibrasi, eval ditunda; pemicu: data Task 16/17 menunjukkan fakta benar sering ditolak) · 2d dedup semantik (R66 — butuh model embedding; pemicu: data Task 16).
+- **G1 (R67):** diputuskan dengan n=30; interval Wilson 95% untuk 24/30 = 62,7–90,5% disajikan ke operator sebelum keputusan R30 — ambang 85% berada di dalam interval itu, dan keputusan diambil dengan kesadaran tersebut.
+
 ---
 
 ## File Structure
@@ -647,6 +656,7 @@ git commit -m "feat(knowledge): field topics opsional pada item knowledge, plus 
 - Produces: `managedFactsFor(message: string, topic: ResolverTopic | null): Promise<ManagedFacts>` — dipanggil `orchestrator.ts` di cabang katalog dan cabang tanpa-destinasi
 
 > **Ruling R56 (dikoreksi sesudah Task 5 selesai — lihat `.superpowers/sdd/2026-09-10-alur-grounding/task-5b-brief.md`):** snippet gerbang di bawah menjadikan overlap kata SYARAT MASUK untuk setiap entri, bertentangan dengan komentarnya sendiri ("alat PERINGKAT, bukan penentu masuk") dan dengan Task 11 ("GENERAL … selalu lolos"). Semantik yang benar: topik spesifik yang cocok → masuk tanpa syarat overlap; giliran `general` → entri bertopik `general` masuk, sisanya lewat overlap (R30); entri tanpa topik dan giliran `null` → overlap. Diperbaiki di Task 5b.
+> **Ruling R63 (temuan eksternal 2a):** plafon item knowledge terkelola per giliran — Task 5c (`.superpowers/sdd/2026-09-10-alur-grounding/task-5c-brief.md`), dikerjakan sesudah Task 14.
 
 - [ ] **Step 1: Tulis test yang gagal**
 
@@ -1727,7 +1737,8 @@ Dan di blok index:
 `migrate diff` butuh skema **sebelum** perubahan sebagai pembanding, dan berkas itu tidak ada di repo. Ambil dari git, jangan buat manual:
 
 ```bash
-git show HEAD:prisma/schema.prisma > .superpowers/sdd/2026-09-10-alur-grounding/schema-sebelum.prisma
+# Ruling R69: pakai commit BASE task ini, BUKAN HEAD -- begitu skema di-commit, HEAD sudah memuat perubahannya dan diff jadi kosong.
+git show <BASE>:prisma/schema.prisma > .superpowers/sdd/2026-09-10-alur-grounding/schema-sebelum.prisma
 DIR="prisma/migrations/$(date +%Y%m%d%H%M%S)_bot_decision_run_cluster_columns"
 mkdir -p "$DIR"
 npx prisma migrate diff \
@@ -1781,6 +1792,7 @@ git commit -m "feat(decision-log): kolom topic/job supaya laporan per cluster bi
 - Modify: `src/components/dashboard/ActivityPanels.tsx` — `DecisionTopicPanel` (Ruling R53)
 - Modify: `src/app/(authenticated)/dashboard/page.tsx` — render panel itu (Ruling R53)
 - Test: `src/app/(authenticated)/dashboard/page.test.tsx` — fixture + satu test panel (Ruling R53)
+- Modify: `scripts/measure-followup-signal.ts` — cetak catatan batas bawah (Ruling R68)
 
 **Interfaces:**
 - Consumes: kolom dari Task 15
@@ -1792,6 +1804,7 @@ git commit -m "feat(decision-log): kolom topic/job supaya laporan per cluster bi
 > - **`job` terbaca.** R51 mempertahankan kolom `job` sebagai sumbu funnel; kolom yang ditulis tapi tak pernah dibaca tidak menjawab apa pun. Tambahkan `byJob` dengan bentuk yang sama lewat `groupBy` kedua (`by: ['job', 'status']`, `job: { not: null }`), dan tampilkan di panel yang sama sebagai bagian kedua.
 > - **Test route:** beberapa `groupBy` berjalan di satu `Promise.all`, jadi `mockResolvedValue` tunggal memberi hasil yang sama ke semuanya — pakai `mockImplementation` yang membedakan menurut `args.by`. Fixture `activity` di `dashboard/page.test.tsx` (baris ~90) ikut diperbarui karena tipe `DashboardActivity` bertambah, dan satu test menegaskan panel menampilkan satu baris topik.
 > - **Step 5 dipindah ke sesudah deploy.** `measure:followup` membaca run PRODUKSI, yang dihasilkan kode `main` — branch ini belum di-deploy, jadi angka sebelum/sesudah hari ini mengukur kode yang sama. (Baseline Task 3 pun hanya 8 run REPLIED.) Dicatat di daftar tindak lanjut laporan akhir.
+> - **Ruling R68 — `mengulang` adalah batas bawah.** `measure-followup-signal.ts` mendeteksi pengulangan lewat overlap kata; pelanggan yang mengulang dengan kata lain terhitung `lanjut`. Task ini menambah satu baris keluaran di skrip itu yang menyatakannya, supaya siapa pun yang membaca angkanya sesudah deploy tahu arah biasnya.
 > - Commit menyebut berkas satu per satu (R34), bukan `git add` satu direktori.
 
 - [ ] **Step 1: Tulis test yang gagal**
@@ -1840,7 +1853,7 @@ Expected: PASS.
 
 ```bash
 npm test && npx tsc --noEmit && npx eslint .
-git add src/app/api/dashboard/activity/route.ts src/app/api/dashboard/activity/route.test.ts src/components/dashboard/ActivityPanels.tsx 'src/app/(authenticated)/dashboard/page.tsx' 'src/app/(authenticated)/dashboard/page.test.tsx'
+git add src/app/api/dashboard/activity/route.ts src/app/api/dashboard/activity/route.test.ts src/components/dashboard/ActivityPanels.tsx 'src/app/(authenticated)/dashboard/page.tsx' 'src/app/(authenticated)/dashboard/page.test.tsx' scripts/measure-followup-signal.ts
 git commit -m "feat(dashboard): laporan keputusan bot per cluster topik"
 ```
 
@@ -2029,6 +2042,32 @@ Expected: potongan tercetak, atau pesan bahwa belum ada yang ditandai.
 git add scripts/fixture-from-flagged.ts package.json
 git commit -m "feat(eval): ubah keputusan yang ditandai jadi kandidat golden case"
 ```
+
+---
+
+### Task 21: Topik tambahan untuk pesan yang menanyakan lebih dari satu hal (Ruling R65)
+
+**Kenapa.** Pengukuran G1: 5 dari 30 pesan berlabel punya topik sah kedua, dan classifier memilih salah satunya. Sejak R56, gerbang topik spesifik mengeluarkan entri bertopik lain — jadi "berapa deposit dan bisa drop off di Malang?" kehilangan fakta salah satu topik (kecuali katalog kosong dan jaring R41 berjalan).
+
+**Files:**
+- Modify: `src/lib/bot/topic-classifier.ts` — keluaran `{ topic, alsoTopics, source }`
+- Modify: `src/lib/bot/runtime-integration.ts` — parameter `alsoTopics` di `managedFactsFor`
+- Modify: `src/lib/bot/orchestrator.ts` — teruskan `alsoTopics` di kedua call site `managedFactsFor`
+- Modify: `scripts/measure-topic-accuracy.ts` — kolom `also` di keluaran TSV
+- Test: `src/lib/bot/topic-classifier.test.ts`, `src/lib/bot/runtime-integration.test.ts`, `src/lib/bot/orchestrator.test.ts`
+
+**Desain:**
+- Satu panggilan classifier, bukan dua. Prompt meminta `{"topic": "<utama>", "also": ["<topik lain yang JUGA ditanyakan>"]}`. `also`: divalidasi ke enum 14 topik, tanpa duplikat, tanpa topik utama, paling banyak 2; hilang atau tidak sah → `[]`. Jalur `regex_fallback` → `[]`. Topik utama divalidasi persis seperti hari ini.
+- `managedFactsFor(message, topic, hasCatalogFacts = false, alsoTopics: readonly ResolverTopic[] = [])`: gerbang spesifik menerima entri bila `item.topics` memuat topik utama ATAU salah satu `alsoTopics`. Aturan `general`/`null` (R30) tidak berubah.
+- Yang TETAP memakai topik utama saja: `resolveKnowledgeForTopic` (katalog), kolom `topic` (R51), `sourceTopic`, dan teks trace yang sudah ada. Trace menambah satu keterangan topik tambahan bila ada.
+
+**🛑 Gerbang ukur — dijalankan CONTROLLER lewat tunnel (akses yang sama dengan Fase 0), sebelum prompt baru di-commit:** `measure-topic-accuracy` pada 100 pesan yang sama (seed 20260910).
+1. Kesepakatan topik utama dengan `topik.tsv` Fase 0 **≥ 95%**. Kurang dari itu = perubahan prompt menggeser klasifikasi utama → BERHENTI, laporkan ke operator.
+2. Pada 30 baris berlabel (`label-topik.tsv`): hitung kesalahan ketat yang topik label-nya kini ada di `also` — itulah manfaat yang diukur, dilaporkan apa adanya.
+
+**Test (TDD):** `also` sah/tidak sah/duplikat/sama dengan utama/lebih dari 2; fallback → `[]`; gerbang menerima entri bertopik tambahan; entri bertopik lain (bukan utama, bukan tambahan) tetap ditolak; orkestrator meneruskan `alsoTopics` di kedua call site (satu test per site). Semua test lama wajib lulus tanpa diubah.
+
+**Commit:** berkas satu per satu (R34), pesan `feat(bot): topik tambahan untuk pesan multi-topik, diukur sebelum dipakai`.
 
 ---
 
