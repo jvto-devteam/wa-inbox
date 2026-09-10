@@ -70,8 +70,8 @@ Empat hal yang sebelumnya saya catat sebagai "tertunda", ternyata sudah punya bu
 | `src/lib/bot/knowledge.ts` | Hapus `GENERAL_FAQ_FALLBACK`; dedup grounding | Modify |
 | `src/lib/bot/orchestrator.ts` | Managed di cabang tanpa-destinasi (R26); FAQ dihapus dari tiga cabang (R27); kerusakan knowledge → hiccup | Modify |
 | `src/lib/bot/reply-verifier.ts` | Deteksi frasa jaminan di balasan | Modify |
-| `prisma/schema.prisma` | Kolom `topic`/`job`/`stage` di `BotDecisionRun` | Modify |
-| `src/lib/bot-control/decision-recorder.ts` | Tulis tiga kolom itu | Modify |
+| `prisma/schema.prisma` | Kolom `topic`/`job` di `BotDecisionRun` (R38: tanpa `stage`) | Modify |
+| `src/lib/bot-control/decision-recorder.ts` | Tulis dua kolom itu | Modify |
 
 ---
 
@@ -1129,8 +1129,7 @@ Tanpa ini, salah tanda dari classifier tidak pernah terlihat operator — dan it
 - Modify: `src/components/bot-control/KnowledgeEditor.tsx`
 - Modify: `src/components/bot-control/KnowledgeSourceTable.tsx`
 - Modify: `src/components/bot-control/KnowledgeRevisionPanel.tsx`
-- Modify: `src/app/api/bot-control/knowledge/sources/route.ts`
-- Modify: `src/app/api/bot-control/knowledge/sources/[id]/draft/route.ts`
+- Tanpa perubahan (Ruling R35): `src/app/api/bot-control/knowledge/sources/route.ts` dan `sources/[id]/draft/route.ts` — keduanya menerima `body: z.unknown()` dan menyerahkan validasi ke `knowledge-workflow` → `validateKnowledgeBody`, jadi `topics` lolos otomatis setelah Task 4
 - Test: `src/components/bot-control/KnowledgeEditor.test.tsx`
 
 **Interfaces:**
@@ -1178,13 +1177,13 @@ Expected: PASS.
 
 - [ ] **Step 5: Terima `topics` di route API**
 
-Di `src/app/api/bot-control/knowledge/sources/route.ts` dan `sources/[id]/draft/route.ts`, pastikan skema Zod body meneruskan `topics` (skema item sudah divalidasi `knowledgeItemSchema`, jadi biasanya cukup memastikan tidak ada `.pick()`/`.omit()` yang membuangnya).
+**Tidak ada yang diubah di route (Ruling R35, terverifikasi):** `sources/route.ts:115` dan `sources/[id]/draft/route.ts:24` mendeklarasikan `body: z.unknown()` dan meneruskan `parsed.data.body` apa adanya ke `knowledge-workflow`, yang memvalidasi dengan `validateKnowledgeBody`. Begitu skema Task 4 memuat `topics`, route meneruskannya tanpa satu baris pun berubah. Jangan edit route ini.
 
 - [ ] **Step 6: Gerbang mutu + commit**
 
 ```bash
 npm test && npx tsc --noEmit && npx eslint .
-git add src/components/bot-control/ src/app/api/bot-control/knowledge/
+git add src/components/bot-control/
 git commit -m "feat(ui): pemilih topik di editor knowledge, topik tampil di tabel dan panel revisi"
 ```
 
@@ -1197,6 +1196,8 @@ git commit -m "feat(ui): pemilih topik di editor knowledge, topik tampil di tabe
 ### Task 10: Buka gerbang eval di working copy
 
 `npm run eval` adalah gerbang mutu utama Fase 2. Sudah dibuktikan menolak jalan (`Deployment gate is CLOSED`) karena `catalog/deployment-approval.json` gitignored dan hanya ada di VPS. `approve:deployment` sudah diverifikasi ada di `package.json`.
+
+> **Ruling R36:** jalankan `npm test` **sebelum** Step 1 dan catat jumlah test lulus. Setelah berkas approval lokal dibuat, jalankan `npm test` lagi — jumlah lulus wajib **identik**. `deployment-gate.test.ts` sendiri terisolasi (katalog di direktori temp), tapi suite lain membaca katalog asli; perbandingan ini membuktikan secara mekanis bahwa berkas approval lokal tidak mengubah hasil suite untuk task sesudahnya. Kalau berbeda: hentikan dan laporkan test mana yang berubah.
 
 **Files:**
 - Tidak ada perubahan kode. Hanya menjalankan skrip yang sudah ada.
@@ -1501,6 +1502,8 @@ git commit -m "feat(bot): dedup baris grounding lintas sumber"
 - Consumes: `GUARANTEE_PHRASES` di `src/lib/bot/knowledge.ts` (cari dengan nama — barisnya bergeser setelah Task 11 dan 13) — perlu diekspor
 - Produces: `VerificationResult.guaranteeViolations: string[]`
 
+> **Ruling R37 — tanda tangan asli, snippet di bawah skematik:** `verifyReply(params: { replyText: string; groundedAmounts: number[]; groundedUrls: string[] })` (`reply-verifier.ts`) — satu objek, bukan argumen posisional, dan tidak punya `groundingLines` maupun `topic`. Tambahkan `topic?: string` opsional ke params-nya. Pemanggil satu-satunya adalah `composeVerifiedReply` (`orchestrator.ts`, dua call site), yang sudah membawa `topic: string` — teruskan `params.topic` di keduanya. Test memanggil `verifyReply({ replyText, groundedAmounts: [], groundedUrls: [], topic: 'blue_fire' })`. Batas yang dinyatakan: Mode 3 memberi label tetap non-topik, jadi cek jaminan tidak pernah menyala untuk pelanggan yang sudah booking.
+
 - [ ] **Step 1: Ekspor daftar frasa**
 
 Di `src/lib/bot/knowledge.ts`, cari `const GUARANTEE_PHRASES` dengan nama dan ubah jadi `export const GUARANTEE_PHRASES`.
@@ -1563,7 +1566,9 @@ git commit -m "feat(bot): verifier menandai balasan yang menjanjikan hal yang gu
 
 ## FASE 4 — Mata
 
-### Task 15: Kolom `topic` / `job` / `stage` di `BotDecisionRun`
+### Task 15: Kolom `topic` / `job` di `BotDecisionRun`
+
+> **Ruling R38 — tanpa kolom `stage`.** Plan ini sendiri mengecualikan `conversationStage`, jadi tidak ada yang pernah menulis kolom `stage`: kolom null permanen adalah skema mati, dan `.claude/rules/prisma-schema.md` melarang menambah field tanpa diskusi. Abaikan setiap `stage` di snippet task ini. Pola berkas `decision-recorder.ts`: setiap kolom diturunkan dari objek `decision` lewat helper `*ForDecision`. `topic` sudah tersedia di keputusan mode `faq` sebagai `sourceTopic` (`types.ts:93`). **`job` belum dibawa keputusan mana pun** — keputusan menambahkannya ke objek keputusan atau melepas kolomnya dicatat di ledger saat pra-dispatch task ini.
 
 Nilai-nilai ini sudah dihitung tiap giliran, hari ini hanya terkubur di `trace` Json sehingga tidak bisa di-`groupBy`.
 
