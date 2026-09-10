@@ -90,10 +90,8 @@ export function KnowledgeSourceTable({
                 <p className="font-medium text-ink">{source.title}</p>
                 {/* Ringkasannya prosa: kolomnya boleh selebar apa pun, barisnya tidak. */}
                 {source.summary && <p className="max-w-4xl text-sm text-ink-muted">{source.summary}</p>}
-                {/* Bukan hiasan: topik yang salah harus terlihat tanpa membuka form.
-                    `?? []` defensif: baris dari caller yang belum diperbarui ke bentuk GET
-                    Task 9 (mis. fixture test halaman lama) tidak boleh merusak render tabel. */}
-                {(source.topics ?? []).length > 0 && (
+                {/* Bukan hiasan: topik yang salah harus terlihat tanpa membuka form. */}
+                {source.topics.length > 0 && (
                   <div className="mt-1 flex flex-wrap gap-1">
                     {source.topics.map((topic) => (
                       <Badge key={topic} variant="muted">

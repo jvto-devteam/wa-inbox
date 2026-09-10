@@ -81,9 +81,7 @@ export function KnowledgeRevisionPanel({
 
               <p className="text-base font-medium text-ink">{revision.title}</p>
               {revision.summary && <p className="text-sm text-ink-muted">{revision.summary}</p>}
-              {/* `?? []` defensif, sama seperti KnowledgeSourceTable: baris dari caller yang
-                  belum diperbarui ke bentuk GET Task 9 tidak boleh merusak render panel. */}
-              {(revision.topics ?? []).length > 0 && (
+              {revision.topics.length > 0 && (
                 <div className="flex flex-wrap gap-1">
                   {revision.topics.map((topic) => (
                     <Badge key={topic} variant="muted">

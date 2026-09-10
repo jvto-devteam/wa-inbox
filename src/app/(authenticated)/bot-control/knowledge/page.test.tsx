@@ -43,6 +43,7 @@ const SOURCES = {
       managed: true,
       hasDraft: true,
       latestRevision: { id: 'krev_1', version: 1, status: 'DRAFT' },
+      topics: [],
     },
   ],
   page: 1,
