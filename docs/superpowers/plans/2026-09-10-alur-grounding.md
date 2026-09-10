@@ -885,16 +885,18 @@ Classifier pesan mengembalikan **tepat satu** topik. Untuk fakta itu salah: satu
 - Consumes: `callLLM` dari `src/lib/bot/llm.ts`, `RESOLVER_TOPICS` (Task 4)
 - Produces: `classifyFactTopics(question: string, answer: string, model?: string): Promise<ResolverTopic[]>` — dipanggil Task 8
 
+> **Ruling R43 — tiga koreksi snippet, terverifikasi terhadap berkas saudaranya `topic-classifier.ts`/`.test.ts`:** (a) test memakai pola repo — import statis + `vi.mock` yang di-hoist (`topic-classifier.test.ts:1-10`), bukan `await import` top-level; (b) kegagalan TIDAK ditelan diam-diam — `classifyTopicViaLLM` mencatat `console.error('topic classification failed', { error })` (`topic-classifier.ts:89`), jadi classifier fakta mencatat dengan cara yang sama; dua test kegagalan memasang `vi.spyOn(console, 'error')` supaya keluaran test bersih dan pencatatannya ditegaskan; (c) contoh deposit di prompt "30%" diganti "20%" — sama dengan katalog (`policy_payment_deposit`: "standard 20%") — supaya prompt tidak menanam angka yang bertentangan dengan fakta JVTO. Biaya kalau salah: nol.
+
 - [ ] **Step 1: Tulis test yang gagal**
 
 Buat `src/lib/bot/fact-topic-classifier.test.ts`:
 
 ```typescript
 import { describe, expect, it, vi, beforeEach } from 'vitest'
+import { classifyFactTopics } from './fact-topic-classifier'
+import { callLLM } from './llm'
 
 vi.mock('./llm', () => ({ callLLM: vi.fn() }))
-const { callLLM } = await import('./llm')
-const { classifyFactTopics } = await import('./fact-topic-classifier')
 
 describe('classifyFactTopics', () => {
   beforeEach(() => vi.mocked(callLLM).mockReset())
@@ -912,15 +914,21 @@ describe('classifyFactTopics', () => {
   })
 
   it('mengembalikan daftar kosong saat LLM gagal — tidak boleh memblokir penyimpanan', async () => {
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
     vi.mocked(callLLM).mockRejectedValue(new Error('timeout'))
     const topics = await classifyFactTopics('Q', 'A')
     expect(topics).toEqual([])
+    expect(logged).toHaveBeenCalled()
+    logged.mockRestore()
   })
 
   it('mengembalikan daftar kosong saat keluaran bukan JSON', async () => {
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
     vi.mocked(callLLM).mockResolvedValue('maaf saya tidak paham')
     const topics = await classifyFactTopics('Q', 'A')
     expect(topics).toEqual([])
+    expect(logged).toHaveBeenCalled()
+    logged.mockRestore()
   })
 })
 ```
@@ -994,7 +1002,7 @@ Examples:
 Fact: "Can a Surabaya package finish with drop-off in Malang? — Yes. A surcharge of IDR 250,000 per vehicle applies."
 Output: {"topics": ["route_endpoint", "price"]}
 
-Fact: "How much deposit confirms a booking? — 30% of the total."
+Fact: "How much deposit confirms a booking? — 20% of the total."
 Output: {"topics": ["payment", "booking"]}
 
 Fact: "All tours are 100% private — your group only, no strangers ever."
@@ -1021,8 +1029,10 @@ export async function classifyFactTopics(
     if (!Array.isArray(topics)) return []
     const valid = topics.filter((t): t is ResolverTopic => typeof t === 'string' && VALID.has(t))
     return [...new Set(valid)]
-  } catch {
-    // Sengaja ditelan: lihat komentar kepala berkas. Operator tetap bisa menyimpan.
+  } catch (error) {
+    // Tidak melempar: lihat komentar kepala berkas -- operator tetap bisa menyimpan. Tapi
+    // kegagalannya dicatat, sama seperti classifyTopicViaLLM, supaya tidak hilang tanpa jejak.
+    console.error('fact topic classification failed', { error })
     return []
   }
 }
@@ -1057,6 +1067,14 @@ git commit -m "feat(knowledge): classifier multi-topik untuk fakta, dijalankan s
 > - Tanda tangan asli: `saveKnowledgeDraft(sourceId: string, params: SaveDraftParams, actor)` dengan `SaveDraftParams = { title?, summary?, body: unknown, reason: string }`. Jadi panggil `saveKnowledgeDraft('src-1', { body: { items: [...] }, reason: 'uji' }, actor)` — `sourceId` posisional pertama, item di dalam `body`, `reason` wajib. `createManagedKnowledge(params, actor)` sama: item di `params.body`.
 > - `RevisionResult` hanya `{ sourceId, revisionId, version, status, title }` — **tidak ada `revision.body`**. Tegaskan body yang **ditulis**: argumen `data.body` pada penulisan `knowledgeRevision` (create/update, langsung atau di dalam `$transaction`) — cari di fungsinya, jangan menebak.
 > - Test "tidak memblokir penyimpanan" menegaskan penulisan tetap terjadi saat classifier mengembalikan `[]`.
+
+> **Ruling R44 — model, urutan, dan cakupan test (terverifikasi di `knowledge-workflow.ts` dan `orchestrator.ts`):**
+> - **Model dari Settings.** Bot memberi `settings.ollamaModel` ke setiap classifier (`orchestrator.ts:1255-1256`); tanpa itu classifier fakta memakai konstanta `DEFAULT_OLLAMA_MODEL` di `llm.ts` dan pilihan model operator di /chatbot diabaikan. Baca `prisma.settings.findUnique({ where: { id: 1 }, select: { ollamaModel: true } })` — HANYA bila ada item tanpa `topics` — lalu teruskan `row?.ollamaModel` (baris hilang → `undefined` → default `llm.ts`).
+> - **Urutan di `saveKnowledgeDraft`:** sesudah SEMUA penjaga — tipe MANUAL (`:198`), ARCHIVED (`:203`), revisi terakhir ada (`:211`) — dan sebelum `update`/`create`. Di `createManagedKnowledge`: sesudah validasi (`:122-123`), sebelum `prisma.$transaction` (`:125`).
+> - **Body yang ditulis** = `{ ...validated.body, items: terisi }` di ketiga titik tulis (`:148`, `:223`, `:240`).
+> - **Test** memakai pola berkas yang ada: mock `@/lib/bot/fact-topic-classifier` dengan default `[]` di `beforeEach` (test lama tak berubah), tegaskan `data.body` pada `mockPrisma.knowledgeRevision.update` (jalur draft), `mockPrisma.knowledgeRevision.create` (jalur versi baru), dan `mockTx.knowledgeRevision.create` (createManagedKnowledge). Tambahan di luar tiga snippet: (1) createManagedKnowledge juga mengisi topics; (2) classifier TIDAK dipanggil untuk sumber non-MANUAL (membuktikan urutan penjaga); (3) classifier menerima model dari Settings; (4) Settings tidak dibaca bila semua item sudah punya topics.
+> - **Batas yang dilaporkan, bukan diperbaiki di sini:** setelah tersimpan, topik isian classifier tidak bisa dibedakan dari pilihan operator, dan tidak diperbarui bila jawaban diedit kemudian — Task 9 menampilkannya di editor supaya operator memeriksa.
+> - Biaya kalau salah: satu query Settings per simpan yang punya item tanpa topik.
 
 - [ ] **Step 1: Tulis test yang gagal**
 
@@ -1142,12 +1160,27 @@ Tanpa ini, salah tanda dari classifier tidak pernah terlihat operator — dan it
 - Modify: `src/components/bot-control/KnowledgeEditor.tsx`
 - Modify: `src/components/bot-control/KnowledgeSourceTable.tsx`
 - Modify: `src/components/bot-control/KnowledgeRevisionPanel.tsx`
-- Tanpa perubahan (Ruling R35): `src/app/api/bot-control/knowledge/sources/route.ts` dan `sources/[id]/draft/route.ts` — keduanya menerima `body: z.unknown()` dan menyerahkan validasi ke `knowledge-workflow` → `validateKnowledgeBody`, jadi `topics` lolos otomatis setelah Task 4
+- Modify: `src/lib/bot-control/knowledge-body.ts` — helper `topicsOfBody` (Ruling R45)
+- Modify: `src/app/api/bot-control/knowledge/sources/route.ts` — **GET saja**: `topics` per baris (Ruling R45)
+- Modify: `src/app/api/bot-control/knowledge/sources/[id]/revisions/route.ts` — `topics` per revisi, body tetap tidak dikirim (Ruling R45)
+- Tanpa perubahan pada handler TULIS (Ruling R35): `POST` di `src/app/api/bot-control/knowledge/sources/route.ts` dan `sources/[id]/draft/route.ts` — keduanya menerima `body: z.unknown()` dan menyerahkan validasi ke `knowledge-workflow` → `validateKnowledgeBody`, jadi `topics` lolos otomatis setelah Task 4
 - Test: `src/components/bot-control/KnowledgeEditor.test.tsx`
+- Test: `src/components/bot-control/KnowledgeSourceTable.test.tsx`, `src/components/bot-control/KnowledgeRevisionPanel.test.tsx` (Ruling R45)
+- Test: `src/lib/bot-control/knowledge-body.test.ts`, `src/app/api/bot-control/knowledge/sources/route.test.ts`, `src/app/api/bot-control/knowledge/sources/[id]/routes.test.ts` (Ruling R45)
 
 **Interfaces:**
 - Consumes: `RESOLVER_TOPICS` (Task 4)
 - Produces: `topics` terkirim di body request ke `POST/PUT` route knowledge
+- Produces: `topics: ResolverTopic[]` per baris di GET sources dan per revisi di GET revisions (Ruling R45)
+
+> **Ruling R45 — data topik belum sampai ke tabel dan panel; snippet test tidak cocok dengan komponen (terverifikasi):**
+> - `KnowledgeSourceRow` (`KnowledgeSourceTable.tsx:16`) dan `RevisionRow` (`KnowledgeRevisionPanel.tsx:7`) tidak membawa isi item sama sekali; GET sources hanya memilih `{ id, version, status }` revisi terakhir (`sources/route.ts:72`), dan GET revisions sengaja tanpa body (`revisions/route.ts:13-15`). Badge topik mustahil tanpa perubahan GET. Maka: helper `topicsOfBody(value: unknown): ResolverTopic[]` di `knowledge-body.ts` (gabungan topik semua item, urut `RESOLVER_TOPICS`, `[]` bila body tak terbaca — lewat `readKnowledgeBody`); GET sources menambah `body: true` ke select revisi terakhir dan mengembalikan `topics` per baris; GET revisions menambah `body: true` ke select dan mengembalikan `topics` per revisi — **body itu sendiri tetap tidak dikirim** (alasan di kepala berkas itu tetap berlaku; `topics` paling banyak 14 nilai). `KnowledgeSourceRow.topics` dan `RevisionRow.topics` bertipe `ResolverTopic[]`. R35 tetap berlaku untuk handler TULIS; R45 hanya menyentuh GET.
+> - Snippet test di bawah skematik. Props asli: `initial: KnowledgeDraft` + `onSave(draft, reason, activate)`, lewat helper `renderEditor()` yang sudah ada di berkas test. Tombol simpan baru aktif setelah alasan ≥10 karakter diisi, dan ada DUA tombol ("Simpan & aktifkan", "Simpan draft") — pilih dengan nama persis. `@testing-library/user-event` TIDAK terpasang (package.json hanya `@testing-library/react` dan `@testing-library/jest-dom`); menambahkannya berarti mengubah package.json = gerbang pemilik, jadi pakai `fireEvent` seperti test yang ada.
+> - Checkbox: `aria-label={`Topik ${topic} item ${index + 1}`}` — satu item → 14 checkbox yang cocok `/topik/i`. Label tampil = id topik apa adanya, sama dengan yang tertulis di trace. Semua centang dilepas → `topics: undefined` (pola `prices`/`links` di berkas yang sama).
+> - `RESOLVER_TOPICS` aman diimpor komponen klien: `module-resolver.ts` tidak mengimpor apa pun.
+> - Commit menyebut berkas satu per satu (R34), bukan `git add` satu direktori.
+> - Test tambahan: `topicsOfBody` (gabungan, urutan, body tak terbaca → `[]`); GET sources dan GET revisions mengembalikan `topics`, dan GET revisions tetap tanpa `body`; badge tampil di tabel dan di panel.
+> - Batas yang dilaporkan: mengosongkan semua topik lalu menyimpan akan diisi ulang classifier (Task 8) — operator tidak bisa membuat item "tanpa topik" dari form.
 
 - [ ] **Step 1: Tulis test yang gagal**
 
@@ -1190,13 +1223,13 @@ Expected: PASS.
 
 - [ ] **Step 5: Terima `topics` di route API**
 
-**Tidak ada yang diubah di route (Ruling R35, terverifikasi):** `sources/route.ts:115` dan `sources/[id]/draft/route.ts:24` mendeklarasikan `body: z.unknown()` dan meneruskan `parsed.data.body` apa adanya ke `knowledge-workflow`, yang memvalidasi dengan `validateKnowledgeBody`. Begitu skema Task 4 memuat `topics`, route meneruskannya tanpa satu baris pun berubah. Jangan edit route ini.
+**Tidak ada yang diubah di route (Ruling R35, terverifikasi):** `sources/route.ts:115` dan `sources/[id]/draft/route.ts:24` mendeklarasikan `body: z.unknown()` dan meneruskan `parsed.data.body` apa adanya ke `knowledge-workflow`, yang memvalidasi dengan `validateKnowledgeBody`. Begitu skema Task 4 memuat `topics`, route meneruskannya tanpa satu baris pun berubah. Jangan edit handler tulisnya — perubahan GET di Ruling R45 terpisah.
 
 - [ ] **Step 6: Gerbang mutu + commit**
 
 ```bash
 npm test && npx tsc --noEmit && npx eslint .
-git add src/components/bot-control/
+git add src/components/bot-control/KnowledgeEditor.tsx src/components/bot-control/KnowledgeEditor.test.tsx src/components/bot-control/KnowledgeSourceTable.tsx src/components/bot-control/KnowledgeSourceTable.test.tsx src/components/bot-control/KnowledgeRevisionPanel.tsx src/components/bot-control/KnowledgeRevisionPanel.test.tsx src/lib/bot-control/knowledge-body.ts src/lib/bot-control/knowledge-body.test.ts src/app/api/bot-control/knowledge/sources/route.ts src/app/api/bot-control/knowledge/sources/route.test.ts 'src/app/api/bot-control/knowledge/sources/[id]/revisions/route.ts' 'src/app/api/bot-control/knowledge/sources/[id]/routes.test.ts'
 git commit -m "feat(ui): pemilih topik di editor knowledge, topik tampil di tabel dan panel revisi"
 ```
 
