@@ -199,6 +199,14 @@ describe('decideAndRespond', () => {
     expect(result).not.toHaveProperty('job')
   })
 
+  // Task 17 (Ruling R54): `knowledge` is filled at the same two knowledge-assembly sites as
+  // `topic`/`job`, and attached at the same single point -- a keyword-escalation decision never
+  // reaches either site, so it must not carry `knowledge` either.
+  it('does not attach knowledge to a keyword-escalation decision — no knowledge-assembly site ran', async () => {
+    const result = await decideAndRespond('conv_1', 'Saya mau komplain dan minta refund!')
+    expect(result).not.toHaveProperty('knowledge')
+  })
+
   it('merges tripBrief server-side rather than overwriting the whole column', async () => {
     // A read-modify-write across two round trips is a lost-update race: two
     // turns for the same conversation each hold 30s+ of LLM time, and each
@@ -731,6 +739,50 @@ describe('decideAndRespond', () => {
     expect(opts.system).toContain('20% dari total, dibayar di Surabaya.')
     expect(result.steps?.map((s) => s.label)).toContain('Knowledge terkelola dipakai')
     expect(result.steps?.find((s) => s.label === 'Knowledge terkelola dipakai')?.detail).toContain('Kebijakan Pembayaran (v3)')
+  })
+
+  // Task 17 (Ruling R54): the no-destination branch's own knowledge-assembly site -- same
+  // fixture as the test right above (managed FAQ alone answers, catalog side empty), asserting
+  // the `knowledge` the decision now carries instead of only the trace step.
+  it('attaches knowledge (catalogLines/managedLines/rejected/gateBypassed) to a faq decision from the no-destination branch', async () => {
+    ;vi.mocked(ensureFreshBookingData).mockResolvedValue(null)
+    ;vi.mocked(classifySalesNeed).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
+    ;vi.mocked(matchDestination).mockReturnValue(null)
+    ;vi.mocked(listDestinations).mockReturnValue(['Bromo', 'Ijen'])
+    ;vi.mocked(classifyTopicViaLLM).mockResolvedValue({ topic: 'payment', source: 'llm' })
+    ;vi.mocked(resolveKnowledgeForTopic).mockReturnValue({
+      factualLines: [],
+      detailLines: [],
+      primaryLink: null,
+      disclosures: [],
+      handoffRequired: false,
+    })
+    ;vi.mocked(loadPublishedManagedKnowledge).mockResolvedValue({
+      entries: [
+        {
+          sourceId: 'ks_1',
+          sourceKey: 'managed/payment',
+          sourceTitle: 'Kebijakan Pembayaran',
+          revisionId: 'krev_1',
+          version: 3,
+          items: [{ question: 'Berapa deposit?', answer: '20% dari total, dibayar di Surabaya.', topics: ['payment'] }],
+        },
+      ],
+      available: true,
+      loadedAt: 0,
+    })
+
+    const result = await decideAndRespond('conv_1', 'Bagaimana cara pembayaran deposit?')
+
+    expect(result.mode).toBe('faq')
+    expect(result).toMatchObject({
+      knowledge: {
+        catalogLines: [],
+        managedLines: [{ line: 'Berapa deposit? — 20% dari total, dibayar di Surabaya.', source: 'Kebijakan Pembayaran (v3)' }],
+        rejected: [],
+        gateBypassed: false,
+      },
+    })
   })
 
   // Ruling R41: the safety net (managedFactsFor's ungated retry) must stay OFF on a turn the
@@ -3292,6 +3344,48 @@ describe('decideAndRespond', () => {
     expect(result.mode).toBe('faq')
     const [, opts] = llmCall(0)
     expect(opts.system).not.toContain('Ya, sudah termasuk voucher spa gratis.')
+  })
+
+  // Task 17 (Ruling R54): the catalog branch's own knowledge-assembly site -- same fixture as
+  // the R41 test right above (a cross-topic managed entry the gate rejects despite sharing
+  // words with the message), asserting the decision's `knowledge.rejected` names it.
+  it('attaches knowledge with a gate-rejected entry to a faq decision from the catalog branch', async () => {
+    ;vi.mocked(ensureFreshBookingData).mockResolvedValue(null)
+    ;vi.mocked(classifySalesNeed).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
+    ;vi.mocked(matchDestination).mockReturnValue({ destination: 'ijen', matches: [pkg()] })
+    ;vi.mocked(checkRouteGate).mockReturnValue({ status: 'clear' })
+    ;vi.mocked(classifyTopicViaLLM).mockResolvedValue({ topic: 'inclusions', source: 'llm' })
+    // resolveKnowledgeForTopic keeps the file's default non-empty factualLines -- that IS the
+    // catalog fact this test needs (and what makes hasCatalogFacts true, so R41's retry does
+    // not readmit the rejected entry below).
+    ;vi.mocked(loadPublishedManagedKnowledge).mockResolvedValue({
+      entries: [
+        {
+          sourceId: 'ks_1',
+          sourceKey: 'managed/payment',
+          sourceTitle: 'Kebijakan Pembayaran',
+          revisionId: 'krev_1',
+          version: 1,
+          items: [{ question: 'Fasilitas spa termasuk paket?', answer: 'Ya, sudah termasuk voucher spa gratis.', topics: ['payment'] }],
+        },
+      ],
+      available: true,
+      loadedAt: 0,
+    })
+
+    const result = await decideAndRespond('conv_1', 'Apa saja fasilitas spa yang termasuk di paket Ijen?')
+
+    expect(result.mode).toBe('faq')
+    expect(result).toMatchObject({
+      knowledge: {
+        catalogLines: ['Every package includes private transport and a driver/guide.'],
+        managedLines: [],
+        rejected: [
+          { sourceKey: 'managed/payment', itemQuestion: 'Fasilitas spa termasuk paket?', reason: 'topik [payment] tidak memuat inclusions' },
+        ],
+        gateBypassed: false,
+      },
+    })
   })
 
   // Ruling R63 (Task 5c): sama seperti test no-destination branch di atas, untuk call site

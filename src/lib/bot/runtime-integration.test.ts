@@ -142,7 +142,8 @@ describe('managedFactsFor', () => {
     // Ruling R63: truncated juga bagian dari ManagedFacts -- EMPTY membawanya juga (0).
     // Ruling R46: degraded juga bagian dari ManagedFacts -- `available: true` (default beforeEach)
     // dengan nol entri terbit memang berarti "tidak ada knowledge", bukan kerusakan, jadi false.
-    expect(await managedFactsFor('Berapa harga ATV?', null)).toEqual({ lines: [], refs: [], gateBypassed: false, truncated: 0, degraded: false })
+    // Task 17: rejected juga bagian dari ManagedFacts -- EMPTY membawanya juga ([]).
+    expect(await managedFactsFor('Berapa harga ATV?', null)).toEqual({ lines: [], refs: [], gateBypassed: false, truncated: 0, rejected: [], degraded: false })
   })
 
   it('folds in an entry whose question shares a word with the message', async () => {
@@ -213,7 +214,8 @@ describe('managedFactsFor', () => {
     // Ruling R46: BERBEDA dari test "tidak ada knowledge terbit" di atas -- di sini loader-nya
     // sendiri gagal (melempar), jadi `degraded` harus TRUE, bukan false: kegagalan pembacaan
     // wajib bisa dibedakan dari "memang tidak ada knowledge" oleh pemanggil (orchestrator.ts).
-    expect(await managedFactsFor('berapa harga ATV?', null)).toEqual({ lines: [], refs: [], gateBypassed: false, truncated: 0, degraded: true })
+    // Task 17: rejected juga bagian dari ManagedFacts -- EMPTY membawanya juga ([]).
+    expect(await managedFactsFor('berapa harga ATV?', null)).toEqual({ lines: [], refs: [], gateBypassed: false, truncated: 0, rejected: [], degraded: true })
   })
 
   it('returns nothing for a message with no usable words', async () => {
@@ -259,6 +261,49 @@ describe('managedFactsFor', () => {
       ])
       const facts = await managedFactsFor('deposit bisa dibayar di surabaya?', 'general')
       expect(facts.lines).toHaveLength(1)
+    })
+  })
+
+  // Task 17 (Ruling R54): "ditolak" hanya memuat entri yang ditolak gerbang TETAPI lolos
+  // overlap kata (akan masuk kalau gerbang tidak ada) -- bukan entri tanpa satu kata pun yang
+  // sama, dan bukan entri yang kemudian dimasukkan kembali oleh jaring R41.
+  describe('rejected (Ruling R54)', () => {
+    it('mencatat entri yang ditolak gerbang beserta alasannya', async () => {
+      mockEntries([
+        { question: 'Berapa deposit di Malang?', answer: '20%.', topics: ['payment'] },
+      ])
+      // Berbagi kata "malang" dengan pesan: tanpa gerbang entri ini akan ikut. `true` = katalog
+      // punya fakta (R41), jadi jaring tidak memasukkannya kembali.
+      const facts = await managedFactsFor('bisa selesai di malang?', 'route_endpoint', true)
+      expect(facts.rejected).toEqual([
+        expect.objectContaining({
+          sourceKey: 'managed/atv',
+          itemQuestion: 'Berapa deposit di Malang?',
+          reason: 'topik [payment] tidak memuat route_endpoint',
+        }),
+      ])
+    })
+
+    it('entri yang ditolak gerbang TANPA satu kata pun yang sama TIDAK dicatat', async () => {
+      mockEntries([
+        { question: 'Berapa deposit upfront?', answer: '20%.', topics: ['payment'] },
+      ])
+      // Tidak berbagi kata bermakna apa pun dengan pesan -- entri ini tidak akan masuk dengan
+      // atau tanpa gerbang, jadi gerbang bukan alasannya.
+      const facts = await managedFactsFor('bisa antar jemput dari bandara?', 'route_endpoint', true)
+      expect(facts.rejected).toEqual([])
+    })
+
+    it('entri yang dimasukkan kembali oleh jaring R41 TIDAK dicatat sebagai ditolak', async () => {
+      mockEntries([
+        { question: 'Berapa deposit di Malang?', answer: '20%.', topics: ['payment'] },
+      ])
+      // hasCatalogFacts=false -- katalog belum menjawab apa pun, jadi jaring menyala dan
+      // memasukkan kembali entri ini lewat overlap kata ("malang").
+      const facts = await managedFactsFor('bisa selesai di malang?', 'route_endpoint', false)
+      expect(facts.gateBypassed).toBe(true)
+      expect(facts.lines).toHaveLength(1)
+      expect(facts.rejected).toEqual([])
     })
   })
 

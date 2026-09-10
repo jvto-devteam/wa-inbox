@@ -125,6 +125,14 @@ export async function handoffReplyText(codeDefault: string): Promise<string> {
 export type ManagedFacts = {
   /** Lines to fold into the grounding, in the same shape the catalog produces. */
   lines: string[]
+  /**
+   * Parallel to `lines`: the "Title (vN)" source string each line in `lines` came from.
+   * Optional (and absent on the `EMPTY` shortcut) so the pre-Task-17 exact-shape tests below
+   * keep passing unmodified -- `toEqual` treats an absent key the same as one set to
+   * `undefined`. Populated whenever `lines` is built by `collect()`, which is every non-EMPTY
+   * result. Task 17: feeds `DecisionKnowledge.managedLines` in orchestrator.ts.
+   */
+  lineSources?: string[]
   /** Trace refs, labelled MANAGED so a reader can tell them from catalog facts. */
   refs: KnowledgeRef[]
   /**
@@ -143,6 +151,21 @@ export type ManagedFacts = {
    */
   truncated: number
   /**
+   * Entri yang DITOLAK gerbang topik pada giliran ini, beserta alasannya (Ruling R54).
+   *
+   * Gerbang yang tidak bisa diperiksa adalah gerbang yang harus dipercaya. Ini yang membuat
+   * "kenapa fakta ini tidak ikut?" bisa dijawab tanpa menjalankan ulang giliran itu -- dan
+   * langsung menyerang risiko terbesar perubahan ini: klasifikasi meleset membuang fakta benar.
+   *
+   * Dibatasi dengan sengaja, BUKAN "semua entri yang topiknya tidak cocok": hanya entri yang
+   * DITOLAK gerbang TETAPI lolos overlap kata (akan masuk kalau gerbang tidak ada). Entri tanpa
+   * satu kata pun yang sama dengan pesan tidak akan ikut dengan atau tanpa gerbang, jadi
+   * gerbang bukan alasannya -- tidak dicatat. Entri yang kemudian dimasukkan kembali oleh
+   * jaring R41 juga tidak dicatat di sini (lihat `gateBypassed`, yang menceritakan kasus itu) --
+   * kalau sebuah entri akhirnya IKUT dijawab, ia bukan lagi sesuatu yang "ditolak".
+   */
+  rejected: Array<{ sourceKey: string; itemQuestion: string; reason: string }>
+  /**
    * True kalau pembacaan knowledge terkelola GAGAL (loader melempar, atau mengembalikan
    * `available: false`) -- BUKAN kondisi "memang tidak ada knowledge yang diterbitkan"
    * (Ruling R46). Sebelum Fase 2 knowledge cuma pelengkap, jadi kedua kondisi itu sama-sama
@@ -154,7 +177,7 @@ export type ManagedFacts = {
   degraded: boolean
 }
 
-const EMPTY: ManagedFacts = { lines: [], refs: [], gateBypassed: false, truncated: 0, degraded: false }
+const EMPTY: ManagedFacts = { lines: [], refs: [], gateBypassed: false, truncated: 0, rejected: [], degraded: false }
 
 /**
  * Words too common to carry a topic.
@@ -207,6 +230,13 @@ type ItemMatch = {
   admittedByTopic: boolean
   /** Jumlah kata bermakna pada pertanyaan/tag item yang juga ada di pesan pelanggan. */
   overlapScore: number
+  /**
+   * True HANYA kalau item ini ditolak MURNI oleh gerbang topik (Lapis 1, topik spesifik) padahal
+   * overlap katanya > 0 -- yaitu item yang AKAN masuk lewat overlap kata (Lapis 2) seandainya
+   * gerbang topik tidak ada. Dipakai `collect` untuk mengisi `ManagedFacts.rejected` (Ruling
+   * R54); lihat header field itu untuk kenapa batasnya sesempit ini.
+   */
+  gateRejectedWithOverlap: boolean
 }
 
 /**
@@ -237,7 +267,12 @@ function evaluateItem(
   // yang membuat migrasi bisa bertahap dan nol revisi lama rusak.
   if (specificTopic && item.topics?.length) {
     const admitted = item.topics.includes(topic)
-    return { admitted, admittedByTopic: admitted, overlapScore }
+    return {
+      admitted,
+      admittedByTopic: admitted,
+      overlapScore,
+      gateRejectedWithOverlap: !admitted && overlapScore > 0,
+    }
   }
 
   // Ruling R30 (keputusan operator setelah Gerbang G1, 2026-09-10): giliran tanpa topik
@@ -248,14 +283,14 @@ function evaluateItem(
   // lain pada giliran `general` -- dan SEMUA entri pada giliran `null` -- masih harus lewat
   // overlap kata di Lapis 2, sama seperti sebelum gerbang topik ada.
   if (topic === 'general' && item.topics?.includes('general')) {
-    return { admitted: true, admittedByTopic: true, overlapScore }
+    return { admitted: true, admittedByTopic: true, overlapScore, gateRejectedWithOverlap: false }
   }
 
   // Lapis 2 -- overlap token. Jalur ini dipakai kalau topik giliran tidak bisa memutuskan
   // entri ini sendirian: giliran `null` (jaring R41 dan pemanggil tanpa topik), entri tanpa
   // `topics` sama sekali, atau giliran `general` dengan entri yang topiknya bukan
   // `general`. Di sinilah -- dan HANYA di sinilah -- overlap kata tetap jadi syarat masuk.
-  return { admitted: overlapScore > 0, admittedByTopic: false, overlapScore }
+  return { admitted: overlapScore > 0, admittedByTopic: false, overlapScore, gateRejectedWithOverlap: false }
 }
 
 /**
@@ -279,7 +314,13 @@ function collect(
   managed: ManagedKnowledge,
   asked: Set<string>,
   topic: ResolverTopic | null
-): { lines: string[]; refs: KnowledgeRef[]; truncated: number } {
+): {
+  lines: string[]
+  lineSources: string[]
+  refs: KnowledgeRef[]
+  truncated: number
+  rejected: Array<{ sourceKey: string; itemQuestion: string; reason: string }>
+} {
   type Candidate = {
     entryIndex: number
     itemIndex: number
@@ -288,11 +329,24 @@ function collect(
   }
 
   const candidates: Candidate[] = []
+  // Ruling R54: setiap item yang ditolak MURNI oleh gerbang topik padahal overlap katanya > 0
+  // dicatat di sini, terpisah dari `candidates` -- item yang tidak lolos sama sekali tidak
+  // pernah masuk seleksi/plafon di bawah, jadi daftar ini tidak kena peringkat atau
+  // MAX_MANAGED_ITEMS_PER_TURN. Saat `topic` adalah `null` (giliran jaring R41), Lapis 1 tidak
+  // pernah berjalan (lihat evaluateItem), jadi daftar ini otomatis selalu kosong untuk panggilan
+  // itu -- properti yang membuat managedFactsFor bisa langsung memakainya di bawah.
+  const rejected: Array<{ sourceKey: string; itemQuestion: string; reason: string }> = []
   managed.entries.forEach((entry, entryIndex) => {
     entry.items.forEach((item, itemIndex) => {
       const result = evaluateItem(item, asked, topic)
       if (result.admitted) {
         candidates.push({ entryIndex, itemIndex, admittedByTopic: result.admittedByTopic, overlapScore: result.overlapScore })
+      } else if (result.gateRejectedWithOverlap) {
+        rejected.push({
+          sourceKey: entry.sourceKey,
+          itemQuestion: item.question,
+          reason: `topik [${(item.topics ?? []).join(', ')}] tidak memuat ${topic}`,
+        })
       }
     })
   })
@@ -315,22 +369,32 @@ function collect(
   }
 
   const lines: string[] = []
+  // Parallel to `lines` -- each line's "Title (vN)" source string (Task 17, feeds
+  // `ManagedFacts.lineSources` / `DecisionKnowledge.managedLines`).
+  const lineSources: string[] = []
   const refs: KnowledgeRef[] = []
 
   managed.entries.forEach((entry, entryIndex) => {
     const itemIndices = selectedItemsByEntry.get(entryIndex)
     if (!itemIndices || itemIndices.size === 0) return
 
+    const source = `${entry.sourceTitle} (v${entry.version})`
+
     entry.items.forEach((item, itemIndex) => {
       if (!itemIndices.has(itemIndex)) return
 
       lines.push(`${item.question} — ${item.answer}`)
+      lineSources.push(source)
       // Prices and links travel as their own lines so the reply verifier can source them: a
       // figure buried in prose is indistinguishable, to it, from one the model invented.
       for (const price of item.prices ?? []) {
         lines.push(`${price.label}: ${price.currency} ${price.amount}${price.note ? ` (${price.note})` : ''}`)
+        lineSources.push(source)
       }
-      for (const link of item.links ?? []) lines.push(`${link.label}: ${link.url}`)
+      for (const link of item.links ?? []) {
+        lines.push(`${link.label}: ${link.url}`)
+        lineSources.push(source)
+      }
     })
 
     refs.push({
@@ -341,7 +405,7 @@ function collect(
     })
   })
 
-  return { lines, refs, truncated }
+  return { lines, lineSources, refs, truncated, rejected }
 }
 
 /**
@@ -409,7 +473,13 @@ export async function managedFactsFor(
   // membedakannya di sini, jadi kita pilih sisi yang lebih murah salahnya -- jawab dengan
   // bahan seadanya, lalu tandai supaya bisa dihitung.
   const ungated = collect(managed, asked, null)
-  return { ...ungated, gateBypassed: ungated.lines.length > 0, degraded: false }
+  const bypassed = ungated.lines.length > 0
+  // Ruling R54: setiap item di `gated.rejected` punya overlapScore > 0 by construction (lihat
+  // gateRejectedWithOverlap), dan admisi Lapis 2 di sini (`topic: null`) adalah PERSIS
+  // `overlapScore > 0` -- jadi begitu jaring ini menghasilkan sesuatu (`bypassed`), setiap item
+  // yang ditolak gerbang di atas SUDAH pasti ikut dimasukkan kembali olehnya. `rejected` harus
+  // dikosongkan supaya trace tidak mengaku menolak sesuatu yang sebenarnya baru saja dijawab.
+  return { ...ungated, rejected: bypassed ? [] : gated.rejected, gateBypassed: bypassed, degraded: false }
 }
 
 /**

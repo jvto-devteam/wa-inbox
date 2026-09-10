@@ -5,7 +5,7 @@ import { X } from 'lucide-react'
 import { Modal } from '@/components/ui/modal'
 import { IconButton } from '@/components/ui/icon-button'
 import { fetchJson } from '@/lib/fetch-json'
-import type { BotDecision } from '@/lib/bot/types'
+import type { BotDecision, DecisionKnowledge } from '@/lib/bot/types'
 
 /**
  * "Why did the bot say that?", answered inside the inbox.
@@ -24,6 +24,18 @@ import type { BotDecision } from '@/lib/bot/types'
 
 type Paged = { items: Array<{ id: string }> }
 
+/**
+ * `knowledge` (Task 17, Ruling R54) lives on `handoff`/`faq`/`clarify` only -- NOT
+ * `booking_context` (Ruling R77, see types.ts's own header on `DecisionKnowledge`). A plain
+ * `trace?.knowledge` would not type-check across the whole `BotDecision` union since the
+ * `booking_context` member has no such property at all; narrowing it out here first is what
+ * lets the rest of this component read `.knowledge` safely.
+ */
+function knowledgeOf(trace: BotDecision | null): DecisionKnowledge | undefined {
+  if (!trace || trace.mode === 'booking_context') return undefined
+  return trace.knowledge
+}
+
 export function BotTracePopover({
   trace,
   messageId,
@@ -38,6 +50,13 @@ export function BotTracePopover({
   // extra flag would only have existed to be set synchronously inside the effect, which
   // triggers cascading renders.
   const [runId, setRunId] = useState<string | null>(null)
+  const knowledge = knowledgeOf(trace)
+  const usedFacts = knowledge
+    ? [
+        ...knowledge.catalogLines.map((line) => ({ line, source: 'Katalog' })),
+        ...knowledge.managedLines,
+      ]
+    : []
 
   useEffect(() => {
     if (!messageId) return
@@ -82,6 +101,35 @@ export function BotTracePopover({
             </li>
           ))}
         </ol>
+      )}
+
+      {/* Task 17 (Ruling R54): "kenapa fakta ini tidak ikut?" -- what was actually sent as
+          grounding, with its source, and what the topic gate turned away and why. Each list
+          renders only when it has something to show, same convention as the steps block above. */}
+      {usedFacts.length > 0 && (
+        <div className="space-y-1.5 border-t border-line pt-2">
+          <p className="font-medium text-ink">Fakta yang dipakai</p>
+          <ul className="space-y-1">
+            {usedFacts.map((fact, i) => (
+              <li key={i} className="text-ink-muted">
+                {fact.line} <span className="text-ink-subtle">— {fact.source}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {knowledge && knowledge.rejected.length > 0 && (
+        <div className="space-y-1.5 border-t border-line pt-2">
+          <p className="font-medium text-ink">Fakta yang ditolak</p>
+          <ul className="space-y-1">
+            {knowledge.rejected.map((item, i) => (
+              <li key={i} className="text-ink-muted">
+                &quot;{item.itemQuestion}&quot; — {item.reason}
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
 
       {runId && (

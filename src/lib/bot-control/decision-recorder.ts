@@ -70,6 +70,7 @@ type DecisionLike = {
   job?: unknown
   steps?: unknown
   verification?: unknown
+  knowledge?: unknown
 }
 
 function asDecision(value: unknown): DecisionLike {
@@ -120,17 +121,24 @@ export function replyTextForDecision(decision: unknown): string | null {
 }
 
 /**
- * Pulls the knowledge topic the answer was grounded in, when the decision names one.
+ * Pulls the knowledge topic the answer was grounded in, when the decision names one, alongside
+ * `decision.knowledge` (Task 17, Ruling R54) -- what was actually sent as grounding on this
+ * turn, and what the topic gate turned away. Both are facts about "what was this decision
+ * grounded in", so they share this one Json column rather than getting a second.
  *
- * Deliberately thin: the orchestrator does not currently hand back a list of the exact chunks
- * it used, and inventing a richer structure here would mean the Decision Logs page showing
- * knowledge references the bot never actually reported. `sourceTopic` is what genuinely exists
- * today; the field is Json so it can grow without a migration once the orchestrator exposes
- * more.
+ * Was deliberately thin before Task 17: the orchestrator did not hand back a list of the exact
+ * chunks it used, and inventing a richer structure here would have meant the Decision Logs page
+ * showing knowledge references the bot never actually reported. `decision.knowledge` is now
+ * that real structure, straight off the decision the same way every other `*ForDecision` helper
+ * in this file reads it -- undefined stays undefined for an older-shaped decision, or one from a
+ * branch Task 17 never touches (Mode 3 -- Ruling R77), never invented.
  */
 export function knowledgeRefsForDecision(decision: unknown): Prisma.InputJsonValue | undefined {
-  const topic = asDecision(decision).sourceTopic
-  return typeof topic === 'string' ? { sourceTopic: topic } : undefined
+  const narrowed = asDecision(decision)
+  const refs: { sourceTopic?: string; knowledge?: unknown } = {}
+  if (typeof narrowed.sourceTopic === 'string') refs.sourceTopic = narrowed.sourceTopic
+  if (narrowed.knowledge !== undefined) refs.knowledge = narrowed.knowledge
+  return Object.keys(refs).length > 0 ? (refs as Prisma.InputJsonValue) : undefined
 }
 
 /**
@@ -185,7 +193,6 @@ export async function recordBotDecisionRun(params: RecordDecisionRunParams): Pro
       simulated: params.simulated,
     })
     const mode = asDecision(params.decision).mode
-    const knowledgeRefs = knowledgeRefsForDecision(params.decision)
     const verification = verificationForDecision(params.decision)
     // `trace` is a non-nullable Json column. sanitizeTrace returns JSON null for a run that had
     // no decision at all (an exception before the orchestrator returned), and Prisma rejects a
@@ -198,6 +205,16 @@ export async function recordBotDecisionRun(params: RecordDecisionRunParams): Pro
     const sanitizedSteps = ((): Prisma.InputJsonValue | undefined => {
       if (params.steps === undefined) return undefined
       const value = sanitizeTrace(params.steps)
+      return value === null ? undefined : (value as Prisma.InputJsonValue)
+    })()
+    // Task 17: knowledgeRefs now carries `decision.knowledge` (managed FAQ lines an operator
+    // wrote), which is exactly the kind of free-form text `trace`/`steps` above already have to
+    // go through this same sanitizer for -- a secret hiding in an operator-written line is no
+    // safer than one in a caught error message.
+    const knowledgeRefs = ((): Prisma.InputJsonValue | undefined => {
+      const refs = knowledgeRefsForDecision(params.decision)
+      if (refs === undefined) return undefined
+      const value = sanitizeTrace(refs)
       return value === null ? undefined : (value as Prisma.InputJsonValue)
     })()
 

@@ -171,7 +171,7 @@ import {
 import { loadCatalog } from './catalog'
 import { checkDeploymentGate } from './deployment-gate'
 import { createNoopPipelineTracer, traceStep, traceClose, type PipelineTracer } from '@/lib/pipeline/tracer'
-import type { BotDecision, Catalog, TraceStep, TripBrief } from './types'
+import type { BotDecision, Catalog, DecisionKnowledge, TraceStep, TripBrief } from './types'
 
 // Deliberately NOT a list local to this file: see the step-0 note in the header.
 // `HANDOFF_KEYWORDS` is sales-classifier.ts's list, shared so that the pre-booking
@@ -872,6 +872,13 @@ async function runBookingContextMode(
  * asking which destination interests the customer next; otherwise a static (non-LLM) reply
  * asks which destination they want, prepended with whatever side facts are directly
  * answerable regardless (see gatherSideFacts/withSideFacts).
+ *
+ * @param knowledgeSink Task 17 (Ruling R54): a mutable box, same idiom as `trace` above --
+ * `runNoDestinationBranch` is its OWN function, not a branch inline in `decideAndRespond`'s
+ * `runDecision` closure the way the catalog branch is, so it has no direct access to that
+ * closure's `turnKnowledge` variable. Set at most once, right after this function's own
+ * knowledge-assembly site finishes (mirrors `turnClassification.topic` being set once per
+ * site, not per `return`) -- `decideAndRespond` reads `.value` back after this call resolves.
  */
 async function runNoDestinationBranch(
   inboundText: string,
@@ -882,7 +889,8 @@ async function runNoDestinationBranch(
   unsupportedOriginCity: string | null,
   routeLegNote: string,
   keywordModuleIds: string[],
-  trace: Tracer
+  trace: Tracer,
+  knowledgeSink: { value?: DecisionKnowledge }
 ): Promise<BotDecision> {
   // A keyword-triggered module (dietary/ISIC/escort/ferry) can genuinely answer a message
   // regardless of what topic it classified as -- 'general' always has non-empty baseline
@@ -890,6 +898,9 @@ async function runNoDestinationBranch(
   // keyword hit here the way it can for an already-allowlisted topic below.
   if (DESTINATION_INDEPENDENT_TOPICS.has(resolverTopic) || keywordModuleIds.length > 0) {
     const preDestinationKnowledge = resolveKnowledgeForTopic(resolverTopic, inboundText, undefined, keywordModuleIds)
+    // Task 17: snapshot BEFORE managed lines are pushed into `factualLines` below -- this is
+    // the pure catalog side of `DecisionKnowledge.catalogLines`.
+    const catalogLines = [...preDestinationKnowledge.factualLines]
 
     // Same addition as the catalog branch below (managedFactsFor's own header explains the
     // crude match): folded in and checked for BEFORE the `factualLines.length > 0` gate right
@@ -923,6 +934,14 @@ async function runNoDestinationBranch(
         'Knowledge terkelola dipangkas',
         `${managed.truncated} item knowledge terkelola dipotong oleh plafon ${MAX_MANAGED_ITEMS_PER_TURN} item per giliran.`
       )
+    }
+    // Task 17 (Ruling R54): the ONE attachment for this site -- right after knowledge
+    // assembly finishes, not duplicated at each of this function's own `return`s below.
+    knowledgeSink.value = {
+      catalogLines,
+      managedLines: managed.lines.map((line, i) => ({ line, source: managed.lineSources?.[i] ?? '' })),
+      rejected: managed.rejected,
+      gateBypassed: managed.gateBypassed,
     }
 
     if (preDestinationKnowledge.factualLines.length > 0) {
@@ -1084,6 +1103,12 @@ async function recordKnowledgeGap(
  * `turnClassification` saat itu. Keputusan yang kembali SEBELUM klasifikasi jalan (gerbang
  * kata kunci eskalasi, Mode 3) menemukan `turnClassification` masih kosong dan jujur tidak
  * membawa keduanya -- lihat orchestrator.test.ts untuk kedua kasus ini.
+ *
+ * Task 17 (Ruling R54): `knowledge` mengikuti pola yang SAMA PERSIS, lewat sibling
+ * `turnKnowledge` -- diisi di kedua titik perakitan knowledge (cabang tanpa-destinasi lewat
+ * `knowledgeSink`, cabang katalog langsung di closure ini), dan ditempel oleh
+ * `attachClassification` di titik yang SAMA. Deliberately BUKAN Mode 3 (lihat BotDecision's own
+ * header di types.ts) -- knowledge Mode 3 adalah pekerjaan Task 11.
  */
 export async function decideAndRespond(
   conversationId: string,
@@ -1094,6 +1119,10 @@ export async function decideAndRespond(
   // Diisi oleh runDecision() di bawah, begitu setiap klasifikasi selesai -- satu-satunya
   // sumber yang dibaca attachClassification setelah runDecision() kembali.
   const turnClassification: { topic?: string; job?: string } = {}
+  // Task 17 (Ruling R54): sibling dari turnClassification di atas, pola dan siklus hidup yang
+  // sama persis -- diisi di kedua titik perakitan knowledge, dibaca SEKALI oleh
+  // attachClassification setelah runDecision() kembali.
+  let turnKnowledge: DecisionKnowledge | undefined
 
   async function runDecision(): Promise<BotDecision> {
     traceStep(pipeline, 'cek-eskalasi', 'mulai')
@@ -1314,7 +1343,11 @@ export async function decideAndRespond(
           : `Model LLM gagal/timeout -- fallback ke pemindaian kata kunci lama, ${keywordModuleResult.moduleIds.length} modul cocok.`
       )
       traceStep(pipeline, 'susun-balasan', 'mulai')
-      return await runNoDestinationBranch(
+      // Task 17: mutable box `runNoDestinationBranch` writes its assembled `knowledge` into
+      // (see that function's own header) -- read back into the sibling `turnKnowledge` right
+      // after the call resolves, same single-attachment discipline as `turnClassification`.
+      const knowledgeSink: { value?: DecisionKnowledge } = {}
+      const decision = await runNoDestinationBranch(
         inboundText,
         conversationId,
         settings.ollamaModel,
@@ -1323,8 +1356,11 @@ export async function decideAndRespond(
         unsupportedOriginCity,
         routeLegNote,
         keywordModuleResult.moduleIds,
-        trace
+        trace,
+        knowledgeSink
       )
+      turnKnowledge = knowledgeSink.value
+      return decision
     }
     trace.push('Destinasi ditemukan', `Destinasi: "${destination}".`)
 
@@ -1584,6 +1620,9 @@ export async function decideAndRespond(
     // topics from general-modules.json, not just the 4 CatalogPackage itself can answer.
     traceStep(pipeline, 'susun-balasan', 'mulai')
     const knowledge = resolveKnowledgeForTopic(resolverTopic, inboundText, destination, keywordModuleIds)
+    // Task 17: snapshot BEFORE managed lines are pushed into `factualLines` below -- this is
+    // the pure catalog side of `DecisionKnowledge.catalogLines`.
+    const catalogLines = [...knowledge.factualLines]
 
     // Managed knowledge is ADDED to what the catalog resolved, never substituted for it. The
     // catalog is released data; this is what an operator wrote between releases, and letting it
@@ -1614,6 +1653,14 @@ export async function decideAndRespond(
         'Knowledge terkelola dipangkas',
         `${managed.truncated} item knowledge terkelola dipotong oleh plafon ${MAX_MANAGED_ITEMS_PER_TURN} item per giliran.`
       )
+    }
+    // Task 17 (Ruling R54): the ONE attachment for this site -- right after knowledge assembly
+    // finishes, not duplicated at each of this function's own `return`s below.
+    turnKnowledge = {
+      catalogLines,
+      managedLines: managed.lines.map((line, i) => ({ line, source: managed.lineSources?.[i] ?? '' })),
+      rejected: managed.rejected,
+      gateBypassed: managed.gateBypassed,
     }
 
     // Task 11 (KnowledgeGapLog): the catalog had nothing for this classified topic -- one
@@ -1956,8 +2003,8 @@ export async function decideAndRespond(
     const decision = await runDecision()
     // The ONE attachment point (see this function's header) -- whatever runDecision() returned,
     // from whichever of its own internal return points, decorated with whatever
-    // turnClassification held by the time it returned.
-    return attachClassification(decision, turnClassification)
+    // turnClassification/turnKnowledge held by the time it returned.
+    return attachClassification(decision, { ...turnClassification, knowledge: turnKnowledge })
   } catch (error) {
     // Log before failing safe: without this, the single most likely production
     // failure surfaces in the bot audit log as an identical, uninformative generic
@@ -1976,15 +2023,21 @@ export async function decideAndRespond(
 }
 
 /**
- * The single Task 15 attachment point. Spreads `topic`/`job` onto whatever `decideAndRespond`'s
- * `runDecision()` returned -- conditionally, so a key that was never set in `turnClassification`
- * is never written as `undefined` onto the decision object (an explicit `undefined` property
- * would still make `'topic' in decision` true, which is not the same fact as "never classified").
+ * The single Task 15/17 attachment point. Spreads `topic`/`job`/`knowledge` onto whatever
+ * `decideAndRespond`'s `runDecision()` returned -- conditionally, so a key that was never set
+ * (`turnClassification` empty, or `turnKnowledge` never assigned) is never written as
+ * `undefined` onto the decision object (an explicit `undefined` property would still make
+ * `'topic' in decision` true, which is not the same fact as "never classified"/"no knowledge-
+ * assembly site ran").
  */
-function attachClassification(decision: BotDecision, ctx: { topic?: string; job?: string }): BotDecision {
+function attachClassification(
+  decision: BotDecision,
+  ctx: { topic?: string; job?: string; knowledge?: DecisionKnowledge }
+): BotDecision {
   return {
     ...decision,
     ...(ctx.topic !== undefined ? { topic: ctx.topic } : {}),
     ...(ctx.job !== undefined ? { job: ctx.job } : {}),
+    ...(ctx.knowledge !== undefined ? { knowledge: ctx.knowledge } : {}),
   }
 }

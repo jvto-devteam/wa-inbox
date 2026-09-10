@@ -57,6 +57,88 @@ describe('BotTracePopover', () => {
     render(<BotTracePopover trace={{ mode: 'handoff', reason: 'x', steps: [] }} onClose={() => {}} />)
     expect(screen.queryByRole('list')).not.toBeInTheDocument()
   })
+
+  // Task 17 (Ruling R54): "kenapa fakta ini tidak ikut?" answered directly in the popover --
+  // both the facts actually sent (with their source) and the ones the topic gate turned away.
+  describe('knowledge (fakta yang dipakai/ditolak)', () => {
+    it('renders each used fact with its source, and each rejected fact with its reason', () => {
+      render(
+        <BotTracePopover
+          trace={{
+            mode: 'faq',
+            draft: 'Deposit dibayar 20%.',
+            sourceTopic: 'payment',
+            knowledge: {
+              catalogLines: ['Every package includes private transport.'],
+              managedLines: [{ line: 'Berapa deposit? — 20% dari total.', source: 'Kebijakan Pembayaran (v3)' }],
+              rejected: [
+                { sourceKey: 'managed/route', itemQuestion: 'Berapa deposit di Malang?', reason: 'topik [payment] tidak memuat route_endpoint' },
+              ],
+              gateBypassed: false,
+            },
+          }}
+          onClose={() => {}}
+        />
+      )
+
+      expect(screen.getByText('Fakta yang dipakai')).toBeInTheDocument()
+      expect(screen.getByText(/Every package includes private transport\./)).toBeInTheDocument()
+      expect(screen.getByText(/Berapa deposit\? — 20% dari total\./)).toBeInTheDocument()
+      expect(screen.getByText(/Kebijakan Pembayaran \(v3\)/)).toBeInTheDocument()
+
+      expect(screen.getByText('Fakta yang ditolak')).toBeInTheDocument()
+      expect(screen.getByText(/Berapa deposit di Malang\?/)).toBeInTheDocument()
+      expect(screen.getByText(/topik \[payment\] tidak memuat route_endpoint/)).toBeInTheDocument()
+    })
+
+    it('renders neither list when knowledge is absent', () => {
+      render(<BotTracePopover trace={{ mode: 'handoff', reason: 'Kata kunci eskalasi terdeteksi' }} onClose={() => {}} />)
+      expect(screen.queryByText('Fakta yang dipakai')).not.toBeInTheDocument()
+      expect(screen.queryByText('Fakta yang ditolak')).not.toBeInTheDocument()
+    })
+
+    it('renders neither list for a booking_context decision, which never carries knowledge (Ruling R77)', () => {
+      render(<BotTracePopover trace={{ mode: 'booking_context', reply: 'Booking Anda berangkat 5 Agustus.' }} onClose={() => {}} />)
+      expect(screen.queryByText('Fakta yang dipakai')).not.toBeInTheDocument()
+      expect(screen.queryByText('Fakta yang ditolak')).not.toBeInTheDocument()
+    })
+
+    it('renders only "Fakta yang dipakai" when nothing was rejected', () => {
+      render(
+        <BotTracePopover
+          trace={{
+            mode: 'faq',
+            draft: 'x',
+            sourceTopic: 'payment',
+            knowledge: { catalogLines: ['Satu fakta katalog.'], managedLines: [], rejected: [], gateBypassed: false },
+          }}
+          onClose={() => {}}
+        />
+      )
+      expect(screen.getByText('Fakta yang dipakai')).toBeInTheDocument()
+      expect(screen.queryByText('Fakta yang ditolak')).not.toBeInTheDocument()
+    })
+
+    it('renders only "Fakta yang ditolak" when nothing was used', () => {
+      render(
+        <BotTracePopover
+          trace={{
+            mode: 'clarify',
+            reply: 'x',
+            knowledge: {
+              catalogLines: [],
+              managedLines: [],
+              rejected: [{ sourceKey: 'managed/route', itemQuestion: 'Q?', reason: 'topik [payment] tidak memuat route_endpoint' }],
+              gateBypassed: false,
+            },
+          }}
+          onClose={() => {}}
+        />
+      )
+      expect(screen.queryByText('Fakta yang dipakai')).not.toBeInTheDocument()
+      expect(screen.getByText('Fakta yang ditolak')).toBeInTheDocument()
+    })
+  })
 })
 
 describe('BotTracePopover run lookup (Phase 3)', () => {

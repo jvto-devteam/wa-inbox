@@ -78,6 +78,29 @@ describe('knowledgeRefsForDecision', () => {
   it('returns undefined rather than inventing references the bot never reported', () => {
     expect(knowledgeRefsForDecision({ mode: 'handoff' })).toBeUndefined()
   })
+
+  // Task 17 (Ruling R54): `decision.knowledge` (catalogLines/managedLines/rejected/gateBypassed,
+  // orchestrator.ts's single attachment point) rides alongside sourceTopic in the same Json
+  // column -- both facts belong to "what was this decision grounded in", and a decision that
+  // still only carries sourceTopic (an older shape, or one Task 17 never touches) must keep
+  // producing exactly what it did before this task.
+  it('includes decision.knowledge alongside sourceTopic when the decision carries one', () => {
+    const knowledge = {
+      catalogLines: ['Every package includes private transport.'],
+      managedLines: [{ line: 'Berapa deposit? — 20%.', source: 'Kebijakan Pembayaran (v3)' }],
+      rejected: [{ sourceKey: 'managed/route', itemQuestion: 'Bisa selesai di Malang?', reason: 'topik [route_endpoint] tidak memuat payment' }],
+      gateBypassed: false,
+    }
+    expect(knowledgeRefsForDecision({ mode: 'faq', sourceTopic: 'payment', knowledge })).toEqual({
+      sourceTopic: 'payment',
+      knowledge,
+    })
+  })
+
+  it('includes decision.knowledge alone when the decision has no sourceTopic', () => {
+    const knowledge = { catalogLines: [], managedLines: [], rejected: [], gateBypassed: true }
+    expect(knowledgeRefsForDecision({ mode: 'clarify', knowledge })).toEqual({ knowledge })
+  })
 })
 
 describe('recordBotDecisionRun', () => {
@@ -127,6 +150,34 @@ describe('recordBotDecisionRun', () => {
     const trace = createdData().trace as { debug: { accessToken: string } }
     expect(trace.debug.accessToken).toBe('[REDACTED]')
     expect(JSON.stringify(createdData())).not.toContain('EAAG-secret')
+  })
+
+  // Task 17 (Ruling R54): knowledgeRefs now carries decision.knowledge too, and it goes
+  // through sanitizeTrace the same as `trace`/`steps` -- a secret hiding inside a managed
+  // knowledge line (an operator-written FAQ answer) must not reach the database intact either.
+  it('sertakan knowledge di knowledgeRefs, tersaniter sebelum ditulis', async () => {
+    await recordBotDecisionRun({
+      ...base,
+      decision: {
+        mode: 'faq',
+        draft: 'x',
+        sourceTopic: 'payment',
+        knowledge: {
+          catalogLines: [],
+          managedLines: [{ line: 'Hubungi kami di Bearer abcdefgh12345678', source: 'FAQ (v1)' }],
+          rejected: [],
+          gateBypassed: false,
+        },
+      },
+    })
+
+    const knowledgeRefs = createdData().knowledgeRefs as {
+      sourceTopic: string
+      knowledge: { managedLines: Array<{ line: string }> }
+    }
+    expect(knowledgeRefs.sourceTopic).toBe('payment')
+    expect(knowledgeRefs.knowledge.managedLines[0].line).not.toContain('abcdefgh12345678')
+    expect(knowledgeRefs.knowledge.managedLines[0].line).toContain('[REDACTED]')
   })
 
   it('returns null instead of throwing when the write fails', async () => {
