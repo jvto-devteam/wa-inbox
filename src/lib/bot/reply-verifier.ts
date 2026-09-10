@@ -171,7 +171,12 @@ const NEGATED_PROMISE = /\b(?:not|never|cannot|can't|can not|isn't|aren't|won't|
 function findGuaranteeViolations(replyText: string, topic: string | undefined): string[] {
   if (!topic || !NO_GUARANTEE_TOPICS.has(topic)) return []
   const violations: string[] = []
-  for (const sentence of (replyText ?? '').split(/(?<=[.!?])\s+/).filter((s) => s.trim().length > 0)) {
+  // Ruling R70: strip URLs before scanning -- GUARANTEE_ROOT's word boundaries match a bare
+  // "guarantee" inside a URL path/filename (e.g. "https://x.id/guarantee.html") with no actual
+  // promise anywhere in the reply. Scoped to THIS scan only -- extractUrls/unknownUrls below
+  // still see the untouched `replyText`.
+  const withoutUrls = (replyText ?? '').replace(/https?:\/\/\S+/gi, ' ')
+  for (const sentence of withoutUrls.split(/(?<=[.!?])\s+/).filter((s) => s.trim().length > 0)) {
     if (NEGATED_PROMISE.test(sentence)) continue
     for (const match of sentence.matchAll(GUARANTEE_ROOT)) violations.push(match[0].toLowerCase())
     if (sentence.toLowerCase().includes(DEFINITELY_OPEN_PHRASE)) violations.push(DEFINITELY_OPEN_PHRASE)

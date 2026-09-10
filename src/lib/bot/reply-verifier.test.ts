@@ -147,6 +147,42 @@ describe('verifyReply guarantee violations', () => {
     })
     expect(result.guaranteeViolations).toContain('guaranteed')
   })
+
+  // Ruling R70: GUARANTEE_ROOT matches inside a bare URL -- "https://x.id/guarantee.html"
+  // contains the substring "guarantee" with word boundaries either side of it (the slash and
+  // dot both count as non-word characters), so without stripping URLs first this URL alone was
+  // flagged as a violation with no actual promise anywhere in the reply.
+  it('tidak menandai URL yang kebetulan memuat kata "guarantee"', () => {
+    const result = verifyReply({
+      replyText: 'https://x.id/guarantee.html',
+      groundedAmounts: [],
+      groundedUrls: [],
+      topic: 'blue_fire',
+    })
+    expect(result.guaranteeViolations).toEqual([])
+  })
+
+  it('tetap menandai kalimat jaminan yang sungguhan meski balasan juga memuat URL', () => {
+    const result = verifyReply({
+      replyText: 'Blue fire is guaranteed every night! Details: https://x.id/guarantee.html',
+      groundedAmounts: [],
+      groundedUrls: [],
+      topic: 'blue_fire',
+    })
+    expect(result.guaranteeViolations).toContain('guaranteed')
+  })
+
+  // URL stripping is scoped to the guarantee scan ONLY -- unknownUrls must still see the full
+  // reply, so an unregistered link is still caught.
+  it('tidak mengubah pemeriksaan unknownUrls (URL tetap diperiksa penuh)', () => {
+    const result = verifyReply({
+      replyText: 'Blue fire is guaranteed! See https://javavolcano-touroperator.com/tours/made-up-package',
+      groundedAmounts: [],
+      groundedUrls: ['https://javavolcano-touroperator.com/tours/ijen-blue-fire-1d'],
+      topic: 'blue_fire',
+    })
+    expect(result.unknownUrls).toEqual(['https://javavolcano-touroperator.com/tours/made-up-package'])
+  })
 })
 
 describe('buildVerificationRetryInstruction', () => {
