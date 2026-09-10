@@ -759,6 +759,51 @@ describe('decideAndRespond', () => {
     expect(opts.system).not.toContain('Bisa, tanpa biaya tambahan.')
   })
 
+  // Ruling R63 (Task 5c): plafon item knowledge terkelola per giliran -- pemangkasan harus
+  // terlihat sebagai langkah trace TERPISAH dari 'Knowledge terkelola dipakai', di sebelahnya.
+  it('mencatat langkah trace pemangkasan saat item knowledge terkelola melebihi plafon (no-destination branch, R63)', async () => {
+    ;vi.mocked(ensureFreshBookingData).mockResolvedValue(null)
+    ;vi.mocked(classifySalesNeed).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
+    ;vi.mocked(matchDestination).mockReturnValue(null)
+    ;vi.mocked(listDestinations).mockReturnValue(['Bromo', 'Ijen'])
+    ;vi.mocked(classifyTopicViaLLM).mockResolvedValue({ topic: 'payment', source: 'llm' })
+    ;vi.mocked(resolveKnowledgeForTopic).mockReturnValue({
+      factualLines: [],
+      detailLines: [],
+      primaryLink: null,
+      disclosures: [],
+      handoffRequired: false,
+    })
+    ;vi.mocked(loadPublishedManagedKnowledge).mockResolvedValue({
+      entries: [
+        {
+          sourceId: 'ks_1',
+          sourceKey: 'managed/payment',
+          sourceTitle: 'Kebijakan Pembayaran',
+          revisionId: 'krev_1',
+          version: 3,
+          // 9 item bertopik cocok -- satu lebih banyak dari plafon (MAX_MANAGED_ITEMS_PER_TURN = 8).
+          items: Array.from({ length: 9 }, (_, i) => ({
+            question: `Pertanyaan pembayaran nomor ${i}?`,
+            answer: `Jawaban ${i}.`,
+            topics: ['payment'],
+          })),
+        },
+      ],
+      available: true,
+      loadedAt: 0,
+    })
+
+    const result = await decideAndRespond('conv_1', 'Bagaimana cara pembayaran deposit?')
+
+    expect(result.mode).toBe('faq')
+    expect(result.steps?.map((s) => s.label)).toContain('Knowledge terkelola dipakai')
+    expect(result.steps?.map((s) => s.label)).toContain('Knowledge terkelola dipangkas')
+    const step = result.steps?.find((s) => s.label === 'Knowledge terkelola dipangkas')
+    expect(step?.detail).toContain('1')
+    expect(step?.detail).toContain('8')
+  })
+
   // A dietary/allergy mention has no dedicated topic keyword bucket at all (module-resolver.ts
   // -- confirmed 2026-08-05), so classifyTopic genuinely falls through to 'general', which is
   // deliberately NOT in DESTINATION_INDEPENDENT_TOPICS. It's only answerable here because
@@ -3202,6 +3247,44 @@ describe('decideAndRespond', () => {
     expect(result.mode).toBe('faq')
     const [, opts] = llmCall(0)
     expect(opts.system).not.toContain('Ya, sudah termasuk voucher spa gratis.')
+  })
+
+  // Ruling R63 (Task 5c): sama seperti test no-destination branch di atas, untuk call site
+  // managedFactsFor milik cabang katalog.
+  it('mencatat langkah trace pemangkasan saat item knowledge terkelola melebihi plafon (catalog branch, R63)', async () => {
+    ;vi.mocked(ensureFreshBookingData).mockResolvedValue(null)
+    ;vi.mocked(classifySalesNeed).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
+    ;vi.mocked(matchDestination).mockReturnValue({ destination: 'ijen', matches: [pkg()] })
+    ;vi.mocked(checkRouteGate).mockReturnValue({ status: 'clear' })
+    ;vi.mocked(classifyTopicViaLLM).mockResolvedValue({ topic: 'inclusions', source: 'llm' })
+    ;vi.mocked(loadPublishedManagedKnowledge).mockResolvedValue({
+      entries: [
+        {
+          sourceId: 'ks_1',
+          sourceKey: 'managed/inclusions',
+          sourceTitle: 'FAQ Inklusi Paket',
+          revisionId: 'krev_1',
+          version: 1,
+          // 9 item bertopik cocok -- satu lebih banyak dari plafon (MAX_MANAGED_ITEMS_PER_TURN = 8).
+          items: Array.from({ length: 9 }, (_, i) => ({
+            question: `Pertanyaan inklusi nomor ${i}?`,
+            answer: `Jawaban ${i}.`,
+            topics: ['inclusions'],
+          })),
+        },
+      ],
+      available: true,
+      loadedAt: 0,
+    })
+
+    const result = await decideAndRespond('conv_1', 'Apa saja fasilitas yang termasuk di paket Ijen?')
+
+    expect(result.mode).toBe('faq')
+    expect(result.steps?.map((s) => s.label)).toContain('Knowledge terkelola dipakai')
+    expect(result.steps?.map((s) => s.label)).toContain('Knowledge terkelola dipangkas')
+    const step = result.steps?.find((s) => s.label === 'Knowledge terkelola dipangkas')
+    expect(step?.detail).toContain('1')
+    expect(step?.detail).toContain('8')
   })
 })
 

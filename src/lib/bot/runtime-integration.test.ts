@@ -12,6 +12,7 @@ import {
   handoffReplyText,
   managedFactsFor,
   offHoursHandoffNotice,
+  MAX_MANAGED_ITEMS_PER_TURN,
 } from './runtime-integration'
 
 vi.mock('@/lib/db', () => ({ prisma: mockDeep<PrismaClient>() }))
@@ -138,7 +139,8 @@ describe('handoffReplyText', () => {
 describe('managedFactsFor', () => {
   it('returns nothing when no managed knowledge is published', async () => {
     // Ruling R25: gateBypassed sekarang bagian dari ManagedFacts -- EMPTY membawanya juga.
-    expect(await managedFactsFor('Berapa harga ATV?', null)).toEqual({ lines: [], refs: [], gateBypassed: false })
+    // Ruling R63: truncated juga bagian dari ManagedFacts -- EMPTY membawanya juga (0).
+    expect(await managedFactsFor('Berapa harga ATV?', null)).toEqual({ lines: [], refs: [], gateBypassed: false, truncated: 0 })
   })
 
   it('folds in an entry whose question shares a word with the message', async () => {
@@ -205,7 +207,8 @@ describe('managedFactsFor', () => {
     vi.spyOn(console, 'error').mockImplementation(() => {})
     vi.mocked(loadPublishedManagedKnowledge).mockRejectedValue(new Error('db down'))
     // Ruling R25: gateBypassed sekarang bagian dari ManagedFacts -- EMPTY membawanya juga.
-    expect(await managedFactsFor('berapa harga ATV?', null)).toEqual({ lines: [], refs: [], gateBypassed: false })
+    // Ruling R63: truncated juga bagian dari ManagedFacts -- EMPTY membawanya juga (0).
+    expect(await managedFactsFor('berapa harga ATV?', null)).toEqual({ lines: [], refs: [], gateBypassed: false, truncated: 0 })
   })
 
   it('returns nothing for a message with no usable words', async () => {
@@ -344,6 +347,108 @@ describe('managedFactsFor', () => {
       ])
       const facts = await managedFactsFor('berapa?', null)
       expect(facts.lines).toEqual([])
+    })
+  })
+
+  // Ruling R63 (Task 5c): plafon item knowledge terkelola per giliran. `MAX_MANAGED_ITEMS_PER_TURN`
+  // dihitung dalam ITEM, bukan baris.
+  describe('plafon item per giliran (Ruling R63)', () => {
+    it('memangkas ke plafon saat lebih dari MAX_MANAGED_ITEMS_PER_TURN item bertopik cocok, dan menghitung truncated', async () => {
+      const items = Array.from({ length: 10 }, (_, i) => ({
+        question: `Pertanyaan khusus nomor ${i}?`,
+        answer: `Jawaban ${i}.`,
+        topics: ['route_endpoint'],
+      }))
+      mockEntries(items)
+
+      // Pesan sengaja tidak berbagi kata apa pun dengan pertanyaan item -- semua 10 item lolos
+      // murni lewat topik (Lapis 1), jadi semuanya seri pada admittedByTopic dan overlapScore;
+      // urutan asli (item 0..7) yang memutus seri.
+      const facts = await managedFactsFor('bisa drop off di kota lain?', 'route_endpoint')
+
+      expect(facts.lines).toHaveLength(MAX_MANAGED_ITEMS_PER_TURN)
+      expect(facts.truncated).toBe(2)
+      for (let i = 0; i < 8; i++) expect(facts.lines.some((line) => line.includes(`Jawaban ${i}.`))).toBe(true)
+      expect(facts.lines.some((line) => line.includes('Jawaban 8.'))).toBe(false)
+      expect(facts.lines.some((line) => line.includes('Jawaban 9.'))).toBe(false)
+    })
+
+    it('item yang masuk lewat topik mengalahkan item yang masuk lewat overlap kata saat plafon penuh', async () => {
+      const topicItems = Array.from({ length: 8 }, (_, i) => ({
+        question: `Topik cocok nomor ${i}?`,
+        answer: `Topik jawaban ${i}.`,
+        topics: ['price'],
+      }))
+      // Tidak punya `topics`, jadi hanya bisa masuk lewat overlap kata (Lapis 2) -- dan overlap-
+      // nya sengaja dibuat SANGAT tinggi (identik dengan pesan) supaya kegagalannya masuk plafon
+      // murni karena kalah kelompok (overlap, bukan topik), bukan karena skornya rendah.
+      const overlapItem = { question: 'Berapa harga tiket masuk kawah ijen?', answer: 'Overlap jawaban.' }
+      mockEntries([...topicItems, overlapItem])
+
+      const facts = await managedFactsFor('berapa harga tiket masuk kawah ijen?', 'price')
+
+      expect(facts.truncated).toBe(1)
+      expect(facts.lines).toHaveLength(8)
+      expect(facts.lines.every((line) => line.startsWith('Topik cocok'))).toBe(true)
+      expect(facts.lines.some((line) => line.includes('Overlap jawaban.'))).toBe(false)
+    })
+
+    it('di antara item yang masuk lewat overlap, skor overlap lebih tinggi menang; seri diputus oleh urutan asli', async () => {
+      // Pesan hanya berisi 4 kata bermakna -- skor overlap tiap item di bawah dihitung dari
+      // berapa banyak kata itu yang muncul di pertanyaan/tag item.
+      mockEntries([
+        { question: 'abcd efgh ijkl mnop', answer: 'A0' }, // skor 4
+        { question: 'abcd efgh ijkl mnop', answer: 'A1' }, // skor 4 (seri dengan A0)
+        { question: 'abcd efgh ijkl', answer: 'A2' }, // skor 3
+        { question: 'abcd efgh ijkl', answer: 'A3' }, // skor 3 (seri dengan A2)
+        { question: 'abcd efgh', answer: 'A4' }, // skor 2
+        { question: 'abcd efgh', answer: 'A5' }, // skor 2 (seri dengan A4)
+        { question: 'abcd', answer: 'A6' }, // skor 1
+        { question: 'abcd', answer: 'A7' }, // skor 1 (seri dengan A6)
+        { question: 'abcd', answer: 'A8' }, // skor 1 (seri dengan A6/A7 -- urutan asli kalah)
+      ])
+
+      const facts = await managedFactsFor('abcd efgh ijkl mnop', null)
+
+      expect(facts.truncated).toBe(1)
+      for (const label of ['A0', 'A1', 'A2', 'A3', 'A4', 'A5', 'A6', 'A7']) {
+        expect(facts.lines.some((line) => line.includes(`— ${label}`))).toBe(true)
+      }
+      // A8 seri skor (1) dengan A6/A7, tapi datang belakangan di urutan asli -- kalah saat
+      // plafon sudah penuh.
+      expect(facts.lines.some((line) => line.includes('— A8'))).toBe(false)
+    })
+
+    it('mengeluarkan item terpilih dalam urutan ASLI entri/item, bukan urutan peringkat', async () => {
+      mockEntries([
+        { question: 'abcd', answer: 'Skor rendah, urutan asli pertama' }, // skor 1
+        { question: 'abcd efgh ijkl', answer: 'Skor tinggi, urutan asli kedua' }, // skor 3
+        { question: 'abcd efgh', answer: 'Skor sedang, urutan asli ketiga' }, // skor 2
+      ])
+
+      const facts = await managedFactsFor('abcd efgh ijkl', null)
+
+      // Ketiganya lolos (di bawah plafon), jadi urutan keluaran murni menguji tie-break/urutan
+      // emisi: harus urutan ASLI (index 0, 1, 2), BUKAN urutan peringkat (yang akan menaruh
+      // item skor 3 lebih dulu).
+      expect(facts.truncated).toBe(0)
+      expect(facts.lines).toEqual([
+        'abcd — Skor rendah, urutan asli pertama',
+        'abcd efgh ijkl — Skor tinggi, urutan asli kedua',
+        'abcd efgh — Skor sedang, urutan asli ketiga',
+      ])
+    })
+
+    it('truncated tetap 0 di bawah plafon, dan hasilnya sama seperti perilaku sebelum task ini', async () => {
+      vi.mocked(loadPublishedManagedKnowledge).mockResolvedValue({ entries: [entry()], available: true, loadedAt: 0 })
+
+      const facts = await managedFactsFor('berapa harga paket ATV untuk 4 orang?', null)
+
+      expect(facts.truncated).toBe(0)
+      expect(facts.lines[0]).toContain('Mulai Rp350.000')
+      expect(facts.refs).toEqual([
+        { sourceType: 'MANAGED', sourceKey: 'managed/atv', title: 'FAQ Harga ATV', version: 2 },
+      ])
     })
   })
 })

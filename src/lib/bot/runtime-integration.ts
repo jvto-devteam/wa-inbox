@@ -15,7 +15,12 @@
  * unpredictable one.
  */
 import { prisma } from '@/lib/db'
-import { loadPublishedManagedKnowledge, type KnowledgeRef, type ManagedKnowledge } from '@/lib/bot/managed-knowledge'
+import {
+  loadPublishedManagedKnowledge,
+  type KnowledgeRef,
+  type ManagedKnowledge,
+  type ManagedKnowledgeEntry,
+} from '@/lib/bot/managed-knowledge'
 import type { ResolverTopic } from './module-resolver'
 
 /**
@@ -130,9 +135,16 @@ export type ManagedFacts = {
    * menolong dan harus ditinjau ulang.
    */
   gateBypassed: boolean
+  /**
+   * Berapa item yang lolos gerbang/overlap tetapi dipotong oleh `MAX_MANAGED_ITEMS_PER_TURN`
+   * (Ruling R63). BUKAN "ditolak gerbang" -- item ini sudah lolos, hanya kalah peringkat saat
+   * plafon penuh. Dicatat terpisah supaya trace bisa membedakan dua kondisi yang beda arti:
+   * gerbang topik yang menolak (irelevan) vs. plafon yang memotong (relevan tapi kebanyakan).
+   */
+  truncated: number
 }
 
-const EMPTY: ManagedFacts = { lines: [], refs: [], gateBypassed: false }
+const EMPTY: ManagedFacts = { lines: [], refs: [], gateBypassed: false, truncated: 0 }
 
 /**
  * Words too common to carry a topic.
@@ -165,6 +177,78 @@ function tokens(text: string): Set<string> {
 }
 
 /**
+ * Plafon item knowledge terkelola per giliran (Ruling R63), dihitung dalam ITEM -- satu item
+ * bisa menghasilkan beberapa BARIS (harga dan tautan berdiri sendiri, lihat `collect` di
+ * bawah), jadi menghitung baris akan memotong entri yang punya banyak harga lebih agresif
+ * daripada entri yang cuma punya satu jawaban teks, tanpa alasan.
+ *
+ * Angka 8 dipilih dari seed FAQ Task 11: paling banyak ~5 item per topik (blok GENERAL + 4
+ * blok destination_readiness), jadi plafon ini TIDAK memangkas apa pun pada data hari ini --
+ * ia pengaman untuk pertumbuhan data ke depan. Setiap kali plafon benar-benar memotong, itu
+ * terlihat di trace ('Knowledge terkelola dipangkas'), jadi angkanya bisa ditinjau ulang
+ * dengan data pemakaian nyata (Task 16) alih-alih ditebak dua kali.
+ */
+export const MAX_MANAGED_ITEMS_PER_TURN = 8
+
+/** Hasil evaluasi satu item terhadap giliran ini -- lolos lewat topik, lewat overlap, atau tidak sama sekali. */
+type ItemMatch = {
+  admitted: boolean
+  /** True kalau lolos di Lapis 1 (topik spesifik cocok) atau baseline `general` -- bukan lewat overlap kata. */
+  admittedByTopic: boolean
+  /** Jumlah kata bermakna pada pertanyaan/tag item yang juga ada di pesan pelanggan. */
+  overlapScore: number
+}
+
+/**
+ * Mengevaluasi satu item terhadap giliran ini. Logikanya sama persis dengan sebelum Ruling
+ * R63 -- hanya diekstrak dari `.filter()` supaya `collect` bisa tahu BAGAIMANA item itu lolos
+ * (topik vs overlap) dan APA skor overlap-nya, keduanya dipakai untuk memeringkat kandidat
+ * saat plafon `MAX_MANAGED_ITEMS_PER_TURN` terlampaui.
+ */
+function evaluateItem(
+  item: ManagedKnowledgeEntry['items'][number],
+  asked: Set<string>,
+  topic: ResolverTopic | null
+): ItemMatch {
+  const specificTopic = topic !== null && topic !== 'general'
+  const candidate = tokens(`${item.question} ${(item.tags ?? []).join(' ')}`)
+  let overlapScore = 0
+  for (const word of candidate) if (asked.has(word)) overlapScore += 1
+
+  // Lapis 1 -- gerbang topik untuk topik SPESIFIK. `topics` terisi berarti operator (atau
+  // classifier) sudah menyatakan pertanyaan macam apa yang layak dijawab entri ini: kalau
+  // topik giliran ini spesifik dan tidak ada di sana, entri itu keluar, berapa pun katanya
+  // cocok -- dan sebaliknya, topik yang cocok sudah CUKUP untuk masuk, overlap kata TIDAK
+  // lagi disyaratkan (Ruling R56). Sebelum ruling ini, overlap tetap wajib untuk setiap
+  // entri walau topiknya sudah cocok -- itu membuang parafrasa persis yang gerbang topik
+  // dimaksudkan untuk menangani ("how much do I pay upfront?" vs entri "Berapa deposit?").
+  //
+  // `topics` KOSONG jatuh ke perilaku sebelum field ini ada (baris Lapis 2 di bawah). Itu
+  // yang membuat migrasi bisa bertahap dan nol revisi lama rusak.
+  if (specificTopic && item.topics?.length) {
+    const admitted = item.topics.includes(topic)
+    return { admitted, admittedByTopic: admitted, overlapScore }
+  }
+
+  // Ruling R30 (keputusan operator setelah Gerbang G1, 2026-09-10): giliran tanpa topik
+  // spesifik — `general` atau `null` — TIDAK digerbang berdasar topik semata. Pengukuran
+  // Fase 0: 47% lalu lintas memang `general` (pesan tanpa pertanyaan), dan 4 dari 6
+  // salah-klasifikasi melibatkan `general`. Entri bertopik `general` adalah baseline yang
+  // dikelola operator, jadi topik yang cocok sudah cukup untuk masuk di sini juga; entri
+  // lain pada giliran `general` -- dan SEMUA entri pada giliran `null` -- masih harus lewat
+  // overlap kata di Lapis 2, sama seperti sebelum gerbang topik ada.
+  if (topic === 'general' && item.topics?.includes('general')) {
+    return { admitted: true, admittedByTopic: true, overlapScore }
+  }
+
+  // Lapis 2 -- overlap token. Jalur ini dipakai kalau topik giliran tidak bisa memutuskan
+  // entri ini sendirian: giliran `null` (jaring R41 dan pemanggil tanpa topik), entri tanpa
+  // `topics` sama sekali, atau giliran `general` dengan entri yang topiknya bukan
+  // `general`. Di sinilah -- dan HANYA di sinilah -- overlap kata tetap jadi syarat masuk.
+  return { admitted: overlapScore > 0, admittedByTopic: false, overlapScore }
+}
+
+/**
  * The matching core of `managedFactsFor`, factored out so it can be called twice in one turn:
  * once gated by topic, and -- only when that yields nothing and the catalog itself has no
  * answer either (Ruling R41) -- once more with `topic` forced to `null` to skip the gate.
@@ -173,51 +257,63 @@ function tokens(text: string): Set<string> {
  * customer's message and the entry's question or tags. Something more clever (embeddings, an
  * LLM judge) would be another model call inside a turn that already spends its budget on
  * several, and would fail in ways nobody could read from a trace.
+ *
+ * Ruling R63: kandidat dikumpulkan lintas SEMUA entri lebih dulu (bukan per entri), diberi
+ * peringkat, lalu dipilih paling banyak `MAX_MANAGED_ITEMS_PER_TURN`. Peringkat: (1) item yang
+ * masuk karena topik mengalahkan item yang masuk lewat overlap kata; (2) dalam tiap kelompok,
+ * skor overlap menurun; (3) seri diputus oleh urutan asli (entri, lalu item) supaya hasilnya
+ * deterministik. Item terpilih lalu DIKELUARKAN dalam urutan ASLI entri/item -- bukan urutan
+ * peringkat -- supaya prompt tetap terbaca per sumber, sama seperti sebelum plafon ini ada.
  */
 function collect(
   managed: ManagedKnowledge,
   asked: Set<string>,
   topic: ResolverTopic | null
-): { lines: string[]; refs: KnowledgeRef[] } {
+): { lines: string[]; refs: KnowledgeRef[]; truncated: number } {
+  type Candidate = {
+    entryIndex: number
+    itemIndex: number
+    admittedByTopic: boolean
+    overlapScore: number
+  }
+
+  const candidates: Candidate[] = []
+  managed.entries.forEach((entry, entryIndex) => {
+    entry.items.forEach((item, itemIndex) => {
+      const result = evaluateItem(item, asked, topic)
+      if (result.admitted) {
+        candidates.push({ entryIndex, itemIndex, admittedByTopic: result.admittedByTopic, overlapScore: result.overlapScore })
+      }
+    })
+  })
+
+  const ranked = [...candidates].sort((a, b) => {
+    if (a.admittedByTopic !== b.admittedByTopic) return a.admittedByTopic ? -1 : 1
+    if (a.overlapScore !== b.overlapScore) return b.overlapScore - a.overlapScore
+    if (a.entryIndex !== b.entryIndex) return a.entryIndex - b.entryIndex
+    return a.itemIndex - b.itemIndex
+  })
+
+  const selected = ranked.slice(0, MAX_MANAGED_ITEMS_PER_TURN)
+  const truncated = candidates.length - selected.length
+
+  const selectedItemsByEntry = new Map<number, Set<number>>()
+  for (const candidate of selected) {
+    const itemIndices = selectedItemsByEntry.get(candidate.entryIndex) ?? new Set<number>()
+    itemIndices.add(candidate.itemIndex)
+    selectedItemsByEntry.set(candidate.entryIndex, itemIndices)
+  }
+
   const lines: string[] = []
   const refs: KnowledgeRef[] = []
 
-  for (const entry of managed.entries) {
-    const matched = entry.items.filter((item) => {
-      const specificTopic = topic !== null && topic !== 'general'
+  managed.entries.forEach((entry, entryIndex) => {
+    const itemIndices = selectedItemsByEntry.get(entryIndex)
+    if (!itemIndices || itemIndices.size === 0) return
 
-      // Lapis 1 -- gerbang topik untuk topik SPESIFIK. `topics` terisi berarti operator (atau
-      // classifier) sudah menyatakan pertanyaan macam apa yang layak dijawab entri ini: kalau
-      // topik giliran ini spesifik dan tidak ada di sana, entri itu keluar, berapa pun katanya
-      // cocok -- dan sebaliknya, topik yang cocok sudah CUKUP untuk masuk, overlap kata TIDAK
-      // lagi disyaratkan (Ruling R56). Sebelum ruling ini, overlap tetap wajib untuk setiap
-      // entri walau topiknya sudah cocok -- itu membuang parafrasa persis yang gerbang topik
-      // dimaksudkan untuk menangani ("how much do I pay upfront?" vs entri "Berapa deposit?").
-      //
-      // `topics` KOSONG jatuh ke perilaku sebelum field ini ada (baris Lapis 2 di bawah). Itu
-      // yang membuat migrasi bisa bertahap dan nol revisi lama rusak.
-      if (specificTopic && item.topics?.length) return item.topics.includes(topic)
+    entry.items.forEach((item, itemIndex) => {
+      if (!itemIndices.has(itemIndex)) return
 
-      // Ruling R30 (keputusan operator setelah Gerbang G1, 2026-09-10): giliran tanpa topik
-      // spesifik — `general` atau `null` — TIDAK digerbang berdasar topik semata. Pengukuran
-      // Fase 0: 47% lalu lintas memang `general` (pesan tanpa pertanyaan), dan 4 dari 6
-      // salah-klasifikasi melibatkan `general`. Entri bertopik `general` adalah baseline yang
-      // dikelola operator, jadi topik yang cocok sudah cukup untuk masuk di sini juga; entri
-      // lain pada giliran `general` -- dan SEMUA entri pada giliran `null` -- masih harus lewat
-      // overlap kata di Lapis 2, sama seperti sebelum gerbang topik ada.
-      if (topic === 'general' && item.topics?.includes('general')) return true
-
-      // Lapis 2 -- overlap token. Jalur ini dipakai kalau topik giliran tidak bisa memutuskan
-      // entri ini sendirian: giliran `null` (jaring R41 dan pemanggil tanpa topik), entri tanpa
-      // `topics` sama sekali, atau giliran `general` dengan entri yang topiknya bukan
-      // `general`. Di sinilah -- dan HANYA di sinilah -- overlap kata tetap jadi syarat masuk.
-      const candidate = tokens(`${item.question} ${(item.tags ?? []).join(' ')}`)
-      for (const word of candidate) if (asked.has(word)) return true
-      return false
-    })
-    if (matched.length === 0) continue
-
-    for (const item of matched) {
       lines.push(`${item.question} — ${item.answer}`)
       // Prices and links travel as their own lines so the reply verifier can source them: a
       // figure buried in prose is indistinguishable, to it, from one the model invented.
@@ -225,7 +321,7 @@ function collect(
         lines.push(`${price.label}: ${price.currency} ${price.amount}${price.note ? ` (${price.note})` : ''}`)
       }
       for (const link of item.links ?? []) lines.push(`${link.label}: ${link.url}`)
-    }
+    })
 
     refs.push({
       sourceType: 'MANAGED',
@@ -233,9 +329,9 @@ function collect(
       title: entry.sourceTitle,
       version: entry.version,
     })
-  }
+  })
 
-  return { lines, refs }
+  return { lines, refs, truncated }
 }
 
 /**

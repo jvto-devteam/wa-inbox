@@ -158,7 +158,7 @@ import { callLLM, type LLMOptions } from './llm'
 // Phase H integration pass: where configuration published through Bot Control reaches the
 // decision path. Every function there falls back to what this file did before, so an
 // un-seeded or unreadable database produces exactly the previous behaviour.
-import { shouldRunEscalationClassifier, fallbackReplyText, managedFactsFor } from './runtime-integration'
+import { shouldRunEscalationClassifier, fallbackReplyText, managedFactsFor, MAX_MANAGED_ITEMS_PER_TURN } from './runtime-integration'
 import {
   verifyReply,
   buildVerificationRetryInstruction,
@@ -907,6 +907,15 @@ async function runNoDestinationBranch(
           .join(', ')}.`
       )
     }
+    // Ruling R63: item yang dipotong plafon (`MAX_MANAGED_ITEMS_PER_TURN`) BUKAN "ditolak
+    // gerbang" -- sudah lolos, hanya kalah peringkat. Dicatat sebagai langkah trace terpisah
+    // supaya seberapa sering ini terjadi bisa ditinjau dengan data pemakaian nyata (Task 16).
+    if (managed.truncated > 0) {
+      trace.push(
+        'Knowledge terkelola dipangkas',
+        `${managed.truncated} item knowledge terkelola dipotong oleh plafon ${MAX_MANAGED_ITEMS_PER_TURN} item per giliran.`
+      )
+    }
 
     if (preDestinationKnowledge.factualLines.length > 0) {
       trace.push(
@@ -1556,6 +1565,15 @@ export async function decideAndRespond(
         `${managed.refs.length} sumber knowledge yang dikelola operator ikut menjadi dasar jawaban: ${managed.refs
           .map((ref) => `${ref.title} (v${ref.version})`)
           .join(', ')}.`
+      )
+    }
+    // Ruling R63: item yang dipotong plafon (`MAX_MANAGED_ITEMS_PER_TURN`) BUKAN "ditolak
+    // gerbang" -- sudah lolos, hanya kalah peringkat. Dicatat sebagai langkah trace terpisah
+    // supaya seberapa sering ini terjadi bisa ditinjau dengan data pemakaian nyata (Task 16).
+    if (managed.truncated > 0) {
+      trace.push(
+        'Knowledge terkelola dipangkas',
+        `${managed.truncated} item knowledge terkelola dipotong oleh plafon ${MAX_MANAGED_ITEMS_PER_TURN} item per giliran.`
       )
     }
 
