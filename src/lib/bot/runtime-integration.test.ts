@@ -213,8 +213,11 @@ describe('managedFactsFor', () => {
 
   describe('gerbang topik', () => {
     it('menolak entri bertopik payment saat giliran bertopik route_endpoint', async () => {
+      // Pertanyaan entri sengaja berbagi kata "surabaya" dengan pesan -- tanpa gerbang topik,
+      // overlap token sendirian sudah cukup meloloskannya, jadi yang menolaknya di sini murni
+      // gerbang topik, bukan kebetulan tidak ada kata yang cocok.
       mockEntries([
-        { question: 'Berapa deposit?', answer: '20% dari total, dibayar di Surabaya.', topics: ['payment'] },
+        { question: 'Berapa deposit di Surabaya?', answer: '20% dari total, dibayar di Surabaya.', topics: ['payment'] },
       ])
       const facts = await managedFactsFor('bisa drop off di surabaya?', 'route_endpoint')
       expect(facts.lines).toEqual([])
