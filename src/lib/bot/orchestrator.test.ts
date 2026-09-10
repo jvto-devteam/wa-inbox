@@ -813,6 +813,26 @@ describe('decideAndRespond', () => {
     expect(step?.detail).toContain('8')
   })
 
+  // Task 12 (Ruling R46): before this task a failed knowledge read came back as `entries: []`,
+  // indistinguishable from "nothing published" -- the bot would answer confidently from half
+  // its knowledge with no one the wiser. `available: false` must now surface as a clarify
+  // reply, at the no-destination branch's own managedFactsFor call site.
+  it('answers TECHNICAL_HICCUP_REPLY when managed knowledge fails to load (no-destination branch)', async () => {
+    ;vi.mocked(ensureFreshBookingData).mockResolvedValue(null)
+    ;vi.mocked(classifySalesNeed).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
+    ;vi.mocked(matchDestination).mockReturnValue(null)
+    ;vi.mocked(listDestinations).mockReturnValue(['Bromo', 'Ijen'])
+    ;vi.mocked(classifyTopicViaLLM).mockResolvedValue({ topic: 'vehicle', source: 'llm' })
+    ;vi.mocked(loadPublishedManagedKnowledge).mockResolvedValue({ entries: [], available: false, loadedAt: 0 })
+
+    const result = await decideAndRespond('conv_1', "Please make sure her meals don't contain beef")
+
+    expect(result.mode).toBe('clarify')
+    expect((result as { reply: string }).reply).toContain('having a small technical hiccup')
+    expect(result.steps?.map((s) => s.label)).toContain('Knowledge tidak terbaca')
+    expect(callLLM).not.toHaveBeenCalled()
+  })
+
   // A dietary/allergy mention has no dedicated topic keyword bucket at all (module-resolver.ts
   // -- confirmed 2026-08-05), so classifyTopic genuinely falls through to 'general', which is
   // deliberately NOT in DESTINATION_INDEPENDENT_TOPICS. It's only answerable here because
@@ -3310,6 +3330,42 @@ describe('decideAndRespond', () => {
     const step = result.steps?.find((s) => s.label === 'Knowledge terkelola dipangkas')
     expect(step?.detail).toContain('1')
     expect(step?.detail).toContain('8')
+  })
+
+  // Task 12 (Ruling R46), catalog-branch counterpart of the no-destination test above --
+  // same failure, the other managedFactsFor call site (orchestrator.ts's catalog branch).
+  it('answers TECHNICAL_HICCUP_REPLY when managed knowledge fails to load (catalog branch)', async () => {
+    ;vi.mocked(ensureFreshBookingData).mockResolvedValue(null)
+    ;vi.mocked(classifySalesNeed).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
+    ;vi.mocked(matchDestination).mockReturnValue({ destination: 'ijen', matches: [pkg()] })
+    ;vi.mocked(checkRouteGate).mockReturnValue({ status: 'clear' })
+    ;vi.mocked(classifyTopicViaLLM).mockResolvedValue({ topic: 'inclusions', source: 'llm' })
+    ;vi.mocked(loadPublishedManagedKnowledge).mockResolvedValue({ entries: [], available: false, loadedAt: 0 })
+
+    const result = await decideAndRespond('conv_1', 'Apa saja fasilitas yang termasuk di paket Ijen?')
+
+    expect(result.mode).toBe('clarify')
+    expect((result as { reply: string }).reply).toContain('having a small technical hiccup')
+    expect(result.steps?.map((s) => s.label)).toContain('Knowledge tidak terbaca')
+    expect(callLLM).not.toHaveBeenCalled()
+  })
+
+  // Negative case for both tests above: an ordinary turn (managed knowledge available, whether
+  // or not it has anything relevant) must never trip the degraded path. Deliberately does NOT
+  // assert `mode !== 'clarify'` -- many legitimate paths end in clarify for other reasons -- only
+  // that this specific failure mode's own fingerprints (the trace step and the hiccup wording)
+  // are absent.
+  it('does not treat an ordinary turn as a knowledge-read failure', async () => {
+    ;vi.mocked(ensureFreshBookingData).mockResolvedValue(null)
+    ;vi.mocked(classifySalesNeed).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
+    ;vi.mocked(matchDestination).mockReturnValue({ destination: 'ijen', matches: [pkg()] })
+    ;vi.mocked(checkRouteGate).mockReturnValue({ status: 'clear' })
+    ;vi.mocked(classifyTopicViaLLM).mockResolvedValue({ topic: 'inclusions', source: 'llm' })
+
+    const result = await decideAndRespond('conv_1', 'Saya mau ke Ijen')
+
+    expect(result.steps?.map((s) => s.label)).not.toContain('Knowledge tidak terbaca')
+    expect((result as { reply?: string }).reply ?? '').not.toContain('having a small technical hiccup')
   })
 })
 

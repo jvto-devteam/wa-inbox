@@ -140,7 +140,9 @@ describe('managedFactsFor', () => {
   it('returns nothing when no managed knowledge is published', async () => {
     // Ruling R25: gateBypassed sekarang bagian dari ManagedFacts -- EMPTY membawanya juga.
     // Ruling R63: truncated juga bagian dari ManagedFacts -- EMPTY membawanya juga (0).
-    expect(await managedFactsFor('Berapa harga ATV?', null)).toEqual({ lines: [], refs: [], gateBypassed: false, truncated: 0 })
+    // Ruling R46: degraded juga bagian dari ManagedFacts -- `available: true` (default beforeEach)
+    // dengan nol entri terbit memang berarti "tidak ada knowledge", bukan kerusakan, jadi false.
+    expect(await managedFactsFor('Berapa harga ATV?', null)).toEqual({ lines: [], refs: [], gateBypassed: false, truncated: 0, degraded: false })
   })
 
   it('folds in an entry whose question shares a word with the message', async () => {
@@ -203,12 +205,15 @@ describe('managedFactsFor', () => {
     expect(facts.lines.some((line) => line.includes('https://example.com/atv'))).toBe(true)
   })
 
-  it('returns nothing rather than throwing when the loader fails', async () => {
+  it('returns nothing rather than throwing when the loader fails -- but flags it as degraded, not silence', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => {})
     vi.mocked(loadPublishedManagedKnowledge).mockRejectedValue(new Error('db down'))
     // Ruling R25: gateBypassed sekarang bagian dari ManagedFacts -- EMPTY membawanya juga.
     // Ruling R63: truncated juga bagian dari ManagedFacts -- EMPTY membawanya juga (0).
-    expect(await managedFactsFor('berapa harga ATV?', null)).toEqual({ lines: [], refs: [], gateBypassed: false, truncated: 0 })
+    // Ruling R46: BERBEDA dari test "tidak ada knowledge terbit" di atas -- di sini loader-nya
+    // sendiri gagal (melempar), jadi `degraded` harus TRUE, bukan false: kegagalan pembacaan
+    // wajib bisa dibedakan dari "memang tidak ada knowledge" oleh pemanggil (orchestrator.ts).
+    expect(await managedFactsFor('berapa harga ATV?', null)).toEqual({ lines: [], refs: [], gateBypassed: false, truncated: 0, degraded: true })
   })
 
   it('returns nothing for a message with no usable words', async () => {
@@ -552,6 +557,39 @@ describe('managedFactsFor', () => {
       // Entri Y kehilangan SEMUA itemnya ke plafon -- sourceKey-nya tidak boleh nongol di refs
       // sama sekali, bukan cuma tidak punya baris.
       expect(facts.refs.map((r) => r.sourceKey)).toEqual(['managed/x'])
+    })
+  })
+
+  // Task 12 (Ruling R46): the loader returns `{ entries: [], available: false }` on a failed
+  // read (managed-knowledge.ts) -- the SAME shape as "nothing published". Without checking
+  // `available` before the `entries.length === 0` early return, a read failure is invisible to
+  // every caller. `degraded` is how the caller (orchestrator.ts) tells the two apart.
+  describe('degraded (Ruling R46)', () => {
+    it('flags degraded when the loader reports available: false', async () => {
+      vi.mocked(loadPublishedManagedKnowledge).mockResolvedValue({ entries: [], available: false, loadedAt: 0 })
+      const facts = await managedFactsFor('berapa harga paket ATV?', null)
+      expect(facts.degraded).toBe(true)
+    })
+
+    it('flags degraded even when the customer message is stopword-only', async () => {
+      // The `asked.size === 0` path and the `available === false` path are both early returns in
+      // managedFactsFor -- this proves the availability check runs BEFORE either the entries or
+      // the tokenised-message logic gets a chance to hide it as "nothing relevant found".
+      vi.mocked(loadPublishedManagedKnowledge).mockResolvedValue({ entries: [], available: false, loadedAt: 0 })
+      const facts = await managedFactsFor('berapa?', 'payment')
+      expect(facts.degraded).toBe(true)
+    })
+
+    it('does not flag degraded when available: true with no entries at all', async () => {
+      vi.mocked(loadPublishedManagedKnowledge).mockResolvedValue({ entries: [], available: true, loadedAt: 0 })
+      const facts = await managedFactsFor('berapa harga paket ATV?', null)
+      expect(facts.degraded).toBe(false)
+    })
+
+    it('does not flag degraded on an ordinary successful read with matching entries', async () => {
+      vi.mocked(loadPublishedManagedKnowledge).mockResolvedValue({ entries: [entry()], available: true, loadedAt: 0 })
+      const facts = await managedFactsFor('berapa harga paket ATV untuk 4 orang?', null)
+      expect(facts.degraded).toBe(false)
     })
   })
 })

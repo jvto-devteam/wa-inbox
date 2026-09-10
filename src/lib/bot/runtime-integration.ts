@@ -142,9 +142,19 @@ export type ManagedFacts = {
    * gerbang topik yang menolak (irelevan) vs. plafon yang memotong (relevan tapi kebanyakan).
    */
   truncated: number
+  /**
+   * True kalau pembacaan knowledge terkelola GAGAL (loader melempar, atau mengembalikan
+   * `available: false`) -- BUKAN kondisi "memang tidak ada knowledge yang diterbitkan"
+   * (Ruling R46). Sebelum Fase 2 knowledge cuma pelengkap, jadi kedua kondisi itu sama-sama
+   * aman ditelan sebagai "tidak ada fakta tambahan". Sesudahnya knowledge memegang seluruh
+   * fakta bisnis JVTO, jadi caller (orchestrator.ts, dua titik) WAJIB memeriksa field ini
+   * sebelum menyusun prompt apa pun -- kalau true, jawab clarify (TECHNICAL_HICCUP_REPLY),
+   * jangan diam-diam menjawab dari separuh pengetahuan.
+   */
+  degraded: boolean
 }
 
-const EMPTY: ManagedFacts = { lines: [], refs: [], gateBypassed: false, truncated: 0 }
+const EMPTY: ManagedFacts = { lines: [], refs: [], gateBypassed: false, truncated: 0, degraded: false }
 
 /**
  * Words too common to carry a topic.
@@ -364,9 +374,17 @@ export async function managedFactsFor(
     managed = await loadPublishedManagedKnowledge()
   } catch (error) {
     // The loader already fails open; this is belt-and-braces because the caller is a bot turn.
+    // Ruling R46: a thrown loader IS a read failure, so this is `degraded: true`, not the plain
+    // EMPTY a caller could mistake for "nothing published".
     console.error('managedFactsFor: gagal memuat knowledge terkelola', { error })
-    return EMPTY
+    return { ...EMPTY, degraded: true }
   }
+
+  // Ruling R46: checked BEFORE `entries.length === 0` below on purpose. The loader returns the
+  // exact same `entries: []` shape on a failed read as it does when nothing is published
+  // (managed-knowledge.ts:97, :143) -- checking `available` only after that early return would
+  // let a read failure hide inside "no knowledge", the very bug this ruling exists to close.
+  if (managed.available === false) return { ...EMPTY, degraded: true }
   if (managed.entries.length === 0) return EMPTY
 
   // Ruling R56: `asked.size === 0` dulu jadi early return di sini, sebelum `collect` sempat
@@ -378,20 +396,20 @@ export async function managedFactsFor(
   const asked = tokens(message)
 
   const gated = collect(managed, asked, topic)
-  if (gated.lines.length > 0) return { ...gated, gateBypassed: false }
+  if (gated.lines.length > 0) return { ...gated, gateBypassed: false, degraded: false }
 
   // Gerbang menghasilkan nol baris. Jaring (retry tanpa gerbang) HANYA berjalan kalau giliran
   // ini memang belum punya jawaban dari katalog (Ruling R41) -- kalau katalog sudah menjawab,
   // mengulang di sini hanya memasukkan kembali entri lintas-topik yang baru saja ditolak
   // gerbang, kebalikan dari tujuan gerbang itu sendiri.
-  if (hasCatalogFacts) return { ...gated, gateBypassed: false }
+  if (hasCatalogFacts) return { ...gated, gateBypassed: false, degraded: false }
 
   // Ini bisa berarti dua hal: memang tidak ada fakta yang relevan (wajar), atau klasifikasi
   // meleset dan fakta yang benar baru saja dibuang (tidak wajar). Kita tidak bisa
   // membedakannya di sini, jadi kita pilih sisi yang lebih murah salahnya -- jawab dengan
   // bahan seadanya, lalu tandai supaya bisa dihitung.
   const ungated = collect(managed, asked, null)
-  return { ...ungated, gateBypassed: ungated.lines.length > 0 }
+  return { ...ungated, gateBypassed: ungated.lines.length > 0, degraded: false }
 }
 
 /**

@@ -898,6 +898,14 @@ async function runNoDestinationBranch(
     // "payment" pre-destination) falls through to the generic "which destination?" reply
     // instead of actually answering.
     const managed = await managedFactsFor(inboundText, resolverTopic, preDestinationKnowledge.factualLines.length > 0)
+    // Ruling R46: before Phase 2 knowledge was only a supplement, so a failed read swallowed
+    // and treated as "nothing extra" was fine. After it, knowledge carries the whole of JVTO's
+    // business facts, so answering anyway means answering confidently from half of it -- with
+    // no one able to tell. Checked here, before any prompt is composed.
+    if (managed.degraded) {
+      trace.push('Knowledge tidak terbaca', 'Pembacaan managed knowledge gagal -- menjawab clarify alih-alih menebak dari separuh pengetahuan.')
+      return { mode: 'clarify', reply: await fallbackReplyText(TECHNICAL_HICCUP_REPLY), steps: trace.steps }
+    }
     if (managed.lines.length > 0) {
       preDestinationKnowledge.factualLines.push(...managed.lines)
       trace.push(
@@ -1583,6 +1591,12 @@ export async function decideAndRespond(
     // way to see which one answered. Only entries whose question or tags share a word with this
     // message are folded in — see managedFactsFor for why a crude match is the right one here.
     const managed = await managedFactsFor(inboundText, resolverTopic, knowledge.factualLines.length > 0)
+    // Ruling R46: same reasoning as the no-destination branch's identical check above -- a
+    // failed knowledge read must surface as clarify, not silently answer from half the facts.
+    if (managed.degraded) {
+      trace.push('Knowledge tidak terbaca', 'Pembacaan managed knowledge gagal -- menjawab clarify alih-alih menebak dari separuh pengetahuan.')
+      return { mode: 'clarify', reply: await fallbackReplyText(TECHNICAL_HICCUP_REPLY), steps: trace.steps }
+    }
     if (managed.lines.length > 0) {
       knowledge.factualLines.push(...managed.lines)
       trace.push(

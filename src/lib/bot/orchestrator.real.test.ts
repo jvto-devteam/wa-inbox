@@ -94,6 +94,13 @@ beforeEach(() => {
   mockPrisma.settings.findUniqueOrThrow.mockResolvedValue({ ollamaModel: 'gemma4:31b-cloud' } as never)
   mockPrisma.message.findMany.mockResolvedValue([] as never)
   mockPrisma.conversation.update.mockResolvedValue({} as never)
+  // Ruling R78: managed-knowledge.ts (imported transitively, unmocked -- this file mocks only
+  // the DB boundary) reads via `prisma.knowledgeRevision.findMany`; left unconfigured it resolves
+  // `undefined`, which the real loader reads as a failed query (`available: false`) -- honest
+  // for a truly broken read, but not what's true here: there are zero published revisions.
+  // Resolving `[]` here is the DB boundary telling the truth for that actual, current state, so
+  // the real loader returns `{ entries: [], available: true }`, matching production today.
+  mockPrisma.knowledgeRevision.findMany.mockResolvedValue([] as never)
   withTripBrief({})
 })
 
