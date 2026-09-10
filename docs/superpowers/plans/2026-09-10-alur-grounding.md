@@ -1400,12 +1400,20 @@ Sebelum Fase 2 knowledge cuma pelengkap, jadi "ditelan lalu jalan terus" benar. 
 
 **Files:**
 - Modify: `src/lib/bot/runtime-integration.ts`
-- Modify: `src/lib/bot/orchestrator.ts`
+- Modify: `src/lib/bot/orchestrator.ts` (tiga titik — Ruling R46)
 - Test: `src/lib/bot/orchestrator.test.ts`
+- Test: `src/lib/bot/runtime-integration.test.ts` (Ruling R46)
 
 **Interfaces:**
 - Consumes: `ManagedKnowledge.available` (sudah ada di `managed-knowledge.ts:48`)
 - Produces: `ManagedFacts.degraded: boolean`
+
+> **Ruling R46 — empat koreksi, terverifikasi di `managed-knowledge.ts` dan `runtime-integration.ts`:**
+> - **Urutan pengecekan.** Saat pembacaan gagal, loader mengembalikan `{ entries: [], available: false }` (`managed-knowledge.ts:97` dan `:143`). `managedFactsFor` hari ini keluar lebih dulu di `entries.length === 0` dan `asked.size === 0` — dua-duanya SEBELUM `available` sempat dibaca, jadi kegagalan tersembunyi sebagai "tidak ada knowledge". `degraded` dihitung dari `managed.available === false` SEBELUM kedua early return itu; blok `catch` di `managedFactsFor` sendiri juga menghasilkan `degraded: true`.
+> - **Tiga titik, bukan satu.** Knowledge dirakit di cabang tanpa-destinasi, cabang katalog, dan Mode 3 (`allManagedFacts()` dari Task 11, R27). Ketiganya memeriksa `degraded` sebelum menyusun prompt; `allManagedFacts` mengembalikan `ManagedFacts` sehingga membawa `degraded` yang sama.
+> - **Balasan bisa diatur operator.** Pakai `await fallbackReplyText(TECHNICAL_HICCUP_REPLY)`, sama dengan cabang katalog-kosong di `orchestrator.ts` (`Settings.fallbackReply`; kosong = default di kode) — bukan konstanta langsung.
+> - **Test** memakai tanda tangan asli `decideAndRespond(conversationId, inboundText)` dan skenario yang sudah ada di `orchestrator.test.ts` untuk tiap titik (satu test per titik). Test negatif TIDAK menegaskan `mode !== 'clarify'` (banyak jalur sah berakhir `clarify`), melainkan: tidak ada langkah trace 'Knowledge tidak terbaca' dan balasan bukan teks hiccup. Di `runtime-integration.test.ts`: `available: false` → `degraded: true`, termasuk saat pesan hanya berisi stopword; `available: true` tanpa entri → `degraded: false`.
+> - Biaya kalau salah: saat database knowledge terputus, pelanggan menerima permintaan maaf alih-alih jawaban dari separuh pengetahuan — memang itu tujuan task ini.
 
 > **Ruling R32:** Task 5 sudah memasang mock `@/lib/bot/managed-knowledge` di `orchestrator.test.ts` dengan default `{ entries: [], available: true, loadedAt: 0 }`. Test di task ini menyetel `available: false` secara eksplisit lewat `vi.mocked(loadPublishedManagedKnowledge).mockResolvedValue(...)` — nama helper `mockManagedKnowledge` di snippet bersifat skematik. Tanpa default itu, setiap test orkestrator akan melihat `available: false` dan berubah jadi "technical hiccup".
 
@@ -1454,7 +1462,7 @@ Expected: PASS.
 
 ```bash
 npm test && npx tsc --noEmit && npx eslint .
-git add src/lib/bot/runtime-integration.ts src/lib/bot/orchestrator.ts src/lib/bot/orchestrator.test.ts
+git add src/lib/bot/runtime-integration.ts src/lib/bot/runtime-integration.test.ts src/lib/bot/orchestrator.ts src/lib/bot/orchestrator.test.ts
 git commit -m "fix(bot): kegagalan baca knowledge jadi clarify, bukan ditelan diam-diam"
 ```
 
