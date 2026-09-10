@@ -52,6 +52,11 @@ Empat hal yang sebelumnya saya catat sebagai "tertunda", ternyata sudah punya bu
 - **`hotel` dan `rooming` memetakan ke modul yang sama** → **bukan cacat.** Terverifikasi: blok 6 prompt mengirim `overnights` (nama hotel) dan `roomingAssumption` **tanpa syarat topik**, jadi kedua pertanyaan tetap menerima fakta lengkap. Tidak ada fakta yang hilang. Task-nya dihapus, dan tabel cacat di dokumen rencana ikut dikoreksi di Task 0.
 - **Gerbang eval tertutup** → sudah dibuktikan tertutup dengan menjalankannya, dan `approve:deployment` terverifikasi ada. Langkah "pastikan tertutup" dihapus — itu mengulang verifikasi yang sudah selesai.
 
+### Keputusan operator 2026-09-11: G2 dan G3 (Ruling R93–R95)
+
+- **G2 — semua benar.** Ke-49 baris `GENERAL_FAQ_FALLBACK` (termasuk 12 yang tidak terkonfirmasi katalog) dinyatakan benar. Isi seed Task 11 = teks konstanta verbatim, tanpa koreksi angka.
+- **G3 — tidak ada aturan khusus soal koper (R93).** `luggage_rule` tetap `null` di 16 paket: baris "Luggage allowance" tidak muncul dan bot tidak mengarang aturan. Menulis kalimat seperti "no luggage restrictions" ke katalog adalah pernyataan ke pelanggan yang belum dirumuskan operator — ditanyakan terpisah, bukan diputuskan di sini.
+
 ### Keputusan operator 2026-09-10: `npm run eval` tidak dieksekusi dulu (Ruling R52)
 
 Eval butuh `JVTO_DEPLOYMENT_APPROVAL_KEY` (tidak ada di `.env` lokal), tunnel ke Ollama produksi, dan menulis baris `eval-*` sementara ke database produksi. Operator memutuskan eval **tidak dijalankan dulu**. Akibatnya: Task 10 ditunda utuh; langkah eval di Task 11 diganti pembanding grounding deterministik (tanpa LLM, tanpa DB); langkah eval di Task 13 dilewati. Eval tercatat sebagai item tertunda di laporan akhir. Batas yang diakui: tidak ada pengukuran balasan model yang nyata sebelum/sesudah pemindahan FAQ.
@@ -91,6 +96,8 @@ Setelah Tahap 1, kode yang berjalan SUDAH membaca body bertopik. Seed yang langs
 4. Verifikasi dengan satu giliran Mode 3 dan satu giliran Mode 1/2 (nomor whitelist): baris FAQ managed muncul di "Fakta yang dipakai", teks `GENERAL_FAQ_FALLBACK` tidak.
 
 Alternatif — terbitkan tepat sebelum deploy Task 11 — hanya boleh bila G2 tidak mengubah angka apa pun.
+
+> **Status 2026-09-11:** G2 tidak mengubah angka apa pun, jadi alternatif ini SAH — dan lebih baik: tidak ada jeda tanpa fakta FAQ. Selama beberapa menit antara terbit dan deploy, isi yang sama muncul dua kali (konstanta + entri), identik.
 
 ---
 
@@ -1333,6 +1340,8 @@ Expected: kosong (berkas itu gitignored). Kalau muncul, **jangan** `git add` —
 > - Nomor baris di Files (`:794`, `:889`, `:1755`, …) sudah bergeser oleh Task 5/6 — cari berdasarkan isi.
 > - Bergantung pada R56 (Task 5b): tanpa itu, blok GENERAL "seluruh 14 topik" hanya lolos kalau ada kata yang sama.
 > - **Ruling R77 — Task 11 juga menutup bagian Mode 3 dari Task 12 dan 17:** `allManagedFacts()` membawa `degraded` dan Mode 3 memeriksanya sebelum menyusun prompt (R46, dengan test-nya); Mode 3 juga mengisi `knowledge` di objek keputusan (R54).
+> - **Ruling R94 — rincian eksekusi Task 11 (sesudah G2 "semua benar"):** (a) data seed = modul murni `src/lib/bot-control/faq-seed-data.ts` (11 entri: judul, pertanyaan pelanggan, jawaban = baris blok VERBATIM, topik dari tabel Step 3), dipakai skrip dan test; controller mencocokkan mekanis data seed dengan konstanta di BASE sebelum konstanta dihapus; (b) skrip `scripts/seed-faq-knowledge.ts` wajib `--actor <accountId>`, default menulis DRAFT (idempoten per judul), `--publish` menerbitkan draft hasil seed, `--dry-run` hanya mencetak rencana — dijalankan lewat `npx tsx`, TANPA entri baru di package.json (konfirmasi operator soal batas package.json belum ada); implementer dilarang menjalankannya; (c) pengganti eval (R52) = test perutean deterministik: untuk kasus eval yang jawabannya bersumber dari FAQ (deposit 20% → `payment`, gas mask → `inclusions`, blue fire → `blue_fire`) plus giliran `general` (blok GENERAL) dan `route_endpoint` (blok FERRY), `managedFactsFor` atas entri seed menghasilkan baris fakta yang diharapkan; `allManagedFacts()` menghasilkan ke-11 blok.
+> - **Ruling R95 — Mode 3 membawa `knowledge`, bukan `topic`/`job`.** R74 melepas `topic`/`job` dari `booking_context` karena Mode 3 berjalan sebelum klasifikasi — itu tetap. Tetapi fakta yang dipakai Mode 3 nyata (R77/R54), jadi varian `booking_context` mendapat `knowledge?` saja.
 
 - [ ] **Step 1 — 🛑 GERBANG G2: operator meninjau kebenaran tiap blok fakta**
 
@@ -2109,6 +2118,8 @@ git commit -m "feat(eval): ubah keputusan yang ditandai jadi kandidat golden cas
 ## FASE 6 — Isi (butuh fakta dari JVTO)
 
 ### Task 19 — 🛑 GERBANG G3: isi `luggage_rule`
+
+> **Status 2026-09-11 (R93):** operator menyatakan tidak ada aturan khusus soal koper. `luggage_rule` tetap `null` — tidak ada yang ditulis. Menunggu keputusan operator apakah bot boleh menyatakan secara eksplisit "tidak ada aturan khusus soal koper".
 
 **Files:**
 - Modify: `catalog/vehicle-and-luggage-rules.json`
