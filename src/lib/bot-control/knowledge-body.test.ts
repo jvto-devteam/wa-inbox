@@ -2,7 +2,7 @@
  * @vitest-environment node
  */
 import { describe, it, expect } from 'vitest'
-import { validateKnowledgeBody, readKnowledgeBody } from './knowledge-body'
+import { validateKnowledgeBody, readKnowledgeBody, topicsOfBody } from './knowledge-body'
 
 const valid = { items: [{ question: 'Berapa harga ATV?', answer: 'Mengikuti paket di katalog aktif.' }] }
 
@@ -106,5 +106,38 @@ describe('readKnowledgeBody', () => {
 
   it('returns the parsed body for a valid one', () => {
     expect(readKnowledgeBody(valid)).toEqual(valid)
+  })
+})
+
+describe('topicsOfBody', () => {
+  it('returns the union of every item topics, ordered by RESOLVER_TOPICS', () => {
+    // 'payment' and 'price' appear before 'booking' in RESOLVER_TOPICS — the output must follow
+    // that order, not the order items or their topics were written in.
+    const result = topicsOfBody({
+      items: [
+        { question: 'Q1', answer: 'A1', topics: ['booking', 'payment'] },
+        { question: 'Q2', answer: 'A2', topics: ['price'] },
+      ],
+    })
+    expect(result).toEqual(['price', 'booking', 'payment'])
+  })
+
+  it('drops duplicates across items', () => {
+    const result = topicsOfBody({
+      items: [
+        { question: 'Q1', answer: 'A1', topics: ['payment'] },
+        { question: 'Q2', answer: 'A2', topics: ['payment'] },
+      ],
+    })
+    expect(result).toEqual(['payment'])
+  })
+
+  it('returns an empty array when no item carries topics', () => {
+    expect(topicsOfBody(valid)).toEqual([])
+  })
+
+  it('returns an empty array for a body this build cannot read', () => {
+    expect(topicsOfBody({ bentuk: 'lama' })).toEqual([])
+    expect(topicsOfBody(null)).toEqual([])
   })
 })

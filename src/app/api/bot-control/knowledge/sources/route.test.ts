@@ -212,6 +212,43 @@ describe('GET /api/bot-control/knowledge/sources', () => {
 
     expect((await (await GET(req())).json()).items[0].hasDraft).toBe(false)
   })
+
+  it('returns the topics carried by the latest revision body, ordered by RESOLVER_TOPICS', async () => {
+    // Task 9: a misclassified topic must be visible without opening the editor.
+    mockPrisma.knowledgeSource.findMany.mockResolvedValue([
+      sourceRow({
+        revisions: [
+          {
+            id: 'krev_2',
+            version: 2,
+            status: 'DRAFT',
+            body: {
+              items: [
+                { question: 'Q1', answer: 'A1', topics: ['booking', 'payment'] },
+                { question: 'Q2', answer: 'A2', topics: ['price'] },
+              ],
+            },
+          },
+        ],
+      }),
+    ] as never)
+
+    const body = await (await GET(req())).json()
+    expect(body.items[0].topics).toEqual(['price', 'booking', 'payment'])
+  })
+
+  it('returns an empty topics array when the latest revision body carries none', async () => {
+    mockPrisma.knowledgeSource.findMany.mockResolvedValue([sourceRow({ revisions: [] })] as never)
+    const body = await (await GET(req())).json()
+    expect(body.items[0].topics).toEqual([])
+  })
+
+  it('selects body on the latest revision so topics can be derived', async () => {
+    await GET(req())
+    expect(mockPrisma.knowledgeSource.findMany.mock.calls[0][0]?.include).toMatchObject({
+      revisions: { orderBy: { version: 'desc' }, take: 1, select: { id: true, version: true, status: true, body: true } },
+    })
+  })
 })
 
 describe('POST /api/bot-control/knowledge/sources', () => {

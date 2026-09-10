@@ -3,6 +3,7 @@ import { Badge } from '@/components/ui/badge'
 import { Modal } from '@/components/ui/modal'
 import { Button } from '@/components/ui/button'
 import { SkeletonText } from '@/components/ui/skeleton'
+import type { ResolverTopic } from '@/lib/bot/module-resolver'
 
 export type RevisionRow = {
   id: string
@@ -16,6 +17,9 @@ export type RevisionRow = {
   publishedAt: string | null
   createdAt: string
   updatedAt: string
+  /** Task 9: which of the 14 topics this revision's items answer — visible per row so a wrong
+   * classification is caught without opening the editor. */
+  topics: ResolverTopic[]
 }
 
 const STATUS_VARIANT: Record<string, 'success' | 'muted' | 'default'> = {
@@ -77,6 +81,17 @@ export function KnowledgeRevisionPanel({
 
               <p className="text-base font-medium text-ink">{revision.title}</p>
               {revision.summary && <p className="text-sm text-ink-muted">{revision.summary}</p>}
+              {/* `?? []` defensif, sama seperti KnowledgeSourceTable: baris dari caller yang
+                  belum diperbarui ke bentuk GET Task 9 tidak boleh merusak render panel. */}
+              {(revision.topics ?? []).length > 0 && (
+                <div className="flex flex-wrap gap-1">
+                  {revision.topics.map((topic) => (
+                    <Badge key={topic} variant="muted">
+                      {topic}
+                    </Badge>
+                  ))}
+                </div>
+              )}
 
               {revision.changeReason && (
                 <p className="text-sm text-ink">Alasan: {revision.changeReason}</p>

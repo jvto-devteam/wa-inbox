@@ -6,6 +6,9 @@ import { Textarea } from '@/components/ui/textarea'
 import { Field, FieldError, Label } from '@/components/ui/label'
 import { Modal } from '@/components/ui/modal'
 import type { KnowledgeItem } from '@/lib/bot-control/knowledge-body'
+// `module-resolver.ts` has no imports of its own, so pulling RESOLVER_TOPICS into a client
+// component costs nothing extra in the bundle.
+import { RESOLVER_TOPICS } from '@/lib/bot/module-resolver'
 
 export type KnowledgeDraft = {
   title: string
@@ -142,6 +145,12 @@ export function KnowledgeEditor({
               aria-label={`Tag item ${index + 1}`}
             />
 
+            <TopicFields
+              topics={item.topics ?? []}
+              onChange={(topics) => updateItem(index, { topics: topics.length > 0 ? topics : undefined })}
+              index={index}
+            />
+
             <PriceFields
               prices={item.prices ?? []}
               onChange={(prices) => updateItem(index, { prices: prices.length > 0 ? prices : undefined })}
@@ -199,6 +208,47 @@ export function KnowledgeEditor({
         </Button>
       </div>
     </Modal>
+  )
+}
+
+/**
+ * Which of the 14 topics this item answers — the gate `runtime-integration.ts` checks before
+ * letting a fact reach a reply. Task 8's classifier can misfire; this is how an operator catches
+ * that without opening the trace. The visible label is the raw topic id, matching what shows up
+ * in the trace, on purpose — translating it would make the two impossible to compare.
+ *
+ * Unchecking every box sends `topics: undefined`, the same "empty means absent" pattern
+ * `prices`/`links` already use in this file.
+ */
+function TopicFields({
+  topics,
+  onChange,
+  index,
+}: {
+  topics: NonNullable<KnowledgeItem['topics']>
+  onChange: (topics: NonNullable<KnowledgeItem['topics']>) => void
+  index: number
+}) {
+  return (
+    <div className="space-y-1.5">
+      <Label>Topik yang dilayani fakta ini</Label>
+      <div className="flex flex-wrap gap-x-3 gap-y-1.5">
+        {RESOLVER_TOPICS.map((topic) => (
+          <label key={topic} className="flex items-center gap-1.5 text-sm text-ink">
+            <input
+              type="checkbox"
+              checked={topics.includes(topic)}
+              onChange={(e) =>
+                onChange(e.target.checked ? [...topics, topic] : topics.filter((t) => t !== topic))
+              }
+              aria-label={`Topik ${topic} item ${index + 1}`}
+              className="focus-ring size-3.5 shrink-0 rounded-xs"
+            />
+            {topic}
+          </label>
+        ))}
+      </div>
+    </div>
   )
 }
 

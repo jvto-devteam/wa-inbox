@@ -12,6 +12,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
+import type { ResolverTopic } from '@/lib/bot/module-resolver'
 
 export type KnowledgeSourceRow = {
   id: string
@@ -21,6 +22,9 @@ export type KnowledgeSourceRow = {
   summary: string | null
   hasDraft?: boolean
   latestRevision?: { id: string; version: number; status: string } | null
+  /** Task 9: which of the 14 topics the latest revision's items answer, so a classifier
+   * misfire (Task 8's risk) is visible on the list without opening the editor. */
+  topics: ResolverTopic[]
 }
 
 export type KnowledgeAction = 'edit' | 'history' | 'publish' | 'archive'
@@ -86,6 +90,18 @@ export function KnowledgeSourceTable({
                 <p className="font-medium text-ink">{source.title}</p>
                 {/* Ringkasannya prosa: kolomnya boleh selebar apa pun, barisnya tidak. */}
                 {source.summary && <p className="max-w-4xl text-sm text-ink-muted">{source.summary}</p>}
+                {/* Bukan hiasan: topik yang salah harus terlihat tanpa membuka form.
+                    `?? []` defensif: baris dari caller yang belum diperbarui ke bentuk GET
+                    Task 9 (mis. fixture test halaman lama) tidak boleh merusak render tabel. */}
+                {(source.topics ?? []).length > 0 && (
+                  <div className="mt-1 flex flex-wrap gap-1">
+                    {source.topics.map((topic) => (
+                      <Badge key={topic} variant="muted">
+                        {topic}
+                      </Badge>
+                    ))}
+                  </div>
+                )}
               </TableCell>
               <TableCell className="py-2.5">
                 <Badge variant={STATUS_VARIANT[source.status] ?? 'default'}>{source.status}</Badge>

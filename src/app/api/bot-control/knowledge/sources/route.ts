@@ -6,6 +6,7 @@ import { getSession } from '@/lib/auth/get-session'
 import { parseJsonBody } from '@/lib/parse-json'
 import { readPaging } from '@/lib/bot-control/paging'
 import { hasAdminPowers } from '@/lib/bot-control/permissions'
+import { topicsOfBody } from '@/lib/bot-control/knowledge-body'
 import {
   createManagedKnowledge,
   KnowledgeNotEditableError,
@@ -69,7 +70,14 @@ export async function GET(req: Request) {
         take: limit,
         include: {
           // Newest first: the row's headline state is its latest revision, not its first.
-          revisions: { orderBy: { version: 'desc' }, take: 1, select: { id: true, version: true, status: true } },
+          // `body: true` is selected ONLY to derive `topics` below — the body itself is never
+          // put on the response; see the header comment on `knowledge-body.ts` for why bodies
+          // stay off list responses.
+          revisions: {
+            orderBy: { version: 'desc' },
+            take: 1,
+            select: { id: true, version: true, status: true, body: true },
+          },
         },
       }),
       prisma.knowledgeSource.count({ where }),
@@ -96,6 +104,8 @@ export async function GET(req: Request) {
             }
           : null,
         hasDraft: source.revisions[0]?.status === 'DRAFT',
+        // Derived from the latest revision's body, never the body itself — at most 14 values.
+        topics: source.revisions[0] ? topicsOfBody(source.revisions[0].body) : [],
       })),
       page,
       limit,

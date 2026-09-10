@@ -143,4 +143,45 @@ describe('KnowledgeEditor', () => {
     renderEditor({ error: 'Isi knowledge tidak valid pada: answer.' })
     expect(screen.getByText(/Isi knowledge tidak valid/)).toBeInTheDocument()
   })
+
+  it('menampilkan 14 pilihan topik', () => {
+    renderEditor()
+    expect(screen.getAllByRole('checkbox', { name: /topik/i })).toHaveLength(14)
+  })
+
+  it('mengirim topik terpilih saat disimpan', () => {
+    const { onSave } = renderEditor()
+    fireEvent.click(screen.getByRole('checkbox', { name: /topik payment/i }))
+    fireEvent.change(screen.getByLabelText('Alasan perubahan'), { target: { value: REASON } })
+    fireEvent.click(screen.getByRole('button', { name: 'Simpan draft' }))
+
+    expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({ items: [expect.objectContaining({ topics: ['payment'] })] }),
+      REASON,
+      false
+    )
+  })
+
+  it('menampilkan topik yang sudah tersimpan sebagai terpilih', () => {
+    renderEditor({
+      initial: draft({ items: [{ question: 'Q', answer: 'A', topics: ['booking'] }] }),
+    })
+    expect(screen.getByRole('checkbox', { name: /topik booking/i })).toBeChecked()
+  })
+
+  it('melepas semua centang topik mengirim topics: undefined, seperti pola prices/links', () => {
+    const { onSave } = renderEditor({
+      initial: draft({ items: [{ question: 'Q', answer: 'A', topics: ['booking'] }] }),
+    })
+    fireEvent.click(screen.getByRole('checkbox', { name: /topik booking/i }))
+    fireEvent.change(screen.getByLabelText('Alasan perubahan'), { target: { value: REASON } })
+    fireEvent.click(screen.getByRole('button', { name: 'Simpan draft' }))
+
+    expect(onSave.mock.calls[0][0].items[0].topics).toBeUndefined()
+  })
+
+  it('label topik yang tampil adalah id topik apa adanya', () => {
+    renderEditor()
+    expect(screen.getByRole('checkbox', { name: 'Topik payment item 1' })).toBeInTheDocument()
+  })
 })

@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { getSession } from '@/lib/auth/get-session'
 import { readPaging } from '@/lib/bot-control/paging'
+import { topicsOfBody } from '@/lib/bot-control/knowledge-body'
 
 /**
  * GET /api/bot-control/knowledge/sources/[id]/revisions — the source's full history.
@@ -10,9 +11,11 @@ import { readPaging } from '@/lib/bot-control/paging'
  * "what did the bot know last Tuesday", which is exactly why revisions are rows rather than a
  * column that gets overwritten.
  *
- * Bodies are NOT included. A history list exists to show WHICH versions there were and what
+ * Bodies are NOT returned. A history list exists to show WHICH versions there were and what
  * changed hands when; sending every version's full prose would make the panel grow without
- * bound on a source that has been edited fifty times.
+ * bound on a source that has been edited fifty times. `body` IS selected from the database
+ * (Task 9) — only to derive `topics` (at most 14 values) below — and is stripped back out
+ * before the response is built.
  */
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await getSession(req)
@@ -47,6 +50,8 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
         publishedAt: true,
         createdAt: true,
         updatedAt: true,
+        // Selected only to derive `topics` below; never put on the response — see header.
+        body: true,
       },
     })
 
@@ -81,6 +86,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
         publishedAt: revision.publishedAt?.toISOString() ?? null,
         createdAt: revision.createdAt.toISOString(),
         updatedAt: revision.updatedAt.toISOString(),
+        topics: topicsOfBody(revision.body),
       })),
     })
   } catch (error) {

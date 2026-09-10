@@ -17,6 +17,7 @@ function revision(overrides: Partial<RevisionRow> = {}): RevisionRow {
     publishedAt: null,
     createdAt: '2026-09-07T02:00:00.000Z',
     updatedAt: '2026-09-07T02:00:00.000Z',
+    topics: [],
     ...overrides,
   }
 }
@@ -74,5 +75,11 @@ describe('KnowledgeRevisionPanel', () => {
   it('surfaces a load error', () => {
     renderPanel({ revisions: [], error: 'Gagal memuat riwayat revisi' })
     expect(screen.getByText('Gagal memuat riwayat revisi')).toBeInTheDocument()
+  })
+
+  it('menampilkan badge topik per revisi', () => {
+    renderPanel({ revisions: [revision({ topics: ['payment', 'booking'] })] })
+    expect(screen.getByText('payment')).toBeInTheDocument()
+    expect(screen.getByText('booking')).toBeInTheDocument()
   })
 })

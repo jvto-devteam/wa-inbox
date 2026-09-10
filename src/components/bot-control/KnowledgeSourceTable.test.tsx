@@ -11,6 +11,7 @@ function source(overrides: Partial<KnowledgeSourceRow> = {}): KnowledgeSourceRow
     title: 'FAQ Harga ATV',
     status: 'PUBLISHED',
     summary: 'Jawaban harga ATV Bromo',
+    topics: [],
     ...overrides,
   }
 }
@@ -84,5 +85,12 @@ describe('KnowledgeSourceTable', () => {
   it('points an operator at the create button instead of showing a bare empty table', () => {
     render(<KnowledgeSourceTable sources={[]} />)
     expect(screen.getByText(/Buat knowledge baru/)).toBeInTheDocument()
+  })
+
+  it('menampilkan badge topik supaya salah tanda terlihat tanpa membuka form', () => {
+    render(<KnowledgeSourceTable sources={[source({ topics: ['payment', 'booking'] })]} />)
+    const row = screen.getAllByRole('row')[1]
+    expect(within(row).getByText('payment')).toBeInTheDocument()
+    expect(within(row).getByText('booking')).toBeInTheDocument()
   })
 })

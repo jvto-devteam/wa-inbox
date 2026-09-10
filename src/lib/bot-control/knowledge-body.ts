@@ -16,7 +16,7 @@
  * indistinguishable from one the model made up, and the verifier cannot tell them apart.
  */
 import { z } from 'zod'
-import { RESOLVER_TOPICS } from '@/lib/bot/module-resolver'
+import { RESOLVER_TOPICS, type ResolverTopic } from '@/lib/bot/module-resolver'
 
 /** A price the bot is permitted to quote, with the currency stated rather than assumed. */
 export const knowledgePriceSchema = z
@@ -96,4 +96,23 @@ export function validateKnowledgeBody(value: unknown): BodyValidation {
 export function readKnowledgeBody(value: unknown): ManagedKnowledgeBody | null {
   const parsed = knowledgeBodySchema.safeParse(value)
   return parsed.success ? parsed.data : null
+}
+
+/**
+ * The union of every item's `topics` in a body, ordered by `RESOLVER_TOPICS` rather than by
+ * write order. Callers (the sources and revisions GET routes) surface this as a badge so a
+ * classifier misfire — the risk Task 8 introduced — is visible on the list, not only inside
+ * the editor.
+ *
+ * `[]` for a body this build cannot read (via `readKnowledgeBody`), same as any other reader of
+ * a stored body: skip it rather than dereference a shape that might not have `items` at all.
+ */
+export function topicsOfBody(value: unknown): ResolverTopic[] {
+  const body = readKnowledgeBody(value)
+  if (!body) return []
+  const found = new Set<ResolverTopic>()
+  for (const item of body.items) {
+    for (const topic of item.topics ?? []) found.add(topic)
+  }
+  return RESOLVER_TOPICS.filter((topic) => found.has(topic))
 }

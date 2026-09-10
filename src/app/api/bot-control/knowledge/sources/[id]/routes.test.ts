@@ -175,12 +175,48 @@ describe('GET /revisions', () => {
     // make the panel grow without bound on a source edited fifty times.
     mockPrisma.knowledgeSource.findUnique.mockResolvedValue({ id: 'ks_1', key: 'managed/abc' } as never)
     mockPrisma.knowledgeRevision.findMany.mockResolvedValue([
-      { id: 'krev_2', version: 2, title: 'v2', summary: null, status: 'PUBLISHED', changeReason: null, createdBy: null, publishedBy: null, publishedAt: null, createdAt: new Date(), updatedAt: new Date() },
+      { id: 'krev_2', version: 2, title: 'v2', summary: null, status: 'PUBLISHED', changeReason: null, createdBy: null, publishedBy: null, publishedAt: null, createdAt: new Date(), updatedAt: new Date(), body: { items: [{ question: 'Q', answer: 'A', topics: ['payment'] }] } },
     ] as never)
 
     const body = await (await getRevisions(getReq(), { params })).json()
     expect(mockPrisma.knowledgeRevision.findMany.mock.calls[0][0]?.orderBy).toEqual({ version: 'desc' })
     expect(body.revisions[0]).not.toHaveProperty('body')
+  })
+
+  it('returns topics per revision, derived from its body, ordered by RESOLVER_TOPICS', async () => {
+    mockPrisma.knowledgeSource.findUnique.mockResolvedValue({ id: 'ks_1', key: 'managed/abc' } as never)
+    mockPrisma.knowledgeRevision.findMany.mockResolvedValue([
+      {
+        id: 'krev_2',
+        version: 2,
+        title: 'v2',
+        summary: null,
+        status: 'PUBLISHED',
+        changeReason: null,
+        createdBy: null,
+        publishedBy: null,
+        publishedAt: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        body: {
+          items: [
+            { question: 'Q1', answer: 'A1', topics: ['booking', 'payment'] },
+            { question: 'Q2', answer: 'A2', topics: ['price'] },
+          ],
+        },
+      },
+    ] as never)
+
+    const body = await (await getRevisions(getReq(), { params })).json()
+    expect(body.revisions[0].topics).toEqual(['price', 'booking', 'payment'])
+  })
+
+  it('selects body on each revision to derive topics, without returning it', async () => {
+    mockPrisma.knowledgeSource.findUnique.mockResolvedValue({ id: 'ks_1', key: 'managed/abc' } as never)
+    mockPrisma.knowledgeRevision.findMany.mockResolvedValue([] as never)
+
+    await getRevisions(getReq(), { params })
+    expect(mockPrisma.knowledgeRevision.findMany.mock.calls[0][0]?.select).toMatchObject({ body: true })
   })
 
   it('answers 404 for a source that does not exist', async () => {
