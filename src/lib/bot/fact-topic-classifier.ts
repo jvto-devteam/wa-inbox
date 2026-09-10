@@ -54,7 +54,7 @@ Reply with ONLY valid JSON, no markdown, no explanation, exactly this shape:
 
 Examples:
 
-Fact: "Can a Surabaya package finish with drop-off in Malang? — Yes. A surcharge of IDR 250,000 per vehicle applies."
+Fact: "Can a Surabaya package finish with drop-off in Malang? — Yes. An additional per-vehicle fee applies; see the current price list."
 Output: {"topics": ["route_endpoint", "price"]}
 
 Fact: "How much deposit confirms a booking? — 20% of the total."
