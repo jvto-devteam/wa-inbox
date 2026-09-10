@@ -27,7 +27,11 @@
  */
 import { config } from 'dotenv'
 
-config()
+// `quiet: true` -- stdout di skrip ini adalah TSV yang dibaca mesin (lihat header file).
+// Tanpa ini, dotenv v17 sendiri mencetak baris "◇ injected env ..." ke stdout SEBELUM baris
+// header TSV, jadi setiap konsumen TSV harus tahu untuk membuang baris pertama secara manual.
+// Task 2 dan 3 sengaja TIDAK diubah -- stdout keduanya dibaca manusia, bukan diparse.
+config({ quiet: true })
 
 /** Sampel harus reproducible supaya angka akurasi bisa dibandingkan lintas waktu tanpa
  * "kebetulan dapat sampel mudah/susah" -- karena itu shuffle-nya diberi seed tetap. */
