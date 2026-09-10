@@ -105,6 +105,52 @@ function managedKey(): string {
 }
 
 /**
+ * Berapa banyak panggilan `classifyFactTopics` yang boleh berjalan bersamaan saat sebuah draft
+ * disimpan (Ruling R86).
+ *
+ * `fillMissingTopics` di bawah dulu memakai `Promise.all(items.map(...))` telanjang: sebuah body
+ * dengan sampai 200 item (batas `validateKnowledgeBody`) tanpa `topics` berarti sampai 200
+ * panggilan LLM bersamaan ke daemon Ollama yang SAMA yang juga melayani setiap giliran bot yang
+ * sedang berjalan -- operator menyimpan satu draft besar bisa membuat balasan pelanggan nyata
+ * ikut melambat atau timeout. Angka 3 bukan hasil pengukuran beban Ollama yang presisi -- ia
+ * pengaman kasar yang membuat kasus terburuk (200 item) jadi ~67 giliran classifier berurutan
+ * alih-alih 200 bersamaan, cukup untuk operator biasa (draft berisi beberapa hingga puluhan item)
+ * tanpa membanjiri daemon yang sama.
+ */
+const MAX_CONCURRENT_TOPIC_CLASSIFICATIONS = 3
+
+/**
+ * Menjalankan `fn` atas `items` dengan maksimum `limit` panggilan bersamaan, hasil tetap
+ * sejajar posisi dengan `items` (urutan penyelesaian TIDAK menentukan urutan hasil).
+ *
+ * Helper kecil di berkas ini sendiri, BUKAN dependensi baru (CLAUDE.md melarang menambah
+ * dependensi) -- sebuah pool "worker" sesederhana mungkin: setiap worker mengambil index
+ * berikutnya yang belum diproses (`next++`) begitu selesai dengan index sebelumnya, sampai
+ * `items` habis. Jumlah worker dibatasi `Math.min(limit, items.length)` supaya array kosong
+ * atau lebih pendek dari `limit` tidak membuat worker menganggur tanpa pernah mengambil apa pun.
+ */
+async function mapWithConcurrencyLimit<T, R>(
+  items: T[],
+  limit: number,
+  fn: (item: T, index: number) => Promise<R>
+): Promise<R[]> {
+  const results: R[] = new Array(items.length)
+  let nextIndex = 0
+
+  async function worker(): Promise<void> {
+    while (nextIndex < items.length) {
+      const current = nextIndex
+      nextIndex += 1
+      results[current] = await fn(items[current], current)
+    }
+  }
+
+  const workerCount = Math.min(limit, items.length)
+  await Promise.all(Array.from({ length: workerCount }, () => worker()))
+  return results
+}
+
+/**
  * Isi `topics` untuk item yang belum punya, dari classifier.
  *
  * Pilihan operator MENANG: item yang sudah punya `topics` tidak pernah disentuh, dan tidak
@@ -138,13 +184,13 @@ async function fillMissingTopics(items: KnowledgeItem[]): Promise<KnowledgeItem[
     console.error('failed to read Settings.ollamaModel for fact topic classification', { error })
   }
 
-  return Promise.all(
-    items.map(async (item) => {
-      if (item.topics && item.topics.length > 0) return item
-      const topics = await classifyFactTopics(item.question, item.answer, model)
-      return topics.length > 0 ? { ...item, topics } : item
-    })
-  )
+  // Ruling R86: dibatasi ke MAX_CONCURRENT_TOPIC_CLASSIFICATIONS panggilan bersamaan -- lihat
+  // konstanta itu untuk kenapa `Promise.all` telanjang di sini tidak aman.
+  return mapWithConcurrencyLimit(items, MAX_CONCURRENT_TOPIC_CLASSIFICATIONS, async (item) => {
+    if (item.topics && item.topics.length > 0) return item
+    const topics = await classifyFactTopics(item.question, item.answer, model)
+    return topics.length > 0 ? { ...item, topics } : item
+  })
 }
 
 export type CreateSourceParams = {

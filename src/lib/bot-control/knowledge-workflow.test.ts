@@ -270,6 +270,42 @@ describe('saveKnowledgeDraft', () => {
     )
     expect(mockPrisma.settings.findUnique).not.toHaveBeenCalled()
   })
+
+  // Ruling R86: `fillMissingTopics` dulu memakai `Promise.all(items.map(...))` telanjang -- sebuah
+  // body dengan sampai 200 item tanpa topics berarti sampai 200 panggilan bersamaan ke daemon
+  // Ollama yang sama yang juga melayani giliran bot yang sedang berjalan.
+  it('R86: klasifikasi topik saat simpan paling banyak 3 panggilan bersamaan, hasil tetap berurutan', async () => {
+    let active = 0
+    let maxActive = 0
+    vi.mocked(classifyFactTopics).mockImplementation(async (question) => {
+      active += 1
+      maxActive = Math.max(maxActive, active)
+      // Macrotask boundary nyata (bukan fake timer) supaya panggilan-panggilan yang genuinely
+      // berjalan bersamaan benar-benar tumpang tindih dalam satu jendela waktu, tanpa bergantung
+      // pada berapa lama real-world classifyFactTopics sungguhan makan waktu.
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      active -= 1
+      return [`topic-${question}`] as never
+    })
+
+    const items = Array.from({ length: 7 }, (_, i) => ({ question: `Q${i}`, answer: `A${i}` }))
+    await saveKnowledgeDraft('ks_1', { body: { items }, reason: REASON }, actor)
+
+    expect(classifyFactTopics).toHaveBeenCalledTimes(7)
+    // Tidak pernah lebih dari 3 bersamaan -- kalau ini masih `Promise.all` telanjang, maxActive
+    // akan jadi 7 (semua 7 item dilempar bersamaan begitu Settings selesai dibaca).
+    expect(maxActive).toBe(3)
+
+    // Hasil tetap sejajar dengan urutan item asli (Q0..Q6), bukan urutan penyelesaian.
+    // Fixture beforeEach (revision()) berstatus DRAFT -- saveKnowledgeDraft menulis lewat
+    // `knowledgeRevision.update`, bukan `create`.
+    const body = mockPrisma.knowledgeRevision.update.mock.calls[0][0].data.body as {
+      items: Array<{ topics?: string[] }>
+    }
+    expect(body.items.map((item) => item.topics)).toEqual(
+      Array.from({ length: 7 }, (_, i) => [`topic-Q${i}`])
+    )
+  })
 })
 
 describe('publishKnowledgeRevision', () => {
