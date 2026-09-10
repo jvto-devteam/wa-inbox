@@ -126,8 +126,35 @@ export async function GET(req: Request) {
   }
 }
 
-/** knowledgeRefs is a free-form Json column; only an object or array can be counted. */
+/**
+ * knowledgeRefs is a free-form Json column, and its shape changed under this list (Ruling R84).
+ *
+ * Before Task 17 it only ever held `{ sourceTopic }` -- counting its JSON keys (1) was an honest
+ * stand-in for "how many facts grounded this reply" back when there was exactly one thing to
+ * count. Task 17 added `knowledge` (`DecisionKnowledge` -- catalogLines/managedLines/rejected/
+ * gateBypassed) alongside it, and the SAME key-count logic kept running: a `faq` row now reads 2
+ * (`sourceTopic` + `knowledge`, regardless of how many facts either one actually holds) while
+ * `clarify`/`handoff` rows (no `sourceTopic`) read 1 -- neither number describes fact lines.
+ *
+ * Fixed here rather than at the write site: `knowledgeRefs` is also read in full by the detail
+ * route and the Test Lab, so changing its shape would ripple further than this list's own count.
+ * When `knowledge` is present, this counts the fact lines actually sent to the model
+ * (`managedLines.length + catalogLines.length`) -- what an operator means by "how much knowledge
+ * did this answer use". An older row with no `knowledge` key falls back to the old key-count
+ * behaviour unchanged, so historical rows keep reading exactly as they always did.
+ *
+ * Every level is checked with `typeof`/`Array.isArray` rather than cast -- this is a Json column
+ * nothing here controls the shape of once it is in the database, so a malformed or partial value
+ * must count as 0 facts, never throw the list a 500.
+ */
 function countKnowledgeRefs(value: Prisma.JsonValue): number {
+  if (value !== null && typeof value === 'object' && !Array.isArray(value) && 'knowledge' in value) {
+    const knowledge: unknown = (value as Record<string, unknown>).knowledge
+    if (knowledge === null || typeof knowledge !== 'object' || Array.isArray(knowledge)) return 0
+    const managedLines: unknown = (knowledge as Record<string, unknown>).managedLines
+    const catalogLines: unknown = (knowledge as Record<string, unknown>).catalogLines
+    return (Array.isArray(managedLines) ? managedLines.length : 0) + (Array.isArray(catalogLines) ? catalogLines.length : 0)
+  }
   if (Array.isArray(value)) return value.length
   if (value !== null && typeof value === 'object') return Object.keys(value).length
   return 0

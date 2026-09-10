@@ -72,6 +72,74 @@ describe('GET /api/bot-control/decisions', () => {
     })
   })
 
+  // Ruling R84: `knowledgeRefs.knowledge` (Task 17) changed the shape this column describes --
+  // counting JSON keys made a `faq` row read 2 (`sourceTopic` + `knowledge`, whatever either
+  // holds) instead of how many facts actually grounded the reply.
+  describe('knowledgeRefsCount (Ruling R84)', () => {
+    it('counts managed + catalog fact lines for a new-shaped row (knowledgeRefs.knowledge present)', async () => {
+      mockPrisma.botDecisionRun.findMany.mockResolvedValue([
+        runRow({
+          knowledgeRefs: {
+            sourceTopic: 'payment',
+            knowledge: {
+              catalogLines: ['Every package includes private transport.'],
+              managedLines: [
+                { line: 'Berapa deposit? — 20% dari total.', source: 'Kebijakan Pembayaran (v3)' },
+                { line: 'ATV 1 jam: IDR 350000', source: 'FAQ Harga ATV (v2)' },
+              ],
+              rejected: [],
+              gateBypassed: false,
+            },
+          },
+        }),
+      ] as never)
+
+      const body = await (await GET(req())).json()
+      // 1 catalog line + 2 managed lines = 3 fact lines, NOT 2 JSON keys.
+      expect(body.items[0].knowledgeRefsCount).toBe(3)
+    })
+
+    it('falls back to the old key-count behaviour for an older row with no knowledge key', async () => {
+      mockPrisma.botDecisionRun.findMany.mockResolvedValue([
+        runRow({ knowledgeRefs: { sourceTopic: 'price' } }),
+      ] as never)
+
+      const body = await (await GET(req())).json()
+      expect(body.items[0].knowledgeRefsCount).toBe(1)
+    })
+
+    it('returns 0 for a null knowledgeRefs column', async () => {
+      mockPrisma.botDecisionRun.findMany.mockResolvedValue([runRow({ knowledgeRefs: null })] as never)
+
+      const body = await (await GET(req())).json()
+      expect(body.items[0].knowledgeRefsCount).toBe(0)
+    })
+
+    it('does not throw and counts 0 when knowledge is present but malformed (defensive, no blind cast)', async () => {
+      mockPrisma.botDecisionRun.findMany.mockResolvedValue([
+        runRow({ knowledgeRefs: { sourceTopic: 'price', knowledge: 'not an object' } }),
+      ] as never)
+
+      const res = await GET(req())
+      expect(res.status).toBe(200)
+      const body = await res.json()
+      expect(body.items[0].knowledgeRefsCount).toBe(0)
+    })
+
+    it('counts only the array that is actually present when the other is missing/invalid', async () => {
+      mockPrisma.botDecisionRun.findMany.mockResolvedValue([
+        runRow({
+          knowledgeRefs: {
+            knowledge: { catalogLines: ['A', 'B'], gateBypassed: false },
+          },
+        }),
+      ] as never)
+
+      const body = await (await GET(req())).json()
+      expect(body.items[0].knowledgeRefsCount).toBe(2)
+    })
+  })
+
   it('resolves contacts in ONE extra query, not one per row', async () => {
     // At 50 rows, a per-row lookup would be 50 round-trips for a decorative column.
     mockPrisma.botDecisionRun.findMany.mockResolvedValue([
