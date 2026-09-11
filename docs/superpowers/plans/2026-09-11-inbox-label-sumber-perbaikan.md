@@ -4016,7 +4016,7 @@ Urutan wajib: **cadangkan → `prisma migrate deploy` SEBELUM kode → build →
 
 Prasyarat: Task 10 hijau, branch sudah digabung ke `main` dan di-push ke `origin/main` (keputusan operator). Langkah 1–2 dijalankan dari checkout utama `/Users/macbook/Code/wa-inbox` (yang punya `.env`; `DATABASE_URL` menunjuk Postgres produksi di VPS — lihat CLAUDE.md §5).
 
-- [ ] **1. Cadangkan**
+- [x] **1. Cadangkan**
 
 Database (tabel yang disentuh migrasi):
 
@@ -4036,7 +4036,7 @@ Pohon kode di VPS (membawa suntingan lokal yang tidak ada di commit mana pun):
 ssh root@31.97.223.43 'cd /var/www/wa-inbox && tar czf /root/wa-inbox-predeploy-$(date +%Y%m%d-%H%M).tar.gz --exclude=node_modules --exclude=.next --exclude=.git . && ls -lh /root/wa-inbox-predeploy-*.tar.gz | tail -1'
 ```
 
-- [ ] **2. Terapkan migrasi (SEBELUM kode) dan verifikasi**
+- [x] **2. Terapkan migrasi (SEBELUM kode) dan verifikasi**
 
 ```bash
 cd /Users/macbook/Code/wa-inbox
@@ -4049,7 +4049,7 @@ echo 'SELECT "topicLabels" FROM "Message" LIMIT 1;' | npx prisma db execute --st
 
 DILARANG `npx prisma migrate dev`. Kolom aditif nullable tidak mengubah perilaku kode lama yang masih berjalan di VPS.
 
-- [ ] **3. Deploy kode dan build di VPS (Node 22)**
+- [x] **3. Deploy kode dan build di VPS (Node 22)**
 
 ```bash
 ssh root@31.97.223.43
@@ -4065,7 +4065,7 @@ npx prisma generate && npm run build
 
 `package.json` tidak berubah di plan ini, jadi `npm ci` tidak diperlukan. Jangan `git reset --hard`/`git clean` (gitignored `catalog/deployment-approval.json`, `.env`, `public/uploads/` harus tetap ada).
 
-- [ ] **4. Restart dan cek sehat**
+- [x] **4. Restart dan cek sehat**
 
 ```bash
 pm2 restart wa-inbox
@@ -4074,7 +4074,7 @@ curl -s -o /dev/null -w '%{http_code}\n' http://localhost:3015/login   # 200
 pm2 logs wa-inbox --lines 200 --nostream | grep -E 'classifyAndStoreTopicLabels|topic-labels' || echo "BELUM ADA GALAT LABEL"
 ```
 
-- [ ] **5. Smoke test di VPS — hanya sandbox Test Lab atau nomor whitelist `6282143403501`**
+- [x] **5. Smoke test di VPS — hanya sandbox Test Lab atau nomor whitelist `6282143403501`**
 
 1. Buka Inbox → percakapan sandbox (Test Lab, `isTest`). Kirim: `Berapa harga paket Ijen untuk 2 orang?`. Dalam beberapa detik, di bawah pesan masuk muncul chip (topik, intent) tanpa muat ulang. Pesan sandbox lama (sebelum rilis) menampilkan ikon "Cek topik"; klik satu → memuat → chip muncul.
 2. Pada balasan bot untuk pesan itu, klik ikon alasan (🧠): bagian **Topik**, **Sumber per paragraf** ("cocok dengan …" atau "Tidak ada paragraf yang cocok…"), dan **Verifikasi** tampil; balasan lama menampilkan "Tidak tercatat untuk balasan ini."
