@@ -28,20 +28,27 @@
  * same-titled source would be treated as "already seeded" and PUBLISHED by this script — either
  * publishing content the operator never asked to go live, or (if they had a v2 draft in
  * progress) pushing an unfinished edit live. Fixed: a title match is only ever treated as "ours"
- * when that source's FIRST EVER revision (version 1, immutable evidence of who created it) has
- * `changeReason === SEED_REASON` — a string this script mints and nothing else does. Anything
- * else with the same title (an operator's own source, or a source this script created that has
- * since been ARCHIVED) is reported as `blocked`, never created over, never used, and never
- * published. `createdBy` is surfaced in the blocked reason as extra diagnostic context for the
- * operator, but is NOT itself the gate — `--publish` legitimately runs as a later, separate
- * invocation (Ruling R80's two-step deploy order) that may be run by a different admin account
- * than whichever one ran the create step, and gating on `createdBy === actor.id` would break
- * that legitimate case.
+ * when that source's FIRST EVER revision (version 1) has `changeReason === SEED_REASON` — a
+ * string this script mints and nothing else does.
  *
- * Even a source THIS script created can stop being publishable: if its latest revision was
- * edited by an operator since (a genuine v2 draft with the operator's own `changeReason`, not
- * `SEED_REASON`), or is already `PUBLISHED`, or the source itself got `ARCHIVED` — `--publish`
- * reports all of these as `publishSkipped`/`blocked` with a reason, never overwrites them.
+ * Fix round 2 (R100), Minor 2: version 1's `changeReason` is NOT immutable evidence, and an
+ * earlier version of this comment (and the code's blocked-reason message) wrongly called it
+ * that. `saveKnowledgeDraft` (knowledge-workflow.ts) rewrites a DRAFT revision IN PLACE —
+ * `changeReason` and `createdBy` included — for as long as that revision has never been
+ * published; only once it IS published does a later edit create a genuinely new, separate
+ * revision (version 2+), leaving version 1 untouched forever after. So an operator editing this
+ * script's own still-DRAFT v1 (before anyone ever published it) rewrites the very row this check
+ * reads, and `firstRevisionChangeReason !== SEED_REASON` becomes true for BOTH that case and a
+ * genuinely unrelated operator source — this script cannot tell the two apart from that signal
+ * alone. The blocked reason is worded to say only what is actually known (the current draft was
+ * not written by this script's own run) rather than falsely asserting a specific origin story;
+ * `createdBy` is still surfaced as diagnostic context, not as a claim of non-origin.
+ *
+ * Even a source THIS script genuinely did create (or does now, this run) can stop being
+ * publishable: if its latest revision was edited since (a `changeReason` no longer
+ * `SEED_REASON`, whether that is a deliberate v2 or an in-place v1 edit as above), or is already
+ * `PUBLISHED`, or the source itself got `ARCHIVED` — `--publish` reports all of these as
+ * `publishSkipped`/`blocked` with a reason, never overwrites them.
  *
  * --- Idempotent by title (for sources this script itself created) ---
  *
@@ -71,12 +78,21 @@
  * since an accurate dry-run plan depends on them; only `createManagedKnowledge`/
  * `publishKnowledgeRevision` — the two functions that write — are skipped.
  *
- * --- Do NOT run this against production ---
+ * --- Operator-only, at Gerbang G5 -- never run by an agent ---
  *
- * This writes real `KnowledgeSource`/`KnowledgeRevision` rows read by the live bot. It is meant
- * to be run once, deliberately, by the operator (or whoever is executing the documented deploy
- * checklist) as part of Task 11's Gerbang G5 — never by an agent, and never against a database
- * this repo's `DATABASE_URL` does not obviously point at on purpose.
+ * This writes real `KnowledgeSource`/`KnowledgeRevision` rows read by the live bot, in
+ * production, on purpose: Task 11's Gerbang G5 is exactly the deliberate operator action of
+ * seeding and publishing this content against the real database, following the documented
+ * Checklist Deploy order (draft — `verify:revisions` — deploy — `--publish` —
+ * `verify:revisions`). That deliberateness is the point, not something to avoid: this file's
+ * whole header explains why a script, run by a human at that specific step, is the honest way
+ * to make the write, not a shortcut around it.
+ *
+ * Fix round 2 (R100), Minor 7: earlier wording here said "Do NOT run this against production",
+ * which read as contradicting G5 itself -- G5 IS running this against production, deliberately.
+ * What must never happen is an AGENT running it, at any point, against any database — that
+ * restriction is unconditional (CLAUDE.md, this task's own instructions) and has nothing to do
+ * with which environment the operator eventually points it at.
  *
  * Usage:
  *   npm run seed:faq-knowledge -- --actor <accountId> [--dry-run]     # write DRAFTs
@@ -143,10 +159,23 @@ export type ManualSourceLookup = {
   /** The SOURCE's own lifecycle status ('DRAFT' | 'PUBLISHED' | 'ARCHIVED') — see schema.prisma. */
   status: string
   createdBy: string | null
-  /** `changeReason` of the source's FIRST EVER revision (version 1) — immutable evidence of origin. */
+  /**
+   * `changeReason` of the source's FIRST EVER revision (version 1) — a strong signal of origin,
+   * NOT immutable proof (Fix round 2, R100, Minor 2): `saveKnowledgeDraft` rewrites this in
+   * place, `changeReason` included, for as long as version 1 has never been published.
+   */
   firstRevisionChangeReason: string | null
   /** The revision that would be published next, or null if the source somehow has none. */
   latestRevision: { status: string; changeReason: string | null } | null
+  /**
+   * How many MANUAL sources in total share this exact title (Fix round 2, R100, Minor 3) — 1 in
+   * the normal case. Titles are not unique (see the "Identifying 'ours'" section above), so more
+   * than one is possible; this lookup always resolves to ONE of them deterministically (the
+   * oldest, by `createdAt` — see `findManualSourceByTitle`'s real implementation in `main()`),
+   * but a count above 1 is worth surfacing to the operator explicitly rather than silently acting
+   * on "whichever one happened to sort first".
+   */
+  matchCount: number
 }
 
 /**
@@ -170,10 +199,16 @@ export type SeedResult = {
   /** Idempotent skip: a source this script itself created earlier already exists. Safe, expected on a rerun. */
   skipped: string[]
   /**
-   * A same-titled MANUAL source exists that is NOT ours (an operator's own source), or IS ours
-   * but has since been archived — never created over, never used, never published (Important 1 / Minor 5b).
+   * A same-titled MANUAL source exists whose current draft this script did not write (a
+   * genuinely unrelated operator source, OR this script's own version-1 draft edited by an
+   * operator before it was ever published — Fix round 2, R100, Minor 2: these two are NOT always
+   * distinguishable, see `ManualSourceLookup.firstRevisionChangeReason`'s own header), or IS ours
+   * but has since been archived — never created over, never used, never published
+   * (Important 1 / Minor 5b).
    */
   blocked: Array<{ title: string; reason: string }>
+  /** More than one MANUAL source shares a seed title (Fix round 2, R100, Minor 3) — reported, not silently resolved. */
+  duplicateTitles: Array<{ title: string; count: number }>
   published: string[]
   publishSkipped: Array<{ title: string; reason: string }>
 }
@@ -221,7 +256,7 @@ export async function runSeed(entries: FaqSeedEntry[], options: SeedOptions, dep
   }
   const actor: Actor = { id: account.id, name: account.name }
 
-  const result: SeedResult = { created: [], skipped: [], blocked: [], published: [], publishSkipped: [] }
+  const result: SeedResult = { created: [], skipped: [], blocked: [], duplicateTitles: [], published: [], publishSkipped: [] }
   // sourceId for every entry this run recognises as its own (just created, or already existing
   // and genuinely seed-created) — the publish phase below needs this even for entries this run
   // itself skipped creating. A `blocked` entry never gets one, by construction.
@@ -231,8 +266,27 @@ export async function runSeed(entries: FaqSeedEntry[], options: SeedOptions, dep
   const publishableByTitle = new Map<string, string | null>()
 
   for (const entry of entries) {
-    const existing = await deps.findManualSourceByTitle(entry.title)
+    // Fix round 2 (R100), Minor 4 (the "5c gap"): a lookup failure here used to propagate
+    // unwrapped all the way to the generic top-level `console.error('Gagal:', ...)` handler,
+    // which prints no summary of what THIS run had already accomplished before the failure --
+    // the exact gap Minor 5c's `SeedPartialFailureError` exists to close for a create failure.
+    // Wrapped the same way, so a lookup failure gets the same "what did we already do" report.
+    let existing: ManualSourceLookup | null
+    try {
+      existing = await deps.findManualSourceByTitle(entry.title)
+    } catch (error) {
+      throw new SeedPartialFailureError(
+        `Gagal memeriksa sumber MANUAL yang sudah ada untuk "${entry.title}": ${error instanceof Error ? error.message : String(error)}`,
+        result
+      )
+    }
     if (existing) {
+      // Fix round 2 (R100), Minor 3: reported explicitly rather than silently resolved --
+      // `existing` is deterministically the OLDEST match (see `findManualSourceByTitle`'s real
+      // implementation in `main()`), but an operator should know there was a choice to make.
+      if (existing.matchCount > 1) {
+        result.duplicateTitles.push({ title: entry.title, count: existing.matchCount })
+      }
       if (existing.status === 'ARCHIVED') {
         result.blocked.push({
           title: entry.title,
@@ -241,9 +295,18 @@ export async function runSeed(entries: FaqSeedEntry[], options: SeedOptions, dep
         continue
       }
       if (existing.firstRevisionChangeReason !== SEED_REASON) {
+        // Fix round 2 (R100), Minor 2: does NOT claim "BUKAN dibuat oleh seed ini" -- that
+        // would be asserting a specific origin this script cannot actually prove (see
+        // `ManualSourceLookup.firstRevisionChangeReason`'s own header: rewriting version 1's
+        // `changeReason` in place, by editing a still-DRAFT source THIS script created, produces
+        // the exact same signal as a genuinely unrelated operator source). States only what is
+        // actually known -- the current draft does not match what this script would have
+        // written -- using the operator-edit phrasing as the LEADING, most likely explanation
+        // (an admin deliberately runs this script against titles it owns; a coincidental
+        // unrelated same-titled source is the unlikely case, not the default assumption).
         result.blocked.push({
           title: entry.title,
-          reason: `Sumber MANUAL berjudul sama sudah ada dan BUKAN dibuat oleh seed ini (dibuat oleh ${existing.createdBy ?? 'tidak diketahui'}) -- dilewati, isinya tidak pernah dipakai atau diterbitkan oleh skrip ini.`,
+          reason: `Sumber MANUAL berjudul sama sudah ada, dibuat oleh akun ${existing.createdBy ?? 'tidak diketahui'} -- draft seed sudah diedit operator (atau ini sumber operator sendiri yang kebetulan berjudul sama) -- tidak diterbitkan oleh skrip ini.`,
         })
         continue
       }
@@ -325,8 +388,12 @@ export function printPlan(result: SeedResult, options: SeedOptions): void {
   console.log(`${prefix}Dibuat (DRAFT): ${result.created.length ? result.created.join(', ') : '(tidak ada)'}`)
   console.log(`${prefix}Dilewati (sudah ada, milik seed ini): ${result.skipped.length ? result.skipped.join(', ') : '(tidak ada)'}`)
   if (result.blocked.length > 0) {
-    console.log(`${prefix}Diblokir (judul sama, bukan milik seed ini atau sudah diarsipkan):`)
+    console.log(`${prefix}Diblokir (judul sama, draft bukan milik run ini, atau sudah diarsipkan):`)
     for (const { title, reason } of result.blocked) console.log(`  - ${title}: ${reason}`)
+  }
+  if (result.duplicateTitles.length > 0) {
+    console.log(`${prefix}Judul dengan LEBIH DARI SATU sumber MANUAL (yang tertua yang dipakai):`)
+    for (const { title, count } of result.duplicateTitles) console.log(`  - ${title}: ${count} sumber`)
   }
   if (options.publish) {
     console.log(`${prefix}Diterbitkan: ${result.published.length ? result.published.join(', ') : '(tidak ada)'}`)
@@ -345,6 +412,9 @@ export function printPartialFailure(error: SeedPartialFailureError): void {
   )
   if (error.partial.skipped.length > 0) console.log(`Sudah dilewati (idempoten) sebelum gagal: ${error.partial.skipped.join(', ')}`)
   if (error.partial.blocked.length > 0) console.log(`Sudah diblokir sebelum gagal: ${error.partial.blocked.map((b) => b.title).join(', ')}`)
+  if (error.partial.duplicateTitles.length > 0) {
+    console.log(`Judul dengan lebih dari satu sumber ditemukan sebelum gagal: ${error.partial.duplicateTitles.map((d) => d.title).join(', ')}`)
+  }
 }
 
 async function main(): Promise<void> {
@@ -362,8 +432,15 @@ async function main(): Promise<void> {
   const deps: SeedDeps = {
     findAccount: (id) => prisma.account.findUnique({ where: { id }, select: { id: true, name: true, role: true } }),
     findManualSourceByTitle: async (title) => {
-      const source = await prisma.knowledgeSource.findFirst({
+      // Fix round 2 (R100), Minor 3: `findFirst` with no `orderBy` has undefined (and in
+      // practice, not necessarily stable) ordering -- which one of several same-titled sources
+      // got picked, and therefore what the whole run's report said, could differ between
+      // otherwise-identical runs. `findMany` + `orderBy: createdAt: 'asc'` makes "the oldest one"
+      // a deterministic, repeatable choice, and surfaces the count so `runSeed` can report a
+      // duplicate explicitly instead of silently resolving it.
+      const sources = await prisma.knowledgeSource.findMany({
         where: { title, type: 'MANUAL' },
+        orderBy: { createdAt: 'asc' },
         select: {
           id: true,
           status: true,
@@ -374,7 +451,8 @@ async function main(): Promise<void> {
           },
         },
       })
-      if (!source) return null
+      if (sources.length === 0) return null
+      const source = sources[0]
       const revisions = source.revisions
       return {
         id: source.id,
@@ -382,6 +460,7 @@ async function main(): Promise<void> {
         createdBy: source.createdBy,
         firstRevisionChangeReason: revisions[0]?.changeReason ?? null,
         latestRevision: revisions.length > 0 ? revisions[revisions.length - 1] : null,
+        matchCount: sources.length,
       }
     },
     createManagedKnowledge,

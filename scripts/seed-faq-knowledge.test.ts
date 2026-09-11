@@ -15,6 +15,7 @@ import {
   SeedPartialFailureError,
   type SeedDeps,
   type SeedOptions,
+  type SeedResult,
   type ManualSourceLookup,
 } from './seed-faq-knowledge'
 import type { FaqSeedEntry } from '@/lib/bot-control/faq-seed-data'
@@ -59,8 +60,13 @@ function seededDraftLookup(overrides: Partial<ManualSourceLookup> = {}): ManualS
     createdBy: ACTOR.id,
     firstRevisionChangeReason: SEED_REASON,
     latestRevision: { status: 'DRAFT', changeReason: SEED_REASON },
+    matchCount: 1,
     ...overrides,
   }
+}
+
+function emptySeedResult(overrides: Partial<SeedResult> = {}): SeedResult {
+  return { created: [], skipped: [], blocked: [], duplicateTitles: [], published: [], publishSkipped: [], ...overrides }
 }
 
 describe('parseArgs', () => {
@@ -152,7 +158,7 @@ describe('runSeed — default mode (write DRAFT)', () => {
 // Fix round 1 (R99), Important 1: a title match alone must never be treated as "already
 // seeded" -- only a source whose FIRST revision carries this script's own SEED_REASON is ours.
 describe('runSeed — conflict detection (Important 1)', () => {
-  it('an operator MANUAL source with the same title is reported as blocked, never created over, never published', async () => {
+  it('a same-titled MANUAL source whose current draft this script did not write is reported as blocked, never created over, never published', async () => {
     const deps = fakeDeps({
       findManualSourceByTitle: vi.fn(async (title: string) =>
         title === 'GENERAL'
@@ -162,6 +168,7 @@ describe('runSeed — conflict detection (Important 1)', () => {
               createdBy: 'acc_operator',
               firstRevisionChangeReason: 'Menulis FAQ deposit dari operator langsung.',
               latestRevision: { status: 'DRAFT', changeReason: 'Menulis FAQ deposit dari operator langsung.' },
+              matchCount: 1,
             }
           : null
       ),
@@ -171,10 +178,13 @@ describe('runSeed — conflict detection (Important 1)', () => {
 
     expect(deps.createManagedKnowledge).not.toHaveBeenCalledWith(expect.objectContaining({ title: 'GENERAL' }), expect.anything())
     expect(deps.publishKnowledgeRevision).not.toHaveBeenCalledWith('src_operator', expect.anything(), expect.anything())
+    // Fix round 2 (R100), Minor 2: must NOT claim "BUKAN dibuat oleh seed ini" -- this script
+    // cannot actually prove that (see ManualSourceLookup.firstRevisionChangeReason's header).
+    expect(result.blocked[0].reason).not.toContain('BUKAN dibuat oleh seed ini')
     expect(result.blocked).toEqual([
       {
         title: 'GENERAL',
-        reason: expect.stringContaining('BUKAN dibuat oleh seed ini'),
+        reason: expect.stringContaining('draft seed sudah diedit operator'),
       },
     ])
     expect(result.created).toEqual(['PAYMENT'])
@@ -186,12 +196,43 @@ describe('runSeed — conflict detection (Important 1)', () => {
     const deps = fakeDeps({
       findManualSourceByTitle: vi.fn(async (title: string) =>
         title === 'GENERAL'
-          ? { id: 'src_operator', status: 'DRAFT', createdBy: 'acc_jane', firstRevisionChangeReason: 'x', latestRevision: null }
+          ? { id: 'src_operator', status: 'DRAFT', createdBy: 'acc_jane', firstRevisionChangeReason: 'x', latestRevision: null, matchCount: 1 }
           : null
       ),
     })
     const result = await runSeed(ENTRIES, options(), deps)
     expect(result.blocked[0].reason).toContain('acc_jane')
+  })
+
+  // Fix round 2 (R100), Minor 2: the specific path the review named -- this script's OWN v1
+  // draft (still unpublished) gets edited by an operator in place (`saveKnowledgeDraft` rewrites
+  // a DRAFT revision's `changeReason` in place; see the type's own header). `createdBy` on the
+  // SOURCE is untouched by that edit (only the REVISION's fields change), so it still names
+  // whichever account originally ran the seed -- which is exactly why the blocked message must
+  // not claim "BUKAN dibuat oleh seed ini (dibuat oleh <that account>)": it WAS created by a
+  // seed run, just no longer holds the seed's own draft content.
+  it("this script's own v1 draft, edited by an operator before ever being published, is reported as an edited-draft block -- not a false 'not created by seed' claim", async () => {
+    const deps = fakeDeps({
+      findManualSourceByTitle: vi.fn(async (title: string) =>
+        title === 'GENERAL'
+          ? {
+              id: 'src_seeded',
+              status: 'DRAFT',
+              createdBy: ACTOR.id, // the seed's OWN actor -- this source genuinely originated here.
+              firstRevisionChangeReason: 'Draft operator: koreksi angka deposit.', // v1 rewritten in place.
+              latestRevision: { status: 'DRAFT', changeReason: 'Draft operator: koreksi angka deposit.' },
+              matchCount: 1,
+            }
+          : null
+      ),
+    })
+
+    const result = await runSeed(ENTRIES, options({ publish: true }), deps)
+
+    expect(result.blocked[0].reason).toContain('draft seed sudah diedit operator')
+    expect(result.blocked[0].reason).not.toContain('BUKAN dibuat oleh seed ini')
+    expect(deps.publishKnowledgeRevision).not.toHaveBeenCalledWith('src_seeded', expect.anything(), expect.anything())
+    expect(result.published).not.toContain('GENERAL')
   })
 
   it('an operator v2 draft written on top of a SEED-created source is not published, but is not a create-time conflict either', async () => {
@@ -348,7 +389,7 @@ describe('runSeed — --dry-run', () => {
     const deps = fakeDeps({
       findManualSourceByTitle: vi.fn(async (title: string) =>
         title === 'GENERAL'
-          ? { id: 'src_operator', status: 'DRAFT', createdBy: 'acc_jane', firstRevisionChangeReason: 'x', latestRevision: null }
+          ? { id: 'src_operator', status: 'DRAFT', createdBy: 'acc_jane', firstRevisionChangeReason: 'x', latestRevision: null, matchCount: 1 }
           : null
       ),
     })
@@ -378,16 +419,32 @@ describe('runSeed — partial failure (Minor 5c)', () => {
     expect((error as Error).message).toContain('db kicked us out')
   })
 
+  // Fix round 2 (R100), Minor 4 (the "5c gap"): a `findManualSourceByTitle` failure used to
+  // propagate unwrapped to the generic top-level handler, which prints no summary of what this
+  // run had already accomplished -- unlike a `createManagedKnowledge` failure, which Minor 5c
+  // already handled. Same fix, same class of bug, different call site.
+  it('a findManualSourceByTitle lookup failure also rejects with SeedPartialFailureError, carrying what was already created', async () => {
+    const deps = fakeDeps({
+      findManualSourceByTitle: vi.fn(async (title: string) => {
+        if (title === 'PAYMENT') throw new Error('connection reset')
+        return null
+      }),
+    })
+
+    const error = await runSeed(ENTRIES, options(), deps).catch((e) => e)
+
+    expect(error).toBeInstanceOf(SeedPartialFailureError)
+    expect((error as InstanceType<typeof SeedPartialFailureError>).partial.created).toEqual(['GENERAL'])
+    expect((error as Error).message).toContain('PAYMENT')
+    expect((error as Error).message).toContain('connection reset')
+    // The failure happened at the LOOKUP, before any create attempt for this title.
+    expect(deps.createManagedKnowledge).not.toHaveBeenCalledWith(expect.objectContaining({ title: 'PAYMENT' }), expect.anything())
+  })
+
   it('printPartialFailure reports the message and what was already created', () => {
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
-    const error = new SeedPartialFailureError('Gagal membuat "PAYMENT": db kicked us out', {
-      created: ['GENERAL'],
-      skipped: [],
-      blocked: [],
-      published: [],
-      publishSkipped: [],
-    })
+    const error = new SeedPartialFailureError('Gagal membuat "PAYMENT": db kicked us out', emptySeedResult({ created: ['GENERAL'] }))
 
     printPartialFailure(error)
 
@@ -398,15 +455,46 @@ describe('runSeed — partial failure (Minor 5c)', () => {
   })
 })
 
+// Fix round 2 (R100), Minor 3: several MANUAL sources sharing a seed title is reported
+// explicitly, not silently resolved by picking whichever one the lookup happened to return.
+describe('runSeed — duplicate titles (Minor 3)', () => {
+  it('reports a title with matchCount > 1 in result.duplicateTitles, while still acting on the one lookup returned', async () => {
+    const deps = fakeDeps({
+      findManualSourceByTitle: vi.fn(async (title: string) => (title === 'GENERAL' ? seededDraftLookup({ matchCount: 3 }) : null)),
+    })
+
+    const result = await runSeed(ENTRIES, options(), deps)
+
+    expect(result.duplicateTitles).toEqual([{ title: 'GENERAL', count: 3 }])
+    expect(result.skipped).toEqual(['GENERAL']) // still resolved deterministically -- just also reported.
+  })
+
+  it('reports nothing when every title matches at most one source', async () => {
+    const deps = fakeDeps({
+      findManualSourceByTitle: vi.fn(async (title: string) => (title === 'GENERAL' ? seededDraftLookup() : null)),
+    })
+
+    const result = await runSeed(ENTRIES, options(), deps)
+
+    expect(result.duplicateTitles).toEqual([])
+  })
+})
+
 describe('printPlan', () => {
   it('lists blocked entries with their reasons', () => {
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
-    printPlan(
-      { created: [], skipped: [], blocked: [{ title: 'GENERAL', reason: 'sudah diarsipkan' }], published: [], publishSkipped: [] },
-      options()
-    )
+    printPlan(emptySeedResult({ blocked: [{ title: 'GENERAL', reason: 'sudah diarsipkan' }] }), options())
     expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('Diblokir'))
     expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('GENERAL: sudah diarsipkan'))
+    logSpy.mockRestore()
+  })
+
+  // Fix round 2 (R100), Minor 3: a duplicate title is reported explicitly, not silently resolved.
+  it('lists titles with more than one matching MANUAL source', () => {
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
+    printPlan(emptySeedResult({ duplicateTitles: [{ title: 'GENERAL', count: 2 }] }), options())
+    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('LEBIH DARI SATU'))
+    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('GENERAL: 2 sumber'))
     logSpy.mockRestore()
   })
 })
