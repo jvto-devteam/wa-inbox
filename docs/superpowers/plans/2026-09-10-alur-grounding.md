@@ -56,6 +56,7 @@ Empat hal yang sebelumnya saya catat sebagai "tertunda", ternyata sudah punya bu
 
 - **G2 — semua benar.** Ke-49 baris `GENERAL_FAQ_FALLBACK` (termasuk 12 yang tidak terkonfirmasi katalog) dinyatakan benar. Isi seed Task 11 = teks konstanta verbatim, tanpa koreksi angka.
 - **G3 — tidak ada aturan khusus soal koper (R93).** `luggage_rule` tetap `null` di 16 paket: baris "Luggage allowance" tidak muncul dan bot tidak mengarang aturan. Menulis kalimat seperti "no luggage restrictions" ke katalog adalah pernyataan ke pelanggan yang belum dirumuskan operator — ditanyakan terpisah, bukan diputuskan di sini.
+- **Jawaban lanjutan operator (3a, 4a, 5b, 6a, 7b):** Task 21 tetap dibatalkan · 8 string trace "lokal" dibuat akurat, label diturunkan dari tag model (R96) · merge + push sekaligus SESUDAH Task 11 · entri `scripts` di package.json termasuk rencana, pustaka baru butuh izin (seed mendapat `npm run seed:faq-knowledge`, R97) · bot tidak menyebut apa pun soal koper — Task 19 selesai tanpa perubahan data.
 
 ### Keputusan operator 2026-09-10: `npm run eval` tidak dieksekusi dulu (Ruling R52)
 
@@ -2089,7 +2090,7 @@ git commit -m "feat(eval): ubah keputusan yang ditandai jadi kandidat golden cas
 
 ### Task 21: Topik tambahan untuk pesan yang menanyakan lebih dari satu hal (Ruling R65)
 
-> **Status 2026-09-10 (Ruling R76): gerbang ukur TIDAK LOLOS — commit fefbe22 dibatalkan dengan revert b75bc4f.** Kesepakatan topik utama prompt baru 93/100; kontrol prompt lama pada 100 pesan yang sama 96/100. Empat perubahan sama di keduanya (noise model); tiga hanya di prompt baru (general→greeting ×2, route_endpoint→booking ×1). Manfaat terukur: 1 dari 6 kesalahan ketat berlabel tertutup. Menunggu keputusan operator. Reviewer mencatat keempat contoh lama di prompt ikut berubah (`"also": []` ditambahkan) — kandidat penyebab bila dicoba lagi.
+> **Status 2026-09-10 (Ruling R76): gerbang ukur TIDAK LOLOS — commit fefbe22 dibatalkan dengan revert b75bc4f.** Kesepakatan topik utama prompt baru 93/100; kontrol prompt lama pada 100 pesan yang sama 96/100. Empat perubahan sama di keduanya (noise model); tiga hanya di prompt baru (general→greeting ×2, route_endpoint→booking ×1). Manfaat terukur: 1 dari 6 kesalahan ketat berlabel tertutup. Keputusan operator (3a): tetap dibatalkan; dikerjakan ulang hanya bila data panel cluster Task 16 sesudah deploy menunjukkan pesan multi-topik sering gagal. Reviewer mencatat keempat contoh lama di prompt ikut berubah (`"also": []` ditambahkan) — kandidat penyebab bila dicoba lagi.
 
 **Kenapa.** Pengukuran G1: 5 dari 30 pesan berlabel punya topik sah kedua, dan classifier memilih salah satunya. Sejak R56, gerbang topik spesifik mengeluarkan entri bertopik lain — jadi "berapa deposit dan bisa drop off di Malang?" kehilangan fakta salah satu topik (kecuali katalog kosong dan jaring R41 berjalan).
 
@@ -2119,7 +2120,7 @@ git commit -m "feat(eval): ubah keputusan yang ditandai jadi kandidat golden cas
 
 ### Task 19 — 🛑 GERBANG G3: isi `luggage_rule`
 
-> **Status 2026-09-11 (R93):** operator menyatakan tidak ada aturan khusus soal koper. `luggage_rule` tetap `null` — tidak ada yang ditulis. Menunggu keputusan operator apakah bot boleh menyatakan secara eksplisit "tidak ada aturan khusus soal koper".
+> **Status 2026-09-11 (R93):** operator menyatakan tidak ada aturan khusus soal koper. `luggage_rule` tetap `null` — tidak ada yang ditulis. Keputusan operator (7b): TIDAK — bot tidak menyebut apa pun soal koper. **Task 19 selesai tanpa perubahan data.**
 
 **Files:**
 - Modify: `catalog/vehicle-and-luggage-rules.json`
