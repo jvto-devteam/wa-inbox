@@ -2149,6 +2149,12 @@ git commit -m "feat(eval): ubah keputusan yang ditandai jadi kandidat golden cas
 
 **Commit:** berkas satu per satu (R34); pesan `feat(bot): pesan multi-topik ditangani lewat klasifikasi topik terpisah`.
 
+> **2026-09-11 — hasil & ronde perbaikan 1.** Gerbang ukur butir 3 di atas TIDAK LOLOS (ketat 25/30, berlebih 40%) dan terbukti salah rancang: plafon metrik ketat 27/30 < ambang 28 (3 baris `label_primer=general`, padahal `general` dibuang dari topik tambahan by design dan topik utama dibekukan), dan `label_diterima` G1 melabeli topik UTAMA yang diterima — keempat topik "berlebih" tertulis harfiah di pesannya (`rescore_t22.ts`). Review opus menemukan jalur tanpa-destinasi membuang topik tambahan diam-diam sementara trace mengklaim digabungkan.
+> - **R102:** cabang tanpa-destinasi juga dimasuki bila salah satu topik tambahan destination-independent; trace "terdeteksi" dipisah dari trace "digabungkan" (yang terakhir hanya ditulis bila penggabungan benar-benar mencapai prompt).
+> - **R103:** `MAX_TOPICS` 4 → 6 (angka 4 berasal dari plan, bukan pilihan operator; bukti produksi: permintaan penawaran 6 topik kehilangan payment dan cancellation). Gabungan terburuk (utama + 6) 4.959 karakter.
+> - **R104:** prompt multi-topik menyalin disambiguasi classifier utama (transfer perjalanan ≠ payment, blue flames, daftar destinasi) + satu contoh topik-sebagai-konteks.
+> - **R105 — gerbang pengganti, dikunci sebelum label buta dan kode perbaikan ada** (`compare_t22b.ts`): contoh operator lengkap; G1 longgar ≥ 29/30; label buta semua-topik (`label-semua-topik.tsv`, dilabel tanpa melihat keluaran classifier) recall ≥ 90% dan topik tambahan berlebih ≤ 20%. Hasil di 2c4ee3a: lengkap, 30/30, 20/20 = 100%, 2/11 = 18,2% — LOLOS. Deploy atas gerbang pengganti menunggu persetujuan operator.
+
 ---
 
 ## FASE 6 — Isi (butuh fakta dari JVTO)
