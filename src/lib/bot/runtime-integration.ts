@@ -286,7 +286,17 @@ type ItemMatch = {
 function evaluateItem(
   item: ManagedKnowledgeEntry['items'][number],
   asked: Set<string>,
-  topic: ResolverTopic | null
+  topic: ResolverTopic | null,
+  // Task 22 (Ruling R101): topik lain yang classifyAllTopics JUGA menyatakan dari pesan yang
+  // sama (multi-topic-classifier.ts, panggilan LLM terpisah dari classifyTopicViaLLM -- lihat
+  // file itu untuk alasan panggilan terpisah). Dibaca HANYA di Lapis 1 di bawah: topik utama
+  // ATAU salah satu `alsoTopics` sudah cukup meloloskan entri -- item yang lolos lewat
+  // also-topic dihitung `admittedByTopic` sama seperti lewat topik utama, jadi ia ikut
+  // memenangkan plafon R63 atas item yang cuma lolos lewat overlap kata. Tidak berpengaruh
+  // pada giliran `general`/`null` (R30 tidak berubah, `specificTopic` di bawah tetap false
+  // untuk keduanya) atau jaring R41 (topic dipaksa `null` di sana, jadi cabang ini tidak
+  // pernah dievaluasi -- lihat managedFactsFor's `collect(managed, asked, null, [])`).
+  alsoTopics: readonly ResolverTopic[]
 ): ItemMatch {
   const specificTopic = topic !== null && topic !== 'general'
   const candidate = tokens(`${item.question} ${(item.tags ?? []).join(' ')}`)
@@ -304,7 +314,8 @@ function evaluateItem(
   // `topics` KOSONG jatuh ke perilaku sebelum field ini ada (baris Lapis 2 di bawah). Itu
   // yang membuat migrasi bisa bertahap dan nol revisi lama rusak.
   if (specificTopic && item.topics?.length) {
-    const admitted = item.topics.includes(topic)
+    const itemTopics = item.topics
+    const admitted = itemTopics.includes(topic) || alsoTopics.some((also) => itemTopics.includes(also))
     return {
       admitted,
       admittedByTopic: admitted,
@@ -351,7 +362,8 @@ function evaluateItem(
 function collect(
   managed: ManagedKnowledge,
   asked: Set<string>,
-  topic: ResolverTopic | null
+  topic: ResolverTopic | null,
+  alsoTopics: readonly ResolverTopic[]
 ): {
   lines: string[]
   lineSources: string[]
@@ -377,7 +389,7 @@ function collect(
   const rejected: Array<{ sourceKey: string; itemQuestion: string; reason: string }> = []
   managed.entries.forEach((entry, entryIndex) => {
     entry.items.forEach((item, itemIndex) => {
-      const result = evaluateItem(item, asked, topic)
+      const result = evaluateItem(item, asked, topic, alsoTopics)
       if (result.admitted) {
         candidates.push({ entryIndex, itemIndex, admittedByTopic: result.admittedByTopic, overlapScore: result.overlapScore })
       } else if (result.gateRejectedWithOverlap) {
@@ -478,7 +490,12 @@ function collect(
 export async function managedFactsFor(
   message: string,
   topic: ResolverTopic | null,
-  hasCatalogFacts = false
+  hasCatalogFacts = false,
+  // Task 22 (Ruling R101): topik tambahan yang classifyAllTopics JUGA menyatakan dari pesan
+  // yang sama -- lihat evaluateItem's own header untuk bagaimana ini dipakai di gerbang
+  // Lapis 1. Tidak berefek pada giliran `general`/`null` (R30 tidak berubah) atau jaring R41
+  // (topic dipaksa `null` di sana, jadi gerbang spesifik tidak pernah dievaluasi).
+  alsoTopics: readonly ResolverTopic[] = []
 ): Promise<ManagedFacts> {
   let managed
   try {
@@ -506,7 +523,7 @@ export async function managedFactsFor(
   // entri semacam itu wajar-wajar saja saat `asked` kosong, tanpa perlu jalan pintas di sini.
   const asked = tokens(message)
 
-  const gated = collect(managed, asked, topic)
+  const gated = collect(managed, asked, topic, alsoTopics)
   if (gated.lines.length > 0) return { ...gated, gateBypassed: false, degraded: false }
 
   // Gerbang menghasilkan nol baris. Jaring (retry tanpa gerbang) HANYA berjalan kalau giliran
@@ -519,7 +536,9 @@ export async function managedFactsFor(
   // meleset dan fakta yang benar baru saja dibuang (tidak wajar). Kita tidak bisa
   // membedakannya di sini, jadi kita pilih sisi yang lebih murah salahnya -- jawab dengan
   // bahan seadanya, lalu tandai supaya bisa dihitung.
-  const ungated = collect(managed, asked, null)
+  // `alsoTopics` tidak relevan di sini -- `topic` dipaksa `null`, jadi cabang topik-spesifik
+  // `evaluateItem` (satu-satunya tempat `alsoTopics` dibaca) tidak pernah berjalan.
+  const ungated = collect(managed, asked, null, [])
   const bypassed = ungated.lines.length > 0
   // Ruling R54: setiap item di `gated.rejected` punya overlapScore > 0 by construction (lihat
   // gateRejectedWithOverlap), dan admisi Lapis 2 di sini (`topic: null`) adalah PERSIS

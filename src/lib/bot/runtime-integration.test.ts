@@ -302,6 +302,85 @@ describe('managedFactsFor', () => {
     })
   })
 
+  // Task 22 (Ruling R101): sebuah pesan bisa menanyakan lebih dari satu topik sekaligus
+  // (classifyAllTopics, panggilan LLM terpisah dari classifyTopicViaLLM -- lihat
+  // multi-topic-classifier.ts). `alsoTopics` meloloskan entri Lapis 1 yang topiknya cocok
+  // dengan SALAH SATU dari topik itu, bukan hanya topik UTAMA -- sama seperti
+  // `item.topics.includes(topic)` sekarang jadi `item.topics.includes(topic) ||
+  // alsoTopics.some(...)`. `general`/`null` (R30/R41) tidak terpengaruh -- `alsoTopics` hanya
+  // dibaca di Lapis 1 (gerbang topik spesifik), yang tidak pernah berjalan untuk keduanya.
+  describe('topik tambahan (alsoTopics, Ruling R101)', () => {
+    it('meloloskan entri yang bertopik salah satu alsoTopics, walau bukan topik utama', async () => {
+      mockEntries([
+        { question: 'Bisa selesai di Malang?', answer: 'Bisa.', topics: ['route_endpoint'] },
+      ])
+      const facts = await managedFactsFor('berapa deposit dan bisa drop off di malang?', 'payment', false, ['route_endpoint'])
+      expect(facts.lines).toHaveLength(1)
+      expect(facts.gateBypassed).toBe(false)
+    })
+
+    it('tetap menolak entri yang bukan topik utama maupun salah satu alsoTopics', async () => {
+      mockEntries([
+        { question: 'Termasuk apa saja di paket?', answer: 'Semua sudah termasuk.', topics: ['inclusions'] },
+      ])
+      const facts = await managedFactsFor(
+        'berapa deposit dan bisa drop off di malang?',
+        'payment',
+        true, // hasCatalogFacts=true supaya jaring R41 tidak menyala dan menyembunyikan penolakan gerbang
+        ['route_endpoint']
+      )
+      expect(facts.lines).toEqual([])
+    })
+
+    it('item yang masuk lewat also-topic dihitung admittedByTopic untuk plafon R63 -- mengalahkan item overlap saat plafon penuh', async () => {
+      // 8 item bertopik route_endpoint (also-topic giliran ini, bukan topik utama) mengisi
+      // plafon penuh -- item overlap murni (tanpa `topics`) harus kalah persis seperti kalau
+      // ke-8 item itu masuk lewat topik UTAMA (test R63 yang setara di atas).
+      const alsoItems = Array.from({ length: MAX_MANAGED_ITEMS_PER_TURN }, (_, i) => ({
+        question: `Also cocok nomor ${i}?`,
+        answer: `Also jawaban ${i}.`,
+        topics: ['route_endpoint'],
+      }))
+      const overlapItem = { question: 'Berapa harga tiket masuk kawah ijen?', answer: 'Overlap jawaban.' }
+      mockEntries([...alsoItems, overlapItem])
+
+      const facts = await managedFactsFor('berapa harga tiket masuk kawah ijen?', 'price', false, ['route_endpoint'])
+
+      expect(facts.truncated).toBe(1)
+      expect(facts.lines).toHaveLength(MAX_MANAGED_ITEMS_PER_TURN)
+      expect(facts.lines.every((line) => line.startsWith('Also cocok'))).toBe(true)
+      expect(facts.lines.some((line) => line.includes('Overlap jawaban.'))).toBe(false)
+    })
+
+    it('entri yang cocok topik UTAMA tetap lolos walau alsoTopics tidak menyebutnya (tanpa regresi)', async () => {
+      mockEntries([
+        { question: 'Berapa deposit?', answer: '20%.', topics: ['payment'] },
+      ])
+      const facts = await managedFactsFor('berapa deposit dan bisa drop off di malang?', 'payment', false, ['route_endpoint'])
+      expect(facts.lines.some((line) => line.includes('20%.'))).toBe(true)
+    })
+
+    it('giliran general tetap tidak digerbang berdasar topik walau alsoTopics diisi (R30 tidak berubah)', async () => {
+      mockEntries([
+        { question: 'Berapa deposit?', answer: '20% dari total, dibayar di Surabaya.', topics: ['payment'] },
+      ])
+      const facts = await managedFactsFor('deposit bisa dibayar di surabaya?', 'general', false, ['route_endpoint'])
+      expect(facts.lines).toHaveLength(1)
+    })
+
+    it('jaring R41 (topic: null) tidak terpengaruh alsoTopics -- Lapis 1 tidak pernah berjalan di sana', async () => {
+      mockEntries([
+        { question: 'Bisa selesai di Malang?', answer: 'Bisa.', topics: ['inclusions'] },
+      ])
+      // Topik utama 'price' tidak cocok dan alsoTopics juga tidak menyebut 'inclusions' --
+      // gerbang menolak semuanya, jaring menyala (hasCatalogFacts=false default) dan tetap
+      // hanya bergantung pada overlap kata ("malang"), bukan alsoTopics.
+      const facts = await managedFactsFor('bisa selesai di malang?', 'price', false, ['route_endpoint'])
+      expect(facts.gateBypassed).toBe(true)
+      expect(facts.lines).toHaveLength(1)
+    })
+  })
+
   // Task 17 (Ruling R54): "ditolak" hanya memuat entri yang ditolak gerbang TETAPI lolos
   // overlap kata (akan masuk kalau gerbang tidak ada) -- bukan entri tanpa satu kata pun yang
   // sama, dan bukan entri yang kemudian dimasukkan kembali oleh jaring R41.
