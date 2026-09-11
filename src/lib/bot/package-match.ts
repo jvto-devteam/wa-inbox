@@ -56,8 +56,9 @@ export function listDestinations(catalog: Catalog): string[] {
  * message. A package matches on ANY of its `destinationTokens`, so a combined
  * Bromo+Ijen tour is offered to a customer who asked about either. Returns `null`
  * when no known destination is mentioned at all -- the caller (orchestrator.ts)
- * treats that the same way route-gate.ts's own "no destination" branch already
- * does: hand off, rather than run a clarifying-question dialogue of its own.
+ * then tries `resolveRegionDestination` below (only when no destination is on file
+ * either), and failing that takes its no-destination branch, which asks which
+ * destination interests the customer rather than handing off.
  */
 export function matchDestination(message: string, catalog: Catalog): { destination: string; matches: CatalogPackage[] } | null {
   const lower = normalizeAliases(message.toLowerCase())
@@ -77,62 +78,84 @@ export function matchDestination(message: string, catalog: Catalog): { destinati
 }
 
 /**
- * Region names customers use INSTEAD of a specific mountain -- every JVTO package is an East
- * Java circuit, so "your 4D3N East Java tour" names the region rather than a stop on it.
- *
- * Reported live 2026-09-09: a customer who stated everything needed to answer -- 4D3N, 2 pax,
- * September 13-16, pickup at Surabaya Airport, continuing to Bali afterwards -- got the static
- * "Hi! Where would you like to go?" list back, because `matchDestination` scans only
- * `destinationTokens` (Bromo/Ijen/Madakaripura/Papuma/Tumpak Sewu) and "East Java" is not one
- * of them. Every other signal in that message parsed correctly; the destination scan was the
- * single thing standing between them and a real package list.
- *
- * Kept to the region names actually observed, NOT a bare "java": "Central Java" and "West Java"
- * are real places JVTO does not serve, and matching them here would answer a request we cannot
- * fulfil with an East Java package list.
- */
-const REGION_TOKENS = ['east java', 'east-java', 'eastjava', 'jawa timur', 'java timur']
-
-/**
- * The destination value a region match carries. Stored on `tripBrief` like any other
- * destination, so `packagesForDestination` below has to understand it too -- otherwise the
- * region survives one turn and then collapses to an empty package pool on the next message.
- */
-export const REGION_DESTINATION = 'east java'
-
-/** Whether the message names the region rather than a specific destination in it. */
-export function mentionsRegion(message: string): boolean {
-  const low = normalizeAliases(message.toLowerCase())
-  return REGION_TOKENS.some((token) => low.includes(token))
-}
-
-/**
- * The whole catalog, anchored to a region name, shaped like `matchDestination`'s result so the
- * caller can treat "they named the region" exactly like "they named a destination" -- the
- * narrowing that follows (duration, origin, finish city) is what turns it back into a short,
- * relevant list. Returns `null` when no region is named, so it composes as a fallback:
- * `matchDestination(...) ?? matchRegion(...)`.
- *
- * A specific destination always wins: "Bromo tour in East Java" is a Bromo request, and
- * `matchDestination` has already answered by the time this is reached.
- */
-export function matchRegion(message: string, catalog: Catalog): { destination: string; matches: CatalogPackage[] } | null {
-  if (!mentionsRegion(message)) return null
-  return catalog.packages.length > 0 ? { destination: REGION_DESTINATION, matches: catalog.packages } : null
-}
-
-/**
  * Every package matching a known destination (used when the destination came from
  * `tripBrief` rather than a fresh match this turn, so there is no `matches` array
  * already in hand).
  */
 export function packagesForDestination(destination: string, catalog: Catalog): CatalogPackage[] {
   const wanted = destination.toLowerCase()
-  // A region covers the whole catalog rather than any single `destinationTokens` entry. Without
-  // this, a conversation that started with "East Java tour" answers the first message correctly
-  // and then loses every package on the follow-up, when `destination` comes from tripBrief.
-  if (wanted === REGION_DESTINATION) return catalog.packages
   return catalog.packages.filter((p) => p.destinationTokens.some((t) => t.toLowerCase() === wanted))
+}
+
+/**
+ * Region names customers use INSTEAD of a specific stop -- every JVTO package is an East Java
+ * circuit, so "your 4D3N East Java tour" names the region the whole catalog sits in, not a
+ * destination.
+ *
+ * Reported live 2026-09-09: a customer who wrote 4D3N, 2 pax, September 13-16, pickup at
+ * Surabaya Airport, continuing to Bali afterwards, got the static "Hi! Where would you like to
+ * go?" list back, because `matchDestination` scans only `destinationTokens` (Bromo/Ijen/
+ * Madakaripura/Papuma/Tumpak Sewu) and "East Java" is none of them.
+ *
+ * Word-bounded on both ends, so "East Javanese food" (about food, not a tour) does not match.
+ * Kept to the region names actually observed plus their hyphenated/unspaced spellings, NOT a
+ * bare "java": "Central Java" and "West Java" are real places JVTO does not serve.
+ */
+const REGION_PATTERN = /\b(?:east[\s-]*java|ja[wv]a[\s-]*timur)\b/i
+
+/** Whether the message names the East Java region ("east java", "east-java", "eastjava", "jawa timur", "java timur"). */
+export function mentionsRegion(message: string): boolean {
+  return REGION_PATTERN.test(message)
+}
+
+/** The trip details already known when a region is resolved -- see `resolveRegionDestination`. */
+export type RegionPreferences = Pick<TripPreferences, 'origin' | 'finishCity' | 'dayCount'>
+
+/**
+ * Resolves a region named without any destination ("your 4D3N East Java tour ... pickup from
+ * Surabaya ... continue to Bali") to a REAL destination token that the customer's stated trip
+ * necessarily passes through. The region itself is never returned as a destination: route-gate.ts
+ * matches destinations exactly against `destinationTokens`, so a pseudo-destination such as
+ * 'east java' would be rejected there, and every destination consumer after it would get nothing.
+ *
+ * Returns non-null only when ALL of these hold:
+ *   1. the message names the region (`mentionsRegion`);
+ *   2. narrowing the WHOLE catalog with `prefs` through `narrowPackagePool` -- the same function
+ *      orchestrator.ts's destination branch narrows with -- leaves a non-empty pool. No requested
+ *      tokens are passed, because the message named no destination;
+ *   3. at least one package in that pool is priced. That package carries the chosen token, so
+ *      route-gate.ts's "no priced match" handoff cannot fire for it;
+ *   4. every package in that pool shares at least one `destinationTokens` entry.
+ * Otherwise it returns `null`, and the caller behaves exactly as if no region had been named.
+ *
+ * When several tokens are shared, the one carried by the MOST catalog packages wins, and ties go
+ * to the alphabetically first. The token is persisted to `tripBrief.destination`. On later turns
+ * `packagesForDestination(token)` is the pool the conversation narrows from, so the widest
+ * shared token keeps the most of the catalog reachable if the customer changes duration or
+ * endpoints. A narrower token (e.g. 'tumpak sewu', none of whose packages is shorter than
+ * 4 days in the current catalog) would send "can we do 3 days instead?" to narrowPackagePool's
+ * 'none' tier, which is a handoff.
+ *
+ * `matches` is `packagesForDestination(token)`, which is exactly what `matchDestination` returns
+ * for a message naming that token, so the caller proceeds as if the customer had named it.
+ * Narrowing only ever filters, and every package in `pool` carries the token, so re-narrowing
+ * `matches` with the same `prefs` and no requested tokens yields `pool` again.
+ */
+export function resolveRegionDestination(
+  message: string,
+  catalog: Catalog,
+  prefs: RegionPreferences
+): { destination: string; matches: CatalogPackage[]; pool: CatalogPackage[] } | null {
+  if (!mentionsRegion(message)) return null
+  const { pool } = narrowPackagePool(catalog.packages, { ...prefs, pax: null }, [])
+  if (pool.length === 0) return null
+  if (!pool.some((p) => p.priceIdr !== null)) return null
+  const tokensOf = (p: CatalogPackage) => p.destinationTokens.map((t) => t.toLowerCase())
+  const shared = [...new Set(tokensOf(pool[0]))].filter((t) => pool.every((p) => tokensOf(p).includes(t)))
+  if (shared.length === 0) return null
+  const coverage = (token: string) => packagesForDestination(token, catalog).length
+  const [destination] = shared.sort((a, b) => coverage(b) - coverage(a) || (a < b ? -1 : a > b ? 1 : 0))
+  return { destination, matches: packagesForDestination(destination, catalog), pool }
 }
 
 // EVERY destination token the customer's message mentions, unlike `matchDestination`'s single

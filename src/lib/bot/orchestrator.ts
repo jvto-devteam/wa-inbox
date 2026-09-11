@@ -61,11 +61,19 @@
 //      bot's own jvto-agent-runtime, and has been removed entirely). A
 //      destination matched THIS message overrides one already on file (the
 //      customer just told us where they want to go); otherwise the
-//      previously persisted one carries the conversation. No destination at
-//      all (neither matched now nor on file, or the catalog is empty) asks a
-//      one-line clarifying question or a generic apology (`mode: 'clarify'`)
-//      rather than handing off -- the bot stays active for the customer's
-//      next reply either way.
+//      previously persisted one carries the conversation. When neither exists
+//      and the message names the region instead ("East Java tour"),
+//      `resolveRegionDestination` may resolve it to a real destination token
+//      that every package matching the customer's stated duration/origin/finish
+//      passes through. That token is then treated exactly as if the customer had
+//      named it. The region itself is never stored or checked as a destination.
+//      With no destination at all (none matched, none on file, none resolved
+//      from the region), the no-destination branch answers a destination-
+//      independent question from general facts while asking which destination
+//      interests them. Otherwise it asks that as a one-line clarifying question,
+//      or sends a generic apology when the catalog is empty. It does not hand
+//      off here (only step 8's verification failure can); the bot stays active
+//      for the customer's next reply.
 //   5. Route-integrity gate: decides whether a package claim may be made
 //      about the matched destination at all. `handoff` status (no synced
 //      price at all) no longer hands off either -- a generic apology instead
@@ -134,13 +142,14 @@ import { classifySalesNeed, HANDOFF_KEYWORDS } from './sales-classifier'
 import {
   listDestinations,
   matchDestination,
-  matchRegion,
   mentionedDestinationTokens,
   mentionedUnsupportedOriginCity,
   narrowPackagePool,
   packagesForDestination,
+  parseTripPreferences,
   pickPackage,
   priceForPax,
+  resolveRegionDestination,
   sortByBestPackagePriority,
   titleCaseCity,
 } from './package-match'
@@ -1574,13 +1583,38 @@ export async function decideAndRespond(
     }
 
     trace.push('Mencari destinasi', 'Mencari destinasi yang cocok dengan pesan pelanggan, atau memakai destinasi yang sudah tercatat sebelumnya.')
-    // A named region ("East Java") falls back to the whole catalog rather than to the static
-    // "where would you like to go?" list -- see matchRegion's header for the live report. The
-    // specific-destination scan runs FIRST, so this only ever fires when nothing more precise
-    // was named, and the funnel gate + narrowPackagePool below still do the narrowing: a bare
-    // "East Java tour" with no duration/origin/finish stated is asked for those three as usual,
-    // it just no longer gets asked which destination it wants.
-    const matched = matchDestination(inboundText, catalog) ?? matchRegion(inboundText, catalog)
+    let matched = matchDestination(inboundText, catalog)
+    // A named region ("East Java tour") with no specific destination: see
+    // resolveRegionDestination's header for the live report and the rules. Runs only when this
+    // message named no destination AND none is on file, so a region never overrides a
+    // destination the conversation already established. The prefs are the deterministic regex
+    // parse merged with what tripBrief already holds (this message wins, the same precedence the
+    // destination branch uses), not the LLM extractor, because that runs inside the destination
+    // branch below, after this decision. When it resolves, the real token it returns is used
+    // exactly as if the customer had typed it: persisted below, route-gated, narrowed. The
+    // destination branch then re-narrows with its own (LLM-primary) preferences. When it returns
+    // null, nothing here has any effect.
+    if (!matched && !tripBrief.destination) {
+      const parsed = parseTripPreferences(inboundText)
+      const regionPrefs = {
+        origin: parsed.origin ?? tripBrief.origin ?? null,
+        finishCity: parsed.finishCity ?? tripBrief.finishCity ?? null,
+        dayCount: parsed.dayCount ?? tripBrief.dayCount ?? null,
+      }
+      const region = resolveRegionDestination(inboundText, catalog, regionPrefs)
+      if (region) {
+        const stated = [
+          regionPrefs.dayCount ? `${regionPrefs.dayCount} hari` : null,
+          regionPrefs.origin ? `mulai ${regionPrefs.origin}` : null,
+          regionPrefs.finishCity ? `selesai di ${titleCaseCity(regionPrefs.finishCity)}` : null,
+        ].filter((s): s is string => s !== null)
+        trace.push(
+          'Wilayah dikenali',
+          `Pelanggan menyebut wilayah East Java tanpa destinasi spesifik; ${region.pool.length} paket yang cocok dengan preferensi (${stated.length > 0 ? stated.join(', ') : 'belum ada'}) semuanya melewati "${region.destination}", jadi "${region.destination}" dipakai sebagai destinasi.`
+        )
+        matched = region
+      }
+    }
     // A destination matched on THIS message wins over the one already on file (the
     // customer just told us where they want to go); otherwise the persisted one
     // carries the conversation.
@@ -1589,10 +1623,12 @@ export async function decideAndRespond(
       await persistTripBrief({ destination })
     }
 
-    // Both branches need these two classifiers; only the destination-known branch needs the
-    // other three. `matchDestination` above is a synchronous catalog scan, so the branch is
-    // already known before any classifier starts -- which is why the no-destination path can
-    // spend two LLM calls rather than five.
+    // Both branches need the keyword-module, primary-topic and all-topics classifiers; only the
+    // destination-known branch needs the other three (trip preferences, preference decline,
+    // recommendation intent). `matchDestination` and the region resolution above are synchronous
+    // (a catalog scan and a regex parse, no LLM call), so the branch is already known before any
+    // classifier starts -- which is why the no-destination path can spend three LLM calls
+    // rather than six.
     //
     // `await` here (not a bare `return <promise>`) is load-bearing -- see runBookingContextMode's
     // own call site above for why: it keeps this inside the try block so the outer catch still
