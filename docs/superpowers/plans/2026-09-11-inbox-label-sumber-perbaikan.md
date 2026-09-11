@@ -105,7 +105,7 @@
   - `export async function classifyAndStoreTopicLabels(messageId: string, source: TopicLabelSource): Promise<TopicLabels | null>` — dari `src/lib/inbox/topic-labels.ts`; TIDAK PERNAH melempar; `null` = tidak diklasifikasi (bukan INBOUND, tanpa teks, tidak ada, atau galat baca/simpan)
   - `src/lib/inbox/topic-labels.ts` juga me-re-export `type TopicLabels` dan `type TopicLabelSource`
 
-- [ ] **Step 1: Simpan salinan skema lama (sebelum mengedit apa pun)**
+- [x] **Step 1: Simpan salinan skema lama (sebelum mengedit apa pun)**
 
 ```bash
 git show HEAD:prisma/schema.prisma > "${TMPDIR:-/tmp}/schema-before-topic-labels.prisma"
@@ -114,7 +114,7 @@ git diff --quiet HEAD -- prisma/schema.prisma && echo "skema bersih, salinan = H
 
 Expected: `skema bersih, salinan = HEAD`. Kalau tidak tercetak, ada perubahan lokal di skema — berhenti dan tanyakan.
 
-- [ ] **Step 2: Tambah kolom di `prisma/schema.prisma`**
+- [x] **Step 2: Tambah kolom di `prisma/schema.prisma`**
 
 Di model `Message` (baris 182), ganti:
 
@@ -131,7 +131,7 @@ menjadi:
   topicLabels     Json?
 ```
 
-- [ ] **Step 3: Buat migrasi offline dan periksa SQL-nya**
+- [x] **Step 3: Buat migrasi offline dan periksa SQL-nya**
 
 ```bash
 mkdir -p prisma/migrations/20260911090000_message_topic_labels
@@ -154,7 +154,7 @@ ALTER TABLE "Message" ADD COLUMN     "topicLabels" JSONB;
 
 dan baris terakhir `MIGRASI ADITIF OK`. Kalau ada pernyataan lain, berhenti — skema berubah lebih dari yang direncanakan. **JANGAN** menjalankan `npx prisma migrate dev` atau `migrate deploy` di task ini (deploy ada di Checklist Deploy).
 
-- [ ] **Step 4: Regenerasi Prisma Client (tanpa database)**
+- [x] **Step 4: Regenerasi Prisma Client (tanpa database)**
 
 ```bash
 npx prisma generate && npx prisma validate
@@ -162,7 +162,7 @@ npx prisma generate && npx prisma validate
 
 Expected: `Generated Prisma Client` dan `The schema at prisma/schema.prisma is valid`.
 
-- [ ] **Step 5: Tulis test yang gagal — `src/lib/inbox/topic-labels.test.ts`**
+- [x] **Step 5: Tulis test yang gagal — `src/lib/inbox/topic-labels.test.ts`**
 
 ```ts
 /**
@@ -325,12 +325,12 @@ describe('readTopicLabels', () => {
 })
 ```
 
-- [ ] **Step 6: Jalankan test, pastikan GAGAL**
+- [x] **Step 6: Jalankan test, pastikan GAGAL**
 
 Run: `npx vitest run src/lib/inbox/topic-labels.test.ts`
 Expected: FAIL — `Failed to resolve import "./topic-labels"` (modul belum ada).
 
-- [ ] **Step 7: Implementasi — `src/lib/inbox/topic-labels-schema.ts`**
+- [x] **Step 7: Implementasi — `src/lib/inbox/topic-labels-schema.ts`**
 
 ```ts
 import { z } from 'zod'
@@ -364,7 +364,7 @@ export function readTopicLabels(value: unknown): TopicLabels | null {
 }
 ```
 
-- [ ] **Step 8: Implementasi — `src/lib/inbox/topic-labels.ts`**
+- [x] **Step 8: Implementasi — `src/lib/inbox/topic-labels.ts`**
 
 ```ts
 import type { Prisma } from '@prisma/client'
@@ -423,12 +423,12 @@ export async function classifyAndStoreTopicLabels(
 }
 ```
 
-- [ ] **Step 9: Jalankan test, pastikan LULUS**
+- [x] **Step 9: Jalankan test, pastikan LULUS**
 
 Run: `npx vitest run src/lib/inbox/topic-labels.test.ts`
 Expected: PASS (10 test).
 
-- [ ] **Step 10: Commit**
+- [x] **Step 10: Commit**
 
 ```bash
 git add prisma/schema.prisma \

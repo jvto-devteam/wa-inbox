@@ -180,6 +180,9 @@ model Message {
   sentBy          SentBy
   agentId         String?
   botTrace        Json?
+  // TopicLabels (src/lib/inbox/topic-labels-schema.ts) untuk pesan INBOUND berteks. Null = belum
+  // diklasifikasi (pesan sebelum rilis, media tanpa teks, atau klasifikasi gagal) -> "Cek topik".
+  topicLabels     Json?
   deliveryStatus  DeliveryStatus   @default(PENDING)
   createdAt       DateTime         @default(now())
 
