@@ -2090,6 +2090,8 @@ git commit -m "feat(eval): ubah keputusan yang ditandai jadi kandidat golden cas
 
 ### Task 21: Topik tambahan untuk pesan yang menanyakan lebih dari satu hal (Ruling R65)
 
+> **2026-09-11: DIGANTIKAN Task 22 (Ruling R101).** Operator menetapkan pesan multi-topik wajib ditangani ("harusnya bisa multi topik"). Desain baru memakai panggilan LLM TERPISAH, sehingga prompt topik utama tidak berubah sama sekali — penyebab kegagalan gerbang di sini (96→93) hilang secara konstruksi.
+
 > **Status 2026-09-10 (Ruling R76): gerbang ukur TIDAK LOLOS — commit fefbe22 dibatalkan dengan revert b75bc4f.** Kesepakatan topik utama prompt baru 93/100; kontrol prompt lama pada 100 pesan yang sama 96/100. Empat perubahan sama di keduanya (noise model); tiga hanya di prompt baru (general→greeting ×2, route_endpoint→booking ×1). Manfaat terukur: 1 dari 6 kesalahan ketat berlabel tertutup. Keputusan operator (3a): tetap dibatalkan; dikerjakan ulang hanya bila data panel cluster Task 16 sesudah deploy menunjukkan pesan multi-topik sering gagal. Reviewer mencatat keempat contoh lama di prompt ikut berubah (`"also": []` ditambahkan) — kandidat penyebab bila dicoba lagi.
 
 **Kenapa.** Pengukuran G1: 5 dari 30 pesan berlabel punya topik sah kedua, dan classifier memilih salah satunya. Sejak R56, gerbang topik spesifik mengeluarkan entri bertopik lain — jadi "berapa deposit dan bisa drop off di Malang?" kehilangan fakta salah satu topik (kecuali katalog kosong dan jaring R41 berjalan).
@@ -2113,6 +2115,39 @@ git commit -m "feat(eval): ubah keputusan yang ditandai jadi kandidat golden cas
 **Test (TDD):** `also` sah/tidak sah/duplikat/sama dengan utama/lebih dari 2; fallback → `[]`; gerbang menerima entri bertopik tambahan; entri bertopik lain (bukan utama, bukan tambahan) tetap ditolak; orkestrator meneruskan `alsoTopics` di kedua call site (satu test per site). Semua test lama wajib lulus tanpa diubah.
 
 **Commit:** berkas satu per satu (R34), pesan `feat(bot): topik tambahan untuk pesan multi-topik, diukur sebelum dipakai`.
+
+---
+
+### Task 22: Multi-topik lewat panggilan LLM terpisah (Ruling R101)
+
+**Kenapa.** Satu pesan sering menanyakan beberapa hal. Bukti produksi 2026-09-11 (`topic_matrix.ts`, tanpa LLM): pesan "how to book…? how many percent … deposit? how about the cancellation and can i see the blue fire?" — bila topik utamanya spesifik, saringan membuang fakta topik lain (payment → BLUE FIRE hilang; booking/cancellation → PAYMENT dan BLUE FIRE hilang). Operator memilih cara "panggilan LLM terpisah": +1 panggilan model per pesan, berjalan paralel.
+
+**Files:**
+- Create: `src/lib/bot/multi-topic-classifier.ts` + test
+- Modify: `src/lib/bot/runtime-integration.ts` (parameter `alsoTopics`) + test
+- Modify: `src/lib/bot/orchestrator.ts` (kedua call site) + test
+- Modify: `src/lib/bot/types.ts` (`DecisionKnowledge.alsoTopics?`)
+- Modify: `src/lib/bot/reply-verifier.ts` bila perlu (cek jaminan memakai semua topik)
+- JANGAN ubah: `src/lib/bot/topic-classifier.ts` (prompt topik utama wajib byte-identik)
+
+**Desain:**
+1. `classifyAllTopics(message, model?): Promise<ResolverTopic[]>` — prompt SENDIRI yang meminta SEMUA topik yang benar-benar ditanyakan pesan (multi-label, paling banyak 4), keluaran JSON `{"topics": [...]}`, divalidasi ke `RESOLVER_TOPICS`, tanpa duplikat; `general` dan `greeting` dibuang (bukan topik tambahan yang bermakna). Gagal/timeout/tak valid → `[]` dan `console.error` (perilaku hari ini, fail-open). Contoh few-shot memakai kalimat netral tanpa fakta JVTO karangan.
+2. Orkestrator: di KEDUA call site klasifikasi (cabang tanpa-destinasi yang kini `Promise.all([keywordModules, topic])`, dan cabang destinasi yang menjalankan lima classifier paralel), tambahkan `classifyAllTopics` ke `Promise.all` yang SAMA — latensi tidak bertambah seri. `alsoTopics` = hasil dikurangi topik utama.
+3. Gerbang knowledge terkelola: `managedFactsFor(message, topic, hasCatalogFacts, alsoTopics = [])`. Item bertopik masuk bila topiknya beririsan dengan {topik utama bila spesifik} ∪ `alsoTopics`; item yang masuk lewat topik tambahan dihitung "masuk karena topik" untuk peringkat plafon R63. Aturan R30 (`general`/`null` tak pernah membuang berdasar topik), jaring R41, `rejected` (R54), dan `degraded` (R46) tetap. Semantik ini sudah pernah ditulis dan di-review di commit fefbe22 (lalu di-revert karena PROMPT-nya, bukan gerbangnya) — boleh dijadikan rujukan.
+4. Fakta KATALOG dan ATURAN juga multi-topik: selain `resolveKnowledgeForTopic(topik utama, …)`, resolusikan tiap topik tambahan dengan argumen yang sama lalu gabungkan `factualLines`/`detailLines`/`disclosures` lewat `dedupeLines` (Task 13); `primaryLink` tetap dari topik utama; `handoffRequired` = OR. Disclosure (mis. "Blue Fire tidak dijamin") adalah ATURAN — wajib ikut bila topiknya ditanyakan walau bukan topik utama. Semua baris gabungan masuk prompt DAN grounding verifier.
+5. Cek jaminan (Task 14) berjalan bila topik utama ATAU salah satu topik tambahan ada di `NO_GUARANTEE_TOPICS`.
+6. Kolom `topic` (R51), `sourceTopic`, `TripBrief.lastTopic`, dan teks trace yang ada tetap memakai topik UTAMA. Tambah satu langkah trace "Topik tambahan terdeteksi" bila `alsoTopics` tak kosong, dan simpan `alsoTopics` di `decision.knowledge` supaya terlihat di popover dan Decision Logs.
+7. Mode 3 tidak berubah (tanpa klasifikasi).
+
+**Test (TDD):** classifier (sah, tak sah, duplikat, general/greeting dibuang, >4 dipotong, gagal → [] + log); gerbang (item bertopik tambahan masuk; item topik lain tetap ditolak; plafon menghitung item topik tambahan sebagai masuk-karena-topik; R30/R41 tetap); orkestrator per call site (panggilan paralel dilakukan, `alsoTopics` diteruskan, disclosure topik tambahan ikut prompt, grounding memuat baris katalog topik tambahan, kolom topic tetap utama). Test lama tidak diubah kecuali asersi `toEqual` persis atas bentuk yang memang bertambah field — sebutkan tiap baris.
+
+**🛑 Gerbang ukur — dijalankan CONTROLLER sebelum deploy:**
+1. Mekanis: `git diff <BASE> -- src/lib/bot/topic-classifier.ts` KOSONG (prompt topik utama tidak tersentuh).
+2. Pesan contoh operator (4 topik) → `classifyAllTopics` memuat `booking`, `payment`, `cancellation`, `blue_fire`.
+3. Pada 30 pesan berlabel G1 (`label-topik.tsv`): cakupan `label_primer` oleh {utama ∪ tambahan} dilaporkan (hari ini 24/30); topik tambahan yang tidak ada di `label_diterima` dihitung sebagai "berlebih" dan dilaporkan. Ambang: cakupan ≥ 28/30 DAN topik berlebih ≤ 20% dari seluruh topik tambahan. Tidak lolos → tidak di-deploy, laporkan ke operator.
+4. Simulasi Test Lab di VPS atas pesan contoh operator dengan topik utama dipaksa spesifik tidak mungkin tanpa mock — maka bukti tambahan: `topic_matrix`-versi-baru (tanpa LLM) menunjukkan PAYMENT dan BLUE FIRE ikut untuk setiap topik utama bila `alsoTopics` memuat keduanya.
+
+**Commit:** berkas satu per satu (R34); pesan `feat(bot): pesan multi-topik ditangani lewat klasifikasi topik terpisah`.
 
 ---
 
