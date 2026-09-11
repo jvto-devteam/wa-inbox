@@ -134,6 +134,7 @@ import { classifySalesNeed, HANDOFF_KEYWORDS } from './sales-classifier'
 import {
   listDestinations,
   matchDestination,
+  matchRegion,
   mentionedDestinationTokens,
   mentionedUnsupportedOriginCity,
   narrowPackagePool,
@@ -1573,7 +1574,13 @@ export async function decideAndRespond(
     }
 
     trace.push('Mencari destinasi', 'Mencari destinasi yang cocok dengan pesan pelanggan, atau memakai destinasi yang sudah tercatat sebelumnya.')
-    const matched = matchDestination(inboundText, catalog)
+    // A named region ("East Java") falls back to the whole catalog rather than to the static
+    // "where would you like to go?" list -- see matchRegion's header for the live report. The
+    // specific-destination scan runs FIRST, so this only ever fires when nothing more precise
+    // was named, and the funnel gate + narrowPackagePool below still do the narrowing: a bare
+    // "East Java tour" with no duration/origin/finish stated is asked for those three as usual,
+    // it just no longer gets asked which destination it wants.
+    const matched = matchDestination(inboundText, catalog) ?? matchRegion(inboundText, catalog)
     // A destination matched on THIS message wins over the one already on file (the
     // customer just told us where they want to go); otherwise the persisted one
     // carries the conversation.

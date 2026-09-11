@@ -77,12 +77,61 @@ export function matchDestination(message: string, catalog: Catalog): { destinati
 }
 
 /**
+ * Region names customers use INSTEAD of a specific mountain -- every JVTO package is an East
+ * Java circuit, so "your 4D3N East Java tour" names the region rather than a stop on it.
+ *
+ * Reported live 2026-09-09: a customer who stated everything needed to answer -- 4D3N, 2 pax,
+ * September 13-16, pickup at Surabaya Airport, continuing to Bali afterwards -- got the static
+ * "Hi! Where would you like to go?" list back, because `matchDestination` scans only
+ * `destinationTokens` (Bromo/Ijen/Madakaripura/Papuma/Tumpak Sewu) and "East Java" is not one
+ * of them. Every other signal in that message parsed correctly; the destination scan was the
+ * single thing standing between them and a real package list.
+ *
+ * Kept to the region names actually observed, NOT a bare "java": "Central Java" and "West Java"
+ * are real places JVTO does not serve, and matching them here would answer a request we cannot
+ * fulfil with an East Java package list.
+ */
+const REGION_TOKENS = ['east java', 'east-java', 'eastjava', 'jawa timur', 'java timur']
+
+/**
+ * The destination value a region match carries. Stored on `tripBrief` like any other
+ * destination, so `packagesForDestination` below has to understand it too -- otherwise the
+ * region survives one turn and then collapses to an empty package pool on the next message.
+ */
+export const REGION_DESTINATION = 'east java'
+
+/** Whether the message names the region rather than a specific destination in it. */
+export function mentionsRegion(message: string): boolean {
+  const low = normalizeAliases(message.toLowerCase())
+  return REGION_TOKENS.some((token) => low.includes(token))
+}
+
+/**
+ * The whole catalog, anchored to a region name, shaped like `matchDestination`'s result so the
+ * caller can treat "they named the region" exactly like "they named a destination" -- the
+ * narrowing that follows (duration, origin, finish city) is what turns it back into a short,
+ * relevant list. Returns `null` when no region is named, so it composes as a fallback:
+ * `matchDestination(...) ?? matchRegion(...)`.
+ *
+ * A specific destination always wins: "Bromo tour in East Java" is a Bromo request, and
+ * `matchDestination` has already answered by the time this is reached.
+ */
+export function matchRegion(message: string, catalog: Catalog): { destination: string; matches: CatalogPackage[] } | null {
+  if (!mentionsRegion(message)) return null
+  return catalog.packages.length > 0 ? { destination: REGION_DESTINATION, matches: catalog.packages } : null
+}
+
+/**
  * Every package matching a known destination (used when the destination came from
  * `tripBrief` rather than a fresh match this turn, so there is no `matches` array
  * already in hand).
  */
 export function packagesForDestination(destination: string, catalog: Catalog): CatalogPackage[] {
   const wanted = destination.toLowerCase()
+  // A region covers the whole catalog rather than any single `destinationTokens` entry. Without
+  // this, a conversation that started with "East Java tour" answers the first message correctly
+  // and then loses every package on the follow-up, when `destination` comes from tripBrief.
+  if (wanted === REGION_DESTINATION) return catalog.packages
   return catalog.packages.filter((p) => p.destinationTokens.some((t) => t.toLowerCase() === wanted))
 }
 

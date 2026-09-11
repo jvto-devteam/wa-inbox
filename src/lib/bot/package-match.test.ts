@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest'
 import {
   matchDestination,
+  matchRegion,
+  REGION_DESTINATION,
   packagesForDestination,
   pickPackage,
   listDestinations,
@@ -127,6 +129,57 @@ describe('packagesForDestination', () => {
 
   it('returns an empty array for an unrecognized destination', () => {
     expect(packagesForDestination('mars', catalog)).toEqual([])
+  })
+
+  it('returns the whole catalog for the region destination, so it survives the next turn', () => {
+    const multi = catalogOf([
+      pkg({ packageKey: 'ijen-1d' }),
+      pkg({ packageKey: 'bromo-1d', destinationTokens: ['bromo'], title: 'Bromo Midnight' }),
+    ])
+    expect(packagesForDestination(REGION_DESTINATION, multi).map((p) => p.packageKey)).toEqual([
+      'ijen-1d',
+      'bromo-1d',
+    ])
+  })
+})
+
+describe('matchRegion', () => {
+  const multi = catalogOf([
+    pkg({ packageKey: 'ijen-1d' }),
+    pkg({ packageKey: 'bromo-1d', destinationTokens: ['bromo'], title: 'Bromo Midnight' }),
+  ])
+
+  // Reported live 2026-09-09: this exact message got "Hi! Where would you like to go?" back.
+  it('matches a region named instead of a destination', () => {
+    const result = matchRegion('booking your 4D3N East Java tour for 2 people', multi)
+    expect(result?.destination).toBe(REGION_DESTINATION)
+    expect(result?.matches.map((p) => p.packageKey)).toEqual(['ijen-1d', 'bromo-1d'])
+  })
+
+  it('accepts the Indonesian and unspaced forms', () => {
+    expect(matchRegion('paket jawa timur 4 hari', multi)?.destination).toBe(REGION_DESTINATION)
+    expect(matchRegion('EastJava trip', multi)?.destination).toBe(REGION_DESTINATION)
+  })
+
+  it('returns null when no region is named', () => {
+    expect(matchRegion('how much is the ijen tour?', multi)).toBeNull()
+  })
+
+  // "Central Java" and "West Java" are real places JVTO does not serve; answering them with an
+  // East Java package list would be a confident answer to a request we cannot fulfil.
+  it('does not match the regions JVTO has no packages for', () => {
+    expect(matchRegion('a central java tour', multi)).toBeNull()
+    expect(matchRegion('west java trip', multi)).toBeNull()
+  })
+
+  it('returns null against an empty catalog rather than an empty option list', () => {
+    expect(matchRegion('east java tour', catalogOf([]))).toBeNull()
+  })
+
+  // The specific scan runs first in orchestrator.ts, but the two must not disagree about a
+  // message naming both -- a Bromo request that happens to mention the region is a Bromo request.
+  it('leaves a specifically named destination to matchDestination', () => {
+    expect(matchDestination('bromo tour in east java', multi)?.destination).toBe('bromo')
   })
 })
 

@@ -98,6 +98,15 @@ export const EVAL_CASES: EvalCase[] = [
     source: 'Task 8 of this plan -- accommodation-rules.json was never read',
   },
   {
+    id: 'east-java-region-named',
+    turns: [
+      "Hi! I'm interested in booking your 4D3N East Java tour for 2 people, from September 13th to September 16th. Could you please let me know the total price for 2 people and what is included in the price? Also, do you provide pickup from Surabaya Airport on September 13th, and where exactly does the tour finish on September 16th? We would need to continue to Bali afterwards.",
+    ],
+    mustContain: [],
+    mustNotContain: ['where would you like to go', 'which destination interests you'],
+    source: 'package-match.ts matchRegion, reported live 2026-09-09 (region named, so the destination scan matched nothing and the static destination list was sent back over a fully-specified request)',
+  },
+  {
     id: 'ijen-monthly-closure',
     turns: ['is ijen open on the first friday of the month?'],
     mustContain: ['closed'],
