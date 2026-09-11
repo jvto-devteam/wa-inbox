@@ -60,7 +60,9 @@ const MEANINGLESS_ALSO_TOPICS = new Set<ResolverTopic>(['general', 'greeting'])
  * dari teks plan controller. Bukti yang mengubahnya: pesan permintaan penawaran produksi
  * (cmsn7yfn) menanyakan 6 topik -- price, inclusions, private_tour, vehicle, payment,
  * cancellation -- dan plafon 4 membuang payment dan cancellation, konsisten 3 dari 3 run.
- * Ukuran prompt pada plafon ini dilaporkan di task-22-fix1-report.md (F6).
+ * Ukuran prompt pada plafon ini, diukur 2026-09-11 dengan resolveKnowledgeForTopic sungguhan:
+ * gabungan terburuk (topik utama + 6 topik tambahan) 4.959 karakter (destinasi Ijen); seluruh
+ * topik digabung sekaligus 5.163 karakter.
  */
 const MAX_TOPICS = 6
 
