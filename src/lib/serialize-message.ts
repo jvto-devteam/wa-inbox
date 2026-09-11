@@ -1,5 +1,6 @@
 import type { Message } from '@prisma/client'
 import type { SentTemplatePayload } from '@/lib/meta/carousel-types'
+import { readTopicLabels, type TopicLabels } from '@/lib/inbox/topic-labels-schema'
 
 export type ReplyToView = { id: string; content: string | null; type: string; sentBy: string }
 
@@ -16,6 +17,7 @@ export type MessageView = {
   deliveryStatus: string
   createdAt: string
   botTrace: unknown
+  topicLabels: TopicLabels | null
   replyTo: ReplyToView | null
   templatePayload: SentTemplatePayload | null
 }
@@ -41,6 +43,7 @@ export function serializeMessage(m: Message & { replyTo?: Message | null }): Mes
     deliveryStatus: m.deliveryStatus,
     createdAt: m.createdAt.toISOString(),
     botTrace: m.botTrace,
+    topicLabels: readTopicLabels(m.topicLabels),
     replyTo: m.replyTo ? { id: m.replyTo.id, content: m.replyTo.content, type: m.replyTo.type, sentBy: m.replyTo.sentBy } : null,
     templatePayload: (m.templatePayload as SentTemplatePayload | null) ?? null,
   }

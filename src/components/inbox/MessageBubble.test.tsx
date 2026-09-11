@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { MessageBubble } from './MessageBubble'
+import type { TopicLabels } from '@/lib/inbox/topic-labels-schema'
 
 describe('MessageBubble', () => {
   it('shows bot-sent messages with a Bot badge', () => {
@@ -534,5 +535,102 @@ describe('MessageBubble — status kirim yang terbaca', () => {
 
     rerender(<MessageBubble message={{ ...outbound, direction: 'INBOUND', sentBy: 'CUSTOMER' }} />)
     expect(container.innerHTML).not.toContain('shadow-sm')
+  })
+})
+
+describe('MessageBubble — label topik', () => {
+  const inbound = {
+    id: 'msg_in',
+    direction: 'INBOUND' as const,
+    content: 'Berapa harga paket Ijen?',
+    channel: 'OFFICIAL',
+    sentBy: 'CUSTOMER',
+    deliveryStatus: 'DELIVERED',
+    createdAt: new Date().toISOString(),
+    botTrace: null,
+  }
+  const labels: TopicLabels = {
+    topic: 'price',
+    alsoTopics: ['payment'],
+    job: 'J2',
+    topicSource: 'llm',
+    source: 'auto',
+    at: '2026-09-11T08:00:00.000Z',
+  }
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('menampilkan chip topik utama, topik tambahan, dan intent', () => {
+    render(<MessageBubble message={{ ...inbound, topicLabels: labels }} conversationId="conv_1" />)
+    expect(screen.getByText('Harga')).toBeInTheDocument()
+    expect(screen.getByText('Pembayaran')).toBeInTheDocument()
+    expect(screen.getByText('Harga & nilai')).toBeInTheDocument()
+    expect(screen.queryByText('perkiraan')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Cek topik')).not.toBeInTheDocument()
+  })
+
+  it('menandai label hasil regex_fallback sebagai perkiraan', () => {
+    render(<MessageBubble message={{ ...inbound, topicLabels: { ...labels, topicSource: 'regex_fallback' } }} conversationId="conv_1" />)
+    expect(screen.getByText('perkiraan')).toBeInTheDocument()
+  })
+
+  it('tidak menampilkan chip di pesan keluar', () => {
+    render(
+      <MessageBubble
+        message={{ ...inbound, direction: 'OUTBOUND', sentBy: 'AGENT', content: 'Halo', topicLabels: labels }}
+        conversationId="conv_1"
+      />
+    )
+    expect(screen.queryByText('Harga & nilai')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Cek topik')).not.toBeInTheDocument()
+  })
+
+  it('menawarkan "Cek topik" untuk pesan masuk berteks tanpa label, lalu menampilkan chip hasilnya', async () => {
+    const fetchMock = vi.fn(async () => ({ ok: true, status: 200, json: async () => ({ topicLabels: labels }) }) as Response)
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<MessageBubble message={inbound} conversationId="conv_1" />)
+    fireEvent.click(screen.getByLabelText('Cek topik'))
+
+    await waitFor(() => expect(screen.getByText('Harga & nilai')).toBeInTheDocument())
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+    expect(url).toBe('/api/conversations/conv_1/messages/msg_in/topic-labels')
+    expect(init.method).toBe('POST')
+    expect(screen.queryByLabelText('Cek topik')).not.toBeInTheDocument()
+  })
+
+  it('berganti ke status memuat selama pemeriksaan', () => {
+    vi.stubGlobal('fetch', vi.fn(() => new Promise<Response>(() => {})))
+
+    render(<MessageBubble message={inbound} conversationId="conv_1" />)
+    fireEvent.click(screen.getByLabelText('Cek topik'))
+
+    expect(screen.getByLabelText('Memeriksa topik...')).toBeDisabled()
+  })
+
+  it('menampilkan galat di tempat bila pemeriksaan gagal', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({ ok: false, status: 500, json: async () => ({ error: 'Topik gagal diperiksa. Coba lagi sebentar lagi.' }) }) as Response)
+    )
+
+    render(<MessageBubble message={inbound} conversationId="conv_1" />)
+    fireEvent.click(screen.getByLabelText('Cek topik'))
+
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('Topik gagal diperiksa. Coba lagi sebentar lagi.'))
+    expect(screen.getByLabelText('Cek topik')).toBeInTheDocument()
+  })
+
+  it('tidak menawarkan "Cek topik" untuk pesan media tanpa teks, atau tanpa conversationId', () => {
+    const { unmount } = render(
+      <MessageBubble message={{ ...inbound, content: null, type: 'image', mediaUrl: '/api/media/msg_in' }} conversationId="conv_1" />
+    )
+    expect(screen.queryByLabelText('Cek topik')).not.toBeInTheDocument()
+    unmount()
+
+    render(<MessageBubble message={inbound} />)
+    expect(screen.queryByLabelText('Cek topik')).not.toBeInTheDocument()
   })
 })

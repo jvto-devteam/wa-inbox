@@ -1,6 +1,6 @@
 'use client'
 import { useState } from 'react'
-import { Bot, Brain, CornerUpLeft, Film, Image as ImageIcon, Paperclip } from 'lucide-react'
+import { Bot, Brain, CornerUpLeft, Film, Image as ImageIcon, Paperclip, Tag } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { IconButton } from '@/components/ui/icon-button'
@@ -10,6 +10,8 @@ import { isHandoffLogMessage, HANDOFF_LOG_SUMMARY } from '@/lib/message-display'
 import { formatWhatsAppText } from '@/lib/whatsapp-format'
 import { fetchJson } from '@/lib/fetch-json'
 import type { BotDecision } from '@/lib/bot/types'
+import type { TopicLabels } from '@/lib/inbox/topic-labels-schema'
+import { jobLabelName, topicLabelName } from '@/lib/inbox/label-names'
 
 export type MessageView = {
   id: string
@@ -28,6 +30,7 @@ export type MessageView = {
   mimeType?: string | null
   fileName?: string | null
   replyTo?: { id: string; content: string | null; type: string; sentBy: string } | null
+  topicLabels?: TopicLabels | null
   templatePayload?: {
     templateName: string
     bodyText: string
@@ -193,6 +196,22 @@ function CouponChip({ coupon }: { coupon: NonNullable<NonNullable<MessageView['t
   )
 }
 
+/** Topik & intent satu pesan masuk. "perkiraan" = topik dari regex cadangan, bukan dari model. */
+function TopicChips({ labels }: { labels: TopicLabels }) {
+  return (
+    <>
+      <Badge variant="brand">{topicLabelName(labels.topic)}</Badge>
+      {labels.alsoTopics.map((topic) => (
+        <Badge key={topic} variant="muted">
+          {topicLabelName(topic)}
+        </Badge>
+      ))}
+      <Badge variant="default">{jobLabelName(labels.job)}</Badge>
+      {labels.topicSource === 'regex_fallback' && <span className="italic">perkiraan</span>}
+    </>
+  )
+}
+
 const CHANNEL_LABEL: Record<string, string> = { OFFICIAL: 'Official', UNOFFICIAL: 'Unofficial' }
 
 function formatTime(iso: string): string {
@@ -255,7 +274,16 @@ function DeliveryStatus({ status }: { status: string }) {
   )
 }
 
-export function MessageBubble({ message, onReply }: { message: MessageView; onReply?: (message: MessageView) => void }) {
+export function MessageBubble({
+  message,
+  onReply,
+  conversationId,
+}: {
+  message: MessageView
+  onReply?: (message: MessageView) => void
+  /** Dibutuhkan route "Cek topik"; tanpa ini ikonnya tidak tampil. */
+  conversationId?: string
+}) {
   // Declared before the handoff-log early return below so every render calls the same hooks
   // in the same order (Rules of Hooks) -- unused in that branch, which is fine.
   const [showTrace, setShowTrace] = useState(false)
@@ -263,6 +291,9 @@ export function MessageBubble({ message, onReply }: { message: MessageView; onRe
   // working recovery path and did nothing. It now re-queues the message's outbound job.
   const [retrying, setRetrying] = useState(false)
   const [retryError, setRetryError] = useState<string | null>(null)
+  const [checkedLabels, setCheckedLabels] = useState<TopicLabels | null>(null)
+  const [checkingTopic, setCheckingTopic] = useState(false)
+  const [topicError, setTopicError] = useState<string | null>(null)
 
   async function retrySend() {
     if (retrying) return
@@ -281,6 +312,23 @@ export function MessageBubble({ message, onReply }: { message: MessageView; onRe
       setRetryError(error instanceof Error ? error.message : 'Gagal mengirim ulang')
     } finally {
       setRetrying(false)
+    }
+  }
+
+  async function checkTopic() {
+    if (checkingTopic || !conversationId) return
+    setCheckingTopic(true)
+    setTopicError(null)
+    try {
+      const data = await fetchJson<{ topicLabels: TopicLabels }>(
+        `/api/conversations/${conversationId}/messages/${message.id}/topic-labels`,
+        { method: 'POST' }
+      )
+      setCheckedLabels(data.topicLabels)
+    } catch (error: unknown) {
+      setTopicError(error instanceof Error ? error.message : 'Gagal memeriksa topik')
+    } finally {
+      setCheckingTopic(false)
     }
   }
 
@@ -326,6 +374,8 @@ export function MessageBubble({ message, onReply }: { message: MessageView; onRe
   const isBotMessage = message.sentBy === 'BOT'
   const hasMedia = Boolean(message.mediaUrl)
   const cards = message.templatePayload?.cards
+  const topicLabels = message.topicLabels ?? checkedLabels
+  const canCheckTopic = !isOutbound && !topicLabels && Boolean(conversationId && message.content?.trim())
 
   return (
     // `group`: aksi balas hanya muncul saat baris ini di-hover atau salah satu kontrolnya
@@ -392,6 +442,22 @@ export function MessageBubble({ message, onReply }: { message: MessageView; onRe
         {/* Only outbound: which channel WE sent through is useful to an agent; which channel a
             customer's own inbound message happened to arrive on is not. */}
         {isOutbound && CHANNEL_LABEL[message.channel] && <Badge variant="muted">{CHANNEL_LABEL[message.channel]}</Badge>}
+        {!isOutbound && topicLabels && <TopicChips labels={topicLabels} />}
+        {canCheckTopic && (
+          <IconButton
+            size="sm"
+            label={checkingTopic ? 'Memeriksa topik...' : 'Cek topik'}
+            icon={<Tag strokeWidth={1.75} />}
+            onClick={checkTopic}
+            disabled={checkingTopic}
+            className="-my-1"
+          />
+        )}
+        {topicError && (
+          <span role="alert" className="text-danger">
+            {topicError}
+          </span>
+        )}
         <time dateTime={message.createdAt}>{formatTime(message.createdAt)}</time>
         {isFailed ? (
           <>

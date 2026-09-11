@@ -964,7 +964,7 @@ EOF
 
 Catatan SSE: `ThreadView` mengganti bubble dengan `event.message` apa adanya (`ThreadView.tsx:228-230`), dan payload `message.updated` dari Task 1 adalah baris Prisma lengkap lewat `withMediaUrl` — kolom `topicLabels` ikut otomatis. Tidak ada perubahan pada handler SSE; cukup test yang membuktikannya.
 
-- [ ] **Step 1: Tulis test yang gagal — `src/lib/inbox/label-names.test.ts`**
+- [x] **Step 1: Tulis test yang gagal — `src/lib/inbox/label-names.test.ts`**
 
 ```ts
 import { describe, it, expect } from 'vitest'
@@ -991,7 +991,7 @@ describe('label-names', () => {
 })
 ```
 
-- [ ] **Step 2: Tulis test yang gagal — `src/lib/serialize-message.test.ts`**
+- [x] **Step 2: Tulis test yang gagal — `src/lib/serialize-message.test.ts`**
 
 Di helper `baseMessage`, tambahkan `topicLabels: null,` tepat setelah baris `    botTrace: null,`. Lalu tambahkan di akhir berkas:
 
@@ -1017,7 +1017,7 @@ describe('serializeMessage topicLabels', () => {
 })
 ```
 
-- [ ] **Step 3: Tulis test yang gagal — `src/components/inbox/MessageBubble.test.tsx`**
+- [x] **Step 3: Tulis test yang gagal — `src/components/inbox/MessageBubble.test.tsx`**
 
 Tambahkan impor di bawah `import { MessageBubble } from './MessageBubble'`:
 
@@ -1126,7 +1126,7 @@ describe('MessageBubble — label topik', () => {
 })
 ```
 
-- [ ] **Step 4: Tulis test yang gagal — `src/components/inbox/ThreadView.test.tsx`**
+- [x] **Step 4: Tulis test yang gagal — `src/components/inbox/ThreadView.test.tsx`**
 
 Di dalam `describe('ThreadView live delivery-status updates', ...)`, tepat SEBELUM baris `  it('ignores a message.updated event for a different conversation', async () => {`, sisipkan:
 
@@ -1165,12 +1165,12 @@ Di dalam `describe('ThreadView live delivery-status updates', ...)`, tepat SEBEL
 
 ```
 
-- [ ] **Step 5: Jalankan, pastikan GAGAL**
+- [x] **Step 5: Jalankan, pastikan GAGAL**
 
 Run: `npx vitest run src/lib/inbox/label-names.test.ts src/lib/serialize-message.test.ts src/components/inbox/MessageBubble.test.tsx src/components/inbox/ThreadView.test.tsx`
 Expected: FAIL — `Failed to resolve import "./label-names"`; di `serialize-message.test.ts` `expected undefined to deeply equal {...}`; di MessageBubble/ThreadView `Unable to find a label with the text of: Cek topik`.
 
-- [ ] **Step 6: Implementasi — `src/lib/inbox/label-names.ts`**
+- [x] **Step 6: Implementasi — `src/lib/inbox/label-names.ts`**
 
 ```ts
 import type { ResolverTopic } from '@/lib/bot/module-resolver'
@@ -1211,7 +1211,7 @@ export function jobLabelName(job: string): string {
 }
 ```
 
-- [ ] **Step 7: Implementasi — `src/lib/serialize-message.ts`**
+- [x] **Step 7: Implementasi — `src/lib/serialize-message.ts`**
 
 Tambahkan impor setelah baris `import type { SentTemplatePayload } from '@/lib/meta/carousel-types'`:
 
@@ -1251,7 +1251,7 @@ menjadi:
     topicLabels: readTopicLabels(m.topicLabels),
 ```
 
-- [ ] **Step 8: Implementasi — `src/components/inbox/MessageBubble.tsx`**
+- [x] **Step 8: Implementasi — `src/components/inbox/MessageBubble.tsx`**
 
 8a. Ganti baris impor ikon (baris 3):
 
@@ -1384,7 +1384,7 @@ menjadi:
         <time dateTime={message.createdAt}>{formatTime(message.createdAt)}</time>
 ```
 
-- [ ] **Step 9: Implementasi — `src/components/inbox/ThreadView.tsx:351`**
+- [x] **Step 9: Implementasi — `src/components/inbox/ThreadView.tsx:351`**
 
 Ganti:
 
@@ -1398,12 +1398,12 @@ menjadi:
             <MessageBubble message={m} onReply={setReplyingTo} conversationId={conversationId} />
 ```
 
-- [ ] **Step 10: Jalankan, pastikan LULUS**
+- [x] **Step 10: Jalankan, pastikan LULUS**
 
 Run: `npx vitest run src/lib/inbox/label-names.test.ts src/lib/serialize-message.test.ts src/components/inbox/MessageBubble.test.tsx src/components/inbox/ThreadView.test.tsx`
 Expected: PASS, termasuk semua test lama di keempat berkas.
 
-- [ ] **Step 11: Commit**
+- [x] **Step 11: Commit**
 
 ```bash
 git add src/lib/inbox/label-names.ts src/lib/inbox/label-names.test.ts \

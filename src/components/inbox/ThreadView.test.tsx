@@ -339,6 +339,38 @@ describe('ThreadView live delivery-status updates', () => {
     expect(screen.getAllByText('Penawaran paket Ijen')).toHaveLength(1)
   })
 
+  it('menampilkan label topik yang tiba lewat message.updated tanpa muat ulang', async () => {
+    const inboundMessage = {
+      id: 'm_in',
+      direction: 'INBOUND',
+      content: 'Berapa harga paket Ijen?',
+      channel: 'OFFICIAL',
+      sentBy: 'CUSTOMER',
+      deliveryStatus: 'DELIVERED',
+      createdAt: new Date().toISOString(),
+      botTrace: null,
+      topicLabels: null,
+    }
+    mockBasicFetch([inboundMessage])
+
+    render(<ThreadView conversationId="conv_1" />)
+    await waitFor(() => expect(screen.getByLabelText('Cek topik')).toBeInTheDocument())
+
+    act(() => {
+      FakeEventSource.instances[0].emit({
+        type: 'message.updated',
+        conversationId: 'conv_1',
+        message: {
+          ...inboundMessage,
+          topicLabels: { topic: 'price', alsoTopics: [], job: 'J2', topicSource: 'llm', source: 'auto', at: '2026-09-11T08:00:00.000Z' },
+        },
+      })
+    })
+
+    await waitFor(() => expect(screen.getByText('Harga & nilai')).toBeInTheDocument())
+    expect(screen.queryByLabelText('Cek topik')).not.toBeInTheDocument()
+  })
+
   it('ignores a message.updated event for a different conversation', async () => {
     mockBasicFetch([outboundMessage])
 

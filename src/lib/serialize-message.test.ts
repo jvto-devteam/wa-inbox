@@ -16,6 +16,7 @@ function baseMessage(overrides: Partial<Parameters<typeof serializeMessage>[0]> 
     deliveryStatus: 'SENT',
     createdAt: new Date('2026-07-28T10:00:00.000Z'),
     botTrace: null,
+    topicLabels: null,
     replyToId: null,
     templatePayload: null,
     ...overrides,
@@ -53,5 +54,25 @@ describe('withMediaUrl mediaUrl resolution', () => {
   it('is null when neither is set', () => {
     const result = withMediaUrl({ id: 'msg_4' })
     expect(result.mediaUrl).toBeNull()
+  })
+})
+
+describe('serializeMessage topicLabels', () => {
+  const labels = {
+    topic: 'price',
+    alsoTopics: ['payment'],
+    job: 'J2',
+    topicSource: 'llm',
+    source: 'auto',
+    at: '2026-09-11T08:00:00.000Z',
+  }
+
+  it('meneruskan label yang valid', () => {
+    expect(serializeMessage(baseMessage({ topicLabels: labels })).topicLabels).toEqual(labels)
+  })
+
+  it('null untuk kolom kosong atau bentuk yang tidak dikenal', () => {
+    expect(serializeMessage(baseMessage()).topicLabels).toBeNull()
+    expect(serializeMessage(baseMessage({ topicLabels: { topic: 'bukan_topik' } })).topicLabels).toBeNull()
   })
 })

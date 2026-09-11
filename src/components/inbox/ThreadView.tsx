@@ -348,7 +348,7 @@ export function ThreadView({
             {i === firstUnreadIndex && (
               <ThreadDivider label="Pesan belum dibaca" tone="accent" innerRef={unreadDividerRef} />
             )}
-            <MessageBubble message={m} onReply={setReplyingTo} />
+            <MessageBubble message={m} onReply={setReplyingTo} conversationId={conversationId} />
           </div>
         ))}
         <div ref={bottomRef} />
