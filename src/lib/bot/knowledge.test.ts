@@ -4,7 +4,6 @@ import {
   resolveKnowledgeForTopic,
   resolveRouteLegFacts,
   __resetKnowledgeCacheForTests,
-  GENERAL_FAQ_FALLBACK,
   GUARDRAIL_INSTRUCTION,
   dedupeLines,
 } from './knowledge'
@@ -424,24 +423,16 @@ describe('resolveRouteLegFacts', () => {
   })
 })
 
-describe('GENERAL_FAQ_FALLBACK', () => {
-  // Reported 2026-08-05: the bot handed off "genuinely unsupported" topics that this exact
-  // content already answers -- deposit percentage, Ijen gas mask/health screening inclusion,
-  // packing list, physical difficulty per destination.
-  it('covers the specific facts reported as missing (deposit percentage, gas mask inclusion)', () => {
-    expect(GENERAL_FAQ_FALLBACK).toContain('Deposit: 20%')
-    expect(GENERAL_FAQ_FALLBACK.toLowerCase()).toContain('gas mask')
-  })
-
-  // Operator-confirmed 2026-08-06: Revolut is fine too, it's essentially just a bank transfer.
-  it('mentions Revolut alongside Wise as an accepted transfer method', () => {
-    expect(GENERAL_FAQ_FALLBACK).toContain('Revolut')
-  })
-
-  it('is always non-empty (a static constant, not data that can fail to load)', () => {
-    expect(GENERAL_FAQ_FALLBACK.length).toBeGreaterThan(500)
-  })
-})
+// `GENERAL_FAQ_FALLBACK` (the hardcoded constant this describe block used to test) was removed
+// in Task 11 (Ruling R27) -- its content moved to `src/lib/bot-control/faq-seed-data.ts`, seeded
+// as managed knowledge. The guarantee this block asserted (the specific facts reported as
+// missing -- deposit percentage, gas mask inclusion, Revolut -- are actually present and
+// reachable) now lives in three other places instead: operator gate G2 (2026-09-10, "semua
+// benar" -- every FAQ line reviewed correct before the move), `npm run verify:revisions` (every
+// PUBLISHED revision, including the seeded ones, parses), and the deterministic routing test in
+// runtime-integration.test.ts ("R94 -- deterministic routing test over FAQ_SEED_DATA"), which
+// asserts `managedFactsFor`/`allManagedFacts` actually resolve these exact lines (including the
+// deposit and gas mask facts) for the topics that should reach them.
 
 describe('GUARDRAIL_INSTRUCTION', () => {
   // Reported live 2026-08-05: "For 3 people, the price is Rp3.275.000/person... Please let us

@@ -261,7 +261,9 @@ function hasNearbyFinishContext(low: string, cityIndex: number, _cityLength: num
 }
 
 // Cities customers occasionally name as their pickup/start point that JVTO genuinely does
-// not service (tours only depart from Surabaya or Bali, per GENERAL_FAQ_FALLBACK) -- e.g. a
+// not service (tours only depart from Surabaya or Bali, per the GENERAL block of managed FAQ
+// knowledge -- src/lib/bot-control/faq-seed-data.ts, formerly hardcoded as GENERAL_FAQ_FALLBACK
+// before Task 11) -- e.g. a
 // real customer wrote "Start / Pick-up: Yogyakarta". Deliberately excludes Ketapang: it's a
 // real waypoint elsewhere in a genuine itinerary ("the ferry from Ketapang to Gilimanuk"), so
 // flagging it here on a bare "from <city>" match would produce a FALSE "not supported" claim

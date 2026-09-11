@@ -69,7 +69,6 @@ vi.mock('./knowledge', () => ({
   resolveRouteLegFacts: vi.fn(),
   factsForModuleIds: vi.fn(),
   GUARDRAIL_INSTRUCTION: 'GUARDRAILS',
-  GENERAL_FAQ_FALLBACK: 'GENERAL FAQ FALLBACK TEXT',
 }))
 vi.mock('./llm')
 vi.mock('./catalog')
@@ -380,15 +379,63 @@ describe('decideAndRespond', () => {
   // customer asking something genuinely answerable but NOT in the booking JSON itself (cold
   // weather packing, Bromo's trekking difficulty, cash-on-arrival policy) had nothing to
   // answer from, because Mode 3 previously grounded the reply ONLY in bookingData.
-  it('gives Mode 3 access to GENERAL_FAQ_FALLBACK and GUARDRAIL_INSTRUCTION, not just the booking JSON', async () => {
+  //
+  // Task 11 (Ruling R27/R77): rewritten -- the fixed GENERAL_FAQ_FALLBACK constant this test
+  // used to check for is gone. Mode 3 now gets its general facts from `allManagedFacts()`
+  // (runtime-integration.ts), so this asserts the same guarantee against THAT source: every
+  // published managed fact -- not just the ones the topic gate would admit, there is no topic
+  // here at all -- reaches Mode 3's system prompt, alongside GUARDRAIL_INSTRUCTION.
+  it('gives Mode 3 access to allManagedFacts() and GUARDRAIL_INSTRUCTION, not just the booking JSON', async () => {
     ;vi.mocked(ensureFreshBookingData).mockResolvedValue({ bookingId: 'B1', destination: 'Ijen' })
+    ;vi.mocked(loadPublishedManagedKnowledge).mockResolvedValue({
+      entries: [
+        {
+          sourceId: 'ks_1',
+          sourceKey: 'managed/warm-layers',
+          sourceTitle: 'WHAT TO BRING',
+          revisionId: 'krev_1',
+          version: 1,
+          items: [{ question: 'What should we pack?', answer: 'Warm layers -- Bromo and Ijen are cold at night (5-15°C).' }],
+        },
+      ],
+      available: true,
+      loadedAt: 0,
+    })
     ;vi.mocked(callLLM).mockResolvedValue('Nights at Bromo/Ijen can get down to 5-15°C, so bring warm layers!')
 
     await decideAndRespond('conv_1', 'Will it be very cold at night?')
 
     const [, opts] = llmCall(0)
-    expect(opts.system).toContain('GENERAL FAQ FALLBACK TEXT')
+    expect(opts.system).toContain('What should we pack? — Warm layers -- Bromo and Ijen are cold at night (5-15°C).')
     expect(opts.system).toContain('GUARDRAILS')
+  })
+
+  // The same behaviour, from the OTHER direction: an entry with NOTHING in common with the
+  // message (Mode 3 has no topic gate and no word-overlap filter -- see allManagedFacts' own
+  // header) still reaches the prompt. managedFactsFor(topic: null) on this same data would
+  // return nothing at all; allManagedFacts must not.
+  it("Mode 3's general facts are NOT gated by topic or word overlap, unlike Mode 1/2", async () => {
+    ;vi.mocked(ensureFreshBookingData).mockResolvedValue({ bookingId: 'B1' })
+    ;vi.mocked(loadPublishedManagedKnowledge).mockResolvedValue({
+      entries: [
+        {
+          sourceId: 'ks_1',
+          sourceKey: 'managed/unrelated',
+          sourceTitle: 'FERRY / TRANSPORT',
+          revisionId: 'krev_1',
+          version: 1,
+          items: [{ question: 'Zzyzx qqwerty unrelated?', answer: 'Ketapang-Gilimanuk ferry, included in overland packages.' }],
+        },
+      ],
+      available: true,
+      loadedAt: 0,
+    })
+    ;vi.mocked(callLLM).mockResolvedValue('Sure!')
+
+    await decideAndRespond('conv_1', 'Who is my guide?')
+
+    const [, opts] = llmCall(0)
+    expect(opts.system).toContain('Ketapang-Gilimanuk ferry, included in overland packages.')
   })
 
   // Confirmed with the operator 2026-08-06: the customer portal link must only be attached
@@ -417,6 +464,55 @@ describe('decideAndRespond', () => {
     const [, opts] = llmCall(0)
     expect(opts.system).not.toContain('customer_portal')
     expect(opts.system).not.toContain('booking portal link')
+  })
+
+  // Task 11 (Ruling R46/R77): same contract as the no-destination/catalog branches' own
+  // `managedFactsFor` degraded checks -- a failed managed-knowledge read must surface as
+  // clarify, never a confident Mode 3 answer built on half the facts.
+  it('answers TECHNICAL_HICCUP_REPLY when managed knowledge fails to load (Mode 3)', async () => {
+    ;vi.mocked(ensureFreshBookingData).mockResolvedValue({ bookingId: 'B1' })
+    ;vi.mocked(loadPublishedManagedKnowledge).mockResolvedValue({ entries: [], available: false, loadedAt: 0 })
+
+    const result = await decideAndRespond('conv_1', 'Is Blue Fire guaranteed?')
+
+    expect(result.mode).toBe('clarify')
+    expect((result as { reply: string }).reply).toContain('having a small technical hiccup')
+    expect(result.steps?.map((s) => s.label)).toContain('Knowledge tidak terbaca')
+    expect(callLLM).not.toHaveBeenCalled()
+  })
+
+  // Task 11 (Ruling R54/R77/R95): Mode 3 now assembles real `knowledge` (via `allManagedFacts()`)
+  // and must carry it on the returned decision, through the same single attachment point Mode
+  // 1/2 already uses -- `topic`/`job` still stay off (R74: Mode 3 never classifies either).
+  it('attaches `knowledge` (managed lines, no catalogLines) to a Mode 3 decision, but not topic/job', async () => {
+    ;vi.mocked(ensureFreshBookingData).mockResolvedValue({ bookingId: 'B1' })
+    ;vi.mocked(loadPublishedManagedKnowledge).mockResolvedValue({
+      entries: [
+        {
+          sourceId: 'ks_1',
+          sourceKey: 'managed/ferry',
+          sourceTitle: 'FERRY / TRANSPORT',
+          revisionId: 'krev_1',
+          version: 1,
+          items: [{ question: 'How does the ferry work?', answer: 'Ketapang-Gilimanuk ferry.' }],
+        },
+      ],
+      available: true,
+      loadedAt: 0,
+    })
+    ;vi.mocked(callLLM).mockResolvedValue('Sure!')
+
+    const result = await decideAndRespond('conv_1', 'How do we get to Bali?')
+
+    expect(result).not.toHaveProperty('topic')
+    expect(result).not.toHaveProperty('job')
+    expect(result.knowledge).toEqual({
+      catalogLines: [],
+      managedLines: [{ line: 'How does the ferry work? — Ketapang-Gilimanuk ferry.', source: 'FERRY / TRANSPORT (v1)' }],
+      rejected: [],
+      rejectedOmitted: 0,
+      gateBypassed: false,
+    })
   })
 
   // Confirmed with the operator 2026-08-06: Ijen's health screening is included for every
@@ -556,12 +652,17 @@ describe('decideAndRespond', () => {
     expect(callLLM).not.toHaveBeenCalled()
   })
 
-  // Reported 2026-08-05: wa-inbox was handing off "genuinely unsupported" topics that
-  // GENERAL_FAQ_FALLBACK (always present in the system prompt) already answers, matching
-  // chatbot-web's own behavior -- its ONLY handoff trigger anywhere is an explicit human-
-  // escalation keyword, never a knowledge gap (see knowledge.ts's GENERAL_FAQ_FALLBACK
-  // header). Still answers via the LLM even when knowledge.ts itself resolves nothing.
-  it('still answers via the LLM (using the general FAQ fallback) when knowledge.ts resolves no topic-specific facts at all, instead of handing off', async () => {
+  // Reported 2026-08-05: wa-inbox was handing off "genuinely unsupported" topics that a general
+  // fallback already answers, matching chatbot-web's own behavior -- its ONLY handoff trigger
+  // anywhere is an explicit human-escalation keyword, never a knowledge gap. Still answers via
+  // the LLM even when knowledge.ts itself resolves nothing.
+  //
+  // Task 11 (Ruling R27): rewritten -- the old GENERAL_FAQ_FALLBACK constant this test used to
+  // check for is gone. What now guarantees "still answers even with zero topic-specific catalog
+  // facts" is managedFactsFor's topic-gated fold-in (Task 5), demonstrated here with a managed
+  // FAQ entry for the SAME topic the catalog itself has nothing for. The behaviour this test
+  // protects (no handoff on a content gap) is unchanged; only its source is.
+  it('still answers via the LLM (using managed knowledge) when knowledge.ts resolves no topic-specific facts at all, instead of handing off', async () => {
     ;vi.mocked(ensureFreshBookingData).mockResolvedValue(null)
     ;vi.mocked(classifySalesNeed).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
     ;vi.mocked(matchDestination).mockReturnValue({ destination: 'ijen', matches: [pkg()] })
@@ -570,13 +671,27 @@ describe('decideAndRespond', () => {
     ;vi.mocked(resolveKnowledgeForTopic).mockReturnValue({
       factualLines: [], detailLines: [], primaryLink: null, disclosures: [], handoffRequired: false,
     })
+    ;vi.mocked(loadPublishedManagedKnowledge).mockResolvedValue({
+      entries: [
+        {
+          sourceId: 'ks_1',
+          sourceKey: 'managed/ferry',
+          sourceTitle: 'FERRY / TRANSPORT',
+          revisionId: 'krev_1',
+          version: 1,
+          items: [{ question: 'How does the ferry crossing to Bali work?', answer: 'Ketapang-Gilimanuk ferry, included in overland packages.', topics: ['route_endpoint'] }],
+        },
+      ],
+      available: true,
+      loadedAt: 0,
+    })
 
     const result = await decideAndRespond('conv_1', 'Can we finish in Bali?')
 
     expect(result.mode).toBe('faq')
     expect(callLLM).toHaveBeenCalled()
     const [, opts] = llmCall(0)
-    expect(opts.system).toContain('GENERAL FAQ FALLBACK TEXT')
+    expect(opts.system).toContain('How does the ferry crossing to Bali work? — Ketapang-Gilimanuk ferry, included in overland packages.')
   })
 
   // Regression: destination_readiness/blue_fire have an empty TOPIC_MODULES list of their own

@@ -106,10 +106,12 @@ export type TraceStep = { label: string; detail: string }
 // knowledge-assembly sites in orchestrator.ts (the no-destination branch and the destination/
 // catalog branch) into the SAME turn-scoped variable `topic`/`job` already use, and attached at
 // the SAME single point after `runDecision()` returns -- see decideAndRespond's own header.
-// Deliberately on the SAME three variants as `topic`/`job` -- NOT `booking_context` (Ruling
-// R77): Mode 3 never reaches either knowledge-assembly site (it short-circuits before them,
-// same reasoning as `topic`/`job` above), and Mode 3's own `knowledge` is Task 11's job, not
-// this one's.
+// Task 11 (Ruling R95): UNLIKE `topic`/`job`, `knowledge` IS also on `booking_context` --
+// Mode 3 never classifies a topic or job (it short-circuits before either, so R74's reasoning
+// for leaving those two off still holds), but it DOES assemble real knowledge now
+// (`allManagedFacts()`, filled via `runBookingContextMode`'s own `knowledgeSink` parameter,
+// the same idiom the no-destination branch uses), so leaving `knowledge` off this variant would
+// misstate a fact this task made true.
 export type DecisionKnowledge = {
   /** Catalog fact lines as sent to the model, captured before managed knowledge was folded in. */
   catalogLines: string[]
@@ -145,7 +147,7 @@ export type DecisionKnowledge = {
 export type BotDecision =
   | { mode: 'handoff'; reason: string; steps?: TraceStep[]; verification?: ReplyVerification; topic?: string; job?: string; knowledge?: DecisionKnowledge }
   | { mode: 'faq'; draft: string; sourceTopic: string; steps?: TraceStep[]; verification?: ReplyVerification; topic?: string; job?: string; knowledge?: DecisionKnowledge }
-  | { mode: 'booking_context'; reply: string; steps?: TraceStep[]; verification?: ReplyVerification }
+  | { mode: 'booking_context'; reply: string; steps?: TraceStep[]; verification?: ReplyVerification; knowledge?: DecisionKnowledge }
   | { mode: 'clarify'; reply: string; steps?: TraceStep[]; verification?: ReplyVerification; topic?: string; job?: string; knowledge?: DecisionKnowledge }
 
 export type CatalogPackage = {
