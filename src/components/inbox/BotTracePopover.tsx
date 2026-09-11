@@ -25,14 +25,16 @@ import type { BotDecision, DecisionKnowledge } from '@/lib/bot/types'
 type Paged = { items: Array<{ id: string }> }
 
 /**
- * `knowledge` (Task 17, Ruling R54) lives on `handoff`/`faq`/`clarify` only -- NOT
- * `booking_context` (Ruling R77, see types.ts's own header on `DecisionKnowledge`). A plain
- * `trace?.knowledge` would not type-check across the whole `BotDecision` union since the
- * `booking_context` member has no such property at all; narrowing it out here first is what
- * lets the rest of this component read `.knowledge` safely.
+ * `knowledge` (Task 17, Ruling R54) lives on every `BotDecision` variant, `booking_context`
+ * included: Task 11 (Ruling R95) attached real assembled knowledge to Mode 3 decisions too
+ * (`allManagedFacts()`, via `runBookingContextMode`'s own `knowledgeSink` -- see
+ * orchestrator.ts and `DecisionKnowledge`'s own header in types.ts), reversing the earlier
+ * Ruling R77 exclusion this function used to encode. No per-mode narrowing is needed any more --
+ * `trace.knowledge` type-checks directly since the field is the same optional type on every
+ * union member.
  */
 function knowledgeOf(trace: BotDecision | null): DecisionKnowledge | undefined {
-  if (!trace || trace.mode === 'booking_context') return undefined
+  if (!trace) return undefined
   return trace.knowledge
 }
 

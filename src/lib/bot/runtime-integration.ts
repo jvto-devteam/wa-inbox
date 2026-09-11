@@ -560,7 +560,6 @@ export async function managedFactsFor(
  * tidak pernah handoff karena kekosongan ini -- lihat orchestrator.ts's header -- tapi itu
  * jaminan PERILAKU (jangan handoff), bukan jaminan bahwa fakta itu SELALU ada di prompt.
  *
-
  * Isi baris dan `refs` memakai format yang SAMA dengan `managedFactsFor`'s `collect` (termasuk
  * baris harga dan tautan yang berdiri sendiri, supaya reply-verifier bisa menyumbernya) --
  * hanya tanpa `evaluateItem`/peringkat/plafon: setiap item dari setiap entri terbit langsung

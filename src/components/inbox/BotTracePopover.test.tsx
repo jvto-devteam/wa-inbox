@@ -97,10 +97,38 @@ describe('BotTracePopover', () => {
       expect(screen.queryByText('Fakta yang ditolak')).not.toBeInTheDocument()
     })
 
-    it('renders neither list for a booking_context decision, which never carries knowledge (Ruling R77)', () => {
+    // R98: renamed from "...which never carries knowledge (Ruling R77)" -- Task 11 (Ruling R95)
+    // made `booking_context` carry `knowledge` too, so that premise is no longer true. This
+    // fixture still has no `knowledge` field at all (an old-shaped botTrace row, stored before
+    // R95), which is the actual reason neither list renders here.
+    it('renders neither list for a booking_context decision with no knowledge attached (old botTrace rows predate Task 11/R95)', () => {
       render(<BotTracePopover trace={{ mode: 'booking_context', reply: 'Booking Anda berangkat 5 Agustus.' }} onClose={() => {}} />)
       expect(screen.queryByText('Fakta yang dipakai')).not.toBeInTheDocument()
       expect(screen.queryByText('Fakta yang ditolak')).not.toBeInTheDocument()
+    })
+
+    // R98: Task 11 (Ruling R95) attached real `knowledge` to Mode 3 decisions -- the popover
+    // must actually show it now instead of silently dropping it via the old mode-based exclusion.
+    it('shows "Fakta yang dipakai" for a booking_context decision that carries knowledge (Task 11/R95)', () => {
+      render(
+        <BotTracePopover
+          trace={{
+            mode: 'booking_context',
+            reply: 'Booking Anda berangkat 5 Agustus.',
+            knowledge: {
+              catalogLines: [],
+              managedLines: [{ line: 'Cuaca dingin -- bawa jaket.', source: 'Info Umum (v1)' }],
+              rejected: [],
+              gateBypassed: false,
+            },
+          }}
+          onClose={() => {}}
+        />
+      )
+
+      expect(screen.getByText('Fakta yang dipakai')).toBeInTheDocument()
+      expect(screen.getByText(/Cuaca dingin -- bawa jaket\./)).toBeInTheDocument()
+      expect(screen.getByText(/Info Umum \(v1\)/)).toBeInTheDocument()
     })
 
     it('renders only "Fakta yang dipakai" when nothing was rejected', () => {
