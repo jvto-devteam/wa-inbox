@@ -130,8 +130,10 @@ export function replyTextForDecision(decision: unknown): string | null {
  * chunks it used, and inventing a richer structure here would have meant the Decision Logs page
  * showing knowledge references the bot never actually reported. `decision.knowledge` is now
  * that real structure, straight off the decision the same way every other `*ForDecision` helper
- * in this file reads it -- undefined stays undefined for an older-shaped decision, or one from a
- * branch Task 17 never touches (Mode 3 -- Ruling R77), never invented.
+ * in this file reads it -- undefined stays undefined for an older-shaped decision, never
+ * invented. Reads structurally (`narrowed.knowledge !== undefined`), not by `mode`, so Task 11's
+ * `knowledge` on `booking_context` decisions (Ruling R95 -- Task 17 itself left Mode 3 without
+ * one, Ruling R77) is picked up here automatically, with no change needed in this file.
  */
 export function knowledgeRefsForDecision(decision: unknown): Prisma.InputJsonValue | undefined {
   const narrowed = asDecision(decision)
