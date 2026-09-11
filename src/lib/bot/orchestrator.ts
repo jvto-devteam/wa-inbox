@@ -193,6 +193,7 @@ import {
   type VerificationResult,
   type ReplyVerification,
 } from './reply-verifier'
+import { attributeReply } from './reply-attribution'
 import { loadCatalog } from './catalog'
 import { checkDeploymentGate } from './deployment-gate'
 import { createNoopPipelineTracer, traceStep, traceClose, type PipelineTracer } from '@/lib/pipeline/tracer'
@@ -2432,10 +2433,22 @@ function attachClassification(
   decision: BotDecision,
   ctx: { topic?: string; job?: string; knowledge?: DecisionKnowledge }
 ): BotDecision {
+  const knowledge = ctx.knowledge === undefined ? undefined : withAttributions(decision, ctx.knowledge)
   return {
     ...decision,
     ...(ctx.topic !== undefined ? { topic: ctx.topic } : {}),
     ...(ctx.job !== undefined ? { job: ctx.job } : {}),
-    ...(ctx.knowledge !== undefined ? { knowledge: ctx.knowledge } : {}),
+    ...(knowledge !== undefined ? { knowledge } : {}),
   }
+}
+
+/**
+ * Pairs the FINAL reply (whatever runDecision() returned, i.e. after composeVerifiedReply's
+ * verifier) paragraph by paragraph with the knowledge it matches, here at the single attachment
+ * point so Message.botTrace and BotDecisionRun.knowledgeRefs carry the same mapping. A handoff
+ * has no reply to attribute.
+ */
+function withAttributions(decision: BotDecision, knowledge: DecisionKnowledge): DecisionKnowledge {
+  const reply = decision.mode === 'faq' ? decision.draft : decision.mode === 'handoff' ? null : decision.reply
+  return reply ? { ...knowledge, attributions: attributeReply(reply, knowledge) } : knowledge
 }

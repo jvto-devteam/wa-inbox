@@ -1849,7 +1849,7 @@ Urutan kandidat deterministik: semua `catalogLines` dulu, lalu `managedLines`, m
 
 **Titik hitung:** di dalam `attachClassification` — satu-satunya titik tempel, dipanggil untuk jalur normal dan jalur `catch` — atas teks keputusan yang dikembalikan `runDecision()` (sudah melewati `composeVerifiedReply`): `faq` → `draft`; `booking_context`/`clarify` → `reply`; `handoff` → tidak ada atribusi. `attributions` dilampirkan (boleh `[]`) hanya bila `knowledge` ada dan teks tidak kosong. `Message.botTrace` (via `sendMessage` → `sanitizeTrace`) dan `BotDecisionRun.knowledgeRefs` (via `knowledgeRefsForDecision`, yang menyalin `decision.knowledge` utuh) otomatis membawa data yang sama — `decision-recorder.ts` dan `send.ts` tidak diubah.
 
-- [ ] **Step 1: Tulis test yang gagal — `src/lib/bot/reply-attribution.test.ts`**
+- [x] **Step 1: Tulis test yang gagal — `src/lib/bot/reply-attribution.test.ts`**
 
 ```ts
 import { describe, it, expect } from 'vitest'
@@ -1948,7 +1948,7 @@ describe('attributeReply', () => {
 })
 ```
 
-- [ ] **Step 2: Tulis test yang gagal — `src/lib/bot/orchestrator.test.ts`**
+- [x] **Step 2: Tulis test yang gagal — `src/lib/bot/orchestrator.test.ts`**
 
 2a. Di test `'attaches \`knowledge\` (managed lines, no catalogLines) to a Mode 3 decision, but not topic/job'` (sudah diubah di Task 5), ganti:
 
@@ -2020,7 +2020,7 @@ menjadi:
 
 ```
 
-- [ ] **Step 3: Tulis test pengunci — `src/lib/bot-control/decision-recorder.test.ts`**
+- [x] **Step 3: Tulis test pengunci — `src/lib/bot-control/decision-recorder.test.ts`**
 
 Tambahkan impor setelah baris `import { prisma } from '@/lib/db'`:
 
@@ -2055,12 +2055,12 @@ Tepat setelah test `'includes decision.knowledge alone when the decision has no 
   })
 ```
 
-- [ ] **Step 4: Jalankan, pastikan GAGAL**
+- [x] **Step 4: Jalankan, pastikan GAGAL**
 
 Run: `npx vitest run src/lib/bot/reply-attribution.test.ts src/lib/bot/orchestrator.test.ts src/lib/bot-control/decision-recorder.test.ts`
 Expected: FAIL — `Failed to resolve import "./reply-attribution"`; di orchestrator.test dua test Mode 3 gagal (`attributions` tidak ada). Dua test decision-recorder baru LULUS sejak awal — itu disengaja: keduanya mengunci bahwa jalur rekam tidak perlu diubah.
 
-- [ ] **Step 5: Implementasi — `src/lib/bot/types.ts`**
+- [x] **Step 5: Implementasi — `src/lib/bot/types.ts`**
 
 Ganti:
 
@@ -2097,7 +2097,7 @@ export type ReplyAttribution = { paragraph: number; lines: AttributedLine[] }
 export type BotDecision =
 ```
 
-- [ ] **Step 6: Implementasi — `src/lib/bot/reply-attribution.ts`**
+- [x] **Step 6: Implementasi — `src/lib/bot/reply-attribution.ts`**
 
 ```ts
 import { extractRupiahAmounts, extractUrls } from './reply-verifier'
@@ -2225,7 +2225,7 @@ const a=grab("src/lib/bot/runtime-integration.ts"), b=grab("src/lib/bot/reply-at
 if(a!==b){console.error("STOPWORDS BERBEDA");process.exit(1)} console.log("STOPWORDS IDENTIK")'
 ```
 
-- [ ] **Step 7: Implementasi — `src/lib/bot/orchestrator.ts`**
+- [x] **Step 7: Implementasi — `src/lib/bot/orchestrator.ts`**
 
 7a. Tepat sebelum baris `import type { BotDecision, Catalog, DecisionKnowledge, TraceStep, TripBrief } from './types'` tambahkan:
 
@@ -2277,12 +2277,12 @@ function withAttributions(decision: BotDecision, knowledge: DecisionKnowledge): 
 }
 ```
 
-- [ ] **Step 8: Jalankan, pastikan LULUS (termasuk simulator, yang tidak diubah)**
+- [x] **Step 8: Jalankan, pastikan LULUS (termasuk simulator, yang tidak diubah)**
 
 Run: `npx vitest run src/lib/bot/reply-attribution.test.ts src/lib/bot/orchestrator.test.ts src/lib/bot-control/decision-recorder.test.ts src/lib/bot-control/simulator.test.ts src/lib/send.test.ts`
 Expected: PASS — termasuk test simulator yang membuktikan tidak ada `sendMessage` dan tidak ada `OutboundJob`.
 
-- [ ] **Step 9: Commit**
+- [x] **Step 9: Commit**
 
 ```bash
 git add src/lib/bot/types.ts src/lib/bot/reply-attribution.ts src/lib/bot/reply-attribution.test.ts \

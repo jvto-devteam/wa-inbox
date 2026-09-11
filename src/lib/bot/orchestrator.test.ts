@@ -632,7 +632,46 @@ describe('decideAndRespond', () => {
       rejected: [],
       rejectedOmitted: 0,
       gateBypassed: false,
+      // 'Sure!' tidak berbagi nominal, URL, atau kata isi dengan baris mana pun.
+      attributions: [],
     })
+  })
+
+  it('mencatat paragraf balasan FINAL yang cocok dengan baris knowledge (attributions)', async () => {
+    ;vi.mocked(ensureFreshBookingData).mockResolvedValue({ bookingId: 'B1' })
+    ;vi.mocked(loadPublishedManagedKnowledge).mockResolvedValue({
+      entries: [
+        {
+          sourceId: 'ks_1',
+          sourceKey: 'managed/ferry',
+          sourceTitle: 'FERRY / TRANSPORT',
+          revisionId: 'krev_1',
+          version: 1,
+          items: [{ question: 'How does the ferry work?', answer: 'Ketapang-Gilimanuk ferry.' }],
+        },
+      ],
+      available: true,
+      loadedAt: 0,
+    })
+    // Berbagi {ferry, ketapang, gilimanuk} = 3 dari 4 kata isi baris -> cocok lewat aturan kata.
+    ;vi.mocked(callLLM).mockResolvedValue('The Ketapang-Gilimanuk ferry crossing to Bali runs every hour.')
+
+    const result = await decideAndRespond('conv_1', 'How do we get to Bali?')
+
+    expect(result.knowledge?.attributions).toEqual([
+      {
+        paragraph: 0,
+        lines: [
+          {
+            kind: 'managed',
+            line: 'How does the ferry work? — Ketapang-Gilimanuk ferry.',
+            sourceId: 'ks_1',
+            title: 'FERRY / TRANSPORT',
+            version: 1,
+          },
+        ],
+      },
+    ])
   })
 
   // Confirmed with the operator 2026-08-06: Ijen's health screening is included for every

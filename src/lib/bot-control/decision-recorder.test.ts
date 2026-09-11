@@ -5,6 +5,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mockDeep, mockReset, type DeepMockProxy } from 'vitest-mock-extended'
 import type { PrismaClient } from '@prisma/client'
 import { prisma } from '@/lib/db'
+import { sanitizeTrace } from './trace-sanitizer'
 import {
   recordBotDecisionRun,
   attachMessageToDecisionRun,
@@ -100,6 +101,29 @@ describe('knowledgeRefsForDecision', () => {
   it('includes decision.knowledge alone when the decision has no sourceTopic', () => {
     const knowledge = { catalogLines: [], managedLines: [], rejected: [], gateBypassed: true }
     expect(knowledgeRefsForDecision({ mode: 'clarify', knowledge })).toEqual({ knowledge })
+  })
+
+  // Inbox (2026-09-11): attributions dan id revisi ikut ke knowledgeRefs dan Message.botTrace tanpa
+  // perubahan di berkas ini maupun di send.ts -- dua test ini yang membuktikannya.
+  const attributedKnowledge = {
+    catalogLines: [],
+    managedLines: [{ line: 'ATV 1 jam: IDR 350000', source: 'FAQ Harga ATV (v2)', sourceId: 'ks_1', sourceKey: 'managed/atv', version: 2 }],
+    rejected: [],
+    gateBypassed: false,
+    attributions: [
+      { paragraph: 0, lines: [{ kind: 'managed', line: 'ATV 1 jam: IDR 350000', sourceId: 'ks_1', title: 'FAQ Harga ATV', version: 2 }] },
+    ],
+  }
+
+  it('membawa knowledge.attributions ke knowledgeRefs apa adanya', () => {
+    expect(knowledgeRefsForDecision({ mode: 'faq', sourceTopic: 'price', knowledge: attributedKnowledge })).toEqual({
+      sourceTopic: 'price',
+      knowledge: attributedKnowledge,
+    })
+  })
+
+  it('sanitizeTrace tidak meredaksi sourceId, sourceKey, maupun attributions', () => {
+    expect(sanitizeTrace({ knowledge: attributedKnowledge })).toEqual({ knowledge: attributedKnowledge })
   })
 })
 

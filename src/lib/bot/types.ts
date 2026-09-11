@@ -158,9 +158,26 @@ export type DecisionKnowledge = {
    * `rejectedOmitted` above -- an absent key reads identically to "nothing to add" everywhere
    * this is consumed, so no pre-Task-22 fixture that builds a `knowledge` object literal needs
    * to change.
-   */
+  */
   alsoTopics?: string[]
+  /**
+   * Which knowledge lines each paragraph of the FINAL reply matches (reply-attribution.ts). A
+   * system match on shared figures, URLs or words -- not the model's own citation. Absent on
+   * replies stored before it existed; `[]` when nothing matched.
+   */
+  attributions?: ReplyAttribution[]
 }
+
+/** One knowledge/catalog line paired with a reply paragraph by `attributeReply`. */
+export type AttributedLine = {
+  kind: 'managed' | 'catalog'
+  line: string
+  sourceId?: string
+  title?: string
+  version?: number
+}
+
+export type ReplyAttribution = { paragraph: number; lines: AttributedLine[] }
 
 export type BotDecision =
   | { mode: 'handoff'; reason: string; steps?: TraceStep[]; verification?: ReplyVerification; topic?: string; job?: string; knowledge?: DecisionKnowledge }
