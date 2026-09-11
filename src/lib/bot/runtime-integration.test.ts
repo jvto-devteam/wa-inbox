@@ -6,11 +6,13 @@ import { mockDeep, mockReset, type DeepMockProxy } from 'vitest-mock-extended'
 import type { PrismaClient } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { loadPublishedManagedKnowledge } from '@/lib/bot/managed-knowledge'
+import { FAQ_SEED_DATA } from '@/lib/bot-control/faq-seed-data'
 import {
   shouldRunEscalationClassifier,
   fallbackReplyText,
   handoffReplyText,
   managedFactsFor,
+  allManagedFacts,
   offHoursHandoffNotice,
   MAX_MANAGED_ITEMS_PER_TURN,
   MAX_REJECTED_RECORDED,
@@ -907,6 +909,187 @@ describe('offHoursHandoffNotice', () => {
     } finally {
       if (originalTz === undefined) delete process.env.TZ
       else process.env.TZ = originalTz
+    }
+  })
+})
+
+// Ruling R27/R77 (Task 11): Mode 3 (booking_context) runs before topic classification, so it has
+// no topic to gate on -- this is the function that keeps its old "GENERAL_FAQ_FALLBACK is always
+// present" guarantee true after that constant is deleted, by handing back EVERY published
+// managed fact unconditionally instead of a fixed string.
+describe('allManagedFacts', () => {
+  it('returns the EMPTY shape when nothing is published', async () => {
+    // `lineSources` is deliberately absent here, not `[]` -- same convention as
+    // `managedFactsFor`'s own EMPTY shortcut (see ManagedFacts.lineSources' own header): an
+    // absent key reads identically to an empty array everywhere this is consumed.
+    expect(await allManagedFacts()).toEqual({
+      lines: [],
+      refs: [],
+      gateBypassed: false,
+      truncated: 0,
+      rejected: [],
+      rejectedOmitted: 0,
+      degraded: false,
+    })
+  })
+
+  it('returns every item from every entry, with no topic gate and no word-overlap filter', async () => {
+    // Neither item shares a single word with anything -- managedFactsFor(topic: null) on this
+    // same data would return nothing at all (no overlap), which is exactly the behaviour this
+    // function must NOT have.
+    vi.mocked(loadPublishedManagedKnowledge).mockResolvedValue({
+      entries: [
+        entry({
+          sourceKey: 'managed/a',
+          sourceTitle: 'FAQ A',
+          version: 3,
+          items: [
+            { question: 'Zzyzx qqwerty?', answer: 'Unrelated answer one.', topics: ['payment'] },
+            { question: 'Another unrelated question?', answer: 'Unrelated answer two.' },
+          ],
+        }),
+      ],
+      available: true,
+      loadedAt: 0,
+    })
+
+    const facts = await allManagedFacts()
+
+    expect(facts.lines).toEqual([
+      'Zzyzx qqwerty? — Unrelated answer one.',
+      'Another unrelated question? — Unrelated answer two.',
+    ])
+    expect(facts.lineSources).toEqual(['FAQ A (v3)', 'FAQ A (v3)'])
+    expect(facts.refs).toEqual([{ sourceType: 'MANAGED', sourceKey: 'managed/a', title: 'FAQ A', version: 3 }])
+  })
+
+  it('emits standalone price and link lines, same as managedFactsFor', async () => {
+    vi.mocked(loadPublishedManagedKnowledge).mockResolvedValue({
+      entries: [
+        entry({
+          items: [
+            {
+              question: 'Berapa harga ATV?',
+              answer: 'Tergantung paket.',
+              prices: [{ label: 'ATV 1 jam', amount: 350000, currency: 'IDR' }],
+              links: [{ label: 'Detail', url: 'https://example.com/atv' }],
+            },
+          ],
+        }),
+      ],
+      available: true,
+      loadedAt: 0,
+    })
+
+    const facts = await allManagedFacts()
+
+    expect(facts.lines).toEqual([
+      'Berapa harga ATV? — Tergantung paket.',
+      'ATV 1 jam: IDR 350000',
+      'Detail: https://example.com/atv',
+    ])
+    expect(facts.lineSources).toEqual(['FAQ Harga ATV (v2)', 'FAQ Harga ATV (v2)', 'FAQ Harga ATV (v2)'])
+  })
+
+  it('never truncates, however many items are published — no MAX_MANAGED_ITEMS_PER_TURN cap', async () => {
+    const items = Array.from({ length: MAX_MANAGED_ITEMS_PER_TURN + 5 }, (_, i) => ({
+      question: `Pertanyaan nomor ${i}?`,
+      answer: `Jawaban ${i}.`,
+    }))
+    vi.mocked(loadPublishedManagedKnowledge).mockResolvedValue({
+      entries: [entry({ items })],
+      available: true,
+      loadedAt: 0,
+    })
+
+    const facts = await allManagedFacts()
+
+    expect(facts.lines).toHaveLength(MAX_MANAGED_ITEMS_PER_TURN + 5)
+    expect(facts.truncated).toBe(0)
+  })
+
+  it('always reports gateBypassed: false, rejected: [], rejectedOmitted: 0 — there is no gate to bypass or reject anything', async () => {
+    vi.mocked(loadPublishedManagedKnowledge).mockResolvedValue({ entries: [entry()], available: true, loadedAt: 0 })
+    const facts = await allManagedFacts()
+    expect(facts.gateBypassed).toBe(false)
+    expect(facts.rejected).toEqual([])
+    expect(facts.rejectedOmitted).toBe(0)
+  })
+
+  it('flags degraded when the loader throws, same contract as managedFactsFor (Ruling R46)', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    vi.mocked(loadPublishedManagedKnowledge).mockRejectedValue(new Error('db down'))
+    const facts = await allManagedFacts()
+    expect(facts.degraded).toBe(true)
+    expect(facts.lines).toEqual([])
+  })
+
+  it('flags degraded when the loader reports available: false, distinct from "nothing published"', async () => {
+    vi.mocked(loadPublishedManagedKnowledge).mockResolvedValue({ entries: [], available: false, loadedAt: 0 })
+    const facts = await allManagedFacts()
+    expect(facts.degraded).toBe(true)
+  })
+})
+
+// Ruling R94 -- the deterministic replacement for the deferred eval run: for every EVAL_CASES
+// turn whose answer came from a GENERAL_FAQ_FALLBACK block (deposit -> payment, gas mask ->
+// inclusions, blue fire -> blue_fire), plus a `general` turn and a `route_endpoint` turn,
+// `managedFactsFor` over FAQ_SEED_DATA-shaped managed entries resolves the expected fact line --
+// and `allManagedFacts()` resolves all 11 blocks. No LLM, no DB: FAQ_SEED_DATA is the pure data
+// module `scripts/seed-faq-knowledge.ts` writes verbatim, loaded here through the same mocked
+// `loadPublishedManagedKnowledge` every other test in this file uses.
+describe('R94 -- deterministic routing test over FAQ_SEED_DATA (replaces the deferred eval run)', () => {
+  function managedEntriesFromSeed() {
+    return FAQ_SEED_DATA.map((seed, i) =>
+      entry({
+        sourceId: `seed_${i}`,
+        sourceKey: `managed/seed-${i}`,
+        sourceTitle: seed.title,
+        revisionId: `seed_${i}_rev1`,
+        version: 1,
+        items: [{ question: seed.question, answer: seed.answer, topics: seed.topics }],
+      })
+    )
+  }
+
+  beforeEach(() => {
+    vi.mocked(loadPublishedManagedKnowledge).mockResolvedValue({
+      entries: managedEntriesFromSeed(),
+      available: true,
+      loadedAt: 0,
+    })
+  })
+
+  it('resolves the deposit line for a deposit question classified as payment', async () => {
+    const facts = await managedFactsFor('How much is the deposit before I can confirm my booking?', 'payment')
+    expect(facts.lines.some((l) => l.includes('Deposit: 20% of total to confirm booking.'))).toBe(true)
+  })
+
+  it('resolves the gas mask line for an inclusions question classified as inclusions', async () => {
+    const facts = await managedFactsFor('Is a gas mask included for the Ijen hike?', 'inclusions')
+    expect(facts.lines.some((l) => l.includes('Gas mask for Ijen hike (where applicable).'))).toBe(true)
+  })
+
+  it('resolves the "NOT guaranteed" blue fire line for a blue_fire question', async () => {
+    const facts = await managedFactsFor('Can you guarantee we will see the blue fire?', 'blue_fire')
+    expect(facts.lines.some((l) => l.includes('NOT guaranteed -- visibility depends on weather'))).toBe(true)
+  })
+
+  it('resolves the GENERAL block lines on a general turn', async () => {
+    const facts = await managedFactsFor('Hi, just wondering about your tours in general', 'general')
+    expect(facts.lines.some((l) => l.includes('All tours are 100% PRIVATE'))).toBe(true)
+  })
+
+  it('resolves the Ketapang-Gilimanuk ferry line for topic route_endpoint', async () => {
+    const facts = await managedFactsFor('How does the ferry crossing to Bali work?', 'route_endpoint')
+    expect(facts.lines.some((l) => l.includes('Ketapang-Gilimanuk ferry'))).toBe(true)
+  })
+
+  it('allManagedFacts() resolves all 11 seeded blocks', async () => {
+    const facts = await allManagedFacts()
+    expect(facts.lines).toHaveLength(FAQ_SEED_DATA.length)
+    for (const seed of FAQ_SEED_DATA) {
+      expect(facts.lines.some((l) => l === `${seed.question} — ${seed.answer}`)).toBe(true)
     }
   })
 })

@@ -544,6 +544,75 @@ export async function managedFactsFor(
 }
 
 /**
+ * SELURUH fakta managed yang terbit -- tanpa gerbang topik, tanpa saringan overlap kata, dan
+ * tanpa plafon `MAX_MANAGED_ITEMS_PER_TURN`.
+ *
+ * Hanya untuk Mode 3 (booking_context). Mode 3 berjalan SEBELUM klasifikasi topik (lihat
+ * orchestrator.ts's header, langkah 1) sehingga tidak pernah punya sebuah `ResolverTopic` untuk
+ * digerbangkan -- `managedFactsFor` sendiri butuh satu. Sebelum fakta JVTO pindah dari
+ * `GENERAL_FAQ_FALLBACK` (knowledge.ts, dihapus Task 11) ke knowledge terkelola, Mode 3 selalu
+ * menerima blok itu utuh, tanpa gerbang apa pun. Fungsi ini menjaga janji perilaku itu tetap
+ * sama sesudah pemindahan: pelanggan yang sudah booking tetap menerima SELURUH fakta umum yang
+ * dulu diterimanya -- hanya sumbernya yang pindah dari sebuah konstanta ke tabel yang bisa
+ * diedit operator.
+ *
+ * Isi baris dan `refs` memakai format yang SAMA dengan `managedFactsFor`'s `collect` (termasuk
+ * baris harga dan tautan yang berdiri sendiri, supaya reply-verifier bisa menyumbernya) --
+ * hanya tanpa `evaluateItem`/peringkat/plafon: setiap item dari setiap entri terbit langsung
+ * masuk, dalam urutan entri/item asli.
+ *
+ * `gateBypassed`, `rejected`, dan `rejectedOmitted` selalu berisi nilai kosongnya -- tidak ada
+ * gerbang di sini untuk dilewati atau menolak apa pun, jadi ketiganya tidak punya cerita untuk
+ * diceritakan. `degraded` tetap berarti persis seperti pada `managedFactsFor` (Ruling R46):
+ * true HANYA saat pembacaan gagal, bukan saat memang tidak ada yang terbit -- caller (Mode 3 di
+ * orchestrator.ts) WAJIB memeriksanya sebelum menyusun prompt, sama seperti kedua titik
+ * pemanggil `managedFactsFor` yang sudah ada.
+ */
+export async function allManagedFacts(): Promise<ManagedFacts> {
+  let managed
+  try {
+    managed = await loadPublishedManagedKnowledge()
+  } catch (error) {
+    console.error('allManagedFacts: gagal memuat knowledge terkelola', { error })
+    return { ...EMPTY, degraded: true }
+  }
+
+  // Ruling R46: sama seperti managedFactsFor -- diperiksa SEBELUM `entries.length === 0` di
+  // bawah, supaya kegagalan baca (yang mengembalikan bentuk `entries: []` yang SAMA dengan
+  // "memang belum ada yang terbit") tidak bersembunyi di baris berikutnya.
+  if (managed.available === false) return { ...EMPTY, degraded: true }
+  if (managed.entries.length === 0) return EMPTY
+
+  const lines: string[] = []
+  const lineSources: string[] = []
+  const refs: KnowledgeRef[] = []
+
+  for (const entry of managed.entries) {
+    if (entry.items.length === 0) continue
+    const source = `${entry.sourceTitle} (v${entry.version})`
+
+    for (const item of entry.items) {
+      lines.push(`${item.question} — ${item.answer}`)
+      lineSources.push(source)
+      // Same reasoning as `collect`: a price or link buried in prose is indistinguishable, to
+      // the reply verifier, from one the model invented.
+      for (const price of item.prices ?? []) {
+        lines.push(`${price.label}: ${price.currency} ${price.amount}${price.note ? ` (${price.note})` : ''}`)
+        lineSources.push(source)
+      }
+      for (const link of item.links ?? []) {
+        lines.push(`${link.label}: ${link.url}`)
+        lineSources.push(source)
+      }
+    }
+
+    refs.push({ sourceType: 'MANAGED', sourceKey: entry.sourceKey, title: entry.sourceTitle, version: entry.version })
+  }
+
+  return { lines, lineSources, refs, gateBypassed: false, truncated: 0, rejected: [], rejectedOmitted: 0, degraded: false }
+}
+
+/**
  * The timezone every working-hours comparison is made in.
  *
  * Hardcoded, and deliberately not `Intl.DateTimeFormat().resolvedOptions().timeZone`: the
