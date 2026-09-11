@@ -9,11 +9,13 @@ import { decideAndRespond } from '@/lib/bot/orchestrator'
 import { __resetRateLimiterForTests } from '@/lib/bot/rate-limiter'
 import { sendMessage } from '@/lib/send'
 import { broadcast } from '@/lib/realtime'
+import { classifyAndStoreTopicLabels } from '@/lib/inbox/topic-labels'
 
 vi.mock('@/lib/db', () => ({ prisma: mockDeep<PrismaClient>() }))
 vi.mock('@/lib/bot/orchestrator', () => ({ decideAndRespond: vi.fn() }))
 vi.mock('@/lib/send', () => ({ sendMessage: vi.fn() }))
 vi.mock('@/lib/realtime', () => ({ broadcast: vi.fn() }))
+vi.mock('@/lib/inbox/topic-labels', () => ({ classifyAndStoreTopicLabels: vi.fn() }))
 
 const mockPrisma = prisma as unknown as DeepMockProxy<PrismaClient>
 
@@ -26,6 +28,9 @@ beforeEach(() => {
   vi.mocked(decideAndRespond).mockReset().mockResolvedValue({ mode: 'handoff', reason: 'default test stub' })
   vi.mocked(sendMessage).mockReset()
   vi.mocked(broadcast).mockReset()
+  // Default: klasifikasi selesai tanpa label. Tanpa nilai ini `.catch` di jalur ingest akan
+  // dipanggil pada `undefined` untuk setiap test lama yang membuat pesan berteks.
+  vi.mocked(classifyAndStoreTopicLabels).mockReset().mockResolvedValue(null)
   // Read by defaultBotEnabled() whenever a new conversation is created, so a brand-new
   // conversation starts in whatever state the global bot mode currently dictates.
   mockPrisma.settings.findUniqueOrThrow.mockResolvedValue({ botAutoReplyAll: true, skipBotForIndonesianNumbers: false } as never)
@@ -1430,5 +1435,80 @@ describe('runBotForConversation decision recording', () => {
 
     await expect(runBotForConversation(conversation, 'halo')).resolves.toBeUndefined()
     expect(mockPrisma.botDecisionRun.update).not.toHaveBeenCalled()
+  })
+})
+
+describe('ingestMetaMessage — label topik otomatis', () => {
+  const base = samplePayload.entry[0].changes[0].value
+
+  function payloadWithMessage(message: Record<string, unknown>): MetaWebhookPayload {
+    return {
+      entry: [{ changes: [{ value: { contacts: base.contacts, messages: [{ ...base.messages[0], ...message }] } }] }],
+    } as MetaWebhookPayload
+  }
+
+  it('mengklasifikasi pesan teks masuk dengan source auto, termasuk di percakapan tanpa bot', async () => {
+    stubHappyPath({ conversation: { botEnabled: false } })
+    mockPrisma.message.create.mockResolvedValue({ id: 'msg_new', conversationId: 'conv_1', content: 'Halo, mau tanya paket Ijen' } as never)
+
+    const result = await ingestMetaMessage(samplePayload)
+
+    expect(result.processed).toBe(1)
+    expect(classifyAndStoreTopicLabels).toHaveBeenCalledTimes(1)
+    expect(classifyAndStoreTopicLabels).toHaveBeenCalledWith('msg_new', 'auto')
+  })
+
+  it('tidak menunggu klasifikasi: ingest selesai walau model tidak pernah menjawab', async () => {
+    stubHappyPath()
+    mockPrisma.message.create.mockResolvedValue({ id: 'msg_new', conversationId: 'conv_1', content: 'Halo, mau tanya paket Ijen' } as never)
+    vi.mocked(classifyAndStoreTopicLabels).mockReturnValue(new Promise(() => {}))
+
+    const result = await ingestMetaMessage(samplePayload)
+
+    expect(result.processed).toBe(1)
+  })
+
+  it('kegagalan klasifikasi hanya dicatat; ingest tetap berhasil', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    stubHappyPath({ conversation: { botEnabled: false } })
+    mockPrisma.message.create.mockResolvedValue({ id: 'msg_new', conversationId: 'conv_1', content: 'Halo' } as never)
+    vi.mocked(classifyAndStoreTopicLabels).mockRejectedValue(new Error('ollama down'))
+
+    const result = await ingestMetaMessage(samplePayload)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(result.processed).toBe(1)
+    expect(errorSpy).toHaveBeenCalledWith(
+      'classifyAndStoreTopicLabels (auto) gagal',
+      expect.objectContaining({ messageId: 'msg_new' })
+    )
+    errorSpy.mockRestore()
+  })
+
+  it('tidak mengklasifikasi pesan media tanpa teks', async () => {
+    stubHappyPath({ conversation: { botEnabled: false } })
+    mockPrisma.message.create.mockResolvedValue({ id: 'msg_img', conversationId: 'conv_1', content: null } as never)
+
+    await ingestMetaMessage(
+      payloadWithMessage({ id: 'wamid.IMG1', type: 'image', text: undefined, image: { id: 'media_1', mime_type: 'image/jpeg' } })
+    )
+
+    expect(classifyAndStoreTopicLabels).not.toHaveBeenCalled()
+  })
+
+  it('mengklasifikasi foto yang punya caption', async () => {
+    stubHappyPath({ conversation: { botEnabled: false } })
+    mockPrisma.message.create.mockResolvedValue({ id: 'msg_cap', conversationId: 'conv_1', content: 'Ini hotelnya?' } as never)
+
+    await ingestMetaMessage(
+      payloadWithMessage({
+        id: 'wamid.IMG2',
+        type: 'image',
+        text: undefined,
+        image: { id: 'media_2', mime_type: 'image/jpeg', caption: 'Ini hotelnya?' },
+      })
+    )
+
+    expect(classifyAndStoreTopicLabels).toHaveBeenCalledWith('msg_cap', 'auto')
   })
 })

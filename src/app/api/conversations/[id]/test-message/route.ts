@@ -4,6 +4,7 @@ import { prisma } from '@/lib/db'
 import { broadcast } from '@/lib/realtime'
 import { withMediaUrl } from '@/lib/serialize-message'
 import { scheduleBotRun } from '@/lib/inbound'
+import { classifyAndStoreTopicLabels } from '@/lib/inbox/topic-labels'
 import { parseJsonBody } from '@/lib/parse-json'
 
 const bodySchema = z.object({ text: z.string().min(1) })
@@ -42,6 +43,13 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   })
   await prisma.conversation.update({ where: { id: conversation.id }, data: { lastMessageAt: created.createdAt } })
   broadcast({ type: 'message.created', conversationId: conversation.id, message: withMediaUrl(created) })
+
+  if (created.content?.trim()) {
+    // Tidak ditunggu, sama seperti jalur webhook di src/lib/inbound.ts.
+    classifyAndStoreTopicLabels(created.id, 'auto').catch((error: unknown) => {
+      console.error('classifyAndStoreTopicLabels (auto) gagal', { messageId: created.id, error })
+    })
+  }
 
   if (conversation.botEnabled) {
     // Not awaited: same debounce/burst-batching as the real webhook path (see

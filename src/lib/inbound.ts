@@ -5,6 +5,7 @@ import { decideAndRespond } from '@/lib/bot/orchestrator'
 import { checkAndRecordRateLimit } from '@/lib/bot/rate-limiter'
 import { sendMessage } from '@/lib/send'
 import { withMediaUrl } from '@/lib/serialize-message'
+import { classifyAndStoreTopicLabels } from '@/lib/inbox/topic-labels'
 import { isIndonesianNumber } from '@/lib/phone'
 import { recordBotDecisionRun, attachMessageToDecisionRun } from '@/lib/bot-control/decision-recorder'
 import { handoffReplyText, offHoursHandoffNotice } from '@/lib/bot/runtime-integration'
@@ -542,6 +543,12 @@ async function ingestSingleMessage(message: MetaInboundMessage, contacts: MetaCo
       include: { replyTo: true },
     })
     broadcast({ type: 'message.created', conversationId: conversation.id, message: withMediaUrl(created) })
+    if (created.content?.trim()) {
+      // Tidak ditunggu: webhook dan bot tidak menunggu model. Label menyusul lewat message.updated.
+      classifyAndStoreTopicLabels(created.id, 'auto').catch((error: unknown) => {
+        console.error('classifyAndStoreTopicLabels (auto) gagal', { messageId: created.id, error })
+      })
+    }
   } catch (error) {
     // Race condition: a concurrent delivery of the same message (Meta's at-least-once
     // retries) can pass the findUnique check above before either request's create()

@@ -4,11 +4,13 @@ import type { PrismaClient } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { broadcast } from '@/lib/realtime'
 import { scheduleBotRun } from '@/lib/inbound'
+import { classifyAndStoreTopicLabels } from '@/lib/inbox/topic-labels'
 import { POST } from './route'
 
 vi.mock('@/lib/db', () => ({ prisma: mockDeep<PrismaClient>() }))
 vi.mock('@/lib/realtime', () => ({ broadcast: vi.fn() }))
 vi.mock('@/lib/inbound', () => ({ scheduleBotRun: vi.fn() }))
+vi.mock('@/lib/inbox/topic-labels', () => ({ classifyAndStoreTopicLabels: vi.fn() }))
 
 const mockPrisma = prisma as unknown as DeepMockProxy<PrismaClient>
 
@@ -20,6 +22,7 @@ beforeEach(() => {
   mockReset(mockPrisma)
   vi.mocked(broadcast).mockReset()
   vi.mocked(scheduleBotRun).mockReset()
+  vi.mocked(classifyAndStoreTopicLabels).mockReset().mockResolvedValue(null)
 })
 
 describe('POST /api/conversations/[id]/test-message', () => {
@@ -68,5 +71,41 @@ describe('POST /api/conversations/[id]/test-message', () => {
     const res = await POST(req({ text: '' }), { params: Promise.resolve({ id: 'conv_test' }) })
     expect(res.status).toBe(400)
     expect(mockPrisma.conversation.findUniqueOrThrow).not.toHaveBeenCalled()
+  })
+
+  it('mengklasifikasi pesan sandbox tanpa menunggu, juga saat bot mati', async () => {
+    mockPrisma.conversation.findUniqueOrThrow.mockResolvedValue({
+      id: 'conv_test', isTest: true, botEnabled: false, contact: { name: null },
+    } as never)
+    mockPrisma.message.create.mockResolvedValue({
+      id: 'msg_1', conversationId: 'conv_test', content: 'Berapa harga Ijen?', createdAt: new Date('2026-08-01T00:00:00Z'),
+    } as never)
+    vi.mocked(classifyAndStoreTopicLabels).mockReturnValue(new Promise(() => {}))
+
+    const res = await POST(req({ text: 'Berapa harga Ijen?' }), { params: Promise.resolve({ id: 'conv_test' }) })
+
+    expect(res.status).toBe(200)
+    expect(classifyAndStoreTopicLabels).toHaveBeenCalledWith('msg_1', 'auto')
+  })
+
+  it('kegagalan klasifikasi tidak menggagalkan route', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    mockPrisma.conversation.findUniqueOrThrow.mockResolvedValue({
+      id: 'conv_test', isTest: true, botEnabled: false, contact: { name: null },
+    } as never)
+    mockPrisma.message.create.mockResolvedValue({
+      id: 'msg_1', conversationId: 'conv_test', content: 'Berapa harga Ijen?', createdAt: new Date('2026-08-01T00:00:00Z'),
+    } as never)
+    vi.mocked(classifyAndStoreTopicLabels).mockRejectedValue(new Error('ollama down'))
+
+    const res = await POST(req({ text: 'Berapa harga Ijen?' }), { params: Promise.resolve({ id: 'conv_test' }) })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(res.status).toBe(200)
+    expect(errorSpy).toHaveBeenCalledWith(
+      'classifyAndStoreTopicLabels (auto) gagal',
+      expect.objectContaining({ messageId: 'msg_1' })
+    )
+    errorSpy.mockRestore()
   })
 })

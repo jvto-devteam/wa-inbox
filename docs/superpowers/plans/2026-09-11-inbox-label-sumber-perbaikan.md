@@ -461,7 +461,7 @@ EOF
 
 Catatan: `ingestSingleMessage` tidak diekspor (`src/lib/inbound.ts:493`); test-nya lewat `ingestMetaMessage` yang diekspor, sama seperti test lain di `inbound.test.ts`. Variabel `created` hanya hidup di dalam blok `try` (baris 525–545), jadi panggilan disisipkan di sana.
 
-- [ ] **Step 1: Siapkan mock di `src/lib/inbound.test.ts`**
+- [x] **Step 1: Siapkan mock di `src/lib/inbound.test.ts`**
 
 Tambahkan impor setelah baris `import { broadcast } from '@/lib/realtime'`:
 
@@ -483,7 +483,7 @@ Di `beforeEach` paling atas, tepat setelah baris `vi.mocked(broadcast).mockReset
   vi.mocked(classifyAndStoreTopicLabels).mockReset().mockResolvedValue(null)
 ```
 
-- [ ] **Step 2: Tulis test yang gagal — tambahkan di AKHIR `src/lib/inbound.test.ts`**
+- [x] **Step 2: Tulis test yang gagal — tambahkan di AKHIR `src/lib/inbound.test.ts`**
 
 ```ts
 describe('ingestMetaMessage — label topik otomatis', () => {
@@ -562,12 +562,12 @@ describe('ingestMetaMessage — label topik otomatis', () => {
 })
 ```
 
-- [ ] **Step 3: Jalankan, pastikan GAGAL**
+- [x] **Step 3: Jalankan, pastikan GAGAL**
 
 Run: `npx vitest run src/lib/inbound.test.ts -t "label topik otomatis"`
 Expected: FAIL — `expected "vi.fn()" to be called 1 times, but got 0 times` (jalur ingest belum memanggilnya). Test "tidak menunggu" dan "tidak mengklasifikasi pesan media" boleh sudah lulus di tahap ini.
 
-- [ ] **Step 4: Implementasi di `src/lib/inbound.ts`**
+- [x] **Step 4: Implementasi di `src/lib/inbound.ts`**
 
 Tambahkan impor tepat setelah baris `import { withMediaUrl } from '@/lib/serialize-message'`:
 
@@ -597,12 +597,12 @@ menjadi:
     // Race condition: a concurrent delivery of the same message (Meta's at-least-once
 ```
 
-- [ ] **Step 5: Jalankan, pastikan LULUS (seluruh berkas, supaya test lama ikut diperiksa)**
+- [x] **Step 5: Jalankan, pastikan LULUS (seluruh berkas, supaya test lama ikut diperiksa)**
 
 Run: `npx vitest run src/lib/inbound.test.ts`
 Expected: PASS, termasuk 5 test baru.
 
-- [ ] **Step 6: Siapkan mock dan tulis test yang gagal di `src/app/api/conversations/[id]/test-message/route.test.ts`**
+- [x] **Step 6: Siapkan mock dan tulis test yang gagal di `src/app/api/conversations/[id]/test-message/route.test.ts`**
 
 Tambahkan impor setelah baris `import { scheduleBotRun } from '@/lib/inbound'`:
 
@@ -662,12 +662,12 @@ Tambahkan dua test ini tepat setelah test `'rejects an empty body'` (masih di da
   })
 ```
 
-- [ ] **Step 7: Jalankan, pastikan GAGAL**
+- [x] **Step 7: Jalankan, pastikan GAGAL**
 
 Run: `npx vitest run "src/app/api/conversations/[id]/test-message/route.test.ts"`
 Expected: FAIL pada `'mengklasifikasi pesan sandbox tanpa menunggu, juga saat bot mati'` — `expected "vi.fn()" to be called with arguments: [ 'msg_1', 'auto' ]`.
 
-- [ ] **Step 8: Implementasi di `src/app/api/conversations/[id]/test-message/route.ts`**
+- [x] **Step 8: Implementasi di `src/app/api/conversations/[id]/test-message/route.ts`**
 
 Tambahkan impor setelah baris `import { scheduleBotRun } from '@/lib/inbound'`:
 
@@ -698,12 +698,12 @@ menjadi:
   if (conversation.botEnabled) {
 ```
 
-- [ ] **Step 9: Jalankan, pastikan LULUS**
+- [x] **Step 9: Jalankan, pastikan LULUS**
 
 Run: `npx vitest run "src/app/api/conversations/[id]/test-message/route.test.ts" src/lib/inbound.test.ts`
 Expected: PASS.
 
-- [ ] **Step 10: Commit**
+- [x] **Step 10: Commit**
 
 ```bash
 git add src/lib/inbound.ts src/lib/inbound.test.ts \
