@@ -373,8 +373,10 @@ describe('managedFactsFor', () => {
         { question: 'Bisa selesai di Malang?', answer: 'Bisa.', topics: ['inclusions'] },
       ])
       // Topik utama 'price' tidak cocok dan alsoTopics juga tidak menyebut 'inclusions' --
-      // gerbang menolak semuanya, jaring menyala (hasCatalogFacts=false default) dan tetap
-      // hanya bergantung pada overlap kata ("malang"), bukan alsoTopics.
+      // gerbang menolak semuanya, lalu jaring menyala (hasCatalogFacts=false default). Entri ini
+      // MASUK lewat jaring justru KARENA ada overlap kata: pesan dan pertanyaan entri berbagi dua
+      // token bermakna, "selesai" dan "malang" ("bisa" stopword, "di" di bawah 4 huruf). Jaring
+      // bergantung pada overlap itu, bukan pada alsoTopics.
       const facts = await managedFactsFor('bisa selesai di malang?', 'price', false, ['route_endpoint'])
       expect(facts.gateBypassed).toBe(true)
       expect(facts.lines).toHaveLength(1)
