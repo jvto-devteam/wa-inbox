@@ -51,14 +51,22 @@ export type KnowledgeModule = {
 // (`scripts/seed-faq-knowledge.ts`) so it can be edited from `/bot-control/knowledge` without a
 // deploy, the way every other fact in this system already can be.
 //
-// The BEHAVIOUR this constant used to guarantee -- general facts are always reachable, so the
-// bot never hands off on a plain content gap -- is unchanged, just re-homed:
-// `resolveKnowledgeForTopic` below still resolves catalog facts per topic, and
-// `runtime-integration.ts`'s `managedFactsFor` folds in the matching managed entries (the
-// GENERAL block is seeded with all 14 `ResolverTopic`s, so it matches on every topic, mirroring
-// how the old constant was unconditional). Mode 3 (booking_context), which runs before topic
-// classification and so has no topic to gate on, gets EVERY published managed fact via
-// `runtime-integration.ts`'s `allManagedFacts()` instead -- see that function's own header.
+// Fix round 1 (R99): general facts are NOT unconditionally reachable any more -- that would be
+// restating the same false guarantee this task removed, just one file over. They reach the
+// prompt only once the seeded entries are actually PUBLISHED (Ruling R57/G5 -- production has
+// zero of them published until that deploy step runs), and only for as long as an operator
+// keeps the GENERAL entry published with its full topic set. What IS unchanged, and is the real
+// invariant, is the BEHAVIOUR the old constant existed to protect: the bot never hands off on a
+// plain content gap. `resolveKnowledgeForTopic` below still resolves catalog facts per topic,
+// and `runtime-integration.ts`'s `managedFactsFor` folds in whatever managed entries are
+// published and match (the GENERAL block, once published, is seeded with all 14
+// `ResolverTopic`s, so it matches on every topic when it exists) -- but "whatever is published
+// and matches" can genuinely be nothing, and the persona's own "defer to the team" guidance is
+// what covers that case, not an assumption that facts are always there.
+//
+// Mode 3 (booking_context), which runs before topic classification and so has no topic to gate
+// on, gets EVERY published managed fact via `runtime-integration.ts`'s `allManagedFacts()`
+// instead -- see that function's own header (same "only what is published" caveat applies).
 
 type LinkRecord = { link_key: string; url: string | null; status: string }
 

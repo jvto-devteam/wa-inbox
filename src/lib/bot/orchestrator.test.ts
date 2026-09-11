@@ -466,6 +466,61 @@ describe('decideAndRespond', () => {
     expect(opts.system).not.toContain('booking portal link')
   })
 
+  // Fix round 1 (R99), Minor 3: an empty "General JVTO facts (...):\n" header with nothing
+  // under it would read to the model as "here are the facts: <nothing>" rather than "there are
+  // none right now" -- omitted entirely when `allManagedFacts()` returns no lines (the real
+  // production state until Gerbang G5 publishes the seeded entries).
+  it('omits the "General JVTO facts" section entirely when nothing is published', async () => {
+    ;vi.mocked(ensureFreshBookingData).mockResolvedValue({ bookingId: 'B1' })
+    ;vi.mocked(loadPublishedManagedKnowledge).mockResolvedValue({ entries: [], available: true, loadedAt: 0 })
+    ;vi.mocked(callLLM).mockResolvedValue('Sure!')
+
+    await decideAndRespond('conv_1', 'Is Blue Fire guaranteed?')
+
+    const [, opts] = llmCall(0)
+    expect(opts.system).not.toContain('General JVTO facts')
+  })
+
+  it('includes the "General JVTO facts" section when at least one managed fact is published', async () => {
+    ;vi.mocked(ensureFreshBookingData).mockResolvedValue({ bookingId: 'B1' })
+    ;vi.mocked(loadPublishedManagedKnowledge).mockResolvedValue({
+      entries: [
+        {
+          sourceId: 'ks_1',
+          sourceKey: 'managed/blue-fire',
+          sourceTitle: 'BLUE FIRE',
+          revisionId: 'krev_1',
+          version: 1,
+          items: [{ question: 'Is blue fire guaranteed?', answer: 'NOT guaranteed -- depends on conditions.' }],
+        },
+      ],
+      available: true,
+      loadedAt: 0,
+    })
+    ;vi.mocked(callLLM).mockResolvedValue('Sure!')
+
+    await decideAndRespond('conv_1', 'Is Blue Fire guaranteed?')
+
+    const [, opts] = llmCall(0)
+    expect(opts.system).toContain('General JVTO facts')
+    expect(opts.system).toContain('Is blue fire guaranteed? — NOT guaranteed -- depends on conditions.')
+  })
+
+  // Fix round 1 (R99), Minor 3: the KLOOK health-screening override must hold whether or not
+  // any general facts are published at all -- it used to say "unlike the general fact above",
+  // which would be a non sequitur on a turn with nothing published.
+  it('states the KLOOK health-screening override without referring to an absent general fact', async () => {
+    ;vi.mocked(ensureFreshBookingData).mockResolvedValue({ bookingId: 'B1', orderChannel: 'KLOOK' })
+    ;vi.mocked(loadPublishedManagedKnowledge).mockResolvedValue({ entries: [], available: true, loadedAt: 0 })
+    ;vi.mocked(callLLM).mockResolvedValue('Sure!')
+
+    await decideAndRespond('conv_1', 'Is the health screening included?')
+
+    const [, opts] = llmCall(0)
+    expect(opts.system).not.toContain('unlike the general fact above')
+    expect(opts.system).toContain('the Ijen health screening is NOT included')
+  })
+
   // Task 11 (Ruling R46/R77): same contract as the no-destination/catalog branches' own
   // `managedFactsFor` degraded checks -- a failed managed-knowledge read must surface as
   // clarify, never a confident Mode 3 answer built on half the facts.

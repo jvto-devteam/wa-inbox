@@ -914,9 +914,12 @@ describe('offHoursHandoffNotice', () => {
 })
 
 // Ruling R27/R77 (Task 11): Mode 3 (booking_context) runs before topic classification, so it has
-// no topic to gate on -- this is the function that keeps its old "GENERAL_FAQ_FALLBACK is always
-// present" guarantee true after that constant is deleted, by handing back EVERY published
-// managed fact unconditionally instead of a fixed string.
+// no topic to gate on -- this function hands back EVERY PUBLISHED managed fact unconditionally
+// (no topic gate), the Mode 3 equivalent of the old GENERAL_FAQ_FALLBACK constant. Fix round 1
+// (R99): that is not the same as "always present" -- see the first test below. Nothing published
+// (the real production state until Gerbang G5 runs) genuinely means zero facts here; the
+// no-handoff-on-content-gap BEHAVIOUR is what stays guaranteed, not the presence of any
+// particular fact.
 describe('allManagedFacts', () => {
   it('returns the EMPTY shape when nothing is published', async () => {
     // `lineSources` is deliberately absent here, not `[]` -- same convention as
