@@ -1440,7 +1440,7 @@ EOF
 
 Catatan: `orchestrator.test.ts` me-mock `loadPublishedManagedKnowledge` tetapi memakai `runtime-integration.ts` asli, jadi test yang meng-`toEqual` `managedLines` (hanya baris 621) harus diperbarui; test lain memakai `toMatchObject` sehingga field tambahan tidak mematahkannya. `sanitizeTrace` tidak meredaksi `sourceId`/`sourceKey` — daftar `SECRET_KEY_HINTS` (`trace-sanitizer.ts:22-37`) hanya memuat `apikey`/`privatekey`, bukan `key`.
 
-- [ ] **Step 1: Tulis test yang gagal — tambahkan `decisionManagedLines` ke impor `src/lib/bot/runtime-integration.test.ts`**
+- [x] **Step 1: Tulis test yang gagal — tambahkan `decisionManagedLines` ke impor `src/lib/bot/runtime-integration.test.ts`**
 
 Di blok impor dari `'./runtime-integration'` (baris 10–19), tambahkan baris `  decisionManagedLines,` tepat setelah `  allManagedFacts,`. Lalu tambahkan di akhir berkas:
 
@@ -1504,7 +1504,7 @@ describe('lineMeta dan decisionManagedLines', () => {
 })
 ```
 
-- [ ] **Step 2: Perbarui ekspektasi di `src/lib/bot/orchestrator.test.ts` (baris 623)**
+- [x] **Step 2: Perbarui ekspektasi di `src/lib/bot/orchestrator.test.ts` (baris 623)**
 
 Ganti:
 
@@ -1526,12 +1526,12 @@ menjadi:
       ],
 ```
 
-- [ ] **Step 3: Jalankan, pastikan GAGAL**
+- [x] **Step 3: Jalankan, pastikan GAGAL**
 
 Run: `npx vitest run src/lib/bot/runtime-integration.test.ts src/lib/bot/orchestrator.test.ts`
 Expected: FAIL — `decisionManagedLines is not a function` di runtime-integration.test; di orchestrator.test test `'attaches \`knowledge\` (managed lines, no catalogLines) to a Mode 3 decision, but not topic/job'` gagal karena `sourceId` tidak ada.
 
-- [ ] **Step 4: Implementasi — `src/lib/bot/types.ts`**
+- [x] **Step 4: Implementasi — `src/lib/bot/types.ts`**
 
 Ganti:
 
@@ -1550,7 +1550,7 @@ menjadi:
   managedLines: Array<{ line: string; source: string; sourceId?: string; sourceKey?: string; version?: number }>
 ```
 
-- [ ] **Step 5: Implementasi — `src/lib/bot/runtime-integration.ts`**
+- [x] **Step 5: Implementasi — `src/lib/bot/runtime-integration.ts`**
 
 5a. Setelah baris `import type { ResolverTopic } from './module-resolver'` tambahkan:
 
@@ -1763,7 +1763,7 @@ menjadi:
   return { lines, lineSources, lineMeta, refs, gateBypassed: false, truncated: 0, rejected: [], rejectedOmitted: 0, degraded: false }
 ```
 
-- [ ] **Step 6: Implementasi — `src/lib/bot/orchestrator.ts`**
+- [x] **Step 6: Implementasi — `src/lib/bot/orchestrator.ts`**
 
 Ganti baris 185:
 
@@ -1798,12 +1798,12 @@ test "$(grep -c 'managedLines: decisionManagedLines(managed),' src/lib/bot/orche
 
 Expected: `3 TITIK DIGANTI`.
 
-- [ ] **Step 7: Jalankan, pastikan LULUS**
+- [x] **Step 7: Jalankan, pastikan LULUS**
 
 Run: `npx vitest run src/lib/bot/runtime-integration.test.ts src/lib/bot/orchestrator.test.ts src/components/inbox/BotTracePopover.test.tsx src/lib/bot-control/decision-recorder.test.ts src/lib/send.test.ts`
 Expected: PASS (tiga berkas terakhir memakai fixture `managedLines` bentuk lama dan harus tetap hijau — bukti kompatibilitas).
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add src/lib/bot/types.ts src/lib/bot/runtime-integration.ts src/lib/bot/runtime-integration.test.ts \

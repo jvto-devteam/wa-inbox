@@ -115,8 +115,11 @@ export type TraceStep = { label: string; detail: string }
 export type DecisionKnowledge = {
   /** Catalog fact lines as sent to the model, captured before managed knowledge was folded in. */
   catalogLines: string[]
-  /** Managed knowledge lines as sent, each paired with its source ("Title (vN)"). */
-  managedLines: Array<{ line: string; source: string }>
+  /**
+   * Managed knowledge lines as sent, each paired with its source ("Title (vN)"). `sourceId`/
+   * `sourceKey`/`version` name the published revision; absent on rows stored before they existed.
+   */
+  managedLines: Array<{ line: string; source: string; sourceId?: string; sourceKey?: string; version?: number }>
   /**
    * Entries the topic gate turned away THAT WOULD HAVE gone in on word overlap alone -- see
    * `ManagedFacts.rejected` in runtime-integration.ts for the exact definition and what it

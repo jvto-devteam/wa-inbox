@@ -22,6 +22,7 @@ import {
   type ManagedKnowledgeEntry,
 } from '@/lib/bot/managed-knowledge'
 import type { ResolverTopic } from './module-resolver'
+import type { DecisionKnowledge } from './types'
 
 /**
  * Whether the LLM escalation layer should run.
@@ -122,6 +123,9 @@ export async function handoffReplyText(codeDefault: string): Promise<string> {
   return settingsText('handoffReply', codeDefault)
 }
 
+/** Which published revision one managed line came from. */
+export type ManagedLineMeta = { sourceId: string; sourceKey: string; version: number }
+
 export type ManagedFacts = {
   /** Lines to fold into the grounding, in the same shape the catalog produces. */
   lines: string[]
@@ -131,8 +135,10 @@ export type ManagedFacts = {
    * keep passing unmodified -- `toEqual` treats an absent key the same as one set to
    * `undefined`. Populated whenever `lines` is built by `collect()`, which is every non-EMPTY
    * result. Task 17: feeds `DecisionKnowledge.managedLines` in orchestrator.ts.
-   */
+  */
   lineSources?: string[]
+  /** Parallel to `lines`, same convention as `lineSources`. Feeds `DecisionKnowledge.managedLines`' ids. */
+  lineMeta?: ManagedLineMeta[]
   /** Trace refs, labelled MANAGED so a reader can tell them from catalog facts. */
   refs: KnowledgeRef[]
   /**
@@ -367,6 +373,7 @@ function collect(
 ): {
   lines: string[]
   lineSources: string[]
+  lineMeta: ManagedLineMeta[]
   refs: KnowledgeRef[]
   truncated: number
   rejected: Array<{ sourceKey: string; itemQuestion: string; reason: string }>
@@ -423,6 +430,7 @@ function collect(
   // Parallel to `lines` -- each line's "Title (vN)" source string (Task 17, feeds
   // `ManagedFacts.lineSources` / `DecisionKnowledge.managedLines`).
   const lineSources: string[] = []
+  const lineMeta: ManagedLineMeta[] = []
   const refs: KnowledgeRef[] = []
 
   managed.entries.forEach((entry, entryIndex) => {
@@ -430,21 +438,25 @@ function collect(
     if (!itemIndices || itemIndices.size === 0) return
 
     const source = `${entry.sourceTitle} (v${entry.version})`
+    const meta: ManagedLineMeta = { sourceId: entry.sourceId, sourceKey: entry.sourceKey, version: entry.version }
 
     entry.items.forEach((item, itemIndex) => {
       if (!itemIndices.has(itemIndex)) return
 
       lines.push(`${item.question} — ${item.answer}`)
       lineSources.push(source)
+      lineMeta.push(meta)
       // Prices and links travel as their own lines so the reply verifier can source them: a
       // figure buried in prose is indistinguishable, to it, from one the model invented.
       for (const price of item.prices ?? []) {
         lines.push(`${price.label}: ${price.currency} ${price.amount}${price.note ? ` (${price.note})` : ''}`)
         lineSources.push(source)
+        lineMeta.push(meta)
       }
       for (const link of item.links ?? []) {
         lines.push(`${link.label}: ${link.url}`)
         lineSources.push(source)
+        lineMeta.push(meta)
       }
     })
 
@@ -464,7 +476,16 @@ function collect(
   const rejectedRecorded = rejected.slice(0, MAX_REJECTED_RECORDED)
   const rejectedOmitted = Math.max(0, rejected.length - MAX_REJECTED_RECORDED)
 
-  return { lines, lineSources, refs, truncated, rejected: rejectedRecorded, rejectedOmitted }
+  return { lines, lineSources, lineMeta, refs, truncated, rejected: rejectedRecorded, rejectedOmitted }
+}
+
+/** `ManagedFacts` → `DecisionKnowledge.managedLines`: one entry per line, revision ids included when known. */
+export function decisionManagedLines(managed: ManagedFacts): DecisionKnowledge['managedLines'] {
+  return managed.lines.map((line, i) => ({
+    line,
+    source: managed.lineSources?.[i] ?? '',
+    ...(managed.lineMeta?.[i] ?? {}),
+  }))
 }
 
 /**
@@ -608,31 +629,36 @@ export async function allManagedFacts(): Promise<ManagedFacts> {
 
   const lines: string[] = []
   const lineSources: string[] = []
+  const lineMeta: ManagedLineMeta[] = []
   const refs: KnowledgeRef[] = []
 
   for (const entry of managed.entries) {
     if (entry.items.length === 0) continue
     const source = `${entry.sourceTitle} (v${entry.version})`
+    const meta: ManagedLineMeta = { sourceId: entry.sourceId, sourceKey: entry.sourceKey, version: entry.version }
 
     for (const item of entry.items) {
       lines.push(`${item.question} — ${item.answer}`)
       lineSources.push(source)
+      lineMeta.push(meta)
       // Same reasoning as `collect`: a price or link buried in prose is indistinguishable, to
       // the reply verifier, from one the model invented.
       for (const price of item.prices ?? []) {
         lines.push(`${price.label}: ${price.currency} ${price.amount}${price.note ? ` (${price.note})` : ''}`)
         lineSources.push(source)
+        lineMeta.push(meta)
       }
       for (const link of item.links ?? []) {
         lines.push(`${link.label}: ${link.url}`)
         lineSources.push(source)
+        lineMeta.push(meta)
       }
     }
 
     refs.push({ sourceType: 'MANAGED', sourceKey: entry.sourceKey, title: entry.sourceTitle, version: entry.version })
   }
 
-  return { lines, lineSources, refs, gateBypassed: false, truncated: 0, rejected: [], rejectedOmitted: 0, degraded: false }
+  return { lines, lineSources, lineMeta, refs, gateBypassed: false, truncated: 0, rejected: [], rejectedOmitted: 0, degraded: false }
 }
 
 /**

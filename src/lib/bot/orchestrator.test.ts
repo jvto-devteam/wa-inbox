@@ -620,7 +620,15 @@ describe('decideAndRespond', () => {
     expect(result).not.toHaveProperty('job')
     expect(result.knowledge).toEqual({
       catalogLines: [],
-      managedLines: [{ line: 'How does the ferry work? — Ketapang-Gilimanuk ferry.', source: 'FERRY / TRANSPORT (v1)' }],
+      managedLines: [
+        {
+          line: 'How does the ferry work? — Ketapang-Gilimanuk ferry.',
+          source: 'FERRY / TRANSPORT (v1)',
+          sourceId: 'ks_1',
+          sourceKey: 'managed/ferry',
+          version: 1,
+        },
+      ],
       rejected: [],
       rejectedOmitted: 0,
       gateBypassed: false,

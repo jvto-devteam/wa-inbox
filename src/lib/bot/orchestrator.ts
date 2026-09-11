@@ -182,7 +182,7 @@ import { callLLM, type LLMOptions } from './llm'
 // Phase H integration pass: where configuration published through Bot Control reaches the
 // decision path. Every function there falls back to what this file did before, so an
 // un-seeded or unreadable database produces exactly the previous behaviour.
-import { shouldRunEscalationClassifier, fallbackReplyText, managedFactsFor, allManagedFacts, MAX_MANAGED_ITEMS_PER_TURN } from './runtime-integration'
+import { shouldRunEscalationClassifier, fallbackReplyText, managedFactsFor, allManagedFacts, decisionManagedLines, MAX_MANAGED_ITEMS_PER_TURN } from './runtime-integration'
 import {
   verifyReply,
   buildVerificationRetryInstruction,
@@ -957,7 +957,7 @@ async function runBookingContextMode(
   // No `catalogLines` here -- Mode 3 has no catalog step at all, only managed knowledge.
   knowledgeSink.value = {
     catalogLines: [],
-    managedLines: managed.lines.map((line, i) => ({ line, source: managed.lineSources?.[i] ?? '' })),
+    managedLines: decisionManagedLines(managed),
     rejected: managed.rejected,
     rejectedOmitted: managed.rejectedOmitted,
     gateBypassed: managed.gateBypassed,
@@ -1179,7 +1179,7 @@ async function runNoDestinationBranch(
     // assembly finishes, not duplicated at each of this function's own `return`s below.
     knowledgeSink.value = {
       catalogLines,
-      managedLines: managed.lines.map((line, i) => ({ line, source: managed.lineSources?.[i] ?? '' })),
+      managedLines: decisionManagedLines(managed),
       rejected: managed.rejected,
       rejectedOmitted: managed.rejectedOmitted,
       gateBypassed: managed.gateBypassed,
@@ -2036,7 +2036,7 @@ export async function decideAndRespond(
     // finishes, not duplicated at each of this function's own `return`s below.
     turnKnowledge = {
       catalogLines,
-      managedLines: managed.lines.map((line, i) => ({ line, source: managed.lineSources?.[i] ?? '' })),
+      managedLines: decisionManagedLines(managed),
       rejected: managed.rejected,
       rejectedOmitted: managed.rejectedOmitted,
       gateBypassed: managed.gateBypassed,

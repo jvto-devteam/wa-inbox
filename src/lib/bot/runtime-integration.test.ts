@@ -13,6 +13,7 @@ import {
   handoffReplyText,
   managedFactsFor,
   allManagedFacts,
+  decisionManagedLines,
   offHoursHandoffNotice,
   MAX_MANAGED_ITEMS_PER_TURN,
   MAX_REJECTED_RECORDED,
@@ -83,6 +84,64 @@ describe('shouldRunEscalationClassifier', () => {
     // own behaviour, never the opposite of it.
     mockPrisma.settings.findUnique.mockResolvedValue(null as never)
     await expect(shouldRunEscalationClassifier()).resolves.toBe(true)
+  })
+})
+
+describe('lineMeta dan decisionManagedLines', () => {
+  const priced = entry({
+    items: [
+      {
+        question: 'Berapa harga ATV?',
+        answer: 'Tergantung paket.',
+        prices: [{ label: 'ATV 1 jam', amount: 350000, currency: 'IDR' }],
+        links: [{ label: 'Detail', url: 'https://example.com/atv' }],
+      },
+    ],
+  })
+  const meta = { sourceId: 'ks_1', sourceKey: 'managed/atv', version: 2 }
+
+  it('managedFactsFor: lineMeta sejajar 1:1 dengan lines, termasuk baris harga dan tautan', async () => {
+    vi.mocked(loadPublishedManagedKnowledge).mockResolvedValue({ entries: [priced], available: true, loadedAt: 0 })
+
+    const facts = await managedFactsFor('berapa harga ATV?', null)
+
+    expect(facts.lines).toHaveLength(3)
+    expect(facts.lineMeta).toEqual([meta, meta, meta])
+  })
+
+  it('allManagedFacts: lineMeta sejajar 1:1 dengan lines', async () => {
+    vi.mocked(loadPublishedManagedKnowledge).mockResolvedValue({ entries: [priced], available: true, loadedAt: 0 })
+
+    const facts = await allManagedFacts()
+
+    expect(facts.lineMeta).toEqual([meta, meta, meta])
+  })
+
+  it('decisionManagedLines memasangkan setiap baris dengan source dan identitas revisinya', async () => {
+    vi.mocked(loadPublishedManagedKnowledge).mockResolvedValue({ entries: [priced], available: true, loadedAt: 0 })
+
+    const facts = await managedFactsFor('berapa harga ATV?', null)
+
+    expect(decisionManagedLines(facts)).toEqual([
+      { line: 'Berapa harga ATV? — Tergantung paket.', source: 'FAQ Harga ATV (v2)', ...meta },
+      { line: 'ATV 1 jam: IDR 350000', source: 'FAQ Harga ATV (v2)', ...meta },
+      { line: 'Detail: https://example.com/atv', source: 'FAQ Harga ATV (v2)', ...meta },
+    ])
+  })
+
+  it('decisionManagedLines tanpa lineMeta (bentuk lama) hanya membawa line dan source', () => {
+    expect(
+      decisionManagedLines({
+        lines: ['A — a'],
+        lineSources: ['FAQ (v1)'],
+        refs: [],
+        gateBypassed: false,
+        truncated: 0,
+        rejected: [],
+        rejectedOmitted: 0,
+        degraded: false,
+      })
+    ).toEqual([{ line: 'A — a', source: 'FAQ (v1)' }])
   })
 })
 
