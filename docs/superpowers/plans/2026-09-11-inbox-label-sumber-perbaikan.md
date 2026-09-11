@@ -2632,7 +2632,7 @@ EOF
 
 Otorisasi: hanya `getSession` — pengecualian §6 yang dicatat di langkah terakhir task ini. Aktor = akun sesi (`name` diambil dari `prisma.account`, pola `create-knowledge-draft/route.ts:62`). Penandaan run (`flaggedAt = now`, `flagNote = reason`) dilakukan SETELAH revisi aktif dan kegagalannya hanya menghasilkan `flagged: false`.
 
-- [ ] **Step 1: Tulis test yang gagal — `src/app/api/inbox/knowledge/[sourceId]/route.test.ts`**
+- [x] **Step 1: Tulis test yang gagal — `src/app/api/inbox/knowledge/[sourceId]/route.test.ts`**
 
 ```ts
 /**
@@ -2711,12 +2711,12 @@ describe('GET /api/inbox/knowledge/[sourceId]', () => {
 })
 ```
 
-- [ ] **Step 2: Jalankan, pastikan GAGAL**
+- [x] **Step 2: Jalankan, pastikan GAGAL**
 
 Run: `npx vitest run "src/app/api/inbox/knowledge/[sourceId]/route.test.ts"`
 Expected: FAIL — `Failed to resolve import "./route"`.
 
-- [ ] **Step 3: Implementasi — `src/app/api/inbox/knowledge/[sourceId]/route.ts`**
+- [x] **Step 3: Implementasi — `src/app/api/inbox/knowledge/[sourceId]/route.ts`**
 
 ```ts
 import { NextResponse } from 'next/server'
@@ -2760,12 +2760,12 @@ export async function GET(req: Request, { params }: { params: Promise<{ sourceId
 }
 ```
 
-- [ ] **Step 4: Jalankan, pastikan LULUS**
+- [x] **Step 4: Jalankan, pastikan LULUS**
 
 Run: `npx vitest run "src/app/api/inbox/knowledge/[sourceId]/route.test.ts"`
 Expected: PASS (5 test).
 
-- [ ] **Step 5: Tulis test yang gagal — `src/app/api/inbox/decisions/[id]/fix/route.test.ts`**
+- [x] **Step 5: Tulis test yang gagal — `src/app/api/inbox/decisions/[id]/fix/route.test.ts`**
 
 Test ini memakai `knowledge-workflow.ts` ASLI di atas prisma tiruan (pola `knowledge-workflow.test.ts`), supaya penjaga MANUAL dan tulisan audit yang diuji adalah yang sungguhan.
 
@@ -3033,12 +3033,12 @@ describe("POST /api/inbox/decisions/[id]/fix — kind: 'new'", () => {
 })
 ```
 
-- [ ] **Step 6: Jalankan, pastikan GAGAL**
+- [x] **Step 6: Jalankan, pastikan GAGAL**
 
 Run: `npx vitest run "src/app/api/inbox/decisions/[id]/fix/route.test.ts"`
 Expected: FAIL — `Failed to resolve import "./route"`.
 
-- [ ] **Step 7: Implementasi — `src/app/api/inbox/decisions/[id]/fix/route.ts`**
+- [x] **Step 7: Implementasi — `src/app/api/inbox/decisions/[id]/fix/route.ts`**
 
 ```ts
 import { NextResponse } from 'next/server'
@@ -3166,12 +3166,12 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 }
 ```
 
-- [ ] **Step 8: Jalankan, pastikan LULUS (termasuk test workflow yang tidak diubah)**
+- [x] **Step 8: Jalankan, pastikan LULUS (termasuk test workflow yang tidak diubah)**
 
 Run: `npx vitest run "src/app/api/inbox/decisions/[id]/fix/route.test.ts" "src/app/api/inbox/knowledge/[sourceId]/route.test.ts" src/lib/bot-control/knowledge-workflow.test.ts`
 Expected: PASS.
 
-- [ ] **Step 9: Amandemen `CLAUDE.md` §6**
+- [x] **Step 9: Amandemen `CLAUDE.md` §6**
 
 Ganti:
 
@@ -3200,7 +3200,7 @@ test "$(grep -c 'POST /api/inbox/decisions/\[id\]/fix' CLAUDE.md)" = 1 && echo "
 
 Expected: `AMANDEMEN OK`.
 
-- [ ] **Step 10: Commit**
+- [x] **Step 10: Commit**
 
 ```bash
 git add "src/app/api/inbox/knowledge/[sourceId]/route.ts" "src/app/api/inbox/knowledge/[sourceId]/route.test.ts" \

@@ -160,6 +160,11 @@ Setiap mutation:
 5. Transaksi Prisma kalau ada lebih dari satu tulisan yang harus konsisten. Saat dipanggil
    dengan client transaksi, tulisan audit **melempar**; saat standalone, ia ditelan.
 
+Pengecualian tunggal untuk langkah 2: perbaikan knowledge dari Inbox
+(`POST /api/inbox/decisions/[id]/fix`) terbuka untuk semua yang login karena setiap simpan
+berversi, dapat dikembalikan, dan tercatat di audit log — route knowledge lainnya tetap lewat
+`hasAdminPowers()`.
+
 Response error selalu `{ error: string }` dengan status HTTP yang sesuai. `try-catch` di
 setiap handler; jangan bocorkan pesan error mentah atau secret.
 
