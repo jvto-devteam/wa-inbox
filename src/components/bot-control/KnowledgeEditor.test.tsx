@@ -192,4 +192,19 @@ describe('KnowledgeEditor', () => {
     renderEditor()
     expect(screen.getByText('Kosongkan semua = topik diisi otomatis saat disimpan.')).toBeInTheDocument()
   })
+
+  it('activateOnly: hanya "Simpan & aktifkan", dan tidak menjanjikan draft', () => {
+    renderEditor({ activateOnly: true })
+    expect(screen.getByRole('button', { name: 'Simpan & aktifkan' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Simpan draft' })).not.toBeInTheDocument()
+    expect(screen.queryByText(/bot belum membacanya/i)).not.toBeInTheDocument()
+    expect(screen.getByText('Tersimpan langsung aktif: bot memakainya mulai pesan berikutnya.')).toBeInTheDocument()
+  })
+
+  it('activateOnly: menyimpan selalu dengan activate = true', () => {
+    const { onSave } = renderEditor({ activateOnly: true })
+    fireEvent.change(screen.getByLabelText('Alasan perubahan'), { target: { value: REASON } })
+    fireEvent.click(screen.getByRole('button', { name: 'Simpan & aktifkan' }))
+    expect(onSave).toHaveBeenCalledWith(draft(), REASON, true)
+  })
 })

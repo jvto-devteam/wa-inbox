@@ -3,6 +3,17 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { MessageBubble } from './MessageBubble'
 import type { TopicLabels } from '@/lib/inbox/topic-labels-schema'
 
+vi.mock('./FixAnswerPanel', () => ({
+  FixAnswerPanel: ({ messageId, onClose }: { messageId: string; onClose: () => void }) => (
+    <div>
+      {`panel perbaikan ${messageId}`}
+      <button type="button" onClick={onClose}>
+        tutup panel
+      </button>
+    </div>
+  ),
+}))
+
 describe('MessageBubble', () => {
   it('shows bot-sent messages with a Bot badge', () => {
     render(<MessageBubble message={{ id: 'm1', direction: 'OUTBOUND', content: 'Info paket Ijen...', channel: 'OFFICIAL', sentBy: 'BOT', deliveryStatus: 'SENT', createdAt: new Date().toISOString(), botTrace: { mode: 'faq', draft: 'Info paket Ijen...', sourceTopic: 'inclusions' } }} />)
@@ -409,6 +420,39 @@ describe('MessageBubble', () => {
     )
     fireEvent.click(screen.getByText('Halo dari agen'))
     expect(screen.queryByText(/mode:/i)).not.toBeInTheDocument()
+  })
+})
+
+describe('MessageBubble — Perbaiki', () => {
+  const botReply = {
+    id: 'msg_bot',
+    direction: 'OUTBOUND' as const,
+    content: 'Harga ATV Rp350.000.',
+    channel: 'OFFICIAL',
+    sentBy: 'BOT',
+    deliveryStatus: 'SENT',
+    createdAt: new Date().toISOString(),
+    botTrace: { mode: 'faq', draft: 'Harga ATV Rp350.000.', sourceTopic: 'price' },
+  }
+
+  it('ikon Perbaiki di balasan bot membuka dan menutup panel perbaikan', () => {
+    render(<MessageBubble message={botReply} />)
+    expect(screen.queryByText('panel perbaikan msg_bot')).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByLabelText('Perbaiki jawaban bot'))
+    expect(screen.getByText('panel perbaikan msg_bot')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByText('tutup panel'))
+    expect(screen.queryByText('panel perbaikan msg_bot')).not.toBeInTheDocument()
+  })
+
+  it('tidak ada ikon Perbaiki di pesan agen maupun pelanggan', () => {
+    const { unmount } = render(<MessageBubble message={{ ...botReply, sentBy: 'AGENT', botTrace: null }} />)
+    expect(screen.queryByLabelText('Perbaiki jawaban bot')).not.toBeInTheDocument()
+    unmount()
+
+    render(<MessageBubble message={{ ...botReply, direction: 'INBOUND', sentBy: 'CUSTOMER', botTrace: null }} />)
+    expect(screen.queryByLabelText('Perbaiki jawaban bot')).not.toBeInTheDocument()
   })
 })
 

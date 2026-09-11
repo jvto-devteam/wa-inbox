@@ -43,6 +43,7 @@ export function KnowledgeEditor({
   error,
   onCancel,
   onSave,
+  activateOnly = false,
 }: {
   initial: KnowledgeDraft
   title: string
@@ -51,6 +52,8 @@ export function KnowledgeEditor({
   onCancel: () => void
   /** `activate` distinguishes "Simpan draft" from "Simpan & aktifkan". */
   onSave: (draft: KnowledgeDraft, reason: string, activate: boolean) => void
+  /** Hanya "Simpan & aktifkan" (panel perbaikan di Inbox). Tanpa prop ini perilaku tidak berubah. */
+  activateOnly?: boolean
 }) {
   const [draft, setDraft] = useState<KnowledgeDraft>({
     ...initial,
@@ -84,10 +87,14 @@ export function KnowledgeEditor({
     <Modal onClose={onCancel} className="max-h-[85vh] w-full max-w-2xl space-y-3 overflow-y-auto p-4">
       <div className="space-y-1 border-b border-line pb-3">
         <h2 className="text-base font-semibold text-ink">{title}</h2>
-        <p className="text-sm text-ink-muted">
-          Disimpan sebagai draft, bot belum membacanya. Tekan &ldquo;Simpan &amp; aktifkan&rdquo; kalau isinya sudah
-          boleh dipakai menjawab customer.
-        </p>
+        {activateOnly ? (
+          <p className="text-sm text-ink-muted">Tersimpan langsung aktif: bot memakainya mulai pesan berikutnya.</p>
+        ) : (
+          <p className="text-sm text-ink-muted">
+            Disimpan sebagai draft, bot belum membacanya. Tekan &ldquo;Simpan &amp; aktifkan&rdquo; kalau isinya sudah
+            boleh dipakai menjawab customer.
+          </p>
+        )}
       </div>
 
       <Field label="Judul">
@@ -195,14 +202,16 @@ export function KnowledgeEditor({
         >
           {saving ? 'Menyimpan...' : 'Simpan & aktifkan'}
         </Button>
-        <Button
-          type="button"
-          variant="outline"
-          onClick={() => onSave(draft, reason.trim(), false)}
-          disabled={saving || !complete || reason.trim().length < MIN_REASON_LENGTH}
-        >
-          {saving ? 'Menyimpan...' : 'Simpan draft'}
-        </Button>
+        {!activateOnly && (
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => onSave(draft, reason.trim(), false)}
+            disabled={saving || !complete || reason.trim().length < MIN_REASON_LENGTH}
+          >
+            {saving ? 'Menyimpan...' : 'Simpan draft'}
+          </Button>
+        )}
         <Button type="button" variant="ghost" className="ml-auto" onClick={onCancel}>
           Batal
         </Button>

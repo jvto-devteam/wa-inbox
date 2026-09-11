@@ -3240,7 +3240,7 @@ EOF
 
 Alur panel: muat run (list → detail) → tampilkan pertanyaan pelanggan, jawaban bot, "Knowledge yang dipakai" (unik per `sourceId`; baris lama tanpa `sourceId` tampil tanpa tombol Edit) → **Edit** memuat revisi PUBLISHED terkini lalu merender `KnowledgeEditor` (menggantikan modal panel, tidak bertumpuk) → **Tambah jawaban yang benar** membuka editor berisi satu item `{ question: inboundText, answer: '' }` → simpan = `POST …/fix` → panel kembali dengan `Aktif: <judul> v<N>` dan status penandaan.
 
-- [ ] **Step 1: Tulis test yang gagal — `src/components/bot-control/KnowledgeEditor.test.tsx`**
+- [x] **Step 1: Tulis test yang gagal — `src/components/bot-control/KnowledgeEditor.test.tsx`**
 
 Tambahkan di dalam `describe('KnowledgeEditor', ...)`, setelah test terakhirnya:
 
@@ -3261,7 +3261,7 @@ Tambahkan di dalam `describe('KnowledgeEditor', ...)`, setelah test terakhirnya:
   })
 ```
 
-- [ ] **Step 2: Tulis test yang gagal — `src/components/inbox/FixAnswerPanel.test.tsx`**
+- [x] **Step 2: Tulis test yang gagal — `src/components/inbox/FixAnswerPanel.test.tsx`**
 
 ```tsx
 import { describe, it, expect, vi, afterEach } from 'vitest'
@@ -3464,7 +3464,7 @@ describe('FixAnswerPanel', () => {
 })
 ```
 
-- [ ] **Step 3: Tulis test yang gagal — `src/components/inbox/MessageBubble.test.tsx`**
+- [x] **Step 3: Tulis test yang gagal — `src/components/inbox/MessageBubble.test.tsx`**
 
 Tambahkan tepat setelah baris-baris impor di atas berkas:
 
@@ -3518,12 +3518,12 @@ describe('MessageBubble — Perbaiki', () => {
 })
 ```
 
-- [ ] **Step 4: Jalankan, pastikan GAGAL**
+- [x] **Step 4: Jalankan, pastikan GAGAL**
 
 Run: `npx vitest run src/components/bot-control/KnowledgeEditor.test.tsx src/components/inbox/FixAnswerPanel.test.tsx src/components/inbox/MessageBubble.test.tsx`
 Expected: FAIL — di KnowledgeEditor "Simpan draft" masih ada; `Failed to resolve import "./FixAnswerPanel"` untuk dua berkas lainnya.
 
-- [ ] **Step 5: Implementasi — `src/components/bot-control/KnowledgeEditor.tsx`**
+- [x] **Step 5: Implementasi — `src/components/bot-control/KnowledgeEditor.tsx`**
 
 5a. Ganti:
 
@@ -3608,7 +3608,7 @@ menjadi:
         )}
 ```
 
-- [ ] **Step 6: Implementasi — `src/components/inbox/FixAnswerPanel.tsx`**
+- [x] **Step 6: Implementasi — `src/components/inbox/FixAnswerPanel.tsx`**
 
 ```tsx
 'use client'
@@ -3840,7 +3840,7 @@ export function FixAnswerPanel({
 }
 ```
 
-- [ ] **Step 7: Implementasi — `src/components/inbox/MessageBubble.tsx`**
+- [x] **Step 7: Implementasi — `src/components/inbox/MessageBubble.tsx`**
 
 7a. Ganti baris impor ikon (hasil Task 4):
 
@@ -3929,12 +3929,12 @@ menjadi:
         {message.sentBy === 'AGENT' && <span>Agen</span>}
 ```
 
-- [ ] **Step 8: Jalankan, pastikan LULUS**
+- [x] **Step 8: Jalankan, pastikan LULUS**
 
 Run: `npx vitest run src/components/bot-control/KnowledgeEditor.test.tsx src/components/inbox/FixAnswerPanel.test.tsx src/components/inbox/MessageBubble.test.tsx src/components/inbox/ThreadView.test.tsx`
 Expected: PASS — termasuk seluruh test lama `KnowledgeEditor.test.tsx` (perilaku tanpa prop identik).
 
-- [ ] **Step 9: Commit**
+- [x] **Step 9: Commit**
 
 ```bash
 git add src/components/bot-control/KnowledgeEditor.tsx src/components/bot-control/KnowledgeEditor.test.tsx \

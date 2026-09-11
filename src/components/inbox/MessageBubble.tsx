@@ -1,11 +1,12 @@
 'use client'
 import { useState } from 'react'
-import { Bot, Brain, CornerUpLeft, Film, Image as ImageIcon, Paperclip, Tag } from 'lucide-react'
+import { Bot, Brain, CornerUpLeft, Film, Image as ImageIcon, Paperclip, Tag, Wrench } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { IconButton } from '@/components/ui/icon-button'
 import { cn } from '@/lib/utils'
 import { BotTracePopover } from './BotTracePopover'
+import { FixAnswerPanel } from './FixAnswerPanel'
 import { isHandoffLogMessage, HANDOFF_LOG_SUMMARY } from '@/lib/message-display'
 import { formatWhatsAppText } from '@/lib/whatsapp-format'
 import { fetchJson } from '@/lib/fetch-json'
@@ -287,6 +288,7 @@ export function MessageBubble({
   // Declared before the handoff-log early return below so every render calls the same hooks
   // in the same order (Rules of Hooks) -- unused in that branch, which is fine.
   const [showTrace, setShowTrace] = useState(false)
+  const [showFix, setShowFix] = useState(false)
   // Phase 6: the "Kirim Ulang" button below shipped with no onClick at all -- it looked like a
   // working recovery path and did nothing. It now re-queues the message's outbound job.
   const [retrying, setRetrying] = useState(false)
@@ -418,6 +420,14 @@ export function MessageBubble({
           onClose={() => setShowTrace(false)}
         />
       )}
+      {isBotMessage && showFix && (
+        <FixAnswerPanel
+          messageId={message.id}
+          trace={(message.botTrace as BotDecision | null) ?? null}
+          replyText={message.content}
+          onClose={() => setShowFix(false)}
+        />
+      )}
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-ink-subtle">
         {message.sentBy === 'BOT' && (
           <Badge variant="default" className="gap-1">
@@ -434,6 +444,15 @@ export function MessageBubble({
             icon={<Brain strokeWidth={1.75} />}
             aria-pressed={showTrace}
             onClick={() => setShowTrace((prev) => !prev)}
+            className="-my-1"
+          />
+        )}
+        {isBotMessage && (
+          <IconButton
+            size="sm"
+            label="Perbaiki jawaban bot"
+            icon={<Wrench strokeWidth={1.75} />}
+            onClick={() => setShowFix(true)}
             className="-my-1"
           />
         )}
