@@ -3958,22 +3958,22 @@ EOF
 
 **Interfaces:** Consumes semua task 1–9. Produces: branch hijau dan siap ditinjau.
 
-- [ ] **Step 1: Seluruh test**
+- [x] **Step 1: Seluruh test**
 
 Run: `npm test`
 Expected: semua PASS. Bila ada yang merah, perbaiki penyebabnya di task yang bersangkutan — jangan melonggarkan asersi.
 
-- [ ] **Step 2: Typecheck**
+- [x] **Step 2: Typecheck**
 
 Run: `npx tsc --noEmit`
 Expected: keluar 0, tanpa keluaran.
 
-- [ ] **Step 3: Lint**
+- [x] **Step 3: Lint**
 
 Run: `npx eslint .`
 Expected: 0 error (warning boleh).
 
-- [ ] **Step 4: Pemeriksa larangan mekanis (harus mencetak `LARANGAN BERSIH`)**
+- [x] **Step 4: Pemeriksa larangan mekanis (harus mencetak `LARANGAN BERSIH`)**
 
 ```bash
 BASE=$(git merge-base HEAD origin/main)
@@ -3986,7 +3986,7 @@ BASE=$(git merge-base HEAD origin/main)
 
 Expected: `LARANGAN BERSIH` — tidak ada perubahan pada classifier/simulator, tidak ada `any` baru, tidak ada dependensi baru, migrasi murni aditif.
 
-- [ ] **Step 5: Commit hanya bila Step 1–4 memerlukan perbaikan** (path eksplisit, trailer yang sama seperti task lain).
+- [x] **Step 5: Commit hanya bila Step 1–4 memerlukan perbaikan** (path eksplisit, trailer yang sama seperti task lain).
 
 ---
 
