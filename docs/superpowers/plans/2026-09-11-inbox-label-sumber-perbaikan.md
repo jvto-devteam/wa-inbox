@@ -740,7 +740,7 @@ EOF
 
 Otorisasi: hanya `getSession` (tanpa `hasAdminPowers`) — sama dengan route flag, karena label baca tidak mengubah apa yang bot lakukan. Tidak ada audit (CLAUDE.md §4: audit hanya untuk perubahan perilaku bot). Tidak ada body; parameter divalidasi Zod.
 
-- [ ] **Step 1: Tulis test yang gagal — `route.test.ts`**
+- [x] **Step 1: Tulis test yang gagal — `route.test.ts`**
 
 ```ts
 /**
@@ -867,12 +867,12 @@ describe('POST /api/conversations/[id]/messages/[messageId]/topic-labels', () =>
 })
 ```
 
-- [ ] **Step 2: Jalankan, pastikan GAGAL**
+- [x] **Step 2: Jalankan, pastikan GAGAL**
 
 Run: `npx vitest run "src/app/api/conversations/[id]/messages/[messageId]/topic-labels/route.test.ts"`
 Expected: FAIL — `Failed to resolve import "./route"`.
 
-- [ ] **Step 3: Implementasi — `route.ts`**
+- [x] **Step 3: Implementasi — `route.ts`**
 
 ```ts
 import { NextResponse } from 'next/server'
@@ -923,12 +923,12 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 }
 ```
 
-- [ ] **Step 4: Jalankan, pastikan LULUS**
+- [x] **Step 4: Jalankan, pastikan LULUS**
 
 Run: `npx vitest run "src/app/api/conversations/[id]/messages/[messageId]/topic-labels/route.test.ts"`
 Expected: PASS (10 test).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add "src/app/api/conversations/[id]/messages/[messageId]/topic-labels/route.ts" \
