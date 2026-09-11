@@ -158,7 +158,7 @@ export type DecisionKnowledge = {
    * `rejectedOmitted` above -- an absent key reads identically to "nothing to add" everywhere
    * this is consumed, so no pre-Task-22 fixture that builds a `knowledge` object literal needs
    * to change.
-  */
+   */
   alsoTopics?: string[]
   /**
    * Which knowledge lines each paragraph of the FINAL reply matches (reply-attribution.ts). A

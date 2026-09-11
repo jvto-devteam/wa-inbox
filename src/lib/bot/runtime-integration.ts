@@ -135,7 +135,7 @@ export type ManagedFacts = {
    * keep passing unmodified -- `toEqual` treats an absent key the same as one set to
    * `undefined`. Populated whenever `lines` is built by `collect()`, which is every non-EMPTY
    * result. Task 17: feeds `DecisionKnowledge.managedLines` in orchestrator.ts.
-  */
+   */
   lineSources?: string[]
   /** Parallel to `lines`, same convention as `lineSources`. Feeds `DecisionKnowledge.managedLines`' ids. */
   lineMeta?: ManagedLineMeta[]
