@@ -146,6 +146,7 @@ import {
 import { extractTripPreferences } from './trip-preferences-extractor'
 import { type ResolverTopic } from './module-resolver'
 import { classifyTopicViaLLM } from './topic-classifier'
+import { classifyAllTopics } from './multi-topic-classifier'
 import { classifyKeywordModulesViaLLM } from './keyword-module-classifier'
 import { detectsAdditionalEscalationSignal } from './escalation-classifier'
 import { detectsPreferenceDeclineViaLLM } from './preference-decline-classifier'
@@ -156,7 +157,9 @@ import {
   resolveKeywordTriggeredFacts,
   resolveRouteLegFacts,
   factsForModuleIds,
+  dedupeLines,
   GUARDRAIL_INSTRUCTION,
+  type ResolvedKnowledge,
 } from './knowledge'
 import { callLLM, type LLMOptions } from './llm'
 // Phase H integration pass: where configuration published through Bot Control reaches the
@@ -289,6 +292,62 @@ export function gatherSideFacts(inboundText: string, keywordFacts?: string[]): s
 // this exact "join with a blank line before the main message" formatting inline.
 export function withSideFacts(sideFacts: string[], baseReply: string): string {
   return sideFacts.length > 0 ? `${sideFacts.join(' ')}\n\n${baseReply}` : baseReply
+}
+
+/**
+ * Task 22 (Ruling R101): folds catalog facts/disclosures for `alsoTopics` (what else
+ * classifyAllTopics found the message asking about, besides the primary topic) into the
+ * primary topic's own `resolveKnowledgeForTopic` result -- so a message asking about several
+ * things at once gets an answer for every one of them, not just the one the primary classifier
+ * picked.
+ *
+ * Each also-topic is resolved with `resolveKnowledgeForTopic(topic, message, destination,
+ * keywordTriggeredModuleIds)` -- the SAME arguments the primary resolution already used at
+ * both call sites (no-destination branch/destination branch), per the brief -- and its
+ * `factualLines`/`detailLines`/`disclosures` are unioned with the primary's own and deduped
+ * (`dedupeLines`, Task 13) so a fact resolved by two topics at once (a real possibility -- see
+ * knowledge.ts's own module-selection comments) does not print twice.
+ *
+ * `primaryLink` deliberately stays the PRIMARY topic's own link, never an also-topic's: the
+ * reply's one "relevant link" is about what the customer's MAIN question was, and swapping it
+ * for a side question's link would point the customer at the wrong page for what they mostly
+ * asked about. `handoffRequired` is the OR across every topic asked -- a guarantee demanded
+ * about ANY of them (not just the primary one) still needs the guardrail's stronger reminder
+ * (see the two call sites' own `knowledge.handoffRequired` checks).
+ *
+ * A no-op (returns `primary` unchanged, no extra `resolveKnowledgeForTopic` calls) when
+ * `alsoTopics` is empty -- the overwhelming majority of turns, since most messages ask about
+ * only one thing.
+ */
+function mergeKnowledgeAcrossTopics(
+  primary: ResolvedKnowledge,
+  alsoTopics: readonly ResolverTopic[],
+  message: string,
+  destination: string | undefined,
+  keywordTriggeredModuleIds: string[]
+): ResolvedKnowledge {
+  if (alsoTopics.length === 0) return primary
+
+  const factualLines = [...primary.factualLines]
+  const detailLines = [...primary.detailLines]
+  const disclosures = [...primary.disclosures]
+  let handoffRequired = primary.handoffRequired
+
+  for (const topic of alsoTopics) {
+    const extra = resolveKnowledgeForTopic(topic, message, destination, keywordTriggeredModuleIds)
+    factualLines.push(...extra.factualLines)
+    detailLines.push(...extra.detailLines)
+    disclosures.push(...extra.disclosures)
+    handoffRequired = handoffRequired || extra.handoffRequired
+  }
+
+  return {
+    factualLines: dedupeLines(factualLines),
+    detailLines: dedupeLines(detailLines),
+    primaryLink: primary.primaryLink,
+    disclosures: dedupeLines(disclosures),
+    handoffRequired,
+  }
 }
 
 // R96 (operator decision 2026-09-11): CLAUDE.md §2 -- the production model tag,
@@ -630,9 +689,14 @@ async function composeVerifiedReply(params: {
   // size. Trace-only, and only the destination-known path can supply it (it is the
   // one branch that resolves a per-pax tier at all). See the wrong-tier note below.
   pricesShownForPax?: number[]
+  // Task 22 (Ruling R101): every OTHER topic classifyAllTopics found in this message, besides
+  // `topic` -- passed straight through to `verifyReply`'s own `alsoTopics`, whose header
+  // explains why the guarantee-violation check needs to see it. Both call sites pass their own
+  // computed `alsoTopics` (possibly `[]`); optional only so this stays a pure addition.
+  alsoTopics?: string[]
   trace: Tracer
 }): Promise<ComposedReply> {
-  const { conversationId, topic, inboundText, system, model, history, groundedAmounts, groundedUrls, pricesShownForPax, trace } = params
+  const { conversationId, topic, inboundText, system, model, history, groundedAmounts, groundedUrls, pricesShownForPax, alsoTopics, trace } = params
   let reply = await callLLM(inboundText, { system, model, history })
   // Second layer of defence behind llm.ts's own validation: an empty reply must never
   // become a dispatched blank message. Previously handed off outright; now a graceful,
@@ -647,7 +711,7 @@ async function composeVerifiedReply(params: {
   // -- the customer treats it as a quote -- and the link registry has already
   // shipped 18 broken "existing" URLs once (see knowledge.ts). One corrective
   // retry, then a safe deferral: never a fabricated number, never a dead link.
-  let verdict = verifyReply({ replyText: reply, groundedAmounts, groundedUrls, topic })
+  let verdict = verifyReply({ replyText: reply, groundedAmounts, groundedUrls, topic, alsoTopics })
   let attempts = 1
   if (verdict.fabricatedPrices.length > 0 || verdict.unknownUrls.length > 0) {
     attempts = 2
@@ -660,7 +724,7 @@ async function composeVerifiedReply(params: {
       model,
       history,
     })
-    const retriedVerdict = retried?.trim() ? verifyReply({ replyText: retried, groundedAmounts, groundedUrls, topic }) : null
+    const retriedVerdict = retried?.trim() ? verifyReply({ replyText: retried, groundedAmounts, groundedUrls, topic, alsoTopics }) : null
     if (retried?.trim() && retriedVerdict && retriedVerdict.fabricatedPrices.length === 0 && retriedVerdict.unknownUrls.length === 0) {
       reply = retried
       verdict = retriedVerdict
@@ -961,6 +1025,9 @@ async function runBookingContextMode(
  * closure's `turnKnowledge` variable. Set at most once, right after this function's own
  * knowledge-assembly site finishes (mirrors `turnClassification.topic` being set once per
  * site, not per `return`) -- `decideAndRespond` reads `.value` back after this call resolves.
+ * @param alsoTopics Task 22 (Ruling R101): what else `classifyAllTopics` found this message
+ * asking about, besides `resolverTopic` -- folded into the pre-destination knowledge via
+ * `mergeKnowledgeAcrossTopics` and into `managedFactsFor`'s own gate below.
  */
 async function runNoDestinationBranch(
   inboundText: string,
@@ -972,16 +1039,25 @@ async function runNoDestinationBranch(
   routeLegNote: string,
   keywordModuleIds: string[],
   trace: Tracer,
-  knowledgeSink: { value?: DecisionKnowledge }
+  knowledgeSink: { value?: DecisionKnowledge },
+  alsoTopics: readonly ResolverTopic[]
 ): Promise<BotDecision> {
   // A keyword-triggered module (dietary/ISIC/escort/ferry) can genuinely answer a message
   // regardless of what topic it classified as -- 'general' always has non-empty baseline
   // facts of its own (TOPIC_MODULES.general), so that alone can't be used to detect a real
   // keyword hit here the way it can for an already-allowlisted topic below.
   if (DESTINATION_INDEPENDENT_TOPICS.has(resolverTopic) || keywordModuleIds.length > 0) {
-    const preDestinationKnowledge = resolveKnowledgeForTopic(resolverTopic, inboundText, undefined, keywordModuleIds)
+    const preDestinationKnowledge = mergeKnowledgeAcrossTopics(
+      resolveKnowledgeForTopic(resolverTopic, inboundText, undefined, keywordModuleIds),
+      alsoTopics,
+      inboundText,
+      undefined,
+      keywordModuleIds
+    )
     // Task 17: snapshot BEFORE managed lines are pushed into `factualLines` below -- this is
-    // the pure catalog side of `DecisionKnowledge.catalogLines`.
+    // the pure catalog side of `DecisionKnowledge.catalogLines`. Task 22: already includes
+    // whatever `alsoTopics` contributed above, so `catalogLines` (what was actually sent to the
+    // model) stays truthful about the multi-topic merge, not just the primary topic's facts.
     const catalogLines = [...preDestinationKnowledge.factualLines]
 
     // Same addition as the catalog branch below (managedFactsFor's own header explains the
@@ -990,7 +1066,7 @@ async function runNoDestinationBranch(
     // deposit question answered purely by a managed FAQ, with nothing in the catalog for
     // "payment" pre-destination) falls through to the generic "which destination?" reply
     // instead of actually answering.
-    const managed = await managedFactsFor(inboundText, resolverTopic, preDestinationKnowledge.factualLines.length > 0)
+    const managed = await managedFactsFor(inboundText, resolverTopic, preDestinationKnowledge.factualLines.length > 0, alsoTopics)
     // Ruling R46: before Phase 2 knowledge was only a supplement, so a failed read swallowed
     // and treated as "nothing extra" was fine. After it, knowledge carries the whole of JVTO's
     // business facts, so answering anyway means answering confidently from half of it -- with
@@ -1025,6 +1101,9 @@ async function runNoDestinationBranch(
       rejected: managed.rejected,
       rejectedOmitted: managed.rejectedOmitted,
       gateBypassed: managed.gateBypassed,
+      // Task 22: absent (not an empty array) when nothing extra was asked -- see
+      // DecisionKnowledge.alsoTopics's own header for why.
+      alsoTopics: alsoTopics.length > 0 ? [...alsoTopics] : undefined,
     }
 
     if (preDestinationKnowledge.factualLines.length > 0) {
@@ -1084,6 +1163,10 @@ async function runNoDestinationBranch(
           ...extractUrls(inboundText),
           ...extractUrls(history?.map((h) => h.content).join('\n') ?? ''),
         ],
+        // Task 22: the guarantee-violation check (reply-verifier.ts) runs when the PRIMARY
+        // topic OR any of these is in NO_GUARANTEE_TOPICS -- a Blue Fire promise slipped into
+        // the answer for a side question must still be caught.
+        alsoTopics: [...alsoTopics],
         trace,
       })
       if (!composed.ok) return composed.decision
@@ -1431,19 +1514,36 @@ export async function decideAndRespond(
     // own call site above for why: it keeps this inside the try block so the outer catch still
     // handles a rejection (an Ollama timeout, etc.) gracefully.
     if (!destination) {
-      const [keywordModuleResult, topicResult] = await Promise.all([
+      // Task 22 (Ruling R101): `classifyAllTopics` joins the SAME `Promise.all` as the other
+      // two classifiers -- one extra LLM call, but running in parallel with the two already
+      // here rather than adding to this branch's latency. `classifyTopicViaLLM` (the primary
+      // topic classifier) is untouched, byte-identical prompt and all -- see
+      // multi-topic-classifier.ts's own header for why this had to be a separate call.
+      const [keywordModuleResult, topicResult, allTopicsResult] = await Promise.all([
         classifyKeywordModulesViaLLM(inboundText, settings.ollamaModel),
         classifyTopicViaLLM(classification.job, inboundText, settings.ollamaModel),
+        classifyAllTopics(inboundText, settings.ollamaModel),
       ])
       // Task 15: no-destination branch's own topic classification site (the destination branch
       // below has its own, separate one).
       turnClassification.topic = topicResult.topic
+      // Task 22: everything ELSE classifyAllTopics found, besides the primary topic above --
+      // `topic`/`sourceTopic`/`TripBrief.lastTopic` stay on the primary topic (unchanged); this
+      // only widens which facts/disclosures get folded into the answer (mergeKnowledgeAcrossTopics
+      // below, and managedFactsFor's own gate).
+      const alsoTopics = allTopicsResult.filter((t) => t !== topicResult.topic)
       trace.push(
         'Memeriksa modul fakta kata kunci',
         keywordModuleResult.source === 'llm'
           ? `Diperiksa oleh model LLM -- ${keywordModuleResult.moduleIds.length} modul cocok.`
           : `Model LLM gagal/timeout -- fallback ke pemindaian kata kunci lama, ${keywordModuleResult.moduleIds.length} modul cocok.`
       )
+      if (alsoTopics.length > 0) {
+        trace.push(
+          'Topik tambahan terdeteksi',
+          `Selain topik utama "${topicResult.topic}", pesan ini juga menanyakan: ${alsoTopics.join(', ')} -- fakta dan disclosure topik-topik ini digabungkan ke jawaban.`
+        )
+      }
       traceStep(pipeline, 'susun-balasan', 'mulai')
       // Task 17: mutable box `runNoDestinationBranch` writes its assembled `knowledge` into
       // (see that function's own header) -- read back into the sibling `turnKnowledge` right
@@ -1459,7 +1559,8 @@ export async function decideAndRespond(
         routeLegNote,
         keywordModuleResult.moduleIds,
         trace,
-        knowledgeSink
+        knowledgeSink,
+        alsoTopics
       )
       turnKnowledge = knowledgeSink.value
       return decision
@@ -1469,12 +1570,19 @@ export async function decideAndRespond(
     // Every one of these five reads nothing but `inboundText` (plus, for the topic classifier,
     // the already-computed sales job) and none reads another's result -- so they run as one
     // batch rather than five sequential waits, each with its own 10s timeout.
+    //
+    // Task 22 (Ruling R101): `classifyAllTopics` is the sixth entry in this SAME `Promise.all`
+    // -- one extra LLM call, running in parallel with the other five rather than adding to this
+    // branch's latency. `classifyTopicViaLLM` (the primary topic classifier, second entry
+    // below) is untouched -- see multi-topic-classifier.ts's own header for why this had to be
+    // a separate call rather than an extension of that prompt.
     const [
       { moduleIds: keywordModuleIds, source: keywordModuleSource },
       { topic: resolverTopic, source: topicSource },
       { preferences, source: preferencesSource },
       { declined: preferenceDeclineSignal, source: declineSource },
       { isRecommendation: recommendationIntentSignal, source: recommendationSource },
+      allTopicsResult,
     ] = await Promise.all([
       // LLM-primary as of 2026-08-07 (see keyword-module-classifier.ts's own header) -- replaces
       // KEYWORD_TRIGGERED_MODULES' keyword scan as the primary source of "which independent fact
@@ -1500,10 +1608,16 @@ export async function decideAndRespond(
       // (each fixed as a one-off keyword patch previously). Falls back to the unchanged
       // isRecommendationRequest regex only on a genuine technical failure.
       detectsRecommendationIntentViaLLM(inboundText, isRecommendationRequest, settings.ollamaModel),
+      classifyAllTopics(inboundText, settings.ollamaModel),
     ])
     // Task 15: destination branch's own topic classification site (the no-destination branch
     // above has its own, separate one).
     turnClassification.topic = resolverTopic
+    // Task 22: everything ELSE classifyAllTopics found, besides the primary topic above --
+    // `topic`/`sourceTopic`/`TripBrief.lastTopic` stay on `resolverTopic` (unchanged); this only
+    // widens which facts/disclosures get folded into the answer (mergeKnowledgeAcrossTopics
+    // below, and managedFactsFor's own gate).
+    const alsoTopics = allTopicsResult.filter((t) => t !== resolverTopic)
     trace.push(
       'Memeriksa modul fakta kata kunci',
       keywordModuleSource === 'llm'
@@ -1514,6 +1628,12 @@ export async function decideAndRespond(
       'Mengklasifikasi topik',
       `Topik terdeteksi: "${resolverTopic}"${topicSource === 'regex_fallback' ? ' (fallback regex -- model LLM gagal/timeout)' : ''}.`
     )
+    if (alsoTopics.length > 0) {
+      trace.push(
+        'Topik tambahan terdeteksi',
+        `Selain topik utama "${resolverTopic}", pesan ini juga menanyakan: ${alsoTopics.join(', ')} -- fakta dan disclosure topik-topik ini digabungkan ke jawaban.`
+      )
+    }
     trace.push(
       'Mengekstrak preferensi perjalanan',
       preferencesSource === 'llm'
@@ -1721,9 +1841,19 @@ export async function decideAndRespond(
     // (see knowledge.ts's header) -- resolves real facts/links/disclosures for all 14 real
     // topics from general-modules.json, not just the 4 CatalogPackage itself can answer.
     traceStep(pipeline, 'susun-balasan', 'mulai')
-    const knowledge = resolveKnowledgeForTopic(resolverTopic, inboundText, destination, keywordModuleIds)
+    // Task 22: merges in each also-topic's own resolveKnowledgeForTopic result (SAME
+    // message/destination/keywordModuleIds arguments as the primary call) -- a no-op when
+    // `alsoTopics` is empty, the overwhelming majority of turns.
+    const knowledge = mergeKnowledgeAcrossTopics(
+      resolveKnowledgeForTopic(resolverTopic, inboundText, destination, keywordModuleIds),
+      alsoTopics,
+      inboundText,
+      destination,
+      keywordModuleIds
+    )
     // Task 17: snapshot BEFORE managed lines are pushed into `factualLines` below -- this is
-    // the pure catalog side of `DecisionKnowledge.catalogLines`.
+    // the pure catalog side of `DecisionKnowledge.catalogLines`. Task 22: already includes
+    // whatever `alsoTopics` contributed above.
     const catalogLines = [...knowledge.factualLines]
 
     // Managed knowledge is ADDED to what the catalog resolved, never substituted for it. The
@@ -1731,7 +1861,7 @@ export async function decideAndRespond(
     // replace anything would let a web form silently contradict the released packages with no
     // way to see which one answered. Only entries whose question or tags share a word with this
     // message are folded in — see managedFactsFor for why a crude match is the right one here.
-    const managed = await managedFactsFor(inboundText, resolverTopic, knowledge.factualLines.length > 0)
+    const managed = await managedFactsFor(inboundText, resolverTopic, knowledge.factualLines.length > 0, alsoTopics)
     // Ruling R46: same reasoning as the no-destination branch's identical check above -- a
     // failed knowledge read must surface as clarify, not silently answer from half the facts.
     if (managed.degraded) {
@@ -1764,6 +1894,9 @@ export async function decideAndRespond(
       rejected: managed.rejected,
       rejectedOmitted: managed.rejectedOmitted,
       gateBypassed: managed.gateBypassed,
+      // Task 22: absent (not an empty array) when nothing extra was asked -- see
+      // DecisionKnowledge.alsoTopics's own header for why.
+      alsoTopics: alsoTopics.length > 0 ? [...alsoTopics] : undefined,
     }
 
     // Task 11 (KnowledgeGapLog): the catalog had nothing for this classified topic -- one
@@ -2091,6 +2224,10 @@ export async function decideAndRespond(
       groundedAmounts,
       groundedUrls,
       pricesShownForPax,
+      // Task 22: the guarantee-violation check (reply-verifier.ts) runs when the PRIMARY topic
+      // OR any of these is in NO_GUARANTEE_TOPICS -- a Blue Fire promise slipped into the
+      // answer for a side question must still be caught.
+      alsoTopics: [...alsoTopics],
       trace,
     })
     if (!composed.ok) return composed.decision

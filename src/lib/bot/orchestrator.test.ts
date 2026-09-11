@@ -9,6 +9,7 @@ import { classifySalesNeed } from './sales-classifier'
 import { matchDestination, packagesForDestination, pickPackage, listDestinations } from './package-match'
 import { extractTripPreferences } from './trip-preferences-extractor'
 import { classifyTopicViaLLM } from './topic-classifier'
+import { classifyAllTopics } from './multi-topic-classifier'
 import { classifyKeywordModulesViaLLM } from './keyword-module-classifier'
 import { detectsAdditionalEscalationSignal } from './escalation-classifier'
 import { detectsPreferenceDeclineViaLLM } from './preference-decline-classifier'
@@ -58,16 +59,38 @@ vi.mock('./trip-preferences-extractor', () => ({ extractTripPreferences: vi.fn()
 // implementation calling the real (also-mocked) callLLM would add an extra callLLM invocation
 // per decideAndRespond call and shift every `callLLM.mock.calls[0]` assertion in this file.
 vi.mock('./topic-classifier', () => ({ classifyTopicViaLLM: vi.fn() }))
+// Task 22 (Ruling R101): mocked as a whole, same rationale as topic-classifier.ts above --
+// its real implementation calling the real (also-mocked) callLLM would add a THIRD callLLM
+// invocation per decideAndRespond call (on top of trip-preferences-extractor.ts's) and shift
+// every `callLLM.mock.calls[0]`/`llmCall(0)` assertion in this file. Default `[]` below keeps
+// every pre-Task-22 test's behaviour unchanged -- `alsoTopics` computed from an empty result is
+// always `[]`, so `mergeKnowledgeAcrossTopics` short-circuits to a no-op.
+vi.mock('./multi-topic-classifier', () => ({ classifyAllTopics: vi.fn() }))
 // Mocked as a whole, same rationale as trip-preferences-extractor.ts/topic-classifier.ts above.
 vi.mock('./keyword-module-classifier', () => ({ classifyKeywordModulesViaLLM: vi.fn() }))
 vi.mock('./escalation-classifier', () => ({ detectsAdditionalEscalationSignal: vi.fn() }))
 vi.mock('./preference-decline-classifier', () => ({ detectsPreferenceDeclineViaLLM: vi.fn() }))
 vi.mock('./recommendation-intent-classifier', () => ({ detectsRecommendationIntentViaLLM: vi.fn() }))
+// `dedupeLines` is a real (not mocked) pure function -- Task 22's `mergeKnowledgeAcrossTopics`
+// (orchestrator.ts) calls the real implementation, which needs no test-provided behaviour, only
+// to exist here since the rest of './knowledge' is mocked as a whole below. Same dedup logic as
+// knowledge.ts's own `dedupeLines` (whitespace-normalized + lowercased text, first occurrence
+// wins) so a merge test's expectations match the real function's behaviour, not a stub's.
+function dedupeLinesForTest(lines: string[]): string[] {
+  const seen = new Set<string>()
+  return lines.filter((line) => {
+    const key = line.replace(/\s+/g, ' ').trim().toLowerCase()
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+}
 vi.mock('./knowledge', () => ({
   resolveKnowledgeForTopic: vi.fn(),
   resolveKeywordTriggeredFacts: vi.fn(),
   resolveRouteLegFacts: vi.fn(),
   factsForModuleIds: vi.fn(),
+  dedupeLines: (lines: string[]) => dedupeLinesForTest(lines),
   GUARDRAIL_INSTRUCTION: 'GUARDRAILS',
 }))
 vi.mock('./llm')
@@ -145,6 +168,10 @@ beforeEach(() => {
   ;vi.mocked(extractTripPreferences).mockResolvedValue({ preferences: { origin: null, dayCount: null, finishCity: null, pax: null }, source: 'llm' })
   ;vi.mocked(listDestinations).mockReturnValue(['Bromo', 'Ijen'])
   ;vi.mocked(classifyTopicViaLLM).mockResolvedValue({ topic: 'inclusions', source: 'llm' })
+  // Task 22: empty by default -- matches this file's pre-existing behaviour (no also-topics,
+  // so `mergeKnowledgeAcrossTopics` is a no-op) for every test that doesn't specifically mock a
+  // multi-topic message of its own.
+  ;vi.mocked(classifyAllTopics).mockResolvedValue([])
   ;vi.mocked(classifyKeywordModulesViaLLM).mockResolvedValue({ moduleIds: [], source: 'llm' })
   ;vi.mocked(detectsAdditionalEscalationSignal).mockResolvedValue(false)
   ;vi.mocked(detectsPreferenceDeclineViaLLM).mockResolvedValue({ declined: false, source: 'llm' })
@@ -3746,6 +3773,228 @@ describe('decideAndRespond', () => {
 
     expect(result.steps?.map((s) => s.label)).not.toContain('Knowledge tidak terbaca')
     expect((result as { reply?: string }).reply ?? '').not.toContain('having a small technical hiccup')
+  })
+})
+
+// Task 22 (Ruling R101): a message can ask about several topics at once -- classifyAllTopics
+// (multi-topic-classifier.ts, its OWN prompt, byte-identical topic-classifier.ts untouched)
+// runs in the SAME Promise.all as the primary topic classifier at both call sites, and
+// `alsoTopics` (its result minus the primary topic) widens which catalog/managed facts and
+// disclosures get folded into the answer -- without ever moving `topic`/`sourceTopic`/
+// `TripBrief.lastTopic` off the primary topic.
+describe('multi-topik (alsoTopics, Ruling R101)', () => {
+  describe('cabang destinasi (katalog)', () => {
+    function setUpDestinationBranch() {
+      vi.mocked(ensureFreshBookingData).mockResolvedValue(null)
+      vi.mocked(classifySalesNeed).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
+      vi.mocked(matchDestination).mockReturnValue({ destination: 'ijen', matches: [pkg()] })
+      vi.mocked(checkRouteGate).mockReturnValue({ status: 'clear' })
+      vi.mocked(classifyTopicViaLLM).mockResolvedValue({ topic: 'payment', source: 'llm' })
+    }
+
+    it('memanggil classifyAllTopics dengan pesan dan model yang sama, paralel dengan classifier lain', async () => {
+      setUpDestinationBranch()
+      vi.mocked(classifyAllTopics).mockResolvedValue(['payment'])
+
+      await decideAndRespond('conv_1', 'berapa deposit dan bisa drop off di malang?')
+
+      expect(classifyAllTopics).toHaveBeenCalledWith('berapa deposit dan bisa drop off di malang?', 'gemma4:31b-cloud')
+    })
+
+    it('menggabungkan factualLines/detailLines/disclosures dari also-topic ke dalam prompt DAN grounding verifier', async () => {
+      setUpDestinationBranch()
+      vi.mocked(classifyAllTopics).mockResolvedValue(['payment', 'blue_fire'])
+      vi.mocked(resolveKnowledgeForTopic).mockImplementation((topic) =>
+        topic === 'blue_fire'
+          ? {
+              factualLines: ['Blue Fire tidak dijamin setiap malam.'],
+              detailLines: ['Kondisi cuaca bisa menutup akses sewaktu-waktu.'],
+              primaryLink: 'https://example.com/blue-fire',
+              disclosures: ['Akses Blue Fire tidak bisa dijamin.'],
+              handoffRequired: false,
+            }
+          : {
+              factualLines: ['Deposit 20% dari total.'],
+              detailLines: [],
+              primaryLink: 'https://example.com/payment',
+              disclosures: [],
+              handoffRequired: false,
+            }
+      )
+
+      const result = await decideAndRespond('conv_1', 'berapa deposit dan bisa lihat blue fire?')
+
+      const [, opts] = llmCall(0)
+      expect(opts.system).toContain('Deposit 20% dari total.')
+      expect(opts.system).toContain('Blue Fire tidak dijamin setiap malam.')
+      expect(opts.system).toContain('Kondisi cuaca bisa menutup akses sewaktu-waktu.')
+      expect(opts.system).toContain('Akses Blue Fire tidak bisa dijamin.')
+      // primaryLink tetap dari topik UTAMA ('payment'), bukan also-topic ('blue_fire') -- lihat
+      // mergeKnowledgeAcrossTopics's own header untuk alasannya.
+      expect(opts.system).toContain('https://example.com/payment')
+      expect(result.mode).toBe('faq')
+    })
+
+    it('handoffRequired adalah OR lintas topik -- also-topic yang menuntut jaminan tetap memicu pengingat guardrail', async () => {
+      setUpDestinationBranch()
+      vi.mocked(classifyAllTopics).mockResolvedValue(['payment', 'blue_fire'])
+      vi.mocked(resolveKnowledgeForTopic).mockImplementation((topic) =>
+        topic === 'blue_fire'
+          ? { factualLines: ['Blue Fire.'], detailLines: [], primaryLink: null, disclosures: [], handoffRequired: true }
+          : { factualLines: ['Deposit.'], detailLines: [], primaryLink: null, disclosures: [], handoffRequired: false }
+      )
+
+      const result = await decideAndRespond('conv_1', 'berapa deposit, dan blue fire dijamin ya?')
+
+      expect(result.steps?.map((s) => s.label)).toContain('Jaminan diminta')
+      const [, opts] = llmCall(0)
+      expect(opts.system).toContain('it genuinely cannot be guaranteed')
+    })
+
+    it('managedFactsFor menerima alsoTopics -- entri knowledge terkelola bertopik also-topic ikut masuk', async () => {
+      setUpDestinationBranch()
+      vi.mocked(classifyAllTopics).mockResolvedValue(['payment', 'blue_fire'])
+      vi.mocked(loadPublishedManagedKnowledge).mockResolvedValue({
+        entries: [
+          {
+            sourceId: 'ks_1',
+            sourceKey: 'managed/blue-fire',
+            sourceTitle: 'FAQ Blue Fire',
+            revisionId: 'krev_1',
+            version: 1,
+            items: [{ question: 'Blue fire dijamin?', answer: 'Tidak, tergantung cuaca.', topics: ['blue_fire'] }],
+          },
+        ],
+        available: true,
+        loadedAt: 0,
+      })
+
+      const result = await decideAndRespond('conv_1', 'berapa deposit dan blue fire dijamin?')
+
+      expect(result).toMatchObject({
+        knowledge: {
+          managedLines: [{ line: 'Blue fire dijamin? — Tidak, tergantung cuaca.', source: 'FAQ Blue Fire (v1)' }],
+        },
+      })
+    })
+
+    it('kolom topic/sourceTopic tetap topik UTAMA walau ada alsoTopics', async () => {
+      setUpDestinationBranch()
+      vi.mocked(classifyAllTopics).mockResolvedValue(['payment', 'blue_fire', 'booking'])
+
+      const result = await decideAndRespond('conv_1', 'deposit, blue fire, dan cara booking?')
+
+      expect((result as { topic?: string }).topic).toBe('payment')
+      expect((result as { sourceTopic?: string }).sourceTopic).toBe('payment')
+    })
+
+    it('trace memuat langkah "Topik tambahan terdeteksi" dan decision.knowledge.alsoTopics terisi saat ada topik tambahan', async () => {
+      setUpDestinationBranch()
+      vi.mocked(classifyAllTopics).mockResolvedValue(['payment', 'blue_fire'])
+
+      const result = await decideAndRespond('conv_1', 'deposit dan blue fire?')
+
+      const step = result.steps?.find((s) => s.label === 'Topik tambahan terdeteksi')
+      expect(step).toBeDefined()
+      expect(step?.detail).toContain('blue_fire')
+      expect((result as { knowledge?: { alsoTopics?: string[] } }).knowledge?.alsoTopics).toEqual(['blue_fire'])
+    })
+
+    it('tidak ada langkah trace atau alsoTopics saat classifyAllTopics hanya mengembalikan topik utama', async () => {
+      setUpDestinationBranch()
+      vi.mocked(classifyAllTopics).mockResolvedValue(['payment'])
+
+      const result = await decideAndRespond('conv_1', 'berapa deposit?')
+
+      expect(result.steps?.map((s) => s.label)).not.toContain('Topik tambahan terdeteksi')
+      expect((result as { knowledge?: { alsoTopics?: string[] } }).knowledge?.alsoTopics).toBeUndefined()
+    })
+
+    it('tidak ada langkah trace atau alsoTopics saat classifyAllTopics gagal (default mock kosong)', async () => {
+      setUpDestinationBranch()
+      // classifyAllTopics default beforeEach: mockResolvedValue([])
+
+      const result = await decideAndRespond('conv_1', 'berapa deposit?')
+
+      expect(result.steps?.map((s) => s.label)).not.toContain('Topik tambahan terdeteksi')
+      expect((result as { knowledge?: { alsoTopics?: string[] } }).knowledge?.alsoTopics).toBeUndefined()
+    })
+
+    // Task 14/22: cek jaminan (NO_GUARANTEE_TOPICS) berjalan bila topik UTAMA *atau* salah satu
+    // also-topic ada di NO_GUARANTEE_TOPICS -- di sini topik utama 'payment' TIDAK diatur, tapi
+    // also-topic 'blue_fire' ADA, dan balasan menjanjikan Blue Fire dalam menjawab sisi
+    // pertanyaan itu.
+    it('cek jaminan berjalan lewat also-topic blue_fire walau topik utama payment', async () => {
+      setUpDestinationBranch()
+      vi.mocked(classifyAllTopics).mockResolvedValue(['payment', 'blue_fire'])
+      vi.mocked(callLLM).mockResolvedValue('Deposit is 20%. Blue fire is guaranteed every night!')
+
+      const result = await decideAndRespond('conv_1', 'berapa deposit, dan blue fire dijamin tiap malam?')
+
+      expect(result.verification?.guaranteeViolations).toEqual(['guaranteed'])
+    })
+  })
+
+  describe('cabang tanpa-destinasi', () => {
+    function setUpNoDestinationBranch() {
+      vi.mocked(ensureFreshBookingData).mockResolvedValue(null)
+      vi.mocked(classifySalesNeed).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
+      vi.mocked(matchDestination).mockReturnValue(null)
+      // 'payment' ada di DESTINATION_INDEPENDENT_TOPICS -- masuk ke jalur yang menjawab
+      // langsung tanpa destinasi, bukan jalur "mau ke mana?" generik.
+      vi.mocked(classifyTopicViaLLM).mockResolvedValue({ topic: 'payment', source: 'llm' })
+      vi.mocked(resolveKnowledgeForTopic).mockReturnValue({
+        factualLines: ['Deposit 20% dari total.'],
+        detailLines: [],
+        primaryLink: null,
+        disclosures: [],
+        handoffRequired: false,
+      })
+    }
+
+    it('memanggil classifyAllTopics dengan pesan dan model yang sama, paralel dengan classifier lain', async () => {
+      setUpNoDestinationBranch()
+      vi.mocked(classifyAllTopics).mockResolvedValue(['payment'])
+
+      await decideAndRespond('conv_1', 'berapa deposit?')
+
+      expect(classifyAllTopics).toHaveBeenCalledWith('berapa deposit?', 'gemma4:31b-cloud')
+    })
+
+    it('menggabungkan facts/disclosures dari also-topic ke dalam prompt tanpa-destinasi', async () => {
+      setUpNoDestinationBranch()
+      vi.mocked(classifyAllTopics).mockResolvedValue(['payment', 'cancellation'])
+      vi.mocked(resolveKnowledgeForTopic).mockImplementation((topic) =>
+        topic === 'cancellation'
+          ? { factualLines: ['Pembatalan bisa dilakukan H-7.'], detailLines: [], primaryLink: null, disclosures: [], handoffRequired: false }
+          : { factualLines: ['Deposit 20% dari total.'], detailLines: [], primaryLink: null, disclosures: [], handoffRequired: false }
+      )
+
+      await decideAndRespond('conv_1', 'berapa deposit, dan bagaimana kalau batal?')
+
+      const [, opts] = llmCall(0)
+      expect(opts.system).toContain('Deposit 20% dari total.')
+      expect(opts.system).toContain('Pembatalan bisa dilakukan H-7.')
+    })
+
+    it('trace memuat langkah "Topik tambahan terdeteksi" dan decision.knowledge.alsoTopics terisi', async () => {
+      setUpNoDestinationBranch()
+      vi.mocked(classifyAllTopics).mockResolvedValue(['payment', 'cancellation'])
+
+      const result = await decideAndRespond('conv_1', 'berapa deposit, dan bagaimana kalau batal?')
+
+      expect(result.steps?.map((s) => s.label)).toContain('Topik tambahan terdeteksi')
+      expect((result as { knowledge?: { alsoTopics?: string[] } }).knowledge?.alsoTopics).toEqual(['cancellation'])
+    })
+
+    it('kolom topic tetap topik UTAMA walau ada alsoTopics', async () => {
+      setUpNoDestinationBranch()
+      vi.mocked(classifyAllTopics).mockResolvedValue(['payment', 'cancellation'])
+
+      const result = await decideAndRespond('conv_1', 'berapa deposit, dan bagaimana kalau batal?')
+
+      expect((result as { topic?: string }).topic).toBe('payment')
+    })
   })
 })
 

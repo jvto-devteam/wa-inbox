@@ -167,9 +167,17 @@ const NEGATED_PROMISE = /\b(?:not|never|cannot|can't|can not|isn't|aren't|won't|
  * evaluated PER SENTENCE rather than across the whole reply -- "Blue fire is guaranteed! Refunds
  * are not guaranteed." must still flag the first sentence; a negation later in the reply must
  * never mask an earlier, real violation.
+ *
+ * Task 22 (Ruling R101): the check runs when the PRIMARY topic OR ANY of `alsoTopics`
+ * (classifyAllTopics, multi-topic-classifier.ts -- what else the message also asked about) is
+ * in `NO_GUARANTEE_TOPICS`. A message whose primary topic is 'payment' but that also asks about
+ * blue_fire still gets scanned: the reply can promise Blue Fire in a sentence answering the
+ * side question, and that promise is exactly what the guardrail forbids regardless of which
+ * topic happened to classify as primary.
  */
-function findGuaranteeViolations(replyText: string, topic: string | undefined): string[] {
-  if (!topic || !NO_GUARANTEE_TOPICS.has(topic)) return []
+function findGuaranteeViolations(replyText: string, topic: string | undefined, alsoTopics: readonly string[] = []): string[] {
+  const topicNeedsCheck = (topic !== undefined && NO_GUARANTEE_TOPICS.has(topic)) || alsoTopics.some((t) => NO_GUARANTEE_TOPICS.has(t))
+  if (!topicNeedsCheck) return []
   const violations: string[] = []
   // Ruling R70: strip URLs before scanning -- GUARANTEE_ROOT's word boundaries match a bare
   // "guarantee" inside a URL path/filename (e.g. "https://x.id/guarantee.html") with no actual
@@ -201,7 +209,7 @@ export type VerificationResult = {
   /**
    * A reply-side promise phrase (see `findGuaranteeViolations`'s header) on a topic whose
    * guardrail forbids making one -- recorded, never blocked (Ruling R49). Always `[]` when
-   * `topic` was omitted or is outside `NO_GUARANTEE_TOPICS`.
+   * neither `topic` nor any of `alsoTopics` (Task 22, Ruling R101) is in `NO_GUARANTEE_TOPICS`.
    */
   guaranteeViolations: string[]
 }
@@ -237,8 +245,15 @@ export function verifyReply(params: {
    * pre-existing call kept working without it.
    */
   topic?: string
+  /**
+   * Task 22 (Ruling R101): every OTHER topic classifyAllTopics found in the same message
+   * (`ResolverTopic[]` minus the primary one -- see orchestrator.ts's `alsoTopics`). Read only
+   * by the guarantee-violation check, same as `topic` above -- optional and defaulted to `[]`
+   * in `findGuaranteeViolations`, so every pre-existing call keeps working unchanged.
+   */
+  alsoTopics?: string[]
 }): VerificationResult {
-  const { replyText, groundedAmounts, groundedUrls, topic } = params
+  const { replyText, groundedAmounts, groundedUrls, topic, alsoTopics } = params
   const fabricatedPrices: number[] = []
   const unverifiedPrices: number[] = []
   for (const amount of extractRupiahAmounts(replyText)) {
@@ -256,7 +271,7 @@ export function verifyReply(params: {
     fabricatedPrices: [...new Set(fabricatedPrices)],
     unverifiedPrices: [...new Set(unverifiedPrices)],
     unknownUrls,
-    guaranteeViolations: findGuaranteeViolations(replyText, topic),
+    guaranteeViolations: findGuaranteeViolations(replyText, topic, alsoTopics),
   }
 }
 

@@ -142,6 +142,21 @@ export type DecisionKnowledge = {
   rejectedOmitted?: number
   /** Mirrors `ManagedFacts.gateBypassed` for this turn -- see its own header. */
   gateBypassed: boolean
+  /**
+   * Task 22 (Ruling R101): every topic BESIDES the primary one that `classifyAllTopics`
+   * (multi-topic-classifier.ts) found in the same message -- e.g. a customer asking about
+   * booking, payment, cancellation AND Blue Fire in one message gets one primary `topic`
+   * (unchanged, still the only value in the `topic` column/`sourceTopic`/`TripBrief.lastTopic`)
+   * plus this list of what else was asked, so catalog/managed facts and disclosures for those
+   * other topics can be folded into the same reply (orchestrator.ts's
+   * `mergeKnowledgeAcrossTopics`) instead of being silently dropped by the topic gate.
+   *
+   * Optional and omitted (not an empty array) when nothing extra was asked, same convention as
+   * `rejectedOmitted` above -- an absent key reads identically to "nothing to add" everywhere
+   * this is consumed, so no pre-Task-22 fixture that builds a `knowledge` object literal needs
+   * to change.
+   */
+  alsoTopics?: string[]
 }
 
 export type BotDecision =

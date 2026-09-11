@@ -172,6 +172,42 @@ describe('verifyReply guarantee violations', () => {
     expect(result.guaranteeViolations).toContain('guaranteed')
   })
 
+  // Task 22 (Ruling R101): cek jaminan berjalan bila topik UTAMA ATAU salah satu topik
+  // TAMBAHAN (classifyAllTopics, multi-topic-classifier.ts) ada di NO_GUARANTEE_TOPICS --
+  // bukan hanya topik utama. Pesan yang topik utamanya 'payment' tapi juga menanyakan
+  // blue_fire (alsoTopics: ['blue_fire']) tidak boleh lolos tanpa cek jaminan.
+  it('cek jaminan berjalan lewat alsoTopics walau topik utama di luar NO_GUARANTEE_TOPICS', () => {
+    const result = verifyReply({
+      replyText: 'Blue fire is guaranteed in May!',
+      groundedAmounts: [],
+      groundedUrls: [],
+      topic: 'payment',
+      alsoTopics: ['blue_fire'],
+    })
+    expect(result.guaranteeViolations).toContain('guaranteed')
+  })
+
+  it('tidak menandai apa pun saat topik utama maupun alsoTopics sama-sama di luar NO_GUARANTEE_TOPICS', () => {
+    const result = verifyReply({
+      replyText: 'Your booking is guaranteed once the deposit clears.',
+      groundedAmounts: [],
+      groundedUrls: [],
+      topic: 'payment',
+      alsoTopics: ['booking', 'cancellation'],
+    })
+    expect(result.guaranteeViolations).toEqual([])
+  })
+
+  it('alsoTopics kosong (default) berperilaku sama seperti sebelum Task 22', () => {
+    const result = verifyReply({
+      replyText: 'Blue fire is guaranteed in May!',
+      groundedAmounts: [],
+      groundedUrls: [],
+      topic: 'blue_fire',
+    })
+    expect(result.guaranteeViolations).toContain('guaranteed')
+  })
+
   // URL stripping is scoped to the guarantee scan ONLY -- unknownUrls must still see the full
   // reply, so an unregistered link is still caught.
   it('tidak mengubah pemeriksaan unknownUrls (URL tetap diperiksa penuh)', () => {
