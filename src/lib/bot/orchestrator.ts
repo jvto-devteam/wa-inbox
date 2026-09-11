@@ -172,6 +172,7 @@ import {
   extractRupiahAmounts,
   extractUrls,
   isDerivableAmount,
+  guaranteeCheckTopics,
   type VerificationResult,
   type ReplyVerification,
 } from './reply-verifier'
@@ -318,6 +319,13 @@ export function withSideFacts(sideFacts: string[], baseReply: string): string {
  * A no-op (returns `primary` unchanged, no extra `resolveKnowledgeForTopic` calls) when
  * `alsoTopics` is empty -- the overwhelming majority of turns, since most messages ask about
  * only one thing.
+ *
+ * Task 22 fix round 1 (F1b): also reports how many NEW catalog lines the also-topics
+ * contributed, per list, after dedup -- `added` -- so the 'Fakta topik tambahan digabungkan'
+ * trace step (`pushAlsoTopicMergeStep`) can state it, including "none". Counted against the
+ * primary's own deduped lists: the merged list is `dedupeLines(primary ++ extras)`, whose
+ * first-occurrence order keeps every primary line first, so the difference is exactly the
+ * also-topics' contribution and never negative.
  */
 function mergeKnowledgeAcrossTopics(
   primary: ResolvedKnowledge,
@@ -325,8 +333,8 @@ function mergeKnowledgeAcrossTopics(
   message: string,
   destination: string | undefined,
   keywordTriggeredModuleIds: string[]
-): ResolvedKnowledge {
-  if (alsoTopics.length === 0) return primary
+): { knowledge: ResolvedKnowledge; added: AlsoTopicLinesAdded } {
+  if (alsoTopics.length === 0) return { knowledge: primary, added: { factualLines: 0, detailLines: 0, disclosures: 0 } }
 
   const factualLines = [...primary.factualLines]
   const detailLines = [...primary.detailLines]
@@ -341,13 +349,56 @@ function mergeKnowledgeAcrossTopics(
     handoffRequired = handoffRequired || extra.handoffRequired
   }
 
-  return {
+  const knowledge: ResolvedKnowledge = {
     factualLines: dedupeLines(factualLines),
     detailLines: dedupeLines(detailLines),
     primaryLink: primary.primaryLink,
     disclosures: dedupeLines(disclosures),
     handoffRequired,
   }
+  return {
+    knowledge,
+    added: {
+      factualLines: knowledge.factualLines.length - dedupeLines(primary.factualLines).length,
+      detailLines: knowledge.detailLines.length - dedupeLines(primary.detailLines).length,
+      disclosures: knowledge.disclosures.length - dedupeLines(primary.disclosures).length,
+    },
+  }
+}
+
+/** How many new (post-dedup) catalog lines the also-topics added, per list -- see `mergeKnowledgeAcrossTopics`. */
+type AlsoTopicLinesAdded = { factualLines: number; detailLines: number; disclosures: number }
+
+/**
+ * Task 22 fix round 1 (F1b): the ONE trace step that claims also-topic facts were merged into
+ * the answer. The detection step ('Topik tambahan terdeteksi') only says what the classifier
+ * found; this one is written only on a path that goes on to compose a prompt from the merged
+ * knowledge -- both call sites push it after their own R46 degraded return, and the
+ * no-destination branch only inside its `factualLines.length > 0` block -- so a turn that
+ * returns before using the merge (generic "which destination?" reply, funnel clarify, route
+ * gate, no-match handoff, R46 degraded) never carries this claim.
+ */
+function pushAlsoTopicMergeStep(trace: Tracer, alsoTopics: readonly ResolverTopic[], added: AlsoTopicLinesAdded): void {
+  if (alsoTopics.length === 0) return
+  const total = added.factualLines + added.detailLines + added.disclosures
+  trace.push(
+    'Fakta topik tambahan digabungkan',
+    total > 0
+      ? `Fakta katalog topik tambahan (${alsoTopics.join(', ')}) digabungkan ke bahan jawaban: ${total} baris baru (${added.factualLines} fakta, ${added.detailLines} detail, ${added.disclosures} disclosure).`
+      : `Fakta katalog topik tambahan (${alsoTopics.join(', ')}) sudah diperiksa, tetapi tidak menambah satu baris pun -- katalog tidak punya baris untuk topik itu, atau semuanya sudah dimuat topik utama.`
+  )
+}
+
+/**
+ * The topic label in the "Known facts relevant to their question (...)" prompt line, shared by
+ * both call sites (Task 22 fix round 1, F1). With no also-topics it is BYTE-IDENTICAL to the
+ * pre-Task-22 `topic: "<primary>"`; otherwise it lists every topic whose facts are in the list
+ * below it -- primary first, then the also-topics -- so the model is not told the facts are
+ * about one topic when they were merged from several.
+ */
+function knownFactsTopicLabel(primary: ResolverTopic, alsoTopics: readonly ResolverTopic[]): string {
+  if (alsoTopics.length === 0) return `topic: "${primary}"`
+  return `topics: ${[primary, ...alsoTopics].map((t) => `"${t}"`).join(', ')}`
 }
 
 // R96 (operator decision 2026-09-11): CLAUDE.md §2 -- the production model tag,
@@ -774,9 +825,14 @@ async function composeVerifiedReply(params: {
   // first time. Never blocks and never changes `reply`: see reply-verifier.ts's header for why
   // recording beats blocking here.
   if (verdict.guaranteeViolations.length > 0) {
+    // Task 22 fix round 1 (F4): names the topic(s) that actually made the check run -- an
+    // also-topic (e.g. 'blue_fire' under a primary 'payment') as much as the primary one, read
+    // from the same NO_GUARANTEE_TOPICS set the check itself reads. When only the primary topic
+    // triggers it, the text is exactly what it was before Task 22.
+    const triggeringTopics = guaranteeCheckTopics(topic, alsoTopics)
     trace.push(
       'Janji yang dilarang topik ini',
-      `Balasan memuat kata jaminan (${verdict.guaranteeViolations.join(', ')}) pada topik "${topic}", yang guardrail-nya melarang menjanjikan apa pun -- tetap dikirim, dicatat untuk dipantau.`
+      `Balasan memuat kata jaminan (${verdict.guaranteeViolations.join(', ')}) pada topik ${triggeringTopics.map((t) => `"${t}"`).join(', ')}, yang guardrail-nya melarang menjanjikan apa pun -- tetap dikirim, dicatat untuk dipantau.`
     )
   }
 
@@ -1046,8 +1102,17 @@ async function runNoDestinationBranch(
   // regardless of what topic it classified as -- 'general' always has non-empty baseline
   // facts of its own (TOPIC_MODULES.general), so that alone can't be used to detect a real
   // keyword hit here the way it can for an already-allowlisted topic below.
-  if (DESTINATION_INDEPENDENT_TOPICS.has(resolverTopic) || keywordModuleIds.length > 0) {
-    const preDestinationKnowledge = mergeKnowledgeAcrossTopics(
+  //
+  // Task 22 fix round 1 (F1, Ruling R102): a destination-independent ALSO-topic makes this
+  // branch eligible too. Same "don't stonewall on an answerable question" principle as the
+  // dietary regression note on DESTINATION_INDEPENDENT_TOPICS's own header -- an answerable
+  // question stays answerable when it arrives as a side question ("hi, how much is the
+  // deposit?" -> primary 'general', also 'payment') instead of as the primary topic. The prompt
+  // below still asks which destination interests them afterwards, unchanged.
+  const answerableAlsoTopics = alsoTopics.filter((t) => DESTINATION_INDEPENDENT_TOPICS.has(t))
+  const primaryAnswerable = DESTINATION_INDEPENDENT_TOPICS.has(resolverTopic)
+  if (primaryAnswerable || answerableAlsoTopics.length > 0 || keywordModuleIds.length > 0) {
+    const { knowledge: preDestinationKnowledge, added: alsoTopicLinesAdded } = mergeKnowledgeAcrossTopics(
       resolveKnowledgeForTopic(resolverTopic, inboundText, undefined, keywordModuleIds),
       alsoTopics,
       inboundText,
@@ -1107,13 +1172,23 @@ async function runNoDestinationBranch(
     }
 
     if (preDestinationKnowledge.factualLines.length > 0) {
+      // Task 22 fix round 1 (F1b): the one place on this branch where the merged knowledge goes
+      // on to ground a prompt -- so the merge claim is written here, never ahead of the R46
+      // return above or the generic "which destination?" fall-through below.
+      pushAlsoTopicMergeStep(trace, alsoTopics, alsoTopicLinesAdded)
+      // F1: the text must be true about what made this branch eligible. When the primary topic
+      // did (or only a keyword module did -- the pre-Task-22 case, wording untouched), it reads
+      // exactly as before; when only a destination-independent also-topic did, it names that
+      // also-topic instead of claiming the primary one is answerable without a destination.
       trace.push(
         'Topik tidak butuh destinasi',
-        `Topik "${resolverTopic}" bisa dijawab tanpa mengetahui destinasi -- menjawab langsung dari fakta umum, sambil tetap menanyakan destinasi untuk rekomendasi paket berikutnya.`
+        primaryAnswerable || answerableAlsoTopics.length === 0
+          ? `Topik "${resolverTopic}" bisa dijawab tanpa mengetahui destinasi -- menjawab langsung dari fakta umum, sambil tetap menanyakan destinasi untuk rekomendasi paket berikutnya.`
+          : `Topik utama "${resolverTopic}" tidak termasuk topik yang bisa dijawab tanpa destinasi, tetapi topik tambahan ${answerableAlsoTopics.map((t) => `"${t}"`).join(', ')} bisa -- menjawab langsung dari fakta umum, sambil tetap menanyakan destinasi untuk rekomendasi paket berikutnya.`
       )
       const system =
         `${SHARED_PERSONA_INSTRUCTIONS}\n\n` +
-        `Known facts relevant to their question (topic: "${resolverTopic}"):\n${preDestinationKnowledge.factualLines.map((f) => `- ${f}`).join('\n')}` +
+        `Known facts relevant to their question (${knownFactsTopicLabel(resolverTopic, alsoTopics)}):\n${preDestinationKnowledge.factualLines.map((f) => `- ${f}`).join('\n')}` +
         (preDestinationKnowledge.detailLines.length > 0
           ? `\n\nMore detail if useful:\n${preDestinationKnowledge.detailLines.map((d) => `- ${d}`).join('\n')}`
           : '') +
@@ -1187,11 +1262,13 @@ async function runNoDestinationBranch(
     // with no destination (the outer `if` being false below), which is merely
     // under-specified, not a content gap the catalog failed to cover.
     //
-    // 'greeting' can't reach this line in practice ('greeting' is never in
-    // DESTINATION_INDEPENDENT_TOPICS, and a keyword-module hit on a bare greeting
-    // doesn't happen), but guarded explicitly anyway -- same condition as the
-    // destination-known branch's own check, so the two call sites can't silently drift
-    // apart if that ever stops being true.
+    // 'greeting' is never in DESTINATION_INDEPENDENT_TOPICS and a keyword-module hit on a bare
+    // greeting doesn't happen -- but since Task 22 fix round 1 (F1) a primary 'greeting' CAN
+    // reach this line, when classifyAllTopics found a destination-independent also-topic the
+    // primary classifier missed. The guard stays exactly as it was: the gap row records the
+    // PRIMARY topic (same as every other topic column, R51), and a 'greeting' row would not say
+    // what went unanswered. Same condition as the destination-known branch's own check, so the
+    // two call sites can't silently drift apart.
     if (resolverTopic !== 'greeting') {
       void recordKnowledgeGap(conversationId, resolverTopic, 'no_facts_resolved', inboundText)
     }
@@ -1541,7 +1618,10 @@ export async function decideAndRespond(
       if (alsoTopics.length > 0) {
         trace.push(
           'Topik tambahan terdeteksi',
-          `Selain topik utama "${topicResult.topic}", pesan ini juga menanyakan: ${alsoTopics.join(', ')} -- fakta dan disclosure topik-topik ini digabungkan ke jawaban.`
+          // Task 22 fix round 1 (F1b): DETECTION only. Whether these topics' facts actually reach
+          // the answer is a separate claim ('Fakta topik tambahan digabungkan', pushAlsoTopicMergeStep),
+          // written only where a prompt is composed from the merged knowledge.
+          `Selain topik utama "${topicResult.topic}", pesan ini juga menanyakan: ${alsoTopics.join(', ')}.`
         )
       }
       traceStep(pipeline, 'susun-balasan', 'mulai')
@@ -1631,7 +1711,10 @@ export async function decideAndRespond(
     if (alsoTopics.length > 0) {
       trace.push(
         'Topik tambahan terdeteksi',
-        `Selain topik utama "${resolverTopic}", pesan ini juga menanyakan: ${alsoTopics.join(', ')} -- fakta dan disclosure topik-topik ini digabungkan ke jawaban.`
+        // Task 22 fix round 1 (F1b): DETECTION only -- see the no-destination branch's identical
+        // step above. The merge claim is pushed later, after the R46 degraded return, by
+        // pushAlsoTopicMergeStep; the funnel/route-gate/no-match returns in between never carry it.
+        `Selain topik utama "${resolverTopic}", pesan ini juga menanyakan: ${alsoTopics.join(', ')}.`
       )
     }
     trace.push(
@@ -1844,7 +1927,7 @@ export async function decideAndRespond(
     // Task 22: merges in each also-topic's own resolveKnowledgeForTopic result (SAME
     // message/destination/keywordModuleIds arguments as the primary call) -- a no-op when
     // `alsoTopics` is empty, the overwhelming majority of turns.
-    const knowledge = mergeKnowledgeAcrossTopics(
+    const { knowledge, added: alsoTopicLinesAdded } = mergeKnowledgeAcrossTopics(
       resolveKnowledgeForTopic(resolverTopic, inboundText, destination, keywordModuleIds),
       alsoTopics,
       inboundText,
@@ -1868,6 +1951,9 @@ export async function decideAndRespond(
       trace.push('Knowledge tidak terbaca', 'Pembacaan managed knowledge gagal -- menjawab clarify alih-alih menebak dari separuh pengetahuan.')
       return { mode: 'clarify', reply: await fallbackReplyText(TECHNICAL_HICCUP_REPLY), steps: trace.steps }
     }
+    // Task 22 fix round 1 (F1b): past the R46 return above there is no other return before this
+    // branch composes its prompt from `knowledge` -- so this is where the merge claim is true.
+    pushAlsoTopicMergeStep(trace, alsoTopics, alsoTopicLinesAdded)
     if (managed.lines.length > 0) {
       knowledge.factualLines.push(...managed.lines)
       trace.push(
@@ -2095,7 +2181,9 @@ export async function decideAndRespond(
     const system =
       `${SHARED_PERSONA_INSTRUCTIONS}\n\n` +
       `Package the customer is asking about: ${pkg.title}\n\n` +
-      `Known facts relevant to their question (topic: "${resolverTopic}"):\n${knowledge.factualLines.map((f) => `- ${f}`).join('\n')}` +
+      // Task 22 fix round 1 (F1): same label rule as the no-destination prompt -- byte-identical
+      // `topic: "<primary>"` with no also-topic, every merged topic listed otherwise.
+      `Known facts relevant to their question (${knownFactsTopicLabel(resolverTopic, alsoTopics)}):\n${knowledge.factualLines.map((f) => `- ${f}`).join('\n')}` +
       (knowledge.detailLines.length > 0 ? `\n\nMore detail if useful:\n${knowledge.detailLines.map((d) => `- ${d}`).join('\n')}` : '') +
       // Which hotel/staging area this specific package uses, medical-check timing, ferry
       // pre-booking notes -- genuinely useful, package-specific facts (not a caveat/
