@@ -544,18 +544,23 @@ export async function managedFactsFor(
 }
 
 /**
- * SELURUH fakta managed yang terbit -- tanpa gerbang topik, tanpa saringan overlap kata, dan
- * tanpa plafon `MAX_MANAGED_ITEMS_PER_TURN`.
+ * SELURUH fakta managed yang SUDAH TERBIT -- tanpa gerbang topik, tanpa saringan overlap kata,
+ * dan tanpa plafon `MAX_MANAGED_ITEMS_PER_TURN`.
  *
- * Hanya untuk Mode 3 (booking_context). Mode 3 berjalan SEBELUM klasifikasi topik (lihat
- * orchestrator.ts's header, langkah 1) sehingga tidak pernah punya sebuah `ResolverTopic` untuk
- * digerbangkan -- `managedFactsFor` sendiri butuh satu. Sebelum fakta JVTO pindah dari
- * `GENERAL_FAQ_FALLBACK` (knowledge.ts, dihapus Task 11) ke knowledge terkelola, Mode 3 selalu
- * menerima blok itu utuh, tanpa gerbang apa pun. Fungsi ini menjaga janji perilaku itu tetap
- * sama sesudah pemindahan: pelanggan yang sudah booking tetap menerima SELURUH fakta umum yang
- * dulu diterimanya -- hanya sumbernya yang pindah dari sebuah konstanta ke tabel yang bisa
- * diedit operator.
+ * Fix round 2 (R100), Important 1: baris di atas sengaja dipertegas dengan "SUDAH TERBIT" --
+ * versi sebelumnya menjanjikan pelanggan booking "tetap menerima SELURUH fakta umum yang dulu
+ * diterimanya", seolah itu jaminan tanpa syarat. Itu salah: fungsi ini mengembalikan HANYA yang
+ * PUBLISHED. Nol entri terbit (keadaan produksi hari ini, sebelum Gerbang G5 menerbitkan
+ * `FAQ_SEED_DATA`) berarti fungsi ini mengembalikan `lines: []` -- Mode 3 genuinely menerima NOL
+ * fakta umum pada giliran itu, bukan sesuatu yang "seluruhnya" tersampaikan. Yang tetap benar
+ * adalah PERILAKU yang dulu dijaga konstanta `GENERAL_FAQ_FALLBACK` (knowledge.ts, dihapus Task
+ * 11): kalau ADA yang terbit, semuanya ikut tanpa gerbang topik apa pun (Mode 3 berjalan SEBELUM
+ * klasifikasi topik -- lihat orchestrator.ts's header, langkah 1 -- sehingga tidak pernah punya
+ * `ResolverTopic` untuk digerbangkan, beda dari `managedFactsFor` yang butuh satu). Bot tetap
+ * tidak pernah handoff karena kekosongan ini -- lihat orchestrator.ts's header -- tapi itu
+ * jaminan PERILAKU (jangan handoff), bukan jaminan bahwa fakta itu SELALU ada di prompt.
  *
+
  * Isi baris dan `refs` memakai format yang SAMA dengan `managedFactsFor`'s `collect` (termasuk
  * baris harga dan tautan yang berdiri sendiri, supaya reply-verifier bisa menyumbernya) --
  * hanya tanpa `evaluateItem`/peringkat/plafon: setiap item dari setiap entri terbit langsung

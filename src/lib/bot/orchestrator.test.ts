@@ -455,6 +455,22 @@ describe('decideAndRespond', () => {
     expect(opts.system).toContain('do NOT include this link')
   })
 
+  // Fix round 2 (R100), Minor 5: the note used to say the "General JVTO facts" section is
+  // "below" it -- wrong, since `generalFactsSection` is concatenated BEFORE this note in
+  // `system`'s template order -- and named it as if it were always present, when it can be
+  // entirely absent (Fix round 1, Minor 3) whenever nothing is published.
+  it('describes the general-facts section as above it, not "below", and without naming it as always present', async () => {
+    ;vi.mocked(ensureFreshBookingData).mockResolvedValue({ bookingId: 'B1', customer_portal: 'https://example.com/my-booking/abc123' })
+    ;vi.mocked(loadPublishedManagedKnowledge).mockResolvedValue({ entries: [], available: true, loadedAt: 0 })
+    ;vi.mocked(callLLM).mockResolvedValue('Sure!')
+
+    await decideAndRespond('conv_1', 'Who is my guide?')
+
+    const [, opts] = llmCall(0)
+    expect(opts.system).not.toContain('"General JVTO facts" below')
+    expect(opts.system).toContain('general JVTO facts (if any are published above')
+  })
+
   it('does not mention the portal link at all when the booking has none', async () => {
     ;vi.mocked(ensureFreshBookingData).mockResolvedValue({ bookingId: 'B1' })
     ;vi.mocked(callLLM).mockResolvedValue('Sure, here is the info.')
@@ -585,6 +601,37 @@ describe('decideAndRespond', () => {
     expect(opts.system).toContain('IMPORTANT override for this specific customer (KLOOK booking)')
     expect(opts.system).toContain('Rp35.000/person')
     expect(opts.system).toContain('a JVTO crew member will still accompany them')
+  })
+
+  // Fix round 2 (R100), Minor 6: both existing KLOOK tests use the empty default managed-
+  // knowledge mock, so neither ever exercised the KLOOK override note alongside an ACTUAL
+  // published general fact -- including, notably, a general "included" fact this override is
+  // specifically meant to contradict for this one customer. Both must coexist in the prompt.
+  it('states the KLOOK override alongside a published general fact, without either section disappearing', async () => {
+    ;vi.mocked(ensureFreshBookingData).mockResolvedValue({ bookingId: 'B1', orderChannel: 'KLOOK' })
+    ;vi.mocked(loadPublishedManagedKnowledge).mockResolvedValue({
+      entries: [
+        {
+          sourceId: 'ks_1',
+          sourceKey: 'managed/inclusions',
+          sourceTitle: 'INCLUSIONS',
+          revisionId: 'krev_1',
+          version: 1,
+          items: [{ question: 'What is included?', answer: 'Medical health screening for Ijen hike (where applicable).' }],
+        },
+      ],
+      available: true,
+      loadedAt: 0,
+    })
+    ;vi.mocked(callLLM).mockResolvedValue('The health screening is a separate Rp35.000/person fee at your hotel.')
+
+    await decideAndRespond('conv_1', 'Is the Ijen health screening included?')
+
+    const [, opts] = llmCall(0)
+    expect(opts.system).toContain('General JVTO facts')
+    expect(opts.system).toContain('What is included? — Medical health screening for Ijen hike (where applicable).')
+    expect(opts.system).toContain('IMPORTANT override for this specific customer (KLOOK booking)')
+    expect(opts.system).toContain('the Ijen health screening is NOT included')
   })
 
   it('does NOT override the Ijen health-screening fact for a JVTO-channel booking', async () => {

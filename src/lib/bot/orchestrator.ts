@@ -102,11 +102,12 @@
 //      already used, so a reply reads as one coherent, human-written answer
 //      instead of deterministically-concatenated template fragments. A topic
 //      with no resolvable modules no longer hands off -- managedFactsFor (runtime-integration.ts)
-//      folds in operator-written managed knowledge for this same topic (Task 11 -- the GENERAL
-//      block alone covers all 14 topics, so a genuinely empty result is rare) and/or the
-//      package recommendation list mean there's almost always something to
+//      folds in whatever operator-written managed knowledge for this same topic IS PUBLISHED
+//      (Task 11 -- the GENERAL block, once published, covers all 14 topics, but in production
+//      today nothing is published yet, so this fold-in can genuinely be empty) and/or the
+//      package recommendation list mean there's often something to
 //      answer with; the persona's own "defer to the team" guidance covers the
-//      genuine residual case. A demanded guarantee on an attraction
+//      genuine residual case, published or not. A demanded guarantee on an attraction
 //      (`knowledge.handoffRequired`) no longer hands off either -- folded into
 //      a stronger reminder alongside GUARDRAIL_INSTRUCTION's existing
 //      "never guarantee Blue Fire/weather" rule instead.
@@ -842,10 +843,17 @@ async function runBookingContextMode(
   // reply actually answered from THEIR booking data (crew/guide names, their hotel, their
   // dates, price, pickup/dropoff, payment status) -- not on every Mode 3 reply regardless of
   // what was asked. A booked customer asking a general question the booking JSON has nothing
-  // to do with (e.g. "is Blue Fire guaranteed?") should get an ordinary answer from the
-  // general facts below, with no booking-portal link tacked onto the end of it.
+  // to do with (e.g. "is Blue Fire guaranteed?") should get an ordinary answer from general
+  // facts instead, with no booking-portal link tacked onto the end of it.
+  //
+  // Fix round 2 (R100), Minor 5: was worded "the 'General JVTO facts' below" -- wrong on both
+  // counts. `generalFactsSection` is concatenated BEFORE this note in `system` below (see the
+  // template order), so it is ABOVE, not below; and it can be ABSENT entirely (Fix round 1,
+  // Minor 3) whenever nothing is published, in which case pointing at a named section that
+  // isn't there would be actively confusing. Reworded to hold in both cases, same class of fix
+  // as `klookHealthScreeningNote` just below.
   const portalLinkNote = portalLink
-    ? `Customer's own booking portal link: ${portalLink}\n\nInclude this link at the end of your reply ONLY when your answer actually used a fact from the booking data JSON above (their crew/guide names, their specific hotel, their dates, price, pickup/dropoff, payment status, etc). If the question is general and answered from the "General JVTO facts" below instead (e.g. Blue Fire, packing list, physical difficulty, policy), answer normally and do NOT include this link.\n\n`
+    ? `Customer's own booking portal link: ${portalLink}\n\nInclude this link at the end of your reply ONLY when your answer actually used a fact from the booking data JSON above (their crew/guide names, their specific hotel, their dates, price, pickup/dropoff, payment status, etc). If the question is general and answered instead from general JVTO facts (if any are published above -- e.g. Blue Fire, packing list, physical difficulty, policy), answer normally and do NOT include this link.\n\n`
     : ''
   // Confirmed with the operator 2026-08-06: Ijen's mandatory medical/health screening is
   // included in the package for every channel EXCEPT KLOOK -- a KLOOK-booked customer must
@@ -1782,13 +1790,15 @@ export async function decideAndRespond(
     }
 
     // Previously handed off outright when knowledge.ts resolved nothing for the topic. Genuinely
-    // having "nothing to answer with" is now rare rather than impossible: `knowledge.factualLines`
-    // already has operator-written managed knowledge folded in above (managedFactsFor, Task 11 --
-    // the GENERAL block alone covers all 14 topics), on top of whatever topic-specific catalog
-    // facts, package policyNotes, or recommendation package list already apply. The persona
-    // instructions' own "defer to the team" guidance (SHARED_PERSONA_INSTRUCTIONS) covers the
-    // genuine residual case -- the bot stays active either way, never disables itself over a
-    // content gap.
+    // having "nothing to answer with" is possible again once no managed knowledge is published
+    // (the actual production state until Gerbang G5): `knowledge.factualLines` above already has
+    // whatever PUBLISHED operator-written managed knowledge matches this topic folded in
+    // (managedFactsFor, Task 11 -- once the GENERAL block is published it covers all 14 topics,
+    // but "published" is the load-bearing word, not "exists in the codebase"), on top of
+    // whatever topic-specific catalog facts, package policyNotes, or recommendation package list
+    // already apply. The persona instructions' own "defer to the team" guidance
+    // (SHARED_PERSONA_INSTRUCTIONS) covers the genuine residual case -- the bot stays active
+    // either way, never disables itself over a content gap.
 
     // Recorded for visibility (see TripBrief.lastTopic's header) -- not yet read back anywhere.
     if (resolverTopic !== tripBrief.lastTopic) {
