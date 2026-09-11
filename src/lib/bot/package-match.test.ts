@@ -170,6 +170,18 @@ describe('resolveRegionDestination', () => {
     // 'bromo' by 2, so the widest one wins even though 'bromo' sorts first.
     expect(result?.destination).toBe('ijen')
     expect(result?.matches).toEqual(packagesForDestination('ijen', multi))
+    expect(result?.tier).toBe('exact')
+    expect(result?.relaxed).toEqual([])
+  })
+
+  // Ruling R106b: a relaxed pool still resolves, but says so. No Bali-origin package finishes in
+  // Bali here, so narrowing keeps the 4-day duration and gives up the start/finish combination.
+  it('reports a relaxed tier and names the stated preference the closest packages do not meet', () => {
+    const result = resolveRegionDestination('4 day east java tour from Bali ending in Bali', multi, { origin: 'Bali', finishCity: 'bali', dayCount: 4 })
+    expect(result?.pool.map((p) => p.packageKey)).toEqual(['bromo-ijen-4d'])
+    expect(result?.tier).toBe('relaxed_start_end')
+    expect(result?.relaxed).toEqual(['origin'])
+    expect(result?.destination).toBe('ijen')
   })
 
   it('breaks a coverage tie alphabetically', () => {

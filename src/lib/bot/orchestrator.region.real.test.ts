@@ -135,7 +135,10 @@ describe.skipIf(!RELEASE_PRESENT)('East Java region against the real route gate 
     expect(replyOf(decision)).not.toContain(DESTINATION_LIST)
     const labels = labelsOf(decision)
     expect(labels).toContain('Wilayah dikenali')
-    expect((decision.steps ?? []).find((s) => s.label === 'Wilayah dikenali')?.detail).toContain(`semuanya melewati "${LIVE_TOKEN}"`)
+    const regionDetail = (decision.steps ?? []).find((s) => s.label === 'Wilayah dikenali')?.detail ?? ''
+    expect(regionDetail).toContain('tanpa menyebut destinasi katalog')
+    expect(regionDetail).toContain('1 paket yang cocok dengan preferensi (4 hari, mulai Surabaya, selesai di Bali)')
+    expect(regionDetail).toContain(`semuanya melewati "${LIVE_TOKEN}"`)
     expect(labels).toContain('Paket valid')
     expect(labels).not.toContain('Paket ditolak')
 
@@ -145,6 +148,30 @@ describe.skipIf(!RELEASE_PRESENT)('East Java region against the real route gate 
 
     // The grounding is the package the customer's stated trip actually narrowed to.
     expect(composerSystem()).toContain(LIVE_PACKAGE)
+  })
+
+  // Ruling R106b. No Bali-origin package finishes in Bali, so narrowing the catalog by these
+  // prefs falls to the 'relaxed_start_end' tier: the 4-day packages that keep EITHER the Bali start
+  // or the Bali finish. They still share a token, so the region resolves, but the trace must not
+  // call them "matching the preferences" -- they are the closest packages, and it says which
+  // preferences were given up. The reply itself discloses the mismatch through matchTierNote.
+  it('says a relaxed resolution is the closest packages, not ones matching the preferences ("4 days from Bali ending in Bali")', async () => {
+    const text = 'east java tour, 4 days from Bali ending in Bali'
+    const region = resolveRegionDestination(text, loadCatalog(), { origin: 'Bali', finishCity: 'bali', dayCount: 4 })
+    expect(region?.tier).toBe('relaxed_start_end')
+    expect(region?.pool.map((p) => p.packageKey)).toEqual(['bali/ijen-papuma-tumpak-sewu-bromo-4d3n', 'tumpak-sewu-bromo-ijen-4d3n'])
+    expect(region?.relaxed).toEqual(['origin', 'finishCity'])
+
+    const { decision, writes } = await turn(text)
+
+    const regionDetail = (decision.steps ?? []).find((s) => s.label === 'Wilayah dikenali')?.detail ?? ''
+    expect(regionDetail).toContain('2 paket terdekat (dilonggarkan: mulai Bali, selesai di Bali)')
+    expect(regionDetail).toContain('tidak ada paket yang memenuhi semua preferensi (4 hari, mulai Bali, selesai di Bali)')
+    expect(regionDetail).not.toContain('cocok dengan preferensi')
+    expect(decision.mode).toBe('faq')
+    expect(labelsOf(decision)).toContain('Paket valid')
+    expect(new Set(writes.map((w) => w.destination).filter((d): d is string => d !== undefined))).toEqual(new Set([LIVE_TOKEN]))
+    expect(composerSystem()).toContain("None of the matching packages above start and finish exactly where the customer asked")
   })
 
   // Case 2. A destination-independent question that merely names the region: no prefs, so the

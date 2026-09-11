@@ -63,10 +63,16 @@
 //      customer just told us where they want to go); otherwise the
 //      previously persisted one carries the conversation. When neither exists
 //      and the message names the region instead ("East Java tour"),
-//      `resolveRegionDestination` may resolve it to a real destination token
-//      that every package matching the customer's stated duration/origin/finish
-//      passes through. That token is then treated exactly as if the customer had
-//      named it. The region itself is never stored or checked as a destination.
+//      `resolveRegionDestination` may resolve it to a real destination token.
+//      The token is shared by every package that narrowing the whole catalog by
+//      the customer's stated duration/origin/finish returns. Those are the
+//      packages meeting every stated preference, or, when none does, the closest
+//      ones (the trace says which). The token becomes `destination`: persisted,
+//      route-gated, and the package set the branch narrows from. But the message
+//      itself still names no catalog destination, so `requestedTokens` stays
+//      empty and is not persisted, and the pickup-scenario check, which needs a
+//      requested destination, is skipped. The region itself is never stored or
+//      checked as a destination.
 //      With no destination at all (none matched, none on file, none resolved
 //      from the region), the no-destination branch answers a destination-
 //      independent question from general facts while asking which destination
@@ -142,6 +148,7 @@ import { classifySalesNeed, HANDOFF_KEYWORDS } from './sales-classifier'
 import {
   listDestinations,
   matchDestination,
+  mentionsRegion,
   mentionedDestinationTokens,
   mentionedUnsupportedOriginCity,
   narrowPackagePool,
@@ -1584,17 +1591,19 @@ export async function decideAndRespond(
 
     trace.push('Mencari destinasi', 'Mencari destinasi yang cocok dengan pesan pelanggan, atau memakai destinasi yang sudah tercatat sebelumnya.')
     let matched = matchDestination(inboundText, catalog)
-    // A named region ("East Java tour") with no specific destination: see
+    // A named region ("East Java tour") with no catalog destination: see
     // resolveRegionDestination's header for the live report and the rules. Runs only when this
-    // message named no destination AND none is on file, so a region never overrides a
-    // destination the conversation already established. The prefs are the deterministic regex
-    // parse merged with what tripBrief already holds (this message wins, the same precedence the
-    // destination branch uses), not the LLM extractor, because that runs inside the destination
-    // branch below, after this decision. When it resolves, the real token it returns is used
-    // exactly as if the customer had typed it: persisted below, route-gated, narrowed. The
-    // destination branch then re-narrows with its own (LLM-primary) preferences. When it returns
-    // null, nothing here has any effect.
-    if (!matched && !tripBrief.destination) {
+    // message named no destination, none is on file, and the message names the region, so a
+    // region never overrides a destination the conversation already established. The prefs are
+    // the deterministic regex parse merged with what tripBrief already holds (this message wins,
+    // the same precedence the destination branch uses), not the LLM extractor, because that runs
+    // inside the destination branch below, after this decision. When it resolves, the token
+    // becomes `destination`: persisted below, route-gated, and the package set the branch narrows
+    // from, which then re-narrows with its own (LLM-primary) preferences. The message still names
+    // no catalog destination, so `requestedTokens` below stays empty, is not persisted, and the
+    // pickup-scenario check that needs it is skipped. When it returns null, nothing here has any
+    // effect.
+    if (!matched && !tripBrief.destination && mentionsRegion(inboundText)) {
       const parsed = parseTripPreferences(inboundText)
       const regionPrefs = {
         origin: parsed.origin ?? tripBrief.origin ?? null,
@@ -1603,14 +1612,22 @@ export async function decideAndRespond(
       }
       const region = resolveRegionDestination(inboundText, catalog, regionPrefs)
       if (region) {
-        const stated = [
-          regionPrefs.dayCount ? `${regionPrefs.dayCount} hari` : null,
-          regionPrefs.origin ? `mulai ${regionPrefs.origin}` : null,
-          regionPrefs.finishCity ? `selesai di ${titleCaseCity(regionPrefs.finishCity)}` : null,
-        ].filter((s): s is string => s !== null)
+        const prefLabel = {
+          dayCount: `${regionPrefs.dayCount} hari`,
+          origin: `mulai ${regionPrefs.origin}`,
+          finishCity: regionPrefs.finishCity ? `selesai di ${titleCaseCity(regionPrefs.finishCity)}` : '',
+        }
+        const stated = (['dayCount', 'origin', 'finishCity'] as const).filter((key) => regionPrefs[key] !== null).map((key) => prefLabel[key])
+        const statedText = stated.length > 0 ? stated.join(', ') : 'belum ada'
+        const lead = 'Pelanggan menyebut wilayah East Java tanpa menyebut destinasi katalog'
+        const via = `semuanya melewati "${region.destination}", sehingga "${region.destination}" dipakai sebagai destinasi.`
+        // Ruling R106b: only an 'exact' pool may be called "matching the preferences". A relaxed
+        // pool is the closest packages, and the trace names which stated preferences were given up.
         trace.push(
           'Wilayah dikenali',
-          `Pelanggan menyebut wilayah East Java tanpa destinasi spesifik; ${region.pool.length} paket yang cocok dengan preferensi (${stated.length > 0 ? stated.join(', ') : 'belum ada'}) semuanya melewati "${region.destination}", jadi "${region.destination}" dipakai sebagai destinasi.`
+          region.tier === 'exact'
+            ? `${lead}; ${region.pool.length} paket yang cocok dengan preferensi (${statedText}) ${via}`
+            : `${lead}; tidak ada paket yang memenuhi semua preferensi (${statedText}), jadi dipakai ${region.pool.length} paket terdekat (dilonggarkan: ${region.relaxed.map((key) => prefLabel[key]).join(', ')}), dan ${via}`
         )
         matched = region
       }

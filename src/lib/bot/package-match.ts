@@ -55,10 +55,12 @@ export function listDestinations(catalog: Catalog): string[] {
  * Finds every package covering the single destination mentioned earliest in the
  * message. A package matches on ANY of its `destinationTokens`, so a combined
  * Bromo+Ijen tour is offered to a customer who asked about either. Returns `null`
- * when no known destination is mentioned at all -- the caller (orchestrator.ts)
- * then tries `resolveRegionDestination` below (only when no destination is on file
- * either), and failing that takes its no-destination branch, which asks which
- * destination interests the customer rather than handing off.
+ * when no known destination is mentioned at all. The caller (orchestrator.ts) then
+ * uses the destination already on file in `tripBrief`, if there is one. Only when
+ * there is none, and the message names the region, does it try
+ * `resolveRegionDestination` below. Failing both, it takes its no-destination branch,
+ * which answers what it can and asks which destination interests the customer rather
+ * than handing off.
  */
 export function matchDestination(message: string, catalog: Catalog): { destination: string; matches: CatalogPackage[] } | null {
   const lower = normalizeAliases(message.toLowerCase())
@@ -112,11 +114,15 @@ export function mentionsRegion(message: string): boolean {
 export type RegionPreferences = Pick<TripPreferences, 'origin' | 'finishCity' | 'dayCount'>
 
 /**
- * Resolves a region named without any destination ("your 4D3N East Java tour ... pickup from
- * Surabaya ... continue to Bali") to a REAL destination token that the customer's stated trip
- * necessarily passes through. The region itself is never returned as a destination: route-gate.ts
- * matches destinations exactly against `destinationTokens`, so a pseudo-destination such as
- * 'east java' would be rejected there, and every destination consumer after it would get nothing.
+ * Resolves a region named without any catalog destination ("your 4D3N East Java tour ... pickup
+ * from Surabaya ... continue to Bali") to a REAL destination token. That token is shared by every
+ * package in the pool `narrowPackagePool` returns for the customer's stated preferences. The pool
+ * holds either the packages that meet every stated preference (`tier` 'exact') or, when no package
+ * does, the closest ones the narrowing relaxes to (`tier` 'relaxed_start_end'; `relaxed` names the
+ * stated preferences not every one of them meets). The region itself is never returned as a
+ * destination: route-gate.ts matches destinations exactly against `destinationTokens`, so a
+ * pseudo-destination such as 'east java' would be rejected there, and every destination consumer
+ * after it would get nothing.
  *
  * Returns non-null only when ALL of these hold:
  *   1. the message names the region (`mentionsRegion`);
@@ -136,8 +142,17 @@ export type RegionPreferences = Pick<TripPreferences, 'origin' | 'finishCity' | 
  * 4 days in the current catalog) would send "can we do 3 days instead?" to narrowPackagePool's
  * 'none' tier, which is a handoff.
  *
- * `matches` is `packagesForDestination(token)`, which is exactly what `matchDestination` returns
- * for a message naming that token, so the caller proceeds as if the customer had named it.
+ * `tier` is `narrowPackagePool`'s own. With no requested tokens that function returns only
+ * 'exact', 'relaxed_start_end' or 'none', and 'none' leaves an empty pool, so here it is always
+ * 'exact' or 'relaxed_start_end'. `relaxed` lists the stated preferences (null ones are never
+ * listed) that not every package in `pool` meets. It is empty for 'exact', because that pool
+ * passed every stated filter. It is never empty for 'relaxed_start_end', because if every
+ * package met every stated preference the exact filter would have succeeded.
+ * Relaxed resolutions are kept on purpose (Ruling R106b): they are what the destination branch
+ * does for a named token too, and its `matchTierNote` tells the customer about the mismatch.
+ *
+ * `matches` is `packagesForDestination(token)`, the same package set `matchDestination` returns
+ * for a message naming that token, so the destination branch starts from the same packages.
  * Narrowing only ever filters, and every package in `pool` carries the token, so re-narrowing
  * `matches` with the same `prefs` and no requested tokens yields `pool` again.
  */
@@ -145,9 +160,15 @@ export function resolveRegionDestination(
   message: string,
   catalog: Catalog,
   prefs: RegionPreferences
-): { destination: string; matches: CatalogPackage[]; pool: CatalogPackage[] } | null {
+): {
+  destination: string
+  matches: CatalogPackage[]
+  pool: CatalogPackage[]
+  tier: PackageMatchTier
+  relaxed: (keyof RegionPreferences)[]
+} | null {
   if (!mentionsRegion(message)) return null
-  const { pool } = narrowPackagePool(catalog.packages, { ...prefs, pax: null }, [])
+  const { pool, tier } = narrowPackagePool(catalog.packages, { ...prefs, pax: null }, [])
   if (pool.length === 0) return null
   if (!pool.some((p) => p.priceIdr !== null)) return null
   const tokensOf = (p: CatalogPackage) => p.destinationTokens.map((t) => t.toLowerCase())
@@ -155,7 +176,13 @@ export function resolveRegionDestination(
   if (shared.length === 0) return null
   const coverage = (token: string) => packagesForDestination(token, catalog).length
   const [destination] = shared.sort((a, b) => coverage(b) - coverage(a) || (a < b ? -1 : a > b ? 1 : 0))
-  return { destination, matches: packagesForDestination(destination, catalog), pool }
+  const meets: Record<keyof RegionPreferences, (p: CatalogPackage) => boolean> = {
+    dayCount: (p) => p.dayCount === prefs.dayCount,
+    origin: (p) => p.origin === prefs.origin,
+    finishCity: (p) => prefs.finishCity !== null && p.finishCities.includes(prefs.finishCity),
+  }
+  const relaxed = (['dayCount', 'origin', 'finishCity'] as const).filter((key) => prefs[key] !== null && !pool.every(meets[key]))
+  return { destination, matches: packagesForDestination(destination, catalog), pool, tier, relaxed }
 }
 
 // EVERY destination token the customer's message mentions, unlike `matchDestination`'s single
