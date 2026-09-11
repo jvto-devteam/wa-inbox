@@ -2184,6 +2184,10 @@ git commit -m "feat(catalog): isi kebijakan koper untuk 16 paket"
 
 ### Task 20: Tulis knowledge yang memang belum ada
 
+> **2026-09-11: DITUNDA oleh operator** ("gunakan knowledge saat ini saja dulu"). Task ini pekerjaan isi, bukan
+> fitur: membaca laporan per cluster dan `KnowledgeGapLog`, lalu menulis entri knowledge baru. Bot memakai
+> knowledge yang ada hari ini (11 entri FAQ terbit + katalog). Dibuka lagi atas permintaan operator.
+
 Fase 1–4 memindahkan dan menyaring fakta yang **sudah** ada. Tidak satu pun menambah yang belum ada. Menurut riset percakapan, itu justru penyebab kegagalan yang dominan.
 
 - [ ] **Step 1: Baca laporan per cluster (Task 16), ambil tiga cluster teratas yang paling sering `CLARIFIED`/`HANDOFF`**
