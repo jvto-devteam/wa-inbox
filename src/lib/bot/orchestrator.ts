@@ -291,6 +291,18 @@ export function withSideFacts(sideFacts: string[], baseReply: string): string {
   return sideFacts.length > 0 ? `${sideFacts.join(' ')}\n\n${baseReply}` : baseReply
 }
 
+// R96 (operator decision 2026-09-11): CLAUDE.md §2 -- the production model tag,
+// `gemma4:31b-cloud`, is a CLOUD tag: the VPS's Ollama daemon forwards inference to
+// ollama.com for it, so customer text (and Mode 3 booking data) leaves the VPS. Only a tag
+// WITHOUT the `-cloud` suffix keeps inference on the VPS itself. The trace steps below used to
+// hardcode "(Ollama, lokal)" regardless of which tag was actually configured -- wrong the
+// moment an operator switched `Settings.ollamaModel` to the cloud tag (true in production
+// today). Deriving the label from the tag itself, in ONE place, keeps every trace step that
+// names a model honest across a model switch instead of re-encoding this rule at each call site.
+export function modelLocationLabel(model: string): 'cloud' | 'lokal' {
+  return model.endsWith('-cloud') ? 'cloud' : 'lokal'
+}
+
 export type PickupScenarioResult = {
   /** Meta-instruction-bearing text for an LLM system prompt -- never show this to a customer directly. */
   forLLM: string | null
@@ -885,7 +897,10 @@ async function runBookingContextMode(
 
   const history = await fetchRecentHistory(conversationId, inboundText)
 
-  trace.push('Meminta jawaban dari model lokal', `Menggunakan model ${ollamaModel} (Ollama, lokal) dengan data booking + ${history?.length ?? 0} pesan riwayat sebagai konteks.`)
+  trace.push(
+    'Meminta jawaban dari model',
+    `Menggunakan model ${ollamaModel} (Ollama, ${modelLocationLabel(ollamaModel)}) dengan data booking + ${history?.length ?? 0} pesan riwayat sebagai konteks.`
+  )
   // What THIS turn was grounded in, and nothing else: every amount the booking
   // JSON carries at any depth (their real balance/payment/invoice total arrive
   // as bare JSON values, number or numeric string, never as Rp-formatted text),
@@ -1038,8 +1053,8 @@ async function runNoDestinationBranch(
 
       const history = await fetchRecentHistory(conversationId, inboundText)
       trace.push(
-        'Meminta jawaban dari model lokal',
-        `Menggunakan model ${ollamaModel} (Ollama, lokal), topik "${resolverTopic}", ${preDestinationKnowledge.factualLines.length} fakta, ${history?.length ?? 0} pesan riwayat.`
+        'Meminta jawaban dari model',
+        `Menggunakan model ${ollamaModel} (Ollama, ${modelLocationLabel(ollamaModel)}), topik "${resolverTopic}", ${preDestinationKnowledge.factualLines.length} fakta, ${history?.length ?? 0} pesan riwayat.`
       )
       // No package has been matched yet on this branch, so the ONLY prices and
       // links this turn was grounded in are whatever the resolved knowledge modules
@@ -1426,7 +1441,7 @@ export async function decideAndRespond(
       trace.push(
         'Memeriksa modul fakta kata kunci',
         keywordModuleResult.source === 'llm'
-          ? `Diperiksa oleh model LLM lokal -- ${keywordModuleResult.moduleIds.length} modul cocok.`
+          ? `Diperiksa oleh model LLM -- ${keywordModuleResult.moduleIds.length} modul cocok.`
           : `Model LLM gagal/timeout -- fallback ke pemindaian kata kunci lama, ${keywordModuleResult.moduleIds.length} modul cocok.`
       )
       traceStep(pipeline, 'susun-balasan', 'mulai')
@@ -1492,7 +1507,7 @@ export async function decideAndRespond(
     trace.push(
       'Memeriksa modul fakta kata kunci',
       keywordModuleSource === 'llm'
-        ? `Diperiksa oleh model LLM lokal -- ${keywordModuleIds.length} modul cocok.`
+        ? `Diperiksa oleh model LLM -- ${keywordModuleIds.length} modul cocok.`
         : `Model LLM gagal/timeout -- fallback ke pemindaian kata kunci lama, ${keywordModuleIds.length} modul cocok.`
     )
     trace.push(
@@ -1502,13 +1517,13 @@ export async function decideAndRespond(
     trace.push(
       'Mengekstrak preferensi perjalanan',
       preferencesSource === 'llm'
-        ? 'Diekstrak oleh model LLM lokal dari teks pelanggan, tervalidasi terhadap nilai yang dikenal (origin/finishCity/dayCount/pax).'
+        ? 'Diekstrak oleh model LLM dari teks pelanggan, tervalidasi terhadap nilai yang dikenal (origin/finishCity/dayCount/pax).'
         : 'Model LLM gagal, timeout, atau hasilnya tidak valid -- fallback ke pemrosesan regex lama (parseTripPreferences).'
     )
     trace.push(
       'Mendeteksi niat rekomendasi paket',
       recommendationSource === 'llm'
-        ? 'Diteksi oleh model LLM lokal.'
+        ? 'Diteksi oleh model LLM.'
         : 'Model LLM gagal/timeout -- fallback ke pemindaian kata kunci lama.'
     )
 
@@ -1585,7 +1600,7 @@ export async function decideAndRespond(
       trace.push(
         'Deteksi pelanggan tidak tahu preferensi',
         declineSource === 'llm'
-          ? 'Diteksi oleh model LLM lokal.'
+          ? 'Diteksi oleh model LLM.'
           : 'Model LLM gagal/timeout -- fallback ke pemindaian kata kunci lama.'
       )
     }
@@ -2005,8 +2020,8 @@ export async function decideAndRespond(
 
     const history = await fetchRecentHistory(conversationId, inboundText)
     trace.push(
-      'Meminta jawaban dari model lokal',
-      `Menggunakan model ${settings.ollamaModel} (Ollama, lokal), topik "${resolverTopic}", ${knowledge.factualLines.length} fakta, ${history?.length ?? 0} pesan riwayat.`
+      'Meminta jawaban dari model',
+      `Menggunakan model ${settings.ollamaModel} (Ollama, ${modelLocationLabel(settings.ollamaModel)}), topik "${resolverTopic}", ${knowledge.factualLines.length} fakta, ${history?.length ?? 0} pesan riwayat.`
     )
     // What this specific turn was actually grounded in -- not the whole catalog.
     // A price the model could not have read here is one it made up.

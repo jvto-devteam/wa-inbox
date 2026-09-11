@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mockDeep, mockReset, type DeepMockProxy } from 'vitest-mock-extended'
 import type { PrismaClient } from '@prisma/client'
 import { prisma } from '@/lib/db'
-import { decideAndRespond, gatherSideFacts, withSideFacts, computeTripPreferencesFunnelDecision } from './orchestrator'
+import { decideAndRespond, gatherSideFacts, withSideFacts, computeTripPreferencesFunnelDecision, modelLocationLabel } from './orchestrator'
 import { ensureFreshBookingData, type BookingData } from '@/lib/booking/client'
 import { checkRouteGate } from './route-gate'
 import { classifySalesNeed } from './sales-classifier'
@@ -245,11 +245,25 @@ describe('decideAndRespond', () => {
         'Mencari data booking',
         'Tidak ada eskalasi',
         'Booking ditemukan',
-        'Meminta jawaban dari model lokal',
+        'Meminta jawaban dari model',
         'Jawaban siap dikirim',
       ])
       expect(result.steps?.find((s) => s.label === 'Booking ditemukan')?.detail).toContain('Ijen Blue Fire Trekking')
       expect(result.steps?.at(-1)?.detail).toBe('Booking Anda ke Ijen sudah lunas.')
+    })
+
+    // R96 (operator decision 2026-09-11): the beforeEach default (`gemma4:31b-cloud`, matching
+    // production -- CLAUDE.md §2) is itself a cloud tag, so the trace must label it "cloud", not
+    // the hardcoded "lokal" it used to say unconditionally.
+    it('labels the model as cloud in the trace when the configured tag ends in -cloud', async () => {
+      ;vi.mocked(ensureFreshBookingData).mockResolvedValue({ bookingId: 'B1', package: 'Ijen Blue Fire Trekking' })
+      ;vi.mocked(callLLM).mockResolvedValue('Booking Anda ke Ijen sudah lunas.')
+
+      const result = await decideAndRespond('conv_1', 'Booking saya sudah lunas belum?')
+
+      expect(result.steps?.find((s) => s.label === 'Meminta jawaban dari model')?.detail).toContain(
+        'gemma4:31b-cloud (Ollama, cloud)'
+      )
     })
 
     it('records destination-search and package-selection steps for a successful FAQ reply', async () => {
@@ -281,7 +295,7 @@ describe('decideAndRespond', () => {
         'Mendeteksi niat rekomendasi paket',
         'Memeriksa validitas paket',
         'Paket valid',
-        'Meminta jawaban dari model lokal',
+        'Meminta jawaban dari model',
         'Jawaban siap dikirim',
       ])
       expect(result.steps?.find((s) => s.label === 'Destinasi ditemukan')?.detail).toContain('ijen')
@@ -3873,5 +3887,19 @@ describe('gatherSideFacts / withSideFacts (pure formatting helpers)', () => {
 
   it('withSideFacts returns the base reply unchanged when there are no side facts', () => {
     expect(withSideFacts([], 'Base reply.')).toBe('Base reply.')
+  })
+})
+
+// R96 (operator decision 2026-09-11): the trace used to hardcode "lokal" for every model,
+// which went wrong the moment production switched to a `-cloud` tag (CLAUDE.md §2). This
+// helper is the single source of truth the trace strings derive their label from.
+describe('modelLocationLabel (pure)', () => {
+  it('labels a -cloud tag as cloud', () => {
+    expect(modelLocationLabel('gemma4:31b-cloud')).toBe('cloud')
+  })
+
+  it('labels a tag without the -cloud suffix as lokal', () => {
+    expect(modelLocationLabel('gemma4:31b')).toBe('lokal')
+    expect(modelLocationLabel('llama3.1:8b')).toBe('lokal')
   })
 })
