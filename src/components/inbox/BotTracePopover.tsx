@@ -5,7 +5,10 @@ import { X } from 'lucide-react'
 import { Modal } from '@/components/ui/modal'
 import { IconButton } from '@/components/ui/icon-button'
 import { fetchJson } from '@/lib/fetch-json'
-import type { BotDecision, DecisionKnowledge } from '@/lib/bot/types'
+import type { AttributedLine, BotDecision, DecisionKnowledge } from '@/lib/bot/types'
+import type { ReplyVerification } from '@/lib/bot/reply-verifier'
+import { splitParagraphs } from '@/lib/bot/reply-attribution'
+import { jobLabelName, topicLabelName } from '@/lib/inbox/label-names'
 
 /**
  * "Why did the bot say that?", answered inside the inbox.
@@ -38,6 +41,37 @@ function knowledgeOf(trace: BotDecision | null): DecisionKnowledge | undefined {
   return trace.knowledge
 }
 
+function replyTextOf(trace: BotDecision | null): string | null {
+  if (!trace || trace.mode === 'handoff') return null
+  return trace.mode === 'faq' ? trace.draft : trace.reply
+}
+
+/** `booking_context` never carries topic/job (see BotDecision in types.ts). */
+function classificationOf(trace: BotDecision | null): { topic?: string; job?: string } {
+  if (!trace || trace.mode === 'booking_context') return {}
+  return { topic: trace.topic, job: trace.job }
+}
+
+const VERIFICATION_STATUS_LABEL: Record<ReplyVerification['status'], string> = {
+  PASSED: 'Lolos',
+  PASSED_AFTER_RETRY: 'Lolos setelah diulang',
+  BLOCKED: 'Diblokir',
+}
+
+function formatRupiah(amount: number): string {
+  return `Rp${amount.toLocaleString('id-ID')}`
+}
+
+function excerpt(text: string, max = 80): string {
+  return text.length > max ? `${text.slice(0, max - 1)}…` : text
+}
+
+function attributedSourceLabel(line: AttributedLine): string {
+  if (line.kind === 'catalog') return 'Katalog'
+  if (line.title && line.version !== undefined) return `${line.title} v${line.version}`
+  return line.title ?? 'Knowledge'
+}
+
 export function BotTracePopover({
   trace,
   messageId,
@@ -59,6 +93,12 @@ export function BotTracePopover({
         ...knowledge.managedLines,
       ]
     : []
+  const replyText = replyTextOf(trace)
+  const paragraphs = replyText ? splitParagraphs(replyText) : []
+  const { topic, job } = classificationOf(trace)
+  const alsoTopics = knowledge?.alsoTopics ?? []
+  const attributions = knowledge?.attributions
+  const verification = trace?.verification
 
   useEffect(() => {
     if (!messageId) return
@@ -90,6 +130,17 @@ export function BotTracePopover({
       {trace?.mode === 'faq' && <p>Sumber topik: {trace.sourceTopic}</p>}
       {trace?.mode === 'booking_context' && <p>Dijawab dari data booking asli (Booking API).</p>}
       {trace?.mode === 'clarify' && <p>Destinasi belum diketahui -- bot menanyakan ke pelanggan.</p>}
+
+      {(topic || job || alsoTopics.length > 0) && (
+        <div className="space-y-1 border-t border-line pt-2">
+          <p className="font-medium text-ink">Topik</p>
+          {topic && <p className="text-ink-muted">{`Utama: ${topicLabelName(topic)} (${topic})`}</p>}
+          {alsoTopics.length > 0 && (
+            <p className="text-ink-muted">{`Tambahan: ${alsoTopics.map((t) => `${topicLabelName(t)} (${t})`).join(', ')}`}</p>
+          )}
+          {job && <p className="text-ink-muted">{`Intent: ${jobLabelName(job)} (${job})`}</p>}
+        </div>
+      )}
 
       {trace?.steps && trace.steps.length > 0 && (
         <ol className="space-y-1.5 border-t border-line pt-2">
@@ -138,6 +189,43 @@ export function BotTracePopover({
               <li className="text-ink-subtle">+{knowledge.rejectedOmitted} lainnya</li>
             )}
           </ul>
+        </div>
+      )}
+
+      {/* Pencocokan sistem (reply-attribution.ts), bukan kutipan model -- karena itu "cocok dengan". */}
+      {replyText !== null && (
+        <div className="space-y-1.5 border-t border-line pt-2">
+          <p className="font-medium text-ink">Sumber per paragraf</p>
+          {attributions === undefined ? (
+            <p className="text-ink-muted">Tidak tercatat untuk balasan ini.</p>
+          ) : attributions.length === 0 ? (
+            <p className="text-ink-muted">Tidak ada paragraf yang cocok dengan fakta mana pun.</p>
+          ) : (
+            <ul className="space-y-1">
+              {attributions.map((attribution) => (
+                <li key={attribution.paragraph} className="space-x-1">
+                  <span className="text-ink">{`“${excerpt(paragraphs[attribution.paragraph] ?? '')}”`}</span>
+                  <span className="text-ink-subtle">{`cocok dengan ${attribution.lines.map(attributedSourceLabel).join('; ')}`}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+
+      {verification && (
+        <div className="space-y-1 border-t border-line pt-2">
+          <p className="font-medium text-ink">Verifikasi</p>
+          <p className="text-ink-muted">{`Status: ${VERIFICATION_STATUS_LABEL[verification.status] ?? verification.status}`}</p>
+          {verification.fabricatedPrices.length > 0 && (
+            <p className="text-ink-muted">{`Harga tidak bersumber: ${verification.fabricatedPrices.map(formatRupiah).join(', ')}`}</p>
+          )}
+          {verification.unverifiedPrices.length > 0 && (
+            <p className="text-ink-muted">{`Harga tidak cocok dengan fakta: ${verification.unverifiedPrices.map(formatRupiah).join(', ')}`}</p>
+          )}
+          {verification.unknownUrls.length > 0 && (
+            <p className="break-all text-ink-muted">{`URL tidak dikenal: ${verification.unknownUrls.join(', ')}`}</p>
+          )}
         </div>
       )}
 

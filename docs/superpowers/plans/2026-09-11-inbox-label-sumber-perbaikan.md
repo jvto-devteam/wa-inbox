@@ -2316,7 +2316,7 @@ Tampilan baru (semua teks dirakit dengan template literal supaya satu node teks)
 - **Verifikasi** (bila `trace.verification` ada): `Status: Lolos | Lolos setelah diulang | Diblokir`, `Harga tidak bersumber: Rp…`, `Harga tidak cocok dengan fakta: Rp…`, `URL tidak dikenal: …`.
 - "Fakta yang dipakai" TIDAK diubah: `source` sudah "Judul (vN)" (Keputusan 8).
 
-- [ ] **Step 1: Tulis test yang gagal — tambahkan di akhir `src/components/inbox/BotTracePopover.test.tsx`**
+- [x] **Step 1: Tulis test yang gagal — tambahkan di akhir `src/components/inbox/BotTracePopover.test.tsx`**
 
 ```tsx
 describe('BotTracePopover — Topik, Sumber per paragraf, Verifikasi', () => {
@@ -2440,12 +2440,12 @@ describe('BotTracePopover — Topik, Sumber per paragraf, Verifikasi', () => {
 })
 ```
 
-- [ ] **Step 2: Jalankan, pastikan GAGAL**
+- [x] **Step 2: Jalankan, pastikan GAGAL**
 
 Run: `npx vitest run src/components/inbox/BotTracePopover.test.tsx`
 Expected: FAIL — `Unable to find an element with the text: Topik` (dan teks baru lainnya); test lama tetap lulus.
 
-- [ ] **Step 3: Implementasi — impor dan helper di `BotTracePopover.tsx`**
+- [x] **Step 3: Implementasi — impor dan helper di `BotTracePopover.tsx`**
 
 Ganti baris:
 
@@ -2498,7 +2498,7 @@ function attributedSourceLabel(line: AttributedLine): string {
 
 ```
 
-- [ ] **Step 4: Implementasi — nilai turunan di dalam komponen**
+- [x] **Step 4: Implementasi — nilai turunan di dalam komponen**
 
 Tepat setelah blok `const usedFacts = knowledge ? [...] : []` (berakhir di baris `    : []`), tambahkan:
 
@@ -2511,7 +2511,7 @@ Tepat setelah blok `const usedFacts = knowledge ? [...] : []` (berakhir di baris
   const verification = trace?.verification
 ```
 
-- [ ] **Step 5: Implementasi — JSX bagian Topik**
+- [x] **Step 5: Implementasi — JSX bagian Topik**
 
 Ganti baris:
 
@@ -2536,7 +2536,7 @@ menjadi:
       )}
 ```
 
-- [ ] **Step 6: Implementasi — JSX Sumber per paragraf dan Verifikasi**
+- [x] **Step 6: Implementasi — JSX Sumber per paragraf dan Verifikasi**
 
 Ganti:
 
@@ -2589,12 +2589,12 @@ menjadi:
         <Link
 ```
 
-- [ ] **Step 7: Jalankan, pastikan LULUS**
+- [x] **Step 7: Jalankan, pastikan LULUS**
 
 Run: `npx vitest run src/components/inbox/BotTracePopover.test.tsx src/components/inbox/MessageBubble.test.tsx`
 Expected: PASS — termasuk seluruh test lama (mis. "Kebijakan Pembayaran (v3)" masih tampil, dan `queryByRole('list')` pada handoff tetap kosong).
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add src/components/inbox/BotTracePopover.tsx src/components/inbox/BotTracePopover.test.tsx

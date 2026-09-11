@@ -293,3 +293,123 @@ describe('BotTracePopover run lookup (Phase 3)', () => {
     expect(screen.queryByRole('link')).toBeNull()
   })
 })
+
+describe('BotTracePopover — Topik, Sumber per paragraf, Verifikasi', () => {
+  it('menampilkan topik utama, topik tambahan, dan intent dengan nama dan id mentahnya', () => {
+    render(
+      <BotTracePopover
+        trace={{
+          mode: 'faq',
+          draft: 'x',
+          sourceTopic: 'payment',
+          topic: 'payment',
+          job: 'J2',
+          knowledge: { catalogLines: [], managedLines: [], rejected: [], gateBypassed: false, alsoTopics: ['blue_fire'] },
+        }}
+        onClose={() => {}}
+      />
+    )
+    expect(screen.getByText('Topik')).toBeInTheDocument()
+    expect(screen.getByText('Utama: Pembayaran (payment)')).toBeInTheDocument()
+    expect(screen.getByText('Tambahan: Blue fire (blue_fire)')).toBeInTheDocument()
+    expect(screen.getByText('Intent: Harga & nilai (J2)')).toBeInTheDocument()
+  })
+
+  it('tanpa bagian Topik bila keputusan tidak membawa klasifikasi', () => {
+    render(<BotTracePopover trace={{ mode: 'handoff', reason: 'Kata kunci eskalasi terdeteksi' }} onClose={() => {}} />)
+    expect(screen.queryByText('Topik')).not.toBeInTheDocument()
+  })
+
+  it('menampilkan potongan setiap paragraf dengan sumber yang cocok, tanpa kata "dikutip"', () => {
+    render(
+      <BotTracePopover
+        trace={{
+          mode: 'faq',
+          draft: 'Halo kak!\n\nHarga ATV Rp350.000 per jam.\n\n- Semua paket termasuk transport privat.',
+          sourceTopic: 'price',
+          knowledge: {
+            catalogLines: ['Every package includes private transport.'],
+            managedLines: [{ line: 'ATV 1 jam: IDR 350000', source: 'FAQ Harga ATV (v2)', sourceId: 'ks_1', sourceKey: 'managed/atv', version: 2 }],
+            rejected: [],
+            gateBypassed: false,
+            attributions: [
+              { paragraph: 1, lines: [{ kind: 'managed', line: 'ATV 1 jam: IDR 350000', sourceId: 'ks_1', title: 'FAQ Harga ATV', version: 2 }] },
+              { paragraph: 2, lines: [{ kind: 'catalog', line: 'Every package includes private transport.' }] },
+            ],
+          },
+        }}
+        onClose={() => {}}
+      />
+    )
+    expect(screen.getByText('Sumber per paragraf')).toBeInTheDocument()
+    expect(screen.getByText('“Harga ATV Rp350.000 per jam.”')).toBeInTheDocument()
+    expect(screen.getByText('cocok dengan FAQ Harga ATV v2')).toBeInTheDocument()
+    expect(screen.getByText('“- Semua paket termasuk transport privat.”')).toBeInTheDocument()
+    expect(screen.getByText('cocok dengan Katalog')).toBeInTheDocument()
+    expect(screen.queryByText(/dikutip/i)).not.toBeInTheDocument()
+  })
+
+  it('balasan lama tanpa attributions: "tidak tercatat"', () => {
+    render(
+      <BotTracePopover
+        trace={{
+          mode: 'clarify',
+          reply: 'Anda tertarik ke mana?',
+          knowledge: { catalogLines: [], managedLines: [], rejected: [], gateBypassed: false },
+        }}
+        onClose={() => {}}
+      />
+    )
+    expect(screen.getByText('Tidak tercatat untuk balasan ini.')).toBeInTheDocument()
+  })
+
+  it('attributions kosong: tidak ada paragraf yang cocok', () => {
+    render(
+      <BotTracePopover
+        trace={{
+          mode: 'booking_context',
+          reply: 'Booking Anda berangkat 5 Agustus.',
+          knowledge: { catalogLines: [], managedLines: [], rejected: [], gateBypassed: false, attributions: [] },
+        }}
+        onClose={() => {}}
+      />
+    )
+    expect(screen.getByText('Tidak ada paragraf yang cocok dengan fakta mana pun.')).toBeInTheDocument()
+  })
+
+  it('handoff tidak punya bagian Sumber per paragraf', () => {
+    render(<BotTracePopover trace={{ mode: 'handoff', reason: 'Kata kunci eskalasi terdeteksi' }} onClose={() => {}} />)
+    expect(screen.queryByText('Sumber per paragraf')).not.toBeInTheDocument()
+  })
+
+  it('menampilkan hasil verifikasi: status, harga tak bersumber, harga tak cocok, URL tak dikenal', () => {
+    render(
+      <BotTracePopover
+        trace={{
+          mode: 'faq',
+          draft: 'x',
+          sourceTopic: 'price',
+          verification: {
+            status: 'BLOCKED',
+            attempts: 2,
+            fabricatedPrices: [350000],
+            unverifiedPrices: [1250000],
+            unknownUrls: ['https://contoh.invalid/x'],
+            guaranteeViolations: [],
+          },
+        }}
+        onClose={() => {}}
+      />
+    )
+    expect(screen.getByText('Verifikasi')).toBeInTheDocument()
+    expect(screen.getByText('Status: Diblokir')).toBeInTheDocument()
+    expect(screen.getByText('Harga tidak bersumber: Rp350.000')).toBeInTheDocument()
+    expect(screen.getByText('Harga tidak cocok dengan fakta: Rp1.250.000')).toBeInTheDocument()
+    expect(screen.getByText('URL tidak dikenal: https://contoh.invalid/x')).toBeInTheDocument()
+  })
+
+  it('tanpa bagian Verifikasi bila giliran itu tidak diverifikasi', () => {
+    render(<BotTracePopover trace={{ mode: 'clarify', reply: 'x' }} onClose={() => {}} />)
+    expect(screen.queryByText('Verifikasi')).not.toBeInTheDocument()
+  })
+})
