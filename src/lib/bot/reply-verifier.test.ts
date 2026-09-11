@@ -221,6 +221,35 @@ describe('verifyReply guarantee violations', () => {
   })
 })
 
+// Task 22 fix round 1 (F4): which topic(s) make the guarantee check run -- read by
+// orchestrator.ts's 'Janji yang dilarang topik ini' trace step so it names the real trigger.
+describe('guaranteeCheckTopics', () => {
+  it('mengembalikan topik utama saja bila hanya ia yang dilarang berjanji', async () => {
+    const { guaranteeCheckTopics } = await import('./reply-verifier')
+    expect(guaranteeCheckTopics('blue_fire', ['payment'])).toEqual(['blue_fire'])
+  })
+
+  it('mengembalikan also-topic pemicu bila topik utama tidak dilarang berjanji', async () => {
+    const { guaranteeCheckTopics } = await import('./reply-verifier')
+    expect(guaranteeCheckTopics('payment', ['cancellation', 'blue_fire'])).toEqual(['blue_fire'])
+  })
+
+  it('mengembalikan semua pemicu, topik utama dulu, tanpa duplikat', async () => {
+    const { guaranteeCheckTopics } = await import('./reply-verifier')
+    expect(guaranteeCheckTopics('destination_readiness', ['blue_fire', 'destination_readiness'])).toEqual([
+      'destination_readiness',
+      'blue_fire',
+    ])
+  })
+
+  it('kosong bila tidak ada topik yang dilarang berjanji, atau topik tidak diketahui', async () => {
+    const { guaranteeCheckTopics } = await import('./reply-verifier')
+    expect(guaranteeCheckTopics('payment', ['booking'])).toEqual([])
+    expect(guaranteeCheckTopics(undefined)).toEqual([])
+    expect(guaranteeCheckTopics('booking_context')).toEqual([])
+  })
+})
+
 describe('buildVerificationRetryInstruction', () => {
   it('names both the fabricated prices and the unknown links, and never the merely-unverified ones', () => {
     const instruction = buildVerificationRetryInstruction({

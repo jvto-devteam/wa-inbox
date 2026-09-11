@@ -144,6 +144,21 @@ export function isDerivableAmount(amount: number, allowed: number[]): boolean {
 const NO_GUARANTEE_TOPICS = new Set(['blue_fire', 'destination_readiness'])
 
 /**
+ * Which of this turn's topics -- the primary one first, then `alsoTopics` in order, no
+ * duplicates -- are in `NO_GUARANTEE_TOPICS`, i.e. which topic(s) make the guarantee check run.
+ * Empty means the check does not run at all.
+ *
+ * Exported (Task 22 fix round 1, F4) so orchestrator.ts's 'Janji yang dilarang topik ini' trace
+ * step names the topic(s) that ACTUALLY triggered the check -- an also-topic like `blue_fire`
+ * when the primary topic is `payment` -- read from the same set the check itself reads, rather
+ * than always naming the primary topic.
+ */
+export function guaranteeCheckTopics(topic: string | undefined, alsoTopics: readonly string[] = []): string[] {
+  const asked = topic !== undefined ? [topic, ...alsoTopics] : [...alsoTopics]
+  return [...new Set(asked.filter((t) => NO_GUARANTEE_TOPICS.has(t)))]
+}
+
+/**
  * The reply side's OWN promise-phrase list -- deliberately NOT knowledge.ts's
  * `GUARANTEE_PHRASES` (Ruling R49). That list detects a customer DEMANDING a guarantee and is
  * tuned wide for that job ('100%', 'certain'); run against a REPLY it would flag "All tours are
@@ -176,8 +191,7 @@ const NEGATED_PROMISE = /\b(?:not|never|cannot|can't|can not|isn't|aren't|won't|
  * topic happened to classify as primary.
  */
 function findGuaranteeViolations(replyText: string, topic: string | undefined, alsoTopics: readonly string[] = []): string[] {
-  const topicNeedsCheck = (topic !== undefined && NO_GUARANTEE_TOPICS.has(topic)) || alsoTopics.some((t) => NO_GUARANTEE_TOPICS.has(t))
-  if (!topicNeedsCheck) return []
+  if (guaranteeCheckTopics(topic, alsoTopics).length === 0) return []
   const violations: string[] = []
   // Ruling R70: strip URLs before scanning -- GUARANTEE_ROOT's word boundaries match a bare
   // "guarantee" inside a URL path/filename (e.g. "https://x.id/guarantee.html") with no actual
