@@ -33,12 +33,38 @@ describe('classifyAllTopics', () => {
     expect(topics).toEqual(['payment'])
   })
 
-  it('memotong ke maksimal 4 topik saat model mengembalikan lebih', async () => {
+  it('memotong ke maksimal 6 topik saat model mengembalikan lebih', async () => {
     vi.mocked(callLLM).mockResolvedValue(
-      '{"topics":["booking","payment","cancellation","blue_fire","inclusions","price"]}'
+      '{"topics":["booking","payment","cancellation","blue_fire","inclusions","price","vehicle","hotel"]}'
     )
     const topics = await classifyAllTopics('pesan')
-    expect(topics).toEqual(['booking', 'payment', 'cancellation', 'blue_fire'])
+    expect(topics).toEqual(['booking', 'payment', 'cancellation', 'blue_fire', 'inclusions', 'price'])
+  })
+
+  // Ruling R103: bukti produksi (cmsn7yfn) -- permintaan penawaran yang menanyakan 6 topik.
+  // Plafon 4 membuang payment dan cancellation; plafon 6 menyimpan keenamnya.
+  it('menyimpan keenam topik permintaan penawaran (price, inclusions, private_tour, vehicle, payment, cancellation)', async () => {
+    vi.mocked(callLLM).mockResolvedValue(
+      '{"topics":["price","inclusions","private_tour","vehicle","payment","cancellation"]}'
+    )
+    const topics = await classifyAllTopics('pesan')
+    expect(topics).toEqual(['price', 'inclusions', 'private_tour', 'vehicle', 'payment', 'cancellation'])
+  })
+
+  // Ruling R104: disambiguasi yang disalin dari prompt classifier topik UTAMA
+  // (topic-classifier.ts) harus benar-benar sampai ke prompt panggilan ini.
+  it('prompt memuat disambiguasi transfer, blue flames, daftar destinasi, contoh topik-konteks, dan plafon 6', async () => {
+    vi.mocked(callLLM).mockResolvedValue('{"topics":[]}')
+    await classifyAllTopics('pesan')
+    const system = vi.mocked(callLLM).mock.calls[0]?.[1]?.system ?? ''
+    expect(system).toContain(
+      'A message mentioning "transfer" in a travel sense (an airport/inter-city transfer, not a money transfer) is NOT this topic.'
+    )
+    expect(system).toContain('(including paraphrases like "blue flames")')
+    expect(system).toContain('(Ijen, Bromo, Tumpak Sewu, Madakaripura, Papuma)')
+    expect(system).toContain('Message: "Does the price include the airport transfer?"\nOutput: {"topics": ["inclusions"]}')
+    expect(system).toContain('Most messages ask about only one thing')
+    expect(system).toContain('List at most 6 topics')
   })
 
   it('mengembalikan daftar kosong saat LLM gagal, dicatat lewat console.error -- tidak boleh memblokir giliran', async () => {
