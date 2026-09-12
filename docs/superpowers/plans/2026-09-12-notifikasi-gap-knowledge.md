@@ -204,7 +204,7 @@ EOF
 
 Aturannya, urut: bukan mode `faq` → `false`; tanpa `knowledge` → `false`; nol fakta (katalog + terkelola) → `false` (itu wilayah `no_facts_resolved` yang sudah ada); `attributions` absen → `false` (pemetaan tidak dihitung, bukan berarti tidak bersumber); `attributions` kosong → `true`.
 
-- [ ] **Step 1: Tulis test yang gagal — `src/lib/inbox/gap-signal.test.ts`**
+- [x] **Step 1: Tulis test yang gagal — `src/lib/inbox/gap-signal.test.ts`**
 
 ```ts
 import { describe, it, expect } from 'vitest'
@@ -260,12 +260,12 @@ describe('isUnsourcedFaqReply', () => {
 })
 ```
 
-- [ ] **Step 2: Jalankan, pastikan GAGAL**
+- [x] **Step 2: Jalankan, pastikan GAGAL**
 
 Run: `npx vitest run src/lib/inbox/gap-signal.test.ts`
 Expected: FAIL — `Failed to resolve import "./gap-signal"`.
 
-- [ ] **Step 3: Implementasi — `src/lib/inbox/gap-signal.ts`**
+- [x] **Step 3: Implementasi — `src/lib/inbox/gap-signal.ts`**
 
 ```ts
 import type { BotDecision } from '@/lib/bot/types'
@@ -299,12 +299,12 @@ export function isUnsourcedFaqReply(decision: BotDecision): boolean {
 }
 ```
 
-- [ ] **Step 4: Jalankan, pastikan LULUS**
+- [x] **Step 4: Jalankan, pastikan LULUS**
 
 Run: `npx vitest run src/lib/inbox/gap-signal.test.ts`
 Expected: PASS (7 test).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/lib/inbox/gap-signal.ts src/lib/inbox/gap-signal.test.ts
