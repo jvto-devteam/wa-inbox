@@ -1,6 +1,7 @@
 'use client'
 import { useEffect, useState } from 'react'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/ui/empty-state'
 import { Select } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -16,11 +17,13 @@ type KnowledgeGap = {
   reason: string
   messageText: string
   createdAt: string
+  resolvedAt: string | null
 }
 
 const REASON_LABEL: Record<string, string> = {
   no_facts_resolved: 'Tidak ada fakta',
   verification_failed: 'Gagal verifikasi',
+  reply_unsourced: 'Jawaban tanpa sumber',
 }
 
 export default function KnowledgeGapsPage() {
@@ -31,7 +34,25 @@ export default function KnowledgeGapsPage() {
   // (aturan yang sama yang dipatuhi halaman Histori Biaya). Saat sebuah permintaan gagal,
   // saringan tetap ditandai selesai supaya daftar tidak memuat selamanya.
   const [loadedFilter, setLoadedFilter] = useState<string | null>(null)
+  const [resolving, setResolving] = useState<string | null>(null)
   const loading = loadedFilter !== filter
+
+  async function resolveGap(id: string) {
+    setResolving(id)
+    try {
+      const saved = await fetchJson<{ id: string; resolvedAt: string | null }>(
+        `/api/inbox/gaps/${encodeURIComponent(id)}/resolve`,
+        { method: 'POST' }
+      )
+      // Baris itu saja yang diperbarui, bukan seluruh daftar: memuat ulang akan memindahkan
+      // posisi baris lain di bawah kursor operator yang sedang menyisir daftar.
+      setGaps((prev) => prev.map((gap) => (gap.id === saved.id ? { ...gap, resolvedAt: saved.resolvedAt } : gap)))
+    } catch {
+      // Ditelan: tombolnya kembali bisa ditekan, dan tidak ada yang hilang kalau gagal.
+    } finally {
+      setResolving(null)
+    }
+  }
 
   useEffect(() => {
     let cancelled = false
@@ -97,6 +118,21 @@ export default function KnowledgeGapsPage() {
                   <time dateTime={g.createdAt} className="ml-auto font-mono text-xs text-ink-subtle">
                     {new Date(g.createdAt).toLocaleString('id-ID')}
                   </time>
+                  {g.resolvedAt ? (
+                    <Badge variant="success">Selesai</Badge>
+                  ) : (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={resolving === g.id}
+                      onClick={() => {
+                        void resolveGap(g.id)
+                      }}
+                    >
+                      {resolving === g.id ? 'Menandai...' : 'Tandai selesai'}
+                    </Button>
+                  )}
                 </div>
                 {/* Wadahnya ikut melebar, kalimat pelanggannya tidak: baris teks di atas ~80
                     karakter melelahkan dibaca, dan ini satu-satunya bagian baris yang berupa

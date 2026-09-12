@@ -24,6 +24,9 @@ export async function GET(request: Request) {
       reason: g.reason,
       messageText: g.messageText,
       createdAt: g.createdAt,
+      // Halaman ini menampilkan SEMUA gap, termasuk yang sudah ditangani -- lonceng yang hanya
+      // mengurus yang belum (lihat /api/inbox/gaps).
+      resolvedAt: g.resolvedAt,
     }))
   )
 }

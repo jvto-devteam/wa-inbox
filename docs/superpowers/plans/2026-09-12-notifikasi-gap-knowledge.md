@@ -2808,7 +2808,7 @@ EOF
 
 Halaman ini tetap memakai route lamanya (200 baris terakhir, dengan saringan alasan) alih-alih `/api/inbox/gaps` yang hanya melayani lonceng (paling banyak 20, hanya yang belum selesai): daftar lengkap termasuk yang sudah ditangani adalah gunanya halaman ini.
 
-- [ ] **Step 1: Tulis test yang gagal — `src/app/api/bot/knowledge-gaps/route.test.ts`**
+- [x] **Step 1: Tulis test yang gagal — `src/app/api/bot/knowledge-gaps/route.test.ts`**
 
 ```ts
 /**
@@ -2867,7 +2867,7 @@ describe('GET /api/bot/knowledge-gaps', () => {
 })
 ```
 
-- [ ] **Step 2: Implementasi — `src/app/api/bot/knowledge-gaps/route.ts`**
+- [x] **Step 2: Implementasi — `src/app/api/bot/knowledge-gaps/route.ts`**
 
 Ganti:
 
@@ -2886,12 +2886,12 @@ menjadi:
       resolvedAt: g.resolvedAt,
 ```
 
-- [ ] **Step 3: Jalankan, pastikan LULUS**
+- [x] **Step 3: Jalankan, pastikan LULUS**
 
 Run: `npx vitest run src/app/api/bot/knowledge-gaps/route.test.ts`
 Expected: PASS (3 test).
 
-- [ ] **Step 4: Tulis test yang gagal — `src/app/(authenticated)/settings/knowledge-gaps/page.test.tsx`**
+- [x] **Step 4: Tulis test yang gagal — `src/app/(authenticated)/settings/knowledge-gaps/page.test.tsx`**
 
 ```tsx
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
@@ -2981,12 +2981,12 @@ describe('KnowledgeGapsPage — status dan penandaan', () => {
 })
 ```
 
-- [ ] **Step 5: Jalankan, pastikan GAGAL**
+- [x] **Step 5: Jalankan, pastikan GAGAL**
 
 Run: `npx vitest run "src/app/(authenticated)/settings/knowledge-gaps/page.test.tsx"`
 Expected: FAIL — `Unable to find an element with the text: Jawaban tanpa sumber` (nama alasan dan tombolnya belum ada).
 
-- [ ] **Step 6: Implementasi — `src/app/(authenticated)/settings/knowledge-gaps/page.tsx`**
+- [x] **Step 6: Implementasi — `src/app/(authenticated)/settings/knowledge-gaps/page.tsx`**
 
 6a. Ganti (empat baris sekaligus — tiga baris pertama juga ada di `ContactTable.tsx`, baris `Skeleton` yang membedakannya):
 
@@ -3098,12 +3098,12 @@ menjadi:
                   )}
 ```
 
-- [ ] **Step 7: Jalankan, pastikan LULUS**
+- [x] **Step 7: Jalankan, pastikan LULUS**
 
 Run: `npx vitest run "src/app/(authenticated)/settings/knowledge-gaps/page.test.tsx" src/app/api/bot/knowledge-gaps/route.test.ts`
 Expected: PASS (7 test).
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add src/app/api/bot/knowledge-gaps/route.ts src/app/api/bot/knowledge-gaps/route.test.ts \
