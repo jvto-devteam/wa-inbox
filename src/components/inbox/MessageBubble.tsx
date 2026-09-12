@@ -1,6 +1,6 @@
 'use client'
 import { useState } from 'react'
-import { Bot, Brain, CornerUpLeft, Film, Image as ImageIcon, Paperclip, Tag, Wrench } from 'lucide-react'
+import { Bot, Brain, Copy, CornerUpLeft, Film, Image as ImageIcon, Paperclip, Tag, Wrench } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { IconButton } from '@/components/ui/icon-button'
@@ -339,6 +339,11 @@ export function MessageBubble({
     }
   }
 
+  async function copyBotReply() {
+    if (!message.content?.trim()) return
+    await navigator.clipboard?.writeText(message.content)
+  }
+
   // A handoff decision is logged (Task 34) as a Message row with content: null, sentBy: 'BOT' --
   // no real reply was ever sent to the customer. Rendered as WhatsApp's own centered system
   // divider (the same line-text-line style as the "Pesan belum dibaca" marker in ThreadView),
@@ -383,6 +388,7 @@ export function MessageBubble({
   const cards = message.templatePayload?.cards
   const topicLabels = message.topicLabels ?? checkedLabels
   const canCheckTopic = !isOutbound && !topicLabels && Boolean(conversationId && message.content?.trim())
+  const canCopyBotReply = isBotMessage && Boolean(message.content?.trim())
 
   return (
     // `group`: aksi balas hanya muncul saat baris ini di-hover atau salah satu kontrolnya
@@ -410,7 +416,7 @@ export function MessageBubble({
           )}
           {hasMedia && <MediaContent message={message} />}
           {message.content ? (
-            <span>{formatWhatsAppText(message.content)}</span>
+            <span className="select-text cursor-text">{formatWhatsAppText(message.content)}</span>
           ) : (
             !hasMedia && message.type && message.type !== 'text' && `[${message.type}]`
           )}
@@ -458,6 +464,17 @@ export function MessageBubble({
             label="Perbaiki jawaban bot"
             icon={<Wrench strokeWidth={1.75} />}
             onClick={() => setShowFix(true)}
+            className="-my-1"
+          />
+        )}
+        {canCopyBotReply && (
+          <IconButton
+            size="sm"
+            label="Salin balasan bot"
+            icon={<Copy strokeWidth={1.75} />}
+            onClick={() => {
+              void copyBotReply().catch(() => {})
+            }}
             className="-my-1"
           />
         )}

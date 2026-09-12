@@ -21,6 +21,21 @@ describe('MessageBubble', () => {
     expect(screen.getByText('Bot')).toBeInTheDocument()
   })
 
+  it('membuat teks balasan bot bisa diblok dan disalin', async () => {
+    const writeText = vi.fn(async () => undefined)
+    Object.defineProperty(globalThis.navigator, 'clipboard', {
+      value: { writeText },
+      configurable: true,
+    })
+
+    render(<MessageBubble message={{ id: 'm1b', direction: 'OUTBOUND', content: 'Info paket Ijen bisa disalin.', channel: 'OFFICIAL', sentBy: 'BOT', deliveryStatus: 'SENT', createdAt: new Date().toISOString(), botTrace: { mode: 'faq', draft: 'Info paket Ijen bisa disalin.', sourceTopic: 'inclusions' } }} />)
+
+    expect(screen.getByText('Info paket Ijen bisa disalin.').closest('.select-text')).toBeInTheDocument()
+    fireEvent.click(screen.getByLabelText('Salin balasan bot'))
+
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith('Info paket Ijen bisa disalin.'))
+  })
+
   it('shows a retry button for failed messages', () => {
     render(<MessageBubble message={{ id: 'm2', direction: 'OUTBOUND', content: 'Halo', channel: 'OFFICIAL', sentBy: 'AGENT', deliveryStatus: 'FAILED', createdAt: new Date().toISOString(), botTrace: null }} />)
     expect(screen.getByRole('button', { name: /kirim ulang/i })).toBeInTheDocument()
