@@ -1464,6 +1464,47 @@ describe('decideAndRespond', () => {
     expect(opts.system).not.toContain('Relevant link (include this URL at the end of your reply): https://example.com/policy/inclusions-exclusions')
   })
 
+  it("prefers the package's own detail link for a concrete package inquiry even before the customer says book", async () => {
+    ;vi.mocked(ensureFreshBookingData).mockResolvedValue(null)
+    ;vi.mocked(classifySalesNeed).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: true })
+    ;vi.mocked(extractTripPreferences).mockResolvedValue({
+      preferences: { origin: 'surabaya', dayCount: 3, finishCity: 'bali', pax: 1 },
+      source: 'llm',
+    })
+    ;vi.mocked(matchDestination).mockReturnValue({
+      destination: 'bromo',
+      matches: [
+        pkg({
+          packageKey: 'bromo-madakaripura-ijen-3d2n',
+          title: 'Bromo Madakaripura Ijen 3D2N',
+          origin: 'Surabaya',
+          dayCount: 3,
+          finishCities: ['bali'],
+          priceIdr: 6300000,
+          links: { details: 'https://example.com/tours/from-surabaya/bromo-madakaripura-ijen-3d2n' },
+        }),
+      ],
+    })
+    ;vi.mocked(checkRouteGate).mockReturnValue({ status: 'clear' })
+    ;vi.mocked(classifyTopicViaLLM).mockResolvedValue({ topic: 'private_tour', source: 'llm' })
+    ;vi.mocked(resolveKnowledgeForTopic).mockReturnValue({
+      factualLines: ['This is a private tour with your own dedicated driver and guide.'],
+      detailLines: [],
+      primaryLink: 'https://example.com/why-jvto/the-jvto-difference',
+      disclosures: [],
+      handoffRequired: false,
+    })
+
+    await decideAndRespond(
+      'conv_1',
+      'Hi! I am planning to visit East Java in September and I am interested in a Bromo + Ijen tour. Do you have availability for 13-15 September? Could you please let me know whether the tour is shared or private, the total price, and what is included in the package? I need pick-up in Surabaya and drop-off towards Bali.'
+    )
+
+    const [, opts] = llmCall(0)
+    expect(opts.system).toContain('Relevant link (include this URL at the end of your reply): https://example.com/tours/from-surabaya/bromo-madakaripura-ijen-3d2n')
+    expect(opts.system).not.toContain('Relevant link (include this URL at the end of your reply): https://example.com/why-jvto/the-jvto-difference')
+  })
+
   // Reported live 2026-08-06: "Could you confirm the hotel names for the 3D2N Bromo Ijen
   // tour?" (topic 'hotel', no booking intent) still got the generic rooming policy page as
   // its link, contradicting resolveKnowledgeForTopic's own disclosure telling the LLM to

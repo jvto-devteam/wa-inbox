@@ -272,6 +272,16 @@ function isBookingIntent(message: string): boolean {
   return BOOKING_INTENT_KEYWORDS.some((k) => low.includes(k))
 }
 
+const PACKAGE_DETAIL_NOUNS = ['package', 'tour', 'trip', 'itinerary']
+const PACKAGE_DETAIL_ASKS = [
+  'availability', 'available', 'price', 'total', 'included', 'include', 'inclusion',
+  'pick-up', 'pickup', 'drop-off', 'drop off', 'finish', 'start', 'private', 'shared', 'group',
+]
+function isPackageDetailIntent(message: string): boolean {
+  const low = message.toLowerCase()
+  return PACKAGE_DETAIL_NOUNS.some((k) => low.includes(k)) && PACKAGE_DETAIL_ASKS.some((k) => low.includes(k))
+}
+
 // Confirmed with the operator 2026-08-06: start/finish/day-count stay MANDATORY before
 // recommending a package (see the trip-preferences funnel gate below) -- the ONLY exception is
 // the customer explicitly saying they don't know/don't care, not simply "one message has
@@ -2113,7 +2123,7 @@ export async function decideAndRespond(
     // the LLM to point to "this package's own detail page", but the link actually passed was
     // still service_standard_rooming's generic rooming_and_accommodation policy page (it won
     // as knowledge.primaryLink), contradicting the disclosure's own words.
-    const primaryLink = isBookingIntent(inboundText) || resolverTopic === 'hotel'
+    const primaryLink = isBookingIntent(inboundText) || isPackageDetailIntent(inboundText) || resolverTopic === 'hotel'
       ? (pkg.links.details ?? knowledge.primaryLink ?? null)
       : (knowledge.primaryLink ?? pkg.links.details ?? null)
 
