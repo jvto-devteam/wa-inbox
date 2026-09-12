@@ -84,7 +84,7 @@
 
 Sengaja BUKAN relasi ke `Message`/`BotDecisionRun`: `BotDecisionRun.messageId` yang sudah ada pun kolom biasa tanpa foreign key, dan menambah FK berarti baris gap ikut terhapus saat pesannya dihapus — justru jejak yang ingin disimpan.
 
-- [ ] **Step 1: Simpan salinan skema lama (sebelum mengedit apa pun)**
+- [x] **Step 1: Simpan salinan skema lama (sebelum mengedit apa pun)**
 
 ```bash
 git show HEAD:prisma/schema.prisma > "${TMPDIR:-/tmp}/schema-before-gap-notif.prisma"
@@ -93,7 +93,7 @@ git diff --quiet HEAD -- prisma/schema.prisma && echo "skema bersih, salinan = H
 
 Expected: `skema bersih, salinan = HEAD`. Kalau tidak tercetak, ada perubahan lokal di skema — berhenti dan tanyakan.
 
-- [ ] **Step 2: Tambah kolom di `prisma/schema.prisma`**
+- [x] **Step 2: Tambah kolom di `prisma/schema.prisma`**
 
 Di model `KnowledgeGapLog`, ganti:
 
@@ -126,20 +126,25 @@ menjadi:
 }
 ```
 
-- [ ] **Step 3: Buat migrasi offline dan periksa SQL-nya**
+- [x] **Step 3: Buat migrasi offline dan periksa SQL-nya**
+
+`prisma migrate diff` menulis spanduk dotenvx (`◇ injected env …`) ke STDOUT, bukan stderr, jadi pengalihan polos akan menaruhnya sebagai baris pertama berkas SQL — migrasi yang rusak dan baru ketahuan saat `migrate deploy` di produksi. Saringan dan pemeriksaan baris pertama di bawah ini yang mencegahnya.
 
 ```bash
 mkdir -p prisma/migrations/20260912080000_knowledge_gap_notification
+f=prisma/migrations/20260912080000_knowledge_gap_notification/migration.sql
 npx prisma migrate diff \
   --from-schema "${TMPDIR:-/tmp}/schema-before-gap-notif.prisma" \
   --to-schema prisma/schema.prisma \
-  --script > prisma/migrations/20260912080000_knowledge_gap_notification/migration.sql
-cat prisma/migrations/20260912080000_knowledge_gap_notification/migration.sql
-! grep -Eiq 'drop|truncate|alter column|rename' prisma/migrations/20260912080000_knowledge_gap_notification/migration.sql \
-  && grep -Eq 'ADD COLUMN +"messageId" TEXT' prisma/migrations/20260912080000_knowledge_gap_notification/migration.sql \
-  && grep -Eq 'ADD COLUMN +"resolvedAt" TIMESTAMP' prisma/migrations/20260912080000_knowledge_gap_notification/migration.sql \
-  && grep -Eq 'ADD COLUMN +"runId" TEXT' prisma/migrations/20260912080000_knowledge_gap_notification/migration.sql \
-  && grep -q 'CREATE INDEX "KnowledgeGapLog_resolvedAt_idx"' prisma/migrations/20260912080000_knowledge_gap_notification/migration.sql \
+  --script 2>/dev/null | grep -v 'injected env' > "$f"
+cat "$f"
+head -1 "$f" | grep -q '^-- AlterTable$' \
+  && ! grep -q 'injected env' "$f" \
+  && ! grep -Eiq 'drop|truncate|alter column|rename' "$f" \
+  && grep -Eq 'ADD COLUMN +"messageId" TEXT' "$f" \
+  && grep -Eq 'ADD COLUMN +"resolvedAt" TIMESTAMP' "$f" \
+  && grep -Eq 'ADD COLUMN +"runId" TEXT' "$f" \
+  && grep -q 'CREATE INDEX "KnowledgeGapLog_resolvedAt_idx"' "$f" \
   && echo "MIGRASI ADITIF OK"
 ```
 
@@ -157,7 +162,7 @@ CREATE INDEX "KnowledgeGapLog_resolvedAt_idx" ON "KnowledgeGapLog"("resolvedAt")
 
 dan baris terakhir `MIGRASI ADITIF OK`. Kalau ada pernyataan lain, berhenti — skema berubah lebih dari yang direncanakan. **JANGAN** menjalankan `migrate dev` atau `migrate deploy` di task ini.
 
-- [ ] **Step 4: Regenerasi Prisma Client dan validasi skema**
+- [x] **Step 4: Regenerasi Prisma Client dan validasi skema**
 
 ```bash
 npx prisma generate && npx prisma validate
@@ -165,12 +170,12 @@ npx prisma generate && npx prisma validate
 
 Expected: `Generated Prisma Client` dan `The schema at prisma/schema.prisma is valid`.
 
-- [ ] **Step 5: Buktikan kolomnya terbaca tipe (test cepat lewat suite yang sudah ada)**
+- [x] **Step 5: Buktikan kolomnya terbaca tipe (test cepat lewat suite yang sudah ada)**
 
 Run: `npx vitest run src/lib/realtime.test.ts`
 Expected: PASS. Ini bukan test kolomnya — ia hanya membuktikan Prisma Client hasil regenerasi tidak merusak suite mana pun sebelum task berikutnya bersandar padanya. Kolomnya sendiri diuji di Task 3, tempat ia pertama kali ditulis.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add prisma/schema.prisma prisma/migrations/20260912080000_knowledge_gap_notification/migration.sql

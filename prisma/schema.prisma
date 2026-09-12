@@ -215,9 +215,20 @@ model KnowledgeGapLog {
   topic          String
   reason         String
   messageText    String
+  // Notifikasi gap (2026-09-12): ketiganya hanya diisi oleh jalur `reply_unsourced`
+  // (src/lib/inbox/gap-log.ts), satu-satunya titik yang memegang id pesan dan id run
+  // sekaligus. Baris gap lama punya ketiganya kosong, dan notifikasi menanganinya dengan
+  // hanya membuka percakapannya. Bukan relasi: menghapus pesannya tidak boleh ikut
+  // menghapus catatan bahwa bot pernah menjawab tanpa sumber.
+  messageId      String?
+  runId          String?
+  // Kosong = masih terbuka. Diisi saat operator menyatakan jawaban barunya sudah sesuai,
+  // atau saat ia menekan "Tandai selesai".
+  resolvedAt     DateTime?
   createdAt      DateTime     @default(now())
 
   @@index([createdAt])
+  @@index([resolvedAt])
 }
 
 /// Satu pengiriman keluar yang tertunda, sedang diproses, atau gagal.
