@@ -556,6 +556,47 @@ const DESTINATION_INDEPENDENT_TOPICS = new Set<ResolverTopic>([
   'booking',
 ])
 
+/**
+ * What the trip-preferences extractor needs to know about the conversation to read a one-word
+ * reply -- built ONLY when the previous bot message was the funnel's own bullet question
+ * (`awaitingTripPreferencesAnswer`), so an ordinary message is still extracted from its own text
+ * alone, exactly as before.
+ *
+ * Reported live 2026-09-12: the customer answered "Surabaya", then "yes, surabaya", and the
+ * finish city never landed -- the extractor sees only the message text, and a bare city name
+ * with origin already known resolves to nothing. The funnel is mandatory by design, so the
+ * customer had no way out of being asked the same thing forever.
+ *
+ * The disambiguation sentence is only emitted when EXACTLY ONE field is still missing, because
+ * that is the only case where "a bare city answers the missing field" is actually sound. With
+ * two missing, the same sentence would be a guess -- so the context then states what is known
+ * and what is missing, and leaves the reading to the model.
+ */
+export function funnelAnswerContext(tripBrief: TripBrief): string | undefined {
+  if (tripBrief.awaitingTripPreferencesAnswer !== true) return undefined
+
+  const known: string[] = []
+  const missing: string[] = []
+  if (tripBrief.origin) known.push(`origin=${tripBrief.origin}`)
+  else missing.push('origin (the city the trip starts in)')
+  if (tripBrief.finishCity) known.push(`finishCity=${tripBrief.finishCity}`)
+  else missing.push('finishCity (the city the trip ends in)')
+  if (tripBrief.dayCount) known.push(`dayCount=${tripBrief.dayCount}`)
+  else missing.push('dayCount (how many days)')
+  if (missing.length === 0) return undefined
+
+  const onlyMissing = missing.length === 1 ? missing[0].split(' ')[0] : null
+  return (
+    'CONTEXT FOR THIS MESSAGE: the customer is replying to a form that asked for start city, ' +
+    'finish city, and number of days. ' +
+    `Already known: ${known.length > 0 ? known.join(', ') : 'nothing yet'}. ` +
+    `Still missing: ${missing.join(', ')}.` +
+    (onlyMissing
+      ? ` If this reply names a city (or agrees, e.g. "yes, X") without saying which field it belongs to, it is answering the MISSING field -- so treat it as ${onlyMissing}.`
+      : '')
+  )
+}
+
 export type TripPreferencesFunnelDecision = {
   /** Whether this turn counts as a package-recommendation request at all. */
   isRecommendationTopic: boolean
@@ -1734,7 +1775,6 @@ export async function decideAndRespond(
       { preferences, source: preferencesSource },
       { declined: preferenceDeclineSignal, source: declineSource },
       { isRecommendation: recommendationIntentSignal, source: recommendationSource },
-      { wantsPackageLink: packageLinkIntentSignal, source: packageLinkSource },
       allTopicsResult,
     ] = await Promise.all([
       // LLM-primary as of 2026-08-07 (see keyword-module-classifier.ts's own header) -- replaces
@@ -1748,7 +1788,7 @@ export async function decideAndRespond(
       // LLM-primary as of 2026-08-07 (see trip-preferences-extractor.ts's own header for the full
       // rationale) -- validated against known values, falls back to the old regex parser only on
       // a genuine technical failure (timeout/error/unparseable output), never as a first-pass gate.
-      extractTripPreferences(inboundText, settings.ollamaModel),
+      extractTripPreferences(inboundText, settings.ollamaModel, funnelAnswerContext(tripBrief)),
       // LLM-primary as of 2026-08-07 (see preference-decline-classifier.ts's own header) --
       // flagged in the manual-matching audit as the highest-risk remaining matcher: this is the
       // funnel's ONLY bypass, so a missed decline traps the customer in a repeat-question loop
@@ -1761,17 +1801,6 @@ export async function decideAndRespond(
       // (each fixed as a one-off keyword patch previously). Falls back to the unchanged
       // isRecommendationRequest regex only on a genuine technical failure.
       detectsRecommendationIntentViaLLM(inboundText, isRecommendationRequest, settings.ollamaModel),
-      // LLM-primary as of 2026-09-12 (see link-intent-classifier.ts's own header) -- the sixth
-      // conversion of this kind, and the one the 2026-08-07 audit missed. It decides WHICH link
-      // the customer gets, and its keyword form sent a customer who named a package ("we'd like
-      // to book your Bromo 1D1N tour") to the generic booking explainer, because the list has
-      // "we want to book" but not "we'd like to book". Falls back to the unchanged
-      // isBookingIntent/isPackageDetailIntent pair only on a genuine technical failure.
-      detectsPackageLinkIntentViaLLM(
-        inboundText,
-        (message) => isBookingIntent(message) || isPackageDetailIntent(message),
-        settings.ollamaModel
-      ),
       classifyAllTopics(inboundText, settings.ollamaModel),
     ])
     // Task 15: destination branch's own topic classification site (the no-destination branch
@@ -1813,13 +1842,6 @@ export async function decideAndRespond(
         ? 'Diteksi oleh model LLM.'
         : 'Model LLM gagal/timeout -- fallback ke pemindaian kata kunci lama.'
     )
-    trace.push(
-      'Mendeteksi niat halaman paket',
-      `${
-        packageLinkSource === 'llm' ? 'Dideteksi oleh model LLM' : 'Model LLM gagal/timeout -- fallback ke kata kunci lama'
-      }: pelanggan ${packageLinkIntentSignal ? 'menanyakan satu paket tertentu -- link halaman paket yang dikirim' : 'bertanya umum -- link kebijakan/panduan yang dikirim'}.`
-    )
-
     const matches = matched?.matches ?? packagesForDestination(destination, catalog)
     // A city/duration mentioned THIS message wins, same precedence as `destination` above;
     // otherwise whatever was persisted from an EARLIER message in the conversation carries it
@@ -2143,11 +2165,44 @@ export async function decideAndRespond(
     // still service_standard_rooming's generic rooming_and_accommodation policy page (it won
     // as knowledge.primaryLink), contradicting the disclosure's own words.
     //
-    // The intent half of that test is `packageLinkIntentSignal` as of 2026-09-12, not the two
-    // keyword predicates directly: they now serve as its fallback only (see the classifier call
-    // in the batch above). `resolverTopic === 'hotel'` is deliberately NOT folded into the
-    // classifier -- it is a fact about the topic we resolved, not about how the customer phrased
-    // anything, so there is nothing for a language model to read there.
+    // The intent half of that test is an LLM signal as of 2026-09-12, not the two keyword
+    // predicates directly: they serve as its fallback only. `resolverTopic === 'hotel'` is
+    // deliberately NOT folded into the classifier -- it is a fact about the topic we resolved,
+    // not about how the customer phrased anything, so there is nothing for a model to read.
+    //
+    // Asked HERE, lazily, rather than in the parallel batch above -- and only when the answer
+    // can actually differ. Measured 2026-09-12: the Ollama daemon serves one request at a time
+    // (seven concurrent trivial calls returned in a clean 0.46/0.92/1.47/2.29/2.60/2.99/3.56s
+    // staircase), so the batch's "parallel" calls are really a queue, and a seventh member
+    // pushed whoever was last past callLLM's 10s abort -- observed live as this classifier and
+    // `preference-decline` both failing on the same turn. The batch's own 2026-08 comment
+    // ("+1 LLM call, running in parallel rather than adding to this branch's latency") does not
+    // hold for this daemon.
+    //
+    // The gate is not an optimisation detail, it is the same fact stated twice: when only one of
+    // the two links exists, or both are the same string, or 'hotel' already forces the package
+    // page, the signal cannot change `primaryLink` -- so asking would spend a queue slot on a
+    // question whose answer is discarded.
+    const linkChoiceMatters =
+      resolverTopic !== 'hotel' &&
+      pkg.links.details != null &&
+      knowledge.primaryLink != null &&
+      pkg.links.details !== knowledge.primaryLink
+    const { wantsPackageLink: packageLinkIntentSignal, source: packageLinkSource } = linkChoiceMatters
+      ? await detectsPackageLinkIntentViaLLM(
+          inboundText,
+          (message) => isBookingIntent(message) || isPackageDetailIntent(message),
+          settings.ollamaModel
+        )
+      : { wantsPackageLink: false, source: 'skipped' as const }
+    trace.push(
+      'Memilih link',
+      packageLinkSource === 'skipped'
+        ? 'Hanya ada satu link yang mungkin untuk giliran ini -- tidak perlu bertanya ke model.'
+        : `${
+            packageLinkSource === 'llm' ? 'Dideteksi oleh model LLM' : 'Model LLM gagal/timeout -- fallback ke kata kunci lama'
+          }: pelanggan ${packageLinkIntentSignal ? 'menanyakan satu paket tertentu -- link halaman paket yang dikirim' : 'bertanya umum -- link kebijakan/panduan yang dikirim'}.`
+    )
     const primaryLink = packageLinkIntentSignal || resolverTopic === 'hotel'
       ? (pkg.links.details ?? knowledge.primaryLink ?? null)
       : (knowledge.primaryLink ?? pkg.links.details ?? null)

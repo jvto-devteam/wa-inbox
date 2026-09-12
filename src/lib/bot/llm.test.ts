@@ -87,6 +87,27 @@ describe('callLLM', () => {
     ])
   })
 
+  // Konteks per-giliran (12 September 2026): pesan system KEDUA, bukan sambungan string ke
+  // `system`. Prompt yang ditala dan diukur (mis. EXTRACTION_SYSTEM_PROMPT) harus tetap utuh
+  // sebagai satu blok -- ini yang membuat penambahan konteks tidak menghitung ulang tuningnya.
+  it('mengirim konteks per-giliran sebagai pesan system kedua, sesudah system utama', async () => {
+    fetchMock.mockResolvedValue({ ok: true, json: async () => ({ message: { content: 'ok' } }) })
+    await callLLM('Surabaya', { system: 'Instruksi utama', context: 'Yang kurang: finishCity.' })
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body)
+    expect(body.messages).toEqual([
+      { role: 'system', content: 'Instruksi utama' },
+      { role: 'system', content: 'Yang kurang: finishCity.' },
+      { role: 'user', content: 'Surabaya' },
+    ])
+  })
+
+  it('tidak mengirim pesan konteks saat tidak ada konteks', async () => {
+    fetchMock.mockResolvedValue({ ok: true, json: async () => ({ message: { content: 'ok' } }) })
+    await callLLM('Surabaya', { system: 'Instruksi utama' })
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body)
+    expect(body.messages).toHaveLength(2)
+  })
+
   it('sends only the user turn when no system prompt is given', async () => {
     fetchMock.mockResolvedValue({ ok: true, json: async () => ({ message: { content: 'ok' } }) })
     await callLLM('Halo')

@@ -115,9 +115,29 @@ function parseAndValidate(raw: string): TripPreferences | null {
   }
 }
 
-export async function extractTripPreferences(message: string, model?: string): Promise<TripPreferencesExtraction> {
+/**
+ * `turnContext` (2026-09-12): what the conversation already knows and what it is still waiting
+ * for, when the customer is replying to the trip-preferences form. Without it this function
+ * reads a bare "Surabaya" with no idea WHICH of the three fields it answers -- and since origin
+ * was usually already known, the reply resolved to nothing and the funnel re-asked forever.
+ * Reported live: a customer answered three times ("Surabaya", "yes, surabaya") and the finish
+ * city never landed, with no way out, because the funnel is mandatory by design.
+ *
+ * Measured against the production model before shipping: no context 0/3 correct, the bot's own
+ * previous question as chat history 1/3, this context message 4/4 -- and a full sentence
+ * ("we start from Bali, 4 days, 2 people, end in Ketapang") still parsed correctly with the
+ * context present, so it narrows an ambiguous reply without distorting an unambiguous one.
+ *
+ * Passed to callLLM as `context` (a second system message), never spliced into
+ * EXTRACTION_SYSTEM_PROMPT: that constant is tuned and measured, and must stay byte-identical.
+ */
+export async function extractTripPreferences(
+  message: string,
+  model?: string,
+  turnContext?: string
+): Promise<TripPreferencesExtraction> {
   try {
-    const raw = await callLLM(message, { system: EXTRACTION_SYSTEM_PROMPT, model })
+    const raw = await callLLM(message, { system: EXTRACTION_SYSTEM_PROMPT, model, context: turnContext })
     const validated = parseAndValidate(raw)
     if (validated) return { preferences: validated, source: 'llm' }
   } catch (err) {

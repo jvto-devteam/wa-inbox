@@ -44,6 +44,17 @@ export type LLMOptions = {
    * `system` separate from `prompt` applies here too.
    */
   history?: Array<{ role: 'user' | 'assistant'; content: string }>
+  /**
+   * Per-turn grounding that belongs beside `system` but must not be spliced INTO it: sent as a
+   * second system-role message, immediately after it. Added 2026-09-12 for the trip-preferences
+   * extractor, whose own prompt is tuned and measured -- concatenating a per-turn sentence onto
+   * that constant would change the exact text every measurement was taken against, for every
+   * caller, on every turn. A separate message leaves the tuned block byte-identical.
+   *
+   * System-role, NOT `history`: this is OUR instruction about the conversation state, not
+   * something the customer said, and the two must never be confusable at the model's end.
+   */
+  context?: string
 }
 
 // A provider that answers with a non-string or a blank string has not answered.
@@ -59,7 +70,8 @@ async function callOllama(
   prompt: string,
   system?: string,
   model?: string,
-  history?: LLMOptions['history']
+  history?: LLMOptions['history'],
+  context?: string
 ): Promise<string> {
   const res = await fetch(`${process.env.OLLAMA_URL}/api/chat`, {
     method: 'POST',
@@ -71,6 +83,7 @@ async function callOllama(
       stream: false,
       messages: [
         ...(system ? [{ role: 'system', content: system }] : []),
+        ...(context ? [{ role: 'system', content: context }] : []),
         ...(history ?? []),
         { role: 'user', content: prompt },
       ],
@@ -83,5 +96,5 @@ async function callOllama(
 }
 
 export async function callLLM(prompt: string, opts?: LLMOptions): Promise<string> {
-  return callOllama(prompt, opts?.system, opts?.model, opts?.history)
+  return callOllama(prompt, opts?.system, opts?.model, opts?.history, opts?.context)
 }

@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mockDeep, mockReset, type DeepMockProxy } from 'vitest-mock-extended'
 import type { PrismaClient } from '@prisma/client'
 import { prisma } from '@/lib/db'
-import { decideAndRespond, gatherSideFacts, withSideFacts, computeTripPreferencesFunnelDecision, modelLocationLabel } from './orchestrator'
+import { decideAndRespond, gatherSideFacts, withSideFacts, computeTripPreferencesFunnelDecision, funnelAnswerContext, modelLocationLabel } from './orchestrator'
 import { ensureFreshBookingData, type BookingData } from '@/lib/booking/client'
 import { checkRouteGate } from './route-gate'
 import { classifySalesNeed } from './sales-classifier'
@@ -323,9 +323,9 @@ describe('decideAndRespond', () => {
         'Mengklasifikasi topik',
         'Mengekstrak preferensi perjalanan',
         'Mendeteksi niat rekomendasi paket',
-        'Mendeteksi niat halaman paket',
         'Memeriksa validitas paket',
         'Paket valid',
+        'Memilih link',
         'Meminta jawaban dari model',
         'Jawaban siap dikirim',
       ])
@@ -375,13 +375,12 @@ describe('decideAndRespond', () => {
     vi.mocked(extractTripPreferences).mockImplementation(gate('prefs', { preferences: NO_PREFS, source: 'llm' }) as never)
     vi.mocked(detectsPreferenceDeclineViaLLM).mockImplementation(gate('decline', { declined: false, source: 'llm' }) as never)
     vi.mocked(detectsRecommendationIntentViaLLM).mockImplementation(gate('reco', { isRecommendation: false, source: 'llm' }) as never)
-    vi.mocked(detectsPackageLinkIntentViaLLM).mockImplementation(gate('link', { wantsPackageLink: false, source: 'llm' }) as never)
 
     await decideAndRespond('conv_1', 'berapa harga paket ijen 3 hari dari surabaya?')
 
-    expect(inFlight).toHaveLength(6)
-    // All six entered before the event loop drained any of them.
-    expect(inFlightWhenFirstSettled).toBe(6)
+    expect(inFlight).toHaveLength(5)
+    // All five entered before the event loop drained any of them.
+    expect(inFlightWhenFirstSettled).toBe(5)
   })
 
   it('does not run the recommendation/preference classifiers when no destination is known', async () => {
@@ -1385,7 +1384,7 @@ describe('decideAndRespond', () => {
 
     await decideAndRespond('conv_1', '3 day ijen trip from Surabaya')
 
-    expect(extractTripPreferences).toHaveBeenCalledWith('3 day ijen trip from Surabaya', 'gemma4:31b-cloud')
+    expect(extractTripPreferences).toHaveBeenCalledWith('3 day ijen trip from Surabaya', 'gemma4:31b-cloud', undefined)
     const [, opts] = llmCall(0)
     expect(opts.system).toContain('Package the customer is asking about: Ijen 3D2N from Surabaya')
   })
@@ -4695,5 +4694,110 @@ describe('pemilihan link: halaman paket vs halaman kebijakan', () => {
     expect(fallback('we want to book this tour')).toBe(true)
     expect(fallback('what is the price of the bromo tour?')).toBe(true)
     expect(fallback('is the weather good in september?')).toBe(false)
+  })
+})
+
+
+// Dilaporkan 12 September 2026: pelanggan menjawab formulir corong dengan "Surabaya", lalu
+// "yes, surabaya", dan kota tujuan akhir tidak pernah terisi -- extractor hanya menerima teks
+// pesannya. Karena corong ini WAJIB dilewati sebelum paket boleh direkomendasikan, pelanggan
+// yang menjawab dengan benar justru terkunci tanpa jalan keluar.
+describe('funnelAnswerContext', () => {
+  it('tidak memberi konteks apa pun saat bot tidak sedang menunggu jawaban formulir', () => {
+    expect(funnelAnswerContext({ origin: 'Surabaya', dayCount: 3 })).toBeUndefined()
+  })
+
+  it('tidak memberi konteks saat ketiga field sudah diketahui', () => {
+    expect(
+      funnelAnswerContext({ awaitingTripPreferencesAnswer: true, origin: 'Surabaya', finishCity: 'bali', dayCount: 3 })
+    ).toBeUndefined()
+  })
+
+  it('menyebut yang sudah diketahui dan menunjuk satu-satunya field yang kurang', () => {
+    const ctx = funnelAnswerContext({ awaitingTripPreferencesAnswer: true, origin: 'Surabaya', dayCount: 3 })
+    expect(ctx).toContain('origin=Surabaya')
+    expect(ctx).toContain('dayCount=3')
+    expect(ctx).toContain('Still missing: finishCity')
+    expect(ctx).toContain('treat it as finishCity')
+  })
+
+  // Aturan "kota telanjang menjawab field yang kurang" hanya sahih kalau yang kurang TEPAT satu.
+  // Dengan dua yang kosong, kalimat itu berubah jadi tebakan -- jadi ia tidak dikirim.
+  it('tidak menebak saat dua field masih kosong', () => {
+    const ctx = funnelAnswerContext({ awaitingTripPreferencesAnswer: true, origin: 'Surabaya' })
+    expect(ctx).toContain('Still missing: finishCity')
+    expect(ctx).toContain('dayCount')
+    expect(ctx).not.toContain('treat it as')
+  })
+})
+
+describe('decideAndRespond -- konteks jawaban formulir', () => {
+  it('meneruskan konteks ke extractor saat giliran ini menjawab formulir', async () => {
+    vi.mocked(ensureFreshBookingData).mockResolvedValue(null)
+    vi.mocked(classifySalesNeed).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
+    vi.mocked(matchDestination).mockReturnValue({ destination: 'bromo', matches: [pkg()] })
+    vi.mocked(checkRouteGate).mockReturnValue({ status: 'clear' })
+    mockPrisma.conversation.findUniqueOrThrow.mockResolvedValue({
+      id: 'conv_1',
+      tripBrief: { destination: 'bromo', origin: 'Surabaya', dayCount: 3, askedTripPreferences: true, awaitingTripPreferencesAnswer: true },
+      bookingData: null,
+      bookingCheckedAt: new Date(),
+      contact: { phone: '6281234567890' },
+    } as never)
+
+    await decideAndRespond('conv_1', 'yes, surabaya')
+
+    const context = vi.mocked(extractTripPreferences).mock.calls[0][2]
+    expect(context).toContain('treat it as finishCity')
+  })
+})
+
+describe('decideAndRespond -- classifier link dipanggil hemat', () => {
+  function stubTurn(details: string | undefined, knowledgeLink: string | null) {
+    vi.mocked(ensureFreshBookingData).mockResolvedValue(null)
+    vi.mocked(classifySalesNeed).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
+    vi.mocked(matchDestination).mockReturnValue({
+      destination: 'bromo',
+      matches: [pkg({ origin: 'Surabaya', dayCount: 3, links: details ? { details } : {} })],
+    })
+    vi.mocked(checkRouteGate).mockReturnValue({ status: 'clear' })
+    vi.mocked(classifyTopicViaLLM).mockResolvedValue({ topic: 'booking', source: 'llm' })
+    vi.mocked(resolveKnowledgeForTopic).mockReturnValue({
+      factualLines: ['Some fact.'], detailLines: [], primaryLink: knowledgeLink, disclosures: [], handoffRequired: false,
+    })
+    vi.mocked(extractTripPreferences).mockResolvedValue({
+      preferences: { origin: 'Surabaya', dayCount: 3, finishCity: 'surabaya', pax: 2 }, source: 'llm',
+    })
+    mockPrisma.conversation.findUniqueOrThrow.mockResolvedValue({
+      id: 'conv_1', tripBrief: { declinedTripPreferences: true }, bookingData: null, bookingCheckedAt: new Date(),
+      contact: { phone: '6281234567890' },
+    } as never)
+  }
+
+  // Daemon Ollama melayani satu permintaan pada satu waktu (diukur 2026-09-12), jadi setiap
+  // panggilan yang jawabannya toh dibuang tetap memakan jatah antrean -- dan yang berdiri di
+  // belakang antrean itulah yang kena batas 10 detik.
+  it('tidak bertanya ke model saat hanya ada satu link yang mungkin', async () => {
+    stubTurn('https://example.com/tours/bromo-3d2n', null)
+
+    await decideAndRespond('conv_1', 'we want to book this tour')
+
+    expect(detectsPackageLinkIntentViaLLM).not.toHaveBeenCalled()
+  })
+
+  it('tidak bertanya ke model saat paket tidak punya halaman sendiri', async () => {
+    stubTurn(undefined, 'https://example.com/travel-guide/booking-information')
+
+    await decideAndRespond('conv_1', 'we want to book this tour')
+
+    expect(detectsPackageLinkIntentViaLLM).not.toHaveBeenCalled()
+  })
+
+  it('bertanya ke model saat kedua link ada dan berbeda', async () => {
+    stubTurn('https://example.com/tours/bromo-3d2n', 'https://example.com/travel-guide/booking-information')
+
+    await decideAndRespond('conv_1', "we'd like to book this tour")
+
+    expect(detectsPackageLinkIntentViaLLM).toHaveBeenCalledTimes(1)
   })
 })

@@ -120,6 +120,30 @@ describe('extractTripPreferences', () => {
     expect(result).toEqual({ preferences: { origin: 'Surabaya', dayCount: null, finishCity: null, pax: null }, source: 'llm' })
   })
 
+  // Dilaporkan 12 September 2026: pelanggan menjawab formulir corong dengan "Surabaya", lalu
+  // "yes, surabaya", dan kota tujuan akhir tidak pernah terisi -- extractor hanya menerima teks
+  // pesannya, jadi ia tidak tahu pertanyaan mana yang sedang dijawab. Diuji ke model produksi:
+  // tanpa konteks 0/3 benar, dengan konteks ini 4/4 benar, dan kalimat lengkap tetap terbaca utuh.
+  it('meneruskan konteks giliran sebagai pesan system terpisah, bukan disambung ke prompt tertala', async () => {
+    vi.mocked(callLLM).mockResolvedValue(JSON.stringify({ origin: null, dayCount: null, finishCity: 'surabaya', pax: null }))
+
+    const result = await extractTripPreferences('yes, surabaya', 'gemma4:31b-cloud', 'Sudah diketahui: origin. Masih kurang: finishCity.')
+
+    expect(result.preferences.finishCity).toBe('surabaya')
+    const [prompt, opts] = vi.mocked(callLLM).mock.calls[0]
+    expect(prompt).toBe('yes, surabaya')
+    expect(opts?.context).toBe('Sudah diketahui: origin. Masih kurang: finishCity.')
+    expect(opts?.system).not.toContain('Masih kurang')
+  })
+
+  it('tidak mengirim konteks apa pun saat pemanggilnya tidak memberi konteks', async () => {
+    vi.mocked(callLLM).mockResolvedValue(JSON.stringify({ origin: 'Surabaya', dayCount: 3, finishCity: null, pax: 2 }))
+
+    await extractTripPreferences('3 days from Surabaya for 2 people', 'gemma4:31b-cloud')
+
+    expect(vi.mocked(callLLM).mock.calls[0][1]?.context).toBeUndefined()
+  })
+
   it('sends the raw customer text as the untrusted prompt, and the extraction instructions as system', async () => {
     vi.mocked(callLLM).mockResolvedValue(JSON.stringify({ origin: null, dayCount: null, finishCity: null, pax: null }))
 
