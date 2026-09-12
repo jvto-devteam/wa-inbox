@@ -9,6 +9,7 @@ import { decideAndRespond } from '@/lib/bot/orchestrator'
 import { __resetRateLimiterForTests } from '@/lib/bot/rate-limiter'
 import { sendMessage } from '@/lib/send'
 import { broadcast } from '@/lib/realtime'
+import { recordUnsourcedReplyGap } from '@/lib/inbox/gap-log'
 import { classifyAndStoreTopicLabels } from '@/lib/inbox/topic-labels'
 
 vi.mock('@/lib/db', () => ({ prisma: mockDeep<PrismaClient>() }))
@@ -16,6 +17,7 @@ vi.mock('@/lib/bot/orchestrator', () => ({ decideAndRespond: vi.fn() }))
 vi.mock('@/lib/send', () => ({ sendMessage: vi.fn() }))
 vi.mock('@/lib/realtime', () => ({ broadcast: vi.fn() }))
 vi.mock('@/lib/inbox/topic-labels', () => ({ classifyAndStoreTopicLabels: vi.fn() }))
+vi.mock('@/lib/inbox/gap-log', () => ({ recordUnsourcedReplyGap: vi.fn() }))
 
 const mockPrisma = prisma as unknown as DeepMockProxy<PrismaClient>
 
@@ -31,6 +33,7 @@ beforeEach(() => {
   // Default: klasifikasi selesai tanpa label. Tanpa nilai ini `.catch` di jalur ingest akan
   // dipanggil pada `undefined` untuk setiap test lama yang membuat pesan berteks.
   vi.mocked(classifyAndStoreTopicLabels).mockReset().mockResolvedValue(null)
+  vi.mocked(recordUnsourcedReplyGap).mockReset().mockResolvedValue(undefined)
   // Read by defaultBotEnabled() whenever a new conversation is created, so a brand-new
   // conversation starts in whatever state the global bot mode currently dictates.
   mockPrisma.settings.findUniqueOrThrow.mockResolvedValue({ botAutoReplyAll: true, skipBotForIndonesianNumbers: false } as never)
@@ -1510,5 +1513,62 @@ describe('ingestMetaMessage — label topik otomatis', () => {
     )
 
     expect(classifyAndStoreTopicLabels).toHaveBeenCalledWith('msg_cap', 'auto')
+  })
+})
+
+describe('runBotForConversation — catatan gap tidak bersumber', () => {
+  const conversation = { id: 'conv_gap', contactName: 'Bruno' }
+  const knowledge = {
+    catalogLines: [],
+    managedLines: [{ line: 'ATV 1 jam: IDR 350000', source: 'FAQ Harga ATV (v2)', sourceId: 'ks_1', sourceKey: 'managed/atv', version: 2 }],
+    rejected: [],
+    gateBypassed: false,
+    attributions: [],
+  }
+
+  it('memanggil penulis gap setelah balasan terkirim, membawa id pesan dan id run', async () => {
+    vi.mocked(decideAndRespond).mockResolvedValue({ mode: 'faq', draft: 'Halo kak!', sourceTopic: 'price', knowledge })
+    vi.mocked(sendMessage).mockResolvedValue({ id: 'msg_bot' } as never)
+
+    await runBotForConversation(conversation, 'berapa harga ATV sekarang?')
+
+    expect(sendMessage).toHaveBeenCalled()
+    expect(recordUnsourcedReplyGap).toHaveBeenCalledWith({
+      decision: expect.objectContaining({ mode: 'faq' }),
+      conversationId: 'conv_gap',
+      messageId: 'msg_bot',
+      runId: 'run_1',
+      inboundText: 'berapa harga ATV sekarang?',
+    })
+  })
+
+  it('tidak menunggu penulis gap: giliran selesai walau penulisannya menggantung', async () => {
+    vi.mocked(decideAndRespond).mockResolvedValue({ mode: 'faq', draft: 'Halo kak!', sourceTopic: 'price', knowledge })
+    vi.mocked(sendMessage).mockResolvedValue({ id: 'msg_bot' } as never)
+    vi.mocked(recordUnsourcedReplyGap).mockReturnValue(new Promise(() => {}))
+
+    await expect(runBotForConversation(conversation, 'berapa harga ATV sekarang?')).resolves.toBeUndefined()
+  })
+
+  it('kegagalan penulis gap hanya dicatat, giliran tetap berhasil', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    vi.mocked(decideAndRespond).mockResolvedValue({ mode: 'faq', draft: 'Halo kak!', sourceTopic: 'price', knowledge })
+    vi.mocked(sendMessage).mockResolvedValue({ id: 'msg_bot' } as never)
+    vi.mocked(recordUnsourcedReplyGap).mockRejectedValue(new Error('db down'))
+
+    await runBotForConversation(conversation, 'berapa harga ATV sekarang?')
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(errorSpy).toHaveBeenCalledWith('recordUnsourcedReplyGap gagal dipanggil', expect.objectContaining({ conversationId: 'conv_gap' }))
+    errorSpy.mockRestore()
+  })
+
+  it('cabang handoff tidak memanggil penulis gap sama sekali', async () => {
+    vi.mocked(decideAndRespond).mockResolvedValue({ mode: 'handoff', reason: 'kata kunci eskalasi' })
+    vi.mocked(sendMessage).mockResolvedValue({ id: 'msg_handoff' } as never)
+
+    await runBotForConversation(conversation, 'mau bicara dengan orang')
+
+    expect(recordUnsourcedReplyGap).not.toHaveBeenCalled()
   })
 })

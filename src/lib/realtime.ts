@@ -5,6 +5,11 @@ type RealtimeEvent =
   // Distinct from message.created so subscribers replace a bubble instead of appending one.
   | { type: 'message.updated'; conversationId: string; message: unknown }
   | { type: 'handoff.alert'; conversationId: string; contactName: string | null }
+  // Satu balasan bot yang tidak bersandar pada fakta mana pun baru saja tercatat
+  // (src/lib/inbox/gap-log.ts). Sengaja tidak membawa isi apa pun selain percakapannya:
+  // lencana lonceng hanya perlu tahu ada yang baru, dan daftarnya diambil ulang dari
+  // /api/inbox/gaps oleh penerima yang memang menampilkannya.
+  | { type: 'knowledge.gap'; conversationId: string }
   // The pinned sandbox conversation's history + TripBrief were wiped (see
   // api/conversations/[id]/clear) -- subscribers drop every locally-held message for this
   // conversation rather than waiting for a full page reload.

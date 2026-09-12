@@ -337,7 +337,7 @@ EOF
 
 Di `inbound.ts` panggilannya duduk tepat setelah `attachMessageToDecisionRun` pada cabang faq/booking_context/clarify — variabel `conversation.id`, `sent`, `decisionRunId`, `decision`, dan `inboundText` semuanya hidup di sana. Cabang handoff tidak disentuh (handoff bukan jawaban FAQ).
 
-- [ ] **Step 1: Tulis test yang gagal — `src/lib/inbox/gap-log.test.ts`**
+- [x] **Step 1: Tulis test yang gagal — `src/lib/inbox/gap-log.test.ts`**
 
 ```ts
 /**
@@ -446,7 +446,7 @@ describe('recordUnsourcedReplyGap', () => {
 })
 ```
 
-- [ ] **Step 2: Tulis test yang gagal — `src/lib/realtime.test.ts`**
+- [x] **Step 2: Tulis test yang gagal — `src/lib/realtime.test.ts`**
 
 Ganti:
 
@@ -482,7 +482,7 @@ menjadi:
   })
 ```
 
-- [ ] **Step 3: Tulis test yang gagal — `src/lib/inbound.test.ts`**
+- [x] **Step 3: Tulis test yang gagal — `src/lib/inbound.test.ts`**
 
 Tambahkan impor setelah baris `import { broadcast } from '@/lib/realtime'`:
 
@@ -563,12 +563,12 @@ describe('runBotForConversation — catatan gap tidak bersumber', () => {
 })
 ```
 
-- [ ] **Step 4: Jalankan, pastikan GAGAL**
+- [x] **Step 4: Jalankan, pastikan GAGAL**
 
 Run: `npx vitest run src/lib/inbox/gap-log.test.ts src/lib/realtime.test.ts src/lib/inbound.test.ts`
 Expected: FAIL — `Failed to resolve import "./gap-log"`; di `inbound.test.ts` gagal pada `Failed to resolve import "@/lib/inbox/gap-log"`.
 
-- [ ] **Step 5: Implementasi — `src/lib/inbox/gap-log.ts`**
+- [x] **Step 5: Implementasi — `src/lib/inbox/gap-log.ts`**
 
 ```ts
 import { prisma } from '@/lib/db'
@@ -620,7 +620,7 @@ export async function recordUnsourcedReplyGap(params: {
 }
 ```
 
-- [ ] **Step 6: Implementasi — `src/lib/realtime.ts`**
+- [x] **Step 6: Implementasi — `src/lib/realtime.ts`**
 
 Ganti:
 
@@ -639,7 +639,7 @@ menjadi:
   | { type: 'knowledge.gap'; conversationId: string }
 ```
 
-- [ ] **Step 7: Implementasi — `src/lib/inbound.ts`**
+- [x] **Step 7: Implementasi — `src/lib/inbound.ts`**
 
 Tambahkan impor setelah baris `import { classifyAndStoreTopicLabels } from '@/lib/inbox/topic-labels'`:
 
@@ -673,12 +673,12 @@ menjadi:
   } else {
 ```
 
-- [ ] **Step 8: Jalankan, pastikan LULUS**
+- [x] **Step 8: Jalankan, pastikan LULUS**
 
 Run: `npx vitest run src/lib/inbox/gap-log.test.ts src/lib/inbox/gap-signal.test.ts src/lib/realtime.test.ts src/lib/inbound.test.ts`
 Expected: PASS, termasuk seluruh test lama di `inbound.test.ts` dan `realtime.test.ts`.
 
-- [ ] **Step 9: Commit**
+- [x] **Step 9: Commit**
 
 ```bash
 git add src/lib/inbox/gap-log.ts src/lib/inbox/gap-log.test.ts \

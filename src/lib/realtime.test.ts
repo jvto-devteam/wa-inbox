@@ -37,6 +37,16 @@ describe('realtime pub/sub', () => {
     expect(listener).toHaveBeenCalledWith({ type: 'handoff.alert', conversationId: 'conv_1', contactName: 'Bruno' })
     unsubscribe()
   })
+
+  it('mengirim knowledge.gap tanpa isi pesan apa pun', () => {
+    // Lencana lonceng hanya perlu tahu ADA gap baru; daftarnya diambil ulang dari
+    // /api/inbox/gaps. Membawa kalimat pelanggan ke setiap tab terbuka tidak diperlukan.
+    const listener = vi.fn()
+    const unsubscribe = subscribe(listener)
+    broadcast({ type: 'knowledge.gap', conversationId: 'conv_1' })
+    expect(listener).toHaveBeenCalledWith({ type: 'knowledge.gap', conversationId: 'conv_1' })
+    unsubscribe()
+  })
 })
 
 describe('isolasi listener saat broadcast', () => {

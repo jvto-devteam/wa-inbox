@@ -6,6 +6,7 @@ import { checkAndRecordRateLimit } from '@/lib/bot/rate-limiter'
 import { sendMessage } from '@/lib/send'
 import { withMediaUrl } from '@/lib/serialize-message'
 import { classifyAndStoreTopicLabels } from '@/lib/inbox/topic-labels'
+import { recordUnsourcedReplyGap } from '@/lib/inbox/gap-log'
 import { isIndonesianNumber } from '@/lib/phone'
 import { recordBotDecisionRun, attachMessageToDecisionRun } from '@/lib/bot-control/decision-recorder'
 import { handoffReplyText, offHoursHandoffNotice } from '@/lib/bot/runtime-integration'
@@ -443,6 +444,18 @@ export async function runBotForConversation(
     // that returns nothing would throw AFTER the customer's message was already dispatched --
     // audit bookkeeping taking down a turn that had actually succeeded.
     await attachMessageToDecisionRun(decisionRunId, sent?.id, traceSnapshot(tracer))
+    // Gap "tidak bersumber" dicatat DI SINI, bukan di orchestrator: ini satu-satunya titik
+    // yang memegang id percakapan, id pesan, dan id run sekaligus -- dan notifikasinya butuh
+    // ketiganya. Tidak ditunggu, sama seperti pembukuan lain di jalur ini.
+    recordUnsourcedReplyGap({
+      decision,
+      conversationId: conversation.id,
+      messageId: sent?.id,
+      runId: decisionRunId,
+      inboundText,
+    }).catch((error: unknown) => {
+      console.error('recordUnsourcedReplyGap gagal dipanggil', { conversationId: conversation.id, error })
+    })
   } else {
     // Confirmed with the operator 2026-08-06: EVERY handoff (escalation keywords, an explicit
     // human request, the deployment gate being closed, or a genuinely unmatched custom
