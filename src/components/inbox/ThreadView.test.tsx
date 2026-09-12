@@ -1048,3 +1048,64 @@ describe('ThreadView — kepala, layar sempit, dan gulungan', () => {
     expect(await screen.findByText(/Belum ada pesan di percakapan ini/)).toBeInTheDocument()
   })
 })
+
+describe('ThreadView — lompat ke pesan tertentu', () => {
+  const inbound = {
+    id: 'm_in',
+    direction: 'INBOUND',
+    content: 'berapa harga ATV sekarang?',
+    channel: 'OFFICIAL',
+    sentBy: 'CUSTOMER',
+    deliveryStatus: 'DELIVERED',
+    createdAt: new Date().toISOString(),
+    botTrace: null,
+    topicLabels: null,
+  }
+  const botReply = {
+    id: 'm_bot',
+    direction: 'OUTBOUND',
+    content: 'Harga ATV mulai Rp350.000.',
+    channel: 'OFFICIAL',
+    sentBy: 'BOT',
+    deliveryStatus: 'SENT',
+    createdAt: new Date().toISOString(),
+    botTrace: { mode: 'faq', draft: 'Harga ATV mulai Rp350.000.', sourceTopic: 'price' },
+    topicLabels: null,
+  }
+
+  function stubThread(messages: unknown[]) {
+    vi.mocked(fetch).mockImplementation((url) => {
+      const s = String(url)
+      if (s.endsWith('/messages')) return Promise.resolve({ ok: true, json: () => Promise.resolve(messages) } as Response)
+      if (s.endsWith('/api/accounts')) return Promise.resolve({ ok: true, json: () => Promise.resolve([]) } as Response)
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({ botEnabled: false, assignedAgentId: null }) } as Response)
+    })
+  }
+
+  it('menggulung ke pesan yang diminta, bukan ke bawah', async () => {
+    const scrollSpy = vi.spyOn(Element.prototype, 'scrollIntoView').mockImplementation(() => {})
+    stubThread([inbound, botReply])
+
+    render(<ThreadView conversationId="conv_1" focusMessageId="m_bot" />)
+
+    await waitFor(() => expect(scrollSpy).toHaveBeenCalledWith({ block: 'center' }))
+    scrollSpy.mockRestore()
+  })
+
+  it('membuka panel perbaikan untuk pesan yang diminta', async () => {
+    stubThread([inbound, botReply])
+
+    render(<ThreadView conversationId="conv_1" focusMessageId="m_bot" />)
+
+    expect(await screen.findByText('Perbaiki jawaban bot')).toBeInTheDocument()
+  })
+
+  it('tanpa focusMessageId, panel perbaikan tidak terbuka sendiri', async () => {
+    stubThread([inbound, botReply])
+
+    render(<ThreadView conversationId="conv_1" />)
+
+    await waitFor(() => expect(screen.getByText('Harga ATV mulai Rp350.000.')).toBeInTheDocument())
+    expect(screen.queryByText('Perbaiki jawaban bot')).not.toBeInTheDocument()
+  })
+})

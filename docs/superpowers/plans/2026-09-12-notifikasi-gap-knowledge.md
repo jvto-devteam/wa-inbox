@@ -1486,7 +1486,7 @@ EOF
 
 Gulungan awal `ThreadView` sudah ada dan berjalan sekali per percakapan (`hasScrolledRef`); pesan yang diminta hanya menjadi sasaran baru dengan prioritas tertinggi, mendahului pembatas "belum dibaca".
 
-- [ ] **Step 1: Tulis test yang gagal — `src/app/(authenticated)/inbox/page.test.tsx`**
+- [x] **Step 1: Tulis test yang gagal — `src/app/(authenticated)/inbox/page.test.tsx`**
 
 Ganti:
 
@@ -1542,7 +1542,7 @@ describe('InboxPage deep link via ?message=', () => {
 })
 ```
 
-- [ ] **Step 2: Tulis test yang gagal — `src/components/inbox/MessageBubble.test.tsx`**
+- [x] **Step 2: Tulis test yang gagal — `src/components/inbox/MessageBubble.test.tsx`**
 
 Tambahkan di akhir `describe('MessageBubble — Perbaiki', ...)`, setelah test terakhirnya:
 
@@ -1558,7 +1558,7 @@ Tambahkan di akhir `describe('MessageBubble — Perbaiki', ...)`, setelah test t
   })
 ```
 
-- [ ] **Step 3: Tulis test yang gagal — `src/components/inbox/ThreadView.test.tsx`**
+- [x] **Step 3: Tulis test yang gagal — `src/components/inbox/ThreadView.test.tsx`**
 
 Tambahkan di akhir berkas:
 
@@ -1625,12 +1625,12 @@ describe('ThreadView — lompat ke pesan tertentu', () => {
 })
 ```
 
-- [ ] **Step 4: Jalankan, pastikan GAGAL**
+- [x] **Step 4: Jalankan, pastikan GAGAL**
 
 Run: `npx vitest run "src/app/(authenticated)/inbox/page.test.tsx" src/components/inbox/MessageBubble.test.tsx src/components/inbox/ThreadView.test.tsx`
 Expected: FAIL — `data-focus-message-id` bernilai `''` padahal diharapkan `msg_bot`; panel tidak terbuka pada test `autoOpenFix`; `scrollIntoView` tidak pernah dipanggil dengan `{ block: 'center' }`.
 
-- [ ] **Step 5: Implementasi — `src/components/inbox/MessageBubble.tsx`**
+- [x] **Step 5: Implementasi — `src/components/inbox/MessageBubble.tsx`**
 
 Ganti:
 
@@ -1679,7 +1679,7 @@ menjadi:
   const [showFix, setShowFix] = useState(Boolean(autoOpenFix))
 ```
 
-- [ ] **Step 6: Implementasi — `src/components/inbox/ThreadView.tsx`**
+- [x] **Step 6: Implementasi — `src/components/inbox/ThreadView.tsx`**
 
 6a. Ganti:
 
@@ -1804,7 +1804,7 @@ menjadi:
         })}
 ```
 
-- [ ] **Step 7: Implementasi — `src/app/(authenticated)/inbox/page.tsx`**
+- [x] **Step 7: Implementasi — `src/app/(authenticated)/inbox/page.tsx`**
 
 7a. Ganti:
 
@@ -1861,12 +1861,12 @@ menjadi:
             focusMessageId={focusMessageId ?? undefined}
 ```
 
-- [ ] **Step 8: Jalankan, pastikan LULUS**
+- [x] **Step 8: Jalankan, pastikan LULUS**
 
 Run: `npx vitest run "src/app/(authenticated)/inbox/page.test.tsx" src/components/inbox/MessageBubble.test.tsx src/components/inbox/ThreadView.test.tsx`
 Expected: PASS, termasuk test lama (gulungan ke pembatas "belum dibaca" tetap berjalan saat tidak ada pesan yang diminta).
 
-- [ ] **Step 9: Commit**
+- [x] **Step 9: Commit**
 
 ```bash
 git add "src/app/(authenticated)/inbox/page.tsx" "src/app/(authenticated)/inbox/page.test.tsx" \

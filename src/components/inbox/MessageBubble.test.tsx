@@ -678,3 +678,26 @@ describe('MessageBubble — label topik', () => {
     expect(screen.queryByLabelText('Cek topik')).not.toBeInTheDocument()
   })
 })
+
+describe('MessageBubble — autoOpenFix', () => {
+  const botReply = {
+    id: 'msg_bot',
+    direction: 'OUTBOUND' as const,
+    content: 'Harga ATV Rp350.000.',
+    channel: 'OFFICIAL',
+    sentBy: 'BOT',
+    deliveryStatus: 'SENT',
+    createdAt: new Date().toISOString(),
+    botTrace: { mode: 'faq', draft: 'Harga ATV Rp350.000.', sourceTopic: 'price' },
+  }
+
+  it('membuka panel perbaikan sendiri saat diminta lewat autoOpenFix', () => {
+    render(<MessageBubble message={botReply} autoOpenFix />)
+    expect(screen.getByText('panel perbaikan msg_bot')).toBeInTheDocument()
+  })
+
+  it('autoOpenFix pada pesan bukan-bot tidak membuka apa pun', () => {
+    render(<MessageBubble message={{ ...botReply, sentBy: 'AGENT', botTrace: null }} autoOpenFix />)
+    expect(screen.queryByText('panel perbaikan msg_bot')).not.toBeInTheDocument()
+  })
+})

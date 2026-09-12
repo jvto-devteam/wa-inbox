@@ -22,8 +22,10 @@ vi.mock('@/components/inbox/ConversationList', () => ({
 }))
 
 vi.mock('@/components/inbox/ThreadView', () => ({
-  ThreadView: ({ conversationId }: { conversationId: string }) => (
-    <div data-testid="thread-view">{conversationId}</div>
+  ThreadView: ({ conversationId, focusMessageId }: { conversationId: string; focusMessageId?: string }) => (
+    <div data-testid="thread-view" data-focus-message-id={focusMessageId ?? ''}>
+      {conversationId}
+    </div>
   ),
 }))
 
@@ -65,5 +67,33 @@ describe('InboxPage deep link via ?conversation=', () => {
     fireEvent.click(screen.getByText('select conv_clicked'))
 
     expect(screen.getByTestId('thread-view')).toHaveTextContent('conv_clicked')
+  })
+})
+
+describe('InboxPage deep link via ?message=', () => {
+  it('meneruskan pesan yang diminta ke ThreadView', () => {
+    mockSearchParams = new URLSearchParams('conversation=conv_1&message=msg_bot')
+
+    render(<InboxPage />)
+
+    expect(screen.getByTestId('thread-view')).toHaveAttribute('data-focus-message-id', 'msg_bot')
+  })
+
+  it('tanpa ?message= tidak ada pesan yang disorot', () => {
+    mockSearchParams = new URLSearchParams('conversation=conv_1')
+
+    render(<InboxPage />)
+
+    expect(screen.getByTestId('thread-view')).toHaveAttribute('data-focus-message-id', '')
+  })
+
+  it('melepas sorotan begitu operator berpindah percakapan', () => {
+    mockSearchParams = new URLSearchParams('conversation=conv_1&message=msg_bot')
+
+    render(<InboxPage />)
+    fireEvent.click(screen.getByText('select conv_clicked'))
+
+    expect(screen.getByTestId('thread-view')).toHaveTextContent('conv_clicked')
+    expect(screen.getByTestId('thread-view')).toHaveAttribute('data-focus-message-id', '')
   })
 })

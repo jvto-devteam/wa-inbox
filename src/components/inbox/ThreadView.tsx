@@ -87,6 +87,7 @@ export function ThreadView({
   contactPanelOpen,
   onToggleContactPanel,
   className,
+  focusMessageId,
 }: {
   conversationId: string
   /** Hanya dirender di bawah md, tempat tiga kolom menjadi satu kolom bertingkat. */
@@ -94,6 +95,11 @@ export function ThreadView({
   contactPanelOpen?: boolean
   onToggleContactPanel?: () => void
   className?: string
+  /**
+   * Pesan yang harus dituju saat thread dibuka dari notifikasi gap (`/inbox?...&message=<id>`):
+   * digulung ke tengah layar, disorot, dan panel perbaikannya dibuka.
+   */
+  focusMessageId?: string
 }) {
   const [messages, setMessages] = useState<MessageView[]>([])
   const [botEnabled, setBotEnabled] = useState(false)
@@ -118,6 +124,7 @@ export function ThreadView({
   const [detailLoaded, setDetailLoaded] = useState(false)
   const unreadDividerRef = useRef<HTMLDivElement>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
+  const focusRef = useRef<HTMLDivElement>(null)
   // Runs the initial scroll-into-place exactly once per opened conversation (ThreadView
   // remounts on conversation switch -- see the `key` on its call site -- so this never needs
   // resetting itself).
@@ -159,6 +166,12 @@ export function ThreadView({
   useEffect(() => {
     if (hasScrolledRef.current || !messagesLoaded || !detailLoaded) return
     hasScrolledRef.current = true
+    // Pesan yang diminta notifikasi menang atas pembatas "belum dibaca": operator sampai di
+    // sini justru untuk melihat jawaban itu, bukan untuk melanjutkan bacaan.
+    if (focusRef.current) {
+      focusRef.current.scrollIntoView({ block: 'center' })
+      return
+    }
     const target = unreadDividerRef.current ?? bottomRef.current
     target?.scrollIntoView({ block: unreadDividerRef.current ? 'start' : 'end' })
   }, [messagesLoaded, detailLoaded])
@@ -340,17 +353,29 @@ export function ThreadView({
             Belum ada pesan di percakapan ini. Tulis yang pertama di bawah.
           </p>
         ) : null}
-        {messages.map((m, i) => (
-          <div key={m.id}>
-            {(i === 0 || !isSameDay(new Date(m.createdAt), new Date(messages[i - 1].createdAt))) && (
-              <ThreadDivider label={dayDividerLabel(m.createdAt)} />
-            )}
-            {i === firstUnreadIndex && (
-              <ThreadDivider label="Pesan belum dibaca" tone="accent" innerRef={unreadDividerRef} />
-            )}
-            <MessageBubble message={m} onReply={setReplyingTo} conversationId={conversationId} />
-          </div>
-        ))}
+        {messages.map((m, i) => {
+          const focused = m.id === focusMessageId
+          return (
+            <div
+              key={m.id}
+              ref={focused ? focusRef : undefined}
+              className={cn(focused && 'rounded-lg ring-2 ring-accent/40')}
+            >
+              {(i === 0 || !isSameDay(new Date(m.createdAt), new Date(messages[i - 1].createdAt))) && (
+                <ThreadDivider label={dayDividerLabel(m.createdAt)} />
+              )}
+              {i === firstUnreadIndex && (
+                <ThreadDivider label="Pesan belum dibaca" tone="accent" innerRef={unreadDividerRef} />
+              )}
+              <MessageBubble
+                message={m}
+                onReply={setReplyingTo}
+                conversationId={conversationId}
+                autoOpenFix={focused}
+              />
+            </div>
+          )
+        })}
         <div ref={bottomRef} />
       </div>
       <ComposeBox

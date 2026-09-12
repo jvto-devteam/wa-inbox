@@ -279,16 +279,21 @@ export function MessageBubble({
   message,
   onReply,
   conversationId,
+  autoOpenFix,
 }: {
   message: MessageView
   onReply?: (message: MessageView) => void
   /** Dibutuhkan route "Cek topik"; tanpa ini ikonnya tidak tampil. */
   conversationId?: string
+  /** Dipakai saat operator tiba dari notifikasi gap: panel perbaikan terbuka tanpa satu klik lagi. */
+  autoOpenFix?: boolean
 }) {
   // Declared before the handoff-log early return below so every render calls the same hooks
   // in the same order (Rules of Hooks) -- unused in that branch, which is fine.
   const [showTrace, setShowTrace] = useState(false)
-  const [showFix, setShowFix] = useState(false)
+  // Nilai awal, bukan efek: gelembung ini dirender ulang saat pesannya berubah, dan sebuah efek
+  // akan membuka kembali panel yang baru saja ditutup operator.
+  const [showFix, setShowFix] = useState(Boolean(autoOpenFix))
   // Phase 6: the "Kirim Ulang" button below shipped with no onClick at all -- it looked like a
   // working recovery path and did nothing. It now re-queues the message's outbound job.
   const [retrying, setRetrying] = useState(false)

@@ -15,6 +15,9 @@ function InboxPageContent() {
   // stomped back to the URL's original value.
   const searchParams = useSearchParams()
   const [selectedId, setSelectedId] = useState<string | null>(() => searchParams.get('conversation'))
+  // Dibaca sekali, dengan alasan yang sama seperti `conversation` di atas. Dilepas begitu
+  // operator berpindah percakapan: menyorot pesan milik percakapan lain tidak berarti apa-apa.
+  const [focusMessageId, setFocusMessageId] = useState<string | null>(() => searchParams.get('message'))
   // Hanya berlaku dari xl ke atas -- lihat komentar geometri di bawah. Di bawah xl panel kontak
   // memang tidak punya kolom, jadi tombolnya pun tidak dirender di sana (ThreadView).
   const [contactPanelOpen, setContactPanelOpen] = useState(true)
@@ -54,7 +57,10 @@ function InboxPageContent() {
     >
       <ConversationList
         selectedId={selectedId}
-        onSelect={setSelectedId}
+        onSelect={(id) => {
+          setSelectedId(id)
+          setFocusMessageId(null)
+        }}
         className={cn(selectedId && 'max-md:hidden')}
       />
       {selectedId ? (
@@ -68,6 +74,7 @@ function InboxPageContent() {
           <ThreadView
             key={`thread-${selectedId}`}
             conversationId={selectedId}
+            focusMessageId={focusMessageId ?? undefined}
             onBack={() => setSelectedId(null)}
             contactPanelOpen={contactPanelOpen}
             onToggleContactPanel={() => setContactPanelOpen((open) => !open)}
