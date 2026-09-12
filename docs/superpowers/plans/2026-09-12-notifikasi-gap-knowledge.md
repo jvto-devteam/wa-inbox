@@ -1898,7 +1898,7 @@ EOF
 
 Ini satu-satunya perubahan pada `simulator.ts`: penambahan field, tanpa menyentuh jalur sandbox, pemulihan, maupun larangan mengirimnya. Otorisasi `/api/bot-control/simulate` yang lama tetap khusus admin; route baru inilah yang terbuka untuk semua yang login (spec §2).
 
-- [ ] **Step 1: Tulis test yang gagal — `src/lib/bot-control/simulator.test.ts`**
+- [x] **Step 1: Tulis test yang gagal — `src/lib/bot-control/simulator.test.ts`**
 
 Tambahkan di akhir berkas:
 
@@ -1931,7 +1931,7 @@ describe('knowledge pada hasil simulasi', () => {
 })
 ```
 
-- [ ] **Step 2: Tulis test yang gagal — `src/app/api/inbox/retest/route.test.ts`**
+- [x] **Step 2: Tulis test yang gagal — `src/app/api/inbox/retest/route.test.ts`**
 
 ```ts
 /**
@@ -2022,12 +2022,12 @@ describe('POST /api/inbox/retest', () => {
 })
 ```
 
-- [ ] **Step 3: Jalankan, pastikan GAGAL**
+- [x] **Step 3: Jalankan, pastikan GAGAL**
 
 Run: `npx vitest run src/lib/bot-control/simulator.test.ts src/app/api/inbox/retest/route.test.ts`
 Expected: FAIL — `result.knowledge` undefined di simulator.test; `Failed to resolve import "./route"` di route.test.
 
-- [ ] **Step 4: Implementasi — `src/lib/bot-control/simulator.ts`**
+- [x] **Step 4: Implementasi — `src/lib/bot-control/simulator.ts`**
 
 4a. Ganti:
 
@@ -2083,7 +2083,7 @@ menjadi:
     knowledge: decision?.knowledge ?? null,
 ```
 
-- [ ] **Step 5: Implementasi — `src/app/api/inbox/retest/route.ts`**
+- [x] **Step 5: Implementasi — `src/app/api/inbox/retest/route.ts`**
 
 ```ts
 import { NextResponse } from 'next/server'
@@ -2132,12 +2132,12 @@ export async function POST(req: Request) {
 }
 ```
 
-- [ ] **Step 6: Jalankan, pastikan LULUS (termasuk penjaga "simulator tidak mengirim")**
+- [x] **Step 6: Jalankan, pastikan LULUS (termasuk penjaga "simulator tidak mengirim")**
 
 Run: `npx vitest run src/lib/bot-control/simulator.test.ts src/app/api/inbox/retest/route.test.ts src/app/api/bot-control/simulate/route.test.ts src/components/bot-control/TestLab.test.tsx`
 Expected: PASS — Test Lab dan route simulate lama tidak berubah perilakunya.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add src/lib/bot-control/simulator.ts src/lib/bot-control/simulator.test.ts \

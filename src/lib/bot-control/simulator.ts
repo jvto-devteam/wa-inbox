@@ -41,7 +41,7 @@ import { decideAndRespond } from '@/lib/bot/orchestrator'
 import { resolveChannel } from '@/lib/channel-router'
 import { ensureTestConversation, TEST_CONTACT_PHONE } from '@/lib/test-conversation'
 import { recordBotDecisionRun } from '@/lib/bot-control/decision-recorder'
-import type { BotDecision, TraceStep } from '@/lib/bot/types'
+import type { BotDecision, DecisionKnowledge, TraceStep } from '@/lib/bot/types'
 
 export type SimulationContextMode = 'none' | 'conversation' | 'test-room'
 
@@ -62,6 +62,13 @@ export type SimulationResult = {
   status: SimulationStatus
   flowSteps: TraceStep[]
   knowledgeRefs: { sourceTopic?: string } | null
+  /**
+   * Fakta yang benar-benar dipakai giliran ini, beserta pemetaan paragrafnya
+   * (`attributions`). Dipakai panel perbaikan di Inbox untuk menjawab satu pertanyaan yang
+   * tidak bisa dijawab teks balasannya sendiri: apakah jawaban barunya bersandar pada entri
+   * yang baru saja disimpan, atau kebetulan terdengar benar.
+   */
+  knowledge: DecisionKnowledge | null
   verification: Record<string, unknown> | null
   warnings: string[]
   wouldSendViaChannel: 'OFFICIAL' | 'UNOFFICIAL'
@@ -188,6 +195,7 @@ export async function runSimulation(request: SimulationRequest): Promise<Simulat
     status: statusForSimulation(decision),
     flowSteps: decision?.steps ?? [],
     knowledgeRefs: decision?.mode === 'faq' ? { sourceTopic: decision.sourceTopic } : null,
+    knowledge: decision?.knowledge ?? null,
     // The orchestrator now hands the verdict back on the decision itself, so the Test Lab's
     // verification panel finally has something to render. Still null for the branches that
     // never verify anything (a static reply, a technical-hiccup fallback) — claiming a

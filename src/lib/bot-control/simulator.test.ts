@@ -214,3 +214,30 @@ describe('runSimulation', () => {
     expect(recordBotDecisionRun).toHaveBeenCalledWith(expect.objectContaining({ conversationId: 'conv_sandbox' }))
   })
 })
+
+describe('knowledge pada hasil simulasi', () => {
+  it('membawa fakta dan pemetaan paragraf apa adanya dari keputusan', async () => {
+    const knowledge = {
+      catalogLines: [],
+      managedLines: [{ line: 'ATV 1 jam: IDR 350000', source: 'FAQ Harga ATV (v2)', sourceId: 'ks_1', sourceKey: 'managed/atv', version: 2 }],
+      rejected: [],
+      gateBypassed: false,
+      attributions: [
+        { paragraph: 0, lines: [{ kind: 'managed' as const, line: 'ATV 1 jam: IDR 350000', sourceId: 'ks_1', title: 'FAQ Harga ATV', version: 2 }] },
+      ],
+    }
+    vi.mocked(decideAndRespond).mockResolvedValue({ mode: 'faq', draft: 'Harga ATV Rp350.000.', sourceTopic: 'price', knowledge })
+
+    const result = await runSimulation({ message: 'berapa harga ATV?' })
+
+    expect(result.knowledge).toEqual(knowledge)
+  })
+
+  it('null saat keputusan tidak membawa knowledge sama sekali', async () => {
+    vi.mocked(decideAndRespond).mockResolvedValue({ mode: 'clarify', reply: 'Ke mana?' })
+
+    const result = await runSimulation({ message: 'halo' })
+
+    expect(result.knowledge).toBeNull()
+  })
+})
