@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation'
 import { Bot, FileText, Home, MessageSquare, Settings, SlidersHorizontal, Users } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { Tooltip } from '@/components/ui/tooltip'
+import { GapBell } from '@/components/GapBell'
 import { fetchJson, redirectToLogin } from '@/lib/fetch-json'
 import { cn } from '@/lib/utils'
 
@@ -205,6 +206,11 @@ export function AppRail() {
             </Link>
           )
         })}
+
+        {/* Tujuan kedelapan, di dalam baris yang sama: di ponsel ia ikut menggulung mendatar
+            bersama tujuh lainnya (lihat alasan di komentar <nav> di atas), di desktop ia ikut
+            kolom. Bukan tautan, karena isinya daftar yang dibuka di tempat. */}
+        <GapBell />
       </nav>
 
       {/* Kesehatan kanal. Di bar atas lama ini dua lencana teks penuh yang selalu menyala hijau

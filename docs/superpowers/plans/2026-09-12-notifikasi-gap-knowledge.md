@@ -1060,7 +1060,7 @@ EOF
 
 Lonceng duduk DI DALAM `<nav>` sebagai tujuan kedelapan, memakai kelas yang sama dengan tujuh tautan lain: di ponsel ia ikut baris yang memang sudah dirancang menggulung mendatar, di desktop ia ikut kolom. Dropdown-nya meniru menu akun yang sudah ada (tutup saat klik di luar dan saat Escape, buka ke atas di ponsel dan ke kanan di desktop).
 
-- [ ] **Step 1: Tulis test yang gagal — `src/components/GapBell.test.tsx`**
+- [x] **Step 1: Tulis test yang gagal — `src/components/GapBell.test.tsx`**
 
 ```tsx
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
@@ -1210,12 +1210,12 @@ describe('GapBell', () => {
 })
 ```
 
-- [ ] **Step 2: Jalankan, pastikan GAGAL**
+- [x] **Step 2: Jalankan, pastikan GAGAL**
 
 Run: `npx vitest run src/components/GapBell.test.tsx`
 Expected: FAIL — `Failed to resolve import "./GapBell"`.
 
-- [ ] **Step 3: Implementasi — `src/components/GapBell.tsx`**
+- [x] **Step 3: Implementasi — `src/components/GapBell.tsx`**
 
 ```tsx
 'use client'
@@ -1378,12 +1378,12 @@ export function GapBell() {
 }
 ```
 
-- [ ] **Step 4: Jalankan, pastikan LULUS**
+- [x] **Step 4: Jalankan, pastikan LULUS**
 
 Run: `npx vitest run src/components/GapBell.test.tsx`
 Expected: PASS (10 test).
 
-- [ ] **Step 5: Tulis test yang gagal — `src/components/AppRail.test.tsx`**
+- [x] **Step 5: Tulis test yang gagal — `src/components/AppRail.test.tsx`**
 
 `GapBell` di-mock di sini dengan sengaja: `stubApi` melempar untuk URL yang tidak dikenal, dan test rail tidak seharusnya ikut menyiapkan `EventSource` serta `/api/inbox/gaps` hanya untuk membuktikan loncengnya terpasang.
 
@@ -1409,12 +1409,12 @@ describe('AppRail — lonceng gap', () => {
 })
 ```
 
-- [ ] **Step 6: Jalankan, pastikan GAGAL**
+- [x] **Step 6: Jalankan, pastikan GAGAL**
 
 Run: `npx vitest run src/components/AppRail.test.tsx`
 Expected: FAIL — `Unable to find an element by: [data-testid="gap-bell"]`.
 
-- [ ] **Step 7: Implementasi — `src/components/AppRail.tsx`**
+- [x] **Step 7: Implementasi — `src/components/AppRail.tsx`**
 
 Tambahkan impor setelah baris `import { Tooltip } from '@/components/ui/tooltip'`:
 
@@ -1447,12 +1447,12 @@ menjadi:
       </nav>
 ```
 
-- [ ] **Step 8: Jalankan, pastikan LULUS**
+- [x] **Step 8: Jalankan, pastikan LULUS**
 
 Run: `npx vitest run src/components/AppRail.test.tsx src/components/GapBell.test.tsx`
 Expected: PASS, termasuk seluruh test lama `AppRail.test.tsx` (daftar tujuan, aturan aktif, menu akun).
 
-- [ ] **Step 9: Commit**
+- [x] **Step 9: Commit**
 
 ```bash
 git add src/components/GapBell.tsx src/components/GapBell.test.tsx \

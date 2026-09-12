@@ -7,6 +7,7 @@ import { BOT_CONTROL_SECTIONS } from './bot-control/BotControlNav'
 
 const pathname = vi.fn(() => '/inbox')
 vi.mock('next/navigation', () => ({ usePathname: () => pathname() }))
+vi.mock('./GapBell', () => ({ GapBell: () => <div data-testid="gap-bell" /> }))
 
 function jsonResponse(body: unknown) {
   return { ok: true, status: 200, json: async () => body } as Response
@@ -361,5 +362,17 @@ describe('semua halaman masih terjangkau', () => {
       expect(existsSync(path.join(dir, 'page.tsx')), `${item.href} tidak punya page.tsx`).toBe(true)
       expect(statSync(dir).isDirectory()).toBe(true)
     }
+  })
+})
+
+describe('AppRail — lonceng gap', () => {
+  it('memasang lonceng tepat satu kali, di dalam menu utama', async () => {
+    stubApi()
+    render(<AppRail />)
+
+    const bell = await screen.findByTestId('gap-bell')
+    expect(bell).toBeInTheDocument()
+    expect(screen.getAllByTestId('gap-bell')).toHaveLength(1)
+    expect(screen.getByRole('navigation', { name: 'Menu utama' })).toContainElement(bell)
   })
 })
