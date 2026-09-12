@@ -44,6 +44,7 @@ export function KnowledgeEditor({
   onCancel,
   onSave,
   activateOnly = false,
+  initialReason,
 }: {
   initial: KnowledgeDraft
   title: string
@@ -54,6 +55,12 @@ export function KnowledgeEditor({
   onSave: (draft: KnowledgeDraft, reason: string, activate: boolean) => void
   /** Hanya "Simpan & aktifkan" (panel perbaikan di Inbox). Tanpa prop ini perilaku tidak berubah. */
   activateOnly?: boolean
+  /**
+   * Alasan yang sudah terisi saat editor dibuka. Dipakai putaran uji ulang: kalimat operator
+   * tentang apa yang masih salah ADALAH alasan revisi berikutnya, jadi ia tidak perlu
+   * menuliskannya dua kali.
+   */
+  initialReason?: string
 }) {
   const [draft, setDraft] = useState<KnowledgeDraft>({
     ...initial,
@@ -61,7 +68,7 @@ export function KnowledgeEditor({
     // from and reads as broken.
     items: initial.items.length > 0 ? initial.items : [EMPTY_ITEM],
   })
-  const [reason, setReason] = useState('')
+  const [reason, setReason] = useState(initialReason ?? '')
 
   function updateItem(index: number, patch: Partial<KnowledgeItem>) {
     setDraft((prev) => ({

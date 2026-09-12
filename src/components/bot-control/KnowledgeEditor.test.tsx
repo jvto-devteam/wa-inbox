@@ -208,3 +208,15 @@ describe('KnowledgeEditor', () => {
     expect(onSave).toHaveBeenCalledWith(draft(), REASON, true)
   })
 })
+
+describe('KnowledgeEditor — alasan yang sudah terisi', () => {
+  it('mengisi alasan dari initialReason, supaya putaran perbaikan tidak menyuruh mengetik ulang', () => {
+    renderEditor({ activateOnly: true, initialReason: 'Harganya masih yang lama, seharusnya Rp400.000' })
+    expect(screen.getByLabelText('Alasan perubahan')).toHaveValue('Harganya masih yang lama, seharusnya Rp400.000')
+  })
+
+  it('tanpa initialReason alasannya tetap kosong seperti sebelumnya', () => {
+    renderEditor()
+    expect(screen.getByLabelText('Alasan perubahan')).toHaveValue('')
+  })
+})

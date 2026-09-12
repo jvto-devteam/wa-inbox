@@ -2169,7 +2169,7 @@ EOF
 
 Putarannya: simpan → uji ulang otomatis → "sudah sesuai?" → **Sudah** menutup gap dan selesai; **Belum** meminta catatan (minimal 10 karakter) lalu membuka editor lagi untuk entri yang sama dengan catatan itu sebagai alasan revisi berikutnya.
 
-- [ ] **Step 1: Tulis test yang gagal — `src/components/bot-control/KnowledgeEditor.test.tsx`**
+- [x] **Step 1: Tulis test yang gagal — `src/components/bot-control/KnowledgeEditor.test.tsx`**
 
 Tambahkan di dalam `describe('KnowledgeEditor', ...)`, setelah test terakhirnya:
 
@@ -2185,7 +2185,7 @@ Tambahkan di dalam `describe('KnowledgeEditor', ...)`, setelah test terakhirnya:
   })
 ```
 
-- [ ] **Step 2: Implementasi — `src/components/bot-control/KnowledgeEditor.tsx`**
+- [x] **Step 2: Implementasi — `src/components/bot-control/KnowledgeEditor.tsx`**
 
 2a. Ganti:
 
@@ -2238,12 +2238,12 @@ menjadi:
   const [reason, setReason] = useState(initialReason ?? '')
 ```
 
-- [ ] **Step 3: Jalankan, pastikan LULUS**
+- [x] **Step 3: Jalankan, pastikan LULUS**
 
 Run: `npx vitest run src/components/bot-control/KnowledgeEditor.test.tsx`
 Expected: PASS, termasuk seluruh test lama.
 
-- [ ] **Step 4: Tulis test yang gagal — `src/components/inbox/FixAnswerPanel.test.tsx`**
+- [x] **Step 4: Tulis test yang gagal — `src/components/inbox/FixAnswerPanel.test.tsx`**
 
 4a. Panel sekarang mencari gap milik pesan ini saat dibuka, jadi rute itu harus ada di setiap skenario. Ganti:
 
@@ -2415,12 +2415,12 @@ async function saveFromEditor(answer = 'Mulai Rp400.000.') {
   })
 ```
 
-- [ ] **Step 5: Jalankan, pastikan GAGAL**
+- [x] **Step 5: Jalankan, pastikan GAGAL**
 
 Run: `npx vitest run src/components/inbox/FixAnswerPanel.test.tsx`
 Expected: FAIL — `fetch tak terduga: GET /api/inbox/gaps?messageId=msg_bot&limit=1` pada test lama (panel belum mencarinya) dan `Unable to find an element with the text: Jawaban ini sudah sesuai?` pada test baru.
 
-- [ ] **Step 6: Implementasi — `src/components/inbox/FixAnswerPanel.tsx`**
+- [x] **Step 6: Implementasi — `src/components/inbox/FixAnswerPanel.tsx`**
 
 6a. Ganti (tiga baris sekaligus — baris `IconButton` sendirian ada di banyak berkas):
 
@@ -2773,12 +2773,12 @@ menjadi:
       )}
 ```
 
-- [ ] **Step 7: Jalankan, pastikan LULUS**
+- [x] **Step 7: Jalankan, pastikan LULUS**
 
 Run: `npx vitest run src/components/inbox/FixAnswerPanel.test.tsx src/components/bot-control/KnowledgeEditor.test.tsx`
 Expected: PASS, termasuk seluruh test lama panel (kedua jalur simpan, galat, tanpa run).
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add src/components/bot-control/KnowledgeEditor.tsx src/components/bot-control/KnowledgeEditor.test.tsx \
