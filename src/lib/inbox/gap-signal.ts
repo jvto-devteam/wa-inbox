@@ -1,4 +1,5 @@
 import type { BotDecision } from '@/lib/bot/types'
+import { extractRupiahAmounts, extractUrls } from '@/lib/bot/reply-verifier'
 
 /**
  * Apakah balasan ini menjawab TANPA bersandar pada satu pun fakta yang dikirim ke model.
@@ -25,5 +26,13 @@ export function isUnsourcedFaqReply(decision: BotDecision): boolean {
 
   const attributions = knowledge.attributions
   if (attributions === undefined) return false
+  if (hasVerifiedPriceOrUrl(decision)) return false
   return attributions.length === 0
+}
+
+function hasVerifiedPriceOrUrl(decision: Extract<BotDecision, { mode: 'faq' }>): boolean {
+  const verification = decision.verification
+  if (!verification || verification.status === 'BLOCKED') return false
+  if (verification.fabricatedPrices.length > 0 || verification.unknownUrls.length > 0) return false
+  return extractRupiahAmounts(decision.draft).length > 0 || extractUrls(decision.draft).length > 0
 }

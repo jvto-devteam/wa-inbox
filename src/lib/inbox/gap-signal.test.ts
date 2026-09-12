@@ -48,4 +48,28 @@ describe('isUnsourcedFaqReply', () => {
   it('menandai walau faktanya hanya dari katalog', () => {
     expect(isUnsourcedFaqReply(faq({ knowledge: knowledge({ catalogLines: ['Every package includes private transport.'], managedLines: [] }) }))).toBe(true)
   })
+
+  it('tidak menandai harga atau URL yang sudah lolos verifier walau attribution kosong', () => {
+    expect(
+      isUnsourcedFaqReply(
+        faq({
+          draft:
+            'Harga paketnya Rp4.550.000 per orang untuk 2 pax, total Rp9.100.000. Detail: https://javavolcano-touroperator.com/tours/ijen-blue-fire-1d',
+          verification: {
+            status: 'PASSED',
+            attempts: 1,
+            fabricatedPrices: [],
+            unverifiedPrices: [],
+            unknownUrls: [],
+            guaranteeViolations: [],
+          },
+          knowledge: knowledge({
+            catalogLines: ['Private tour includes transport and guide.'],
+            managedLines: [],
+            attributions: [],
+          }),
+        }),
+      ),
+    ).toBe(false)
+  })
 })
