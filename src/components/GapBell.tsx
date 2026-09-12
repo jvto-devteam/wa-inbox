@@ -89,7 +89,10 @@ export function GapBell() {
   }, [open])
 
   return (
-    <div ref={boxRef} className="relative shrink-0">
+    // `md:px-1` menyamakan inset tombol ini dengan tujuh tautan di dalam <nav>, yang mendapat
+    // inset itu dari padding <nav> sendiri — lonceng duduk di luar nav (lihat AppRail), jadi ia
+    // harus membawa paddingnya sendiri atau tepinya meleset 4px dari menu di atasnya.
+    <div ref={boxRef} className="relative shrink-0 md:w-full md:px-1">
       <button
         type="button"
         onClick={() => setOpen((prev) => !prev)}
@@ -117,8 +120,12 @@ export function GapBell() {
         <div
           role="menu"
           className={cn(
-            'absolute bottom-full left-0 z-30 mb-2 w-72 rounded-lg border border-line bg-surface p-1 shadow-popover',
-            'md:bottom-0 md:left-full md:mb-0 md:ml-2'
+            // Arah bukanya persis menu akun di AppRail, dan karena alasan yang sama: menjauh
+            // dari tepi layar. `right-0` di ponsel, bukan `left-0` — lonceng duduk di ujung
+            // kanan bar bawah, jadi popover selebar 288px yang dijangkarkan ke kiri akan
+            // meluber keluar layar 390px.
+            'absolute right-0 bottom-full z-30 mb-2 w-72 rounded-lg border border-line bg-surface p-1 shadow-popover',
+            'md:right-auto md:bottom-0 md:left-full md:mb-0 md:ml-2'
           )}
         >
           <p className="px-2 py-1.5 text-xs font-medium text-ink">Jawaban yang perlu knowledge</p>

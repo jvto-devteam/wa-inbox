@@ -365,14 +365,40 @@ describe('semua halaman masih terjangkau', () => {
   })
 })
 
+/**
+ * Kelas Tailwind yang membuat sebuah elemen MEMOTONG apa pun yang keluar dari kotaknya.
+ * `overflow-x-visible` sengaja tidak ada di sini dan tidak perlu ada: CSS menghitung ulang
+ * `visible` menjadi `auto` begitu sumbu lainnya bukan visible, jadi satu `overflow-y-auto`
+ * sudah cukup untuk membuat kedua sumbu memotong.
+ */
+const CLIPPING_CLASS = /(^|:)overflow(-[xy])?-(auto|scroll|hidden)$/
+
 describe('AppRail — lonceng gap', () => {
-  it('memasang lonceng tepat satu kali, di dalam menu utama', async () => {
+  it('memasang lonceng tepat satu kali', async () => {
     stubApi()
     render(<AppRail />)
 
     const bell = await screen.findByTestId('gap-bell')
     expect(bell).toBeInTheDocument()
     expect(screen.getAllByTestId('gap-bell')).toHaveLength(1)
-    expect(screen.getByRole('navigation', { name: 'Menu utama' })).toContainElement(bell)
+  })
+
+  // Daftar lonceng adalah popover `absolute` yang dibuka DI LUAR kotak tombolnya: ke atas di
+  // bar bawah ponsel, ke kanan di rail desktop. Begitu ia punya leluhur yang menggulung,
+  // popover itu terpotong dan operator melihat "tidak terjadi apa-apa saat diklik" -- padahal
+  // menunya ADA di dokumen, jadi tidak satu pun test DOM biasa bisa menangkapnya. Ini yang
+  // terjadi saat lonceng dipasang di dalam <nav>, yang menggulung mendatar di ponsel.
+  it('tidak punya leluhur yang menggulung, yang akan memotong popover-nya', async () => {
+    stubApi()
+    const { container } = render(<AppRail />)
+
+    const bell = await screen.findByTestId('gap-bell')
+    const offenders: string[] = []
+    for (let el = bell.parentElement; el && el !== container; el = el.parentElement) {
+      for (const cls of Array.from(el.classList)) {
+        if (CLIPPING_CLASS.test(cls)) offenders.push(`${el.tagName.toLowerCase()}.${cls}`)
+      }
+    }
+    expect(offenders).toEqual([])
   })
 })

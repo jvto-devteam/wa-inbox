@@ -206,12 +206,18 @@ export function AppRail() {
             </Link>
           )
         })}
-
-        {/* Tujuan kedelapan, di dalam baris yang sama: di ponsel ia ikut menggulung mendatar
-            bersama tujuh lainnya (lihat alasan di komentar <nav> di atas), di desktop ia ikut
-            kolom. Bukan tautan, karena isinya daftar yang dibuka di tempat. */}
-        <GapBell />
       </nav>
+
+      {/* Lonceng gap: DI LUAR <nav>, dan itu load-bearing. Isinya popover `absolute` yang dibuka
+          di luar kotak tombolnya (ke atas di ponsel, ke kanan di desktop), sementara <nav> di
+          atas menggulung — `overflow-x-auto` di ponsel, dan di desktop `md:overflow-x-visible`
+          yang dihitung ulang CSS menjadi `auto` karena berpasangan dengan `md:overflow-y-auto`.
+          Leluhur yang menggulung MEMOTONG popover: menunya tetap ada di DOM (jadi tidak ada test
+          render yang gagal) tapi tidak pernah terlihat operator. Tempatnya sekarang sama dengan
+          menu akun di bawah, yang memang selalu tampil. Bonus di ponsel: lonceng tidak lagi ikut
+          menggulung menjauh — notifikasi yang harus dicari dengan menggeser adalah notifikasi
+          yang terlewat. Bukan tautan, karena isinya daftar yang dibuka di tempat. */}
+      <GapBell />
 
       {/* Kesehatan kanal. Di bar atas lama ini dua lencana teks penuh yang selalu menyala hijau
           di setiap halaman; di rail ia menyusut jadi satu titik dengan tooltip, dan menjadi
