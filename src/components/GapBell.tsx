@@ -21,6 +21,7 @@ type GapFeed = { count: number; items: GapItem[] }
 
 const REASON_LABEL: Record<string, string> = {
   reply_unsourced: 'Jawaban tanpa sumber',
+  reply_deferred_knowledge: 'Butuh knowledge tambahan',
   no_facts_resolved: 'Tidak ada fakta',
   verification_failed: 'Gagal verifikasi',
 }

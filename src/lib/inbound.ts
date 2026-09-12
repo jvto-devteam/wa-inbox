@@ -444,9 +444,9 @@ export async function runBotForConversation(
     // that returns nothing would throw AFTER the customer's message was already dispatched --
     // audit bookkeeping taking down a turn that had actually succeeded.
     await attachMessageToDecisionRun(decisionRunId, sent?.id, traceSnapshot(tracer))
-    // Gap "tidak bersumber" dicatat DI SINI, bukan di orchestrator: ini satu-satunya titik
-    // yang memegang id percakapan, id pesan, dan id run sekaligus -- dan notifikasinya butuh
-    // ketiganya. Tidak ditunggu, sama seperti pembukuan lain di jalur ini.
+    // Gap knowledge terkait reply dicatat DI SINI, bukan di orchestrator: ini satu-satunya
+    // titik yang memegang id percakapan, id pesan, dan id run sekaligus -- dan notifikasinya
+    // butuh ketiganya. Tidak ditunggu, sama seperti pembukuan lain di jalur ini.
     recordUnsourcedReplyGap({
       decision,
       conversationId: conversation.id,

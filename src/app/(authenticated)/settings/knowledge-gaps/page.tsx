@@ -24,6 +24,7 @@ const REASON_LABEL: Record<string, string> = {
   no_facts_resolved: 'Tidak ada fakta',
   verification_failed: 'Gagal verifikasi',
   reply_unsourced: 'Jawaban tanpa sumber',
+  reply_deferred_knowledge: 'Butuh knowledge tambahan',
 }
 
 export default function KnowledgeGapsPage() {
@@ -81,6 +82,7 @@ export default function KnowledgeGapsPage() {
             <option value="">Semua alasan</option>
             <option value="no_facts_resolved">Tidak ada fakta</option>
             <option value="verification_failed">Gagal verifikasi</option>
+            <option value="reply_deferred_knowledge">Butuh knowledge tambahan</option>
           </Select>
         }
       />

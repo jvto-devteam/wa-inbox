@@ -142,20 +142,6 @@ export function BotTracePopover({
         </div>
       )}
 
-      {trace?.steps && trace.steps.length > 0 && (
-        <ol className="space-y-1.5 border-t border-line pt-2">
-          {trace.steps.map((step, i) => (
-            <li key={i} className="flex gap-1.5">
-              <span className="shrink-0 font-mono text-ink-subtle">{i + 1}.</span>
-              <div>
-                <p className="font-medium text-ink">{step.label}</p>
-                <p className="text-ink-muted">{step.detail}</p>
-              </div>
-            </li>
-          ))}
-        </ol>
-      )}
-
       {/* Task 17 (Ruling R54): "kenapa fakta ini tidak ikut?" -- what was actually sent as
           grounding, with its source, and what the topic gate turned away and why. Each list
           renders only when it has something to show, same convention as the steps block above. */}

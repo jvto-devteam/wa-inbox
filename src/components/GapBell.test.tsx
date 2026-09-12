@@ -96,6 +96,15 @@ describe('GapBell', () => {
     expect(screen.getByRole('link', { name: 'Lihat semua' })).toHaveAttribute('href', '/settings/knowledge-gaps')
   })
 
+  it('memberi label reason untuk jawaban yang ditunda karena knowledge kurang', async () => {
+    stubFeed({ count: 1, items: [gap({ reason: 'reply_deferred_knowledge' })] })
+    render(<GapBell />)
+
+    fireEvent.click(await screen.findByLabelText('Gap knowledge (1 belum ditangani)'))
+
+    expect(screen.getByText('Butuh knowledge tambahan')).toBeInTheDocument()
+  })
+
   it('item menautkan ke percakapan dan pesannya', async () => {
     stubFeed({ count: 2, items: [gap(), gap({ id: 'gap_2', messageId: null, conversationId: 'conv_2', contactName: 'Ayu' })] })
     render(<GapBell />)

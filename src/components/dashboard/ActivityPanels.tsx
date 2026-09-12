@@ -30,6 +30,8 @@ const DECISION_TONES: { key: string; tone: ChartTone }[] = [
 const GAP_REASON_LABEL: Record<string, string> = {
   no_facts_resolved: 'Tidak ada fakta',
   verification_failed: 'Gagal verifikasi',
+  reply_unsourced: 'Jawaban tanpa sumber',
+  reply_deferred_knowledge: 'Butuh knowledge tambahan',
 }
 
 /**

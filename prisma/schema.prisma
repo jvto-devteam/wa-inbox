@@ -215,11 +215,11 @@ model KnowledgeGapLog {
   topic          String
   reason         String
   messageText    String
-  // Notifikasi gap (2026-09-12): ketiganya hanya diisi oleh jalur `reply_unsourced`
-  // (src/lib/inbox/gap-log.ts), satu-satunya titik yang memegang id pesan dan id run
-  // sekaligus. Baris gap lama punya ketiganya kosong, dan notifikasi menanganinya dengan
-  // hanya membuka percakapannya. Bukan relasi: menghapus pesannya tidak boleh ikut
-  // menghapus catatan bahwa bot pernah menjawab tanpa sumber.
+  // Notifikasi gap (2026-09-12): ketiganya hanya diisi oleh jalur gap setelah reply bot
+  // terkirim (src/lib/inbox/gap-log.ts), satu-satunya titik yang memegang id pesan dan id
+  // run sekaligus. Baris gap lama punya ketiganya kosong, dan notifikasi menanganinya
+  // dengan hanya membuka percakapannya. Bukan relasi: menghapus pesannya tidak boleh ikut
+  // menghapus catatan bahwa bot pernah menjawab kurang knowledge.
   messageId      String?
   runId          String?
   // Kosong = masih terbuka. Diisi saat operator menyatakan jawaban barunya sudah sesuai,

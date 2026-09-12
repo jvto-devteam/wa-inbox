@@ -1,13 +1,13 @@
 import { prisma } from '@/lib/db'
 import { broadcast } from '@/lib/realtime'
-import { isUnsourcedFaqReply } from './gap-signal'
+import { DEFERRED_KNOWLEDGE_REPLY_REASON, knowledgeGapReasonForDecision, UNSOURCED_REPLY_REASON } from './gap-signal'
 import type { BotDecision } from '@/lib/bot/types'
 
-/** Alasan gap untuk balasan FAQ yang tidak bersandar pada satu pun fakta yang dikirim ke model. */
-export const UNSOURCED_REPLY_REASON = 'reply_unsourced'
+/** Alasan gap untuk balasan FAQ: tidak bersumber, atau ada sub-pertanyaan yang ditunda. */
+export { DEFERRED_KNOWLEDGE_REPLY_REASON, UNSOURCED_REPLY_REASON }
 
 /**
- * Mencatat satu balasan yang tidak bersumber, lalu memberi tahu lonceng.
+ * Mencatat satu balasan yang perlu knowledge tambahan, lalu memberi tahu lonceng.
  *
  * Dipanggil dari `inbound.ts` SETELAH balasannya terkirim, bukan dari orchestrator: hanya di
  * titik itu id percakapan, id pesan, dan id run ada bersamaan, dan notifikasi membutuhkan
@@ -27,14 +27,15 @@ export async function recordUnsourcedReplyGap(params: {
   const { decision } = params
   // Pemeriksaan mode kedua kalinya ada demi penyempitan tipe, bukan demi logika: `topic` dan
   // `sourceTopic` hanya ada di varian faq.
-  if (!isUnsourcedFaqReply(decision) || decision.mode !== 'faq') return
+  const reason = knowledgeGapReasonForDecision(decision)
+  if (!reason || decision.mode !== 'faq') return
 
   try {
     await prisma.knowledgeGapLog.create({
       data: {
         conversationId: params.conversationId,
         topic: decision.topic ?? decision.sourceTopic,
-        reason: UNSOURCED_REPLY_REASON,
+        reason,
         messageText: params.inboundText,
         messageId: params.messageId ?? null,
         runId: params.runId,

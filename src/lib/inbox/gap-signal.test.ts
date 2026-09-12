@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { isUnsourcedFaqReply } from './gap-signal'
+import { DEFERRED_KNOWLEDGE_REPLY_REASON, isUnsourcedFaqReply, knowledgeGapReasonForDecision, UNSOURCED_REPLY_REASON } from './gap-signal'
 import type { BotDecision, DecisionKnowledge } from '@/lib/bot/types'
 
 function knowledge(overrides: Partial<DecisionKnowledge> = {}): DecisionKnowledge {
@@ -71,5 +71,59 @@ describe('isUnsourcedFaqReply', () => {
         }),
       ),
     ).toBe(false)
+  })
+})
+
+describe('knowledgeGapReasonForDecision', () => {
+  it('menandai balasan FAQ yang menunda sub-pertanyaan karena knowledge belum cukup', () => {
+    expect(
+      knowledgeGapReasonForDecision(
+        faq({
+          draft:
+            "Harga totalnya Rp9.100.000. Let me check with our team regarding the space for your two large backpacks and get back to you shortly.",
+          verification: {
+            status: 'PASSED',
+            attempts: 1,
+            fabricatedPrices: [],
+            unverifiedPrices: [],
+            unknownUrls: [],
+            guaranteeViolations: [],
+          },
+          knowledge: knowledge({
+            catalogLines: ['We use an AC MPV for 1-3 guests.'],
+            managedLines: [],
+            attributions: [{ paragraph: 0, lines: [{ kind: 'catalog', line: 'We use an AC MPV for 1-3 guests.' }] }],
+          }),
+        }),
+      ),
+    ).toBe(DEFERRED_KNOWLEDGE_REPLY_REASON)
+  })
+
+  it('tetap memakai reason reply_unsourced untuk balasan FAQ tanpa satu pun attribution', () => {
+    expect(knowledgeGapReasonForDecision(faq())).toBe(UNSOURCED_REPLY_REASON)
+  })
+
+  it('tidak menandai disclosure availability biasa sebagai deferred knowledge', () => {
+    expect(
+      knowledgeGapReasonForDecision(
+        faq({
+          draft:
+            'Harga totalnya Rp9.100.000, subject to availability and confirmation. Exact availability for your dates is confirmed automatically at checkout.',
+          verification: {
+            status: 'PASSED',
+            attempts: 1,
+            fabricatedPrices: [],
+            unverifiedPrices: [],
+            unknownUrls: [],
+            guaranteeViolations: [],
+          },
+          knowledge: knowledge({
+            catalogLines: ['2 pax price: IDR 4550000 per person.'],
+            managedLines: [],
+            attributions: [{ paragraph: 0, lines: [{ kind: 'catalog', line: '2 pax price: IDR 4550000 per person.' }] }],
+          }),
+        }),
+      ),
+    ).toBeNull()
   })
 })

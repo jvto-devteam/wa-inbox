@@ -46,6 +46,14 @@ describe('KnowledgeGapsPage — status dan penandaan', () => {
     expect(screen.getByRole('button', { name: 'Tandai selesai' })).toBeInTheDocument()
   })
 
+  it('memberi nama reason saat bot menunda sub-pertanyaan karena knowledge kurang', async () => {
+    stubFetch([gap({ reason: 'reply_deferred_knowledge' })])
+
+    render(<KnowledgeGapsPage />)
+
+    expect(await screen.findByText('Butuh knowledge tambahan')).toBeInTheDocument()
+  })
+
   it('menandai selesai dan menggantinya dengan lencana, tanpa memuat ulang daftar', async () => {
     const fetchMock = stubFetch([gap()])
 

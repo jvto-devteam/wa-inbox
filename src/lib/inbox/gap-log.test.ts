@@ -6,7 +6,7 @@ import { mockDeep, mockReset, type DeepMockProxy } from 'vitest-mock-extended'
 import type { PrismaClient } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { broadcast } from '@/lib/realtime'
-import { recordUnsourcedReplyGap, UNSOURCED_REPLY_REASON } from './gap-log'
+import { DEFERRED_KNOWLEDGE_REPLY_REASON, recordUnsourcedReplyGap, UNSOURCED_REPLY_REASON } from './gap-log'
 import type { BotDecision, DecisionKnowledge } from '@/lib/bot/types'
 
 vi.mock('@/lib/db', () => ({ prisma: mockDeep<PrismaClient>() }))
@@ -63,6 +63,29 @@ describe('recordUnsourcedReplyGap', () => {
   it('memancarkan knowledge.gap setelah barisnya tersimpan', async () => {
     await recordUnsourcedReplyGap(params())
     expect(broadcast).toHaveBeenCalledWith({ type: 'knowledge.gap', conversationId: 'conv_1' })
+  })
+
+  it('menulis reason reply_deferred_knowledge untuk balasan yang menunda sub-pertanyaan', async () => {
+    await recordUnsourcedReplyGap(
+      params({
+        decision: {
+          mode: 'faq',
+          draft: 'Harga totalnya Rp9.100.000. Let me check with our team about your luggage and get back to you shortly.',
+          sourceTopic: 'vehicle',
+          topic: 'vehicle',
+          knowledge: knowledge({
+            catalogLines: ['We use an AC MPV for 1-3 guests.'],
+            managedLines: [],
+            attributions: [{ paragraph: 0, lines: [{ kind: 'catalog' as const, line: 'We use an AC MPV for 1-3 guests.' }] }],
+          }),
+        },
+      }),
+    )
+
+    expect(mockPrisma.knowledgeGapLog.create.mock.calls[0][0].data).toMatchObject({
+      reason: DEFERRED_KNOWLEDGE_REPLY_REASON,
+      topic: 'vehicle',
+    })
   })
 
   it('memakai sourceTopic bila keputusan tidak membawa topic', async () => {

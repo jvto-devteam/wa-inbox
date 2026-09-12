@@ -26,7 +26,7 @@ describe('BotTracePopover', () => {
     expect(screen.getByText(/booking api/i)).toBeInTheDocument()
   })
 
-  it('renders the step-by-step reasoning trace, in order, when present', () => {
+  it('does not render the step-by-step reasoning trace in the compact inbox popover', () => {
     render(
       <BotTracePopover
         trace={{
@@ -41,10 +41,10 @@ describe('BotTracePopover', () => {
       />
     )
 
-    const labels = screen.getAllByText(/Pesan diterima|Eskalasi terdeteksi/).map((el) => el.textContent)
-    expect(labels).toEqual(['Pesan diterima', 'Eskalasi terdeteksi'])
-    expect(screen.getByText('Memeriksa kata kunci eskalasi.')).toBeInTheDocument()
-    expect(screen.getByText('Diserahkan ke agen.')).toBeInTheDocument()
+    expect(screen.queryByText('Pesan diterima')).not.toBeInTheDocument()
+    expect(screen.queryByText('Eskalasi terdeteksi')).not.toBeInTheDocument()
+    expect(screen.queryByText('Memeriksa kata kunci eskalasi.')).not.toBeInTheDocument()
+    expect(screen.queryByText('Diserahkan ke agen.')).not.toBeInTheDocument()
   })
 
   it('falls back to just the terse summary when steps is absent (a botTrace row stored before the trace feature existed)', () => {
