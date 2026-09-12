@@ -168,6 +168,7 @@ import { classifyKeywordModulesViaLLM } from './keyword-module-classifier'
 import { detectsAdditionalEscalationSignal } from './escalation-classifier'
 import { detectsPreferenceDeclineViaLLM } from './preference-decline-classifier'
 import { detectsRecommendationIntentViaLLM } from './recommendation-intent-classifier'
+import { detectsPackageLinkIntentViaLLM } from './link-intent-classifier'
 import { parsePickupTiming, buildItineraryScenario, describeScenarioForLLM, describeScenarioForCustomer, evaluateScenario } from './scenario-evaluator'
 import {
   resolveKnowledgeForTopic,
@@ -1733,6 +1734,7 @@ export async function decideAndRespond(
       { preferences, source: preferencesSource },
       { declined: preferenceDeclineSignal, source: declineSource },
       { isRecommendation: recommendationIntentSignal, source: recommendationSource },
+      { wantsPackageLink: packageLinkIntentSignal, source: packageLinkSource },
       allTopicsResult,
     ] = await Promise.all([
       // LLM-primary as of 2026-08-07 (see keyword-module-classifier.ts's own header) -- replaces
@@ -1759,6 +1761,17 @@ export async function decideAndRespond(
       // (each fixed as a one-off keyword patch previously). Falls back to the unchanged
       // isRecommendationRequest regex only on a genuine technical failure.
       detectsRecommendationIntentViaLLM(inboundText, isRecommendationRequest, settings.ollamaModel),
+      // LLM-primary as of 2026-09-12 (see link-intent-classifier.ts's own header) -- the sixth
+      // conversion of this kind, and the one the 2026-08-07 audit missed. It decides WHICH link
+      // the customer gets, and its keyword form sent a customer who named a package ("we'd like
+      // to book your Bromo 1D1N tour") to the generic booking explainer, because the list has
+      // "we want to book" but not "we'd like to book". Falls back to the unchanged
+      // isBookingIntent/isPackageDetailIntent pair only on a genuine technical failure.
+      detectsPackageLinkIntentViaLLM(
+        inboundText,
+        (message) => isBookingIntent(message) || isPackageDetailIntent(message),
+        settings.ollamaModel
+      ),
       classifyAllTopics(inboundText, settings.ollamaModel),
     ])
     // Task 15: destination branch's own topic classification site (the no-destination branch
@@ -1799,6 +1812,12 @@ export async function decideAndRespond(
       recommendationSource === 'llm'
         ? 'Diteksi oleh model LLM.'
         : 'Model LLM gagal/timeout -- fallback ke pemindaian kata kunci lama.'
+    )
+    trace.push(
+      'Mendeteksi niat halaman paket',
+      `${
+        packageLinkSource === 'llm' ? 'Dideteksi oleh model LLM' : 'Model LLM gagal/timeout -- fallback ke kata kunci lama'
+      }: pelanggan ${packageLinkIntentSignal ? 'menanyakan satu paket tertentu -- link halaman paket yang dikirim' : 'bertanya umum -- link kebijakan/panduan yang dikirim'}.`
     )
 
     const matches = matched?.matches ?? packagesForDestination(destination, catalog)
@@ -2123,7 +2142,13 @@ export async function decideAndRespond(
     // the LLM to point to "this package's own detail page", but the link actually passed was
     // still service_standard_rooming's generic rooming_and_accommodation policy page (it won
     // as knowledge.primaryLink), contradicting the disclosure's own words.
-    const primaryLink = isBookingIntent(inboundText) || isPackageDetailIntent(inboundText) || resolverTopic === 'hotel'
+    //
+    // The intent half of that test is `packageLinkIntentSignal` as of 2026-09-12, not the two
+    // keyword predicates directly: they now serve as its fallback only (see the classifier call
+    // in the batch above). `resolverTopic === 'hotel'` is deliberately NOT folded into the
+    // classifier -- it is a fact about the topic we resolved, not about how the customer phrased
+    // anything, so there is nothing for a language model to read there.
+    const primaryLink = packageLinkIntentSignal || resolverTopic === 'hotel'
       ? (pkg.links.details ?? knowledge.primaryLink ?? null)
       : (knowledge.primaryLink ?? pkg.links.details ?? null)
 

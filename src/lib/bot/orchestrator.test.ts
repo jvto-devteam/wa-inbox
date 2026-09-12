@@ -14,6 +14,7 @@ import { classifyKeywordModulesViaLLM } from './keyword-module-classifier'
 import { detectsAdditionalEscalationSignal } from './escalation-classifier'
 import { detectsPreferenceDeclineViaLLM } from './preference-decline-classifier'
 import { detectsRecommendationIntentViaLLM } from './recommendation-intent-classifier'
+import { detectsPackageLinkIntentViaLLM } from './link-intent-classifier'
 import { resolveKnowledgeForTopic, resolveKeywordTriggeredFacts, resolveRouteLegFacts, factsForModuleIds } from './knowledge'
 import { callLLM, type LLMOptions } from './llm'
 import { loadCatalog } from './catalog'
@@ -71,6 +72,7 @@ vi.mock('./keyword-module-classifier', () => ({ classifyKeywordModulesViaLLM: vi
 vi.mock('./escalation-classifier', () => ({ detectsAdditionalEscalationSignal: vi.fn() }))
 vi.mock('./preference-decline-classifier', () => ({ detectsPreferenceDeclineViaLLM: vi.fn() }))
 vi.mock('./recommendation-intent-classifier', () => ({ detectsRecommendationIntentViaLLM: vi.fn() }))
+vi.mock('./link-intent-classifier', () => ({ detectsPackageLinkIntentViaLLM: vi.fn() }))
 // `dedupeLines` is a real (not mocked) pure function -- Task 22's `mergeKnowledgeAcrossTopics`
 // (orchestrator.ts) calls the real implementation, which needs no test-provided behaviour, only
 // to exist here since the rest of './knowledge' is mocked as a whole below. Same dedup logic as
@@ -176,6 +178,7 @@ beforeEach(() => {
   ;vi.mocked(detectsAdditionalEscalationSignal).mockResolvedValue(false)
   ;vi.mocked(detectsPreferenceDeclineViaLLM).mockResolvedValue({ declined: false, source: 'llm' })
   ;vi.mocked(detectsRecommendationIntentViaLLM).mockResolvedValue({ isRecommendation: false, source: 'llm' })
+  ;vi.mocked(detectsPackageLinkIntentViaLLM).mockResolvedValue({ wantsPackageLink: false, source: 'llm' })
   ;vi.mocked(factsForModuleIds).mockReturnValue([])
   ;vi.mocked(resolveKeywordTriggeredFacts).mockReturnValue([])
   ;vi.mocked(resolveRouteLegFacts).mockReturnValue([])
@@ -320,6 +323,7 @@ describe('decideAndRespond', () => {
         'Mengklasifikasi topik',
         'Mengekstrak preferensi perjalanan',
         'Mendeteksi niat rekomendasi paket',
+        'Mendeteksi niat halaman paket',
         'Memeriksa validitas paket',
         'Paket valid',
         'Meminta jawaban dari model',
@@ -371,12 +375,13 @@ describe('decideAndRespond', () => {
     vi.mocked(extractTripPreferences).mockImplementation(gate('prefs', { preferences: NO_PREFS, source: 'llm' }) as never)
     vi.mocked(detectsPreferenceDeclineViaLLM).mockImplementation(gate('decline', { declined: false, source: 'llm' }) as never)
     vi.mocked(detectsRecommendationIntentViaLLM).mockImplementation(gate('reco', { isRecommendation: false, source: 'llm' }) as never)
+    vi.mocked(detectsPackageLinkIntentViaLLM).mockImplementation(gate('link', { wantsPackageLink: false, source: 'llm' }) as never)
 
     await decideAndRespond('conv_1', 'berapa harga paket ijen 3 hari dari surabaya?')
 
-    expect(inFlight).toHaveLength(5)
-    // All five entered before the event loop drained any of them.
-    expect(inFlightWhenFirstSettled).toBe(5)
+    expect(inFlight).toHaveLength(6)
+    // All six entered before the event loop drained any of them.
+    expect(inFlightWhenFirstSettled).toBe(6)
   })
 
   it('does not run the recommendation/preference classifiers when no destination is known', async () => {
@@ -389,6 +394,7 @@ describe('decideAndRespond', () => {
     expect(extractTripPreferences).not.toHaveBeenCalled()
     expect(detectsPreferenceDeclineViaLLM).not.toHaveBeenCalled()
     expect(detectsRecommendationIntentViaLLM).not.toHaveBeenCalled()
+    expect(detectsPackageLinkIntentViaLLM).not.toHaveBeenCalled()
   })
 
   it('uses Mode 3 (booking_context) when an existing booking is found, skipping the FAQ path entirely', async () => {
@@ -1456,6 +1462,10 @@ describe('decideAndRespond', () => {
       factualLines: ['Rooming info.'], detailLines: [], primaryLink: 'https://example.com/policy/inclusions-exclusions',
       disclosures: [], handoffRequired: false,
     })
+    // Sinyalnya datang dari classifier sejak 2026-09-12, bukan dari kata kunci di teks ini.
+    // Disetel eksplisit supaya test ini lulus karena hal yang namanya sendiri sebutkan (niat
+    // memesan), bukan menumpang aturan `resolverTopic === 'hotel'` yang kebetulan juga berlaku.
+    ;vi.mocked(detectsPackageLinkIntentViaLLM).mockResolvedValue({ wantsPackageLink: true, source: 'llm' })
 
     await decideAndRespond('conv_1', 'can I book the 3D2N trip starting the 14th? Also we will not be at the hotel that day.')
 
@@ -1494,6 +1504,10 @@ describe('decideAndRespond', () => {
       disclosures: [],
       handoffRequired: false,
     })
+    // Pesan ini menyebut satu paket konkret lengkap dengan tanggal, jumlah orang, dan titik
+    // jemput -- persis yang dibaca classifier sejak 2026-09-12. Dulu sinyalnya datang dari
+    // isPackageDetailIntent yang mencocokkan kata "available"/"price"/"included" di teks ini.
+    ;vi.mocked(detectsPackageLinkIntentViaLLM).mockResolvedValue({ wantsPackageLink: true, source: 'llm' })
 
     await decideAndRespond(
       'conv_1',
@@ -4602,5 +4616,84 @@ describe('modelLocationLabel (pure)', () => {
   it('labels a tag without the -cloud suffix as lokal', () => {
     expect(modelLocationLabel('gemma4:31b')).toBe('lokal')
     expect(modelLocationLabel('llama3.1:8b')).toBe('lokal')
+  })
+})
+
+// Dilaporkan 12 September 2026 dari balasan produksi yang sungguh terkirim: pelanggan menulis
+// "we'd like to book your Bromo 1D1N tour from Surabaya" -- menyebut paketnya, minta memesannya
+// -- dan dikirimi halaman panduan umum "how booking works", bukan halaman tur itu. Penyebabnya
+// BOOKING_INTENT_KEYWORDS memuat "we want to book" tapi tidak "we'd like to book", dan
+// isPackageDetailIntent menuntut salah satu kata tanyanya ("price"/"available"/"included"/...)
+// yang tidak dipakai pesan itu. Seluruh fakta di balasan itu benar dan verifikasi lolos --
+// hanya linknya yang salah, jenis kekeliruan yang tidak bisa dilihat pemeriksa grounding mana
+// pun. Pemilihan link sekarang memakai sinyal LLM; kedua predikat kata kunci turun jadi
+// cadangannya.
+describe('pemilihan link: halaman paket vs halaman kebijakan', () => {
+  const bromo = pkg({
+    packageKey: 'bromo-1d1n',
+    destinationTokens: ['bromo'],
+    title: '1 Day Bromo Midnight Experience from Surabaya',
+    origin: 'Surabaya',
+    dayCount: 1,
+    priceIdr: 1550000,
+    links: { details: 'https://javavolcano-touroperator.com/tours/from-surabaya/bromo-1d1n' },
+  })
+
+  function stubBromoTurn() {
+    vi.mocked(ensureFreshBookingData).mockResolvedValue(null)
+    vi.mocked(classifySalesNeed).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
+    vi.mocked(matchDestination).mockReturnValue({ destination: 'bromo', matches: [bromo] })
+    vi.mocked(checkRouteGate).mockReturnValue({ status: 'clear' })
+    vi.mocked(classifyTopicViaLLM).mockResolvedValue({ topic: 'booking', source: 'llm' })
+    vi.mocked(resolveKnowledgeForTopic).mockReturnValue({
+      factualLines: ['JVTO accepts bookings only through the official website.'],
+      detailLines: [],
+      primaryLink: 'https://javavolcano-touroperator.com/travel-guide/booking-information',
+      disclosures: [],
+      handoffRequired: false,
+    })
+    vi.mocked(extractTripPreferences).mockResolvedValue({
+      preferences: { origin: 'Surabaya', dayCount: 1, finishCity: null, pax: 2 },
+      source: 'llm',
+    })
+    mockPrisma.conversation.findUniqueOrThrow.mockResolvedValue({
+      id: 'conv_1', tripBrief: { declinedTripPreferences: true }, bookingData: null, bookingCheckedAt: new Date(),
+      contact: { phone: '6281234567890' },
+    } as never)
+  }
+
+  it('mengirim halaman paket saat pelanggan menyebut satu paket tertentu', async () => {
+    stubBromoTurn()
+    vi.mocked(detectsPackageLinkIntentViaLLM).mockResolvedValue({ wantsPackageLink: true, source: 'llm' })
+
+    await decideAndRespond('conv_1', "We're 2 people and we'd like to book your Bromo 1D1N tour from Surabaya for 12-13 September.")
+
+    const [, opts] = llmCall(0)
+    expect(opts.system).toContain('https://javavolcano-touroperator.com/tours/from-surabaya/bromo-1d1n')
+    expect(opts.system).not.toContain('travel-guide/booking-information')
+  })
+
+  it('tetap mengirim halaman kebijakan untuk pertanyaan umum', async () => {
+    stubBromoTurn()
+    vi.mocked(detectsPackageLinkIntentViaLLM).mockResolvedValue({ wantsPackageLink: false, source: 'llm' })
+
+    await decideAndRespond('conv_1', 'how does booking work with you?')
+
+    const [, opts] = llmCall(0)
+    expect(opts.system).toContain('travel-guide/booking-information')
+  })
+
+  // Kata kunci lama tidak dihapus, ia turun pangkat: saat model gagal/timeout, pemilihan link
+  // harus tetap bekerja untuk frasa-frasa yang memang ada di daftarnya.
+  it('menyerahkan kedua predikat kata kunci lama sebagai cadangan classifier', async () => {
+    stubBromoTurn()
+    vi.mocked(detectsPackageLinkIntentViaLLM).mockResolvedValue({ wantsPackageLink: false, source: 'llm' })
+
+    await decideAndRespond('conv_1', 'we want to book this tour')
+
+    const fallback = vi.mocked(detectsPackageLinkIntentViaLLM).mock.calls[0][1]
+    expect(fallback('we want to book this tour')).toBe(true)
+    expect(fallback('what is the price of the bromo tour?')).toBe(true)
+    expect(fallback('is the weather good in september?')).toBe(false)
   })
 })
