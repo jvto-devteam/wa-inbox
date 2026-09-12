@@ -1092,6 +1092,25 @@ describe('ThreadView — lompat ke pesan tertentu', () => {
     scrollSpy.mockRestore()
   })
 
+  // Ketujuh gap terbuka di produksi hari ini ada di SATU percakapan, jadi "gap berikutnya"
+  // hampir selalu berarti pesan lain di thread yang sudah terbuka. ThreadView tidak remount di
+  // situ (key-nya conversationId), dan gulungan pertamanya sekali-jalan -- tanpa penanganan
+  // khusus, notifikasi kedua hanya memindahkan cincin sorot ke pesan yang bisa jauh di luar
+  // layar, dan operator lagi-lagi melihat "tidak terjadi apa-apa".
+  it('menggulung ke pesan gap berikutnya di percakapan yang sama', async () => {
+    const scrollSpy = vi.spyOn(Element.prototype, 'scrollIntoView').mockImplementation(() => {})
+    stubThread([inbound, botReply])
+
+    const { rerender } = render(<ThreadView conversationId="conv_1" focusMessageId="m_bot" />)
+    await waitFor(() => expect(scrollSpy).toHaveBeenCalledWith({ block: 'center' }))
+    scrollSpy.mockClear()
+
+    rerender(<ThreadView conversationId="conv_1" focusMessageId="m_in" />)
+
+    await waitFor(() => expect(scrollSpy).toHaveBeenCalledWith({ block: 'center' }))
+    scrollSpy.mockRestore()
+  })
+
   it('membuka panel perbaikan untuk pesan yang diminta', async () => {
     stubThread([inbound, botReply])
 

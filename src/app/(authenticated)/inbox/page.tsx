@@ -1,6 +1,6 @@
 'use client'
 import { Suspense, useState } from 'react'
-import { useSearchParams } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { MessagesSquare } from 'lucide-react'
 import { ConversationList } from '@/components/inbox/ConversationList'
 import { ThreadView } from '@/components/inbox/ThreadView'
@@ -13,11 +13,39 @@ function InboxPageContent() {
   // once on mount as the initial state rather than synced continuously via an effect, so a user
   // manually picking a different conversation from ConversationList afterward doesn't get
   // stomped back to the URL's original value.
+  const router = useRouter()
   const searchParams = useSearchParams()
-  const [selectedId, setSelectedId] = useState<string | null>(() => searchParams.get('conversation'))
+  const urlConversation = searchParams.get('conversation')
+  const urlMessage = searchParams.get('message')
+  const [selectedId, setSelectedId] = useState<string | null>(urlConversation)
   // Dibaca sekali, dengan alasan yang sama seperti `conversation` di atas. Dilepas begitu
   // operator berpindah percakapan: menyorot pesan milik percakapan lain tidak berarti apa-apa.
-  const [focusMessageId, setFocusMessageId] = useState<string | null>(() => searchParams.get('message'))
+  const [focusMessageId, setFocusMessageId] = useState<string | null>(urlMessage)
+
+  // Lonceng gap ada di SETIAP halaman, /inbox termasuk. Menekan salah satu isinya dari /inbox
+  // adalah navigasi ke rute yang sama dengan query berbeda, dan React mempertahankan komponen
+  // yang sudah terpasang -- inisialisasi useState di atas tidak dijalankan ulang, jadi URL-nya
+  // berubah sementara layarnya tidak. Itulah "diklik, tidak terjadi apa-apa" yang dilaporkan.
+  //
+  // Yang memicu sinkronisasi adalah query yang BERUBAH, bukan query yang ada: membaca URL pada
+  // setiap render akan menarik balik percakapan yang baru saja dipilih operator sendiri, persis
+  // yang dihindari oleh useState-sekali-baca semula.
+  //
+  // Penyesuaiannya di fase render, bukan di useEffect: ini pola "menyesuaikan state saat prop
+  // berubah" milik React, dan React membuang render yang sedang berjalan lalu mengulangnya
+  // dengan nilai baru SEBELUM apa pun tergambar. Versi useEffect-nya menggambar satu bingkai
+  // dengan percakapan lama dulu, dan ditolak lint di repo ini (cascading renders).
+  const urlKey = `${urlConversation ?? ''}|${urlMessage ?? ''}`
+  const [lastUrlKey, setLastUrlKey] = useState(urlKey)
+  if (urlKey !== lastUrlKey) {
+    setLastUrlKey(urlKey)
+    // URL tanpa percakapan (mis. operator mengetik /inbox polos) tidak menutup apa pun yang
+    // sedang dibaca -- ia hanya bukan permintaan untuk membuka sesuatu.
+    if (urlConversation) {
+      setSelectedId(urlConversation)
+      setFocusMessageId(urlMessage)
+    }
+  }
   // Hanya berlaku dari xl ke atas -- lihat komentar geometri di bawah. Di bawah xl panel kontak
   // memang tidak punya kolom, jadi tombolnya pun tidak dirender di sana (ThreadView).
   const [contactPanelOpen, setContactPanelOpen] = useState(true)
@@ -60,6 +88,19 @@ function InboxPageContent() {
         onSelect={(id) => {
           setSelectedId(id)
           setFocusMessageId(null)
+          // Pilihan manual ikut ditulis ke URL supaya "apa yang tertulis di URL" dan "apa yang
+          // terlihat di layar" tidak pernah berpisah. Tanpa ini, menekan gap yang SAMA setelah
+          // operator berpindah percakapan sendiri tidak melakukan apa-apa: href gap itu identik
+          // dengan URL lama yang masih tertinggal, jadi tidak ada query yang berubah untuk
+          // disinkronkan. `replace`, bukan `push`: berpindah percakapan bukan langkah riwayat,
+          // dan setiap klik di daftar akan menumpuk satu entri tombol-kembali kalau ia jadi.
+          //
+          // `lastUrlKey` sengaja TIDAK disetel di sini ke URL yang sebentar lagi berlaku.
+          // Navigasi itu asinkron: menebaknya lebih dulu membuat URL yang masih tertinggal
+          // terbaca sebagai "query berubah" pada render berikutnya, dan penyesuaian di atas
+          // justru menarik balik percakapan yang baru saja diklik. Biarkan ia mencatat apa yang
+          // BENAR-BENAR terlihat; saat replace mendarat, penyesuaiannya menjadi no-op.
+          router.replace(`/inbox?conversation=${encodeURIComponent(id)}`, { scroll: false })
         }}
         className={cn(selectedId && 'max-md:hidden')}
       />

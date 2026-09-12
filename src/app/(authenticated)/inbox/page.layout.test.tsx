@@ -18,6 +18,9 @@ let mockSearchParams: URLSearchParams
 
 vi.mock('next/navigation', () => ({
   useSearchParams: () => mockSearchParams,
+  // Dipakai InboxPage untuk mencerminkan percakapan pilihan operator ke URL; cangkang tiga
+  // kolom tidak peduli isinya, hanya tidak boleh meledak saat dipanggil.
+  useRouter: () => ({ replace: () => {} }),
 }))
 
 // Sama seperti page.test.tsx, tiga anaknya dipalsukan -- tapi di sini mereka MENERUSKAN

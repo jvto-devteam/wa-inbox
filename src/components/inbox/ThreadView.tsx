@@ -125,6 +125,7 @@ export function ThreadView({
   const unreadDividerRef = useRef<HTMLDivElement>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
   const focusRef = useRef<HTMLDivElement>(null)
+  const lastFocusScrolledRef = useRef<string | null>(null)
   // Runs the initial scroll-into-place exactly once per opened conversation (ThreadView
   // remounts on conversation switch -- see the `key` on its call site -- so this never needs
   // resetting itself).
@@ -170,11 +171,26 @@ export function ThreadView({
     // sini justru untuk melihat jawaban itu, bukan untuk melanjutkan bacaan.
     if (focusRef.current) {
       focusRef.current.scrollIntoView({ block: 'center' })
+      // Dicatat supaya efek di bawah -- yang mengurus PERGANTIAN pesan sorot -- tidak
+      // menggulung ke elemen yang sama sekali lagi pada pemasangan pertama.
+      lastFocusScrolledRef.current = focusMessageId ?? null
       return
     }
     const target = unreadDividerRef.current ?? bottomRef.current
     target?.scrollIntoView({ block: unreadDividerRef.current ? 'start' : 'end' })
   }, [messagesLoaded, detailLoaded])
+
+  // Dua notifikasi gap di percakapan yang SAMA adalah kasus biasa, bukan pengecualian. Thread-
+  // nya tidak dipasang ulang saat itu terjadi (ThreadView di-key pada conversationId, bukan
+  // pesan), dan gulungan pertama di atas sudah terkunci `hasScrolledRef`. Tanpa efek ini
+  // notifikasi kedua hanya memindahkan cincin sorot -- ke pesan yang bisa berada jauh di luar
+  // layar, yang bagi operator tidak bisa dibedakan dari tombol yang tidak berfungsi.
+  useEffect(() => {
+    if (!focusMessageId || !messagesLoaded) return
+    if (lastFocusScrolledRef.current === focusMessageId) return
+    lastFocusScrolledRef.current = focusMessageId
+    focusRef.current?.scrollIntoView({ block: 'center' })
+  }, [focusMessageId, messagesLoaded])
 
   useEffect(() => {
     fetchJson<Agent[]>('/api/accounts')
