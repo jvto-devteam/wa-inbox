@@ -12,6 +12,15 @@ vi.mock('next/navigation', () => ({ usePathname: () => pathname() }))
 
 beforeEach(() => {
   pathname.mockReturnValue('/bot-control')
+  // AppRail memasang GapBell, yang membuka EventSource sendiri; jsdom tidak punya kelas itu.
+  // Stub no-op sudah cukup -- perilaku loncengnya diuji di src/components/GapBell.test.tsx.
+  vi.stubGlobal(
+    'EventSource',
+    class {
+      onmessage: ((event: MessageEvent) => void) | null = null
+      close = vi.fn()
+    }
+  )
 })
 
 afterEach(() => {

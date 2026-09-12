@@ -59,7 +59,11 @@ describe('authenticated route group', () => {
   it('opens the SSE subscription and asks for notification permission on authenticated pages', () => {
     render(<AuthenticatedLayout>{<div>halaman</div>}</AuthenticatedLayout>)
 
-    expect(FakeEventSource.urls).toEqual(['/api/sse'])
+    // Dua langganan, bukan satu: NotificationListener (suara + notifikasi browser untuk
+    // handoff) dan GapBell di dalam AppRail (lencana gap knowledge, naik seketika). Yang
+    // dijaga test ini tetap sama seperti sebelumnya -- keduanya hanya hidup DI DALAM grup
+    // terautentikasi, dan /login tidak bisa menjangkaunya.
+    expect(FakeEventSource.urls).toEqual(['/api/sse', '/api/sse'])
     expect(requestPermission).toHaveBeenCalled()
   })
 

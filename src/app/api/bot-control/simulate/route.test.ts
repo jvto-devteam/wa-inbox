@@ -30,6 +30,9 @@ const result = {
   wouldSendViaChannel: 'UNOFFICIAL' as const,
   decisionRunId: 'run_sim_1',
   latencyMs: 1200,
+  // Wajib sejak SimulationResult membawa knowledge (panel perbaikan di Inbox membacanya);
+  // null di sini karena keputusan tiruan test ini tidak merakit fakta apa pun.
+  knowledge: null,
 }
 
 beforeEach(() => {
