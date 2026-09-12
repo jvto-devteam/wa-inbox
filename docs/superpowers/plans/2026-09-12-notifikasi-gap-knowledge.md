@@ -710,7 +710,7 @@ EOF
 
 Otorisasi: `getSession` saja, tanpa `hasAdminPowers` — konsisten dengan route `/api/inbox/*` lain yang sudah ada dan dengan pengecualian CLAUDE.md §6. Route lama `/api/bot/knowledge-gaps` tidak disentuh.
 
-- [ ] **Step 1: Tulis test yang gagal — `src/app/api/inbox/gaps/route.test.ts`**
+- [x] **Step 1: Tulis test yang gagal — `src/app/api/inbox/gaps/route.test.ts`**
 
 ```ts
 /**
@@ -830,7 +830,7 @@ describe('GET /api/inbox/gaps', () => {
 })
 ```
 
-- [ ] **Step 2: Tulis test yang gagal — `src/app/api/inbox/gaps/[id]/resolve/route.test.ts`**
+- [x] **Step 2: Tulis test yang gagal — `src/app/api/inbox/gaps/[id]/resolve/route.test.ts`**
 
 ```ts
 /**
@@ -910,12 +910,12 @@ describe('POST /api/inbox/gaps/[id]/resolve', () => {
 })
 ```
 
-- [ ] **Step 3: Jalankan, pastikan GAGAL**
+- [x] **Step 3: Jalankan, pastikan GAGAL**
 
 Run: `npx vitest run src/app/api/inbox/gaps/route.test.ts "src/app/api/inbox/gaps/[id]/resolve/route.test.ts"`
 Expected: FAIL — `Failed to resolve import "./route"` di kedua berkas.
 
-- [ ] **Step 4: Implementasi — `src/app/api/inbox/gaps/route.ts`**
+- [x] **Step 4: Implementasi — `src/app/api/inbox/gaps/route.ts`**
 
 ```ts
 import { NextResponse } from 'next/server'
@@ -982,7 +982,7 @@ export async function GET(req: Request) {
 }
 ```
 
-- [ ] **Step 5: Implementasi — `src/app/api/inbox/gaps/[id]/resolve/route.ts`**
+- [x] **Step 5: Implementasi — `src/app/api/inbox/gaps/[id]/resolve/route.ts`**
 
 ```ts
 import { NextResponse } from 'next/server'
@@ -1023,12 +1023,12 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 }
 ```
 
-- [ ] **Step 6: Jalankan, pastikan LULUS**
+- [x] **Step 6: Jalankan, pastikan LULUS**
 
 Run: `npx vitest run src/app/api/inbox/gaps/route.test.ts "src/app/api/inbox/gaps/[id]/resolve/route.test.ts"`
 Expected: PASS (12 test).
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add src/app/api/inbox/gaps/route.ts src/app/api/inbox/gaps/route.test.ts \
