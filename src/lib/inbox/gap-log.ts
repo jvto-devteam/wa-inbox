@@ -1,6 +1,6 @@
 import { prisma } from '@/lib/db'
 import { broadcast } from '@/lib/realtime'
-import { DEFERRED_KNOWLEDGE_REPLY_REASON, knowledgeGapReasonForDecision, UNSOURCED_REPLY_REASON } from './gap-signal'
+import { DEFERRED_KNOWLEDGE_REPLY_REASON, knowledgeGapForDecision, UNSOURCED_REPLY_REASON } from './gap-signal'
 import type { BotDecision } from '@/lib/bot/types'
 
 /** Alasan gap untuk balasan FAQ: tidak bersumber, atau ada sub-pertanyaan yang ditunda. */
@@ -27,16 +27,19 @@ export async function recordUnsourcedReplyGap(params: {
   const { decision } = params
   // Pemeriksaan mode kedua kalinya ada demi penyempitan tipe, bukan demi logika: `topic` dan
   // `sourceTopic` hanya ada di varian faq.
-  const reason = knowledgeGapReasonForDecision(decision)
-  if (!reason || decision.mode !== 'faq') return
+  const gap = knowledgeGapForDecision(decision, params.inboundText)
+  if (!gap || decision.mode !== 'faq') return
 
   try {
     await prisma.knowledgeGapLog.create({
       data: {
         conversationId: params.conversationId,
         topic: decision.topic ?? decision.sourceTopic,
-        reason,
+        reason: gap.reason,
         messageText: params.inboundText,
+        missingQuestion: gap.missingQuestion,
+        answerSnippet: gap.answerSnippet,
+        answerParagraph: gap.answerParagraph,
         messageId: params.messageId ?? null,
         runId: params.runId,
       },

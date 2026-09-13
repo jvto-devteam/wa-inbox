@@ -16,6 +16,9 @@ type KnowledgeGap = {
   topic: string
   reason: string
   messageText: string
+  missingQuestion?: string | null
+  answerSnippet?: string | null
+  answerParagraph?: number | null
   createdAt: string
   resolvedAt: string | null
 }
@@ -139,7 +142,8 @@ export default function KnowledgeGapsPage() {
                 {/* Wadahnya ikut melebar, kalimat pelanggannya tidak: baris teks di atas ~80
                     karakter melelahkan dibaca, dan ini satu-satunya bagian baris yang berupa
                     prosa. */}
-                <p className="mt-1 max-w-4xl text-sm text-ink-muted">{g.messageText}</p>
+                <p className="mt-1 max-w-4xl text-sm text-ink-muted">{g.missingQuestion ?? g.messageText}</p>
+                {g.answerSnippet && <p className="mt-1 max-w-4xl text-xs text-ink-subtle">{g.answerSnippet}</p>}
               </li>
             ))}
           </ul>

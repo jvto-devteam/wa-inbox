@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/react'
+import { render, screen, fireEvent, cleanup } from '@testing-library/react'
 import { FixAnswerPanel } from './FixAnswerPanel'
 import type { BotDecision } from '@/lib/bot/types'
 
@@ -47,7 +47,23 @@ const RUN_ROUTES: Record<string, Route> = {
   'GET /api/bot-control/decisions/run_1': {
     body: { id: 'run_1', conversationId: 'conv_1', inboundText: QUESTION, replyText: 'Harga ATV Rp350.000.' },
   },
-  'GET /api/inbox/gaps?messageId=msg_bot&limit=1': { body: { count: 1, items: [{ id: 'gap_1' }] } },
+  'GET /api/inbox/gaps?messageId=msg_bot&limit=1': {
+    body: {
+      count: 1,
+      items: [
+        {
+          id: 'gap_1',
+          reason: 'reply_deferred_knowledge',
+          topic: 'vehicle',
+          messageText: 'Can we bring ten suitcases?',
+          missingQuestion: 'Can we bring ten suitcases?',
+          answerSnippet: 'Let me check with our team about Ijen safety.',
+          answerParagraph: 0,
+          createdAt: '2026-09-13T02:01:00.000Z',
+        },
+      ],
+    },
+  },
 }
 
 const SAVED = { sourceId: 'ks_1', revisionId: 'krev_4', version: 4, status: 'PUBLISHED', title: 'FAQ Harga ATV', flagged: true }
@@ -102,6 +118,19 @@ describe('FixAnswerPanel', () => {
     expect(screen.getAllByRole('button', { name: 'Edit' })).toHaveLength(1)
   })
 
+  it('menjelaskan gap knowledge yang melekat pada jawaban ini', async () => {
+    stubFetch(RUN_ROUTES)
+    renderPanel()
+
+    expect(await screen.findByText('Gap knowledge pada jawaban ini')).toBeInTheDocument()
+    expect(screen.getByText('Ada bagian jawaban yang belum punya knowledge')).toBeInTheDocument()
+    expect(screen.getByText('Topik: vehicle')).toBeInTheDocument()
+    expect(screen.getByText('Pertanyaan yang perlu knowledge')).toBeInTheDocument()
+    expect(screen.getByText('Bagian jawaban yang belum bersumber')).toBeInTheDocument()
+    expect(screen.getAllByText('Can we bring ten suitcases?').length).toBeGreaterThan(0)
+    expect(screen.getByText('Let me check with our team about Ijen safety.')).toBeInTheDocument()
+  })
+
   it('Edit: membuka editor dari revisi PUBLISHED terkini, lalu menyimpan & mengaktifkan', async () => {
     const fetchMock = stubFetch({
       ...RUN_ROUTES,
@@ -143,7 +172,7 @@ describe('FixAnswerPanel', () => {
     renderPanel()
 
     fireEvent.click(await screen.findByRole('button', { name: 'Tambah jawaban yang benar' }))
-    expect(screen.getByLabelText('Pertanyaan item 1')).toHaveValue(QUESTION)
+    expect(screen.getByLabelText('Pertanyaan item 1')).toHaveValue('Can we bring ten suitcases?')
     expect(screen.getByLabelText('Jawaban item 1')).toHaveValue('')
 
     fireEvent.change(screen.getByLabelText('Jawaban item 1'), { target: { value: 'ATV 1 jam Rp400.000 per orang.' } })
@@ -153,8 +182,8 @@ describe('FixAnswerPanel', () => {
     expect(await screen.findByText(`Aktif: ${QUESTION} v1`)).toBeInTheDocument()
     expect(fixBody(fetchMock)).toEqual({
       kind: 'new',
-      title: QUESTION,
-      items: [{ question: QUESTION, answer: 'ATV 1 jam Rp400.000 per orang.' }],
+      title: 'Can we bring ten suitcases?',
+      items: [{ question: 'Can we bring ten suitcases?', answer: 'ATV 1 jam Rp400.000 per orang.' }],
       reason: REASON,
     })
   })

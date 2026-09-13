@@ -469,6 +469,48 @@ describe('MessageBubble — Perbaiki', () => {
     render(<MessageBubble message={{ ...botReply, direction: 'INBOUND', sentBy: 'CUSTOMER', botTrace: null }} />)
     expect(screen.queryByLabelText('Perbaiki jawaban bot')).not.toBeInTheDocument()
   })
+
+  it('menandai balasan bot yang punya gap knowledge dengan border dan ikon warning', () => {
+    const { container } = render(
+      <MessageBubble
+        message={{
+          ...botReply,
+          knowledgeGap: {
+            id: 'gap_1',
+            topic: 'vehicle',
+            reason: 'reply_deferred_knowledge',
+            messageText: 'Can we bring ten suitcases?',
+            createdAt: '2026-09-13T02:01:00.000Z',
+          },
+        }}
+      />
+    )
+
+    expect(screen.getByLabelText('Ada gap knowledge pada jawaban ini')).toBeInTheDocument()
+    expect(screen.getByText('Ada bagian jawaban yang belum punya knowledge')).toBeInTheDocument()
+    expect(container.querySelector('.border-warning')).toBeInTheDocument()
+  })
+
+  it('klik ikon warning membuka panel perbaikan untuk jawaban itu', () => {
+    render(
+      <MessageBubble
+        message={{
+          ...botReply,
+          knowledgeGap: {
+            id: 'gap_1',
+            topic: 'vehicle',
+            reason: 'reply_deferred_knowledge',
+            messageText: 'Can we bring ten suitcases?',
+            createdAt: '2026-09-13T02:01:00.000Z',
+          },
+        }}
+      />
+    )
+
+    fireEvent.click(screen.getByLabelText('Ada gap knowledge pada jawaban ini'))
+
+    expect(screen.getByText('panel perbaikan msg_bot')).toBeInTheDocument()
+  })
 })
 
 describe('MessageBubble retry (Phase 6)', () => {

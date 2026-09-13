@@ -3,6 +3,16 @@ import type { SentTemplatePayload } from '@/lib/meta/carousel-types'
 import { readTopicLabels, type TopicLabels } from '@/lib/inbox/topic-labels-schema'
 
 export type ReplyToView = { id: string; content: string | null; type: string; sentBy: string }
+export type MessageKnowledgeGap = {
+  id: string
+  topic: string
+  reason: string
+  messageText: string
+  missingQuestion: string | null
+  answerSnippet: string | null
+  answerParagraph: number | null
+  createdAt: string
+}
 
 export type MessageView = {
   id: string
@@ -18,6 +28,7 @@ export type MessageView = {
   createdAt: string
   botTrace: unknown
   topicLabels: TopicLabels | null
+  knowledgeGap: MessageKnowledgeGap | null
   replyTo: ReplyToView | null
   templatePayload: SentTemplatePayload | null
 }
@@ -29,7 +40,10 @@ export type MessageView = {
  * a content/type/sender snapshot, not the parent's own media, so nothing beyond
  * that is carried across.
  */
-export function serializeMessage(m: Message & { replyTo?: Message | null }): MessageView {
+export function serializeMessage(
+  m: Message & { replyTo?: Message | null },
+  knowledgeGap: MessageKnowledgeGap | null = null
+): MessageView {
   return {
     id: m.id,
     direction: m.direction,
@@ -44,6 +58,7 @@ export function serializeMessage(m: Message & { replyTo?: Message | null }): Mes
     createdAt: m.createdAt.toISOString(),
     botTrace: m.botTrace,
     topicLabels: readTopicLabels(m.topicLabels),
+    knowledgeGap,
     replyTo: m.replyTo ? { id: m.replyTo.id, content: m.replyTo.content, type: m.replyTo.type, sentBy: m.replyTo.sentBy } : null,
     templatePayload: (m.templatePayload as SentTemplatePayload | null) ?? null,
   }

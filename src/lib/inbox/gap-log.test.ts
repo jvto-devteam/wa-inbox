@@ -54,6 +54,9 @@ describe('recordUnsourcedReplyGap', () => {
         topic: 'price',
         reason: UNSOURCED_REPLY_REASON,
         messageText: 'berapa harga ATV sekarang?',
+        missingQuestion: 'berapa harga ATV sekarang?',
+        answerSnippet: 'Halo kak!',
+        answerParagraph: 0,
         messageId: 'msg_bot',
         runId: 'run_1',
       },
@@ -85,6 +88,9 @@ describe('recordUnsourcedReplyGap', () => {
     expect(mockPrisma.knowledgeGapLog.create.mock.calls[0][0].data).toMatchObject({
       reason: DEFERRED_KNOWLEDGE_REPLY_REASON,
       topic: 'vehicle',
+      missingQuestion: 'berapa harga ATV sekarang?',
+      answerSnippet: 'Harga totalnya Rp9.100.000. Let me check with our team about your luggage and get back to you shortly.',
+      answerParagraph: 0,
     })
   })
 

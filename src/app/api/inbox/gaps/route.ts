@@ -52,6 +52,9 @@ export async function GET(req: Request) {
         topic: gap.topic,
         reason: gap.reason,
         messageText: gap.messageText,
+        missingQuestion: gap.missingQuestion,
+        answerSnippet: gap.answerSnippet,
+        answerParagraph: gap.answerParagraph,
         createdAt: gap.createdAt.toISOString(),
       })),
     })

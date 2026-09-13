@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { DEFERRED_KNOWLEDGE_REPLY_REASON, isUnsourcedFaqReply, knowledgeGapReasonForDecision, UNSOURCED_REPLY_REASON } from './gap-signal'
+import { DEFERRED_KNOWLEDGE_REPLY_REASON, isUnsourcedFaqReply, knowledgeGapForDecision, knowledgeGapReasonForDecision, UNSOURCED_REPLY_REASON } from './gap-signal'
 import type { BotDecision, DecisionKnowledge } from '@/lib/bot/types'
 
 function knowledge(overrides: Partial<DecisionKnowledge> = {}): DecisionKnowledge {
@@ -125,5 +125,55 @@ describe('knowledgeGapReasonForDecision', () => {
         }),
       ),
     ).toBeNull()
+  })
+})
+
+describe('knowledgeGapForDecision', () => {
+  it('memilih sub-pertanyaan paling dekat untuk paragraf deferred knowledge', () => {
+    expect(
+      knowledgeGapForDecision(
+        faq({
+          draft:
+            'Hi! Let me check with our team about Ijen safety and get back to you shortly.\n\nFor cancellation, day-1 cancellation is not refundable.',
+          sourceTopic: 'cancellation',
+          topic: 'cancellation',
+          knowledge: knowledge({
+            catalogLines: ['Day-1 cancellation is not refundable.'],
+            managedLines: [],
+            attributions: [{ paragraph: 1, lines: [{ kind: 'catalog', line: 'Day-1 cancellation is not refundable.' }] }],
+          }),
+        }),
+        'Is Ijen safe? Can I cancel tour at the day 1 trip?',
+      ),
+    ).toEqual({
+      reason: DEFERRED_KNOWLEDGE_REPLY_REASON,
+      missingQuestion: 'Is Ijen safe?',
+      answerSnippet: 'Hi! Let me check with our team about Ijen safety and get back to you shortly.',
+      answerParagraph: 0,
+    })
+  })
+
+  it('menandai paragraf tanpa attribution walau paragraf lain bersumber', () => {
+    expect(
+      knowledgeGapForDecision(
+        faq({
+          draft:
+            'Hi! Ijen is safe for travelers with normal fitness.\n\nFor cancellation, day-1 cancellation is not refundable.',
+          sourceTopic: 'cancellation',
+          topic: 'cancellation',
+          knowledge: knowledge({
+            catalogLines: ['Day-1 cancellation is not refundable.'],
+            managedLines: [],
+            attributions: [{ paragraph: 1, lines: [{ kind: 'catalog', line: 'Day-1 cancellation is not refundable.' }] }],
+          }),
+        }),
+        'Is Ijen safe? Can I cancel tour at the day 1 trip?',
+      ),
+    ).toEqual({
+      reason: UNSOURCED_REPLY_REASON,
+      missingQuestion: 'Is Ijen safe?',
+      answerSnippet: 'Hi! Ijen is safe for travelers with normal fitness.',
+      answerParagraph: 0,
+    })
   })
 })

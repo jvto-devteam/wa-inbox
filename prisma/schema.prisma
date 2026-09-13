@@ -222,6 +222,14 @@ model KnowledgeGapLog {
   // menghapus catatan bahwa bot pernah menjawab kurang knowledge.
   messageId      String?
   runId          String?
+  // Detail spesifik gap per sub-pertanyaan/paragraf. Nullable supaya baris lama tetap valid:
+  // sebelum 2026-09-13, gap hanya tahu pesan customer utuh, bukan bagian mana yang tidak
+  // punya knowledge. `missingQuestion` dipakai editor Inbox untuk prefill pertanyaan knowledge
+  // baru secara spesifik; `answerSnippet`/`answerParagraph` menunjukkan bagian jawaban bot
+  // yang memicu warning.
+  missingQuestion String?
+  answerSnippet   String?
+  answerParagraph Int?
   // Kosong = masih terbuka. Diisi saat operator menyatakan jawaban barunya sudah sesuai,
   // atau saat ia menekan "Tandai selesai".
   resolvedAt     DateTime?

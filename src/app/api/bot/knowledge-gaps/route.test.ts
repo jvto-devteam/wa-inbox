@@ -18,6 +18,9 @@ function row(overrides: Record<string, unknown> = {}) {
     topic: 'price',
     reason: 'reply_unsourced',
     messageText: 'berapa harga ATV sekarang?',
+    missingQuestion: 'berapa harga ATV sekarang?',
+    answerSnippet: 'Halo kak!',
+    answerParagraph: 0,
     createdAt: new Date('2026-09-12T02:00:00.000Z'),
     resolvedAt: null,
     conversation: { contact: { name: 'Bruno' } },
@@ -35,7 +38,14 @@ describe('GET /api/bot/knowledge-gaps', () => {
   it('membawa resolvedAt supaya halaman bisa membedakan yang sudah ditangani', async () => {
     const body = (await (await GET(new Request('http://localhost/api/bot/knowledge-gaps'))).json()) as Array<Record<string, unknown>>
 
-    expect(body[0]).toMatchObject({ id: 'gap_1', reason: 'reply_unsourced', resolvedAt: null })
+    expect(body[0]).toMatchObject({
+      id: 'gap_1',
+      reason: 'reply_unsourced',
+      missingQuestion: 'berapa harga ATV sekarang?',
+      answerSnippet: 'Halo kak!',
+      answerParagraph: 0,
+      resolvedAt: null,
+    })
   })
 
   it('meneruskan stempel selesai apa adanya', async () => {

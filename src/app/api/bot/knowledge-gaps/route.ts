@@ -23,6 +23,9 @@ export async function GET(request: Request) {
       topic: g.topic,
       reason: g.reason,
       messageText: g.messageText,
+      missingQuestion: g.missingQuestion,
+      answerSnippet: g.answerSnippet,
+      answerParagraph: g.answerParagraph,
       createdAt: g.createdAt,
       // Halaman ini menampilkan SEMUA gap, termasuk yang sudah ditangani -- lonceng yang hanya
       // mengurus yang belum (lihat /api/inbox/gaps).

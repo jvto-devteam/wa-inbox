@@ -371,6 +371,51 @@ describe('ThreadView live delivery-status updates', () => {
     expect(screen.queryByLabelText('Cek topik')).not.toBeInTheDocument()
   })
 
+  it('memuat ulang message list saat knowledge.gap tiba, lalu menampilkan warning di bubble terkait', async () => {
+    const cleanReply = {
+      id: 'm_bot',
+      direction: 'OUTBOUND',
+      content: 'Let me check with our team.',
+      channel: 'OFFICIAL',
+      sentBy: 'BOT',
+      deliveryStatus: 'SENT',
+      createdAt: new Date().toISOString(),
+      botTrace: { mode: 'faq', draft: 'Let me check with our team.', sourceTopic: 'vehicle' },
+      knowledgeGap: null,
+    }
+    const gappedReply = {
+      ...cleanReply,
+      knowledgeGap: {
+        id: 'gap_1',
+        topic: 'vehicle',
+        reason: 'reply_deferred_knowledge',
+        messageText: 'Can we bring ten suitcases?',
+        missingQuestion: 'Can we bring ten suitcases?',
+        answerSnippet: 'Let me check with our team.',
+        answerParagraph: 0,
+        createdAt: '2026-09-13T02:01:00.000Z',
+      },
+    }
+    let messages: unknown[] = [cleanReply]
+    vi.mocked(fetch).mockImplementation((url) => {
+      const s = String(url)
+      if (s.endsWith('/messages')) return Promise.resolve({ ok: true, json: () => Promise.resolve(messages) } as Response)
+      if (s.endsWith('/api/accounts')) return Promise.resolve({ ok: true, json: () => Promise.resolve([]) } as Response)
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({ botEnabled: false, assignedAgentId: null }) } as Response)
+    })
+
+    render(<ThreadView conversationId="conv_1" />)
+    await waitFor(() => expect(screen.queryByLabelText('Ada gap knowledge pada jawaban ini')).not.toBeInTheDocument())
+
+    messages = [gappedReply]
+    act(() => {
+      FakeEventSource.instances[0].emit({ type: 'knowledge.gap', conversationId: 'conv_1' })
+    })
+
+    await waitFor(() => expect(screen.getByLabelText('Ada gap knowledge pada jawaban ini')).toBeInTheDocument())
+    expect(screen.getByText('Ada bagian jawaban yang belum punya knowledge')).toBeInTheDocument()
+  })
+
   it('ignores a message.updated event for a different conversation', async () => {
     mockBasicFetch([outboundMessage])
 

@@ -11,6 +11,16 @@ import type { BotDecision } from '@/lib/bot/types'
 import type { KnowledgeItem } from '@/lib/bot-control/knowledge-body'
 
 type RunView = { id: string; conversationId: string; inboundText: string; replyText: string | null }
+type GapView = {
+  id: string
+  reason: string
+  topic: string
+  messageText: string
+  missingQuestion?: string | null
+  answerSnippet?: string | null
+  answerParagraph?: number | null
+  createdAt: string
+}
 type LoadState =
   | { status: 'loading' }
   | { status: 'no-run' }
@@ -33,6 +43,12 @@ type Retest =
 
 const MIN_NOTE_LENGTH = 10
 type UsedSource = { key: string; label: string; sourceId?: string }
+const KNOWLEDGE_GAP_LABEL: Record<string, string> = {
+  no_facts_resolved: 'Tidak ada fakta knowledge untuk pertanyaan ini',
+  verification_failed: 'Jawaban gagal diverifikasi terhadap knowledge',
+  reply_unsourced: 'Ada jawaban yang tidak punya knowledge',
+  reply_deferred_knowledge: 'Ada bagian jawaban yang belum punya knowledge',
+}
 
 /** Batas knowledgeItemSchema (question) dan judul yang wajar untuk entri baru. */
 const QUESTION_MAX = 1000
@@ -46,6 +62,10 @@ function usedSources(trace: BotDecision | null): UsedSource[] {
     if (!seen.has(key)) seen.set(key, { key, label: line.source, ...(line.sourceId ? { sourceId: line.sourceId } : {}) })
   }
   return [...seen.values()]
+}
+
+function knowledgeGapLabel(reason: string): string {
+  return KNOWLEDGE_GAP_LABEL[reason] ?? 'Ada gap knowledge pada jawaban ini'
 }
 
 /**
@@ -70,7 +90,7 @@ export function FixAnswerPanel({
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [result, setResult] = useState<FixResult | null>(null)
-  const [gapId, setGapId] = useState<string | null>(null)
+  const [gap, setGap] = useState<GapView | null>(null)
   const [retest, setRetest] = useState<Retest | null>(null)
   const [notSuitable, setNotSuitable] = useState(false)
   const [note, setNote] = useState('')
@@ -107,9 +127,9 @@ export function FixAnswerPanel({
   // hanya tidak ada yang perlu ditutup.
   useEffect(() => {
     let cancelled = false
-    fetchJson<{ items: Array<{ id: string }> }>(`/api/inbox/gaps?messageId=${encodeURIComponent(messageId)}&limit=1`)
+    fetchJson<{ items: GapView[] }>(`/api/inbox/gaps?messageId=${encodeURIComponent(messageId)}&limit=1`)
       .then((feed) => {
-        if (!cancelled) setGapId(feed.items[0]?.id ?? null)
+        if (!cancelled) setGap(feed.items[0] ?? null)
       })
       .catch(() => {})
     return () => {
@@ -141,9 +161,9 @@ export function FixAnswerPanel({
   }
 
   async function confirmSuitable() {
-    if (gapId) {
+    if (gap) {
       try {
-        await fetchJson(`/api/inbox/gaps/${encodeURIComponent(gapId)}/resolve`, { method: 'POST' })
+        await fetchJson(`/api/inbox/gaps/${encodeURIComponent(gap.id)}/resolve`, { method: 'POST' })
       } catch {
         // Ditelan: revisinya sudah aktif, dan gagal menandai gap hanya berarti ia masih muncul
         // di lonceng -- bukan alasan menampilkan kegagalan atas pekerjaan yang berhasil.
@@ -176,11 +196,12 @@ export function FixAnswerPanel({
   }
 
   function openNew(inboundText: string) {
+    const question = gap?.missingQuestion?.trim() || inboundText
     setSaveError(null)
     setEditing({
       kind: 'new',
       title: 'Tambah jawaban yang benar',
-      initial: { title: inboundText.slice(0, TITLE_MAX), summary: '', items: [{ question: inboundText.slice(0, QUESTION_MAX), answer: '' }] },
+      initial: { title: question.slice(0, TITLE_MAX), summary: '', items: [{ question: question.slice(0, QUESTION_MAX), answer: '' }] },
     })
   }
 
@@ -254,6 +275,23 @@ export function FixAnswerPanel({
 
       {load.status === 'ready' && (
         <>
+          {gap && (
+            <div className="space-y-1 rounded-md border border-warning/30 bg-warning-subtle px-3 py-2 text-warning">
+              <p className="font-medium">Gap knowledge pada jawaban ini</p>
+              <p>{knowledgeGapLabel(gap.reason)}</p>
+              <p>{`Topik: ${gap.topic}`}</p>
+              <div className="space-y-0.5 text-ink">
+                <p className="font-medium">Pertanyaan yang perlu knowledge</p>
+                <p className="whitespace-pre-wrap text-ink-muted">{gap.missingQuestion ?? gap.messageText}</p>
+              </div>
+              {gap.answerSnippet && (
+                <div className="space-y-0.5 text-ink">
+                  <p className="font-medium">Bagian jawaban yang belum bersumber</p>
+                  <p className="whitespace-pre-wrap text-ink-muted">{gap.answerSnippet}</p>
+                </div>
+              )}
+            </div>
+          )}
           <div className="space-y-1">
             <p className="font-medium text-ink">Pertanyaan pelanggan</p>
             <p className="whitespace-pre-wrap text-ink-muted">{load.run.inboundText}</p>

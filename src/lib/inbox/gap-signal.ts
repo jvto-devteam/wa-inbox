@@ -1,10 +1,17 @@
 import type { BotDecision } from '@/lib/bot/types'
+import { splitParagraphs } from '@/lib/bot/reply-attribution'
 import { extractRupiahAmounts, extractUrls } from '@/lib/bot/reply-verifier'
 
 export const UNSOURCED_REPLY_REASON = 'reply_unsourced'
 export const DEFERRED_KNOWLEDGE_REPLY_REASON = 'reply_deferred_knowledge'
 
 export type ReplyKnowledgeGapReason = typeof UNSOURCED_REPLY_REASON | typeof DEFERRED_KNOWLEDGE_REPLY_REASON
+export type ReplyKnowledgeGap = {
+  reason: ReplyKnowledgeGapReason
+  missingQuestion: string | null
+  answerSnippet: string | null
+  answerParagraph: number | null
+}
 
 /**
  * Apakah balasan ini menjawab TANPA bersandar pada satu pun fakta yang dikirim ke model.
@@ -23,16 +30,7 @@ export type ReplyKnowledgeGapReason = typeof UNSOURCED_REPLY_REASON | typeof DEF
  *     bukan artinya tidak bersumber.
  */
 export function isUnsourcedFaqReply(decision: BotDecision): boolean {
-  if (decision.mode !== 'faq') return false
-
-  const knowledge = decision.knowledge
-  if (!knowledge) return false
-  if (knowledge.catalogLines.length + knowledge.managedLines.length === 0) return false
-
-  const attributions = knowledge.attributions
-  if (attributions === undefined) return false
-  if (hasVerifiedPriceOrUrl(decision)) return false
-  return attributions.length === 0
+  return knowledgeGapForDecision(decision, null)?.reason === UNSOURCED_REPLY_REASON
 }
 
 /**
@@ -50,16 +48,30 @@ export function isDeferredKnowledgeFaqReply(decision: BotDecision): boolean {
 }
 
 export function knowledgeGapReasonForDecision(decision: BotDecision): ReplyKnowledgeGapReason | null {
-  if (isDeferredKnowledgeFaqReply(decision)) return DEFERRED_KNOWLEDGE_REPLY_REASON
-  if (isUnsourcedFaqReply(decision)) return UNSOURCED_REPLY_REASON
-  return null
+  return knowledgeGapForDecision(decision, null)?.reason ?? null
 }
 
-function hasVerifiedPriceOrUrl(decision: Extract<BotDecision, { mode: 'faq' }>): boolean {
-  const verification = decision.verification
-  if (!verification || verification.status === 'BLOCKED') return false
-  if (verification.fabricatedPrices.length > 0 || verification.unknownUrls.length > 0) return false
-  return extractRupiahAmounts(decision.draft).length > 0 || extractUrls(decision.draft).length > 0
+export function knowledgeGapForDecision(decision: BotDecision, inboundText: string | null): ReplyKnowledgeGap | null {
+  if (decision.mode !== 'faq') return null
+
+  const deferred = deferredParagraph(decision.draft)
+  if (deferred) {
+    return {
+      reason: DEFERRED_KNOWLEDGE_REPLY_REASON,
+      missingQuestion: closestCustomerQuestion(inboundText, deferred.text),
+      answerSnippet: deferred.text,
+      answerParagraph: deferred.index,
+    }
+  }
+
+  const unsourced = unattributedParagraph(decision)
+  if (!unsourced) return null
+  return {
+    reason: UNSOURCED_REPLY_REASON,
+    missingQuestion: closestCustomerQuestion(inboundText, unsourced.text),
+    answerSnippet: unsourced.text,
+    answerParagraph: unsourced.index,
+  }
 }
 
 const DEFERRED_KNOWLEDGE_PATTERNS = [
@@ -71,3 +83,103 @@ const DEFERRED_KNOWLEDGE_PATTERNS = [
   /\bperlu kami cek\b/i,
   /\bakan kami cek\b/i,
 ]
+
+const QUESTION_SPLIT = /[^?]+?\?/g
+const BULLET_PREFIX = /^\s*(?:[-*•]|\d+[.)])\s+/
+const WORDS = /[\p{L}\p{N}]+/gu
+const STOPWORDS = new Set([
+  'yang', 'untuk', 'dari', 'dengan', 'atau', 'dan', 'ada', 'apa', 'apakah', 'adakah', 'bisa',
+  'bisakah', 'boleh', 'saya', 'kami', 'kita', 'anda', 'ini', 'itu', 'berapa', 'kapan', 'dimana',
+  'mana', 'bagaimana', 'gimana', 'kenapa', 'mengapa', 'siapa', 'mohon', 'tolong', 'terima',
+  'kasih', 'selamat', 'halo', 'hallo', 'sudah', 'belum', 'akan', 'juga', 'saja', 'kalau', 'jika',
+  'tapi', 'tetapi', 'karena', 'tersebut', 'tentang', 'seperti', 'punya', 'ingin', 'pengen',
+  'the', 'and', 'for', 'with', 'you', 'are', 'what', 'can', 'how', 'where', 'when', 'does',
+  'have', 'this', 'that', 'there', 'would', 'could', 'should', 'please', 'thanks', 'hello',
+  'about', 'from', 'your', 'much', 'many',
+])
+
+function deferredParagraph(replyText: string): { index: number; text: string } | null {
+  return splitParagraphs(replyText)
+    .map((text, index) => ({ index, text }))
+    .find(({ text }) => DEFERRED_KNOWLEDGE_PATTERNS.some((pattern) => pattern.test(text))) ?? null
+}
+
+function unattributedParagraph(decision: Extract<BotDecision, { mode: 'faq' }>): { index: number; text: string } | null {
+  const knowledge = decision.knowledge
+  if (!knowledge) return null
+  if (knowledge.catalogLines.length + knowledge.managedLines.length === 0) return null
+  const attributions = knowledge.attributions
+  if (attributions === undefined) return null
+  if (attributions.length === 0) {
+    if (hasVerifiedPriceOrUrlInParagraph(decision, decision.draft)) return null
+    return firstAnswerParagraph(decision.draft)
+  }
+
+  const attributed = new Set(attributions.map((a) => a.paragraph))
+  for (const [index, text] of splitParagraphs(decision.draft).entries()) {
+    if (attributed.has(index)) continue
+    if (!isMeaningfulAnswer(text)) continue
+    if (hasVerifiedPriceOrUrlInParagraph(decision, text)) continue
+    return { index, text }
+  }
+  return null
+}
+
+function firstAnswerParagraph(replyText: string): { index: number; text: string } | null {
+  const paragraphs = splitParagraphs(replyText)
+  const index = paragraphs.findIndex((paragraph) => paragraph.trim().length > 0)
+  return index === -1 ? null : { index, text: paragraphs[index] }
+}
+
+function isMeaningfulAnswer(text: string): boolean {
+  const trimmed = text.trim()
+  if (trimmed.length < 12) return false
+  if (/^(?:hi|hello|halo|hallo)[!.\s]*$/i.test(trimmed)) return false
+  if (extractUrls(trimmed).length > 0 && contentWords(trimmed).size <= 2) return false
+  return contentWords(trimmed).size > 0
+}
+
+function hasVerifiedPriceOrUrlInParagraph(decision: Extract<BotDecision, { mode: 'faq' }>, paragraph: string): boolean {
+  const verification = decision.verification
+  if (!verification || verification.status === 'BLOCKED') return false
+  if (verification.fabricatedPrices.length > 0 || verification.unknownUrls.length > 0) return false
+  return extractRupiahAmounts(paragraph).length > 0 || extractUrls(paragraph).length > 0
+}
+
+function splitCustomerQuestions(inboundText: string | null): string[] {
+  const normalized = inboundText?.replace(/\s+/g, ' ').trim()
+  if (!normalized) return []
+  const questionMatches = normalized.match(QUESTION_SPLIT)?.map((q) => q.trim()).filter(Boolean) ?? []
+  if (questionMatches.length > 0) return questionMatches
+  const bullets = inboundText!
+    .split('\n')
+    .map((line) => line.replace(BULLET_PREFIX, '').trim())
+    .filter((line) => line.length > 0)
+  return bullets.length > 1 ? bullets : [normalized]
+}
+
+function closestCustomerQuestion(inboundText: string | null, answerSnippet: string): string | null {
+  const questions = splitCustomerQuestions(inboundText)
+  if (questions.length === 0) return inboundText?.trim() || null
+  if (questions.length === 1) return questions[0]
+
+  const answerWords = contentWords(answerSnippet)
+  let best = questions[0]
+  let bestScore = -1
+  for (const question of questions) {
+    let score = 0
+    for (const word of contentWords(question)) {
+      if (answerWords.has(word)) score += 1
+    }
+    if (score > bestScore) {
+      best = question
+      bestScore = score
+    }
+  }
+  return bestScore > 0 ? best : inboundText?.trim() || best
+}
+
+function contentWords(text: string): Set<string> {
+  const words = text.toLowerCase().match(WORDS) ?? []
+  return new Set(words.filter((word) => word.length >= 4 && !STOPWORDS.has(word)))
+}

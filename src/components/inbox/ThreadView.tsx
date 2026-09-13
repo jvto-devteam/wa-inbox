@@ -48,6 +48,10 @@ function dayDividerLabel(iso: string): string {
   return date.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })
 }
 
+function fetchMessages(conversationId: string): Promise<MessageView[]> {
+  return fetchJson<MessageView[]>(`/api/conversations/${conversationId}/messages`)
+}
+
 /**
  * Pembatas mendatar di dalam thread: garis - teks - garis.
  *
@@ -135,7 +139,7 @@ export function ThreadView({
   // any other failure the thread must keep its empty/default state rather than take an error
   // object into `messages` (which `messages.map` would then throw on).
   useEffect(() => {
-    fetchJson<MessageView[]>(`/api/conversations/${conversationId}/messages`)
+    fetchMessages(conversationId)
       .then(setMessages)
       .catch(() => {})
       .finally(() => setMessagesLoaded(true))
@@ -272,6 +276,11 @@ export function ThreadView({
         setMessages([])
         setBotEnabled(true)
         setUnreadCutoff(null)
+      }
+      if (event.type === 'knowledge.gap' && event.conversationId === conversationId) {
+        fetchMessages(conversationId)
+          .then(setMessages)
+          .catch(() => {})
       }
     }
     return () => es.close()

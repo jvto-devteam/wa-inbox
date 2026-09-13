@@ -1,9 +1,10 @@
 'use client'
 import { useState } from 'react'
-import { Bot, Brain, Copy, CornerUpLeft, Film, Image as ImageIcon, Paperclip, Tag, Wrench } from 'lucide-react'
+import { AlertTriangle, Bot, Brain, Copy, CornerUpLeft, Film, Image as ImageIcon, Paperclip, Tag, Wrench } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { IconButton } from '@/components/ui/icon-button'
+import { Tooltip } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 import { BotTracePopover } from './BotTracePopover'
 import { FixAnswerPanel } from './FixAnswerPanel'
@@ -31,6 +32,16 @@ export type MessageView = {
   mimeType?: string | null
   fileName?: string | null
   replyTo?: { id: string; content: string | null; type: string; sentBy: string } | null
+  knowledgeGap?: {
+    id: string
+    topic: string
+    reason: string
+    messageText: string
+    missingQuestion?: string | null
+    answerSnippet?: string | null
+    answerParagraph?: number | null
+    createdAt: string
+  } | null
   topicLabels?: TopicLabels | null
   templatePayload?: {
     templateName: string
@@ -214,6 +225,16 @@ function TopicChips({ labels }: { labels: TopicLabels }) {
 }
 
 const CHANNEL_LABEL: Record<string, string> = { OFFICIAL: 'Official', UNOFFICIAL: 'Unofficial' }
+const KNOWLEDGE_GAP_LABEL: Record<string, string> = {
+  no_facts_resolved: 'Tidak ada fakta knowledge untuk pertanyaan ini',
+  verification_failed: 'Jawaban gagal diverifikasi terhadap knowledge',
+  reply_unsourced: 'Ada jawaban yang tidak punya knowledge',
+  reply_deferred_knowledge: 'Ada bagian jawaban yang belum punya knowledge',
+}
+
+function knowledgeGapLabel(reason: string): string {
+  return KNOWLEDGE_GAP_LABEL[reason] ?? 'Ada gap knowledge pada jawaban ini'
+}
 
 function formatTime(iso: string): string {
   return new Date(iso).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })
@@ -389,6 +410,7 @@ export function MessageBubble({
   const topicLabels = message.topicLabels ?? checkedLabels
   const canCheckTopic = !isOutbound && !topicLabels && Boolean(conversationId && message.content?.trim())
   const canCopyBotReply = isBotMessage && Boolean(message.content?.trim())
+  const knowledgeGap = isBotMessage ? message.knowledgeGap : null
 
   return (
     // `group`: aksi balas hanya muncul saat baris ini di-hover atau salah satu kontrolnya
@@ -406,7 +428,8 @@ export function MessageBubble({
           // atas rata. Dua-duanya bergaris rambut, jadi keduanya tetap terbaca di atas canvas.
           isOutbound
             ? 'rounded-tr-none border-accent/20 bg-accent-subtle text-ink'
-            : 'rounded-tl-none border-line bg-surface text-ink'
+            : 'rounded-tl-none border-line bg-surface text-ink',
+          knowledgeGap && 'border-warning ring-1 ring-warning/30'
         )}
       >
         {message.replyTo && <QuotedPreview replyTo={message.replyTo} />}
@@ -445,6 +468,17 @@ export function MessageBubble({
             <Bot aria-hidden="true" className="size-3" strokeWidth={1.75} />
             Bot
           </Badge>
+        )}
+        {knowledgeGap && (
+          <Tooltip content={knowledgeGapLabel(knowledgeGap.reason)}>
+            <IconButton
+              size="sm"
+              label="Ada gap knowledge pada jawaban ini"
+              icon={<AlertTriangle strokeWidth={1.75} />}
+              onClick={() => setShowFix(true)}
+              className="-my-1 border border-warning/35 bg-warning-subtle text-warning hover:bg-warning-subtle hover:text-warning"
+            />
+          </Tooltip>
         )}
         {/* Dedicated trigger for the reasoning trace, separate from the bubble itself -- clicking
             the message text/media should never be overloaded with an unrelated toggle. */}
