@@ -158,6 +158,52 @@ describe('ThreadView keyed by conversationId', () => {
   })
 })
 
+describe('ThreadView bot test panel', () => {
+  it('opens a per-conversation test panel and calls the inbox retest route with the selected conversation', async () => {
+    vi.mocked(fetch).mockImplementation((url) => {
+      const s = String(url)
+      if (s.endsWith('/messages')) return Promise.resolve({ ok: true, json: () => Promise.resolve([]) } as Response)
+      if (s.endsWith('/api/accounts')) return Promise.resolve({ ok: true, json: () => Promise.resolve([]) } as Response)
+      if (s.endsWith('/retest')) {
+        return Promise.resolve({
+          ok: true,
+          json: () =>
+            Promise.resolve({
+              mode: 'faq',
+              reply: 'Ini jawaban uji untuk chat ini',
+              status: 'WOULD_REPLY',
+              flowSteps: [],
+              knowledgeRefs: { sourceTopic: 'price' },
+              verification: null,
+              warnings: ['Sandbox'],
+              wouldSendViaChannel: 'OFFICIAL',
+              decisionRunId: 'run_42',
+              latencyMs: 240,
+            }),
+        } as Response)
+      }
+      return Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({ botEnabled: false, contactName: 'Bruno Figarola' }),
+      } as Response)
+    })
+
+    render(<ThreadView conversationId="conv_42" />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Uji Bot' }))
+    fireEvent.change(screen.getByLabelText('Pesan pelanggan untuk uji bot'), { target: { value: 'berapa harga paket?' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Jalankan Uji' }))
+
+    await waitFor(() => {
+      expect(fetch).toHaveBeenCalledWith(
+        expect.stringContaining('/api/inbox/retest'),
+        expect.objectContaining({ method: 'POST' })
+      )
+    })
+    expect(await screen.findByText('Ini jawaban uji untuk chat ini')).toBeInTheDocument()
+  })
+})
+
 describe('ThreadView header identity', () => {
   it("shows the contact's name and avatar photo in the header when available", async () => {
     vi.mocked(fetch).mockImplementation((url) => {
