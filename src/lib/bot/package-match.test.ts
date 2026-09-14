@@ -12,6 +12,8 @@ import {
   mentionedDestinationTokens,
   mentionedUnsupportedOriginCity,
   narrowPackagePool,
+  packageFitDisclosureLines,
+  sortByPackageFitPriority,
   sortByBestPackagePriority,
 } from './package-match'
 import type { Catalog, CatalogPackage } from './types'
@@ -716,6 +718,63 @@ describe('narrowPackagePool', () => {
     const result = narrowPackagePool([bromoOnly3d, bromoIjen3d], { origin: null, dayCount: null, finishCity: null, pax: null }, [])
     expect(result.tier).toBe('exact')
     expect(result.pool.length).toBe(2)
+  })
+})
+
+describe('sortByPackageFitPriority', () => {
+  it('prefers the closest package shape over the historical flagship priority for a single-destination Bromo quote', () => {
+    const bromoOnly = pkg({ packageKey: 'bromo-1d1n', destinationTokens: ['bromo'], title: 'Bromo Midnight', dayCount: 1 })
+    const flagship = pkg({
+      packageKey: 'bromo-madakaripura-ijen-3d2n',
+      destinationTokens: ['bromo', 'madakaripura', 'ijen'],
+      title: 'Bromo Madakaripura Ijen',
+      dayCount: 3,
+    })
+
+    const sorted = sortByPackageFitPriority([flagship, bromoOnly], { origin: null, finishCity: null, dayCount: null, pax: 2 }, ['bromo'])
+
+    expect(sorted.map((p) => p.packageKey)).toEqual(['bromo-1d1n', 'bromo-madakaripura-ijen-3d2n'])
+  })
+
+  it('keeps the curated best-package order when candidates are equally close', () => {
+    const ordinary = pkg({ packageKey: 'ordinary-3d', destinationTokens: ['bromo', 'ijen'], dayCount: 3 })
+    const best = pkg({ packageKey: 'bromo-madakaripura-ijen-3d2n', destinationTokens: ['bromo', 'ijen'], dayCount: 3 })
+
+    const sorted = sortByPackageFitPriority([ordinary, best], { origin: null, finishCity: null, dayCount: 3, pax: 2 }, ['bromo', 'ijen'])
+
+    expect(sorted.map((p) => p.packageKey)).toEqual(['bromo-madakaripura-ijen-3d2n', 'ordinary-3d'])
+  })
+})
+
+describe('packageFitDisclosureLines', () => {
+  it('names the specific requested destination that an alternative package does not include', () => {
+    const alternative = pkg({
+      packageKey: 'bromo-madakaripura-ijen-3d2n',
+      title: '3 Day Bromo, Madakaripura & Ijen',
+      destinationTokens: ['bromo', 'madakaripura', 'ijen'],
+      origin: 'Surabaya',
+      dayCount: 3,
+      finishCities: ['bali'],
+    })
+
+    expect(packageFitDisclosureLines([alternative], { origin: 'Surabaya', finishCity: 'bali', dayCount: 3, pax: 2 }, ['bromo', 'ijen', 'tumpak sewu'])).toEqual([
+      '3 Day Bromo, Madakaripura & Ijen: does NOT include requested destination(s): Tumpak Sewu.',
+    ])
+  })
+
+  it('names duration and endpoint mismatches without turning them into a handoff', () => {
+    const alternative = pkg({
+      packageKey: 'tumpak-sewu-bromo-ijen-4d3n',
+      title: '4 Day Tumpak Sewu, Bromo & Ijen',
+      destinationTokens: ['tumpak sewu', 'bromo', 'ijen'],
+      origin: 'Surabaya',
+      dayCount: 4,
+      finishCities: ['bali'],
+    })
+
+    expect(packageFitDisclosureLines([alternative], { origin: 'Bali', finishCity: 'bali', dayCount: 5, pax: 2 }, ['tumpak sewu', 'bromo', 'ijen'])).toEqual([
+      '4 Day Tumpak Sewu, Bromo & Ijen: starts from Surabaya, not requested Bali; duration is 4D, not requested 5D.',
+    ])
   })
 })
 

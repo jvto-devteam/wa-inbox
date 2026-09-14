@@ -152,13 +152,14 @@ import {
   mentionedDestinationTokens,
   mentionedUnsupportedOriginCity,
   narrowPackagePool,
+  packageFitDisclosureLines,
   packagesForDestination,
   parseTripPreferencesFormAnswer,
   parseTripPreferences,
   pickPackage,
   priceForPax,
   resolveRegionDestination,
-  sortByBestPackagePriority,
+  sortByPackageFitPriority,
   titleCaseCity,
 } from './package-match'
 import { extractTripPreferences } from './trip-preferences-extractor'
@@ -281,6 +282,27 @@ const PACKAGE_DETAIL_ASKS = [
 function isPackageDetailIntent(message: string): boolean {
   const low = message.toLowerCase()
   return PACKAGE_DETAIL_NOUNS.some((k) => low.includes(k)) && PACKAGE_DETAIL_ASKS.some((k) => low.includes(k))
+}
+
+const CLOCK_TIME_PATTERN = /\b(?:[01]?\d|2[0-3])(?::\d{2})?\s*(?:am|pm)\b/gi
+const TIMING_CHANGE_PATTERN = /\b(?:arriv(?:e|al|ing)|after|before|late|start(?:ing)?|begin|pickup|pick-up)\b/i
+
+function normalizedClockTimes(text: string): string[] {
+  return [...text.matchAll(CLOCK_TIME_PATTERN)].map((match) => match[0].toLowerCase().replace(/\s+/g, ''))
+}
+
+function needsSpecialTimingConfirmation(message: string, groundedText: string): boolean {
+  if (!TIMING_CHANGE_PATTERN.test(message)) return false
+  const askedTimes = normalizedClockTimes(message)
+  if (askedTimes.length === 0) return false
+  const groundedTimes = new Set(normalizedClockTimes(groundedText))
+  return askedTimes.some((time) => !groundedTimes.has(time))
+}
+
+function packageDestinationCovers(packageToken: string, requestedToken: string): boolean {
+  const packageValue = packageToken.toLowerCase()
+  const requestedValue = requestedToken.toLowerCase()
+  return packageValue === requestedValue || packageValue.includes(requestedValue) || requestedValue.includes(packageValue)
 }
 
 // Confirmed with the operator 2026-08-06: start/finish/day-count stay MANDATORY before
@@ -824,6 +846,8 @@ async function composeVerifiedReply(params: {
   pricesShownForPax?: number[]
   requiredPackageUrls?: string[]
   allowedFinishCities?: string[]
+  missingRequestedDestinations?: string[]
+  specialTimingNeedsConfirmation?: boolean
   requiresLiveData?: boolean
   // Task 22 (Ruling R101): every OTHER topic classifyAllTopics found in this message, besides
   // `topic` -- passed straight through to `verifyReply`'s own `alsoTopics`, whose header
@@ -845,6 +869,8 @@ async function composeVerifiedReply(params: {
     pricesShownForPax,
     requiredPackageUrls,
     allowedFinishCities,
+    missingRequestedDestinations,
+    specialTimingNeedsConfirmation,
     requiresLiveData,
     alsoTopics,
     trace,
@@ -871,6 +897,8 @@ async function composeVerifiedReply(params: {
     pricesShownForPax,
     requiredPackageUrls,
     allowedFinishCities,
+    missingRequestedDestinations,
+    specialTimingNeedsConfirmation,
     requiresLiveData,
     topic,
     alsoTopics,
@@ -896,6 +924,8 @@ async function composeVerifiedReply(params: {
           pricesShownForPax,
           requiredPackageUrls,
           allowedFinishCities,
+          missingRequestedDestinations,
+          specialTimingNeedsConfirmation,
           requiresLiveData,
           topic,
           alsoTopics,
@@ -2060,7 +2090,7 @@ export async function decideAndRespond(
     // option carries its OWN details-page link (never the shared `primaryLink` below) --
     // live-tested 2026-08-04, a single link at the end of a 5-option list left the customer
     // unable to tell which package it belonged to.
-    const optionPool = sortByBestPackagePriority(matchTierPool)
+    const optionPool = sortByPackageFitPriority(matchTierPool, { origin, dayCount, finishCity, pax }, requestedTokens)
     const optionPackages = optionPool.filter((p) => p.priceIdr !== null).slice(0, 5)
 
     // "3 day trip from Surabaya" or "10-12 June (3 days) from Surabaya" -> the single package
@@ -2295,6 +2325,32 @@ export async function decideAndRespond(
             })
             .join('\n')
         : null
+    const fitDisclosureLines = packageFitDisclosureLines(optionPackages, { origin, dayCount, finishCity, pax }, requestedTokens)
+    const fitDisclosureNote =
+      fitDisclosureLines.length > 0
+        ? `\n\nHow the closest package option(s) differ from the customer's request:\n${fitDisclosureLines.map((line) => `- ${line}`).join('\n')}\nIf a requested destination is missing from an alternative, name it directly and say it is not included in that standard package; never describe that as only a route/order difference.`
+        : ''
+    const missingRequestedDestinations = [
+      ...new Set(
+        optionPackages.flatMap((p) => {
+          const packageTokens = p.destinationTokens.map((token) => token.toLowerCase())
+          return requestedTokens.filter((token) => !packageTokens.some((packageToken) => packageDestinationCovers(packageToken, token)))
+        })
+      ),
+    ]
+    const packageLogistics = packageLogisticsLines(pkg)
+    const specialTimingGroundingText = [
+      ...knowledge.factualLines,
+      ...knowledge.detailLines,
+      ...disclosures,
+      ...pkg.stagingNotes,
+      ...packageLogistics,
+      packageOptionsText ?? '',
+    ].join('\n')
+    const specialTimingNeedsConfirmation = needsSpecialTimingConfirmation(inboundText, specialTimingGroundingText)
+    const specialTimingNote = specialTimingNeedsConfirmation
+      ? `\n\nThe customer asks about a specific pickup/start/arrival timing that is not stated in the facts above. Do not say it can be arranged. Answer the rest from the facts, and for that exact timing say our team will confirm it shortly.`
+      : ''
     // Only fires when a price is unqualified ("from Rp X") because the group size genuinely
     // isn't known yet -- once pax IS known, priceLabel above already states their real,
     // specific price and no further caveat is needed.
@@ -2306,7 +2362,7 @@ export async function decideAndRespond(
     // never silently swap in an alternative as if it were the customer's exact request.
     const matchTierNote =
       matchTier === 'relaxed_route'
-        ? `\n\nNone of the matching packages above cover the exact route/order the customer described, but they DO match the same start city, finish city, and trip length -- be upfront that the route/stop order is slightly different from what they described, while confirming the start, finish, and duration are exactly as requested.`
+        ? `\n\nNone of the matching packages above cover the exact route/order or every requested destination exactly, but they DO match the same start city, finish city, and trip length -- be upfront when the route/stop order is slightly different or when a requested destination is not included, using the specific difference(s) listed above while confirming the start, finish, and duration are exactly as requested.`
         : matchTier === 'relaxed_start_end'
           ? `\n\nNone of the matching packages above match every stated start, finish, and duration detail exactly -- these are the closest relevant alternative(s). Be upfront that the exact combination they wanted isn't a standard package, and mention that our team can adjust the specifics after booking if needed.`
           : ''
@@ -2422,10 +2478,12 @@ export async function decideAndRespond(
             ? `\n\nThe customer described a detailed, specific itinerary (exact dates, pickup/drop-off points, or a day-by-day plan) that doesn't cleanly match one of the standard packages above. Still answer everything you actually know for certain, directly and specifically, exactly as you normally would -- e.g. state the closest package's real price, confirm/deny whether something they asked about is offered, state real inclusions -- do NOT turn a fact you already know into a vague "let us check and get back to you". The ONLY thing to defer is the exact custom routing/timing itself: present the closest standard option(s) as a starting point, and mention our admin team will follow up directly to build the specific day-by-day plan around their exact dates/route.`
             : '')
         : '') +
+      fitDisclosureNote +
       finishCityFact +
       unsupportedOriginNote +
       routeLegNote +
       scenarioNote +
+      specialTimingNote +
       paxPriceNote +
       matchTierNote +
       multiQuestionNote +
@@ -2506,7 +2564,6 @@ export async function decideAndRespond(
     // correct tier to be wrong about.
     const pricesShownForPax =
       pax === null ? [] : optionPackages.map((p) => priceForPax(p, pax).priceIdr).filter((n): n is number => n !== null)
-    const packageLogistics = packageLogisticsLines(pkg)
     const verificationGroundedText = [
       ...knowledge.factualLines,
       ...knowledge.detailLines,
@@ -2516,6 +2573,10 @@ export async function decideAndRespond(
       packageOptionsText ?? '',
       pkg.finishCities.length > 0 ? `Finish options for this package: ${pkg.finishCities.join(', ')}.` : '',
     ].join('\n')
+    const finishVerificationPackages = matchTier === 'exact' && !recommendMultiple ? [pkg] : optionPackages.length > 0 ? optionPackages : [pkg]
+    const allowedFinishCitiesForVerification = [
+      ...new Set(finishVerificationPackages.flatMap((p) => p.finishCities)),
+    ]
 
     traceStep(pipeline, 'verifikasi-balasan', 'mulai')
     const composed = await composeVerifiedReply({
@@ -2532,7 +2593,9 @@ export async function decideAndRespond(
       requiredPackageUrls: recommendMultiple
         ? optionPackages.map((p) => p.links.details).filter((u): u is string => Boolean(u))
         : pkg.links.details ? [pkg.links.details] : [],
-      allowedFinishCities: pkg.finishCities,
+      allowedFinishCities: allowedFinishCitiesForVerification,
+      missingRequestedDestinations,
+      specialTimingNeedsConfirmation,
       requiresLiveData: classification.needsLiveData,
       // Task 22: the guarantee-violation check (reply-verifier.ts) runs when the PRIMARY topic
       // OR any of these is in NO_GUARANTEE_TOPICS -- a Blue Fire promise slipped into the

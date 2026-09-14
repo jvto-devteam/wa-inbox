@@ -675,6 +675,116 @@ export function sortByBestPackagePriority(packages: CatalogPackage[]): CatalogPa
     .map(({ p }) => p)
 }
 
+function bestPackageRank(pkg: CatalogPackage): number {
+  const index = BEST_PACKAGE_KEYS.indexOf(pkg.packageKey)
+  return index === -1 ? BEST_PACKAGE_KEYS.length : index
+}
+
+function normalizedDestinationTokens(pkg: CatalogPackage): string[] {
+  return pkg.destinationTokens.map((token) => token.toLowerCase())
+}
+
+function destinationTokenCovers(packageToken: string, requestedToken: string): boolean {
+  return packageToken === requestedToken || packageToken.includes(requestedToken) || requestedToken.includes(packageToken)
+}
+
+function missingRequestedTokens(pkg: CatalogPackage, requestedTokens: string[]): string[] {
+  const packageTokens = normalizedDestinationTokens(pkg)
+  return requestedTokens.filter((token) => !packageTokens.some((packageToken) => destinationTokenCovers(packageToken, token.toLowerCase())))
+}
+
+function extraDestinationCount(pkg: CatalogPackage, requestedTokens: string[]): number {
+  if (requestedTokens.length === 0) return 0
+  const requested = requestedTokens.map((token) => token.toLowerCase())
+  return normalizedDestinationTokens(pkg).filter((token) => !requested.some((requestedToken) => destinationTokenCovers(token, requestedToken))).length
+}
+
+function durationDistance(pkg: CatalogPackage, dayCount: number | null): number {
+  if (dayCount !== null) return pkg.dayCount === null ? 30 : Math.abs(pkg.dayCount - dayCount)
+  return pkg.dayCount ?? 30
+}
+
+/**
+ * Sorts package alternatives by how closely they fit the customer's stated trip shape before
+ * applying the operator's curated flagship order as a tie-breaker. This keeps recommendations
+ * systemic: a Bromo-only quote prefers the Bromo-only package, while equally fitting Bromo+Ijen
+ * options still respect the operator's best-package priority.
+ */
+export function sortByPackageFitPriority(
+  packages: CatalogPackage[],
+  preferences: TripPreferences = NO_PREFERENCES,
+  requestedTokens: string[] = []
+): CatalogPackage[] {
+  return packages
+    .map((pkg, index) => {
+      const missing = missingRequestedTokens(pkg, requestedTokens).length
+      const extra = extraDestinationCount(pkg, requestedTokens)
+      const originMismatch = preferences.origin !== null && pkg.origin !== preferences.origin ? 1 : 0
+      const finishMismatch = preferences.finishCity !== null && !pkg.finishCities.includes(preferences.finishCity) ? 1 : 0
+      return {
+        pkg,
+        index,
+        missing,
+        originMismatch,
+        finishMismatch,
+        duration: durationDistance(pkg, preferences.dayCount),
+        extra,
+        best: bestPackageRank(pkg),
+      }
+    })
+    .sort(
+      (a, b) =>
+        a.missing - b.missing ||
+        a.originMismatch - b.originMismatch ||
+        a.finishMismatch - b.finishMismatch ||
+        a.duration - b.duration ||
+        a.extra - b.extra ||
+        a.best - b.best ||
+        a.index - b.index
+    )
+    .map(({ pkg }) => pkg)
+}
+
+function titleCaseDestinationToken(token: string): string {
+  return token.replace(/\b\w/g, (char) => char.toUpperCase())
+}
+
+function packageDisplayName(pkg: CatalogPackage): string {
+  if (pkg.dayCount !== null) {
+    const withoutDuration = pkg.title
+      .replace(new RegExp(`^${pkg.dayCount}\\s+Day\\s+`, 'i'), '')
+      .replace(/\s+\d+D(?:\d+N)?$/i, '')
+    return `${pkg.dayCount} Day ${withoutDuration}`
+  }
+  return pkg.title
+}
+
+export function packageFitDisclosureLines(
+  packages: CatalogPackage[],
+  preferences: TripPreferences = NO_PREFERENCES,
+  requestedTokens: string[] = []
+): string[] {
+  return packages
+    .map((pkg) => {
+      const notes: string[] = []
+      const missing = missingRequestedTokens(pkg, requestedTokens)
+      if (missing.length > 0) {
+        notes.push(`does NOT include requested destination(s): ${missing.map(titleCaseDestinationToken).join(', ')}`)
+      }
+      if (preferences.origin !== null && pkg.origin !== preferences.origin) {
+        notes.push(`starts from ${pkg.origin ?? 'unknown'}, not requested ${preferences.origin}`)
+      }
+      if (preferences.finishCity !== null && !pkg.finishCities.includes(preferences.finishCity)) {
+        notes.push(`does not finish in ${titleCaseCity(preferences.finishCity)}`)
+      }
+      if (preferences.dayCount !== null && pkg.dayCount !== preferences.dayCount) {
+        notes.push(`duration is ${pkg.dayCount ?? '?'}D, not requested ${preferences.dayCount}D`)
+      }
+      return notes.length > 0 ? `${packageDisplayName(pkg)}: ${notes.join('; ')}.` : null
+    })
+    .filter((line): line is string => line !== null)
+}
+
 export type PackageMatchTier = 'exact' | 'relaxed_route' | 'relaxed_start_end' | 'none'
 
 /**

@@ -169,6 +169,46 @@ describe('verifyReply', () => {
     })
     expect(r.unsupportedClaims).toEqual([])
   })
+
+  it('blocks an alternative package reply that omits the requested destination it cannot cover', () => {
+    const r = verifyReply({
+      replyText: 'Yes, the closest 3-day route is slightly different: Bromo, Madakaripura, and Ijen.',
+      groundedAmounts: [],
+      groundedUrls: [],
+      missingRequestedDestinations: ['tumpak sewu'],
+    })
+    expect(r.unsupportedClaims).toEqual(['missing_destination:tumpak sewu'])
+  })
+
+  it('allows an alternative package reply that explicitly names the missing requested destination', () => {
+    const r = verifyReply({
+      replyText: 'The exact 3-day route with Tumpak Sewu is not a standard package; the closest option includes Bromo, Madakaripura, and Ijen instead.',
+      groundedAmounts: [],
+      groundedUrls: [],
+      missingRequestedDestinations: ['tumpak sewu'],
+    })
+    expect(r.unsupportedClaims).toEqual([])
+  })
+
+  it('blocks a confident special timing claim when the timing needs confirmation', () => {
+    const r = verifyReply({
+      replyText: 'Yes, we can certainly arrange for your tour to begin after your 5 PM arrival.',
+      groundedAmounts: [],
+      groundedUrls: [],
+      specialTimingNeedsConfirmation: true,
+    })
+    expect(r.unsupportedClaims).toEqual(['special_timing'])
+  })
+
+  it('allows a deferred special timing answer when the timing needs confirmation', () => {
+    const r = verifyReply({
+      replyText: 'Let me confirm the 5 PM start timing with our team and get back to you shortly.',
+      groundedAmounts: [],
+      groundedUrls: [],
+      specialTimingNeedsConfirmation: true,
+    })
+    expect(r.unsupportedClaims).toEqual([])
+  })
 })
 
 describe('verifyReply guarantee violations', () => {

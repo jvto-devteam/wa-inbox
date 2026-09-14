@@ -266,6 +266,8 @@ export function verifyReply(params: {
   pricesShownForPax?: number[]
   requiredPackageUrls?: string[]
   allowedFinishCities?: string[]
+  missingRequestedDestinations?: string[]
+  specialTimingNeedsConfirmation?: boolean
   requiresLiveData?: boolean
   /**
    * The turn's `ResolverTopic`, when known -- drives the guarantee-violation check only
@@ -289,6 +291,8 @@ export function verifyReply(params: {
     pricesShownForPax,
     requiredPackageUrls = [],
     allowedFinishCities = [],
+    missingRequestedDestinations = [],
+    specialTimingNeedsConfirmation = false,
     requiresLiveData = false,
     topic,
     alsoTopics,
@@ -321,7 +325,14 @@ export function verifyReply(params: {
     wrongPaxTierPrices,
     unknownUrls,
     misdirectedUrls: findMisdirectedUrls(replyText, replyUrls, requiredPackageUrls),
-    unsupportedClaims: findUnsupportedClaims({ replyText, groundedText, allowedFinishCities, requiresLiveData }),
+    unsupportedClaims: findUnsupportedClaims({
+      replyText,
+      groundedText,
+      allowedFinishCities,
+      missingRequestedDestinations,
+      specialTimingNeedsConfirmation,
+      requiresLiveData,
+    }),
     guaranteeViolations: findGuaranteeViolations(replyText, topic, alsoTopics),
   }
 }
@@ -359,14 +370,27 @@ const EUR_AMOUNT = /(?:€\s*\d|\beur\s*\d|\d[\d.,]*\s*eur\b)/i
 const LIVE_AVAILABILITY_CLAIM = /\b(?:we have availability|available for|available on|available from|dates? (?:are|is) confirmed|confirmed automatically|exact dates are confirmed)\b/i
 const FINISH_CLAIM = /\b(?:finish(?:es)?|end(?:s)?|drop(?:s)?[\s-]?off|drop[\s-]?off)\s+(?:in|at|to|towards)?\s*(bali|surabaya|malang|ketapang)\b/gi
 const HOTEL_INCLUDED_CLAIM = /\b(?:include|includes|included|including)\b[^.!?]{0,50}\b(?:hotel|accommodation|room)\b|\b(?:hotel|accommodation|room)\b[^.!?]{0,50}\b(?:include|includes|included)\b/i
+const ALTERNATIVE_DISCLOSURE_CLAIM = /\b(?:not|no|does(?:\s+not|n't)|is(?:\s+not|n't)|cannot|can't|different|closest|alternative|instead|missing|without|standard)\b/i
+const CLOCK_TIME = /\b(?:[01]?\d|2[0-3])(?::\d{2})?\s*(?:am|pm)\b/i
+const CONFIDENT_SPECIAL_TIMING_CLAIM =
+  /\b(?:yes|sure|certainly|definitely|can|could|will|possible|arrange|provide)\b[^.!?]{0,100}\b(?:start|begin|pickup|pick-up|arriv(?:e|al)|after|before|late)\b/i
 
 function findUnsupportedClaims(params: {
   replyText: string
   groundedText: string
   allowedFinishCities: string[]
+  missingRequestedDestinations: string[]
+  specialTimingNeedsConfirmation: boolean
   requiresLiveData: boolean
 }): string[] {
-  const { replyText, groundedText, allowedFinishCities, requiresLiveData } = params
+  const {
+    replyText,
+    groundedText,
+    allowedFinishCities,
+    missingRequestedDestinations,
+    specialTimingNeedsConfirmation,
+    requiresLiveData,
+  } = params
   const claims: string[] = []
   const grounded = groundedText.toLowerCase()
   const deferred = DEFERRAL_PATTERN.test(replyText)
@@ -386,6 +410,12 @@ function findUnsupportedClaims(params: {
   if (requiresLiveData && LIVE_AVAILABILITY_CLAIM.test(replyText) && !deferred) {
     claims.push('live_availability')
   }
+  for (const destination of missingRequestedDestinations) {
+    if (!disclosesMissingDestination(replyText, destination)) claims.push(`missing_destination:${destination}`)
+  }
+  if (specialTimingNeedsConfirmation && CLOCK_TIME.test(replyText) && CONFIDENT_SPECIAL_TIMING_CLAIM.test(replyText) && !deferred) {
+    claims.push('special_timing')
+  }
 
   const allowed = new Set(allowedFinishCities.map((city) => city.toLowerCase()))
   if (allowed.size > 0) {
@@ -397,6 +427,13 @@ function findUnsupportedClaims(params: {
   }
 
   return [...new Set(claims)]
+}
+
+function disclosesMissingDestination(replyText: string, destination: string): boolean {
+  const destinationPattern = new RegExp(`\\b${destination.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '[\\s-]+')}\\b`, 'i')
+  return replyText
+    .split(/(?<=[.!?])\s+/)
+    .some((sentence) => destinationPattern.test(sentence) && ALTERNATIVE_DISCLOSURE_CLAIM.test(sentence))
 }
 
 function isNegatedFinishClaim(replyText: string, matchIndex: number): boolean {

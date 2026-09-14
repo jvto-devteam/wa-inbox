@@ -3622,6 +3622,30 @@ describe('decideAndRespond', () => {
       expect(opts.system).toContain('route/stop order is slightly different')
     })
 
+    it('names the requested destination missing from a closest alternative instead of calling it only a route/order difference', async () => {
+      ;vi.mocked(ensureFreshBookingData).mockResolvedValue(null)
+      ;vi.mocked(classifySalesNeed).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
+      ;vi.mocked(loadCatalog).mockReturnValue(catalogWithTokens(['bromo', 'ijen', 'tumpak sewu']))
+      const bromoMadaIjen = pkg({
+        packageKey: 'bromo-madakaripura-ijen-3d2n',
+        title: 'Bromo Madakaripura Ijen 3D',
+        destinationTokens: ['bromo', 'madakaripura', 'ijen'],
+        origin: 'Surabaya',
+        dayCount: 3,
+        finishCities: ['bali'],
+      })
+      ;vi.mocked(matchDestination).mockReturnValue({ destination: 'bromo', matches: [bromoMadaIjen] })
+      ;vi.mocked(checkRouteGate).mockReturnValue({ status: 'clear' })
+      ;vi.mocked(classifyTopicViaLLM).mockResolvedValue({ topic: 'price', source: 'llm' })
+      ;vi.mocked(extractTripPreferences).mockResolvedValue({ preferences: { origin: 'Surabaya', dayCount: 3, finishCity: 'bali', pax: 2 }, source: 'llm' })
+
+      await decideAndRespond('conv_1', 'Can we do Bromo, Tumpak Sewu and Ijen in 3 days from Surabaya to Bali for 2 people?')
+
+      const [, opts] = llmCall(0)
+      expect(opts.system).toContain('does NOT include requested destination(s): Tumpak Sewu')
+      expect(opts.system).toContain('If a requested destination is missing from an alternative, name it directly')
+    })
+
     // The operator's own example: "4 day Bali -> Bali" doesn't exist -- offer "4 day
     // Surabaya -> Bali" instead (same finish, different start), with an admin-adjust note.
     it('tells the LLM to be upfront and mention admin will adjust when no package satisfies both origin and finishCity together', async () => {
@@ -3662,6 +3686,84 @@ describe('decideAndRespond', () => {
       const [, opts] = llmCall(0)
       expect(opts.system).toContain('closest relevant alternative')
       expect(opts.system).toContain("exact combination they wanted isn't a standard package")
+    })
+
+    it('chooses a Bromo-only package before a multi-destination flagship for a single-destination private jeep quote', async () => {
+      ;vi.mocked(ensureFreshBookingData).mockResolvedValue(null)
+      ;vi.mocked(classifySalesNeed).mockReturnValue({ job: 'J2', missingInfo: [], needsLiveData: false })
+      ;vi.mocked(loadCatalog).mockReturnValue(catalogWithTokens(['bromo']))
+      const flagship = pkg({
+        packageKey: 'bromo-madakaripura-ijen-3d2n',
+        title: 'Bromo Madakaripura Ijen 3D',
+        destinationTokens: ['bromo', 'madakaripura', 'ijen'],
+        origin: 'Surabaya',
+        dayCount: 3,
+        finishCities: ['bali'],
+        priceIdr: 2450000,
+      })
+      const bromoOnly = pkg({
+        packageKey: 'bromo-1d1n',
+        title: 'Bromo Midnight 1D',
+        destinationTokens: ['bromo'],
+        origin: 'Surabaya',
+        dayCount: 1,
+        finishCities: ['surabaya'],
+        priceIdr: 1550000,
+      })
+      ;vi.mocked(matchDestination).mockReturnValue({ destination: 'bromo', matches: [flagship, bromoOnly] })
+      ;vi.mocked(checkRouteGate).mockReturnValue({ status: 'clear' })
+      ;vi.mocked(classifyTopicViaLLM).mockResolvedValue({ topic: 'private_tour', source: 'llm' })
+      ;vi.mocked(extractTripPreferences).mockResolvedValue({ preferences: { origin: null, dayCount: null, finishCity: null, pax: 2 }, source: 'llm' })
+
+      await decideAndRespond('conv_1', 'Do you provide a private jeep tour for Bromo mountain? 2 pax quotation please.')
+
+      const [, opts] = llmCall(0)
+      expect(opts.system).toContain('Package the customer is asking about: Bromo Midnight 1D')
+    })
+
+    it('does not hand off a relaxed alternative just because the first option cannot finish where another shown option can', async () => {
+      ;vi.mocked(ensureFreshBookingData).mockResolvedValue(null)
+      ;vi.mocked(classifySalesNeed).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
+      const baliOrigin = pkg({ packageKey: 'bali-origin-4d', title: 'Bali Origin 4D', origin: 'Bali', dayCount: 4, finishCities: ['surabaya'] })
+      const surabayaToBali = pkg({ packageKey: 'surabaya-bali-4d', title: 'Surabaya to Bali 4D', origin: 'Surabaya', dayCount: 4, finishCities: ['bali'] })
+      ;vi.mocked(matchDestination).mockReturnValue({ destination: 'ijen', matches: [baliOrigin, surabayaToBali] })
+      ;vi.mocked(checkRouteGate).mockReturnValue({ status: 'clear' })
+      ;vi.mocked(classifyTopicViaLLM).mockResolvedValue({ topic: 'route_endpoint', source: 'llm' })
+      ;vi.mocked(extractTripPreferences).mockResolvedValue({ preferences: { origin: 'Bali', dayCount: 4, finishCity: 'bali', pax: null }, source: 'llm' })
+      vi.mocked(callLLM).mockResolvedValue('Hi! One of the closest options finishes in Bali, but the exact Bali-to-Bali combination is not standard.')
+
+      const result = await decideAndRespond('conv_1', '4 day trip starting and finishing in Bali')
+
+      expect(result.mode).toBe('faq')
+      expect(result.verification?.status).toBe('PASSED')
+    })
+
+    it('rewrites a confident late-start claim into a timing confirmation instead of sending it', async () => {
+      ;vi.mocked(ensureFreshBookingData).mockResolvedValue(null)
+      ;vi.mocked(classifySalesNeed).mockReturnValue({ job: 'J2', missingInfo: [], needsLiveData: false })
+      const bromoIjen = pkg({
+        packageKey: 'bromo-madakaripura-ijen-3d2n',
+        title: 'Bromo Madakaripura Ijen 3D',
+        destinationTokens: ['bromo', 'ijen'],
+        origin: 'Surabaya',
+        dayCount: 3,
+        finishCities: ['bali'],
+        priceIdr: 2450000,
+      })
+      ;vi.mocked(matchDestination).mockReturnValue({ destination: 'bromo', matches: [bromoIjen] })
+      ;vi.mocked(checkRouteGate).mockReturnValue({ status: 'clear' })
+      ;vi.mocked(classifyTopicViaLLM).mockResolvedValue({ topic: 'price', source: 'llm' })
+      ;vi.mocked(extractTripPreferences).mockResolvedValue({ preferences: { origin: 'Surabaya', dayCount: 3, finishCity: 'bali', pax: null }, source: 'llm' })
+      vi.mocked(callLLM)
+        .mockResolvedValueOnce('Hi! Yes, we can certainly arrange for your tour to begin after your 5 PM arrival.')
+        .mockResolvedValueOnce('Hi! Let me confirm the 5 PM start timing with our team and get back to you shortly. The closest package is Bromo Madakaripura Ijen 3D.')
+
+      const result = await decideAndRespond('conv_1', 'Can we join after we arrive in Surabaya around 5 PM instead of starting at noon? Bromo and Ijen 3D2N.')
+
+      expect(result.mode).toBe('faq')
+      if (result.mode !== 'faq') throw new Error(`Expected faq mode, received ${result.mode}`)
+      expect(result.verification?.status).toBe('PASSED_AFTER_RETRY')
+      expect(result.draft).toContain('confirm the 5 PM start timing')
     })
 
     it('leads the option list with a confirmed best package even when it is not first in the matched array', async () => {
