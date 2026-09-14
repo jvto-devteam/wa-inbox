@@ -162,7 +162,7 @@ describe('FixAnswerPanel', () => {
     })
   })
 
-  it('Tambah jawaban yang benar: editor berisi satu item dengan pertanyaan pelanggan', async () => {
+  it('Tambah jawaban yang benar: editor berisi default rekomendasi gap selain jawaban faktualnya', async () => {
     const fetchMock = stubFetch({
       ...RUN_ROUTES,
       'POST /api/inbox/decisions/run_1/fix': {
@@ -173,18 +173,33 @@ describe('FixAnswerPanel', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: 'Tambah jawaban yang benar' }))
     expect(screen.getByLabelText('Pertanyaan item 1')).toHaveValue('Can we bring ten suitcases?')
+    expect(screen.getByLabelText('Ringkasan knowledge')).toHaveValue(
+      'Menjawab gap ada bagian jawaban yang belum punya knowledge: Can we bring ten suitcases?'
+    )
+    expect(screen.getByLabelText('Tag item 1')).toHaveValue('vehicle, bring, suitcases, check, team, about, ijen, safety')
+    expect(screen.getByRole('checkbox', { name: 'Topik vehicle item 1' })).toBeChecked()
+    expect(screen.getByLabelText('Alasan perubahan')).toHaveValue(
+      'Menutup gap knowledge dari rekomendasi chatbot pada jawaban paragraf 1.'
+    )
     expect(screen.getByLabelText('Jawaban item 1')).toHaveValue('')
 
     fireEvent.change(screen.getByLabelText('Jawaban item 1'), { target: { value: 'ATV 1 jam Rp400.000 per orang.' } })
-    fireEvent.change(screen.getByLabelText('Alasan perubahan'), { target: { value: REASON } })
     fireEvent.click(screen.getByRole('button', { name: 'Simpan & aktifkan' }))
 
     expect(await screen.findByText(`Aktif: ${QUESTION} v1`)).toBeInTheDocument()
     expect(fixBody(fetchMock)).toEqual({
       kind: 'new',
       title: 'Can we bring ten suitcases?',
-      items: [{ question: 'Can we bring ten suitcases?', answer: 'ATV 1 jam Rp400.000 per orang.' }],
-      reason: REASON,
+      summary: 'Menjawab gap ada bagian jawaban yang belum punya knowledge: Can we bring ten suitcases?',
+      items: [
+        {
+          question: 'Can we bring ten suitcases?',
+          answer: 'ATV 1 jam Rp400.000 per orang.',
+          tags: ['vehicle', 'bring', 'suitcases', 'check', 'team', 'about', 'ijen', 'safety'],
+          topics: ['vehicle'],
+        },
+      ],
+      reason: 'Menutup gap knowledge dari rekomendasi chatbot pada jawaban paragraf 1.',
     })
   })
 

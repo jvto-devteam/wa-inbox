@@ -171,7 +171,7 @@ describe.skipIf(!RELEASE_PRESENT)('East Java region against the real route gate 
     expect(decision.mode).toBe('faq')
     expect(labelsOf(decision)).toContain('Paket valid')
     expect(new Set(writes.map((w) => w.destination).filter((d): d is string => d !== undefined))).toEqual(new Set([LIVE_TOKEN]))
-    expect(composerSystem()).toContain("None of the matching packages above start and finish exactly where the customer asked")
+    expect(composerSystem()).toContain('None of the matching packages above match every stated start, finish, and duration detail exactly')
   })
 
   // Case 2. A destination-independent question that merely names the region: no prefs, so the

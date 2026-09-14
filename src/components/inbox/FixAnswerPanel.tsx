@@ -9,6 +9,7 @@ import { KnowledgeEditor, type KnowledgeDraft } from '@/components/bot-control/K
 import { fetchJson } from '@/lib/fetch-json'
 import type { BotDecision } from '@/lib/bot/types'
 import type { KnowledgeItem } from '@/lib/bot-control/knowledge-body'
+import { RESOLVER_TOPICS, type ResolverTopic } from '@/lib/bot/module-resolver'
 
 type RunView = { id: string; conversationId: string; inboundText: string; replyText: string | null }
 type GapView = {
@@ -66,6 +67,35 @@ function usedSources(trace: BotDecision | null): UsedSource[] {
 
 function knowledgeGapLabel(reason: string): string {
   return KNOWLEDGE_GAP_LABEL[reason] ?? 'Ada gap knowledge pada jawaban ini'
+}
+
+function defaultTopicsFor(gap: GapView | null): ResolverTopic[] | undefined {
+  if (!gap || !RESOLVER_TOPICS.includes(gap.topic as ResolverTopic)) return undefined
+  return [gap.topic as ResolverTopic]
+}
+
+function defaultTagsFor(gap: GapView | null, question: string): string[] | undefined {
+  const stop = new Set(['what', 'which', 'where', 'when', 'with', 'from', 'that', 'this', 'have', 'need', 'please', 'thank', 'untuk', 'yang'])
+  const words = `${gap?.topic ?? ''} ${question} ${gap?.answerSnippet ?? ''}`
+    .toLowerCase()
+    .split(/[^\p{L}\p{N}]+/u)
+    .filter((word) => word.length >= 4 && !stop.has(word))
+  const tags = [...new Set(words)].slice(0, 8)
+  return tags.length > 0 ? tags : undefined
+}
+
+function defaultSummaryFor(gap: GapView | null, question: string): string {
+  if (!gap) return ''
+  const target = gap.missingQuestion?.trim() || question
+  return `Menjawab gap ${knowledgeGapLabel(gap.reason).toLowerCase()}: ${target.slice(0, 140)}`
+}
+
+function defaultReasonFor(gap: GapView | null): string | undefined {
+  if (!gap) return undefined
+  const paragraph = gap.answerParagraph !== null && gap.answerParagraph !== undefined
+    ? ` paragraf ${gap.answerParagraph + 1}`
+    : ''
+  return `Menutup gap knowledge dari rekomendasi chatbot pada jawaban${paragraph}.`
 }
 
 /**
@@ -197,11 +227,18 @@ export function FixAnswerPanel({
 
   function openNew(inboundText: string) {
     const question = gap?.missingQuestion?.trim() || inboundText
+    const topics = defaultTopicsFor(gap)
+    const tags = defaultTagsFor(gap, question)
     setSaveError(null)
     setEditing({
       kind: 'new',
       title: 'Tambah jawaban yang benar',
-      initial: { title: question.slice(0, TITLE_MAX), summary: '', items: [{ question: question.slice(0, QUESTION_MAX), answer: '' }] },
+      initial: {
+        title: question.slice(0, TITLE_MAX),
+        summary: defaultSummaryFor(gap, question),
+        items: [{ question: question.slice(0, QUESTION_MAX), answer: '', ...(tags ? { tags } : {}), ...(topics ? { topics } : {}) }],
+      },
+      reason: defaultReasonFor(gap),
     })
   }
 

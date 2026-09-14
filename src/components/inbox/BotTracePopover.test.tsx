@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { render, screen, cleanup, waitFor } from '@testing-library/react'
+import { render, screen, cleanup, waitFor, fireEvent } from '@testing-library/react'
 import { BotTracePopover } from './BotTracePopover'
 
 describe('BotTracePopover', () => {
@@ -7,6 +7,15 @@ describe('BotTracePopover', () => {
     render(<BotTracePopover trace={{ mode: 'faq', draft: 'Info paket...', sourceTopic: 'inclusions' }} onClose={() => {}} />)
     expect(screen.getByText(/faq/i)).toBeInTheDocument()
     expect(screen.getByText(/inclusions/i)).toBeInTheDocument()
+  })
+
+  it('menyediakan tombol perbaikan di popover otak saat callback diberikan', () => {
+    const onFix = vi.fn()
+    render(<BotTracePopover trace={{ mode: 'faq', draft: 'Info paket...', sourceTopic: 'inclusions' }} onFix={onFix} onClose={() => {}} />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Perbaiki jawaban bot' }))
+
+    expect(onFix).toHaveBeenCalled()
   })
 
   it('shows the handoff reason', () => {
@@ -394,7 +403,10 @@ describe('BotTracePopover — Topik, Sumber per paragraf, Verifikasi', () => {
             attempts: 2,
             fabricatedPrices: [350000],
             unverifiedPrices: [1250000],
+            wrongPaxTierPrices: [2450000],
             unknownUrls: ['https://contoh.invalid/x'],
+            misdirectedUrls: ['https://javavolcano-touroperator.com/why-jvto/the-jvto-difference'],
+            unsupportedClaims: ['luggage_storage'],
             guaranteeViolations: [],
           },
         }}
@@ -405,7 +417,10 @@ describe('BotTracePopover — Topik, Sumber per paragraf, Verifikasi', () => {
     expect(screen.getByText('Status: Diblokir')).toBeInTheDocument()
     expect(screen.getByText('Harga tidak bersumber: Rp350.000')).toBeInTheDocument()
     expect(screen.getByText('Harga tidak cocok dengan fakta: Rp1.250.000')).toBeInTheDocument()
+    expect(screen.getByText('Tier tidak sesuai pax: Rp2.450.000')).toBeInTheDocument()
     expect(screen.getByText('URL tidak dikenal: https://contoh.invalid/x')).toBeInTheDocument()
+    expect(screen.getByText('Link tidak sesuai paket: https://javavolcano-touroperator.com/why-jvto/the-jvto-difference')).toBeInTheDocument()
+    expect(screen.getByText('Klaim tanpa fakta: luggage_storage')).toBeInTheDocument()
   })
 
   it('tanpa bagian Verifikasi bila giliran itu tidak diverifikasi', () => {

@@ -60,7 +60,10 @@ describe('isUnsourcedFaqReply', () => {
             attempts: 1,
             fabricatedPrices: [],
             unverifiedPrices: [],
+            wrongPaxTierPrices: [],
             unknownUrls: [],
+            misdirectedUrls: [],
+            unsupportedClaims: [],
             guaranteeViolations: [],
           },
           knowledge: knowledge({
@@ -86,7 +89,10 @@ describe('knowledgeGapReasonForDecision', () => {
             attempts: 1,
             fabricatedPrices: [],
             unverifiedPrices: [],
+            wrongPaxTierPrices: [],
             unknownUrls: [],
+            misdirectedUrls: [],
+            unsupportedClaims: [],
             guaranteeViolations: [],
           },
           knowledge: knowledge({
@@ -114,7 +120,10 @@ describe('knowledgeGapReasonForDecision', () => {
             attempts: 1,
             fabricatedPrices: [],
             unverifiedPrices: [],
+            wrongPaxTierPrices: [],
             unknownUrls: [],
+            misdirectedUrls: [],
+            unsupportedClaims: [],
             guaranteeViolations: [],
           },
           knowledge: knowledge({

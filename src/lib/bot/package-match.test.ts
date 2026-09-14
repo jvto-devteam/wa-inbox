@@ -7,6 +7,7 @@ import {
   pickPackage,
   listDestinations,
   parseTripPreferences,
+  parseTripPreferencesFormAnswer,
   priceForPax,
   mentionedDestinationTokens,
   mentionedUnsupportedOriginCity,
@@ -458,6 +459,11 @@ describe('parseTripPreferences', () => {
       expect(result.finishCity).toBe('bali')
     })
 
+    it('parses a route arrow as origin and finish city, independent of where the duration appears', () => {
+      const result = parseTripPreferences('3 Day, Surabaya -> Bali.')
+      expect(result).toMatchObject({ origin: 'Surabaya', dayCount: 3, finishCity: 'bali' })
+    })
+
     it('a bare city mention with no finish-context phrasing is still parsed as origin, unchanged', () => {
       expect(parseTripPreferences('I want to go to Ijen from Bali').origin).toBe('Bali')
       expect(parseTripPreferences('a trip to Bali please').origin).toBe('Bali')
@@ -549,6 +555,35 @@ describe('parseTripPreferences', () => {
 
     it('never invents an unreasonable group size from an unrelated large number', () => {
       expect(parseTripPreferences('our budget is 500 pax').pax).toBeNull()
+    })
+  })
+
+  describe('form-answer parser', () => {
+    it('uses the bot form order for a compact answer only while the funnel is awaiting it', () => {
+      expect(
+        parseTripPreferencesFormAnswer('Bali, Surabaya, 3 days', {
+          awaitingTripPreferencesAnswer: true,
+        })
+      ).toEqual({ origin: 'Bali', finishCity: 'surabaya', dayCount: 3, pax: null })
+      expect(parseTripPreferencesFormAnswer('Bali, Surabaya, 3 days', {})).toBeNull()
+    })
+
+    it('reads labels before falling back to form order', () => {
+      expect(
+        parseTripPreferencesFormAnswer('Pickup: Bali\nDrop: Surabaya\nNumber of Day: 3 days', {
+          awaitingTripPreferencesAnswer: true,
+        })
+      ).toEqual({ origin: 'Bali', finishCity: 'surabaya', dayCount: 3, pax: null })
+    })
+
+    it('fills the only missing city from a short answer without changing known fields', () => {
+      expect(
+        parseTripPreferencesFormAnswer('yes, Surabaya', {
+          awaitingTripPreferencesAnswer: true,
+          origin: 'Bali',
+          dayCount: 3,
+        })
+      ).toEqual({ origin: null, finishCity: 'surabaya', dayCount: null, pax: null })
     })
   })
 })
@@ -665,11 +700,11 @@ describe('narrowPackagePool', () => {
     expect(result.pool.map((p) => p.packageKey)).toContain('surabaya-bali-4d')
   })
 
-  it('tier "none": not even the stated duration has any match for this destination', () => {
+  it('tier "relaxed_start_end": unsupported stated duration still offers the closest relevant package', () => {
     const onlyThreeDay = pkg({ packageKey: 'only-3d', origin: 'Surabaya', dayCount: 3, finishCities: ['surabaya'] })
     const result = narrowPackagePool([onlyThreeDay], { origin: 'Surabaya', dayCount: 15, finishCity: null, pax: null }, [])
-    expect(result.tier).toBe('none')
-    expect(result.pool).toEqual([])
+    expect(result.tier).toBe('relaxed_start_end')
+    expect(result.pool.map((p) => p.packageKey)).toEqual(['only-3d'])
   })
 
   it('treats no requested destinations (a bare recommendation ask) the same as "exact" once start/finish/duration match', () => {

@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { X } from 'lucide-react'
 import { Modal } from '@/components/ui/modal'
+import { Button } from '@/components/ui/button'
 import { IconButton } from '@/components/ui/icon-button'
 import { fetchJson } from '@/lib/fetch-json'
 import type { AttributedLine, BotDecision, DecisionKnowledge } from '@/lib/bot/types'
@@ -75,10 +76,12 @@ function attributedSourceLabel(line: AttributedLine): string {
 export function BotTracePopover({
   trace,
   messageId,
+  onFix,
   onClose,
 }: {
   trace: BotDecision | null
   messageId?: string
+  onFix?: () => void
   onClose: () => void
 }) {
   // No separate "lookup finished" flag: the link renders exactly when a run id is in hand, and
@@ -209,8 +212,17 @@ export function BotTracePopover({
           {verification.unverifiedPrices.length > 0 && (
             <p className="text-ink-muted">{`Harga tidak cocok dengan fakta: ${verification.unverifiedPrices.map(formatRupiah).join(', ')}`}</p>
           )}
+          {verification.wrongPaxTierPrices.length > 0 && (
+            <p className="text-ink-muted">{`Tier tidak sesuai pax: ${verification.wrongPaxTierPrices.map(formatRupiah).join(', ')}`}</p>
+          )}
           {verification.unknownUrls.length > 0 && (
             <p className="break-all text-ink-muted">{`URL tidak dikenal: ${verification.unknownUrls.join(', ')}`}</p>
+          )}
+          {verification.misdirectedUrls.length > 0 && (
+            <p className="break-all text-ink-muted">{`Link tidak sesuai paket: ${verification.misdirectedUrls.join(', ')}`}</p>
+          )}
+          {verification.unsupportedClaims.length > 0 && (
+            <p className="text-ink-muted">{`Klaim tanpa fakta: ${verification.unsupportedClaims.join(', ')}`}</p>
           )}
         </div>
       )}
@@ -222,6 +234,14 @@ export function BotTracePopover({
         >
           Lihat detail keputusan lengkap →
         </Link>
+      )}
+
+      {onFix && (
+        <div className="border-t border-line pt-2">
+          <Button type="button" variant="outline" size="sm" onClick={onFix}>
+            Perbaiki jawaban bot
+          </Button>
+        </div>
       )}
     </Modal>
   )

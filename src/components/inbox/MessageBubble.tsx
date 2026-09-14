@@ -1,6 +1,6 @@
 'use client'
 import { useState } from 'react'
-import { AlertTriangle, Bot, Brain, Copy, CornerUpLeft, Film, Image as ImageIcon, Paperclip, Tag, Wrench } from 'lucide-react'
+import { AlertTriangle, Bot, Brain, Copy, CornerUpLeft, Film, Image as ImageIcon, Paperclip, Tag } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { IconButton } from '@/components/ui/icon-button'
@@ -411,46 +411,53 @@ export function MessageBubble({
   const canCheckTopic = !isOutbound && !topicLabels && Boolean(conversationId && message.content?.trim())
   const canCopyBotReply = isBotMessage && Boolean(message.content?.trim())
   const knowledgeGap = isBotMessage ? message.knowledgeGap : null
+  const bubble = (
+    <div
+      className={cn(
+        cards?.length ? 'max-w-lg' : 'max-w-md',
+        // text-md (15px), bukan ukuran UI 13.5px: isi pesan adalah satu-satunya teks di
+        // aplikasi ini yang dibaca berparagraf-paragraf, berjam-jam, setiap hari.
+        'overflow-hidden rounded-lg border px-3.5 py-2.5 text-md whitespace-pre-wrap',
+        // Masuk vs keluar dibedakan oleh warna dan sudut yang dipangkas, bukan oleh bayangan:
+        // keluar = tint aksen dengan sudut kanan atas rata, masuk = putih dengan sudut kiri
+        // atas rata. Dua-duanya bergaris rambut, jadi keduanya tetap terbaca di atas canvas.
+        isOutbound
+          ? 'rounded-tr-none border-accent/20 bg-accent-subtle text-ink'
+          : 'rounded-tl-none border-line bg-surface text-ink',
+        knowledgeGap && 'border-warning ring-1 ring-warning/30'
+      )}
+    >
+      {message.replyTo && <QuotedPreview replyTo={message.replyTo} />}
+      <div className="flex flex-col gap-1.5">
+        {message.templatePayload?.limitedTimeOffer && (
+          <LimitedTimeOfferBanner offer={message.templatePayload.limitedTimeOffer} />
+        )}
+        {hasMedia && <MediaContent message={message} />}
+        {message.content ? (
+          <span className="select-text cursor-text">{formatWhatsAppText(message.content)}</span>
+        ) : (
+          !hasMedia && message.type && message.type !== 'text' && `[${message.type}]`
+        )}
+        {cards && cards.length > 0 && <CarouselContent cards={cards} />}
+        {message.templatePayload?.coupon && <CouponChip coupon={message.templatePayload.coupon} />}
+      </div>
+    </div>
+  )
 
   return (
     // `group`: aksi balas hanya muncul saat baris ini di-hover atau salah satu kontrolnya
     // menerima fokus keyboard. Sebuah tombol tetap di bawah setiap gelembung mengubah riwayat
     // percakapan jadi daftar tombol; di layar sentuh (yang tidak punya hover) ia tetap terlihat.
     <div className={cn('group flex flex-col gap-1', isOutbound ? 'items-end' : 'items-start')}>
-      <div
-        className={cn(
-          cards?.length ? 'max-w-lg' : 'max-w-md',
-          // text-md (15px), bukan ukuran UI 13.5px: isi pesan adalah satu-satunya teks di
-          // aplikasi ini yang dibaca berparagraf-paragraf, berjam-jam, setiap hari.
-          'overflow-hidden rounded-lg border px-3.5 py-2.5 text-md whitespace-pre-wrap',
-          // Masuk vs keluar dibedakan oleh warna dan sudut yang dipangkas, bukan oleh bayangan:
-          // keluar = tint aksen dengan sudut kanan atas rata, masuk = putih dengan sudut kiri
-          // atas rata. Dua-duanya bergaris rambut, jadi keduanya tetap terbaca di atas canvas.
-          isOutbound
-            ? 'rounded-tr-none border-accent/20 bg-accent-subtle text-ink'
-            : 'rounded-tl-none border-line bg-surface text-ink',
-          knowledgeGap && 'border-warning ring-1 ring-warning/30'
-        )}
-      >
-        {message.replyTo && <QuotedPreview replyTo={message.replyTo} />}
-        <div className="flex flex-col gap-1.5">
-          {message.templatePayload?.limitedTimeOffer && (
-            <LimitedTimeOfferBanner offer={message.templatePayload.limitedTimeOffer} />
-          )}
-          {hasMedia && <MediaContent message={message} />}
-          {message.content ? (
-            <span className="select-text cursor-text">{formatWhatsAppText(message.content)}</span>
-          ) : (
-            !hasMedia && message.type && message.type !== 'text' && `[${message.type}]`
-          )}
-          {cards && cards.length > 0 && <CarouselContent cards={cards} />}
-          {message.templatePayload?.coupon && <CouponChip coupon={message.templatePayload.coupon} />}
-        </div>
-      </div>
+      {knowledgeGap ? <Tooltip content={knowledgeGapLabel(knowledgeGap.reason)}>{bubble}</Tooltip> : bubble}
       {isBotMessage && showTrace && (
         <BotTracePopover
           trace={(message.botTrace as BotDecision | null) ?? null}
           messageId={message.id}
+          onFix={() => {
+            setShowTrace(false)
+            setShowFix(true)
+          }}
           onClose={() => setShowTrace(false)}
         />
       )}
@@ -470,15 +477,13 @@ export function MessageBubble({
           </Badge>
         )}
         {knowledgeGap && (
-          <Tooltip content={knowledgeGapLabel(knowledgeGap.reason)}>
-            <IconButton
-              size="sm"
-              label="Ada gap knowledge pada jawaban ini"
-              icon={<AlertTriangle strokeWidth={1.75} />}
-              onClick={() => setShowFix(true)}
-              className="-my-1 border border-warning/35 bg-warning-subtle text-warning hover:bg-warning-subtle hover:text-warning"
-            />
-          </Tooltip>
+          <IconButton
+            size="sm"
+            label="Ada gap knowledge pada jawaban ini"
+            icon={<AlertTriangle strokeWidth={1.75} />}
+            onClick={() => setShowFix(true)}
+            className="-my-1 border border-warning/35 bg-warning-subtle text-warning hover:bg-warning-subtle hover:text-warning"
+          />
         )}
         {/* Dedicated trigger for the reasoning trace, separate from the bubble itself -- clicking
             the message text/media should never be overloaded with an unrelated toggle. */}
@@ -489,15 +494,6 @@ export function MessageBubble({
             icon={<Brain strokeWidth={1.75} />}
             aria-pressed={showTrace}
             onClick={() => setShowTrace((prev) => !prev)}
-            className="-my-1"
-          />
-        )}
-        {isBotMessage && (
-          <IconButton
-            size="sm"
-            label="Perbaiki jawaban bot"
-            icon={<Wrench strokeWidth={1.75} />}
-            onClick={() => setShowFix(true)}
             className="-my-1"
           />
         )}

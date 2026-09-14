@@ -153,6 +153,7 @@ import {
   mentionedUnsupportedOriginCity,
   narrowPackagePool,
   packagesForDestination,
+  parseTripPreferencesFormAnswer,
   parseTripPreferences,
   pickPackage,
   priceForPax,
@@ -189,7 +190,6 @@ import {
   buildVerificationRetryInstruction,
   extractRupiahAmounts,
   extractUrls,
-  isDerivableAmount,
   guaranteeCheckTopics,
   type VerificationResult,
   type ReplyVerification,
@@ -198,7 +198,7 @@ import { attributeReply } from './reply-attribution'
 import { loadCatalog } from './catalog'
 import { checkDeploymentGate } from './deployment-gate'
 import { createNoopPipelineTracer, traceStep, traceClose, type PipelineTracer } from '@/lib/pipeline/tracer'
-import type { BotDecision, Catalog, DecisionKnowledge, TraceStep, TripBrief } from './types'
+import type { BotDecision, Catalog, CatalogPackage, DecisionKnowledge, TraceStep, TripBrief } from './types'
 
 // Deliberately NOT a list local to this file: see the step-0 note in the header.
 // `HANDOFF_KEYWORDS` is sales-classifier.ts's list, shared so that the pre-booking
@@ -430,6 +430,17 @@ function knownFactsTopicLabel(primary: ResolverTopic, alsoTopics: readonly Resol
   return `topics: ${[primary, ...alsoTopics].map((t) => `"${t}"`).join(', ')}`
 }
 
+function packageLogisticsLines(pkg: CatalogPackage): string[] {
+  return [
+    pkg.overnights.length > 0 ? `Overnight stays for this package, in night order: ${pkg.overnights.join(' then ')}. State these names directly if asked which hotel they stay at.` : null,
+    pkg.roomingAssumption ? `Rooming: ${pkg.roomingAssumption}` : null,
+    pkg.vehicleCategory ? `Vehicle for this package: ${pkg.vehicleCategory}` : null,
+    pkg.luggageRule ? `Luggage allowance: ${pkg.luggageRule}` : null,
+    pkg.crewRoles ? `Crew: ${pkg.crewRoles}` : null,
+    pkg.languageNote ? `Guide language: ${pkg.languageNote}` : null,
+  ].filter((line): line is string => line !== null)
+}
+
 // R96 (operator decision 2026-09-11): CLAUDE.md §2 -- the production model tag,
 // `gemma4:31b-cloud`, is a CLOUD tag: the VPS's Ollama daemon forwards inference to
 // ollama.com for it, so customer text (and Mode 3 booking data) leaves the VPS. Only a tag
@@ -644,7 +655,7 @@ export function computeTripPreferencesFunnelDecision(input: {
   preferenceDeclineSignal: boolean
   recommendationIntentSignal: boolean
 }): TripPreferencesFunnelDecision {
-  const { tripBrief, inboundText, resolverTopic, origin, finishCity, dayCount, preferenceDeclineSignal, recommendationIntentSignal } = input
+  const { tripBrief, resolverTopic, origin, finishCity, dayCount, preferenceDeclineSignal, recommendationIntentSignal } = input
   const wasAwaitingAnswer = tripBrief.awaitingTripPreferencesAnswer === true
   // 'price' kept alongside isRecommendationRequest as a belt-and-suspenders topic-based signal
   // -- either one is enough. `wasAwaitingAnswer` (set true exactly when the gate below asked
@@ -806,10 +817,14 @@ async function composeVerifiedReply(params: {
   history: LLMOptions['history']
   groundedAmounts: number[]
   groundedUrls: string[]
+  groundedText?: string
   // The prices this turn's prompt actually PRINTED for the customer's known group
-  // size. Trace-only, and only the destination-known path can supply it (it is the
-  // one branch that resolves a per-pax tier at all). See the wrong-tier note below.
+  // size. Only the destination-known path can supply it (it is the one branch that
+  // resolves a per-pax tier at all).
   pricesShownForPax?: number[]
+  requiredPackageUrls?: string[]
+  allowedFinishCities?: string[]
+  requiresLiveData?: boolean
   // Task 22 (Ruling R101): every OTHER topic classifyAllTopics found in this message, besides
   // `topic` -- passed straight through to `verifyReply`'s own `alsoTopics`, whose header
   // explains why the guarantee-violation check needs to see it. Both call sites pass their own
@@ -817,7 +832,23 @@ async function composeVerifiedReply(params: {
   alsoTopics?: string[]
   trace: Tracer
 }): Promise<ComposedReply> {
-  const { conversationId, topic, inboundText, system, model, history, groundedAmounts, groundedUrls, pricesShownForPax, alsoTopics, trace } = params
+  const {
+    conversationId,
+    topic,
+    inboundText,
+    system,
+    model,
+    history,
+    groundedAmounts,
+    groundedUrls,
+    groundedText,
+    pricesShownForPax,
+    requiredPackageUrls,
+    allowedFinishCities,
+    requiresLiveData,
+    alsoTopics,
+    trace,
+  } = params
   let reply = await callLLM(inboundText, { system, model, history })
   // Second layer of defence behind llm.ts's own validation: an empty reply must never
   // become a dispatched blank message. Previously handed off outright; now a graceful,
@@ -832,31 +863,55 @@ async function composeVerifiedReply(params: {
   // -- the customer treats it as a quote -- and the link registry has already
   // shipped 18 broken "existing" URLs once (see knowledge.ts). One corrective
   // retry, then a safe deferral: never a fabricated number, never a dead link.
-  let verdict = verifyReply({ replyText: reply, groundedAmounts, groundedUrls, topic, alsoTopics })
+  let verdict = verifyReply({
+    replyText: reply,
+    groundedAmounts,
+    groundedUrls,
+    groundedText,
+    pricesShownForPax,
+    requiredPackageUrls,
+    allowedFinishCities,
+    requiresLiveData,
+    topic,
+    alsoTopics,
+  })
   let attempts = 1
-  if (verdict.fabricatedPrices.length > 0 || verdict.unknownUrls.length > 0) {
+  if (blockingVerdictFindings(verdict, topic, alsoTopics).length > 0) {
     attempts = 2
     trace.push(
       'Verifikasi gagal',
-      `Balasan menyebut harga/link yang tidak ada di data: ${[...verdict.fabricatedPrices, ...verdict.unknownUrls].join(', ')} -- model diminta menulis ulang.`
+      `Balasan memuat klaim yang tidak aman untuk giliran ini: ${blockingVerdictFindings(verdict, topic, alsoTopics).join(', ')} -- model diminta menulis ulang.`
     )
     const retried = await callLLM(inboundText, {
       system: `${system}${buildVerificationRetryInstruction(verdict)}`,
       model,
       history,
     })
-    const retriedVerdict = retried?.trim() ? verifyReply({ replyText: retried, groundedAmounts, groundedUrls, topic, alsoTopics }) : null
-    if (retried?.trim() && retriedVerdict && retriedVerdict.fabricatedPrices.length === 0 && retriedVerdict.unknownUrls.length === 0) {
+    const retriedVerdict = retried?.trim()
+      ? verifyReply({
+          replyText: retried,
+          groundedAmounts,
+          groundedUrls,
+          groundedText,
+          pricesShownForPax,
+          requiredPackageUrls,
+          allowedFinishCities,
+          requiresLiveData,
+          topic,
+          alsoTopics,
+        })
+      : null
+    if (retried?.trim() && retriedVerdict && blockingVerdictFindings(retriedVerdict, topic, alsoTopics).length === 0) {
       reply = retried
       verdict = retriedVerdict
-      trace.push('Penulisan ulang berhasil', 'Balasan kedua hanya memakai harga/link yang benar-benar ada di data.')
+      trace.push('Penulisan ulang berhasil', 'Balasan kedua lolos verifikasi harga, link, tier pax, klaim, dan guardrail.')
     } else {
       // The ONE handoff this branch adds, and deliberately the only one. It is
       // NOT a content gap -- the facts WERE present in the prompt and the model
       // would not use them -- which is exactly why it is the one case where a
       // human genuinely must answer: the bot has already proven, twice, that it
       // cannot answer this turn without inventing a price or a link.
-      trace.push('Balasan ditahan', 'Penulisan ulang masih mengarang harga/link -- balasan diganti pesan aman dan percakapan diserahkan ke agen.')
+      trace.push('Balasan ditahan', 'Penulisan ulang masih memuat klaim yang tidak aman -- balasan diganti pesan aman dan percakapan diserahkan ke agen.')
       // NOT a content gap -- the facts WERE present in the prompt and the model reached
       // past them anyway. Opposite failure mode from 'no_facts_resolved' below, needing
       // an opposite fix (see KnowledgeGapLog's own schema comment).
@@ -865,7 +920,7 @@ async function composeVerifiedReply(params: {
         ok: false,
         decision: {
           mode: 'handoff',
-          reason: 'Balasan gagal verifikasi harga/link dua kali berturut-turut',
+          reason: 'Balasan gagal verifikasi knowledge dua kali berturut-turut',
           steps: trace.steps,
           // The verdict of the SECOND attempt when there was one: it is the reply that was
           // actually withheld, so it is the one an operator needs to see.
@@ -906,31 +961,6 @@ async function composeVerifiedReply(params: {
     )
   }
 
-  // The wrong-TIER case, which verification by construction cannot catch: a
-  // neighbouring tier is an exact member of `groundedAmounts` (the caller grounds
-  // on every tier of every presented option, deliberately -- see that comment),
-  // so `isDerivableAmount` returns true on its first line and the figure never
-  // reaches `unverifiedPrices`. Where the caller knows which prices this prompt
-  // actually printed for a KNOWN pax count, a real-but-not-this-customer's tier is
-  // worth naming in the trace. Trace-only on purpose: the reply states a genuine
-  // catalog price, and blocking it would trade a common false positive for a rarer
-  // real one -- exactly the trade the wide grounding exists to avoid.
-  if (pricesShownForPax && pricesShownForPax.length > 0) {
-    const misquotedTiers = [
-      ...new Set(
-        extractRupiahAmounts(reply).filter(
-          (a) => groundedAmounts.includes(a) && !isDerivableAmount(a, pricesShownForPax)
-        )
-      ),
-    ]
-    if (misquotedTiers.length > 0) {
-      trace.push(
-        'Tier harga tidak sesuai jumlah orang',
-        `Balasan menyebut ${misquotedTiers.map((a) => `Rp${a.toLocaleString('id-ID')}`).join(', ')} -- harga itu ada di katalog, tapi bukan tier untuk jumlah pax pelanggan ini (${pricesShownForPax.map((a) => `Rp${a.toLocaleString('id-ID')}`).join(', ')}) -- tetap dikirim.`
-      )
-    }
-  }
-
   trace.push('Jawaban siap dikirim', previewText(reply))
   return {
     ok: true,
@@ -948,9 +978,28 @@ function summariseVerdict(verdict: VerificationResult) {
   return {
     fabricatedPrices: verdict.fabricatedPrices,
     unverifiedPrices: verdict.unverifiedPrices,
+    wrongPaxTierPrices: verdict.wrongPaxTierPrices,
     unknownUrls: verdict.unknownUrls,
+    misdirectedUrls: verdict.misdirectedUrls,
+    unsupportedClaims: verdict.unsupportedClaims,
     guaranteeViolations: verdict.guaranteeViolations,
   }
+}
+
+function blockingVerdictFindings(verdict: VerificationResult, topic: string, alsoTopics: string[] | undefined): string[] {
+  const guaranteeTopics = guaranteeCheckTopics(topic, alsoTopics)
+  return [
+    ...verdict.fabricatedPrices.map((amount) => `harga tidak bersumber Rp${amount.toLocaleString('id-ID')}`),
+    ...verdict.unknownUrls.map((url) => `URL tidak dikenal ${url}`),
+    ...verdict.wrongPaxTierPrices.map((amount) => `tier pax salah Rp${amount.toLocaleString('id-ID')}`),
+    ...verdict.misdirectedUrls.map((url) => `link paket salah arah ${url}`),
+    ...verdict.unsupportedClaims.map((claim) => `klaim tanpa fakta ${claim}`),
+    ...verdict.guaranteeViolations.map((phrase) =>
+      guaranteeTopics.length > 0
+        ? `janji terlarang ${phrase} pada topik ${guaranteeTopics.map((t) => `"${t}"`).join(', ')}`
+        : `janji terlarang ${phrase}`
+    ),
+  ]
 }
 
 /**
@@ -1104,6 +1153,7 @@ async function runBookingContextMode(
     ...bookingAmountsIn(bookingData),
     ...extractRupiahAmounts([bookingJson, ...managed.lines, klookHealthScreeningNote, ...modeThreeRouteLegFacts].join('\n')),
   ]
+  const groundedText = [bookingJson, ...managed.lines, klookHealthScreeningNote, ...modeThreeRouteLegFacts].join('\n')
   const groundedUrls = [
     ...(portalLink ? [portalLink] : []),
     ...extractUrls([bookingJson, ...managed.lines].join('\n')),
@@ -1125,6 +1175,7 @@ async function runBookingContextMode(
     history,
     groundedAmounts,
     groundedUrls,
+    groundedText,
     trace,
   })
   if (!composed.ok) return composed.decision
@@ -1300,6 +1351,7 @@ async function runNoDestinationBranch(
         model: ollamaModel,
         history,
         groundedAmounts: extractRupiahAmounts(preDestinationText),
+        groundedText: preDestinationText,
         // A URL the customer themselves just pasted, or one this same conversation already
         // sent in an earlier turn (`history` above, fed into the same callLLM call), is not
         // something the model invented -- repeating it back is not a fabrication.
@@ -1769,6 +1821,10 @@ export async function decideAndRespond(
     // branch's latency. `classifyTopicViaLLM` (the primary topic classifier, second entry
     // below) is untouched -- see multi-topic-classifier.ts's own header for why this had to be
     // a separate call rather than an extension of that prompt.
+    const formPreferences = parseTripPreferencesFormAnswer(inboundText, tripBrief)
+    const preferenceExtraction = formPreferences
+      ? Promise.resolve({ preferences: formPreferences, source: 'structured_form' as const })
+      : extractTripPreferences(inboundText, settings.ollamaModel, funnelAnswerContext(tripBrief))
     const [
       { moduleIds: keywordModuleIds, source: keywordModuleSource },
       { topic: resolverTopic, source: topicSource },
@@ -1785,10 +1841,7 @@ export async function decideAndRespond(
       // once here and shared by every step below rather than re-derived at each use.
       classifyKeywordModulesViaLLM(inboundText, settings.ollamaModel),
       classifyTopicViaLLM(classification.job, inboundText, settings.ollamaModel),
-      // LLM-primary as of 2026-08-07 (see trip-preferences-extractor.ts's own header for the full
-      // rationale) -- validated against known values, falls back to the old regex parser only on
-      // a genuine technical failure (timeout/error/unparseable output), never as a first-pass gate.
-      extractTripPreferences(inboundText, settings.ollamaModel, funnelAnswerContext(tripBrief)),
+      preferenceExtraction,
       // LLM-primary as of 2026-08-07 (see preference-decline-classifier.ts's own header) --
       // flagged in the manual-matching audit as the highest-risk remaining matcher: this is the
       // funnel's ONLY bypass, so a missed decline traps the customer in a repeat-question loop
@@ -1832,9 +1885,11 @@ export async function decideAndRespond(
     }
     trace.push(
       'Mengekstrak preferensi perjalanan',
-      preferencesSource === 'llm'
-        ? 'Diekstrak oleh model LLM dari teks pelanggan, tervalidasi terhadap nilai yang dikenal (origin/finishCity/dayCount/pax).'
-        : 'Model LLM gagal, timeout, atau hasilnya tidak valid -- fallback ke pemrosesan regex lama (parseTripPreferences).'
+      preferencesSource === 'structured_form'
+        ? 'Dibaca deterministik sebagai jawaban atas formulir start/finish/day-count yang baru ditanyakan bot.'
+        : preferencesSource === 'llm'
+          ? 'Diekstrak oleh model LLM dari teks pelanggan, tervalidasi terhadap nilai yang dikenal (origin/finishCity/dayCount/pax).'
+          : 'Model LLM gagal, timeout, atau hasilnya tidak valid -- fallback ke pemrosesan regex lama (parseTripPreferences).'
     )
     trace.push(
       'Mendeteksi niat rekomendasi paket',
@@ -1980,19 +2035,19 @@ export async function decideAndRespond(
 
     // Confirmed with the operator 2026-08-05: narrowPackagePool's own header explains the 4
     // explicit priority tiers this uses instead of a single-pass "skip whichever filter would
-    // zero the pool" narrowing. `matchTier === 'none'` means not even the stated duration has a
-    // match for this destination at all -- hand off instead of presenting an unrelated list
-    // (the operator's own explicit ask: genuinely too-custom requests go to a human, who
-    // follows up directly, rather than the bot guessing something irrelevant).
+    // zero the pool" narrowing. `matchTier === 'none'` now only means there is no relevant
+    // package pool at all. A stated duration/start/finish that has no exact standard package
+    // still reaches the LLM as a closest alternative, with `matchTierNote` below forcing honest
+    // wording instead of a handoff.
     const { pool: matchTierPool, tier: matchTier } = narrowPackagePool(matches, { origin, dayCount, finishCity, pax }, requestedTokens)
     if (matchTier === 'none') {
       trace.push(
         'Tidak ada paket yang cocok',
-        `Tidak ada paket untuk destinasi "${destination}" dengan durasi ${dayCount} hari sama sekali -- diserahkan ke agen, tim akan follow up langsung.`
+        `Tidak ada paket relevan untuk destinasi "${destination}" sama sekali -- diserahkan ke agen, tim akan follow up langsung.`
       )
       return {
         mode: 'handoff',
-        reason: `Permintaan pelanggan (durasi ${dayCount ?? '?'} hari) tidak cocok dengan paket manapun untuk destinasi "${destination}", bahkan setelah dilonggarkan.`,
+        reason: `Permintaan pelanggan tidak cocok dengan paket manapun untuk destinasi "${destination}", bahkan setelah dilonggarkan.`,
         steps: trace.steps,
       }
     }
@@ -2253,7 +2308,7 @@ export async function decideAndRespond(
       matchTier === 'relaxed_route'
         ? `\n\nNone of the matching packages above cover the exact route/order the customer described, but they DO match the same start city, finish city, and trip length -- be upfront that the route/stop order is slightly different from what they described, while confirming the start, finish, and duration are exactly as requested.`
         : matchTier === 'relaxed_start_end'
-          ? `\n\nNone of the matching packages above start and finish exactly where the customer asked -- these are the closest alternative(s) for their trip length instead. Be upfront that the exact start/finish combination they wanted isn't a standard package, and mention that our team can adjust the specifics after booking if needed.`
+          ? `\n\nNone of the matching packages above match every stated start, finish, and duration detail exactly -- these are the closest relevant alternative(s). Be upfront that the exact combination they wanted isn't a standard package, and mention that our team can adjust the specifics after booking if needed.`
           : ''
     // "Can we finish the trip in Bali?" -- a Bali-ORIGIN package's real dropoff options are
     // all Surabaya/Malang-area (verified 2026-08-05: none of the 4 Bali-origin packages list
@@ -2451,6 +2506,16 @@ export async function decideAndRespond(
     // correct tier to be wrong about.
     const pricesShownForPax =
       pax === null ? [] : optionPackages.map((p) => priceForPax(p, pax).priceIdr).filter((n): n is number => n !== null)
+    const packageLogistics = packageLogisticsLines(pkg)
+    const verificationGroundedText = [
+      ...knowledge.factualLines,
+      ...knowledge.detailLines,
+      ...disclosures,
+      ...pkg.stagingNotes,
+      ...packageLogistics,
+      packageOptionsText ?? '',
+      pkg.finishCities.length > 0 ? `Finish options for this package: ${pkg.finishCities.join(', ')}.` : '',
+    ].join('\n')
 
     traceStep(pipeline, 'verifikasi-balasan', 'mulai')
     const composed = await composeVerifiedReply({
@@ -2462,7 +2527,13 @@ export async function decideAndRespond(
       history,
       groundedAmounts,
       groundedUrls,
+      groundedText: verificationGroundedText,
       pricesShownForPax,
+      requiredPackageUrls: recommendMultiple
+        ? optionPackages.map((p) => p.links.details).filter((u): u is string => Boolean(u))
+        : pkg.links.details ? [pkg.links.details] : [],
+      allowedFinishCities: pkg.finishCities,
+      requiresLiveData: classification.needsLiveData,
       // Task 22: the guarantee-violation check (reply-verifier.ts) runs when the PRIMARY topic
       // OR any of these is in NO_GUARANTEE_TOPICS -- a Blue Fire promise slipped into the
       // answer for a side question must still be caught.

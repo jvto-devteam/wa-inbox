@@ -201,6 +201,25 @@ const MONTH_NAMES = [
   'july', 'august', 'september', 'october', 'november', 'december',
 ]
 
+type CityToken = { canonical: string; finish: string; pattern: RegExp }
+
+const CITY_TOKENS: CityToken[] = [
+  { canonical: 'Surabaya', finish: 'surabaya', pattern: /\b(?:surabaya|sub|juanda)(?:\s+airport)?\b/i },
+  { canonical: 'Bali', finish: 'bali', pattern: /\b(?:bali|denpasar|dps)(?:\s+airport)?\b/i },
+  { canonical: 'Malang', finish: 'malang', pattern: /\bmalang\b/i },
+  { canonical: 'Ketapang', finish: 'ketapang', pattern: /\bketapang\b/i },
+]
+
+const ORIGIN_CITY_SOURCE = '(?:surabaya|sub|juanda(?:\\s+airport)?|bali|denpasar|dps(?:\\s+airport)?)'
+const FINISH_CITY_SOURCE = '(?:surabaya|sub|juanda(?:\\s+airport)?|bali|denpasar|dps(?:\\s+airport)?|malang|ketapang)'
+
+function cityFromText(text: string, role: 'origin' | 'finish'): CityToken | null {
+  const allowed = role === 'origin'
+    ? CITY_TOKENS.filter((city) => city.canonical === 'Surabaya' || city.canonical === 'Bali')
+    : CITY_TOKENS
+  return allowed.find((city) => city.pattern.test(text)) ?? null
+}
+
 // A customer-stated duration/origin/finish-city, parsed from free text -- used to narrow
 // pickPackage's choice among a destination's several packages (they differ mainly by
 // day count, starting city, and which cities they can end in; see catalog/package-profiles.json's
@@ -211,6 +230,12 @@ const MONTH_NAMES = [
 export type TripPreferences = { origin: string | null; dayCount: number | null; finishCity: string | null; pax: number | null }
 
 const NO_PREFERENCES: TripPreferences = { origin: null, dayCount: null, finishCity: null, pax: null }
+export type TripPreferenceFormState = {
+  awaitingTripPreferencesAnswer?: boolean
+  origin?: string | null
+  finishCity?: string | null
+  dayCount?: number | null
+}
 
 // "2 people"/"4 pax"/"group of 15"/"a party of 6"/"3 of us" -> that number. "solo"/"just
 // me"/"myself"/"alone" -> 1. Added 2026-08-05: CatalogPackage.priceTiers (see that field's own
@@ -350,13 +375,22 @@ export function titleCaseCity(city: string): string {
 // finish-context phrase in English always PRECEDES the city it governs ("finish in X", "back
 // to/in X", "drop off X") -- there is no natural phrasing where it follows -- so the window now
 // only looks at the text BEFORE each city, restoring directionality the proximity-only check
-// was missing. `cityLength` is no longer needed (the window never extended past the city
-// anyway) but kept in the signature to avoid changing both call sites for a cosmetic-only trim.
+// was missing.
 const FINISH_CONTEXT_WINDOW = 30
-function hasNearbyFinishContext(low: string, cityIndex: number, _cityLength: number): boolean {
+function hasNearbyFinishContext(low: string, cityIndex: number): boolean {
   const start = Math.max(0, cityIndex - FINISH_CONTEXT_WINDOW)
   const window = low.slice(start, cityIndex)
   return FINISH_CONTEXT_PHRASES.some((p) => window.includes(p))
+}
+
+function routePair(low: string): { origin: string; finishCity: string } | null {
+  const arrow = low.match(new RegExp(`\\b(${ORIGIN_CITY_SOURCE})\\b\\s*(?:->|→)\\s*\\b(${FINISH_CITY_SOURCE})\\b`, 'i'))
+  const fromTo = low.match(new RegExp(`\\bfrom\\s+(${ORIGIN_CITY_SOURCE})\\b[^.!?]{0,80}\\bto\\s+(${FINISH_CITY_SOURCE})\\b`, 'i'))
+  const match = arrow ?? fromTo
+  if (!match) return null
+  const origin = cityFromText(match[1], 'origin')
+  const finish = cityFromText(match[2], 'finish')
+  return origin && finish ? { origin: origin.canonical, finishCity: finish.finish } : null
 }
 
 // Cities customers occasionally name as their pickup/start point that JVTO genuinely does
@@ -411,12 +445,14 @@ export function mentionedUnsupportedOriginCity(message: string): string | null {
 }
 
 function parseOrigin(low: string): string | null {
+  const route = routePair(low)
+  if (route) return route.origin
   const fromMatch = low.match(FROM_CITY_PATTERN)
   if (fromMatch) return titleCaseCity(fromMatch[1] ?? fromMatch[2] ?? fromMatch[3])
   const surabayaIndex = low.indexOf('surabaya')
-  if (surabayaIndex !== -1 && !hasNearbyFinishContext(low, surabayaIndex, 'surabaya'.length)) return 'Surabaya'
+  if (surabayaIndex !== -1 && !hasNearbyFinishContext(low, surabayaIndex)) return 'Surabaya'
   const baliIndex = low.indexOf('bali')
-  if (baliIndex !== -1 && !hasNearbyFinishContext(low, baliIndex, 'bali'.length)) return 'Bali'
+  if (baliIndex !== -1 && !hasNearbyFinishContext(low, baliIndex)) return 'Bali'
   return null
 }
 
@@ -439,6 +475,8 @@ const CONTINUE_ONWARD_PATTERN =
   /\b(?:continue|continuing|carry on|carrying on|onward|make our way|making our way|head|heading)\b[^.!?]{0,40}?\bto\s+(bali|surabaya|malang|ketapang)\b/
 
 function parseFinishCity(low: string): string | null {
+  const route = routePair(low)
+  if (route) return route.finishCity
   if (FINISH_CONTEXT_PHRASES.some((p) => low.includes(p))) {
     for (const city of FINISH_CITY_TOKENS) {
       if (low.includes(city)) return city
@@ -453,6 +491,100 @@ function parseFinishCity(low: string): string | null {
 export function parseTripPreferences(message: string): TripPreferences {
   const low = normalizeAliases(message.toLowerCase())
   return { origin: parseOrigin(low), dayCount: parseDayCount(low), finishCity: parseFinishCity(low), pax: parsePax(low) }
+}
+
+function parseLabelledField(low: string, labels: string[], role: 'origin' | 'finish'): string | null {
+  const labelPattern = labels.map((label) => label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')
+  const cityPattern = role === 'origin' ? ORIGIN_CITY_SOURCE : FINISH_CITY_SOURCE
+  const match = low.match(new RegExp(`(?:^|[\\n,;])\\s*(?:${labelPattern})\\s*:?\\s*(${cityPattern})\\b`, 'i'))
+  const city = match ? cityFromText(match[1], role) : null
+  return city ? (role === 'origin' ? city.canonical : city.finish) : null
+}
+
+function parseLabelledDayCount(low: string): number | null {
+  const match = low.match(/(?:^|[\n,;])\s*(?:number of day(?:s)?|days?|duration|durasi|jumlah hari)\s*:?\s*(\d{1,2})(?:\s*(?:days?|hari|d\b))?/i)
+  if (!match) return null
+  const n = Number(match[1])
+  return n > 0 && n <= 30 ? n : null
+}
+
+function commaParts(message: string): string[] {
+  return message
+    .split(/[,;\n]+/)
+    .map((part) => part.trim())
+    .filter(Boolean)
+}
+
+function mergePreferencePatch(base: TripPreferences, patch: Partial<TripPreferences>): TripPreferences {
+  return {
+    origin: patch.origin ?? base.origin,
+    finishCity: patch.finishCity ?? base.finishCity,
+    dayCount: patch.dayCount ?? base.dayCount,
+    pax: patch.pax ?? base.pax,
+  }
+}
+
+/**
+ * Deterministic parser for the bot's own start/finish/day-count form. Free text keeps using
+ * `parseTripPreferences`/LLM extraction; this only runs while the conversation is explicitly
+ * awaiting that form, so compact answers can be interpreted by the order the bot itself asked.
+ */
+export function parseTripPreferencesFormAnswer(message: string, state: TripPreferenceFormState): TripPreferences | null {
+  if (state.awaitingTripPreferencesAnswer !== true) return null
+  const low = normalizeAliases(message.toLowerCase())
+  const parsed = parseTripPreferences(message)
+  const labelled = mergePreferencePatch(NO_PREFERENCES, {
+    origin: parseLabelledField(low, ['pickup', 'pick-up', 'start', 'from'], 'origin'),
+    finishCity: parseLabelledField(low, ['drop', 'dropoff', 'drop-off', 'finish', 'end', 'to'], 'finish'),
+    dayCount: parseLabelledDayCount(low),
+    pax: parsed.pax,
+  })
+  if (labelled.origin || labelled.finishCity || labelled.dayCount || labelled.pax) return labelled
+
+  const route = routePair(low)
+  if (route) return { ...NO_PREFERENCES, ...route, dayCount: parsed.dayCount, pax: parsed.pax }
+
+  const missing: Array<keyof Pick<TripPreferences, 'origin' | 'finishCity' | 'dayCount'>> = []
+  if (!state.origin) missing.push('origin')
+  if (!state.finishCity) missing.push('finishCity')
+  if (!state.dayCount) missing.push('dayCount')
+  if (missing.length === 0) return null
+
+  const parts = commaParts(message)
+  if (parts.length >= 2) {
+    const patch: Partial<TripPreferences> = {}
+    let partIndex = 0
+    for (const field of missing) {
+      const part = parts[partIndex]
+      if (!part) break
+      if (field === 'dayCount') patch.dayCount = parseDayCount(normalizeAliases(part.toLowerCase()))
+      else {
+        const city = cityFromText(part, field === 'origin' ? 'origin' : 'finish')
+        if (city) {
+          if (field === 'origin') patch.origin = city.canonical
+          else patch.finishCity = city.finish
+        }
+      }
+      partIndex += 1
+    }
+    const out = mergePreferencePatch(NO_PREFERENCES, patch)
+    if (out.origin || out.finishCity || out.dayCount) return out
+  }
+
+  if (missing.length === 1) {
+    const field = missing[0]
+    if (field === 'dayCount') {
+      const dayCount = parseDayCount(low)
+      return dayCount ? { ...NO_PREFERENCES, dayCount } : null
+    }
+    const city = cityFromText(message, field === 'origin' ? 'origin' : 'finish')
+    if (!city) return null
+    return field === 'origin'
+      ? { ...NO_PREFERENCES, origin: city.canonical }
+      : { ...NO_PREFERENCES, finishCity: city.finish }
+  }
+
+  return null
 }
 
 // Shared by pickPackage and narrowPackagePool below -- whether `p` covers EVERY destination
@@ -564,9 +696,8 @@ export type PackageMatchTier = 'exact' | 'relaxed_route' | 'relaxed_start_end' |
  *      finishCity), then keeping finishCity (drops origin), unioning whichever succeed, before
  *      relaxing both. E.g. "4 day Bali -> Bali" doesn't exist (no Bali-origin package finishes
  *      in Bali) -- offers "4 day Surabaya -> Bali" instead (same finish, different start).
- *   4. 'none': not even the stated duration has a match against this destination at all --
- *      nothing to offer even approximately; the caller should hand off to a human agent
- *      instead of presenting an unrelated list.
+ *   4. 'none': no candidate package exists at all. A stated-but-unsupported duration still
+ *      returns a near-match pool, because an honest closest package is better than a handoff.
  *
  * `requestedTokens` should be `mentionedDestinationTokens(message, catalog)`, not just the
  * single anchor token `matches` was already filtered by.
@@ -613,7 +744,7 @@ export function narrowPackagePool(
   let durationPool = matches
   if (dayCount) {
     durationPool = durationPool.filter((p) => p.dayCount === dayCount)
-    if (durationPool.length === 0) return { pool: [], tier: 'none' }
+    if (durationPool.length === 0) return { pool: matches, tier: 'relaxed_start_end' }
   }
 
   const keepOrigin = origin ? durationPool.filter((p) => p.origin === origin) : []

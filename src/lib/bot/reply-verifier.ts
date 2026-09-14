@@ -218,8 +218,14 @@ export type VerificationResult = {
   fabricatedPrices: number[]
   /** The grounding had prices, this is not one of them and not derivable -- advise. */
   unverifiedPrices: number[]
+  /** A real catalog tier was quoted, but not one of the prices printed for this pax count. */
+  wrongPaxTierPrices: number[]
   /** Not in the link registry or any package link for this turn -- block. */
   unknownUrls: string[]
+  /** A grounded URL was used, but the turn required a concrete package URL and this is not one. */
+  misdirectedUrls: string[]
+  /** Customer-facing claims whose required fact was not present in this turn's grounding. */
+  unsupportedClaims: string[]
   /**
    * A reply-side promise phrase (see `findGuaranteeViolations`'s header) on a topic whose
    * guardrail forbids making one -- recorded, never blocked (Ruling R49). Always `[]` when
@@ -245,7 +251,10 @@ export type ReplyVerification = {
   attempts: number
   fabricatedPrices: number[]
   unverifiedPrices: number[]
+  wrongPaxTierPrices: number[]
   unknownUrls: string[]
+  misdirectedUrls: string[]
+  unsupportedClaims: string[]
   guaranteeViolations: string[]
 }
 
@@ -253,6 +262,11 @@ export function verifyReply(params: {
   replyText: string
   groundedAmounts: number[]
   groundedUrls: string[]
+  groundedText?: string
+  pricesShownForPax?: number[]
+  requiredPackageUrls?: string[]
+  allowedFinishCities?: string[]
+  requiresLiveData?: boolean
   /**
    * The turn's `ResolverTopic`, when known -- drives the guarantee-violation check only
    * (Ruling R37). Optional and unused by the price/URL checks above it, which is why every
@@ -267,26 +281,127 @@ export function verifyReply(params: {
    */
   alsoTopics?: string[]
 }): VerificationResult {
-  const { replyText, groundedAmounts, groundedUrls, topic, alsoTopics } = params
+  const {
+    replyText,
+    groundedAmounts,
+    groundedUrls,
+    groundedText = '',
+    pricesShownForPax,
+    requiredPackageUrls = [],
+    allowedFinishCities = [],
+    requiresLiveData = false,
+    topic,
+    alsoTopics,
+  } = params
   const fabricatedPrices: number[] = []
   const unverifiedPrices: number[] = []
-  for (const amount of extractRupiahAmounts(replyText)) {
+  const replyAmounts = extractRupiahAmounts(replyText)
+  for (const amount of replyAmounts) {
     if (isDerivableAmount(amount, groundedAmounts)) continue
     if (groundedAmounts.length === 0) fabricatedPrices.push(amount)
     else unverifiedPrices.push(amount)
   }
+  const wrongPaxTierPrices = pricesShownForPax && pricesShownForPax.length > 0
+    ? [
+        ...new Set(
+          replyAmounts.filter((amount) => groundedAmounts.includes(amount) && !isDerivableAmount(amount, pricesShownForPax))
+        ),
+      ]
+    : []
   // A URL is all-or-nothing: unlike a price there is no arithmetic that could
   // legitimately produce one the grounding never contained, so an unknown URL
   // is always a fabrication. Compared without a trailing slash -- the model
   // routinely adds one and that is formatting, not a different page.
   const allowed = new Set(groundedUrls.map((u) => u.replace(/\/+$/, '')))
-  const unknownUrls = [...new Set(extractUrls(replyText).filter((u) => !allowed.has(u.replace(/\/+$/, ''))))]
+  const replyUrls = extractUrls(replyText)
+  const unknownUrls = [...new Set(replyUrls.filter((u) => !allowed.has(u.replace(/\/+$/, ''))))]
   return {
     fabricatedPrices: [...new Set(fabricatedPrices)],
     unverifiedPrices: [...new Set(unverifiedPrices)],
+    wrongPaxTierPrices,
     unknownUrls,
+    misdirectedUrls: findMisdirectedUrls(replyText, replyUrls, requiredPackageUrls),
+    unsupportedClaims: findUnsupportedClaims({ replyText, groundedText, allowedFinishCities, requiresLiveData }),
     guaranteeViolations: findGuaranteeViolations(replyText, topic, alsoTopics),
   }
+}
+
+function findMisdirectedUrls(replyText: string, replyUrls: string[], requiredPackageUrls: string[]): string[] {
+  if (requiredPackageUrls.length === 0 || replyUrls.length === 0) return []
+  const required = new Set(requiredPackageUrls.map(normalizeUrl))
+  if (replyUrls.some((url) => required.has(normalizeUrl(url)))) return []
+  if (!looksLikePackagePriceReply(replyText)) return []
+  return [...new Set(replyUrls.filter((url) => isJvtoUrl(url) && !required.has(normalizeUrl(url))))]
+}
+
+function normalizeUrl(url: string): string {
+  return url.replace(/\/+$/, '').toLowerCase()
+}
+
+function isJvtoUrl(url: string): boolean {
+  try {
+    return new URL(url).hostname === 'javavolcano-touroperator.com'
+  } catch {
+    return false
+  }
+}
+
+function looksLikePackagePriceReply(replyText: string): boolean {
+  return extractRupiahAmounts(replyText).length > 0 || /\b(?:package|tour|price|priced|per person|pax)\b/i.test(replyText)
+}
+
+const DEFERRAL_PATTERN = /\b(?:let me check|we(?:'|’)ll check|i(?:'|’)ll check|get back to you|confirm (?:this|that|it) with|subject to availability|perlu kami cek|akan kami cek)\b/i
+const LUGGAGE_WORDS = /\b(?:luggage|baggage|bags?|backpacks?|suitcases?)\b/i
+const LUGGAGE_STORAGE_CLAIM = /\b(?:yes|you can|possible|safe|safely|keep|leave|store|fit|fits)\b[^.!?]{0,80}\b(?:luggage|baggage|bags?|backpacks?|suitcases?)\b|\b(?:luggage|baggage|bags?|backpacks?|suitcases?)\b[^.!?]{0,80}\b(?:vehicle|car|mpv|safe|safely|keep|leave|store|fit|fits)\b/i
+const CANCELLATION_DAY_CLAIM = /\b(?:cancel|cancellation|refund|credit)\b[^.!?]{0,80}\b(?:day\s*1|first day|same day|on the day|tour day)\b|\b(?:day\s*1|first day|same day|on the day|tour day)\b[^.!?]{0,80}\b(?:cancel|cancellation|refund|credit)\b/i
+const CONFIDENT_CLAIM = /\b(?:yes|can|will|include|included|refund|credit|possible|allowed)\b/i
+const EUR_AMOUNT = /(?:€\s*\d|\beur\s*\d|\d[\d.,]*\s*eur\b)/i
+const LIVE_AVAILABILITY_CLAIM = /\b(?:we have availability|available for|available on|available from|dates? (?:are|is) confirmed|confirmed automatically|exact dates are confirmed)\b/i
+const FINISH_CLAIM = /\b(?:finish(?:es)?|end(?:s)?|drop(?:s)?[\s-]?off|drop[\s-]?off)\s+(?:in|at|to|towards)?\s*(bali|surabaya|malang|ketapang)\b/gi
+const HOTEL_INCLUDED_CLAIM = /\b(?:include|includes|included|including)\b[^.!?]{0,50}\b(?:hotel|accommodation|room)\b|\b(?:hotel|accommodation|room)\b[^.!?]{0,50}\b(?:include|includes|included)\b/i
+
+function findUnsupportedClaims(params: {
+  replyText: string
+  groundedText: string
+  allowedFinishCities: string[]
+  requiresLiveData: boolean
+}): string[] {
+  const { replyText, groundedText, allowedFinishCities, requiresLiveData } = params
+  const claims: string[] = []
+  const grounded = groundedText.toLowerCase()
+  const deferred = DEFERRAL_PATTERN.test(replyText)
+
+  if (LUGGAGE_STORAGE_CLAIM.test(replyText) && !deferred && !LUGGAGE_WORDS.test(grounded)) {
+    claims.push('luggage_storage')
+  }
+  if (CANCELLATION_DAY_CLAIM.test(replyText) && CONFIDENT_CLAIM.test(replyText) && !/\b(?:cancel|cancellation|refund|credit|reschedule)\b/i.test(grounded)) {
+    claims.push('cancellation_terms')
+  }
+  if (HOTEL_INCLUDED_CLAIM.test(replyText) && !/\b(?:hotel|accommodation|overnight|rooming|room)\b/i.test(grounded)) {
+    claims.push('package_inclusion:hotel')
+  }
+  if (EUR_AMOUNT.test(replyText) && !EUR_AMOUNT.test(grounded)) {
+    claims.push('currency_conversion')
+  }
+  if (requiresLiveData && LIVE_AVAILABILITY_CLAIM.test(replyText) && !deferred) {
+    claims.push('live_availability')
+  }
+
+  const allowed = new Set(allowedFinishCities.map((city) => city.toLowerCase()))
+  if (allowed.size > 0) {
+    for (const match of replyText.matchAll(FINISH_CLAIM)) {
+      const city = match[1].toLowerCase()
+      if (isNegatedFinishClaim(replyText, match.index ?? 0)) continue
+      if (!allowed.has(city)) claims.push(`route_finish:${city}`)
+    }
+  }
+
+  return [...new Set(claims)]
+}
+
+function isNegatedFinishClaim(replyText: string, matchIndex: number): boolean {
+  const before = replyText.slice(Math.max(0, matchIndex - 40), matchIndex).toLowerCase()
+  return /\b(?:not|never|cannot|can't|can not|doesn't|does not|won't|will not|no)\b/.test(before)
 }
 
 // No replacement reply constant lives here: a twice-failed verification returns
@@ -304,10 +419,16 @@ export function buildVerificationRetryInstruction(result: VerificationResult): s
   if (result.fabricatedPrices.length > 0) {
     parts.push(`prices (${result.fabricatedPrices.map((a) => `Rp${a.toLocaleString('id-ID')}`).join(', ')})`)
   }
+  if (result.wrongPaxTierPrices.length > 0) {
+    parts.push(`wrong pax-tier prices (${result.wrongPaxTierPrices.map((a) => `Rp${a.toLocaleString('id-ID')}`).join(', ')})`)
+  }
   if (result.unknownUrls.length > 0) parts.push(`links (${result.unknownUrls.join(', ')})`)
+  if (result.misdirectedUrls.length > 0) parts.push(`misdirected links (${result.misdirectedUrls.join(', ')})`)
+  if (result.unsupportedClaims.length > 0) parts.push(`unsupported claims (${result.unsupportedClaims.join(', ')})`)
+  if (result.guaranteeViolations.length > 0) parts.push(`forbidden guarantee wording (${result.guaranteeViolations.join(', ')})`)
   return (
-    `\n\nCRITICAL CORRECTION: your previous reply stated ${parts.join(' and ')} that appear NOWHERE in the facts above. ` +
-    `They are fabricated and must not be sent. Rewrite your reply using ONLY the prices and links given above; ` +
-    `if the facts above do not contain the price or link the customer asked for, say our team will confirm it shortly and give neither.`
+    `\n\nCRITICAL CORRECTION: your previous reply stated ${parts.join(' and ')} that are not safe for this turn. ` +
+    `Rewrite your reply using ONLY the facts, prices, package links, and restrictions given above. ` +
+    `If the facts above do not contain the exact answer the customer asked for, say our team will confirm that specific point shortly and do not invent it.`
   )
 }

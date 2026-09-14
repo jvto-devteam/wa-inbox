@@ -450,24 +450,27 @@ describe('MessageBubble — Perbaiki', () => {
     botTrace: { mode: 'faq', draft: 'Harga ATV Rp350.000.', sourceTopic: 'price' },
   }
 
-  it('ikon Perbaiki di balasan bot membuka dan menutup panel perbaikan', () => {
+  it('tombol Perbaiki di popover otak membuka dan menutup panel perbaikan', () => {
     render(<MessageBubble message={botReply} />)
     expect(screen.queryByText('panel perbaikan msg_bot')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Perbaiki jawaban bot')).not.toBeInTheDocument()
 
-    fireEvent.click(screen.getByLabelText('Perbaiki jawaban bot'))
+    fireEvent.click(screen.getByLabelText('Lihat alasan bot'))
+    fireEvent.click(screen.getByRole('button', { name: 'Perbaiki jawaban bot' }))
     expect(screen.getByText('panel perbaikan msg_bot')).toBeInTheDocument()
+    expect(screen.queryByText(/sumber topik/i)).not.toBeInTheDocument()
 
     fireEvent.click(screen.getByText('tutup panel'))
     expect(screen.queryByText('panel perbaikan msg_bot')).not.toBeInTheDocument()
   })
 
-  it('tidak ada ikon Perbaiki di pesan agen maupun pelanggan', () => {
+  it('tidak ada perbaikan bot di pesan agen maupun pelanggan', () => {
     const { unmount } = render(<MessageBubble message={{ ...botReply, sentBy: 'AGENT', botTrace: null }} />)
-    expect(screen.queryByLabelText('Perbaiki jawaban bot')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Perbaiki jawaban bot' })).not.toBeInTheDocument()
     unmount()
 
     render(<MessageBubble message={{ ...botReply, direction: 'INBOUND', sentBy: 'CUSTOMER', botTrace: null }} />)
-    expect(screen.queryByLabelText('Perbaiki jawaban bot')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Perbaiki jawaban bot' })).not.toBeInTheDocument()
   })
 
   it('menandai balasan bot yang punya gap knowledge dengan border dan ikon warning', () => {
@@ -489,6 +492,26 @@ describe('MessageBubble — Perbaiki', () => {
     expect(screen.getByLabelText('Ada gap knowledge pada jawaban ini')).toBeInTheDocument()
     expect(screen.getByText('Ada bagian jawaban yang belum punya knowledge')).toBeInTheDocument()
     expect(container.querySelector('.border-warning')).toBeInTheDocument()
+  })
+
+  it('tooltip gap menempel pada jawaban, bukan pada ikon warning', () => {
+    render(
+      <MessageBubble
+        message={{
+          ...botReply,
+          knowledgeGap: {
+            id: 'gap_1',
+            topic: 'vehicle',
+            reason: 'reply_deferred_knowledge',
+            messageText: 'Can we bring ten suitcases?',
+            createdAt: '2026-09-13T02:01:00.000Z',
+          },
+        }}
+      />
+    )
+
+    expect(screen.getByText('Harga ATV Rp350.000.').closest('.relative')).toHaveTextContent('Ada bagian jawaban yang belum punya knowledge')
+    expect(screen.getByLabelText('Ada gap knowledge pada jawaban ini').parentElement).not.toHaveClass('relative')
   })
 
   it('klik ikon warning membuka panel perbaikan untuk jawaban itu', () => {

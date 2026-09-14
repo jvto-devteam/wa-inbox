@@ -2024,7 +2024,7 @@ describe('decideAndRespond', () => {
 
       const result = await decideAndRespond('conv_1', 'How much is the Ijen tour?')
 
-      expect(result).toMatchObject({ mode: 'handoff', reason: 'Balasan gagal verifikasi harga/link dua kali berturut-turut' })
+      expect(result).toMatchObject({ mode: 'handoff', reason: 'Balasan gagal verifikasi knowledge dua kali berturut-turut' })
       expect(vi.mocked(callLLM).mock.calls).toHaveLength(2)
       expect(result.steps?.map((s) => s.label)).toContain('Balasan ditahan')
       // Task 11: the facts WERE present and the model reached past them anyway -- an
@@ -2099,6 +2099,70 @@ describe('decideAndRespond', () => {
       expect(llmCall(1)[1]!.system).toContain('https://javavolcano-touroperator.com/tours/made-up-package')
     })
 
+    it('rewrites a package price reply that uses a grounded but non-package JVTO link', async () => {
+      groundedMainPath({ priceIdr: 6300000, priceTiers: [{ minPax: 1, maxPax: 1, priceIdr: 6300000 }], links: { details: 'https://javavolcano-touroperator.com/tours/from-surabaya/bromo-ijen-3d2n' } })
+      vi.mocked(extractTripPreferences).mockResolvedValue({
+        preferences: { origin: null, dayCount: null, finishCity: null, pax: 1 },
+        source: 'llm',
+      })
+      vi.mocked(resolveKnowledgeForTopic).mockReturnValue({
+        factualLines: ['Why JVTO: private tours with careful support.'],
+        detailLines: [],
+        primaryLink: 'https://javavolcano-touroperator.com/why-jvto/the-jvto-difference',
+        disclosures: [],
+        handoffRequired: false,
+      })
+      vi.mocked(detectsPackageLinkIntentViaLLM).mockResolvedValue({ wantsPackageLink: true, source: 'llm' })
+      vi.mocked(callLLM)
+        .mockResolvedValueOnce('Hi! The price is Rp6.300.000 per person: https://javavolcano-touroperator.com/why-jvto/the-jvto-difference')
+        .mockResolvedValueOnce('Hi! The price is Rp6.300.000 per person: https://javavolcano-touroperator.com/tours/from-surabaya/bromo-ijen-3d2n')
+
+      const result = await decideAndRespond('conv_1', 'How much is this Ijen package for solo traveler?')
+
+      expect(result).toMatchObject({
+        mode: 'faq',
+        draft: 'Hi! The price is Rp6.300.000 per person: https://javavolcano-touroperator.com/tours/from-surabaya/bromo-ijen-3d2n',
+      })
+      expect(result.steps?.find((s) => s.label === 'Verifikasi gagal')?.detail).toContain('link paket salah arah')
+    })
+
+    it('rewrites a confident luggage storage claim when the package has no luggage rule', async () => {
+      groundedMainPath({ vehicleCategory: 'Private AC MPV', luggageRule: null })
+      vi.mocked(callLLM)
+        .mockResolvedValueOnce('Yes, you can safely keep your large backpacks in the vehicle during excursions.')
+        .mockResolvedValueOnce('Let me check with our team regarding the space for your large backpacks.')
+
+      const result = await decideAndRespond('conv_1', 'Can we keep two large backpacks in the vehicle?')
+
+      expect(result).toMatchObject({ mode: 'faq', draft: 'Let me check with our team regarding the space for your large backpacks.' })
+      expect(result.steps?.find((s) => s.label === 'Verifikasi gagal')?.detail).toContain('klaim tanpa fakta luggage_storage')
+    })
+
+    it('rewrites a confident availability claim when the classifier says live data is needed', async () => {
+      groundedMainPath()
+      vi.mocked(classifySalesNeed).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: true })
+      vi.mocked(callLLM)
+        .mockResolvedValueOnce('Yes, we have availability for 13-15 September and your exact dates are confirmed automatically at checkout.')
+        .mockResolvedValueOnce('Our team will confirm the exact availability for 13-15 September shortly.')
+
+      const result = await decideAndRespond('conv_1', 'Do you have availability for 13-15 September?')
+
+      expect(result).toMatchObject({ mode: 'faq', draft: 'Our team will confirm the exact availability for 13-15 September shortly.' })
+      expect(result.steps?.find((s) => s.label === 'Verifikasi gagal')?.detail).toContain('klaim tanpa fakta live_availability')
+    })
+
+    it('rewrites a finish-city claim outside the selected package finish options', async () => {
+      groundedMainPath({ finishCities: ['surabaya'] })
+      vi.mocked(callLLM)
+        .mockResolvedValueOnce('This tour finishes in Bali.')
+        .mockResolvedValueOnce('This tour does not finish in Bali; our team can advise on custom routing if needed.')
+
+      const result = await decideAndRespond('conv_1', 'Can this Ijen tour finish in Bali?')
+
+      expect(result).toMatchObject({ mode: 'faq', draft: 'This tour does not finish in Bali; our team can advise on custom routing if needed.' })
+      expect(result.steps?.find((s) => s.label === 'Verifikasi gagal')?.detail).toContain('klaim tanpa fakta route_finish:bali')
+    })
+
     // Important 3: a URL the customer themselves supplied is not something the model
     // invented -- a customer pasting a tour-page link ("I saw this -- is it available?")
     // must not trip the always-blocking unknownUrls check just because it isn't a URL this
@@ -2152,11 +2216,7 @@ describe('decideAndRespond', () => {
       expect(result.steps?.find((s) => s.label === 'Harga perlu dicek')?.detail).toContain('Rp9.999.999')
     })
 
-    // The wrong-TIER case verification cannot catch by construction: a neighbouring tier is
-    // an exact member of the (deliberately wide) grounding, so it passes silently. All this
-    // adds is a trace note -- the reply still goes out, because the figure IS a real catalog
-    // price and blocking it would trade a common false positive for a rarer real one.
-    it('notes in the trace when the reply quotes a real tier that is not this pax count\'s', async () => {
+    it("rewrites when the reply quotes a real tier that is not this pax count's", async () => {
       vi.mocked(ensureFreshBookingData).mockResolvedValue(null)
       vi.mocked(classifySalesNeed).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
       vi.mocked(checkRouteGate).mockReturnValue({ status: 'clear' })
@@ -2176,34 +2236,31 @@ describe('decideAndRespond', () => {
         preferences: { origin: null, dayCount: null, finishCity: null, pax: 2 },
         source: 'llm',
       })
-      // The 11+-pax rate, quoted to a group of 2 -- exactly the error priceForPax exists to
-      // prevent, and a real catalog number, so nothing blocks it.
-      vi.mocked(callLLM).mockResolvedValue('Hi! It is Rp2.450.000 per person.')
+      vi.mocked(callLLM)
+        .mockResolvedValueOnce('Hi! It is Rp2.450.000 per person.')
+        .mockResolvedValueOnce('Hi! It is Rp3.570.000 per person, so Rp7.140.000 for the two of you.')
 
       const result = await decideAndRespond('conv_1', 'We will be 2 people, how much?')
 
-      expect(result).toMatchObject({ mode: 'faq', draft: 'Hi! It is Rp2.450.000 per person.' })
-      expect(vi.mocked(callLLM).mock.calls).toHaveLength(1)
-      const note = result.steps?.find((s) => s.label === 'Tier harga tidak sesuai jumlah orang')
-      expect(note?.detail).toContain('Rp2.450.000')
-      expect(note?.detail).toContain('Rp3.570.000')
+      expect(result).toMatchObject({ mode: 'faq', draft: 'Hi! It is Rp3.570.000 per person, so Rp7.140.000 for the two of you.' })
+      expect(vi.mocked(callLLM).mock.calls).toHaveLength(2)
+      expect(result.steps?.find((s) => s.label === 'Verifikasi gagal')?.detail).toContain('tier pax salah Rp2.450.000')
+      expect(llmCall(1)[1]!.system).toContain('wrong pax-tier prices (Rp2.450.000)')
     })
 
-    // Task 14 (reply-verifier.ts's guarantee check): same advisory severity as 'Harga perlu
-    // dicek' above -- recorded, never blocked, never rewritten. blue_fire is one of the two
-    // topics (NO_GUARANTEE_TOPICS) whose guardrail forbids promising anything.
-    it('records but still sends a blue_fire reply that promises a guarantee', async () => {
+    it('rewrites a blue_fire reply that promises a guarantee', async () => {
       groundedMainPath({ priceIdr: 4050000, priceTiers: [{ minPax: 2, maxPax: 3, priceIdr: 4050000 }] })
       vi.mocked(classifyTopicViaLLM).mockResolvedValue({ topic: 'blue_fire', source: 'llm' })
-      vi.mocked(callLLM).mockResolvedValue('Blue fire is guaranteed every night in May!')
+      vi.mocked(callLLM)
+        .mockResolvedValueOnce('Blue fire is guaranteed every night in May!')
+        .mockResolvedValueOnce('Blue fire cannot be guaranteed because it depends on weather and authority conditions.')
 
       const result = await decideAndRespond('conv_1', 'Is blue fire guaranteed if we book in May?')
 
-      expect(result).toMatchObject({ mode: 'faq', draft: 'Blue fire is guaranteed every night in May!' })
-      expect(vi.mocked(callLLM).mock.calls).toHaveLength(1)
-      const note = result.steps?.find((s) => s.label === 'Janji yang dilarang topik ini')
-      expect(note?.detail).toContain('guaranteed')
-      expect(result.verification?.guaranteeViolations).toEqual(['guaranteed'])
+      expect(result).toMatchObject({ mode: 'faq', draft: 'Blue fire cannot be guaranteed because it depends on weather and authority conditions.' })
+      expect(vi.mocked(callLLM).mock.calls).toHaveLength(2)
+      expect(result.steps?.find((s) => s.label === 'Verifikasi gagal')?.detail).toContain('janji terlarang guaranteed pada topik "blue_fire"')
+      expect(result.verification?.guaranteeViolations).toEqual([])
     })
 
     it("stays quiet when the reply quotes this pax count's own tier, or a group total built from it", async () => {
@@ -2272,7 +2329,7 @@ describe('decideAndRespond', () => {
 
       const result = await decideAndRespond('conv_1', 'Sisa pembayaran saya berapa?')
 
-      expect(result).toMatchObject({ mode: 'handoff', reason: 'Balasan gagal verifikasi harga/link dua kali berturut-turut' })
+      expect(result).toMatchObject({ mode: 'handoff', reason: 'Balasan gagal verifikasi knowledge dua kali berturut-turut' })
       // Task 11: verification-failed recording is wired at composeVerifiedReply's one
       // shared blocking branch, so Mode 3 (booking context) trips it too.
       expect(mockPrisma.knowledgeGapLog.create).toHaveBeenCalledWith(
@@ -2313,7 +2370,7 @@ describe('decideAndRespond', () => {
 
       const result = await decideAndRespond('conv_1', 'How does the deposit work?')
 
-      expect(result).toMatchObject({ mode: 'handoff', reason: 'Balasan gagal verifikasi harga/link dua kali berturut-turut' })
+      expect(result).toMatchObject({ mode: 'handoff', reason: 'Balasan gagal verifikasi knowledge dua kali berturut-turut' })
       expect(mockPrisma.knowledgeGapLog.create).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({ conversationId: 'conv_1', topic: 'payment', reason: 'verification_failed' }),
@@ -3580,13 +3637,11 @@ describe('decideAndRespond', () => {
       await decideAndRespond('conv_1', '4 day trip starting and finishing in Bali')
 
       const [, opts] = llmCall(0)
-      expect(opts.system).toContain("exact start/finish combination they wanted isn't a standard package")
+      expect(opts.system).toContain("exact combination they wanted isn't a standard package")
       expect(opts.system).toContain('our team can adjust the specifics after booking')
     })
 
-    // Operator's own explicit ask: a genuinely too-custom request (not even the stated
-    // duration exists for this destination) hands off to a human instead of guessing.
-    it('hands off to a human agent when not even the stated duration matches any package', async () => {
+    it('offers the closest relevant package when the stated duration is not a standard package', async () => {
       ;vi.mocked(ensureFreshBookingData).mockResolvedValue(null)
       ;vi.mocked(classifySalesNeed).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
       const onlyThreeDay = pkg({ packageKey: 'only-3d', origin: 'Surabaya', dayCount: 3, finishCities: ['surabaya'] })
@@ -3603,8 +3658,10 @@ describe('decideAndRespond', () => {
 
       const result = await decideAndRespond('conv_1', 'A 15 day trip to Ijen please')
 
-      expect(result.mode).toBe('handoff')
-      expect(callLLM).not.toHaveBeenCalled()
+      expect(result.mode).toBe('faq')
+      const [, opts] = llmCall(0)
+      expect(opts.system).toContain('closest relevant alternative')
+      expect(opts.system).toContain("exact combination they wanted isn't a standard package")
     })
 
     it('leads the option list with a confirmed best package even when it is not first in the matched array', async () => {
@@ -4077,6 +4134,7 @@ describe('multi-topik (alsoTopics, Ruling R101)', () => {
 
       const result = await decideAndRespond('conv_1', 'berapa deposit, dan blue fire dijamin tiap malam?')
 
+      expect(result).toMatchObject({ mode: 'handoff', reason: 'Balasan gagal verifikasi knowledge dua kali berturut-turut' })
       expect(result.verification?.guaranteeViolations).toEqual(['guaranteed'])
     })
 
@@ -4089,8 +4147,8 @@ describe('multi-topik (alsoTopics, Ruling R101)', () => {
 
       const result = await decideAndRespond('conv_1', 'berapa deposit, dan blue fire dijamin tiap malam?')
 
-      const note = result.steps?.find((s) => s.label === 'Janji yang dilarang topik ini')
-      expect(note?.detail).toContain('pada topik "blue_fire",')
+      const note = result.steps?.find((s) => s.label === 'Verifikasi gagal')
+      expect(note?.detail).toContain('pada topik "blue_fire"')
       expect(note?.detail).not.toContain('payment')
     })
 
@@ -4102,8 +4160,8 @@ describe('multi-topik (alsoTopics, Ruling R101)', () => {
 
       const result = await decideAndRespond('conv_1', 'is the hike hard, and is blue fire guaranteed?')
 
-      const note = result.steps?.find((s) => s.label === 'Janji yang dilarang topik ini')
-      expect(note?.detail).toContain('pada topik "destination_readiness", "blue_fire",')
+      const note = result.steps?.find((s) => s.label === 'Verifikasi gagal')
+      expect(note?.detail).toContain('pada topik "destination_readiness", "blue_fire"')
     })
 
     // Task 22 fix round 1 (F2, grounding): an also-topic's catalog line carrying an Rp amount
@@ -4222,7 +4280,7 @@ describe('multi-topik (alsoTopics, Ruling R101)', () => {
         expect(labelsOf(result)).not.toContain('Fakta topik tambahan digabungkan')
       })
 
-      it('tidak ada paket yang cocok dengan durasi (handoff)', async () => {
+      it('durasi standar tidak ada tetap lanjut sebagai rekomendasi paket terdekat', async () => {
         setUpDestinationBranch()
         vi.mocked(extractTripPreferences).mockResolvedValue({
           preferences: { origin: null, dayCount: 9, finishCity: null, pax: null },
@@ -4232,10 +4290,9 @@ describe('multi-topik (alsoTopics, Ruling R101)', () => {
 
         const result = await decideAndRespond('conv_1', 'berapa deposit untuk trip 9 hari, dan bagaimana kalau batal?')
 
-        expect(result.mode).toBe('handoff')
-        expect(labelsOf(result)).toContain('Tidak ada paket yang cocok')
+        expect(result.mode).toBe('faq')
+        expect(labelsOf(result)).toContain('Fakta topik tambahan digabungkan')
         expect(labelsOf(result)).toContain('Topik tambahan terdeteksi')
-        expect(labelsOf(result)).not.toContain('Fakta topik tambahan digabungkan')
       })
     })
   })
@@ -4371,8 +4428,8 @@ describe('multi-topik (alsoTopics, Ruling R101)', () => {
       const result = await decideAndRespond('conv_1', 'berapa deposit, dan blue fire dijamin tiap malam?')
 
       expect(result.verification?.guaranteeViolations).toEqual(['guaranteed'])
-      const note = result.steps?.find((s) => s.label === 'Janji yang dilarang topik ini')
-      expect(note?.detail).toContain('pada topik "blue_fire",')
+      const note = result.steps?.find((s) => s.label === 'Verifikasi gagal')
+      expect(note?.detail).toContain('pada topik "blue_fire"')
     })
 
     // Task 22 fix round 1 (F2, grounding): with no package on this branch, the ONLY amounts it
@@ -4732,7 +4789,7 @@ describe('funnelAnswerContext', () => {
 })
 
 describe('decideAndRespond -- konteks jawaban formulir', () => {
-  it('meneruskan konteks ke extractor saat giliran ini menjawab formulir', async () => {
+  it('membaca jawaban satu field secara deterministik sebelum memanggil extractor LLM', async () => {
     vi.mocked(ensureFreshBookingData).mockResolvedValue(null)
     vi.mocked(classifySalesNeed).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
     vi.mocked(matchDestination).mockReturnValue({ destination: 'bromo', matches: [pkg()] })
@@ -4747,8 +4804,37 @@ describe('decideAndRespond -- konteks jawaban formulir', () => {
 
     await decideAndRespond('conv_1', 'yes, surabaya')
 
-    const context = vi.mocked(extractTripPreferences).mock.calls[0][2]
-    expect(context).toContain('treat it as finishCity')
+    expect(extractTripPreferences).not.toHaveBeenCalled()
+    expect(tripBriefWrites()).toContainEqual({
+      id: 'conv_1',
+      patch: { destination: 'bromo', origin: 'Surabaya', dayCount: 3, finishCity: 'surabaya' },
+    })
+  })
+
+  it('membaca jawaban compact sesuai urutan form: pickup, drop, number of days', async () => {
+    vi.mocked(ensureFreshBookingData).mockResolvedValue(null)
+    vi.mocked(classifySalesNeed).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
+    vi.mocked(matchDestination).mockReturnValue({
+      destination: 'bromo',
+      matches: [pkg({ origin: 'Bali', dayCount: 3, finishCities: ['surabaya'] })],
+    })
+    vi.mocked(checkRouteGate).mockReturnValue({ status: 'clear' })
+    mockPrisma.conversation.findUniqueOrThrow.mockResolvedValue({
+      id: 'conv_1',
+      tripBrief: { destination: 'bromo', askedTripPreferences: true, awaitingTripPreferencesAnswer: true },
+      bookingData: null,
+      bookingCheckedAt: new Date(),
+      contact: { phone: '6281234567890' },
+    } as never)
+
+    const result = await decideAndRespond('conv_1', 'Bali, Surabaya, 3 days')
+
+    expect(result.mode).toBe('faq')
+    expect(extractTripPreferences).not.toHaveBeenCalled()
+    expect(tripBriefWrites()).toContainEqual({
+      id: 'conv_1',
+      patch: { destination: 'bromo', origin: 'Bali', dayCount: 3, finishCity: 'surabaya' },
+    })
   })
 })
 

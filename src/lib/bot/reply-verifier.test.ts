@@ -25,6 +25,11 @@ describe('extractRupiahAmounts', () => {
 describe('verifyReply', () => {
   const tiers = [4050000, 7500000]
   const urls = ['https://javavolcano-touroperator.com/tours/from-bali/bromo-ijen-3d2n']
+  const emptyHighRisk = {
+    wrongPaxTierPrices: [],
+    misdirectedUrls: [],
+    unsupportedClaims: [],
+  }
 
   it('passes a reply quoting a real tier and a real link', () => {
     expect(
@@ -33,7 +38,7 @@ describe('verifyReply', () => {
         groundedAmounts: tiers,
         groundedUrls: urls,
       })
-    ).toEqual({ fabricatedPrices: [], unverifiedPrices: [], unknownUrls: [], guaranteeViolations: [] })
+    ).toEqual({ fabricatedPrices: [], unverifiedPrices: [], unknownUrls: [], guaranteeViolations: [], ...emptyHighRisk })
   })
 
   it('blocks a price when the grounding published none at all', () => {
@@ -73,6 +78,96 @@ describe('verifyReply', () => {
   it('accepts a grounded link the model gave a trailing slash', () => {
     const r = verifyReply({ replyText: `Details: ${urls[0]}/`, groundedAmounts: tiers, groundedUrls: urls })
     expect(r.unknownUrls).toEqual([])
+  })
+
+  it("blocks a real catalog tier when it is not this pax count's tier", () => {
+    const r = verifyReply({
+      replyText: 'Hi! It is Rp2.450.000 per person.',
+      groundedAmounts: [2450000, 3570000],
+      groundedUrls: urls,
+      pricesShownForPax: [3570000],
+    })
+    expect(r.wrongPaxTierPrices).toEqual([2450000])
+  })
+
+  it("accepts this pax count's tier and the group total derived from it", () => {
+    const r = verifyReply({
+      replyText: 'Hi! It is Rp3.570.000 per person, so Rp7.140.000 total for two people.',
+      groundedAmounts: [2450000, 3570000],
+      groundedUrls: urls,
+      pricesShownForPax: [3570000],
+    })
+    expect(r.wrongPaxTierPrices).toEqual([])
+  })
+
+  it('blocks a non-package JVTO link in a package price reply when a package link is required', () => {
+    const r = verifyReply({
+      replyText: 'Hi! The price is Rp6.300.000 per person: https://javavolcano-touroperator.com/why-jvto/the-jvto-difference',
+      groundedAmounts: [6300000],
+      groundedUrls: ['https://javavolcano-touroperator.com/why-jvto/the-jvto-difference', urls[0]],
+      requiredPackageUrls: [urls[0]],
+    })
+    expect(r.misdirectedUrls).toEqual(['https://javavolcano-touroperator.com/why-jvto/the-jvto-difference'])
+  })
+
+  it('blocks a confident luggage storage claim when no luggage fact was grounded', () => {
+    const r = verifyReply({
+      replyText: 'Yes, you can safely keep your large backpacks in the vehicle during excursions.',
+      groundedAmounts: [],
+      groundedUrls: [],
+      groundedText: 'Vehicle for this package: private AC MPV.',
+    })
+    expect(r.unsupportedClaims).toEqual(['luggage_storage'])
+  })
+
+  it('does not block a luggage deferral when no luggage fact was grounded', () => {
+    const r = verifyReply({
+      replyText: 'Let me check with our team regarding the space for your two large backpacks.',
+      groundedAmounts: [],
+      groundedUrls: [],
+      groundedText: 'Vehicle for this package: private AC MPV.',
+    })
+    expect(r.unsupportedClaims).toEqual([])
+  })
+
+  it('blocks EUR conversion figures unless an EUR fact was grounded', () => {
+    const r = verifyReply({
+      replyText: 'The price is Rp9.100.000, around EUR 520.',
+      groundedAmounts: [4550000],
+      groundedUrls: urls,
+      groundedText: 'Price for 2 pax: IDR 4550000 per person.',
+    })
+    expect(r.unsupportedClaims).toEqual(['currency_conversion'])
+  })
+
+  it('blocks a confident live availability claim when the turn needs live data', () => {
+    const r = verifyReply({
+      replyText: 'Yes, we have availability for 13-15 September and your exact dates are confirmed automatically at checkout.',
+      groundedAmounts: [],
+      groundedUrls: [],
+      requiresLiveData: true,
+    })
+    expect(r.unsupportedClaims).toEqual(['live_availability'])
+  })
+
+  it('blocks a finish-city claim outside this package finish options', () => {
+    const r = verifyReply({
+      replyText: 'This tour finishes in Bali.',
+      groundedAmounts: [],
+      groundedUrls: [],
+      allowedFinishCities: ['surabaya', 'malang'],
+    })
+    expect(r.unsupportedClaims).toEqual(['route_finish:bali'])
+  })
+
+  it('does not block a negated finish-city correction', () => {
+    const r = verifyReply({
+      replyText: 'This tour does not finish in Bali; our team can advise on custom routing.',
+      groundedAmounts: [],
+      groundedUrls: [],
+      allowedFinishCities: ['surabaya', 'malang'],
+    })
+    expect(r.unsupportedClaims).toEqual([])
   })
 })
 
@@ -257,6 +352,9 @@ describe('buildVerificationRetryInstruction', () => {
       unverifiedPrices: [9999999],
       unknownUrls: ['https://javavolcano-touroperator.com/tours/made-up-package'],
       guaranteeViolations: [],
+      wrongPaxTierPrices: [],
+      misdirectedUrls: [],
+      unsupportedClaims: [],
     })
     expect(instruction).toContain('Rp2.000.000')
     expect(instruction).toContain('https://javavolcano-touroperator.com/tours/made-up-package')
