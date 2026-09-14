@@ -172,8 +172,18 @@ import { detectsAdditionalEscalationSignal } from './escalation-classifier'
 import { detectsPreferenceDeclineViaLLM } from './preference-decline-classifier'
 import { detectsRecommendationIntentViaLLM } from './recommendation-intent-classifier'
 import { detectsPackageLinkIntentViaLLM } from './link-intent-classifier'
-import { NOT_STANDARD_PACKAGE_POLICY } from './policy-statements'
-import { parsePickupTiming, buildItineraryScenario, describeScenarioForLLM, describeScenarioForCustomer, evaluateScenario } from './scenario-evaluator'
+import { NOT_STANDARD_PACKAGE_POLICY, PICKUP_ROUTE_ORDER_POLICY } from './policy-statements'
+import {
+  parsePickupTiming,
+  buildItineraryScenario,
+  evaluateScenario,
+  mentionsPickupOrArrival,
+  packageStartsWithIjen,
+  pickupRouteAdvice,
+  scenarioFacts,
+  withRecommendationInstruction,
+  type PickupRouteOrder,
+} from './scenario-evaluator'
 import {
   resolveKnowledgeForTopic,
   resolveKeywordTriggeredFacts,
@@ -554,9 +564,13 @@ export type PickupScenarioResult = {
   forCustomer: string | null
   /** Non-null exactly when a real recommendation was found -- caller should push this to the trace. */
   traceDetail: string | null
+  /** Saran urutan dari aturan jam 12:00 (pickupRouteAdvice), null kalau aturannya tidak berlaku. */
+  routeOrder: PickupRouteOrder | null
 }
 
-const NO_PICKUP_SCENARIO: PickupScenarioResult = { forLLM: null, forCustomer: null, traceDetail: null }
+const NO_PICKUP_SCENARIO: PickupScenarioResult = { forLLM: null, forCustomer: null, traceDetail: null, routeOrder: null }
+
+const SURABAYA_MENTION = /\b(?:surabaya|juanda)\b/i
 
 /**
  * Evaluates whether the customer's stated pickup type/time changes the recommended
@@ -573,26 +587,46 @@ export function evaluatePickupScenario(
   conversationId: string
 ): PickupScenarioResult {
   const pickupTiming = parsePickupTiming(inboundText)
-  if (!pickupTiming.type || !pickupTiming.time || ctx.requestedTokens.length === 0) return NO_PICKUP_SCENARIO
+  if (!pickupTiming.time || ctx.requestedTokens.length === 0) return NO_PICKUP_SCENARIO
+  // Aturan jam 12:00 (2026-09-14) ditentukan jamnya, bukan tempat jemputnya: "arrive in Surabaya
+  // around 5 PM" tanpa kata "airport" tetap berlaku. Kata jemput/tiba tetap wajib supaya jam
+  // aktivitas tidak dianggap jam jemput.
+  if (!pickupTiming.type && !mentionsPickupOrArrival(inboundText)) return NO_PICKUP_SCENARIO
   try {
-    const scenario = buildItineraryScenario({
-      origin: ctx.origin,
+    const origin = ctx.origin ?? (SURABAYA_MENTION.test(inboundText) ? 'Surabaya' : null)
+    const advice = pickupRouteAdvice({
+      time: pickupTiming.time,
       pickupType: pickupTiming.type,
-      pickupTime: pickupTiming.time,
-      requestedTokens: ctx.requestedTokens,
+      origin,
       finishCity: ctx.finishCity,
-      dayCount: ctx.dayCount,
-      pax: ctx.pax,
+      requestedTokens: ctx.requestedTokens,
     })
-    const evaluation = evaluateScenario(scenario)
-    const forLLM = describeScenarioForLLM(evaluation)
-    const forCustomer = describeScenarioForCustomer(evaluation)
+    const facts = [...(advice?.lines ?? [])]
+    if (pickupTiming.type) {
+      const evaluation = evaluateScenario(
+        buildItineraryScenario({
+          origin,
+          pickupType: pickupTiming.type,
+          pickupTime: pickupTiming.time,
+          requestedTokens: ctx.requestedTokens,
+          finishCity: ctx.finishCity,
+          dayCount: ctx.dayCount,
+          pax: ctx.pax,
+        })
+      )
+      // Urutan versi evaluator selalu Bromo dulu, jam berapa pun. Kalau aturan jam 12:00 sudah
+      // menyebut urutannya, yang diambil dari evaluator hanya peringatannya.
+      const evaluatorFacts = advice ? evaluation.warnings : (scenarioFacts(evaluation) ?? [])
+      for (const fact of evaluatorFacts) if (!facts.includes(fact)) facts.push(fact)
+    }
+    if (facts.length === 0) return NO_PICKUP_SCENARIO
     return {
-      forLLM,
-      forCustomer,
-      traceDetail: forLLM
-        ? `Pickup ${pickupTiming.type} jam ${pickupTiming.time} -- ada rekomendasi urutan/peringatan dari data rute nyata.`
-        : null,
+      forLLM: withRecommendationInstruction(facts),
+      forCustomer: facts.join(' '),
+      traceDetail: advice
+        ? `Jemput jam ${pickupTiming.time} -- ${advice.order === 'bromo_first' ? 'setelah 12:00, disarankan Bromo dulu' : 'sampai 12:00, Ijen dulu cocok'}.`
+        : `Pickup ${pickupTiming.type} jam ${pickupTiming.time} -- ada rekomendasi urutan/peringatan dari data rute nyata.`,
+      routeOrder: advice?.order ?? null,
     }
   } catch (err) {
     // Never let this optional enrichment break the main reply -- see TECHNICAL_HICCUP_REPLY's
@@ -2458,6 +2492,15 @@ export async function decideAndRespond(
       packageOptionsText ?? '',
     ].join('\n')
     const specialTimingNeedsConfirmation = needsSpecialTimingConfirmation(inboundForUnderstanding, specialTimingGroundingText)
+    // Pilihan operator 2026-09-14: jemput setelah 12:00 disarankan Bromo dulu, tapi paket
+    // Surabaya -> Surabaya yang ada semuanya mulai dari Ijen. Paketnya tetap ditawarkan, dengan
+    // catatan tim bisa membalik urutannya setelah booking.
+    const ijenFirstOptions =
+      pickupScenario.routeOrder === 'bromo_first' ? optionPackages.filter((p) => packageStartsWithIjen(p.packageKey) === true) : []
+    const pickupRouteOrderNote =
+      ijenFirstOptions.length > 0
+        ? `\n\nThese package(s) start with Ijen on day 1 (Surabaya to Bondowoso): ${ijenFirstOptions.map((p) => `"${p.title}"`).join(', ')}. Still offer them. ${PICKUP_ROUTE_ORDER_POLICY}`
+        : ''
     const specialTimingNote = specialTimingNeedsConfirmation
       ? `\n\nThe customer asks about a specific pickup/start/arrival timing that is not stated in the facts above. Do not say it can be arranged. Answer the rest from the facts, and for that exact timing say our team will confirm it shortly.`
       : ''
@@ -2593,6 +2636,7 @@ export async function decideAndRespond(
       unsupportedOriginNote +
       routeLegNote +
       scenarioNote +
+      pickupRouteOrderNote +
       specialTimingNote +
       paxPriceNote +
       matchTierNote +

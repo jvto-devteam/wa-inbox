@@ -1,4 +1,6 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { PICKUP_ROUTE_ORDER_POLICY } from './policy-statements'
+import { __resetScenarioDatasetsForTests } from './scenario-evaluator'
 import { mockDeep, mockReset, type DeepMockProxy } from 'vitest-mock-extended'
 import type { PrismaClient } from '@prisma/client'
 import { prisma } from '@/lib/db'
@@ -17,7 +19,7 @@ import { detectsRecommendationIntentViaLLM } from './recommendation-intent-class
 import { detectsPackageLinkIntentViaLLM } from './link-intent-classifier'
 import { resolveKnowledgeForTopic, resolveKeywordTriggeredFacts, resolveRouteLegFacts, factsForModuleIds } from './knowledge'
 import { callLLM, type LLMOptions } from './llm'
-import { loadCatalog } from './catalog'
+import { loadCatalog, readCatalogFile } from './catalog'
 import { checkDeploymentGate } from './deployment-gate'
 import { loadPublishedManagedKnowledge } from '@/lib/bot/managed-knowledge'
 import type { CatalogPackage } from './types'
@@ -1723,6 +1725,59 @@ describe('decideAndRespond', () => {
     expect(reply).toContain('Happy to recommend the best package for you!')
     // The LLM-instruction suffix must never leak into a reply the LLM never composed.
     expect(reply).not.toContain('Always mention this recommendation')
+  })
+
+  // Aturan operator 2026-09-14: jemput setelah jam 12:00 -> Bromo dulu. Untuk trip yang pulang ke
+  // Surabaya belum ada paket Bromo-dulu, dan operator memilih: tetap tawarkan paket yang ada, lalu
+  // sampaikan tim bisa membalik urutannya jadi Bromo dulu setelah booking. Kalimat Ezio sungguhan --
+  // tanpa kata "airport", jam "5 PM" tanpa titik dua -- dulu tidak memicu saran apa pun.
+  describe('saran urutan rute dari jam jemput', () => {
+    const ijenFirstPackage = () =>
+      pkg({
+        packageKey: 'ijen-bromo-madakaripura-3d2n',
+        title: '3 Day Ijen, Bromo & Madakaripura Waterfall Discovery from Surabaya',
+        destinationTokens: ['ijen', 'bromo', 'madakaripura'],
+        origin: 'Surabaya',
+        dayCount: 3,
+        finishCities: ['surabaya'],
+      })
+
+    // `./catalog` di-mock untuk seluruh file ini, termasuk readCatalogFile -- tanpa ini evaluator
+    // membaca data rute kosong (dan menyimpannya di cache), dan saran jam jemput tidak pernah muncul.
+    beforeEach(async () => {
+      const actualCatalog = await vi.importActual<typeof import('./catalog')>('./catalog')
+      ;vi.mocked(readCatalogFile).mockImplementation(actualCatalog.readCatalogFile)
+      __resetScenarioDatasetsForTests()
+      ;vi.mocked(ensureFreshBookingData).mockResolvedValue(null)
+      ;vi.mocked(classifySalesNeed).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
+      ;vi.mocked(loadCatalog).mockReturnValue({ packages: [pkg({ packageKey: 'catalog-anchor', destinationTokens: ['bromo', 'ijen'] })], syncedAt: null })
+      ;vi.mocked(matchDestination).mockReturnValue({ destination: 'ijen', matches: [ijenFirstPackage()] })
+      ;vi.mocked(checkRouteGate).mockReturnValue({ status: 'clear' })
+      ;vi.mocked(extractTripPreferences).mockResolvedValue({ preferences: { origin: 'Surabaya', dayCount: 3, finishCity: 'surabaya', pax: 2 }, source: 'llm' })
+    })
+
+    afterEach(() => {
+      __resetScenarioDatasetsForTests()
+    })
+
+    it('jemput setelah 12:00 -> Bromo dulu, paket yang mulai dari Ijen tetap ditawarkan dengan catatan urutan bisa dibalik', async () => {
+      await decideAndRespond('conv_1', 'We will arrive in Surabaya around 5 PM. We want Bromo and Ijen for 3 days, back to Surabaya.')
+
+      const system = systemOf(llmCall(0)[1])
+      expect(system).toContain('we recommend visiting Bromo first')
+      expect(system).toContain('start with Ijen on day 1')
+      expect(system).toContain('"3 Day Ijen, Bromo & Madakaripura Waterfall Discovery from Surabaya"')
+      expect(system).toContain(PICKUP_ROUTE_ORDER_POLICY)
+    })
+
+    it('jemput sampai 12:00 -> Ijen dulu cocok, tanpa catatan membalik urutan', async () => {
+      await decideAndRespond('conv_1', 'Our flight lands in Surabaya at 10am. We want Bromo and Ijen for 3 days, back to Surabaya.')
+
+      const system = systemOf(llmCall(0)[1])
+      expect(system).toContain('starting with Ijen works well')
+      expect(system).not.toContain('we recommend visiting Bromo first')
+      expect(system).not.toContain(PICKUP_ROUTE_ORDER_POLICY)
+    })
   })
 
   it('does not add an unsupported-origin note when a real, supported origin (Bali/Surabaya) is stated', async () => {

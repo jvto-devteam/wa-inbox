@@ -135,6 +135,18 @@ describe('attributeReply -- kalimat kebijakan', () => {
 // Dilaporkan 14 September 2026 dari uji ulang Arpan: paragraf "tidak ada paket standar... tim bisa
 // menyesuaikan setelah booking" ditandai "tanpa sumber", padahal kalimat itu diperintahkan prompt
 // untuk alternatif terdekat -- kelas yang sama dengan kebijakan ketersediaan.
+// Ditambahkan 2026-09-14 bersama aturan jam jemput 12:00: balasan yang menyampaikan bahwa urutan
+// paket bisa dibalik jadi Bromo dulu setelah booking adalah kebijakan yang dipilih operator, bukan gap.
+describe('attributeReply -- kalimat urutan rute setelah booking', () => {
+  it('mencocokkan parafrasa yang wajar dari model', () => {
+    const [attribution] = attributeReply(
+      'This package normally begins at Ijen, but our team can reverse the order so you visit Bromo first once booked.',
+      knowledge()
+    )
+    expect(attribution.lines).toEqual([expect.objectContaining({ kind: 'policy', title: 'Kebijakan urutan rute setelah booking' })])
+  })
+})
+
 describe('attributeReply -- kalimat paket tidak standar', () => {
   const ARPAN =
     "Hi! We don't have a standard package that starts and ends in Bali for those dates, but our team can adjust the specifics for you after booking. Here are the closest options:"

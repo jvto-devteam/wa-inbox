@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { AVAILABILITY_POLICY, NO_GUARANTEE_POLICY, NOT_STANDARD_PACKAGE_POLICY, POLICY_STATEMENTS } from './policy-statements'
+import { AVAILABILITY_POLICY, NO_GUARANTEE_POLICY, NOT_STANDARD_PACKAGE_POLICY, PICKUP_ROUTE_ORDER_POLICY, POLICY_STATEMENTS } from './policy-statements'
 
 // Kedua kalimat ini ikut prompt. Memindahkannya ke modul sendiri (2026-09-14) tidak boleh mengubah
 // satu karakter pun dari yang sebelumnya dikirim ke model -- teks pembanding di bawah diekstrak
@@ -21,7 +21,7 @@ describe('policy-statements', () => {
   })
 
   it('hanya memuat pernyataan kebijakan, bukan larangan guardrail', () => {
-    expect(POLICY_STATEMENTS.map((p) => p.line)).toEqual([AVAILABILITY_POLICY, NO_GUARANTEE_POLICY, NOT_STANDARD_PACKAGE_POLICY])
+    expect(POLICY_STATEMENTS.map((p) => p.line)).toEqual([AVAILABILITY_POLICY, NO_GUARANTEE_POLICY, NOT_STANDARD_PACKAGE_POLICY, PICKUP_ROUTE_ORDER_POLICY])
     for (const p of POLICY_STATEMENTS) expect(p.line).not.toMatch(/NEVER/)
   })
 })

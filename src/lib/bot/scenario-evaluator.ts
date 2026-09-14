@@ -611,6 +611,16 @@ function parseExplicitClockTime(low: string): string | null {
     if (ampm === 'am' && h === 12) h = 0
     return `${String(h).padStart(2, '0')}:${hhmm[2]}`
   }
+  // "5 PM", "10am" -- jam tanpa menit. Dilaporkan 2026-09-14: pesan Ezio ("arrive in Surabaya
+  // around 5 PM") tidak terbaca jamnya sama sekali.
+  const hourAmPm = low.match(/\b(1[0-2]|0?[1-9])\s*(a\.?m\.?|p\.?m\.?)(?![a-z])/)
+  if (hourAmPm) {
+    let h = Number(hourAmPm[1])
+    const isPm = hourAmPm[2].startsWith('p')
+    if (isPm && h < 12) h += 12
+    if (!isPm && h === 12) h = 0
+    return `${String(h).padStart(2, '0')}:00`
+  }
   const jam = low.match(/\b(?:jam|pukul)\s+(\d{1,2})\s*(pagi|siang|sore|malam)?\b/)
   if (jam) {
     let h = Number(jam[1])
@@ -635,14 +645,92 @@ export function parsePickupTiming(message: string): { type: LocationType | null;
   const type = detectPickupType(low)
   let time = parseExplicitClockTime(low)
   if (!time) {
+    // "Good morning, we arrive in the evening" dulu terbaca jam 08:00 -- salam bukan jam.
+    const withoutGreetings = low.replace(GREETING_PATTERN, ' ')
     for (const [word, t] of Object.entries(BARE_DAYPART_TIME)) {
-      if (new RegExp(`\\b${word}\\b`).test(low)) {
+      if (new RegExp(`\\b${word}\\b`).test(withoutGreetings)) {
         time = t
         break
       }
     }
   }
   return { type, time }
+}
+
+const GREETING_PATTERN = /\b(?:good|selamat)\s+(?:morning|afternoon|evening|night|pagi|siang|sore|malam)\b/g
+
+const PICKUP_OR_ARRIVAL_PATTERN =
+  /\b(?:pick(?:ing)?[\s-]?up|pick\s+(?:us|me|them|you)\s+up|jemput\w*|arriv\w*|land(?:s|ed|ing)?|flight|tiba|datang|mendarat|depart\w*|leav(?:e|ing)|berangkat)\b/i
+
+/**
+ * Apakah pesan menyebut jemput/tiba/berangkat. Dipakai sebagai pengganti kata tempat jemput
+ * (airport/hotel/...) untuk aturan jam 12:00: yang menentukan saran urutan adalah jamnya, bukan
+ * tempatnya, tapi jam aktivitas ("blue fire jam 2am") tidak boleh dianggap jam jemput.
+ */
+export function mentionsPickupOrArrival(message: string): boolean {
+  return PICKUP_OR_ARRIVAL_PATTERN.test(message ?? '')
+}
+
+// ─── Saran urutan Bromo/Ijen dari jam jemput (aturan operator 2026-09-14) ───
+//
+// "pickup lebih dari jam 12 siang itu rekomendasi bromo dulu": dari Surabaya ke Bondowoso (basis
+// Ijen) butuh 6-8 jam, ke Bromo 3.5-4.5 jam, dan Ijen berangkat tengah malam. Jemput siang/sore
+// langsung ke Bondowoso menyisakan hampir tidak ada waktu istirahat. Sampai jam 12:00 tepat, rute
+// Ijen dulu masih cocok.
+export type PickupRouteOrder = 'ijen_first' | 'bromo_first'
+
+const BROMO_FIRST_AFTER_MINUTES = 12 * 60
+const LATE_ARRIVAL_MINUTES = 17 * 60
+// Selesai di Bali/Ketapang rutenya memang selalu Bromo dulu (tidak ada paket Ijen dulu ke arah
+// sana), jadi saran "Ijen dulu" tidak pernah berlaku.
+const FINISH_CITIES_ALWAYS_BROMO_FIRST = new Set(['bali', 'ketapang'])
+
+function legDurationText(datasets: Datasets, legId: string): string | null {
+  const leg = datasets.legs.find((l) => l.id === legId)
+  if (typeof leg?.duration_text !== 'string') return null
+  return leg.duration_text.replace(/\s*\([^)]*\)\s*$/, '').replace(/^(?:±|\+\/-)\s*/, '')
+}
+
+export function pickupRouteAdvice(
+  input: { time: string; pickupType: LocationType | null; origin: string | null; finishCity: string | null; requestedTokens: string[] },
+  datasets: Datasets = loadScenarioDatasets()
+): { order: PickupRouteOrder; lines: string[] } | null {
+  if ((input.origin ?? '').toLowerCase() !== 'surabaya') return null
+  if (!input.requestedTokens.includes('bromo') || !input.requestedTokens.includes('ijen')) return null
+  const minutes = parseHHMM(input.time)
+  const toIjenBase = legDurationText(datasets, 'surabaya_to_bondowoso_ijen_area')
+  if (minutes === null || !toIjenBase) return null
+
+  if (minutes > BROMO_FIRST_AFTER_MINUTES) {
+    const toBromo = legDurationText(datasets, input.pickupType === 'hotel' ? 'surabaya_hotel_to_bromo_area' : 'surabaya_airport_to_bromo_area')
+    if (!toBromo) return null
+    const from = input.pickupType === 'airport' ? 'Surabaya Airport' : 'Surabaya'
+    const lines = [
+      `With pickup after 12:00, we recommend visiting Bromo first: ${from} to the Bromo area takes about ${toBromo}, while Surabaya to Bondowoso (the base for Ijen) takes about ${toIjenBase}, so starting with Bromo leaves more time to rest before the midnight departure to Ijen.`,
+    ]
+    if (minutes >= LATE_ARRIVAL_MINUTES) {
+      const rule = datasets.rules.find((r) => r.id === 'late_airport_arrival_requires_rest_warning')
+      if (typeof rule?.recommendation === 'string') lines.push(rule.recommendation)
+    }
+    return { order: 'bromo_first', lines }
+  }
+
+  if (!input.finishCity || FINISH_CITIES_ALWAYS_BROMO_FIRST.has(input.finishCity.toLowerCase())) return null
+  return {
+    order: 'ijen_first',
+    lines: [
+      `With pickup at or before 12:00, starting with Ijen works well: Surabaya to Bondowoso (the base for Ijen) takes about ${toIjenBase}, which still leaves time to rest before the midnight departure to Ijen.`,
+    ],
+  }
+}
+
+/** Urutan paket dari 11-package-route-map.json: true kalau Ijen dikunjungi sebelum Bromo, null kalau paketnya tidak memuat keduanya. */
+export function packageStartsWithIjen(packageKey: string, datasets: Datasets = loadScenarioDatasets()): boolean | null {
+  const route = datasets.packageRoutes.find((r) => r.package_id === packageKey)
+  const sequence = Array.isArray(route?.route_sequence) ? route.route_sequence.map(String) : []
+  const ijen = sequence.findIndex((stop) => /ijen/i.test(stop))
+  const bromo = sequence.findIndex((stop) => /bromo/i.test(stop))
+  return ijen < 0 || bromo < 0 ? null : ijen < bromo
 }
 
 // ─── Building a scenario from what the orchestrator already knows ───
@@ -709,7 +797,7 @@ export function buildItineraryScenario(input: {
  * text mixed in, so it's safe to use verbatim in a reply that is NOT LLM-composed (a static
  * template), not just as LLM grounding.
  */
-function scenarioFacts(evaluation: ScenarioEvaluation): string[] | null {
+export function scenarioFacts(evaluation: ScenarioEvaluation): string[] | null {
   if (evaluation.warnings.length === 0) return null
   const lines: string[] = []
   if (evaluation.recommended_route.length > 2) {
@@ -736,6 +824,11 @@ export function describeScenarioForLLM(evaluation: ScenarioEvaluation): string |
   // than a conditional "if relevant", since a real rest-time consideration is always relevant
   // once the evaluator has found one -- it should never be silently dropped in favor of
   // answering only the rest of the question.
+  return withRecommendationInstruction(lines)
+}
+
+/** Fakta rekomendasi + perintah untuk model agar tidak dibuang. Hanya untuk prompt, jangan dikirim ke pelanggan. */
+export function withRecommendationInstruction(lines: string[]): string {
   return `${lines.join(' ')} Always mention this recommendation and its reasoning (e.g. limited rest time before an early-morning hike) in your reply, even briefly -- alongside whatever else the customer asked (price, packages, etc). Do not drop it in favor of answering only the other part of their question.`
 }
 

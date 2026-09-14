@@ -39,6 +39,17 @@ export const NOT_STANDARD_PACKAGE_POLICY =
   "Be upfront that the exact combination they wanted isn't a standard package, and mention that our team can adjust the specifics after booking if needed."
 
 /**
+ * Pilihan operator 2026-09-14 untuk jemput setelah jam 12:00 (lihat pickupRouteAdvice di
+ * scenario-evaluator.ts): Bromo dulu disarankan, tapi semua paket Surabaya -> Surabaya yang ada mulai
+ * dari Ijen. Paketnya tetap ditawarkan, dan pelanggan diberi tahu urutannya bisa dibalik setelah booking.
+ * Kata-katanya sengaja berbeda dari NOT_STANDARD_PACKAGE_POLICY ("standard", "team", "after booking"):
+ * pencocok sumber menghitung kata isi yang sama, dan kalimat yang terlalu mirip membuat balasan "paket
+ * tidak standar" ikut dianggap bersumber dari kebijakan urutan rute.
+ */
+export const PICKUP_ROUTE_ORDER_POLICY =
+  'Say that these packages normally begin at Ijen, and that our team can reverse the order to visit Bromo first once booked.'
+
+/**
  * Kandidat pencocok sumber. Sengaja hanya PERNYATAAN kebijakan, bukan baris GUARDRAIL_INSTRUCTION:
  * baris guardrail adalah larangan untuk model ("NEVER ..."), bukan fakta yang boleh disampaikan ke
  * pelanggan, jadi balasan yang mirip dengannya tidak otomatis bersumber.
@@ -47,4 +58,5 @@ export const POLICY_STATEMENTS: ReadonlyArray<{ title: string; line: string }> =
   { title: 'Kebijakan ketersediaan', line: AVAILABILITY_POLICY },
   { title: 'Kebijakan tanpa jaminan akses', line: NO_GUARANTEE_POLICY },
   { title: 'Kebijakan paket tidak standar', line: NOT_STANDARD_PACKAGE_POLICY },
+  { title: 'Kebijakan urutan rute setelah booking', line: PICKUP_ROUTE_ORDER_POLICY },
 ]
