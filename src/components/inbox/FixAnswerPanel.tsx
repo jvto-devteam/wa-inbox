@@ -7,9 +7,11 @@ import { IconButton } from '@/components/ui/icon-button'
 import { Textarea } from '@/components/ui/textarea'
 import { KnowledgeEditor, type KnowledgeDraft } from '@/components/bot-control/KnowledgeEditor'
 import { fetchJson } from '@/lib/fetch-json'
+import { cn } from '@/lib/utils'
 import type { BotDecision } from '@/lib/bot/types'
 import type { KnowledgeItem } from '@/lib/bot-control/knowledge-body'
 import { RESOLVER_TOPICS, type ResolverTopic } from '@/lib/bot/module-resolver'
+import { MATCHER_STOPWORDS } from '@/lib/bot/runtime-integration'
 
 type RunView = { id: string; conversationId: string; inboundText: string; replyText: string | null }
 type GapView = {
@@ -74,20 +76,71 @@ function defaultTopicsFor(gap: GapView | null): ResolverTopic[] | undefined {
   return [gap.topic as ResolverTopic]
 }
 
-function defaultTagsFor(gap: GapView | null, question: string): string[] | undefined {
-  const stop = new Set(['what', 'which', 'where', 'when', 'with', 'from', 'that', 'this', 'have', 'need', 'please', 'thank', 'untuk', 'yang'])
-  const words = `${gap?.topic ?? ''} ${question} ${gap?.answerSnippet ?? ''}`
+/**
+ * Kata yang lolos filter pencocok tapi tidak menerangkan apa pun. Sengaja pendek dan konkret:
+ * semuanya kata pembuka/pengisi yang muncul di pertanyaan pelanggan sungguhan, bukan daftar
+ * stopword umum kedua (itu sudah ada di MATCHER_STOPWORDS).
+ */
+const FILLER_WORDS = new Set([
+  'also', 'noticed', 'wondering', 'currently', 'actually', 'maybe', 'perhaps', 'around',
+  'starts', 'start', 'tell', 'know', 'like', 'want', 'going', 'planning', 'standard',
+])
+
+function keywordsOf(text: string): string[] {
+  return text
     .toLowerCase()
     .split(/[^\p{L}\p{N}]+/u)
-    .filter((word) => word.length >= 4 && !stop.has(word))
-  const tags = [...new Set(words)].slice(0, 8)
+    .filter((word) => word.length >= 4 && !MATCHER_STOPWORDS.has(word) && !FILLER_WORDS.has(word))
+}
+
+/**
+ * Tag untuk entri baru.
+ *
+ * Tag BUKAN dekorasi: runtime-integration.ts mencocokkannya ke pesan PELANGGAN untuk memutuskan
+ * entri mana yang boleh menjawab, jadi tag yang tidak pernah ditulis pelanggan adalah bahan
+ * salah-cocok, bukan sekadar berisik. Dua aturan, keduanya lahir dari laporan 2026-09-14:
+ *
+ *   - `answerSnippet` tidak lagi menjadi sumber kata. Untuk gap `reply_deferred_knowledge`
+ *     isinya SELALU kalimat stok bot ("let me check with our team ... get back to you shortly"),
+ *     sehingga setiap entri baru selalu menerima tag `check`, `team`, `shortly`, `regarding`.
+ *   - Kata yang muncul di pertanyaan pelanggan DAN di kalimat penundaan didahulukan. Kalimat
+ *     penundaan menyebut ulang hal yang tidak bisa dijawab ("regarding the flexibility of the
+ *     pickup time"), jadi irisan keduanya adalah pokok pertanyaannya -- bukan kalimat pembuka
+ *     yang kebetulan berdiri paling depan.
+ *
+ * Topik TIDAK ikut jadi tag: ia sudah punya fieldnya sendiri (`topics`).
+ */
+function defaultTagsFor(gap: GapView | null, question: string): string[] | undefined {
+  const asked = keywordsOf(gap?.missingQuestion?.trim() || question)
+  if (asked.length === 0) return undefined
+  const deferred = new Set(keywordsOf(gap?.answerSnippet ?? ''))
+  const shared = asked.filter((word) => deferred.has(word))
+  const tags = [...new Set([...shared, ...asked])].slice(0, 6)
   return tags.length > 0 ? tags : undefined
 }
 
+/**
+ * Judul dipotong di batas kata. Sebelumnya `slice(0, 80)` memotong di tengah kata, dan judul itu
+ * ikut tersimpan apa adanya kalau operator tidak mengubahnya.
+ */
+function titleFrom(question: string): string {
+  const clean = question.replace(/\s+/g, ' ').trim()
+  if (clean.length <= TITLE_MAX) return clean
+  const cut = clean.slice(0, TITLE_MAX - 1)
+  const lastSpace = cut.lastIndexOf(' ')
+  const trimmed = (lastSpace > TITLE_MAX / 2 ? cut.slice(0, lastSpace) : cut).replace(/[\s,;:.-]+$/, '')
+  return `${trimmed}…`
+}
+
+/**
+ * Ringkasan memuat pertanyaan pelanggan UTUH -- justru karena judulnya dipotong. Sebelumnya ia
+ * mengulang label internal gap ("Menjawab gap ada bagian jawaban yang belum punya knowledge:"),
+ * kalimat yang tidak memberi tahu pembaca knowledge apa pun yang tidak sudah ada di judul.
+ */
 function defaultSummaryFor(gap: GapView | null, question: string): string {
   if (!gap) return ''
-  const target = gap.missingQuestion?.trim() || question
-  return `Menjawab gap ${knowledgeGapLabel(gap.reason).toLowerCase()}: ${target.slice(0, 140)}`
+  const target = (gap.missingQuestion?.trim() || question).replace(/\s+/g, ' ').trim()
+  return `Pertanyaan pelanggan: "${target}"`
 }
 
 function defaultReasonFor(gap: GapView | null): string | undefined {
@@ -120,7 +173,15 @@ export function FixAnswerPanel({
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [result, setResult] = useState<FixResult | null>(null)
-  const [gap, setGap] = useState<GapView | null>(null)
+  // Satu balasan bisa punya LEBIH DARI SATU gap -- satu per pertanyaan pelanggan yang ditunda
+  // (lihat gap-signal.ts). Panel ini dulu memuat satu saja, jadi gap kedua tidak pernah bisa
+  // dibuka maupun ditandai selesai meski barisnya ada di database.
+  const [gaps, setGaps] = useState<GapView[]>([])
+  // Berapa gap pada jawaban ini yang sudah ditutup dalam sesi panel ini -- tanpa angka ini,
+  // menutup gap pertama dari dua terlihat seperti tidak terjadi apa-apa: kotaknya cuma berganti
+  // isi, dan operator tidak punya tanda bahwa pekerjaannya maju.
+  const [closedCount, setClosedCount] = useState(0)
+  const [selectedGapId, setSelectedGapId] = useState<string | null>(null)
   const [retest, setRetest] = useState<Retest | null>(null)
   const [notSuitable, setNotSuitable] = useState(false)
   const [note, setNote] = useState('')
@@ -157,15 +218,23 @@ export function FixAnswerPanel({
   // hanya tidak ada yang perlu ditutup.
   useEffect(() => {
     let cancelled = false
-    fetchJson<{ items: GapView[] }>(`/api/inbox/gaps?messageId=${encodeURIComponent(messageId)}&limit=1`)
+    fetchJson<{ items: GapView[] }>(`/api/inbox/gaps?messageId=${encodeURIComponent(messageId)}&limit=5`)
       .then((feed) => {
-        if (!cancelled) setGap(feed.items[0] ?? null)
+        if (cancelled) return
+        // `?? []` bukan basa-basi: badan respons yang tidak berbentuk feed (mis. galat yang
+        // terlanjur ber-status 200) dulu membuat `gaps` menjadi undefined, dan panel yang sudah
+        // menampilkan perbaikan ikut jatuh saat merender -- kegagalan memuat lonceng tidak boleh
+        // merusak halaman yang sedang dipakai operator.
+        setGaps(feed.items ?? [])
+        setSelectedGapId(feed.items?.[0]?.id ?? null)
       })
       .catch(() => {})
     return () => {
       cancelled = true
     }
   }, [messageId])
+
+  const gap = gaps.find((candidate) => candidate.id === selectedGapId) ?? gaps[0] ?? null
 
   async function runRetest(sourceId: string, run: RunView) {
     setRetest({ status: 'running' })
@@ -199,8 +268,23 @@ export function FixAnswerPanel({
         // di lonceng -- bukan alasan menampilkan kegagalan atas pekerjaan yang berhasil.
       }
     }
-    setResolved(true)
     setNotSuitable(false)
+
+    // Gap yang baru ditutup dikeluarkan dari daftar. Selama masih ada sisanya, putaran ini
+    // BELUM selesai: operator baru menjawab satu dari beberapa pertanyaan yang ditunda, dan
+    // menutup panel di sini akan meninggalkan sisanya tanpa penanda apa pun bahwa ia ada.
+    const remaining = gaps.filter((candidate) => candidate.id !== gap?.id)
+    setGaps(remaining)
+    if (gap) setClosedCount((count) => count + 1)
+    if (remaining.length > 0) {
+      setSelectedGapId(remaining[0].id)
+      setResult(null)
+      setRetest(null)
+      setEditing(null)
+      setNote('')
+      return
+    }
+    setResolved(true)
   }
 
   async function openEdit(sourceId: string, initialReason?: string) {
@@ -234,7 +318,7 @@ export function FixAnswerPanel({
       kind: 'new',
       title: 'Tambah jawaban yang benar',
       initial: {
-        title: question.slice(0, TITLE_MAX),
+        title: titleFrom(question),
         summary: defaultSummaryFor(gap, question),
         items: [{ question: question.slice(0, QUESTION_MAX), answer: '', ...(tags ? { tags } : {}), ...(topics ? { topics } : {}) }],
       },
@@ -315,6 +399,30 @@ export function FixAnswerPanel({
           {gap && (
             <div className="space-y-1 rounded-md border border-warning/30 bg-warning-subtle px-3 py-2 text-warning">
               <p className="font-medium">Gap knowledge pada jawaban ini</p>
+              {closedCount > 0 && (
+                <p className="text-ink-muted">{`${closedCount} gap ditandai selesai, tersisa ${gaps.length}.`}</p>
+              )}
+              {gaps.length > 1 && (
+                <div className="flex flex-wrap items-center gap-1.5 pt-0.5 pb-1">
+                  <span className="text-ink-muted">{`Gap ${gaps.indexOf(gap) + 1} dari ${gaps.length}`}</span>
+                  {gaps.map((candidate, index) => (
+                    <button
+                      key={candidate.id}
+                      type="button"
+                      aria-pressed={candidate.id === gap.id}
+                      onClick={() => setSelectedGapId(candidate.id)}
+                      className={cn(
+                        'focus-ring rounded-sm border px-1.5 py-0.5 text-xs font-medium',
+                        candidate.id === gap.id
+                          ? 'border-warning/40 bg-warning/15 text-warning'
+                          : 'border-line bg-surface text-ink-muted hover:bg-surface-sunken'
+                      )}
+                    >
+                      {`Gap ${index + 1}`}
+                    </button>
+                  ))}
+                </div>
+              )}
               <p>{knowledgeGapLabel(gap.reason)}</p>
               <p>{`Topik: ${gap.topic}`}</p>
               <div className="space-y-0.5 text-ink">

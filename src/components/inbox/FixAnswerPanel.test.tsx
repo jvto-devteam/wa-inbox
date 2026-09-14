@@ -47,7 +47,7 @@ const RUN_ROUTES: Record<string, Route> = {
   'GET /api/bot-control/decisions/run_1': {
     body: { id: 'run_1', conversationId: 'conv_1', inboundText: QUESTION, replyText: 'Harga ATV Rp350.000.' },
   },
-  'GET /api/inbox/gaps?messageId=msg_bot&limit=1': {
+  'GET /api/inbox/gaps?messageId=msg_bot&limit=5': {
     body: {
       count: 1,
       items: [
@@ -174,9 +174,11 @@ describe('FixAnswerPanel', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Tambah jawaban yang benar' }))
     expect(screen.getByLabelText('Pertanyaan item 1')).toHaveValue('Can we bring ten suitcases?')
     expect(screen.getByLabelText('Ringkasan knowledge')).toHaveValue(
-      'Menjawab gap ada bagian jawaban yang belum punya knowledge: Can we bring ten suitcases?'
+      'Pertanyaan pelanggan: "Can we bring ten suitcases?"'
     )
-    expect(screen.getByLabelText('Tag item 1')).toHaveValue('vehicle, bring, suitcases, check, team, about, ijen, safety')
+    // Kata dari kalimat stok penundaan bot ("let me check with our team ...") TIDAK boleh jadi
+    // tag: tag dicocokkan ke pesan PELANGGAN, dan tidak ada pelanggan yang menulis "check"/"team".
+    expect(screen.getByLabelText('Tag item 1')).toHaveValue('bring, suitcases')
     expect(screen.getByRole('checkbox', { name: 'Topik vehicle item 1' })).toBeChecked()
     expect(screen.getByLabelText('Alasan perubahan')).toHaveValue(
       'Menutup gap knowledge dari rekomendasi chatbot pada jawaban paragraf 1.'
@@ -190,12 +192,12 @@ describe('FixAnswerPanel', () => {
     expect(fixBody(fetchMock)).toEqual({
       kind: 'new',
       title: 'Can we bring ten suitcases?',
-      summary: 'Menjawab gap ada bagian jawaban yang belum punya knowledge: Can we bring ten suitcases?',
+      summary: 'Pertanyaan pelanggan: "Can we bring ten suitcases?"',
       items: [
         {
           question: 'Can we bring ten suitcases?',
           answer: 'ATV 1 jam Rp400.000 per orang.',
-          tags: ['vehicle', 'bring', 'suitcases', 'check', 'team', 'about', 'ijen', 'safety'],
+          tags: ['bring', 'suitcases'],
           topics: ['vehicle'],
         },
       ],
@@ -388,5 +390,158 @@ describe('FixAnswerPanel — putaran uji ulang', () => {
     expect(await screen.findByText('Aktif: FAQ Harga ATV v4')).toBeInTheDocument()
     expect(screen.getByRole('alert')).toHaveTextContent('Gagal menjalankan uji ulang')
     expect(screen.getByRole('button', { name: 'Coba uji ulang lagi' })).toBeInTheDocument()
+  })
+})
+
+
+// Dilaporkan 14 September 2026: satu balasan menunda DUA pertanyaan pelanggan ("How flexible is
+// the pickup time?" dan "Could we leave at 16:00-17:00?") dengan dua kalimat "Let me check with
+// our team" terpisah, tetapi panel hanya memperlihatkan satu -- jadi pertanyaan kedua tidak
+// pernah bisa diperbaiki maupun ditandai selesai.
+describe('FixAnswerPanel -- balasan dengan lebih dari satu gap', () => {
+  const PICKUP = 'Could you please tell us how flexible the pickup time is on the first day?'
+  const LATER = 'Would it also be possible to leave Surabaya around 16:00-17:00 without affecting the main itinerary?'
+
+  const DUA_GAP: Record<string, Route> = {
+    ...RUN_ROUTES,
+    'GET /api/inbox/gaps?messageId=msg_bot&limit=5': {
+      body: {
+        count: 2,
+        items: [
+          {
+            id: 'gap_1', reason: 'reply_deferred_knowledge', topic: 'booking',
+            messageText: `${PICKUP} ${LATER}`, missingQuestion: PICKUP,
+            answerSnippet: 'Let me check with our team regarding the flexibility of the pickup time and I will get back to you shortly!',
+            answerParagraph: 2, createdAt: '2026-09-14T02:01:00.000Z',
+          },
+          {
+            id: 'gap_2', reason: 'reply_deferred_knowledge', topic: 'booking',
+            messageText: `${PICKUP} ${LATER}`, missingQuestion: LATER,
+            answerSnippet: 'Let me check with our team if leaving at 16:00-17:00 is possible without affecting the itinerary and I will follow up shortly!',
+            answerParagraph: 3, createdAt: '2026-09-14T02:01:00.000Z',
+          },
+        ],
+      },
+    },
+  }
+
+  it('memperlihatkan kedua gap, bukan hanya yang pertama', async () => {
+    stubFetch(DUA_GAP)
+    renderPanel()
+
+    expect(await screen.findByText('Gap 1 dari 2')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Gap 1' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Gap 2' })).toBeInTheDocument()
+    expect(screen.getByText(PICKUP)).toBeInTheDocument()
+  })
+
+  it('berpindah ke gap kedua saat dipilih', async () => {
+    stubFetch(DUA_GAP)
+    renderPanel()
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Gap 2' }))
+
+    expect(screen.getByText('Gap 2 dari 2')).toBeInTheDocument()
+    expect(screen.getByText(LATER)).toBeInTheDocument()
+  })
+
+  it('formulir jawaban baru memakai gap yang sedang dipilih, bukan selalu yang pertama', async () => {
+    stubFetch(DUA_GAP)
+    renderPanel()
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Gap 2' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Tambah jawaban yang benar' }))
+
+    expect(screen.getByLabelText('Pertanyaan item 1')).toHaveValue(LATER)
+    expect(screen.getByLabelText('Alasan perubahan')).toHaveValue(
+      'Menutup gap knowledge dari rekomendasi chatbot pada jawaban paragraf 4.'
+    )
+  })
+
+  it('menandai satu gap selesai tidak mengakhiri putaran selama masih ada sisanya', async () => {
+    const fetchMock = stubFetch({
+      ...DUA_GAP,
+      ...KNOWLEDGE_ROUTE,
+      'POST /api/inbox/decisions/run_1/fix': { body: SAVED },
+      'POST /api/inbox/retest': { body: retestBody() },
+      'POST /api/inbox/gaps/gap_1/resolve': { body: { id: 'gap_1', resolvedAt: '2026-09-14T03:00:00.000Z' } },
+    })
+    renderPanel()
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Edit' }))
+    await screen.findByDisplayValue('Mulai Rp350.000.')
+    saveFromEditor()
+    fireEvent.click(await screen.findByRole('button', { name: 'Sudah sesuai' }))
+
+    expect(await screen.findByText('1 gap ditandai selesai, tersisa 1.')).toBeInTheDocument()
+    expect(screen.getByText(LATER)).toBeInTheDocument()
+    expect(screen.queryByText('Gap ditandai selesai.')).not.toBeInTheDocument()
+    expect(fetchMock.mock.calls.some(([url]) => String(url) === '/api/inbox/gaps/gap_1/resolve')).toBe(true)
+  })
+})
+
+// "Jangan salah ngisi aja" (14 September 2026): default formulir dipakai operator apa adanya,
+// jadi nilai yang meleset bukan sekadar berisik -- tag ikut dicocokkan ke pesan pelanggan oleh
+// pencocok knowledge, dan judul yang dipotong di tengah kata jadi judul yang salah selamanya.
+describe('FixAnswerPanel -- kualitas nilai default', () => {
+  const PANJANG =
+    'We also noticed that the standard itinerary starts from Surabaya around 12:00, so could you please tell us how flexible the pickup time is on the first day?'
+
+  const GAP_PANJANG: Record<string, Route> = {
+    ...RUN_ROUTES,
+    'GET /api/inbox/gaps?messageId=msg_bot&limit=5': {
+      body: {
+        count: 1,
+        items: [
+          {
+            id: 'gap_1', reason: 'reply_deferred_knowledge', topic: 'booking',
+            messageText: PANJANG, missingQuestion: PANJANG,
+            answerSnippet: 'Let me check with our team regarding the flexibility of the pickup time and I will get back to you shortly!',
+            answerParagraph: 2, createdAt: '2026-09-14T02:01:00.000Z',
+          },
+        ],
+      },
+    },
+  }
+
+  it('memotong judul di batas kata, bukan di tengah kata', async () => {
+    stubFetch(GAP_PANJANG)
+    renderPanel()
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Tambah jawaban yang benar' }))
+
+    const title = (screen.getByLabelText('Judul knowledge') as HTMLInputElement).value
+    expect(title.length).toBeLessThanOrEqual(80)
+    expect(title.endsWith('…')).toBe(true)
+
+    // Potongannya harus berhenti di batas kata: sisa pertanyaan sesudahnya tidak boleh dimulai
+    // dengan huruf/angka, karena itu berarti satu kata terbelah dua.
+    const body = title.slice(0, -1)
+    expect(PANJANG.startsWith(body)).toBe(true)
+    const nextChar = PANJANG[body.length]
+    expect(nextChar === undefined || /[^\p{L}\p{N}]/u.test(nextChar)).toBe(true)
+  })
+
+  it('mendahulukan kata yang benar-benar jadi pokok pertanyaan, dan membuang basa-basi bot', async () => {
+    stubFetch(GAP_PANJANG)
+    renderPanel()
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Tambah jawaban yang benar' }))
+
+    const tags = (screen.getByLabelText('Tag item 1') as HTMLInputElement).value.split(', ')
+    expect(tags).toContain('pickup')
+    for (const boilerplate of ['check', 'team', 'shortly', 'regarding', 'back']) {
+      expect(tags).not.toContain(boilerplate)
+    }
+    expect(tags.length).toBeLessThanOrEqual(6)
+  })
+
+  it('ringkasan memuat pertanyaan pelanggan yang UTUH, karena judulnya terpotong', async () => {
+    stubFetch(GAP_PANJANG)
+    renderPanel()
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Tambah jawaban yang benar' }))
+
+    expect(screen.getByLabelText('Ringkasan knowledge')).toHaveValue(`Pertanyaan pelanggan: "${PANJANG}"`)
   })
 })

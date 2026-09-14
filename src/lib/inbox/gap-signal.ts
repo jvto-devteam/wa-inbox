@@ -51,27 +51,48 @@ export function knowledgeGapReasonForDecision(decision: BotDecision): ReplyKnowl
   return knowledgeGapForDecision(decision, null)?.reason ?? null
 }
 
-export function knowledgeGapForDecision(decision: BotDecision, inboundText: string | null): ReplyKnowledgeGap | null {
-  if (decision.mode !== 'faq') return null
+/**
+ * SEMUA gap pada satu balasan, bukan yang pertama saja.
+ *
+ * Dilaporkan 2026-09-14: satu balasan menunda DUA pertanyaan pelanggan dengan dua kalimat
+ * "Let me check with our team" terpisah, dan hanya satu yang muncul di daftar perbaikan --
+ * pencariannya berhenti di paragraf pertama yang cocok, jadi pertanyaan kedua tidak pernah
+ * tercatat dan tidak pernah bisa diperbaiki. Satu paragraf yang ditunda adalah satu pertanyaan
+ * pelanggan yang belum terjawab; dua di antaranya adalah dua pekerjaan terpisah bagi operator,
+ * bukan satu.
+ *
+ * Jalur `unsourced` sengaja tetap satu baris: ia menandai balasan yang TIDAK bersandar pada
+ * fakta apa pun, satu kondisi tentang giliran itu secara keseluruhan -- bukan daftar pertanyaan
+ * yang tertunda satu per satu.
+ */
+export function knowledgeGapsForDecision(decision: BotDecision, inboundText: string | null): ReplyKnowledgeGap[] {
+  if (decision.mode !== 'faq') return []
 
-  const deferred = deferredParagraph(decision.draft)
-  if (deferred) {
-    return {
+  const deferred = deferredParagraphs(decision.draft)
+  if (deferred.length > 0) {
+    return deferred.map((paragraph) => ({
       reason: DEFERRED_KNOWLEDGE_REPLY_REASON,
-      missingQuestion: closestCustomerQuestion(inboundText, deferred.text),
-      answerSnippet: deferred.text,
-      answerParagraph: deferred.index,
-    }
+      missingQuestion: closestCustomerQuestion(inboundText, paragraph.text),
+      answerSnippet: paragraph.text,
+      answerParagraph: paragraph.index,
+    }))
   }
 
   const unsourced = unattributedParagraph(decision)
-  if (!unsourced) return null
-  return {
-    reason: UNSOURCED_REPLY_REASON,
-    missingQuestion: closestCustomerQuestion(inboundText, unsourced.text),
-    answerSnippet: unsourced.text,
-    answerParagraph: unsourced.index,
-  }
+  if (!unsourced) return []
+  return [
+    {
+      reason: UNSOURCED_REPLY_REASON,
+      missingQuestion: closestCustomerQuestion(inboundText, unsourced.text),
+      answerSnippet: unsourced.text,
+      answerParagraph: unsourced.index,
+    },
+  ]
+}
+
+/** Gap pertama saja -- dipakai lonceng dan ikon gelembung, yang cuma perlu tahu ADA atau TIDAK. */
+export function knowledgeGapForDecision(decision: BotDecision, inboundText: string | null): ReplyKnowledgeGap | null {
+  return knowledgeGapsForDecision(decision, inboundText)[0] ?? null
 }
 
 const DEFERRED_KNOWLEDGE_PATTERNS = [
@@ -98,10 +119,10 @@ const STOPWORDS = new Set([
   'about', 'from', 'your', 'much', 'many',
 ])
 
-function deferredParagraph(replyText: string): { index: number; text: string } | null {
+function deferredParagraphs(replyText: string): Array<{ index: number; text: string }> {
   return splitParagraphs(replyText)
     .map((text, index) => ({ index, text }))
-    .find(({ text }) => DEFERRED_KNOWLEDGE_PATTERNS.some((pattern) => pattern.test(text))) ?? null
+    .filter(({ text }) => DEFERRED_KNOWLEDGE_PATTERNS.some((pattern) => pattern.test(text)))
 }
 
 function unattributedParagraph(decision: Extract<BotDecision, { mode: 'faq' }>): { index: number; text: string } | null {

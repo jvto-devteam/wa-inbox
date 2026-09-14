@@ -214,7 +214,12 @@ const EMPTY: ManagedFacts = {
  * made a single FAQ about ATV prices match "jam berapa pickup dari bandara?" — and from there,
  * every entry would match nearly every message. Politeness fillers are here for the same reason.
  */
-const STOPWORDS = new Set([
+/**
+ * Diekspor sebagai MATCHER_STOPWORDS (2026-09-14) supaya default tag di FixAnswerPanel disaring
+ * oleh daftar yang SAMA dengan yang dipakai pencocok di bawah. Tag yang tersaring di sini tidak
+ * pernah bisa memenangkan overlap kata, jadi menyarankannya ke operator hanya membuang tempat.
+ */
+export const MATCHER_STOPWORDS = new Set([
   // Question words and fillers, Indonesian.
   'yang', 'untuk', 'dari', 'dengan', 'atau', 'dan', 'ada', 'apa', 'apakah', 'adakah', 'bisa',
   'bisakah', 'boleh', 'saya', 'kami', 'kita', 'anda', 'ini', 'itu', 'berapa', 'kapan', 'dimana',
@@ -232,7 +237,7 @@ function tokens(text: string): Set<string> {
     text
       .toLowerCase()
       .split(/[^\p{L}\p{N}]+/u)
-      .filter((word) => word.length >= 4 && !STOPWORDS.has(word))
+      .filter((word) => word.length >= 4 && !MATCHER_STOPWORDS.has(word))
   )
 }
 

@@ -131,3 +131,57 @@ describe('recordUnsourcedReplyGap', () => {
     errorSpy.mockRestore()
   })
 })
+
+
+// Dilaporkan 14 September 2026: balasan yang menunda DUA pertanyaan hanya menghasilkan satu
+// baris gap, jadi pertanyaan kedua tidak pernah muncul di daftar perbaikan. Satu paragraf yang
+// ditunda = satu pekerjaan operator, jadi satu baris masing-masing -- dengan runId dan
+// messageId yang sama, karena keduanya memang berasal dari satu giliran bot.
+describe('recordUnsourcedReplyGap -- balasan dengan lebih dari satu penundaan', () => {
+  const duaTunda: BotDecision = {
+    mode: 'faq',
+    draft: [
+      'Hi!',
+      '* Yes, the tour is available; the price for 4 people is Rp3.050.000 per person.',
+      '* Let me check with our team regarding the flexibility of the pickup time and I will get back to you shortly!',
+      '* Let me check with our team if leaving at 16:00-17:00 is possible without affecting the itinerary and I will follow up shortly!',
+    ].join('\n\n'),
+    sourceTopic: 'booking',
+    topic: 'booking',
+    knowledge: knowledge(),
+  }
+
+  it('menulis satu baris untuk setiap paragraf yang ditunda', async () => {
+    await recordUnsourcedReplyGap(params({ decision: duaTunda, inboundText: 'How flexible is the pickup time? Could we leave at 16:00-17:00 instead?' }))
+
+    expect(mockPrisma.knowledgeGapLog.create).toHaveBeenCalledTimes(2)
+    const snippets = mockPrisma.knowledgeGapLog.create.mock.calls.map(([arg]) => arg.data.answerSnippet)
+    expect(snippets[0]).toContain('flexibility of the pickup time')
+    expect(snippets[1]).toContain('16:00-17:00')
+  })
+
+  it('menomori paragraf tiap baris sesuai posisinya di balasan', async () => {
+    await recordUnsourcedReplyGap(params({ decision: duaTunda, inboundText: 'How flexible is the pickup time? Could we leave at 16:00-17:00 instead?' }))
+
+    const paragraphs = mockPrisma.knowledgeGapLog.create.mock.calls.map(([arg]) => arg.data.answerParagraph)
+    expect(paragraphs).toEqual([2, 3])
+  })
+
+  it('membunyikan lonceng sekali saja, bukan sekali per baris', async () => {
+    await recordUnsourcedReplyGap(params({ decision: duaTunda, inboundText: 'How flexible is the pickup time?' }))
+
+    expect(broadcast).toHaveBeenCalledTimes(1)
+  })
+
+  // Satu baris gagal ditulis tidak boleh menelan baris lainnya, dan tidak boleh menggagalkan
+  // giliran bot yang sudah berhasil terkirim.
+  it('tetap menulis baris kedua saat baris pertama gagal', async () => {
+    mockPrisma.knowledgeGapLog.create
+      .mockRejectedValueOnce(new Error('db down'))
+      .mockResolvedValueOnce({ id: 'gap_2' } as never)
+
+    await recordUnsourcedReplyGap(params({ decision: duaTunda, inboundText: 'How flexible is the pickup time?' }))
+
+    expect(mockPrisma.knowledgeGapLog.create).toHaveBeenCalledTimes(2)
+  })
+})

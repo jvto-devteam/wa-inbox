@@ -1,6 +1,6 @@
 import { prisma } from '@/lib/db'
 import { broadcast } from '@/lib/realtime'
-import { DEFERRED_KNOWLEDGE_REPLY_REASON, knowledgeGapForDecision, UNSOURCED_REPLY_REASON } from './gap-signal'
+import { DEFERRED_KNOWLEDGE_REPLY_REASON, knowledgeGapsForDecision, UNSOURCED_REPLY_REASON } from './gap-signal'
 import type { BotDecision } from '@/lib/bot/types'
 
 /** Alasan gap untuk balasan FAQ: tidak bersumber, atau ada sub-pertanyaan yang ditunda. */
@@ -27,25 +27,39 @@ export async function recordUnsourcedReplyGap(params: {
   const { decision } = params
   // Pemeriksaan mode kedua kalinya ada demi penyempitan tipe, bukan demi logika: `topic` dan
   // `sourceTopic` hanya ada di varian faq.
-  const gap = knowledgeGapForDecision(decision, params.inboundText)
-  if (!gap || decision.mode !== 'faq') return
+  const gaps = knowledgeGapsForDecision(decision, params.inboundText)
+  if (gaps.length === 0 || decision.mode !== 'faq') return
 
-  try {
-    await prisma.knowledgeGapLog.create({
-      data: {
-        conversationId: params.conversationId,
-        topic: decision.topic ?? decision.sourceTopic,
-        reason: gap.reason,
-        messageText: params.inboundText,
-        missingQuestion: gap.missingQuestion,
-        answerSnippet: gap.answerSnippet,
-        answerParagraph: gap.answerParagraph,
-        messageId: params.messageId ?? null,
-        runId: params.runId,
-      },
-    })
-    broadcast({ type: 'knowledge.gap', conversationId: params.conversationId })
-  } catch (error) {
-    console.error('recordUnsourcedReplyGap gagal', { conversationId: params.conversationId, error })
+  // Satu baris per gap, bukan satu baris per balasan: balasan yang menunda dua pertanyaan
+  // pelanggan memberi operator DUA pekerjaan, dan satu baris gabungan membuat yang kedua tidak
+  // pernah muncul di daftar perbaikan (dilaporkan 2026-09-14).
+  //
+  // Ditulis satu per satu di dalam try-nya masing-masing, bukan lewat createMany: satu baris
+  // yang gagal tidak boleh ikut menelan baris lain, dan tidak satu pun boleh menggagalkan
+  // giliran bot yang balasannya sudah terkirim.
+  let written = 0
+  for (const gap of gaps) {
+    try {
+      await prisma.knowledgeGapLog.create({
+        data: {
+          conversationId: params.conversationId,
+          topic: decision.topic ?? decision.sourceTopic,
+          reason: gap.reason,
+          messageText: params.inboundText,
+          missingQuestion: gap.missingQuestion,
+          answerSnippet: gap.answerSnippet,
+          answerParagraph: gap.answerParagraph,
+          messageId: params.messageId ?? null,
+          runId: params.runId,
+        },
+      })
+      written += 1
+    } catch (error) {
+      console.error('recordUnsourcedReplyGap gagal', { conversationId: params.conversationId, error })
+    }
   }
+
+  // Sekali saja, berapa pun barisnya: lonceng memuat ulang daftarnya sendiri dari API, jadi satu
+  // sinyal sudah cukup untuk memperlihatkan semuanya.
+  if (written > 0) broadcast({ type: 'knowledge.gap', conversationId: params.conversationId })
 }

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { DEFERRED_KNOWLEDGE_REPLY_REASON, isUnsourcedFaqReply, knowledgeGapForDecision, knowledgeGapReasonForDecision, UNSOURCED_REPLY_REASON } from './gap-signal'
+import { DEFERRED_KNOWLEDGE_REPLY_REASON, isUnsourcedFaqReply, knowledgeGapForDecision, knowledgeGapsForDecision, knowledgeGapReasonForDecision, UNSOURCED_REPLY_REASON } from './gap-signal'
 import type { BotDecision, DecisionKnowledge } from '@/lib/bot/types'
 
 function knowledge(overrides: Partial<DecisionKnowledge> = {}): DecisionKnowledge {
@@ -184,5 +184,64 @@ describe('knowledgeGapForDecision', () => {
       answerSnippet: 'Hi! Ijen is safe for travelers with normal fitness.',
       answerParagraph: 0,
     })
+  })
+})
+
+
+// Dilaporkan 14 September 2026 dari balasan produksi: satu balasan menunda DUA pertanyaan
+// pelanggan (waktu jemput, dan berangkat sore) dengan dua kalimat "Let me check with our team"
+// terpisah, tetapi hanya satu yang muncul di daftar perbaikan -- `deferredParagraph` berhenti
+// di paragraf pertama yang cocok, jadi pertanyaan kedua tidak pernah tercatat dan tidak pernah
+// bisa diperbaiki.
+describe('knowledgeGapsForDecision', () => {
+  const draftDuaTunda = [
+    'Hi!',
+    '* Yes, the tour is available; the price for 4 people is Rp3.050.000 per person.',
+    '* Let me check with our team regarding the flexibility of the pickup time and I will get back to you shortly!',
+    '* Let me check with our team if leaving at 16:00-17:00 is possible without affecting the itinerary and I will follow up shortly!',
+  ].join('\n\n')
+
+  const inbound = [
+    'We also noticed that the standard itinerary starts from Surabaya around 12:00. Could you please tell us how flexible the pickup time is on the first day?',
+    'Since Bromo is visited the following morning, would it also be possible to leave Surabaya later in the afternoon, for example around 16:00-17:00, without affecting the main itinerary?',
+  ].join(' ')
+
+  it('mencatat SETIAP paragraf yang ditunda, bukan hanya yang pertama', () => {
+    const gaps = knowledgeGapsForDecision(faq({ draft: draftDuaTunda }), inbound)
+
+    expect(gaps).toHaveLength(2)
+    expect(gaps.map((g) => g.reason)).toEqual([DEFERRED_KNOWLEDGE_REPLY_REASON, DEFERRED_KNOWLEDGE_REPLY_REASON])
+    expect(gaps[0].answerSnippet).toContain('flexibility of the pickup time')
+    expect(gaps[1].answerSnippet).toContain('16:00-17:00')
+  })
+
+  it('memasangkan tiap paragraf tunda dengan pertanyaan pelanggan yang paling dekat', () => {
+    const gaps = knowledgeGapsForDecision(faq({ draft: draftDuaTunda }), inbound)
+
+    expect(gaps[0].missingQuestion).toContain('pickup time')
+    expect(gaps[1].missingQuestion).toContain('16:00-17:00')
+  })
+
+  it('menomori paragrafnya sesuai posisi aslinya di balasan', () => {
+    const gaps = knowledgeGapsForDecision(faq({ draft: draftDuaTunda }), inbound)
+
+    expect(gaps.map((g) => g.answerParagraph)).toEqual([2, 3])
+  })
+
+  it('tetap satu baris untuk balasan yang hanya menunda satu pertanyaan', () => {
+    const draft = 'Hi!\n\n* Let me check with our team regarding the pickup time and I will get back to you shortly!'
+    expect(knowledgeGapsForDecision(faq({ draft }), 'How flexible is the pickup time?')).toHaveLength(1)
+  })
+
+  it('mengembalikan daftar kosong saat tidak ada gap sama sekali', () => {
+    const attributions = [{ paragraph: 0, lines: [{ kind: 'managed' as const, line: 'ATV 1 jam: IDR 350000', sourceId: 'ks_1', title: 'FAQ Harga ATV', version: 2 }] }]
+    expect(knowledgeGapsForDecision(faq({ knowledge: knowledge({ attributions }) }), 'berapa harga atv?')).toEqual([])
+  })
+
+  // Pemanggil lama (lonceng, ikon gelembung) tetap memakai bentuk tunggal, dan ia harus
+  // menjawab persis sama seperti sebelumnya: gap pertama.
+  it('bentuk tunggalnya tetap mengembalikan gap pertama', () => {
+    const first = knowledgeGapForDecision(faq({ draft: draftDuaTunda }), inbound)
+    expect(first).toEqual(knowledgeGapsForDecision(faq({ draft: draftDuaTunda }), inbound)[0])
   })
 })
