@@ -146,6 +146,7 @@ import { ensureFreshBookingData, type BookingData } from '@/lib/booking/client'
 import { checkRouteGate } from './route-gate'
 import { classifySalesNeed, HANDOFF_KEYWORDS } from './sales-classifier'
 import {
+  findNamedPackage,
   listDestinations,
   matchDestination,
   mentionsRegion,
@@ -2006,14 +2007,33 @@ export async function decideAndRespond(
         ? 'Diteksi oleh model LLM.'
         : 'Model LLM gagal/timeout -- fallback ke pemindaian kata kunci lama.'
     )
-    const matches = matched?.matches ?? packagesForDestination(destination, catalog)
+    // Paket yang disebut pelanggan secara persis -- judul lengkap atau link halaman paketnya (lihat
+    // header findNamedPackage). Dilaporkan 2026-09-14 (Sakura): tanpa ini, pesan yang menyebut paket
+    // tetap diberi formulir start/finish/jumlah hari. Dicari di kandidat destinasi DAN seluruh
+    // katalog, karena link yang ditempel pelanggan tidak bergantung pada destinasi mana yang
+    // kebetulan terdeteksi. Kalau ketemu, ia menjadi SATU-SATUNYA kandidat, supaya penyaringan dan
+    // pilihan paket di bawah menjawab paket itu -- ada dua paket 4 hari dari Surabaya yang bisa tertukar.
+    const namedPackage = findNamedPackage(inboundForUnderstanding, [...(matched?.matches ?? []), ...catalog.packages])
+    if (namedPackage) {
+      trace.push(
+        'Paket disebut pelanggan',
+        `Pelanggan menyebut paket "${namedPackage.title}" -- formulir start/finish/jumlah hari dilewati, jawaban memakai paket itu.`
+      )
+    }
+    const matches = namedPackage ? [namedPackage] : (matched?.matches ?? packagesForDestination(destination, catalog))
     // A city/duration mentioned THIS message wins, same precedence as `destination` above;
     // otherwise whatever was persisted from an EARLIER message in the conversation carries it
     // forward -- see TripBrief.dayCount/finishCity's own header for why all three (origin
     // included) need this, not just origin.
-    const origin = preferences.origin ?? tripBrief.origin ?? null
-    const dayCount = preferences.dayCount ?? tripBrief.dayCount ?? null
-    const finishCity = preferences.finishCity ?? tripBrief.finishCity ?? null
+    //
+    // Paket yang disebut pelanggan duduk di antara keduanya: ia lebih baru daripada apa pun yang
+    // tersimpan dari pesan sebelumnya, tetapi kota/durasi yang pelanggan tulis eksplisit di pesan yang
+    // sama tetap menang. Finish-nya hanya dipakai kalau paket itu punya tepat satu titik akhir -- kalau
+    // lebih, titik akhir mana yang diinginkan pelanggan memang masih belum diketahui.
+    const namedFinishCity = namedPackage && namedPackage.finishCities.length === 1 ? namedPackage.finishCities[0] : null
+    const origin = preferences.origin ?? namedPackage?.origin ?? tripBrief.origin ?? null
+    const dayCount = preferences.dayCount ?? namedPackage?.dayCount ?? tripBrief.dayCount ?? null
+    const finishCity = preferences.finishCity ?? namedFinishCity ?? tripBrief.finishCity ?? null
     // Same "this message wins, else the persisted one carries the conversation" precedence as
     // origin/dayCount/finishCity -- see priceForPax's own header for why this matters: without
     // it, a customer who states their group size once ("we will be 2 people") would need to
@@ -2084,12 +2104,17 @@ export async function decideAndRespond(
       )
     }
     const isRecommendationTopic = funnelDecision.isRecommendationTopic
-    const bypassTripPreferenceForm = funnelDecision.shouldAsk && canAnswerSpecificPackageRequestWithoutTripForm({
-      message: inboundForUnderstanding,
-      resolverTopic,
-      requestedTokens,
-      dayCount,
-    })
+    // Paket yang disebut persis (namedPackage di atas) sudah menjawab untuk apa formulir ini ada --
+    // memilih paket -- jadi formulir dilewati walaupun finish-nya masih kosong.
+    const bypassTripPreferenceForm =
+      funnelDecision.shouldAsk &&
+      (namedPackage !== null ||
+        canAnswerSpecificPackageRequestWithoutTripForm({
+          message: inboundForUnderstanding,
+          resolverTopic,
+          requestedTokens,
+          dayCount,
+        }))
     if (funnelDecision.wasAwaitingAnswer) {
       await persistTripBrief({ destination, awaitingTripPreferencesAnswer: false, ...(pendingQuestion ? { pendingTripQuestion: null } : {}) })
     }

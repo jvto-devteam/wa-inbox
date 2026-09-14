@@ -3883,6 +3883,86 @@ describe('decideAndRespond', () => {
       expect(opts.system).toContain('Rp1.550.000/person (for 2 pax)')
     })
 
+    // Dilaporkan 14 September 2026 (Sakura): pelanggan menyebut paketnya -- judul lengkap dan link
+    // halaman paket -- tetapi bot meminta formulir start/finish/jumlah hari. Pukul 12.16 WIB model
+    // timeout, cadangan kata kunci membaca "additional cost" sebagai topik harga, finish kosong, dan
+    // jalan pintas paket spesifik menolak pesan multi-destinasi. Paket yang disebut PERSIS lewat
+    // judul atau link kini dianggap sudah dipilih pelanggan.
+    describe('paket yang disebut pelanggan', () => {
+      const papuma4d = pkg({
+        packageKey: 'ijen-papuma-tumpak-sewu-bromo-4d3n',
+        title: '4 Day Ijen, Papuma Beach, Tumpak Sewu & Bromo Journey from Surabaya',
+        destinationTokens: ['ijen', 'papuma', 'tumpak sewu', 'bromo'],
+        origin: 'Surabaya',
+        dayCount: 4,
+        finishCities: ['surabaya'],
+        priceIdr: 3650000,
+        links: { details: 'https://javavolcano-touroperator.com/tours/from-surabaya/ijen-papuma-tumpak-sewu-bromo-4d3n' },
+      })
+      const tumpakSewu4d = pkg({
+        packageKey: 'tumpak-sewu-bromo-ijen-4d3n',
+        title: '4 Day Tumpak Sewu, Bromo & Ijen Adventure from Surabaya to Bali',
+        destinationTokens: ['tumpak sewu', 'bromo', 'ijen'],
+        origin: 'Surabaya',
+        dayCount: 4,
+        finishCities: ['ketapang', 'bali'],
+        priceIdr: 3125000,
+        links: { details: 'https://javavolcano-touroperator.com/tours/from-surabaya/tumpak-sewu-bromo-ijen-4d3n' },
+      })
+
+      function stubDegradedTurn(preferences: { origin: string | null; dayCount: number | null; finishCity: string | null; pax: number | null }) {
+        ;vi.mocked(ensureFreshBookingData).mockResolvedValue(null)
+        ;vi.mocked(classifySalesNeed).mockReturnValue({ job: 'J3', missingInfo: [], needsLiveData: false })
+        ;vi.mocked(loadCatalog).mockReturnValue(catalogWithTokens(['ijen', 'papuma', 'tumpak sewu', 'bromo']))
+        ;vi.mocked(matchDestination).mockReturnValue({ destination: 'ijen', matches: [tumpakSewu4d, papuma4d] })
+        ;vi.mocked(checkRouteGate).mockReturnValue({ status: 'clear' })
+        // Kondisi 12.16 WIB: model timeout, semua sinyal dari cadangan kata kunci.
+        ;vi.mocked(classifyTopicViaLLM).mockResolvedValue({ topic: 'price', source: 'regex_fallback' })
+        ;vi.mocked(extractTripPreferences).mockResolvedValue({ preferences, source: 'regex_fallback' })
+        ;vi.mocked(detectsRecommendationIntentViaLLM).mockResolvedValue({ isRecommendation: true, source: 'regex_fallback' })
+      }
+
+      it('menjawab paket yang disebut lewat judul dan link, tanpa formulir', async () => {
+        stubDegradedTurn({ origin: 'Surabaya', dayCount: 4, finishCity: null, pax: 2 })
+
+        const result = await decideAndRespond(
+          'conv_1',
+          "Hi JVTO, I'm interested in booking 4 DAY IJEN, PAPUMA BEACH, TUMPAK SEWU & BROMO JOURNEY FROM SURABAYA. \n" +
+            'https://javavolcano-touroperator.com/tours/from-surabaya/ijen-papuma-tumpak-sewu-bromo-4d3n\n\n' +
+            'We are 2 guests. Could you please let us know the additional cost for this?'
+        )
+
+        expect(result.mode).toBe('faq')
+        const [, opts] = llmCall(0)
+        expect(opts.system).toContain('Package the customer is asking about: 4 Day Ijen, Papuma Beach, Tumpak Sewu & Bromo Journey from Surabaya')
+        expect(result.steps?.map((s) => s.label)).toContain('Paket disebut pelanggan')
+      })
+
+      // Paket dengan lebih dari satu titik akhir: finish tetap kosong, jadi yang diuji benar-benar
+      // jalan pintas formulirnya -- bukan kebetulan ketiga isian terisi dari data paket.
+      it('melewati formulir untuk paket bertitik akhir ganda yang disebut lewat judul huruf kapital', async () => {
+        stubDegradedTurn({ origin: 'Surabaya', dayCount: 4, finishCity: null, pax: 2 })
+
+        const result = await decideAndRespond('conv_1', '4 DAY TUMPAK SEWU, BROMO & IJEN ADVENTURE FROM SURABAYA TO BALI for 2 people, what is the price?')
+
+        expect(result.mode).toBe('faq')
+        const [, opts] = llmCall(0)
+        expect(opts.system).toContain('Package the customer is asking about: 4 Day Tumpak Sewu, Bromo & Ijen Adventure from Surabaya to Bali')
+      })
+
+      // Tidak menebak: menyebut destinasi dan durasi bukan menyebut paket. Dua paket 4 hari dari
+      // Surabaya cocok di sini, jadi formulir tetap wajib supaya bot tidak memilihkan yang salah.
+      it('tetap meminta formulir saat pelanggan hanya menyebut destinasi dan durasi', async () => {
+        stubDegradedTurn({ origin: 'Surabaya', dayCount: 4, finishCity: null, pax: 2 })
+
+        const result = await decideAndRespond('conv_1', 'We want Ijen, Papuma, Tumpak Sewu and Bromo for 4 days from Surabaya. What is the additional cost for 2 people?')
+
+        expect(result.mode).toBe('clarify')
+        expect(result.mode === 'clarify' ? result.reply : '').toContain('Could you share a few details?')
+        expect(result.steps?.map((s) => s.label)).not.toContain('Paket disebut pelanggan')
+      })
+    })
+
     it('does not hand off a relaxed alternative just because the first option cannot finish where another shown option can', async () => {
       ;vi.mocked(ensureFreshBookingData).mockResolvedValue(null)
       ;vi.mocked(classifySalesNeed).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })

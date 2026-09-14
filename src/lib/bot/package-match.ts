@@ -630,6 +630,65 @@ function coversAllRequestedTokens(p: CatalogPackage, requestedTokens: string[]):
  * match at all. "3 day trip from Surabaya" recommends the specific 3D2N-from-Surabaya package
  * instead of whichever priced package for that destination happens to be first.
  */
+/**
+ * Paket yang disebut pelanggan secara PERSIS -- lewat link halaman paketnya atau judul lengkapnya.
+ *
+ * Dilaporkan 2026-09-14 (Sakura): pelanggan menulis judul paket dan menempel link halamannya, tetapi
+ * bot tetap meminta formulir start/finish/jumlah hari. Sebelum fungsi ini tidak ada yang mencocokkan
+ * judul atau link paket di pesan pelanggan, jadi apakah formulir muncul bergantung pada kebetulan topik
+ * terbaca apa -- dan saat model timeout, cadangan kata kunci membaca "additional cost" sebagai harga.
+ *
+ * Deterministik, tanpa model: tetap bekerja justru saat daemon model sedang lambat.
+ *
+ * Hanya kecocokan persis, tidak pernah tebakan -- menyebut "Bromo dan Ijen 4 hari" BUKAN menyebut
+ * paket, dan ada dua paket 4 hari dari Surabaya yang sama-sama cocok dengan kalimat seperti itu:
+ *   - link: path `/tours/<asal>/<slug>` harus sama dengan link halaman paket. Path membawa asalnya
+ *     (`from-bali` / `from-surabaya`), jadi paket bernama mirip dari dua asal tidak tertukar.
+ *   - judul: judul lengkap, tidak peka huruf besar, tanda baca, tanda kutip, dan `&`/`and` -- pelanggan
+ *     menempelnya dalam huruf kapital atau di dalam tanda kutip. Minimal 4 kata supaya judul pendek
+ *     tidak cocok dengan kalimat biasa.
+ * Link menang atas judul. Kalau dua paket berbeda sama kuatnya, hasilnya null: lebih baik formulir
+ * daripada paket yang salah. named-package.test.ts memeriksa setiap paket di katalog asli kembali ke
+ * dirinya sendiri dari judul dan link-nya.
+ */
+export function findNamedPackage(message: string, packages: CatalogPackage[]): CatalogPackage | null {
+  return packageFromLink(message, packages) ?? packageFromTitle(message, packages)
+}
+
+const PACKAGE_PATH_PATTERN = /\/tours\/[a-z0-9-]+\/[a-z0-9-]+/gi
+const MIN_TITLE_WORDS = 4
+
+function uniqueByKey(packages: CatalogPackage[]): CatalogPackage[] {
+  return [...new Map(packages.map((p) => [p.packageKey, p])).values()]
+}
+
+function packageFromLink(message: string, packages: CatalogPackage[]): CatalogPackage | null {
+  const mentioned = new Set((message.match(PACKAGE_PATH_PATTERN) ?? []).map((path) => path.toLowerCase()))
+  if (mentioned.size === 0) return null
+  const hits = uniqueByKey(
+    packages.filter((p) => {
+      const path = p.links.details?.toLowerCase().match(PACKAGE_PATH_PATTERN)?.[0]
+      return path !== undefined && mentioned.has(path)
+    })
+  )
+  return hits.length === 1 ? hits[0] : null
+}
+
+function normalizedTitleText(text: string): string {
+  return ` ${text.toLowerCase().replace(/&/g, ' and ').replace(/[^a-z0-9]+/g, ' ').trim()} `
+}
+
+function packageFromTitle(message: string, packages: CatalogPackage[]): CatalogPackage | null {
+  const text = normalizedTitleText(message)
+  const hits = packages
+    .map((p) => ({ p, title: normalizedTitleText(p.title) }))
+    .filter(({ title }) => title.trim().split(' ').length >= MIN_TITLE_WORDS && text.includes(title))
+  if (hits.length === 0) return null
+  const longest = Math.max(...hits.map(({ title }) => title.length))
+  const best = uniqueByKey(hits.filter(({ title }) => title.length === longest).map(({ p }) => p))
+  return best.length === 1 ? best[0] : null
+}
+
 export function pickPackage(
   matches: CatalogPackage[],
   preferences: TripPreferences = NO_PREFERENCES,
