@@ -369,6 +369,12 @@ function shouldSavePendingTripQuestion(message: string): boolean {
   return Object.keys(patch).length > 0 || PENDING_TRIP_QUESTION_PATTERN.test(message)
 }
 
+function decisionReplyText(decision: BotDecision): string | null {
+  if (decision.mode === 'faq') return decision.draft
+  if (decision.mode === 'booking_context' || decision.mode === 'clarify') return decision.reply
+  return null
+}
+
 // Confirmed with the operator 2026-08-06: start/finish/day-count stay MANDATORY before
 // recommending a package (see the trip-preferences funnel gate below) -- the ONLY exception is
 // the customer explicitly saying they don't know/don't care, not simply "one message has
@@ -1906,11 +1912,8 @@ export async function decideAndRespond(
         alsoTopics
       )
       turnKnowledge = knowledgeSink.value
-      if (
-        decision.mode === 'clarify' &&
-        /where would you like to go|which destination|destination interests/i.test(decision.reply) &&
-        shouldSavePendingTripQuestion(inboundForUnderstanding)
-      ) {
+      const decisionReply = decisionReplyText(decision)
+      if (/where would you like to go|which destination|destination interests/i.test(decisionReply ?? '') && shouldSavePendingTripQuestion(inboundForUnderstanding)) {
         await persistTripBrief({ ...tripPreferencePatchFromMessage(inboundForUnderstanding), pendingTripQuestion: pendingQuestion ?? inboundText })
       }
       return decision

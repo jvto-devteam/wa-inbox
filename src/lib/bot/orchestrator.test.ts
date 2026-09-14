@@ -1051,6 +1051,31 @@ describe('decideAndRespond', () => {
     expect(result.steps?.find((s) => s.label === 'Knowledge terkelola dipakai')?.detail).toContain('Kebijakan Pembayaran (v3)')
   })
 
+  it('saves a package question even when the no-destination branch answers known facts before asking for the destination', async () => {
+    ;vi.mocked(ensureFreshBookingData).mockResolvedValue(null)
+    ;vi.mocked(classifySalesNeed).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
+    ;vi.mocked(matchDestination).mockReturnValue(null)
+    ;vi.mocked(listDestinations).mockReturnValue(['Bromo', 'Ijen'])
+    ;vi.mocked(classifyTopicViaLLM).mockResolvedValue({ topic: 'booking', source: 'llm' })
+    ;vi.mocked(resolveKnowledgeForTopic).mockReturnValue({
+      factualLines: ['Tours are nearly always available and exact dates are confirmed at checkout.'],
+      detailLines: [],
+      primaryLink: null,
+      disclosures: [],
+      handoffRequired: false,
+    })
+    ;vi.mocked(callLLM).mockResolvedValue('Hi! Yes, tours are nearly always available. Which destination interests you?')
+
+    const input = 'Trip 3 hari 2 malam untuk 4 orang, apakah tersedia dan berapa harganya?'
+    const result = await decideAndRespond('conv_1', input)
+
+    expect(result.mode).toBe('faq')
+    expect(tripBriefWrites()).toContainEqual({
+      id: 'conv_1',
+      patch: { dayCount: 3, pax: 4, pendingTripQuestion: input },
+    })
+  })
+
   // Task 17 (Ruling R54): the no-destination branch's own knowledge-assembly site -- same
   // fixture as the test right above (managed FAQ alone answers, catalog side empty), asserting
   // the `knowledge` the decision now carries instead of only the trace step.

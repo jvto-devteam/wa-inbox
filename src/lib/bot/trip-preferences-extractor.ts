@@ -23,7 +23,7 @@
  * optional enrichment step that must never break the main reply.
  */
 import { callLLM } from './llm'
-import { parseTripPreferences, titleCaseCity, type TripPreferences } from './package-match'
+import { hasExplicitTripDayCount, parseTripPreferences, titleCaseCity, type TripPreferences } from './package-match'
 
 export type TripPreferencesExtraction = {
   preferences: TripPreferences
@@ -136,12 +136,21 @@ export async function extractTripPreferences(
   model?: string,
   turnContext?: string
 ): Promise<TripPreferencesExtraction> {
+  const deterministic = parseTripPreferences(message)
   try {
     const raw = await callLLM(message, { system: EXTRACTION_SYSTEM_PROMPT, model, context: turnContext })
     const validated = parseAndValidate(raw)
-    if (validated) return { preferences: validated, source: 'llm' }
+    if (validated) {
+      return {
+        preferences: {
+          ...validated,
+          dayCount: hasExplicitTripDayCount(message) && deterministic.dayCount !== null ? deterministic.dayCount : validated.dayCount,
+        },
+        source: 'llm',
+      }
+    }
   } catch (err) {
     console.error('trip preference extraction failed', { error: err })
   }
-  return { preferences: parseTripPreferences(message), source: 'regex_fallback' }
+  return { preferences: deterministic, source: 'regex_fallback' }
 }

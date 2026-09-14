@@ -38,6 +38,17 @@ describe('extractTripPreferences', () => {
     expect(result.preferences.dayCount).toBe(5)
   })
 
+  it('prefers an explicit package duration over an LLM duration inferred from dates', async () => {
+    vi.mocked(callLLM).mockResolvedValue(JSON.stringify({ origin: 'Surabaya', dayCount: 2, finishCity: null, pax: 2 }))
+
+    const result = await extractTripPreferences(
+      "We're 2 people and we'd like to book your Bromo 1D1N tour from Surabaya for 12-13 September.",
+      'gemma4:31b-cloud'
+    )
+
+    expect(result).toEqual({ preferences: { origin: 'Surabaya', dayCount: 1, finishCity: null, pax: 2 }, source: 'llm' })
+  })
+
   it('extracts a valid finishCity', async () => {
     vi.mocked(callLLM).mockResolvedValue(JSON.stringify({ origin: null, dayCount: null, finishCity: 'malang', pax: null }))
     const result = await extractTripPreferences('can we end in Malang?', 'gemma4:31b-cloud')

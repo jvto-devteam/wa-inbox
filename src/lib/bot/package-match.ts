@@ -288,6 +288,16 @@ export function priceForPax(pkg: CatalogPackage, pax: number | null): { priceIdr
  * space before "day") didn't match a bare `\s*`, so a real, explicitly stated duration was
  * silently lost and the recommendation list fell back to showing every duration.
  */
+const EXPLICIT_DAY_COUNT_PATTERN = /(\d{1,2})[\s-]*(?:d[\s-]*\d{1,2}[\s-]*n\b|days?\b|hari\b)/
+
+export function hasExplicitTripDayCount(message: string): boolean {
+  const low = normalizeAliases(message.toLowerCase())
+  const explicit = low.match(EXPLICIT_DAY_COUNT_PATTERN)
+  if (!explicit) return false
+  const n = Number(explicit[1])
+  return n > 0 && n <= 30
+}
+
 function parseDayCount(low: string): number | null {
   // An explicit "N day(s)/hari"/"NdMn" match is unambiguous -- the customer said the number
   // right next to the duration unit -- so it's trusted up to 30 (JVTO's real catalog tops out
@@ -296,7 +306,7 @@ function parseDayCount(low: string): number | null {
   // dropped here and left to an ad-hoc LLM hedge instead). Reported live 2026-08-05: "a 20 day
   // expedition to Ijen" was rejected by the old cap of 10, so dayCount stayed null and the
   // request never reached the tiered fallback/handoff logic it should have.
-  const explicit = low.match(/(\d{1,2})[\s-]*(?:d[\s-]*\d{1,2}[\s-]*n\b|days?\b|hari\b)/)
+  const explicit = low.match(EXPLICIT_DAY_COUNT_PATTERN)
   if (explicit) {
     const n = Number(explicit[1])
     if (n > 0 && n <= 30) return n
