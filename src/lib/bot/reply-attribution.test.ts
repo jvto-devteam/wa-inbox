@@ -131,3 +131,22 @@ describe('attributeReply -- kalimat kebijakan', () => {
     ).toEqual([])
   })
 })
+
+// Dilaporkan 14 September 2026 dari uji ulang Arpan: paragraf "tidak ada paket standar... tim bisa
+// menyesuaikan setelah booking" ditandai "tanpa sumber", padahal kalimat itu diperintahkan prompt
+// untuk alternatif terdekat -- kelas yang sama dengan kebijakan ketersediaan.
+describe('attributeReply -- kalimat paket tidak standar', () => {
+  const ARPAN =
+    "Hi! We don't have a standard package that starts and ends in Bali for those dates, but our team can adjust the specifics for you after booking. Here are the closest options:"
+
+  it('mencocokkan parafrasa dari balasan Arpan', () => {
+    const [attribution] = attributeReply(ARPAN, knowledge())
+    expect(attribution.lines).toEqual([expect.objectContaining({ kind: 'policy', title: 'Kebijakan paket tidak standar' })])
+  })
+
+  // Kandidat ini tidak boleh jadi karpet untuk janji tim yang lain: kalimat "tim akan menghubungi
+  // setelah booking" hanya berbagi kata umum, bukan kebijakan paket tidak standar.
+  it('tidak mencocokkan janji tim yang lain', () => {
+    expect(attributeReply('Our team will contact you after booking to confirm your pickup time.', knowledge())).toEqual([])
+  })
+})

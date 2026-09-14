@@ -171,6 +171,7 @@ import { detectsAdditionalEscalationSignal } from './escalation-classifier'
 import { detectsPreferenceDeclineViaLLM } from './preference-decline-classifier'
 import { detectsRecommendationIntentViaLLM } from './recommendation-intent-classifier'
 import { detectsPackageLinkIntentViaLLM } from './link-intent-classifier'
+import { NOT_STANDARD_PACKAGE_POLICY } from './policy-statements'
 import { parsePickupTiming, buildItineraryScenario, describeScenarioForLLM, describeScenarioForCustomer, evaluateScenario } from './scenario-evaluator'
 import {
   resolveKnowledgeForTopic,
@@ -2448,7 +2449,7 @@ export async function decideAndRespond(
       matchTier === 'relaxed_route'
         ? `\n\nNone of the matching packages above cover the exact route/order or every requested destination exactly, but they DO match the same start city, finish city, and trip length -- be upfront when the route/stop order is slightly different or when a requested destination is not included, using the specific difference(s) listed above while confirming the start, finish, and duration are exactly as requested.`
         : matchTier === 'relaxed_start_end'
-          ? `\n\nNone of the matching packages above match every stated start, finish, and duration detail exactly -- these are the closest relevant alternative(s). Be upfront that the exact combination they wanted isn't a standard package, and mention that our team can adjust the specifics after booking if needed.`
+          ? `\n\nNone of the matching packages above match every stated start, finish, and duration detail exactly -- these are the closest relevant alternative(s). ${NOT_STANDARD_PACKAGE_POLICY}`
           : ''
     // "Can we finish the trip in Bali?" -- a Bali-ORIGIN package's real dropoff options are
     // all Surabaya/Malang-area (verified 2026-08-05: none of the 4 Bali-origin packages list

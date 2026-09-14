@@ -29,6 +29,16 @@ export const NO_GUARANTEE_POLICY =
   'Attraction access such as Blue Fire, along with weather and sunrise, cannot be guaranteed; it depends on current conditions and the authorities.'
 
 /**
+ * Kalimat untuk alternatif terdekat, dikonfirmasi operator 2026-08-05 (lihat matchTierNote di
+ * orchestrator.ts). Ditambahkan ke sini 2026-09-14: uji ulang Arpan menunjukkan parafrasanya ("we
+ * don't have a standard package... our team can adjust the specifics after booking") ditandai
+ * "tanpa sumber", kelas yang sama dengan kebijakan ketersediaan. Berbentuk arahan untuk model,
+ * bukan larangan: isinya dua pernyataan yang boleh disampaikan ke pelanggan.
+ */
+export const NOT_STANDARD_PACKAGE_POLICY =
+  "Be upfront that the exact combination they wanted isn't a standard package, and mention that our team can adjust the specifics after booking if needed."
+
+/**
  * Kandidat pencocok sumber. Sengaja hanya PERNYATAAN kebijakan, bukan baris GUARDRAIL_INSTRUCTION:
  * baris guardrail adalah larangan untuk model ("NEVER ..."), bukan fakta yang boleh disampaikan ke
  * pelanggan, jadi balasan yang mirip dengannya tidak otomatis bersumber.
@@ -36,4 +46,5 @@ export const NO_GUARANTEE_POLICY =
 export const POLICY_STATEMENTS: ReadonlyArray<{ title: string; line: string }> = [
   { title: 'Kebijakan ketersediaan', line: AVAILABILITY_POLICY },
   { title: 'Kebijakan tanpa jaminan akses', line: NO_GUARANTEE_POLICY },
+  { title: 'Kebijakan paket tidak standar', line: NOT_STANDARD_PACKAGE_POLICY },
 ]

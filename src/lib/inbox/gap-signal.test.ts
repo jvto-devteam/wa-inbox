@@ -302,3 +302,35 @@ describe('knowledgeGapsForDecision -- kalimat kebijakan bukan gap', () => {
     expect(gaps[0].answerSnippet).toContain('pet dragon')
   })
 })
+
+describe('knowledgeGapsForDecision -- kalimat paket tidak standar bukan gap', () => {
+  it('tidak menandai paragraf pembuka alternatif terdekat pada balasan Arpan', () => {
+    // Paragraf inklusi yang BERSUMBER wajib ada: tanpa satu pun paragraf yang cocok, gap-signal
+    // memakai pengecualian lain (harga/URL terverifikasi di seluruh draft) dan test ini lulus tanpa
+    // menguji apa pun -- itu yang terjadi pada versi pertamanya. Di produksi paragraf inklusi Arpan
+    // memang bersumber, jadi hanya paragraf pembukanya yang tertandai.
+    const draft = [
+      "Hi! We don't have a standard package that starts and ends in Bali for those dates, but our team can adjust the specifics for you after booking. Here are the closest options:",
+      '- 3 Day Bromo & Ijen Volcano Discovery from Bali: Rp3.800.000/person (for 3 pax) - https://javavolcano-touroperator.com/tours/from-bali/bromo-ijen-3d2n',
+      'Prices are subject to availability and confirmation. Inclusions are private transport, dedicated driver/guide, all entrance fees, 4WD Jeep for Bromo, gas masks, and medical screenings for Ijen.',
+    ].join('\n\n')
+    const k = knowledge({
+      catalogLines: [
+        'Every package includes private transport, a dedicated driver and guide(s), all entrance fees and permits, drinking water, meals as stated, and full pick-up to drop-off assistance.',
+      ],
+      managedLines: [],
+      attributions: [],
+    })
+    const decision = faq({
+      draft,
+      sourceTopic: 'inclusions',
+      verification: {
+        status: 'PASSED', attempts: 1, fabricatedPrices: [], unverifiedPrices: [], wrongPaxTierPrices: [],
+        unknownUrls: [], misdirectedUrls: [], unsupportedClaims: [], guaranteeViolations: [],
+      },
+      knowledge: { ...k, attributions: attributeReply(draft, k) },
+    })
+
+    expect(knowledgeGapsForDecision(decision, 'Please share your best all-inclusive price.')).toEqual([])
+  })
+})
