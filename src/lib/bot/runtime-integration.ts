@@ -15,6 +15,7 @@
  * unpredictable one.
  */
 import { prisma } from '@/lib/db'
+import { MATCHER_STOPWORDS } from './matcher-stopwords'
 import {
   loadPublishedManagedKnowledge,
   type KnowledgeRef,
@@ -214,24 +215,6 @@ const EMPTY: ManagedFacts = {
  * made a single FAQ about ATV prices match "jam berapa pickup dari bandara?" — and from there,
  * every entry would match nearly every message. Politeness fillers are here for the same reason.
  */
-/**
- * Diekspor sebagai MATCHER_STOPWORDS (2026-09-14) supaya default tag di FixAnswerPanel disaring
- * oleh daftar yang SAMA dengan yang dipakai pencocok di bawah. Tag yang tersaring di sini tidak
- * pernah bisa memenangkan overlap kata, jadi menyarankannya ke operator hanya membuang tempat.
- */
-export const MATCHER_STOPWORDS = new Set([
-  // Question words and fillers, Indonesian.
-  'yang', 'untuk', 'dari', 'dengan', 'atau', 'dan', 'ada', 'apa', 'apakah', 'adakah', 'bisa',
-  'bisakah', 'boleh', 'saya', 'kami', 'kita', 'anda', 'ini', 'itu', 'berapa', 'kapan', 'dimana',
-  'mana', 'bagaimana', 'gimana', 'kenapa', 'mengapa', 'siapa', 'mohon', 'tolong', 'terima',
-  'kasih', 'selamat', 'halo', 'hallo', 'sudah', 'belum', 'akan', 'juga', 'saja', 'kalau', 'jika',
-  'tapi', 'tetapi', 'karena', 'tersebut', 'tentang', 'seperti', 'punya', 'ingin', 'pengen',
-  // English.
-  'the', 'and', 'for', 'with', 'you', 'are', 'what', 'can', 'how', 'where', 'when', 'does',
-  'have', 'this', 'that', 'there', 'would', 'could', 'should', 'please', 'thanks', 'hello',
-  'about', 'from', 'your', 'much', 'many',
-])
-
 function tokens(text: string): Set<string> {
   return new Set(
     text

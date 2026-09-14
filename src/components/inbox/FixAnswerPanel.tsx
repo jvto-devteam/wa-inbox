@@ -11,7 +11,7 @@ import { cn } from '@/lib/utils'
 import type { BotDecision } from '@/lib/bot/types'
 import type { KnowledgeItem } from '@/lib/bot-control/knowledge-body'
 import { RESOLVER_TOPICS, type ResolverTopic } from '@/lib/bot/module-resolver'
-import { MATCHER_STOPWORDS } from '@/lib/bot/runtime-integration'
+import { MATCHER_STOPWORDS } from '@/lib/bot/matcher-stopwords'
 
 type RunView = { id: string; conversationId: string; inboundText: string; replyText: string | null }
 type GapView = {
