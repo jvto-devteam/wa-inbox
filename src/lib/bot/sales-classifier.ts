@@ -347,7 +347,7 @@ function includesAny(text: string, needles: string[]): boolean {
 // package-match.ts's trip-preferences clarify branch and multi-destination awareness, see
 // orchestrator.ts), widening the possible value type here -- REQUIRED_FIELDS_BY_JOB below never
 // actually lists any of them, so this is a type-only accommodation, not a behavior change.
-function isMissing(value: string | number | boolean | string[] | undefined): boolean {
+function isMissing(value: string | number | boolean | string[] | null | undefined): boolean {
   return value === undefined || value === null || value === '' || (Array.isArray(value) && value.length === 0)
 }
 

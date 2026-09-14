@@ -1516,6 +1516,7 @@ describe('decideAndRespond', () => {
     const [, opts] = llmCall(0)
     expect(opts.system).toContain('Relevant link (include this URL at the end of your reply): https://example.com/tours/from-surabaya/bromo-madakaripura-ijen-3d2n')
     expect(opts.system).not.toContain('Relevant link (include this URL at the end of your reply): https://example.com/why-jvto/the-jvto-difference')
+    expect(opts.system).toContain('The customer asks whether they can join a shared/group tour')
   })
 
   // Reported live 2026-08-06: "Could you confirm the hotel names for the 3D2N Bromo Ijen
@@ -2524,6 +2525,23 @@ describe('decideAndRespond', () => {
       expect(resolveKnowledgeForTopic).not.toHaveBeenCalled()
       expect(mockPrisma.knowledgeGapLog.create).not.toHaveBeenCalled()
     })
+
+    it('saves stated pax/day count and the original question before asking for a destination', async () => {
+      vi.mocked(ensureFreshBookingData).mockResolvedValue(null)
+      vi.mocked(classifySalesNeed).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
+      vi.mocked(matchDestination).mockReturnValue(null)
+      vi.mocked(listDestinations).mockReturnValue(['Bromo', 'Ijen'])
+      vi.mocked(classifyTopicViaLLM).mockResolvedValue({ topic: 'general', source: 'llm' })
+
+      const input = 'Trip 3 hari 2 malam untuk 4 orang, mohon info harga, fasilitas, itinerary, dan persyaratan.'
+      const result = await decideAndRespond('conv_1', input)
+
+      expect(result.mode).toBe('clarify')
+      expect(tripBriefWrites()).toContainEqual({
+        id: 'conv_1',
+        patch: { dayCount: 3, pax: 4, pendingTripQuestion: input },
+      })
+    })
   })
 
   describe('trip-preferences clarify (start/finish/day-count funnel)', () => {
@@ -2544,7 +2562,12 @@ describe('decideAndRespond', () => {
       expect(callLLM).not.toHaveBeenCalled()
       expect(tripBriefWrites()).toContainEqual({
         id: 'conv_1',
-        patch: { destination: 'ijen', askedTripPreferences: true, awaitingTripPreferencesAnswer: true },
+        patch: {
+          destination: 'ijen',
+          askedTripPreferences: true,
+          awaitingTripPreferencesAnswer: true,
+          pendingTripQuestion: 'Which package do you recommend for Ijen?',
+        },
       })
     })
 
@@ -2597,6 +2620,25 @@ describe('decideAndRespond', () => {
       expect(reply).toContain('- Start (Surabaya/Bali):')
       expect(reply).toContain('- Finish (Surabaya/Bali):')
       expect(reply).toContain('- Number of Day(s):')
+    })
+
+    it('stores the original package question before asking for trip details, so the form answer can still answer it', async () => {
+      ;vi.mocked(ensureFreshBookingData).mockResolvedValue(null)
+      ;vi.mocked(classifySalesNeed).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
+      ;vi.mocked(matchDestination).mockReturnValue({ destination: 'ijen', matches: [fromBali, fromSurabaya] })
+      ;vi.mocked(classifyTopicViaLLM).mockResolvedValue({ topic: 'price', source: 'llm' })
+
+      await decideAndRespond('conv_1', 'What is the price, car rental option, and Blue Fire rule for Ijen?')
+
+      expect(tripBriefWrites()).toContainEqual({
+        id: 'conv_1',
+        patch: {
+          destination: 'ijen',
+          askedTripPreferences: true,
+          awaitingTripPreferencesAnswer: true,
+          pendingTripQuestion: 'What is the price, car rental option, and Blue Fire rule for Ijen?',
+        },
+      })
     })
 
     // Origin sharing alone used to be enough to skip the ask (the old, narrower rule) -- now
@@ -2719,6 +2761,63 @@ describe('decideAndRespond', () => {
       expect(opts.system).toContain('Bromo & Ijen Discovery')
       expect(opts.system).toContain('Ijen, Bromo & Madakaripura')
       expect(opts.system).toContain('present ALL 2 of the options above')
+    })
+
+    it('answers the saved original package question together with the form answer, not just the form answer alone', async () => {
+      ;vi.mocked(ensureFreshBookingData).mockResolvedValue(null)
+      ;vi.mocked(classifySalesNeed).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
+      const option = pkg({
+        packageKey: 'bromo-madakaripura-ijen-3d2n',
+        title: 'Bromo Madakaripura Ijen 3D',
+        destinationTokens: ['bromo', 'ijen'],
+        origin: 'Surabaya',
+        dayCount: 3,
+        finishCities: ['bali'],
+        priceIdr: 2450000,
+        priceTiers: [{ minPax: 2, maxPax: 2, priceIdr: 3570000 }],
+      })
+      ;vi.mocked(matchDestination).mockReturnValue(null)
+      ;vi.mocked(packagesForDestination).mockReturnValue([option])
+      ;vi.mocked(checkRouteGate).mockReturnValue({ status: 'clear' })
+      ;vi.mocked(classifyTopicViaLLM).mockResolvedValue({ topic: 'price', source: 'llm' })
+      ;vi.mocked(resolveKnowledgeForTopic).mockReturnValue({
+        factualLines: ['Private car rental with driver is not sold as a separate standalone fallback in this flow.'],
+        detailLines: ['Blue Fire cannot be guaranteed because it depends on weather, volcanic activity, and authority clearance.'],
+        primaryLink: null,
+        disclosures: [],
+        handoffRequired: false,
+      })
+      mockPrisma.conversation.findUniqueOrThrow.mockResolvedValue({
+        id: 'conv_1',
+        tripBrief: {
+          destination: 'bromo',
+          requestedTokens: ['bromo', 'ijen'],
+          pax: 2,
+          askedTripPreferences: true,
+          awaitingTripPreferencesAnswer: true,
+          pendingTripQuestion: 'Do you arrange Bromo and Ijen, what is the cost for 2 people, car rental cost, and Blue Fire rule?',
+        },
+        bookingData: null,
+        bookingCheckedAt: new Date(),
+        contact: { phone: '6281234567890' },
+      } as never)
+
+      await decideAndRespond('conv_1', 'Pickup: Surabaya\nDrop: Bali\nNumber of Day: 3 days')
+
+      expect(classifyTopicViaLLM).toHaveBeenCalledWith(
+        'J1',
+        expect.stringContaining('car rental cost'),
+        'gemma4:31b-cloud'
+      )
+      const [prompt, opts] = llmCall(0)
+      expect(prompt).toContain('car rental cost')
+      expect(prompt).toContain('Pickup: Surabaya')
+      expect(opts.system).toContain('Blue Fire cannot be guaranteed')
+      expect(opts.system).toContain('Rp3.570.000/person (for 2 pax)')
+      expect(tripBriefWrites()).toContainEqual({
+        id: 'conv_1',
+        patch: { destination: 'bromo', awaitingTripPreferencesAnswer: false, pendingTripQuestion: null },
+      })
     })
 
     // Reported live 2026-08-06: "Which package do you recommend for Ijen?" -> funnel asks ->
@@ -3719,6 +3818,44 @@ describe('decideAndRespond', () => {
 
       const [, opts] = llmCall(0)
       expect(opts.system).toContain('Package the customer is asking about: Bromo Midnight 1D')
+    })
+
+    it('answers a specific Bromo private-jeep quotation directly instead of forcing the trip-preference form', async () => {
+      ;vi.mocked(ensureFreshBookingData).mockResolvedValue(null)
+      ;vi.mocked(classifySalesNeed).mockReturnValue({ job: 'J2', missingInfo: [], needsLiveData: false })
+      ;vi.mocked(loadCatalog).mockReturnValue(catalogWithTokens(['bromo']))
+      const flagship = pkg({
+        packageKey: 'bromo-madakaripura-ijen-3d2n',
+        title: 'Bromo Madakaripura Ijen 3D',
+        destinationTokens: ['bromo', 'madakaripura', 'ijen'],
+        origin: 'Surabaya',
+        dayCount: 3,
+        finishCities: ['bali'],
+        priceIdr: 2450000,
+      })
+      const bromoOnly = pkg({
+        packageKey: 'bromo-1d1n',
+        title: 'Bromo Midnight 1D',
+        destinationTokens: ['bromo'],
+        origin: 'Surabaya',
+        dayCount: 1,
+        finishCities: ['surabaya'],
+        priceIdr: 1550000,
+        priceTiers: [{ minPax: 2, maxPax: 2, priceIdr: 1550000 }],
+        links: { details: 'https://javavolcano-touroperator.com/tours/from-surabaya/bromo-1d1n' },
+      })
+      ;vi.mocked(matchDestination).mockReturnValue({ destination: 'bromo', matches: [flagship, bromoOnly] })
+      ;vi.mocked(checkRouteGate).mockReturnValue({ status: 'clear' })
+      ;vi.mocked(classifyTopicViaLLM).mockResolvedValue({ topic: 'price', source: 'llm' })
+      ;vi.mocked(extractTripPreferences).mockResolvedValue({ preferences: { origin: null, dayCount: null, finishCity: null, pax: 2 }, source: 'llm' })
+      ;vi.mocked(detectsRecommendationIntentViaLLM).mockResolvedValue({ isRecommendation: true, source: 'llm' })
+
+      const result = await decideAndRespond('conv_1', 'Do you provide a private jeep tour for Bromo mountain? 2pp, can I please get a quotation for this?')
+
+      expect(result.mode).toBe('faq')
+      const [, opts] = llmCall(0)
+      expect(opts.system).toContain('Package the customer is asking about: Bromo Midnight 1D')
+      expect(opts.system).toContain('Rp1.550.000/person (for 2 pax)')
     })
 
     it('does not hand off a relaxed alternative just because the first option cannot finish where another shown option can', async () => {

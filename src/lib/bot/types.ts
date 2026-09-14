@@ -61,6 +61,12 @@ export type TripBrief = {
   // just one. Kept separate from `askedTripPreferences` so this signal doesn't linger and wrongly
   // apply to an unrelated later message in the same conversation.
   awaitingTripPreferencesAnswer?: boolean
+  // Original customer question saved when the bot has to ask a trip-detail form before it can
+  // recommend/price a package. The follow-up answer ("Pickup: ...") is only the missing form
+  // data; this text keeps the actual business questions (price, inclusions, car rental, Blue
+  // Fire, group/private) in scope for the next turn. Null means the pending question has been
+  // consumed/cleared; optional means conversations written before this field existed.
+  pendingTripQuestion?: string | null
 }
 
 export type RouteGateResult =

@@ -246,7 +246,7 @@ export type TripPreferenceFormState = {
 // group size (a genuine JVTO group has never approached that scale).
 function parsePax(low: string): number | null {
   if (/\b(solo|just me|myself|alone|by myself)\b/.test(low)) return 1
-  const explicit = low.match(/\b(\d{1,3})\s*(?:people|persons?|pax|travell?ers?|guests?|adults?)\b/)
+  const explicit = low.match(/\b(\d{1,3})\s*(?:people|persons?|pax|ppl|pp|orang|travell?ers?|guests?|adults?)\b/)
   if (explicit) {
     const n = Number(explicit[1])
     if (n > 0 && n <= 200) return n

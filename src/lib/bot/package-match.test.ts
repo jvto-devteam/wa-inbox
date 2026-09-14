@@ -532,6 +532,8 @@ describe('parseTripPreferences', () => {
     it('parses an explicit count with a group-size unit', () => {
       expect(parseTripPreferences('we will be 2 people').pax).toBe(2)
       expect(parseTripPreferences('4 pax please').pax).toBe(4)
+      expect(parseTripPreferences('2pp quotation please').pax).toBe(2)
+      expect(parseTripPreferences('pesertanya ada 4 orang').pax).toBe(4)
       expect(parseTripPreferences('booking for 6 persons').pax).toBe(6)
       expect(parseTripPreferences('a group of 15 travelers').pax).toBe(15)
     })

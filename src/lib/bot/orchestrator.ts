@@ -305,6 +305,70 @@ function packageDestinationCovers(packageToken: string, requestedToken: string):
   return packageValue === requestedValue || packageValue.includes(requestedValue) || requestedValue.includes(packageValue)
 }
 
+const SPECIFIC_PACKAGE_REQUEST_PATTERN =
+  /\b(?:quotation|quote|private\s+jeep|1\s*d\s*1\s*n|1d1n|1\s*day|one\s*day|book\s+(?:your|the|this)|this\s+(?:tour|package))\b/i
+const GENERIC_PACKAGE_RECOMMENDATION_PATTERN = /\b(?:which|what)\s+(?:package|tour)|\b(?:recommend|suggest|options|choices)\b/i
+const GROUP_JOIN_REQUEST_PATTERN = /\b(?:join|joining|shared|sharing|group|open\s+trip)\b/i
+const PENDING_TRIP_QUESTION_PATTERN =
+  /\b(?:price|cost|quote|quotation|itinerary|include|included|inclusions?|availability|available|pickup|pick-up|drop|dropoff|drop-off|finish|start|pax|people|persons?|ppl|pp|orang|recommend|suggest|options|packages?)\b|\b(?:which|what)\s+(?:package|tour)\b/i
+
+function canAnswerSpecificPackageRequestWithoutTripForm(input: {
+  message: string
+  resolverTopic: ResolverTopic
+  requestedTokens: string[]
+  dayCount: number | null
+}): boolean {
+  const { message, resolverTopic, requestedTokens, dayCount } = input
+  if (!SPECIFIC_PACKAGE_REQUEST_PATTERN.test(message)) return false
+  if (GENERIC_PACKAGE_RECOMMENDATION_PATTERN.test(message) && !/\b(?:quotation|quote|private\s+jeep)\b/i.test(message)) return false
+  if (requestedTokens.length > 1 && dayCount !== 1) return false
+  return resolverTopic === 'price' || resolverTopic === 'booking' || DESTINATION_INDEPENDENT_TOPICS.has(resolverTopic)
+}
+
+function sharedGroupRequestNote(message: string): string {
+  if (!GROUP_JOIN_REQUEST_PATTERN.test(message)) return ''
+  return `\n\nThe customer asks whether they can join a shared/group tour. If the facts above state JVTO tours are private or not mixed with strangers, answer that directly first; do not simply recommend a private package as if they asked for one.`
+}
+
+function pendingTripQuestionText(tripBrief: TripBrief): string | null {
+  return typeof tripBrief.pendingTripQuestion === 'string' && tripBrief.pendingTripQuestion.trim().length > 0
+    ? tripBrief.pendingTripQuestion.trim()
+    : null
+}
+
+function combinePendingTripQuestion(pendingQuestion: string | null, inboundText: string): string {
+  return pendingQuestion
+    ? `${pendingQuestion}\n\nCustomer later provided trip details:\n${inboundText}`
+    : inboundText
+}
+
+function tripPreferencePatchFromMessage(message: string): Partial<TripBrief> {
+  const parsed = parseTripPreferences(message)
+  return {
+    ...(parsed.origin ? { origin: parsed.origin } : {}),
+    ...(parsed.finishCity ? { finishCity: parsed.finishCity } : {}),
+    ...(parsed.dayCount ? { dayCount: parsed.dayCount } : {}),
+    ...(parsed.pax ? { pax: parsed.pax } : {}),
+  }
+}
+
+function shouldUsePendingTripQuestion(
+  pendingQuestion: string | null,
+  inboundText: string,
+  tripBrief: TripBrief
+): boolean {
+  if (!pendingQuestion) return false
+  const formPreferences = parseTripPreferencesFormAnswer(inboundText, tripBrief)
+  if (formPreferences) return true
+  const patch = tripPreferencePatchFromMessage(inboundText)
+  return Object.keys(patch).length > 0
+}
+
+function shouldSavePendingTripQuestion(message: string): boolean {
+  const patch = tripPreferencePatchFromMessage(message)
+  return Object.keys(patch).length > 0 || PENDING_TRIP_QUESTION_PATTERN.test(message)
+}
+
 // Confirmed with the operator 2026-08-06: start/finish/day-count stay MANDATORY before
 // recommending a package (see the trip-preferences funnel gate below) -- the ONLY exception is
 // the customer explicitly saying they don't know/don't care, not simply "one message has
@@ -1354,6 +1418,7 @@ async function runNoDestinationBranch(
         (isMultiQuestionMessage(inboundText)
           ? `\n\nThis message contains several distinct questions -- answer EVERY one of them, each as its own bullet point. Do not skip any, and do not lump multiple unconfirmed items into one vague sentence. It's fine for this reply to be longer than usual to cover everything.`
           : '') +
+        sharedGroupRequestNote(inboundText) +
         `\n\n${GUARDRAIL_INSTRUCTION}`
 
       const history = await fetchRecentHistory(conversationId, inboundText)
@@ -1675,13 +1740,16 @@ export async function decideAndRespond(
       `
     }
     const catalog = loadCatalog()
+    const pendingQuestion = pendingTripQuestionText(tripBrief)
+    const shouldUsePendingQuestion = shouldUsePendingTripQuestion(pendingQuestion, inboundText, tripBrief)
+    const inboundForUnderstanding = shouldUsePendingQuestion ? combinePendingTripQuestion(pendingQuestion, inboundText) : inboundText
 
     // Reported 2026-08-06: "Start / Pick-up: Yogyakarta... What is the price for 2 people?"
     // was silently mis-parsed (the bare-city fallback grabbed an unrelated finish-city mention
     // instead) rather than the bot ever telling the customer Yogyakarta isn't a supported
     // pickup point at all. Computed once, up front, so both the pre-destination and the main
     // knowledge-composition branches below can fold the same honest note into their prompts.
-    const unsupportedOriginCity = mentionedUnsupportedOriginCity(inboundText)
+    const unsupportedOriginCity = mentionedUnsupportedOriginCity(inboundForUnderstanding)
     const unsupportedOriginNote = unsupportedOriginCity
       ? `\n\nThe customer mentioned wanting pickup/start from "${unsupportedOriginCity}" -- our tours only depart from Surabaya or Bali. Be upfront that this specific city is not a supported pickup point, rather than ignoring it or guessing a different one; suggest starting from Surabaya or Bali instead.`
       : ''
@@ -1691,13 +1759,13 @@ export async function decideAndRespond(
     // itinerary question) -- real, operator-sourced estimates exist per leg but were never
     // reachable. Resolved from the raw message directly (not gated on topic/destination) so
     // it also surfaces on a message naming several legs at once.
-    const routeLegFacts = resolveRouteLegFacts(inboundText)
+    const routeLegFacts = resolveRouteLegFacts(inboundForUnderstanding)
     const routeLegNote =
       routeLegFacts.length > 0
         ? `\n\nReal travel-time estimates for the specific leg(s) the customer asked about (these are approximate/operational, so still phrase them as "approximately" or "around"):\n${routeLegFacts.map((f) => `- ${f}`).join('\n')}`
         : ''
 
-    const classification = classifySalesNeed({ message: inboundText, tripBrief })
+    const classification = classifySalesNeed({ message: inboundForUnderstanding, tripBrief })
     // Task 15: captured here, read once by attachClassification after runDecision() returns --
     // see this function's own header for why every return statement below must NOT set this
     // individually.
@@ -1725,7 +1793,7 @@ export async function decideAndRespond(
     }
 
     trace.push('Mencari destinasi', 'Mencari destinasi yang cocok dengan pesan pelanggan, atau memakai destinasi yang sudah tercatat sebelumnya.')
-    let matched = matchDestination(inboundText, catalog)
+    let matched = matchDestination(inboundText, catalog) ?? (pendingQuestion ? matchDestination(pendingQuestion, catalog) : null)
     // A named region ("East Java tour") with no catalog destination: see
     // resolveRegionDestination's header for the live report and the rules. Runs only when this
     // message named no destination, none is on file, and the message names the region, so a
@@ -1738,14 +1806,14 @@ export async function decideAndRespond(
     // no catalog destination, so `requestedTokens` below stays empty, is not persisted, and the
     // pickup-scenario check that needs it is skipped. When it returns null, nothing here has any
     // effect.
-    if (!matched && !tripBrief.destination && mentionsRegion(inboundText)) {
-      const parsed = parseTripPreferences(inboundText)
+    if (!matched && !tripBrief.destination && mentionsRegion(inboundForUnderstanding)) {
+      const parsed = parseTripPreferences(inboundForUnderstanding)
       const regionPrefs = {
         origin: parsed.origin ?? tripBrief.origin ?? null,
         finishCity: parsed.finishCity ?? tripBrief.finishCity ?? null,
         dayCount: parsed.dayCount ?? tripBrief.dayCount ?? null,
       }
-      const region = resolveRegionDestination(inboundText, catalog, regionPrefs)
+      const region = resolveRegionDestination(inboundForUnderstanding, catalog, regionPrefs)
       if (region) {
         const prefLabel = {
           dayCount: `${regionPrefs.dayCount} hari`,
@@ -1792,9 +1860,9 @@ export async function decideAndRespond(
       // topic classifier) is untouched, byte-identical prompt and all -- see
       // multi-topic-classifier.ts's own header for why this had to be a separate call.
       const [keywordModuleResult, topicResult, allTopicsResult] = await Promise.all([
-        classifyKeywordModulesViaLLM(inboundText, settings.ollamaModel),
-        classifyTopicViaLLM(classification.job, inboundText, settings.ollamaModel),
-        classifyAllTopics(inboundText, settings.ollamaModel),
+        classifyKeywordModulesViaLLM(inboundForUnderstanding, settings.ollamaModel),
+        classifyTopicViaLLM(classification.job, inboundForUnderstanding, settings.ollamaModel),
+        classifyAllTopics(inboundForUnderstanding, settings.ollamaModel),
       ])
       // Task 15: no-destination branch's own topic classification site (the destination branch
       // below has its own, separate one).
@@ -1825,7 +1893,7 @@ export async function decideAndRespond(
       // after the call resolves, same single-attachment discipline as `turnClassification`.
       const knowledgeSink: { value?: DecisionKnowledge } = {}
       const decision = await runNoDestinationBranch(
-        inboundText,
+        inboundForUnderstanding,
         conversationId,
         settings.ollamaModel,
         topicResult.topic,
@@ -1838,6 +1906,13 @@ export async function decideAndRespond(
         alsoTopics
       )
       turnKnowledge = knowledgeSink.value
+      if (
+        decision.mode === 'clarify' &&
+        /where would you like to go|which destination|destination interests/i.test(decision.reply) &&
+        shouldSavePendingTripQuestion(inboundForUnderstanding)
+      ) {
+        await persistTripBrief({ ...tripPreferencePatchFromMessage(inboundForUnderstanding), pendingTripQuestion: pendingQuestion ?? inboundText })
+      }
       return decision
     }
     trace.push('Destinasi ditemukan', `Destinasi: "${destination}".`)
@@ -1854,7 +1929,7 @@ export async function decideAndRespond(
     const formPreferences = parseTripPreferencesFormAnswer(inboundText, tripBrief)
     const preferenceExtraction = formPreferences
       ? Promise.resolve({ preferences: formPreferences, source: 'structured_form' as const })
-      : extractTripPreferences(inboundText, settings.ollamaModel, funnelAnswerContext(tripBrief))
+      : extractTripPreferences(inboundForUnderstanding, settings.ollamaModel, funnelAnswerContext(tripBrief))
     const [
       { moduleIds: keywordModuleIds, source: keywordModuleSource },
       { topic: resolverTopic, source: topicSource },
@@ -1869,8 +1944,8 @@ export async function decideAndRespond(
       // rental, etc.) does this message call for," validated against the real module_id set,
       // falling back to the unchanged regex scan only on a genuine technical failure. Resolved
       // once here and shared by every step below rather than re-derived at each use.
-      classifyKeywordModulesViaLLM(inboundText, settings.ollamaModel),
-      classifyTopicViaLLM(classification.job, inboundText, settings.ollamaModel),
+      classifyKeywordModulesViaLLM(inboundForUnderstanding, settings.ollamaModel),
+      classifyTopicViaLLM(classification.job, inboundForUnderstanding, settings.ollamaModel),
       preferenceExtraction,
       // LLM-primary as of 2026-08-07 (see preference-decline-classifier.ts's own header) --
       // flagged in the manual-matching audit as the highest-risk remaining matcher: this is the
@@ -1883,8 +1958,8 @@ export async function decideAndRespond(
       // trigger words and had a documented history of false positives from its own bare keywords
       // (each fixed as a one-off keyword patch previously). Falls back to the unchanged
       // isRecommendationRequest regex only on a genuine technical failure.
-      detectsRecommendationIntentViaLLM(inboundText, isRecommendationRequest, settings.ollamaModel),
-      classifyAllTopics(inboundText, settings.ollamaModel),
+      detectsRecommendationIntentViaLLM(inboundForUnderstanding, isRecommendationRequest, settings.ollamaModel),
+      classifyAllTopics(inboundForUnderstanding, settings.ollamaModel),
     ])
     // Task 15: destination branch's own topic classification site (the no-destination branch
     // above has its own, separate one).
@@ -1968,7 +2043,7 @@ export async function decideAndRespond(
     // conversation" precedence origin/dayCount/finishCity/pax already use, so destinations
     // named earlier in the conversation aren't silently forgotten the moment a later message
     // (e.g. answering a follow-up "how many days?") doesn't restate them.
-    const requestedTokensThisMessage = mentionedDestinationTokens(inboundText, catalog)
+    const requestedTokensThisMessage = mentionedDestinationTokens(inboundForUnderstanding, catalog)
     const requestedTokens = requestedTokensThisMessage.length > 0 ? requestedTokensThisMessage : (tripBrief.requestedTokens ?? [])
     if (requestedTokensThisMessage.length > 0 && requestedTokensThisMessage.join(',') !== (tripBrief.requestedTokens ?? []).join(',')) {
       await persistTripBrief({ destination, requestedTokens: requestedTokensThisMessage })
@@ -1978,7 +2053,7 @@ export async function decideAndRespond(
     // their pickup time, with no explicit "which first?" question, should still get the
     // recommendation): needs REASONING (rest time, route order), not a single fact to quote.
     // See evaluatePickupScenario's own header for the full rationale.
-    const pickupScenario = evaluatePickupScenario(inboundText, { origin, finishCity, dayCount, pax, requestedTokens }, conversationId)
+    const pickupScenario = evaluatePickupScenario(inboundForUnderstanding, { origin, finishCity, dayCount, pax, requestedTokens }, conversationId)
     if (pickupScenario.traceDetail) trace.push('Evaluasi urutan rute & waktu istirahat', pickupScenario.traceDetail)
     const scenarioNote = pickupScenario.forLLM ? `\n\n${pickupScenario.forLLM}` : ''
 
@@ -1988,7 +2063,7 @@ export async function decideAndRespond(
     // writes, trace, reply) the pure decision implies, in the exact same order as before.
     const funnelDecision = computeTripPreferencesFunnelDecision({
       tripBrief,
-      inboundText,
+      inboundText: inboundForUnderstanding,
       resolverTopic,
       origin,
       finishCity,
@@ -2005,14 +2080,20 @@ export async function decideAndRespond(
       )
     }
     const isRecommendationTopic = funnelDecision.isRecommendationTopic
+    const bypassTripPreferenceForm = funnelDecision.shouldAsk && canAnswerSpecificPackageRequestWithoutTripForm({
+      message: inboundForUnderstanding,
+      resolverTopic,
+      requestedTokens,
+      dayCount,
+    })
     if (funnelDecision.wasAwaitingAnswer) {
-      await persistTripBrief({ destination, awaitingTripPreferencesAnswer: false })
+      await persistTripBrief({ destination, awaitingTripPreferencesAnswer: false, ...(pendingQuestion ? { pendingTripQuestion: null } : {}) })
     }
     if (funnelDecision.justDeclined) {
       await persistTripBrief({ destination, declinedTripPreferences: true })
     }
-    if (funnelDecision.shouldAsk) {
-      await persistTripBrief({ destination, askedTripPreferences: true, awaitingTripPreferencesAnswer: true })
+    if (funnelDecision.shouldAsk && !bypassTripPreferenceForm) {
+      await persistTripBrief({ destination, askedTripPreferences: true, awaitingTripPreferencesAnswer: true, pendingTripQuestion: pendingQuestion ?? inboundText })
       trace.push(
         'Menanyakan detail trip',
         `Merekomendasikan paket butuh start, finish, dan jumlah hari -- salah satu belum diketahui, menanyakan sebelum merekomendasikan.`
@@ -2028,7 +2109,7 @@ export async function decideAndRespond(
       // crater?" also classifies as topic 'price' (triggering this same funnel gate), so its
       // genuinely answerable questions got silently dropped too -- answer them first, THEN
       // still ask for the missing start/finish/duration.
-      const funnelSideFacts = gatherSideFacts(inboundText, factsForModuleIds(keywordModuleIds))
+      const funnelSideFacts = gatherSideFacts(inboundForUnderstanding, factsForModuleIds(keywordModuleIds))
       // Reported 2026-08-06: a customer who merely STATES their pickup time ("pickup jam 6
       // sore, mau ke Bromo dan Ijen") -- not an explicit "which first?" question -- with
       // start/finish/duration still unknown should get the rest-time/route recommendation
@@ -2125,9 +2206,9 @@ export async function decideAndRespond(
     // message/destination/keywordModuleIds arguments as the primary call) -- a no-op when
     // `alsoTopics` is empty, the overwhelming majority of turns.
     const { knowledge, added: alsoTopicLinesAdded } = mergeKnowledgeAcrossTopics(
-      resolveKnowledgeForTopic(resolverTopic, inboundText, destination, keywordModuleIds),
+      resolveKnowledgeForTopic(resolverTopic, inboundForUnderstanding, destination, keywordModuleIds),
       alsoTopics,
-      inboundText,
+      inboundForUnderstanding,
       destination,
       keywordModuleIds
     )
@@ -2141,7 +2222,7 @@ export async function decideAndRespond(
     // replace anything would let a web form silently contradict the released packages with no
     // way to see which one answered. Only entries whose question or tags share a word with this
     // message are folded in — see managedFactsFor for why a crude match is the right one here.
-    const managed = await managedFactsFor(inboundText, resolverTopic, knowledge.factualLines.length > 0, alsoTopics)
+    const managed = await managedFactsFor(inboundForUnderstanding, resolverTopic, knowledge.factualLines.length > 0, alsoTopics)
     // Ruling R46: same reasoning as the no-destination branch's identical check above -- a
     // failed knowledge read must surface as clarify, not silently answer from half the facts.
     if (managed.degraded) {
@@ -2275,7 +2356,7 @@ export async function decideAndRespond(
       pkg.links.details !== knowledge.primaryLink
     const { wantsPackageLink: packageLinkIntentSignal, source: packageLinkSource } = linkChoiceMatters
       ? await detectsPackageLinkIntentViaLLM(
-          inboundText,
+          inboundForUnderstanding,
           (message) => isBookingIntent(message) || isPackageDetailIntent(message),
           settings.ollamaModel
         )
@@ -2347,7 +2428,7 @@ export async function decideAndRespond(
       ...packageLogistics,
       packageOptionsText ?? '',
     ].join('\n')
-    const specialTimingNeedsConfirmation = needsSpecialTimingConfirmation(inboundText, specialTimingGroundingText)
+    const specialTimingNeedsConfirmation = needsSpecialTimingConfirmation(inboundForUnderstanding, specialTimingGroundingText)
     const specialTimingNote = specialTimingNeedsConfirmation
       ? `\n\nThe customer asks about a specific pickup/start/arrival timing that is not stated in the facts above. Do not say it can be arranged. Answer the rest from the facts, and for that exact timing say our team will confirm it shortly.`
       : ''
@@ -2413,7 +2494,7 @@ export async function decideAndRespond(
     // entirely, never even acknowledged. Overrides SHARED_PERSONA_INSTRUCTIONS' usual 2-3
     // sentence brevity for this case specifically: completeness matters more than staying
     // short when the customer asked several distinct things and expects each one answered.
-    const isMultiQuestion = isMultiQuestionMessage(inboundText)
+    const isMultiQuestion = isMultiQuestionMessage(inboundForUnderstanding)
     // Reported 2026-08-05: a detailed, real, day-by-day private-driver request (arrival/free
     // day/sunrise-tour/departure spelled out across 4 separate dates, quotation + Jeep +
     // entrance-ticket questions) got every standard package dumped back at it, several
@@ -2435,7 +2516,7 @@ export async function decideAndRespond(
     // already fully handled by multiQuestionNote below (answer each fact directly, defer only
     // the specific items that genuinely need it), so this note would only add a redundant,
     // unwarranted "we'll follow up" caveat and dilute multiQuestionNote's own per-item guidance.
-    const looksLikeCustomItinerary = !isMultiQuestion && optionPackages.length > 1 && inboundText.length > 400
+    const looksLikeCustomItinerary = !isMultiQuestion && optionPackages.length > 1 && inboundForUnderstanding.length > 400
     const multiQuestionNote = isMultiQuestion
       ? `\n\nThis message contains several distinct questions -- answer EVERY one of them, each as its own bullet point. Do not skip any, and do not lump multiple unconfirmed items into one vague sentence (e.g. never write "for the invoice, replacement arrangements, and hotel names, let me check" -- give each its own bullet, even if several of them end up saying the same honest "our team will confirm this shortly"). It's fine for this reply to be longer than usual to cover everything. For any question specifically about the day-by-day itinerary/schedule OR specific hotel names/room details, don't manually re-derive them -- just point that bullet to the package's own link (given below), and only state itinerary/hotel-adjacent details (like a pickup time) if they're a fact you actually have. Include that link only ONCE in the whole reply (in whichever bullet needs it), never repeat it again at the end. For cancellation/refund terms, use the real cancellation policy facts given below (never "let me check with our team" -- that policy is fully known). Once you've already stated a confident price and package recommendation elsewhere in this reply, do not also add a "our team will follow up to adjust/build the itinerary" caveat -- only defer items you genuinely don't have a fact for.`
       : ''
@@ -2487,6 +2568,7 @@ export async function decideAndRespond(
       paxPriceNote +
       matchTierNote +
       multiQuestionNote +
+      sharedGroupRequestNote(inboundForUnderstanding) +
       (disclosures.length > 0 ? `\n\nImportant -- must be reflected in your reply:\n${disclosures.map((d) => `- ${d}`).join('\n')}` : '') +
       (classification.needsLiveData
         ? `\n\nThis question also touches live/real-time availability or pricing confirmation, which you cannot verify -- answer everything else from the facts above, but for that specific part say our team will confirm it shortly.`
@@ -2553,7 +2635,7 @@ export async function decideAndRespond(
       // available?"), or one this same conversation already sent in an earlier turn
       // (`history` above, fed into the same callLLM call) -- the model repeating either
       // back is not something it invented.
-      ...extractUrls(inboundText),
+      ...extractUrls(inboundForUnderstanding),
       ...extractUrls(history?.map((h) => h.content).join('\n') ?? ''),
     ]
 
@@ -2582,7 +2664,7 @@ export async function decideAndRespond(
     const composed = await composeVerifiedReply({
       conversationId,
       topic: resolverTopic,
-      inboundText,
+      inboundText: inboundForUnderstanding,
       system,
       model: settings.ollamaModel,
       history,
