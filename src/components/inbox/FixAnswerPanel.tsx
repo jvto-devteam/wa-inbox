@@ -241,7 +241,7 @@ export function FixAnswerPanel({
     try {
       const simulated = await fetchJson<{
         reply: string | null
-        knowledge: { attributions?: Array<{ lines: Array<{ sourceId?: string }> }> } | null
+        knowledge: { attributions?: Array<{ lines: Array<{ kind?: string; sourceId?: string }> }> } | null
       }>('/api/inbox/retest', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -252,7 +252,10 @@ export function FixAnswerPanel({
         status: 'done',
         reply: simulated.reply,
         sourcedByNewEntry: attributions.some((attribution) => attribution.lines.some((line) => line.sourceId === sourceId)),
-        sourcedAtAll: attributions.length > 0,
+        // Kalimat kebijakan (policy-statements.ts) bukan fakta: kebijakan ketersediaan ikut hampir
+        // setiap jawaban harga, jadi paragraf yang HANYA cocok dengannya belum bersumber pada
+        // knowledge -- menghitungnya akan membuat perbaikan yang tidak terpakai tampak berhasil.
+        sourcedAtAll: attributions.some((attribution) => attribution.lines.some((line) => line.kind !== 'policy')),
       })
     } catch (error: unknown) {
       setRetest({ status: 'error', message: error instanceof Error ? error.message : 'Gagal menjalankan uji ulang' })

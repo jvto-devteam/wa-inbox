@@ -92,3 +92,42 @@ describe('attributeReply', () => {
     ).toEqual([{ paragraph: 0, lines: [{ kind: 'managed', line: 'ATV 1 jam: IDR 350000', title: 'FAQ Harga ATV (v2)' }] }])
   })
 })
+
+// Dilaporkan 14 September 2026 dari dua balasan produksi (Marije dan Amine): paragraf yang
+// menyatakan kebijakan ketersediaan selalu ditandai "tidak punya knowledge", karena pencocok hanya
+// membaca katalog dan knowledge terkelola -- padahal kalimatnya kebijakan yang sudah dikonfirmasi
+// operator dan dikirim ke model sebagai disclosure. Teks paragraf di bawah disalin dari balasan
+// yang sungguh terkirim.
+describe('attributeReply -- kalimat kebijakan', () => {
+  const MARIJE =
+    'We are nearly always available, so we encourage you to go ahead and book, as exact availability for your dates is confirmed automatically at checkout!'
+  const AMINE =
+    'Our tours are nearly always available, and your exact dates will be confirmed automatically at checkout when you book through our website.'
+
+  it('mencocokkan parafrasa kebijakan ketersediaan dari balasan Marije', () => {
+    const [attribution] = attributeReply(MARIJE, knowledge())
+    expect(attribution.paragraph).toBe(0)
+    expect(attribution.lines).toEqual([expect.objectContaining({ kind: 'policy', title: 'Kebijakan ketersediaan' })])
+  })
+
+  it('mencocokkan parafrasa kebijakan ketersediaan dari balasan Amine', () => {
+    const [attribution] = attributeReply(AMINE, knowledge())
+    expect(attribution.lines).toEqual([expect.objectContaining({ kind: 'policy', title: 'Kebijakan ketersediaan' })])
+  })
+
+  it('mencocokkan parafrasa kebijakan tanpa jaminan akses', () => {
+    const [attribution] = attributeReply(
+      'Blue Fire visibility cannot be guaranteed, as it depends on the weather and current conditions set by the authorities.',
+      knowledge()
+    )
+    expect(attribution.lines).toEqual([expect.objectContaining({ kind: 'policy', title: 'Kebijakan tanpa jaminan akses' })])
+  })
+
+  // Kebijakan tidak boleh jadi karpet untuk menutupi janji yang tidak bersumber: paragraf yang
+  // tidak membicarakan ketersediaan atau jaminan akses tetap tidak cocok dengan apa pun.
+  it('tidak mencocokkan paragraf yang bukan soal kebijakan', () => {
+    expect(
+      attributeReply('Hi! Yes, we can certainly handle the pick-up in Surabaya and the drop-off in Bali via the Ketapang-Gilimanuk ferry.', knowledge())
+    ).toEqual([])
+  })
+})

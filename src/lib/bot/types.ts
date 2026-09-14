@@ -176,7 +176,12 @@ export type DecisionKnowledge = {
 
 /** One knowledge/catalog line paired with a reply paragraph by `attributeReply`. */
 export type AttributedLine = {
-  kind: 'managed' | 'catalog'
+  /**
+   * `policy` (2026-09-14): kalimat kebijakan yang dikonfirmasi operator dan dikirim sebagai
+   * disclosure (policy-statements.ts). Dihitung "bersumber" untuk penanda gap, tapi BUKAN fakta --
+   * pemakai yang menanyakan "apakah jawaban ini bersandar pada knowledge" harus mengecualikannya.
+   */
+  kind: 'managed' | 'catalog' | 'policy'
   line: string
   sourceId?: string
   title?: string

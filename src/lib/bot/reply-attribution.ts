@@ -1,11 +1,17 @@
 import { extractRupiahAmounts, extractUrls } from './reply-verifier'
+import { POLICY_STATEMENTS } from './policy-statements'
 import type { AttributedLine, DecisionKnowledge, ReplyAttribution } from './types'
 
 /**
  * Paragraf balasan FINAL -> baris knowledge/katalog yang cocok. Murni dan deterministik, tanpa
  * model; hasilnya pencocokan sistem, bukan kutipan model, jadi UI menulisnya "cocok dengan".
  * BotTracePopover (klien) mengimpor `splitParagraphs` dari sini, jadi berkas ini hanya boleh
- * mengimpor modul murni -- reply-verifier.ts tidak punya impor sama sekali.
+ * mengimpor modul murni -- reply-verifier.ts dan policy-statements.ts tidak punya impor sama sekali.
+ *
+ * Selain katalog dan knowledge terkelola, kalimat KEBIJAKAN (policy-statements.ts) juga menjadi
+ * kandidat sejak 2026-09-14. Tanpa itu, paragraf yang menyatakan kebijakan ketersediaan -- yang ikut
+ * hampir setiap jawaban harga -- selalu tampak tidak bersumber, dan penanda gap meminta operator
+ * menambah knowledge untuk pertanyaan yang sudah dijawab benar.
  *
  * Cocok bila SALAH SATU: nominal Rupiah sama; URL sama; atau kata isi yang sama
  * >= MIN_SHARED_CONTENT_WORDS dan >= MIN_SHARED_RATIO dari kata isi baris.
@@ -99,6 +105,7 @@ export function attributeReply(replyText: string, knowledge: DecisionKnowledge):
         ...(m.version !== undefined ? { version: m.version } : {}),
       })
     ),
+    ...POLICY_STATEMENTS.map((policy) => candidate({ kind: 'policy', line: policy.line, title: policy.title })),
   ]
 
   const attributions: ReplyAttribution[] = []

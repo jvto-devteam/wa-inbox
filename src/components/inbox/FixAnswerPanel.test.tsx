@@ -374,6 +374,32 @@ describe('FixAnswerPanel — putaran uji ulang', () => {
     expect(await screen.findByText('Belum bersumber: tidak ada paragraf yang cocok dengan fakta mana pun.')).toBeInTheDocument()
   })
 
+  // Uji ulang yang jawabannya hanya cocok dengan kalimat KEBIJAKAN (2026-09-14) belum bersumber pada
+  // fakta: kebijakan ketersediaan ikut hampir setiap jawaban harga, jadi menghitungnya sebagai
+  // "bersumber" akan membuat perbaikan yang tidak terpakai terlihat berhasil.
+  it('jawaban uji ulang yang hanya cocok dengan kebijakan tetap dinyatakan belum bersumber', async () => {
+    stubFetch({
+      ...RUN_ROUTES,
+      ...KNOWLEDGE_ROUTE,
+      'POST /api/inbox/decisions/run_1/fix': { body: SAVED },
+      'POST /api/inbox/retest': {
+        body: retestBody({
+          knowledge: {
+            catalogLines: [], managedLines: [], rejected: [], gateBypassed: false,
+            attributions: [{ paragraph: 0, lines: [{ kind: 'policy', line: 'Nearly always available.', title: 'Kebijakan ketersediaan' }] }],
+          },
+        }),
+      },
+    })
+    renderPanel()
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Edit' }))
+    await screen.findByDisplayValue('Mulai Rp350.000.')
+    saveFromEditor()
+
+    expect(await screen.findByText('Belum bersumber: tidak ada paragraf yang cocok dengan fakta mana pun.')).toBeInTheDocument()
+  })
+
   it('kegagalan uji ulang tidak menghapus hasil simpan, dan bisa diulang', async () => {
     stubFetch({
       ...RUN_ROUTES,

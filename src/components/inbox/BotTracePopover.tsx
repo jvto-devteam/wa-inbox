@@ -69,6 +69,9 @@ function excerpt(text: string, max = 80): string {
 
 function attributedSourceLabel(line: AttributedLine): string {
   if (line.kind === 'catalog') return 'Katalog'
+  // Eksplisit, bukan menumpang cabang judul di bawah: kalimat kebijakan tanpa judul tidak boleh
+  // tampil sebagai "Knowledge", karena ia memang bukan entri knowledge.
+  if (line.kind === 'policy') return line.title ?? 'Kebijakan'
   if (line.title && line.version !== undefined) return `${line.title} v${line.version}`
   return line.title ?? 'Knowledge'
 }

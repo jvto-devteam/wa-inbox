@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { DEFERRED_KNOWLEDGE_REPLY_REASON, isUnsourcedFaqReply, knowledgeGapForDecision, knowledgeGapsForDecision, knowledgeGapReasonForDecision, UNSOURCED_REPLY_REASON } from './gap-signal'
 import type { BotDecision, DecisionKnowledge } from '@/lib/bot/types'
+import { attributeReply } from '@/lib/bot/reply-attribution'
 
 function knowledge(overrides: Partial<DecisionKnowledge> = {}): DecisionKnowledge {
   return {
@@ -243,5 +244,61 @@ describe('knowledgeGapsForDecision', () => {
   it('bentuk tunggalnya tetap mengembalikan gap pertama', () => {
     const first = knowledgeGapForDecision(faq({ draft: draftDuaTunda }), inbound)
     expect(first).toEqual(knowledgeGapsForDecision(faq({ draft: draftDuaTunda }), inbound)[0])
+  })
+})
+
+
+// Dilaporkan 14 September 2026 (balasan Amine): paragraf kebijakan ketersediaan ditandai
+// "tidak punya knowledge", dan panel meminta operator menambah knowledge untuk pertanyaan yang
+// sudah dijawab benar. Pemetaannya dihitung oleh attributeReply sungguhan -- persis seperti titik
+// tempel orchestrator -- supaya test ini membuktikan jalur utuhnya, bukan pemetaan tulisan tangan.
+describe('knowledgeGapsForDecision -- kalimat kebijakan bukan gap', () => {
+  const catalogLines = [
+    'This is a private tour with your own dedicated driver and guide(s); you are never combined with another group.',
+    'Every package includes private transport, a dedicated driver and guide(s), all entrance fees and permits, drinking water, meals as stated, and full pick-up to drop-off assistance.',
+  ]
+
+  // `verification` disalin dari keputusan produksi Amine (PASSED, semua daftar kosong). Tanpanya
+  // paragraf yang hanya berisi link terverifikasi ikut tertandai -- sesuatu yang di produksi tidak
+  // terjadi, jadi fixture tanpa verification menguji keputusan yang tidak pernah ada.
+  function decisionFor(draft: string): BotDecision {
+    const k = knowledge({ catalogLines, managedLines: [], attributions: [] })
+    return faq({
+      draft,
+      sourceTopic: 'private_tour',
+      verification: {
+        status: 'PASSED',
+        attempts: 1,
+        fabricatedPrices: [],
+        unverifiedPrices: [],
+        wrongPaxTierPrices: [],
+        unknownUrls: [],
+        misdirectedUrls: [],
+        unsupportedClaims: [],
+        guaranteeViolations: [],
+      },
+      knowledge: { ...k, attributions: attributeReply(draft, k) },
+    })
+  }
+
+  it('tidak menandai balasan Amine, yang paragraf lainnya sudah bersumber', () => {
+    const draft = [
+      'Hi! Our tours are 100% private, meaning you will have your own dedicated driver and guide without any strangers.',
+      'Our tours are nearly always available, and your exact dates will be confirmed automatically at checkout when you book through our website.',
+      'https://javavolcano-touroperator.com/tours/from-surabaya/bromo-madakaripura-ijen-3d2n',
+    ].join('\n\n')
+
+    expect(knowledgeGapsForDecision(decisionFor(draft), 'Do you have availability for 13-15 September?')).toEqual([])
+  })
+
+  it('tetap menandai paragraf yang benar-benar tidak bersumber, walau paragraf lain cocok dengan kebijakan', () => {
+    const draft = [
+      'Our tours are nearly always available, and your exact dates will be confirmed automatically at checkout when you book through our website.',
+      'You can also bring your pet dragon on the Ijen hike at no extra charge.',
+    ].join('\n\n')
+
+    const gaps = knowledgeGapsForDecision(decisionFor(draft), 'Can I bring my pet dragon?')
+    expect(gaps).toHaveLength(1)
+    expect(gaps[0].answerSnippet).toContain('pet dragon')
   })
 })

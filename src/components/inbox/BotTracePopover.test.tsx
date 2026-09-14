@@ -358,6 +358,27 @@ describe('BotTracePopover — Topik, Sumber per paragraf, Verifikasi', () => {
     expect(screen.queryByText(/dikutip/i)).not.toBeInTheDocument()
   })
 
+  it('menyebut kalimat kebijakan dengan namanya, bukan sebagai "Knowledge"', () => {
+    render(
+      <BotTracePopover
+        trace={{
+          mode: 'faq',
+          draft: 'Our tours are nearly always available, and your exact dates will be confirmed automatically at checkout.',
+          sourceTopic: 'price',
+          knowledge: {
+            catalogLines: [],
+            managedLines: [],
+            rejected: [],
+            gateBypassed: false,
+            attributions: [{ paragraph: 0, lines: [{ kind: 'policy', line: 'Nearly always available.', title: 'Kebijakan ketersediaan' }] }],
+          },
+        }}
+        onClose={() => {}}
+      />
+    )
+    expect(screen.getByText('cocok dengan Kebijakan ketersediaan')).toBeInTheDocument()
+  })
+
   it('balasan lama tanpa attributions: "tidak tercatat"', () => {
     render(
       <BotTracePopover

@@ -23,6 +23,7 @@
  */
 import { readCatalogFile } from './catalog'
 import type { ResolverTopic } from './module-resolver'
+import { AVAILABILITY_POLICY, NO_GUARANTEE_POLICY } from './policy-statements'
 
 const GENERAL_MODULES_FILE = 'general-modules.json'
 const LINK_REGISTRY_FILE = 'customer-link-registry.json'
@@ -364,10 +365,11 @@ const DISCLOSURES = {
   // automatically at checkout -- the old wording ("not yet confirmed") was making the LLM ask
   // the customer for their travel dates "to verify" before recommending they book at all,
   // which is friction for something checkout already handles. Say so plainly instead.
-  availabilityNotConfirmed:
-    'Nearly always available -- exact availability for a specific date is confirmed automatically at checkout, so encourage the customer to go ahead and book rather than asking for their dates first "to verify".',
-  noGuaranteeAccess:
-    'Attraction access such as Blue Fire, along with weather and sunrise, cannot be guaranteed; it depends on current conditions and the authorities.',
+  // Teksnya tinggal di policy-statements.ts sejak 2026-09-14, byte-identik, supaya pencocok sumber
+  // (reply-attribution.ts, yang juga dipakai browser dan tidak boleh mengimpor file ini) membaca
+  // kalimat yang SAMA dengan yang dikirim ke model -- lihat header file itu.
+  availabilityNotConfirmed: AVAILABILITY_POLICY,
+  noGuaranteeAccess: NO_GUARANTEE_POLICY,
 }
 
 const GUARANTEE_PHRASES = ['guarantee', 'guaranteed', '100%', 'certain', 'definitely be open']
