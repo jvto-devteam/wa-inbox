@@ -116,6 +116,7 @@ model Conversation {
   messages         Message[]
   labels           LabelOnConversation[]
   knowledgeGaps    KnowledgeGapLog[]
+  messageDrafts    MessageDraft[]
 }
 
 enum MessageDirection {
@@ -169,6 +170,7 @@ model Message {
   replyToId       String?
   replyTo         Message?         @relation("MessageReplyTo", fields: [replyToId], references: [id])
   replies         Message[]        @relation("MessageReplyTo")
+  draft           MessageDraft?    @relation("MessageDraftSource")
   // Set only when this OUTBOUND message was dispatched as a real Cloud API template message
   // (type: 'template', sent via sendTemplateMessage) -- the exact resolved structure at send
   // time: template name, substituted body text, and for a carousel, each card's real display
@@ -198,6 +200,51 @@ model Message {
   // volume. If that ever stops being true, the right fix is a GIN + pg_trgm
   // trigram index (needs the pg_trgm extension enabled), not a btree.
   @@index([conversationId, createdAt])
+}
+
+/// Draft jawaban bot untuk satu pesan pelanggan, dibuat agen dari Inbox mulai 2026-09-15,
+/// diedit lalu dikirim manual -- bukan dikirim otomatis begitu selesai digenerate.
+///
+/// `sourceMessageId` diberi `@unique`: satu pesan pelanggan hanya boleh punya satu draft aktif,
+/// jadi generate ulang menimpa baris yang sama alih-alih menumpuk baris baru untuk pesan yang
+/// sama.
+///
+/// `conversation` dan `sourceMessage` sengaja relasi ber-foreign-key dengan `onDelete: Cascade`
+/// -- beda dari BotDecisionRun/BotControlAuditLog di bawah, yang sengaja BUKAN foreign key
+/// supaya catatan auditnya bertahan melebihi data yang dicatatnya. Draft yang belum terkirim
+/// bukan catatan audit: kalau percakapan sandbox dibersihkan (`/api/conversations/[id]/clear`
+/// menjalankan `message.deleteMany`) atau pesan sumbernya hilang, draft yang menunjuknya sudah
+/// tidak berarti apa-apa dan boleh ikut terhapus.
+///
+/// Draft terkunci begitu `sentAt` terisi -- `sentMessageId` (juga `@unique`) menunjuk pesan
+/// OUTBOUND yang benar-benar terkirim, dan baris ini tidak lagi diedit sesudahnya.
+///
+/// `generatedById`, `editedById`, `sentById` sengaja kolom id akun string biasa, BUKAN relasi
+/// ber-foreign-key: akun yang dihapus tidak boleh menghapus jejak siapa yang
+/// membuat/mengedit/mengirim draft ini, mengikuti alasan yang sama seperti BotDecisionRun dan
+/// BotControlAuditLog.
+model MessageDraft {
+  id                   String       @id @default(cuid())
+  conversationId       String
+  conversation         Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sourceMessageId      String       @unique
+  sourceMessage        Message      @relation("MessageDraftSource", fields: [sourceMessageId], references: [id], onDelete: Cascade)
+  generatedText        String?
+  text                 String?
+  decision             Json
+  pendingKnowledgeGaps Json?
+  decisionRunId        String?
+  generatedById        String?
+  generatedAt          DateTime     @default(now())
+  editedById           String?
+  editedAt             DateTime?
+  sentById             String?
+  sentAt               DateTime?
+  sentMessageId        String?      @unique
+  createdAt            DateTime     @default(now())
+  updatedAt            DateTime     @updatedAt
+
+  @@index([conversationId])
 }
 
 // What the bot could not answer, recorded as it happens. Until this existed
