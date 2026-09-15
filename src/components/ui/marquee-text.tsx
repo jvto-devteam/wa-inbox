@@ -1,5 +1,5 @@
 'use client'
-import { useRef, useState, type CSSProperties } from 'react'
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react'
 import { cn } from '@/lib/utils'
 
 // Piksel per detik yang dianggap nyaman dibaca sambil bergulir -- dipakai untuk menurunkan
@@ -18,24 +18,42 @@ const MARQUEE_MIN_DURATION_S = 2.5
  *
  * Sengaja TIDAK punya elemen atau tab stop interaktif sendiri -- dipakai di dalam <button>
  * baris daftar percakapan, dan menambah `tabIndex` di sini akan menggandakan tab stop pada
- * baris yang sama. Hover/fokus yang memicu animasi ini datang dari pointer yang sungguh
- * berada di atas teksnya sendiri (mouseenter tidak bubble, jadi ini aman dipasang di sini
- * tanpa memicu diri sendiri dari elemen tetangga).
+ * baris yang sama. Hover dideteksi lewat mouseenter/mouseleave langsung di elemen ini (aman
+ * dipasang di sini tanpa memicu diri sendiri dari elemen tetangga, karena mouseenter tidak
+ * bubble). Fokus keyboard TIDAK bisa dideteksi lewat onFocus/onBlur React di elemen ini:
+ * teks ini sendiri bukan kontrol, jadi fokus tidak pernah mendarat di sini -- dan sebuah
+ * event fokus mengalir NAIK dari elemen yang benar-benar difokus ke leluhurnya, tidak
+ * pernah turun ke keturunan seperti span ini. Jadi begitu mount, komponen ini mencari
+ * leluhur interaktif terdekat lewat DOM (`closest('button, a, [tabindex]')`) dan memasang
+ * listener `focusin`/`focusout` LANGSUNG di elemen itu -- bukan di dirinya sendiri, dan
+ * tanpa menambah tab stop apa pun. Kalau tidak ada leluhur interaktif (mis. header
+ * ThreadView, ContactPanel), hover tetap jalan dan tidak ada listener fokus mati yang
+ * dipasang.
  */
 export function MarqueeText({ text, className }: { text: string; className?: string }) {
+  const wrapperRef = useRef<HTMLSpanElement>(null)
   const textRef = useRef<HTMLSpanElement>(null)
   const [marqueeDistance, setMarqueeDistance] = useState<number | null>(null)
 
-  function measureAndMaybeStart() {
+  const measureAndMaybeStart = useCallback(() => {
     const el = textRef.current
     if (!el) return
     const distance = el.scrollWidth - el.clientWidth
     if (distance > 0) setMarqueeDistance(distance)
-  }
+  }, [])
 
-  function stop() {
-    setMarqueeDistance(null)
-  }
+  const stop = useCallback(() => setMarqueeDistance(null), [])
+
+  useEffect(() => {
+    const interactiveAncestor = wrapperRef.current?.closest('button, a, [tabindex]')
+    if (!interactiveAncestor) return
+    interactiveAncestor.addEventListener('focusin', measureAndMaybeStart)
+    interactiveAncestor.addEventListener('focusout', stop)
+    return () => {
+      interactiveAncestor.removeEventListener('focusin', measureAndMaybeStart)
+      interactiveAncestor.removeEventListener('focusout', stop)
+    }
+  }, [measureAndMaybeStart, stop])
 
   const isScrolling = marqueeDistance !== null
   const style: CSSProperties | undefined = isScrolling
@@ -47,11 +65,10 @@ export function MarqueeText({ text, className }: { text: string; className?: str
 
   return (
     <span
+      ref={wrapperRef}
       className="block max-w-full overflow-hidden"
       onMouseEnter={measureAndMaybeStart}
       onMouseLeave={stop}
-      onFocus={measureAndMaybeStart}
-      onBlur={stop}
     >
       <span
         ref={textRef}
