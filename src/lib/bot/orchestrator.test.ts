@@ -4333,6 +4333,123 @@ describe('decideAndRespond', () => {
   })
 })
 
+// Task 1 (draft jawaban dari Inbox): `options.draft` lets the same engine run for one OLD
+// customer message inside the real conversation, without side effects on that conversation's
+// data -- history is cut off before the chosen message (so the draft can't see what the
+// customer said/received AFTER it), and the two writes that mutate the conversation
+// (`persistTripBrief`'s $executeRaw, KnowledgeGapLog rows) are suppressed/queued instead of
+// applied for real. Every scenario below mirrors an existing non-draft test one section above,
+// just with `options.draft` added -- the non-draft test it mirrors is the proof the normal path
+// stays byte-for-byte unchanged.
+describe('mode draft (generate draft dari Inbox)', () => {
+  const historyBefore = new Date('2026-09-10T00:00:00Z')
+
+  // Mirrors 'merges tripBrief server-side rather than overwriting the whole column' above --
+  // same fixture, same input, only `options.draft` added.
+  it('does not call $executeRaw for tripBrief when options.draft is set, but still produces a decision', async () => {
+    ;vi.mocked(ensureFreshBookingData).mockResolvedValue(null)
+    ;vi.mocked(classifySalesNeed).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
+    ;vi.mocked(checkRouteGate).mockReturnValue({ status: 'clear' })
+    ;vi.mocked(matchDestination).mockReturnValue({ destination: 'ijen', matches: [pkg()] })
+
+    const result = await decideAndRespond('conv_1', 'i want to go to ijen', undefined, {
+      draft: { historyBefore, knowledgeGaps: [] },
+    })
+
+    expect(mockPrisma.$executeRaw).not.toHaveBeenCalled()
+    expect(mockPrisma.conversation.update).not.toHaveBeenCalled()
+    expect(result.mode).toBe('faq')
+  })
+
+  // Mirrors 'passes recent messages as history, oldest first, mapped to user/assistant roles'
+  // above (Mode 3 -- fetchRecentHistory's own where-clause is shared by all three call sites,
+  // so exercising it via Mode 3 proves the shared function, not just one caller).
+  it('adds createdAt: { lt: historyBefore } to the message.findMany where-clause when options.draft is set', async () => {
+    ;vi.mocked(ensureFreshBookingData).mockResolvedValue({ bookingId: 'B1', status: 'unpaid', financial: { balance: 500000 } })
+    ;vi.mocked(callLLM).mockResolvedValue('Sisa Rp500.000.')
+    mockPrisma.message.findMany.mockResolvedValue([
+      { direction: 'INBOUND', content: 'Sudah lunas belum?', createdAt: new Date('2026-08-01T10:01:00Z') },
+      { direction: 'OUTBOUND', content: 'Halo, ada yang bisa dibantu?', createdAt: new Date('2026-08-01T10:00:00Z') },
+    ] as never)
+
+    await decideAndRespond('conv_1', 'Kalau yang kemarin gimana?', undefined, {
+      draft: { historyBefore, knowledgeGaps: [] },
+    })
+
+    expect(mockPrisma.message.findMany).toHaveBeenCalledWith({
+      where: { conversationId: 'conv_1', content: { not: null }, createdAt: { lt: historyBefore } },
+      orderBy: { createdAt: 'desc' },
+      take: 8,
+    })
+  })
+
+  // Mirrors 'records a knowledge gap when the catalog resolved no facts for the topic' above.
+  it('queues a no_facts_resolved gap in options.draft.knowledgeGaps instead of writing KnowledgeGapLog', async () => {
+    vi.mocked(ensureFreshBookingData).mockResolvedValue(null)
+    vi.mocked(classifySalesNeed).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
+    vi.mocked(matchDestination).mockReturnValue({ destination: 'ijen', matches: [pkg() as unknown as CatalogPackage] })
+    vi.mocked(checkRouteGate).mockReturnValue({ status: 'clear' })
+    vi.mocked(classifyTopicViaLLM).mockResolvedValue({ topic: 'destination_readiness', source: 'llm' })
+    vi.mocked(resolveKnowledgeForTopic).mockReturnValue({
+      factualLines: [],
+      detailLines: [],
+      primaryLink: null,
+      disclosures: [],
+      handoffRequired: false,
+    })
+    const knowledgeGaps: { topic: string; reason: 'no_facts_resolved' | 'verification_failed'; messageText: string }[] = []
+
+    const result = await decideAndRespond('conv_1', 'do you offer paragliding over the crater?', undefined, {
+      draft: { historyBefore, knowledgeGaps },
+    })
+
+    expect(mockPrisma.knowledgeGapLog.create).not.toHaveBeenCalled()
+    expect(result.mode).toBe('faq')
+    expect(knowledgeGaps).toContainEqual({
+      topic: 'destination_readiness',
+      reason: 'no_facts_resolved',
+      messageText: 'do you offer paragliding over the crater?',
+    })
+  })
+
+  // Mirrors 'hands off when the rewrite still invents a price' above -- the verification_failed
+  // gap is recorded from composeVerifiedReply's one shared blocking branch.
+  it('queues a verification_failed gap in options.draft.knowledgeGaps instead of writing KnowledgeGapLog', async () => {
+    ;vi.mocked(ensureFreshBookingData).mockResolvedValue(null)
+    ;vi.mocked(classifySalesNeed).mockReturnValue({ job: 'J1', missingInfo: [], needsLiveData: false })
+    ;vi.mocked(checkRouteGate).mockReturnValue({ status: 'clear' })
+    ;vi.mocked(matchDestination).mockReturnValue({ destination: 'ijen', matches: [pkg({ priceIdr: null, priceTiers: [] }) as unknown as CatalogPackage] })
+    ;vi.mocked(callLLM).mockResolvedValue('Hi! It is Rp2.000.000 per person.')
+    const knowledgeGaps: { topic: string; reason: 'no_facts_resolved' | 'verification_failed'; messageText: string }[] = []
+
+    const result = await decideAndRespond('conv_1', 'How much is the Ijen tour?', undefined, {
+      draft: { historyBefore, knowledgeGaps },
+    })
+
+    expect(result).toMatchObject({ mode: 'handoff', reason: 'Balasan gagal verifikasi knowledge dua kali berturut-turut' })
+    expect(mockPrisma.knowledgeGapLog.create).not.toHaveBeenCalled()
+    expect(knowledgeGaps).toContainEqual({
+      topic: 'inclusions',
+      reason: 'verification_failed',
+      messageText: 'How much is the Ijen tour?',
+    })
+  })
+
+  // Draft mode's whole point (see DecisionRunOptions's own header) is answering a booking
+  // question that's already been resolved -- booking lookup must still run normally.
+  it('still looks up booking data (ensureFreshBookingData) in draft mode', async () => {
+    ;vi.mocked(ensureFreshBookingData).mockResolvedValue({ bookingId: 'B1', guest: 'Bruno' })
+    ;vi.mocked(callLLM).mockResolvedValue('Booking Anda atas nama Bruno.')
+
+    const result = await decideAndRespond('conv_1', 'Booking saya sudah lunas belum?', undefined, {
+      draft: { historyBefore, knowledgeGaps: [] },
+    })
+
+    expect(ensureFreshBookingData).toHaveBeenCalled()
+    expect(result.mode).toBe('booking_context')
+  })
+})
+
 // Task 22 (Ruling R101): a message can ask about several topics at once -- classifyAllTopics
 // (multi-topic-classifier.ts, its OWN prompt, byte-identical topic-classifier.ts untouched)
 // runs in the SAME Promise.all as the primary topic classifier at both call sites, and
