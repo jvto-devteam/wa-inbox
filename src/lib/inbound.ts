@@ -255,7 +255,9 @@ async function applyTemplateStatusUpdate(update: MetaTemplateStatusUpdate): Prom
 // window" pattern that got this number flagged for spam once already (see the Unofficial-channel
 // bulk-send incident). A new message from the same conversation restarts the wait, so a genuine
 // multi-message thought gets combined into one decision instead of several.
-const BURST_DEBOUNCE_MS = 5000
+// Exported for scripts/replay-agent-answers.ts, which counts how many bot runs production would
+// have made for a customer's opening messages -- reading these rather than copying the numbers.
+export const BURST_DEBOUNCE_MS = 5000
 
 // Hard ceiling on how long ONE burst may keep being extended. Without it the
 // trailing debounce has no upper bound: a customer sending a message every 4
@@ -265,7 +267,7 @@ const BURST_DEBOUNCE_MS = 5000
 // bubbles" pause but still inside the window where a customer is plausibly
 // waiting. Ported from watsapin's lib/bot-engine/burst-scheduler.ts, which
 // took this file's own debounce as its reference and then found the gap.
-const BURST_MAX_WAIT_MS = 25000
+export const BURST_MAX_WAIT_MS = 25000
 
 type PendingBurst = {
   texts: string[]
