@@ -79,6 +79,13 @@ export const ADMIN_REPLY_WINDOW_MS = 60 * 60 * 1000
 const EMERGENCY_REPLY = /forest fire|kebakaran|temporarily clos|ijen update/i
 
 /**
+ * Notifikasi booking otomatis ("*[JVTO] Booking Pending — Payment Required*", "... Confirmed")
+ * terkirim dari nomor yang sama sehingga tercatat sebagai pesan AGENT, tapi bukan jawaban admin.
+ * Replay tahap 2 #31: booking dibuat dalam jendela 60 menit dan kedua notifikasinya ikut terhitung.
+ */
+const AUTOMATED_NOTICE = /^\s*\*?\[JVTO\]/
+
+/**
  * @param bookingDay Tanggal booking pelanggan (`YYYY-MM-DD`, lihat `parseBookingDay`), atau null.
  * Pelanggan yang sudah booking dijawab produksi lewat Mode 3 (data booking), yang tidak bisa
  * direplay di percakapan sekali pakai -- membandingkannya dengan jawaban katalog tidak adil.
@@ -116,7 +123,9 @@ export function buildOpeningPair(
   }
 
   // Caption gambar/dokumen ikut dihitung: itu tetap kalimat yang ditulis admin untuk pelanggan ini.
-  const adminAnswers = adminBlock.filter((m) => hasText(m.content) && !options.broadcastContents.has(m.content ?? ''))
+  const adminAnswers = adminBlock.filter(
+    (m) => hasText(m.content) && !options.broadcastContents.has(m.content ?? '') && !AUTOMATED_NOTICE.test(m.content ?? '')
+  )
   const adminText = adminAnswers.map((m) => (m.content ?? '').trim()).join('\n\n')
   if (adminText.length < MIN_ADMIN_CHARS) return { ok: false, reason: 'balasan_admin_hanya_broadcast_atau_pendek' }
   if (EMERGENCY_REPLY.test(adminText)) return { ok: false, reason: 'balasan_kondisi_darurat' }

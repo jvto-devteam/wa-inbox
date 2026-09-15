@@ -108,6 +108,33 @@ describe('buildOpeningPair', () => {
     expect(result.pair.adminMediaCount).toBe(1)
   })
 
+  it('membuang notifikasi booking otomatis [JVTO] dari jawaban admin (replay tahap 2 #31)', () => {
+    const result = buildOpeningPair(
+      'c1',
+      [
+        msg('m1', 'CUSTOMER', QUESTION, 0),
+        msg('m2', 'AGENT', LONG_ADMIN, 60_000),
+        msg('m3', 'AGENT', '*[JVTO] Booking Pending — Payment Required* ⏳\n\nHi, thank you for booking with JVTO.', 120_000),
+        msg('m4', 'AGENT', '*[JVTO] Booking Confirmed — Payment Received* ✅🎉\n\nYour booking is now confirmed.', 180_000, 'image'),
+      ],
+      options()
+    )
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.pair.adminMessageIds).toEqual(['m2'])
+    expect(result.pair.adminText).toBe(LONG_ADMIN)
+  })
+
+  it('tidak membuang jawaban admin yang hanya menyebut [JVTO] di tengah kalimat', () => {
+    const answer = 'Hello! The booking confirmation will arrive titled [JVTO] Booking Confirmed once the deposit is paid.'
+    const result = buildOpeningPair('c1', [msg('m1', 'CUSTOMER', QUESTION, 0), msg('m2', 'AGENT', answer, 60_000)], options())
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.pair.adminMessageIds).toEqual(['m2'])
+  })
+
   it('hanya menghitung pesan admin dalam jendela sejak balasan pertamanya', () => {
     const first = 60_000
     const result = buildOpeningPair(
