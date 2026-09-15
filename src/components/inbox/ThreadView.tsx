@@ -7,7 +7,6 @@ import { Select } from '@/components/ui/select'
 import { Button } from '@/components/ui/button'
 import { IconButton } from '@/components/ui/icon-button'
 import { SkeletonText } from '@/components/ui/skeleton'
-import { Textarea } from '@/components/ui/textarea'
 import { ContactAvatar } from '@/components/ContactAvatar'
 import { cn } from '@/lib/utils'
 import { fetchJson } from '@/lib/fetch-json'
@@ -22,19 +21,6 @@ type ConversationDetail = {
   contactName?: string | null
   avatarUrl?: string | null
   bookingData?: BookingData | null
-}
-
-type BotTestResult = {
-  mode: string
-  reply: string | null
-  status: string
-  flowSteps: Array<{ label: string; detail: string }>
-  knowledgeRefs: { sourceTopic?: string } | null
-  verification: Record<string, unknown> | null
-  warnings: string[]
-  wouldSendViaChannel: string
-  decisionRunId: string | null
-  latencyMs: number
 }
 
 /** Fire-and-forget: a failed mark-as-read is a cosmetic sidebar-badge staleness, never worth surfacing. */
@@ -129,11 +115,6 @@ export function ThreadView({
   const [agents, setAgents] = useState<Agent[]>([])
   const [assignError, setAssignError] = useState<string | null>(null)
   const [clearingChat, setClearingChat] = useState(false)
-  const [showBotTest, setShowBotTest] = useState(false)
-  const [botTestMessage, setBotTestMessage] = useState('')
-  const [botTestResult, setBotTestResult] = useState<BotTestResult | null>(null)
-  const [botTestError, setBotTestError] = useState<string | null>(null)
-  const [botTestRunning, setBotTestRunning] = useState(false)
   // Captured once, from the conversation's lastReadAt as of the moment the thread was opened --
   // this draws the "Pesan belum dibaca" divider. It must not track later markAsRead() calls
   // (which move the read boundary forward as the agent keeps watching) or the divider would
@@ -264,33 +245,6 @@ export function ThreadView({
   }
 
   useEffect(() => {
-    setShowBotTest(false)
-    setBotTestMessage('')
-    setBotTestResult(null)
-    setBotTestError(null)
-    setBotTestRunning(false)
-  }, [conversationId])
-
-  async function runBotTest() {
-    if (!botTestMessage.trim() || botTestRunning) return
-    setBotTestRunning(true)
-    setBotTestError(null)
-    setBotTestResult(null)
-    try {
-      const simulated = await fetchJson<BotTestResult>('/api/inbox/retest', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: botTestMessage.trim(), conversationId }),
-      })
-      setBotTestResult(simulated)
-    } catch (error: unknown) {
-      setBotTestError(error instanceof Error ? error.message : 'Gagal menjalankan uji bot untuk chat ini')
-    } finally {
-      setBotTestRunning(false)
-    }
-  }
-
-  useEffect(() => {
     const es = new EventSource('/api/sse')
     es.onmessage = (e) => {
       const event = JSON.parse(e.data)
@@ -364,9 +318,6 @@ export function ThreadView({
           )}
         </div>
         <div className="flex shrink-0 items-center gap-1.5">
-          <Button type="button" variant="outline" size="sm" onClick={() => setShowBotTest((value) => !value)}>
-            {showBotTest ? 'Tutup Uji Bot' : 'Uji Bot'}
-          </Button>
           {isTest && (
             <Button type="button" variant="destructive" size="sm" onClick={clearChat} disabled={clearingChat}>
               {clearingChat ? 'Menghapus...' : 'Hapus Chat'}
@@ -404,52 +355,6 @@ export function ThreadView({
           )}
         </div>
       </header>
-      {showBotTest && (
-        <div className="border-b border-line bg-surface-sunken px-3 py-3">
-          <div className="mb-2 flex items-center justify-between gap-2">
-            <p className="text-sm font-medium text-ink">Uji bot untuk chat ini</p>
-            <span className="text-xs text-ink-muted">dry run</span>
-          </div>
-          <div className="space-y-2">
-            <Textarea
-              aria-label="Pesan pelanggan untuk uji bot"
-              value={botTestMessage}
-              onChange={(event) => setBotTestMessage(event.target.value)}
-              rows={3}
-              placeholder="Contoh: berapa harga paket 3 hari 2 malam dari bali?"
-            />
-            <div className="flex flex-wrap items-center gap-2">
-              <Button type="button" size="sm" onClick={runBotTest} disabled={botTestRunning || !botTestMessage.trim()}>
-                {botTestRunning ? 'Menguji...' : 'Jalankan Uji'}
-              </Button>
-              {botTestError && <span className="text-sm text-danger">{botTestError}</span>}
-            </div>
-          </div>
-          {botTestResult && (
-            <div className="mt-3 rounded-md border border-line bg-canvas p-3">
-              <div className="mb-2 flex flex-wrap items-center gap-2">
-                <span className="rounded-sm border border-line bg-surface-sunken px-1.5 py-0.5 text-xs font-medium text-ink">
-                  {botTestResult.status}
-                </span>
-                <span className="text-xs text-ink-muted uppercase">{botTestResult.mode}</span>
-                <span className="text-xs text-ink-muted">{botTestResult.latencyMs} ms</span>
-              </div>
-              {botTestResult.reply ? (
-                <p className="whitespace-pre-wrap text-sm text-ink">{botTestResult.reply}</p>
-              ) : (
-                <p className="text-sm text-ink-muted">Bot tidak akan mengirim draft untuk hasil ini; ia akan memilih jalur handoff/clarify.</p>
-              )}
-              {botTestResult.warnings.length > 0 && (
-                <ul className="mt-2 list-disc space-y-1 pl-4 text-xs text-warning">
-                  {botTestResult.warnings.map((warning) => (
-                    <li key={warning}>{warning}</li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          )}
-        </div>
-      )}
       {assignError && (
         <p role="alert" className="shrink-0 border-b border-line bg-danger-subtle px-3 py-1.5 text-xs text-danger">
           {assignError}
