@@ -8,9 +8,11 @@ import { Button } from '@/components/ui/button'
 import { IconButton } from '@/components/ui/icon-button'
 import { SkeletonText } from '@/components/ui/skeleton'
 import { ContactAvatar } from '@/components/ContactAvatar'
+import { MarqueeText } from '@/components/ui/marquee-text'
 import { cn } from '@/lib/utils'
 import { fetchJson } from '@/lib/fetch-json'
 import type { BookingData } from '@/lib/booking/client'
+import { bookingGuestName, contactDisplayName } from '@/lib/booking/display-name'
 import type { MessageDraftView } from '@/lib/inbox/message-draft-view'
 
 type Agent = { id: string; name: string }
@@ -363,7 +365,10 @@ export function ThreadView({
         )}
         <ContactAvatar name={contactName} avatarUrl={avatarUrl} size="size-8" />
         <div className="flex min-w-0 flex-1 flex-col">
-          <span className="truncate text-base font-semibold text-ink">{contactName ?? 'Tanpa nama'}</span>
+          <MarqueeText
+            text={contactDisplayName(contactName, bookingGuestName(bookingData), 'Tanpa nama')}
+            className="text-base font-semibold text-ink"
+          />
           {isTest && (
             <span className="truncate text-xs text-warning">Room Tes -- tidak terkirim ke WhatsApp</span>
           )}

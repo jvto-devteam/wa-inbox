@@ -84,6 +84,9 @@ export function BookingSummary({
       <Card className="space-y-2 p-3">
         <Badge variant="success">Booking Ada</Badge>
         <dl className="space-y-1 text-sm">
+          {bookingData.guest && <Row label="Nama" value={bookingData.guest} />}
+          {bookingData.id && <Row label="Kode booking" value={bookingData.id} />}
+          {bookingData.booking_number && <Row label="Nomor booking" value={bookingData.booking_number} />}
           {bookingData.package && <Row label="Paket" value={bookingData.package} />}
           {dateRange && <Row label="Tanggal" value={dateRange} />}
           {bookingData.total_pax != null && <Row label="Pax" value={String(bookingData.total_pax)} />}

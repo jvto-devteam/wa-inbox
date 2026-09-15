@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { ensureTestConversation } from '@/lib/test-conversation'
+import { bookingGuestName } from '@/lib/booking/display-name'
 
 export async function GET(req: Request) {
   const q = new URL(req.url).searchParams.get('q')?.trim() || null
@@ -56,6 +57,9 @@ export async function GET(req: Request) {
     // there's an actual booking on file. A dedicated column (see schema.prisma), not parsed
     // out of bookingData: it's snapshotted once and permanent, unlike the rest of bookingData.
     orderChannel: c.orderChannel,
+    // Nama dari data booking (bookingData.guest), ditampilkan di samping nama kontak WhatsApp
+    // lewat contactDisplayName -- lihat src/lib/booking/display-name.ts.
+    bookingGuestName: bookingGuestName(c.bookingData),
     isPinned: c.isPinned,
     isTest: c.isTest,
     unreadCount: unreadCounts[i],

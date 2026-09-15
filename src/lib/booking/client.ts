@@ -55,6 +55,7 @@ export type BookingHotelStay = {
 export type BookingData = {
   id?: string
   guest?: string
+  booking_number?: string
   package?: string
   date?: BookingDate
   orderChannel?: string

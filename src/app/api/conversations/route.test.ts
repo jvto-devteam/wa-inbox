@@ -51,6 +51,44 @@ describe('GET /api/conversations', () => {
     }))
   })
 
+  it('surfaces the booking guest name derived from bookingData, next to the contact name', async () => {
+    mockPrisma.conversation.findMany.mockResolvedValue([{
+      id: 'conv_1',
+      botEnabled: true,
+      status: 'OPEN',
+      pipelineStage: 'nego',
+      lastMessageAt: new Date('2026-07-25T10:00:00Z'),
+      contact: { name: 'Zayar', phone: '6281234567890' },
+      bookingData: { id: 'JVTO-3754', guest: 'Muhammad Zayar' },
+      messages: [],
+      labels: [],
+    }] as never)
+
+    const res = await GET(new Request('http://localhost/api/conversations'))
+    const body = await res.json()
+
+    expect(body[0].bookingGuestName).toBe('Muhammad Zayar')
+  })
+
+  it('surfaces bookingGuestName as null when there is no booking on file', async () => {
+    mockPrisma.conversation.findMany.mockResolvedValue([{
+      id: 'conv_1',
+      botEnabled: true,
+      status: 'OPEN',
+      pipelineStage: 'new',
+      lastMessageAt: new Date('2026-07-25T10:00:00Z'),
+      contact: { name: 'Zayar', phone: '6281234567890' },
+      bookingData: null,
+      messages: [],
+      labels: [],
+    }] as never)
+
+    const res = await GET(new Request('http://localhost/api/conversations'))
+    const body = await res.json()
+
+    expect(body[0].bookingGuestName).toBeNull()
+  })
+
   it('surfaces the last message sender as null when a conversation has no messages yet', async () => {
     mockPrisma.conversation.findMany.mockResolvedValue([{
       id: 'conv_2',

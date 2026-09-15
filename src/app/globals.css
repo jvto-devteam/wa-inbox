@@ -249,6 +249,33 @@
   .select-chevron:disabled {
     background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12' fill='none' stroke='%238A96AB' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 4.5 6 7.5 9 4.5'/%3E%3C/svg%3E");
   }
+
+  /* MarqueeText (src/components/ui/marquee-text.tsx): nama panjang yang terpotong `...` saat
+     diam, bergulir ke kiri sampai ujung lalu kembali saat hover/fokus. Jarak geraknya datang
+     dari JS lewat --marquee-distance (scrollWidth - clientWidth yang sesungguhnya, bukan
+     ditebak dari CSS) supaya animasinya berhenti PERSIS di ujung teks, bukan lewat atau
+     kurang. prefers-reduced-motion sudah dihormati untuk SELURUH aplikasi lewat blok di
+     bawah (animation-duration dipangkas ke 0.01ms), jadi tidak perlu query khusus di sini. */
+  .animate-marquee {
+    animation-name: marquee-scroll;
+    animation-timing-function: linear;
+    animation-iteration-count: infinite;
+  }
+}
+
+@keyframes marquee-scroll {
+  0%,
+  10% {
+    transform: translateX(0);
+  }
+  45%,
+  55% {
+    transform: translateX(calc(-1 * var(--marquee-distance, 0px)));
+  }
+  90%,
+  100% {
+    transform: translateX(0);
+  }
 }
 
 /* prefers-reduced-motion dihormati di seluruh aplikasi, bukan per komponen. */

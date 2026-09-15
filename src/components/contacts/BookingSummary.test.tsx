@@ -176,6 +176,28 @@ describe('BookingSummary — confirmed booking', () => {
     render(<BookingSummary bookingData={realBooking} tripBrief={null} />)
     expect(screen.queryByRole('link', { name: 'Lihat Portal' })).not.toBeInTheDocument()
   })
+
+  it('shows Nama, Kode booking, and Nomor booking at the top of the detail list, when present', () => {
+    render(
+      <BookingSummary
+        bookingData={{ ...realBooking, id: 'JVTO-3754', guest: 'Muhammad Zayar', booking_number: 'JVR/089/08/26' }}
+        tripBrief={null}
+      />
+    )
+    expect(screen.getByText('Nama')).toBeInTheDocument()
+    expect(screen.getByText('Muhammad Zayar')).toBeInTheDocument()
+    expect(screen.getByText('Kode booking')).toBeInTheDocument()
+    expect(screen.getByText('JVTO-3754')).toBeInTheDocument()
+    expect(screen.getByText('Nomor booking')).toBeInTheDocument()
+    expect(screen.getByText('JVR/089/08/26')).toBeInTheDocument()
+  })
+
+  it('omits Nama, Kode booking, and Nomor booking rows individually when their fields are absent', () => {
+    render(<BookingSummary bookingData={{ package: 'Ijen Blue Fire Trekking' }} tripBrief={null} />)
+    expect(screen.queryByText('Nama')).not.toBeInTheDocument()
+    expect(screen.queryByText('Kode booking')).not.toBeInTheDocument()
+    expect(screen.queryByText('Nomor booking')).not.toBeInTheDocument()
+  })
 })
 
 describe('BookingSummary — other states', () => {

@@ -7,6 +7,7 @@ const summary = {
   lastMessage: 'Halo!', lastMessageSentBy: 'CUSTOMER', lastMessageAt: new Date().toISOString(),
   botEnabled: true, status: 'OPEN', isPinned: false, orderChannel: null, pipelineStage: 'new', unreadCount: 0,
   labels: [{ id: 'lbl_1', name: 'Confirmed Booking', color: '#3C6B42' }],
+  bookingGuestName: null as string | null,
 }
 
 describe('ConversationListItem', () => {
@@ -81,6 +82,21 @@ describe('ConversationListItem', () => {
     render(<ConversationListItem conversation={{ ...summary, orderChannel: 'JVTO', pipelineStage: 'lunas' }} onClick={() => {}} />)
     expect(screen.getByText('JVTO')).toBeInTheDocument()
     expect(screen.getByText('Lunas')).toBeInTheDocument()
+  })
+
+  it('shows the booking guest name next to the contact name when it differs', () => {
+    render(
+      <ConversationListItem
+        conversation={{ ...summary, contactName: 'Zayar', bookingGuestName: 'Muhammad Zayar' }}
+        onClick={() => {}}
+      />
+    )
+    expect(screen.getByText('Zayar (Muhammad Zayar)')).toBeInTheDocument()
+  })
+
+  it('shows only the contact name when there is no booking guest name', () => {
+    render(<ConversationListItem conversation={summary} onClick={() => {}} />)
+    expect(screen.getByText('Bruno Figarola')).toBeInTheDocument()
   })
 
   it('shows the real avatar photo when avatarUrl is set, instead of the initial fallback', () => {

@@ -1,9 +1,11 @@
 import { Bot, BotOff, Pin } from 'lucide-react'
 import { Avatar } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
+import { MarqueeText } from '@/components/ui/marquee-text'
 import { cn } from '@/lib/utils'
 import { isHandoffLogMessage, HANDOFF_LOG_SUMMARY } from '@/lib/message-display'
 import { STAGE_LABELS, STAGE_VARIANTS } from '@/lib/pipeline'
+import { contactDisplayName } from '@/lib/booking/display-name'
 
 // Unlisted channels (e.g. TWT) fall back to the Badge component's own default `muted` look
 // rather than guessing a color for a platform we haven't been told one for.
@@ -37,6 +39,9 @@ export type ConversationSummary = {
   pipelineStage: string
   unreadCount: number
   labels: Array<{ id: string; name: string; color: string }>
+  // Nama tamu dari data booking (bookingData.guest) -- null sampai ada booking pada
+  // percakapan ini. Ditampilkan di samping nama kontak lewat contactDisplayName.
+  bookingGuestName: string | null
 }
 
 /**
@@ -126,13 +131,11 @@ export function ConversationListItem({
                 <Pin aria-hidden="true" className="size-3.5" strokeWidth={1.75} />
               </span>
             )}
-            <span
-              className={cn(
-                'min-w-0 flex-1 truncate text-base text-ink',
-                isUnread ? 'font-semibold' : 'font-medium'
-              )}
-            >
-              {conversation.contactName ?? conversation.contactPhone}
+            <span className="min-w-0 flex-1">
+              <MarqueeText
+                text={contactDisplayName(conversation.contactName, conversation.bookingGuestName, conversation.contactPhone)}
+                className={cn('text-base text-ink', isUnread ? 'font-semibold' : 'font-medium')}
+              />
             </span>
             <time dateTime={conversation.lastMessageAt} className="shrink-0 text-xs text-ink-subtle">
               {formatListTime(conversation.lastMessageAt)}

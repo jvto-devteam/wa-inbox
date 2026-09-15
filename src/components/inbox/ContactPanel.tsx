@@ -3,11 +3,13 @@ import { useEffect, useState } from 'react'
 import { Select } from '@/components/ui/select'
 import { Skeleton, SkeletonText } from '@/components/ui/skeleton'
 import { ContactAvatar } from '@/components/ContactAvatar'
+import { MarqueeText } from '@/components/ui/marquee-text'
 import { cn } from '@/lib/utils'
 import { LabelPicker, type LabelOption } from './LabelPicker'
 import { NotesSection } from './NotesSection'
 import { RemindersSection } from './RemindersSection'
 import { BookingSummary, type BookingData, type TripBrief } from '@/components/contacts/BookingSummary'
+import { bookingGuestName, contactDisplayName } from '@/lib/booking/display-name'
 import { fetchJson } from '@/lib/fetch-json'
 import { PIPELINE_STAGES } from '@/lib/pipeline'
 
@@ -99,8 +101,11 @@ export function ContactPanel({ conversationId, className }: { conversationId: st
     >
       <div className="flex items-center gap-2.5">
         <ContactAvatar name={detail.contactName} avatarUrl={detail.avatarUrl} />
-        <div className="min-w-0">
-          <p className="truncate text-base font-semibold text-ink">{detail.contactName ?? 'Tanpa nama'}</p>
+        <div className="min-w-0 flex-1">
+          <MarqueeText
+            text={contactDisplayName(detail.contactName, bookingGuestName(detail.bookingData), 'Tanpa nama')}
+            className="text-base font-semibold text-ink"
+          />
           {detail.source && <p className="truncate text-xs text-ink-muted">{detail.source}</p>}
         </div>
       </div>
