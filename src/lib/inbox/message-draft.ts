@@ -238,13 +238,14 @@ export async function sendDraft(input: {
   // Klaim DULU, sebelum memanggil sendMessage: dua tekan "kirim" yang bersamaan tidak boleh
   // berdua-duanya lolos ke pelanggan. Pemenangnya ditentukan di sini oleh `sentAt: null`,
   // bukan oleh pembacaan `loadDraftOrThrow` di atas yang sudah basi begitu ada jeda I/O.
+  const sentAt = new Date()
   const claimed = await prisma.messageDraft.updateMany({
     where: { id: draft.id, sentAt: null },
-    data: { sentAt: new Date(), sentById: input.accountId },
+    data: { sentAt, sentById: input.accountId },
   })
   if (claimed.count === 0) throw new DraftError(409, DRAFT_LOCKED)
 
-  let sent: { id: string }
+  let sent: Awaited<ReturnType<typeof sendMessage>>
   try {
     sent = await sendMessage({
       conversationId: input.conversationId,
@@ -262,39 +263,70 @@ export async function sendDraft(input: {
     throw error
   }
 
-  await prisma.messageDraft.update({ where: { id: draft.id }, data: { sentMessageId: sent.id } })
-  await attachMessageToDecisionRun(draft.decisionRunId ?? null, sent.id)
+  // TITIK TANPA JALAN BALIK: `sendMessage` sudah mengembalikan sebuah baris, yang berarti
+  // pesan SUDAH keluar ke pelanggan -- lepas dari `deliveryStatus` akhirnya (bubble-nya sendiri
+  // yang menunjukkan status pengiriman, lihat send.ts). Dari titik ini, TIDAK SATU PUN langkah
+  // di bawah boleh membuat `sendDraft` melempar lagi: setiap langkah adalah pembukuan pasca-
+  // kirim (menautkan id, mencatat gap), bukan syarat sebuah pengiriman dianggap berhasil.
+  // Sebuah tulisan pembukuan yang gagal di sini dulu membuat route membalas 500 "Gagal
+  // mengirim draft" padahal pesannya sudah terkirim -- agen yang membaca "gagal" mengetik
+  // ulang lewat composer dan pelanggan menerima dua kali. Setiap langkah karena itu log-dan-
+  // lanjut sendiri-sendiri, dan gap TETAP ditulis walau langkah sebelumnya gagal.
+  try {
+    await prisma.messageDraft.update({ where: { id: draft.id }, data: { sentMessageId: sent.id } })
+  } catch (error) {
+    console.error('sendDraft: gagal menyimpan sentMessageId (pesan tetap terkirim)', { conversationId: input.conversationId, error })
+  }
 
-  // Baru sekarang, SETELAH benar-benar terkirim, gap yang ditampung `generateDraft` ditulis
-  // sungguhan -- satu per satu dalam try-nya sendiri, seperti gap-log.ts: satu baris yang
-  // gagal tidak boleh ikut menggagalkan baris lain atau membatalkan pengiriman yang sudah terjadi.
+  try {
+    await attachMessageToDecisionRun(draft.decisionRunId ?? null, sent.id)
+  } catch (error) {
+    console.error('sendDraft: gagal menautkan run keputusan (pesan tetap terkirim)', { conversationId: input.conversationId, error })
+  }
+
+  // Gap yang ditampung `generateDraft` ditulis sungguhan -- satu per satu dalam try-nya
+  // sendiri, seperti gap-log.ts: satu baris yang gagal tidak boleh ikut menggagalkan baris
+  // lain, dan TIDAK bergantung pada langkah sentMessageId di atas berhasil atau tidak.
   for (const gap of readPendingKnowledgeGaps(draft.pendingKnowledgeGaps)) {
     try {
       await prisma.knowledgeGapLog.create({
         data: { conversationId: input.conversationId, topic: gap.topic, reason: gap.reason, messageText: gap.messageText },
       })
     } catch (error) {
-      console.error('sendDraft: gagal menulis pending knowledge gap', { conversationId: input.conversationId, error })
+      console.error('sendDraft: gagal menulis pending knowledge gap (pesan tetap terkirim)', { conversationId: input.conversationId, error })
     }
   }
 
-  // `recordUnsourcedReplyGap` sendiri tidak pernah melempar (lihat header gap-log.ts) --
-  // dipanggil langsung, tanpa try/catch tambahan di sini.
+  // `recordUnsourcedReplyGap` sendiri sudah tidak pernah melempar (lihat header gap-log.ts),
+  // tapi dibungkus juga di sini supaya kegagalan tak terduga apa pun tetap log-dan-lanjut,
+  // konsisten dengan setiap langkah pasca-kirim lain di atas.
   const decisionForGap = asBotDecision(draft.decision)
   if (decisionForGap) {
-    await recordUnsourcedReplyGap({
-      decision: decisionForGap,
-      conversationId: input.conversationId,
-      messageId: sent.id,
-      runId: draft.decisionRunId ?? null,
-      inboundText: source.content ?? '',
-    })
+    try {
+      await recordUnsourcedReplyGap({
+        decision: decisionForGap,
+        conversationId: input.conversationId,
+        messageId: sent.id,
+        runId: draft.decisionRunId ?? null,
+        inboundText: source.content ?? '',
+      })
+    } catch (error) {
+      console.error('sendDraft: gagal mencatat gap balasan (pesan tetap terkirim)', { conversationId: input.conversationId, error })
+    }
   }
 
-  const sentRow = await prisma.message.findUniqueOrThrow({ where: { id: sent.id }, include: { replyTo: true } })
-  const finalDraft = await prisma.messageDraft.findUniqueOrThrow({ where: { id: draft.id } })
+  // Dibangun dari data yang SUDAH ADA di memori (baris `sent` yang dikembalikan `sendMessage`,
+  // yang sudah menyertakan `replyTo`; dan `draft` yang sudah diketahui + status kirim yang baru
+  // saja diklaim) -- bukan dibaca ulang lewat `findUniqueOrThrow`. Sebuah pembacaan ulang yang
+  // gagal (mis. DB berkedip sepersekian detik) tidak boleh mengubah "pesan sudah terkirim"
+  // menjadi respons 500.
+  const names = await accountNamesFor([draft.generatedById, draft.editedById, input.accountId]).catch((error: unknown) => {
+    console.error('sendDraft: gagal mengambil nama akun (pesan tetap terkirim)', { conversationId: input.conversationId, error })
+    return new Map<string, string>()
+  })
+  const finalDraft: MessageDraft = { ...draft, sentAt, sentById: input.accountId, sentMessageId: sent.id }
 
-  return { draft: await buildView(finalDraft, source.content ?? ''), message: serializeMessage(sentRow) }
+  return { draft: toView(finalDraft, source.content ?? '', names), message: serializeMessage(sent) }
 }
 
 /** Untuk route daftar pesan (Task 4). */

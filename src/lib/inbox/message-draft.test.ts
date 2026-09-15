@@ -251,9 +251,9 @@ describe('sendDraft', () => {
   beforeEach(() => {
     mockPrisma.messageDraft.findUnique.mockResolvedValue(draftRow() as never)
     mockPrisma.messageDraft.updateMany.mockResolvedValue({ count: 1 } as never)
-    vi.mocked(sendMessage).mockResolvedValue({ id: 'msg_sent' } as never)
-    mockPrisma.message.findUniqueOrThrow.mockResolvedValue(sentMessageRow as never)
-    mockPrisma.messageDraft.findUniqueOrThrow.mockResolvedValue(draftRow({ sentAt: new Date(), sentById: ACCOUNT_ID, sentMessageId: 'msg_sent' }) as never)
+    // `sendMessage` sudah mengembalikan baris LENGKAP (dengan `replyTo`) -- sendDraft membangun
+    // responsnya langsung dari nilai ini, tanpa membaca ulang lewat Prisma.
+    vi.mocked(sendMessage).mockResolvedValue(sentMessageRow as never)
   })
 
   it('memanggil sendMessage dengan sentBy AGENT, replyToId pesan sumber, dan botTrace = decision', async () => {
@@ -321,6 +321,33 @@ describe('sendDraft', () => {
     vi.spyOn(console, 'error').mockImplementation(() => {})
 
     await expect(sendDraft({ conversationId: CONVERSATION_ID, messageId: MESSAGE_ID, accountId: ACCOUNT_ID })).resolves.toBeDefined()
+  })
+
+  it('update sentMessageId gagal -> sendDraft tetap resolve dengan pesan terkirim, pending gap dan recordUnsourcedReplyGap tetap terpanggil', async () => {
+    mockPrisma.messageDraft.findUnique.mockResolvedValue(
+      draftRow({
+        pendingKnowledgeGaps: [{ topic: 'vehicle', reason: 'no_facts_resolved', messageText: 'Berapa harga paket Ijen 2D1N?' }],
+      }) as never
+    )
+    mockPrisma.messageDraft.update.mockRejectedValueOnce(new Error('db down'))
+    mockPrisma.knowledgeGapLog.create.mockResolvedValue({ id: 'gap_1' } as never)
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    const result = await sendDraft({ conversationId: CONVERSATION_ID, messageId: MESSAGE_ID, accountId: ACCOUNT_ID })
+
+    // Pesan tetap dilaporkan terkirim -- sendMessage sudah kembali, itu satu-satunya syarat.
+    expect(result.message.id).toBe('msg_sent')
+    expect(mockPrisma.knowledgeGapLog.create).toHaveBeenCalled()
+    expect(recordUnsourcedReplyGap).toHaveBeenCalledWith(expect.objectContaining({ messageId: 'msg_sent' }))
+  })
+
+  it('attachMessageToDecisionRun gagal -> sendDraft tetap resolve', async () => {
+    vi.mocked(attachMessageToDecisionRun).mockRejectedValueOnce(new Error('db down'))
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    const result = await sendDraft({ conversationId: CONVERSATION_ID, messageId: MESSAGE_ID, accountId: ACCOUNT_ID })
+
+    expect(result.message.id).toBe('msg_sent')
   })
 
   it('draft belum ada -> 404', async () => {
