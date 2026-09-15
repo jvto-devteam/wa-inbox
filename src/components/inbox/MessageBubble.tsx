@@ -14,6 +14,9 @@ import { fetchJson } from '@/lib/fetch-json'
 import type { BotDecision } from '@/lib/bot/types'
 import type { TopicLabels } from '@/lib/inbox/topic-labels-schema'
 import { jobLabelName, topicLabelName } from '@/lib/inbox/label-names'
+import { knowledgeGapLabel } from '@/lib/inbox/gap-labels'
+import { MessageDraftCard } from './MessageDraftCard'
+import type { MessageDraftView } from '@/lib/inbox/message-draft-view'
 
 export type MessageView = {
   id: string
@@ -58,6 +61,12 @@ export type MessageView = {
     limitedTimeOffer?: { text: string; expirationTimeMs: number }
     coupon?: { buttonText: string; code: string }
   } | null
+  /** Task 5: draft jawaban bot yang menunggu di pesan masuk ini, kalau sudah dibuat. */
+  draft?: MessageDraftView | null
+  /** true pada pesan keluar yang dikirim lewat "Kirim pesan" di MessageDraftCard, bukan
+   *  ComposeBox biasa -- dipakai untuk memperlakukannya seperti balasan bot (tombol alasan
+   *  bot, indikator gap, FixAnswerPanel) walau `sentBy` tetap 'AGENT'. */
+  fromDraft?: boolean
 }
 
 export const SENDER_LABEL: Record<string, string> = { CUSTOMER: 'Pelanggan', BOT: 'Bot', AGENT: 'Agen' }
@@ -225,16 +234,6 @@ function TopicChips({ labels }: { labels: TopicLabels }) {
 }
 
 const CHANNEL_LABEL: Record<string, string> = { OFFICIAL: 'Official', UNOFFICIAL: 'Unofficial' }
-const KNOWLEDGE_GAP_LABEL: Record<string, string> = {
-  no_facts_resolved: 'Tidak ada fakta knowledge untuk pertanyaan ini',
-  verification_failed: 'Jawaban gagal diverifikasi terhadap knowledge',
-  reply_unsourced: 'Ada jawaban yang tidak punya knowledge',
-  reply_deferred_knowledge: 'Ada bagian jawaban yang belum punya knowledge',
-}
-
-function knowledgeGapLabel(reason: string): string {
-  return KNOWLEDGE_GAP_LABEL[reason] ?? 'Ada gap knowledge pada jawaban ini'
-}
 
 function formatTime(iso: string): string {
   return new Date(iso).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })
@@ -301,6 +300,8 @@ export function MessageBubble({
   onReply,
   conversationId,
   autoOpenFix,
+  onDraftChange,
+  onDraftSent,
 }: {
   message: MessageView
   onReply?: (message: MessageView) => void
@@ -308,6 +309,10 @@ export function MessageBubble({
   conversationId?: string
   /** Dipakai saat operator tiba dari notifikasi gap: panel perbaikan terbuka tanpa satu klik lagi. */
   autoOpenFix?: boolean
+  /** Task 5: draft baru dibuat/diedit/dibuat-ulang -- ganti `draft` pada pesan sumber ini. */
+  onDraftChange?: (messageId: string, draft: MessageDraftView) => void
+  /** Task 5: draft terkirim -- ganti `draft` pada pesan sumber DAN masukkan pesan yang terkirim. */
+  onDraftSent?: (messageId: string, draft: MessageDraftView, sent: MessageView) => void
 }) {
   // Declared before the handoff-log early return below so every render calls the same hooks
   // in the same order (Rules of Hooks) -- unused in that branch, which is fine.
@@ -322,6 +327,8 @@ export function MessageBubble({
   const [checkedLabels, setCheckedLabels] = useState<TopicLabels | null>(null)
   const [checkingTopic, setCheckingTopic] = useState(false)
   const [topicError, setTopicError] = useState<string | null>(null)
+  const [generatingDraft, setGeneratingDraft] = useState(false)
+  const [draftError, setDraftError] = useState<string | null>(null)
 
   async function retrySend() {
     if (retrying) return
@@ -365,6 +372,23 @@ export function MessageBubble({
     await navigator.clipboard?.writeText(message.content)
   }
 
+  async function generateDraft() {
+    if (generatingDraft || !conversationId) return
+    setGeneratingDraft(true)
+    setDraftError(null)
+    try {
+      const draft = await fetchJson<MessageDraftView>(
+        `/api/conversations/${conversationId}/messages/${message.id}/draft`,
+        { method: 'POST' }
+      )
+      onDraftChange?.(message.id, draft)
+    } catch (error: unknown) {
+      setDraftError(error instanceof Error ? error.message : 'Gagal membuat draft')
+    } finally {
+      setGeneratingDraft(false)
+    }
+  }
+
   // A handoff decision is logged (Task 34) as a Message row with content: null, sentBy: 'BOT' --
   // no real reply was ever sent to the customer. Rendered as WhatsApp's own centered system
   // divider (the same line-text-line style as the "Pesan belum dibaca" marker in ThreadView),
@@ -405,12 +429,20 @@ export function MessageBubble({
   // needs an answer for, and hiding the button there left them with no way to ask -- the
   // popover now says "Trace tidak tersedia untuk pesan ini" instead of silently not existing.
   const isBotMessage = message.sentBy === 'BOT'
+  // Task 5: pesan yang dikirim lewat "Kirim pesan" di MessageDraftCard -- sebuah balasan
+  // seorang agen menulis SEBAGIAN dari draft bot. Untuk tombol alasan bot, indikator gap, dan
+  // FixAnswerPanel ia diperlakukan seperti balasan bot; tombol salin (`canCopyBotReply` di
+  // bawah) tetap hanya untuk BOT sungguhan -- lihat catatan di MessageView.fromDraft.
+  const isFromDraft = Boolean(message.fromDraft) && message.sentBy === 'AGENT'
+  const showsBotReasoning = isBotMessage || isFromDraft
   const hasMedia = Boolean(message.mediaUrl)
   const cards = message.templatePayload?.cards
   const topicLabels = message.topicLabels ?? checkedLabels
   const canCheckTopic = !isOutbound && !topicLabels && Boolean(conversationId && message.content?.trim())
   const canCopyBotReply = isBotMessage && Boolean(message.content?.trim())
-  const knowledgeGap = isBotMessage ? message.knowledgeGap : null
+  const knowledgeGap = showsBotReasoning ? message.knowledgeGap : null
+  const canGenerateDraft =
+    !isOutbound && Boolean(message.content?.trim()) && Boolean(conversationId) && !message.draft
   const bubble = (
     <div
       className={cn(
@@ -450,7 +482,28 @@ export function MessageBubble({
     // percakapan jadi daftar tombol; di layar sentuh (yang tidak punya hover) ia tetap terlihat.
     <div className={cn('group flex flex-col gap-1', isOutbound ? 'items-end' : 'items-start')}>
       {knowledgeGap ? <Tooltip content={knowledgeGapLabel(knowledgeGap.reason)}>{bubble}</Tooltip> : bubble}
-      {isBotMessage && showTrace && (
+      {canGenerateDraft && (
+        <div className="w-full max-w-md space-y-1">
+          <Button type="button" variant="outline" size="sm" onClick={generateDraft} disabled={generatingDraft}>
+            {generatingDraft ? 'Menyusun draft...' : 'Generate draft'}
+          </Button>
+          {draftError && (
+            <p role="alert" className="text-danger">
+              {draftError}
+            </p>
+          )}
+        </div>
+      )}
+      {message.draft && conversationId && (
+        <MessageDraftCard
+          draft={message.draft}
+          conversationId={conversationId}
+          messageId={message.id}
+          onDraftChange={onDraftChange}
+          onDraftSent={onDraftSent}
+        />
+      )}
+      {showsBotReasoning && showTrace && (
         <BotTracePopover
           trace={(message.botTrace as BotDecision | null) ?? null}
           messageId={message.id}
@@ -461,7 +514,7 @@ export function MessageBubble({
           onClose={() => setShowTrace(false)}
         />
       )}
-      {isBotMessage && showFix && (
+      {showsBotReasoning && showFix && (
         <FixAnswerPanel
           messageId={message.id}
           trace={(message.botTrace as BotDecision | null) ?? null}
@@ -476,6 +529,7 @@ export function MessageBubble({
             Bot
           </Badge>
         )}
+        {isFromDraft && <Badge variant="muted">Dari draft bot</Badge>}
         {knowledgeGap && (
           <IconButton
             size="sm"
@@ -487,7 +541,7 @@ export function MessageBubble({
         )}
         {/* Dedicated trigger for the reasoning trace, separate from the bubble itself -- clicking
             the message text/media should never be overloaded with an unrelated toggle. */}
-        {isBotMessage && (
+        {showsBotReasoning && (
           <IconButton
             size="sm"
             label={showTrace ? 'Sembunyikan alasan bot' : 'Lihat alasan bot'}

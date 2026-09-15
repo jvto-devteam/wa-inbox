@@ -434,6 +434,60 @@ describe('ThreadView live delivery-status updates', () => {
 
     await waitFor(() => expect(screen.getByRole('img', { name: 'Terkirim' })).toBeInTheDocument())
   })
+
+  it('tidak menghapus draft yang sudah tampil saat message.updated tiba tanpa field draft (broadcast SSE tidak pernah membawanya)', async () => {
+    // broadcast() di inbound.ts/send.ts/worker.ts mengirim `withMediaUrl(prismaRow)` -- baris
+    // Message mentah, yang TIDAK PERNAH punya kolom `draft`/`fromDraft` (keduanya dihitung
+    // hanya oleh GET .../messages dan endpoint draft). Tanpa penjagaan ini, tanda terima
+    // pengiriman apa pun yang tiba lewat message.updated akan diam-diam menghapus kartu draft
+    // yang sedang dilihat operator.
+    const draftView = {
+      id: 'draft_1',
+      sourceMessageId: 'm_in',
+      text: 'Harga paket Ijen 3D2N mulai Rp1.500.000 per orang.',
+      generatedText: 'Harga paket Ijen 3D2N mulai Rp1.500.000 per orang.',
+      mode: 'faq',
+      handoffReason: null,
+      decision: { mode: 'faq', draft: 'Harga paket Ijen 3D2N mulai Rp1.500.000 per orang.', sourceTopic: 'price' },
+      knowledgeGaps: [],
+      generatedAt: new Date().toISOString(),
+      generatedByName: null,
+      editedAt: null,
+      editedByName: null,
+      sentAt: null,
+      sentByName: null,
+      sentMessageId: null,
+    }
+    const inboundMessage = {
+      id: 'm_in',
+      direction: 'INBOUND',
+      content: 'Berapa harga paket Ijen?',
+      channel: 'OFFICIAL',
+      sentBy: 'CUSTOMER',
+      deliveryStatus: 'DELIVERED',
+      createdAt: new Date().toISOString(),
+      botTrace: null,
+      draft: draftView,
+    }
+    mockBasicFetch([inboundMessage])
+
+    render(<ThreadView conversationId="conv_1" />)
+    await waitFor(() => expect(screen.getByText('Draft jawaban bot')).toBeInTheDocument())
+
+    const es = FakeEventSource.instances[0]
+    act(() => {
+      // Payload SSE realistis: baris Message mentah, tanpa field `draft` sama sekali --
+      // bukan `draft: null`, yang justru harus menang (lihat komentar withPreservedDraftFields
+      // di ThreadView.tsx untuk kenapa keduanya dibedakan).
+      es.emit({
+        type: 'message.updated',
+        conversationId: 'conv_1',
+        message: { ...inboundMessage, deliveryStatus: 'DELIVERED', draft: undefined },
+      })
+    })
+
+    await waitFor(() => expect(screen.getByText('Draft jawaban bot')).toBeInTheDocument())
+  })
 })
 
 describe('ThreadView live handoff sync', () => {

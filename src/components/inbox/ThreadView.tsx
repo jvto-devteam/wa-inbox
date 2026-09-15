@@ -11,6 +11,7 @@ import { ContactAvatar } from '@/components/ContactAvatar'
 import { cn } from '@/lib/utils'
 import { fetchJson } from '@/lib/fetch-json'
 import type { BookingData } from '@/lib/booking/client'
+import type { MessageDraftView } from '@/lib/inbox/message-draft-view'
 
 type Agent = { id: string; name: string }
 type ConversationDetail = {
@@ -50,6 +51,39 @@ function dayDividerLabel(iso: string): string {
 
 function fetchMessages(conversationId: string): Promise<MessageView[]> {
   return fetchJson<MessageView[]>(`/api/conversations/${conversationId}/messages`)
+}
+
+/**
+ * SSE broadcasts (`broadcast()` call sites in inbound.ts/send.ts/worker.ts/...) pass through
+ * `withMediaUrl(prismaRow)` -- a raw `Message` row plus a resolved media URL, never `draft` or
+ * `fromDraft` (neither is a column on `Message`; both are computed server-side only for the
+ * GET .../messages route and the draft endpoints). Replacing a bubble wholesale from such an
+ * event would silently erase a draft card or a "Dari draft bot" badge the agent is already
+ * looking at. `'draft' in incoming` (not `incoming.draft !== undefined`) is deliberate: it lets
+ * a payload that explicitly carries `draft: null` (a real "no draft" answer) through, while a
+ * payload missing the key entirely falls back to what's already on screen.
+ */
+function withPreservedDraftFields(existing: MessageView, incoming: MessageView): MessageView {
+  return {
+    ...incoming,
+    draft: 'draft' in incoming ? incoming.draft : existing.draft,
+    fromDraft: 'fromDraft' in incoming ? incoming.fromDraft : existing.fromDraft,
+  }
+}
+
+/**
+ * The `.../draft/send` response's `message` is server-serialized with `fromDraft: false`
+ * (Controller ruling, Task 5 spec): that field describes what an SSE broadcast about this same
+ * message will look like, not what THIS agent's own thread should show right after sending from
+ * a draft. Forcing it true here is what makes the "Dari draft bot" badge appear without a reload.
+ */
+function upsertSentMessage(prev: MessageView[], sent: MessageView): MessageView[] {
+  const withBadge: MessageView = { ...sent, fromDraft: true }
+  const index = prev.findIndex((m) => m.id === withBadge.id)
+  if (index === -1) return [...prev, withBadge]
+  const next = [...prev]
+  next[index] = withBadge
+  return next
 }
 
 /**
@@ -244,6 +278,21 @@ export function ThreadView({
     }
   }
 
+  /** Task 5: draft baru dibuat/diedit/dibuat-ulang -- ganti `draft` pada pesan sumbernya saja. */
+  function handleDraftChange(messageId: string, draft: MessageDraftView) {
+    setMessages((prev) => prev.map((m) => (m.id === messageId ? { ...m, draft } : m)))
+  }
+
+  /**
+   * Task 5: draft terkirim -- ganti `draft` pada pesan sumber DAN masukkan pesan yang baru
+   * terkirim, menggantikan yang sudah masuk lewat SSE (message.created bisa mendahului
+   * respons POST .../draft/send ini, sama seperti race ComposeBox yang sudah ada) atau
+   * menambahkannya kalau belum.
+   */
+  function handleDraftSent(messageId: string, draft: MessageDraftView, sent: MessageView) {
+    setMessages((prev) => upsertSentMessage(prev.map((m) => (m.id === messageId ? { ...m, draft } : m)), sent))
+  }
+
   useEffect(() => {
     const es = new EventSource('/api/sse')
     es.onmessage = (e) => {
@@ -259,7 +308,9 @@ export function ThreadView({
       // after the message itself, so the bubble must be replaced in place -- appending
       // would duplicate it. Ignored if the message isn't loaded in this thread.
       if (event.type === 'message.updated' && event.conversationId === conversationId) {
-        setMessages((prev) => prev.map((m) => (m.id === event.message.id ? event.message : m)))
+        setMessages((prev) =>
+          prev.map((m) => (m.id === event.message.id ? withPreservedDraftFields(m, event.message) : m))
+        )
       }
       // inbound.ts flips conversation.botEnabled to false server-side the moment the bot hands
       // off -- broadcasting this alert is the ONLY signal of that, since it happens without any
@@ -397,6 +448,8 @@ export function ThreadView({
                 onReply={setReplyingTo}
                 conversationId={conversationId}
                 autoOpenFix={focused}
+                onDraftChange={handleDraftChange}
+                onDraftSent={handleDraftSent}
               />
             </div>
           )

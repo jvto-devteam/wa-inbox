@@ -781,3 +781,163 @@ describe('MessageBubble — autoOpenFix', () => {
     expect(screen.queryByText('panel perbaikan msg_bot')).not.toBeInTheDocument()
   })
 })
+
+// Task 5: tombol "Generate draft" dan integrasi MessageDraftCard.
+describe('MessageBubble — draft jawaban bot', () => {
+  const inboundText = {
+    id: 'm_in',
+    direction: 'INBOUND' as const,
+    content: 'Berapa harga paket Ijen?',
+    channel: 'OFFICIAL',
+    sentBy: 'CUSTOMER',
+    deliveryStatus: 'DELIVERED',
+    createdAt: new Date().toISOString(),
+    botTrace: null,
+  }
+
+  const draftView = {
+    id: 'draft_1',
+    sourceMessageId: 'm_in',
+    text: 'Harga paket Ijen 3D2N mulai Rp1.500.000 per orang.',
+    generatedText: 'Harga paket Ijen 3D2N mulai Rp1.500.000 per orang.',
+    mode: 'faq' as const,
+    handoffReason: null,
+    decision: { mode: 'faq', draft: 'Harga paket Ijen 3D2N mulai Rp1.500.000 per orang.', sourceTopic: 'price' },
+    knowledgeGaps: [],
+    generatedAt: new Date().toISOString(),
+    generatedByName: null,
+    editedAt: null,
+    editedByName: null,
+    sentAt: null,
+    sentByName: null,
+    sentMessageId: null,
+  }
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('menampilkan tombol Generate draft hanya untuk pesan masuk berteks dengan conversationId, dan belum ada draft', () => {
+    render(<MessageBubble message={inboundText} conversationId="conv_1" />)
+    expect(screen.getByRole('button', { name: 'Generate draft' })).toBeInTheDocument()
+  })
+
+  it('tidak menampilkan tombol Generate draft tanpa conversationId', () => {
+    render(<MessageBubble message={inboundText} />)
+    expect(screen.queryByRole('button', { name: 'Generate draft' })).not.toBeInTheDocument()
+  })
+
+  it('tidak menampilkan tombol Generate draft pada pesan keluar', () => {
+    render(
+      <MessageBubble
+        message={{ ...inboundText, direction: 'OUTBOUND', sentBy: 'AGENT' }}
+        conversationId="conv_1"
+      />
+    )
+    expect(screen.queryByRole('button', { name: 'Generate draft' })).not.toBeInTheDocument()
+  })
+
+  it('tidak menampilkan tombol Generate draft pada pesan media tanpa teks', () => {
+    render(
+      <MessageBubble
+        message={{ ...inboundText, content: null, type: 'image', mediaUrl: '/api/media/m_in' }}
+        conversationId="conv_1"
+      />
+    )
+    expect(screen.queryByRole('button', { name: 'Generate draft' })).not.toBeInTheDocument()
+  })
+
+  it('tidak menampilkan tombol Generate draft kalau draft sudah ada', () => {
+    render(<MessageBubble message={{ ...inboundText, draft: draftView }} conversationId="conv_1" />)
+    expect(screen.queryByRole('button', { name: 'Generate draft' })).not.toBeInTheDocument()
+    expect(screen.getByText('Draft jawaban bot')).toBeInTheDocument()
+  })
+
+  it('generate: POST ke endpoint draft, lalu memanggil onDraftChange dengan draft yang dikembalikan', async () => {
+    const fetchMock = vi.fn(async () => ({ ok: true, status: 200, json: async () => draftView }) as Response)
+    vi.stubGlobal('fetch', fetchMock)
+    const onDraftChange = vi.fn()
+
+    render(<MessageBubble message={inboundText} conversationId="conv_1" onDraftChange={onDraftChange} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Generate draft' }))
+
+    expect(screen.getByRole('button', { name: 'Menyusun draft...' })).toBeDisabled()
+
+    await waitFor(() => expect(onDraftChange).toHaveBeenCalledWith('m_in', draftView))
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+    expect(url).toBe('/api/conversations/conv_1/messages/m_in/draft')
+    expect(init.method).toBe('POST')
+  })
+
+  it('menampilkan galat generate sebagai teks text-danger di bawah tombol', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({ ok: false, status: 500, json: async () => ({ error: 'Gagal membuat draft' }) }) as Response)
+    )
+
+    render(<MessageBubble message={inboundText} conversationId="conv_1" />)
+    fireEvent.click(screen.getByRole('button', { name: 'Generate draft' }))
+
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('Gagal membuat draft'))
+  })
+
+  it('pesan terkirim dari draft (fromDraft, sentBy AGENT) menampilkan badge "Dari draft bot" dan tombol alasan bot', () => {
+    render(
+      <MessageBubble
+        message={{
+          id: 'm_out',
+          direction: 'OUTBOUND',
+          content: 'Harga paket Ijen 3D2N mulai Rp1.500.000 per orang.',
+          channel: 'OFFICIAL',
+          sentBy: 'AGENT',
+          deliveryStatus: 'SENT',
+          createdAt: new Date().toISOString(),
+          botTrace: { mode: 'faq', draft: 'Harga paket Ijen 3D2N mulai Rp1.500.000 per orang.', sourceTopic: 'price' },
+          fromDraft: true,
+        }}
+      />
+    )
+
+    expect(screen.getByText('Dari draft bot')).toBeInTheDocument()
+    expect(screen.getByLabelText('Lihat alasan bot')).toBeInTheDocument()
+  })
+
+  it('pesan agen biasa (fromDraft tidak diset) tidak menampilkan badge "Dari draft bot" atau tombol alasan bot', () => {
+    render(
+      <MessageBubble
+        message={{
+          id: 'm_out2',
+          direction: 'OUTBOUND',
+          content: 'Halo, terima kasih sudah menghubungi kami.',
+          channel: 'OFFICIAL',
+          sentBy: 'AGENT',
+          deliveryStatus: 'SENT',
+          createdAt: new Date().toISOString(),
+          botTrace: null,
+        }}
+      />
+    )
+
+    expect(screen.queryByText('Dari draft bot')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Lihat alasan bot')).not.toBeInTheDocument()
+  })
+
+  it('tombol salin balasan bot tetap hanya untuk BOT, bukan untuk pesan fromDraft dari AGENT', () => {
+    render(
+      <MessageBubble
+        message={{
+          id: 'm_out3',
+          direction: 'OUTBOUND',
+          content: 'Harga paket Ijen 3D2N mulai Rp1.500.000 per orang.',
+          channel: 'OFFICIAL',
+          sentBy: 'AGENT',
+          deliveryStatus: 'SENT',
+          createdAt: new Date().toISOString(),
+          botTrace: { mode: 'faq', draft: 'x', sourceTopic: 'price' },
+          fromDraft: true,
+        }}
+      />
+    )
+    expect(screen.queryByLabelText('Salin balasan bot')).not.toBeInTheDocument()
+  })
+})
