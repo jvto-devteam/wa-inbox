@@ -1,7 +1,15 @@
+import { readFileSync } from 'node:fs'
+import path from 'node:path'
 import { describe, it, expect, vi } from 'vitest'
 import {
+  ADMIN_REPLY_WINDOW_MS,
+  FALLBACK_STEP_LABELS,
+  LLM_FALLBACK_DETAIL,
   buildOpeningPair,
   countBursts,
+  degradedReason,
+  jakartaDay,
+  parseBookingDay,
   seededShuffle,
   sweepReplayRows,
   REPLAY_PHONE_PREFIX,
@@ -12,6 +20,7 @@ import {
 const T0 = new Date('2026-08-20T03:00:00Z').getTime()
 const LONG_ADMIN =
   'Hello! Yes, we can arrange pickup at Surabaya Airport and drop-off in Ubud. The 3D2N private tour price for 2 pax is below.'
+const QUESTION = 'Hi, is a Bromo Ijen tour possible on 27 October?'
 
 function msg(id: string, sentBy: ReplayMessage['sentBy'], content: string | null, offsetMs: number, type = 'text'): ReplayMessage {
   return { id, sentBy, type, content, createdAt: new Date(T0 + offsetMs) }
@@ -26,7 +35,7 @@ describe('buildOpeningPair', () => {
     const result = buildOpeningPair(
       'c1',
       [
-        msg('m1', 'CUSTOMER', 'Hi, is a Bromo Ijen tour possible on 27 October?', 0),
+        msg('m1', 'CUSTOMER', QUESTION, 0),
         msg('m2', 'AGENT', LONG_ADMIN, 60_000),
         msg('m3', 'CUSTOMER', 'Great, thanks', 120_000),
         msg('m4', 'AGENT', 'You are welcome, here is the booking link for your tour.', 180_000),
@@ -39,7 +48,7 @@ describe('buildOpeningPair', () => {
       pair: {
         conversationId: 'c1',
         askedAt: new Date(T0),
-        customerText: 'Hi, is a Bromo Ijen tour possible on 27 October?',
+        customerText: QUESTION,
         customerMessageIds: ['m1'],
         productionBurstCount: 1,
         adminText: LONG_ADMIN,
@@ -70,11 +79,7 @@ describe('buildOpeningPair', () => {
   it('mengabaikan reaksi emoji dan mengurutkan pesan menurut waktu', () => {
     const result = buildOpeningPair(
       'c1',
-      [
-        msg('m3', 'AGENT', LONG_ADMIN, 60_000),
-        msg('r1', 'AGENT', '👍', 1_000, 'reaction'),
-        msg('m1', 'CUSTOMER', 'Hi, is a Bromo Ijen tour possible on 27 October?', 0),
-      ],
+      [msg('m3', 'AGENT', LONG_ADMIN, 60_000), msg('r1', 'AGENT', '👍', 1_000, 'reaction'), msg('m1', 'CUSTOMER', QUESTION, 0)],
       options()
     )
 
@@ -88,7 +93,7 @@ describe('buildOpeningPair', () => {
     const result = buildOpeningPair(
       'c1',
       [
-        msg('m1', 'CUSTOMER', 'Hi, is a Bromo Ijen tour possible on 27 October?', 0),
+        msg('m1', 'CUSTOMER', QUESTION, 0),
         msg('m2', 'AGENT', broadcast, 30_000),
         msg('m3', 'AGENT', LONG_ADMIN, 60_000),
         msg('m4', 'AGENT', null, 61_000, 'image'),
@@ -101,6 +106,35 @@ describe('buildOpeningPair', () => {
     expect(result.pair.adminText).toBe(LONG_ADMIN)
     expect(result.pair.adminMessageIds).toEqual(['m3'])
     expect(result.pair.adminMediaCount).toBe(1)
+  })
+
+  it('hanya menghitung pesan admin dalam jendela sejak balasan pertamanya', () => {
+    const first = 60_000
+    const result = buildOpeningPair(
+      'c1',
+      [
+        msg('m1', 'CUSTOMER', QUESTION, 0),
+        msg('m2', 'AGENT', LONG_ADMIN, first),
+        msg('m3', 'AGENT', 'For 3 participants we provide a private MPV such as a Toyota Avanza.', first + ADMIN_REPLY_WINDOW_MS),
+        msg('m4', 'AGENT', '[JVTO] Booking Pending -- Payment Required. Please complete your deposit payment.', first + ADMIN_REPLY_WINDOW_MS + 1),
+        msg('m5', 'AGENT', null, first + 8 * 60 * 60 * 1000, 'image'),
+      ],
+      options()
+    )
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.pair.adminMessageIds).toEqual(['m2', 'm3'])
+    expect(result.pair.adminMediaCount).toBe(0)
+  })
+
+  it('melewati pelanggan yang booking-nya dibuat pada atau sebelum hari bertanya (WIB)', () => {
+    const messages = [msg('m1', 'CUSTOMER', QUESTION, 0), msg('m2', 'AGENT', LONG_ADMIN, 60_000)]
+    // T0 = 2026-08-20 03:00 UTC = 2026-08-20 10:00 WIB
+    expect(buildOpeningPair('c1', messages, options(), '2026-06-28')).toEqual({ ok: false, reason: 'sudah_booking_saat_bertanya' })
+    expect(buildOpeningPair('c1', messages, options(), '2026-08-20')).toEqual({ ok: false, reason: 'sudah_booking_saat_bertanya' })
+    expect(buildOpeningPair('c1', messages, options(), '2026-08-21').ok).toBe(true)
+    expect(buildOpeningPair('c1', messages, options(), null).ok).toBe(true)
   })
 
   it.each([
@@ -126,6 +160,24 @@ describe('buildOpeningPair', () => {
   })
 })
 
+describe('parseBookingDay', () => {
+  it('membaca format booking_date API booking', () => {
+    expect(parseBookingDay('03 Sep 2026')).toBe('2026-09-03')
+    expect(parseBookingDay('7 Aug 2026')).toBe('2026-08-07')
+  })
+
+  it.each([null, undefined, 20260903, '', '2026-09-03', '03 Sept 2026', '03 Xyz 2026'])('mengembalikan null untuk %s', (value) => {
+    expect(parseBookingDay(value)).toBeNull()
+  })
+})
+
+describe('jakartaDay', () => {
+  it('memakai kalender Asia/Jakarta, bukan UTC', () => {
+    expect(jakartaDay(new Date('2026-09-02T16:59:59Z'))).toBe('2026-09-02')
+    expect(jakartaDay(new Date('2026-09-02T17:00:00Z'))).toBe('2026-09-03')
+  })
+})
+
 describe('countBursts', () => {
   it('membuka burst baru saat jeda mencapai debounce', () => {
     expect(countBursts([new Date(0), new Date(4_999), new Date(9_998)], 5000, 25000)).toBe(1)
@@ -135,6 +187,32 @@ describe('countBursts', () => {
   it('membuka burst baru saat batas maxWait sejak pesan pertama terlampaui', () => {
     const everyFourSeconds = [0, 4_000, 8_000, 12_000, 16_000, 20_000, 24_000, 28_000].map((t) => new Date(t))
     expect(countBursts(everyFourSeconds, 5000, 25000)).toBe(2)
+  })
+})
+
+describe('degradedReason', () => {
+  const healthy = [
+    { label: 'Pesan diterima', detail: 'Memeriksa apakah pesan mengandung kata kunci eskalasi.' },
+    { label: 'Mengklasifikasi topik', detail: 'Topik terdeteksi: "price".' },
+  ]
+
+  it('null untuk giliran yang sehat', () => {
+    expect(degradedReason(healthy)).toBeNull()
+  })
+
+  it('menandai classifier yang jatuh ke regex karena LLM gagal/timeout (replay tahap 1 #3)', () => {
+    const steps = [...healthy, { label: 'Mengklasifikasi topik', detail: 'Topik terdeteksi: "price" (fallback regex -- model LLM gagal/timeout).' }]
+    expect(degradedReason(steps)).toBe('Mengklasifikasi topik: LLM gagal/timeout')
+  })
+
+  it.each(FALLBACK_STEP_LABELS)('menandai jalur cadangan "%s"', (label) => {
+    expect(degradedReason([...healthy, { label, detail: 'tetap dijawab dengan pesan cadangan' }])).toBe(label)
+  })
+
+  it('setiap label dan pola yang dicari benar-benar ada di orchestrator.ts', () => {
+    const source = readFileSync(path.join(__dirname, '..', 'orchestrator.ts'), 'utf8')
+    for (const label of FALLBACK_STEP_LABELS) expect(source).toContain(`'${label}'`)
+    expect(source.match(new RegExp(LLM_FALLBACK_DETAIL.source, 'gi'))?.length ?? 0).toBeGreaterThanOrEqual(5)
   })
 })
 
@@ -151,10 +229,11 @@ describe('seededShuffle', () => {
 describe('sweepReplayRows', () => {
   it('menghapus Message, lalu Conversation, lalu Contact, semuanya dibatasi prefix replay-', async () => {
     const calls: string[] = []
-    const record = (name: string) => vi.fn(async () => {
-      calls.push(name)
-      return { count: 0 }
-    })
+    const record = (name: string) =>
+      vi.fn(async () => {
+        calls.push(name)
+        return { count: 0 }
+      })
     const client = {
       message: { deleteMany: record('message') },
       conversation: { deleteMany: record('conversation') },

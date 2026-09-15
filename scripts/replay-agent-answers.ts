@@ -5,29 +5,33 @@
  * knowledge atau alur. Aturan pemilihan pasangan ada di src/lib/bot/eval/replay-pairs.ts.
  *
  * Dijalankan BERTAHAP atas permintaan operator (2026-09-15): batch kecil dulu, ditinjau, baru
- * dinaikkan. `--offset` melanjutkan urutan acak yang sama (seed tetap), sehingga pasangan yang
- * sudah ditinjau tidak terulang:
- *   tahap 1: --offset 0  --limit 10
- *   tahap 2: --offset 10 --limit 50
+ * dinaikkan. Pasangan yang sudah ditinjau dikecualikan lewat `--exclude` (id percakapan, dipisah
+ * koma) -- bukan lewat offset, karena setiap perubahan aturan pemilihan mengubah urutan acaknya:
+ *   tahap 1: --limit 10
+ *   tahap 2: --limit 50 --exclude <10 id tahap 1>
  *
  * Harus dijalankan DI VPS. Di laptop, gerbang deployment tertutup (catalog/deployment-approval.json
  * hanya ada di VPS) dan setiap giliran jatuh ke handoff yang tidak berkata apa pun tentang
  * produksi. Skrip berhenti dengan kode 3 kalau gerbang tertutup, sama seperti run-eval.ts.
  *
  * Tulisan ke database, dan hanya ini:
- *  - satu Contact + Conversation sekali pakai per pasangan (telepon `replay-...`, isTest=true,
- *    botEnabled=false), disapu begitu pasangannya selesai dan juga di awal run. isTest mematikan
+ *  - satu Contact + Conversation sekali pakai per percobaan (telepon `replay-...`, isTest=true,
+ *    botEnabled=false), disapu begitu percobaannya selesai dan juga di awal run. isTest mematikan
  *    lookup booking (ensureFreshBookingData), sehingga booking yang dibuat pelanggan SESUDAH
  *    pertanyaan itu tidak bocor ke jawaban replay.
  *  - decideAndRespond dijalankan dengan `options.draft`: tripBrief tidak ditulis, dan gap knowledge
  *    dikumpulkan di memori (ikut dilaporkan) alih-alih ditulis ke KnowledgeGapLog.
  * Tidak ada Message yang dibuat, dan sendMessage tidak diimpor: tidak ada yang terkirim ke siapa pun.
  *
+ * Giliran yang jatuh ke jalur cadangan (classifier LLM timeout, jawaban kosong -- lihat
+ * degradedReason) diulang sekali. Kalau masih jatuh, barisnya ditandai `degraded` dan tidak boleh
+ * dinilai: ia mengukur gangguan, bukan knowledge.
+ *
  * Keluaran: satu baris JSON per pasangan ke stdout, ringkasan ke stderr. stdout berisi teks
  * pelanggan -- simpan di luar repo. Teks pelanggan dikirim ke model di Settings.ollamaModel, sama
  * seperti giliran bot produksi.
  *
- * Kode keluar: 0 selesai, 1 ada pasangan yang gagal atau batch kosong, 3 gerbang tertutup.
+ * Kode keluar: 0 selesai, 1 ada percobaan yang melempar atau batch kosong, 3 gerbang tertutup.
  */
 import { config } from 'dotenv'
 import type { BotDecision } from '@/lib/bot/types'
@@ -39,13 +43,22 @@ config({ quiet: true })
 
 const EXIT_GATE_CLOSED = 3
 const SAMPLE_SEED = 20260915
+const MAX_ATTEMPTS = 2
 
-function readFlag(name: string, fallback: number): number {
+function readNumberFlag(name: string, fallback: number): number {
   const index = process.argv.indexOf(`--${name}`)
   if (index === -1) return fallback
   const value = Number(process.argv[index + 1])
   if (!Number.isInteger(value) || value < 0) throw new Error(`--${name} harus bilangan bulat >= 0`)
   return value
+}
+
+function readListFlag(name: string): Set<string> {
+  const index = process.argv.indexOf(`--${name}`)
+  if (index === -1) return new Set()
+  const raw = process.argv[index + 1]
+  if (!raw || raw.startsWith('--')) throw new Error(`--${name} butuh daftar id dipisah koma`)
+  return new Set(raw.split(',').map((id) => id.trim()).filter(Boolean))
 }
 
 function decisionSummary(decision: BotDecision | null) {
@@ -62,8 +75,9 @@ function decisionSummary(decision: BotDecision | null) {
 }
 
 async function main(): Promise<void> {
-  const offset = readFlag('offset', 0)
-  const limit = readFlag('limit', 10)
+  const offset = readNumberFlag('offset', 0)
+  const limit = readNumberFlag('limit', 10)
+  const exclude = readListFlag('exclude')
 
   // Dynamic import: modul-modul ini membaca env saat dimuat, jadi harus sesudah dotenv.
   const { checkDeploymentGate } = await import('@/lib/bot/deployment-gate')
@@ -106,36 +120,48 @@ async function main(): Promise<void> {
       where: { isTest: false },
       select: {
         id: true,
+        bookingData: true,
         contact: { select: { phone: true } },
         messages: { select: { id: true, sentBy: true, type: true, content: true, createdAt: true } },
       },
     })
 
     const skipped: Record<string, number> = {}
+    const skip = (reason: string) => {
+      skipped[reason] = (skipped[reason] ?? 0) + 1
+    }
     const eligible: OpeningPair[] = []
     for (const conversation of conversations) {
-      // Audiens bot: nomor non-Indonesia (Settings.skipBotForIndonesianNumbers).
-      if (isIndonesianNumber(conversation.contact.phone)) {
-        skipped.nomor_indonesia = (skipped.nomor_indonesia ?? 0) + 1
+      if (exclude.has(conversation.id)) {
+        skip('sudah_ditinjau')
         continue
       }
-      const result = pairs.buildOpeningPair(conversation.id, conversation.messages, {
-        broadcastContents,
-        burstDebounceMs: BURST_DEBOUNCE_MS,
-        burstMaxWaitMs: BURST_MAX_WAIT_MS,
-      })
+      // Audiens bot: nomor non-Indonesia (Settings.skipBotForIndonesianNumbers).
+      if (isIndonesianNumber(conversation.contact.phone)) {
+        skip('nomor_indonesia')
+        continue
+      }
+      const booking = conversation.bookingData as { booking_date?: unknown } | null
+      const result = pairs.buildOpeningPair(
+        conversation.id,
+        conversation.messages,
+        { broadcastContents, burstDebounceMs: BURST_DEBOUNCE_MS, burstMaxWaitMs: BURST_MAX_WAIT_MS },
+        pairs.parseBookingDay(booking?.booking_date)
+      )
       if (result.ok) eligible.push(result.pair)
-      else skipped[result.reason] = (skipped[result.reason] ?? 0) + 1
+      else skip(result.reason)
     }
 
     // Diurutkan dulu supaya urutan acak tidak bergantung pada urutan baris dari Postgres.
     eligible.sort((a, b) => a.askedAt.getTime() - b.askedAt.getTime() || a.conversationId.localeCompare(b.conversationId))
     const batch = pairs.seededShuffle(eligible, SAMPLE_SEED).slice(offset, offset + limit)
 
+    const unmatchedExcludes = [...exclude].filter((id) => !conversations.some((c) => c.id === id))
     console.error(`Percakapan non-test: ${conversations.length}`)
     for (const [reason, count] of Object.entries(skipped).sort((a, b) => b[1] - a[1])) {
       console.error(`  dilewati ${reason.padEnd(44)} ${count}`)
     }
+    if (unmatchedExcludes.length > 0) console.error(`  PERINGATAN: ${unmatchedExcludes.length} id --exclude tidak ditemukan`)
     console.error(`Pasangan pembuka memenuhi syarat: ${eligible.length}`)
     console.error(`Batch (seed ${SAMPLE_SEED}): urutan ${offset}..${offset + batch.length - 1} (${batch.length} pasangan)\n`)
 
@@ -149,31 +175,46 @@ async function main(): Promise<void> {
 
     const modeCounts: Record<string, number> = {}
     let failures = 0
+    let degradedCount = 0
     for (const [position, pair] of batch.entries()) {
       const startedAt = Date.now()
-      const knowledgeGaps: PendingKnowledgeGap[] = []
       let decision: BotDecision | null = null
+      let knowledgeGaps: PendingKnowledgeGap[] = []
       let error: string | null = null
-      try {
-        const contact = await prisma.contact.create({
-          data: { phone: `${pairs.REPLAY_PHONE_PREFIX}${pair.conversationId}`, name: 'replay' },
-        })
-        const conversation = await prisma.conversation.create({
-          data: { contactId: contact.id, isTest: true, botEnabled: false, tripBrief: {} },
-        })
-        decision = await decideAndRespond(conversation.id, pair.customerText, undefined, {
-          draft: { historyBefore: new Date(), knowledgeGaps },
-        })
-      } catch (caught) {
-        error = caught instanceof Error ? caught.message : String(caught)
-        failures++
-      } finally {
-        await pairs.sweepReplayRows(prisma)
+      let degraded: string | null = null
+      let attempts = 0
+
+      while (attempts < MAX_ATTEMPTS) {
+        attempts++
+        decision = null
+        error = null
+        knowledgeGaps = []
+        try {
+          const contact = await prisma.contact.create({
+            data: { phone: `${pairs.REPLAY_PHONE_PREFIX}${pair.conversationId}`, name: 'replay' },
+          })
+          const conversation = await prisma.conversation.create({
+            data: { contactId: contact.id, isTest: true, botEnabled: false, tripBrief: {} },
+          })
+          decision = await decideAndRespond(conversation.id, pair.customerText, undefined, {
+            draft: { historyBefore: new Date(), knowledgeGaps },
+          })
+        } catch (caught) {
+          error = caught instanceof Error ? caught.message : String(caught)
+        } finally {
+          await pairs.sweepReplayRows(prisma)
+        }
+        degraded = error ? null : pairs.degradedReason(decision?.steps ?? [])
+        if (!error && !degraded) break
       }
 
-      const mode = decision?.mode ?? 'gagal'
+      if (error) failures++
+      if (degraded) degradedCount++
+      const mode = error ? 'gagal' : degraded ? 'degraded' : (decision?.mode ?? 'gagal')
       modeCounts[mode] = (modeCounts[mode] ?? 0) + 1
-      console.error(`[${offset + position}] ${mode.padEnd(16)} ${Math.round((Date.now() - startedAt) / 1000)}s  ${pair.conversationId}`)
+      console.error(
+        `[${offset + position}] ${mode.padEnd(16)} ${Math.round((Date.now() - startedAt) / 1000)}s  percobaan ${attempts}  ${pair.conversationId}`
+      )
       console.log(
         JSON.stringify({
           urutan: offset + position,
@@ -184,16 +225,19 @@ async function main(): Promise<void> {
           admin: pair.adminText,
           adminMediaCount: pair.adminMediaCount,
           bot: { reply: replyFromDecision(decision), ...decisionSummary(decision), knowledgeGaps },
+          attempts,
+          degraded,
           error,
           latencyMs: Date.now() - startedAt,
         })
       )
     }
 
-    console.error('\nMode jawaban bot:')
+    console.error('\nHasil (degraded dan gagal tidak boleh dinilai):')
     for (const [mode, count] of Object.entries(modeCounts).sort((a, b) => b[1] - a[1])) {
       console.error(`  ${mode.padEnd(16)} ${count}`)
     }
+    if (degradedCount > 0) console.error(`${degradedCount} pasangan tetap degraded setelah ${MAX_ATTEMPTS} percobaan.`)
     if (failures > 0) {
       console.error(`${failures} pasangan gagal dijalankan (lihat kolom error).`)
       process.exitCode = 1
