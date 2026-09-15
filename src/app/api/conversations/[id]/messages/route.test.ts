@@ -143,4 +143,21 @@ describe('GET /api/conversations/[id]/messages', () => {
 
     expect(mockPrisma.messageDraft.findMany).toHaveBeenCalledTimes(1)
   })
+
+  it('draftsForConversation gagal -> tetap 200 dengan pesan, draft null dan fromDraft false', async () => {
+    mockPrisma.message.findMany.mockResolvedValue([
+      { id: 'm1', direction: 'INBOUND', content: 'Halo', channel: 'OFFICIAL', sentBy: 'CUSTOMER', deliveryStatus: 'DELIVERED', createdAt: new Date(), botTrace: null },
+    ] as never)
+    mockPrisma.knowledgeGapLog.findMany.mockResolvedValue([] as never)
+    mockPrisma.messageDraft.findMany.mockRejectedValue(new Error('db down'))
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    const res = await GET(new Request('http://localhost/api/conversations/conv_1/messages'), { params: Promise.resolve({ id: 'conv_1' }) })
+    const body = await res.json()
+
+    expect(res.status).toBe(200)
+    expect(body[0].content).toBe('Halo')
+    expect(body[0].draft).toBeNull()
+    expect(body[0].fromDraft).toBe(false)
+  })
 })

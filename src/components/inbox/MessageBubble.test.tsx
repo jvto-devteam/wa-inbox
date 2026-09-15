@@ -847,6 +847,16 @@ describe('MessageBubble — draft jawaban bot', () => {
     expect(screen.queryByRole('button', { name: 'Generate draft' })).not.toBeInTheDocument()
   })
 
+  it('tidak menampilkan tombol Generate draft pada pesan gambar BERKAPTION (ada teks tapi type bukan text)', () => {
+    render(
+      <MessageBubble
+        message={{ ...inboundText, type: 'image', mediaUrl: '/api/media/m_in' }}
+        conversationId="conv_1"
+      />
+    )
+    expect(screen.queryByRole('button', { name: 'Generate draft' })).not.toBeInTheDocument()
+  })
+
   it('tidak menampilkan tombol Generate draft kalau draft sudah ada', () => {
     render(<MessageBubble message={{ ...inboundText, draft: draftView }} conversationId="conv_1" />)
     expect(screen.queryByRole('button', { name: 'Generate draft' })).not.toBeInTheDocument()

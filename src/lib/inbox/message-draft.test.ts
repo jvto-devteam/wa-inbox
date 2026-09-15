@@ -31,6 +31,7 @@ const sourceMessage = {
   id: MESSAGE_ID,
   conversationId: CONVERSATION_ID,
   direction: 'INBOUND' as const,
+  type: 'text',
   content: 'Berapa harga paket Ijen 2D1N?',
   createdAt: new Date('2026-09-14T08:00:00.000Z'),
 }
@@ -126,6 +127,16 @@ describe('generateDraft', () => {
 
   it('pesan bukan teks/bukan inbound -> 400', async () => {
     mockPrisma.message.findUnique.mockResolvedValue({ ...sourceMessage, direction: 'OUTBOUND' } as never)
+
+    await expect(generateDraft({ conversationId: CONVERSATION_ID, messageId: MESSAGE_ID, accountId: ACCOUNT_ID })).rejects.toMatchObject({
+      status: 400,
+      message: 'Draft hanya bisa dibuat untuk pesan teks dari pelanggan',
+    })
+    expect(decideAndRespond).not.toHaveBeenCalled()
+  })
+
+  it('pesan gambar berkaption (type image, content terisi) -> 400, bukan diperlakukan sebagai teks', async () => {
+    mockPrisma.message.findUnique.mockResolvedValue({ ...sourceMessage, type: 'image', content: 'Ini paketnya kan?' } as never)
 
     await expect(generateDraft({ conversationId: CONVERSATION_ID, messageId: MESSAGE_ID, accountId: ACCOUNT_ID })).rejects.toMatchObject({
       status: 400,
@@ -275,11 +286,18 @@ describe('sendDraft', () => {
     expect(attachMessageToDecisionRun).toHaveBeenCalledWith('run_1', 'msg_sent')
   })
 
-  it('mengklaim draft sebelum mengirim (sentAt/sentById) lewat updateMany dengan penjaga sentAt: null', async () => {
+  it('mengklaim draft sebelum mengirim (sentAt/sentById) lewat updateMany dengan penjaga sentAt: null DAN updatedAt yang dibaca', async () => {
+    const row = draftRow()
+    mockPrisma.messageDraft.findUnique.mockResolvedValue(row as never)
+
     await sendDraft({ conversationId: CONVERSATION_ID, messageId: MESSAGE_ID, accountId: ACCOUNT_ID })
 
+    // `updatedAt: row.updatedAt` di where-clause -- bukan cuma `sentAt: null` -- supaya sebuah
+    // generate/edit yang menyelip di antara pembacaan draft dan klaim ini (mengubah `text`,
+    // yang membuat Prisma membumbui `updatedAt` baru) membuat klaim gagal alih-alih diam-diam
+    // mengirim teks lama sementara baris di DB sudah menunjukkan teks baru.
     expect(mockPrisma.messageDraft.updateMany).toHaveBeenCalledWith({
-      where: { id: 'draft_1', sentAt: null },
+      where: { id: 'draft_1', sentAt: null, updatedAt: row.updatedAt },
       data: { sentAt: expect.any(Date), sentById: ACCOUNT_ID },
     })
   })
@@ -370,8 +388,26 @@ describe('sendDraft', () => {
     expect(sendMessage).not.toHaveBeenCalled()
   })
 
-  it('kirim kedua kali -> 409 (klaim balapan gagal)', async () => {
+  it('klaim gagal (updateMany count 0) tapi baris masih belum terkirim -> 409 "berubah", bukan "terkunci" (pembacaan basi antara read dan klaim)', async () => {
+    // `findUnique` awal (di `loadDraftOrThrow`) melihat draft belum terkirim, tapi antara
+    // pembacaan itu dan klaim `updateMany` sebuah generate/edit lain sempat lewat -- ditandai
+    // di sini oleh `updateMany` gagal (count 0) padahal baris yang dibaca ulang TETAP
+    // `sentAt: null`. Ini BUKAN kasus "sudah terkirim", jadi pesannya harus beda.
     mockPrisma.messageDraft.updateMany.mockResolvedValue({ count: 0 } as never)
+    mockPrisma.messageDraft.findUnique.mockResolvedValueOnce(draftRow() as never).mockResolvedValueOnce(draftRow() as never)
+
+    await expect(sendDraft({ conversationId: CONVERSATION_ID, messageId: MESSAGE_ID, accountId: ACCOUNT_ID })).rejects.toMatchObject({
+      status: 409,
+      message: 'Draft baru saja berubah, muat ulang lalu kirim lagi',
+    })
+    expect(sendMessage).not.toHaveBeenCalled()
+  })
+
+  it('klaim gagal (updateMany count 0) dan baris ternyata sudah terkirim -> tetap 409 "terkunci"', async () => {
+    mockPrisma.messageDraft.updateMany.mockResolvedValue({ count: 0 } as never)
+    mockPrisma.messageDraft.findUnique
+      .mockResolvedValueOnce(draftRow() as never)
+      .mockResolvedValueOnce(draftRow({ sentAt: new Date(), sentById: ACCOUNT_ID }) as never)
 
     await expect(sendDraft({ conversationId: CONVERSATION_ID, messageId: MESSAGE_ID, accountId: ACCOUNT_ID })).rejects.toMatchObject({
       status: 409,
@@ -399,5 +435,15 @@ describe('sendDraft', () => {
       data: { sentAt: null, sentById: null },
     })
     expect(recordUnsourcedReplyGap).not.toHaveBeenCalled()
+  })
+
+  it('sendMessage melempar DAN rollback klaim ikut melempar -> error ASLI (sendMessage) yang dilempar, bukan error rollback', async () => {
+    vi.mocked(sendMessage).mockRejectedValue(new Error('provider down'))
+    mockPrisma.messageDraft.update.mockRejectedValue(new Error('rollback db down'))
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    await expect(sendDraft({ conversationId: CONVERSATION_ID, messageId: MESSAGE_ID, accountId: ACCOUNT_ID })).rejects.toThrow('provider down')
+
+    expect(errorSpy).toHaveBeenCalled()
   })
 })

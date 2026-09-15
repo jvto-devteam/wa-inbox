@@ -441,8 +441,14 @@ export function MessageBubble({
   const canCheckTopic = !isOutbound && !topicLabels && Boolean(conversationId && message.content?.trim())
   const canCopyBotReply = isBotMessage && Boolean(message.content?.trim())
   const knowledgeGap = showsBotReasoning ? message.knowledgeGap : null
+  // `type` hilang di fixture lama berarti pesan teks biasa (lihat catatan opsional di
+  // MessageView di atas) -- tapi kalau ADA dan bukan 'text' (gambar/video/dokumen berkaption,
+  // yang tetap punya `content`), tombol tetap disembunyikan. Bot produksi hanya pernah
+  // menjawab `type === 'text'` (src/lib/inbound.ts), jadi draft tidak boleh berpura-pura bisa
+  // menjawab sesuatu yang bot sungguhan tidak pernah diminta menjawab.
+  const isTextMessage = message.type === undefined || message.type === 'text'
   const canGenerateDraft =
-    !isOutbound && Boolean(message.content?.trim()) && Boolean(conversationId) && !message.draft
+    !isOutbound && isTextMessage && Boolean(message.content?.trim()) && Boolean(conversationId) && !message.draft
   const bubble = (
     <div
       className={cn(

@@ -28,6 +28,7 @@ const SOURCE_NOT_TEXT = 'Draft hanya bisa dibuat untuk pesan teks dari pelanggan
 const DRAFT_NOT_FOUND = 'Draft belum dibuat'
 const DRAFT_LOCKED = 'Draft sudah terkirim dan terkunci'
 const DRAFT_EMPTY = 'Draft kosong, tulis jawabannya dulu'
+const DRAFT_STALE = 'Draft baru saja berubah, muat ulang lalu kirim lagi'
 
 export class DraftError extends Error {
   constructor(
@@ -79,7 +80,14 @@ function readPendingKnowledgeGaps(value: Prisma.JsonValue | null): PendingKnowle
 async function loadSourceMessage(conversationId: string, messageId: string): Promise<Message> {
   const message = await prisma.message.findUnique({ where: { id: messageId } })
   if (!message || message.conversationId !== conversationId) throw new DraftError(404, SOURCE_NOT_FOUND)
-  if (message.direction !== 'INBOUND' || !message.content?.trim()) throw new DraftError(400, SOURCE_NOT_TEXT)
+  // `type !== 'text'` juga ditolak di sini, bukan hanya `!content` -- gambar/video/dokumen
+  // berkaption punya `content` terisi (Meta mengirim caption sebagai content), tapi bot
+  // sungguhan tidak pernah menjawabnya (lihat inbound.ts: hanya `type === 'text'` yang lewat
+  // gerbang bot). Membiarkan draft dibuat untuk pesan macam ini akan menjawab sesuatu yang
+  // bot produksi tidak pernah benar-benar diminta menjawab.
+  if (message.direction !== 'INBOUND' || message.type !== 'text' || !message.content?.trim()) {
+    throw new DraftError(400, SOURCE_NOT_TEXT)
+  }
   return message
 }
 
@@ -238,12 +246,27 @@ export async function sendDraft(input: {
   // Klaim DULU, sebelum memanggil sendMessage: dua tekan "kirim" yang bersamaan tidak boleh
   // berdua-duanya lolos ke pelanggan. Pemenangnya ditentukan di sini oleh `sentAt: null`,
   // bukan oleh pembacaan `loadDraftOrThrow` di atas yang sudah basi begitu ada jeda I/O.
+  //
+  // `updatedAt: draft.updatedAt` di where-clause -- bukan cuma `sentAt: null` -- menutup
+  // celah yang lebih halus: sebuah generate-ulang/edit yang menyelip TEPAT di antara
+  // `loadDraftOrThrow` di atas dan klaim ini mengubah `text` (dan Prisma membumbui `updatedAt`
+  // baru lewat `@updatedAt`) tanpa mengubah `sentAt`. Tanpa penjaga ini klaim tetap lolos dan
+  // `text`/`decision`/dll yang dipakai di bawah adalah versi BASI -- pelanggan menerima jawaban
+  // lama sementara baris di DB sudah menunjukkan draft yang baru.
   const sentAt = new Date()
   const claimed = await prisma.messageDraft.updateMany({
-    where: { id: draft.id, sentAt: null },
+    where: { id: draft.id, sentAt: null, updatedAt: draft.updatedAt },
     data: { sentAt, sentById: input.accountId },
   })
-  if (claimed.count === 0) throw new DraftError(409, DRAFT_LOCKED)
+  if (claimed.count === 0) {
+    // Klaim gagal karena salah satu dari dua hal, dan keduanya butuh pesan berbeda: draft
+    // sudah keburu terkirim (lewat request lain) -> tetap "terkunci"; atau draft masih belum
+    // terkirim tapi `updatedAt`-nya sudah berubah (edit/regenerate menyelip) -> "berubah",
+    // bukan "terkunci", supaya agen tahu harus muat ulang teksnya, bukan menganggap orang lain
+    // sudah mengirimkannya.
+    const fresh = await prisma.messageDraft.findUnique({ where: { id: draft.id } })
+    throw new DraftError(409, fresh?.sentAt ? DRAFT_LOCKED : DRAFT_STALE)
+  }
 
   let sent: Awaited<ReturnType<typeof sendMessage>>
   try {
@@ -259,7 +282,20 @@ export async function sendDraft(input: {
     // Klaim di atas sudah menulis sentAt -- sebuah pengiriman yang gagal TOTAL (melempar,
     // bukan sekadar deliveryStatus FAILED) harus mengembalikannya supaya agen bisa mencoba
     // lagi, bukan menemukan draft "terkirim" yang sebenarnya tidak pernah keluar.
-    await prisma.messageDraft.update({ where: { id: draft.id }, data: { sentAt: null, sentById: null } })
+    //
+    // Rollback ini sendiri bisa gagal (DB berkedip lagi tepat di titik ini) -- kalau dibiarkan
+    // melempar, error ASLI dari `sendMessage` (alasan sebenarnya kenapa pengiriman gagal)
+    // tertutup oleh error rollback, dan draft tertinggal terkunci (sentAt masih terisi) tanpa
+    // agen pernah tahu kenapa. Log-dan-lanjut di sini, lalu tetap lempar error ASLI supaya
+    // pemanggil melihat sebab kegagalan yang sebenarnya.
+    try {
+      await prisma.messageDraft.update({ where: { id: draft.id }, data: { sentAt: null, sentById: null } })
+    } catch (rollbackError) {
+      console.error('sendDraft: gagal mengembalikan klaim draft setelah sendMessage gagal', {
+        conversationId: input.conversationId,
+        error: rollbackError,
+      })
+    }
     throw error
   }
 

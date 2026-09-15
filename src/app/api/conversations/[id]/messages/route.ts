@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { serializeMessage, type MessageKnowledgeGap } from '@/lib/serialize-message'
 import { draftsForConversation } from '@/lib/inbox/message-draft'
+import type { MessageDraftView } from '@/lib/inbox/message-draft-view'
 
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
@@ -28,7 +29,18 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
         },
       })
     : []
-  const { bySourceMessageId, sentMessageIds } = await draftsForConversation(id)
+  // Draft adalah lapisan tambahan di atas daftar pesan -- kalau tabelnya bermasalah
+  // (mis. migrasi belum jalan, DB berkedip), seluruh thread tidak boleh ikut 500. Pesan
+  // tetap tampil tanpa draft/status "terkirim dari draft" daripada mengembalikan error.
+  let bySourceMessageId = new Map<string, MessageDraftView>()
+  let sentMessageIds = new Set<string>()
+  try {
+    const drafts = await draftsForConversation(id)
+    bySourceMessageId = drafts.bySourceMessageId
+    sentMessageIds = drafts.sentMessageIds
+  } catch (error) {
+    console.error('GET /api/conversations/[id]/messages: gagal memuat draft, menampilkan pesan tanpa draft', { conversationId: id, error })
+  }
 
   const gapsByMessageId = new Map<string, MessageKnowledgeGap>()
   for (const gap of gaps) {
