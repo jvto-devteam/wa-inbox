@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { serializeMessage, type MessageKnowledgeGap } from '@/lib/serialize-message'
+import { draftsForConversation } from '@/lib/inbox/message-draft'
 
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
@@ -27,6 +28,8 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
         },
       })
     : []
+  const { bySourceMessageId, sentMessageIds } = await draftsForConversation(id)
+
   const gapsByMessageId = new Map<string, MessageKnowledgeGap>()
   for (const gap of gaps) {
     if (!gap.messageId || gapsByMessageId.has(gap.messageId)) continue
@@ -42,5 +45,12 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     })
   }
 
-  return NextResponse.json(messages.map((message) => serializeMessage(message, gapsByMessageId.get(message.id) ?? null)))
+  return NextResponse.json(
+    messages.map((message) =>
+      serializeMessage(message, gapsByMessageId.get(message.id) ?? null, {
+        draft: bySourceMessageId.get(message.id) ?? null,
+        fromDraft: sentMessageIds.has(message.id),
+      })
+    )
+  )
 }

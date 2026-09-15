@@ -1,6 +1,7 @@
 import type { Message } from '@prisma/client'
 import type { SentTemplatePayload } from '@/lib/meta/carousel-types'
 import { readTopicLabels, type TopicLabels } from '@/lib/inbox/topic-labels-schema'
+import type { MessageDraftView } from '@/lib/inbox/message-draft-view'
 
 export type ReplyToView = { id: string; content: string | null; type: string; sentBy: string }
 export type MessageKnowledgeGap = {
@@ -31,6 +32,8 @@ export type MessageView = {
   knowledgeGap: MessageKnowledgeGap | null
   replyTo: ReplyToView | null
   templatePayload: SentTemplatePayload | null
+  draft: MessageDraftView | null
+  fromDraft: boolean
 }
 
 /**
@@ -42,7 +45,8 @@ export type MessageView = {
  */
 export function serializeMessage(
   m: Message & { replyTo?: Message | null },
-  knowledgeGap: MessageKnowledgeGap | null = null
+  knowledgeGap: MessageKnowledgeGap | null = null,
+  extras: { draft?: MessageDraftView | null; fromDraft?: boolean } = {}
 ): MessageView {
   return {
     id: m.id,
@@ -61,6 +65,8 @@ export function serializeMessage(
     knowledgeGap,
     replyTo: m.replyTo ? { id: m.replyTo.id, content: m.replyTo.content, type: m.replyTo.type, sentBy: m.replyTo.sentBy } : null,
     templatePayload: (m.templatePayload as SentTemplatePayload | null) ?? null,
+    draft: extras.draft ?? null,
+    fromDraft: extras.fromDraft ?? false,
   }
 }
 
