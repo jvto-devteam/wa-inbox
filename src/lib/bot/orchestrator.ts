@@ -2401,7 +2401,10 @@ export async function decideAndRespond(
     // Task 17 (Ruling R54): the ONE attachment for this site -- right after knowledge assembly
     // finishes, not duplicated at each of this function's own `return`s below.
     turnKnowledge = {
-      catalogLines,
+      catalogLines: [
+        ...catalogLines,
+        ...(pickupScenario.forCustomer ? [pickupScenario.forCustomer] : []),
+      ],
       managedLines: decisionManagedLines(managed),
       rejected: managed.rejected,
       rejectedOmitted: managed.rejectedOmitted,

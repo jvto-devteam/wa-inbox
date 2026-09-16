@@ -1761,13 +1761,14 @@ describe('decideAndRespond', () => {
     })
 
     it('jemput setelah 12:00 -> Bromo dulu, paket yang mulai dari Ijen tetap ditawarkan dengan catatan urutan bisa dibalik', async () => {
-      await decideAndRespond('conv_1', 'We will arrive in Surabaya around 5 PM. We want Bromo and Ijen for 3 days, back to Surabaya.')
+      const result = await decideAndRespond('conv_1', 'We will arrive in Surabaya around 5 PM. We want Bromo and Ijen for 3 days, back to Surabaya.')
 
       const system = systemOf(llmCall(0)[1])
       expect(system).toContain('we recommend visiting Bromo first')
       expect(system).toContain('start with Ijen on day 1')
       expect(system).toContain('"3 Day Ijen, Bromo & Madakaripura Waterfall Discovery from Surabaya"')
       expect(system).toContain(PICKUP_ROUTE_ORDER_POLICY)
+      expect(result.knowledge?.catalogLines.some((line) => line.includes('recommend visiting Bromo first'))).toBe(true)
     })
 
     it('jemput sampai 12:00 -> Ijen dulu cocok, tanpa catatan membalik urutan', async () => {

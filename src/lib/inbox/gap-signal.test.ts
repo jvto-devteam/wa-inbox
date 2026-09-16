@@ -252,6 +252,35 @@ describe('knowledgeGapsForDecision', () => {
     expect(knowledgeGapsForDecision(decision, 'Can we join after we arrive around 5 PM instead of starting at noon?')).toEqual([])
   })
 
+  it('tidak menandai paragraf Bromo-first pickup-route sebagai unsourced saat attribution gagal', () => {
+    const draft = [
+      'Hi! Since you arrive at 5 PM, we recommend visiting Bromo first because Surabaya to Bondowoso (Ijen) takes 6–8 hours, and starting with Bromo allows more rest before the midnight Ijen hike. Here are the options:',
+      '- 3 Day Bromo, Madakaripura & Ijen Overland from Surabaya to Bali: from Rp2.450.000/person - https://javavolcano-touroperator.com/tours/from-surabaya/bromo-madakaripura-ijen-3d2n',
+    ].join('\n\n')
+    const decision = faq({
+      draft,
+      sourceTopic: 'price',
+      verification: {
+        status: 'PASSED',
+        attempts: 1,
+        fabricatedPrices: [],
+        unverifiedPrices: [],
+        wrongPaxTierPrices: [],
+        unknownUrls: [],
+        misdirectedUrls: [],
+        unsupportedClaims: [],
+        guaranteeViolations: [],
+      },
+      knowledge: knowledge({
+        catalogLines: ['Every package includes private transport, dedicated driver and guide.'],
+        managedLines: [],
+        attributions: [],
+      }),
+    })
+
+    expect(knowledgeGapsForDecision(decision, 'Can we join after we arrive around 5 PM instead of starting at noon?')).toEqual([])
+  })
+
   it('mengembalikan daftar kosong saat tidak ada gap sama sekali', () => {
     const attributions = [{ paragraph: 0, lines: [{ kind: 'managed' as const, line: 'ATV 1 jam: IDR 350000', sourceId: 'ks_1', title: 'FAQ Harga ATV', version: 2 }] }]
     expect(knowledgeGapsForDecision(faq({ knowledge: knowledge({ attributions }) }), 'berapa harga atv?')).toEqual([])

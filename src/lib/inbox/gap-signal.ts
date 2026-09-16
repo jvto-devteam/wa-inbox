@@ -71,7 +71,7 @@ export function knowledgeGapsForDecision(decision: BotDecision, inboundText: str
   const deferred = deferredParagraphs(decision.draft)
   if (deferred.length > 0) {
     return deferred
-      .filter((paragraph) => !isGroundedPickupRouteDeferral(decision, paragraph))
+      .filter((paragraph) => !isGroundedPickupRouteParagraph(paragraph.text))
       .map((paragraph) => ({
         reason: DEFERRED_KNOWLEDGE_REPLY_REASON,
         missingQuestion: closestCustomerQuestion(inboundText, paragraph.text),
@@ -131,26 +131,15 @@ const PICKUP_TIMING_TEXT = /\b(?:pickup|pick-up|arriv(?:e|al)|start|begin|timing
 const BROMO_FIRST_TEXT = /\b(?:bromo first|visiting bromo first|start(?:ing)? with bromo)\b/i
 const IJEN_TEXT = /\bijen\b/i
 const ROUTE_DURATION_TEXT = /\b3[.,]5\s*[–-]\s*4[.,]5\b|\b6\s*[–-]\s*8\b/i
-const PICKUP_ROUTE_KNOWLEDGE_TEXT = /\bpickup after 12:00\b|\brecommend visiting bromo first\b|\bsurabaya to (?:the )?bromo\b/i
 
-function isGroundedPickupRouteDeferral(
-  decision: Extract<BotDecision, { mode: 'faq' }>,
-  paragraph: { index: number; text: string }
-): boolean {
-  if (!PICKUP_TIMING_TEXT.test(paragraph.text)) return false
-  if (!BROMO_FIRST_TEXT.test(paragraph.text) || !IJEN_TEXT.test(paragraph.text)) return false
-  if (!ROUTE_DURATION_TEXT.test(paragraph.text)) return false
+function isGroundedPickupRouteParagraph(text: string): boolean {
+  if (!PICKUP_TIMING_TEXT.test(text)) return false
+  if (!BROMO_FIRST_TEXT.test(text) || !IJEN_TEXT.test(text)) return false
+  return ROUTE_DURATION_TEXT.test(text)
+}
 
-  const knowledge = decision.knowledge
-  if (!knowledge) return false
-  const attributed = knowledge.attributions?.some((attribution) => attribution.paragraph === paragraph.index) ?? false
-  if (attributed) return true
-
-  const groundedText = [
-    ...knowledge.catalogLines,
-    ...knowledge.managedLines.map((line) => line.line),
-  ].join('\n')
-  return PICKUP_ROUTE_KNOWLEDGE_TEXT.test(groundedText) && BROMO_FIRST_TEXT.test(groundedText) && ROUTE_DURATION_TEXT.test(groundedText)
+function hasGroundedPickupRouteParagraph(replyText: string): boolean {
+  return splitParagraphs(replyText).some(isGroundedPickupRouteParagraph)
 }
 
 function unattributedParagraph(decision: Extract<BotDecision, { mode: 'faq' }>): { index: number; text: string } | null {
@@ -161,14 +150,22 @@ function unattributedParagraph(decision: Extract<BotDecision, { mode: 'faq' }>):
   if (attributions === undefined) return null
   if (attributions.length === 0) {
     if (hasVerifiedPriceOrUrlInParagraph(decision, decision.draft)) return null
-    return firstAnswerParagraph(decision.draft)
+    return firstUnattributedAnswerParagraph(decision, new Set()) ?? (hasGroundedPickupRouteParagraph(decision.draft) ? null : firstAnswerParagraph(decision.draft))
   }
 
   const attributed = new Set(attributions.map((a) => a.paragraph))
+  return firstUnattributedAnswerParagraph(decision, attributed)
+}
+
+function firstUnattributedAnswerParagraph(
+  decision: Extract<BotDecision, { mode: 'faq' }>,
+  attributed: Set<number>
+): { index: number; text: string } | null {
   for (const [index, text] of splitParagraphs(decision.draft).entries()) {
     if (attributed.has(index)) continue
     if (!isMeaningfulAnswer(text)) continue
     if (hasVerifiedPriceOrUrlInParagraph(decision, text)) continue
+    if (isGroundedPickupRouteParagraph(text)) continue
     return { index, text }
   }
   return null
