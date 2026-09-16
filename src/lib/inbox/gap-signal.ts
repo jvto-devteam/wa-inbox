@@ -70,12 +70,14 @@ export function knowledgeGapsForDecision(decision: BotDecision, inboundText: str
 
   const deferred = deferredParagraphs(decision.draft)
   if (deferred.length > 0) {
-    return deferred.map((paragraph) => ({
-      reason: DEFERRED_KNOWLEDGE_REPLY_REASON,
-      missingQuestion: closestCustomerQuestion(inboundText, paragraph.text),
-      answerSnippet: paragraph.text,
-      answerParagraph: paragraph.index,
-    }))
+    return deferred
+      .filter((paragraph) => !isGroundedPickupRouteDeferral(decision, paragraph))
+      .map((paragraph) => ({
+        reason: DEFERRED_KNOWLEDGE_REPLY_REASON,
+        missingQuestion: closestCustomerQuestion(inboundText, paragraph.text),
+        answerSnippet: paragraph.text,
+        answerParagraph: paragraph.index,
+      }))
   }
 
   const unsourced = unattributedParagraph(decision)
@@ -123,6 +125,32 @@ function deferredParagraphs(replyText: string): Array<{ index: number; text: str
   return splitParagraphs(replyText)
     .map((text, index) => ({ index, text }))
     .filter(({ text }) => DEFERRED_KNOWLEDGE_PATTERNS.some((pattern) => pattern.test(text)))
+}
+
+const PICKUP_TIMING_TEXT = /\b(?:pickup|pick-up|arriv(?:e|al)|start|begin|timing)\b/i
+const BROMO_FIRST_TEXT = /\b(?:bromo first|visiting bromo first|start(?:ing)? with bromo)\b/i
+const IJEN_TEXT = /\bijen\b/i
+const ROUTE_DURATION_TEXT = /\b3[.,]5\s*[–-]\s*4[.,]5\b|\b6\s*[–-]\s*8\b/i
+const PICKUP_ROUTE_KNOWLEDGE_TEXT = /\bpickup after 12:00\b|\brecommend visiting bromo first\b|\bsurabaya to (?:the )?bromo\b/i
+
+function isGroundedPickupRouteDeferral(
+  decision: Extract<BotDecision, { mode: 'faq' }>,
+  paragraph: { index: number; text: string }
+): boolean {
+  if (!PICKUP_TIMING_TEXT.test(paragraph.text)) return false
+  if (!BROMO_FIRST_TEXT.test(paragraph.text) || !IJEN_TEXT.test(paragraph.text)) return false
+  if (!ROUTE_DURATION_TEXT.test(paragraph.text)) return false
+
+  const knowledge = decision.knowledge
+  if (!knowledge) return false
+  const attributed = knowledge.attributions?.some((attribution) => attribution.paragraph === paragraph.index) ?? false
+  if (attributed) return true
+
+  const groundedText = [
+    ...knowledge.catalogLines,
+    ...knowledge.managedLines.map((line) => line.line),
+  ].join('\n')
+  return PICKUP_ROUTE_KNOWLEDGE_TEXT.test(groundedText) && BROMO_FIRST_TEXT.test(groundedText) && ROUTE_DURATION_TEXT.test(groundedText)
 }
 
 function unattributedParagraph(decision: Extract<BotDecision, { mode: 'faq' }>): { index: number; text: string } | null {

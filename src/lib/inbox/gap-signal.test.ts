@@ -234,6 +234,24 @@ describe('knowledgeGapsForDecision', () => {
     expect(knowledgeGapsForDecision(faq({ draft }), 'How flexible is the pickup time?')).toHaveLength(1)
   })
 
+  it('tidak menandai gap untuk paragraf pickup sore yang sudah memuat rekomendasi Bromo-first berbasis durasi rute', () => {
+    const sourceLine =
+      'With pickup after 12:00, we recommend visiting Bromo first: Surabaya to the Bromo area takes about 3.5–4.5 hours, while Surabaya to Bondowoso (the base for Ijen) takes about 6-8 hours, so starting with Bromo leaves more time to rest before the midnight departure to Ijen.'
+    const draft =
+      'Hi! Let me check that 5 PM pickup timing with our team and get back to you shortly! Since you arrive late, we recommend visiting Bromo first because the drive is shorter (3.5–4.5 hours) than to Ijen (6–8 hours), allowing you more rest before the midnight Ijen hike.'
+    const decision = faq({
+      draft,
+      sourceTopic: 'route_endpoint',
+      knowledge: knowledge({
+        catalogLines: [sourceLine],
+        managedLines: [],
+        attributions: [{ paragraph: 0, lines: [{ kind: 'catalog', line: sourceLine }] }],
+      }),
+    })
+
+    expect(knowledgeGapsForDecision(decision, 'Can we join after we arrive around 5 PM instead of starting at noon?')).toEqual([])
+  })
+
   it('mengembalikan daftar kosong saat tidak ada gap sama sekali', () => {
     const attributions = [{ paragraph: 0, lines: [{ kind: 'managed' as const, line: 'ATV 1 jam: IDR 350000', sourceId: 'ks_1', title: 'FAQ Harga ATV', version: 2 }] }]
     expect(knowledgeGapsForDecision(faq({ knowledge: knowledge({ attributions }) }), 'berapa harga atv?')).toEqual([])
