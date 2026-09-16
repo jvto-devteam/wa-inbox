@@ -13,6 +13,7 @@ import { Prisma } from '@prisma/client'
 import type { Message, MessageDraft } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { decideAndRespond, type PendingKnowledgeGap } from '@/lib/bot/orchestrator'
+import { callLLM } from '@/lib/bot/llm'
 import { replyFromDecision } from '@/lib/bot-control/simulator'
 import { sanitizeTrace } from '@/lib/bot-control/trace-sanitizer'
 import { recordBotDecisionRun, attachMessageToDecisionRun } from '@/lib/bot-control/decision-recorder'
@@ -29,6 +30,9 @@ const DRAFT_NOT_FOUND = 'Draft belum dibuat'
 const DRAFT_LOCKED = 'Draft sudah terkirim dan terkunci'
 const DRAFT_EMPTY = 'Draft kosong, tulis jawabannya dulu'
 const DRAFT_STALE = 'Draft baru saja berubah, muat ulang lalu kirim lagi'
+const REVISION_PROMPT_EMPTY = 'Prompt revisi tidak boleh kosong'
+const REVISION_EMPTY = 'Model tidak menghasilkan revisi draft'
+const REVISION_CONTEXT_LIMIT = 12
 
 export class DraftError extends Error {
   constructor(
@@ -142,6 +146,56 @@ async function buildView(draft: MessageDraft, sourceContent: string): Promise<Me
   return toView(draft, sourceContent, names)
 }
 
+type DraftRevisionContextMessage = Pick<Message, 'direction' | 'sentBy' | 'content' | 'createdAt'>
+
+function speakerForContext(message: DraftRevisionContextMessage): string {
+  if (message.direction === 'INBOUND') return 'Pelanggan'
+  if (message.sentBy === 'BOT') return 'Bot'
+  if (message.sentBy === 'AGENT') return 'Agen'
+  return 'JVTO'
+}
+
+function buildRevisionSystemPrompt(input: {
+  contextMessages: DraftRevisionContextMessage[]
+  sourceContent: string
+  currentDraft: string
+}): string {
+  const context =
+    input.contextMessages.length > 0
+      ? input.contextMessages
+          .map((message) => {
+            const time = message.createdAt.toISOString()
+            const text = (message.content ?? '').replace(/\s+/g, ' ').trim()
+            return `- ${time} ${speakerForContext(message)}: ${text}`
+          })
+          .join('\n')
+      : '- Tidak ada riwayat percakapan sebelumnya.'
+
+  return [
+    'Anda membantu agen JVTO merevisi draft balasan WhatsApp.',
+    'Ikuti instruksi revisi dari agen, tetapi jangan mengarang fakta baru di luar konteks percakapan dan draft saat ini.',
+    'Pertahankan bahasa yang natural untuk pelanggan, singkat bila instruksi agen meminta singkat.',
+    'Balas hanya dengan teks draft final yang sudah direvisi, tanpa penjelasan, tanpa markdown pembungkus.',
+    '',
+    'Konteks percakapan:',
+    context,
+    '',
+    `Pesan pelanggan yang sedang dijawab:\n${input.sourceContent}`,
+    '',
+    `Draft saat ini:\n${input.currentDraft}`,
+  ].join('\n')
+}
+
+async function loadRevisionContext(conversationId: string, source: Message): Promise<DraftRevisionContextMessage[]> {
+  const messages = await prisma.message.findMany({
+    where: { conversationId, content: { not: null }, createdAt: { lte: source.createdAt } },
+    orderBy: { createdAt: 'desc' },
+    take: REVISION_CONTEXT_LIMIT,
+    select: { direction: true, sentBy: true, content: true, createdAt: true },
+  })
+  return [...messages].reverse()
+}
+
 export async function generateDraft(input: { conversationId: string; messageId: string; accountId: string }): Promise<MessageDraftView> {
   const source = await loadSourceMessage(input.conversationId, input.messageId)
   const sourceContent = source.content ?? ''
@@ -225,6 +279,42 @@ export async function editDraft(input: {
   const claimed = await prisma.messageDraft.updateMany({
     where: { id: draft.id, sentAt: null },
     data: { text: input.text, editedAt: isEdited ? new Date() : null, editedById: isEdited ? input.accountId : null },
+  })
+  if (claimed.count === 0) throw new DraftError(409, DRAFT_LOCKED)
+
+  const fresh = await prisma.messageDraft.findUniqueOrThrow({ where: { id: draft.id } })
+  return buildView(fresh, source.content ?? '')
+}
+
+export async function reviseDraftWithPrompt(input: {
+  conversationId: string
+  messageId: string
+  accountId: string
+  prompt: string
+}): Promise<MessageDraftView> {
+  const revisionPrompt = input.prompt.trim()
+  if (!revisionPrompt) throw new DraftError(400, REVISION_PROMPT_EMPTY)
+
+  const source = await loadSourceMessage(input.conversationId, input.messageId)
+  const draft = await loadDraftOrThrow(source.id)
+  const currentDraft = (draft.text ?? '').trim()
+  if (!currentDraft) throw new DraftError(400, DRAFT_EMPTY)
+
+  const [settings, contextMessages] = await Promise.all([
+    prisma.settings.findUnique({ where: { id: 1 }, select: { ollamaModel: true } }),
+    loadRevisionContext(input.conversationId, source),
+  ])
+  const rawRevision = await callLLM(revisionPrompt, {
+    model: settings?.ollamaModel,
+    system: buildRevisionSystemPrompt({ contextMessages, sourceContent: source.content ?? '', currentDraft }),
+  })
+  const revisedText = rawRevision.trim()
+  if (!revisedText) throw new DraftError(400, REVISION_EMPTY)
+
+  const isEdited = revisedText !== draft.generatedText
+  const claimed = await prisma.messageDraft.updateMany({
+    where: { id: draft.id, sentAt: null },
+    data: { text: revisedText, editedAt: isEdited ? new Date() : null, editedById: isEdited ? input.accountId : null },
   })
   if (claimed.count === 0) throw new DraftError(409, DRAFT_LOCKED)
 

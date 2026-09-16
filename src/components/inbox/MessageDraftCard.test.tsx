@@ -86,7 +86,16 @@ describe('MessageDraftCard', () => {
     ).toBeInTheDocument()
   })
 
-  it('edit draft: Edit draft membuka Textarea, Simpan mem-PATCH lalu memanggil onDraftChange', async () => {
+  it('edit draft: Edit draft membuka pilihan edit manual dan edit dengan prompt', () => {
+    render(<MessageDraftCard draft={baseDraft()} conversationId="conv_1" messageId="m_in" />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Edit draft' }))
+
+    expect(screen.getByRole('menuitem', { name: 'Edit manual' })).toBeInTheDocument()
+    expect(screen.getByRole('menuitem', { name: 'Edit dengan prompt' })).toBeInTheDocument()
+  })
+
+  it('edit draft manual: Edit manual membuka Textarea, Simpan mem-PATCH lalu memanggil onDraftChange', async () => {
     const updated = baseDraft({ text: 'Teks yang sudah diedit.', editedAt: '2026-09-15T02:00:00.000Z', editedByName: 'Agen Dewi' })
     vi.mocked(fetch).mockResolvedValue({ ok: true, json: async () => updated } as Response)
     const onDraftChange = vi.fn()
@@ -94,6 +103,7 @@ describe('MessageDraftCard', () => {
     render(<MessageDraftCard draft={baseDraft()} conversationId="conv_1" messageId="m_in" onDraftChange={onDraftChange} />)
 
     fireEvent.click(screen.getByRole('button', { name: 'Edit draft' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Edit manual' }))
     const textarea = screen.getByLabelText('Edit draft')
     fireEvent.change(textarea, { target: { value: 'Teks yang sudah diedit.' } })
     fireEvent.click(screen.getByRole('button', { name: 'Simpan' }))
@@ -105,10 +115,30 @@ describe('MessageDraftCard', () => {
     expect(JSON.parse(init.body as string)).toEqual({ text: 'Teks yang sudah diedit.' })
   })
 
+  it('edit dengan prompt: mengirim prompt revisi ke .../draft/revise lalu memanggil onDraftChange', async () => {
+    const updated = baseDraft({ text: 'Versi revisi dari prompt.', editedAt: '2026-09-15T02:00:00.000Z', editedByName: 'Agen Dewi' })
+    vi.mocked(fetch).mockResolvedValue({ ok: true, json: async () => updated } as Response)
+    const onDraftChange = vi.fn()
+
+    render(<MessageDraftCard draft={baseDraft()} conversationId="conv_1" messageId="m_in" onDraftChange={onDraftChange} />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Edit draft' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Edit dengan prompt' }))
+    fireEvent.change(screen.getByLabelText('Prompt revisi draft'), { target: { value: 'Buat lebih singkat dan sebutkan pickup Surabaya.' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Revisi draft' }))
+
+    await waitFor(() => expect(onDraftChange).toHaveBeenCalledWith('m_in', updated))
+    const [url, init] = vi.mocked(fetch).mock.calls[0] as unknown as [string, RequestInit]
+    expect(url).toBe('/api/conversations/conv_1/messages/m_in/draft/revise')
+    expect(init.method).toBe('POST')
+    expect(JSON.parse(init.body as string)).toEqual({ prompt: 'Buat lebih singkat dan sebutkan pickup Surabaya.' })
+  })
+
   it('Batal menutup mode edit tanpa memanggil fetch', () => {
     render(<MessageDraftCard draft={baseDraft()} conversationId="conv_1" messageId="m_in" />)
 
     fireEvent.click(screen.getByRole('button', { name: 'Edit draft' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Edit manual' }))
     expect(screen.getByLabelText('Edit draft')).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: 'Batal' }))

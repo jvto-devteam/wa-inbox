@@ -1,6 +1,6 @@
 'use client'
 import { useState } from 'react'
-import { Bot, Brain } from 'lucide-react'
+import { Bot, Brain, ChevronDown } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { IconButton } from '@/components/ui/icon-button'
@@ -41,7 +41,10 @@ export function MessageDraftCard({
 }) {
   const [showTrace, setShowTrace] = useState(false)
   const [editing, setEditing] = useState(false)
+  const [editMenuOpen, setEditMenuOpen] = useState(false)
+  const [promptEditing, setPromptEditing] = useState(false)
   const [editText, setEditText] = useState(draft.text ?? '')
+  const [revisionPrompt, setRevisionPrompt] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -66,7 +69,17 @@ export function MessageDraftCard({
   function startEdit() {
     setEditText(draft.text ?? '')
     setError(null)
+    setEditMenuOpen(false)
+    setPromptEditing(false)
     setEditing(true)
+  }
+
+  function startPromptEdit() {
+    setRevisionPrompt('')
+    setError(null)
+    setEditMenuOpen(false)
+    setEditing(false)
+    setPromptEditing(true)
   }
 
   async function saveEdit() {
@@ -88,8 +101,28 @@ export function MessageDraftCard({
     }
   }
 
+  async function savePromptEdit() {
+    if (busy) return
+    setBusy(true)
+    setError(null)
+    try {
+      const updated = await fetchJson<MessageDraftView>(`${draftUrl}/revise`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt: revisionPrompt }),
+      })
+      onDraftChange?.(messageId, updated)
+      setPromptEditing(false)
+      setRevisionPrompt('')
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Gagal merevisi draft')
+    } finally {
+      setBusy(false)
+    }
+  }
+
   async function send() {
-    if (busy || editing || !draft.text?.trim()) return
+    if (busy || editing || promptEditing || !draft.text?.trim()) return
     setBusy(true)
     setError(null)
     try {
@@ -161,6 +194,18 @@ export function MessageDraftCard({
           aria-label="Edit draft"
           disabled={busy}
         />
+      ) : promptEditing ? (
+        <div className="space-y-2">
+          {draft.text && <p className="whitespace-pre-wrap rounded-md bg-surface-sunken px-2.5 py-2">{formatWhatsAppText(draft.text)}</p>}
+          <Textarea
+            value={revisionPrompt}
+            onChange={(e) => setRevisionPrompt(e.target.value)}
+            rows={3}
+            aria-label="Prompt revisi draft"
+            placeholder="Contoh: buat lebih singkat, tambahkan bahwa pickup dari Surabaya tersedia, jangan sebut EUR."
+            disabled={busy}
+          />
+        </div>
       ) : draft.text ? (
         <p className="whitespace-pre-wrap">{formatWhatsAppText(draft.text)}</p>
       ) : draft.mode === 'handoff' ? (
@@ -180,14 +225,57 @@ export function MessageDraftCard({
                 Batal
               </Button>
             </>
+          ) : promptEditing ? (
+            <>
+              <Button type="button" size="sm" disabled={busy || !revisionPrompt.trim()} onClick={() => void savePromptEdit()}>
+                Revisi draft
+              </Button>
+              <Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => setPromptEditing(false)}>
+                Batal
+              </Button>
+            </>
           ) : (
             <>
               <Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => void regenerate()}>
                 Generate ulang
               </Button>
-              <Button type="button" variant="outline" size="sm" disabled={busy} onClick={startEdit}>
-                Edit draft
-              </Button>
+              <div className="relative">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={busy}
+                  aria-haspopup="menu"
+                  aria-expanded={editMenuOpen}
+                  onClick={() => setEditMenuOpen((prev) => !prev)}
+                >
+                  Edit draft
+                  <ChevronDown aria-hidden="true" className="size-3.5" strokeWidth={1.75} />
+                </Button>
+                {editMenuOpen && (
+                  <div
+                    role="menu"
+                    className="absolute left-0 top-full z-20 mt-1 min-w-40 rounded-md border border-line-strong bg-surface p-1 shadow-lg"
+                  >
+                    <button
+                      type="button"
+                      role="menuitem"
+                      className="w-full rounded px-2 py-1.5 text-left text-sm hover:bg-surface-sunken"
+                      onClick={startEdit}
+                    >
+                      Edit manual
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      className="w-full rounded px-2 py-1.5 text-left text-sm hover:bg-surface-sunken"
+                      onClick={startPromptEdit}
+                    >
+                      Edit dengan prompt
+                    </button>
+                  </div>
+                )}
+              </div>
               <Button
                 type="button"
                 size="sm"

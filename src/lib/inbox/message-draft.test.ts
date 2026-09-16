@@ -6,14 +6,16 @@ import { mockDeep, mockReset, type DeepMockProxy } from 'vitest-mock-extended'
 import type { PrismaClient } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { decideAndRespond } from '@/lib/bot/orchestrator'
+import { callLLM } from '@/lib/bot/llm'
 import { recordBotDecisionRun, attachMessageToDecisionRun } from '@/lib/bot-control/decision-recorder'
 import { sendMessage } from '@/lib/send'
 import { recordUnsourcedReplyGap } from '@/lib/inbox/gap-log'
-import { generateDraft, editDraft, sendDraft } from './message-draft'
+import { generateDraft, editDraft, reviseDraftWithPrompt, sendDraft } from './message-draft'
 import type { BotDecision } from '@/lib/bot/types'
 
 vi.mock('@/lib/db', () => ({ prisma: mockDeep<PrismaClient>() }))
 vi.mock('@/lib/bot/orchestrator', () => ({ decideAndRespond: vi.fn() }))
+vi.mock('@/lib/bot/llm', () => ({ callLLM: vi.fn() }))
 vi.mock('@/lib/bot-control/decision-recorder', () => ({
   recordBotDecisionRun: vi.fn(),
   attachMessageToDecisionRun: vi.fn(),
@@ -70,7 +72,9 @@ beforeEach(() => {
   vi.clearAllMocks()
   mockPrisma.message.findUnique.mockResolvedValue(sourceMessage as never)
   mockPrisma.account.findMany.mockResolvedValue([{ id: ACCOUNT_ID, name: 'Agen Satu' }] as never)
+  mockPrisma.settings.findUnique.mockResolvedValue({ ollamaModel: 'gemma4:31b-cloud' } as never)
   vi.mocked(decideAndRespond).mockResolvedValue(faqDecision)
+  vi.mocked(callLLM).mockResolvedValue('Versi revisi dari model.')
   vi.mocked(recordBotDecisionRun).mockResolvedValue('run_1')
 })
 
@@ -236,6 +240,67 @@ describe('editDraft', () => {
       editDraft({ conversationId: CONVERSATION_ID, messageId: MESSAGE_ID, accountId: ACCOUNT_ID, text: 'apa saja' })
     ).rejects.toMatchObject({ status: 409, message: 'Draft sudah terkirim dan terkunci' })
     expect(mockPrisma.messageDraft.updateMany).not.toHaveBeenCalled()
+  })
+})
+
+describe('reviseDraftWithPrompt', () => {
+  it('meminta LLM merevisi draft dengan riwayat percakapan, pesan sumber, dan draft saat ini', async () => {
+    mockPrisma.messageDraft.findUnique.mockResolvedValue(draftRow({ text: 'Jawaban awal.' }) as never)
+    mockPrisma.message.findMany.mockResolvedValue([
+      { ...sourceMessage, id: 'msg_prev', content: 'Do you pick up in Surabaya?', createdAt: new Date('2026-09-14T07:58:00.000Z') },
+      sourceMessage,
+    ] as never)
+    mockPrisma.messageDraft.updateMany.mockResolvedValue({ count: 1 } as never)
+    mockPrisma.messageDraft.findUniqueOrThrow.mockResolvedValue(
+      draftRow({ text: 'Versi revisi dari model.', editedAt: new Date(), editedById: ACCOUNT_ID }) as never
+    )
+
+    await reviseDraftWithPrompt({
+      conversationId: CONVERSATION_ID,
+      messageId: MESSAGE_ID,
+      accountId: ACCOUNT_ID,
+      prompt: 'Buat lebih singkat dan sebutkan pickup Surabaya.',
+    })
+
+    expect(callLLM).toHaveBeenCalledWith('Buat lebih singkat dan sebutkan pickup Surabaya.', {
+      model: 'gemma4:31b-cloud',
+      system: expect.stringContaining('Konteks percakapan'),
+    })
+    const system = vi.mocked(callLLM).mock.calls[0]?.[1]?.system ?? ''
+    expect(system).toContain('Pelanggan: Do you pick up in Surabaya?')
+    expect(system).toContain(`Pesan pelanggan yang sedang dijawab:\n${sourceMessage.content}`)
+    expect(system).toContain('Draft saat ini:\nJawaban awal.')
+    expect(mockPrisma.messageDraft.updateMany).toHaveBeenCalledWith({
+      where: { id: 'draft_1', sentAt: null },
+      data: { text: 'Versi revisi dari model.', editedAt: expect.any(Date), editedById: ACCOUNT_ID },
+    })
+  })
+
+  it('prompt kosong -> 400 dan tidak memanggil LLM', async () => {
+    await expect(
+      reviseDraftWithPrompt({ conversationId: CONVERSATION_ID, messageId: MESSAGE_ID, accountId: ACCOUNT_ID, prompt: '   ' })
+    ).rejects.toMatchObject({ status: 400, message: 'Prompt revisi tidak boleh kosong' })
+    expect(callLLM).not.toHaveBeenCalled()
+  })
+
+  it('output LLM kosong -> 400 dan draft tidak diubah', async () => {
+    mockPrisma.messageDraft.findUnique.mockResolvedValue(draftRow() as never)
+    mockPrisma.message.findMany.mockResolvedValue([sourceMessage] as never)
+    vi.mocked(callLLM).mockResolvedValue('   ')
+
+    await expect(
+      reviseDraftWithPrompt({ conversationId: CONVERSATION_ID, messageId: MESSAGE_ID, accountId: ACCOUNT_ID, prompt: 'singkatkan' })
+    ).rejects.toMatchObject({ status: 400, message: 'Model tidak menghasilkan revisi draft' })
+    expect(mockPrisma.messageDraft.updateMany).not.toHaveBeenCalled()
+  })
+
+  it('draft sudah terkirim -> 409 dan tidak memanggil LLM', async () => {
+    mockPrisma.messageDraft.findUnique.mockResolvedValue(draftRow({ sentAt: new Date() }) as never)
+
+    await expect(
+      reviseDraftWithPrompt({ conversationId: CONVERSATION_ID, messageId: MESSAGE_ID, accountId: ACCOUNT_ID, prompt: 'singkatkan' })
+    ).rejects.toMatchObject({ status: 409, message: 'Draft sudah terkirim dan terkunci' })
+    expect(callLLM).not.toHaveBeenCalled()
   })
 })
 
