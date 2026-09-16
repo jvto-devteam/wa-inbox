@@ -4035,7 +4035,7 @@ describe('decideAndRespond', () => {
       expect(result.verification?.status).toBe('PASSED')
     })
 
-    it('rewrites a confident late-start claim into a timing confirmation instead of sending it', async () => {
+    it('does not rewrite a grounded late Surabaya pickup claim into a timing confirmation', async () => {
       ;vi.mocked(ensureFreshBookingData).mockResolvedValue(null)
       ;vi.mocked(classifySalesNeed).mockReturnValue({ job: 'J2', missingInfo: [], needsLiveData: false })
       const bromoIjen = pkg({
@@ -4051,16 +4051,15 @@ describe('decideAndRespond', () => {
       ;vi.mocked(checkRouteGate).mockReturnValue({ status: 'clear' })
       ;vi.mocked(classifyTopicViaLLM).mockResolvedValue({ topic: 'price', source: 'llm' })
       ;vi.mocked(extractTripPreferences).mockResolvedValue({ preferences: { origin: 'Surabaya', dayCount: 3, finishCity: 'bali', pax: null }, source: 'llm' })
-      vi.mocked(callLLM)
-        .mockResolvedValueOnce('Hi! Yes, we can certainly arrange for your tour to begin after your 5 PM arrival.')
-        .mockResolvedValueOnce('Hi! Let me confirm the 5 PM start timing with our team and get back to you shortly. The closest package is Bromo Madakaripura Ijen 3D.')
+      vi.mocked(callLLM).mockResolvedValue('Hi! Yes, we can certainly arrange for your tour to begin after your 5 PM arrival. Since you arrive after 12:00, we recommend visiting Bromo first.')
 
       const result = await decideAndRespond('conv_1', 'Can we join after we arrive in Surabaya around 5 PM instead of starting at noon? Bromo and Ijen 3D2N.')
 
       expect(result.mode).toBe('faq')
       if (result.mode !== 'faq') throw new Error(`Expected faq mode, received ${result.mode}`)
-      expect(result.verification?.status).toBe('PASSED_AFTER_RETRY')
-      expect(result.draft).toContain('confirm the 5 PM start timing')
+      expect(result.verification?.status).toBe('PASSED')
+      expect(result.draft).toContain('certainly arrange')
+      expect(result.draft.toLowerCase()).not.toContain('confirm')
     })
 
     it('leads the option list with a confirmed best package even when it is not first in the matched array', async () => {

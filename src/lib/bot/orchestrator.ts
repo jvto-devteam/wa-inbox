@@ -305,10 +305,19 @@ function normalizedClockTimes(text: string): string[] {
 
 function needsSpecialTimingConfirmation(message: string, groundedText: string): boolean {
   if (!TIMING_CHANGE_PATTERN.test(message)) return false
+  if (isGroundedSurabayaBromoIjenLatePickup(message)) return false
   const askedTimes = normalizedClockTimes(message)
   if (askedTimes.length === 0) return false
   const groundedTimes = new Set(normalizedClockTimes(groundedText))
   return askedTimes.some((time) => !groundedTimes.has(time))
+}
+
+function isGroundedSurabayaBromoIjenLatePickup(message: string): boolean {
+  const timing = parsePickupTiming(message)
+  if (!timing.time || !mentionsPickupOrArrival(message)) return false
+  if (!SURABAYA_MENTION.test(message)) return false
+  if (!/\bbromo\b/i.test(message) || !/\bijen\b/i.test(message)) return false
+  return timing.time > '12:00'
 }
 
 function packageDestinationCovers(packageToken: string, requestedToken: string): boolean {
@@ -2567,7 +2576,8 @@ export async function decideAndRespond(
       ...packageLogistics,
       packageOptionsText ?? '',
     ].join('\n')
-    const specialTimingNeedsConfirmation = needsSpecialTimingConfirmation(inboundForUnderstanding, specialTimingGroundingText)
+    const specialTimingNeedsConfirmation =
+      pickupScenario.routeOrder === null && needsSpecialTimingConfirmation(inboundForUnderstanding, specialTimingGroundingText)
     // Pilihan operator 2026-09-14: jemput setelah 12:00 disarankan Bromo dulu, tapi paket
     // Surabaya -> Surabaya yang ada semuanya mulai dari Ijen. Paketnya tetap ditawarkan, dengan
     // catatan tim bisa membalik urutannya setelah booking.
