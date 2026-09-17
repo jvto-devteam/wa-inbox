@@ -8,6 +8,20 @@ function jsonResponse(body: unknown) {
   return { ok: true, status: 200, json: () => Promise.resolve(body) } as Response
 }
 
+// ConversationList also fetches /api/labels (for the filter row) on every mount. Routing by
+// URL keeps that call answered with `[]` by default so it never gets mistaken for the
+// conversations list -- e.g. `getAllByRole('button')[0]` would otherwise pick up a stray
+// filter pill instead of the first conversation row. `labels` defaults to empty for every
+// test that isn't specifically exercising the filter row.
+function mockConversationsFetch(list: unknown[], labels: unknown[] = []) {
+  vi.mocked(fetch).mockImplementation((input: RequestInfo | URL) => {
+    const url = typeof input === 'string' ? input : input.toString()
+    if (url.startsWith('/api/conversations')) return Promise.resolve(jsonResponse(list))
+    if (url.startsWith('/api/labels')) return Promise.resolve(jsonResponse(labels))
+    return Promise.resolve(jsonResponse([]))
+  })
+}
+
 // ConversationList opens an EventSource for live updates; jsdom doesn't implement it, so
 // stub a minimal version (same shape ThreadView.test.tsx uses) that also lets a test push
 // an event through `onmessage`.
@@ -53,7 +67,8 @@ describe('ConversationList search debounce', () => {
     // No timer advance at all -- the very first load must not wait out the debounce window.
     await advanceTimers(0)
 
-    expect(fetch).toHaveBeenCalledTimes(1)
+    // Also fetches /api/labels on mount (for the filter row) -- assert the conversations
+    // call specifically rather than the total count.
     expect(fetch).toHaveBeenCalledWith('/api/conversations')
   })
 
@@ -110,6 +125,78 @@ describe('ConversationList search debounce', () => {
   })
 })
 
+describe('ConversationList label filter', () => {
+  const LABELS = [
+    { id: 'lbl_1', name: 'VIP', color: '#3C6B42' },
+    { id: 'lbl_2', name: 'Komplain', color: '#B23B3B' },
+  ]
+
+  it('does not render a filter row when there are no labels in the system', async () => {
+    mockConversationsFetch([], [])
+    render(<ConversationList selectedId={null} onSelect={() => {}} />)
+    await advanceTimers(0)
+
+    expect(screen.queryByRole('group', { name: 'Filter label' })).not.toBeInTheDocument()
+  })
+
+  it('renders All plus one button per label, with All active by default', async () => {
+    mockConversationsFetch([], LABELS)
+    render(<ConversationList selectedId={null} onSelect={() => {}} />)
+    await advanceTimers(0)
+
+    const group = screen.getByRole('group', { name: 'Filter label' })
+    expect(screen.getByRole('button', { name: 'All' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: 'VIP' })).toHaveAttribute('aria-pressed', 'false')
+    expect(screen.getByRole('button', { name: 'Komplain' })).toHaveAttribute('aria-pressed', 'false')
+    expect(group).toBeInTheDocument()
+  })
+
+  it('re-fetches with labelId when a label pill is clicked, and marks it active', async () => {
+    mockConversationsFetch([], LABELS)
+    render(<ConversationList selectedId={null} onSelect={() => {}} />)
+    await advanceTimers(0)
+    vi.mocked(fetch).mockClear()
+
+    fireEvent.click(screen.getByRole('button', { name: 'VIP' }))
+    await advanceTimers(300)
+
+    expect(fetch).toHaveBeenCalledWith('/api/conversations?labelId=lbl_1')
+    expect(screen.getByRole('button', { name: 'VIP' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: 'All' })).toHaveAttribute('aria-pressed', 'false')
+  })
+
+  it('combines the active label filter with a search query', async () => {
+    mockConversationsFetch([], LABELS)
+    render(<ConversationList selectedId={null} onSelect={() => {}} />)
+    await advanceTimers(0)
+
+    fireEvent.click(screen.getByRole('button', { name: 'VIP' }))
+    await advanceTimers(300)
+    vi.mocked(fetch).mockClear()
+
+    fireEvent.change(screen.getByPlaceholderText(SEARCH_INPUT_PLACEHOLDER), { target: { value: 'ijen' } })
+    await advanceTimers(300)
+
+    expect(fetch).toHaveBeenCalledWith('/api/conversations?q=ijen&labelId=lbl_1')
+  })
+
+  it('returns to the unfiltered list when All is clicked again', async () => {
+    mockConversationsFetch([], LABELS)
+    render(<ConversationList selectedId={null} onSelect={() => {}} />)
+    await advanceTimers(0)
+
+    fireEvent.click(screen.getByRole('button', { name: 'VIP' }))
+    await advanceTimers(300)
+    vi.mocked(fetch).mockClear()
+
+    fireEvent.click(screen.getByRole('button', { name: 'All' }))
+    await advanceTimers(300)
+
+    expect(fetch).toHaveBeenCalledWith('/api/conversations')
+    expect(screen.getByRole('button', { name: 'All' })).toHaveAttribute('aria-pressed', 'true')
+  })
+})
+
 // The list used to be a one-shot snapshot: it fetched on mount and on search, and never
 // subscribed to the SSE stream every inbound/outbound message already broadcasts on. A new
 // customer message produced no new row, and a reply on an open conversation neither moved it
@@ -137,7 +224,7 @@ describe('ConversationList live updates', () => {
       conversation('a', { lastMessageAt: '2026-07-20T12:00:00.000Z' }),
       conversation('b', { lastMessageAt: '2026-07-20T09:00:00.000Z' }),
     ]
-    vi.mocked(fetch).mockImplementation(() => Promise.resolve(jsonResponse(list)))
+    mockConversationsFetch(list)
 
     render(<ConversationList selectedId={null} onSelect={() => {}} />)
     await advanceTimers(0)
@@ -177,7 +264,7 @@ describe('ConversationList live updates', () => {
       conversation('test', { lastMessageAt: '2026-07-20T09:00:00.000Z', isPinned: true }),
       conversation('a', { lastMessageAt: '2026-07-20T10:00:00.000Z', isPinned: false }),
     ]
-    vi.mocked(fetch).mockImplementation(() => Promise.resolve(jsonResponse(list)))
+    mockConversationsFetch(list)
 
     render(<ConversationList selectedId={null} onSelect={() => {}} />)
     await advanceTimers(0)
@@ -200,7 +287,7 @@ describe('ConversationList live updates', () => {
   })
 
   it('re-fetches when the event is for a conversation not currently in the list', async () => {
-    vi.mocked(fetch).mockImplementation(() => Promise.resolve(jsonResponse([conversation('a')])))
+    mockConversationsFetch([conversation('a')])
 
     render(<ConversationList selectedId={null} onSelect={() => {}} />)
     await advanceTimers(0)
@@ -209,9 +296,7 @@ describe('ConversationList live updates', () => {
     const es = FakeEventSource.instances[0]
     // A brand-new conversation: the event carries no contact name, phone, labels or
     // botEnabled, so the full row can only come from the server.
-    vi.mocked(fetch).mockImplementation(() =>
-      Promise.resolve(jsonResponse([conversation('baru', { contactName: 'Pelanggan Baru' }), conversation('a')]))
-    )
+    mockConversationsFetch([conversation('baru', { contactName: 'Pelanggan Baru' }), conversation('a')])
     act(() => {
       es.emit({
         type: 'message.created',
@@ -226,7 +311,7 @@ describe('ConversationList live updates', () => {
   })
 
   it('keeps the active search filter on the re-fetch triggered by a new conversation', async () => {
-    vi.mocked(fetch).mockImplementation(() => Promise.resolve(jsonResponse([conversation('a')])))
+    mockConversationsFetch([conversation('a')])
 
     render(<ConversationList selectedId={null} onSelect={() => {}} />)
     await advanceTimers(0)
@@ -250,7 +335,7 @@ describe('ConversationList live updates', () => {
   })
 
   it('ignores event types it does not handle', async () => {
-    vi.mocked(fetch).mockImplementation(() => Promise.resolve(jsonResponse([conversation('a')])))
+    mockConversationsFetch([conversation('a')])
 
     render(<ConversationList selectedId={null} onSelect={() => {}} />)
     await advanceTimers(0)
@@ -301,7 +386,7 @@ describe('ConversationList unread counts', () => {
   }
 
   it('bumps the unread badge on an inbound message for a conversation that is not selected', async () => {
-    vi.mocked(fetch).mockImplementation(() => Promise.resolve(jsonResponse([conversation('a')])))
+    mockConversationsFetch([conversation('a')])
     render(<ConversationList selectedId={null} onSelect={() => {}} />)
     await advanceTimers(0)
 
@@ -319,7 +404,7 @@ describe('ConversationList unread counts', () => {
   })
 
   it('does not bump the unread badge for an inbound message on the currently selected conversation', async () => {
-    vi.mocked(fetch).mockImplementation(() => Promise.resolve(jsonResponse([conversation('a')])))
+    mockConversationsFetch([conversation('a')])
     render(<ConversationList selectedId="a" onSelect={() => {}} />)
     await advanceTimers(0)
 
@@ -337,7 +422,7 @@ describe('ConversationList unread counts', () => {
   })
 
   it('does not bump the unread badge for an outbound message', async () => {
-    vi.mocked(fetch).mockImplementation(() => Promise.resolve(jsonResponse([conversation('a')])))
+    mockConversationsFetch([conversation('a')])
     render(<ConversationList selectedId={null} onSelect={() => {}} />)
     await advanceTimers(0)
 
@@ -355,7 +440,7 @@ describe('ConversationList unread counts', () => {
   })
 
   it('clears the unread badge for a conversation as soon as it becomes selected', async () => {
-    vi.mocked(fetch).mockImplementation(() => Promise.resolve(jsonResponse([conversation('a', { unreadCount: 5 })])))
+    mockConversationsFetch([conversation('a', { unreadCount: 5 })])
     const { rerender } = render(<ConversationList selectedId={null} onSelect={() => {}} />)
     await advanceTimers(0)
     expect(screen.getByLabelText('5 pesan belum dibaca')).toBeInTheDocument()
@@ -384,23 +469,19 @@ describe('ConversationList session expiry', () => {
   })
 
   it('renders the list normally on a 200, exactly as before', async () => {
-    vi.mocked(fetch).mockImplementation(() =>
-      Promise.resolve(
-        jsonResponse([
-          {
-            id: 'conv_1',
-            contactName: 'Bruno',
-            contactPhone: '6281234567890',
-            lastMessage: 'Halo!',
-            lastMessageSentBy: 'CUSTOMER',
-            lastMessageAt: '2026-07-20T10:00:00.000Z',
-            botEnabled: true,
-            status: 'OPEN',
-            labels: [],
-          },
-        ])
-      )
-    )
+    mockConversationsFetch([
+      {
+        id: 'conv_1',
+        contactName: 'Bruno',
+        contactPhone: '6281234567890',
+        lastMessage: 'Halo!',
+        lastMessageSentBy: 'CUSTOMER',
+        lastMessageAt: '2026-07-20T10:00:00.000Z',
+        botEnabled: true,
+        status: 'OPEN',
+        labels: [],
+      },
+    ])
 
     render(<ConversationList selectedId={null} onSelect={() => {}} />)
     await advanceTimers(0)
@@ -411,7 +492,7 @@ describe('ConversationList session expiry', () => {
   })
 
   it('keeps the existing rows when a non-401 failure happens on a later search', async () => {
-    vi.mocked(fetch).mockImplementation(() => Promise.resolve(jsonResponse([conversationRow()])))
+    mockConversationsFetch([conversationRow()])
 
     render(<ConversationList selectedId={null} onSelect={() => {}} />)
     await advanceTimers(0)
@@ -482,7 +563,7 @@ describe('ConversationList — aksesibilitas dan gulungan', () => {
   })
 
   it('menyusun barisnya sebagai daftar sungguhan, dan tiap baris adalah tombol yang bisa di-Tab', async () => {
-    vi.mocked(fetch).mockImplementation(() => Promise.resolve(jsonResponse([row('a'), row('b')])))
+    mockConversationsFetch([row('a'), row('b')])
     render(<ConversationList selectedId={null} onSelect={() => {}} />)
     await advanceTimers(0)
 
@@ -499,7 +580,7 @@ describe('ConversationList — aksesibilitas dan gulungan', () => {
   })
 
   it('menandai percakapan yang sedang dibuka dengan aria-current, bukan hanya dengan warna', async () => {
-    vi.mocked(fetch).mockImplementation(() => Promise.resolve(jsonResponse([row('a'), row('b')])))
+    mockConversationsFetch([row('a'), row('b')])
     render(<ConversationList selectedId="b" onSelect={() => {}} />)
     await advanceTimers(0)
 
@@ -509,7 +590,7 @@ describe('ConversationList — aksesibilitas dan gulungan', () => {
   })
 
   it('memilih percakapan lewat Enter di baris yang sedang difokus', async () => {
-    vi.mocked(fetch).mockImplementation(() => Promise.resolve(jsonResponse([row('a')])))
+    mockConversationsFetch([row('a')])
     const onSelect = vi.fn()
     render(<ConversationList selectedId={null} onSelect={onSelect} />)
     await advanceTimers(0)

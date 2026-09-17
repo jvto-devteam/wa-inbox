@@ -1,25 +1,32 @@
 import { NextResponse } from 'next/server'
+import type { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { ensureTestConversation } from '@/lib/test-conversation'
 import { bookingGuestName } from '@/lib/booking/display-name'
 
 export async function GET(req: Request) {
-  const q = new URL(req.url).searchParams.get('q')?.trim() || null
+  const url = new URL(req.url)
+  const q = url.searchParams.get('q')?.trim() || null
+  const labelId = url.searchParams.get('labelId')?.trim() || null
 
   // Only on the unfiltered load -- a search's own result set deciding whether the sandbox
   // room matches is normal filtering behavior, no need to re-upsert on every keystroke.
   if (!q) await ensureTestConversation()
 
+  const where: Prisma.ConversationWhereInput = {}
+  if (q) {
+    where.OR = [
+      { contact: { name: { contains: q, mode: 'insensitive' } } },
+      { contact: { phone: { contains: q } } },
+      { messages: { some: { content: { contains: q, mode: 'insensitive' } } } },
+    ]
+  }
+  if (labelId) {
+    where.labels = { some: { labelId } }
+  }
+
   const conversations = await prisma.conversation.findMany({
-    where: q
-      ? {
-          OR: [
-            { contact: { name: { contains: q, mode: 'insensitive' } } },
-            { contact: { phone: { contains: q } } },
-            { messages: { some: { content: { contains: q, mode: 'insensitive' } } } },
-          ],
-        }
-      : undefined,
+    where: Object.keys(where).length ? where : undefined,
     orderBy: [{ isPinned: 'desc' }, { lastMessageAt: 'desc' }],
     include: {
       contact: true,

@@ -119,6 +119,25 @@ describe('GET /api/conversations', () => {
     }))
   })
 
+  it('filters by labelId, matching conversations that have that label attached', async () => {
+    mockPrisma.conversation.findMany.mockResolvedValue([] as never)
+    await GET(new Request('http://localhost/api/conversations?labelId=lbl_1'))
+    expect(mockPrisma.conversation.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: { labels: { some: { labelId: 'lbl_1' } } },
+    }))
+  })
+
+  it('combines a search query and a labelId filter rather than one overriding the other', async () => {
+    mockPrisma.conversation.findMany.mockResolvedValue([] as never)
+    await GET(new Request('http://localhost/api/conversations?q=ijen&labelId=lbl_1'))
+    expect(mockPrisma.conversation.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({
+        OR: expect.any(Array),
+        labels: { some: { labelId: 'lbl_1' } },
+      }),
+    }))
+  })
+
   it('treats a whitespace-only q as no search, returning the unfiltered list', async () => {
     mockPrisma.conversation.findMany.mockResolvedValue([] as never)
     await GET(new Request('http://localhost/api/conversations?q=%20%20'))

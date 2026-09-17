@@ -7,13 +7,18 @@ import { EmptyState } from '@/components/ui/empty-state'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
 import { ConversationListItem, type ConversationSummary } from './ConversationListItem'
+import type { LabelOption } from './LabelPicker'
 import { fetchJson } from '@/lib/fetch-json'
 
 const SEARCH_DEBOUNCE_MS = 300
 
-function conversationsUrl(query: string) {
+function conversationsUrl(query: string, labelId: string | null) {
+  const params = new URLSearchParams()
   const trimmed = query.trim()
-  return trimmed ? `/api/conversations?q=${encodeURIComponent(trimmed)}` : '/api/conversations'
+  if (trimmed) params.set('q', trimmed)
+  if (labelId) params.set('labelId', labelId)
+  const qs = params.toString()
+  return qs ? `/api/conversations?${qs}` : '/api/conversations'
 }
 
 // Pinned first, then newest -- the same ordering the API applies
@@ -66,6 +71,8 @@ export function ConversationList({
 }) {
   const [conversations, setConversations] = useState<ConversationSummary[]>([])
   const [query, setQuery] = useState('')
+  const [labelId, setLabelId] = useState<string | null>(null)
+  const [allLabels, setAllLabels] = useState<LabelOption[]>([])
   // Hanya menandai permintaan PERTAMA. Menyalakan kerangka di setiap pencarian akan membuat
   // daftar berkedip di setiap ketukan tombol; hasil lama yang tinggal sebentar lebih tenang.
   const [firstLoadDone, setFirstLoadDone] = useState(false)
@@ -75,17 +82,25 @@ export function ConversationList({
   // directly would tear down and re-open the EventSource on every keystroke and on every
   // single incoming message; the refs let that effect stay mounted for the tab's lifetime.
   const queryRef = useRef(query)
+  const labelIdRef = useRef(labelId)
   const conversationsRef = useRef(conversations)
   const selectedIdRef = useRef(selectedId)
   useEffect(() => {
     queryRef.current = query
   }, [query])
   useEffect(() => {
+    labelIdRef.current = labelId
+  }, [labelId])
+  useEffect(() => {
     conversationsRef.current = conversations
   }, [conversations])
   useEffect(() => {
     selectedIdRef.current = selectedId
   }, [selectedId])
+
+  useEffect(() => {
+    fetchJson<LabelOption[]>('/api/labels').then(setAllLabels).catch(() => {})
+  }, [])
 
   // Opening a conversation is an immediate "I've seen this" signal, ahead of ThreadView's own
   // PATCH landing — without it the badge lingers for the length of that request.
@@ -108,14 +123,14 @@ export function ConversationList({
     }
   }
 
-  const loadConversations = useCallback((q: string) => {
+  const loadConversations = useCallback((q: string, lbl: string | null) => {
     // On a rejection the list simply keeps whatever it already had: a 401 has already sent
     // the browser to /login, and a 500 must not blank out the agent's inbox.
     //
     // The deep-link case (/inbox?conversation=<id>) is why the selected row is cleared here
     // too: there the id is already selected on mount, so the adjustment above has nothing to
     // react to by the time the list itself arrives.
-    fetchJson<ConversationSummary[]>(conversationsUrl(q))
+    fetchJson<ConversationSummary[]>(conversationsUrl(q, lbl))
       .then((list) =>
         setConversations(
           selectedIdRef.current
@@ -130,13 +145,13 @@ export function ConversationList({
   useEffect(() => {
     if (isFirstRender.current) {
       isFirstRender.current = false
-      loadConversations(query)
+      loadConversations(query, labelId)
       return
     }
 
-    const timer = setTimeout(() => loadConversations(query), SEARCH_DEBOUNCE_MS)
+    const timer = setTimeout(() => loadConversations(query, labelId), SEARCH_DEBOUNCE_MS)
     return () => clearTimeout(timer)
-  }, [query, loadConversations])
+  }, [query, labelId, loadConversations])
 
   // Live updates. Without this the sidebar was a one-shot snapshot: a new customer message
   // never appeared as a row, and a reply on an existing conversation never moved it to the
@@ -169,7 +184,7 @@ export function ConversationList({
       // "percakapan belum dikenal" di bawah.
       if (event.type === 'conversation.updated') {
         if (conversationsRef.current.some((c) => c.id === event.conversationId)) {
-          loadConversations(queryRef.current)
+          loadConversations(queryRef.current, labelIdRef.current)
         }
         return
       }
@@ -182,7 +197,7 @@ export function ConversationList({
       // what must stay a pure function (React may invoke it twice).
       const known = conversationsRef.current.some((c) => c.id === event.conversationId)
       if (!known) {
-        loadConversations(queryRef.current)
+        loadConversations(queryRef.current, labelIdRef.current)
         return
       }
 
@@ -236,6 +251,32 @@ export function ConversationList({
             className="pl-8"
           />
         </div>
+
+        {allLabels.length > 0 && (
+          <div role="group" aria-label="Filter label" className="mt-2 flex gap-1.5 overflow-x-auto">
+            <Button
+              type="button"
+              size="sm"
+              variant={labelId === null ? 'default' : 'outline'}
+              aria-pressed={labelId === null}
+              onClick={() => setLabelId(null)}
+            >
+              All
+            </Button>
+            {allLabels.map((l) => (
+              <Button
+                key={l.id}
+                type="button"
+                size="sm"
+                variant={labelId === l.id ? 'default' : 'outline'}
+                aria-pressed={labelId === l.id}
+                onClick={() => setLabelId(l.id)}
+              >
+                {l.name}
+              </Button>
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
