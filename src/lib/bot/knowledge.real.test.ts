@@ -241,13 +241,27 @@ describe.skipIf(!RELEASE_PRESENT)('resolveKnowledgeForTopic against the real syn
   // Reported live 2026-08-06: real customers asked about destinations genuinely outside the
   // 5-destination catalog (Borobudur/Prambanan, Baluran, Tangkuban Perahu, De Djawatan,
   // Kawah Wurung, Blawan) -- the bot only had a generic destination-list deflection.
+  //
+  // Operator decision 2026-09-17 (G36/G37): destinations OUTSIDE East Java or far from the
+  // routes are declined, with JVTO's own packages offered instead -- never "the team will look
+  // into it". Places inside East Java the operator has not ruled on (Baluran) keep the old
+  // "team looks into it" path, and must not be swept into the declined list.
   it.each([
-    ['can you add Borobudur and Prambanan to our itinerary?', 'borobudur/prambanan'],
-    ['is there an open trip to Baluran National Park?', 'baluran'],
+    ['can you add Borobudur and Prambanan to our itinerary?', 'borobudur'],
     ['we want to visit Tangkuban Perahu volcano too', 'tangkuban perahu'],
-  ] as const)('resolves an honest "custom extension, team will follow up" fact for %s (%s)', (message, _keyword) => {
+  ] as const)('declines a destination outside East Java and offers our own tours for %s (%s)', (message, keyword) => {
     const result = resolveKnowledgeForTopic('general', message)
-    expect(result.factualLines.some((f) => f.toLowerCase().includes('team can look into'))).toBe(true)
+    const fact = result.factualLines.find((f) => f.toLowerCase().includes("can't be added"))
+    expect(fact).toBeDefined()
+    expect(fact!.toLowerCase()).toContain(keyword)
+    expect(fact!.toLowerCase()).toContain('suggest the jvto tour')
+  })
+
+  it('keeps the "team can look into it" path for an East Java place the operator has not ruled on (Baluran)', () => {
+    const result = resolveKnowledgeForTopic('general', 'is there an open trip to Baluran National Park?')
+    const fact = result.factualLines.find((f) => f.toLowerCase().includes('team can look into'))
+    expect(fact).toBeDefined()
+    expect(fact!.toLowerCase()).not.toContain('baluran')
   })
 
   // Reported live 2026-08-06: general-modules.json's route_leg_* modules carry real,

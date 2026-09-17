@@ -624,7 +624,7 @@
     {
       "data": "crew_language",
       "looks_general": "\"English always available\"",
-      "actual": "Other languages subject to confirmation",
+      "actual": "Other languages, including Mandarin, are not available",
       "applies_to": "all_private_packages"
     },
     {

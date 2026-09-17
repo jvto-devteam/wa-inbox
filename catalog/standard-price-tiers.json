@@ -296,7 +296,7 @@
     "package_key": "bromo-madakaripura-ijen-3d2n",
     "price_type": "published_standard",
     "currency": "IDR",
-    "ferry_included": false,
+    "ferry_included": true,
     "pax_tiers": [
       {
         "min_pax": 1,
@@ -744,7 +744,7 @@
     "package_key": "tumpak-sewu-bromo-ijen-4d3n",
     "price_type": "published_standard",
     "currency": "IDR",
-    "ferry_included": false,
+    "ferry_included": true,
     "pax_tiers": [
       {
         "min_pax": 1,

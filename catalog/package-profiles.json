@@ -74,9 +74,7 @@
       {
         "day": 1,
         "title": "Bali to Banyuwangi for Ijen Staging",
-        "meals": [
-          "D"
-        ]
+        "meals": []
       },
       {
         "day": 2,
@@ -133,9 +131,7 @@
       {
         "day": 1,
         "title": "Bali to Banyuwangi for Ijen Staging",
-        "meals": [
-          "D"
-        ]
+        "meals": []
       },
       {
         "day": 2,
@@ -199,9 +195,7 @@
       {
         "day": 1,
         "title": "Bali to Banyuwangi for Ijen Staging",
-        "meals": [
-          "D"
-        ]
+        "meals": []
       },
       {
         "day": 2,
@@ -268,9 +262,7 @@
       {
         "day": 1,
         "title": "Midnight Departure from Surabaya for Bromo Sunrise",
-        "meals": [
-          "B"
-        ]
+        "meals": []
       }
     ],
     "source_evidence": [
@@ -301,7 +293,8 @@
     "day_count": 2,
     "private": true,
     "destination_tokens": [
-      "bromo"
+      "bromo",
+      "madakaripura"
     ],
     "public_url": "/tours/from-surabaya/bromo-2d1n",
     "day_titles": [
@@ -873,9 +866,7 @@
       {
         "day": 1,
         "title": "Surabaya to Taman Safari Prigen and Bromo Overnight",
-        "meals": [
-          "B"
-        ]
+        "meals": []
       },
       {
         "day": 2,
@@ -936,8 +927,7 @@
         "day": 2,
         "title": "Tumpak Sewu and Continue Toward the Bromo Side",
         "meals": [
-          "B",
-          "L"
+          "B"
         ]
       },
       {

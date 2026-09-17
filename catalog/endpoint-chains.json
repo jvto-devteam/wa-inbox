@@ -40,49 +40,56 @@
       }
     ],
     "standard_dropoff_options": [
-      "Surabaya Airport",
-      "Surabaya Hotel",
-      "Malang"
+      "Ketapang Harbor",
+      "Bali with additional transfer"
     ],
     "finish_details": [
       {
-        "id": "surabaya_airport_dropoff",
-        "label": "Surabaya Airport dropoff",
-        "type": "airport",
-        "connects_to": [],
+        "id": "ketapang_harbor_dropoff",
+        "label": "Ketapang Harbor dropoff",
+        "type": "harbor",
+        "connects_to": [
+          "Gilimanuk Harbor",
+          "Pemuteran",
+          "Lovina",
+          "Ubud",
+          "Canggu",
+          "Seminyak",
+          "Denpasar Airport"
+        ],
         "required_customer_fields": [
-          "flight_number",
-          "departure_time"
+          "next_destination",
+          "ferry_or_bali_transfer_preference"
         ]
       },
       {
-        "id": "surabaya_hotel_dropoff",
-        "label": "Surabaya hotel dropoff",
-        "type": "hotel",
+        "id": "bali_hotel_dropoff",
+        "label": "Bali hotel dropoff",
+        "type": "bali_area",
         "connects_to": [],
         "required_customer_fields": [
+          "hotel_name",
           "hotel_area"
-        ]
-      },
-      {
-        "id": "malang_dropoff",
-        "label": "Malang dropoff",
-        "type": "city_point",
-        "connects_to": [],
-        "required_customer_fields": [
-          "dropoff_area"
         ]
       }
     ],
     "endpoint_options": [
       {
-        "option": "Surabaya Airport",
-        "location_ref": "surabaya_airport_dropoff",
-        "type": "airport",
-        "connects_to": [],
+        "option": "Ketapang Harbor",
+        "location_ref": "ketapang_harbor_dropoff",
+        "type": "harbor",
+        "connects_to": [
+          "Gilimanuk Harbor",
+          "Pemuteran",
+          "Lovina",
+          "Ubud",
+          "Canggu",
+          "Seminyak",
+          "Denpasar Airport"
+        ],
         "required_fields": [
-          "flight_number",
-          "departure_time"
+          "next_destination",
+          "ferry_or_bali_transfer_preference"
         ],
         "classification": "final_jvto_standard",
         "evidence": [
@@ -91,28 +98,15 @@
         ]
       },
       {
-        "option": "Surabaya Hotel",
-        "location_ref": "surabaya_hotel_dropoff",
-        "type": "hotel",
+        "option": "Bali with additional transfer",
+        "location_ref": "bali_hotel_dropoff",
+        "type": "bali_area",
         "connects_to": [],
         "required_fields": [
+          "hotel_name",
           "hotel_area"
         ],
-        "classification": "final_jvto_standard",
-        "evidence": [
-          "11-package-route-map.json (standard_dropoff_options)",
-          "02-dropoff-contexts.json"
-        ]
-      },
-      {
-        "option": "Malang",
-        "location_ref": "malang_dropoff",
-        "type": "city_point",
-        "connects_to": [],
-        "required_fields": [
-          "dropoff_area"
-        ],
-        "classification": "final_jvto_standard",
+        "classification": "live_condition",
         "evidence": [
           "11-package-route-map.json (standard_dropoff_options)",
           "02-dropoff-contexts.json"
@@ -125,7 +119,7 @@
       "ferry_leg": "bali__to__bromo",
       "boundary_classification": "final_jvto_standard",
       "onward_transfer_classification": "live_condition",
-      "note": "Bali-origin: Gilimanuk→Ketapang sea crossing at the START; the tour then finishes in Surabaya (NOT a finish in Bali).",
+      "note": "Bali-origin round trip: Gilimanuk-Ketapang crossing at the start, and after Ijen the tour returns to Ketapang Harbor with the passenger ferry ticket back to Gilimanuk included -- a finish in Bali, not Surabaya. The onward Bali hotel transfer is an optional add-on. (The Bali-origin 3D2N variant that finishes in Surabaya is ijen-bromo-madakaripura-3d2n.)",
       "evidence": [
         "package-route-map.json",
         "11-package-route-map.json",
@@ -145,7 +139,7 @@
       {
         "rule_id": "ferry_bali_buffer_required",
         "classification": "live_condition",
-        "note": "Ferizy ticket must be pre-booked H-1 (geofence-gated 2.65km from Ketapang). Allow 2–3h harbor queue buffer especially during peak / holiday periods. Confirm vehicle-crossing or guest-only handoff preference before booking.",
+        "note": "Ferizy ticket must be pre-booked H-1 (geofence-gated 2.65km from Ketapang). Allow 2–3h harbor queue buffer especially during peak / holiday periods. The East Java vehicle does not cross: guests cross as passengers and continue with a Bali driver.",
         "severity": "high",
         "evidence": [
           "12-recommendation-rules.json"
@@ -161,7 +155,7 @@
         ]
       }
     ],
-    "note": "Bali-origin: Gilimanuk→Ketapang sea crossing at the START; the tour then finishes in Surabaya (NOT a finish in Bali).",
+    "note": "Bali-origin round trip: Gilimanuk-Ketapang crossing at the start, and after Ijen the tour returns to Ketapang Harbor with the passenger ferry ticket back to Gilimanuk included -- a finish in Bali, not Surabaya. The onward Bali hotel transfer is an optional add-on. (The Bali-origin 3D2N variant that finishes in Surabaya is ijen-bromo-madakaripura-3d2n.)",
     "source_evidence": [
       "core:generated/itinerary-intelligence/11-package-route-map.json",
       "core:generated/itinerary-intelligence/02-dropoff-contexts.json",
@@ -294,7 +288,7 @@
       {
         "rule_id": "ferry_bali_buffer_required",
         "classification": "live_condition",
-        "note": "Ferizy ticket must be pre-booked H-1 (geofence-gated 2.65km from Ketapang). Allow 2–3h harbor queue buffer especially during peak / holiday periods. Confirm vehicle-crossing or guest-only handoff preference before booking.",
+        "note": "Ferizy ticket must be pre-booked H-1 (geofence-gated 2.65km from Ketapang). Allow 2–3h harbor queue buffer especially during peak / holiday periods. The East Java vehicle does not cross: guests cross as passengers and continue with a Bali driver.",
         "severity": "high",
         "evidence": [
           "12-recommendation-rules.json"
@@ -443,7 +437,7 @@
       {
         "rule_id": "ferry_bali_buffer_required",
         "classification": "live_condition",
-        "note": "Ferizy ticket must be pre-booked H-1 (geofence-gated 2.65km from Ketapang). Allow 2–3h harbor queue buffer especially during peak / holiday periods. Confirm vehicle-crossing or guest-only handoff preference before booking.",
+        "note": "Ferizy ticket must be pre-booked H-1 (geofence-gated 2.65km from Ketapang). Allow 2–3h harbor queue buffer especially during peak / holiday periods. The East Java vehicle does not cross: guests cross as passengers and continue with a Bali driver.",
         "severity": "high",
         "evidence": [
           "12-recommendation-rules.json"
@@ -592,7 +586,7 @@
       {
         "rule_id": "ferry_bali_buffer_required",
         "classification": "live_condition",
-        "note": "Ferizy ticket must be pre-booked H-1 (geofence-gated 2.65km from Ketapang). Allow 2–3h harbor queue buffer especially during peak / holiday periods. Confirm vehicle-crossing or guest-only handoff preference before booking.",
+        "note": "Ferizy ticket must be pre-booked H-1 (geofence-gated 2.65km from Ketapang). Allow 2–3h harbor queue buffer especially during peak / holiday periods. The East Java vehicle does not cross: guests cross as passengers and continue with a Bali driver.",
         "severity": "high",
         "evidence": [
           "12-recommendation-rules.json"
@@ -959,7 +953,7 @@
     "release_id": "customer-sales-release-20260628-001",
     "package_key": "bromo-madakaripura-ijen-3d2n",
     "origin": "Surabaya",
-    "ferry_included": false,
+    "ferry_included": true,
     "standard_pickup_options": [
       "Surabaya Airport pickup",
       "Surabaya hotel pickup",
@@ -1134,7 +1128,7 @@
       "ferry_leg": null,
       "boundary_classification": "final_jvto_standard",
       "onward_transfer_classification": "live_condition",
-      "note": "Finishes toward Bali via a Ketapang/Gilimanuk ferry crossing; the onward Bali hotel transfer is a live arrangement, not a direct hotel drop unless stated.",
+      "note": "Finishes at Ketapang Harbor with the passenger ferry ticket Ketapang-Gilimanuk included; the East Java vehicle does not cross. The onward Bali hotel transfer is an optional add-on.",
       "evidence": [
         "package-route-map.json",
         "11-package-route-map.json",
@@ -1154,7 +1148,7 @@
       {
         "rule_id": "ferry_bali_buffer_required",
         "classification": "live_condition",
-        "note": "Ferizy ticket must be pre-booked H-1 (geofence-gated 2.65km from Ketapang). Allow 2–3h harbor queue buffer especially during peak / holiday periods. Confirm vehicle-crossing or guest-only handoff preference before booking.",
+        "note": "Ferizy ticket must be pre-booked H-1 (geofence-gated 2.65km from Ketapang). Allow 2–3h harbor queue buffer especially during peak / holiday periods. The East Java vehicle does not cross: guests cross as passengers and continue with a Bali driver.",
         "severity": "high",
         "evidence": [
           "12-recommendation-rules.json"
@@ -1170,7 +1164,7 @@
         ]
       }
     ],
-    "note": "Finishes toward Bali via a Ketapang/Gilimanuk ferry crossing; the onward Bali hotel transfer is a live arrangement, not a direct hotel drop unless stated.",
+    "note": "Finishes at Ketapang Harbor with the passenger ferry ticket Ketapang-Gilimanuk included; the East Java vehicle does not cross. The onward Bali hotel transfer is an optional add-on.",
     "source_evidence": [
       "core:generated/itinerary-intelligence/11-package-route-map.json",
       "core:generated/itinerary-intelligence/02-dropoff-contexts.json",
@@ -2689,7 +2683,7 @@
     "release_id": "customer-sales-release-20260628-001",
     "package_key": "tumpak-sewu-bromo-ijen-4d3n",
     "origin": "Surabaya",
-    "ferry_included": false,
+    "ferry_included": true,
     "standard_pickup_options": [
       "Surabaya Airport pickup",
       "Surabaya hotel pickup",
@@ -2852,7 +2846,7 @@
       "ferry_leg": null,
       "boundary_classification": "final_jvto_standard",
       "onward_transfer_classification": "live_condition",
-      "note": "Finishes toward Bali via a Ketapang/Gilimanuk ferry crossing; the onward Bali hotel transfer is a live arrangement, not a direct hotel drop unless stated.",
+      "note": "Finishes at Ketapang Harbor with the passenger ferry ticket Ketapang-Gilimanuk included; the East Java vehicle does not cross. The onward Bali hotel transfer is an optional add-on.",
       "evidence": [
         "package-route-map.json",
         "11-package-route-map.json",
@@ -2872,7 +2866,7 @@
       {
         "rule_id": "ferry_bali_buffer_required",
         "classification": "live_condition",
-        "note": "Ferizy ticket must be pre-booked H-1 (geofence-gated 2.65km from Ketapang). Allow 2–3h harbor queue buffer especially during peak / holiday periods. Confirm vehicle-crossing or guest-only handoff preference before booking.",
+        "note": "Ferizy ticket must be pre-booked H-1 (geofence-gated 2.65km from Ketapang). Allow 2–3h harbor queue buffer especially during peak / holiday periods. The East Java vehicle does not cross: guests cross as passengers and continue with a Bali driver.",
         "severity": "high",
         "evidence": [
           "12-recommendation-rules.json"
@@ -2888,7 +2882,7 @@
         ]
       }
     ],
-    "note": "Finishes toward Bali via a Ketapang/Gilimanuk ferry crossing; the onward Bali hotel transfer is a live arrangement, not a direct hotel drop unless stated.",
+    "note": "Finishes at Ketapang Harbor with the passenger ferry ticket Ketapang-Gilimanuk included; the East Java vehicle does not cross. The onward Bali hotel transfer is an optional add-on.",
     "source_evidence": [
       "core:generated/itinerary-intelligence/11-package-route-map.json",
       "core:generated/itinerary-intelligence/02-dropoff-contexts.json",

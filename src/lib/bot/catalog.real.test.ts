@@ -107,18 +107,24 @@ describe.skipIf(!RELEASE_PRESENT)('loadCatalog against the real synced catalog/'
     expect(picked.dayCount).toBe(3)
   })
 
-  it('populates finishCities for every package from the real endpoint-chains.json, and no Bali-origin package finishes in Bali', () => {
+  it('populates finishCities for every package from the real endpoint-chains.json, and only the Bali round-trip package finishes in Bali among Bali-origin ones', () => {
     for (const pkg of loadCatalog().packages) {
       expect(Array.isArray(pkg.finishCities)).toBe(true)
       expect(pkg.finishCities.length).toBeGreaterThan(0)
     }
     // Regression, reported 2026-08-05: "can we finish in Bali?" was answered from a
-    // Bali-ORIGIN package, which the real dropoff data says does NOT finish in Bali at all.
+    // Bali-ORIGIN package that does NOT finish in Bali. Operator-confirmed 2026-09-17: exactly
+    // ONE Bali-origin package is a round trip back to Bali -- bali/bromo-ijen-3d2n
+    // (/tours/from-bali/bromo-ijen-3d2n: Ijen, then Ketapang and the ferry back). Its 3D2N
+    // sibling ijen-bromo-madakaripura-3d2n and the 4D3N/5D4N tours finish in Surabaya, and must
+    // still never be offered as a Bali finish.
     const baliOrigin = loadCatalog().packages.filter((p) => p.origin === 'Bali')
     expect(baliOrigin.length).toBeGreaterThan(0)
     for (const pkg of baliOrigin) {
-      expect(pkg.finishCities).not.toContain('bali')
+      if (pkg.packageKey === 'bali/bromo-ijen-3d2n') expect(pkg.finishCities).toContain('bali')
+      else expect(pkg.finishCities).not.toContain('bali')
     }
+    expect(baliOrigin.filter((p) => p.finishCities.includes('bali')).map((p) => p.packageKey)).toEqual(['bali/bromo-ijen-3d2n'])
     // At least one real package genuinely can finish in Bali (so the "yes" branch of
     // orchestrator.ts's finishCityFact is reachable, not just the "no" branch).
     expect(loadCatalog().packages.some((p) => p.finishCities.includes('bali'))).toBe(true)
