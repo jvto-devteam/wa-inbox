@@ -8,16 +8,19 @@ function jsonResponse(body: unknown) {
   return { ok: true, status: 200, json: () => Promise.resolve(body) } as Response
 }
 
-// ConversationList also fetches /api/labels (for the filter row) on every mount. Routing by
-// URL keeps that call answered with `[]` by default so it never gets mistaken for the
-// conversations list -- e.g. `getAllByRole('button')[0]` would otherwise pick up a stray
-// filter pill instead of the first conversation row. `labels` defaults to empty for every
-// test that isn't specifically exercising the filter row.
-function mockConversationsFetch(list: unknown[], labels: unknown[] = []) {
+// ConversationList also fetches /api/conversations/order-channels (for the filter row) on
+// every mount. Routing by URL keeps that call answered with `[]` by default so it never gets
+// mistaken for the conversations list -- e.g. `getAllByRole('button')[0]` would otherwise pick
+// up a stray filter pill instead of the first conversation row. `channels` defaults to empty
+// for every test that isn't specifically exercising the filter row.
+//
+// The order-channels check must come BEFORE the conversations one: its URL also starts with
+// '/api/conversations'.
+function mockConversationsFetch(list: unknown[], channels: unknown[] = []) {
   vi.mocked(fetch).mockImplementation((input: RequestInfo | URL) => {
     const url = typeof input === 'string' ? input : input.toString()
+    if (url.startsWith('/api/conversations/order-channels')) return Promise.resolve(jsonResponse(channels))
     if (url.startsWith('/api/conversations')) return Promise.resolve(jsonResponse(list))
-    if (url.startsWith('/api/labels')) return Promise.resolve(jsonResponse(labels))
     return Promise.resolve(jsonResponse([]))
   })
 }
@@ -67,7 +70,7 @@ describe('ConversationList search debounce', () => {
     // No timer advance at all -- the very first load must not wait out the debounce window.
     await advanceTimers(0)
 
-    // Also fetches /api/labels on mount (for the filter row) -- assert the conversations
+    // Also fetches /api/conversations/order-channels on mount (for the filter row) -- assert the conversations
     // call specifically rather than the total count.
     expect(fetch).toHaveBeenCalledWith('/api/conversations')
   })
@@ -125,67 +128,64 @@ describe('ConversationList search debounce', () => {
   })
 })
 
-describe('ConversationList label filter', () => {
-  const LABELS = [
-    { id: 'lbl_1', name: 'VIP', color: '#3C6B42' },
-    { id: 'lbl_2', name: 'Komplain', color: '#B23B3B' },
-  ]
+describe('ConversationList channel filter', () => {
+  const CHANNELS = ['JVTO', 'KLOOK']
 
-  it('does not render a filter row when there are no labels in the system', async () => {
+  it('does not render a filter row when no conversation has a booking yet', async () => {
     mockConversationsFetch([], [])
     render(<ConversationList selectedId={null} onSelect={() => {}} />)
     await advanceTimers(0)
 
-    expect(screen.queryByRole('group', { name: 'Filter label' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('group', { name: 'Filter kanal' })).not.toBeInTheDocument()
   })
 
-  it('renders All plus one button per label, with All active by default', async () => {
-    mockConversationsFetch([], LABELS)
+  it('renders All plus one button per distinct order channel, with All active by default', async () => {
+    mockConversationsFetch([], CHANNELS)
     render(<ConversationList selectedId={null} onSelect={() => {}} />)
     await advanceTimers(0)
 
-    const group = screen.getByRole('group', { name: 'Filter label' })
+    const group = screen.getByRole('group', { name: 'Filter kanal' })
     expect(screen.getByRole('button', { name: 'All' })).toHaveAttribute('aria-pressed', 'true')
-    expect(screen.getByRole('button', { name: 'VIP' })).toHaveAttribute('aria-pressed', 'false')
-    expect(screen.getByRole('button', { name: 'Komplain' })).toHaveAttribute('aria-pressed', 'false')
+    expect(screen.getByRole('button', { name: 'JVTO' })).toHaveAttribute('aria-pressed', 'false')
+    expect(screen.getByRole('button', { name: 'KLOOK' })).toHaveAttribute('aria-pressed', 'false')
     expect(group).toBeInTheDocument()
   })
 
-  it('re-fetches with labelId when a label pill is clicked, and marks it active', async () => {
-    mockConversationsFetch([], LABELS)
+  it('re-fetches with orderChannel when a channel pill is clicked, and marks it active', async () => {
+    mockConversationsFetch([], CHANNELS)
     render(<ConversationList selectedId={null} onSelect={() => {}} />)
     await advanceTimers(0)
     vi.mocked(fetch).mockClear()
 
-    fireEvent.click(screen.getByRole('button', { name: 'VIP' }))
+    fireEvent.click(screen.getByRole('button', { name: 'JVTO' }))
     await advanceTimers(300)
 
-    expect(fetch).toHaveBeenCalledWith('/api/conversations?labelId=lbl_1')
-    expect(screen.getByRole('button', { name: 'VIP' })).toHaveAttribute('aria-pressed', 'true')
+    expect(fetch).toHaveBeenCalledWith('/api/conversations?orderChannel=JVTO')
+    expect(screen.getByRole('button', { name: 'JVTO' })).toHaveAttribute('aria-pressed', 'true')
     expect(screen.getByRole('button', { name: 'All' })).toHaveAttribute('aria-pressed', 'false')
   })
 
-  it('combines the active label filter with a search query', async () => {
-    mockConversationsFetch([], LABELS)
+  it('combines the active channel filter with a search query', async () => {
+    mockConversationsFetch([], CHANNELS)
     render(<ConversationList selectedId={null} onSelect={() => {}} />)
     await advanceTimers(0)
 
-    fireEvent.click(screen.getByRole('button', { name: 'VIP' }))
+    fireEvent.click(screen.getByRole('button', { name: 'JVTO' }))
     await advanceTimers(300)
     vi.mocked(fetch).mockClear()
 
     fireEvent.change(screen.getByPlaceholderText(SEARCH_INPUT_PLACEHOLDER), { target: { value: 'ijen' } })
     await advanceTimers(300)
 
-    expect(fetch).toHaveBeenCalledWith('/api/conversations?q=ijen&labelId=lbl_1')
+    expect(fetch).toHaveBeenCalledWith('/api/conversations?q=ijen&orderChannel=JVTO')
   })
 
   it('returns to the unfiltered list when All is clicked again', async () => {
-    mockConversationsFetch([], LABELS)
+    mockConversationsFetch([], CHANNELS)
     render(<ConversationList selectedId={null} onSelect={() => {}} />)
     await advanceTimers(0)
 
-    fireEvent.click(screen.getByRole('button', { name: 'VIP' }))
+    fireEvent.click(screen.getByRole('button', { name: 'JVTO' }))
     await advanceTimers(300)
     vi.mocked(fetch).mockClear()
 

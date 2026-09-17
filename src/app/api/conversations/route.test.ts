@@ -119,21 +119,21 @@ describe('GET /api/conversations', () => {
     }))
   })
 
-  it('filters by labelId, matching conversations that have that label attached', async () => {
+  it('filters by orderChannel, matching conversations whose booking came from that platform', async () => {
     mockPrisma.conversation.findMany.mockResolvedValue([] as never)
-    await GET(new Request('http://localhost/api/conversations?labelId=lbl_1'))
+    await GET(new Request('http://localhost/api/conversations?orderChannel=JVTO'))
     expect(mockPrisma.conversation.findMany).toHaveBeenCalledWith(expect.objectContaining({
-      where: { labels: { some: { labelId: 'lbl_1' } } },
+      where: { orderChannel: 'JVTO' },
     }))
   })
 
-  it('combines a search query and a labelId filter rather than one overriding the other', async () => {
+  it('combines a search query and an orderChannel filter rather than one overriding the other', async () => {
     mockPrisma.conversation.findMany.mockResolvedValue([] as never)
-    await GET(new Request('http://localhost/api/conversations?q=ijen&labelId=lbl_1'))
+    await GET(new Request('http://localhost/api/conversations?q=ijen&orderChannel=JVTO'))
     expect(mockPrisma.conversation.findMany).toHaveBeenCalledWith(expect.objectContaining({
       where: expect.objectContaining({
         OR: expect.any(Array),
-        labels: { some: { labelId: 'lbl_1' } },
+        orderChannel: 'JVTO',
       }),
     }))
   })

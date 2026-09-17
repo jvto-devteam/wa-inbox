@@ -75,6 +75,17 @@ function jsonResponse(body: unknown) {
   return { ok: true, status: 200, json: () => Promise.resolve(body) } as Response
 }
 
+// ConversationList also fetches /api/conversations/order-channels (for the filter row) on
+// mount. That URL starts with '/api/conversations' too, so it must be checked first --
+// otherwise it gets the conversation rows and tries to render each one as a filter pill.
+function mockConversationsFetch(rows: unknown[]) {
+  return vi.fn((input: RequestInfo | URL) => {
+    const url = typeof input === 'string' ? input : input.toString()
+    if (url.startsWith('/api/conversations/order-channels')) return Promise.resolve(jsonResponse([]))
+    return Promise.resolve(jsonResponse(rows))
+  })
+}
+
 beforeEach(() => {
   FakeEventSource.instances = []
   vi.stubGlobal('EventSource', FakeEventSource)
@@ -89,7 +100,7 @@ afterEach(() => {
 
 describe('konsumen SSE lama terhadap event pipeline.step', () => {
   it('ConversationList mengabaikannya: tidak melempar, tidak memuat ulang daftar, baris tidak berubah', async () => {
-    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(jsonResponse(conversationRows))))
+    vi.stubGlobal('fetch', mockConversationsFetch(conversationRows))
     render(<ConversationList selectedId={null} onSelect={() => {}} />)
     await waitFor(() => expect(screen.getByText('Bruno')).toBeInTheDocument())
     vi.mocked(fetch).mockClear()
@@ -151,7 +162,7 @@ describe('konsumen SSE lama terhadap event pipeline.step', () => {
   })
 
   it('event yang benar-benar tidak dikenal pun tidak menjatuhkan konsumen mana pun', async () => {
-    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(jsonResponse(conversationRows))))
+    vi.stubGlobal('fetch', mockConversationsFetch(conversationRows))
     render(<ConversationList selectedId={null} onSelect={() => {}} />)
     await waitFor(() => expect(screen.getByText('Bruno')).toBeInTheDocument())
 

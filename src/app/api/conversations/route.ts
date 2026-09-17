@@ -7,7 +7,7 @@ import { bookingGuestName } from '@/lib/booking/display-name'
 export async function GET(req: Request) {
   const url = new URL(req.url)
   const q = url.searchParams.get('q')?.trim() || null
-  const labelId = url.searchParams.get('labelId')?.trim() || null
+  const orderChannel = url.searchParams.get('orderChannel')?.trim() || null
 
   // Only on the unfiltered load -- a search's own result set deciding whether the sandbox
   // room matches is normal filtering behavior, no need to re-upsert on every keystroke.
@@ -21,8 +21,8 @@ export async function GET(req: Request) {
       { messages: { some: { content: { contains: q, mode: 'insensitive' } } } },
     ]
   }
-  if (labelId) {
-    where.labels = { some: { labelId } }
+  if (orderChannel) {
+    where.orderChannel = orderChannel
   }
 
   const conversations = await prisma.conversation.findMany({

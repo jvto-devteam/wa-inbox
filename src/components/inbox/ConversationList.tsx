@@ -7,16 +7,15 @@ import { EmptyState } from '@/components/ui/empty-state'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
 import { ConversationListItem, type ConversationSummary } from './ConversationListItem'
-import type { LabelOption } from './LabelPicker'
 import { fetchJson } from '@/lib/fetch-json'
 
 const SEARCH_DEBOUNCE_MS = 300
 
-function conversationsUrl(query: string, labelId: string | null) {
+function conversationsUrl(query: string, orderChannel: string | null) {
   const params = new URLSearchParams()
   const trimmed = query.trim()
   if (trimmed) params.set('q', trimmed)
-  if (labelId) params.set('labelId', labelId)
+  if (orderChannel) params.set('orderChannel', orderChannel)
   const qs = params.toString()
   return qs ? `/api/conversations?${qs}` : '/api/conversations'
 }
@@ -71,8 +70,8 @@ export function ConversationList({
 }) {
   const [conversations, setConversations] = useState<ConversationSummary[]>([])
   const [query, setQuery] = useState('')
-  const [labelId, setLabelId] = useState<string | null>(null)
-  const [allLabels, setAllLabels] = useState<LabelOption[]>([])
+  const [channel, setChannel] = useState<string | null>(null)
+  const [channels, setChannels] = useState<string[]>([])
   // Hanya menandai permintaan PERTAMA. Menyalakan kerangka di setiap pencarian akan membuat
   // daftar berkedip di setiap ketukan tombol; hasil lama yang tinggal sebentar lebih tenang.
   const [firstLoadDone, setFirstLoadDone] = useState(false)
@@ -82,15 +81,15 @@ export function ConversationList({
   // directly would tear down and re-open the EventSource on every keystroke and on every
   // single incoming message; the refs let that effect stay mounted for the tab's lifetime.
   const queryRef = useRef(query)
-  const labelIdRef = useRef(labelId)
+  const channelRef = useRef(channel)
   const conversationsRef = useRef(conversations)
   const selectedIdRef = useRef(selectedId)
   useEffect(() => {
     queryRef.current = query
   }, [query])
   useEffect(() => {
-    labelIdRef.current = labelId
-  }, [labelId])
+    channelRef.current = channel
+  }, [channel])
   useEffect(() => {
     conversationsRef.current = conversations
   }, [conversations])
@@ -98,8 +97,10 @@ export function ConversationList({
     selectedIdRef.current = selectedId
   }, [selectedId])
 
+  // Distinct orderChannel values actually on file (JVTO/KLOOK/TWT/...), not a hardcoded list --
+  // whichever platforms have sent a booking so far are exactly the ones worth filtering by.
   useEffect(() => {
-    fetchJson<LabelOption[]>('/api/labels').then(setAllLabels).catch(() => {})
+    fetchJson<string[]>('/api/conversations/order-channels').then(setChannels).catch(() => {})
   }, [])
 
   // Opening a conversation is an immediate "I've seen this" signal, ahead of ThreadView's own
@@ -123,14 +124,14 @@ export function ConversationList({
     }
   }
 
-  const loadConversations = useCallback((q: string, lbl: string | null) => {
+  const loadConversations = useCallback((q: string, ch: string | null) => {
     // On a rejection the list simply keeps whatever it already had: a 401 has already sent
     // the browser to /login, and a 500 must not blank out the agent's inbox.
     //
     // The deep-link case (/inbox?conversation=<id>) is why the selected row is cleared here
     // too: there the id is already selected on mount, so the adjustment above has nothing to
     // react to by the time the list itself arrives.
-    fetchJson<ConversationSummary[]>(conversationsUrl(q, lbl))
+    fetchJson<ConversationSummary[]>(conversationsUrl(q, ch))
       .then((list) =>
         setConversations(
           selectedIdRef.current
@@ -145,13 +146,13 @@ export function ConversationList({
   useEffect(() => {
     if (isFirstRender.current) {
       isFirstRender.current = false
-      loadConversations(query, labelId)
+      loadConversations(query, channel)
       return
     }
 
-    const timer = setTimeout(() => loadConversations(query, labelId), SEARCH_DEBOUNCE_MS)
+    const timer = setTimeout(() => loadConversations(query, channel), SEARCH_DEBOUNCE_MS)
     return () => clearTimeout(timer)
-  }, [query, labelId, loadConversations])
+  }, [query, channel, loadConversations])
 
   // Live updates. Without this the sidebar was a one-shot snapshot: a new customer message
   // never appeared as a row, and a reply on an existing conversation never moved it to the
@@ -184,7 +185,7 @@ export function ConversationList({
       // "percakapan belum dikenal" di bawah.
       if (event.type === 'conversation.updated') {
         if (conversationsRef.current.some((c) => c.id === event.conversationId)) {
-          loadConversations(queryRef.current, labelIdRef.current)
+          loadConversations(queryRef.current, channelRef.current)
         }
         return
       }
@@ -197,7 +198,7 @@ export function ConversationList({
       // what must stay a pure function (React may invoke it twice).
       const known = conversationsRef.current.some((c) => c.id === event.conversationId)
       if (!known) {
-        loadConversations(queryRef.current, labelIdRef.current)
+        loadConversations(queryRef.current, channelRef.current)
         return
       }
 
@@ -252,27 +253,27 @@ export function ConversationList({
           />
         </div>
 
-        {allLabels.length > 0 && (
-          <div role="group" aria-label="Filter label" className="mt-2 flex gap-1.5 overflow-x-auto">
+        {channels.length > 0 && (
+          <div role="group" aria-label="Filter kanal" className="mt-2 flex gap-1.5 overflow-x-auto">
             <Button
               type="button"
               size="sm"
-              variant={labelId === null ? 'default' : 'outline'}
-              aria-pressed={labelId === null}
-              onClick={() => setLabelId(null)}
+              variant={channel === null ? 'default' : 'outline'}
+              aria-pressed={channel === null}
+              onClick={() => setChannel(null)}
             >
               All
             </Button>
-            {allLabels.map((l) => (
+            {channels.map((c) => (
               <Button
-                key={l.id}
+                key={c}
                 type="button"
                 size="sm"
-                variant={labelId === l.id ? 'default' : 'outline'}
-                aria-pressed={labelId === l.id}
-                onClick={() => setLabelId(l.id)}
+                variant={channel === c ? 'default' : 'outline'}
+                aria-pressed={channel === c}
+                onClick={() => setChannel(c)}
               >
-                {l.name}
+                {c}
               </Button>
             ))}
           </div>
