@@ -7,15 +7,26 @@ import { EmptyState } from '@/components/ui/empty-state'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
 import { ConversationListItem, type ConversationSummary } from './ConversationListItem'
+import type { LabelOption } from './LabelPicker'
 import { fetchJson } from '@/lib/fetch-json'
 
 const SEARCH_DEBOUNCE_MS = 300
 
-function conversationsUrl(query: string, orderChannel: string | null) {
+// The filter row is single-select across two different dimensions -- a booking's origin
+// platform (orderChannel, e.g. JVTO/KLOOK) and an operator-defined Label -- so "which pill is
+// active" needs both which kind and which value, not just a bare id.
+type FilterOption = { kind: 'channel'; value: string } | { kind: 'label'; value: string }
+
+function sameFilter(a: FilterOption | null, b: FilterOption | null) {
+  return a === b || (a !== null && b !== null && a.kind === b.kind && a.value === b.value)
+}
+
+function conversationsUrl(query: string, filter: FilterOption | null) {
   const params = new URLSearchParams()
   const trimmed = query.trim()
   if (trimmed) params.set('q', trimmed)
-  if (orderChannel) params.set('orderChannel', orderChannel)
+  if (filter?.kind === 'channel') params.set('orderChannel', filter.value)
+  if (filter?.kind === 'label') params.set('labelId', filter.value)
   const qs = params.toString()
   return qs ? `/api/conversations?${qs}` : '/api/conversations'
 }
@@ -70,8 +81,9 @@ export function ConversationList({
 }) {
   const [conversations, setConversations] = useState<ConversationSummary[]>([])
   const [query, setQuery] = useState('')
-  const [channel, setChannel] = useState<string | null>(null)
+  const [filter, setFilter] = useState<FilterOption | null>(null)
   const [channels, setChannels] = useState<string[]>([])
+  const [allLabels, setAllLabels] = useState<LabelOption[]>([])
   // Hanya menandai permintaan PERTAMA. Menyalakan kerangka di setiap pencarian akan membuat
   // daftar berkedip di setiap ketukan tombol; hasil lama yang tinggal sebentar lebih tenang.
   const [firstLoadDone, setFirstLoadDone] = useState(false)
@@ -81,15 +93,15 @@ export function ConversationList({
   // directly would tear down and re-open the EventSource on every keystroke and on every
   // single incoming message; the refs let that effect stay mounted for the tab's lifetime.
   const queryRef = useRef(query)
-  const channelRef = useRef(channel)
+  const filterRef = useRef(filter)
   const conversationsRef = useRef(conversations)
   const selectedIdRef = useRef(selectedId)
   useEffect(() => {
     queryRef.current = query
   }, [query])
   useEffect(() => {
-    channelRef.current = channel
-  }, [channel])
+    filterRef.current = filter
+  }, [filter])
   useEffect(() => {
     conversationsRef.current = conversations
   }, [conversations])
@@ -101,6 +113,13 @@ export function ConversationList({
   // whichever platforms have sent a booking so far are exactly the ones worth filtering by.
   useEffect(() => {
     fetchJson<string[]>('/api/conversations/order-channels').then(setChannels).catch(() => {})
+  }, [])
+
+  // Operator-defined labels, the other filterable dimension. Created/renamed from ContactPanel
+  // (a sibling, separate mount) -- a label made mid-session shows up here on the next full
+  // reload of this list, same as it does for the per-row label badges.
+  useEffect(() => {
+    fetchJson<LabelOption[]>('/api/labels').then(setAllLabels).catch(() => {})
   }, [])
 
   // Opening a conversation is an immediate "I've seen this" signal, ahead of ThreadView's own
@@ -124,14 +143,14 @@ export function ConversationList({
     }
   }
 
-  const loadConversations = useCallback((q: string, ch: string | null) => {
+  const loadConversations = useCallback((q: string, f: FilterOption | null) => {
     // On a rejection the list simply keeps whatever it already had: a 401 has already sent
     // the browser to /login, and a 500 must not blank out the agent's inbox.
     //
     // The deep-link case (/inbox?conversation=<id>) is why the selected row is cleared here
     // too: there the id is already selected on mount, so the adjustment above has nothing to
     // react to by the time the list itself arrives.
-    fetchJson<ConversationSummary[]>(conversationsUrl(q, ch))
+    fetchJson<ConversationSummary[]>(conversationsUrl(q, f))
       .then((list) =>
         setConversations(
           selectedIdRef.current
@@ -146,13 +165,13 @@ export function ConversationList({
   useEffect(() => {
     if (isFirstRender.current) {
       isFirstRender.current = false
-      loadConversations(query, channel)
+      loadConversations(query, filter)
       return
     }
 
-    const timer = setTimeout(() => loadConversations(query, channel), SEARCH_DEBOUNCE_MS)
+    const timer = setTimeout(() => loadConversations(query, filter), SEARCH_DEBOUNCE_MS)
     return () => clearTimeout(timer)
-  }, [query, channel, loadConversations])
+  }, [query, filter, loadConversations])
 
   // Live updates. Without this the sidebar was a one-shot snapshot: a new customer message
   // never appeared as a row, and a reply on an existing conversation never moved it to the
@@ -185,7 +204,7 @@ export function ConversationList({
       // "percakapan belum dikenal" di bawah.
       if (event.type === 'conversation.updated') {
         if (conversationsRef.current.some((c) => c.id === event.conversationId)) {
-          loadConversations(queryRef.current, channelRef.current)
+          loadConversations(queryRef.current, filterRef.current)
         }
         return
       }
@@ -198,7 +217,7 @@ export function ConversationList({
       // what must stay a pure function (React may invoke it twice).
       const known = conversationsRef.current.some((c) => c.id === event.conversationId)
       if (!known) {
-        loadConversations(queryRef.current, channelRef.current)
+        loadConversations(queryRef.current, filterRef.current)
         return
       }
 
@@ -253,29 +272,48 @@ export function ConversationList({
           />
         </div>
 
-        {channels.length > 0 && (
-          <div role="group" aria-label="Filter kanal" className="mt-2 flex gap-1.5 overflow-x-auto">
+        {(channels.length > 0 || allLabels.length > 0) && (
+          <div role="group" aria-label="Filter inbox" className="mt-2 flex gap-1.5 overflow-x-auto">
             <Button
               type="button"
               size="sm"
-              variant={channel === null ? 'default' : 'outline'}
-              aria-pressed={channel === null}
-              onClick={() => setChannel(null)}
+              variant={filter === null ? 'default' : 'outline'}
+              aria-pressed={filter === null}
+              onClick={() => setFilter(null)}
             >
               All
             </Button>
-            {channels.map((c) => (
-              <Button
-                key={c}
-                type="button"
-                size="sm"
-                variant={channel === c ? 'default' : 'outline'}
-                aria-pressed={channel === c}
-                onClick={() => setChannel(c)}
-              >
-                {c}
-              </Button>
-            ))}
+            {channels.map((c) => {
+              const active = sameFilter(filter, { kind: 'channel', value: c })
+              return (
+                <Button
+                  key={`channel:${c}`}
+                  type="button"
+                  size="sm"
+                  variant={active ? 'default' : 'outline'}
+                  aria-pressed={active}
+                  onClick={() => setFilter({ kind: 'channel', value: c })}
+                >
+                  {c}
+                </Button>
+              )
+            })}
+            {allLabels.map((l) => {
+              const active = sameFilter(filter, { kind: 'label', value: l.id })
+              return (
+                <Button
+                  key={`label:${l.id}`}
+                  type="button"
+                  size="sm"
+                  variant={active ? 'default' : 'outline'}
+                  aria-pressed={active}
+                  onClick={() => setFilter({ kind: 'label', value: l.id })}
+                >
+                  <span aria-hidden="true" className="size-2 shrink-0 rounded-full" style={{ backgroundColor: l.color }} />
+                  {l.name}
+                </Button>
+              )
+            })}
           </div>
         )}
       </div>

@@ -8,6 +8,7 @@ export async function GET(req: Request) {
   const url = new URL(req.url)
   const q = url.searchParams.get('q')?.trim() || null
   const orderChannel = url.searchParams.get('orderChannel')?.trim() || null
+  const labelId = url.searchParams.get('labelId')?.trim() || null
 
   // Only on the unfiltered load -- a search's own result set deciding whether the sandbox
   // room matches is normal filtering behavior, no need to re-upsert on every keystroke.
@@ -23,6 +24,11 @@ export async function GET(req: Request) {
   }
   if (orderChannel) {
     where.orderChannel = orderChannel
+  }
+  // The inbox filter row is single-select (one pill active at a time), so the UI never sends
+  // both -- but nothing here stops a caller from combining them, same as `q` above.
+  if (labelId) {
+    where.labels = { some: { labelId } }
   }
 
   const conversations = await prisma.conversation.findMany({

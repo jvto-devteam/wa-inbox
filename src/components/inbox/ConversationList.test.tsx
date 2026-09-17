@@ -8,19 +8,20 @@ function jsonResponse(body: unknown) {
   return { ok: true, status: 200, json: () => Promise.resolve(body) } as Response
 }
 
-// ConversationList also fetches /api/conversations/order-channels (for the filter row) on
-// every mount. Routing by URL keeps that call answered with `[]` by default so it never gets
-// mistaken for the conversations list -- e.g. `getAllByRole('button')[0]` would otherwise pick
-// up a stray filter pill instead of the first conversation row. `channels` defaults to empty
-// for every test that isn't specifically exercising the filter row.
+// ConversationList also fetches /api/conversations/order-channels and /api/labels (for the
+// filter row) on every mount. Routing by URL keeps those calls answered with `[]` by default so
+// neither gets mistaken for the conversations list -- e.g. `getAllByRole('button')[0]` would
+// otherwise pick up a stray filter pill instead of the first conversation row. `channels` and
+// `labels` default to empty for every test that isn't specifically exercising the filter row.
 //
 // The order-channels check must come BEFORE the conversations one: its URL also starts with
 // '/api/conversations'.
-function mockConversationsFetch(list: unknown[], channels: unknown[] = []) {
+function mockConversationsFetch(list: unknown[], channels: unknown[] = [], labels: unknown[] = []) {
   vi.mocked(fetch).mockImplementation((input: RequestInfo | URL) => {
     const url = typeof input === 'string' ? input : input.toString()
     if (url.startsWith('/api/conversations/order-channels')) return Promise.resolve(jsonResponse(channels))
     if (url.startsWith('/api/conversations')) return Promise.resolve(jsonResponse(list))
+    if (url.startsWith('/api/labels')) return Promise.resolve(jsonResponse(labels))
     return Promise.resolve(jsonResponse([]))
   })
 }
@@ -128,31 +129,46 @@ describe('ConversationList search debounce', () => {
   })
 })
 
-describe('ConversationList channel filter', () => {
+describe('ConversationList filter row (channel + label)', () => {
   const CHANNELS = ['JVTO', 'KLOOK']
+  const LABELS = [
+    { id: 'lbl_1', name: 'VIP', color: '#3C6B42' },
+    { id: 'lbl_2', name: 'Komplain', color: '#B23B3B' },
+  ]
 
-  it('does not render a filter row when no conversation has a booking yet', async () => {
-    mockConversationsFetch([], [])
+  it('does not render a filter row when there is neither a channel nor a label yet', async () => {
+    mockConversationsFetch([], [], [])
     render(<ConversationList selectedId={null} onSelect={() => {}} />)
     await advanceTimers(0)
 
-    expect(screen.queryByRole('group', { name: 'Filter kanal' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('group', { name: 'Filter inbox' })).not.toBeInTheDocument()
   })
 
-  it('renders All plus one button per distinct order channel, with All active by default', async () => {
-    mockConversationsFetch([], CHANNELS)
+  it('renders All plus one button per channel and per label, with All active by default', async () => {
+    mockConversationsFetch([], CHANNELS, LABELS)
     render(<ConversationList selectedId={null} onSelect={() => {}} />)
     await advanceTimers(0)
 
-    const group = screen.getByRole('group', { name: 'Filter kanal' })
+    const group = screen.getByRole('group', { name: 'Filter inbox' })
     expect(screen.getByRole('button', { name: 'All' })).toHaveAttribute('aria-pressed', 'true')
     expect(screen.getByRole('button', { name: 'JVTO' })).toHaveAttribute('aria-pressed', 'false')
     expect(screen.getByRole('button', { name: 'KLOOK' })).toHaveAttribute('aria-pressed', 'false')
+    expect(screen.getByRole('button', { name: 'VIP' })).toHaveAttribute('aria-pressed', 'false')
+    expect(screen.getByRole('button', { name: 'Komplain' })).toHaveAttribute('aria-pressed', 'false')
     expect(group).toBeInTheDocument()
   })
 
+  it('renders a channel-only row when there are no labels yet', async () => {
+    mockConversationsFetch([], CHANNELS, [])
+    render(<ConversationList selectedId={null} onSelect={() => {}} />)
+    await advanceTimers(0)
+
+    expect(screen.getByRole('group', { name: 'Filter inbox' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'JVTO' })).toBeInTheDocument()
+  })
+
   it('re-fetches with orderChannel when a channel pill is clicked, and marks it active', async () => {
-    mockConversationsFetch([], CHANNELS)
+    mockConversationsFetch([], CHANNELS, LABELS)
     render(<ConversationList selectedId={null} onSelect={() => {}} />)
     await advanceTimers(0)
     vi.mocked(fetch).mockClear()
@@ -165,8 +181,38 @@ describe('ConversationList channel filter', () => {
     expect(screen.getByRole('button', { name: 'All' })).toHaveAttribute('aria-pressed', 'false')
   })
 
-  it('combines the active channel filter with a search query', async () => {
-    mockConversationsFetch([], CHANNELS)
+  it('re-fetches with labelId when a label pill is clicked, and marks it active', async () => {
+    mockConversationsFetch([], CHANNELS, LABELS)
+    render(<ConversationList selectedId={null} onSelect={() => {}} />)
+    await advanceTimers(0)
+    vi.mocked(fetch).mockClear()
+
+    fireEvent.click(screen.getByRole('button', { name: 'VIP' }))
+    await advanceTimers(300)
+
+    expect(fetch).toHaveBeenCalledWith('/api/conversations?labelId=lbl_1')
+    expect(screen.getByRole('button', { name: 'VIP' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: 'All' })).toHaveAttribute('aria-pressed', 'false')
+  })
+
+  it('picking a label deactivates a previously active channel pill, and vice versa', async () => {
+    mockConversationsFetch([], CHANNELS, LABELS)
+    render(<ConversationList selectedId={null} onSelect={() => {}} />)
+    await advanceTimers(0)
+
+    fireEvent.click(screen.getByRole('button', { name: 'JVTO' }))
+    await advanceTimers(300)
+    expect(screen.getByRole('button', { name: 'JVTO' })).toHaveAttribute('aria-pressed', 'true')
+
+    fireEvent.click(screen.getByRole('button', { name: 'VIP' }))
+    await advanceTimers(300)
+
+    expect(screen.getByRole('button', { name: 'JVTO' })).toHaveAttribute('aria-pressed', 'false')
+    expect(screen.getByRole('button', { name: 'VIP' })).toHaveAttribute('aria-pressed', 'true')
+  })
+
+  it('combines the active filter with a search query', async () => {
+    mockConversationsFetch([], CHANNELS, LABELS)
     render(<ConversationList selectedId={null} onSelect={() => {}} />)
     await advanceTimers(0)
 
@@ -181,11 +227,11 @@ describe('ConversationList channel filter', () => {
   })
 
   it('returns to the unfiltered list when All is clicked again', async () => {
-    mockConversationsFetch([], CHANNELS)
+    mockConversationsFetch([], CHANNELS, LABELS)
     render(<ConversationList selectedId={null} onSelect={() => {}} />)
     await advanceTimers(0)
 
-    fireEvent.click(screen.getByRole('button', { name: 'JVTO' }))
+    fireEvent.click(screen.getByRole('button', { name: 'VIP' }))
     await advanceTimers(300)
     vi.mocked(fetch).mockClear()
 

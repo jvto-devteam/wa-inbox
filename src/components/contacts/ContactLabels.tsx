@@ -15,13 +15,15 @@ export function ContactLabels({
   initialLabels: LabelOption[]
 }) {
   const [attachedLabels, setAttachedLabels] = useState<LabelOption[]>(initialLabels)
+  const [labels, setLabels] = useState<LabelOption[]>(allLabels)
 
   return (
     <LabelPicker
       conversationId={conversationId}
-      allLabels={allLabels}
+      allLabels={labels}
       attachedLabels={attachedLabels}
       onAttachedChange={setAttachedLabels}
+      onAllLabelsChange={setLabels}
     />
   )
 }

@@ -138,6 +138,7 @@ export function ContactPanel({ conversationId, className }: { conversationId: st
         allLabels={allLabels}
         attachedLabels={detail.labels}
         onAttachedChange={(labels) => setDetail((prev) => (prev ? { ...prev, labels } : prev))}
+        onAllLabelsChange={setAllLabels}
       />
 
       <RemindersSection contactId={detail.contactId} />
