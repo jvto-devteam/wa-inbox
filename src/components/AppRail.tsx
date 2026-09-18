@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Bot, FileText, Home, MessageSquare, Settings, SlidersHorizontal, Users } from 'lucide-react'
+import { Bot, FileText, Home, Menu, MessageSquare, Settings, SlidersHorizontal, Users } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { Tooltip } from '@/components/ui/tooltip'
 import { GapBell } from '@/components/GapBell'
@@ -22,6 +22,15 @@ import { cn } from '@/lib/utils'
 // Daftar tujuannya TIDAK berubah — tujuh yang sama, href yang sama, aturan aktif yang sama.
 // Yang berubah hanya bentuknya. `NAV_ITEMS` diekspor supaya test bisa membandingkan daftar itu
 // dengan daftar sebelumnya alih-alih mempercayai ingatan.
+//
+// Di ponsel, hanya EMPAT item pertama (PRIMARY_ITEMS) yang tampil langsung di bar; sisanya
+// (OVERFLOW_ITEMS) ada di balik tombol "Semua" yang membuka sheet berisi daftar itu. Ini
+// menggantikan pendekatan lama (semua tujuh sejajar, digulung mendatar kalau tidak muat):
+// scroll horizontal tidak berhenti tumbuh setiap ada menu baru, sementara overflow-sheet
+// selalu punya lebar tetap di bar berapa pun jumlah tujuannya nanti. Elemennya TIDAK
+// diduplikasi — OVERFLOW_ITEMS dirender sekali di dalam wrapper yang `md:contents` (jadi di
+// desktop ia lebur jadi bagian biasa dari rail vertikal, sama seperti sebelumnya) dan hanya
+// menjadi sheet fixed-position saat `moreOpen` true di ponsel.
 
 /**
  * Tujuh tujuan tingkat atas, dalam urutan yang sama seperti bar atas sebelumnya.
@@ -40,6 +49,11 @@ export const NAV_ITEMS: ReadonlyArray<{ href: string; label: string; icon: Lucid
   { href: '/bot-control', label: 'Bot Control', icon: SlidersHorizontal },
   { href: '/settings', label: 'Pengaturan', icon: Settings },
 ] as const
+
+/** Empat tujuan yang tampil langsung di bar bawah ponsel, tanpa perlu buka "Semua". */
+const PRIMARY_ITEMS = NAV_ITEMS.slice(0, 4)
+/** Sisanya, di balik tombol "Semua" di ponsel — dan bagian biasa dari rail di desktop. */
+const OVERFLOW_ITEMS = NAV_ITEMS.slice(4)
 
 type NumberStatus = { officialTokenValid: boolean; unofficialConfigured: boolean }
 type Session = { role: 'ADMIN' | 'AGENT'; name: string }
@@ -71,11 +85,44 @@ export function initialsFrom(name: string): string {
     .join('')
 }
 
+/**
+ * Satu tautan nav, dipakai untuk PRIMARY_ITEMS maupun OVERFLOW_ITEMS — className-nya sama
+ * persis di kedua konteks, supaya tidak ada tujuan yang terlihat "asing" tergantung ia
+ * dirender langsung di bar atau di dalam sheet "Semua"/rail desktop.
+ */
+function renderNavItem(item: (typeof NAV_ITEMS)[number], pathname: string) {
+  const active = isActivePath(pathname, item.href)
+  const Icon = item.icon
+  return (
+    <Link
+      key={item.href}
+      href={item.href}
+      aria-current={active ? 'page' : undefined}
+      className={cn(
+        'focus-ring-inverse flex w-16 shrink-0 flex-col items-center justify-start gap-1 rounded-md px-0.5 py-2',
+        'text-center text-[10px] leading-[1.15] font-medium tracking-tight transition-colors',
+        'md:w-full',
+        active
+          ? // Satu dari tiga tempat aksen boleh dibelanjakan (aturan 2 sistem desain).
+            // Putih di atas --color-accent = 6.6:1, jauh di atas ambang teks kecil.
+            'bg-accent text-white'
+          : 'text-white/70 hover:bg-white/10 hover:text-white'
+      )}
+    >
+      <Icon aria-hidden="true" className="size-[18px] shrink-0" strokeWidth={1.75} />
+      {/* Label SELALU terlihat, dan ia adalah nama aksesibel tautan ini — bukan aria-label
+          terpisah yang bisa menyimpang dari yang terbaca di layar. */}
+      <span className="w-full">{item.label}</span>
+    </Link>
+  )
+}
+
 export function AppRail() {
   const pathname = usePathname()
   const [status, setStatus] = useState<NumberStatus | null>(null)
   const [session, setSession] = useState<Session | null>(null)
   const [menuOpen, setMenuOpen] = useState(false)
+  const [moreOpen, setMoreOpen] = useState(false)
   const [loggingOut, setLoggingOut] = useState(false)
   const [logoutError, setLogoutError] = useState<string | null>(null)
   const accountRef = useRef<HTMLDivElement>(null)
@@ -106,6 +153,18 @@ export function AppRail() {
       document.removeEventListener('keydown', onKeyDown)
     }
   }, [menuOpen])
+
+  // Sheet "Semua" ditutup lewat tap di backdrop (lihat JSX-nya) atau Escape di sini — tidak
+  // perlu pointerdown-di-luar seperti menu akun karena backdrop-nya sudah menutupi seluruh
+  // layar, jadi setiap tap di luar sheet SUDAH berarti tap di backdrop.
+  useEffect(() => {
+    if (!moreOpen) return
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Escape') setMoreOpen(false)
+    }
+    document.addEventListener('keydown', onKeyDown)
+    return () => document.removeEventListener('keydown', onKeyDown)
+  }, [moreOpen])
 
   // Genuinely waits for the server before navigating. Redirecting first would race the
   // in-flight POST against a document unload that can cancel it, leaving the session cookie
@@ -172,51 +231,77 @@ export function AppRail() {
       <nav
         aria-label="Menu utama"
         className={cn(
-          // Di ponsel tujuh tujuan × 64px = 448px, lebih lebar dari layar 390px, jadi barisnya
-          // menggulung mendatar. Itu pilihan sadar: memotong daftar menjadi "5 + Lainnya"
-          // menyembunyikan dua tujuan di balik ketukan kedua, dan menyembunyikan labelnya
-          // membuat rail tidak bisa dipelajari justru di perangkat yang tidak punya hover.
-          'flex min-w-0 flex-1 flex-row items-stretch gap-0.5 overflow-x-auto',
+          // Di ponsel hanya PRIMARY_ITEMS + tombol "Semua" yang sejajar di bar (5 slot × 64px =
+          // 320px, muat di layar 390px), jadi tidak perlu lagi menggulung mendatar.
+          'flex min-w-0 flex-1 flex-row items-stretch gap-0.5',
           'md:w-full md:flex-none md:flex-col md:gap-0.5 md:overflow-x-visible md:overflow-y-auto md:px-1'
         )}
       >
-        {NAV_ITEMS.map((item) => {
-          const active = isActivePath(pathname, item.href)
-          const Icon = item.icon
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              aria-current={active ? 'page' : undefined}
-              className={cn(
-                'focus-ring-inverse flex w-16 shrink-0 flex-col items-center justify-start gap-1 rounded-md px-0.5 py-2',
-                'text-center text-[10px] leading-[1.15] font-medium tracking-tight transition-colors',
-                'md:w-full',
-                active
-                  ? // Satu dari tiga tempat aksen boleh dibelanjakan (aturan 2 sistem desain).
-                    // Putih di atas --color-accent = 6.6:1, jauh di atas ambang teks kecil.
-                    'bg-accent text-white'
-                  : 'text-white/70 hover:bg-white/10 hover:text-white'
-              )}
-            >
-              <Icon aria-hidden="true" className="size-[18px] shrink-0" strokeWidth={1.75} />
-              {/* Label SELALU terlihat, dan ia adalah nama aksesibel tautan ini — bukan
-                  aria-label terpisah yang bisa menyimpang dari yang terbaca di layar. */}
-              <span className="w-full">{item.label}</span>
-            </Link>
-          )
-        })}
+        {PRIMARY_ITEMS.map((item) => renderNavItem(item, pathname))}
+
+        {/* Tombol "Semua": hanya ada di ponsel (di desktop OVERFLOW_ITEMS sudah tampil langsung
+            lewat wrapper `md:contents` di bawah). Bentuknya sengaja disamakan dengan item nav
+            lain (ikon di atas, label di bawah) supaya tidak terlihat seperti kontrol asing di
+            antara tautan navigasi. */}
+        <button
+          type="button"
+          onClick={() => setMoreOpen((open) => !open)}
+          aria-expanded={moreOpen}
+          aria-haspopup="menu"
+          aria-label="Menu lainnya"
+          className={cn(
+            'focus-ring-inverse flex w-16 shrink-0 flex-col items-center justify-start gap-1 rounded-md px-0.5 py-2',
+            'text-center text-[10px] leading-[1.15] font-medium tracking-tight text-white/70 transition-colors hover:bg-white/10 hover:text-white',
+            'md:hidden'
+          )}
+        >
+          <Menu aria-hidden="true" className="size-[18px] shrink-0" strokeWidth={1.75} />
+          <span className="w-full">Semua</span>
+        </button>
+
+        {/* OVERFLOW_ITEMS dirender SEKALI di sini — tidak pernah diduplikasi. `md:contents`
+            membuat div ini transparan secara layout di desktop, jadi anak-anaknya menjadi
+            bagian biasa dari rail vertikal `<nav>`, persis seperti sebelum ada tombol "Semua".
+            Di ponsel, div yang sama menjadi sheet `fixed` (tidak akan terpotong oleh leluhur
+            manapun yang menggulung, sama seperti alasan GapBell ada di luar `<nav>`) yang
+            hanya tampil saat `moreOpen`. */}
+        <div
+          // role="menu" hanya dipasang saat benar-benar terbuka: div ini SELALU ada di DOM
+          // (lihat komentar di atas), jadi memasangnya tanpa syarat akan membuat
+          // `getByRole('menu')` ambigu dengan popover akun di bawah — dan secara semantik pun
+          // sheet yang tersembunyi bukan menu yang sedang aktif.
+          role={moreOpen ? 'menu' : undefined}
+          aria-label="Menu lainnya"
+          className={cn(
+            'md:contents',
+            moreOpen
+              ? 'fixed inset-x-2 bottom-16 z-40 grid grid-cols-3 place-items-center gap-1 rounded-lg border border-line bg-ink p-2 shadow-popover'
+              : 'hidden'
+          )}
+        >
+          {OVERFLOW_ITEMS.map((item) => renderNavItem(item, pathname))}
+        </div>
+
+        {/* Backdrop: penutup penuh layar, hanya ada saat sheet terbuka. Tap di mana pun di
+            sini menutup sheet tanpa navigasi — lebih sederhana daripada pointerdown-di-luar
+            karena backdrop-nya sendiri SUDAH menutupi seluruh "luar". */}
+        {moreOpen && (
+          <div
+            aria-hidden="true"
+            onClick={() => setMoreOpen(false)}
+            className="fixed inset-0 z-30 bg-black/40 md:hidden"
+          />
+        )}
       </nav>
 
       {/* Lonceng gap: DI LUAR <nav>, dan itu load-bearing. Isinya popover `absolute` yang dibuka
-          di luar kotak tombolnya (ke atas di ponsel, ke kanan di desktop), sementara <nav> di
-          atas menggulung — `overflow-x-auto` di ponsel, dan di desktop `md:overflow-x-visible`
-          yang dihitung ulang CSS menjadi `auto` karena berpasangan dengan `md:overflow-y-auto`.
-          Leluhur yang menggulung MEMOTONG popover: menunya tetap ada di DOM (jadi tidak ada test
-          render yang gagal) tapi tidak pernah terlihat operator. Tempatnya sekarang sama dengan
-          menu akun di bawah, yang memang selalu tampil. Bonus di ponsel: lonceng tidak lagi ikut
-          menggulung menjauh — notifikasi yang harus dicari dengan menggeser adalah notifikasi
-          yang terlewat. Bukan tautan, karena isinya daftar yang dibuka di tempat. */}
+          di luar kotak tombolnya (ke atas di ponsel, ke kanan di desktop). <nav> sendiri tidak
+          lagi menggulung di ponsel (lihat komentar "Semua" di atas), tapi di desktop ia masih
+          `md:overflow-x-visible` yang dihitung ulang CSS menjadi `auto` karena berpasangan
+          dengan `md:overflow-y-auto`. Leluhur yang menggulung MEMOTONG popover: menunya tetap
+          ada di DOM (jadi tidak ada test render yang gagal) tapi tidak pernah terlihat operator.
+          Tempatnya sekarang sama dengan menu akun di bawah, yang memang selalu tampil. Bukan
+          tautan, karena isinya daftar yang dibuka di tempat. */}
       <GapBell />
 
       {/* Kesehatan kanal. Di bar atas lama ini dua lencana teks penuh yang selalu menyala hijau

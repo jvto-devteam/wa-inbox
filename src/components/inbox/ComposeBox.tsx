@@ -519,17 +519,36 @@ export function ComposeBox({
       )}
       {/* Siapa yang menjawab chat ini, dan tombol untuk menukarnya. Sebelumnya dua tombol pil
           berwarna kuning/hijau tanpa kalimat apa pun di sebelahnya, jadi keadaan sekarang
-          harus disimpulkan dari tombolnya sendiri -- yang justru menyebut keadaan BERIKUTNYA. */}
-      <div className="flex items-center gap-2 text-xs text-ink-muted">
-        {botEnabled ? (
-          <Bot aria-hidden="true" className="size-3.5 shrink-0 text-ink-subtle" strokeWidth={1.75} />
-        ) : (
-          <BotOff aria-hidden="true" className="size-3.5 shrink-0 text-ink-subtle" strokeWidth={1.75} />
+          harus disimpulkan dari tombolnya sendiri -- yang justru menyebut keadaan BERIKUTNYA.
+          Jalur kirim (Official/Unofficial) juga tinggal di sini sekarang, bukan di baris alat
+          utama di bawah -- baris itu sudah punya empat elemen (lampiran, kotak tulis, kirim,
+          dan sebelumnya jalur kirim), dan jalur kirim adalah satu-satunya yang statusnya perlu
+          selalu terlihat tanpa membuka apa pun. `flex-wrap` di sini murni jaring pengaman: di
+          layar sesempit apapun baris ini menggulung ke bawah alih-alih memotong salah satu
+          elemen, bukan pengganti perhitungan lebar yang sebenarnya. */}
+      <div className="flex flex-wrap items-center gap-2 text-xs text-ink-muted">
+        {!isTest && (
+          <Select
+            value={channel}
+            onChange={(e) => selectChannel(e.target.value as 'OFFICIAL' | 'UNOFFICIAL')}
+            className="w-auto shrink-0 py-1 text-xs"
+            aria-label="Channel"
+          >
+            <option value="OFFICIAL">Official</option>
+            <option value="UNOFFICIAL">Unofficial</option>
+          </Select>
         )}
-        <span className="min-w-0 truncate">
-          {botEnabled ? 'Bot menjawab chat ini otomatis' : 'Chat ini dijawab agen'}
+        <span className="flex min-w-0 flex-1 items-center gap-1.5 truncate">
+          {botEnabled ? (
+            <Bot aria-hidden="true" className="size-3.5 shrink-0 text-ink-subtle" strokeWidth={1.75} />
+          ) : (
+            <BotOff aria-hidden="true" className="size-3.5 shrink-0 text-ink-subtle" strokeWidth={1.75} />
+          )}
+          <span className="min-w-0 truncate">
+            {botEnabled ? 'Bot menjawab chat ini otomatis' : 'Chat ini dijawab agen'}
+          </span>
         </span>
-        <Button type="button" variant="outline" size="sm" onClick={toggleBot} className="ml-auto">
+        <Button type="button" variant="outline" size="sm" onClick={toggleBot} className="ml-auto shrink-0">
           {botEnabled ? 'Ambil Alih dari Bot' : 'Aktifkan Bot untuk Chat Ini'}
         </Button>
       </div>
@@ -741,20 +760,12 @@ export function ComposeBox({
           {sendError}
         </p>
       )}
-      {/* Satu baris alat: jalur kirim, lampiran/template, kotak tulis, kirim. items-end supaya
-          tombol tetap sejajar dasar kotak tulis saat kotaknya tumbuh, bukan melompat ke tengah. */}
+      {/* Satu baris alat: lampiran/template, kotak tulis, kirim. Jalur kirim pindah ke baris
+          status bot di atas. items-end supaya tombol tetap sejajar dasar kotak tulis saat
+          kotaknya tumbuh, bukan melompat ke tengah. */}
       <div className="flex items-end gap-1.5">
         {!isTest && (
           <>
-            <Select
-              value={channel}
-              onChange={(e) => selectChannel(e.target.value as 'OFFICIAL' | 'UNOFFICIAL')}
-              className="w-auto shrink-0 text-sm"
-              aria-label="Channel"
-            >
-              <option value="OFFICIAL">Official</option>
-              <option value="UNOFFICIAL">Unofficial</option>
-            </Select>
             <input ref={fileInputRef} type="file" className="hidden" onChange={handleAttachmentSelected} />
             <div ref={attachMenuRef} className="relative shrink-0">
               {/* A single "+" trigger for everything besides plain text -- Foto & Video, Dokumen,

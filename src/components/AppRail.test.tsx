@@ -373,6 +373,78 @@ describe('semua halaman masih terjangkau', () => {
  */
 const CLIPPING_CLASS = /(^|:)overflow(-[xy])?-(auto|scroll|hidden)$/
 
+describe('AppRail — sheet "Semua"', () => {
+  const OVERFLOW_LABELS = ['Chatbot', 'Bot Control', 'Pengaturan']
+  const PRIMARY_LABELS = ['Beranda', 'Inbox', 'Kontak', 'Template Pesan']
+
+  it('menyembunyikan tautan overflow dari peran menu sampai "Semua" dibuka', () => {
+    stubApi()
+    render(<AppRail />)
+
+    // Tautannya tetap ADA di DOM (lihat komentar di komponen: satu set elemen dipakai lagi
+    // di rail desktop lewat `md:contents`), tapi belum berperan sebagai menu yang terbuka.
+    expect(screen.queryByRole('menu', { name: 'Menu lainnya' })).not.toBeInTheDocument()
+    for (const label of OVERFLOW_LABELS) {
+      expect(screen.getByRole('link', { name: label })).toBeInTheDocument()
+    }
+  })
+
+  it('membuka sheet berisi tepat tiga tujuan overflow saat tombol "Semua" ditekan', () => {
+    stubApi()
+    render(<AppRail />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Menu lainnya' }))
+
+    const sheet = screen.getByRole('menu', { name: 'Menu lainnya' })
+    for (const label of OVERFLOW_LABELS) {
+      expect(screen.getByRole('link', { name: label })).toBeInTheDocument()
+    }
+    // Item utama tidak diduplikasi ke dalam sheet.
+    for (const label of PRIMARY_LABELS) {
+      expect(sheet).not.toHaveTextContent(label)
+    }
+  })
+
+  it('menutup sheet lewat tap di backdrop, tanpa ikut menavigasi', () => {
+    stubApi()
+    const { container } = render(<AppRail />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Menu lainnya' }))
+    expect(screen.getByRole('menu', { name: 'Menu lainnya' })).toBeInTheDocument()
+
+    const backdrop = container.querySelector('[aria-hidden="true"].fixed.inset-0')
+    expect(backdrop).not.toBeNull()
+    fireEvent.click(backdrop as Element)
+
+    expect(screen.queryByRole('menu', { name: 'Menu lainnya' })).not.toBeInTheDocument()
+  })
+
+  it('menutup sheet dengan Escape', () => {
+    stubApi()
+    render(<AppRail />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Menu lainnya' }))
+    expect(screen.getByRole('menu', { name: 'Menu lainnya' })).toBeInTheDocument()
+
+    fireEvent.keyDown(document, { key: 'Escape' })
+
+    expect(screen.queryByRole('menu', { name: 'Menu lainnya' })).not.toBeInTheDocument()
+  })
+
+  it('memakai posisi fixed, jadi leluhur yang menggulung tidak bisa memotongnya', () => {
+    // Beda dari lonceng gap (popover `absolute`, yang harus keluar dari leluhur yang
+    // menggulung supaya tidak terpotong): sheet ini `fixed` terhadap viewport, jadi ia kebal
+    // terhadap overflow leluhur di mana pun ia diletakkan di DOM.
+    stubApi()
+    render(<AppRail />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Menu lainnya' }))
+    const sheet = screen.getByRole('menu', { name: 'Menu lainnya' })
+
+    expect(sheet.className).toMatch(/\bfixed\b/)
+  })
+})
+
 describe('AppRail — lonceng gap', () => {
   it('memasang lonceng tepat satu kali', async () => {
     stubApi()
