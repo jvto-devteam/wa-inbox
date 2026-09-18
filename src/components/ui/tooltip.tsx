@@ -39,7 +39,17 @@ export function Tooltip({
   className?: string
 }) {
   return (
-    <span className={cn('group relative inline-flex', className)}>
+    // `inline-block`, bukan `inline-flex`: pemicunya ('children') tidak pernah butuh tata
+    // letak flex sungguhan (satu-satunya "sibling" lain adalah span popup yang `absolute`,
+    // sudah keluar dari alur normal apa pun display wadahnya). `inline-flex` di sini pernah
+    // membuat MessageBubble (pemicu berupa <div max-w-md> berisi paragraf panjang) diukur
+    // sebagai flex-item dari span ini -- ukuran "shrink-to-fit"-nya dihitung dari lebar
+    // maksimum kontennya SEBELUM `max-w-md` sempat membatasi, bukan dari lebar yang
+    // sebenarnya tersedia, jadi teksnya salah dibungkus lalu terpotong oleh overflow-hidden
+    // bubble-nya sendiri. `inline-block` tetap shrink-to-fit (bentuknya tidak berubah untuk
+    // pemicu kecil seperti tombol ikon), tapi anaknya kembali diukur sebagai kotak blok
+    // biasa, yang membungkus teks panjang dengan benar.
+    <span className={cn('group relative inline-block', className)}>
       {children}
       <span
         aria-hidden="true"
