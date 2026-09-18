@@ -23,7 +23,7 @@ import { cn } from '@/lib/utils'
 // Yang berubah hanya bentuknya. `NAV_ITEMS` diekspor supaya test bisa membandingkan daftar itu
 // dengan daftar sebelumnya alih-alih mempercayai ingatan.
 //
-// Bar bawah ponsel menampilkan LIMA tab: Beranda, Inbox, Kontak, Lonceng (GapBell), Semua --
+// Bar bawah ponsel menampilkan LIMA tab: Beranda, Inbox, Kontak, Gap (GapBell), Semua --
 // masing-masing `flex-1` supaya membagi rata lebar layar, pola yang sama dengan tab bar
 // WhatsApp. Ini iterasi KETIGA; dua sebelumnya sama-sama gagal karena alasan berbeda:
 // (1) semua tujuh sejajar, digulung mendatar kalau tidak muat -- scroll tidak berhenti tumbuh
@@ -271,13 +271,14 @@ export function AppRail() {
         {NAV_ITEMS.map((item, i) => renderNavItem(item, pathname, i >= MOBILE_VISIBLE_COUNT))}
       </nav>
 
-      {/* Lonceng gap: saudara <nav>, BUKAN anaknya, dan itu load-bearing. Isinya popover
-          `absolute` yang dibuka di luar kotak tombolnya (ke atas di ponsel, ke kanan di
-          desktop). <nav> di desktop punya `overflow-y-auto`, yang dihitung ulang CSS jadi
-          memotong sumbu X juga begitu ada leluhur dengan overflow-y bukan `visible` --
-          leluhur yang menggulung MEMOTONG popover (menunya tetap ada di DOM, jadi tidak ada
-          test render yang gagal, tapi operator tidak pernah melihatnya). Bukan tautan, karena
-          isinya daftar yang dibuka di tempat. */}
+      {/* Lonceng gap: saudara <nav>, BUKAN anaknya, dan itu load-bearing. Popovernya `fixed`
+          di ponsel (lihat GapBell -- posisinya sudah tidak lagi mengasumsikan tombol ini ada
+          di ujung kanan bar) dan `absolute` ke kanan tombol di rail desktop. <nav> di desktop
+          punya `overflow-y-auto`, yang dihitung ulang CSS jadi memotong sumbu X juga begitu
+          ada leluhur dengan overflow-y bukan `visible` -- leluhur yang menggulung MEMOTONG
+          popover `absolute` (menunya tetap ada di DOM, jadi tidak ada test render yang gagal,
+          tapi operator tidak pernah melihatnya); `fixed` di ponsel kebal terhadap itu. Bukan
+          tautan, karena isinya daftar yang dibuka di tempat. */}
       <GapBell />
 
       {/* Tombol "Semua": tab nav biasa (bentuknya identik dengan renderNavItem), hanya ada di

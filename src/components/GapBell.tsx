@@ -93,12 +93,10 @@ export function GapBell() {
     // inset itu dari padding <nav> sendiri — lonceng duduk di luar nav (lihat AppRail), jadi ia
     // harus membawa paddingnya sendiri atau tepinya meleset 4px dari menu di atasnya.
     <div ref={boxRef} className="relative flex-1 md:w-full md:flex-none md:px-1">
-      {/* Tab nav biasa (ikon di atas, label "Lonceng" di bawah) -- bentuknya sama persis
-          dengan renderNavItem di AppRail, dan `flex-1` di sini juga sama alasannya: lima tab
-          (Beranda/Inbox/Kontak/Lonceng/Semua) berbagi rata lebar bar bawah ponsel, sama
-          seperti tab bar WhatsApp. Labelnya "Lonceng", bukan "Gap" -- nama yang dipahami
-          operator tanpa perlu tahu istilah "knowledge gap" di baliknya; aria-label tetap
-          menyebut detailnya untuk pembaca layar. */}
+      {/* Tab nav biasa (ikon di atas, label "Gap" di bawah) -- bentuknya sama persis dengan
+          renderNavItem di AppRail, dan `flex-1` di sini juga sama alasannya: lima tab
+          (Beranda/Inbox/Kontak/Gap/Semua) berbagi rata lebar bar bawah ponsel, sama seperti
+          tab bar WhatsApp. */}
       <button
         type="button"
         onClick={() => setOpen((prev) => !prev)}
@@ -119,19 +117,23 @@ export function GapBell() {
             </span>
           )}
         </span>
-        <span className="w-full">Lonceng</span>
+        <span className="w-full">Gap</span>
       </button>
 
       {open && (
         <div
           role="menu"
           className={cn(
-            // Arah bukanya persis menu akun di AppRail, dan karena alasan yang sama: menjauh
-            // dari tepi layar. `right-0` di ponsel, bukan `left-0` — lonceng duduk di ujung
-            // kanan bar bawah, jadi popover selebar 288px yang dijangkarkan ke kiri akan
-            // meluber keluar layar 390px.
-            'absolute right-0 bottom-full z-30 mb-2 w-72 rounded-lg border border-line bg-surface p-1 shadow-popover',
-            'md:right-auto md:bottom-0 md:left-full md:mb-0 md:ml-2'
+            // `fixed` di ponsel, BUKAN `absolute right-0` seperti sebelumnya: tombol ini
+            // sekarang tab keempat dari lima (Beranda/Inbox/Kontak/Gap/Semua), bukan lagi
+            // elemen paling kanan di bar -- `right-0` yang dijangkarkan ke kotak tombolnya
+            // sendiri membuat popover selebar 288px nongol di tengah layar, jauh dari
+            // ikonnya. `fixed inset-x-2 bottom-16` sama sekali tidak bergantung pada posisi
+            // tombol di baris (sama seperti sidebar "Semua"), jadi selalu pas di atas bar
+            // apa pun urutan tabnya nanti. Di desktop (rail vertikal, tombol ini SELALU di
+            // posisi tetap) tetap `absolute` yang dijangkarkan ke sebelah kanan tombolnya.
+            'fixed inset-x-2 bottom-16 z-30 rounded-lg border border-line bg-surface p-1 shadow-popover',
+            'md:absolute md:inset-auto md:right-auto md:bottom-0 md:left-full md:mb-0 md:ml-2 md:w-72'
           )}
         >
           <p className="px-2 py-1.5 text-xs font-medium text-ink">Jawaban yang perlu knowledge</p>
