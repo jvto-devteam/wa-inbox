@@ -23,11 +23,16 @@ import { cn } from '@/lib/utils'
 // Yang berubah hanya bentuknya. `NAV_ITEMS` diekspor supaya test bisa membandingkan daftar itu
 // dengan daftar sebelumnya alih-alih mempercayai ingatan.
 //
-// Di ponsel, hanya EMPAT item pertama (PRIMARY_ITEMS) yang tampil langsung di bar; sisanya
-// (OVERFLOW_ITEMS) ada di balik tombol "Semua" yang membuka sheet berisi daftar itu. Ini
-// menggantikan pendekatan lama (semua tujuh sejajar, digulung mendatar kalau tidak muat):
-// scroll horizontal tidak berhenti tumbuh setiap ada menu baru, sementara overflow-sheet
-// selalu punya lebar tetap di bar berapa pun jumlah tujuannya nanti. Elemennya TIDAK
+// Di ponsel, hanya TIGA item pertama (PRIMARY_ITEMS) yang tampil langsung di bar, ditambah
+// tombol "Semua" (empat tab total, lebarnya dibagi rata lewat `flex-1` -- pola yang sama
+// dengan tab bar WhatsApp). Sisanya (OVERFLOW_ITEMS) ada di balik "Semua", yang membuka sheet
+// berisi daftar itu. Ini menggantikan DUA pendekatan yang sudah dicoba dan sama-sama sesak:
+// (1) semua tujuh sejajar, digulung mendatar kalau tidak muat -- scroll tidak berhenti tumbuh
+// setiap ada menu baru; (2) empat item primer + "Semua" dengan lebar TETAP (w-16) berdampingan
+// dengan lonceng gap dan avatar yang JUGA punya label teks sendiri -- totalnya lebih lebar dari
+// layar 390px, jadi "Template Pesan" pecah dua baris dan semuanya berdesakan. `flex-1` di
+// setiap tab membuat lebar bar SELALU pas dengan layar, dan GapBell menyusut jadi ikon bundar
+// tanpa label di ponsel (lihat GapBell) supaya tidak ikut menyita jatah tab. Elemennya TIDAK
 // diduplikasi — OVERFLOW_ITEMS dirender sekali di dalam wrapper yang `md:contents` (jadi di
 // desktop ia lebur jadi bagian biasa dari rail vertikal, sama seperti sebelumnya) dan hanya
 // menjadi sheet fixed-position saat `moreOpen` true di ponsel.
@@ -50,10 +55,17 @@ export const NAV_ITEMS: ReadonlyArray<{ href: string; label: string; icon: Lucid
   { href: '/settings', label: 'Pengaturan', icon: Settings },
 ] as const
 
-/** Empat tujuan yang tampil langsung di bar bawah ponsel, tanpa perlu buka "Semua". */
-const PRIMARY_ITEMS = NAV_ITEMS.slice(0, 4)
+/**
+ * Tiga tujuan yang tampil langsung di bar bawah ponsel + tombol "Semua" = empat tab, pola
+ * yang sama dengan bar bawah WhatsApp (Chat/Pembaruan/Komunitas/Panggilan). Sebelumnya ada
+ * EMPAT item primer + "Semua" + lonceng gap + avatar berbagi satu baris 390px — lebih lebar
+ * dari layarnya sendiri, makanya label "Template Pesan" pecah dua baris dan segalanya
+ * berdesakan. Tiga + Semua, dengan lonceng gap yang sekarang jadi ikon bundar compact (lihat
+ * GapBell), akhirnya muat.
+ */
+const PRIMARY_ITEMS = NAV_ITEMS.slice(0, 3)
 /** Sisanya, di balik tombol "Semua" di ponsel — dan bagian biasa dari rail di desktop. */
-const OVERFLOW_ITEMS = NAV_ITEMS.slice(4)
+const OVERFLOW_ITEMS = NAV_ITEMS.slice(3)
 
 type NumberStatus = { officialTokenValid: boolean; unofficialConfigured: boolean }
 type Session = { role: 'ADMIN' | 'AGENT'; name: string }
@@ -99,9 +111,12 @@ function renderNavItem(item: (typeof NAV_ITEMS)[number], pathname: string) {
       href={item.href}
       aria-current={active ? 'page' : undefined}
       className={cn(
-        'focus-ring-inverse flex w-16 shrink-0 flex-col items-center justify-start gap-1 rounded-md px-0.5 py-2',
+        // `flex-1` di ponsel, bukan `w-16` tetap: empat tab (tiga tujuan + "Semua") membagi
+        // rata sisa lebar bar, persis seperti tab bar WhatsApp -- lebarnya ikut menyesuaikan
+        // diri, tidak dihitung tangan dari jumlah item yang kebetulan ada sekarang.
+        'focus-ring-inverse flex flex-1 flex-col items-center justify-start gap-1 rounded-md px-0.5 py-2',
         'text-center text-[10px] leading-[1.15] font-medium tracking-tight transition-colors',
-        'md:w-full',
+        'md:w-full md:flex-none',
         active
           ? // Satu dari tiga tempat aksen boleh dibelanjakan (aturan 2 sistem desain).
             // Putih di atas --color-accent = 6.6:1, jauh di atas ambang teks kecil.
@@ -231,8 +246,9 @@ export function AppRail() {
       <nav
         aria-label="Menu utama"
         className={cn(
-          // Di ponsel hanya PRIMARY_ITEMS + tombol "Semua" yang sejajar di bar (5 slot × 64px =
-          // 320px, muat di layar 390px), jadi tidak perlu lagi menggulung mendatar.
+          // Di ponsel hanya PRIMARY_ITEMS (tiga tujuan) + tombol "Semua" yang sejajar di bar --
+          // empat tab yang membagi rata lebar lewat `flex-1` pada tiap tab (lihat renderNavItem
+          // dan tombol "Semua" di bawah), jadi tidak perlu lagi menggulung mendatar.
           'flex min-w-0 flex-1 flex-row items-stretch gap-0.5',
           'md:w-full md:flex-none md:flex-col md:gap-0.5 md:overflow-x-visible md:overflow-y-auto md:px-1'
         )}
@@ -250,7 +266,7 @@ export function AppRail() {
           aria-haspopup="menu"
           aria-label="Menu lainnya"
           className={cn(
-            'focus-ring-inverse flex w-16 shrink-0 flex-col items-center justify-start gap-1 rounded-md px-0.5 py-2',
+            'focus-ring-inverse flex flex-1 flex-col items-center justify-start gap-1 rounded-md px-0.5 py-2',
             'text-center text-[10px] leading-[1.15] font-medium tracking-tight text-white/70 transition-colors hover:bg-white/10 hover:text-white',
             'md:hidden'
           )}
@@ -275,7 +291,7 @@ export function AppRail() {
           className={cn(
             'md:contents',
             moreOpen
-              ? 'fixed inset-x-2 bottom-16 z-40 grid grid-cols-3 place-items-center gap-1 rounded-lg border border-line bg-ink p-2 shadow-popover'
+              ? 'fixed inset-x-2 bottom-16 z-40 grid grid-cols-2 place-items-center gap-1 rounded-lg border border-line bg-ink p-2 shadow-popover'
               : 'hidden'
           )}
         >

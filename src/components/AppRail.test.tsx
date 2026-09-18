@@ -374,8 +374,8 @@ describe('semua halaman masih terjangkau', () => {
 const CLIPPING_CLASS = /(^|:)overflow(-[xy])?-(auto|scroll|hidden)$/
 
 describe('AppRail — sheet "Semua"', () => {
-  const OVERFLOW_LABELS = ['Chatbot', 'Bot Control', 'Pengaturan']
-  const PRIMARY_LABELS = ['Beranda', 'Inbox', 'Kontak', 'Template Pesan']
+  const OVERFLOW_LABELS = ['Template Pesan', 'Chatbot', 'Bot Control', 'Pengaturan']
+  const PRIMARY_LABELS = ['Beranda', 'Inbox', 'Kontak']
 
   it('menyembunyikan tautan overflow dari peran menu sampai "Semua" dibuka', () => {
     stubApi()
@@ -389,7 +389,7 @@ describe('AppRail — sheet "Semua"', () => {
     }
   })
 
-  it('membuka sheet berisi tepat tiga tujuan overflow saat tombol "Semua" ditekan', () => {
+  it('membuka sheet berisi tepat empat tujuan overflow saat tombol "Semua" ditekan', () => {
     stubApi()
     render(<AppRail />)
 

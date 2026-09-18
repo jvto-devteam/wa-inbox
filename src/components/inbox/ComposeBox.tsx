@@ -521,34 +521,37 @@ export function ComposeBox({
           berwarna kuning/hijau tanpa kalimat apa pun di sebelahnya, jadi keadaan sekarang
           harus disimpulkan dari tombolnya sendiri -- yang justru menyebut keadaan BERIKUTNYA.
           Jalur kirim (Official/Unofficial) juga tinggal di sini sekarang, bukan di baris alat
-          utama di bawah -- baris itu sudah punya empat elemen (lampiran, kotak tulis, kirim,
-          dan sebelumnya jalur kirim), dan jalur kirim adalah satu-satunya yang statusnya perlu
-          selalu terlihat tanpa membuka apa pun. `flex-wrap` di sini murni jaring pengaman: di
-          layar sesempit apapun baris ini menggulung ke bawah alih-alih memotong salah satu
-          elemen, bukan pengganti perhitungan lebar yang sebenarnya. */}
-      <div className="flex flex-wrap items-center gap-2 text-xs text-ink-muted">
-        {!isTest && (
-          <Select
-            value={channel}
-            onChange={(e) => selectChannel(e.target.value as 'OFFICIAL' | 'UNOFFICIAL')}
-            className="w-auto shrink-0 py-1 text-xs"
-            aria-label="Channel"
-          >
-            <option value="OFFICIAL">Official</option>
-            <option value="UNOFFICIAL">Unofficial</option>
-          </Select>
-        )}
-        <span className="flex min-w-0 flex-1 items-center gap-1.5 truncate">
-          {botEnabled ? (
-            <Bot aria-hidden="true" className="size-3.5 shrink-0 text-ink-subtle" strokeWidth={1.75} />
-          ) : (
-            <BotOff aria-hidden="true" className="size-3.5 shrink-0 text-ink-subtle" strokeWidth={1.75} />
+          utama di bawah -- baris itu sudah punya lampiran, kotak tulis, dan kirim, dan jalur
+          kirim adalah satu-satunya yang statusnya perlu selalu terlihat tanpa membuka apa pun.
+          DUA baris, bukan satu yang digulung `flex-wrap`: percobaan pertama memaksa teks
+          status menyusut jadi "Chat i..." alih-alih pindah baris, karena `flex-1 min-w-0`
+          membuatnya selalu MENGISI sisa baris pertama, bukan meluber ke baris kedua. Baris
+          info (jalur kirim + status bot) dan baris aksi (tombol toggle, kalimatnya sendiri
+          sudah panjang) sekarang punya barisnya masing-masing -- pasti muat, bukan berharap
+          browser membungkusnya dengan benar. */}
+      <div className="flex flex-col gap-1.5 text-xs text-ink-muted">
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+          {!isTest && (
+            <Select
+              value={channel}
+              onChange={(e) => selectChannel(e.target.value as 'OFFICIAL' | 'UNOFFICIAL')}
+              className="w-auto shrink-0 py-1 text-xs"
+              aria-label="Channel"
+            >
+              <option value="OFFICIAL">Official</option>
+              <option value="UNOFFICIAL">Unofficial</option>
+            </Select>
           )}
-          <span className="min-w-0 truncate">
+          <span className="inline-flex items-center gap-1.5">
+            {botEnabled ? (
+              <Bot aria-hidden="true" className="size-3.5 shrink-0 text-ink-subtle" strokeWidth={1.75} />
+            ) : (
+              <BotOff aria-hidden="true" className="size-3.5 shrink-0 text-ink-subtle" strokeWidth={1.75} />
+            )}
             {botEnabled ? 'Bot menjawab chat ini otomatis' : 'Chat ini dijawab agen'}
           </span>
-        </span>
-        <Button type="button" variant="outline" size="sm" onClick={toggleBot} className="ml-auto shrink-0">
+        </div>
+        <Button type="button" variant="outline" size="sm" onClick={toggleBot} className="self-start">
           {botEnabled ? 'Ambil Alih dari Bot' : 'Aktifkan Bot untuk Chat Ini'}
         </Button>
       </div>

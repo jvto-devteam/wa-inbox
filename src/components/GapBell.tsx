@@ -93,6 +93,11 @@ export function GapBell() {
     // inset itu dari padding <nav> sendiri — lonceng duduk di luar nav (lihat AppRail), jadi ia
     // harus membawa paddingnya sendiri atau tepinya meleset 4px dari menu di atasnya.
     <div ref={boxRef} className="relative shrink-0 md:w-full md:px-1">
+      {/* Di ponsel ia ikon bundar polos (sama ukurannya dengan avatar di sebelahnya) -- BUKAN
+          tab nav selebar 64px dengan label di bawahnya. Rail bawah sudah punya empat tab
+          (PRIMARY_ITEMS + "Semua") yang berbagi lebar layar; menambah satu tab teks lagi di
+          sini adalah alasan utama bar itu dulu sesak. Di desktop, di mana lebar rail 64px
+          selalu cukup, ia kembali ke bentuk tab berlabel yang sama dengan tujuan lain. */}
       <button
         type="button"
         onClick={() => setOpen((prev) => !prev)}
@@ -100,9 +105,10 @@ export function GapBell() {
         aria-haspopup="menu"
         aria-label={feed.count > 0 ? `Gap knowledge (${feed.count} belum ditangani)` : 'Gap knowledge'}
         className={cn(
-          'focus-ring-inverse flex w-16 shrink-0 flex-col items-center justify-start gap-1 rounded-md px-0.5 py-2',
-          'text-center text-[10px] leading-[1.15] font-medium tracking-tight transition-colors',
-          'text-white/70 hover:bg-white/10 hover:text-white md:w-full'
+          'focus-ring-inverse flex size-8 items-center justify-center rounded-md transition-colors',
+          'text-white/70 hover:bg-white/10 hover:text-white',
+          'md:w-full md:flex-col md:items-center md:justify-start md:gap-1 md:rounded-md md:px-0.5 md:py-2',
+          'md:text-center md:text-[10px] md:leading-[1.15] md:font-medium md:tracking-tight'
         )}
       >
         <span className="relative">
@@ -113,7 +119,7 @@ export function GapBell() {
             </span>
           )}
         </span>
-        <span className="w-full">Gap</span>
+        <span className="hidden w-full md:block">Gap</span>
       </button>
 
       {open && (
