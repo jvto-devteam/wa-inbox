@@ -15,7 +15,21 @@ import { hasValidCronSecret } from '@/lib/outbound/cron-auth'
 // is bundled for Node and that importing Prisma here does not break the build.
 export const runtime = 'nodejs'
 
-const PUBLIC_PATHS = ['/login', '/api/auth/login', '/api/webhooks/meta', '/logo.png', '/icon.png']
+const PUBLIC_PATHS = [
+  '/login',
+  '/api/auth/login',
+  '/api/webhooks/meta',
+  '/logo.png',
+  '/icon.png',
+  // Manifest PWA + ikonnya: browser membacanya SEBELUM ada sesi (untuk memutuskan apakah
+  // menawarkan "Install app"), termasuk di layar /login itu sendiri -- tanpa baris ini,
+  // setiap permintaan ke jalur-jalur ini kena redirect ke /login, jadi manifest-nya sendiri
+  // tidak pernah berhasil dibaca browser.
+  '/manifest.webmanifest',
+  '/icon-192.png',
+  '/icon-512.png',
+  '/apple-icon.png',
+]
 
 /**
  * Endpoints a scheduler may call with a shared secret instead of a session cookie.

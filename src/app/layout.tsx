@@ -1,4 +1,4 @@
-import type { Metadata } from 'next'
+import type { Metadata, Viewport } from 'next'
 import { Poppins, IBM_Plex_Mono } from 'next/font/google'
 import './globals.css'
 
@@ -28,7 +28,26 @@ const ibmPlexMono = IBM_Plex_Mono({
   display: 'swap',
 })
 
-export const metadata: Metadata = { title: 'wa-inbox' }
+export const metadata: Metadata = {
+  title: 'wa-inbox',
+  // `manifest` dan apple-icon.png sudah tertaut otomatis lewat konvensi file Next.js
+  // (src/app/manifest.ts, src/app/apple-icon.png) -- appleWebApp di sini murni untuk hal yang
+  // TIDAK dibaca dari manifest.json oleh iOS: Safari mengabaikan `display: standalone` di
+  // manifest untuk PWA yang dibuka lewat "Add to Home Screen", dan butuh meta tag Apple-nya
+  // sendiri untuk itu.
+  appleWebApp: {
+    capable: true,
+    title: 'wa-inbox',
+    statusBarStyle: 'default',
+  },
+}
+
+// `themeColor` pindah dari `metadata` ke `viewport` sejak Next 14 -- warnanya sama dengan
+// manifest.ts (--color-ink, navy JVTO), supaya address bar/status bar browser di ponsel
+// (sebelum di-install) sudah konsisten dengan rupa app sesudah di-install.
+export const viewport: Viewport = {
+  themeColor: '#0b1b3d',
+}
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (

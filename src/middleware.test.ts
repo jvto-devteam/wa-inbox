@@ -32,7 +32,15 @@ beforeEach(() => {
 })
 
 describe('middleware — public paths', () => {
-  it.each(['/login', '/api/auth/login', '/api/webhooks/meta'])('lets %s through without a session', async (path) => {
+  it.each([
+    '/login',
+    '/api/auth/login',
+    '/api/webhooks/meta',
+    '/manifest.webmanifest',
+    '/icon-192.png',
+    '/icon-512.png',
+    '/apple-icon.png',
+  ])('lets %s through without a session', async (path) => {
     const res = await middleware(request(path))
     expect(res.status).toBe(200)
     expect(mockPrisma.account.findUnique).not.toHaveBeenCalled()
