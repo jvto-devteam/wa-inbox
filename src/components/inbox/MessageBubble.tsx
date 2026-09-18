@@ -455,7 +455,12 @@ export function MessageBubble({
         cards?.length ? 'max-w-lg' : 'max-w-md',
         // text-md (15px), bukan ukuran UI 13.5px: isi pesan adalah satu-satunya teks di
         // aplikasi ini yang dibaca berparagraf-paragraf, berjam-jam, setiap hari.
-        'overflow-hidden rounded-lg border px-3.5 py-2.5 text-md whitespace-pre-wrap',
+        // `break-words` di samping `whitespace-pre-wrap`: pre-wrap sendiri cuma membungkus di
+        // spasi/baris baru, jadi satu untai tanpa spasi (URL panjang, "Booking ID: JVR/045/…")
+        // tidak akan pernah pecah -- lebar bubble jadi ikut melebar mengikuti untai itu, dan
+        // `overflow-hidden` di baris ini menyembunyikan kelebihannya secara diam-diam alih-alih
+        // menampilkan scrollbar. break-words memaksa untai sepanjang itu pecah ke baris baru.
+        'overflow-hidden rounded-lg border px-3.5 py-2.5 text-md whitespace-pre-wrap break-words',
         // Masuk vs keluar dibedakan oleh warna dan sudut yang dipangkas, bukan oleh bayangan:
         // keluar = tint aksen dengan sudut kanan atas rata, masuk = putih dengan sudut kiri
         // atas rata. Dua-duanya bergaris rambut, jadi keduanya tetap terbaca di atas canvas.

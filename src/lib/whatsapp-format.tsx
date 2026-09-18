@@ -52,7 +52,11 @@ function splitByPattern(nodes: Node[], regex: RegExp, wrap: (content: string, ke
 export function formatWhatsAppText(text: string): ReactNode[] {
   let nodes: Node[] = [text]
   nodes = splitByPattern(nodes, URL_RE, (url, k) => (
-    <a key={k} href={url} target="_blank" rel="noreferrer" className="text-brand underline">
+    // URL panjang (checkout.xendit.co, .../my-.../b2f...) tidak punya spasi sama sekali --
+    // tanpa break-all, satu <a> bisa jadi lebih lebar dari bubble pesan (max-w-md) dan
+    // meluber diam-diam (bubble-nya sendiri overflow-hidden, jadi bukan scrollbar yang
+    // kelihatan, tapi teks yang terpotong).
+    <a key={k} href={url} target="_blank" rel="noreferrer" className="text-brand underline break-all">
       {url}
     </a>
   ))

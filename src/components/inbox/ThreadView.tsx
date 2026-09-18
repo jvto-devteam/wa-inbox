@@ -393,7 +393,12 @@ export function ThreadView({
       <div
         role="log"
         aria-label="Riwayat pesan"
-        className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain px-3 py-4 sm:px-4"
+        // `overflow-x-hidden` eksplisit, bukan dibiarkan `visible`: begitu `overflow-y` diset
+        // non-`visible`, CSS menghitung ulang sumbu lainnya jadi `auto` juga kalau dibiarkan --
+        // sebuah bubble yang gagal wrap (lihat perbaikan break-words di MessageBubble) akan
+        // membuat kotak ini jadi scroll-container horizontal-nya sendiri, sebelum sempat
+        // mentok ke overflow-hidden grid terluar (lihat komentar di inbox/page.tsx).
+        className="min-h-0 flex-1 space-y-3 overflow-x-hidden overflow-y-auto overscroll-contain px-3 py-4 sm:px-4"
       >
         {!messagesLoaded ? (
           <div className="space-y-4" aria-hidden="true">
