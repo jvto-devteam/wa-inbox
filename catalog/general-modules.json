@@ -56,7 +56,7 @@
     "scope": "ijen_scoped",
     "title": "Ijen Health Screening",
     "short_answer": "For Ijen crater hikes, a health certificate is mandatory for every guest before crater entry — JVTO coordinates the screening with licensed medical staff.",
-    "detail_summary": "A health certificate is mandatory for every guest before crater access at Kawah Ijen; JVTO coordinates the screening with licensed medical staff and the verified certificate is checked at the crater gate. The East Java conservation authority (BBKSDA), Surat Edaran SE.1658/KSA.9/2024, is cited as the supporting authority.",
+    "detail_summary": "A health certificate is mandatory for every guest before crater access at Kawah Ijen; JVTO coordinates the screening with licensed medical staff and the verified certificate is checked at the crater gate. The East Java conservation authority (BBKSDA), Surat Edaran SE.35/K2/BIDTEK.1/KSA/1/2024, is cited as the supporting authority.",
     "customer_visible": true,
     "reusable": true,
     "detail_ref": "policies/ijen-health-screening",
@@ -271,7 +271,7 @@
     "category": "service",
     "scope": "global",
     "title": "Vehicle by Group Size",
-    "short_answer": "We use an AC MPV for 1–3 guests, a Hiace for 4–9 guests, and multiple Hiace vehicles for groups larger than 9, scaled to your group size.",
+    "short_answer": "We use an AC MPV for 1–3 guests, a Hiace for 4–9 guests, one Hiace plus an MPV for 10–11 guests, and multiple Hiace vehicles for larger groups, scaled to your group size.",
     "rules": [
       {
         "pax_min": 1,
@@ -285,6 +285,11 @@
       },
       {
         "pax_min": 10,
+        "pax_max": 11,
+        "vehicle": "Hiace + MPV"
+      },
+      {
+        "pax_min": 12,
         "pax_max": null,
         "vehicle": "Multiple Hiace (scaled to group size)"
       }
