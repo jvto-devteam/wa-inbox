@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, cleanup, waitFor, fireEvent } from '@testing-library/react'
+import { render, screen, cleanup, waitFor, fireEvent, within } from '@testing-library/react'
 import { readFileSync, readdirSync, existsSync, statSync } from 'node:fs'
 import path from 'node:path'
 import { AppRail, NAV_ITEMS, isActivePath, initialsFrom } from './AppRail'
@@ -373,75 +373,102 @@ describe('semua halaman masih terjangkau', () => {
  */
 const CLIPPING_CLASS = /(^|:)overflow(-[xy])?-(auto|scroll|hidden)$/
 
-describe('AppRail — sheet "Semua"', () => {
-  const OVERFLOW_LABELS = ['Template Pesan', 'Chatbot', 'Bot Control', 'Pengaturan']
-  const PRIMARY_LABELS = ['Beranda', 'Inbox', 'Kontak']
+describe('AppRail — sidebar "Semua"', () => {
+  // Tiga yang sudah tampil di bar bawah + empat yang cuma lewat sidebar -- daftar lengkapnya
+  // adalah NAV_ITEMS itu sendiri, yang sudah punya test terpisah (`daftar tujuan rail`).
+  const MOBILE_VISIBLE_LABELS = ['Beranda', 'Inbox', 'Kontak']
 
-  it('menyembunyikan tautan overflow dari peran menu sampai "Semua" dibuka', () => {
+  it('menyembunyikan empat tujuan yang belum tampil di bar sampai "Semua" dibuka, tapi tautannya tetap ADA di DOM', () => {
     stubApi()
     render(<AppRail />)
 
-    // Tautannya tetap ADA di DOM (lihat komentar di komponen: satu set elemen dipakai lagi
-    // di rail desktop lewat `md:contents`), tapi belum berperan sebagai menu yang terbuka.
-    expect(screen.queryByRole('menu', { name: 'Menu lainnya' })).not.toBeInTheDocument()
-    for (const label of OVERFLOW_LABELS) {
-      expect(screen.getByRole('link', { name: label })).toBeInTheDocument()
+    // Tautannya tetap ada (lihat komentar di komponen: satu set elemen dipakai lagi di rail
+    // desktop lewat `hidden md:flex`), cuma belum ada sidebar yang terbuka.
+    expect(screen.queryByRole('navigation', { name: 'Semua menu' })).not.toBeInTheDocument()
+    for (const item of NAV_ITEMS) {
+      expect(screen.getByRole('link', { name: item.label })).toBeInTheDocument()
     }
   })
 
-  it('membuka sheet berisi tepat empat tujuan overflow saat tombol "Semua" ditekan', () => {
+  it('membuka sidebar berisi KETUJUH tujuan saat tombol "Semua" ditekan, termasuk yang sudah ada di bar', () => {
     stubApi()
     render(<AppRail />)
 
-    fireEvent.click(screen.getByRole('button', { name: 'Menu lainnya' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Semua menu' }))
 
-    const sheet = screen.getByRole('menu', { name: 'Menu lainnya' })
-    for (const label of OVERFLOW_LABELS) {
-      expect(screen.getByRole('link', { name: label })).toBeInTheDocument()
-    }
-    // Item utama tidak diduplikasi ke dalam sheet.
-    for (const label of PRIMARY_LABELS) {
-      expect(sheet).not.toHaveTextContent(label)
+    const sidebar = screen.getByRole('navigation', { name: 'Semua menu' })
+    for (const item of NAV_ITEMS) {
+      expect(within(sidebar).getByRole('link', { name: item.label })).toBeInTheDocument()
     }
   })
 
-  it('menutup sheet lewat tap di backdrop, tanpa ikut menavigasi', () => {
+  it('menutup sidebar (dan tautan navigasi kembali ke satu instance) lewat tap di backdrop', () => {
     stubApi()
     const { container } = render(<AppRail />)
 
-    fireEvent.click(screen.getByRole('button', { name: 'Menu lainnya' }))
-    expect(screen.getByRole('menu', { name: 'Menu lainnya' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Semua menu' }))
+    expect(screen.getByRole('navigation', { name: 'Semua menu' })).toBeInTheDocument()
+    // Selama sidebar terbuka, tiga tujuan ini SENGAJA duplikat -- satu di bar, satu di
+    // sidebar, seperti tautan "Beranda" yang sama-sama ada di header dan footer.
+    for (const label of MOBILE_VISIBLE_LABELS) {
+      expect(screen.getAllByRole('link', { name: label })).toHaveLength(2)
+    }
 
-    const backdrop = container.querySelector('[aria-hidden="true"].fixed.inset-0')
+    const backdrop = container.querySelector('.fixed.inset-0 > [aria-hidden="true"]')
     expect(backdrop).not.toBeNull()
     fireEvent.click(backdrop as Element)
 
-    expect(screen.queryByRole('menu', { name: 'Menu lainnya' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('navigation', { name: 'Semua menu' })).not.toBeInTheDocument()
+    for (const label of MOBILE_VISIBLE_LABELS) {
+      expect(screen.getAllByRole('link', { name: label })).toHaveLength(1)
+    }
   })
 
-  it('menutup sheet dengan Escape', () => {
+  it('menutup sidebar dengan Escape', () => {
     stubApi()
     render(<AppRail />)
 
-    fireEvent.click(screen.getByRole('button', { name: 'Menu lainnya' }))
-    expect(screen.getByRole('menu', { name: 'Menu lainnya' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Semua menu' }))
+    expect(screen.getByRole('navigation', { name: 'Semua menu' })).toBeInTheDocument()
 
     fireEvent.keyDown(document, { key: 'Escape' })
 
-    expect(screen.queryByRole('menu', { name: 'Menu lainnya' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('navigation', { name: 'Semua menu' })).not.toBeInTheDocument()
   })
 
-  it('memakai posisi fixed, jadi leluhur yang menggulung tidak bisa memotongnya', () => {
-    // Beda dari lonceng gap (popover `absolute`, yang harus keluar dari leluhur yang
-    // menggulung supaya tidak terpotong): sheet ini `fixed` terhadap viewport, jadi ia kebal
-    // terhadap overflow leluhur di mana pun ia diletakkan di DOM.
+  it('menutup sidebar sesudah menavigasi ke salah satu tujuannya', () => {
     stubApi()
     render(<AppRail />)
 
-    fireEvent.click(screen.getByRole('button', { name: 'Menu lainnya' }))
-    const sheet = screen.getByRole('menu', { name: 'Menu lainnya' })
+    fireEvent.click(screen.getByRole('button', { name: 'Semua menu' }))
+    const sidebar = screen.getByRole('navigation', { name: 'Semua menu' })
 
-    expect(sheet.className).toMatch(/\bfixed\b/)
+    fireEvent.click(within(sidebar).getByRole('link', { name: 'Pengaturan' }))
+
+    expect(screen.queryByRole('navigation', { name: 'Semua menu' })).not.toBeInTheDocument()
+  })
+
+  it('menutup sidebar lewat tombol "Tutup semua menu"', () => {
+    stubApi()
+    render(<AppRail />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Semua menu' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Tutup semua menu' }))
+
+    expect(screen.queryByRole('navigation', { name: 'Semua menu' })).not.toBeInTheDocument()
+  })
+
+  it('ada di dalam leluhur `fixed`, jadi leluhur yang menggulung tidak bisa memotongnya', () => {
+    // Beda dari lonceng gap (popover `absolute`, yang harus keluar dari leluhur yang
+    // menggulung supaya tidak terpotong): overlay sidebar ini `fixed` terhadap viewport, jadi
+    // ia kebal terhadap overflow leluhur di mana pun ia diletakkan di DOM.
+    stubApi()
+    render(<AppRail />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Semua menu' }))
+    const sidebar = screen.getByRole('navigation', { name: 'Semua menu' })
+
+    expect(sidebar.closest('.fixed')).not.toBeNull()
   })
 })
 

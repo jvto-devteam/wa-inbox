@@ -52,11 +52,12 @@ beforeEach(() => {
   vi.stubGlobal('EventSource', FakeEventSource)
 })
 
-// ThreadView fires three distinct GET requests per conversation:
+// ThreadView fires two distinct GET requests per conversation:
 //   /api/conversations/:id/messages  -> Message[]
 //   /api/conversations/:id           -> { botEnabled: boolean }
-//   /api/accounts                    -> Agent[] (not conversation-specific)
-// A mock that only branches on "does the URL contain the conversation id"
+// (Tahap "belum ditugaskan tidak perlu" menghapus request ketiga, /api/accounts -- dropdown
+// assign-agent yang memakainya sudah dihapus dari header, lihat 'ThreadView header — toggle
+// bot' di bawah.) A mock that only branches on "does the URL contain the conversation id"
 // (without also checking the `/messages` suffix) would answer the detail
 // request with the messages array, silently resolving `data.botEnabled` to
 // `undefined` — the test would then pass without ever exercising the real
@@ -71,9 +72,6 @@ function routeFetchByEndpoint(routes: {
     if (s.endsWith('/messages')) {
       const id = s.split('/').at(-2)!
       return Promise.resolve({ ok: true, json: () => Promise.resolve(routes.messages[id] ?? []) } as Response)
-    }
-    if (s.endsWith('/api/accounts')) {
-      return Promise.resolve({ ok: true, json: () => Promise.resolve([]) } as Response)
     }
     const id = s.split('/').at(-1)!
     return Promise.resolve({ ok: true, json: () => Promise.resolve(routes.detail[id]) } as Response)
@@ -618,118 +616,67 @@ describe('ThreadView read tracking', () => {
   })
 })
 
-describe('ThreadView assign-agent dropdown', () => {
-  const agents = [
-    { id: 'acc_1', name: 'Rina' },
-    { id: 'acc_2', name: 'Budi' },
-  ]
-
-  // Routes GET messages/detail/accounts plus PATCH assign, recording PATCH
-  // request bodies so tests can assert exactly what was sent.
-  function mockFetchWithAssign(opts: { assignedAgentId: string | null; patchResponse?: { assignedAgentId: string | null } }) {
-    const patchCalls: unknown[] = []
-    vi.mocked(fetch).mockImplementation((url, init) => {
+// Dropdown "Belum ditugaskan" (assign-agent) dihapus dari header -- satu peran nyata
+// (JVTO cuma ADMIN/AGENT, lihat CLAUDE.md) tidak butuh siapa-mengerjakan-apa yang eksplisit.
+// Tombol toggle bot pindah ke slot yang ditinggalkannya, di ThreadView.test.tsx sekarang
+// (bukan ComposeBox.test.tsx lagi) karena fetch POST /toggle-bot dan state botEnabled-nya juga
+// pindah kemari.
+describe('ThreadView header — toggle bot', () => {
+  function mockFetchWithBotEnabled(botEnabled: boolean) {
+    return vi.fn((url: RequestInfo | URL, init?: RequestInit) => {
       const s = String(url)
       if (s.endsWith('/messages')) return Promise.resolve({ ok: true, json: () => Promise.resolve([]) } as Response)
-      if (s.endsWith('/api/accounts')) return Promise.resolve({ ok: true, json: () => Promise.resolve(agents) } as Response)
-      if (s.endsWith('/assign') && init?.method === 'PATCH') {
-        patchCalls.push(JSON.parse(String(init.body)))
-        return Promise.resolve({
-          ok: true,
-          json: () => Promise.resolve(opts.patchResponse ?? { assignedAgentId: null }),
-        } as Response)
+      if (s.endsWith('/toggle-bot') && init?.method === 'POST') {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ botEnabled: !botEnabled }) } as Response)
       }
-      return Promise.resolve({ ok: true, json: () => Promise.resolve({ botEnabled: false, assignedAgentId: opts.assignedAgentId }) } as Response)
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({ botEnabled }) } as Response)
     })
-    return patchCalls
   }
 
-  it('populates the dropdown from GET /api/accounts and selects the conversation\'s assigned agent', async () => {
-    mockFetchWithAssign({ assignedAgentId: 'acc_2' })
-
+  it('renders "Aktifkan Bot untuk Chat Ini" di header saat bot nonaktif', async () => {
+    vi.stubGlobal('fetch', mockFetchWithBotEnabled(false))
     render(<ThreadView conversationId="conv_1" />)
 
-    const select = (await screen.findByLabelText('Ditugaskan ke')) as HTMLSelectElement
-    await waitFor(() => expect(screen.getByText('Budi')).toBeInTheDocument())
-    await waitFor(() => expect(select.value).toBe('acc_2'))
+    expect(await screen.findByRole('button', { name: 'Aktifkan Bot untuk Chat Ini' })).toBeInTheDocument()
   })
 
-  it('shows "Belum ditugaskan" selected when the conversation has no assigned agent', async () => {
-    mockFetchWithAssign({ assignedAgentId: null })
-
+  it('renders "Ambil Alih dari Bot" di header saat bot aktif', async () => {
+    vi.stubGlobal('fetch', mockFetchWithBotEnabled(true))
     render(<ThreadView conversationId="conv_1" />)
 
-    const select = (await screen.findByLabelText('Ditugaskan ke')) as HTMLSelectElement
-    await waitFor(() => expect(select.value).toBe(''))
+    expect(await screen.findByRole('button', { name: 'Ambil Alih dari Bot' })).toBeInTheDocument()
   })
 
-  it('PATCHes agentId on selection and updates the dropdown only after the server confirms', async () => {
-    let resolvePatch: (() => void) | undefined
-    const patchPending = new Promise<void>((resolve) => {
-      resolvePatch = resolve
-    })
-    const patchCalls: unknown[] = []
-    vi.mocked(fetch).mockImplementation((url, init) => {
-      const s = String(url)
-      if (s.endsWith('/messages')) return Promise.resolve({ ok: true, json: () => Promise.resolve([]) } as Response)
-      if (s.endsWith('/api/accounts')) return Promise.resolve({ ok: true, json: () => Promise.resolve(agents) } as Response)
-      if (s.endsWith('/assign') && init?.method === 'PATCH') {
-        patchCalls.push(JSON.parse(String(init.body)))
-        return patchPending.then(() => ({ ok: true, json: () => Promise.resolve({ assignedAgentId: 'acc_1' }) }) as Response)
-      }
-      return Promise.resolve({ ok: true, json: () => Promise.resolve({ botEnabled: false, assignedAgentId: null }) } as Response)
-    })
-
+  it('memanggil endpoint toggle-bot dan menukar label tombolnya begitu server konfirmasi', async () => {
+    const fetchMock = mockFetchWithBotEnabled(false)
+    vi.stubGlobal('fetch', fetchMock)
     render(<ThreadView conversationId="conv_1" />)
 
-    const select = (await screen.findByLabelText('Ditugaskan ke')) as HTMLSelectElement
-    await waitFor(() => expect(select.value).toBe(''))
+    fireEvent.click(await screen.findByRole('button', { name: 'Aktifkan Bot untuk Chat Ini' }))
 
-    fireEvent.change(select, { target: { value: 'acc_1' } })
-
-    // Request fired, but the server hasn't responded yet — no optimistic
-    // update, so the dropdown must still reflect the old (unassigned) value.
-    await waitFor(() => expect(patchCalls).toEqual([{ agentId: 'acc_1' }]))
-    expect(select.value).toBe('')
-
-    resolvePatch?.()
-    await waitFor(() => expect(select.value).toBe('acc_1'))
+    expect(fetchMock).toHaveBeenCalledWith('/api/conversations/conv_1/toggle-bot', { method: 'POST' })
+    expect(await screen.findByRole('button', { name: 'Ambil Alih dari Bot' })).toBeInTheDocument()
   })
 
-  it('PATCHes agentId: null when "Belum ditugaskan" is selected to unassign', async () => {
-    const patchCalls = mockFetchWithAssign({ assignedAgentId: 'acc_1', patchResponse: { assignedAgentId: null } })
-
+  it('menampilkan error inline di bawah header saat endpoint toggle-bot gagal', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url: RequestInfo | URL, init?: RequestInit) => {
+        const s = String(url)
+        if (s.endsWith('/messages')) return Promise.resolve({ ok: true, json: () => Promise.resolve([]) } as Response)
+        if (s.endsWith('/toggle-bot') && init?.method === 'POST') {
+          return Promise.reject(new Error('network error'))
+        }
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ botEnabled: false }) } as Response)
+      })
+    )
     render(<ThreadView conversationId="conv_1" />)
 
-    const select = (await screen.findByLabelText('Ditugaskan ke')) as HTMLSelectElement
-    await waitFor(() => expect(select.value).toBe('acc_1'))
+    fireEvent.click(await screen.findByRole('button', { name: 'Aktifkan Bot untuk Chat Ini' }))
 
-    fireEvent.change(select, { target: { value: '' } })
-
-    await waitFor(() => expect(patchCalls).toEqual([{ agentId: null }]))
-    await waitFor(() => expect(select.value).toBe(''))
-  })
-
-  it('shows an error and leaves the dropdown unchanged when the PATCH request fails', async () => {
-    vi.mocked(fetch).mockImplementation((url, init) => {
-      const s = String(url)
-      if (s.endsWith('/messages')) return Promise.resolve({ ok: true, json: () => Promise.resolve([]) } as Response)
-      if (s.endsWith('/api/accounts')) return Promise.resolve({ ok: true, json: () => Promise.resolve(agents) } as Response)
-      if (s.endsWith('/assign') && init?.method === 'PATCH') {
-        return Promise.resolve({ ok: false, json: () => Promise.resolve({ error: 'nope' }) } as Response)
-      }
-      return Promise.resolve({ ok: true, json: () => Promise.resolve({ botEnabled: false, assignedAgentId: null }) } as Response)
-    })
-
-    render(<ThreadView conversationId="conv_1" />)
-
-    const select = (await screen.findByLabelText('Ditugaskan ke')) as HTMLSelectElement
-    await waitFor(() => expect(select.value).toBe(''))
-
-    fireEvent.change(select, { target: { value: 'acc_1' } })
-
-    await waitFor(() => expect(screen.getByText('Gagal mengubah penugasan agen')).toBeInTheDocument())
-    expect(select.value).toBe('')
+    expect(await screen.findByText('Gagal mengambil alih dari bot')).toBeInTheDocument()
+    // Tombolnya tetap menawarkan aksi yang sama -- gagal bukan berarti diam-diam berhasil.
+    expect(screen.getByRole('button', { name: 'Aktifkan Bot untuk Chat Ini' })).toBeInTheDocument()
   })
 })
 
@@ -782,7 +729,7 @@ describe('ThreadView reply/quote', () => {
     expect(screen.getByText('Membalas Pelanggan')).toBeInTheDocument()
 
     fireEvent.change(screen.getByLabelText('Pesan'), { target: { value: 'Iya benar' } })
-    fireEvent.click(screen.getByText('Kirim'))
+    fireEvent.click(screen.getByRole('button', { name: 'Kirim' }))
 
     await waitFor(() => expect(screen.queryByText('Membalas Pelanggan')).not.toBeInTheDocument())
   })
@@ -825,7 +772,7 @@ describe('ThreadView test-room send/SSE race', () => {
     await screen.findByPlaceholderText('Ketik sebagai customer untuk menguji bot...')
 
     fireEvent.change(screen.getByLabelText('Pesan'), { target: { value: 'is ijen safe?' } })
-    fireEvent.click(screen.getByText('Kirim'))
+    fireEvent.click(screen.getByRole('button', { name: 'Kirim' }))
 
     // SSE echo of the same message arrives first, while the bot is still "thinking" server-side.
     const es = FakeEventSource.instances[0]
@@ -1129,15 +1076,6 @@ describe('ThreadView — kepala, layar sempit, dan gulungan', () => {
 
     rerender(<ThreadView conversationId="conv_1" contactPanelOpen={false} onToggleContactPanel={onToggle} />)
     expect(screen.getByLabelText('Tampilkan panel kontak')).toHaveAttribute('aria-pressed', 'false')
-  })
-
-  it('menjaga nama pilihan agen tetap bisa ditemukan pembaca layar meski labelnya tidak lagi di layar', async () => {
-    mockBasic()
-    render(<ThreadView conversationId="conv_1" />)
-
-    // Label "Ditugaskan ke" dilepas dari layar di Tahap 1C (nilainya sendiri sudah berbunyi),
-    // tapi namanya WAJIB tetap ada -- sebuah <select> tanpa nama adalah kontrol tanpa arti.
-    expect(await screen.findByLabelText('Ditugaskan ke')).toBeInTheDocument()
   })
 
   it('mengatakan percakapan ini masih kosong, alih-alih memperlihatkan area kosong tanpa penjelasan', async () => {

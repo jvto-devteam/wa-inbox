@@ -3,7 +3,6 @@ import { useEffect, useRef, useState } from 'react'
 import { ArrowLeft, PanelRight, PanelRightClose } from 'lucide-react'
 import { MessageBubble, type MessageView } from './MessageBubble'
 import { ComposeBox } from './ComposeBox'
-import { Select } from '@/components/ui/select'
 import { Button } from '@/components/ui/button'
 import { IconButton } from '@/components/ui/icon-button'
 import { SkeletonText } from '@/components/ui/skeleton'
@@ -15,11 +14,9 @@ import type { BookingData } from '@/lib/booking/client'
 import { bookingGuestName, contactDisplayName } from '@/lib/booking/display-name'
 import type { MessageDraftView } from '@/lib/inbox/message-draft-view'
 
-type Agent = { id: string; name: string }
 type ConversationDetail = {
   botEnabled: boolean
   isTest?: boolean
-  assignedAgentId?: string | null
   lastReadAt?: string | null
   contactName?: string | null
   avatarUrl?: string | null
@@ -147,9 +144,7 @@ export function ThreadView({
   const [contactName, setContactName] = useState<string | null>(null)
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null)
   const [bookingData, setBookingData] = useState<BookingData | null>(null)
-  const [assignedAgentId, setAssignedAgentId] = useState<string | null>(null)
-  const [agents, setAgents] = useState<Agent[]>([])
-  const [assignError, setAssignError] = useState<string | null>(null)
+  const [botToggleError, setBotToggleError] = useState<string | null>(null)
   const [clearingChat, setClearingChat] = useState(false)
   // Captured once, from the conversation's lastReadAt as of the moment the thread was opened --
   // this draws the "Pesan belum dibaca" divider. It must not track later markAsRead() calls
@@ -186,7 +181,6 @@ export function ThreadView({
       .then((data) => {
         setBotEnabled(data.botEnabled)
         setIsTest(data.isTest ?? false)
-        setAssignedAgentId(data.assignedAgentId ?? null)
         setUnreadCutoff(data.lastReadAt ?? null)
         setContactName(data.contactName ?? null)
         setAvatarUrl(data.avatarUrl ?? null)
@@ -232,31 +226,20 @@ export function ThreadView({
     focusRef.current?.scrollIntoView({ block: 'center' })
   }, [focusMessageId, messagesLoaded])
 
-  useEffect(() => {
-    fetchJson<Agent[]>('/api/accounts')
-      .then(setAgents)
-      .catch(() => {})
-  }, [])
-
-  // Mirrors ContactPanel's pipeline-stage dropdown: assignment drives who is
-  // responsible for the conversation, so the dropdown must only ever reflect
-  // what the server confirmed — no optimistic update. Await the response and
-  // only update displayed state on success.
-  async function changeAssignedAgent(agentId: string | null) {
-    setAssignError(null)
+  // Pindah dari ComposeBox: tombolnya sekarang di header (dekat nama kontak), bukan di dasar
+  // kolom pesan, jadi state botEnabled yang sudah ada di ThreadView bisa diubah langsung tanpa
+  // lewat prop callback lagi. Baris error di bawah header (dulu punya "Belum ditugaskan") dipakai
+  // ulang untuk ini, bukan dihapus -- kegagalan tetap butuh tempat terlihat.
+  async function toggleBot() {
+    setBotToggleError(null)
     try {
-      const res = await fetch(`/api/conversations/${conversationId}/assign`, {
-        method: 'PATCH',
-        body: JSON.stringify({ agentId }),
-      })
-      if (!res.ok) {
-        setAssignError('Gagal mengubah penugasan agen')
-        return
-      }
-      const updated = await res.json()
-      setAssignedAgentId(updated.assignedAgentId ?? null)
+      const { botEnabled: newValue } = await fetchJson<{ botEnabled: boolean }>(
+        `/api/conversations/${conversationId}/toggle-bot`,
+        { method: 'POST' }
+      )
+      setBotEnabled(newValue)
     } catch {
-      setAssignError('Gagal mengubah penugasan agen')
+      setBotToggleError('Gagal mengambil alih dari bot')
     }
   }
 
@@ -379,25 +362,14 @@ export function ThreadView({
               {clearingChat ? 'Menghapus...' : 'Hapus Chat'}
             </Button>
           )}
-          {/* Label "Ditugaskan ke" tidak lagi ditulis di layar: nilainya sendiri sudah berbunyi
-              "Belum ditugaskan" atau sebuah nama, dan dua kata tetap di kepala yang sempit
-              memakan ruang yang seharusnya milik nama pelanggan. Namanya untuk pembaca layar
-              tetap ada lewat aria-label. */}
-          <Select
-            id="assign-agent"
-            aria-label="Ditugaskan ke"
-            title="Ditugaskan ke"
-            value={assignedAgentId ?? ''}
-            onChange={(e) => changeAssignedAgent(e.target.value === '' ? null : e.target.value)}
-            className="w-auto max-w-40 text-sm"
-          >
-            <option value="">Belum ditugaskan</option>
-            {agents.map((agent) => (
-              <option key={agent.id} value={agent.id}>
-                {agent.name}
-              </option>
-            ))}
-          </Select>
+          {/* Menggantikan dropdown "Belum ditugaskan" (dihapus -- lihat CLAUDE.md soal fitur
+              yang dihapus, ini kasus baru yang sama semangatnya: satu peran nyata tidak butuh
+              lapisan penugasan). Tombol toggle bot pindah kemari dari ComposeBox supaya selalu
+              terlihat dekat nama kontak, di mobile maupun desktop, tanpa harus digulung sampai
+              dasar kolom pesan dulu. */}
+          <Button type="button" variant="outline" size="sm" onClick={toggleBot}>
+            {botEnabled ? 'Ambil Alih dari Bot' : 'Aktifkan Bot untuk Chat Ini'}
+          </Button>
           {onToggleContactPanel && (
             // Hanya dari xl ke atas: di bawah itu panel kontak memang tidak punya kolom untuk
             // ditempati, jadi tombol yang tidak bisa menampilkan apa-apa lebih baik tidak ada.
@@ -411,9 +383,9 @@ export function ThreadView({
           )}
         </div>
       </header>
-      {assignError && (
+      {botToggleError && (
         <p role="alert" className="shrink-0 border-b border-line bg-danger-subtle px-3 py-1.5 text-xs text-danger">
-          {assignError}
+          {botToggleError}
         </p>
       )}
       {/* role="log": riwayat yang bertambah sendiri lewat SSE. Pembaca layar butuh tahu bahwa
@@ -477,7 +449,6 @@ export function ThreadView({
           setMessages((prev) => (prev.some((existing) => existing.id === m.id) ? prev : [...prev, m]))
           setReplyingTo(null)
         }}
-        onBotToggled={setBotEnabled}
       />
     </section>
   )

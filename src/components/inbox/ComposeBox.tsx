@@ -8,7 +8,6 @@ import { Textarea } from '@/components/ui/textarea'
 import { Button } from '@/components/ui/button'
 import { IconButton } from '@/components/ui/icon-button'
 import { Card } from '@/components/ui/card'
-import { fetchJson } from '@/lib/fetch-json'
 import { formatWhatsAppText } from '@/lib/whatsapp-format'
 import { TemplatePreviewBubble, type PreviewButton, type PreviewCard } from './TemplatePreviewBubble'
 import { bookingVariableFields, resolveVariableField, type VariableField } from '@/lib/booking/variable-fields'
@@ -108,9 +107,12 @@ export function ComposeBox({
   isTest = false,
   onCancelReply,
   onSent,
-  onBotToggled,
 }: {
   conversationId: string
+  // Dipakai murni untuk kalimat status ("Bot menjawab..." / "Chat ini dijawab agen") --
+  // tombol untuk menukarnya pindah ke header ThreadView (dekat nama kontak), karena di
+  // situlah "Belum ditugaskan" dulu berada sebelum dihapus. ComposeBox tidak lagi butuh
+  // `onBotToggled`: ia tidak mengubah state ini sendiri.
   botEnabled: boolean
   replyingTo?: MessageView | null
   // This conversation's contact name + real booking payload -- resolves a template variable
@@ -126,7 +128,6 @@ export function ComposeBox({
   isTest?: boolean
   onCancelReply?: () => void
   onSent: (m: MessageView) => void
-  onBotToggled: (enabled: boolean) => void
 }) {
   const variableFields = bookingVariableFields(contactName, bookingData)
   const [text, setText] = useState('')
@@ -353,18 +354,6 @@ export function ComposeBox({
     uploadAttachment(file)
   }
 
-  async function toggleBot() {
-    try {
-      const { botEnabled: newValue } = await fetchJson<{ botEnabled: boolean }>(
-        `/api/conversations/${conversationId}/toggle-bot`,
-        { method: 'POST' }
-      )
-      onBotToggled(newValue)
-    } catch {
-      setSendError('Gagal mengambil alih dari bot')
-    }
-  }
-
   // Fetch failures here must not leave the picker in a half-open, silently-broken state
   // (same rule LabelPicker's attach/detach follow) — catch the error, surface it inline,
   // and never call setPickerOpen(true) on a request that didn't actually succeed. Template is
@@ -517,43 +506,33 @@ export function ComposeBox({
           />
         </div>
       )}
-      {/* Siapa yang menjawab chat ini, dan tombol untuk menukarnya. Sebelumnya dua tombol pil
-          berwarna kuning/hijau tanpa kalimat apa pun di sebelahnya, jadi keadaan sekarang
-          harus disimpulkan dari tombolnya sendiri -- yang justru menyebut keadaan BERIKUTNYA.
-          Jalur kirim (Official/Unofficial) juga tinggal di sini sekarang, bukan di baris alat
-          utama di bawah -- baris itu sudah punya lampiran, kotak tulis, dan kirim, dan jalur
-          kirim adalah satu-satunya yang statusnya perlu selalu terlihat tanpa membuka apa pun.
-          DUA baris, bukan satu yang digulung `flex-wrap`: percobaan pertama memaksa teks
-          status menyusut jadi "Chat i..." alih-alih pindah baris, karena `flex-1 min-w-0`
-          membuatnya selalu MENGISI sisa baris pertama, bukan meluber ke baris kedua. Baris
-          info (jalur kirim + status bot) dan baris aksi (tombol toggle, kalimatnya sendiri
-          sudah panjang) sekarang punya barisnya masing-masing -- pasti muat, bukan berharap
-          browser membungkusnya dengan benar. */}
-      <div className="flex flex-col gap-1.5 text-xs text-ink-muted">
-        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-          {!isTest && (
-            <Select
-              value={channel}
-              onChange={(e) => selectChannel(e.target.value as 'OFFICIAL' | 'UNOFFICIAL')}
-              className="w-auto shrink-0 py-1 text-xs"
-              aria-label="Channel"
-            >
-              <option value="OFFICIAL">Official</option>
-              <option value="UNOFFICIAL">Unofficial</option>
-            </Select>
+      {/* Siapa yang menjawab chat ini -- kalimat status saja, tanpa tombol untuk menukarnya.
+          Tombolnya ("Aktifkan Bot untuk Chat Ini" / "Ambil Alih dari Bot") pindah ke header
+          ThreadView, di tempat yang dulu ditempati dropdown "Belum ditugaskan" (dihapus) --
+          jadi selalu terlihat dekat nama kontak, bukan di bawah tumpukan pesan. Jalur kirim
+          (Official/Unofficial) tetap di sini: baris alat utama di bawah sudah punya lampiran,
+          kotak tulis, dan kirim, dan jalur kirim adalah satu-satunya yang statusnya perlu
+          selalu terlihat tanpa membuka apa pun. */}
+      <div className="flex flex-wrap items-center gap-2 text-xs text-ink-muted">
+        {!isTest && (
+          <Select
+            value={channel}
+            onChange={(e) => selectChannel(e.target.value as 'OFFICIAL' | 'UNOFFICIAL')}
+            className="w-auto shrink-0 py-1 text-xs"
+            aria-label="Channel"
+          >
+            <option value="OFFICIAL">Official</option>
+            <option value="UNOFFICIAL">Unofficial</option>
+          </Select>
+        )}
+        <span className="inline-flex items-center gap-1.5">
+          {botEnabled ? (
+            <Bot aria-hidden="true" className="size-3.5 shrink-0 text-ink-subtle" strokeWidth={1.75} />
+          ) : (
+            <BotOff aria-hidden="true" className="size-3.5 shrink-0 text-ink-subtle" strokeWidth={1.75} />
           )}
-          <span className="inline-flex items-center gap-1.5">
-            {botEnabled ? (
-              <Bot aria-hidden="true" className="size-3.5 shrink-0 text-ink-subtle" strokeWidth={1.75} />
-            ) : (
-              <BotOff aria-hidden="true" className="size-3.5 shrink-0 text-ink-subtle" strokeWidth={1.75} />
-            )}
-            {botEnabled ? 'Bot menjawab chat ini otomatis' : 'Chat ini dijawab agen'}
-          </span>
-        </div>
-        <Button type="button" variant="outline" size="sm" onClick={toggleBot} className="self-start">
-          {botEnabled ? 'Ambil Alih dari Bot' : 'Aktifkan Bot untuk Chat Ini'}
-        </Button>
+          {botEnabled ? 'Bot menjawab chat ini otomatis' : 'Chat ini dijawab agen'}
+        </span>
       </div>
       {attachmentError && (
         <p role="alert" className="text-xs text-danger">
@@ -836,10 +815,16 @@ export function ComposeBox({
           rows={1}
           className="max-h-33 min-h-8 resize-none py-1.5 text-md leading-snug"
         />
-        <Button onClick={send} disabled={sending || uploading} className="shrink-0">
-          <SendHorizontal aria-hidden="true" className="size-4" strokeWidth={1.75} />
-          Kirim
-        </Button>
+        {/* Ikon saja, seperti tombol kirim WhatsApp -- namanya yang bisa dibaca pembaca layar
+            tetap "Kirim" lewat `label`, cuma tidak lagi tertulis di layar. */}
+        <IconButton
+          type="button"
+          variant="default"
+          label="Kirim"
+          icon={<SendHorizontal strokeWidth={1.75} />}
+          onClick={send}
+          disabled={sending || uploading}
+        />
       </div>
       <p className="text-[11px] text-ink-subtle">
         Enter mengirim. Shift + Enter membuat baris baru.
