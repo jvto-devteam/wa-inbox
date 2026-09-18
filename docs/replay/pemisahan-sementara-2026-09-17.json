@@ -1,0 +1,35 @@
+{
+  "_catatan": "Topik layak yang sifatnya SEMENTARA -- terikat penutupan Bromo/Ijen Agustus-September 2026 -- dan dipisahkan dari daftar usulan penambahan atas permintaan operator 2026-09-17. Dipilah per topik setelah membaca isi lengkapnya, BUKAN dari kata kunci atau field 'sifat': keduanya terbukti berisik (C14 Drone, C15 Cuaca, dan A02 Tenggat pelunasan ikut tertandai padahal permanen). Kebijakan permanen yang DIPICU penutupan -- B47, C18, C19, G12, G13, G18 -- sengaja TETAP di daftar utama: isinya cara menghadapi penutupan, dan berlaku selamanya. Memisahkan tidak sama dengan menahan: status aktif/ditahan tiap topik tetap keputusan operator.",
+  "_dibacaOleh": "build_knowledge_baru.py dan check_knowledge_baru.py (argumen ke-7). Pemeriksa menolak berkas bila isi sheet '4. Sementara' tidak sama persis dengan daftar ini.",
+
+  "dipisahkan": {
+    "C04": {
+      "alasan": "Terikat kejadian penutupan Bromo Agustus-September 2026: menyebut bekas kebakaran dan perbedaan jawaban admin Agustus vs September.",
+      "catatan": "BELUM DIPUTUSKAN. Topik paling sering ditanyakan dari seluruh 327 (33 percakapan) -- selama Bromo tutup, tanpa ini bot tidak punya jawaban untuk pertanyaan terbanyak. Skema knowledge tidak punya masa berlaku, jadi bila diaktifkan harus dinonaktifkan MANUAL saat Bromo dibuka. Tumpang tindih dengan G15."
+    },
+    "G15": {
+      "alasan": "Menyebut 'alternatif resmi yang ditetapkan Taman Nasional selama penutupan'.",
+      "catatan": "Tumpang tindih dengan C04; cukup salah satu."
+    },
+    "C27": {
+      "alasan": "Menyebut kebakaran bertanggal 6 Agustus dan 10-11 September 2026.",
+      "catatan": "Intinya permanen -- JVTO masuk ke Bromo lewat Probolinggo -- dan bisa dipecah menjadi knowledge tetap tanpa tanggal kebakarannya."
+    },
+    "G16": {
+      "alasan": "Alternatif Kawah Wurung + Blawan Hot Spring hanya berlaku selama Ijen ditutup.",
+      "catatan": "BERTENTANGAN DENGAN KEPUTUSAN OPERATOR: isinya sama dengan C06, yang ditahan ('biarkan dulu'). G16 lolos lewat saringan otomatis karena berstatus celah, sehingga tidak pernah sampai ke review operator."
+    },
+    "C10": {
+      "alasan": "Demonstrasi api biru dengan membakar belerang hanya dilakukan selama akses turun ke kawah ditutup.",
+      "catatan": "F41 adalah duplikatnya; cukup salah satu."
+    },
+    "F41": {
+      "alasan": "Demonstrasi api biru dengan membakar belerang hanya dilakukan selama akses turun ke kawah ditutup.",
+      "catatan": "Duplikat C10."
+    },
+    "C09": {
+      "alasan": "Akses turun ke kawah Ijen ditutup 'untuk sementara'.",
+      "catatan": "BELUM DIPUTUSKAN. Diloloskan operator secara eksplisit 2026-09-16 ('tetap berikan bahwa blue fire sementara ini memang ditutup'). Dipisahkan karena sifatnya sementara; apakah tetap diaktifkan atau ditahan belum ditetapkan. Terkait naskah perbaikan knowledge PUBLISHED BLUE FIRE dan BEST TIME."
+    }
+  }
+}

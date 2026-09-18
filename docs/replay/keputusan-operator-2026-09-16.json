@@ -1,0 +1,824 @@
+{
+  "_catatan": "Keputusan operator atas topik yang tersaring otomatis. 'lolos' = layak ditambahkan meski saringan otomatis menahannya; 'tahan' = jangan ditambahkan dulu. 'versiTerpilih' wajib untuk topik yang jawaban adminnya berbeda-beda (status tidak_konsisten_admin): tanpa itu, meloloskan topik justru memasukkan kontradiksi ke bot. Diperiksa sebelum semua saringan otomatis di build_final.py.",
+  "D33": {
+    "keputusan": "lolos",
+    "tanggal": "2026-09-16",
+    "alasan": "Aturan umum untuk booking mendadak: detail jemput dikonfirmasi setelah pembayaran diterima. Tersaring hanya karena kata 'tomorrow/today' pada kalimat aslinya."
+  },
+  "D30": {
+    "keputusan": "lolos",
+    "tanggal": "2026-09-16",
+    "alasan": "Norma operasional: berangkat ke base Ijen 23.30-00.00. Tersaring karena kata 'tonight'. Ada di destination-guidance.json yang tidak dimuat bot, jadi bot memang belum tahu."
+  },
+  "F28": {
+    "keputusan": "tahan",
+    "tanggal": "2026-09-16",
+    "alasan": "Proses internal (tim IT membuka tanggal di website), jarang ditanyakan pelanggan."
+  },
+  "H43": {
+    "keputusan": "tahan",
+    "tanggal": "2026-09-16",
+    "alasan": "Bertentangan dengan H09 (transfer bandara di luar durasi tur tidak termasuk). Perlu diputuskan lebih dulu, bukan sekadar dipromosikan."
+  },
+  "A09": {
+    "keputusan": "lolos",
+    "tanggal": "2026-09-16",
+    "alasan": "Operator meloloskan seluruh bucket kebijakan pembayaran. Yang disetujui: nama bank, nama badan hukum, SWIFT, dan alamat bank/penerima. Nomor rekening tidak ada di data ini dan tetap dikirim admin di chat. Bukti 10 percakapan."
+  },
+  "A15": {
+    "keputusan": "lolos",
+    "tanggal": "2026-09-16",
+    "alasan": "Panduan saat kartu ditolak: coba kartu lain atau bayar via transfer; link pembayaran lama tetap berlaku. Isinya troubleshooting, bukan detail rekening. Bukti 5 percakapan."
+  },
+  "G08": {
+    "keputusan": "lolos",
+    "tanggal": "2026-09-16",
+    "alasan": "Data yang diperlukan untuk refund internasional (nama bank, SWIFT, nama pemilik, alamat) atau refund via Wise. Diloloskan operator meski buktinya baru 1 percakapan."
+  },
+  "A07": {
+    "keputusan": "lolos",
+    "tanggal": "2026-09-16",
+    "alasan": "Metode pembayaran yang diterima. Memperbaiki kesalahan aktif: bot sekarang menyimpulkan kartu tidak diterima. Bukti 9 percakapan."
+  },
+  "A06": {
+    "keputusan": "lolos",
+    "tanggal": "2026-09-16",
+    "versiTerpilih": "Cash on Arrival SUDAH TIDAK DIGUNAKAN LAGI. Untuk booking last-minute: selesaikan checkout di website lalu bayar PENUH via transfer (transfer bank, Wise, Revolut, Payoneer, atau transfer internasional lain ke rekening resmi JVTO). Tidak menerima pembayaran penuh tunai saat kedatangan, dan PayPal tidak ditawarkan. Alasannya: dana kartu butuh beberapa hari kerja untuk cair dari payment gateway, sedangkan JVTO harus membayar hotel, tiket, transport, dan kru sebelum tur berjalan.",
+    "koreksiKatalog": "Diverifikasi di DB produksi 2026-09-16: sumber 'PAYMENT' v1 PUBLISHED masih memuat 'Cash on Arrival is available for some packages, subject to approval.' Operator menyatakan Cash on Arrival sudah tidak digunakan -- baris itu harus DIHAPUS. Baris ambang pada entri yang sama ('under 6 days: 100% full payment via Bank Transfer required' dan 'within 14 days: may require full payment') sudah benar dan dipertahankan, sesuai keputusan A05. NASKAH PERBAIKAN SIAP: docs/replay/perbaikan-knowledge-published-2026-09-16.json (belum diterapkan ke DB).",
+    "alasan": "Operator 2026-09-16: 'cash on arrival sudah tidak digunakan, gunakan full transfer untuk last minutes'. Bukti 7 percakapan."
+  },
+  "A08": {
+    "keputusan": "lolos",
+    "tanggal": "2026-09-16",
+    "alasan": "Transfer dari luar negeri via Wise/Revolut, cantumkan Booking ID, biaya transfer ditanggung pengirim. Bukti 6 percakapan."
+  },
+  "D01": {
+    "keputusan": "lolos",
+    "tanggal": "2026-09-16",
+    "versiTerpilih": "Jemput hari pertama dari hotel di Surabaya pukul 11.00 sebagai DEFAULT, termasuk untuk booking Klook meski jadwal Klook menulis 08.00. Jam ini tetap mengikuti preferensi tamu dan boleh disesuaikan (mis. dimajukan bila driver siap dan tamu setuju) -- tulis sebagai jam standar yang bisa diubah, bukan aturan kaku.",
+    "alasan": "Versi mayoritas 11.00 dipilih; operator menegaskan jam jemput pada dasarnya preferensi tamu."
+  },
+  "A05": {
+    "keputusan": "lolos",
+    "tanggal": "2026-09-16",
+    "versiTerpilih": "Ikuti ambang yang sudah ada di knowledge: kurang dari 6 hari sebelum tur dimulai wajib transfer bank (kartu online tidak tersedia); kurang dari 14 hari kemungkinan wajib pelunasan penuh. Varian 5 / 7 / 14 hari yang muncul dari admin TIDAK dipakai.",
+    "alasan": "Operator: 'Sesuai knowledge'."
+  },
+  "H06": {
+    "keputusan": "lolos",
+    "tanggal": "2026-09-16",
+    "versiTerpilih": "Titik akhir mengikuti definisi paket masing-masing, bukan satu jawaban global. Bot menjawab dari endpoint paket yang bersangkutan (endpoint-chains.json); jangan menggeneralisasi bahwa semua paket asal Bali berakhir di tempat yang sama.",
+    "alasan": "Operator: 'Tetap sesuai paket'."
+  },
+  "B25": {
+    "keputusan": "lolos",
+    "tanggal": "2026-09-16",
+    "versiTerpilih": "Tanggal tur = tanggal jemput pukul 00.00. Urutan hari tur: 00.00 jemput, 02.30 sunrise tour Bromo, dan seterusnya. Jadi tur 'tanggal X' dijemput 00.00 tanggal X (malam pergantian dari X-1 ke X), bukan berangkat malam tanggal X.",
+    "alasan": "Operator menetapkan pemetaan tanggal dan urutan jamnya."
+  },
+  "B40": {
+    "keputusan": "lolos",
+    "tanggal": "2026-09-16",
+    "versiTerpilih": "Jeep sudah termasuk dalam paket. JVTO tidak menjual transport/jeep sebagai layanan terpisah -- sejalan dengan K15.",
+    "alasan": "Operator: 'Ya jeep include, tidak dijual terpisah' (dikonfirmasi 2026-09-16)."
+  },
+  "E17": {
+    "keputusan": "lolos",
+    "tanggal": "2026-09-16",
+    "versiTerpilih": "Jeep sudah termasuk dalam paket. JVTO tidak menjual transport/jeep sebagai layanan terpisah -- sejalan dengan K15. Kuotasi transport privat saja tidak ditawarkan.",
+    "alasan": "Satu keputusan dengan B40. Operator: 'Ya jeep include, tidak dijual terpisah' (dikonfirmasi 2026-09-16)."
+  },
+  "H33": {
+    "keputusan": "lolos",
+    "tanggal": "2026-09-16",
+    "versiTerpilih": "Bila hotel yang diminta adalah preferensi tamu (di luar akomodasi standar JVTO), tamu memesan sendiri lalu mengirim detail reservasi agar itinerary disesuaikan. Berlaku untuk ARTOTEL Cabin Bromo dan Bobocabin Ijen.",
+    "alasan": "Operator: 'jika hotel preferensi tamu maka tamu yg pesan sendiri'."
+  },
+  "D27": {
+    "keputusan": "lolos",
+    "tanggal": "2026-09-16",
+    "versiTerpilih": "Perkiraan tiba di Surabaya pada hari terakhir sekitar pukul 16.00; sarankan tamu memesan penerbangan setelah pukul 17.00.",
+    "alasan": "Diloloskan lewat 'sisanya lolos'; memakai usulan operator-facing yang diajukan (±16.00, penerbangan setelah 17.00)."
+  },
+  "H01": {
+    "keputusan": "lolos",
+    "tanggal": "2026-09-16",
+    "versiTerpilih": "Headlamp/senter TIDAK termasuk paket. Tamu membawa sendiri, memakai senter ponsel di Bromo, atau menyewa di pintu masuk Ijen sebelum mendaki dengan biaya sekitar IDR 35.000.",
+    "alasan": "Versi mayoritas (10 fakta vs 1) dan sejalan dengan knowledge WHAT TO BRING."
+  },
+  "G02": {
+    "keputusan": "lolos",
+    "tanggal": "2026-09-16",
+    "versiTerpilih": "Versi A: Lifetime Package Credit mempertahankan harga paket yang sudah dikonfirmasi meski harga naik, dan dapat dipindahtangankan SATU KALI (paket, pax, dan harga sama). Istilah 'JVTO Travel Credit 100%' tanpa penguncian harga tidak dipakai.",
+    "alasan": "Versi mayoritas dan sesuai katalog."
+  },
+  "B19": {
+    "keputusan": "lolos",
+    "tanggal": "2026-09-16",
+    "versiTerpilih": "Durasi Surabaya <-> area Ijen sekitar 6-7 jam (katalog menyebut 6-8 jam). Versi '5 jam' tidak dipakai.",
+    "alasan": "Versi yang sejalan dengan katalog."
+  },
+  "E24": {
+    "keputusan": "lolos",
+    "tanggal": "2026-09-16",
+    "versiTerpilih": "Madakaripura: add-on IDR 200.000 per orang dipilih saat checkout, sudah termasuk tiket masuk, guide lokal, dan ojek. Skema bayar langsung ke kru (90.000 + 100.000) tidak dipakai.",
+    "alasan": "Versi yang jauh lebih sering dan lebih baru."
+  },
+  "B44": {
+    "keputusan": "lolos",
+    "tanggal": "2026-09-16",
+    "versiTerpilih": "Pendakian Rinjani di luar cakupan layanan JVTO (Jawa Timur). Arahkan ke kontak partner, sejalan dengan K4.",
+    "alasan": "Versi yang sejalan dengan cakupan layanan resmi."
+  },
+  "F15": {
+    "keputusan": "lolos",
+    "tanggal": "2026-09-16",
+    "versiTerpilih": "Sarankan tamu membawa uang tunai IDR 500.000-1.000.000 PER ORANG untuk seluruh tur, bagi pengeluaran pribadi: makan yang tidak termasuk paket, pony ride di Bromo, camilan, dan suvenir. Basis per hari untuk dua orang tidak dipakai.",
+    "alasan": "Operator menetapkan satu angka dan satu basis dari empat versi admin."
+  },
+  "G14": {
+    "keputusan": "tahan",
+    "tanggal": "2026-09-16",
+    "alasan": "Nominal refund saat penutupan Bromo/Ijen Agustus-September 2026 -- kondisi sementara, sudah ditetapkan di luar lingkup."
+  },
+  "E20": {
+    "keputusan": "tahan",
+    "tanggal": "2026-09-16",
+    "alasan": "Selisih total tagihan berasal dari add-on yang dipilih saat checkout, bukan harga paket. Tidak boleh jadi harga."
+  },
+  "E12": {
+    "keputusan": "tahan",
+    "tanggal": "2026-09-16",
+    "alasan": "Dua angka potongan hotel (1.500.000 vs 1.512.000) untuk paket dan pax yang sama. Perbaiki di katalog, bukan di knowledge."
+  },
+  "D17": {
+    "keputusan": "tahan",
+    "tanggal": "2026-09-16",
+    "alasan": "Seluruh buktinya gugur di saringan (bukti dihitung 0) -- jam jemput Bali memang kesepakatan per-booking, bukan aturan."
+  },
+  "B26": {
+    "keputusan": "tahan",
+    "tanggal": "2026-09-16",
+    "alasan": "Satu percakapan, prioritas rendah, dan dua angka durasi berbeda dari admin yang sama."
+  },
+  "H04": {
+    "keputusan": "lolos",
+    "tanggal": "2026-09-16",
+    "versiTerpilih": "Paket yang berakhir di Bali sudah termasuk tiket feri penumpang Ketapang-Gilimanuk. Berlaku untuk paket Surabaya yang finish ke Bali (bromo-madakaripura-ijen-3d2n dan tumpak-sewu-bromo-ijen-4d3n). Transport lanjutan dari Gilimanuk ke hotel/tujuan di Bali TIDAK termasuk; itu add-on Bali private transfer yang dipilih saat checkout.",
+    "koreksiKatalog": "standard-price-tiers.json dan endpoint-chains.json: ferry_included false -> true untuk bromo-madakaripura-ijen-3d2n dan tumpak-sewu-bromo-ijen-4d3n. Periksa juga component-matrices.json yang tidak mencantumkan 'ferry crossing' pada inklusi kedua paket itu.",
+    "alasan": "Operator: 'Ferry included untuk paket trip end bali'. Katalog terverifikasi menandai false untuk kedua paket tersebut."
+  },
+  "D19": {
+    "keputusan": "lolos",
+    "tanggal": "2026-09-16",
+    "versiTerpilih": "Paket Surabaya yang mengarah ke Bali resmi berakhir di Pelabuhan Ketapang setelah Ijen; tiket feri penumpang Ketapang-Gilimanuk termasuk. Kendaraan Jawa Timur tidak ikut menyeberang. Lanjutan di Bali adalah add-on.",
+    "koreksiKatalog": "Sama dengan H04: ferry_included true untuk kedua paket, dan hapus/perbaiki catatan rute yang menyuruh mengonfirmasi preferensi 'vehicle-crossing'.",
+    "alasan": "Satu keputusan dengan H04."
+  },
+  "B06": {
+    "keputusan": "lolos",
+    "tanggal": "2026-09-16",
+    "versiTerpilih": "Paket Surabaya -> Bali selesai di Pelabuhan Ketapang dengan tiket feri ke Gilimanuk sudah termasuk. Transfer lanjut ke hotel/tujuan di Bali (mis. Ubud) adalah add-on Bali private transfer saat checkout; harga paket tidak mencakupnya.",
+    "koreksiKatalog": "Sama dengan H04.",
+    "alasan": "Satu keputusan dengan H04."
+  },
+  "B07": {
+    "keputusan": "lolos",
+    "tanggal": "2026-09-16",
+    "versiTerpilih": "Paket 3D2N dari Bali ada DUA varian: (1) selesai di Bali -- 'bromo-ijen-3d2n' (from-bali/bromo-ijen-3d2n), hari terakhir Ijen lalu kembali ke Pelabuhan Ketapang dan feri ke Bali, tiket feri termasuk; (2) selesai di Surabaya -- 'ijen-bromo-madakaripura-3d2n' (from-bali/ijen-bromo-madakaripura-3d2n). Bot harus menanyakan/menentukan varian mana sebelum menjawab titik akhir.",
+    "koreksiKatalog": "endpoint-chains.json paket bali/bromo-ijen-3d2n: catatan 'the tour then finishes in Surabaya (NOT a finish in Bali)' SALAH untuk varian ini, dan standard_dropoff_options-nya (Surabaya Airport / Surabaya Hotel / Malang) harus menjadi Ketapang Harbor + feri ke Bali. Varian bali/ijen-bromo-madakaripura-3d2n sudah benar (selesai di Surabaya).",
+    "alasan": "Operator memberi dua URL paket yang membedakan kedua varian."
+  },
+  "D21": {
+    "keputusan": "lolos",
+    "tanggal": "2026-09-16",
+    "versiTerpilih": "Pada varian 3D2N dari Bali yang selesai di Bali (bromo-ijen-3d2n), hari terakhir tamu kembali ke Pelabuhan Ketapang setelah Ijen dan tiket feri ke Bali termasuk.",
+    "koreksiKatalog": "Sama dengan B07.",
+    "alasan": "Satu keputusan dengan B07."
+  },
+  "A19": {
+    "keputusan": "lolos",
+    "tanggal": "2026-09-16",
+    "versiTerpilih": "Untuk booking dengan penyesuaian (upgrade/potong hotel, jadwal pesawat, rute, drop-off): tamu memesan paket standar terdekat di website seperti biasa dan membayar deposit standar, tanpa perlu kolom catatan khusus. Setelah booking terkonfirmasi, ADMIN JVTO yang menyesuaikan booking dari sisi JVTO. Tamu tidak mengubah booking sendiri lewat WhatsApp.",
+    "koreksiKatalog": "general-modules.json: ubah 'WhatsApp/email tidak membuat, mengonfirmasi, atau mengubah booking' menjadi rumusan yang membedakan keduanya -- tamu tidak mengubah sendiri lewat WhatsApp, tetapi admin menyesuaikan dari sisi JVTO atas permintaan. Maksud anti-penipuan tetap dipertahankan.",
+    "alasan": "Operator setuju dengan usulan perumusan ulang."
+  },
+  "G20": {
+    "keputusan": "lolos",
+    "tanggal": "2026-09-16",
+    "versiTerpilih": "Perubahan booking (titik akhir, add-on, tujuan drop-off) tidak perlu batal atau booking ulang: admin menyesuaikan dari sisi JVTO tanpa biaya tambahan. Bila tur diubah menjadi selesai di Surabaya, add-on transfer Bali dihapus dan total disesuaikan.",
+    "koreksiKatalog": "Sama dengan A19.",
+    "alasan": "Satu keputusan dengan A19."
+  },
+  "D13": {
+    "keputusan": "lolos",
+    "tanggal": "2026-09-16",
+    "versiTerpilih": "Titik berangkat DEFAULT adalah Surabaya dan Bali. Selain itu, jemput dari Malang (hotel, stasiun, atau titik di kota) juga bisa TANPA biaya tambahan; harga tetap harga paket di website.",
+    "koreksiKatalog": "Diverifikasi di DB produksi 2026-09-16: sumber 'GENERAL' v1 PUBLISHED memuat kalimat 'Tours depart from Surabaya or Bali.' tanpa pengecualian apa pun. Inilah sebab bot menolak permintaan jemput Malang di replay (K6). Kalimat itu harus diperluas menjadi: default Surabaya dan Bali, dan jemput dari Malang serta Probolinggo juga tersedia tanpa biaya tambahan. Katalog juga perlu mencantumkan kedua titik jemput itu. Keputusan D13/D15 tidak akan berlaku sebelum kalimat ini diperbaiki. NASKAH PERBAIKAN SIAP: docs/replay/perbaikan-knowledge-published-2026-09-16.json (belum diterapkan ke DB).",
+    "alasan": "Operator: 'defaultnya surabaya dan bali, tapi juga bisa ke tempat yg disebutkan itu, dan juga tanpa biaya tambahan'."
+  },
+  "D15": {
+    "keputusan": "lolos",
+    "tanggal": "2026-09-16",
+    "versiTerpilih": "Selain default Surabaya dan Bali, jemput juga bisa dari Probolinggo (stasiun, hotel, atau titik turun bus di Probolinggo/Kraksaan) tanpa biaya tambahan.",
+    "koreksiKatalog": "Sama dengan D13: tambahkan Probolinggo sebagai titik jemput.",
+    "alasan": "Satu keputusan dengan D13."
+  },
+  "F33": {
+    "keputusan": "lolos",
+    "tanggal": "2026-09-16",
+    "versiTerpilih": "Sepanjang perjalanan darat ada satu driver (driver-guide) berbahasa Inggris. Di destinasi tertentu (Ijen, Tumpak Sewu, Madakaripura) ada guide lokal, dan guide lokal ini JUGA berbahasa Inggris. Jadi pendampingan berbahasa Inggris tetap terpenuhi di seluruh tur. Bahasa lain (mis. Mandarin) tidak tersedia -- lihat F34.",
+    "alasan": "Operator: 'local guide juga english'."
+  },
+  "C09": {
+    "keputusan": "lolos",
+    "tanggal": "2026-09-16",
+    "versiTerpilih": "Akses turun ke dasar kawah Ijen ditutup oleh otoritas, sehingga Blue Fire alami untuk sementara TIDAK dapat diakses secara resmi dan tidak boleh dijanjikan. Pendakian Ijen tetap berjalan sampai bibir kawah/puncak: titik sunrise dan pemandangan danau kawah.",
+    "koreksiKatalog": "PENTING -- diverifikasi langsung di DB produksi 2026-09-16 (11 revisi PUBLISHED, 3 menyebut Blue Fire). (1) Sumber 'BLUE FIRE' v1 PUBLISHED: hapus 'Best chance: dry season (April-October), typically between 2am-4am before sunrise'; kalimat 'NOT guaranteed -- visibility depends on weather, volcanic activity, and local authority clearance' sudah benar dan dipertahankan. (2) Sumber 'BEST TIME' v1 PUBLISHED: 'highest chance of Blue Fire at Ijen' dan 'blue fire less likely' masih menjanjikan Blue Fire bisa dilihat -- harus disesuaikan dengan penutupan akses kawah. (3) Sumber 'DESTINATIONS' v1 PUBLISHED menyebut 'Ijen Crater: blue fire phenomenon' sebagai deskripsi destinasi -- ini deskriptif, bukan janji, jadi PERLU DITINJAU operator, belum tentu salah. Tanpa perbaikan (1) dan (2), bot menyangkal pernyataannya sendiri dalam satu giliran. NASKAH PERBAIKAN SIAP: docs/replay/perbaikan-knowledge-published-2026-09-16.json (belum diterapkan ke DB).",
+    "alasan": "Operator: 'tetap berikan bahwa blue fire sementara ini memang ditutup dan tidak dapat diakses secara resmi'."
+  },
+  "C06": {
+    "keputusan": "tahan",
+    "tanggal": "2026-09-16",
+    "alasan": "Operator: 'biarkan dulu'. Itinerary pengganti Ijen (Kawah Wurung + Blawan) belum dimasukkan ke katalog."
+  },
+  "G36": {
+    "keputusan": "lolos",
+    "tanggal": "2026-09-16",
+    "versiTerpilih": "JVTO khusus tur privat di Jawa Timur dan tidak mengoperasikan tur di Yogyakarta maupun Bali (termasuk kapal lumba-lumba Lovina dan pendakian Gunung Agung). Tolak permintaan itu, lalu tawarkan paket Jawa Timur yang JVTO punya.",
+    "koreksiKatalog": "Katalog menjadikan Yogyakarta/Borobudur/Prambanan contoh 'custom extension' yang akan dikuotasi tim -- harus diubah menjadi penolakan + tawaran paket sendiri.",
+    "alasan": "Operator: 'tolak, tawarkan paket yg kita punya aja'."
+  },
+  "G37": {
+    "keputusan": "lolos",
+    "tanggal": "2026-09-16",
+    "versiTerpilih": "Destinasi jauh (Sukamade, Pulau Menjangan, Tangkuban Perahu, Kawah Putih) tidak bisa dijadikan pengganti maupun tambahan. Tolak, lalu tawarkan paket Jawa Timur yang JVTO punya.",
+    "koreksiKatalog": "Hapus Tangkuban Perahu sebagai contoh 'custom extension' di katalog.",
+    "alasan": "Satu keputusan dengan G36."
+  },
+  "H18": {
+    "keputusan": "lolos",
+    "tanggal": "2026-09-16",
+    "versiTerpilih": "ATURAN MAKAN UMUM (berlaku semua paket). SARAPAN: selalu ada setiap pagi SETELAH hari pertama, di hotel tempat menginap -- tidak pernah ada sarapan di Hari 1, dan tidak ada sarapan pada tur 1 hari tanpa menginap. MAKAN SIANG: HANYA pada hari pendakian Ijen, dan hanya bila Ijen bukan destinasi terakhir ATAU Ijen destinasi terakhir tetapi drop-off Surabaya; bila tur berakhir ke Bali (Ketapang/drop Bali), hari Ijen TIDAK dapat makan siang. Tumpak Sewu TIDAK mendapat makan siang. MAKAN MALAM: hanya di kota BONDOWOSO, pada malam sebelum naik Ijen keesokan harinya -- paket yang bermalam di Banyuwangi TIDAK mendapat makan malam.",
+    "koreksiKatalog": "package-profiles.json day_titles[].meals -- 6 koreksi terverifikasi: (1) bali/ijen-bromo-madakaripura-3d2n D1 hapus D (menginap Banyuwangi); (2) bali/ijen-papuma-tumpak-sewu-bromo-4d3n D1 hapus D; (3) bali/ijen-papuma-tumpak-sewu-bromo-5d4n D1 hapus D; (4) bromo-1d1n D1 hapus B; (5) taman-safari-prigen-bromo-madakaripura-3d2n D1 hapus B; (6) tumpak-sewu-bromo-ijen-4d3n D2 hapus L (Tumpak Sewu tidak dapat makan siang). BUKAN kesalahan: bromo-madakaripura-ijen-3d2n D2 dan tumpak-sewu-bromo-ijen-4d3n D3 -- keduanya bondowoso_ijen_staging menurut accommodation-rules.json, jadi makan malamnya benar.",
+    "alasan": "Operator memberi aturan umum, lalu meralat: makan siang TIDAK termasuk di Tumpak Sewu, dan Bondowoso adalah nama kota (bukan istilah untuk basis Ijen mana pun)."
+  },
+  "H17": {
+    "keputusan": "lolos",
+    "tanggal": "2026-09-16",
+    "versiTerpilih": "Tur 1 hari Bromo midnight TIDAK termasuk sarapan (tidak ada menginap, dan sarapan hanya ada setelah hari pertama). Rombongan berhenti untuk sarapan di restoran area Bromo dengan biaya sendiri.",
+    "koreksiKatalog": "package-profiles.json bromo-1d1n: Hari 1 'B' harus dikosongkan.",
+    "alasan": "Konsekuensi langsung aturan makan operator; sejalan dengan jawaban admin."
+  },
+  "H16": {
+    "keputusan": "lolos",
+    "tanggal": "2026-09-16",
+    "versiTerpilih": "Tiket masuk mengikuti isi paket yang dipilih: kalau paketnya memuat Madakaripura maka tiket Madakaripura termasuk, kalau tidak memuat ya tidak. Bila tamu menginginkan Madakaripura, arahkan memilih paket yang memang memuat Madakaripura -- jangan menjanjikan Madakaripura pada paket yang tidak memuatnya.",
+    "koreksiKatalog": "package-profiles.json bromo-2d1n: judul Hari 2 menyebut Madakaripura tetapi destination_tokens hanya ['bromo']. Samakan keduanya supaya bot tidak menjawab bertentangan dengan isi paketnya sendiri.",
+    "alasan": "Operator: 'sesuai paketnya, kalo paket yg dipilih ada madakaripura maka termasuk, jika tidak ya tidak'."
+  },
+  "F34": {
+    "keputusan": "lolos",
+    "tanggal": "2026-09-16",
+    "versiTerpilih": "JVTO tidak menyediakan driver maupun guide berbahasa Mandarin, termasuk guide lokal di destinasi. Bahasa yang tersedia adalah Inggris. Jawab tidak tersedia secara langsung, jangan menjanjikan pengecekan.",
+    "koreksiKatalog": "Katalog 'other languages subject to confirmation' membuat bot menjanjikan pengecekan; ubah menjadi pernyataan bahwa hanya Inggris yang tersedia.",
+    "alasan": "Operator: 'sesuai admin, jvto tidak punya driver guide berbahasa mandarin, termasuk local guide'."
+  },
+  "F07": {
+    "keputusan": "lolos",
+    "tanggal": "2026-09-16",
+    "versiTerpilih": "Bedakan dua hal: SELAMA TUR BERLANGSUNG tim JVTO siap membantu 24 jam -- tamu bisa menghubungi/menelepon nomor JVTO kapan saja. Dukungan umum (pertanyaan pra-booking dan di luar masa tur) tetap 08:00-22:00 WIB.",
+    "koreksiKatalog": "general-modules.json baris 191-192: tambahkan pembedaan ini; saat ini hanya menyebut support line 08:00-22:00 sehingga bot tidak tahu soal pendampingan 24 jam selama tur.",
+    "alasan": "Operator setuju dengan usulan membedakan tim lapangan dan dukungan umum."
+  },
+  "F20": {
+    "keputusan": "tahan",
+    "tanggal": "2026-09-16",
+    "alasan": "Operator setuju: angka admin '2 jam' tidak dipakai. Nilai katalog (3-4 jam) sengaja konservatif untuk tenggat penerbangan."
+  },
+  "B31": {
+    "keputusan": "tahan",
+    "tanggal": "2026-09-16",
+    "alasan": "Jam keberangkatan spesifik ke Papuma/Tumpak Sewu bersifat operasional per booking; anjuran katalog tetap dipakai. Ditahan sebagai default -- operator dapat menimpa bila ingin jam admin yang jadi acuan."
+  },
+  "E21": {
+    "keputusan": "tahan",
+    "tanggal": "2026-09-16",
+    "alasan": "Operator: jangan masuk knowledge. Pembayaran di bawah tier kemungkinan potongan hotel atau harga lama."
+  },
+  "E22": {
+    "keputusan": "tahan",
+    "tanggal": "2026-09-16",
+    "alasan": "Operator: jangan masuk knowledge. Tampak salah kutip admin (tarif 3 orang dipakai untuk 4 orang); layak jadi bahan koreksi internal, bukan knowledge."
+  },
+  "C14": {
+    "keputusan": "lolos",
+    "tanggal": "2026-09-16",
+    "versiTerpilih": "Drone boleh dibawa. Menerbangkan drone di Taman Nasional Bromo Tengger Semeru wajib izin resmi dari otoritas taman, biaya izin saat ini IDR 2.000.000. Izin bisa diajukan sendiri oleh tamu ATAU dibantu tim JVTO pada hari pertama tur. Di Ijen drone dilarang.",
+    "koreksiKatalog": "general-modules.json modul service_drone_usage: 'not something JVTO arranges or resells' harus diubah -- tim JVTO membantu pengajuan izin.",
+    "alasan": "Operator: 'ya sesuai jawaban admin saja'."
+  },
+  "E08": {
+    "keputusan": "lolos",
+    "tanggal": "2026-09-16",
+    "versiTerpilih": "Tidak ada diskon tambahan dan harga tidak dapat dinegosiasi: harga dihitung dari biaya operasional nyata (transport privat, akomodasi, tiket masuk, Jeep privat, guide). Tur privat lebih mahal daripada tur gabungan karena kendaraan dan kru hanya melayani satu grup. JANGAN sebut nominal -- rujuk ke harga di website.",
+    "alasan": "Grup A: aturan harga tanpa angka JVTO."
+  },
+  "E06": {
+    "keputusan": "lolos",
+    "tanggal": "2026-09-16",
+    "versiTerpilih": "Harga di website adalah per orang dan dihitung otomatis dari tanggal perjalanan serta jumlah peserta saat booking. Makin banyak peserta dalam satu grup privat, makin murah per orang karena biaya transport dan operasional dibagi. Harga yang berlaku selalu harga website.",
+    "alasan": "Grup A."
+  },
+  "E05": {
+    "keputusan": "lolos",
+    "tanggal": "2026-09-16",
+    "versiTerpilih": "Harga 'mulai dari' yang tampil di halaman paket adalah tarif untuk grup 11 orang ke atas. Untuk peserta lebih sedikit, harga per orang lebih tinggi. Arahkan pelanggan memasukkan tanggal dan jumlah peserta di website untuk harga sebenarnya.",
+    "alasan": "Grup A. Tanpa ini bot menyesatkan soal harga yang terlihat di website."
+  },
+  "A12": {
+    "keputusan": "lolos",
+    "tanggal": "2026-09-16",
+    "versiTerpilih": "Pembayaran lewat kartu atau QR dikenai biaya pemrosesan payment gateway sekitar 3,4% dari total. Biaya itu dipungut oleh payment gateway (Xendit), bukan oleh JVTO. Pembayaran lewat transfer bank tidak dikenai biaya ini.",
+    "alasan": "Grup A. Persentase gateway, bukan harga JVTO."
+  },
+  "E07": {
+    "keputusan": "lolos",
+    "tanggal": "2026-09-16",
+    "versiTerpilih": "Ada harga khusus untuk solo traveler dan turnya tetap privat (tidak digabung grup lain). Nominalnya JANGAN disebut dari knowledge -- arahkan ke harga website untuk 1 peserta.",
+    "alasan": "Grup A."
+  },
+  "E10": {
+    "keputusan": "lolos",
+    "tanggal": "2026-09-16",
+    "versiTerpilih": "Grup dengan lebih dari 18 peserta mendapat 1 kursi gratis (FOC).",
+    "alasan": "Grup A. Ambang peserta, bukan harga."
+  },
+  "H34": {
+    "keputusan": "lolos",
+    "tanggal": "2026-09-16",
+    "versiTerpilih": "Tamu boleh memesan hotel sendiri. Kirimkan nama hotel/homestay untuk setiap malam SEBELUM memesannya, agar JVTO memastikan lokasinya cocok dengan rute dan itinerary. Tamu tetap memesan paket standar di website dan membayar deposit 20%; setelah booking terkonfirmasi, anggaran hotel yang tidak dipakai dipotong dari sisa tagihan. Besar potongan dihitung admin per kasus -- jangan sebut nominal.",
+    "alasan": "Grup A."
+  },
+  "E11": {
+    "keputusan": "lolos",
+    "tanggal": "2026-09-16",
+    "versiTerpilih": "Potongan karena memakai hotel sendiri dihitung manual oleh admin dari anggaran hotel yang tidak terpakai, bergantung jumlah malam dan kelas hotel. Alurnya: booking paket standar di website, deposit 20%, lalu potongan diterapkan pada sisa tagihan. Jangan sebut nominal.",
+    "alasan": "Grup A. Satu rangkaian dengan H34."
+  },
+  "H32": {
+    "keputusan": "lolos",
+    "tanggal": "2026-09-16",
+    "versiTerpilih": "Upgrade hotel (terutama di area Bromo) bisa diminta -- cukup sebutkan hotel yang diinginkan. Bergantung ketersediaan, dengan biaya tambahan yang ditambahkan ke sisa tagihan. JVTO TIDAK memungut biaya jasa untuk memesankan hotel upgrade. Nominal dikuotasi admin per kasus.",
+    "alasan": "Grup A."
+  },
+  "E26": {
+    "keputusan": "lolos",
+    "tanggal": "2026-09-16",
+    "versiTerpilih": "Add-on transfer Bali tidak wajib dipesan di muka: pesan turnya dulu, add-on ditambahkan admin setelah hotel di Bali pasti. Untuk Jimbaran/Kuta Selatan pilih tujuan 'Kuta'. Driver Bali terpisah menemui tamu di Pelabuhan Gilimanuk. Tarif per tujuan ada di katalog/checkout, bukan di knowledge.",
+    "alasan": "Grup A: prosedurnya masuk, daftar tarifnya tidak (lihat E27)."
+  },
+  "G21": {
+    "keputusan": "lolos",
+    "tanggal": "2026-09-16",
+    "versiTerpilih": "Pelanggan boleh melewatkan destinasi atau komponen tertentu atas pilihan sendiri; anggaran yang tidak terpakai (mis. tiket masuk dan guide lokal) direfund dan sisa paket tetap berjalan. Besarnya dihitung admin per kasus.",
+    "alasan": "Grup A."
+  },
+  "E36": {
+    "keputusan": "lolos",
+    "tanggal": "2026-09-16",
+    "versiTerpilih": "Naik kuda tersedia di Bromo, TIDAK termasuk paket, dan tidak perlu dipesan di muka -- putuskan di lokasi atau beri tahu guide, bayar tunai langsung. Tarifnya tarif lokal (sekitar IDR 250.000-350.000 per kuda) yang berubah menurut musim, jadi sebutkan sebagai perkiraan, bukan harga pasti.",
+    "alasan": "Grup A. Tarif lokal pihak ketiga, bukan harga JVTO."
+  },
+  "H24": {
+    "keputusan": "lolos",
+    "tanggal": "2026-09-16",
+    "versiTerpilih": "Ponco tidak termasuk paket, tetapi bisa dibeli di lokasi Madakaripura (sekitar IDR 30.000, harga lokal).",
+    "alasan": "Grup A."
+  },
+  "E31": {
+    "keputusan": "lolos",
+    "tanggal": "2026-09-16",
+    "versiTerpilih": "Masker gas sudah disediakan dalam paket Ijen. Bila tamu ingin masker baru miliknya sendiri, bisa diatur dengan biaya terpisah (sekitar IDR 55.000-60.000 per masker) -- beri tahu sebelum tur.",
+    "alasan": "Grup A."
+  },
+  "E09": {
+    "keputusan": "lolos",
+    "tanggal": "2026-09-16",
+    "versiTerpilih": "Ada sedikit selisih harga antara WNI dan WNA karena tarif TIKET MASUK pemerintah berbeda (Ijen, Bromo, Madakaripura) -- bukan karena JVTO membedakan harga layanannya.",
+    "alasan": "Grup A. Sebab selisihnya yang jadi knowledge, bukan nominalnya."
+  },
+  "E28": {
+    "keputusan": "lolos",
+    "tanggal": "2026-09-16",
+    "versiTerpilih": "Bila tamu tidak ingin memakai transportasi umum, admin JVTO yang akan mengurus transfer privat ke luar Jawa Timur (mis. Yogyakarta) setelah tur selesai. Bergantung ketersediaan kendaraan dan kru; biayanya dikuotasi terpisah oleh admin -- JANGAN sebut nominal, karena kuotasi berubah menurut ketersediaan. Ini berbeda dari G36: JVTO tetap tidak mengoperasikan tur di Yogyakarta.",
+    "alasan": "Operator: 'jika tamu tidak ingin gunakan transportasi umum, biar admin yg akan mengurus'."
+  },
+  "E29": {
+    "keputusan": "lolos",
+    "tanggal": "2026-09-16",
+    "versiTerpilih": "Transfer bandara di luar durasi paket TIDAK termasuk (sesuai H09). Namun JVTO tetap boleh menawarkan bantuan mencarikan rekanan dengan biaya terpisah bila tamu membutuhkannya. Jangan sebut nominal.",
+    "alasan": "Operator: 'iya tawarkan aja gpp'. Konteks percakapan menunjukkan admin justru menegaskan H09 lebih dulu, jadi ini bukan pertentangan."
+  },
+  "E27": {
+    "keputusan": "tahan",
+    "tanggal": "2026-09-16",
+    "alasan": "Operator: 'jangan dulu'. Daftar tarif add-on transfer Bali per tujuan adalah harga JVTO -- tempatnya di katalog/checkout."
+  },
+  "E13": {
+    "keputusan": "tahan",
+    "tanggal": "2026-09-16",
+    "alasan": "Operator: 'jangan dulu'. Nominal potongan jemputan Bali adalah komponen harga; perbaiki di katalog."
+  },
+  "E33": {
+    "keputusan": "tahan",
+    "tanggal": "2026-09-16",
+    "alasan": "Operator: 'jangan dulu'. Harga tambahan satu hari istirahat; tempatnya di katalog."
+  },
+  "F31": {
+    "keputusan": "tahan",
+    "tanggal": "2026-09-16",
+    "alasan": "Operator: 'jangan dulu'. Tarif upgrade kendaraan mengikuti harga partner yang berubah; tempatnya di katalog."
+  },
+  "E16": {
+    "keputusan": "tahan",
+    "tanggal": "2026-09-16",
+    "alasan": "Operator: 'jangan dulu'. CATATAN PENTING: paket 3D2N Tumpak Sewu & Bromo dijual admin tetapi TIDAK ADA di katalog, sehingga bot tidak mengetahui keberadaan paket itu sama sekali -- ini bukan sekadar soal harga dan tetap perlu ditindaklanjuti di katalog."
+  },
+  "E23": {
+    "keputusan": "tahan",
+    "tanggal": "2026-09-16",
+    "alasan": "Sudah tercakup keputusan E24 (add-on Madakaripura IDR 200.000/orang saat checkout). Jangan dibuat entri knowledge terpisah."
+  },
+  "E19": {
+    "keputusan": "tahan",
+    "tanggal": "2026-09-16",
+    "alasan": "Sudah tercakup keputusan H01 (sewa headlamp sekitar IDR 35.000 di pintu masuk Ijen)."
+  },
+  "G33": {
+    "keputusan": "tahan",
+    "tanggal": "2026-09-16",
+    "alasan": "Sudah tercakup keputusan C14 (drone: izin TNBTS IDR 2.000.000, tim JVTO membantu pengajuan)."
+  },
+  "C07": {
+    "keputusan": "tahan",
+    "tanggal": "2026-09-16",
+    "alasan": "Kondisi sementara (penutupan Ijen) -- di luar lingkup, sejalan dengan C06 dan G14."
+  },
+  "E14": {
+    "keputusan": "tahan",
+    "tanggal": "2026-09-16",
+    "alasan": "Kondisi sementara (nilai komponen yang direfund saat destinasi ditutup) -- di luar lingkup, sejalan dengan G14."
+  },
+  "H09": {
+    "keputusan": "lolos",
+    "tanggal": "2026-09-16",
+    "versiTerpilih": "Antar/jemput bandara termasuk HANYA bila jatuh di dalam durasi tur (mis. 3D2N: Hari 1 dijemput di Bandara Surabaya, Hari 3 diantar ke bandara bila penerbangannya hari itu). Di luar durasi paket tidak termasuk. Bot cukup MEMBERI REKOMENDASI: tawarkan bantuan mencarikan rekanan dengan biaya terpisah (lihat E29), tanpa menyebut nominal dan tanpa menolak mentah-mentah.",
+    "alasan": "Operator: 'Ya berikan rekomendasi saja'. Bukti satu percakapan tidak lagi menentukan -- aturan ini sudah dipakai operator sebagai dasar dua keputusan lain (H43 ditahan karena bertentangan dengannya, E29 disetujui karena sejalan)."
+  },
+  "B47": {
+    "keputusan": "lolos",
+    "tanggal": "2026-09-16",
+    "versiTerpilih": "Bila destinasi ditutup sementara dan tanggal perjalanan masih beberapa minggu lagi, tunggu update resmi lebih dulu dan jangan mengusulkan program alternatif terlalu dini. Bila menjelang tanggal destinasi tetap tutup, bagian yang terdampak diganti dengan rute alternatif yang setara. Ini aturan CARA MERESPONS, bukan penetapan kondisi tertentu.",
+    "alasan": "Operator: 'ya benar'."
+  },
+  "B32": {
+    "keputusan": "lolos",
+    "tanggal": "2026-09-16",
+    "alasan": "Bucket bukti tunggal: fakta operasional/publik yang tidak bergantung kesepakatan satu pelanggan. Aturan disetujui operator 2026-09-16."
+  },
+  "B36": {
+    "keputusan": "lolos",
+    "tanggal": "2026-09-16",
+    "alasan": "Bucket bukti tunggal: fakta operasional/publik yang tidak bergantung kesepakatan satu pelanggan. Aturan disetujui operator 2026-09-16."
+  },
+  "D11": {
+    "keputusan": "lolos",
+    "tanggal": "2026-09-16",
+    "alasan": "Bucket bukti tunggal: fakta operasional/publik yang tidak bergantung kesepakatan satu pelanggan. Aturan disetujui operator 2026-09-16."
+  },
+  "D12": {
+    "keputusan": "lolos",
+    "tanggal": "2026-09-16",
+    "alasan": "Bucket bukti tunggal: fakta operasional/publik yang tidak bergantung kesepakatan satu pelanggan. Aturan disetujui operator 2026-09-16."
+  },
+  "D14": {
+    "keputusan": "lolos",
+    "tanggal": "2026-09-16",
+    "versiTerpilih": "Untuk mengejar sunrise Bromo dari hotel di Malang, berangkat 00.00-01.00, atau menginap di area Bromo. Berangkat pukul 03.00 terlalu mundur untuk sunrise. JANGAN memakai angka '2 jam' dari admin -- pakai durasi perjalanan dari katalog, sejalan dengan keputusan F20.",
+    "alasan": "Bucket bukti tunggal: fakta operasional/publik yang tidak bergantung kesepakatan satu pelanggan. Aturan disetujui operator 2026-09-16."
+  },
+  "D18": {
+    "keputusan": "lolos",
+    "tanggal": "2026-09-16",
+    "alasan": "Bucket bukti tunggal: fakta operasional/publik yang tidak bergantung kesepakatan satu pelanggan. Aturan disetujui operator 2026-09-16."
+  },
+  "D22": {
+    "keputusan": "lolos",
+    "tanggal": "2026-09-16",
+    "alasan": "Bucket bukti tunggal: fakta operasional/publik yang tidak bergantung kesepakatan satu pelanggan. Aturan disetujui operator 2026-09-16."
+  },
+  "D25": {
+    "keputusan": "lolos",
+    "tanggal": "2026-09-16",
+    "alasan": "Bucket bukti tunggal: fakta operasional/publik yang tidak bergantung kesepakatan satu pelanggan. Aturan disetujui operator 2026-09-16."
+  },
+  "D31": {
+    "keputusan": "lolos",
+    "tanggal": "2026-09-16",
+    "alasan": "Bucket bukti tunggal: fakta operasional/publik yang tidak bergantung kesepakatan satu pelanggan. Aturan disetujui operator 2026-09-16."
+  },
+  "F37": {
+    "keputusan": "lolos",
+    "tanggal": "2026-09-16",
+    "alasan": "Bucket bukti tunggal: fakta operasional/publik yang tidak bergantung kesepakatan satu pelanggan. Aturan disetujui operator 2026-09-16."
+  },
+  "F39": {
+    "keputusan": "lolos",
+    "tanggal": "2026-09-16",
+    "alasan": "Bucket bukti tunggal: fakta operasional/publik yang tidak bergantung kesepakatan satu pelanggan. Aturan disetujui operator 2026-09-16."
+  },
+  "F42": {
+    "keputusan": "lolos",
+    "tanggal": "2026-09-16",
+    "alasan": "Bucket bukti tunggal: fakta operasional/publik yang tidak bergantung kesepakatan satu pelanggan. Aturan disetujui operator 2026-09-16."
+  },
+  "F43": {
+    "keputusan": "lolos",
+    "tanggal": "2026-09-16",
+    "alasan": "Bucket bukti tunggal: fakta operasional/publik yang tidak bergantung kesepakatan satu pelanggan. Aturan disetujui operator 2026-09-16."
+  },
+  "C20": {
+    "keputusan": "lolos",
+    "tanggal": "2026-09-16",
+    "alasan": "Bucket bukti tunggal: fakta operasional/publik yang tidak bergantung kesepakatan satu pelanggan. Aturan disetujui operator 2026-09-16."
+  },
+  "C21": {
+    "keputusan": "lolos",
+    "tanggal": "2026-09-16",
+    "alasan": "Bucket bukti tunggal: fakta operasional/publik yang tidak bergantung kesepakatan satu pelanggan. Aturan disetujui operator 2026-09-16."
+  },
+  "C22": {
+    "keputusan": "lolos",
+    "tanggal": "2026-09-16",
+    "alasan": "Bucket bukti tunggal: fakta operasional/publik yang tidak bergantung kesepakatan satu pelanggan. Aturan disetujui operator 2026-09-16."
+  },
+  "C23": {
+    "keputusan": "lolos",
+    "tanggal": "2026-09-16",
+    "alasan": "Bucket bukti tunggal: fakta operasional/publik yang tidak bergantung kesepakatan satu pelanggan. Aturan disetujui operator 2026-09-16."
+  },
+  "H59": {
+    "keputusan": "lolos",
+    "tanggal": "2026-09-16",
+    "alasan": "Bucket bukti tunggal: fakta operasional/publik yang tidak bergantung kesepakatan satu pelanggan. Aturan disetujui operator 2026-09-16."
+  },
+  "H60": {
+    "keputusan": "lolos",
+    "tanggal": "2026-09-16",
+    "alasan": "Bucket bukti tunggal: fakta operasional/publik yang tidak bergantung kesepakatan satu pelanggan. Aturan disetujui operator 2026-09-16."
+  },
+  "H61": {
+    "keputusan": "lolos",
+    "tanggal": "2026-09-16",
+    "alasan": "Bucket bukti tunggal: fakta operasional/publik yang tidak bergantung kesepakatan satu pelanggan. Aturan disetujui operator 2026-09-16."
+  },
+  "H03": {
+    "keputusan": "lolos",
+    "tanggal": "2026-09-16",
+    "alasan": "Bucket bukti tunggal: fakta operasional/publik yang tidak bergantung kesepakatan satu pelanggan. Aturan disetujui operator 2026-09-16."
+  },
+  "H14": {
+    "keputusan": "lolos",
+    "tanggal": "2026-09-16",
+    "alasan": "Bucket bukti tunggal: fakta operasional/publik yang tidak bergantung kesepakatan satu pelanggan. Aturan disetujui operator 2026-09-16."
+  },
+  "H20": {
+    "keputusan": "lolos",
+    "tanggal": "2026-09-16",
+    "alasan": "Bucket bukti tunggal: fakta operasional/publik yang tidak bergantung kesepakatan satu pelanggan. Aturan disetujui operator 2026-09-16."
+  },
+  "H21": {
+    "keputusan": "lolos",
+    "tanggal": "2026-09-16",
+    "alasan": "Bucket bukti tunggal: fakta operasional/publik yang tidak bergantung kesepakatan satu pelanggan. Aturan disetujui operator 2026-09-16."
+  },
+  "H22": {
+    "keputusan": "lolos",
+    "tanggal": "2026-09-16",
+    "alasan": "Bucket bukti tunggal: fakta operasional/publik yang tidak bergantung kesepakatan satu pelanggan. Aturan disetujui operator 2026-09-16."
+  },
+  "H23": {
+    "keputusan": "lolos",
+    "tanggal": "2026-09-16",
+    "alasan": "Bucket bukti tunggal: fakta operasional/publik yang tidak bergantung kesepakatan satu pelanggan. Aturan disetujui operator 2026-09-16."
+  },
+  "H25": {
+    "keputusan": "lolos",
+    "tanggal": "2026-09-16",
+    "alasan": "Bucket bukti tunggal: fakta operasional/publik yang tidak bergantung kesepakatan satu pelanggan. Aturan disetujui operator 2026-09-16."
+  },
+  "H44": {
+    "keputusan": "lolos",
+    "tanggal": "2026-09-16",
+    "alasan": "Bucket bukti tunggal: fakta operasional/publik yang tidak bergantung kesepakatan satu pelanggan. Aturan disetujui operator 2026-09-16."
+  },
+  "G34": {
+    "keputusan": "lolos",
+    "tanggal": "2026-09-16",
+    "alasan": "Bucket bukti tunggal: fakta operasional/publik yang tidak bergantung kesepakatan satu pelanggan. Aturan disetujui operator 2026-09-16."
+  },
+  "A26": {
+    "keputusan": "lolos",
+    "tanggal": "2026-09-16",
+    "alasan": "Bucket bukti tunggal: fakta operasional/publik yang tidak bergantung kesepakatan satu pelanggan. Aturan disetujui operator 2026-09-16."
+  },
+  "A28": {
+    "keputusan": "lolos",
+    "tanggal": "2026-09-16",
+    "alasan": "Bucket bukti tunggal: fakta operasional/publik yang tidak bergantung kesepakatan satu pelanggan. Aturan disetujui operator 2026-09-16."
+  },
+  "G19": {
+    "keputusan": "lolos",
+    "tanggal": "2026-09-16",
+    "alasan": "Bucket bukti tunggal: fakta operasional/publik yang tidak bergantung kesepakatan satu pelanggan. Aturan disetujui operator 2026-09-16."
+  },
+  "G23": {
+    "keputusan": "lolos",
+    "tanggal": "2026-09-16",
+    "alasan": "Bucket bukti tunggal: fakta operasional/publik yang tidak bergantung kesepakatan satu pelanggan. Aturan disetujui operator 2026-09-16."
+  },
+  "G24": {
+    "keputusan": "lolos",
+    "tanggal": "2026-09-16",
+    "alasan": "Bucket bukti tunggal: fakta operasional/publik yang tidak bergantung kesepakatan satu pelanggan. Aturan disetujui operator 2026-09-16."
+  },
+  "H63": {
+    "keputusan": "lolos",
+    "tanggal": "2026-09-16",
+    "alasan": "Bucket bukti tunggal: fakta operasional/publik yang tidak bergantung kesepakatan satu pelanggan. Aturan disetujui operator 2026-09-16."
+  },
+  "H56": {
+    "keputusan": "lolos",
+    "tanggal": "2026-09-16",
+    "versiTerpilih": "Nomor pengirim notifikasi payment gateway bukan milik JVTO dan pesan ke nomor itu tidak sampai ke tim JVTO. Hubungi JVTO hanya lewat kanal resminya.",
+    "alasan": "Bucket bukti tunggal: fakta operasional/publik yang tidak bergantung kesepakatan satu pelanggan. Aturan disetujui operator 2026-09-16."
+  },
+  "H57": {
+    "keputusan": "lolos",
+    "tanggal": "2026-09-16",
+    "versiTerpilih": "Harga yang berlaku adalah harga di website resmi JVTO. Harga berbeda yang pernah muncul di WhatsApp dihasilkan oleh asisten AI WhatsApp Business dan TIDAK berlaku.",
+    "alasan": "Bucket bukti tunggal: fakta operasional/publik yang tidak bergantung kesepakatan satu pelanggan. Aturan disetujui operator 2026-09-16."
+  },
+  "G40": {
+    "keputusan": "lolos",
+    "tanggal": "2026-09-16",
+    "alasan": "Bucket bukti tunggal: fakta operasional/publik yang tidak bergantung kesepakatan satu pelanggan. Aturan disetujui operator 2026-09-16."
+  },
+  "G41": {
+    "keputusan": "lolos",
+    "tanggal": "2026-09-16",
+    "alasan": "Bucket bukti tunggal: fakta operasional/publik yang tidak bergantung kesepakatan satu pelanggan. Aturan disetujui operator 2026-09-16."
+  },
+  "G42": {
+    "keputusan": "lolos",
+    "tanggal": "2026-09-16",
+    "alasan": "Bucket bukti tunggal: fakta operasional/publik yang tidak bergantung kesepakatan satu pelanggan. Aturan disetujui operator 2026-09-16."
+  },
+  "G43": {
+    "keputusan": "lolos",
+    "tanggal": "2026-09-16",
+    "alasan": "Bucket bukti tunggal: fakta operasional/publik yang tidak bergantung kesepakatan satu pelanggan. Aturan disetujui operator 2026-09-16."
+  },
+  "G44": {
+    "keputusan": "lolos",
+    "tanggal": "2026-09-16",
+    "alasan": "Bucket bukti tunggal: fakta operasional/publik yang tidak bergantung kesepakatan satu pelanggan. Aturan disetujui operator 2026-09-16."
+  },
+  "G45": {
+    "keputusan": "lolos",
+    "tanggal": "2026-09-16",
+    "alasan": "Bucket bukti tunggal: fakta operasional/publik yang tidak bergantung kesepakatan satu pelanggan. Aturan disetujui operator 2026-09-16."
+  },
+  "G46": {
+    "keputusan": "lolos",
+    "tanggal": "2026-09-16",
+    "alasan": "Bucket bukti tunggal: fakta operasional/publik yang tidak bergantung kesepakatan satu pelanggan. Aturan disetujui operator 2026-09-16."
+  },
+  "E35": {
+    "keputusan": "lolos",
+    "tanggal": "2026-09-16",
+    "alasan": "Bucket bukti tunggal: fakta operasional/publik yang tidak bergantung kesepakatan satu pelanggan. Aturan disetujui operator 2026-09-16."
+  },
+  "F22": {
+    "keputusan": "lolos",
+    "tanggal": "2026-09-16",
+    "alasan": "Bucket bukti tunggal: fakta operasional/publik yang tidak bergantung kesepakatan satu pelanggan. Aturan disetujui operator 2026-09-16."
+  },
+  "F25": {
+    "keputusan": "lolos",
+    "tanggal": "2026-09-16",
+    "alasan": "Bucket bukti tunggal: fakta operasional/publik yang tidak bergantung kesepakatan satu pelanggan. Aturan disetujui operator 2026-09-16."
+  },
+  "F26": {
+    "keputusan": "lolos",
+    "tanggal": "2026-09-16",
+    "alasan": "Bucket bukti tunggal: fakta operasional/publik yang tidak bergantung kesepakatan satu pelanggan. Aturan disetujui operator 2026-09-16."
+  },
+  "F27": {
+    "keputusan": "lolos",
+    "tanggal": "2026-09-16",
+    "alasan": "Bucket bukti tunggal: fakta operasional/publik yang tidak bergantung kesepakatan satu pelanggan. Aturan disetujui operator 2026-09-16."
+  },
+  "G30": {
+    "keputusan": "lolos",
+    "tanggal": "2026-09-16",
+    "alasan": "Bucket bukti tunggal: fakta operasional/publik yang tidak bergantung kesepakatan satu pelanggan. Aturan disetujui operator 2026-09-16."
+  },
+  "G31": {
+    "keputusan": "lolos",
+    "tanggal": "2026-09-16",
+    "alasan": "Bucket bukti tunggal: fakta operasional/publik yang tidak bergantung kesepakatan satu pelanggan. Aturan disetujui operator 2026-09-16."
+  },
+  "G32": {
+    "keputusan": "lolos",
+    "tanggal": "2026-09-16",
+    "alasan": "Bucket bukti tunggal: fakta operasional/publik yang tidak bergantung kesepakatan satu pelanggan. Aturan disetujui operator 2026-09-16."
+  },
+  "H39": {
+    "keputusan": "lolos",
+    "tanggal": "2026-09-16",
+    "alasan": "Bucket bukti tunggal: fakta operasional/publik yang tidak bergantung kesepakatan satu pelanggan. Aturan disetujui operator 2026-09-16."
+  },
+  "H41": {
+    "keputusan": "lolos",
+    "tanggal": "2026-09-16",
+    "alasan": "Bucket bukti tunggal: fakta operasional/publik yang tidak bergantung kesepakatan satu pelanggan. Aturan disetujui operator 2026-09-16."
+  },
+  "D09": {
+    "keputusan": "lolos",
+    "tanggal": "2026-09-16",
+    "versiTerpilih": "Antar ke bandara termasuk HANYA bila penerbangan jatuh pada hari terakhir tur. Bila penerbangan keesokan harinya, tamu diantar ke hotel dan transfer bandara berikutnya di luar paket (lihat H09 dan E29).",
+    "alasan": "Bucket bukti tunggal: fakta operasional/publik yang tidak bergantung kesepakatan satu pelanggan. Aturan disetujui operator 2026-09-16."
+  },
+  "H51": {
+    "keputusan": "lolos",
+    "tanggal": "2026-09-16",
+    "alasan": "Bucket bukti tunggal: fakta operasional/publik yang tidak bergantung kesepakatan satu pelanggan. Aturan disetujui operator 2026-09-16."
+  },
+  "H52": {
+    "keputusan": "lolos",
+    "tanggal": "2026-09-16",
+    "alasan": "Bucket bukti tunggal: fakta operasional/publik yang tidak bergantung kesepakatan satu pelanggan. Aturan disetujui operator 2026-09-16."
+  },
+  "H54": {
+    "keputusan": "lolos",
+    "tanggal": "2026-09-16",
+    "alasan": "Bucket bukti tunggal: fakta operasional/publik yang tidak bergantung kesepakatan satu pelanggan. Aturan disetujui operator 2026-09-16."
+  },
+  "H55": {
+    "keputusan": "lolos",
+    "tanggal": "2026-09-16",
+    "alasan": "Bucket bukti tunggal: fakta operasional/publik yang tidak bergantung kesepakatan satu pelanggan. Aturan disetujui operator 2026-09-16."
+  },
+  "A25": {
+    "keputusan": "tahan",
+    "tanggal": "2026-09-16",
+    "alasan": "Booking lewat agen: harga khusus agen belum dijawab admin (masih ditanyakan ke tim), jadi aturannya belum lengkap."
+  },
+  "A27": {
+    "keputusan": "tahan",
+    "tanggal": "2026-09-16",
+    "alasan": "Isinya sama dengan F28 yang sudah ditahan operator (tim IT membuka kembali tanggal di website). Ditahan agar konsisten."
+  },
+  "A31": {
+    "keputusan": "tahan",
+    "tanggal": "2026-09-16",
+    "alasan": "Kasus satu booking (solo + jemput hotel Canggu); sudah tercakup E07 dan aturan titik jemput."
+  },
+  "E30": {
+    "keputusan": "tahan",
+    "tanggal": "2026-09-16",
+    "alasan": "Upgrade kendaraan -- tempatnya katalog, sejalan dengan F31 yang ditahan."
+  },
+  "E32": {
+    "keputusan": "tahan",
+    "tanggal": "2026-09-16",
+    "alasan": "Add-on Bromo Sunset: keberadaan dan harga add-on adalah data katalog/checkout, bukan knowledge."
+  },
+  "H26": {
+    "keputusan": "tahan",
+    "tanggal": "2026-09-16",
+    "alasan": "Bertentangan dengan keputusan operator di B40/E17: JVTO tidak menjual transport privat terpisah, sehingga ketentuan kuotasi transport-only tidak boleh diajarkan ke bot."
+  },
+  "H28": {
+    "keputusan": "tahan",
+    "tanggal": "2026-09-16",
+    "alasan": "Daftar hotel untuk satu rute 5D4N yang disesuaikan -- kesepakatan per booking."
+  },
+  "H62": {
+    "keputusan": "tahan",
+    "tanggal": "2026-09-16",
+    "alasan": "Membagikan kontak guide Yogyakarta berlawanan dengan G36 (tolak, lalu tawarkan paket JVTO sendiri)."
+  }
+}

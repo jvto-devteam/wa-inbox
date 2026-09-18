@@ -1,0 +1,1170 @@
+{
+  "judul": "Daftar celah knowledge — replay jawaban admin JVTO vs bot",
+  "dibuat": "2026-09-15",
+  "status": "Menunggu tinjauan operator. Belum ada entri knowledge atau perubahan katalog yang dibuat dari daftar ini.",
+  "metode": {
+    "alat": "scripts/replay-agent-answers.ts + src/lib/bot/eval/replay-pairs.ts",
+    "commit": [
+      "90a4a58",
+      "fd3bda9",
+      "bf6c162"
+    ],
+    "seed": 20260915,
+    "keterangan": "Pertanyaan pembuka pelanggan asli dijalankan ke bot di VPS (mode draft, percakapan sekali pakai, tanpa kirim). Jawaban admin JVTO yang benar-benar terkirim dipakai sebagai sumber kebenaran. Setiap celah diverifikasi tidak ada di catalog/*.json maupun revisi knowledge PUBLISHED sebelum dicatat.",
+    "rujukan": "Rujukan tX#N = tahap X, urutan N. conversationId menunjuk percakapan asli di Inbox; askedAt = waktu pesan pembuka (UTC)."
+  },
+  "verifikasi": {
+    "fileKatalog": 22,
+    "revisiKnowledgePublished": 11
+  },
+  "cakupan": {
+    "direplay": 107,
+    "perTahap": {
+      "tahap1": 10,
+      "tahap2": 50,
+      "tahap3": 47
+    },
+    "dinilai": 92,
+    "tidakDinilai": [
+      {
+        "ref": "t1#3",
+        "conversationId": "cmt6f8vkb01s8ehqlfra16fmd",
+        "askedAt": "2026-08-23T23:11:41.000Z",
+        "alasan": "degraded"
+      },
+      {
+        "ref": "t2#11",
+        "conversationId": "cmt31ot1y00z9ehqlposoeb7f",
+        "askedAt": "2026-08-21T14:28:51.000Z",
+        "alasan": "degraded"
+      },
+      {
+        "ref": "t1#5",
+        "conversationId": "cmsie23lk000q1oqlbvy2rkzs",
+        "askedAt": "2026-08-07T03:31:58.000Z",
+        "alasan": "pertanyaan pelanggan yang sudah booking atau urusan operasional"
+      },
+      {
+        "ref": "t1#7",
+        "conversationId": "cmtbpy9do00eh0wqlfe8mrbxq",
+        "askedAt": "2026-08-27T16:10:12.000Z",
+        "alasan": "pertanyaan pelanggan yang sudah booking atau urusan operasional"
+      },
+      {
+        "ref": "t2#18",
+        "conversationId": "cmtziyjv400ndkmql417cw9tx",
+        "askedAt": "2026-09-13T08:00:57.000Z",
+        "alasan": "pertanyaan pelanggan yang sudah booking atau urusan operasional"
+      },
+      {
+        "ref": "t2#27",
+        "conversationId": "cmsrny69z00whtuqlfbiajm27",
+        "askedAt": "2026-08-13T15:18:45.000Z",
+        "alasan": "pertanyaan pelanggan yang sudah booking atau urusan operasional"
+      },
+      {
+        "ref": "t2#35",
+        "conversationId": "cmscpzf4m00niylqlzsv1sg9q",
+        "askedAt": "2026-08-03T04:19:10.000Z",
+        "alasan": "pertanyaan pelanggan yang sudah booking atau urusan operasional"
+      },
+      {
+        "ref": "t3#2",
+        "conversationId": "cms6re1ai0007vkqlfkoosb08",
+        "askedAt": "2026-07-30T00:11:56.000Z",
+        "alasan": "pertanyaan pelanggan yang sudah booking atau urusan operasional"
+      },
+      {
+        "ref": "t3#5",
+        "conversationId": "cmsr23wfv00rptuqlcrhgzvjm",
+        "askedAt": "2026-08-13T05:07:21.000Z",
+        "alasan": "pertanyaan pelanggan yang sudah booking atau urusan operasional"
+      },
+      {
+        "ref": "t3#11",
+        "conversationId": "cmt5516y601bgehqlfa8org0y",
+        "askedAt": "2026-08-23T01:38:00.000Z",
+        "alasan": "pertanyaan pelanggan yang sudah booking atau urusan operasional"
+      },
+      {
+        "ref": "t3#28",
+        "conversationId": "cms5ffpa9000qm1qlki32ys07",
+        "askedAt": "2026-07-29T01:49:31.000Z",
+        "alasan": "pertanyaan pelanggan yang sudah booking atau urusan operasional"
+      },
+      {
+        "ref": "t3#35",
+        "conversationId": "cmsejjvp3000i1dqlq5me2phn",
+        "askedAt": "2026-08-04T10:55:05.000Z",
+        "alasan": "pertanyaan pelanggan yang sudah booking atau urusan operasional"
+      },
+      {
+        "ref": "t3#39",
+        "conversationId": "cms5fo8vg000xm1qlwno4etb5",
+        "askedAt": "2026-07-29T01:56:10.000Z",
+        "alasan": "pertanyaan pelanggan yang sudah booking atau urusan operasional"
+      },
+      {
+        "ref": "t3#43",
+        "conversationId": "cmtzci60c00kpkmqlt5dofh72",
+        "askedAt": "2026-09-13T05:00:15.000Z",
+        "alasan": "pertanyaan pelanggan yang sudah booking atau urusan operasional"
+      },
+      {
+        "ref": "t3#6",
+        "conversationId": "cmsadufpv009cylql6kteqzy0",
+        "askedAt": "2026-08-01T13:03:50.000Z",
+        "alasan": "permintaan dari customer service Klook"
+      }
+    ]
+  },
+  "celahKnowledge": [
+    {
+      "id": "K1",
+      "topik": "Hotel sendiri",
+      "jawabanAdmin": "Boleh; kirim pilihan hotel untuk dicek kecocokan rute; booking + deposit 20% seperti biasa, lalu budget hotel yang tidak terpakai dipotong dari pelunasan (contoh: IDR 1.530.000 untuk 4D3N Bali)",
+      "jawabanBot": "\"Let me check with our team\" / handoff",
+      "pasangan": [
+        {
+          "ref": "t1#8",
+          "conversationId": "cmtc30zh100fp0wqlrpsl9t3e",
+          "askedAt": "2026-08-27T22:16:15.000Z"
+        },
+        {
+          "ref": "t2#7",
+          "conversationId": "cmshduely000twnqlbnambvy4",
+          "askedAt": "2026-08-06T10:38:12.000Z"
+        },
+        {
+          "ref": "t2#43",
+          "conversationId": "cmt71gsqq01voehqli5tk7cfd",
+          "askedAt": "2026-08-24T09:33:42.000Z"
+        }
+      ]
+    },
+    {
+      "id": "K2",
+      "topik": "Drop-off Bandara Banyuwangi",
+      "jawabanAdmin": "Bisa, menggantikan lanjut ke Bali",
+      "jawabanBot": "\"Let me check with our team\"",
+      "pasangan": [
+        {
+          "ref": "t1#8",
+          "conversationId": "cmtc30zh100fp0wqlrpsl9t3e",
+          "askedAt": "2026-08-27T22:16:15.000Z"
+        }
+      ]
+    },
+    {
+      "id": "K3",
+      "topik": "Usia minimum / izin orang tua",
+      "jawabanAdmin": "Tidak ada batas usia minimum asal fit; 17 tahun + surat izin orang tua tertulis tidak masalah",
+      "jawabanBot": "Tidak dijawab (formulir)",
+      "pasangan": [
+        {
+          "ref": "t1#9",
+          "conversationId": "cmshppt23003ewnqlzb5odnqf",
+          "askedAt": "2026-08-06T16:10:32.000Z"
+        }
+      ]
+    },
+    {
+      "id": "K4",
+      "topik": "Cakupan layanan: hanya Jawa Timur",
+      "jawabanAdmin": "JVTO tidak melayani tur/aktivitas di Bali, Yogyakarta, atau pendakian Gunung Agung; admin memberi kontak partner lokal (Bali, Yogyakarta)",
+      "jawabanBot": "\"Let me check with our team\" / menjanjikan harga custom 14 hari / mengabaikan Agung",
+      "pasangan": [
+        {
+          "ref": "t1#6",
+          "conversationId": "cmsqdq2p600o9tuql6r7qix7d",
+          "askedAt": "2026-08-12T17:44:45.000Z"
+        },
+        {
+          "ref": "t2#20",
+          "conversationId": "cmth50ods01l20wql1clokcgm",
+          "askedAt": "2026-08-31T11:10:50.000Z"
+        },
+        {
+          "ref": "t2#28",
+          "conversationId": "cmtk2sej700mqzwql1cu1yhzr",
+          "askedAt": "2026-09-02T12:31:43.000Z"
+        }
+      ]
+    },
+    {
+      "id": "K5",
+      "topik": "Harga solo (1 pax)",
+      "jawabanAdmin": "Ada harga solo; admin menyebutnya ada di halaman paket",
+      "jawabanBot": "Tarif 1 pax tidak ada untuk 7 dari 16 paket di `standard-price-tiers.json` (bali 5D4N, bromo-1d1n, bromo-2d1n, ijen-2d1n, malang-5d4n, malang-6d5n, taman-safari-3d2n), sehingga bot menyebut harga \"from\" untuk tamu solo",
+      "pasangan": [
+        {
+          "ref": "t1#4",
+          "conversationId": "cmsk1s00t0045vgql0h4kfeqh",
+          "askedAt": "2026-08-08T07:23:43.000Z"
+        },
+        {
+          "ref": "t2#10",
+          "conversationId": "cmtwrlafj002v9mqlfnggqu92",
+          "askedAt": "2026-09-11T09:39:16.000Z"
+        },
+        {
+          "ref": "t2#36",
+          "conversationId": "cmse7sg22001qtxql22yuwelm",
+          "askedAt": "2026-08-04T05:25:24.000Z"
+        },
+        {
+          "ref": "t3#19",
+          "conversationId": "cmtbe5li5009p0wqlrm7qdnjj",
+          "askedAt": "2026-08-27T10:39:59.000Z"
+        },
+        {
+          "ref": "t3#27",
+          "conversationId": "cmsj0q2fo00am1oql5dwmcs01",
+          "askedAt": "2026-08-07T14:06:27.000Z"
+        }
+      ]
+    },
+    {
+      "id": "K6",
+      "topik": "Titik jemput/antar di luar Surabaya & Bali",
+      "jawabanAdmin": "Jemput dari Malang (tanpa biaya tambahan), Stasiun Probolinggo, atau hotel di Banyuwangi bisa; antar ke Malang atau hotel di Banyuwangi bisa",
+      "jawabanBot": "\"We only depart from Surabaya or Bali\" / \"we don't have pickup from Malang/Yogyakarta\" / pertanyaan diabaikan",
+      "pasangan": [
+        {
+          "ref": "t2#1",
+          "conversationId": "cmtu16qqd00ggguqlcwxyv5to",
+          "askedAt": "2026-09-09T11:44:35.000Z"
+        },
+        {
+          "ref": "t2#7",
+          "conversationId": "cmshduely000twnqlbnambvy4",
+          "askedAt": "2026-08-06T10:38:12.000Z"
+        },
+        {
+          "ref": "t2#8",
+          "conversationId": "cmt3bc3xn011behqlpgf2txj8",
+          "askedAt": "2026-08-21T18:58:55.000Z"
+        },
+        {
+          "ref": "t2#9",
+          "conversationId": "cmskrps0o00xivgql1dzt1d1y",
+          "askedAt": "2026-08-08T19:29:49.000Z"
+        },
+        {
+          "ref": "t2#21",
+          "conversationId": "cmsrlsku100vxtuqls5nsj88c",
+          "askedAt": "2026-08-13T14:18:25.000Z"
+        },
+        {
+          "ref": "t2#22",
+          "conversationId": "cmtbqrj2a00en0wql5ek3qgwx",
+          "askedAt": "2026-08-27T16:32:57.000Z"
+        },
+        {
+          "ref": "t2#36",
+          "conversationId": "cmse7sg22001qtxql22yuwelm",
+          "askedAt": "2026-08-04T05:25:24.000Z"
+        },
+        {
+          "ref": "t3#15",
+          "conversationId": "cmt304eq300xiehql94g7fdi4",
+          "askedAt": "2026-08-21T13:45:00.000Z"
+        },
+        {
+          "ref": "t3#31",
+          "conversationId": "cmsm0h7fy01dlvgql0b3z0trr",
+          "askedAt": "2026-08-09T16:22:51.000Z"
+        }
+      ]
+    },
+    {
+      "id": "K7",
+      "topik": "Kombinasi terlalu padat",
+      "jawabanAdmin": "Tumpak Sewu + Bromo + Ijen tidak ditawarkan 3D2N (terlalu terburu-buru, juga untuk sopir) → 4D3N, atau 3D2N Bromo-Madakaripura-Ijen; dua air terjun dalam 3 hari tidak disarankan; Bromo + Madakaripura + Ijen tidak bisa 2D1N → 3D2N",
+      "jawabanBot": "\"Let me check with our team\" / formulir / \"team will follow up\"",
+      "pasangan": [
+        {
+          "ref": "t2#4",
+          "conversationId": "cmtuqjtx700rtguqlz1uhq2om",
+          "askedAt": "2026-09-09T23:34:36.000Z"
+        },
+        {
+          "ref": "t2#6",
+          "conversationId": "cmtiyofzi00b1zwqlry1dem37",
+          "askedAt": "2026-09-01T17:48:54.000Z"
+        },
+        {
+          "ref": "t2#8",
+          "conversationId": "cmt3bc3xn011behqlpgf2txj8",
+          "askedAt": "2026-08-21T18:58:55.000Z"
+        },
+        {
+          "ref": "t2#13",
+          "conversationId": "cmtdktbzu00u80wqlfk2j5d4z",
+          "askedAt": "2026-08-28T23:21:56.000Z"
+        },
+        {
+          "ref": "t3#19",
+          "conversationId": "cmtbe5li5009p0wqlrm7qdnjj",
+          "askedAt": "2026-08-27T10:39:59.000Z"
+        },
+        {
+          "ref": "t3#31",
+          "conversationId": "cmsm0h7fy01dlvgql0b3z0trr",
+          "askedAt": "2026-08-09T16:22:51.000Z"
+        },
+        {
+          "ref": "t3#33",
+          "conversationId": "cmserdf110005gfqlq10u6nda",
+          "askedAt": "2026-08-04T14:33:34.000Z"
+        }
+      ]
+    },
+    {
+      "id": "K8",
+      "topik": "Add-on Madakaripura",
+      "jawabanAdmin": "IDR 200.000/orang (tiket + guide lokal), dipilih saat checkout; tersedia untuk 1D1N, 4D3N Tumpak Sewu, 5D4N Bali-Surabaya, dan 3D2N Tumpak Sewu-Bromo",
+      "jawabanBot": "\"Madakaripura is not included\" tanpa menyebut add-on",
+      "pasangan": [
+        {
+          "ref": "t2#10",
+          "conversationId": "cmtwrlafj002v9mqlfnggqu92",
+          "askedAt": "2026-09-11T09:39:16.000Z"
+        },
+        {
+          "ref": "t2#26",
+          "conversationId": "cmtcjj6c100jv0wqlyhpd8zlz",
+          "askedAt": "2026-08-28T05:58:17.000Z"
+        },
+        {
+          "ref": "t2#39",
+          "conversationId": "cmtu3wlws00jzguqlp7n6z7jz",
+          "askedAt": "2026-09-09T13:00:41.000Z"
+        },
+        {
+          "ref": "t3#18",
+          "conversationId": "cmth735jx01li0wqlfu3eldsk",
+          "askedAt": "2026-08-31T12:08:46.000Z"
+        },
+        {
+          "ref": "t3#46",
+          "conversationId": "cmsi2o59v0050wnqlkeanq3c3",
+          "askedAt": "2026-08-06T22:13:10.000Z"
+        }
+      ]
+    },
+    {
+      "id": "K9",
+      "topik": "Kendaraan & sopir",
+      "jawabanAdmin": "Sopir dan kendaraan yang sama sepanjang tur di Jawa Timur; kendaraan Jawa Timur berhenti di Ketapang, sopir Bali terpisah lewat add-on",
+      "jawabanBot": "Tidak dijawab",
+      "pasangan": [
+        {
+          "ref": "t2#15",
+          "conversationId": "cmswyk0sr00ajibql744ya9s6",
+          "askedAt": "2026-08-17T08:14:32.000Z"
+        },
+        {
+          "ref": "t2#16",
+          "conversationId": "cmtpzzz5c01ngo3ql6bio73wb",
+          "askedAt": "2026-09-06T16:00:14.000Z"
+        }
+      ]
+    },
+    {
+      "id": "K10",
+      "topik": "Kamar mandi",
+      "jawabanAdmin": "Semua kamar privat dengan kamar mandi dalam (en-suite)",
+      "jawabanBot": "Tidak dijawab",
+      "pasangan": [
+        {
+          "ref": "t2#8",
+          "conversationId": "cmt3bc3xn011behqlpgf2txj8",
+          "askedAt": "2026-08-21T18:58:55.000Z"
+        },
+        {
+          "ref": "t2#15",
+          "conversationId": "cmswyk0sr00ajibql744ya9s6",
+          "askedAt": "2026-08-17T08:14:32.000Z"
+        }
+      ]
+    },
+    {
+      "id": "K11",
+      "topik": "Upgrade hotel Bromo",
+      "jawabanAdmin": "Manis Ae Bromo, tambahan IDR 400.000 (ditambahkan admin ke pelunasan setelah booking)",
+      "jawabanBot": "Katalog hanya \"room upgrades available subject to confirmation\"",
+      "pasangan": [
+        {
+          "ref": "t2#22",
+          "conversationId": "cmtbqrj2a00en0wql5ek3qgwx",
+          "askedAt": "2026-08-27T16:32:57.000Z"
+        },
+        {
+          "ref": "t2#31",
+          "conversationId": "cmt1quxoh00fuehqlcmn1cmxq",
+          "askedAt": "2026-08-20T16:37:54.000Z"
+        }
+      ]
+    },
+    {
+      "id": "K12",
+      "topik": "Jam jemput menyesuaikan pesawat",
+      "jawabanAdmin": "Tur privat: jam jemput disesuaikan dengan kedatangan pesawat (mis. tiba 15.00 atau 17.00)",
+      "jawabanBot": "\"Let me check with our team\"",
+      "pasangan": [
+        {
+          "ref": "t2#31",
+          "conversationId": "cmt1quxoh00fuehqlcmn1cmxq",
+          "askedAt": "2026-08-20T16:37:54.000Z"
+        },
+        {
+          "ref": "t3#19",
+          "conversationId": "cmtbe5li5009p0wqlrm7qdnjj",
+          "askedAt": "2026-08-27T10:39:59.000Z"
+        },
+        {
+          "ref": "t3#32",
+          "conversationId": "cmsvjyosw001sibqlgag17oei",
+          "askedAt": "2026-08-16T08:38:14.000Z"
+        }
+      ]
+    },
+    {
+      "id": "K13",
+      "topik": "Kunjungan siang, bukan sunrise",
+      "jawabanAdmin": "Bromo dan Ijen bisa dijadwalkan siang hari",
+      "jawabanBot": "Formulir (preferensi diabaikan)",
+      "pasangan": [
+        {
+          "ref": "t2#47",
+          "conversationId": "cmshb6l2q0004wnql1z5j4f6h",
+          "askedAt": "2026-08-06T09:23:41.000Z"
+        }
+      ]
+    },
+    {
+      "id": "K14",
+      "topik": "Gunung Semeru",
+      "jawabanAdmin": "Tidak dibuka untuk pendakian (aktivitas vulkanik); tidak bisa dimasukkan",
+      "jawabanBot": "\"Team can look into adding it as a custom extension\"",
+      "pasangan": [
+        {
+          "ref": "t2#48",
+          "conversationId": "cmsep699w000fc0qlgzwi6p0l",
+          "askedAt": "2026-08-04T13:32:02.000Z"
+        }
+      ]
+    },
+    {
+      "id": "K15",
+      "topik": "Sewa mobil + sopir saja",
+      "jawabanAdmin": "Tidak ada layanan sopir/transport terpisah; transport hanya bagian dari paket tur",
+      "jawabanBot": "Tidak dijawab / menawarkan paket tanpa menyebut batasan ini",
+      "pasangan": [
+        {
+          "ref": "t2#6",
+          "conversationId": "cmtiyofzi00b1zwqlry1dem37",
+          "askedAt": "2026-09-01T17:48:54.000Z"
+        },
+        {
+          "ref": "t3#26",
+          "conversationId": "cmtbkmiw800b90wqljxxkybbk",
+          "askedAt": "2026-08-27T13:41:06.000Z"
+        }
+      ]
+    },
+    {
+      "id": "K16",
+      "topik": "Melewati destinasi dalam paket",
+      "jawabanAdmin": "Boleh melewati Madakaripura/Papuma sesuai keinginan",
+      "jawabanBot": "Handoff (verifikasi gagal) / formulir",
+      "pasangan": [
+        {
+          "ref": "t2#9",
+          "conversationId": "cmskrps0o00xivgql1dzt1d1y",
+          "askedAt": "2026-08-08T19:29:49.000Z"
+        },
+        {
+          "ref": "t2#42",
+          "conversationId": "cmsegd9010018i7qlmyaam2gd",
+          "askedAt": "2026-08-04T09:25:31.000Z"
+        },
+        {
+          "ref": "t2#43",
+          "conversationId": "cmt71gsqq01voehqli5tk7cfd",
+          "askedAt": "2026-08-24T09:33:42.000Z"
+        },
+        {
+          "ref": "t3#22",
+          "conversationId": "cmt5l2ji501hwehqllakpo9r4",
+          "askedAt": "2026-08-23T09:06:57.000Z"
+        }
+      ]
+    },
+    {
+      "id": "K17",
+      "topik": "Paket Bali→Surabaya diakhiri di Ketapang",
+      "jawabanAdmin": "4D3N dari Bali bisa disesuaikan berakhir di Ketapang dengan tiket feri ke Bali tanpa biaya tambahan",
+      "jawabanBot": "\"We don't have a standard package that starts and finishes in Bali\"",
+      "pasangan": [
+        {
+          "ref": "t3#10",
+          "conversationId": "cmt0i1hwo0072ehql559bbxpy",
+          "askedAt": "2026-08-19T19:43:18.000Z"
+        }
+      ]
+    },
+    {
+      "id": "K18",
+      "topik": "Harga & waktu add-on transfer Bali",
+      "jawabanAdmin": "Gilimanuk→Canggu IDR 900.000 (2 orang); Gilimanuk→Padang Bai IDR 1.050.000 (2 orang), tiba ±17.00–18.00; ke Gili disarankan menginap semalam di Padang Bai",
+      "jawabanBot": "\"Optional add-on during booking\" / \"let me check timings\"",
+      "pasangan": [
+        {
+          "ref": "t3#10",
+          "conversationId": "cmt0i1hwo0072ehql559bbxpy",
+          "askedAt": "2026-08-19T19:43:18.000Z"
+        },
+        {
+          "ref": "t3#45",
+          "conversationId": "cmsnblzg801savgqls37jlkgq",
+          "askedAt": "2026-08-10T14:22:16.000Z"
+        }
+      ]
+    },
+    {
+      "id": "K19",
+      "topik": "Bromo ditutup otoritas",
+      "jawabanAdmin": "Kalau taman nasional masih tutup: sunrise dari Seruni Point (bila dibuka), atau lewati Bromo dan bagian Bromo yang tidak terpakai (tiket + jeep) dikembalikan",
+      "jawabanBot": "Tidak dijawab (\"team will follow up\")",
+      "pasangan": [
+        {
+          "ref": "t3#14",
+          "conversationId": "cmsvmqkf7002jibql5qy9gf4w",
+          "askedAt": "2026-08-16T09:55:55.000Z"
+        }
+      ]
+    },
+    {
+      "id": "K20",
+      "topik": "Antar-jemput bandara",
+      "jawabanAdmin": "Termasuk bila jatuh di dalam durasi tur (jemput Hari 1, antar Hari 3); tidak termasuk bila penerbangan di luar durasi (hari berikutnya)",
+      "jawabanBot": "\"Full pick-up to drop-off assistance is included\" / \"let me check\"",
+      "pasangan": [
+        {
+          "ref": "t3#23",
+          "conversationId": "cmt3j6li5012behql8h3eq1sz",
+          "askedAt": "2026-08-21T22:38:34.000Z"
+        }
+      ]
+    }
+  ],
+  "pertentanganKatalog": [
+    {
+      "id": "B1",
+      "katalogAtauKnowledge": "\"English-speaking driver/guide standard\", \"private dedicated driver + guide\"",
+      "admin": "Tidak seragam antar-admin: umumnya English-speaking driver + guide lokal di Ijen & Tumpak Sewu (di Bromo sopir jeep menemani); sebagian menulis \"English-speaking guide\"",
+      "pasangan": [
+        {
+          "ref": "t1#0",
+          "conversationId": "cmt1f0oh500bwehqlmbtsucar",
+          "askedAt": "2026-08-20T11:06:27.000Z"
+        },
+        {
+          "ref": "t1#6",
+          "conversationId": "cmsqdq2p600o9tuql6r7qix7d",
+          "askedAt": "2026-08-12T17:44:45.000Z"
+        },
+        {
+          "ref": "t2#15",
+          "conversationId": "cmswyk0sr00ajibql744ya9s6",
+          "askedAt": "2026-08-17T08:14:32.000Z"
+        },
+        {
+          "ref": "t2#28",
+          "conversationId": "cmtk2sej700mqzwql1cu1yhzr",
+          "askedAt": "2026-09-02T12:31:43.000Z"
+        },
+        {
+          "ref": "t3#42",
+          "conversationId": "cmtk6chbh00nmzwqltwybvm6j",
+          "askedAt": "2026-09-02T14:11:19.000Z"
+        },
+        {
+          "ref": "t3#45",
+          "conversationId": "cmsnblzg801savgqls37jlkgq",
+          "askedAt": "2026-08-10T14:22:16.000Z"
+        }
+      ]
+    },
+    {
+      "id": "B2",
+      "katalogAtauKnowledge": "Katalog tidak konsisten: `package-profiles.json` `bromo-2d1n` judul hari ke-2 \"Bromo Sunrise, Madakaripura, and Return to Surabaya\", tapi daftar destinasinya hanya `bromo` → bot: \"Madakaripura is not included\"",
+      "admin": "2D1N Bromo Sunrise Adventure sudah termasuk Madakaripura (sesuai judul hari ke-2)",
+      "pasangan": [
+        {
+          "ref": "t2#38",
+          "conversationId": "cmscyim0h00v8ylql7degnbsp",
+          "askedAt": "2026-08-03T08:18:02.000Z"
+        },
+        {
+          "ref": "t2#39",
+          "conversationId": "cmtu3wlws00jzguqlp7n6z7jz",
+          "askedAt": "2026-09-09T13:00:41.000Z"
+        },
+        {
+          "ref": "t3#19",
+          "conversationId": "cmtbe5li5009p0wqlrm7qdnjj",
+          "askedAt": "2026-08-27T10:39:59.000Z"
+        }
+      ]
+    },
+    {
+      "id": "B3",
+      "katalogAtauKnowledge": "Knowledge PAYMENT: pelunasan via Bank Transfer / Wise / Revolut; tidak menyebut kartu",
+      "admin": "Kartu kredit/debit diterima (notifikasi booking: deposit via link Xendit)",
+      "pasangan": [
+        {
+          "ref": "t1#0",
+          "conversationId": "cmt1f0oh500bwehqlmbtsucar",
+          "askedAt": "2026-08-20T11:06:27.000Z"
+        },
+        {
+          "ref": "t2#29",
+          "conversationId": "cmsn7xjss01qyvgql25mfrxvy",
+          "askedAt": "2026-08-10T12:39:17.000Z"
+        },
+        {
+          "ref": "t3#41",
+          "conversationId": "cmttckyfc004oguqllyj71bic",
+          "askedAt": "2026-09-09T00:15:48.000Z"
+        }
+      ]
+    },
+    {
+      "id": "B4",
+      "katalogAtauKnowledge": "Drone Bromo: izin Rp2.000.000 \"diurus langsung ke taman nasional, bukan lewat JVTO\"",
+      "admin": "\"Tim kami bisa membantu pengajuan izin di hari pertama tur\"",
+      "pasangan": [
+        {
+          "ref": "t2#42",
+          "conversationId": "cmsegd9010018i7qlmyaam2gd",
+          "askedAt": "2026-08-04T09:25:31.000Z"
+        }
+      ]
+    },
+    {
+      "id": "B5",
+      "katalogAtauKnowledge": "Slug yang dikirim admin tidak ada di katalog: `from-bali/ijen-bromo-tumpak-sewu-4d3n`, `from-surabaya/tumpak-sewu-bromo-3d2n`",
+      "admin": "Paket di website yang tidak dikenal bot, atau link salah",
+      "pasangan": [
+        {
+          "ref": "t2#37",
+          "conversationId": "cmsqz9dn500qztuqle63tbdqp",
+          "askedAt": "2026-08-13T03:47:38.000Z"
+        },
+        {
+          "ref": "t3#18",
+          "conversationId": "cmth735jx01li0wqlfu3eldsk",
+          "askedAt": "2026-08-31T12:08:46.000Z"
+        }
+      ]
+    },
+    {
+      "id": "B6",
+      "katalogAtauKnowledge": "`endpoint-chains.json` `bali/bromo-ijen-3d2n`: \"Bali-origin: Gilimanuk→Ketapang sea crossing at the START; the tour then finishes in Surabaya (NOT a finish in Bali).\"; titik antar Surabaya Airport / Surabaya Hotel / Malang",
+      "admin": "Paket ini berakhir di Ketapang dengan tiket feri kembali ke Bali (Bali → Bromo → Ijen → Bali); antar ke hotel Bali lewat add-on",
+      "pasangan": [
+        {
+          "ref": "t1#0",
+          "conversationId": "cmt1f0oh500bwehqlmbtsucar",
+          "askedAt": "2026-08-20T11:06:27.000Z"
+        },
+        {
+          "ref": "t2#34",
+          "conversationId": "cmsda5zg5016bylqltovhfjm8",
+          "askedAt": "2026-08-03T13:44:09.000Z"
+        },
+        {
+          "ref": "t2#41",
+          "conversationId": "cmtigf1yt0081zwqlzchq0zsv",
+          "askedAt": "2026-09-01T09:17:43.000Z"
+        },
+        {
+          "ref": "t2#45",
+          "conversationId": "cmsd7zydz014wylqlzlb46puv",
+          "askedAt": "2026-08-03T12:43:28.000Z"
+        },
+        {
+          "ref": "t3#1",
+          "conversationId": "cmt8ospak024behqlwjk80vtg",
+          "askedAt": "2026-08-25T13:14:34.000Z"
+        },
+        {
+          "ref": "t3#12",
+          "conversationId": "cmtj8dxby00bfzwql3zm9l6g8",
+          "askedAt": "2026-09-01T22:20:39.000Z"
+        },
+        {
+          "ref": "t3#29",
+          "conversationId": "cmsvlprxn002aibql0eon1j6l",
+          "askedAt": "2026-08-16T09:27:19.000Z"
+        }
+      ]
+    }
+  ],
+  "masalahAlur": [
+    {
+      "id": "A1",
+      "masalah": "Formulir start/finish/hari menelan pertanyaan lain pelanggan",
+      "pasangan": [
+        {
+          "ref": "t1#9",
+          "conversationId": "cmshppt23003ewnqlzb5odnqf",
+          "askedAt": "2026-08-06T16:10:32.000Z"
+        },
+        {
+          "ref": "t2#15",
+          "conversationId": "cmswyk0sr00ajibql744ya9s6",
+          "askedAt": "2026-08-17T08:14:32.000Z"
+        },
+        {
+          "ref": "t2#19",
+          "conversationId": "cmsbpyofo00irylqleeem9gfj",
+          "askedAt": "2026-08-02T11:30:50.000Z"
+        },
+        {
+          "ref": "t2#23",
+          "conversationId": "cmu0ew91u0048kxql59z9v9z3",
+          "askedAt": "2026-09-13T22:54:57.000Z"
+        },
+        {
+          "ref": "t2#25",
+          "conversationId": "cmt5i176b01g7ehqlr6xe1kt0",
+          "askedAt": "2026-08-23T07:41:54.000Z"
+        },
+        {
+          "ref": "t2#33",
+          "conversationId": "cmsdh7ea30177ylqllpzngl9k",
+          "askedAt": "2026-08-03T17:01:11.000Z"
+        },
+        {
+          "ref": "t3#15",
+          "conversationId": "cmt304eq300xiehql94g7fdi4",
+          "askedAt": "2026-08-21T13:45:00.000Z"
+        },
+        {
+          "ref": "t3#36",
+          "conversationId": "cmt17pzao00a3ehql97a4qdvz",
+          "askedAt": "2026-08-20T07:42:11.000Z"
+        }
+      ]
+    },
+    {
+      "id": "A2",
+      "masalah": "Formulir tidak menanyakan tanggal & jumlah orang (admin selalu tanya)",
+      "pasangan": [
+        {
+          "ref": "t1#1",
+          "conversationId": "cmth6id6n01l50wqlfz70t4n6",
+          "askedAt": "2026-08-31T11:52:36.000Z"
+        },
+        {
+          "ref": "t1#4",
+          "conversationId": "cmsk1s00t0045vgql0h4kfeqh",
+          "askedAt": "2026-08-08T07:23:43.000Z"
+        },
+        {
+          "ref": "t1#9",
+          "conversationId": "cmshppt23003ewnqlzb5odnqf",
+          "askedAt": "2026-08-06T16:10:32.000Z"
+        },
+        {
+          "ref": "t2#0",
+          "conversationId": "cmtfpoe6i01c00wqlxqfquhmm",
+          "askedAt": "2026-08-30T11:13:37.000Z"
+        },
+        {
+          "ref": "t3#0",
+          "conversationId": "cmsvkkiiu001vibqll3aonjaj",
+          "askedAt": "2026-08-16T08:55:14.000Z"
+        },
+        {
+          "ref": "t3#13",
+          "conversationId": "cmt70ag1t01vlehqlwkie99o6",
+          "askedAt": "2026-08-24T09:00:46.000Z"
+        },
+        {
+          "ref": "t3#16",
+          "conversationId": "cmsje7dac00bt1oql752rg2ed",
+          "askedAt": "2026-08-07T20:23:49.000Z"
+        },
+        {
+          "ref": "t3#25",
+          "conversationId": "cmtwll6fi00069mqlnxrk5q3z",
+          "askedAt": "2026-09-11T06:51:13.000Z"
+        },
+        {
+          "ref": "t3#37",
+          "conversationId": "cmsg724vs003oncql3f13lz17",
+          "askedAt": "2026-08-05T14:40:28.000Z"
+        }
+      ]
+    },
+    {
+      "id": "A3",
+      "masalah": "Pemilihan paket keliru: jumlah hari mengalahkan destinasi; Taman Safari untuk Bromo+Madakaripura; 2D1N dipilih untuk Bromo+Madakaripura+Ijen",
+      "pasangan": [
+        {
+          "ref": "t1#6",
+          "conversationId": "cmsqdq2p600o9tuql6r7qix7d",
+          "askedAt": "2026-08-12T17:44:45.000Z"
+        },
+        {
+          "ref": "t2#5",
+          "conversationId": "cmt2r9yly00upehqlf34pbahm",
+          "askedAt": "2026-08-21T09:37:22.000Z"
+        },
+        {
+          "ref": "t2#29",
+          "conversationId": "cmsn7xjss01qyvgql25mfrxvy",
+          "askedAt": "2026-08-10T12:39:17.000Z"
+        },
+        {
+          "ref": "t3#19",
+          "conversationId": "cmtbe5li5009p0wqlrm7qdnjj",
+          "askedAt": "2026-08-27T10:39:59.000Z"
+        }
+      ]
+    },
+    {
+      "id": "A4",
+      "masalah": "Paket asal Bali & Surabaya dicampur tanpa menanyakan titik jemput",
+      "pasangan": [
+        {
+          "ref": "t1#2",
+          "conversationId": "cmt5aknb501f4ehqlstumaoon",
+          "askedAt": "2026-08-23T04:13:05.000Z"
+        },
+        {
+          "ref": "t2#44",
+          "conversationId": "cmsztr6e10020ehqln7nnixhn",
+          "askedAt": "2026-08-19T08:23:26.000Z"
+        }
+      ]
+    },
+    {
+      "id": "A5",
+      "masalah": "Informasi sudah cukup (start/finish/hari/destinasi), tapi tetap formulir alih-alih menawarkan paket",
+      "pasangan": [
+        {
+          "ref": "t1#4",
+          "conversationId": "cmsk1s00t0045vgql0h4kfeqh",
+          "askedAt": "2026-08-08T07:23:43.000Z"
+        },
+        {
+          "ref": "t2#25",
+          "conversationId": "cmt5i176b01g7ehqlr6xe1kt0",
+          "askedAt": "2026-08-23T07:41:54.000Z"
+        },
+        {
+          "ref": "t2#33",
+          "conversationId": "cmsdh7ea30177ylqllpzngl9k",
+          "askedAt": "2026-08-03T17:01:11.000Z"
+        },
+        {
+          "ref": "t2#34",
+          "conversationId": "cmsda5zg5016bylqltovhfjm8",
+          "askedAt": "2026-08-03T13:44:09.000Z"
+        },
+        {
+          "ref": "t2#37",
+          "conversationId": "cmsqz9dn500qztuqle63tbdqp",
+          "askedAt": "2026-08-13T03:47:38.000Z"
+        },
+        {
+          "ref": "t2#45",
+          "conversationId": "cmsd7zydz014wylqlzlb46puv",
+          "askedAt": "2026-08-03T12:43:28.000Z"
+        },
+        {
+          "ref": "t3#4",
+          "conversationId": "cmsaqt9pg00dtylqllgv12qv4",
+          "askedAt": "2026-08-01T19:06:50.000Z"
+        },
+        {
+          "ref": "t3#17",
+          "conversationId": "cmsd1ctvr00zsylqlcv722dob",
+          "askedAt": "2026-08-03T09:37:32.000Z"
+        },
+        {
+          "ref": "t3#20",
+          "conversationId": "cmshhssxf002hwnqlx5m2vmcn",
+          "askedAt": "2026-08-06T12:28:55.000Z"
+        },
+        {
+          "ref": "t3#29",
+          "conversationId": "cmsvlprxn002aibql0eon1j6l",
+          "askedAt": "2026-08-16T09:27:19.000Z"
+        },
+        {
+          "ref": "t3#40",
+          "conversationId": "cmtk1j6sh00mizwqlqsiu7ohc",
+          "askedAt": "2026-09-02T11:56:35.000Z"
+        }
+      ]
+    },
+    {
+      "id": "A6",
+      "masalah": "\"Isn't a standard package\" / \"no standard package that starts and finishes in Bali\" untuk paket standar (berakar di B6)",
+      "pasangan": [
+        {
+          "ref": "t1#0",
+          "conversationId": "cmt1f0oh500bwehqlmbtsucar",
+          "askedAt": "2026-08-20T11:06:27.000Z"
+        },
+        {
+          "ref": "t2#41",
+          "conversationId": "cmtigf1yt0081zwqlzchq0zsv",
+          "askedAt": "2026-09-01T09:17:43.000Z"
+        },
+        {
+          "ref": "t3#1",
+          "conversationId": "cmt8ospak024behqlwjk80vtg",
+          "askedAt": "2026-08-25T13:14:34.000Z"
+        },
+        {
+          "ref": "t3#10",
+          "conversationId": "cmt0i1hwo0072ehql559bbxpy",
+          "askedAt": "2026-08-19T19:43:18.000Z"
+        }
+      ]
+    },
+    {
+      "id": "A7",
+      "masalah": "Menanyakan \"which destination\" padahal sudah jelas / tidak relevan (termasuk salah ketik \"ljen\")",
+      "pasangan": [
+        {
+          "ref": "t2#3",
+          "conversationId": "cmth0y6sl01k50wqlz894yw2d",
+          "askedAt": "2026-08-31T09:16:55.000Z"
+        },
+        {
+          "ref": "t2#12",
+          "conversationId": "cmu11ft16000ongqlicnz4oxm",
+          "askedAt": "2026-09-14T09:26:01.000Z"
+        },
+        {
+          "ref": "t2#40",
+          "conversationId": "cmsg3jkxq001qncqlu1nw0o87",
+          "askedAt": "2026-08-05T13:02:05.000Z"
+        },
+        {
+          "ref": "t2#49",
+          "conversationId": "cmse0ufq90194ylql3zsplo4k",
+          "askedAt": "2026-08-04T02:10:59.000Z"
+        },
+        {
+          "ref": "t3#3",
+          "conversationId": "cmt9w3r9102a8ehqlz623gia3",
+          "askedAt": "2026-08-26T09:26:54.000Z"
+        },
+        {
+          "ref": "t3#7",
+          "conversationId": "cmsk0agk2003xvgqldx9ugza4",
+          "askedAt": "2026-08-08T06:42:05.000Z"
+        },
+        {
+          "ref": "t3#9",
+          "conversationId": "cmt5dpglx01fiehqlbwhu61pd",
+          "askedAt": "2026-08-23T05:40:48.000Z"
+        },
+        {
+          "ref": "t3#30",
+          "conversationId": "cmtjhcagc00cmzwqllquddbwq",
+          "askedAt": "2026-09-02T02:31:20.000Z"
+        },
+        {
+          "ref": "t3#41",
+          "conversationId": "cmttckyfc004oguqllyj71bic",
+          "askedAt": "2026-09-09T00:15:48.000Z"
+        }
+      ]
+    },
+    {
+      "id": "A8",
+      "masalah": "Permintaan quote detail gagal verifikasi dua kali → handoff tanpa balasan",
+      "pasangan": [
+        {
+          "ref": "t2#9",
+          "conversationId": "cmskrps0o00xivgql1dzt1d1y",
+          "askedAt": "2026-08-08T19:29:49.000Z"
+        },
+        {
+          "ref": "t2#42",
+          "conversationId": "cmsegd9010018i7qlmyaam2gd",
+          "askedAt": "2026-08-04T09:25:31.000Z"
+        },
+        {
+          "ref": "t2#43",
+          "conversationId": "cmt71gsqq01voehqli5tk7cfd",
+          "askedAt": "2026-08-24T09:33:42.000Z"
+        }
+      ]
+    },
+    {
+      "id": "A9",
+      "masalah": "URL lama yang dikirim pelanggan (`/packages/surabaya/3d2n/1`) diulang bot dan lolos verifikasi",
+      "pasangan": [
+        {
+          "ref": "t2#18",
+          "conversationId": "cmtziyjv400ndkmql417cw9tx",
+          "askedAt": "2026-09-13T08:00:57.000Z"
+        }
+      ]
+    },
+    {
+      "id": "A10",
+      "masalah": "Menjanjikan \"team will follow up / build a plan\" untuk hal yang tidak dilayani JVTO",
+      "pasangan": [
+        {
+          "ref": "t1#6",
+          "conversationId": "cmsqdq2p600o9tuql6r7qix7d",
+          "askedAt": "2026-08-12T17:44:45.000Z"
+        },
+        {
+          "ref": "t2#20",
+          "conversationId": "cmth50ods01l20wql1clokcgm",
+          "askedAt": "2026-08-31T11:10:50.000Z"
+        },
+        {
+          "ref": "t2#48",
+          "conversationId": "cmsep699w000fc0qlgzwi6p0l",
+          "askedAt": "2026-08-04T13:32:02.000Z"
+        },
+        {
+          "ref": "t3#14",
+          "conversationId": "cmsvmqkf7002jibql5qy9gf4w",
+          "askedAt": "2026-08-16T09:55:55.000Z"
+        },
+        {
+          "ref": "t3#31",
+          "conversationId": "cmsm0h7fy01dlvgql0b3z0trr",
+          "askedAt": "2026-08-09T16:22:51.000Z"
+        },
+        {
+          "ref": "t3#33",
+          "conversationId": "cmserdf110005gfqlq10u6nda",
+          "askedAt": "2026-08-04T14:33:34.000Z"
+        }
+      ]
+    },
+    {
+      "id": "A11",
+      "masalah": "Pickup Ketapang Harbor ada di katalog (`pickup_ketapang_harbor`), tapi bot tidak memakainya",
+      "pasangan": [
+        {
+          "ref": "t2#49",
+          "conversationId": "cmse0ufq90194ylql3zsplo4k",
+          "askedAt": "2026-08-04T02:10:59.000Z"
+        }
+      ]
+    },
+    {
+      "id": "A12",
+      "masalah": "Ekstraksi jumlah hari salah: \"15 days in uluwatu\" terbaca sebagai tur 15 hari",
+      "pasangan": [
+        {
+          "ref": "t3#22",
+          "conversationId": "cmt5l2ji501hwehqllakpo9r4",
+          "askedAt": "2026-08-23T09:06:57.000Z"
+        }
+      ]
+    },
+    {
+      "id": "A13",
+      "masalah": "`short_answer` modul `inclusion_east_java_bali_ferry` (\"Ketapang–Gilimanuk ferry crossing for Bali-linked packages.\") disisipkan apa adanya sebagai kalimat pembuka yang terpotong sebelum formulir (juga muncul di satu pasangan degraded tahap 1)",
+      "pasangan": [
+        {
+          "ref": "t3#24",
+          "conversationId": "cmsbtg10700knylqlddn4o9bn",
+          "askedAt": "2026-08-02T13:08:17.000Z"
+        }
+      ]
+    },
+    {
+      "id": "A14",
+      "masalah": "\"None of our standard packages include Tumpak Sewu\" padahal `tumpak-sewu-bromo-ijen-4d3n` dan paket lain memuatnya (filter durasi 3 hari tidak dijelaskan)",
+      "pasangan": [
+        {
+          "ref": "t3#18",
+          "conversationId": "cmth735jx01li0wqlfu3eldsk",
+          "askedAt": "2026-08-31T12:08:46.000Z"
+        },
+        {
+          "ref": "t3#33",
+          "conversationId": "cmserdf110005gfqlq10u6nda",
+          "askedAt": "2026-08-04T14:33:34.000Z"
+        }
+      ]
+    }
+  ],
+  "temuanData": [
+    {
+      "id": "D1",
+      "temuan": "Balasan ke pelanggan yang tidak tercatat di database: pelanggan membalas (\"Thank you for your fast reply\", \"Yes please\", jawaban bernomor 1-2-3) padahal tidak ada pesan admin sebelumnya di DB. Contoh t2#8: 3 pesan pelanggan 18:58–19:03 UTC, balasan admin pertama yang tercatat 23:02. Penyelidikan: Meta tidak pernah mengirim pesan-pesan itu ke webhook wa-inbox (kode tidak membuangnya); 5 percakapan pasti (balasan tombol/menu tanpa pesan keluar tercatat), 32 indikasi kuat dari 244 percakapan yang dibuka pelanggan. Operator mengonfirmasi: pesan dari AI Meta untuk WhatsApp Business / Meta Business Suite tidak masuk ke webhook",
+      "pasangan": [
+        {
+          "ref": "t2#2",
+          "conversationId": "cmtd6ei5t00rz0wqlyoo4h4bt",
+          "askedAt": "2026-08-28T16:38:30.000Z"
+        },
+        {
+          "ref": "t2#8",
+          "conversationId": "cmt3bc3xn011behqlpgf2txj8",
+          "askedAt": "2026-08-21T18:58:55.000Z"
+        },
+        {
+          "ref": "t2#22",
+          "conversationId": "cmtbqrj2a00en0wql5ek3qgwx",
+          "askedAt": "2026-08-27T16:32:57.000Z"
+        },
+        {
+          "ref": "t2#23",
+          "conversationId": "cmu0ew91u0048kxql59z9v9z3",
+          "askedAt": "2026-09-13T22:54:57.000Z"
+        },
+        {
+          "ref": "t2#31",
+          "conversationId": "cmt1quxoh00fuehqlcmn1cmxq",
+          "askedAt": "2026-08-20T16:37:54.000Z"
+        },
+        {
+          "ref": "t2#32",
+          "conversationId": "cmt378mio0115ehqlhxosamwa",
+          "askedAt": "2026-08-21T17:04:14.000Z"
+        },
+        {
+          "ref": "t2#49",
+          "conversationId": "cmse0ufq90194ylql3zsplo4k",
+          "askedAt": "2026-08-04T02:10:59.000Z"
+        },
+        {
+          "ref": "t3#17",
+          "conversationId": "cmsd1ctvr00zsylqlcv722dob",
+          "askedAt": "2026-08-03T09:37:32.000Z"
+        },
+        {
+          "ref": "t3#44",
+          "conversationId": "cms5qb3yn001ybfqlr4045d82",
+          "askedAt": "2026-07-29T06:53:52.000Z"
+        }
+      ]
+    }
+  ],
+  "catatanPasanganTidakDinilai": [
+    "Uang tunai selama tur: sekitar IDR 200.000–500.000 per hari untuk 2 orang; banyak warung dan toko di area Bromo/Ijen tidak menerima kartu (tahap 3, pasangan pelanggan yang sudah booking).",
+    "Dari Bali dengan prioritas kenyamanan: admin menyarankan terbang Bali→Surabaya daripada overland; estimasi tiba Ketapang ±10.00 dan Gilimanuk ±12.00 WITA setelah Ijen; Gilimanuk→Padang Bai 5–6 jam (tahap 2, pasangan degraded)."
+  ]
+}

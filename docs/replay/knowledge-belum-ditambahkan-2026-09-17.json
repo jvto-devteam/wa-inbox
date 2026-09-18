@@ -1,0 +1,826 @@
+{
+  "dibuat": "2026-09-17",
+  "total": 78,
+  "kelompok": {
+    "butuh_katalog": {
+      "sheet": "1. Butuh koreksi katalog",
+      "arti": "Keputusan sudah Anda ambil, tetapi katalog (atau knowledge aktif) masih menyatakan sebaliknya. Kalau ditambahkan sekarang, bot membaca dua sumber yang bertentangan. Kerjakan koreksi katalognya dulu.",
+      "topik": [
+        {
+          "id": "A19",
+          "kategori": "booking_pembayaran",
+          "topik": "Booking dengan penyesuaian (upgrade/potong hotel, jadwal pesawat, rute, drop-off): booking paket standar lalu admin mengubah",
+          "isi": "Untuk booking dengan penyesuaian (upgrade/potong hotel, jadwal pesawat, rute, drop-off): tamu memesan paket standar terdekat di website seperti biasa dan membayar deposit standar, tanpa perlu kolom catatan khusus. Setelah booking terkonfirmasi, ADMIN JVTO yang menyesuaikan booking dari sisi JVTO. Tamu tidak mengubah booking sendiri lewat WhatsApp.",
+          "sumberIsi": "Versi terpilih operator",
+          "Yang harus dikoreksi dulu": "general-modules.json: ubah 'WhatsApp/email tidak membuat, mengonfirmasi, atau mengubah booking' menjadi rumusan yang membedakan keduanya -- tamu tidak mengubah sendiri lewat WhatsApp, tetapi admin menyesuaikan dari sisi JVTO atas permintaan. Maksud anti-penipuan tetap dipertahankan.",
+          "jumlahChat": 17,
+          "prioritas": "tinggi"
+        },
+        {
+          "id": "H04",
+          "kategori": "termasuk_tidak_termasuk",
+          "topik": "Tiket feri Ketapang–Gilimanuk pada paket Surabaya→Bali (finish Ketapang)",
+          "isi": "Paket yang berakhir di Bali sudah termasuk tiket feri penumpang Ketapang-Gilimanuk. Berlaku untuk paket Surabaya yang finish ke Bali (bromo-madakaripura-ijen-3d2n dan tumpak-sewu-bromo-ijen-4d3n). Transport lanjutan dari Gilimanuk ke hotel/tujuan di Bali TIDAK termasuk; itu add-on Bali private transfer yang dipilih saat checkout.",
+          "sumberIsi": "Versi terpilih operator",
+          "Yang harus dikoreksi dulu": "standard-price-tiers.json dan endpoint-chains.json: ferry_included false -> true untuk bromo-madakaripura-ijen-3d2n dan tumpak-sewu-bromo-ijen-4d3n. Periksa juga component-matrices.json yang tidak mencantumkan 'ferry crossing' pada inklusi kedua paket itu.",
+          "jumlahChat": 15,
+          "prioritas": "tinggi"
+        },
+        {
+          "id": "D13",
+          "kategori": "jemput_antar",
+          "topik": "Jemput dari Malang tanpa biaya tambahan",
+          "isi": "Titik berangkat DEFAULT adalah Surabaya dan Bali. Selain itu, jemput dari Malang (hotel, stasiun, atau titik di kota) juga bisa TANPA biaya tambahan; harga tetap harga paket di website.",
+          "sumberIsi": "Versi terpilih operator",
+          "Yang harus dikoreksi dulu": "Diverifikasi di DB produksi 2026-09-16: sumber 'GENERAL' v1 PUBLISHED memuat kalimat 'Tours depart from Surabaya or Bali.' tanpa pengecualian apa pun. Inilah sebab bot menolak permintaan jemput Malang di replay (K6). Kalimat itu harus diperluas menjadi: default Surabaya dan Bali, dan jemput dari Malang serta Probolinggo juga tersedia tanpa biaya tambahan. Katalog juga perlu mencantumkan kedua titik jemput itu. Keputusan D13/D15 tidak akan berlaku sebelum kalimat ini diperbaiki. NASKAH PERBAIKAN SIAP: docs/replay/perbaikan-knowledge-published-2026-09-16.json (belum diterapkan ke DB).",
+          "jumlahChat": 9,
+          "prioritas": "tinggi"
+        },
+        {
+          "id": "D19",
+          "kategori": "jemput_antar",
+          "topik": "Paket Surabaya→Bali berakhir di Ketapang: tiket feri termasuk, kendaraan tidak menyeberang",
+          "isi": "Paket Surabaya yang mengarah ke Bali resmi berakhir di Pelabuhan Ketapang setelah Ijen; tiket feri penumpang Ketapang-Gilimanuk termasuk. Kendaraan Jawa Timur tidak ikut menyeberang. Lanjutan di Bali adalah add-on.",
+          "sumberIsi": "Versi terpilih operator",
+          "Yang harus dikoreksi dulu": "Sama dengan H04: ferry_included true untuk kedua paket, dan hapus/perbaiki catatan rute yang menyuruh mengonfirmasi preferensi 'vehicle-crossing'.",
+          "jumlahChat": 9,
+          "prioritas": "tinggi"
+        },
+        {
+          "id": "A06",
+          "kategori": "booking_pembayaran",
+          "topik": "Cara bayar booking last-minute: transfer (Wise/Revolut/Payoneer), bukan tunai saat tiba",
+          "isi": "Cash on Arrival SUDAH TIDAK DIGUNAKAN LAGI. Untuk booking last-minute: selesaikan checkout di website lalu bayar PENUH via transfer (transfer bank, Wise, Revolut, Payoneer, atau transfer internasional lain ke rekening resmi JVTO). Tidak menerima pembayaran penuh tunai saat kedatangan, dan PayPal tidak ditawarkan. Alasannya: dana kartu butuh beberapa hari kerja untuk cair dari payment gateway, sedangkan JVTO harus membayar hotel, tiket, transport, dan kru sebelum tur berjalan.",
+          "sumberIsi": "Versi terpilih operator",
+          "Yang harus dikoreksi dulu": "Diverifikasi di DB produksi 2026-09-16: sumber 'PAYMENT' v1 PUBLISHED masih memuat 'Cash on Arrival is available for some packages, subject to approval.' Operator menyatakan Cash on Arrival sudah tidak digunakan -- baris itu harus DIHAPUS. Baris ambang pada entri yang sama ('under 6 days: 100% full payment via Bank Transfer required' dan 'within 14 days: may require full payment') sudah benar dan dipertahankan, sesuai keputusan A05. NASKAH PERBAIKAN SIAP: docs/replay/perbaikan-knowledge-published-2026-09-16.json (belum diterapkan ke DB).",
+          "jumlahChat": 7,
+          "prioritas": "tinggi"
+        },
+        {
+          "id": "B07",
+          "kategori": "paket_rute",
+          "topik": "3D2N Bromo & Ijen dari Bali berakhir di Ketapang (kembali ke Bali), bukan Surabaya",
+          "isi": "Paket 3D2N dari Bali ada DUA varian: (1) selesai di Bali -- 'bromo-ijen-3d2n' (from-bali/bromo-ijen-3d2n), hari terakhir Ijen lalu kembali ke Pelabuhan Ketapang dan feri ke Bali, tiket feri termasuk; (2) selesai di Surabaya -- 'ijen-bromo-madakaripura-3d2n' (from-bali/ijen-bromo-madakaripura-3d2n). Bot harus menanyakan/menentukan varian mana sebelum menjawab titik akhir.",
+          "sumberIsi": "Versi terpilih operator",
+          "Yang harus dikoreksi dulu": "endpoint-chains.json paket bali/bromo-ijen-3d2n: catatan 'the tour then finishes in Surabaya (NOT a finish in Bali)' SALAH untuk varian ini, dan standard_dropoff_options-nya (Surabaya Airport / Surabaya Hotel / Malang) harus menjadi Ketapang Harbor + feri ke Bali. Varian bali/ijen-bromo-madakaripura-3d2n sudah benar (selesai di Surabaya).",
+          "jumlahChat": 7,
+          "prioritas": "tinggi"
+        },
+        {
+          "id": "B06",
+          "kategori": "paket_rute",
+          "topik": "Tiket feri Ketapang–Gilimanuk termasuk pada paket Surabaya → Bali; transfer lanjut di Bali add-on",
+          "isi": "Paket Surabaya -> Bali selesai di Pelabuhan Ketapang dengan tiket feri ke Gilimanuk sudah termasuk. Transfer lanjut ke hotel/tujuan di Bali (mis. Ubud) adalah add-on Bali private transfer saat checkout; harga paket tidak mencakupnya.",
+          "sumberIsi": "Versi terpilih operator",
+          "Yang harus dikoreksi dulu": "Sama dengan H04.",
+          "jumlahChat": 5,
+          "prioritas": "tinggi"
+        },
+        {
+          "id": "G36",
+          "kategori": "di_luar_layanan",
+          "topik": "Cakupan hanya Jawa Timur; Yogyakarta, Bali, dan Gunung Agung lewat partner",
+          "isi": "JVTO khusus tur privat di Jawa Timur dan tidak mengoperasikan tur di Yogyakarta maupun Bali (termasuk kapal lumba-lumba Lovina dan pendakian Gunung Agung). Tolak permintaan itu, lalu tawarkan paket Jawa Timur yang JVTO punya.",
+          "sumberIsi": "Versi terpilih operator",
+          "Yang harus dikoreksi dulu": "Katalog menjadikan Yogyakarta/Borobudur/Prambanan contoh 'custom extension' yang akan dikuotasi tim -- harus diubah menjadi penolakan + tawaran paket sendiri.",
+          "jumlahChat": 5,
+          "prioritas": "tinggi"
+        },
+        {
+          "id": "C14",
+          "kategori": "destinasi_kondisi",
+          "topik": "Drone di Bromo dan Ijen",
+          "isi": "Drone boleh dibawa. Menerbangkan drone di Taman Nasional Bromo Tengger Semeru wajib izin resmi dari otoritas taman, biaya izin saat ini IDR 2.000.000. Izin bisa diajukan sendiri oleh tamu ATAU dibantu tim JVTO pada hari pertama tur. Di Ijen drone dilarang.",
+          "sumberIsi": "Versi terpilih operator",
+          "Yang harus dikoreksi dulu": "general-modules.json modul service_drone_usage: 'not something JVTO arranges or resells' harus diubah -- tim JVTO membantu pengajuan izin.",
+          "jumlahChat": 3,
+          "prioritas": "tinggi"
+        },
+        {
+          "id": "F07",
+          "kategori": "logistik_operasional",
+          "topik": "Jam layanan tim selama tur: 24 jam vs 08:00-22:00",
+          "isi": "Bedakan dua hal: SELAMA TUR BERLANGSUNG tim JVTO siap membantu 24 jam -- tamu bisa menghubungi/menelepon nomor JVTO kapan saja. Dukungan umum (pertanyaan pra-booking dan di luar masa tur) tetap 08:00-22:00 WIB.",
+          "sumberIsi": "Versi terpilih operator",
+          "Yang harus dikoreksi dulu": "general-modules.json baris 191-192: tambahkan pembedaan ini; saat ini hanya menyebut support line 08:00-22:00 sehingga bot tidak tahu soal pendampingan 24 jam selama tur.",
+          "jumlahChat": 3,
+          "prioritas": "tinggi"
+        },
+        {
+          "id": "D21",
+          "kategori": "jemput_antar",
+          "topik": "Paket Bali 3D2N Bromo & Ijen kembali ke Ketapang dengan tiket feri ke Bali",
+          "isi": "Pada varian 3D2N dari Bali yang selesai di Bali (bromo-ijen-3d2n), hari terakhir tamu kembali ke Pelabuhan Ketapang setelah Ijen dan tiket feri ke Bali termasuk.",
+          "sumberIsi": "Versi terpilih operator",
+          "Yang harus dikoreksi dulu": "Sama dengan B07.",
+          "jumlahChat": 1,
+          "prioritas": "tinggi"
+        },
+        {
+          "id": "D15",
+          "kategori": "jemput_antar",
+          "topik": "Jemput di Probolinggo (stasiun, hotel, titik turun bus)",
+          "isi": "Selain default Surabaya dan Bali, jemput juga bisa dari Probolinggo (stasiun, hotel, atau titik turun bus di Probolinggo/Kraksaan) tanpa biaya tambahan.",
+          "sumberIsi": "Versi terpilih operator",
+          "Yang harus dikoreksi dulu": "Sama dengan D13: tambahkan Probolinggo sebagai titik jemput.",
+          "jumlahChat": 5,
+          "prioritas": "sedang"
+        },
+        {
+          "id": "G20",
+          "kategori": "pembatalan_perubahan",
+          "topik": "Mengubah booking dari sisi JVTO tanpa batal/booking ulang (titik akhir, add-on, drop-off)",
+          "isi": "Perubahan booking (titik akhir, add-on, tujuan drop-off) tidak perlu batal atau booking ulang: admin menyesuaikan dari sisi JVTO tanpa biaya tambahan. Bila tur diubah menjadi selesai di Surabaya, add-on transfer Bali dihapus dan total disesuaikan.",
+          "sumberIsi": "Versi terpilih operator",
+          "Yang harus dikoreksi dulu": "Sama dengan A19.",
+          "jumlahChat": 3,
+          "prioritas": "sedang"
+        },
+        {
+          "id": "G37",
+          "kategori": "di_luar_layanan",
+          "topik": "Destinasi jauh tidak bisa jadi pengganti/tambahan (Sukamade, Menjangan, Tangkuban Perahu, Kawah Putih)",
+          "isi": "Destinasi jauh (Sukamade, Pulau Menjangan, Tangkuban Perahu, Kawah Putih) tidak bisa dijadikan pengganti maupun tambahan. Tolak, lalu tawarkan paket Jawa Timur yang JVTO punya.",
+          "sumberIsi": "Versi terpilih operator",
+          "Yang harus dikoreksi dulu": "Hapus Tangkuban Perahu sebagai contoh 'custom extension' di katalog.",
+          "jumlahChat": 3,
+          "prioritas": "sedang"
+        },
+        {
+          "id": "F34",
+          "kategori": "kendaraan_kru_guide",
+          "topik": "Bahasa kru selain Inggris (Mandarin)",
+          "isi": "JVTO tidak menyediakan driver maupun guide berbahasa Mandarin, termasuk guide lokal di destinasi. Bahasa yang tersedia adalah Inggris. Jawab tidak tersedia secara langsung, jangan menjanjikan pengecekan.",
+          "sumberIsi": "Versi terpilih operator",
+          "Yang harus dikoreksi dulu": "Katalog 'other languages subject to confirmation' membuat bot menjanjikan pengecekan; ubah menjadi pernyataan bahwa hanya Inggris yang tersedia.",
+          "jumlahChat": 1,
+          "prioritas": "sedang"
+        },
+        {
+          "id": "H16",
+          "kategori": "termasuk_tidak_termasuk",
+          "topik": "Madakaripura pada paket 2D1N Bromo dari Surabaya",
+          "isi": "Tiket masuk mengikuti isi paket yang dipilih: kalau paketnya memuat Madakaripura maka tiket Madakaripura termasuk, kalau tidak memuat ya tidak. Bila tamu menginginkan Madakaripura, arahkan memilih paket yang memang memuat Madakaripura -- jangan menjanjikan Madakaripura pada paket yang tidak memuatnya.",
+          "sumberIsi": "Versi terpilih operator",
+          "Yang harus dikoreksi dulu": "package-profiles.json bromo-2d1n: judul Hari 2 menyebut Madakaripura tetapi destination_tokens hanya ['bromo']. Samakan keduanya supaya bot tidak menjawab bertentangan dengan isi paketnya sendiri.",
+          "jumlahChat": 1,
+          "prioritas": "sedang"
+        },
+        {
+          "id": "H17",
+          "kategori": "termasuk_tidak_termasuk",
+          "topik": "Sarapan pada tur 1 hari Bromo midnight",
+          "isi": "Tur 1 hari Bromo midnight TIDAK termasuk sarapan (tidak ada menginap, dan sarapan hanya ada setelah hari pertama). Rombongan berhenti untuk sarapan di restoran area Bromo dengan biaya sendiri.",
+          "sumberIsi": "Versi terpilih operator",
+          "Yang harus dikoreksi dulu": "package-profiles.json bromo-1d1n: Hari 1 'B' harus dikosongkan.",
+          "jumlahChat": 1,
+          "prioritas": "sedang"
+        },
+        {
+          "id": "H18",
+          "kategori": "termasuk_tidak_termasuk",
+          "topik": "Makan yang termasuk paket 4D3N dari Bali",
+          "isi": "ATURAN MAKAN UMUM (berlaku semua paket). SARAPAN: selalu ada setiap pagi SETELAH hari pertama, di hotel tempat menginap -- tidak pernah ada sarapan di Hari 1, dan tidak ada sarapan pada tur 1 hari tanpa menginap. MAKAN SIANG: HANYA pada hari pendakian Ijen, dan hanya bila Ijen bukan destinasi terakhir ATAU Ijen destinasi terakhir tetapi drop-off Surabaya; bila tur berakhir ke Bali (Ketapang/drop Bali), hari Ijen TIDAK dapat makan siang. Tumpak Sewu TIDAK mendapat makan siang. MAKAN MALAM: hanya di kota BONDOWOSO, pada malam sebelum naik Ijen keesokan harinya -- paket yang bermalam di Banyuwangi TIDAK mendapat makan malam.",
+          "sumberIsi": "Versi terpilih operator",
+          "Yang harus dikoreksi dulu": "package-profiles.json day_titles[].meals -- 6 koreksi terverifikasi: (1) bali/ijen-bromo-madakaripura-3d2n D1 hapus D (menginap Banyuwangi); (2) bali/ijen-papuma-tumpak-sewu-bromo-4d3n D1 hapus D; (3) bali/ijen-papuma-tumpak-sewu-bromo-5d4n D1 hapus D; (4) bromo-1d1n D1 hapus B; (5) taman-safari-prigen-bromo-madakaripura-3d2n D1 hapus B; (6) tumpak-sewu-bromo-ijen-4d3n D2 hapus L (Tumpak Sewu tidak dapat makan siang). BUKAN kesalahan: bromo-madakaripura-ijen-3d2n D2 dan tumpak-sewu-bromo-ijen-4d3n D3 -- keduanya bondowoso_ijen_staging menurut accommodation-rules.json, jadi makan malamnya benar.",
+          "jumlahChat": 1,
+          "prioritas": "sedang"
+        }
+      ]
+    },
+    "bertanggal": {
+      "sheet": "2. Kalimat bertanggal",
+      "arti": "Isinya permanen, tetapi memuat kalimat yang terikat tanggal/kejadian tertentu. Kalimat itu harus dibuang dulu, dan itu mengubah jawaban admin sehingga butuh persetujuan Anda.",
+      "topik": [
+        {
+          "id": "C08",
+          "kategori": "destinasi_kondisi",
+          "topik": "Destinasi lain tetap berjalan saat satu destinasi ditutup",
+          "isi": "Penutupan hanya berlaku di area destinasi yang ditutup. Saat Taman Nasional Bromo ditutup, Ijen, Madakaripura, Pantai Papuma, dan Tumpak Sewu tetap berjalan sesuai rencana; Madakaripura dikunjungi setelah sunrise di Seruni Point. Saat Ijen ditutup, hanya kunjungan Ijen yang terdampak dan itinerary lain tetap. Saat Bromo dan Ijen sama-sama tutup (September 2026), Tumpak Sewu dan Madakaripura tetap tersedia.",
+          "sumberIsi": "Jawaban admin",
+          "Kalimat yang harus dibuang": "Saat Bromo dan Ijen sama-sama tutup (September 2026), Tumpak Sewu dan Madakaripura tetap tersedia.",
+          "jumlahChat": 8,
+          "prioritas": "tinggi"
+        },
+        {
+          "id": "C25",
+          "kategori": "destinasi_kondisi",
+          "topik": "Sumber pemantauan resmi kebakaran dan kualitas udara; verifikasi berita",
+          "isi": "Peta titik api resmi bisa dipantau di situs SiPongi KLHK (sipongi.gakkum.kehutanan.go.id/peta); kualitas udara bisa dipantau lewat peta IQAir. Bila pelanggan melihat berita kebakaran Bromo, admin meminta sumber beritanya untuk dicek: laporan sering sebenarnya tentang area dekat Gunung Semeru, karena Bromo dan Semeru berada dalam Taman Nasional Bromo Tengger Semeru yang sama, dan video lama sering beredar ulang. Kondisi sesaat (5–6 Sep 2026): kualitas udara di lokasi tur baik hingga sedang, angin umumnya ke utara, rute tur dinilai aman.",
+          "sumberIsi": "Jawaban admin",
+          "Kalimat yang harus dibuang": "Kondisi sesaat (5–6 Sep 2026): kualitas udara di lokasi tur baik hingga sedang, angin umumnya ke utara, rute tur dinilai aman.",
+          "jumlahChat": 4,
+          "prioritas": "tinggi"
+        },
+        {
+          "id": "B35",
+          "kategori": "paket_rute",
+          "topik": "Ijen tanpa Blue Fire: jemput ±02.00 atau hanya bibir kawah; alasan tetap berangkat dini hari",
+          "isi": "Jemput Ijen standar sekitar tengah malam. Bila melewatkan Blue Fire, jemput sekitar 02.00 dan masih cukup waktu mencapai puncak untuk sunrise; kunjungan hanya ke bibir kawah (sunrise dan danau, tanpa turun ke kawah) berangkat ±03.00–03.30 bila Ijen buka dan aman. Keberangkatan dini hari kini terutama untuk sunrise (±05.30): hotel → area Ijen ±2 jam, lalu hiking ±1,5–2 jam.",
+          "sumberIsi": "Jawaban admin",
+          "Kalimat yang harus dibuang": "Keberangkatan dini hari kini terutama untuk sunrise (±05.30): hotel → area Ijen ±2 jam, lalu hiking ±1,5–2 jam.",
+          "jumlahChat": 3,
+          "prioritas": "tinggi"
+        }
+      ]
+    },
+    "sementara_dipisah": {
+      "sheet": "3. Sementara (dipisah)",
+      "arti": "Terikat penutupan Bromo/Ijen Agustus-September 2026. Skema knowledge tidak punya masa berlaku: bila diaktifkan, harus dinonaktifkan manual saat destinasi dibuka.",
+      "topik": [
+        {
+          "id": "C04",
+          "kategori": "destinasi_kondisi",
+          "topik": "Itinerary pengganti saat Bromo (Taman Nasional) ditutup",
+          "isi": "Jika Bromo resmi dibuka dan dinyatakan aman sebelum tanggal tur, itinerary asli dijalankan (mungkin masih ada bekas kebakaran). Jika masih resmi ditutup: (1) tetap naik Jeep 4WD privat dari hotel; (2) sunrise di Seruni Point; (3) bila kondisi aman dan otoritas mengizinkan, opsi lanjut trekking dari Seruni Point ke King Kong Hill (viewpoint sunrise standar, lebih tinggi) — opsi ini disebut hampir semua admin pada September, tetapi sebagian admin Agustus hanya menyebut Seruni; (4) bila Seruni juga ditutup, sunrise di Mentigen Hill/Viewpoint (dipilih yang aman diakses); (5) Kawah Bromo dan Lautan Pasir tidak bisa diakses, jadi naik kuda dan foto jeep di Lautan Pasir tidak bisa dan tidak ada penggantinya — kuda masih bisa di area Seruni (parkir jeep ke viewpoint), foto dengan jeep di lokasi lain yang terbuka; (6) tidak ada gunung berapi lain pengganti Bromo; bila Taman Nasional tetap tutup, dipakai titik sunrise alternatif terbaik di luar Taman Nasional sesuai area yang resmi buka. Pertanyaan refund dalam percakapan ini tidak dijawab admin (hanya alternatif); daftar lama K19 mencatat versi admin lain: Bromo dilewati dan bagian tiket + jeep dikembalikan.",
+          "sumberIsi": "Jawaban admin",
+          "Mengapa sementara / catatan keputusan": "Terikat kejadian penutupan Bromo Agustus-September 2026: menyebut bekas kebakaran dan perbedaan jawaban admin Agustus vs September. -- BELUM DIPUTUSKAN. Topik paling sering ditanyakan dari seluruh 327 (33 percakapan) -- selama Bromo tutup, tanpa ini bot tidak punya jawaban untuk pertanyaan terbanyak. Skema knowledge tidak punya masa berlaku, jadi bila diaktifkan harus dinonaktifkan MANUAL saat Bromo dibuka. Tumpang tindih dengan G15.",
+          "jumlahChat": 33,
+          "prioritas": "tinggi"
+        },
+        {
+          "id": "C09",
+          "kategori": "destinasi_kondisi",
+          "topik": "Akses turun ke kawah Ijen (Blue Fire) ditutup; pendakian tetap ke bibir kawah",
+          "isi": "Akses turun ke dasar kawah Ijen ditutup oleh otoritas, sehingga Blue Fire alami untuk sementara TIDAK dapat diakses secara resmi dan tidak boleh dijanjikan. Pendakian Ijen tetap berjalan sampai bibir kawah/puncak: titik sunrise dan pemandangan danau kawah.",
+          "sumberIsi": "Versi terpilih operator",
+          "Mengapa sementara / catatan keputusan": "Akses turun ke kawah Ijen ditutup 'untuk sementara'. -- BELUM DIPUTUSKAN. Diloloskan operator secara eksplisit 2026-09-16 ('tetap berikan bahwa blue fire sementara ini memang ditutup'). Dipisahkan karena sifatnya sementara; apakah tetap diaktifkan atau ditahan belum ditetapkan. Terkait naskah perbaikan knowledge PUBLISHED BLUE FIRE dan BEST TIME.",
+          "jumlahChat": 10,
+          "prioritas": "tinggi"
+        },
+        {
+          "id": "G15",
+          "kategori": "pembatalan_perubahan",
+          "topik": "Alternatif saat Bromo (kawah & Lautan Pasir) ditutup: Seruni Point, Kingkong Hill",
+          "isi": "Selama tanggal tur belum tiba pelanggan tidak perlu melakukan apa-apa. Bila Bromo resmi dibuka sebelum/saat tur, itinerary asli dijalankan (kawah dan Lautan Pasir). Bila kawah dan Lautan Pasir tetap ditutup: sunrise dari Seruni Point dengan Jeep privat (alternatif resmi yang ditetapkan Taman Nasional selama penutupan), dengan kemungkinan trekking ke Kingkong Hill bila aman; kawah dan Lautan Pasir tidak dikunjungi. Bila tanggal fleksibel, admin menyarankan menunda beberapa hari. Bila tidak mau alternatif: lewati program Bromo dengan refund porsi tak terpakai, atau jadwalkan ulang setelah dibuka.",
+          "sumberIsi": "Jawaban admin",
+          "Mengapa sementara / catatan keputusan": "Menyebut 'alternatif resmi yang ditetapkan Taman Nasional selama penutupan'. -- Tumpang tindih dengan C04; cukup salah satu.",
+          "jumlahChat": 6,
+          "prioritas": "tinggi"
+        },
+        {
+          "id": "C10",
+          "kategori": "destinasi_kondisi",
+          "topik": "Demonstrasi api biru oleh guide dengan membakar belerang",
+          "isi": "Selama akses turun ke kawah ditutup, guide lokal biasanya mendemonstrasikan efek api biru dengan membakar sepotong kecil belerang di area yang aman/diizinkan, supaya tamu mendapat gambaran Blue Fire. Ini hanya demonstrasi/simulasi, jauh lebih kecil dari Blue Fire alami.",
+          "sumberIsi": "Jawaban admin",
+          "Mengapa sementara / catatan keputusan": "Demonstrasi api biru dengan membakar belerang hanya dilakukan selama akses turun ke kawah ditutup. -- F41 adalah duplikatnya; cukup salah satu.",
+          "jumlahChat": 5,
+          "prioritas": "tinggi"
+        },
+        {
+          "id": "C27",
+          "kategori": "destinasi_kondisi",
+          "topik": "Jalur akses Bromo JVTO lewat Probolinggo (kebakaran sisi Malang tidak berdampak)",
+          "isi": "JVTO masuk ke Bromo lewat Probolinggo. Kebakaran di sisi Malang (mis. area Bukit Teletubbies sisi Malang, 10–11 Sep 2026; area akses via Malang, 6 Agu 2026) tidak berdampak pada akses JVTO; akses via Probolinggo (dan Pasuruan) saat itu masih aman beroperasi.",
+          "sumberIsi": "Jawaban admin",
+          "Mengapa sementara / catatan keputusan": "Menyebut kebakaran bertanggal 6 Agustus dan 10-11 September 2026. -- Intinya permanen -- JVTO masuk ke Bromo lewat Probolinggo -- dan bisa dipecah menjadi knowledge tetap tanpa tanggal kebakarannya.",
+          "jumlahChat": 3,
+          "prioritas": "tinggi"
+        },
+        {
+          "id": "F41",
+          "kategori": "kendaraan_kru_guide",
+          "topik": "Demonstrasi api biru dari belerang saat akses kawah Ijen ditutup",
+          "isi": "Bila akses turun ke kawah ditutup dan kondisi memungkinkan, guide lokal Ijen biasanya mendemonstrasikan fenomena dengan mengambil sedikit belerang alami dan membakarnya dengan aman sehingga muncul nyala biru; ini hanya demonstrasi kecil, jauh lebih kecil dan tidak sebanding dengan Blue Fire alami.",
+          "sumberIsi": "Jawaban admin",
+          "Mengapa sementara / catatan keputusan": "Demonstrasi api biru dengan membakar belerang hanya dilakukan selama akses turun ke kawah ditutup. -- Duplikat C10.",
+          "jumlahChat": 3,
+          "prioritas": "tinggi"
+        },
+        {
+          "id": "G16",
+          "kategori": "pembatalan_perubahan",
+          "topik": "Alternatif saat Ijen ditutup: sunrise Kawah Wurung + Blawan Hot Spring",
+          "isi": "Bila Ijen resmi dibuka dan dinyatakan aman, kunjungan Ijen berjalan normal. Bila tetap ditutup, JVTO menjalankan alternatif sunrise di Kawah Wurung dan Blawan Hot Spring, yang tetap cocok dengan akomodasi di area Ijen. (Pada satu booking Klook admin menambahkan Madakaripura sebagai kompensasi; itu tampak khusus pelanggan.)",
+          "sumberIsi": "Jawaban admin",
+          "Mengapa sementara / catatan keputusan": "Alternatif Kawah Wurung + Blawan Hot Spring hanya berlaku selama Ijen ditutup. -- BERTENTANGAN DENGAN KEPUTUSAN OPERATOR: isinya sama dengan C06, yang ditahan ('biarkan dulu'). G16 lolos lewat saringan otomatis karena berstatus celah, sehingga tidak pernah sampai ke review operator.",
+          "jumlahChat": 3,
+          "prioritas": "tinggi"
+        }
+      ]
+    },
+    "ditahan_penulisan": {
+      "sheet": "4. Ditahan saat penulisan",
+      "arti": "Lolos sebagai 'aman', tetapi saat ditulis ulang ternyata bertentangan dengan keputusan Anda yang lain. Tidak diaktifkan.",
+      "topik": [
+        {
+          "id": "B39",
+          "kategori": "paket_rute",
+          "topik": "Itinerary kustom: dicek tim operasional lalu dibuatkan proposal/quotation",
+          "isi": "Pelanggan menyampaikan perubahan/itinerary yang diinginkan; admin membahasnya dulu dengan tim operasional untuk memastikan kelayakan sebelum dikonfirmasi. Untuk rute kustom (mis. kendaraan privat dari Yogyakarta lewat Bromo dan Banyuwangi, atau tur sehari dari Bondowoso ke Kawah Wurung/Blawan) JVTO menyiapkan proposal paket custom/quotation terlebih dahulu dan mengecek akomodasi.",
+          "sumberIsi": "Jawaban admin",
+          "Alasan ditahan": "Menawarkan proposal paket kustom; bertentangan dengan G40 (tidak ada paket kustom, tawarkan paket standar terdekat). Juga menyebut pengganti Ijen Kawah Wurung/Blawan yang ditahan operator (C06).",
+          "jumlahChat": 4,
+          "prioritas": "tinggi",
+          "draftInggrisTidakDiaktifkan": "- Please tell us the changes or itinerary you have in mind.\n- Our team first discusses it with our operations team to make sure it is feasible before confirming.\n- For custom routes (for example, private transport from Yogyakarta via Bromo and Banyuwangi, or a day tour from Bondowoso to Kawah Wurung / Blawan), we first prepare a custom package proposal / quotation and check accommodation."
+        },
+        {
+          "id": "G12",
+          "kategori": "pembatalan_perubahan",
+          "topik": "Membatalkan seluruh tur karena destinasi ditutup (force majeure)",
+          "isi": "Refund tunai berdasarkan ketentuan force majeure hanya berlaku bila kejadian resmi terverifikasi membuat SELURUH tur mustahil dijalankan. Bila hanya sebagian terdampak (mis. Ijen tutup tetapi Bromo/Madakaripura masih bisa), tur tidak dianggap mustahil dan pembatalan seluruh booking mengikuti Lifetime Package Credit. Penutupan yang terjadi setelah pembatalan diproses tidak mengubah pembatalan itu (tetap kredit). Admin mengecek kondisi booking spesifik sebelum mengonfirmasi opsi batal + refund; bila ingin batal karena penutupan, beri tahu paling lambat 3 hari sebelum tur agar hotel dan kendaraan bisa dibatalkan. Tuntutan refund tunai di luar ketentuan dicatat dan ditinjau bersama manajemen.",
+          "sumberIsi": "Jawaban admin",
+          "Alasan ditahan": "Meminta pemberitahuan 3 hari sebelum tur untuk pembatalan karena penutupan; belum jelas selaras dengan aturan pembatalan 48 jam. Perlu keputusan operator.",
+          "jumlahChat": 4,
+          "prioritas": "tinggi",
+          "draftInggrisTidakDiaktifkan": "- A cash refund under force majeure only applies when an officially verified event makes the ENTIRE tour impossible.\n- If only part of the tour is affected (for example Ijen is closed but Bromo or Madakaripura can still be visited), the tour is not considered impossible, and cancelling the whole booking follows our Lifetime Package Credit terms.\n- A closure that happens after your cancellation has been processed does not change it; it stays as credit.\n- Our team checks your specific booking before confirming a cancel and refund option.\n- If you want to cancel because of a closure, please tell us at least 3 days before the tour so hotels and vehicles can be cancelled.\n- Cash refund requests outside these terms are noted and reviewed with management."
+        },
+        {
+          "id": "H45",
+          "kategori": "akomodasi",
+          "topik": "Menginap di sisi Probolinggo (bukan Pasuruan) dan rekomendasi hotel Bromo",
+          "isi": "JVTO menyarankan hotel di sisi Probolinggo karena rute lebih efisien dan praktis untuk transfer (juga untuk itinerary Madakaripura + Bromo). Hotel di sisi Pasuruan (mis. Jambuluwuk Bromo Resort) kurang disarankan: beberapa jalan yang tampak di Google Maps sulit/tidak cocok untuk kendaraan tur sehingga driver harus memutar jauh. Rekomendasi sisi Probolinggo: Artotel Cabin Bromo, Manis Ae Bromo, Jiwa Jawa Bromo (Manis Ae dan Jiwa Jawa juga alternatif bila ARTOTEL penuh; semuanya di area Bromo, bukan Ijen).",
+          "sumberIsi": "Jawaban admin",
+          "Alasan ditahan": "Merekomendasikan Artotel Cabin Bromo dan Jiwa Jawa Bromo sebagai pilihan hotel JVTO; bertentangan dengan H33 dan G42 (tamu memesan sendiri).",
+          "jumlahChat": 3,
+          "prioritas": "tinggi",
+          "draftInggrisTidakDiaktifkan": "- We recommend staying on the Probolinggo side of Bromo, as the route is more efficient and practical for transfers (also for itineraries combining Madakaripura and Bromo).\n- Hotels on the Pasuruan side (e.g. Jambuluwuk Bromo Resort) are less recommended: some roads shown on Google Maps are difficult or unsuitable for tour vehicles, so the driver has to take a long detour.\n- Recommended hotels on the Probolinggo side: Artotel Cabin Bromo, Manis Ae Bromo, Jiwa Jawa Bromo.\n- Manis Ae and Jiwa Jawa are also alternatives if Artotel is full. All of these are in the Bromo area, not Ijen."
+        },
+        {
+          "id": "F40",
+          "kategori": "kendaraan_kru_guide",
+          "topik": "Layanan terpisah untuk rombongan/partner: Jeep Bromo dan guide lokal saja",
+          "isi": "Bisa: rombongan besar bisa datang dengan bus sendiri ke meeting point lalu pindah ke Jeep 4x4 yang disiapkan JVTO sesuai jumlah rombongan. Untuk driver/partner dari Bali, JVTO bisa menyediakan Jeep 4WD privat Bromo untuk sunrise, guide lokal berbahasa Inggris untuk pendakian Ijen (termasuk Blue Fire dan danau kawah, tergantung kondisi taman nasional), dan guide lokal Tumpak Sewu bila perlu. Harga tidak disebut.",
+          "sumberIsi": "Jawaban admin",
+          "Alasan ditahan": "Bertentangan dengan keputusan E17/B40 (Jeep dan transport tidak dijual terpisah), dan menjanjikan Blue Fire yang bertentangan dengan C09.",
+          "jumlahChat": 2,
+          "prioritas": "sedang",
+          "draftInggrisTidakDiaktifkan": "- Yes. Large groups can come by their own bus to the meeting point and switch to 4x4 Jeeps we arrange to match the group size.\n- For drivers or partners coming from Bali, we can provide a private 4WD Jeep for the Bromo sunrise, an English-speaking local guide for the Ijen hike (including Blue Fire and the crater lake, subject to national park conditions), and a local guide for Tumpak Sewu if needed."
+        }
+      ]
+    },
+    "ditahan_operator": {
+      "sheet": "5. Ditahan operator",
+      "arti": "Anda tahan saat review (harga, duplikat, kasus per-booking, atau perlu keputusan).",
+      "topik": [
+        {
+          "id": "C06",
+          "kategori": "destinasi_kondisi",
+          "topik": "Itinerary pengganti saat Kawah Ijen ditutup",
+          "isi": "Jika Ijen resmi dibuka dan dinyatakan aman sebelum tanggal kunjungan, tur Ijen asli dijalankan (pelanggan dikabari). Jika tetap tutup, tur tetap berjalan dengan pengganti standar: sunrise di Kawah Wurung + Blawan Hot Spring — keduanya dikunjungi, tamu tidak perlu memilih; berangkat dari hotel sekitar 03.00 (bukan tengah malam seperti tur Ijen biasa). Kawah Wurung jauh lebih mudah dari pendakian Ijen: dari parkiran hanya jalan menanjak singkat ke titik pandang. Varian yang ditawarkan sebagian admin: Air Terjun Blawan ditambahkan; aktivitas ATV sebagai pengganti hot spring; atau Kawah Wurung + Madakaripura (dikunjungi setelah tur Bromo). Tidak ada gunung berapi lain pengganti Ijen; destinasi sekitar seperti Taman Nasional Baluran juga terdampak kebakaran sehingga tidak aman; opsi lain yang pernah ditawarkan: fokus ke Tumpak Sewu dan Bromo. Satu admin memberi tahu kondisi penutupan sebelum pelanggan booking dan meminta konfirmasi bersedia lanjut. Pengembalian selisih biaya: lihat C07.",
+          "sumberIsi": "Jawaban admin",
+          "Alasan ditahan": "Operator: 'biarkan dulu'. Itinerary pengganti Ijen (Kawah Wurung + Blawan) belum dimasukkan ke katalog.",
+          "jumlahChat": 16,
+          "prioritas": "tinggi"
+        },
+        {
+          "id": "E23",
+          "kategori": "add_on",
+          "topik": "Add-on Air Terjun Madakaripura: harga, isi, paket, dan waktu kunjungan",
+          "isi": "Madakaripura tidak termasuk default di 1D Bromo Midnight, 3D2N Tumpak Sewu & Bromo, 4D3N Tumpak Sewu–Bromo–Ijen, 4D3N dan 5D4N dari Bali; bisa ditambahkan sebagai add-on opsional saat checkout seharga IDR 200.000/orang, termasuk tiket masuk, guide lokal, dan ojek (motorbike shuttle). Contoh: 1D Bromo Midnight 2 orang 3.100.000 + 400.000 = 3.500.000; 3D2N Tumpak Sewu & Bromo 2 orang 7.540.000; 5D4N dari Bali 5 orang 24.750.000 + 1.000.000 = 25.750.000. Dikunjungi setelah Bromo: di 5D4N Bali/hari terakhir dalam perjalanan ke Surabaya (tanpa malam tambahan; tiba Surabaya ±17.00–18.00), di 4D3N dalam perjalanan ke Bondowoso sebelum Ijen; lokasinya dekat Bromo sehingga muat di tur 1 hari.",
+          "sumberIsi": "Jawaban admin",
+          "Alasan ditahan": "Sudah tercakup keputusan E24 (add-on Madakaripura IDR 200.000/orang saat checkout). Jangan dibuat entri knowledge terpisah.",
+          "jumlahChat": 12,
+          "prioritas": "tinggi"
+        },
+        {
+          "id": "E27",
+          "kategori": "add_on",
+          "topik": "Harga add-on transfer Bali per tujuan",
+          "isi": "Dari Pelabuhan Gilimanuk: Ubud IDR 900.000 (2 orang; juga 900.000 untuk booking 3 orang, tidak bisa digratiskan); Canggu IDR 900.000 (2 orang) dan IDR 1.200.000 (4 orang); Denpasar IDR 900.000 (1 orang); Uluwatu IDR 1.000.000; Padang Bai IDR 1.050.000 (2 orang). Satu kuotasi dari Pelabuhan Ketapang ke hotel di Ubud dengan mobil privat: IDR 800.000 (2 orang).",
+          "sumberIsi": "Jawaban admin",
+          "Alasan ditahan": "Operator: 'jangan dulu'. Daftar tarif add-on transfer Bali per tujuan adalah harga JVTO -- tempatnya di katalog/checkout.",
+          "jumlahChat": 9,
+          "prioritas": "tinggi"
+        },
+        {
+          "id": "G14",
+          "kategori": "pembatalan_perubahan",
+          "topik": "Nominal refund Bromo/Ijen saat penutupan Agustus-September 2026",
+          "isi": "Nominal yang dikirim admin berbeda-beda (semua untuk kondisi penutupan Agustus-September 2026): (1) Bromo & Seruni sama-sama tutup, program Bromo tidak jalan: Jeep privat IDR 500.000 + tiket Bromo IDR 160.000 per orang. (2) Kawah tutup, tetap sunrise Seruni dengan Jeep: tawaran awal IDR 150.000 per orang, lalu setelah tinjauan ulang IDR 500.000 total untuk 2 orang. (3) Paket 3D2N Tumpak Sewu & Bromo, 2 orang: sunrise Kingkong Hill IDR 350.000 total; Seruni saja IDR 550.000 total. (4) Potongan tiket Bromo IDR 150.000 untuk 2 orang. (5) Refund porsi terdampak 3D Surabaya-Bali IDR 380.000 untuk 2 orang. (6) Ijen: IDR 350.000 untuk 2 orang (tiket, cek kesehatan, makan malam); pulang lebih awal ke Surabaya IDR 795.000 untuk 2 orang (hotel, makan malam, tiket, guide).",
+          "sumberIsi": "Jawaban admin",
+          "Alasan ditahan": "Nominal refund saat penutupan Bromo/Ijen Agustus-September 2026 -- kondisi sementara, sudah ditetapkan di luar lingkup.",
+          "jumlahChat": 5,
+          "prioritas": "tinggi"
+        },
+        {
+          "id": "B31",
+          "kategori": "paket_rute",
+          "topik": "Jadwal harian 4D3N IPTB: jam ke Tumpak Sewu dan Papuma",
+          "isi": "Hari Ijen: kembali ke hotel (Baratha) ±10.30, check-out dan makan siang, lalu ke Doho Homestay Jember; berangkat ke Pantai Papuma ±14.30 tiba ±16.00 (versi lain: berangkat lagi ±12.00 setelah aktivitas pagi). Hari Tumpak Sewu: check-out hotel pukul 03.30 menuju Tumpak Sewu; keberangkatan dari hotel di Jember bisa disesuaikan (05.00, 06.00, atau 07.00).",
+          "sumberIsi": "Jawaban admin",
+          "Alasan ditahan": "Jam keberangkatan spesifik ke Papuma/Tumpak Sewu bersifat operasional per booking; anjuran katalog tetap dipakai. Ditahan sebagai default -- operator dapat menimpa bila ingin jam admin yang jadi acuan.",
+          "jumlahChat": 4,
+          "prioritas": "tinggi"
+        },
+        {
+          "id": "E16",
+          "kategori": "harga",
+          "topik": "Harga 3D2N Tumpak Sewu & Bromo (paket tidak ada di katalog)",
+          "isi": "Paket standar 3D2N Tumpak Sewu & Bromo (tanpa Madakaripura): 2 orang IDR 7.140.000 total (3.570.000/orang); 4 orang IDR 3.050.000/orang (total 12.200.000) — sama dengan 3D2N Bromo–Madakaripura–Ijen. Madakaripura bisa ditambah sebagai add-on.",
+          "sumberIsi": "Jawaban admin",
+          "Alasan ditahan": "Operator: 'jangan dulu'. CATATAN PENTING: paket 3D2N Tumpak Sewu & Bromo dijual admin tetapi TIDAK ADA di katalog, sehingga bot tidak mengetahui keberadaan paket itu sama sekali -- ini bukan sekadar soal harga dan tetap perlu ditindaklanjuti di katalog.",
+          "jumlahChat": 3,
+          "prioritas": "tinggi"
+        },
+        {
+          "id": "E14",
+          "kategori": "harga",
+          "topik": "Nilai komponen yang direfund saat destinasi ditutup/diganti (jeep & tiket masuk)",
+          "isi": "Nilai yang dipakai admin: jeep Bromo IDR 500.000 (booking 2 orang; saat Bromo diganti Teras Semeru + Tumpak Sewu hanya jeep yang direfund karena rute pengganti lebih mahal — BBM/tol, guide lokal Tumpak Sewu, Goa Tetes, sarapan); tiket masuk Bromo IDR 255.000/orang dan Ijen IDR 150.000/orang (refund goodwill penuh nilai tiket saat Kawah/Lautan Pasir tutup).",
+          "sumberIsi": "Jawaban admin",
+          "Alasan ditahan": "Kondisi sementara (nilai komponen yang direfund saat destinasi ditutup) -- di luar lingkup, sejalan dengan G14.",
+          "jumlahChat": 2,
+          "prioritas": "tinggi"
+        },
+        {
+          "id": "C07",
+          "kategori": "destinasi_kondisi",
+          "topik": "Pengembalian selisih biaya saat destinasi diganti karena ditutup",
+          "isi": "Satu admin (September 2026): bila Ijen tetap tutup dan diganti sunrise Kawah Wurung + Blawan Hot Spring, selisih biaya yang tidak terpakai dikembalikan sebesar IDR 65.000 per orang ditambah IDR 250.000 budget guide — pengganti dan pengembalian selisih diberikan bersamaan. Untuk Bromo, daftar lama K19 mencatat: bila Bromo dilewati, bagian tiket + jeep yang tidak terpakai dikembalikan. Di tiga percakapan lain (C04) pelanggan menanyakan refund saat Bromo tutup dan admin hanya menawarkan alternatif tanpa menjawab refund.",
+          "sumberIsi": "Jawaban admin",
+          "Alasan ditahan": "Kondisi sementara (penutupan Ijen) -- di luar lingkup, sejalan dengan C06 dan G14.",
+          "jumlahChat": 1,
+          "prioritas": "tinggi"
+        },
+        {
+          "id": "D17",
+          "kategori": "jemput_antar",
+          "topik": "Jam jemput di hotel Bali untuk paket dari Bali",
+          "isi": "Admin memberi jam berbeda: 07.00 (3D2N Bromo & Ijen dari Bali; juga satu 4D Ijen–Papuma–Tumpak Sewu–Bromo setelah dikoreksi dari 10.00; Canggu/Tanah Lot/Ubud), 08.00 (Kuta, Uluwatu dalam satu kasus), 09.00 (4D dari Ubud dan Canggu), dan 10.00 (default driver Bali untuk 4D dari Bali, 5D4N dari Seminyak, 4D dari Uluwatu, 3D Ijen–Bromo–Madakaripura dari Bali 'around 10:00'). Jemput dapat dimajukan atas permintaan (mis. 10.00 menjadi 09.00 lalu 08.00 karena lalu lintas; 06.00 atau 07.00 bisa diatur). Pola kasar: paket Bromo-dulu (3D2N Bromo & Ijen) 07.00, paket Ijen-dulu umumnya 10.00, tapi ada pengecualian.",
+          "sumberIsi": "Jawaban admin",
+          "Alasan ditahan": "Seluruh buktinya gugur di saringan (bukti dihitung 0) -- jam jemput Bali memang kesepakatan per-booking, bukan aturan.",
+          "jumlahChat": 12,
+          "prioritas": "sedang"
+        },
+        {
+          "id": "E20",
+          "kategori": "harga",
+          "topik": "Total tagihan booking lebih tinggi dari tier tanpa rincian (kemungkinan add-on)",
+          "isi": "Template booking/pengingat mencatat total di atas tier untuk jumlah pax yang sama: 4D3N Adventure Sby→Bali 2 orang IDR 10.000.000 (dua percakapan) dan 9.500.000 (tier 9.100.000); 4D3N Journey Sby 2 orang 9.500.000 (tier 9.100.000); 4D3N dari Bali 1 orang 9.250.000 (tier 9.050.000) dan 2 orang 10.200.000 (tier 9.800.000); 5D4N dari Bali 2 orang 11.300.000 (tier 10.900.000); 3D2N Bromo & Ijen dari Bali 2 orang 9.000.000 (tier 8.100.000); 3D2N Overland Sby→Bali 2 orang 9.040.000 dan 7.640.000 (tier 7.140.000), 4 orang 13.200.000 (tier 12.200.000). Selisih +200.000/+400.000 cocok dengan add-on Madakaripura, +900.000/+1.000.000 dengan add-on transfer Bali, tapi admin tidak merinci.",
+          "sumberIsi": "Jawaban admin",
+          "Alasan ditahan": "Selisih total tagihan berasal dari add-on yang dipilih saat checkout, bukan harga paket. Tidak boleh jadi harga.",
+          "jumlahChat": 11,
+          "prioritas": "sedang"
+        },
+        {
+          "id": "E21",
+          "kategori": "harga",
+          "topik": "Pembayaran tercatat lebih rendah dari tier katalog",
+          "isi": "Konfirmasi pembayaran yang dikirim admin: 4D3N Ijen, Bromo & Madakaripura Expedition 2 orang lunas IDR 7.120.000 (Nov 2026); 2D1N Bromo Sunrise 4 orang lunas IDR 7.520.000 (≈1.880.000/orang); 1D Bromo Midnight 2 orang dengan add-on Madakaripura lunas IDR 2.800.000 (Juli 2026).",
+          "sumberIsi": "Jawaban admin",
+          "Alasan ditahan": "Operator: jangan masuk knowledge. Pembayaran di bawah tier kemungkinan potongan hotel atau harga lama.",
+          "jumlahChat": 3,
+          "prioritas": "sedang"
+        },
+        {
+          "id": "F31",
+          "kategori": "kendaraan_kru_guide",
+          "topik": "Upgrade kendaraan (Innova Zenix, Hiace Premio)",
+          "isi": "Kendaraan standar paket (mis. Suzuki Ertiga untuk MPV) sudah nyaman; upgrade bersifat opsional dan tergantung ketersediaan. Toyota Innova Zenix: tambahan IDR 3.500.000 untuk seluruh trip 4 hari (harga partner kendaraan pada periode itu; Zenix MPV premium baru dengan biaya sewa lebih tinggi dan BBM RON 92+). Rombongan Hiace bisa upgrade ke Toyota Hiace Premio dengan biaya tambahan.",
+          "sumberIsi": "Jawaban admin",
+          "Alasan ditahan": "Operator: 'jangan dulu'. Tarif upgrade kendaraan mengikuti harga partner yang berubah; tempatnya di katalog.",
+          "jumlahChat": 2,
+          "prioritas": "sedang"
+        },
+        {
+          "id": "A31",
+          "kategori": "booking_pembayaran",
+          "topik": "Booking untuk 1 orang dengan jemput hotel di Bali",
+          "isi": "Bisa: booking untuk 1 peserta dengan penjemputan dari hotel di Canggu, Bali, diselesaikan lewat website.",
+          "sumberIsi": "Jawaban admin",
+          "Alasan ditahan": "Kasus satu booking (solo + jemput hotel Canggu); sudah tercakup E07 dan aturan titik jemput.",
+          "jumlahChat": 1,
+          "prioritas": "sedang"
+        },
+        {
+          "id": "E12",
+          "kategori": "harga",
+          "topik": "Nilai potongan hotel 3D2N untuk 3 orang: IDR 1.500.000 vs IDR 1.512.000",
+          "isi": "Versi 1 (2026-08-03): potongan IDR 1.500.000 dari sisa pembayaran setelah booking terkonfirmasi. Versi 2 (2026-08-23, percakapan yang sama): refund budget hotel IDR 1.512.000, sehingga 9.825.000 − 1.512.000 = IDR 8.313.000.",
+          "sumberIsi": "Jawaban admin",
+          "Alasan ditahan": "Dua angka potongan hotel (1.500.000 vs 1.512.000) untuk paket dan pax yang sama. Perbaiki di katalog, bukan di knowledge.",
+          "jumlahChat": 1,
+          "prioritas": "sedang"
+        },
+        {
+          "id": "E13",
+          "kategori": "harga",
+          "topik": "Potongan bila tidak memakai jemputan Bali pada paket dari Bali",
+          "isi": "Biaya transport jemput Bali yang tidak dipakai, IDR 600.000, dipotong dari harga paket dari Bali (contoh 2 orang: 8.100.000 − 600.000 = IDR 7.500.000).",
+          "sumberIsi": "Jawaban admin",
+          "Alasan ditahan": "Operator: 'jangan dulu'. Nominal potongan jemputan Bali adalah komponen harga; perbaiki di katalog.",
+          "jumlahChat": 1,
+          "prioritas": "sedang"
+        },
+        {
+          "id": "E22",
+          "kategori": "harga",
+          "topik": "Kuotasi 3D2N Bromo–Madakaripura–Ijen 4 orang memakai tarif 3 orang",
+          "isi": "Admin (2026-09-01) mengutip IDR 3.275.000/orang, total 13.100.000 untuk 4 orang. Tier katalog dan tiga admin lain (b02-039, b10-119, b14-088) menyebut 4 orang = IDR 3.050.000/orang, total 12.200.000.",
+          "sumberIsi": "Jawaban admin",
+          "Alasan ditahan": "Operator: jangan masuk knowledge. Tampak salah kutip admin (tarif 3 orang dipakai untuk 4 orang); layak jadi bahan koreksi internal, bukan knowledge.",
+          "jumlahChat": 1,
+          "prioritas": "sedang"
+        },
+        {
+          "id": "F20",
+          "kategori": "logistik_operasional",
+          "topik": "Durasi Bromo ke Surabaya",
+          "isi": "Menurut admin, Bromo ke Surabaya sekitar 2 jam.",
+          "sumberIsi": "Jawaban admin",
+          "Alasan ditahan": "Operator setuju: angka admin '2 jam' tidak dipakai. Nilai katalog (3-4 jam) sengaja konservatif untuk tenggat penerbangan.",
+          "jumlahChat": 1,
+          "prioritas": "sedang"
+        },
+        {
+          "id": "H26",
+          "kategori": "termasuk_tidak_termasuk",
+          "topik": "Kuotasi transport privat custom: tiket masuk dan akomodasi tidak termasuk",
+          "isi": "Tidak; pada kuotasi transport privat custom, semua tiket masuk dan biaya atraksi dibayar langsung oleh tamu, dan akomodasi tidak termasuk.",
+          "sumberIsi": "Jawaban admin",
+          "Alasan ditahan": "Bertentangan dengan keputusan operator di B40/E17: JVTO tidak menjual transport privat terpisah, sehingga ketentuan kuotasi transport-only tidak boleh diajarkan ke bot.",
+          "jumlahChat": 1,
+          "prioritas": "sedang"
+        },
+        {
+          "id": "A25",
+          "kategori": "booking_pembayaran",
+          "topik": "Booking lewat agen/mitra",
+          "isi": "Harga khusus agen tidak dijawab langsung; admin menanyakan ke tim. Untuk booking agen (contoh Bromo Midnight), admin meminta nama tamu, foto paspor, dan nomor kamar hotel, lalu membuat invoice.",
+          "sumberIsi": "Jawaban admin",
+          "Alasan ditahan": "Booking lewat agen: harga khusus agen belum dijawab admin (masih ditanyakan ke tim), jadi aturannya belum lengkap.",
+          "jumlahChat": 1,
+          "prioritas": "rendah"
+        },
+        {
+          "id": "A27",
+          "kategori": "booking_pembayaran",
+          "topik": "Tanggal tidak bisa dipilih di website",
+          "isi": "Bila tanggal (mis. keberangkatan mendadak) tidak bisa dipilih padahal masih tersedia, tim bisa membuka kembali tanggal itu di website; pelanggan refresh lalu checkout seperti biasa.",
+          "sumberIsi": "Jawaban admin",
+          "Alasan ditahan": "Isinya sama dengan F28 yang sudah ditahan operator (tim IT membuka kembali tanggal di website). Ditahan agar konsisten.",
+          "jumlahChat": 1,
+          "prioritas": "rendah"
+        },
+        {
+          "id": "B26",
+          "kategori": "paket_rute",
+          "topik": "Durasi tur Bromo 1 hari dari Malang (12–14 jam vs 10–12 jam)",
+          "isi": "Jemput sekitar 00.00 dari hotel di Malang. Admin menyebut dua durasi di percakapan yang sama: total 12–14 jam tergantung lalu lintas dan kondisi taman nasional, lalu disarankan menyediakan 10–12 jam; program Bromo (viewpoint sunrise, lautan pasir, kawah) biasanya selesai 09.00–10.00 sebelum kembali.",
+          "sumberIsi": "Jawaban admin",
+          "Alasan ditahan": "Satu percakapan, prioritas rendah, dan dua angka durasi berbeda dari admin yang sama.",
+          "jumlahChat": 1,
+          "prioritas": "rendah"
+        },
+        {
+          "id": "E19",
+          "kategori": "harga",
+          "topik": "Sewa headlamp",
+          "isi": "Sewa headlamp sekitar IDR 35.000 per buah.",
+          "sumberIsi": "Jawaban admin",
+          "Alasan ditahan": "Sudah tercakup keputusan H01 (sewa headlamp sekitar IDR 35.000 di pintu masuk Ijen).",
+          "jumlahChat": 1,
+          "prioritas": "rendah"
+        },
+        {
+          "id": "E30",
+          "kategori": "add_on",
+          "topik": "Upgrade kendaraan ke Toyota Innova Zenix",
+          "isi": "Bisa upgrade ke Toyota Innova Zenix dengan biaya tambahan (nominal tidak disebut).",
+          "sumberIsi": "Jawaban admin",
+          "Alasan ditahan": "Upgrade kendaraan -- tempatnya katalog, sejalan dengan F31 yang ditahan.",
+          "jumlahChat": 1,
+          "prioritas": "rendah"
+        },
+        {
+          "id": "E32",
+          "kategori": "add_on",
+          "topik": "Add-on Bromo Sunset",
+          "isi": "Admin menawarkan add-on \"Bromo Sunset experience\" untuk ditambahkan ke itinerary (paket 3D Bromo, Madakaripura & Ijen); harga tidak disebut.",
+          "sumberIsi": "Jawaban admin",
+          "Alasan ditahan": "Add-on Bromo Sunset: keberadaan dan harga add-on adalah data katalog/checkout, bukan knowledge.",
+          "jumlahChat": 1,
+          "prioritas": "rendah"
+        },
+        {
+          "id": "E33",
+          "kategori": "add_on",
+          "topik": "Menambah satu hari istirahat setelah Ijen",
+          "isi": "Tambahan satu hari istirahat setelah Ijen pada 4D3N: IDR 1.150.000, termasuk 1 malam hotel tambahan, kendaraan, dan layanan driver/kru (dihitung khusus; jumlah pax tidak disebut). Menurut admin satu malam tambahan sudah cukup.",
+          "sumberIsi": "Jawaban admin",
+          "Alasan ditahan": "Operator: 'jangan dulu'. Harga tambahan satu hari istirahat; tempatnya di katalog.",
+          "jumlahChat": 1,
+          "prioritas": "rendah"
+        },
+        {
+          "id": "F28",
+          "kategori": "logistik_operasional",
+          "topik": "Pembukaan ulang tanggal booking di website oleh tim IT",
+          "isi": "Pembukaan tanggal di website dilakukan tim IT pada jam kerja; permintaan yang masuk tengah malam diproses keesokan pagi.",
+          "sumberIsi": "Jawaban admin",
+          "Alasan ditahan": "Proses internal (tim IT membuka tanggal di website), jarang ditanyakan pelanggan.",
+          "jumlahChat": 1,
+          "prioritas": "rendah"
+        },
+        {
+          "id": "G33",
+          "kategori": "kesehatan_usia_persyaratan",
+          "topik": "Drone di Bromo",
+          "isi": "Drone boleh dibawa, tetapi menerbangkannya di Taman Nasional Bromo resmi memerlukan izin dari otoritas TN dengan biaya sekitar IDR 2.000.000. Terbang tanpa izin sepenuhnya risiko pelanggan; JVTO bisa mengarahkan cara mengurus izin.",
+          "sumberIsi": "Jawaban admin",
+          "Alasan ditahan": "Sudah tercakup keputusan C14 (drone: izin TNBTS IDR 2.000.000, tim JVTO membantu pengajuan).",
+          "jumlahChat": 1,
+          "prioritas": "rendah"
+        },
+        {
+          "id": "H28",
+          "kategori": "akomodasi",
+          "topik": "Hotel paket 5D4N dengan rute disesuaikan",
+          "isi": "Untuk rute 5D4N yang disesuaikan: Hari 1 Luminor Hotel Banyuwangi; Hari 2 Artha Cottage (area Tumpak Sewu); Hari 3 Joglo Kecombrang Bromo; Hari 4 Holiday Inn Express Surabaya. Upgrade bisa diminta dengan biaya tambahan.",
+          "sumberIsi": "Jawaban admin",
+          "Alasan ditahan": "Daftar hotel untuk satu rute 5D4N yang disesuaikan -- kesepakatan per booking.",
+          "jumlahChat": 1,
+          "prioritas": "rendah"
+        },
+        {
+          "id": "H43",
+          "kategori": "akomodasi",
+          "topik": "Malam tambahan di Surabaya setelah paket 5D4N dari Bali",
+          "isi": "Akomodasi hanya sampai malam ke-4; malam tambahan di Surabaya dibayar sendiri, tetapi shuttle bandara yang termasuk paket tetap bisa dijadwalkan di hari berikutnya.",
+          "sumberIsi": "Jawaban admin",
+          "Alasan ditahan": "Bertentangan dengan H09 (transfer bandara di luar durasi tur tidak termasuk). Perlu diputuskan lebih dulu, bukan sekadar dipromosikan.",
+          "jumlahChat": 1,
+          "prioritas": "rendah"
+        },
+        {
+          "id": "H62",
+          "kategori": "lainnya",
+          "topik": "Rekomendasi guide di Yogyakarta (di luar area layanan)",
+          "isi": "Yogyakarta di luar area layanan JVTO; admin bersedia membagikan kontak guide kenalan di sana.",
+          "sumberIsi": "Jawaban admin",
+          "Alasan ditahan": "Membagikan kontak guide Yogyakarta berlawanan dengan G36 (tolak, lalu tawarkan paket JVTO sendiri).",
+          "jumlahChat": 1,
+          "prioritas": "rendah"
+        }
+      ]
+    },
+    "kondisi_sementara": {
+      "sheet": "6. Kondisi sementara",
+      "arti": "Kondisi sesaat (penutupan, kebakaran, jadwal bertanggal). Sesuai keputusan Anda: di luar lingkup knowledge.",
+      "topik": [
+        {
+          "id": "C03",
+          "kategori": "destinasi_kondisi",
+          "topik": "Kebakaran dan penutupan Kawah Ijen mulai 4 September 2026",
+          "isi": "Kondisi sesaat: 2–3 Sep 2026 ada kebakaran di pegunungan dekat Ijen (Bromo aman). Mulai 4 Sep Kawah Ijen (jalur TWA Kawah Ijen/Paltuding) ditutup sementara oleh otoritas sampai pemberitahuan lebih lanjut. 5 Sep lebih dari 50 titik api; 6 Sep pemadaman dibantu helikopter, sekitar 75% api padam dalam sehari; penutupan 14 hari mungkin dicabut lebih awal bila otoritas menilai aman. 8 Sep: versi satu admin \"semua titik api padam (update Kepala BKSDA), pendinginan dan pembersihan\", versi admin lain \"masih ada titik api di area sulit dijangkau, water bombing berlanjut\". 9–15 Sep api padam, area dalam pemantauan, pemulihan, dan asesmen; belum ada tanggal buka resmi dari BKSDA/BBKSDA; per 14 Sep mungkin buka dalam beberapa hari. Estimasi admin dari kejadian sebelumnya: 2–3 minggu (bukan resmi). Pembukaan sebelum tanggal tur tidak dijamin. Kebakaran Ijen jauh dari Bromo; rute Bromo normal, visibilitas tetap tergantung cuaca.",
+          "sumberIsi": "Jawaban admin",
+          "Penjelasan": "Status sesaat September 2026. Kebijakan umum di baliknya (itinerary pengganti Ijen, kompensasi, keputusan otoritas, saran menunggu) ada di C06, C07, C18, C19.",
+          "jumlahChat": 25,
+          "prioritas": "tinggi"
+        },
+        {
+          "id": "C01",
+          "kategori": "destinasi_kondisi",
+          "topik": "Kebakaran dan penutupan Bromo Agustus sampai awal September 2026",
+          "isi": "Kondisi sesaat (Agustus–awal September 2026): 8–9 Agu otoritas menutup jalan akses ke semua viewpoint sunrise (termasuk King Kong Hill) dan kawah karena kebakaran hutan; 9–12 Agu Bromo ditutup sementara, pelanggan tidak perlu bertindak, tim memantau update resmi Taman Nasional; 13 Agu api meluas; 14–18 Agu api padam, Taman Nasional evaluasi keselamatan akhir tanpa tanggal buka. Tanggal buka kembali disebut berbeda-beda oleh admin: \"mulai malam 19 Agustus\", \"20 Agustus\", \"per 23/24 Agustus sudah buka\", dan \"per 27 Agustus resmi dibuka\"; setelah buka tur berjalan normal termasuk sunrise, Lautan Pasir, dan kawah. 28 Agu kebakaran lagi di area tertentu, titik sunrise lain dipakai bila lokasi terdampak ditutup; 2–3 Sep Bromo buka normal walau ada kebakaran di sebagian area.",
+          "sumberIsi": "Jawaban admin",
+          "Penjelasan": "Kronologi sesaat, tidak untuk dijadikan knowledge permanen. Kebijakan umum di baliknya dipecah ke C04 (itinerary pengganti Bromo), C07 (pengembalian selisih), C08 (destinasi lain tetap), C18 (keputusan otoritas), C19 (saran menunggu), C27 (jalur akses via Probolinggo). Catatan: tanggal buka kembali yang disebut admin tidak seragam (19 malam / 20 / 27 Agustus).",
+          "jumlahChat": 24,
+          "prioritas": "tinggi"
+        },
+        {
+          "id": "C02",
+          "kategori": "destinasi_kondisi",
+          "topik": "Bromo ditutup lagi mulai 12 September 2026",
+          "isi": "Kondisi sesaat: Bromo masih buka pagi 12 Sep 2026; pengumuman resmi penutupan sementara terbit sore 12 Sep karena kebakaran hutan, berlaku sampai pemberitahuan lebih lanjut. Kebakaran baru terjadi hanya beberapa hari setelah Bromo dibuka kembali. Kawah Bromo dan Lautan Pasir tertutup; sunrise Seruni Point dengan jeep dari hotel tetap bisa, trekking ke Kingkong Hill bila aman. Estimasi admin (bukan resmi): pemulihan 10–14 hari dari tanggal penutupan, Bromo diperkirakan butuh lebih lama dari Ijen. Per 13 Sep Bromo dan Ijen masih resmi ditutup; per 15 Sep api di Bromo dan Ijen padam, keduanya masih ditutup sambil asesmen, diharapkan buka dalam beberapa hari.",
+          "sumberIsi": "Jawaban admin",
+          "Penjelasan": "Status sesaat September 2026. Kebijakan umum (alternatif saat Bromo ditutup, keputusan otoritas, saran menunggu) ada di C04, C18, C19.",
+          "jumlahChat": 13,
+          "prioritas": "tinggi"
+        },
+        {
+          "id": "G17",
+          "kategori": "pembatalan_perubahan",
+          "topik": "Pindah ke paket 3D2N Tumpak Sewu & Bromo saat Ijen ditutup (September 2026)",
+          "isi": "Opsi selama penutupan Ijen September 2026: pindah ke paket 3D2N Tumpak Sewu & Bromo (2 orang IDR 7.140.000); harga mengikuti tarif 3D2N, deposit/pembayaran yang sudah masuk dipotongkan dan selisihnya dikembalikan (tunai oleh tim bila saat tur). Rute bisa tetap berakhir di Pelabuhan Ketapang dengan penyeberangan feri ke Bali (Day 3 setelah Bromo dan Madakaripura langsung ke Ketapang) atau kembali ke Bandara Surabaya. Tanggal bisa diamankan dengan itinerary fleksibel: Ijen & Bromo buka = itinerary asli; Ijen tutup = 3D2N Tumpak Sewu + Bromo; Bromo juga tutup = sunrise Seruni + Kingkong Hill. Bila Ijen dibuka lagi sebelum/selama trip, situasinya ditinjau bersama pelanggan (bisa kembali ke 4D3N dengan membayar selisih via transfer atau tunai IDR).",
+          "sumberIsi": "Jawaban admin",
+          "Penjelasan": "Kondisi sesaat penutupan Ijen September 2026. Kebijakan umum di baliknya (alternatif lebih dulu, lalu refund komponen) sudah dicatat di topik refund komponen. Paket 3D2N Tumpak Sewu & Bromo sendiri tidak ada di package-profiles.json (16 paket; tidak ada tumpak-sewu-bromo-3d2n), sejalan dengan B5.",
+          "jumlahChat": 7,
+          "prioritas": "tinggi"
+        },
+        {
+          "id": "B46",
+          "kategori": "paket_rute",
+          "topik": "Alternatif saat Ijen ditutup (Kawah Wurung, Blawan, ATV, Tumpak Sewu) — September 2026",
+          "isi": "Kondisi sesaat penutupan Ijen September 2026. Hanya bagian Ijen yang berubah: berangkat dari hotel ±03.00 → sunrise Kawah Wurung → keliling Kawah Wurung → Blawan Hot Spring → kembali ke hotel (atau → Ketapang → feri → driver Bali); opsi ATV (dengan Kawah Wurung berangkat 03.00, ATV saja berangkat 06.00); atau bagian Ijen diganti Tumpak Sewu dengan rute dan hotel diatur ulang. Pada 4H3M juga ditambahkan Madakaripura di hari terakhir tanpa biaya tambahan. Bila Ijen dibuka dan aman, kembali ke itinerary asli.",
+          "sumberIsi": "Jawaban admin",
+          "Penjelasan": "Kondisi sesaat. Kebijakan umum di baliknya dibahas di topik terpisah.",
+          "jumlahChat": 5,
+          "prioritas": "tinggi"
+        },
+        {
+          "id": "A30",
+          "kategori": "booking_pembayaran",
+          "topik": "Booking selama penutupan Bromo/Ijen September 2026",
+          "isi": "Selama Bromo (kebakaran hutan) dan Ijen ditutup (Agustus–September 2026), JVTO menutup sementara registrasi online untuk tanggal terdampak dan menjeda booking baru paket 4 hari agar tamu tidak kecewa; tanggal tertentu dibuka khusus atas permintaan pelanggan yang bersedia menerima pengaturan alternatif (bukan tanda Bromo buka). Sebelum pembayaran, JVTO memberi tahu penutupan dan meminta pelanggan mengonfirmasi mau melanjutkan; admin juga pernah menahan tanggal tanpa pembayaran sambil memantau kondisi. Kebijakan umum di baliknya: tenggat pelunasan tidak ditunda karena penutupan (topik tenggat pelunasan); refund/credit saat penutupan diatur di kebijakan pembatalan (grup lain).",
+          "sumberIsi": "Jawaban admin",
+          "Penjelasan": "Kondisi penutupan sesaat. Kebijakan tertulis tentang penutupan terverifikasi (credit atau refund) sudah ada di policy_cancellation_package_credit; praktik memberi tahu sebelum bayar belum ada di katalog.",
+          "jumlahChat": 4,
+          "prioritas": "tinggi"
+        },
+        {
+          "id": "B45",
+          "kategori": "paket_rute",
+          "topik": "Alternatif saat Bromo ditutup (Agustus–September 2026)",
+          "isi": "Kondisi sesaat penutupan Bromo Agustus–September 2026. Alternatif yang diberikan: jeep ke area Seruni lalu opsi trekking ke King Kong Hill bila aman; atau hari itu diganti Madakaripura (jemput 10.00 atau 11.00); atau untuk tur dari Surabaya berangkat 02.00 → Teras Semeru → Tumpak Sewu → kembali Surabaya (Madakaripura tidak bisa ikut).",
+          "sumberIsi": "Jawaban admin",
+          "Penjelasan": "Kondisi sesaat. Kebijakan umum di baliknya dibahas di topik terpisah (alternatif rute lalu refund komponen).",
+          "jumlahChat": 3,
+          "prioritas": "tinggi"
+        },
+        {
+          "id": "C28",
+          "kategori": "destinasi_kondisi",
+          "topik": "Erupsi Anak Krakatau dan penerbangan ke Surabaya (September 2026)",
+          "isi": "Kondisi sesaat: per 7 Sep 2026 Anak Krakatau berstatus Level III (Siaga). Surabaya jauh dari Krakatau, operasional Bandara Juanda berjalan dan penerbangan ke Surabaya tidak terdampak; rute tur dinyatakan aman.",
+          "sumberIsi": "Jawaban admin",
+          "Penjelasan": "Kondisi sesaat. Kebijakan pembatalan penerbangan terverifikasi karena abu vulkanik (Recovery Fee 50%) ada di detail modul policy_cancellation_package_credit dan tidak disinggung admin di sini.",
+          "jumlahChat": 3,
+          "prioritas": "tinggi"
+        },
+        {
+          "id": "F29",
+          "kategori": "logistik_operasional",
+          "topik": "Jadwal keberangkatan dan itinerary alternatif saat Bromo/Ijen ditutup (Agustus-September 2026)",
+          "isi": "Kondisi sesaat penutupan 2026: keberangkatan sunrise Bromo tetap 01.30 walau kawah tidak dikunjungi karena diperkirakan macet berat; itinerary alternatif Seruni Point tetap memakai Jeep privat; bila Ijen tetap ditutup, itinerary alternatif berangkat dari hotel sekitar 03.00 dengan briefing jadwal dari tim.",
+          "sumberIsi": "Jawaban admin",
+          "Penjelasan": "Kondisi sesaat penutupan Bromo/Ijen 2026. Kebijakan umum di baliknya (alternatif Seruni Point atau refund bagian Bromo) sudah tercatat sebagai K19; fakta grup ini tidak menambah kebijakan baru.",
+          "jumlahChat": 4,
+          "prioritas": "sedang"
+        },
+        {
+          "id": "E34",
+          "kategori": "add_on",
+          "topik": "Kompensasi dan alternatif saat Ijen ditutup",
+          "isi": "Kondisi September 2026: pada 4D3N JVTO menambahkan Madakaripura gratis di hari terakhir setelah Bromo sebagai kompensasi; alternatif pengganti yang ditawarkan antara lain Kawah Wurung/Blawan, ATV, atau snorkeling di Bangsring (biaya tambahan dikonfirmasi kemudian); JVTO menyarankan menunggu update resmi Ijen sebelum mengubah itinerary.",
+          "sumberIsi": "Jawaban admin",
+          "Penjelasan": "Tanggapan sesaat atas penutupan Ijen. Tidak ada kebijakan kompensasi umum yang dinyatakan; katalog hanya memuat status akses kawah Ijen (policy_ijen_crater_access_status).",
+          "jumlahChat": 3,
+          "prioritas": "sedang"
+        },
+        {
+          "id": "E15",
+          "kategori": "harga",
+          "topik": "Harga saat Bromo (Kawah/Lautan Pasir) ditutup — sunrise di Seruni Point",
+          "isi": "Kondisi Agustus–September 2026: bila Bromo belum dibuka, sunrise dipindah ke Seruni Point dengan Jeep privat tetap dipakai. Satu admin menyatakan harga tetap sama (2026-08-09); admin lain (2026-09-13) menyatakan harga IDR 100.000/orang lebih murah bila Kawah dan Lautan Pasir tetap tutup (porsi tiket yang tidak terpakai; Seruni tetap perlu tiket masuk). Kebijakan umum di baliknya (nilai komponen yang direfund) dicatat di topik terpisah.",
+          "sumberIsi": "Jawaban admin",
+          "Penjelasan": "Kondisi penutupan Bromo sesaat. Dua jawaban berbeda (harga sama vs lebih murah 100.000) bergantung apakah Kawah/Lautan Pasir tutup total; operator perlu memutuskan bila dijadikan kebijakan. Tidak ada Seruni Point di katalog.",
+          "jumlahChat": 2,
+          "prioritas": "sedang"
+        },
+        {
+          "id": "A29",
+          "kategori": "booking_pembayaran",
+          "topik": "Musim ramai Agustus 2026: segera booking",
+          "isi": "Pertengahan hingga akhir Agustus 2026 adalah periode ramai; banyak hotel mulai penuh, sehingga admin menyarankan segera booking setelah tanggal pasti; transfer Bali bisa ditambah/diubah belakangan. Kebijakan umum di baliknya (booking sedini mungkin) dicatat di topik terpisah.",
+          "sumberIsi": "Jawaban admin",
+          "Penjelasan": "Kondisi musiman sesaat (Agustus 2026). Kebijakan umumnya ada di topik \"Kapan sebaiknya booking\" (celah).",
+          "jumlahChat": 2,
+          "prioritas": "rendah"
+        },
+        {
+          "id": "C26",
+          "kategori": "destinasi_kondisi",
+          "topik": "Bukit Teletubbies gersang di musim kemarau 2026",
+          "isi": "Juli–Agustus 2026: Bukit Teletubbies bisa dikunjungi, tetapi tim tidak merekomendasikannya saat itu karena gersang akibat musim kemarau dan kebakaran hutan; lanskapnya mungkin tidak sehijau biasanya.",
+          "sumberIsi": "Jawaban admin",
+          "Penjelasan": "Kondisi lanskap sesaat (kemarau + kebakaran 2026). Nama Bukit Teletubbies sendiri tidak ada di catalog/*.json, catalog/itinerary-intelligence/*.json, dan knowledge-published.md.",
+          "jumlahChat": 2,
+          "prioritas": "rendah"
+        },
+        {
+          "id": "D29",
+          "kategori": "jemput_antar",
+          "topik": "Jam berangkat sunrise tetap saat dialihkan ke Seruni Point",
+          "isi": "Selama situasi Bromo (penutupan/kemacetan Agustus–September 2026), jam berangkat tetap sama (contoh 01.30) karena tetap harus berangkat dini untuk sunrise di Seruni Point dan diperkirakan macet berat.",
+          "sumberIsi": "Jawaban admin",
+          "Penjelasan": "Kondisi sesaat terkait penutupan area Bromo 2026. Kebijakan umum di baliknya (alternatif Seruni Point / refund bagian Bromo) ada di daftar lama K19 dan menjadi bahasan grup destinasi.",
+          "jumlahChat": 2,
+          "prioritas": "rendah"
+        },
+        {
+          "id": "G38",
+          "kategori": "di_luar_layanan",
+          "topik": "Pendakian Gunung Semeru",
+          "isi": "Saat ini Gunung Semeru tidak dibuka untuk pendakian karena aktivitas vulkanik dan erupsi yang sering, sehingga tidak bisa dimasukkan ke itinerary.",
+          "sumberIsi": "Jawaban admin",
+          "Penjelasan": "Status penutupan Semeru bersifat sesaat (per 2026-08-05). Katalog tidak punya status Semeru; untuk destinasi di luar katalog, modul custom extension akan menjanjikan tindak lanjut tim, yang tidak sesuai selama Semeru tertutup.",
+          "jumlahChat": 1,
+          "prioritas": "rendah"
+        },
+        {
+          "id": "H47",
+          "kategori": "akomodasi",
+          "topik": "Akomodasi saat penutupan Bromo (September 2026)",
+          "isi": "Saat itu (13 September 2026) tidak ada perubahan akomodasi yang dikonfirmasi akibat penutupan Bromo.",
+          "sumberIsi": "Jawaban admin",
+          "Penjelasan": "Kondisi sesaat terkait penutupan Bromo; tidak ada kebijakan umum di baliknya pada fakta ini (kebijakan refund penutupan dibahas di grup lain/K19).",
+          "jumlahChat": 1,
+          "prioritas": "rendah"
+        }
+      ]
+    }
+  }
+}

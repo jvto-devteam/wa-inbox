@@ -1,0 +1,65 @@
+{
+  "_catatan": "Naskah perbaikan untuk revisi knowledge PUBLISHED yang terbukti keliru, disiapkan 2026-09-16. BELUM diterapkan ke database: DATABASE_URL menunjuk produksi dan sesi ini hanya menjalankan kueri baca. Revisi PUBLISHED bersifat immutable, jadi setiap perbaikan = REVISI BARU (v2); revisi lama otomatis diarsipkan saat yang baru diaktifkan. Terapkan lewat alur normal operator: edit -> simpan draft -> aktifkan.",
+  "_sumberTemuan": "Diverifikasi lewat psql terhadap DB produksi 2026-09-16: 11 revisi PUBLISHED, 3 di antaranya menyebut Blue Fire.",
+  "_catatanRetrieval": "Field 'topics' dan 'question' sengaja TIDAK diubah. Keduanya menentukan apakah item terpanggil (gerbang topik + irisan kata, plafon MAX_MANAGED_ITEMS_PER_TURN = 8). Mengubahnya berisiko membuat entri yang sudah benar berhenti muncul. Yang diperbaiki hanya isi 'answer'.",
+
+  "perbaikan": [
+    {
+      "sumber": "BLUE FIRE",
+      "key": "managed/mtwatnsg-anb9yp",
+      "revisiSekarang": { "id": "cmtwatnt40003auah6bqw5ksf", "versi": 1, "status": "PUBLISHED" },
+      "topikTerkait": "C09",
+      "masalah": "Menjanjikan 'Best chance: dry season (April-October), typically between 2am-4am before sunrise' padahal akses turun ke dasar kawah ditutup otoritas, sehingga Blue Fire alami tidak dapat diakses resmi.",
+      "answerSekarang": "- A rare natural phenomenon caused by ignited sulfuric gas -- one of Earth's most unique sights.\n- NOT guaranteed -- visibility depends on weather, volcanic activity, and local authority clearance.\n- Best chance: dry season (April-October), typically between 2am-4am before sunrise.\n- Even without blue fire, the sunrise and turquoise crater lake are spectacular.",
+      "answerUsulan": "- A rare natural phenomenon caused by ignited sulfuric gas -- one of Earth's most unique sights.\n- Access down into the crater floor is currently CLOSED by the authorities, so the natural blue fire cannot be viewed officially at this time. We never promise it.\n- NOT guaranteed -- visibility depends on weather, volcanic activity, and local authority clearance.\n- The Ijen hike still runs up to the crater rim: the sunrise viewpoint and the turquoise crater lake.",
+      "yangBerubah": "Baris 'Best chance ... 2am-4am' diganti pernyataan penutupan akses. Baris terakhir diperjelas bahwa pendakian tetap sampai bibir kawah.",
+      "topics": ["blue_fire"],
+      "question": "Can we see the Blue Fire at Ijen, and is it guaranteed?"
+    },
+    {
+      "sumber": "BEST TIME",
+      "key": "managed/mtwatoi8-gsflyw",
+      "revisiSekarang": { "id": "cmtwatoiv000fauahs97gtzxy", "versi": 1, "status": "PUBLISHED" },
+      "topikTerkait": "C09",
+      "masalah": "'highest chance of Blue Fire at Ijen' dan 'blue fire less likely' masih menyiratkan Blue Fire bisa dilihat bila musimnya tepat.",
+      "answerSekarang": "- Dry season (April-October): best visibility, highest chance of Blue Fire at Ijen.\n- Wet season (November-March): possible rain and fog; Bromo can still be beautiful; Ijen hikes still possible but blue fire less likely.",
+      "answerUsulan": "- Dry season (April-October): best visibility for the Bromo sunrise and the Ijen crater rim.\n- Wet season (November-March): possible rain and fog; Bromo can still be beautiful; Ijen hikes are still possible.\n- Blue fire is not part of the plan at the moment: access down into the crater floor is closed by the authorities.",
+      "yangBerubah": "Rujukan musiman ke Blue Fire dihapus dan diganti keterangan penutupan akses. Panduan musimnya sendiri dipertahankan.",
+      "topics": ["blue_fire", "destination_readiness"],
+      "question": "What's the best time of year to visit for Blue Fire?"
+    },
+    {
+      "sumber": "GENERAL",
+      "key": "managed/mtwatnnp-zopbgf",
+      "revisiSekarang": { "id": "cmtwatnoo0001auah0jzm3ox3", "versi": 1, "status": "PUBLISHED" },
+      "topikTerkait": "D13 dan D15",
+      "masalah": "'Tours depart from Surabaya or Bali.' tanpa pengecualian. Inilah sebab bot menolak permintaan jemput Malang pada replay (K6), padahal admin melayaninya tanpa biaya tambahan.",
+      "answerSekarang": "- All tours are 100% PRIVATE -- your group only, no strangers ever.\n- Guides: certified, English-speaking local guides.\n- Tours depart from Surabaya or Bali.",
+      "answerUsulan": "- All tours are 100% PRIVATE -- your group only, no strangers ever.\n- Guides: certified, English-speaking local guides.\n- Tours depart from Surabaya or Bali by default.\n- Pickup from Malang or Probolinggo (hotel, station, or bus drop-off point) is also available at no extra charge -- the package price stays the same.",
+      "yangBerubah": "Kalimat titik berangkat dipecah menjadi default + pengecualian tanpa biaya tambahan, sesuai keputusan D13/D15.",
+      "topics": ["inclusions", "price", "private_tour", "vehicle", "rooming", "hotel", "route_endpoint", "destination_readiness", "booking", "payment", "cancellation", "blue_fire", "greeting", "general"],
+      "question": "Are your tours private, and where do they depart from?"
+    },
+    {
+      "sumber": "PAYMENT",
+      "key": "managed/mtwato9n-tig1vd",
+      "revisiSekarang": { "id": "cmtwatoaf000bauahk6rc187s", "versi": 1, "status": "PUBLISHED" },
+      "topikTerkait": "A06 dan A05",
+      "masalah": "Memuat 'Cash on Arrival is available for some packages, subject to approval.' Operator menyatakan 2026-09-16 bahwa Cash on Arrival sudah tidak digunakan.",
+      "answerSekarang": "- Deposit: 20% of total to confirm booking.\n- Balance due 3 days before Day 1 via Bank Transfer / Wise / Revolut.\n- Cash on Arrival is available for some packages, subject to approval.\n- Last-minute bookings (under 6 days before Day 1): 100% full payment via Bank Transfer required.\n- Within 14 days of Day 1: JVTO may require full payment instead of the standard deposit.",
+      "answerUsulan": "- Deposit: 20% of total to confirm booking.\n- Balance due 3 days before Day 1 via Bank Transfer / Wise / Revolut.\n- Last-minute bookings (under 6 days before Day 1): 100% full payment via Bank Transfer required. Cash on Arrival is not offered.\n- Within 14 days of Day 1: JVTO may require full payment instead of the standard deposit.",
+      "yangBerubah": "Baris Cash on Arrival dihapus, dan penegasan 'not offered' dilekatkan pada baris last-minute. Kedua ambang (6 hari dan 14 hari) DIPERTAHANKAN karena keputusan A05 justru menetapkan ambang knowledge inilah yang dipakai.",
+      "topics": ["payment"],
+      "question": "How much is the deposit, and when is the balance due?"
+    }
+  ],
+
+  "perluDitinjauOperator": [
+    {
+      "sumber": "DESTINATIONS",
+      "key": "managed/mtwatoqb-h64g3h",
+      "revisiSekarang": { "id": "cmtwator2000jauah06l5l3bf", "versi": 1, "status": "PUBLISHED" },
+      "catatan": "Menyebut 'Ijen Crater: blue fire phenomenon' dalam daftar deskripsi destinasi. Ini deskriptif, bukan janji bisa dilihat, jadi belum tentu perlu diubah. Keputusan ada pada operator: biarkan apa adanya, atau ubah menjadi 'turquoise sulfuric crater lake, sunrise, sulfur miners' tanpa menyebut blue fire."
+    }
+  ]
+}

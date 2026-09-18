@@ -1,0 +1,108 @@
+◇ injected env (18) from .env // tip: ⌁ auth for agents [www.vestauth.com]
+{
+  "dryRun": false,
+  "sumberBaru": [
+    {
+      "title": "PACKAGES & ROUTES (review 2026-09)",
+      "items": 28,
+      "status": "dibuat DRAFT v1",
+      "sourceId": "cmu59vcw900003cahnqo5l7sw"
+    },
+    {
+      "title": "PICKUP & DROP-OFF (review 2026-09)",
+      "items": 24,
+      "status": "dibuat DRAFT v1",
+      "sourceId": "cmu59vd3b00023cah5aiw1vw1"
+    },
+    {
+      "title": "TRIP LOGISTICS (review 2026-09)",
+      "items": 22,
+      "status": "dibuat DRAFT v1",
+      "sourceId": "cmu59vd8f00043cahq8gosfn8"
+    },
+    {
+      "title": "BOOKING & PAYMENT DETAILS (review 2026-09)",
+      "items": 21,
+      "status": "dibuat DRAFT v1",
+      "sourceId": "cmu59vddi00063cahsiducq6q"
+    },
+    {
+      "title": "CHANGES & CANCELLATION (review 2026-09)",
+      "items": 17,
+      "status": "dibuat DRAFT v1",
+      "sourceId": "cmu59vdiz00083cahq0dqlalh"
+    },
+    {
+      "title": "ACCOMMODATION (review 2026-09)",
+      "items": 14,
+      "status": "dibuat DRAFT v1",
+      "sourceId": "cmu59vdo3000a3cah7aif7jvu"
+    },
+    {
+      "title": "OTHER QUESTIONS (review 2026-09)",
+      "items": 13,
+      "status": "dibuat DRAFT v1",
+      "sourceId": "cmu59vdsq000c3cah45ejkmf8"
+    },
+    {
+      "title": "INCLUDED & NOT INCLUDED (review 2026-09)",
+      "items": 12,
+      "status": "dibuat DRAFT v1",
+      "sourceId": "cmu59vdxf000e3cahs7n1vd9i"
+    },
+    {
+      "title": "VEHICLES, DRIVER & GUIDES (review 2026-09)",
+      "items": 8,
+      "status": "dibuat DRAFT v1",
+      "sourceId": "cmu59ve2a000g3cah9wpwng2j"
+    },
+    {
+      "title": "PRICING RULES (review 2026-09)",
+      "items": 7,
+      "status": "dibuat DRAFT v1",
+      "sourceId": "cmu59ve6w000i3cahaytvh6lo"
+    },
+    {
+      "title": "DESTINATIONS & CONDITIONS (review 2026-09)",
+      "items": 8,
+      "status": "dibuat DRAFT v1",
+      "sourceId": "cmu59vebn000k3cah6nzkqfn8"
+    },
+    {
+      "title": "OUTSIDE OUR SERVICE (review 2026-09)",
+      "items": 8,
+      "status": "dibuat DRAFT v1",
+      "sourceId": "cmu59vegn000m3cahrlvefmd2"
+    },
+    {
+      "title": "HEALTH, AGE & REQUIREMENTS (review 2026-09)",
+      "items": 7,
+      "status": "dibuat DRAFT v1",
+      "sourceId": "cmu59velg000o3cahvj2svyvs"
+    },
+    {
+      "title": "ADD-ONS (review 2026-09)",
+      "items": 7,
+      "status": "dibuat DRAFT v1",
+      "sourceId": "cmu59veq7000q3cah0rp92s90"
+    }
+  ],
+  "perbaikan": [
+    {
+      "sumber": "BLUE FIRE",
+      "status": "disimpan DRAFT v2"
+    },
+    {
+      "sumber": "BEST TIME",
+      "status": "disimpan DRAFT v2"
+    },
+    {
+      "sumber": "GENERAL",
+      "status": "disimpan DRAFT v2"
+    },
+    {
+      "sumber": "PAYMENT",
+      "status": "disimpan DRAFT v2"
+    }
+  ]
+}

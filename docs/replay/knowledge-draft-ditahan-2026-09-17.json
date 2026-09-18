@@ -1,0 +1,58 @@
+{
+  "ditahan": [
+    {
+      "sourceIds": [
+        "B39"
+      ],
+      "alasan": "Menawarkan proposal paket kustom; bertentangan dengan G40 (tidak ada paket kustom, tawarkan paket standar terdekat). Juga menyebut pengganti Ijen Kawah Wurung/Blawan yang ditahan operator (C06).",
+      "question": "Can you create a custom itinerary for us?",
+      "answer": "- Please tell us the changes or itinerary you have in mind.\n- Our team first discusses it with our operations team to make sure it is feasible before confirming.\n- For custom routes (for example, private transport from Yogyakarta via Bromo and Banyuwangi, or a day tour from Bondowoso to Kawah Wurung / Blawan), we first prepare a custom package proposal / quotation and check accommodation."
+    },
+    {
+      "sourceIds": [
+        "G12"
+      ],
+      "alasan": "Meminta pemberitahuan 3 hari sebelum tur untuk pembatalan karena penutupan; belum jelas selaras dengan aturan pembatalan 48 jam. Perlu keputusan operator.",
+      "question": "Can I cancel the whole tour and get a cash refund because a destination is closed?",
+      "answer": "- A cash refund under force majeure only applies when an officially verified event makes the ENTIRE tour impossible.\n- If only part of the tour is affected (for example Ijen is closed but Bromo or Madakaripura can still be visited), the tour is not considered impossible, and cancelling the whole booking follows our Lifetime Package Credit terms.\n- A closure that happens after your cancellation has been processed does not change it; it stays as credit.\n- Our team checks your specific booking before confirming a cancel and refund option.\n- If you want to cancel because of a closure, please tell us at least 3 days before the tour so hotels and vehicles can be cancelled.\n- Cash refund requests outside these terms are noted and reviewed with management."
+    },
+    {
+      "sourceIds": [
+        "H45"
+      ],
+      "alasan": "Merekomendasikan Artotel Cabin Bromo dan Jiwa Jawa Bromo sebagai pilihan hotel JVTO; bertentangan dengan H33 dan G42 (tamu memesan sendiri).",
+      "question": "Which side of Bromo should we stay on, and which hotels do you recommend?",
+      "answer": "- We recommend staying on the Probolinggo side of Bromo, as the route is more efficient and practical for transfers (also for itineraries combining Madakaripura and Bromo).\n- Hotels on the Pasuruan side (e.g. Jambuluwuk Bromo Resort) are less recommended: some roads shown on Google Maps are difficult or unsuitable for tour vehicles, so the driver has to take a long detour.\n- Recommended hotels on the Probolinggo side: Artotel Cabin Bromo, Manis Ae Bromo, Jiwa Jawa Bromo.\n- Manis Ae and Jiwa Jawa are also alternatives if Artotel is full. All of these are in the Bromo area, not Ijen."
+    },
+    {
+      "sourceIds": [
+        "F40"
+      ],
+      "alasan": "Bertentangan dengan keputusan E17/B40 (Jeep dan transport tidak dijual terpisah), dan menjanjikan Blue Fire yang bertentangan dengan C09.",
+      "question": "Can you provide only a Bromo Jeep or local guides for our group or our own driver?",
+      "answer": "- Yes. Large groups can come by their own bus to the meeting point and switch to 4x4 Jeeps we arrange to match the group size.\n- For drivers or partners coming from Bali, we can provide a private 4WD Jeep for the Bromo sunrise, an English-speaking local guide for the Ijen hike (including Blue Fire and the crater lake, subject to national park conditions), and a local guide for Tumpak Sewu if needed."
+    }
+  ],
+  "disunting": [
+    {
+      "id": "B21",
+      "kalimatDibuang": "- A 4D3N Surabaya-Bromo-Madakaripura-Ijen-Surabaya tour is also available as an alternative.",
+      "alasan": "Ambigu: tidak jelas alternatif untuk permintaan yang mana."
+    },
+    {
+      "id": "F12",
+      "kalimatDibuang": "(including the Seruni-Kingkong Hill sunrise point trek, which has no crater)",
+      "alasan": "Merujuk trek alternatif saat kawah Bromo ditutup (kondisi sementara)."
+    },
+    {
+      "id": "A16",
+      "kalimatDibuang": "Payment is due within 24 hours of the booking being created.",
+      "alasan": "Tenggat 24 jam hanya disimpulkan dari jam pembuatan booking, tidak pernah dinyatakan."
+    },
+    {
+      "id": "G04",
+      "kalimatDibuang": "- This also applies if you cannot make it because of a flight disruption.",
+      "alasan": "Klaim dari sebagian staf saja, bukan aturan yang disepakati."
+    }
+  ]
+}

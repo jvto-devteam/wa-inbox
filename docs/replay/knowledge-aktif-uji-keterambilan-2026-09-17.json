@@ -1,0 +1,5157 @@
+[
+  {
+    "sumber": "MEDICAL SCREENING",
+    "sourceId": "cmtwatnwk0004auahopy8s77p",
+    "versi": 1,
+    "review": false,
+    "index": 0,
+    "question": "Is a medical screening required before the Ijen hike?",
+    "topics": [
+      "destination_readiness"
+    ],
+    "tags": [],
+    "topikGiliran": "destination_readiness",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "INCLUSIONS",
+    "sourceId": "cmtwato110006auah8vnxog1u",
+    "versi": 1,
+    "review": false,
+    "index": 0,
+    "question": "What's included in the tour package?",
+    "topics": [
+      "inclusions"
+    ],
+    "tags": [],
+    "topikGiliran": "inclusions",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "EXCLUSIONS",
+    "sourceId": "cmtwato5h0008auahgwvcd5k4",
+    "versi": 1,
+    "review": false,
+    "index": 0,
+    "question": "What's not included in the tour package?",
+    "topics": [
+      "inclusions"
+    ],
+    "tags": [],
+    "topikGiliran": "inclusions",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "WHAT TO BRING",
+    "sourceId": "cmtwatodw000cauah6t8o1g4y",
+    "versi": 1,
+    "review": false,
+    "index": 0,
+    "question": "What should we bring or pack for the Bromo and Ijen tour?",
+    "topics": [
+      "destination_readiness"
+    ],
+    "tags": [],
+    "topikGiliran": "destination_readiness",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "DESTINATIONS",
+    "sourceId": "cmtwatoqc000iauah7mm7xiha",
+    "versi": 1,
+    "review": false,
+    "index": 0,
+    "question": "What destinations do you offer tours to?",
+    "topics": [
+      "general"
+    ],
+    "tags": [],
+    "topikGiliran": "general",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 6
+  },
+  {
+    "sumber": "PHYSICAL DIFFICULTY",
+    "sourceId": "cmtwatoma000gauahj2ox96y9",
+    "versi": 1,
+    "review": false,
+    "index": 0,
+    "question": "How physically difficult is the Ijen hike compared to Bromo?",
+    "topics": [
+      "destination_readiness"
+    ],
+    "tags": [],
+    "topikGiliran": "destination_readiness",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "BEST TIME",
+    "sourceId": "cmtwatoi8000eauah27jdvjnv",
+    "versi": 2,
+    "review": false,
+    "index": 0,
+    "question": "What's the best time of year to visit for Blue Fire?",
+    "topics": [
+      "blue_fire",
+      "destination_readiness"
+    ],
+    "tags": [],
+    "topikGiliran": "blue_fire",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 5
+  },
+  {
+    "sumber": "BLUE FIRE",
+    "sourceId": "cmtwatnsg0002auahiqdp9wji",
+    "versi": 2,
+    "review": false,
+    "index": 0,
+    "question": "Can we see the Blue Fire at Ijen, and is it guaranteed?",
+    "topics": [
+      "blue_fire"
+    ],
+    "tags": [],
+    "topikGiliran": "blue_fire",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 5
+  },
+  {
+    "sumber": "PAYMENT",
+    "sourceId": "cmtwato9n000aauaho8wcsxiz",
+    "versi": 2,
+    "review": false,
+    "index": 0,
+    "question": "How much is the deposit, and when is the balance due?",
+    "topics": [
+      "payment"
+    ],
+    "tags": [],
+    "topikGiliran": "payment",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "DESTINATIONS & CONDITIONS (review 2026-09)",
+    "sourceId": "cmu59vebn000k3cah6nzkqfn8",
+    "versi": 1,
+    "review": true,
+    "index": 0,
+    "question": "Which sunrise viewpoint do you use at Bromo - King Kong Hill, Seruni Point or Mentigen? How far is the walk?",
+    "topics": [
+      "destination_readiness"
+    ],
+    "tags": [
+      "king kong hill",
+      "kingkong",
+      "seruni point",
+      "mentigen",
+      "sunrise viewpoint",
+      "bromo sunrise",
+      "steps",
+      "walk",
+      "viewpoint"
+    ],
+    "topikGiliran": "destination_readiness",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "DESTINATIONS & CONDITIONS (review 2026-09)",
+    "sourceId": "cmu59vebn000k3cah6nzkqfn8",
+    "versi": 1,
+    "review": true,
+    "index": 1,
+    "question": "The destination is closed right now. Should I change or cancel my trip?",
+    "topics": [
+      "destination_readiness",
+      "cancellation"
+    ],
+    "tags": [
+      "closed",
+      "closure",
+      "reopen",
+      "hold trip",
+      "postpone",
+      "change date",
+      "cancel",
+      "wait",
+      "alternative itinerary"
+    ],
+    "topikGiliran": "cancellation",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "DESTINATIONS & CONDITIONS (review 2026-09)",
+    "sourceId": "cmu59vebn000k3cah6nzkqfn8",
+    "versi": 1,
+    "review": true,
+    "index": 2,
+    "question": "Is there a place to change clothes at Madakaripura waterfall?",
+    "topics": [
+      "destination_readiness"
+    ],
+    "tags": [
+      "madakaripura",
+      "change clothes",
+      "toilet",
+      "changing room",
+      "restroom",
+      "wet clothes"
+    ],
+    "topikGiliran": "destination_readiness",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "DESTINATIONS & CONDITIONS (review 2026-09)",
+    "sourceId": "cmu59vebn000k3cah6nzkqfn8",
+    "versi": 1,
+    "review": true,
+    "index": 3,
+    "question": "Can I see Mount Semeru from Tumpak Sewu? What is Teras Semeru?",
+    "topics": [
+      "destination_readiness"
+    ],
+    "tags": [
+      "semeru",
+      "mount semeru",
+      "tumpak sewu",
+      "teras semeru",
+      "view",
+      "viewpoint",
+      "panorama",
+      "see the volcano"
+    ],
+    "topikGiliran": "destination_readiness",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "DESTINATIONS & CONDITIONS (review 2026-09)",
+    "sourceId": "cmu59vebn000k3cah6nzkqfn8",
+    "versi": 1,
+    "review": true,
+    "index": 4,
+    "question": "What is the weather like? Is it rainy season, and will rain or fog affect the tour?",
+    "topics": [
+      "destination_readiness"
+    ],
+    "tags": [
+      "weather",
+      "rain",
+      "rainy season",
+      "dry season",
+      "fog",
+      "cloudy",
+      "clear sky",
+      "december",
+      "monsoon"
+    ],
+    "topikGiliran": "general",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "DESTINATIONS & CONDITIONS (review 2026-09)",
+    "sourceId": "cmu59vebn000k3cah6nzkqfn8",
+    "versi": 1,
+    "review": true,
+    "index": 5,
+    "question": "Who decides whether Bromo or Ijen is open or closed? Can we be the first visitors at Ijen?",
+    "topics": [
+      "destination_readiness"
+    ],
+    "tags": [
+      "open",
+      "closed",
+      "national park",
+      "authorities",
+      "regulations",
+      "ijen opening time",
+      "first visitors",
+      "safety"
+    ],
+    "topikGiliran": "destination_readiness",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "DESTINATIONS & CONDITIONS (review 2026-09)",
+    "sourceId": "cmu59vebn000k3cah6nzkqfn8",
+    "versi": 1,
+    "review": true,
+    "index": 6,
+    "question": "What time does Madakaripura close, and when can we visit it on the tour?",
+    "topics": [
+      "destination_readiness"
+    ],
+    "tags": [
+      "madakaripura",
+      "closing time",
+      "opening hours",
+      "what time",
+      "afternoon",
+      "visit time",
+      "tumpak sewu",
+      "flight from surabaya"
+    ],
+    "topikGiliran": "destination_readiness",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "DESTINATIONS & CONDITIONS (review 2026-09)",
+    "sourceId": "cmu59vebn000k3cah6nzkqfn8",
+    "versi": 1,
+    "review": true,
+    "index": 7,
+    "question": "Is Tumpak Sewu crowded? What time is best to go?",
+    "topics": [
+      "destination_readiness"
+    ],
+    "tags": [
+      "tumpak sewu",
+      "crowded",
+      "crowds",
+      "busy",
+      "best time",
+      "early morning",
+      "tourists"
+    ],
+    "topikGiliran": "destination_readiness",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "PRICING RULES (review 2026-09)",
+    "sourceId": "cmu59ve6w000i3cahaytvh6lo",
+    "versi": 1,
+    "review": true,
+    "index": 0,
+    "question": "Can you give a discount? Why is a private tour more expensive?",
+    "topics": [
+      "price",
+      "private_tour"
+    ],
+    "tags": [
+      "discount",
+      "cheaper",
+      "negotiate",
+      "best price",
+      "too expensive",
+      "why expensive",
+      "shared tour",
+      "lower price"
+    ],
+    "topikGiliran": "private_tour",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "PRICING RULES (review 2026-09)",
+    "sourceId": "cmu59ve6w000i3cahaytvh6lo",
+    "versi": 1,
+    "review": true,
+    "index": 1,
+    "question": "Is the price lower if we book our own hotels?",
+    "topics": [
+      "price",
+      "hotel"
+    ],
+    "tags": [
+      "own hotel",
+      "without hotel",
+      "book my own hotel",
+      "reduction",
+      "discount",
+      "no accommodation",
+      "cheaper"
+    ],
+    "topikGiliran": "price",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "PRICING RULES (review 2026-09)",
+    "sourceId": "cmu59ve6w000i3cahaytvh6lo",
+    "versi": 1,
+    "review": true,
+    "index": 2,
+    "question": "Why is the price different for Indonesians and foreigners?",
+    "topics": [
+      "price"
+    ],
+    "tags": [
+      "foreigner price",
+      "indonesian price",
+      "local price",
+      "different price",
+      "entrance fee",
+      "tourist price",
+      "kitas"
+    ],
+    "topikGiliran": "price",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "PRICING RULES (review 2026-09)",
+    "sourceId": "cmu59ve6w000i3cahaytvh6lo",
+    "versi": 1,
+    "review": true,
+    "index": 3,
+    "question": "Is the price per person, and why is it higher than the 'from' price on your website?",
+    "topics": [
+      "price"
+    ],
+    "tags": [
+      "price per person",
+      "from price",
+      "starting price",
+      "group size",
+      "how much",
+      "price different",
+      "cheaper for groups",
+      "website price"
+    ],
+    "topikGiliran": "price",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "PRICING RULES (review 2026-09)",
+    "sourceId": "cmu59ve6w000i3cahaytvh6lo",
+    "versi": 1,
+    "review": true,
+    "index": 4,
+    "question": "I'm travelling alone. Is there a price for a solo traveller, and is the tour still private?",
+    "topics": [
+      "price",
+      "private_tour"
+    ],
+    "tags": [
+      "solo",
+      "alone",
+      "one person",
+      "solo traveler",
+      "single traveller",
+      "join group",
+      "private"
+    ],
+    "topikGiliran": "price",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "PRICING RULES (review 2026-09)",
+    "sourceId": "cmu59ve6w000i3cahaytvh6lo",
+    "versi": 1,
+    "review": true,
+    "index": 5,
+    "question": "Do large groups get a free place?",
+    "topics": [
+      "price"
+    ],
+    "tags": [
+      "free seat",
+      "foc",
+      "free of charge",
+      "large group",
+      "group discount",
+      "tour leader"
+    ],
+    "topikGiliran": "general",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "PRICING RULES (review 2026-09)",
+    "sourceId": "cmu59ve6w000i3cahaytvh6lo",
+    "versi": 1,
+    "review": true,
+    "index": 6,
+    "question": "Can you quote just a private car or Jeep without the tour package?",
+    "topics": [
+      "price",
+      "vehicle"
+    ],
+    "tags": [
+      "transport only",
+      "car only",
+      "jeep only",
+      "private driver",
+      "car rental",
+      "quote",
+      "without package"
+    ],
+    "topikGiliran": "vehicle",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "GENERAL",
+    "sourceId": "cmtwatnnt0000auahjvtr6j3b",
+    "versi": 3,
+    "review": false,
+    "index": 0,
+    "question": "Are your tours private, and where do they depart from?",
+    "topics": [
+      "inclusions",
+      "price",
+      "private_tour",
+      "vehicle",
+      "rooming",
+      "hotel",
+      "route_endpoint",
+      "destination_readiness",
+      "booking",
+      "payment",
+      "cancellation",
+      "blue_fire",
+      "greeting",
+      "general"
+    ],
+    "tags": [
+      "pickup",
+      "pick up",
+      "malang",
+      "probolinggo",
+      "departure",
+      "depart from",
+      "private tour",
+      "english guide"
+    ],
+    "topikGiliran": "private_tour",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "ACCOMMODATION (review 2026-09)",
+    "sourceId": "cmu59vdo3000a3cah7aif7jvu",
+    "versi": 2,
+    "review": true,
+    "index": 0,
+    "question": "What happens if the hotel in our package is fully booked?",
+    "topics": [
+      "hotel",
+      "booking"
+    ],
+    "tags": [
+      "hotel full",
+      "fully booked",
+      "replacement hotel",
+      "alternative hotel",
+      "hotel availability",
+      "similar hotel",
+      "substitute",
+      "last minute"
+    ],
+    "topikGiliran": "hotel",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "ACCOMMODATION (review 2026-09)",
+    "sourceId": "cmu59vdo3000a3cah7aif7jvu",
+    "versi": 2,
+    "review": true,
+    "index": 1,
+    "question": "Can we book our own hotels and get a discount on the tour price?",
+    "topics": [
+      "hotel",
+      "price",
+      "booking"
+    ],
+    "tags": [
+      "book own hotel",
+      "own accommodation",
+      "without hotel",
+      "hotel discount",
+      "reduce price",
+      "deduction",
+      "deposit",
+      "homestay"
+    ],
+    "topikGiliran": "price",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "ACCOMMODATION (review 2026-09)",
+    "sourceId": "cmu59vdo3000a3cah7aif7jvu",
+    "versi": 2,
+    "review": true,
+    "index": 2,
+    "question": "Do the hotels have air conditioning, WiFi, soap and a hairdryer?",
+    "topics": [
+      "hotel"
+    ],
+    "tags": [
+      "air conditioning",
+      "ac",
+      "wifi",
+      "internet",
+      "soap",
+      "toiletries",
+      "hairdryer",
+      "hotel facilities",
+      "amenities"
+    ],
+    "topikGiliran": "hotel",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "ACCOMMODATION (review 2026-09)",
+    "sourceId": "cmu59vdo3000a3cah7aif7jvu",
+    "versi": 2,
+    "review": true,
+    "index": 3,
+    "question": "Which hotels are used on the 3D2N Tumpak Sewu & Bromo tour from Surabaya?",
+    "topics": [
+      "hotel"
+    ],
+    "tags": [
+      "tumpak sewu",
+      "bromo",
+      "3d2n",
+      "3 days",
+      "surabaya",
+      "which hotel",
+      "artha cottage",
+      "joglo kecombrang"
+    ],
+    "topikGiliran": "hotel",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "ACCOMMODATION (review 2026-09)",
+    "sourceId": "cmu59vdo3000a3cah7aif7jvu",
+    "versi": 2,
+    "review": true,
+    "index": 4,
+    "question": "I booked through Klook. Which hotels will we stay in?",
+    "topics": [
+      "hotel",
+      "booking"
+    ],
+    "tags": [
+      "klook",
+      "klook booking",
+      "which hotel",
+      "voucher",
+      "accommodation",
+      "hotel name"
+    ],
+    "topikGiliran": "hotel",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "ACCOMMODATION (review 2026-09)",
+    "sourceId": "cmu59vdo3000a3cah7aif7jvu",
+    "versi": 2,
+    "review": true,
+    "index": 5,
+    "question": "Do the rooms have a private bathroom?",
+    "topics": [
+      "hotel",
+      "rooming"
+    ],
+    "tags": [
+      "private bathroom",
+      "en-suite",
+      "ensuite",
+      "shared bathroom",
+      "bathroom",
+      "private room",
+      "toilet"
+    ],
+    "topikGiliran": "rooming",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 4
+  },
+  {
+    "sumber": "ACCOMMODATION (review 2026-09)",
+    "sourceId": "cmu59vdo3000a3cah7aif7jvu",
+    "versi": 2,
+    "review": true,
+    "index": 6,
+    "question": "What are the hotel check-in and check-out times?",
+    "topics": [
+      "hotel"
+    ],
+    "tags": [
+      "check-in",
+      "check in time",
+      "check-out",
+      "check out time",
+      "early check in",
+      "banyuwangi",
+      "room ready"
+    ],
+    "topikGiliran": "hotel",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "ACCOMMODATION (review 2026-09)",
+    "sourceId": "cmu59vdo3000a3cah7aif7jvu",
+    "versi": 2,
+    "review": true,
+    "index": 7,
+    "question": "What hotel address should I put on my visa application?",
+    "topics": [
+      "hotel"
+    ],
+    "tags": [
+      "hotel address",
+      "visa",
+      "visa application",
+      "arrival card",
+      "address in indonesia",
+      "where staying"
+    ],
+    "topikGiliran": "hotel",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "ACCOMMODATION (review 2026-09)",
+    "sourceId": "cmu59vdo3000a3cah7aif7jvu",
+    "versi": 2,
+    "review": true,
+    "index": 8,
+    "question": "Where should we stay in Surabaya the night before the tour?",
+    "topics": [
+      "hotel",
+      "route_endpoint"
+    ],
+    "tags": [
+      "surabaya hotel",
+      "night before",
+      "juanda",
+      "airport hotel",
+      "where to stay",
+      "stay in surabaya",
+      "before tour"
+    ],
+    "topikGiliran": "hotel",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "ACCOMMODATION (review 2026-09)",
+    "sourceId": "cmu59vdo3000a3cah7aif7jvu",
+    "versi": 2,
+    "review": true,
+    "index": 9,
+    "question": "Can we upgrade our hotel, especially in Bromo, and how much does it cost?",
+    "topics": [
+      "hotel",
+      "price"
+    ],
+    "tags": [
+      "upgrade",
+      "hotel upgrade",
+      "better hotel",
+      "luxury hotel",
+      "bromo hotel",
+      "extra cost",
+      "service fee",
+      "balance"
+    ],
+    "topikGiliran": "price",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "ACCOMMODATION (review 2026-09)",
+    "sourceId": "cmu59vdo3000a3cah7aif7jvu",
+    "versi": 2,
+    "review": true,
+    "index": 10,
+    "question": "Where can I see the hotel names and photos for the tour?",
+    "topics": [
+      "hotel"
+    ],
+    "tags": [
+      "hotel name",
+      "hotel photos",
+      "which hotel",
+      "accommodation",
+      "pictures",
+      "package page",
+      "website"
+    ],
+    "topikGiliran": "hotel",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "ACCOMMODATION (review 2026-09)",
+    "sourceId": "cmu59vdo3000a3cah7aif7jvu",
+    "versi": 2,
+    "review": true,
+    "index": 11,
+    "question": "How are rooms arranged for a group of 5 people?",
+    "topics": [
+      "rooming"
+    ],
+    "tags": [
+      "5 people",
+      "five",
+      "room arrangement",
+      "triple room",
+      "extra bed",
+      "twin room",
+      "own bed",
+      "extra room",
+      "rooms"
+    ],
+    "topikGiliran": "rooming",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 4
+  },
+  {
+    "sumber": "ACCOMMODATION (review 2026-09)",
+    "sourceId": "cmu59vdo3000a3cah7aif7jvu",
+    "versi": 2,
+    "review": true,
+    "index": 12,
+    "question": "We leave very early for Ijen. Can we get breakfast?",
+    "topics": [
+      "hotel",
+      "inclusions",
+      "destination_readiness"
+    ],
+    "tags": [
+      "breakfast",
+      "breakfast box",
+      "ijen",
+      "early morning",
+      "packed breakfast",
+      "food"
+    ],
+    "topikGiliran": "destination_readiness",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "ACCOMMODATION (review 2026-09)",
+    "sourceId": "cmu59vdo3000a3cah7aif7jvu",
+    "versi": 2,
+    "review": true,
+    "index": 13,
+    "question": "Can you book ARTOTEL Cabin Bromo or Bobocabin Ijen for us?",
+    "topics": [
+      "hotel",
+      "booking",
+      "destination_readiness"
+    ],
+    "tags": [
+      "artotel",
+      "artotel cabin",
+      "bobocabin",
+      "cabin",
+      "book hotel",
+      "preferred hotel",
+      "reservation"
+    ],
+    "topikGiliran": "destination_readiness",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "ADD-ONS (review 2026-09)",
+    "sourceId": "cmu59veq7000q3cah0rp92s90",
+    "versi": 2,
+    "review": true,
+    "index": 0,
+    "question": "Can you arrange a private transfer to Yogyakarta after the tour?",
+    "topics": [
+      "route_endpoint",
+      "vehicle",
+      "private_tour"
+    ],
+    "tags": [
+      "yogyakarta",
+      "jogja",
+      "private transfer",
+      "after the tour",
+      "drop off",
+      "transport",
+      "yogya"
+    ],
+    "topikGiliran": "private_tour",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "ADD-ONS (review 2026-09)",
+    "sourceId": "cmu59veq7000q3cah0rp92s90",
+    "versi": 2,
+    "review": true,
+    "index": 1,
+    "question": "Is an airport transfer included if it is outside the tour dates?",
+    "topics": [
+      "inclusions",
+      "route_endpoint"
+    ],
+    "tags": [
+      "airport transfer",
+      "airport pickup",
+      "extra day",
+      "before the tour",
+      "after the tour",
+      "separate cost"
+    ],
+    "topikGiliran": "inclusions",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "ADD-ONS (review 2026-09)",
+    "sourceId": "cmu59veq7000q3cah0rp92s90",
+    "versi": 2,
+    "review": true,
+    "index": 2,
+    "question": "Do I need to book the Bali hotel transfer in advance, and how does it work?",
+    "topics": [
+      "route_endpoint",
+      "booking",
+      "hotel"
+    ],
+    "tags": [
+      "bali transfer",
+      "gilimanuk",
+      "jimbaran",
+      "kuta",
+      "bali hotel",
+      "drop off",
+      "add later",
+      "bali driver"
+    ],
+    "topikGiliran": "hotel",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "ADD-ONS (review 2026-09)",
+    "sourceId": "cmu59veq7000q3cah0rp92s90",
+    "versi": 2,
+    "review": true,
+    "index": 3,
+    "question": "Can we ride a horse at Bromo? How much does it cost?",
+    "topics": [
+      "inclusions",
+      "price"
+    ],
+    "tags": [
+      "horse",
+      "horse ride",
+      "horse riding",
+      "bromo",
+      "cost",
+      "cash",
+      "how much"
+    ],
+    "topikGiliran": "price",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "ADD-ONS (review 2026-09)",
+    "sourceId": "cmu59veq7000q3cah0rp92s90",
+    "versi": 2,
+    "review": true,
+    "index": 4,
+    "question": "Can I buy my own new gas mask for Ijen?",
+    "topics": [
+      "inclusions",
+      "price",
+      "destination_readiness"
+    ],
+    "tags": [
+      "gas mask",
+      "new mask",
+      "buy mask",
+      "own mask",
+      "ijen",
+      "mask price"
+    ],
+    "topikGiliran": "destination_readiness",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "ADD-ONS (review 2026-09)",
+    "sourceId": "cmu59veq7000q3cah0rp92s90",
+    "versi": 2,
+    "review": true,
+    "index": 5,
+    "question": "Can I add rafting or other activities that are not in the package?",
+    "topics": [
+      "inclusions",
+      "private_tour"
+    ],
+    "tags": [
+      "rafting",
+      "pekalen",
+      "extra activity",
+      "add activity",
+      "white water",
+      "not included",
+      "pay separately"
+    ],
+    "topikGiliran": "general",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "ADD-ONS (review 2026-09)",
+    "sourceId": "cmu59veq7000q3cah0rp92s90",
+    "versi": 2,
+    "review": true,
+    "index": 6,
+    "question": "How much is Madakaripura, and what does the add-on include?",
+    "topics": [
+      "price",
+      "inclusions"
+    ],
+    "tags": [
+      "madakaripura",
+      "add-on",
+      "entrance ticket",
+      "local guide",
+      "ojek",
+      "how much",
+      "checkout"
+    ],
+    "topikGiliran": "price",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "BOOKING & PAYMENT DETAILS (review 2026-09)",
+    "sourceId": "cmu59vddi00063cahsiducq6q",
+    "versi": 2,
+    "review": true,
+    "index": 0,
+    "question": "I've made the bank transfer. What happens next, do I need to send proof of payment?",
+    "topics": [
+      "payment",
+      "booking"
+    ],
+    "tags": [
+      "bank transfer",
+      "proof of payment",
+      "transfer receipt",
+      "payment proof",
+      "confirmation",
+      "receipt",
+      "sent the money",
+      "transferred"
+    ],
+    "topikGiliran": "payment",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "BOOKING & PAYMENT DETAILS (review 2026-09)",
+    "sourceId": "cmu59vddi00063cahsiducq6q",
+    "versi": 2,
+    "review": true,
+    "index": 1,
+    "question": "My booking says pending / awaiting payment. How long do I have to pay, and what if the payment link expired?",
+    "topics": [
+      "booking",
+      "payment"
+    ],
+    "tags": [
+      "pending",
+      "awaiting payment",
+      "payment link",
+      "link expired",
+      "payment deadline",
+      "24 hours",
+      "not confirmed",
+      "expired"
+    ],
+    "topikGiliran": "payment",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "BOOKING & PAYMENT DETAILS (review 2026-09)",
+    "sourceId": "cmu59vddi00063cahsiducq6q",
+    "versi": 2,
+    "review": true,
+    "index": 2,
+    "question": "What are your bank details for an international transfer? Do you have a SWIFT code or a WiseTag?",
+    "topics": [
+      "payment"
+    ],
+    "tags": [
+      "bank details",
+      "account number",
+      "swift code",
+      "bca",
+      "beneficiary",
+      "wisetag",
+      "bank address",
+      "international transfer"
+    ],
+    "topikGiliran": "general",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "BOOKING & PAYMENT DETAILS (review 2026-09)",
+    "sourceId": "cmu59vddi00063cahsiducq6q",
+    "versi": 2,
+    "review": true,
+    "index": 3,
+    "question": "Can I pay the remaining balance by credit card? Can you send me a card payment link?",
+    "topics": [
+      "payment"
+    ],
+    "tags": [
+      "card payment link",
+      "credit card",
+      "debit card",
+      "pay balance",
+      "remaining balance",
+      "new link",
+      "partially paid",
+      "resend link"
+    ],
+    "topikGiliran": "payment",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "BOOKING & PAYMENT DETAILS (review 2026-09)",
+    "sourceId": "cmu59vddi00063cahsiducq6q",
+    "versi": 2,
+    "review": true,
+    "index": 4,
+    "question": "I received a payment reminder but I've already paid. Should I ignore it?",
+    "topics": [
+      "payment"
+    ],
+    "tags": [
+      "reminder",
+      "payment reminder",
+      "already paid",
+      "ignore",
+      "email",
+      "balance",
+      "paid in full",
+      "cash"
+    ],
+    "topikGiliran": "payment",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "BOOKING & PAYMENT DETAILS (review 2026-09)",
+    "sourceId": "cmu59vddi00063cahsiducq6q",
+    "versi": 2,
+    "review": true,
+    "index": 5,
+    "question": "Is there a fee for paying by credit card or QR?",
+    "topics": [
+      "payment"
+    ],
+    "tags": [
+      "card fee",
+      "credit card fee",
+      "surcharge",
+      "processing fee",
+      "qr",
+      "3.4%",
+      "extra charge",
+      "bank transfer"
+    ],
+    "topikGiliran": "payment",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "BOOKING & PAYMENT DETAILS (review 2026-09)",
+    "sourceId": "cmu59vddi00063cahsiducq6q",
+    "versi": 2,
+    "review": true,
+    "index": 6,
+    "question": "My card payment failed / my card was declined. What should I do?",
+    "topics": [
+      "payment"
+    ],
+    "tags": [
+      "card declined",
+      "payment failed",
+      "card rejected",
+      "error",
+      "amex",
+      "american express",
+      "visa",
+      "mastercard",
+      "card not working"
+    ],
+    "topikGiliran": "payment",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "BOOKING & PAYMENT DETAILS (review 2026-09)",
+    "sourceId": "cmu59vddi00063cahsiducq6q",
+    "versi": 2,
+    "review": true,
+    "index": 7,
+    "question": "Can I pay in euros or US dollars instead of rupiah?",
+    "topics": [
+      "payment",
+      "price"
+    ],
+    "tags": [
+      "currency",
+      "euro",
+      "usd",
+      "dollars",
+      "rupiah",
+      "idr",
+      "exchange rate",
+      "pay in euros"
+    ],
+    "topikGiliran": "payment",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "BOOKING & PAYMENT DETAILS (review 2026-09)",
+    "sourceId": "cmu59vddi00063cahsiducq6q",
+    "versi": 2,
+    "review": true,
+    "index": 8,
+    "question": "Can we pay in installments, split the payment between group members, or have someone else pay?",
+    "topics": [
+      "payment"
+    ],
+    "tags": [
+      "installments",
+      "split payment",
+      "pay separately",
+      "friend pay",
+      "someone else pay",
+      "partial payment",
+      "wise",
+      "group payment"
+    ],
+    "topikGiliran": "payment",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "BOOKING & PAYMENT DETAILS (review 2026-09)",
+    "sourceId": "cmu59vddi00063cahsiducq6q",
+    "versi": 2,
+    "review": true,
+    "index": 9,
+    "question": "Where can I see my itinerary, pickup details and hotel information after booking?",
+    "topics": [
+      "booking",
+      "hotel"
+    ],
+    "tags": [
+      "trip dashboard",
+      "my booking",
+      "itinerary",
+      "pickup details",
+      "accommodation",
+      "trip updates",
+      "dashboard",
+      "booking details"
+    ],
+    "topikGiliran": "hotel",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "BOOKING & PAYMENT DETAILS (review 2026-09)",
+    "sourceId": "cmu59vddi00063cahsiducq6q",
+    "versi": 2,
+    "review": true,
+    "index": 10,
+    "question": "Can you give me an exact price or send a quotation by email?",
+    "topics": [
+      "price",
+      "booking"
+    ],
+    "tags": [
+      "quote",
+      "quotation",
+      "exact price",
+      "how much",
+      "email",
+      "number of people",
+      "travel dates",
+      "price for"
+    ],
+    "topikGiliran": "price",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "BOOKING & PAYMENT DETAILS (review 2026-09)",
+    "sourceId": "cmu59vddi00063cahsiducq6q",
+    "versi": 2,
+    "review": true,
+    "index": 11,
+    "question": "We added something after booking. How do we pay for extra add-ons or changes?",
+    "topics": [
+      "payment",
+      "inclusions"
+    ],
+    "tags": [
+      "add-on",
+      "extra cost",
+      "additional charge",
+      "pay cash",
+      "change fee",
+      "after booking",
+      "extra transfer",
+      "during tour"
+    ],
+    "topikGiliran": "payment",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "BOOKING & PAYMENT DETAILS (review 2026-09)",
+    "sourceId": "cmu59vddi00063cahsiducq6q",
+    "versi": 2,
+    "review": true,
+    "index": 12,
+    "question": "How far in advance should we book? Can we book a tour for tomorrow?",
+    "topics": [
+      "booking"
+    ],
+    "tags": [
+      "book tomorrow",
+      "last minute",
+      "how early",
+      "advance booking",
+      "availability",
+      "short notice",
+      "when to book",
+      "available"
+    ],
+    "topikGiliran": "booking",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "BOOKING & PAYMENT DETAILS (review 2026-09)",
+    "sourceId": "cmu59vddi00063cahsiducq6q",
+    "versi": 2,
+    "review": true,
+    "index": 13,
+    "question": "Can I book your Tumpak Sewu & Bromo tour on Klook?",
+    "topics": [
+      "booking",
+      "destination_readiness"
+    ],
+    "tags": [
+      "klook",
+      "booked on klook",
+      "third party",
+      "official website",
+      "tumpak sewu",
+      "bromo",
+      "book online"
+    ],
+    "topikGiliran": "destination_readiness",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "BOOKING & PAYMENT DETAILS (review 2026-09)",
+    "sourceId": "cmu59vddi00063cahsiducq6q",
+    "versi": 2,
+    "review": true,
+    "index": 14,
+    "question": "Our group includes Indonesian citizens and foreigners. How do we book with the different prices?",
+    "topics": [
+      "booking",
+      "price"
+    ],
+    "tags": [
+      "indonesian citizen",
+      "local price",
+      "mixed group",
+      "indonesian",
+      "price difference",
+      "refund",
+      "foreigners"
+    ],
+    "topikGiliran": "price",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "BOOKING & PAYMENT DETAILS (review 2026-09)",
+    "sourceId": "cmu59vddi00063cahsiducq6q",
+    "versi": 2,
+    "review": true,
+    "index": 15,
+    "question": "When is the final balance payment due?",
+    "topics": [
+      "payment"
+    ],
+    "tags": [
+      "balance due",
+      "payment deadline",
+      "final payment",
+      "full payment",
+      "when to pay",
+      "days before",
+      "remaining balance",
+      "due date"
+    ],
+    "topikGiliran": "payment",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "BOOKING & PAYMENT DETAILS (review 2026-09)",
+    "sourceId": "cmu59vddi00063cahsiducq6q",
+    "versi": 2,
+    "review": true,
+    "index": 16,
+    "question": "Can I pay the remaining balance in cash when we meet on Day 1?",
+    "topics": [
+      "payment"
+    ],
+    "tags": [
+      "cash",
+      "pay cash",
+      "cash on arrival",
+      "day 1",
+      "pay on arrival",
+      "rupiah",
+      "balance",
+      "cash payment"
+    ],
+    "topikGiliran": "payment",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "BOOKING & PAYMENT DETAILS (review 2026-09)",
+    "sourceId": "cmu59vddi00063cahsiducq6q",
+    "versi": 2,
+    "review": true,
+    "index": 17,
+    "question": "What payment methods do you accept?",
+    "topics": [
+      "payment"
+    ],
+    "tags": [
+      "payment methods",
+      "how to pay",
+      "credit card",
+      "bank transfer",
+      "wise",
+      "revolut",
+      "payoneer",
+      "visa"
+    ],
+    "topikGiliran": "payment",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "BOOKING & PAYMENT DETAILS (review 2026-09)",
+    "sourceId": "cmu59vddi00063cahsiducq6q",
+    "versi": 2,
+    "review": true,
+    "index": 18,
+    "question": "What's the best way to transfer money from abroad?",
+    "topics": [
+      "payment"
+    ],
+    "tags": [
+      "transfer from abroad",
+      "international transfer",
+      "wise",
+      "revolut",
+      "transfer fee",
+      "booking id",
+      "reference",
+      "overseas"
+    ],
+    "topikGiliran": "general",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "BOOKING & PAYMENT DETAILS (review 2026-09)",
+    "sourceId": "cmu59vddi00063cahsiducq6q",
+    "versi": 2,
+    "review": true,
+    "index": 19,
+    "question": "Will I receive an invoice or booking confirmation voucher?",
+    "topics": [
+      "booking",
+      "payment"
+    ],
+    "tags": [
+      "invoice",
+      "voucher",
+      "e-voucher",
+      "booking confirmation",
+      "confirmation email",
+      "receipt",
+      "proof of booking",
+      "email"
+    ],
+    "topikGiliran": "booking",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "BOOKING & PAYMENT DETAILS (review 2026-09)",
+    "sourceId": "cmu59vddi00063cahsiducq6q",
+    "versi": 2,
+    "review": true,
+    "index": 20,
+    "question": "We're booking last minute. Do we need to pay in full, and can we pay by card?",
+    "topics": [
+      "payment",
+      "booking"
+    ],
+    "tags": [
+      "last minute",
+      "full payment",
+      "short notice",
+      "card not available",
+      "bank transfer",
+      "book soon",
+      "days before",
+      "deposit"
+    ],
+    "topikGiliran": "payment",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "CHANGES & CANCELLATION (review 2026-09)",
+    "sourceId": "cmu59vdiz00083cahq0dqlalh",
+    "versi": 2,
+    "review": true,
+    "index": 0,
+    "question": "Bromo is closed. Can we put our trip on hold, postpone it, or reschedule instead of cancelling?",
+    "topics": [
+      "destination_readiness",
+      "cancellation"
+    ],
+    "tags": [
+      "closed",
+      "closure",
+      "postpone",
+      "reschedule",
+      "hold",
+      "new date",
+      "rebook",
+      "bromo closed",
+      "reopen"
+    ],
+    "topikGiliran": "destination_readiness",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "CHANGES & CANCELLATION (review 2026-09)",
+    "sourceId": "cmu59vdiz00083cahq0dqlalh",
+    "versi": 2,
+    "review": true,
+    "index": 1,
+    "question": "How will I receive a refund agreed during the tour?",
+    "topics": [
+      "cancellation",
+      "payment"
+    ],
+    "tags": [
+      "refund",
+      "cash",
+      "during tour",
+      "driver",
+      "guide",
+      "unused",
+      "bank transfer",
+      "refund method"
+    ],
+    "topikGiliran": "cancellation",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "CHANGES & CANCELLATION (review 2026-09)",
+    "sourceId": "cmu59vdiz00083cahq0dqlalh",
+    "versi": 2,
+    "review": true,
+    "index": 2,
+    "question": "Can I skip a destination or activity on my tour and get a refund for that part?",
+    "topics": [
+      "cancellation",
+      "inclusions"
+    ],
+    "tags": [
+      "skip",
+      "skip destination",
+      "refund",
+      "unused",
+      "entrance ticket",
+      "local guide",
+      "partial refund",
+      "not visit"
+    ],
+    "topikGiliran": "cancellation",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "CHANGES & CANCELLATION (review 2026-09)",
+    "sourceId": "cmu59vdiz00083cahq0dqlalh",
+    "versi": 2,
+    "review": true,
+    "index": 3,
+    "question": "I booked through Klook. How do I change, add guests, or cancel my booking?",
+    "topics": [
+      "booking",
+      "cancellation"
+    ],
+    "tags": [
+      "klook",
+      "cancel",
+      "add guests",
+      "change booking",
+      "manage booking",
+      "voucher",
+      "full refund",
+      "operator"
+    ],
+    "topikGiliran": "cancellation",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "CHANGES & CANCELLATION (review 2026-09)",
+    "sourceId": "cmu59vdiz00083cahq0dqlalh",
+    "versi": 2,
+    "review": true,
+    "index": 4,
+    "question": "Will I get official written proof of my travel credit after cancelling?",
+    "topics": [
+      "cancellation"
+    ],
+    "tags": [
+      "credit",
+      "certificate",
+      "proof",
+      "confirmation",
+      "email",
+      "lifetime package credit",
+      "expiry",
+      "travel credit"
+    ],
+    "topikGiliran": "cancellation",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "CHANGES & CANCELLATION (review 2026-09)",
+    "sourceId": "cmu59vdiz00083cahq0dqlalh",
+    "versi": 2,
+    "review": true,
+    "index": 5,
+    "question": "How do I use my travel credit to book a new trip?",
+    "topics": [
+      "cancellation",
+      "booking",
+      "payment"
+    ],
+    "tags": [
+      "use credit",
+      "travel credit",
+      "new trip",
+      "redeem",
+      "rebook",
+      "balance",
+      "new dates",
+      "lifetime credit"
+    ],
+    "topikGiliran": "cancellation",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "CHANGES & CANCELLATION (review 2026-09)",
+    "sourceId": "cmu59vdiz00083cahq0dqlalh",
+    "versi": 2,
+    "review": true,
+    "index": 6,
+    "question": "What details do you need to send my refund by international bank transfer or Wise?",
+    "topics": [
+      "payment",
+      "cancellation"
+    ],
+    "tags": [
+      "refund",
+      "bank transfer",
+      "wise",
+      "swift",
+      "bank details",
+      "account currency",
+      "international transfer",
+      "account holder"
+    ],
+    "topikGiliran": "payment",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "CHANGES & CANCELLATION (review 2026-09)",
+    "sourceId": "cmu59vdiz00083cahq0dqlalh",
+    "versi": 2,
+    "review": true,
+    "index": 7,
+    "question": "Can I add more guests to my booking after I have booked?",
+    "topics": [
+      "booking",
+      "rooming"
+    ],
+    "tags": [
+      "add guests",
+      "extra person",
+      "more people",
+      "add participant",
+      "change booking",
+      "room availability",
+      "additional guest"
+    ],
+    "topikGiliran": "booking",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "CHANGES & CANCELLATION (review 2026-09)",
+    "sourceId": "cmu59vdiz00083cahq0dqlalh",
+    "versi": 2,
+    "review": true,
+    "index": 8,
+    "question": "Can you give me written confirmation of the itinerary change for my insurance claim?",
+    "topics": [
+      "cancellation"
+    ],
+    "tags": [
+      "insurance",
+      "insurance claim",
+      "written confirmation",
+      "itinerary change",
+      "letter",
+      "updated itinerary",
+      "proof"
+    ],
+    "topikGiliran": "general",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "CHANGES & CANCELLATION (review 2026-09)",
+    "sourceId": "cmu59vdiz00083cahq0dqlalh",
+    "versi": 2,
+    "review": true,
+    "index": 9,
+    "question": "If Bromo or Ijen is closed but the tour still goes ahead, how much do we get refunded?",
+    "topics": [
+      "cancellation",
+      "destination_readiness",
+      "price"
+    ],
+    "tags": [
+      "refund",
+      "closed",
+      "closure",
+      "ijen closed",
+      "bromo closed",
+      "unused",
+      "partial refund",
+      "shorten tour",
+      "how much refund"
+    ],
+    "topikGiliran": "price",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "CHANGES & CANCELLATION (review 2026-09)",
+    "sourceId": "cmu59vdiz00083cahq0dqlalh",
+    "versi": 2,
+    "review": true,
+    "index": 10,
+    "question": "One person in our group can't come anymore. Do they get a refund?",
+    "topics": [
+      "cancellation",
+      "price"
+    ],
+    "tags": [
+      "one person cancel",
+      "fewer people",
+      "guest cancel",
+      "refund",
+      "cash refund",
+      "group size",
+      "48 hours",
+      "partial cancellation"
+    ],
+    "topikGiliran": "cancellation",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "CHANGES & CANCELLATION (review 2026-09)",
+    "sourceId": "cmu59vdiz00083cahq0dqlalh",
+    "versi": 2,
+    "review": true,
+    "index": 11,
+    "question": "If I cancel after paying the deposit, do I still have to pay the remaining balance?",
+    "topics": [
+      "cancellation",
+      "payment"
+    ],
+    "tags": [
+      "deposit",
+      "cancel",
+      "remaining balance",
+      "balance due",
+      "refund deposit",
+      "credit",
+      "lifetime credit",
+      "48 hours"
+    ],
+    "topikGiliran": "payment",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "CHANGES & CANCELLATION (review 2026-09)",
+    "sourceId": "cmu59vdiz00083cahq0dqlalh",
+    "versi": 2,
+    "review": true,
+    "index": 12,
+    "question": "What happens if I cancel less than 48 hours before the tour or miss the pickup?",
+    "topics": [
+      "cancellation"
+    ],
+    "tags": [
+      "last minute",
+      "cancel",
+      "48 hours",
+      "no show",
+      "missed pickup",
+      "forfeit",
+      "no refund",
+      "late cancellation",
+      "flight"
+    ],
+    "topikGiliran": "cancellation",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "CHANGES & CANCELLATION (review 2026-09)",
+    "sourceId": "cmu59vdiz00083cahq0dqlalh",
+    "versi": 2,
+    "review": true,
+    "index": 13,
+    "question": "My flight was cancelled or delayed. What should I do about my tour?",
+    "topics": [
+      "cancellation",
+      "booking"
+    ],
+    "tags": [
+      "flight cancelled",
+      "flight delayed",
+      "delay",
+      "missed flight",
+      "reschedule",
+      "new flight",
+      "postpone",
+      "late arrival"
+    ],
+    "topikGiliran": "cancellation",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "CHANGES & CANCELLATION (review 2026-09)",
+    "sourceId": "cmu59vdiz00083cahq0dqlalh",
+    "versi": 2,
+    "review": true,
+    "index": 14,
+    "question": "Can we change the order of the itinerary or the daily departure times?",
+    "topics": [
+      "booking",
+      "route_endpoint"
+    ],
+    "tags": [
+      "change itinerary",
+      "route order",
+      "swap days",
+      "reorder",
+      "departure time",
+      "leave later",
+      "weather",
+      "schedule change"
+    ],
+    "topikGiliran": "general",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "CHANGES & CANCELLATION (review 2026-09)",
+    "sourceId": "cmu59vdiz00083cahq0dqlalh",
+    "versi": 2,
+    "review": true,
+    "index": 15,
+    "question": "Can I change my tour date before I have paid?",
+    "topics": [
+      "booking"
+    ],
+    "tags": [
+      "change date",
+      "new date",
+      "unpaid",
+      "not paid",
+      "rebook",
+      "different date",
+      "reschedule",
+      "before payment"
+    ],
+    "topikGiliran": "general",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "CHANGES & CANCELLATION (review 2026-09)",
+    "sourceId": "cmu59vdiz00083cahq0dqlalh",
+    "versi": 2,
+    "review": true,
+    "index": 16,
+    "question": "If prices go up, is my Lifetime Package Credit still worth the same package? Can I transfer it to someone else?",
+    "topics": [
+      "cancellation",
+      "price"
+    ],
+    "tags": [
+      "credit",
+      "lifetime credit",
+      "price increase",
+      "locked price",
+      "transfer credit",
+      "someone else",
+      "travel credit",
+      "price change"
+    ],
+    "topikGiliran": "price",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "HEALTH, AGE & REQUIREMENTS (review 2026-09)",
+    "sourceId": "cmu59velg000o3cahvj2svyvs",
+    "versi": 2,
+    "review": true,
+    "index": 0,
+    "question": "Is there a special price for Indonesian citizens with a KTP? Can an Indonesian join a tourist booking?",
+    "topics": [
+      "price",
+      "booking"
+    ],
+    "tags": [
+      "ktp",
+      "indonesian",
+      "local price",
+      "indonesian citizen",
+      "id card",
+      "resident",
+      "wni",
+      "passport"
+    ],
+    "topikGiliran": "price",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "HEALTH, AGE & REQUIREMENTS (review 2026-09)",
+    "sourceId": "cmu59velg000o3cahvj2svyvs",
+    "versi": 2,
+    "review": true,
+    "index": 1,
+    "question": "Is there a minimum age? Can a 17-year-old join without parents?",
+    "topics": [
+      "private_tour"
+    ],
+    "tags": [
+      "age limit",
+      "minimum age",
+      "teenager",
+      "17 years old",
+      "without parents",
+      "consent letter",
+      "minor",
+      "kids"
+    ],
+    "topikGiliran": "private_tour",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "HEALTH, AGE & REQUIREMENTS (review 2026-09)",
+    "sourceId": "cmu59velg000o3cahvj2svyvs",
+    "versi": 2,
+    "review": true,
+    "index": 2,
+    "question": "When and where is the health check for Ijen?",
+    "topics": [
+      "destination_readiness"
+    ],
+    "tags": [
+      "health check",
+      "medical check",
+      "ijen",
+      "screening",
+      "health certificate",
+      "briefing",
+      "when"
+    ],
+    "topikGiliran": "destination_readiness",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "HEALTH, AGE & REQUIREMENTS (review 2026-09)",
+    "sourceId": "cmu59velg000o3cahvj2svyvs",
+    "versi": 2,
+    "review": true,
+    "index": 3,
+    "question": "What documents do I need to bring or fill in before the tour?",
+    "topics": [
+      "booking",
+      "destination_readiness"
+    ],
+    "tags": [
+      "documents",
+      "passport",
+      "form",
+      "what to bring",
+      "paperwork",
+      "pickup details",
+      "health screening"
+    ],
+    "topikGiliran": "general",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "HEALTH, AGE & REQUIREMENTS (review 2026-09)",
+    "sourceId": "cmu59velg000o3cahvj2svyvs",
+    "versi": 2,
+    "review": true,
+    "index": 4,
+    "question": "What happens if someone gets sick during the trip?",
+    "topics": [
+      "destination_readiness"
+    ],
+    "tags": [
+      "sick",
+      "ill",
+      "hospital",
+      "clinic",
+      "doctor",
+      "not feeling well",
+      "skip ijen",
+      "fever"
+    ],
+    "topikGiliran": "general",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "HEALTH, AGE & REQUIREMENTS (review 2026-09)",
+    "sourceId": "cmu59velg000o3cahvj2svyvs",
+    "versi": 2,
+    "review": true,
+    "index": 5,
+    "question": "I am pregnant. Can I join the tour, and how much walking is involved?",
+    "topics": [
+      "destination_readiness",
+      "price"
+    ],
+    "tags": [
+      "pregnant",
+      "pregnancy",
+      "walking",
+      "trekking",
+      "difficulty",
+      "hike",
+      "fitness"
+    ],
+    "topikGiliran": "price",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "HEALTH, AGE & REQUIREMENTS (review 2026-09)",
+    "sourceId": "cmu59velg000o3cahvj2svyvs",
+    "versi": 2,
+    "review": true,
+    "index": 6,
+    "question": "Should I bring a mask for smoke or air quality?",
+    "topics": [
+      "inclusions"
+    ],
+    "tags": [
+      "mask",
+      "gas mask",
+      "smoke",
+      "air quality",
+      "respirator",
+      "sulfur",
+      "bring"
+    ],
+    "topikGiliran": "general",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "INCLUDED & NOT INCLUDED (review 2026-09)",
+    "sourceId": "cmu59vdxf000e3cahs7n1vd9i",
+    "versi": 2,
+    "review": true,
+    "index": 0,
+    "question": "Is airport pickup or drop-off included if my flight is before or after the tour dates?",
+    "topics": [
+      "inclusions",
+      "route_endpoint"
+    ],
+    "tags": [
+      "airport transfer",
+      "airport pickup",
+      "airport drop off",
+      "extra night",
+      "flight",
+      "surabaya airport",
+      "not included",
+      "before the tour"
+    ],
+    "topikGiliran": "inclusions",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "INCLUDED & NOT INCLUDED (review 2026-09)",
+    "sourceId": "cmu59vdxf000e3cahs7n1vd9i",
+    "versi": 2,
+    "review": true,
+    "index": 1,
+    "question": "Are the gas masks for Ijen clean? Are they reused?",
+    "topics": [
+      "inclusions",
+      "destination_readiness"
+    ],
+    "tags": [
+      "gas mask",
+      "mask",
+      "clean",
+      "hygiene",
+      "sanitised",
+      "filter",
+      "reused",
+      "ijen"
+    ],
+    "topikGiliran": "destination_readiness",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "INCLUDED & NOT INCLUDED (review 2026-09)",
+    "sourceId": "cmu59vdxf000e3cahs7n1vd9i",
+    "versi": 2,
+    "review": true,
+    "index": 2,
+    "question": "What if we want to stop for lunch during the tour?",
+    "topics": [
+      "inclusions"
+    ],
+    "tags": [
+      "lunch",
+      "restaurant",
+      "food",
+      "eat",
+      "stop for lunch",
+      "driver",
+      "meal"
+    ],
+    "topikGiliran": "general",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "INCLUDED & NOT INCLUDED (review 2026-09)",
+    "sourceId": "cmu59vdxf000e3cahs7n1vd9i",
+    "versi": 2,
+    "review": true,
+    "index": 3,
+    "question": "If our Ijen visit changes, do we still get the same meals?",
+    "topics": [
+      "inclusions",
+      "destination_readiness"
+    ],
+    "tags": [
+      "meals",
+      "ijen",
+      "itinerary change",
+      "still included",
+      "breakfast",
+      "change plan",
+      "food"
+    ],
+    "topikGiliran": "destination_readiness",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "INCLUDED & NOT INCLUDED (review 2026-09)",
+    "sourceId": "cmu59vdxf000e3cahs7n1vd9i",
+    "versi": 2,
+    "review": true,
+    "index": 4,
+    "question": "Do you provide waterproof bags?",
+    "topics": [
+      "inclusions"
+    ],
+    "tags": [
+      "waterproof bag",
+      "dry bag",
+      "waterproof",
+      "bag",
+      "provided",
+      "bring"
+    ],
+    "topikGiliran": "general",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "INCLUDED & NOT INCLUDED (review 2026-09)",
+    "sourceId": "cmu59vdxf000e3cahs7n1vd9i",
+    "versi": 2,
+    "review": true,
+    "index": 5,
+    "question": "Will our luggage be carried with us for the whole tour?",
+    "topics": [
+      "inclusions",
+      "vehicle"
+    ],
+    "tags": [
+      "luggage",
+      "baggage",
+      "suitcase",
+      "bags",
+      "carry luggage",
+      "whole trip"
+    ],
+    "topikGiliran": "vehicle",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "INCLUDED & NOT INCLUDED (review 2026-09)",
+    "sourceId": "cmu59vdxf000e3cahs7n1vd9i",
+    "versi": 2,
+    "review": true,
+    "index": 6,
+    "question": "Are there any extra costs, like fuel, tolls, parking or driver fees?",
+    "topics": [
+      "inclusions",
+      "price"
+    ],
+    "tags": [
+      "extra costs",
+      "hidden fees",
+      "fuel",
+      "tolls",
+      "parking",
+      "driver fee",
+      "health certificate",
+      "juanda airport",
+      "included"
+    ],
+    "topikGiliran": "price",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "INCLUDED & NOT INCLUDED (review 2026-09)",
+    "sourceId": "cmu59vdxf000e3cahs7n1vd9i",
+    "versi": 2,
+    "review": true,
+    "index": 7,
+    "question": "Are the entrance tickets and local guide for Tumpak Sewu and Goa Tetes included?",
+    "topics": [
+      "inclusions",
+      "private_tour"
+    ],
+    "tags": [
+      "tumpak sewu",
+      "goa tetes",
+      "entrance ticket",
+      "local guide",
+      "included",
+      "waterfall"
+    ],
+    "topikGiliran": "private_tour",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "INCLUDED & NOT INCLUDED (review 2026-09)",
+    "sourceId": "cmu59vdxf000e3cahs7n1vd9i",
+    "versi": 2,
+    "review": true,
+    "index": 8,
+    "question": "Do we get breakfast before going to Tumpak Sewu?",
+    "topics": [
+      "inclusions",
+      "destination_readiness"
+    ],
+    "tags": [
+      "breakfast",
+      "tumpak sewu",
+      "waterfall",
+      "hotel breakfast",
+      "morning",
+      "what time"
+    ],
+    "topikGiliran": "destination_readiness",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "INCLUDED & NOT INCLUDED (review 2026-09)",
+    "sourceId": "cmu59vdxf000e3cahs7n1vd9i",
+    "versi": 2,
+    "review": true,
+    "index": 9,
+    "question": "Do we need a poncho for the waterfall, and is one provided?",
+    "topics": [
+      "inclusions"
+    ],
+    "tags": [
+      "poncho",
+      "raincoat",
+      "madakaripura",
+      "waterfall",
+      "get wet",
+      "buy"
+    ],
+    "topikGiliran": "general",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "INCLUDED & NOT INCLUDED (review 2026-09)",
+    "sourceId": "cmu59vdxf000e3cahs7n1vd9i",
+    "versi": 2,
+    "review": true,
+    "index": 10,
+    "question": "Do you provide headlamps or flashlights for the hikes?",
+    "topics": [
+      "inclusions",
+      "blue_fire",
+      "destination_readiness"
+    ],
+    "tags": [
+      "headlamp",
+      "flashlight",
+      "torch",
+      "rent",
+      "ijen",
+      "bromo",
+      "hike",
+      "provided"
+    ],
+    "topikGiliran": "destination_readiness",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "INCLUDED & NOT INCLUDED (review 2026-09)",
+    "sourceId": "cmu59vdxf000e3cahs7n1vd9i",
+    "versi": 2,
+    "review": true,
+    "index": 11,
+    "question": "Where does the 3D2N tour from Bali end: back in Bali or in Surabaya?",
+    "topics": [
+      "route_endpoint"
+    ],
+    "tags": [
+      "end point",
+      "finish",
+      "where does it end",
+      "from bali",
+      "back to bali",
+      "surabaya",
+      "ketapang",
+      "drop off"
+    ],
+    "topikGiliran": "route_endpoint",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "OTHER QUESTIONS (review 2026-09)",
+    "sourceId": "cmu59vdsq000c3cah45ejkmf8",
+    "versi": 2,
+    "review": true,
+    "index": 0,
+    "question": "Do we get a free t-shirt with the tour?",
+    "topics": [
+      "inclusions"
+    ],
+    "tags": [
+      "t-shirt",
+      "tshirt",
+      "shirt",
+      "free",
+      "complimentary",
+      "size",
+      "long sleeve",
+      "gift"
+    ],
+    "topikGiliran": "general",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "OTHER QUESTIONS (review 2026-09)",
+    "sourceId": "cmu59vdsq000c3cah45ejkmf8",
+    "versi": 2,
+    "review": true,
+    "index": 1,
+    "question": "Where can I leave a review for your tour?",
+    "topics": [
+      "price"
+    ],
+    "tags": [
+      "review",
+      "google review",
+      "trustpilot",
+      "feedback",
+      "rate",
+      "guide name",
+      "leave a review"
+    ],
+    "topikGiliran": "general",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "OTHER QUESTIONS (review 2026-09)",
+    "sourceId": "cmu59vdsq000c3cah45ejkmf8",
+    "versi": 2,
+    "review": true,
+    "index": 2,
+    "question": "How can we travel to Yogyakarta or other cities before or after the tour?",
+    "topics": [
+      "route_endpoint"
+    ],
+    "tags": [
+      "train",
+      "yogyakarta",
+      "jogja",
+      "bus",
+      "salatiga",
+      "solo",
+      "transfer",
+      "after the tour"
+    ],
+    "topikGiliran": "general",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "OTHER QUESTIONS (review 2026-09)",
+    "sourceId": "cmu59vdsq000c3cah45ejkmf8",
+    "versi": 2,
+    "review": true,
+    "index": 3,
+    "question": "Who founded JVTO?",
+    "topics": [
+      "general"
+    ],
+    "tags": [
+      "founder",
+      "owner",
+      "who runs",
+      "tourism police",
+      "police",
+      "safety",
+      "security",
+      "about you"
+    ],
+    "topikGiliran": "general",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 4
+  },
+  {
+    "sumber": "OTHER QUESTIONS (review 2026-09)",
+    "sourceId": "cmu59vdsq000c3cah45ejkmf8",
+    "versi": 2,
+    "review": true,
+    "index": 4,
+    "question": "I got a payment notification from another WhatsApp number. Can I reply to it?",
+    "topics": [
+      "payment"
+    ],
+    "tags": [
+      "payment notification",
+      "different number",
+      "other number",
+      "payment gateway",
+      "reply",
+      "contact",
+      "official"
+    ],
+    "topikGiliran": "payment",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "OTHER QUESTIONS (review 2026-09)",
+    "sourceId": "cmu59vdsq000c3cah45ejkmf8",
+    "versi": 2,
+    "review": true,
+    "index": 5,
+    "question": "When is peak season?",
+    "topics": [
+      "booking"
+    ],
+    "tags": [
+      "peak season",
+      "high season",
+      "busy",
+      "crowded",
+      "august",
+      "september",
+      "best month"
+    ],
+    "topikGiliran": "general",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 7
+  },
+  {
+    "sumber": "OTHER QUESTIONS (review 2026-09)",
+    "sourceId": "cmu59vdsq000c3cah45ejkmf8",
+    "versi": 2,
+    "review": true,
+    "index": 6,
+    "question": "What is the difference between booking on your website and booking the same tour on Klook?",
+    "topics": [
+      "booking",
+      "inclusions"
+    ],
+    "tags": [
+      "klook",
+      "difference",
+      "website",
+      "compare",
+      "same tour",
+      "medical check",
+      "lunch",
+      "bondowoso"
+    ],
+    "topikGiliran": "booking",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "OTHER QUESTIONS (review 2026-09)",
+    "sourceId": "cmu59vdsq000c3cah45ejkmf8",
+    "versi": 2,
+    "review": true,
+    "index": 7,
+    "question": "What is your Instagram account?",
+    "topics": [
+      "general"
+    ],
+    "tags": [
+      "instagram",
+      "ig",
+      "social media",
+      "official account",
+      "photos"
+    ],
+    "topikGiliran": "general",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 6
+  },
+  {
+    "sumber": "OTHER QUESTIONS (review 2026-09)",
+    "sourceId": "cmu59vdsq000c3cah45ejkmf8",
+    "versi": 2,
+    "review": true,
+    "index": 8,
+    "question": "Where can we exchange money or withdraw Rupiah in Surabaya?",
+    "topics": [
+      "vehicle"
+    ],
+    "tags": [
+      "money changer",
+      "exchange money",
+      "atm",
+      "rupiah",
+      "cash",
+      "usd",
+      "juanda",
+      "airport"
+    ],
+    "topikGiliran": "general",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "OTHER QUESTIONS (review 2026-09)",
+    "sourceId": "cmu59vdsq000c3cah45ejkmf8",
+    "versi": 2,
+    "review": true,
+    "index": 9,
+    "question": "Our flight is affected by volcanic activity. When will flights be back to normal?",
+    "topics": [
+      "destination_readiness"
+    ],
+    "tags": [
+      "flight",
+      "cancelled flight",
+      "volcanic ash",
+      "eruption",
+      "airline",
+      "airport closed",
+      "delay"
+    ],
+    "topikGiliran": "general",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "OTHER QUESTIONS (review 2026-09)",
+    "sourceId": "cmu59vdsq000c3cah45ejkmf8",
+    "versi": 2,
+    "review": true,
+    "index": 10,
+    "question": "Should we tip the driver and guide, and how much?",
+    "topics": [
+      "price"
+    ],
+    "tags": [
+      "tip",
+      "tipping",
+      "gratuity",
+      "driver",
+      "guide",
+      "how much",
+      "cash"
+    ],
+    "topikGiliran": "price",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "OTHER QUESTIONS (review 2026-09)",
+    "sourceId": "cmu59vdsq000c3cah45ejkmf8",
+    "versi": 2,
+    "review": true,
+    "index": 11,
+    "question": "I was quoted a different price on WhatsApp. Which price is correct?",
+    "topics": [
+      "price"
+    ],
+    "tags": [
+      "different price",
+      "price on whatsapp",
+      "quoted price",
+      "website price",
+      "correct price",
+      "wrong price",
+      "cheaper"
+    ],
+    "topikGiliran": "price",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "OTHER QUESTIONS (review 2026-09)",
+    "sourceId": "cmu59vdsq000c3cah45ejkmf8",
+    "versi": 2,
+    "review": true,
+    "index": 12,
+    "question": "What places are worth visiting in Malang and Lumajang?",
+    "topics": [
+      "destination_readiness"
+    ],
+    "tags": [
+      "malang",
+      "lumajang",
+      "things to do",
+      "attractions",
+      "places to visit",
+      "paragliding",
+      "tea plantation",
+      "rainbow village"
+    ],
+    "topikGiliran": "general",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "OUTSIDE OUR SERVICE (review 2026-09)",
+    "sourceId": "cmu59vegn000m3cahrlvefmd2",
+    "versi": 2,
+    "review": true,
+    "index": 0,
+    "question": "Can I just rent a car with a driver, or book transport only between destinations?",
+    "topics": [
+      "vehicle",
+      "private_tour"
+    ],
+    "tags": [
+      "car rental",
+      "rent a car",
+      "driver only",
+      "transport only",
+      "car with driver",
+      "hire driver",
+      "transfer between"
+    ],
+    "topikGiliran": "vehicle",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "OUTSIDE OUR SERVICE (review 2026-09)",
+    "sourceId": "cmu59vegn000m3cahrlvefmd2",
+    "versi": 2,
+    "review": true,
+    "index": 1,
+    "question": "Can I do Bromo, Tumpak Sewu and Ijen in 3 days 2 nights?",
+    "topics": [
+      "private_tour",
+      "destination_readiness"
+    ],
+    "tags": [
+      "3 days",
+      "3d2n",
+      "bromo",
+      "tumpak sewu",
+      "ijen",
+      "4d3n",
+      "all three",
+      "short trip"
+    ],
+    "topikGiliran": "destination_readiness",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "OUTSIDE OUR SERVICE (review 2026-09)",
+    "sourceId": "cmu59vegn000m3cahrlvefmd2",
+    "versi": 2,
+    "review": true,
+    "index": 2,
+    "question": "Can you create a custom multi-day tour exactly as I planned it?",
+    "topics": [
+      "private_tour"
+    ],
+    "tags": [
+      "custom tour",
+      "customize",
+      "tailor made",
+      "own itinerary",
+      "multi day",
+      "personalized",
+      "my plan"
+    ],
+    "topikGiliran": "general",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "OUTSIDE OUR SERVICE (review 2026-09)",
+    "sourceId": "cmu59vegn000m3cahrlvefmd2",
+    "versi": 2,
+    "review": true,
+    "index": 3,
+    "question": "Can you book Jiwa Jawa Bromo hotel for us?",
+    "topics": [
+      "hotel"
+    ],
+    "tags": [
+      "jiwa jawa",
+      "hotel",
+      "book hotel",
+      "agoda",
+      "trip.com",
+      "other hotel",
+      "own hotel"
+    ],
+    "topikGiliran": "hotel",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "OUTSIDE OUR SERVICE (review 2026-09)",
+    "sourceId": "cmu59vegn000m3cahrlvefmd2",
+    "versi": 2,
+    "review": true,
+    "index": 4,
+    "question": "Can I rent water shoes at Madakaripura?",
+    "topics": [
+      "destination_readiness"
+    ],
+    "tags": [
+      "water shoes",
+      "madakaripura",
+      "sandals",
+      "shoes rental",
+      "rent shoes",
+      "footwear",
+      "flip flops"
+    ],
+    "topikGiliran": "destination_readiness",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "OUTSIDE OUR SERVICE (review 2026-09)",
+    "sourceId": "cmu59vegn000m3cahrlvefmd2",
+    "versi": 2,
+    "review": true,
+    "index": 5,
+    "question": "Can you arrange a transfer from Jakarta airport to the train station and book our train tickets?",
+    "topics": [
+      "route_endpoint"
+    ],
+    "tags": [
+      "jakarta",
+      "train",
+      "train ticket",
+      "train station",
+      "airport transfer",
+      "grab",
+      "kai access"
+    ],
+    "topikGiliran": "route_endpoint",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "OUTSIDE OUR SERVICE (review 2026-09)",
+    "sourceId": "cmu59vegn000m3cahrlvefmd2",
+    "versi": 2,
+    "review": true,
+    "index": 6,
+    "question": "Can I take a boat from Surabaya to Bali?",
+    "topics": [
+      "route_endpoint"
+    ],
+    "tags": [
+      "boat",
+      "ship",
+      "surabaya to bali",
+      "ferry",
+      "sea",
+      "cruise"
+    ],
+    "topikGiliran": "route_endpoint",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "OUTSIDE OUR SERVICE (review 2026-09)",
+    "sourceId": "cmu59vegn000m3cahrlvefmd2",
+    "versi": 2,
+    "review": true,
+    "index": 7,
+    "question": "Can I follow the tour car on a rented motorbike?",
+    "topics": [
+      "vehicle"
+    ],
+    "tags": [
+      "motorbike",
+      "scooter",
+      "motorcycle",
+      "rent bike",
+      "follow the car",
+      "ride"
+    ],
+    "topikGiliran": "vehicle",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "PACKAGES & ROUTES (review 2026-09)",
+    "sourceId": "cmu59vcw900003cahnqo5l7sw",
+    "versi": 2,
+    "review": true,
+    "index": 0,
+    "question": "Can we do Tumpak Sewu, Bromo and Ijen in 3 days, or Bromo and Tumpak Sewu in 1 or 2 days?",
+    "topics": [
+      "private_tour",
+      "destination_readiness"
+    ],
+    "tags": [
+      "3 days",
+      "2 days",
+      "one day",
+      "tumpak sewu",
+      "bromo",
+      "ijen",
+      "madakaripura",
+      "combine",
+      "too rushed",
+      "short trip"
+    ],
+    "topikGiliran": "destination_readiness",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "PACKAGES & ROUTES (review 2026-09)",
+    "sourceId": "cmu59vcw900003cahnqo5l7sw",
+    "versi": 2,
+    "review": true,
+    "index": 1,
+    "question": "Can we skip Madakaripura or Papuma Beach in the package? Does the price change?",
+    "topics": [
+      "private_tour",
+      "price"
+    ],
+    "tags": [
+      "skip",
+      "madakaripura",
+      "papuma",
+      "remove destination",
+      "same price",
+      "relaxed",
+      "change itinerary",
+      "rest"
+    ],
+    "topikGiliran": "price",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "PACKAGES & ROUTES (review 2026-09)",
+    "sourceId": "cmu59vcw900003cahnqo5l7sw",
+    "versi": 2,
+    "review": true,
+    "index": 2,
+    "question": "Do you have a Tumpak Sewu and Bromo tour without Ijen, or a Tumpak Sewu only tour from Surabaya?",
+    "topics": [
+      "private_tour",
+      "route_endpoint",
+      "destination_readiness"
+    ],
+    "tags": [
+      "tumpak sewu",
+      "bromo",
+      "without ijen",
+      "3 days",
+      "surabaya",
+      "waterfall only",
+      "tumpak sewu only",
+      "itinerary"
+    ],
+    "topikGiliran": "destination_readiness",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "PACKAGES & ROUTES (review 2026-09)",
+    "sourceId": "cmu59vcw900003cahnqo5l7sw",
+    "versi": 2,
+    "review": true,
+    "index": 3,
+    "question": "What's the best way to continue to Bali, Labuan Bajo or the Gili Islands after the tour?",
+    "topics": [
+      "route_endpoint"
+    ],
+    "tags": [
+      "bali",
+      "fly",
+      "flight",
+      "labuan bajo",
+      "gili",
+      "fast boat",
+      "padang bai",
+      "after tour",
+      "fastest way"
+    ],
+    "topikGiliran": "route_endpoint",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "PACKAGES & ROUTES (review 2026-09)",
+    "sourceId": "cmu59vcw900003cahnqo5l7sw",
+    "versi": 2,
+    "review": true,
+    "index": 4,
+    "question": "Can the order of the itinerary change? Can we visit Tumpak Sewu first?",
+    "topics": [
+      "private_tour",
+      "hotel",
+      "destination_readiness"
+    ],
+    "tags": [
+      "order",
+      "change itinerary",
+      "tumpak sewu first",
+      "high season",
+      "rearrange",
+      "sequence",
+      "availability"
+    ],
+    "topikGiliran": "destination_readiness",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "PACKAGES & ROUTES (review 2026-09)",
+    "sourceId": "cmu59vcw900003cahnqo5l7sw",
+    "versi": 2,
+    "review": true,
+    "index": 5,
+    "question": "Do we have to wake up early for sunrise? Can we visit Bromo or Ijen later in the day?",
+    "topics": [
+      "private_tour",
+      "destination_readiness"
+    ],
+    "tags": [
+      "sunrise",
+      "wake up early",
+      "later start",
+      "daytime",
+      "skip sunrise",
+      "midnight",
+      "bromo",
+      "ijen"
+    ],
+    "topikGiliran": "destination_readiness",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "PACKAGES & ROUTES (review 2026-09)",
+    "sourceId": "cmu59vcw900003cahnqo5l7sw",
+    "versi": 2,
+    "review": true,
+    "index": 6,
+    "question": "Can I do an Ijen only tour from Bali, or from my hotel in Banyuwangi?",
+    "topics": [
+      "private_tour",
+      "route_endpoint",
+      "hotel"
+    ],
+    "tags": [
+      "ijen only",
+      "from bali",
+      "banyuwangi",
+      "hotel pickup",
+      "day trip",
+      "ijen crater",
+      "own hotel"
+    ],
+    "topikGiliran": "hotel",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "PACKAGES & ROUTES (review 2026-09)",
+    "sourceId": "cmu59vcw900003cahnqo5l7sw",
+    "versi": 2,
+    "review": true,
+    "index": 7,
+    "question": "Can we add a coffee plantation near Ijen or Goa Tetes near Tumpak Sewu?",
+    "topics": [
+      "private_tour",
+      "destination_readiness"
+    ],
+    "tags": [
+      "coffee",
+      "coffee plantation",
+      "coffee tasting",
+      "goa tetes",
+      "kawah wurung",
+      "add activity",
+      "extra stop"
+    ],
+    "topikGiliran": "destination_readiness",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "PACKAGES & ROUTES (review 2026-09)",
+    "sourceId": "cmu59vcw900003cahnqo5l7sw",
+    "versi": 2,
+    "review": true,
+    "index": 8,
+    "question": "If some of us don't want to hike Ijen, can they stay at the hotel?",
+    "topics": [
+      "private_tour",
+      "hotel"
+    ],
+    "tags": [
+      "not hiking",
+      "stay at hotel",
+      "wait",
+      "base camp",
+      "ijen",
+      "skip hike",
+      "elderly",
+      "kids"
+    ],
+    "topikGiliran": "hotel",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "PACKAGES & ROUTES (review 2026-09)",
+    "sourceId": "cmu59vcw900003cahnqo5l7sw",
+    "versi": 2,
+    "review": true,
+    "index": 9,
+    "question": "Can the tour from Surabaya end back in Surabaya instead of Ketapang?",
+    "topics": [
+      "route_endpoint",
+      "price"
+    ],
+    "tags": [
+      "end in surabaya",
+      "drop off",
+      "airport",
+      "train station",
+      "ketapang",
+      "finish",
+      "surabaya hotel",
+      "return"
+    ],
+    "topikGiliran": "route_endpoint",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "PACKAGES & ROUTES (review 2026-09)",
+    "sourceId": "cmu59vcw900003cahnqo5l7sw",
+    "versi": 2,
+    "review": true,
+    "index": 10,
+    "question": "Is Madakaripura Waterfall included in the 2D1N Bromo Sunrise tour or the 3 Day Bromo & Ijen tour from Bali?",
+    "topics": [
+      "inclusions",
+      "private_tour"
+    ],
+    "tags": [
+      "madakaripura",
+      "waterfall",
+      "included",
+      "2 days",
+      "bromo sunrise",
+      "from bali",
+      "3 days",
+      "entrance ticket"
+    ],
+    "topikGiliran": "inclusions",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "PACKAGES & ROUTES (review 2026-09)",
+    "sourceId": "cmu59vcw900003cahnqo5l7sw",
+    "versi": 2,
+    "review": true,
+    "index": 11,
+    "question": "Our arrival time is late or midday. Can the route order be adjusted to fit our arrival?",
+    "topics": [
+      "private_tour",
+      "route_endpoint"
+    ],
+    "tags": [
+      "arrival time",
+      "late arrival",
+      "night arrival",
+      "route order",
+      "reverse",
+      "pickup time",
+      "train",
+      "flight arrival"
+    ],
+    "topikGiliran": "general",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "PACKAGES & ROUTES (review 2026-09)",
+    "sourceId": "cmu59vcw900003cahnqo5l7sw",
+    "versi": 2,
+    "review": true,
+    "index": 12,
+    "question": "How long is the drive between Bromo, Ijen, Tumpak Sewu, Ketapang and Bali?",
+    "topics": [
+      "private_tour",
+      "route_endpoint"
+    ],
+    "tags": [
+      "how long",
+      "driving time",
+      "drive",
+      "hours",
+      "distance",
+      "ketapang",
+      "ubud",
+      "tumpak sewu",
+      "travel time"
+    ],
+    "topikGiliran": "route_endpoint",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "PACKAGES & ROUTES (review 2026-09)",
+    "sourceId": "cmu59vcw900003cahnqo5l7sw",
+    "versi": 2,
+    "review": true,
+    "index": 13,
+    "question": "What time do we get back to Surabaya on the last day, and what flight time should we book?",
+    "topics": [
+      "route_endpoint",
+      "booking"
+    ],
+    "tags": [
+      "what time",
+      "arrive surabaya",
+      "flight time",
+      "last day",
+      "juanda",
+      "airport",
+      "book flight",
+      "return time"
+    ],
+    "topikGiliran": "booking",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "PACKAGES & ROUTES (review 2026-09)",
+    "sourceId": "cmu59vcw900003cahnqo5l7sw",
+    "versi": 2,
+    "review": true,
+    "index": 14,
+    "question": "I have an afternoon flight or train on the last day. Can the tour still work?",
+    "topics": [
+      "route_endpoint",
+      "private_tour"
+    ],
+    "tags": [
+      "afternoon flight",
+      "train",
+      "last day",
+      "skip madakaripura",
+      "catch flight",
+      "departure time",
+      "early flight",
+      "airport"
+    ],
+    "topikGiliran": "general",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "PACKAGES & ROUTES (review 2026-09)",
+    "sourceId": "cmu59vcw900003cahnqo5l7sw",
+    "versi": 2,
+    "review": true,
+    "index": 15,
+    "question": "Can the 4D3N Ijen, Papuma, Tumpak Sewu & Bromo tour from Bali end at Ketapang so we can go back to Bali?",
+    "topics": [
+      "route_endpoint",
+      "private_tour"
+    ],
+    "tags": [
+      "back to bali",
+      "return to bali",
+      "ketapang",
+      "ferry",
+      "gilimanuk",
+      "4 days",
+      "end point",
+      "from bali"
+    ],
+    "topikGiliran": "route_endpoint",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "PACKAGES & ROUTES (review 2026-09)",
+    "sourceId": "cmu59vcw900003cahnqo5l7sw",
+    "versi": 2,
+    "review": true,
+    "index": 16,
+    "question": "What time do we arrive at Ketapang and Padang Bai after the Ijen hike?",
+    "topics": [
+      "route_endpoint"
+    ],
+    "tags": [
+      "what time",
+      "arrive",
+      "ketapang",
+      "padang bai",
+      "after ijen",
+      "bali arrival",
+      "harbor"
+    ],
+    "topikGiliran": "route_endpoint",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "PACKAGES & ROUTES (review 2026-09)",
+    "sourceId": "cmu59vcw900003cahnqo5l7sw",
+    "versi": 2,
+    "review": true,
+    "index": 17,
+    "question": "Which viewpoint do we go to for the Bromo sunrise? Is Seruni Point included?",
+    "topics": [
+      "private_tour",
+      "destination_readiness",
+      "inclusions"
+    ],
+    "tags": [
+      "sunrise viewpoint",
+      "king kong hill",
+      "seruni point",
+      "sea of sand",
+      "jeep",
+      "bromo crater",
+      "viewpoint"
+    ],
+    "topikGiliran": "inclusions",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "PACKAGES & ROUTES (review 2026-09)",
+    "sourceId": "cmu59vcw900003cahnqo5l7sw",
+    "versi": 2,
+    "review": true,
+    "index": 18,
+    "question": "I'm traveling alone. Can I book a private tour as a solo traveler?",
+    "topics": [
+      "private_tour",
+      "price"
+    ],
+    "tags": [
+      "solo",
+      "alone",
+      "one person",
+      "single traveler",
+      "traveling alone",
+      "join group",
+      "private tour"
+    ],
+    "topikGiliran": "private_tour",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "PACKAGES & ROUTES (review 2026-09)",
+    "sourceId": "cmu59vcw900003cahnqo5l7sw",
+    "versi": 2,
+    "review": true,
+    "index": 19,
+    "question": "When do we visit Madakaripura? Do we need an extra night for it?",
+    "topics": [
+      "private_tour",
+      "destination_readiness"
+    ],
+    "tags": [
+      "madakaripura",
+      "when",
+      "extra night",
+      "day 1",
+      "after bromo",
+      "schedule",
+      "waterfall"
+    ],
+    "topikGiliran": "destination_readiness",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "PACKAGES & ROUTES (review 2026-09)",
+    "sourceId": "cmu59vcw900003cahnqo5l7sw",
+    "versi": 2,
+    "review": true,
+    "index": 20,
+    "question": "Ijen is closed on the first Friday of the month. What happens if our tour falls on that day?",
+    "topics": [
+      "destination_readiness",
+      "private_tour"
+    ],
+    "tags": [
+      "first friday",
+      "ijen closed",
+      "friday",
+      "closed",
+      "closure",
+      "reschedule",
+      "change date"
+    ],
+    "topikGiliran": "destination_readiness",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "PACKAGES & ROUTES (review 2026-09)",
+    "sourceId": "cmu59vcw900003cahnqo5l7sw",
+    "versi": 2,
+    "review": true,
+    "index": 21,
+    "question": "Can you pick us up in Malang or Probolinggo, or drop us at a hotel in Banyuwangi?",
+    "topics": [
+      "route_endpoint",
+      "hotel"
+    ],
+    "tags": [
+      "malang",
+      "probolinggo",
+      "banyuwangi",
+      "pick up",
+      "drop off",
+      "baluran",
+      "hotel",
+      "start point"
+    ],
+    "topikGiliran": "hotel",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "PACKAGES & ROUTES (review 2026-09)",
+    "sourceId": "cmu59vcw900003cahnqo5l7sw",
+    "versi": 2,
+    "review": true,
+    "index": 22,
+    "question": "A destination on our tour is closed. What will happen to our trip?",
+    "topics": [
+      "destination_readiness"
+    ],
+    "tags": [
+      "closed",
+      "closure",
+      "destination closed",
+      "alternative",
+      "national park",
+      "what happens",
+      "eruption",
+      "replacement"
+    ],
+    "topikGiliran": "general",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "PACKAGES & ROUTES (review 2026-09)",
+    "sourceId": "cmu59vcw900003cahnqo5l7sw",
+    "versi": 2,
+    "review": true,
+    "index": 23,
+    "question": "Does the 4D3N tour from Surabaya stop at Kampung Jodipan (Rainbow Village) in Malang?",
+    "topics": [
+      "private_tour"
+    ],
+    "tags": [
+      "kampung jodipan",
+      "rainbow village",
+      "malang",
+      "stop",
+      "4 days",
+      "detour"
+    ],
+    "topikGiliran": "general",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "PACKAGES & ROUTES (review 2026-09)",
+    "sourceId": "cmu59vcw900003cahnqo5l7sw",
+    "versi": 2,
+    "review": true,
+    "index": 24,
+    "question": "For the 1 Day Bromo Midnight tour, which date should I book - is pick-up on the night of that date?",
+    "topics": [
+      "booking",
+      "private_tour",
+      "destination_readiness"
+    ],
+    "tags": [
+      "midnight",
+      "tour date",
+      "pickup time",
+      "which date",
+      "1 day",
+      "bromo midnight",
+      "night",
+      "book date"
+    ],
+    "topikGiliran": "destination_readiness",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "PACKAGES & ROUTES (review 2026-09)",
+    "sourceId": "cmu59vcw900003cahnqo5l7sw",
+    "versi": 2,
+    "review": true,
+    "index": 25,
+    "question": "Can I book only transport or a Jeep and arrange my own hotel?",
+    "topics": [
+      "vehicle",
+      "inclusions"
+    ],
+    "tags": [
+      "jeep only",
+      "transport only",
+      "car rental",
+      "own hotel",
+      "driver only",
+      "jeep rental",
+      "without hotel"
+    ],
+    "topikGiliran": "vehicle",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "PACKAGES & ROUTES (review 2026-09)",
+    "sourceId": "cmu59vcw900003cahnqo5l7sw",
+    "versi": 2,
+    "review": true,
+    "index": 26,
+    "question": "How long is the drive from Surabaya to Ijen?",
+    "topics": [
+      "route_endpoint",
+      "private_tour",
+      "destination_readiness"
+    ],
+    "tags": [
+      "how long",
+      "surabaya",
+      "ijen",
+      "drive",
+      "hours",
+      "travel time",
+      "distance"
+    ],
+    "topikGiliran": "destination_readiness",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "PACKAGES & ROUTES (review 2026-09)",
+    "sourceId": "cmu59vcw900003cahnqo5l7sw",
+    "versi": 2,
+    "review": true,
+    "index": 27,
+    "question": "Do you offer Mount Rinjani trekking?",
+    "topics": [
+      "destination_readiness"
+    ],
+    "tags": [
+      "rinjani",
+      "lombok",
+      "trekking",
+      "hike",
+      "mount rinjani",
+      "climb"
+    ],
+    "topikGiliran": "destination_readiness",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "FERRY / TRANSPORT",
+    "sourceId": "cmtwatoug000kauahy2slzqck",
+    "versi": 4,
+    "review": false,
+    "index": 0,
+    "question": "How do we get from Java to Bali, and is transport included?",
+    "topics": [
+      "route_endpoint",
+      "vehicle"
+    ],
+    "tags": [],
+    "topikGiliran": "vehicle",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "FERRY / TRANSPORT",
+    "sourceId": "cmtwatoug000kauahy2slzqck",
+    "versi": 4,
+    "review": false,
+    "index": 1,
+    "question": "Can you drop us off at our hotel in Bali (e.g. Ubud, Canggu, Seminyak)? Is the transfer from the harbor included?",
+    "topics": [
+      "route_endpoint",
+      "inclusions",
+      "hotel"
+    ],
+    "tags": [
+      "ubud",
+      "canggu",
+      "seminyak",
+      "hotel",
+      "dropoff",
+      "transfer",
+      "harbor"
+    ],
+    "topikGiliran": "hotel",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "PICKUP & DROP-OFF (review 2026-09)",
+    "sourceId": "cmu59vd3b00023cah5aiw1vw1",
+    "versi": 2,
+    "review": true,
+    "index": 0,
+    "question": "My flight lands in the afternoon. Can the pickup time be adjusted to my arrival time?",
+    "topics": [
+      "route_endpoint",
+      "private_tour"
+    ],
+    "tags": [
+      "pickup time",
+      "flight arrival",
+      "landing",
+      "arrive",
+      "afternoon",
+      "evening",
+      "adjust pickup",
+      "day 1",
+      "start time"
+    ],
+    "topikGiliran": "general",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "PICKUP & DROP-OFF (review 2026-09)",
+    "sourceId": "cmu59vd3b00023cah5aiw1vw1",
+    "versi": 2,
+    "review": true,
+    "index": 1,
+    "question": "Where will your team meet us at the airport?",
+    "topics": [
+      "route_endpoint"
+    ],
+    "tags": [
+      "airport pickup",
+      "meeting point",
+      "arrival hall",
+      "name sign",
+      "where to meet",
+      "terminal 2",
+      "surabaya airport",
+      "find driver"
+    ],
+    "topikGiliran": "route_endpoint",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "PICKUP & DROP-OFF (review 2026-09)",
+    "sourceId": "cmu59vd3b00023cah5aiw1vw1",
+    "versi": 2,
+    "review": true,
+    "index": 2,
+    "question": "How does the hotel pickup work? Where does the driver wait?",
+    "topics": [
+      "route_endpoint",
+      "hotel"
+    ],
+    "tags": [
+      "hotel pickup",
+      "lobby",
+      "driver",
+      "where to wait",
+      "car photo",
+      "pickup point",
+      "hotel"
+    ],
+    "topikGiliran": "hotel",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "PICKUP & DROP-OFF (review 2026-09)",
+    "sourceId": "cmu59vd3b00023cah5aiw1vw1",
+    "versi": 2,
+    "review": true,
+    "index": 3,
+    "question": "Instead of ending at Ketapang Harbor, can the tour end at Banyuwangi Airport or my hotel in Banyuwangi?",
+    "topics": [
+      "route_endpoint",
+      "hotel"
+    ],
+    "tags": [
+      "banyuwangi airport",
+      "banyuwangi hotel",
+      "drop off",
+      "end tour",
+      "ketapang",
+      "finish",
+      "after ijen",
+      "flight to jakarta"
+    ],
+    "topikGiliran": "hotel",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "PICKUP & DROP-OFF (review 2026-09)",
+    "sourceId": "cmu59vd3b00023cah5aiw1vw1",
+    "versi": 2,
+    "review": true,
+    "index": 4,
+    "question": "If our tour starts in Bali, how do we get to Java and who meets us?",
+    "topics": [
+      "route_endpoint"
+    ],
+    "tags": [
+      "from bali",
+      "gilimanuk",
+      "ketapang",
+      "ferry",
+      "porter",
+      "handover",
+      "bali pickup",
+      "crossing to java"
+    ],
+    "topikGiliran": "route_endpoint",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "PICKUP & DROP-OFF (review 2026-09)",
+    "sourceId": "cmu59vd3b00023cah5aiw1vw1",
+    "versi": 2,
+    "review": true,
+    "index": 5,
+    "question": "I'm booking last minute. When will you confirm the pickup details?",
+    "topics": [
+      "booking",
+      "payment"
+    ],
+    "tags": [
+      "last minute",
+      "pickup details",
+      "confirm pickup",
+      "payment received",
+      "short notice",
+      "urgent booking",
+      "tomorrow"
+    ],
+    "topikGiliran": "booking",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "PICKUP & DROP-OFF (review 2026-09)",
+    "sourceId": "cmu59vd3b00023cah5aiw1vw1",
+    "versi": 2,
+    "review": true,
+    "index": 6,
+    "question": "Can you pick up our group from two different places, like the airport and a hotel?",
+    "topics": [
+      "route_endpoint",
+      "hotel"
+    ],
+    "tags": [
+      "two pickup points",
+      "different terminals",
+      "separate pickup",
+      "airport and hotel",
+      "group arriving",
+      "multiple pickup"
+    ],
+    "topikGiliran": "hotel",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "PICKUP & DROP-OFF (review 2026-09)",
+    "sourceId": "cmu59vd3b00023cah5aiw1vw1",
+    "versi": 2,
+    "review": true,
+    "index": 7,
+    "question": "Should I get off the train at Wonokromo or Gubeng station in Surabaya?",
+    "topics": [
+      "route_endpoint"
+    ],
+    "tags": [
+      "wonokromo",
+      "gubeng",
+      "train station",
+      "which station",
+      "train",
+      "surabaya station",
+      "get off"
+    ],
+    "topikGiliran": "general",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "PICKUP & DROP-OFF (review 2026-09)",
+    "sourceId": "cmu59vd3b00023cah5aiw1vw1",
+    "versi": 2,
+    "review": true,
+    "index": 8,
+    "question": "Can you pick us up at Bungurasih bus terminal in Surabaya?",
+    "topics": [
+      "route_endpoint"
+    ],
+    "tags": [
+      "bungurasih",
+      "bus terminal",
+      "bus station",
+      "arrive by bus",
+      "surabaya bus",
+      "bus pickup"
+    ],
+    "topikGiliran": "general",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "PICKUP & DROP-OFF (review 2026-09)",
+    "sourceId": "cmu59vd3b00023cah5aiw1vw1",
+    "versi": 2,
+    "review": true,
+    "index": 9,
+    "question": "What time do we leave our hotel in Bondowoso for the Ijen hike?",
+    "topics": [
+      "blue_fire",
+      "route_endpoint",
+      "hotel"
+    ],
+    "tags": [
+      "bondowoso",
+      "ijen departure",
+      "what time leave",
+      "midnight",
+      "ijen hike",
+      "hotel departure",
+      "blue fire start"
+    ],
+    "topikGiliran": "hotel",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "PICKUP & DROP-OFF (review 2026-09)",
+    "sourceId": "cmu59vd3b00023cah5aiw1vw1",
+    "versi": 2,
+    "review": true,
+    "index": 10,
+    "question": "How early should we be ready before pickup?",
+    "topics": [
+      "route_endpoint"
+    ],
+    "tags": [
+      "be ready",
+      "before pickup",
+      "10 minutes",
+      "pickup time",
+      "what to bring",
+      "documents",
+      "reminder"
+    ],
+    "topikGiliran": "general",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "PICKUP & DROP-OFF (review 2026-09)",
+    "sourceId": "cmu59vd3b00023cah5aiw1vw1",
+    "versi": 2,
+    "review": true,
+    "index": 11,
+    "question": "What happens if my flight is delayed or immigration takes a long time?",
+    "topics": [
+      "route_endpoint"
+    ],
+    "tags": [
+      "flight delayed",
+      "delay",
+      "late flight",
+      "immigration",
+      "customs",
+      "luggage",
+      "flight number",
+      "wait at airport"
+    ],
+    "topikGiliran": "general",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "PICKUP & DROP-OFF (review 2026-09)",
+    "sourceId": "cmu59vd3b00023cah5aiw1vw1",
+    "versi": 2,
+    "review": true,
+    "index": 12,
+    "question": "What details do you need from me to arrange pickup and drop-off?",
+    "topics": [
+      "booking",
+      "route_endpoint"
+    ],
+    "tags": [
+      "pickup details",
+      "flight number",
+      "hotel address",
+      "train number",
+      "google maps",
+      "what information",
+      "drop off details"
+    ],
+    "topikGiliran": "route_endpoint",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "PICKUP & DROP-OFF (review 2026-09)",
+    "sourceId": "cmu59vd3b00023cah5aiw1vw1",
+    "versi": 2,
+    "review": true,
+    "index": 13,
+    "question": "What time should I arrive in Surabaya? Is a late evening arrival okay?",
+    "topics": [
+      "route_endpoint"
+    ],
+    "tags": [
+      "arrival time",
+      "arrive surabaya",
+      "late arrival",
+      "night flight",
+      "evening arrival",
+      "before noon",
+      "what time arrive"
+    ],
+    "topikGiliran": "general",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "PICKUP & DROP-OFF (review 2026-09)",
+    "sourceId": "cmu59vd3b00023cah5aiw1vw1",
+    "versi": 2,
+    "review": true,
+    "index": 14,
+    "question": "Can you pick us up at Surabaya Gubeng train station?",
+    "topics": [
+      "route_endpoint"
+    ],
+    "tags": [
+      "gubeng",
+      "train station",
+      "train pickup",
+      "yogyakarta",
+      "surabaya station",
+      "arrive by train",
+      "train"
+    ],
+    "topikGiliran": "general",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "PICKUP & DROP-OFF (review 2026-09)",
+    "sourceId": "cmu59vd3b00023cah5aiw1vw1",
+    "versi": 2,
+    "review": true,
+    "index": 15,
+    "question": "After Ijen, what time do we reach Bali and how long to Denpasar, Sanur or Padang Bai?",
+    "topics": [
+      "route_endpoint"
+    ],
+    "tags": [
+      "arrive bali",
+      "gilimanuk",
+      "denpasar",
+      "sanur",
+      "padang bai",
+      "bali airport",
+      "how long",
+      "what time"
+    ],
+    "topikGiliran": "route_endpoint",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "PICKUP & DROP-OFF (review 2026-09)",
+    "sourceId": "cmu59vd3b00023cah5aiw1vw1",
+    "versi": 2,
+    "review": true,
+    "index": 16,
+    "question": "What time is pickup from Surabaya for the Bromo sunrise tour?",
+    "topics": [
+      "route_endpoint",
+      "destination_readiness"
+    ],
+    "tags": [
+      "bromo sunrise",
+      "pickup time",
+      "midnight",
+      "from surabaya",
+      "king kong hill",
+      "what time",
+      "jeep",
+      "earlier pickup"
+    ],
+    "topikGiliran": "destination_readiness",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "PICKUP & DROP-OFF (review 2026-09)",
+    "sourceId": "cmu59vd3b00023cah5aiw1vw1",
+    "versi": 2,
+    "review": true,
+    "index": 17,
+    "question": "Where can we be dropped off at the end of a tour that finishes in Surabaya?",
+    "topics": [
+      "route_endpoint"
+    ],
+    "tags": [
+      "drop off",
+      "end in surabaya",
+      "juanda airport",
+      "gubeng",
+      "hotel surabaya",
+      "train station",
+      "from bali",
+      "finish"
+    ],
+    "topikGiliran": "route_endpoint",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "PICKUP & DROP-OFF (review 2026-09)",
+    "sourceId": "cmu59vd3b00023cah5aiw1vw1",
+    "versi": 2,
+    "review": true,
+    "index": 18,
+    "question": "Is the drop-off to the airport included if my flight is the day after the tour ends?",
+    "topics": [
+      "route_endpoint",
+      "inclusions"
+    ],
+    "tags": [
+      "airport drop off",
+      "airport transfer",
+      "flight next day",
+      "last day",
+      "included",
+      "hotel drop off",
+      "departure flight"
+    ],
+    "topikGiliran": "inclusions",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "PICKUP & DROP-OFF (review 2026-09)",
+    "sourceId": "cmu59vd3b00023cah5aiw1vw1",
+    "versi": 2,
+    "review": true,
+    "index": 19,
+    "question": "We're staying in Malang. What time should we leave to catch the Bromo sunrise?",
+    "topics": [
+      "route_endpoint",
+      "hotel"
+    ],
+    "tags": [
+      "malang",
+      "bromo sunrise",
+      "what time leave",
+      "departure time",
+      "from malang",
+      "midnight",
+      "stay near bromo"
+    ],
+    "topikGiliran": "hotel",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "PICKUP & DROP-OFF (review 2026-09)",
+    "sourceId": "cmu59vd3b00023cah5aiw1vw1",
+    "versi": 2,
+    "review": true,
+    "index": 20,
+    "question": "Your tour starts from Bali, but we are already at Ketapang Harbor. Can we join from there?",
+    "topics": [
+      "route_endpoint",
+      "private_tour"
+    ],
+    "tags": [
+      "ketapang",
+      "start from ketapang",
+      "banyuwangi",
+      "from bali",
+      "join",
+      "harbor pickup",
+      "already in java"
+    ],
+    "topikGiliran": "private_tour",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "PICKUP & DROP-OFF (review 2026-09)",
+    "sourceId": "cmu59vd3b00023cah5aiw1vw1",
+    "versi": 2,
+    "review": true,
+    "index": 21,
+    "question": "Can our tour from Surabaya end in Malang instead of going back to Surabaya?",
+    "topics": [
+      "route_endpoint"
+    ],
+    "tags": [
+      "end in malang",
+      "malang",
+      "drop off",
+      "finish",
+      "instead of surabaya",
+      "from surabaya"
+    ],
+    "topikGiliran": "route_endpoint",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "PICKUP & DROP-OFF (review 2026-09)",
+    "sourceId": "cmu59vd3b00023cah5aiw1vw1",
+    "versi": 2,
+    "review": true,
+    "index": 22,
+    "question": "What time is the first-day pickup from my hotel in Surabaya?",
+    "topics": [
+      "route_endpoint",
+      "hotel"
+    ],
+    "tags": [
+      "pickup time",
+      "hotel pickup",
+      "surabaya hotel",
+      "first day",
+      "11am",
+      "klook",
+      "what time",
+      "start time"
+    ],
+    "topikGiliran": "hotel",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "PICKUP & DROP-OFF (review 2026-09)",
+    "sourceId": "cmu59vd3b00023cah5aiw1vw1",
+    "versi": 2,
+    "review": true,
+    "index": 23,
+    "question": "What time do we get back to Surabaya on the last day? When should I book my flight?",
+    "topics": [
+      "route_endpoint",
+      "booking"
+    ],
+    "tags": [
+      "last day",
+      "arrive surabaya",
+      "flight time",
+      "book flight",
+      "return time",
+      "what time back",
+      "departure flight"
+    ],
+    "topikGiliran": "booking",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "TRIP LOGISTICS (review 2026-09)",
+    "sourceId": "cmu59vd8f00043cahq8gosfn8",
+    "versi": 2,
+    "review": true,
+    "index": 0,
+    "question": "How will the driver or guide contact us before the tour?",
+    "topics": [
+      "booking",
+      "private_tour"
+    ],
+    "tags": [
+      "driver contact",
+      "guide contact",
+      "driver number",
+      "whatsapp",
+      "pickup location",
+      "airbnb",
+      "google maps",
+      "contact"
+    ],
+    "topikGiliran": "private_tour",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "TRIP LOGISTICS (review 2026-09)",
+    "sourceId": "cmu59vd8f00043cahq8gosfn8",
+    "versi": 2,
+    "review": true,
+    "index": 1,
+    "question": "Can we leave our luggage in the car while we visit attractions or hike Ijen?",
+    "topics": [
+      "vehicle"
+    ],
+    "tags": [
+      "luggage",
+      "suitcase",
+      "leave bags",
+      "locker",
+      "car",
+      "daypack",
+      "safe",
+      "ijen hike"
+    ],
+    "topikGiliran": "vehicle",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "TRIP LOGISTICS (review 2026-09)",
+    "sourceId": "cmu59vd8f00043cahq8gosfn8",
+    "versi": 2,
+    "review": true,
+    "index": 2,
+    "question": "Where should we wait for the hotel pickup?",
+    "topics": [
+      "hotel"
+    ],
+    "tags": [
+      "pickup",
+      "hotel pickup",
+      "lobby",
+      "wait",
+      "driver arrive",
+      "where to meet",
+      "meeting point",
+      "driver photo"
+    ],
+    "topikGiliran": "hotel",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "TRIP LOGISTICS (review 2026-09)",
+    "sourceId": "cmu59vd8f00043cahq8gosfn8",
+    "versi": 2,
+    "review": true,
+    "index": 3,
+    "question": "How do we get the photos from our tour?",
+    "topics": [
+      "private_tour"
+    ],
+    "tags": [
+      "photos",
+      "pictures",
+      "google drive",
+      "trip dashboard",
+      "download",
+      "empty folder",
+      "review",
+      "trustpilot"
+    ],
+    "topikGiliran": "general",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "TRIP LOGISTICS (review 2026-09)",
+    "sourceId": "cmu59vd8f00043cahq8gosfn8",
+    "versi": 2,
+    "review": true,
+    "index": 4,
+    "question": "Will we get a reminder with the pickup time before the tour?",
+    "topics": [
+      "booking"
+    ],
+    "tags": [
+      "reminder",
+      "pickup time",
+      "pickup location",
+      "be ready",
+      "day before",
+      "what time",
+      "booking portal",
+      "documents"
+    ],
+    "topikGiliran": "general",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "TRIP LOGISTICS (review 2026-09)",
+    "sourceId": "cmu59vd8f00043cahq8gosfn8",
+    "versi": 2,
+    "review": true,
+    "index": 5,
+    "question": "Where can I see my itinerary, pickup time and hotel details after booking?",
+    "topics": [
+      "booking",
+      "hotel"
+    ],
+    "tags": [
+      "trip dashboard",
+      "itinerary",
+      "pickup time",
+      "accommodation",
+      "my booking",
+      "packing list",
+      "booking details",
+      "portal"
+    ],
+    "topikGiliran": "hotel",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "TRIP LOGISTICS (review 2026-09)",
+    "sourceId": "cmu59vd8f00043cahq8gosfn8",
+    "versi": 2,
+    "review": true,
+    "index": 6,
+    "question": "Can we make extra stops along the way, like a cafe, coffee plantation or restaurant?",
+    "topics": [
+      "private_tour"
+    ],
+    "tags": [
+      "stop",
+      "flexible",
+      "cafe",
+      "coffee plantation",
+      "restaurant",
+      "viewpoint",
+      "dinner",
+      "work meeting"
+    ],
+    "topikGiliran": "general",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "TRIP LOGISTICS (review 2026-09)",
+    "sourceId": "cmu59vd8f00043cahq8gosfn8",
+    "versi": 2,
+    "review": true,
+    "index": 7,
+    "question": "Do we need to check out before the Bromo sunrise or Ijen hike?",
+    "topics": [
+      "hotel",
+      "destination_readiness"
+    ],
+    "tags": [
+      "check out",
+      "return to hotel",
+      "breakfast",
+      "shower",
+      "luggage",
+      "bromo sunrise",
+      "ijen",
+      "after hike"
+    ],
+    "topikGiliran": "destination_readiness",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "TRIP LOGISTICS (review 2026-09)",
+    "sourceId": "cmu59vd8f00043cahq8gosfn8",
+    "versi": 2,
+    "review": true,
+    "index": 8,
+    "question": "What shoes and clothes should we wear for the waterfalls?",
+    "topics": [
+      "destination_readiness"
+    ],
+    "tags": [
+      "shoes",
+      "sandals",
+      "flip flops",
+      "waterfall",
+      "tumpak sewu",
+      "madakaripura",
+      "clothes",
+      "wet"
+    ],
+    "topikGiliran": "general",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "TRIP LOGISTICS (review 2026-09)",
+    "sourceId": "cmu59vd8f00043cahq8gosfn8",
+    "versi": 2,
+    "review": true,
+    "index": 9,
+    "question": "Where can we exchange money during the tour?",
+    "topics": [
+      "price"
+    ],
+    "tags": [
+      "money exchange",
+      "money changer",
+      "exchange rate",
+      "cash",
+      "rupiah",
+      "juanda airport",
+      "currency",
+      "atm"
+    ],
+    "topikGiliran": "general",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "TRIP LOGISTICS (review 2026-09)",
+    "sourceId": "cmu59vd8f00043cahq8gosfn8",
+    "versi": 2,
+    "review": true,
+    "index": 10,
+    "question": "How does the ferry crossing between Java and Bali work with drivers?",
+    "topics": [
+      "route_endpoint",
+      "private_tour"
+    ],
+    "tags": [
+      "ferry",
+      "porter",
+      "ketapang",
+      "gilimanuk",
+      "bali driver",
+      "crossing",
+      "harbor",
+      "handover"
+    ],
+    "topikGiliran": "private_tour",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "TRIP LOGISTICS (review 2026-09)",
+    "sourceId": "cmu59vd8f00043cahq8gosfn8",
+    "versi": 2,
+    "review": true,
+    "index": 11,
+    "question": "Can we go on to the Gili Islands from Padang Bai on the same day the tour ends?",
+    "topics": [
+      "route_endpoint"
+    ],
+    "tags": [
+      "gili",
+      "padang bai",
+      "boat",
+      "fast boat",
+      "same day",
+      "last boat",
+      "gili trawangan",
+      "after tour"
+    ],
+    "topikGiliran": "general",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "TRIP LOGISTICS (review 2026-09)",
+    "sourceId": "cmu59vd8f00043cahq8gosfn8",
+    "versi": 2,
+    "review": true,
+    "index": 12,
+    "question": "Our flight is the day after the tour ends in Surabaya. What do you recommend?",
+    "topics": [
+      "route_endpoint"
+    ],
+    "tags": [
+      "flight next day",
+      "surabaya",
+      "airport",
+      "juanda",
+      "grab",
+      "taxi",
+      "extra night",
+      "departure"
+    ],
+    "topikGiliran": "general",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "TRIP LOGISTICS (review 2026-09)",
+    "sourceId": "cmu59vd8f00043cahq8gosfn8",
+    "versi": 2,
+    "review": true,
+    "index": 13,
+    "question": "Can we buy warm clothes during the tour?",
+    "topics": [
+      "destination_readiness"
+    ],
+    "tags": [
+      "warm clothes",
+      "jacket",
+      "buy jacket",
+      "shop",
+      "cold",
+      "shopping",
+      "clothing",
+      "store"
+    ],
+    "topikGiliran": "general",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "TRIP LOGISTICS (review 2026-09)",
+    "sourceId": "cmu59vd8f00043cahq8gosfn8",
+    "versi": 2,
+    "review": true,
+    "index": 14,
+    "question": "How do we get from Jakarta to Surabaya?",
+    "topics": [
+      "route_endpoint"
+    ],
+    "tags": [
+      "jakarta",
+      "surabaya",
+      "train",
+      "kai access",
+      "transfer",
+      "ticket",
+      "how to get",
+      "travel"
+    ],
+    "topikGiliran": "general",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "TRIP LOGISTICS (review 2026-09)",
+    "sourceId": "cmu59vd8f00043cahq8gosfn8",
+    "versi": 2,
+    "review": true,
+    "index": 15,
+    "question": "I left something behind during the tour. Can you help find it?",
+    "topics": [
+      "hotel"
+    ],
+    "tags": [
+      "lost item",
+      "left behind",
+      "forgot",
+      "lost",
+      "phone",
+      "hotel",
+      "driver",
+      "find"
+    ],
+    "topikGiliran": "general",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "TRIP LOGISTICS (review 2026-09)",
+    "sourceId": "cmu59vd8f00043cahq8gosfn8",
+    "versi": 2,
+    "review": true,
+    "index": 16,
+    "question": "What should we pack for Bromo and Ijen?",
+    "topics": [
+      "destination_readiness"
+    ],
+    "tags": [
+      "packing list",
+      "what to bring",
+      "what to pack",
+      "jacket",
+      "cold",
+      "shoes",
+      "gloves",
+      "gas mask"
+    ],
+    "topikGiliran": "destination_readiness",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "TRIP LOGISTICS (review 2026-09)",
+    "sourceId": "cmu59vd8f00043cahq8gosfn8",
+    "versi": 2,
+    "review": true,
+    "index": 17,
+    "question": "Is there a luggage limit on the tour?",
+    "topics": [
+      "vehicle",
+      "private_tour"
+    ],
+    "tags": [
+      "luggage limit",
+      "baggage",
+      "suitcase",
+      "how many bags",
+      "backpack",
+      "luggage space",
+      "kg",
+      "vehicle size"
+    ],
+    "topikGiliran": "vehicle",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "TRIP LOGISTICS (review 2026-09)",
+    "sourceId": "cmu59vd8f00043cahq8gosfn8",
+    "versi": 2,
+    "review": true,
+    "index": 18,
+    "question": "What pickup details do you need from us, and what if our flight is delayed?",
+    "topics": [
+      "booking",
+      "route_endpoint"
+    ],
+    "tags": [
+      "pickup details",
+      "flight number",
+      "flight delay",
+      "delayed",
+      "airport pickup",
+      "arrival time",
+      "hotel address",
+      "drop off"
+    ],
+    "topikGiliran": "general",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "TRIP LOGISTICS (review 2026-09)",
+    "sourceId": "cmu59vd8f00043cahq8gosfn8",
+    "versi": 2,
+    "review": true,
+    "index": 19,
+    "question": "What time will we arrive in Bali or Surabaya on the last day?",
+    "topics": [
+      "route_endpoint"
+    ],
+    "tags": [
+      "arrival time",
+      "last day",
+      "what time arrive",
+      "denpasar",
+      "ubud",
+      "canggu",
+      "gilimanuk",
+      "surabaya"
+    ],
+    "topikGiliran": "route_endpoint",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "TRIP LOGISTICS (review 2026-09)",
+    "sourceId": "cmu59vd8f00043cahq8gosfn8",
+    "versi": 2,
+    "review": true,
+    "index": 20,
+    "question": "Do we need a flashlight or headlamp?",
+    "topics": [
+      "destination_readiness",
+      "inclusions"
+    ],
+    "tags": [
+      "headlamp",
+      "flashlight",
+      "torch",
+      "rent",
+      "dark",
+      "sunrise point",
+      "hiking shoes",
+      "provided"
+    ],
+    "topikGiliran": "general",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "TRIP LOGISTICS (review 2026-09)",
+    "sourceId": "cmu59vd8f00043cahq8gosfn8",
+    "versi": 2,
+    "review": true,
+    "index": 21,
+    "question": "How much cash should we bring for the tour?",
+    "topics": [
+      "inclusions",
+      "price"
+    ],
+    "tags": [
+      "cash",
+      "how much money",
+      "bring money",
+      "rupiah",
+      "idr",
+      "pony ride",
+      "meals",
+      "souvenirs"
+    ],
+    "topikGiliran": "price",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "VEHICLES, DRIVER & GUIDES (review 2026-09)",
+    "sourceId": "cmu59ve2a000g3cah9wpwng2j",
+    "versi": 2,
+    "review": true,
+    "index": 0,
+    "question": "Do we keep the same driver and car for the whole tour, including Bali?",
+    "topics": [
+      "vehicle",
+      "route_endpoint"
+    ],
+    "tags": [
+      "same driver",
+      "same car",
+      "change driver",
+      "bali driver",
+      "ketapang",
+      "ferry",
+      "gilimanuk",
+      "pemuteran"
+    ],
+    "topikGiliran": "vehicle",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "VEHICLES, DRIVER & GUIDES (review 2026-09)",
+    "sourceId": "cmu59ve2a000g3cah9wpwng2j",
+    "versi": 2,
+    "review": true,
+    "index": 1,
+    "question": "How many people fit in one Bromo Jeep?",
+    "topics": [
+      "vehicle",
+      "destination_readiness"
+    ],
+    "tags": [
+      "jeep",
+      "how many people",
+      "capacity",
+      "bromo jeep",
+      "per jeep",
+      "two jeeps",
+      "group"
+    ],
+    "topikGiliran": "destination_readiness",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "VEHICLES, DRIVER & GUIDES (review 2026-09)",
+    "sourceId": "cmu59ve2a000g3cah9wpwng2j",
+    "versi": 2,
+    "review": true,
+    "index": 2,
+    "question": "Are Bromo Jeeps available on busy dates or if I book at the last minute?",
+    "topics": [
+      "vehicle",
+      "booking",
+      "destination_readiness"
+    ],
+    "tags": [
+      "jeep availability",
+      "last minute",
+      "busy dates",
+      "holiday",
+      "fully booked",
+      "bromo jeep",
+      "short notice"
+    ],
+    "topikGiliran": "destination_readiness",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "VEHICLES, DRIVER & GUIDES (review 2026-09)",
+    "sourceId": "cmu59ve2a000g3cah9wpwng2j",
+    "versi": 2,
+    "review": true,
+    "index": 3,
+    "question": "Can we go to Ijen by motorbike instead?",
+    "topics": [
+      "vehicle",
+      "destination_readiness"
+    ],
+    "tags": [
+      "motorbike",
+      "scooter",
+      "motorcycle",
+      "ijen",
+      "ride",
+      "own transport"
+    ],
+    "topikGiliran": "destination_readiness",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "VEHICLES, DRIVER & GUIDES (review 2026-09)",
+    "sourceId": "cmu59ve2a000g3cah9wpwng2j",
+    "versi": 2,
+    "review": true,
+    "index": 4,
+    "question": "Can we choose the Jeep colour or get a Jeep with a rooftop?",
+    "topics": [
+      "vehicle"
+    ],
+    "tags": [
+      "jeep color",
+      "jeep colour",
+      "rooftop",
+      "sit on roof",
+      "bromo jeep",
+      "choose jeep"
+    ],
+    "topikGiliran": "general",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "VEHICLES, DRIVER & GUIDES (review 2026-09)",
+    "sourceId": "cmu59ve2a000g3cah9wpwng2j",
+    "versi": 2,
+    "review": true,
+    "index": 5,
+    "question": "What kind of vehicle will we have for our group size?",
+    "topics": [
+      "vehicle"
+    ],
+    "tags": [
+      "vehicle",
+      "car",
+      "van",
+      "hiace",
+      "avanza",
+      "group size",
+      "luggage space",
+      "what car"
+    ],
+    "topikGiliran": "vehicle",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "VEHICLES, DRIVER & GUIDES (review 2026-09)",
+    "sourceId": "cmu59ve2a000g3cah9wpwng2j",
+    "versi": 2,
+    "review": true,
+    "index": 6,
+    "question": "Can I fly my drone during the tour?",
+    "topics": [
+      "private_tour"
+    ],
+    "tags": [
+      "drone",
+      "fly drone",
+      "drone rules",
+      "photography",
+      "allowed"
+    ],
+    "topikGiliran": "general",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  },
+  {
+    "sumber": "VEHICLES, DRIVER & GUIDES (review 2026-09)",
+    "sourceId": "cmu59ve2a000g3cah9wpwng2j",
+    "versi": 2,
+    "review": true,
+    "index": 7,
+    "question": "Will we have an English-speaking guide with us?",
+    "topics": [
+      "private_tour"
+    ],
+    "tags": [
+      "english speaking",
+      "guide",
+      "driver guide",
+      "local guide",
+      "language",
+      "mandarin",
+      "tour guide"
+    ],
+    "topikGiliran": "private_tour",
+    "terambil": true,
+    "sebab": null,
+    "itemTerpilih": 8
+  }
+]
