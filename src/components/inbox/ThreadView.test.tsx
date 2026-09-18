@@ -191,7 +191,7 @@ describe('ThreadView header identity', () => {
     expect(screen.getByText('B')).toBeInTheDocument()
   })
 
-  it('shows the "Room Tes" badge and hides ComposeBox\'s channel selector when isTest is true', async () => {
+  it('shows the "Room Tes" badge when isTest is true', async () => {
     vi.mocked(fetch).mockImplementation((url) => {
       const s = String(url)
       if (s.endsWith('/messages')) return Promise.resolve({ ok: true, json: () => Promise.resolve([]) } as Response)
@@ -205,7 +205,6 @@ describe('ThreadView header identity', () => {
     render(<ThreadView conversationId="conv_test" />)
 
     expect(await screen.findByText(/Room Tes/)).toBeInTheDocument()
-    expect(screen.queryByLabelText('Channel')).not.toBeInTheDocument()
   })
 })
 
@@ -809,12 +808,17 @@ describe('ThreadView template variable data', () => {
           json: () => Promise.resolve([{ id: 'tpl_1', name: 'Konfirmasi', type: 'QUICK_REPLY', category: null, body: 'Sisa tagihan: {{1}}' }]),
         } as Response)
       }
+      // ComposeBox tidak lagi punya pemilih channel manual -- test ini butuh channel
+      // UNOFFICIAL supaya template QUICK_REPLY di atas kelihatan di picker, jadi
+      // /api/settings (jatuh ke cabang ini juga) menjawab defaultChannel: 'UNOFFICIAL'.
+      if (s === '/api/settings') {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ defaultChannel: 'UNOFFICIAL' }) } as Response)
+      }
       return Promise.resolve({
         ok: true,
         json: () =>
           Promise.resolve({
             botEnabled: false,
-            assignedAgentId: null,
             lastReadAt: null,
             contactName: 'Bruno Figarola',
             bookingData: { financial: { balance: 350000 } },
@@ -829,8 +833,7 @@ describe('ThreadView template variable data', () => {
     render(<ThreadView conversationId="conv_1" />)
     await waitFor(() => expect(screen.getByText('Bruno Figarola')).toBeInTheDocument())
 
-    fireEvent.change(screen.getByLabelText('Channel'), { target: { value: 'UNOFFICIAL' } })
-    fireEvent.click(screen.getByLabelText('Tambah lampiran atau template'))
+    fireEvent.click(await screen.findByLabelText('Tambah lampiran atau template'))
     fireEvent.click(await screen.findByRole('menuitem', { name: 'Template' }))
     fireEvent.click(await screen.findByText('Konfirmasi'))
 

@@ -300,7 +300,7 @@ export function ThreadView({
       // inbound.ts flips conversation.botEnabled to false server-side the moment the bot hands
       // off -- broadcasting this alert is the ONLY signal of that, since it happens without any
       // click in THIS browser tab. Without syncing local state to it, an agent who had just
-      // manually re-activated the bot for this one chat (see ComposeBox's "Aktifkan Bot untuk
+      // manually re-activated the bot for this one chat (see the header's "Aktifkan Bot untuk
       // Chat Ini") kept seeing "Ambil Alih dari Bot" -- implying the bot was still answering --
       // for a chat the bot had already handed straight back off, which is exactly backwards.
       if (event.type === 'handoff.alert' && event.conversationId === conversationId) {
@@ -367,7 +367,7 @@ export function ThreadView({
               lapisan penugasan). Tombol toggle bot pindah kemari dari ComposeBox supaya selalu
               terlihat dekat nama kontak, di mobile maupun desktop, tanpa harus digulung sampai
               dasar kolom pesan dulu. */}
-          <Button type="button" variant="outline" size="sm" onClick={toggleBot}>
+          <Button type="button" variant="outline" size="sm" onClick={toggleBot} className="h-6 px-2 text-xs">
             {botEnabled ? 'Ambil Alih dari Bot' : 'Aktifkan Bot untuk Chat Ini'}
           </Button>
           {onToggleContactPanel && (
@@ -435,7 +435,6 @@ export function ThreadView({
       </div>
       <ComposeBox
         conversationId={conversationId}
-        botEnabled={botEnabled}
         contactName={contactName}
         bookingData={bookingData}
         isTest={isTest}

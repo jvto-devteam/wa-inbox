@@ -1,8 +1,7 @@
 'use client'
 import { useEffect, useRef, useState, type ChangeEvent } from 'react'
-import { Bot, BotOff, FileText, Film, Image as ImageIcon, Music, Paperclip, Plus, SendHorizontal, X } from 'lucide-react'
+import { FileText, Film, Image as ImageIcon, Music, Paperclip, Plus, SendHorizontal, X } from 'lucide-react'
 import { SENDER_LABEL, type MessageView } from './MessageBubble'
-import { Select } from '@/components/ui/select'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Button } from '@/components/ui/button'
@@ -100,7 +99,6 @@ function VariableSourceSelect({ fields, onPick }: { fields: VariableField[]; onP
 
 export function ComposeBox({
   conversationId,
-  botEnabled,
   replyingTo,
   contactName = null,
   bookingData = null,
@@ -109,11 +107,6 @@ export function ComposeBox({
   onSent,
 }: {
   conversationId: string
-  // Dipakai murni untuk kalimat status ("Bot menjawab..." / "Chat ini dijawab agen") --
-  // tombol untuk menukarnya pindah ke header ThreadView (dekat nama kontak), karena di
-  // situlah "Belum ditugaskan" dulu berada sebelum dihapus. ComposeBox tidak lagi butuh
-  // `onBotToggled`: ia tidak mengubah state ini sendiri.
-  botEnabled: boolean
   replyingTo?: MessageView | null
   // This conversation's contact name + real booking payload -- resolves a template variable
   // bound to a data field (src/lib/booking/variable-fields.ts) at selection time, and backs
@@ -131,12 +124,12 @@ export function ComposeBox({
 }) {
   const variableFields = bookingVariableFields(contactName, bookingData)
   const [text, setText] = useState('')
-  // Seeded from the org-wide Settings.defaultChannel ("Default jalur kirim" in
-  // Pengaturan) below, not left as a hardcoded literal: ComposeBox always puts
-  // an explicit `channel` in its /api/send body, and resolveChannel lets an
-  // explicit value win, so a hardcoded 'OFFICIAL' here made that setting dead
-  // configuration for every human-agent send. 'OFFICIAL' remains the fallback
-  // for the pre-fetch render and for a failed settings fetch.
+  // Seeded from the org-wide Settings.defaultChannel ("Default jalur kirim" in Pengaturan)
+  // below, not left as a hardcoded literal: ComposeBox always puts an explicit `channel` in
+  // its /api/send body, so a hardcoded 'OFFICIAL' here made that setting dead configuration
+  // for every human-agent send. 'OFFICIAL' remains the fallback for the pre-fetch render and
+  // for a failed settings fetch. Tidak ada lagi pemilih manual di UI -- jalur kirim sepenuhnya
+  // mengikuti setelan org, tidak bisa ditimpa per pesan.
   const [channel, setChannel] = useState<'OFFICIAL' | 'UNOFFICIAL'>('OFFICIAL')
   const [sending, setSending] = useState(false)
   const [templates, setTemplates] = useState<QuickReplyTemplate[]>([])
@@ -166,10 +159,6 @@ export function ComposeBox({
   // submission-time example/placeholder (see submitLtoTemplate/submitCouponTemplate).
   const [ltoExpiration, setLtoExpiration] = useState('')
   const [couponCode, setCouponCode] = useState('')
-  // Guards the seed below against clobbering a deliberate per-message override:
-  // if the agent picks a channel before the settings fetch resolves, their
-  // choice wins.
-  const channelTouched = useRef(false)
 
   useEffect(() => {
     let cancelled = false
@@ -181,7 +170,7 @@ export function ComposeBox({
         // half-read value.
         if (!res.ok) return
         const s = (await res.json()) as { defaultChannel?: 'OFFICIAL' | 'UNOFFICIAL' }
-        if (cancelled || channelTouched.current) return
+        if (cancelled) return
         if (s.defaultChannel === 'OFFICIAL' || s.defaultChannel === 'UNOFFICIAL') setChannel(s.defaultChannel)
       } catch {
         // Fall back to 'OFFICIAL' — an unreachable settings endpoint must not
@@ -192,11 +181,6 @@ export function ComposeBox({
       cancelled = true
     }
   }, [])
-
-  function selectChannel(value: 'OFFICIAL' | 'UNOFFICIAL') {
-    channelTouched.current = true
-    setChannel(value)
-  }
 
   // Kotak tulis tumbuh mengikuti isinya, bukan mengikuti jumlah baris baru. Bentuk sebelumnya
   // menghitung '\n' (rows={text.split('\n').length}), jadi satu paragraf panjang yang
@@ -506,34 +490,6 @@ export function ComposeBox({
           />
         </div>
       )}
-      {/* Siapa yang menjawab chat ini -- kalimat status saja, tanpa tombol untuk menukarnya.
-          Tombolnya ("Aktifkan Bot untuk Chat Ini" / "Ambil Alih dari Bot") pindah ke header
-          ThreadView, di tempat yang dulu ditempati dropdown "Belum ditugaskan" (dihapus) --
-          jadi selalu terlihat dekat nama kontak, bukan di bawah tumpukan pesan. Jalur kirim
-          (Official/Unofficial) tetap di sini: baris alat utama di bawah sudah punya lampiran,
-          kotak tulis, dan kirim, dan jalur kirim adalah satu-satunya yang statusnya perlu
-          selalu terlihat tanpa membuka apa pun. */}
-      <div className="flex flex-wrap items-center gap-2 text-xs text-ink-muted">
-        {!isTest && (
-          <Select
-            value={channel}
-            onChange={(e) => selectChannel(e.target.value as 'OFFICIAL' | 'UNOFFICIAL')}
-            className="w-auto shrink-0 py-1 text-xs"
-            aria-label="Channel"
-          >
-            <option value="OFFICIAL">Official</option>
-            <option value="UNOFFICIAL">Unofficial</option>
-          </Select>
-        )}
-        <span className="inline-flex items-center gap-1.5">
-          {botEnabled ? (
-            <Bot aria-hidden="true" className="size-3.5 shrink-0 text-ink-subtle" strokeWidth={1.75} />
-          ) : (
-            <BotOff aria-hidden="true" className="size-3.5 shrink-0 text-ink-subtle" strokeWidth={1.75} />
-          )}
-          {botEnabled ? 'Bot menjawab chat ini otomatis' : 'Chat ini dijawab agen'}
-        </span>
-      </div>
       {attachmentError && (
         <p role="alert" className="text-xs text-danger">
           {attachmentError}
@@ -826,9 +782,6 @@ export function ComposeBox({
           disabled={sending || uploading}
         />
       </div>
-      <p className="text-[11px] text-ink-subtle">
-        Enter mengirim. Shift + Enter membuat baris baru.
-      </p>
     </div>
   )
 }

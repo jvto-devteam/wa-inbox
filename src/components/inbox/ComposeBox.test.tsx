@@ -18,16 +18,16 @@ async function openTemplateMenu() {
   fireEvent.click(await screen.findByRole('menuitem', { name: 'Template' }))
 }
 
-// The picker now only ever shows the templates sendable on whichever channel is currently
-// selected (OFFICIAL templates vs QUICK_REPLY ones) -- quick-reply tests need to be on
-// Unofficial first, since ComposeBox defaults to Official.
-async function switchToUnofficial() {
-  fireEvent.change(await screen.findByLabelText('Channel'), { target: { value: 'UNOFFICIAL' } })
-}
+// The picker only ever shows the templates sendable on whichever channel is currently active
+// (OFFICIAL templates vs QUICK_REPLY ones) -- there's no manual selector anymore (removed:
+// channel sekarang murni ikut Settings.defaultChannel), so quick-reply tests seed it by
+// having their own `/api/settings` mock answer 'UNOFFICIAL' instead of the 'OFFICIAL'
+// fallback, then just wait for text that only renders once that seed has landed (`findBy*`
+// already retries, so no separate "wait for channel" step is needed).
 
 // Tombol "Aktifkan Bot untuk Chat Ini" / "Ambil Alih dari Bot" pindah ke header ThreadView --
-// test-nya ikut pindah ke ThreadView.test.tsx. ComposeBox sekarang cuma menampilkan kalimat
-// status (lihat 'menyebutkan siapa yang sedang menjawab chat ini' di bawah), tanpa tombolnya.
+// test-nya ikut pindah ke ThreadView.test.tsx. ComposeBox tidak lagi menampilkan status bot
+// sama sekali (kalimatnya dianggap tidak perlu -- tombolnya di header sudah cukup jelas).
 
 describe('ComposeBox quick replies', () => {
   beforeEach(() => {
@@ -41,14 +41,13 @@ describe('ComposeBox quick replies', () => {
               { id: 'tpl_1', name: 'Cara Booking', type: 'QUICK_REPLY', category: 'Cara Booking', body: 'Ikuti panduan booking di link ini...' },
             ],
           })
-        return Promise.resolve({ ok: true, json: async () => ({ id: 'm1', deliveryStatus: 'SENT' }) })
+        return Promise.resolve({ ok: true, json: async () => ({ defaultChannel: 'UNOFFICIAL' }) })
       })
     )
   })
 
   it('fills the text input when a quick reply is selected', async () => {
-    render(<ComposeBox conversationId="conv_1" botEnabled={false} onSent={() => {}} />)
-    await switchToUnofficial()
+    render(<ComposeBox conversationId="conv_1" onSent={() => {}} />)
     await openTemplateMenu()
     fireEvent.click(await screen.findByText('Cara Booking'))
     await waitFor(() => {
@@ -57,8 +56,7 @@ describe('ComposeBox quick replies', () => {
   })
 
   it('closes the picker after a template is selected', async () => {
-    render(<ComposeBox conversationId="conv_1" botEnabled={false} onSent={() => {}} />)
-    await switchToUnofficial()
+    render(<ComposeBox conversationId="conv_1" onSent={() => {}} />)
     await openTemplateMenu()
     fireEvent.click(await screen.findByText('Cara Booking'))
     // The template's name (its picker button label) only ever lives in the picker itself --
@@ -83,11 +81,10 @@ describe('ComposeBox quick replies', () => {
               { id: 'tpl_official', name: 'booking_confirmation', type: 'OFFICIAL', category: 'UTILITY', body: 'Booking Anda dikonfirmasi.' },
             ],
           })
-        return Promise.resolve({ ok: true, json: async () => ({ id: 'm1', deliveryStatus: 'SENT' }) })
+        return Promise.resolve({ ok: true, json: async () => ({ defaultChannel: 'UNOFFICIAL' }) })
       })
     )
-    render(<ComposeBox conversationId="conv_1" botEnabled={false} onSent={() => {}} />)
-    await switchToUnofficial()
+    render(<ComposeBox conversationId="conv_1" onSent={() => {}} />)
     await openTemplateMenu()
 
     expect(await screen.findByRole('heading', { name: /panduan/i })).toBeInTheDocument()
@@ -98,9 +95,14 @@ describe('ComposeBox quick replies', () => {
   })
 
   it('shows an inline error and does not open the picker when the templates request fails', async () => {
-    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve({ ok: false, json: async () => ({ error: 'Internal error' }) })))
-    render(<ComposeBox conversationId="conv_1" botEnabled={false} onSent={() => {}} />)
-    await switchToUnofficial()
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url: string) => {
+        if (url === '/api/templates') return Promise.resolve({ ok: false, json: async () => ({ error: 'Internal error' }) })
+        return Promise.resolve({ ok: true, json: async () => ({ defaultChannel: 'UNOFFICIAL' }) })
+      })
+    )
+    render(<ComposeBox conversationId="conv_1" onSent={() => {}} />)
 
     await openTemplateMenu()
 
@@ -109,9 +111,14 @@ describe('ComposeBox quick replies', () => {
   })
 
   it('shows an inline error when the templates request throws (network failure)', async () => {
-    vi.stubGlobal('fetch', vi.fn(() => Promise.reject(new Error('Network error'))))
-    render(<ComposeBox conversationId="conv_1" botEnabled={false} onSent={() => {}} />)
-    await switchToUnofficial()
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url: string) => {
+        if (url === '/api/templates') return Promise.reject(new Error('Network error'))
+        return Promise.resolve({ ok: true, json: async () => ({ defaultChannel: 'UNOFFICIAL' }) })
+      })
+    )
+    render(<ComposeBox conversationId="conv_1" onSent={() => {}} />)
 
     await openTemplateMenu()
 
@@ -119,9 +126,14 @@ describe('ComposeBox quick replies', () => {
   })
 
   it('shows the empty state when there are no quick-reply templates', async () => {
-    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve({ ok: true, json: async () => [] })))
-    render(<ComposeBox conversationId="conv_1" botEnabled={false} onSent={() => {}} />)
-    await switchToUnofficial()
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url: string) => {
+        if (url === '/api/templates') return Promise.resolve({ ok: true, json: async () => [] })
+        return Promise.resolve({ ok: true, json: async () => ({ defaultChannel: 'UNOFFICIAL' }) })
+      })
+    )
+    render(<ComposeBox conversationId="conv_1" onSent={() => {}} />)
 
     await openTemplateMenu()
 
@@ -147,8 +159,7 @@ describe('ComposeBox quick reply variables', () => {
 
   it('opens a parameter form instead of pasting immediately when the body has {{n}} placeholders', async () => {
     vi.stubGlobal('fetch', mockFetch([varQuickReply]))
-    render(<ComposeBox conversationId="conv_1" botEnabled={false} onSent={() => {}} />)
-    await switchToUnofficial()
+    render(<ComposeBox conversationId="conv_1" onSent={() => {}} />)
     await openTemplateMenu()
 
     fireEvent.click(await screen.findByText('Konfirmasi Booking'))
@@ -161,8 +172,7 @@ describe('ComposeBox quick reply variables', () => {
 
   it('interpolates the filled values into the text input on Gunakan Balasan', async () => {
     vi.stubGlobal('fetch', mockFetch([varQuickReply]))
-    render(<ComposeBox conversationId="conv_1" botEnabled={false} onSent={() => {}} />)
-    await switchToUnofficial()
+    render(<ComposeBox conversationId="conv_1" onSent={() => {}} />)
     await openTemplateMenu()
     fireEvent.click(await screen.findByText('Konfirmasi Booking'))
 
@@ -178,8 +188,7 @@ describe('ComposeBox quick reply variables', () => {
 
   it('closes the param form and returns to the list on Batal, without touching the text input', async () => {
     vi.stubGlobal('fetch', mockFetch([varQuickReply]))
-    render(<ComposeBox conversationId="conv_1" botEnabled={false} onSent={() => {}} />)
-    await switchToUnofficial()
+    render(<ComposeBox conversationId="conv_1" onSent={() => {}} />)
     await openTemplateMenu()
     fireEvent.click(await screen.findByText('Konfirmasi Booking'))
 
@@ -195,8 +204,7 @@ describe('ComposeBox quick reply variables', () => {
       'fetch',
       mockFetch([{ ...varQuickReply, body: 'Halo {{1}}, apakah benar {{1}}?' }])
     )
-    render(<ComposeBox conversationId="conv_1" botEnabled={false} onSent={() => {}} />)
-    await switchToUnofficial()
+    render(<ComposeBox conversationId="conv_1" onSent={() => {}} />)
     await openTemplateMenu()
     fireEvent.click(await screen.findByText('Konfirmasi Booking'))
 
@@ -224,8 +232,7 @@ describe('ComposeBox variable-from-data picker', () => {
         return Promise.resolve({ ok: true, json: async () => ({ defaultChannel: 'UNOFFICIAL' }) })
       })
     )
-    render(<ComposeBox conversationId="conv_1" botEnabled={false} onSent={() => {}} />)
-    await switchToUnofficial()
+    render(<ComposeBox conversationId="conv_1" onSent={() => {}} />)
     await openTemplateMenu()
     fireEvent.click(await screen.findByText('Konfirmasi'))
 
@@ -244,7 +251,7 @@ describe('ComposeBox variable-from-data picker', () => {
         return Promise.resolve({ ok: true, json: async () => ({ defaultChannel: 'OFFICIAL' }) })
       })
     )
-    render(<ComposeBox conversationId="conv_1" botEnabled={false} contactName={contactName} bookingData={bookingData} onSent={() => {}} />)
+    render(<ComposeBox conversationId="conv_1" contactName={contactName} bookingData={bookingData} onSent={() => {}} />)
     await openTemplateMenu()
     fireEvent.click(await screen.findByText('booking_confirmation'))
 
@@ -263,8 +270,7 @@ describe('ComposeBox variable-from-data picker', () => {
         return Promise.resolve({ ok: true, json: async () => ({ defaultChannel: 'UNOFFICIAL' }) })
       })
     )
-    render(<ComposeBox conversationId="conv_1" botEnabled={false} contactName={contactName} bookingData={bookingData} onSent={() => {}} />)
-    await switchToUnofficial()
+    render(<ComposeBox conversationId="conv_1" contactName={contactName} bookingData={bookingData} onSent={() => {}} />)
     await openTemplateMenu()
     fireEvent.click(await screen.findByText('Konfirmasi'))
 
@@ -304,7 +310,7 @@ describe('ComposeBox variable bindings (auto-resolved at selection time)', () =>
         return Promise.resolve({ ok: true, json: async () => ({ defaultChannel: 'OFFICIAL' }) })
       })
     )
-    render(<ComposeBox conversationId="conv_1" botEnabled={false} contactName={contactName} bookingData={bookingData} onSent={() => {}} />)
+    render(<ComposeBox conversationId="conv_1" contactName={contactName} bookingData={bookingData} onSent={() => {}} />)
     await openTemplateMenu()
     fireEvent.click(await screen.findByText('booking_confirmation'))
 
@@ -336,7 +342,7 @@ describe('ComposeBox variable bindings (auto-resolved at selection time)', () =>
         return Promise.resolve({ ok: true, json: async () => ({ defaultChannel: 'OFFICIAL' }) })
       })
     )
-    render(<ComposeBox conversationId="conv_1" botEnabled={false} contactName={contactName} bookingData={bookingData} onSent={() => {}} />)
+    render(<ComposeBox conversationId="conv_1" contactName={contactName} bookingData={bookingData} onSent={() => {}} />)
     await openTemplateMenu()
     fireEvent.click(await screen.findByText('booking_confirmation'))
 
@@ -358,8 +364,7 @@ describe('ComposeBox variable bindings (auto-resolved at selection time)', () =>
         return Promise.resolve({ ok: true, json: async () => ({ defaultChannel: 'UNOFFICIAL' }) })
       })
     )
-    render(<ComposeBox conversationId="conv_1" botEnabled={false} contactName={contactName} bookingData={bookingData} onSent={() => {}} />)
-    await switchToUnofficial()
+    render(<ComposeBox conversationId="conv_1" contactName={contactName} bookingData={bookingData} onSent={() => {}} />)
     await openTemplateMenu()
     fireEvent.click(await screen.findByText('Konfirmasi'))
 
@@ -385,8 +390,7 @@ describe('ComposeBox variable bindings (auto-resolved at selection time)', () =>
         return Promise.resolve({ ok: true, json: async () => ({ defaultChannel: 'UNOFFICIAL' }) })
       })
     )
-    render(<ComposeBox conversationId="conv_1" botEnabled={false} contactName={contactName} bookingData={bookingData} onSent={() => {}} />)
-    await switchToUnofficial()
+    render(<ComposeBox conversationId="conv_1" contactName={contactName} bookingData={bookingData} onSent={() => {}} />)
     await openTemplateMenu()
     fireEvent.click(await screen.findByText('Konfirmasi'))
 
@@ -425,7 +429,7 @@ describe('ComposeBox send failures', () => {
     mockSend({ ok: false, status: 500, json: async () => ({ error: 'Internal error' }) })
     const onSent = vi.fn()
 
-    render(<ComposeBox conversationId="conv_1" botEnabled={false} onSent={onSent} />)
+    render(<ComposeBox conversationId="conv_1" onSent={onSent} />)
     const input = await type(TYPED)
     fireEvent.click(screen.getByRole('button', { name: 'Kirim' }))
 
@@ -438,7 +442,7 @@ describe('ComposeBox send failures', () => {
     mockSend({ ok: false, status: 401, json: async () => ({ error: 'Unauthorized' }) })
     const onSent = vi.fn()
 
-    render(<ComposeBox conversationId="conv_1" botEnabled={false} onSent={onSent} />)
+    render(<ComposeBox conversationId="conv_1" onSent={onSent} />)
     const input = await type(TYPED)
     fireEvent.click(screen.getByRole('button', { name: 'Kirim' }))
 
@@ -451,7 +455,7 @@ describe('ComposeBox send failures', () => {
     mockSend(() => Promise.reject(new Error('Network error')))
     const onSent = vi.fn()
 
-    render(<ComposeBox conversationId="conv_1" botEnabled={false} onSent={onSent} />)
+    render(<ComposeBox conversationId="conv_1" onSent={onSent} />)
     const input = await type(TYPED)
     fireEvent.click(screen.getByRole('button', { name: 'Kirim' }))
 
@@ -463,7 +467,7 @@ describe('ComposeBox send failures', () => {
   it('re-enables the Kirim button after a failure so the agent can retry the same text', async () => {
     mockSend({ ok: false, status: 500, json: async () => ({ error: 'Internal error' }) })
 
-    render(<ComposeBox conversationId="conv_1" botEnabled={false} onSent={() => {}} />)
+    render(<ComposeBox conversationId="conv_1" onSent={() => {}} />)
     await type(TYPED)
     fireEvent.click(screen.getByRole('button', { name: 'Kirim' }))
 
@@ -475,7 +479,7 @@ describe('ComposeBox send failures', () => {
     mockSend({ ok: true, status: 200, json: async () => ({ id: 'msg_1', deliveryStatus: 'SENT' }) })
     const onSent = vi.fn()
 
-    render(<ComposeBox conversationId="conv_1" botEnabled={false} onSent={onSent} />)
+    render(<ComposeBox conversationId="conv_1" onSent={onSent} />)
     const input = await type(TYPED)
     fireEvent.click(screen.getByRole('button', { name: 'Kirim' }))
 
@@ -492,7 +496,7 @@ describe('ComposeBox send failures', () => {
     mockSend({ ok: true, status: 200, json: async () => ({ id: 'msg_1', deliveryStatus: 'SENT' }) })
     const onSent = vi.fn()
 
-    render(<ComposeBox conversationId="conv_1" botEnabled={false} onSent={onSent} />)
+    render(<ComposeBox conversationId="conv_1" onSent={onSent} />)
     const input = await type(TYPED)
     fireEvent.keyDown(input, { key: 'Enter' })
 
@@ -510,7 +514,7 @@ describe('ComposeBox send failures', () => {
     mockSend({ ok: true, status: 200, json: async () => ({ id: 'msg_1', deliveryStatus: 'SENT' }) })
     const onSent = vi.fn()
 
-    render(<ComposeBox conversationId="conv_1" botEnabled={false} onSent={onSent} />)
+    render(<ComposeBox conversationId="conv_1" onSent={onSent} />)
     const input = await type(TYPED)
     fireEvent.keyDown(input, keyEvent)
 
@@ -528,7 +532,7 @@ describe('ComposeBox send failures', () => {
       )
     )
 
-    render(<ComposeBox conversationId="conv_1" botEnabled={false} onSent={() => {}} />)
+    render(<ComposeBox conversationId="conv_1" onSent={() => {}} />)
     await type(TYPED)
     fireEvent.click(screen.getByRole('button', { name: 'Kirim' }))
     await screen.findByText('Gagal mengirim pesan — coba lagi')
@@ -565,7 +569,7 @@ describe('ComposeBox attachments', () => {
 
   it('uploads a selected file and shows an attachment preview chip with its filename', async () => {
     mockFetch()
-    render(<ComposeBox conversationId="conv_1" botEnabled={false} onSent={() => {}} />)
+    render(<ComposeBox conversationId="conv_1" onSent={() => {}} />)
 
     selectFile(new File(['x'], 'foto.jpg', { type: 'image/jpeg' }))
 
@@ -576,7 +580,7 @@ describe('ComposeBox attachments', () => {
   it('sends a media-only message (no caption) with the uploaded attachment', async () => {
     mockFetch()
     const onSent = vi.fn()
-    render(<ComposeBox conversationId="conv_1" botEnabled={false} onSent={onSent} />)
+    render(<ComposeBox conversationId="conv_1" onSent={onSent} />)
 
     selectFile(new File(['x'], 'foto.jpg', { type: 'image/jpeg' }))
     await screen.findByAltText(/foto\.jpg/)
@@ -595,7 +599,7 @@ describe('ComposeBox attachments', () => {
 
   it('removes the staged attachment when its cancel button is clicked, without sending media', async () => {
     mockFetch()
-    render(<ComposeBox conversationId="conv_1" botEnabled={false} onSent={() => {}} />)
+    render(<ComposeBox conversationId="conv_1" onSent={() => {}} />)
 
     selectFile(new File(['x'], 'foto.jpg', { type: 'image/jpeg' }))
     await screen.findByAltText(/foto\.jpg/)
@@ -607,7 +611,7 @@ describe('ComposeBox attachments', () => {
 
   it('shows an error and stages nothing when the upload itself fails', async () => {
     mockFetch({ uploads: { ok: false, json: async () => ({ error: 'Ukuran file melebihi batas 5MB untuk image' }) } })
-    render(<ComposeBox conversationId="conv_1" botEnabled={false} onSent={() => {}} />)
+    render(<ComposeBox conversationId="conv_1" onSent={() => {}} />)
 
     selectFile(new File(['x'], 'foto.jpg', { type: 'image/jpeg' }))
 
@@ -616,10 +620,10 @@ describe('ComposeBox attachments', () => {
   })
 })
 
-// ComposeBox always puts an explicit `channel` in its /api/send body, and
-// resolveChannel lets an explicit value win — so a hardcoded initial
-// 'OFFICIAL' made the admin-configurable Settings.defaultChannel dead
-// configuration for every human-agent send.
+// ComposeBox always puts an explicit `channel` in its /api/send body, seeded from
+// Settings.defaultChannel -- there's no manual selector anymore (removed: satu jalur kirim
+// per organisasi, bukan pilihan per pesan), so this is observed purely through what actually
+// lands in the /api/send request, not through a Channel <select> that no longer exists.
 describe('ComposeBox default channel from Settings', () => {
   function mockSettings(response: unknown) {
     vi.stubGlobal(
@@ -632,94 +636,41 @@ describe('ComposeBox default channel from Settings', () => {
     )
   }
 
-  it('seeds the channel select from Settings.defaultChannel', async () => {
-    mockSettings({ ok: true, json: async () => ({ defaultChannel: 'UNOFFICIAL', botAutoReplyAll: true }) })
-
-    render(<ComposeBox conversationId="conv_1" botEnabled={false} onSent={() => {}} />)
-
-    await waitFor(() => expect(screen.getByLabelText('Channel')).toHaveValue('UNOFFICIAL'))
-  })
-
-  it('keeps OFFICIAL when Settings.defaultChannel is OFFICIAL', async () => {
-    mockSettings({ ok: true, json: async () => ({ defaultChannel: 'OFFICIAL', botAutoReplyAll: true }) })
-
-    render(<ComposeBox conversationId="conv_1" botEnabled={false} onSent={() => {}} />)
-
-    await waitFor(() => expect(fetch).toHaveBeenCalledWith('/api/settings'))
-    expect(screen.getByLabelText('Channel')).toHaveValue('OFFICIAL')
-  })
-
-  it('sends on the seeded channel', async () => {
-    mockSettings({ ok: true, json: async () => ({ defaultChannel: 'UNOFFICIAL' }) })
-
-    render(<ComposeBox conversationId="conv_1" botEnabled={false} onSent={() => {}} />)
-    await waitFor(() => expect(screen.getByLabelText('Channel')).toHaveValue('UNOFFICIAL'))
-
-    fireEvent.change(screen.getByLabelText('Pesan'), { target: { value: 'Halo' } })
+  async function sendAndCaptureChannel() {
+    render(<ComposeBox conversationId="conv_1" onSent={() => {}} />)
+    fireEvent.change(await screen.findByLabelText('Pesan'), { target: { value: 'Halo' } })
     fireEvent.click(screen.getByRole('button', { name: 'Kirim' }))
-
-    await waitFor(() =>
-      expect(fetch).toHaveBeenCalledWith('/api/send', {
-        method: 'POST',
-        body: JSON.stringify({ conversationId: 'conv_1', text: 'Halo', channel: 'UNOFFICIAL' }),
-      })
-    )
-  })
-
-  it('still lets the agent override the seeded channel for a single message', async () => {
-    mockSettings({ ok: true, json: async () => ({ defaultChannel: 'UNOFFICIAL' }) })
-
-    render(<ComposeBox conversationId="conv_1" botEnabled={false} onSent={() => {}} />)
-    await waitFor(() => expect(screen.getByLabelText('Channel')).toHaveValue('UNOFFICIAL'))
-
-    fireEvent.change(screen.getByLabelText('Channel'), { target: { value: 'OFFICIAL' } })
-
-    expect(screen.getByLabelText('Channel')).toHaveValue('OFFICIAL')
-  })
-
-  // A late-resolving settings fetch must not silently flip a channel the agent
-  // has already chosen for the message they're composing.
-  it('does not clobber an override made before the settings fetch resolves', async () => {
-    let release: (value: unknown) => void = () => {}
-    mockSettings(() => new Promise((resolve) => (release = resolve)))
-
-    render(<ComposeBox conversationId="conv_1" botEnabled={false} onSent={() => {}} />)
-    // Override away from the 'OFFICIAL' pre-fetch fallback, then let the
-    // settings fetch land with a *different* value — a clobber would be visible.
-    fireEvent.change(screen.getByLabelText('Channel'), { target: { value: 'UNOFFICIAL' } })
-    expect(screen.getByLabelText('Channel')).toHaveValue('UNOFFICIAL')
-
-    release({ ok: true, json: async () => ({ defaultChannel: 'OFFICIAL' }) })
-
     await waitFor(() => expect(fetch).toHaveBeenCalledWith('/api/settings'))
-    expect(screen.getByLabelText('Channel')).toHaveValue('UNOFFICIAL')
+    await waitFor(() =>
+      expect(vi.mocked(fetch).mock.calls.some(([url]) => url === '/api/send')).toBe(true)
+    )
+    const sendCall = vi.mocked(fetch).mock.calls.find(([url]) => url === '/api/send')!
+    return JSON.parse((sendCall[1] as RequestInit).body as string).channel
+  }
+
+  it('sends on Settings.defaultChannel when it is UNOFFICIAL', async () => {
+    mockSettings({ ok: true, json: async () => ({ defaultChannel: 'UNOFFICIAL', botAutoReplyAll: true }) })
+    expect(await sendAndCaptureChannel()).toBe('UNOFFICIAL')
+  })
+
+  it('sends on Settings.defaultChannel when it is OFFICIAL', async () => {
+    mockSettings({ ok: true, json: async () => ({ defaultChannel: 'OFFICIAL', botAutoReplyAll: true }) })
+    expect(await sendAndCaptureChannel()).toBe('OFFICIAL')
   })
 
   it('falls back to OFFICIAL when the settings request is not ok', async () => {
     mockSettings({ ok: false, json: async () => ({ error: 'Internal error' }) })
-
-    render(<ComposeBox conversationId="conv_1" botEnabled={false} onSent={() => {}} />)
-
-    await waitFor(() => expect(fetch).toHaveBeenCalledWith('/api/settings'))
-    expect(screen.getByLabelText('Channel')).toHaveValue('OFFICIAL')
+    expect(await sendAndCaptureChannel()).toBe('OFFICIAL')
   })
 
   it('falls back to OFFICIAL when the settings request throws', async () => {
     mockSettings(() => Promise.reject(new Error('Network error')))
-
-    render(<ComposeBox conversationId="conv_1" botEnabled={false} onSent={() => {}} />)
-
-    await waitFor(() => expect(fetch).toHaveBeenCalledWith('/api/settings'))
-    expect(screen.getByLabelText('Channel')).toHaveValue('OFFICIAL')
+    expect(await sendAndCaptureChannel()).toBe('OFFICIAL')
   })
 
   it('falls back to OFFICIAL when defaultChannel is missing or unrecognised', async () => {
     mockSettings({ ok: true, json: async () => ({ botAutoReplyAll: true }) })
-
-    render(<ComposeBox conversationId="conv_1" botEnabled={false} onSent={() => {}} />)
-
-    await waitFor(() => expect(fetch).toHaveBeenCalledWith('/api/settings'))
-    expect(screen.getByLabelText('Channel')).toHaveValue('OFFICIAL')
+    expect(await sendAndCaptureChannel()).toBe('OFFICIAL')
   })
 })
 
@@ -733,7 +684,6 @@ describe('ComposeBox reply preview', () => {
     render(
       <ComposeBox
         conversationId="conv_1"
-        botEnabled={false}
         replyingTo={replyingTo}
         onCancelReply={() => {}}
         onSent={() => {}}
@@ -744,7 +694,7 @@ describe('ComposeBox reply preview', () => {
   })
 
   it('does not show the preview bar when replyingTo is null', () => {
-    render(<ComposeBox conversationId="conv_1" botEnabled={false} onSent={() => {}} />)
+    render(<ComposeBox conversationId="conv_1" onSent={() => {}} />)
     expect(screen.queryByText(/^Membalas /)).not.toBeInTheDocument()
   })
 
@@ -753,7 +703,6 @@ describe('ComposeBox reply preview', () => {
     render(
       <ComposeBox
         conversationId="conv_1"
-        botEnabled={false}
         replyingTo={replyingTo}
         onCancelReply={onCancelReply}
         onSent={() => {}}
@@ -776,7 +725,6 @@ describe('ComposeBox reply preview', () => {
     render(
       <ComposeBox
         conversationId="conv_1"
-        botEnabled={false}
         replyingTo={replyingTo}
         onCancelReply={() => {}}
         onSent={onSent}
@@ -819,7 +767,7 @@ describe('ComposeBox official template dispatch', () => {
 
   it('only lists APPROVED official templates, not PENDING ones', async () => {
     vi.stubGlobal('fetch', mockFetch([quickReply, simpleOfficial, pendingOfficial]))
-    render(<ComposeBox conversationId="conv_1" botEnabled={false} onSent={() => {}} />)
+    render(<ComposeBox conversationId="conv_1" onSent={() => {}} />)
 
     await openTemplateMenu()
 
@@ -831,7 +779,7 @@ describe('ComposeBox official template dispatch', () => {
     const fetchMock = mockFetch([simpleOfficial])
     vi.stubGlobal('fetch', fetchMock)
     const onSent = vi.fn()
-    render(<ComposeBox conversationId="conv_1" botEnabled={false} onSent={onSent} />)
+    render(<ComposeBox conversationId="conv_1" onSent={onSent} />)
 
     await openTemplateMenu()
     fireEvent.click(await screen.findByText('sapaan'))
@@ -851,7 +799,7 @@ describe('ComposeBox official template dispatch', () => {
 
   it('opens a parameter form for a template with variables instead of sending immediately', async () => {
     vi.stubGlobal('fetch', mockFetch([paramOfficial]))
-    render(<ComposeBox conversationId="conv_1" botEnabled={false} onSent={() => {}} />)
+    render(<ComposeBox conversationId="conv_1" onSent={() => {}} />)
 
     await openTemplateMenu()
     fireEvent.click(await screen.findByText('booking_confirmation'))
@@ -864,7 +812,7 @@ describe('ComposeBox official template dispatch', () => {
   it('sends the filled-in parameters in order when the form is submitted', async () => {
     const fetchMock = mockFetch([paramOfficial])
     vi.stubGlobal('fetch', fetchMock)
-    render(<ComposeBox conversationId="conv_1" botEnabled={false} onSent={() => {}} />)
+    render(<ComposeBox conversationId="conv_1" onSent={() => {}} />)
 
     await openTemplateMenu()
     fireEvent.click(await screen.findByText('booking_confirmation'))
@@ -882,7 +830,7 @@ describe('ComposeBox official template dispatch', () => {
 
   it('closes the param form and returns to the list on Batal', async () => {
     vi.stubGlobal('fetch', mockFetch([paramOfficial]))
-    render(<ComposeBox conversationId="conv_1" botEnabled={false} onSent={() => {}} />)
+    render(<ComposeBox conversationId="conv_1" onSent={() => {}} />)
 
     await openTemplateMenu()
     fireEvent.click(await screen.findByText('booking_confirmation'))
@@ -898,7 +846,7 @@ describe('ComposeBox official template dispatch', () => {
     const fetchMock = mockFetch([simpleOfficial], { ok: false, json: async () => ({ error: 'Template belum disetujui Meta' }) })
     vi.stubGlobal('fetch', fetchMock)
     const onSent = vi.fn()
-    render(<ComposeBox conversationId="conv_1" botEnabled={false} onSent={onSent} />)
+    render(<ComposeBox conversationId="conv_1" onSent={onSent} />)
 
     await openTemplateMenu()
     fireEvent.click(await screen.findByText('sapaan'))
@@ -912,7 +860,7 @@ describe('ComposeBox official template dispatch', () => {
 
   it('opens the param form for an LTO template even with zero body variables, and requires an expiration', async () => {
     vi.stubGlobal('fetch', mockFetch([ltoOfficial]))
-    render(<ComposeBox conversationId="conv_1" botEnabled={false} onSent={() => {}} />)
+    render(<ComposeBox conversationId="conv_1" onSent={() => {}} />)
 
     await openTemplateMenu()
     fireEvent.click(await screen.findByText('promo_akhir_tahun'))
@@ -925,7 +873,7 @@ describe('ComposeBox official template dispatch', () => {
   it('sends an LTO template with the expiration converted to epoch milliseconds', async () => {
     const fetchMock = mockFetch([ltoOfficial])
     vi.stubGlobal('fetch', fetchMock)
-    render(<ComposeBox conversationId="conv_1" botEnabled={false} onSent={() => {}} />)
+    render(<ComposeBox conversationId="conv_1" onSent={() => {}} />)
 
     await openTemplateMenu()
     fireEvent.click(await screen.findByText('promo_akhir_tahun'))
@@ -941,7 +889,7 @@ describe('ComposeBox official template dispatch', () => {
 
   it('opens the param form for a COUPON template even with zero body variables, and requires a code', async () => {
     vi.stubGlobal('fetch', mockFetch([couponOfficial]))
-    render(<ComposeBox conversationId="conv_1" botEnabled={false} onSent={() => {}} />)
+    render(<ComposeBox conversationId="conv_1" onSent={() => {}} />)
 
     await openTemplateMenu()
     fireEvent.click(await screen.findByText('kode_diskon'))
@@ -954,7 +902,7 @@ describe('ComposeBox official template dispatch', () => {
   it('sends a COUPON template with the real code the agent typed', async () => {
     const fetchMock = mockFetch([couponOfficial])
     vi.stubGlobal('fetch', fetchMock)
-    render(<ComposeBox conversationId="conv_1" botEnabled={false} onSent={() => {}} />)
+    render(<ComposeBox conversationId="conv_1" onSent={() => {}} />)
 
     await openTemplateMenu()
     fireEvent.click(await screen.findByText('kode_diskon'))
@@ -970,10 +918,9 @@ describe('ComposeBox official template dispatch', () => {
 })
 
 describe('ComposeBox — test room (isTest)', () => {
-  it('hides the channel selector and attach menu, and shows the customer-typing placeholder', () => {
-    render(<ComposeBox conversationId="conv_test" botEnabled={true} isTest={true} onSent={() => {}} />)
+  it('hides the attach menu and shows the customer-typing placeholder', () => {
+    render(<ComposeBox conversationId="conv_test" isTest={true} onSent={() => {}} />)
 
-    expect(screen.queryByLabelText('Channel')).not.toBeInTheDocument()
     expect(screen.queryByLabelText('Tambah lampiran atau template')).not.toBeInTheDocument()
     expect(screen.getByPlaceholderText('Ketik sebagai customer untuk menguji bot...')).toBeInTheDocument()
   })
@@ -986,7 +933,7 @@ describe('ComposeBox — test room (isTest)', () => {
     vi.stubGlobal('fetch', fetchMock)
     const onSent = vi.fn()
 
-    render(<ComposeBox conversationId="conv_test" botEnabled={true} isTest={true} onSent={onSent} />)
+    render(<ComposeBox conversationId="conv_test" isTest={true} onSent={onSent} />)
 
     fireEvent.change(screen.getByLabelText('Pesan'), { target: { value: 'Halo bot' } })
     fireEvent.click(screen.getByRole('button', { name: 'Kirim' }))
@@ -1004,34 +951,17 @@ describe('ComposeBox — test room (isTest)', () => {
 // tertulis, dan menu lampirannya adalah menu sungguhan.
 describe('ComposeBox — nama kontrol dan pintasan', () => {
   it('memberi nama pada setiap kontrol yang bisa diklik di kotak tulis', async () => {
-    render(<ComposeBox conversationId="conv_1" botEnabled={false} onSent={() => {}} />)
+    render(<ComposeBox conversationId="conv_1" onSent={() => {}} />)
 
     expect(screen.getByLabelText('Pesan')).toBeInTheDocument()
-    expect(screen.getByLabelText('Channel')).toBeInTheDocument()
     expect(await screen.findByLabelText('Tambah lampiran atau template')).toBeInTheDocument()
-    // Tombol kirim menyebut apa yang terjadi, bukan sekadar sebuah ikon panah.
+    // Tombol kirim ikon-saja: namanya untuk pembaca layar tetap "Kirim" lewat aria-label,
+    // meski tidak lagi ada teks yang tertulis di layar.
     expect(screen.getByRole('button', { name: 'Kirim' })).toBeInTheDocument()
   })
 
-  it('menuliskan pintasan kirim di layar alih-alih membiarkan operator menemukannya sendiri', () => {
-    render(<ComposeBox conversationId="conv_1" botEnabled={false} onSent={() => {}} />)
-
-    expect(screen.getByText(/Enter mengirim/)).toBeInTheDocument()
-    expect(screen.getByText(/Shift \+ Enter/)).toBeInTheDocument()
-  })
-
-  it('menyebutkan siapa yang sedang menjawab chat ini, bukan hanya menawarkan tombol tukar', () => {
-    const { rerender } = render(
-      <ComposeBox conversationId="conv_1" botEnabled={true} onSent={() => {}} />
-    )
-    expect(screen.getByText('Bot menjawab chat ini otomatis')).toBeInTheDocument()
-
-    rerender(<ComposeBox conversationId="conv_1" botEnabled={false} onSent={() => {}} />)
-    expect(screen.getByText('Chat ini dijawab agen')).toBeInTheDocument()
-  })
-
   it('membuka lampiran/template sebagai menu sungguhan, dengan tiga pilihan yang bernama', async () => {
-    render(<ComposeBox conversationId="conv_1" botEnabled={false} onSent={() => {}} />)
+    render(<ComposeBox conversationId="conv_1" onSent={() => {}} />)
 
     const trigger = await screen.findByLabelText('Tambah lampiran atau template')
     expect(trigger).toHaveAttribute('aria-expanded', 'false')
@@ -1049,7 +979,7 @@ describe('ComposeBox — nama kontrol dan pintasan', () => {
     const fetchMock = vi.fn(async () => ({ ok: true, json: async () => ({ id: 'm1', deliveryStatus: 'SENT', channel: 'OFFICIAL', createdAt: new Date().toISOString() }) }) as Response)
     vi.stubGlobal('fetch', fetchMock)
     const onSent = vi.fn()
-    render(<ComposeBox conversationId="conv_1" botEnabled={false} onSent={onSent} />)
+    render(<ComposeBox conversationId="conv_1" onSent={onSent} />)
 
     const box = screen.getByLabelText('Pesan')
     fireEvent.change(box, { target: { value: 'Halo kak' } })
