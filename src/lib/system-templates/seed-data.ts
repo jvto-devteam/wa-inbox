@@ -662,6 +662,25 @@ https://crew-portal.javavolcano-touroperator.com/`,
     source: 'javavolcano-touroperator/app/Console/Commands/TripReminderCrew.php:82',
   },
   {
+    key: 'trip_daily_itinerary',
+    name: 'Itinerary harian ke pelanggan',
+    description:
+      'Dikirim ke pelanggan setiap malam selama trip (jadwal dari new-backoffice, tabel WaItinerary) lewat /backoffice/send-wa/test di javavolcano-touroperator.',
+    audience: 'CUSTOMER',
+    body: `*Hello {customer_name}.*
+{itinerary}`,
+    imageUrl: null,
+    variables: [
+      req('customer_name', 'John Doe', 'Nama pelanggan (user booking).'),
+      req(
+        'itinerary',
+        '*Day 1 - Ijen Crater*\nMidnight hike to the blue fire.',
+        "Isi WaItinerary.message dengan setiap {br} diganti baris baru."
+      ),
+    ],
+    source: 'javavolcano-touroperator/app/Http/Controllers/Backoffice/SendWaController.php:57',
+  },
+  {
     key: 'internal_consent_completed',
     name: 'Form consent selesai diisi',
     description: 'Dikirim ke nomor internal JVTO saat webhook Typeform menerima form consent yang sudah diisi pelanggan.',

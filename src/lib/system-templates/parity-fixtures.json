@@ -380,6 +380,22 @@
       "text": "*Reminder for tomorrow’s schedule*.\n\n*Customer Name:* John Doe\n*Pickup Location:* Hotel Majapahit Surabaya\n*Pickup Time:* 08:00\n*Crews:* Budi Example, Agus Example (Ijen Guide)\n\n📱 Check more details at:\nhttps://crew-portal.javavolcano-touroperator.com/"
     }
   ],
+  "trip_daily_itinerary": [
+    {
+      "variables": {
+        "customer_name": "John Doe",
+        "itinerary": "*Day 1 - Ijen Crater*\nMidnight hike to the blue fire.\n\nPickup 00:30 at the hotel lobby."
+      },
+      "text": "*Hello John Doe.*\n*Day 1 - Ijen Crater*\nMidnight hike to the blue fire.\n\nPickup 00:30 at the hotel lobby."
+    },
+    {
+      "variables": {
+        "customer_name": "Jane Roe",
+        "itinerary": "*Day 2 - Bromo*\nSunrise at Penanjakan."
+      },
+      "text": "*Hello Jane Roe.*\n*Day 2 - Bromo*\nSunrise at Penanjakan."
+    }
+  ],
   "internal_consent_completed": [
     {
       "variables": {

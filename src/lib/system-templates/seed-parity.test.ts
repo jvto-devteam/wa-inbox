@@ -33,6 +33,7 @@ const EXPECTED_KEYS = [
   'payment_received_first',
   'payment_reminder_balance',
   'trip_concluded',
+  'trip_daily_itinerary',
   'trip_information',
   'trip_payment_arrangement',
   'vendor_tshirt_size_update',
