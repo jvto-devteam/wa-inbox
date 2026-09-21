@@ -1,0 +1,411 @@
+{
+  "booking_pending_payment": [
+    {
+      "variables": {
+        "customer_name": "John Doe",
+        "booking_id": "JVTO-2026-0001",
+        "tour_package": "Bromo Ijen Tour 3 Days 2 Nights",
+        "travel_dates": "12 October 2026 - 14 October 2026",
+        "pax": "2",
+        "amount_due": "1.500.000",
+        "payment_type": "Deposit",
+        "payment_method": "Credit/Debit Card (XENDIT)",
+        "payment_link": "https://checkout.xendit.co/web/example-invoice-0001",
+        "payment_deadline": "05 October 2026 23:59 WIB"
+      },
+      "text": "*[JVTO] Booking Pending — Payment Required* ⏳\n\nHi _John Doe_, thank you for booking with *JVTO*. Your booking has been created and is currently *pending payment*.\n\n*Booking Summary*\n- *Booking ID:* JVTO-2026-0001\n- *Tour Package:* Bromo Ijen Tour 3 Days 2 Nights\n- *Travel Dates:* 12 October 2026 - 14 October 2026\n- *Guests (Pax):* 2\n- *Status:* Pending (Awaiting Payment)\n\n*Amount Due:* IDR 1.500.000\n*Payment Type:* Deposit\n*Payment Method:* Credit/Debit Card (XENDIT)\n\nPlease complete your payment using this official link:\n👉 https://checkout.xendit.co/web/example-invoice-0001\n\n*Payment deadline:* 05 October 2026 23:59 WIB\n\n*Notes*\n- Your booking will be confirmed automatically once payment is successful.\n- *Security:* JVTO will never ask for your OTP/PIN. Please pay only via the link above.\n\n*Need help?* Reply to this chat or contact:\n- WhatsApp: +62 822-4478-8833\n- Email: hello@javavolcano-touroperator.com\n\n— JVTO Team"
+    }
+  ],
+  "payment_method_confirmed_cash": [
+    {
+      "variables": {
+        "customer_name": "John Doe",
+        "remaining_balance": "3.250.000"
+      },
+      "text": "Dear John Doe,\n\nThank you for confirming your payment method.\nYou have selected the following payment option for the remaining balance of your tour:\n\n🔹 *Payment Method:* Cash\n💰 *Remaining Balance:* IDR 3.250.000 \n🔗 *Payment information:* https://javavolcano-touroperator.com/payment-information\n\nIf you have any questions or need assistance, we are happy to help.\n\nWarm regards,\nJVTO Team\n🌋 Explore Java’s Volcanoes with Us"
+    }
+  ],
+  "payment_method_confirmed_card": [
+    {
+      "variables": {
+        "customer_name": "John Doe",
+        "remaining_balance": "3.250.000",
+        "payment_link": "https://checkout.xendit.co/web/example-invoice-0002"
+      },
+      "text": "Dear John Doe,\n\nThank you for confirming your payment method.\nYou have selected the following payment option for the remaining balance of your tour:\n\n🔹 *Payment Method:* Credit/Debit Card (XENDIT)\n💰 *Remaining Balance:* IDR 3.250.000 \n🔗 *Payment Link:* https://checkout.xendit.co/web/example-invoice-0002\n\nIf you have any questions or need assistance, we are happy to help.\n\nWarm regards,\nJVTO Team\n🌋 Explore Java’s Volcanoes with Us"
+    }
+  ],
+  "payment_method_confirmed_wise": [
+    {
+      "variables": {
+        "customer_name": "John Doe",
+        "remaining_balance": "3.250.000"
+      },
+      "text": "Dear John Doe,\n\nThank you for confirming your payment method.\nYou have selected the following payment option for the remaining balance of your tour:\n\n🔹 *Payment Method:* Wise Transfer\n💰 *Remaining Balance:* IDR 3.250.000 \n🔗 *Payment information:* https://javavolcano-touroperator.com/payment-information\n\nIf you have any questions or need assistance, we are happy to help.\n\nWarm regards,\nJVTO Team\n🌋 Explore Java’s Volcanoes with Us"
+    }
+  ],
+  "payment_received_first": [
+    {
+      "variables": {
+        "customer_name": "John Doe",
+        "booking_code": "JVTO-2026-0001",
+        "package_name": "Bromo Ijen Tour 3 Days 2 Nights",
+        "travel_date_start": "12 October 2026",
+        "travel_date_end": "14 October 2026",
+        "pickup": "Hotel Majapahit Surabaya 08:00",
+        "total_pax": "2",
+        "booking_slug": "a1b2c3d4-example",
+        "payment_amount": "1.500.000",
+        "payment_type": "Deposit",
+        "payment_status": "Partially Paid"
+      },
+      "text": "*[JVTO] Booking Confirmed — Payment Received* ✅🎉\n\nHi _John Doe_, thank you for your payment. Your booking is now *confirmed*.\n\n*Booking Details*\n- *Booking ID:* JVTO-2026-0001\n- *Tour Package:* Bromo Ijen Tour 3 Days 2 Nights\n- *Travel Dates:* 12 October 2026 - 14 October 2026\n-- *Pickup Location:* Hotel Majapahit Surabaya 08:00\n- *Guests (Pax):* 2\n- *Status:* Confirmed\n\n*Payment Summary*\n- *Payment Received:* IDR 1.500.000\n- *Payment Type:* Deposit\n- *Payment Status:* Partially Paid\n\n*Trip Dashboard* 📊\nView your itinerary, pickup details, accommodation, and trip updates here:\n👉 https://javavolcano-touroperator.com/my-booking/a1b2c3d4-example\n\n*Notes*\n- Any confirmed updates will appear in the Trip Dashboard.\n- If a remaining balance applies, we will share the payment link and deadline in a separate message.\n- Please review the Trip Dashboard and tell us if any details need correction.\n\n*Need help?* Reply to this chat or contact:\n- WhatsApp: +62 822-4478-8833\n- Email: hello@javavolcano-touroperator.com\n\n*Security:* JVTO will never ask for your OTP/PIN. Please use only official links shared in this chat.\n\n— JVTO Team"
+    },
+    {
+      "variables": {
+        "customer_name": "John Doe",
+        "booking_code": "JVTO-2026-0001",
+        "package_name": "3 Days 2 Nights Package",
+        "travel_date_start": "12 October 2026",
+        "travel_date_end": "14 October 2026",
+        "pickup": "Hotel Majapahit Surabaya",
+        "total_pax": "2",
+        "booking_slug": "a1b2c3d4-example",
+        "payment_amount": "4.750.000",
+        "payment_type": "Full Payment",
+        "payment_status": "Fully Paid"
+      },
+      "text": "*[JVTO] Booking Confirmed — Payment Received* ✅🎉\n\nHi _John Doe_, thank you for your payment. Your booking is now *confirmed*.\n\n*Booking Details*\n- *Booking ID:* JVTO-2026-0001\n- *Tour Package:* 3 Days 2 Nights Package\n- *Travel Dates:* 12 October 2026 - 14 October 2026\n-- *Pickup Location:* Hotel Majapahit Surabaya\n- *Guests (Pax):* 2\n- *Status:* Confirmed\n\n*Payment Summary*\n- *Payment Received:* IDR 4.750.000\n- *Payment Type:* Full Payment\n- *Payment Status:* Fully Paid\n\n*Trip Dashboard* 📊\nView your itinerary, pickup details, accommodation, and trip updates here:\n👉 https://javavolcano-touroperator.com/my-booking/a1b2c3d4-example\n\n*Notes*\n- Any confirmed updates will appear in the Trip Dashboard.\n- If a remaining balance applies, we will share the payment link and deadline in a separate message.\n- Please review the Trip Dashboard and tell us if any details need correction.\n\n*Need help?* Reply to this chat or contact:\n- WhatsApp: +62 822-4478-8833\n- Email: hello@javavolcano-touroperator.com\n\n*Security:* JVTO will never ask for your OTP/PIN. Please use only official links shared in this chat.\n\n— JVTO Team"
+    }
+  ],
+  "payment_received_balance": [
+    {
+      "variables": {
+        "customer_name": "John Doe",
+        "booking_code": "JVTO-2026-0001",
+        "package_name": "Bromo Ijen Tour 3 Days 2 Nights",
+        "travel_date_start": "12 October 2026",
+        "travel_date_end": "14 October 2026",
+        "pickup": "Hotel Majapahit Surabaya 08:00",
+        "total_pax": "2",
+        "booking_slug": "a1b2c3d4-example",
+        "payment_amount": "3.250.000",
+        "payment_type": "Full Payment",
+        "payment_status": "Fully Paid"
+      },
+      "text": "*[JVTO] Booking Confirmed — Payment Received* ✅🎉\n\nHi _John Doe_, thank you for your payment. Your booking is now *confirmed*.\n\n*Booking Details*\n- *Booking ID:* JVTO-2026-0001\n- *Tour Package:* Bromo Ijen Tour 3 Days 2 Nights\n- *Travel Dates:* 12 October 2026 - 14 October 2026\n- *Pickup Location:* Hotel Majapahit Surabaya 08:00\n- *Guests (Pax):* 2\n- *Status:* Confirmed\n\n*Payment Summary*\n- *Payment Received:* IDR 3.250.000\n- *Payment Type:* Full Payment\n- *Payment Status:* Fully Paid\n\n*Trip Dashboard* 📊\nView your itinerary, pickup details, accommodation, and trip updates here:\n👉 https://javavolcano-touroperator.com/my-booking/a1b2c3d4-example\n\n*Notes*\n- Any confirmed updates will appear in the Trip Dashboard.\n- If a remaining balance applies, we will share the payment link and deadline in a separate message.\n- Please review the Trip Dashboard and tell us if any details need correction.\n\n*Need help?* Reply to this chat or contact:\n- WhatsApp: +62 822-4478-8833\n- Email: hello@javavolcano-touroperator.com\n\n*Security:* JVTO will never ask for your OTP/PIN. Please use only official links shared in this chat.\n\n— JVTO Team"
+    },
+    {
+      "variables": {
+        "customer_name": "John Doe",
+        "booking_code": "JVTO-2026-0001",
+        "package_name": "Bromo Ijen Tour 3 Days 2 Nights",
+        "travel_date_start": "12 October 2026",
+        "travel_date_end": "14 October 2026",
+        "pickup": "Hotel Majapahit Surabaya 08:00",
+        "total_pax": "2",
+        "booking_slug": "a1b2c3d4-example",
+        "payment_amount": "1.000.000",
+        "payment_type": "Balance Payment",
+        "payment_status": "Partially Paid"
+      },
+      "text": "*[JVTO] Booking Confirmed — Payment Received* ✅🎉\n\nHi _John Doe_, thank you for your payment. Your booking is now *confirmed*.\n\n*Booking Details*\n- *Booking ID:* JVTO-2026-0001\n- *Tour Package:* Bromo Ijen Tour 3 Days 2 Nights\n- *Travel Dates:* 12 October 2026 - 14 October 2026\n- *Pickup Location:* Hotel Majapahit Surabaya 08:00\n- *Guests (Pax):* 2\n- *Status:* Confirmed\n\n*Payment Summary*\n- *Payment Received:* IDR 1.000.000\n- *Payment Type:* Balance Payment\n- *Payment Status:* Partially Paid\n\n*Trip Dashboard* 📊\nView your itinerary, pickup details, accommodation, and trip updates here:\n👉 https://javavolcano-touroperator.com/my-booking/a1b2c3d4-example\n\n*Notes*\n- Any confirmed updates will appear in the Trip Dashboard.\n- If a remaining balance applies, we will share the payment link and deadline in a separate message.\n- Please review the Trip Dashboard and tell us if any details need correction.\n\n*Need help?* Reply to this chat or contact:\n- WhatsApp: +62 822-4478-8833\n- Email: hello@javavolcano-touroperator.com\n\n*Security:* JVTO will never ask for your OTP/PIN. Please use only official links shared in this chat.\n\n— JVTO Team"
+    }
+  ],
+  "booking_confirmed_backoffice_jvto": [
+    {
+      "variables": {
+        "customer_name": "John Doe",
+        "booking_slug": "a1b2c3d4-example"
+      },
+      "text": "✅ *Booking Confirmed – Java Volcano Tour Operator (JVTO)*\nThank you, John Doe, for completing your *booking*.\n\nWe’re pleased to confirm that your *tour booking is now secured*. 📩\nYour *payment receipt, remaining balance, payment method*, and *tour itinerary* have all been sent to your registered email address.\n\nPlease kindly check your inbox (and spam folder just in case), or you can access it directly via the link below\n\n🔗 https://javavolcano-touroperator.com/my-booking/a1b2c3d4-example\n\nIf you have any questions or special requests, feel free to contact us via WhatsApp or email.\n\n🙏 We truly appreciate your trust. We look forward to welcoming you on an unforgettable journey!\n\n*JVTO Team*"
+    }
+  ],
+  "booking_confirmed_backoffice_klook": [
+    {
+      "variables": {
+        "customer_name": "John Doe",
+        "booking_slug": "a1b2c3d4-example"
+      },
+      "text": "✅ *Booking Confirmed – Java Volcano Tour Operator (JVTO)*\nThank you, John Doe, for completing your *booking*.\n\nWe’re pleased to confirm that your *tour booking is now secured*. 📩\n\nIf you have any questions or special requests, feel free to contact us via WhatsApp or email.\n\nFor detailed trip information, you can check directly at the following link: https://javavolcano-touroperator.com/my-booking/a1b2c3d4-example\n\n🙏 We truly appreciate your trust. We look forward to welcoming you on an unforgettable journey!\n\n*JVTO Team*"
+    }
+  ],
+  "booking_confirmed_klook_email": [
+    {
+      "variables": {
+        "customer_name": "John Doe",
+        "package_name": "Bromo Ijen Tour 3 Days 2 Nights",
+        "total_pax": "2",
+        "booking_slug": "a1b2c3d4-example"
+      },
+      "text": "*Booking Confirmed!* ✅🎉\n\nDear John Doe,\n\nWe're thrilled to confirm your booking! 🎉 Below are the details of your upcoming trip:\n\n*Your Booking Details*\n\n- *Tour Package*: Bromo Ijen Tour 3 Days 2 Nights\n- *Number of Pax*: 2 Pax\n\n*Access Your Personalized Trip Dashboard* 📊\nhttps://javavolcano-touroperator.com/my-booking/a1b2c3d4-example\n\n*What's Next?*\n- Your booking is confirmed, you can check your trip detail through Trip Dasbboard.\n\n*Need Help?*\nContact us:\n- WhatsApp: +62 822-4478-8833\n- Email: hello@javavolcano-touroperator.com\n\nLet's Get Ready to Explore! 🎉\nWe're looking forward to helping you create unforgettable memories!\n\nBest regards,\nJVTO Team 🚐"
+    }
+  ],
+  "payment_reminder_balance": [
+    {
+      "variables": {
+        "customer_name": "John Doe",
+        "booking_code": "JVTO-2026-0001",
+        "package_name": "Bromo Ijen Tour 3 Days 2 Nights",
+        "travel_date_start": "12 Oct 2026",
+        "travel_date_end": "14 Oct 2026",
+        "pickup": "Hotel Majapahit Surabaya 08:00",
+        "total_pax": "2",
+        "total_amount": "4,750,000",
+        "deposit_paid": "1,500,000",
+        "outstanding_balance": "3,250,000",
+        "card_due_date": "07 Oct 2026",
+        "transfer_due_date": "09 Oct 2026",
+        "card_payment_link": "https://checkout.xendit.co/web/example-invoice-0003",
+        "booking_slug": "a1b2c3d4-example"
+      },
+      "text": "*[JVTO] Payment Reminder — Balance Payment Required* ⏰\n\nHi _John Doe_, this is a reminder that your booking is confirmed and the *remaining balance* is still unpaid.\n\n*Booking Details*\n- *Booking ID:* JVTO-2026-0001\n- *Tour Package:* Bromo Ijen Tour 3 Days 2 Nights\n- *Travel Dates:* 12 Oct 2026 - 14 Oct 2026\n- *Trip Day 1:* 12 Oct 2026\n- *Pickup Location:* Hotel Majapahit Surabaya 08:00\n- *Guests (Pax):* 2\n- *Status:* Confirmed (Deposit Paid)\n\n*Payment Summary*\n- *Total Amount:* IDR 4,750,000\n- *Deposit Paid:* IDR 1,500,000\n- *Outstanding Balance:* IDR 3,250,000\n\n*Balance Payment Deadline*\n- *Card:* 07 Oct 2026 *(no later than 5 days before Day 1)*\n- *Bank Transfer / Wise:* 09 Oct 2026 *(no later than 3 days before Day 1)*\n\n*Pay the Balance*\n- *Card Payment:* 👉 https://checkout.xendit.co/web/example-invoice-0003\n- *Bank Transfer / Wise instructions:* 👉 https://javavolcano-touroperator.com/my-booking/a1b2c3d4-example\n\n*Notes*\n- Full payment is required before the trip so we can finalize all operational arrangements.\n- Please pay before the deadline to avoid disruptions.\n\n*Need help?* Reply to this chat or contact:\n- WhatsApp: +62 822-4478-8833\n- Email: hello@javavolcano-touroperator.com\n\n*Security:* JVTO will never ask for your OTP/PIN. Please use only official links shared by JVTO.\n\n— JVTO Team"
+    }
+  ],
+  "trip_information": [
+    {
+      "variables": {
+        "customer_name": "John Doe",
+        "pickup_time": "08:00",
+        "pickup": "Hotel Majapahit Surabaya",
+        "booking_slug": "a1b2c3d4-example"
+      },
+      "text": "🌄 *Let's Explore!*\n\nDear John Doe,\n\n*Get ready for an adventure!*\n\n*Logistical Details* 📍\n- Pickup Time: 08:00\n- Pickup Location: Hotel Majapahit Surabaya\n\n*Important Reminders* ⚡\n- Arrive 10 minutes prior to pickup time\n- Bring necessary documents and gear\n\n*Your Adventure Awaits!* 💥\nAccess your trip details and documents:\n\n*Unified Portal*: https://javavolcano-touroperator.com/my-booking/a1b2c3d4-example\n\n*Need Help?*\nContact us:\n- WhatsApp: +62 822-4478-8833\n- Email: hello@javavolcano-touroperator.com\n\nBest regards,\nJVTO Team"
+    }
+  ],
+  "trip_payment_arrangement": [
+    {
+      "variables": {
+        "customer_name": "John Doe",
+        "grand_total": "4.500.000",
+        "payment_content": "Deposit paid: 1.500.000 IDR\nRemaining balance: 3.000.000 IDR\n\nPlease settle the remaining balance in cash to our guide on Day 1."
+      },
+      "text": "*Hello John Doe,*\n\nWe would like to kindly request for your attention to the following payment arrangement for This Trip is : *4.500.000 IDR*\n\nDeposit paid: 1.500.000 IDR\nRemaining balance: 3.000.000 IDR\n\nPlease settle the remaining balance in cash to our guide on Day 1.\nAnd our team will be happy to assist you with the payment process.\nLooking forward to meet you 😊\n\n📞 +62 822-4478-8833\n🏢 https://maps.app.goo.gl/TLgNey9iqSCM3QYh7\n\nBest Regards,\n*JAVA VOLCANO TOUR OPERATOR*"
+    },
+    {
+      "variables": {
+        "customer_name": "John Doe",
+        "grand_total": "4.500.000",
+        "payment_content": "Please pay the full amount in cash to our guide on Day 1."
+      },
+      "text": "*Hello John Doe,*\n\nWe would like to kindly request for your attention to the following payment arrangement for This Trip is : *4.500.000 IDR*\n\nPlease pay the full amount in cash to our guide on Day 1.\nAnd our team will be happy to assist you with the payment process.\nLooking forward to meet you 😊\n\n📞 +62 822-4478-8833\n🏢 https://maps.app.goo.gl/TLgNey9iqSCM3QYh7\n\nBest Regards,\n*JAVA VOLCANO TOUR OPERATOR*"
+    }
+  ],
+  "trip_concluded": [
+    {
+      "variables": {
+        "customer_name": "John Doe",
+        "booking_slug": "a1b2c3d4-example"
+      },
+      "text": "Hello John Doe 🌟\n\n*Your Journey with JVTO Concludes!* 🏜\n\nThank you so much for choosing *Java Volcano Tour Operator* for your adventure!\nWe truly hope you had a fun and unforgettable trip in Indonesia.\n\n📸 Your Trip Memories:\nAll the fantastic pictures from your trip are ready for you to view and download! Access them directly on your personalized trip dashboard:\n🌐 https://javavolcano-touroperator.com/my-booking/a1b2c3d4-example\n\n✍ Share Your Experience:\nYour feedback is invaluable to us and incredibly helpful to future travelers. Please take a moment to leave a review on Google or Trustpilot (link also available on portal).\n\nWe hope to welcome you on another adventure soon!\n\nMany thanks,\nThe JVTO Team"
+    }
+  ],
+  "hotel_room_reservation": [
+    {
+      "variables": {
+        "hotel_name": "Hotel Example Bromo",
+        "check_in_date": "13 October 2026",
+        "check_out_date": "14 October 2026",
+        "guest": "John Doe (2 PAX)",
+        "rooms": "Deluxe Double x 1 + Standard Twin x 1",
+        "hotel_slug": "hotel-example-bromo",
+        "meals": "Include Dinner & Lunch 2 pax"
+      },
+      "text": "*📩 Room Reservation Hotel Example Bromo*\n\n🗓 Check In : 13 October 2026\n\n🛫Check Out : 14 October 2026\n\n👥 Guest : John Doe (2 PAX)\n\n🛏 Rooms : Deluxe Double x 1 + Standard Twin x 1\n\nInclude Dinner & Lunch 2 pax\n\nCek detail Reservasi ⬇️⬇️\nhttps://partner.javavolcano-touroperator.com/reservation/hotel-example-bromo\n\nTerima kasih"
+    },
+    {
+      "variables": {
+        "hotel_name": "Hotel Example Bromo",
+        "check_in_date": "13 October 2026",
+        "check_out_date": "14 October 2026",
+        "guest": "John Doe (2 PAX)",
+        "rooms": "Deluxe Double x 1 + Standard Twin x 1",
+        "hotel_slug": "hotel-example-bromo",
+        "meals": "Include Dinner 2 pax"
+      },
+      "text": "*📩 Room Reservation Hotel Example Bromo*\n\n🗓 Check In : 13 October 2026\n\n🛫Check Out : 14 October 2026\n\n👥 Guest : John Doe (2 PAX)\n\n🛏 Rooms : Deluxe Double x 1 + Standard Twin x 1\n\nInclude Dinner 2 pax\n\nCek detail Reservasi ⬇️⬇️\nhttps://partner.javavolcano-touroperator.com/reservation/hotel-example-bromo\n\nTerima kasih"
+    },
+    {
+      "variables": {
+        "hotel_name": "Hotel Example Bromo",
+        "check_in_date": "13 October 2026",
+        "check_out_date": "14 October 2026",
+        "guest": "John Doe (2 PAX)",
+        "rooms": "Deluxe Double x 1 + Standard Twin x 1",
+        "hotel_slug": "hotel-example-bromo",
+        "meals": ""
+      },
+      "text": "*📩 Room Reservation Hotel Example Bromo*\n\n🗓 Check In : 13 October 2026\n\n🛫Check Out : 14 October 2026\n\n👥 Guest : John Doe (2 PAX)\n\n🛏 Rooms : Deluxe Double x 1 + Standard Twin x 1\n\nCek detail Reservasi ⬇️⬇️\nhttps://partner.javavolcano-touroperator.com/reservation/hotel-example-bromo\n\nTerima kasih"
+    }
+  ],
+  "internal_new_booking": [
+    {
+      "variables": {
+        "customer_name": "John Doe",
+        "package_url": "https://javavolcano-touroperator.com/bromo-ijen-tour-3d2n",
+        "total_pax": "2",
+        "trip_date": "12 October 2026",
+        "pickup": "Hotel Majapahit Surabaya 08:00",
+        "drop": "Ketapang Harbour",
+        "special_requirements": "Vegetarian meals for 1 guest",
+        "payment_method": "Xendit"
+      },
+      "text": "*New Booking from Website*\n\n*Name:* John Doe\n*Package:* https://javavolcano-touroperator.com/bromo-ijen-tour-3d2n\n*Participants:* 2 pax\n*Trip Date:* 12 October 2026\n*Pickup:* Hotel Majapahit Surabaya 08:00\n*Drop:* Ketapang Harbour\n\n*Special Requirements:* Vegetarian meals for 1 guest\n*Payment Method:* Xendit"
+    },
+    {
+      "variables": {
+        "customer_name": "John Doe",
+        "package_url": "https://javavolcano-touroperator.com/bromo-ijen-tour-3d2n",
+        "total_pax": "2",
+        "trip_date": "12 October 2026",
+        "pickup": "Hotel Majapahit Surabaya 08:00",
+        "drop": "",
+        "special_requirements": "",
+        "payment_method": "Xendit"
+      },
+      "text": "*New Booking from Website*\n\n*Name:* John Doe\n*Package:* https://javavolcano-touroperator.com/bromo-ijen-tour-3d2n\n*Participants:* 2 pax\n*Trip Date:* 12 October 2026\n*Pickup:* Hotel Majapahit Surabaya 08:00\n\n*Payment Method:* Xendit"
+    },
+    {
+      "variables": {
+        "customer_name": "John Doe",
+        "package_url": "https://javavolcano-touroperator.com/bromo-ijen-tour-3d2n",
+        "total_pax": "2",
+        "trip_date": "12 October 2026",
+        "pickup": "Hotel Majapahit Surabaya 08:00",
+        "drop": "Ketapang Harbour",
+        "special_requirements": "",
+        "payment_method": "Xendit"
+      },
+      "text": "*New Booking from Website*\n\n*Name:* John Doe\n*Package:* https://javavolcano-touroperator.com/bromo-ijen-tour-3d2n\n*Participants:* 2 pax\n*Trip Date:* 12 October 2026\n*Pickup:* Hotel Majapahit Surabaya 08:00\n*Drop:* Ketapang Harbour\n\n*Payment Method:* Xendit"
+    },
+    {
+      "variables": {
+        "customer_name": "John Doe",
+        "package_url": "https://javavolcano-touroperator.com/bromo-ijen-tour-3d2n",
+        "total_pax": "2",
+        "trip_date": "12 October 2026",
+        "pickup": "Hotel Majapahit Surabaya 08:00",
+        "drop": "",
+        "special_requirements": "Vegetarian meals for 1 guest",
+        "payment_method": "Xendit"
+      },
+      "text": "*New Booking from Website*\n\n*Name:* John Doe\n*Package:* https://javavolcano-touroperator.com/bromo-ijen-tour-3d2n\n*Participants:* 2 pax\n*Trip Date:* 12 October 2026\n*Pickup:* Hotel Majapahit Surabaya 08:00\n\n*Special Requirements:* Vegetarian meals for 1 guest\n*Payment Method:* Xendit"
+    }
+  ],
+  "internal_bali_transport": [
+    {
+      "variables": {
+        "service_date": "12 October 2026",
+        "pickup_time": "09:30",
+        "customer_name": "John Doe",
+        "total_pax": "2",
+        "vehicle": "Avanza",
+        "pickup": "Kuta Beach Hotel",
+        "drop": "Ketapang",
+        "extras": "Porter x 1 & Ferry Ticket x 2"
+      },
+      "text": "*Transport Service Bali*\n\n🗓 Tanggal : 12 October 2026\n\n🕤 Jam Pickup : 09:30\n\n👥 Tamu : John Doe (2 pax) \n\n🚗 Unit : Avanza\n\n📍 Pickup : Kuta Beach Hotel\n\n🏁 Drop : Ketapang\n\n✅ Tambahan : Porter x 1 & Ferry Ticket x 2"
+    },
+    {
+      "variables": {
+        "service_date": "14 October 2026",
+        "pickup_time": "TO BE CONFIRMED",
+        "customer_name": "John Doe",
+        "total_pax": "2",
+        "vehicle": "Elf Short",
+        "pickup": "Gilimanuk",
+        "drop": "Transfer To Ubud. (TO BE CONFIRMED)",
+        "extras": "Porter x 1"
+      },
+      "text": "*Transport Service Bali*\n\n🗓 Tanggal : 14 October 2026\n\n🕤 Jam Pickup : TO BE CONFIRMED\n\n👥 Tamu : John Doe (2 pax) \n\n🚗 Unit : Elf Short\n\n📍 Pickup : Gilimanuk\n\n🏁 Drop : Transfer To Ubud. (TO BE CONFIRMED)\n\n✅ Tambahan : Porter x 1"
+    }
+  ],
+  "internal_bali_transport_reminder": [
+    {
+      "variables": {
+        "service_date": "12 October 2026",
+        "pickup_time": "09:30",
+        "customer_name": "John Doe",
+        "total_pax": "2",
+        "vehicle": "Avanza",
+        "pickup": "Kuta Beach Hotel",
+        "drop": "Ketapang",
+        "extras": "Porter x 1 & Ferry Ticket x 2"
+      },
+      "text": "*Reminder Transport Service Bali*\n\n🗓 Tanggal : 12 October 2026\n\n🕤 Jam Pickup : 09:30\n\n👥 Tamu : John Doe (2 pax) \n\n🚗 Unit : Avanza\n\n📍 Pickup : Kuta Beach Hotel\n\n🏁 Drop : Ketapang\n\n✅ Tambahan : Porter x 1 & Ferry Ticket x 2"
+    },
+    {
+      "variables": {
+        "service_date": "14 October 2026",
+        "pickup_time": "TO BE CONFIRMED",
+        "customer_name": "John Doe",
+        "total_pax": "2",
+        "vehicle": "Elf Short",
+        "pickup": "Gilimanuk",
+        "drop": "Transfer To Ubud. (TO BE CONFIRMED)",
+        "extras": "Porter x 1"
+      },
+      "text": "*Reminder Transport Service Bali*\n\n🗓 Tanggal : 14 October 2026\n\n🕤 Jam Pickup : TO BE CONFIRMED\n\n👥 Tamu : John Doe (2 pax) \n\n🚗 Unit : Elf Short\n\n📍 Pickup : Gilimanuk\n\n🏁 Drop : Transfer To Ubud. (TO BE CONFIRMED)\n\n✅ Tambahan : Porter x 1"
+    }
+  ],
+  "crew_trip_media": [
+    {
+      "variables": {
+        "customer_name": "John Doe",
+        "media_link": "https://drive.google.com/drive/folders/example-trip-media",
+        "crew_list": "*1. Budi Example*\n*2. Agus Example (Ijen Guide)*"
+      },
+      "text": "*Trip Media John Doe,*\n\\🌐 https://drive.google.com/drive/folders/example-trip-media\n\n🧗‍♂️ *CREW:*\n*1. Budi Example*\n*2. Agus Example (Ijen Guide)*"
+    }
+  ],
+  "crew_reminder_personal": [
+    {
+      "variables": {
+        "crew_name": "Budi Example",
+        "customer_name": "John Doe",
+        "pickup": "Hotel Majapahit Surabaya",
+        "pickup_time": "08:00"
+      },
+      "text": "*Hello Budi Example*,\nPlease prepare for your schedule tomorrow.\n\n*Customer Name:* John Doe\n*Pickup Location:* Hotel Majapahit Surabaya\n*Pickup Time:* 08:00\n\n📱 You can check more details at:\nhttps://crew-portal.javavolcano-touroperator.com/"
+    }
+  ],
+  "crew_reminder_group": [
+    {
+      "variables": {
+        "customer_name": "John Doe",
+        "pickup": "Hotel Majapahit Surabaya",
+        "pickup_time": "08:00",
+        "crew_list": "Budi Example, Agus Example (Ijen Guide)"
+      },
+      "text": "*Reminder for tomorrow’s schedule*.\n\n*Customer Name:* John Doe\n*Pickup Location:* Hotel Majapahit Surabaya\n*Pickup Time:* 08:00\n*Crews:* Budi Example, Agus Example (Ijen Guide)\n\n📱 Check more details at:\nhttps://crew-portal.javavolcano-touroperator.com/"
+    }
+  ],
+  "internal_consent_completed": [
+    {
+      "variables": {
+        "customer_name": "John Doe"
+      },
+      "text": "John Doe has completed the consent form input"
+    }
+  ],
+  "vendor_tshirt_size_update": [
+    {
+      "variables": {
+        "customer_name": "John Doe",
+        "trip_date": "12 Oct 2026",
+        "channel": "JVTO",
+        "sizes": "S x 1; M x 2; XL x 1"
+      },
+      "text": "*🎽 Update Size T-Shirt*\n\nNama Customer: John Doe\nTanggal Trip: 12 Oct 2026\nChannel: JVTO\nSize: S x 1; M x 2; XL x 1"
+    },
+    {
+      "variables": {
+        "customer_name": "-",
+        "trip_date": "-",
+        "channel": "KLOOK",
+        "sizes": "-"
+      },
+      "text": "*🎽 Update Size T-Shirt*\n\nNama Customer: -\nTanggal Trip: -\nChannel: KLOOK\nSize: -"
+    }
+  ]
+}

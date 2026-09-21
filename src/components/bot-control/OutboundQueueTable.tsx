@@ -15,10 +15,14 @@ import {
 
 export type OutboundJobRow = {
   id: string
-  conversationId: string
+  /** Null for a system-template send to a group or an internal number (no conversation). */
+  conversationId: string | null
   messageId: string | null
   contactName: string | null
   contactPhone: string | null
+  /** Destination label when there is no contact, e.g. `6281...` or `grup:120363...@g.us`. */
+  target?: string | null
+  templateKey?: string | null
   channel: string
   provider: string
   status: string
@@ -113,10 +117,13 @@ export function OutboundQueueTable({
                 )}
               </TableCell>
               <TableCell className="py-2.5 text-sm text-ink">
-                {/* The job outlives a deleted conversation; an empty cell would read as a bug. */}
-                {job.contactName ?? job.contactPhone ?? (
+                {/* The job outlives a deleted conversation; an empty cell would read as a bug. A
+                    system-template job to a group or an internal number never had a contact at
+                    all, so it shows where it went instead. */}
+                {job.contactName ?? job.contactPhone ?? job.target ?? (
                   <span className="text-ink-subtle">(kontak terhapus)</span>
                 )}
+                {job.templateKey && <span className="block font-mono text-xs text-ink-muted">{job.templateKey}</span>}
               </TableCell>
               <TableCell className="py-2.5 text-sm text-ink-muted">
                 {job.channel}

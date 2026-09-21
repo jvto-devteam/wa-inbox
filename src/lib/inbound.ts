@@ -53,7 +53,7 @@ export type MetaInboundMessage = {
  * and either switch being on won. One writer means the switch on /chatbot is the answer, both
  * ways.
  */
-async function defaultBotEnabled(phone: string): Promise<boolean> {
+export async function defaultBotEnabled(phone: string): Promise<boolean> {
   const settings = await prisma.settings.findUniqueOrThrow({ where: { id: 1 } })
 
   if (isIndonesianNumber(phone) && settings.skipBotForIndonesianNumbers) return false

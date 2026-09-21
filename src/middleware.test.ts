@@ -177,3 +177,31 @@ describe('middleware — cron secret', () => {
     expect((await middleware(cronRequest('/api/outbound-jobs/process', 'anything'))).status).toBe(401)
   })
 })
+
+describe('middleware — API key paths', () => {
+  function keyRequest(path: string, authorization?: string) {
+    return new NextRequest(`http://localhost${path}`, { headers: authorization ? { authorization } : {} })
+  }
+
+  it.each(['/api/v1/system-messages', '/api/v1/system-messages/templates'])(
+    'hands %s to the route (which verifies the key) when a Bearer key is present',
+    async (path) => {
+      const res = await middleware(keyRequest(path, 'Bearer wai_abc'))
+      expect(res.status).toBe(200)
+      expect(mockPrisma.account.findUnique).not.toHaveBeenCalled()
+    }
+  )
+
+  it('falls through to the normal 401 without a key', async () => {
+    vi.mocked(verifySessionToken).mockResolvedValue(null)
+    expect((await middleware(keyRequest('/api/v1/system-messages'))).status).toBe(401)
+    expect((await middleware(keyRequest('/api/v1/system-messages', 'Bearer not-our-key'))).status).toBe(401)
+  })
+
+  it('does not let an API key open any other endpoint', async () => {
+    vi.mocked(verifySessionToken).mockResolvedValue(null)
+    expect((await middleware(keyRequest('/api/v1/system-messages/other', 'Bearer wai_abc'))).status).toBe(401)
+    expect((await middleware(keyRequest('/api/system-templates', 'Bearer wai_abc'))).status).toBe(401)
+    expect((await middleware(keyRequest('/api/send', 'Bearer wai_abc'))).status).toBe(401)
+  })
+})

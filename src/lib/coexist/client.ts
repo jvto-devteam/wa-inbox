@@ -70,3 +70,29 @@ export async function sendCoexistMedia(
   }
   return {}
 }
+
+// Group sends take `group_id` (a full `...@g.us` JID) instead of `phone_no` -- verified against
+// wa-dashboard's src/app/api/v1/send_message_group/route.ts and send_image_group/route.ts. Used
+// only by system-template jobs (src/lib/system-templates/send.ts): hotel reservation groups,
+// crew groups, and the internal booking group that javavolcano-touroperator used to post to
+// directly.
+export async function sendCoexistGroupText(creds: CoexistCreds, groupId: string, text: string): Promise<{ externalId?: string }> {
+  await coexistPost(creds, '/api/v1/send_message_group', { group_id: groupId, message: text })
+  return {}
+}
+
+export async function sendCoexistGroupImage(
+  creds: CoexistCreds,
+  groupId: string,
+  imageUrl: string,
+  caption?: string
+): Promise<{ externalId?: string }> {
+  // separate_caption "0": image and caption arrive as ONE message, matching what JVTO sent.
+  await coexistPost(creds, '/api/v1/send_image_group', {
+    group_id: groupId,
+    url: imageUrl,
+    message: caption,
+    separate_caption: '0',
+  })
+  return {}
+}

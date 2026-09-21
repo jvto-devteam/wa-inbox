@@ -80,7 +80,9 @@ export async function GET(req: Request) {
     // pressed the button.
     const pausedProviders = await getPausedProviders()
 
-    const conversationIds = [...new Set(jobs.map((job) => job.conversationId))]
+    const conversationIds = [
+      ...new Set(jobs.map((job) => job.conversationId).filter((id): id is string => id !== null)),
+    ]
     const conversations =
       conversationIds.length === 0
         ? []
@@ -92,7 +94,7 @@ export async function GET(req: Request) {
 
     return NextResponse.json({
       items: jobs.map((job) => {
-        const contact = contactByConversation.get(job.conversationId)
+        const contact = job.conversationId ? contactByConversation.get(job.conversationId) : undefined
         return {
           id: job.id,
           conversationId: job.conversationId,
@@ -101,6 +103,11 @@ export async function GET(req: Request) {
           // like a rendering bug.
           contactName: contact?.name ?? null,
           contactPhone: contact?.phone ?? null,
+          // Only set on system-template sends that never had a conversation (a group, or an
+          // internal/crew number) -- the row would otherwise read "(kontak terhapus)", which is
+          // false: there never was a contact.
+          target: job.target,
+          templateKey: job.templateKey,
           channel: job.channel,
           provider: job.provider,
           status: job.status,

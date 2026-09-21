@@ -36,7 +36,13 @@
 import { prisma } from '@/lib/db'
 import { DEFAULT_SAFETY_THRESHOLDS, type SafetyThresholds } from '@/lib/outbound/safety-bounds'
 
-export type OutboundPurpose = 'ONE_TO_ONE' | 'BOT_REPLY' | 'CAMPAIGN'
+/**
+ * SYSTEM = a transactional message another program asked for through a system template
+ * (payment received, trip reminder...). Treated like ONE_TO_ONE -- warnings only, never blocked
+ * by opt-out or the content-duplicate check -- because the customer's booking is the reason it
+ * exists, and a repeat is already prevented upstream by the job's unique idempotencyKey.
+ */
+export type OutboundPurpose = 'ONE_TO_ONE' | 'BOT_REPLY' | 'CAMPAIGN' | 'SYSTEM'
 
 export type SafetyCheckParams = {
   conversationId: string

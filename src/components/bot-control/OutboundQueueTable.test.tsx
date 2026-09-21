@@ -32,6 +32,26 @@ describe('OutboundQueueTable', () => {
     expect(screen.getByText('wa-coexist timeout')).toBeInTheDocument()
   })
 
+  it('shows where a system-template job went when it never had a contact', () => {
+    render(
+      <OutboundQueueTable
+        jobs={[
+          job({
+            conversationId: null,
+            messageId: null,
+            contactName: null,
+            contactPhone: null,
+            target: 'grup:120363335090996109@g.us',
+            templateKey: 'hotel_room_reservation',
+          }),
+        ]}
+      />
+    )
+    expect(screen.getByText('grup:120363335090996109@g.us')).toBeInTheDocument()
+    expect(screen.getByText('hotel_room_reservation')).toBeInTheDocument()
+    expect(screen.queryByText('(kontak terhapus)')).not.toBeInTheDocument()
+  })
+
   it('says so when the contact is gone rather than leaving a blank cell', () => {
     render(<OutboundQueueTable jobs={[job({ contactName: null, contactPhone: null })]} />)
     expect(screen.getByText('(kontak terhapus)')).toBeInTheDocument()

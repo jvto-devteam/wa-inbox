@@ -19,7 +19,7 @@
 import { prisma } from '@/lib/db'
 import { sendMetaText, sendMetaMedia } from '@/lib/meta/messages'
 import { uploadMetaMediaFromUrl } from '@/lib/meta/media-upload'
-import { sendCoexistText, sendCoexistMedia } from '@/lib/coexist/client'
+import { sendCoexistText, sendCoexistMedia, sendCoexistGroupText, sendCoexistGroupImage } from '@/lib/coexist/client'
 import { broadcast } from '@/lib/realtime'
 import { withMediaUrl } from '@/lib/serialize-message'
 import { canRetry, nextAttemptAt } from '@/lib/outbound/retry-policy'
@@ -95,13 +95,13 @@ export async function recoverStuckOutboundJobs(now: Date = new Date()): Promise<
   // than restated: a copy would let the list and this button disagree about which rows exist.
   const stuckWhere = stuckOutboundJobWhere(now)
 
-  let stuck: { id: string; attempts: number; maxAttempts: number; messageId: string | null; conversationId: string }[]
+  let stuck: { id: string; attempts: number; maxAttempts: number; messageId: string | null }[]
   try {
     stuck = await prisma.outboundJob.findMany({
       where: stuckWhere,
       orderBy: { updatedAt: 'asc' },
       take: DEFAULT_BATCH,
-      select: { id: true, attempts: true, maxAttempts: true, messageId: true, conversationId: true },
+      select: { id: true, attempts: true, maxAttempts: true, messageId: true },
     })
   } catch (error) {
     // Recovery runs at the top of every queue drain, so it must never be able to stop one:
@@ -136,7 +136,7 @@ export async function recoverStuckOutboundJobs(now: Date = new Date()): Promise<
       result.failed += 1
       // Only now does the bubble go red. While the job is still on the ladder the message
       // stays PENDING, matching what processOutboundJob does with an ordinary failure.
-      if (job.messageId) await updateMessage(job.messageId, job.conversationId, { deliveryStatus: 'FAILED' })
+      if (job.messageId) await updateMessage(job.messageId, { deliveryStatus: 'FAILED' })
     } catch (error) {
       console.error('worker: gagal memulihkan job SENDING', { jobId: job.id, error })
     }
@@ -184,7 +184,7 @@ export async function processOutboundJob(jobId: string): Promise<JobOutcome> {
       // `externalId` is only ever produced by the Official path; wa-coexist returns nothing to
       // correlate against (see channel-capabilities.ts), so it stays null there rather than
       // being filled with a fabricated id.
-      await updateMessage(job.messageId, job.conversationId, {
+      await updateMessage(job.messageId, {
         deliveryStatus: 'SENT',
         ...(externalId ? { externalId } : {}),
       })
@@ -209,7 +209,7 @@ export async function processOutboundJob(jobId: string): Promise<JobOutcome> {
       where: { id: jobId },
       data: { status: 'FAILED', attempts, nextAttemptAt: null, lastError: message },
     })
-    if (job.messageId) await updateMessage(job.messageId, job.conversationId, { deliveryStatus: 'FAILED' })
+    if (job.messageId) await updateMessage(job.messageId, { deliveryStatus: 'FAILED' })
     return 'failed'
   }
 }
@@ -239,6 +239,15 @@ async function dispatch(channel: string, provider: string, payload: OutboundJobP
     return sent.externalId
   }
 
+  // A group JID only ever arrives from a system-template send (src/lib/system-templates/send.ts),
+  // which only produces text or an image. Anything else is refused rather than pushed down the
+  // phone endpoints, where wa-dashboard would try to treat `...@g.us` as a phone number.
+  if (payload.targetType === 'GROUP') {
+    if (!payload.media) return (await sendCoexistGroupText(waNumber, payload.to, payload.text)).externalId
+    if (payload.media.type !== 'image') throw new Error(`Kirim ${payload.media.type} ke grup belum didukung.`)
+    return (await sendCoexistGroupImage(waNumber, payload.to, payload.media.url, payload.text || undefined)).externalId
+  }
+
   if (payload.media) {
     // wa-coexist has no audio endpoint; audio rides send_file_url as a document, exactly as
     // the pre-queue send path did. Message.type still says 'audio' so the bubble renders a player.
@@ -259,12 +268,15 @@ async function dispatch(channel: string, provider: string, payload: OutboundJobP
 /**
  * Writes the new delivery status onto the message and tells the open inboxes about it.
  *
+ * The conversation id comes from the message row itself, not the job: a job without a
+ * conversation (a system-template send to a group or internal number) never has a message
+ * either, and a message always belongs to exactly one conversation.
+ *
  * Failure here is logged and swallowed: the message HAS been sent at this point, and throwing
  * would flip a successful job back onto the retry ladder and send it a second time.
  */
 async function updateMessage(
   messageId: string,
-  conversationId: string,
   data: { deliveryStatus: 'SENT' | 'FAILED'; externalId?: string }
 ): Promise<void> {
   try {
@@ -272,7 +284,7 @@ async function updateMessage(
     // Reuses the existing `message.updated` event rather than inventing a new one: subscribers
     // already know to REPLACE a bubble on it (it is what Meta delivery receipts use), so a
     // queued send's status change lands in the inbox through a path that is already tested.
-    broadcast({ type: 'message.updated', conversationId, message: withMediaUrl(updated) })
+    broadcast({ type: 'message.updated', conversationId: updated.conversationId, message: withMediaUrl(updated) })
   } catch (error) {
     console.error('worker: gagal memperbarui status pesan', { messageId, error })
   }

@@ -7,3 +7,18 @@
 export function isIndonesianNumber(phone: string): boolean {
   return /^62\d+$/.test(phone)
 }
+
+/**
+ * Turns a phone number typed by a human or stored by another system into the Contact.phone
+ * form above. Used on the system-template API (src/lib/system-templates/send.ts), where numbers
+ * arrive from javavolcano-touroperator's booking form as "+62 812-3456-7890", "0812...", etc.
+ *
+ * A leading 0 is Indonesian local format and becomes 62 -- JVTO's own staff numbers are written
+ * that way (e.g. "082143403501" in TypeformController). Returns null for anything that is not
+ * plausibly a phone number, so the caller can refuse it instead of messaging garbage.
+ */
+export function normalizePhoneNumber(input: string): string | null {
+  let digits = input.replace(/\D/g, '')
+  if (digits.startsWith('0')) digits = `62${digits.slice(1)}`
+  return digits.length >= 8 && digits.length <= 15 ? digits : null
+}

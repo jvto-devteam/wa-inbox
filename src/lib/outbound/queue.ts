@@ -18,22 +18,40 @@ export type OutboundJobPayload = {
   to: string
   text: string
   media?: { url: string; type: 'image' | 'video' | 'audio' | 'document'; mimeType: string; fileName?: string }
+  /**
+   * GROUP = `to` is a WhatsApp group JID (`...@g.us`) and dispatch uses the group endpoints.
+   * Absent on every job written before system templates existed, which is why absence means
+   * PHONE: those rows must keep going out exactly as they did.
+   */
+  targetType?: 'PHONE' | 'GROUP'
 }
 
 export type EnqueueParams = {
-  conversationId: string
-  messageId: string
-  contactId: string
+  /**
+   * All three are null together for a system-template send to a group or an internal number:
+   * there is no conversation, no bubble, and no contact, so the safety guard (which is about a
+   * contact's consent and a conversation's recent messages) has nothing to check.
+   */
+  conversationId: string | null
+  messageId: string | null
+  contactId: string | null
   channel: 'OFFICIAL' | 'UNOFFICIAL'
   provider: OutboundProvider
   payload: OutboundJobPayload
   sentBy: 'BOT' | 'AGENT'
   purpose?: OutboundPurpose
+  /** System-template sends only (see OutboundJob.idempotencyKey in prisma/schema.prisma). */
+  idempotencyKey?: string
+  templateKey?: string
+  sourceClientId?: string
+  target?: string
 }
 
 export type EnqueueResult = {
   jobId: string | null
   blocked: boolean
+  /** True when `idempotencyKey` already belonged to a job; `jobId` is that existing job. */
+  duplicate?: boolean
   blockingReason?: string
   warnings: string[]
 }
@@ -49,17 +67,22 @@ export type EnqueueResult = {
 export async function enqueueOutboundJob(params: EnqueueParams): Promise<EnqueueResult> {
   const purpose: OutboundPurpose = params.purpose ?? (params.sentBy === 'BOT' ? 'BOT_REPLY' : 'ONE_TO_ONE')
 
-  const safety = await checkOutboundSafety({
-    conversationId: params.conversationId,
-    contactId: params.contactId,
-    // The message row already exists at this point — it is created before the enqueue so the
-    // bubble survives a provider outage — so the guard has to be told which row is this send's
-    // own, or it finds it and calls the message a duplicate of itself.
-    currentMessageId: params.messageId,
-    messageText: params.payload.text || undefined,
-    sentBy: params.sentBy,
-    purpose,
-  })
+  const safety =
+    params.conversationId && params.contactId
+      ? await checkOutboundSafety({
+          conversationId: params.conversationId,
+          contactId: params.contactId,
+          // The message row already exists at this point — it is created before the enqueue so
+          // the bubble survives a provider outage — so the guard has to be told which row is
+          // this send's own, or it finds it and calls the message a duplicate of itself.
+          currentMessageId: params.messageId ?? undefined,
+          messageText: params.payload.text || undefined,
+          sentBy: params.sentBy,
+          purpose,
+        })
+      : // No contact and no conversation (a group or internal-number system send): nothing
+        // for consent or the per-conversation duplicate check to look at.
+        { allowed: true as const, warnings: [] as string[], blockingReason: undefined }
 
   const base = {
     conversationId: params.conversationId,
@@ -67,6 +90,10 @@ export async function enqueueOutboundJob(params: EnqueueParams): Promise<Enqueue
     channel: params.channel,
     provider: params.provider,
     payload: params.payload as unknown as Prisma.InputJsonValue,
+    idempotencyKey: params.idempotencyKey,
+    templateKey: params.templateKey,
+    sourceClientId: params.sourceClientId,
+    target: params.target,
   }
 
   try {
@@ -87,6 +114,16 @@ export async function enqueueOutboundJob(params: EnqueueParams): Promise<Enqueue
     })
     return { jobId: job.id, blocked: false, warnings: safety.warnings }
   } catch (error) {
+    // Two requests carrying the same idempotencyKey raced past the caller's own lookup; the
+    // unique constraint let exactly one of them in. The loser reports the winner's job instead
+    // of failing -- from the calling program's side the send DID get queued.
+    if (params.idempotencyKey && error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+      const existing = await prisma.outboundJob.findUnique({
+        where: { idempotencyKey: params.idempotencyKey },
+        select: { id: true },
+      })
+      if (existing) return { jobId: existing.id, blocked: false, duplicate: true, warnings: safety.warnings }
+    }
     console.error('enqueueOutboundJob gagal', { conversationId: params.conversationId, error })
     return { jobId: null, blocked: false, warnings: [...safety.warnings, 'Gagal membuat antrean pengiriman.'] }
   }

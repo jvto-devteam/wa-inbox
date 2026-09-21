@@ -70,7 +70,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
           return null
         })
       if (message) {
-        broadcast({ type: 'message.updated', conversationId: job.conversationId, message: withMediaUrl(message) })
+        broadcast({ type: 'message.updated', conversationId: message.conversationId, message: withMediaUrl(message) })
       }
     }
 

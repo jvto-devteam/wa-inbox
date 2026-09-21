@@ -5,7 +5,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mockDeep, mockReset, type DeepMockProxy } from 'vitest-mock-extended'
 import type { PrismaClient } from '@prisma/client'
 import { prisma } from '@/lib/db'
-import { sendCoexistText, sendCoexistMedia } from '@/lib/coexist/client'
+import { sendCoexistText, sendCoexistMedia, sendCoexistGroupText, sendCoexistGroupImage } from '@/lib/coexist/client'
 import { sendMetaMedia } from '@/lib/meta/messages'
 import { uploadMetaMediaFromUrl } from '@/lib/meta/media-upload'
 import { broadcast } from '@/lib/realtime'
@@ -13,7 +13,12 @@ import { processOutboundJob, processDueOutboundJobs, recoverStuckOutboundJobs } 
 import { STUCK_SENDING_MS } from './stuck'
 
 vi.mock('@/lib/db', () => ({ prisma: mockDeep<PrismaClient>() }))
-vi.mock('@/lib/coexist/client', () => ({ sendCoexistText: vi.fn(), sendCoexistMedia: vi.fn() }))
+vi.mock('@/lib/coexist/client', () => ({
+  sendCoexistText: vi.fn(),
+  sendCoexistMedia: vi.fn(),
+  sendCoexistGroupText: vi.fn(),
+  sendCoexistGroupImage: vi.fn(),
+}))
 vi.mock('@/lib/meta/messages', () => ({ sendMetaText: vi.fn(), sendMetaMedia: vi.fn() }))
 vi.mock('@/lib/meta/media-upload', () => ({ uploadMetaMediaFromUrl: vi.fn() }))
 vi.mock('@/lib/realtime', () => ({ broadcast: vi.fn() }))
@@ -58,7 +63,7 @@ beforeEach(() => {
   mockPrisma.outboundJob.findUnique.mockResolvedValue(job())
   mockPrisma.outboundJob.update.mockResolvedValue({ id: 'job_1' } as never)
   mockPrisma.waNumber.findFirstOrThrow.mockResolvedValue({ phoneNumberId: 'pnid', accessToken: 'tok' } as never)
-  mockPrisma.message.update.mockResolvedValue({ id: 'msg_1', deliveryStatus: 'SENT' } as never)
+  mockPrisma.message.update.mockResolvedValue({ id: 'msg_1', conversationId: 'conv_1', deliveryStatus: 'SENT' } as never)
   vi.mocked(sendCoexistText).mockResolvedValue({})
 })
 
@@ -110,6 +115,48 @@ describe('successful dispatch', () => {
     await processOutboundJob('job_1')
 
     expect(sendCoexistMedia).toHaveBeenCalledWith(expect.anything(), '628123', 'https://x/a.ogg', 'document', undefined)
+  })
+
+  it('sends a GROUP job through the group endpoint, never send_message', async () => {
+    mockPrisma.outboundJob.findUnique.mockResolvedValue(
+      job({
+        conversationId: null,
+        messageId: null,
+        payload: { to: '120363335090996109@g.us', text: 'Room Reservation', targetType: 'GROUP' },
+      })
+    )
+    vi.mocked(sendCoexistGroupText).mockResolvedValue({})
+
+    expect(await processOutboundJob('job_1')).toBe('sent')
+    expect(sendCoexistGroupText).toHaveBeenCalledWith(expect.anything(), '120363335090996109@g.us', 'Room Reservation')
+    expect(sendCoexistText).not.toHaveBeenCalled()
+  })
+
+  it('sends a GROUP image job with its caption through send_image_group', async () => {
+    mockPrisma.outboundJob.findUnique.mockResolvedValue(
+      job({
+        conversationId: null,
+        messageId: null,
+        payload: {
+          to: 'x@g.us',
+          text: 'Trip Media',
+          targetType: 'GROUP',
+          media: { url: 'https://x/b.jpg', type: 'image', mimeType: 'image/jpeg' },
+        },
+      })
+    )
+    vi.mocked(sendCoexistGroupImage).mockResolvedValue({})
+
+    await processOutboundJob('job_1')
+    expect(sendCoexistGroupImage).toHaveBeenCalledWith(expect.anything(), 'x@g.us', 'https://x/b.jpg', 'Trip Media')
+  })
+
+  it('finishes a job that has no conversation or message without touching any bubble', async () => {
+    mockPrisma.outboundJob.findUnique.mockResolvedValue(job({ conversationId: null, messageId: null }))
+
+    expect(await processOutboundJob('job_1')).toBe('sent')
+    expect(mockPrisma.message.update).not.toHaveBeenCalled()
+    expect(broadcast).not.toHaveBeenCalled()
   })
 
   it('never fabricates an externalId for Unofficial, which returns none', async () => {

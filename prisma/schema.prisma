@@ -297,9 +297,15 @@ model KnowledgeGapLog {
 /// mendaftarkan empat percobaan (segera, +30 detik, +2 menit, +10 menit) sebelum FAILED;
 /// dengan maxAttempts 3, percobaan +10 menit tidak akan pernah tercapai dan tangga yang
 /// didokumentasikan itu tinggal separuh. Angka di sini mengikuti tangga yang operasional.
+///
+/// `conversationId` boleh null sejak template sistem (src/lib/system-templates/send.ts): pesan
+/// yang dikirim program lain ke nomor internal, crew, atau grup WA sengaja TIDAK membuat
+/// percakapan di Inbox — tujuan itu bukan pelanggan, dan grup bahkan tidak punya nomor untuk
+/// dijadikan Contact. Job semacam itu hanya hidup di sini, dan `target` yang memberi tahu halaman
+/// Outbound Queue ke mana ia pergi.
 model OutboundJob {
   id             String         @id @default(cuid())
-  conversationId String
+  conversationId String?
   messageId      String?
   channel        MessageChannel
   /// COEXIST (Unofficial) atau META (Official).
@@ -314,6 +320,16 @@ model OutboundJob {
   maxAttempts    Int            @default(4)
   nextAttemptAt  DateTime?
   lastError      String?
+  /// Diisi pemanggil API template sistem, satu per kejadian (mis. `payment_received_first:1234`).
+  /// Unique supaya retry dari program pemanggil — yang memang disuruh mencoba ulang saat gagal —
+  /// tidak pernah menghasilkan pesan kedua. Null untuk semua pengiriman lain.
+  idempotencyKey String?        @unique
+  /// `SystemTemplate.key` yang menghasilkan job ini, kalau ada.
+  templateKey    String?
+  /// `ApiClient.id` pemanggilnya, kalau job datang dari API template sistem.
+  sourceClientId String?
+  /// Label tujuan untuk halaman Outbound Queue saat tidak ada percakapan (nomor, atau `grup:<id>`).
+  target         String?
   createdAt      DateTime       @default(now())
   updatedAt      DateTime       @updatedAt
 
@@ -742,4 +758,55 @@ model BotControlAuditLog {
   @@index([entityType, entityId])
   @@index([action])
   @@index([createdAt])
+}
+
+enum SystemTemplateAudience {
+  CUSTOMER
+  INTERNAL
+}
+
+/// Teks pesan yang dikirim PROGRAM LAIN (javavolcano-touroperator, new-backoffice) lewat
+/// `POST /api/v1/system-messages`, dan diedit operator di /templates → Template Sistem.
+///
+/// Sengaja terpisah dari `Template`. `Template` adalah template Meta (metaId, metaStatus, cards,
+/// variabel posisional `{{1}}`) yang dipilih agent di ComposeBox; ini teks bebas untuk jalur
+/// Unofficial, variabelnya bernama (`{name}`), diisi oleh program pemanggil, dan tidak pernah
+/// melewati review Meta. Menyatukan keduanya berarti setiap template sistem membawa belasan
+/// kolom Meta yang tidak berarti, dan ComposeBox harus belajar menyembunyikannya.
+///
+/// `key` adalah kontrak dengan program pemanggil, jadi tidak bisa diubah dari UI dan barisnya
+/// hanya dibuat oleh seed (scripts/seed-system-templates.ts). Operator mengubah isi, lalu simpan
+/// → langsung berlaku (CLAUDE.md §3).
+model SystemTemplate {
+  id          String                 @id @default(cuid())
+  key         String                 @unique
+  name        String
+  description String?
+  audience    SystemTemplateAudience
+  /// Teks dengan placeholder `{nama_variabel}`. Baris yang memuat variabel opsional yang kosong
+  /// dibuang saat render (src/lib/system-templates/render.ts).
+  body        String
+  /// Kalau terisi, pesan dikirim sebagai gambar dengan `body` sebagai caption.
+  imageUrl    String?
+  /// SystemTemplateVariable[]: `{ name, required, example?, description? }`.
+  variables   Json
+  isActive    Boolean                @default(true)
+  updatedById String?
+  createdAt   DateTime               @default(now())
+  updatedAt   DateTime               @updatedAt
+}
+
+/// Program lain yang boleh memanggil `POST /api/v1/system-messages`.
+///
+/// Hanya hash SHA-256 dari key yang disimpan: key mentah ditampilkan satu kali saat dibuat dan
+/// tidak pernah lagi — tidak di response, tidak di log, tidak di audit (CLAUDE.md §5).
+/// `keyPrefix` (beberapa karakter awal) cukup untuk mengenali key mana yang dipakai di mana.
+model ApiClient {
+  id         String    @id @default(cuid())
+  name       String
+  keyHash    String    @unique
+  keyPrefix  String
+  lastUsedAt DateTime?
+  revokedAt  DateTime?
+  createdAt  DateTime  @default(now())
 }

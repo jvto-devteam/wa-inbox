@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth/get-session'
 import { prisma } from '@/lib/db'
 import { hasValidCronSecret } from '@/lib/outbound/cron-auth'
+import { bearerApiKey } from '@/lib/api-clients/auth'
 
 // Next.js middleware runs on the Edge runtime by default, which cannot run
 // Prisma. The session check below has to reach the database, so this file
@@ -42,6 +43,17 @@ const PUBLIC_PATHS = [
  */
 const CRON_PATHS = new Set(['/api/outbound-jobs/process'])
 
+/**
+ * Endpoints other programs (javavolcano-touroperator, new-backoffice) call with an API key.
+ *
+ * Same exact-match reasoning as CRON_PATHS. Only the SHAPE of the key is checked here (a
+ * `Bearer wai_...` header), which is enough to decide "this is not a browser session request";
+ * the key itself is verified against ApiClient by the route handler, which is the only place
+ * that knows which client it belongs to. A request without such a header falls through to the
+ * session check and gets the usual 401.
+ */
+const API_KEY_PATHS = new Set(['/api/v1/system-messages', '/api/v1/system-messages/templates'])
+
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl
   if (PUBLIC_PATHS.some((p) => pathname.startsWith(p))) return NextResponse.next()
@@ -49,6 +61,7 @@ export async function middleware(req: NextRequest) {
   // Checked before the session lookup so a cron never needs an account row, and skipped
   // entirely (hasValidCronSecret returns false) when no secret is configured.
   if (CRON_PATHS.has(pathname) && hasValidCronSecret(req)) return NextResponse.next()
+  if (API_KEY_PATHS.has(pathname) && bearerApiKey(req)) return NextResponse.next()
 
   const session = await getSession(req)
 

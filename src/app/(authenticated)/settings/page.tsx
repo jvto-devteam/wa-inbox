@@ -11,6 +11,7 @@ import { SectionNav, SectionNavLayout, SectionNavPane } from '@/components/ui/se
 import { FormSection } from '@/components/settings/section'
 import { UserManagementSection } from '@/components/settings/UserManagementSection'
 import { WebhookCredentialsPanel } from '@/components/settings/WebhookCredentialsPanel'
+import { ApiClientsPanel } from '@/components/settings/ApiClientsPanel'
 import { hasAdminPowers } from '@/lib/bot-control/permissions'
 import { fetchJson } from '@/lib/fetch-json'
 import {
@@ -26,7 +27,7 @@ type Settings = {
 
 const SAFETY_FIELDS = Object.keys(SAFETY_BOUNDS) as SafetyBoundKey[]
 
-type SettingsSectionId = 'jalur' | 'nomor' | 'pengaman' | 'halaman-lain' | 'pengguna' | 'webhook'
+type SettingsSectionId = 'jalur' | 'nomor' | 'pengaman' | 'halaman-lain' | 'pengguna' | 'webhook' | 'api-client'
 
 /**
  * Bagian-bagian halaman ini, dan urutannya di sidebar kedua.
@@ -45,6 +46,7 @@ const SETTINGS_SECTIONS: ReadonlyArray<{ id: SettingsSectionId; label: string; a
   { id: 'halaman-lain', label: 'Kelola di halaman lain', adminOnly: true },
   { id: 'pengguna', label: 'Manajemen pengguna', adminOnly: true },
   { id: 'webhook', label: 'Webhook & kredensial', adminOnly: true },
+  { id: 'api-client', label: 'API client', adminOnly: true },
 ]
 
 type NumberStatus = { officialTokenValid: boolean; unofficialConfigured: boolean }
@@ -152,7 +154,7 @@ export default function SettingsPage() {
   }
 
   const admin = hasAdminPowers(role)
-  // Empat dari enam bagian hanya untuk admin, dan daftar inilah SATU-SATUNYA gerbangnya:
+  // Lima dari tujuh bagian hanya untuk admin, dan daftar inilah SATU-SATUNYA gerbangnya:
   // `activeId` selalu dipilih dari daftar yang sudah disaring, jadi tidak ada panel admin yang
   // bisa terbuka lewat state yang tertinggal saat peran berubah di tengah jalan.
   const sections = SETTINGS_SECTIONS.filter((s) => admin || !s.adminOnly)
@@ -280,6 +282,7 @@ export default function SettingsPage() {
 
           {activeId === 'pengguna' && <UserManagementSection />}
           {activeId === 'webhook' && <WebhookCredentialsPanel />}
+          {activeId === 'api-client' && <ApiClientsPanel />}
         </SectionNavPane>
       </SectionNavLayout>
     </main>

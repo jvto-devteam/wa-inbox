@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { sendCoexistText, sendCoexistMedia } from './client'
+import { sendCoexistText, sendCoexistMedia, sendCoexistGroupText, sendCoexistGroupImage } from './client'
 
 import type { MockedFunction } from 'vitest'
 
@@ -142,6 +142,54 @@ describe('sendCoexistMedia', () => {
 function mockedFetch() {
   return vi.mocked(fetch)
 }
+
+describe('group sends (system templates to hotel/crew/internal groups)', () => {
+  const ok = () => mockFetch().mockResolvedValue({ ok: true, json: async () => ({ status: '200', message: 'Successfully' }) })
+
+  it('posts text to /api/v1/send_message_group with group_id, not phone_no', async () => {
+    ok()
+    const result = await sendCoexistGroupText(waNumber, '120363335090996109@g.us', 'Halo grup')
+
+    expect(result).toEqual({})
+    expect(fetch).toHaveBeenCalledWith(
+      'http://localhost:4000/api/v1/send_message_group',
+      expect.objectContaining({
+        body: JSON.stringify({
+          api_key: 'key123',
+          number_key: 'num456',
+          group_id: '120363335090996109@g.us',
+          message: 'Halo grup',
+        }),
+      })
+    )
+  })
+
+  it('posts an image to /api/v1/send_image_group with the caption attached to the image', async () => {
+    ok()
+    await sendCoexistGroupImage(waNumber, '120363335090996109@g.us', 'https://x.test/a.jpg', 'Caption')
+
+    expect(fetch).toHaveBeenCalledWith(
+      'http://localhost:4000/api/v1/send_image_group',
+      expect.objectContaining({
+        // separate_caption "0" = one message (image + caption), which is what every JVTO group
+        // image send used; "1" would split it into an image and a separate text message.
+        body: JSON.stringify({
+          api_key: 'key123',
+          number_key: 'num456',
+          group_id: '120363335090996109@g.us',
+          url: 'https://x.test/a.jpg',
+          message: 'Caption',
+          separate_caption: '0',
+        }),
+      })
+    )
+  })
+
+  it('throws when wa-dashboard rejects a group send', async () => {
+    mockFetch().mockResolvedValue({ ok: false, json: async () => ({ status: '1005', message: 'not a participant' }) })
+    await expect(sendCoexistGroupText(waNumber, 'x@g.us', 'Halo')).rejects.toThrow('not a participant')
+  })
+})
 
 describe('wa-coexist request timeouts', () => {
   function signalOf(call: number) {
