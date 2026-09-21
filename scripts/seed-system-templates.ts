@@ -23,6 +23,10 @@ export function planSeed(seeds: SystemTemplateSeed[], existingKeys: Set<string>)
 
 async function main() {
   const apply = process.argv.includes('--apply')
+  // Loaded here, before @/lib/db is imported: that module builds its pg adapter from
+  // DATABASE_URL at import time, and only prisma.config.ts loads .env on its own.
+  const { config } = await import('dotenv')
+  config({ quiet: true })
   const { prisma } = await import('@/lib/db')
 
   try {
