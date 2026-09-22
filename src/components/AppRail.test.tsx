@@ -85,18 +85,24 @@ const DESTINATIONS_BEFORE_1B = [
   ['Pengaturan', '/settings'],
 ] as const
 
+// Satu-satunya tambahan sejak 1B: Summary Harian (2026-09-22), di posisi keempat supaya tiga
+// tujuan bar ponsel tetap sama.
+const DESTINATIONS_NOW = [
+  ...DESTINATIONS_BEFORE_1B.slice(0, 3),
+  ['Summary Harian', '/summary'],
+  ...DESTINATIONS_BEFORE_1B.slice(3),
+] as const
+
 describe('daftar tujuan rail', () => {
-  it('sama persis dengan daftar bar atas sebelum Tahap 1B — label, href, dan urutannya', () => {
-    expect(NAV_ITEMS.map((item) => [item.label, item.href])).toEqual(
-      DESTINATIONS_BEFORE_1B.map(([label, href]) => [label, href])
-    )
+  it('daftar sebelum Tahap 1B, urutannya tetap, ditambah Summary Harian di posisi keempat', () => {
+    expect(NAV_ITEMS.map((item) => [item.label, item.href])).toEqual(DESTINATIONS_NOW.map(([label, href]) => [label, href]))
   })
 
   it('memberi setiap tujuan sebuah ikon, karena rail tanpa ikon adalah daftar teks yang sempit', () => {
     for (const item of NAV_ITEMS) {
       expect(typeof item.icon, `${item.label} tidak punya ikon`).not.toBe('undefined')
     }
-    // Tujuh ikon yang berbeda. Dua tujuan yang berbagi satu ikon adalah dua tujuan yang tidak
+    // Setiap ikon berbeda. Dua tujuan yang berbagi satu ikon adalah dua tujuan yang tidak
     // bisa dibedakan sekilas, dan pasangan Chatbot/Bot Control adalah yang paling berisiko.
     expect(new Set(NAV_ITEMS.map((i) => i.icon)).size).toBe(NAV_ITEMS.length)
   })
@@ -331,10 +337,11 @@ describe('semua halaman masih terjangkau', () => {
   const railHrefs = new Set(NAV_ITEMS.map((i) => i.href))
   const subNavHrefs = new Set(BOT_CONTROL_SECTIONS.map((s) => s.href as string))
 
-  it('menemukan kesembilan belas halaman di disk, bukan lebih sedikit', () => {
-    // Angka ini adalah jumlah halaman saat Tahap 1B ditulis. Kalau ia berubah, test-test di
-    // bawah harus dibaca ulang secara sadar, bukan lolos diam-diam.
-    expect(routes).toHaveLength(19)
+  it('menemukan kedua puluh halaman di disk, bukan lebih sedikit', () => {
+    // Angka ini adalah jumlah halaman saat Tahap 1B ditulis (19), ditambah /summary (2026-09-22,
+    // dijangkau dari rail). Kalau ia berubah, test-test di bawah harus dibaca ulang secara sadar,
+    // bukan lolos diam-diam.
+    expect(routes).toHaveLength(20)
   })
 
   for (const route of routesOnDisk()) {

@@ -810,3 +810,25 @@ model ApiClient {
   revokedAt  DateTime?
   createdAt  DateTime  @default(now())
 }
+
+/// Ringkasan chat harian untuk halaman /summary: satu baris per hari WIB, dibuat job
+/// `POST /api/daily-summary/generate` (crontab VPS, 00:00 WIB) untuk hari yang baru selesai.
+///
+/// `payload` adalah JSON yang divalidasi `dailySummaryPayloadSchema`
+/// (src/lib/daily-summary/payload-schema.ts), bukan tabel ternormalisasi: halaman hanya membaca
+/// satu hari utuh, dan tidak ada query lintas hari. Isinya memuat nama pelanggan dan cuplikan
+/// chat, jadi baris yang `date`-nya lebih tua dari 30 hari dipangkas (keputusan owner 2026-09-22,
+/// `pruneDailySummaries`). Dipangkas per `date`, bukan `startedAt`: membuat ulang hari lama tidak
+/// boleh memperpanjang umurnya.
+model DailySummary {
+  id         String    @id @default(cuid())
+  /// "YYYY-MM-DD", hari Asia/Jakarta yang diringkas.
+  date       String    @unique
+  /// RUNNING | DONE | PARTIAL | FAILED. PARTIAL = sebagian percakapan gagal dicek LLM.
+  status     String
+  model      String?
+  startedAt  DateTime  @default(now())
+  finishedAt DateTime?
+  error      String?
+  payload    Json?
+}

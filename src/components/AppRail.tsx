@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Bot, FileText, Home, Menu, MessageSquare, Settings, SlidersHorizontal, Users, X } from 'lucide-react'
+import { Bot, FileText, Home, Menu, MessageSquare, NotebookText, Settings, SlidersHorizontal, Users, X } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { Tooltip } from '@/components/ui/tooltip'
 import { GapBell } from '@/components/GapBell'
@@ -51,7 +51,9 @@ import { cn } from '@/lib/utils'
 // sebelum Tahap 1B mana pun menyentuhnya.
 
 /**
- * Tujuh tujuan tingkat atas, dalam urutan yang sama seperti bar atas sebelumnya.
+ * Tujuan tingkat atas: tujuh dari bar atas sebelumnya, dalam urutan yang sama, ditambah Summary
+ * Harian (2026-09-22) di posisi keempat -- sesudah tiga tujuan yang tampil di bar ponsel, jadi
+ * bar itu tidak berubah; di ponsel ia dibuka lewat sidebar "Semua".
  *
  * Ikonnya dari lucide-react, yang SUDAH ada di dependencies (dipakai /dev/design-system);
  * tidak ada pustaka baru yang dipasang untuk ini. Pasangan Chatbot/Bot Control sengaja
@@ -62,6 +64,7 @@ export const NAV_ITEMS: ReadonlyArray<{ href: string; label: string; icon: Lucid
   { href: '/dashboard', label: 'Beranda', icon: Home },
   { href: '/inbox', label: 'Inbox', icon: MessageSquare },
   { href: '/contacts', label: 'Kontak', icon: Users },
+  { href: '/summary', label: 'Summary Harian', icon: NotebookText },
   { href: '/templates', label: 'Template Pesan', icon: FileText },
   { href: '/chatbot', label: 'Chatbot', icon: Bot },
   { href: '/bot-control', label: 'Bot Control', icon: SlidersHorizontal },

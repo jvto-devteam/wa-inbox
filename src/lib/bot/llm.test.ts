@@ -51,6 +51,15 @@ describe('callLLM', () => {
     expect(init.signal).toBeInstanceOf(AbortSignal)
   })
 
+  it('keeps the 10s timeout when no timeoutMs is given, and uses timeoutMs when it is', async () => {
+    fetchMock.mockResolvedValue({ ok: true, json: async () => ({ message: { content: 'ok' } }) })
+    const timeoutSpy = vi.spyOn(AbortSignal, 'timeout')
+    await callLLM('Booking saya kapan?')
+    await callLLM('Ringkas percakapan ini', { timeoutMs: 60_000 })
+    expect(timeoutSpy.mock.calls).toEqual([[10_000], [60_000]])
+    timeoutSpy.mockRestore()
+  })
+
   it('rejects (rather than hanging) when the request is aborted by its timeout', async () => {
     fetchMock.mockRejectedValue(new DOMException('The operation was aborted.', 'TimeoutError'))
     await expect(callLLM('Booking saya kapan?')).rejects.toThrow()

@@ -55,6 +55,12 @@ export type LLMOptions = {
    * something the customer said, and the two must never be confusable at the model's end.
    */
   context?: string
+  /**
+   * Batas waktu request ini, dalam ms. Default LLM_TIMEOUT_MS (10 s) -- jalur balasan bot tidak
+   * pernah mengisinya. Hanya job di luar jalur webhook (ringkasan harian, src/lib/daily-summary)
+   * yang boleh menunggu lebih lama, karena tidak ada pelanggan atau webhook yang tertahan.
+   */
+  timeoutMs?: number
 }
 
 // A provider that answers with a non-string or a blank string has not answered.
@@ -71,7 +77,8 @@ async function callOllama(
   system?: string,
   model?: string,
   history?: LLMOptions['history'],
-  context?: string
+  context?: string,
+  timeoutMs?: number
 ): Promise<string> {
   const res = await fetch(`${process.env.OLLAMA_URL}/api/chat`, {
     method: 'POST',
@@ -88,7 +95,7 @@ async function callOllama(
         { role: 'user', content: prompt },
       ],
     }),
-    signal: AbortSignal.timeout(LLM_TIMEOUT_MS),
+    signal: AbortSignal.timeout(timeoutMs ?? LLM_TIMEOUT_MS),
   })
   if (!res.ok) throw new Error('Ollama request failed')
   const body = await res.json()
@@ -96,5 +103,5 @@ async function callOllama(
 }
 
 export async function callLLM(prompt: string, opts?: LLMOptions): Promise<string> {
-  return callOllama(prompt, opts?.system, opts?.model, opts?.history, opts?.context)
+  return callOllama(prompt, opts?.system, opts?.model, opts?.history, opts?.context, opts?.timeoutMs)
 }

@@ -146,6 +146,13 @@ describe('middleware — cron secret', () => {
     expect(mockPrisma.account.findUnique).not.toHaveBeenCalled()
   })
 
+  it('lets the daily-summary job through on a valid secret, but not its read endpoint', async () => {
+    const res = await middleware(cronRequest('/api/daily-summary/generate', SECRET))
+    expect(res.status).toBe(200)
+    vi.mocked(verifySessionToken).mockResolvedValue(null)
+    expect((await middleware(cronRequest('/api/daily-summary', SECRET))).status).toBe(401)
+  })
+
   it('falls through to the normal 401 when the secret is wrong', async () => {
     vi.mocked(verifySessionToken).mockResolvedValue(null)
     const res = await middleware(cronRequest('/api/outbound-jobs/process', 'f'.repeat(40)))
