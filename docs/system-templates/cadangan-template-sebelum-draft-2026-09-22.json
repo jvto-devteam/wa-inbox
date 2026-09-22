@@ -1,0 +1,94 @@
+[
+  {
+    "key": "booking_pending_payment",
+    "body": "*[JVTO] Booking Pending — Payment Required* ⏳\n\nHi _{customer_name}_, thank you for booking with *JVTO*. Your booking has been created and is currently *pending payment*.\n\n*Booking Summary*\n- *Booking ID:* {booking_id}\n- *Tour Package:* {tour_package}\n- *Travel Dates:* {travel_dates}\n- *Guests (Pax):* {pax}\n- *Status:* Pending (Awaiting Payment)\n\n*Amount Due:* IDR {amount_due}\n*Payment Type:* {payment_type}\n*Payment Method:* {payment_method}\n\nPlease complete your payment using this official link:\n👉 {payment_link}\n\n*Payment deadline:* {payment_deadline}\n\n*Notes*\n- Your booking will be confirmed automatically once payment is successful.\n- *Security:* JVTO will never ask for your OTP/PIN. Please pay only via the link above.\n\n*Need help?* Reply to this chat or contact:\n- WhatsApp: +62 822-4478-8833\n- Email: hello@javavolcano-touroperator.com\n\n— JVTO Team"
+  },
+  {
+    "key": "payment_method_confirmed_card",
+    "body": "Dear {customer_name},\n\nThank you for confirming your payment method.\nYou have selected the following payment option for the remaining balance of your tour:\n\n🔹 *Payment Method:* Credit/Debit Card (XENDIT)\n💰 *Remaining Balance:* IDR {remaining_balance} \n🔗 *Payment Link:* {payment_link}\n\nIf you have any questions or need assistance, we are happy to help.\n\nWarm regards,\nJVTO Team\n🌋 Explore Java’s Volcanoes with Us"
+  },
+  {
+    "key": "payment_method_confirmed_cash",
+    "body": "Dear {customer_name},\n\nThank you for confirming your payment method.\nYou have selected the following payment option for the remaining balance of your tour:\n\n🔹 *Payment Method:* Cash\n💰 *Remaining Balance:* IDR {remaining_balance} \n🔗 *Payment information:* https://jvto.me/booking\n\nIf you have any questions or need assistance, we are happy to help.\n\nWarm regards,\nJVTO Team\n🌋 Explore Java’s Volcanoes with Us"
+  },
+  {
+    "key": "payment_received_first",
+    "body": "*[JVTO] Booking Confirmed — Payment Received* ✅🎉\n\nHi _{customer_name}_, thank you for your payment. Your booking is now *confirmed*.\n\n*Booking Details*\n- *Booking ID:* {booking_code}\n- *Tour Package:* {package_name}\n- *Travel Dates:* {travel_date_start} - {travel_date_end}\n-- *Pickup Location:* {pickup}\n- *Guests (Pax):* {total_pax}\n- *Status:* Confirmed\n\n*Payment Summary*\n- *Payment Received:* IDR {payment_amount}\n- *Payment Type:* {payment_type}\n- *Payment Status:* {payment_status}\n\n*Trip Dashboard* 📊\nView your itinerary, pickup details, accommodation, and trip updates here:\n👉 https://jvto.me/b/{booking_short}\n\n*Notes*\n- Any confirmed updates will appear in the Trip Dashboard.\n- If a remaining balance applies, we will share the payment link and deadline in a separate message.\n- Please review the Trip Dashboard and tell us if any details need correction.\n\n*Need help?* Reply to this chat or contact:\n- WhatsApp: +62 822-4478-8833\n- Email: hello@javavolcano-touroperator.com\n\n*Security:* JVTO will never ask for your OTP/PIN. Please use only official links shared in this chat.\n\n— JVTO Team"
+  },
+  {
+    "key": "payment_method_confirmed_wise",
+    "body": "Dear {customer_name},\n\nThank you for confirming your payment method.\nYou have selected the following payment option for the remaining balance of your tour:\n\n🔹 *Payment Method:* Wise Transfer\n💰 *Remaining Balance:* IDR {remaining_balance} \n🔗 *Payment information:* https://jvto.me/booking\n\nIf you have any questions or need assistance, we are happy to help.\n\nWarm regards,\nJVTO Team\n🌋 Explore Java’s Volcanoes with Us"
+  },
+  {
+    "key": "booking_confirmed_backoffice_klook",
+    "body": "✅ *Booking Confirmed – Java Volcano Tour Operator (JVTO)*\nThank you, {customer_name}, for completing your *booking*.\n\nWe’re pleased to confirm that your *tour booking is now secured*. 📩\n\nIf you have any questions or special requests, feel free to contact us via WhatsApp or email.\n\nFor detailed trip information, you can check directly at the following link: https://jvto.me/b/{booking_short}\n\n🙏 We truly appreciate your trust. We look forward to welcoming you on an unforgettable journey!\n\n*JVTO Team*"
+  },
+  {
+    "key": "payment_reminder_balance",
+    "body": "*[JVTO] Payment Reminder — Balance Payment Required* ⏰\n\nHi _{customer_name}_, this is a reminder that your booking is confirmed and the *remaining balance* is still unpaid.\n\n*Booking Details*\n- *Booking ID:* {booking_code}\n- *Tour Package:* {package_name}\n- *Travel Dates:* {travel_date_start} - {travel_date_end}\n- *Trip Day 1:* {travel_date_start}\n- *Pickup Location:* {pickup}\n- *Guests (Pax):* {total_pax}\n- *Status:* Confirmed (Deposit Paid)\n\n*Payment Summary*\n- *Total Amount:* IDR {total_amount}\n- *Deposit Paid:* IDR {deposit_paid}\n- *Outstanding Balance:* IDR {outstanding_balance}\n\n*Balance Payment Deadline*\n- *Card:* {card_due_date} *(no later than 5 days before Day 1)*\n- *Bank Transfer / Wise:* {transfer_due_date} *(no later than 3 days before Day 1)*\n\n*Pay the Balance*\n- *Card Payment:* 👉 {card_payment_link}\n- *Bank Transfer / Wise instructions:* 👉 https://jvto.me/b/{booking_short}\n\n*Notes*\n- Full payment is required before the trip so we can finalize all operational arrangements.\n- Please pay before the deadline to avoid disruptions.\n\n*Need help?* Reply to this chat or contact:\n- WhatsApp: +62 822-4478-8833\n- Email: hello@javavolcano-touroperator.com\n\n*Security:* JVTO will never ask for your OTP/PIN. Please use only official links shared by JVTO.\n\n— JVTO Team"
+  },
+  {
+    "key": "trip_payment_arrangement",
+    "body": "*Hello {customer_name},*\n\nWe would like to kindly request for your attention to the following payment arrangement for This Trip is : *{grand_total} IDR*\n\n{payment_content}\nAnd our team will be happy to assist you with the payment process.\nLooking forward to meet you 😊\n\n📞 +62 822-4478-8833\n🏢 https://maps.app.goo.gl/TLgNey9iqSCM3QYh7\n\nBest Regards,\n*JAVA VOLCANO TOUR OPERATOR*"
+  },
+  {
+    "key": "hotel_room_reservation",
+    "body": "*📩 Room Reservation {hotel_name}*\n\n🗓 Check In : {check_in_date}\n\n🛫Check Out : {check_out_date}\n\n👥 Guest : {guest}\n\n🛏 Rooms : {rooms}\n\n{meals}\n\nCek detail Reservasi ⬇️⬇️\nhttps://partner.javavolcano-touroperator.com/reservation/{hotel_slug}\n\nTerima kasih"
+  },
+  {
+    "key": "internal_new_booking",
+    "body": "*New Booking from Website*\n\n*Name:* {customer_name}\n*Package:* {package_url}\n*Participants:* {total_pax} pax\n*Trip Date:* {trip_date}\n*Pickup:* {pickup}\n*Drop:* {drop}\n\n*Special Requirements:* {special_requirements}\n*Payment Method:* {payment_method}"
+  },
+  {
+    "key": "internal_bali_transport",
+    "body": "*Transport Service Bali*\n\n🗓 Tanggal : {service_date}\n\n🕤 Jam Pickup : {pickup_time}\n\n👥 Tamu : {customer_name} ({total_pax} pax) \n\n🚗 Unit : {vehicle}\n\n📍 Pickup : {pickup}\n\n🏁 Drop : {drop}\n\n✅ Tambahan : {extras}"
+  },
+  {
+    "key": "internal_bali_transport_reminder",
+    "body": "*Reminder Transport Service Bali*\n\n🗓 Tanggal : {service_date}\n\n🕤 Jam Pickup : {pickup_time}\n\n👥 Tamu : {customer_name} ({total_pax} pax) \n\n🚗 Unit : {vehicle}\n\n📍 Pickup : {pickup}\n\n🏁 Drop : {drop}\n\n✅ Tambahan : {extras}"
+  },
+  {
+    "key": "crew_trip_media",
+    "body": "*Trip Media {customer_name},*\n\\🌐 {media_link}\n\n🧗‍♂️ *CREW:*\n{crew_list}"
+  },
+  {
+    "key": "crew_reminder_personal",
+    "body": "*Hello {crew_name}*,\nPlease prepare for your schedule tomorrow.\n\n*Customer Name:* {customer_name}\n*Pickup Location:* {pickup}\n*Pickup Time:* {pickup_time}\n\n📱 You can check more details at:\nhttps://crew-portal.javavolcano-touroperator.com/"
+  },
+  {
+    "key": "crew_reminder_group",
+    "body": "*Reminder for tomorrow’s schedule*.\n\n*Customer Name:* {customer_name}\n*Pickup Location:* {pickup}\n*Pickup Time:* {pickup_time}\n*Crews:* {crew_list}\n\n📱 Check more details at:\nhttps://crew-portal.javavolcano-touroperator.com/"
+  },
+  {
+    "key": "internal_consent_completed",
+    "body": "{customer_name} has completed the consent form input"
+  },
+  {
+    "key": "vendor_tshirt_size_update",
+    "body": "*🎽 Update Size T-Shirt*\n\nNama Customer: {customer_name}\nTanggal Trip: {trip_date}\nChannel: {channel}\nSize: {sizes}"
+  },
+  {
+    "key": "trip_daily_itinerary",
+    "body": "*Hello {customer_name}.*\n{itinerary}"
+  },
+  {
+    "key": "booking_confirmed_backoffice_jvto",
+    "body": "✅ *Booking Confirmed – Java Volcano Tour Operator (JVTO)*\nThank you, {customer_name}, for completing your *booking*.\n\nWe’re pleased to confirm that your *tour booking is now secured*. 📩\nYour *payment receipt, remaining balance, payment method*, and *tour itinerary* have all been sent to your registered email address.\n\nPlease kindly check your inbox (and spam folder just in case), or you can access it directly via the link below\n\n🔗 https://jvto.me/b/{booking_short}\n\nIf you have any questions or special requests, feel free to contact us via WhatsApp or email.\n\n🙏 We truly appreciate your trust. We look forward to welcoming you on an unforgettable journey!\n\n*JVTO Team*"
+  },
+  {
+    "key": "payment_received_balance",
+    "body": "*[JVTO] Booking Confirmed — Payment Received* ✅🎉\n\nHi _{customer_name}_, thank you for your payment. Your booking is now *confirmed*.\n\n*Booking Details*\n- *Booking ID:* {booking_code}\n- *Tour Package:* {package_name}\n- *Travel Dates:* {travel_date_start} - {travel_date_end}\n- *Pickup Location:* {pickup}\n- *Guests (Pax):* {total_pax}\n- *Status:* Confirmed\n\n*Payment Summary*\n- *Payment Received:* IDR {payment_amount}\n- *Payment Type:* {payment_type}\n- *Payment Status:* {payment_status}\n\n*Trip Dashboard* 📊\nView your itinerary, pickup details, accommodation, and trip updates here:\n👉 https://jvto.me/b/{booking_short}\n\n*Notes*\n- Any confirmed updates will appear in the Trip Dashboard.\n- If a remaining balance applies, we will share the payment link and deadline in a separate message.\n- Please review the Trip Dashboard and tell us if any details need correction.\n\n*Need help?* Reply to this chat or contact:\n- WhatsApp: +62 822-4478-8833\n- Email: hello@javavolcano-touroperator.com\n\n*Security:* JVTO will never ask for your OTP/PIN. Please use only official links shared in this chat.\n\n— JVTO Team"
+  },
+  {
+    "key": "trip_information",
+    "body": "🌄 *Let's Explore!*\n\nDear {customer_name},\n\n*Get ready for an adventure!*\n\n*Logistical Details* 📍\n- Pickup Time: {pickup_time}\n- Pickup Location: {pickup}\n\n*Important Reminders* ⚡\n- Arrive 10 minutes prior to pickup time\n- Bring necessary documents and gear\n\n*Your Adventure Awaits!* 💥\nAccess your trip details and documents:\n\n*Unified Portal*: https://jvto.me/b/{booking_short}\n\n*Need Help?*\nContact us:\n- WhatsApp: +62 822-4478-8833\n- Email: hello@javavolcano-touroperator.com\n\nBest regards,\nJVTO Team"
+  },
+  {
+    "key": "trip_concluded",
+    "body": "Hello {customer_name} 🌟\n\n*Your Journey with JVTO Concludes!* 🏜\n\nThank you so much for choosing *Java Volcano Tour Operator* for your adventure!\nWe truly hope you had a fun and unforgettable trip in Indonesia.\n\n📸 Your Trip Memories:\nAll the fantastic pictures from your trip are ready for you to view and download! Access them directly on your personalized trip dashboard:\n🌐 https://jvto.me/b/{booking_short}\n\n✍ Share Your Experience:\nYour feedback is invaluable to us and incredibly helpful to future travelers. Please take a moment to leave a review on Google or Trustpilot (link also available on portal).\n\nWe hope to welcome you on another adventure soon!\n\nMany thanks,\nThe JVTO Team"
+  },
+  {
+    "key": "booking_confirmed_klook_email",
+    "body": "*Booking Confirmed!* ✅🎉\n\nDear {customer_name},\n\nWe're thrilled to confirm your booking! 🎉 Below are the details of your upcoming trip:\n\n*Your Booking Details*\n\n- *Tour Package*: {package_name}\n- *Number of Pax*: {total_pax} Pax\n\n*Access Your Personalized Trip Dashboard* 📊\nhttps://jvto.me/b/{booking_short}\n\n*What's Next?*\n- Your booking is confirmed, you can check your trip detail through Trip Dasbboard.\n\n*Need Help?*\nContact us:\n- WhatsApp: +62 822-4478-8833\n- Email: hello@javavolcano-touroperator.com\n\nLet's Get Ready to Explore! 🎉\nWe're looking forward to helping you create unforgettable memories!\n\nBest regards,\nJVTO Team 🚐"
+  }
+]
