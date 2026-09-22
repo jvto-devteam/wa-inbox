@@ -8,7 +8,7 @@ import { isDateKey, jakartaDayKey, previousJakartaDayKey } from '@/lib/daily-sum
 /**
  * POST /api/daily-summary/generate — buat (ulang) ringkasan chat satu hari WIB.
  *
- * Dua pemanggil: crontab VPS tiap 00:00 WIB (`0 17 * * *` UTC) dengan header `x-cron-secret`,
+ * Dua pemanggil: crontab VPS tiap 00:00 WIB (`0 0 * * *`; jam sistem VPS Asia/Jakarta) dengan header `x-cron-secret`,
  * dan admin yang menekan "Buat ulang" di /summary. Secret dicek ulang di sini, bukan hanya di
  * middleware -- alasan yang sama dengan POST /api/outbound-jobs/process.
  *

@@ -126,7 +126,7 @@ sendiri-sendiri, halaman berbohong tentang tombol di sebelahnya.
 
 ### Summary harian (`/summary`)
 `DailySummary`, satu baris per hari WIB, payload JSON (`src/lib/daily-summary/payload-schema.ts`).
-Dibuat `POST /api/daily-summary/generate` (crontab VPS `0 17 * * *` UTC = 00:00 WIB, header
+Dibuat `POST /api/daily-summary/generate` (crontab VPS `0 0 * * *` — jam sistem VPS Asia/Jakarta, header
 `x-cron-secret`; atau admin lewat tombol "Buat ulang"). Satu panggilan LLM per percakapan
 (model `Settings.ollamaModel`, timeout 60 s) yang meringkas **dan** menyaring kandidat "belum
 dibalas"/"pelanggan diam" yang sudah selesai. Ambang di `src/lib/daily-summary/config.ts`.
