@@ -88,32 +88,46 @@ describe('DailySummaryPage', () => {
     stubFetch({ role: 'AGENT', body: response(summaryRow) })
     render(<DailySummaryPage />)
 
-    expect(await screen.findByText('Belum dibalas')).toBeInTheDocument()
-    expect(screen.getByText('menunggu 3 jam')).toBeInTheDocument()
-    expect(screen.getByText('diam 3 hari')).toBeInTheDocument()
+    // Tab pertama terbuka: Belum dibalas.
+    expect(await screen.findByText('menunggu 3 jam')).toBeInTheDocument()
     expect(screen.getByText(/2 percakapan lain disaring/)).toBeInTheDocument()
-    expect(screen.getAllByText('Belum dicek LLM').length).toBeGreaterThan(0)
     expect(screen.getByText(/1 percakapan gagal dicek LLM/)).toBeInTheDocument()
-    expect(screen.getByText('Berapa harga untuk 2 orang?')).toBeInTheDocument()
     expect(screen.getAllByRole('link', { name: 'Anna' })[0]).toHaveAttribute('href', '/inbox?conversation=conv_1')
+    // Bagian lain tidak dirender sampai tabnya dipilih.
+    expect(screen.queryByText('diam 3 hari')).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('tab', { name: /Pelanggan diam/ }))
+    expect(screen.getByText('diam 3 hari')).toBeInTheDocument()
+    expect(screen.getAllByText('Belum dicek LLM').length).toBeGreaterThan(0)
+    expect(screen.getByRole('tab', { name: /Pelanggan diam/ })).toHaveAttribute('aria-selected', 'true')
+
+    fireEvent.click(screen.getByRole('tab', { name: /Ringkasan percakapan/ }))
+    expect(screen.getByText('Berapa harga untuk 2 orang?')).toBeInTheDocument()
+  })
+
+  it('setiap tab menyebut jumlah isinya', async () => {
+    stubFetch({ role: 'AGENT', body: response(summaryRow) })
+    render(<DailySummaryPage />)
+    expect(await screen.findByRole('tab', { name: 'Belum dibalas, 1' })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: 'Lead baru, 0' })).toBeInTheDocument()
   })
 
   it('setiap bagian punya tombol tindakan ke Inbox', async () => {
     stubFetch({ role: 'AGENT', body: response(summaryRow) })
     render(<DailySummaryPage />)
-    await screen.findByText('Belum dibalas')
-
     // Belum dibalas: pesan pelanggan yang menunggu ikut tersorot.
-    expect(screen.getByRole('link', { name: 'Balas' })).toHaveAttribute('href', '/inbox?conversation=conv_1&message=msg_in_1')
+    expect(await screen.findByRole('link', { name: 'Balas' })).toHaveAttribute('href', '/inbox?conversation=conv_1&message=msg_in_1')
     // Pelanggan diam dari baris lama tanpa id pesan: tetap membuka percakapannya.
+    fireEvent.click(screen.getByRole('tab', { name: /Pelanggan diam/ }))
     expect(screen.getByRole('link', { name: 'Follow up' })).toHaveAttribute('href', '/inbox?conversation=conv_2')
+    fireEvent.click(screen.getByRole('tab', { name: /Ringkasan percakapan/ }))
     expect(screen.getByRole('link', { name: 'Buka chat' })).toHaveAttribute('href', '/inbox?conversation=conv_1')
   })
 
   it('tombol Buat ulang hanya untuk admin', async () => {
     stubFetch({ role: 'AGENT', body: response(summaryRow) })
     render(<DailySummaryPage />)
-    await screen.findByText('Belum dibalas')
+    await screen.findByText('menunggu 3 jam')
     expect(screen.queryByRole('button', { name: 'Buat ulang' })).not.toBeInTheDocument()
   })
 

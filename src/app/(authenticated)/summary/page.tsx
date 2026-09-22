@@ -14,11 +14,25 @@ import {
   UnrepliedSection,
 } from '@/components/daily-summary/SummarySections'
 import type { DailySummaryResponse } from '@/app/api/daily-summary/route'
+import type { DailySummaryPayload } from '@/lib/daily-summary/payload-schema'
 import type { AccountRoleName } from '@/lib/auth/session'
 import { hasAdminPowers } from '@/lib/bot-control/permissions'
 import { fetchJson } from '@/lib/fetch-json'
+import { cn } from '@/lib/utils'
 
 type Session = { role: AccountRoleName }
+
+type TabId = 'unreplied' | 'dormant' | 'leads' | 'handoffs' | 'gaps' | 'conversations'
+
+/** Urutan tab = urutan prioritas tindakan: yang menunggu balasan kita dulu. */
+const TABS: ReadonlyArray<{ id: TabId; label: string; count: (p: DailySummaryPayload) => number }> = [
+  { id: 'unreplied', label: 'Belum dibalas', count: (p) => p.unreplied.length },
+  { id: 'dormant', label: 'Pelanggan diam', count: (p) => p.dormant.length },
+  { id: 'leads', label: 'Lead baru', count: (p) => p.newLeads.length },
+  { id: 'handoffs', label: 'Handoff', count: (p) => p.handoffs.length },
+  { id: 'gaps', label: 'Gap knowledge', count: (p) => p.gaps.newCount },
+  { id: 'conversations', label: 'Ringkasan percakapan', count: (p) => p.conversations.length },
+]
 
 const STATUS_LABEL: Record<string, string> = {
   DONE: 'Selesai',
@@ -60,6 +74,8 @@ export default function DailySummaryPage() {
   const [role, setRole] = useState<Session['role'] | null>(null)
   const [generating, setGenerating] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
+  // Tetap di tab yang sama saat berganti tanggal: operator biasanya membandingkan bagian yang sama.
+  const [tab, setTab] = useState<TabId>('unreplied')
 
   const load = useCallback(() => {
     return fetchJson<DailySummaryResponse>(`/api/daily-summary${date ? `?date=${encodeURIComponent(date)}` : ''}`)
@@ -193,12 +209,53 @@ export default function DailySummaryPage() {
                 <Stat label="Pesan keluar" value={payload.counts.outbound} />
                 <Stat label="Kontak baru" value={payload.counts.newConversations} />
               </div>
-              <UnrepliedSection items={payload.unreplied} filteredOut={payload.filteredOut.unreplied} windowEnd={payload.windowEnd} />
-              <DormantSection items={payload.dormant} filteredOut={payload.filteredOut.dormant} windowEnd={payload.windowEnd} />
-              <NewLeadsSection items={payload.newLeads} />
-              <HandoffSection items={payload.handoffs} />
-              <GapSection gaps={payload.gaps} />
-              <ConversationSummariesSection items={payload.conversations} />
+              {/* Satu bagian pada satu waktu, bukan enam kartu berurutan: halaman yang digulung
+                  panjang membuat bagian bawah (gap, ringkasan) tidak pernah dilihat. Gaya tab
+                  sama dengan /templates. Di ponsel baris tab digulung mendatar. */}
+              <div role="tablist" aria-label="Bagian ringkasan" className="flex gap-5 overflow-x-auto border-b border-line">
+                {TABS.map((t) => {
+                  const active = tab === t.id
+                  const count = t.count(payload)
+                  return (
+                    <button
+                      key={t.id}
+                      type="button"
+                      role="tab"
+                      id={`summary-tab-${t.id}`}
+                      aria-selected={active}
+                      aria-label={`${t.label}, ${count}`}
+                      aria-controls="summary-tabpanel"
+                      onClick={() => setTab(t.id)}
+                      className={cn(
+                        'focus-ring -mb-px inline-flex shrink-0 items-center gap-1.5 border-b-2 px-0.5 pb-2 font-medium whitespace-nowrap transition-colors',
+                        active ? 'border-accent text-ink' : 'border-transparent text-ink-muted hover:text-ink'
+                      )}
+                    >
+                      {t.label}
+                      <span
+                        className={cn(
+                          'rounded-sm px-1.5 text-xs tabular-nums',
+                          count > 0 ? 'bg-surface-sunken text-ink' : 'bg-surface-sunken text-ink-subtle'
+                        )}
+                      >
+                        {count}
+                      </span>
+                    </button>
+                  )
+                })}
+              </div>
+              <div role="tabpanel" id="summary-tabpanel" aria-labelledby={`summary-tab-${tab}`}>
+                {tab === 'unreplied' && (
+                  <UnrepliedSection items={payload.unreplied} filteredOut={payload.filteredOut.unreplied} windowEnd={payload.windowEnd} />
+                )}
+                {tab === 'dormant' && (
+                  <DormantSection items={payload.dormant} filteredOut={payload.filteredOut.dormant} windowEnd={payload.windowEnd} />
+                )}
+                {tab === 'leads' && <NewLeadsSection items={payload.newLeads} />}
+                {tab === 'handoffs' && <HandoffSection items={payload.handoffs} />}
+                {tab === 'gaps' && <GapSection gaps={payload.gaps} />}
+                {tab === 'conversations' && <ConversationSummariesSection items={payload.conversations} />}
+              </div>
             </>
           )}
         </div>
