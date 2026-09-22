@@ -11,8 +11,9 @@
  * belum ada di baris (daftar variabel = kontrak dengan program pemanggil). booking_short kini
  * dikirim di setiap tempat yang mengirim booking_slug (new-backoffice BookingController,
  * javavolcano-touroperator ReminderPayment/TripInformation/TripMedia/KlookEmailExtractorController/
- * thirdParty/XenditController), jadi di sinilah ia dideklarasikan. Seed tidak diubah: seed-parity.test.ts mengunci teks port PHP aslinya, dan
- * seed bersifat create-only — baris produksi milik operator.
+ * thirdParty/XenditController), jadi di sinilah ia dideklarasikan. Seed tidak diubah:
+ * seed-parity.test.ts mengunci teks port PHP aslinya, dan seed bersifat create-only — baris
+ * produksi milik operator.
  *
  * Hanya mengganti string tautan yang PERSIS sama. Template yang tautannya sudah diubah operator
  * dilewati dan dilaporkan, tidak ditimpa. Aman dijalankan ulang (idempoten).
@@ -36,7 +37,7 @@ export const TARGET_KEYS = [
 export const BOOKING_SHORT_VARIABLE: SystemTemplateVariable = {
   name: 'booking_short',
   required: true,
-  example: '5Ixwzg6B7G',
+  example: 'Ab3dE5fG7h',
   description: 'Kolom bookings.url_short — segmen terakhir tautan https://jvto.me/b/<kode>.',
 }
 
@@ -120,7 +121,9 @@ async function main() {
           },
           tx
         )
-      })
+        // Dijalankan dari laptop ke DB VPS: satu transaksi pernah makan 31 detik, jauh di atas
+        // default 5 detik Prisma. Tiap template tetap satu transaksi sendiri.
+      }, { maxWait: 30_000, timeout: 120_000 })
     }
     console.log(`\n${plan.update.length} diubah.`)
   } finally {

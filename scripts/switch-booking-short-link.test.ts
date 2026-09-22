@@ -31,8 +31,8 @@ describe('planSwitch', () => {
       expect(validateTemplateBody(update.body, update.variables)).toEqual([])
 
       const values = Object.fromEntries(update.variables.map((variable) => [variable.name, variable.example ?? 'x']))
-      const rendered = renderSystemTemplate({ body: update.body, variables: update.variables }, { ...values, booking_short: '5Ixwzg6B7G' })
-      expect(rendered.ok && rendered.text).toContain('https://jvto.me/b/5Ixwzg6B7G')
+      const rendered = renderSystemTemplate({ body: update.body, variables: update.variables }, { ...values, booking_short: 'Ab3dE5fG7h' })
+      expect(rendered.ok && rendered.text).toContain('https://jvto.me/b/Ab3dE5fG7h')
     }
   })
 
