@@ -131,7 +131,7 @@ export default function DailySummaryPage() {
   )
 
   return (
-    <main className="mx-auto w-full max-w-[1100px] p-6">
+    <main className="mx-auto w-full max-w-[1600px] p-6">
       <PageHeader
         title="Summary Harian"
         description="Rekap chat per hari WIB, dibuat otomatis tiap 00:00. Disimpan 30 hari."
