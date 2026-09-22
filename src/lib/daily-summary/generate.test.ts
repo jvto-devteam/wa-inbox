@@ -20,7 +20,7 @@ const { start, end } = jakartaDayRange(DATE)
 const HOUR = 60 * 60 * 1000
 
 function msg(direction: 'INBOUND' | 'OUTBOUND', at: Date, content = 'halo'): TranscriptMessage {
-  return { direction, sentBy: direction === 'INBOUND' ? 'CUSTOMER' : 'AGENT', type: 'text', content, createdAt: at }
+  return { id: `m-${direction}-${at.getTime()}`, direction, sentBy: direction === 'INBOUND' ? 'CUSTOMER' : 'AGENT', type: 'text', content, createdAt: at }
 }
 
 function conv(id: string, messages: TranscriptMessage[], extra: Partial<ConversationFacts> = {}): ConversationFacts {

@@ -117,6 +117,7 @@ export function buildPayload(
         payload.unreplied.push({
           ...ref,
           lastMessageAt: c.unreplied.last.createdAt.toISOString(),
+          lastMessageId: c.unreplied.last.id,
           waitingMs: c.unreplied.waitingMs,
           snippet: messageSnippet(c.unreplied.last),
           review,
@@ -128,6 +129,7 @@ export function buildPayload(
         payload.dormant.push({
           ...ref,
           lastMessageAt: c.dormant.last.createdAt.toISOString(),
+          lastMessageId: c.dormant.last.id,
           silentMs: c.dormant.silentMs,
           snippet: messageSnippet(c.dormant.last),
           review,

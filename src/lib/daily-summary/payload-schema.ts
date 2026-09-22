@@ -31,9 +31,17 @@ const conversationRef = {
 /** `review: null` = LLM gagal atau timeout; halaman menampilkannya sebagai "belum dicek". */
 const reviewField = conversationReviewSchema.nullable()
 
+/**
+ * Id pesan terakhir, untuk tombol yang membuka Inbox dengan pesan itu tersorot. Opsional karena
+ * baris yang dibuat sebelum kolom ini ada (21 September 2026) tidak memilikinya -- tombolnya
+ * tetap membuka percakapan, hanya tanpa sorotan.
+ */
+const lastMessageId = z.string().optional()
+
 const unrepliedItemSchema = z.object({
   ...conversationRef,
   lastMessageAt: z.string(),
+  lastMessageId,
   waitingMs: z.number(),
   snippet: z.string(),
   review: reviewField,
@@ -42,6 +50,7 @@ const unrepliedItemSchema = z.object({
 const dormantItemSchema = z.object({
   ...conversationRef,
   lastMessageAt: z.string(),
+  lastMessageId,
   silentMs: z.number(),
   snippet: z.string(),
   review: reviewField,

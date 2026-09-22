@@ -7,7 +7,7 @@ const HOUR = 60 * 60 * 1000
 const before = (ms: number) => new Date(end.getTime() - ms)
 
 function msg(direction: 'INBOUND' | 'OUTBOUND', at: Date, content: string | null = 'halo', type = 'text'): TranscriptMessage {
-  return { direction, sentBy: direction === 'INBOUND' ? 'CUSTOMER' : 'AGENT', type, content, createdAt: at }
+  return { id: `m-${direction}-${at.getTime()}`, direction, sentBy: direction === 'INBOUND' ? 'CUSTOMER' : 'AGENT', type, content, createdAt: at }
 }
 
 function facts(messages: TranscriptMessage[], overrides: Partial<ConversationFacts> = {}): ConversationFacts {

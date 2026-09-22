@@ -22,6 +22,7 @@ import type { TripBriefSummary } from './payload-schema'
  */
 
 export type TranscriptMessage = {
+  id: string
   direction: MessageDirection
   sentBy: SentBy
   type: string
@@ -168,7 +169,7 @@ export async function collectDay(start: Date, end: Date): Promise<CollectedDay> 
       where: { conversationId: conversation.id, createdAt: { lt: end } },
       orderBy: { createdAt: 'desc' },
       take: TRANSCRIPT_MAX_MESSAGES,
-      select: { direction: true, sentBy: true, type: true, content: true, createdAt: true },
+      select: { id: true, direction: true, sentBy: true, type: true, content: true, createdAt: true },
     })
     facts.push({
       conversationId: conversation.id,

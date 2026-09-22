@@ -28,6 +28,7 @@ const payload = {
       contactName: 'Anna',
       pipelineStage: 'new',
       lastMessageAt: '2026-09-21T14:00:00.000Z',
+      lastMessageId: 'msg_in_1',
       waitingMs: 3 * 3600000,
       snippet: 'Berapa harga Ijen untuk 2 orang?',
       review,
@@ -95,6 +96,18 @@ describe('DailySummaryPage', () => {
     expect(screen.getByText(/1 percakapan gagal dicek LLM/)).toBeInTheDocument()
     expect(screen.getByText('Berapa harga untuk 2 orang?')).toBeInTheDocument()
     expect(screen.getAllByRole('link', { name: 'Anna' })[0]).toHaveAttribute('href', '/inbox?conversation=conv_1')
+  })
+
+  it('setiap bagian punya tombol tindakan ke Inbox', async () => {
+    stubFetch({ role: 'AGENT', body: response(summaryRow) })
+    render(<DailySummaryPage />)
+    await screen.findByText('Belum dibalas')
+
+    // Belum dibalas: pesan pelanggan yang menunggu ikut tersorot.
+    expect(screen.getByRole('link', { name: 'Balas' })).toHaveAttribute('href', '/inbox?conversation=conv_1&message=msg_in_1')
+    // Pelanggan diam dari baris lama tanpa id pesan: tetap membuka percakapannya.
+    expect(screen.getByRole('link', { name: 'Follow up' })).toHaveAttribute('href', '/inbox?conversation=conv_2')
+    expect(screen.getByRole('link', { name: 'Buka chat' })).toHaveAttribute('href', '/inbox?conversation=conv_1')
   })
 
   it('tombol Buat ulang hanya untuk admin', async () => {

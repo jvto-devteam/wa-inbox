@@ -46,6 +46,26 @@ function jakartaTime(iso: string): string {
   return new Date(iso).toLocaleTimeString('id-ID', { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit' })
 }
 
+/**
+ * Tombol tindakan per baris: tautan ke Inbox bergaya tombol kecil. Tautan, bukan <button>,
+ * karena tindakannya memang pindah halaman -- dan bisa dibuka di tab baru sambil tetap
+ * menyisir daftar ini.
+ */
+function ActionLink({ href, children, primary = false }: { href: string; children: ReactNode; primary?: boolean }) {
+  return (
+    <Link
+      href={href}
+      className={
+        primary
+          ? 'focus-ring ml-auto inline-flex h-7 shrink-0 items-center rounded-md bg-accent px-2.5 text-sm font-medium text-white hover:bg-accent-hover'
+          : 'focus-ring ml-auto inline-flex h-7 shrink-0 items-center rounded-md border border-line-strong bg-surface px-2.5 text-sm font-medium text-ink hover:bg-surface-sunken'
+      }
+    >
+      {children}
+    </Link>
+  )
+}
+
 function ContactLink({ id, name }: { id: string; name: string | null }) {
   return (
     <Link href={conversationHref(id)} className="focus-ring rounded-sm text-base font-medium text-ink hover:underline">
@@ -100,6 +120,9 @@ export function UnrepliedSection({ items, filteredOut, windowEnd }: { items: Unr
                 <ContactLink id={item.conversationId} name={item.contactName} />
                 <Badge variant="destructive">menunggu {formatWait(item.lastMessageAt, now)}</Badge>
                 <span className="text-xs text-ink-subtle">{STAGE_LABELS[item.pipelineStage] ?? item.pipelineStage}</span>
+                <ActionLink href={conversationHref(item.conversationId, item.lastMessageId)} primary>
+                  Balas
+                </ActionLink>
               </div>
               <p className="max-w-4xl text-sm text-ink">“{item.snippet}”</p>
               <ReviewLine review={item.review} />
@@ -125,6 +148,9 @@ export function DormantSection({ items, filteredOut, windowEnd }: { items: Dorma
                 <ContactLink id={item.conversationId} name={item.contactName} />
                 <Badge variant="warning">diam {formatWait(item.lastMessageAt, now)}</Badge>
                 <span className="text-xs text-ink-subtle">{STAGE_LABELS[item.pipelineStage] ?? item.pipelineStage}</span>
+                <ActionLink href={conversationHref(item.conversationId, item.lastMessageId)} primary>
+                  Follow up
+                </ActionLink>
               </div>
               <p className="max-w-4xl text-sm text-ink-muted">Pesan terakhir kita: “{item.snippet}”</p>
               <ReviewLine review={item.review} />
@@ -162,6 +188,7 @@ export function NewLeadsSection({ items }: { items: NewLeadItem[] }) {
                 <time dateTime={item.createdAt} className="font-mono text-xs text-ink-subtle">
                   {jakartaTime(item.createdAt)}
                 </time>
+                <ActionLink href={conversationHref(item.conversationId)}>Buka chat</ActionLink>
               </div>
               {item.tripBrief && tripBriefParts(item.tripBrief).length > 0 && (
                 <div className="flex flex-wrap gap-1">
@@ -200,6 +227,9 @@ export function HandoffSection({ items }: { items: HandoffItem[] }) {
                   {jakartaTime(item.at)}
                 </time>
                 {item.stillWaiting ? <Badge variant="destructive">Masih menunggu</Badge> : <Badge variant="success">Sudah dibalas</Badge>}
+                <ActionLink href={conversationHref(item.conversationId)} primary={item.stillWaiting}>
+                  {item.stillWaiting ? 'Balas' : 'Lihat chat'}
+                </ActionLink>
               </div>
               <p className="max-w-4xl text-sm text-ink-muted">“{item.inboundText}”</p>
             </li>
@@ -242,13 +272,14 @@ export function GapSection({ gaps }: { gaps: DailySummaryPayload['gaps'] }) {
           </div>
           <ul className="divide-y divide-line">
             {gaps.items.map((gap) => (
-              <li key={gap.id} className="px-4 py-2.5">
-                <Link href={conversationHref(gap.conversationId, gap.messageId)} className="focus-ring block rounded-sm hover:underline">
+              <li key={gap.id} className="flex items-center gap-3 px-4 py-2.5">
+                <div className="min-w-0">
                   <span className="text-sm font-medium text-ink">
                     {gap.contactName ?? 'Tanpa nama'} · {gap.topic}
                   </span>
                   <span className="block truncate text-sm text-ink-muted">{gap.messageText}</span>
-                </Link>
+                </div>
+                <ActionLink href={conversationHref(gap.conversationId, gap.messageId)}>Ajari bot</ActionLink>
               </li>
             ))}
           </ul>
@@ -293,6 +324,7 @@ export function ConversationSummariesSection({ items }: { items: ConversationSum
                 <span className="text-xs text-ink-subtle">
                   {item.inbound} masuk · {item.outbound} keluar
                 </span>
+                <ActionLink href={conversationHref(item.conversationId)}>Buka chat</ActionLink>
               </div>
               {item.review ? (
                 <div className="max-w-4xl space-y-2">
