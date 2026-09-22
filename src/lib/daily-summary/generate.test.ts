@@ -131,16 +131,28 @@ describe('generateDailySummary', () => {
         conv('b', [msg('OUTBOUND', new Date(end.getTime() - 3 * HOUR))], { outboundToday: 1 }),
       ])
     )
-    vi.mocked(reviewConversation).mockResolvedValueOnce(review('perlu_tindakan')).mockResolvedValueOnce(null)
+    // Percakapan b gagal dua kali: percobaan pertama dan satu percobaan ulang.
+    vi.mocked(reviewConversation).mockResolvedValueOnce(review('perlu_tindakan')).mockResolvedValueOnce(null).mockResolvedValueOnce(null)
 
     const result = await generateDailySummary(DATE, end)
 
     expect(result).toEqual({ outcome: 'generated', date: DATE, status: 'PARTIAL' })
-    expect(reviewConversation).toHaveBeenCalledTimes(2)
+    expect(reviewConversation).toHaveBeenCalledTimes(3)
     expect(vi.mocked(reviewConversation).mock.calls[0][1]).toEqual(['unreplied', 'active'])
     expect(vi.mocked(reviewConversation).mock.calls[0][2]).toBe('gemma4:31b-cloud')
     const update = mockPrisma.dailySummary.update.mock.calls[0][0]
     expect(update.data).toMatchObject({ status: 'PARTIAL', model: 'gemma4:31b-cloud', error: null })
+  })
+
+  it('mencoba ulang sekali percakapan yang gagal dinilai, lalu DONE bila berhasil', async () => {
+    mockPrisma.dailySummary.updateMany.mockResolvedValue({ count: 1 })
+    vi.mocked(collectDay).mockResolvedValue(day([conv('a', [msg('INBOUND', new Date(end.getTime() - 2 * HOUR))], { inboundToday: 1 })]))
+    vi.mocked(reviewConversation).mockResolvedValueOnce(null).mockResolvedValueOnce(review('perlu_tindakan'))
+
+    const result = await generateDailySummary(DATE, end)
+
+    expect(result).toEqual({ outcome: 'generated', date: DATE, status: 'DONE' })
+    expect(reviewConversation).toHaveBeenCalledTimes(2)
   })
 
   it('mengikuti setelan chatbot untuk nomor Indonesia', async () => {

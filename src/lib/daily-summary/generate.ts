@@ -218,6 +218,12 @@ export async function generateDailySummary(date: string, now: Date = new Date())
     const day = await collectDay(start, end, { excludeIndonesian })
     const targets = reviewTargets(day)
     const results = await mapWithConcurrency(targets, REVIEW_CONCURRENCY, (t) => reviewConversation(t.transcript, t.reasons, model))
+    // Satu percobaan ulang, berurutan, untuk yang gagal. Kegagalan yang teramati di produksi
+    // (2026-09-22: "Ollama request failed" dan timeout 60 s) datang dari server ollama.com yang
+    // sedang sibuk, bukan dari percakapannya -- dan dicoba satu per satu supaya tidak menambah beban.
+    for (let i = 0; i < targets.length; i++) {
+      if (results[i] === null) results[i] = await reviewConversation(targets[i].transcript, targets[i].reasons, model)
+    }
     const reviews = new Map(targets.map((t, i) => [t.conversationId, results[i]]))
 
     const payload = dailySummaryPayloadSchema.parse({ ...buildPayload(date, day, reviews, new Date()), excludedIndonesian: excludeIndonesian })
