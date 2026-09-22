@@ -109,6 +109,8 @@ export const dailySummaryPayloadSchema = z.object({
   windowStart: z.string(),
   windowEnd: z.string(),
   generatedAt: z.string(),
+  /** Nomor Indonesia disaring (Settings.skipBotForIndonesianNumbers saat dibuat). Opsional: baris lama tidak punya. */
+  excludedIndonesian: z.boolean().optional(),
   thresholds: z.object({ unrepliedMinMs: z.number(), dormantMinMs: z.number(), lookbackMs: z.number() }),
   counts: z.object({
     activeConversations: z.number(),

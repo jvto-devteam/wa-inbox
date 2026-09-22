@@ -166,6 +166,7 @@ export default function DailySummaryPage() {
             <span>Status: {STATUS_LABEL[summary.status] ?? summary.status}</span>
             {summary.model && <span>Model: {summary.model}</span>}
             {payload && <span>Dibuat {new Date(payload.generatedAt).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })} WIB</span>}
+            {payload?.excludedIndonesian && <span>Nomor Indonesia tidak dihitung (sesuai setelan Chatbot)</span>}
           </div>
 
           {summary.status === 'RUNNING' && (

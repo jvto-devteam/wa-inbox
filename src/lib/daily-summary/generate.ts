@@ -208,15 +208,19 @@ export async function generateDailySummary(date: string, now: Date = new Date())
 
   let model: string | undefined
   try {
-    const settings = await prisma.settings.findUnique({ where: { id: 1 }, select: { ollamaModel: true } })
+    const settings = await prisma.settings.findUnique({
+      where: { id: 1 },
+      select: { ollamaModel: true, skipBotForIndonesianNumbers: true },
+    })
     model = settings?.ollamaModel ?? undefined
+    const excludeIndonesian = settings?.skipBotForIndonesianNumbers ?? false
 
-    const day = await collectDay(start, end)
+    const day = await collectDay(start, end, { excludeIndonesian })
     const targets = reviewTargets(day)
     const results = await mapWithConcurrency(targets, REVIEW_CONCURRENCY, (t) => reviewConversation(t.transcript, t.reasons, model))
     const reviews = new Map(targets.map((t, i) => [t.conversationId, results[i]]))
 
-    const payload = dailySummaryPayloadSchema.parse(buildPayload(date, day, reviews, new Date()))
+    const payload = dailySummaryPayloadSchema.parse({ ...buildPayload(date, day, reviews, new Date()), excludedIndonesian: excludeIndonesian })
     const status = payload.counts.reviewFailed > 0 ? 'PARTIAL' : 'DONE'
     await prisma.dailySummary.update({
       where: { date },

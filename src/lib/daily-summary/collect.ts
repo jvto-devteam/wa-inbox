@@ -1,5 +1,6 @@
 import type { MessageDirection, SentBy } from '@prisma/client'
 import { prisma } from '@/lib/db'
+import { isIndonesianNumber } from '@/lib/phone'
 import {
   DORMANT_MIN_MS,
   DORMANT_STAGES,
@@ -18,8 +19,13 @@ import type { TripBriefSummary } from './payload-schema'
  * dinding: laporan yang dibuat ulang siang harinya harus sama dengan yang dibuat tengah malam,
  * dan pesan yang masuk sesudah `end` bukan bagian dari hari itu.
  *
- * Percakapan `isTest` dikecualikan di setiap query.
+ * Percakapan `isTest` dikecualikan di setiap query. Nomor Indonesia juga dikecualikan kalau
+ * `excludeIndonesian` -- yaitu `Settings.skipBotForIndonesianNumbers`, aturan yang sama dengan
+ * gerbang bot di src/lib/inbound.ts (`isIndonesianNumber`): nomor yang tidak dilayani bot
+ * (staf, vendor, driver lokal) juga bukan bagian dari rekap percakapan pelanggan.
  */
+
+export type CollectOptions = { excludeIndonesian: boolean }
 
 export type TranscriptMessage = {
   id: string
@@ -143,14 +149,17 @@ export function summarizeTripBrief(value: unknown): TripBriefSummary | null {
   return Object.keys(present).length > 0 ? present : null
 }
 
-export async function collectDay(start: Date, end: Date): Promise<CollectedDay> {
+export async function collectDay(start: Date, end: Date, options: CollectOptions): Promise<CollectedDay> {
+  const included = (phone: string) => !(options.excludeIndonesian && isIndonesianNumber(phone))
   const lookbackStart = new Date(end.getTime() - LOOKBACK_MS)
   const inDay = { gte: start, lt: end }
 
-  const conversations = await prisma.conversation.findMany({
-    where: { isTest: false, messages: { some: { createdAt: { gte: lookbackStart, lt: end } } } },
-    select: { id: true, createdAt: true, pipelineStage: true, tripBrief: true, contact: { select: { name: true } } },
-  })
+  const conversations = (
+    await prisma.conversation.findMany({
+      where: { isTest: false, messages: { some: { createdAt: { gte: lookbackStart, lt: end } } } },
+      select: { id: true, createdAt: true, pipelineStage: true, tripBrief: true, contact: { select: { name: true, phone: true } } },
+    })
+  ).filter((c) => included(c.contact.phone))
   const ids = conversations.map((c) => c.id)
 
   const todayCounts = ids.length
@@ -183,7 +192,7 @@ export async function collectDay(start: Date, end: Date): Promise<CollectedDay> 
     })
   }
 
-  const [runs, gaps, openGapTotal] = await Promise.all([
+  const [runs, allGaps, openGaps] = await Promise.all([
     prisma.botDecisionRun.findMany({
       where: { status: 'HANDOFF', startedAt: inDay },
       orderBy: { startedAt: 'asc' },
@@ -199,20 +208,26 @@ export async function collectDay(start: Date, end: Date): Promise<CollectedDay> 
         topic: true,
         reason: true,
         messageText: true,
-        conversation: { select: { contact: { select: { name: true } } } },
+        conversation: { select: { contact: { select: { name: true, phone: true } } } },
       },
     }),
-    prisma.knowledgeGapLog.count({ where: { resolvedAt: null, conversation: { isTest: false } } }),
+    // Diambil barisnya, bukan `count`, supaya saringan nomor Indonesia memakai fungsi yang sama.
+    prisma.knowledgeGapLog.findMany({
+      where: { resolvedAt: null, conversation: { isTest: false } },
+      select: { conversation: { select: { contact: { select: { phone: true } } } } },
+    }),
   ])
 
   // BotDecisionRun.conversationId bukan relasi, jadi `isTest` disaring lewat lookup terpisah.
   const runConversations = runs.length
     ? await prisma.conversation.findMany({
         where: { id: { in: [...new Set(runs.map((r) => r.conversationId))] } },
-        select: { id: true, isTest: true, contact: { select: { name: true } } },
+        select: { id: true, isTest: true, contact: { select: { name: true, phone: true } } },
       })
     : []
-  const realRunIds = new Set(runConversations.filter((c) => !c.isTest).map((c) => c.id))
+  const realRunIds = new Set(runConversations.filter((c) => !c.isTest && included(c.contact.phone)).map((c) => c.id))
+  const gaps = allGaps.filter((g) => included(g.conversation.contact.phone))
+  const openGapTotal = openGaps.filter((g) => included(g.conversation.contact.phone)).length
 
   const contactNames = new Map<string, string | null>()
   for (const c of runConversations) contactNames.set(c.id, c.contact.name)

@@ -143,6 +143,18 @@ describe('generateDailySummary', () => {
     expect(update.data).toMatchObject({ status: 'PARTIAL', model: 'gemma4:31b-cloud', error: null })
   })
 
+  it('mengikuti setelan chatbot untuk nomor Indonesia', async () => {
+    mockPrisma.settings.findUnique.mockResolvedValue({ ollamaModel: 'm', skipBotForIndonesianNumbers: true } as never)
+    mockPrisma.dailySummary.updateMany.mockResolvedValue({ count: 1 })
+    vi.mocked(collectDay).mockResolvedValue(day([]))
+
+    await generateDailySummary(DATE, end)
+
+    expect(vi.mocked(collectDay).mock.calls[0][2]).toEqual({ excludeIndonesian: true })
+    const update = mockPrisma.dailySummary.update.mock.calls[0][0]
+    expect(update.data.payload).toMatchObject({ excludedIndonesian: true })
+  })
+
   it('menolak jalan ganda saat baris RUNNING masih segar', async () => {
     mockPrisma.dailySummary.updateMany.mockResolvedValue({ count: 0 })
     mockPrisma.dailySummary.create.mockRejectedValue(
