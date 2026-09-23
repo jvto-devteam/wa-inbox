@@ -287,7 +287,7 @@
     },
     {
       "link_key": "package_bromo_ijen_3d2n_booking",
-      "url": "https://javavolcano-touroperator.com/checkout?package=bromo-ijen-3d2n",
+      "url": "https://jvto.me/book?package=bromo-ijen-3d2n",
       "content_type": "booking_start",
       "status": "prefill_unverified",
       "package_key": "bali/bromo-ijen-3d2n",
@@ -349,7 +349,7 @@
     },
     {
       "link_key": "package_ijen_bromo_madakaripura_3d2n_booking",
-      "url": "https://javavolcano-touroperator.com/checkout?package=ijen-bromo-madakaripura-3d2n",
+      "url": "https://jvto.me/book?package=ijen-bromo-madakaripura-3d2n",
       "content_type": "booking_start",
       "status": "prefill_unverified",
       "package_key": "bali/ijen-bromo-madakaripura-3d2n",
@@ -411,7 +411,7 @@
     },
     {
       "link_key": "package_ijen_papuma_tumpak_sewu_bromo_4d3n_booking",
-      "url": "https://javavolcano-touroperator.com/checkout?package=ijen-papuma-tumpak-sewu-bromo-4d3n",
+      "url": "https://jvto.me/book?package=ijen-papuma-tumpak-sewu-bromo-4d3n",
       "content_type": "booking_start",
       "status": "prefill_unverified",
       "package_key": "bali/ijen-papuma-tumpak-sewu-bromo-4d3n",
@@ -473,7 +473,7 @@
     },
     {
       "link_key": "package_ijen_papuma_tumpak_sewu_bromo_5d4n_booking",
-      "url": "https://javavolcano-touroperator.com/checkout?package=ijen-papuma-tumpak-sewu-bromo-5d4n",
+      "url": "https://jvto.me/book?package=ijen-papuma-tumpak-sewu-bromo-5d4n",
       "content_type": "booking_start",
       "status": "prefill_unverified",
       "package_key": "bali/ijen-papuma-tumpak-sewu-bromo-5d4n",
@@ -535,7 +535,7 @@
     },
     {
       "link_key": "package_bromo_1d1n_booking",
-      "url": "https://javavolcano-touroperator.com/checkout?package=bromo-1d1n",
+      "url": "https://jvto.me/book?package=bromo-1d1n",
       "content_type": "booking_start",
       "status": "prefill_unverified",
       "package_key": "bromo-1d1n",
@@ -597,7 +597,7 @@
     },
     {
       "link_key": "package_bromo_2d1n_booking",
-      "url": "https://javavolcano-touroperator.com/checkout?package=bromo-2d1n",
+      "url": "https://jvto.me/book?package=bromo-2d1n",
       "content_type": "booking_start",
       "status": "prefill_unverified",
       "package_key": "bromo-2d1n",
@@ -659,7 +659,7 @@
     },
     {
       "link_key": "package_bromo_madakaripura_ijen_3d2n_booking",
-      "url": "https://javavolcano-touroperator.com/checkout?package=bromo-madakaripura-ijen-3d2n",
+      "url": "https://jvto.me/book?package=bromo-madakaripura-ijen-3d2n",
       "content_type": "booking_start",
       "status": "prefill_unverified",
       "package_key": "bromo-madakaripura-ijen-3d2n",
@@ -721,7 +721,7 @@
     },
     {
       "link_key": "package_ijen_2d1n_booking",
-      "url": "https://javavolcano-touroperator.com/checkout?package=ijen-2d1n",
+      "url": "https://jvto.me/book?package=ijen-2d1n",
       "content_type": "booking_start",
       "status": "prefill_unverified",
       "package_key": "ijen-2d1n",
@@ -783,7 +783,7 @@
     },
     {
       "link_key": "package_ijen_bromo_madakaripura_3d2n_booking",
-      "url": "https://javavolcano-touroperator.com/checkout?package=ijen-bromo-madakaripura-3d2n",
+      "url": "https://jvto.me/book?package=ijen-bromo-madakaripura-3d2n",
       "content_type": "booking_start",
       "status": "prefill_unverified",
       "package_key": "ijen-bromo-madakaripura-3d2n",
@@ -845,7 +845,7 @@
     },
     {
       "link_key": "package_ijen_bromo_madakaripura_4d3n_booking",
-      "url": "https://javavolcano-touroperator.com/checkout?package=ijen-bromo-madakaripura-4d3n",
+      "url": "https://jvto.me/book?package=ijen-bromo-madakaripura-4d3n",
       "content_type": "booking_start",
       "status": "prefill_unverified",
       "package_key": "ijen-bromo-madakaripura-4d3n",
@@ -907,7 +907,7 @@
     },
     {
       "link_key": "package_ijen_bromo_madakaripura_malang_5d4n_booking",
-      "url": "https://javavolcano-touroperator.com/checkout?package=ijen-bromo-madakaripura-malang-5d4n",
+      "url": "https://jvto.me/book?package=ijen-bromo-madakaripura-malang-5d4n",
       "content_type": "booking_start",
       "status": "prefill_unverified",
       "package_key": "ijen-bromo-madakaripura-malang-5d4n",
@@ -969,7 +969,7 @@
     },
     {
       "link_key": "package_ijen_papuma_tumpak_sewu_bromo_4d3n_booking",
-      "url": "https://javavolcano-touroperator.com/checkout?package=ijen-papuma-tumpak-sewu-bromo-4d3n",
+      "url": "https://jvto.me/book?package=ijen-papuma-tumpak-sewu-bromo-4d3n",
       "content_type": "booking_start",
       "status": "prefill_unverified",
       "package_key": "ijen-papuma-tumpak-sewu-bromo-4d3n",
@@ -1031,7 +1031,7 @@
     },
     {
       "link_key": "package_ijen_papuma_tumpak_sewu_bromo_5d4n_booking",
-      "url": "https://javavolcano-touroperator.com/checkout?package=ijen-papuma-tumpak-sewu-bromo-5d4n",
+      "url": "https://jvto.me/book?package=ijen-papuma-tumpak-sewu-bromo-5d4n",
       "content_type": "booking_start",
       "status": "prefill_unverified",
       "package_key": "ijen-papuma-tumpak-sewu-bromo-5d4n",
@@ -1093,7 +1093,7 @@
     },
     {
       "link_key": "package_ijen_papuma_tumpak_sewu_bromo_malang_6d5n_booking",
-      "url": "https://javavolcano-touroperator.com/checkout?package=ijen-papuma-tumpak-sewu-bromo-malang-6d5n",
+      "url": "https://jvto.me/book?package=ijen-papuma-tumpak-sewu-bromo-malang-6d5n",
       "content_type": "booking_start",
       "status": "prefill_unverified",
       "package_key": "ijen-papuma-tumpak-sewu-bromo-malang-6d5n",
@@ -1155,7 +1155,7 @@
     },
     {
       "link_key": "package_taman_safari_prigen_bromo_madakaripura_3d2n_booking",
-      "url": "https://javavolcano-touroperator.com/checkout?package=taman-safari-prigen-bromo-madakaripura-3d2n",
+      "url": "https://jvto.me/book?package=taman-safari-prigen-bromo-madakaripura-3d2n",
       "content_type": "booking_start",
       "status": "prefill_unverified",
       "package_key": "taman-safari-prigen-bromo-madakaripura-3d2n",
@@ -1217,7 +1217,7 @@
     },
     {
       "link_key": "package_tumpak_sewu_bromo_ijen_4d3n_booking",
-      "url": "https://javavolcano-touroperator.com/checkout?package=tumpak-sewu-bromo-ijen-4d3n",
+      "url": "https://jvto.me/book?package=tumpak-sewu-bromo-ijen-4d3n",
       "content_type": "booking_start",
       "status": "prefill_unverified",
       "package_key": "tumpak-sewu-bromo-ijen-4d3n",

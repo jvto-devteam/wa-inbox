@@ -6,9 +6,7 @@
  * rule pola (r/, team/, b/). Slug yang tidak terdaftar tidak menghasilkan 404 yang kelihatan —
  * ia menghasilkan halaman error Cloudflare, di tautan yang sudah terlanjur dikirim ke pelanggan.
  *
- * Dua pengecualian yang disengaja:
- * - /checkout?package=... tetap memakai domain panjang: sumber Bulk Redirect tidak boleh memuat
- *   query string, jadi ia butuh entri jvto.me/book tersendiri yang belum dibuat.
+ * Satu pengecualian yang disengaja:
  * - /assets/... (customer-media-registry.json) tetap panjang: itu berkas gambar yang diunduh
  *   penyedia WhatsApp, bukan halaman yang dibaca orang.
  */
@@ -39,7 +37,7 @@ describe('katalog memakai short link yang benar-benar terdaftar', () => {
     const unknown: string[] = []
     for (const file of catalogFiles) {
       for (const [, rest] of readCatalog(file).matchAll(SHORT_URL)) {
-        const slug = rest.split('#')[0].replace(/\/$/, '')
+        const slug = rest.split('#')[0].split('?')[0].replace(/\/$/, '')
         if (!shortSlugs.has(slug) && !PATTERN_SLUGS.some((p) => p.test(slug))) unknown.push(`${file}: ${slug}`)
       }
     }
@@ -57,13 +55,13 @@ describe('katalog memakai short link yang benar-benar terdaftar', () => {
     expect(unknown).toEqual([])
   })
 
-  it('tidak ada lagi URL halaman berdomain panjang di katalog, selain /checkout, /assets, dan legacy_base_url', () => {
+  it('tidak ada lagi URL halaman berdomain panjang di katalog, selain /assets dan legacy_base_url', () => {
     const leftovers: string[] = []
     for (const file of catalogFiles) {
       const body = readCatalog(file)
       for (const match of body.matchAll(LONG_URL)) {
         const path = match[1]
-        if (path.startsWith('/checkout') || path.startsWith('/assets')) continue
+        if (path.startsWith('/assets')) continue
         // Satu-satunya domain panjang yang boleh tersisa: nilai legacy_base_url, yang dipakai
         // membangun links.legacyDetails untuk mengenali URL yang ditempel pelanggan.
         if (path === '' && /"legacy_base_url":\s*"$/.test(body.slice(0, match.index))) continue
