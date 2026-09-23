@@ -30,8 +30,9 @@ Semua diputuskan operator dalam sesi brainstorming 2026-09-23.
 | Keputusan | Pilihan | Alasan |
 | --- | --- | --- |
 | Satu baris sidebar = apa | **Satu benang** (bukan satu orang) | Tetap benar meski identitas lintas-platform belum pernah digabungkan operator. Bisa diubah ke tampilan per-orang nanti **tanpa migrasi** — ini murni soal render. |
-| Penyaring email | **Tidak ada** | Semua email masuk. Manusia yang memilah. Menghapus seluruh subsistem klasifikasi, dan LLM tidak pernah menyentuh email yang tidak ditunjuk manusia. |
-| Bot di email | **Draf manual saja** | Tombol ditekan operator. Tidak ada balasan email otomatis. |
+| Penyaring email | **Melabeli, tidak menggerbang** | Semua email tetap masuk — tidak ada yang dibuang. Klasifikasi otomatis memberi label `LEAD` / `OPERASIONAL` / `BISING` yang hanya mengatur urutan, filter, dan badge di tab Email. |
+| Model pelabel | **`qwen2.5:latest` (lokal)** | Terverifikasi terpasang di daemon VPS. Model produksi `gemma4:31b-cloud` meneruskan teks ke ollama.com (CLAUDE.md §2), dan kotak masuk email memuat invoice serta surat pribadi — jadi pelabelan tidak boleh memakainya. |
+| Bot di email | **Draf manual saja** | Tombol ditekan operator. Tidak ada balasan email otomatis. Klasifikasi otomatis di atas **hanya melabeli**, tidak pernah menyusun atau mengirim jawaban. |
 | Pemisahan visual | **Tab per channel**, default WhatsApp | Hari pertama setelah deploy, tim melihat persis apa yang mereka lihat sekarang. |
 | Sakelar bot | **Empat, terpisah** — WA / IG / FB / Email | Permintaan operator langsung. |
 | Protokol email | **Gmail API** | Terverifikasi: `dig MX javavolcano-touroperator.com` → `1 SMTP.GOOGLE.com`. Kedua kotak surat ada di Google, jadi satu pola integrasi, bukan dua. |
@@ -260,6 +261,58 @@ Pembersihan isi email sebelum masuk ke `Message.content`: buang riwayat terkutip
 (`> On … wrote:`), signature, dan disclaimer. Tanpa itu, draf yang dibuat dari email keempat
 dalam satu benang akan menjawab pertanyaan dari email pertama.
 
+### 6.4 Klasifikasi email otomatis
+
+Setiap email masuk dilabeli otomatis: `LEAD`, `OPERASIONAL`, atau `BISING`.
+
+**Label, bukan gerbang.** Semua email tetap masuk dan tetap terlihat. Label hanya mengatur
+urutan, filter, dan hitungan belum-dibaca di tab Email — ia tidak pernah membuang, menunda,
+atau menyembunyikan apa pun. Alasannya sama dengan §5: penyaring yang bisa membuang sesuatu
+diam-diam akan berbohong tanpa ada yang tahu, dan lead yang hilang karena salah vonis tidak
+akan pernah dilaporkan siapa pun. Label yang meleset langsung terlihat dan bisa dikoreksi.
+
+**Modelnya `qwen2.5:latest`, lokal, dan bukan model produksi.** Ini keputusan privasi, bukan
+biaya. `gemma4:31b-cloud` adalah tag cloud: daemon meneruskan teks ke ollama.com, jadi ia
+keluar dari VPS (CLAUDE.md §2). Di WhatsApp isinya obrolan tur; di kotak masuk email bercampur
+invoice supplier, notifikasi bank, dan surat pribadi. Klasifikasi otomatis berarti **setiap**
+email harus dibaca model, jadi modelnya harus yang tidak mengirim ke mana pun.
+
+Bukti kelayakan, diukur di VPS 2026-09-23 (`/api/tags` dan `free -g`):
+
+| | Ukuran | Catatan |
+| --- | --- | --- |
+| VPS | 15 GB RAM, 10 GB tersedia, 4 core, tanpa GPU | Dipakai bersama Postgres + Next.js + bot |
+| `gemma4:e4b` (8B) | 9,61 GB | Muat, tapi nyaris menghabiskan sisa RAM |
+| **`qwen2.5:latest` (1.5B)** | **0,99 GB** | Dipilih — lega dan cepat di 4 core |
+
+1.5B cukup karena memilah tiga label jauh lebih mudah daripada menyusun jawaban, dan karena
+label tidak menggerbang apa pun: label yang meleset memakan satu lirikan operator, bukan lead
+yang hilang. Yang 8B akan berebut RAM dan CPU dengan hal yang benar-benar mendesak — pelanggan
+WhatsApp yang sedang menunggu balasan. **Pelabelan email tidak boleh pernah memperlambat itu.**
+
+**Koreksi operator menang permanen.** Sekali operator mengubah label sebuah benang, klasifikasi
+otomatis tidak boleh menimpanya lagi. Ini pelajaran yang sama dengan §5: dua penulis untuk satu
+keputusan berarti salah satunya diam-diam jadi no-op.
+
+```prisma
+enum MailLabel {
+  LEAD
+  OPERASIONAL
+  BISING
+}
+
+model Conversation {
+  /// Hanya untuk EMAIL. Null = belum sempat dilabeli (misal pelabel sedang mati).
+  mailLabel         MailLabel?
+  /// True setelah operator mengoreksi. Pelabel otomatis TIDAK BOLEH menimpa yang true.
+  mailLabelIsManual Boolean   @default(false)
+}
+```
+
+Pelabel yang mati harus membuat email **tetap masuk tanpa label**, bukan menahannya. `mailLabel`
+null berarti "belum dilabeli", dan benang tanpa label muncul di urutan teratas supaya kegagalan
+pelabel terlihat sebagai tumpukan yang mencurigakan, bukan sebagai keheningan.
+
 ---
 
 ## 7. Alur keluar
@@ -286,6 +339,12 @@ Gmail melihat percakapan yang sama — tidak ada dua kenyataan.
 
 **Lima tab:** Semua · **WhatsApp** (default) · Instagram · Facebook · Email.
 Hitungan belum-dibaca per tab. Satu benang = satu baris, dengan badge platform.
+
+Di tab Email, `mailLabel` (§6.4) mengurutkan: benang **tanpa label** di atas (kegagalan
+pelabel harus terlihat), lalu `LEAD`, lalu `OPERASIONAL`, lalu `BISING`. Badge belum-dibaca
+tab Email hanya menghitung `LEAD` dan benang tanpa label — `BISING` tidak pernah menuntut
+perhatian, tapi tetap ada dan tetap bisa dibuka. Label bisa diganti operator langsung dari
+baris itu, dan sekali diganti ia terkunci dari pelabel otomatis.
 
 Badge platform berbeda dari `Conversation.orderChannel` yang sudah ada — yang itu asal
 **booking** (Klook/JVTO/TWT), bukan channel pesan. Keduanya tampil berdampingan.
@@ -317,6 +376,11 @@ perubahan gerbang bot tidak bercampur dengan migrasi skema saat ada yang perlu d
 OAuth dua kotak surat, `watch()` + Pub/Sub + cron pengaman, pembersih kutipan, pengiriman via
 Gmail API. Alur drafnya sudah ada.
 
+**Fase 3b — pelabel otomatis.** Dipisah dari fase 3 dengan sengaja: email harus terbukti masuk,
+terbaca, dan terbalas lebih dulu. Pelabel adalah lapisan kenyamanan di atas itu, dan memisahkannya
+berarti pelabel yang buruk bisa dimatikan tanpa mematikan emailnya. Urutan ini juga memberi data
+nyata untuk menilai akurasi `qwen2.5:latest` sebelum ia dipercaya mengurutkan apa pun.
+
 **Fase 4 — Instagram DM + Facebook Messenger.** Satu fase karena payload dan adapternya
 identik. Bergantung pada App Review Meta (`instagram_manage_messages`, `pages_messaging`) —
 proses akun, di luar kendali kode, dan biasanya yang paling lama.
@@ -336,13 +400,19 @@ tanpa bergantung pada persetujuan pihak luar.
 | Filter `skipBotForIndonesianNumbers` tampak berlaku di IG/FB tapi tidak | Dijaga eksplisit ke `WHATSAPP`, bukan dibiarkan gagal diam-diam lewat regex yang tidak cocok. |
 | Riwayat terkutip email meracuni prompt | Pembersih kutipan sebelum menulis `Message.content`; butuh test dengan email balasan berlapis. |
 | Token OAuth bocor | `MailAccount.refreshToken` tidak pernah masuk API response, UI, atau audit log (CLAUDE.md §5). |
+| Isi email pribadi keluar dari VPS lewat pelabel | Pelabel memakai model **lokal** (`qwen2.5:latest`), bukan `gemma4:31b-cloud`. Wajib ada test yang gagal kalau pelabel dipanggil dengan tag ber-`-cloud`. |
+| Pelabel 1.5B salah vonis | Label tidak menggerbang: semua email tetap masuk dan terlihat. Koreksi operator mengunci benang itu dari pelabel otomatis. |
+| Pelabel mati diam-diam | `mailLabel` null = belum dilabeli, dan benang tanpa label muncul **di atas** — kegagalan menumpuk secara kasatmata, bukan hilang. |
+| Pelabel merebut RAM/CPU dari balasan WhatsApp | Model 1.5B (0,99 GB) dipilih atas 8B (9,61 GB) justru karena ini; VPS hanya punya 10 GB tersedia dan 4 core tanpa GPU. |
 
 ---
 
 ## 11. Yang sengaja TIDAK dibangun
 
-- Klasifikasi email otomatis (lead / bukan lead) — operator memutuskan manusia yang memilah.
-- Autoreply email.
+- **Pembuangan** email otomatis. Klasifikasi melabeli (§6.4); ia tidak pernah membuang,
+  menahan, atau menyembunyikan.
+- Autoreply email. Pelabel hanya melabeli — ia tidak menyusun maupun mengirim jawaban.
+- Pemakaian model cloud untuk pelabelan.
 - Komentar IG/FB.
 - Penggabungan identitas otomatis lintas platform.
 - Nilai baru di enum `MessageChannel`.

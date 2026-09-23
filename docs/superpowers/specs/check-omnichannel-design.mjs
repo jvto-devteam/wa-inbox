@@ -135,6 +135,19 @@ mustContain('src/lib/channel-router.ts', /export async function resolveChannelFo
 mustContain('src/lib/bot-control/channel-capabilities.ts', /OutboundChannel\s*=/, 'tipe OutboundChannel')
 
 // ---------------------------------------------------------------------------
+// §6.4 — pelabel email: model LOKAL, bukan model produksi
+// ---------------------------------------------------------------------------
+// Desain bergantung pada fakta bahwa model produksi adalah tag -cloud (teks keluar dari VPS).
+// Kalau suatu saat produksi pindah ke tag lokal, seluruh argumen "pakai model terpisah untuk
+// melabeli" runtuh dan §6.4 harus ditulis ulang.
+mustContain('src/lib/bot/llm.ts', /const DEFAULT_OLLAMA_MODEL = '[^']*-cloud'/, 'model produksi masih tag -cloud')
+mustContain('src/lib/bot/llm.ts', /Settings\.ollamaModel/, 'model bisa ditimpa per pemanggil lewat Settings.ollamaModel')
+
+// Klaim "belum ada": pelabel dan enum labelnya belum dibangun.
+mustNotContain('prisma/schema.prisma', /^enum MailLabel /m, 'enum MailLabel')
+mustNotContain('prisma/schema.prisma', /mailLabelIsManual/, 'kolom mailLabelIsManual')
+
+// ---------------------------------------------------------------------------
 // §8 — orderChannel adalah asal BOOKING, bukan channel pesan
 // ---------------------------------------------------------------------------
 mustContain('prisma/schema.prisma', /orderChannel/, 'Conversation.orderChannel')
