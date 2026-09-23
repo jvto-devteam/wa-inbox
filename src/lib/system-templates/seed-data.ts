@@ -470,8 +470,6 @@ Dear _{customer_name}_, here are your pickup details:
 
 ⚡ *Important reminders*
 - Meet us in the *arrival hall*, 10 minutes after you collect your luggage
-- Send us your *flight number* now, and tell us right away if it is delayed
-- Keep your phone on after landing — our driver calls if the hall is crowded
 
 🪧 *How to find us*
 Our team will be waiting in the arrival hall holding a *pickup sign with your name*, exactly like the picture above.
@@ -507,8 +505,6 @@ Dear _{customer_name}_, here are your pickup details:
 
 ⚡ *Important reminders*
 - Meet us at the *main station exit*, 10 minutes after your train arrives
-- Send us your *train name and number* now, and tell us right away if it is delayed
-- Keep your phone on — our driver calls if the exit is crowded
 
 🪧 *How to find us*
 Our team will be waiting at the main station exit holding a *pickup sign with your name*, exactly like the picture above.
@@ -545,7 +541,6 @@ Dear _{customer_name}_, here are your pickup details:
 ⚡ *Important reminders*
 - Wait in the *hotel lobby* 10 minutes before pickup time
 - Settle your bill and check out before pickup time if this is your last night
-- Tell us if your room is booked under a different name
 
 🪧 *How to find us*
 Our team will be waiting in the hotel lobby holding a *pickup sign with your name*, exactly like the picture above.
