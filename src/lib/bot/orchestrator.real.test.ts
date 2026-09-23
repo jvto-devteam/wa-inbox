@@ -240,7 +240,8 @@ describe.skipIf(!RELEASE_PRESENT)('decideAndRespond against the real parsing pip
 
     const opts = composerCall()
     expect(opts.system).not.toContain('bromo-1d1n')
-    expect(systemOf(opts).toLowerCase()).toContain('tumpak-sewu-bromo')
+    // Slug short link paket multi-destinasi itu (jvto.me/sub/tumpak-bromo-ijen-4d3n).
+    expect(systemOf(opts).toLowerCase()).toContain('tumpak-bromo-ijen-4d3n')
   })
 
   // Reported live 2026-08-07: no real Ijen package both starts AND finishes in Bali (all

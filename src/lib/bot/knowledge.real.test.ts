@@ -28,7 +28,7 @@ describe.skipIf(!RELEASE_PRESENT)('resolveKnowledgeForTopic against the real syn
 
   it('resolves a real, live URL (not null) for the price topic', () => {
     const result = resolveKnowledgeForTopic('price', 'how much?')
-    expect(result.primaryLink).toMatch(/^https:\/\/javavolcano-touroperator\.com\//)
+    expect(result.primaryLink).toMatch(/^https:\/\/jvto\.me\//)
   })
 
   // Regression: reported 2026-08-04 -- "is ijen safe?" was linking to the generic package tour
@@ -39,7 +39,7 @@ describe.skipIf(!RELEASE_PRESENT)('resolveKnowledgeForTopic against the real syn
   it('resolves the real Ijen destination guide link for destination_readiness when destination="ijen"', () => {
     const result = resolveKnowledgeForTopic('destination_readiness', 'is ijen safe?', 'ijen')
     expect(result.factualLines.length).toBeGreaterThan(0)
-    expect(result.primaryLink).toBe('https://javavolcano-touroperator.com/destinations/ijen-crater')
+    expect(result.primaryLink).toBe('https://jvto.me/ijen')
   })
 
   it('returns no facts for a topic the real release genuinely has no modules for (route_endpoint)', () => {
@@ -56,7 +56,7 @@ describe.skipIf(!RELEASE_PRESENT)('resolveKnowledgeForTopic against the real syn
   it('resolves the real cancellation/refund policy link for the cancellation topic, not a generic fallback', () => {
     const result = resolveKnowledgeForTopic('cancellation', 'what is your refund policy?')
     expect(result.factualLines.length).toBeGreaterThan(0)
-    expect(result.primaryLink).toBe('https://javavolcano-touroperator.com/policy/booking-payment-cancellation')
+    expect(result.primaryLink).toBe('https://jvto.me/cancel')
   })
 
   // Reported live 2026-08-06: a customer's bundled quotation request asked about "cancellation
@@ -68,7 +68,7 @@ describe.skipIf(!RELEASE_PRESENT)('resolveKnowledgeForTopic against the real syn
   it('resolves the real cancellation policy fact and link even when the topic is "price", not "cancellation"', () => {
     const result = resolveKnowledgeForTopic('price', 'Cancellation and refund terms?')
     expect(result.factualLines.some((f) => f.toLowerCase().includes('lifetime package credit'))).toBe(true)
-    expect(result.primaryLink).toBe('https://javavolcano-touroperator.com/policy/booking-payment-cancellation')
+    expect(result.primaryLink).toBe('https://jvto.me/cancel')
   })
 
   // Reported 2026-08-05: a group of 15 got "let me check with our team" for vehicle -- honest,
@@ -94,7 +94,7 @@ describe.skipIf(!RELEASE_PRESENT)('resolveKnowledgeForTopic against the real syn
 
   it("resolves the real ISIC-specific link (not a generic fallback) for a student-pricing question", () => {
     const result = resolveKnowledgeForTopic('price', 'do you offer student discounts with ISIC?')
-    expect(result.primaryLink).toBe('https://javavolcano-touroperator.com/isic/student-package')
+    expect(result.primaryLink).toBe('https://jvto.me/isic')
   })
 
   // Reported 2026-08-05: a dietary-accommodation request ("please make sure her meals don't

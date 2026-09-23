@@ -1,6 +1,7 @@
 {
   "schema_version": "customer-link-registry-v1",
-  "base_url": "https://javavolcano-touroperator.com",
+  "base_url": "https://jvto.me",
+  "legacy_base_url": "https://javavolcano-touroperator.com",
   "generated_from": "knowledge-catalog general-modules.json + package-variations.json (link_key / public_page_key universe)",
   "summary": {
     "total_links": 53,
@@ -18,7 +19,7 @@
   "links": [
     {
       "link_key": "booking_safety_anti_fraud",
-      "url": "https://javavolcano-touroperator.com/travel-guide/booking-information",
+      "url": "https://jvto.me/booking",
       "content_type": "general_explainer",
       "status": "existing",
       "used_by": [
@@ -27,7 +28,7 @@
     },
     {
       "link_key": "bromo_sunrise",
-      "url": "https://javavolcano-touroperator.com/destinations/mount-bromo",
+      "url": "https://jvto.me/bromo",
       "content_type": "destination_page",
       "status": "existing",
       "used_by": [
@@ -36,7 +37,7 @@
     },
     {
       "link_key": "cancellation_travel_credit",
-      "url": "https://javavolcano-touroperator.com/policy/booking-payment-cancellation",
+      "url": "https://jvto.me/cancel",
       "content_type": "general_explainer",
       "status": "existing",
       "used_by": [
@@ -45,7 +46,7 @@
     },
     {
       "link_key": "finish_in_bali",
-      "url": "https://javavolcano-touroperator.com/tours/from-bali",
+      "url": "https://jvto.me/bali",
       "content_type": "general_explainer",
       "status": "existing",
       "used_by": [
@@ -54,7 +55,7 @@
     },
     {
       "link_key": "how_booking_works",
-      "url": "https://javavolcano-touroperator.com/travel-guide/booking-information",
+      "url": "https://jvto.me/booking",
       "content_type": "general_explainer",
       "status": "existing",
       "used_by": [
@@ -63,7 +64,7 @@
     },
     {
       "link_key": "ijen_monthly_closure",
-      "url": "https://javavolcano-touroperator.com/destinations/ijen-crater",
+      "url": "https://jvto.me/ijen",
       "content_type": "destination_page",
       "status": "existing",
       "used_by": [
@@ -72,7 +73,7 @@
     },
     {
       "link_key": "ijen_readiness",
-      "url": "https://javavolcano-touroperator.com/destinations/ijen-crater",
+      "url": "https://jvto.me/ijen",
       "content_type": "destination_page",
       "status": "existing",
       "used_by": [
@@ -84,7 +85,7 @@
     },
     {
       "link_key": "isic_student_pricing",
-      "url": "https://javavolcano-touroperator.com/isic/student-package",
+      "url": "https://jvto.me/isic",
       "content_type": "general_explainer",
       "status": "existing",
       "used_by": [
@@ -93,7 +94,7 @@
     },
     {
       "link_key": "madakaripura_guide",
-      "url": "https://javavolcano-touroperator.com/destinations/madakaripura-waterfall",
+      "url": "https://jvto.me/madakaripura",
       "content_type": "destination_page",
       "status": "existing",
       "used_by": [
@@ -102,7 +103,7 @@
     },
     {
       "link_key": "malang_batu_guide",
-      "url": "https://javavolcano-touroperator.com/travel-guide/faq",
+      "url": "https://jvto.me/faq",
       "content_type": "general_explainer",
       "status": "existing",
       "used_by": [
@@ -111,7 +112,7 @@
     },
     {
       "link_key": "natural_phenomena",
-      "url": "https://javavolcano-touroperator.com/travel-guide/weather-and-closures",
+      "url": "https://jvto.me/weather",
       "content_type": "general_explainer",
       "status": "existing",
       "used_by": [
@@ -120,7 +121,7 @@
     },
     {
       "link_key": "papuma_guide",
-      "url": "https://javavolcano-touroperator.com/destinations/papuma-beach",
+      "url": "https://jvto.me/papuma",
       "content_type": "destination_page",
       "status": "existing",
       "used_by": [
@@ -130,7 +131,7 @@
     },
     {
       "link_key": "payment_and_deposit",
-      "url": "https://javavolcano-touroperator.com/policy/booking-payment-cancellation",
+      "url": "https://jvto.me/cancel",
       "content_type": "general_explainer",
       "status": "existing",
       "used_by": [
@@ -139,7 +140,7 @@
     },
     {
       "link_key": "police_escort_groups",
-      "url": "https://javavolcano-touroperator.com/travel-guide/police-escort-for-groups",
+      "url": "https://jvto.me/police-escort",
       "content_type": "general_explainer",
       "status": "existing",
       "used_by": [
@@ -148,7 +149,7 @@
     },
     {
       "link_key": "safety_on_tours",
-      "url": "https://javavolcano-touroperator.com/travel-guide/safety-on-tours",
+      "url": "https://jvto.me/safety",
       "content_type": "general_explainer",
       "status": "existing",
       "used_by": [
@@ -157,7 +158,7 @@
     },
     {
       "link_key": "private_tour",
-      "url": "https://javavolcano-touroperator.com/why-jvto/the-jvto-difference",
+      "url": "https://jvto.me/difference",
       "content_type": "general_explainer",
       "status": "existing",
       "used_by": [
@@ -167,7 +168,7 @@
     },
     {
       "link_key": "rooming_and_accommodation",
-      "url": "https://javavolcano-touroperator.com/policy/inclusions-exclusions",
+      "url": "https://jvto.me/include",
       "content_type": "general_explainer",
       "status": "existing",
       "used_by": [
@@ -176,7 +177,7 @@
     },
     {
       "link_key": "tumpak_sewu_difficulty",
-      "url": "https://javavolcano-touroperator.com/destinations/tumpak-sewu-waterfall",
+      "url": "https://jvto.me/tumpak-sewu",
       "content_type": "destination_page",
       "status": "existing",
       "used_by": [
@@ -186,7 +187,7 @@
     },
     {
       "link_key": "vehicle_and_luggage",
-      "url": "https://javavolcano-touroperator.com/policy/inclusions-exclusions",
+      "url": "https://jvto.me/include",
       "content_type": "general_explainer",
       "status": "existing",
       "used_by": [
@@ -195,7 +196,7 @@
     },
     {
       "link_key": "what_is_included",
-      "url": "https://javavolcano-touroperator.com/policy/inclusions-exclusions",
+      "url": "https://jvto.me/include",
       "content_type": "general_explainer",
       "status": "existing",
       "used_by": [
@@ -213,7 +214,7 @@
     },
     {
       "link_key": "why_stay_near_bromo",
-      "url": "https://javavolcano-touroperator.com/destinations/mount-bromo",
+      "url": "https://jvto.me/bromo",
       "content_type": "general_explainer",
       "status": "existing",
       "used_by": [
@@ -222,7 +223,7 @@
     },
     {
       "link_key": "why_stay_near_ijen",
-      "url": "https://javavolcano-touroperator.com/destinations/ijen-crater",
+      "url": "https://jvto.me/ijen",
       "content_type": "general_explainer",
       "status": "existing",
       "used_by": [
@@ -232,54 +233,54 @@
     },
     {
       "link_key": "package_bromo_ijen_3d2n",
-      "url": "https://javavolcano-touroperator.com/tours/from-bali/bromo-ijen-3d2n",
+      "url": "https://jvto.me/bali/bromo-ijen-3d2n",
       "content_type": "package_page",
       "status": "existing",
       "package_key": "bali/bromo-ijen-3d2n",
       "section_anchors": [
         {
           "anchor": "#overview",
-          "url": "https://javavolcano-touroperator.com/tours/from-bali/bromo-ijen-3d2n#overview",
+          "url": "https://jvto.me/bali/bromo-ijen-3d2n#overview",
           "status": "existing"
         },
         {
           "anchor": "#itinerary",
-          "url": "https://javavolcano-touroperator.com/tours/from-bali/bromo-ijen-3d2n#itinerary",
+          "url": "https://jvto.me/bali/bromo-ijen-3d2n#itinerary",
           "status": "existing"
         },
         {
           "anchor": "#price",
-          "url": "https://javavolcano-touroperator.com/tours/from-bali/bromo-ijen-3d2n#price",
+          "url": "https://jvto.me/bali/bromo-ijen-3d2n#price",
           "status": "unverified"
         },
         {
           "anchor": "#included",
-          "url": "https://javavolcano-touroperator.com/tours/from-bali/bromo-ijen-3d2n#included",
+          "url": "https://jvto.me/bali/bromo-ijen-3d2n#included",
           "status": "existing"
         },
         {
           "anchor": "#accommodation",
-          "url": "https://javavolcano-touroperator.com/tours/from-bali/bromo-ijen-3d2n#accommodation",
+          "url": "https://jvto.me/bali/bromo-ijen-3d2n#accommodation",
           "status": "existing"
         },
         {
           "anchor": "#vehicle",
-          "url": "https://javavolcano-touroperator.com/tours/from-bali/bromo-ijen-3d2n#vehicle",
+          "url": "https://jvto.me/bali/bromo-ijen-3d2n#vehicle",
           "status": "unverified"
         },
         {
           "anchor": "#finish",
-          "url": "https://javavolcano-touroperator.com/tours/from-bali/bromo-ijen-3d2n#finish",
+          "url": "https://jvto.me/bali/bromo-ijen-3d2n#finish",
           "status": "unverified"
         },
         {
           "anchor": "#important-notes",
-          "url": "https://javavolcano-touroperator.com/tours/from-bali/bromo-ijen-3d2n#important-notes",
+          "url": "https://jvto.me/bali/bromo-ijen-3d2n#important-notes",
           "status": "unverified"
         },
         {
           "anchor": "#book",
-          "url": "https://javavolcano-touroperator.com/tours/from-bali/bromo-ijen-3d2n#book",
+          "url": "https://jvto.me/bali/bromo-ijen-3d2n#book",
           "status": "existing"
         }
       ]
@@ -294,54 +295,54 @@
     },
     {
       "link_key": "package_ijen_bromo_madakaripura_3d2n",
-      "url": "https://javavolcano-touroperator.com/tours/from-bali/ijen-bromo-madakaripura-3d2n",
+      "url": "https://jvto.me/bali/ijen-bromo-3d2n",
       "content_type": "package_page",
       "status": "existing",
       "package_key": "bali/ijen-bromo-madakaripura-3d2n",
       "section_anchors": [
         {
           "anchor": "#overview",
-          "url": "https://javavolcano-touroperator.com/tours/from-bali/ijen-bromo-madakaripura-3d2n#overview",
+          "url": "https://jvto.me/bali/ijen-bromo-3d2n#overview",
           "status": "existing"
         },
         {
           "anchor": "#itinerary",
-          "url": "https://javavolcano-touroperator.com/tours/from-bali/ijen-bromo-madakaripura-3d2n#itinerary",
+          "url": "https://jvto.me/bali/ijen-bromo-3d2n#itinerary",
           "status": "existing"
         },
         {
           "anchor": "#price",
-          "url": "https://javavolcano-touroperator.com/tours/from-bali/ijen-bromo-madakaripura-3d2n#price",
+          "url": "https://jvto.me/bali/ijen-bromo-3d2n#price",
           "status": "unverified"
         },
         {
           "anchor": "#included",
-          "url": "https://javavolcano-touroperator.com/tours/from-bali/ijen-bromo-madakaripura-3d2n#included",
+          "url": "https://jvto.me/bali/ijen-bromo-3d2n#included",
           "status": "existing"
         },
         {
           "anchor": "#accommodation",
-          "url": "https://javavolcano-touroperator.com/tours/from-bali/ijen-bromo-madakaripura-3d2n#accommodation",
+          "url": "https://jvto.me/bali/ijen-bromo-3d2n#accommodation",
           "status": "existing"
         },
         {
           "anchor": "#vehicle",
-          "url": "https://javavolcano-touroperator.com/tours/from-bali/ijen-bromo-madakaripura-3d2n#vehicle",
+          "url": "https://jvto.me/bali/ijen-bromo-3d2n#vehicle",
           "status": "unverified"
         },
         {
           "anchor": "#finish",
-          "url": "https://javavolcano-touroperator.com/tours/from-bali/ijen-bromo-madakaripura-3d2n#finish",
+          "url": "https://jvto.me/bali/ijen-bromo-3d2n#finish",
           "status": "unverified"
         },
         {
           "anchor": "#important-notes",
-          "url": "https://javavolcano-touroperator.com/tours/from-bali/ijen-bromo-madakaripura-3d2n#important-notes",
+          "url": "https://jvto.me/bali/ijen-bromo-3d2n#important-notes",
           "status": "unverified"
         },
         {
           "anchor": "#book",
-          "url": "https://javavolcano-touroperator.com/tours/from-bali/ijen-bromo-madakaripura-3d2n#book",
+          "url": "https://jvto.me/bali/ijen-bromo-3d2n#book",
           "status": "existing"
         }
       ]
@@ -356,54 +357,54 @@
     },
     {
       "link_key": "package_ijen_papuma_tumpak_sewu_bromo_4d3n",
-      "url": "https://javavolcano-touroperator.com/tours/from-bali/ijen-papuma-tumpak-sewu-bromo-4d3n",
+      "url": "https://jvto.me/bali/ijen-tumpak-bromo-4d3n",
       "content_type": "package_page",
       "status": "existing",
       "package_key": "bali/ijen-papuma-tumpak-sewu-bromo-4d3n",
       "section_anchors": [
         {
           "anchor": "#overview",
-          "url": "https://javavolcano-touroperator.com/tours/from-bali/ijen-papuma-tumpak-sewu-bromo-4d3n#overview",
+          "url": "https://jvto.me/bali/ijen-tumpak-bromo-4d3n#overview",
           "status": "existing"
         },
         {
           "anchor": "#itinerary",
-          "url": "https://javavolcano-touroperator.com/tours/from-bali/ijen-papuma-tumpak-sewu-bromo-4d3n#itinerary",
+          "url": "https://jvto.me/bali/ijen-tumpak-bromo-4d3n#itinerary",
           "status": "existing"
         },
         {
           "anchor": "#price",
-          "url": "https://javavolcano-touroperator.com/tours/from-bali/ijen-papuma-tumpak-sewu-bromo-4d3n#price",
+          "url": "https://jvto.me/bali/ijen-tumpak-bromo-4d3n#price",
           "status": "unverified"
         },
         {
           "anchor": "#included",
-          "url": "https://javavolcano-touroperator.com/tours/from-bali/ijen-papuma-tumpak-sewu-bromo-4d3n#included",
+          "url": "https://jvto.me/bali/ijen-tumpak-bromo-4d3n#included",
           "status": "existing"
         },
         {
           "anchor": "#accommodation",
-          "url": "https://javavolcano-touroperator.com/tours/from-bali/ijen-papuma-tumpak-sewu-bromo-4d3n#accommodation",
+          "url": "https://jvto.me/bali/ijen-tumpak-bromo-4d3n#accommodation",
           "status": "existing"
         },
         {
           "anchor": "#vehicle",
-          "url": "https://javavolcano-touroperator.com/tours/from-bali/ijen-papuma-tumpak-sewu-bromo-4d3n#vehicle",
+          "url": "https://jvto.me/bali/ijen-tumpak-bromo-4d3n#vehicle",
           "status": "unverified"
         },
         {
           "anchor": "#finish",
-          "url": "https://javavolcano-touroperator.com/tours/from-bali/ijen-papuma-tumpak-sewu-bromo-4d3n#finish",
+          "url": "https://jvto.me/bali/ijen-tumpak-bromo-4d3n#finish",
           "status": "unverified"
         },
         {
           "anchor": "#important-notes",
-          "url": "https://javavolcano-touroperator.com/tours/from-bali/ijen-papuma-tumpak-sewu-bromo-4d3n#important-notes",
+          "url": "https://jvto.me/bali/ijen-tumpak-bromo-4d3n#important-notes",
           "status": "unverified"
         },
         {
           "anchor": "#book",
-          "url": "https://javavolcano-touroperator.com/tours/from-bali/ijen-papuma-tumpak-sewu-bromo-4d3n#book",
+          "url": "https://jvto.me/bali/ijen-tumpak-bromo-4d3n#book",
           "status": "existing"
         }
       ]
@@ -418,54 +419,54 @@
     },
     {
       "link_key": "package_ijen_papuma_tumpak_sewu_bromo_5d4n",
-      "url": "https://javavolcano-touroperator.com/tours/from-bali/ijen-papuma-tumpak-sewu-bromo-5d4n",
+      "url": "https://jvto.me/bali/ijen-tumpak-bromo-5d4n",
       "content_type": "package_page",
       "status": "existing",
       "package_key": "bali/ijen-papuma-tumpak-sewu-bromo-5d4n",
       "section_anchors": [
         {
           "anchor": "#overview",
-          "url": "https://javavolcano-touroperator.com/tours/from-bali/ijen-papuma-tumpak-sewu-bromo-5d4n#overview",
+          "url": "https://jvto.me/bali/ijen-tumpak-bromo-5d4n#overview",
           "status": "existing"
         },
         {
           "anchor": "#itinerary",
-          "url": "https://javavolcano-touroperator.com/tours/from-bali/ijen-papuma-tumpak-sewu-bromo-5d4n#itinerary",
+          "url": "https://jvto.me/bali/ijen-tumpak-bromo-5d4n#itinerary",
           "status": "existing"
         },
         {
           "anchor": "#price",
-          "url": "https://javavolcano-touroperator.com/tours/from-bali/ijen-papuma-tumpak-sewu-bromo-5d4n#price",
+          "url": "https://jvto.me/bali/ijen-tumpak-bromo-5d4n#price",
           "status": "unverified"
         },
         {
           "anchor": "#included",
-          "url": "https://javavolcano-touroperator.com/tours/from-bali/ijen-papuma-tumpak-sewu-bromo-5d4n#included",
+          "url": "https://jvto.me/bali/ijen-tumpak-bromo-5d4n#included",
           "status": "existing"
         },
         {
           "anchor": "#accommodation",
-          "url": "https://javavolcano-touroperator.com/tours/from-bali/ijen-papuma-tumpak-sewu-bromo-5d4n#accommodation",
+          "url": "https://jvto.me/bali/ijen-tumpak-bromo-5d4n#accommodation",
           "status": "existing"
         },
         {
           "anchor": "#vehicle",
-          "url": "https://javavolcano-touroperator.com/tours/from-bali/ijen-papuma-tumpak-sewu-bromo-5d4n#vehicle",
+          "url": "https://jvto.me/bali/ijen-tumpak-bromo-5d4n#vehicle",
           "status": "unverified"
         },
         {
           "anchor": "#finish",
-          "url": "https://javavolcano-touroperator.com/tours/from-bali/ijen-papuma-tumpak-sewu-bromo-5d4n#finish",
+          "url": "https://jvto.me/bali/ijen-tumpak-bromo-5d4n#finish",
           "status": "unverified"
         },
         {
           "anchor": "#important-notes",
-          "url": "https://javavolcano-touroperator.com/tours/from-bali/ijen-papuma-tumpak-sewu-bromo-5d4n#important-notes",
+          "url": "https://jvto.me/bali/ijen-tumpak-bromo-5d4n#important-notes",
           "status": "unverified"
         },
         {
           "anchor": "#book",
-          "url": "https://javavolcano-touroperator.com/tours/from-bali/ijen-papuma-tumpak-sewu-bromo-5d4n#book",
+          "url": "https://jvto.me/bali/ijen-tumpak-bromo-5d4n#book",
           "status": "existing"
         }
       ]
@@ -480,54 +481,54 @@
     },
     {
       "link_key": "package_bromo_1d1n",
-      "url": "https://javavolcano-touroperator.com/tours/from-surabaya/bromo-1d1n",
+      "url": "https://jvto.me/sub/bromo-1d1n",
       "content_type": "package_page",
       "status": "existing",
       "package_key": "bromo-1d1n",
       "section_anchors": [
         {
           "anchor": "#overview",
-          "url": "https://javavolcano-touroperator.com/tours/from-surabaya/bromo-1d1n#overview",
+          "url": "https://jvto.me/sub/bromo-1d1n#overview",
           "status": "existing"
         },
         {
           "anchor": "#itinerary",
-          "url": "https://javavolcano-touroperator.com/tours/from-surabaya/bromo-1d1n#itinerary",
+          "url": "https://jvto.me/sub/bromo-1d1n#itinerary",
           "status": "existing"
         },
         {
           "anchor": "#price",
-          "url": "https://javavolcano-touroperator.com/tours/from-surabaya/bromo-1d1n#price",
+          "url": "https://jvto.me/sub/bromo-1d1n#price",
           "status": "unverified"
         },
         {
           "anchor": "#included",
-          "url": "https://javavolcano-touroperator.com/tours/from-surabaya/bromo-1d1n#included",
+          "url": "https://jvto.me/sub/bromo-1d1n#included",
           "status": "existing"
         },
         {
           "anchor": "#accommodation",
-          "url": "https://javavolcano-touroperator.com/tours/from-surabaya/bromo-1d1n#accommodation",
+          "url": "https://jvto.me/sub/bromo-1d1n#accommodation",
           "status": "unverified"
         },
         {
           "anchor": "#vehicle",
-          "url": "https://javavolcano-touroperator.com/tours/from-surabaya/bromo-1d1n#vehicle",
+          "url": "https://jvto.me/sub/bromo-1d1n#vehicle",
           "status": "unverified"
         },
         {
           "anchor": "#finish",
-          "url": "https://javavolcano-touroperator.com/tours/from-surabaya/bromo-1d1n#finish",
+          "url": "https://jvto.me/sub/bromo-1d1n#finish",
           "status": "unverified"
         },
         {
           "anchor": "#important-notes",
-          "url": "https://javavolcano-touroperator.com/tours/from-surabaya/bromo-1d1n#important-notes",
+          "url": "https://jvto.me/sub/bromo-1d1n#important-notes",
           "status": "unverified"
         },
         {
           "anchor": "#book",
-          "url": "https://javavolcano-touroperator.com/tours/from-surabaya/bromo-1d1n#book",
+          "url": "https://jvto.me/sub/bromo-1d1n#book",
           "status": "existing"
         }
       ]
@@ -542,54 +543,54 @@
     },
     {
       "link_key": "package_bromo_2d1n",
-      "url": "https://javavolcano-touroperator.com/tours/from-surabaya/bromo-2d1n",
+      "url": "https://jvto.me/sub/bromo-2d1n",
       "content_type": "package_page",
       "status": "existing",
       "package_key": "bromo-2d1n",
       "section_anchors": [
         {
           "anchor": "#overview",
-          "url": "https://javavolcano-touroperator.com/tours/from-surabaya/bromo-2d1n#overview",
+          "url": "https://jvto.me/sub/bromo-2d1n#overview",
           "status": "existing"
         },
         {
           "anchor": "#itinerary",
-          "url": "https://javavolcano-touroperator.com/tours/from-surabaya/bromo-2d1n#itinerary",
+          "url": "https://jvto.me/sub/bromo-2d1n#itinerary",
           "status": "existing"
         },
         {
           "anchor": "#price",
-          "url": "https://javavolcano-touroperator.com/tours/from-surabaya/bromo-2d1n#price",
+          "url": "https://jvto.me/sub/bromo-2d1n#price",
           "status": "unverified"
         },
         {
           "anchor": "#included",
-          "url": "https://javavolcano-touroperator.com/tours/from-surabaya/bromo-2d1n#included",
+          "url": "https://jvto.me/sub/bromo-2d1n#included",
           "status": "existing"
         },
         {
           "anchor": "#accommodation",
-          "url": "https://javavolcano-touroperator.com/tours/from-surabaya/bromo-2d1n#accommodation",
+          "url": "https://jvto.me/sub/bromo-2d1n#accommodation",
           "status": "existing"
         },
         {
           "anchor": "#vehicle",
-          "url": "https://javavolcano-touroperator.com/tours/from-surabaya/bromo-2d1n#vehicle",
+          "url": "https://jvto.me/sub/bromo-2d1n#vehicle",
           "status": "unverified"
         },
         {
           "anchor": "#finish",
-          "url": "https://javavolcano-touroperator.com/tours/from-surabaya/bromo-2d1n#finish",
+          "url": "https://jvto.me/sub/bromo-2d1n#finish",
           "status": "unverified"
         },
         {
           "anchor": "#important-notes",
-          "url": "https://javavolcano-touroperator.com/tours/from-surabaya/bromo-2d1n#important-notes",
+          "url": "https://jvto.me/sub/bromo-2d1n#important-notes",
           "status": "unverified"
         },
         {
           "anchor": "#book",
-          "url": "https://javavolcano-touroperator.com/tours/from-surabaya/bromo-2d1n#book",
+          "url": "https://jvto.me/sub/bromo-2d1n#book",
           "status": "existing"
         }
       ]
@@ -604,54 +605,54 @@
     },
     {
       "link_key": "package_bromo_madakaripura_ijen_3d2n",
-      "url": "https://javavolcano-touroperator.com/tours/from-surabaya/bromo-madakaripura-ijen-3d2n",
+      "url": "https://jvto.me/sub/bromo-ijen-3d2n",
       "content_type": "package_page",
       "status": "existing",
       "package_key": "bromo-madakaripura-ijen-3d2n",
       "section_anchors": [
         {
           "anchor": "#overview",
-          "url": "https://javavolcano-touroperator.com/tours/from-surabaya/bromo-madakaripura-ijen-3d2n#overview",
+          "url": "https://jvto.me/sub/bromo-ijen-3d2n#overview",
           "status": "existing"
         },
         {
           "anchor": "#itinerary",
-          "url": "https://javavolcano-touroperator.com/tours/from-surabaya/bromo-madakaripura-ijen-3d2n#itinerary",
+          "url": "https://jvto.me/sub/bromo-ijen-3d2n#itinerary",
           "status": "existing"
         },
         {
           "anchor": "#price",
-          "url": "https://javavolcano-touroperator.com/tours/from-surabaya/bromo-madakaripura-ijen-3d2n#price",
+          "url": "https://jvto.me/sub/bromo-ijen-3d2n#price",
           "status": "unverified"
         },
         {
           "anchor": "#included",
-          "url": "https://javavolcano-touroperator.com/tours/from-surabaya/bromo-madakaripura-ijen-3d2n#included",
+          "url": "https://jvto.me/sub/bromo-ijen-3d2n#included",
           "status": "existing"
         },
         {
           "anchor": "#accommodation",
-          "url": "https://javavolcano-touroperator.com/tours/from-surabaya/bromo-madakaripura-ijen-3d2n#accommodation",
+          "url": "https://jvto.me/sub/bromo-ijen-3d2n#accommodation",
           "status": "existing"
         },
         {
           "anchor": "#vehicle",
-          "url": "https://javavolcano-touroperator.com/tours/from-surabaya/bromo-madakaripura-ijen-3d2n#vehicle",
+          "url": "https://jvto.me/sub/bromo-ijen-3d2n#vehicle",
           "status": "unverified"
         },
         {
           "anchor": "#finish",
-          "url": "https://javavolcano-touroperator.com/tours/from-surabaya/bromo-madakaripura-ijen-3d2n#finish",
+          "url": "https://jvto.me/sub/bromo-ijen-3d2n#finish",
           "status": "unverified"
         },
         {
           "anchor": "#important-notes",
-          "url": "https://javavolcano-touroperator.com/tours/from-surabaya/bromo-madakaripura-ijen-3d2n#important-notes",
+          "url": "https://jvto.me/sub/bromo-ijen-3d2n#important-notes",
           "status": "unverified"
         },
         {
           "anchor": "#book",
-          "url": "https://javavolcano-touroperator.com/tours/from-surabaya/bromo-madakaripura-ijen-3d2n#book",
+          "url": "https://jvto.me/sub/bromo-ijen-3d2n#book",
           "status": "existing"
         }
       ]
@@ -666,54 +667,54 @@
     },
     {
       "link_key": "package_ijen_2d1n",
-      "url": "https://javavolcano-touroperator.com/tours/from-surabaya/ijen-2d1n",
+      "url": "https://jvto.me/sub/ijen-2d1n",
       "content_type": "package_page",
       "status": "existing",
       "package_key": "ijen-2d1n",
       "section_anchors": [
         {
           "anchor": "#overview",
-          "url": "https://javavolcano-touroperator.com/tours/from-surabaya/ijen-2d1n#overview",
+          "url": "https://jvto.me/sub/ijen-2d1n#overview",
           "status": "existing"
         },
         {
           "anchor": "#itinerary",
-          "url": "https://javavolcano-touroperator.com/tours/from-surabaya/ijen-2d1n#itinerary",
+          "url": "https://jvto.me/sub/ijen-2d1n#itinerary",
           "status": "existing"
         },
         {
           "anchor": "#price",
-          "url": "https://javavolcano-touroperator.com/tours/from-surabaya/ijen-2d1n#price",
+          "url": "https://jvto.me/sub/ijen-2d1n#price",
           "status": "unverified"
         },
         {
           "anchor": "#included",
-          "url": "https://javavolcano-touroperator.com/tours/from-surabaya/ijen-2d1n#included",
+          "url": "https://jvto.me/sub/ijen-2d1n#included",
           "status": "existing"
         },
         {
           "anchor": "#accommodation",
-          "url": "https://javavolcano-touroperator.com/tours/from-surabaya/ijen-2d1n#accommodation",
+          "url": "https://jvto.me/sub/ijen-2d1n#accommodation",
           "status": "existing"
         },
         {
           "anchor": "#vehicle",
-          "url": "https://javavolcano-touroperator.com/tours/from-surabaya/ijen-2d1n#vehicle",
+          "url": "https://jvto.me/sub/ijen-2d1n#vehicle",
           "status": "unverified"
         },
         {
           "anchor": "#finish",
-          "url": "https://javavolcano-touroperator.com/tours/from-surabaya/ijen-2d1n#finish",
+          "url": "https://jvto.me/sub/ijen-2d1n#finish",
           "status": "unverified"
         },
         {
           "anchor": "#important-notes",
-          "url": "https://javavolcano-touroperator.com/tours/from-surabaya/ijen-2d1n#important-notes",
+          "url": "https://jvto.me/sub/ijen-2d1n#important-notes",
           "status": "unverified"
         },
         {
           "anchor": "#book",
-          "url": "https://javavolcano-touroperator.com/tours/from-surabaya/ijen-2d1n#book",
+          "url": "https://jvto.me/sub/ijen-2d1n#book",
           "status": "existing"
         }
       ]
@@ -728,54 +729,54 @@
     },
     {
       "link_key": "package_ijen_bromo_madakaripura_3d2n",
-      "url": "https://javavolcano-touroperator.com/tours/from-surabaya/ijen-bromo-madakaripura-3d2n",
+      "url": "https://jvto.me/sub/ijen-bromo-3d2n",
       "content_type": "package_page",
       "status": "existing",
       "package_key": "ijen-bromo-madakaripura-3d2n",
       "section_anchors": [
         {
           "anchor": "#overview",
-          "url": "https://javavolcano-touroperator.com/tours/from-surabaya/ijen-bromo-madakaripura-3d2n#overview",
+          "url": "https://jvto.me/sub/ijen-bromo-3d2n#overview",
           "status": "existing"
         },
         {
           "anchor": "#itinerary",
-          "url": "https://javavolcano-touroperator.com/tours/from-surabaya/ijen-bromo-madakaripura-3d2n#itinerary",
+          "url": "https://jvto.me/sub/ijen-bromo-3d2n#itinerary",
           "status": "existing"
         },
         {
           "anchor": "#price",
-          "url": "https://javavolcano-touroperator.com/tours/from-surabaya/ijen-bromo-madakaripura-3d2n#price",
+          "url": "https://jvto.me/sub/ijen-bromo-3d2n#price",
           "status": "unverified"
         },
         {
           "anchor": "#included",
-          "url": "https://javavolcano-touroperator.com/tours/from-surabaya/ijen-bromo-madakaripura-3d2n#included",
+          "url": "https://jvto.me/sub/ijen-bromo-3d2n#included",
           "status": "existing"
         },
         {
           "anchor": "#accommodation",
-          "url": "https://javavolcano-touroperator.com/tours/from-surabaya/ijen-bromo-madakaripura-3d2n#accommodation",
+          "url": "https://jvto.me/sub/ijen-bromo-3d2n#accommodation",
           "status": "existing"
         },
         {
           "anchor": "#vehicle",
-          "url": "https://javavolcano-touroperator.com/tours/from-surabaya/ijen-bromo-madakaripura-3d2n#vehicle",
+          "url": "https://jvto.me/sub/ijen-bromo-3d2n#vehicle",
           "status": "unverified"
         },
         {
           "anchor": "#finish",
-          "url": "https://javavolcano-touroperator.com/tours/from-surabaya/ijen-bromo-madakaripura-3d2n#finish",
+          "url": "https://jvto.me/sub/ijen-bromo-3d2n#finish",
           "status": "unverified"
         },
         {
           "anchor": "#important-notes",
-          "url": "https://javavolcano-touroperator.com/tours/from-surabaya/ijen-bromo-madakaripura-3d2n#important-notes",
+          "url": "https://jvto.me/sub/ijen-bromo-3d2n#important-notes",
           "status": "unverified"
         },
         {
           "anchor": "#book",
-          "url": "https://javavolcano-touroperator.com/tours/from-surabaya/ijen-bromo-madakaripura-3d2n#book",
+          "url": "https://jvto.me/sub/ijen-bromo-3d2n#book",
           "status": "existing"
         }
       ]
@@ -790,54 +791,54 @@
     },
     {
       "link_key": "package_ijen_bromo_madakaripura_4d3n",
-      "url": "https://javavolcano-touroperator.com/tours/from-surabaya/ijen-bromo-madakaripura-4d3n",
+      "url": "https://jvto.me/sub/ijen-bromo-4d3n",
       "content_type": "package_page",
       "status": "existing",
       "package_key": "ijen-bromo-madakaripura-4d3n",
       "section_anchors": [
         {
           "anchor": "#overview",
-          "url": "https://javavolcano-touroperator.com/tours/from-surabaya/ijen-bromo-madakaripura-4d3n#overview",
+          "url": "https://jvto.me/sub/ijen-bromo-4d3n#overview",
           "status": "existing"
         },
         {
           "anchor": "#itinerary",
-          "url": "https://javavolcano-touroperator.com/tours/from-surabaya/ijen-bromo-madakaripura-4d3n#itinerary",
+          "url": "https://jvto.me/sub/ijen-bromo-4d3n#itinerary",
           "status": "existing"
         },
         {
           "anchor": "#price",
-          "url": "https://javavolcano-touroperator.com/tours/from-surabaya/ijen-bromo-madakaripura-4d3n#price",
+          "url": "https://jvto.me/sub/ijen-bromo-4d3n#price",
           "status": "unverified"
         },
         {
           "anchor": "#included",
-          "url": "https://javavolcano-touroperator.com/tours/from-surabaya/ijen-bromo-madakaripura-4d3n#included",
+          "url": "https://jvto.me/sub/ijen-bromo-4d3n#included",
           "status": "existing"
         },
         {
           "anchor": "#accommodation",
-          "url": "https://javavolcano-touroperator.com/tours/from-surabaya/ijen-bromo-madakaripura-4d3n#accommodation",
+          "url": "https://jvto.me/sub/ijen-bromo-4d3n#accommodation",
           "status": "existing"
         },
         {
           "anchor": "#vehicle",
-          "url": "https://javavolcano-touroperator.com/tours/from-surabaya/ijen-bromo-madakaripura-4d3n#vehicle",
+          "url": "https://jvto.me/sub/ijen-bromo-4d3n#vehicle",
           "status": "unverified"
         },
         {
           "anchor": "#finish",
-          "url": "https://javavolcano-touroperator.com/tours/from-surabaya/ijen-bromo-madakaripura-4d3n#finish",
+          "url": "https://jvto.me/sub/ijen-bromo-4d3n#finish",
           "status": "unverified"
         },
         {
           "anchor": "#important-notes",
-          "url": "https://javavolcano-touroperator.com/tours/from-surabaya/ijen-bromo-madakaripura-4d3n#important-notes",
+          "url": "https://jvto.me/sub/ijen-bromo-4d3n#important-notes",
           "status": "unverified"
         },
         {
           "anchor": "#book",
-          "url": "https://javavolcano-touroperator.com/tours/from-surabaya/ijen-bromo-madakaripura-4d3n#book",
+          "url": "https://jvto.me/sub/ijen-bromo-4d3n#book",
           "status": "existing"
         }
       ]
@@ -852,54 +853,54 @@
     },
     {
       "link_key": "package_ijen_bromo_madakaripura_malang_5d4n",
-      "url": "https://javavolcano-touroperator.com/tours/from-surabaya/ijen-bromo-madakaripura-malang-5d4n",
+      "url": "https://jvto.me/sub/ijen-bromo-malang-5d4n",
       "content_type": "package_page",
       "status": "existing",
       "package_key": "ijen-bromo-madakaripura-malang-5d4n",
       "section_anchors": [
         {
           "anchor": "#overview",
-          "url": "https://javavolcano-touroperator.com/tours/from-surabaya/ijen-bromo-madakaripura-malang-5d4n#overview",
+          "url": "https://jvto.me/sub/ijen-bromo-malang-5d4n#overview",
           "status": "existing"
         },
         {
           "anchor": "#itinerary",
-          "url": "https://javavolcano-touroperator.com/tours/from-surabaya/ijen-bromo-madakaripura-malang-5d4n#itinerary",
+          "url": "https://jvto.me/sub/ijen-bromo-malang-5d4n#itinerary",
           "status": "existing"
         },
         {
           "anchor": "#price",
-          "url": "https://javavolcano-touroperator.com/tours/from-surabaya/ijen-bromo-madakaripura-malang-5d4n#price",
+          "url": "https://jvto.me/sub/ijen-bromo-malang-5d4n#price",
           "status": "unverified"
         },
         {
           "anchor": "#included",
-          "url": "https://javavolcano-touroperator.com/tours/from-surabaya/ijen-bromo-madakaripura-malang-5d4n#included",
+          "url": "https://jvto.me/sub/ijen-bromo-malang-5d4n#included",
           "status": "existing"
         },
         {
           "anchor": "#accommodation",
-          "url": "https://javavolcano-touroperator.com/tours/from-surabaya/ijen-bromo-madakaripura-malang-5d4n#accommodation",
+          "url": "https://jvto.me/sub/ijen-bromo-malang-5d4n#accommodation",
           "status": "existing"
         },
         {
           "anchor": "#vehicle",
-          "url": "https://javavolcano-touroperator.com/tours/from-surabaya/ijen-bromo-madakaripura-malang-5d4n#vehicle",
+          "url": "https://jvto.me/sub/ijen-bromo-malang-5d4n#vehicle",
           "status": "unverified"
         },
         {
           "anchor": "#finish",
-          "url": "https://javavolcano-touroperator.com/tours/from-surabaya/ijen-bromo-madakaripura-malang-5d4n#finish",
+          "url": "https://jvto.me/sub/ijen-bromo-malang-5d4n#finish",
           "status": "unverified"
         },
         {
           "anchor": "#important-notes",
-          "url": "https://javavolcano-touroperator.com/tours/from-surabaya/ijen-bromo-madakaripura-malang-5d4n#important-notes",
+          "url": "https://jvto.me/sub/ijen-bromo-malang-5d4n#important-notes",
           "status": "unverified"
         },
         {
           "anchor": "#book",
-          "url": "https://javavolcano-touroperator.com/tours/from-surabaya/ijen-bromo-madakaripura-malang-5d4n#book",
+          "url": "https://jvto.me/sub/ijen-bromo-malang-5d4n#book",
           "status": "existing"
         }
       ]
@@ -914,54 +915,54 @@
     },
     {
       "link_key": "package_ijen_papuma_tumpak_sewu_bromo_4d3n",
-      "url": "https://javavolcano-touroperator.com/tours/from-surabaya/ijen-papuma-tumpak-sewu-bromo-4d3n",
+      "url": "https://jvto.me/sub/ijen-tumpak-bromo-4d3n",
       "content_type": "package_page",
       "status": "existing",
       "package_key": "ijen-papuma-tumpak-sewu-bromo-4d3n",
       "section_anchors": [
         {
           "anchor": "#overview",
-          "url": "https://javavolcano-touroperator.com/tours/from-surabaya/ijen-papuma-tumpak-sewu-bromo-4d3n#overview",
+          "url": "https://jvto.me/sub/ijen-tumpak-bromo-4d3n#overview",
           "status": "existing"
         },
         {
           "anchor": "#itinerary",
-          "url": "https://javavolcano-touroperator.com/tours/from-surabaya/ijen-papuma-tumpak-sewu-bromo-4d3n#itinerary",
+          "url": "https://jvto.me/sub/ijen-tumpak-bromo-4d3n#itinerary",
           "status": "existing"
         },
         {
           "anchor": "#price",
-          "url": "https://javavolcano-touroperator.com/tours/from-surabaya/ijen-papuma-tumpak-sewu-bromo-4d3n#price",
+          "url": "https://jvto.me/sub/ijen-tumpak-bromo-4d3n#price",
           "status": "unverified"
         },
         {
           "anchor": "#included",
-          "url": "https://javavolcano-touroperator.com/tours/from-surabaya/ijen-papuma-tumpak-sewu-bromo-4d3n#included",
+          "url": "https://jvto.me/sub/ijen-tumpak-bromo-4d3n#included",
           "status": "existing"
         },
         {
           "anchor": "#accommodation",
-          "url": "https://javavolcano-touroperator.com/tours/from-surabaya/ijen-papuma-tumpak-sewu-bromo-4d3n#accommodation",
+          "url": "https://jvto.me/sub/ijen-tumpak-bromo-4d3n#accommodation",
           "status": "existing"
         },
         {
           "anchor": "#vehicle",
-          "url": "https://javavolcano-touroperator.com/tours/from-surabaya/ijen-papuma-tumpak-sewu-bromo-4d3n#vehicle",
+          "url": "https://jvto.me/sub/ijen-tumpak-bromo-4d3n#vehicle",
           "status": "unverified"
         },
         {
           "anchor": "#finish",
-          "url": "https://javavolcano-touroperator.com/tours/from-surabaya/ijen-papuma-tumpak-sewu-bromo-4d3n#finish",
+          "url": "https://jvto.me/sub/ijen-tumpak-bromo-4d3n#finish",
           "status": "unverified"
         },
         {
           "anchor": "#important-notes",
-          "url": "https://javavolcano-touroperator.com/tours/from-surabaya/ijen-papuma-tumpak-sewu-bromo-4d3n#important-notes",
+          "url": "https://jvto.me/sub/ijen-tumpak-bromo-4d3n#important-notes",
           "status": "unverified"
         },
         {
           "anchor": "#book",
-          "url": "https://javavolcano-touroperator.com/tours/from-surabaya/ijen-papuma-tumpak-sewu-bromo-4d3n#book",
+          "url": "https://jvto.me/sub/ijen-tumpak-bromo-4d3n#book",
           "status": "existing"
         }
       ]
@@ -976,54 +977,54 @@
     },
     {
       "link_key": "package_ijen_papuma_tumpak_sewu_bromo_5d4n",
-      "url": "https://javavolcano-touroperator.com/tours/from-surabaya/ijen-papuma-tumpak-sewu-bromo-5d4n",
+      "url": "https://jvto.me/sub/ijen-tumpak-bromo-5d4n",
       "content_type": "package_page",
       "status": "existing",
       "package_key": "ijen-papuma-tumpak-sewu-bromo-5d4n",
       "section_anchors": [
         {
           "anchor": "#overview",
-          "url": "https://javavolcano-touroperator.com/tours/from-surabaya/ijen-papuma-tumpak-sewu-bromo-5d4n#overview",
+          "url": "https://jvto.me/sub/ijen-tumpak-bromo-5d4n#overview",
           "status": "existing"
         },
         {
           "anchor": "#itinerary",
-          "url": "https://javavolcano-touroperator.com/tours/from-surabaya/ijen-papuma-tumpak-sewu-bromo-5d4n#itinerary",
+          "url": "https://jvto.me/sub/ijen-tumpak-bromo-5d4n#itinerary",
           "status": "existing"
         },
         {
           "anchor": "#price",
-          "url": "https://javavolcano-touroperator.com/tours/from-surabaya/ijen-papuma-tumpak-sewu-bromo-5d4n#price",
+          "url": "https://jvto.me/sub/ijen-tumpak-bromo-5d4n#price",
           "status": "unverified"
         },
         {
           "anchor": "#included",
-          "url": "https://javavolcano-touroperator.com/tours/from-surabaya/ijen-papuma-tumpak-sewu-bromo-5d4n#included",
+          "url": "https://jvto.me/sub/ijen-tumpak-bromo-5d4n#included",
           "status": "existing"
         },
         {
           "anchor": "#accommodation",
-          "url": "https://javavolcano-touroperator.com/tours/from-surabaya/ijen-papuma-tumpak-sewu-bromo-5d4n#accommodation",
+          "url": "https://jvto.me/sub/ijen-tumpak-bromo-5d4n#accommodation",
           "status": "existing"
         },
         {
           "anchor": "#vehicle",
-          "url": "https://javavolcano-touroperator.com/tours/from-surabaya/ijen-papuma-tumpak-sewu-bromo-5d4n#vehicle",
+          "url": "https://jvto.me/sub/ijen-tumpak-bromo-5d4n#vehicle",
           "status": "unverified"
         },
         {
           "anchor": "#finish",
-          "url": "https://javavolcano-touroperator.com/tours/from-surabaya/ijen-papuma-tumpak-sewu-bromo-5d4n#finish",
+          "url": "https://jvto.me/sub/ijen-tumpak-bromo-5d4n#finish",
           "status": "unverified"
         },
         {
           "anchor": "#important-notes",
-          "url": "https://javavolcano-touroperator.com/tours/from-surabaya/ijen-papuma-tumpak-sewu-bromo-5d4n#important-notes",
+          "url": "https://jvto.me/sub/ijen-tumpak-bromo-5d4n#important-notes",
           "status": "unverified"
         },
         {
           "anchor": "#book",
-          "url": "https://javavolcano-touroperator.com/tours/from-surabaya/ijen-papuma-tumpak-sewu-bromo-5d4n#book",
+          "url": "https://jvto.me/sub/ijen-tumpak-bromo-5d4n#book",
           "status": "existing"
         }
       ]
@@ -1038,54 +1039,54 @@
     },
     {
       "link_key": "package_ijen_papuma_tumpak_sewu_bromo_malang_6d5n",
-      "url": "https://javavolcano-touroperator.com/tours/from-surabaya/ijen-papuma-tumpak-sewu-bromo-malang-6d5n",
+      "url": "https://jvto.me/sub/ijen-tumpak-bromo-malang-6d5n",
       "content_type": "package_page",
       "status": "existing",
       "package_key": "ijen-papuma-tumpak-sewu-bromo-malang-6d5n",
       "section_anchors": [
         {
           "anchor": "#overview",
-          "url": "https://javavolcano-touroperator.com/tours/from-surabaya/ijen-papuma-tumpak-sewu-bromo-malang-6d5n#overview",
+          "url": "https://jvto.me/sub/ijen-tumpak-bromo-malang-6d5n#overview",
           "status": "existing"
         },
         {
           "anchor": "#itinerary",
-          "url": "https://javavolcano-touroperator.com/tours/from-surabaya/ijen-papuma-tumpak-sewu-bromo-malang-6d5n#itinerary",
+          "url": "https://jvto.me/sub/ijen-tumpak-bromo-malang-6d5n#itinerary",
           "status": "existing"
         },
         {
           "anchor": "#price",
-          "url": "https://javavolcano-touroperator.com/tours/from-surabaya/ijen-papuma-tumpak-sewu-bromo-malang-6d5n#price",
+          "url": "https://jvto.me/sub/ijen-tumpak-bromo-malang-6d5n#price",
           "status": "unverified"
         },
         {
           "anchor": "#included",
-          "url": "https://javavolcano-touroperator.com/tours/from-surabaya/ijen-papuma-tumpak-sewu-bromo-malang-6d5n#included",
+          "url": "https://jvto.me/sub/ijen-tumpak-bromo-malang-6d5n#included",
           "status": "existing"
         },
         {
           "anchor": "#accommodation",
-          "url": "https://javavolcano-touroperator.com/tours/from-surabaya/ijen-papuma-tumpak-sewu-bromo-malang-6d5n#accommodation",
+          "url": "https://jvto.me/sub/ijen-tumpak-bromo-malang-6d5n#accommodation",
           "status": "existing"
         },
         {
           "anchor": "#vehicle",
-          "url": "https://javavolcano-touroperator.com/tours/from-surabaya/ijen-papuma-tumpak-sewu-bromo-malang-6d5n#vehicle",
+          "url": "https://jvto.me/sub/ijen-tumpak-bromo-malang-6d5n#vehicle",
           "status": "unverified"
         },
         {
           "anchor": "#finish",
-          "url": "https://javavolcano-touroperator.com/tours/from-surabaya/ijen-papuma-tumpak-sewu-bromo-malang-6d5n#finish",
+          "url": "https://jvto.me/sub/ijen-tumpak-bromo-malang-6d5n#finish",
           "status": "unverified"
         },
         {
           "anchor": "#important-notes",
-          "url": "https://javavolcano-touroperator.com/tours/from-surabaya/ijen-papuma-tumpak-sewu-bromo-malang-6d5n#important-notes",
+          "url": "https://jvto.me/sub/ijen-tumpak-bromo-malang-6d5n#important-notes",
           "status": "unverified"
         },
         {
           "anchor": "#book",
-          "url": "https://javavolcano-touroperator.com/tours/from-surabaya/ijen-papuma-tumpak-sewu-bromo-malang-6d5n#book",
+          "url": "https://jvto.me/sub/ijen-tumpak-bromo-malang-6d5n#book",
           "status": "existing"
         }
       ]
@@ -1100,54 +1101,54 @@
     },
     {
       "link_key": "package_taman_safari_prigen_bromo_madakaripura_3d2n",
-      "url": "https://javavolcano-touroperator.com/tours/from-surabaya/taman-safari-prigen-bromo-madakaripura-3d2n",
+      "url": "https://jvto.me/sub/safari-bromo-3d2n",
       "content_type": "package_page",
       "status": "existing",
       "package_key": "taman-safari-prigen-bromo-madakaripura-3d2n",
       "section_anchors": [
         {
           "anchor": "#overview",
-          "url": "https://javavolcano-touroperator.com/tours/from-surabaya/taman-safari-prigen-bromo-madakaripura-3d2n#overview",
+          "url": "https://jvto.me/sub/safari-bromo-3d2n#overview",
           "status": "existing"
         },
         {
           "anchor": "#itinerary",
-          "url": "https://javavolcano-touroperator.com/tours/from-surabaya/taman-safari-prigen-bromo-madakaripura-3d2n#itinerary",
+          "url": "https://jvto.me/sub/safari-bromo-3d2n#itinerary",
           "status": "existing"
         },
         {
           "anchor": "#price",
-          "url": "https://javavolcano-touroperator.com/tours/from-surabaya/taman-safari-prigen-bromo-madakaripura-3d2n#price",
+          "url": "https://jvto.me/sub/safari-bromo-3d2n#price",
           "status": "unverified"
         },
         {
           "anchor": "#included",
-          "url": "https://javavolcano-touroperator.com/tours/from-surabaya/taman-safari-prigen-bromo-madakaripura-3d2n#included",
+          "url": "https://jvto.me/sub/safari-bromo-3d2n#included",
           "status": "existing"
         },
         {
           "anchor": "#accommodation",
-          "url": "https://javavolcano-touroperator.com/tours/from-surabaya/taman-safari-prigen-bromo-madakaripura-3d2n#accommodation",
+          "url": "https://jvto.me/sub/safari-bromo-3d2n#accommodation",
           "status": "existing"
         },
         {
           "anchor": "#vehicle",
-          "url": "https://javavolcano-touroperator.com/tours/from-surabaya/taman-safari-prigen-bromo-madakaripura-3d2n#vehicle",
+          "url": "https://jvto.me/sub/safari-bromo-3d2n#vehicle",
           "status": "unverified"
         },
         {
           "anchor": "#finish",
-          "url": "https://javavolcano-touroperator.com/tours/from-surabaya/taman-safari-prigen-bromo-madakaripura-3d2n#finish",
+          "url": "https://jvto.me/sub/safari-bromo-3d2n#finish",
           "status": "unverified"
         },
         {
           "anchor": "#important-notes",
-          "url": "https://javavolcano-touroperator.com/tours/from-surabaya/taman-safari-prigen-bromo-madakaripura-3d2n#important-notes",
+          "url": "https://jvto.me/sub/safari-bromo-3d2n#important-notes",
           "status": "unverified"
         },
         {
           "anchor": "#book",
-          "url": "https://javavolcano-touroperator.com/tours/from-surabaya/taman-safari-prigen-bromo-madakaripura-3d2n#book",
+          "url": "https://jvto.me/sub/safari-bromo-3d2n#book",
           "status": "existing"
         }
       ]
@@ -1162,54 +1163,54 @@
     },
     {
       "link_key": "package_tumpak_sewu_bromo_ijen_4d3n",
-      "url": "https://javavolcano-touroperator.com/tours/from-surabaya/tumpak-sewu-bromo-ijen-4d3n",
+      "url": "https://jvto.me/sub/tumpak-bromo-ijen-4d3n",
       "content_type": "package_page",
       "status": "existing",
       "package_key": "tumpak-sewu-bromo-ijen-4d3n",
       "section_anchors": [
         {
           "anchor": "#overview",
-          "url": "https://javavolcano-touroperator.com/tours/from-surabaya/tumpak-sewu-bromo-ijen-4d3n#overview",
+          "url": "https://jvto.me/sub/tumpak-bromo-ijen-4d3n#overview",
           "status": "existing"
         },
         {
           "anchor": "#itinerary",
-          "url": "https://javavolcano-touroperator.com/tours/from-surabaya/tumpak-sewu-bromo-ijen-4d3n#itinerary",
+          "url": "https://jvto.me/sub/tumpak-bromo-ijen-4d3n#itinerary",
           "status": "existing"
         },
         {
           "anchor": "#price",
-          "url": "https://javavolcano-touroperator.com/tours/from-surabaya/tumpak-sewu-bromo-ijen-4d3n#price",
+          "url": "https://jvto.me/sub/tumpak-bromo-ijen-4d3n#price",
           "status": "unverified"
         },
         {
           "anchor": "#included",
-          "url": "https://javavolcano-touroperator.com/tours/from-surabaya/tumpak-sewu-bromo-ijen-4d3n#included",
+          "url": "https://jvto.me/sub/tumpak-bromo-ijen-4d3n#included",
           "status": "existing"
         },
         {
           "anchor": "#accommodation",
-          "url": "https://javavolcano-touroperator.com/tours/from-surabaya/tumpak-sewu-bromo-ijen-4d3n#accommodation",
+          "url": "https://jvto.me/sub/tumpak-bromo-ijen-4d3n#accommodation",
           "status": "existing"
         },
         {
           "anchor": "#vehicle",
-          "url": "https://javavolcano-touroperator.com/tours/from-surabaya/tumpak-sewu-bromo-ijen-4d3n#vehicle",
+          "url": "https://jvto.me/sub/tumpak-bromo-ijen-4d3n#vehicle",
           "status": "unverified"
         },
         {
           "anchor": "#finish",
-          "url": "https://javavolcano-touroperator.com/tours/from-surabaya/tumpak-sewu-bromo-ijen-4d3n#finish",
+          "url": "https://jvto.me/sub/tumpak-bromo-ijen-4d3n#finish",
           "status": "unverified"
         },
         {
           "anchor": "#important-notes",
-          "url": "https://javavolcano-touroperator.com/tours/from-surabaya/tumpak-sewu-bromo-ijen-4d3n#important-notes",
+          "url": "https://jvto.me/sub/tumpak-bromo-ijen-4d3n#important-notes",
           "status": "unverified"
         },
         {
           "anchor": "#book",
-          "url": "https://javavolcano-touroperator.com/tours/from-surabaya/tumpak-sewu-bromo-ijen-4d3n#book",
+          "url": "https://jvto.me/sub/tumpak-bromo-ijen-4d3n#book",
           "status": "existing"
         }
       ]

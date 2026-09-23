@@ -83,7 +83,7 @@ describe.skipIf(!RELEASE_PRESENT)('loadCatalog against the real synced catalog/'
 
   it('gives every package a public details link on the real site', () => {
     for (const pkg of loadCatalog().packages) {
-      expect(pkg.links.details).toMatch(/^https:\/\/javavolcano-touroperator\.com\/tours\//)
+      expect(pkg.links.details).toMatch(/^https:\/\/jvto\.me\/(?:sub|bali)\//)
     }
   })
 

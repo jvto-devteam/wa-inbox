@@ -23,6 +23,15 @@ describe('findNamedPackage', () => {
     expect(findNamedPackage(message, catalog.packages)?.packageKey).toBe('bromo-1d1n')
   })
 
+  // Sejak 2026-09-23 bot mengirim short link, jadi pelanggan membalas dengan bentuk itu; website
+  // tetap melayani bentuk panjang, jadi keduanya harus mengarah ke paket yang sama.
+  it('mengenali short link paket, dan short link serta link panjang menunjuk paket yang sama', () => {
+    expect(findNamedPackage('Is this still available? https://jvto.me/sub/bromo-1d1n', catalog.packages)?.packageKey).toBe('bromo-1d1n')
+    expect(findNamedPackage('https://jvto.me/bali/bromo-ijen-3d2n', catalog.packages)?.packageKey).toBe(
+      findNamedPackage('https://javavolcano-touroperator.com/tours/from-bali/bromo-ijen-3d2n', catalog.packages)?.packageKey
+    )
+  })
+
   // Teks pelanggan asli dari database: judul huruf kapital di dalam tanda kutip.
   it('mengenali judul huruf kapital di dalam tanda kutip', () => {
     const message = 'Yes, it’ll be the “3 DAY BROMO, MADAKARIPURA & IJEN OVERLAND FROM SURABAYA TO BALI” for 2 people'

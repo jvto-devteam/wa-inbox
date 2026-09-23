@@ -349,9 +349,16 @@ function normalizeUrl(url: string): string {
   return url.replace(/\/+$/, '').toLowerCase()
 }
 
+/**
+ * Dua host, bukan satu: katalog memakai short link jvto.me sejak 2026-09-23, tapi pesan lama di
+ * chat pelanggan (dan jawaban model yang meniru contoh lama) masih memakai domain panjang. Yang
+ * hanya mengenali satu host akan diam-diam berhenti mendeteksi link paket yang nyasar.
+ */
+const JVTO_HOSTS = new Set(['javavolcano-touroperator.com', 'jvto.me'])
+
 function isJvtoUrl(url: string): boolean {
   try {
-    return new URL(url).hostname === 'javavolcano-touroperator.com'
+    return JVTO_HOSTS.has(new URL(url).hostname)
   } catch {
     return false
   }

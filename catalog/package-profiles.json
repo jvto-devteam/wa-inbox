@@ -14,7 +14,8 @@
       "bromo",
       "ijen"
     ],
-    "public_url": "/tours/from-bali/bromo-ijen-3d2n",
+    "public_url": "/bali/bromo-ijen-3d2n",
+    "legacy_public_url": "/tours/from-bali/bromo-ijen-3d2n",
     "day_titles": [
       {
         "day": 1,
@@ -69,7 +70,8 @@
       "bromo",
       "madakaripura"
     ],
-    "public_url": "/tours/from-bali/ijen-bromo-madakaripura-3d2n",
+    "public_url": "/bali/ijen-bromo-3d2n",
+    "legacy_public_url": "/tours/from-bali/ijen-bromo-madakaripura-3d2n",
     "day_titles": [
       {
         "day": 1,
@@ -126,7 +128,8 @@
       "sewu",
       "bromo"
     ],
-    "public_url": "/tours/from-bali/ijen-papuma-tumpak-sewu-bromo-4d3n",
+    "public_url": "/bali/ijen-tumpak-bromo-4d3n",
+    "legacy_public_url": "/tours/from-bali/ijen-papuma-tumpak-sewu-bromo-4d3n",
     "day_titles": [
       {
         "day": 1,
@@ -190,7 +193,8 @@
       "sewu",
       "bromo"
     ],
-    "public_url": "/tours/from-bali/ijen-papuma-tumpak-sewu-bromo-5d4n",
+    "public_url": "/bali/ijen-tumpak-bromo-5d4n",
+    "legacy_public_url": "/tours/from-bali/ijen-papuma-tumpak-sewu-bromo-5d4n",
     "day_titles": [
       {
         "day": 1,
@@ -257,7 +261,8 @@
     "destination_tokens": [
       "bromo"
     ],
-    "public_url": "/tours/from-surabaya/bromo-1d1n",
+    "public_url": "/sub/bromo-1d1n",
+    "legacy_public_url": "/tours/from-surabaya/bromo-1d1n",
     "day_titles": [
       {
         "day": 1,
@@ -296,7 +301,8 @@
       "bromo",
       "madakaripura"
     ],
-    "public_url": "/tours/from-surabaya/bromo-2d1n",
+    "public_url": "/sub/bromo-2d1n",
+    "legacy_public_url": "/tours/from-surabaya/bromo-2d1n",
     "day_titles": [
       {
         "day": 1,
@@ -343,7 +349,8 @@
       "madakaripura",
       "ijen"
     ],
-    "public_url": "/tours/from-surabaya/bromo-madakaripura-ijen-3d2n",
+    "public_url": "/sub/bromo-ijen-3d2n",
+    "legacy_public_url": "/tours/from-surabaya/bromo-madakaripura-ijen-3d2n",
     "day_titles": [
       {
         "day": 1,
@@ -396,7 +403,8 @@
     "destination_tokens": [
       "ijen"
     ],
-    "public_url": "/tours/from-surabaya/ijen-2d1n",
+    "public_url": "/sub/ijen-2d1n",
+    "legacy_public_url": "/tours/from-surabaya/ijen-2d1n",
     "day_titles": [
       {
         "day": 1,
@@ -446,7 +454,8 @@
       "bromo",
       "madakaripura"
     ],
-    "public_url": "/tours/from-surabaya/ijen-bromo-madakaripura-3d2n",
+    "public_url": "/sub/ijen-bromo-3d2n",
+    "legacy_public_url": "/tours/from-surabaya/ijen-bromo-madakaripura-3d2n",
     "day_titles": [
       {
         "day": 1,
@@ -503,7 +512,8 @@
       "bromo",
       "madakaripura"
     ],
-    "public_url": "/tours/from-surabaya/ijen-bromo-madakaripura-4d3n",
+    "public_url": "/sub/ijen-bromo-4d3n",
+    "legacy_public_url": "/tours/from-surabaya/ijen-bromo-madakaripura-4d3n",
     "day_titles": [
       {
         "day": 1,
@@ -568,7 +578,8 @@
       "madakaripura",
       "malang"
     ],
-    "public_url": "/tours/from-surabaya/ijen-bromo-madakaripura-malang-5d4n",
+    "public_url": "/sub/ijen-bromo-malang-5d4n",
+    "legacy_public_url": "/tours/from-surabaya/ijen-bromo-madakaripura-malang-5d4n",
     "day_titles": [
       {
         "day": 1,
@@ -641,7 +652,8 @@
       "sewu",
       "bromo"
     ],
-    "public_url": "/tours/from-surabaya/ijen-papuma-tumpak-sewu-bromo-4d3n",
+    "public_url": "/sub/ijen-tumpak-bromo-4d3n",
+    "legacy_public_url": "/tours/from-surabaya/ijen-papuma-tumpak-sewu-bromo-4d3n",
     "day_titles": [
       {
         "day": 1,
@@ -707,7 +719,8 @@
       "sewu",
       "bromo"
     ],
-    "public_url": "/tours/from-surabaya/ijen-papuma-tumpak-sewu-bromo-5d4n",
+    "public_url": "/sub/ijen-tumpak-bromo-5d4n",
+    "legacy_public_url": "/tours/from-surabaya/ijen-papuma-tumpak-sewu-bromo-5d4n",
     "day_titles": [
       {
         "day": 1,
@@ -781,7 +794,8 @@
       "bromo",
       "malang"
     ],
-    "public_url": "/tours/from-surabaya/ijen-papuma-tumpak-sewu-bromo-malang-6d5n",
+    "public_url": "/sub/ijen-tumpak-bromo-malang-6d5n",
+    "legacy_public_url": "/tours/from-surabaya/ijen-papuma-tumpak-sewu-bromo-malang-6d5n",
     "day_titles": [
       {
         "day": 1,
@@ -861,7 +875,8 @@
       "bromo",
       "madakaripura"
     ],
-    "public_url": "/tours/from-surabaya/taman-safari-prigen-bromo-madakaripura-3d2n",
+    "public_url": "/sub/safari-bromo-3d2n",
+    "legacy_public_url": "/tours/from-surabaya/taman-safari-prigen-bromo-madakaripura-3d2n",
     "day_titles": [
       {
         "day": 1,
@@ -916,7 +931,8 @@
       "bromo",
       "ijen"
     ],
-    "public_url": "/tours/from-surabaya/tumpak-sewu-bromo-ijen-4d3n",
+    "public_url": "/sub/tumpak-bromo-ijen-4d3n",
+    "legacy_public_url": "/tours/from-surabaya/tumpak-sewu-bromo-ijen-4d3n",
     "day_titles": [
       {
         "day": 1,

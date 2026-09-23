@@ -49,6 +49,8 @@ const LIVE_TEXT = liveCase.turns[0]
 // tumpak-sewu-bromo-ijen-4d3n alone. Its tokens bromo/ijen/tumpak sewu are carried by 15/13/6
 // catalog packages, so the widest one, 'bromo', is chosen (resolveRegionDestination's header).
 const LIVE_PACKAGE = 'tumpak-sewu-bromo-ijen-4d3n'
+// Prompt memuat TAUTAN paket, bukan packageKey-nya; sejak 2026-09-23 tautan itu short link.
+const LIVE_PACKAGE_LINK = 'https://jvto.me/sub/tumpak-bromo-ijen-4d3n'
 const LIVE_TOKEN = 'bromo'
 
 const HICCUP = "technical hiccup"
@@ -147,7 +149,7 @@ describe.skipIf(!RELEASE_PRESENT)('East Java region against the real route gate 
     expect(new Set(destinations)).toEqual(new Set([LIVE_TOKEN]))
 
     // The grounding is the package the customer's stated trip actually narrowed to.
-    expect(composerSystem()).toContain(LIVE_PACKAGE)
+    expect(composerSystem()).toContain(LIVE_PACKAGE_LINK)
   })
 
   // Ruling R106b. No Bali-origin package finishes in Bali, so narrowing the catalog by these

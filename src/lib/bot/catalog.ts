@@ -378,11 +378,42 @@ function publicSiteBaseUrl(linkRegistry: unknown): string {
   return (asString(linkRegistry.base_url) ?? '').replace(/\/+$/, '')
 }
 
-function buildDetailsLink(baseUrl: string, publicUrl: string | null): Record<string, string> {
+function legacySiteBaseUrl(linkRegistry: unknown): string {
+  if (!isObject(linkRegistry)) return ''
+  return (asString(linkRegistry.legacy_base_url) ?? '').replace(/\/+$/, '')
+}
+
+function joinUrl(baseUrl: string, path: string): string {
+  return `${baseUrl}${path.startsWith('/') ? '' : '/'}${path}`
+}
+
+/**
+ * `details` adalah tautan yang DIKIRIM bot (short link jvto.me sejak 2026-09-23).
+ * `legacyDetails` adalah tautan domain panjang halaman yang sama, disimpan karena pelanggan
+ * menempelkan URL yang mereka salin dari browser — findNamedPackage harus mengenali keduanya,
+ * dan website tetap melayani bentuk panjang.
+ */
+function buildDetailsLink(
+  baseUrl: string,
+  legacyBaseUrl: string,
+  publicUrl: string | null,
+  legacyPublicUrl: string | null
+): Record<string, string> {
   if (!publicUrl) return {}
-  if (/^https?:\/\//i.test(publicUrl)) return { details: publicUrl }
-  if (!baseUrl) return {}
-  return { details: `${baseUrl}${publicUrl.startsWith('/') ? '' : '/'}${publicUrl}` }
+  const links: Record<string, string> = /^https?:\/\//i.test(publicUrl)
+    ? { details: publicUrl }
+    : baseUrl
+      ? { details: joinUrl(baseUrl, publicUrl) }
+      : {}
+  if (links.details === undefined) return {}
+  if (legacyPublicUrl) {
+    links.legacyDetails = /^https?:\/\//i.test(legacyPublicUrl)
+      ? legacyPublicUrl
+      : legacyBaseUrl
+        ? joinUrl(legacyBaseUrl, legacyPublicUrl)
+        : links.details
+  }
+  return links
 }
 
 // The catalog is ~330KB across eleven files, read and JSON.parsed synchronously
@@ -440,7 +471,9 @@ function buildCatalog(): Catalog {
   const generalModulesData = readCatalogFile(GENERAL_MODULES_FILE)
   const policyNoteIndex = buildNoteIndex(moduleCompatibility, generalModulesData, 'policy')
   const stagingNoteIndex = buildNoteIndex(moduleCompatibility, generalModulesData, 'staging')
-  const baseUrl = publicSiteBaseUrl(readCatalogFile(LINK_REGISTRY_FILE))
+  const linkRegistry = readCatalogFile(LINK_REGISTRY_FILE)
+  const baseUrl = publicSiteBaseUrl(linkRegistry)
+  const legacyBaseUrl = legacySiteBaseUrl(linkRegistry)
   const finishCityIndex = buildFinishCityIndex(readCatalogFile(ENDPOINT_CHAINS_FILE))
   const accommodation = indexByPackageKey(readCatalogFile(ACCOMMODATION_FILE), ACCOMMODATION_FILE)
   const vehicle = indexByPackageKey(readCatalogFile(VEHICLE_FILE), VEHICLE_FILE)
@@ -495,7 +528,7 @@ function buildCatalog(): Catalog {
       inclusions: component ? asStringArray(component.included) : [],
       policyNotes: policyNoteIndex.get(packageKey) ?? [],
       stagingNotes: stagingNoteIndex.get(packageKey) ?? [],
-      links: buildDetailsLink(baseUrl, asString(profile.public_url)),
+      links: buildDetailsLink(baseUrl, legacyBaseUrl, asString(profile.public_url), asString(profile.legacy_public_url)),
       origin: asString(profile.origin),
       dayCount: asPositiveInt(profile.day_count),
       finishCities: finishCityIndex.get(packageKey) ?? [],

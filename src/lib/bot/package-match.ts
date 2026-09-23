@@ -655,7 +655,10 @@ export function findNamedPackage(message: string, packages: CatalogPackage[]): C
   return packageFromLink(message, packages) ?? packageFromTitle(message, packages)
 }
 
-const PACKAGE_PATH_PATTERN = /\/tours\/[a-z0-9-]+\/[a-z0-9-]+/gi
+// Dua bentuk path halaman paket: domain panjang (/tours/from-surabaya/<slug>) dan short link
+// (/sub/<slug>, /bali/<slug>). Pelanggan menempel yang mereka salin dari browser, bot mengirim
+// yang pendek, jadi keduanya harus dikenali.
+const PACKAGE_PATH_PATTERN = /\/(?:tours\/from-[a-z]+|sub|bali)\/[a-z0-9-]+/gi
 const MIN_TITLE_WORDS = 4
 
 function uniqueByKey(packages: CatalogPackage[]): CatalogPackage[] {
@@ -666,10 +669,12 @@ function packageFromLink(message: string, packages: CatalogPackage[]): CatalogPa
   const mentioned = new Set((message.match(PACKAGE_PATH_PATTERN) ?? []).map((path) => path.toLowerCase()))
   if (mentioned.size === 0) return null
   const hits = uniqueByKey(
-    packages.filter((p) => {
-      const path = p.links.details?.toLowerCase().match(PACKAGE_PATH_PATTERN)?.[0]
-      return path !== undefined && mentioned.has(path)
-    })
+    packages.filter((p) =>
+      [p.links.details, p.links.legacyDetails].some((link) => {
+        const path = link?.toLowerCase().match(PACKAGE_PATH_PATTERN)?.[0]
+        return path !== undefined && mentioned.has(path)
+      })
+    )
   )
   return hits.length === 1 ? hits[0] : null
 }
