@@ -34,6 +34,11 @@ function opt(name: string, example: string, description: string): SystemTemplate
 }
 
 const customerName = req('customer_name', 'John Doe', 'Nama pelanggan (users.name).')
+const bookingShort = req(
+  'booking_short',
+  'Ab3dE5fG7h',
+  'Kolom bookings.url_short — segmen terakhir tautan https://jvto.me/b/<kode>.'
+)
 const bookingSlug = req(
   'booking_slug',
   'a1b2c3d4-example',
@@ -449,6 +454,117 @@ JVTO Team`,
       bookingSlug,
     ],
     source: 'javavolcano-touroperator/app/Console/Commands/TripInformation.php:59',
+  },
+  {
+    key: 'trip_information_airport',
+    name: 'Informasi trip — jemput di bandara',
+    description: 'Dikirim ke pelanggan pada jadwal wa_schedule_trip_information bila lokasi jemput adalah bandara. Gambar: pickup sign bernama tamu (imageUrl per kiriman).',
+    audience: 'CUSTOMER',
+    body: `🌄 *[TRIP INFO] Get ready for your adventure!*
+
+Dear _{customer_name}_, here are your pickup details:
+
+📅 *Date:* {trip_date}
+⏰ *Pickup Time:* \`{pickup_time}\`
+📍 *Pickup Point:* {pickup}
+
+⚡ *Important reminders*
+- Meet us in the *arrival hall*, 10 minutes after you collect your luggage
+- Send us your *flight number* now, and tell us right away if it is delayed
+- Keep your phone on after landing — our driver calls if the hall is crowded
+
+🪧 *How to find us*
+Our team will be waiting in the arrival hall holding a *pickup sign with your name*, exactly like the picture above.
+
+💬 *Need help?* Reply to this chat, WhatsApp +62 822-4478-8833 or email hello@javavolcano-touroperator.com
+
+👉 *Open your trip details and documents:*
+https://jvto.me/b/{booking_short}
+
+_Your adventure awaits! Best regards, JVTO Team_`,
+    imageUrl: `${IMG}/message-template/trip-reminder.jpg`,
+    variables: [
+      customerName,
+      req('trip_date', 'Friday, 26 September 2026', "bookings.travel_date_start, date('l, j F Y')."),
+      req('pickup_time', '08:00', 'bookings.pickup_time apa adanya (tidak diformat ulang).'),
+      req('pickup', 'Surabaya Airport', 'Lokasi jemput (bookings.pickup).'),
+      bookingShort,
+    ],
+    source: 'javavolcano-touroperator/app/Console/Commands/TripInformation.php:57 (varian per tipe jemput, 2026-09-23)',
+  },
+  {
+    key: 'trip_information_station',
+    name: 'Informasi trip — jemput di stasiun',
+    description: 'Dikirim ke pelanggan pada jadwal wa_schedule_trip_information bila lokasi jemput adalah stasiun. Gambar: pickup sign bernama tamu (imageUrl per kiriman).',
+    audience: 'CUSTOMER',
+    body: `🌄 *[TRIP INFO] Get ready for your adventure!*
+
+Dear _{customer_name}_, here are your pickup details:
+
+📅 *Date:* {trip_date}
+⏰ *Pickup Time:* \`{pickup_time}\`
+📍 *Pickup Point:* {pickup}
+
+⚡ *Important reminders*
+- Meet us at the *main station exit*, 10 minutes after your train arrives
+- Send us your *train name and number* now, and tell us right away if it is delayed
+- Keep your phone on — our driver calls if the exit is crowded
+
+🪧 *How to find us*
+Our team will be waiting at the main station exit holding a *pickup sign with your name*, exactly like the picture above.
+
+💬 *Need help?* Reply to this chat, WhatsApp +62 822-4478-8833 or email hello@javavolcano-touroperator.com
+
+👉 *Open your trip details and documents:*
+https://jvto.me/b/{booking_short}
+
+_Your adventure awaits! Best regards, JVTO Team_`,
+    imageUrl: `${IMG}/message-template/trip-reminder.jpg`,
+    variables: [
+      customerName,
+      req('trip_date', 'Friday, 26 September 2026', "bookings.travel_date_start, date('l, j F Y')."),
+      req('pickup_time', '08:00', 'bookings.pickup_time apa adanya (tidak diformat ulang).'),
+      req('pickup', 'Surabaya Gubeng Station', 'Lokasi jemput (bookings.pickup).'),
+      bookingShort,
+    ],
+    source: 'javavolcano-touroperator/app/Console/Commands/TripInformation.php:57 (varian per tipe jemput, 2026-09-23)',
+  },
+  {
+    key: 'trip_information_hotel',
+    name: 'Informasi trip — jemput di hotel',
+    description: 'Dikirim ke pelanggan pada jadwal wa_schedule_trip_information bila lokasi jemput adalah hotel. Gambar: pickup sign bernama tamu (imageUrl per kiriman).',
+    audience: 'CUSTOMER',
+    body: `🌄 *[TRIP INFO] Get ready for your adventure!*
+
+Dear _{customer_name}_, here are your pickup details:
+
+📅 *Date:* {trip_date}
+⏰ *Pickup Time:* \`{pickup_time}\`
+📍 *Pickup Point:* {pickup}
+
+⚡ *Important reminders*
+- Wait in the *hotel lobby* 10 minutes before pickup time
+- Settle your bill and check out before pickup time if this is your last night
+- Tell us if your room is booked under a different name
+
+🪧 *How to find us*
+Our team will be waiting in the hotel lobby holding a *pickup sign with your name*, exactly like the picture above.
+
+💬 *Need help?* Reply to this chat, WhatsApp +62 822-4478-8833 or email hello@javavolcano-touroperator.com
+
+👉 *Open your trip details and documents:*
+https://jvto.me/b/{booking_short}
+
+_Your adventure awaits! Best regards, JVTO Team_`,
+    imageUrl: `${IMG}/message-template/trip-reminder.jpg`,
+    variables: [
+      customerName,
+      req('trip_date', 'Friday, 26 September 2026', "bookings.travel_date_start, date('l, j F Y')."),
+      req('pickup_time', '08:00', 'bookings.pickup_time apa adanya (tidak diformat ulang).'),
+      req('pickup', 'Hotel Majapahit Surabaya', 'Lokasi jemput (bookings.pickup).'),
+      bookingShort,
+    ],
+    source: 'javavolcano-touroperator/app/Console/Commands/TripInformation.php:57 (varian per tipe jemput, 2026-09-23)',
   },
   {
     key: 'trip_payment_arrangement',

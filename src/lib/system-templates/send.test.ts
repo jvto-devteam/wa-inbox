@@ -128,6 +128,32 @@ describe('enqueueSystemTemplateSend', () => {
     )
   })
 
+  it('lets the caller override the template image for one send (pickup sign)', async () => {
+    mockPrisma.systemTemplate.findUnique.mockResolvedValue(template({ imageUrl: 'https://x.test/trip-reminder.jpg' }))
+    await enqueueSystemTemplateSend({ ...base, imageUrl: 'https://legacy.javavolcano-touroperator.com/pickup-sign/img/Ab3dE5fG7h.png' })
+
+    expect(enqueueOutboundJob).toHaveBeenCalledWith(
+      expect.objectContaining({
+        payload: expect.objectContaining({
+          media: {
+            url: 'https://legacy.javavolcano-touroperator.com/pickup-sign/img/Ab3dE5fG7h.png',
+            type: 'image',
+            mimeType: 'image/png',
+          },
+        }),
+      })
+    )
+  })
+
+  it('still sends an image when only the caller supplies one', async () => {
+    mockPrisma.systemTemplate.findUnique.mockResolvedValue(template({ imageUrl: null }))
+    await enqueueSystemTemplateSend({ ...base, imageUrl: 'https://jvto.me/x.png' })
+
+    expect(enqueueOutboundJob).toHaveBeenCalledWith(
+      expect.objectContaining({ payload: expect.objectContaining({ media: expect.objectContaining({ url: 'https://jvto.me/x.png' }) }) })
+    )
+  })
+
   it('never creates a conversation for an INTERNAL template', async () => {
     mockPrisma.systemTemplate.findUnique.mockResolvedValue(
       template({ audience: 'INTERNAL', body: '{name} has completed the consent form', variables: [{ name: 'name', required: true }] })

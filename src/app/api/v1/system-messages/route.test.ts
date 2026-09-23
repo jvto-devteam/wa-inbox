@@ -74,6 +74,22 @@ describe('POST /api/v1/system-messages', () => {
     expect(enqueueSystemTemplateSend).not.toHaveBeenCalled()
   })
 
+  it('passes an allowed imageUrl through, and refuses any other host or scheme', async () => {
+    const ok = await post({ ...body, imageUrl: 'https://legacy.javavolcano-touroperator.com/pickup-sign/img/Ab3dE5fG7h.png' })
+    expect(ok.status).toBe(202)
+    expect(enqueueSystemTemplateSend).toHaveBeenCalledWith(
+      expect.objectContaining({ imageUrl: 'https://legacy.javavolcano-touroperator.com/pickup-sign/img/Ab3dE5fG7h.png' })
+    )
+
+    for (const bad of ['https://evil.test/sign.png', 'http://javavolcano-touroperator.com/sign.png']) {
+      vi.clearAllMocks()
+      vi.mocked(authenticateApiClient).mockResolvedValue({ id: 'client_1', name: 'jvto' })
+      const res = await post({ ...body, imageUrl: bad })
+      expect(res.status, bad).toBe(400)
+      expect(enqueueSystemTemplateSend).not.toHaveBeenCalled()
+    }
+  })
+
   it('names the missing required variables', async () => {
     vi.mocked(enqueueSystemTemplateSend).mockResolvedValue({ ok: false, code: 'MISSING_VARIABLES', missing: ['booking_code', 'pax'] })
     const res = await post(body)

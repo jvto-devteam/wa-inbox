@@ -35,9 +35,20 @@ const EXPECTED_KEYS = [
   'trip_concluded',
   'trip_daily_itinerary',
   'trip_information',
+  'trip_information_airport',
+  'trip_information_hotel',
+  'trip_information_station',
   'trip_payment_arrangement',
   'vendor_tshirt_size_update',
 ]
+
+/**
+ * Template yang TIDAK pernah ada di PHP, jadi tidak ada keluaran asli untuk dibandingkan.
+ * Ditulis di sini supaya "tidak ada fixture" berarti keputusan, bukan fixture yang lupa dibuat:
+ * ketiganya lahir 2026-09-23 sebagai varian trip_information per tipe jemput (bandara / stasiun /
+ * hotel). Sisa aturan (badan template valid, kunci unik) tetap berlaku untuk mereka.
+ */
+const KEYS_WITHOUT_PHP_ORIGIN = new Set(['trip_information_airport', 'trip_information_station', 'trip_information_hotel'])
 
 describe('system template seeds', () => {
   it('cover exactly the planned keys', () => {
@@ -58,6 +69,10 @@ describe('system template seeds', () => {
     '%s renders exactly what its PHP original sent',
     (key, seed) => {
       const cases = byKey[key]
+      if (KEYS_WITHOUT_PHP_ORIGIN.has(key)) {
+        expect(cases, `${key} tidak punya asal PHP, jadi tidak boleh punya fixture paritas`).toBeUndefined()
+        return
+      }
       expect(cases, `tidak ada fixture paritas untuk ${key}`).toBeDefined()
       for (const c of cases) {
         expect(renderSystemTemplate(seed, c.variables)).toEqual({ ok: true, text: c.text })

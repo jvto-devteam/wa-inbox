@@ -37,6 +37,8 @@ export type SystemSendParams = {
   to: SystemSendTarget
   variables: VariableValues
   idempotencyKey: string
+  /** Gambar khusus kiriman ini; menggantikan SystemTemplate.imageUrl. Sudah divalidasi pemanggil. */
+  imageUrl?: string
 }
 
 export type SystemSendResult =
@@ -88,8 +90,10 @@ export async function enqueueSystemTemplateSend(params: SystemSendParams): Promi
   )
   if (!rendered.ok) return { ok: false, code: 'MISSING_VARIABLES', missing: rendered.missing }
 
-  const media: OutboundJobPayload['media'] = template.imageUrl
-    ? { url: template.imageUrl, type: 'image', mimeType: imageMimeType(template.imageUrl) }
+  // Gambar kiriman menang atas gambar template: pickup sign bernama tamu, bukan gambar umum.
+  const imageUrl = params.imageUrl ?? template.imageUrl
+  const media: OutboundJobPayload['media'] = imageUrl
+    ? { url: imageUrl, type: 'image', mimeType: imageMimeType(imageUrl) }
     : undefined
 
   const common = {
