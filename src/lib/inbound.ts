@@ -517,30 +517,46 @@ async function ingestSingleMessage(message: MetaInboundMessage, contacts: MetaCo
   const profileName =
     contacts?.find((c) => c.wa_id === message.from)?.profile?.name ?? contacts?.[0]?.profile?.name ?? undefined
 
-  const contact = await prisma.contact.upsert({
-    where: { phone: message.from },
-    update: profileName ? { name: profileName } : {},
-    create: { phone: message.from, name: profileName ?? null },
+  // Kontak dicari lewat identitasnya, bukan lewat nomornya. Setelah Task 9 melepas
+  // Contact.phone @unique, Prisma menolak `phone` di `where` sebuah upsert -- dan nomor
+  // memang bukan lagi identitas: ia hanya salah satu alamat, kebetulan yang pertama ada.
+  const known = await prisma.channelIdentity.findUnique({
+    where: { platform_externalId: { platform: 'WHATSAPP', externalId: message.from } },
+    select: { contactId: true },
   })
 
-  // Dual-write masa transisi: Conversation.contactId masih sumber kebenaran, tapi setiap
-  // percakapan baru sudah membawa identitasnya supaya backfill hanya perlu mengurus baris lama.
+  const contact = known
+    ? await prisma.contact.update({
+        where: { id: known.contactId },
+        data: profileName ? { name: profileName } : {},
+      })
+    : await prisma.contact.create({ data: { phone: message.from, name: profileName ?? null } })
+
   const identity = await upsertChannelIdentity({
     platform: 'WHATSAPP',
-    externalId: contact.phone,
+    // Diambil dari payload, bukan dari contact.phone: setelah Task 9 kolom itu bertipe
+    // `string | null` dan tidak bisa dipakai sebagai externalId yang wajib string.
+    externalId: message.from,
     contactId: contact.id,
     displayName: profileName,
   })
 
   const sentAt = parseMetaTimestamp(message.timestamp)
+
   const conversation = await prisma.conversation.upsert({
-    where: { contactId: contact.id },
-    update: { lastMessageAt: sentAt, channelIdentityId: identity.id },
+    // Dikunci lewat (channelIdentityId, externalThreadId), bukan contactId: setelah Task 9
+    // melepas Conversation.contactId @unique, Prisma menolak contactId di `where` sebuah
+    // upsert karena ia bukan lagi field unik.
+    where: {
+      channelIdentityId_externalThreadId: { channelIdentityId: identity.id, externalThreadId: '' },
+    },
+    update: { lastMessageAt: sentAt },
     create: {
       contactId: contact.id,
-      lastMessageAt: sentAt,
       channelIdentityId: identity.id,
-      botEnabled: await defaultBotEnabled(contact.phone),
+      externalThreadId: '',
+      lastMessageAt: sentAt,
+      botEnabled: await defaultBotEnabled(message.from),
     },
   })
 
@@ -645,29 +661,45 @@ async function ingestEchoedMessage(echo: MetaMessageEcho): Promise<boolean> {
   const existing = await prisma.message.findUnique({ where: { externalId: echo.id } })
   if (existing) return false
 
-  const contact = await prisma.contact.upsert({
-    where: { phone: echo.to },
-    update: {},
-    create: { phone: echo.to, name: null },
+  // Kontak dicari lewat identitasnya, bukan lewat nomornya. Setelah Task 9 melepas
+  // Contact.phone @unique, Prisma menolak `phone` di `where` sebuah upsert -- dan nomor
+  // memang bukan lagi identitas: ia hanya salah satu alamat, kebetulan yang pertama ada.
+  const known = await prisma.channelIdentity.findUnique({
+    where: { platform_externalId: { platform: 'WHATSAPP', externalId: echo.to } },
+    select: { contactId: true },
   })
 
-  // Dual-write masa transisi: Conversation.contactId masih sumber kebenaran, tapi setiap
-  // percakapan baru sudah membawa identitasnya supaya backfill hanya perlu mengurus baris lama.
+  const contact = known
+    ? await prisma.contact.update({
+        where: { id: known.contactId },
+        data: {},
+      })
+    : await prisma.contact.create({ data: { phone: echo.to, name: null } })
+
   const identity = await upsertChannelIdentity({
     platform: 'WHATSAPP',
+    // Diambil dari payload, bukan dari contact.phone: setelah Task 9 kolom itu bertipe
+    // `string | null` dan tidak bisa dipakai sebagai externalId yang wajib string.
     externalId: echo.to,
     contactId: contact.id,
   })
 
   const sentAt = parseMetaTimestamp(echo.timestamp)
+
   const conversation = await prisma.conversation.upsert({
-    where: { contactId: contact.id },
-    update: { lastMessageAt: sentAt, channelIdentityId: identity.id },
+    // Dikunci lewat (channelIdentityId, externalThreadId), bukan contactId: setelah Task 9
+    // melepas Conversation.contactId @unique, Prisma menolak contactId di `where` sebuah
+    // upsert karena ia bukan lagi field unik.
+    where: {
+      channelIdentityId_externalThreadId: { channelIdentityId: identity.id, externalThreadId: '' },
+    },
+    update: { lastMessageAt: sentAt },
     create: {
       contactId: contact.id,
-      lastMessageAt: sentAt,
       channelIdentityId: identity.id,
-      botEnabled: await defaultBotEnabled(contact.phone),
+      externalThreadId: '',
+      lastMessageAt: sentAt,
+      botEnabled: await defaultBotEnabled(echo.to),
     },
   })
 

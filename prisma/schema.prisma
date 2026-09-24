@@ -162,6 +162,11 @@ model Conversation {
   /// unik yang dibuat di atas data yang masih punya duplikat akan menggagalkan migrasi
   /// di tengah jalan.
   externalThreadId String @default("")
+
+  /// Dipasang di Task 5b, setelah backfill Task 5 selesai (0 duplikat terverifikasi 2026-09-24).
+  /// Ini yang membuat conversation.upsert bisa dikunci lewat (channelIdentityId,
+  /// externalThreadId) alih-alih contactId -- kunci yang akan dilepas Task 9.
+  @@unique([channelIdentityId, externalThreadId])
 }
 
 enum MessageDirection {

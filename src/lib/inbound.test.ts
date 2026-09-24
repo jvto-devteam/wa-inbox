@@ -108,7 +108,17 @@ const samplePayload = {
 /** Stubs the happy path everything-exists case so individual tests only override what they care about. */
 function stubHappyPath(overrides: { contact?: object; conversation?: object } = {}) {
   mockPrisma.message.findUnique.mockResolvedValue(null)
-  mockPrisma.contact.upsert.mockResolvedValue({ ...contactRow, avatarUrl: 'x', ...overrides.contact } as never)
+  // Kontak dicari lewat ChannelIdentity sekarang (Task 5b), bukan contact.upsert({ where: {
+  // phone } }). Default channelIdentity.findUnique tidak di-stub di sini (resolve ke
+  // `undefined`, falsy), jadi jalur default adalah "identitas belum ada" -> contact.create.
+  // Test yang perlu jalur "identitas sudah ada" meng-override channelIdentity.findUnique
+  // sendiri, dan contact.update di bawah ini echo balik `where.id` supaya kontak yang
+  // dikembalikan tetap kontak yang sama dengan yang diminta test itu.
+  mockPrisma.contact.create.mockResolvedValue({ ...contactRow, avatarUrl: 'x', ...overrides.contact } as never)
+  mockPrisma.contact.update.mockImplementation(
+    ((args: { where: { id: string } }) =>
+      Promise.resolve({ ...contactRow, avatarUrl: 'x', ...overrides.contact, id: args.where.id })) as never,
+  )
   mockPrisma.conversation.upsert.mockResolvedValue({ ...conversationRow, ...overrides.conversation } as never)
   mockPrisma.message.create.mockResolvedValue({ id: 'msg_new' } as never)
 }
@@ -116,7 +126,7 @@ function stubHappyPath(overrides: { contact?: object; conversation?: object } = 
 describe('ingestMetaMessage', () => {
   it('creates Contact, Conversation, and Message when none exist', async () => {
     mockPrisma.message.findUnique.mockResolvedValue(null)
-    mockPrisma.contact.upsert.mockResolvedValue(contactRow)
+    mockPrisma.contact.create.mockResolvedValue(contactRow)
     mockPrisma.conversation.upsert.mockResolvedValue(conversationRow)
     mockPrisma.waNumber.findFirst.mockResolvedValue({ coexistBaseUrl: 'http://x' } as never)
     mockPrisma.message.create.mockResolvedValue({} as never)
@@ -125,9 +135,12 @@ describe('ingestMetaMessage', () => {
     const result = await ingestMetaMessage(samplePayload)
 
     expect(result).toEqual({ processed: 1, skipped: 0, statusUpdates: 0, templateStatusUpdates: 0, echoed: 0 })
-    expect(mockPrisma.contact.upsert).toHaveBeenCalledWith(expect.objectContaining({
-      where: { phone: '6281234567890' },
-    }))
+    // Identitas belum pernah ada (channelIdentity.findUnique tidak di-stub -> falsy), jadi
+    // kontak dibuat baru lewat contact.create, bukan contact.upsert({ where: { phone } }) yang
+    // berhenti dikompilasi begitu Task 9 melepas Contact.phone @unique.
+    expect(mockPrisma.contact.create).toHaveBeenCalledWith({
+      data: { phone: '6281234567890', name: 'Bruno Figarola' },
+    })
     expect(mockPrisma.message.create).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({ externalId: 'wamid.ABC123', direction: 'INBOUND', sentBy: 'CUSTOMER' }),
     }))
@@ -148,7 +161,7 @@ describe('ingestMetaMessage', () => {
     // The DB's @unique constraint on externalId rejects the loser's insert with P2002; the
     // function must swallow that and report a clean skip instead of throwing/500ing.
     mockPrisma.message.findUnique.mockResolvedValue(null)
-    mockPrisma.contact.upsert.mockResolvedValue({ ...contactRow, avatarUrl: 'x' })
+    mockPrisma.contact.create.mockResolvedValue({ ...contactRow, avatarUrl: 'x' })
     mockPrisma.conversation.upsert.mockResolvedValue(conversationRow)
     mockPrisma.message.create.mockRejectedValue(
       new Prisma.PrismaClientKnownRequestError('Unique constraint failed on the fields: (`externalId`)', {
@@ -180,8 +193,62 @@ describe('ingestMetaMessage', () => {
     await ingestMetaMessage(samplePayload)
 
     const arg = mockPrisma.conversation.upsert.mock.calls[0][0]
+    // `where` sendiri sudah dikunci lewat channelIdentityId (Task 5b) -- `update` tidak perlu
+    // menulisnya lagi karena baris yang ditemukan sudah pasti identitas yang sama.
+    expect(arg.where).toEqual({
+      channelIdentityId_externalThreadId: { channelIdentityId: 'ci_wa_1', externalThreadId: '' },
+    })
     expect(arg.create).toEqual(expect.objectContaining({ channelIdentityId: 'ci_wa_1' }))
-    expect(arg.update).toEqual(expect.objectContaining({ channelIdentityId: 'ci_wa_1' }))
+  })
+})
+
+describe('pencarian lepas dari kunci unik lama', () => {
+  it('mencari conversation lewat kunci benang, bukan lewat contactId', async () => {
+    stubHappyPath()
+    mockPrisma.channelIdentity.findUnique.mockResolvedValue({ contactId: 'contact_1' } as never)
+    mockPrisma.channelIdentity.upsert.mockResolvedValue({ id: 'ci_wa_1', contactId: 'contact_1' } as never)
+
+    await ingestMetaMessage(samplePayload)
+
+    const arg = mockPrisma.conversation.upsert.mock.calls[0][0]
+    expect(arg.where).toEqual({
+      channelIdentityId_externalThreadId: { channelIdentityId: 'ci_wa_1', externalThreadId: '' },
+    })
+  })
+
+  // contact.upsert({ where: { phone } }) berhenti dikompilasi begitu Task 9 melepas
+  // Contact.phone @unique. Kontak dicari lewat identitasnya, bukan lewat nomornya.
+  it('tidak pernah memanggil contact.upsert', async () => {
+    stubHappyPath()
+    mockPrisma.channelIdentity.findUnique.mockResolvedValue({ contactId: 'contact_1' } as never)
+
+    await ingestMetaMessage(samplePayload)
+
+    expect(mockPrisma.contact.upsert).not.toHaveBeenCalled()
+  })
+
+  it('memakai kontak yang sudah tertaut ke identitas itu', async () => {
+    stubHappyPath()
+    mockPrisma.channelIdentity.findUnique.mockResolvedValue({ contactId: 'contact_lama' } as never)
+
+    await ingestMetaMessage(samplePayload)
+
+    expect(mockPrisma.contact.create).not.toHaveBeenCalled()
+    // upsertChannelIdentity() (src/lib/channel/identity.ts) membungkus argumen prisma di
+    // bawah `create`/`update`, bukan top-level -- contactId lama harus mengalir ke sana.
+    expect(mockPrisma.channelIdentity.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({ create: expect.objectContaining({ contactId: 'contact_lama' }) }),
+    )
+  })
+
+  it('membuat kontak baru saat identitasnya belum pernah ada', async () => {
+    stubHappyPath()
+    mockPrisma.channelIdentity.findUnique.mockResolvedValue(null as never)
+    mockPrisma.contact.create.mockResolvedValue({ id: 'contact_baru', phone: '6281234567890' } as never)
+
+    await ingestMetaMessage(samplePayload)
+
+    expect(mockPrisma.contact.create).toHaveBeenCalled()
   })
 })
 
@@ -224,10 +291,10 @@ describe('defaultBotEnabled (new conversation creation)', () => {
 
   it('still starts a NON-Indonesian conversation active when the Indonesia filter is on', async () => {
     mockPrisma.settings.findUniqueOrThrow.mockResolvedValue({ botAutoReplyAll: true, skipBotForIndonesianNumbers: true } as never)
-    // stubHappyPath's default contact mock always resolves to the (Indonesian) fixture phone
-    // regardless of the payload's actual `from` -- override it to a real non-Indonesian phone,
-    // since that's what defaultBotEnabled() actually checks (the upserted contact's phone).
-    stubHappyPath({ contact: { phone: '12025551234' } })
+    // defaultBotEnabled() now checks message.from straight off the payload (Task 5b), not the
+    // upserted contact's phone -- usPayload's own `from` (12025551234, non-Indonesian) is
+    // already enough, no contact override needed.
+    stubHappyPath()
 
     await ingestMetaMessage(usPayload)
 
@@ -353,14 +420,8 @@ describe('ingestMetaMessage batching', () => {
     expect(result.processed).toBe(3)
     // The profile name must come from the SAME change as the message -- a hoisted
     // contacts[0] would label every contact 'Bruno'.
-    expect(mockPrisma.contact.upsert).toHaveBeenCalledWith(expect.objectContaining({
-      where: { phone: '628222' },
-      create: { phone: '628222', name: 'Ayu' },
-    }))
-    expect(mockPrisma.contact.upsert).toHaveBeenCalledWith(expect.objectContaining({
-      where: { phone: '628333' },
-      create: { phone: '628333', name: 'Citra' },
-    }))
+    expect(mockPrisma.contact.create).toHaveBeenCalledWith({ data: { phone: '628222', name: 'Ayu' } })
+    expect(mockPrisma.contact.create).toHaveBeenCalledWith({ data: { phone: '628333', name: 'Citra' } })
   })
 
   it('tolerates a payload with no entry/changes/messages at all', async () => {
@@ -833,7 +894,7 @@ describe('ingestMetaMessage bot dispatch', () => {
     // splitting one thought across "halo" / "is ijen safe?" must not produce two disjointed bot
     // replies -- both fragments land in the same 5s window and are joined into one inboundText.
     mockPrisma.message.findUnique.mockResolvedValue(null)
-    mockPrisma.contact.upsert.mockResolvedValue({ ...contactRow, avatarUrl: 'x' })
+    mockPrisma.contact.create.mockResolvedValue({ ...contactRow, avatarUrl: 'x' })
     mockPrisma.message.create.mockResolvedValue({ id: 'msg_new' } as never)
     mockPrisma.conversation.upsert.mockResolvedValue({ ...conversationRow, botEnabled: true })
     vi.mocked(decideAndRespond).mockResolvedValue({ mode: 'handoff', reason: 'Kata kunci eskalasi terdeteksi' })
@@ -1086,7 +1147,7 @@ describe('ingestMetaMessage delivery-status callbacks', () => {
     mockPrisma.message.findUnique
       .mockResolvedValueOnce(null) // inbound idempotency check
       .mockResolvedValueOnce({ id: 'msg_out', deliveryStatus: 'SENT' } as never) // status lookup
-    mockPrisma.contact.upsert.mockResolvedValue({ ...contactRow, avatarUrl: 'x' })
+    mockPrisma.contact.create.mockResolvedValue({ ...contactRow, avatarUrl: 'x' })
     mockPrisma.conversation.upsert.mockResolvedValue({ ...conversationRow, botEnabled: false })
     mockPrisma.message.create.mockResolvedValue({ id: 'msg_in' } as never)
     mockPrisma.message.update.mockResolvedValue({ id: 'msg_out', conversationId: 'conv_1', deliveryStatus: 'READ' } as never)
@@ -1174,13 +1235,14 @@ describe('ingestMetaMessage template-status callbacks', () => {
     await ingestMetaMessage(templatePayload({ event: 'APPROVED', message_template_id: '993' }))
 
     expect(mockPrisma.message.create).not.toHaveBeenCalled()
-    expect(mockPrisma.contact.upsert).not.toHaveBeenCalled()
+    expect(mockPrisma.contact.create).not.toHaveBeenCalled()
+    expect(mockPrisma.contact.update).not.toHaveBeenCalled()
   })
 
   it('still ingests ordinary message changes batched alongside a template change', async () => {
     mockPrisma.template.updateMany.mockResolvedValue({ count: 1 } as never)
     mockPrisma.message.findUnique.mockResolvedValue(null)
-    mockPrisma.contact.upsert.mockResolvedValue({ ...contactRow, avatarUrl: 'x' })
+    mockPrisma.contact.create.mockResolvedValue({ ...contactRow, avatarUrl: 'x' })
     mockPrisma.conversation.upsert.mockResolvedValue({ ...conversationRow, botEnabled: false })
     mockPrisma.message.create.mockResolvedValue({ id: 'msg_in' } as never)
 
@@ -1221,7 +1283,8 @@ describe('ingestMetaMessage message echoes (smb_message_echoes)', () => {
     }]))
 
     expect(result).toEqual({ processed: 0, skipped: 0, statusUpdates: 0, templateStatusUpdates: 0, echoed: 1 })
-    expect(mockPrisma.contact.upsert).toHaveBeenCalledWith(expect.objectContaining({ where: { phone: '6281234567890' } }))
+    // Kontak dicari lewat identitas WhatsApp echo.to, bukan contact.upsert({ where: { phone } }).
+    expect(mockPrisma.contact.create).toHaveBeenCalledWith({ data: { phone: '6281234567890', name: null } })
     expect(mockPrisma.message.create).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({
         externalId: 'wamid.ECHO1',
@@ -1298,7 +1361,7 @@ describe('ingestMetaMessage message echoes (smb_message_echoes)', () => {
     // instant it's created. The matching coexistence echo for that same send has to attach to
     // THAT row, not spawn a second one.
     mockPrisma.message.findUnique.mockResolvedValue(null)
-    mockPrisma.contact.upsert.mockResolvedValue({ ...contactRow, avatarUrl: 'x' })
+    mockPrisma.contact.create.mockResolvedValue({ ...contactRow, avatarUrl: 'x' })
     mockPrisma.conversation.upsert.mockResolvedValue(conversationRow)
     mockPrisma.message.findFirst.mockResolvedValue({ id: 'msg_self_sent', content: 'Where would you like to go?' } as never)
     mockPrisma.message.update.mockResolvedValue({ id: 'msg_self_sent', externalId: 'wamid.ECHO_SELF' } as never)
@@ -1319,7 +1382,7 @@ describe('ingestMetaMessage message echoes (smb_message_echoes)', () => {
 
   it('only matches a self-sent row that is still unmatched (externalId: null), UNOFFICIAL, and recent -- scoping the findFirst query correctly', async () => {
     mockPrisma.message.findUnique.mockResolvedValue(null)
-    mockPrisma.contact.upsert.mockResolvedValue({ ...contactRow, avatarUrl: 'x' })
+    mockPrisma.contact.create.mockResolvedValue({ ...contactRow, avatarUrl: 'x' })
     mockPrisma.conversation.upsert.mockResolvedValue(conversationRow)
     mockPrisma.message.findFirst.mockResolvedValue(null)
     mockPrisma.message.create.mockResolvedValue({ id: 'msg_new' } as never)
@@ -1344,7 +1407,7 @@ describe('ingestMetaMessage message echoes (smb_message_echoes)', () => {
 
   it('treats a concurrent duplicate echo create (P2002) as an idempotent skip', async () => {
     mockPrisma.message.findUnique.mockResolvedValue(null)
-    mockPrisma.contact.upsert.mockResolvedValue({ ...contactRow, avatarUrl: 'x' })
+    mockPrisma.contact.create.mockResolvedValue({ ...contactRow, avatarUrl: 'x' })
     mockPrisma.conversation.upsert.mockResolvedValue(conversationRow)
     mockPrisma.message.create.mockRejectedValue(
       new Prisma.PrismaClientKnownRequestError('Unique constraint failed on the fields: (`externalId`)', {

@@ -84,7 +84,9 @@ beforeEach(() => {
   mockPrisma.settings.findUnique.mockResolvedValue({ fallbackReply: null, handoffReply: null } as never)
   mockPrisma.conversation.findUnique.mockResolvedValue({ botEnabled: true } as never)
   mockPrisma.message.findUnique.mockResolvedValue(null)
-  mockPrisma.contact.upsert.mockResolvedValue(contactRow as never)
+  // Task 5b: kontak dicari lewat ChannelIdentity, bukan contact.upsert({ where: { phone } }).
+  // channelIdentity.findUnique tidak di-stub (falsy), jadi jalurnya selalu contact.create.
+  mockPrisma.contact.create.mockResolvedValue(contactRow as never)
   mockPrisma.conversation.upsert.mockResolvedValue(conversationRow as never)
   mockPrisma.message.create.mockResolvedValue({ id: 'msg_new' } as never)
   // Dual-write target (Task 4) -- defaulted so ingestSingleMessage's `identity.id` read never
