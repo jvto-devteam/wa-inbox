@@ -14,6 +14,8 @@ import { recordBotDecisionRun, attachMessageToDecisionRun } from '@/lib/bot-cont
 import { handoffReplyText, offHoursHandoffNotice } from '@/lib/bot/runtime-integration'
 import { openPipelineRun, traceStep, traceClose, traceSnapshot, traceRunId, type PipelineTracer } from '@/lib/pipeline/tracer'
 import type { BotDecision } from '@/lib/bot/types'
+import { ingestMessengerPayload } from '@/lib/inbound-messenger'
+import { isMessengerPayload, type MessengerWebhookPayload } from '@/lib/meta/messenger-types'
 
 type MetaMediaObject = { id: string; mime_type: string; caption?: string; filename?: string }
 
@@ -194,6 +196,13 @@ export type IngestResult = {
   /** Message echoes (sent from the WhatsApp Business app/a linked device) that produced a new Message row. */
   echoed: number
 }
+
+// Fields that only WhatsApp's changes[].value shape ever populates (statuses, template
+// verdicts, coexistence echoes) -- a Messenger/Instagram payload has no equivalent, so its
+// IngestResult always reports these as zero rather than leaving them undefined.
+const EMPTY_INGEST_RESULT = {
+  processed: 0, skipped: 0, statusUpdates: 0, templateStatusUpdates: 0, echoed: 0,
+} as const
 
 const DELIVERY_STATUS_BY_META_STATUS: Record<string, DeliveryStatus> = {
   sent: 'SENT',
@@ -840,7 +849,20 @@ async function ingestEchoedMessage(echo: MetaMessageEcho): Promise<boolean> {
  * because every step is idempotent. Swallowing it to return 200 would reintroduce
  * exactly the silent-loss failure mode this function was restructured to fix.
  */
-export async function ingestMetaMessage(payload: MetaWebhookPayload): Promise<IngestResult> {
+export async function ingestMetaMessage(
+  payload: MetaWebhookPayload | MessengerWebhookPayload,
+): Promise<IngestResult> {
+  // Meta memakai SATU endpoint webhook dan SATU app secret untuk WhatsApp, Page, dan
+  // Instagram -- yang membedakan hanya `payload.object`. Sebelum percabangan ini ada,
+  // payload Page/Instagram lolos verifikasi signature lalu jatuh ke loop `entry.changes`
+  // yang di bentuk itu tidak ada, jadi pesannya hilang tanpa jejak sementara endpoint
+  // tetap membalas 200 dan Meta menganggap pengirimannya berhasil.
+  if (isMessengerPayload(payload)) {
+    const platform = payload.object === 'instagram' ? 'INSTAGRAM' : 'FACEBOOK'
+    const res = await ingestMessengerPayload(payload, platform)
+    return { ...EMPTY_INGEST_RESULT, processed: res.processed, skipped: res.skipped }
+  }
+
   let processed = 0
   let skipped = 0
   let statusUpdates = 0

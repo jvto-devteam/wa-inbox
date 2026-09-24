@@ -18,6 +18,7 @@ import { sendMessage } from '@/lib/send'
 import { broadcast } from '@/lib/realtime'
 import { recordUnsourcedReplyGap } from '@/lib/inbox/gap-log'
 import { classifyAndStoreTopicLabels } from '@/lib/inbox/topic-labels'
+import { ingestMessengerPayload } from '@/lib/inbound-messenger'
 
 vi.mock('@/lib/db', () => ({ prisma: mockDeep<PrismaClient>() }))
 vi.mock('@/lib/bot/orchestrator', () => ({ decideAndRespond: vi.fn() }))
@@ -25,6 +26,7 @@ vi.mock('@/lib/send', () => ({ sendMessage: vi.fn() }))
 vi.mock('@/lib/realtime', () => ({ broadcast: vi.fn() }))
 vi.mock('@/lib/inbox/topic-labels', () => ({ classifyAndStoreTopicLabels: vi.fn() }))
 vi.mock('@/lib/inbox/gap-log', () => ({ recordUnsourcedReplyGap: vi.fn() }))
+vi.mock('@/lib/inbound-messenger', () => ({ ingestMessengerPayload: vi.fn() }))
 
 const mockPrisma = prisma as unknown as DeepMockProxy<PrismaClient>
 
@@ -71,6 +73,7 @@ beforeEach(() => {
   // before ChannelIdentity existed -- doesn't need to know upsertChannelIdentity's return value
   // is read (`identity.id`) before conversation.upsert is even called.
   mockPrisma.channelIdentity.upsert.mockResolvedValue({ id: 'ci_default', contactId: 'contact_1' } as never)
+  vi.mocked(ingestMessengerPayload).mockReset()
 })
 
 const contactRow = {
@@ -1819,5 +1822,27 @@ describe('runBotForConversation — catatan gap tidak bersumber', () => {
     await runBotForConversation(conversation, 'mau bicara dengan orang')
 
     expect(recordUnsourcedReplyGap).not.toHaveBeenCalled()
+  })
+})
+
+describe('perutean payload.object', () => {
+  it('meneruskan payload page ke ingest Messenger', async () => {
+    const spy = vi.mocked(ingestMessengerPayload).mockResolvedValue({ processed: 1, skipped: 0 })
+    await ingestMetaMessage({ object: 'page', entry: [] } as never)
+    expect(spy).toHaveBeenCalledWith(expect.objectContaining({ object: 'page' }), 'FACEBOOK')
+  })
+
+  it('meneruskan payload instagram ke ingest Messenger dengan platform INSTAGRAM', async () => {
+    const spy = vi.mocked(ingestMessengerPayload).mockResolvedValue({ processed: 1, skipped: 0 })
+    await ingestMetaMessage({ object: 'instagram', entry: [] } as never)
+    expect(spy).toHaveBeenCalledWith(expect.anything(), 'INSTAGRAM')
+  })
+
+  // Penjaga regresi: jalur WhatsApp tidak boleh ikut berubah bentuk.
+  it('payload WhatsApp tetap lewat jalur changes[].value.messages[]', async () => {
+    stubHappyPath()
+    const result = await ingestMetaMessage(samplePayload)
+    expect(result.processed).toBe(1)
+    expect(vi.mocked(ingestMessengerPayload)).not.toHaveBeenCalled()
   })
 })
