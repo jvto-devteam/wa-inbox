@@ -26,11 +26,19 @@ import { readPaging } from '@/lib/bot-control/paging'
  * untuk orderBy pada relasi ke-banyak, bukan field seperti `lastMessageAt`). Query karena itu
  * dipecah dua:
  *
- * - Tier 1: kontak TANPA percakapan sama sekali. Ini bukan kasus kosong -- template sistem
- *   (src/lib/system-templates/send.ts) sengaja membuat Contact untuk nomor internal/crew tanpa
- *   pernah membuat Conversation (lihat komentar `conversationId` di schema.prisma). Diurutkan
- *   oleh `createdAt`, ditaruh DI DEPAN -- mempertahankan perilaku lama, yang menaruh kontak
- *   tanpa percakapan di awal lewat efek samping orderBy relasi Prisma.
+ * - Tier 1: kontak TANPA percakapan sama sekali. Diurutkan oleh `createdAt`, ditaruh DI DEPAN
+ *   -- mempertahankan perilaku lama, yang menaruh kontak tanpa percakapan di awal lewat efek
+ *   samping orderBy relasi Prisma.
+ *
+ *   Tier ini BUKAN kasus kosong, tapi alasannya bukan yang pernah ditulis di sini. Template
+ *   sistem (src/lib/system-templates/send.ts) TIDAK membuat Contact untuk nomor internal/crew:
+ *   cabang INTERNAL dan cabang grup di sana meng-enqueue dengan `contactId: null` dan tidak
+ *   pernah menyentuh tabel Contact sama sekali; hanya cabang CUSTOMER yang membuat Contact, dan
+ *   cabang itu selalu membuat Conversation juga. Yang benar-benar mendarat di tier ini adalah
+ *   Contact yatim dari balapan kontak ganda (Temuan I-4/I-5): dua pesan pertama yang nyaris
+ *   bersamaan dari nomor baru yang sama membuat dua Contact, identitasnya hanya terikat ke
+ *   salah satu, dan yang lain tinggal tanpa percakapan. Tanpa tier 1 kontak seperti itu hilang
+ *   sama sekali dari halaman Kontak -- tak terlihat, tak bisa digabungkan, tak bisa dibersihkan.
  * - Tier 2: kontak DENGAN percakapan, sumbernya `Conversation.findMany` (bukan `Contact`),
  *   diurut langsung oleh `Conversation.lastMessageAt` -- field asli, bukan lewat relasi, jadi
  *   tidak kena batasan di atas. Kontak dengan lebih dari satu percakapan (channel non-WhatsApp,

@@ -1437,6 +1437,24 @@ describe('ingestMetaMessage message echoes (smb_message_echoes)', () => {
     }))
   })
 
+  // Temuan M-3: kontak yang identitasnya sudah dikenal dulu dibaca lewat
+  // `contact.update({ where: { id }, data: {} })` -- UPDATE kosong di SETIAP pesan echo, murni
+  // untuk mengambil barisnya. Echo tidak membawa nama profil, jadi memang tidak pernah ada yang
+  // perlu ditulis.
+  it('membaca kontak yang sudah dikenal tanpa menulis apa pun (bukan UPDATE kosong)', async () => {
+    stubHappyPath()
+    mockPrisma.channelIdentity.findUnique.mockResolvedValue({ contactId: 'contact_lama' } as never)
+    mockPrisma.contact.findUniqueOrThrow.mockResolvedValue({ id: 'contact_lama', phone: '6281234567890', name: null } as never)
+
+    await ingestMetaMessage(echoPayload([{
+      id: 'wamid.ECHO_NOWRITE', from: '622244788833', to: '6281234567890', timestamp: '1700000000', type: 'text', text: { body: 'Halo' },
+    }]))
+
+    expect(mockPrisma.contact.findUniqueOrThrow).toHaveBeenCalledWith({ where: { id: 'contact_lama' } })
+    expect(mockPrisma.contact.update).not.toHaveBeenCalled()
+    expect(mockPrisma.contact.create).not.toHaveBeenCalled()
+  })
+
   it('does not invoke the bot orchestrator for an echoed message', async () => {
     stubHappyPath({ conversation: { botEnabled: true } })
 

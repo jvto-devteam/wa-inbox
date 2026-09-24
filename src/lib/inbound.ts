@@ -718,11 +718,12 @@ async function ingestEchoedMessage(echo: MetaMessageEcho): Promise<boolean> {
     select: { contactId: true },
   })
 
+  // `findUniqueOrThrow`, not `update({ data: {} })`. An echo carries no profile name, so there
+  // has never been anything to write here -- the old no-op UPDATE was a plain read wearing a
+  // write's clothes, and it ran on EVERY echoed message. (ingestSingleMessage above keeps its
+  // `update` because an inbound message genuinely can carry a new profile name.)
   const contact = known
-    ? await prisma.contact.update({
-        where: { id: known.contactId },
-        data: {},
-      })
+    ? await prisma.contact.findUniqueOrThrow({ where: { id: known.contactId } })
     : await prisma.contact.create({ data: { phone: echo.to, name: null } })
 
   const identity = await upsertChannelIdentity({
