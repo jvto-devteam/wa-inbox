@@ -17,7 +17,8 @@
 - **Migrasi produksi dibuat offline:** `npx prisma migrate diff --from-schema <lama> --to-schema prisma/schema.prisma --script`, simpan ke `prisma/migrations/<YYYYMMDDHHMMSS>_<snake_case>/migration.sql`, terapkan dengan `npx prisma migrate deploy`.
 - **Flagnya `--from-schema` / `--to-schema`**, bukan `--from-schema-datamodel` / `--to-schema-datamodel` — Prisma 7 sudah menghapus varian panjang itu. Diverifikasi 2026-09-24 lewat `npx prisma migrate diff --help`.
 - **Periksa isi `migration.sql` sesudah menyimpannya.** `prisma migrate diff` di lingkungan ini kadang mencampur baris log CLI ke stdout, dan baris itu ikut ter-redirect ke file. File migrasi yang memuat teks non-SQL akan menggagalkan `migrate deploy` di produksi, di tengah jalan. Buang barisnya sebelum commit.
-- **Sebelum tiap commit:** `npm test`, `npx tsc --noEmit`, `npx eslint .` (0 error, warning boleh).
+- **Sebelum tiap commit:** `npm test`, `npx tsc --noEmit`, `npx eslint .` (0 error, warning boleh). Perintahnya persis itu — `eslint .`, bukan direktori yang sedang dikerjakan.
+- **Jalankan ketiga gerbang dari `git status` yang bersih, SESUDAH commit — bukan dari working tree.** Verifikasi atas perubahan yang belum di-commit tidak membuktikan apa pun tentang commit-nya. Task 3 gagal persis begini: perbaikan `tsc` ada di working tree, laporannya menyatakan hijau, dan yang ter-commit merah.
 - **Sebelum deploy VPS:** `npm run build` **lokal** dulu — test/tsc/eslint tidak menangkap kerusakan client bundle.
 - **Deploy VPS:** `git checkout` dari `origin/main`, dan **export PATH nvm Node 22** atau semua perintah Prisma 7 mati di Node 18 bawaan.
 - Otorisasi route mutation lewat `requireAdmin(req)` dari `src/lib/auth/require-admin.ts` (ia yang memanggil `hasAdminPowers()`).
@@ -296,7 +297,13 @@ describe('upsertChannelIdentity', () => {
 
     await upsertChannelIdentity({ platform: 'WHATSAPP', externalId: '123', contactId: 'c_2' })
 
-    const arg = mockPrisma.channelIdentity.upsert.mock.calls[0][0]
+    // Cast-nya wajib: tipe `where` yang disimpulkan Prisma untuk argumen mock adalah union,
+    // jadi `platform_externalId` mungkin undefined dan `tsc --noEmit` menolak akses langsung
+    // (TS18048). Ia hanya menyempitkan tipe saat kompilasi -- nilai yang diperiksa tetap
+    // argumen sungguhan yang diterima upsert, jadi test ini tetap menangkap platform salah.
+    const arg = mockPrisma.channelIdentity.upsert.mock.calls[0][0] as unknown as {
+      where: { platform_externalId: { platform: string } }
+    }
     expect(arg.where.platform_externalId.platform).toBe('WHATSAPP')
   })
 
