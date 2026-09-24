@@ -141,6 +141,32 @@ describe('GET /api/conversations', () => {
     }))
   })
 
+  it('filters by platform, matching conversations whose channel identity is on that platform', async () => {
+    mockPrisma.conversation.findMany.mockResolvedValue([] as never)
+    await GET(new Request('http://localhost/api/conversations?platform=FACEBOOK'))
+    expect(mockPrisma.conversation.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: { channelIdentity: { platform: 'FACEBOOK' } },
+    }))
+  })
+
+  // "Semua" (the All tab) must send no `platform` param at all -- confirming here that the
+  // unfiltered request applies no channelIdentity filter, not merely one that happens to
+  // match everything. channelIdentityId is nullable, so a relation filter here would behave
+  // like an inner join and silently drop any conversation with no channel identity.
+  it('applies no channelIdentity filter at all when platform is omitted ("Semua")', async () => {
+    mockPrisma.conversation.findMany.mockResolvedValue([] as never)
+    await GET(new Request('http://localhost/api/conversations'))
+    expect(mockPrisma.conversation.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: undefined })
+    )
+  })
+
+  it('rejects an unrecognized platform value instead of passing it through to Prisma', async () => {
+    const res = await GET(new Request('http://localhost/api/conversations?platform=BOGUS'))
+    expect(res.status).toBe(400)
+    expect(mockPrisma.conversation.findMany).not.toHaveBeenCalled()
+  })
+
   it('filters by labelId, matching conversations that have that label attached', async () => {
     mockPrisma.conversation.findMany.mockResolvedValue([] as never)
     await GET(new Request('http://localhost/api/conversations?labelId=lbl_1'))

@@ -9,13 +9,21 @@ import { cn } from '@/lib/utils'
 import { ConversationListItem, type ConversationSummary } from './ConversationListItem'
 import type { LabelOption } from './LabelPicker'
 import { fetchJson } from '@/lib/fetch-json'
+import { SHIPPED_PLATFORMS, PLATFORM_LABEL } from '@/lib/channel/platform'
 
 const SEARCH_DEBOUNCE_MS = 300
 
-// The filter row is single-select across two different dimensions -- a booking's origin
-// platform (orderChannel, e.g. JVTO/KLOOK) and an operator-defined Label -- so "which pill is
+// The filter row is single-select across three different dimensions -- a booking's origin
+// platform (orderChannel, e.g. JVTO/KLOOK), an operator-defined Label, and the messaging
+// platform the conversation itself came in on (WhatsApp/Facebook/...) -- so "which pill is
 // active" needs both which kind and which value, not just a bare id.
-type FilterOption = { kind: 'channel'; value: string } | { kind: 'label'; value: string }
+//
+// 'channel' here is Conversation.orderChannel -- where a BOOKING originated -- not the
+// messaging platform. That is a different fact about the same row; see 'platform' below.
+type FilterOption =
+  | { kind: 'channel'; value: string }
+  | { kind: 'label'; value: string }
+  | { kind: 'platform'; value: string }
 
 function sameFilter(a: FilterOption | null, b: FilterOption | null) {
   return a === b || (a !== null && b !== null && a.kind === b.kind && a.value === b.value)
@@ -27,6 +35,7 @@ function conversationsUrl(query: string, filter: FilterOption | null) {
   if (trimmed) params.set('q', trimmed)
   if (filter?.kind === 'channel') params.set('orderChannel', filter.value)
   if (filter?.kind === 'label') params.set('labelId', filter.value)
+  if (filter?.kind === 'platform') params.set('platform', filter.value)
   const qs = params.toString()
   return qs ? `/api/conversations?${qs}` : '/api/conversations'
 }
@@ -81,7 +90,9 @@ export function ConversationList({
 }) {
   const [conversations, setConversations] = useState<ConversationSummary[]>([])
   const [query, setQuery] = useState('')
-  const [filter, setFilter] = useState<FilterOption | null>(null)
+  // Default WhatsApp, bukan null ("Semua") -- hari pertama setelah deploy tim melihat persis
+  // apa yang mereka lihat sekarang (satu-satunya platform yang pernah ada sebelum tab ini).
+  const [filter, setFilter] = useState<FilterOption | null>({ kind: 'platform', value: 'WHATSAPP' })
   const [channels, setChannels] = useState<string[]>([])
   const [allLabels, setAllLabels] = useState<LabelOption[]>([])
   // Hanya menandai permintaan PERTAMA. Menyalakan kerangka di setiap pencarian akan membuat
@@ -272,7 +283,7 @@ export function ConversationList({
           />
         </div>
 
-        {(channels.length > 0 || allLabels.length > 0) && (
+        {(SHIPPED_PLATFORMS.length > 0 || channels.length > 0 || allLabels.length > 0) && (
           <div role="group" aria-label="Filter inbox" className="mt-2 flex gap-1.5 overflow-x-auto">
             <Button
               type="button"
@@ -283,6 +294,21 @@ export function ConversationList({
             >
               All
             </Button>
+            {SHIPPED_PLATFORMS.map((p) => {
+              const active = sameFilter(filter, { kind: 'platform', value: p })
+              return (
+                <Button
+                  key={`platform:${p}`}
+                  type="button"
+                  size="sm"
+                  variant={active ? 'default' : 'outline'}
+                  aria-pressed={active}
+                  onClick={() => setFilter({ kind: 'platform', value: p })}
+                >
+                  {PLATFORM_LABEL[p]}
+                </Button>
+              )
+            })}
             {channels.map((c) => {
               const active = sameFilter(filter, { kind: 'channel', value: c })
               return (

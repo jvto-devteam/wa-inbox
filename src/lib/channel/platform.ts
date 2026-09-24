@@ -33,3 +33,24 @@ export const BOT_TOGGLE_COLUMN_BY_PLATFORM = {
   FACEBOOK: 'botEnabledFacebook',
   EMAIL: 'botEnabledEmail',
 } as const satisfies Record<Platform, keyof Settings>
+
+/**
+ * Platform yang tabnya ditampilkan di Inbox — bertambah SATU entri per fase channel.
+ *
+ * Sengaja konstanta, bukan diturunkan dari isi tabel: kalau diturunkan dari data, tab
+ * Facebook baru muncul saat pesan Facebook PERTAMA tiba, jadi operator tidak punya cara
+ * melihat channel itu sudah hidup sebelum ada yang menulis — dan tab yang berkedip mengikuti
+ * isi tabel membuat orang ragu apakah ia salah lihat.
+ *
+ * Tab kosong lebih buruk daripada tidak ada tab: ia menjanjikan sesuatu yang tidak bisa
+ * diberikan, dan tidak bisa dibedakan dari channel yang rusak. Karena itu Instagram dan
+ * Email TIDAK ada di sini sampai fasenya benar-benar selesai.
+ */
+export const SHIPPED_PLATFORMS = ['WHATSAPP', 'FACEBOOK'] as const satisfies readonly Platform[]
+
+export const PLATFORM_LABEL: Record<Platform, string> = {
+  WHATSAPP: 'WhatsApp',
+  INSTAGRAM: 'Instagram',
+  FACEBOOK: 'Facebook',
+  EMAIL: 'Email',
+}

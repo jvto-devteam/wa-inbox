@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, fireEvent, cleanup, act } from '@testing-library/react'
+import { render, screen, within, fireEvent, cleanup, act } from '@testing-library/react'
 import { ConversationList } from './ConversationList'
 
 const SEARCH_INPUT_PLACEHOLDER = 'Cari nama, nomor, atau isi pesan...'
@@ -65,15 +65,15 @@ afterEach(() => {
 })
 
 describe('ConversationList search debounce', () => {
-  it('fetches the unfiltered list immediately on mount, with no debounce delay', async () => {
+  it('fetches the WhatsApp-filtered list immediately on mount, with no debounce delay', async () => {
     render(<ConversationList selectedId={null} onSelect={() => {}} />)
 
     // No timer advance at all -- the very first load must not wait out the debounce window.
     await advanceTimers(0)
 
-    // Also fetches /api/conversations/order-channels on mount (for the filter row) -- assert the conversations
-    // call specifically rather than the total count.
-    expect(fetch).toHaveBeenCalledWith('/api/conversations')
+    // Default filter is the WhatsApp platform tab (see ConversationList's initial state) --
+    // day one after deploy shows exactly what the team sees today.
+    expect(fetch).toHaveBeenCalledWith('/api/conversations?platform=WHATSAPP')
   })
 
   it('schedules exactly one fetch after the debounce delay when typing quickly, not one per keystroke', async () => {
@@ -94,7 +94,7 @@ describe('ConversationList search debounce', () => {
     await advanceTimers(300)
 
     expect(fetch).toHaveBeenCalledTimes(1)
-    expect(fetch).toHaveBeenCalledWith('/api/conversations?q=ijen')
+    expect(fetch).toHaveBeenCalledWith('/api/conversations?q=ijen&platform=WHATSAPP')
   })
 
   it('clears the debounce timer on unmount, so no stale fetch fires afterward', async () => {
@@ -112,7 +112,7 @@ describe('ConversationList search debounce', () => {
     expect(fetch).not.toHaveBeenCalled()
   })
 
-  it('re-fetches the unfiltered list when the search input is cleared', async () => {
+  it('re-fetches the WhatsApp-filtered list when the search input is cleared', async () => {
     render(<ConversationList selectedId={null} onSelect={() => {}} />)
     await advanceTimers(0) // flush the initial mount fetch
 
@@ -125,7 +125,7 @@ describe('ConversationList search debounce', () => {
     await advanceTimers(300)
 
     expect(fetch).toHaveBeenCalledTimes(1)
-    expect(fetch).toHaveBeenCalledWith('/api/conversations')
+    expect(fetch).toHaveBeenCalledWith('/api/conversations?platform=WHATSAPP')
   })
 })
 
@@ -136,26 +136,47 @@ describe('ConversationList filter row (channel + label)', () => {
     { id: 'lbl_2', name: 'Komplain', color: '#B23B3B' },
   ]
 
-  it('does not render a filter row when there is neither a channel nor a label yet', async () => {
+  it('still renders the filter row for its platform tabs when there is neither a channel nor a label yet', async () => {
     mockConversationsFetch([], [], [])
     render(<ConversationList selectedId={null} onSelect={() => {}} />)
     await advanceTimers(0)
 
-    expect(screen.queryByRole('group', { name: 'Filter inbox' })).not.toBeInTheDocument()
+    // SHIPPED_PLATFORMS (WhatsApp, Facebook) is a fixed constant, not derived from data -- so
+    // unlike the channel/label pills, the platform tabs (and the row that holds them) show up
+    // even before any booking channel or label exists.
+    expect(screen.getByRole('group', { name: 'Filter inbox' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'WhatsApp' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Facebook' })).toBeInTheDocument()
   })
 
-  it('renders All plus one button per channel and per label, with All active by default', async () => {
+  it('renders All + platform tabs + one button per channel and per label, with WhatsApp active by default', async () => {
     mockConversationsFetch([], CHANNELS, LABELS)
     render(<ConversationList selectedId={null} onSelect={() => {}} />)
     await advanceTimers(0)
 
     const group = screen.getByRole('group', { name: 'Filter inbox' })
-    expect(screen.getByRole('button', { name: 'All' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: 'All' })).toHaveAttribute('aria-pressed', 'false')
+    expect(screen.getByRole('button', { name: 'WhatsApp' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: 'Facebook' })).toHaveAttribute('aria-pressed', 'false')
     expect(screen.getByRole('button', { name: 'JVTO' })).toHaveAttribute('aria-pressed', 'false')
     expect(screen.getByRole('button', { name: 'KLOOK' })).toHaveAttribute('aria-pressed', 'false')
     expect(screen.getByRole('button', { name: 'VIP' })).toHaveAttribute('aria-pressed', 'false')
     expect(screen.getByRole('button', { name: 'Komplain' })).toHaveAttribute('aria-pressed', 'false')
     expect(group).toBeInTheDocument()
+  })
+
+  it('re-fetches with the platform param when a platform pill is clicked, and marks it active', async () => {
+    mockConversationsFetch([], CHANNELS, LABELS)
+    render(<ConversationList selectedId={null} onSelect={() => {}} />)
+    await advanceTimers(0)
+    vi.mocked(fetch).mockClear()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Facebook' }))
+    await advanceTimers(300)
+
+    expect(fetch).toHaveBeenCalledWith('/api/conversations?platform=FACEBOOK')
+    expect(screen.getByRole('button', { name: 'Facebook' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: 'WhatsApp' })).toHaveAttribute('aria-pressed', 'false')
   })
 
   it('renders a channel-only row when there are no labels yet', async () => {
@@ -297,7 +318,9 @@ describe('ConversationList live updates', () => {
     expect(screen.getByText('Halo, masih ada slot besok?')).toBeInTheDocument()
     expect(screen.queryByText('Pesan lama b')).not.toBeInTheDocument()
 
-    const rows = screen.getAllByRole('button').map((el) => el.textContent)
+    // Scoped to the <ul> of conversation rows -- the filter row's own buttons (All, WhatsApp,
+    // Facebook, ...) sit above the list and would otherwise be picked up as rows[0]/rows[1].
+    const rows = within(screen.getByRole('list')).getAllByRole('button').map((el) => el.textContent)
     expect(rows[0]).toContain('Kontak b')
     expect(rows[1]).toContain('Kontak a')
 
@@ -327,7 +350,7 @@ describe('ConversationList live updates', () => {
     })
     await advanceTimers(0)
 
-    const rows = screen.getAllByRole('button').map((el) => el.textContent)
+    const rows = within(screen.getByRole('list')).getAllByRole('button').map((el) => el.textContent)
     expect(rows[0]).toContain('Kontak test')
     expect(rows[1]).toContain('Kontak a')
   })
@@ -352,7 +375,7 @@ describe('ConversationList live updates', () => {
     })
     await advanceTimers(0)
 
-    expect(fetch).toHaveBeenCalledWith('/api/conversations')
+    expect(fetch).toHaveBeenCalledWith('/api/conversations?platform=WHATSAPP')
     expect(screen.getByText('Pelanggan Baru')).toBeInTheDocument()
   })
 
@@ -376,8 +399,9 @@ describe('ConversationList live updates', () => {
     })
     await advanceTimers(0)
 
-    // Re-fetching unfiltered would silently drop the agent's search.
-    expect(fetch).toHaveBeenCalledWith('/api/conversations?q=ijen')
+    // Re-fetching without the active filter would silently drop the agent's search (and its
+    // default WhatsApp tab).
+    expect(fetch).toHaveBeenCalledWith('/api/conversations?q=ijen&platform=WHATSAPP')
   })
 
   it('ignores event types it does not handle', async () => {
@@ -641,7 +665,9 @@ describe('ConversationList — aksesibilitas dan gulungan', () => {
     render(<ConversationList selectedId={null} onSelect={onSelect} />)
     await advanceTimers(0)
 
-    const button = screen.getAllByRole('button')[0]
+    // Scoped to the <ul> of conversation rows -- the filter row's own buttons (All, WhatsApp,
+    // Facebook, ...) sit above the list and would otherwise be picked up as button [0].
+    const button = within(screen.getByRole('list')).getAllByRole('button')[0]
     button.focus()
     expect(document.activeElement).toBe(button)
     // fireEvent.click adalah apa yang dikirim browser untuk Enter/Spasi pada <button>.

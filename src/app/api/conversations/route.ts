@@ -1,14 +1,23 @@
 import { NextResponse } from 'next/server'
-import type { Prisma } from '@prisma/client'
+import type { Prisma, Platform } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { ensureTestConversation } from '@/lib/test-conversation'
 import { bookingGuestName } from '@/lib/booking/display-name'
+import { ALL_PLATFORMS } from '@/lib/channel/platform'
 
 export async function GET(req: Request) {
   const url = new URL(req.url)
   const q = url.searchParams.get('q')?.trim() || null
   const orderChannel = url.searchParams.get('orderChannel')?.trim() || null
   const labelId = url.searchParams.get('labelId')?.trim() || null
+  const platformParam = url.searchParams.get('platform')?.trim() || null
+  // Validated against the enum's actual values -- never hand a raw query string to Prisma as
+  // a Platform. An unrecognized value is a caller bug (typo, stale link), not "show nothing
+  // filtered", so it's rejected rather than silently ignored or silently matching zero rows.
+  if (platformParam !== null && !ALL_PLATFORMS.includes(platformParam as Platform)) {
+    return NextResponse.json({ error: 'platform tidak valid' }, { status: 400 })
+  }
+  const platform = platformParam as Platform | null
 
   // Only on the unfiltered load -- a search's own result set deciding whether the sandbox
   // room matches is normal filtering behavior, no need to re-upsert on every keystroke.
@@ -29,6 +38,13 @@ export async function GET(req: Request) {
   // both -- but nothing here stops a caller from combining them, same as `q` above.
   if (labelId) {
     where.labels = { some: { labelId } }
+  }
+  // channelIdentityId is nullable (see schema.prisma), so this relation filter behaves like an
+  // inner join: a row with no channelIdentity matches neither `platform` nor its absence. That
+  // is fine here ONLY because it's conditional -- the "Semua" tab sends no `platform` param at
+  // all, so this branch never runs and no filter (not even a match-everything one) is applied.
+  if (platform) {
+    where.channelIdentity = { platform }
   }
 
   const conversations = await prisma.conversation.findMany({
