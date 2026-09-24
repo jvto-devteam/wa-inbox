@@ -265,6 +265,49 @@ describe('pencarian lepas dari kunci unik lama', () => {
 
     expect(mockPrisma.contact.create).toHaveBeenCalled()
   })
+
+  // --- Temuan I-4/I-5: balapan kontak ganda ---
+  //
+  // Contact.phone tidak lagi @unique, jadi dua pesan pertama yang nyaris bersamaan dari nomor
+  // baru yang sama sama-sama gagal menemukan identitas dan sama-sama membuat Contact (A dan B).
+  // upsertChannelIdentity mengikat identitas ke salah satunya saja dan mengembalikan pemilik
+  // yang sebenarnya lewat `contactId`. Yang kalah balapan HARUS memakai nilai itu, bukan
+  // `contact.id` hasil create-nya sendiri: kalau tidak, Conversation.contactId dan
+  // ChannelIdentity.contactId menunjuk Contact berbeda selamanya, dan
+  // src/app/api/send/route.ts menjawab 404 "Percakapan tidak ditemukan" untuk nomor yang
+  // thread-nya jelas ada di Inbox.
+  it('memakai contactId milik identitas untuk percakapan, bukan kontak yang baru saja dibuat sendiri', async () => {
+    stubHappyPath()
+    mockPrisma.channelIdentity.findUnique.mockResolvedValue(null as never)
+    // Request ini kalah balapan: ia membuat contact_B, tapi identitasnya sudah terikat ke
+    // contact_A milik request yang menang.
+    mockPrisma.contact.create.mockResolvedValue({ id: 'contact_B', phone: '6281234567890', name: null } as never)
+    mockPrisma.channelIdentity.upsert.mockResolvedValue({ id: 'ci_wa_1', contactId: 'contact_A' } as never)
+
+    await ingestMetaMessage(samplePayload)
+
+    expect(mockPrisma.conversation.upsert).toHaveBeenCalledWith(expect.objectContaining({
+      create: expect.objectContaining({ contactId: 'contact_A' }),
+    }))
+  })
+
+  it('echo coexistence juga memakai contactId milik identitas', async () => {
+    stubHappyPath()
+    mockPrisma.channelIdentity.findUnique.mockResolvedValue(null as never)
+    mockPrisma.contact.create.mockResolvedValue({ id: 'contact_B', phone: '6281234567890', name: null } as never)
+    mockPrisma.channelIdentity.upsert.mockResolvedValue({ id: 'ci_wa_1', contactId: 'contact_A' } as never)
+    mockPrisma.message.findFirst.mockResolvedValue(null as never)
+
+    await ingestMetaMessage({
+      entry: [{ changes: [{ value: { message_echoes: [
+        { id: 'wamid.echo_race', from: '628999', to: '6281234567890', timestamp: '1700000000', type: 'text', text: { body: 'halo' } },
+      ] } }] }],
+    })
+
+    expect(mockPrisma.conversation.upsert).toHaveBeenCalledWith(expect.objectContaining({
+      create: expect.objectContaining({ contactId: 'contact_A' }),
+    }))
+  })
 })
 
 describe('defaultBotEnabled (new conversation creation)', () => {

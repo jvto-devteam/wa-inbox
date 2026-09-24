@@ -72,7 +72,10 @@ async function runCase(c: EvalCase): Promise<CaseResult> {
     },
     update: { tripBrief: {}, botEnabled: true },
     create: {
-      contactId: contact.id,
+      // `identity.contactId`, not the locally resolved `contact.id` -- same discipline as
+      // src/lib/inbound.ts's ingestSingleMessage, so Conversation.contactId can never disagree
+      // with ChannelIdentity.contactId even if two runs overlap.
+      contactId: identity.contactId,
       channelIdentityId: identity.id,
       externalThreadId: '',
       botEnabled: true,

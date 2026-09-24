@@ -62,6 +62,14 @@ function imageMimeType(url: string): string {
  * for one booking) both see "no row" and one of the inserts fails with P2002. On the second
  * try the row exists and the upsert takes its update branch. Found against a real Postgres, not
  * a mock.
+ *
+ * Applies to the `conversation.upsert` below, whose compound key
+ * (channelIdentityId, externalThreadId) is still unique. It does NOT protect the
+ * `contact.create` it also wraps: Task 9 dropped `Contact.phone @unique`, so that insert can no
+ * longer raise P2002 at all and the retry there is unreachable. The duplicate-Contact race it
+ * used to catch is handled instead by reading `identity.contactId` back off the
+ * ChannelIdentity upsert (see the conversation `create` below) -- the loser of the race still
+ * attaches to the contact the identity points at, rather than being prevented from losing.
  */
 async function upsertOnce<T>(run: () => Promise<T>): Promise<T> {
   try {
@@ -172,7 +180,13 @@ export async function enqueueSystemTemplateSend(params: SystemSendParams): Promi
       },
       update: { lastMessageAt: now },
       create: {
-        contactId: contact.id,
+        // `identity.contactId`, not the locally resolved `contact.id` -- see the equivalent
+        // comment in src/lib/inbound.ts's ingestSingleMessage. Contact.phone is no longer
+        // @unique, so two parallel first sends to the same new number can each create their own
+        // Contact; reading the id back off the identity means the loser still attaches its
+        // conversation to the contact the identity actually points at, instead of leaving
+        // Conversation.contactId disagreeing with ChannelIdentity.contactId forever.
+        contactId: identity.contactId,
         channelIdentityId: identity.id,
         externalThreadId: '',
         lastMessageAt: now,
@@ -200,7 +214,10 @@ export async function enqueueSystemTemplateSend(params: SystemSendParams): Promi
     ...common,
     conversationId: conversation.id,
     messageId: created.id,
-    contactId: contact.id,
+    // Same contact the conversation above was opened under, for the same reason: this id is
+    // what the outbound safety guard reads consent for (src/lib/outbound/safety-guard.ts), so
+    // it must not be able to point at a different Contact row than the conversation does.
+    contactId: identity.contactId,
     target: phone,
     payload: { to: phone, text: rendered.text, media, targetType: 'PHONE' },
   })

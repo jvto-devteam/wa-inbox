@@ -186,6 +186,12 @@ describe('enqueueSystemTemplateSend', () => {
     )
   })
 
+  // Kept as a pin on `upsertOnce` itself, which still wraps `conversation.upsert` on the
+  // compound key (channelIdentityId, externalThreadId) where P2002 IS still reachable. The
+  // contact.create path below can no longer raise P2002 in production -- Task 9 dropped
+  // `Contact.phone @unique` -- so this exercises the retry helper against an injected error, not
+  // a race Postgres can still produce. The duplicate-Contact race it used to protect against is
+  // now handled by reading `identity.contactId` back (see the test below).
   it('survives losing the race to create a new customer contact', async () => {
     const { Prisma } = await import('@prisma/client')
     const conflict = new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
@@ -196,6 +202,22 @@ describe('enqueueSystemTemplateSend', () => {
 
     expect(await enqueueSystemTemplateSend(base)).toEqual({ ok: true, jobId: 'job_1', status: 'QUEUED', duplicate: false })
     expect(mockPrisma.contact.create).toHaveBeenCalledTimes(2)
+  })
+
+  // Temuan I-4/I-5: yang kalah balapan kontak ganda harus menempel ke kontak milik identitas,
+  // bukan ke Contact yang baru saja dibuatnya sendiri. Kalau tidak, Conversation.contactId dan
+  // ChannelIdentity.contactId menunjuk baris berbeda selamanya dan src/app/api/send/route.ts
+  // menjawab 404 untuk nomor yang thread-nya jelas ada di Inbox.
+  it('membuka percakapan (dan job) di bawah contactId milik identitas, bukan kontak yang baru dibuat sendiri', async () => {
+    mockPrisma.contact.create.mockResolvedValue({ id: 'contact_B' } as never)
+    mockPrisma.channelIdentity.upsert.mockResolvedValue({ id: 'identity_1', contactId: 'contact_A' } as never)
+
+    await enqueueSystemTemplateSend(base)
+
+    expect(mockPrisma.conversation.upsert).toHaveBeenCalledWith(expect.objectContaining({
+      create: expect.objectContaining({ contactId: 'contact_A' }),
+    }))
+    expect(enqueueOutboundJob).toHaveBeenCalledWith(expect.objectContaining({ contactId: 'contact_A' }))
   })
 
   it('refuses a phone that is not a phone number', async () => {

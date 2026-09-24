@@ -593,7 +593,17 @@ async function ingestSingleMessage(message: MetaInboundMessage, contacts: MetaCo
     },
     update: { lastMessageAt: sentAt },
     create: {
-      contactId: contact.id,
+      // `identity.contactId`, NOT the locally resolved `contact.id`. Contact.phone is no longer
+      // @unique, so two near-simultaneous first messages from the same new number both find no
+      // identity and both create a Contact (A and B). upsertChannelIdentity binds the identity
+      // to whichever committed first; the loser would otherwise open the conversation under its
+      // own Contact, leaving Conversation.contactId permanently disagreeing with
+      // ChannelIdentity.contactId -- and src/app/api/send/route.ts, which looks a contact up by
+      // phone with `orderBy: { createdAt: 'asc' }`, then picks the contact that has no
+      // conversation and answers 404 "Percakapan tidak ditemukan" for a number with a visibly
+      // active thread in the Inbox. Reading it back off the identity makes the race
+      // self-healing: whoever loses still attaches to the identity's contact.
+      contactId: identity.contactId,
       channelIdentityId: identity.id,
       externalThreadId: '',
       lastMessageAt: sentAt,
@@ -736,7 +746,9 @@ async function ingestEchoedMessage(echo: MetaMessageEcho): Promise<boolean> {
     },
     update: { lastMessageAt: sentAt },
     create: {
-      contactId: contact.id,
+      // `identity.contactId`, not the locally resolved `contact.id` -- see ingestSingleMessage
+      // above for the duplicate-contact race this closes.
+      contactId: identity.contactId,
       channelIdentityId: identity.id,
       externalThreadId: '',
       lastMessageAt: sentAt,
