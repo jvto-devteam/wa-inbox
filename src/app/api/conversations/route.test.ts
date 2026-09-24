@@ -15,10 +15,13 @@ const mockPrisma = prisma as unknown as DeepMockProxy<PrismaClient>
 
 beforeEach(() => {
   mockReset(mockPrisma)
-  // Every unfiltered GET calls ensureTestConversation() first (see route.ts), which upserts
-  // the sandbox contact + conversation -- give it a harmless default so tests that don't care
-  // about that behavior don't have to configure it themselves.
-  mockPrisma.contact.upsert.mockResolvedValue({ id: 'contact_test' } as never)
+  // Every unfiltered GET calls ensureTestConversation() first (see route.ts), which looks up
+  // the sandbox contact by its channel identity, creates it if unknown, then upserts the
+  // conversation -- give it harmless defaults so tests that don't care about that behavior
+  // don't have to configure it themselves.
+  mockPrisma.channelIdentity.findUnique.mockResolvedValue(null)
+  mockPrisma.contact.create.mockResolvedValue({ id: 'contact_test' } as never)
+  mockPrisma.channelIdentity.upsert.mockResolvedValue({ id: 'identity_test', contactId: 'contact_test' } as never)
   mockPrisma.conversation.upsert.mockResolvedValue({ id: 'conv_test' } as never)
 })
 
@@ -201,9 +204,9 @@ describe('GET /api/conversations', () => {
     mockPrisma.conversation.findMany.mockResolvedValue([] as never)
 
     await GET(new Request('http://localhost/api/conversations'))
-    expect(mockPrisma.contact.upsert).toHaveBeenCalledTimes(1)
+    expect(mockPrisma.channelIdentity.findUnique).toHaveBeenCalledTimes(1)
 
     await GET(new Request('http://localhost/api/conversations?q=ijen'))
-    expect(mockPrisma.contact.upsert).toHaveBeenCalledTimes(1)
+    expect(mockPrisma.channelIdentity.findUnique).toHaveBeenCalledTimes(1)
   })
 })

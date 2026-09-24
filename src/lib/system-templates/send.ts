@@ -20,6 +20,7 @@
  */
 import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db'
+import { upsertChannelIdentity } from '@/lib/channel/identity'
 import { broadcast } from '@/lib/realtime'
 import { withMediaUrl } from '@/lib/serialize-message'
 import { enqueueOutboundJob, type OutboundJobPayload } from '@/lib/outbound/queue'
@@ -140,20 +141,43 @@ export async function enqueueSystemTemplateSend(params: SystemSendParams): Promi
   // CUSTOMER: the message becomes part of the customer's conversation, exactly like an agent's
   // queued reply (send.ts's sendViaQueue) — bubble first, as PENDING, then the job.
   const nameValue = params.variables.name
-  const contact = await upsertOnce(() =>
-    prisma.contact.upsert({
-      where: { phone },
-      update: {},
-      create: { phone, name: typeof nameValue === 'string' && nameValue.trim() ? nameValue.trim() : null },
-    })
-  )
+  const resolvedName = typeof nameValue === 'string' && nameValue.trim() ? nameValue.trim() : null
+
+  const known = await prisma.channelIdentity.findUnique({
+    where: { platform_externalId: { platform: 'WHATSAPP', externalId: phone } },
+    select: { contactId: true },
+  })
+
+  const contact = known
+    ? await prisma.contact.update({
+        where: { id: known.contactId },
+        data: resolvedName ? { name: resolvedName } : {},
+      })
+    : await upsertOnce(() => prisma.contact.create({ data: { phone, name: resolvedName } }))
+
+  const identity = await upsertChannelIdentity({
+    platform: 'WHATSAPP',
+    externalId: phone,
+    contactId: contact.id,
+    displayName: resolvedName,
+  })
+
   const now = new Date()
   const botEnabled = await defaultBotEnabled(phone)
+
   const conversation = await upsertOnce(() =>
     prisma.conversation.upsert({
-      where: { contactId: contact.id },
+      where: {
+        channelIdentityId_externalThreadId: { channelIdentityId: identity.id, externalThreadId: '' },
+      },
       update: { lastMessageAt: now },
-      create: { contactId: contact.id, lastMessageAt: now, botEnabled },
+      create: {
+        contactId: contact.id,
+        channelIdentityId: identity.id,
+        externalThreadId: '',
+        lastMessageAt: now,
+        botEnabled,
+      },
     })
   )
 

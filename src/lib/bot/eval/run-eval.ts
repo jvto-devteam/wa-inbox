@@ -37,6 +37,7 @@
  * `process.exit`.
  */
 import { prisma } from '@/lib/db'
+import { upsertChannelIdentity } from '@/lib/channel/identity'
 import { checkDeploymentGate } from '../deployment-gate'
 import { decideAndRespond } from '../orchestrator'
 import { EVAL_CASES, type EvalCase } from './fixtures'
@@ -49,15 +50,35 @@ type CaseResult = { id: string; passed: boolean; detail: string; reply: string }
 
 async function runCase(c: EvalCase): Promise<CaseResult> {
   const phone = `eval-${c.id}`
-  const contact = await prisma.contact.upsert({
-    where: { phone },
-    update: {},
-    create: { phone, name: `eval ${c.id}` },
+
+  const known = await prisma.channelIdentity.findUnique({
+    where: { platform_externalId: { platform: 'WHATSAPP', externalId: phone } },
+    select: { contactId: true },
   })
+
+  const contact = known
+    ? { id: known.contactId }
+    : await prisma.contact.create({ data: { phone, name: `eval ${c.id}` } })
+
+  const identity = await upsertChannelIdentity({
+    platform: 'WHATSAPP',
+    externalId: phone,
+    contactId: contact.id,
+  })
+
   const conversation = await prisma.conversation.upsert({
-    where: { contactId: contact.id },
+    where: {
+      channelIdentityId_externalThreadId: { channelIdentityId: identity.id, externalThreadId: '' },
+    },
     update: { tripBrief: {}, botEnabled: true },
-    create: { contactId: contact.id, botEnabled: true, isTest: true, tripBrief: {} },
+    create: {
+      contactId: contact.id,
+      channelIdentityId: identity.id,
+      externalThreadId: '',
+      botEnabled: true,
+      isTest: true,
+      tripBrief: {},
+    },
   })
 
   let reply = ''

@@ -13,21 +13,54 @@ beforeEach(() => {
 })
 
 describe('ensureTestConversation', () => {
-  it('upserts the sandbox contact by the reserved sentinel phone, then the pinned/test conversation by contactId', async () => {
-    mockPrisma.contact.upsert.mockResolvedValue({ id: 'contact_test', phone: TEST_CONTACT_PHONE } as never)
+  it('creates the sandbox contact by the reserved sentinel identity when unknown, then the pinned/test conversation by channel identity', async () => {
+    mockPrisma.channelIdentity.findUnique.mockResolvedValue(null)
+    mockPrisma.contact.create.mockResolvedValue({ id: 'contact_test', phone: TEST_CONTACT_PHONE } as never)
+    mockPrisma.channelIdentity.upsert.mockResolvedValue({ id: 'identity_test', contactId: 'contact_test' } as never)
     mockPrisma.conversation.upsert.mockResolvedValue({} as never)
 
     await ensureTestConversation()
 
-    expect(mockPrisma.contact.upsert).toHaveBeenCalledWith({
-      where: { phone: TEST_CONTACT_PHONE },
+    expect(mockPrisma.channelIdentity.findUnique).toHaveBeenCalledWith({
+      where: { platform_externalId: { platform: 'WHATSAPP', externalId: TEST_CONTACT_PHONE } },
+      select: { contactId: true },
+    })
+    expect(mockPrisma.contact.create).toHaveBeenCalledWith({
+      data: { phone: TEST_CONTACT_PHONE, name: '🧪 Tes Bot (Internal)' },
+    })
+    expect(mockPrisma.channelIdentity.upsert).toHaveBeenCalledWith({
+      where: { platform_externalId: { platform: 'WHATSAPP', externalId: TEST_CONTACT_PHONE } },
       update: {},
-      create: { phone: TEST_CONTACT_PHONE, name: '🧪 Tes Bot (Internal)' },
+      create: { platform: 'WHATSAPP', externalId: TEST_CONTACT_PHONE, contactId: 'contact_test', displayName: null },
+      select: { id: true, contactId: true },
     })
     expect(mockPrisma.conversation.upsert).toHaveBeenCalledWith({
-      where: { contactId: 'contact_test' },
+      where: {
+        channelIdentityId_externalThreadId: { channelIdentityId: 'identity_test', externalThreadId: '' },
+      },
       update: {},
-      create: { contactId: 'contact_test', isPinned: true, isTest: true },
+      create: {
+        contactId: 'contact_test',
+        channelIdentityId: 'identity_test',
+        externalThreadId: '',
+        isPinned: true,
+        isTest: true,
+      },
     })
+  })
+
+  it('reuses an existing channel identity instead of creating a new contact', async () => {
+    mockPrisma.channelIdentity.findUnique.mockResolvedValue({ contactId: 'contact_existing' } as never)
+    mockPrisma.channelIdentity.upsert.mockResolvedValue({ id: 'identity_existing', contactId: 'contact_existing' } as never)
+    mockPrisma.conversation.upsert.mockResolvedValue({} as never)
+
+    await ensureTestConversation()
+
+    expect(mockPrisma.contact.create).not.toHaveBeenCalled()
+    expect(mockPrisma.conversation.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        create: expect.objectContaining({ contactId: 'contact_existing', channelIdentityId: 'identity_existing' }),
+      })
+    )
   })
 })

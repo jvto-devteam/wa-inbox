@@ -52,7 +52,9 @@ beforeEach(() => {
   vi.clearAllMocks()
   mockPrisma.outboundJob.findUnique.mockResolvedValue(null)
   mockPrisma.systemTemplate.findUnique.mockResolvedValue(template())
-  mockPrisma.contact.upsert.mockResolvedValue({ id: 'contact_1' } as never)
+  mockPrisma.channelIdentity.findUnique.mockResolvedValue(null)
+  mockPrisma.contact.create.mockResolvedValue({ id: 'contact_1' } as never)
+  mockPrisma.channelIdentity.upsert.mockResolvedValue({ id: 'identity_1', contactId: 'contact_1' } as never)
   mockPrisma.conversation.upsert.mockResolvedValue({ id: 'conv_1' } as never)
   mockPrisma.message.create.mockResolvedValue({ id: 'msg_1', conversationId: 'conv_1' } as never)
   vi.mocked(enqueueOutboundJob).mockResolvedValue({ jobId: 'job_1', blocked: false, warnings: [] })
@@ -86,9 +88,7 @@ describe('enqueueSystemTemplateSend', () => {
     const result = await enqueueSystemTemplateSend(base)
 
     expect(result).toEqual({ ok: true, jobId: 'job_1', status: 'QUEUED', duplicate: false })
-    expect(mockPrisma.contact.upsert).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { phone: '6281234567890' }, create: { phone: '6281234567890', name: 'Anna' } })
-    )
+    expect(mockPrisma.contact.create).toHaveBeenCalledWith({ data: { phone: '6281234567890', name: 'Anna' } })
     expect(mockPrisma.message.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
@@ -160,7 +160,7 @@ describe('enqueueSystemTemplateSend', () => {
     )
     await enqueueSystemTemplateSend({ ...base, to: { phone: '082143403501' }, variables: { name: 'Anna' } })
 
-    expect(mockPrisma.contact.upsert).not.toHaveBeenCalled()
+    expect(mockPrisma.contact.create).not.toHaveBeenCalled()
     expect(mockPrisma.message.create).not.toHaveBeenCalled()
     expect(enqueueOutboundJob).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -176,7 +176,7 @@ describe('enqueueSystemTemplateSend', () => {
   it('sends to a group as a GROUP job, with no conversation, whatever the audience', async () => {
     await enqueueSystemTemplateSend({ ...base, to: { groupId: '120363335090996109@g.us' } })
 
-    expect(mockPrisma.contact.upsert).not.toHaveBeenCalled()
+    expect(mockPrisma.contact.create).not.toHaveBeenCalled()
     expect(enqueueOutboundJob).toHaveBeenCalledWith(
       expect.objectContaining({
         conversationId: null,
@@ -192,10 +192,10 @@ describe('enqueueSystemTemplateSend', () => {
       code: 'P2002',
       clientVersion: 'test',
     })
-    mockPrisma.contact.upsert.mockRejectedValueOnce(conflict).mockResolvedValueOnce({ id: 'contact_1' } as never)
+    mockPrisma.contact.create.mockRejectedValueOnce(conflict).mockResolvedValueOnce({ id: 'contact_1' } as never)
 
     expect(await enqueueSystemTemplateSend(base)).toEqual({ ok: true, jobId: 'job_1', status: 'QUEUED', duplicate: false })
-    expect(mockPrisma.contact.upsert).toHaveBeenCalledTimes(2)
+    expect(mockPrisma.contact.create).toHaveBeenCalledTimes(2)
   })
 
   it('refuses a phone that is not a phone number', async () => {
