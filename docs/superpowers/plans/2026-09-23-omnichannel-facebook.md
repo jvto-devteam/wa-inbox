@@ -282,11 +282,17 @@ beforeEach(() => {
   mockReset(mockPrisma)
   vi.mocked(upsertChannelIdentity).mockReset().mockResolvedValue({ id: 'ci_fb_1', contactId: 'contact_fb_1' })
   mockPrisma.message.findUnique.mockResolvedValue(null as never)
+  // Default eksplisit: identitas BELUM ada. Tanpa baris ini mock mengembalikan undefined,
+  // yang kebetulan berperilaku sama -- dan "kebetulan benar" adalah cara test berbohong.
+  mockPrisma.channelIdentity.findUnique.mockResolvedValue(null as never)
   mockPrisma.contact.create.mockResolvedValue({ id: 'contact_fb_1', phone: null } as never)
   mockPrisma.conversation.upsert.mockResolvedValue({ id: 'conv_fb_1', botEnabled: false } as never)
   mockPrisma.message.create.mockResolvedValue({ id: 'msg_fb_1' } as never)
+  // `botAutoReplyAll` WAJIB ada: sejak perbaikan regresi C-1, defaultBotEnabled membaca
+  // sakelar global DAN sakelar platform. Tanpa kolom ini nilainya undefined, ekspresinya
+  // jadi falsy, dan test yang mengharapkan botEnabled=false lulus karena alasan yang salah.
   mockPrisma.settings.findUniqueOrThrow.mockResolvedValue({
-    botEnabledFacebook: false, skipBotForIndonesianNumbers: false,
+    botAutoReplyAll: true, botEnabledFacebook: false, skipBotForIndonesianNumbers: false,
   } as never)
 })
 
@@ -306,10 +312,26 @@ describe('ingestMessengerPayload', () => {
 
   // Contact Facebook TIDAK punya nomor telepon. Sebelum fondasi Task 9 melonggarkan
   // Contact.phone jadi nullable, baris seperti ini mustahil dibuat sama sekali.
-  it('membuat Contact tanpa nomor telepon', async () => {
+  it('membuat Contact tanpa nomor telepon saat identitas belum ada', async () => {
+    mockPrisma.channelIdentity.findUnique.mockResolvedValue(null as never)
     await ingestMessengerPayload(payload, 'FACEBOOK')
     const arg = mockPrisma.contact.create.mock.calls[0][0]
     expect(arg.data.phone ?? null).toBeNull()
+  })
+
+  // Pesan KEDUA dari pengirim yang sama tidak boleh melahirkan Contact baru. Tanpa penjaga
+  // ini, satu pelanggan yang mengirim 50 pesan meninggalkan 49 baris Contact yatim yang
+  // menumpuk di halaman Kontak, dan sampahnya baru kelihatan setelah pelanggan sungguhan
+  // mulai menulis -- saat pembersihannya sudah harus manual dan memilah.
+  it('memakai kontak yang sudah tertaut saat identitas sudah ada', async () => {
+    mockPrisma.channelIdentity.findUnique.mockResolvedValue({ contactId: 'contact_lama' } as never)
+
+    await ingestMessengerPayload(payload, 'FACEBOOK')
+
+    expect(mockPrisma.contact.create).not.toHaveBeenCalled()
+    expect(upsertChannelIdentity).toHaveBeenCalledWith(
+      expect.objectContaining({ contactId: 'contact_lama' }),
+    )
   })
 
   // externalId Meta ditulis ke kolom Message.externalId yang @unique -- kolom yang sama
@@ -406,12 +428,23 @@ async function ingestOne(
   const existing = await prisma.message.findUnique({ where: { externalId: message.mid } })
   if (existing) return false
 
-  const contact = await prisma.contact.create({ data: { phone: null, name: null } })
+  // Identitas dicari LEBIH DULU, Contact dibuat hanya kalau belum ada -- pola yang sama
+  // persis dengan ingestSingleMessage di src/lib/inbound.ts. Kalau Contact dibuat tanpa
+  // syarat, pelanggan yang sama mengirim 50 pesan meninggalkan 49 baris Contact yatim:
+  // percakapannya tetap benar (ia memakai identity.contactId), tapi sampahnya menumpuk
+  // di tier 1 halaman Kontak -- tempat yang justru disediakan untuk kontak tanpa percakapan.
+  const known = await prisma.channelIdentity.findUnique({
+    where: { platform_externalId: { platform, externalId: event.sender.id } },
+    select: { contactId: true },
+  })
+
+  const contactId =
+    known?.contactId ?? (await prisma.contact.create({ data: { phone: null, name: null } })).id
 
   const identity = await upsertChannelIdentity({
     platform,
     externalId: event.sender.id,
-    contactId: contact.id,
+    contactId,
   })
 
   const sentAt = new Date(event.timestamp)
