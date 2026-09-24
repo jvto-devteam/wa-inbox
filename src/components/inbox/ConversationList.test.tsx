@@ -321,6 +321,42 @@ describe('ConversationList platform badge visibility', () => {
 
     expect(within(screen.getByRole('list')).queryByText('Facebook')).not.toBeInTheDocument()
   })
+
+  // GET /api/conversations only constrains channelIdentity when `platform` itself is the
+  // active filter (route.ts:46-48) -- an orderChannel or labelId filter has no platform
+  // restriction at all, so a pill like "KLOOK" can return a WhatsApp booking and a Facebook
+  // booking side by side. `filter === null` alone missed this: it hid the badge for exactly
+  // the filter states where rows can still mix platforms.
+  it('shows the platform badge when an orderChannel pill is active, since it can mix rows from more than one platform', async () => {
+    mockConversationsFetch(
+      [conversation('a', { platform: 'WHATSAPP' }), conversation('b', { platform: 'FACEBOOK' })],
+      ['KLOOK']
+    )
+    render(<ConversationList selectedId={null} onSelect={() => {}} />)
+    await advanceTimers(0)
+
+    fireEvent.click(screen.getByRole('button', { name: 'KLOOK' }))
+    await advanceTimers(300)
+
+    expect(within(screen.getByRole('list')).getByText('WhatsApp')).toBeInTheDocument()
+    expect(within(screen.getByRole('list')).getByText('Facebook')).toBeInTheDocument()
+  })
+
+  it('shows the platform badge when a label pill is active, since it can mix rows from more than one platform', async () => {
+    mockConversationsFetch(
+      [conversation('a', { platform: 'WHATSAPP' }), conversation('b', { platform: 'FACEBOOK' })],
+      [],
+      [{ id: 'lbl_1', name: 'VIP', color: '#3C6B42' }]
+    )
+    render(<ConversationList selectedId={null} onSelect={() => {}} />)
+    await advanceTimers(0)
+
+    fireEvent.click(screen.getByRole('button', { name: 'VIP' }))
+    await advanceTimers(300)
+
+    expect(within(screen.getByRole('list')).getByText('WhatsApp')).toBeInTheDocument()
+    expect(within(screen.getByRole('list')).getByText('Facebook')).toBeInTheDocument()
+  })
 })
 
 // The list used to be a one-shot snapshot: it fetched on mount and on search, and never

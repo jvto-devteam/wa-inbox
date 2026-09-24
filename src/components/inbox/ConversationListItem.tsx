@@ -97,10 +97,12 @@ export function ConversationListItem({
   conversation: ConversationSummary
   onClick: () => void
   active?: boolean
-  // Only meaningful on the "Semua" tab, where rows from every shipped platform sit side by
-  // side with no other way to tell them apart. On a single-platform tab (WhatsApp/Facebook)
-  // every row already agrees, so the badge would be uniform noise -- ConversationList passes
-  // this as `filter === null`.
+  // False only when a single platform tab (WhatsApp/Facebook) is active -- the one state
+  // where every row on screen already agrees on its platform, so the badge would be uniform
+  // noise. Every other filter state ("Semua", an orderChannel pill, a label pill) can mix
+  // rows from more than one platform (see ConversationList's `showPlatformBadge` comment for
+  // why), so the badge stays meaningful there. ConversationList passes this as
+  // `filter?.kind !== 'platform'`.
   showPlatformBadge?: boolean
 }) {
   // A handoff decision (Task 34) is logged as a Message row with content: null, sentBy: 'BOT' --
@@ -185,8 +187,9 @@ export function ConversationListItem({
                 orderChannel di bawahnya (variant="brand", bukan "muted", dan label kata penuh
                 "WhatsApp"/"Facebook" bukan kode singkat "JVTO"/"KLOOK") supaya operator tidak
                 mengira keduanya fakta yang sama: yang ini platform pesan, yang di bawah asal
-                booking. Hanya tampil di tab "Semua" -- di tab satu platform, setiap baris
-                sudah sepakat, jadi badge-nya jadi derau seragam. */}
+                booking. Tersembunyi HANYA saat tab satu platform aktif -- lihat penjelasan
+                showPlatformBadge di signature komponen ini untuk kenapa "Semua" bukan
+                satu-satunya keadaan yang perlu badge ini. */}
             {showPlatformBadge && conversation.platform && (
               <Badge variant="brand">{PLATFORM_LABEL[conversation.platform]}</Badge>
             )}

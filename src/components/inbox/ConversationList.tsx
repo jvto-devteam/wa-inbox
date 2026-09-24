@@ -390,10 +390,17 @@ export function ConversationList({
                 conversation={c}
                 active={c.id === selectedId}
                 onClick={() => onSelect(c.id)}
-                // Only worth showing on "Semua" (filter === null), where rows from every
-                // shipped platform sit side by side -- on a single-platform tab every row
-                // already agrees, so the badge would be uniform noise.
-                showPlatformBadge={filter === null}
+                // Hidden ONLY when a single platform tab is active (filter.kind === 'platform')
+                // -- that is the one state where every row on screen already agrees on its
+                // platform, so the badge would be uniform noise. Every other state -- "Semua"
+                // (filter === null), an orderChannel pill (e.g. KLOOK), or a label pill -- can
+                // mix rows from more than one platform: GET /api/conversations only constrains
+                // channelIdentity when `platform` itself is the active filter (see route.ts);
+                // orderChannel/labelId filter across every platform with no such restriction.
+                // `filter === null` alone used to gate this and was too narrow -- it missed the
+                // channel/label pills, where a KLOOK (say) booking from WhatsApp and one from
+                // Facebook could sit side by side with no way to tell them apart.
+                showPlatformBadge={filter?.kind !== 'platform'}
               />
             ))}
           </ul>
