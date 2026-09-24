@@ -50,25 +50,47 @@ Sama persis dengan plan fondasi — semuanya tetap berlaku:
 
 ---
 
-## Task 0: Ajukan App Review Meta (non-kode — kerjakan HARI PERTAMA, paralel)
+## Task 0: Siapkan app Meta (non-kode — kerjakan HARI PERTAMA, paralel)
 
-Ini satu-satunya pekerjaan di plan ini yang latensinya di luar kendali kode. Ajukan sekarang, lalu kerjakan Task 1 dst. sambil menunggu.
+Ini satu-satunya pekerjaan di plan ini yang latensinya di luar kendali kode. Kerjakan sekarang, lalu lanjut ke Task 1 sambil menunggu — **Task 1-5 tidak bergantung pada persetujuan Meta sama sekali.**
 
-- [ ] **Step 1: Kumpulkan yang dibutuhkan**
+- [ ] **Step 1: Pasang Messenger dan ambil kredensial**
 
 Di [developers.facebook.com](https://developers.facebook.com) pada app Meta yang sama dengan WhatsApp Cloud API JVTO:
 - Tambahkan produk **Messenger**.
 - Tautkan Facebook Page JVTO.
 - Catat **Page ID** dan buat **Page Access Token** berumur panjang.
-- Ajukan Advanced Access untuk permission **`pages_messaging`**.
 
-- [ ] **Step 2: Daftarkan webhook Messenger**
+- [ ] **Step 2: CEK status `pages_messaging` dulu — jangan langsung mengajukan**
+
+Buka **App Review → Permissions and Features**, cari `pages_messaging`, dan baca status aksesnya.
+
+| Status | Artinya | Tindakan |
+| --- | --- | --- |
+| **Advanced Access** | Sudah bisa berkirim pesan dengan siapa pun | Tidak ada. Lanjut, Task 7 tidak terblokir. |
+| **Standard Access** | Hanya bisa berkirim pesan dengan orang yang **punya peran di app** (admin/developer/tester) | Ajukan Advanced Access. Task 1-6 tetap jalan; hanya Task 7 Step 4 yang menunggu. |
+
+Status di dashboard itu **otoritatif untuk app ini** — jangan menyimpulkan dari dokumentasi umum atau dari ingatan siapa pun, termasuk dari plan ini. Aturan akses Meta berubah cukup sering.
+
+- [ ] **Step 3: Kalau perlu diajukan, cek dulu Business Verification**
+
+Buka **Business Settings → Security Center**. Kalau tertulis **Verified**, bagian paling lama dari App Review sudah selesai — app ini sudah menjalankan WhatsApp Cloud API produksi dengan nomor sungguhan, yang mensyaratkannya. Sisanya tinggal pengajuan permission.
+
+Kalau **belum** verified, urus itu lebih dulu: pengajuan permission tanpa business terverifikasi akan ditolak dan waktunya terbuang.
+
+Catat tanggal pengajuan di sini: `______`
+
+- [ ] **Step 4: Sementara menunggu, tambahkan penguji**
+
+Di **App Roles → Roles**, tambahkan akun Facebook anggota tim sebagai **Tester**. Dengan Standard Access, akun bertester inilah yang dipakai untuk seluruh pengujian di Task 7 — dan itu sudah cukup untuk membuktikan seluruh jalur masuk, simpan, dan balas bekerja.
+
+- [ ] **Step 5: Daftarkan webhook Messenger**
 
 Callback URL: `https://<domain produksi>/api/webhooks/meta` — **URL yang sama persis dengan WhatsApp**. Verify token sama. App secret sama, jadi `verifyMetaSignature` tidak perlu diubah sama sekali.
 
 Subscribe field: `messages`, `messaging_postbacks`.
 
-- [ ] **Step 3: Simpan kredensial sebagai environment variable di VPS**
+- [ ] **Step 6: Simpan kredensial sebagai environment variable di VPS**
 
 ```
 FB_PAGE_ID=<page id>
@@ -77,9 +99,20 @@ FB_PAGE_ACCESS_TOKEN=<token>
 
 Disimpan sebagai env var, bukan kolom database seperti `WaNumber`, karena JVTO punya **satu** Page dan tidak akan punya lebih — CLAUDE.md §1. Token ini tidak boleh pernah muncul di UI, API response, atau audit log.
 
-- [ ] **Step 4: Catat statusnya**
+- [ ] **Step 7: Kunci apa yang terblokir dan apa yang tidak**
 
-Tulis tanggal pengajuan di plan ini. Task 1-5 bisa jalan penuh tanpa persetujuan (Meta mengizinkan pengujian ke akun yang punya peran di app). Hanya Task 6 (uji dengan akun luar) yang menunggu Advanced Access.
+Isi tabel ini sebelum melanjutkan, supaya tidak ada yang menunggu hal yang sebenarnya tidak perlu ditunggu:
+
+| | |
+| --- | --- |
+| Status `pages_messaging` | `______` (Standard / Advanced) |
+| Business Verification | `______` (Verified / belum) |
+| Tanggal pengajuan (kalau ada) | `______` |
+| Akun tester yang dipakai menguji | `______` |
+
+Yang **tidak pernah** terblokir oleh Meta: Task 1 sampai Task 7 Step 3. Seluruh jalur masuk, simpan, tab, dan kirim bisa dibangun dan diuji penuh dengan akun tester.
+
+Yang terblokir **hanya kalau** statusnya masih Standard Access: berkirim pesan dengan akun yang tidak punya peran di app — artinya pelanggan sungguhan. Jangan jadikan ini alasan menunda apa pun selain itu.
 
 ---
 
@@ -781,9 +814,11 @@ curl -sI https://<domain produksi> | head -1
 
 Expected: `HTTP/2 200`.
 
-- [ ] **Step 4: Uji pesan sungguhan — HANYA dari akun Facebook milik tim**
+- [ ] **Step 4: Uji pesan sungguhan — HANYA dari akun tester yang didaftarkan di Task 0 Step 4**
 
-Kirim DM ke Page JVTO dari akun Facebook anggota tim. **Jangan pernah menguji ke akun pelanggan sungguhan.**
+Kirim DM ke Page JVTO dari akun Facebook anggota tim yang sudah berperan **Tester** di app. **Jangan pernah menguji ke akun pelanggan sungguhan.**
+
+Kalau `pages_messaging` masih Standard Access, akun tester inilah satu-satunya yang bisa berkirim pesan — dan itu sudah cukup membuktikan seluruh jalurnya. Kalau pesan dari akun tester pun tidak sampai, masalahnya di kode atau di langganan webhook, **bukan** di App Review.
 
 Verifikasi berurutan:
 1. Percakapan muncul di tab **Facebook**, tidak muncul di tab WhatsApp.
