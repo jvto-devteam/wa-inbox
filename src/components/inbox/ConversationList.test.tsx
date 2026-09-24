@@ -264,6 +264,65 @@ describe('ConversationList filter row (channel + label)', () => {
   })
 })
 
+// The platform badge (WhatsApp/Facebook per row) is only useful where rows from more than one
+// platform can appear side by side -- the "Semua" tab. On a single-platform tab every row
+// already agrees on its platform, so the badge would be uniform noise rather than information.
+describe('ConversationList platform badge visibility', () => {
+  function conversation(id: string, overrides: Record<string, unknown> = {}) {
+    return {
+      id,
+      contactName: `Kontak ${id}`,
+      contactPhone: `62812000${id}`,
+      lastMessage: `Pesan ${id}`,
+      lastMessageSentBy: 'CUSTOMER',
+      lastMessageAt: '2026-07-20T10:00:00.000Z',
+      botEnabled: false,
+      status: 'OPEN',
+      pipelineStage: 'new',
+      unreadCount: 0,
+      labels: [],
+      platform: 'WHATSAPP',
+      ...overrides,
+    }
+  }
+
+  // Scoped to the <ul> of conversation rows throughout -- "Facebook"/"WhatsApp" is also the
+  // text of the filter row's own tab buttons, which must not be mistaken for the row badge.
+  it('hides the platform badge on the default WhatsApp tab', async () => {
+    mockConversationsFetch([conversation('a')])
+    render(<ConversationList selectedId={null} onSelect={() => {}} />)
+    await advanceTimers(0)
+
+    expect(within(screen.getByRole('list')).queryByText('WhatsApp')).not.toBeInTheDocument()
+  })
+
+  it('shows the platform badge once "All" is selected', async () => {
+    mockConversationsFetch([conversation('a', { platform: 'FACEBOOK' })])
+    render(<ConversationList selectedId={null} onSelect={() => {}} />)
+    await advanceTimers(0)
+
+    fireEvent.click(screen.getByRole('button', { name: 'All' }))
+    await advanceTimers(300)
+
+    expect(within(screen.getByRole('list')).getByText('Facebook')).toBeInTheDocument()
+  })
+
+  it('hides the platform badge again after switching to a single-platform tab', async () => {
+    mockConversationsFetch([conversation('a', { platform: 'FACEBOOK' })])
+    render(<ConversationList selectedId={null} onSelect={() => {}} />)
+    await advanceTimers(0)
+
+    fireEvent.click(screen.getByRole('button', { name: 'All' }))
+    await advanceTimers(300)
+    expect(within(screen.getByRole('list')).getByText('Facebook')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Facebook' }))
+    await advanceTimers(300)
+
+    expect(within(screen.getByRole('list')).queryByText('Facebook')).not.toBeInTheDocument()
+  })
+})
+
 // The list used to be a one-shot snapshot: it fetched on mount and on search, and never
 // subscribed to the SSE stream every inbound/outbound message already broadcasts on. A new
 // customer message produced no new row, and a reply on an open conversation neither moved it

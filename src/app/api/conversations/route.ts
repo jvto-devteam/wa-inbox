@@ -54,6 +54,9 @@ export async function GET(req: Request) {
       contact: true,
       messages: { orderBy: { createdAt: 'desc' }, take: 1 },
       labels: { include: { label: true } },
+      // Only `platform` -- the row only needs to know which messaging channel this is, not
+      // the rest of ChannelIdentity (externalId etc.).
+      channelIdentity: { select: { platform: true } },
     },
   })
 
@@ -82,6 +85,11 @@ export async function GET(req: Request) {
     botEnabled: c.botEnabled,
     status: c.status,
     pipelineStage: c.pipelineStage,
+    // Which messaging platform this conversation itself is on -- WhatsApp/Facebook/... --
+    // null when channelIdentityId is null (see schema.prisma). A DIFFERENT fact from
+    // orderChannel below: this is the channel the conversation is happening on, orderChannel
+    // is where a booking originated. Both can be true for the same row at once.
+    platform: c.channelIdentity?.platform ?? null,
     // Sidebar shows this instead of the Bot/Agen badge -- null (no badge at all) until
     // there's an actual booking on file. A dedicated column (see schema.prisma), not parsed
     // out of bookingData: it's snapshotted once and permanent, unlike the rest of bookingData.

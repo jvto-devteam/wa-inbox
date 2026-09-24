@@ -284,7 +284,7 @@ export function ConversationList({
         </div>
 
         {(SHIPPED_PLATFORMS.length > 0 || channels.length > 0 || allLabels.length > 0) && (
-          <div role="group" aria-label="Filter inbox" className="mt-2 flex gap-1.5 overflow-x-auto">
+          <div role="group" aria-label="Filter inbox" className="mt-2 flex items-center gap-1.5 overflow-x-auto">
             <Button
               type="button"
               size="sm"
@@ -309,6 +309,14 @@ export function ConversationList({
                 </Button>
               )
             })}
+
+            {/* Pemisah antar dimensi: platform pesan (di atas) vs asal booking + label
+                operator (di bawah) adalah fakta yang berbeda -- tanpa pemisah, KLOOK bisa
+                terlihat seperti "platform lain" setara WhatsApp/Facebook di deret yang sama. */}
+            {(channels.length > 0 || allLabels.length > 0) && (
+              <span aria-hidden="true" className="mx-0.5 h-5 w-px shrink-0 bg-line" />
+            )}
+
             {channels.map((c) => {
               const active = sameFilter(filter, { kind: 'channel', value: c })
               return (
@@ -324,6 +332,14 @@ export function ConversationList({
                 </Button>
               )
             })}
+
+            {/* Pemisah kedua: asal booking vs label operator -- dua dimensi ini sendiri
+                sudah ada sebelum task platform, tetap dipisah agar konsisten dengan
+                pemisah di atas alih-alih membiarkan satu sisi terlihat "tergabung". */}
+            {channels.length > 0 && allLabels.length > 0 && (
+              <span aria-hidden="true" className="mx-0.5 h-5 w-px shrink-0 bg-line" />
+            )}
+
             {allLabels.map((l) => {
               const active = sameFilter(filter, { kind: 'label', value: l.id })
               return (
@@ -374,6 +390,10 @@ export function ConversationList({
                 conversation={c}
                 active={c.id === selectedId}
                 onClick={() => onSelect(c.id)}
+                // Only worth showing on "Semua" (filter === null), where rows from every
+                // shipped platform sit side by side -- on a single-platform tab every row
+                // already agrees, so the badge would be uniform noise.
+                showPlatformBadge={filter === null}
               />
             ))}
           </ul>

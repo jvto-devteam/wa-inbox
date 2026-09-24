@@ -1,11 +1,13 @@
 import { describe, it, expect } from 'vitest'
 import { render, screen } from '@testing-library/react'
+import type { Platform } from '@prisma/client'
 import { ConversationListItem, formatListTime } from './ConversationListItem'
 
 const summary = {
   id: 'conv_1', contactName: 'Bruno Figarola', contactPhone: '6281234567890', avatarUrl: null,
   lastMessage: 'Halo!', lastMessageSentBy: 'CUSTOMER', lastMessageAt: new Date().toISOString(),
-  botEnabled: true, status: 'OPEN', isPinned: false, orderChannel: null, pipelineStage: 'new', unreadCount: 0,
+  botEnabled: true, status: 'OPEN', isPinned: false, platform: null as Platform | null,
+  orderChannel: null, pipelineStage: 'new', unreadCount: 0,
   labels: [{ id: 'lbl_1', name: 'Confirmed Booking', color: '#3C6B42' }],
   bookingGuestName: null as string | null,
 }
@@ -82,6 +84,48 @@ describe('ConversationListItem', () => {
     render(<ConversationListItem conversation={{ ...summary, orderChannel: 'JVTO', pipelineStage: 'lunas' }} onClick={() => {}} />)
     expect(screen.getByText('JVTO')).toBeInTheDocument()
     expect(screen.getByText('Lunas')).toBeInTheDocument()
+  })
+
+  it('shows the platform badge when showPlatformBadge is true and the conversation has a platform', () => {
+    render(
+      <ConversationListItem
+        conversation={{ ...summary, platform: 'WHATSAPP' }}
+        onClick={() => {}}
+        showPlatformBadge
+      />
+    )
+    expect(screen.getByText('WhatsApp')).toBeInTheDocument()
+  })
+
+  it('hides the platform badge when showPlatformBadge is false, even with a platform set', () => {
+    render(<ConversationListItem conversation={{ ...summary, platform: 'FACEBOOK' }} onClick={() => {}} />)
+    expect(screen.queryByText('Facebook')).not.toBeInTheDocument()
+  })
+
+  it('hides the platform badge when there is no channelIdentity, even on the "Semua" tab', () => {
+    render(<ConversationListItem conversation={{ ...summary, platform: null }} onClick={() => {}} showPlatformBadge />)
+    expect(screen.queryByText('WhatsApp')).not.toBeInTheDocument()
+    expect(screen.queryByText('Facebook')).not.toBeInTheDocument()
+  })
+
+  // Batasan keras dari review: badge platform tidak boleh bisa dikira badge orderChannel --
+  // yang satu asal booking (JVTO/KLOOK), yang satu platform pesan (WhatsApp/Facebook). Keduanya
+  // harus bisa tampil bersamaan di baris yang sama, dan rupanya harus berbeda.
+  it('shows the platform badge and the order channel badge together, visually distinct from each other', () => {
+    render(
+      <ConversationListItem
+        conversation={{ ...summary, platform: 'FACEBOOK', orderChannel: 'KLOOK' }}
+        onClick={() => {}}
+        showPlatformBadge
+      />
+    )
+    const platformBadge = screen.getByText('Facebook')
+    const orderChannelBadge = screen.getByText('KLOOK')
+    expect(platformBadge).toBeInTheDocument()
+    expect(orderChannelBadge).toBeInTheDocument()
+    // Different visual treatment (accent-colored badge vs. the muted+per-channel-color badge),
+    // not merely different text -- so the two facts can't be mistaken for one another.
+    expect(platformBadge.className).not.toBe(orderChannelBadge.className)
   })
 
   it('shows the booking guest name next to the contact name when it differs', () => {

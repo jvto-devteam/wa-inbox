@@ -54,6 +54,56 @@ describe('GET /api/conversations', () => {
     }))
   })
 
+  it('surfaces the messaging platform derived from channelIdentity, alongside orderChannel', async () => {
+    mockPrisma.conversation.findMany.mockResolvedValue([{
+      id: 'conv_1',
+      botEnabled: true,
+      status: 'OPEN',
+      pipelineStage: 'nego',
+      lastMessageAt: new Date('2026-07-25T10:00:00Z'),
+      contact: { name: 'Bruno Figarola', phone: '6281234567890' },
+      messages: [],
+      labels: [],
+      channelIdentity: { platform: 'FACEBOOK' },
+      orderChannel: 'KLOOK',
+    }] as never)
+
+    const res = await GET(new Request('http://localhost/api/conversations'))
+    const body = await res.json()
+
+    // Two different facts about the same row -- platform (messaging channel) and orderChannel
+    // (booking origin) -- must both survive, neither one overwriting the other.
+    expect(body[0].platform).toBe('FACEBOOK')
+    expect(body[0].orderChannel).toBe('KLOOK')
+  })
+
+  it('surfaces platform as null when the conversation has no channelIdentity', async () => {
+    mockPrisma.conversation.findMany.mockResolvedValue([{
+      id: 'conv_1',
+      botEnabled: true,
+      status: 'OPEN',
+      pipelineStage: 'new',
+      lastMessageAt: new Date('2026-07-25T10:00:00Z'),
+      contact: { name: 'Zayar', phone: '6281234567890' },
+      messages: [],
+      labels: [],
+      channelIdentity: null,
+    }] as never)
+
+    const res = await GET(new Request('http://localhost/api/conversations'))
+    const body = await res.json()
+
+    expect(body[0].platform).toBeNull()
+  })
+
+  it('selects only platform from channelIdentity, not the whole row', async () => {
+    mockPrisma.conversation.findMany.mockResolvedValue([] as never)
+    await GET(new Request('http://localhost/api/conversations'))
+    expect(mockPrisma.conversation.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      include: expect.objectContaining({ channelIdentity: { select: { platform: true } } }),
+    }))
+  })
+
   it('surfaces the booking guest name derived from bookingData, next to the contact name', async () => {
     mockPrisma.conversation.findMany.mockResolvedValue([{
       id: 'conv_1',

@@ -1,3 +1,4 @@
+import type { Platform } from '@prisma/client'
 import { Bot, BotOff, Pin } from 'lucide-react'
 import { Avatar } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
@@ -6,6 +7,7 @@ import { cn } from '@/lib/utils'
 import { isHandoffLogMessage, HANDOFF_LOG_SUMMARY } from '@/lib/message-display'
 import { STAGE_LABELS, STAGE_VARIANTS } from '@/lib/pipeline'
 import { contactDisplayName } from '@/lib/booking/display-name'
+import { PLATFORM_LABEL } from '@/lib/channel/platform'
 
 // Unlisted channels (e.g. TWT) fall back to the Badge component's own default `muted` look
 // rather than guessing a color for a platform we haven't been told one for.
@@ -31,6 +33,11 @@ export type ConversationSummary = {
   // Sorts this conversation to the top of the list (see GET /api/conversations' orderBy) --
   // currently only ever true for the one isTest sandbox conversation.
   isPinned: boolean
+  // Which messaging platform this conversation itself is on -- WhatsApp/Facebook/... -- null
+  // when the conversation has no channelIdentity (channelIdentityId is nullable in the
+  // schema). NOT the same fact as orderChannel below: this is where the conversation is
+  // happening, orderChannel is where a booking originated. Both can show at once.
+  platform: Platform | null
   // Which platform a booking (if any) originated from -- Klook, JVTO, TWT, etc. Null until
   // there's an actual booking on file, in which case no badge shows at all (see below).
   orderChannel: string | null
@@ -85,10 +92,16 @@ export function ConversationListItem({
   conversation,
   onClick,
   active,
+  showPlatformBadge,
 }: {
   conversation: ConversationSummary
   onClick: () => void
   active?: boolean
+  // Only meaningful on the "Semua" tab, where rows from every shipped platform sit side by
+  // side with no other way to tell them apart. On a single-platform tab (WhatsApp/Facebook)
+  // every row already agrees, so the badge would be uniform noise -- ConversationList passes
+  // this as `filter === null`.
+  showPlatformBadge?: boolean
 }) {
   // A handoff decision (Task 34) is logged as a Message row with content: null, sentBy: 'BOT' --
   // no real reply was ever sent to the customer. Without this, the sidebar preview renders blank.
@@ -168,6 +181,15 @@ export function ConversationListItem({
               tempat yang sama, jadi "bot menjawab / bot mati" bisa dipindai menurun tanpa
               membaca satu kata pun. */}
           <span className="flex flex-wrap items-center gap-1">
+            {/* Badge platform (WhatsApp/Facebook/...) -- bentuknya SENGAJA beda dari badge
+                orderChannel di bawahnya (variant="brand", bukan "muted", dan label kata penuh
+                "WhatsApp"/"Facebook" bukan kode singkat "JVTO"/"KLOOK") supaya operator tidak
+                mengira keduanya fakta yang sama: yang ini platform pesan, yang di bawah asal
+                booking. Hanya tampil di tab "Semua" -- di tab satu platform, setiap baris
+                sudah sepakat, jadi badge-nya jadi derau seragam. */}
+            {showPlatformBadge && conversation.platform && (
+              <Badge variant="brand">{PLATFORM_LABEL[conversation.platform]}</Badge>
+            )}
             {conversation.orderChannel && (
               <Badge variant="muted" className={ORDER_CHANNEL_CLASSES[conversation.orderChannel]}>
                 {conversation.orderChannel}
