@@ -30,7 +30,7 @@ describe('upsertChannelIdentity', () => {
 
     await upsertChannelIdentity({ platform: 'WHATSAPP', externalId: '123', contactId: 'c_2' })
 
-    const arg = mockPrisma.channelIdentity.upsert.mock.calls[0][0]
+    const arg = mockPrisma.channelIdentity.upsert.mock.calls[0][0] as unknown as { where: { platform_externalId: { platform: string } } }
     expect(arg.where.platform_externalId.platform).toBe('WHATSAPP')
   })
 
