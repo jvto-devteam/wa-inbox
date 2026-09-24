@@ -106,6 +106,9 @@ beforeEach(() => {
   mockPrisma.contact.upsert.mockResolvedValue(contactRow as never)
   mockPrisma.conversation.upsert.mockResolvedValue(conversationRow as never)
   mockPrisma.message.create.mockResolvedValue({ id: 'msg_new' } as never)
+  // Dual-write target (Task 4) -- defaulted so ingestSingleMessage's `identity.id` read never
+  // hits an unmocked (undefined) resolution.
+  mockPrisma.channelIdentity.upsert.mockResolvedValue({ id: 'ci_default', contactId: 'contact_1' } as never)
   mockPrisma.botDecisionRun.create.mockResolvedValue({ id: 'run_1' } as never)
   mockPrisma.botDecisionRun.update.mockResolvedValue({ id: 'run_1' } as never)
 })

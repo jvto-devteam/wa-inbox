@@ -52,6 +52,10 @@ beforeEach(() => {
   // them needing to know the audit table exists.
   mockPrisma.botDecisionRun.create.mockResolvedValue({ id: 'run_1' } as never)
   mockPrisma.botDecisionRun.update.mockResolvedValue({ id: 'run_1' } as never)
+  // Dual-write target (Task 4). Defaulted here so every pre-existing test below -- written
+  // before ChannelIdentity existed -- doesn't need to know upsertChannelIdentity's return value
+  // is read (`identity.id`) before conversation.upsert is even called.
+  mockPrisma.channelIdentity.upsert.mockResolvedValue({ id: 'ci_default', contactId: 'contact_1' } as never)
 })
 
 const contactRow = {
@@ -156,6 +160,28 @@ describe('ingestMetaMessage', () => {
     const result = await ingestMetaMessage(samplePayload)
 
     expect(result).toEqual({ processed: 0, skipped: 1, statusUpdates: 0, templateStatusUpdates: 0, echoed: 0 })
+  })
+
+  it('menulis ChannelIdentity WhatsApp untuk pesan masuk', async () => {
+    stubHappyPath()
+    await ingestMetaMessage(samplePayload)
+
+    expect(mockPrisma.channelIdentity.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { platform_externalId: { platform: 'WHATSAPP', externalId: '6281234567890' } },
+      }),
+    )
+  })
+
+  it('menautkan conversation ke ChannelIdentity yang baru ditulis', async () => {
+    stubHappyPath()
+    mockPrisma.channelIdentity.upsert.mockResolvedValue({ id: 'ci_wa_1', contactId: 'contact_1' } as never)
+
+    await ingestMetaMessage(samplePayload)
+
+    const arg = mockPrisma.conversation.upsert.mock.calls[0][0]
+    expect(arg.create).toEqual(expect.objectContaining({ channelIdentityId: 'ci_wa_1' }))
+    expect(arg.update).toEqual(expect.objectContaining({ channelIdentityId: 'ci_wa_1' }))
   })
 })
 

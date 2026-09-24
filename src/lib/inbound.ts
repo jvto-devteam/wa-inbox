@@ -1,5 +1,6 @@
 import { Prisma, type DeliveryStatus, type TemplateMetaStatus } from '@prisma/client'
 import { prisma } from '@/lib/db'
+import { upsertChannelIdentity } from '@/lib/channel/identity'
 import { broadcast } from '@/lib/realtime'
 import { decideAndRespond } from '@/lib/bot/orchestrator'
 import { checkAndRecordRateLimit } from '@/lib/bot/rate-limiter'
@@ -522,11 +523,25 @@ async function ingestSingleMessage(message: MetaInboundMessage, contacts: MetaCo
     create: { phone: message.from, name: profileName ?? null },
   })
 
+  // Dual-write masa transisi: Conversation.contactId masih sumber kebenaran, tapi setiap
+  // percakapan baru sudah membawa identitasnya supaya backfill hanya perlu mengurus baris lama.
+  const identity = await upsertChannelIdentity({
+    platform: 'WHATSAPP',
+    externalId: contact.phone,
+    contactId: contact.id,
+    displayName: profileName,
+  })
+
   const sentAt = parseMetaTimestamp(message.timestamp)
   const conversation = await prisma.conversation.upsert({
     where: { contactId: contact.id },
-    update: { lastMessageAt: sentAt },
-    create: { contactId: contact.id, lastMessageAt: sentAt, botEnabled: await defaultBotEnabled(contact.phone) },
+    update: { lastMessageAt: sentAt, channelIdentityId: identity.id },
+    create: {
+      contactId: contact.id,
+      lastMessageAt: sentAt,
+      channelIdentityId: identity.id,
+      botEnabled: await defaultBotEnabled(contact.phone),
+    },
   })
 
   const media = mediaObjectFor(message)
@@ -636,11 +651,24 @@ async function ingestEchoedMessage(echo: MetaMessageEcho): Promise<boolean> {
     create: { phone: echo.to, name: null },
   })
 
+  // Dual-write masa transisi: Conversation.contactId masih sumber kebenaran, tapi setiap
+  // percakapan baru sudah membawa identitasnya supaya backfill hanya perlu mengurus baris lama.
+  const identity = await upsertChannelIdentity({
+    platform: 'WHATSAPP',
+    externalId: echo.to,
+    contactId: contact.id,
+  })
+
   const sentAt = parseMetaTimestamp(echo.timestamp)
   const conversation = await prisma.conversation.upsert({
     where: { contactId: contact.id },
-    update: { lastMessageAt: sentAt },
-    create: { contactId: contact.id, lastMessageAt: sentAt, botEnabled: await defaultBotEnabled(contact.phone) },
+    update: { lastMessageAt: sentAt, channelIdentityId: identity.id },
+    create: {
+      contactId: contact.id,
+      lastMessageAt: sentAt,
+      channelIdentityId: identity.id,
+      botEnabled: await defaultBotEnabled(contact.phone),
+    },
   })
 
   const media = mediaObjectFor(echo)
