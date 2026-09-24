@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { mockDeep, mockReset, type DeepMockProxy } from 'vitest-mock-extended'
-import type { PrismaClient } from '@prisma/client'
+import { Prisma, type PrismaClient } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { upsertChannelIdentity } from '@/lib/channel/identity'
 import type { MessengerWebhookPayload } from '@/lib/meta/messenger-types'
@@ -113,5 +113,109 @@ describe('ingestMessengerPayload', () => {
     expect(arg.where).toEqual({
       channelIdentityId_externalThreadId: { channelIdentityId: 'ci_fb_1', externalThreadId: '' },
     })
+  })
+
+  // Simulasi dua pengiriman webhook `mid` yang sama, benar-benar bersamaan: keduanya lolos
+  // findUnique idempotency check (sama-sama melihat null) sebelum salah satu message.create()
+  // commit. Constraint @unique DB menolak insert sisi yang kalah dengan P2002 -- fungsi ini
+  // wajib menelan itu dan melaporkan skip bersih, bukan melempar keluar dari loop
+  // ingestMessengerPayload dan membatalkan sisa pesan di payload webhook yang sama. Pola dan
+  // test ini menyalin persis ingestSingleMessage di src/lib/inbound.ts (lihat
+  // src/lib/inbound.test.ts:173-191).
+  it('menangkap P2002 sebagai skip bersih saat dua create bersamaan bentrok pada externalId', async () => {
+    mockPrisma.message.create.mockRejectedValue(
+      new Prisma.PrismaClientKnownRequestError('Unique constraint failed on the fields: (`externalId`)', {
+        code: 'P2002',
+        clientVersion: '7.9.0',
+      }),
+    )
+
+    const result = await ingestMessengerPayload(payload, 'FACEBOOK')
+
+    expect(result).toEqual({ processed: 0, skipped: 1 })
+  })
+
+  // Error Prisma lain (bukan P2002) TIDAK boleh ditelan -- itu kegagalan genuine (DB down,
+  // dll) yang harus terlihat, bukan disamarkan jadi skip biasa.
+  it('melempar ulang error Prisma yang bukan P2002', async () => {
+    mockPrisma.message.create.mockRejectedValue(
+      new Prisma.PrismaClientKnownRequestError('Some other DB error', {
+        code: 'P2025',
+        clientVersion: '7.9.0',
+      }),
+    )
+
+    await expect(ingestMessengerPayload(payload, 'FACEBOOK')).rejects.toThrow()
+  })
+
+  // Pelanggan Facebook yang mengirim hanya foto/stiker tanpa teks TIDAK BOLEH menghasilkan
+  // nol jejak. Medianya sendiri sengaja tidak diunduh/disimpan (di luar cakupan perbaikan
+  // ini) -- yang wajib terjadi hanyalah pesan tetap tersimpan dengan penanda tipe lampiran
+  // yang bisa dibaca manusia, supaya percakapannya muncul di Inbox.
+  it('menyimpan lampiran tanpa teks dengan penanda tipenya', async () => {
+    const attachmentOnly: MessengerWebhookPayload = {
+      object: 'page',
+      entry: [{
+        id: 'page_1',
+        time: 1758000000000,
+        messaging: [{
+          sender: { id: 'psid_abc' },
+          recipient: { id: 'page_1' },
+          timestamp: 1758000000000,
+          message: { mid: 'm_fb_photo', attachments: [{ type: 'image', payload: { url: 'https://example.com/x.jpg' } }] },
+        }],
+      }],
+    }
+
+    const result = await ingestMessengerPayload(attachmentOnly, 'FACEBOOK')
+
+    expect(result).toEqual({ processed: 1, skipped: 0 })
+    const arg = mockPrisma.message.create.mock.calls[0][0] as { data: { content: string | null } }
+    expect(arg.data.content).toBe('[Lampiran: image]')
+  })
+
+  it('menyimpan lampiran tanpa teks dan tanpa tipe yang dikenal dengan penanda generik', async () => {
+    const unknownAttachment: MessengerWebhookPayload = {
+      object: 'page',
+      entry: [{
+        id: 'page_1',
+        time: 1758000000000,
+        messaging: [{
+          sender: { id: 'psid_abc' },
+          recipient: { id: 'page_1' },
+          timestamp: 1758000000000,
+          message: { mid: 'm_fb_unknown', attachments: [{ type: undefined as unknown as string }] },
+        }],
+      }],
+    }
+
+    const result = await ingestMessengerPayload(unknownAttachment, 'FACEBOOK')
+
+    expect(result).toEqual({ processed: 1, skipped: 0 })
+    const arg = mockPrisma.message.create.mock.calls[0][0] as { data: { content: string | null } }
+    expect(arg.data.content).toBe('[Lampiran]')
+  })
+
+  // Event yang benar-benar kosong (tanpa teks DAN tanpa lampiran) tidak membawa apa pun --
+  // itu bukan kegagalan, dan tetap harus dilewati seperti sebelumnya.
+  it('melewati pesan tanpa teks dan tanpa lampiran', async () => {
+    const empty: MessengerWebhookPayload = {
+      object: 'page',
+      entry: [{
+        id: 'page_1',
+        time: 1758000000000,
+        messaging: [{
+          sender: { id: 'psid_abc' },
+          recipient: { id: 'page_1' },
+          timestamp: 1758000000000,
+          message: { mid: 'm_fb_empty' },
+        }],
+      }],
+    }
+
+    const result = await ingestMessengerPayload(empty, 'FACEBOOK')
+
+    expect(result).toEqual({ processed: 0, skipped: 1 })
+    expect(mockPrisma.message.create).not.toHaveBeenCalled()
   })
 })

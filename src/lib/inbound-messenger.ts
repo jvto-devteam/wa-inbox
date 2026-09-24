@@ -1,10 +1,12 @@
-import type { Platform } from '@prisma/client'
+import { Prisma, type Platform } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { upsertChannelIdentity } from '@/lib/channel/identity'
 import { defaultBotEnabled } from '@/lib/inbound'
 import { broadcast } from '@/lib/realtime'
 import { withMediaUrl } from '@/lib/serialize-message'
 import type { MessengerMessagingEvent, MessengerWebhookPayload } from '@/lib/meta/messenger-types'
+
+type MessengerAttachment = NonNullable<NonNullable<MessengerMessagingEvent['message']>['attachments']>[number]
 
 /**
  * Ingest pesan Messenger dan Instagram DM.
@@ -31,6 +33,23 @@ export async function ingestMessengerPayload(
   return { processed, skipped }
 }
 
+/**
+ * Penanda dapat-dibaca-manusia untuk pesan tanpa teks tapi punya lampiran (foto, stiker,
+ * dll). Media-nya sendiri SENGAJA tidak diunduh atau disimpan di sini -- URL Meta
+ * kedaluwarsa ~5 menit dan butuh header Authorization untuk diresolve ulang (lihat komentar
+ * `mediaId` di prisma/schema.prisma); itu pekerjaan tersendiri, di luar cakupan ini. Yang
+ * harus terjadi sekarang hanyalah: percakapan MUNCUL di Inbox dan operator TAHU pelanggan
+ * menulis sesuatu, lalu bisa membukanya langsung di Messenger untuk melihat isi aslinya.
+ * Tanpa penanda ini, pesan berlampiran-tanpa-teks menghasilkan nol jejak sama sekali --
+ * tidak ada Message, tidak ada Conversation, tidak ada broadcast -- persis pola "gagal
+ * diam-diam" yang seluruh rencana omnichannel ini menolaknya di setiap keputusan lain.
+ */
+function attachmentPlaceholder(attachments: MessengerAttachment[] | undefined): string | null {
+  if (!attachments || attachments.length === 0) return null
+  const type = attachments[0]?.type
+  return type ? `[Lampiran: ${type}]` : '[Lampiran]'
+}
+
 async function ingestOne(
   event: MessengerMessagingEvent,
   platform: Extract<Platform, 'FACEBOOK' | 'INSTAGRAM'>,
@@ -43,7 +62,11 @@ async function ingestOne(
   if (message.is_echo) return false
 
   const text = message.text?.trim()
-  if (!text) return false
+  // Teks lebih diutamakan; kalau kosong, jatuh ke penanda lampiran. Event yang benar-benar
+  // kosong (tanpa teks DAN tanpa lampiran) tidak membawa apa pun untuk dicatat -- itu bukan
+  // kegagalan, hanya memang tidak ada isi.
+  const content = text || attachmentPlaceholder(message.attachments)
+  if (!content) return false
 
   const existing = await prisma.message.findUnique({ where: { externalId: message.mid } })
   if (existing) return false
@@ -83,23 +106,36 @@ async function ingestOne(
     },
   })
 
-  const created = await prisma.message.create({
-    data: {
-      conversationId: conversation.id,
-      externalId: message.mid,
-      direction: 'INBOUND',
-      type: 'text',
-      content: text,
-      channel: 'OFFICIAL',
-      sentBy: 'CUSTOMER',
-    },
-  })
+  try {
+    const created = await prisma.message.create({
+      data: {
+        conversationId: conversation.id,
+        externalId: message.mid,
+        direction: 'INBOUND',
+        type: 'text',
+        content,
+        channel: 'OFFICIAL',
+        sentBy: 'CUSTOMER',
+      },
+    })
 
-  // Bentuk event mengikuti apa yang benar-benar dipakai src/lib/inbound.ts
-  // (ingestSingleMessage), bukan bentuk yang dikarang baru: RealtimeEvent di
-  // src/lib/realtime.ts tidak punya varian 'message.new', dan 'message.created' wajib
-  // membawa `message` supaya ConversationList/ThreadView bisa merender bubble-nya tanpa
-  // fetch ulang.
-  broadcast({ type: 'message.created', conversationId: conversation.id, message: withMediaUrl(created) })
-  return true
+    // Bentuk event mengikuti apa yang benar-benar dipakai src/lib/inbound.ts
+    // (ingestSingleMessage), bukan bentuk yang dikarang baru: RealtimeEvent di
+    // src/lib/realtime.ts tidak punya varian 'message.new', dan 'message.created' wajib
+    // membawa `message` supaya ConversationList/ThreadView bisa merender bubble-nya tanpa
+    // fetch ulang.
+    broadcast({ type: 'message.created', conversationId: conversation.id, message: withMediaUrl(created) })
+    return true
+  } catch (error) {
+    // Balapan retry-at-least-once Meta yang sama seperti ingestSingleMessage di
+    // src/lib/inbound.ts: dua pengiriman webhook `mid` yang sama, keduanya lolos findUnique
+    // di atas sebelum salah satu message.create() commit. Constraint @unique pada
+    // externalId menahan baris duplikat di level DB -- sisi yang kalah balapan harus
+    // melapor skip bersih, bukan melempar keluar dari loop ingestMessengerPayload dan
+    // membatalkan sisa pesan di payload webhook itu.
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+      return false
+    }
+    throw error
+  }
 }
