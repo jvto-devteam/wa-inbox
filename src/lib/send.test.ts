@@ -11,11 +11,16 @@ import { sendCoexistText, sendCoexistMedia } from '@/lib/coexist/client'
 import { resolveChannelForCapability } from '@/lib/channel-router'
 import { enqueueOutboundJob } from '@/lib/outbound/queue'
 import { processOutboundJob } from '@/lib/outbound/worker'
+import { broadcast } from '@/lib/realtime'
 
 vi.mock('@/lib/db', () => ({ prisma: mockDeep<PrismaClient>() }))
 vi.mock('@/lib/meta/messages', () => ({ sendMetaText: vi.fn(), sendMetaMedia: vi.fn() }))
 vi.mock('@/lib/meta/media-upload', () => ({ uploadMetaMediaFromUrl: vi.fn() }))
 vi.mock('@/lib/channel-router', () => ({ resolveChannelForCapability: vi.fn() }))
+// The real broadcast() is a harmless no-op against an empty in-memory listener set, which is
+// why no test here bothered to mock it before -- but Temuan I-4a (fix round 1) needs to assert
+// it WAS called for the new phone-null guard, so it needs to be a spy, not the real thing.
+vi.mock('@/lib/realtime', () => ({ broadcast: vi.fn() }))
 
 /** sendMessage now asks the policy per capability; these tests only care about the channel. */
 function routeTo(channel: 'OFFICIAL' | 'UNOFFICIAL', disabled = false) {
@@ -49,6 +54,7 @@ beforeEach(() => {
   vi.mocked(unlink).mockReset().mockResolvedValue(undefined)
   vi.mocked(enqueueOutboundJob).mockReset().mockResolvedValue({ jobId: 'job_1', blocked: false, warnings: [] })
   vi.mocked(processOutboundJob).mockReset().mockResolvedValue('sent')
+  vi.mocked(broadcast).mockReset()
   mockPrisma.conversation.findUniqueOrThrow.mockResolvedValue({
     id: 'conv_1', contactId: 'contact_1', contact: { phone: '6281234567890' },
   } as never)
@@ -450,5 +456,61 @@ describe('sendMessage — kebijakan kemampuan channel (regresi Temuan 2)', () =>
     expect(sendCoexistText).not.toHaveBeenCalled()
     expect(enqueueOutboundJob).not.toHaveBeenCalled()
     warn.mockRestore()
+  })
+})
+
+// Temuan I-4a, fix round 1: gerbang baru Task 9 (`!conversation.contact.phone` -> blocked
+// FAILED message) yang belum punya test sama sekali di review pertama. `sendMessage` hanya
+// pernah membawa WhatsApp (Meta Official / coexist Unofficial) -- keduanya butuh nomor asli, dan
+// Contact.phone jadi nullable sejak Task 9 (kontak lahir dari IG/FB/email). Pola persis meniru
+// describe block "kebijakan kemampuan channel" di atas: pastikan TIDAK SATU PUN provider
+// dipanggil, dan Message FAILED + broadcast tetap terjadi (bukan crash/silent drop).
+describe('sendMessage — kontak tanpa nomor telepon (Temuan I-4a, fix round 1)', () => {
+  it('mencatat Message FAILED dan broadcast, tanpa memanggil satu pun provider, saat contact.phone null', async () => {
+    routeTo('OFFICIAL')
+    mockPrisma.conversation.findUniqueOrThrow.mockResolvedValue({
+      id: 'conv_1', contactId: 'contact_1', isTest: false, contact: { phone: null },
+    } as never)
+    mockPrisma.message.create.mockResolvedValue({ id: 'msg_blocked', deliveryStatus: 'FAILED' } as never)
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    const result = await sendMessage({ conversationId: 'conv_1', text: 'halo', sentBy: 'AGENT' })
+
+    // Yang paling penting: tidak satu pun jalur pengiriman WhatsApp tersentuh, Official maupun
+    // Unofficial (langsung ataupun lewat sendViaQueue/enqueueOutboundJob).
+    expect(sendMetaText).not.toHaveBeenCalled()
+    expect(sendMetaMedia).not.toHaveBeenCalled()
+    expect(sendCoexistText).not.toHaveBeenCalled()
+    expect(sendCoexistMedia).not.toHaveBeenCalled()
+    expect(enqueueOutboundJob).not.toHaveBeenCalled()
+    expect(uploadMetaMediaFromUrl).not.toHaveBeenCalled()
+
+    // Dicatat sebagai FAILED (bubble + tombol retry di UI), bukan dilempar sebagai exception.
+    expect(mockPrisma.message.create.mock.calls[0][0].data).toMatchObject({
+      conversationId: 'conv_1',
+      deliveryStatus: 'FAILED',
+    })
+    expect(broadcast).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'message.created', conversationId: 'conv_1' }),
+    )
+    expect(result).toEqual({ id: 'msg_blocked', deliveryStatus: 'FAILED' })
+    error.mockRestore()
+  })
+
+  it('gerbang ini berjalan SEBELUM cabang Unofficial (sendViaQueue tidak pernah dipanggil)', async () => {
+    // routing.disabled tetap false di sini -- ini membuktikan gerbang phone-null berdiri
+    // sendiri, bukan kebetulan lolos lewat gerbang kemampuan channel yang sudah ada.
+    routeTo('UNOFFICIAL')
+    mockPrisma.conversation.findUniqueOrThrow.mockResolvedValue({
+      id: 'conv_1', contactId: 'contact_1', isTest: false, contact: { phone: null },
+    } as never)
+    mockPrisma.message.create.mockResolvedValue({ id: 'msg_blocked', deliveryStatus: 'FAILED' } as never)
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    await sendMessage({ conversationId: 'conv_1', text: 'halo', sentBy: 'AGENT' })
+
+    expect(enqueueOutboundJob).not.toHaveBeenCalled()
+    expect(sendCoexistText).not.toHaveBeenCalled()
+    error.mockRestore()
   })
 })

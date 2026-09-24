@@ -40,6 +40,26 @@ describe('POST /api/send/template', () => {
     expect(sendTemplateMessage).not.toHaveBeenCalled()
   })
 
+  // Temuan I-4b, fix round 1: gerbang phone-null Task 9 (src/app/api/send/template/route.ts,
+  // sebelum waNumber.findFirstOrThrow) belum punya test sama sekali di review pertama. Template
+  // Meta HANYA lewat Cloud API WhatsApp -- kontak tanpa nomor (IG/FB/email, sejak Task 9) tidak
+  // bisa dikirimi lewat jalur ini sama sekali.
+  it('returns 400 when the contact has no phone number, and touches no side effect (Temuan I-4b)', async () => {
+    mockPrisma.template.findUnique.mockResolvedValue({ id: 't1', metaStatus: 'APPROVED', body: 'Halo', cards: null } as never)
+    mockPrisma.conversation.findUniqueOrThrow.mockResolvedValue({ id: 'conv_1', contact: { phone: null } } as never)
+
+    const res = await POST(req({ conversationId: 'conv_1', templateId: 't1' }))
+    const body = await res.json()
+
+    expect(res.status).toBe(400)
+    expect(body).toEqual({ error: 'Kontak ini tidak punya nomor WhatsApp' })
+    // Berhenti SEBELUM menyentuh waNumber, upload media, atau kirim -- bukan gagal di tengah jalan.
+    expect(mockPrisma.waNumber.findFirstOrThrow).not.toHaveBeenCalled()
+    expect(uploadMetaMediaFromUrl).not.toHaveBeenCalled()
+    expect(sendTemplateMessage).not.toHaveBeenCalled()
+    expect(mockPrisma.message.create).not.toHaveBeenCalled()
+  })
+
   it('sends a TEXT template, interpolates the body, and records the resolved templatePayload', async () => {
     mockPrisma.template.findUnique.mockResolvedValue({
       id: 't1', name: 'booking_confirmation', metaStatus: 'APPROVED', body: 'Halo {{1}}, paket Anda {{2}} sudah dikonfirmasi.', cards: null,

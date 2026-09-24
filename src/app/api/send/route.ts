@@ -20,7 +20,9 @@ const mediaSchema = z.object({
 // - { to, text } — a phone-number-based compatibility shape kept for a future,
 //   separately-authorized cutover of chatbot-web's legacy sender (Task 46 Step 1).
 //   `to` is resolved to its Conversation via Contact.phone -- no longer unique since the
-//   omnichannel-fondasi Task 9 relaxation, so this takes the most recently active one.
+//   omnichannel-fondasi Task 9 relaxation. Two Contacts can now share a number, so the
+//   oldest Contact wins (deterministic pick, see the comment at the lookup itself), and
+//   within that Contact the most recently active Conversation is used.
 // `text` is optional in both, but not independently of `media`: a media-less send still
 // needs real text, while an attachment can go out with no caption at all -- the .refine
 // below is what actually enforces "at least one of the two", not the field types themselves.
@@ -53,8 +55,10 @@ export async function POST(req: Request) {
   if ('conversationId' in parsed.data) {
     conversationId = parsed.data.conversationId
   } else {
+    // legacy-key-ok: kompat Task 46 -- phone tak lagi unik sejak Task 9, orderBy createdAt asc di bawah membuat pilihannya deterministik (lihat komentar di atas modul ini, dan Temuan I-1 fix round 1)
     const contact = await prisma.contact.findFirst({
       where: { phone: parsed.data.to },
+      orderBy: { createdAt: 'asc' },
       include: { conversations: { orderBy: { lastMessageAt: 'desc' }, take: 1 } },
     })
     if (!contact) return NextResponse.json({ error: 'Kontak tidak ditemukan' }, { status: 404 })

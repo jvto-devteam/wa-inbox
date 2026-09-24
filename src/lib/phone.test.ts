@@ -18,6 +18,13 @@ describe('isIndonesianNumber', () => {
     expect(isIndonesianNumber('')).toBe(false)
     expect(isIndonesianNumber('+6282143403501')).toBe(false) // stored format never has a leading "+"
   })
+
+  // Temuan M-4, fix round 1: signature widened to `string | null` for Task 9 (Contact.phone is
+  // nullable for contacts born on a channel without one -- IG/FB/email), but no test covered
+  // the null case itself.
+  it('does not match null (a contact with no phone number is not an Indonesian number)', () => {
+    expect(isIndonesianNumber(null)).toBe(false)
+  })
 })
 
 describe('normalizePhoneNumber', () => {

@@ -185,7 +185,12 @@ export function ContactTable() {
             </TableHeader>
             <TableBody>
               {contacts.map((c) => (
-                <TableRow key={c.id}>
+                // Sejak Task 9 satu Contact bisa muncul sebagai lebih dari satu baris (satu
+                // per Conversation, lihat komentar di /api/contacts). `c.id` (id Contact) jadi
+                // duplikat lintas baris dalam kasus itu; `c.conversationId` unik per baris,
+                // dan hanya null untuk kontak tier 1 (tanpa percakapan sama sekali, yang karena
+                // itu memang cuma satu baris per kontak).
+                <TableRow key={c.conversationId ?? c.id}>
                   <TableCell>
                     <Link
                       href={`/contacts/${c.id}`}

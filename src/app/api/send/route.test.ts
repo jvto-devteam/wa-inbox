@@ -80,6 +80,9 @@ describe('POST /api/send', () => {
     expect(await res.json()).toEqual({ id: 'msg_1', deliveryStatus: 'SENT' })
     expect(mockPrisma.contact.findFirst).toHaveBeenCalledWith({
       where: { phone: '6281234567890' },
+      // Temuan I-1, fix round 1: deterministik (yang tertua menang) sejak Contact.phone bukan
+      // lagi unik -- dua Contact kini bisa berbagi nomor.
+      orderBy: { createdAt: 'asc' },
       include: { conversations: { orderBy: { lastMessageAt: 'desc' }, take: 1 } },
     })
     expect(sendMessage).toHaveBeenCalledWith(expect.objectContaining({ conversationId: 'conv_1', text: 'Halo!', sentBy: 'AGENT' }))
