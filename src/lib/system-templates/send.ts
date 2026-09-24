@@ -163,7 +163,7 @@ export async function enqueueSystemTemplateSend(params: SystemSendParams): Promi
   })
 
   const now = new Date()
-  const botEnabled = await defaultBotEnabled(phone)
+  const botEnabled = await defaultBotEnabled({ platform: 'WHATSAPP', phone })
 
   const conversation = await upsertOnce(() =>
     prisma.conversation.upsert({

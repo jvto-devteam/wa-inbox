@@ -765,6 +765,15 @@ model Settings {
   /// adalah /api/outbound-jobs/pause-provider dan resume-provider, langsung berlaku tanpa
   /// publish apa pun.
   pausedProviders             String[]       @default([])
+  /// Sakelar autoreply bot per platform. Seperti botAutoReplyAll, keempatnya BUKAN gerbang
+  /// runtime: saat di-toggle mereka menulis massal ke Conversation.botEnabled, lalu menyingkir.
+  /// Gerbang runtime tetap satu (Conversation.botEnabled) supaya "Ambil Alih dari Bot" per chat
+  /// tidak bisa tertimpa diam-diam -- lihat komentar di kepala defaultBotEnabled().
+  /// Default: hanya WhatsApp menyala, karena channel lain belum ada saat kolom ini lahir.
+  botEnabledWhatsapp          Boolean        @default(true)
+  botEnabledInstagram         Boolean        @default(false)
+  botEnabledFacebook          Boolean        @default(false)
+  botEnabledEmail             Boolean        @default(false)
 }
 
 /// Catatan setiap perubahan penting di Bot Control. SDD Manage Second §7.1.

@@ -1,6 +1,7 @@
-import { Prisma, type DeliveryStatus, type TemplateMetaStatus } from '@prisma/client'
+import { Prisma, type DeliveryStatus, type TemplateMetaStatus, type Platform, type Settings } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { upsertChannelIdentity } from '@/lib/channel/identity'
+import { hasPhoneNumber } from '@/lib/channel/platform'
 import { broadcast } from '@/lib/realtime'
 import { decideAndRespond } from '@/lib/bot/orchestrator'
 import { checkAndRecordRateLimit } from '@/lib/bot/rate-limiter'
@@ -43,6 +44,13 @@ export type MetaInboundMessage = {
 // src/app/api/bot/indonesia-filter/route.ts, src/lib/phone.ts): an Indonesian-number
 // contact's very first conversation must start inactive too when that filter is on, not
 // just existing ones caught by the toggle's own bulk write.
+const TOGGLE_BY_PLATFORM = {
+  WHATSAPP: 'botEnabledWhatsapp',
+  INSTAGRAM: 'botEnabledInstagram',
+  FACEBOOK: 'botEnabledFacebook',
+  EMAIL: 'botEnabledEmail',
+} as const satisfies Record<Platform, keyof Settings>
+
 /**
  * Whether the bot should answer this contact by default.
  *
@@ -53,13 +61,31 @@ export type MetaInboundMessage = {
  * disabled and the bot would still skip every +62 number, because the Settings toggle was on
  * and either switch being on won. One writer means the switch on /chatbot is the answer, both
  * ways.
+ *
+ * Per-platform: reads exactly one of the four `botEnabled<Platform>` columns
+ * (TOGGLE_BY_PLATFORM), same discipline as `botAutoReplyAll` above -- these four are read here,
+ * when a NEW conversation is born, and nowhere else. Toggling one bulk-writes every matching
+ * conversation's `Conversation.botEnabled` (a later task's route, mirroring
+ * src/app/api/bot/mode/route.ts) and then gets out of the way. They must never become a second
+ * gate ANDed with `Conversation.botEnabled` at message time -- that gate stays the single one in
+ * `flushBurst`/`runBotForConversation` above. Two writers for one decision is exactly the
+ * `skipBotForIndonesianNumbers` bug this function already fixed once: either one being on wins,
+ * which silently makes half the control a no-op.
+ *
+ * The Indonesia filter is gated through `hasPhoneNumber(platform)`, not left to the regex
+ * merely failing to match: Instagram IGSIDs and Facebook PSIDs are long digit strings that
+ * `/^62\d+$/` (src/lib/phone.ts) happens not to match today, so without the explicit guard the
+ * filter would silently do nothing on those platforms while appearing to apply -- and a filter
+ * that silently does nothing is worse than one switched off, because nobody ever reports it.
  */
-export async function defaultBotEnabled(phone: string): Promise<boolean> {
+export async function defaultBotEnabled(input: { platform: Platform; phone: string | null }): Promise<boolean> {
   const settings = await prisma.settings.findUniqueOrThrow({ where: { id: 1 } })
 
-  if (isIndonesianNumber(phone) && settings.skipBotForIndonesianNumbers) return false
+  if (hasPhoneNumber(input.platform) && input.phone && isIndonesianNumber(input.phone) && settings.skipBotForIndonesianNumbers) {
+    return false
+  }
 
-  return settings.botAutoReplyAll
+  return settings[TOGGLE_BY_PLATFORM[input.platform]]
 }
 
 // Every media message type Meta can send carries the same {id, mime_type, caption?,
@@ -556,7 +582,7 @@ async function ingestSingleMessage(message: MetaInboundMessage, contacts: MetaCo
       channelIdentityId: identity.id,
       externalThreadId: '',
       lastMessageAt: sentAt,
-      botEnabled: await defaultBotEnabled(message.from),
+      botEnabled: await defaultBotEnabled({ platform: 'WHATSAPP', phone: message.from }),
     },
   })
 
@@ -699,7 +725,7 @@ async function ingestEchoedMessage(echo: MetaMessageEcho): Promise<boolean> {
       channelIdentityId: identity.id,
       externalThreadId: '',
       lastMessageAt: sentAt,
-      botEnabled: await defaultBotEnabled(echo.to),
+      botEnabled: await defaultBotEnabled({ platform: 'WHATSAPP', phone: echo.to }),
     },
   })
 

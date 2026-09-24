@@ -4,7 +4,14 @@ import path from 'node:path'
 import { mockDeep, mockReset, type DeepMockProxy } from 'vitest-mock-extended'
 import { Prisma, type PrismaClient } from '@prisma/client'
 import { prisma } from '@/lib/db'
-import { ingestMetaMessage, scheduleBotRun, runBotForConversation, __resetPendingBurstsForTests, type MetaWebhookPayload } from './inbound'
+import {
+  ingestMetaMessage,
+  scheduleBotRun,
+  runBotForConversation,
+  defaultBotEnabled,
+  __resetPendingBurstsForTests,
+  type MetaWebhookPayload,
+} from './inbound'
 import { decideAndRespond } from '@/lib/bot/orchestrator'
 import { __resetRateLimiterForTests } from '@/lib/bot/rate-limiter'
 import { sendMessage } from '@/lib/send'
@@ -35,8 +42,16 @@ beforeEach(() => {
   vi.mocked(classifyAndStoreTopicLabels).mockReset().mockResolvedValue(null)
   vi.mocked(recordUnsourcedReplyGap).mockReset().mockResolvedValue(undefined)
   // Read by defaultBotEnabled() whenever a new conversation is created, so a brand-new
-  // conversation starts in whatever state the global bot mode currently dictates.
-  mockPrisma.settings.findUniqueOrThrow.mockResolvedValue({ botAutoReplyAll: true, skipBotForIndonesianNumbers: false } as never)
+  // conversation starts in whatever state the per-platform toggle currently dictates.
+  // Matches the schema defaults: only WhatsApp on, the other three platforms off.
+  mockPrisma.settings.findUniqueOrThrow.mockResolvedValue({
+    botAutoReplyAll: true,
+    skipBotForIndonesianNumbers: false,
+    botEnabledWhatsapp: true,
+    botEnabledInstagram: false,
+    botEnabledFacebook: false,
+    botEnabledEmail: false,
+  } as never)
   // The two operator-editable bot sentences (runtime-integration.ts). Null by default so every
   // pre-existing test sees the code's own wording, which is what they were written against.
   mockPrisma.settings.findUnique.mockResolvedValue({ fallbackReply: null, handoffReply: null } as never)
@@ -264,8 +279,8 @@ describe('defaultBotEnabled (new conversation creation)', () => {
     }],
   }
 
-  it('starts a brand-new conversation active when botAutoReplyAll is on and the Indonesia filter is off', async () => {
-    mockPrisma.settings.findUniqueOrThrow.mockResolvedValue({ botAutoReplyAll: true, skipBotForIndonesianNumbers: false } as never)
+  it('starts a brand-new conversation active when botEnabledWhatsapp is on and the Indonesia filter is off', async () => {
+    mockPrisma.settings.findUniqueOrThrow.mockResolvedValue({ botEnabledWhatsapp: true, skipBotForIndonesianNumbers: false } as never)
     stubHappyPath()
 
     await ingestMetaMessage(samplePayload)
@@ -278,8 +293,8 @@ describe('defaultBotEnabled (new conversation creation)', () => {
   // The operator-facing feature this describe block exists for: an Indonesian contact's very
   // first conversation must start inactive too when the filter is on, not just existing
   // conversations caught by the toggle route's own bulk write.
-  it('starts a brand-new INDONESIAN-number conversation inactive when the Indonesia filter is on, even though botAutoReplyAll is on', async () => {
-    mockPrisma.settings.findUniqueOrThrow.mockResolvedValue({ botAutoReplyAll: true, skipBotForIndonesianNumbers: true } as never)
+  it('starts a brand-new INDONESIAN-number conversation inactive when the Indonesia filter is on, even though botEnabledWhatsapp is on', async () => {
+    mockPrisma.settings.findUniqueOrThrow.mockResolvedValue({ botEnabledWhatsapp: true, skipBotForIndonesianNumbers: true } as never)
     stubHappyPath()
 
     await ingestMetaMessage(samplePayload) // samplePayload's contact is 6281234567890 -- Indonesian
@@ -290,7 +305,7 @@ describe('defaultBotEnabled (new conversation creation)', () => {
   })
 
   it('still starts a NON-Indonesian conversation active when the Indonesia filter is on', async () => {
-    mockPrisma.settings.findUniqueOrThrow.mockResolvedValue({ botAutoReplyAll: true, skipBotForIndonesianNumbers: true } as never)
+    mockPrisma.settings.findUniqueOrThrow.mockResolvedValue({ botEnabledWhatsapp: true, skipBotForIndonesianNumbers: true } as never)
     // defaultBotEnabled() now checks message.from straight off the payload (Task 5b), not the
     // upserted contact's phone -- usPayload's own `from` (12025551234, non-Indonesian) is
     // already enough, no contact override needed.
@@ -311,7 +326,7 @@ describe('defaultBotEnabled (new conversation creation)', () => {
   // the direction that mattered: publishing it as DISABLED changed nothing while the Settings
   // toggle was on. These two tests pin the column as the single writer, both ways.
   it('answers an Indonesian number as soon as the column is false — nothing else can force a skip', async () => {
-    mockPrisma.settings.findUniqueOrThrow.mockResolvedValue({ botAutoReplyAll: true, skipBotForIndonesianNumbers: false } as never)
+    mockPrisma.settings.findUniqueOrThrow.mockResolvedValue({ botEnabledWhatsapp: true, skipBotForIndonesianNumbers: false } as never)
     stubHappyPath()
 
     await ingestMetaMessage(samplePayload) // 6281234567890 -- Indonesian
@@ -339,8 +354,8 @@ describe('defaultBotEnabled (new conversation creation)', () => {
     expect(botControlImports).toEqual(['decision-recorder'])
   })
 
-  it('the Indonesia filter never overrides botAutoReplyAll being off -- both must independently allow the bot', async () => {
-    mockPrisma.settings.findUniqueOrThrow.mockResolvedValue({ botAutoReplyAll: false, skipBotForIndonesianNumbers: false } as never)
+  it('the Indonesia filter never overrides botEnabledWhatsapp being off -- both must independently allow the bot', async () => {
+    mockPrisma.settings.findUniqueOrThrow.mockResolvedValue({ botEnabledWhatsapp: false, skipBotForIndonesianNumbers: false } as never)
     stubHappyPath()
 
     await ingestMetaMessage(usPayload)
@@ -348,6 +363,42 @@ describe('defaultBotEnabled (new conversation creation)', () => {
     expect(mockPrisma.conversation.upsert).toHaveBeenCalledWith(expect.objectContaining({
       create: expect.objectContaining({ botEnabled: false }),
     }))
+  })
+})
+
+describe('defaultBotEnabled per platform', () => {
+  it('memakai sakelar WhatsApp untuk percakapan WhatsApp', async () => {
+    mockPrisma.settings.findUniqueOrThrow.mockResolvedValue({
+      botAutoReplyAll: true, skipBotForIndonesianNumbers: false,
+      botEnabledWhatsapp: false, botEnabledFacebook: true,
+      botEnabledInstagram: false, botEnabledEmail: false,
+    } as never)
+
+    await expect(defaultBotEnabled({ platform: 'WHATSAPP', phone: '491234567' })).resolves.toBe(false)
+  })
+
+  it('memakai sakelar Facebook untuk percakapan Facebook', async () => {
+    mockPrisma.settings.findUniqueOrThrow.mockResolvedValue({
+      botAutoReplyAll: true, skipBotForIndonesianNumbers: false,
+      botEnabledWhatsapp: false, botEnabledFacebook: true,
+      botEnabledInstagram: false, botEnabledEmail: false,
+    } as never)
+
+    await expect(defaultBotEnabled({ platform: 'FACEBOOK', phone: null })).resolves.toBe(true)
+  })
+
+  // Tanpa penjagaan hasPhoneNumber(), PSID Facebook berupa angka panjang bisa lolos ke
+  // regex /^62\d+$/ kalau suatu saat regexnya dilonggarkan -- dan filter nomor Indonesia
+  // akan diam-diam mematikan bot di channel yang sama sekali tidak punya nomor telepon.
+  it('filter nomor Indonesia tidak pernah berlaku di platform non-telepon', async () => {
+    mockPrisma.settings.findUniqueOrThrow.mockResolvedValue({
+      botAutoReplyAll: true, skipBotForIndonesianNumbers: true,
+      botEnabledWhatsapp: true, botEnabledFacebook: true,
+      botEnabledInstagram: true, botEnabledEmail: true,
+    } as never)
+
+    await expect(defaultBotEnabled({ platform: 'FACEBOOK', phone: '628123456789' })).resolves.toBe(true)
+    await expect(defaultBotEnabled({ platform: 'WHATSAPP', phone: '628123456789' })).resolves.toBe(false)
   })
 })
 
