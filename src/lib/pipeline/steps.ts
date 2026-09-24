@@ -133,7 +133,7 @@ export const PIPELINE_STEPS: PipelineStep[] = [
     id: 'gerbang-bot',
     label: 'Kelayakan bot dicek',
     summary:
-      'Percakapan baru mengikuti Settings.botAutoReplyAll, dan nomor +62 dilewati bila filter nomor Indonesia menyala. Percakapan lama mempertahankan botEnabled-nya sendiri: agent yang mengambil alih tidak boleh dikembalikan ke bot oleh pesan berikutnya.',
+      'Percakapan baru lahir aktif hanya bila sakelar global (Settings.botAutoReplyAll) DAN sakelar channel platform itu (Settings.botEnabledWhatsapp/Instagram/Facebook/Email) sama-sama menyala. Nomor +62 dilewati bila filter nomor Indonesia menyala — filter itu hanya berlaku di platform berbasis nomor telepon (WhatsApp). Percakapan lama mempertahankan botEnabled-nya sendiri: agent yang mengambil alih tidak boleh dikembalikan ke bot oleh pesan berikutnya.',
     sourceRef: { file: 'src/lib/inbound.ts', symbol: 'defaultBotEnabled' },
     x: 40 + COL * 2,
     y: LANE_MAIN,

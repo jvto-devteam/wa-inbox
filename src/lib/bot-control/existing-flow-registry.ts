@@ -109,7 +109,7 @@ const NODES: ExistingFlowNode[] = [
     name: 'Kebijakan bot default dicek',
     type: 'guard',
     description:
-      'Menentukan apakah percakapan baru dimulai dengan botEnabled true: mengikuti Settings.botAutoReplyAll, dan bila filter nomor Indonesia aktif, nomor +62 tidak dibalas otomatis. Percakapan yang sudah ada mempertahankan nilainya sendiri — agent yang mengambil alih tidak boleh dikembalikan ke bot oleh pesan berikutnya.',
+      'Menentukan apakah percakapan baru dimulai dengan botEnabled true: hanya bila sakelar global (Settings.botAutoReplyAll) DAN sakelar channel platform itu (Settings.botEnabledWhatsapp/Instagram/Facebook/Email) sama-sama menyala — salah satu dimatikan berarti percakapan baru lahir nonaktif. Bila filter nomor Indonesia aktif, nomor +62 tidak dibalas otomatis; filter itu hanya berlaku di platform yang identitasnya memang nomor telepon (WhatsApp), bukan di Instagram/Facebook/Email. Percakapan yang sudah ada mempertahankan nilainya sendiri — agent yang mengambil alih tidak boleh dikembalikan ke bot oleh pesan berikutnya.',
     sourceFile: 'src/lib/inbound.ts',
     sourceRef: 'defaultBotEnabled',
     possibleOutputs: ['bot aktif → lanjut', 'bot nonaktif → berhenti, pesan hanya masuk inbox'],

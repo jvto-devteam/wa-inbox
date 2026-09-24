@@ -32,18 +32,26 @@ export type MetaInboundMessage = {
   context?: { id?: string }
 }
 
-// A brand-new conversation must start with the bot in whatever state the global mode
-// currently dictates -- On (Settings.botAutoReplyAll) means every conversation defaults
-// active, Off means every conversation defaults inactive until an agent manually opts it
-// in (see src/app/api/bot/mode/route.ts, which bulk-writes existing conversations the
-// same way on every toggle). Reading this fresh on every new conversation, rather than
-// relying on the schema's static default, is what keeps a conversation created five
+// A brand-new conversation starts bot-enabled only when BOTH operator switches allow it:
+// the global mode (Settings.botAutoReplyAll, /chatbot's "Aktif untuk semua chat" /
+// "Matikan (Off)") AND that platform's own switch (Settings.botEnabled<Platform>, the four
+// per-channel toggles on the same page). Either one being off means the conversation is born
+// inactive until an agent manually opts it in.
+//
+// Both, not just the platform one: the two switches are written by two different bulk-writer
+// routes (src/app/api/bot/mode/route.ts and src/app/api/bot/channel-toggle/route.ts), and
+// neither touches the other's column. Reading only the platform column here meant pressing
+// the global "Matikan (Off)" left botEnabledWhatsapp true, so a number that had never written
+// before got a conversation born bot-enabled -- the bot answering while /chatbot showed
+// "Bot: Off (Manual per Chat)". Reading BOTH fresh on every new conversation, rather than
+// relying on the schema's static default, is also what keeps a conversation created five
 // minutes after an Off toggle from starting active anyway.
 //
 // `phone` additionally checks Settings.skipBotForIndonesianNumbers (see
 // src/app/api/bot/indonesia-filter/route.ts, src/lib/phone.ts): an Indonesian-number
 // contact's very first conversation must start inactive too when that filter is on, not
-// just existing ones caught by the toggle's own bulk write.
+// just existing ones caught by the toggle's own bulk write. That filter applies ONLY to
+// platforms whose identity is a phone number (hasPhoneNumber, src/lib/channel/platform.ts).
 const TOGGLE_BY_PLATFORM = {
   WHATSAPP: 'botEnabledWhatsapp',
   INSTAGRAM: 'botEnabledInstagram',
@@ -62,15 +70,22 @@ const TOGGLE_BY_PLATFORM = {
  * and either switch being on won. One writer means the switch on /chatbot is the answer, both
  * ways.
  *
- * Per-platform: reads exactly one of the four `botEnabled<Platform>` columns
- * (TOGGLE_BY_PLATFORM), same discipline as `botAutoReplyAll` above -- these four are read here,
- * when a NEW conversation is born, and nowhere else. Toggling one bulk-writes every matching
- * conversation's `Conversation.botEnabled` (a later task's route, mirroring
- * src/app/api/bot/mode/route.ts) and then gets out of the way. They must never become a second
- * gate ANDed with `Conversation.botEnabled` at message time -- that gate stays the single one in
- * `flushBurst`/`runBotForConversation` above. Two writers for one decision is exactly the
- * `skipBotForIndonesianNumbers` bug this function already fixed once: either one being on wins,
- * which silently makes half the control a no-op.
+ * Per-platform: `Settings.botAutoReplyAll` is ANDed with exactly one of the four
+ * `botEnabled<Platform>` columns (TOGGLE_BY_PLATFORM). Both are consulted, and both here --
+ * when a NEW conversation is born -- and nowhere else at message time. The global switch and
+ * the platform switch are independent columns written by two independent bulk-writer routes
+ * (src/app/api/bot/mode/route.ts, src/app/api/bot/channel-toggle/route.ts); neither writes the
+ * other's column, so reading only one of them here let the other silently disagree with what
+ * /chatbot displays. Toggling either bulk-writes every matching conversation's
+ * `Conversation.botEnabled` and then gets out of the way.
+ *
+ * AND, never OR: an operator turning anything OFF must mean off. That is the opposite of the
+ * `skipBotForIndonesianNumbers` bug this function already fixed once (two sources OR'd, so
+ * either one being ON won and half the control became a no-op).
+ *
+ * Neither column may ever become a second gate ANDed with `Conversation.botEnabled` at MESSAGE
+ * time -- that gate stays the single one in `flushBurst`/`runBotForConversation` above. These
+ * two reads happen exactly once, at conversation birth, which is not that.
  *
  * The Indonesia filter is gated through `hasPhoneNumber(platform)`, not left to the regex
  * merely failing to match: Instagram IGSIDs and Facebook PSIDs are long digit strings that
@@ -85,7 +100,7 @@ export async function defaultBotEnabled(input: { platform: Platform; phone: stri
     return false
   }
 
-  return settings[TOGGLE_BY_PLATFORM[input.platform]]
+  return settings.botAutoReplyAll && settings[TOGGLE_BY_PLATFORM[input.platform]]
 }
 
 // Every media message type Meta can send carries the same {id, mime_type, caption?,
