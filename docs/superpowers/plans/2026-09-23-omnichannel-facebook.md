@@ -748,7 +748,7 @@ Di `conversationsUrl`, tambahkan satu baris sejajar dengan yang sudah ada:
 Di blok pill yang sudah ada (sekitar baris 275-315), tambahkan `.map()` bergaya sama. Default WhatsApp:
 
 ```tsx
-  {(['WHATSAPP', 'INSTAGRAM', 'FACEBOOK', 'EMAIL'] as const).map((p) => {
+  {SHIPPED_PLATFORMS.map((p) => {
     const active = sameFilter(filter, { kind: 'platform', value: p })
     return (
       <Button key={`platform:${p}`} type="button" size="sm"
@@ -760,9 +760,36 @@ Di blok pill yang sudah ada (sekitar baris 275-315), tambahkan `.map()` bergaya 
   })}
 ```
 
-dengan `const PLATFORM_LABEL = { WHATSAPP: 'WhatsApp', INSTAGRAM: 'Instagram', FACEBOOK: 'Facebook', EMAIL: 'Email' } as const`.
+Tambahkan di `src/lib/channel/platform.ts`:
+
+```ts
+/**
+ * Platform yang tabnya ditampilkan di Inbox — bertambah SATU entri per fase channel.
+ *
+ * Sengaja konstanta, bukan diturunkan dari isi tabel: kalau diturunkan dari data, tab
+ * Facebook baru muncul saat pesan Facebook PERTAMA tiba, jadi operator tidak punya cara
+ * melihat channel itu sudah hidup sebelum ada yang menulis — dan tab yang berkedip mengikuti
+ * isi tabel membuat orang ragu apakah ia salah lihat.
+ *
+ * Tab kosong lebih buruk daripada tidak ada tab: ia menjanjikan sesuatu yang tidak bisa
+ * diberikan, dan tidak bisa dibedakan dari channel yang rusak. Karena itu Instagram dan
+ * Email TIDAK ada di sini sampai fasenya benar-benar selesai.
+ */
+export const SHIPPED_PLATFORMS = ['WHATSAPP', 'FACEBOOK'] as const satisfies readonly Platform[]
+
+export const PLATFORM_LABEL: Record<Platform, string> = {
+  WHATSAPP: 'WhatsApp',
+  INSTAGRAM: 'Instagram',
+  FACEBOOK: 'Facebook',
+  EMAIL: 'Email',
+}
+```
+
+`PLATFORM_LABEL` memuat keempatnya supaya fase berikutnya hanya perlu menambah satu entri ke `SHIPPED_PLATFORMS`, tanpa menyentuh label.
 
 Set state awal `useState<FilterOption | null>({ kind: 'platform', value: 'WHATSAPP' })` — **default WhatsApp**, supaya hari pertama setelah deploy tim melihat persis apa yang mereka lihat sekarang.
+
+Tambahkan test yang menjaga aturannya: `SHIPPED_PLATFORMS` **tidak boleh** memuat `INSTAGRAM` atau `EMAIL` sampai fase masing-masing selesai. Tanpa itu, seseorang akan menambahkan keempatnya sekaligus "supaya rapi" dan tab kosong kembali.
 
 - [ ] **Step 3: Dukung filter di API**
 

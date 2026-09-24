@@ -337,7 +337,25 @@ Gmail melihat percakapan yang sama — tidak ada dua kenyataan.
 
 ## 8. UI
 
-**Lima tab:** Semua · **WhatsApp** (default) · Instagram · Facebook · Email.
+**Tab tumbuh seiring channel-nya jadi — bukan lima tab tetap dengan tiga menunggu kosong.**
+Keputusan operator 2026-09-24, merevisi desain awal.
+
+| Setelah fase | Tab yang tampil |
+| --- | --- |
+| Fondasi (sekarang) | — belum ada tab; satu channel tidak butuh penyaring |
+| Facebook | Semua · **WhatsApp** (default) · Facebook |
+| Instagram | Semua · **WhatsApp** · Facebook · Instagram |
+| Email | Semua · **WhatsApp** · Facebook · Instagram · Email |
+
+Daftarnya berasal dari satu konstanta `SHIPPED_PLATFORMS` di kode, yang bertambah satu entri
+per fase — **bukan** diturunkan dari data. Kalau diturunkan dari data, tab Facebook baru
+muncul saat pesan Facebook pertama tiba, jadi operator tidak punya cara melihat bahwa channel
+itu sudah hidup sebelum ada yang menulis. Tab yang berkedip-kedip mengikuti isi tabel juga
+membuat orang ragu apakah ia salah lihat.
+
+Tab kosong lebih buruk daripada tidak ada tab: ia menjanjikan sesuatu yang tidak bisa
+diberikan, dan tidak ada cara membedakannya dari channel yang rusak.
+
 Hitungan belum-dibaca per tab. Satu benang = satu baris, dengan badge platform.
 
 Di tab Email, `mailLabel` (§6.4) mengurutkan: benang **tanpa label** di atas (kegagalan

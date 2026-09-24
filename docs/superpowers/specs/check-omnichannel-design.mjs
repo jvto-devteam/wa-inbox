@@ -88,8 +88,19 @@ mustContain('prisma/schema.prisma', /^model WaNumber /m, 'model WaNumber sebagai
 // ---------------------------------------------------------------------------
 // §4 — tiga kunci yang akan dilepas, dan enum yang TIDAK disentuh
 // ---------------------------------------------------------------------------
-mustContain('prisma/schema.prisma', /phone\s+String\s+@unique/, 'Contact.phone @unique (yang akan dilepas)')
-mustContain('prisma/schema.prisma', /contactId\s+String\s+@unique/, 'Conversation.contactId @unique (yang akan dilepas)')
+// Fase fondasi SELESAI 2026-09-24: kedua kunci ini sudah dilepas di produksi.
+// Assertion-nya berbalik arah — dulu "harus ada (akan dilepas)", kini "harus SUDAH lepas".
+mustContain('prisma/schema.prisma', /phone\s+String\?/, 'Contact.phone sudah nullable')
+mustNotContain('prisma/schema.prisma', /phone\s+String\s+@unique/, 'Contact.phone @unique (sudah dilepas)')
+// Terikat ke model Conversation, bukan seluruh file: ContactConsent.contactId MEMANG
+// @unique (satu baris consent per kontak) dan tidak ada hubungannya dengan migrasi ini.
+// Versi pertama pemeriksa ini salah membacanya sebagai constraint yang gagal dilepas.
+checks.push('Conversation.contactId sudah TIDAK unik')
+const convModel = ((read('prisma/schema.prisma') ?? '').match(/model Conversation \{[\s\S]*?\n\}/) ?? [''])[0]
+if (!convModel) failures.push('prisma/schema.prisma: model Conversation tidak ditemukan')
+else if (/contactId\s+String\s+@unique/.test(convModel))
+  failures.push('prisma/schema.prisma: Conversation.contactId masih @unique — migrasi pelonggaran belum jalan')
+mustContain('prisma/schema.prisma', /@@unique\(\[channelIdentityId, externalThreadId\]\)/, 'kunci benang gabungan')
 
 // MessageChannel harus tetap PERSIS dua nilai; desain bergantung pada ini.
 const schema = read('prisma/schema.prisma') ?? ''
@@ -102,10 +113,10 @@ else {
     failures.push(`enum MessageChannel sekarang [${values.join(', ')}] — desain mengasumsikan tepat OFFICIAL+UNOFFICIAL`)
 }
 
-// §4 klaim "belum ada"
-mustNotContain('prisma/schema.prisma', /^enum Platform /m, 'enum Platform')
-mustNotContain('prisma/schema.prisma', /^model ChannelIdentity /m, 'model ChannelIdentity')
-mustNotContain('prisma/schema.prisma', /^model MailAccount /m, 'model MailAccount')
+// §4 — fondasi SUDAH dibangun (2026-09-24); MailAccount masih menunggu fase email.
+mustContain('prisma/schema.prisma', /^enum Platform /m, 'enum Platform')
+mustContain('prisma/schema.prisma', /^model ChannelIdentity /m, 'model ChannelIdentity')
+mustNotContain('prisma/schema.prisma', /^model MailAccount /m, 'model MailAccount (fase email, belum)')
 
 // ---------------------------------------------------------------------------
 // §5 — gerbang bot: satu, bukan dua
@@ -115,17 +126,24 @@ mustContain('src/lib/inbound.ts', /conversation\.botEnabled && botCanAnswer/, 'g
 mustContain('src/app/api/bot/mode/route.ts', /updateMany/, 'botAutoReplyAll sebagai penulis massal, bukan gerbang')
 mustContain('src/lib/phone.ts', /isIndonesianNumber/, 'isIndonesianNumber()')
 mustContain('src/lib/phone.ts', /\^62/, 'regex prefix 62 yang tidak akan cocok dengan IGSID/PSID')
-// defaultBotEnabled belum sadar platform -- begitu ia sadar, fase 2 sudah jalan.
-mustNotContain('src/lib/inbound.ts', /defaultBotEnabled\([^)]*platform/i, 'parameter platform di defaultBotEnabled')
+// Fase sakelar per-channel SELESAI: defaultBotEnabled kini sadar platform.
+mustContain('src/lib/inbound.ts', /defaultBotEnabled\(input: \{ platform: Platform/, 'defaultBotEnabled sadar platform')
+// C-1: sakelar global HARUS tetap ikut dibaca. Regresi ini pernah terjadi dan lolos ke
+// produksi -- sakelar darurat "Matikan (Off)" berhenti berlaku untuk percakapan baru.
+mustContain('src/lib/inbound.ts', /settings\.botAutoReplyAll && settings\[TOGGLE_BY_PLATFORM/, 'sakelar global DAN sakelar platform, keduanya dibaca')
+mustContain('src/lib/channel/platform.ts', /hasPhoneNumber/, 'penjaga hasPhoneNumber')
 
 // ---------------------------------------------------------------------------
 // §6 — parser masuk belum mengenal IG/FB
 // ---------------------------------------------------------------------------
 mustNotContain('src/lib/inbound.ts', /payload\.object|\bentry\[\d*\]?\.messaging\b|value\.messaging/, 'percabangan payload.object / entry[].messaging[]')
 
-// §6.3 — belum ada infrastruktur email sama sekali
-for (const rel of ['src/lib/inbound.ts', 'src/lib/send.ts', 'prisma/schema.prisma'])
-  mustNotContain(rel, /gmail|imap|smtp|nodemailer/i, 'jejak email')
+// §6.3 — belum ada infrastruktur email sama sekali.
+// Dipersempit ke IMPOR dan PEMAKAIAN, bukan sekadar penyebutan: komentar dokumentasi
+// `externalThreadId` menyebut "threadId Gmail" sebagai penjelasan, dan versi lama
+// pemeriksa ini salah membacanya sebagai infrastruktur email yang sudah terpasang.
+for (const rel of ['src/lib/inbound.ts', 'src/lib/send.ts'])
+  mustNotContain(rel, /from ['"](nodemailer|imap|googleapis)|gmail\.users|createTransport/i, 'impor/pemakaian email')
 
 // ---------------------------------------------------------------------------
 // §7 — dispatch keluar masih WhatsApp-saja
