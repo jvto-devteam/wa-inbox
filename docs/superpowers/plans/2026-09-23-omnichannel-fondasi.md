@@ -15,6 +15,8 @@
 - **Dilarang `any`.** Pakai `unknown` atau tipe yang sesuai.
 - **Dilarang `npx prisma migrate dev`** terhadap database produksi — `DATABASE_URL` di repo ini menunjuk VPS produksi dan perintah itu bisa me-reset database saat mendeteksi drift.
 - **Migrasi produksi dibuat offline:** `npx prisma migrate diff --from-schema <lama> --to-schema prisma/schema.prisma --script`, simpan ke `prisma/migrations/<YYYYMMDDHHMMSS>_<snake_case>/migration.sql`, terapkan dengan `npx prisma migrate deploy`.
+- **Flagnya `--from-schema` / `--to-schema`**, bukan `--from-schema-datamodel` / `--to-schema-datamodel` — Prisma 7 sudah menghapus varian panjang itu. Diverifikasi 2026-09-24 lewat `npx prisma migrate diff --help`.
+- **Periksa isi `migration.sql` sesudah menyimpannya.** `prisma migrate diff` di lingkungan ini kadang mencampur baris log CLI ke stdout, dan baris itu ikut ter-redirect ke file. File migrasi yang memuat teks non-SQL akan menggagalkan `migrate deploy` di produksi, di tengah jalan. Buang barisnya sebelum commit.
 - **Sebelum tiap commit:** `npm test`, `npx tsc --noEmit`, `npx eslint .` (0 error, warning boleh).
 - **Sebelum deploy VPS:** `npm run build` **lokal** dulu — test/tsc/eslint tidak menangkap kerusakan client bundle.
 - **Deploy VPS:** `git checkout` dari `origin/main`, dan **export PATH nvm Node 22** atau semua perintah Prisma 7 mati di Node 18 bawaan.
@@ -127,8 +129,8 @@ Pada model `Conversation`, tambahkan (nullable — belum ada yang mengisinya):
 ```bash
 cd /Users/macbook/Code/wa-inbox
 git show HEAD:prisma/schema.prisma > /tmp/schema-lama.prisma
-npx prisma migrate diff --from-schema-datamodel /tmp/schema-lama.prisma \
-  --to-schema-datamodel prisma/schema.prisma --script \
+npx prisma migrate diff --from-schema /tmp/schema-lama.prisma \
+  --to-schema prisma/schema.prisma --script \
   > /tmp/migration-channel-identity.sql
 cat /tmp/migration-channel-identity.sql
 ```
@@ -649,8 +651,8 @@ Pada `model Conversation`:
 
 ```bash
 git show HEAD:prisma/schema.prisma > /tmp/schema-lama.prisma
-npx prisma migrate diff --from-schema-datamodel /tmp/schema-lama.prisma \
-  --to-schema-datamodel prisma/schema.prisma --script > /tmp/m.sql
+npx prisma migrate diff --from-schema /tmp/schema-lama.prisma \
+  --to-schema prisma/schema.prisma --script > /tmp/m.sql
 cat /tmp/m.sql
 mkdir -p prisma/migrations/20260924095000_conversation_thread_key
 cp /tmp/m.sql prisma/migrations/20260924095000_conversation_thread_key/migration.sql
@@ -823,8 +825,8 @@ Pada model `Settings` di `prisma/schema.prisma`:
 
 ```bash
 git show HEAD:prisma/schema.prisma > /tmp/schema-lama.prisma
-npx prisma migrate diff --from-schema-datamodel /tmp/schema-lama.prisma \
-  --to-schema-datamodel prisma/schema.prisma --script > /tmp/m.sql
+npx prisma migrate diff --from-schema /tmp/schema-lama.prisma \
+  --to-schema prisma/schema.prisma --script > /tmp/m.sql
 cat /tmp/m.sql
 mkdir -p prisma/migrations/20260924100000_bot_toggle_per_channel
 cp /tmp/m.sql prisma/migrations/20260924100000_bot_toggle_per_channel/migration.sql
@@ -1213,8 +1215,8 @@ Pada `model Conversation`, ubah `contactId String @unique` menjadi `contactId St
 
 ```bash
 git show HEAD:prisma/schema.prisma > /tmp/schema-lama.prisma
-npx prisma migrate diff --from-schema-datamodel /tmp/schema-lama.prisma \
-  --to-schema-datamodel prisma/schema.prisma --script > /tmp/m.sql
+npx prisma migrate diff --from-schema /tmp/schema-lama.prisma \
+  --to-schema prisma/schema.prisma --script > /tmp/m.sql
 cat /tmp/m.sql
 ```
 
