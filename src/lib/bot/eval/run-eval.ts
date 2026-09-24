@@ -101,14 +101,28 @@ async function runCase(c: EvalCase): Promise<CaseResult> {
 // mocked prisma (no real database, no Ollama) -- see that file's header for why this needed
 // its own regression test.
 export async function cleanup(): Promise<void> {
-  // NOT a cascade. `Contact <--RESTRICT-- Conversation <--RESTRICT-- Message` (see
-  // prisma/migrations/20260727013701_init/migration.sql:194 and :200): this schema uses real
-  // Postgres foreign keys, not Prisma-emulated ones (`relationMode` is unset in schema.prisma,
-  // which defaults to "foreignKeys"), and neither FK cascades. Deleting a Contact while its
-  // Conversation still exists -- or a Conversation while a Message referencing it still
-  // exists -- aborts the WHOLE delete statement atomically; Prisma throws and zero rows are
-  // removed. So this must delete leaves of the dependency tree first: Message, then
-  // Conversation, then Contact.
+  // NOT a cascade. Two independent RESTRICT chains hang off Contact:
+  //
+  //   Contact <--RESTRICT-- Conversation <--RESTRICT-- Message
+  //     (prisma/migrations/20260727013701_init/migration.sql:194 and :200)
+  //   Contact <--RESTRICT-- ChannelIdentity
+  //     (prisma/migrations/20260924080000_channel_identity/migration.sql:27)
+  //
+  // This schema uses real Postgres foreign keys, not Prisma-emulated ones (`relationMode` is
+  // unset in schema.prisma, which defaults to "foreignKeys"), and none of those FKs cascade.
+  // Deleting a Contact while ANY row still references it -- a Conversation or a
+  // ChannelIdentity -- aborts the WHOLE delete statement atomically; Prisma throws P2003 and
+  // zero rows are removed. So this must delete leaves of the dependency tree first: Message,
+  // then Conversation, then ChannelIdentity, then Contact.
+  //
+  // ChannelIdentity was missed when `runCase` above started creating one, which is exactly the
+  // failure this ordering exists to prevent: the Contact delete threw P2003, nothing at all was
+  // removed, and every `npm run eval` on the VPS left 13 `eval-` Contacts plus 13
+  // ChannelIdentity rows permanently in the customer database -- visible on the Contacts page
+  // and counted in every contact total. Conversation.channelIdentityId is ON DELETE SET NULL
+  // (same migration, :30) rather than RESTRICT, so identity-before-conversation would also have
+  // "worked"; it is deleted after Conversation anyway, so the order stays a plain leaves-first
+  // walk that needs no per-FK exception to read correctly.
   //
   // decideAndRespond (all `runCase` above ever calls) never itself creates a Message, Note,
   // or Reminder row -- `Message.create` only happens in inbound.ts and send.ts, neither of
@@ -116,11 +130,12 @@ export async function cleanup(): Promise<void> {
   // today. Note/Reminder both also reference Contact with the same RESTRICT behavior, but
   // nothing this script does can ever create one, so they're deliberately left alone.
   //
-  // All three are independently scoped to the literal `eval-` phone prefix (never inferred
+  // All four are independently scoped to the literal `eval-` phone prefix (never inferred
   // from IDs collected during this run), so a partial/crashed run can never leave a stray
   // WHERE clause wide enough to touch a real customer's rows.
   await prisma.message.deleteMany({ where: { conversation: { contact: { phone: { startsWith: 'eval-' } } } } })
   await prisma.conversation.deleteMany({ where: { contact: { phone: { startsWith: 'eval-' } } } })
+  await prisma.channelIdentity.deleteMany({ where: { contact: { phone: { startsWith: 'eval-' } } } })
   await prisma.contact.deleteMany({ where: { phone: { startsWith: 'eval-' } } })
 }
 
@@ -179,10 +194,11 @@ async function main(): Promise<void> {
     // enough that an operator can remove them by hand rather than them silently accumulating
     // and breaking every later run's `upsert` (which would re-use, not recreate, them).
     console.error(
-      "\nCleanup FAILED -- leftover eval- rows were NOT removed. Remove them by hand, in this order (Message, then Conversation, then Contact -- the FKs are RESTRICT, not CASCADE, see cleanup()'s own comment):"
+      "\nCleanup FAILED -- leftover eval- rows were NOT removed. Remove them by hand, in this order (Message, then Conversation, then ChannelIdentity, then Contact -- the FKs are RESTRICT, not CASCADE, see cleanup()'s own comment):"
     )
     console.error(`  DELETE FROM "Message" USING "Conversation" c, "Contact" ct WHERE "Message"."conversationId" = c.id AND c."contactId" = ct.id AND ct.phone LIKE 'eval-%';`)
     console.error(`  DELETE FROM "Conversation" USING "Contact" ct WHERE "Conversation"."contactId" = ct.id AND ct.phone LIKE 'eval-%';`)
+    console.error(`  DELETE FROM "ChannelIdentity" USING "Contact" ct WHERE "ChannelIdentity"."contactId" = ct.id AND ct.phone LIKE 'eval-%';`)
     console.error(`  DELETE FROM "Contact" WHERE phone LIKE 'eval-%';`)
     console.error(error)
   }

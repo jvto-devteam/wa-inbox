@@ -33,19 +33,42 @@ beforeEach(() => {
   mockReset(mockPrisma)
 })
 
+// Temuan I-1 (fix round 2): `runCase` gained a `upsertChannelIdentity` call, and ChannelIdentity
+// references Contact with the same ON DELETE RESTRICT (prisma/migrations/
+// 20260924080000_channel_identity/migration.sql:27). `cleanup()` never deleted it, so the
+// Contact delete threw P2003 and removed NOTHING -- every `npm run eval` on the VPS left 13
+// eval- Contacts and 13 ChannelIdentity rows permanently in the customer database. The
+// assertions below passed throughout, because this file's mock knows nothing about foreign keys:
+// they only pinned the three deletes that existed. Pinning the EXACT set and order is what makes
+// the next table added to runCase fail here instead of in production.
 describe('cleanup', () => {
-  it('deletes Message, then Conversation, then Contact -- the FK dependency order, leaves first', async () => {
+  it('deletes Message, then Conversation, then ChannelIdentity, then Contact -- the FK dependency order, leaves first', async () => {
     await cleanup()
 
     const messageOrder = mockPrisma.message.deleteMany.mock.invocationCallOrder[0]
     const conversationOrder = mockPrisma.conversation.deleteMany.mock.invocationCallOrder[0]
+    const identityOrder = mockPrisma.channelIdentity.deleteMany.mock.invocationCallOrder[0]
     const contactOrder = mockPrisma.contact.deleteMany.mock.invocationCallOrder[0]
 
     expect(messageOrder).toBeDefined()
     expect(conversationOrder).toBeDefined()
+    expect(identityOrder).toBeDefined()
     expect(contactOrder).toBeDefined()
     expect(messageOrder).toBeLessThan(conversationOrder)
-    expect(conversationOrder).toBeLessThan(contactOrder)
+    expect(conversationOrder).toBeLessThan(identityOrder)
+    expect(identityOrder).toBeLessThan(contactOrder)
+  })
+
+  // The specific regression: Contact must never be the delete that runs while a ChannelIdentity
+  // referencing it is still there. Asserted as "identity strictly before contact" above AND as
+  // "the identity delete happened at all" here, so removing the call cannot pass by making the
+  // ordering assertion vacuous.
+  it('deletes the ChannelIdentity rows -- without them the Contact delete throws P2003 and removes nothing', async () => {
+    await cleanup()
+
+    expect(mockPrisma.channelIdentity.deleteMany).toHaveBeenCalledWith({
+      where: { contact: { phone: { startsWith: 'eval-' } } },
+    })
   })
 
   it('scopes every delete to the eval- prefix, so it can never reach a real customer row', async () => {
@@ -55,6 +78,9 @@ describe('cleanup', () => {
       where: { conversation: { contact: { phone: { startsWith: 'eval-' } } } },
     })
     expect(mockPrisma.conversation.deleteMany).toHaveBeenCalledWith({
+      where: { contact: { phone: { startsWith: 'eval-' } } },
+    })
+    expect(mockPrisma.channelIdentity.deleteMany).toHaveBeenCalledWith({
       where: { contact: { phone: { startsWith: 'eval-' } } },
     })
     expect(mockPrisma.contact.deleteMany).toHaveBeenCalledWith({
@@ -67,6 +93,7 @@ describe('cleanup', () => {
 
     expect(mockPrisma.message.deleteMany).toHaveBeenCalledTimes(1)
     expect(mockPrisma.conversation.deleteMany).toHaveBeenCalledTimes(1)
+    expect(mockPrisma.channelIdentity.deleteMany).toHaveBeenCalledTimes(1)
     expect(mockPrisma.contact.deleteMany).toHaveBeenCalledTimes(1)
   })
 })
