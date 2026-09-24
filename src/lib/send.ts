@@ -4,6 +4,7 @@ import type { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { sendMetaText, sendMetaMedia } from '@/lib/meta/messages'
 import { uploadMetaMediaFromUrl } from '@/lib/meta/media-upload'
+import { sendMessengerText } from '@/lib/meta/messenger-send'
 import { sendCoexistText, sendCoexistMedia } from '@/lib/coexist/client'
 import { resolveChannelForCapability } from '@/lib/channel-router'
 import type { ChannelCapabilityKey } from '@/lib/bot-control/channel-capabilities'
@@ -82,11 +83,26 @@ export async function sendMessage(params: {
   botTrace?: unknown
   replyToId?: string
   media?: OutboundMedia
+  // Which platform this send goes out on. Default 'WHATSAPP' so every existing caller
+  // (agent reply route, bot orchestrator, message-draft) keeps working unchanged without
+  // knowing this parameter exists. Task 5 (Facebook Messenger).
+  platform?: 'WHATSAPP' | 'FACEBOOK'
 }) {
-  // Sanitized ONCE, here, before any of this function's three writes (blocked below, the
-  // direct write further down, and sendViaQueue's own write, which receives this already-
-  // sanitized value rather than the raw params.botTrace).
+  // Sanitized ONCE, here, before any of this function's writes (blocked below, the direct
+  // write further down, sendViaQueue's own write, and sendMessengerMessage's write below --
+  // all receive this already-sanitized value rather than the raw params.botTrace).
   const botTrace = sanitizedBotTrace(params.botTrace)
+
+  // Cabang platform duluan, baru cabang MessageChannel. MessageChannel { OFFICIAL,
+  // UNOFFICIAL } berarti "Meta Cloud API vs wa-coexist" -- dua jalur DI DALAM WhatsApp,
+  // bukan dua platform, jadi FACEBOOK tidak pernah jadi nilai ketiga enum itu (lihat
+  // sendMessengerMessage di bawah, yang menulis 'OFFICIAL' -- pengiriman Graph API
+  // sungguhan, hanya kebetulan bukan WhatsApp). Messenger juga tidak melewati capability
+  // matrix WhatsApp (resolveChannelForCapability) atau gerbang `contact.phone` di bawah --
+  // kontak Facebook tidak pernah punya nomor telepon; identitasnya PSID di ChannelIdentity.
+  if (params.platform === 'FACEBOOK') {
+    return sendMessengerMessage(params, botTrace)
+  }
 
   // The capability matrix decides both WHICH channel carries this send and whether it may go
   // out at all. SDD Manage Second §15 Phase H task 4.
@@ -252,6 +268,92 @@ export async function sendMessage(params: {
       mimeType: params.media?.mimeType ?? null,
       fileName: params.media?.fileName ?? null,
       channel,
+      sentBy: params.sentBy,
+      agentId: params.agentId,
+      botTrace: botTrace as never,
+      deliveryStatus,
+      replyToId: params.replyToId,
+    },
+    include: { replyTo: true },
+  })
+  broadcast({ type: 'message.created', conversationId: params.conversationId, message: withMediaUrl(created) })
+  return created
+}
+
+/**
+ * The Facebook Messenger send path. Deliberately its own small function, not spliced into the
+ * WhatsApp direct path above: Messenger has no capability matrix, no OFFICIAL/UNOFFICIAL
+ * choice, no waNumber, and its recipient identity is a PSID (ChannelIdentity.externalId), not
+ * `contact.phone` -- a Facebook-born contact's `phone` column is always null (see
+ * prisma/schema.prisma's Contact.phone comment). `channel: 'OFFICIAL'` on the written row is
+ * not a lie: this is a real, direct Graph API call, the same shape of fact OFFICIAL records
+ * for WhatsApp -- it only ever means "not queued through the Unofficial outbound job".
+ */
+async function sendMessengerMessage(
+  params: {
+    conversationId: string
+    text: string
+    sentBy: 'AGENT' | 'BOT'
+    agentId?: string
+    replyToId?: string
+  },
+  botTrace: Prisma.InputJsonValue | undefined,
+) {
+  const conversation = await prisma.conversation.findUniqueOrThrow({
+    where: { id: params.conversationId },
+    include: { channelIdentity: true },
+  })
+
+  const recordFailed = async () => {
+    const failed = await prisma.message.create({
+      data: {
+        conversationId: params.conversationId,
+        direction: 'OUTBOUND',
+        type: 'text',
+        content: params.text || null,
+        channel: 'OFFICIAL',
+        sentBy: params.sentBy,
+        agentId: params.agentId,
+        botTrace: botTrace as never,
+        deliveryStatus: 'FAILED',
+        replyToId: params.replyToId,
+      },
+      include: { replyTo: true },
+    })
+    broadcast({ type: 'message.created', conversationId: params.conversationId, message: withMediaUrl(failed) })
+    return failed
+  }
+
+  // A Facebook conversation with no ChannelIdentity is a routing bug elsewhere (every FB
+  // conversation is created FROM a ChannelIdentity -- see inbound-messenger.ts), not something
+  // to crash on: record it as a normal FAILED send, same as the WhatsApp `!contact.phone` gate
+  // above does for its own equivalent impossible state.
+  const recipientId = conversation.channelIdentity?.externalId
+  if (!recipientId) {
+    console.error('sendMessage: percakapan Facebook tanpa ChannelIdentity (PSID)', {
+      conversationId: params.conversationId,
+    })
+    return recordFailed()
+  }
+
+  let externalId: string | undefined
+  let deliveryStatus: 'SENT' | 'FAILED' = 'SENT'
+  try {
+    const result = await sendMessengerText(recipientId, params.text)
+    externalId = result.externalId
+  } catch (error) {
+    console.error('sendMessage: Messenger send attempt failed', { conversationId: params.conversationId, error })
+    deliveryStatus = 'FAILED'
+  }
+
+  const created = await prisma.message.create({
+    data: {
+      conversationId: params.conversationId,
+      externalId,
+      direction: 'OUTBOUND',
+      type: 'text',
+      content: params.text || null,
+      channel: 'OFFICIAL',
       sentBy: params.sentBy,
       agentId: params.agentId,
       botTrace: botTrace as never,

@@ -12,10 +12,12 @@ import { resolveChannelForCapability } from '@/lib/channel-router'
 import { enqueueOutboundJob } from '@/lib/outbound/queue'
 import { processOutboundJob } from '@/lib/outbound/worker'
 import { broadcast } from '@/lib/realtime'
+import { sendMessengerText } from '@/lib/meta/messenger-send'
 
 vi.mock('@/lib/db', () => ({ prisma: mockDeep<PrismaClient>() }))
 vi.mock('@/lib/meta/messages', () => ({ sendMetaText: vi.fn(), sendMetaMedia: vi.fn() }))
 vi.mock('@/lib/meta/media-upload', () => ({ uploadMetaMediaFromUrl: vi.fn() }))
+vi.mock('@/lib/meta/messenger-send', () => ({ sendMessengerText: vi.fn() }))
 vi.mock('@/lib/channel-router', () => ({ resolveChannelForCapability: vi.fn() }))
 // The real broadcast() is a harmless no-op against an empty in-memory listener set, which is
 // why no test here bothered to mock it before -- but Temuan I-4a (fix round 1) needs to assert
@@ -55,6 +57,7 @@ beforeEach(() => {
   vi.mocked(enqueueOutboundJob).mockReset().mockResolvedValue({ jobId: 'job_1', blocked: false, warnings: [] })
   vi.mocked(processOutboundJob).mockReset().mockResolvedValue('sent')
   vi.mocked(broadcast).mockReset()
+  vi.mocked(sendMessengerText).mockReset()
   mockPrisma.conversation.findUniqueOrThrow.mockResolvedValue({
     id: 'conv_1', contactId: 'contact_1', contact: { phone: '6281234567890' },
   } as never)
@@ -512,5 +515,73 @@ describe('sendMessage — kontak tanpa nomor telepon (Temuan I-4a, fix round 1)'
     expect(enqueueOutboundJob).not.toHaveBeenCalled()
     expect(sendCoexistText).not.toHaveBeenCalled()
     error.mockRestore()
+  })
+})
+
+// Task 5: cabang platform Facebook Messenger. Berdiri DI ATAS seluruh mesin khusus WhatsApp
+// (capability matrix, gerbang contact.phone, waNumber) -- kontak Facebook tidak punya nomor
+// telepon sama sekali, identitasnya PSID di ChannelIdentity. MessageChannel { OFFICIAL,
+// UNOFFICIAL } tetap dua jalur DI DALAM WhatsApp; kirim Messenger memakai 'OFFICIAL' sebagai
+// nilai channel karena ia juga real Graph API call, bukan nilai enum ketiga.
+describe('sendMessage — platform Facebook Messenger (Task 5)', () => {
+  it('mengirim lewat Graph API Messenger, bukan mesin WhatsApp, dan mencatat SENT dengan externalId Graph', async () => {
+    mockPrisma.conversation.findUniqueOrThrow.mockResolvedValue({
+      id: 'conv_fb', channelIdentity: { externalId: 'psid_abc' },
+    } as never)
+    vi.mocked(sendMessengerText).mockResolvedValue({ externalId: 'm_out_1' })
+    mockPrisma.message.create.mockResolvedValue({ id: 'msg_fb', deliveryStatus: 'SENT' } as never)
+
+    const result = await sendMessage({ conversationId: 'conv_fb', text: 'Halo!', sentBy: 'AGENT', platform: 'FACEBOOK' })
+
+    expect(sendMessengerText).toHaveBeenCalledWith('psid_abc', 'Halo!')
+    expect(sendMetaText).not.toHaveBeenCalled()
+    expect(sendCoexistText).not.toHaveBeenCalled()
+    expect(resolveChannelForCapability).not.toHaveBeenCalled()
+    expect(mockPrisma.waNumber.findFirstOrThrow).not.toHaveBeenCalled()
+    expect(result.deliveryStatus).toBe('SENT')
+    expect(mockPrisma.message.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ channel: 'OFFICIAL', externalId: 'm_out_1', deliveryStatus: 'SENT', sentBy: 'AGENT' }),
+    }))
+  })
+
+  it('mencatat FAILED saat sendMessengerText melempar (mis. di luar jendela 24 jam), tanpa melempar sendMessage sendiri', async () => {
+    mockPrisma.conversation.findUniqueOrThrow.mockResolvedValue({
+      id: 'conv_fb', channelIdentity: { externalId: 'psid_abc' },
+    } as never)
+    vi.mocked(sendMessengerText).mockRejectedValue(new Error('Facebook menolak: sudah lewat 24 jam sejak pesan terakhir pelanggan'))
+    mockPrisma.message.create.mockResolvedValue({ id: 'msg_fb2', deliveryStatus: 'FAILED' } as never)
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    const result = await sendMessage({ conversationId: 'conv_fb', text: 'Halo!', sentBy: 'BOT', platform: 'FACEBOOK' })
+
+    expect(result.deliveryStatus).toBe('FAILED')
+    expect(mockPrisma.message.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ deliveryStatus: 'FAILED' }),
+    }))
+    errorSpy.mockRestore()
+  })
+
+  it('mencatat FAILED tanpa memanggil sendMessengerText saat percakapan tidak punya ChannelIdentity (PSID)', async () => {
+    mockPrisma.conversation.findUniqueOrThrow.mockResolvedValue({ id: 'conv_fb', channelIdentity: null } as never)
+    mockPrisma.message.create.mockResolvedValue({ id: 'msg_fb3', deliveryStatus: 'FAILED' } as never)
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    const result = await sendMessage({ conversationId: 'conv_fb', text: 'Halo!', sentBy: 'AGENT', platform: 'FACEBOOK' })
+
+    expect(sendMessengerText).not.toHaveBeenCalled()
+    expect(result.deliveryStatus).toBe('FAILED')
+    errorSpy.mockRestore()
+  })
+
+  // Penjaga regresi: jalur WhatsApp default (tanpa platform, atau platform: 'WHATSAPP')
+  // tidak boleh ikut tersentuh sama sekali oleh cabang baru ini.
+  it('tidak menyentuh sendMessengerText sama sekali saat platform tidak diberikan (default WhatsApp)', async () => {
+    vi.mocked(sendMetaText).mockResolvedValue({ externalId: 'wamid.OUT_X' })
+    mockPrisma.message.create.mockResolvedValue({ id: 'msg_wa', deliveryStatus: 'SENT' } as never)
+
+    await sendMessage({ conversationId: 'conv_1', text: 'Halo!', sentBy: 'AGENT' })
+
+    expect(sendMessengerText).not.toHaveBeenCalled()
+    expect(sendMetaText).toHaveBeenCalled()
   })
 })
