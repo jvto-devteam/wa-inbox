@@ -23,6 +23,10 @@ type Settings = {
   botAutoReplyAll: boolean
   skipBotForIndonesianNumbers: boolean
   handoffOnHumanRequest: boolean
+  botEnabledWhatsapp: boolean
+  botEnabledInstagram: boolean
+  botEnabledFacebook: boolean
+  botEnabledEmail: boolean
   catalogSyncedAt: string | null
   fallbackReply: string | null
   handoffReply: string | null
@@ -49,6 +53,14 @@ const CHATBOT_SECTIONS = [
 ] as const
 
 type ChatbotSectionId = (typeof CHATBOT_SECTIONS)[number]['id']
+
+/** Empat sakelar bot per platform di bagian "Kapan bot menjawab" -- lihat POST /api/bot/channel-toggle. */
+const PLATFORM_LABELS = {
+  WHATSAPP: { label: 'WhatsApp', key: 'botEnabledWhatsapp' },
+  INSTAGRAM: { label: 'Instagram', key: 'botEnabledInstagram' },
+  FACEBOOK: { label: 'Facebook', key: 'botEnabledFacebook' },
+  EMAIL: { label: 'Email', key: 'botEnabledEmail' },
+} as const
 
 /**
  * Satu baris sakelar: keadaan yang berlaku sekarang (lencana), akibatnya kalau dibiarkan
@@ -163,6 +175,19 @@ export default function ChatbotPage() {
           body: JSON.stringify({ handoffOnHumanRequest: !settings.handoffOnHumanRequest }),
         })
       )
+    } catch {
+      // Badge keeps showing the last confirmed state — never a guessed one.
+    }
+  }
+
+  async function toggleChannel(platform: keyof typeof PLATFORM_LABELS) {
+    try {
+      const { enabled } = await fetchJson<{ platform: string; enabled: boolean }>(
+        '/api/bot/channel-toggle',
+        { method: 'POST', body: JSON.stringify({ platform }) },
+      )
+      const key = PLATFORM_LABELS[platform].key
+      setSettings((prev) => (prev ? { ...prev, [key]: enabled } : prev))
     } catch {
       // Badge keeps showing the last confirmed state — never a guessed one.
     }
@@ -358,6 +383,36 @@ export default function ChatbotPage() {
                 (&ldquo;mau bicara dengan manusia&rdquo; dan sejenisnya) yang memicu handoff; kata kunci itu tidak pernah
                 bisa dimatikan dari sini.
               </SwitchRow>
+
+              {/* Empat sakelar per platform -- lihat POST /api/bot/channel-toggle. Sama seperti
+                  tiga sakelar di atas, ini penulis massal ke Conversation.botEnabled untuk
+                  platform itu saja, bukan gerbang kedua di samping tiga sakelar tadi. */}
+              <div className="pt-3">
+                <p className="text-sm font-medium text-ink">Per channel</p>
+                <p className="text-sm text-ink-muted">
+                  Sakelar terpisah untuk tiap platform. Mematikan lalu menyalakan ulang sebuah channel menghapus
+                  status &ldquo;Ambil Alih dari Bot&rdquo; per chat di channel itu.
+                </p>
+                <div className="mt-3 space-y-2">
+                  {(Object.keys(PLATFORM_LABELS) as Array<keyof typeof PLATFORM_LABELS>).map((p) => {
+                    const { label, key } = PLATFORM_LABELS[p]
+                    const on = settings[key]
+                    return (
+                      <div key={p} className="flex items-center justify-between gap-3">
+                        <span className="text-sm">{label}</span>
+                        <div className="flex items-center gap-2">
+                          <Badge variant={on ? 'success' : 'warning'}>Bot: {on ? 'On' : 'Off'}</Badge>
+                          {admin ? (
+                            <Button size="sm" variant={on ? 'destructive' : 'outline'} onClick={() => toggleChannel(p)}>
+                              {on ? 'Matikan' : 'Aktifkan'}
+                            </Button>
+                          ) : null}
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
             </FormSection>
           )}
 
