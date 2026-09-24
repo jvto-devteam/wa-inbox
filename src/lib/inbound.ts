@@ -1,7 +1,7 @@
-import { Prisma, type DeliveryStatus, type TemplateMetaStatus, type Platform, type Settings } from '@prisma/client'
+import { Prisma, type DeliveryStatus, type TemplateMetaStatus, type Platform } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { upsertChannelIdentity } from '@/lib/channel/identity'
-import { hasPhoneNumber } from '@/lib/channel/platform'
+import { hasPhoneNumber, BOT_TOGGLE_COLUMN_BY_PLATFORM } from '@/lib/channel/platform'
 import { broadcast } from '@/lib/realtime'
 import { decideAndRespond } from '@/lib/bot/orchestrator'
 import { checkAndRecordRateLimit } from '@/lib/bot/rate-limiter'
@@ -52,12 +52,10 @@ export type MetaInboundMessage = {
 // contact's very first conversation must start inactive too when that filter is on, not
 // just existing ones caught by the toggle's own bulk write. That filter applies ONLY to
 // platforms whose identity is a phone number (hasPhoneNumber, src/lib/channel/platform.ts).
-const TOGGLE_BY_PLATFORM = {
-  WHATSAPP: 'botEnabledWhatsapp',
-  INSTAGRAM: 'botEnabledInstagram',
-  FACEBOOK: 'botEnabledFacebook',
-  EMAIL: 'botEnabledEmail',
-} as const satisfies Record<Platform, keyof Settings>
+//
+// Peta platform -> kolom sakelar dipakai bersama tiga pihak (di sini, /api/bot/channel-toggle,
+// dan /api/bot/mode), jadi ia hidup di satu tempat: src/lib/channel/platform.ts.
+const TOGGLE_BY_PLATFORM = BOT_TOGGLE_COLUMN_BY_PLATFORM
 
 /**
  * Whether the bot should answer this contact by default.

@@ -1,4 +1,4 @@
-import type { Platform } from '@prisma/client'
+import type { Platform, Settings } from '@prisma/client'
 
 /**
  * Satu-satunya tempat yang menjawab "platform ini identitasnya nomor telepon atau bukan".
@@ -16,3 +16,20 @@ const PHONE_BASED: ReadonlySet<Platform> = new Set<Platform>(['WHATSAPP'])
 export function hasPhoneNumber(platform: Platform): boolean {
   return PHONE_BASED.has(platform)
 }
+
+/**
+ * Kolom `Settings` yang menyimpan sakelar bot untuk tiap platform.
+ *
+ * Satu salinan, di sini, karena tiga pihak membutuhkannya dan ketiganya harus setuju:
+ * `defaultBotEnabled` (src/lib/inbound.ts, saat percakapan lahir),
+ * `POST /api/bot/channel-toggle` (penulis massal per channel), dan `POST /api/bot/mode`
+ * (sakelar global, yang harus menghormati sakelar tiap platform saat menyalakan). Peta yang
+ * disalin tiga kali adalah peta yang cepat atau lambat berselisih -- dan selisihnya berupa
+ * sakelar di layar yang tidak cocok dengan perilaku bot, persis kelas bug yang sudah terjadi.
+ */
+export const BOT_TOGGLE_COLUMN_BY_PLATFORM = {
+  WHATSAPP: 'botEnabledWhatsapp',
+  INSTAGRAM: 'botEnabledInstagram',
+  FACEBOOK: 'botEnabledFacebook',
+  EMAIL: 'botEnabledEmail',
+} as const satisfies Record<Platform, keyof Settings>
