@@ -5,10 +5,25 @@
  *
  * Idempoten: dijalankan dua kali menghasilkan keadaan yang sama, karena upsert berkunci
  * (platform, externalId) dan update hanya menyentuh baris yang channelIdentityId-nya null.
+ *
+ * Jalankan dengan:
+ *   node --env-file=.env scripts/backfill-channel-identity.mjs
+ *
+ * `node` polos tidak memuat `.env` sendiri (beda dari Next.js) — tanpa `--env-file=.env`,
+ * DATABASE_URL kosong dan adapter gagal dengan pesan yang jauh dari sebabnya.
  */
 import { PrismaClient } from '@prisma/client'
+import { PrismaPg } from '@prisma/adapter-pg'
 
-const prisma = new PrismaClient()
+if (!process.env.DATABASE_URL) {
+  console.error(
+    'GAGAL: DATABASE_URL kosong. Jalankan dengan: node --env-file=.env scripts/backfill-channel-identity.mjs',
+  )
+  process.exit(1)
+}
+
+const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL })
+const prisma = new PrismaClient({ adapter })
 
 let identitas = 0
 let tertaut = 0
