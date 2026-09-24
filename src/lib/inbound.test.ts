@@ -80,6 +80,8 @@ const conversationRow = {
   isPinned: false,
   isTest: false,
   createdAt: new Date(),
+  channelIdentityId: null,
+  externalThreadId: '',
 }
 
 const samplePayload = {

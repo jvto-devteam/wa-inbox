@@ -48,6 +48,33 @@ model WaNumber {
   createdAt        DateTime @default(now())
 }
 
+enum Platform {
+  WHATSAPP
+  INSTAGRAM
+  FACEBOOK
+  EMAIL
+}
+
+/// Alamat satu orang di satu platform. Contact = manusianya; ChannelIdentity = alamatnya.
+/// Dipisah karena hanya WhatsApp yang identitasnya nomor telepon: Instagram memberi IGSID,
+/// Messenger memberi PSID, email memberi alamat surat. Tanpa tabel ini, identitas non-telepon
+/// harus dijejalkan ke Contact.phone dan bertabrakan dengan skema nomor.
+model ChannelIdentity {
+  id          String   @id @default(cuid())
+  platform    Platform
+  /// WA: 6281… · IG: IGSID · FB: PSID · EMAIL: alamat@domain
+  externalId  String
+  contactId   String
+  contact     Contact  @relation(fields: [contactId], references: [id])
+  displayName String?
+  createdAt   DateTime @default(now())
+
+  conversations Conversation[]
+
+  @@unique([platform, externalId])
+  @@index([contactId])
+}
+
 model Contact {
   id              String        @id @default(cuid())
   phone           String        @unique
@@ -62,6 +89,7 @@ model Contact {
   source          String?
   createdAt       DateTime      @default(now())
   conversation    Conversation?
+  identities      ChannelIdentity[]
   notes           Note[]
   reminders       Reminder[]
 }
@@ -117,6 +145,23 @@ model Conversation {
   labels           LabelOnConversation[]
   knowledgeGaps    KnowledgeGapLog[]
   messageDrafts    MessageDraft[]
+
+  /// Null selama masa transisi fondasi; terisi penuh setelah backfill Task 5 selesai.
+  channelIdentityId String?
+  channelIdentity   ChannelIdentity? @relation(fields: [channelIdentityId], references: [id])
+
+  /// Kunci benang di dalam satu identitas. String kosong = benang tunggal, yang benar untuk
+  /// semua DM (WhatsApp/Instagram/Facebook): satu akun = satu percakapan. Email nanti mengisi
+  /// kolom ini dengan threadId Gmail, karena satu orang bisa punya banyak benang sekaligus.
+  ///
+  /// Sengaja string kosong, bukan null: Postgres menganggap setiap NULL berbeda satu sama
+  /// lain, jadi unique index yang dipasang di Task 5b tidak akan mengekang apa pun kalau
+  /// kolomnya nullable -- dan satu akun bisa diam-diam melahirkan percakapan baru tiap pesan.
+  ///
+  /// Unique index-nya BELUM dipasang di sini: ia menunggu backfill selesai, karena index
+  /// unik yang dibuat di atas data yang masih punya duplikat akan menggagalkan migrasi
+  /// di tengah jalan.
+  externalThreadId String @default("")
 }
 
 enum MessageDirection {
