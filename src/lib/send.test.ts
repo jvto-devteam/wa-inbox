@@ -585,3 +585,98 @@ describe('sendMessage — platform Facebook Messenger (Task 5)', () => {
     expect(sendMetaText).toHaveBeenCalled()
   })
 })
+
+// Review round 1, Temuan 1: `platform` sebagai parameter yang harus diingat pemanggil gagal
+// ke arah paling membingungkan (default WhatsApp) ketika tidak diisi -- percakapan Facebook
+// yang SUDAH ada di Inbox (Task 3+4) tidak pernah bisa dibalas karena setiap panggilan nyata
+// (POST /api/send) tidak pernah mengoper `platform`. Perbaikan: platform DITURUNKAN dari
+// `conversation.channelIdentity.platform`, bukan diminta dari pemanggil.
+describe('sendMessage — platform diturunkan dari conversation, bukan parameter (Temuan 1, fix round 1)', () => {
+  it('mengirim lewat Messenger saat channelIdentity.platform Facebook, TANPA pemanggil mengoper platform apa pun', async () => {
+    mockPrisma.conversation.findUniqueOrThrow.mockResolvedValue({
+      id: 'conv_fb', channelIdentity: { platform: 'FACEBOOK', externalId: 'psid_derived' },
+    } as never)
+    vi.mocked(sendMessengerText).mockResolvedValue({ externalId: 'm_out_derived' })
+    mockPrisma.message.create.mockResolvedValue({ id: 'msg_fb_derived', deliveryStatus: 'SENT' } as never)
+
+    // TIDAK ADA `platform` di sini -- inilah persis yang dikirim POST /api/send hari ini.
+    const result = await sendMessage({ conversationId: 'conv_fb', text: 'Halo dari agen', sentBy: 'AGENT' })
+
+    expect(sendMessengerText).toHaveBeenCalledWith('psid_derived', 'Halo dari agen')
+    expect(sendMetaText).not.toHaveBeenCalled()
+    expect(sendCoexistText).not.toHaveBeenCalled()
+    expect(resolveChannelForCapability).not.toHaveBeenCalled()
+    expect(result.deliveryStatus).toBe('SENT')
+  })
+
+  it('tetap lewat jalur WhatsApp saat channelIdentity.platform WhatsApp, tanpa platform diberikan', async () => {
+    mockPrisma.conversation.findUniqueOrThrow.mockResolvedValue({
+      id: 'conv_1', contactId: 'contact_1', contact: { phone: '6281234567890' },
+      channelIdentity: { platform: 'WHATSAPP', externalId: '6281234567890' },
+    } as never)
+    vi.mocked(sendMetaText).mockResolvedValue({ externalId: 'wamid.OUT_Y' })
+    mockPrisma.message.create.mockResolvedValue({ id: 'msg_wa_y', deliveryStatus: 'SENT' } as never)
+
+    await sendMessage({ conversationId: 'conv_1', text: 'Halo!', sentBy: 'AGENT' })
+
+    expect(sendMessengerText).not.toHaveBeenCalled()
+    expect(sendMetaText).toHaveBeenCalled()
+  })
+
+  it('memperlakukan channelIdentity null sebagai WhatsApp (baris pra-backfill, perilaku lama)', async () => {
+    mockPrisma.conversation.findUniqueOrThrow.mockResolvedValue({
+      id: 'conv_1', contactId: 'contact_1', contact: { phone: '6281234567890' }, channelIdentity: null,
+    } as never)
+    vi.mocked(sendMetaText).mockResolvedValue({ externalId: 'wamid.OUT_Z' })
+    mockPrisma.message.create.mockResolvedValue({ id: 'msg_wa_z', deliveryStatus: 'SENT' } as never)
+
+    const result = await sendMessage({ conversationId: 'conv_1', text: 'Halo!', sentBy: 'AGENT' })
+
+    expect(sendMessengerText).not.toHaveBeenCalled()
+    expect(sendMetaText).toHaveBeenCalled()
+    expect(result.deliveryStatus).toBe('SENT')
+  })
+
+  it('override eksplisit params.platform tetap menang atas channelIdentity (jalur test/masa depan)', async () => {
+    mockPrisma.conversation.findUniqueOrThrow.mockResolvedValue({
+      id: 'conv_fb', channelIdentity: { platform: 'FACEBOOK', externalId: 'psid_x' },
+    } as never)
+    vi.mocked(sendMessengerText).mockResolvedValue({ externalId: 'm_out_override' })
+    mockPrisma.message.create.mockResolvedValue({ id: 'msg_override', deliveryStatus: 'SENT' } as never)
+
+    await sendMessage({ conversationId: 'conv_fb', text: 'Halo!', sentBy: 'AGENT', platform: 'FACEBOOK' })
+
+    expect(sendMessengerText).toHaveBeenCalledWith('psid_x', 'Halo!')
+  })
+})
+
+// Review round 1, Temuan 2: lampiran di jalur Facebook harus gagal TERLIHAT (Message FAILED +
+// broadcast), bukan diam-diam mengirim teksnya saja dan kehilangan lampirannya tanpa jejak.
+describe('sendMessage — lampiran di jalur Facebook gagal terlihat, bukan hilang diam-diam (Temuan 2, fix round 1)', () => {
+  it('mencatat FAILED + broadcast dan TIDAK memanggil sendMessengerText sama sekali saat media disertakan', async () => {
+    mockPrisma.conversation.findUniqueOrThrow.mockResolvedValue({
+      id: 'conv_fb', channelIdentity: { platform: 'FACEBOOK', externalId: 'psid_abc' },
+    } as never)
+    mockPrisma.message.create.mockResolvedValue({ id: 'msg_fb_media', deliveryStatus: 'FAILED' } as never)
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    const result = await sendMessage({
+      conversationId: 'conv_fb',
+      text: 'Lihat ini',
+      sentBy: 'AGENT',
+      platform: 'FACEBOOK',
+      media: { url: 'https://wa-inbox.example.com/uploads/x.jpg', type: 'image', mimeType: 'image/jpeg' },
+    })
+
+    expect(sendMessengerText).not.toHaveBeenCalled()
+    expect(result.deliveryStatus).toBe('FAILED')
+    expect(mockPrisma.message.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        deliveryStatus: 'FAILED',
+        content: expect.stringContaining('belum didukung'),
+      }),
+    }))
+    expect(broadcast).toHaveBeenCalledWith(expect.objectContaining({ type: 'message.created', conversationId: 'conv_fb' }))
+    errorSpy.mockRestore()
+  })
+})
