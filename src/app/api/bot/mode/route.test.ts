@@ -28,26 +28,46 @@ beforeEach(() => {
   mockPrisma.account.findUnique.mockResolvedValue({ name: 'Admin Satu' } as never)
 })
 
+// Posisi keempat sakelar channel ikut menentukan apa yang ditulis sakelar global saat
+// dinyalakan (Temuan I-3), jadi setiap test menyebutkannya eksplisit. Default di sini sama
+// dengan default schema: hanya WhatsApp menyala.
+function settings(overrides: Record<string, unknown> = {}) {
+  return {
+    botAutoReplyAll: false,
+    skipBotForIndonesianNumbers: false,
+    botEnabledWhatsapp: true,
+    botEnabledInstagram: false,
+    botEnabledFacebook: false,
+    botEnabledEmail: false,
+    ...overrides,
+  } as never
+}
+
 describe('POST /api/bot/mode', () => {
   it('flips botAutoReplyAll when called by an admin', async () => {
-    mockPrisma.settings.findUniqueOrThrow.mockResolvedValue({ botAutoReplyAll: false } as never)
+    mockPrisma.settings.findUniqueOrThrow.mockResolvedValue(settings({ botAutoReplyAll: false }))
     mockPrisma.settings.update.mockResolvedValue({ botAutoReplyAll: true } as never)
     const res = await POST(request())
     expect((await res.json()).botAutoReplyAll).toBe(true)
   })
 
-  it('bulk-activates every conversation when flipping Off -> On', async () => {
-    mockPrisma.settings.findUniqueOrThrow.mockResolvedValue({ botAutoReplyAll: false } as never)
+  it('bulk-activates every conversation on a switched-on platform when flipping Off -> On', async () => {
+    mockPrisma.settings.findUniqueOrThrow.mockResolvedValue(
+      settings({ botAutoReplyAll: false, botEnabledWhatsapp: true, botEnabledFacebook: true })
+    )
     mockPrisma.settings.update.mockResolvedValue({ botAutoReplyAll: true } as never)
 
     await POST(request())
 
     expect(mockPrisma.settings.update).toHaveBeenCalledWith({ where: { id: 1 }, data: { botAutoReplyAll: true } })
-    expect(mockPrisma.conversation.updateMany).toHaveBeenCalledWith({ data: { botEnabled: true } })
+    expect(mockPrisma.conversation.updateMany).toHaveBeenCalledWith({
+      where: { channelIdentity: { platform: { in: ['WHATSAPP', 'FACEBOOK'] } } },
+      data: { botEnabled: true },
+    })
   })
 
   it('bulk-deactivates every conversation when flipping On -> Off, leaving per-chat re-activation to agents', async () => {
-    mockPrisma.settings.findUniqueOrThrow.mockResolvedValue({ botAutoReplyAll: true } as never)
+    mockPrisma.settings.findUniqueOrThrow.mockResolvedValue(settings({ botAutoReplyAll: true }))
     mockPrisma.settings.update.mockResolvedValue({ botAutoReplyAll: false } as never)
 
     await POST(request())
@@ -56,21 +76,73 @@ describe('POST /api/bot/mode', () => {
     expect(mockPrisma.conversation.updateMany).toHaveBeenCalledWith({ data: { botEnabled: false } })
   })
 
-  // The Indonesia filter (see src/app/api/bot/indonesia-filter/route.ts) must survive an
-  // unrelated botAutoReplyAll flip -- turning the overall bot back On must not silently
-  // re-activate the numbers the operator specifically asked to keep human-handled.
-  it('does NOT re-activate Indonesian-number conversations when flipping Off -> On while the Indonesia filter is active', async () => {
-    mockPrisma.settings.findUniqueOrThrow.mockResolvedValue({ botAutoReplyAll: false, skipBotForIndonesianNumbers: true } as never)
+  // --- Temuan I-3: sakelar global menimpa keempat sakelar channel ---
+  //
+  // `updateMany({ data: { botEnabled: next } })` TANPA `where` menyentuh setiap percakapan di
+  // setiap platform. Begitu Instagram/Facebook/Email ada isinya, menekan "On" global saat
+  // botEnabledInstagram=false menyalakan bot di setiap percakapan Instagram, dan /chatbot lalu
+  // menampilkan "Instagram — Bot: Off" di sebelah chat Instagram yang sedang dijawab bot.
+  it('tidak menyalakan percakapan di platform yang sakelar channel-nya mati', async () => {
+    mockPrisma.settings.findUniqueOrThrow.mockResolvedValue(
+      settings({ botAutoReplyAll: false, botEnabledWhatsapp: true, botEnabledInstagram: false })
+    )
+    mockPrisma.settings.update.mockResolvedValue({ botAutoReplyAll: true } as never)
+
+    await POST(request())
+
+    // Yang dinyalakan hanya WhatsApp.
+    expect(mockPrisma.conversation.updateMany).toHaveBeenCalledWith({
+      where: { channelIdentity: { platform: { in: ['WHATSAPP'] } } },
+      data: { botEnabled: true },
+    })
+    // Dan komplemennya ditulis false, bukan dibiarkan memegang `true` yang basi.
+    expect(mockPrisma.conversation.updateMany).toHaveBeenCalledWith({
+      where: { OR: [{ channelIdentity: { platform: { notIn: ['WHATSAPP'] } } }] },
+      data: { botEnabled: false },
+    })
+    // Tidak pernah lagi tulisan massal tanpa `where` saat menyalakan.
+    expect(mockPrisma.conversation.updateMany).not.toHaveBeenCalledWith({ data: { botEnabled: true } })
+  })
+
+  it('tidak menyalakan apa pun kalau keempat sakelar channel mati', async () => {
+    mockPrisma.settings.findUniqueOrThrow.mockResolvedValue(
+      settings({ botAutoReplyAll: false, botEnabledWhatsapp: false })
+    )
     mockPrisma.settings.update.mockResolvedValue({ botAutoReplyAll: true } as never)
 
     await POST(request())
 
     expect(mockPrisma.conversation.updateMany).toHaveBeenCalledWith({
-      where: { contact: { phone: { not: { startsWith: '62' } } } },
+      where: { channelIdentity: { platform: { in: [] } } },
+      data: { botEnabled: true },
+    })
+  })
+
+  // The Indonesia filter (see src/app/api/bot/indonesia-filter/route.ts) must survive an
+  // unrelated botAutoReplyAll flip -- turning the overall bot back On must not silently
+  // re-activate the numbers the operator specifically asked to keep human-handled.
+  it('does NOT re-activate Indonesian-number conversations when flipping Off -> On while the Indonesia filter is active', async () => {
+    mockPrisma.settings.findUniqueOrThrow.mockResolvedValue(
+      settings({ botAutoReplyAll: false, skipBotForIndonesianNumbers: true, botEnabledWhatsapp: true })
+    )
+    mockPrisma.settings.update.mockResolvedValue({ botAutoReplyAll: true } as never)
+
+    await POST(request())
+
+    expect(mockPrisma.conversation.updateMany).toHaveBeenCalledWith({
+      where: {
+        channelIdentity: { platform: { in: ['WHATSAPP'] } },
+        contact: { phone: { not: { startsWith: '62' } } },
+      },
       data: { botEnabled: true },
     })
     expect(mockPrisma.conversation.updateMany).toHaveBeenCalledWith({
-      where: { contact: { phone: { startsWith: '62' } } },
+      where: {
+        OR: [
+          { channelIdentity: { platform: { notIn: ['WHATSAPP'] } } },
+          { contact: { phone: { startsWith: '62' } } },
+        ],
+      },
       data: { botEnabled: false },
     })
     // Never the old single unconditional bulk write when the filter is active.
@@ -78,13 +150,30 @@ describe('POST /api/bot/mode', () => {
   })
 
   it('still does a single unconditional bulk write when flipping On -> Off, even with the Indonesia filter active (turning the whole bot off makes the filter moot)', async () => {
-    mockPrisma.settings.findUniqueOrThrow.mockResolvedValue({ botAutoReplyAll: true, skipBotForIndonesianNumbers: true } as never)
+    mockPrisma.settings.findUniqueOrThrow.mockResolvedValue(
+      settings({ botAutoReplyAll: true, skipBotForIndonesianNumbers: true })
+    )
     mockPrisma.settings.update.mockResolvedValue({ botAutoReplyAll: false } as never)
 
     await POST(request())
 
     expect(mockPrisma.conversation.updateMany).toHaveBeenCalledWith({ data: { botEnabled: false } })
     expect(mockPrisma.conversation.updateMany).toHaveBeenCalledTimes(1)
+  })
+
+  // Tombol berhenti darurat harus benar-benar menghentikan semuanya: tanpa `where` sama sekali,
+  // termasuk percakapan di platform yang sakelar channel-nya menyala DAN percakapan yang belum
+  // punya baris channelIdentity (yang tidak akan terlihat oleh where berbasis platform).
+  it('Off tetap satu tulisan tanpa where, apa pun posisi sakelar channel', async () => {
+    mockPrisma.settings.findUniqueOrThrow.mockResolvedValue(
+      settings({ botAutoReplyAll: true, botEnabledWhatsapp: true, botEnabledInstagram: true, botEnabledFacebook: true, botEnabledEmail: true })
+    )
+    mockPrisma.settings.update.mockResolvedValue({ botAutoReplyAll: false } as never)
+
+    await POST(request())
+
+    expect(mockPrisma.conversation.updateMany).toHaveBeenCalledTimes(1)
+    expect(mockPrisma.conversation.updateMany).toHaveBeenCalledWith({ data: { botEnabled: false } })
   })
 
   it('records who turned the global bot switch off, and when', async () => {
