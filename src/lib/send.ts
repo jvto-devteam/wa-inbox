@@ -98,14 +98,11 @@ export async function sendMessage(params: {
     include: { contact: true },
   })
 
-  // A capability no channel can carry is recorded as a FAILED message rather than thrown: the
-  // bubble then shows what was attempted, with the retry button, instead of the send vanishing
-  // with only a server log to show for it.
-  if (routing.disabled) {
-    console.warn('sendMessage: kemampuan tidak didukung channel mana pun', {
-      conversationId: params.conversationId,
-      capability,
-    })
+  // A send that cannot physically go out (no channel supports the capability, or -- since
+  // Task 9 -- the contact has no phone number for this WhatsApp-only send path) is recorded as
+  // a FAILED message rather than thrown: the bubble then shows what was attempted, with the
+  // retry button, instead of the send vanishing with only a server log to show for it.
+  const recordBlocked = async () => {
     const blocked = await prisma.message.create({
       data: {
         conversationId: params.conversationId,
@@ -128,6 +125,26 @@ export async function sendMessage(params: {
     return blocked
   }
 
+  if (routing.disabled) {
+    console.warn('sendMessage: kemampuan tidak didukung channel mana pun', {
+      conversationId: params.conversationId,
+      capability,
+    })
+    return recordBlocked()
+  }
+
+  // `sendMessage` only ever carries WhatsApp (Meta Official / coexist Unofficial) -- both need
+  // a real phone number. A null `contact.phone` (Task 9: contacts born on IG/FB/email have no
+  // phone) reaching this path is a routing bug elsewhere, not something to crash on; other
+  // channels get their own send path once they exist, not this one.
+  if (!conversation.contact.phone) {
+    console.error('sendMessage: kontak tidak punya nomor telepon untuk jalur kirim WhatsApp', {
+      conversationId: params.conversationId,
+    })
+    return recordBlocked()
+  }
+  const contactPhone = conversation.contact.phone
+
   // --- Phase 6: Unofficial goes through the outbound queue ---
   //
   // Unofficial is the primary send path, and until now it was fire-and-forget: one attempt at
@@ -144,7 +161,14 @@ export async function sendMessage(params: {
   if (channel === 'UNOFFICIAL' && !conversation.isTest) {
     // Already sanitized above -- sendViaQueue's own write must not sanitize a second time
     // (idempotent, but pointless) or, worse, skip it by reaching for params.botTrace directly.
-    return sendViaQueue({ ...params, botTrace, conversation, channel })
+    // `contact.phone` rebuilt with the already-narrowed `contactPhone`: the guard above proved
+    // it non-null, but that narrowing doesn't survive re-reading it off `conversation` here.
+    return sendViaQueue({
+      ...params,
+      botTrace,
+      conversation: { ...conversation, contact: { phone: contactPhone } },
+      channel,
+    })
   }
 
   let externalId: string | undefined
@@ -175,7 +199,7 @@ export async function sendMessage(params: {
           mediaId = uploaded.id
           const result = await sendMetaMedia(
             waNumber,
-            conversation.contact.phone,
+            contactPhone,
             params.media.type,
             uploaded.id,
             params.text || undefined,
@@ -183,7 +207,7 @@ export async function sendMessage(params: {
           )
           externalId = result.externalId
         } else {
-          const result = await sendMetaText(waNumber, conversation.contact.phone, params.text, replyToExternalId)
+          const result = await sendMetaText(waNumber, contactPhone, params.text, replyToExternalId)
           externalId = result.externalId
         }
       } else if (params.media) {
@@ -193,14 +217,14 @@ export async function sendMessage(params: {
         // it labeled 'audio' so the bubble still renders an audio player.
         const result = await sendCoexistMedia(
           waNumber,
-          conversation.contact.phone,
+          contactPhone,
           params.media.url,
           params.media.type === 'audio' ? 'document' : params.media.type,
           params.text || undefined
         )
         externalId = result.externalId
       } else {
-        const result = await sendCoexistText(waNumber, conversation.contact.phone, params.text)
+        const result = await sendCoexistText(waNumber, contactPhone, params.text)
         externalId = result.externalId
       }
     } catch (error) {

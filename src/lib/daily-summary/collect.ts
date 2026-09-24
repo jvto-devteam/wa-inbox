@@ -150,7 +150,7 @@ export function summarizeTripBrief(value: unknown): TripBriefSummary | null {
 }
 
 export async function collectDay(start: Date, end: Date, options: CollectOptions): Promise<CollectedDay> {
-  const included = (phone: string) => !(options.excludeIndonesian && isIndonesianNumber(phone))
+  const included = (phone: string | null) => !(options.excludeIndonesian && isIndonesianNumber(phone))
   const lookbackStart = new Date(end.getTime() - LOOKBACK_MS)
   const inDay = { gte: start, lt: end }
 

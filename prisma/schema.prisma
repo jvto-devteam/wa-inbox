@@ -77,7 +77,11 @@ model ChannelIdentity {
 
 model Contact {
   id              String        @id @default(cuid())
-  phone           String        @unique
+  /// Nomor WhatsApp. Null untuk kontak yang lahir dari channel tanpa nomor (IG/FB/email).
+  /// Identitas yang sesungguhnya ada di ChannelIdentity; kolom ini dipertahankan sebagai
+  /// kolom denormalisasi supaya kueri filter nomor Indonesia di
+  /// src/app/api/bot/indonesia-filter/route.ts tetap jalan tanpa diubah.
+  phone           String?
   name            String?
   avatarUrl       String?
   // Negative cache for avatar enrichment, mirroring Conversation.bookingCheckedAt.
@@ -88,7 +92,11 @@ model Contact {
   avatarCheckedAt DateTime?
   source          String?
   createdAt       DateTime      @default(now())
-  conversation    Conversation?
+  /// Daftar, bukan satu, sejak Task 9: Conversation.contactId dilonggarkan dari @unique
+  /// supaya satu Contact bisa punya banyak Conversation (identitas ganda lintas channel).
+  /// Setiap call site yang dulu mengasumsikan satu-ke-satu (mis. daftar Kontak) sekarang
+  /// memilih eksplisit, biasanya yang paling baru lewat lastMessageAt.
+  conversations   Conversation[]
   identities      ChannelIdentity[]
   notes           Note[]
   reminders       Reminder[]
@@ -102,7 +110,7 @@ enum ConversationStatus {
 
 model Conversation {
   id               String                @id @default(cuid())
-  contactId        String                @unique
+  contactId        String
   contact          Contact               @relation(fields: [contactId], references: [id])
   botEnabled       Boolean               @default(true)
   assignedAgentId  String?
@@ -167,6 +175,10 @@ model Conversation {
   /// Ini yang membuat conversation.upsert bisa dikunci lewat (channelIdentityId,
   /// externalThreadId) alih-alih contactId -- kunci yang akan dilepas Task 9.
   @@unique([channelIdentityId, externalThreadId])
+  /// Dilonggarkan dari @@unique di Task 9: satu Contact sekarang boleh punya banyak
+  /// Conversation (identitas ganda lintas channel). Index biasa menjaga lookup by
+  /// contactId tetap cepat tanpa memaksa keunikan.
+  @@index([contactId])
 }
 
 enum MessageDirection {

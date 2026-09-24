@@ -4,8 +4,10 @@
 // contact upsert, which writes `message.from`/`echo.to` verbatim.
 
 /** True for an Indonesian phone number (country code 62), false otherwise (including empty/malformed input). */
-export function isIndonesianNumber(phone: string): boolean {
-  return /^62\d+$/.test(phone)
+// `phone` is nullable since Task 9 (Contact.phone -- contacts born on a channel without a
+// phone number, IG/FB/email, never match this and are never treated as Indonesian).
+export function isIndonesianNumber(phone: string | null): boolean {
+  return phone != null && /^62\d+$/.test(phone)
 }
 
 /**

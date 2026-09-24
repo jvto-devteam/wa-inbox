@@ -22,7 +22,12 @@ export default async function ContactDetailPage({ params }: { params: Promise<{ 
   const contact = await prisma.contact.findUnique({
     where: { id },
     include: {
-      conversation: {
+      // Sejak Task 9 satu Contact bisa punya banyak Conversation. Halaman detail kontak
+      // masih menampilkan satu -- yang paling baru aktif -- karena ini bukan bagian dari
+      // pekerjaan yang membangun UI multi-percakapan-per-kontak.
+      conversations: {
+        orderBy: { lastMessageAt: 'desc' },
+        take: 1,
         include: {
           labels: { include: { label: true } },
           messages: { orderBy: { createdAt: 'asc' } },
@@ -33,7 +38,7 @@ export default async function ContactDetailPage({ params }: { params: Promise<{ 
 
   if (!contact) notFound()
 
-  const conversation = contact.conversation
+  const conversation = contact.conversations[0]
   // Same reasoning as the /api/conversations/[id] route: refresh on open, independent of
   // whether the bot ever ran for this conversation (e.g. while the kill switch is on).
   const bookingData = conversation ? await ensureFreshBookingData({ ...conversation, contact }) : null

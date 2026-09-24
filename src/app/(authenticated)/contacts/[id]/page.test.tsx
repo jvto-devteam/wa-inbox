@@ -27,14 +27,16 @@ function contactWith(messages: Array<Record<string, unknown>>) {
     phone: '6281234567890',
     avatarUrl: null,
     source: null,
-    conversation: {
-      id: 'conv_1',
-      pipelineStage: 'new',
-      bookingData: null,
-      tripBrief: null,
-      labels: [],
-      messages,
-    },
+    conversations: [
+      {
+        id: 'conv_1',
+        pipelineStage: 'new',
+        bookingData: null,
+        tripBrief: null,
+        labels: [],
+        messages,
+      },
+    ],
   }
 }
 

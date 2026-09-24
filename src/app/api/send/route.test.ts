@@ -63,10 +63,10 @@ describe('POST /api/send', () => {
   })
 
   it('resolves a phone-based { to, text } body to its conversation and sends', async () => {
-    mockPrisma.contact.findUnique.mockResolvedValue({
+    mockPrisma.contact.findFirst.mockResolvedValue({
       id: 'contact_1',
       phone: '6281234567890',
-      conversation: { id: 'conv_1' },
+      conversations: [{ id: 'conv_1' }],
     } as never)
     vi.mocked(sendMessage).mockResolvedValue({ id: 'msg_1', deliveryStatus: 'SENT' } as never)
 
@@ -78,15 +78,15 @@ describe('POST /api/send', () => {
 
     expect(res.status).toBe(200)
     expect(await res.json()).toEqual({ id: 'msg_1', deliveryStatus: 'SENT' })
-    expect(mockPrisma.contact.findUnique).toHaveBeenCalledWith({
+    expect(mockPrisma.contact.findFirst).toHaveBeenCalledWith({
       where: { phone: '6281234567890' },
-      include: { conversation: true },
+      include: { conversations: { orderBy: { lastMessageAt: 'desc' }, take: 1 } },
     })
     expect(sendMessage).toHaveBeenCalledWith(expect.objectContaining({ conversationId: 'conv_1', text: 'Halo!', sentBy: 'AGENT' }))
   })
 
   it('returns 404 when the phone number has no matching Contact', async () => {
-    mockPrisma.contact.findUnique.mockResolvedValue(null)
+    mockPrisma.contact.findFirst.mockResolvedValue(null)
 
     const req = new Request('http://localhost/api/send', {
       method: 'POST',
@@ -113,10 +113,10 @@ describe('POST /api/send', () => {
   })
 
   it('returns 404 when the Contact exists but has no Conversation yet', async () => {
-    mockPrisma.contact.findUnique.mockResolvedValue({
+    mockPrisma.contact.findFirst.mockResolvedValue({
       id: 'contact_1',
       phone: '6281234567890',
-      conversation: null,
+      conversations: [],
     } as never)
 
     const req = new Request('http://localhost/api/send', {

@@ -19,7 +19,8 @@ const mediaSchema = z.object({
 // - { conversationId, text } — the native wa-inbox shape (Task 9).
 // - { to, text } — a phone-number-based compatibility shape kept for a future,
 //   separately-authorized cutover of chatbot-web's legacy sender (Task 46 Step 1).
-//   `to` is resolved to its Conversation via the unique Contact.phone.
+//   `to` is resolved to its Conversation via Contact.phone -- no longer unique since the
+//   omnichannel-fondasi Task 9 relaxation, so this takes the most recently active one.
 // `text` is optional in both, but not independently of `media`: a media-less send still
 // needs real text, while an attachment can go out with no caption at all -- the .refine
 // below is what actually enforces "at least one of the two", not the field types themselves.
@@ -52,13 +53,14 @@ export async function POST(req: Request) {
   if ('conversationId' in parsed.data) {
     conversationId = parsed.data.conversationId
   } else {
-    const contact = await prisma.contact.findUnique({
+    const contact = await prisma.contact.findFirst({
       where: { phone: parsed.data.to },
-      include: { conversation: true },
+      include: { conversations: { orderBy: { lastMessageAt: 'desc' }, take: 1 } },
     })
     if (!contact) return NextResponse.json({ error: 'Kontak tidak ditemukan' }, { status: 404 })
-    if (!contact.conversation) return NextResponse.json({ error: 'Percakapan tidak ditemukan' }, { status: 404 })
-    conversationId = contact.conversation.id
+    const conversation = contact.conversations[0]
+    if (!conversation) return NextResponse.json({ error: 'Percakapan tidak ditemukan' }, { status: 404 })
+    conversationId = conversation.id
   }
 
   const session = await getSession(req)

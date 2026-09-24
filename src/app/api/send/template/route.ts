@@ -54,6 +54,13 @@ export async function POST(req: Request) {
     where: { id: parsed.data.conversationId },
     include: { contact: true },
   })
+  // Meta template sends only ever go over WhatsApp (see the module comment above) and need a
+  // real phone number. Since Task 9, Contact.phone is nullable for contacts born on a channel
+  // without one (IG/FB/email) -- not something this Cloud-API-only path can ever serve.
+  if (!conversation.contact.phone) {
+    return NextResponse.json({ error: 'Kontak ini tidak punya nomor WhatsApp' }, { status: 400 })
+  }
+  const contactPhone = conversation.contact.phone
   const waNumber = await prisma.waNumber.findFirstOrThrow()
   const session = await getSession(req)
 
@@ -105,7 +112,7 @@ export async function POST(req: Request) {
   let externalId: string | undefined
   let deliveryStatus: 'SENT' | 'FAILED' = 'SENT'
   try {
-    const result = await sendTemplateMessage(waNumber, conversation.contact.phone, {
+    const result = await sendTemplateMessage(waNumber, contactPhone, {
       name: template.name,
       bodyParams,
       header: sendHeader,

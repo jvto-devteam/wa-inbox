@@ -205,7 +205,7 @@ export async function ensureFreshBookingData(conversation: {
   pipelineStage: string
   orderChannel?: string | null
   isTest?: boolean
-  contact: { phone: string }
+  contact: { phone: string | null }
 }): Promise<BookingData | null> {
   // The sandbox conversation's sentinel phone (src/lib/test-conversation.ts) has no digits at
   // all, so normalizePhone() below reduces it to '' -- an empty phone_no filter that some
@@ -217,7 +217,11 @@ export async function ensureFreshBookingData(conversation: {
   let bookingData = conversation.bookingData as BookingData | null
   const stale =
     !conversation.bookingCheckedAt || Date.now() - conversation.bookingCheckedAt.getTime() > BOOKING_CACHE_MS
-  if (stale) bookingData = await lookupBooking(conversation.contact.phone)
+  // Booking lookup is keyed by phone number (the JVTO booking API has no other identity to
+  // search by). A null phone -- a contact born on a channel without one (IG/FB/email, Task 9)
+  // -- structurally cannot have a booking looked up, so it's treated the same as "API not
+  // configured": no lookup, cached data (if any) simply stands.
+  if (stale && conversation.contact.phone) bookingData = await lookupBooking(conversation.contact.phone)
 
   // Tahap diturunkan dari SETIAP pemanggilan, bukan hanya saat cache miss.
   //
