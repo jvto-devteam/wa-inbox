@@ -593,11 +593,28 @@ git commit -m "chore(backfill): tautkan Conversation lama ke ChannelIdentity Wha
 
 ---
 
-## Task 5b: Pindahkan kunci upsert SEBELUM constraint lama dilepas
+## Task 5b: Pindahkan SEMUA pencarian dari kunci yang akan dilepas
 
 **Task ini tidak boleh dilewati, dan urutannya tidak boleh ditukar dengan Task 9.**
 
-`ingestSingleMessage` melakukan `conversation.upsert({ where: { contactId: contact.id } })`. Prisma mewajibkan field di `where` sebuah upsert punya constraint unik. Begitu Task 9 melepas `Conversation.contactId @unique`, pemanggilan itu **berhenti dikompilasi dan ingest WhatsApp patah total**. Jadi kunci penggantinya harus sudah terpasang dan terpakai lebih dulu.
+Prisma mewajibkan field di `where` sebuah upsert punya constraint unik. Task 9 melepas **dua** constraint, dan di `src/lib/inbound.ts` ada **empat** call site yang bergantung padanya — dua di `ingestSingleMessage`, dua di `ingestEchoedMessage`:
+
+| Baris | Pemanggilan | Bergantung pada |
+| --- | --- | --- |
+| `:519-520` | `contact.upsert({ where: { phone: message.from } })` | `Contact.phone @unique` |
+| `:526-527` | `conversation.upsert({ where: { contactId } })` | `Conversation.contactId @unique` |
+| `:633-634` | `contact.upsert({ where: { phone: echo.to } })` | `Contact.phone @unique` |
+| `:640-641` | `conversation.upsert({ where: { contactId } })` | `Conversation.contactId @unique` |
+
+Begitu Task 9 jalan, **keempatnya berhenti dikompilasi dan ingest WhatsApp patah total.** Jadi semuanya harus pindah lebih dulu, dalam satu task, supaya tidak pernah ada keadaan ter-deploy di mana separuh sudah pindah dan separuh belum.
+
+Resolusi kontak berpindah lewat `ChannelIdentity` — pola yang sama dengan yang dipakai jalur Facebook nanti, sehingga kedua jalur seragam:
+
+```
+cari ChannelIdentity(WHATSAPP, nomor)
+  ├─ ketemu     → pakai contactId-nya, perbarui nama kalau ada yang baru
+  └─ tidak ada  → buat Contact baru, lalu identitasnya
+```
 
 **Files:**
 - Modify: `prisma/schema.prisma` (unique index baru)
@@ -647,29 +664,93 @@ Expected: hanya `CREATE UNIQUE INDEX "Conversation_channelIdentityId_externalThr
 Tambahkan ke `src/lib/inbound.test.ts`:
 
 ```ts
-it('mencari conversation lewat kunci benang, bukan lewat contactId', async () => {
-  stubHappyPath()
-  mockPrisma.channelIdentity.upsert.mockResolvedValue({ id: 'ci_wa_1', contactId: 'contact_1' } as never)
+describe('pencarian lepas dari kunci unik lama', () => {
+  it('mencari conversation lewat kunci benang, bukan lewat contactId', async () => {
+    stubHappyPath()
+    mockPrisma.channelIdentity.findUnique.mockResolvedValue({ contactId: 'contact_1' } as never)
+    mockPrisma.channelIdentity.upsert.mockResolvedValue({ id: 'ci_wa_1', contactId: 'contact_1' } as never)
 
-  await ingestMetaMessage(samplePayload)
+    await ingestMetaMessage(samplePayload)
 
-  const arg = mockPrisma.conversation.upsert.mock.calls[0][0]
-  expect(arg.where).toEqual({
-    channelIdentityId_externalThreadId: { channelIdentityId: 'ci_wa_1', externalThreadId: '' },
+    const arg = mockPrisma.conversation.upsert.mock.calls[0][0]
+    expect(arg.where).toEqual({
+      channelIdentityId_externalThreadId: { channelIdentityId: 'ci_wa_1', externalThreadId: '' },
+    })
+  })
+
+  // contact.upsert({ where: { phone } }) berhenti dikompilasi begitu Task 9 melepas
+  // Contact.phone @unique. Kontak dicari lewat identitasnya, bukan lewat nomornya.
+  it('tidak pernah memanggil contact.upsert', async () => {
+    stubHappyPath()
+    mockPrisma.channelIdentity.findUnique.mockResolvedValue({ contactId: 'contact_1' } as never)
+
+    await ingestMetaMessage(samplePayload)
+
+    expect(mockPrisma.contact.upsert).not.toHaveBeenCalled()
+  })
+
+  it('memakai kontak yang sudah tertaut ke identitas itu', async () => {
+    stubHappyPath()
+    mockPrisma.channelIdentity.findUnique.mockResolvedValue({ contactId: 'contact_lama' } as never)
+
+    await ingestMetaMessage(samplePayload)
+
+    expect(mockPrisma.contact.create).not.toHaveBeenCalled()
+    expect(mockPrisma.channelIdentity.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({ contactId: 'contact_lama' }),
+    )
+  })
+
+  it('membuat kontak baru saat identitasnya belum pernah ada', async () => {
+    stubHappyPath()
+    mockPrisma.channelIdentity.findUnique.mockResolvedValue(null as never)
+    mockPrisma.contact.create.mockResolvedValue({ id: 'contact_baru', phone: '6281234567890' } as never)
+
+    await ingestMetaMessage(samplePayload)
+
+    expect(mockPrisma.contact.create).toHaveBeenCalled()
   })
 })
 ```
 
+Ganti `'6281234567890'` dengan nilai `from` yang benar-benar dipakai `samplePayload` di file itu.
+
 - [ ] **Step 5: Jalankan, pastikan gagal**
 
 Run: `npm test -- src/lib/inbound.test.ts`
-Expected: FAIL — `where` masih `{ contactId: ... }`.
+Expected: FAIL — `contact.upsert` masih dipanggil dan `where` conversation masih `{ contactId: ... }`.
 
-- [ ] **Step 6: Pindahkan kuncinya**
+- [ ] **Step 6: Pindahkan keempat call site**
 
-Di `src/lib/inbound.ts`, pada `ingestSingleMessage` dan `ingestEchoedMessage`, ganti `where` upsert:
+Di `src/lib/inbound.ts`, pada `ingestSingleMessage`, ganti blok resolusi kontak + conversation:
 
 ```ts
+  // Kontak dicari lewat identitasnya, bukan lewat nomornya. Setelah Task 9 melepas
+  // Contact.phone @unique, Prisma menolak `phone` di `where` sebuah upsert -- dan nomor
+  // memang bukan lagi identitas: ia hanya salah satu alamat, kebetulan yang pertama ada.
+  const known = await prisma.channelIdentity.findUnique({
+    where: { platform_externalId: { platform: 'WHATSAPP', externalId: message.from } },
+    select: { contactId: true },
+  })
+
+  const contact = known
+    ? await prisma.contact.update({
+        where: { id: known.contactId },
+        data: profileName ? { name: profileName } : {},
+      })
+    : await prisma.contact.create({ data: { phone: message.from, name: profileName ?? null } })
+
+  const identity = await upsertChannelIdentity({
+    platform: 'WHATSAPP',
+    // Diambil dari payload, bukan dari contact.phone: setelah Task 9 kolom itu bertipe
+    // `string | null` dan tidak bisa dipakai sebagai externalId yang wajib string.
+    externalId: message.from,
+    contactId: contact.id,
+    displayName: profileName,
+  })
+
+  const sentAt = parseMetaTimestamp(message.timestamp)
+
   const conversation = await prisma.conversation.upsert({
     // Dikunci lewat (channelIdentityId, externalThreadId), bukan contactId: setelah Task 9
     // melepas Conversation.contactId @unique, Prisma menolak contactId di `where` sebuah
@@ -683,10 +764,14 @@ Di `src/lib/inbound.ts`, pada `ingestSingleMessage` dan `ingestEchoedMessage`, g
       channelIdentityId: identity.id,
       externalThreadId: '',
       lastMessageAt: sentAt,
-      botEnabled: await defaultBotEnabled(contact.phone),
+      botEnabled: await defaultBotEnabled(message.from),
     },
   })
 ```
+
+Lakukan perubahan yang sama persis di `ingestEchoedMessage`, dengan `echo.to` menggantikan `message.from` dan tanpa `displayName`.
+
+Blok `upsertChannelIdentity` yang ditambahkan Task 4 sekarang tergantikan oleh blok di atas — pastikan tidak ada dua pemanggilan berturut-turut.
 
 - [ ] **Step 7: Jalankan, pastikan lulus**
 
