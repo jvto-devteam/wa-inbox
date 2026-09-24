@@ -21,13 +21,17 @@ import { join } from 'node:path'
  * jadi jalan keluar -- satu-satunya cara lolos adalah `update:`/`create:` benar-benar
  * muncul lebih dulu, yang berarti bentuknya bukan lagi call yang sama.
  *
- * --- `findFirst`/`findUnique`, ditambahkan fix round 1 (Temuan I-2) ---
+ * --- `findFirst`/`findUnique`/`findMany`, ditambahkan fix round 1 (Temuan I-2) dan fix round 2
+ * (Temuan I-6) ---
  *
  * `contact.upsert`/`conversation.upsert` bukan satu-satunya bentuk berkunci lama: Task 9 fix
  * round 1 sendiri menambahkan `contact.findFirst({ where: { phone } })` di
  * src/app/api/send/route.ts, dan itu di luar jangkauan dua pola di atas -- `findFirst`/
  * `findUnique` tidak punya `update:`/`create:` untuk dijadikan jangkar negative-lookahead yang
- * sama. Jangkar strukturalnya di sini berbeda: hanya sintaks komentar (baris ganda `//` atau blok) dan
+ * sama. `findMany` menyusul di fix round 2: `contact.findMany({ where: { phone } })` lalu `[0]`
+ * adalah bentuk terakhir yang masih dikompilasi setelah kedua unique dilepas, dan ia tetap
+ * mengkodekan asumsi "satu nomor = satu kontak" yang balapan kontak ganda (Temuan I-4/I-5)
+ * buktikan salah. Jangkar strukturalnya sama untuk ketiganya: hanya sintaks komentar (baris ganda `//` atau blok) dan
  * whitespace yang boleh berada di antara `{` pembuka argumen dan `where:`. Token lain apa pun
  * di sana berarti bentuknya bukan `{ where: { phone/contactId ... } }` yang dicari.
  *
@@ -36,6 +40,13 @@ import { join } from 'node:path'
  * eksplisit lewat komentar SATU BARIS tepat di atas call site: `// legacy-key-ok: <alasan>`.
  * Pengecualian yang harus ditulis sadar jauh lebih baik daripada penjaga yang diam-diam tidak
  * melihat polanya -- lihat `isMarkedLegacyKeyOk` di bawah.
+ *
+ * Tapi teks penanda itu bebas dan tak terbatas, jadi ia sendiri bisa disalahgunakan: siapa pun
+ * bisa membungkam pelanggaran sungguhan dengan satu baris komentar dan tidak ada yang tahu
+ * (Temuan I-6). Karena itu yang dipaku bukan hanya "nol pelanggaran", tapi HIMPUNAN penandanya
+ * -- lokasi file dan teks alasannya, di `APPROVED_LEGACY_KEY_MARKERS` di bawah. Penanda baru,
+ * penanda yang pindah file, atau alasan yang diubah semuanya menggagalkan test sampai daftar
+ * itu ikut diedit dengan sadar. Hari ini isinya tepat satu.
  *
  * `contact.upsert`/`conversation.upsert` SENGAJA tidak diberi mekanisme pengecualian yang sama:
  * tidak ada pemakaian sah untuk pola itu di repo ini (semua sudah dimigrasikan ke
@@ -81,6 +92,10 @@ const FIND_LEGACY_PATTERNS: Array<{ usage: string; regex: RegExp }> = [
     regex: new RegExp(String.raw`contact\.findUnique\(\s*\{\s*${COMMENT_OR_SPACE}where:\s*\{\s*phone\b`, 'g'),
   },
   {
+    usage: 'contact.findMany({ where: { phone } })',
+    regex: new RegExp(String.raw`contact\.findMany\(\s*\{\s*${COMMENT_OR_SPACE}where:\s*\{\s*phone\b`, 'g'),
+  },
+  {
     usage: 'conversation.findFirst({ where: { contactId } })',
     regex: new RegExp(String.raw`conversation\.findFirst\(\s*\{\s*${COMMENT_OR_SPACE}where:\s*\{\s*contactId\b`, 'g'),
   },
@@ -88,7 +103,36 @@ const FIND_LEGACY_PATTERNS: Array<{ usage: string; regex: RegExp }> = [
     usage: 'conversation.findUnique({ where: { contactId } })',
     regex: new RegExp(String.raw`conversation\.findUnique\(\s*\{\s*${COMMENT_OR_SPACE}where:\s*\{\s*contactId\b`, 'g'),
   },
+  {
+    usage: 'conversation.findMany({ where: { contactId } })',
+    regex: new RegExp(String.raw`conversation\.findMany\(\s*\{\s*${COMMENT_OR_SPACE}where:\s*\{\s*contactId\b`, 'g'),
+  },
 ]
+
+/**
+ * Penanda `// legacy-key-ok: <alasan>` yang BOLEH ada di repo ini, lengkap dengan lokasi dan
+ * alasannya. Dipaku sebagai himpunan, bukan sekadar dihitung: mekanisme pengecualian yang
+ * teksnya bebas dan jumlahnya tak dibatasi bisa dipakai siapa pun untuk mendiamkan pelanggaran
+ * sungguhan tanpa ada yang tahu. Dengan daftar ini, menambah pengecualian baru berarti
+ * mengedit file ini dengan sadar -- dan penanda yang muncul di tempat yang tidak terduga
+ * membuat test GAGAL, bukan lolos diam-diam.
+ */
+const APPROVED_LEGACY_KEY_MARKERS: Array<{ file: string; reason: string }> = [
+  {
+    file: join('src', 'app', 'api', 'send', 'route.ts'),
+    reason:
+      'kompat Task 46 -- phone tak lagi unik sejak Task 9, orderBy createdAt asc di bawah membuat pilihannya deterministik (lihat komentar di atas modul ini, dan Temuan I-1 fix round 1)',
+  },
+]
+
+/** Setiap `// legacy-key-ok: <alasan>` di satu file, alasannya saja, urut kemunculan. */
+export function findLegacyKeyMarkers(source: string): string[] {
+  return source
+    .split('\n')
+    .map((line) => /^\s*\/\/\s*legacy-key-ok:\s*(.*)$/.exec(line))
+    .filter((match): match is RegExpExecArray => match !== null)
+    .map((match) => match[1].trim())
+}
 
 /**
  * True kalau baris TEPAT di atas posisi `matchIndex` (yaitu di atas baris yang memuat awal call
@@ -145,6 +189,25 @@ describe('tidak ada lagi upsert/lookup berkunci lama tanpa penanda di seluruh re
     }
 
     expect(offenders).toEqual([])
+  })
+
+  // Temuan I-6: penjaga yang hanya menghitung pelanggaran memberi jalan keluar yang tak
+  // terbatas -- satu baris `// legacy-key-ok:` di mana pun membuat pelanggaran sungguhan
+  // menghilang dari `offenders` di atas tanpa ada yang menyadarinya. Yang dipaku di sini adalah
+  // HIMPUNAN penandanya: lokasi file DAN teks alasannya. Penanda baru, penanda yang pindah
+  // file, atau alasan yang diubah, semuanya menggagalkan test ini sampai daftar
+  // APPROVED_LEGACY_KEY_MARKERS ikut diedit dengan sadar.
+  it('hanya penanda legacy-key-ok yang sudah disetujui yang ada di seluruh src/', () => {
+    const found: Array<{ file: string; reason: string }> = []
+
+    for (const file of sourceFiles('src')) {
+      for (const reason of findLegacyKeyMarkers(readFileSync(file, 'utf8'))) found.push({ file, reason })
+    }
+
+    const sort = (rows: Array<{ file: string; reason: string }>) =>
+      [...rows].sort((a, b) => `${a.file}\u0000${a.reason}`.localeCompare(`${b.file}\u0000${b.reason}`))
+
+    expect(sort(found)).toEqual(sort(APPROVED_LEGACY_KEY_MARKERS))
   })
 })
 
@@ -306,6 +369,71 @@ describe('findLegacyKeyUsages (kontrol positif)', () => {
       })
     `
     expect(findLegacyKeyUsages(src)).toContain('contact.findFirst({ where: { phone } })')
+  })
+
+  // --- findMany, ditambahkan fix round 2 (Temuan I-6) ---
+  //
+  // `contact.findMany({ where: { phone } })` lalu `[0]` adalah bentuk terakhir yang MASIH
+  // dikompilasi setelah kedua unique dilepas, dan ia tetap mengkodekan asumsi lama "satu nomor
+  // = satu kontak" -- justru asumsi yang balapan kontak ganda (Temuan I-4/I-5) buktikan salah.
+  it('mendeteksi contact.findMany({ where: { phone } }) yang diambil [0]-nya', () => {
+    const src = `
+      const contacts = await prisma.contact.findMany({
+        where: { phone: to },
+      })
+      const contact = contacts[0]
+    `
+    expect(findLegacyKeyUsages(src)).toContain('contact.findMany({ where: { phone } })')
+  })
+
+  it('mendeteksi contact.findMany({ where: { phone } }) walau didahului komentar penjelas tiga baris', () => {
+    const src = `
+      const contacts = await prisma.contact.findMany({
+        // Dicari lewat nomor, lalu diambil yang pertama -- persis asumsi "satu nomor = satu
+        // kontak" yang sudah tidak berlaku sejak Task 9 melepas Contact.phone @unique, dan
+        // komentar sepanjang ini tidak boleh jadi jalan keluar.
+        where: { phone: to },
+      })
+    `
+    expect(findLegacyKeyUsages(src)).toContain('contact.findMany({ where: { phone } })')
+  })
+
+  it('mendeteksi conversation.findMany({ where: { contactId } }) polos', () => {
+    const src = `
+      const conversations = await prisma.conversation.findMany({
+        where: { contactId: contact.id },
+      })
+    `
+    expect(findLegacyKeyUsages(src)).toContain('conversation.findMany({ where: { contactId } })')
+  })
+
+  it('TIDAK menandai contact.findMany({ where: { phone } }) yang ditandai // legacy-key-ok tepat di atasnya', () => {
+    const src = `
+      // legacy-key-ok: contoh sintetis untuk kontrol positif penanda, bukan kode nyata
+      const contacts = await prisma.contact.findMany({
+        where: { phone: to },
+      })
+    `
+    expect(findLegacyKeyUsages(src)).toEqual([])
+  })
+
+  // --- findLegacyKeyMarkers, kontrol positif untuk pemakuan himpunan penanda (Temuan I-6) ---
+
+  it('findLegacyKeyMarkers mengembalikan setiap alasan penanda, tidak hanya menghitungnya', () => {
+    const src = `
+      // legacy-key-ok: alasan pertama
+      const a = await prisma.contact.findFirst({ where: { phone: to } })
+      // legacy-key-ok: alasan kedua
+      const b = await prisma.contact.findMany({ where: { phone: to } })
+    `
+    expect(findLegacyKeyMarkers(src)).toEqual(['alasan pertama', 'alasan kedua'])
+  })
+
+  it('findLegacyKeyMarkers tidak melihat penanda di akhir baris kode (konvensinya satu bentuk saja)', () => {
+    const src = `
+      const a = await prisma.contact.findFirst({ where: { phone: to } }) // legacy-key-ok: bukan bentuknya
+    `
+    expect(findLegacyKeyMarkers(src)).toEqual([])
   })
 
   it('tidak salah tertangkap oleh model lain yang kebetulan memuat "contact" sebagai substring (contactConsent)', () => {
