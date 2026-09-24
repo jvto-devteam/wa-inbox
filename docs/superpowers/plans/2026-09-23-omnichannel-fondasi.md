@@ -800,6 +800,232 @@ Kirim satu pesan WhatsApp dari nomor whitelist `6282143403501` dan pastikan masu
 
 ---
 
+## Task 5c: Tiga file lain yang juga memakai kunci lama
+
+**Task ini lahir dari kesalahan, dan alasannya ditulis supaya tidak terulang.**
+
+Task 5b memindahkan empat call site di `src/lib/inbound.ts`. Cakupan itu ditentukan dengan menggeledah **satu file saja** — persis kesalahan yang CLAUDE.md §9 peringatkan (*"Satu file bukan keseluruhan"*). Geledah ulang seluruh repo menemukan **enam call site lagi di tiga file**, dua di antaranya jalur produksi:
+
+| File | Baris | Jalur |
+| --- | --- | --- |
+| `src/lib/test-conversation.ts` | 14, 19 | **Produksi** — `ensureTestConversation()` jalan tiap kali daftar inbox dimuat |
+| `src/lib/system-templates/send.ts` | 144, 153 | **Produksi** — kiriman template ke nomor pelanggan |
+| `src/lib/bot/eval/run-eval.ts` | 52, 57 | `npm run eval`, 13 golden case |
+
+Tanpa task ini, Task 9 mematahkan sandbox Test Bot, pengiriman template, dan seluruh suite eval — dan dua yang pertama baru ketahuan saat ada yang memakainya.
+
+**Files:**
+- Modify: `src/lib/test-conversation.ts`
+- Modify: `src/lib/system-templates/send.ts`
+- Modify: `src/lib/bot/eval/run-eval.ts`
+- Test: file test yang sudah ada untuk ketiganya
+
+**Interfaces:**
+- Consumes: `upsertChannelIdentity()` (Task 3), kunci `channelIdentityId_externalThreadId` (Task 5b)
+- Produces: nol pemakaian `contact.upsert({ where: { phone } })` dan `conversation.upsert({ where: { contactId } })` di seluruh repo
+
+- [ ] **Step 1: Tulis test yang gagal — penjaga mekanis untuk seluruh repo**
+
+Buat `src/lib/channel/no-legacy-keys.test.ts`:
+
+```ts
+import { describe, it, expect } from 'vitest'
+import { readFileSync, readdirSync, statSync } from 'node:fs'
+import { join } from 'node:path'
+
+/**
+ * Penjaga lintas-repo, bukan test unit.
+ *
+ * Task 9 melepas Contact.phone @unique dan Conversation.contactId @unique. Prisma menolak
+ * field non-unik di `where` sebuah upsert, jadi setiap pemakaian yang tersisa berhenti
+ * dikompilasi begitu migrasi itu jalan. Cakupan Task 5b ditentukan dengan menggeledah satu
+ * file dan meleset enam call site di tiga file -- test ini ada supaya kesalahan itu tidak
+ * bisa terulang diam-diam.
+ */
+function sourceFiles(dir: string): string[] {
+  const out: string[] = []
+  for (const entry of readdirSync(dir)) {
+    const p = join(dir, entry)
+    if (statSync(p).isDirectory()) out.push(...sourceFiles(p))
+    else if (/\.tsx?$/.test(entry) && !/\.test\.tsx?$/.test(entry)) out.push(p)
+  }
+  return out
+}
+
+describe('tidak ada lagi upsert berkunci lama di seluruh repo', () => {
+  it('nol contact.upsert({ where: { phone } }) dan conversation.upsert({ where: { contactId } })', () => {
+    const offenders: string[] = []
+
+    for (const file of sourceFiles('src')) {
+      const src = readFileSync(file, 'utf8')
+      if (/contact\.upsert\(\s*\{[\s\S]{0,120}?where:\s*\{\s*phone/.test(src)) {
+        offenders.push(`${file}: contact.upsert({ where: { phone } })`)
+      }
+      if (/conversation\.upsert\(\s*\{[\s\S]{0,120}?where:\s*\{\s*contactId/.test(src)) {
+        offenders.push(`${file}: conversation.upsert({ where: { contactId } })`)
+      }
+    }
+
+    expect(offenders).toEqual([])
+  })
+})
+```
+
+- [ ] **Step 2: Jalankan, pastikan gagal dengan DAFTAR yang benar**
+
+Run: `npm test -- src/lib/channel/no-legacy-keys.test.ts`
+
+Expected: FAIL, dan daftar `offenders` memuat **tepat tiga file**: `test-conversation.ts`, `system-templates/send.ts`, `bot/eval/run-eval.ts`. Kalau daftarnya memuat file lain, catat — berarti masih ada yang terlewat lagi.
+
+- [ ] **Step 3: Pindahkan `src/lib/test-conversation.ts`**
+
+Kontaknya memakai sentinel `TEST_CONTACT_PHONE = '__bot_test__'` yang sengaja non-numerik. Sentinel itu **tetap dipakai** sebagai `externalId` — ia tetap unik di dalam platform WhatsApp, dan tidak akan pernah bertabrakan dengan nomor sungguhan.
+
+```ts
+export async function ensureTestConversation(): Promise<void> {
+  // Dicari lewat identitas, bukan lewat nomor: Task 9 melepas Contact.phone @unique dan
+  // Prisma menolak field non-unik di `where` sebuah upsert. Sentinel-nya tetap sama.
+  const known = await prisma.channelIdentity.findUnique({
+    where: { platform_externalId: { platform: 'WHATSAPP', externalId: TEST_CONTACT_PHONE } },
+    select: { contactId: true },
+  })
+
+  const contact =
+    known ??
+    (await prisma.contact.create({
+      data: { phone: TEST_CONTACT_PHONE, name: '🧪 Tes Bot (Internal)' },
+    }).then((c) => ({ contactId: c.id })))
+
+  const identity = await upsertChannelIdentity({
+    platform: 'WHATSAPP',
+    externalId: TEST_CONTACT_PHONE,
+    contactId: contact.contactId,
+  })
+
+  await prisma.conversation.upsert({
+    where: {
+      channelIdentityId_externalThreadId: { channelIdentityId: identity.id, externalThreadId: '' },
+    },
+    update: {},
+    create: {
+      contactId: contact.contactId,
+      channelIdentityId: identity.id,
+      externalThreadId: '',
+      isPinned: true,
+      isTest: true,
+    },
+  })
+}
+```
+
+Tambahkan import `upsertChannelIdentity` dari `@/lib/channel/identity`.
+
+- [ ] **Step 4: Pindahkan `src/lib/system-templates/send.ts`**
+
+Ini jalur pelanggan sungguhan — perlakukan dengan hati-hati. Pertahankan pembungkus `upsertOnce()` yang sudah ada; ia menangani balapan, dan menghapusnya akan memperkenalkan bug yang tidak berhubungan.
+
+```ts
+  const nameValue = params.variables.name
+  const resolvedName = typeof nameValue === 'string' && nameValue.trim() ? nameValue.trim() : null
+
+  const known = await prisma.channelIdentity.findUnique({
+    where: { platform_externalId: { platform: 'WHATSAPP', externalId: phone } },
+    select: { contactId: true },
+  })
+
+  const contact = known
+    ? await prisma.contact.update({
+        where: { id: known.contactId },
+        data: resolvedName ? { name: resolvedName } : {},
+      })
+    : await upsertOnce(() => prisma.contact.create({ data: { phone, name: resolvedName } }))
+
+  const identity = await upsertChannelIdentity({
+    platform: 'WHATSAPP',
+    externalId: phone,
+    contactId: contact.id,
+    displayName: resolvedName,
+  })
+
+  const now = new Date()
+  const botEnabled = await defaultBotEnabled(phone)
+
+  const conversation = await upsertOnce(() =>
+    prisma.conversation.upsert({
+      where: {
+        channelIdentityId_externalThreadId: { channelIdentityId: identity.id, externalThreadId: '' },
+      },
+      update: { lastMessageAt: now },
+      create: {
+        contactId: contact.id,
+        channelIdentityId: identity.id,
+        externalThreadId: '',
+        lastMessageAt: now,
+        botEnabled,
+      },
+    })
+  )
+```
+
+`defaultBotEnabled(phone)` masih bertanda tangan lama di sini — **jangan diubah di task ini**, Task 6 yang mengubahnya bersama seluruh pemanggil lainnya.
+
+- [ ] **Step 5: Pindahkan `src/lib/bot/eval/run-eval.ts`**
+
+Telepon sintetiknya `eval-${c.id}` — tetap dipakai sebagai `externalId`.
+
+```ts
+  const phone = `eval-${c.id}`
+
+  const known = await prisma.channelIdentity.findUnique({
+    where: { platform_externalId: { platform: 'WHATSAPP', externalId: phone } },
+    select: { contactId: true },
+  })
+
+  const contact = known
+    ? { id: known.contactId }
+    : await prisma.contact.create({ data: { phone, name: `eval ${c.id}` } })
+
+  const identity = await upsertChannelIdentity({
+    platform: 'WHATSAPP',
+    externalId: phone,
+    contactId: contact.id,
+  })
+
+  const conversation = await prisma.conversation.upsert({
+    where: {
+      channelIdentityId_externalThreadId: { channelIdentityId: identity.id, externalThreadId: '' },
+    },
+    update: { tripBrief: {}, botEnabled: true },
+    create: {
+      contactId: contact.id,
+      channelIdentityId: identity.id,
+      externalThreadId: '',
+      botEnabled: true,
+      isTest: true,
+      tripBrief: {},
+    },
+  })
+```
+
+- [ ] **Step 6: Jalankan penjaga, pastikan LULUS**
+
+Run: `npm test -- src/lib/channel/no-legacy-keys.test.ts`
+Expected: PASS — `offenders` kosong.
+
+- [ ] **Step 7: Verifikasi penuh**
+
+Run: `npm test && npx tsc --noEmit && npx eslint . && npm run build`
+Expected: semua lulus. Test yang mem-mock `contact.upsert` di ketiga jalur ini perlu disesuaikan ke `contact.create` / `contact.update` — sesuaikan mock-nya, **jangan melonggarkan assertion-nya**.
+
+- [ ] **Step 8: Commit**
+
+```bash
+git add src/lib/test-conversation.ts src/lib/system-templates/send.ts src/lib/bot/eval/run-eval.ts src/lib/channel/no-legacy-keys.test.ts
+git commit -m "feat(channel): pindahkan tiga jalur terakhir dari kunci unik lama"
+```
+
+---
+
 ## Task 6: Empat sakelar bot per channel di Settings
 
 **Files:**
