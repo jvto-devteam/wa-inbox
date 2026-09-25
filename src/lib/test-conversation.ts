@@ -41,7 +41,10 @@ export async function ensureTestConversation(): Promise<void> {
     },
     update: {},
     create: {
-      contactId: contact.contactId,
+      // WAJIB nilai balik upsertChannelIdentity, bukan contact.contactId milik pemanggil --
+      // lihat kontraknya di src/lib/channel/identity.ts. Kalau identitasnya sudah ada,
+      // cabang update tidak menyentuh contactId, jadi pemiliknya bisa Contact yang lain.
+      contactId: identity.contactId,
       channelIdentityId: identity.id,
       externalThreadId: '',
       isPinned: true,

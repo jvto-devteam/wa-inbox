@@ -63,4 +63,20 @@ describe('ensureTestConversation', () => {
       })
     )
   })
+
+  // upsertChannelIdentity mengembalikan pemilik yang BENAR-BENAR terikat, yang belum tentu
+  // sama dengan Contact yang baru saja dibuat pemanggil. Memakai contact.contactId sendiri
+  // membuat Conversation.contactId dan ChannelIdentity.contactId menunjuk Contact berbeda
+  // selamanya -- lihat kontraknya di src/lib/channel/identity.ts.
+  it('memakai contactId dari identitas, bukan Contact yang dibuat sendiri', async () => {
+    mockPrisma.channelIdentity.findUnique.mockResolvedValue(null)
+    mockPrisma.contact.create.mockResolvedValue({ id: 'contact_kalah' } as never)
+    mockPrisma.channelIdentity.upsert.mockResolvedValue({ id: 'ci_1', contactId: 'contact_menang' } as never)
+    mockPrisma.conversation.upsert.mockResolvedValue({} as never)
+
+    await ensureTestConversation()
+
+    const arg = mockPrisma.conversation.upsert.mock.calls[0][0] as unknown as { create: { contactId: string } }
+    expect(arg.create.contactId).toBe('contact_menang')
+  })
 })
