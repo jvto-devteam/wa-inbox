@@ -234,12 +234,18 @@ Yang ditambah: percabangan atas `payload.object`.
 | `instagram` | `entry[].messaging[]` | INSTAGRAM |
 | `page` | `entry[].messaging[]` | FACEBOOK |
 
-Saat ini `src/lib/inbound.ts` hanya mengenali bentuk pertama, jadi pesan IG/FB **masuk, lolos
-verifikasi, lalu dibuang diam-diam** sambil membalas 200. Parser `entry[].messaging[]` adalah
-pekerjaan baru yang sesungguhnya di sini; sisanya bisa dipakai ulang.
-
 IG dan FB berbagi bentuk payload yang identik, jadi keduanya satu adapter dengan `platform`
 sebagai parameter — bukan dua.
+
+**SELESAI pada fase Facebook (2026-09-25).** Ketika ditulis, bagian ini berbunyi "`inbound.ts`
+hanya mengenali bentuk pertama, jadi pesan IG/FB masuk, lolos verifikasi, lalu dibuang diam-diam
+sambil membalas 200". Itu tidak lagi benar untuk **kedua** platform: `isMessengerPayload`
+(`src/lib/meta/messenger-types.ts`) menerima `page` DAN `instagram`, dan `src/lib/inbound.ts`
+memetakan `payload.object === 'instagram'` ke `INSTAGRAM` sebelum memanggil adapter yang sama.
+
+Konsekuensinya untuk fase Instagram: **jalur masuknya tidak perlu dibangun lagi.** Yang tersisa
+adalah pengiriman keluar (`src/lib/send.ts` masih bertipe `'WHATSAPP' | 'FACEBOOK'`), pencarian
+nama yang masih terpaku Facebook (`src/lib/meta/messenger-profile.ts`), dan izin Meta.
 
 ### 6.3 Email
 

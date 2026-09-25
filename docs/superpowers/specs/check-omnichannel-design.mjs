@@ -134,9 +134,25 @@ mustContain('src/lib/inbound.ts', /settings\.botAutoReplyAll && settings\[TOGGLE
 mustContain('src/lib/channel/platform.ts', /hasPhoneNumber/, 'penjaga hasPhoneNumber')
 
 // ---------------------------------------------------------------------------
-// §6 — parser masuk belum mengenal IG/FB
+// §6 — parser masuk SUDAH mengenal IG dan FB (selesai di fase Facebook, 2026-09-25)
 // ---------------------------------------------------------------------------
-mustNotContain('src/lib/inbound.ts', /payload\.object|\bentry\[\d*\]?\.messaging\b|value\.messaging/, 'percabangan payload.object / entry[].messaging[]')
+// Assertion-nya berbalik arah, seperti §4 saat fase fondasi selesai. Dulu "belum ada
+// percabangan payload.object"; kini percabangan itu WAJIB ada untuk KEDUA platform.
+// Yang dijaga di sini bukan sekadar "ada percabangan", tapi klaim yang dipakai rencana
+// fase Instagram sebagai pijakan: jalur MASUK Instagram tidak perlu dibangun lagi. Kalau
+// seseorang mempersempit isMessengerPayload kembali ke 'page' saja, rencana itu langsung
+// berbohong -- dan pesan Instagram kembali dibuang diam-diam sambil membalas 200.
+mustContain('src/lib/inbound.ts', /isMessengerPayload\(payload\)/, 'percabangan payload Messenger/Instagram')
+mustContain('src/lib/inbound.ts', /payload\.object === 'instagram' \? 'INSTAGRAM'/, 'pemetaan object=instagram ke platform INSTAGRAM')
+mustContain('src/lib/meta/messenger-types.ts', /object === 'page' \|\| object === 'instagram'/, "isMessengerPayload menerima 'page' DAN 'instagram'")
+
+// Fase Instagram BELUM selesai: dua hal di bawah ini adalah sisa pekerjaannya. Keduanya
+// dicatat sebagai klaim "belum ada" supaya pemeriksa ini ikut berubah saat fase itu jalan.
+mustNotContain('src/lib/send.ts', /platform === 'INSTAGRAM'/, 'cabang kirim INSTAGRAM (fase Instagram, belum)')
+mustNotContain('src/lib/channel/platform.ts', /SHIPPED_PLATFORMS = \[[^\]]*INSTAGRAM/, 'INSTAGRAM di SHIPPED_PLATFORMS (fase Instagram, belum)')
+// Pencarian nama masih terpaku Facebook: dipanggil untuk KEDUA platform tanpa argumen
+// platform, jadi IGSID ditanyakan ke Page Facebook. Harus jadi sadar-platform sebelum IG rilis.
+mustNotContain('src/lib/meta/messenger-profile.ts', /platform/, 'messenger-profile sadar platform (fase Instagram, belum)')
 
 // §6.3 — belum ada infrastruktur email sama sekali.
 // Dipersempit ke IMPOR dan PEMAKAIAN, bukan sekadar penyebutan: komentar dokumentasi
