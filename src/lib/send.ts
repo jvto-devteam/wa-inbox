@@ -368,7 +368,7 @@ async function sendMessengerMessage(
   let externalId: string | undefined
   let deliveryStatus: 'SENT' | 'FAILED' = 'SENT'
   try {
-    const result = await sendMessengerText(recipientId, params.text)
+    const result = await sendMessengerText(recipientId, params.text, 'FACEBOOK')
     externalId = result.externalId
   } catch (error) {
     console.error('sendMessage: Messenger send attempt failed', { conversationId: params.conversationId, error })

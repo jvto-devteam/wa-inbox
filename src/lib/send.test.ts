@@ -533,7 +533,7 @@ describe('sendMessage — platform Facebook Messenger (Task 5)', () => {
 
     const result = await sendMessage({ conversationId: 'conv_fb', text: 'Halo!', sentBy: 'AGENT', platform: 'FACEBOOK' })
 
-    expect(sendMessengerText).toHaveBeenCalledWith('psid_abc', 'Halo!')
+    expect(sendMessengerText).toHaveBeenCalledWith('psid_abc', 'Halo!', 'FACEBOOK')
     expect(sendMetaText).not.toHaveBeenCalled()
     expect(sendCoexistText).not.toHaveBeenCalled()
     expect(resolveChannelForCapability).not.toHaveBeenCalled()
@@ -602,7 +602,7 @@ describe('sendMessage — platform diturunkan dari conversation, bukan parameter
     // TIDAK ADA `platform` di sini -- inilah persis yang dikirim POST /api/send hari ini.
     const result = await sendMessage({ conversationId: 'conv_fb', text: 'Halo dari agen', sentBy: 'AGENT' })
 
-    expect(sendMessengerText).toHaveBeenCalledWith('psid_derived', 'Halo dari agen')
+    expect(sendMessengerText).toHaveBeenCalledWith('psid_derived', 'Halo dari agen', 'FACEBOOK')
     expect(sendMetaText).not.toHaveBeenCalled()
     expect(sendCoexistText).not.toHaveBeenCalled()
     expect(resolveChannelForCapability).not.toHaveBeenCalled()
@@ -646,7 +646,7 @@ describe('sendMessage — platform diturunkan dari conversation, bukan parameter
 
     await sendMessage({ conversationId: 'conv_fb', text: 'Halo!', sentBy: 'AGENT', platform: 'FACEBOOK' })
 
-    expect(sendMessengerText).toHaveBeenCalledWith('psid_x', 'Halo!')
+    expect(sendMessengerText).toHaveBeenCalledWith('psid_x', 'Halo!', 'FACEBOOK')
   })
 })
 
