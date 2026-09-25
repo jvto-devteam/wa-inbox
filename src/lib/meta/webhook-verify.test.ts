@@ -21,3 +21,54 @@ describe('verifyMetaSignature', () => {
     expect(verifyMetaSignature(body, null, secret)).toBe(false)
   })
 })
+
+describe('verifyMetaSignature with multiple app secrets', () => {
+  const secretA = 'secret-a'
+  const secretB = 'secret-b'
+  const secretC = 'unrelated-secret-c'
+  const body = JSON.stringify({ hello: 'world' })
+
+  function sign(b: string, s: string) {
+    return 'sha256=' + crypto.createHmac('sha256', s).update(b).digest('hex')
+  }
+
+  it('verifies a signature made with secret A when the list is [A, B]', () => {
+    expect(verifyMetaSignature(body, sign(body, secretA), [secretA, secretB])).toBe(true)
+  })
+
+  it('verifies a signature made with secret B when the list is [A, B]', () => {
+    expect(verifyMetaSignature(body, sign(body, secretB), [secretA, secretB])).toBe(true)
+  })
+
+  it('rejects a signature made with an unrelated secret C when the list is [A, B]', () => {
+    expect(verifyMetaSignature(body, sign(body, secretC), [secretA, secretB])).toBe(false)
+  })
+
+  it('rejects when the secret list is empty', () => {
+    expect(verifyMetaSignature(body, sign(body, secretA), [])).toBe(false)
+  })
+
+  it('rejects when the secret list contains only empty strings', () => {
+    expect(verifyMetaSignature(body, sign(body, secretA), ['', ''])).toBe(false)
+  })
+
+  it('verifies the valid secret when the list also contains undefined/null entries, without throwing', () => {
+    expect(() =>
+      verifyMetaSignature(body, sign(body, secretA), [undefined, secretA, null]),
+    ).not.toThrow()
+    expect(verifyMetaSignature(body, sign(body, secretA), [undefined, secretA, null])).toBe(true)
+  })
+
+  it('still rejects a tampered payload with a multi-secret list', () => {
+    expect(verifyMetaSignature(body + 'x', sign(body, secretA), [secretA, secretB])).toBe(false)
+  })
+
+  it('still requires the sha256= prefix with a multi-secret list', () => {
+    const raw = crypto.createHmac('sha256', secretA).update(body).digest('hex')
+    expect(verifyMetaSignature(body, raw, [secretA, secretB])).toBe(false)
+  })
+
+  it('still rejects when the signature length does not match, with a multi-secret list', () => {
+    expect(verifyMetaSignature(body, 'sha256=deadbeef', [secretA, secretB])).toBe(false)
+  })
+})

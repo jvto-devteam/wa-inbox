@@ -17,7 +17,10 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   const rawBody = await req.text()
   const signature = req.headers.get('x-hub-signature-256')
-  if (!verifyMetaSignature(rawBody, signature, process.env.META_APP_SECRET!)) {
+  const appSecrets = [process.env.META_APP_SECRET, process.env.FB_APP_SECRET].filter(
+    (secret): secret is string => Boolean(secret),
+  )
+  if (!verifyMetaSignature(rawBody, signature, appSecrets)) {
     return new Response('Invalid signature', { status: 401 })
   }
 
