@@ -71,4 +71,16 @@ describe('verifyMetaSignature with multiple app secrets', () => {
   it('still rejects when the signature length does not match, with a multi-secret list', () => {
     expect(verifyMetaSignature(body, 'sha256=deadbeef', [secretA, secretB])).toBe(false)
   })
+
+  it('rejects a signature whose UTF-16 length matches 64 but contains a non-ASCII character, without throwing', () => {
+    // 63 ASCII hex-like chars + 1 non-ASCII char ('é') is 64 UTF-16 code units
+    // (so a naive `.length` guard would pass) but 65 UTF-8 bytes once
+    // `Buffer.from` encodes it — which used to make `crypto.timingSafeEqual`
+    // throw a RangeError instead of returning false.
+    const nonAsciiProvided = 'a'.repeat(63) + 'é'
+    expect(nonAsciiProvided.length).toBe(64)
+    const header = 'sha256=' + nonAsciiProvided
+    expect(() => verifyMetaSignature(body, header, [secretA, secretB])).not.toThrow()
+    expect(verifyMetaSignature(body, header, [secretA, secretB])).toBe(false)
+  })
 })

@@ -24,7 +24,17 @@ export async function POST(req: Request) {
     return new Response('Invalid signature', { status: 401 })
   }
 
-  const payload = JSON.parse(rawBody)
-  await ingestMetaMessage(payload)
+  let payload: Parameters<typeof ingestMetaMessage>[0]
+  try {
+    payload = JSON.parse(rawBody)
+  } catch {
+    return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
+  }
+
+  try {
+    await ingestMetaMessage(payload)
+  } catch {
+    return NextResponse.json({ error: 'Failed to process webhook' }, { status: 500 })
+  }
   return new Response('OK', { status: 200 })
 }

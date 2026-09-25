@@ -50,4 +50,36 @@ describe('POST /api/webhooks/meta', () => {
     const res = await POST(req)
     expect(res.status).toBe(401)
   })
+
+  it('returns 400 (not 500) for a validly signed but non-JSON body', async () => {
+    const body = 'not json'
+    const sig = 'sha256=' + crypto.createHmac('sha256', 'app-secret').update(body).digest('hex')
+    const req = new Request('http://localhost/api/webhooks/meta', {
+      method: 'POST',
+      headers: { 'x-hub-signature-256': sig },
+      body,
+    })
+    const callCountBefore = vi.mocked(ingestMetaMessage).mock.calls.length
+    const res = await POST(req)
+    expect(res.status).toBe(400)
+    const json = await res.json()
+    expect(typeof json.error).toBe('string')
+    expect(vi.mocked(ingestMetaMessage).mock.calls.length).toBe(callCountBefore)
+  })
+
+  it('returns 500 with a generic {error} body (not the raw error) when ingestion fails', async () => {
+    vi.mocked(ingestMetaMessage).mockRejectedValueOnce(new Error('db is down: connection string leaked'))
+    const body = JSON.stringify({ entry: [] })
+    const sig = 'sha256=' + crypto.createHmac('sha256', 'app-secret').update(body).digest('hex')
+    const req = new Request('http://localhost/api/webhooks/meta', {
+      method: 'POST',
+      headers: { 'x-hub-signature-256': sig },
+      body,
+    })
+    const res = await POST(req)
+    expect(res.status).toBe(500)
+    const json = await res.json()
+    expect(typeof json.error).toBe('string')
+    expect(json.error).not.toContain('db is down')
+  })
 })
