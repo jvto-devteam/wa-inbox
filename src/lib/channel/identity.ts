@@ -1,4 +1,4 @@
-import type { Platform } from '@prisma/client'
+import { Prisma, type Platform } from '@prisma/client'
 import { prisma } from '@/lib/db'
 
 /**
@@ -24,6 +24,19 @@ import { prisma } from '@/lib/db'
  * dan `src/app/api/send/route.ts` (cari kontak lewat `phone`, `orderBy: createdAt asc`) memilih
  * Contact yang tidak punya percakapan lalu menjawab 404 "Percakapan tidak ditemukan" untuk
  * nomor yang thread-nya jelas terlihat di Inbox.
+ *
+ * `upsert` Prisma BUKAN atomik terhadap balapan: ia SELECT dulu, lalu INSERT. Dua pemanggilan
+ * bersamaan untuk (platform, externalId) yang sama sama-sama tidak menemukan baris, sama-sama
+ * mencoba INSERT, dan yang kalah menabrak @@unique -> P2002 dilempar ke pemanggil. Di jalur
+ * webhook lemparan itu keluar sebagai HTTP 500, dan Meta menganggap 500 sebagai kegagalan lalu
+ * mengirim ulang -- balapan yang sama, 500 yang sama, berputar. Terjadi sungguhan di produksi
+ * 2026-09-25 pukul 09:34:13 WIB, saat satu Page masih berlangganan ke dua app Meta sekaligus
+ * sehingga setiap pesan tiba dua kali dan nyaris bersamaan.
+ *
+ * Yang kalah balapan TIDAK gagal: barisnya sudah ada (ditulis yang menang), jadi maksud
+ * pemanggil sudah terpenuhi. Sekali coba lagi menempuh cabang `update`, mengembalikan pemilik
+ * yang benar-benar terikat, dan menutup 500-nya. Percobaan kedua sengaja tidak dilindungi --
+ * P2002 dua kali berturut-turut bukan lagi balapan biasa dan harus terlihat, bukan ditelan.
  */
 export async function upsertChannelIdentity(input: {
   platform: Platform
@@ -33,10 +46,20 @@ export async function upsertChannelIdentity(input: {
 }): Promise<{ id: string; contactId: string }> {
   const { platform, externalId, contactId, displayName } = input
 
-  return prisma.channelIdentity.upsert({
-    where: { platform_externalId: { platform, externalId } },
-    update: displayName ? { displayName } : {},
-    create: { platform, externalId, contactId, displayName: displayName ?? null },
-    select: { id: true, contactId: true },
-  })
+  const write = () =>
+    prisma.channelIdentity.upsert({
+      where: { platform_externalId: { platform, externalId } },
+      update: displayName ? { displayName } : {},
+      create: { platform, externalId, contactId, displayName: displayName ?? null },
+      select: { id: true, contactId: true },
+    })
+
+  try {
+    return await write()
+  } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+      return write()
+    }
+    throw error
+  }
 }
