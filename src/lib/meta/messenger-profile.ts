@@ -60,14 +60,28 @@ export async function fetchMessengerProfileName(
   const token = process.env.FB_PAGE_ACCESS_TOKEN
   if (!token) return null
 
+  // Dihitung SEKALI, dipakai di dua tempat di bawah (membangun URL Page dan memfilter
+  // participant yang BUKAN page id). Kalau suatu saat hanya salah satu diedit, `find()` di
+  // bawah diam-diam mengembalikan Page-nya sendiri dan setiap kontak Facebook lahir bernama
+  // nama Page, tanpa error -- lihat review round 2 Temuan 4.
+  const pageId = process.env.FB_PAGE_ID || DEFAULT_PAGE_ID
+
   const url =
     platform === 'INSTAGRAM'
       ? `https://graph.facebook.com/${GRAPH_VERSION}/${externalId}?fields=${encodeURIComponent('name,username')}&access_token=${token}`
-      : `https://graph.facebook.com/${GRAPH_VERSION}/${process.env.FB_PAGE_ID || DEFAULT_PAGE_ID}/conversations?user_id=${externalId}&fields=participants&access_token=${token}`
+      : `https://graph.facebook.com/${GRAPH_VERSION}/${pageId}/conversations?user_id=${externalId}&fields=participants&access_token=${token}`
 
   try {
     const res = await fetch(url, { signal: AbortSignal.timeout(LOOKUP_TIMEOUT_MS) })
-    if (!res.ok) return null
+    if (!res.ok) {
+      // Non-fatal: pencarian gagal, kontak tetap lahir tanpa nama (lihat try/catch pemanggil
+      // di inbound-messenger.ts). Log ini adalah satu-satunya jejak yang membedakan "izin
+      // token belum ada" (mis. instagram_basic belum di-grant) dari "akun memang tidak
+      // punya nama" -- tanpanya keduanya terlihat identik dari Inbox. HANYA status HTTP dan
+      // platform, TIDAK PERNAH `url` (mengandung access_token) atau `token` itu sendiri.
+      console.warn('fetchMessengerProfileName: pencarian gagal', { platform, status: res.status })
+      return null
+    }
 
     const data: unknown = await res.json()
     if (!isObject(data)) return null
@@ -77,13 +91,16 @@ export async function fetchMessengerProfileName(
       return profile.name ?? profile.username ?? null
     }
 
-    const pageId = process.env.FB_PAGE_ID || DEFAULT_PAGE_ID
     const participants = (data as ConversationsResponse).data?.[0]?.participants?.data
     if (!participants) return null
 
     const sender = participants.find((participant) => participant.id && participant.id !== pageId)
     return sender?.name ?? null
   } catch {
+    // Non-fatal juga di sini (timeout, error jaringan, JSON tak terduga) -- tidak ada
+    // `res.status` yang valid pada jalur ini, jadi log hanya membawa `platform`. TIDAK
+    // PERNAH `url` atau `token`.
+    console.warn('fetchMessengerProfileName: pencarian melempar error', { platform })
     return null
   }
 }

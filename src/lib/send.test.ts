@@ -673,7 +673,11 @@ describe('sendMessage — lampiran di jalur Facebook gagal terlihat, bukan hilan
     expect(mockPrisma.message.create).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({
         deliveryStatus: 'FAILED',
-        content: expect.stringContaining('belum didukung'),
+        // String PENUH, bukan stringContaining -- pesan ini pernah berubah diam-diam dari
+        // "balas lewat Messenger" jadi "balas lewat aplikasi Facebook" (regresi, kembali
+        // di fix round 2 Temuan 2) tanpa satu pun tes yang merah. Messenger adalah nama
+        // APLIKASI yang membawa DM Facebook -- lihat komentar namaAplikasi di send.ts.
+        content: 'Kirim lampiran ke Facebook belum didukung -- kirim teks, atau balas lewat Messenger',
       }),
     }))
     expect(broadcast).toHaveBeenCalledWith(expect.objectContaining({ type: 'message.created', conversationId: 'conv_fb' }))
@@ -732,6 +736,11 @@ describe('percakapan Instagram', () => {
     expect(sendMessengerText).not.toHaveBeenCalled()
     const data = mockPrisma.message.create.mock.calls[0][0].data as { deliveryStatus?: string; content?: string }
     expect(data.deliveryStatus).toBe('FAILED')
-    expect(data.content).toMatch(/Instagram/)
+    // String PENUH, sepadan dengan padanan Facebook-nya di atas.
+    expect(data.content).toBe('Kirim lampiran ke Instagram belum didukung -- kirim teks, atau balas lewat Instagram')
+    // "Terlihat" di repo ini berarti DUA hal: baris Message FAILED (dicek di atas) DAN
+    // broadcast ke Inbox -- padanan Facebook-nya menegaskan keduanya, tes ini sebelumnya
+    // hanya menegaskan separuh klaim namanya sendiri.
+    expect(broadcast).toHaveBeenCalledWith(expect.objectContaining({ type: 'message.created', conversationId: 'conv_ig' }))
   })
 })

@@ -330,6 +330,13 @@ async function sendMessengerMessage(
   platform: 'FACEBOOK' | 'INSTAGRAM',
 ) {
   const nama = platform === 'INSTAGRAM' ? 'Instagram' : 'Facebook'
+  // Nama PLATFORM (`nama`, dipakai di klausa "Kirim lampiran ke X belum didukung") dan nama
+  // APLIKASI tempat operator membalas manual (dipakai di klausa "balas lewat") sengaja
+  // dipisah, bukan dipakai ulang: DM Facebook dibawa oleh aplikasi bernama Messenger, bukan
+  // aplikasi bernama "Facebook" -- menyamakan keduanya pernah membuat teks produksi berubah
+  // jadi "balas lewat aplikasi Facebook", yang faktual salah dan pernah harus dikembalikan.
+  // Jangan gabungkan lagi jadi satu variabel.
+  const namaAplikasi = platform === 'INSTAGRAM' ? 'Instagram' : 'Messenger'
   const recordFailed = async (content: string | null) => {
     const failed = await prisma.message.create({
       data: {
@@ -350,16 +357,17 @@ async function sendMessengerMessage(
     return failed
   }
 
-  // Lampiran ke Facebook BELUM diimplementasikan -- sendMessengerText (Task 5) hanya
-  // mengirim teks. Gagal TERLIHAT di sini, bukan diam-diam mengirim teksnya saja dan
-  // kehilangan lampirannya tanpa jejak: kelas bug yang sama persis yang
-  // inbound-messenger.ts (attachmentPlaceholder) sudah tutup di sisi masuk. Dicek SEBELUM
-  // memanggil sendMessengerText sama sekali -- nol pemanggilan provider untuk kasus ini.
+  // Lampiran ke Facebook maupun Instagram BELUM diimplementasikan -- sendMessengerText
+  // hanya mengirim teks, untuk kedua platform yang lewat fungsi bersama ini. Gagal TERLIHAT
+  // di sini, bukan diam-diam mengirim teksnya saja dan kehilangan lampirannya tanpa jejak:
+  // kelas bug yang sama persis yang inbound-messenger.ts (attachmentPlaceholder) sudah
+  // tutup di sisi masuk. Dicek SEBELUM memanggil sendMessengerText sama sekali -- nol
+  // pemanggilan provider untuk kasus ini.
   if (params.media) {
     console.error('sendMessage: lampiran belum didukung', {
       conversationId: params.conversationId, platform,
     })
-    return recordFailed(`Kirim lampiran ke ${nama} belum didukung -- kirim teks, atau balas lewat aplikasi ${nama}`)
+    return recordFailed(`Kirim lampiran ke ${nama} belum didukung -- kirim teks, atau balas lewat ${namaAplikasi}`)
   }
 
   // A Facebook conversation with no ChannelIdentity is a routing bug elsewhere (every FB
@@ -380,7 +388,9 @@ async function sendMessengerMessage(
     const result = await sendMessengerText(recipientId, params.text, platform)
     externalId = result.externalId
   } catch (error) {
-    console.error('sendMessage: Messenger send attempt failed', { conversationId: params.conversationId, error })
+    console.error('sendMessage: Messenger send attempt failed', {
+      conversationId: params.conversationId, platform, error,
+    })
     deliveryStatus = 'FAILED'
   }
 

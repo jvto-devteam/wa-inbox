@@ -239,6 +239,36 @@ describe('ingestMessengerPayload', () => {
     expect(upsertChannelIdentity).toHaveBeenCalledWith(
       expect.objectContaining({ displayName: 'David Setya Ramadhan' }),
     )
+    // `platform` HARUS diteruskan apa adanya ke fetchMessengerProfileName, bukan hardcode --
+    // lihat tes INSTAGRAM setelah ini untuk sisi lain dari penjagaan yang sama.
+    expect(fetchMessengerProfileName).toHaveBeenCalledWith('psid_abc', 'FACEBOOK')
+  })
+
+  // `platform` bukan sekadar dilewatkan ke ingestOne -- ia harus sampai ke
+  // fetchMessengerProfileName APA ADANYA, bukan hardcode 'FACEBOOK'. Sebelum tes ini,
+  // seluruh 15 tes di file ini memanggil ingestMessengerPayload dengan 'FACEBOOK', jadi
+  // hardcode di inbound-messenger.ts:97 lolos tanpa satu pun tes merah.
+  it('meneruskan platform INSTAGRAM ke pencarian profil, bukan hardcode FACEBOOK', async () => {
+    mockPrisma.channelIdentity.findUnique.mockResolvedValue(null as never)
+    vi.mocked(fetchMessengerProfileName).mockResolvedValue('Nama IG')
+
+    const igPayload: MessengerWebhookPayload = {
+      object: 'instagram',
+      entry: [{
+        id: 'ig_page_1',
+        time: 1758000000000,
+        messaging: [{
+          sender: { id: 'igsid_abc' },
+          recipient: { id: 'ig_page_1' },
+          timestamp: 1758000000000,
+          message: { mid: 'm_ig_1', text: 'Halo, masih ada slot Bromo?' },
+        }],
+      }],
+    }
+
+    await ingestMessengerPayload(igPayload, 'INSTAGRAM')
+
+    expect(fetchMessengerProfileName).toHaveBeenCalledWith('igsid_abc', 'INSTAGRAM')
   })
 
   // Pengirim yang SUDAH DIKENAL tidak boleh memicu satu pun pemanggilan Graph API -- nama

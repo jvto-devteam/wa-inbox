@@ -54,6 +54,27 @@ describe('fetchMessengerProfileName', () => {
     expect(name).toBeNull()
   })
 
+  // Review round 2, Temuan 3: cabang gagal harus meninggalkan jejak -- tanpa ini, begitu
+  // token produksi kehilangan izin (mis. instagram_basic belum di-grant), SETIAP kontak
+  // Instagram lahir tanpa nama dan tidak ada cara membedakannya dari "akun memang tak
+  // bernama". Log HANYA platform + status, TIDAK PERNAH url (yang membawa access_token).
+  it('menulis console.warn berisi platform dan status HTTP saat Graph API membalas error, tanpa membawa url atau token', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: false,
+      status: 400,
+      json: async () => ({ error: { message: 'Unsupported get request', code: 100 } }),
+    }))
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    await fetchMessengerProfileName('psid_abc', 'FACEBOOK')
+
+    expect(warnSpy).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ platform: 'FACEBOOK', status: 400 }))
+    const loggedArgs = warnSpy.mock.calls.flat().map((arg) => JSON.stringify(arg))
+    expect(loggedArgs.join(' ')).not.toContain('token-uji')
+    expect(loggedArgs.join(' ')).not.toContain('access_token')
+    warnSpy.mockRestore()
+  })
+
   it('mengembalikan null (tidak melempar) saat fetch reject', async () => {
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('network down')))
 
