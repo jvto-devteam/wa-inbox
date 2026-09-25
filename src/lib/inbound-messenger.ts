@@ -94,7 +94,7 @@ async function ingestOne(
     // pelanggan wajib tetap masuk ke Inbox walau pencarian nama gagal dengan cara apa pun,
     // termasuk cara yang belum ketahuan hari ini.
     try {
-      displayName = await fetchMessengerProfileName(event.sender.id)
+      displayName = await fetchMessengerProfileName(event.sender.id, platform)
     } catch {
       displayName = null
     }

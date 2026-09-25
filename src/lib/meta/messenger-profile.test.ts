@@ -26,7 +26,7 @@ describe('fetchMessengerProfileName', () => {
       }),
     }))
 
-    const name = await fetchMessengerProfileName('24326633563651786')
+    const name = await fetchMessengerProfileName('24326633563651786', 'FACEBOOK')
 
     expect(name).toBe('David Setya Ramadhan')
   })
@@ -37,7 +37,7 @@ describe('fetchMessengerProfileName', () => {
       json: async () => ({ data: [{ participants: { data: [{ id: 'page_1', name: 'Java Volcano Tour Operator' }] } }] }),
     }))
 
-    const name = await fetchMessengerProfileName('psid_tak_dikenal')
+    const name = await fetchMessengerProfileName('psid_tak_dikenal', 'FACEBOOK')
 
     expect(name).toBeNull()
   })
@@ -49,7 +49,7 @@ describe('fetchMessengerProfileName', () => {
       json: async () => ({ error: { message: 'Unsupported get request', code: 100 } }),
     }))
 
-    const name = await fetchMessengerProfileName('psid_abc')
+    const name = await fetchMessengerProfileName('psid_abc', 'FACEBOOK')
 
     expect(name).toBeNull()
   })
@@ -57,7 +57,7 @@ describe('fetchMessengerProfileName', () => {
   it('mengembalikan null (tidak melempar) saat fetch reject', async () => {
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('network down')))
 
-    const name = await fetchMessengerProfileName('psid_abc')
+    const name = await fetchMessengerProfileName('psid_abc', 'FACEBOOK')
 
     expect(name).toBeNull()
   })
@@ -67,7 +67,7 @@ describe('fetchMessengerProfileName', () => {
     const fetchMock = vi.fn()
     vi.stubGlobal('fetch', fetchMock)
 
-    const name = await fetchMessengerProfileName('psid_abc')
+    const name = await fetchMessengerProfileName('psid_abc', 'FACEBOOK')
 
     expect(name).toBeNull()
     expect(fetchMock).not.toHaveBeenCalled()
@@ -80,9 +80,61 @@ describe('fetchMessengerProfileName', () => {
     const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ data: [] }) })
     vi.stubGlobal('fetch', fetchMock)
 
-    await fetchMessengerProfileName('psid_abc')
+    await fetchMessengerProfileName('psid_abc', 'FACEBOOK')
 
     const init = fetchMock.mock.calls[0][1] as { signal?: AbortSignal }
     expect(init.signal).toBeInstanceOf(AbortSignal)
   })
+})
+
+describe('cabang Instagram', () => {
+  it('memakai endpoint profil IGSID langsung, bukan percakapan Page', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true, json: async () => ({ name: 'Sinta', username: 'sinta.jvto' }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const nama = await fetchMessengerProfileName('igsid_777', 'INSTAGRAM')
+
+    expect(nama).toBe('Sinta')
+    const url = String(fetchMock.mock.calls[0][0])
+    expect(url).toContain('/igsid_777')
+    expect(url).toContain('fields=name%2Cusername')
+    // Endpoint percakapan Page adalah jalur FACEBOOK. Kalau Instagram ikut lewat sana,
+    // IGSID ditanyakan ke Page dan balasannya selalu kosong -- gagal senyap.
+    expect(url).not.toContain('/conversations')
+  })
+
+  it('jatuh ke username kalau name tidak ada', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true, json: async () => ({ username: 'sinta.jvto' }),
+    }))
+
+    expect(await fetchMessengerProfileName('igsid_777', 'INSTAGRAM')).toBe('sinta.jvto')
+  })
+
+  it('mengembalikan null, tidak melempar, saat Graph menolak', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 400, json: async () => ({}) }))
+
+    expect(await fetchMessengerProfileName('igsid_777', 'INSTAGRAM')).toBeNull()
+  })
+})
+
+// Regresi: cabang Facebook tidak boleh berubah perilakunya.
+it('Facebook tetap lewat percakapan Page', async () => {
+  // beforeEach file ini men-stub FB_PAGE_ID='page_1', tapi payload di bawah memakai page id
+  // produksi asli -- override di sini supaya filter "participant yang BUKAN page id" punya
+  // page id yang benar-benar cocok dengan datanya.
+  vi.stubEnv('FB_PAGE_ID', '698402510359502')
+  const fetchMock = vi.fn().mockResolvedValue({
+    ok: true,
+    json: async () => ({ data: [{ participants: { data: [
+      { id: '698402510359502', name: 'Java Volcano' },
+      { id: 'psid_abc', name: 'David' },
+    ] } }] }),
+  })
+  vi.stubGlobal('fetch', fetchMock)
+
+  expect(await fetchMessengerProfileName('psid_abc', 'FACEBOOK')).toBe('David')
+  expect(String(fetchMock.mock.calls[0][0])).toContain('/conversations')
 })

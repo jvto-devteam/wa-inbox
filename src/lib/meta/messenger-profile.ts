@@ -21,45 +21,64 @@ interface ConversationsResponse {
   }>
 }
 
-function isConversationsResponse(value: unknown): value is ConversationsResponse {
+interface InstagramProfileResponse {
+  name?: string
+  username?: string
+}
+
+function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null
 }
 
 /**
- * Cari nama tampilan pengirim Messenger lewat participants percakapan Page.
+ * Cari nama tampilan pengirim Messenger atau Instagram DM.
  *
- * Endpoint profil langsung (`GET /{psid}?fields=name`) DITOLAK Graph API (code 100, "does
- * not exist, cannot be loaded due to missing permissions") -- terverifikasi di produksi.
- * Endpoint yang benar-benar bekerja adalah percakapan Page ini:
- * `GET /{page_id}/conversations?user_id={psid}&fields=participants`. Pengirimnya adalah
- * participant yang id-nya BUKAN page id.
+ * Dua cabang, karena Graph API memperlakukan keduanya BERBEDA -- bukan karena kerapian:
+ *
+ * - FACEBOOK: `GET /{psid}?fields=name` DITOLAK (code 100, terverifikasi di produksi
+ *   2026-09-23). Satu-satunya jalan adalah `GET /{page_id}/conversations?user_id={psid}
+ *   &fields=participants`, lalu ambil participant yang id-nya BUKAN page id.
+ * - INSTAGRAM: endpoint profil langsung JUSTRU bekerja --
+ *   `GET /{igsid}?fields=name,username`. Akun Instagram boleh tidak punya `name`
+ *   (hanya username), jadi `username` dipakai sebagai cadangan.
+ *
+ * `platform` WAJIB dan tanpa default. Default apa pun di sini akan salah untuk separuh
+ * pemanggil dan gagal secara senyap: kontak lahir tanpa nama, tidak ada error, tidak ada
+ * yang melapor. Bandingkan dengan `platform` opsional di src/lib/send.ts yang sudah
+ * dibatalkan pada Review round 1 Temuan 1 karena persis alasan ini.
  *
  * SELALU mengembalikan `null`, tidak pernah melempar -- error jaringan, error Graph, token
- * hilang, atau bentuk respons yang tak terduga semuanya ditelan di sini. Pemanggil
- * (`inbound-messenger.ts`) memakai hasil ini hanya untuk mengisi nama; pesan pelanggan itu
- * sendiri wajib tetap masuk ke Inbox walau pencarian nama gagal total.
+ * hilang, atau bentuk respons tak terduga semuanya ditelan di sini. Pesan pelanggan wajib
+ * tetap masuk ke Inbox walau pencarian nama gagal total.
  *
- * Token TIDAK PERNAH ikut ke log atau ke nilai balik -- baik lewat sukses maupun lewat jalur
- * gagal manapun di fungsi ini (lihat pola yang sama di messenger-send.ts).
+ * Token TIDAK PERNAH ikut ke log maupun ke nilai balik, lewat jalur sukses maupun gagal.
  */
-export async function fetchMessengerProfileName(psid: string): Promise<string | null> {
+export async function fetchMessengerProfileName(
+  externalId: string,
+  platform: 'FACEBOOK' | 'INSTAGRAM',
+): Promise<string | null> {
   const token = process.env.FB_PAGE_ACCESS_TOKEN
   if (!token) return null
 
-  const pageId = process.env.FB_PAGE_ID || DEFAULT_PAGE_ID
+  const url =
+    platform === 'INSTAGRAM'
+      ? `https://graph.facebook.com/${GRAPH_VERSION}/${externalId}?fields=${encodeURIComponent('name,username')}&access_token=${token}`
+      : `https://graph.facebook.com/${GRAPH_VERSION}/${process.env.FB_PAGE_ID || DEFAULT_PAGE_ID}/conversations?user_id=${externalId}&fields=participants&access_token=${token}`
 
   try {
-    const res = await fetch(
-      `https://graph.facebook.com/${GRAPH_VERSION}/${pageId}/conversations?user_id=${psid}&fields=participants&access_token=${token}`,
-      { signal: AbortSignal.timeout(LOOKUP_TIMEOUT_MS) },
-    )
-
+    const res = await fetch(url, { signal: AbortSignal.timeout(LOOKUP_TIMEOUT_MS) })
     if (!res.ok) return null
 
     const data: unknown = await res.json()
-    if (!isConversationsResponse(data)) return null
+    if (!isObject(data)) return null
 
-    const participants = data.data?.[0]?.participants?.data
+    if (platform === 'INSTAGRAM') {
+      const profile = data as InstagramProfileResponse
+      return profile.name ?? profile.username ?? null
+    }
+
+    const pageId = process.env.FB_PAGE_ID || DEFAULT_PAGE_ID
+    const participants = (data as ConversationsResponse).data?.[0]?.participants?.data
     if (!participants) return null
 
     const sender = participants.find((participant) => participant.id && participant.id !== pageId)
