@@ -91,7 +91,7 @@ export async function sendMessage(params: {
   // gagal ke arah paling membingungkan: percakapan Facebook diam-diam dikirim lewat gerbang
   // telepon WhatsApp dan selalu gagal, karena kontak Facebook tidak pernah punya nomor
   // telepon. Review round 1, Temuan 1.
-  platform?: 'WHATSAPP' | 'FACEBOOK'
+  platform?: 'WHATSAPP' | 'FACEBOOK' | 'INSTAGRAM'
 }) {
   // Sanitized ONCE, here, before any of this function's writes (blocked below, the direct
   // write further down, sendViaQueue's own write, and sendMessengerMessage's write below --
@@ -118,8 +118,12 @@ export async function sendMessage(params: {
   // sungguhan, hanya kebetulan bukan WhatsApp). Messenger juga tidak melewati capability
   // matrix WhatsApp (resolveChannelForCapability) atau gerbang `contact.phone` di bawah --
   // kontak Facebook tidak pernah punya nomor telepon; identitasnya PSID di ChannelIdentity.
-  if (platform === 'FACEBOOK') {
-    return sendMessengerMessage(params, botTrace, conversation)
+  // Instagram DM memakai adapter, endpoint, dan token yang SAMA dengan Messenger (akun
+  // Instagram Professional tertaut ke Page yang sama), jadi satu cabang untuk keduanya --
+  // bukan dua cabang yang cepat atau lambat berselisih. `platform` diteruskan ke bawah
+  // supaya body kirim dan pesan error tetap benar per platform.
+  if (platform === 'FACEBOOK' || platform === 'INSTAGRAM') {
+    return sendMessengerMessage(params, botTrace, conversation, platform)
   }
 
   // The capability matrix decides both WHICH channel carries this send and whether it may go
@@ -295,13 +299,16 @@ export async function sendMessage(params: {
 }
 
 /**
- * The Facebook Messenger send path. Deliberately its own small function, not spliced into the
- * WhatsApp direct path above: Messenger has no capability matrix, no OFFICIAL/UNOFFICIAL
- * choice, no waNumber, and its recipient identity is a PSID (ChannelIdentity.externalId), not
- * `contact.phone` -- a Facebook-born contact's `phone` column is always null (see
- * prisma/schema.prisma's Contact.phone comment). `channel: 'OFFICIAL'` on the written row is
- * not a lie: this is a real, direct Graph API call, the same shape of fact OFFICIAL records
- * for WhatsApp -- it only ever means "not queued through the Unofficial outbound job".
+ * The Messenger send path, shared by Facebook and Instagram DM: same adapter, same Graph API
+ * endpoint, same Page-linked token (an Instagram Professional account is tied to the same
+ * Page), so one function for both -- not two that could drift apart. Deliberately its own
+ * small function, not spliced into the WhatsApp direct path above: Messenger has no capability
+ * matrix, no OFFICIAL/UNOFFICIAL choice, no waNumber, and its recipient identity is a PSID/IGSID
+ * (ChannelIdentity.externalId), not `contact.phone` -- a Facebook- or Instagram-born contact's
+ * `phone` column is always null (see prisma/schema.prisma's Contact.phone comment).
+ * `channel: 'OFFICIAL'` on the written row is not a lie: this is a real, direct Graph API call,
+ * the same shape of fact OFFICIAL records for WhatsApp -- it only ever means "not queued
+ * through the Unofficial outbound job".
  *
  * `conversation` is passed in already-loaded from `sendMessage` (which needed it anyway to
  * derive `platform`) rather than re-queried here -- one fetch, not two.
@@ -314,13 +321,15 @@ async function sendMessengerMessage(
     agentId?: string
     replyToId?: string
     // Declared explicitly, not omitted from the type, so the next reader can see this field
-    // is read (the gate right below) rather than quietly forgotten. Sending Facebook media is
-    // its own separate task -- deliberately out of scope here (review round 1, Temuan 2).
+    // is read (the gate right below) rather than quietly forgotten. Sending Messenger/Instagram
+    // media is its own separate task -- deliberately out of scope here (review round 1, Temuan 2).
     media?: OutboundMedia
   },
   botTrace: Prisma.InputJsonValue | undefined,
   conversation: { channelIdentity: { externalId: string } | null },
+  platform: 'FACEBOOK' | 'INSTAGRAM',
 ) {
+  const nama = platform === 'INSTAGRAM' ? 'Instagram' : 'Facebook'
   const recordFailed = async (content: string | null) => {
     const failed = await prisma.message.create({
       data: {
@@ -347,10 +356,10 @@ async function sendMessengerMessage(
   // inbound-messenger.ts (attachmentPlaceholder) sudah tutup di sisi masuk. Dicek SEBELUM
   // memanggil sendMessengerText sama sekali -- nol pemanggilan provider untuk kasus ini.
   if (params.media) {
-    console.error('sendMessage: lampiran ke Facebook belum didukung', {
-      conversationId: params.conversationId,
+    console.error('sendMessage: lampiran belum didukung', {
+      conversationId: params.conversationId, platform,
     })
-    return recordFailed('Kirim lampiran ke Facebook belum didukung -- kirim teks, atau balas lewat Messenger')
+    return recordFailed(`Kirim lampiran ke ${nama} belum didukung -- kirim teks, atau balas lewat aplikasi ${nama}`)
   }
 
   // A Facebook conversation with no ChannelIdentity is a routing bug elsewhere (every FB
@@ -359,8 +368,8 @@ async function sendMessengerMessage(
   // above does for its own equivalent impossible state.
   const recipientId = conversation.channelIdentity?.externalId
   if (!recipientId) {
-    console.error('sendMessage: percakapan Facebook tanpa ChannelIdentity (PSID)', {
-      conversationId: params.conversationId,
+    console.error('sendMessage: percakapan tanpa ChannelIdentity', {
+      conversationId: params.conversationId, platform,
     })
     return recordFailed(params.text || null)
   }
@@ -368,7 +377,7 @@ async function sendMessengerMessage(
   let externalId: string | undefined
   let deliveryStatus: 'SENT' | 'FAILED' = 'SENT'
   try {
-    const result = await sendMessengerText(recipientId, params.text, 'FACEBOOK')
+    const result = await sendMessengerText(recipientId, params.text, platform)
     externalId = result.externalId
   } catch (error) {
     console.error('sendMessage: Messenger send attempt failed', { conversationId: params.conversationId, error })

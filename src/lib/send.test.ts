@@ -680,3 +680,58 @@ describe('sendMessage — lampiran di jalur Facebook gagal terlihat, bukan hilan
     errorSpy.mockRestore()
   })
 })
+
+// Task 3 (omnichannel Instagram): percakapan Instagram memakai jalur Messenger yang sama
+// dengan Facebook (adapter, endpoint, dan token yang sama -- akun Instagram Professional
+// tertaut ke Page yang sama), dibedakan hanya oleh `platform` yang diteruskan ke bawah.
+describe('percakapan Instagram', () => {
+  it('merutekan ke jalur Messenger dengan platform INSTAGRAM', async () => {
+    mockPrisma.conversation.findUniqueOrThrow.mockResolvedValue({
+      id: 'conv_ig', contact: { phone: null },
+      channelIdentity: { platform: 'INSTAGRAM', externalId: 'igsid_777' },
+    } as never)
+    mockPrisma.message.create.mockResolvedValue({ id: 'msg_1' } as never)
+    vi.mocked(sendMessengerText).mockResolvedValue({ externalId: 'm_ig_1' })
+
+    await sendMessage({ conversationId: 'conv_ig', text: 'Halo!', sentBy: 'AGENT' })
+
+    expect(sendMessengerText).toHaveBeenCalledWith('igsid_777', 'Halo!', 'INSTAGRAM')
+  })
+
+  // Kontak Instagram tidak pernah punya nomor telepon. Kalau cabang platform tidak ada,
+  // pengiriman jatuh ke gerbang `!contact.phone` jalur WhatsApp dan SELALU gagal -- dengan
+  // pesan yang menyesatkan pula.
+  it('tidak pernah jatuh ke gerbang nomor telepon WhatsApp', async () => {
+    mockPrisma.conversation.findUniqueOrThrow.mockResolvedValue({
+      id: 'conv_ig', contact: { phone: null },
+      channelIdentity: { platform: 'INSTAGRAM', externalId: 'igsid_777' },
+    } as never)
+    mockPrisma.message.create.mockResolvedValue({ id: 'msg_1' } as never)
+    vi.mocked(sendMessengerText).mockResolvedValue({ externalId: 'm_ig_1' })
+
+    const hasil = await sendMessage({ conversationId: 'conv_ig', text: 'Halo!', sentBy: 'AGENT' })
+
+    expect(hasil).toBeTruthy()
+    expect(sendMessengerText).toHaveBeenCalled()
+  })
+
+  // Kelas bug yang sama yang attachmentPlaceholder tutup di sisi masuk: gagal TERLIHAT,
+  // bukan diam-diam mengirim teksnya saja dan kehilangan lampirannya tanpa jejak.
+  it('menolak lampiran secara terlihat, tanpa memanggil provider sama sekali', async () => {
+    mockPrisma.conversation.findUniqueOrThrow.mockResolvedValue({
+      id: 'conv_ig', contact: { phone: null },
+      channelIdentity: { platform: 'INSTAGRAM', externalId: 'igsid_777' },
+    } as never)
+    mockPrisma.message.create.mockResolvedValue({ id: 'msg_gagal', deliveryStatus: 'FAILED' } as never)
+
+    await sendMessage({
+      conversationId: 'conv_ig', text: '', sentBy: 'AGENT',
+      media: { type: 'image', url: 'https://x/y.jpg', mimeType: 'image/jpeg' },
+    })
+
+    expect(sendMessengerText).not.toHaveBeenCalled()
+    const data = mockPrisma.message.create.mock.calls[0][0].data as { deliveryStatus?: string; content?: string }
+    expect(data.deliveryStatus).toBe('FAILED')
+    expect(data.content).toMatch(/Instagram/)
+  })
+})
