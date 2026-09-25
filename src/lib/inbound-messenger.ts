@@ -2,6 +2,7 @@ import { Prisma, type Platform } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { upsertChannelIdentity } from '@/lib/channel/identity'
 import { defaultBotEnabled } from '@/lib/inbound'
+import { fetchMessengerProfileName } from '@/lib/meta/messenger-profile'
 import { broadcast } from '@/lib/realtime'
 import { withMediaUrl } from '@/lib/serialize-message'
 import type { MessengerMessagingEvent, MessengerWebhookPayload } from '@/lib/meta/messenger-types'
@@ -81,13 +82,30 @@ async function ingestOne(
     select: { contactId: true },
   })
 
-  const contactId =
-    known?.contactId ?? (await prisma.contact.create({ data: { phone: null, name: null } })).id
+  let contactId: string
+  let displayName: string | null = null
+
+  if (known?.contactId) {
+    contactId = known.contactId
+  } else {
+    // Pencarian nama HANYA terjadi di sini -- saat Contact-nya lahir -- bukan di setiap
+    // pesan. Dibungkus try/catch di luar fetchMessengerProfileName sendiri (yang sudah
+    // menelan error-nya sendiri) sebagai lapisan kedua yang sengaja berlebihan: pesan
+    // pelanggan wajib tetap masuk ke Inbox walau pencarian nama gagal dengan cara apa pun,
+    // termasuk cara yang belum ketahuan hari ini.
+    try {
+      displayName = await fetchMessengerProfileName(event.sender.id)
+    } catch {
+      displayName = null
+    }
+    contactId = (await prisma.contact.create({ data: { phone: null, name: displayName } })).id
+  }
 
   const identity = await upsertChannelIdentity({
     platform,
     externalId: event.sender.id,
     contactId,
+    displayName,
   })
 
   const sentAt = new Date(event.timestamp)

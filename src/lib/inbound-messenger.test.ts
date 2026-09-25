@@ -3,11 +3,13 @@ import { mockDeep, mockReset, type DeepMockProxy } from 'vitest-mock-extended'
 import { Prisma, type PrismaClient } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { upsertChannelIdentity } from '@/lib/channel/identity'
+import { fetchMessengerProfileName } from '@/lib/meta/messenger-profile'
 import type { MessengerWebhookPayload } from '@/lib/meta/messenger-types'
 
 vi.mock('@/lib/db', () => ({ prisma: mockDeep<PrismaClient>() }))
 vi.mock('@/lib/channel/identity', () => ({ upsertChannelIdentity: vi.fn() }))
 vi.mock('@/lib/realtime', () => ({ broadcast: vi.fn() }))
+vi.mock('@/lib/meta/messenger-profile', () => ({ fetchMessengerProfileName: vi.fn() }))
 
 const mockPrisma = prisma as unknown as DeepMockProxy<PrismaClient>
 import { ingestMessengerPayload } from './inbound-messenger'
@@ -29,6 +31,10 @@ const payload: MessengerWebhookPayload = {
 beforeEach(() => {
   mockReset(mockPrisma)
   vi.mocked(upsertChannelIdentity).mockReset().mockResolvedValue({ id: 'ci_fb_1', contactId: 'contact_fb_1' })
+  // Default eksplisit: pencarian nama tidak menemukan apa pun. Test lama yang tidak peduli
+  // soal nama (mayoritas suite ini) tetap berarti persis seperti sebelum fitur ini ada,
+  // bukan "kebetulan lulus" karena diam-diam memanggil Graph API yang tak dimock.
+  vi.mocked(fetchMessengerProfileName).mockReset().mockResolvedValue(null)
   mockPrisma.message.findUnique.mockResolvedValue(null as never)
   // Default eksplisit: identitas BELUM ada. Tanpa baris ini mock mengembalikan undefined,
   // yang kebetulan berperilaku sama -- dan "kebetulan benar" adalah cara test berbohong.
@@ -217,5 +223,47 @@ describe('ingestMessengerPayload', () => {
 
     expect(result).toEqual({ processed: 0, skipped: 1 })
     expect(mockPrisma.message.create).not.toHaveBeenCalled()
+  })
+
+  // Pengirim BARU: nama hasil pencarian Graph API harus tersimpan di Contact DAN diteruskan
+  // ke upsertChannelIdentity sebagai displayName, supaya baris identitas ikut membawa nama
+  // yang sama tanpa pencarian kedua.
+  it('menyimpan nama hasil pencarian pada Contact dan meneruskannya sebagai displayName saat pengirim baru', async () => {
+    mockPrisma.channelIdentity.findUnique.mockResolvedValue(null as never)
+    vi.mocked(fetchMessengerProfileName).mockResolvedValue('David Setya Ramadhan')
+
+    await ingestMessengerPayload(payload, 'FACEBOOK')
+
+    const createArg = mockPrisma.contact.create.mock.calls[0][0] as { data: { name: string | null } }
+    expect(createArg.data.name).toBe('David Setya Ramadhan')
+    expect(upsertChannelIdentity).toHaveBeenCalledWith(
+      expect.objectContaining({ displayName: 'David Setya Ramadhan' }),
+    )
+  })
+
+  // Pengirim yang SUDAH DIKENAL tidak boleh memicu satu pun pemanggilan Graph API -- nama
+  // hanya perlu dicari sekali, saat Contact-nya lahir. Tanpa penjaga ini, pelanggan yang
+  // mengirim 50 pesan memicu 50 panggilan Graph API untuk sesuatu yang jawabannya sudah
+  // diketahui sejak pesan pertama.
+  it('tidak memanggil pencarian profil sama sekali untuk pengirim yang sudah dikenal', async () => {
+    mockPrisma.channelIdentity.findUnique.mockResolvedValue({ contactId: 'contact_lama' } as never)
+
+    await ingestMessengerPayload(payload, 'FACEBOOK')
+
+    expect(fetchMessengerProfileName).not.toHaveBeenCalled()
+  })
+
+  // Pencarian nama yang GAGAL TOTAL (melempar, bukan cuma mengembalikan null) tidak boleh
+  // menggagalkan ingest. Pesan pelanggan harus tetap masuk, Contact tetap dibuat, hanya
+  // dengan name null -- persis seperti sebelum fitur pencarian nama ini ada.
+  it('tetap mengingest pesan saat pencarian profil melempar error', async () => {
+    mockPrisma.channelIdentity.findUnique.mockResolvedValue(null as never)
+    vi.mocked(fetchMessengerProfileName).mockRejectedValue(new Error('Graph API down'))
+
+    const result = await ingestMessengerPayload(payload, 'FACEBOOK')
+
+    expect(result).toEqual({ processed: 1, skipped: 0 })
+    const createArg = mockPrisma.contact.create.mock.calls[0][0] as { data: { name: string | null } }
+    expect(createArg.data.name ?? null).toBeNull()
   })
 })
