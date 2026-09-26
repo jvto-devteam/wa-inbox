@@ -28,12 +28,20 @@ export async function sendMessengerText(
   text: string,
   platform: 'FACEBOOK' | 'INSTAGRAM',
 ): Promise<{ externalId: string }> {
-  const token = process.env.FB_PAGE_ACCESS_TOKEN
-  if (!token) throw new Error('FB_PAGE_ACCESS_TOKEN belum diatur')
-
   const nama = PLATFORM_NAMA[platform]
 
-  const res = await fetch(`https://graph.facebook.com/${GRAPH_VERSION}/me/messages?access_token=${token}`, {
+  // DUA SISTEM, bukan satu API dengan dua endpoint -- sama seperti di messenger-profile.ts.
+  // Instagram DM masuk lewat jalur "Instagram API with Instagram login", jadi balasannya
+  // WAJIB keluar lewat jalur yang sama: host `graph.instagram.com` dengan token akun
+  // Instagram. IGSID yang kita terima hanya berarti di sistem itu; mengirimnya ke
+  // graph.facebook.com dengan Page token ditolak, karena id-nya tidak dikenal di sana.
+  const instagram = platform === 'INSTAGRAM'
+  const host = instagram ? 'graph.instagram.com' : 'graph.facebook.com'
+  const envVar = instagram ? 'IG_USER_TOKEN' : 'FB_PAGE_ACCESS_TOKEN'
+  const token = instagram ? process.env.IG_USER_TOKEN : process.env.FB_PAGE_ACCESS_TOKEN
+  if (!token) throw new Error(`${envVar} belum diatur`)
+
+  const res = await fetch(`https://${host}/${GRAPH_VERSION}/me/messages?access_token=${token}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({

@@ -3,6 +3,7 @@ import { sendMessengerText } from './messenger-send'
 
 beforeEach(() => {
   vi.stubEnv('FB_PAGE_ACCESS_TOKEN', 'token-uji')
+  vi.stubEnv('IG_USER_TOKEN', 'token-ig-uji')
 })
 afterEach(() => {
   vi.unstubAllEnvs()
@@ -103,4 +104,51 @@ it('Facebook tetap menyebut Facebook saat jendela lewat', async () => {
 
   await expect(sendMessengerText('psid_abc', 'Halo!', 'FACEBOOK'))
     .rejects.toThrow(/Facebook menolak.*24 jam/)
+})
+
+// Instagram DM tiba lewat jalur "Instagram API with Instagram login" -- sistem yang BERBEDA
+// dari Messenger, dengan host dan token sendiri. IGSID yang kita terima tidak dikenal di
+// graph.facebook.com, jadi mengirim ke host yang salah gagal tanpa pesan yang menjelaskan
+// apa pun. Terukur di produksi 2026-09-26: pencarian nama ke host yang salah mengembalikan
+// 403, dan kontak lahir tanpa nama.
+describe('pemilihan host dan token per platform', () => {
+  it('Instagram memakai graph.instagram.com, bukan graph.facebook.com', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ message_id: 'm1' }) })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await sendMessengerText('igsid_1', 'Halo!', 'INSTAGRAM')
+
+    const url = String(fetchMock.mock.calls[0][0])
+    expect(url).toContain('graph.instagram.com')
+    expect(url).not.toContain('graph.facebook.com')
+  })
+
+  it('Facebook tetap memakai graph.facebook.com', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ message_id: 'm2' }) })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await sendMessengerText('psid_1', 'Halo!', 'FACEBOOK')
+
+    const url = String(fetchMock.mock.calls[0][0])
+    expect(url).toContain('graph.facebook.com')
+    expect(url).not.toContain('graph.instagram.com')
+  })
+
+  // Token yang tertukar adalah kegagalan yang paling sulit dilihat: URL-nya benar, host-nya
+  // benar, dan Meta hanya membalas 403 tanpa menyebut token mana yang dipakai.
+  it('tiap platform memakai token env-nya sendiri', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ message_id: 'm3' }) })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await sendMessengerText('igsid_1', 'Halo!', 'INSTAGRAM')
+    await sendMessengerText('psid_1', 'Halo!', 'FACEBOOK')
+
+    expect(String(fetchMock.mock.calls[0][0])).toContain('token-ig-uji')
+    expect(String(fetchMock.mock.calls[1][0])).toContain('token-uji')
+  })
+
+  it('menyebut env var yang benar saat tokennya belum diatur', async () => {
+    vi.stubEnv('IG_USER_TOKEN', '')
+    await expect(sendMessengerText('igsid_1', 'Halo!', 'INSTAGRAM')).rejects.toThrow(/IG_USER_TOKEN/)
+  })
 })

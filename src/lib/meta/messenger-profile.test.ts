@@ -4,6 +4,10 @@ import { fetchMessengerProfileName } from './messenger-profile'
 beforeEach(() => {
   vi.stubEnv('FB_PAGE_ACCESS_TOKEN', 'token-uji')
   vi.stubEnv('FB_PAGE_ID', 'page_1')
+  // Cabang INSTAGRAM memakai sistem lain: graph.instagram.com dengan token akun Instagram,
+  // bukan Page token. Tanpa stub ini setiap tes Instagram mengembalikan null pada gerbang
+  // "token kosong" -- dan gagal dengan alasan yang tidak ada hubungannya dengan apa yang diuji.
+  vi.stubEnv('IG_USER_TOKEN', 'token-ig-uji')
 })
 afterEach(() => {
   vi.unstubAllEnvs()
@@ -158,4 +162,28 @@ it('Facebook tetap lewat percakapan Page', async () => {
 
   expect(await fetchMessengerProfileName('psid_abc', 'FACEBOOK')).toBe('David')
   expect(String(fetchMock.mock.calls[0][0])).toContain('/conversations')
+})
+
+describe('pemilihan host dan token per platform', () => {
+  it('Instagram bertanya ke graph.instagram.com dengan IG_USER_TOKEN', async () => {
+    vi.stubEnv('IG_USER_TOKEN', 'token-ig-uji')
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ username: 'sinta' }) })
+    vi.stubGlobal('fetch', fetchMock)
+
+    expect(await fetchMessengerProfileName('igsid_1', 'INSTAGRAM')).toBe('sinta')
+
+    const url = String(fetchMock.mock.calls[0][0])
+    expect(url).toContain('graph.instagram.com')
+    expect(url).not.toContain('graph.facebook.com')
+    expect(url).toContain('token-ig-uji')
+  })
+
+  it('mengembalikan null tanpa memanggil apa pun kalau IG_USER_TOKEN kosong', async () => {
+    vi.stubEnv('IG_USER_TOKEN', '')
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+
+    expect(await fetchMessengerProfileName('igsid_1', 'INSTAGRAM')).toBeNull()
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
 })

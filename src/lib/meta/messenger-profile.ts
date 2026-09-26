@@ -57,7 +57,17 @@ export async function fetchMessengerProfileName(
   externalId: string,
   platform: 'FACEBOOK' | 'INSTAGRAM',
 ): Promise<string | null> {
-  const token = process.env.FB_PAGE_ACCESS_TOKEN
+  // DUA SISTEM, bukan satu API dengan dua endpoint. Instagram DM tiba lewat jalur
+  // "Instagram API with Instagram login": host `graph.instagram.com`, token milik akun
+  // Instagram (`IG_USER_TOKEN`), dan IGSID dari ruang penamaan Instagram sendiri. Facebook
+  // Messenger tetap di `graph.facebook.com` dengan Page token dan PSID.
+  //
+  // Menanyakan IGSID ke graph.facebook.com dengan Page token mengembalikan 403 -- terukur di
+  // produksi 2026-09-26 pukul 13:10 WIB lewat console.warn di bawah, pada DM Instagram
+  // pertama yang benar-benar masuk. Keduanya angka panjang dan terlihat serupa, jadi
+  // kesalahan ini tidak menghasilkan error yang menjelaskan dirinya sendiri: kontak hanya
+  // lahir tanpa nama.
+  const token = platform === 'INSTAGRAM' ? process.env.IG_USER_TOKEN : process.env.FB_PAGE_ACCESS_TOKEN
   if (!token) return null
 
   // Dihitung SEKALI, dipakai di dua tempat di bawah (membangun URL Page dan memfilter
@@ -68,7 +78,7 @@ export async function fetchMessengerProfileName(
 
   const url =
     platform === 'INSTAGRAM'
-      ? `https://graph.facebook.com/${GRAPH_VERSION}/${externalId}?fields=${encodeURIComponent('name,username')}&access_token=${token}`
+      ? `https://graph.instagram.com/${GRAPH_VERSION}/${externalId}?fields=${encodeURIComponent('name,username')}&access_token=${token}`
       : `https://graph.facebook.com/${GRAPH_VERSION}/${pageId}/conversations?user_id=${externalId}&fields=participants&access_token=${token}`
 
   try {
