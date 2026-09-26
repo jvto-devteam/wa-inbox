@@ -22,9 +22,8 @@ describe('SHIPPED_PLATFORMS', () => {
   // Tab kosong lebih buruk daripada tidak ada tab (lihat komentar di platform.ts). Test ini
   // gagal keras kalau seseorang menambahkan Instagram atau Email ke daftar tab sebelum
   // fasenya benar-benar selesai -- "supaya rapi" tidak boleh mengalahkan aturan ini diam-diam.
-  it('hanya memuat platform yang fasenya sudah selesai (belum termasuk Instagram/Email)', () => {
-    expect(SHIPPED_PLATFORMS).toEqual(['WHATSAPP', 'FACEBOOK'])
-    expect(SHIPPED_PLATFORMS).not.toContain('INSTAGRAM')
+  it('hanya memuat platform yang fasenya sudah selesai (belum termasuk Email)', () => {
+    expect(SHIPPED_PLATFORMS).toEqual(['WHATSAPP', 'FACEBOOK', 'INSTAGRAM'])
     expect(SHIPPED_PLATFORMS).not.toContain('EMAIL')
   })
 

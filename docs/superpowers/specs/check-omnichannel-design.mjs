@@ -146,13 +146,17 @@ mustContain('src/lib/inbound.ts', /isMessengerPayload\(payload\)/, 'percabangan 
 mustContain('src/lib/inbound.ts', /payload\.object === 'instagram' \? 'INSTAGRAM'/, 'pemetaan object=instagram ke platform INSTAGRAM')
 mustContain('src/lib/meta/messenger-types.ts', /object === 'page' \|\| object === 'instagram'/, "isMessengerPayload menerima 'page' DAN 'instagram'")
 
-// Fase Instagram BELUM selesai: dua hal di bawah ini adalah sisa pekerjaannya. Keduanya
-// dicatat sebagai klaim "belum ada" supaya pemeriksa ini ikut berubah saat fase itu jalan.
-mustNotContain('src/lib/send.ts', /platform === 'INSTAGRAM'/, 'cabang kirim INSTAGRAM (fase Instagram, belum)')
-mustNotContain('src/lib/channel/platform.ts', /SHIPPED_PLATFORMS = \[[^\]]*INSTAGRAM/, 'INSTAGRAM di SHIPPED_PLATFORMS (fase Instagram, belum)')
-// Pencarian nama masih terpaku Facebook: dipanggil untuk KEDUA platform tanpa argumen
-// platform, jadi IGSID ditanyakan ke Page Facebook. Harus jadi sadar-platform sebelum IG rilis.
-mustNotContain('src/lib/meta/messenger-profile.ts', /platform/, 'messenger-profile sadar platform (fase Instagram, belum)')
+// Fase Instagram SELESAI 2026-09-26: assertion-nya berbalik arah, seperti §4 dan §6 sebelumnya.
+mustContain('src/lib/send.ts', /platform === 'FACEBOOK' \|\| platform === 'INSTAGRAM'/, 'cabang kirim FACEBOOK dan INSTAGRAM')
+mustContain('src/lib/channel/platform.ts', /SHIPPED_PLATFORMS = \['WHATSAPP', 'FACEBOOK', 'INSTAGRAM'\]/, 'INSTAGRAM di SHIPPED_PLATFORMS')
+// Kedua modul Meta WAJIB tetap sadar-platform. Graph API memperlakukan keduanya berbeda:
+// PSID Facebook hanya bisa lewat /{page_id}/conversations, IGSID justru lewat profil langsung.
+// Kalau parameternya dilepas, IGSID ditanyakan ke Page Facebook dan setiap kontak Instagram
+// lahir tanpa nama -- diam-diam, tanpa error.
+mustContain('src/lib/meta/messenger-profile.ts', /platform: 'FACEBOOK' \| 'INSTAGRAM'/, 'messenger-profile sadar platform')
+mustContain('src/lib/meta/messenger-send.ts', /platform: 'FACEBOOK' \| 'INSTAGRAM'/, 'messenger-send sadar platform')
+// Email BELUM: klaim "belum ada" berikutnya, yang harus basi saat fase email jalan.
+mustNotContain('src/lib/channel/platform.ts', /SHIPPED_PLATFORMS = \[[^\]]*EMAIL/, 'EMAIL di SHIPPED_PLATFORMS (fase email, belum)')
 
 // §6.3 — belum ada infrastruktur email sama sekali.
 // Dipersempit ke IMPOR dan PEMAKAIAN, bukan sekadar penyebutan: komentar dokumentasi

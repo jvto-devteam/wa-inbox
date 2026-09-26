@@ -10,6 +10,19 @@
 
 **Spec:** `docs/superpowers/specs/2026-09-23-omnichannel-inbox-design.md` (§6.2, §7, §8, §9 Fase 4)
 
+> **STATUS: Tugas 1-5 SELESAI dan tayang di produksi (2026-09-26).** Tugas 6 (konfigurasi
+> Meta) juga selesai: Page token dengan `instagram_basic` + `instagram_manage_messages` yang
+> tidak kedaluwarsa, `@javavolcanotouroperator` tertaut ke Page `698402510359502`, dan objek
+> webhook `instagram` terdaftar aktif. Yang belum: uji DM sungguhan, dan kepastian apakah
+> `instagram_manage_messages` sudah Advanced Access atau masih Standard.
+>
+> **`check-instagram-plan.mjs` sudah DIHAPUS, bukan hilang.** Ia memverifikasi klaim rencana
+> ini tentang keadaan repo SEBELUM eksekusi — termasuk setiap potongan "ganti X menjadi Y".
+> Begitu rencananya dieksekusi, semua jangkar itu termakan dan 14 klaimnya menjadi merah
+> permanen. Pemeriksa merah yang tidak bisa diperbaiki siapa pun lebih buruk daripada tidak
+> ada pemeriksa: ia melatih orang mengabaikan pemeriksa. Assertion yang tahan lama sudah
+> pindah ke `check-omnichannel-design.mjs`, yang kini menguji 61 klaim dan hijau.
+
 **Pemeriksa spec:** `node docs/superpowers/specs/check-omnichannel-design.mjs` — harus exit 0 sebelum DAN sesudah rencana ini dijalankan. Tugas 5 mengubah klaimnya; tugas lain tidak boleh membuatnya merah.
 
 ---
