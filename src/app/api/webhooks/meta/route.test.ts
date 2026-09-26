@@ -41,6 +41,29 @@ describe('POST /api/webhooks/meta', () => {
     expect(ingestMetaMessage).toHaveBeenCalled()
   })
 
+  // Tiga app Meta menembak endpoint yang sama, masing-masing dengan rahasianya sendiri.
+  // Satu rahasia yang terlewat di daftar TIDAK menghasilkan error yang bisa dibaca: seluruh
+  // pesan dari app itu ditolak 401 dan hilang tanpa jejak. Tes ini menyebut ketiga env var
+  // secara eksplisit supaya menghapus salah satunya membuat suite merah, bukan Inbox sunyi.
+  it.each([
+    ['META_APP_SECRET', 'rahasia-wa'],
+    ['FB_APP_SECRET', 'rahasia-fb'],
+    ['IG_APP_SECRET', 'rahasia-ig'],
+  ])('menerima tanda tangan dari %s', async (envVar, secret) => {
+    vi.stubEnv(envVar, secret)
+    const body = JSON.stringify({ entry: [] })
+    const sig = 'sha256=' + crypto.createHmac('sha256', secret).update(body).digest('hex')
+    const res = await POST(
+      new Request('http://localhost/api/webhooks/meta', {
+        method: 'POST',
+        headers: { 'x-hub-signature-256': sig },
+        body,
+      }),
+    )
+    expect(res.status).toBe(200)
+    vi.unstubAllEnvs()
+  })
+
   it('rejects a payload with a bad signature', async () => {
     const req = new Request('http://localhost/api/webhooks/meta', {
       method: 'POST',
