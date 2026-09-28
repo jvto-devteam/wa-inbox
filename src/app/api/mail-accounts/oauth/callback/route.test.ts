@@ -72,4 +72,21 @@ describe('GET /api/mail-accounts/oauth/callback', () => {
     expect(requestSync).toHaveBeenCalledWith('mail_1')
     expect(res.headers.get('set-cookie')).toMatch(/mail_oauth_state=;/)
   })
+
+  // Temuan review 6: kegagalan sinkronisasi pertama sebelumnya ditelan diam-diam
+  // (`.catch(() => {})`) -- tidak ada cara melacak kenapa push belum hidup untuk kotak surat
+  // yang baru disambungkan. Dicatat seperti webhook (src/app/api/webhooks/gmail/route.ts).
+  it('sinkronisasi pertama gagal: tetap dianggap tersambung, tapi kegagalannya dicatat', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+    vi.mocked(requestSync).mockReset().mockRejectedValue(new Error('boom'))
+
+    const res = await callback('code=c&state=state-ok')
+
+    expect(outcome(res)).toBe('tersambung')
+    await vi.waitFor(() => expect(consoleError).toHaveBeenCalledWith(
+      'oauth callback: sinkronisasi pertama gagal',
+      expect.objectContaining({ accountId: 'mail_1', error: 'Error' }),
+    ))
+    consoleError.mockRestore()
+  })
 })

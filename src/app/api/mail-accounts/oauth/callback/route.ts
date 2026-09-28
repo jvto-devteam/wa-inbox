@@ -60,7 +60,12 @@ export async function GET(req: NextRequest) {
     })
     invalidateAccessToken(account.id)
     // Sinkronisasi pertama langsung: ia yang memasang watch(), jadi push hidup tanpa menunggu cron.
-    void requestSync(account.id).catch(() => {})
+    // Kegagalannya tidak menggagalkan koneksi kotak surat (cron 15 menit menutup celahnya), tapi
+    // ditelan diam-diam tanpa log berarti tidak ada cara melacak KENAPA push belum hidup -- catat
+    // seperti webhook (src/app/api/webhooks/gmail/route.ts), bukan pesan mentah/secret.
+    void requestSync(account.id).catch((error: unknown) => {
+      console.error('oauth callback: sinkronisasi pertama gagal', { accountId: account.id, error: error instanceof Error ? error.name : 'unknown' })
+    })
     return finish('tersambung')
   } catch (error) {
     console.error('oauth callback kotak surat gagal', { kind: error instanceof GmailError ? error.kind : 'unknown' })
