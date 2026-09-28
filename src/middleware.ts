@@ -20,6 +20,7 @@ const PUBLIC_PATHS = [
   '/login',
   '/api/auth/login',
   '/api/webhooks/meta',
+  '/api/webhooks/gmail',
   '/logo.png',
   '/icon.png',
   // Manifest PWA + ikonnya: browser membacanya SEBELUM ada sesi (untuk memutuskan apakah
@@ -41,7 +42,7 @@ const PUBLIC_PATHS = [
  * match, and it still requires a valid secret — a request without one falls straight through
  * to the normal session check below and is rejected like any other.
  */
-const CRON_PATHS = new Set(['/api/outbound-jobs/process', '/api/daily-summary/generate'])
+const CRON_PATHS = new Set(['/api/outbound-jobs/process', '/api/daily-summary/generate', '/api/email/sync'])
 
 /**
  * Endpoints other programs (javavolcano-touroperator, new-backoffice) call with an API key.
