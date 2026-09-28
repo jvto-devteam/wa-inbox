@@ -40,7 +40,8 @@ function stripNulByte<T extends string | null>(value: T): T {
 
 function composeContent(email: ParsedEmail): string {
   const body = cleanEmailBody(stripNulByte(email.body))
-  const attachments = email.attachments.map((name) => `[Lampiran: ${name}]`).join('\n')
+  // Nama file lampiran ikut ditulis ke content, jadi ia jalur NUL yang sama dengan badan email.
+  const attachments = email.attachments.map((name) => `[Lampiran: ${stripNulByte(name)}]`).join('\n')
   return [body, attachments].filter(Boolean).join('\n\n') || '(email tanpa isi)'
 }
 
@@ -72,9 +73,14 @@ export async function ingestGmailMessage(account: { id: string; emailAddress: st
   // externalId, dipakai gmail/send.ts sebagai penerima) mengikuti Reply-To kalau ada. Nama
   // tampilan tetap mengutamakan From -- relay biasanya menaruh nama tamu di From, bukan di
   // Reply-To yang sering hanya berisi alamat telanjang.
+  //
+  // Reply-To yang menunjuk kotak surat ini sendiri (spam, email palsu, pengirim salah
+  // konfigurasi) diabaikan: sebagai identitas, setiap balasan Inbox akan terkirim ke JVTO
+  // sendiri, bukan ke siapa pun yang menulis.
+  const replyTo = email.replyTo?.address === account.emailAddress ? null : email.replyTo
   const customerIdentity: EmailAddress = {
-    address: (email.replyTo ?? email.from).address,
-    name: stripNulByte(email.from.name ?? email.replyTo?.name ?? null),
+    address: (replyTo ?? email.from).address,
+    name: stripNulByte(email.from.name ?? replyTo?.name ?? null),
   }
 
   const conversationId = await findOrCreateThread(account, email, customerIdentity)

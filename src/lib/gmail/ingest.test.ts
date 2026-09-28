@@ -186,6 +186,33 @@ describe('ingestGmailMessage — masuk', () => {
     }))).toBe('skipped')
     expect(mockPrisma.conversation.upsert).not.toHaveBeenCalled()
   })
+
+  // Reply-To yang menunjuk kotak surat JVTO sendiri (spam, email palsu, atau salah konfigurasi
+  // pengirim) tidak boleh jadi identitas pelanggan: balasan Inbox akan terkirim ke JVTO sendiri.
+  it('Reply-To berisi alamat kotak surat sendiri diabaikan -- identitas dan balasan ke From', async () => {
+    await ingestGmailMessage(account, email({
+      from: 'Sinta <sinta@example.com>',
+      headers: [{ name: 'Reply-To', value: 'JVTO <Hello@JavaVolcano-TourOperator.com>' }],
+    }))
+    expect(upsertChannelIdentity).toHaveBeenCalledWith(expect.objectContaining({
+      platform: 'EMAIL', externalId: 'sinta@example.com', displayName: 'Sinta',
+    }))
+  })
+
+  it('byte NUL di nama file lampiran ikut dibuang sebelum tulis ke DB', async () => {
+    const nul = String.fromCharCode(0)
+    const msg = email()
+    msg.payload = {
+      mimeType: 'multipart/mixed',
+      headers: msg.payload?.headers,
+      parts: [
+        { mimeType: 'text/plain', body: { data: b64('Paspor terlampir') } },
+        { mimeType: 'application/pdf', filename: `pas${nul}por.pdf`, body: { attachmentId: 'a1' } },
+      ],
+    }
+    expect(await ingestGmailMessage(account, msg)).toBe('created')
+    expect(mockPrisma.message.create.mock.calls[0][0].data.content).toBe('Paspor terlampir\n\n[Lampiran: paspor.pdf]')
+  })
 })
 
 describe('ingestGmailMessage — keluar (SENT)', () => {
