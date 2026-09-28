@@ -385,7 +385,7 @@ export default function ChatbotPage() {
                 bisa dimatikan dari sini.
               </SwitchRow>
 
-              {/* Empat sakelar per platform -- lihat POST /api/bot/channel-toggle. Sama seperti
+              {/* Tiga sakelar per platform -- lihat POST /api/bot/channel-toggle. Sama seperti
                   tiga sakelar di atas, ini penulis massal ke Conversation.botEnabled untuk
                   platform itu saja, bukan gerbang kedua di samping tiga sakelar tadi. */}
               <div className="pt-3">
