@@ -153,6 +153,23 @@ describe('ConversationListItem', () => {
     render(<ConversationListItem conversation={summary} onClick={() => {}} />)
     expect(screen.getByText('B')).toBeInTheDocument()
   })
+
+  it('percakapan email menampilkan subjek di depan cuplikan dan TIDAK menampilkan ikon bot', () => {
+    render(
+      <ConversationListItem
+        conversation={{ ...summary, platform: 'EMAIL', subject: 'Tur Bromo 3D2N', lastMessage: 'Masih ada slot?', botEnabled: false }}
+        onClick={() => {}}
+      />
+    )
+    expect(screen.getByText(/Tur Bromo 3D2N/)).toBeInTheDocument()
+    expect(screen.queryByLabelText('Bot mati')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Bot aktif')).not.toBeInTheDocument()
+  })
+
+  it('percakapan non-email tetap menampilkan ikon bot', () => {
+    render(<ConversationListItem conversation={{ ...summary, platform: 'WHATSAPP' }} onClick={() => {}} />)
+    expect(screen.getByLabelText('Bot aktif')).toBeInTheDocument()
+  })
 })
 
 // Tahap 1C: hierarki satu baris. Yang diuji di sini adalah apa yang harus bisa DIPINDAI

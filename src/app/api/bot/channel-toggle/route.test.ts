@@ -37,6 +37,14 @@ describe('POST /api/bot/channel-toggle', () => {
     expect(mockPrisma.settings.update).not.toHaveBeenCalled()
   })
 
+  it('EMAIL ditolak: bot tidak pernah menjawab email (draf manual saja)', async () => {
+    const res = await POST(new Request('http://localhost/api/bot/channel-toggle', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ platform: 'EMAIL' }),
+    }))
+    expect(res.status).toBe(400)
+    expect(mockPrisma.settings.update).not.toHaveBeenCalled()
+  })
+
   // Inti desainnya: sakelar adalah PENULIS MASSAL, bukan gerbang kedua. Kalau updateMany
   // ini hilang, sakelar hanya berlaku untuk percakapan baru dan operator akan melihat
   // toggle menyala sementara chat-chat lama tetap diam.

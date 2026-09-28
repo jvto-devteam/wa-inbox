@@ -6,7 +6,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   const { id } = await params
   const conversation = await prisma.conversation.findUniqueOrThrow({
     where: { id },
-    include: { contact: true, labels: { include: { label: true } } },
+    include: { contact: true, labels: { include: { label: true } }, channelIdentity: { select: { platform: true } } },
   })
   // Refreshed here (not just as a side effect of the bot answering a message) so
   // ContactPanel shows real booking data as soon as an agent opens the conversation,
@@ -27,5 +27,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     pipelineStage: conversation.pipelineStage,
     assignedAgentId: conversation.assignedAgentId,
     lastReadAt: conversation.lastReadAt?.toISOString() ?? null,
+    platform: conversation.channelIdentity?.platform ?? null,
+    subject: conversation.subject,
   })
 }

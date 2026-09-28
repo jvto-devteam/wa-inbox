@@ -54,12 +54,13 @@ const CHATBOT_SECTIONS = [
 
 type ChatbotSectionId = (typeof CHATBOT_SECTIONS)[number]['id']
 
-/** Empat sakelar bot per platform di bagian "Kapan bot menjawab" -- lihat POST /api/bot/channel-toggle. */
+/** Sakelar bot per platform di bagian "Kapan bot menjawab" -- lihat POST /api/bot/channel-toggle.
+ *  Email sengaja tidak ada: bot tidak pernah menjawab email (draf manual saja) -- lihat
+ *  docs/superpowers/plans/2026-09-28-omnichannel-email.md, D1. */
 const PLATFORM_LABELS = {
   WHATSAPP: { label: 'WhatsApp', key: 'botEnabledWhatsapp' },
   INSTAGRAM: { label: 'Instagram', key: 'botEnabledInstagram' },
   FACEBOOK: { label: 'Facebook', key: 'botEnabledFacebook' },
-  EMAIL: { label: 'Email', key: 'botEnabledEmail' },
 } as const
 
 /**
@@ -412,6 +413,9 @@ export default function ChatbotPage() {
                     )
                   })}
                 </div>
+                <p className="mt-2 text-xs text-ink-muted">
+                  Email tidak punya sakelar: bot tidak pernah membalas email otomatis. Pakai tombol draf di Inbox.
+                </p>
               </div>
             </FormSection>
           )}

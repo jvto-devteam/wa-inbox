@@ -38,6 +38,8 @@ export type ConversationSummary = {
   // schema). NOT the same fact as orderChannel below: this is where the conversation is
   // happening, orderChannel is where a booking originated. Both can show at once.
   platform: Platform | null
+  // Hanya untuk EMAIL. Opsional supaya pemanggil lama dan fixture test tetap berlaku.
+  subject?: string | null
   // Which platform a booking (if any) originated from -- Klook, JVTO, TWT, etc. Null until
   // there's an actual booking on file, in which case no badge shows at all (see below).
   orderChannel: string | null
@@ -113,7 +115,10 @@ export function ConversationListItem({
   })
   const isUnread = conversation.unreadCount > 0
   const prefix = isHandoffLog ? null : PREVIEW_PREFIX[conversation.lastMessageSentBy ?? '']
-  const preview = isHandoffLog ? HANDOFF_LOG_SUMMARY : conversation.lastMessage
+  const rawPreview = isHandoffLog ? HANDOFF_LOG_SUMMARY : conversation.lastMessage
+  // Email: subjek lebih bermakna daripada kalimat pertama balasan ("Terima kasih, ...").
+  const isEmail = conversation.platform === 'EMAIL'
+  const preview = isEmail && conversation.subject ? `${conversation.subject} — ${rawPreview ?? ''}` : rawPreview
   const BotIcon = conversation.botEnabled ? Bot : BotOff
 
   return (
@@ -206,13 +211,17 @@ export function ConversationListItem({
                 {l.name}
               </Badge>
             ))}
-            <span
-              aria-label={conversation.botEnabled ? 'Bot aktif' : 'Bot mati'}
-              title={conversation.botEnabled ? 'Bot menjawab otomatis' : 'Bot mati — dijawab agen'}
-              className="ml-auto shrink-0 pl-1 text-ink-subtle"
-            >
-              <BotIcon aria-hidden="true" className="size-3.5" strokeWidth={1.75} />
-            </span>
+            {/* Bot tidak pernah menjawab email (D1) -- ikon status bot di baris email hanya
+                bisa menyesatkan, jadi disembunyikan sepenuhnya di sana. */}
+            {!isEmail && (
+              <span
+                aria-label={conversation.botEnabled ? 'Bot aktif' : 'Bot mati'}
+                title={conversation.botEnabled ? 'Bot menjawab otomatis' : 'Bot mati — dijawab agen'}
+                className="ml-auto shrink-0 pl-1 text-ink-subtle"
+              >
+                <BotIcon aria-hidden="true" className="size-3.5" strokeWidth={1.75} />
+              </span>
+            )}
           </span>
         </span>
       </button>

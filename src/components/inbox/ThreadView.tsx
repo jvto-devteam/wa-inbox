@@ -21,6 +21,8 @@ type ConversationDetail = {
   contactName?: string | null
   avatarUrl?: string | null
   bookingData?: BookingData | null
+  platform?: string | null
+  subject?: string | null
 }
 
 /** Fire-and-forget: a failed mark-as-read is a cosmetic sidebar-badge staleness, never worth surfacing. */
@@ -141,6 +143,8 @@ export function ThreadView({
   const [messages, setMessages] = useState<MessageView[]>([])
   const [botEnabled, setBotEnabled] = useState(false)
   const [isTest, setIsTest] = useState(false)
+  const [isEmail, setIsEmail] = useState(false)
+  const [subject, setSubject] = useState<string | null>(null)
   const [contactName, setContactName] = useState<string | null>(null)
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null)
   const [bookingData, setBookingData] = useState<BookingData | null>(null)
@@ -181,6 +185,8 @@ export function ThreadView({
       .then((data) => {
         setBotEnabled(data.botEnabled)
         setIsTest(data.isTest ?? false)
+        setIsEmail(data.platform === 'EMAIL')
+        setSubject(data.subject ?? null)
         setUnreadCutoff(data.lastReadAt ?? null)
         setContactName(data.contactName ?? null)
         setAvatarUrl(data.avatarUrl ?? null)
@@ -352,6 +358,7 @@ export function ThreadView({
             text={contactDisplayName(contactName, bookingGuestName(bookingData), 'Tanpa nama')}
             className="text-base font-semibold text-ink"
           />
+          {isEmail && subject && <span className="truncate text-xs text-ink-muted">{subject}</span>}
           {isTest && (
             <span className="truncate text-xs text-warning">Room Tes -- tidak terkirim ke WhatsApp</span>
           )}
@@ -367,9 +374,14 @@ export function ThreadView({
               lapisan penugasan). Tombol toggle bot pindah kemari dari ComposeBox supaya selalu
               terlihat dekat nama kontak, di mobile maupun desktop, tanpa harus digulung sampai
               dasar kolom pesan dulu. */}
-          <Button type="button" variant="outline" size="sm" onClick={toggleBot} className="h-6 px-2 text-xs">
-            {botEnabled ? 'Ambil Alih dari Bot' : 'Aktifkan Bot untuk Chat Ini'}
-          </Button>
+          {/* Bot tidak pernah menjawab email (D1) -- tombol ambil-alih/aktifkan bot tidak
+              berarti apa-apa di sini, jadi disembunyikan sepenuhnya alih-alih ditampilkan
+              menyala/mati untuk sesuatu yang tidak pernah berjalan. */}
+          {!isEmail && (
+            <Button type="button" variant="outline" size="sm" onClick={toggleBot} className="h-6 px-2 text-xs">
+              {botEnabled ? 'Ambil Alih dari Bot' : 'Aktifkan Bot untuk Chat Ini'}
+            </Button>
+          )}
           {onToggleContactPanel && (
             // Hanya dari xl ke atas: di bawah itu panel kontak memang tidak punya kolom untuk
             // ditempati, jadi tombol yang tidak bisa menampilkan apa-apa lebih baik tidak ada.

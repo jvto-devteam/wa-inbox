@@ -31,7 +31,10 @@ import { hasPhoneNumber, BOT_TOGGLE_COLUMN_BY_PLATFORM } from '@/lib/channel/pla
  * satu fitur yang sama bertentangan dengan dirinya sendiri.
  */
 const bodySchema = z.object({
-  platform: z.enum(['WHATSAPP', 'INSTAGRAM', 'FACEBOOK', 'EMAIL']),
+  // EMAIL sengaja tidak diterima: bot tidak pernah menjawab email (draf manual saja, D1 di
+  // docs/superpowers/plans/2026-09-28-omnichannel-email.md). Sakelar yang menyala tanpa
+  // mengubah apa pun lebih buruk daripada tidak ada sakelar.
+  platform: z.enum(['WHATSAPP', 'INSTAGRAM', 'FACEBOOK']),
 })
 
 export async function POST(req: Request) {

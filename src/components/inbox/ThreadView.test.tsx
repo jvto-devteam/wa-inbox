@@ -191,6 +191,23 @@ describe('ThreadView header identity', () => {
     expect(screen.getByText('B')).toBeInTheDocument()
   })
 
+  it('percakapan email: subjek tampil di header dan tombol bot tidak ada', async () => {
+    vi.mocked(fetch).mockImplementation((url) => {
+      const s = String(url)
+      if (s.endsWith('/messages')) return Promise.resolve({ ok: true, json: () => Promise.resolve([]) } as Response)
+      if (s.endsWith('/api/accounts')) return Promise.resolve({ ok: true, json: () => Promise.resolve([]) } as Response)
+      return Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({ botEnabled: false, platform: 'EMAIL', subject: 'Tur Bromo 3D2N', contactName: 'Sinta' }),
+      } as Response)
+    })
+
+    render(<ThreadView conversationId="conv_mail" />)
+
+    await waitFor(() => expect(screen.getByText('Tur Bromo 3D2N')).toBeInTheDocument())
+    expect(screen.queryByRole('button', { name: /Ambil Alih dari Bot|Aktifkan Bot untuk Chat Ini/ })).not.toBeInTheDocument()
+  })
+
   it('shows the "Room Tes" badge when isTest is true', async () => {
     vi.mocked(fetch).mockImplementation((url) => {
       const s = String(url)

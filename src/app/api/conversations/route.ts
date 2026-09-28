@@ -90,6 +90,8 @@ export async function GET(req: Request) {
     // orderChannel below: this is the channel the conversation is happening on, orderChannel
     // is where a booking originated. Both can be true for the same row at once.
     platform: c.channelIdentity?.platform ?? null,
+    // Hanya terisi untuk EMAIL: subjek benang, ditampilkan di depan cuplikan pesan terakhir.
+    subject: c.subject,
     // Sidebar shows this instead of the Bot/Agen badge -- null (no badge at all) until
     // there's an actual booking on file. A dedicated column (see schema.prisma), not parsed
     // out of bookingData: it's snapshotted once and permanent, unlike the rest of bookingData.

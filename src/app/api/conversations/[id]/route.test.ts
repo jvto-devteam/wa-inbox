@@ -31,6 +31,8 @@ describe('GET /api/conversations/[id]', () => {
       labels: [{ label: { id: 'lbl_1', name: 'Confirmed Booking', color: '#3C6B42' } }],
       pipelineStage: 'booked',
       assignedAgentId: 'acc_1',
+      channelIdentity: { platform: 'WHATSAPP' },
+      subject: null,
     } as never)
     vi.mocked(ensureFreshBookingData).mockResolvedValue({
       destination: 'Bromo', dateRange: '10-12 Aug', pax: 2, amountPaid: 500000, amountDue: 500000, status: 'CONFIRMED',
@@ -53,10 +55,12 @@ describe('GET /api/conversations/[id]', () => {
       pipelineStage: 'booked',
       assignedAgentId: 'acc_1',
       lastReadAt: null,
+      platform: 'WHATSAPP',
+      subject: null,
     })
     expect(mockPrisma.conversation.findUniqueOrThrow).toHaveBeenCalledWith({
       where: { id: 'conv_1' },
-      include: { contact: true, labels: { include: { label: true } } },
+      include: { contact: true, labels: { include: { label: true } }, channelIdentity: { select: { platform: true } } },
     })
   })
 
@@ -139,5 +143,18 @@ describe('GET /api/conversations/[id]', () => {
 
     expect(body.bookingData).toBeNull()
     expect(body.tripBrief).toBeNull()
+  })
+
+  it('mengembalikan platform dan subjek untuk percakapan email', async () => {
+    mockPrisma.conversation.findUniqueOrThrow.mockResolvedValue({
+      botEnabled: false, isTest: false, bookingData: null, tripBrief: null, subject: 'Tur Bromo',
+      channelIdentity: { platform: 'EMAIL' },
+      contact: { id: 'c1', name: 'Sinta', avatarUrl: null, source: null },
+      labels: [], pipelineStage: 'new', assignedAgentId: null, lastReadAt: null,
+    } as never)
+    vi.mocked(ensureFreshBookingData).mockResolvedValue(null as never)
+
+    const res = await GET(new Request('http://localhost/api/conversations/conv_1'), { params: Promise.resolve({ id: 'conv_1' }) })
+    expect(await res.json()).toMatchObject({ platform: 'EMAIL', subject: 'Tur Bromo' })
   })
 })
