@@ -12,6 +12,7 @@ import { FormSection } from '@/components/settings/section'
 import { UserManagementSection } from '@/components/settings/UserManagementSection'
 import { WebhookCredentialsPanel } from '@/components/settings/WebhookCredentialsPanel'
 import { ApiClientsPanel } from '@/components/settings/ApiClientsPanel'
+import { MailAccountsPanel } from '@/components/settings/MailAccountsPanel'
 import { hasAdminPowers } from '@/lib/bot-control/permissions'
 import { fetchJson } from '@/lib/fetch-json'
 import {
@@ -27,7 +28,7 @@ type Settings = {
 
 const SAFETY_FIELDS = Object.keys(SAFETY_BOUNDS) as SafetyBoundKey[]
 
-type SettingsSectionId = 'jalur' | 'nomor' | 'pengaman' | 'halaman-lain' | 'pengguna' | 'webhook' | 'api-client'
+type SettingsSectionId = 'jalur' | 'nomor' | 'pengaman' | 'halaman-lain' | 'pengguna' | 'webhook' | 'api-client' | 'kotak-surat'
 
 /**
  * Bagian-bagian halaman ini, dan urutannya di sidebar kedua.
@@ -47,6 +48,7 @@ const SETTINGS_SECTIONS: ReadonlyArray<{ id: SettingsSectionId; label: string; a
   { id: 'pengguna', label: 'Manajemen pengguna', adminOnly: true },
   { id: 'webhook', label: 'Webhook & kredensial', adminOnly: true },
   { id: 'api-client', label: 'API client', adminOnly: true },
+  { id: 'kotak-surat', label: 'Kotak surat email', adminOnly: true },
 ]
 
 type NumberStatus = { officialTokenValid: boolean; unofficialConfigured: boolean }
@@ -87,7 +89,15 @@ export default function SettingsPage() {
   // behind the input's `key` did not change — and a box showing a number that was refused is
   // the exact "setting that looks applied" failure these bounds exist to prevent.
   const [safetyNonce, setSafetyNonce] = useState(0)
-  const [active, setActive] = useState<SettingsSectionId>('jalur')
+  // Callback OAuth kotak surat mendarat di ?section=kotak-surat -- tanpa ini admin kembali
+  // dari Google ke bagian pertama dan tidak melihat hasil penyambungannya. Inisialisasi lazy
+  // (bukan efek yang memanggil setState) supaya dibaca sekali di render pertama sisi klien,
+  // sama seperti pola `webhookUrl` di WebhookCredentialsPanel.
+  const [active, setActive] = useState<SettingsSectionId>(() => {
+    if (typeof window === 'undefined') return 'jalur'
+    const requested = new URLSearchParams(window.location.search).get('section')
+    return requested && SETTINGS_SECTIONS.some((s) => s.id === requested) ? (requested as SettingsSectionId) : 'jalur'
+  })
 
   useEffect(() => {
     // Each rejection is swallowed: the page renders its skeleton until both land, which
@@ -283,6 +293,7 @@ export default function SettingsPage() {
           {activeId === 'pengguna' && <UserManagementSection />}
           {activeId === 'webhook' && <WebhookCredentialsPanel />}
           {activeId === 'api-client' && <ApiClientsPanel />}
+          {activeId === 'kotak-surat' && <MailAccountsPanel />}
         </SectionNavPane>
       </SectionNavLayout>
     </main>
