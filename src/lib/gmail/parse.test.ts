@@ -52,6 +52,13 @@ describe('htmlToText', () => {
     expect(text).toContain('Forwarded message')
     expect(text).toContain('Booking #123 dikonfirmasi')
   })
+
+  it('menormalkan NBSP mentah (bukan hanya entitas &nbsp;) jadi spasi biasa', () => {
+    const html = '<p>Harga Bromo </p><p>OK</p>'
+    const text = htmlToText(html)
+    expect(text).not.toContain(' ')
+    expect(text).toBe('Harga Bromo\nOK')
+  })
 })
 
 describe('parseGmailMessage', () => {

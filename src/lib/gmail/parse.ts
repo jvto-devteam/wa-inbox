@@ -94,7 +94,7 @@ export function htmlToText(html: string): string {
     .replace(/<[^>]+>/g, '')
   return decodeEntities(flattened)
     .replace(/\r/g, '')
-    .replace(/ /g, ' ')
+    .replace(/\u00A0/g, ' ')
     .replace(/[ \t]+\n/g, '\n')
     .replace(/\n{3,}/g, '\n\n')
     .trim()
