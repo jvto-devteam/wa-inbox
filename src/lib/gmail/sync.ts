@@ -1,3 +1,4 @@
+import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import {
   getAccessToken, invalidateAccessToken, gmailGetMessage, gmailGetProfile,
@@ -106,8 +107,15 @@ export async function syncMailAccount(accountId: string, now: Date = new Date())
         else result.skipped += 1
       } catch (error) {
         failed = true
+        // `name` dan (kalau Prisma) `code` ikut dicatat supaya sebab bisa dilacak tanpa
+        // membuka `message` -- ini yang membedakan error 22021 (byte NUL, lihat stripNulByte
+        // di ingest.ts) dari kegagalan Gmail HTTP lainnya tanpa pernah mencetak isi email.
         console.error('syncMailAccount: satu email gagal diproses', {
-          accountId, gmailMessageId: id, kind: error instanceof GmailError ? error.kind : 'unknown',
+          accountId,
+          gmailMessageId: id,
+          kind: error instanceof GmailError ? error.kind : 'unknown',
+          name: error instanceof Error ? error.name : 'unknown',
+          ...(error instanceof Prisma.PrismaClientKnownRequestError ? { code: error.code } : {}),
         })
       }
     }
@@ -117,8 +125,11 @@ export async function syncMailAccount(accountId: string, now: Date = new Date())
     if (failed) result.error = 'INGEST_FAILED'
     else await advanceHistoryId(account.id, account.historyId, nextHistoryId)
 
-    // Diperpanjang SELALU, juga saat ada email yang gagal: satu email rusak tidak boleh ikut
-    // mematikan push untuk semua email berikutnya.
+    // Diperpanjang setiap kali history.list DI ATAS berhasil diambil -- termasuk saat ada
+    // email yang gagal diproses satu per satu: satu email rusak tidak boleh ikut mematikan
+    // push untuk email berikutnya. Kalau history.list SENDIRI yang gagal, baris ini tidak
+    // pernah tercapai (dilempar ke catch di bawah, hasilnya GMAIL_HTTP/AUTH_REVOKED, bukan
+    // WATCH_FAILED) -- "SELALU" di komentar lama ini menyesatkan.
     const watchError = await renewWatchIfDue(token, account, now)
     result.error = result.error ?? watchError
   } catch (error) {
@@ -155,6 +166,12 @@ export function requestSync(accountId: string): Promise<SyncResult> {
       return result
     } finally {
       running.delete(accountId)
+      // `syncMailAccount` di atas bisa melempar SEBELUM baris `while` mana pun tercapai
+      // (misalnya `findUniqueOrThrow` yang gagal). Tanpa baris ini, bel yang berbunyi
+      // SELAGI upaya itu berjalan meninggalkan penanda rerun basi -- percobaan bersih
+      // berikutnya untuk akun yang sama diam-diam mengulang sinkronisasi satu kali ekstra
+      // yang tidak pernah diminta siapa pun.
+      rerunRequested.delete(accountId)
     }
   })()
   running.set(accountId, run)
@@ -162,11 +179,24 @@ export function requestSync(accountId: string): Promise<SyncResult> {
 }
 
 export async function syncAllMailAccounts(): Promise<SyncResult[]> {
-  const accounts = await prisma.mailAccount.findMany({ select: { id: true }, orderBy: { createdAt: 'asc' } })
+  const accounts = await prisma.mailAccount.findMany({ select: { id: true, emailAddress: true }, orderBy: { createdAt: 'asc' } })
   const results: SyncResult[] = []
   // Berurutan, bukan paralel: kotak surat JVTO hanya dua, dan sinkronisasi berurutan tidak
   // pernah berebut CPU dengan balasan WhatsApp yang sedang ditunggu pelanggan.
-  for (const account of accounts) results.push(await requestSync(account.id))
+  for (const account of accounts) {
+    try {
+      results.push(await requestSync(account.id))
+    } catch (error) {
+      // `requestSync`/`syncMailAccount` bisa melempar SEBELUM sempat membangun SyncResult
+      // sendiri (misalnya `findUniqueOrThrow` gagal karena akunnya baru saja dihapus).
+      // Tanpa try/catch di sini, satu kotak surat yang bernasib begitu menghentikan
+      // `for` dan kotak surat berikutnya di daftar tidak pernah disinkronkan sama sekali.
+      console.error('syncAllMailAccounts: satu kotak surat gagal disinkronkan', {
+        accountId: account.id, name: error instanceof Error ? error.name : 'unknown',
+      })
+      results.push({ accountId: account.id, emailAddress: account.emailAddress, ingested: 0, skipped: 0, error: 'GMAIL_HTTP' })
+    }
+  }
   return results
 }
 

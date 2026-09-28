@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest'
 import { mockDeep, mockReset, type DeepMockProxy } from 'vitest-mock-extended'
-import type { PrismaClient } from '@prisma/client'
+import { Prisma, type PrismaClient } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import * as client from './client'
 import { ingestGmailMessage } from './ingest'
@@ -146,6 +146,37 @@ describe('syncMailAccount', () => {
     expect(result).toMatchObject({ ingested: 2, error: 'WATCH_FAILED' })
     expect(mockPrisma.mailAccount.updateMany).toHaveBeenCalled()
   })
+
+  // Temuan review 1: log kegagalan per-email lama hanya mencatat `kind` (kategori GmailError).
+  // Error Prisma (misalnya 22021 byte NUL yang lolos ke DB) bukan GmailError, jadi `kind`-nya
+  // selalu 'unknown' -- tidak ada cara melacak sebabnya tanpa membuka `message` mentah, yang
+  // dilarang (bisa memuat isi email).
+  it('email gagal karena error Prisma dicatat dengan name DAN code, tanpa pesan mentah', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const prismaError = new Prisma.PrismaClientKnownRequestError(
+      'Isi email rahasia pelanggan bocor di sini kalau dicetak', { code: '22021', clientVersion: 'x' },
+    )
+    vi.mocked(ingestGmailMessage).mockRejectedValueOnce(prismaError).mockResolvedValueOnce('created')
+
+    await syncMailAccount('mail_1', NOW)
+
+    const call = consoleError.mock.calls.find((c) => c[0] === 'syncMailAccount: satu email gagal diproses')
+    expect(call?.[1]).toMatchObject({ name: 'PrismaClientKnownRequestError', code: '22021' })
+    expect(JSON.stringify(call)).not.toContain('Isi email rahasia')
+    consoleError.mockRestore()
+  })
+
+  it('email gagal karena error biasa (bukan Prisma) dicatat dengan name, tanpa field code', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+    vi.mocked(ingestGmailMessage).mockRejectedValueOnce(new TypeError('boom')).mockResolvedValueOnce('created')
+
+    await syncMailAccount('mail_1', NOW)
+
+    const call = consoleError.mock.calls.find((c) => c[0] === 'syncMailAccount: satu email gagal diproses')
+    expect(call?.[1]).toMatchObject({ name: 'TypeError' })
+    expect(call?.[1]).not.toHaveProperty('code')
+    consoleError.mockRestore()
+  })
 })
 
 describe('requestSync (single-flight)', () => {
@@ -166,6 +197,32 @@ describe('requestSync (single-flight)', () => {
     await first
     expect(mockPrisma.mailAccount.findUniqueOrThrow).toHaveBeenCalledTimes(2)
   })
+
+  // Temuan review 4b: `syncMailAccount` bisa melempar SEBELUM baris `while(rerunRequested...)`
+  // pernah tercapai (di sini: `findUniqueOrThrow` gagal). Tanpa membersihkan `rerunRequested`
+  // di `finally`, bel yang berbunyi selagi upaya yang gagal itu berjalan meninggalkan penanda
+  // basi -- percobaan BERSIH berikutnya untuk akun yang sama diam-diam mengulang sinkronisasi
+  // satu kali ekstra yang tidak pernah diminta siapa pun.
+  it('upaya yang gagal tidak menyisakan penanda rerun basi untuk percobaan berikutnya', async () => {
+    let reject: (error: Error) => void = () => {}
+    mockPrisma.mailAccount.findUniqueOrThrow.mockImplementationOnce(
+      (() => new Promise((_r, rj) => { reject = rj })) as never,
+    )
+
+    const first = requestSync('mail_1')
+    const second = requestSync('mail_1') // menandai rerunRequested selagi 'first' masih berjalan
+    expect(second).toBe(first)
+
+    reject(new Error('akun terhapus'))
+    await expect(first).rejects.toThrow('akun terhapus')
+
+    mockPrisma.mailAccount.findUniqueOrThrow.mockResolvedValue(account as never)
+    await requestSync('mail_1')
+
+    // 1x percobaan pertama (gagal) + 1x percobaan bersih berikutnya. Kalau rerunRequested
+    // tidak dibersihkan, percobaan bersih itu diam-diam mengulang jadi 3x total.
+    expect(mockPrisma.mailAccount.findUniqueOrThrow).toHaveBeenCalledTimes(2)
+  })
 })
 
 describe('syncAllMailAccounts', () => {
@@ -179,5 +236,27 @@ describe('syncAllMailAccounts', () => {
 
     const results = await syncAllMailAccounts()
     expect(results.map((r) => r.error)).toEqual(['AUTH_REVOKED', null])
+  })
+
+  // Temuan review 4a: sebelumnya `syncAllMailAccounts` tidak membungkus `requestSync` sama
+  // sekali -- lemparan MENTAH dari satu akun (misalnya `findUniqueOrThrow` gagal karena akunnya
+  // baru saja dihapus) menghentikan `for` dan kotak surat berikutnya di daftar tidak pernah
+  // disinkronkan.
+  it('lemparan MENTAH (bukan SyncResult.error) dari satu kotak surat tidak menghentikan yang lain', async () => {
+    mockPrisma.mailAccount.findMany.mockResolvedValue([
+      { id: 'mail_bad', emailAddress: 'bad@x.com' },
+      { id: 'mail_2', emailAddress: 'mail_2@x.com' },
+    ] as never)
+    mockPrisma.mailAccount.findUniqueOrThrow.mockImplementation((async (args: { where: { id: string } }) => {
+      if (args.where.id === 'mail_bad') throw new Error('akun terhapus')
+      return { ...account, id: args.where.id, emailAddress: `${args.where.id}@x.com` }
+    }) as never)
+
+    const results = await syncAllMailAccounts()
+
+    expect(results).toEqual([
+      { accountId: 'mail_bad', emailAddress: 'bad@x.com', ingested: 0, skipped: 0, error: 'GMAIL_HTTP' },
+      expect.objectContaining({ accountId: 'mail_2', error: null }),
+    ])
   })
 })
