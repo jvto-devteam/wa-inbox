@@ -33,6 +33,19 @@ describe('parseAddress', () => {
   it('null kalau tidak ada alamat yang bisa dibalas', () => {
     expect(parseAddress('undisclosed-recipients:;')).toBeNull()
   })
+
+  it('menolak dua alamat yang menyamar jadi satu lewat koma di bentuk angle (temuan review)', () => {
+    expect(parseAddress('<a@x.com,b@y.com>')).toBeNull()
+  })
+
+  it('menolak alamat ber-titik-koma', () => {
+    expect(parseAddress('a@x.com;b@y.com')).toBeNull()
+    expect(parseAddress('<a@x.com;b@y.com>')).toBeNull()
+  })
+
+  it('alamat tunggal yang sah tetap diterima (bukan regresi)', () => {
+    expect(parseAddress('<a@x.com>')).toEqual({ address: 'a@x.com', name: null })
+  })
 })
 
 describe('htmlToText', () => {
@@ -135,5 +148,19 @@ describe('parseGmailMessage', () => {
       body: { data: b64('x') },
     }))
     expect(parsed.waInboxId).toBe('msg_abc')
+  })
+
+  it('membaca Reply-To, mengambil alamat PERTAMA kalau ada beberapa', () => {
+    const parsed = parseGmailMessage(message({
+      mimeType: 'text/plain',
+      headers: [...headers, { name: 'Reply-To', value: 'Tamu <tamu@example.com>, lain@example.com' }],
+      body: { data: b64('x') },
+    }))
+    expect(parsed.replyTo).toEqual({ address: 'tamu@example.com', name: 'Tamu' })
+  })
+
+  it('tanpa header Reply-To: null', () => {
+    const parsed = parseGmailMessage(message({ mimeType: 'text/plain', headers, body: { data: b64('x') } }))
+    expect(parsed.replyTo).toBeNull()
   })
 })

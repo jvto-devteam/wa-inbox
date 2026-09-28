@@ -22,6 +22,11 @@ export interface ParsedEmail {
   labelIds: string[]
   sentAt: Date
   from: EmailAddress | null
+  // Reply-To (spec §11 temuan review): relay form/OTA/notifikasi mengirim dari `noreply@...`
+  // tapi minta balasan ke alamat tamu yang sesungguhnya. Dibaca terpisah dari From supaya
+  // ingest.ts bisa memilih alamat identitas pelanggan yang benar tanpa mengubah arti From
+  // (masih dipakai apa adanya untuk penjaga "dari kotak surat sendiri").
+  replyTo: EmailAddress | null
   subject: string | null
   waInboxId: string | null
   body: string
@@ -56,14 +61,31 @@ export function decodeMimeWords(value: string): string {
     })
 }
 
+/**
+ * Satu alamat, bukan daftar. `,` dan `;` ditolak eksplisit (bukan hanya diandalkan pada gagalnya
+ * pola regex): bentuk angle `<a@x.com,b@y.com>` lolos pola aslinya sebagai SATU alamat karena
+ * kelas karakternya hanya membuang `<>` dan spasi, bukan koma -- hasilnya identitas ber-koma dan
+ * `To:` dua penerima sekaligus saat dipakai balas (temuan review).
+ */
 export function parseAddress(value: string): EmailAddress | null {
   const decoded = decodeMimeWords(value).trim()
   const angled = decoded.match(/^(.*?)<([^<>\s]+@[^<>\s]+)>\s*$/)
   if (angled) {
+    const address = angled[2]
+    if (address.includes(',') || address.includes(';')) return null
     const name = angled[1].trim().replace(/^"(.*)"$/, '$1').trim()
-    return { address: angled[2].toLowerCase(), name: name || null }
+    return { address: address.toLowerCase(), name: name || null }
   }
+  if (decoded.includes(',') || decoded.includes(';')) return null
   return /^[^\s<>@]+@[^\s<>@]+$/.test(decoded) ? { address: decoded.toLowerCase(), name: null } : null
+}
+
+/**
+ * Header Reply-To bisa memuat beberapa alamat dipisah koma (RFC 5322 §3.6.3). Ambil yang
+ * pertama saja -- balasan hanya bisa dikirim ke satu alamat.
+ */
+function firstAddress(headerValue: string): EmailAddress | null {
+  return parseAddress(headerValue.split(',')[0] ?? '')
 }
 
 function decodeEntities(text: string): string {
@@ -136,6 +158,7 @@ export function parseGmailMessage(message: GmailMessage): ParsedEmail {
   if (message.payload) walk(message.payload, acc)
 
   const fromHeader = header(headers, 'From')
+  const replyToHeader = header(headers, 'Reply-To')
   const subject = header(headers, 'Subject')
 
   return {
@@ -144,6 +167,7 @@ export function parseGmailMessage(message: GmailMessage): ParsedEmail {
     labelIds: message.labelIds ?? [],
     sentAt: new Date(Number(message.internalDate ?? Date.now())),
     from: fromHeader ? parseAddress(fromHeader) : null,
+    replyTo: replyToHeader ? firstAddress(replyToHeader) : null,
     subject: subject ? decodeMimeWords(subject).trim() || null : null,
     waInboxId: header(headers, WA_INBOX_ID_HEADER),
     body: acc.plain ?? (acc.html ? htmlToText(acc.html) : ''),
