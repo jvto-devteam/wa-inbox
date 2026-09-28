@@ -62,9 +62,27 @@ async function ingestOutbound(account: { id: string }, email: ParsedEmail, conte
   // dengan X-WA-Inbox-Id). Barisnya sudah ada; cukup pastikan externalId-nya terisi, karena
   // sinkronisasi bisa tiba lebih dulu daripada jawaban messages.send.
   if (email.waInboxId) {
-    const own = await prisma.message.findUnique({ where: { id: email.waInboxId }, select: { id: true, externalId: true } })
+    const own = await prisma.message.findUnique({
+      where: { id: email.waInboxId },
+      select: { id: true, externalId: true, deliveryStatus: true, conversationId: true },
+    })
     if (own) {
-      if (!own.externalId) await prisma.message.update({ where: { id: own.id }, data: { externalId: email.id } })
+      // Fix round 1 (Temuan 1a): baris ini bisa salah tercatat FAILED atau tetap PENDING
+      // selamanya kalau jawaban messages.send hilang (5xx SETELAH Gmail sudah menerima
+      // pesannya, koneksi putus, timeout fetch) atau proses mati di antara pembuatan baris
+      // PENDING dan update akhirnya (restart pm2 saat deploy). Salinan SENT yang tersinkron
+      // balik ke sini adalah bukti definitif email itu TERKIRIM -- tanpa baris ini, baris
+      // tetap FAILED/PENDING, operator menekan tombol retry, dan pelanggan menerima email
+      // yang sama dua kali. Kalau sudah SENT dengan externalId terisi (kasus normal, balapan
+      // biasa), tidak ada apa pun yang perlu ditulis ulang.
+      if (!own.externalId || own.deliveryStatus !== 'SENT') {
+        const updated = await prisma.message.update({
+          where: { id: own.id },
+          data: { externalId: email.id, deliveryStatus: 'SENT' },
+          include: { replyTo: true },
+        })
+        broadcast({ type: 'message.updated', conversationId: updated.conversationId, message: withMediaUrl(updated) })
+      }
       return 'reconciled'
     }
   }

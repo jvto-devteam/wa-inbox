@@ -135,14 +135,50 @@ describe('ingestGmailMessage — masuk', () => {
 })
 
 describe('ingestGmailMessage — keluar (SENT)', () => {
-  it('salinan SENT dari balasan Inbox hanya mengisi externalId baris kita, tidak menduplikasi', async () => {
+  // Fix round 1 (Temuan 1): baris kita bisa salah tercatat FAILED/PENDING kalau jawaban
+  // messages.send hilang (5xx setelah Gmail menerima, koneksi putus, timeout fetch) atau
+  // proses mati di antara pembuatan baris PENDING dan update akhirnya (restart pm2 saat
+  // deploy). Salinan SENT yang tersinkron balik adalah bukti definitif email itu TERKIRIM --
+  // tanpa perbaikan ini baris tetap FAILED/PENDING selamanya, operator menekan retry, dan
+  // pelanggan menerima email yang sama dua kali.
+  it('baris kita FAILED tanpa externalId direkonsiliasi jadi SENT dan broadcast message.updated', async () => {
     mockPrisma.message.findUnique
       .mockResolvedValueOnce(null as never) // cek externalId
-      .mockResolvedValueOnce({ id: 'msg_kita', externalId: null } as never) // cek X-WA-Inbox-Id
+      .mockResolvedValueOnce({ id: 'msg_kita', externalId: null, deliveryStatus: 'FAILED', conversationId: 'conv_kita' } as never) // cek X-WA-Inbox-Id
+    mockPrisma.message.update.mockResolvedValue({ id: 'msg_kita', conversationId: 'conv_kita', externalId: 'gm_1', deliveryStatus: 'SENT' } as never)
     const sent = email({ labelIds: ['SENT'], from: 'hello@javavolcano-touroperator.com', headers: [{ name: 'X-WA-Inbox-Id', value: 'msg_kita' }] })
 
     expect(await ingestGmailMessage(account, sent)).toBe('reconciled')
-    expect(mockPrisma.message.update).toHaveBeenCalledWith({ where: { id: 'msg_kita' }, data: { externalId: 'gm_1' } })
+    expect(mockPrisma.message.update).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: 'msg_kita' }, data: { externalId: 'gm_1', deliveryStatus: 'SENT' },
+    }))
+    expect(broadcast).toHaveBeenCalledWith(expect.objectContaining({ type: 'message.updated', conversationId: 'conv_kita' }))
+    expect(mockPrisma.message.create).not.toHaveBeenCalled()
+  })
+
+  it('baris kita PENDING dengan externalId sudah terisi tetap direkonsiliasi jadi SENT', async () => {
+    mockPrisma.message.findUnique
+      .mockResolvedValueOnce(null as never)
+      .mockResolvedValueOnce({ id: 'msg_kita', externalId: 'gm_1', deliveryStatus: 'PENDING', conversationId: 'conv_kita' } as never)
+    mockPrisma.message.update.mockResolvedValue({ id: 'msg_kita', conversationId: 'conv_kita', externalId: 'gm_1', deliveryStatus: 'SENT' } as never)
+    const sent = email({ labelIds: ['SENT'], from: 'hello@javavolcano-touroperator.com', headers: [{ name: 'X-WA-Inbox-Id', value: 'msg_kita' }] })
+
+    expect(await ingestGmailMessage(account, sent)).toBe('reconciled')
+    expect(mockPrisma.message.update).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: 'msg_kita' }, data: { externalId: 'gm_1', deliveryStatus: 'SENT' },
+    }))
+    expect(broadcast).toHaveBeenCalledWith(expect.objectContaining({ type: 'message.updated', conversationId: 'conv_kita' }))
+  })
+
+  it('baris kita sudah SENT dengan externalId terisi: tidak diupdate, tidak broadcast', async () => {
+    mockPrisma.message.findUnique
+      .mockResolvedValueOnce(null as never)
+      .mockResolvedValueOnce({ id: 'msg_kita', externalId: 'gm_1', deliveryStatus: 'SENT', conversationId: 'conv_kita' } as never)
+    const sent = email({ labelIds: ['SENT'], from: 'hello@javavolcano-touroperator.com', headers: [{ name: 'X-WA-Inbox-Id', value: 'msg_kita' }] })
+
+    expect(await ingestGmailMessage(account, sent)).toBe('reconciled')
+    expect(mockPrisma.message.update).not.toHaveBeenCalled()
+    expect(broadcast).not.toHaveBeenCalled()
     expect(mockPrisma.message.create).not.toHaveBeenCalled()
   })
 

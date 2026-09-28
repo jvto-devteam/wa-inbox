@@ -64,10 +64,26 @@ describe('sendEmailMessage', () => {
     expect(decode(vi.mocked(gmailSendRaw).mock.calls[0][1])).toContain('Subject: Re: Tur Bromo')
   })
 
-  it('Gmail menolak: baris jadi FAILED, tidak melempar', async () => {
+  it('Gmail menolak: baris jadi FAILED lewat updateMany berpenjaga externalId null, tidak melempar', async () => {
+    // Fix round 1 (Temuan 1b): update akhir tidak boleh menimpa baris yang sudah SENT karena
+    // ingest.ts (src/lib/gmail/ingest.ts) sempat merekonsiliasinya lebih dulu -- jawaban
+    // messages.send yang gagal di sini bisa saja tetap sampai ke Gmail (5xx setelah diterima,
+    // koneksi putus). Ditulis lewat updateMany berpenjaga `externalId: null`, lalu dibaca
+    // ulang untuk nilai kembalian dan broadcast.
     vi.mocked(gmailSendRaw).mockRejectedValue(new Error('boom'))
+    mockPrisma.message.updateMany.mockResolvedValue({ count: 1 } as never)
+    mockPrisma.message.findUniqueOrThrow.mockResolvedValue({ id: 'msg_new', conversationId: 'conv_1', deliveryStatus: 'FAILED' } as never)
+
     await sendEmailMessage(params, undefined)
-    expect(mockPrisma.message.update).toHaveBeenCalledWith(expect.objectContaining({ data: { deliveryStatus: 'FAILED' } }))
+
+    expect(mockPrisma.message.updateMany).toHaveBeenCalledWith({
+      where: { id: 'msg_new', externalId: null }, data: { deliveryStatus: 'FAILED' },
+    })
+    expect(mockPrisma.message.update).not.toHaveBeenCalledWith(expect.objectContaining({ data: { deliveryStatus: 'FAILED' } }))
+    expect(mockPrisma.message.findUniqueOrThrow).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: 'msg_new' }, include: { replyTo: true } }),
+    )
+    expect(vi.mocked(broadcast).mock.calls.at(-1)?.[0]).toMatchObject({ type: 'message.updated', conversationId: 'conv_1' })
   })
 
   it('lampiran ditolak TERLIHAT, nol panggilan Gmail', async () => {

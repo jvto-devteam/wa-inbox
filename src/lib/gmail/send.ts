@@ -101,11 +101,25 @@ export async function sendEmailMessage(params: EmailSendParams, botTrace: Prisma
     deliveryStatus = 'FAILED'
   }
 
-  const updated = await prisma.message.update({
-    where: { id: pending.id },
-    data: externalId ? { deliveryStatus, externalId } : { deliveryStatus },
-    include: { replyTo: true },
-  })
+  let updated
+  if (externalId) {
+    updated = await prisma.message.update({
+      where: { id: pending.id },
+      data: { deliveryStatus, externalId },
+      include: { replyTo: true },
+    })
+  } else {
+    // Fix round 1 (Temuan 1b): deliveryStatus di sini adalah 'FAILED', tapi jawaban
+    // messages.send yang gagal ditangkap tidak berarti Gmail-nya gagal mengirim -- 5xx bisa
+    // muncul SETELAH Gmail menerima pesannya, koneksi bisa putus setelah itu, fetch bisa
+    // timeout. Salinan SENT dari email itu bisa sudah tersinkron balik dan direkonsiliasi
+    // ingest.ts (src/lib/gmail/ingest.ts) SEBELUM baris ini sampai di sini. updateMany
+    // berpenjaga externalId: null supaya update ini TIDAK PERNAH menimpa baris yang sudah
+    // SENT kembali jadi FAILED -- itu yang membuat operator menekan retry dan pelanggan
+    // menerima email yang sama dua kali.
+    await prisma.message.updateMany({ where: { id: pending.id, externalId: null }, data: { deliveryStatus: 'FAILED' } })
+    updated = await prisma.message.findUniqueOrThrow({ where: { id: pending.id }, include: { replyTo: true } })
+  }
   broadcast({ type: 'message.updated', conversationId: params.conversationId, message: withMediaUrl(updated) })
   return updated
 }
