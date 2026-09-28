@@ -132,6 +132,60 @@ describe('ingestGmailMessage — masuk', () => {
     expect(mockPrisma.message.update).not.toHaveBeenCalled()
     expect(mockPrisma.message.create).toHaveBeenCalled()
   })
+
+  // Temuan review 1: byte NUL (0x00) lolos parseGmailMessage/cleanEmailBody dan bikin Postgres
+  // menolak tulisan (error 22021, BUKAN P2002) -- ingestGmailMessage melempar, sync menandai
+  // INGEST_FAILED dan kursor tidak pernah maju melewati email itu.
+  it('byte NUL di badan, subjek, dan nama pengirim dibuang sebelum tulis apa pun ke DB', async () => {
+    const msg: GmailMessage = {
+      id: 'gm_nul',
+      threadId: 'th_nul',
+      labelIds: ['INBOX'],
+      internalDate: '1759000000000',
+      payload: {
+        mimeType: 'text/plain',
+        headers: [
+          { name: 'From', value: 'Sinta\u0000 W <sinta@example.com>' },
+          { name: 'Subject', value: 'Tur\u0000 Bromo' },
+        ],
+        body: { data: b64('Masih ada slot\u000012 Okt?') },
+      },
+    }
+
+    expect(await ingestGmailMessage(account, msg)).toBe('created')
+
+    const createdContent = mockPrisma.message.create.mock.calls[0][0].data.content as string
+    expect(createdContent).not.toContain('\u0000')
+
+    const upsertCreate = mockPrisma.conversation.upsert.mock.calls[0][0].create as { subject: string | null }
+    expect(upsertCreate.subject).not.toContain('\u0000')
+
+    const contactCreateName = mockPrisma.contact.create.mock.calls[0]?.[0]?.data?.name as string
+    expect(contactCreateName).not.toContain('\u0000')
+
+    const displayName = vi.mocked(upsertChannelIdentity).mock.calls[0][0].displayName as string
+    expect(displayName).not.toContain('\u0000')
+  })
+
+  // Temuan review 2: relay form/OTA/notifikasi kirim dari `noreply@...` dengan Reply-To berisi
+  // alamat tamu sesungguhnya. Tanpa ini, identitas dan balasan Inbox menempel ke noreply@.
+  it('Reply-To dipakai sebagai identitas pelanggan; From tetap dipakai untuk nama tampilan', async () => {
+    await ingestGmailMessage(account, email({
+      from: 'noreply@relay.com',
+      headers: [{ name: 'Reply-To', value: 'Tamu <tamu@example.com>' }],
+    }))
+    expect(upsertChannelIdentity).toHaveBeenCalledWith(expect.objectContaining({
+      platform: 'EMAIL', externalId: 'tamu@example.com', displayName: 'Tamu',
+    }))
+  })
+
+  it('penjaga "dari kotak surat sendiri" tetap memakai From walau ada Reply-To eksternal', async () => {
+    expect(await ingestGmailMessage(account, email({
+      from: 'JVTO <hello@javavolcano-touroperator.com>',
+      headers: [{ name: 'Reply-To', value: 'tamu@example.com' }],
+    }))).toBe('skipped')
+    expect(mockPrisma.conversation.upsert).not.toHaveBeenCalled()
+  })
 })
 
 describe('ingestGmailMessage — keluar (SENT)', () => {

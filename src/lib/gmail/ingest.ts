@@ -26,8 +26,20 @@ function isUniqueViolation(error: unknown): boolean {
   return error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002'
 }
 
+/**
+ * Postgres menolak byte NUL (0x00) di kolom TEXT (error 22021, BUKAN P2002) -- email dari
+ * pengirim otomatis/rusak kadang membawanya di badan, subjek, atau nama tampilan. Tanpa ini
+ * `prisma.message.create`/`conversation.upsert` melempar error yang TIDAK ditangkap sebagai
+ * P2002, `ingestGmailMessage` ikut melempar, `syncMailAccount` menandai INGEST_FAILED dan
+ * TIDAK memajukan kursor (lihat sync.ts) -- setiap sinkronisasi berikutnya menarik ulang semua
+ * email sejak saat itu, selamanya, sampai seseorang menghapus email itu secara manual.
+ */
+function stripNulByte<T extends string | null>(value: T): T {
+  return (value === null ? null : (value as string).replace(/\u0000/g, '')) as T
+}
+
 function composeContent(email: ParsedEmail): string {
-  const body = cleanEmailBody(email.body)
+  const body = cleanEmailBody(stripNulByte(email.body))
   const attachments = email.attachments.map((name) => `[Lampiran: ${name}]`).join('\n')
   return [body, attachments].filter(Boolean).join('\n\n') || '(email tanpa isi)'
 }
@@ -50,10 +62,22 @@ export async function ingestGmailMessage(account: { id: string; emailAddress: st
     return 'skipped'
   }
   // Tanpa label SENT tapi "dari" kotak surat ini sendiri: catatan untuk diri sendiri, atau
-  // pemalsuan From. Bukan pelanggan -- jangan lahirkan kontak ber-alamat JVTO.
+  // pemalsuan From. Bukan pelanggan -- jangan lahirkan kontak ber-alamat JVTO. Penjaga ini
+  // SELALU memakai From, tidak pernah Reply-To di bawah -- Reply-To hanya mengubah KE MANA
+  // balasan pergi, bukan siapa yang dianggap mengirim email ini.
   if (email.from.address === account.emailAddress) return 'skipped'
 
-  const conversationId = await findOrCreateThread(account, email, email.from)
+  // Relay form/OTA/notifikasi (temuan review): From sering `noreply@...`, sedangkan Reply-To
+  // membawa alamat tamu yang sesungguhnya bisa dibalas. Identitas pelanggan (ChannelIdentity.
+  // externalId, dipakai gmail/send.ts sebagai penerima) mengikuti Reply-To kalau ada. Nama
+  // tampilan tetap mengutamakan From -- relay biasanya menaruh nama tamu di From, bukan di
+  // Reply-To yang sering hanya berisi alamat telanjang.
+  const customerIdentity: EmailAddress = {
+    address: (email.replyTo ?? email.from).address,
+    name: stripNulByte(email.from.name ?? email.replyTo?.name ?? null),
+  }
+
+  const conversationId = await findOrCreateThread(account, email, customerIdentity)
   return createMessage(conversationId, email, content, 'INBOUND')
 }
 
@@ -97,7 +121,7 @@ async function ingestOutbound(account: { id: string }, email: ParsedEmail, conte
   return createMessage(conversation.id, email, content, 'OUTBOUND')
 }
 
-async function findOrCreateThread(account: { id: string }, email: ParsedEmail, from: EmailAddress): Promise<string> {
+async function findOrCreateThread(account: { id: string }, email: ParsedEmail, customer: EmailAddress): Promise<string> {
   // Benang dicari lewat (kotak surat, thread Gmail) LEBIH DULU, siapa pun pengirimnya: orang
   // kedua yang ikut membalas di thread yang sama harus masuk benang yang sama.
   const byThread = await prisma.conversation.findFirst({
@@ -110,15 +134,15 @@ async function findOrCreateThread(account: { id: string }, email: ParsedEmail, f
   // src/lib/inbound-messenger.ts, supaya pelanggan yang menulis 50 email tidak meninggalkan
   // 49 Contact yatim.
   const known = await prisma.channelIdentity.findUnique({
-    where: { platform_externalId: { platform: 'EMAIL', externalId: from.address } },
+    where: { platform_externalId: { platform: 'EMAIL', externalId: customer.address } },
     select: { contactId: true },
   })
-  const contactId = known?.contactId ?? (await prisma.contact.create({ data: { phone: null, name: from.name } })).id
+  const contactId = known?.contactId ?? (await prisma.contact.create({ data: { phone: null, name: customer.name } })).id
   const identity = await upsertChannelIdentity({
     platform: 'EMAIL',
-    externalId: from.address,
+    externalId: customer.address,
     contactId,
-    displayName: from.name ?? undefined,
+    displayName: customer.name ?? undefined,
   })
 
   try {
@@ -130,7 +154,7 @@ async function findOrCreateThread(account: { id: string }, email: ParsedEmail, f
         channelIdentityId: identity.id,
         externalThreadId: email.threadId,
         mailAccountId: account.id,
-        subject: email.subject,
+        subject: stripNulByte(email.subject),
         lastMessageAt: email.sentAt,
         botEnabled: false,
       },
