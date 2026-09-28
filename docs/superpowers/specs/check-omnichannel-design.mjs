@@ -113,10 +113,13 @@ else {
     failures.push(`enum MessageChannel sekarang [${values.join(', ')}] — desain mengasumsikan tepat OFFICIAL+UNOFFICIAL`)
 }
 
-// §4 — fondasi SUDAH dibangun (2026-09-24); MailAccount masih menunggu fase email.
+// §4 — fondasi SUDAH dibangun (2026-09-24); MailAccount SUDAH (fase email, 2026-09-28).
 mustContain('prisma/schema.prisma', /^enum Platform /m, 'enum Platform')
 mustContain('prisma/schema.prisma', /^model ChannelIdentity /m, 'model ChannelIdentity')
-mustNotContain('prisma/schema.prisma', /^model MailAccount /m, 'model MailAccount (fase email, belum)')
+mustContain('prisma/schema.prisma', /^model MailAccount /m, 'model MailAccount')
+// §4.3: alamat pengirim balasan disimpan eksplisit, bukan disimpulkan.
+mustContain('prisma/schema.prisma', /mailAccountId String\?/, 'Conversation.mailAccountId')
+mustContain('prisma/schema.prisma', /@@unique\(\[mailAccountId, externalThreadId\]\)/, 'satu thread Gmail = satu percakapan')
 
 // ---------------------------------------------------------------------------
 // §5 — gerbang bot: satu, bukan dua

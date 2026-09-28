@@ -48,6 +48,34 @@ model WaNumber {
   createdAt        DateTime @default(now())
 }
 
+/// Kotak surat MILIK JVTO (bukan pelanggan). Meniru bentuk WaNumber: satu baris per kotak
+/// surat yang disambungkan lewat OAuth dari panel Pengaturan -> Kotak surat email.
+model MailAccount {
+  id             String    @id @default(cuid())
+  /// Selalu huruf kecil. Push Pub/Sub menyebut kotak surat lewat alamat ini, jadi ejaannya
+  /// harus satu -- "Hello@" dan "hello@" yang tersimpan sebagai dua baris berarti push untuk
+  /// salah satunya tidak pernah menemukan akunnya.
+  emailAddress   String    @unique
+  /// Token OAuth. TIDAK PERNAH keluar ke UI, API response, audit log, atau log server
+  /// (CLAUDE.md §5). Setiap pembaca memakai `select` eksplisit tanpa kolom ini.
+  refreshToken   String
+  /// Kursor Gmail history.list. Null = belum pernah tersinkron.
+  historyId      String?
+  /// watch() Gmail mati tiap 7 hari. Null / lewat = harus diperpanjang (src/lib/gmail/sync.ts).
+  watchExpiresAt DateTime?
+  /// Sinkronisasi TERAKHIR YANG BERHASIL. Dipisah dari lastSyncError supaya panel bisa
+  /// menunjukkan "terakhir berhasil 3 jam lalu" saat sinkronisasi sedang gagal -- kegagalan
+  /// yang tidak menampilkan umurnya terlihat sama dengan kegagalan yang baru saja terjadi.
+  lastSyncAt     DateTime?
+  /// Kategori kegagalan terakhir (MailSyncError di src/lib/gmail/sync.ts), null = sehat.
+  /// Hanya kategori tetap, TIDAK PERNAH teks error mentah: teks dari Google bisa berubah
+  /// bentuk, dan kolom ini tampil di UI.
+  lastSyncError  String?
+  createdAt      DateTime  @default(now())
+
+  conversations Conversation[]
+}
+
 enum Platform {
   WHATSAPP
   INSTAGRAM
@@ -171,10 +199,24 @@ model Conversation {
   /// di tengah jalan.
   externalThreadId String @default("")
 
+  /// Hanya untuk EMAIL: kotak surat JVTO mana yang disurati. Menentukan alamat pengirim
+  /// balasan (spec §4.3) -- disimpan eksplisit, tidak pernah disimpulkan. Orang yang sama
+  /// menyurati dua alamat JVTO = dua benang. Itu benar, bukan bug.
+  mailAccountId String?
+  mailAccount   MailAccount? @relation(fields: [mailAccountId], references: [id])
+  /// Hanya untuk EMAIL: subjek benang saat lahir.
+  subject       String?
+
   /// Dipasang di Task 5b, setelah backfill Task 5 selesai (0 duplikat terverifikasi 2026-09-24).
   /// Ini yang membuat conversation.upsert bisa dikunci lewat (channelIdentityId,
   /// externalThreadId) alih-alih contactId -- kunci yang akan dilepas Task 9.
   @@unique([channelIdentityId, externalThreadId])
+  /// Satu thread Gmail di satu kotak surat = satu percakapan, siapa pun pengirimnya. Tanpa
+  /// ini, istri pelanggan yang ikut membalas di thread yang sama melahirkan percakapan kedua
+  /// (kunci di atas memakai channelIdentityId, dan identitasnya berbeda). Baris non-email
+  /// punya mailAccountId NULL, dan Postgres menganggap setiap NULL berbeda -- jadi indeks ini
+  /// tidak mengekang WhatsApp/Instagram/Facebook sama sekali.
+  @@unique([mailAccountId, externalThreadId])
   /// Dilonggarkan dari @@unique di Task 9: satu Contact sekarang boleh punya banyak
   /// Conversation (identitas ganda lintas channel). Index biasa menjaga lookup by
   /// contactId tetap cepat tanpa memaksa keunikan.

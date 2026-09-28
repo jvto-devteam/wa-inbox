@@ -104,6 +104,8 @@ const conversationRow = {
   createdAt: new Date(),
   channelIdentityId: null,
   externalThreadId: '',
+  mailAccountId: null,
+  subject: null,
 }
 
 const samplePayload = {
