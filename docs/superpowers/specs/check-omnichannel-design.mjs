@@ -151,6 +151,9 @@ mustContain('src/lib/meta/messenger-types.ts', /object === 'page' \|\| object ==
 
 // Fase Instagram SELESAI 2026-09-26: assertion-nya berbalik arah, seperti §4 dan §6 sebelumnya.
 mustContain('src/lib/send.ts', /platform === 'FACEBOOK' \|\| platform === 'INSTAGRAM'/, 'cabang kirim FACEBOOK dan INSTAGRAM')
+// Fase email: cabang kirim EMAIL, dan balasan keluar dari alamat yang disurati (§4.3, §7).
+mustContain('src/lib/send.ts', /platform === 'EMAIL'/, 'cabang kirim EMAIL')
+mustContain('src/lib/gmail/send.ts', /mailAccount: \{ select: \{ id: true, emailAddress: true/, 'FROM dari Conversation.mailAccount, bukan disimpulkan')
 mustContain('src/lib/channel/platform.ts', /SHIPPED_PLATFORMS = \['WHATSAPP', 'FACEBOOK', 'INSTAGRAM'\]/, 'INSTAGRAM di SHIPPED_PLATFORMS')
 // Kedua modul Meta WAJIB tetap sadar-platform. Graph API memperlakukan keduanya berbeda:
 // PSID Facebook hanya bisa lewat /{page_id}/conversations, IGSID justru lewat profil langsung.

@@ -9,6 +9,7 @@ import { sendCoexistText, sendCoexistMedia } from '@/lib/coexist/client'
 import { resolveChannelForCapability } from '@/lib/channel-router'
 import type { ChannelCapabilityKey } from '@/lib/bot-control/channel-capabilities'
 import { broadcast } from '@/lib/realtime'
+import { sendEmailMessage } from '@/lib/gmail/send'
 import { withMediaUrl } from '@/lib/serialize-message'
 import { enqueueOutboundJob } from '@/lib/outbound/queue'
 import { processOutboundJob } from '@/lib/outbound/worker'
@@ -91,7 +92,7 @@ export async function sendMessage(params: {
   // gagal ke arah paling membingungkan: percakapan Facebook diam-diam dikirim lewat gerbang
   // telepon WhatsApp dan selalu gagal, karena kontak Facebook tidak pernah punya nomor
   // telepon. Review round 1, Temuan 1.
-  platform?: 'WHATSAPP' | 'FACEBOOK' | 'INSTAGRAM'
+  platform?: 'WHATSAPP' | 'FACEBOOK' | 'INSTAGRAM' | 'EMAIL'
 }) {
   // Sanitized ONCE, here, before any of this function's writes (blocked below, the direct
   // write further down, sendViaQueue's own write, and sendMessengerMessage's write below --
@@ -122,6 +123,13 @@ export async function sendMessage(params: {
   // Instagram Professional tertaut ke Page yang sama), jadi satu cabang untuk keduanya --
   // bukan dua cabang yang cepat atau lambat berselisih. `platform` diteruskan ke bawah
   // supaya body kirim dan pesan error tetap benar per platform.
+  // Email punya jalurnya sendiri (src/lib/gmail/send.ts): tidak ada capability matrix, tidak
+  // ada nomor telepon, dan penerimanya alamat di ChannelIdentity.externalId. Dicek duluan
+  // supaya percakapan email tidak pernah jatuh ke gerbang `contact.phone` WhatsApp di bawah.
+  if (platform === 'EMAIL') {
+    return sendEmailMessage(params, botTrace)
+  }
+
   if (platform === 'FACEBOOK' || platform === 'INSTAGRAM') {
     return sendMessengerMessage(params, botTrace, conversation, platform)
   }

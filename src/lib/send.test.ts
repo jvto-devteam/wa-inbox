@@ -13,11 +13,13 @@ import { enqueueOutboundJob } from '@/lib/outbound/queue'
 import { processOutboundJob } from '@/lib/outbound/worker'
 import { broadcast } from '@/lib/realtime'
 import { sendMessengerText } from '@/lib/meta/messenger-send'
+import { sendEmailMessage } from '@/lib/gmail/send'
 
 vi.mock('@/lib/db', () => ({ prisma: mockDeep<PrismaClient>() }))
 vi.mock('@/lib/meta/messages', () => ({ sendMetaText: vi.fn(), sendMetaMedia: vi.fn() }))
 vi.mock('@/lib/meta/media-upload', () => ({ uploadMetaMediaFromUrl: vi.fn() }))
 vi.mock('@/lib/meta/messenger-send', () => ({ sendMessengerText: vi.fn() }))
+vi.mock('@/lib/gmail/send', () => ({ sendEmailMessage: vi.fn() }))
 vi.mock('@/lib/channel-router', () => ({ resolveChannelForCapability: vi.fn() }))
 // The real broadcast() is a harmless no-op against an empty in-memory listener set, which is
 // why no test here bothered to mock it before -- but Temuan I-4a (fix round 1) needs to assert
@@ -742,5 +744,22 @@ describe('percakapan Instagram', () => {
     // broadcast ke Inbox -- padanan Facebook-nya menegaskan keduanya, tes ini sebelumnya
     // hanya menegaskan separuh klaim namanya sendiri.
     expect(broadcast).toHaveBeenCalledWith(expect.objectContaining({ type: 'message.created', conversationId: 'conv_ig' }))
+  })
+})
+
+// Task 8 (fase email): percakapan EMAIL punya jalurnya sendiri (src/lib/gmail/send.ts), dicek
+// SEBELUM gerbang contact.phone WhatsApp -- kontak email tidak pernah punya nomor telepon.
+describe('percakapan EMAIL', () => {
+  it('percakapan EMAIL dirutekan ke sendEmailMessage, tidak menyentuh jalur WhatsApp', async () => {
+    mockPrisma.conversation.findUniqueOrThrow.mockResolvedValue({
+      id: 'conv_mail', isTest: false, contact: { phone: null }, channelIdentity: { platform: 'EMAIL', externalId: 'sinta@example.com' },
+    } as never)
+    vi.mocked(sendEmailMessage).mockResolvedValue({ id: 'msg_mail' } as never)
+
+    const result = await sendMessage({ conversationId: 'conv_mail', text: 'Halo', sentBy: 'AGENT' })
+
+    expect(result).toEqual({ id: 'msg_mail' })
+    expect(sendEmailMessage).toHaveBeenCalledWith(expect.objectContaining({ conversationId: 'conv_mail', text: 'Halo' }), undefined)
+    expect(mockPrisma.waNumber.findFirstOrThrow).not.toHaveBeenCalled()
   })
 })
