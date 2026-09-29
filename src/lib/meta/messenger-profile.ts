@@ -114,3 +114,51 @@ export async function fetchMessengerProfileName(
     return null
   }
 }
+
+/**
+ * Bahan tautan "buka di platform asal" untuk panel info kontak di Inbox.
+ *
+ * Dua platform, dua bentuk yang berbeda, dan keduanya diverifikasi di produksi 2026-09-29:
+ * - INSTAGRAM: IGSID memberi `username` langsung -> tautan profil instagram.com/<username>.
+ * - FACEBOOK: profil dari PSID TIDAK bisa dibuka (Graph menjawab error 100: PSID bukan objek
+ *   yang boleh dibaca Page). Yang tersedia hanya `link` percakapan di inbox Page, berbentuk
+ *   path relatif `/<page>/inbox/<thread>/?section=messages` -- tautan ke percakapannya, bukan
+ *   ke akun orangnya.
+ *
+ * Selalu mengembalikan nilai, tidak pernah melempar: panel harus tetap tampil walau Graph API
+ * sedang lambat atau token dicabut -- tautan yang hilang lebih baik daripada panel yang kosong.
+ */
+export async function fetchMessengerProfileLink(
+  externalId: string,
+  platform: 'FACEBOOK' | 'INSTAGRAM',
+): Promise<{ igUsername: string | null; fbThreadPath: string | null }> {
+  const empty = { igUsername: null, fbThreadPath: null }
+  const token = platform === 'INSTAGRAM' ? process.env.IG_USER_TOKEN : process.env.FB_PAGE_ACCESS_TOKEN
+  if (!token) return empty
+
+  const pageId = process.env.FB_PAGE_ID || DEFAULT_PAGE_ID
+  const url =
+    platform === 'INSTAGRAM'
+      ? `https://graph.instagram.com/${GRAPH_VERSION}/${externalId}?fields=username&access_token=${token}`
+      : `https://graph.facebook.com/${GRAPH_VERSION}/${pageId}/conversations?user_id=${externalId}&fields=link&access_token=${token}`
+
+  try {
+    const res = await fetch(url, { signal: AbortSignal.timeout(LOOKUP_TIMEOUT_MS) })
+    if (!res.ok) {
+      console.warn('fetchMessengerProfileLink: pencarian gagal', { platform, status: res.status })
+      return empty
+    }
+    const data: unknown = await res.json()
+    if (!isObject(data)) return empty
+
+    if (platform === 'INSTAGRAM') {
+      const username = (data as { username?: unknown }).username
+      return { igUsername: typeof username === 'string' ? username : null, fbThreadPath: null }
+    }
+    const link = (data as { data?: Array<{ link?: unknown }> }).data?.[0]?.link
+    return { igUsername: null, fbThreadPath: typeof link === 'string' ? link : null }
+  } catch {
+    console.warn('fetchMessengerProfileLink: pencarian melempar error', { platform })
+    return empty
+  }
+}

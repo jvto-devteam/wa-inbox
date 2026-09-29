@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { fetchMessengerProfileName } from './messenger-profile'
+import { fetchMessengerProfileName, fetchMessengerProfileLink } from './messenger-profile'
 
 beforeEach(() => {
   vi.stubEnv('FB_PAGE_ACCESS_TOKEN', 'token-uji')
@@ -184,6 +184,47 @@ describe('pemilihan host dan token per platform', () => {
     vi.stubGlobal('fetch', fetchMock)
 
     expect(await fetchMessengerProfileName('igsid_1', 'INSTAGRAM')).toBeNull()
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+})
+
+// Info kontak di panel kanan Inbox. Profil Facebook dari PSID TIDAK bisa dibuka (Graph menjawab
+// error 100 -- diverifikasi di produksi 2026-09-29), jadi yang tersedia hanya tautan percakapan
+// di inbox Page. Instagram memberi username langsung dari IGSID.
+describe('fetchMessengerProfileLink', () => {
+  it('Instagram: meminta username dari graph.instagram.com dengan token akun IG', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ username: 'sinta.jvto', id: 'igsid_1' }) })
+    vi.stubGlobal('fetch', fetchMock)
+
+    expect(await fetchMessengerProfileLink('igsid_1', 'INSTAGRAM')).toEqual({ igUsername: 'sinta.jvto', fbThreadPath: null })
+    const url = String(fetchMock.mock.calls[0][0])
+    expect(url).toContain('https://graph.instagram.com/')
+    expect(url).toContain('/igsid_1?fields=username')
+  })
+
+  it('Facebook: meminta link percakapan Page untuk PSID itu', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true, json: async () => ({ data: [{ id: 't_1', link: '/page_1/inbox/999/?section=messages' }] }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    expect(await fetchMessengerProfileLink('psid_abc', 'FACEBOOK')).toEqual({ igUsername: null, fbThreadPath: '/page_1/inbox/999/?section=messages' })
+    const url = String(fetchMock.mock.calls[0][0])
+    expect(url).toContain('/page_1/conversations?user_id=psid_abc')
+    expect(url).toContain('fields=link')
+  })
+
+  it('gagal atau tanpa token: nilai kosong, tidak melempar', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 400, json: async () => ({}) }))
+    expect(await fetchMessengerProfileLink('igsid_1', 'INSTAGRAM')).toEqual({ igUsername: null, fbThreadPath: null })
+
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('timeout')))
+    expect(await fetchMessengerProfileLink('psid_abc', 'FACEBOOK')).toEqual({ igUsername: null, fbThreadPath: null })
+
+    vi.stubEnv('IG_USER_TOKEN', '')
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+    expect(await fetchMessengerProfileLink('igsid_1', 'INSTAGRAM')).toEqual({ igUsername: null, fbThreadPath: null })
     expect(fetchMock).not.toHaveBeenCalled()
   })
 })

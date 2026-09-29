@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { render, screen, waitFor, fireEvent } from '@testing-library/react'
+import { render, screen, waitFor, fireEvent, within } from '@testing-library/react'
 import { ContactPanel } from './ContactPanel'
 
 const baseDetail = {
@@ -222,5 +222,49 @@ describe('ContactPanel — kolom, memuat, dan gulungan', () => {
     // twMerge harus membuang `flex` bawaan komponen, kalau tidak panel tetap terlihat di layar
     // sedang justru saat halaman menyuruhnya sembunyi.
     expect(column.className.split(/\s+/)).not.toContain('flex')
+  })
+})
+
+describe('ContactPanel — info kontak di platform asal', () => {
+  function mockFetchWithChannel(contact: unknown) {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url: string) => {
+        if (url === '/api/conversations/conv_1/channel') return Promise.resolve({ ok: true, json: () => Promise.resolve({ contact }) } as Response)
+        if (url === '/api/labels') return Promise.resolve({ ok: true, json: () => Promise.resolve(allLabels) } as Response)
+        if (url.startsWith('/api/contacts/')) return Promise.resolve({ ok: true, json: () => Promise.resolve([]) } as Response)
+        return Promise.resolve({ ok: true, json: () => Promise.resolve(baseDetail) } as Response)
+      })
+    )
+  }
+
+  it('menampilkan @username Instagram sebagai tautan yang terbuka di tab baru', async () => {
+    mockFetchWithChannel({
+      platform: 'INSTAGRAM', platformLabel: 'Instagram', value: '@sinta.jvto',
+      href: 'https://www.instagram.com/sinta.jvto/', linkLabel: 'Buka profil Instagram',
+    })
+    render(<ContactPanel conversationId="conv_1" />)
+
+    const link = await screen.findByRole('link', { name: '@sinta.jvto' })
+    expect(link).toHaveAttribute('href', 'https://www.instagram.com/sinta.jvto/')
+    expect(link).toHaveAttribute('target', '_blank')
+    expect(link).toHaveAttribute('rel', expect.stringContaining('noopener'))
+    expect(within(screen.getByRole('region', { name: 'Kontak' })).getByText('Instagram')).toBeInTheDocument()
+  })
+
+  it('nilai tanpa tautan tampil sebagai teks biasa', async () => {
+    mockFetchWithChannel({ platform: 'FACEBOOK', platformLabel: 'Facebook', value: 'David', href: null, linkLabel: null })
+    render(<ContactPanel conversationId="conv_1" />)
+
+    const section = await screen.findByRole('region', { name: 'Kontak' })
+    expect(within(section).getByText('David')).toBeInTheDocument()
+    expect(within(section).queryByRole('link')).not.toBeInTheDocument()
+  })
+
+  it('tanpa info kontak (respons kosong) bagian ini tidak tampil, panel tetap jalan', async () => {
+    mockFetchWithChannel(null)
+    render(<ContactPanel conversationId="conv_1" />)
+    await waitFor(() => expect(screen.getByText('Bruno Figarola')).toBeInTheDocument())
+    expect(screen.queryByRole('region', { name: 'Kontak' })).not.toBeInTheDocument()
   })
 })

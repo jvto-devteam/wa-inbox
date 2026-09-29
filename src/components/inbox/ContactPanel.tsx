@@ -12,6 +12,7 @@ import { BookingSummary, type BookingData, type TripBrief } from '@/components/c
 import { bookingGuestName, contactDisplayName } from '@/lib/booking/display-name'
 import { fetchJson } from '@/lib/fetch-json'
 import { PIPELINE_STAGES } from '@/lib/pipeline'
+import type { ChannelContact } from '@/lib/channel/contact-channel'
 
 type ContactDetail = {
   botEnabled: boolean
@@ -59,10 +60,16 @@ export function ContactPanel({ conversationId, className }: { conversationId: st
   const [detail, setDetail] = useState<ContactDetail | null>(null)
   const [allLabels, setAllLabels] = useState<LabelOption[]>([])
   const [pipelineError, setPipelineError] = useState<string | null>(null)
+  const [channel, setChannel] = useState<ChannelContact | null>(null)
 
   useEffect(() => {
     fetchJson<ContactDetail>(`/api/conversations/${conversationId}`).then(setDetail).catch(() => {})
     fetchJson<LabelOption[]>('/api/labels').then(setAllLabels).catch(() => {})
+    // Terpisah dari detail: untuk IG/FB endpoint ini bisa memanggil Graph API, dan panel tidak
+    // boleh menunggunya. Gagal = bagian Kontak saja yang tidak tampil.
+    fetchJson<{ contact?: ChannelContact | null }>(`/api/conversations/${conversationId}/channel`)
+      .then((data) => setChannel(data.contact ?? null))
+      .catch(() => {})
   }, [conversationId])
 
   // Mirrors LabelPicker's pattern: the pipeline stage drives follow-up/triage
@@ -109,6 +116,30 @@ export function ContactPanel({ conversationId, className }: { conversationId: st
           {detail.source && <p className="truncate text-xs text-ink-muted">{detail.source}</p>}
         </div>
       </div>
+
+      {channel && (
+        // Kontak di platform asal: nomor WA, alamat email, @username IG, atau nama FB -- dengan
+        // tautan ke sana kalau ada. Facebook hanya bisa ditautkan ke percakapan di inbox Page,
+        // bukan ke profil orangnya (Meta tidak membuka profil dari PSID).
+        <section aria-label="Kontak" className="space-y-1">
+          <PanelSectionTitle>Kontak</PanelSectionTitle>
+          <p className="text-xs text-ink-muted">{channel.platformLabel}</p>
+          {channel.href ? (
+            <a
+              href={channel.href}
+              target="_blank"
+              rel="noopener noreferrer"
+              title={channel.linkLabel ?? undefined}
+              className="block text-sm font-medium break-all text-accent hover:underline"
+            >
+              {channel.value}
+            </a>
+          ) : (
+            <p className="text-sm break-all text-ink">{channel.value}</p>
+          )}
+          {channel.href && channel.linkLabel && <p className="text-xs text-ink-subtle">{channel.linkLabel} ↗</p>}
+        </section>
+      )}
 
       <BookingSummary bookingData={detail.bookingData} tripBrief={detail.tripBrief} />
 
