@@ -1,7 +1,7 @@
 # Omnichannel Inbox — Desain
 
 **Tanggal:** 2026-09-23
-**Status:** desain, menunggu review operator. Belum ada kode.
+**Status:** fondasi, sakelar per channel, Facebook, Instagram, dan Email (fase 3) tayang. Fase 3b (pelabel) belum.
 **Pemeriksa mekanis:** `node docs/superpowers/specs/check-omnichannel-design.mjs` (wajib hijau)
 
 ---
@@ -399,6 +399,12 @@ perubahan gerbang bot tidak bercampur dengan migrasi skema saat ada yang perlu d
 **Fase 3 — Email.** Tidak butuh App Review Meta, jadi tidak menunggu siapa pun. `MailAccount`,
 OAuth dua kotak surat, `watch()` + Pub/Sub + cron pengaman, pembersih kutipan, pengiriman via
 Gmail API. Alur drafnya sudah ada.
+
+**SELESAI 2026-09-29** lewat `docs/superpowers/plans/2026-09-28-omnichannel-email.md`; tab Email
+menyala setelah uji ujung-ke-ujung di produksi. Dua penyimpangan sengaja dari dokumen ini:
+sakelar bot Email **dilepas** (keputusan D1 rencana itu — bot tidak pernah menjawab email, dan
+sakelar tanpa efek dilarang §5), dan daily summary **mengecualikan benang email otomatis**
+lewat `Conversation.mailAutomated` (keputusan owner 2026-09-29), mendahului pelabel fase 3b.
 
 **Fase 3b — pelabel otomatis.** Dipisah dari fase 3 dengan sengaja: email harus terbukti masuk,
 terbaca, dan terbalas lebih dulu. Pelabel adalah lapisan kenyamanan di atas itu, dan memisahkannya

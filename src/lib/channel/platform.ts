@@ -43,14 +43,17 @@ export const BOT_TOGGLE_COLUMN_BY_PLATFORM = {
  * isi tabel membuat orang ragu apakah ia salah lihat.
  *
  * Tab kosong lebih buruk daripada tidak ada tab: ia menjanjikan sesuatu yang tidak bisa
- * diberikan, dan tidak bisa dibedakan dari channel yang rusak. Karena itu Email TIDAK ada
- * di sini sampai fasenya benar-benar selesai.
+ * diberikan, dan tidak bisa dibedakan dari channel yang rusak. Karena itu sebuah platform
+ * baru masuk ke sini setelah fasenya benar-benar selesai, tidak sebelumnya.
  *
  * Instagram masuk 2026-09-26, setelah jalurnya utuh DAN terverifikasi di Meta: Page token
  * dengan `instagram_basic` + `instagram_manage_messages` yang tidak kedaluwarsa, akun
  * @javavolcanotouroperator tertaut ke Page, dan objek webhook `instagram` terdaftar aktif.
+ *
+ * Email masuk 2026-09-29, setelah uji ujung-ke-ujung di produksi: email ke hello@ masuk lewat
+ * push Gmail, terbalas dari Inbox dalam thread yang sama (SENT), tanpa duplikat salinan SENT.
  */
-export const SHIPPED_PLATFORMS = ['WHATSAPP', 'FACEBOOK', 'INSTAGRAM'] as const satisfies readonly Platform[]
+export const SHIPPED_PLATFORMS = ['WHATSAPP', 'FACEBOOK', 'INSTAGRAM', 'EMAIL'] as const satisfies readonly Platform[]
 
 export const PLATFORM_LABEL: Record<Platform, string> = {
   WHATSAPP: 'WhatsApp',

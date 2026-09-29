@@ -120,6 +120,17 @@ Definisi "macet" ada di **satu tempat**: `src/lib/outbound/stuck.ts` — dipakai
 recovery di worker dan filter di halaman Outbound Queue. Kalau dua tempat mendefinisikannya
 sendiri-sendiri, halaman berbohong tentang tombol di sebelahnya.
 
+### Email (Gmail)
+`MailAccount` (satu baris per kotak surat JVTO, disambungkan lewat OAuth di Pengaturan → Kotak
+surat email). `refreshToken` **tidak pernah** keluar ke UI/API/log. Satu thread Gmail = satu
+`Conversation` (`externalThreadId` = threadId, `mailAccountId` = kotak surat yang disurati;
+balasan keluar dari alamat itu). Masuk lewat dua lapis: push Pub/Sub `POST /api/webhooks/gmail`
+(bel pintu, token di query; project GCP `jvto-wa-inbox`) dan crontab VPS `*/15`
+`POST /api/email/sync` yang **sekaligus memperpanjang `watch()`** (mati tiap 7 hari).
+**Bot tidak pernah menjawab email** — draf manual saja; tidak ada sakelar bot Email.
+`Conversation.mailAutomated` menandai benang dari pengirim mesin (label, bukan gerbang):
+email tetap masuk, hanya daily summary yang tidak mengumpulkannya. Kode di `src/lib/gmail/`.
+
 ### Decision log & triage
 `BotDecisionRun` + trace viewer + popover di Inbox. Triage = dua kolom `flaggedAt` /
 `flagNote` pada baris yang sama, bukan tabel tersendiri.

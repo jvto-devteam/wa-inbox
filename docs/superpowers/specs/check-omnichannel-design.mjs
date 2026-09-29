@@ -154,22 +154,26 @@ mustContain('src/lib/send.ts', /platform === 'FACEBOOK' \|\| platform === 'INSTA
 // Fase email: cabang kirim EMAIL, dan balasan keluar dari alamat yang disurati (§4.3, §7).
 mustContain('src/lib/send.ts', /platform === 'EMAIL'/, 'cabang kirim EMAIL')
 mustContain('src/lib/gmail/send.ts', /mailAccount: \{ select: \{ id: true, emailAddress: true/, 'FROM dari Conversation.mailAccount, bukan disimpulkan')
-mustContain('src/lib/channel/platform.ts', /SHIPPED_PLATFORMS = \['WHATSAPP', 'FACEBOOK', 'INSTAGRAM'\]/, 'INSTAGRAM di SHIPPED_PLATFORMS')
+mustContain('src/lib/channel/platform.ts', /SHIPPED_PLATFORMS = \['WHATSAPP', 'FACEBOOK', 'INSTAGRAM', 'EMAIL'\]/, 'INSTAGRAM dan EMAIL di SHIPPED_PLATFORMS')
 // Kedua modul Meta WAJIB tetap sadar-platform. Graph API memperlakukan keduanya berbeda:
 // PSID Facebook hanya bisa lewat /{page_id}/conversations, IGSID justru lewat profil langsung.
 // Kalau parameternya dilepas, IGSID ditanyakan ke Page Facebook dan setiap kontak Instagram
 // lahir tanpa nama -- diam-diam, tanpa error.
 mustContain('src/lib/meta/messenger-profile.ts', /platform: 'FACEBOOK' \| 'INSTAGRAM'/, 'messenger-profile sadar platform')
 mustContain('src/lib/meta/messenger-send.ts', /platform: 'FACEBOOK' \| 'INSTAGRAM'/, 'messenger-send sadar platform')
-// Email BELUM: klaim "belum ada" berikutnya, yang harus basi saat fase email jalan.
-mustNotContain('src/lib/channel/platform.ts', /SHIPPED_PLATFORMS = \[[^\]]*EMAIL/, 'EMAIL di SHIPPED_PLATFORMS (fase email, belum)')
-
-// §6.3 — belum ada infrastruktur email sama sekali.
-// Dipersempit ke IMPOR dan PEMAKAIAN, bukan sekadar penyebutan: komentar dokumentasi
-// `externalThreadId` menyebut "threadId Gmail" sebagai penjelasan, dan versi lama
-// pemeriksa ini salah membacanya sebagai infrastruktur email yang sudah terpasang.
+// §6.3 — infrastruktur email hidup di src/lib/gmail/, TIDAK di inbound.ts/send.ts: keduanya
+// hanya mendelegasikan, tanpa SDK email. Dipersempit ke IMPOR dan PEMAKAIAN, bukan sekadar
+// penyebutan: komentar dokumentasi `externalThreadId` menyebut "threadId Gmail".
 for (const rel of ['src/lib/inbound.ts', 'src/lib/send.ts'])
   mustNotContain(rel, /from ['"](nodemailer|imap|googleapis)|gmail\.users|createTransport/i, 'impor/pemakaian email')
+
+// §6.3 — dua lapis masuk: push + tarikan cron yang sekaligus memperpanjang watch().
+fileExists('src/app/api/webhooks/gmail/route.ts')
+mustContain('src/middleware.ts', /'\/api\/email\/sync'/, 'sinkronisasi email sebagai jalur cron')
+mustContain('src/lib/gmail/sync.ts', /renewWatchIfDue/, 'perpanjangan watch() di jalur sinkronisasi')
+// §2 / §11 — bot TIDAK menjawab email: percakapan email lahir dengan bot mati, dan sakelarnya tidak diterima.
+mustContain('src/lib/gmail/ingest.ts', /botEnabled: false/, 'percakapan email lahir tanpa bot')
+mustNotContain('src/app/api/bot/channel-toggle/route.ts', /z\.enum\(\[[^\]]*'EMAIL'/, 'sakelar bot EMAIL')
 
 // ---------------------------------------------------------------------------
 // §7 — dispatch keluar masih WhatsApp-saja
