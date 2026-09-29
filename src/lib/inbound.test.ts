@@ -106,6 +106,7 @@ const conversationRow = {
   externalThreadId: '',
   mailAccountId: null,
   subject: null,
+  mailAutomated: false,
 }
 
 const samplePayload = {

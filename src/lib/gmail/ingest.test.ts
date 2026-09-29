@@ -215,6 +215,35 @@ describe('ingestGmailMessage — masuk', () => {
   })
 })
 
+// Penanda email otomatis (newsletter, notifikasi, balasan mesin): dipakai daily summary untuk
+// menyaring benang yang tidak butuh perhatian manusia. Label, bukan gerbang -- email tetap masuk.
+describe('ingestGmailMessage — penanda email otomatis', () => {
+  const mailAutomatedWrites = () =>
+    mockPrisma.conversation.updateMany.mock.calls.filter(([args]) => 'mailAutomated' in (args.data as object))
+
+  it('benang baru dari email otomatis lahir dengan mailAutomated true, tapi tetap masuk', async () => {
+    expect(await ingestGmailMessage(account, email({ headers: [{ name: 'List-Unsubscribe', value: '<mailto:u@x.com>' }] }))).toBe('created')
+    expect(mockPrisma.conversation.upsert.mock.calls[0][0].create).toMatchObject({ mailAutomated: true })
+  })
+
+  it('benang baru dari manusia lahir dengan mailAutomated false', async () => {
+    await ingestGmailMessage(account, email())
+    expect(mockPrisma.conversation.upsert.mock.calls[0][0].create).toMatchObject({ mailAutomated: false })
+  })
+
+  it('manusia yang menulis di benang otomatis mengangkat penandanya (sekali jadi manusia, tetap manusia)', async () => {
+    mockPrisma.conversation.findFirst.mockResolvedValue({ id: 'conv_existing' } as never)
+    await ingestGmailMessage(account, email())
+    expect(mailAutomatedWrites()).toEqual([[{ where: { id: 'conv_existing', mailAutomated: true }, data: { mailAutomated: false } }]])
+  })
+
+  it('email otomatis berikutnya di benang yang ada tidak menyentuh penandanya', async () => {
+    mockPrisma.conversation.findFirst.mockResolvedValue({ id: 'conv_existing' } as never)
+    await ingestGmailMessage(account, email({ from: 'noreply@klook.com' }))
+    expect(mailAutomatedWrites()).toEqual([])
+  })
+})
+
 describe('ingestGmailMessage — keluar (SENT)', () => {
   // Fix round 1 (Temuan 1): baris kita bisa salah tercatat FAILED/PENDING kalau jawaban
   // messages.send hilang (5xx setelah Gmail menerima, koneksi putus, timeout fetch) atau

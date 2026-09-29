@@ -23,6 +23,11 @@ import type { TripBriefSummary } from './payload-schema'
  * `excludeIndonesian` -- yaitu `Settings.skipBotForIndonesianNumbers`, aturan yang sama dengan
  * gerbang bot di src/lib/inbound.ts (`isIndonesianNumber`): nomor yang tidak dilayani bot
  * (staf, vendor, driver lokal) juga bukan bagian dari rekap percakapan pelanggan.
+ *
+ * Benang email bertanda otomatis (`Conversation.mailAutomated`: newsletter, notifikasi, balasan
+ * mesin -- src/lib/gmail/automated.ts) juga tidak dikumpulkan: tanpa saringan ini setiap
+ * notifikasi bank muncul sebagai "belum dibalas" dan memakan satu panggilan LLM. Kolom itu
+ * selalu false untuk WhatsApp/Instagram/Facebook, jadi saringan ini tidak menyentuh mereka.
  */
 
 export type CollectOptions = { excludeIndonesian: boolean }
@@ -156,7 +161,7 @@ export async function collectDay(start: Date, end: Date, options: CollectOptions
 
   const conversations = (
     await prisma.conversation.findMany({
-      where: { isTest: false, messages: { some: { createdAt: { gte: lookbackStart, lt: end } } } },
+      where: { isTest: false, mailAutomated: false, messages: { some: { createdAt: { gte: lookbackStart, lt: end } } } },
       select: { id: true, createdAt: true, pipelineStage: true, tripBrief: true, contact: { select: { name: true, phone: true } } },
     })
   ).filter((c) => included(c.contact.phone))

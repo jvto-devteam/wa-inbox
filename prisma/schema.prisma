@@ -206,6 +206,12 @@ model Conversation {
   mailAccount   MailAccount? @relation(fields: [mailAccountId], references: [id])
   /// Hanya untuk EMAIL: subjek benang saat lahir.
   subject       String?
+  /// Hanya untuk EMAIL: benang ini dari pengirim mesin (newsletter, notifikasi, balasan
+  /// otomatis) -- lihat src/lib/gmail/automated.ts. LABEL, BUKAN GERBANG: email tetap masuk
+  /// dan tetap terlihat di Inbox; yang memakai tanda ini hanya daily summary, supaya benang
+  /// otomatis tidak muncul sebagai "belum dibalas". Satu email dari manusia di benang itu
+  /// mengangkatnya kembali ke false, dan tidak pernah balik ke true.
+  mailAutomated Boolean @default(false)
 
   /// Dipasang di Task 5b, setelah backfill Task 5 selesai (0 duplikat terverifikasi 2026-09-24).
   /// Ini yang membuat conversation.upsert bisa dikunci lewat (channelIdentityId,

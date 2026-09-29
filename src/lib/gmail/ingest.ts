@@ -3,6 +3,7 @@ import { prisma } from '@/lib/db'
 import { upsertChannelIdentity } from '@/lib/channel/identity'
 import { broadcast } from '@/lib/realtime'
 import { withMediaUrl } from '@/lib/serialize-message'
+import { isAutomatedEmail } from './automated'
 import { cleanEmailBody } from './clean-body'
 import { parseGmailMessage, type EmailAddress, type ParsedEmail } from './parse'
 import type { GmailMessage } from './types'
@@ -83,7 +84,8 @@ export async function ingestGmailMessage(account: { id: string; emailAddress: st
     name: stripNulByte(email.from.name ?? replyTo?.name ?? null),
   }
 
-  const conversationId = await findOrCreateThread(account, email, customerIdentity)
+  const automated = isAutomatedEmail(message, email.from)
+  const conversationId = await findOrCreateThread(account, email, customerIdentity, automated)
   return createMessage(conversationId, email, content, 'INBOUND')
 }
 
@@ -127,14 +129,36 @@ async function ingestOutbound(account: { id: string }, email: ParsedEmail, conte
   return createMessage(conversation.id, email, content, 'OUTBOUND')
 }
 
-async function findOrCreateThread(account: { id: string }, email: ParsedEmail, customer: EmailAddress): Promise<string> {
+/**
+ * Email dari manusia di benang yang bertanda otomatis mengangkat tandanya: pelanggan yang
+ * membalas notifikasi booking adalah percakapan sungguhan dan harus masuk daily summary.
+ * Hanya satu arah -- email otomatis berikutnya tidak pernah menurunkannya lagi, supaya satu
+ * newsletter tidak menyembunyikan percakapan yang sudah terbukti melibatkan manusia.
+ */
+async function liftAutomatedFlag(conversationId: string, automated: boolean): Promise<void> {
+  if (automated) return
+  await prisma.conversation.updateMany({
+    where: { id: conversationId, mailAutomated: true },
+    data: { mailAutomated: false },
+  })
+}
+
+async function findOrCreateThread(
+  account: { id: string },
+  email: ParsedEmail,
+  customer: EmailAddress,
+  automated: boolean,
+): Promise<string> {
   // Benang dicari lewat (kotak surat, thread Gmail) LEBIH DULU, siapa pun pengirimnya: orang
   // kedua yang ikut membalas di thread yang sama harus masuk benang yang sama.
   const byThread = await prisma.conversation.findFirst({
     where: { mailAccountId: account.id, externalThreadId: email.threadId },
     select: { id: true },
   })
-  if (byThread) return byThread.id
+  if (byThread) {
+    await liftAutomatedFlag(byThread.id, automated)
+    return byThread.id
+  }
 
   // Identitas dulu, Contact hanya kalau identitasnya baru -- pola yang sama dengan
   // src/lib/inbound-messenger.ts, supaya pelanggan yang menulis 50 email tidak meninggalkan
@@ -163,6 +187,7 @@ async function findOrCreateThread(account: { id: string }, email: ParsedEmail, c
         subject: stripNulByte(email.subject),
         lastMessageAt: email.sentAt,
         botEnabled: false,
+        mailAutomated: automated,
       },
       select: { id: true },
     })
@@ -175,7 +200,10 @@ async function findOrCreateThread(account: { id: string }, email: ParsedEmail, c
         where: { mailAccountId: account.id, externalThreadId: email.threadId },
         select: { id: true },
       })
-      if (winner) return winner.id
+      if (winner) {
+        await liftAutomatedFlag(winner.id, automated)
+        return winner.id
+      }
     }
     throw error
   }

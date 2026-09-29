@@ -41,6 +41,16 @@ beforeEach(() => {
         ]) as never)
 })
 
+describe('collectDay — email otomatis', () => {
+  // Newsletter, notifikasi bank, dan balasan mesin tidak butuh perhatian manusia -- tanpa
+  // saringan ini setiap benang itu muncul sebagai "belum dibalas" dan memakan satu panggilan LLM.
+  it('benang email bertanda otomatis tidak ikut dikumpulkan', async () => {
+    await collectDay(start, end, { excludeIndonesian: false })
+    const first = mockPrisma.conversation.findMany.mock.calls[0][0] as { where: Record<string, unknown> }
+    expect(first.where).toMatchObject({ isTest: false, mailAutomated: false })
+  })
+})
+
 describe('collectDay — nomor Indonesia', () => {
   it('disaring dari percakapan, handoff, dan gap saat setelan chatbot aktif', async () => {
     const day = await collectDay(start, end, { excludeIndonesian: true })
