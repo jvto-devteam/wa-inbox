@@ -26,8 +26,13 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Hanya admin yang bisa menyambungkan kotak surat' }, { status: 403 })
   }
 
+  // Basis redirect dari APP_BASE_URL -- basis yang sama dengan redirect_uri OAuth (oauth.ts).
+  // req.url TIDAK bisa dipakai di produksi: di belakang reverse proxy VPS isinya
+  // http://localhost:3015, dan admin terlempar ke localhost setelah menyetujui izin Google
+  // (terjadi 2026-09-29). req.url hanya cadangan saat env itu kosong (dev lokal).
+  const base = process.env.APP_BASE_URL?.replace(/\/+$/, '') || req.url
   const finish = (outcome: Outcome) => {
-    const res = NextResponse.redirect(new URL(`/settings?section=kotak-surat&mail=${outcome}`, req.url))
+    const res = NextResponse.redirect(new URL(`/settings?section=kotak-surat&mail=${outcome}`, base))
     res.cookies.set(MAIL_OAUTH_STATE_COOKIE, '', { path: '/api/mail-accounts/oauth', maxAge: 0 })
     return res
   }

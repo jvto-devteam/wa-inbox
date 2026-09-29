@@ -34,6 +34,21 @@ beforeEach(() => {
 })
 
 describe('GET /api/mail-accounts/oauth/callback', () => {
+  // Di VPS aplikasi berjalan di belakang reverse proxy: req.url berisi http://localhost:3015,
+  // bukan domain publik. Redirect yang dibangun dari req.url mengirim admin ke localhost
+  // (terjadi di produksi 2026-09-29). Tujuan redirect harus dari APP_BASE_URL.
+  it('redirect kembali ke APP_BASE_URL, bukan ke host internal di req.url', async () => {
+    vi.stubEnv('APP_BASE_URL', 'https://wa-inbox.contoh.test/')
+    try {
+      const req = new NextRequest('http://localhost:3015/api/mail-accounts/oauth/callback?code=c&state=state-ok')
+      req.cookies.set('mail_oauth_state', 'state-ok')
+      const res = await GET(req)
+      expect(res.headers.get('location')).toBe('https://wa-inbox.contoh.test/settings?section=kotak-surat&mail=tersambung')
+    } finally {
+      vi.unstubAllEnvs()
+    }
+  })
+
   it('state tidak cocok: ditolak, tidak menukar code', async () => {
     const res = await callback('code=c&state=state-lain')
     expect(outcome(res)).toBe('state-tidak-cocok')
