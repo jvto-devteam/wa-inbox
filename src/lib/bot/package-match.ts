@@ -503,16 +503,40 @@ export function parseTripPreferences(message: string): TripPreferences {
   return { origin: parseOrigin(low), dayCount: parseDayCount(low), finishCity: parseFinishCity(low), pax: parsePax(low) }
 }
 
+// Awal baris berlabel. Peluru di depan ("- Start: Bali") ikut diterima: formulir bot sendiri
+// ditulis dengan peluru, dan pelanggan yang menyalinnya ikut menyalin pelurunya (dilaporkan live
+// 2026-10-01).
+const LABELLED_LINE_START = '(?:^|[\\n,;])\\s*(?:[-*\u2022\u00b7]\\s*)?'
+
 function parseLabelledField(low: string, labels: string[], role: 'origin' | 'finish'): string | null {
   const labelPattern = labels.map((label) => label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')
   const cityPattern = role === 'origin' ? ORIGIN_CITY_SOURCE : FINISH_CITY_SOURCE
-  const match = low.match(new RegExp(`(?:^|[\\n,;])\\s*(?:${labelPattern})\\s*:?\\s*(${cityPattern})\\b`, 'i'))
-  const city = match ? cityFromText(match[1], role) : null
+  // "Start (Surabaya/Bali): Bali" -- kurung salinan label formulir dilewati, kota sesudahnya yang dibaca.
+  const match = low.match(
+    new RegExp(`${LABELLED_LINE_START}(?:${labelPattern})\\s*(?:\\([^)\\n]*\\))?\\s*:?\\s*(${cityPattern})\\b`, 'i')
+  )
+  // "Start (Surabaya): 16th" -- pelanggan mengganti isi kurung dengan kotanya dan menulis tanggal
+  // sesudahnya. Dipakai hanya kalau kurung itu menyebut tepat satu kota: "(Surabaya/Bali)" bawaan
+  // formulir menyebut dua dan tidak menjawab apa pun.
+  const bracketed = match ? null : low.match(new RegExp(`${LABELLED_LINE_START}(?:${labelPattern})\\s*\\(([^)\\n]*)\\)`, 'i'))
+  const city = match ? cityFromText(match[1], role) : bracketed ? onlyCityIn(bracketed[1], role) : null
   return city ? (role === 'origin' ? city.canonical : city.finish) : null
 }
 
+function onlyCityIn(text: string, role: 'origin' | 'finish'): CityToken | null {
+  const found = CITY_TOKENS.filter((city) => city.pattern.test(text))
+  if (found.length !== 1) return null
+  return cityFromText(text, role)
+}
+
 function parseLabelledDayCount(low: string): number | null {
-  const match = low.match(/(?:^|[\n,;])\s*(?:number of day(?:s)?|days?|duration|durasi|jumlah hari)\s*:?\s*(\d{1,2})(?:\s*(?:days?|hari|d\b))?/i)
+  // "Number of Day(s): 3" -- label formulir bot sendiri, dengan "(s)"-nya.
+  const match = low.match(
+    new RegExp(
+      `${LABELLED_LINE_START}(?:number of day(?:\\(s\\)|s)?|days?|duration|durasi|jumlah hari)\\s*:?\\s*(\\d{1,2})(?:\\s*(?:days?|hari|d\\b))?`,
+      'i'
+    )
+  )
   if (!match) return null
   const n = Number(match[1])
   return n > 0 && n <= 30 ? n : null
@@ -549,7 +573,10 @@ export function parseTripPreferencesFormAnswer(message: string, state: TripPrefe
     dayCount: parseLabelledDayCount(low),
     pax: parsed.pax,
   })
-  if (labelled.origin || labelled.finishCity || labelled.dayCount || labelled.pax) return labelled
+  // Ukuran rombongan saja tidak menjadikan pesan ini jawaban formulir (dilaporkan live 2026-10-01):
+  // "We will be a group of 20. Start from Surabaya ... finish at Surabaya" diklaim di sini hanya
+  // karena pax-nya, jadi ekstraksi LLM dilewati dan start/finish di kalimat yang sama hilang.
+  if (labelled.origin || labelled.finishCity || labelled.dayCount) return labelled
 
   const route = routePair(low)
   if (route) return { ...NO_PREFERENCES, ...route, dayCount: parsed.dayCount, pax: parsed.pax }

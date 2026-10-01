@@ -589,6 +589,33 @@ describe('parseTripPreferences', () => {
         })
       ).toEqual({ origin: null, finishCity: 'surabaya', dayCount: null, pax: null })
     })
+
+    // Dilaporkan live 2026-10-01: pelanggan menyalin formulir bot sendiri, mengganti isi kurungnya,
+    // dan bot mengulang formulir yang sama karena label "Number of Day(s)" miliknya tidak terbaca.
+    it("reads the bot's own echoed form labels, bullets and parentheses included", () => {
+      expect(
+        parseTripPreferencesFormAnswer('- Start (Surabaya): 16th\n- Finish (Surabaya): 18th\n- Number of Day(s): 3', {
+          awaitingTripPreferencesAnswer: true,
+        })
+      ).toEqual({ origin: 'Surabaya', finishCity: 'surabaya', dayCount: 3, pax: null })
+      expect(
+        parseTripPreferencesFormAnswer('- Start (Surabaya/Bali): Bali\n- Finish (Surabaya/Bali): Surabaya\n- Number of Day(s): 4', {
+          awaitingTripPreferencesAnswer: true,
+        })
+      ).toEqual({ origin: 'Bali', finishCity: 'surabaya', dayCount: 4, pax: null })
+    })
+
+    // Dilaporkan live 2026-10-01: ukuran rombongan saja membuat pembaca ini mengklaim pesan itu
+    // sebagai jawaban formulir, sehingga ekstraksi LLM dilewati dan start/finish di kalimat yang
+    // sama hilang.
+    it('does not claim a free-text answer as a form answer from group size alone', () => {
+      expect(
+        parseTripPreferencesFormAnswer(
+          'We will be a group of 15 to 20 persons. Start from Surabaya on Oct 16 (we will arrive the 15th night) et finish at Surabaya on Sunday 18th',
+          { awaitingTripPreferencesAnswer: true }
+        )
+      ).toBeNull()
+    })
   })
 })
 
