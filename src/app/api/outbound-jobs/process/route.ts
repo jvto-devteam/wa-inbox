@@ -68,7 +68,7 @@ export async function POST(req: Request) {
 
   // Item antrean Summary Harian harus tertutup begitu admin membalas (atau pengingat jatuh
   // tempo), bukan menunggu ringkasan 00:00 berikutnya -- kalau tidak, halaman menyuruh orang
-  // membalas chat yang sudah dibalas. Dua kueri indeks per tick; tidak pernah melempar.
+  // membalas chat yang sudah dibalas. Per item OPEN/SCHEDULED ada 1-2 kueri pesan (ditambah satu kueri pengingat untuk SCHEDULED); tidak pernah melempar.
   await reconcileSummaryItems().catch((error: unknown) => {
     console.error('POST /api/outbound-jobs/process: rekonsiliasi antrean summary gagal', error)
   })

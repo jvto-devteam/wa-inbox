@@ -188,11 +188,15 @@ async function reconcileOne(
   if (kind === 'REPLY') {
     const outbound = await prisma.message.findFirst({
       where: { conversationId: item.conversationId, direction: 'OUTBOUND', createdAt: { gt: anchorAt } },
-      select: { id: true },
+      orderBy: { createdAt: 'asc' },
+      select: { id: true, createdAt: true },
     })
     if (outbound) {
       if (reminderId) completeReminderId = reminderId
-      Object.assign(data, { state: 'DONE', closedReason: 'REPLIED', closedAt: now })
+      // closedAt = waktu balasan, bukan waktu rekonsiliasi: pesan pelanggan yang datang di antara
+      // balasan dan tick berikutnya harus tetap terlihat "lebih baru dari closedAt" oleh sync,
+      // supaya item dibuka ulang dan pesannya tidak hilang dari antrean.
+      Object.assign(data, { state: 'DONE', closedReason: 'REPLIED', closedAt: outbound.createdAt })
       result.closed++
       await write(item.id, data, completeReminderId)
       return
@@ -207,6 +211,7 @@ async function reconcileOne(
       touched = true
       result.reopened++
     } else if (reminder.done) {
+      // Tabel Reminder tidak punya waktu selesai, jadi satu-satunya penanda yang ada adalah `now`.
       Object.assign(data, { state: 'DONE', closedReason: 'REMINDER_DONE', closedAt: now })
       touched = true
       result.closed++

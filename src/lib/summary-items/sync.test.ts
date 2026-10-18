@@ -79,10 +79,12 @@ describe('reconcileSummaryItems', () => {
 
   it('REPLY dengan OUTBOUND sesudah anchor -> DONE/REPLIED dan reminder done', async () => {
     mockPrisma.summaryItem.findMany.mockResolvedValue([row({ state: 'SCHEDULED', reminderId: 'r1' })] as never)
-    mockPrisma.message.findFirst.mockResolvedValue({ id: 'o1' } as never)
+    const sentAt = at('2026-10-17T03:00:00Z')
+    mockPrisma.message.findFirst.mockResolvedValue({ id: 'o1', createdAt: sentAt } as never)
     const r = await reconcileSummaryItems(NOW)
     expect(r).toEqual({ closed: 1, converted: 0, reopened: 0 })
-    expect(mockPrisma.summaryItem.update.mock.calls[0][0].data).toMatchObject({ state: 'DONE', closedReason: 'REPLIED', closedAt: NOW })
+    // closedAt = waktu balasan, bukan NOW.
+    expect(mockPrisma.summaryItem.update.mock.calls[0][0].data).toMatchObject({ state: 'DONE', closedReason: 'REPLIED', closedAt: sentAt })
     expect(mockPrisma.reminder.updateMany.mock.calls[0][0]).toMatchObject({ where: { id: 'r1' }, data: { done: true } })
     expect(mockPrisma.$transaction).toHaveBeenCalledTimes(1)
   })
@@ -99,10 +101,14 @@ describe('reconcileSummaryItems', () => {
 
   it('FOLLOW_UP + inbound + outbound sesudahnya -> DONE', async () => {
     mockPrisma.summaryItem.findMany.mockResolvedValue([row({ kind: 'FOLLOW_UP' })] as never)
-    mockPrisma.message.findFirst.mockImplementation((async (a: { where: { direction: string } }) => (a.where.direction === 'INBOUND' ? inbound : { id: 'o1' })) as never)
+    const sentAt = at('2026-10-18T03:00:00Z')
+    mockPrisma.message.findFirst.mockImplementation((async (a: { where: { direction: string } }) => (a.where.direction === 'INBOUND' ? inbound : { id: 'o1', createdAt: sentAt })) as never)
     const r = await reconcileSummaryItems(NOW)
     expect(r).toMatchObject({ closed: 1, converted: 1 })
-    expect(mockPrisma.summaryItem.update.mock.calls[0][0].data).toMatchObject({ state: 'DONE', closedReason: 'REPLIED', kind: 'REPLY' })
+    // Kueri OUTBOUND harus memakai anchor baru (pesan inbound), bukan anchor lama.
+    const outboundQuery = mockPrisma.message.findFirst.mock.calls.map((c) => c[0] as { where: { direction: string; createdAt: unknown } }).find((q) => q.where.direction === 'OUTBOUND')
+    expect(outboundQuery?.where.createdAt).toEqual({ gt: inbound.createdAt })
+    expect(mockPrisma.summaryItem.update.mock.calls[0][0].data).toMatchObject({ state: 'DONE', closedReason: 'REPLIED', kind: 'REPLY', closedAt: sentAt })
   })
 
   it('SCHEDULED + reminder done -> DONE/REMINDER_DONE', async () => {
