@@ -2,17 +2,6 @@ import { describe, it, expect, vi, afterEach } from 'vitest'
 import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react'
 import DailySummaryPage from './page'
 
-const review = {
-  status: 'perlu_tindakan',
-  alasan: 'Pelanggan menanyakan harga dan belum dijawab.',
-  jenisKontak: 'calon_tamu',
-  topik: 'Paket Ijen 2 orang',
-  pertanyaan: ['Berapa harga untuk 2 orang?'],
-  poinPenting: ['3 Oktober'],
-  statusAgen: 'Belum ada balasan.',
-  langkahBerikut: 'Kirim harga paket Ijen.',
-}
-
 const payload = {
   version: 1,
   date: '2026-09-21',
@@ -22,37 +11,12 @@ const payload = {
   thresholds: { unrepliedMinMs: 3600000, dormantMinMs: 172800000, lookbackMs: 1209600000 },
   counts: { activeConversations: 5, inbound: 20, outbound: 18, newConversations: 1, reviewed: 5, reviewFailed: 1 },
   filteredOut: { unreplied: 2, dormant: 0 },
-  unreplied: [
-    {
-      conversationId: 'conv_1',
-      contactName: 'Anna',
-      pipelineStage: 'new',
-      lastMessageAt: '2026-09-21T14:00:00.000Z',
-      lastMessageId: 'msg_in_1',
-      waitingMs: 3 * 3600000,
-      snippet: 'Berapa harga Ijen untuk 2 orang?',
-      review,
-    },
-  ],
-  dormant: [
-    {
-      conversationId: 'conv_2',
-      contactName: 'Marco',
-      pipelineStage: 'nego',
-      lastMessageAt: '2026-09-18T17:00:00.000Z',
-      silentMs: 72 * 3600000,
-      snippet: 'Harga paket 3D2N ...',
-      review: null,
-    },
-  ],
+  unreplied: [],
+  dormant: [],
   newLeads: [],
   handoffs: [],
   gaps: { newCount: 0, openTotal: 4, byReason: [], byTopic: [], items: [] },
-  conversations: [{ conversationId: 'conv_1', contactName: 'Anna', pipelineStage: 'new', inbound: 3, outbound: 0, review }],
-}
-
-function response(summary: unknown) {
-  return { dates: summary ? [{ date: '2026-09-21', status: 'PARTIAL' }] : [], summary }
+  conversations: [],
 }
 
 const summaryRow = {
@@ -65,17 +29,51 @@ const summaryRow = {
   payload,
 }
 
-function stubFetch({ role, body }: { role: 'ADMIN' | 'AGENT'; body: unknown }) {
+function summaryResponse(summary: unknown) {
+  return { dates: summary ? [{ date: '2026-09-21', status: 'PARTIAL' }] : [], summary }
+}
+
+const openItem = {
+  id: 'item_1',
+  conversationId: 'conv_1',
+  contactName: 'Anna',
+  pipelineStage: 'new',
+  kind: 'REPLY',
+  state: 'OPEN',
+  anchorAt: '2026-09-21T14:00:00.000Z',
+  anchorMessageId: 'msg_in_1',
+  snippet: 'Berapa harga Ijen untuk 2 orang?',
+  review: null,
+  handoff: false,
+  newLead: false,
+  openedOn: '2026-09-21',
+  dueAt: null,
+}
+
+function stubFetch({
+  role,
+  summary = summaryResponse(summaryRow),
+  queue = { open: [openItem], scheduled: [], openGapTotal: 4 },
+}: {
+  role: 'ADMIN' | 'AGENT'
+  summary?: unknown
+  queue?: unknown
+}) {
   const fetchMock = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
     const key = `${init?.method ?? 'GET'} ${String(url)}`
     const ok = (json: unknown) => ({ ok: true, status: 200, json: async () => json }) as Response
     if (key === 'GET /api/session') return ok({ role, name: 'Tester' })
-    if (key.startsWith('GET /api/daily-summary')) return ok(body)
+    if (key === 'GET /api/daily-summary') return ok(summary)
+    if (key === 'GET /api/summary-items') return ok(queue)
     if (key === 'POST /api/daily-summary/generate') return ok({ date: '2026-09-21', status: 'DONE' })
     throw new Error(`fetch tak terduga: ${key}`)
   })
   vi.stubGlobal('fetch', fetchMock)
   return fetchMock
+}
+
+function callsTo(fetchMock: ReturnType<typeof stubFetch>, url: string) {
+  return fetchMock.mock.calls.filter(([u, init]) => String(u) === url && (init?.method ?? 'GET') === 'GET').length
 }
 
 afterEach(() => {
@@ -84,55 +82,47 @@ afterEach(() => {
 })
 
 describe('DailySummaryPage', () => {
-  it('menampilkan bagian-bagian ringkasan dari payload tersimpan', async () => {
-    stubFetch({ role: 'AGENT', body: response(summaryRow) })
+  it('menampilkan antrean dan status ringkasan terbaru, tanpa tab, pemilih tanggal, atau kartu statistik', async () => {
+    stubFetch({ role: 'AGENT' })
     render(<DailySummaryPage />)
 
-    // Tab pertama terbuka: Belum dibalas.
-    expect(await screen.findByText('menunggu 3 jam')).toBeInTheDocument()
-    expect(screen.getByText(/2 percakapan lain disaring/)).toBeInTheDocument()
-    expect(screen.getByText(/1 percakapan gagal dicek LLM/)).toBeInTheDocument()
-    expect(screen.getAllByRole('link', { name: 'Anna' })[0]).toHaveAttribute('href', '/inbox?conversation=conv_1')
-    // Bagian lain tidak dirender sampai tabnya dipilih.
-    expect(screen.queryByText('diam 3 hari')).not.toBeInTheDocument()
-
-    fireEvent.click(screen.getByRole('tab', { name: /Pelanggan diam/ }))
-    expect(screen.getByText('diam 3 hari')).toBeInTheDocument()
-    expect(screen.getAllByText('Belum dicek LLM').length).toBeGreaterThan(0)
-    expect(screen.getByRole('tab', { name: /Pelanggan diam/ })).toHaveAttribute('aria-selected', 'true')
-
-    fireEvent.click(screen.getByRole('tab', { name: /Ringkasan percakapan/ }))
-    expect(screen.getByText('Berapa harga untuk 2 orang?')).toBeInTheDocument()
-  })
-
-  it('setiap tab menyebut jumlah isinya', async () => {
-    stubFetch({ role: 'AGENT', body: response(summaryRow) })
-    render(<DailySummaryPage />)
-    expect(await screen.findByRole('tab', { name: 'Belum dibalas, 1' })).toBeInTheDocument()
-    expect(screen.getByRole('tab', { name: 'Lead baru, 0' })).toBeInTheDocument()
-  })
-
-  it('setiap bagian punya tombol tindakan ke Inbox', async () => {
-    stubFetch({ role: 'AGENT', body: response(summaryRow) })
-    render(<DailySummaryPage />)
-    // Belum dibalas: pesan pelanggan yang menunggu ikut tersorot.
     expect(await screen.findByRole('link', { name: 'Balas' })).toHaveAttribute('href', '/inbox?conversation=conv_1&message=msg_in_1')
-    // Pelanggan diam dari baris lama tanpa id pesan: tetap membuka percakapannya.
-    fireEvent.click(screen.getByRole('tab', { name: /Pelanggan diam/ }))
-    expect(screen.getByRole('link', { name: 'Follow up' })).toHaveAttribute('href', '/inbox?conversation=conv_2')
-    fireEvent.click(screen.getByRole('tab', { name: /Ringkasan percakapan/ }))
-    expect(screen.getByRole('link', { name: 'Buka chat' })).toHaveAttribute('href', '/inbox?conversation=conv_1')
+    expect(screen.getByRole('heading', { name: 'Summary Harian' })).toBeInTheDocument()
+    expect(
+      screen.getByText('Antrean tindakan dari ringkasan chat harian. Item selesai saat dibalas, dijadwalkan, atau dilepas.')
+    ).toBeInTheDocument()
+    expect(await screen.findByText('Status: Sebagian')).toBeInTheDocument()
+    expect(screen.getByText('Model: gemma4:31b-cloud')).toBeInTheDocument()
+    expect(screen.getByText(/1 percakapan gagal dicek LLM/)).toBeInTheDocument()
+
+    expect(screen.queryByRole('tab')).not.toBeInTheDocument()
+    expect(screen.queryByRole('combobox', { name: 'Pilih tanggal' })).not.toBeInTheDocument()
+    expect(screen.queryByText('Pesan masuk')).not.toBeInTheDocument()
+  })
+
+  it('tautan gap knowledge hanya tampil bila ada yang terbuka', async () => {
+    stubFetch({ role: 'AGENT' })
+    render(<DailySummaryPage />)
+    expect(await screen.findByRole('link', { name: '4 gap knowledge terbuka →' })).toHaveAttribute('href', '/settings/knowledge-gaps')
+    cleanup()
+
+    stubFetch({ role: 'AGENT', queue: { open: [], scheduled: [], openGapTotal: 0 } })
+    render(<DailySummaryPage />)
+    expect(await screen.findByText('Tidak ada item terbuka. Semua sudah dibalas, dijadwalkan, atau dilepas.')).toBeInTheDocument()
+    expect(screen.queryByText(/gap knowledge terbuka/)).not.toBeInTheDocument()
   })
 
   it('tombol Buat ulang hanya untuk admin', async () => {
-    stubFetch({ role: 'AGENT', body: response(summaryRow) })
+    stubFetch({ role: 'AGENT' })
     render(<DailySummaryPage />)
-    await screen.findByText('menunggu 3 jam')
+    await screen.findByRole('link', { name: 'Balas' })
     expect(screen.queryByRole('button', { name: 'Buat ulang' })).not.toBeInTheDocument()
   })
 
-  it('admin membuat ulang tanggal yang sedang dibuka', async () => {
-    const fetchMock = stubFetch({ role: 'ADMIN', body: response(summaryRow) })
+  it('admin membuat ulang ringkasan terbaru, lalu antrean dan lencana menu dimuat ulang', async () => {
+    const fetchMock = stubFetch({ role: 'ADMIN' })
+    const events = vi.fn()
+    window.addEventListener('summary-items:changed', events)
     render(<DailySummaryPage />)
 
     fireEvent.click(await screen.findByRole('button', { name: 'Buat ulang' }))
@@ -140,11 +130,32 @@ describe('DailySummaryPage', () => {
     await waitFor(() => expect(screen.getByText('Ringkasan selesai dibuat ulang.')).toBeInTheDocument())
     const post = fetchMock.mock.calls.find(([url, init]) => String(url) === '/api/daily-summary/generate' && init?.method === 'POST')
     expect(JSON.parse(String(post?.[1]?.body))).toEqual({ date: '2026-09-21' })
+    await waitFor(() => expect(callsTo(fetchMock, '/api/summary-items')).toBe(2))
+    expect(callsTo(fetchMock, '/api/daily-summary')).toBe(2)
+    expect(events).toHaveBeenCalledTimes(1)
+    window.removeEventListener('summary-items:changed', events)
   })
 
-  it('keadaan kosong sebelum job pertama', async () => {
-    stubFetch({ role: 'AGENT', body: response(null) })
+  it('tanpa ringkasan sama sekali, admin ditawari membuat ringkasan kemarin', async () => {
+    stubFetch({ role: 'ADMIN', summary: summaryResponse(null), queue: { open: [], scheduled: [], openGapTotal: 0 } })
     render(<DailySummaryPage />)
-    expect(await screen.findByText('Belum ada ringkasan.')).toBeInTheDocument()
+    expect(await screen.findByText(/Belum ada ringkasan\./)).toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: 'Buat ringkasan kemarin' })).toBeInTheDocument()
+  })
+
+  it('kegagalan memuat antrean tampil sebagai pesan error', async () => {
+    stubFetch({ role: 'AGENT' })
+    const base = vi.mocked(fetch)
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+        if (String(url) === '/api/summary-items') {
+          return { ok: false, status: 500, json: async () => ({ error: 'Gagal memuat antrean' }) } as Response
+        }
+        return base(url, init)
+      })
+    )
+    render(<DailySummaryPage />)
+    expect(await screen.findByRole('alert')).toHaveTextContent('Gagal memuat antrean')
   })
 })

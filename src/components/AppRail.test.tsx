@@ -23,6 +23,7 @@ function stubApi(overrides: Record<string, () => Promise<Response>> = {}) {
       return jsonResponse({ officialTokenValid: true, unofficialConfigured: true })
     }
     if (url === '/api/session') return jsonResponse({ role: 'ADMIN', name: 'Admin Demo' })
+    if (url === '/api/summary-items/count') return jsonResponse({ open: 0 })
     if (url === '/api/auth/logout') return jsonResponse({ ok: true })
     throw new Error(`unexpected fetch: ${key}`)
   })
@@ -506,5 +507,73 @@ describe('AppRail — lonceng gap', () => {
       }
     }
     expect(offenders).toEqual([])
+  })
+})
+
+describe('AppRail — angka antrean Summary Harian', () => {
+  it('menampilkan jumlah item OPEN dari endpoint count di rail dan di sidebar "Semua"', async () => {
+    const fetchMock = stubApi({ '/api/summary-items/count': async () => jsonResponse({ open: 7 }) })
+    render(<AppRail />)
+
+    const link = await screen.findByRole('link', { name: 'Summary Harian (7 item terbuka)' })
+    expect(link).toHaveAttribute('href', '/summary')
+    expect(within(link).getByText('7')).toBeInTheDocument()
+    expect(fetchMock).toHaveBeenCalledWith('/api/summary-items/count')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Semua menu' }))
+    const sidebar = screen.getByRole('navigation', { name: 'Semua menu' })
+    expect(within(sidebar).getByRole('link', { name: 'Summary Harian (7 item terbuka)' })).toBeInTheDocument()
+  })
+
+  it('tidak menampilkan angka 0', async () => {
+    const fetchMock = stubApi()
+    render(<AppRail />)
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/summary-items/count'))
+    const link = screen.getByRole('link', { name: 'Summary Harian' })
+    expect(link).not.toHaveAttribute('aria-label')
+    expect(within(link).queryByText('0')).not.toBeInTheDocument()
+  })
+
+  it('menelan kegagalan fetch: menu tetap tampil tanpa angka', async () => {
+    const fetchMock = stubApi({
+      '/api/summary-items/count': async () => ({ ok: false, status: 500, json: async () => ({ error: 'x' }) }) as Response,
+    })
+    render(<AppRail />)
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/summary-items/count'))
+    expect(screen.getByRole('link', { name: 'Summary Harian' })).toBeInTheDocument()
+  })
+
+  it('memuat ulang angka saat event summary-items:changed', async () => {
+    let open = 3
+    const fetchMock = stubApi({ '/api/summary-items/count': async () => jsonResponse({ open }) })
+    render(<AppRail />)
+    await screen.findByRole('link', { name: 'Summary Harian (3 item terbuka)' })
+
+    open = 2
+    window.dispatchEvent(new Event('summary-items:changed'))
+
+    expect(await screen.findByRole('link', { name: 'Summary Harian (2 item terbuka)' })).toBeInTheDocument()
+    expect(fetchMock.mock.calls.filter(([url]) => url === '/api/summary-items/count')).toHaveLength(2)
+  })
+
+  it('memuat ulang angka setiap 60 detik dan berhenti saat dilepas', async () => {
+    vi.useFakeTimers()
+    try {
+      const fetchMock = stubApi()
+      const { unmount } = render(<AppRail />)
+      const countCalls = () => fetchMock.mock.calls.filter(([url]) => url === '/api/summary-items/count').length
+      expect(countCalls()).toBe(1)
+
+      await vi.advanceTimersByTimeAsync(60_000)
+      expect(countCalls()).toBe(2)
+
+      unmount()
+      await vi.advanceTimersByTimeAsync(120_000)
+      expect(countCalls()).toBe(2)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })

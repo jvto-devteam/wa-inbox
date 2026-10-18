@@ -1,38 +1,18 @@
 'use client'
+import Link from 'next/link'
 import { useCallback, useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
-import { EmptyState } from '@/components/ui/empty-state'
 import { PageHeader } from '@/components/ui/page-header'
-import { Select } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
-import {
-  ConversationSummariesSection,
-  DormantSection,
-  GapSection,
-  HandoffSection,
-  NewLeadsSection,
-  UnrepliedSection,
-} from '@/components/daily-summary/SummarySections'
+import { SummaryQueue } from '@/components/daily-summary/SummaryQueue'
 import type { DailySummaryResponse } from '@/app/api/daily-summary/route'
-import type { DailySummaryPayload } from '@/lib/daily-summary/payload-schema'
+import type { SummaryItemsResponse } from '@/app/api/summary-items/route'
 import type { AccountRoleName } from '@/lib/auth/session'
 import { hasAdminPowers } from '@/lib/bot-control/permissions'
 import { fetchJson } from '@/lib/fetch-json'
-import { cn } from '@/lib/utils'
+import { announceSummaryItemsChanged } from '@/lib/summary-items/events'
 
 type Session = { role: AccountRoleName }
-
-type TabId = 'unreplied' | 'dormant' | 'leads' | 'handoffs' | 'gaps' | 'conversations'
-
-/** Urutan tab = urutan prioritas tindakan: yang menunggu balasan kita dulu. */
-const TABS: ReadonlyArray<{ id: TabId; label: string; count: (p: DailySummaryPayload) => number }> = [
-  { id: 'unreplied', label: 'Belum dibalas', count: (p) => p.unreplied.length },
-  { id: 'dormant', label: 'Pelanggan diam', count: (p) => p.dormant.length },
-  { id: 'leads', label: 'Lead baru', count: (p) => p.newLeads.length },
-  { id: 'handoffs', label: 'Handoff', count: (p) => p.handoffs.length },
-  { id: 'gaps', label: 'Gap knowledge', count: (p) => p.gaps.newCount },
-  { id: 'conversations', label: 'Ringkasan percakapan', count: (p) => p.conversations.length },
-]
 
 const STATUS_LABEL: Record<string, string> = {
   DONE: 'Selesai',
@@ -51,45 +31,50 @@ function dateLabel(date: string): string {
   })
 }
 
-function Stat({ label, value }: { label: string; value: number }) {
-  return (
-    <div className="rounded-lg border border-line bg-surface px-4 py-3">
-      <p className="text-xs text-ink-muted">{label}</p>
-      <p className="text-xl font-semibold text-ink tabular-nums">{value}</p>
-    </div>
-  )
-}
-
 /**
- * Ringkasan chat harian. Dibuat job tiap 00:00 WIB (POST /api/daily-summary/generate) untuk hari
- * yang baru selesai; halaman ini hanya membaca hasil yang tersimpan, jadi membukanya tidak
- * pernah memicu panggilan LLM.
+ * Summary Harian sebagai SATU antrean tindakan. Ringkasan dibuat job tiap 00:00 WIB
+ * (POST /api/daily-summary/generate) dan disinkronkan jadi SummaryItem; halaman ini membaca
+ * antrean itu (GET /api/summary-items, yang merekonsiliasi dengan pesan & pengingat terbaru)
+ * dan status ringkasan terbaru. Membukanya tidak pernah memicu panggilan LLM.
+ *
+ * Pemilih tanggal, enam tab, dan kartu statistik sengaja dibuang: laporan per hari menjawab
+ * "apa yang terjadi kemarin", padahal yang dibutuhkan operator adalah "apa yang masih harus
+ * saya kerjakan" -- dan item yang sudah dibalas tidak boleh terus muncul.
  */
 export default function DailySummaryPage() {
   const [data, setData] = useState<DailySummaryResponse | null>(null)
-  // null = tanggal terbaru yang tersedia.
-  const [date, setDate] = useState<string | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+  const [summaryError, setSummaryError] = useState<string | null>(null)
+  const [queue, setQueue] = useState<SummaryItemsResponse | null>(null)
+  const [queueError, setQueueError] = useState<string | null>(null)
+  const [queueLoading, setQueueLoading] = useState(true)
   const [role, setRole] = useState<Session['role'] | null>(null)
   const [generating, setGenerating] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
-  // Tetap di tab yang sama saat berganti tanggal: operator biasanya membandingkan bagian yang sama.
-  const [tab, setTab] = useState<TabId>('unreplied')
 
-  const load = useCallback(() => {
-    return fetchJson<DailySummaryResponse>(`/api/daily-summary${date ? `?date=${encodeURIComponent(date)}` : ''}`)
+  const loadSummary = useCallback(() => {
+    // Tanpa `date` = ringkasan terbaru.
+    return fetchJson<DailySummaryResponse>('/api/daily-summary')
       .then((response) => {
         setData(response)
-        setError(null)
+        setSummaryError(null)
       })
-      .catch((err: unknown) => setError(err instanceof Error ? err.message : 'Gagal memuat ringkasan'))
-      .finally(() => setLoading(false))
-  }, [date])
+      .catch((err: unknown) => setSummaryError(err instanceof Error ? err.message : 'Gagal memuat ringkasan'))
+  }, [])
+
+  const loadQueue = useCallback(() => {
+    return fetchJson<SummaryItemsResponse>('/api/summary-items')
+      .then((response) => {
+        setQueue(response)
+        setQueueError(null)
+      })
+      .catch((err: unknown) => setQueueError(err instanceof Error ? err.message : 'Gagal memuat antrean'))
+      .finally(() => setQueueLoading(false))
+  }, [])
 
   useEffect(() => {
-    void load()
-  }, [load])
+    void loadSummary()
+    void loadQueue()
+  }, [loadSummary, loadQueue])
 
   useEffect(() => {
     fetchJson<Session>('/api/session')
@@ -112,7 +97,9 @@ export default function DailySummaryPage() {
         body: JSON.stringify(summary ? { date: summary.date } : {}),
       })
       setNotice('Ringkasan selesai dibuat ulang.')
-      await load()
+      // Buat ulang menyinkronkan item baru; antrean dan lencana menu ikut dimuat ulang.
+      await Promise.all([loadSummary(), loadQueue()])
+      announceSummaryItemsChanged()
     } catch (err: unknown) {
       setNotice(err instanceof Error ? err.message : 'Gagal membuat ringkasan')
     } finally {
@@ -120,37 +107,19 @@ export default function DailySummaryPage() {
     }
   }
 
-  const actions = (
-    <div className="flex flex-wrap items-center gap-2">
-      {data && data.dates.length > 0 && (
-        <Select
-          aria-label="Pilih tanggal"
-          value={summary?.date ?? ''}
-          onChange={(e) => {
-            setLoading(true)
-            setDate(e.target.value)
-          }}
-        >
-          {data.dates.map((d) => (
-            <option key={d.date} value={d.date}>
-              {dateLabel(d.date)}
-            </option>
-          ))}
-        </Select>
-      )}
-      {isAdmin && (
-        <Button type="button" variant="outline" disabled={generating} onClick={() => void regenerate()}>
-          {generating ? 'Membuat… (bisa beberapa menit)' : summary ? 'Buat ulang' : 'Buat ringkasan kemarin'}
-        </Button>
-      )}
-    </div>
-  )
+  const actions = isAdmin ? (
+    <Button type="button" variant="outline" disabled={generating} onClick={() => void regenerate()}>
+      {generating ? 'Membuat… (bisa beberapa menit)' : summary ? 'Buat ulang' : 'Buat ringkasan kemarin'}
+    </Button>
+  ) : undefined
+
+  const openGapTotal = queue?.openGapTotal ?? 0
 
   return (
     <main className="mx-auto w-full max-w-[1600px] p-6">
       <PageHeader
         title="Summary Harian"
-        description="Rekap chat per hari WIB, dibuat otomatis tiap 00:00. Disimpan 30 hari."
+        description="Antrean tindakan dari ringkasan chat harian. Item selesai saat dibalas, dijadwalkan, atau dilepas."
         actions={actions}
       />
 
@@ -160,106 +129,70 @@ export default function DailySummaryPage() {
         </p>
       )}
 
-      {loading ? (
-        <div aria-busy="true" className="mt-6 space-y-3">
-          <Skeleton className="h-16 w-full" />
-          <Skeleton className="h-40 w-full" />
-        </div>
-      ) : error ? (
-        <p role="alert" className="mt-6 text-sm text-danger">
-          {error}
+      {/* Status ringkasan terbaru: dari mana antrean ini terakhir diisi. */}
+      <div className="mt-4 space-y-1">
+        {summaryError ? (
+          <p role="alert" className="text-sm text-danger">
+            {summaryError}
+          </p>
+        ) : data && !summary ? (
+          <p className="text-sm text-ink-muted">Belum ada ringkasan. Ringkasan pertama muncul setelah job 00:00 WIB berjalan.</p>
+        ) : summary ? (
+          <>
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-ink-muted">
+              <span>
+                Ringkasan terbaru: <span className="font-medium text-ink">{dateLabel(summary.date)}</span>
+              </span>
+              <span>Status: {STATUS_LABEL[summary.status] ?? summary.status}</span>
+              {summary.model && <span>Model: {summary.model}</span>}
+              {payload && <span>Dibuat {new Date(payload.generatedAt).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })} WIB</span>}
+              {payload?.excludedIndonesian && <span>Nomor Indonesia tidak dihitung (sesuai setelan Chatbot)</span>}
+            </div>
+            {summary.status === 'RUNNING' && (
+              <p role="status" className="text-sm text-warning">
+                Ringkasan sedang dibuat ulang. Antrean di bawah belum memuat hasilnya.
+              </p>
+            )}
+            {summary.status === 'PARTIAL' && payload && (
+              <p role="status" className="text-sm text-warning">
+                {payload.counts.reviewFailed} percakapan gagal dicek LLM dan ditandai &quot;Belum dicek LLM&quot;.
+              </p>
+            )}
+            {summary.error && (
+              <p role="alert" className="text-sm text-danger">
+                {summary.error}
+              </p>
+            )}
+          </>
+        ) : null}
+      </div>
+
+      {openGapTotal > 0 && (
+        <p className="mt-3 text-sm">
+          <Link href="/settings/knowledge-gaps" className="focus-ring rounded-sm font-medium text-accent hover:underline">
+            {openGapTotal} gap knowledge terbuka →
+          </Link>
         </p>
-      ) : !summary ? (
-        <EmptyState
-          className="mt-6"
-          title="Belum ada ringkasan."
-          description="Ringkasan pertama muncul setelah job 00:00 WIB berjalan."
-        />
-      ) : (
-        <div className="mt-6 space-y-4">
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-ink-muted">
-            <span className="font-medium text-ink">{dateLabel(summary.date)}</span>
-            <span>Status: {STATUS_LABEL[summary.status] ?? summary.status}</span>
-            {summary.model && <span>Model: {summary.model}</span>}
-            {payload && <span>Dibuat {new Date(payload.generatedAt).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })} WIB</span>}
-            {payload?.excludedIndonesian && <span>Nomor Indonesia tidak dihitung (sesuai setelan Chatbot)</span>}
-          </div>
-
-          {summary.status === 'RUNNING' && (
-            <p role="status" className="text-sm text-warning">
-              Ringkasan sedang dibuat ulang. Yang tampil di bawah adalah versi sebelumnya, kalau ada.
-            </p>
-          )}
-          {summary.status === 'PARTIAL' && payload && (
-            <p role="status" className="text-sm text-warning">
-              {payload.counts.reviewFailed} percakapan gagal dicek LLM dan ditandai &quot;Belum dicek LLM&quot;.
-            </p>
-          )}
-          {summary.error && (
-            <p role="alert" className="text-sm text-danger">
-              {summary.error}
-            </p>
-          )}
-
-          {payload && (
-            <>
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                <Stat label="Percakapan aktif" value={payload.counts.activeConversations} />
-                <Stat label="Pesan masuk" value={payload.counts.inbound} />
-                <Stat label="Pesan keluar" value={payload.counts.outbound} />
-                <Stat label="Kontak baru" value={payload.counts.newConversations} />
-              </div>
-              {/* Satu bagian pada satu waktu, bukan enam kartu berurutan: halaman yang digulung
-                  panjang membuat bagian bawah (gap, ringkasan) tidak pernah dilihat. Gaya tab
-                  sama dengan /templates. Di ponsel baris tab digulung mendatar. */}
-              <div role="tablist" aria-label="Bagian ringkasan" className="flex gap-5 overflow-x-auto border-b border-line">
-                {TABS.map((t) => {
-                  const active = tab === t.id
-                  const count = t.count(payload)
-                  return (
-                    <button
-                      key={t.id}
-                      type="button"
-                      role="tab"
-                      id={`summary-tab-${t.id}`}
-                      aria-selected={active}
-                      aria-label={`${t.label}, ${count}`}
-                      aria-controls="summary-tabpanel"
-                      onClick={() => setTab(t.id)}
-                      className={cn(
-                        'focus-ring -mb-px inline-flex shrink-0 items-center gap-1.5 border-b-2 px-0.5 pb-2 font-medium whitespace-nowrap transition-colors',
-                        active ? 'border-accent text-ink' : 'border-transparent text-ink-muted hover:text-ink'
-                      )}
-                    >
-                      {t.label}
-                      <span
-                        className={cn(
-                          'rounded-sm px-1.5 text-xs tabular-nums',
-                          count > 0 ? 'bg-surface-sunken text-ink' : 'bg-surface-sunken text-ink-subtle'
-                        )}
-                      >
-                        {count}
-                      </span>
-                    </button>
-                  )
-                })}
-              </div>
-              <div role="tabpanel" id="summary-tabpanel" aria-labelledby={`summary-tab-${tab}`}>
-                {tab === 'unreplied' && (
-                  <UnrepliedSection items={payload.unreplied} filteredOut={payload.filteredOut.unreplied} windowEnd={payload.windowEnd} />
-                )}
-                {tab === 'dormant' && (
-                  <DormantSection items={payload.dormant} filteredOut={payload.filteredOut.dormant} windowEnd={payload.windowEnd} />
-                )}
-                {tab === 'leads' && <NewLeadsSection items={payload.newLeads} />}
-                {tab === 'handoffs' && <HandoffSection items={payload.handoffs} />}
-                {tab === 'gaps' && <GapSection gaps={payload.gaps} />}
-                {tab === 'conversations' && <ConversationSummariesSection items={payload.conversations} />}
-              </div>
-            </>
-          )}
-        </div>
       )}
+
+      <div className="mt-6">
+        {queueLoading ? (
+          <div aria-busy="true" className="space-y-3">
+            <Skeleton className="h-24 w-full" />
+            <Skeleton className="h-24 w-full" />
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {/* Gagal memuat ulang sesudah aksi tidak menghapus daftar yang sudah tampil. */}
+            {queueError && (
+              <p role="alert" className="text-sm text-danger">
+                {queueError}
+              </p>
+            )}
+            {queue && <SummaryQueue open={queue.open} scheduled={queue.scheduled} onChanged={loadQueue} />}
+          </div>
+        )}
+      </div>
     </main>
   )
 }

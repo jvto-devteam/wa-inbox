@@ -7,6 +7,7 @@ import type { LucideIcon } from 'lucide-react'
 import { Tooltip } from '@/components/ui/tooltip'
 import { GapBell } from '@/components/GapBell'
 import { fetchJson, redirectToLogin } from '@/lib/fetch-json'
+import { SUMMARY_ITEMS_CHANGED } from '@/lib/summary-items/events'
 import { cn } from '@/lib/utils'
 
 // Cangkang navigasi global. Setiap halaman terautentikasi merender di bawahnya (lihat
@@ -77,6 +78,24 @@ const MOBILE_VISIBLE_COUNT = 3
 type NumberStatus = { officialTokenValid: boolean; unofficialConfigured: boolean }
 type Session = { role: 'ADMIN' | 'AGENT'; name: string }
 
+/** Angka di sebelah tujuan nav, per href. Hanya /summary yang punya angka saat ini. */
+type NavCounts = Record<string, number>
+
+const SUMMARY_COUNT_POLL_MS = 60_000
+
+function badgeText(count: number): string {
+  return count > 99 ? '99+' : String(count)
+}
+
+/**
+ * Nama aksesibel tautan nav. Tanpa angka = label itu sendiri (tidak ada aria-label terpisah);
+ * dengan angka, label yang SAMA ditambah jumlahnya, supaya pembaca layar mendengar apa yang
+ * terlihat di lencana.
+ */
+function navAriaLabel(label: string, count: number): string | undefined {
+  return count > 0 ? `${label} (${count} item terbuka)` : undefined
+}
+
 /**
  * A menu is active for its own path and for anything nested beneath it — /contacts/<id>
  * keeps "Kontak" lit, /settings/knowledge-gaps keeps "Pengaturan" lit.
@@ -110,7 +129,7 @@ export function initialsFrom(name: string): string {
  * cuma kelihatan di rail desktop (di ponsel, jalan satu-satunya ke situ adalah sidebar
  * "Semua", lihat renderSidebarItem).
  */
-function renderNavItem(item: (typeof NAV_ITEMS)[number], pathname: string, mobileHidden: boolean) {
+function renderNavItem(item: (typeof NAV_ITEMS)[number], pathname: string, mobileHidden: boolean, count: number) {
   const active = isActivePath(pathname, item.href)
   const Icon = item.icon
   return (
@@ -118,6 +137,7 @@ function renderNavItem(item: (typeof NAV_ITEMS)[number], pathname: string, mobil
       key={item.href}
       href={item.href}
       aria-current={active ? 'page' : undefined}
+      aria-label={navAriaLabel(item.label, count)}
       className={cn(
         'focus-ring-inverse flex-col items-center justify-start gap-1 rounded-md px-0.5 py-2',
         'text-center text-[10px] leading-[1.15] font-medium tracking-tight transition-colors',
@@ -130,9 +150,20 @@ function renderNavItem(item: (typeof NAV_ITEMS)[number], pathname: string, mobil
           : 'text-white/70 hover:bg-white/10 hover:text-white'
       )}
     >
-      <Icon aria-hidden="true" className="size-[18px] shrink-0" strokeWidth={1.75} />
-      {/* Label SELALU terlihat, dan ia adalah nama aksesibel tautan ini — bukan aria-label
-          terpisah yang bisa menyimpang dari yang terbaca di layar. */}
+      {/* Lencana angka menempel di ikon, bentuknya sama dengan lencana GapBell. */}
+      <span className="relative">
+        <Icon aria-hidden="true" className="size-[18px] shrink-0" strokeWidth={1.75} />
+        {count > 0 && (
+          <span
+            aria-hidden="true"
+            className="absolute -top-1.5 -right-2 min-w-4 rounded-full bg-danger px-1 text-[9px] leading-4 font-semibold text-white tabular-nums"
+          >
+            {badgeText(count)}
+          </span>
+        )}
+      </span>
+      {/* Label SELALU terlihat, dan ia adalah nama aksesibel tautan ini — aria-label hanya
+          dipasang saat ada angka, dan isinya label yang sama ditambah jumlahnya. */}
       <span className="w-full">{item.label}</span>
     </Link>
   )
@@ -143,7 +174,7 @@ function renderNavItem(item: (typeof NAV_ITEMS)[number], pathname: string, mobil
  * bawah, bukan tab kotak seperti renderNavItem. `onNavigate` menutup sidebar sesudah tap,
  * sama seperti menu popover lain di file ini.
  */
-function renderSidebarItem(item: (typeof NAV_ITEMS)[number], pathname: string, onNavigate: () => void) {
+function renderSidebarItem(item: (typeof NAV_ITEMS)[number], pathname: string, onNavigate: () => void, count: number) {
   const active = isActivePath(pathname, item.href)
   const Icon = item.icon
   return (
@@ -151,6 +182,7 @@ function renderSidebarItem(item: (typeof NAV_ITEMS)[number], pathname: string, o
       key={item.href}
       href={item.href}
       aria-current={active ? 'page' : undefined}
+      aria-label={navAriaLabel(item.label, count)}
       onClick={onNavigate}
       className={cn(
         'focus-ring flex items-center gap-3 rounded-md px-2.5 py-2 text-sm font-medium transition-colors',
@@ -159,6 +191,17 @@ function renderSidebarItem(item: (typeof NAV_ITEMS)[number], pathname: string, o
     >
       <Icon aria-hidden="true" className="size-4 shrink-0" strokeWidth={1.75} />
       {item.label}
+      {count > 0 && (
+        <span
+          aria-hidden="true"
+          className={cn(
+            'ml-auto min-w-5 rounded-full px-1.5 text-center text-xs leading-5 font-semibold tabular-nums',
+            active ? 'bg-white/20 text-white' : 'bg-danger text-white'
+          )}
+        >
+          {badgeText(count)}
+        </span>
+      )}
     </Link>
   )
 }
@@ -171,6 +214,7 @@ export function AppRail() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [loggingOut, setLoggingOut] = useState(false)
   const [logoutError, setLogoutError] = useState<string | null>(null)
+  const [summaryOpenCount, setSummaryOpenCount] = useState(0)
   const accountRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -181,6 +225,30 @@ export function AppRail() {
     fetchJson<NumberStatus>('/api/numbers/status').then(setStatus).catch(() => {})
     fetchJson<Session>('/api/session').then(setSession).catch(() => {})
   }, [])
+
+  // Jumlah item OPEN Summary Harian: saat mount, tiap 60 detik, dan seketika saat halaman
+  // /summary mengumumkan perubahan. Kegagalan ditelan (pola GapBell): lencana adalah tambahan
+  // di atas navigasi, dan respons yang bukan angka dianggap nol, bukan dipasang ke state.
+  useEffect(() => {
+    let cancelled = false
+    function load() {
+      fetchJson<{ open?: unknown }>('/api/summary-items/count')
+        .then((body) => {
+          if (!cancelled) setSummaryOpenCount(typeof body.open === 'number' ? body.open : 0)
+        })
+        .catch(() => {})
+    }
+    load()
+    const timer = setInterval(load, SUMMARY_COUNT_POLL_MS)
+    window.addEventListener(SUMMARY_ITEMS_CHANGED, load)
+    return () => {
+      cancelled = true
+      clearInterval(timer)
+      window.removeEventListener(SUMMARY_ITEMS_CHANGED, load)
+    }
+  }, [])
+
+  const navCounts: NavCounts = { '/summary': summaryOpenCount }
 
   // A dropdown that cannot be dismissed by clicking away is a trap on a rail that sits on
   // every page, so close on outside pointerdown and on Escape.
@@ -271,7 +339,7 @@ export function AppRail() {
       </Link>
 
       <nav aria-label="Menu utama" className="contents md:flex md:w-full md:flex-none md:flex-col md:gap-0.5 md:overflow-y-auto md:px-1">
-        {NAV_ITEMS.map((item, i) => renderNavItem(item, pathname, i >= MOBILE_VISIBLE_COUNT))}
+        {NAV_ITEMS.map((item, i) => renderNavItem(item, pathname, i >= MOBILE_VISIBLE_COUNT, navCounts[item.href] ?? 0))}
       </nav>
 
       {/* Lonceng gap: saudara <nav>, BUKAN anaknya, dan itu load-bearing. Popovernya `fixed`
@@ -328,7 +396,7 @@ export function AppRail() {
                 <X aria-hidden="true" className="size-4" strokeWidth={2} />
               </button>
             </div>
-            {NAV_ITEMS.map((item) => renderSidebarItem(item, pathname, () => setSidebarOpen(false)))}
+            {NAV_ITEMS.map((item) => renderSidebarItem(item, pathname, () => setSidebarOpen(false), navCounts[item.href] ?? 0))}
           </nav>
         </div>
       )}
