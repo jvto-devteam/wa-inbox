@@ -138,10 +138,9 @@ email tetap masuk, hanya daily summary yang tidak mengumpulkannya. Kode di `src/
 ### Summary harian (`/summary`)
 `DailySummary`, satu baris per hari WIB, payload JSON (`src/lib/daily-summary/payload-schema.ts`).
 Dibuat `POST /api/daily-summary/generate` (crontab VPS `0 0 * * *` — jam sistem VPS Asia/Jakarta, header
-`x-cron-secret`; atau admin lewat tombol "Buat ulang"). Satu panggilan LLM per **kandidat
-antrean** ("belum dibalas"/"pelanggan diam" saja — percakapan yang sekadar aktif tidak dinilai,
-keputusan owner 2026-10-18; model `Settings.ollamaModel`, timeout 60 s) yang meringkas **dan**
-menyaring kandidat yang sudah selesai. Ambang di `src/lib/daily-summary/config.ts`.
+`x-cron-secret`; atau admin lewat tombol "Buat ulang"). Satu panggilan LLM per percakapan
+(model `Settings.ollamaModel`, timeout 60 s) yang meringkas **dan** menyaring kandidat "belum
+dibalas"/"pelanggan diam" yang sudah selesai. Ambang di `src/lib/daily-summary/config.ts`.
 Dipangkas setelah **30 hari** per `date` (keputusan owner 2026-09-22) — payload memuat nama
 dan cuplikan chat pelanggan.
 
@@ -151,6 +150,8 @@ boleh berhenti di halaman). Kandidat disinkronkan ke `SummaryItem` (satu baris p
 item hanya punya tiga jalan keluar: tertutup otomatis oleh `reconcileSummaryItems` (dipanggil di
 tick `POST /api/outbound-jobs/process` dan saat daftar dibaca), dijadwalkan lewat `Reminder`, atau
 dilepas dengan catatan. Jangan tambahkan kembali tab bacaan atau statistik tanpa tindakan.
+Percakapan yang sekadar aktif **tetap** dinilai LLM dan disimpan di `payload.conversations`
+(keputusan owner 2026-10-18), walau halaman tidak menampilkannya.
 
 ### Simulator & test
 `simulator.ts`, Test Lab, dan `npm run eval` (13 golden case).
