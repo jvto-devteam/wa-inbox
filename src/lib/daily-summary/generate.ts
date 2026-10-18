@@ -101,11 +101,13 @@ export function buildPayload(
     const ref = { conversationId: facts.conversationId, contactName: facts.contactName, pipelineStage: facts.pipelineStage }
     const closed = review?.status === 'selesai'
 
+    // `conversations` sengaja dibiarkan kosong sejak 2026-10-18: pembacanya (tab "Ringkasan
+    // percakapan") dihapus saat /summary jadi antrean tindakan. Kolomnya tetap di skema supaya
+    // baris lama masih terbaca.
     if (c.activeToday) {
       payload.counts.activeConversations++
       payload.counts.inbound += facts.inboundToday
       payload.counts.outbound += facts.outboundToday
-      payload.conversations.push({ ...ref, inbound: facts.inboundToday, outbound: facts.outboundToday, review })
     }
     if (c.isNewLead) {
       payload.counts.newConversations++
@@ -166,21 +168,28 @@ export function buildPayload(
   // Paling lama menunggu dulu; pelanggan diam paling baru dulu (paling mungkin masih bisa diselamatkan).
   payload.unreplied.sort((a, b) => b.waitingMs - a.waitingMs)
   payload.dormant.sort((a, b) => a.silentMs - b.silentMs)
-  payload.conversations.sort((a, b) => b.inbound + b.outbound - (a.inbound + a.outbound))
 
   return payload
 }
 
-/** Percakapan yang perlu dinilai LLM beserta alasannya, satu entri per percakapan. */
+/**
+ * Percakapan yang perlu dinilai LLM beserta alasannya, satu entri per percakapan.
+ *
+ * Hanya kandidat antrean (belum dibalas / diam): penilaiannya menyaring yang sudah selesai dan
+ * mengisi "langkah berikut" di kartu. Percakapan yang sekadar aktif tidak dinilai lagi sejak
+ * 2026-10-18 -- hasilnya tidak dibaca siapa pun, sementara transkripnya ikut terkirim ke server
+ * model (tag `-cloud`). `active` tetap disertakan sebagai konteks bila berlaku.
+ */
 export function reviewTargets(day: CollectedDay): ReviewTarget[] {
   const targets: ReviewTarget[] = []
   for (const facts of day.conversations) {
     const c = classifyConversation(facts, day.start, day.end)
+    if (!c.unreplied && !c.dormant) continue
     const reasons: ReviewReason[] = []
     if (c.unreplied) reasons.push('unreplied')
     if (c.dormant) reasons.push('dormant')
     if (c.activeToday) reasons.push('active')
-    if (reasons.length > 0) targets.push({ conversationId: facts.conversationId, transcript: buildTranscript(facts.messages), reasons })
+    targets.push({ conversationId: facts.conversationId, transcript: buildTranscript(facts.messages), reasons })
   }
   return targets
 }

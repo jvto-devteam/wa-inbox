@@ -133,7 +133,9 @@ describe('generateDailySummary', () => {
     vi.mocked(collectDay).mockResolvedValue(
       day([
         conv('a', [msg('INBOUND', new Date(end.getTime() - 2 * HOUR))], { inboundToday: 1 }),
-        conv('b', [msg('OUTBOUND', new Date(end.getTime() - 3 * HOUR))], { outboundToday: 1 }),
+        conv('b', [msg('OUTBOUND', new Date(end.getTime() - 72 * HOUR))]),
+        // Hanya aktif, bukan kandidat antrean: tidak dinilai LLM.
+        conv('c', [msg('OUTBOUND', new Date(end.getTime() - 3 * HOUR))], { outboundToday: 1 }),
       ])
     )
     // Percakapan b gagal dua kali: percobaan pertama dan satu percobaan ulang.
@@ -144,9 +146,11 @@ describe('generateDailySummary', () => {
     expect(result).toEqual({ outcome: 'generated', date: DATE, status: 'PARTIAL' })
     expect(reviewConversation).toHaveBeenCalledTimes(3)
     expect(vi.mocked(reviewConversation).mock.calls[0][1]).toEqual(['unreplied', 'active'])
+    expect(vi.mocked(reviewConversation).mock.calls[1][1]).toEqual(['dormant'])
     expect(vi.mocked(reviewConversation).mock.calls[0][2]).toBe('gemma4:31b-cloud')
     const update = mockPrisma.dailySummary.update.mock.calls[0][0]
     expect(update.data).toMatchObject({ status: 'PARTIAL', model: 'gemma4:31b-cloud', error: null })
+    expect(update.data.payload).toMatchObject({ conversations: [], counts: { activeConversations: 2, reviewed: 1, reviewFailed: 1 } })
   })
 
   it('mencoba ulang sekali percakapan yang gagal dinilai, lalu DONE bila berhasil', async () => {
