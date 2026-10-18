@@ -11,6 +11,7 @@ import { POST } from './route'
 vi.mock('@/lib/auth/session', () => ({ verifySessionToken: vi.fn() }))
 vi.mock('@/lib/outbound/worker', () => ({ processDueOutboundJobs: vi.fn() }))
 vi.mock('@/lib/bot-control/audit', () => ({ pruneBotAuditLogs: vi.fn() }))
+vi.mock('@/lib/summary-items/sync', () => ({ reconcileSummaryItems: vi.fn().mockResolvedValue({ closed: 0, converted: 0, reopened: 0 }) }))
 
 const SECRET = 'c'.repeat(40)
 

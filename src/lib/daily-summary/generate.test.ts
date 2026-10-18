@@ -6,6 +6,11 @@ import { Prisma, type PrismaClient } from '@prisma/client'
 vi.mock('@/lib/db', () => ({ prisma: mockDeep<PrismaClient>() }))
 vi.mock('./collect', async (importOriginal) => ({ ...(await importOriginal<typeof import('./collect')>()), collectDay: vi.fn() }))
 vi.mock('./review', async (importOriginal) => ({ ...(await importOriginal<typeof import('./review')>()), reviewConversation: vi.fn() }))
+vi.mock('@/lib/summary-items/sync', () => ({
+  syncSummaryItems: vi.fn().mockResolvedValue({ created: 0, updated: 0, reopened: 0 }),
+  reconcileSummaryItems: vi.fn().mockResolvedValue({ closed: 0, converted: 0, reopened: 0 }),
+  pruneSummaryItems: vi.fn().mockResolvedValue({ deleted: 0 }),
+}))
 
 import { prisma } from '@/lib/db'
 import { collectDay, type CollectedDay, type ConversationFacts, type TranscriptMessage } from './collect'

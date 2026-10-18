@@ -212,6 +212,8 @@ model Conversation {
   /// otomatis tidak muncul sebagai "belum dibalas". Satu email dari manusia di benang itu
   /// mengangkatnya kembali ke false, dan tidak pernah balik ke true.
   mailAutomated Boolean @default(false)
+  /// Antrean tindakan Summary Harian untuk percakapan ini (src/lib/summary-items/sync.ts).
+  summaryItem   SummaryItem?
 
   /// Dipasang di Task 5b, setelah backfill Task 5 selesai (0 duplikat terverifikasi 2026-09-24).
   /// Ini yang membuat conversation.upsert bisa dikunci lewat (channelIdentityId,
@@ -950,4 +952,42 @@ model DailySummary {
   finishedAt DateTime?
   error      String?
   payload    Json?
+}
+
+/// Antrean tindakan di halaman /summary: satu baris per percakapan yang butuh dibalas
+/// (REPLY) atau diikuti (FOLLOW_UP). Diisi `syncSummaryItems` dari payload ringkasan harian,
+/// dan ditutup `reconcileSummaryItems` begitu fakta di tabel Message berubah (pesan keluar
+/// sesudah anchor, pengingat selesai). Baris DONE/DROPPED dipangkas setelah 30 hari sejak
+/// `closedAt` (`pruneSummaryItems`) karena `snippet` dan `review` memuat cuplikan chat pelanggan.
+model SummaryItem {
+  id              String       @id @default(cuid())
+  conversationId  String       @unique
+  conversation    Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  /// REPLY | FOLLOW_UP
+  kind            String
+  /// OPEN | SCHEDULED | DONE | DROPPED
+  state           String
+  /// Waktu pesan pemicu. REPLY tertutup oleh pesan OUTBOUND sesudahnya; FOLLOW_UP jadi REPLY oleh INBOUND sesudahnya.
+  anchorAt        DateTime
+  anchorMessageId String?
+  snippet         String
+  /// ConversationReview (payload-schema.ts) terakhir, atau null bila LLM gagal.
+  review          Json?
+  handoff         Boolean      @default(false)
+  newLead         Boolean      @default(false)
+  /// "YYYY-MM-DD" ringkasan yang (kembali) membuka item ini.
+  openedOn        String
+  /// "YYYY-MM-DD" ringkasan terakhir yang memuat item ini.
+  lastSeenOn      String
+  reminderId      String?
+  dueAt           DateTime?
+  /// REPLIED | REMINDER_DONE | DROPPED
+  closedReason    String?
+  note            String?
+  closedById      String?
+  closedAt        DateTime?
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  @@index([state])
 }

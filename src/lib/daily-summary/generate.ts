@@ -11,6 +11,7 @@ import {
 import { buildTranscript, classifyConversation, collectDay, messageSnippet, type CollectedDay } from './collect'
 import { dailySummaryPayloadSchema, type ConversationReview, type DailySummaryPayload } from './payload-schema'
 import { reviewConversation, type ReviewReason } from './review'
+import { pruneSummaryItems, reconcileSummaryItems, syncSummaryItems } from '@/lib/summary-items/sync'
 import { jakartaDayKey, jakartaDayRange } from './time'
 
 /**
@@ -232,6 +233,15 @@ export async function generateDailySummary(date: string, now: Date = new Date())
       where: { date },
       data: { status, model: model ?? null, finishedAt: new Date(), error: null, payload },
     })
+    // Antrean tindakan menumpang ringkasan ini. Kedua fungsi tidak pernah melempar; dibungkus
+    // lagi supaya perubahan di masa depan pun tidak bisa membuat ringkasan yang sudah tersimpan
+    // dilaporkan gagal.
+    try {
+      await syncSummaryItems(date, payload, now)
+      await reconcileSummaryItems()
+    } catch (syncError) {
+      console.error('generateDailySummary: sinkronisasi antrean gagal', { date, syncError })
+    }
     return { outcome: 'generated', date, status }
   } catch (error) {
     console.error('generateDailySummary gagal', { date, error })
@@ -242,5 +252,6 @@ export async function generateDailySummary(date: string, now: Date = new Date())
     return { outcome: 'failed', date }
   } finally {
     await pruneDailySummaries(now)
+    await pruneSummaryItems(now)
   }
 }

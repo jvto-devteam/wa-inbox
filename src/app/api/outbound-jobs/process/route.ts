@@ -3,6 +3,7 @@ import { requireAdmin } from '@/lib/auth/require-admin'
 import { hasValidCronSecret } from '@/lib/outbound/cron-auth'
 import { processDueOutboundJobs } from '@/lib/outbound/worker'
 import { pruneBotAuditLogs } from '@/lib/bot-control/audit'
+import { reconcileSummaryItems } from '@/lib/summary-items/sync'
 import { advancePipelineStagesFromBooking, refreshStaleBookingData } from '@/lib/booking/client'
 
 /**
@@ -63,6 +64,13 @@ export async function POST(req: Request) {
   // berarti satu panggilan HTTP ke API booking.
   await refreshStaleBookingData().catch((error: unknown) => {
     console.error('POST /api/outbound-jobs/process: menyegarkan data booking gagal', error)
+  })
+
+  // Item antrean Summary Harian harus tertutup begitu admin membalas (atau pengingat jatuh
+  // tempo), bukan menunggu ringkasan 00:00 berikutnya -- kalau tidak, halaman menyuruh orang
+  // membalas chat yang sudah dibalas. Dua kueri indeks per tick; tidak pernah melempar.
+  await reconcileSummaryItems().catch((error: unknown) => {
+    console.error('POST /api/outbound-jobs/process: rekonsiliasi antrean summary gagal', error)
   })
 
   try {
