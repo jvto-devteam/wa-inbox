@@ -3,9 +3,11 @@ import { useEffect, useState } from 'react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { SkeletonText } from '@/components/ui/skeleton'
-import { RemindDropActions, dateKeyLabel, wibDateTimeLabel } from '@/components/daily-summary/SummaryQueue'
-import { normalizeQuestion, type ConversationReview } from '@/lib/daily-summary/payload-schema'
+import { RemindDropActions, dateKeyLabel } from '@/components/daily-summary/SummaryQueue'
+import { QuestionList } from '@/components/daily-summary/QuestionList'
+import type { ConversationReview } from '@/lib/daily-summary/payload-schema'
 import { fetchJson } from '@/lib/fetch-json'
+import { followUpStatus, isActionable, wibDateTimeLabel } from '@/lib/summary-items/status'
 import { PanelSectionTitle } from './ContactPanel'
 // Hanya tipe: route itu menyentuh prisma, dan komponen klien tidak boleh membawa modul server.
 import type { ChatReviewItem, ChatReviewResponse } from '@/app/api/conversations/[id]/chat-review/route'
@@ -33,41 +35,6 @@ const CONTACT_KIND_LABEL: Record<ConversationReview['jenisKontak'], string> = {
   lainnya: 'Lainnya',
 }
 
-const CLOSED_REASON_LABEL: Record<string, string> = {
-  REPLIED: 'dibalas',
-  REMINDER_DONE: 'pengingat selesai',
-  STAGE_ADVANCED: 'tahap pipeline naik',
-}
-
-type FollowUpStatus = {
-  label: string
-  detail: string | null
-  variant: 'destructive' | 'warning' | 'success' | 'muted'
-}
-
-/** Satu kalimat status untuk item antrean percakapan ini (null = tidak pernah masuk antrean). */
-export function followUpStatus(item: ChatReviewItem | null): FollowUpStatus {
-  if (!item) return { label: 'Tidak ada di antrean', detail: null, variant: 'muted' }
-  switch (item.state) {
-    case 'OPEN':
-      return item.kind === 'REPLY'
-        ? { label: 'Belum dijawab', detail: null, variant: 'destructive' }
-        : { label: 'Perlu follow up', detail: null, variant: 'warning' }
-    case 'SCHEDULED':
-      return { label: item.dueAt ? `Dijadwalkan ${wibDateTimeLabel(item.dueAt)}` : 'Dijadwalkan', detail: null, variant: 'muted' }
-    case 'DONE':
-      return {
-        label: 'Sudah ditindaklanjuti',
-        detail: item.closedReason ? (CLOSED_REASON_LABEL[item.closedReason] ?? item.closedReason) : null,
-        variant: 'success',
-      }
-    case 'DROPPED':
-      return { label: 'Dilepas', detail: item.note, variant: 'muted' }
-    default:
-      return { label: item.state, detail: null, variant: 'muted' }
-  }
-}
-
 function FollowUpSection({
   item,
   defaultNote,
@@ -80,7 +47,6 @@ function FollowUpSection({
   loadError: string | null
 }) {
   const status = followUpStatus(item)
-  const actionable = item && (item.state === 'OPEN' || item.state === 'SCHEDULED')
   return (
     <section aria-label="Status tindak lanjut" className="space-y-1.5">
       <PanelSectionTitle>Status tindak lanjut</PanelSectionTitle>
@@ -88,7 +54,7 @@ function FollowUpSection({
         <Badge variant={status.variant}>{status.label}</Badge>
         {status.detail && <span className="text-sm text-ink-muted">{status.detail}</span>}
       </div>
-      {actionable && (
+      {isActionable(item) && (
         // `key`: aksi item lain (setelah dilepas lalu muncul item baru) mulai dari panel tertutup.
         <RemindDropActions key={item.id} itemId={item.id} defaultNote={defaultNote} onChanged={onChanged} />
       )}
@@ -111,28 +77,6 @@ function TextList({ label, items }: { label: string; items: string[] }) {
         {items.map((text, i) => (
           <li key={i}>{text}</li>
         ))}
-      </ul>
-    </div>
-  )
-}
-
-/** Pertanyaan pelanggan dengan tanda teks (bukan hanya warna); ringkasan lama tanpa tanda. */
-function QuestionList({ questions }: { questions: ConversationReview['pertanyaan'] }) {
-  if (questions.length === 0) return null
-  return (
-    <div className="space-y-0.5">
-      <p className="text-xs font-medium text-ink-subtle">Yang ditanyakan</p>
-      <ul aria-label="Yang ditanyakan" className="space-y-1 text-sm text-ink">
-        {questions.map((raw, i) => {
-          const q = normalizeQuestion(raw)
-          return (
-            <li key={i} className="flex flex-wrap items-baseline gap-x-1.5">
-              <span>{q.teks}</span>
-              {q.terjawab === true && <span className="text-xs font-medium text-success">✅ terjawab</span>}
-              {q.terjawab === false && <span className="text-xs font-medium text-warning">⏳ belum</span>}
-            </li>
-          )
-        })}
       </ul>
     </div>
   )

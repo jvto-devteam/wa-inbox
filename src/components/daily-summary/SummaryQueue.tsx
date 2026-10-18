@@ -10,6 +10,7 @@ import { STAGE_LABELS } from '@/lib/pipeline'
 import { jakartaDayKey, jakartaDayRange } from '@/lib/daily-summary/time'
 import { fetchJson } from '@/lib/fetch-json'
 import { announceSummaryItemsChanged } from '@/lib/summary-items/events'
+import { wibDateTimeLabel } from '@/lib/summary-items/status'
 import type { SummaryItemView } from '@/lib/summary-items/view'
 
 /**
@@ -66,24 +67,11 @@ export function dateKeyLabel(dateKey: string): string {
   })
 }
 
-/** Waktu ISO sebagai hari, tanggal, dan jam WIB, mis. "Sen, 19 Okt, 09.00 WIB". */
-export function wibDateTimeLabel(iso: string): string {
-  const text = new Date(iso).toLocaleString('id-ID', {
-    timeZone: 'Asia/Jakarta',
-    weekday: 'short',
-    day: 'numeric',
-    month: 'short',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
-  return `${text} WIB`
-}
-
 /**
  * Tautan ke Inbox bergaya tombol kecil. Tautan, bukan <button>, karena tindakannya memang
  * pindah halaman -- dan bisa dibuka di tab baru sambil tetap menyisir antrean ini.
  */
-function ActionLink({ href, children, primary = false }: { href: string; children: ReactNode; primary?: boolean }) {
+export function ActionLink({ href, children, primary = false }: { href: string; children: ReactNode; primary?: boolean }) {
   return (
     <Link
       href={href}
@@ -107,7 +95,7 @@ function ContactLink({ item }: { item: SummaryItemView }) {
 }
 
 /** Topik + alasan → langkah berikut dari LLM, atau penanda bahwa LLM gagal menilainya. */
-function ReviewLine({ review }: { review: SummaryItemView['review'] }) {
+export function ReviewLine({ review }: { review: SummaryItemView['review'] }) {
   if (!review) return <Badge variant="warning">Belum dicek LLM</Badge>
   return (
     <div className="space-y-0.5">

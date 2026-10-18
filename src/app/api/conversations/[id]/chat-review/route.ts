@@ -8,6 +8,7 @@ import { reviewConversation, type ReviewReason } from '@/lib/daily-summary/revie
 import { chatReviewHistory, type ChatReviewHistoryEntry } from '@/lib/chat-review/history'
 import { saveChatReview } from '@/lib/chat-review/store'
 import { reconcileSummaryItems } from '@/lib/summary-items/sync'
+import { toSummaryItemStatus, type SummaryItemStatus } from '@/lib/summary-items/status'
 
 /**
  * Tab "Ringkasan chat" di panel kanan Inbox.
@@ -23,16 +24,8 @@ import { reconcileSummaryItems } from '@/lib/summary-items/sync'
 /** Jeda minimal antar panggilan LLM per percakapan; klik beruntun mengembalikan hasil yang ada. */
 export const REFRESH_COOLDOWN_MS = 30_000
 
-export type ChatReviewItem = {
-  id: string
-  kind: string
-  state: string
-  anchorAt: string
-  dueAt: string | null
-  closedReason: string | null
-  note: string | null
-  closedAt: string | null
-}
+/** Status item antrean + anchor-nya; bentuk dasarnya dipakai bersama GET /api/daily-summary. */
+export type ChatReviewItem = SummaryItemStatus & { anchorAt: string }
 
 export type ChatReviewResponse = {
   latest: { review: ConversationReview; at: string } | null
@@ -52,18 +45,7 @@ async function buildResponse(conversationId: string): Promise<ChatReviewResponse
   const parsed = conversationReviewSchema.safeParse(conv.chatReview)
   const latest = parsed.success && conv.chatReviewAt ? { review: parsed.data, at: conv.chatReviewAt.toISOString() } : null
   const s = conv.summaryItem
-  const item: ChatReviewItem | null = s
-    ? {
-        id: s.id,
-        kind: s.kind,
-        state: s.state,
-        anchorAt: s.anchorAt.toISOString(),
-        dueAt: s.dueAt ? s.dueAt.toISOString() : null,
-        closedReason: s.closedReason,
-        note: s.note,
-        closedAt: s.closedAt ? s.closedAt.toISOString() : null,
-      }
-    : null
+  const item: ChatReviewItem | null = s ? { ...toSummaryItemStatus(s), anchorAt: s.anchorAt.toISOString() } : null
   return { latest, item, history: await chatReviewHistory(conversationId) }
 }
 

@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import { render, screen, cleanup, fireEvent, waitFor, within } from '@testing-library/react'
-import { ChatReviewTab, followUpStatus } from './ChatReviewTab'
+import { ChatReviewTab } from './ChatReviewTab'
+import { followUpStatus } from '@/lib/summary-items/status'
 import { SUMMARY_ITEMS_CHANGED } from '@/lib/summary-items/events'
 import type { ChatReviewItem, ChatReviewResponse } from '@/app/api/conversations/[id]/chat-review/route'
 

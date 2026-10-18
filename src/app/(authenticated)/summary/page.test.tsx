@@ -1,6 +1,14 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, cleanup, fireEvent, waitFor, within } from '@testing-library/react'
 import DailySummaryPage from './page'
+
+let mockSearchParams = new URLSearchParams()
+const replace = vi.fn()
+
+vi.mock('next/navigation', () => ({
+  useSearchParams: () => mockSearchParams,
+  useRouter: () => ({ replace }),
+}))
 
 const payload = {
   version: 1,
@@ -29,9 +37,40 @@ const summaryRow = {
   payload,
 }
 
-function summaryResponse(summary: unknown) {
-  return { dates: summary ? [{ date: '2026-09-21', status: 'PARTIAL' }] : [], summary }
+function summaryResponse(summary: unknown, items: Record<string, unknown> = {}) {
+  return {
+    dates: summary
+      ? [
+          { date: '2026-09-21', status: 'PARTIAL' },
+          { date: '2026-09-20', status: 'DONE' },
+        ]
+      : [],
+    summary,
+    items,
+  }
 }
+
+/** Ringkasan 20 September: satu percakapan belum dibalas yang SEKARANG sudah ditindaklanjuti. */
+const pastPayload = {
+  ...payload,
+  date: '2026-09-20',
+  counts: { activeConversations: 3, inbound: 9, outbound: 8, newConversations: 1, reviewed: 3, reviewFailed: 0 },
+  unreplied: [
+    {
+      conversationId: 'conv_old',
+      contactName: 'Bima',
+      pipelineStage: 'new',
+      lastMessageAt: '2026-09-20T10:00:00.000Z',
+      waitingMs: 1,
+      snippet: 'Masih ada slot?',
+      review: null,
+    },
+  ],
+}
+const pastResponse = summaryResponse(
+  { ...summaryRow, date: '2026-09-20', status: 'DONE', payload: pastPayload },
+  { conv_old: { id: 'si_old', kind: 'REPLY', state: 'DONE', dueAt: null, closedReason: 'REPLIED', note: null, closedAt: null } }
+)
 
 const openItem = {
   id: 'item_1',
@@ -64,6 +103,7 @@ function stubFetch({
     const ok = (json: unknown) => ({ ok: true, status: 200, json: async () => json }) as Response
     if (key === 'GET /api/session') return ok({ role, name: 'Tester' })
     if (key === 'GET /api/daily-summary') return ok(summary)
+    if (key === 'GET /api/daily-summary?date=2026-09-20') return ok(pastResponse)
     if (key === 'GET /api/summary-items') return ok(queue)
     if (key === 'POST /api/daily-summary/generate') return ok({ date: '2026-09-21', status: 'DONE' })
     throw new Error(`fetch tak terduga: ${key}`)
@@ -79,10 +119,12 @@ function callsTo(fetchMock: ReturnType<typeof stubFetch>, url: string) {
 afterEach(() => {
   cleanup()
   vi.unstubAllGlobals()
+  mockSearchParams = new URLSearchParams()
+  replace.mockClear()
 })
 
 describe('DailySummaryPage', () => {
-  it('menampilkan antrean dan status ringkasan terbaru, tanpa tab, pemilih tanggal, atau kartu statistik', async () => {
+  it('menampilkan antrean dan status ringkasan terbaru, tanpa tab atau kartu statistik', async () => {
     stubFetch({ role: 'AGENT' })
     render(<DailySummaryPage />)
 
@@ -96,8 +138,63 @@ describe('DailySummaryPage', () => {
     expect(screen.getByText(/1 percakapan gagal dicek LLM/)).toBeInTheDocument()
 
     expect(screen.queryByRole('tab')).not.toBeInTheDocument()
-    expect(screen.queryByRole('combobox', { name: 'Pilih tanggal' })).not.toBeInTheDocument()
     expect(screen.queryByText('Pesan masuk')).not.toBeInTheDocument()
+    // Default = antrean; tanpa query `date`.
+    expect(screen.getByRole('combobox', { name: 'Pilih tampilan' })).toHaveValue('')
+  })
+
+  it('pemilih tampilan: antrean dulu, lalu satu opsi per tanggal', async () => {
+    stubFetch({ role: 'AGENT' })
+    render(<DailySummaryPage />)
+    const select = screen.getByRole('combobox', { name: 'Pilih tampilan' })
+    await waitFor(() => expect(within(select).getAllByRole('option')).toHaveLength(3))
+    expect(within(select).getAllByRole('option').map((o) => o.textContent)).toEqual([
+      'Antrean sekarang',
+      'Senin, 21 September 2026',
+      'Minggu, 20 September 2026',
+    ])
+  })
+
+  it('memilih tanggal menulis ?date= ke URL, memuat tanggal itu, dan menampilkan status sekarang', async () => {
+    const fetchMock = stubFetch({ role: 'AGENT' })
+    render(<DailySummaryPage />)
+    await screen.findByRole('link', { name: 'Balas' })
+    const select = screen.getByRole('combobox', { name: 'Pilih tampilan' })
+    await waitFor(() => expect(within(select).getAllByRole('option')).toHaveLength(3))
+
+    fireEvent.change(select, { target: { value: '2026-09-20' } })
+
+    expect(replace).toHaveBeenCalledWith('/summary?date=2026-09-20', { scroll: false })
+    const card = await screen.findByRole('listitem', { name: 'Bima' })
+    expect(callsTo(fetchMock, '/api/daily-summary?date=2026-09-20')).toBe(1)
+    expect(within(card).getByText('Belum dibalas')).toBeInTheDocument()
+    expect(within(card).getByText('Sudah ditindaklanjuti')).toBeInTheDocument()
+    expect(within(card).getByRole('link', { name: 'Buka chat' })).toHaveAttribute('href', '/inbox?conversation=conv_old')
+    expect(screen.getByText('3 aktif · 9 masuk · 8 keluar · 1 kontak baru')).toBeInTheDocument()
+    expect(screen.getByText('Status: Selesai')).toBeInTheDocument()
+    expect(screen.getByText(/^Ringkasan:/)).toBeInTheDocument()
+    // Antrean tidak tampil di tampilan tanggal.
+    expect(screen.queryByRole('link', { name: 'Balas' })).not.toBeInTheDocument()
+
+    fireEvent.change(select, { target: { value: '' } })
+    expect(replace).toHaveBeenLastCalledWith('/summary', { scroll: false })
+    expect(await screen.findByRole('link', { name: 'Balas' })).toBeInTheDocument()
+  })
+
+  it('?date= di URL langsung membuka tanggal itu; Buat ulang membuat ulang tanggal itu', async () => {
+    mockSearchParams = new URLSearchParams('date=2026-09-20')
+    const fetchMock = stubFetch({ role: 'ADMIN' })
+    render(<DailySummaryPage />)
+
+    expect(await screen.findByRole('listitem', { name: 'Bima' })).toBeInTheDocument()
+    expect(screen.getByRole('combobox', { name: 'Pilih tampilan' })).toHaveValue('2026-09-20')
+    expect(callsTo(fetchMock, '/api/daily-summary')).toBe(0)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Buat ulang' }))
+    await waitFor(() => expect(screen.getByText('Ringkasan selesai dibuat ulang.')).toBeInTheDocument())
+    const post = fetchMock.mock.calls.find(([url, init]) => String(url) === '/api/daily-summary/generate' && init?.method === 'POST')
+    expect(JSON.parse(String(post?.[1]?.body))).toEqual({ date: '2026-09-20' })
+    expect(callsTo(fetchMock, '/api/daily-summary?date=2026-09-20')).toBe(2)
   })
 
   it('tautan gap knowledge hanya tampil bila ada yang terbuka', async () => {
