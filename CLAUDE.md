@@ -164,6 +164,8 @@ hasil yang lebih baru; "Buat ulang" tanggal lama di /summary tidak menurunkan ta
 Tiap pertanyaan membawa `terjawab` (true/false); ringkasan lama yang berupa string polos tampil
 tanpa tanda. `parseReview` menurunkan item yang bentuknya melenceng, bukan menggagalkan seluruh
 ringkasan. Riwayat dibaca dari payload `DailySummary`, bukan dari kolom ini.
+Dipangkas setelah **30 hari** sejak `chatReviewAt` (keputusan owner 2026-10-19), sama dengan
+DailySummary dan SummaryItem — isinya memuat poin penting chat pelanggan.
 
 ### Simulator & test
 `simulator.ts`, Test Lab, dan `npm run eval` (13 golden case).

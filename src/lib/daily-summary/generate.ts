@@ -11,7 +11,7 @@ import {
 import { buildTranscript, classifyConversation, collectDay, messageSnippet, type CollectedDay } from './collect'
 import { dailySummaryPayloadSchema, type ConversationReview, type DailySummaryPayload } from './payload-schema'
 import { reviewConversation, type ReviewReason } from './review'
-import { saveChatReview } from '@/lib/chat-review/store'
+import { pruneChatReviews, saveChatReview } from '@/lib/chat-review/store'
 import { pruneSummaryItems, reconcileSummaryItems, syncSummaryItems } from '@/lib/summary-items/sync'
 import { jakartaDayKey, jakartaDayRange } from './time'
 
@@ -263,5 +263,6 @@ export async function generateDailySummary(date: string, now: Date = new Date())
   } finally {
     await pruneDailySummaries(now)
     await pruneSummaryItems(now)
+    await pruneChatReviews(now)
   }
 }

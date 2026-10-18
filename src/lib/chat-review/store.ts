@@ -1,4 +1,6 @@
+import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db'
+import { RETENTION_MS } from '@/lib/daily-summary/config'
 import type { ConversationReview } from '@/lib/daily-summary/payload-schema'
 
 /**
@@ -19,5 +21,23 @@ export async function saveChatReview(conversationId: string, review: Conversatio
   } catch (error) {
     console.error('saveChatReview gagal', { conversationId, error: error instanceof Error ? error.message : 'unknown' })
     return false
+  }
+}
+
+/**
+ * Mengosongkan ringkasan terbaru yang `chatReviewAt`-nya lebih tua dari masa simpan (30 hari,
+ * sama dengan DailySummary dan SummaryItem): isinya memuat poin penting chat pelanggan. Hanya
+ * kolomnya yang dikosongkan, barisnya tetap. Tidak pernah melempar.
+ */
+export async function pruneChatReviews(now: Date = new Date()): Promise<{ cleared: number }> {
+  try {
+    const { count } = await prisma.conversation.updateMany({
+      where: { chatReviewAt: { lt: new Date(now.getTime() - RETENTION_MS) } },
+      data: { chatReview: Prisma.DbNull, chatReviewAt: null },
+    })
+    return { cleared: count }
+  } catch (error) {
+    console.error('pruneChatReviews gagal', { error: error instanceof Error ? error.message : 'unknown' })
+    return { cleared: 0 }
   }
 }

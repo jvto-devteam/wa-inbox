@@ -7,7 +7,8 @@ vi.mock('@/lib/db', () => ({ prisma: mockDeep<PrismaClient>() }))
 
 import { prisma } from '@/lib/db'
 import type { ConversationReview } from '@/lib/daily-summary/payload-schema'
-import { saveChatReview } from './store'
+import { Prisma } from '@prisma/client'
+import { pruneChatReviews, saveChatReview } from './store'
 
 const mockPrisma = prisma as unknown as DeepMockProxy<PrismaClient>
 const review: ConversationReview = {
@@ -36,5 +37,23 @@ describe('saveChatReview', () => {
     mockPrisma.conversation.updateMany.mockRejectedValue(new Error('db mati'))
     vi.spyOn(console, 'error').mockImplementation(() => undefined)
     expect(await saveChatReview('c1', review, new Date())).toBe(false)
+  })
+})
+
+describe('pruneChatReviews', () => {
+  it('mengosongkan ringkasan yang lebih tua dari 30 hari', async () => {
+    mockPrisma.conversation.updateMany.mockResolvedValue({ count: 3 })
+    const now = new Date('2026-10-19T00:00:00Z')
+    await expect(pruneChatReviews(now)).resolves.toEqual({ cleared: 3 })
+    expect(mockPrisma.conversation.updateMany).toHaveBeenCalledWith({
+      where: { chatReviewAt: { lt: new Date('2026-09-19T00:00:00Z') } },
+      data: { chatReview: Prisma.DbNull, chatReviewAt: null },
+    })
+  })
+
+  it('tidak pernah melempar', async () => {
+    mockPrisma.conversation.updateMany.mockRejectedValue(new Error('db mati'))
+    vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    await expect(pruneChatReviews()).resolves.toEqual({ cleared: 0 })
   })
 })

@@ -6,7 +6,10 @@ import { Prisma, type PrismaClient } from '@prisma/client'
 vi.mock('@/lib/db', () => ({ prisma: mockDeep<PrismaClient>() }))
 vi.mock('./collect', async (importOriginal) => ({ ...(await importOriginal<typeof import('./collect')>()), collectDay: vi.fn() }))
 vi.mock('./review', async (importOriginal) => ({ ...(await importOriginal<typeof import('./review')>()), reviewConversation: vi.fn() }))
-vi.mock('@/lib/chat-review/store', () => ({ saveChatReview: vi.fn().mockResolvedValue(true) }))
+vi.mock('@/lib/chat-review/store', () => ({
+  saveChatReview: vi.fn().mockResolvedValue(true),
+  pruneChatReviews: vi.fn().mockResolvedValue({ cleared: 0 }),
+}))
 vi.mock('@/lib/summary-items/sync', () => ({
   syncSummaryItems: vi.fn().mockResolvedValue({ created: 0, updated: 0, reopened: 0 }),
   reconcileSummaryItems: vi.fn().mockResolvedValue({ closed: 0, converted: 0, reopened: 0 }),
@@ -16,7 +19,7 @@ vi.mock('@/lib/summary-items/sync', () => ({
 import { prisma } from '@/lib/db'
 import { collectDay, type CollectedDay, type ConversationFacts, type TranscriptMessage } from './collect'
 import { reviewConversation } from './review'
-import { saveChatReview } from '@/lib/chat-review/store'
+import { pruneChatReviews, saveChatReview } from '@/lib/chat-review/store'
 import { buildPayload, generateDailySummary, pruneDailySummaries } from './generate'
 import type { ConversationReview } from './payload-schema'
 import { jakartaDayRange } from './time'
@@ -200,6 +203,15 @@ describe('generateDailySummary', () => {
 
     expect(result).toEqual({ outcome: 'already_running', date: DATE })
     expect(collectDay).not.toHaveBeenCalled()
+  })
+
+  it('memangkas ringkasan chat lama dengan now yang sama, juga saat gagal', async () => {
+    mockPrisma.dailySummary.updateMany.mockResolvedValue({ count: 1 })
+    mockPrisma.dailySummary.update.mockResolvedValue({} as never)
+    vi.mocked(collectDay).mockRejectedValue(new Error('x'))
+    vi.mocked(pruneChatReviews).mockClear()
+    await generateDailySummary(DATE, end)
+    expect(pruneChatReviews).toHaveBeenCalledWith(end)
   })
 
   it('kegagalan pengumpulan data → FAILED tanpa pesan error mentah', async () => {
