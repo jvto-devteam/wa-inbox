@@ -6,6 +6,7 @@ import { Prisma, type PrismaClient } from '@prisma/client'
 vi.mock('@/lib/db', () => ({ prisma: mockDeep<PrismaClient>() }))
 vi.mock('./collect', async (importOriginal) => ({ ...(await importOriginal<typeof import('./collect')>()), collectDay: vi.fn() }))
 vi.mock('./review', async (importOriginal) => ({ ...(await importOriginal<typeof import('./review')>()), reviewConversation: vi.fn() }))
+vi.mock('@/lib/chat-review/store', () => ({ saveChatReview: vi.fn().mockResolvedValue(true) }))
 vi.mock('@/lib/summary-items/sync', () => ({
   syncSummaryItems: vi.fn().mockResolvedValue({ created: 0, updated: 0, reopened: 0 }),
   reconcileSummaryItems: vi.fn().mockResolvedValue({ closed: 0, converted: 0, reopened: 0 }),
@@ -15,6 +16,7 @@ vi.mock('@/lib/summary-items/sync', () => ({
 import { prisma } from '@/lib/db'
 import { collectDay, type CollectedDay, type ConversationFacts, type TranscriptMessage } from './collect'
 import { reviewConversation } from './review'
+import { saveChatReview } from '@/lib/chat-review/store'
 import { buildPayload, generateDailySummary, pruneDailySummaries } from './generate'
 import type { ConversationReview } from './payload-schema'
 import { jakartaDayRange } from './time'
@@ -63,6 +65,7 @@ beforeEach(() => {
   mockReset(mockPrisma)
   vi.mocked(collectDay).mockReset()
   vi.mocked(reviewConversation).mockReset()
+  vi.mocked(saveChatReview).mockClear()
 })
 
 describe('buildPayload', () => {
@@ -147,6 +150,21 @@ describe('generateDailySummary', () => {
     expect(vi.mocked(reviewConversation).mock.calls[0][2]).toBe('gemma4:31b-cloud')
     const update = mockPrisma.dailySummary.update.mock.calls[0][0]
     expect(update.data).toMatchObject({ status: 'PARTIAL', model: 'gemma4:31b-cloud', error: null })
+    // Hanya review non-null yang disimpan sebagai ringkasan terbaru, dengan `end` sebagai "per".
+    expect(saveChatReview).toHaveBeenCalledTimes(1)
+    expect(vi.mocked(saveChatReview).mock.calls[0][0]).toBe('a')
+    expect(vi.mocked(saveChatReview).mock.calls[0][2]).toEqual(end)
+  })
+
+  it('kegagalan menyimpan ringkasan terbaru tidak mengubah status ringkasan', async () => {
+    mockPrisma.dailySummary.updateMany.mockResolvedValue({ count: 1 })
+    vi.mocked(collectDay).mockResolvedValue(day([conv('a', [msg('INBOUND', new Date(end.getTime() - 2 * HOUR))], { inboundToday: 1 })]))
+    vi.mocked(reviewConversation).mockResolvedValue(review('perlu_tindakan'))
+    vi.mocked(saveChatReview).mockRejectedValueOnce(new Error('db mati'))
+
+    const result = await generateDailySummary(DATE, end)
+
+    expect(result).toEqual({ outcome: 'generated', date: DATE, status: 'DONE' })
   })
 
   it('mencoba ulang sekali percakapan yang gagal dinilai, lalu DONE bila berhasil', async () => {

@@ -11,6 +11,7 @@ import {
 import { buildTranscript, classifyConversation, collectDay, messageSnippet, type CollectedDay } from './collect'
 import { dailySummaryPayloadSchema, type ConversationReview, type DailySummaryPayload } from './payload-schema'
 import { reviewConversation, type ReviewReason } from './review'
+import { saveChatReview } from '@/lib/chat-review/store'
 import { pruneSummaryItems, reconcileSummaryItems, syncSummaryItems } from '@/lib/summary-items/sync'
 import { jakartaDayKey, jakartaDayRange } from './time'
 
@@ -233,6 +234,15 @@ export async function generateDailySummary(date: string, now: Date = new Date())
       where: { date },
       data: { status, model: model ?? null, finishedAt: new Date(), error: null, payload },
     })
+    // Ringkasan terbaru per percakapan untuk panel Inbox. `saveChatReview` tidak pernah melempar
+    // dan tidak menimpa hasil yang lebih baru; kegagalannya tidak mengubah status ringkasan.
+    try {
+      for (const [conversationId, review] of reviews) {
+        if (review) await saveChatReview(conversationId, review, end)
+      }
+    } catch (saveError) {
+      console.error('generateDailySummary: simpan ringkasan terbaru gagal', { date, saveError })
+    }
     // Antrean tindakan menumpang ringkasan ini. Kedua fungsi tidak pernah melempar; dibungkus
     // lagi supaya perubahan di masa depan pun tidak bisa membuat ringkasan yang sudah tersimpan
     // dilaporkan gagal.

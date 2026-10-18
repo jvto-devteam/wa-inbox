@@ -214,6 +214,12 @@ model Conversation {
   mailAutomated Boolean @default(false)
   /// Antrean tindakan Summary Harian untuk percakapan ini (src/lib/summary-items/sync.ts).
   summaryItem   SummaryItem?
+  /// Ringkasan TERBARU percakapan ini untuk tab "Ringkasan chat" di panel Inbox (sebuah
+  /// ConversationReview, src/lib/daily-summary/payload-schema.ts). Diisi job harian atau tombol
+  /// "Perbarui"; hanya ditimpa oleh hasil yang `chatReviewAt`-nya lebih baru (src/lib/chat-review/store.ts).
+  chatReview    Json?
+  /// Waktu "per" ringkasan di atas berlaku (akhir hari WIB untuk job harian, saat klik untuk tombol).
+  chatReviewAt  DateTime?
 
   /// Dipasang di Task 5b, setelah backfill Task 5 selesai (0 duplikat terverifikasi 2026-09-24).
   /// Ini yang membuat conversation.upsert bisa dikunci lewat (channelIdentityId,

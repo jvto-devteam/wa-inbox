@@ -107,6 +107,8 @@ const conversationRow = {
   mailAccountId: null,
   subject: null,
   mailAutomated: false,
+  chatReview: null,
+  chatReviewAt: null,
 }
 
 const samplePayload = {

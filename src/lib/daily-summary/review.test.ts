@@ -4,7 +4,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 vi.mock('@/lib/bot/llm', () => ({ callLLM: vi.fn() }))
 
 import { callLLM } from '@/lib/bot/llm'
-import { buildReviewPrompt, parseReview, reviewConversation } from './review'
+import { normalizeQuestion } from './payload-schema'
+import { buildReviewPrompt, parseReview, reviewConversation, REVIEW_SYSTEM_PROMPT } from './review'
 
 const valid = {
   status: 'perlu_tindakan',
@@ -33,6 +34,15 @@ describe('parseReview', () => {
     ['field hilang', JSON.stringify({ status: 'selesai' })],
   ])('menolak %s', (_label, raw) => {
     expect(parseReview(raw)).toBeNull()
+  })
+
+  it('menerima pertanyaan berbentuk objek dan string polos, membuang yang teksnya kosong', () => {
+    const raw = { ...valid, pertanyaan: [{ teks: '  Harga? ', terjawab: true }, 'Jam jemput?', { teks: '   ', terjawab: false }] }
+    expect(parseReview(JSON.stringify(raw))?.pertanyaan).toEqual([{ teks: 'Harga?', terjawab: true }, 'Jam jemput?'])
+  })
+
+  it('menolak objek pertanyaan tanpa terjawab', () => {
+    expect(parseReview(JSON.stringify({ ...valid, pertanyaan: [{ teks: 'x' }] }))).toBeNull()
   })
 
   it('membatasi array ke 5 item', () => {
@@ -69,5 +79,16 @@ describe('buildReviewPrompt', () => {
     expect(prompt).toContain('pelanggan belum menjawab selama beberapa hari')
     expect(prompt).toContain('Pelanggan: ok thanks')
     expect(prompt).not.toMatch(/\+?62\d{8,}/)
+  })
+})
+
+describe('pertanyaan per butir', () => {
+  it('normalizeQuestion: string lama → terjawab null', () => {
+    expect(normalizeQuestion('Harga?')).toEqual({ teks: 'Harga?', terjawab: null })
+    expect(normalizeQuestion({ teks: 'Harga?', terjawab: false })).toEqual({ teks: 'Harga?', terjawab: false })
+  })
+
+  it('prompt meminta bentuk objek dengan terjawab', () => {
+    expect(REVIEW_SYSTEM_PROMPT).toContain('"pertanyaan":[{"teks":"...","terjawab":true}]')
   })
 })

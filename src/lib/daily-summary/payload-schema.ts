@@ -9,13 +9,25 @@ import { z } from 'zod'
 export const REVIEW_STATUSES = ['perlu_tindakan', 'selesai', 'tidak_jelas'] as const
 export const CONTACT_KINDS = ['calon_tamu', 'tamu_existing', 'mitra', 'lainnya'] as const
 
+/**
+ * Satu pertanyaan pelanggan. Ringkasan lama (sebelum 19 Oktober 2026) menyimpannya sebagai
+ * string polos, jadi keduanya diterima; `normalizeQuestion` menyeragamkannya untuk tampilan.
+ */
+export const reviewQuestionSchema = z.union([z.string(), z.object({ teks: z.string(), terjawab: z.boolean() })])
+export type ReviewQuestion = z.infer<typeof reviewQuestionSchema>
+
+/** String lama → `terjawab: null` (tidak diketahui, tampil tanpa tanda). */
+export function normalizeQuestion(q: ReviewQuestion): { teks: string; terjawab: boolean | null } {
+  return typeof q === 'string' ? { teks: q, terjawab: null } : { teks: q.teks, terjawab: q.terjawab }
+}
+
 /** Hasil satu panggilan LLM untuk satu percakapan (review.ts). */
 export const conversationReviewSchema = z.object({
   status: z.enum(REVIEW_STATUSES),
   alasan: z.string(),
   jenisKontak: z.enum(CONTACT_KINDS),
   topik: z.string(),
-  pertanyaan: z.array(z.string()),
+  pertanyaan: z.array(reviewQuestionSchema),
   poinPenting: z.array(z.string()),
   statusAgen: z.string(),
   langkahBerikut: z.string(),
