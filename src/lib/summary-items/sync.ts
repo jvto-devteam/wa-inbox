@@ -1,6 +1,6 @@
 import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db'
-import { RETENTION_MS } from '@/lib/daily-summary/config'
+import { DORMANT_STAGES, RETENTION_MS } from '@/lib/daily-summary/config'
 import { messageSnippet, type TranscriptMessage } from '@/lib/daily-summary/collect'
 import type { ConversationReview, DailySummaryPayload } from '@/lib/daily-summary/payload-schema'
 
@@ -12,6 +12,11 @@ import type { ConversationReview, DailySummaryPayload } from '@/lib/daily-summar
  * harus tertutup begitu admin membalas. `syncSummaryItems` memasukkan kandidat dari payload;
  * `reconcileSummaryItems` murni membaca fakta (pesan keluar, pengingat) dan boleh dipanggil
  * kapan saja, termasuk tiap tick `/api/outbound-jobs/process`.
+ *
+ * Jalan keluar otomatis (reconcile): REPLY tertutup oleh pesan keluar sesudah anchor; FOLLOW_UP
+ * jadi REPLY bila pelanggan chat lagi, atau tertutup (REPLIED) bila admin sudah mengirim pesan
+ * sesudah anchor, atau (STAGE_ADVANCED) bila tahap pipeline sudah keluar dari DORMANT_STAGES.
+ * Pengingat dipantau selama `reminderId` terisi, baik SCHEDULED maupun OPEN (sudah jatuh tempo).
  *
  * Semua fungsi di sini tidak pernah melempar: antrean adalah pelengkap ringkasan, dan
  * kegagalannya tidak boleh mengubah status ringkasan atau menahan antrean outbound.
@@ -56,6 +61,20 @@ function toCandidates(payload: DailySummaryPayload): Candidate[] {
   return [...payload.unreplied.map((i) => base(i, 'REPLY')), ...payload.dormant.map((i) => base(i, 'FOLLOW_UP'))]
 }
 
+type ClosedRow = { state: string; closedReason: string | null; anchorAt: Date; closedAt: Date | null }
+
+/**
+ * Kartu REPLY yang dilepas (DROPPED) atau ditutup lewat pengingat selesai (REMINDER_DONE) bisa
+ * menampilkan pesan lama, sebab anchor-nya tidak disegarkan selama terbawa. Pesan pelanggan yang
+ * masuk sebelum penutupan tapi sesudah pesan yang tampil di kartu juga harus membukanya lagi,
+ * jadi pembandingnya anchor baris, bukan closedAt. Selain itu berlaku aturan closedAt.
+ */
+function shouldReopen(row: ClosedRow, c: Candidate): boolean {
+  const staleCardClose = row.state === 'DROPPED' || (row.state === 'DONE' && row.closedReason === 'REMINDER_DONE')
+  if (c.kind === 'REPLY' && staleCardClose) return c.anchorAt > row.anchorAt
+  return row.closedAt !== null && c.anchorAt > row.closedAt
+}
+
 /** Masukkan kandidat dari payload ringkasan `date` ke antrean. */
 export async function syncSummaryItems(
   date: string,
@@ -81,13 +100,16 @@ export async function syncSummaryItems(
         })
         result.created++
       } else if (row.state === 'OPEN' || row.state === 'SCHEDULED') {
+        // Membuat ulang ringkasan tanggal lama tidak boleh memundurkan item yang sudah
+        // diperbarui oleh ringkasan yang lebih baru.
+        if (date < row.lastSeenOn) continue
         await prisma.summaryItem.update({
           where: { id: row.id },
           // "YYYY-MM-DD" terurut leksikografis sama dengan urutan tanggal.
           data: { ...fields, lastSeenOn: row.lastSeenOn > date ? row.lastSeenOn : date },
         })
         result.updated++
-      } else if (row.closedAt && c.anchorAt > row.closedAt) {
+      } else if (shouldReopen(row, c)) {
         // Pesan baru sesudah ditutup: item lahir kembali. Pesan yang sama tidak membukanya lagi,
         // jadi keputusan operator tetap berlaku.
         await prisma.summaryItem.update({
@@ -184,6 +206,34 @@ async function reconcileOne(
     }
   }
 
+  // 1b. FOLLOW_UP yang tidak berubah jadi REPLY harus punya jalan keluar sendiri: admin sudah
+  // mengirim pesan sesudah anchor, atau lead sudah maju dari tahap yang perlu dikejar.
+  if (kind === 'FOLLOW_UP') {
+    const outbound = await prisma.message.findFirst({
+      where: { conversationId: item.conversationId, direction: 'OUTBOUND', createdAt: { gt: anchorAt } },
+      orderBy: { createdAt: 'asc' },
+      select: { id: true, createdAt: true },
+    })
+    if (outbound) {
+      if (reminderId) completeReminderId = reminderId
+      Object.assign(data, { state: 'DONE', closedReason: 'REPLIED', closedAt: outbound.createdAt })
+      result.closed++
+      await write(item.id, data, completeReminderId)
+      return
+    }
+    const conversation = await prisma.conversation.findUnique({
+      where: { id: item.conversationId },
+      select: { pipelineStage: true },
+    })
+    if (conversation && !DORMANT_STAGES.includes(conversation.pipelineStage)) {
+      if (reminderId) completeReminderId = reminderId
+      Object.assign(data, { state: 'DONE', closedReason: 'STAGE_ADVANCED', closedAt: now })
+      result.closed++
+      await write(item.id, data, completeReminderId)
+      return
+    }
+  }
+
   // 2. Sudah ada balasan kita sesudah anchor: selesai.
   if (kind === 'REPLY') {
     const outbound = await prisma.message.findFirst({
@@ -203,19 +253,20 @@ async function reconcileOne(
     }
   }
 
-  // 3. Dijadwalkan: ikuti nasib pengingatnya.
-  if (state === 'SCHEDULED' && reminderId) {
+  // 3. Ada pengingat terkait (SCHEDULED, atau OPEN karena sudah jatuh tempo): ikuti nasibnya.
+  // Pengingat yang ditandai selesai setelah jatuh tempo tetap harus menutup item.
+  if (reminderId) {
     const reminder = await prisma.reminder.findUnique({ where: { id: reminderId } })
     if (!reminder) {
       Object.assign(data, { state: 'OPEN', reminderId: null, dueAt: null })
       touched = true
-      result.reopened++
+      if (state === 'SCHEDULED') result.reopened++
     } else if (reminder.done) {
       // Tabel Reminder tidak punya waktu selesai, jadi satu-satunya penanda yang ada adalah `now`.
       Object.assign(data, { state: 'DONE', closedReason: 'REMINDER_DONE', closedAt: now })
       touched = true
       result.closed++
-    } else if (reminder.dueAt <= now) {
+    } else if (state === 'SCHEDULED' && reminder.dueAt <= now) {
       // reminderId/dueAt dipertahankan supaya UI bisa menulis "pengingat jatuh tempo".
       Object.assign(data, { state: 'OPEN' })
       touched = true

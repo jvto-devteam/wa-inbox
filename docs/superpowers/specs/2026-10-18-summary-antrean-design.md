@@ -13,7 +13,10 @@ ada status per item, dan item yang sudah dibalas tetap tampil sampai ringkasan d
 
 Setiap item hanya punya tiga jalan keluar:
 1. **Ditangani**: ditutup otomatis. Item REPLY tertutup saat ada pesan keluar sesudah pesan
-   pemicunya. Item FOLLOW_UP berubah jadi REPLY saat pelanggan kembali chat.
+   pemicunya. Item FOLLOW_UP berubah jadi REPLY saat pelanggan kembali chat; kalau tidak,
+   FOLLOW_UP tertutup (REPLIED) saat admin sudah mengirim pesan sesudah pesan pemicunya, atau
+   (STAGE_ADVANCED) saat tahap pipeline percakapan sudah keluar dari `DORMANT_STAGES`.
+   Pesan pelanggan yang lebih baru dari kartu yang dilepas / pengingatnya selesai membuka item lagi.
 2. **Dijadwalkan**: tombol "Ingatkan" membuat `Reminder` (model yang sudah ada) dan item
    berstatus SCHEDULED. Saat jatuh tempo, item terbuka lagi. Kalau reminder ditandai selesai
    di panel kontak, item ikut selesai.

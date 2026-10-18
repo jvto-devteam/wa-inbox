@@ -981,7 +981,7 @@ model SummaryItem {
   lastSeenOn      String
   reminderId      String?
   dueAt           DateTime?
-  /// REPLIED | REMINDER_DONE | DROPPED
+  /// REPLIED | REMINDER_DONE | DROPPED | STAGE_ADVANCED
   closedReason    String?
   note            String?
   closedById      String?
