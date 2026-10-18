@@ -41,8 +41,35 @@ describe('parseReview', () => {
     expect(parseReview(JSON.stringify(raw))?.pertanyaan).toEqual([{ teks: 'Harga?', terjawab: true }, 'Jam jemput?'])
   })
 
-  it('menolak objek pertanyaan tanpa terjawab', () => {
-    expect(parseReview(JSON.stringify({ ...valid, pertanyaan: [{ teks: 'x' }] }))).toBeNull()
+  describe('toleransi bentuk pertanyaan', () => {
+    const parseQ = (pertanyaan: unknown[]) => parseReview(JSON.stringify({ ...valid, pertanyaan }))?.pertanyaan
+
+    it('terjawab berupa string "true"/"false" dijadikan boolean', () => {
+      expect(parseQ([{ teks: 'A?', terjawab: 'true' }, { teks: 'B?', terjawab: 'false' }])).toEqual([
+        { teks: 'A?', terjawab: true },
+        { teks: 'B?', terjawab: false },
+      ])
+    })
+
+    it('objek tanpa terjawab diturunkan jadi string polos', () => {
+      expect(parseQ([{ teks: 'Harga?' }])).toEqual(['Harga?'])
+    })
+
+    it('terjawab null atau tidak valid diturunkan jadi string polos', () => {
+      expect(parseQ([{ teks: 'A?', terjawab: null }, { teks: 'B?', terjawab: 'mungkin' }, { teks: 'C?', terjawab: 1 }])).toEqual(['A?', 'B?', 'C?'])
+    })
+
+    it('teks di kunci "pertanyaan" dipakai sebagai cadangan, jadi string polos', () => {
+      expect(parseQ([{ pertanyaan: 'Harga?', terjawab: false }])).toEqual(['Harga?'])
+    })
+
+    it('item selain string/objek bermakna dibuang, ringkasan tetap lolos', () => {
+      expect(parseQ(['Jam?', 42, null, [], {}, { teks: 5 }, { teks: 'Ok?', terjawab: true }])).toEqual(['Jam?', { teks: 'Ok?', terjawab: true }])
+    })
+
+    it('teks hasil penurunan tetap dipotong dan yang kosong dibuang', () => {
+      expect(parseQ([{ teks: '   ' }, { teks: 'x'.repeat(400) }])).toEqual([`${'x'.repeat(299)}…`])
+    })
   })
 
   it('membatasi array ke 5 item', () => {
@@ -89,6 +116,6 @@ describe('pertanyaan per butir', () => {
   })
 
   it('prompt meminta bentuk objek dengan terjawab', () => {
-    expect(REVIEW_SYSTEM_PROMPT).toContain('"pertanyaan":[{"teks":"...","terjawab":true}]')
+    expect(REVIEW_SYSTEM_PROMPT).toContain('"pertanyaan":[{"teks":"...","terjawab":true|false}]')
   })
 })

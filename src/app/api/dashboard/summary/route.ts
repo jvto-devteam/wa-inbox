@@ -23,6 +23,7 @@ export async function GET() {
     // isn't "waiting for an agent" (see the reason text below).
     prisma.conversation.findMany({
       where: { status: 'OPEN', botEnabled: false, assignedAgentId: null },
+      omit: { chatReview: true },
       include: { contact: true },
       take: 20,
     }),

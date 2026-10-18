@@ -72,10 +72,12 @@ function FollowUpSection({
   item,
   defaultNote,
   onChanged,
+  loadError,
 }: {
   item: ChatReviewItem | null
   defaultNote: string
   onChanged: () => Promise<void>
+  loadError: string | null
 }) {
   const status = followUpStatus(item)
   const actionable = item && (item.state === 'OPEN' || item.state === 'SCHEDULED')
@@ -89,6 +91,12 @@ function FollowUpSection({
       {actionable && (
         // `key`: aksi item lain (setelah dilepas lalu muncul item baru) mulai dari panel tertutup.
         <RemindDropActions key={item.id} itemId={item.id} defaultNote={defaultNote} onChanged={onChanged} />
+      )}
+      {loadError && (
+        // Aksi berhasil tetapi muat ulang gagal: status di atas bisa sudah basi, jadi katakan.
+        <p role="alert" className="text-sm text-danger">
+          {loadError}
+        </p>
       )}
     </section>
   )
@@ -250,18 +258,25 @@ export function ChatReviewTab({ conversationId, contactName }: { conversationId:
     )
   }
 
-  const latest = data.latest
+  // Belum ada hasil terbaru tetapi riwayat harian ada: ringkasan harian terakhir jadi yang terbaru.
+  const fallback = !data.latest && data.history.length > 0 ? data.history[0] : null
+  const latest = data.latest ?? (fallback ? { review: fallback.review, at: null } : null)
+  const latestLabel = data.latest
+    ? `Diperbarui ${wibDateTimeLabel(data.latest.at)}`
+    : fallback
+      ? `Dari ringkasan harian ${dateKeyLabel(fallback.date)}`
+      : 'Belum ada ringkasan.'
   const defaultNote = latest?.review.langkahBerikut || `Follow up ${contactName || 'Tanpa nama'}`
 
   return (
     <div className="flex flex-col gap-4">
-      <FollowUpSection item={data.item} defaultNote={defaultNote} onChanged={reload} />
+      <FollowUpSection item={data.item} defaultNote={defaultNote} onChanged={reload} loadError={loadError} />
 
       <section aria-label="Poin penting terbaru" className="space-y-2">
         <PanelSectionTitle>Poin penting terbaru</PanelSectionTitle>
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-xs text-ink-muted">
-            {latest ? `Diperbarui ${wibDateTimeLabel(latest.at)}` : 'Belum ada ringkasan.'}
+            {latestLabel}
           </span>
           <Button type="button" size="sm" variant="outline" disabled={refreshing} onClick={() => void refresh()}>
             {refreshing ? 'Meringkas…' : 'Perbarui sekarang'}

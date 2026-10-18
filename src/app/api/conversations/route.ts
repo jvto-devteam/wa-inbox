@@ -50,6 +50,8 @@ export async function GET(req: Request) {
   const conversations = await prisma.conversation.findMany({
     where: Object.keys(where).length ? where : undefined,
     orderBy: [{ isPinned: 'desc' }, { lastMessageAt: 'desc' }],
+    // JSONB ringkasan LLM besar dan tidak dipakai daftar; hanya tab Ringkasan chat yang membacanya.
+    omit: { chatReview: true },
     include: {
       contact: true,
       messages: { orderBy: { createdAt: 'desc' }, take: 1 },

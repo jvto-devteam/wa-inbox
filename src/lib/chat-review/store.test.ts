@@ -17,12 +17,12 @@ const review: ConversationReview = {
 beforeEach(() => mockReset(mockPrisma))
 
 describe('saveChatReview', () => {
-  it('hanya menulis bila chatReviewAt kosong atau lebih lama dari asOf', async () => {
+  it('hanya menulis bila chatReviewAt kosong, lebih lama, atau sama dengan asOf', async () => {
     mockPrisma.conversation.updateMany.mockResolvedValue({ count: 1 })
     const asOf = new Date('2026-10-19T00:00:00Z')
     expect(await saveChatReview('c1', review, asOf)).toBe(true)
     expect(mockPrisma.conversation.updateMany).toHaveBeenCalledWith({
-      where: { id: 'c1', OR: [{ chatReviewAt: null }, { chatReviewAt: { lt: asOf } }] },
+      where: { id: 'c1', OR: [{ chatReviewAt: null }, { chatReviewAt: { lte: asOf } }] },
       data: { chatReview: review, chatReviewAt: asOf },
     })
   })

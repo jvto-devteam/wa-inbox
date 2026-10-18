@@ -148,6 +148,38 @@ describe('ChatReviewTab', () => {
     expect(screen.getByRole('button', { name: 'Perbarui sekarang' })).toBeEnabled()
   })
 
+  it('latest kosong tetapi riwayat ada: riwayat terbaru jadi ringkasan, berlabel tanggal harian', async () => {
+    stubFetch(() =>
+      json(response({ latest: null, history: [{ date: '2026-10-18', review: { ...review, topik: 'Harga Bromo' } }] }))
+    )
+    render(<ChatReviewTab conversationId="conv_1" />)
+
+    const latest = await screen.findByRole('region', { name: 'Poin penting terbaru' })
+    expect(within(latest).getByText(/^Dari ringkasan harian .*18 Okt/)).toBeInTheDocument()
+    expect(within(latest).getByText('Harga Bromo')).toBeInTheDocument()
+    expect(within(latest).getByText('Tanggal 12 November')).toBeInTheDocument()
+    expect(within(latest).queryByText(/^Diperbarui/)).not.toBeInTheDocument()
+    expect(screen.queryByText('Belum ada ringkasan.')).not.toBeInTheDocument()
+  })
+
+  it('muat ulang gagal setelah Lepas berhasil: galat tampil inline, data lama tetap terlihat', async () => {
+    let gets = 0
+    stubFetch((url) => {
+      if (url === '/api/summary-items/item_1/drop') return json({ ok: true })
+      gets++
+      return gets === 1 ? json(response()) : json({ error: 'Gagal memuat ringkasan' }, 500)
+    })
+    render(<ChatReviewTab conversationId="conv_1" />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Lepas' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Lepas item' }))
+
+    const status = screen.getByRole('region', { name: 'Status tindak lanjut' })
+    expect(await within(status).findByText('Gagal memuat ringkasan')).toBeInTheDocument()
+    expect(within(status).getByText('Gagal memuat ringkasan')).toHaveAttribute('role', 'alert')
+    expect(screen.getByText('Paket Ijen 2 orang')).toBeInTheDocument()
+  })
+
   it('"Perbarui sekarang" memanggil POST, tombol nonaktif selama menunggu, lalu menampilkan hasilnya', async () => {
     let resolvePost: (r: Response) => void = () => {}
     const fetchMock = stubFetch((_url, init) => {

@@ -153,6 +153,18 @@ dilepas dengan catatan. Jangan tambahkan kembali tab bacaan atau statistik tanpa
 Percakapan yang sekadar aktif **tetap** dinilai LLM dan disimpan di `payload.conversations`
 (keputusan owner 2026-10-18), walau halaman tidak menampilkannya.
 
+### Ringkasan chat (tab di panel kanan Inbox)
+Menampilkan ringkasan LLM **terbaru** satu percakapan, tanda terjawab per pertanyaan, riwayat
+per hari, dan status tindak lanjut live dari `SummaryItem` (bisa Ingatkan/Lepas dari sini).
+Ringkasan terbaru disimpan di `Conversation.chatReview` / `chatReviewAt`, ditulis dua jalur:
+job 00.00 (asOf = akhir hari yang diringkas) dan tombol "Perbarui sekarang"
+(`POST /api/conversations/[id]/chat-review`, asOf = `now`, cooldown 30 detik).
+`saveChatReview` (`src/lib/chat-review/store.ts`) menulis bersyarat dan **tidak pernah menimpa**
+hasil yang lebih baru; "Buat ulang" tanggal lama di /summary tidak menurunkan tab ini.
+Tiap pertanyaan membawa `terjawab` (true/false); ringkasan lama yang berupa string polos tampil
+tanpa tanda. `parseReview` menurunkan item yang bentuknya melenceng, bukan menggagalkan seluruh
+ringkasan. Riwayat dibaca dari payload `DailySummary`, bukan dari kolom ini.
+
 ### Simulator & test
 `simulator.ts`, Test Lab, dan `npm run eval` (13 golden case).
 
