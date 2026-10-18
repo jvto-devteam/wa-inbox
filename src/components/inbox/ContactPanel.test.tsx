@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor, fireEvent, within } from '@testing-library/react'
 import { ContactPanel } from './ContactPanel'
 
@@ -43,6 +43,11 @@ function mockFetchWithPipeline(detail: typeof baseDetail, pipelineResponse: { ok
     })
   )
 }
+
+// Tab terakhir diingat di localStorage; tiap test mulai dari tab Kontak.
+beforeEach(() => {
+  localStorage.clear()
+})
 
 describe('ContactPanel', () => {
   it('renders contact name, source, and an initial-letter avatar fallback when avatarUrl is null', async () => {
@@ -266,5 +271,86 @@ describe('ContactPanel — info kontak di platform asal', () => {
     render(<ContactPanel conversationId="conv_1" />)
     await waitFor(() => expect(screen.getByText('Bruno Figarola')).toBeInTheDocument())
     expect(screen.queryByRole('region', { name: 'Kontak' })).not.toBeInTheDocument()
+  })
+})
+
+describe('ContactPanel — tab Kontak / Ringkasan chat', () => {
+  const chatReview = {
+    latest: null,
+    item: { id: 'item_1', kind: 'FOLLOW_UP', state: 'OPEN', anchorAt: '2026-10-18T13:30:00.000Z', dueAt: null, closedReason: null, note: null, closedAt: null },
+    history: [],
+  }
+
+  function mockFetchWithChatReview() {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url: string) => {
+        if (url === '/api/conversations/conv_1/chat-review') return Promise.resolve({ ok: true, json: () => Promise.resolve(chatReview) } as Response)
+        if (url === '/api/labels') return Promise.resolve({ ok: true, json: () => Promise.resolve(allLabels) } as Response)
+        if (url.startsWith('/api/contacts/')) return Promise.resolve({ ok: true, json: () => Promise.resolve([]) } as Response)
+        return Promise.resolve({ ok: true, json: () => Promise.resolve(baseDetail) } as Response)
+      })
+    )
+  }
+
+  it('mulai di tab Kontak dengan isi lama, dan belum memuat ringkasan', async () => {
+    mockFetchWithChatReview()
+    render(<ContactPanel conversationId="conv_1" />)
+
+    await screen.findByText('Bruno Figarola')
+    expect(screen.getByRole('tab', { name: 'Kontak' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByRole('tab', { name: 'Ringkasan chat' })).toHaveAttribute('aria-selected', 'false')
+    expect(screen.getByRole('tabpanel', { name: 'Kontak' })).toContainElement(screen.getByLabelText('Tahap pipeline'))
+    expect(fetch).not.toHaveBeenCalledWith('/api/conversations/conv_1/chat-review')
+  })
+
+  it('berpindah ke Ringkasan chat lalu kembali ke Kontak, isi lama tetap ada', async () => {
+    mockFetchWithChatReview()
+    render(<ContactPanel conversationId="conv_1" />)
+    await screen.findByText('Bruno Figarola')
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Ringkasan chat' }))
+    expect(screen.getByRole('tab', { name: 'Ringkasan chat' })).toHaveAttribute('aria-selected', 'true')
+    const panel = screen.getByRole('tabpanel', { name: 'Ringkasan chat' })
+    expect(await within(panel).findByText('Perlu follow up')).toBeInTheDocument()
+    expect(fetch).toHaveBeenCalledWith('/api/conversations/conv_1/chat-review')
+    expect(screen.queryByLabelText('Tahap pipeline')).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Kontak' }))
+    expect(screen.getByText('Bruno Figarola')).toBeInTheDocument()
+    expect(screen.getByLabelText('Tahap pipeline')).toHaveValue('new')
+    expect(screen.queryByRole('tabpanel', { name: 'Ringkasan chat' })).not.toBeInTheDocument()
+  })
+
+  it('tab terakhir diingat untuk panel berikutnya', async () => {
+    mockFetchWithChatReview()
+    const { unmount } = render(<ContactPanel conversationId="conv_1" />)
+    await screen.findByText('Bruno Figarola')
+    fireEvent.click(screen.getByRole('tab', { name: 'Ringkasan chat' }))
+    unmount()
+
+    render(<ContactPanel conversationId="conv_1" />)
+    expect(await screen.findByRole('tab', { name: 'Ringkasan chat' })).toHaveAttribute('aria-selected', 'true')
+    expect(await screen.findByText('Perlu follow up')).toBeInTheDocument()
+  })
+
+  it('localStorage yang melempar tidak memecah panel: tab tetap berpindah', async () => {
+    mockFetchWithChatReview()
+    const getItem = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+      throw new Error('blocked')
+    })
+    const setItem = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new Error('blocked')
+    })
+    try {
+      render(<ContactPanel conversationId="conv_1" />)
+      await screen.findByText('Bruno Figarola')
+      expect(screen.getByRole('tab', { name: 'Kontak' })).toHaveAttribute('aria-selected', 'true')
+      fireEvent.click(screen.getByRole('tab', { name: 'Ringkasan chat' }))
+      expect(screen.getByRole('tab', { name: 'Ringkasan chat' })).toHaveAttribute('aria-selected', 'true')
+    } finally {
+      getItem.mockRestore()
+      setItem.mockRestore()
+    }
   })
 })

@@ -56,7 +56,8 @@ function displayName(item: SummaryItemView): string {
   return item.contactName ?? 'Tanpa nama'
 }
 
-function dateKeyLabel(dateKey: string): string {
+/** Tanggal hari Jakarta (`YYYY-MM-DD`) sebagai label pendek, mis. "18 Okt 2026". */
+export function dateKeyLabel(dateKey: string): string {
   return new Date(`${dateKey}T00:00:00+07:00`).toLocaleDateString('id-ID', {
     timeZone: 'Asia/Jakarta',
     day: 'numeric',
@@ -65,7 +66,8 @@ function dateKeyLabel(dateKey: string): string {
   })
 }
 
-function dueLabel(iso: string): string {
+/** Waktu ISO sebagai hari, tanggal, dan jam WIB, mis. "Sen, 19 Okt, 09.00 WIB". */
+export function wibDateTimeLabel(iso: string): string {
   const text = new Date(iso).toLocaleString('id-ID', {
     timeZone: 'Asia/Jakarta',
     weekday: 'short',
@@ -120,16 +122,35 @@ function ReviewLine({ review }: { review: SummaryItemView['review'] }) {
 
 type Panel = 'remind' | 'drop' | null
 
-function OpenItemCard({ item, now, onChanged }: { item: SummaryItemView; now: Date; onChanged: () => void | Promise<void> }) {
+/**
+ * Tombol "Ingatkan" dan "Lepas" beserta panel kecilnya, untuk satu item OPEN/SCHEDULED. Dipakai
+ * antrean ini dan tab "Ringkasan chat" di Inbox -- satu komponen supaya pilihan waktu, batas
+ * catatan, dan body yang dikirim tidak bisa berbeda di dua tempat.
+ *
+ * `children` ditaruh di depan tombol pada baris yang sama (antrean menaruh tautan "Balas" di
+ * sana). Setelah aksi sukses: event `summary-items:changed`, lalu `onChanged`.
+ */
+export function RemindDropActions({
+  itemId,
+  defaultNote,
+  now,
+  onChanged,
+  children,
+}: {
+  itemId: string
+  /** Isi awal catatan pengingat; dipotong ke batas panjang catatan. */
+  defaultNote: string
+  /** "Sekarang" untuk pilihan "Ingatkan"; tanpa nilai = saat tombol Jadwalkan ditekan. */
+  now?: Date
+  onChanged: () => void | Promise<void>
+  children?: ReactNode
+}) {
   const [panel, setPanel] = useState<Panel>(null)
   const [days, setDays] = useState(REMIND_OPTIONS[0].days)
-  const [note, setNote] = useState(() => (item.review?.langkahBerikut || `Follow up ${displayName(item)}`).slice(0, NOTE_MAX))
+  const [note, setNote] = useState(() => defaultNote.slice(0, NOTE_MAX))
   const [dropNote, setDropNote] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
-
-  const isReply = item.kind === 'REPLY'
-  const name = displayName(item)
 
   function toggle(next: Exclude<Panel, null>) {
     setError(null)
@@ -155,8 +176,8 @@ function OpenItemCard({ item, now, onChanged }: { item: SummaryItemView; now: Da
   }
 
   function schedule() {
-    void submit(`/api/summary-items/${encodeURIComponent(item.id)}/schedule`, {
-      dueAt: jakartaMorningIso(now, days),
+    void submit(`/api/summary-items/${encodeURIComponent(itemId)}/schedule`, {
+      dueAt: jakartaMorningIso(now ?? new Date(), days),
       note: note.trim(),
     })
   }
@@ -164,33 +185,13 @@ function OpenItemCard({ item, now, onChanged }: { item: SummaryItemView; now: Da
   function drop() {
     const trimmed = dropNote.trim()
     // Body JSON selalu dikirim, minimal `{}`: route menolak permintaan tanpa body.
-    void submit(`/api/summary-items/${encodeURIComponent(item.id)}/drop`, trimmed ? { note: trimmed } : {})
+    void submit(`/api/summary-items/${encodeURIComponent(itemId)}/drop`, trimmed ? { note: trimmed } : {})
   }
 
   return (
-    <li className="space-y-1.5 px-4 py-3" aria-label={`${KIND_LABEL[item.kind]}: ${name}`}>
-      <div className="flex flex-wrap items-center gap-2">
-        <ContactLink item={item} />
-        <Badge variant={isReply ? 'destructive' : 'warning'}>{KIND_LABEL[item.kind]}</Badge>
-        {item.handoff && <Badge variant="muted">Handoff</Badge>}
-        {item.newLead && <Badge variant="brand">Lead baru</Badge>}
-        {item.dueAt && <Badge variant="warning">Pengingat jatuh tempo</Badge>}
-        <span className="text-xs text-ink-subtle">{STAGE_LABELS[item.pipelineStage] ?? item.pipelineStage}</span>
-      </div>
-      <p className="text-xs text-ink-muted">
-        {isReply ? 'menunggu' : 'diam'} {formatWait(item.anchorAt, now)} · sejak {dateKeyLabel(item.openedOn)}
-      </p>
-      {item.snippet && (
-        <p className={isReply ? 'max-w-4xl text-sm text-ink' : 'max-w-4xl text-sm text-ink-muted'}>
-          {isReply ? '' : 'Pesan terakhir kita: '}“{item.snippet}”
-        </p>
-      )}
-      <ReviewLine review={item.review} />
-
+    <>
       <div className="flex flex-wrap items-center gap-2 pt-1">
-        <ActionLink href={conversationHref(item.conversationId, isReply ? item.anchorMessageId : null)} primary>
-          {isReply ? 'Balas' : 'Follow up'}
-        </ActionLink>
+        {children}
         <Button type="button" size="sm" variant="outline" aria-expanded={panel === 'remind'} onClick={() => toggle('remind')}>
           Ingatkan
         </Button>
@@ -250,6 +251,44 @@ function OpenItemCard({ item, now, onChanged }: { item: SummaryItemView; now: Da
           {error}
         </p>
       )}
+    </>
+  )
+}
+
+function OpenItemCard({ item, now, onChanged }: { item: SummaryItemView; now: Date; onChanged: () => void | Promise<void> }) {
+  const isReply = item.kind === 'REPLY'
+  const name = displayName(item)
+
+  return (
+    <li className="space-y-1.5 px-4 py-3" aria-label={`${KIND_LABEL[item.kind]}: ${name}`}>
+      <div className="flex flex-wrap items-center gap-2">
+        <ContactLink item={item} />
+        <Badge variant={isReply ? 'destructive' : 'warning'}>{KIND_LABEL[item.kind]}</Badge>
+        {item.handoff && <Badge variant="muted">Handoff</Badge>}
+        {item.newLead && <Badge variant="brand">Lead baru</Badge>}
+        {item.dueAt && <Badge variant="warning">Pengingat jatuh tempo</Badge>}
+        <span className="text-xs text-ink-subtle">{STAGE_LABELS[item.pipelineStage] ?? item.pipelineStage}</span>
+      </div>
+      <p className="text-xs text-ink-muted">
+        {isReply ? 'menunggu' : 'diam'} {formatWait(item.anchorAt, now)} · sejak {dateKeyLabel(item.openedOn)}
+      </p>
+      {item.snippet && (
+        <p className={isReply ? 'max-w-4xl text-sm text-ink' : 'max-w-4xl text-sm text-ink-muted'}>
+          {isReply ? '' : 'Pesan terakhir kita: '}“{item.snippet}”
+        </p>
+      )}
+      <ReviewLine review={item.review} />
+
+      <RemindDropActions
+        itemId={item.id}
+        defaultNote={item.review?.langkahBerikut || `Follow up ${name}`}
+        now={now}
+        onChanged={onChanged}
+      >
+        <ActionLink href={conversationHref(item.conversationId, isReply ? item.anchorMessageId : null)} primary>
+          {isReply ? 'Balas' : 'Follow up'}
+        </ActionLink>
+      </RemindDropActions>
     </li>
   )
 }
@@ -259,7 +298,7 @@ function ScheduledItemRow({ item }: { item: SummaryItemView }) {
     <li className="flex flex-wrap items-center gap-2 px-4 py-2.5" aria-label={`Dijadwalkan: ${displayName(item)}`}>
       <ContactLink item={item} />
       <Badge variant="muted">{KIND_LABEL[item.kind]}</Badge>
-      {item.dueAt && <span className="text-sm text-ink-muted">diingatkan {dueLabel(item.dueAt)}</span>}
+      {item.dueAt && <span className="text-sm text-ink-muted">diingatkan {wibDateTimeLabel(item.dueAt)}</span>}
       <span className="ml-auto">
         <ActionLink href={conversationHref(item.conversationId)}>Buka chat</ActionLink>
       </span>

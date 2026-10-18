@@ -8,6 +8,7 @@ import { cn } from '@/lib/utils'
 import { LabelPicker, type LabelOption } from './LabelPicker'
 import { NotesSection } from './NotesSection'
 import { RemindersSection } from './RemindersSection'
+import { ChatReviewTab } from './ChatReviewTab'
 import { BookingSummary, type BookingData, type TripBrief } from '@/components/contacts/BookingSummary'
 import { bookingGuestName, contactDisplayName } from '@/lib/booking/display-name'
 import { fetchJson } from '@/lib/fetch-json'
@@ -36,6 +37,35 @@ export function PanelSectionTitle({ children }: { children: React.ReactNode }) {
   return <h3 className="text-xs font-semibold tracking-wide text-ink-subtle uppercase">{children}</h3>
 }
 
+type PanelTab = 'kontak' | 'ringkasan'
+
+const PANEL_TABS: ReadonlyArray<{ value: PanelTab; label: string }> = [
+  { value: 'kontak', label: 'Kontak' },
+  { value: 'ringkasan', label: 'Ringkasan chat' },
+]
+
+/**
+ * Tab terakhir yang dipilih, per browser. Kenyamanan saja: penyimpanan bisa kosong atau melempar
+ * (jendela privat, data situs diblokir), dan panel tetap jalan dengan tab Kontak.
+ */
+const TAB_STORAGE_KEY = 'wa-inbox:contact-panel-tab'
+
+function readStoredTab(): PanelTab {
+  try {
+    return globalThis.localStorage?.getItem(TAB_STORAGE_KEY) === 'ringkasan' ? 'ringkasan' : 'kontak'
+  } catch {
+    return 'kontak'
+  }
+}
+
+function storeTab(tab: PanelTab) {
+  try {
+    globalThis.localStorage?.setItem(TAB_STORAGE_KEY, tab)
+  } catch {
+    // Diabaikan: tab tetap berpindah, hanya tidak diingat.
+  }
+}
+
 function ContactPanelSkeleton({ className }: { className?: string }) {
   return (
     <aside
@@ -61,6 +91,13 @@ export function ContactPanel({ conversationId, className }: { conversationId: st
   const [allLabels, setAllLabels] = useState<LabelOption[]>([])
   const [pipelineError, setPipelineError] = useState<string | null>(null)
   const [channel, setChannel] = useState<ChannelContact | null>(null)
+  // Dibaca saat mount aman dari beda hidrasi: render pertama selalu kerangka, tanpa tab.
+  const [tab, setTab] = useState<PanelTab>(readStoredTab)
+
+  function selectTab(next: PanelTab) {
+    setTab(next)
+    storeTab(next)
+  }
 
   useEffect(() => {
     fetchJson<ContactDetail>(`/api/conversations/${conversationId}`).then(setDetail).catch(() => {})
@@ -106,75 +143,111 @@ export function ContactPanel({ conversationId, className }: { conversationId: st
         className
       )}
     >
-      <div className="flex items-center gap-2.5">
-        <ContactAvatar name={detail.contactName} avatarUrl={detail.avatarUrl} />
-        <div className="min-w-0 flex-1">
-          <MarqueeText
-            text={contactDisplayName(detail.contactName, bookingGuestName(detail.bookingData), 'Tanpa nama')}
-            className="text-base font-semibold text-ink"
-          />
-          {detail.source && <p className="truncate text-xs text-ink-muted">{detail.source}</p>}
-        </div>
-      </div>
-
-      {channel && (
-        // Kontak di platform asal: nomor WA, alamat email, @username IG, atau nama FB -- dengan
-        // tautan ke sana kalau ada. Facebook hanya bisa ditautkan ke percakapan di inbox Page,
-        // bukan ke profil orangnya (Meta tidak membuka profil dari PSID).
-        <section aria-label="Kontak" className="space-y-1">
-          <PanelSectionTitle>Kontak</PanelSectionTitle>
-          <p className="text-xs text-ink-muted">{channel.platformLabel}</p>
-          {channel.href ? (
-            <a
-              href={channel.href}
-              target="_blank"
-              rel="noopener noreferrer"
-              title={channel.linkLabel ?? undefined}
-              className="block text-sm font-medium break-all text-accent hover:underline"
+      <div role="tablist" aria-label="Isi panel kanan" className="flex shrink-0 gap-4 border-b border-line">
+        {PANEL_TABS.map(({ value, label }) => {
+          const active = tab === value
+          return (
+            <button
+              key={value}
+              type="button"
+              role="tab"
+              id={`contact-panel-tab-${value}`}
+              aria-selected={active}
+              aria-controls={`contact-panel-tabpanel-${value}`}
+              onClick={() => selectTab(value)}
+              className={cn(
+                'focus-ring -mb-px border-b-2 px-0.5 pb-2 text-sm font-medium transition-colors',
+                active ? 'border-accent text-ink' : 'border-transparent text-ink-muted hover:text-ink'
+              )}
             >
-              {channel.value}
-            </a>
-          ) : (
-            <p className="text-sm break-all text-ink">{channel.value}</p>
-          )}
-          {channel.href && channel.linkLabel && <p className="text-xs text-ink-subtle">{channel.linkLabel} ↗</p>}
-        </section>
-      )}
-
-      <BookingSummary bookingData={detail.bookingData} tripBrief={detail.tripBrief} />
-
-      <div className="space-y-2">
-        <PanelSectionTitle>Tahap Pipeline</PanelSectionTitle>
-        <Select
-          aria-label="Tahap pipeline"
-          value={detail.pipelineStage}
-          onChange={(e) => changePipelineStage(e.target.value)}
-          className="w-full"
-        >
-          {PIPELINE_STAGES.map((s) => (
-            <option key={s.value} value={s.value}>
-              {s.label}
-            </option>
-          ))}
-        </Select>
-        {pipelineError && (
-          <p role="alert" className="text-xs text-danger">
-            {pipelineError}
-          </p>
-        )}
+              {label}
+            </button>
+          )
+        })}
       </div>
 
-      <LabelPicker
-        conversationId={conversationId}
-        allLabels={allLabels}
-        attachedLabels={detail.labels}
-        onAttachedChange={(labels) => setDetail((prev) => (prev ? { ...prev, labels } : prev))}
-        onAllLabelsChange={setAllLabels}
-      />
+      {tab === 'kontak' ? (
+        <div
+          role="tabpanel"
+          id="contact-panel-tabpanel-kontak"
+          aria-labelledby="contact-panel-tab-kontak"
+          className="flex flex-col gap-4"
+        >
+          <div className="flex items-center gap-2.5">
+            <ContactAvatar name={detail.contactName} avatarUrl={detail.avatarUrl} />
+            <div className="min-w-0 flex-1">
+              <MarqueeText
+                text={contactDisplayName(detail.contactName, bookingGuestName(detail.bookingData), 'Tanpa nama')}
+                className="text-base font-semibold text-ink"
+              />
+              {detail.source && <p className="truncate text-xs text-ink-muted">{detail.source}</p>}
+            </div>
+          </div>
 
-      <RemindersSection contactId={detail.contactId} />
+          {channel && (
+            // Kontak di platform asal: nomor WA, alamat email, @username IG, atau nama FB -- dengan
+            // tautan ke sana kalau ada. Facebook hanya bisa ditautkan ke percakapan di inbox Page,
+            // bukan ke profil orangnya (Meta tidak membuka profil dari PSID).
+            <section aria-label="Kontak" className="space-y-1">
+              <PanelSectionTitle>Kontak</PanelSectionTitle>
+              <p className="text-xs text-ink-muted">{channel.platformLabel}</p>
+              {channel.href ? (
+                <a
+                  href={channel.href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  title={channel.linkLabel ?? undefined}
+                  className="block text-sm font-medium break-all text-accent hover:underline"
+                >
+                  {channel.value}
+                </a>
+              ) : (
+                <p className="text-sm break-all text-ink">{channel.value}</p>
+              )}
+              {channel.href && channel.linkLabel && <p className="text-xs text-ink-subtle">{channel.linkLabel} ↗</p>}
+            </section>
+          )}
 
-      <NotesSection contactId={detail.contactId} />
+          <BookingSummary bookingData={detail.bookingData} tripBrief={detail.tripBrief} />
+
+          <div className="space-y-2">
+            <PanelSectionTitle>Tahap Pipeline</PanelSectionTitle>
+            <Select
+              aria-label="Tahap pipeline"
+              value={detail.pipelineStage}
+              onChange={(e) => changePipelineStage(e.target.value)}
+              className="w-full"
+            >
+              {PIPELINE_STAGES.map((s) => (
+                <option key={s.value} value={s.value}>
+                  {s.label}
+                </option>
+              ))}
+            </Select>
+            {pipelineError && (
+              <p role="alert" className="text-xs text-danger">
+                {pipelineError}
+              </p>
+            )}
+          </div>
+
+          <LabelPicker
+            conversationId={conversationId}
+            allLabels={allLabels}
+            attachedLabels={detail.labels}
+            onAttachedChange={(labels) => setDetail((prev) => (prev ? { ...prev, labels } : prev))}
+            onAllLabelsChange={setAllLabels}
+          />
+
+          <RemindersSection contactId={detail.contactId} />
+
+          <NotesSection contactId={detail.contactId} />
+        </div>
+      ) : (
+        <div role="tabpanel" id="contact-panel-tabpanel-ringkasan" aria-labelledby="contact-panel-tab-ringkasan">
+          <ChatReviewTab key={conversationId} conversationId={conversationId} contactName={detail.contactName} />
+        </div>
+      )}
     </aside>
   )
 }
