@@ -150,6 +150,8 @@ boleh berhenti di halaman). Kandidat disinkronkan ke `SummaryItem` (satu baris p
 item hanya punya tiga jalan keluar: tertutup otomatis oleh `reconcileSummaryItems` (dipanggil di
 tick `POST /api/outbound-jobs/process` dan saat daftar dibaca), dijadwalkan lewat `Reminder`, atau
 dilepas dengan catatan. Jangan tambahkan kembali tab bacaan atau statistik tanpa tindakan.
+Pemilih tampilan (`?date=`) membuka ringkasan hari lain: kartunya memakai review hari itu,
+tetapi badge "Status sekarang" dan tombol Ingatkan/Lepas memakai status `SummaryItem` yang live.
 Percakapan yang sekadar aktif **tetap** dinilai LLM dan disimpan di `payload.conversations`
 (keputusan owner 2026-10-18), walau halaman tidak menampilkannya.
 
