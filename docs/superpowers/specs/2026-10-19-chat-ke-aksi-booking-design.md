@@ -114,7 +114,7 @@ kode dan tanggal di kartu.
 
 **P2. Jalur tulis: memakai jalur my-booking tamu yang sudah ada (keputusan Claude, disetujui owner 2026-10-19).**
 - Legacy `POST /bookings/update-pickup/{url}`, `update-drop/{url}`, `update-tshirt/{url}`
-  (`UserBookingsController.php:752`, `:802`, `:711`), dikunci oleh `url` booking yang ada di
+  (`UserBookingsController.php:752`, `:802`, `:711` pada `b68454ad`; cek ulang di `origin/main` sebelum dibangun), dikunci oleh `url` booking yang ada di
   `bookingData.customer_portal` (`…/my-booking/{url}`). Field pickup: `meeting_point`,
   `flight_ticket_type_number`, `hotel`, `train_ticket_type_number`, `others_location`,
   `pickup_time1`/`pickup_time2`. Keduanya memanggil `EcosystemSync::notify`.
@@ -124,8 +124,9 @@ kode dan tanggal di kartu.
 - Tidak ada yang wajib dibuat owner sebelum Fase 2.
 
 **Keamanan (di luar repo ini, dilaporkan ke owner 2026-10-19):** `/booking-overview/api` tanpa login;
-webhook Xendit tanpa verifikasi `x-callback-token` dan tanpa membaca `status`
-(`XenditController.php:44-68`); jalur update my-booking tanpa kunci; pengecekan harga checkout hanya bila
+webhook Xendit **sudah** diverifikasi di `origin/main` `cca8dab5` (`XenditWebhookVerifier`: token +
+status PAID/SETTLED dari API Xendit), tetapi hanya menolak bila `XENDIT_WEBHOOK_ENFORCE=true` (default
+`false` = log-only) — nilai produksinya belum diperiksa; jalur update my-booking tanpa kunci; pengecekan harga checkout hanya bila
 `CHECKOUT_PRICE_ENFORCE=true`.
 
 ### 5.2 Ekstraksi per pesan (real time)
@@ -160,7 +161,7 @@ Bukti (dibaca 2026-10-19, baca-saja):
 | Kelompok | Field | Hasil |
 |---|---|---|
 | **AI bisa ubah** | titik jemput/antar di Surabaya (`Surabaya Airport`, `Surabaya Hotel`, `Surabaya Train Station`, `Others`), detail hotel/flight/kereta, terminal, jam jemput & antar, ukuran kaos, catatan | Kartu usulan → Setujui / Selalu izinkan |
-| **AI ubah + kabari vendor Bali** | jam/titik antar pada booking yang memakai transport Bali (paket mulai Bali atau add-on transport Bali) | Sama, lalu sistem mengirim info terbaru ke vendor transport Bali (vendor hanya dikabari sekali saat DP, `XenditController.php:323-358`) |
+| **AI ubah + kabari vendor Bali** | jam/titik antar pada booking yang memakai transport Bali (paket mulai Bali atau add-on transport Bali) | Sama, lalu sistem mengirim info terbaru ke vendor transport Bali (vendor hanya dikabari sekali saat DP, `internal_bali_transport` di `XenditController::invoiceSuccess`) |
 | **Tugas ops** | pindah start Surabaya ↔ Bali (`Denpasar Airport`, `Bali Hotel` = ganti paket), tanggal trip, pax, hotel menginap | Tugas dengan dampak, tidak pernah diterapkan otomatis |
 
 ### 5.3a Permintaan tamu tidak pernah hilang (keputusan owner 2026-10-19)

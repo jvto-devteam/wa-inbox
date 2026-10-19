@@ -370,7 +370,7 @@ export async function notifyBookingAction(e: { kind: 'CHANGE'|'MISMATCH'|'TASK'|
 
 ## Fase 2 — Penerapan lewat jalur my-booking
 
-**Gerbang fase:** tidak ada pekerjaan backoffice yang wajib (spec §5.1 P2). Sebelum Task 9, baca utuh `UserBookingsController::updatePickup/updateDrop/updateTshirt` di javavolcano-touroperator dan catat bentuk respons nyatanya.
+**Gerbang fase:** tidak ada pekerjaan backoffice yang wajib (spec §5.1 P2). Sebelum Task 9, `git fetch` repo legacy lalu baca utuh di `origin/main` `UserBookingsController::updatePickup/updateDrop/updateTshirt` di javavolcano-touroperator dan catat bentuk respons nyatanya.
 
 ### Task 9: Klien tulis lewat jalur my-booking
 
@@ -435,7 +435,7 @@ Alur dalam satu handler:
 **Files:** Create `src/lib/booking-actions/bali-vendor.ts` (+ test); Modify alur Task 11.
 
 - Sesudah CHANGE kelompok `BALI` diterapkan: kirim info terbaru (titik/jam antar, kode booking, tanggal, pax) ke vendor transport Bali.
-- **Langkah pertama:** baca `XenditController.php:323-358` di javavolcano-touroperator untuk tahu tujuan dan saluran WA `internal_bali_transport` (nomor/grup vendor, template). Pakai tujuan yang sama; isi template "perubahan" baru lewat `SystemTemplate` wa-inbox bila saluran itu wa-inbox. Kalau tujuan vendor tidak bisa ditemukan di kode, berhenti dan tanya owner.
+- **Langkah pertama:** `git fetch` repo javavolcano-touroperator, lalu baca cabang `internal_bali_transport` di `XenditController::invoiceSuccess` pada `origin/main` untuk tahu tujuan dan saluran WA `internal_bali_transport` (nomor/grup vendor, template). Pakai tujuan yang sama; isi template "perubahan" baru lewat `SystemTemplate` wa-inbox bila saluran itu wa-inbox. Kalau tujuan vendor tidak bisa ditemukan di kode, berhenti dan tanya owner.
 - Gagal kirim → event `VENDOR_NOTICE_FAILED`, push ke admin; perubahan booking tetap berlaku.
 - [ ] Test: `BALI change executed → one vendor notice`, `AI change → no vendor notice`, `vendor send failure → admin notified, change kept`.
 - [ ] FAIL → implement → PASS → commit.
