@@ -11,6 +11,7 @@ const review = {
   topik: 'Paket Ijen 2 orang',
   pertanyaan: ['Berapa harga untuk 2 orang?'],
   poinPenting: [],
+  janjiTim: [],
   statusAgen: 'Belum ada balasan.',
   langkahBerikut: 'Kirim harga paket Ijen.',
 }
@@ -66,6 +67,46 @@ describe('jakartaMorningIso', () => {
 })
 
 describe('SummaryQueue', () => {
+  it('kartu PROMISE: label "Janji tim", daftar janji, dan aksi utama "Buka chat" ke pesan janji', () => {
+    const promiseReview = {
+      ...review,
+      janjiTim: [{ teks: 'Kirim invoice', terpenuhi: false, messageId: 'msg_j' }, { teks: 'Cek jeep', terpenuhi: true }],
+      langkahBerikut: '',
+    }
+    render(
+      <SummaryQueue
+        open={[item({ kind: 'PROMISE', anchorMessageId: 'msg_j', snippet: 'Kirim invoice', review: promiseReview })]}
+        scheduled={[]}
+        now={NOW}
+        onChanged={() => {}}
+      />
+    )
+    const card = screen.getByRole('listitem', { name: 'Janji tim: Anna' })
+    expect(within(card).getByText('Janji tim', { selector: 'span' })).toBeInTheDocument()
+    expect(within(card).getByText(/^dijanjikan /)).toBeInTheDocument()
+    const promises = within(within(card).getByRole('list', { name: 'Janji tim' })).getAllByRole('listitem')
+    expect(promises[0]).toHaveTextContent('Kirim invoice⏳ belum')
+    expect(promises[1]).toHaveTextContent('Cek jeep✅ ditepati')
+    expect(within(card).getByRole('link', { name: 'Buka chat' })).toHaveAttribute('href', '/inbox?conversation=conv_1&message=msg_j&lihat=1')
+    expect(within(card).queryByRole('link', { name: 'Balas' })).not.toBeInTheDocument()
+    expect(within(card).queryByRole('link', { name: 'Follow up' })).not.toBeInTheDocument()
+    // Ingatkan/Lepas tetap berlaku; catatan awal menyebut janji bila LLM tidak memberi langkah berikut.
+    fireEvent.click(within(card).getByRole('button', { name: 'Ingatkan' }))
+    expect(within(card).getByRole('textbox', { name: 'Catatan pengingat' })).toHaveValue('Tepati janji ke Anna')
+  })
+
+  it('kartu PROMISE tanpa review: snippet janji tampil, Buka chat tanpa pesan bila anchor tidak diketahui', () => {
+    render(<SummaryQueue open={[item({ kind: 'PROMISE', anchorMessageId: null, snippet: 'Itinerary besok', review: null })]} scheduled={[]} now={NOW} onChanged={() => {}} />)
+    const card = screen.getByRole('listitem', { name: 'Janji tim: Anna' })
+    expect(within(card).getByText('Janji: “Itinerary besok”')).toBeInTheDocument()
+    expect(within(card).getByRole('link', { name: 'Buka chat' })).toHaveAttribute('href', '/inbox?conversation=conv_1')
+  })
+
+  it('baris dijadwalkan memakai label jenis yang sama', () => {
+    render(<SummaryQueue open={[]} scheduled={[item({ kind: 'PROMISE', state: 'SCHEDULED' })]} now={NOW} onChanged={() => {}} />)
+    expect(within(screen.getByRole('listitem', { name: 'Dijadwalkan: Anna' })).getByText('Janji tim')).toBeInTheDocument()
+  })
+
   it('merender item OPEN dengan badge, stage, waktu tunggu, snippet, dan review', () => {
     render(
       <SummaryQueue

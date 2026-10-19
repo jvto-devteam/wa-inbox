@@ -6,7 +6,7 @@ import { SUMMARY_ITEM_INCLUDE, toSummaryItemView, type SummaryItemView } from '@
 
 /**
  * GET /api/summary-items — antrean tindakan Summary Harian. Rekonsiliasi dulu dengan pesan
- * dan pengingat terbaru, lalu OPEN (REPLY sebelum FOLLOW_UP, tertua dulu) dan SCHEDULED
+ * dan pengingat terbaru, lalu OPEN (REPLY, lalu FOLLOW_UP, lalu PROMISE; tertua dulu) dan SCHEDULED
  * (jatuh tempo terdekat dulu). Terbuka untuk semua yang login, seperti /api/daily-summary.
  */
 export type SummaryItemsResponse = { open: SummaryItemView[]; scheduled: SummaryItemView[]; openGapTotal: number }
@@ -25,7 +25,8 @@ export async function GET(req: Request) {
       prisma.knowledgeGapLog.count({ where: { resolvedAt: null, conversation: { isTest: false } } }),
     ])
 
-    const kindRank = (k: string) => (k === 'REPLY' ? 0 : 1)
+    const KIND_RANK: Record<string, number> = { REPLY: 0, FOLLOW_UP: 1, PROMISE: 2 }
+    const kindRank = (k: string) => KIND_RANK[k] ?? 3
     const open = rows
       .filter((r) => r.state === 'OPEN')
       .sort((a, b) => kindRank(a.kind) - kindRank(b.kind) || a.anchorAt.getTime() - b.anchorAt.getTime())

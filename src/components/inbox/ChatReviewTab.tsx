@@ -6,13 +6,13 @@ import { Button } from '@/components/ui/button'
 import { SkeletonText } from '@/components/ui/skeleton'
 import { RemindDropActions, conversationHref, dateKeyLabel } from '@/components/daily-summary/SummaryQueue'
 import { SnapshotStatusBadge } from '@/components/daily-summary/SnapshotStatusBadge'
-import { PointList, QuestionList } from '@/components/daily-summary/QuestionList'
+import { PointList, PromiseList, QuestionList } from '@/components/daily-summary/QuestionList'
 import type { ChatReviewHistoryEntry } from '@/lib/chat-review/history'
 import type { ConversationReview } from '@/lib/daily-summary/payload-schema'
 import { isDateKey, jakartaDayRange } from '@/lib/daily-summary/time'
 import { scrollToThreadMessage } from '@/lib/inbox/message-anchor'
 import { fetchJson } from '@/lib/fetch-json'
-import { followUpStatus, isActionable, wibDateTimeLabel } from '@/lib/summary-items/status'
+import { followUpStatus, isActionable, summaryItemKindLabel, wibDateTimeLabel } from '@/lib/summary-items/status'
 import { PanelSectionTitle } from './ContactPanel'
 // Hanya tipe: route itu menyentuh prisma, dan komponen klien tidak boleh membawa modul server.
 import type { ChatReviewItem, ChatReviewResponse } from '@/app/api/conversations/[id]/chat-review/route'
@@ -56,6 +56,8 @@ function FollowUpSection({
     <section aria-label="Status tindak lanjut" className="space-y-1.5">
       <PanelSectionTitle>Status tindak lanjut</PanelSectionTitle>
       <div className="flex flex-wrap items-center gap-2">
+        {/* Jenis hanya ditulis untuk janji: "Belum dijawab"/"Perlu follow up" sudah menyebut jenisnya. */}
+        {item?.kind === 'PROMISE' && <Badge variant="brand">{summaryItemKindLabel(item.kind)}</Badge>}
         <Badge variant={status.variant}>{status.label}</Badge>
         {status.detail && <span className="text-sm text-ink-muted">{status.detail}</span>}
       </div>
@@ -94,6 +96,7 @@ function ReviewBody({ review, conversationId }: { review: ConversationReview; co
   return (
     <div className="space-y-2">
       <QuestionList questions={review.pertanyaan} conversationId={conversationId} />
+      <PromiseList promises={review.janjiTim} conversationId={conversationId} />
       <PointList points={review.poinPenting} conversationId={conversationId} />
       {review.statusAgen && (
         <p className="text-sm text-ink">

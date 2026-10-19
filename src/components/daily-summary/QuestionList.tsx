@@ -1,12 +1,12 @@
 'use client'
 import Link from 'next/link'
 import type { ReactNode } from 'react'
-import { conversationHref } from '@/components/daily-summary/SummaryQueue'
-import { normalizePoint, normalizeQuestion, type ConversationReview } from '@/lib/daily-summary/payload-schema'
+import { conversationHref } from '@/components/daily-summary/conversation-href'
+import { normalizePoint, normalizePromise, normalizeQuestion, type ConversationReview } from '@/lib/daily-summary/payload-schema'
 import { scrollToThreadMessage } from '@/lib/inbox/message-anchor'
 
 /**
- * Daftar "Yang ditanyakan" dan "Poin penting" dari satu ringkasan LLM. Dipakai tab "Ringkasan
+ * Daftar "Yang ditanyakan", "Janji tim", dan "Poin penting" dari satu ringkasan LLM. Dipakai tab "Ringkasan
  * chat" di Inbox dan tampilan per tanggal di /summary.
  *
  * Butir yang membawa `messageId` (pesan sumbernya di transkrip, lihat review.ts) menjadi tautan ke
@@ -44,6 +44,40 @@ function ListBlock({ label, children }: { label: string; children: ReactNode }) 
   )
 }
 
+type CheckItem = { teks: string; done: boolean | null; messageId: string | null }
+
+/**
+ * Daftar bertanda ✅/⏳ (teks, bukan hanya warna); `done: null` (ringkasan lama berupa string) tampil
+ * tanpa tanda. Satu komponen untuk pertanyaan dan janji supaya tanda dan tautannya tidak berbeda.
+ */
+function CheckList({
+  label,
+  items,
+  doneText,
+  conversationId,
+}: {
+  label: string
+  items: CheckItem[]
+  /** Tanda untuk `done: true`, mis. "terjawab" atau "ditepati". */
+  doneText: string
+  conversationId?: string
+}) {
+  if (items.length === 0) return null
+  return (
+    <ListBlock label={label}>
+      <ul aria-label={label} className="space-y-1 text-sm text-ink">
+        {items.map((item, i) => (
+          <li key={i} className="flex flex-wrap items-baseline gap-x-1.5">
+            <ItemText teks={item.teks} messageId={item.messageId} conversationId={conversationId} />
+            {item.done === true && <span className="text-xs font-medium text-success">✅ {doneText}</span>}
+            {item.done === false && <span className="text-xs font-medium text-warning">⏳ belum</span>}
+          </li>
+        ))}
+      </ul>
+    </ListBlock>
+  )
+}
+
 /** Pertanyaan pelanggan dengan tanda teks (bukan hanya warna); ringkasan lama tanpa tanda. */
 export function QuestionList({
   questions,
@@ -53,23 +87,21 @@ export function QuestionList({
   /** Tanpa ini butir tidak pernah jadi tautan. */
   conversationId?: string
 }) {
-  if (questions.length === 0) return null
-  return (
-    <ListBlock label="Yang ditanyakan">
-      <ul aria-label="Yang ditanyakan" className="space-y-1 text-sm text-ink">
-        {questions.map((raw, i) => {
-          const q = normalizeQuestion(raw)
-          return (
-            <li key={i} className="flex flex-wrap items-baseline gap-x-1.5">
-              <ItemText teks={q.teks} messageId={q.messageId} conversationId={conversationId} />
-              {q.terjawab === true && <span className="text-xs font-medium text-success">✅ terjawab</span>}
-              {q.terjawab === false && <span className="text-xs font-medium text-warning">⏳ belum</span>}
-            </li>
-          )
-        })}
-      </ul>
-    </ListBlock>
-  )
+  const items = questions.map((raw) => {
+    const q = normalizeQuestion(raw)
+    return { teks: q.teks, done: q.terjawab, messageId: q.messageId }
+  })
+  return <CheckList label="Yang ditanyakan" items={items} doneText="terjawab" conversationId={conversationId} />
+}
+
+/** Janji tim kepada pelanggan: ✅ ditepati / ⏳ belum, dengan aturan tautan yang sama. */
+export function PromiseList({ promises, conversationId }: { promises: ConversationReview['janjiTim']; conversationId?: string }) {
+  // `?? []`: ringkasan yang tidak lewat skema (cache klien lama) bisa tidak membawa `janjiTim`.
+  const items = (promises ?? []).map((raw) => {
+    const p = normalizePromise(raw)
+    return { teks: p.teks, done: p.terpenuhi, messageId: p.messageId }
+  })
+  return <CheckList label="Janji tim" items={items} doneText="ditepati" conversationId={conversationId} />
 }
 
 /** Poin penting (tanggal, jumlah orang, paket, dll.), dengan aturan tautan yang sama. */

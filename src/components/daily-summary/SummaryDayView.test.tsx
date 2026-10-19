@@ -12,6 +12,7 @@ const review: ConversationReview = {
   topik: 'Paket Ijen 2 orang',
   pertanyaan: [{ teks: 'Berapa harga untuk 2 orang?', terjawab: false }, { teks: 'Termasuk jemput?', terjawab: true }, 'Bisa bayar di tempat?'],
   poinPenting: [],
+  janjiTim: [],
   statusAgen: '',
   langkahBerikut: 'Kirim harga paket Ijen.',
 }
@@ -64,6 +65,33 @@ afterEach(() => {
 })
 
 describe('SummaryDayView', () => {
+  it('janji tim: label "Janji tim" hanya bila bukan belum dibalas/diam, status live "Janji belum ditepati", daftar janji', () => {
+    const promised = { ...review, janjiTim: [{ teks: 'Kirim invoice', terpenuhi: false, messageId: 'm_j' }] }
+    const p = payload({
+      unreplied: [{ ...ref('c_anna', 'Anna'), lastMessageAt: '2026-10-18T10:00:00.000Z', waitingMs: 1, snippet: 'harga?', review: promised }],
+      conversations: [{ ...ref('c_eka', 'Eka'), inbound: 1, outbound: 2, review: promised }],
+    })
+    render(
+      <SummaryDayView payload={p} items={{ ...items, c_eka: status({ id: 'si_eka', kind: 'PROMISE', state: 'OPEN' }) }} onChanged={() => {}} />
+    )
+    const eka = card('Eka')
+    expect(within(eka).getByText('Janji tim', { selector: 'span' })).toBeInTheDocument()
+    expect(within(eka).getByText('Janji belum ditepati')).toBeInTheDocument()
+    const row = within(within(eka).getByRole('list', { name: 'Janji tim' })).getByRole('listitem')
+    expect(row).toHaveTextContent('Kirim invoice⏳ belum')
+    expect(within(row).getByRole('link')).toHaveAttribute('href', '/inbox?conversation=c_eka&message=m_j&lihat=1')
+    // Anna belum dibalas: REPLY menang, jadi tidak berlabel "Janji tim" walau daftarnya tetap terbaca.
+    expect(within(card('Anna')).queryByText('Janji tim', { selector: 'span' })).not.toBeInTheDocument()
+    expect(within(card('Anna')).getByRole('list', { name: 'Janji tim' })).toBeInTheDocument()
+  })
+
+  it('PROMISE yang tertutup karena ditepati: "Sudah ditindaklanjuti · janji ditepati"', () => {
+    const p = payload({ conversations: [{ ...ref('c_eka', 'Eka'), inbound: 1, outbound: 1, review }] })
+    render(<SummaryDayView payload={p} items={{ c_eka: status({ kind: 'PROMISE', state: 'DONE', closedReason: 'PROMISE_KEPT' }) }} onChanged={() => {}} />)
+    expect(within(card('Eka')).getByText('Sudah ditindaklanjuti')).toBeInTheDocument()
+    expect(within(card('Eka')).getByText('janji ditepati')).toBeInTheDocument()
+  })
+
   it('angka hari itu satu baris, plus gap baru bila ada', () => {
     render(<SummaryDayView payload={payload()} items={items} onChanged={() => {}} />)
     expect(screen.getByText('7 aktif · 30 masuk · 25 keluar · 2 kontak baru · 3 gap baru hari itu')).toBeInTheDocument()

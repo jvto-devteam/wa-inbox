@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 vi.mock('@/lib/bot/llm', () => ({ callLLM: vi.fn() }))
 
 import { callLLM } from '@/lib/bot/llm'
-import { normalizePoint, normalizeQuestion } from './payload-schema'
+import { normalizePoint, normalizePromise, normalizeQuestion, unkeptPromises } from './payload-schema'
 import { buildReviewPrompt, parseReview, resolvePesan, reviewConversation, REVIEW_SYSTEM_PROMPT } from './review'
 
 const valid = {
@@ -24,7 +24,8 @@ beforeEach(() => {
 
 describe('parseReview', () => {
   it('menerima JSON valid, juga yang dibungkus code fence', () => {
-    expect(parseReview(JSON.stringify(valid))).toEqual(valid)
+    // Ringkasan tanpa `janjiTim` (bentuk lama) tetap lolos dan terbaca sebagai daftar kosong.
+    expect(parseReview(JSON.stringify(valid))).toEqual({ ...valid, janjiTim: [] })
     expect(parseReview('```json\n' + JSON.stringify(valid) + '\n```')?.status).toBe('perlu_tindakan')
   })
 
@@ -209,5 +210,50 @@ describe('pesan → messageId', () => {
     const review = await reviewConversation({ text: '#1 a\n#2 b', ids: ['x1', 'x2'] }, ['active'], undefined)
     expect(review?.poinPenting).toEqual([{ teks: 'Tanggal', messageId: 'x2' }])
     expect(vi.mocked(callLLM).mock.calls[0][0]).toContain('#1 a\n#2 b')
+  })
+})
+
+describe('janji tim', () => {
+  const ids = ['m1', 'm2', 'm3', 'm4', 'm5']
+  const parseJ = (janjiTim: unknown) => parseReview(JSON.stringify({ ...valid, janjiTim }), ids)
+
+  it('prompt meminta janjiTim berbentuk objek dengan terpenuhi dan pesan', () => {
+    expect(REVIEW_SYSTEM_PROMPT).toContain('"janjiTim":[{"teks":"...","terpenuhi":true|false,"pesan":N}]')
+    expect(REVIEW_SYSTEM_PROMPT).toMatch(/"janjiTim": komitmen yang diucapkan TIM/)
+    expect(REVIEW_SYSTEM_PROMPT).toMatch(/"terpenuhi" bernilai true HANYA bila transkrip menunjukkan janji itu sudah dilakukan/)
+  })
+
+  it('pesan valid jadi messageId, nomor mentah tidak disimpan; "true"/"false" jadi boolean', () => {
+    const review = parseJ([
+      { teks: ' Kirim invoice ', terpenuhi: false, pesan: 4 },
+      { teks: 'Cek ketersediaan', terpenuhi: 'true', pesan: '#2' },
+      { teks: 'Itinerary besok', terpenuhi: false, pesan: 99 },
+    ])
+    expect(review?.janjiTim).toEqual([
+      { teks: 'Kirim invoice', terpenuhi: false, messageId: 'm4' },
+      { teks: 'Cek ketersediaan', terpenuhi: true, messageId: 'm2' },
+      { teks: 'Itinerary besok', terpenuhi: false },
+    ])
+    expect(JSON.stringify(review)).not.toContain('"pesan"')
+  })
+
+  it('toleran per butir: string tetap, terpenuhi tidak valid jadi string, sampah dibuang', () => {
+    const review = parseJ(['Konfirmasi jemput', { teks: 'Harga', terpenuhi: 'mungkin' }, 42, null, {}, { teks: 7 }, { teks: '  ', terpenuhi: false }])
+    expect(review).not.toBeNull()
+    expect(review?.janjiTim).toEqual(['Konfirmasi jemput', 'Harga'])
+  })
+
+  it('janjiTim bukan array dianggap kosong, ringkasan tetap lolos; dibatasi 5 butir', () => {
+    expect(parseJ('invoice menyusul')?.janjiTim).toEqual([])
+    expect(parseJ(null)?.janjiTim).toEqual([])
+    expect(parseJ(['1', '2', '3', '4', '5', '6'])?.janjiTim).toHaveLength(5)
+  })
+
+  it('normalizePromise dan unkeptPromises: hanya terpenuhi:false yang dihitung belum ditepati', () => {
+    expect(normalizePromise('Invoice')).toEqual({ teks: 'Invoice', terpenuhi: null, messageId: null })
+    expect(normalizePromise({ teks: 'Invoice', terpenuhi: false, messageId: 'm2' })).toEqual({ teks: 'Invoice', terpenuhi: false, messageId: 'm2' })
+    expect(
+      unkeptPromises({ janjiTim: ['Lama', { teks: 'Sudah', terpenuhi: true }, { teks: 'Belum', terpenuhi: false, messageId: 'm3' }] })
+    ).toEqual([{ teks: 'Belum', terpenuhi: false, messageId: 'm3' }])
   })
 })

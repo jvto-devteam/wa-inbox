@@ -46,8 +46,9 @@ describe('GET /api/summary-items', () => {
     expect((await GET(req())).status).toBe(401)
   })
 
-  it('mengurutkan OPEN (REPLY dulu, lalu anchorAt naik) dan SCHEDULED (dueAt naik)', async () => {
+  it('mengurutkan OPEN (REPLY, FOLLOW_UP, PROMISE, lalu anchorAt naik) dan SCHEDULED (dueAt naik)', async () => {
     mockPrisma.summaryItem.findMany.mockResolvedValue([
+      row('p_old', { kind: 'PROMISE', anchorAt: new Date('2026-10-01T00:00:00Z') }),
       row('f_old', { kind: 'FOLLOW_UP', anchorAt: new Date('2026-10-10T00:00:00Z') }),
       row('r_new', { anchorAt: new Date('2026-10-17T05:00:00Z') }),
       row('r_old', { anchorAt: new Date('2026-10-16T05:00:00Z') }),
@@ -58,7 +59,7 @@ describe('GET /api/summary-items', () => {
     expect(res.status).toBe(200)
     const body = await res.json()
     expect(reconcileSummaryItems).toHaveBeenCalledTimes(1)
-    expect(body.open.map((i: { id: string }) => i.id)).toEqual(['r_old', 'r_new', 'f_old'])
+    expect(body.open.map((i: { id: string }) => i.id)).toEqual(['r_old', 'r_new', 'f_old', 'p_old'])
     expect(body.scheduled.map((i: { id: string }) => i.id)).toEqual(['s_soon', 's_late'])
     expect(body.openGapTotal).toBe(3)
     expect(body.open[0]).toMatchObject({

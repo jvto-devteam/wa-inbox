@@ -11,7 +11,7 @@ import { chatReviewHistory } from './history'
 
 const mockPrisma = prisma as unknown as DeepMockProxy<PrismaClient>
 const rev = (topik: string): ConversationReview => ({
-  status: 'perlu_tindakan', alasan: 'a', jenisKontak: 'calon_tamu', topik, pertanyaan: [{ teks: 'q', terjawab: false }], poinPenting: [], statusAgen: '', langkahBerikut: '',
+  status: 'perlu_tindakan', alasan: 'a', jenisKontak: 'calon_tamu', topik, pertanyaan: [{ teks: 'q', terjawab: false }], poinPenting: [], janjiTim: [], statusAgen: '', langkahBerikut: '',
 })
 const ref = (conversationId: string) => ({ conversationId, contactName: 'Budi', pipelineStage: 'NEW' })
 

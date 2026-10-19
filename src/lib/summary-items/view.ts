@@ -1,4 +1,5 @@
 import { conversationReviewSchema, type ConversationReview } from '@/lib/daily-summary/payload-schema'
+import type { SummaryItemKind } from './status'
 
 /** Bentuk item antrean yang dikirim ke halaman /summary. */
 export type SummaryItemView = {
@@ -6,7 +7,7 @@ export type SummaryItemView = {
   conversationId: string
   contactName: string | null
   pipelineStage: string
-  kind: 'REPLY' | 'FOLLOW_UP'
+  kind: SummaryItemKind
   state: 'OPEN' | 'SCHEDULED'
   anchorAt: string
   anchorMessageId: string | null

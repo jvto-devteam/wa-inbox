@@ -5,13 +5,16 @@ import type { PrismaClient } from '@prisma/client'
 
 vi.mock('@/lib/db', () => ({ prisma: mockDeep<PrismaClient>() }))
 vi.mock('@/lib/auth/session', () => ({ verifySessionToken: vi.fn() }))
-vi.mock('@/lib/summary-items/sync', () => ({ reconcileSummaryItems: vi.fn().mockResolvedValue(undefined) }))
+vi.mock('@/lib/summary-items/sync', () => ({
+  reconcileSummaryItems: vi.fn().mockResolvedValue(undefined),
+  applyReviewToItem: vi.fn().mockResolvedValue('unchanged'),
+}))
 vi.mock('@/lib/daily-summary/review', () => ({ reviewConversation: vi.fn() }))
 vi.mock('@/lib/chat-review/store', () => ({ saveChatReview: vi.fn().mockResolvedValue(true) }))
 
 import { prisma } from '@/lib/db'
 import { verifySessionToken } from '@/lib/auth/session'
-import { reconcileSummaryItems } from '@/lib/summary-items/sync'
+import { applyReviewToItem, reconcileSummaryItems } from '@/lib/summary-items/sync'
 import { reviewConversation } from '@/lib/daily-summary/review'
 import { saveChatReview } from '@/lib/chat-review/store'
 import { GET, POST } from './route'
@@ -22,7 +25,7 @@ const ctx = { params: Promise.resolve({ id: 'c1' }) }
 
 const review = {
   status: 'perlu_tindakan', alasan: 'a', jenisKontak: 'calon_tamu', topik: 'Ijen',
-  pertanyaan: [{ teks: 'Harga?', terjawab: false }], poinPenting: [], statusAgen: '', langkahBerikut: '',
+  pertanyaan: [{ teks: 'Harga?', terjawab: false }], poinPenting: [], janjiTim: [], statusAgen: '', langkahBerikut: '',
 }
 const payload = (date: string) => ({
   version: 1, date, windowStart: 'a', windowEnd: 'b', generatedAt: 'c',
@@ -45,6 +48,7 @@ beforeEach(() => {
   vi.mocked(reviewConversation).mockReset()
   vi.mocked(saveChatReview).mockClear()
   vi.mocked(reconcileSummaryItems).mockClear()
+  vi.mocked(applyReviewToItem).mockClear()
   vi.mocked(verifySessionToken).mockResolvedValue({ accountId: 'acc', role: 'AGENT', tokenVersion: 0 })
   mockPrisma.dailySummary.findMany.mockResolvedValue([])
   mockPrisma.message.findMany.mockResolvedValue([])
@@ -153,6 +157,8 @@ describe('POST /api/conversations/[id]/chat-review', () => {
     expect(vi.mocked(reviewConversation).mock.calls[0][1]).toEqual(reasons)
     expect(vi.mocked(reviewConversation).mock.calls[0][2]).toBe('gemma4:31b-cloud')
     expect(saveChatReview).toHaveBeenCalledWith('c1', review, expect.any(Date))
+    // Perbarui menerapkan review baru ke item "Janji tim" dengan asOf yang sama dengan simpanannya.
+    expect(applyReviewToItem).toHaveBeenCalledWith('c1', review, vi.mocked(saveChatReview).mock.calls[0][2])
     expect(Object.keys(await res.json()).sort()).toEqual(['history', 'item', 'lastMessageAt', 'latest'])
     // Transkrip bernomor lama → baru, dengan ids yang sejajar.
     const transcript = vi.mocked(reviewConversation).mock.calls[0][0]
@@ -171,6 +177,7 @@ describe('POST /api/conversations/[id]/chat-review', () => {
     expect(res.status).toBe(502)
     expect(await res.json()).toEqual({ error: 'Gagal meringkas. Coba lagi.' })
     expect(saveChatReview).not.toHaveBeenCalled()
+    expect(applyReviewToItem).not.toHaveBeenCalled()
   })
 
   it('penjaga 30 detik: chatReviewAt baru → kembalikan yang ada tanpa memanggil LLM', async () => {
@@ -178,6 +185,7 @@ describe('POST /api/conversations/[id]/chat-review', () => {
     const res = await POST(req('POST'), ctx)
     expect(res.status).toBe(200)
     expect(reviewConversation).not.toHaveBeenCalled()
+    expect(applyReviewToItem).not.toHaveBeenCalled()
     expect(mockPrisma.message.findMany).not.toHaveBeenCalled()
     expect((await res.json()).latest.review.topik).toBe('Ijen')
   })

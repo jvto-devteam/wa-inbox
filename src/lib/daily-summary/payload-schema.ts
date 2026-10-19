@@ -38,6 +38,32 @@ export function normalizePoint(p: ReviewPoint): { teks: string; messageId: strin
   return typeof p === 'string' ? { teks: p, messageId: null } : { teks: p.teks, messageId: p.messageId ?? null }
 }
 
+/**
+ * Satu janji TIM kepada pelanggan ("saya cek dulu", "invoice menyusul"). `terpenuhi` = transkrip
+ * menunjukkan janji itu sudah dilakukan. String polos diterima seperti pertanyaan lama: tanpa
+ * tanda, dan tidak pernah dianggap janji yang belum ditepati.
+ */
+export const reviewPromiseSchema = z.union([
+  z.string(),
+  z.object({ teks: z.string(), terpenuhi: z.boolean(), messageId: z.string().optional() }),
+])
+export type ReviewPromise = z.infer<typeof reviewPromiseSchema>
+
+/** String → `terpenuhi: null` (tidak diketahui, tampil tanpa tanda). */
+export function normalizePromise(p: ReviewPromise): { teks: string; terpenuhi: boolean | null; messageId: string | null } {
+  return typeof p === 'string'
+    ? { teks: p, terpenuhi: null, messageId: null }
+    : { teks: p.teks, terpenuhi: p.terpenuhi, messageId: p.messageId ?? null }
+}
+
+/**
+ * Janji yang secara eksplisit `terpenuhi: false` -- satu-satunya yang membuat item antrean
+ * PROMISE (summary-items/sync.ts). Ringkasan lama tanpa `janjiTim` → kosong.
+ */
+export function unkeptPromises(review: Pick<ConversationReview, 'janjiTim'>): ReturnType<typeof normalizePromise>[] {
+  return (review.janjiTim ?? []).map(normalizePromise).filter((p) => p.terpenuhi === false)
+}
+
 /** Hasil satu panggilan LLM untuk satu percakapan (review.ts). */
 export const conversationReviewSchema = z.object({
   status: z.enum(REVIEW_STATUSES),
@@ -46,6 +72,8 @@ export const conversationReviewSchema = z.object({
   topik: z.string(),
   pertanyaan: z.array(reviewQuestionSchema),
   poinPenting: z.array(reviewPointSchema),
+  /** Opsional: ringkasan sebelum 19 Oktober 2026 tidak memilikinya, dan dibaca sebagai `[]`. */
+  janjiTim: z.array(reviewPromiseSchema).default([]),
   statusAgen: z.string(),
   langkahBerikut: z.string(),
 })

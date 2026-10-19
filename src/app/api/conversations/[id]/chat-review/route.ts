@@ -7,7 +7,7 @@ import { conversationReviewSchema, type ConversationReview } from '@/lib/daily-s
 import { reviewConversation, type ReviewReason } from '@/lib/daily-summary/review'
 import { chatReviewHistory, type ChatReviewHistoryEntry } from '@/lib/chat-review/history'
 import { saveChatReview } from '@/lib/chat-review/store'
-import { reconcileSummaryItems } from '@/lib/summary-items/sync'
+import { applyReviewToItem, reconcileSummaryItems } from '@/lib/summary-items/sync'
 import { toSummaryItemStatus, type SummaryItemStatus } from '@/lib/summary-items/status'
 
 /**
@@ -15,7 +15,8 @@ import { toSummaryItemStatus, type SummaryItemStatus } from '@/lib/summary-items
  *
  * GET  membaca ringkasan terbaru (`Conversation.chatReview`), status tindak lanjut live
  *      (`SummaryItem`, setelah rekonsiliasi) dan riwayat per hari dari `DailySummary`.
- * POST meringkas SEKARANG lewat LLM untuk percakapan ini (tombol "Perbarui sekarang").
+ * POST meringkas SEKARANG lewat LLM untuk percakapan ini (tombol "Perbarui sekarang"), lalu
+ *      menerapkan hasilnya ke item "Janji tim" percakapan ini (`applyReviewToItem`).
  *
  * Terbuka untuk semua yang login, sama seperti /api/summary-items: hanya baca dan ringkas, tidak
  * mengubah apa yang bot lakukan, jadi tanpa hasAdminPowers dan tanpa audit log.
@@ -109,6 +110,8 @@ export async function POST(req: Request, { params }: Ctx) {
     if (!review) return NextResponse.json({ error: 'Gagal meringkas. Coba lagi.' }, { status: 502 })
 
     await saveChatReview(id, review, now)
+    // Janji tim yang kini sudah ditepati menutup item PROMISE-nya (PROMISE_KEPT). Tidak pernah melempar.
+    await applyReviewToItem(id, review, now)
     return NextResponse.json(await buildResponse(id))
   } catch (err) {
     console.error('POST /api/conversations/[id]/chat-review failed', err)

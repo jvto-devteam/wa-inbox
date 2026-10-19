@@ -154,6 +154,10 @@ Pemilih tampilan (`?date=`) membuka ringkasan hari lain: kartunya memakai review
 tetapi badge "Status sekarang" dan tombol Ingatkan/Lepas memakai status `SummaryItem` yang live.
 Percakapan yang sekadar aktif **tetap** dinilai LLM dan disimpan di `payload.conversations`
 (keputusan owner 2026-10-18), walau halaman tidak menampilkannya.
+Jenis ketiga, `PROMISE` ("Janji tim"), lahir dari `janjiTim` berstatus `terpenuhi:false` hanya untuk
+percakapan yang bukan kandidat REPLY/FOLLOW_UP (keduanya selalu menang); ia tertutup `PROMISE_KEPT`
+oleh review berikutnya tanpa janji terbuka (`applyReviewToItem`) dan jadi REPLY bila pelanggan chat lagi —
+pesan keluar saja **tidak** menutupnya.
 
 ### Ringkasan chat (tab di panel kanan Inbox)
 Menampilkan ringkasan LLM **terbaru** satu percakapan, tanda terjawab per pertanyaan, riwayat
@@ -173,6 +177,8 @@ Transkrip ke LLM bernomor `#N` (`buildNumberedTranscript`); model menunjuk pesan
 `pesan`, dan `parseReview` menyimpannya sebagai `messageId` (nomor mentah tidak pernah disimpan,
 nomor tidak valid dibuang). Butir pertanyaan/poin ber-`messageId` di tab ini dan di /summary bisa
 diklik ke `/inbox?conversation=…&message=…`; string lama tampil sebagai teks biasa.
+Review juga memuat `janjiTim` (`{ teks, terpenuhi, messageId? }`, opsional, default `[]`), tampil ✅/⏳
+lewat `CheckList` yang sama dengan pertanyaan; "Perbarui sekarang" memanggil `applyReviewToItem` sesudah menyimpan.
 Dipangkas setelah **30 hari** sejak `chatReviewAt` (keputusan owner 2026-10-19), sama dengan
 DailySummary dan SummaryItem — isinya memuat poin penting chat pelanggan.
 

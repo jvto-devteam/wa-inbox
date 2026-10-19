@@ -12,7 +12,7 @@ import { pruneChatReviews, saveChatReview } from './store'
 
 const mockPrisma = prisma as unknown as DeepMockProxy<PrismaClient>
 const review: ConversationReview = {
-  status: 'selesai', alasan: 'a', jenisKontak: 'lainnya', topik: 't', pertanyaan: [], poinPenting: [], statusAgen: '', langkahBerikut: '',
+  status: 'selesai', alasan: 'a', jenisKontak: 'lainnya', topik: 't', pertanyaan: [], poinPenting: [], janjiTim: [], statusAgen: '', langkahBerikut: '',
 }
 
 beforeEach(() => mockReset(mockPrisma))

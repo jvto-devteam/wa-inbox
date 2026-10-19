@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import { render, screen, cleanup, fireEvent, waitFor, within } from '@testing-library/react'
 import { ChatReviewTab, hasMessagesSince } from './ChatReviewTab'
-import { followUpStatus } from '@/lib/summary-items/status'
+import { followUpStatus, summaryItemKindLabel } from '@/lib/summary-items/status'
 import { SUMMARY_ITEMS_CHANGED } from '@/lib/summary-items/events'
 import type { ChatReviewItem, ChatReviewResponse } from '@/app/api/conversations/[id]/chat-review/route'
 
@@ -18,6 +18,7 @@ const review: ChatReviewResponse['history'][number]['review'] = {
     'Bisa bayar di tempat?',
   ],
   poinPenting: ['Tanggal 12 November', 'Dari Surabaya'],
+  janjiTim: [],
   statusAgen: 'Tim sudah menjelaskan rute.',
   langkahBerikut: 'Kirim harga paket Ijen.',
 }
@@ -82,6 +83,56 @@ describe('followUpStatus', () => {
       detail: 'Sudah booking lewat agen',
     })
     expect(followUpStatus(null).label).toBe('Tidak ada di antrean')
+  })
+
+  it('janji tim: OPEN = "Janji belum ditepati", PROMISE_KEPT = "janji ditepati", label jenis "Janji tim"', () => {
+    expect(followUpStatus(item({ kind: 'PROMISE', state: 'OPEN' }))).toMatchObject({ label: 'Janji belum ditepati', variant: 'warning' })
+    expect(followUpStatus(item({ kind: 'PROMISE', state: 'DONE', closedReason: 'PROMISE_KEPT' }))).toMatchObject({
+      label: 'Sudah ditindaklanjuti',
+      detail: 'janji ditepati',
+    })
+    expect(summaryItemKindLabel('PROMISE')).toBe('Janji tim')
+    expect(summaryItemKindLabel('REPLY')).toBe('Belum dibalas')
+    expect(summaryItemKindLabel('LAIN')).toBe('LAIN')
+  })
+})
+
+describe('ChatReviewTab: janji tim', () => {
+  it('status PROMISE berlabel "Janji tim", daftar janji ✅ ditepati / ⏳ belum, butir ber-messageId jadi tautan lihat=1', async () => {
+    const withPromises = {
+      ...review,
+      janjiTim: [
+        { teks: 'Kirim invoice', terpenuhi: false, messageId: 'msg_9' },
+        { teks: 'Cek ketersediaan jeep', terpenuhi: true },
+        'Janji lama',
+      ],
+    }
+    stubFetch(() => json(response({ latest: { review: withPromises, at: '2026-10-19T02:00:00.000Z' }, item: item({ kind: 'PROMISE' }) })))
+    render(<ChatReviewTab conversationId="conv_1" />)
+
+    const status = await screen.findByRole('region', { name: 'Status tindak lanjut' })
+    expect(within(status).getByText('Janji tim')).toBeInTheDocument()
+    expect(within(status).getByText('Janji belum ditepati')).toBeInTheDocument()
+    expect(within(status).getByRole('button', { name: 'Ingatkan' })).toBeInTheDocument()
+
+    const list = within(screen.getByRole('region', { name: 'Poin penting terbaru' })).getByRole('list', { name: 'Janji tim' })
+    const rows = within(list).getAllByRole('listitem')
+    expect(rows[0]).toHaveTextContent('Kirim invoice⏳ belum')
+    expect(rows[1]).toHaveTextContent('Cek ketersediaan jeep✅ ditepati')
+    expect(rows[2]).toHaveTextContent(/^Janji lama$/)
+    expect(within(rows[0]).getByRole('link', { name: 'Lihat pesan: Kirim invoice' })).toHaveAttribute(
+      'href',
+      '/inbox?conversation=conv_1&message=msg_9&lihat=1'
+    )
+    expect(within(rows[1]).queryByRole('link')).not.toBeInTheDocument()
+  })
+
+  it('tanpa janji: daftar "Janji tim" tidak dirender dan item REPLY tanpa label jenis', async () => {
+    stubFetch(() => json(response()))
+    render(<ChatReviewTab conversationId="conv_1" />)
+    const status = await screen.findByRole('region', { name: 'Status tindak lanjut' })
+    expect(within(status).queryByText('Janji tim')).not.toBeInTheDocument()
+    expect(screen.queryByRole('list', { name: 'Janji tim' })).not.toBeInTheDocument()
   })
 })
 

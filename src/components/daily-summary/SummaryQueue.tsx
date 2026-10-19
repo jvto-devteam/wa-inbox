@@ -10,13 +10,18 @@ import { STAGE_LABELS } from '@/lib/pipeline'
 import { jakartaDayKey, jakartaDayRange } from '@/lib/daily-summary/time'
 import { fetchJson } from '@/lib/fetch-json'
 import { announceSummaryItemsChanged } from '@/lib/summary-items/events'
-import { wibDateTimeLabel } from '@/lib/summary-items/status'
+import { summaryItemKindLabel, wibDateTimeLabel } from '@/lib/summary-items/status'
 import type { SummaryItemView } from '@/lib/summary-items/view'
+import { PromiseList } from '@/components/daily-summary/QuestionList'
+import { conversationHref } from '@/components/daily-summary/conversation-href'
 
 /**
  * Antrean tindakan halaman /summary. Setiap item OPEN punya tiga jalan keluar: dibalas di Inbox
  * (item tertutup sendiri lewat rekonsiliasi), dijadwalkan lewat pengingat, atau dilepas. Tidak
  * ada yang mengirim pesan ke pelanggan dari sini -- "Balas" hanya membuka percakapannya.
+ *
+ * Kartu "Janji tim" (PROMISE) menampilkan daftar janji dan aksi utamanya "Buka chat" ke pesan
+ * janji itu; ia tertutup oleh ringkasan berikutnya yang tidak lagi memuat janji terbuka.
  *
  * Setelah aksi sukses, `onChanged` memuat ulang daftar dan event `summary-items:changed`
  * memberi tahu lencana di AppRail supaya angkanya tidak menunggu putaran 60 detik berikutnya.
@@ -24,11 +29,6 @@ import type { SummaryItemView } from '@/lib/summary-items/view'
 
 const DAY_MS = 24 * 60 * 60 * 1000
 const NOTE_MAX = 500
-
-const KIND_LABEL: Record<SummaryItemView['kind'], string> = {
-  REPLY: 'Belum dibalas',
-  FOLLOW_UP: 'Follow up',
-}
 
 /** Pilihan cepat "Ingatkan": selalu pukul 09.00 WIB, N hari kalender Jakarta dari hari ini. */
 const REMIND_OPTIONS: ReadonlyArray<{ days: number; label: string }> = [
@@ -48,15 +48,7 @@ export function jakartaMorningIso(now: Date, daysAhead: number): string {
   return `${key}T09:00:00+07:00`
 }
 
-/**
- * `lihat`: pesan hanya digulung dan disorot, panel "Perbaiki jawaban bot" tidak dibuka sendiri
- * (`&lihat=1`, dibaca inbox/page.tsx). Dipakai butir ringkasan; Balas dan lonceng gap tanpa ini.
- */
-export function conversationHref(conversationId: string, messageId?: string | null, opts: { lihat?: boolean } = {}): string {
-  const base = `/inbox?conversation=${encodeURIComponent(conversationId)}`
-  if (!messageId) return base
-  return `${base}&message=${encodeURIComponent(messageId)}${opts.lihat ? '&lihat=1' : ''}`
-}
+export { conversationHref }
 
 function displayName(item: SummaryItemView): string {
   return item.contactName ?? 'Tanpa nama'
@@ -248,38 +240,82 @@ export function RemindDropActions({
   )
 }
 
-function OpenItemCard({ item, now, onChanged }: { item: SummaryItemView; now: Date; onChanged: () => void | Promise<void> }) {
-  const isReply = item.kind === 'REPLY'
-  const name = displayName(item)
+const KIND_BADGE: Record<SummaryItemView['kind'], 'destructive' | 'warning' | 'brand'> = {
+  REPLY: 'destructive',
+  FOLLOW_UP: 'warning',
+  PROMISE: 'brand',
+}
 
+/** Jeda + teks pemicu untuk kartu terbuka, per jenis. */
+function AnchorLines({ item, now }: { item: SummaryItemView; now: Date }) {
+  const since = `${formatWait(item.anchorAt, now)} · sejak ${dateKeyLabel(item.openedOn)}`
+  if (item.kind === 'PROMISE') {
+    const promises = item.review?.janjiTim ?? []
+    return (
+      <>
+        <p className="text-xs text-ink-muted">dijanjikan {since}</p>
+        {promises.length > 0 ? (
+          <PromiseList promises={promises} conversationId={item.conversationId} />
+        ) : (
+          item.snippet && <p className="max-w-4xl text-sm text-ink">Janji: “{item.snippet}”</p>
+        )}
+      </>
+    )
+  }
+  const isReply = item.kind === 'REPLY'
   return (
-    <li className="space-y-1.5 px-4 py-3" aria-label={`${KIND_LABEL[item.kind]}: ${name}`}>
-      <div className="flex flex-wrap items-center gap-2">
-        <ContactLink item={item} />
-        <Badge variant={isReply ? 'destructive' : 'warning'}>{KIND_LABEL[item.kind]}</Badge>
-        {item.handoff && <Badge variant="muted">Handoff</Badge>}
-        {item.newLead && <Badge variant="brand">Lead baru</Badge>}
-        {item.dueAt && <Badge variant="warning">Pengingat jatuh tempo</Badge>}
-        <span className="text-xs text-ink-subtle">{STAGE_LABELS[item.pipelineStage] ?? item.pipelineStage}</span>
-      </div>
+    <>
       <p className="text-xs text-ink-muted">
-        {isReply ? 'menunggu' : 'diam'} {formatWait(item.anchorAt, now)} · sejak {dateKeyLabel(item.openedOn)}
+        {isReply ? 'menunggu' : 'diam'} {since}
       </p>
       {item.snippet && (
         <p className={isReply ? 'max-w-4xl text-sm text-ink' : 'max-w-4xl text-sm text-ink-muted'}>
           {isReply ? '' : 'Pesan terakhir kita: '}“{item.snippet}”
         </p>
       )}
+    </>
+  )
+}
+
+/** Aksi utama kartu: Balas (ke pesan pelanggan), Follow up, atau Buka chat (ke pesan janji). */
+function primaryAction(item: SummaryItemView): { href: string; label: string } {
+  switch (item.kind) {
+    case 'REPLY':
+      return { href: conversationHref(item.conversationId, item.anchorMessageId), label: 'Balas' }
+    case 'PROMISE':
+      return { href: conversationHref(item.conversationId, item.anchorMessageId, { lihat: true }), label: 'Buka chat' }
+    default:
+      return { href: conversationHref(item.conversationId), label: 'Follow up' }
+  }
+}
+
+function OpenItemCard({ item, now, onChanged }: { item: SummaryItemView; now: Date; onChanged: () => void | Promise<void> }) {
+  const name = displayName(item)
+  const kindLabel = summaryItemKindLabel(item.kind)
+  const action = primaryAction(item)
+  const fallbackNote = item.kind === 'PROMISE' ? `Tepati janji ke ${name}` : `Follow up ${name}`
+
+  return (
+    <li className="space-y-1.5 px-4 py-3" aria-label={`${kindLabel}: ${name}`}>
+      <div className="flex flex-wrap items-center gap-2">
+        <ContactLink item={item} />
+        <Badge variant={KIND_BADGE[item.kind]}>{kindLabel}</Badge>
+        {item.handoff && <Badge variant="muted">Handoff</Badge>}
+        {item.newLead && <Badge variant="brand">Lead baru</Badge>}
+        {item.dueAt && <Badge variant="warning">Pengingat jatuh tempo</Badge>}
+        <span className="text-xs text-ink-subtle">{STAGE_LABELS[item.pipelineStage] ?? item.pipelineStage}</span>
+      </div>
+      <AnchorLines item={item} now={now} />
       <ReviewLine review={item.review} />
 
       <RemindDropActions
         itemId={item.id}
-        defaultNote={item.review?.langkahBerikut || `Follow up ${name}`}
+        defaultNote={item.review?.langkahBerikut || fallbackNote}
         now={now}
         onChanged={onChanged}
       >
-        <ActionLink href={conversationHref(item.conversationId, isReply ? item.anchorMessageId : null)} primary>
-          {isReply ? 'Balas' : 'Follow up'}
+        <ActionLink href={action.href} primary>
+          {action.label}
         </ActionLink>
       </RemindDropActions>
     </li>
@@ -290,7 +326,7 @@ function ScheduledItemRow({ item }: { item: SummaryItemView }) {
   return (
     <li className="flex flex-wrap items-center gap-2 px-4 py-2.5" aria-label={`Dijadwalkan: ${displayName(item)}`}>
       <ContactLink item={item} />
-      <Badge variant="muted">{KIND_LABEL[item.kind]}</Badge>
+      <Badge variant="muted">{summaryItemKindLabel(item.kind)}</Badge>
       {item.dueAt && <span className="text-sm text-ink-muted">diingatkan {wibDateTimeLabel(item.dueAt)}</span>}
       <span className="ml-auto">
         <ActionLink href={conversationHref(item.conversationId)}>Buka chat</ActionLink>

@@ -2,7 +2,9 @@ import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { DORMANT_STAGES, RETENTION_MS } from '@/lib/daily-summary/config'
 import { messageSnippet, type TranscriptMessage } from '@/lib/daily-summary/collect'
-import type { ConversationReview, DailySummaryPayload } from '@/lib/daily-summary/payload-schema'
+import { unkeptPromises, type ConversationReview, type DailySummaryPayload } from '@/lib/daily-summary/payload-schema'
+import { jakartaDayRange } from '@/lib/daily-summary/time'
+import type { SummaryItemKind } from './status'
 
 /**
  * Antrean tindakan Summary Harian: menjaga tabel `SummaryItem` tetap searah dengan payload
@@ -18,14 +20,20 @@ import type { ConversationReview, DailySummaryPayload } from '@/lib/daily-summar
  * sesudah anchor, atau (STAGE_ADVANCED) bila tahap pipeline sudah keluar dari DORMANT_STAGES.
  * Pengingat dipantau selama `reminderId` terisi, baik SCHEDULED maupun OPEN (sudah jatuh tempo).
  *
+ * PROMISE (janji tim yang belum ditepati, dari `janjiTim` di review) hanya lahir untuk percakapan
+ * yang BUKAN kandidat REPLY/FOLLOW_UP hari itu -- keduanya selalu menang. Ia tertutup
+ * (PROMISE_KEPT) oleh review berikutnya yang tidak lagi memuat janji terbuka (`applyReviewToItem`,
+ * dari sync malam atau tombol "Perbarui sekarang"), dan berubah jadi REPLY seperti FOLLOW_UP bila
+ * pelanggan chat lagi. Pesan keluar sesudah janji TIDAK menutupnya: membalas belum tentu menepati.
+ *
  * Semua fungsi di sini tidak pernah melempar: antrean adalah pelengkap ringkasan, dan
  * kegagalannya tidak boleh mengubah status ringkasan atau menahan antrean outbound.
  */
 
-export const SUMMARY_ITEM_KINDS = ['REPLY', 'FOLLOW_UP'] as const
+export { SUMMARY_ITEM_KINDS } from './status'
 export const SUMMARY_ITEM_STATES = ['OPEN', 'SCHEDULED', 'DONE', 'DROPPED'] as const
 
-type Kind = (typeof SUMMARY_ITEM_KINDS)[number]
+type Kind = SummaryItemKind
 
 type Candidate = {
   conversationId: string
@@ -61,6 +69,54 @@ function toCandidates(payload: DailySummaryPayload): Candidate[] {
   return [...payload.unreplied.map((i) => base(i, 'REPLY')), ...payload.dormant.map((i) => base(i, 'FOLLOW_UP'))]
 }
 
+/**
+ * Review per percakapan dari bagian mana pun payload (review yang sama ditulis ke setiap bagian
+ * tempat percakapan itu muncul); yang diambil review non-null pertama.
+ */
+function reviewsByConversation(payload: DailySummaryPayload): Map<string, ConversationReview> {
+  const reviews = new Map<string, ConversationReview>()
+  for (const list of [payload.unreplied, payload.dormant, payload.newLeads, payload.conversations]) {
+    for (const entry of list) {
+      if (entry.review && !reviews.has(entry.conversationId)) reviews.set(entry.conversationId, entry.review)
+    }
+  }
+  return reviews
+}
+
+/**
+ * Kandidat PROMISE: anchor = waktu pesan janji terbuka yang PALING BARU (dicari lewat `messageId`
+ * dan dibatasi ke percakapan itu), atau akhir hari ringkasan bila tak satu pun pesannya diketahui.
+ */
+async function promiseCandidate(
+  conversationId: string,
+  review: ConversationReview,
+  dayEnd: Date,
+  newLead: boolean
+): Promise<Candidate | null> {
+  const unkept = unkeptPromises(review)
+  if (unkept.length === 0) return null
+  const messageIds = unkept.flatMap((p) => (p.messageId ? [p.messageId] : []))
+  const message =
+    messageIds.length > 0
+      ? await prisma.message.findFirst({
+          where: { id: { in: messageIds }, conversationId },
+          orderBy: { createdAt: 'desc' },
+          select: { id: true, createdAt: true },
+        })
+      : null
+  const anchored = message ? unkept.find((p) => p.messageId === message.id) : undefined
+  return {
+    conversationId,
+    kind: 'PROMISE',
+    anchorAt: message?.createdAt ?? dayEnd,
+    anchorMessageId: message?.id ?? null,
+    snippet: (anchored ?? unkept[0]).teks,
+    review,
+    handoff: false,
+    newLead,
+  }
+}
+
 type ClosedRow = { state: string; closedReason: string | null; anchorAt: Date; closedAt: Date | null }
 
 /**
@@ -79,11 +135,27 @@ function shouldReopen(row: ClosedRow, c: Candidate): boolean {
 export async function syncSummaryItems(
   date: string,
   payload: DailySummaryPayload,
-  _now: Date = new Date()
-): Promise<{ created: number; updated: number; reopened: number }> {
-  const result = { created: 0, updated: 0, reopened: 0 }
+  now: Date = new Date()
+): Promise<{ created: number; updated: number; reopened: number; closed: number }> {
+  const result = { created: 0, updated: 0, reopened: 0, closed: 0 }
   try {
-    for (const c of toCandidates(payload)) {
+    const candidates = toCandidates(payload)
+    const taken = new Set(candidates.map((c) => c.conversationId))
+    const newLeadIds = new Set(payload.newLeads.map((l) => l.conversationId))
+    // Sampai kapan review hari itu melihat percakapan: akhir hari, kecuali hari itu belum selesai
+    // ("Buat ulang" untuk hari ini) -- anchor/closedAt di masa depan akan menahan item.
+    const dayEnd = new Date(Math.min(jakartaDayRange(date).end.getTime(), now.getTime()))
+    // Review tanpa janji terbuka untuk percakapan yang bukan kandidat REPLY/FOLLOW_UP: bahan
+    // penutupan PROMISE_KEPT di bawah.
+    const kept: Array<[string, ConversationReview]> = []
+    for (const [conversationId, review] of reviewsByConversation(payload)) {
+      if (taken.has(conversationId)) continue
+      const c = await promiseCandidate(conversationId, review, dayEnd, newLeadIds.has(conversationId))
+      if (c) candidates.push(c)
+      else kept.push([conversationId, review])
+    }
+
+    for (const c of candidates) {
       const fields = {
         kind: c.kind,
         anchorAt: c.anchorAt,
@@ -103,6 +175,8 @@ export async function syncSummaryItems(
         // Membuat ulang ringkasan tanggal lama tidak boleh memundurkan item yang sudah
         // diperbarui oleh ringkasan yang lebih baru.
         if (date < row.lastSeenOn) continue
+        // REPLY/FOLLOW_UP yang masih terbuka menang atas janji: jangan menurunkannya jadi PROMISE.
+        if (c.kind === 'PROMISE' && row.kind !== 'PROMISE') continue
         await prisma.summaryItem.update({
           where: { id: row.id },
           // "YYYY-MM-DD" terurut leksikografis sama dengan urutan tanggal.
@@ -130,11 +204,65 @@ export async function syncSummaryItems(
         result.reopened++
       }
     }
+
+    // Satu kueri untuk semua PROMISE terbuka yang review-nya hari ini tanpa janji terbuka.
+    const keptReviews = new Map(kept)
+    const promiseRows =
+      keptReviews.size > 0
+        ? await prisma.summaryItem.findMany({
+            where: { conversationId: { in: [...keptReviews.keys()] }, kind: 'PROMISE', state: { in: ['OPEN', 'SCHEDULED'] } },
+          })
+        : []
+    for (const row of promiseRows) {
+      const review = keptReviews.get(row.conversationId)
+      if (!review || date < row.lastSeenOn) continue
+      if ((await applyReviewToRow(row, review, dayEnd)) === 'closed') result.closed++
+    }
     return result
   } catch (error) {
     console.error('syncSummaryItems gagal', { date, error })
-    return { created: 0, updated: 0, reopened: 0 }
+    return { created: 0, updated: 0, reopened: 0, closed: 0 }
   }
+}
+
+export type ApplyReviewOutcome = 'closed' | 'updated' | 'unchanged'
+
+/**
+ * Menerapkan review terbaru satu percakapan ke item PROMISE-nya yang masih OPEN/SCHEDULED: tidak
+ * ada lagi janji terbuka → DONE/PROMISE_KEPT (pengingatnya ikut ditandai selesai); masih ada →
+ * review di item disegarkan. Item jenis lain dan item tertutup tidak disentuh -- REPLY/FOLLOW_UP
+ * punya jalan keluar sendiri di `reconcileSummaryItems`, dan membuat item baru tetap tugas sync
+ * malam (ambang "belum dibalas"/"diam" hanya dinilai di sana).
+ *
+ * `asOf` = sampai kapan review itu melihat percakapan. Review yang lebih tua dari janjinya
+ * (anchor) tidak bisa tahu janji itu, jadi diabaikan. Dipakai sync malam (asOf = akhir hari) dan
+ * POST /api/conversations/[id]/chat-review (asOf = sekarang). Tidak pernah melempar.
+ */
+export async function applyReviewToItem(conversationId: string, review: ConversationReview, asOf: Date): Promise<ApplyReviewOutcome> {
+  try {
+    const row = await prisma.summaryItem.findUnique({ where: { conversationId } })
+    return row ? await applyReviewToRow(row, review, asOf) : 'unchanged'
+  } catch (error) {
+    console.error('applyReviewToItem gagal', { conversationId, error: error instanceof Error ? error.message : 'unknown' })
+    return 'unchanged'
+  }
+}
+
+type PromiseRow = { id: string; kind: string; state: string; anchorAt: Date; reminderId: string | null }
+
+async function applyReviewToRow(row: PromiseRow, review: ConversationReview, asOf: Date): Promise<ApplyReviewOutcome> {
+  if (row.kind !== 'PROMISE' || (row.state !== 'OPEN' && row.state !== 'SCHEDULED')) return 'unchanged'
+  if (asOf < row.anchorAt) return 'unchanged'
+  if (unkeptPromises(review).length > 0) {
+    await prisma.summaryItem.update({ where: { id: row.id }, data: { review: reviewValue(review) } })
+    return 'updated'
+  }
+  await write(
+    row.id,
+    { state: 'DONE', closedReason: 'PROMISE_KEPT', closedAt: asOf, review: reviewValue(review) },
+    row.reminderId
+  )
+  return 'closed'
 }
 
 const messageSelect = { id: true, direction: true, sentBy: true, type: true, content: true, createdAt: true } as const
@@ -179,8 +307,8 @@ async function reconcileOne(
   let completeReminderId: string | null = null
   let touched = false
 
-  // 1. Pelanggan bicara lagi sesudah kita: tindak lanjut berubah jadi menunggu balasan.
-  if (kind === 'FOLLOW_UP') {
+  // 1. Pelanggan bicara lagi sesudah kita (atau sesudah janji kita): berubah jadi menunggu balasan.
+  if (kind === 'FOLLOW_UP' || kind === 'PROMISE') {
     const inbound = await prisma.message.findFirst({
       where: { conversationId: item.conversationId, direction: 'INBOUND', createdAt: { gt: anchorAt } },
       orderBy: { createdAt: 'asc' },

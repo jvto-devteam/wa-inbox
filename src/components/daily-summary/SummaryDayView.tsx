@@ -3,9 +3,9 @@ import Link from 'next/link'
 import { Badge } from '@/components/ui/badge'
 import { EmptyState } from '@/components/ui/empty-state'
 import { ActionLink, RemindDropActions, ReviewLine, conversationHref } from '@/components/daily-summary/SummaryQueue'
-import { QuestionList } from '@/components/daily-summary/QuestionList'
-import type { ConversationReview, DailySummaryPayload } from '@/lib/daily-summary/payload-schema'
-import { followUpStatus, isActionable, type SummaryItemStatus } from '@/lib/summary-items/status'
+import { PromiseList, QuestionList } from '@/components/daily-summary/QuestionList'
+import { unkeptPromises, type ConversationReview, type DailySummaryPayload } from '@/lib/daily-summary/payload-schema'
+import { followUpStatus, isActionable, summaryItemKindLabel, type SummaryItemStatus } from '@/lib/summary-items/status'
 
 /**
  * Tampilan satu tanggal di /summary: apa yang terjadi hari itu (label dan ringkasan LLM dari
@@ -17,11 +17,13 @@ import { followUpStatus, isActionable, type SummaryItemStatus } from '@/lib/summ
  * berbeda. Yang masih terbuka diurutkan paling atas.
  */
 
-type DayLabel = 'unreplied' | 'dormant' | 'newLead' | 'handoff'
+type DayLabel = 'unreplied' | 'dormant' | 'promise' | 'newLead' | 'handoff'
 
 const DAY_LABELS: ReadonlyArray<{ key: DayLabel; label: string; variant: 'destructive' | 'warning' | 'brand' | 'muted' }> = [
   { key: 'unreplied', label: 'Belum dibalas', variant: 'destructive' },
   { key: 'dormant', label: 'Pelanggan diam', variant: 'warning' },
+  // Sama dengan aturan sync: janji terbuka hanya jadi label bila bukan belum dibalas/diam.
+  { key: 'promise', label: summaryItemKindLabel('PROMISE'), variant: 'brand' },
   { key: 'newLead', label: 'Lead baru', variant: 'brand' },
   { key: 'handoff', label: 'Handoff', variant: 'muted' },
 ]
@@ -54,6 +56,11 @@ function collectConversations(payload: DailySummaryPayload): DayConversation[] {
   for (const entry of payload.newLeads) add(entry, 'newLead')
   for (const entry of payload.handoffs) add(entry, 'handoff')
   for (const entry of payload.conversations) add(entry, null)
+  for (const conv of byId.values()) {
+    if (conv.review && !conv.labels.has('unreplied') && !conv.labels.has('dormant') && unkeptPromises(conv.review).length > 0) {
+      conv.labels.add('promise')
+    }
+  }
   return [...byId.values()]
 }
 
@@ -100,6 +107,7 @@ function DayCard({
       </div>
       <ReviewLine review={conv.review} />
       {conv.review && <QuestionList questions={conv.review.pertanyaan} conversationId={conv.conversationId} />}
+      {conv.review && <PromiseList promises={conv.review.janjiTim} conversationId={conv.conversationId} />}
 
       {isActionable(item) ? (
         // `key`: item baru untuk percakapan yang sama mulai dari panel tertutup.

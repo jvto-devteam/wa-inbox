@@ -969,11 +969,12 @@ model SummaryItem {
   id              String       @id @default(cuid())
   conversationId  String       @unique
   conversation    Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
-  /// REPLY | FOLLOW_UP
+  /// REPLY | FOLLOW_UP | PROMISE
   kind            String
   /// OPEN | SCHEDULED | DONE | DROPPED
   state           String
-  /// Waktu pesan pemicu. REPLY tertutup oleh pesan OUTBOUND sesudahnya; FOLLOW_UP jadi REPLY oleh INBOUND sesudahnya.
+  /// Waktu pesan pemicu. REPLY tertutup oleh pesan OUTBOUND sesudahnya; FOLLOW_UP/PROMISE jadi REPLY oleh INBOUND sesudahnya.
+  /// PROMISE: waktu pesan janji tim (atau akhir hari ringkasan bila pesannya tidak diketahui).
   anchorAt        DateTime
   anchorMessageId String?
   snippet         String
@@ -987,7 +988,7 @@ model SummaryItem {
   lastSeenOn      String
   reminderId      String?
   dueAt           DateTime?
-  /// REPLIED | REMINDER_DONE | DROPPED | STAGE_ADVANCED
+  /// REPLIED | REMINDER_DONE | DROPPED | STAGE_ADVANCED | PROMISE_KEPT
   closedReason    String?
   note            String?
   closedById      String?
