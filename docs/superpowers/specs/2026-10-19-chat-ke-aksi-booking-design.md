@@ -182,8 +182,9 @@ ada kedaluwarsa.
 - Aksi admin: **Setujui** (bisa mengoreksi isian dulu), **Tolak** (dengan alasan opsional).
 - **Setelan persetujuan (keputusan owner 2026-10-19, menggantikan "admin yang proses terapkan"):**
   kolom di `Settings`, diedit di `/settings`, berlaku seketika (edit → simpan → aktif, CLAUDE.md §3).
-  Tiga sakelar, masing-masing `APPROVE` (default) atau `ALWAYS`: perubahan ringan, perubahan sedang,
-  pesan permintaan data (§5.7). Perubahan besar tidak punya sakelar. Mengubah setelan ini mengubah
+  Tiga sakelar, masing-masing `APPROVE` atau `ALWAYS`: perubahan ringan, perubahan sedang (default
+  `APPROVE`), dan pesan permintaan data (§5.7) dengan default **`ALWAYS`** (keputusan owner 2026-10-19:
+  "pesan permintaan data selalu izinkan"). Perubahan besar tidak punya sakelar. Mengubah setelan ini mengubah
   apa yang dilakukan sistem, jadi lewat `hasAdminPowers()` dan `writeBotAuditLog`.
 - Mode `ALWAYS`: kartu dibuat lalu langsung diterapkan oleh sistem (actor `SYSTEM`). Kartu tetap
   tampil sebagai pemberitahuan "diterapkan otomatis" dengan tombol **Batalkan**, yang menulis

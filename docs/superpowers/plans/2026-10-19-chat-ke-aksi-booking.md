@@ -443,7 +443,7 @@ Alur dalam satu handler:
 ### Task 11b: Setelan persetujuan + terapkan otomatis + Batalkan
 
 **Files:**
-- Modify: `prisma/schema.prisma` (`Settings`: `bookingLightApproval String @default("APPROVE")`, `bookingBaliApproval String @default("APPROVE")`, `dataRequestApproval String @default("APPROVE")`), migrasi aditif
+- Modify: `prisma/schema.prisma` (`Settings`: `bookingLightApproval String @default("APPROVE")`, `bookingBaliApproval String @default("APPROVE")`, `dataRequestApproval String @default("ALWAYS")` (keputusan owner 2026-10-19)), migrasi aditif
 - Modify: `PATCH /api/settings` (Zod `z.enum(['APPROVE','ALWAYS'])`, tetap `hasAdminPowers()`, `writeBotAuditLog` aksi `UPDATE`), halaman `/settings` (tiga sakelar, mobile-first)
 - Modify: `src/lib/booking-actions/store.ts`, `src/app/api/booking-actions/[id]/route.ts` (+ `op: 'revert'`)
 
@@ -482,6 +482,7 @@ Alur dalam satu handler:
 - [ ] Test:
   - `H-8 → none; H-7 → one`
   - `Indonesian number → none`
+  - `default setting sends automatically within 24h window`
   - `same day twice → still one`
   - `next day → yesterday superseded, new one created`
   - `data completed → resolved DATA_COMPLETE`
