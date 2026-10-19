@@ -157,7 +157,8 @@ Percakapan yang sekadar aktif **tetap** dinilai LLM dan disimpan di `payload.con
 Jenis ketiga, `PROMISE` ("Janji tim"), lahir dari `janjiTim` berstatus `terpenuhi:false` hanya untuk
 percakapan yang bukan kandidat REPLY/FOLLOW_UP (keduanya selalu menang); ia tertutup `PROMISE_KEPT`
 oleh review berikutnya tanpa janji terbuka (`applyReviewToItem`) dan jadi REPLY bila pelanggan chat lagi —
-pesan keluar saja **tidak** menutupnya.
+pesan keluar saja **tidak** menutupnya, dan janji yang masih terbuka membuka lagi baris DONE/REPLIED
+(anchor naik ke waktu balasan). Aturan buat/buka ulang ada di satu tempat, `upsertCandidate`.
 
 ### Ringkasan chat (tab di panel kanan Inbox)
 Menampilkan ringkasan LLM **terbaru** satu percakapan, tanda terjawab per pertanyaan, riwayat
@@ -178,7 +179,8 @@ Transkrip ke LLM bernomor `#N` (`buildNumberedTranscript`); model menunjuk pesan
 nomor tidak valid dibuang). Butir pertanyaan/poin ber-`messageId` di tab ini dan di /summary bisa
 diklik ke `/inbox?conversation=…&message=…`; string lama tampil sebagai teks biasa.
 Review juga memuat `janjiTim` (`{ teks, terpenuhi, messageId? }`, opsional, default `[]`), tampil ✅/⏳
-lewat `CheckList` yang sama dengan pertanyaan; "Perbarui sekarang" memanggil `applyReviewToItem` sesudah menyimpan.
+lewat `CheckList` yang sama dengan pertanyaan; "Perbarui sekarang" memanggil `applyReviewToItem` sesudah menyimpan
+(menutup, menyegarkan, atau membuat/membuka lagi PROMISE; REPLY/FOLLOW_UP yang terbuka tidak disentuh).
 Dipangkas setelah **30 hari** sejak `chatReviewAt` (keputusan owner 2026-10-19), sama dengan
 DailySummary dan SummaryItem — isinya memuat poin penting chat pelanggan.
 
