@@ -241,10 +241,13 @@ describe('ChatReviewTab', () => {
       if (init?.method === 'POST') return new Promise<Response>((resolve) => (resolvePost = resolve))
       return json(response({ latest: null }))
     })
+    const listener = vi.fn()
+    window.addEventListener(SUMMARY_ITEMS_CHANGED, listener)
     render(<ChatReviewTab conversationId="conv_1" />)
 
     fireEvent.click(await screen.findByRole('button', { name: 'Perbarui sekarang' }))
     const busy = screen.getByRole('button', { name: 'Meringkas…' })
+    expect(listener).not.toHaveBeenCalled()
     expect(busy).toBeDisabled()
     expect(fetchMock).toHaveBeenCalledWith(URL, { method: 'POST' })
 
@@ -252,6 +255,9 @@ describe('ChatReviewTab', () => {
     expect(await screen.findByText('Topik baru dari LLM')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Perbarui sekarang' })).toBeEnabled()
     expect(screen.queryByText('Belum ada ringkasan.')).not.toBeInTheDocument()
+    // Perbarui bisa mengubah item "Janji tim": lencana menu diberi tahu, sekali.
+    expect(listener).toHaveBeenCalledTimes(1)
+    window.removeEventListener(SUMMARY_ITEMS_CHANGED, listener)
   })
 
   it('502 dari POST tampil inline, ringkasan lama tetap terlihat', async () => {
@@ -259,6 +265,8 @@ describe('ChatReviewTab', () => {
       if (init?.method === 'POST') return json({ error: 'Gagal meringkas. Coba lagi.' }, 502)
       return json(response())
     })
+    const listener = vi.fn()
+    window.addEventListener(SUMMARY_ITEMS_CHANGED, listener)
     render(<ChatReviewTab conversationId="conv_1" />)
 
     fireEvent.click(await screen.findByRole('button', { name: 'Perbarui sekarang' }))
@@ -266,6 +274,8 @@ describe('ChatReviewTab', () => {
     expect(await within(latest).findByRole('alert')).toHaveTextContent('Gagal meringkas. Coba lagi.')
     expect(within(latest).getByText('Paket Ijen 2 orang')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Perbarui sekarang' })).toBeEnabled()
+    expect(listener).not.toHaveBeenCalled()
+    window.removeEventListener(SUMMARY_ITEMS_CHANGED, listener)
   })
 
   it('riwayat: satu <details> per tanggal dengan tanggal, topik, badge, dan isi yang sama formatnya', async () => {

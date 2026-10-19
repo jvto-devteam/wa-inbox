@@ -7,6 +7,7 @@ vi.mock('@/lib/db', () => ({ prisma: mockDeep<PrismaClient>() }))
 
 import { prisma } from '@/lib/db'
 import { RETENTION_MS } from '@/lib/daily-summary/config'
+import { jakartaDayRange } from '@/lib/daily-summary/time'
 import type { DailySummaryPayload } from '@/lib/daily-summary/payload-schema'
 import { applyReviewToItem, pruneSummaryItems, reconcileSummaryItems, syncSummaryItems } from './sync'
 
@@ -119,240 +120,341 @@ describe('syncSummaryItems', () => {
   })
 })
 
-describe('janji tim (PROMISE)', () => {
-  const DATE = '2026-10-18'
-  // Akhir hari WIB 18 Oktober = 18 Oktober 17.00 UTC; job malam berjalan sesudahnya.
-  const DAY_END = at('2026-10-18T17:00:00Z')
-  const AFTER = at('2026-10-18T17:05:00Z')
-  const review = (janjiTim: unknown[]) => ({
-    status: 'perlu_tindakan', alasan: 'a', jenisKontak: 'calon_tamu', topik: 'Ijen', pertanyaan: [], poinPenting: [],
-    janjiTim, statusAgen: '', langkahBerikut: 'Kirim invoice',
-  })
-  const unkept = review([{ teks: 'Kirim invoice', terpenuhi: false, messageId: 'mj' }, { teks: 'Cek kamar', terpenuhi: true }])
-  const kept = review([{ teks: 'Kirim invoice', terpenuhi: true, messageId: 'mj' }])
-  const active = (id: string, r: unknown) => ({ conversationId: id, contactName: 'Budi', pipelineStage: 'new', inbound: 1, outbound: 1, review: r })
-  const promiseAt = at('2026-10-18T03:00:00Z')
+/**
+ * Tiruan prisma yang MENYIMPAN state (item, pesan, pengingat, chatReviewAt), supaya urutan job
+ * malam → rekonsiliasi → Perbarui bisa dijalankan seperti di produksi. Kasus-kasusnya berasal dari
+ * repro review 2026-10-19 (janji hilang di job yang sama, anchor cadangan bergeser, Buat ulang).
+ */
+type StoreItem = {
+  id: string; conversationId: string; kind: string; state: string; anchorAt: Date; anchorMessageId: string | null; snippet: string
+  review: unknown; handoff: boolean; newLead: boolean; openedOn: string; lastSeenOn: string; reminderId: string | null
+  dueAt: Date | null; closedReason: string | null; note: string | null; closedById: string | null; closedAt: Date | null
+}
+type StoreMsg = { id: string; conversationId: string; direction: 'INBOUND' | 'OUTBOUND'; sentBy: string; type: string; content: string; createdAt: Date }
+type MsgWhere = { conversationId?: string; direction?: string; createdAt?: { gt?: Date; lte?: Date }; id?: { in: string[] } }
 
-  beforeEach(() => {
-    mockPrisma.summaryItem.findMany.mockResolvedValue([])
-  })
-
-  it('janji terbuka pada percakapan yang bukan REPLY/FOLLOW_UP -> PROMISE, anchor = waktu pesan janji', async () => {
-    mockPrisma.summaryItem.findUnique.mockResolvedValue(null)
-    mockPrisma.message.findFirst.mockResolvedValue({ id: 'mj', createdAt: promiseAt } as never)
-    const r = await syncSummaryItems(DATE, payload({ conversations: [active('c2', unkept)] as never }), AFTER)
-    expect(r.created).toBe(1)
-    // Lookup dibatasi ke percakapan itu, hanya janji yang belum ditepati.
-    expect(mockPrisma.message.findFirst.mock.calls[0][0]).toMatchObject({ where: { id: { in: ['mj'] }, conversationId: 'c2' }, orderBy: { createdAt: 'desc' } })
-    expect(mockPrisma.summaryItem.create.mock.calls[0][0].data).toMatchObject({
-      conversationId: 'c2', kind: 'PROMISE', state: 'OPEN', anchorAt: promiseAt, anchorMessageId: 'mj', snippet: 'Kirim invoice', handoff: false,
+function useStore() {
+  const st = {
+    items: [] as StoreItem[],
+    messages: [] as StoreMsg[],
+    reminders: {} as Record<string, { id: string; done: boolean; dueAt: Date }>,
+    chatReviewAt: null as Date | null,
+  }
+  const matches = (item: StoreItem, where: Record<string, unknown>) =>
+    Object.entries(where).every(([key, cond]) => {
+      const value = (item as Record<string, unknown>)[key]
+      if (cond && typeof cond === 'object' && 'in' in cond) return (cond as { in: unknown[] }).in.includes(value)
+      return value === cond
     })
+  beforeEach(() => {
+    st.items = []
+    st.messages = []
+    st.reminders = {}
+    st.chatReviewAt = null
+    mockPrisma.summaryItem.findUnique.mockImplementation((async (a: { where: { conversationId: string } }) =>
+      st.items.find((i) => i.conversationId === a.where.conversationId) ?? null) as never)
+    mockPrisma.summaryItem.findMany.mockImplementation((async (a: { where: Record<string, unknown> }) => st.items.filter((i) => matches(i, a.where))) as never)
+    mockPrisma.summaryItem.create.mockImplementation((async (a: { data: Partial<StoreItem> }) => {
+      const created = { ...(row() as unknown as StoreItem), id: `i${st.items.length + 1}`, ...a.data }
+      st.items.push(created)
+      return created
+    }) as never)
+    mockPrisma.summaryItem.update.mockImplementation((async (a: { where: { id: string }; data: Partial<StoreItem> }) => {
+      const target = st.items.find((i) => i.id === a.where.id)
+      if (target) Object.assign(target, a.data)
+      return target
+    }) as never)
+    mockPrisma.reminder.findUnique.mockImplementation((async (a: { where: { id: string } }) => st.reminders[a.where.id] ?? null) as never)
+    mockPrisma.reminder.updateMany.mockImplementation((async (a: { where: { id: string } }) => {
+      const r = st.reminders[a.where.id]
+      if (r) r.done = true
+      return { count: r ? 1 : 0 }
+    }) as never)
+    mockPrisma.conversation.findUnique.mockImplementation((async () => ({ pipelineStage: 'nego', chatReviewAt: st.chatReviewAt })) as never)
+    mockPrisma.$transaction.mockImplementation((async (ops: unknown) => (Array.isArray(ops) ? Promise.all(ops) : ops)) as never)
+    mockPrisma.message.findFirst.mockImplementation((async (a: { where: MsgWhere; orderBy: { createdAt: 'asc' | 'desc' } }) => {
+      const { conversationId, direction, createdAt, id } = a.where
+      const hits = st.messages
+        .filter((m) => m.conversationId === conversationId)
+        .filter((m) => direction === undefined || m.direction === direction)
+        .filter((m) => !createdAt?.gt || m.createdAt > createdAt.gt)
+        .filter((m) => !createdAt?.lte || m.createdAt <= createdAt.lte)
+        .filter((m) => !id || id.in.includes(m.id))
+        .sort((x, y) => x.createdAt.getTime() - y.createdAt.getTime())
+      return (a.orderBy?.createdAt === 'desc' ? hits.reverse() : hits)[0] ?? null
+    }) as never)
+  })
+  const msg = (id: string, direction: StoreMsg['direction'], iso: string) =>
+    st.messages.push({ id, conversationId: 'c1', direction, sentBy: direction === 'INBOUND' ? 'CUSTOMER' : 'AGENT', type: 'TEXT', content: id, createdAt: at(iso) })
+  const snap = () => st.items.map((i) => `${i.kind}/${i.state}/${i.closedReason ?? '-'}`).join(',')
+  return { st, msg, snap }
+}
+
+const rv = (janjiTim: unknown[]) => ({
+  status: 'perlu_tindakan', alasan: 'a', jenisKontak: 'calon_tamu', topik: 't', pertanyaan: [], poinPenting: [], janjiTim, statusAgen: '', langkahBerikut: '',
+}) as never
+const pl = (review: unknown | null) =>
+  payload({ conversations: (review ? [{ conversationId: 'c1', contactName: 'B', pipelineStage: 'nego', inbound: 1, outbound: 1, review }] : []) as never })
+const unkeptId = rv([{ teks: 'Invoice besok', terpenuhi: false, messageId: 'janji' }])
+const unkeptNoId = rv([{ teks: 'Invoice besok', terpenuhi: false }])
+const keptId = rv([{ teks: 'Invoice besok', terpenuhi: true, messageId: 'janji' }])
+/** Job malam untuk hari `day` (YYYY-MM-DD): sync lalu rekonsiliasi, 5 menit sesudah akhir hari WIB. */
+async function nightly(day: string, review: unknown | null) {
+  const { end } = jakartaDayRange(day)
+  await syncSummaryItems(day, pl(review), new Date(end.getTime() + 5 * 60_000))
+  await reconcileSummaryItems(new Date(end.getTime() + 6 * 60_000))
+}
+
+describe('janji tim (PROMISE): kandidat dan prioritas', () => {
+  const { st, msg, snap } = useStore()
+
+  it('janji terbuka pada percakapan yang bukan REPLY/FOLLOW_UP -> PROMISE, anchor + tautan = pesan janji', async () => {
+    msg('janji', 'OUTBOUND', '2026-10-17T03:00:00Z')
+    await nightly('2026-10-17', unkeptId)
+    expect(st.items[0]).toMatchObject({ kind: 'PROMISE', state: 'OPEN', anchorAt: at('2026-10-17T03:00:00Z'), anchorMessageId: 'janji', snippet: 'Invoice besok' })
   })
 
-  it('pesan janji tidak diketahui -> anchor = akhir hari ringkasan', async () => {
-    mockPrisma.summaryItem.findUnique.mockResolvedValue(null)
-    const r = await syncSummaryItems(DATE, payload({ conversations: [active('c2', review([{ teks: 'Itinerary besok', terpenuhi: false }]))] as never }), AFTER)
-    expect(r.created).toBe(1)
-    expect(mockPrisma.message.findFirst).not.toHaveBeenCalled()
-    expect(mockPrisma.summaryItem.create.mock.calls[0][0].data).toMatchObject({ kind: 'PROMISE', anchorAt: DAY_END, anchorMessageId: null, snippet: 'Itinerary besok' })
+  it('tanpa messageId: anchor = pesan OUTBOUND terakhir ≤ asOf, bukan akhir hari', async () => {
+    msg('a', 'OUTBOUND', '2026-10-17T03:00:00Z')
+    msg('b', 'OUTBOUND', '2026-10-17T06:00:00Z')
+    msg('besok', 'OUTBOUND', '2026-10-18T01:00:00Z')
+    await syncSummaryItems('2026-10-17', pl(unkeptNoId), at('2026-10-17T17:05:00Z'))
+    expect(st.items[0]).toMatchObject({ kind: 'PROMISE', anchorAt: at('2026-10-17T06:00:00Z'), anchorMessageId: null })
   })
 
-  it('"Buat ulang" untuk hari yang belum selesai: anchor cadangan = sekarang, bukan akhir hari', async () => {
-    mockPrisma.summaryItem.findUnique.mockResolvedValue(null)
-    await syncSummaryItems(DATE, payload({ conversations: [active('c2', review([{ teks: 'Itinerary', terpenuhi: false }]))] as never }), NOW)
-    expect(mockPrisma.summaryItem.create.mock.calls[0][0].data.anchorAt).toEqual(NOW)
+  it('tanpa messageId dan tanpa pesan keluar: anchor = asOf (dijepit ke now saat Buat ulang hari ini)', async () => {
+    await syncSummaryItems('2026-10-18', pl(unkeptNoId), NOW)
+    expect(st.items[0].anchorAt).toEqual(NOW)
   })
 
   it('janji string lama atau terpenuhi:true tidak membuat item', async () => {
     vi.mocked(console.error).mockClear()
-    mockPrisma.summaryItem.findUnique.mockResolvedValue(null)
-    const r = await syncSummaryItems(DATE, payload({ conversations: [active('c2', review(['Invoice menyusul'])), active('c3', kept)] as never }), AFTER)
-    expect(r.created).toBe(0)
-    expect(mockPrisma.summaryItem.create).not.toHaveBeenCalled()
-    // Lolos tanpa error yang tertelan, bukan karena sync gagal diam-diam.
+    await syncSummaryItems('2026-10-18', pl(rv(['Invoice menyusul', { teks: 'Cek', terpenuhi: true }])), NOW)
+    expect(st.items).toHaveLength(0)
     expect(console.error).not.toHaveBeenCalled()
   })
 
   it('REPLY menang: percakapan yang belum dibalas dan punya janji terbuka hanya jadi REPLY', async () => {
-    mockPrisma.summaryItem.findUnique.mockResolvedValue(null)
-    const waiting = { ...unreplied('c1', '2026-10-18T05:00:00Z'), review: unkept }
-    const r = await syncSummaryItems(DATE, payload({ unreplied: [waiting] as never, conversations: [active('c1', unkept)] as never }), AFTER)
-    expect(r.created).toBe(1)
-    expect(mockPrisma.summaryItem.create).toHaveBeenCalledTimes(1)
-    expect(mockPrisma.summaryItem.create.mock.calls[0][0].data.kind).toBe('REPLY')
+    const waiting = { ...unreplied('c1', '2026-10-18T05:00:00Z'), review: unkeptId }
+    await syncSummaryItems('2026-10-18', payload({ unreplied: [waiting] as never, conversations: pl(unkeptId).conversations }), NOW)
+    expect(snap()).toBe('REPLY/OPEN/-')
   })
 
-  it('REPLY yang masih OPEN tidak diturunkan jadi PROMISE', async () => {
-    mockPrisma.summaryItem.findUnique.mockResolvedValue(row({ kind: 'REPLY', lastSeenOn: '2026-10-17' }) as never)
-    mockPrisma.message.findFirst.mockResolvedValue({ id: 'mj', createdAt: promiseAt } as never)
-    const r = await syncSummaryItems(DATE, payload({ conversations: [active('c1', unkept)] as never }), AFTER)
-    expect(r).toEqual({ created: 0, updated: 0, reopened: 0, closed: 0 })
-    expect(mockPrisma.summaryItem.update).not.toHaveBeenCalled()
+  it('REPLY/FOLLOW_UP yang masih OPEN tidak diturunkan jadi PROMISE, lewat sync maupun Perbarui', async () => {
+    for (const kind of ['REPLY', 'FOLLOW_UP']) {
+      st.items = [{ ...(row({ kind, lastSeenOn: '2026-10-17' }) as unknown as StoreItem) }]
+      msg('janji', 'OUTBOUND', '2026-10-17T03:00:00Z')
+      await syncSummaryItems('2026-10-18', pl(unkeptId), NOW)
+      await expect(applyReviewToItem('c1', unkeptId, NOW)).resolves.toBe('unchanged')
+      expect(snap()).toBe(`${kind}/OPEN/-`)
+    }
   })
 
   it('PROMISE yang OPEN berubah jadi REPLY bila percakapan itu kandidat REPLY', async () => {
-    mockPrisma.summaryItem.findUnique.mockResolvedValue(row({ kind: 'PROMISE', lastSeenOn: '2026-10-17' }) as never)
-    const r = await syncSummaryItems(DATE, payload({ unreplied: [unreplied('c1', '2026-10-18T05:00:00Z')] as never }), AFTER)
-    expect(r.updated).toBe(1)
-    expect(mockPrisma.summaryItem.update.mock.calls[0][0].data).toMatchObject({ kind: 'REPLY', anchorMessageId: 'm-c1' })
+    st.items = [{ ...(row({ kind: 'PROMISE', lastSeenOn: '2026-10-17' }) as unknown as StoreItem) }]
+    await syncSummaryItems('2026-10-18', payload({ unreplied: [unreplied('c1', '2026-10-18T05:00:00Z')] as never }), NOW)
+    expect(st.items[0]).toMatchObject({ kind: 'REPLY', anchorMessageId: 'm-c1' })
   })
 
-  it('DROPPED PROMISE dengan janji yang sama tidak dibuka lagi; janji sesudah closedAt membukanya', async () => {
-    const dropped = row({ kind: 'PROMISE', state: 'DROPPED', closedReason: 'DROPPED', anchorAt: promiseAt, closedAt: at('2026-10-18T04:00:00Z') })
-    mockPrisma.summaryItem.findUnique.mockResolvedValue(dropped as never)
-    mockPrisma.message.findFirst.mockResolvedValue({ id: 'mj', createdAt: promiseAt } as never)
-    expect((await syncSummaryItems(DATE, payload({ conversations: [active('c1', unkept)] as never }), AFTER)).reopened).toBe(0)
-
-    const later = at('2026-10-18T06:00:00Z')
-    mockPrisma.message.findFirst.mockResolvedValue({ id: 'mj', createdAt: later } as never)
-    expect((await syncSummaryItems(DATE, payload({ conversations: [active('c1', unkept)] as never }), AFTER)).reopened).toBe(1)
-    expect(mockPrisma.summaryItem.update.mock.calls[0][0].data).toMatchObject({ kind: 'PROMISE', state: 'OPEN', anchorAt: later, closedAt: null })
-  })
-
-  describe('aturan buka ulang PROMISE', () => {
-    const reply = at('2026-10-18T05:00:00Z')
-    const sync = () => syncSummaryItems(DATE, payload({ conversations: [active('c1', unkept)] as never }), AFTER)
-    beforeEach(() => {
-      mockPrisma.message.findFirst.mockResolvedValue({ id: 'mj', createdAt: promiseAt } as never)
-    })
-
-    it('DONE/REPLIED dibuka lagi berapa pun anchor-nya; anchor naik ke waktu balasan', async () => {
-      mockPrisma.summaryItem.findUnique.mockResolvedValue(
-        row({ kind: 'REPLY', state: 'DONE', closedReason: 'REPLIED', anchorAt: at('2026-10-18T04:00:00Z'), closedAt: reply, lastSeenOn: '2026-10-18' }) as never
-      )
-      expect((await sync()).reopened).toBe(1)
-      expect(mockPrisma.summaryItem.update.mock.calls[0][0].data).toMatchObject({
-        kind: 'PROMISE', state: 'OPEN', anchorAt: reply, anchorMessageId: 'mj', closedReason: null, closedAt: null,
-      })
-    })
-
-    it('DONE/REPLIED tidak dibuka oleh review yang belum melihat balasannya, atau ringkasan tanggal lama', async () => {
-      mockPrisma.summaryItem.findUnique.mockResolvedValue(
-        row({ kind: 'REPLY', state: 'DONE', closedReason: 'REPLIED', closedAt: at('2026-10-19T02:00:00Z'), lastSeenOn: '2026-10-18' }) as never
-      )
-      expect((await sync()).reopened).toBe(0)
-      mockPrisma.summaryItem.findUnique.mockResolvedValue(
-        row({ kind: 'REPLY', state: 'DONE', closedReason: 'REPLIED', closedAt: reply, lastSeenOn: '2026-10-19' }) as never
-      )
-      expect((await sync()).reopened).toBe(0)
-      expect(mockPrisma.summaryItem.update).not.toHaveBeenCalled()
-    })
-
-    it('REMINDER_DONE seperti DROPPED: hanya janji lebih baru dari anchor baris', async () => {
-      const closed = (anchorAt: Date) =>
-        row({ kind: 'PROMISE', state: 'DONE', closedReason: 'REMINDER_DONE', anchorAt, closedAt: at('2026-10-18T02:00:00Z') })
-      mockPrisma.summaryItem.findUnique.mockResolvedValue(closed(promiseAt) as never)
-      expect((await sync()).reopened).toBe(0)
-      // Janji lebih baru dari anchor baris walau lebih tua dari closedAt (aturan closedAt akan menolaknya).
-      mockPrisma.summaryItem.findUnique.mockResolvedValue(closed(at('2026-10-18T01:00:00Z')) as never)
-      expect((await sync()).reopened).toBe(1)
-    })
-
-    it('PROMISE_KEPT hanya dibuka oleh janji sesudah closedAt', async () => {
-      mockPrisma.summaryItem.findUnique.mockResolvedValue(
-        row({ kind: 'PROMISE', state: 'DONE', closedReason: 'PROMISE_KEPT', anchorAt: at('2026-10-18T01:00:00Z'), closedAt: at('2026-10-18T04:00:00Z') }) as never
-      )
-      expect((await sync()).reopened).toBe(0)
-      mockPrisma.summaryItem.findUnique.mockResolvedValue(
-        row({ kind: 'PROMISE', state: 'DONE', closedReason: 'PROMISE_KEPT', anchorAt: at('2026-10-18T01:00:00Z'), closedAt: at('2026-10-18T02:00:00Z') }) as never
-      )
-      expect((await sync()).reopened).toBe(1)
-    })
-
-    it('PROMISE yang masih OPEN: anchor tidak pernah mundur ke pesan janji', async () => {
-      mockPrisma.summaryItem.findUnique.mockResolvedValue(row({ kind: 'PROMISE', anchorAt: reply, lastSeenOn: '2026-10-17' }) as never)
-      expect((await sync()).updated).toBe(1)
-      expect(mockPrisma.summaryItem.update.mock.calls[0][0].data).toMatchObject({ anchorAt: reply, anchorMessageId: 'mj' })
-    })
-  })
-
-  it('review berikutnya tanpa janji terbuka menutup PROMISE: DONE/PROMISE_KEPT, closedAt = akhir hari, pengingat selesai', async () => {
-    mockPrisma.summaryItem.findUnique.mockResolvedValue(null)
-    mockPrisma.summaryItem.findMany.mockResolvedValue([row({ kind: 'PROMISE', state: 'SCHEDULED', anchorAt: promiseAt, reminderId: 'r1', lastSeenOn: '2026-10-17' })] as never)
-    const r = await syncSummaryItems(DATE, payload({ conversations: [active('c1', kept)] as never }), AFTER)
-    expect(r).toEqual({ created: 0, updated: 0, reopened: 0, closed: 1 })
-    expect(mockPrisma.summaryItem.findMany.mock.calls[0][0]).toEqual({
-      where: { conversationId: { in: ['c1'] }, kind: 'PROMISE', state: { in: ['OPEN', 'SCHEDULED'] } },
-    })
-    expect(mockPrisma.summaryItem.update.mock.calls[0][0].data).toMatchObject({ state: 'DONE', closedReason: 'PROMISE_KEPT', closedAt: DAY_END })
-    expect(mockPrisma.reminder.updateMany.mock.calls[0][0]).toMatchObject({ where: { id: 'r1', done: false }, data: { done: true } })
-  })
-
-  it('ringkasan tanggal lama tidak menutup PROMISE yang dilihat ringkasan lebih baru', async () => {
-    mockPrisma.summaryItem.findMany.mockResolvedValue([row({ kind: 'PROMISE', anchorAt: promiseAt, lastSeenOn: '2026-10-19' })] as never)
-    const r = await syncSummaryItems(DATE, payload({ conversations: [active('c1', kept)] as never }), AFTER)
-    expect(r.closed).toBe(0)
-    expect(mockPrisma.summaryItem.update).not.toHaveBeenCalled()
-  })
-
-  it('review tanpa janji tidak menyentuh item REPLY/FOLLOW_UP', async () => {
-    // Kueri sudah menyaring kind; penjaga di kode tetap menolak bila baris lain ikut terbawa.
-    mockPrisma.summaryItem.findMany.mockResolvedValue([row({ kind: 'FOLLOW_UP' })] as never)
-    const r = await syncSummaryItems(DATE, payload({ conversations: [active('c1', kept)] as never }), AFTER)
-    expect(r.closed).toBe(0)
-    expect(mockPrisma.summaryItem.update).not.toHaveBeenCalled()
+  it('janji terbuka yang berganti: snippet, tautan, dan anchor ikut janji terbuka pertama', async () => {
+    msg('janji', 'OUTBOUND', '2026-10-17T03:00:00Z')
+    msg('itin', 'OUTBOUND', '2026-10-18T02:00:00Z')
+    await nightly('2026-10-17', unkeptId)
+    await nightly('2026-10-18', rv([{ teks: 'Invoice besok', terpenuhi: true, messageId: 'janji' }, { teks: 'Itinerary', terpenuhi: false, messageId: 'itin' }]))
+    expect(st.items[0]).toMatchObject({ kind: 'PROMISE', state: 'OPEN', snippet: 'Itinerary', anchorMessageId: 'itin', anchorAt: at('2026-10-18T02:00:00Z'), lastSeenOn: '2026-10-18' })
   })
 })
 
-describe('applyReviewToItem (tombol Perbarui)', () => {
-  const review = (janjiTim: unknown[]) =>
-    ({ status: 'selesai', alasan: 'a', jenisKontak: 'calon_tamu', topik: 't', pertanyaan: [], poinPenting: [], janjiTim, statusAgen: '', langkahBerikut: '' }) as never
-  const promiseRow = (over: Record<string, unknown> = {}) => row({ kind: 'PROMISE', anchorAt: at('2026-10-17T03:00:00Z'), ...over })
+describe('janji tim (PROMISE): janji tidak hilang dan tidak bolak-balik', () => {
+  const { st, msg, snap } = useStore()
 
-  it('tanpa janji terbuka -> DONE/PROMISE_KEPT dengan closedAt = asOf', async () => {
-    mockPrisma.summaryItem.findUnique.mockResolvedValue(promiseRow() as never)
-    await expect(applyReviewToItem('c1', review([{ teks: 'Invoice', terpenuhi: true }]), NOW)).resolves.toBe('closed')
-    expect(mockPrisma.summaryItem.update.mock.calls[0][0]).toMatchObject({ where: { id: 'i1' }, data: { state: 'DONE', closedReason: 'PROMISE_KEPT', closedAt: NOW } })
-    expect(mockPrisma.$transaction).toHaveBeenCalledTimes(1)
+  it('satu hari: janji, "ok ditunggu", "baik" sebelum job malam -> tetap PROMISE OPEN, juga malam berikutnya', async () => {
+    msg('janji', 'OUTBOUND', '2026-10-17T03:00:00Z')
+    msg('ok', 'INBOUND', '2026-10-17T04:00:00Z')
+    msg('baik', 'OUTBOUND', '2026-10-17T05:00:00Z')
+    await nightly('2026-10-17', unkeptId)
+    expect(st.items[0]).toMatchObject({ kind: 'PROMISE', state: 'OPEN', anchorAt: at('2026-10-17T03:00:00Z') })
+    await nightly('2026-10-18', null)
+    expect(snap()).toBe('PROMISE/OPEN/-')
   })
 
-  it('janji masih terbuka -> hanya review di item yang disegarkan', async () => {
-    mockPrisma.summaryItem.findUnique.mockResolvedValue(promiseRow() as never)
-    const r = review([{ teks: 'Invoice', terpenuhi: false }])
-    await expect(applyReviewToItem('c1', r, NOW)).resolves.toBe('updated')
-    expect(mockPrisma.summaryItem.update.mock.calls[0][0]).toEqual({ where: { id: 'i1' }, data: { review: r } })
+  it('Perbarui lalu rekonsiliasi berulang -> tetap PROMISE OPEN', async () => {
+    msg('janji', 'OUTBOUND', '2026-10-17T03:00:00Z')
+    msg('ok', 'INBOUND', '2026-10-17T04:00:00Z')
+    msg('baik', 'OUTBOUND', '2026-10-17T05:00:00Z')
+    const outcomes: string[] = []
+    for (const t of ['2026-10-17T06:00:00Z', '2026-10-17T06:10:00Z', '2026-10-17T06:20:00Z']) {
+      st.chatReviewAt = at(t) // saveChatReview dengan asOf yang sama
+      outcomes.push(await applyReviewToItem('c1', unkeptId, at(t)))
+      await reconcileSummaryItems(at(t))
+      expect(snap()).toBe('PROMISE/OPEN/-')
+    }
+    expect(outcomes).toEqual(['created', 'updated', 'updated'])
+  })
+
+  it('PROMISE → REPLY (pesan belum dibalas) → DONE/REPLIED → malam berikutnya PROMISE lagi, anchor tetap waktu janji', async () => {
+    msg('janji', 'OUTBOUND', '2026-10-17T03:00:00Z')
+    await nightly('2026-10-17', unkeptId)
+    msg('ok', 'INBOUND', '2026-10-18T04:00:00Z')
+    await reconcileSummaryItems(at('2026-10-18T04:30:00Z'))
+    expect(st.items[0]).toMatchObject({ kind: 'REPLY', state: 'OPEN', anchorMessageId: 'ok' })
+    msg('balasan', 'OUTBOUND', '2026-10-18T05:00:00Z')
+    await reconcileSummaryItems(at('2026-10-18T05:30:00Z'))
+    expect(snap()).toBe('REPLY/DONE/REPLIED')
+
+    await nightly('2026-10-18', unkeptId)
+    expect(st.items[0]).toMatchObject({ kind: 'PROMISE', state: 'OPEN', anchorAt: at('2026-10-17T03:00:00Z'), anchorMessageId: 'janji' })
+    await nightly('2026-10-19', unkeptId)
+    expect(snap()).toBe('PROMISE/OPEN/-')
+
+    // Pesan pelanggan yang belum dibalas: barulah jadi REPLY.
+    msg('tanya', 'INBOUND', '2026-10-20T01:00:00Z')
+    await reconcileSummaryItems(at('2026-10-20T01:30:00Z'))
+    expect(st.items[0]).toMatchObject({ kind: 'REPLY', state: 'OPEN', anchorMessageId: 'tanya' })
+  })
+
+  it('Lepas tanpa messageId: tidak dibuka lagi oleh sync maupun Perbarui walau ada pesan keluar baru', async () => {
+    msg('janji', 'OUTBOUND', '2026-10-17T03:00:00Z')
+    await nightly('2026-10-17', unkeptNoId)
+    Object.assign(st.items[0], { state: 'DROPPED', closedReason: 'DROPPED', closedAt: at('2026-10-18T02:00:00Z') })
+    msg('halo', 'OUTBOUND', '2026-10-18T03:00:00Z')
+    await nightly('2026-10-18', unkeptNoId)
+    st.chatReviewAt = at('2026-10-19T03:00:00Z')
+    await expect(applyReviewToItem('c1', unkeptNoId, at('2026-10-19T03:00:00Z'))).resolves.toBe('unchanged')
+    expect(snap()).toBe('PROMISE/DROPPED/DROPPED')
+  })
+
+  it('Lepas dengan messageId: janji yang sama tidak membukanya lagi; janji baru sesudahnya membuka', async () => {
+    msg('janji', 'OUTBOUND', '2026-10-17T03:00:00Z')
+    await nightly('2026-10-17', unkeptId)
+    Object.assign(st.items[0], { state: 'DROPPED', closedReason: 'DROPPED', closedAt: at('2026-10-18T02:00:00Z') })
+    await nightly('2026-10-18', unkeptId)
+    st.chatReviewAt = at('2026-10-19T03:00:00Z')
+    await expect(applyReviewToItem('c1', unkeptId, at('2026-10-19T03:00:00Z'))).resolves.toBe('unchanged')
+    expect(snap()).toBe('PROMISE/DROPPED/DROPPED')
+
+    msg('janji2', 'OUTBOUND', '2026-10-19T04:00:00Z')
+    await nightly('2026-10-19', rv([{ teks: 'Voucher', terpenuhi: false, messageId: 'janji2' }]))
+    expect(st.items[0]).toMatchObject({ kind: 'PROMISE', state: 'OPEN', anchorMessageId: 'janji2' })
   })
 
   it.each([
-    ['item REPLY', row()],
-    ['PROMISE yang sudah DONE', promiseRow({ state: 'DONE', closedReason: 'REPLIED', closedAt: NOW })],
-    ['review lebih tua dari janjinya', promiseRow({ anchorAt: at('2026-10-18T11:00:00Z') })],
-  ])('%s tidak disentuh', async (_label, existing) => {
-    mockPrisma.summaryItem.findUnique.mockResolvedValue(existing as never)
-    await expect(applyReviewToItem('c1', review([]), NOW)).resolves.toBe('unchanged')
-    expect(mockPrisma.summaryItem.update).not.toHaveBeenCalled()
+    ['dengan messageId', unkeptId],
+    ['tanpa messageId', unkeptNoId],
+  ])('Ingatkan → jatuh tempo → selesai (REMINDER_DONE) tidak dibuka lagi oleh janji yang sama (%s)', async (_label, review) => {
+    msg('janji', 'OUTBOUND', '2026-10-17T03:00:00Z')
+    await nightly('2026-10-17', review)
+    st.reminders.r1 = { id: 'r1', done: false, dueAt: at('2026-10-18T02:00:00Z') }
+    Object.assign(st.items[0], { state: 'SCHEDULED', reminderId: 'r1', dueAt: at('2026-10-18T02:00:00Z') })
+    await reconcileSummaryItems(at('2026-10-18T02:30:00Z'))
+    expect(snap()).toBe('PROMISE/OPEN/-')
+    st.reminders.r1.done = true
+    await reconcileSummaryItems(at('2026-10-18T03:00:00Z'))
+    expect(snap()).toBe('PROMISE/DONE/REMINDER_DONE')
+    await nightly('2026-10-18', review)
+    expect(snap()).toBe('PROMISE/DONE/REMINDER_DONE')
   })
 
-  it('tanpa item dan ada janji terbuka -> PROMISE dibuat (tanggal = hari WIB asOf)', async () => {
-    mockPrisma.summaryItem.findUnique.mockResolvedValue(null)
-    mockPrisma.message.findFirst.mockResolvedValue({ id: 'mj', createdAt: at('2026-10-18T03:00:00Z') } as never)
-    await expect(applyReviewToItem('c1', review([{ teks: 'Invoice', terpenuhi: false, messageId: 'mj' }]), NOW)).resolves.toBe('created')
-    expect(mockPrisma.summaryItem.create.mock.calls[0][0].data).toMatchObject({
-      conversationId: 'c1', kind: 'PROMISE', state: 'OPEN', anchorAt: at('2026-10-18T03:00:00Z'), anchorMessageId: 'mj', openedOn: '2026-10-18', lastSeenOn: '2026-10-18',
-    })
+  it('LLM bergantian [] dan janji tanpa messageId: tetap PROMISE OPEN dengan anchor yang sama', async () => {
+    msg('janji', 'OUTBOUND', '2026-10-17T03:00:00Z')
+    const seq = [unkeptNoId, rv([]), unkeptNoId, rv([]), unkeptNoId]
+    for (let d = 0; d < seq.length; d++) {
+      msg(`lain${d}`, 'OUTBOUND', `2026-10-${17 + d}T09:00:00Z`)
+      await nightly(`2026-10-${17 + d}`, seq[d])
+      expect(snap()).toBe('PROMISE/OPEN/-')
+      expect(st.items[0].anchorAt).toEqual(at('2026-10-17T09:00:00Z'))
+    }
   })
 
-  it('item DONE/REPLIED + janji terbuka -> PROMISE dibuka lagi lewat aturan sync', async () => {
-    mockPrisma.summaryItem.findUnique.mockResolvedValue(
-      row({ state: 'DONE', closedReason: 'REPLIED', closedAt: at('2026-10-18T05:00:00Z'), lastSeenOn: '2026-10-17' }) as never
-    )
-    await expect(applyReviewToItem('c1', review([{ teks: 'Invoice', terpenuhi: false }]), NOW)).resolves.toBe('reopened')
-    expect(mockPrisma.summaryItem.update.mock.calls[0][0].data).toMatchObject({ kind: 'PROMISE', state: 'OPEN', anchorAt: NOW, closedAt: null })
+  it('messageId hilang satu malam: anchor dan tautan baris tetap', async () => {
+    msg('janji', 'OUTBOUND', '2026-10-17T03:00:00Z')
+    for (const [d, review] of [unkeptId, unkeptNoId, unkeptId].entries()) {
+      msg(`lain${d}`, 'OUTBOUND', `2026-10-${17 + d}T09:00:00Z`)
+      await nightly(`2026-10-${17 + d}`, review)
+      expect(st.items[0]).toMatchObject({ kind: 'PROMISE', state: 'OPEN', anchorAt: at('2026-10-17T03:00:00Z'), anchorMessageId: 'janji' })
+    }
+  })
+})
+
+describe('janji tim (PROMISE): ringkasan tanggal lama dan penutupan', () => {
+  const { st, msg, snap } = useStore()
+
+  it('Buat ulang tanggal lama tidak membuka DONE/REPLIED yang sudah dinilai review lebih baru', async () => {
+    st.items = [{
+      ...(row() as unknown as StoreItem), kind: 'REPLY', state: 'DONE', closedReason: 'REPLIED', anchorAt: at('2026-10-15T10:00:00Z'),
+      closedAt: at('2026-10-16T05:00:00Z'), lastSeenOn: '2026-10-15', openedOn: '2026-10-15',
+    }]
+    msg('janji', 'OUTBOUND', '2026-10-16T05:00:00Z')
+    st.chatReviewAt = jakartaDayRange('2026-10-17').end // job malam 17: janji ditepati
+    await syncSummaryItems('2026-10-17', pl(keptId), at('2026-10-17T17:05:00Z'))
+    await syncSummaryItems('2026-10-16', pl(unkeptId), at('2026-10-19T03:00:00Z'))
+    expect(snap()).toBe('REPLY/DONE/REPLIED')
+    // Review terbaru yang sama-sama belum ditepati tetap membukanya.
+    st.chatReviewAt = jakartaDayRange('2026-10-18').end
+    await syncSummaryItems('2026-10-18', pl(unkeptId), at('2026-10-18T17:05:00Z'))
+    expect(snap()).toBe('PROMISE/OPEN/-')
   })
 
-  it.each(['REPLY', 'FOLLOW_UP'])('item %s yang OPEN menang: review dengan janji terbuka tidak menyentuhnya', async (kind) => {
-    mockPrisma.summaryItem.findUnique.mockResolvedValue(row({ kind }) as never)
-    await expect(applyReviewToItem('c1', review([{ teks: 'Invoice', terpenuhi: false }]), NOW)).resolves.toBe('unchanged')
-    expect(mockPrisma.summaryItem.update).not.toHaveBeenCalled()
-    expect(mockPrisma.summaryItem.create).not.toHaveBeenCalled()
+  it('Buat ulang tanggal lama tidak menimpa review item PROMISE yang terbuka', async () => {
+    msg('janji', 'OUTBOUND', '2026-10-15T03:00:00Z')
+    await nightly('2026-10-15', unkeptId)
+    st.chatReviewAt = jakartaDayRange('2026-10-17').end
+    msg('lain', 'OUTBOUND', '2026-10-16T03:00:00Z')
+    await syncSummaryItems('2026-10-16', pl(rv([{ teks: 'Lain', terpenuhi: false, messageId: 'lain' }])), at('2026-10-19T03:00:00Z'))
+    expect(st.items[0]).toMatchObject({ anchorMessageId: 'janji', snippet: 'Invoice besok', lastSeenOn: '2026-10-15' })
   })
 
-  it('tanpa item dan tanpa janji terbuka -> unchanged; error -> unchanged, tidak melempar', async () => {
-    mockPrisma.summaryItem.findUnique.mockResolvedValue(null)
-    await expect(applyReviewToItem('c1', review([]), NOW)).resolves.toBe('unchanged')
-    expect(mockPrisma.summaryItem.create).not.toHaveBeenCalled()
+  it('review yang tidak lagi menyebut janjinya membiarkan item OPEN dan tidak menimpa review-nya', async () => {
+    msg('janji', 'OUTBOUND', '2026-10-17T03:00:00Z')
+    await nightly('2026-10-17', unkeptId)
+    await nightly('2026-10-18', rv([]))
+    expect(snap()).toBe('PROMISE/OPEN/-')
+    expect(st.items[0].review).toEqual(unkeptId)
+    // Hanya sebagian yang ditepati: tetap terbuka.
+    st.items[0].review = rv([{ teks: 'Invoice besok', terpenuhi: false, messageId: 'janji' }, { teks: 'Cek jeep', terpenuhi: false }])
+    await nightly('2026-10-19', keptId)
+    expect(snap()).toBe('PROMISE/OPEN/-')
+  })
+
+  it('setiap janji yang dilacak eksplisit terpenuhi -> DONE/PROMISE_KEPT, closedAt = akhir hari, pengingat selesai', async () => {
+    msg('janji', 'OUTBOUND', '2026-10-17T03:00:00Z')
+    await nightly('2026-10-17', unkeptId)
+    st.reminders.r1 = { id: 'r1', done: false, dueAt: at('2026-10-25T02:00:00Z') }
+    Object.assign(st.items[0], { state: 'SCHEDULED', reminderId: 'r1' })
+    await nightly('2026-10-18', keptId)
+    expect(st.items[0]).toMatchObject({ state: 'DONE', closedReason: 'PROMISE_KEPT', closedAt: jakartaDayRange('2026-10-18').end, lastSeenOn: '2026-10-18' })
+    expect(st.reminders.r1.done).toBe(true)
+  })
+
+  it('cocok lewat teks bila salah satu tanpa messageId', async () => {
+    await nightly('2026-10-17', unkeptNoId)
+    await nightly('2026-10-18', rv([{ teks: '  invoice   BESOK ', terpenuhi: true }]))
+    expect(snap()).toBe('PROMISE/DONE/PROMISE_KEPT')
+  })
+
+  it('Perbarui: tutup PROMISE_KEPT dengan closedAt = asOf dan lastSeenOn naik ke hari asOf', async () => {
+    msg('janji', 'OUTBOUND', '2026-10-17T03:00:00Z')
+    await nightly('2026-10-17', unkeptId)
+    st.chatReviewAt = at('2026-10-19T02:00:00Z')
+    await expect(applyReviewToItem('c1', keptId, at('2026-10-19T02:00:00Z'))).resolves.toBe('closed')
+    expect(st.items[0]).toMatchObject({ state: 'DONE', closedReason: 'PROMISE_KEPT', closedAt: at('2026-10-19T02:00:00Z'), lastSeenOn: '2026-10-19' })
+  })
+
+  it('Perbarui: membuat PROMISE dari kosong dan membuka lagi DONE/REPLIED', async () => {
+    msg('janji', 'OUTBOUND', '2026-10-18T03:00:00Z')
+    st.chatReviewAt = NOW
+    await expect(applyReviewToItem('c1', unkeptId, NOW)).resolves.toBe('created')
+    expect(st.items[0]).toMatchObject({ kind: 'PROMISE', state: 'OPEN', anchorMessageId: 'janji', openedOn: '2026-10-18', lastSeenOn: '2026-10-18' })
+    Object.assign(st.items[0], { kind: 'REPLY', state: 'DONE', closedReason: 'REPLIED', closedAt: at('2026-10-18T05:00:00Z') })
+    await expect(applyReviewToItem('c1', unkeptId, NOW)).resolves.toBe('reopened')
+    expect(snap()).toBe('PROMISE/OPEN/-')
+  })
+
+  it('Perbarui: tanpa item dan tanpa janji terbuka -> unchanged; error -> unchanged, tidak melempar', async () => {
+    await expect(applyReviewToItem('c1', rv([]), NOW)).resolves.toBe('unchanged')
+    expect(st.items).toHaveLength(0)
     mockPrisma.summaryItem.findUnique.mockRejectedValue(new Error('db down'))
-    await expect(applyReviewToItem('c1', review([]), NOW)).resolves.toBe('unchanged')
+    await expect(applyReviewToItem('c1', unkeptId, NOW)).resolves.toBe('unchanged')
   })
 })
 
@@ -489,6 +591,19 @@ describe('reconcileSummaryItems', () => {
       expect(mockPrisma.reminder.updateMany.mock.calls[0][0]).toMatchObject({ where: { id: 'r1' }, data: { done: true } })
     })
 
+    it('inbound yang sudah dibalas (sebelum pesan keluar terakhir) tidak mengubahnya jadi REPLY', async () => {
+      mockPrisma.summaryItem.findMany.mockResolvedValue([row({ kind: 'PROMISE' })] as never)
+      const lastOut = at('2026-10-18T05:00:00Z')
+      mockPrisma.message.findFirst.mockImplementation((async (a: { where: { direction: string; createdAt?: { gt: Date } } }) => {
+        if (a.where.direction === 'OUTBOUND') return { id: 'o1', createdAt: lastOut }
+        return a.where.createdAt && a.where.createdAt.gt < inbound.createdAt ? inbound : null
+      }) as never)
+      const r = await reconcileSummaryItems(NOW)
+      expect(r.converted).toBe(0)
+      const inboundQuery = mockPrisma.message.findFirst.mock.calls.map((c) => c[0] as { where: { direction: string; createdAt: unknown } }).find((q) => q.where.direction === 'INBOUND')
+      expect(inboundQuery?.where.createdAt).toEqual({ gt: lastOut })
+    })
+
     it('pesan keluar sesudah janji TIDAK menutupnya, dan tahap pipeline tidak dicek', async () => {
       mockPrisma.summaryItem.findMany.mockResolvedValue([row({ kind: 'PROMISE' })] as never)
       mockPrisma.message.findFirst.mockImplementation((async (a: { where: { direction: string } }) => (a.where.direction === 'OUTBOUND' ? { id: 'o1', createdAt: NOW } : null)) as never)
@@ -518,92 +633,5 @@ describe('pruneSummaryItems', () => {
   it('menelan error', async () => {
     mockPrisma.summaryItem.deleteMany.mockRejectedValue(new Error('x'))
     await expect(pruneSummaryItems(NOW)).resolves.toEqual({ deleted: 0 })
-  })
-})
-
-describe('skenario: janji tidak hilang sesudah "ok ditunggu" → REPLY → dibalas', () => {
-  type Item = ReturnType<typeof row> & { kind: string; state: string; anchorAt: Date; closedAt: Date | null; lastSeenOn: string }
-  type Msg = { id: string; conversationId: string; direction: 'INBOUND' | 'OUTBOUND'; sentBy: string; type: string; content: string; createdAt: Date }
-  type Where = Record<string, unknown> & { createdAt?: { gt: Date }; id?: { in: string[] } }
-
-  let items: Item[]
-  let messages: Msg[]
-
-  const matches = (item: Item, where: Record<string, unknown>) =>
-    Object.entries(where).every(([key, cond]) => {
-      const value = (item as Record<string, unknown>)[key]
-      if (cond && typeof cond === 'object' && 'in' in cond) return (cond as { in: unknown[] }).in.includes(value)
-      return value === cond
-    })
-
-  beforeEach(() => {
-    items = []
-    messages = []
-    mockPrisma.summaryItem.findUnique.mockImplementation((async (a: { where: { conversationId: string } }) =>
-      items.find((i) => i.conversationId === a.where.conversationId) ?? null) as never)
-    mockPrisma.summaryItem.findMany.mockImplementation((async (a: { where: Record<string, unknown> }) => items.filter((i) => matches(i, a.where))) as never)
-    mockPrisma.summaryItem.create.mockImplementation((async (a: { data: Record<string, unknown> }) => {
-      const created = { ...row(), id: 'i1', closedReason: null, closedAt: null, reminderId: null, dueAt: null, ...a.data } as Item
-      items.push(created)
-      return created
-    }) as never)
-    mockPrisma.summaryItem.update.mockImplementation((async (a: { where: { id: string }; data: Record<string, unknown> }) => {
-      const target = items.find((i) => i.id === a.where.id)
-      if (target) Object.assign(target, a.data)
-      return target
-    }) as never)
-    mockPrisma.$transaction.mockImplementation((async (ops: unknown) => (Array.isArray(ops) ? Promise.all(ops) : ops)) as never)
-    mockPrisma.message.findFirst.mockImplementation((async (a: { where: Where; orderBy: { createdAt: 'asc' | 'desc' } }) => {
-      const { conversationId, direction, createdAt, id } = a.where
-      const hits = messages
-        .filter((m) => m.conversationId === conversationId)
-        .filter((m) => direction === undefined || m.direction === direction)
-        .filter((m) => !createdAt || m.createdAt > createdAt.gt)
-        .filter((m) => !id || id.in.includes(m.id))
-        .sort((x, y) => x.createdAt.getTime() - y.createdAt.getTime())
-      return (a.orderBy.createdAt === 'desc' ? hits.reverse() : hits)[0] ?? null
-    }) as never)
-  })
-
-  const msg = (id: string, direction: Msg['direction'], iso: string): Msg => ({
-    id, conversationId: 'c1', direction, sentBy: direction === 'INBOUND' ? 'CUSTOMER' : 'AGENT', type: 'TEXT', content: id, createdAt: at(iso),
-  })
-  const promiseReview = {
-    status: 'perlu_tindakan', alasan: 'a', jenisKontak: 'calon_tamu', topik: 't', pertanyaan: [], poinPenting: [],
-    janjiTim: [{ teks: 'Kirim invoice', terpenuhi: false, messageId: 'janji' }], statusAgen: '', langkahBerikut: '',
-  }
-  const night = () =>
-    payload({ conversations: [{ conversationId: 'c1', contactName: 'Budi', pipelineStage: 'nego', inbound: 1, outbound: 1, review: promiseReview }] as never })
-
-  it('PROMISE → REPLY → DONE/REPLIED → malam berikutnya PROMISE lagi, dan tetap terbuka', async () => {
-    // Malam 1 (17 Okt): tim berjanji 03.00 UTC, pelanggan "ok ditunggu" 04.00, tim membalas 05.00.
-    messages.push(msg('janji', 'OUTBOUND', '2026-10-17T03:00:00Z'))
-    await syncSummaryItems('2026-10-17', night(), at('2026-10-17T17:05:00Z'))
-    expect(items[0]).toMatchObject({ kind: 'PROMISE', state: 'OPEN', anchorAt: at('2026-10-17T03:00:00Z') })
-
-    messages.push(msg('ok-ditunggu', 'INBOUND', '2026-10-18T04:00:00Z'))
-    await reconcileSummaryItems(at('2026-10-18T04:30:00Z'))
-    expect(items[0]).toMatchObject({ kind: 'REPLY', state: 'OPEN', anchorMessageId: 'ok-ditunggu' })
-
-    messages.push(msg('balasan', 'OUTBOUND', '2026-10-18T05:00:00Z'))
-    await reconcileSummaryItems(at('2026-10-18T05:30:00Z'))
-    expect(items[0]).toMatchObject({ kind: 'REPLY', state: 'DONE', closedReason: 'REPLIED', closedAt: at('2026-10-18T05:00:00Z') })
-
-    // Malam 2: janji masih terpenuhi:false → dibuka lagi; rekonsiliasi di job yang sama tidak
-    // mengubahnya jadi REPLY karena "ok ditunggu" sudah dibalas.
-    const r = await syncSummaryItems('2026-10-18', night(), at('2026-10-18T17:05:00Z'))
-    expect(r.reopened).toBe(1)
-    await reconcileSummaryItems(at('2026-10-18T17:06:00Z'))
-    expect(items[0]).toMatchObject({ kind: 'PROMISE', state: 'OPEN', anchorAt: at('2026-10-18T05:00:00Z'), anchorMessageId: 'janji' })
-
-    // Malam 3: masih terbuka, anchor tidak mundur ke pesan janji, tetap PROMISE.
-    await syncSummaryItems('2026-10-19', night(), at('2026-10-19T17:05:00Z'))
-    await reconcileSummaryItems(at('2026-10-19T17:06:00Z'))
-    expect(items[0]).toMatchObject({ kind: 'PROMISE', state: 'OPEN', anchorAt: at('2026-10-18T05:00:00Z') })
-
-    // Pelanggan chat lagi sesudah balasan terakhir: barulah jadi REPLY.
-    messages.push(msg('tanya-lagi', 'INBOUND', '2026-10-20T01:00:00Z'))
-    await reconcileSummaryItems(at('2026-10-20T01:30:00Z'))
-    expect(items[0]).toMatchObject({ kind: 'REPLY', state: 'OPEN', anchorMessageId: 'tanya-lagi' })
   })
 })

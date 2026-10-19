@@ -253,7 +253,8 @@ function AnchorLines({ item, now }: { item: SummaryItemView; now: Date }) {
     const promises = item.review?.janjiTim ?? []
     return (
       <>
-        <p className="text-xs text-ink-muted">dijanjikan {since}</p>
+        {/* Bukan "dijanjikan N lalu": anchor bisa cadangan (pesan keluar terakhir), bukan waktu janjinya. */}
+        <p className="text-xs text-ink-muted">terbuka sejak {dateKeyLabel(item.openedOn)}</p>
         {promises.length > 0 ? (
           <PromiseList promises={promises} conversationId={item.conversationId} />
         ) : (

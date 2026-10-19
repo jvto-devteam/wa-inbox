@@ -83,7 +83,7 @@ describe('SummaryQueue', () => {
     )
     const card = screen.getByRole('listitem', { name: 'Janji tim: Anna' })
     expect(within(card).getByText('Janji tim', { selector: 'span' })).toBeInTheDocument()
-    expect(within(card).getByText(/^dijanjikan /)).toBeInTheDocument()
+    expect(within(card).getByText('terbuka sejak 17 Okt 2026')).toBeInTheDocument()
     const promises = within(within(card).getByRole('list', { name: 'Janji tim' })).getAllByRole('listitem')
     expect(promises[0]).toHaveTextContent('Kirim invoice⏳ belum')
     expect(promises[1]).toHaveTextContent('Cek jeep✅ ditepati')

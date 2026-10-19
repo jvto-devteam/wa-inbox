@@ -155,10 +155,11 @@ tetapi badge "Status sekarang" dan tombol Ingatkan/Lepas memakai status `Summary
 Percakapan yang sekadar aktif **tetap** dinilai LLM dan disimpan di `payload.conversations`
 (keputusan owner 2026-10-18), walau halaman tidak menampilkannya.
 Jenis ketiga, `PROMISE` ("Janji tim"), lahir dari `janjiTim` berstatus `terpenuhi:false` hanya untuk
-percakapan yang bukan kandidat REPLY/FOLLOW_UP (keduanya selalu menang); ia tertutup `PROMISE_KEPT`
-oleh review berikutnya tanpa janji terbuka (`applyReviewToItem`) dan jadi REPLY bila pelanggan chat lagi —
-pesan keluar saja **tidak** menutupnya, dan janji yang masih terbuka membuka lagi baris DONE/REPLIED
-(anchor naik ke waktu balasan). Aturan buat/buka ulang ada di satu tempat, `upsertCandidate`.
+percakapan yang bukan kandidat REPLY/FOLLOW_UP (keduanya selalu menang). Ia tertutup `PROMISE_KEPT` **hanya**
+bila review terbaru menandai setiap janji yang dilacaknya `terpenuhi:true` — janji yang sekadar tidak disebut
+lagi membiarkan item OPEN (operator bisa Lepas) — dan jadi REPLY hanya oleh pesan pelanggan yang belum dibalas.
+Pesan keluar **tidak** menutupnya; janji terbuka membuka lagi DONE/REPLIED bila review itu yang terbaru
+(≥ `chatReviewAt`). Aturan buat/buka ulang ada di satu tempat, `upsertCandidate`.
 
 ### Ringkasan chat (tab di panel kanan Inbox)
 Menampilkan ringkasan LLM **terbaru** satu percakapan, tanda terjawab per pertanyaan, riwayat
@@ -180,7 +181,8 @@ nomor tidak valid dibuang). Butir pertanyaan/poin ber-`messageId` di tab ini dan
 diklik ke `/inbox?conversation=…&message=…`; string lama tampil sebagai teks biasa.
 Review juga memuat `janjiTim` (`{ teks, terpenuhi, messageId? }`, opsional, default `[]`), tampil ✅/⏳
 lewat `CheckList` yang sama dengan pertanyaan; "Perbarui sekarang" memanggil `applyReviewToItem` sesudah menyimpan
-(menutup, menyegarkan, atau membuat/membuka lagi PROMISE; REPLY/FOLLOW_UP yang terbuka tidak disentuh).
+(menutup, menyegarkan, atau membuat/membuka lagi PROMISE; REPLY/FOLLOW_UP yang terbuka tidak disentuh), lalu
+mengirim `summary-items:changed`.
 Dipangkas setelah **30 hari** sejak `chatReviewAt` (keputusan owner 2026-10-19), sama dengan
 DailySummary dan SummaryItem — isinya memuat poin penting chat pelanggan.
 

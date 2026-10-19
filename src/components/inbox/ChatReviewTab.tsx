@@ -12,6 +12,7 @@ import type { ConversationReview } from '@/lib/daily-summary/payload-schema'
 import { isDateKey, jakartaDayRange } from '@/lib/daily-summary/time'
 import { scrollToThreadMessage } from '@/lib/inbox/message-anchor'
 import { fetchJson } from '@/lib/fetch-json'
+import { announceSummaryItemsChanged } from '@/lib/summary-items/events'
 import { followUpStatus, isActionable, summaryItemKindLabel, wibDateTimeLabel } from '@/lib/summary-items/status'
 import { PanelSectionTitle } from './ContactPanel'
 // Hanya tipe: route itu menyentuh prisma, dan komponen klien tidak boleh membawa modul server.
@@ -224,6 +225,8 @@ export function ChatReviewTab({ conversationId, contactName }: { conversationId:
     setRefreshError(null)
     try {
       setData(await fetchJson<ChatReviewResponse>(url, { method: 'POST' }))
+      // Perbarui bisa membuat, membuka lagi, atau menutup item "Janji tim": lencana menu ikut berubah.
+      announceSummaryItemsChanged()
     } catch (err: unknown) {
       setRefreshError(err instanceof Error ? err.message : 'Gagal meringkas. Coba lagi.')
     } finally {
