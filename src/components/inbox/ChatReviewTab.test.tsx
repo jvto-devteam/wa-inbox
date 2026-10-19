@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import { render, screen, cleanup, fireEvent, waitFor, within } from '@testing-library/react'
-import { ChatReviewTab } from './ChatReviewTab'
+import { ChatReviewTab, hasMessagesSince } from './ChatReviewTab'
 import { followUpStatus } from '@/lib/summary-items/status'
 import { SUMMARY_ITEMS_CHANGED } from '@/lib/summary-items/events'
 import type { ChatReviewItem, ChatReviewResponse } from '@/app/api/conversations/[id]/chat-review/route'
@@ -41,6 +41,7 @@ function response(overrides: Partial<ChatReviewResponse> = {}): ChatReviewRespon
     latest: { review, at: '2026-10-19T02:00:00.000Z' },
     item: item(),
     history: [],
+    lastMessageAt: null,
     ...overrides,
   }
 }
@@ -291,5 +292,88 @@ describe('ChatReviewTab', () => {
     stubFetch(() => json({ error: 'Percakapan tidak ditemukan' }, 404))
     render(<ChatReviewTab conversationId="conv_1" />)
     expect(await screen.findByRole('alert')).toHaveTextContent('Percakapan tidak ditemukan')
+  })
+})
+
+describe('butir yang bisa diklik', () => {
+  it('pertanyaan dan poin dengan messageId jadi tautan ke pesan sumber; yang lain teks biasa', async () => {
+    const linked = {
+      ...review,
+      pertanyaan: [{ teks: 'Berapa harga?', terjawab: false, messageId: 'msg_3' }, { teks: 'Jemput?', terjawab: true }, 'Bayar di tempat?'],
+      poinPenting: [{ teks: 'Tanggal 12 November', messageId: 'msg 5' }, { teks: 'Dari Surabaya' }, 'Paket Ijen'],
+    }
+    stubFetch(() => json(response({ latest: { review: linked, at: '2026-10-19T02:00:00.000Z' } })))
+    render(<ChatReviewTab conversationId="conv_1" />)
+
+    const latest = await screen.findByRole('region', { name: 'Poin penting terbaru' })
+    const q = within(latest).getByRole('link', { name: 'Lihat pesan: Berapa harga?' })
+    expect(q).toHaveAttribute('href', '/inbox?conversation=conv_1&message=msg_3')
+    const p = within(latest).getByRole('link', { name: 'Lihat pesan: Tanggal 12 November' })
+    expect(p).toHaveAttribute('href', '/inbox?conversation=conv_1&message=msg%205')
+    expect(within(latest).getAllByRole('link')).toHaveLength(2)
+    for (const text of ['Jemput?', 'Bayar di tempat?', 'Dari Surabaya', 'Paket Ijen']) {
+      expect(within(latest).getByText(text).closest('a')).toBeNull()
+    }
+  })
+
+  it('klik butir menggulung ke pesan yang sedang dirender (klik ulang pada URL yang sama)', async () => {
+    const linked = { ...review, poinPenting: [{ teks: 'Tanggal 12 November', messageId: 'msg_5' }] }
+    stubFetch(() => json(response({ latest: { review: linked, at: '2026-10-19T02:00:00.000Z' } })))
+    const bubble = document.createElement('div')
+    bubble.id = 'pesan-msg_5'
+    const scroll = vi.fn()
+    bubble.scrollIntoView = scroll
+    document.body.appendChild(bubble)
+    render(<ChatReviewTab conversationId="conv_1" />)
+
+    const link = await screen.findByRole('link', { name: 'Lihat pesan: Tanggal 12 November' })
+    // Klik tanpa navigasi sungguhan: jsdom tidak punya router Next.
+    link.addEventListener('click', (e) => e.preventDefault())
+    fireEvent.click(link)
+    expect(scroll).toHaveBeenCalledWith({ block: 'center' })
+    bubble.remove()
+  })
+})
+
+describe('tanda "Ada pesan baru"', () => {
+  it('hasMessagesSince membandingkan waktu, null tidak pernah memicu', () => {
+    expect(hasMessagesSince('2026-10-19T03:00:00.000Z', '2026-10-19T02:00:00.000Z')).toBe(true)
+    expect(hasMessagesSince('2026-10-19T02:00:00.000Z', '2026-10-19T02:00:00.000Z')).toBe(false)
+    expect(hasMessagesSince('2026-10-19T01:00:00.000Z', '2026-10-19T02:00:00.000Z')).toBe(false)
+    expect(hasMessagesSince(null, '2026-10-19T02:00:00.000Z')).toBe(false)
+    expect(hasMessagesSince('2026-10-19T03:00:00.000Z', null)).toBe(false)
+  })
+
+  it('pesan sesudah latest.at: tanda tampil dan menjelaskan tombol Perbarui', async () => {
+    stubFetch(() => json(response({ lastMessageAt: '2026-10-19T02:30:00.000Z' })))
+    render(<ChatReviewTab conversationId="conv_1" />)
+    const hint = await screen.findByText('Ada pesan baru sejak ringkasan ini.')
+    expect(screen.getByRole('button', { name: 'Perbarui sekarang' })).toHaveAttribute('aria-describedby', hint.id)
+  })
+
+  it('tidak ada pesan sesudah latest.at: tanpa tanda', async () => {
+    stubFetch(() => json(response({ lastMessageAt: '2026-10-19T02:00:00.000Z' })))
+    render(<ChatReviewTab conversationId="conv_1" />)
+    await screen.findByRole('region', { name: 'Poin penting terbaru' })
+    expect(screen.queryByText('Ada pesan baru sejak ringkasan ini.')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Perbarui sekarang' })).not.toHaveAttribute('aria-describedby')
+  })
+
+  it.each([
+    // Akhir 18 Okt WIB = 2026-10-18T17:00:00Z.
+    ['2026-10-18T16:59:00.000Z', false],
+    ['2026-10-18T17:01:00.000Z', true],
+  ])('cadangan riwayat dibandingkan dengan akhir hari WIB (pesan %s → %s)', async (lastMessageAt, shown) => {
+    stubFetch(() => json(response({ latest: null, lastMessageAt, history: [{ date: '2026-10-18', review }] })))
+    render(<ChatReviewTab conversationId="conv_1" />)
+    await screen.findByText(/^Dari ringkasan harian/)
+    expect(screen.queryByText('Ada pesan baru sejak ringkasan ini.') !== null).toBe(shown)
+  })
+
+  it('belum ada ringkasan sama sekali: tanpa tanda', async () => {
+    stubFetch(() => json(response({ latest: null, lastMessageAt: '2026-10-19T02:30:00.000Z' })))
+    render(<ChatReviewTab conversationId="conv_1" />)
+    await screen.findByText('Belum ada ringkasan.')
+    expect(screen.queryByText('Ada pesan baru sejak ringkasan ini.')).not.toBeInTheDocument()
   })
 })

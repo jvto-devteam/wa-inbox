@@ -148,6 +148,23 @@ describe('SummaryDayView', () => {
     window.removeEventListener(SUMMARY_ITEMS_CHANGED, events)
   })
 
+  it('pertanyaan dengan messageId jadi tautan ke pesan sumbernya; string lama tetap teks', () => {
+    const linked = { ...review, pertanyaan: [{ teks: 'Jam berapa berangkat?', terjawab: false, messageId: 'm_7' }, 'Bawa jaket?'] }
+    render(
+      <SummaryDayView
+        payload={payload({ conversations: [{ ...ref('c_citra', 'Citra'), inbound: 1, outbound: 1, review: linked }] })}
+        items={{}}
+        onChanged={() => {}}
+      />
+    )
+    const citra = card('Citra')
+    expect(within(citra).getByRole('link', { name: 'Lihat pesan: Jam berapa berangkat?' })).toHaveAttribute(
+      'href',
+      '/inbox?conversation=c_citra&message=m_7'
+    )
+    expect(within(citra).getByText('Bawa jaket?').closest('a')).toBeNull()
+  })
+
   it('payload tanpa percakapan menampilkan keadaan kosong', () => {
     render(
       <SummaryDayView

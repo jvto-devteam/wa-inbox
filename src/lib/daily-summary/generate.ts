@@ -8,7 +8,7 @@ import {
   RUNNING_STALE_MS,
   UNREPLIED_MIN_MS,
 } from './config'
-import { buildTranscript, classifyConversation, collectDay, messageSnippet, type CollectedDay } from './collect'
+import { buildNumberedTranscript, classifyConversation, collectDay, messageSnippet, type CollectedDay, type NumberedTranscript } from './collect'
 import { dailySummaryPayloadSchema, type ConversationReview, type DailySummaryPayload } from './payload-schema'
 import { reviewConversation, type ReviewReason } from './review'
 import { pruneChatReviews, saveChatReview } from '@/lib/chat-review/store'
@@ -33,7 +33,7 @@ export type GenerateResult =
   | { outcome: 'already_running'; date: string }
   | { outcome: 'failed'; date: string }
 
-type ReviewTarget = { conversationId: string; transcript: string; reasons: ReviewReason[] }
+type ReviewTarget = { conversationId: string; transcript: NumberedTranscript; reasons: ReviewReason[] }
 
 async function mapWithConcurrency<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
   const results: R[] = new Array(items.length)
@@ -181,7 +181,7 @@ export function reviewTargets(day: CollectedDay): ReviewTarget[] {
     if (c.unreplied) reasons.push('unreplied')
     if (c.dormant) reasons.push('dormant')
     if (c.activeToday) reasons.push('active')
-    if (reasons.length > 0) targets.push({ conversationId: facts.conversationId, transcript: buildTranscript(facts.messages), reasons })
+    if (reasons.length > 0) targets.push({ conversationId: facts.conversationId, transcript: buildNumberedTranscript(facts.messages), reasons })
   }
   return targets
 }

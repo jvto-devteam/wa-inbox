@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { getSession } from '@/lib/auth/get-session'
-import { buildTranscript } from '@/lib/daily-summary/collect'
+import { buildNumberedTranscript } from '@/lib/daily-summary/collect'
 import { TRANSCRIPT_MAX_MESSAGES } from '@/lib/daily-summary/config'
 import { conversationReviewSchema, type ConversationReview } from '@/lib/daily-summary/payload-schema'
 import { reviewConversation, type ReviewReason } from '@/lib/daily-summary/review'
@@ -31,6 +31,12 @@ export type ChatReviewResponse = {
   latest: { review: ConversationReview; at: string } | null
   item: ChatReviewItem | null
   history: ChatReviewHistoryEntry[]
+  /**
+   * Waktu pesan terakhir percakapan ini (ISO), apa pun arahnya -- untuk tanda "Ada pesan baru
+   * sejak ringkasan ini". Dibaca dari tabel pesan, bukan `Conversation.lastMessageAt`: kolom itu
+   * tidak diperbarui di setiap jalur kirim (balasan bot, misalnya). null = belum ada pesan.
+   */
+  lastMessageAt: string | null
 }
 
 type Ctx = { params: Promise<{ id: string }> }
@@ -46,7 +52,17 @@ async function buildResponse(conversationId: string): Promise<ChatReviewResponse
   const latest = parsed.success && conv.chatReviewAt ? { review: parsed.data, at: conv.chatReviewAt.toISOString() } : null
   const s = conv.summaryItem
   const item: ChatReviewItem | null = s ? { ...toSummaryItemStatus(s), anchorAt: s.anchorAt.toISOString() } : null
-  return { latest, item, history: await chatReviewHistory(conversationId) }
+  const lastMessage = await prisma.message.findFirst({
+    where: { conversationId },
+    orderBy: { createdAt: 'desc' },
+    select: { createdAt: true },
+  })
+  return {
+    latest,
+    item,
+    history: await chatReviewHistory(conversationId),
+    lastMessageAt: lastMessage?.createdAt.toISOString() ?? null,
+  }
 }
 
 export async function GET(req: Request, { params }: Ctx) {
@@ -89,7 +105,7 @@ export async function POST(req: Request, { params }: Ctx) {
     const reasons: ReviewReason[] = messages[messages.length - 1].direction === 'INBOUND' ? ['unreplied'] : ['active']
 
     const settings = await prisma.settings.findUnique({ where: { id: 1 }, select: { ollamaModel: true } })
-    const review = await reviewConversation(buildTranscript(messages), reasons, settings?.ollamaModel ?? undefined)
+    const review = await reviewConversation(buildNumberedTranscript(messages), reasons, settings?.ollamaModel ?? undefined)
     if (!review) return NextResponse.json({ error: 'Gagal meringkas. Coba lagi.' }, { status: 502 })
 
     await saveChatReview(id, review, now)

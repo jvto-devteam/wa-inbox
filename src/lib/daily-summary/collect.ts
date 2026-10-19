@@ -122,18 +122,33 @@ function jakartaStamp(at: Date): string {
   return `${part('day')}/${part('month')} ${part('hour')}.${part('minute')}`
 }
 
+function transcriptLine(m: TranscriptMessage): string {
+  const raw = m.content?.trim() ? m.content.trim() : `[${m.type}]`
+  const text = raw.length > TRANSCRIPT_MAX_CHARS_PER_MESSAGE ? `${raw.slice(0, TRANSCRIPT_MAX_CHARS_PER_MESSAGE)}…` : raw
+  return `[${jakartaStamp(m.createdAt)}] ${SPEAKER[m.sentBy]}: ${text}`
+}
+
 /**
  * Transkrip untuk LLM. Hanya peran, waktu WIB, dan isi pesan -- nomor telepon dan nama kontak
  * sengaja tidak ikut: model produksi adalah tag `-cloud`, dan ringkasan tidak butuh keduanya.
  */
 export function buildTranscript(messages: TranscriptMessage[]): string {
-  return messages
-    .map((m) => {
-      const raw = m.content?.trim() ? m.content.trim() : `[${m.type}]`
-      const text = raw.length > TRANSCRIPT_MAX_CHARS_PER_MESSAGE ? `${raw.slice(0, TRANSCRIPT_MAX_CHARS_PER_MESSAGE)}…` : raw
-      return `[${jakartaStamp(m.createdAt)}] ${SPEAKER[m.sentBy]}: ${text}`
-    })
-    .join('\n')
+  return messages.map(transcriptLine).join('\n')
+}
+
+/** Transkrip bernomor + peta nomor → id pesan (`ids[N - 1]` = pesan `#N`). */
+export type NumberedTranscript = { text: string; ids: string[] }
+
+/**
+ * Sama dengan `buildTranscript`, tetapi tiap baris diawali `#N ` (1..jumlah pesan). Model
+ * menunjuk pesan sumber sebuah poin lewat nomor itu (`pesan`), dan `parseReview` menerjemahkannya
+ * ke id pesan lewat `ids` -- id asli tidak pernah dikirim ke model, nomor tidak pernah disimpan.
+ */
+export function buildNumberedTranscript(messages: TranscriptMessage[]): NumberedTranscript {
+  return {
+    text: messages.map((m, i) => `#${i + 1} ${transcriptLine(m)}`).join('\n'),
+    ids: messages.map((m) => m.id),
+  }
 }
 
 /** Hanya field TripBrief yang ditampilkan, dengan tipe yang benar-benar dicek. Kosong → null. */

@@ -4,8 +4,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 vi.mock('@/lib/bot/llm', () => ({ callLLM: vi.fn() }))
 
 import { callLLM } from '@/lib/bot/llm'
-import { normalizeQuestion } from './payload-schema'
-import { buildReviewPrompt, parseReview, reviewConversation, REVIEW_SYSTEM_PROMPT } from './review'
+import { normalizePoint, normalizeQuestion } from './payload-schema'
+import { buildReviewPrompt, parseReview, resolvePesan, reviewConversation, REVIEW_SYSTEM_PROMPT } from './review'
 
 const valid = {
   status: 'perlu_tindakan',
@@ -81,7 +81,7 @@ describe('parseReview', () => {
 describe('reviewConversation', () => {
   it('memakai model yang diberikan dan timeout panjang', async () => {
     vi.mocked(callLLM).mockResolvedValue(JSON.stringify(valid))
-    await reviewConversation('[21/09 09.05] Pelanggan: halo', ['unreplied'], 'gemma4:31b-cloud')
+    await reviewConversation({ text: '#1 [21/09 09.05] Pelanggan: halo', ids: ['m1'] }, ['unreplied'], 'gemma4:31b-cloud')
     const [, opts] = vi.mocked(callLLM).mock.calls[0]
     expect(opts).toMatchObject({ model: 'gemma4:31b-cloud', timeoutMs: 60_000 })
   })
@@ -90,13 +90,13 @@ describe('reviewConversation', () => {
     vi.mocked(callLLM).mockImplementation(async () => {
       throw new DOMException('The operation was aborted due to timeout', 'TimeoutError')
     })
-    const review = await reviewConversation('x', ['active'], undefined)
+    const review = await reviewConversation({ text: 'x', ids: [] }, ['active'], undefined)
     expect(review).toBeNull()
   })
 
   it('output rusak → null', async () => {
     vi.mocked(callLLM).mockResolvedValue('maaf, saya tidak bisa')
-    await expect(reviewConversation('x', ['active'], undefined)).resolves.toBeNull()
+    await expect(reviewConversation({ text: 'x', ids: [] }, ['active'], undefined)).resolves.toBeNull()
   })
 })
 
@@ -111,11 +111,103 @@ describe('buildReviewPrompt', () => {
 
 describe('pertanyaan per butir', () => {
   it('normalizeQuestion: string lama → terjawab null', () => {
-    expect(normalizeQuestion('Harga?')).toEqual({ teks: 'Harga?', terjawab: null })
-    expect(normalizeQuestion({ teks: 'Harga?', terjawab: false })).toEqual({ teks: 'Harga?', terjawab: false })
+    expect(normalizeQuestion('Harga?')).toEqual({ teks: 'Harga?', terjawab: null, messageId: null })
+    expect(normalizeQuestion({ teks: 'Harga?', terjawab: false })).toEqual({ teks: 'Harga?', terjawab: false, messageId: null })
+    expect(normalizeQuestion({ teks: 'Harga?', terjawab: true, messageId: 'm3' })).toEqual({ teks: 'Harga?', terjawab: true, messageId: 'm3' })
   })
 
   it('prompt meminta bentuk objek dengan terjawab', () => {
-    expect(REVIEW_SYSTEM_PROMPT).toContain('"pertanyaan":[{"teks":"...","terjawab":true|false}]')
+    expect(REVIEW_SYSTEM_PROMPT).toContain('"pertanyaan":[{"teks":"...","terjawab":true|false,"pesan":3}]')
+    expect(REVIEW_SYSTEM_PROMPT).toContain('"poinPenting":[{"teks":"...","pesan":5}]')
+    expect(REVIEW_SYSTEM_PROMPT).toMatch(/"pesan": nomor #.*Kalau ragu, hilangkan "pesan"/)
+  })
+})
+
+describe('poin penting per butir', () => {
+  it('normalizePoint: string lama → messageId null; objek membawa messageId', () => {
+    expect(normalizePoint('3 Oktober')).toEqual({ teks: '3 Oktober', messageId: null })
+    expect(normalizePoint({ teks: '3 Oktober' })).toEqual({ teks: '3 Oktober', messageId: null })
+    expect(normalizePoint({ teks: '3 Oktober', messageId: 'm5' })).toEqual({ teks: '3 Oktober', messageId: 'm5' })
+  })
+})
+
+describe('pesan → messageId', () => {
+  const ids = ['m1', 'm2', 'm3', 'm4', 'm5']
+  const parseWith = (patch: Record<string, unknown>) => parseReview(JSON.stringify({ ...valid, ...patch }), ids)
+
+  it('resolvePesan menerima angka, "3", dan "#3"; menolak di luar jangkauan dan bentuk lain', () => {
+    expect(resolvePesan(3, ids)).toBe('m3')
+    expect(resolvePesan('3', ids)).toBe('m3')
+    expect(resolvePesan('#3', ids)).toBe('m3')
+    expect(resolvePesan(' # 5 ', ids)).toBe('m5')
+    for (const bad of [0, 6, -1, 2.5, '7', '#0', 'tiga', '3a', null, undefined, true, [3], { n: 3 }]) {
+      expect(resolvePesan(bad, ids)).toBeUndefined()
+    }
+    expect(resolvePesan(1, [])).toBeUndefined()
+  })
+
+  it('pertanyaan: pesan valid jadi messageId, nomor mentah tidak disimpan', () => {
+    const review = parseWith({
+      pertanyaan: [
+        { teks: 'Harga?', terjawab: false, pesan: 3 },
+        { teks: 'Jemput?', terjawab: true, pesan: '#1' },
+        { teks: 'Pax?', terjawab: 'true', pesan: '2' },
+      ],
+    })
+    expect(review?.pertanyaan).toEqual([
+      { teks: 'Harga?', terjawab: false, messageId: 'm3' },
+      { teks: 'Jemput?', terjawab: true, messageId: 'm1' },
+      { teks: 'Pax?', terjawab: true, messageId: 'm2' },
+    ])
+    expect(JSON.stringify(review)).not.toContain('"pesan"')
+  })
+
+  it('pertanyaan: pesan di luar jangkauan atau hilang → tanpa messageId, item tetap ada', () => {
+    const review = parseWith({
+      pertanyaan: [{ teks: 'A?', terjawab: false, pesan: 9 }, { teks: 'B?', terjawab: true }, { teks: 'C?', terjawab: false, pesan: 'x' }],
+    })
+    expect(review?.pertanyaan).toEqual([
+      { teks: 'A?', terjawab: false },
+      { teks: 'B?', terjawab: true },
+      { teks: 'C?', terjawab: false },
+    ])
+    for (const q of review?.pertanyaan ?? []) expect(q).not.toHaveProperty('messageId')
+  })
+
+  it('poinPenting: objek dengan pesan valid jadi { teks, messageId }, tanpa pesan jadi string polos', () => {
+    const review = parseWith({
+      poinPenting: [{ teks: ' 3 Oktober ', pesan: 5 }, { teks: '2 orang', pesan: '#2' }, { teks: 'Dari Surabaya' }, { teks: 'Hotel', pesan: 99 }, 'Paket Ijen'],
+    })
+    expect(review?.poinPenting).toEqual([
+      { teks: '3 Oktober', messageId: 'm5' },
+      { teks: '2 orang', messageId: 'm2' },
+      'Dari Surabaya',
+      'Hotel',
+      'Paket Ijen',
+    ])
+    expect(JSON.stringify(review)).not.toContain('"pesan"')
+  })
+
+  it('poinPenting: item rusak dibuang tanpa menggagalkan ringkasan', () => {
+    const review = parseWith({ poinPenting: [42, null, {}, { teks: 7, pesan: 1 }, [], { teks: '   ', pesan: 1 }, { teks: 'Ok', pesan: 1 }] })
+    expect(review).not.toBeNull()
+    expect(review?.poinPenting).toEqual([{ teks: 'Ok', messageId: 'm1' }])
+  })
+
+  it('string lama di kedua daftar tetap valid', () => {
+    expect(parseWith({ pertanyaan: ['Harga?'], poinPenting: ['3 Oktober'] })).toMatchObject({ pertanyaan: ['Harga?'], poinPenting: ['3 Oktober'] })
+  })
+
+  it('tanpa ids, setiap pesan dibuang', () => {
+    const review = parseReview(JSON.stringify({ ...valid, pertanyaan: [{ teks: 'A?', terjawab: true, pesan: 1 }], poinPenting: [{ teks: 'B', pesan: 1 }] }))
+    expect(review?.pertanyaan).toEqual([{ teks: 'A?', terjawab: true }])
+    expect(review?.poinPenting).toEqual(['B'])
+  })
+
+  it('reviewConversation meneruskan ids transkrip ke parser', async () => {
+    vi.mocked(callLLM).mockResolvedValue(JSON.stringify({ ...valid, poinPenting: [{ teks: 'Tanggal', pesan: 2 }] }))
+    const review = await reviewConversation({ text: '#1 a\n#2 b', ids: ['x1', 'x2'] }, ['active'], undefined)
+    expect(review?.poinPenting).toEqual([{ teks: 'Tanggal', messageId: 'x2' }])
+    expect(vi.mocked(callLLM).mock.calls[0][0]).toContain('#1 a\n#2 b')
   })
 })

@@ -99,7 +99,7 @@ function DayCard({
         {status.detail && <span className="text-ink-muted">{status.detail}</span>}
       </div>
       <ReviewLine review={conv.review} />
-      {conv.review && <QuestionList questions={conv.review.pertanyaan} />}
+      {conv.review && <QuestionList questions={conv.review.pertanyaan} conversationId={conv.conversationId} />}
 
       {isActionable(item) ? (
         // `key`: item baru untuk percakapan yang sama mulai dari panel tertutup.

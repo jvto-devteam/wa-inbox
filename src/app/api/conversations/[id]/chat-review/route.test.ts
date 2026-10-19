@@ -86,7 +86,17 @@ describe('GET /api/conversations/[id]/chat-review', () => {
   it('latest null bila belum ada atau tidak lolos skema', async () => {
     mockPrisma.conversation.findUnique.mockResolvedValue({ chatReview: { rusak: true }, chatReviewAt: new Date(), summaryItem: null } as never)
     const body = await (await GET(req(), ctx)).json()
-    expect(body).toEqual({ latest: null, item: null, history: [] })
+    expect(body).toEqual({ latest: null, item: null, history: [], lastMessageAt: null })
+  })
+
+  it('lastMessageAt = waktu pesan terakhir dari tabel pesan', async () => {
+    mockPrisma.conversation.findUnique.mockResolvedValue({ chatReview: review, chatReviewAt: new Date('2026-10-19T00:00:00Z'), summaryItem: null } as never)
+    mockPrisma.message.findFirst.mockResolvedValue({ createdAt: new Date('2026-10-19T03:00:00Z') } as never)
+    const body = await (await GET(req(), ctx)).json()
+    expect(body.lastMessageAt).toBe('2026-10-19T03:00:00.000Z')
+    expect(mockPrisma.message.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { conversationId: 'c1' }, orderBy: { createdAt: 'desc' } })
+    )
   })
 })
 
@@ -127,7 +137,11 @@ describe('POST /api/conversations/[id]/chat-review', () => {
     expect(vi.mocked(reviewConversation).mock.calls[0][1]).toEqual(reasons)
     expect(vi.mocked(reviewConversation).mock.calls[0][2]).toBe('gemma4:31b-cloud')
     expect(saveChatReview).toHaveBeenCalledWith('c1', review, expect.any(Date))
-    expect(Object.keys(await res.json()).sort()).toEqual(['history', 'item', 'latest'])
+    expect(Object.keys(await res.json()).sort()).toEqual(['history', 'item', 'lastMessageAt', 'latest'])
+    // Transkrip bernomor lama → baru, dengan ids yang sejajar.
+    const transcript = vi.mocked(reviewConversation).mock.calls[0][0]
+    expect(transcript.ids).toEqual(['m1', 'm2'])
+    expect(transcript.text.split('\n').map((l) => l.slice(0, 3))).toEqual(['#1 ', '#2 '])
   })
 
   it('502 saat review null, tanpa menyimpan', async () => {

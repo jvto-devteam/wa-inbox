@@ -13,6 +13,7 @@ import { fetchJson } from '@/lib/fetch-json'
 import type { BookingData } from '@/lib/booking/client'
 import { bookingGuestName, contactDisplayName } from '@/lib/booking/display-name'
 import type { MessageDraftView } from '@/lib/inbox/message-draft-view'
+import { threadMessageDomId } from '@/lib/inbox/message-anchor'
 
 type ConversationDetail = {
   botEnabled: boolean
@@ -428,6 +429,7 @@ export function ThreadView({
           return (
             <div
               key={m.id}
+              id={threadMessageDomId(m.id)}
               ref={focused ? focusRef : undefined}
               className={cn(focused && 'rounded-lg ring-2 ring-accent/40')}
             >

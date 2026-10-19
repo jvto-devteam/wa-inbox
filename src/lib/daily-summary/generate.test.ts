@@ -151,6 +151,10 @@ describe('generateDailySummary', () => {
     expect(reviewConversation).toHaveBeenCalledTimes(3)
     expect(vi.mocked(reviewConversation).mock.calls[0][1]).toEqual(['unreplied', 'active'])
     expect(vi.mocked(reviewConversation).mock.calls[0][2]).toBe('gemma4:31b-cloud')
+    // Transkrip bernomor + ids pesan, supaya `pesan` dari model bisa diterjemahkan ke messageId.
+    const transcript = vi.mocked(reviewConversation).mock.calls[0][0]
+    expect(transcript.ids).toEqual([`m-INBOUND-${end.getTime() - 2 * HOUR}`])
+    expect(transcript.text).toMatch(/^#1 \[/)
     const update = mockPrisma.dailySummary.update.mock.calls[0][0]
     expect(update.data).toMatchObject({ status: 'PARTIAL', model: 'gemma4:31b-cloud', error: null })
     // Hanya review non-null yang disimpan sebagai ringkasan terbaru, dengan `end` sebagai "per".

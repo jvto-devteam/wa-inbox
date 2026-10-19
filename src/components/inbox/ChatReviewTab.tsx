@@ -1,11 +1,12 @@
 'use client'
-import { useEffect, useState } from 'react'
+import { useEffect, useId, useState } from 'react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { SkeletonText } from '@/components/ui/skeleton'
 import { RemindDropActions, dateKeyLabel } from '@/components/daily-summary/SummaryQueue'
-import { QuestionList } from '@/components/daily-summary/QuestionList'
+import { PointList, QuestionList } from '@/components/daily-summary/QuestionList'
 import type { ConversationReview } from '@/lib/daily-summary/payload-schema'
+import { isDateKey, jakartaDayRange } from '@/lib/daily-summary/time'
 import { fetchJson } from '@/lib/fetch-json'
 import { followUpStatus, isActionable, wibDateTimeLabel } from '@/lib/summary-items/status'
 import { PanelSectionTitle } from './ContactPanel'
@@ -68,20 +69,6 @@ function FollowUpSection({
   )
 }
 
-function TextList({ label, items }: { label: string; items: string[] }) {
-  if (items.length === 0) return null
-  return (
-    <div className="space-y-0.5">
-      <p className="text-xs font-medium text-ink-subtle">{label}</p>
-      <ul className="list-disc space-y-0.5 pl-4 text-sm text-ink">
-        {items.map((text, i) => (
-          <li key={i}>{text}</li>
-        ))}
-      </ul>
-    </div>
-  )
-}
-
 function ReviewHeader({ review }: { review: ConversationReview }) {
   const status = REVIEW_STATUS_BADGE[review.status]
   return (
@@ -95,12 +82,15 @@ function ReviewHeader({ review }: { review: ConversationReview }) {
   )
 }
 
-/** Isi satu ringkasan; dipakai untuk yang terbaru dan untuk tiap hari di riwayat. */
-function ReviewBody({ review }: { review: ConversationReview }) {
+/**
+ * Isi satu ringkasan; dipakai untuk yang terbaru dan untuk tiap hari di riwayat. Butir yang tahu
+ * pesan sumbernya menjadi tautan ke pesan itu di thread sebelah (lihat QuestionList).
+ */
+function ReviewBody({ review, conversationId }: { review: ConversationReview; conversationId: string }) {
   return (
     <div className="space-y-2">
-      <QuestionList questions={review.pertanyaan} />
-      <TextList label="Poin penting" items={review.poinPenting} />
+      <QuestionList questions={review.pertanyaan} conversationId={conversationId} />
+      <PointList points={review.poinPenting} conversationId={conversationId} />
       {review.statusAgen && (
         <p className="text-sm text-ink">
           <span className="font-medium text-ink-subtle">Sudah dijawab tim: </span>
@@ -117,7 +107,7 @@ function ReviewBody({ review }: { review: ConversationReview }) {
   )
 }
 
-function HistorySection({ history }: { history: ChatReviewResponse['history'] }) {
+function HistorySection({ history, conversationId }: { history: ChatReviewResponse['history']; conversationId: string }) {
   if (history.length === 0) return null
   return (
     <section aria-label="Riwayat" className="space-y-1.5">
@@ -133,7 +123,7 @@ function HistorySection({ history }: { history: ChatReviewResponse['history'] })
                 <Badge variant={status.variant}>{status.label}</Badge>
               </summary>
               <div className="border-t border-line px-2.5 py-2">
-                <ReviewBody review={entry.review} />
+                <ReviewBody review={entry.review} conversationId={conversationId} />
               </div>
             </details>
           )
@@ -143,12 +133,24 @@ function HistorySection({ history }: { history: ChatReviewResponse['history'] })
   )
 }
 
+/** Akhir hari WIB `dateKey` (ISO) -- "per" ringkasan harian; null bila kuncinya tidak valid. */
+function endOfDayIso(dateKey: string): string | null {
+  return isDateKey(dateKey) ? jakartaDayRange(dateKey).end.toISOString() : null
+}
+
+/** Ada pesan (arah apa pun) yang datang SESUDAH ringkasan yang sedang ditampilkan dibuat. */
+export function hasMessagesSince(lastMessageAt: string | null, reviewedAt: string | null): boolean {
+  if (!lastMessageAt || !reviewedAt) return false
+  return Date.parse(lastMessageAt) > Date.parse(reviewedAt)
+}
+
 export function ChatReviewTab({ conversationId, contactName }: { conversationId: string; contactName?: string | null }) {
   const [data, setData] = useState<ChatReviewResponse | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [refreshing, setRefreshing] = useState(false)
   const [refreshError, setRefreshError] = useState<string | null>(null)
 
+  const newMessagesHintId = useId()
   const url = `/api/conversations/${encodeURIComponent(conversationId)}/chat-review`
 
   useEffect(() => {
@@ -211,6 +213,9 @@ export function ChatReviewTab({ conversationId, contactName }: { conversationId:
       ? `Dari ringkasan harian ${dateKeyLabel(fallback.date)}`
       : 'Belum ada ringkasan.'
   const defaultNote = latest?.review.langkahBerikut || `Follow up ${contactName || 'Tanpa nama'}`
+  // Ringkasan terbaru "per" `latest.at`; ringkasan harian cadangan "per" akhir hari itu (WIB).
+  const reviewedAt = data.latest ? data.latest.at : fallback ? endOfDayIso(fallback.date) : null
+  const showNewMessages = hasMessagesSince(data.lastMessageAt, reviewedAt)
 
   return (
     <div className="flex flex-col gap-4">
@@ -222,7 +227,20 @@ export function ChatReviewTab({ conversationId, contactName }: { conversationId:
           <span className="text-xs text-ink-muted">
             {latestLabel}
           </span>
-          <Button type="button" size="sm" variant="outline" disabled={refreshing} onClick={() => void refresh()}>
+          {showNewMessages && (
+            // Diletakkan tepat sebelum tombolnya: isinya ajakan untuk menekan "Perbarui sekarang".
+            <span id={newMessagesHintId} className="text-xs font-medium text-warning">
+              Ada pesan baru sejak ringkasan ini.
+            </span>
+          )}
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            disabled={refreshing}
+            aria-describedby={showNewMessages ? newMessagesHintId : undefined}
+            onClick={() => void refresh()}
+          >
             {refreshing ? 'Meringkas…' : 'Perbarui sekarang'}
           </Button>
         </div>
@@ -234,12 +252,12 @@ export function ChatReviewTab({ conversationId, contactName }: { conversationId:
         {latest && (
           <>
             <ReviewHeader review={latest.review} />
-            <ReviewBody review={latest.review} />
+            <ReviewBody review={latest.review} conversationId={conversationId} />
           </>
         )}
       </section>
 
-      <HistorySection history={data.history} />
+      <HistorySection history={data.history} conversationId={conversationId} />
     </div>
   )
 }

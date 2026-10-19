@@ -166,6 +166,10 @@ hasil yang lebih baru; "Buat ulang" tanggal lama di /summary tidak menurunkan ta
 Tiap pertanyaan membawa `terjawab` (true/false); ringkasan lama yang berupa string polos tampil
 tanpa tanda. `parseReview` menurunkan item yang bentuknya melenceng, bukan menggagalkan seluruh
 ringkasan. Riwayat dibaca dari payload `DailySummary`, bukan dari kolom ini.
+Transkrip ke LLM bernomor `#N` (`buildNumberedTranscript`); model menunjuk pesan sumber lewat
+`pesan`, dan `parseReview` menyimpannya sebagai `messageId` (nomor mentah tidak pernah disimpan,
+nomor tidak valid dibuang). Butir pertanyaan/poin ber-`messageId` di tab ini dan di /summary bisa
+diklik ke `/inbox?conversation=…&message=…`; string lama tampil sebagai teks biasa.
 Dipangkas setelah **30 hari** sejak `chatReviewAt` (keputusan owner 2026-10-19), sama dengan
 DailySummary dan SummaryItem — isinya memuat poin penting chat pelanggan.
 

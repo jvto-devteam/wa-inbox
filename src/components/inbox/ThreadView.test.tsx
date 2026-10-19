@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, waitFor, fireEvent, act } from '@testing-library/react'
 import { useState } from 'react'
 import { ThreadView } from './ThreadView'
+import { scrollToThreadMessage, threadMessageDomId } from '@/lib/inbox/message-anchor'
 
 // Mirrors how `src/app/inbox/page.tsx` renders `ThreadView`: keyed by
 // `conversationId` so switching conversations fully remounts the component
@@ -1165,6 +1166,23 @@ describe('ThreadView — lompat ke pesan tertentu', () => {
     rerender(<ThreadView conversationId="conv_1" focusMessageId="m_in" />)
 
     await waitFor(() => expect(scrollSpy).toHaveBeenCalledWith({ block: 'center' }))
+    scrollSpy.mockRestore()
+  })
+
+  // Tautan "Lihat pesan" di tab Ringkasan chat menggulung ulang lewat id ini saat butir yang SAMA
+  // diklik lagi (URL tidak berubah, jadi efek sorot di atas tidak terpicu).
+  it('setiap pesan punya id DOM dari threadMessageDomId, dan scrollToThreadMessage menggulung ke sana', async () => {
+    stubThread([inbound, botReply])
+    render(<ThreadView conversationId="conv_1" focusMessageId="m_bot" />)
+    await waitFor(() => expect(document.getElementById(threadMessageDomId('m_bot'))).not.toBeNull())
+    expect(document.getElementById(threadMessageDomId('m_in'))).not.toBeNull()
+
+    const scrollSpy = vi.spyOn(Element.prototype, 'scrollIntoView').mockImplementation(() => {})
+    scrollToThreadMessage('m_bot')
+    expect(scrollSpy).toHaveBeenCalledTimes(1)
+    expect(scrollSpy.mock.contexts[0]).toBe(document.getElementById(threadMessageDomId('m_bot')))
+    scrollToThreadMessage('tidak_ada')
+    expect(scrollSpy).toHaveBeenCalledTimes(1)
     scrollSpy.mockRestore()
   })
 

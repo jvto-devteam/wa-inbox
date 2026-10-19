@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildTranscript, classifyConversation, messageSnippet, summarizeTripBrief, type ConversationFacts, type TranscriptMessage } from './collect'
+import { buildNumberedTranscript, buildTranscript, classifyConversation, messageSnippet, summarizeTripBrief, type ConversationFacts, type TranscriptMessage } from './collect'
 import { jakartaDayRange } from './time'
 
 const { start, end } = jakartaDayRange('2026-09-21')
@@ -89,6 +89,16 @@ describe('buildTranscript & messageSnippet', () => {
       msg('OUTBOUND', new Date('2026-09-21T02:10:00Z'), null, 'image'),
     ])
     expect(transcript).toBe('[21/09 09.05] Pelanggan: Ijen tanggal 3 Oktober untuk 2 orang?\n[21/09 09.10] Agen: [image]')
+  })
+
+  it('varian bernomor: tiap baris diawali #N dan ids memetakan nomor ke id pesan', () => {
+    const a = msg('INBOUND', new Date('2026-09-21T02:05:00Z'), 'Ijen 3 Oktober?')
+    const b = msg('OUTBOUND', new Date('2026-09-21T02:10:00Z'), null, 'image')
+    const c = msg('INBOUND', new Date('2026-09-21T02:12:00Z'), 'ok')
+    const numbered = buildNumberedTranscript([a, b, c])
+    expect(numbered.text).toBe('#1 [21/09 09.05] Pelanggan: Ijen 3 Oktober?\n#2 [21/09 09.10] Agen: [image]\n#3 [21/09 09.12] Pelanggan: ok')
+    expect(numbered.ids).toEqual([a.id, b.id, c.id])
+    expect(buildNumberedTranscript([])).toEqual({ text: '', ids: [] })
   })
 
   it('memotong pesan panjang', () => {

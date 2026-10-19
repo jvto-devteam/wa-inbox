@@ -12,13 +12,30 @@ export const CONTACT_KINDS = ['calon_tamu', 'tamu_existing', 'mitra', 'lainnya']
 /**
  * Satu pertanyaan pelanggan. Ringkasan lama (sebelum 19 Oktober 2026) menyimpannya sebagai
  * string polos, jadi keduanya diterima; `normalizeQuestion` menyeragamkannya untuk tampilan.
+ *
+ * `messageId` = pesan sumber di transkrip (model menunjuk nomor `#N`, review.ts menerjemahkannya).
+ * Opsional: model boleh tidak yakin, dan ringkasan sebelum 20 Oktober 2026 tidak memilikinya --
+ * item tanpa `messageId` tampil sebagai teks biasa, bukan tautan.
  */
-export const reviewQuestionSchema = z.union([z.string(), z.object({ teks: z.string(), terjawab: z.boolean() })])
+export const reviewQuestionSchema = z.union([
+  z.string(),
+  z.object({ teks: z.string(), terjawab: z.boolean(), messageId: z.string().optional() }),
+])
 export type ReviewQuestion = z.infer<typeof reviewQuestionSchema>
 
 /** String lama → `terjawab: null` (tidak diketahui, tampil tanpa tanda). */
-export function normalizeQuestion(q: ReviewQuestion): { teks: string; terjawab: boolean | null } {
-  return typeof q === 'string' ? { teks: q, terjawab: null } : { teks: q.teks, terjawab: q.terjawab }
+export function normalizeQuestion(q: ReviewQuestion): { teks: string; terjawab: boolean | null; messageId: string | null } {
+  return typeof q === 'string'
+    ? { teks: q, terjawab: null, messageId: null }
+    : { teks: q.teks, terjawab: q.terjawab, messageId: q.messageId ?? null }
+}
+
+/** Satu poin penting: string polos (lama, atau tanpa pesan sumber) atau objek ber-`messageId`. */
+export const reviewPointSchema = z.union([z.string(), z.object({ teks: z.string(), messageId: z.string().optional() })])
+export type ReviewPoint = z.infer<typeof reviewPointSchema>
+
+export function normalizePoint(p: ReviewPoint): { teks: string; messageId: string | null } {
+  return typeof p === 'string' ? { teks: p, messageId: null } : { teks: p.teks, messageId: p.messageId ?? null }
 }
 
 /** Hasil satu panggilan LLM untuk satu percakapan (review.ts). */
@@ -28,7 +45,7 @@ export const conversationReviewSchema = z.object({
   jenisKontak: z.enum(CONTACT_KINDS),
   topik: z.string(),
   pertanyaan: z.array(reviewQuestionSchema),
-  poinPenting: z.array(z.string()),
+  poinPenting: z.array(reviewPointSchema),
   statusAgen: z.string(),
   langkahBerikut: z.string(),
 })
