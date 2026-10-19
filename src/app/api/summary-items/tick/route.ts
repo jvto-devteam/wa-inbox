@@ -19,7 +19,8 @@ import { createLiveReplyItems, reconcileSummaryItems } from '@/lib/summary-items
  * 3. `createLiveReplyItems` (pesan pelanggan yang belum dibalas ≥ 1 jam masuk antrean tanpa
  *    menunggu 00:00).
  * Tidak pernah memanggil LLM. `refreshStaleBookingData` memanggil API booking (maks. 25
- * percakapan per tick, berurutan, timeout 10 s per panggilan, berhenti sesudah 60 s).
+ * percakapan per tick, diacak dari 100 yang paling basi, berurutan, timeout 10 s per panggilan,
+ * berhenti sesudah 60 s).
  *
  * Endpoint tersendiri, bukan `/api/outbound-jobs/process`: endpoint itu juga menjalankan retry
  * ladder outbound (`processDueOutboundJobs`), dan menjadwalkannya adalah keputusan owner yang

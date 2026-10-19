@@ -438,3 +438,63 @@ describe('refreshStaleBookingData: batas waktu per tick', () => {
     vi.mocked(Date.now).mockRestore()
   })
 })
+
+describe('refreshStaleBookingData: yang terus gagal tidak menahan antrean (head-of-line)', () => {
+  type Row = { id: string; bookingData: null; bookingCheckedAt: Date | null; pipelineStage: string; orderChannel: null; isTest: boolean; contact: { phone: string } }
+  // Telepon '62800000NNNN'; 25 baris pertama (terlama) selalu gagal di API booking.
+  const phone = (i: number) => `62800${String(i).padStart(6, '0')}`
+  const makePool = (n: number): Row[] =>
+    Array.from({ length: n }, (_, i) => ({ id: `c${i}`, bookingData: null, bookingCheckedAt: null, pipelineStage: 'new', orderChannel: null, isTest: false, contact: { phone: phone(i) } }))
+  const FAILING = 25
+
+  /** PRNG bertenaga tetap (mulberry32) supaya acakan bisa diulang. */
+  function seeded(seed: number): () => number {
+    let a = seed >>> 0
+    return () => {
+      a = (a + 0x6d2b79f5) >>> 0
+      let t = a
+      t = Math.imul(t ^ (t >>> 15), t | 1)
+      t ^= t + Math.imul(t ^ (t >>> 7), t | 61)
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+    }
+  }
+
+  /** Tiruan DB: baris basi urut terlama dulu; yang berhasil distempel keluar dari kolam. */
+  function arrange(n: number) {
+    let stale = makePool(n)
+    mockPrisma.conversation.findMany.mockImplementation(((args: { take?: number }) => Promise.resolve(stale.slice(0, args.take))) as never)
+    mockPrisma.conversation.update.mockImplementation(((args: { where: { id: string }; data: { bookingCheckedAt?: Date } }) => {
+      if (args.data.bookingCheckedAt) stale = stale.filter((r) => r.id !== args.where.id)
+      return Promise.resolve({})
+    }) as never)
+    const failing = new Set(Array.from({ length: FAILING }, (_, i) => phone(i)))
+    ;mockFetch().mockImplementation(async (...args: never[]) => {
+      const requested = new URL(String(args[0])).searchParams.get('phone_no') ?? ''
+      return failing.has(requested) ? { ok: false, status: 503, json: async () => ({}) } : { ok: true, json: async () => [] }
+    })
+    return { remaining: () => stale.length }
+  }
+
+  it('mengambil kolam 100 terlama, mengerjakan paling banyak 25', async () => {
+    arrange(120)
+    expect(await refreshStaleBookingData(25, 60_000, { random: seeded(1) })).toEqual({ diperiksa: 25 })
+    expect(mockPrisma.conversation.findMany.mock.calls[0][0]).toMatchObject({ take: 100 })
+    expect(fetch).toHaveBeenCalledTimes(25)
+  })
+
+  it('baris di belakang 25 yang terus gagal akhirnya tersentuh', async () => {
+    const db = arrange(60)
+    // Tanpa acakan, setiap tick hanya mengulang 25 yang gagal dan 35 lainnya tidak pernah dicek.
+    for (let tick = 0; tick < 20 && db.remaining() > FAILING; tick++) {
+      await refreshStaleBookingData(25, 60_000, { random: seeded(tick + 1) })
+    }
+    expect(db.remaining()).toBe(FAILING)
+  })
+
+  it('tanpa acakan (random = 0.999… → urutan asli) tick pertama hanya mengerjakan 25 terlama', async () => {
+    const db = arrange(60)
+    // random mendekati 1 membuat Fisher-Yates menukar setiap elemen dengan dirinya sendiri.
+    await refreshStaleBookingData(25, 60_000, { random: () => 0.9999999 })
+    expect(db.remaining()).toBe(60)
+  })
+})

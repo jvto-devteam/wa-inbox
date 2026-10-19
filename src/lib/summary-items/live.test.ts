@@ -7,7 +7,8 @@ vi.mock('@/lib/db', () => ({ prisma: mockDeep<PrismaClient>() }))
 
 import { prisma } from '@/lib/db'
 import { LOOKBACK_MS, TRANSCRIPT_MAX_MESSAGES, UNREPLIED_MIN_MS } from '@/lib/daily-summary/config'
-import { createLiveReplyItems } from './sync'
+import { createLiveReplyItems, syncSummaryItems } from './sync'
+import type { DailySummaryPayload } from '@/lib/daily-summary/payload-schema'
 
 const mockPrisma = prisma as unknown as DeepMockProxy<PrismaClient>
 // 15.00 WIB Senin 19 Oktober.
@@ -21,7 +22,7 @@ type Msg = { id: string; direction: 'INBOUND' | 'OUTBOUND'; sentBy: 'CUSTOMER' |
 const inbound = (id: string, createdAt: Date, content: string | null = 'harga Ijen berapa?', type = 'text'): Msg => ({
   id, direction: 'INBOUND', sentBy: 'CUSTOMER', type, content, createdAt,
 })
-const outbound = (id: string, createdAt: Date, content = 'halo'): Msg => ({ id, direction: 'OUTBOUND', sentBy: 'AGENT', type: 'text', content, createdAt })
+const outbound = (id: string, createdAt: Date, content = 'halo', sentBy: 'AGENT' | 'BOT' = 'AGENT'): Msg => ({ id, direction: 'OUTBOUND', sentBy, type: 'text', content, createdAt })
 
 type ConvOver = {
   id?: string
@@ -177,8 +178,8 @@ describe('createLiveReplyItems: saringan penutup', () => {
     expect(mockPrisma.summaryItem.create).not.toHaveBeenCalled()
   })
 
-  it('reaksi dilewati', async () => {
-    given([conv([outbound('o1', ago(5 * HOUR)), inbound('m1', ago(4 * HOUR), '👍', 'reaction')])])
+  it('reaksi (bentuk produksi: content null) dilewati', async () => {
+    given([conv([outbound('o1', ago(5 * HOUR)), inbound('m1', ago(4 * HOUR), null, 'reaction')])])
     expect(await createLiveReplyItems(NOW)).toEqual({ ...none, skipped: 1 })
   })
 
@@ -188,12 +189,30 @@ describe('createLiveReplyItems: saringan penutup', () => {
     expect(created()[0]).toMatchObject({ anchorMessageId: 'q1', anchorAt: ago(5 * HOUR), coveredUntil: ago(4 * HOUR), snippet: 'ok thanks 🙏' })
   })
 
-  it('"oke"/"siap"/👍 sesudah pertanyaan kita adalah jawaban, bukan penutup', async () => {
-    for (const reply of [inbound('m1', ago(4 * HOUR), 'oke kak'), inbound('m1', ago(4 * HOUR), 'siap'), inbound('m1', ago(4 * HOUR), '👍', 'reaction')]) {
+  it('"oke"/"siap" sesudah pertanyaan AGEN adalah jawaban, bukan penutup', async () => {
+    for (const reply of [inbound('m1', ago(4 * HOUR), 'oke kak'), inbound('m1', ago(4 * HOUR), 'siap')]) {
       mockReset(mockPrisma)
       given([conv([outbound('o1', ago(5 * HOUR), 'Mau saya booking-kan untuk tanggal 20?'), reply])])
       expect(await createLiveReplyItems(NOW)).toEqual({ ...none, created: 1 })
     }
+  })
+
+  // Repro review N2: reaksi tersimpan dengan content null, jadi emojinya tidak diketahui.
+  it('reaksi (content null) atau emoji saja sesudah pertanyaan agen maupun bot tetap penutup', async () => {
+    for (const sentBy of ['AGENT', 'BOT'] as const) {
+      for (const reply of [inbound('r1', ago(4 * HOUR), null, 'reaction'), inbound('r1', ago(4 * HOUR), '👍')]) {
+        mockReset(mockPrisma)
+        given([conv([outbound('o1', ago(5 * HOUR), 'Ada lagi yang bisa kami bantu?', sentBy), reply])])
+        expect(await createLiveReplyItems(NOW)).toEqual({ ...none, skipped: 1 })
+        expect(mockPrisma.summaryItem.create).not.toHaveBeenCalled()
+      }
+    }
+  })
+
+  it('"ok" sesudah pertanyaan persona BOT tetap penutup', async () => {
+    given([conv([outbound('o1', ago(5 * HOUR), 'Ada lagi yang bisa kami bantu?', 'BOT'), inbound('m1', ago(4 * HOUR), 'ok')])])
+    expect(await createLiveReplyItems(NOW)).toEqual({ ...none, skipped: 1 })
+    expect(mockPrisma.summaryItem.create).not.toHaveBeenCalled()
   })
 
   it('"oke" sesudah pesan kita yang bukan pertanyaan tetap penutup; "thanks" sesudah pertanyaan juga', async () => {
@@ -208,8 +227,13 @@ describe('createLiveReplyItems: saringan penutup', () => {
     expect(created()[0]).toMatchObject({ anchorMessageId: 'm1', snippet: '[image]' })
   })
 
-  it('review terbaru "selesai" dengan chatReviewAt = waktu pesan terakhir (batas ≤): dilewati', async () => {
+  it('review "selesai" dengan chatReviewAt = waktu pesan terakhir belum melihatnya (transkrip `lt end`): item tetap dibuat', async () => {
     given([conv([inbound('m1', ago(20 * HOUR), 'Great, see you then!')], { chatReview: review('selesai'), chatReviewAt: ago(20 * HOUR) })])
+    expect(await createLiveReplyItems(NOW)).toEqual({ ...none, created: 1 })
+  })
+
+  it('review terbaru "selesai" yang sudah melihat pesan terakhir (pesan < chatReviewAt): dilewati', async () => {
+    given([conv([inbound('m1', ago(20 * HOUR), 'Great, see you then!')], { chatReview: review('selesai'), chatReviewAt: ago(20 * HOUR - 1) })])
     expect(await createLiveReplyItems(NOW)).toEqual({ ...none, skipped: 1 })
   })
 
@@ -282,6 +306,38 @@ describe('createLiveReplyItems: baris yang sudah ada', () => {
       given([conv([...run, inbound('m4', wib('19', '11:10'), 'jadi bisa?')], { summaryItem: dropped })])
       expect(await createLiveReplyItems(wib('19', '11:15'))).toEqual({ ...none, reopened: 1 })
       expect(updated()[0]).toMatchObject({ state: 'OPEN', anchorMessageId: 'm1', anchorAt: wib('19', '09:00'), coveredUntil: wib('19', '11:10'), snippet: 'jadi bisa?' })
+    })
+
+    // Repro review N1, utuh: tick → sync malam → Lepas. Kartu harus menampilkan m4 sebelum Lepas
+    // boleh mencakupnya; sesudah itu hanya pesan yang benar-benar baru yang membuka lagi.
+    it('tick 00.15 memajukan kartu ke m4, sync malam 00.30 tidak memundurkan snippet, Lepas hanya menutup yang tampil', async () => {
+      const m4 = inbound('m4', wib('20', '00:10'), 'pertanyaan baru 00.10')
+      const open = row({ state: 'OPEN', closedReason: null, closedAt: null, anchorAt: wib('19', '09:00'), anchorMessageId: 'm1', coveredUntil: wib('19', '10:20'), snippet: 'kak', openedOn: '2026-10-19', lastSeenOn: '2026-10-19' })
+      given([conv([...run, m4], { summaryItem: open })])
+      expect(await createLiveReplyItems(wib('20', '00:15'))).toEqual({ ...none, updated: 1 })
+      const afterTick = { ...open, ...updated()[0] }
+      expect(afterTick).toMatchObject({ coveredUntil: wib('20', '00:10'), snippet: 'pertanyaan baru 00.10' })
+
+      mockReset(mockPrisma)
+      mockPrisma.summaryItem.findUnique.mockResolvedValue(afterTick as never)
+      const nightly = {
+        unreplied: [{ conversationId: 'c1', contactName: 'x', pipelineStage: 'new', lastMessageAt: wib('19', '10:20').toISOString(), lastMessageId: 'm3',
+          firstMessageAt: wib('19', '09:00').toISOString(), firstMessageId: 'm1', waitingMs: 1, snippet: 'kak', review: null }],
+        dormant: [], handoffs: [], newLeads: [], conversations: [],
+      } as unknown as DailySummaryPayload
+      await syncSummaryItems('2026-10-19', nightly, wib('20', '00:30'))
+      const afterSync = { ...afterTick, ...updated()[0] }
+      expect(afterSync).toMatchObject({ coveredUntil: wib('20', '00:10'), snippet: 'pertanyaan baru 00.10', anchorAt: wib('19', '09:00') })
+
+      // Operator melihat m4 di kartu lalu Lepas: m4 tidak membukanya lagi, m5 membuka.
+      const droppedAfter = { ...afterSync, state: 'DROPPED', closedReason: 'DROPPED', closedAt: wib('20', '08:00') }
+      mockReset(mockPrisma)
+      given([conv([...run, m4], { summaryItem: droppedAfter })])
+      expect(await createLiveReplyItems(wib('20', '08:30'))).toEqual({ ...none, skipped: 1 })
+      mockReset(mockPrisma)
+      given([conv([...run, m4, inbound('m5', wib('20', '08:40'), 'jadi bisa?')], { summaryItem: droppedAfter })])
+      expect(await createLiveReplyItems(wib('20', '09:00'))).toEqual({ ...none, reopened: 1 })
+      expect(updated()[0]).toMatchObject({ coveredUntil: wib('20', '08:40'), snippet: 'jadi bisa?' })
     })
 
     it('yang baru hanya penutup tidak membuka lagi', async () => {

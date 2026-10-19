@@ -182,6 +182,9 @@ const BOOKING_CACHE_MS = 24 * 60 * 60 * 1000
 /** Waktu maksimal `refreshStaleBookingData` per pemanggilan (lihat batas di loop-nya). */
 export const REFRESH_BUDGET_MS = 60_000
 
+/** Berapa percakapan basi terlama yang diacak `refreshStaleBookingData` sebelum memilih `limit`. */
+export const REFRESH_POOL_SIZE = 100
+
 function todayYmd(): string {
   const now = new Date()
   const pad = (n: number) => String(n).padStart(2, '0')
@@ -372,11 +375,21 @@ export async function advancePipelineStagesFromBooking(): Promise<{ diperbarui: 
  * membanjiri API itu tanpa alasan. Dengan batas kecil, tumpukan lama terkejar dalam beberapa
  * tick dan sesudahnya hampir selalu tidak ada pekerjaan.
  *
- * Yang paling lama tidak dicek dikerjakan lebih dulu (NULL lebih dulu). Berurutan, bukan
- * paralel: mengalirkan puluhan permintaan serentak ke API pihak ketiga adalah cara membuatnya
- * membatasi kita.
+ * Urutan: diambil `poolSize` percakapan yang paling lama tidak dicek (NULL lebih dulu), DIACAK,
+ * lalu dikerjakan paling banyak `limit` di antaranya. Tanpa acakan, percakapan yang API-nya terus
+ * gagal (yang gagal sengaja tidak distempel, lihat `ensureFreshBookingData`) akan selalu jadi 25
+ * terlama dan memakan setiap tick selamanya -- yang di belakangnya tidak pernah tersentuh. Kolam
+ * yang lebih besar dari `limit` + acakan membuat setiap baris di kolam punya peluang tiap tick,
+ * tanpa kolom baru di skema. Berurutan, bukan paralel: mengalirkan puluhan permintaan serentak
+ * ke API pihak ketiga adalah cara membuatnya membatasi kita.
+ *
+ * `random` hanya celah test supaya acakan deterministik; produksi memakai `Math.random`.
  */
-export async function refreshStaleBookingData(limit = 25, budgetMs = REFRESH_BUDGET_MS): Promise<{ diperiksa: number }> {
+export async function refreshStaleBookingData(
+  limit = 25,
+  budgetMs = REFRESH_BUDGET_MS,
+  { poolSize = REFRESH_POOL_SIZE, random = Math.random }: { poolSize?: number; random?: () => number } = {}
+): Promise<{ diperiksa: number }> {
   const deadline = Date.now() + budgetMs
   try {
     const kandidat = await prisma.conversation.findMany({
@@ -397,11 +410,11 @@ export async function refreshStaleBookingData(limit = 25, budgetMs = REFRESH_BUD
         contact: { select: { phone: true } },
       },
       orderBy: { bookingCheckedAt: { sort: 'asc', nulls: 'first' } },
-      take: limit,
+      take: Math.max(poolSize, limit),
     })
 
     let diperiksa = 0
-    for (const conversation of kandidat) {
+    for (const conversation of shuffle(kandidat, random).slice(0, limit)) {
       // Batas waktu per tick: tiap panggilan bisa makan timeout 10 s, dan tick antrean tidak
       // boleh tertahan lebih dari ~1 menit oleh API booking yang lambat. Sisanya tick berikutnya.
       if (Date.now() >= deadline) break
@@ -419,4 +432,14 @@ export async function refreshStaleBookingData(limit = 25, budgetMs = REFRESH_BUD
     console.error('refreshStaleBookingData gagal', { error })
     return { diperiksa: 0 }
   }
+}
+
+/** Fisher-Yates pada salinan; `random` mengembalikan [0, 1) seperti `Math.random`. */
+function shuffle<T>(items: readonly T[], random: () => number): T[] {
+  const copy = [...items]
+  for (let i = copy.length - 1; i > 0; i--) {
+    const j = Math.min(i, Math.floor(random() * (i + 1)))
+    ;[copy[i], copy[j]] = [copy[j], copy[i]]
+  }
+  return copy
 }

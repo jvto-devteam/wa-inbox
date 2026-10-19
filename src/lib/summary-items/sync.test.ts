@@ -829,10 +829,32 @@ describe('syncSummaryItems: aturan REPLY satu untuk live dan malam (repro review
     expect(data.coveredUntil).toEqual(wib('19', '10:20'))
   })
 
-  it('cakupan tidak pernah mundur pada pembaruan OPEN', async () => {
-    mockPrisma.summaryItem.findUnique.mockResolvedValue(liveRow({ coveredUntil: wib('19', '11:00') }) as never)
+  it('cakupan dan snippet tidak pernah mundur pada pembaruan OPEN', async () => {
+    mockPrisma.summaryItem.findUnique.mockResolvedValue(liveRow({ coveredUntil: wib('19', '11:00'), snippet: 'jam berapa?' }) as never)
     await syncSummaryItems('2026-10-19', payload({ unreplied: [runItem()] as never }), wib('20', '00:20'))
-    expect(mockPrisma.summaryItem.update.mock.calls[0][0].data.coveredUntil).toEqual(wib('19', '11:00'))
+    expect(mockPrisma.summaryItem.update.mock.calls[0][0].data).toMatchObject({ coveredUntil: wib('19', '11:00'), snippet: 'jam berapa?' })
+  })
+
+  // Repro review N1: tick 00.10 menyegarkan kartu ke m4, sync malam 00.30 (transkrip sampai 23.59)
+  // hanya kenal m3. Dulu cakupan tetap m4 tapi snippet mundur ke m3, sehingga Lepas ikut menutup
+  // m4 yang tidak pernah tampil di kartu.
+  it('sync malam sesudah tick menyegarkan ke m4 (00.10): cakupan DAN snippet tetap m4', async () => {
+    mockPrisma.summaryItem.findUnique.mockResolvedValue(liveRow({ coveredUntil: wib('20', '00:10'), snippet: 'pertanyaan baru 00.10' }) as never)
+    await syncSummaryItems(
+      '2026-10-19',
+      payload({ unreplied: [runItem({ firstMessageAt: wib('19', '09:00').toISOString(), firstMessageId: 'm1' })] as never }),
+      wib('20', '00:30')
+    )
+    const data = mockPrisma.summaryItem.update.mock.calls[0][0].data
+    expect(data.coveredUntil).toEqual(wib('20', '00:10'))
+    expect(data.snippet).toBe('pertanyaan baru 00.10')
+    expect(data).toMatchObject({ anchorAt: wib('19', '09:00'), anchorMessageId: 'm1' })
+  })
+
+  it('cakupan payload yang lebih baru tetap memajukan cakupan + snippet bersama', async () => {
+    mockPrisma.summaryItem.findUnique.mockResolvedValue(liveRow({ coveredUntil: wib('19', '09:40'), snippet: 'halo?' }) as never)
+    await syncSummaryItems('2026-10-19', payload({ unreplied: [runItem()] as never }), wib('20', '00:20'))
+    expect(mockPrisma.summaryItem.update.mock.calls[0][0].data).toMatchObject({ coveredUntil: wib('19', '10:20'), snippet: 'kak' })
   })
 
   it('item baru dari payload baru: anchor = firstMessageAt/Id, cakupan + snippet = pesan terakhir', async () => {

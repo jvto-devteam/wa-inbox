@@ -292,7 +292,11 @@ async function upsertCandidate(c: Candidate, row: ItemRow | null, clock: ReviewC
     // janji terbaru B ditepati lalu operator Lepas, B yang dibalik LLM jadi "belum" lagi tidak boleh
     // terlihat "lebih baru dari anchor" dan membuka item yang sudah dilepas.
     // REPLY yang tetap REPLY: anchor tidak pernah maju (lama menunggu tidak boleh "mundur" hanya
-    // karena pelanggan menulis lagi), cakupan tidak pernah mundur. Snippet ikut kandidat (terbaru).
+    // karena pelanggan menulis lagi), cakupan tidak pernah mundur. Cakupan dan snippet SELALU
+    // bergerak bersama: baris yang sudah mencakup pesan lebih baru (tick live 00.10 mendahului
+    // sync malam 00.30 yang melihat sampai 23.59) mempertahankan keduanya. Kalau hanya cakupannya
+    // yang dipertahankan, kartu menampilkan pesan lama sementara Lepas ikut menutup pesan baru
+    // yang tidak pernah tampil.
     const keepReplyAnchor = c.kind === 'REPLY' && row.kind === 'REPLY' && row.anchorAt <= c.anchorAt
     const covered = c.kind === 'REPLY' && row.kind === 'REPLY' && row.coveredUntil && c.coveredUntil && row.coveredUntil > c.coveredUntil
     const data =
@@ -300,7 +304,7 @@ async function upsertCandidate(c: Candidate, row: ItemRow | null, clock: ReviewC
         ? {
             ...fields,
             ...(keepReplyAnchor ? { anchorAt: row.anchorAt, anchorMessageId: row.anchorMessageId } : {}),
-            ...(covered ? { coveredUntil: row.coveredUntil } : {}),
+            ...(covered ? { coveredUntil: row.coveredUntil, snippet: row.snippet } : {}),
           }
         : !c.anchorKnown
           ? { ...fields, anchorAt: row.anchorAt, anchorMessageId: row.anchorMessageId }
@@ -842,15 +846,21 @@ async function liveOne(conversation: LiveConversation, now: Date): Promise<keyof
   for (const m of run) {
     if (!row || (await shouldReopen(row, candidateCovering(m), clock))) opening.push(m)
   }
-  const afterQuestion = Boolean(previousOutbound?.content?.includes('?'))
-  if (!opening.some((m) => !isNoiseMessage(m, { afterQuestion }))) return 'skipped'
+  // Hanya pertanyaan AGEN yang mengubah "ok" jadi jawaban; pertanyaan persona bot ("Ada lagi yang
+  // bisa kami bantu?") ada di hampir setiap giliran bot dan tidak menunggu keputusan pelanggan.
+  const afterAgentQuestion = previousOutbound !== null && previousOutbound.sentBy !== 'BOT' && Boolean(previousOutbound.content?.includes('?'))
+  if (!opening.some((m) => !isNoiseMessage(m, { afterAgentQuestion }))) return 'skipped'
   const outcome = await upsertCandidate(candidateCovering(latest), row, clock)
   return outcome === 'created' || outcome === 'reopened' ? outcome : 'skipped'
 }
 
-/** Review terbaru sudah melihat pesan terakhir (lastMessageAt ≤ chatReviewAt) dan menilainya "selesai". */
+/**
+ * Review terbaru sudah melihat pesan terakhir dan menilainya "selesai". "Melihat" = pesan itu
+ * SEBELUM chatReviewAt (lastMessageAt < chatReviewAt): transkrip malam memakai `createdAt < end`
+ * dan chatReviewAt = end, jadi pesan tepat pada chatReviewAt belum pernah dibaca review itu.
+ */
 function judgedDoneByLatestReview(conversation: LiveConversation, lastMessageAt: Date): boolean {
-  if (!conversation.chatReviewAt || !(lastMessageAt <= conversation.chatReviewAt)) return false
+  if (!conversation.chatReviewAt || !(lastMessageAt < conversation.chatReviewAt)) return false
   // Hanya `status` yang dibutuhkan; bentuk sisa ringkasan lama tidak boleh membuat penilaian hilang.
   const review = conversationReviewSchema.pick({ status: true }).safeParse(conversation.chatReview)
   return review.success && review.data.status === 'selesai'

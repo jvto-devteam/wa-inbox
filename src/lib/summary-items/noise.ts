@@ -14,14 +14,19 @@
  * - Selain itu setiap kata harus ada di kosakata penutup/pengisi, minimal satu kata inti, dan
  *   maksimal MAX_WORDS kata. "ya"/"yes" sendirian TIDAK termasuk: itu jawaban atas pertanyaan
  *   kita dan menunggu langkah berikutnya.
- * - `afterQuestion` (pesan keluar terakhir sebelum rangkaian memuat "?"): "ok"/"oke"/"siap"/
- *   "baik" dan sejenisnya adalah JAWABAN ("mau saya booking-kan?" → "oke"), bukan penutup, jadi
- *   tidak lagi dihitung sebagai kata inti. Emoji/reaksi saja (👍 atas "jadi ambil paket ini?")
- *   diperlakukan sama. Ucapan terima kasih/"noted" tetap penutup.
+ * - Reaksi dan pesan emoji saja SELALU penutup, juga sesudah pertanyaan kita. Di produksi reaksi
+ *   tersimpan dengan `content` null (src/lib/inbound.ts), jadi emojinya tidak diketahui: 👍 dan
+ *   😂 tidak bisa dibedakan, dan menjadikan reaksi atas sapaan persona bot sebagai kartu hanya
+ *   menambah antrean palsu.
+ * - `afterAgentQuestion` (pesan keluar terakhir sebelum rangkaian dikirim AGEN -- bukan bot -- dan
+ *   memuat "?"): "ok"/"oke"/"siap"/"baik" dan sejenisnya adalah JAWABAN ("mau saya booking-kan?"
+ *   → "oke"), bukan penutup, jadi tidak lagi dihitung sebagai kata inti. Pertanyaan persona bot
+ *   ("Ada lagi yang bisa kami bantu?") tidak dihitung: "ok" atasnya tetap penutup. Ucapan terima
+ *   kasih/"noted" tetap penutup.
  */
 
 export type NoiseMessage = { type: string; content: string | null }
-export type NoiseContext = { afterQuestion?: boolean }
+export type NoiseContext = { afterAgentQuestion?: boolean }
 
 const MAX_WORDS = 6
 
@@ -32,7 +37,7 @@ const CORE = new Set([
   'makasih', 'makasi', 'mksh', 'mksih', 'terimakasih', 'trimakasih', 'trims', 'matur', 'nuwun', 'suwun',
 ])
 
-/** Kata inti yang berarti "ya/setuju": jawaban, bukan penutup, bila kita baru saja bertanya. */
+/** Kata inti yang berarti "ya/setuju": jawaban, bukan penutup, bila agen kita baru saja bertanya. */
 const AFFIRMATIVE = new Set(['ok', 'oke', 'okey', 'okay', 'okee', 'okeh', 'sip', 'siap', 'baik', 'alright'])
 
 /** Kata pengisi yang boleh menempel pada kata inti, tidak pernah cukup sendirian. */
@@ -46,11 +51,11 @@ const FILLER = new Set([
 const NON_TEXT = /[\p{Extended_Pictographic}\p{Emoji_Modifier}\u200d\ufe0f\p{P}\p{S}\s]/gu
 
 export function isNoiseMessage(message: NoiseMessage, context: NoiseContext = {}): boolean {
-  const afterQuestion = context.afterQuestion === true
-  if (message.type === 'reaction') return !afterQuestion
+  const afterQuestion = context.afterAgentQuestion === true
+  if (message.type === 'reaction') return true
   const text = message.content?.trim() ?? ''
   if (!text || text.includes('?') || text.includes('\uff1f')) return false
-  if (text.replace(NON_TEXT, '') === '') return !afterQuestion
+  if (text.replace(NON_TEXT, '') === '') return true
   const isCore = (w: string) => CORE.has(w) && !(afterQuestion && AFFIRMATIVE.has(w))
   const isFiller = (w: string) => FILLER.has(w) || (afterQuestion && AFFIRMATIVE.has(w))
 
