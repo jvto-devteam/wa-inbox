@@ -279,6 +279,21 @@ perbaikannya masuk rencana.
   bisa punya beberapa perangkat. Isi notifikasi memuat kode booking dan ringkasan perubahan, tanpa
   nomor HP atau email tamu.
 
+### 5.11 Panel kanan chat selalu terbaru (keputusan owner 2026-10-19)
+
+Tab "Ringkasan chat" (`src/components/inbox/ChatReviewTab.tsx`, CLAUDE.md §4) sudah memuat pertanyaan
+(✓/⏳), poin penting, janji tim, dan riwayat per hari, tetapi hanya diperbarui oleh job 00.00 atau tombol
+"Perbarui sekarang" (`POST /api/conversations/[id]/chat-review`, cooldown 30 s). Perubahan:
+- **Diperbarui otomatis** sesudah pesan masuk, memakai jalur yang sama dengan tombol "Perbarui sekarang"
+  (`reviewConversation` → `saveChatReview` → `applyReviewToItem`), dipicu dari pemicu §5.2 dengan
+  **jeda minimal 5 menit per percakapan** (keputusan Claude: satu review = satu panggilan LLM besar,
+  timeout 60 s; jeda menjaga biaya dan antrean model). Pesan yang datang selama jeda ikut terbaca di
+  review berikutnya.
+- **Bagian "Disematkan" di paling atas**: `BookingAction` OPEN jenis CHANGE/TASK (label "belum dipenuhi")
+  dan MISMATCH, dibaca live dari tabel aksi, bukan dari LLM review.
+- **Bagian "Riwayat perubahan"**: `BookingActionEvent` per booking (EXECUTED/REVERTED/MARKED_DONE…).
+- Pengecualian nomor Indonesia sama dengan §5.2 untuk pembaruan otomatis; tombol manual tetap ada.
+
 ## 6. Yang diserahkan ke builder
 
 - Skema tabel baru (usulan, fakta, peringatan, tugas, riwayat), dengan catatan bahwa

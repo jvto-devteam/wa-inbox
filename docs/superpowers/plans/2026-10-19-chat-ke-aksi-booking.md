@@ -336,6 +336,26 @@ Komponen mendengarkan `booking-actions.changed` lewat SSE yang sudah dipakai Con
 - [ ] `npm run build` lokal (memori: tsc/eslint tidak menangkap kerusakan bundle klien).
 - [ ] Commit.
 
+### Task 8c: Panel kanan chat selalu terbaru
+
+**Files:**
+- Create: `src/lib/chat-review/auto-refresh.ts` (+ test)
+- Modify: `src/lib/booking-actions/schedule.ts` (panggil `scheduleChatReviewRefresh` sesudah ekstraksi), `src/components/inbox/ChatReviewTab.tsx` (bagian "Disematkan" + "Riwayat perubahan"), `GET /api/conversations/[id]/chat-review` (+ `pinned`, `changeHistory`)
+
+**Interfaces — Produces:** `scheduleChatReviewRefresh(conversationId: string, now?: Date): void` — tidak pernah melempar.
+
+- Memakai fungsi yang sama dengan `POST /api/conversations/[id]/chat-review` (`reviewConversation`, `saveChatReview`, `applyReviewToItem`), lalu `broadcast({ type: 'conversation.updated', conversationId })` supaya tab yang terbuka memuat ulang.
+- Jeda: paling cepat 5 menit sejak `chatReviewAt` terakhir. Pesan selama jeda → satu review terjadwal di akhir jeda (bukan satu per pesan). Dikecualikan untuk nomor Indonesia (sama dengan Task 5).
+- "Disematkan" dibaca live dari `BookingAction` OPEN (CHANGE/TASK/MISMATCH); "Riwayat perubahan" dari `BookingActionEvent` per booking (20 terbaru). Setiap butir ber-`sourceMessageId` bisa diklik ke `/inbox?conversation=…&message=…`.
+
+- [ ] Test:
+  - `three messages within 5 minutes → one review`
+  - `review older than 5 minutes → refresh runs`
+  - `Indonesian number → no auto refresh`
+  - `pinned shows open CHANGE/TASK/MISMATCH, not closed ones`
+  - `refresh failure leaves previous review intact`
+- [ ] FAIL → implement → PASS → `npm run build` → commit.
+
 ### Task 8b: PWA + notifikasi push ke admin
 
 **Files:**
