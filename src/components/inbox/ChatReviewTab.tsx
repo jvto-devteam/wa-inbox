@@ -114,32 +114,43 @@ function ReviewBody({ review, conversationId }: { review: ConversationReview; co
 const RESPONDED_HELP =
   'Tim sudah membalas sesudah hari itu — belum tentu semua pertanyaan terjawab; lihat tanda ✅/⏳ di ringkasan terbaru.'
 
+/** Waktu ISO ringkas dalam WIB untuk baris riwayat, mis. "18 Okt 09.12". */
+export function compactWibLabel(iso: string): string {
+  const d = new Date(iso)
+  const date = d.toLocaleDateString('id-ID', { timeZone: 'Asia/Jakarta', day: 'numeric', month: 'short' })
+  const time = d.toLocaleTimeString('id-ID', { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit', hour12: false })
+  return `${date} ${time.replace(':', '.')}`
+}
+
 /**
- * Penanda "Ditanggapi" untuk entri riwayat yang saat itu belum selesai. Tautannya hanya menggulung
- * dan menyorot pesan balasan (`lihat=1`), tidak membuka panel perbaikan bot.
+ * Penanda "Ditanggapi" untuk entri riwayat yang saat itu belum selesai, kompak di baris `<summary>`
+ * supaya terlihat tanpa membuka entri. Tautannya hanya menggulung dan menyorot pesan balasan
+ * (`lihat=1`); `stopPropagation` agar klik tidak ikut membuka/menutup `<details>`.
  */
 function RespondedIndicator({ entry, conversationId }: { entry: ChatReviewHistoryEntry; conversationId: string }) {
   if (entry.review.status === 'selesai') return null
-  if (!entry.respondedAt || !entry.respondedMessageId) {
+  const messageId = entry.respondedMessageId
+  if (!entry.respondedAt || !messageId) {
     return (
-      <p className="text-xs text-warning">
-        Belum ditanggapi sejak itu
-      </p>
+      <span className="text-xs text-warning" title={RESPONDED_HELP}>
+        Belum ditanggapi
+      </span>
     )
   }
-  const who = entry.respondedBy === 'BOT' ? 'Dibalas bot' : 'Ditanggapi tim'
+  const who = entry.respondedBy === 'BOT' ? 'Dibalas bot' : 'Ditanggapi'
   return (
-    <p className="text-xs text-ink-muted" title={RESPONDED_HELP}>
-      <Link
-        href={conversationHref(conversationId, entry.respondedMessageId, { lihat: true })}
-        scroll={false}
-        onClick={() => scrollToThreadMessage(entry.respondedMessageId ?? '')}
-        className="focus-ring rounded-sm underline decoration-dotted underline-offset-2 hover:text-accent"
-      >
-        {who} {wibDateTimeLabel(entry.respondedAt)}
-      </Link>
-      <span className="block text-ink-subtle">{RESPONDED_HELP}</span>
-    </p>
+    <Link
+      href={conversationHref(conversationId, messageId, { lihat: true })}
+      scroll={false}
+      title={RESPONDED_HELP}
+      onClick={(e) => {
+        e.stopPropagation()
+        scrollToThreadMessage(messageId)
+      }}
+      className="focus-ring rounded-sm text-xs text-ink-muted underline decoration-dotted underline-offset-2 hover:text-accent"
+    >
+      {who} {compactWibLabel(entry.respondedAt)}
+    </Link>
   )
 }
 
@@ -156,9 +167,10 @@ function HistorySection({ history, conversationId }: { history: ChatReviewRespon
                 <span className="font-medium text-ink">{dateKeyLabel(entry.date)}</span>
                 {entry.review.topik && <span className="min-w-0 text-ink-muted">{entry.review.topik}</span>}
                 <SnapshotStatusBadge status={entry.review.status} />
+                <RespondedIndicator entry={entry} conversationId={conversationId} />
               </summary>
               <div className="space-y-2 border-t border-line px-2.5 py-2">
-                <RespondedIndicator entry={entry} conversationId={conversationId} />
+                {entry.review.status !== 'selesai' && <p className="text-xs text-ink-subtle">{RESPONDED_HELP}</p>}
                 <ReviewBody review={entry.review} conversationId={conversationId} />
               </div>
             </details>

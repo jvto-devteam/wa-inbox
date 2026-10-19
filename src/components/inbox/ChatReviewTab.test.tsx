@@ -397,10 +397,17 @@ describe('tanda "Ada pesan baru"', () => {
       const days = await renderHistory([
         { date: '2026-10-18', review, respondedAt: '2026-10-19T03:00:00.000Z', respondedMessageId: 'msg_9', respondedBy: 'AGENT' },
       ])
-      const link = within(days[0] as HTMLElement).getByRole('link', { name: /Ditanggapi tim/ })
+      const link = within(days[0] as HTMLElement).getByRole('link', { name: /^Ditanggapi/ })
       expect(link).toHaveAttribute('href', '/inbox?conversation=conv_1&message=msg_9&lihat=1')
-      expect(link).toHaveTextContent('10.00 WIB')
+      expect(link).toHaveTextContent('19 Okt 10.00')
+      expect(link.closest('summary')).not.toBeNull() // terlihat saat <details> tertutup
+      expect(days[0]).not.toHaveAttribute('open')
+      expect(link).toHaveAttribute('title', expect.stringContaining('belum tentu semua pertanyaan terjawab'))
       expect(days[0].textContent).toContain('belum tentu semua pertanyaan terjawab')
+
+      // Klik tautan tidak membuka/menutup <details>.
+      fireEvent.click(link)
+      expect(days[0]).not.toHaveAttribute('open')
     })
 
     it('dibalas bot: kata-katanya "Dibalas bot"', async () => {
@@ -408,13 +415,14 @@ describe('tanda "Ada pesan baru"', () => {
         { date: '2026-10-18', review: { ...review, status: 'tidak_jelas' }, respondedAt: '2026-10-19T03:00:00.000Z', respondedMessageId: 'msg_9', respondedBy: 'BOT' },
       ])
       expect(within(days[0] as HTMLElement).getByRole('link', { name: /Dibalas bot/ })).toBeInTheDocument()
-      expect(within(days[0] as HTMLElement).queryByText(/Ditanggapi tim/)).not.toBeInTheDocument()
+      expect(within(days[0] as HTMLElement).queryByText(/^Ditanggapi/)).not.toBeInTheDocument()
     })
 
-    it('belum ada tanggapan: "Belum ditanggapi sejak itu" bernada peringatan, tanpa tautan', async () => {
+    it('belum ada tanggapan: "Belum ditanggapi" bernada peringatan, tanpa tautan', async () => {
       const days = await renderHistory([{ date: '2026-10-18', review, ...NO_REPLY }])
-      const note = within(days[0] as HTMLElement).getByText('Belum ditanggapi sejak itu')
+      const note = within(days[0] as HTMLElement).getByText('Belum ditanggapi')
       expect(note.className).toMatch(/warning/)
+      expect(note.closest('summary')).not.toBeNull()
       expect(within(days[0] as HTMLElement).queryByRole('link', { name: /tim|bot/i })).not.toBeInTheDocument()
     })
 
