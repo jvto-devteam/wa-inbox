@@ -78,6 +78,7 @@ const CLOSED_REASON_LABEL: Record<string, string> = {
   REMINDER_DONE: 'pengingat selesai',
   STAGE_ADVANCED: 'tahap pipeline naik',
   PROMISE_KEPT: 'janji ditepati',
+  JUDGED_DONE: 'dinilai selesai',
 }
 
 export type FollowUpStatus = {

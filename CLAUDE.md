@@ -147,9 +147,22 @@ dan cuplikan chat pelanggan.
 Halamannya **antrean tindakan**, bukan laporan bacaan (permintaan bos 2026-10-18: data tidak
 boleh berhenti di halaman). Kandidat disinkronkan ke `SummaryItem` (satu baris per percakapan,
 `src/lib/summary-items/sync.ts`); item yang belum tertutup terbawa ke hari berikutnya. Setiap
-item hanya punya tiga jalan keluar: tertutup otomatis oleh `reconcileSummaryItems` (dipanggil di
-tick `POST /api/outbound-jobs/process` dan saat daftar dibaca), dijadwalkan lewat `Reminder`, atau
+item hanya punya tiga jalan keluar: tertutup otomatis oleh `reconcileSummaryItems` (dipanggil tick
+`POST /api/summary-items/tick` dan saat daftar dibaca), dijadwalkan lewat `Reminder`, atau
 dilepas dengan catatan. Jangan tambahkan kembali tab bacaan atau statistik tanpa tindakan.
+
+**Antrean live**: `POST /api/summary-items/tick` (crontab VPS `*/5 * * * *`,
+`/usr/local/bin/wa-inbox-summary-tick.sh` = `scripts/wa-inbox-summary-tick.sh`, header `x-cron-secret`,
+log `/var/log/wa-inbox-summary-tick.log`) menjalankan `reconcileSummaryItems` lalu `createLiveReplyItems`
+— murni DB, **tanpa LLM**. Pesan pelanggan yang belum dibalas ≥ `UNREPLIED_MIN_MS` (pesan terakhir
+INBOUND, ≤ `LOOKBACK_MS`) langsung jadi REPLY tanpa menunggu 00:00; anchor = pesan masuk pertama sesudah
+balasan terakhir kita. Rangkaian yang isinya hanya reaksi/penutup ("ok", "thanks", 👍; `isNoiseMessage`,
+sengaja sempit) dilewati; baris OPEN/SCHEDULED diserahkan ke reconcile; baris tertutup dibuka ulang
+dengan `shouldReopen`/`upsertCandidate` yang sama dengan sync malam. Penutup yang lolos saringan
+ditutup sync malam sebagai `JUDGED_DONE` ("dinilai selesai") bila review terbaru menilainya `selesai`
+(`filteredOut.unrepliedIds` di payload). **`POST /api/outbound-jobs/process` TIDAK punya cron di
+produksi** — jangan andalkan apa pun yang hanya dipanggil dari sana; menjadwalkannya (retry ladder
+outbound) adalah keputusan owner tersendiri.
 Pemilih tampilan (`?date=`) membuka ringkasan hari lain: kartunya memakai review hari itu,
 tetapi badge "Status sekarang" dan tombol Ingatkan/Lepas memakai status `SummaryItem` yang live.
 Percakapan yang sekadar aktif **tetap** dinilai LLM dan disimpan di `payload.conversations`

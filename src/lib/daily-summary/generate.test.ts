@@ -88,7 +88,8 @@ describe('buildPayload', () => {
 
   it('kandidat yang dinilai selesai tidak tampil, tapi dihitung', () => {
     expect(payload.unreplied.map((u) => u.conversationId)).toEqual(['open', 'unknown'])
-    expect(payload.filteredOut).toEqual({ unreplied: 1, dormant: 1 })
+    // unrepliedIds: bahan penutupan JUDGED_DONE di syncSummaryItems; dormant tidak ikut.
+    expect(payload.filteredOut).toEqual({ unreplied: 1, dormant: 1, unrepliedIds: ['closed'] })
     expect(payload.dormant).toEqual([])
   })
 

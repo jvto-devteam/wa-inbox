@@ -178,7 +178,15 @@ export const dailySummaryPayloadSchema = z.object({
     reviewFailed: z.number(),
   }),
   /** Kandidat yang dinilai LLM sudah `selesai` -- tidak tampil, tapi dihitung agar bisa diaudit. */
-  filteredOut: z.object({ unreplied: z.number(), dormant: z.number() }),
+  filteredOut: z.object({
+    unreplied: z.number(),
+    dormant: z.number(),
+    /**
+     * Percakapan "belum dibalas" yang disaring karena review menilainya "selesai". Bahan penutupan
+     * `JUDGED_DONE` di `syncSummaryItems`; opsional karena payload lama tidak memuatnya.
+     */
+    unrepliedIds: z.array(z.string()).optional(),
+  }),
   unreplied: z.array(unrepliedItemSchema),
   dormant: z.array(dormantItemSchema),
   newLeads: z.array(newLeadItemSchema),

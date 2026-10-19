@@ -42,7 +42,12 @@ const PUBLIC_PATHS = [
  * match, and it still requires a valid secret — a request without one falls straight through
  * to the normal session check below and is rejected like any other.
  */
-const CRON_PATHS = new Set(['/api/outbound-jobs/process', '/api/daily-summary/generate', '/api/email/sync'])
+const CRON_PATHS = new Set([
+  '/api/outbound-jobs/process',
+  '/api/daily-summary/generate',
+  '/api/email/sync',
+  '/api/summary-items/tick',
+])
 
 /**
  * Endpoints other programs (javavolcano-touroperator, new-backoffice) call with an API key.

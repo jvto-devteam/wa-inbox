@@ -78,6 +78,7 @@ describe('followUpStatus', () => {
     })
     expect(followUpStatus(item({ state: 'DONE', closedReason: 'REMINDER_DONE' })).detail).toBe('pengingat selesai')
     expect(followUpStatus(item({ state: 'DONE', closedReason: 'STAGE_ADVANCED' })).detail).toBe('tahap pipeline naik')
+    expect(followUpStatus(item({ state: 'DONE', closedReason: 'JUDGED_DONE' })).detail).toBe('dinilai selesai')
     expect(followUpStatus(item({ state: 'DROPPED', note: 'Sudah booking lewat agen' }))).toMatchObject({
       label: 'Dilepas',
       detail: 'Sudah booking lewat agen',

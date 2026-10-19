@@ -1,7 +1,14 @@
 import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db'
-import { DORMANT_STAGES, RETENTION_MS } from '@/lib/daily-summary/config'
+import {
+  DORMANT_STAGES,
+  LOOKBACK_MS,
+  RETENTION_MS,
+  TRANSCRIPT_MAX_MESSAGES,
+  UNREPLIED_MIN_MS,
+} from '@/lib/daily-summary/config'
 import { messageSnippet, type TranscriptMessage } from '@/lib/daily-summary/collect'
+import { isIndonesianNumber } from '@/lib/phone'
 import {
   conversationReviewSchema,
   normalizePromise,
@@ -10,6 +17,7 @@ import {
   type DailySummaryPayload,
 } from '@/lib/daily-summary/payload-schema'
 import { jakartaDayKey, jakartaDayRange } from '@/lib/daily-summary/time'
+import { isNoiseMessage } from './noise'
 import type { SummaryItemKind } from './status'
 
 /**
@@ -19,7 +27,14 @@ import type { SummaryItemKind } from './status'
  * Kenapa dua langkah terpisah: payload hanya lahir sekali sehari (00:00 WIB), sedangkan item
  * harus tertutup begitu admin membalas. `syncSummaryItems` memasukkan kandidat dari payload;
  * `reconcileSummaryItems` murni membaca fakta (pesan keluar, pengingat) dan boleh dipanggil
- * kapan saja, termasuk tiap tick `/api/outbound-jobs/process`.
+ * kapan saja: tiap tick `POST /api/summary-items/tick` (crontab VPS 5 menit) dan saat daftar
+ * dibaca. `/api/outbound-jobs/process` juga memanggilnya, tetapi endpoint itu TIDAK punya cron
+ * di produksi -- jangan andalkan.
+ *
+ * Antrean live (`createLiveReplyItems`, tick yang sama): pesan pelanggan yang belum dibalas
+ * ≥ UNREPLIED_MIN_MS langsung jadi REPLY tanpa menunggu 00:00, tanpa LLM. Penutup murni
+ * ("ok", "thanks", 👍) disaring `isNoiseMessage`; yang lolos ditutup `JUDGED_DONE` oleh sync
+ * malam bila review terbaru menilainya "selesai" (`filteredOut.unrepliedIds` di payload).
  *
  * Jalan keluar otomatis (reconcile): REPLY tertutup oleh pesan keluar sesudah anchor; FOLLOW_UP
  * jadi REPLY bila pelanggan chat lagi, atau tertutup (REPLIED) bila admin sudah mengirim pesan
@@ -323,6 +338,8 @@ export async function syncSummaryItems(
       if (outcome !== 'skipped') result[outcome]++
     }
 
+    result.closed += await closeJudgedDone(payload, new Set(candidates.map((c) => c.conversationId)), date, clockFor)
+
     // Satu kueri untuk semua PROMISE terbuka yang review-nya hari ini tanpa janji terbuka.
     const keptReviews = new Map(kept)
     const promiseRows =
@@ -341,6 +358,39 @@ export async function syncSummaryItems(
     console.error('syncSummaryItems gagal', { date, error })
     return { created: 0, updated: 0, reopened: 0, closed: 0 }
   }
+}
+
+/**
+ * REPLY OPEN yang percakapannya dinilai "selesai" oleh review malam ini -- karena itu tidak masuk
+ * `payload.unreplied` (`filteredOut.unrepliedIds`, generate.ts) -- ditutup `JUDGED_DONE`. Tanpa ini
+ * kartu live untuk penutup yang lolos `isNoiseMessage` ("Great, see you then!") tidak pernah
+ * tertutup: tidak ada pesan keluar yang menyusul.
+ *
+ * Syarat, semuanya wajib: review melihat anchor (anchorAt ≤ asOf), ringkasan ini tidak lebih tua
+ * dari `lastSeenOn`, review ini yang terbaru (`isLatest`, pola `chatReviewAt` yang sama dengan
+ * PROMISE), dan percakapannya bukan kandidat lain malam ini. Item dengan pengingat (jatuh tempo)
+ * tidak disentuh: pengingat itu keputusan operator, bukan penilaian LLM. Satu kueri untuk semua.
+ */
+async function closeJudgedDone(
+  payload: DailySummaryPayload,
+  candidateIds: Set<string>,
+  date: string,
+  clockFor: (conversationId: string) => ReviewClock
+): Promise<number> {
+  const ids = [...new Set(payload.filteredOut?.unrepliedIds ?? [])].filter((id) => !candidateIds.has(id))
+  if (ids.length === 0) return 0
+  const rows = await prisma.summaryItem.findMany({
+    where: { conversationId: { in: ids }, kind: 'REPLY', state: 'OPEN', reminderId: null },
+  })
+  let closed = 0
+  for (const row of rows) {
+    const clock = clockFor(row.conversationId)
+    if (date < row.lastSeenOn || row.anchorAt > clock.asOf) continue
+    if (!(await clock.isLatest())) continue
+    await write(row.id, { state: 'DONE', closedReason: 'JUDGED_DONE', closedAt: clock.asOf, lastSeenOn: date }, null)
+    closed++
+  }
+  return closed
 }
 
 export type ApplyReviewOutcome = 'closed' | 'updated' | 'created' | 'reopened' | 'unchanged'
@@ -579,6 +629,147 @@ async function write(itemId: string, data: Prisma.SummaryItemUncheckedUpdateInpu
     ops.push(prisma.reminder.updateMany({ where: { id: completeReminderId, done: false }, data: { done: true } }))
   }
   await prisma.$transaction(ops)
+}
+
+export type LiveResult = { created: number; reopened: number; skipped: number }
+
+/**
+ * Kandidat antrean live: percakapan nyata (bukan test, bukan email otomatis) yang pesan
+ * terakhirnya ada di jendela [now − LOOKBACK_MS, now − UNREPLIED_MIN_MS] -- sama dengan
+ * `classifyConversation`, hanya "sekarang"-nya jam dinding, bukan akhir hari. Satu kueri: baris
+ * `SummaryItem`, review terbaru, dan pesan 14 hari terakhir (maks. TRANSCRIPT_MAX_MESSAGES) ikut
+ * terbawa, jadi tidak ada kueri per percakapan selain tulisan untuk item yang benar berubah.
+ */
+async function findLiveConversations(now: Date) {
+  const cutoff = new Date(now.getTime() - UNREPLIED_MIN_MS)
+  const lookbackStart = new Date(now.getTime() - LOOKBACK_MS)
+  return prisma.conversation.findMany({
+    where: {
+      isTest: false,
+      mailAutomated: false,
+      messages: {
+        some: { direction: 'INBOUND', createdAt: { gte: lookbackStart, lte: cutoff } },
+        none: { createdAt: { gt: cutoff } },
+      },
+    },
+    select: {
+      id: true,
+      createdAt: true,
+      chatReview: true,
+      chatReviewAt: true,
+      contact: { select: { phone: true } },
+      summaryItem: true,
+      messages: {
+        where: { createdAt: { gte: lookbackStart } },
+        orderBy: { createdAt: 'desc' },
+        take: TRANSCRIPT_MAX_MESSAGES,
+        select: messageSelect,
+      },
+    },
+  })
+}
+
+type LiveConversation = Awaited<ReturnType<typeof findLiveConversations>>[number]
+
+/**
+ * Antrean live: pesan pelanggan yang belum dibalas ≥ UNREPLIED_MIN_MS jadi item REPLY tanpa
+ * menunggu job 00:00. Murni DB, tanpa LLM; dipanggil tick `POST /api/summary-items/tick` sesudah
+ * `reconcileSummaryItems`. Tidak pernah melempar.
+ *
+ * - Nomor Indonesia dikecualikan bila `Settings.skipBotForIndonesianNumbers`, aturan yang sama
+ *   dengan `collectDay` (`isIndonesianNumber`).
+ * - "Rangkaian belum dibalas" = pesan INBOUND sesudah pesan OUTBOUND terakhir. Anchor = pesan
+ *   PERTAMA rangkaian itu (sejak kapan pelanggan menunggu); snippet = pesan pertama yang bukan
+ *   penutup, supaya kartu menampilkan yang perlu dijawab.
+ * - Rangkaian yang isinya hanya reaksi/penutup (`isNoiseMessage`) dilewati. Penutup di akhir tidak
+ *   menyembunyikan pertanyaan sebelumnya: "harganya berapa?" lalu "ok" tetap jadi item.
+ * - Review terbaru (`Conversation.chatReview`) yang sudah melihat pesan terakhir dan menilainya
+ *   "selesai" juga dilewati -- penilaian yang sama yang membuat job malam menyaringnya.
+ * - Baris OPEN/SCHEDULED tidak disentuh: itu urusan reconcile (FOLLOW_UP/PROMISE jadi REPLY oleh
+ *   pesan masuk yang belum dibalas). Baris tertutup mengikuti `shouldReopen` + `upsertCandidate`
+ *   persis seperti sync malam; hanya pesan yang menurut aturan itu sanggup membuka baris yang
+ *   dihitung, jadi penutup yang sudah dilepas operator tidak membukanya lagi.
+ */
+export async function createLiveReplyItems(now: Date = new Date()): Promise<LiveResult> {
+  const result: LiveResult = { created: 0, reopened: 0, skipped: 0 }
+  try {
+    const settings = await prisma.settings.findUnique({ where: { id: 1 }, select: { skipBotForIndonesianNumbers: true } })
+    const excludeIndonesian = settings?.skipBotForIndonesianNumbers ?? false
+    const date = jakartaDayKey(now)
+    const todayStart = jakartaDayRange(date).start
+    for (const conversation of await findLiveConversations(now)) {
+      if (excludeIndonesian && isIndonesianNumber(conversation.contact.phone)) continue
+      try {
+        const outcome = await liveOne(conversation, now, date, todayStart)
+        if (outcome) result[outcome]++
+      } catch (error) {
+        console.error('createLiveReplyItems: satu percakapan gagal', {
+          conversationId: conversation.id,
+          error: error instanceof Error ? error.message : 'unknown',
+        })
+      }
+    }
+    return result
+  } catch (error) {
+    console.error('createLiveReplyItems gagal', { error: error instanceof Error ? error.message : 'unknown' })
+    return { created: 0, reopened: 0, skipped: 0 }
+  }
+}
+
+/** null = bukan kandidat (pesan terakhir bukan pesan pelanggan di jendela waktu). */
+async function liveOne(
+  conversation: LiveConversation,
+  now: Date,
+  date: string,
+  todayStart: Date
+): Promise<keyof LiveResult | null> {
+  const cutoff = now.getTime() - UNREPLIED_MIN_MS
+  const lookbackStart = now.getTime() - LOOKBACK_MS
+  // Pesan urut baru → lama; dicek lagi di sini supaya batas waktu tidak hanya bergantung pada kueri.
+  const last = conversation.messages[0]
+  if (!last || last.direction !== 'INBOUND') return null
+  if (last.createdAt.getTime() > cutoff || last.createdAt.getTime() < lookbackStart) return null
+
+  const run: TranscriptMessage[] = []
+  for (const m of conversation.messages) {
+    if (m.direction !== 'INBOUND') break
+    run.unshift(m)
+  }
+  if (judgedDoneByLatestReview(conversation, last.createdAt)) return 'skipped'
+
+  const row = conversation.summaryItem
+  if (row && (row.state === 'OPEN' || row.state === 'SCHEDULED')) return 'skipped'
+
+  const clock = reviewClock(conversation.id, now, now, date)
+  const candidateAt = (m: TranscriptMessage): Candidate => ({
+    conversationId: conversation.id,
+    kind: 'REPLY',
+    anchorAt: m.createdAt,
+    anchorMessageId: m.id,
+    anchorKnown: true,
+    promises: [],
+    snippet: messageSnippet(m),
+    review: null,
+    handoff: false,
+    newLead: conversation.createdAt >= todayStart,
+  })
+  // Tanpa baris: seluruh rangkaian. Baris tertutup: hanya pesan yang membukanya menurut aturan
+  // malam (untuk REPLY aturan itu monoton terhadap anchor, jadi hasilnya ekor rangkaian).
+  const eligible: TranscriptMessage[] = []
+  for (const m of run) {
+    if (!row || (await shouldReopen(row, candidateAt(m), clock))) eligible.push(m)
+  }
+  const substantive = eligible.find((m) => !isNoiseMessage(m))
+  if (!substantive) return 'skipped'
+  const outcome = await upsertCandidate({ ...candidateAt(eligible[0]), snippet: messageSnippet(substantive) }, row, clock)
+  return outcome === 'created' || outcome === 'reopened' ? outcome : 'skipped'
+}
+
+function judgedDoneByLatestReview(conversation: LiveConversation, lastMessageAt: Date): boolean {
+  if (!conversation.chatReviewAt || conversation.chatReviewAt < lastMessageAt) return false
+  // Hanya `status` yang dibutuhkan; bentuk sisa ringkasan lama tidak boleh membuat penilaian hilang.
+  const review = conversationReviewSchema.pick({ status: true }).safeParse(conversation.chatReview)
+  return review.success && review.data.status === 'selesai'
 }
 
 /** Menghapus item DONE/DROPPED yang ditutup lebih dari 30 hari lalu. Tidak pernah melempar. */

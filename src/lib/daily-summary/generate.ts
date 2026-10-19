@@ -85,7 +85,7 @@ export function buildPayload(
     generatedAt: generatedAt.toISOString(),
     thresholds: { unrepliedMinMs: UNREPLIED_MIN_MS, dormantMinMs: DORMANT_MIN_MS, lookbackMs: LOOKBACK_MS },
     counts: { activeConversations: 0, inbound: 0, outbound: 0, newConversations: 0, reviewed: 0, reviewFailed: 0 },
-    filteredOut: { unreplied: 0, dormant: 0 },
+    filteredOut: { unreplied: 0, dormant: 0, unrepliedIds: [] },
     unreplied: [],
     dormant: [],
     newLeads: [],
@@ -114,8 +114,10 @@ export function buildPayload(
     }
     if (c.unreplied) {
       stillWaiting.add(facts.conversationId)
-      if (closed) payload.filteredOut.unreplied++
-      else
+      if (closed) {
+        payload.filteredOut.unreplied++
+        payload.filteredOut.unrepliedIds?.push(facts.conversationId)
+      } else
         payload.unreplied.push({
           ...ref,
           lastMessageAt: c.unreplied.last.createdAt.toISOString(),
