@@ -429,6 +429,8 @@ describe('tanda "Ada pesan baru"', () => {
     it('status selesai: tanpa penanda apa pun', async () => {
       const days = await renderHistory([{ date: '2026-10-18', review: { ...review, status: 'selesai' }, ...NO_REPLY }])
       expect(days[0].textContent).not.toMatch(/ditanggapi|dibalas bot|belum ditanggapi/i)
+      expect(within(days[0] as HTMLElement).queryByRole('link')).not.toBeInTheDocument()
+      expect(days[0].querySelector('summary a, summary [title]')).toBeNull()
     })
   })
 })

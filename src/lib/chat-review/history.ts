@@ -59,20 +59,40 @@ async function withResponses(conversationId: string, entries: ChatReviewHistoryE
   if (ends.size === 0) return entries
   const oldestEnd = new Date(Math.min(...ends.values()))
   const outbound = await prisma.message.findMany({
-    where: { conversationId, direction: 'OUTBOUND', createdAt: { gte: oldestEnd } },
+    // FAILED = tidak pernah sampai ke pelanggan, jadi bukan tanggapan.
+    where: { conversationId, direction: 'OUTBOUND', deliveryStatus: { not: 'FAILED' }, createdAt: { gte: oldestEnd } },
     orderBy: { createdAt: 'asc' },
+    // Urutan menaik dan jendela riwayat 31 hari membatasi kebutuhan; 500 menjaga kueri tetap ringan.
+    take: 500,
     select: { id: true, createdAt: true, sentBy: true },
   })
   return entries.map((e) => {
     const end = ends.get(e.date)
     if (end === undefined) return e
-    const first = outbound.find((m) => m.createdAt.getTime() >= end)
-    if (!first) return e
+    // Balasan manusia diutamakan; bot hanya bila tak ada balasan tim sesudah akhir hari itu.
+    let agent: (typeof outbound)[number] | null = null
+    let bot: (typeof outbound)[number] | null = null
+    for (const m of outbound) {
+      if (m.createdAt.getTime() < end) continue
+      switch (m.sentBy) {
+        case 'AGENT':
+          agent = m
+          break
+        case 'BOT':
+          bot ??= m
+          break
+        default:
+          break
+      }
+      if (agent) break
+    }
+    const picked = agent ?? bot
+    if (!picked) return e
     return {
       ...e,
-      respondedAt: first.createdAt.toISOString(),
-      respondedMessageId: first.id,
-      respondedBy: first.sentBy === 'BOT' ? 'BOT' : 'AGENT',
+      respondedAt: picked.createdAt.toISOString(),
+      respondedMessageId: picked.id,
+      respondedBy: agent ? 'AGENT' : 'BOT',
     }
   })
 }

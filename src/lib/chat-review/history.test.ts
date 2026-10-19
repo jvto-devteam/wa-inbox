@@ -58,7 +58,7 @@ describe('chatReviewHistory: penanda ditanggapi', () => {
   // 2026-10-17 berakhir 2026-10-17T17:00:00Z (24.00 WIB); 2026-10-18 berakhir 2026-10-18T17:00:00Z.
   const msg = (id: string, iso: string, sentBy: 'BOT' | 'AGENT') => ({ id, createdAt: new Date(iso), sentBy })
 
-  it('ditanggapi, belum ditanggapi, dan balasan bot, dengan SATU kueri pesan', async () => {
+  it('ditanggapi dan selesai, dengan SATU kueri pesan', async () => {
     mockPrisma.dailySummary.findMany.mockResolvedValue([row('2026-10-18', 'perlu_tindakan'), row('2026-10-17', 'tidak_jelas'), row('2026-10-16', 'selesai')] as never)
     mockPrisma.message.findMany.mockResolvedValue([
       msg('mBot', '2026-10-17T18:00:00Z', 'BOT'),
@@ -70,12 +70,14 @@ describe('chatReviewHistory: penanda ditanggapi', () => {
     expect(mockPrisma.message.findMany).toHaveBeenCalledTimes(1)
     expect(mockPrisma.message.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { conversationId: 'c1', direction: 'OUTBOUND', createdAt: { gte: new Date('2026-10-17T17:00:00Z') } },
+        where: { conversationId: 'c1', direction: 'OUTBOUND', deliveryStatus: { not: 'FAILED' }, createdAt: { gte: new Date('2026-10-17T17:00:00Z') } },
         orderBy: { createdAt: 'asc' },
+        take: 500,
       })
     )
     expect(h[0]).toMatchObject({ date: '2026-10-18', respondedMessageId: 'mAgen', respondedBy: 'AGENT', respondedAt: '2026-10-19T02:00:00.000Z' })
-    expect(h[1]).toMatchObject({ date: '2026-10-17', respondedMessageId: 'mBot', respondedBy: 'BOT' })
+    // Balasan tim (mAgen) diutamakan atas bot yang lebih dulu.
+    expect(h[1]).toMatchObject({ date: '2026-10-17', respondedMessageId: 'mAgen', respondedBy: 'AGENT' })
     expect(h[2]).toMatchObject({ date: '2026-10-16', respondedAt: null, respondedMessageId: null, respondedBy: null })
   })
 
@@ -101,5 +103,47 @@ describe('chatReviewHistory: penanda ditanggapi', () => {
     const [e] = await chatReviewHistory('c1')
     expect(mockPrisma.message.findMany).not.toHaveBeenCalled()
     expect(e.respondedAt).toBeNull()
+  })
+
+  it('bot lebih dulu lalu tim: yang dipilih balasan tim', async () => {
+    mockPrisma.dailySummary.findMany.mockResolvedValue([row('2026-10-18', 'perlu_tindakan')] as never)
+    mockPrisma.message.findMany.mockResolvedValue([
+      msg('mBot', '2026-10-18T18:00:00Z', 'BOT'),
+      msg('mAgen', '2026-10-19T05:00:00Z', 'AGENT'),
+    ] as never)
+    const [e] = await chatReviewHistory('c1')
+    expect(e).toMatchObject({ respondedMessageId: 'mAgen', respondedBy: 'AGENT', respondedAt: '2026-10-19T05:00:00.000Z' })
+  })
+
+  it('hanya bot: dipilih balasan bot pertama', async () => {
+    mockPrisma.dailySummary.findMany.mockResolvedValue([row('2026-10-18', 'perlu_tindakan')] as never)
+    mockPrisma.message.findMany.mockResolvedValue([
+      msg('b1', '2026-10-18T18:00:00Z', 'BOT'),
+      msg('b2', '2026-10-19T05:00:00Z', 'BOT'),
+    ] as never)
+    const [e] = await chatReviewHistory('c1')
+    expect(e).toMatchObject({ respondedMessageId: 'b1', respondedBy: 'BOT' })
+  })
+
+  it('sentBy lain (CUSTOMER) diabaikan', async () => {
+    mockPrisma.dailySummary.findMany.mockResolvedValue([row('2026-10-18', 'perlu_tindakan')] as never)
+    mockPrisma.message.findMany.mockResolvedValue([{ id: 'x', createdAt: new Date('2026-10-19T01:00:00Z'), sentBy: 'CUSTOMER' }] as never)
+    const [e] = await chatReviewHistory('c1')
+    expect(e.respondedAt).toBeNull()
+  })
+
+  it('pesan FAILED dikecualikan lewat kueri; take 500', async () => {
+    mockPrisma.dailySummary.findMany.mockResolvedValue([row('2026-10-18', 'perlu_tindakan')] as never)
+    await chatReviewHistory('c1')
+    const arg = mockPrisma.message.findMany.mock.calls[0][0]
+    expect(arg?.where).toMatchObject({ deliveryStatus: { not: 'FAILED' } })
+    expect(arg?.take).toBe(500)
+  })
+
+  it('entri selesai yang lebih tua tidak melebarkan jendela kueri', async () => {
+    mockPrisma.dailySummary.findMany.mockResolvedValue([row('2026-10-18', 'perlu_tindakan'), row('2026-10-10', 'selesai')] as never)
+    await chatReviewHistory('c1')
+    const arg = mockPrisma.message.findMany.mock.calls[0][0]
+    expect(arg?.where?.createdAt).toEqual({ gte: new Date('2026-10-18T17:00:00Z') })
   })
 })

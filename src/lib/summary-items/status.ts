@@ -38,17 +38,21 @@ export function toSummaryItemStatus(row: SummaryItemStatusRow): SummaryItemStatu
   }
 }
 
-/** Waktu ISO sebagai hari, tanggal, dan jam WIB, mis. "Sen, 19 Okt, 09.00 WIB". */
-export function wibDateTimeLabel(iso: string): string {
+/**
+ * Waktu ISO sebagai hari, tanggal, dan jam WIB, mis. "Sen, 19 Okt, 09.00 WIB". `compact` membuang
+ * hari dan akhiran: "19 Okt 09.00". `hourCycle: 'h23'` agar tengah malam tampil "00.xx", bukan "24.xx".
+ */
+export function wibDateTimeLabel(iso: string, opts: { compact?: boolean } = {}): string {
   const text = new Date(iso).toLocaleString('id-ID', {
     timeZone: 'Asia/Jakarta',
-    weekday: 'short',
+    ...(opts.compact ? {} : { weekday: 'short' }),
     day: 'numeric',
     month: 'short',
     hour: '2-digit',
     minute: '2-digit',
+    hourCycle: 'h23',
   })
-  return `${text} WIB`
+  return opts.compact ? text.replace(',', '') : `${text} WIB`
 }
 
 const CLOSED_REASON_LABEL: Record<string, string> = {

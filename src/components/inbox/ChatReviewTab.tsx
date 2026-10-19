@@ -112,15 +112,7 @@ function ReviewBody({ review, conversationId }: { review: ConversationReview; co
 }
 
 const RESPONDED_HELP =
-  'Tim sudah membalas sesudah hari itu — belum tentu semua pertanyaan terjawab; lihat tanda ✅/⏳ di ringkasan terbaru.'
-
-/** Waktu ISO ringkas dalam WIB untuk baris riwayat, mis. "18 Okt 09.12". */
-export function compactWibLabel(iso: string): string {
-  const d = new Date(iso)
-  const date = d.toLocaleDateString('id-ID', { timeZone: 'Asia/Jakarta', day: 'numeric', month: 'short' })
-  const time = d.toLocaleTimeString('id-ID', { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit', hour12: false })
-  return `${date} ${time.replace(':', '.')}`
-}
+  'Sudah ada balasan (tim atau bot) sesudah hari itu — belum tentu semua pertanyaan terjawab; lihat tanda ✅/⏳ di ringkasan terbaru.'
 
 /**
  * Penanda "Ditanggapi" untuk entri riwayat yang saat itu belum selesai, kompak di baris `<summary>`
@@ -149,7 +141,7 @@ function RespondedIndicator({ entry, conversationId }: { entry: ChatReviewHistor
       }}
       className="focus-ring rounded-sm text-xs text-ink-muted underline decoration-dotted underline-offset-2 hover:text-accent"
     >
-      {who} {compactWibLabel(entry.respondedAt)}
+      {who} {wibDateTimeLabel(entry.respondedAt, { compact: true })}
     </Link>
   )
 }
