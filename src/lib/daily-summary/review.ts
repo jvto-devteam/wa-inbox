@@ -51,7 +51,7 @@ Aturan isi:
 - "topik": beberapa kata.
 - "pertanyaan": pertanyaan atau permintaan penting pelanggan, maksimal 5. "terjawab" bernilai true HANYA bila tim sudah menjawabnya dengan jelas di transkrip; selain itu false.
 - "poinPenting": fakta penting seperti tanggal, jumlah orang, paket, titik jemput, keberatan; maksimal 5.
-- "janjiTim": komitmen yang diucapkan TIM kepada pelanggan, misalnya akan mengirim harga, invoice, atau itinerary, mengecek ketersediaan, atau mengonfirmasi sesuatu; maksimal 5. Janji pelanggan kepada tim tidak termasuk. "terpenuhi" bernilai true HANYA bila transkrip menunjukkan janji itu sudah dilakukan; selain itu false.
+- "janjiTim": komitmen yang diucapkan TIM kepada pelanggan, misalnya akan mengirim harga, invoice, atau itinerary, mengecek ketersediaan, atau mengonfirmasi sesuatu; maksimal 5. Janji pelanggan kepada tim tidak termasuk. "terpenuhi" bernilai true HANYA bila transkrip menunjukkan janji itu sudah dilakukan; selain itu false. Janji yang sudah terpenuhi tetap ditulis dengan "pesan" tempat janji itu DIUCAPKAN (bukan pesan saat ditepati), supaya bisa dicocokkan dengan janji yang sama di ringkasan sebelumnya.
 - "pesan": nomor # (angka saja) dari baris transkrip tempat pertanyaan itu diajukan, poin itu disebutkan, atau janji itu diucapkan. Kalau ragu, hilangkan "pesan" -- jangan menebak.
 - "statusAgen": apa yang sudah dijawab atau dijanjikan tim.
 - "langkahBerikut": apa yang sebaiknya dilakukan tim berikutnya; string kosong kalau tidak ada.

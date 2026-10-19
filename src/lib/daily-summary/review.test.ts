@@ -220,6 +220,8 @@ describe('janji tim', () => {
   it('prompt meminta janjiTim berbentuk objek dengan terpenuhi dan pesan', () => {
     expect(REVIEW_SYSTEM_PROMPT).toContain('"janjiTim":[{"teks":"...","terpenuhi":true|false,"pesan":N}]')
     expect(REVIEW_SYSTEM_PROMPT).toMatch(/"janjiTim": komitmen yang diucapkan TIM/)
+    // Janji yang ditepati tetap membawa nomor pesan janjinya: penutupan PROMISE_KEPT mencocokkan lewat id, bukan teks.
+    expect(REVIEW_SYSTEM_PROMPT).toMatch(/sudah terpenuhi tetap ditulis dengan "pesan" tempat janji itu DIUCAPKAN/)
     expect(REVIEW_SYSTEM_PROMPT).toMatch(/"terpenuhi" bernilai true HANYA bila transkrip menunjukkan janji itu sudah dilakukan/)
   })
 

@@ -48,11 +48,18 @@ type Candidate = {
   anchorMessageId: string | null
   /** Anchor dari pesan pemicu yang diketahui; false hanya untuk PROMISE dengan anchor cadangan. */
   anchorKnown: boolean
+  /**
+   * PROMISE: janji terbuka yang pesannya benar ada di percakapan, urut review (kosong untuk
+   * REPLY/FOLLOW_UP). Bahan memilih tautan + snippet di `upsertCandidate`.
+   */
+  promises: PromiseLink[]
   snippet: string
   review: ConversationReview | null
   handoff: boolean
   newLead: boolean
 }
+
+type PromiseLink = { messageId: string; teks: string; createdAt: Date }
 
 const reviewValue = (review: ConversationReview | null) =>
   review === null ? Prisma.DbNull : (review as unknown as Prisma.InputJsonValue)
@@ -69,6 +76,7 @@ function toCandidates(payload: DailySummaryPayload): Candidate[] {
     anchorAt: new Date(item.lastMessageAt),
     anchorMessageId: item.lastMessageId ?? null,
     anchorKnown: true,
+    promises: [],
     snippet: item.snippet,
     review: item.review,
     // Serah-terima hanya bermakna untuk yang menunggu balasan.
@@ -93,11 +101,16 @@ function reviewsByConversation(payload: DailySummaryPayload): Map<string, Conver
 }
 
 /**
- * Kandidat PROMISE. Tautan + anchor = pesan janji terbuka PERTAMA yang `messageId`-nya benar ada di
- * percakapan ini (`anchorKnown`). Tanpa itu anchor cadangan = pesan OUTBOUND terakhir ≤ `asOf`
- * (janji pasti diucapkan tim, jadi tidak lebih baru dari pesan keluar terakhir), atau `asOf` bila
- * belum ada pesan keluar sama sekali. Anchor cadangan tidak pernah dipakai untuk memindahkan atau
- * membuka ulang baris yang sudah ada -- lihat `upsertCandidate` dan `shouldReopen`.
+ * Kandidat PROMISE dari janji terbuka yang `messageId`-nya benar ada di percakapan ini (`anchorKnown`):
+ * - anchor = waktu pesan janji terbuka TERBARU (max createdAt). Anchor inilah yang dibandingkan saat
+ *   membuka ulang, jadi hasilnya tidak bergantung pada urutan janji di keluaran LLM: janji B yang
+ *   lebih baru dari baris yang dilepas tetap membukanya walau janji lama A disebut lebih dulu.
+ * - tautan + snippet bawaan = janji terbuka PERTAMA (urut review); `upsertCandidate` memilih yang
+ *   lain untuk baris yang sudah ada.
+ * Tanpa itu anchor cadangan = pesan OUTBOUND terakhir ≤ `asOf` (janji pasti diucapkan tim, jadi
+ * tidak lebih baru dari pesan keluar terakhir), atau `asOf` bila belum ada pesan keluar sama sekali.
+ * Anchor cadangan tidak pernah dipakai untuk memindahkan atau membuka ulang baris yang sudah ada --
+ * lihat `upsertCandidate` dan `shouldReopen`.
  */
 async function promiseCandidate(
   conversationId: string,
@@ -107,15 +120,19 @@ async function promiseCandidate(
 ): Promise<Candidate | null> {
   const unkept = unkeptPromises(review)
   if (unkept.length === 0) return null
-  const withId = unkept.find((p) => p.messageId)
-  const message = withId?.messageId
-    ? await prisma.message.findFirst({
-        where: { id: { in: [withId.messageId] }, conversationId },
-        orderBy: { createdAt: 'desc' },
-        select: { id: true, createdAt: true },
-      })
-    : null
-  const fallback = message
+  const ids = [...new Set(unkept.flatMap((p) => (p.messageId ? [p.messageId] : [])))]
+  const found = ids.length
+    ? await prisma.message.findMany({ where: { id: { in: ids }, conversationId }, select: { id: true, createdAt: true } })
+    : []
+  const createdAt = new Map(found.map((m) => [m.id, m.createdAt]))
+  const promises: PromiseLink[] = []
+  for (const p of unkept) {
+    const at = p.messageId ? createdAt.get(p.messageId) : undefined
+    if (p.messageId && at && !promises.some((l) => l.messageId === p.messageId)) promises.push({ messageId: p.messageId, teks: p.teks, createdAt: at })
+  }
+  const first = promises[0] ?? null
+  const newest = newestPromise(promises)
+  const fallback = newest
     ? null
     : await prisma.message.findFirst({
         where: { conversationId, direction: 'OUTBOUND', createdAt: { lte: asOf } },
@@ -125,14 +142,20 @@ async function promiseCandidate(
   return {
     conversationId,
     kind: 'PROMISE',
-    anchorAt: message?.createdAt ?? fallback?.createdAt ?? asOf,
-    anchorMessageId: message?.id ?? null,
-    anchorKnown: message !== null,
-    snippet: (message && withId ? withId : unkept[0]).teks,
+    anchorAt: newest?.createdAt ?? fallback?.createdAt ?? asOf,
+    anchorMessageId: first?.messageId ?? null,
+    anchorKnown: newest !== null,
+    promises,
+    snippet: (first ?? unkept[0]).teks,
     review,
     handoff: false,
     newLead,
   }
+}
+
+/** Janji dengan pesan paling baru; seri → yang lebih dulu di review. */
+function newestPromise(promises: PromiseLink[]): PromiseLink | null {
+  return promises.reduce<PromiseLink | null>((best, p) => (best === null || p.createdAt > best.createdAt ? p : best), null)
 }
 
 /**
@@ -174,7 +197,8 @@ const closedByReply = (row: ClosedRow) => row.state === 'DONE' && row.closedReas
  *   anchor cadangan bergeser, dan keputusan operator (Lepas, pengingat selesai) atau penilaian
  *   "ditepati" tidak boleh terbalik hanya karena LLM lupa menyebut nomor pesannya.
  * - DROPPED/REMINDER_DONE: hanya janji lebih baru dari anchor baris; PROMISE_KEPT dan selebihnya:
- *   hanya janji sesudah closedAt.
+ *   hanya janji sesudah closedAt. Pembandingnya `c.anchorAt` = janji terbuka TERBARU, bukan yang
+ *   pertama disebut, supaya janji baru tidak tertutup janji lama yang kebetulan disebut lebih dulu.
  */
 async function shouldReopen(row: ClosedRow, c: Candidate, clock: ReviewClock): Promise<boolean> {
   const staleCardClose = row.state === 'DROPPED' || (row.state === 'DONE' && row.closedReason === 'REMINDER_DONE')
@@ -185,6 +209,8 @@ async function shouldReopen(row: ClosedRow, c: Candidate, clock: ReviewClock): P
   if ((c.kind === 'REPLY' || c.kind === 'PROMISE') && staleCardClose) return c.anchorAt > row.anchorAt
   return row.closedAt !== null && c.anchorAt > row.closedAt
 }
+
+const promiseLink = (p: PromiseLink) => ({ anchorMessageId: p.messageId, snippet: p.teks })
 
 type UpsertOutcome = 'created' | 'updated' | 'reopened' | 'skipped'
 
@@ -204,6 +230,9 @@ async function upsertCandidate(c: Candidate, row: ItemRow | null, clock: ReviewC
     newLead: c.newLead,
   }
   if (!row) {
+    // "Buat ulang" tanggal lama atau job malam yang kalah balapan dengan Perbarui tidak boleh
+    // melahirkan janji dari review yang sudah usang.
+    if (c.kind === 'PROMISE' && !(await clock.isLatest())) return 'skipped'
     await prisma.summaryItem.create({
       data: { conversationId: c.conversationId, ...fields, state: 'OPEN', openedOn: date, lastSeenOn: date },
     })
@@ -217,8 +246,14 @@ async function upsertCandidate(c: Candidate, row: ItemRow | null, clock: ReviewC
     if (c.kind === 'PROMISE' && row.kind !== 'PROMISE') return 'skipped'
     if (c.kind === 'PROMISE' && !(await clock.isLatest())) return 'skipped'
     // Pesan janji tidak diketahui malam ini: anchor dan tautan baris tetap (anchor cadangan bergeser).
+    // Diketahui: tautan tetap selama janjinya masih terbuka, supaya kartu tidak berpindah-pindah
+    // janji antar-malam hanya karena urutan keluaran LLM berubah.
     const data =
-      c.kind === 'PROMISE' && !c.anchorKnown ? { ...fields, anchorAt: row.anchorAt, anchorMessageId: row.anchorMessageId } : fields
+      c.kind !== 'PROMISE'
+        ? fields
+        : !c.anchorKnown
+          ? { ...fields, anchorAt: row.anchorAt, anchorMessageId: row.anchorMessageId }
+          : { ...fields, ...promiseLink(c.promises.find((p) => p.messageId === row.anchorMessageId) ?? c.promises[0]) }
     await prisma.summaryItem.update({
       where: { id: row.id },
       // "YYYY-MM-DD" terurut leksikografis sama dengan urutan tanggal.
@@ -228,11 +263,14 @@ async function upsertCandidate(c: Candidate, row: ItemRow | null, clock: ReviewC
   }
   if (!(await shouldReopen(row, c, clock))) return 'skipped'
   // Pesan baru sesudah ditutup: item lahir kembali. Pesan yang sama tidak membukanya lagi,
-  // jadi keputusan operator tetap berlaku.
+  // jadi keputusan operator tetap berlaku. PROMISE yang dibuka karena janji lebih baru menautkan
+  // janji pemicunya (yang terbaru), bukan janji lama yang mungkin justru baru dilepas operator.
+  const reopenedBy = c.kind === 'PROMISE' && !closedByReply(row) ? newestPromise(c.promises) : null
   await prisma.summaryItem.update({
     where: { id: row.id },
     data: {
       ...fields,
+      ...(reopenedBy ? promiseLink(reopenedBy) : {}),
       state: 'OPEN',
       openedOn: date,
       lastSeenOn: date,

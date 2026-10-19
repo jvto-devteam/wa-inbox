@@ -183,6 +183,8 @@ function useStore() {
         .sort((x, y) => x.createdAt.getTime() - y.createdAt.getTime())
       return (a.orderBy?.createdAt === 'desc' ? hits.reverse() : hits)[0] ?? null
     }) as never)
+    mockPrisma.message.findMany.mockImplementation((async (a: { where: MsgWhere }) =>
+      st.messages.filter((m) => m.conversationId === a.where.conversationId && (!a.where.id || a.where.id.in.includes(m.id)))) as never)
   })
   const msg = (id: string, direction: StoreMsg['direction'], iso: string) =>
     st.messages.push({ id, conversationId: 'c1', direction, sentBy: direction === 'INBOUND' ? 'CUSTOMER' : 'AGENT', type: 'TEXT', content: id, createdAt: at(iso) })
@@ -355,6 +357,56 @@ describe('janji tim (PROMISE): janji tidak hilang dan tidak bolak-balik', () => 
     expect(snap()).toBe('PROMISE/DONE/REMINDER_DONE')
   })
 
+  // Repro review putaran 4: janji baru B harus muncul walau janji lama A disebut lebih dulu.
+  const janjiA = { teks: 'Invoice', terpenuhi: false, messageId: 'jA' }
+  const janjiB = { teks: 'Itinerary', terpenuhi: false, messageId: 'jB' }
+
+  it.each([
+    ['[A, B]', [janjiA, janjiB]],
+    ['[B, A]', [janjiB, janjiA]],
+  ])('Lepas janji A, lalu janji baru B: %s membuka lagi dengan tautan ke B, hasil sama untuk kedua urutan', async (_label, janji) => {
+    msg('jA', 'OUTBOUND', '2026-10-17T03:00:00Z')
+    await nightly('2026-10-17', rv([janjiA]))
+    Object.assign(st.items[0], { state: 'DROPPED', closedReason: 'DROPPED', closedAt: at('2026-10-18T02:00:00Z') })
+    msg('jB', 'OUTBOUND', '2026-10-18T03:00:00Z')
+    await nightly('2026-10-18', rv(janji))
+    expect(st.items[0]).toMatchObject({
+      kind: 'PROMISE', state: 'OPEN', anchorAt: at('2026-10-18T03:00:00Z'), anchorMessageId: 'jB', snippet: 'Itinerary', openedOn: '2026-10-18',
+    })
+    // Malam berikutnya urutan dibalik: kartu tetap di janji B, anchor tidak bergeser.
+    await nightly('2026-10-19', rv([...janji].reverse()))
+    expect(st.items[0]).toMatchObject({ state: 'OPEN', anchorAt: at('2026-10-18T03:00:00Z'), anchorMessageId: 'jB', snippet: 'Itinerary' })
+    // Dilepas lagi: janji yang sama, urutan mana pun, tidak membukanya.
+    Object.assign(st.items[0], { state: 'DROPPED', closedReason: 'DROPPED', closedAt: at('2026-10-20T02:00:00Z') })
+    await nightly('2026-10-20', rv(janji))
+    await nightly('2026-10-21', rv([...janji].reverse()))
+    expect(snap()).toBe('PROMISE/DROPPED/DROPPED')
+  })
+
+  it.each([
+    ['[A, B]', [janjiA, janjiB]],
+    ['[B, A]', [janjiB, janjiA]],
+  ])('PROMISE_KEPT untuk A, lalu janji baru B dengan A disebut belum lagi: %s membuka lagi ke B', async (_label, janji) => {
+    msg('jA', 'OUTBOUND', '2026-10-17T03:00:00Z')
+    await nightly('2026-10-17', rv([janjiA]))
+    await nightly('2026-10-18', rv([{ ...janjiA, terpenuhi: true }]))
+    expect(snap()).toBe('PROMISE/DONE/PROMISE_KEPT')
+    msg('jB', 'OUTBOUND', '2026-10-19T03:00:00Z')
+    await nightly('2026-10-19', rv(janji))
+    expect(st.items[0]).toMatchObject({ kind: 'PROMISE', state: 'OPEN', anchorAt: at('2026-10-19T03:00:00Z'), anchorMessageId: 'jB', snippet: 'Itinerary' })
+  })
+
+  it('PROMISE_KEPT tidak dibuka lagi bila semua janji terbuka lebih tua dari closedAt (urutan mana pun)', async () => {
+    msg('jA', 'OUTBOUND', '2026-10-17T03:00:00Z')
+    msg('jB', 'OUTBOUND', '2026-10-17T04:00:00Z')
+    await nightly('2026-10-17', rv([janjiA, janjiB]))
+    await nightly('2026-10-18', rv([{ ...janjiA, terpenuhi: true }, { ...janjiB, terpenuhi: true }]))
+    expect(snap()).toBe('PROMISE/DONE/PROMISE_KEPT')
+    await nightly('2026-10-19', rv([janjiA, janjiB]))
+    await nightly('2026-10-20', rv([janjiB, janjiA]))
+    expect(snap()).toBe('PROMISE/DONE/PROMISE_KEPT')
+  })
+
   it('LLM bergantian [] dan janji tanpa messageId: tetap PROMISE OPEN dengan anchor yang sama', async () => {
     msg('janji', 'OUTBOUND', '2026-10-17T03:00:00Z')
     const seq = [unkeptNoId, rv([]), unkeptNoId, rv([]), unkeptNoId]
@@ -402,6 +454,20 @@ describe('janji tim (PROMISE): ringkasan tanggal lama dan penutupan', () => {
     msg('lain', 'OUTBOUND', '2026-10-16T03:00:00Z')
     await syncSummaryItems('2026-10-16', pl(rv([{ teks: 'Lain', terpenuhi: false, messageId: 'lain' }])), at('2026-10-19T03:00:00Z'))
     expect(st.items[0]).toMatchObject({ anchorMessageId: 'janji', snippet: 'Invoice besok', lastSeenOn: '2026-10-15' })
+  })
+
+  it('review usang tidak membuat PROMISE baru: Buat ulang tanggal lama dan job malam yang kalah dari Perbarui', async () => {
+    msg('janji', 'OUTBOUND', '2026-10-15T03:00:00Z')
+    // Ringkasan chat sudah diperbarui sesudah akhir hari 16 (mis. Perbarui, lalu janjinya dilihat ditepati).
+    st.chatReviewAt = at('2026-10-17T02:00:00Z')
+    await syncSummaryItems('2026-10-16', pl(unkeptId), at('2026-10-19T03:00:00Z'))
+    expect(st.items).toHaveLength(0)
+    // Perbarui lebih dulu menulis chatReviewAt yang lebih baru dari waktu review Perbarui ini.
+    await expect(applyReviewToItem('c1', unkeptId, at('2026-10-17T01:00:00Z'))).resolves.toBe('unchanged')
+    expect(st.items).toHaveLength(0)
+    // Review terbaru tetap membuatnya.
+    await expect(applyReviewToItem('c1', unkeptId, at('2026-10-17T02:00:00Z'))).resolves.toBe('created')
+    expect(snap()).toBe('PROMISE/OPEN/-')
   })
 
   it('review yang tidak lagi menyebut janjinya membiarkan item OPEN dan tidak menimpa review-nya', async () => {

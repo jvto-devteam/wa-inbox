@@ -159,7 +159,9 @@ percakapan yang bukan kandidat REPLY/FOLLOW_UP (keduanya selalu menang). Ia tert
 bila review terbaru menandai setiap janji yang dilacaknya `terpenuhi:true` — janji yang sekadar tidak disebut
 lagi membiarkan item OPEN (operator bisa Lepas) — dan jadi REPLY hanya oleh pesan pelanggan yang belum dibalas.
 Pesan keluar **tidak** menutupnya; janji terbuka membuka lagi DONE/REPLIED bila review itu yang terbaru
-(≥ `chatReviewAt`). Aturan buat/buka ulang ada di satu tempat, `upsertCandidate`.
+(≥ `chatReviewAt`; syarat yang sama berlaku untuk membuat PROMISE baru). Anchor = pesan janji terbuka
+**terbaru** (max `createdAt`), jadi buka ulang setelah Lepas/PROMISE_KEPT tidak bergantung pada urutan
+keluaran LLM. Aturan buat/buka ulang ada di satu tempat, `upsertCandidate`.
 
 ### Ringkasan chat (tab di panel kanan Inbox)
 Menampilkan ringkasan LLM **terbaru** satu percakapan, tanda terjawab per pertanyaan, riwayat
