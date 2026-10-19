@@ -27,7 +27,7 @@ beforeEach(() => {
   vi.mocked(advancePipelineStagesFromBooking).mockResolvedValue({ diperbarui: 0 })
   vi.mocked(refreshStaleBookingData).mockResolvedValue({ diperiksa: 0 })
   vi.mocked(reconcileSummaryItems).mockResolvedValue({ closed: 2, converted: 1, reopened: 0 })
-  vi.mocked(createLiveReplyItems).mockResolvedValue({ created: 3, reopened: 1, skipped: 4 })
+  vi.mocked(createLiveReplyItems).mockResolvedValue({ created: 3, updated: 2, reopened: 1, skipped: 4 })
   vi.spyOn(console, 'error').mockImplementation(() => {})
 })
 
@@ -40,7 +40,7 @@ describe('POST /api/summary-items/tick', () => {
   it('scheduler dengan secret: kebersihan, reconcile, lalu item live, dengan waktu yang sama', async () => {
     const res = await POST(req(SECRET))
     expect(res.status).toBe(200)
-    expect(await res.json()).toEqual({ reconciled: { closed: 2, converted: 1, reopened: 0 }, live: { created: 3, reopened: 1, skipped: 4 } })
+    expect(await res.json()).toEqual({ reconciled: { closed: 2, converted: 1, reopened: 0 }, live: { created: 3, updated: 2, reopened: 1, skipped: 4 } })
     const sequence = [pruneBotAuditLogs, advancePipelineStagesFromBooking, refreshStaleBookingData, reconcileSummaryItems, createLiveReplyItems].map(order)
     expect(sequence.every((n) => typeof n === 'number')).toBe(true)
     expect([...sequence].sort((a, b) => a - b)).toEqual(sequence)
@@ -70,6 +70,24 @@ describe('POST /api/summary-items/tick', () => {
     await POST(req(SECRET))
     expect(processDueOutboundJobs).not.toHaveBeenCalled()
     expect(reviewConversation).not.toHaveBeenCalled()
+  })
+
+  it('single-flight: tick kedua selagi yang pertama berjalan dijawab 200 { busy: true } tanpa menjalankan apa pun', async () => {
+    let release: () => void = () => {}
+    vi.mocked(refreshStaleBookingData).mockImplementationOnce(() => new Promise((resolve) => { release = () => resolve({ diperiksa: 0 }) }))
+    const first = POST(req(SECRET))
+    await vi.waitFor(() => expect(refreshStaleBookingData).toHaveBeenCalledTimes(1))
+    const second = await POST(req(SECRET))
+    expect(second.status).toBe(200)
+    expect(await second.json()).toEqual({ busy: true })
+    expect(pruneBotAuditLogs).toHaveBeenCalledTimes(1)
+    release()
+    expect((await first).status).toBe(200)
+    expect(reconcileSummaryItems).toHaveBeenCalledTimes(1)
+    // Sesudah selesai, tick berikutnya jalan lagi -- termasuk sesudah tick yang gagal.
+    vi.mocked(createLiveReplyItems).mockRejectedValueOnce(new Error('x'))
+    expect((await POST(req(SECRET))).status).toBe(500)
+    expect((await POST(req(SECRET))).status).toBe(200)
   })
 
   it('tanpa secret: 401 dan tidak menjalankan apa pun', async () => {

@@ -158,10 +158,18 @@ log `/var/log/wa-inbox-summary-tick.log`) menjalankan, berurutan: kebersihan yan
 `/api/outbound-jobs/process` (`pruneBotAuditLogs`, `advancePipelineStagesFromBooking`,
 `refreshStaleBookingData` — tahap pipeline naik sebelum reconcile supaya STAGE_ADVANCED tertutup di tick
 yang sama), lalu `reconcileSummaryItems`, lalu `createLiveReplyItems` — **tanpa LLM**, dan tanpa
-`processDueOutboundJobs`. Rangkaian pesan pelanggan sesudah balasan terakhir kita yang pesan
-**pertamanya** sudah ≥ `UNREPLIED_MIN_MS` (pesan terakhir INBOUND, ≤ `LOOKBACK_MS`) langsung jadi REPLY
-tanpa menunggu 00:00; anchor = pesan pertama itu. Rangkaian yang isinya hanya reaksi/penutup ("ok",
-"thanks", 👍; `isNoiseMessage`, sengaja sempit) dilewati; baris OPEN/SCHEDULED diserahkan ke reconcile;
+`processDueOutboundJobs`. Tick yang tumpang tindih dicegah `flock -n` di skrip dan single-flight di
+route (`{ busy: true }`); penyegaran data booking dibatasi 60 s per tick, dan API booking yang gagal
+(timeout/non-OK/error) **tidak pernah** menghapus `bookingData` atau menstempel `bookingCheckedAt` —
+hanya jawaban kosong yang sah yang berarti "tanpa booking". Rangkaian pesan pelanggan sesudah balasan
+terakhir kita yang pesan **pertamanya** sudah ≥ `UNREPLIED_MIN_MS` (pesan terakhir INBOUND,
+≤ `LOOKBACK_MS`) langsung jadi REPLY tanpa menunggu 00:00. Aturan REPLY satu untuk live, sync malam,
+dan reconcile: `anchorAt` = pesan masuk **pertama** rangkaian dan tidak pernah maju selama item terbuka;
+`coveredUntil` + snippet = pesan masuk **terbaru** yang sudah tercakup kartu; Lepas/pengingat selesai
+dibuka lagi hanya oleh pesan masuk yang lebih baru dari `coveredUntil` (baris lama tanpa kolom itu:
+`anchorAt`). Rangkaian (atau bagian barunya) yang isinya hanya reaksi/penutup ("ok", "thanks", 👍;
+`isNoiseMessage`, sengaja sempit; "ok"/"siap"/👍 sesudah pertanyaan kita dihitung jawaban) dilewati;
+REPLY OPEN/SCHEDULED hanya disegarkan cakupannya, FOLLOW_UP/PROMISE terbuka diserahkan ke reconcile;
 baris tertutup dibuka ulang dengan `shouldReopen`/`upsertCandidate` yang sama dengan sync malam. Penutup
 yang lolos saringan ditutup sync malam sebagai `JUDGED_DONE` ("dinilai selesai") bila review terbaru
 menilainya `selesai` (`filteredOut.unrepliedIds` di payload). **`POST /api/outbound-jobs/process` TIDAK

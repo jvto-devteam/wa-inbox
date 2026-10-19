@@ -19,7 +19,7 @@ import { createLiveReplyItems, reconcileSummaryItems } from '@/lib/summary-items
  * 3. `createLiveReplyItems` (pesan pelanggan yang belum dibalas ≥ 1 jam masuk antrean tanpa
  *    menunggu 00:00).
  * Tidak pernah memanggil LLM. `refreshStaleBookingData` memanggil API booking (maks. 25
- * percakapan per tick, berurutan, timeout 10 s per panggilan).
+ * percakapan per tick, berurutan, timeout 10 s per panggilan, berhenti sesudah 60 s).
  *
  * Endpoint tersendiri, bukan `/api/outbound-jobs/process`: endpoint itu juga menjalankan retry
  * ladder outbound (`processDueOutboundJobs`), dan menjadwalkannya adalah keputusan owner yang
@@ -29,10 +29,28 @@ import { createLiveReplyItems, reconcileSummaryItems } from '@/lib/summary-items
  * Secret dicek ulang di sini, bukan hanya di middleware -- alasan yang sama dengan
  * POST /api/outbound-jobs/process.
  */
+/**
+ * Single-flight per proses: tick yang masih berjalan (API booking lambat) tidak boleh ditumpuk
+ * tick berikutnya -- dua `createLiveReplyItems` bersamaan berebut membuat baris yang sama (P2002)
+ * dan menggandakan panggilan API booking. Server ini satu proses Node (pm2), jadi variabel modul
+ * cukup; skrip cron juga memakai `flock -n` sebagai lapis kedua.
+ */
+let running = false
+
 export async function POST(req: Request) {
   if (!hasValidCronSecret(req)) {
     return NextResponse.json({ error: 'Hanya scheduler yang bisa menjalankan tick antrean' }, { status: 401 })
   }
+  if (running) return NextResponse.json({ busy: true })
+  running = true
+  try {
+    return await tick()
+  } finally {
+    running = false
+  }
+}
+
+async function tick(): Promise<NextResponse> {
   // Housekeeping first and unguarded-by-the-tally: `pruneBotAuditLogs` never throws, and the
   // `.catch` is the belt to that braces — a future edit that makes it throw must still not be
   // able to take the queue down with it.

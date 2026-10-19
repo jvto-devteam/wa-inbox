@@ -14,9 +14,14 @@
  * - Selain itu setiap kata harus ada di kosakata penutup/pengisi, minimal satu kata inti, dan
  *   maksimal MAX_WORDS kata. "ya"/"yes" sendirian TIDAK termasuk: itu jawaban atas pertanyaan
  *   kita dan menunggu langkah berikutnya.
+ * - `afterQuestion` (pesan keluar terakhir sebelum rangkaian memuat "?"): "ok"/"oke"/"siap"/
+ *   "baik" dan sejenisnya adalah JAWABAN ("mau saya booking-kan?" → "oke"), bukan penutup, jadi
+ *   tidak lagi dihitung sebagai kata inti. Emoji/reaksi saja (👍 atas "jadi ambil paket ini?")
+ *   diperlakukan sama. Ucapan terima kasih/"noted" tetap penutup.
  */
 
 export type NoiseMessage = { type: string; content: string | null }
+export type NoiseContext = { afterQuestion?: boolean }
 
 const MAX_WORDS = 6
 
@@ -26,6 +31,9 @@ const CORE = new Set([
   'thanks', 'thank', 'thankyou', 'thanku', 'thx', 'thnx', 'tks', 'tq', 'ty', 'tysm',
   'makasih', 'makasi', 'mksh', 'mksih', 'terimakasih', 'trimakasih', 'trims', 'matur', 'nuwun', 'suwun',
 ])
+
+/** Kata inti yang berarti "ya/setuju": jawaban, bukan penutup, bila kita baru saja bertanya. */
+const AFFIRMATIVE = new Set(['ok', 'oke', 'okey', 'okay', 'okee', 'okeh', 'sip', 'siap', 'baik', 'alright'])
 
 /** Kata pengisi yang boleh menempel pada kata inti, tidak pernah cukup sendirian. */
 const FILLER = new Set([
@@ -37,11 +45,14 @@ const FILLER = new Set([
 /** Emoji, modifier warna kulit, ZWJ, variation selector, tanda baca, dan simbol. */
 const NON_TEXT = /[\p{Extended_Pictographic}\p{Emoji_Modifier}\u200d\ufe0f\p{P}\p{S}\s]/gu
 
-export function isNoiseMessage(message: NoiseMessage): boolean {
-  if (message.type === 'reaction') return true
+export function isNoiseMessage(message: NoiseMessage, context: NoiseContext = {}): boolean {
+  const afterQuestion = context.afterQuestion === true
+  if (message.type === 'reaction') return !afterQuestion
   const text = message.content?.trim() ?? ''
   if (!text || text.includes('?') || text.includes('\uff1f')) return false
-  if (text.replace(NON_TEXT, '') === '') return true
+  if (text.replace(NON_TEXT, '') === '') return !afterQuestion
+  const isCore = (w: string) => CORE.has(w) && !(afterQuestion && AFFIRMATIVE.has(w))
+  const isFiller = (w: string) => FILLER.has(w) || (afterQuestion && AFFIRMATIVE.has(w))
 
   const words = text
     .toLowerCase()
@@ -53,5 +64,5 @@ export function isNoiseMessage(message: NoiseMessage): boolean {
     .split(' ')
     .filter(Boolean)
   if (words.length === 0 || words.length > MAX_WORDS) return false
-  return words.some((w) => CORE.has(w)) && words.every((w) => CORE.has(w) || FILLER.has(w))
+  return words.some(isCore) && words.every((w) => isCore(w) || isFiller(w))
 }

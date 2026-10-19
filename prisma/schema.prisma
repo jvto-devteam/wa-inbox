@@ -977,6 +977,9 @@ model SummaryItem {
   /// PROMISE: waktu pesan janji tim (atau akhir hari ringkasan bila pesannya tidak diketahui).
   anchorAt        DateTime
   anchorMessageId String?
+  /// REPLY: createdAt pesan masuk TERBARU yang sudah tercakup kartu (snippet ikut pesan itu). Lepas/pengingat
+  /// selesai hanya dibuka lagi oleh pesan masuk yang lebih baru dari ini. Null = baris lama → pakai anchorAt.
+  coveredUntil    DateTime?
   snippet         String
   /// ConversationReview (payload-schema.ts) terakhir, atau null bila LLM gagal.
   review          Json?

@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mockDeep, mockReset, type DeepMockProxy } from 'vitest-mock-extended'
 import { Prisma, type PrismaClient } from '@prisma/client'
 import { prisma } from '@/lib/db'
-import { lookupBooking, ensureFreshBookingData } from './client'
+import { lookupBooking, lookupBookingResult, ensureFreshBookingData, refreshStaleBookingData } from './client'
 
 import type { MockedFunction } from 'vitest'
 
@@ -377,5 +377,64 @@ describe('ensureFreshBookingData — pipeline auto-advance', () => {
     expect(mockPrisma.conversation.update).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({ pipelineStage: 'booked' }),
     }))
+  })
+})
+
+describe('API booking gagal tidak menghapus data booking', () => {
+  const STALE = new Date(Date.now() - 25 * 60 * 60 * 1000)
+  const cached = () => ({ id: 'conv_1', bookingData: { id: 'B1', guest: 'Bruno' }, bookingCheckedAt: STALE, pipelineStage: 'lunas', contact: { phone: '6281234567890' } })
+
+  it.each([
+    ['timeout', () => mockFetch().mockRejectedValue(Object.assign(new Error('The operation was aborted due to timeout'), { name: 'TimeoutError' }))],
+    ['status non-OK', () => mockFetch().mockResolvedValue({ ok: false, status: 503, json: async () => ({}) })],
+    ['exception saat membaca body', () => mockFetch().mockResolvedValue({ ok: true, json: async () => { throw new Error('invalid JSON') } })],
+  ])('%s: lookupBookingResult = error, bookingData lama tetap, bookingCheckedAt tidak distempel', async (_name, arrange) => {
+    arrange()
+    expect(await lookupBookingResult('6281234567890')).toEqual({ status: 'error' })
+    const result = await ensureFreshBookingData(cached())
+    expect(result).toEqual({ id: 'B1', guest: 'Bruno' })
+    // Tahap sudah benar (lunas) dan orderChannel tidak berubah: tidak ada tulisan sama sekali.
+    expect(mockPrisma.conversation.update).not.toHaveBeenCalled()
+  })
+
+  it('API belum dikonfigurasi juga dianggap gagal, bukan "tanpa booking"', async () => {
+    delete process.env.BOOKING_API_URL
+    expect(await lookupBookingResult('6281234567890')).toEqual({ status: 'error' })
+    await ensureFreshBookingData(cached())
+    expect(mockPrisma.conversation.update).not.toHaveBeenCalled()
+  })
+
+  it('error tetap boleh menaikkan tahap dari data lama, tanpa menyentuh bookingData', async () => {
+    ;mockFetch().mockResolvedValue({ ok: false, status: 500, json: async () => ({}) })
+    await ensureFreshBookingData({ ...cached(), pipelineStage: 'new' })
+    const data = mockPrisma.conversation.update.mock.calls[0][0].data
+    expect(data).not.toHaveProperty('bookingData')
+    expect(data).not.toHaveProperty('bookingCheckedAt')
+  })
+
+  it('jawaban kosong yang sah tetap "tidak ditemukan": bookingData dikosongkan dan distempel', async () => {
+    ;mockFetch().mockResolvedValue({ ok: true, json: async () => [] })
+    expect(await lookupBookingResult('6281234567890')).toEqual({ status: 'not_found' })
+    await ensureFreshBookingData(cached())
+    expect(mockPrisma.conversation.update).toHaveBeenCalledWith({
+      where: { id: 'conv_1' },
+      data: { bookingData: Prisma.DbNull, bookingCheckedAt: expect.any(Date) },
+    })
+  })
+})
+
+describe('refreshStaleBookingData: batas waktu per tick', () => {
+  it('berhenti begitu anggaran waktu habis; sisanya untuk tick berikutnya', async () => {
+    const rows = ['a', 'b', 'c'].map((id) => ({ id, bookingData: null, bookingCheckedAt: null, pipelineStage: 'new', orderChannel: null, isTest: false, contact: { phone: '628123' } }))
+    mockPrisma.conversation.findMany.mockResolvedValue(rows as never)
+    let clock = 1_000_000
+    vi.spyOn(Date, 'now').mockImplementation(() => clock)
+    ;mockFetch().mockImplementation(async () => {
+      clock += 40_000 // tiap panggilan API makan 40 detik
+      return { ok: true, json: async () => [] }
+    })
+    expect(await refreshStaleBookingData(25, 60_000)).toEqual({ diperiksa: 2 })
+    expect(fetch).toHaveBeenCalledTimes(2)
+    vi.mocked(Date.now).mockRestore()
   })
 })

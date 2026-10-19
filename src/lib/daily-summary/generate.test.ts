@@ -93,6 +93,20 @@ describe('buildPayload', () => {
     expect(payload.dormant).toEqual([])
   })
 
+  it('unreplied membawa pesan pertama rangkaian yang belum dibalas (anchor REPLY)', () => {
+    const run = conv('run', [
+      msg('INBOUND', new Date(end.getTime() - 9 * HOUR), 'lama'),
+      msg('OUTBOUND', new Date(end.getTime() - 8 * HOUR), 'balas'),
+      msg('INBOUND', new Date(end.getTime() - 6 * HOUR), 'mau tanya'),
+      msg('INBOUND', new Date(end.getTime() - 3 * HOUR), 'halo?'),
+    ], { inboundToday: 2 })
+    const p = buildPayload(DATE, day([run]), new Map([['run', review('perlu_tindakan')]]), end)
+    const item = p.unreplied[0]
+    expect(item.firstMessageAt).toBe(new Date(end.getTime() - 6 * HOUR).toISOString())
+    expect(item.firstMessageId).toBe(run.messages[2].id)
+    expect(item.lastMessageId).toBe(run.messages[3].id)
+  })
+
   it('review gagal tetap tampil sebagai belum dicek dan dihitung', () => {
     expect(payload.unreplied.find((u) => u.conversationId === 'unknown')?.review).toBeNull()
     expect(payload.counts.reviewFailed).toBe(1)

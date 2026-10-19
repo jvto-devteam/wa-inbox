@@ -99,6 +99,12 @@ const unrepliedItemSchema = z.object({
   ...conversationRef,
   lastMessageAt: z.string(),
   lastMessageId,
+  /**
+   * Pesan PERTAMA rangkaian pesan pelanggan sesudah balasan terakhir kita: anchor item REPLY
+   * (sejak kapan menunggu). Opsional karena payload sebelum 19 Oktober 2026 tidak memilikinya.
+   */
+  firstMessageAt: z.string().optional(),
+  firstMessageId: z.string().optional(),
   waitingMs: z.number(),
   snippet: z.string(),
   review: reviewField,

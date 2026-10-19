@@ -71,13 +71,24 @@ describe('syncSummaryItems', () => {
     expect(mockPrisma.summaryItem.update).not.toHaveBeenCalled()
   })
 
-  it('DROPPED REPLY, kandidat inbound lebih baru dari anchor baris tapi lebih lama dari closedAt -> dibuka ulang', async () => {
+  it('DROPPED REPLY, inbound terbaru lebih baru dari cakupan kartu tapi lebih lama dari closedAt -> dibuka ulang', async () => {
     mockPrisma.summaryItem.findUnique.mockResolvedValue(
-      row({ state: 'DROPPED', closedReason: 'DROPPED', anchorAt: at('2026-10-17T01:00:00Z'), closedAt: at('2026-10-17T14:00:00Z') }) as never
+      row({ state: 'DROPPED', closedReason: 'DROPPED', anchorAt: at('2026-10-17T01:00:00Z'), coveredUntil: at('2026-10-17T01:00:00Z'), closedAt: at('2026-10-17T14:00:00Z') }) as never
     )
     const r = await syncSummaryItems('2026-10-18', payload({ unreplied: [unreplied('c1', '2026-10-17T10:00:00Z')] as never }), NOW)
     expect(r.reopened).toBe(1)
-    expect(mockPrisma.summaryItem.update.mock.calls[0][0].data).toMatchObject({ state: 'OPEN', closedAt: null, anchorAt: at('2026-10-17T10:00:00Z') })
+    expect(mockPrisma.summaryItem.update.mock.calls[0][0].data).toMatchObject({
+      state: 'OPEN', closedAt: null, anchorAt: at('2026-10-17T10:00:00Z'), coveredUntil: at('2026-10-17T10:00:00Z'),
+    })
+  })
+
+  it('DROPPED REPLY yang cakupannya sudah memuat inbound itu -> tetap dilepas', async () => {
+    mockPrisma.summaryItem.findUnique.mockResolvedValue(
+      row({ state: 'DROPPED', closedReason: 'DROPPED', anchorAt: at('2026-10-17T01:00:00Z'), coveredUntil: at('2026-10-17T10:00:00Z'), closedAt: at('2026-10-17T14:00:00Z') }) as never
+    )
+    const r = await syncSummaryItems('2026-10-18', payload({ unreplied: [unreplied('c1', '2026-10-17T10:00:00Z')] as never }), NOW)
+    expect(r.reopened).toBe(0)
+    expect(mockPrisma.summaryItem.update).not.toHaveBeenCalled()
   })
 
   it('DONE/REMINDER_DONE REPLY, kandidat lebih baru dari anchor baris -> dibuka ulang', async () => {
@@ -562,6 +573,17 @@ describe('reconcileSummaryItems', () => {
     })
   })
 
+  it('FOLLOW_UP + beberapa inbound -> anchor inbound pertama, cakupan + snippet inbound terbaru', async () => {
+    mockPrisma.summaryItem.findMany.mockResolvedValue([row({ kind: 'FOLLOW_UP' })] as never)
+    const newest = { ...inbound, id: 'in2', content: 'halo?', createdAt: at('2026-10-18T04:00:00Z') }
+    mockPrisma.message.findFirst.mockImplementation((async (a: { where: { direction: string }; orderBy: { createdAt: string } }) =>
+      a.where.direction !== 'INBOUND' ? null : a.orderBy.createdAt === 'desc' ? newest : inbound) as never)
+    await reconcileSummaryItems(NOW)
+    expect(mockPrisma.summaryItem.update.mock.calls[0][0].data).toMatchObject({
+      kind: 'REPLY', anchorAt: inbound.createdAt, anchorMessageId: 'in1', coveredUntil: newest.createdAt, snippet: 'halo?',
+    })
+  })
+
   it('FOLLOW_UP + inbound + outbound sesudahnya -> DONE', async () => {
     mockPrisma.summaryItem.findMany.mockResolvedValue([row({ kind: 'FOLLOW_UP' })] as never)
     const sentAt = at('2026-10-18T03:00:00Z')
@@ -771,5 +793,67 @@ describe('syncSummaryItems: REPLY yang dinilai selesai (JUDGED_DONE)', () => {
   it('kegagalan penutupan tertelan seperti sync lainnya', async () => {
     mockPrisma.summaryItem.findMany.mockRejectedValue(new Error('db down'))
     await expect(syncSummaryItems(DATE, judged(['c1']), NOW)).resolves.toEqual({ created: 0, updated: 0, reopened: 0, closed: 0 })
+  })
+})
+
+describe('syncSummaryItems: aturan REPLY satu untuk live dan malam (repro review)', () => {
+  const wib = (d: string, hhmm: string) => new Date(`2026-10-${d}T${hhmm}:00+07:00`)
+  const runItem = (over: Record<string, unknown> = {}) => ({
+    conversationId: 'c1', contactName: 'x', pipelineStage: 'new', lastMessageAt: wib('19', '10:20').toISOString(), lastMessageId: 'm3',
+    waitingMs: 1, snippet: 'kak', review: null, ...over,
+  })
+  const liveRow = (over: Record<string, unknown> = {}) =>
+    row({ anchorAt: wib('19', '09:00'), anchorMessageId: 'm1', coveredUntil: wib('19', '10:20'), snippet: 'kak', openedOn: '2026-10-19', lastSeenOn: '2026-10-19', ...over })
+
+  it('item live yang dilepas 10.30 tidak dibuka sync 00.00 untuk pesan yang sudah tercakup', async () => {
+    mockPrisma.summaryItem.findUnique.mockResolvedValue(liveRow({ state: 'DROPPED', closedReason: 'DROPPED', closedAt: wib('19', '10:30') }) as never)
+    const r = await syncSummaryItems('2026-10-19', payload({ unreplied: [runItem()] as never }), wib('20', '00:20'))
+    expect(r.reopened).toBe(0)
+    expect(mockPrisma.summaryItem.update).not.toHaveBeenCalled()
+  })
+
+  it('pesan baru sesudah Lepas tetap membuka lewat sync malam', async () => {
+    mockPrisma.summaryItem.findUnique.mockResolvedValue(liveRow({ state: 'DROPPED', closedReason: 'DROPPED', closedAt: wib('19', '10:30') }) as never)
+    const r = await syncSummaryItems('2026-10-19', payload({ unreplied: [runItem({ lastMessageAt: wib('19', '20:00').toISOString(), lastMessageId: 'm4', snippet: 'jadi?' })] as never }), wib('20', '00:20'))
+    expect(r.reopened).toBe(1)
+    expect(mockPrisma.summaryItem.update.mock.calls[0][0].data).toMatchObject({ state: 'OPEN', coveredUntil: wib('19', '20:00'), snippet: 'jadi?' })
+  })
+
+  it('item OPEN: anchor tidak lompat ke pesan terakhir (payload lama tanpa firstMessageAt), snippet = pesan terbaru', async () => {
+    mockPrisma.summaryItem.findUnique.mockResolvedValue(liveRow({ coveredUntil: wib('19', '09:40'), snippet: 'halo?' }) as never)
+    await syncSummaryItems('2026-10-19', payload({ unreplied: [runItem()] as never }), wib('20', '00:20'))
+    const data = mockPrisma.summaryItem.update.mock.calls[0][0].data
+    expect(data.anchorAt).toEqual(wib('19', '09:00'))
+    expect(data.anchorMessageId).toBe('m1')
+    expect(data.snippet).toBe('kak')
+    expect(data.coveredUntil).toEqual(wib('19', '10:20'))
+  })
+
+  it('cakupan tidak pernah mundur pada pembaruan OPEN', async () => {
+    mockPrisma.summaryItem.findUnique.mockResolvedValue(liveRow({ coveredUntil: wib('19', '11:00') }) as never)
+    await syncSummaryItems('2026-10-19', payload({ unreplied: [runItem()] as never }), wib('20', '00:20'))
+    expect(mockPrisma.summaryItem.update.mock.calls[0][0].data.coveredUntil).toEqual(wib('19', '11:00'))
+  })
+
+  it('item baru dari payload baru: anchor = firstMessageAt/Id, cakupan + snippet = pesan terakhir', async () => {
+    mockPrisma.summaryItem.findUnique.mockResolvedValue(null)
+    await syncSummaryItems('2026-10-19', payload({ unreplied: [runItem({ firstMessageAt: wib('19', '09:00').toISOString(), firstMessageId: 'm1' })] as never }), wib('20', '00:20'))
+    expect(mockPrisma.summaryItem.create.mock.calls[0][0].data).toMatchObject({
+      kind: 'REPLY', anchorAt: wib('19', '09:00'), anchorMessageId: 'm1', coveredUntil: wib('19', '10:20'), snippet: 'kak',
+    })
+  })
+
+  it('FOLLOW_UP tidak membawa coveredUntil', async () => {
+    mockPrisma.summaryItem.findUnique.mockResolvedValue(null)
+    await syncSummaryItems('2026-10-19', payload({ dormant: [runItem()] as never }), wib('20', '00:20'))
+    expect(mockPrisma.summaryItem.create.mock.calls[0][0].data).toMatchObject({ kind: 'FOLLOW_UP', coveredUntil: null })
+  })
+
+  it('satu kandidat gagal (P2002 karena tick live) tidak membatalkan sisa sync', async () => {
+    mockPrisma.summaryItem.findUnique.mockResolvedValue(null)
+    mockPrisma.summaryItem.create.mockRejectedValueOnce(new Error('Unique constraint failed')).mockResolvedValueOnce({} as never)
+    const r = await syncSummaryItems('2026-10-19', payload({ unreplied: [runItem(), runItem({ conversationId: 'c2' })] as never }), wib('20', '00:20'))
+    expect(r.created).toBe(1)
+    expect(mockPrisma.summaryItem.create).toHaveBeenCalledTimes(2)
   })
 })

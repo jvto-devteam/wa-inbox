@@ -25,6 +25,15 @@ describe('isNoiseMessage', () => {
     expect(isNoiseMessage(text(null, 'reaction'))).toBe(true)
   })
 
+  it('sesudah pertanyaan kita: "ok"/"siap"/"baik"/👍 adalah jawaban, terima kasih tetap penutup', () => {
+    const q = { afterQuestion: true }
+    for (const content of ['ok', 'oke kak', 'siap', 'baik pak', 'okkk', '👍']) expect(isNoiseMessage(text(content), q)).toBe(false)
+    expect(isNoiseMessage(text('👍', 'reaction'), q)).toBe(false)
+    for (const content of ['thanks', 'terima kasih kak', 'ok thanks', 'noted']) expect(isNoiseMessage(text(content), q)).toBe(true)
+    // Tanpa pertanyaan: tetap penutup.
+    expect(isNoiseMessage(text('oke kak'), { afterQuestion: false })).toBe(true)
+  })
+
   it('pesan tanpa teks (gambar, dokumen, voice) bukan penutup: bisa bukti transfer', () => {
     expect(isNoiseMessage(text(null, 'image'))).toBe(false)
     expect(isNoiseMessage(text('   ', 'document'))).toBe(false)

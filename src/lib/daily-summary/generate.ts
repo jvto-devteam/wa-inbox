@@ -8,7 +8,15 @@ import {
   RUNNING_STALE_MS,
   UNREPLIED_MIN_MS,
 } from './config'
-import { buildNumberedTranscript, classifyConversation, collectDay, messageSnippet, type CollectedDay, type NumberedTranscript } from './collect'
+import {
+  buildNumberedTranscript,
+  classifyConversation,
+  collectDay,
+  messageSnippet,
+  type CollectedDay,
+  type NumberedTranscript,
+  type TranscriptMessage,
+} from './collect'
 import { dailySummaryPayloadSchema, type ConversationReview, type DailySummaryPayload } from './payload-schema'
 import { reviewConversation, type ReviewReason } from './review'
 import { pruneChatReviews, saveChatReview } from '@/lib/chat-review/store'
@@ -70,6 +78,17 @@ async function claim(date: string, now: Date): Promise<boolean> {
   }
 }
 
+/**
+ * Pesan pertama rangkaian pesan pelanggan di ujung transkrip (sesudah pesan keluar terakhir).
+ * Transkrip hanya memuat TRANSCRIPT_MAX_MESSAGES pesan terakhir, jadi rangkaian yang lebih panjang
+ * berawal dari pesan tertua yang terbawa.
+ */
+export function firstOfUnansweredRun(messages: TranscriptMessage[]): { firstMessageAt?: string; firstMessageId?: string } {
+  let first: TranscriptMessage | undefined
+  for (let i = messages.length - 1; i >= 0 && messages[i].direction === 'INBOUND'; i--) first = messages[i]
+  return first ? { firstMessageAt: first.createdAt.toISOString(), firstMessageId: first.id } : {}
+}
+
 export function buildPayload(
   date: string,
   day: CollectedDay,
@@ -122,6 +141,7 @@ export function buildPayload(
           ...ref,
           lastMessageAt: c.unreplied.last.createdAt.toISOString(),
           lastMessageId: c.unreplied.last.id,
+          ...firstOfUnansweredRun(facts.messages),
           waitingMs: c.unreplied.waitingMs,
           snippet: messageSnippet(c.unreplied.last),
           review,

@@ -113,14 +113,23 @@ function pickLatest(bookings: BookingData[]): BookingData | null {
 }
 
 /**
+ * Hasil satu pencarian booking. "Tidak ditemukan" dan "gagal" SENGAJA dibedakan: hanya jawaban
+ * sah dari API ("tidak ada booking untuk nomor ini") yang boleh menghapus `bookingData` yang
+ * tersimpan. Timeout, status non-OK, body rusak, atau API yang belum dikonfigurasi bukan bukti
+ * apa pun tentang booking pelanggan -- dulu semuanya terbaca `null` dan penyegaran berkala
+ * menimpa data booking yang benar dengan NULL setiap kali API booking tersendat.
+ */
+export type BookingLookup = { status: 'found'; data: BookingData } | { status: 'not_found' } | { status: 'error' }
+
+/**
  * Looks up booking data for a phone number via the configured booking API.
  * Returns the raw booking object (most recent by start date, if multiple
- * bookings exist) or `null` when not found, not configured, or on any
- * error — never throws.
+ * bookings exist), `not_found` only for a successful empty answer, and `error`
+ * when not configured or on any failure -- never throws.
  */
-export async function lookupBooking(phone: string): Promise<BookingData | null> {
+export async function lookupBookingResult(phone: string): Promise<BookingLookup> {
   const url = process.env.BOOKING_API_URL
-  if (!url) return null
+  if (!url) return { status: 'error' }
 
   const key = process.env.BOOKING_API_KEY
   const headers: Record<string, string> = {}
@@ -139,22 +148,29 @@ export async function lookupBooking(phone: string): Promise<BookingData | null> 
       signal: AbortSignal.timeout(10000),
     })
 
-    if (!res.ok) return null
+    if (!res.ok) return { status: 'error' }
 
     const body = await res.json()
 
     if (Array.isArray(body)) {
-      return pickLatest(body as BookingData[])
+      const latest = pickLatest(body as BookingData[])
+      return latest ? { status: 'found', data: latest } : { status: 'not_found' }
     }
 
     if (!body || typeof body !== 'object' || Object.keys(body).length === 0) {
-      return null
+      return { status: 'not_found' }
     }
 
-    return body as BookingData
+    return { status: 'found', data: body as BookingData }
   } catch {
-    return null
+    return { status: 'error' }
   }
+}
+
+/** Bentuk lama: data booking, atau `null` untuk tidak ditemukan maupun gagal. Never throws. */
+export async function lookupBooking(phone: string): Promise<BookingData | null> {
+  const result = await lookupBookingResult(phone)
+  return result.status === 'found' ? result.data : null
 }
 
 // How long a fetched (or confirmed-absent) booking lookup is trusted before re-checking the
@@ -162,6 +178,9 @@ export async function lookupBooking(phone: string): Promise<BookingData | null> 
 // moved here, and the one enrichContactAvatar (src/lib/inbound.ts) uses for the same reason:
 // one consistent "re-check external data daily" cadence across the codebase.
 const BOOKING_CACHE_MS = 24 * 60 * 60 * 1000
+
+/** Waktu maksimal `refreshStaleBookingData` per pemanggilan (lihat batas di loop-nya). */
+export const REFRESH_BUDGET_MS = 60_000
 
 function todayYmd(): string {
   const now = new Date()
@@ -215,13 +234,23 @@ export async function ensureFreshBookingData(conversation: {
   if (conversation.isTest) return null
 
   let bookingData = conversation.bookingData as BookingData | null
-  const stale =
+  let stale =
     !conversation.bookingCheckedAt || Date.now() - conversation.bookingCheckedAt.getTime() > BOOKING_CACHE_MS
   // Booking lookup is keyed by phone number (the JVTO booking API has no other identity to
   // search by). A null phone -- a contact born on a channel without one (IG/FB/email, Task 9)
   // -- structurally cannot have a booking looked up, so it's treated the same as "API not
   // configured": no lookup, cached data (if any) simply stands.
-  if (stale && conversation.contact.phone) bookingData = await lookupBooking(conversation.contact.phone)
+  if (stale && conversation.contact.phone) {
+    const lookup = await lookupBookingResult(conversation.contact.phone)
+    if (lookup.status === 'error') {
+      // API gagal: data tersimpan tetap berlaku dan `bookingCheckedAt` TIDAK distempel, supaya
+      // percakapan ini dicoba lagi di penyegaran berikutnya alih-alih dianggap "tanpa booking"
+      // selama 24 jam. Tahap masih dinilai dari data lama di bawah.
+      stale = false
+    } else {
+      bookingData = lookup.status === 'found' ? lookup.data : null
+    }
+  }
 
   // Tahap diturunkan dari SETIAP pemanggilan, bukan hanya saat cache miss.
   //
@@ -347,7 +376,8 @@ export async function advancePipelineStagesFromBooking(): Promise<{ diperbarui: 
  * paralel: mengalirkan puluhan permintaan serentak ke API pihak ketiga adalah cara membuatnya
  * membatasi kita.
  */
-export async function refreshStaleBookingData(limit = 25): Promise<{ diperiksa: number }> {
+export async function refreshStaleBookingData(limit = 25, budgetMs = REFRESH_BUDGET_MS): Promise<{ diperiksa: number }> {
+  const deadline = Date.now() + budgetMs
   try {
     const kandidat = await prisma.conversation.findMany({
       where: {
@@ -370,7 +400,12 @@ export async function refreshStaleBookingData(limit = 25): Promise<{ diperiksa: 
       take: limit,
     })
 
+    let diperiksa = 0
     for (const conversation of kandidat) {
+      // Batas waktu per tick: tiap panggilan bisa makan timeout 10 s, dan tick antrean tidak
+      // boleh tertahan lebih dari ~1 menit oleh API booking yang lambat. Sisanya tick berikutnya.
+      if (Date.now() >= deadline) break
+      diperiksa++
       // `ensureFreshBookingData` sudah menelan errornya sendiri lewat `lookupBooking`, tapi
       // penulisan Prisma-nya tidak -- satu baris bermasalah tidak boleh menghentikan sisanya.
       await ensureFreshBookingData(conversation).catch((error: unknown) => {
@@ -378,8 +413,8 @@ export async function refreshStaleBookingData(limit = 25): Promise<{ diperiksa: 
       })
     }
 
-    if (kandidat.length > 0) console.info('refreshStaleBookingData', { diperiksa: kandidat.length })
-    return { diperiksa: kandidat.length }
+    if (diperiksa > 0) console.info('refreshStaleBookingData', { diperiksa, kandidat: kandidat.length })
+    return { diperiksa }
   } catch (error) {
     console.error('refreshStaleBookingData gagal', { error })
     return { diperiksa: 0 }
