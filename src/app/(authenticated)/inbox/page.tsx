@@ -21,6 +21,10 @@ function InboxPageContent() {
   // Dibaca sekali, dengan alasan yang sama seperti `conversation` di atas. Dilepas begitu
   // operator berpindah percakapan: menyorot pesan milik percakapan lain tidak berarti apa-apa.
   const [focusMessageId, setFocusMessageId] = useState<string | null>(urlMessage)
+  // `&lihat=1` (butir Ringkasan chat / /summary): pesan hanya disorot, panel "Perbaiki jawaban
+  // bot" tidak dibuka sendiri. Tanpa parameter ini (Balas, lonceng gap) perilakunya tetap.
+  const urlLihat = searchParams.get('lihat') === '1'
+  const [openFixOnFocus, setOpenFixOnFocus] = useState(!urlLihat)
 
   // Lonceng gap ada di SETIAP halaman, /inbox termasuk. Menekan salah satu isinya dari /inbox
   // adalah navigasi ke rute yang sama dengan query berbeda, dan React mempertahankan komponen
@@ -35,7 +39,7 @@ function InboxPageContent() {
   // berubah" milik React, dan React membuang render yang sedang berjalan lalu mengulangnya
   // dengan nilai baru SEBELUM apa pun tergambar. Versi useEffect-nya menggambar satu bingkai
   // dengan percakapan lama dulu, dan ditolak lint di repo ini (cascading renders).
-  const urlKey = `${urlConversation ?? ''}|${urlMessage ?? ''}`
+  const urlKey = `${urlConversation ?? ''}|${urlMessage ?? ''}|${urlLihat ? '1' : ''}`
   const [lastUrlKey, setLastUrlKey] = useState(urlKey)
   if (urlKey !== lastUrlKey) {
     setLastUrlKey(urlKey)
@@ -44,6 +48,7 @@ function InboxPageContent() {
     if (urlConversation) {
       setSelectedId(urlConversation)
       setFocusMessageId(urlMessage)
+      setOpenFixOnFocus(!urlLihat)
     }
   }
   // Hanya berlaku dari xl ke atas -- lihat komentar geometri di bawah. Di bawah xl panel kontak
@@ -116,6 +121,7 @@ function InboxPageContent() {
             key={`thread-${selectedId}`}
             conversationId={selectedId}
             focusMessageId={focusMessageId ?? undefined}
+            openFixOnFocus={openFixOnFocus}
             onBack={() => setSelectedId(null)}
             contactPanelOpen={contactPanelOpen}
             onToggleContactPanel={() => setContactPanelOpen((open) => !open)}

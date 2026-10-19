@@ -160,7 +160,7 @@ describe('SummaryDayView', () => {
     const citra = card('Citra')
     expect(within(citra).getByRole('link', { name: 'Lihat pesan: Jam berapa berangkat?' })).toHaveAttribute(
       'href',
-      '/inbox?conversation=c_citra&message=m_7'
+      '/inbox?conversation=c_citra&message=m_7&lihat=1'
     )
     expect(within(citra).getByText('Bawa jaket?').closest('a')).toBeNull()
   })

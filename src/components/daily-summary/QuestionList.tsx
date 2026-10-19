@@ -10,7 +10,8 @@ import { scrollToThreadMessage } from '@/lib/inbox/message-anchor'
  * chat" di Inbox dan tampilan per tanggal di /summary.
  *
  * Butir yang membawa `messageId` (pesan sumbernya di transkrip, lihat review.ts) menjadi tautan ke
- * `/inbox?conversation=<id>&message=<messageId>`: thread menggulung ke pesan itu dan menyorotnya.
+ * `/inbox?conversation=<id>&message=<messageId>&lihat=1`: thread menggulung ke pesan itu dan menyorotnya
+ * tanpa membuka panel perbaikan bot.
  * Ringkasan lama (string polos) dan butir yang sumbernya tidak diketahui tampil sebagai teks biasa.
  */
 
@@ -19,7 +20,8 @@ function ItemText({ teks, messageId, conversationId }: { teks: string; messageId
   if (!messageId || !conversationId) return <span>{teks}</span>
   return (
     <Link
-      href={conversationHref(conversationId, messageId)}
+      // `lihat`: membaca sumber poin, bukan memperbaiki jawaban bot -- panel perbaikan tetap tertutup.
+      href={conversationHref(conversationId, messageId, { lihat: true })}
       scroll={false}
       // URL yang sama (butir yang sama diklik lagi) tidak memicu efek sorot di ThreadView; gulung
       // langsung bila pesannya sedang dirender. Di /summary tidak ada thread, jadi ini no-op.

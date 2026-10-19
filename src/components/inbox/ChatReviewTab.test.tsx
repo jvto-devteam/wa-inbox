@@ -307,9 +307,9 @@ describe('butir yang bisa diklik', () => {
 
     const latest = await screen.findByRole('region', { name: 'Poin penting terbaru' })
     const q = within(latest).getByRole('link', { name: 'Lihat pesan: Berapa harga?' })
-    expect(q).toHaveAttribute('href', '/inbox?conversation=conv_1&message=msg_3')
+    expect(q).toHaveAttribute('href', '/inbox?conversation=conv_1&message=msg_3&lihat=1')
     const p = within(latest).getByRole('link', { name: 'Lihat pesan: Tanggal 12 November' })
-    expect(p).toHaveAttribute('href', '/inbox?conversation=conv_1&message=msg%205')
+    expect(p).toHaveAttribute('href', '/inbox?conversation=conv_1&message=msg%205&lihat=1')
     expect(within(latest).getAllByRole('link')).toHaveLength(2)
     for (const text of ['Jemput?', 'Bayar di tempat?', 'Dari Surabaya', 'Paket Ijen']) {
       expect(within(latest).getByText(text).closest('a')).toBeNull()

@@ -24,8 +24,8 @@ vi.mock('@/components/inbox/ConversationList', () => ({
 }))
 
 vi.mock('@/components/inbox/ThreadView', () => ({
-  ThreadView: ({ conversationId, focusMessageId }: { conversationId: string; focusMessageId?: string }) => (
-    <div data-testid="thread-view" data-focus-message-id={focusMessageId ?? ''}>
+  ThreadView: ({ conversationId, focusMessageId, openFixOnFocus }: { conversationId: string; focusMessageId?: string; openFixOnFocus?: boolean }) => (
+    <div data-testid="thread-view" data-focus-message-id={focusMessageId ?? ''} data-open-fix={String(openFixOnFocus ?? true)}>
       {conversationId}
     </div>
   ),
@@ -80,6 +80,18 @@ describe('InboxPage deep link via ?message=', () => {
     render(<InboxPage />)
 
     expect(screen.getByTestId('thread-view')).toHaveAttribute('data-focus-message-id', 'msg_bot')
+  })
+
+  it('&lihat=1 (butir ringkasan): sorot tanpa membuka panel perbaikan; tanpa itu tetap terbuka', () => {
+    mockSearchParams = new URLSearchParams('conversation=conv_1&message=msg_bot&lihat=1')
+    const { rerender } = render(<InboxPage />)
+    expect(screen.getByTestId('thread-view')).toHaveAttribute('data-focus-message-id', 'msg_bot')
+    expect(screen.getByTestId('thread-view')).toHaveAttribute('data-open-fix', 'false')
+
+    // Gap bell / Balas pada percakapan yang sama: hanya `lihat` yang hilang dari URL.
+    mockSearchParams = new URLSearchParams('conversation=conv_1&message=msg_bot')
+    rerender(<InboxPage />)
+    expect(screen.getByTestId('thread-view')).toHaveAttribute('data-open-fix', 'true')
   })
 
   it('tanpa ?message= tidak ada pesan yang disorot', () => {

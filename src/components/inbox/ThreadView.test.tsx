@@ -1194,6 +1194,21 @@ describe('ThreadView — lompat ke pesan tertentu', () => {
     expect(await screen.findByText('Perbaiki jawaban bot')).toBeInTheDocument()
   })
 
+  // Butir Ringkasan chat (`&lihat=1`) hanya menunjukkan pesan sumbernya; membuka panel perbaikan
+  // bot di sana mengubah "lihat" menjadi "perbaiki" tanpa diminta.
+  it('openFixOnFocus={false}: pesan bot disorot dan digulung, panel perbaikan tidak terbuka', async () => {
+    const scrollSpy = vi.spyOn(Element.prototype, 'scrollIntoView').mockImplementation(() => {})
+    stubThread([inbound, botReply])
+
+    render(<ThreadView conversationId="conv_1" focusMessageId="m_bot" openFixOnFocus={false} />)
+
+    await waitFor(() => expect(scrollSpy).toHaveBeenCalledWith({ block: 'center' }))
+    expect(screen.getByText('Harga ATV mulai Rp350.000.')).toBeInTheDocument()
+    expect(document.getElementById(threadMessageDomId('m_bot'))?.className).toContain('ring-2')
+    expect(screen.queryByText('Perbaiki jawaban bot')).not.toBeInTheDocument()
+    scrollSpy.mockRestore()
+  })
+
   it('tanpa focusMessageId, panel perbaikan tidak terbuka sendiri', async () => {
     stubThread([inbound, botReply])
 

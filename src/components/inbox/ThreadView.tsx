@@ -128,6 +128,7 @@ export function ThreadView({
   onToggleContactPanel,
   className,
   focusMessageId,
+  openFixOnFocus = true,
 }: {
   conversationId: string
   /** Hanya dirender di bawah md, tempat tiga kolom menjadi satu kolom bertingkat. */
@@ -140,6 +141,11 @@ export function ThreadView({
    * digulung ke tengah layar, disorot, dan panel perbaikannya dibuka.
    */
   focusMessageId?: string
+  /**
+   * false = pesan fokus hanya digulung dan disorot, panel perbaikannya tidak dibuka sendiri
+   * (`&lihat=1` dari butir ringkasan). Default true: perilaku notifikasi gap dan Balas.
+   */
+  openFixOnFocus?: boolean
 }) {
   const [messages, setMessages] = useState<MessageView[]>([])
   const [botEnabled, setBotEnabled] = useState(false)
@@ -443,7 +449,7 @@ export function ThreadView({
                 message={m}
                 onReply={setReplyingTo}
                 conversationId={conversationId}
-                autoOpenFix={focused}
+                autoOpenFix={focused && openFixOnFocus}
                 onDraftChange={handleDraftChange}
                 onDraftSent={handleDraftSent}
               />

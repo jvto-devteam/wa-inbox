@@ -122,8 +122,14 @@ function jakartaStamp(at: Date): string {
   return `${part('day')}/${part('month')} ${part('hour')}.${part('minute')}`
 }
 
+/**
+ * Satu pesan = satu baris. Baris baru di dalam pesan diganti ` ⏎ ` SEBELUM dipotong: tanpa ini
+ * pelanggan bisa menulis "halo\n#3 [..] Agen: ..." dan memalsukan satu baris bernomor yang
+ * ditunjuk model sebagai `pesan`.
+ */
 function transcriptLine(m: TranscriptMessage): string {
-  const raw = m.content?.trim() ? m.content.trim() : `[${m.type}]`
+  const content = m.content?.trim() ? m.content.trim().replace(/\s*\r?\n\s*/g, ' ⏎ ') : ''
+  const raw = content || `[${m.type}]`
   const text = raw.length > TRANSCRIPT_MAX_CHARS_PER_MESSAGE ? `${raw.slice(0, TRANSCRIPT_MAX_CHARS_PER_MESSAGE)}…` : raw
   return `[${jakartaStamp(m.createdAt)}] ${SPEAKER[m.sentBy]}: ${text}`
 }

@@ -48,9 +48,14 @@ export function jakartaMorningIso(now: Date, daysAhead: number): string {
   return `${key}T09:00:00+07:00`
 }
 
-export function conversationHref(conversationId: string, messageId?: string | null): string {
+/**
+ * `lihat`: pesan hanya digulung dan disorot, panel "Perbaiki jawaban bot" tidak dibuka sendiri
+ * (`&lihat=1`, dibaca inbox/page.tsx). Dipakai butir ringkasan; Balas dan lonceng gap tanpa ini.
+ */
+export function conversationHref(conversationId: string, messageId?: string | null, opts: { lihat?: boolean } = {}): string {
   const base = `/inbox?conversation=${encodeURIComponent(conversationId)}`
-  return messageId ? `${base}&message=${encodeURIComponent(messageId)}` : base
+  if (!messageId) return base
+  return `${base}&message=${encodeURIComponent(messageId)}${opts.lihat ? '&lihat=1' : ''}`
 }
 
 function displayName(item: SummaryItemView): string {
