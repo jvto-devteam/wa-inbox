@@ -1218,3 +1218,86 @@ describe('ThreadView — lompat ke pesan tertentu', () => {
     expect(screen.queryByText('Perbaiki jawaban bot')).not.toBeInTheDocument()
   })
 })
+
+// Tombol "Balas" (`&draft=1`) dan "Follow up" (`&followup=1`) di antrean /summary. Keduanya
+// hanya menyiapkan balasan: tidak ada POST ke /api/send di jalur mana pun.
+describe('ThreadView — siap kirim dari antrean', () => {
+  const HOUR = 60 * 60 * 1000
+  const inbound = (createdAt: string) => ({
+    id: 'm_in',
+    direction: 'INBOUND',
+    content: 'berapa harga ATV sekarang?',
+    channel: 'OFFICIAL',
+    sentBy: 'CUSTOMER',
+    deliveryStatus: 'DELIVERED',
+    createdAt,
+    botTrace: null,
+    topicLabels: null,
+    draft: null,
+  })
+  const draftView = {
+    id: 'draft_1',
+    sourceMessageId: 'm_in',
+    text: 'Harga ATV mulai Rp350.000.',
+    generatedText: 'Harga ATV mulai Rp350.000.',
+    mode: 'faq',
+    handoffReason: null,
+    decision: null,
+    knowledgeGaps: [],
+    generatedAt: new Date().toISOString(),
+    generatedByName: null,
+    editedAt: null,
+    editedByName: null,
+    sentAt: null,
+    sentByName: null,
+    sentMessageId: null,
+  }
+
+  function stubThread(messages: unknown[]) {
+    vi.mocked(fetch).mockImplementation((url, init) => {
+      const s = String(url)
+      if (s.endsWith('/messages')) return Promise.resolve({ ok: true, json: () => Promise.resolve(messages) } as Response)
+      if (s.endsWith('/draft') && init?.method === 'POST')
+        return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(draftView) } as Response)
+      if (s === '/api/settings') return Promise.resolve({ ok: true, json: () => Promise.resolve({ defaultChannel: 'OFFICIAL' }) } as Response)
+      if (s === '/api/templates') return Promise.resolve({ ok: true, json: () => Promise.resolve([]) } as Response)
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({ botEnabled: false, platform: 'WHATSAPP' }) } as Response)
+    })
+  }
+
+  const callsTo = (predicate: (url: string, init?: RequestInit) => boolean) =>
+    vi.mocked(fetch).mock.calls.filter(([url, init]) => predicate(String(url), init))
+
+  it('autoDraft: draft untuk pesan masuk yang disorot disusun tepat sekali dan ditampilkan', async () => {
+    const scrollSpy = vi.spyOn(Element.prototype, 'scrollIntoView').mockImplementation(() => {})
+    stubThread([inbound(new Date().toISOString())])
+
+    render(<ThreadView conversationId="conv_1" focusMessageId="m_in" autoDraft />)
+
+    expect(await screen.findByText('Draft jawaban bot')).toBeInTheDocument()
+    expect(callsTo((url, init) => url.endsWith('/messages/m_in/draft') && init?.method === 'POST')).toHaveLength(1)
+    expect(callsTo((url) => url.startsWith('/api/send'))).toHaveLength(0)
+    scrollSpy.mockRestore()
+  })
+
+  it('tanpa autoDraft tidak ada draft yang disusun', async () => {
+    stubThread([inbound(new Date().toISOString())])
+    render(<ThreadView conversationId="conv_1" focusMessageId="m_in" />)
+    expect(await screen.findByRole('button', { name: 'Generate draft' })).toBeInTheDocument()
+    expect(callsTo((url) => url.endsWith('/draft'))).toHaveLength(0)
+  })
+
+  it('followUp + pesan masuk terakhir > 24 jam: pemilih template resmi terbuka', async () => {
+    stubThread([inbound(new Date(Date.now() - 30 * HOUR).toISOString())])
+    render(<ThreadView conversationId="conv_1" followUp />)
+    expect(await screen.findByText('TEMPLATE RESMI (META)')).toBeInTheDocument()
+    expect(callsTo((url) => url.startsWith('/api/send'))).toHaveLength(0)
+  })
+
+  it('followUp + pesan masuk terakhir < 24 jam: kotak balasan difokuskan', async () => {
+    stubThread([inbound(new Date(Date.now() - 2 * HOUR).toISOString())])
+    render(<ThreadView conversationId="conv_1" followUp />)
+    await waitFor(() => expect(screen.getByRole('textbox', { name: 'Pesan' })).toHaveFocus())
+    expect(screen.queryByText('TEMPLATE RESMI (META)')).not.toBeInTheDocument()
+  })
+})

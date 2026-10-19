@@ -990,3 +990,110 @@ describe('ComposeBox — nama kontrol dan pintasan', () => {
     await waitFor(() => expect(onSent).toHaveBeenCalled())
   })
 })
+
+// `&followup=1` dari "Follow up" di antrean /summary. Tidak satu pun jalur ini boleh mengirim:
+// yang diuji hanya pemilih template terbuka atau kotak balasan terfokus.
+describe('ComposeBox — followUp dari antrean', () => {
+  const HOUR = 60 * 60 * 1000
+  const officialTemplate = {
+    id: 'tpl_off',
+    name: 'Sapa Ulang',
+    type: 'OFFICIAL',
+    category: 'MARKETING',
+    body: 'Halo, apakah masih berminat?',
+    metaStatus: 'APPROVED',
+    format: 'TEXT',
+    variables: [],
+  }
+
+  function stubChannel(defaultChannel: 'OFFICIAL' | 'UNOFFICIAL') {
+    const fetchMock = vi.fn((url: string) => {
+      if (url === '/api/templates') return Promise.resolve({ ok: true, json: async () => [officialTemplate] })
+      if (url === '/api/settings') return Promise.resolve({ ok: true, json: async () => ({ defaultChannel }) })
+      return Promise.resolve({ ok: true, json: async () => ({}) })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    return fetchMock
+  }
+
+  function sendCalls(fetchMock: ReturnType<typeof vi.fn>) {
+    return fetchMock.mock.calls.filter(([url]) => String(url).startsWith('/api/send'))
+  }
+
+  it('jendela tertutup (pesan masuk terakhir > 24 jam, kanal Official): pemilih template terbuka', async () => {
+    const fetchMock = stubChannel('OFFICIAL')
+    render(
+      <ComposeBox
+        conversationId="conv_1"
+        onSent={() => {}}
+        followUp
+        platform="WHATSAPP"
+        lastInboundAt={new Date(Date.now() - 30 * HOUR).toISOString()}
+      />
+    )
+    expect(await screen.findByText('TEMPLATE RESMI (META)')).toBeInTheDocument()
+    expect(screen.getByText('Sapa Ulang')).toBeInTheDocument()
+    expect(screen.getByPlaceholderText(COMPOSER_PLACEHOLDER)).not.toHaveFocus()
+    expect(sendCalls(fetchMock)).toHaveLength(0)
+  })
+
+  it('tanpa pesan masuk sama sekali dihitung jendela tertutup', async () => {
+    stubChannel('OFFICIAL')
+    render(<ComposeBox conversationId="conv_1" onSent={() => {}} followUp lastInboundAt={null} />)
+    expect(await screen.findByText('TEMPLATE RESMI (META)')).toBeInTheDocument()
+  })
+
+  it('jendela terbuka (pesan masuk 2 jam lalu): kotak balasan difokuskan, pemilih tidak dibuka', async () => {
+    const fetchMock = stubChannel('OFFICIAL')
+    render(
+      <ComposeBox
+        conversationId="conv_1"
+        onSent={() => {}}
+        followUp
+        platform="WHATSAPP"
+        lastInboundAt={new Date(Date.now() - 2 * HOUR).toISOString()}
+      />
+    )
+    await waitFor(() => expect(screen.getByPlaceholderText(COMPOSER_PLACEHOLDER)).toHaveFocus())
+    expect(screen.queryByText('TEMPLATE RESMI (META)')).not.toBeInTheDocument()
+    expect(fetchMock.mock.calls.some(([url]) => url === '/api/templates')).toBe(false)
+    expect(sendCalls(fetchMock)).toHaveLength(0)
+  })
+
+  it('kanal Unofficial tidak berjendela: kotak balasan difokuskan meski pesan masuk sudah lama', async () => {
+    const fetchMock = stubChannel('UNOFFICIAL')
+    render(
+      <ComposeBox
+        conversationId="conv_1"
+        onSent={() => {}}
+        followUp
+        lastInboundAt={new Date(Date.now() - 72 * HOUR).toISOString()}
+      />
+    )
+    await waitFor(() => expect(screen.getByPlaceholderText(COMPOSER_PLACEHOLDER)).toHaveFocus())
+    expect(fetchMock.mock.calls.some(([url]) => url === '/api/templates')).toBe(false)
+  })
+
+  it('tanpa followUp tidak ada pemilih yang terbuka dan tidak ada fokus otomatis', async () => {
+    const fetchMock = stubChannel('OFFICIAL')
+    render(<ComposeBox conversationId="conv_1" onSent={() => {}} lastInboundAt={null} />)
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/settings'))
+    await Promise.resolve()
+    expect(screen.queryByText('TEMPLATE RESMI (META)')).not.toBeInTheDocument()
+    expect(screen.getByPlaceholderText(COMPOSER_PLACEHOLDER)).not.toHaveFocus()
+  })
+
+  it('pemilih dibuka sekali: pesan masuk baru (prop berubah) tidak membukanya lagi setelah ditutup', async () => {
+    const fetchMock = stubChannel('OFFICIAL')
+    const old = new Date(Date.now() - 30 * HOUR).toISOString()
+    const { rerender } = render(<ComposeBox conversationId="conv_1" onSent={() => {}} followUp lastInboundAt={old} />)
+    expect(await screen.findByText('TEMPLATE RESMI (META)')).toBeInTheDocument()
+    fireEvent.click(screen.getByLabelText('Tutup daftar template'))
+    rerender(
+      <ComposeBox conversationId="conv_1" onSent={() => {}} followUp lastInboundAt={new Date(Date.now() - 31 * HOUR).toISOString()} />
+    )
+    await Promise.resolve()
+    expect(screen.queryByText('TEMPLATE RESMI (META)')).not.toBeInTheDocument()
+    expect(fetchMock.mock.calls.filter(([url]) => url === '/api/templates')).toHaveLength(1)
+  })
+})

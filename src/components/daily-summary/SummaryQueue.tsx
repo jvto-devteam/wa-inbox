@@ -278,15 +278,18 @@ function AnchorLines({ item, now }: { item: SummaryItemView; now: Date }) {
   )
 }
 
-/** Aksi utama kartu: Balas (ke pesan pelanggan), Follow up, atau Buka chat (ke pesan janji). */
+/**
+ * Aksi utama kartu: Balas (ke pesan pelanggan, draft disusun otomatis), Follow up (pemilih
+ * template atau kotak balasan siap), atau Buka chat (ke pesan janji). Tidak satu pun mengirim.
+ */
 function primaryAction(item: SummaryItemView): { href: string; label: string } {
   switch (item.kind) {
     case 'REPLY':
-      return { href: conversationHref(item.conversationId, item.anchorMessageId), label: 'Balas' }
+      return { href: conversationHref(item.conversationId, item.anchorMessageId, { draft: true }), label: 'Balas' }
     case 'PROMISE':
       return { href: conversationHref(item.conversationId, item.anchorMessageId, { lihat: true }), label: 'Buka chat' }
     default:
-      return { href: conversationHref(item.conversationId), label: 'Follow up' }
+      return { href: conversationHref(item.conversationId, null, { followup: true }), label: 'Follow up' }
   }
 }
 

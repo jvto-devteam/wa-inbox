@@ -24,8 +24,26 @@ vi.mock('@/components/inbox/ConversationList', () => ({
 }))
 
 vi.mock('@/components/inbox/ThreadView', () => ({
-  ThreadView: ({ conversationId, focusMessageId, openFixOnFocus }: { conversationId: string; focusMessageId?: string; openFixOnFocus?: boolean }) => (
-    <div data-testid="thread-view" data-focus-message-id={focusMessageId ?? ''} data-open-fix={String(openFixOnFocus ?? true)}>
+  ThreadView: ({
+    conversationId,
+    focusMessageId,
+    openFixOnFocus,
+    autoDraft,
+    followUp,
+  }: {
+    conversationId: string
+    focusMessageId?: string
+    openFixOnFocus?: boolean
+    autoDraft?: boolean
+    followUp?: boolean
+  }) => (
+    <div
+      data-testid="thread-view"
+      data-focus-message-id={focusMessageId ?? ''}
+      data-open-fix={String(openFixOnFocus ?? true)}
+      data-auto-draft={String(autoDraft ?? false)}
+      data-follow-up={String(followUp ?? false)}
+    >
       {conversationId}
     </div>
   ),
@@ -92,6 +110,36 @@ describe('InboxPage deep link via ?message=', () => {
     mockSearchParams = new URLSearchParams('conversation=conv_1&message=msg_bot')
     rerender(<InboxPage />)
     expect(screen.getByTestId('thread-view')).toHaveAttribute('data-open-fix', 'true')
+  })
+
+  it('&draft=1 (Balas dari antrean) dan &followup=1 (Follow up) diteruskan ke ThreadView', () => {
+    mockSearchParams = new URLSearchParams('conversation=conv_1&message=msg_in&draft=1')
+    const { rerender } = render(<InboxPage />)
+    expect(screen.getByTestId('thread-view')).toHaveAttribute('data-auto-draft', 'true')
+    expect(screen.getByTestId('thread-view')).toHaveAttribute('data-follow-up', 'false')
+
+    // Tautan lain di /inbox yang sama (query berubah tanpa remount) ikut disinkronkan.
+    mockSearchParams = new URLSearchParams('conversation=conv_2&followup=1')
+    rerender(<InboxPage />)
+    expect(screen.getByTestId('thread-view')).toHaveTextContent('conv_2')
+    expect(screen.getByTestId('thread-view')).toHaveAttribute('data-auto-draft', 'false')
+    expect(screen.getByTestId('thread-view')).toHaveAttribute('data-follow-up', 'true')
+  })
+
+  it('tanpa parameter itu tidak ada draft otomatis maupun follow up', () => {
+    mockSearchParams = new URLSearchParams('conversation=conv_1&message=msg_in')
+    render(<InboxPage />)
+    expect(screen.getByTestId('thread-view')).toHaveAttribute('data-auto-draft', 'false')
+    expect(screen.getByTestId('thread-view')).toHaveAttribute('data-follow-up', 'false')
+  })
+
+  it('draft otomatis dan follow up dilepas begitu operator berpindah percakapan', () => {
+    mockSearchParams = new URLSearchParams('conversation=conv_1&message=msg_in&draft=1&followup=1')
+    render(<InboxPage />)
+    fireEvent.click(screen.getByText('select conv_clicked'))
+    expect(screen.getByTestId('thread-view')).toHaveTextContent('conv_clicked')
+    expect(screen.getByTestId('thread-view')).toHaveAttribute('data-auto-draft', 'false')
+    expect(screen.getByTestId('thread-view')).toHaveAttribute('data-follow-up', 'false')
   })
 
   it('tanpa ?message= tidak ada pesan yang disorot', () => {

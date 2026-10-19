@@ -128,7 +128,7 @@ describe('DailySummaryPage', () => {
     stubFetch({ role: 'AGENT' })
     render(<DailySummaryPage />)
 
-    expect(await screen.findByRole('link', { name: 'Balas' })).toHaveAttribute('href', '/inbox?conversation=conv_1&message=msg_in_1')
+    expect(await screen.findByRole('link', { name: 'Balas' })).toHaveAttribute('href', '/inbox?conversation=conv_1&message=msg_in_1&draft=1')
     expect(screen.getByRole('heading', { name: 'Summary Harian' })).toBeInTheDocument()
     expect(
       screen.getByText('Antrean tindakan dari ringkasan chat harian. Item selesai saat dibalas, dijadwalkan, atau dilepas.')

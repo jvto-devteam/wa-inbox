@@ -25,6 +25,13 @@ function InboxPageContent() {
   // bot" tidak dibuka sendiri. Tanpa parameter ini (Balas, lonceng gap) perilakunya tetap.
   const urlLihat = searchParams.get('lihat') === '1'
   const [openFixOnFocus, setOpenFixOnFocus] = useState(!urlLihat)
+  // `&draft=1` (Balas dari antrean /summary) dan `&followup=1` (Follow up): Inbox menyiapkan
+  // balasan -- menyusun draft untuk pesan sorot, atau membuka pemilih template / memfokuskan
+  // kotak balasan. Tidak ada yang terkirim; keduanya dilepas saat operator berpindah percakapan.
+  const urlDraft = searchParams.get('draft') === '1'
+  const urlFollowUp = searchParams.get('followup') === '1'
+  const [autoDraft, setAutoDraft] = useState(urlDraft)
+  const [followUp, setFollowUp] = useState(urlFollowUp)
 
   // Lonceng gap ada di SETIAP halaman, /inbox termasuk. Menekan salah satu isinya dari /inbox
   // adalah navigasi ke rute yang sama dengan query berbeda, dan React mempertahankan komponen
@@ -39,7 +46,7 @@ function InboxPageContent() {
   // berubah" milik React, dan React membuang render yang sedang berjalan lalu mengulangnya
   // dengan nilai baru SEBELUM apa pun tergambar. Versi useEffect-nya menggambar satu bingkai
   // dengan percakapan lama dulu, dan ditolak lint di repo ini (cascading renders).
-  const urlKey = `${urlConversation ?? ''}|${urlMessage ?? ''}|${urlLihat ? '1' : ''}`
+  const urlKey = `${urlConversation ?? ''}|${urlMessage ?? ''}|${urlLihat ? '1' : ''}|${urlDraft ? '1' : ''}|${urlFollowUp ? '1' : ''}`
   const [lastUrlKey, setLastUrlKey] = useState(urlKey)
   if (urlKey !== lastUrlKey) {
     setLastUrlKey(urlKey)
@@ -49,6 +56,8 @@ function InboxPageContent() {
       setSelectedId(urlConversation)
       setFocusMessageId(urlMessage)
       setOpenFixOnFocus(!urlLihat)
+      setAutoDraft(urlDraft)
+      setFollowUp(urlFollowUp)
     }
   }
   // Hanya berlaku dari xl ke atas -- lihat komentar geometri di bawah. Di bawah xl panel kontak
@@ -93,6 +102,8 @@ function InboxPageContent() {
         onSelect={(id) => {
           setSelectedId(id)
           setFocusMessageId(null)
+          setAutoDraft(false)
+          setFollowUp(false)
           // Pilihan manual ikut ditulis ke URL supaya "apa yang tertulis di URL" dan "apa yang
           // terlihat di layar" tidak pernah berpisah. Tanpa ini, menekan gap yang SAMA setelah
           // operator berpindah percakapan sendiri tidak melakukan apa-apa: href gap itu identik
@@ -122,6 +133,8 @@ function InboxPageContent() {
             conversationId={selectedId}
             focusMessageId={focusMessageId ?? undefined}
             openFixOnFocus={openFixOnFocus}
+            autoDraft={autoDraft}
+            followUp={followUp}
             onBack={() => setSelectedId(null)}
             contactPanelOpen={contactPanelOpen}
             onToggleContactPanel={() => setContactPanelOpen((open) => !open)}

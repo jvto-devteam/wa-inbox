@@ -12,6 +12,7 @@ import { TemplatePreviewBubble, type PreviewButton, type PreviewCard } from './T
 import { bookingVariableFields, resolveVariableField, type VariableField } from '@/lib/booking/variable-fields'
 import { extractVariableNumbers, interpolateVariables } from '@/lib/template-variables'
 import type { BookingData } from '@/lib/booking/client'
+import { followUpNeedsTemplate } from '@/lib/inbox/service-window'
 
 // Maps a variable's 1-indexed position (as a string key, e.g. "1" for {{1}}) to a
 // src/lib/booking/variable-fields.ts field key, chosen once at template-creation time --
@@ -103,6 +104,9 @@ export function ComposeBox({
   contactName = null,
   bookingData = null,
   isTest = false,
+  platform = null,
+  lastInboundAt = null,
+  followUp = false,
   onCancelReply,
   onSent,
 }: {
@@ -119,6 +123,17 @@ export function ComposeBox({
   // real WhatsApp number. Channel/attachments/templates are all agent-outbound concepts
   // that don't apply to "typing as the customer", so they're hidden in this mode.
   isTest?: boolean
+  /** Platform percakapan (null = WhatsApp, sama seperti send.ts). Hanya dipakai `followUp`. */
+  platform?: string | null
+  /** Waktu pesan masuk terakhir -- jendela layanan Meta dihitung dari sini. Hanya dipakai `followUp`. */
+  lastInboundAt?: string | null
+  /**
+   * Operator tiba dari "Follow up" di antrean (`&followup=1`). Sekali per pemasangan: kalau
+   * jendela layanan tertutup (`followUpNeedsTemplate`), pemilih template dibuka; kalau tidak,
+   * kursor ditaruh di kotak balasan. Tidak satu pun mengirim -- memilih template resmi tetap
+   * butuh klik, dan template bervariabel membuka form isian dulu.
+   */
+  followUp?: boolean
   onCancelReply?: () => void
   onSent: (m: MessageView) => void
 }) {
@@ -131,6 +146,11 @@ export function ComposeBox({
   // for a failed settings fetch. Tidak ada lagi pemilih manual di UI -- jalur kirim sepenuhnya
   // mengikuti setelan org, tidak bisa ditimpa per pesan.
   const [channel, setChannel] = useState<'OFFICIAL' | 'UNOFFICIAL'>('OFFICIAL')
+  // true setelah GET /api/settings selesai (berhasil atau gagal). `followUp` menunggu ini:
+  // sebelum itu `channel` masih nilai cadangan, dan keputusan template-atau-tidak bergantung
+  // pada kanal yang benar-benar akan dipakai.
+  const [channelSettled, setChannelSettled] = useState(false)
+  const followUpHandledRef = useRef(false)
   const [sending, setSending] = useState(false)
   const [templates, setTemplates] = useState<QuickReplyTemplate[]>([])
   const [officialTemplates, setOfficialTemplates] = useState<OfficialTemplate[]>([])
@@ -168,19 +188,41 @@ export function ComposeBox({
         // No optimistic seeding: a non-ok response or a network failure leaves
         // the compose box on the 'OFFICIAL' fallback rather than on some
         // half-read value.
-        if (!res.ok) return
-        const s = (await res.json()) as { defaultChannel?: 'OFFICIAL' | 'UNOFFICIAL' }
-        if (cancelled) return
-        if (s.defaultChannel === 'OFFICIAL' || s.defaultChannel === 'UNOFFICIAL') setChannel(s.defaultChannel)
+        if (res.ok) {
+          const s = (await res.json()) as { defaultChannel?: 'OFFICIAL' | 'UNOFFICIAL' }
+          if (!cancelled && (s.defaultChannel === 'OFFICIAL' || s.defaultChannel === 'UNOFFICIAL')) {
+            setChannel(s.defaultChannel)
+          }
+        }
       } catch {
         // Fall back to 'OFFICIAL' — an unreachable settings endpoint must not
         // leave the agent unable to send.
       }
+      if (!cancelled) setChannelSettled(true)
     })()
     return () => {
       cancelled = true
     }
   }, [])
+
+  // `&followup=1`: dijalankan sekali begitu kanal dan data thread siap (ThreadView baru
+  // meneruskan `followUp` setelah pesan dan detail percakapan termuat). Room tes tidak punya
+  // template, jadi di sana selalu fokus ke kotak tulis.
+  useEffect(() => {
+    if (!followUp) {
+      followUpHandledRef.current = false
+      return
+    }
+    if (!channelSettled || followUpHandledRef.current) return
+    followUpHandledRef.current = true
+    if (!isTest && followUpNeedsTemplate({ platform, channel, lastInboundAt })) {
+      void openTemplatePicker()
+    } else {
+      textareaRef.current?.focus()
+    }
+    // Penjaga ref di atas yang memastikan pemicu ini hanya berjalan sekali per permintaan,
+    // meski dependensinya (mis. pesan masuk baru lewat SSE) berubah sesudahnya.
+  }, [followUp, channelSettled, isTest, platform, channel, lastInboundAt])
 
   // Kotak tulis tumbuh mengikuti isinya, bukan mengikuti jumlah baris baru. Bentuk sebelumnya
   // menghitung '\n' (rows={text.split('\n').length}), jadi satu paragraf panjang yang

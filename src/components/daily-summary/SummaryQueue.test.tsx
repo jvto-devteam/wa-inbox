@@ -137,7 +137,7 @@ describe('SummaryQueue', () => {
     expect(screen.queryByText('Pengingat jatuh tempo')).not.toBeInTheDocument()
   })
 
-  it('tautan Balas membawa id pesan; Follow up membuka percakapannya saja', () => {
+  it('tautan Balas membawa id pesan + draft=1; Follow up membawa followup=1 tanpa pesan', () => {
     render(
       <SummaryQueue
         open={[
@@ -156,9 +156,9 @@ describe('SummaryQueue', () => {
         onChanged={() => {}}
       />
     )
-    expect(screen.getByRole('link', { name: 'Balas' })).toHaveAttribute('href', '/inbox?conversation=conv_1&message=msg_in_1')
+    expect(screen.getByRole('link', { name: 'Balas' })).toHaveAttribute('href', '/inbox?conversation=conv_1&message=msg_in_1&draft=1')
     const followUp = screen.getByRole('listitem', { name: 'Follow up: Marco' })
-    expect(within(followUp).getByRole('link', { name: 'Follow up' })).toHaveAttribute('href', '/inbox?conversation=conv_2')
+    expect(within(followUp).getByRole('link', { name: 'Follow up' })).toHaveAttribute('href', '/inbox?conversation=conv_2&followup=1')
     expect(within(followUp).getByText(/diam 3 hari/)).toBeInTheDocument()
   })
 
