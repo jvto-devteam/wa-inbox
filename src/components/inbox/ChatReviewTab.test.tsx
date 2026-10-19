@@ -22,6 +22,8 @@ const review: ChatReviewResponse['history'][number]['review'] = {
   langkahBerikut: 'Kirim harga paket Ijen.',
 }
 
+const NO_REPLY = { respondedAt: null, respondedMessageId: null, respondedBy: null } as const
+
 function item(overrides: Partial<ChatReviewItem> = {}): ChatReviewItem {
   return {
     id: 'item_1',
@@ -152,7 +154,7 @@ describe('ChatReviewTab', () => {
 
   it('latest kosong tetapi riwayat ada: riwayat terbaru jadi ringkasan, berlabel tanggal harian', async () => {
     stubFetch(() =>
-      json(response({ latest: null, history: [{ date: '2026-10-18', review: { ...review, topik: 'Harga Bromo' } }] }))
+      json(response({ latest: null, history: [{ date: '2026-10-18', review: { ...review, topik: 'Harga Bromo' }, ...NO_REPLY }] }))
     )
     render(<ChatReviewTab conversationId="conv_1" />)
 
@@ -220,8 +222,8 @@ describe('ChatReviewTab', () => {
       json(
         response({
           history: [
-            { date: '2026-10-18', review: { ...review, status: 'selesai', topik: 'Harga Bromo' } },
-            { date: '2026-10-17', review: { ...review, status: 'tidak_jelas', topik: 'Sapaan awal', pertanyaan: ['Halo?'] } },
+            { date: '2026-10-18', review: { ...review, status: 'selesai', topik: 'Harga Bromo' }, ...NO_REPLY },
+            { date: '2026-10-17', review: { ...review, status: 'tidak_jelas', topik: 'Sapaan awal', pertanyaan: ['Halo?'] }, ...NO_REPLY },
           ],
         })
       )
@@ -234,9 +236,9 @@ describe('ChatReviewTab', () => {
     const first = within(days[0] as HTMLElement)
     expect(days[0].querySelector('summary')).toHaveTextContent(/18 Okt 2026/)
     expect(first.getByText('Harga Bromo')).toBeInTheDocument()
-    expect(first.getByText('Selesai')).toBeInTheDocument()
+    expect(first.getByText('Saat itu: selesai')).toBeInTheDocument()
     expect(first.getByText('⏳ belum')).toBeInTheDocument()
-    expect(within(days[1] as HTMLElement).getByText('Tidak jelas')).toBeInTheDocument()
+    expect(within(days[1] as HTMLElement).getByText('Saat itu: tidak jelas')).toBeInTheDocument()
     expect(within(days[1] as HTMLElement).getByText('Halo?')).toBeInTheDocument()
     expect(history).toBeInTheDocument()
   })
@@ -364,7 +366,7 @@ describe('tanda "Ada pesan baru"', () => {
     ['2026-10-18T16:59:00.000Z', false],
     ['2026-10-18T17:01:00.000Z', true],
   ])('cadangan riwayat dibandingkan dengan akhir hari WIB (pesan %s → %s)', async (lastMessageAt, shown) => {
-    stubFetch(() => json(response({ latest: null, lastMessageAt, history: [{ date: '2026-10-18', review }] })))
+    stubFetch(() => json(response({ latest: null, lastMessageAt, history: [{ date: '2026-10-18', review, ...NO_REPLY }] })))
     render(<ChatReviewTab conversationId="conv_1" />)
     await screen.findByText(/^Dari ringkasan harian/)
     expect(screen.queryByText('Ada pesan baru sejak ringkasan ini.') !== null).toBe(shown)
@@ -375,5 +377,50 @@ describe('tanda "Ada pesan baru"', () => {
     render(<ChatReviewTab conversationId="conv_1" />)
     await screen.findByText('Belum ada ringkasan.')
     expect(screen.queryByText('Ada pesan baru sejak ringkasan ini.')).not.toBeInTheDocument()
+  })
+
+  describe('riwayat: potret status dan penanda Ditanggapi', () => {
+    async function renderHistory(history: ChatReviewResponse['history']) {
+      stubFetch(() => json(response({ history })))
+      const { container } = render(<ChatReviewTab conversationId="conv_1" />)
+      await screen.findByRole('region', { name: 'Riwayat' })
+      return container.querySelectorAll('details')
+    }
+
+    it('badge riwayat netral (muted, bukan destructive) dan berlabel "Saat itu: ..."', async () => {
+      const days = await renderHistory([{ date: '2026-10-18', review, ...NO_REPLY }])
+      const badge = within(days[0] as HTMLElement).getByText('Saat itu: perlu tindakan')
+      expect(badge.className).not.toMatch(/danger|destructive|red/)
+    })
+
+    it('ada tanggapan tim: tautan ke pesan dengan lihat=1 dan teks bantuan', async () => {
+      const days = await renderHistory([
+        { date: '2026-10-18', review, respondedAt: '2026-10-19T03:00:00.000Z', respondedMessageId: 'msg_9', respondedBy: 'AGENT' },
+      ])
+      const link = within(days[0] as HTMLElement).getByRole('link', { name: /Ditanggapi tim/ })
+      expect(link).toHaveAttribute('href', '/inbox?conversation=conv_1&message=msg_9&lihat=1')
+      expect(link).toHaveTextContent('10.00 WIB')
+      expect(days[0].textContent).toContain('belum tentu semua pertanyaan terjawab')
+    })
+
+    it('dibalas bot: kata-katanya "Dibalas bot"', async () => {
+      const days = await renderHistory([
+        { date: '2026-10-18', review: { ...review, status: 'tidak_jelas' }, respondedAt: '2026-10-19T03:00:00.000Z', respondedMessageId: 'msg_9', respondedBy: 'BOT' },
+      ])
+      expect(within(days[0] as HTMLElement).getByRole('link', { name: /Dibalas bot/ })).toBeInTheDocument()
+      expect(within(days[0] as HTMLElement).queryByText(/Ditanggapi tim/)).not.toBeInTheDocument()
+    })
+
+    it('belum ada tanggapan: "Belum ditanggapi sejak itu" bernada peringatan, tanpa tautan', async () => {
+      const days = await renderHistory([{ date: '2026-10-18', review, ...NO_REPLY }])
+      const note = within(days[0] as HTMLElement).getByText('Belum ditanggapi sejak itu')
+      expect(note.className).toMatch(/warning/)
+      expect(within(days[0] as HTMLElement).queryByRole('link', { name: /tim|bot/i })).not.toBeInTheDocument()
+    })
+
+    it('status selesai: tanpa penanda apa pun', async () => {
+      const days = await renderHistory([{ date: '2026-10-18', review: { ...review, status: 'selesai' }, ...NO_REPLY }])
+      expect(days[0].textContent).not.toMatch(/ditanggapi|dibalas bot|belum ditanggapi/i)
+    })
   })
 })

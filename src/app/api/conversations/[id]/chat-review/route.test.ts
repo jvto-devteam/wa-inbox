@@ -47,6 +47,7 @@ beforeEach(() => {
   vi.mocked(reconcileSummaryItems).mockClear()
   vi.mocked(verifySessionToken).mockResolvedValue({ accountId: 'acc', role: 'AGENT', tokenVersion: 0 })
   mockPrisma.dailySummary.findMany.mockResolvedValue([])
+  mockPrisma.message.findMany.mockResolvedValue([])
 })
 
 describe('GET /api/conversations/[id]/chat-review', () => {
@@ -81,6 +82,21 @@ describe('GET /api/conversations/[id]/chat-review', () => {
       closedReason: 'REPLIED', note: null, closedAt: '2026-10-17T02:00:00.000Z',
     })
     expect(body.history.map((h: { date: string }) => h.date)).toEqual(['2026-10-18', '2026-10-16'])
+  })
+
+  it('riwayat membawa respondedAt/respondedMessageId/respondedBy dari satu kueri pesan keluar', async () => {
+    mockPrisma.conversation.findUnique.mockResolvedValue({ chatReview: review, chatReviewAt: new Date('2026-10-19T00:00:00Z'), summaryItem: null } as never)
+    mockPrisma.dailySummary.findMany.mockResolvedValue([
+      { date: '2026-10-18', payload: payload('2026-10-18') },
+      { date: '2026-10-16', payload: payload('2026-10-16') },
+    ] as never)
+    mockPrisma.message.findMany.mockResolvedValue([{ id: 'mOut', createdAt: new Date('2026-10-19T02:00:00Z'), sentBy: 'BOT' }] as never)
+
+    const body = await (await GET(req(), ctx)).json()
+
+    expect(body.history[0]).toMatchObject({ date: '2026-10-18', respondedAt: '2026-10-19T02:00:00.000Z', respondedMessageId: 'mOut', respondedBy: 'BOT' })
+    expect(body.history[1]).toMatchObject({ date: '2026-10-16', respondedMessageId: 'mOut', respondedBy: 'BOT' })
+    expect(Object.keys(body.history[0]).sort()).toEqual(['date', 'respondedAt', 'respondedBy', 'respondedMessageId', 'review'])
   })
 
   it('latest null bila belum ada atau tidak lolos skema', async () => {

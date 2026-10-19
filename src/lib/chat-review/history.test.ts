@@ -28,7 +28,10 @@ function payload(date: string, parts: Record<string, unknown[]>) {
   }
 }
 
-beforeEach(() => mockReset(mockPrisma))
+beforeEach(() => {
+  mockReset(mockPrisma)
+  mockPrisma.message.findMany.mockResolvedValue([])
+})
 
 describe('chatReviewHistory', () => {
   it('mengambil review non-null pertama, melewati payload rusak dan hari tanpa percakapan itu', async () => {
@@ -43,5 +46,60 @@ describe('chatReviewHistory', () => {
 
     expect(history.map((h) => [h.date, h.review.topik])).toEqual([['2026-10-18', 'dari unreplied'], ['2026-10-15', 'aktif']])
     expect(mockPrisma.dailySummary.findMany).toHaveBeenCalledWith(expect.objectContaining({ orderBy: { date: 'desc' }, take: 31 }))
+  })
+})
+
+describe('chatReviewHistory: penanda ditanggapi', () => {
+  const perluRev = (status: ConversationReview['status']): ConversationReview => ({ ...rev('t'), status })
+  const row = (date: string, status: ConversationReview['status']) => ({
+    date,
+    payload: payload(date, { conversations: [{ ...ref('c1'), inbound: 1, outbound: 0, review: perluRev(status) }] }),
+  })
+  // 2026-10-17 berakhir 2026-10-17T17:00:00Z (24.00 WIB); 2026-10-18 berakhir 2026-10-18T17:00:00Z.
+  const msg = (id: string, iso: string, sentBy: 'BOT' | 'AGENT') => ({ id, createdAt: new Date(iso), sentBy })
+
+  it('ditanggapi, belum ditanggapi, dan balasan bot, dengan SATU kueri pesan', async () => {
+    mockPrisma.dailySummary.findMany.mockResolvedValue([row('2026-10-18', 'perlu_tindakan'), row('2026-10-17', 'tidak_jelas'), row('2026-10-16', 'selesai')] as never)
+    mockPrisma.message.findMany.mockResolvedValue([
+      msg('mBot', '2026-10-17T18:00:00Z', 'BOT'),
+      msg('mAgen', '2026-10-19T02:00:00Z', 'AGENT'),
+    ] as never)
+
+    const h = await chatReviewHistory('c1')
+
+    expect(mockPrisma.message.findMany).toHaveBeenCalledTimes(1)
+    expect(mockPrisma.message.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { conversationId: 'c1', direction: 'OUTBOUND', createdAt: { gte: new Date('2026-10-17T17:00:00Z') } },
+        orderBy: { createdAt: 'asc' },
+      })
+    )
+    expect(h[0]).toMatchObject({ date: '2026-10-18', respondedMessageId: 'mAgen', respondedBy: 'AGENT', respondedAt: '2026-10-19T02:00:00.000Z' })
+    expect(h[1]).toMatchObject({ date: '2026-10-17', respondedMessageId: 'mBot', respondedBy: 'BOT' })
+    expect(h[2]).toMatchObject({ date: '2026-10-16', respondedAt: null, respondedMessageId: null, respondedBy: null })
+  })
+
+  it('tidak ada balasan sesudahnya: semua null', async () => {
+    mockPrisma.dailySummary.findMany.mockResolvedValue([row('2026-10-18', 'perlu_tindakan')] as never)
+    mockPrisma.message.findMany.mockResolvedValue([] as never)
+    const [e] = await chatReviewHistory('c1')
+    expect(e).toMatchObject({ respondedAt: null, respondedMessageId: null, respondedBy: null })
+  })
+
+  it('batas akhir hari: pesan tepat di akhir hari dihitung, semenit sebelumnya tidak', async () => {
+    mockPrisma.dailySummary.findMany.mockResolvedValue([row('2026-10-18', 'perlu_tindakan')] as never)
+    mockPrisma.message.findMany.mockResolvedValue([
+      msg('sebelum', '2026-10-18T16:59:59.999Z', 'AGENT'),
+      msg('tepat', '2026-10-18T17:00:00.000Z', 'AGENT'),
+    ] as never)
+    const [e] = await chatReviewHistory('c1')
+    expect(e.respondedMessageId).toBe('tepat')
+  })
+
+  it('semua entri selesai: tidak ada kueri pesan sama sekali', async () => {
+    mockPrisma.dailySummary.findMany.mockResolvedValue([row('2026-10-18', 'selesai')] as never)
+    const [e] = await chatReviewHistory('c1')
+    expect(mockPrisma.message.findMany).not.toHaveBeenCalled()
+    expect(e.respondedAt).toBeNull()
   })
 })

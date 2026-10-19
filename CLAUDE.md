@@ -166,6 +166,9 @@ hasil yang lebih baru; "Buat ulang" tanggal lama di /summary tidak menurunkan ta
 Tiap pertanyaan membawa `terjawab` (true/false); ringkasan lama yang berupa string polos tampil
 tanpa tanda. `parseReview` menurunkan item yang bentuknya melenceng, bukan menggagalkan seluruh
 ringkasan. Riwayat dibaca dari payload `DailySummary`, bukan dari kolom ini.
+Status review di riwayat berlabel potret netral ("Saat itu: ..."; `SnapshotStatusBadge`), bukan merah;
+entri `perlu_tindakan`/`tidak_jelas` membawa `respondedAt`/`respondedMessageId`/`respondedBy` (pesan OUTBOUND
+pertama sesudah akhir hari WIB itu, satu kueri di `chatReviewHistory`) -- penanda "sudah dibalas", bukan bukti semua terjawab.
 Transkrip ke LLM bernomor `#N` (`buildNumberedTranscript`); model menunjuk pesan sumber lewat
 `pesan`, dan `parseReview` menyimpannya sebagai `messageId` (nomor mentah tidak pernah disimpan,
 nomor tidak valid dibuang). Butir pertanyaan/poin ber-`messageId` di tab ini dan di /summary bisa

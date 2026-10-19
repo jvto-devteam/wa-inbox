@@ -1,12 +1,16 @@
 'use client'
+import Link from 'next/link'
 import { useEffect, useId, useState } from 'react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { SkeletonText } from '@/components/ui/skeleton'
-import { RemindDropActions, dateKeyLabel } from '@/components/daily-summary/SummaryQueue'
+import { RemindDropActions, conversationHref, dateKeyLabel } from '@/components/daily-summary/SummaryQueue'
+import { SnapshotStatusBadge } from '@/components/daily-summary/SnapshotStatusBadge'
 import { PointList, QuestionList } from '@/components/daily-summary/QuestionList'
+import type { ChatReviewHistoryEntry } from '@/lib/chat-review/history'
 import type { ConversationReview } from '@/lib/daily-summary/payload-schema'
 import { isDateKey, jakartaDayRange } from '@/lib/daily-summary/time'
+import { scrollToThreadMessage } from '@/lib/inbox/message-anchor'
 import { fetchJson } from '@/lib/fetch-json'
 import { followUpStatus, isActionable, wibDateTimeLabel } from '@/lib/summary-items/status'
 import { PanelSectionTitle } from './ContactPanel'
@@ -107,6 +111,38 @@ function ReviewBody({ review, conversationId }: { review: ConversationReview; co
   )
 }
 
+const RESPONDED_HELP =
+  'Tim sudah membalas sesudah hari itu — belum tentu semua pertanyaan terjawab; lihat tanda ✅/⏳ di ringkasan terbaru.'
+
+/**
+ * Penanda "Ditanggapi" untuk entri riwayat yang saat itu belum selesai. Tautannya hanya menggulung
+ * dan menyorot pesan balasan (`lihat=1`), tidak membuka panel perbaikan bot.
+ */
+function RespondedIndicator({ entry, conversationId }: { entry: ChatReviewHistoryEntry; conversationId: string }) {
+  if (entry.review.status === 'selesai') return null
+  if (!entry.respondedAt || !entry.respondedMessageId) {
+    return (
+      <p className="text-xs text-warning">
+        Belum ditanggapi sejak itu
+      </p>
+    )
+  }
+  const who = entry.respondedBy === 'BOT' ? 'Dibalas bot' : 'Ditanggapi tim'
+  return (
+    <p className="text-xs text-ink-muted" title={RESPONDED_HELP}>
+      <Link
+        href={conversationHref(conversationId, entry.respondedMessageId, { lihat: true })}
+        scroll={false}
+        onClick={() => scrollToThreadMessage(entry.respondedMessageId ?? '')}
+        className="focus-ring rounded-sm underline decoration-dotted underline-offset-2 hover:text-accent"
+      >
+        {who} {wibDateTimeLabel(entry.respondedAt)}
+      </Link>
+      <span className="block text-ink-subtle">{RESPONDED_HELP}</span>
+    </p>
+  )
+}
+
 function HistorySection({ history, conversationId }: { history: ChatReviewResponse['history']; conversationId: string }) {
   if (history.length === 0) return null
   return (
@@ -114,15 +150,15 @@ function HistorySection({ history, conversationId }: { history: ChatReviewRespon
       <PanelSectionTitle>Riwayat</PanelSectionTitle>
       <div className="space-y-1.5">
         {history.map((entry) => {
-          const status = REVIEW_STATUS_BADGE[entry.review.status]
           return (
             <details key={entry.date} className="rounded-md border border-line">
               <summary className="focus-ring flex cursor-pointer flex-wrap items-center gap-1.5 px-2.5 py-1.5 text-sm">
                 <span className="font-medium text-ink">{dateKeyLabel(entry.date)}</span>
                 {entry.review.topik && <span className="min-w-0 text-ink-muted">{entry.review.topik}</span>}
-                <Badge variant={status.variant}>{status.label}</Badge>
+                <SnapshotStatusBadge status={entry.review.status} />
               </summary>
-              <div className="border-t border-line px-2.5 py-2">
+              <div className="space-y-2 border-t border-line px-2.5 py-2">
+                <RespondedIndicator entry={entry} conversationId={conversationId} />
                 <ReviewBody review={entry.review} conversationId={conversationId} />
               </div>
             </details>
