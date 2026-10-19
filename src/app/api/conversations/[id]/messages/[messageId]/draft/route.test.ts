@@ -81,6 +81,33 @@ describe('POST .../draft', () => {
     expect(generateDraft).toHaveBeenCalledWith({ conversationId: CONVERSATION_ID, messageId: MESSAGE_ID, accountId: 'acc_1' })
   })
 
+  it('body { ifAbsent: true } diteruskan ke generateDraft', async () => {
+    const req = new Request(`http://localhost/api/conversations/${CONVERSATION_ID}/messages/${MESSAGE_ID}/draft`, {
+      method: 'POST',
+      headers: { cookie: 'wa_inbox_session=tok', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ifAbsent: true }),
+    })
+    const res = await POST(req, params())
+    expect(res.status).toBe(200)
+    expect(generateDraft).toHaveBeenCalledWith({
+      conversationId: CONVERSATION_ID,
+      messageId: MESSAGE_ID,
+      accountId: 'acc_1',
+      ifAbsent: true,
+    })
+  })
+
+  it('400 untuk body yang tidak dikenal (.strict())', async () => {
+    const req = new Request(`http://localhost/api/conversations/${CONVERSATION_ID}/messages/${MESSAGE_ID}/draft`, {
+      method: 'POST',
+      headers: { cookie: 'wa_inbox_session=tok', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ paksa: true }),
+    })
+    const res = await POST(req, params())
+    expect(res.status).toBe(400)
+    expect(generateDraft).not.toHaveBeenCalled()
+  })
+
   it('DraftError diteruskan dengan status dan pesannya sendiri', async () => {
     vi.mocked(generateDraft).mockRejectedValue(new DraftError(409, 'Draft sudah terkirim dan terkunci'))
     const res = await POST(postReq(), params())

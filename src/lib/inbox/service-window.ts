@@ -17,6 +17,14 @@ export function lastInboundAt(messages: ReadonlyArray<{ direction: string; creat
   return null
 }
 
+/** Jendela tertutup: tidak ada pesan masuk sama sekali, atau yang terakhir sudah >= 24 jam. */
+export function serviceWindowClosed(lastInbound: string | null, now: Date = new Date()): boolean {
+  if (!lastInbound) return true
+  const last = new Date(lastInbound).getTime()
+  if (Number.isNaN(last)) return true
+  return now.getTime() - last >= SERVICE_WINDOW_MS
+}
+
 /**
  * Apakah follow up di percakapan ini harus lewat template?
  *
@@ -36,8 +44,15 @@ export function followUpNeedsTemplate(input: {
 }): boolean {
   if ((input.platform ?? 'WHATSAPP') !== 'WHATSAPP') return false
   if (!supportsCapability(input.channel, 'send_template')) return false
-  if (!input.lastInboundAt) return true
-  const last = new Date(input.lastInboundAt).getTime()
-  if (Number.isNaN(last)) return true
-  return (input.now ?? new Date()).getTime() - last >= SERVICE_WINDOW_MS
+  return serviceWindowClosed(input.lastInboundAt, input.now)
+}
+
+/**
+ * Messenger/Instagram juga berjendela 24 jam, tapi jalur kirimnya hanya teks -- tidak ada template
+ * untuk dibuka. Follow up di sana hanya diberi peringatan (Meta menolak dengan code 10, lihat
+ * messenger-send.ts); kirim tidak diblokir, karena hitungan di klien bisa meleset dari Meta.
+ */
+export function followUpWindowWarning(input: { platform: string | null; lastInboundAt: string | null; now?: Date }): boolean {
+  if (input.platform !== 'FACEBOOK' && input.platform !== 'INSTAGRAM') return false
+  return serviceWindowClosed(input.lastInboundAt, input.now)
 }

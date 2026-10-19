@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { SERVICE_WINDOW_MS, followUpNeedsTemplate, lastInboundAt } from './service-window'
+import { SERVICE_WINDOW_MS, followUpNeedsTemplate, followUpWindowWarning, lastInboundAt } from './service-window'
 
 const NOW = new Date('2026-10-19T10:00:00.000Z')
 const ago = (ms: number) => new Date(NOW.getTime() - ms).toISOString()
@@ -38,6 +38,22 @@ describe('followUpNeedsTemplate', () => {
   it('platform selain WhatsApp = tidak perlu template', () => {
     for (const platform of ['EMAIL', 'FACEBOOK', 'INSTAGRAM']) {
       expect(followUpNeedsTemplate({ platform, channel: 'OFFICIAL', lastInboundAt: null, now: NOW })).toBe(false)
+    }
+  })
+})
+
+describe('followUpWindowWarning', () => {
+  it('Facebook/Instagram dengan jendela tertutup = peringatan', () => {
+    for (const platform of ['FACEBOOK', 'INSTAGRAM']) {
+      expect(followUpWindowWarning({ platform, lastInboundAt: ago(SERVICE_WINDOW_MS), now: NOW })).toBe(true)
+      expect(followUpWindowWarning({ platform, lastInboundAt: null, now: NOW })).toBe(true)
+    }
+  })
+
+  it('jendela terbuka, atau platform WhatsApp/Email = tanpa peringatan', () => {
+    expect(followUpWindowWarning({ platform: 'FACEBOOK', lastInboundAt: ago(SERVICE_WINDOW_MS - 1), now: NOW })).toBe(false)
+    for (const platform of ['WHATSAPP', 'EMAIL', null]) {
+      expect(followUpWindowWarning({ platform, lastInboundAt: null, now: NOW })).toBe(false)
     }
   })
 })

@@ -196,12 +196,24 @@ async function loadRevisionContext(conversationId: string, source: Message): Pro
   return [...messages].reverse()
 }
 
-export async function generateDraft(input: { conversationId: string; messageId: string; accountId: string }): Promise<MessageDraftView> {
+/**
+ * `ifAbsent`: dipakai pemicu otomatis Inbox (`&draft=1` dari "Balas" di antrean). Kalau draft
+ * yang belum terkirim sudah ada -- mungkin sudah diedit operator di tab lain -- draft itu yang
+ * dikembalikan apa adanya, tanpa memanggil model dan tanpa menimpa apa pun. Tombol manual
+ * "Generate draft" tidak mengirim flag ini dan tetap membuat ulang seperti biasa.
+ */
+export async function generateDraft(input: {
+  conversationId: string
+  messageId: string
+  accountId: string
+  ifAbsent?: boolean
+}): Promise<MessageDraftView> {
   const source = await loadSourceMessage(input.conversationId, input.messageId)
   const sourceContent = source.content ?? ''
 
   const existing = await prisma.messageDraft.findUnique({ where: { sourceMessageId: source.id } })
   if (existing?.sentAt) throw new DraftError(409, DRAFT_LOCKED)
+  if (existing && input.ifAbsent) return buildView(existing, sourceContent)
 
   const startedAt = new Date()
   // Diisi OLEH `decideAndRespond` sendiri (lewat referensi ini) tepat di titik-titik yang
@@ -238,6 +250,21 @@ export async function generateDraft(input: { conversationId: string; messageId: 
     // model, bukan revisi operator sebelumnya.
     editedAt: null,
     editedById: null,
+  }
+
+  // `ifAbsent` tidak pernah menimpa: baris yang muncul selama model berpikir (klik manual di tab
+  // lain) dibiarkan, dan pembuatan di bawah yang bentrok (P2002) mengembalikan baris itu.
+  if (input.ifAbsent) {
+    try {
+      const created = await prisma.messageDraft.create({
+        data: { conversationId: input.conversationId, sourceMessageId: source.id, ...data },
+      })
+      return buildView(created, sourceContent)
+    } catch (error) {
+      if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== 'P2002') throw error
+      const winner = await prisma.messageDraft.findUniqueOrThrow({ where: { sourceMessageId: source.id } })
+      return buildView(winner, sourceContent)
+    }
   }
 
   // Penjaga balapan: draft yang sudah terkirim TIDAK BOLEH tertimpa oleh sebuah generate yang

@@ -3,7 +3,7 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mockDeep, mockReset, type DeepMockProxy } from 'vitest-mock-extended'
-import type { PrismaClient } from '@prisma/client'
+import { Prisma, type PrismaClient } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { decideAndRespond } from '@/lib/bot/orchestrator'
 import { callLLM } from '@/lib/bot/llm'
@@ -192,6 +192,54 @@ describe('generateDraft', () => {
         editedById: null,
       }),
     })
+  })
+})
+
+// Pemicu otomatis Inbox (`&draft=1`) memakai `ifAbsent`: draft yang belum terkirim -- termasuk
+// yang sudah diedit operator -- tidak boleh tertimpa.
+describe('generateDraft — ifAbsent', () => {
+  const input = { conversationId: CONVERSATION_ID, messageId: MESSAGE_ID, accountId: ACCOUNT_ID, ifAbsent: true }
+
+  it('draft belum terkirim sudah ada: dikembalikan apa adanya, model tidak dipanggil, tidak ada tulisan', async () => {
+    const edited = draftRow({ text: 'Teks yang sudah diedit operator', editedAt: new Date(), editedById: ACCOUNT_ID })
+    mockPrisma.messageDraft.findUnique.mockResolvedValue(edited as never)
+
+    const view = await generateDraft(input)
+
+    expect(view.text).toBe('Teks yang sudah diedit operator')
+    expect(decideAndRespond).not.toHaveBeenCalled()
+    expect(recordBotDecisionRun).not.toHaveBeenCalled()
+    expect(mockPrisma.messageDraft.updateMany).not.toHaveBeenCalled()
+    expect(mockPrisma.messageDraft.create).not.toHaveBeenCalled()
+  })
+
+  it('belum ada draft: dibuat lewat create, tanpa updateMany', async () => {
+    mockPrisma.messageDraft.findUnique.mockResolvedValue(null)
+    mockPrisma.messageDraft.create.mockResolvedValue(draftRow() as never)
+
+    await generateDraft(input)
+
+    expect(decideAndRespond).toHaveBeenCalledTimes(1)
+    expect(mockPrisma.messageDraft.create).toHaveBeenCalledTimes(1)
+    expect(mockPrisma.messageDraft.updateMany).not.toHaveBeenCalled()
+  })
+
+  it('draft muncul selama model berpikir (P2002): baris pemenang dikembalikan, tidak ditimpa', async () => {
+    mockPrisma.messageDraft.findUnique.mockResolvedValue(null)
+    mockPrisma.messageDraft.create.mockRejectedValue(
+      new Prisma.PrismaClientKnownRequestError('unique', { code: 'P2002', clientVersion: 'test' })
+    )
+    mockPrisma.messageDraft.findUniqueOrThrow.mockResolvedValue(draftRow({ text: 'Draft tab lain' }) as never)
+
+    const view = await generateDraft(input)
+
+    expect(view.text).toBe('Draft tab lain')
+    expect(mockPrisma.messageDraft.updateMany).not.toHaveBeenCalled()
+  })
+
+  it('draft sudah terkirim tetap 409', async () => {
+    mockPrisma.messageDraft.findUnique.mockResolvedValue(draftRow({ sentAt: new Date(), sentById: ACCOUNT_ID }) as never)
+    await expect(generateDraft(input)).rejects.toMatchObject({ status: 409 })
   })
 })
 

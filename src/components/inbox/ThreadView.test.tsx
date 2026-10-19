@@ -1280,6 +1280,88 @@ describe('ThreadView — siap kirim dari antrean', () => {
     scrollSpy.mockRestore()
   })
 
+  const msg = (id: string, over: Record<string, unknown> = {}) => ({ ...inbound(new Date().toISOString()), id, ...over })
+  const draftPosts = () => callsTo((url, init) => url.endsWith('/draft') && init?.method === 'POST')
+
+  it('autoDraft: dua pesan masuk berturut-turut -> draft untuk yang KEDUA, sorotan tetap di pesan fokus', async () => {
+    const scrollSpy = vi.spyOn(Element.prototype, 'scrollIntoView').mockImplementation(() => {})
+    stubThread([msg('m_in', { content: 'Halo' }), msg('m_in2', { content: 'Berapa harga ATV?' })])
+
+    render(<ThreadView conversationId="conv_1" focusMessageId="m_in" autoDraft />)
+
+    await waitFor(() => expect(draftPosts()).toHaveLength(1))
+    expect(String(draftPosts()[0][0])).toBe('/api/conversations/conv_1/messages/m_in2/draft')
+    expect(document.getElementById(threadMessageDomId('m_in'))?.className).toContain('ring-2')
+    expect(document.getElementById(threadMessageDomId('m_in2'))?.className).not.toContain('ring-2')
+    scrollSpy.mockRestore()
+  })
+
+  it('autoDraft: pesan pertama non-teks, kedua teks -> draft untuk yang kedua', async () => {
+    stubThread([msg('m_in', { type: 'image', content: null, mediaUrl: '/api/media/m_in' }), msg('m_in2')])
+    render(<ThreadView conversationId="conv_1" focusMessageId="m_in" autoDraft />)
+    await waitFor(() => expect(draftPosts()).toHaveLength(1))
+    expect(String(draftPosts()[0][0])).toBe('/api/conversations/conv_1/messages/m_in2/draft')
+  })
+
+  it('autoDraft: semua pesan di run non-teks -> catatan tampil, tanpa POST', async () => {
+    stubThread([
+      msg('m_in', { type: 'image', content: null, mediaUrl: '/api/media/m_in' }),
+      msg('m_in2', { type: 'sticker', content: null }),
+      { ...msg('m_out'), direction: 'OUTBOUND', sentBy: 'AGENT', content: 'Baik kak' },
+      msg('m_in3', { content: 'pertanyaan di run lain' }),
+    ])
+    render(<ThreadView conversationId="conv_1" focusMessageId="m_in" autoDraft />)
+    expect(await screen.findByText(/Tidak ada pesan teks dari pelanggan di sini/)).toBeInTheDocument()
+    expect(draftPosts()).toHaveLength(0)
+  })
+
+  it('autoDraft: fokus berpindah di percakapan yang sudah terbuka -> tepat satu POST, ke target baru', async () => {
+    stubThread([
+      msg('m_a', { draft: draftView }),
+      { ...msg('m_out'), direction: 'OUTBOUND', sentBy: 'AGENT', content: 'Baik kak' },
+      msg('m_b', { content: 'Halo lagi' }),
+      msg('m_c', { content: 'Kalau 3 orang berapa?' }),
+    ])
+    const { rerender } = render(<ThreadView conversationId="conv_1" focusMessageId="m_a" autoDraft />)
+    expect(await screen.findByText('Draft jawaban bot')).toBeInTheDocument()
+    expect(draftPosts()).toHaveLength(0)
+
+    rerender(<ThreadView conversationId="conv_1" focusMessageId="m_b" autoDraft />)
+    await waitFor(() => expect(draftPosts()).toHaveLength(1))
+    expect(String(draftPosts()[0][0])).toBe('/api/conversations/conv_1/messages/m_c/draft')
+    // Render ulang dengan fokus yang sama tidak memicu lagi.
+    rerender(<ThreadView conversationId="conv_1" focusMessageId="m_b" autoDraft />)
+    await Promise.resolve()
+    expect(draftPosts()).toHaveLength(1)
+  })
+
+  it('followUp: pemilih template tidak terbuka sebelum /messages selesai', async () => {
+    let resolveMessages: (value: unknown[]) => void = () => {}
+    const pending = new Promise<unknown[]>((resolve) => {
+      resolveMessages = resolve
+    })
+    vi.mocked(fetch).mockImplementation((url) => {
+      const s = String(url)
+      if (s.endsWith('/messages')) return Promise.resolve({ ok: true, json: () => pending } as Response)
+      if (s === '/api/settings') return Promise.resolve({ ok: true, json: () => Promise.resolve({ defaultChannel: 'OFFICIAL' }) } as Response)
+      if (s === '/api/templates') return Promise.resolve({ ok: true, json: () => Promise.resolve([]) } as Response)
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({ botEnabled: false, platform: 'WHATSAPP' }) } as Response)
+    })
+
+    render(<ThreadView conversationId="conv_1" followUp />)
+    // Detail dan settings sudah mendarat; hanya /messages yang tertahan.
+    await waitFor(() => expect(callsTo((url) => url === '/api/settings')).toHaveLength(1))
+    await waitFor(() => expect(callsTo((url) => url === '/api/conversations/conv_1')).toHaveLength(1))
+    await new Promise((r) => setTimeout(r, 20))
+    expect(screen.queryByText('TEMPLATE RESMI (META)')).not.toBeInTheDocument()
+    expect(callsTo((url) => url === '/api/templates')).toHaveLength(0)
+
+    await act(async () => {
+      resolveMessages([inbound(new Date(Date.now() - 30 * HOUR).toISOString())])
+    })
+    expect(await screen.findByText('TEMPLATE RESMI (META)')).toBeInTheDocument()
+  })
+
   it('tanpa autoDraft tidak ada draft yang disusun', async () => {
     stubThread([inbound(new Date().toISOString())])
     render(<ThreadView conversationId="conv_1" focusMessageId="m_in" />)

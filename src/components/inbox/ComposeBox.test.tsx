@@ -1083,6 +1083,50 @@ describe('ComposeBox — followUp dari antrean', () => {
     expect(screen.getByPlaceholderText(COMPOSER_PLACEHOLDER)).not.toHaveFocus()
   })
 
+  const WARNING = 'Jendela 24 jam sudah tertutup — pesan kemungkinan ditolak Meta.'
+
+  it('Messenger/Instagram dengan jendela tertutup: peringatan tampil, tanpa pemilih template, kirim tetap jalan', async () => {
+    const fetchMock = stubChannel('OFFICIAL')
+    render(
+      <ComposeBox
+        conversationId="conv_1"
+        onSent={() => {}}
+        followUp
+        platform="INSTAGRAM"
+        lastInboundAt={new Date(Date.now() - 30 * HOUR).toISOString()}
+      />
+    )
+    expect(await screen.findByText(WARNING)).toBeInTheDocument()
+    await waitFor(() => expect(screen.getByPlaceholderText(COMPOSER_PLACEHOLDER)).toHaveFocus())
+    expect(screen.queryByText('TEMPLATE RESMI (META)')).not.toBeInTheDocument()
+
+    // Tidak diblokir: operator tetap bisa mengirim dengan klik sendiri.
+    fireEvent.change(screen.getByPlaceholderText(COMPOSER_PLACEHOLDER), { target: { value: 'Halo kak' } })
+    expect(screen.getByLabelText('Kirim')).toBeEnabled()
+    fireEvent.click(screen.getByLabelText('Kirim'))
+    await waitFor(() => expect(sendCalls(fetchMock)).toHaveLength(1))
+  })
+
+  it('Messenger dengan jendela terbuka, atau WhatsApp tertutup: tanpa peringatan', async () => {
+    stubChannel('OFFICIAL')
+    const { unmount } = render(
+      <ComposeBox
+        conversationId="conv_1"
+        onSent={() => {}}
+        followUp
+        platform="FACEBOOK"
+        lastInboundAt={new Date(Date.now() - 2 * HOUR).toISOString()}
+      />
+    )
+    await waitFor(() => expect(screen.getByPlaceholderText(COMPOSER_PLACEHOLDER)).toHaveFocus())
+    expect(screen.queryByText(WARNING)).not.toBeInTheDocument()
+    unmount()
+
+    render(<ComposeBox conversationId="conv_1" onSent={() => {}} followUp platform="WHATSAPP" lastInboundAt={null} />)
+    expect(await screen.findByText('TEMPLATE RESMI (META)')).toBeInTheDocument()
+    expect(screen.queryByText(WARNING)).not.toBeInTheDocument()
+  })
+
   it('pemilih dibuka sekali: pesan masuk baru (prop berubah) tidak membukanya lagi setelah ditutup', async () => {
     const fetchMock = stubChannel('OFFICIAL')
     const old = new Date(Date.now() - 30 * HOUR).toISOString()

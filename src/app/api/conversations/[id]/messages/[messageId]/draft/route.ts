@@ -6,6 +6,9 @@ import { DraftError, generateDraft, editDraft } from '@/lib/inbox/message-draft'
 
 const paramsSchema = z.object({ id: z.string().trim().min(1), messageId: z.string().trim().min(1) })
 const editBodySchema = z.object({ text: z.string().max(4096) }).strict()
+// Body POST opsional: tombol manual mengirim tanpa body (buat ulang), pemicu otomatis `&draft=1`
+// mengirim `{ ifAbsent: true }` supaya draft yang sudah ada tidak tertimpa.
+const generateBodySchema = z.object({ ifAbsent: z.boolean().optional() }).strict()
 
 /**
  * Buat/buat-ulang draft jawaban untuk satu pesan masuk. Terbuka untuk semua yang login --
@@ -20,10 +23,17 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   if (!parsedParams.success) return NextResponse.json({ error: 'Alamat pesan tidak valid' }, { status: 400 })
 
   try {
+    let ifAbsent = false
+    if ((await req.clone().text()).trim()) {
+      const parsedBody = await parseJsonBody(req, generateBodySchema)
+      if (!parsedBody.success) return NextResponse.json({ error: parsedBody.error }, { status: 400 })
+      ifAbsent = parsedBody.data.ifAbsent === true
+    }
     const draft = await generateDraft({
       conversationId: parsedParams.data.id,
       messageId: parsedParams.data.messageId,
       accountId: session.accountId,
+      ...(ifAbsent ? { ifAbsent: true } : {}),
     })
     return NextResponse.json(draft)
   } catch (error) {

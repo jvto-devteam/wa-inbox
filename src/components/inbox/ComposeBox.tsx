@@ -12,7 +12,7 @@ import { TemplatePreviewBubble, type PreviewButton, type PreviewCard } from './T
 import { bookingVariableFields, resolveVariableField, type VariableField } from '@/lib/booking/variable-fields'
 import { extractVariableNumbers, interpolateVariables } from '@/lib/template-variables'
 import type { BookingData } from '@/lib/booking/client'
-import { followUpNeedsTemplate } from '@/lib/inbox/service-window'
+import { followUpNeedsTemplate, followUpWindowWarning } from '@/lib/inbox/service-window'
 
 // Maps a variable's 1-indexed position (as a string key, e.g. "1" for {{1}}) to a
 // src/lib/booking/variable-fields.ts field key, chosen once at template-creation time --
@@ -151,6 +151,9 @@ export function ComposeBox({
   // pada kanal yang benar-benar akan dipakai.
   const [channelSettled, setChannelSettled] = useState(false)
   const followUpHandledRef = useRef(false)
+  // Follow up Messenger/Instagram di luar jendela 24 jam: peringatan saja, kirim tidak diblokir.
+  // Diturunkan saat render (bukan state dari efek), jadi ikut benar kalau pesan masuk baru tiba.
+  const windowWarning = followUp && !isTest && followUpWindowWarning({ platform, lastInboundAt })
   const [sending, setSending] = useState(false)
   const [templates, setTemplates] = useState<QuickReplyTemplate[]>([])
   const [officialTemplates, setOfficialTemplates] = useState<OfficialTemplate[]>([])
@@ -729,6 +732,11 @@ export function ComposeBox({
             ))
           )}
         </Card>
+      )}
+      {windowWarning && (
+        <p role="status" className="text-xs text-warning">
+          Jendela 24 jam sudah tertutup — pesan kemungkinan ditolak Meta.
+        </p>
       )}
       {templateError && (
         <p role="alert" className="text-xs text-danger">
