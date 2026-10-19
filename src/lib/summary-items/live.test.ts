@@ -75,7 +75,7 @@ describe('createLiveReplyItems: pemilihan kandidat', () => {
       mailAutomated: false,
       messages: {
         some: { direction: 'INBOUND', createdAt: { gte: lookbackStart, lte: cutoff } },
-        none: { createdAt: { gt: cutoff } },
+        none: { direction: 'OUTBOUND', createdAt: { gt: cutoff } },
       },
     })
     expect(args?.select?.summaryItem).toBe(true)
@@ -95,6 +95,20 @@ describe('createLiveReplyItems: pemilihan kandidat', () => {
 
   it('pesan yang baru 59 menit belum jadi item', async () => {
     given([conv([inbound('m1', ago(UNREPLIED_MIN_MS - 1))])])
+    expect(await createLiveReplyItems(NOW)).toEqual({ created: 0, reopened: 0, skipped: 0 })
+    expect(mockPrisma.summaryItem.create).not.toHaveBeenCalled()
+  })
+
+  it('lama menunggu dihitung dari pesan PERTAMA: 09.00, 09.40, 10.20 dengan now 10.30 → item anchor 09.00', async () => {
+    const now = new Date('2026-10-19T03:30:00Z') // 10.30 WIB
+    const wib = (hhmm: string) => new Date(`2026-10-19T${hhmm}:00+07:00`)
+    given([conv([outbound('o1', wib('08:30')), inbound('m1', wib('09:00'), 'mau booking Bromo'), inbound('m2', wib('09:40'), 'halo?'), inbound('m3', wib('10:20'), 'kak')])])
+    expect(await createLiveReplyItems(now)).toEqual({ created: 1, reopened: 0, skipped: 0 })
+    expect(created()[0]).toMatchObject({ anchorMessageId: 'm1', anchorAt: wib('09:00'), snippet: 'mau booking Bromo' })
+  })
+
+  it('balasan kita di tengah memotong rangkaian: pesan sesudahnya yang baru 10 menit belum jadi item', async () => {
+    given([conv([inbound('m1', ago(3 * HOUR)), outbound('o1', ago(2 * HOUR)), inbound('m2', ago(10 * 60 * 1000))])])
     expect(await createLiveReplyItems(NOW)).toEqual({ created: 0, reopened: 0, skipped: 0 })
     expect(mockPrisma.summaryItem.create).not.toHaveBeenCalled()
   })
@@ -225,6 +239,13 @@ describe('createLiveReplyItems: baris yang sudah ada', () => {
     const dropped = row({ state: 'DROPPED', closedReason: 'DROPPED', anchorAt: ago(30 * HOUR), closedAt: ago(20 * HOUR) })
     given([conv([inbound('m1', ago(30 * HOUR), 'harga?'), inbound('m2', ago(5 * HOUR), 'ok thanks')], { summaryItem: dropped })])
     expect(await createLiveReplyItems(NOW)).toEqual({ created: 0, reopened: 0, skipped: 1 })
+  })
+
+  it('DROPPED dibuka pesan baru yang baru 10 menit: tunggu tenggang 1 jam-nya sendiri', async () => {
+    const dropped = row({ state: 'DROPPED', closedReason: 'DROPPED', anchorAt: ago(3 * HOUR), closedAt: ago(2 * HOUR) })
+    given([conv([inbound('m1', ago(3 * HOUR)), inbound('m2', ago(10 * 60 * 1000), 'any update')], { summaryItem: dropped })])
+    expect(await createLiveReplyItems(NOW)).toEqual({ created: 0, reopened: 0, skipped: 1 })
+    expect(mockPrisma.summaryItem.update).not.toHaveBeenCalled()
   })
 
   it('REMINDER_DONE mengikuti aturan anchor baris, sama dengan sync malam', async () => {

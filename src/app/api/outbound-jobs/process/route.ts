@@ -26,7 +26,11 @@ import { advancePipelineStagesFromBooking, refreshStaleBookingData } from '@/lib
  *
  * --- Why the audit-log pruning rides along here ---
  *
- * This is the ONLY endpoint a scheduler already calls, so it is the only recurring beat the app
+ * (2026-10-19: this endpoint has NO cron in production. The same three housekeeping calls now
+ * also run from POST /api/summary-items/tick, every 5 minutes; they stay here too so a future
+ * cron on this endpoint keeps working. All three are idempotent.)
+ *
+ * This was meant to be the ONLY endpoint a scheduler calls, so the only recurring beat the app
  * has. Giving the one-year audit retention its own cron entry would mean a second secret, a
  * second middleware path, and a job an operator has to remember to configure — for a DELETE
  * that is an indexed no-op on almost every tick. Attaching it here costs nothing and cannot be

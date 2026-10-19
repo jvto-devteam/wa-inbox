@@ -32,7 +32,8 @@ import type { SummaryItemKind } from './status'
  * di produksi -- jangan andalkan.
  *
  * Antrean live (`createLiveReplyItems`, tick yang sama): pesan pelanggan yang belum dibalas
- * ≥ UNREPLIED_MIN_MS langsung jadi REPLY tanpa menunggu 00:00, tanpa LLM. Penutup murni
+ * ≥ UNREPLIED_MIN_MS (diukur dari pesan PERTAMA yang belum dibalas) langsung jadi REPLY tanpa
+ * menunggu 00:00, tanpa LLM. Penutup murni
  * ("ok", "thanks", 👍) disaring `isNoiseMessage`; yang lolos ditutup `JUDGED_DONE` oleh sync
  * malam bila review terbaru menilainya "selesai" (`filteredOut.unrepliedIds` di payload).
  *
@@ -634,11 +635,13 @@ async function write(itemId: string, data: Prisma.SummaryItemUncheckedUpdateInpu
 export type LiveResult = { created: number; reopened: number; skipped: number }
 
 /**
- * Kandidat antrean live: percakapan nyata (bukan test, bukan email otomatis) yang pesan
- * terakhirnya ada di jendela [now − LOOKBACK_MS, now − UNREPLIED_MIN_MS] -- sama dengan
- * `classifyConversation`, hanya "sekarang"-nya jam dinding, bukan akhir hari. Satu kueri: baris
- * `SummaryItem`, review terbaru, dan pesan 14 hari terakhir (maks. TRANSCRIPT_MAX_MESSAGES) ikut
- * terbawa, jadi tidak ada kueri per percakapan selain tulisan untuk item yang benar berubah.
+ * Kandidat antrean live: percakapan nyata (bukan test, bukan email otomatis) yang punya pesan
+ * pelanggan di [now − LOOKBACK_MS, now − UNREPLIED_MIN_MS] tanpa pesan keluar sesudah
+ * now − UNREPLIED_MIN_MS. Ini saringan kasar yang mencakup semua kandidat sebenarnya; syarat
+ * persisnya (pesan terakhir INBOUND, pesan PERTAMA rangkaian belum dibalas ≥ 1 jam) dicek
+ * `liveOne` dari pesan yang ikut terbawa. Satu kueri: baris `SummaryItem`, review terbaru, dan
+ * pesan 14 hari terakhir (maks. TRANSCRIPT_MAX_MESSAGES) ikut terbawa, jadi tidak ada kueri per
+ * percakapan selain tulisan untuk item yang benar berubah.
  */
 async function findLiveConversations(now: Date) {
   const cutoff = new Date(now.getTime() - UNREPLIED_MIN_MS)
@@ -649,7 +652,7 @@ async function findLiveConversations(now: Date) {
       mailAutomated: false,
       messages: {
         some: { direction: 'INBOUND', createdAt: { gte: lookbackStart, lte: cutoff } },
-        none: { createdAt: { gt: cutoff } },
+        none: { direction: 'OUTBOUND', createdAt: { gt: cutoff } },
       },
     },
     select: {
@@ -672,9 +675,10 @@ async function findLiveConversations(now: Date) {
 type LiveConversation = Awaited<ReturnType<typeof findLiveConversations>>[number]
 
 /**
- * Antrean live: pesan pelanggan yang belum dibalas ≥ UNREPLIED_MIN_MS jadi item REPLY tanpa
- * menunggu job 00:00. Murni DB, tanpa LLM; dipanggil tick `POST /api/summary-items/tick` sesudah
- * `reconcileSummaryItems`. Tidak pernah melempar.
+ * Antrean live: pesan pelanggan yang belum dibalas ≥ UNREPLIED_MIN_MS -- diukur dari pesan
+ * PERTAMA rangkaian yang belum dibalas -- jadi item REPLY tanpa menunggu job 00:00. Murni DB,
+ * tanpa LLM; dipanggil tick `POST /api/summary-items/tick` sesudah `reconcileSummaryItems`.
+ * Tidak pernah melempar.
  *
  * - Nomor Indonesia dikecualikan bila `Settings.skipBotForIndonesianNumbers`, aturan yang sama
  *   dengan `collectDay` (`isIndonesianNumber`).
@@ -725,16 +729,20 @@ async function liveOne(
 ): Promise<keyof LiveResult | null> {
   const cutoff = now.getTime() - UNREPLIED_MIN_MS
   const lookbackStart = now.getTime() - LOOKBACK_MS
-  // Pesan urut baru → lama; dicek lagi di sini supaya batas waktu tidak hanya bergantung pada kueri.
+  // Pesan urut baru → lama, semuanya dalam LOOKBACK_MS (kueri); dicek lagi di sini supaya batas
+  // waktu tidak hanya bergantung pada kueri.
   const last = conversation.messages[0]
   if (!last || last.direction !== 'INBOUND') return null
-  if (last.createdAt.getTime() > cutoff || last.createdAt.getTime() < lookbackStart) return null
+  if (last.createdAt.getTime() < lookbackStart) return null
 
   const run: TranscriptMessage[] = []
   for (const m of conversation.messages) {
     if (m.direction !== 'INBOUND') break
     run.unshift(m)
   }
+  // Lama menunggu dihitung dari pesan PERTAMA yang belum dibalas, bukan yang terakhir: pelanggan
+  // yang menulis lagi tiap 30 menit selama 3 jam sudah menunggu 3 jam.
+  if (run[0].createdAt.getTime() > cutoff || run[0].createdAt.getTime() < lookbackStart) return null
   if (judgedDoneByLatestReview(conversation, last.createdAt)) return 'skipped'
 
   const row = conversation.summaryItem
@@ -761,6 +769,8 @@ async function liveOne(
   }
   const substantive = eligible.find((m) => !isNoiseMessage(m))
   if (!substantive) return 'skipped'
+  // Baris tertutup yang hanya dibuka pesan baru: pesan itu juga mendapat tenggang 1 jam.
+  if (eligible[0].createdAt.getTime() > cutoff) return 'skipped'
   const outcome = await upsertCandidate({ ...candidateAt(eligible[0]), snippet: messageSnippet(substantive) }, row, clock)
   return outcome === 'created' || outcome === 'reopened' ? outcome : 'skipped'
 }

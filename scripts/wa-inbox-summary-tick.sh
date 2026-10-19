@@ -1,9 +1,13 @@
 #!/usr/bin/env bash
-# Tick antrean live Summary Harian: POST /api/summary-items/tick (reconcile + item REPLY live,
-# tanpa LLM). Dipasang di VPS sebagai /usr/local/bin/wa-inbox-summary-tick.sh, sebentuk dengan
-# /usr/local/bin/wa-inbox-daily-summary.sh (job 00:00):
+# Tick antrean live Summary Harian: POST /api/summary-items/tick (kebersihan audit log/pipeline/
+# data booking, reconcile, item REPLY live; tanpa LLM). Dipasang di VPS sebagai
+# /usr/local/bin/wa-inbox-summary-tick.sh, sebentuk dengan /usr/local/bin/wa-inbox-daily-summary.sh
+# (job 00:00):
 #
 #   */5 * * * * /usr/local/bin/wa-inbox-summary-tick.sh
+#
+# --max-time 300, bukan 60: refreshStaleBookingData bisa sampai 25 panggilan API booking x 10 s
+# bila API itu lambat; curl yang putus duluan hanya mencatat gagal palsu (server tetap jalan).
 #
 # Log: /var/log/wa-inbox-summary-tick.log (satu baris per tick). Secret dibaca dari .env aplikasi
 # (OUTBOUND_CRON_SECRET) dan TIDAK PERNAH dicetak -- tidak ke log, tidak ke argumen proses (curl
@@ -26,7 +30,7 @@ if [ -z "$SECRET" ]; then
   exit 1
 fi
 
-BODY="$(printf 'x-cron-secret: %s\n' "$SECRET" | curl -sS --max-time 60 -X POST -H @- -w '\nHTTP %{http_code}' "$BASE_URL/api/summary-items/tick" 2>&1)"
+BODY="$(printf 'x-cron-secret: %s\n' "$SECRET" | curl -sS --max-time 300 -X POST -H @- -w '\nHTTP %{http_code}' "$BASE_URL/api/summary-items/tick" 2>&1)"
 CODE=$?
 unset SECRET
 
