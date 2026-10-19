@@ -396,6 +396,19 @@ describe('janji tim (PROMISE): janji tidak hilang dan tidak bolak-balik', () => 
     expect(st.items[0]).toMatchObject({ kind: 'PROMISE', state: 'OPEN', anchorAt: at('2026-10-19T03:00:00Z'), anchorMessageId: 'jB', snippet: 'Itinerary' })
   })
 
+  it('X-BACK: anchor PROMISE terbuka tidak mundur saat janji terbaru ditepati; Lepas tidak dibuka lagi bila LLM membaliknya', async () => {
+    msg('jA', 'OUTBOUND', '2026-10-17T03:00:00Z')
+    msg('jB', 'OUTBOUND', '2026-10-17T04:00:00Z')
+    await nightly('2026-10-17', rv([janjiA, janjiB]))
+    expect(st.items[0].anchorAt).toEqual(at('2026-10-17T04:00:00Z'))
+    await nightly('2026-10-18', rv([janjiA, { ...janjiB, terpenuhi: true }]))
+    expect(st.items[0]).toMatchObject({ state: 'OPEN', anchorAt: at('2026-10-17T04:00:00Z'), anchorMessageId: 'jA' })
+    Object.assign(st.items[0], { state: 'DROPPED', closedReason: 'DROPPED', closedAt: at('2026-10-19T02:00:00Z') })
+    await nightly('2026-10-19', rv([janjiA, janjiB]))
+    await nightly('2026-10-20', rv([janjiB, janjiA]))
+    expect(snap()).toBe('PROMISE/DROPPED/DROPPED')
+  })
+
   it('PROMISE_KEPT tidak dibuka lagi bila semua janji terbuka lebih tua dari closedAt (urutan mana pun)', async () => {
     msg('jA', 'OUTBOUND', '2026-10-17T03:00:00Z')
     msg('jB', 'OUTBOUND', '2026-10-17T04:00:00Z')

@@ -247,13 +247,19 @@ async function upsertCandidate(c: Candidate, row: ItemRow | null, clock: ReviewC
     if (c.kind === 'PROMISE' && !(await clock.isLatest())) return 'skipped'
     // Pesan janji tidak diketahui malam ini: anchor dan tautan baris tetap (anchor cadangan bergeser).
     // Diketahui: tautan tetap selama janjinya masih terbuka, supaya kartu tidak berpindah-pindah
-    // janji antar-malam hanya karena urutan keluaran LLM berubah.
+    // janji antar-malam hanya karena urutan keluaran LLM berubah. Anchor tidak pernah mundur: bila
+    // janji terbaru B ditepati lalu operator Lepas, B yang dibalik LLM jadi "belum" lagi tidak boleh
+    // terlihat "lebih baru dari anchor" dan membuka item yang sudah dilepas.
     const data =
       c.kind !== 'PROMISE'
         ? fields
         : !c.anchorKnown
           ? { ...fields, anchorAt: row.anchorAt, anchorMessageId: row.anchorMessageId }
-          : { ...fields, ...promiseLink(c.promises.find((p) => p.messageId === row.anchorMessageId) ?? c.promises[0]) }
+          : {
+              ...fields,
+              anchorAt: c.anchorAt > row.anchorAt ? c.anchorAt : row.anchorAt,
+              ...promiseLink(c.promises.find((p) => p.messageId === row.anchorMessageId) ?? c.promises[0]),
+            }
     await prisma.summaryItem.update({
       where: { id: row.id },
       // "YYYY-MM-DD" terurut leksikografis sama dengan urutan tanggal.
