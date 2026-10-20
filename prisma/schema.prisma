@@ -34,6 +34,22 @@ model Account {
   createdAt             DateTime       @default(now())
   assignedConversations Conversation[] @relation("AssignedAgent")
   notes                 Note[]
+  pushSubscriptions     PushSubscription[]
+}
+
+// Langganan Web Push (satu baris per perangkat/browser). `endpoint` unik; 404/410 dari layanan push
+// menghapus barisnya. Kunci p256dh/auth bersifat rahasia -- tidak pernah keluar lewat API/log.
+model PushSubscription {
+  id            String    @id @default(cuid())
+  accountId     String
+  account       Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  endpoint      String    @unique
+  p256dh        String
+  auth          String
+  createdAt     DateTime  @default(now())
+  lastSuccessAt DateTime?
+
+  @@index([accountId])
 }
 
 model WaNumber {

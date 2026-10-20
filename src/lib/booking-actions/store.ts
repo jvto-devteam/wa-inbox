@@ -20,7 +20,8 @@
  *     ulang untuk field + nilai yang sama; nilai lain tetap membuat kartu baru.
  *   - Dicakup per booking: hanya baris ber-bookingId sama dengan booking sekarang (atau null).
  *   - Kunci advisory per percakapan di awal transaksi mencegah baris OPEN/fakta ganda.
- *   - Notifikasi/label BUKAN urusan modul ini (Ruling R1).
+ *   - Label BUKAN urusan modul ini (Ruling R1). Notifikasi push (Task 8b) dikirim SESUDAH commit untuk
+ *     tiap CHANGE/TASK/MISMATCH yang baru dibuat pada pemanggilan itu, fire-and-forget.
  */
 import type { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db'
@@ -30,6 +31,7 @@ import { changeAlreadyApplied, findMismatches, type ActiveFact } from './compare
 import { changeGroup, type ChangeGroup, type FieldKey } from './fields'
 import type { Extraction } from './extract'
 import { recordEvent, type BookingEventActor } from './history'
+import { notifyBookingAction, summarizeAction, type BookingPushEvent } from '@/lib/push/send'
 
 type Tx = Prisma.TransactionClient
 type Ctx = {
@@ -43,7 +45,7 @@ type Ctx = {
   blocked: Set<string>
   times: Map<string, number>
 }
-type Counters = { created: number; resolved: number; opened: number; touched: boolean }
+type Counters = { created: number; resolved: number; opened: number; touched: boolean; notify: BookingPushEvent[] }
 
 const CHANGE_TYPES = ['CHANGE', 'TASK']
 const PERSON_REASONS = ['REJECTED', 'DISMISSED_CHAT_WRONG', 'MARKED_DONE', 'NOT_NEEDED']
@@ -57,6 +59,12 @@ function asBooking(raw: unknown): BookingData | null {
 function bookingIdOf(b: BookingData): string | null {
   const id = (b as Record<string, unknown>).booking_id
   return typeof id === 'string' || typeof id === 'number' ? String(id) : null
+}
+
+/** Kode booking untuk tampilan (mis. "JVTO-3899") = `bookingData.id`; bukan `booking_id` numerik. */
+function bookingCodeOf(b: BookingData): string | null {
+  const id = (b as Record<string, unknown>).id
+  return typeof id === 'string' && id.trim() ? id.trim() : null
 }
 
 function proposedOf(raw: unknown): string | null {
@@ -133,6 +141,14 @@ async function createAction(
     select: { id: true },
   })
   counters.created++
+  counters.notify.push({
+    kind: data.type,
+    conversationId: ctx.conversationId,
+    bookingCode: bookingCodeOf(ctx.booking),
+    summary: summarizeAction(data.field, data.value),
+    actionId: row.id,
+    messageId: data.messageId,
+  })
   await recordEvent(ctx.tx, {
     conversationId: ctx.conversationId,
     bookingId: ctx.bookingId,
@@ -239,7 +255,7 @@ async function run(
   actor: BookingEventActor,
   body: (ctx: Ctx, counters: Counters) => Promise<void>
 ): Promise<Counters> {
-  const counters: Counters = { created: 0, resolved: 0, opened: 0, touched: false }
+  const counters: Counters = { created: 0, resolved: 0, opened: 0, touched: false, notify: [] }
   await prisma.$transaction(async (tx) => {
     // Kunci per percakapan (dilepas saat commit): dua proses tak boleh menyisipkan baris OPEN/fakta ganda.
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${conversationId}))`
@@ -249,6 +265,14 @@ async function run(
     await body({ tx, conversationId, bookingId: bookingIdOf(booking), booking, now, actor, blocked, times: new Map() }, counters)
   })
   if (counters.touched) broadcast({ type: 'booking-actions.changed', conversationId })
+  // Fire-and-forget: tidak di-await dan tidak boleh melempar ke jalur webhook.
+  for (const e of counters.notify) {
+    try {
+      void Promise.resolve(notifyBookingAction(e)).catch(() => undefined)
+    } catch {
+      // notifyBookingAction sendiri tidak melempar; ini sabuk pengaman.
+    }
+  }
   return counters
 }
 

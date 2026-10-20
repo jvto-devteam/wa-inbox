@@ -56,7 +56,7 @@ const appDir = path.join(process.cwd(), 'src', 'app')
 // assert the structure: the listener is wired to the authenticated route group, and the
 // login screen is outside that group and therefore cannot reach it.
 describe('authenticated route group', () => {
-  it('opens the SSE subscription and asks for notification permission on authenticated pages', () => {
+  it('opens the SSE subscription on authenticated pages without auto-asking notification permission', () => {
     render(<AuthenticatedLayout>{<div>halaman</div>}</AuthenticatedLayout>)
 
     // Dua langganan, bukan satu: NotificationListener (suara + notifikasi browser untuk
@@ -64,7 +64,8 @@ describe('authenticated route group', () => {
     // dijaga test ini tetap sama seperti sebelumnya -- keduanya hanya hidup DI DALAM grup
     // terautentikasi, dan /login tidak bisa menjangkaunya.
     expect(FakeEventSource.urls).toEqual(['/api/sse', '/api/sse'])
-    expect(requestPermission).toHaveBeenCalled()
+    // Task 8b: izin diminta lewat tombol "Nyalakan notifikasi" (gestur pengguna; iOS), bukan saat load.
+    expect(requestPermission).not.toHaveBeenCalled()
   })
 
   it('still renders the page it wraps', () => {

@@ -7,10 +7,12 @@ import type { BookingData } from '@/lib/booking/client'
 vi.mock('@/lib/db', () => ({ prisma: mockDeep<PrismaClient>() }))
 vi.mock('@/lib/realtime', () => ({ broadcast: vi.fn() }))
 vi.mock('@/lib/bot/llm', () => ({ callLLM: vi.fn() }))
+vi.mock('@/lib/push/send', async (orig) => ({ ...(await orig<typeof import('@/lib/push/send')>()), notifyBookingAction: vi.fn() }))
 
 import { prisma } from '@/lib/db'
 import { broadcast } from '@/lib/realtime'
 import { callLLM } from '@/lib/bot/llm'
+import { notifyBookingAction } from '@/lib/push/send'
 import { applyExtraction, reevaluateBookingActions } from './store'
 
 const db = prisma as unknown as DeepMockProxy<PrismaClient>
@@ -35,6 +37,7 @@ beforeEach(() => {
   mockReset(db)
   vi.mocked(broadcast).mockClear()
   vi.mocked(callLLM).mockClear()
+  vi.mocked(notifyBookingAction).mockReset()
   facts = []; actions = []; events = []; seq = 0; calls = []; msgTimes = {}
   booking = { booking_id: 77, total_pax: 4, pickup: { meeting_point: 'Surabaya Airport' } } as BookingData
   db.$transaction.mockImplementation((async (cb: (tx: unknown) => unknown) => cb(db)) as never)
@@ -120,6 +123,39 @@ describe('applyExtraction', () => {
     await applyExtraction('c1', ex({ facts: [item('pickup_detail', 'Hotel Majapahit', 'm1'), item('hotel', 'Bromo Permai', 'm2')] }), NOW)
     expect(actions).toHaveLength(1)
     expect(actions[0]).toMatchObject({ type: 'CHANGE', field: 'pickup_detail', proposedValue: 'Hotel Majapahit' })
+  })
+})
+
+describe('notifikasi push (Task 8b)', () => {
+  it('notifies once per NEWLY created CHANGE/TASK after commit, with code, summary and message', async () => {
+    booking = { ...booking!, id: 'JVTO-3899' } as BookingData
+    await applyExtraction('c1', ex({ changes: [item('pickup_point', 'Surabaya Hotel', 'm1'), item('travel_date', '2026-11-05', 'm2')] }), NOW)
+    expect(notifyBookingAction).toHaveBeenCalledTimes(2)
+    expect(notifyBookingAction).toHaveBeenCalledWith({
+      kind: 'CHANGE', conversationId: 'c1', bookingCode: 'JVTO-3899', summary: 'Titik jemput → Surabaya Hotel', actionId: actions[0].id, messageId: 'm1',
+    })
+    expect(vi.mocked(notifyBookingAction).mock.calls[1][0]).toMatchObject({ kind: 'TASK', summary: 'Tanggal trip → 2026-11-05' })
+  })
+
+  it('notifies MISMATCH created by evaluation', async () => {
+    await applyExtraction('c1', ex({ facts: [item('total_pax', '5', 'm1')] }), NOW)
+    expect(notifyBookingAction).toHaveBeenCalledWith(expect.objectContaining({ kind: 'MISMATCH', bookingCode: null, summary: 'Jumlah tamu → 5' }))
+  })
+
+  it('does not notify when nothing new is created or when the same change repeats', async () => {
+    const c = { changes: [item('pickup_point', 'Surabaya Hotel', 'm1')] }
+    await applyExtraction('c1', ex(c), NOW)
+    vi.mocked(notifyBookingAction).mockClear()
+    await applyExtraction('c1', ex(c), NOW)
+    expect(notifyBookingAction).not.toHaveBeenCalled()
+  })
+
+  it('fires only after the transaction commits, and a throwing notifier never breaks the caller', async () => {
+    let committed = false
+    db.$transaction.mockImplementation((async (cb: (tx: unknown) => unknown) => { const r = await cb(db); committed = true; return r }) as never)
+    vi.mocked(notifyBookingAction).mockImplementation((() => { expect(committed).toBe(true); throw new Error('boom') }) as never)
+    await expect(applyExtraction('c1', ex({ changes: [item('pickup_point', 'Surabaya Hotel', 'm1')] }), NOW)).resolves.toEqual({ created: 1 })
+    expect(notifyBookingAction).toHaveBeenCalledTimes(1)
   })
 })
 
