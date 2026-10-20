@@ -40,6 +40,15 @@ export type BookingItineraryDay = {
 
 export type BookingPoint = {
   text?: string
+  // Field jemput (`pickup`) dan antar (`dropoff`) dari ScheduleController; semuanya bisa kosong.
+  meeting_point?: string | null
+  meeting_point_arrival?: string | null
+  meeting_point_value?: string | null
+  pickup_time?: string | null
+  drop_point?: string | null
+  drop_point_arrival?: string | null
+  drop_point_value?: string | null
+  drop_time?: string | null
   [key: string]: unknown
 }
 
@@ -61,6 +70,7 @@ export type BookingData = {
   orderChannel?: string
   customer_portal?: string
   total_pax?: number
+  tshirtSize?: string | null
   duration?: string
   booking_date?: string
   financial?: {

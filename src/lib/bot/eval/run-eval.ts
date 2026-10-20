@@ -40,7 +40,9 @@ import { prisma } from '@/lib/db'
 import { upsertChannelIdentity } from '@/lib/channel/identity'
 import { checkDeploymentGate } from '../deployment-gate'
 import { decideAndRespond } from '../orchestrator'
+import { extractBookingSignals } from '@/lib/booking-actions/extract'
 import { EVAL_CASES, type EvalCase } from './fixtures'
+import { EXTRACTION_CASES, type ExtractionCase, type ExtractionExpectation } from './extraction-cases'
 
 // Distinct from the regression exit code (1) below, so a CI wiring can tell "not approved to
 // run here" apart from "quality regressed" without parsing stdout.
@@ -98,6 +100,24 @@ async function runCase(c: EvalCase): Promise<CaseResult> {
   if (missing.length > 0) detail = `missing: ${missing.join(', ')}`
   if (present.length > 0) detail += `${detail ? '; ' : ''}forbidden: ${present.join(', ')}`
   return { id: c.id, passed: missing.length === 0 && present.length === 0, detail: detail || 'ok', reply }
+}
+
+// Kasus ekstraktor booking: tanpa database (tidak ada percakapan yang dibuat), hanya Ollama.
+// Satu panggilan gagal teknis (`null`) dihitung gagal -- bukan "tidak ada sinyal".
+async function runExtractionCase(c: ExtractionCase): Promise<CaseResult> {
+  const transcript = {
+    text: c.guestMessages.map((m, i) => `#${i + 1} Tamu: ${m}`).join('\n'),
+    ids: c.guestMessages.map((_, i) => `eval-msg-${i + 1}`),
+  }
+  const out = await extractBookingSignals({ transcript, booking: c.booking })
+  if (!out) return { id: c.id, passed: false, detail: 'extractor failed technically', reply: '' }
+  const problems: string[] = []
+  const has = (list: typeof out.changes, e: ExtractionExpectation) =>
+    list.some((x) => x.field === e.field && (e.value === undefined || x.value === e.value))
+  for (const e of c.expectChanges) if (!has(out.changes, e)) problems.push(`missing change ${e.field}${e.value ? `=${e.value}` : ''}`)
+  for (const e of c.expectFacts) if (!has(out.facts, e)) problems.push(`missing fact ${e.field}${e.value ? `=${e.value}` : ''}`)
+  if (c.expectNone && (out.changes.length > 0 || out.facts.length > 0)) problems.push('expected no signals')
+  return { id: c.id, passed: problems.length === 0, detail: problems.join('; ') || 'ok', reply: JSON.stringify(out) }
 }
 
 // Exported for run-eval.test.ts, which asserts the deletion order and scoping against a
@@ -166,13 +186,14 @@ async function main(): Promise<void> {
   const results: CaseResult[] = []
   try {
     for (const c of EVAL_CASES) results.push(await runCase(c))
+    for (const c of EXTRACTION_CASES) results.push(await runExtractionCase(c))
   } catch (error) {
     // A case being SCORED a failure never throws -- that comes back as an ordinary
     // CaseResult from runCase. A throw here means the harness itself broke mid-run (a
     // network blip, a real bug). Caught, not left to propagate, so whatever results were
     // already collected still get printed below and cleanup still runs -- a crash on case
     // #9 must not silently discard the report for cases #1-8, nor skip removing their rows.
-    console.error(`\nrun-eval crashed after ${results.length}/${EVAL_CASES.length} case(s) completed:`, error)
+    console.error(`\nrun-eval crashed after ${results.length}/${EVAL_CASES.length + EXTRACTION_CASES.length} case(s) completed:`, error)
   }
 
   // Printed BEFORE cleanup, deliberately: a cleanup failure below (or the crash above) must
@@ -184,9 +205,10 @@ async function main(): Promise<void> {
   const passed = results.filter((r) => r.passed).length
   const rate = results.length > 0 ? Math.round((passed / results.length) * 100) : 0
   console.log(`\nPASS ${passed}/${results.length} (${rate}%)`)
-  const incomplete = results.length < EVAL_CASES.length
+  const totalCases = EVAL_CASES.length + EXTRACTION_CASES.length
+  const incomplete = results.length < totalCases
   if (incomplete) {
-    console.error(`INCOMPLETE: only ${results.length}/${EVAL_CASES.length} cases ran (see the crash above) -- this is not a real score, do not compare it to the baseline.`)
+    console.error(`INCOMPLETE: only ${results.length}/${totalCases} cases ran (see the crash above) -- this is not a real score, do not compare it to the baseline.`)
   }
 
   try {
