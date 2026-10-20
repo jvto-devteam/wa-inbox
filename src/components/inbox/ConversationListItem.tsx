@@ -47,6 +47,8 @@ export type ConversationSummary = {
   // present (defaults to "new" in the schema), so its badge always renders, unlike orderChannel.
   pipelineStage: string
   unreadCount: number
+  // CHANGE/TASK OPEN untuk booking percakapan ini. Opsional supaya pemanggil lama tetap berlaku.
+  openChangeRequests?: number
   labels: Array<{ id: string; name: string; color: string }>
   // Nama tamu dari data booking (bookingData.guest) -- null sampai ada booking pada
   // percakapan ini. Ditampilkan di samping nama kontak lewat contactDisplayName.
@@ -202,6 +204,9 @@ export function ConversationListItem({
               <Badge variant="muted" className={ORDER_CHANNEL_CLASSES[conversation.orderChannel]}>
                 {conversation.orderChannel}
               </Badge>
+            )}
+            {(conversation.openChangeRequests ?? 0) > 0 && (
+              <Badge variant="warning">Permintaan perubahan · belum dipenuhi</Badge>
             )}
             <Badge variant={STAGE_VARIANTS[conversation.pipelineStage] ?? 'muted'}>
               {STAGE_LABELS[conversation.pipelineStage] ?? conversation.pipelineStage}

@@ -262,3 +262,14 @@ describe('formatListTime', () => {
     expect(formatListTime('bukan tanggal', now)).toBe('')
   })
 })
+
+describe('ConversationListItem change-request label', () => {
+  it('shows the chip while openChangeRequests > 0 and hides it otherwise', () => {
+    const { rerender } = render(<ConversationListItem conversation={{ ...summary, openChangeRequests: 2 }} onClick={() => {}} />)
+    expect(screen.getByText('Permintaan perubahan · belum dipenuhi')).toBeInTheDocument()
+    rerender(<ConversationListItem conversation={{ ...summary, openChangeRequests: 0 }} onClick={() => {}} />)
+    expect(screen.queryByText('Permintaan perubahan · belum dipenuhi')).not.toBeInTheDocument()
+    rerender(<ConversationListItem conversation={summary} onClick={() => {}} />)
+    expect(screen.queryByText('Permintaan perubahan · belum dipenuhi')).not.toBeInTheDocument()
+  })
+})

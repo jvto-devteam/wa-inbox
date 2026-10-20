@@ -23,6 +23,7 @@ beforeEach(() => {
   mockPrisma.contact.create.mockResolvedValue({ id: 'contact_test' } as never)
   mockPrisma.channelIdentity.upsert.mockResolvedValue({ id: 'identity_test', contactId: 'contact_test' } as never)
   mockPrisma.conversation.upsert.mockResolvedValue({ id: 'conv_test' } as never)
+  mockPrisma.bookingAction.findMany.mockResolvedValue([] as never)
 })
 
 describe('GET /api/conversations', () => {
@@ -284,5 +285,44 @@ describe('GET /api/conversations', () => {
 
     await GET(new Request('http://localhost/api/conversations?q=ijen'))
     expect(mockPrisma.channelIdentity.findUnique).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('GET /api/conversations openChangeRequests', () => {
+  const conv = (id: string, bookingData: unknown) => ({
+    id, botEnabled: true, status: 'OPEN', pipelineStage: 'nego', lastMessageAt: new Date('2026-07-25T10:00:00Z'),
+    contact: { name: 'A', phone: '1' }, messages: [], labels: [], bookingData,
+  })
+
+  it('label stays while TASK open, counted in one query, scoped to current booking', async () => {
+    mockPrisma.conversation.findMany.mockResolvedValue([
+      conv('c1', { booking_id: 77 }), conv('c2', null), conv('c3', { booking_id: 5 }),
+    ] as never)
+    mockPrisma.bookingAction.findMany.mockResolvedValue([
+      { conversationId: 'c1', bookingId: '77' },
+      { conversationId: 'c1', bookingId: null },
+      { conversationId: 'c1', bookingId: '12' },
+      { conversationId: 'c2', bookingId: '12' },
+      { conversationId: 'c3', bookingId: '5' },
+    ] as never)
+    const body = await (await GET(new Request('http://localhost/api/conversations'))).json()
+    expect(body.map((c: { openChangeRequests: number }) => c.openChangeRequests)).toEqual([2, 0, 1])
+    expect(mockPrisma.bookingAction.findMany).toHaveBeenCalledTimes(1)
+    expect(mockPrisma.bookingAction.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: { conversationId: { in: ['c1', 'c2', 'c3'] }, state: 'OPEN', type: { in: ['CHANGE', 'TASK'] } },
+    }))
+  })
+
+  it('label gone after done, and no expiry after 30 days', async () => {
+    mockPrisma.conversation.findMany.mockResolvedValue([conv('c1', { booking_id: 77 })] as never)
+    // Tidak ada filter umur: kueri hanya menyaring state OPEN, jadi aksi 30+ hari tetap terhitung.
+    mockPrisma.bookingAction.findMany.mockResolvedValue([{ conversationId: 'c1', bookingId: '77', createdAt: new Date('2026-01-01') }] as never)
+    let body = await (await GET(new Request('http://localhost/api/conversations'))).json()
+    expect(body[0].openChangeRequests).toBe(1)
+    const where = mockPrisma.bookingAction.findMany.mock.calls[0][0]?.where as Record<string, unknown>
+    expect(where).not.toHaveProperty('createdAt')
+    mockPrisma.bookingAction.findMany.mockResolvedValue([] as never)
+    body = await (await GET(new Request('http://localhost/api/conversations'))).json()
+    expect(body[0].openChangeRequests).toBe(0)
   })
 })

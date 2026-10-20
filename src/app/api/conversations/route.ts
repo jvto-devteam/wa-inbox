@@ -4,6 +4,7 @@ import { prisma } from '@/lib/db'
 import { ensureTestConversation } from '@/lib/test-conversation'
 import { bookingGuestName } from '@/lib/booking/display-name'
 import { ALL_PLATFORMS } from '@/lib/channel/platform'
+import { currentBookingId, inCurrentBooking } from '@/lib/booking-actions/scope'
 
 export async function GET(req: Request) {
   const url = new URL(req.url)
@@ -76,6 +77,20 @@ export async function GET(req: Request) {
     )
   )
 
+  // Label "Permintaan perubahan": satu kueri untuk seluruh halaman (bukan N+1). Lingkup booking
+  // disaring di memori memakai bookingData yang sudah ikut termuat -- aksi booking lama yang tak
+  // pernah ditutup saat booking berganti tidak dihitung. Tanpa batas umur: tidak ada kedaluwarsa.
+  const openActions = await prisma.bookingAction.findMany({
+    where: { conversationId: { in: conversations.map((c) => c.id) }, state: 'OPEN', type: { in: ['CHANGE', 'TASK'] } },
+    select: { conversationId: true, bookingId: true },
+  })
+  const openByConversation = new Map<string, Array<{ bookingId: string | null }>>()
+  for (const a of openActions) {
+    const list = openByConversation.get(a.conversationId)
+    if (list) list.push(a)
+    else openByConversation.set(a.conversationId, [a])
+  }
+
   return NextResponse.json(conversations.map((c, i) => ({
     id: c.id,
     contactName: c.contact.name,
@@ -104,6 +119,7 @@ export async function GET(req: Request) {
     isPinned: c.isPinned,
     isTest: c.isTest,
     unreadCount: unreadCounts[i],
+    openChangeRequests: (openByConversation.get(c.id) ?? []).filter((a) => inCurrentBooking(a, currentBookingId(c.bookingData))).length,
     labels: c.labels.map((l) => ({ id: l.label.id, name: l.label.name, color: l.label.color })),
   })))
 }

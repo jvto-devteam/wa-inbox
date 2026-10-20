@@ -1,0 +1,84 @@
+import { NextResponse } from 'next/server'
+import { z } from 'zod'
+import { prisma } from '@/lib/db'
+import { getSession } from '@/lib/auth/get-session'
+import { recordEvent } from '@/lib/booking-actions/history'
+import { broadcast } from '@/lib/realtime'
+
+/**
+ * Tutup/tolak satu tindakan booking dari Inbox. Terbuka untuk semua akun yang login (keputusan
+ * owner 2026-10-19; pengecualian hasAdminPowers dicatat di CLAUDE.md §6 pada Task 13).
+ * `closedById` WAJIB terisi: store.ts tidak membuat ulang aksi yang ditutup orang untuk field+nilai
+ * yang sama.
+ */
+const bodySchema = z.discriminatedUnion('op', [
+  z.object({ op: z.literal('reject'), reason: z.string().max(500).optional() }),
+  z.object({ op: z.literal('dismiss'), reason: z.string().max(500).optional() }),
+  z.object({ op: z.literal('done'), note: z.string().max(500).optional() }),
+  z.object({ op: z.literal('not_needed'), note: z.string().max(500).optional() }),
+])
+
+type Op = z.infer<typeof bodySchema>['op']
+
+const OUTCOME: Record<Op, { state: string; closedReason: string; event: 'REJECTED' | 'RESOLVED'; types: readonly string[] }> = {
+  reject: { state: 'REJECTED', closedReason: 'REJECTED', event: 'REJECTED', types: ['CHANGE', 'DATA_REQUEST'] },
+  dismiss: { state: 'RESOLVED', closedReason: 'DISMISSED_CHAT_WRONG', event: 'RESOLVED', types: ['MISMATCH'] },
+  done: { state: 'DONE', closedReason: 'MARKED_DONE', event: 'RESOLVED', types: ['CHANGE', 'TASK'] },
+  not_needed: { state: 'DONE', closedReason: 'NOT_NEEDED', event: 'RESOLVED', types: ['CHANGE', 'TASK'] },
+}
+
+type Ctx = { params: Promise<{ id: string }> }
+
+export async function PATCH(req: Request, { params }: Ctx) {
+  try {
+    const session = await getSession(req)
+    if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    const { id } = await params
+
+    let json: unknown
+    try {
+      json = await req.json()
+    } catch {
+      return NextResponse.json({ error: 'Body tidak valid' }, { status: 400 })
+    }
+    const parsed = bodySchema.safeParse(json)
+    if (!parsed.success) return NextResponse.json({ error: 'Body tidak valid' }, { status: 400 })
+    const body = parsed.data
+    const text = body.op === 'reject' || body.op === 'dismiss' ? body.reason : body.note
+
+    const action = await prisma.bookingAction.findUnique({ where: { id } })
+    if (!action) return NextResponse.json({ error: 'Tindakan tidak ditemukan' }, { status: 404 })
+    if (action.state !== 'OPEN') return NextResponse.json({ error: 'Tindakan sudah ditutup' }, { status: 409 })
+
+    const outcome = OUTCOME[body.op]
+    if (!outcome.types.includes(action.type)) {
+      return NextResponse.json({ error: 'Operasi tidak cocok dengan jenis tindakan' }, { status: 400 })
+    }
+
+    const closed = await prisma.$transaction(async (tx) => {
+      // Bersyarat pada state OPEN: dua klik bersamaan tidak sama-sama lolos.
+      const res = await tx.bookingAction.updateMany({
+        where: { id, state: 'OPEN' },
+        data: { state: outcome.state, closedReason: outcome.closedReason, closedById: session.accountId, closedAt: new Date() },
+      })
+      if (res.count === 0) return false
+      await recordEvent(tx, {
+        conversationId: action.conversationId,
+        bookingId: action.bookingId,
+        actionId: action.id,
+        event: outcome.event,
+        actor: 'ACCOUNT',
+        accountId: session.accountId,
+        reason: text ?? null,
+      })
+      return true
+    })
+    if (!closed) return NextResponse.json({ error: 'Tindakan sudah ditutup' }, { status: 409 })
+
+    broadcast({ type: 'booking-actions.changed', conversationId: action.conversationId })
+    return NextResponse.json({ ok: true, state: outcome.state })
+  } catch (error) {
+    console.error('PATCH booking-action gagal', error)
+    return NextResponse.json({ error: 'Gagal memperbarui tindakan booking' }, { status: 500 })
+  }
+}
