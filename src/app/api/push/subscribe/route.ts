@@ -8,11 +8,14 @@ import { parseJsonBody } from '@/lib/parse-json'
  * Langganan Web Push. Terbuka untuk semua akun yang login (bukan keputusan bot, tidak
  * ada audit). Kunci p256dh/auth rahasia: tidak pernah dikembalikan atau di-log.
  */
+const httpsEndpoint = z.url({ protocol: /^https$/ }).max(2048)
+// p256dh = titik P-256 tak terkompresi (65 byte -> 87 char base64url); auth = 16 byte -> 22 char.
+const b64url = (min: number, max: number) => z.string().regex(/^[A-Za-z0-9_-]+$/).min(min).max(max)
 const subscribeSchema = z.object({
-  endpoint: z.url().max(2048),
-  keys: z.object({ p256dh: z.string().min(1).max(512), auth: z.string().min(1).max(512) }),
+  endpoint: httpsEndpoint,
+  keys: z.object({ p256dh: b64url(80, 95), auth: b64url(20, 26) }),
 })
-const unsubscribeSchema = z.object({ endpoint: z.url().max(2048) })
+const unsubscribeSchema = z.object({ endpoint: httpsEndpoint })
 
 export async function POST(req: Request) {
   try {

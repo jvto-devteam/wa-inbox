@@ -39,9 +39,13 @@ const FIELD_LABELS: Record<string, string> = {
   tshirt_sizes: 'Ukuran kaos', note: 'Catatan', travel_date: 'Tanggal trip', total_pax: 'Jumlah tamu', hotel: 'Hotel',
 }
 
+const FREE_TEXT_FIELDS = new Set(['note', 'pickup_detail', 'drop_detail', 'pickup_arrival', 'drop_arrival'])
+
 /** Ringkasan pendek "Titik jemput → Surabaya Hotel". */
 export function summarizeAction(field: string, value: string | null): string {
   const label = FIELD_LABELS[field] ?? field
+  // Teks bebas dari tamu bisa memuat nama: layar kunci hanya menampilkan labelnya.
+  if (FREE_TEXT_FIELDS.has(field)) return `${label} ${field === 'note' ? 'baru' : 'diperbarui'} — buka chat`
   return value ? `${label} → ${value}` : label
 }
 
@@ -95,6 +99,7 @@ export async function notifyBookingAction(e: BookingPushEvent): Promise<void> {
           await webpush.sendNotification({ endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } }, body, {
             vapidDetails: vapid,
             TTL: 60 * 60 * 24,
+            timeout: 10_000,
           })
           await prisma.pushSubscription.update({ where: { id: s.id }, data: { lastSuccessAt: new Date() } })
         } catch (err) {

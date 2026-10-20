@@ -62,10 +62,27 @@ describe('NotificationListener push', () => {
     expect(screen.queryByRole('button', { name: 'Nyalakan notifikasi' })).toBeNull()
   })
 
-  it('shows retry label when the server rejects', async () => {
-    fetchMock.mockImplementation(async (url: string) => (url.includes('vapid') ? { ok: false } : { ok: true }))
+  it('no button when server answers 404 (VAPID not configured)', async () => {
+    fetchMock.mockImplementation(async () => ({ ok: false, status: 404 }))
     render(<NotificationListener />)
-    fireEvent.click(await screen.findByRole('button', { name: 'Nyalakan notifikasi' }))
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/push/vapid-public-key'))
+    await new Promise((r) => setTimeout(r, 10))
+    expect(screen.queryByRole('button', { name: 'Nyalakan notifikasi' })).toBeNull()
+  })
+
+  it('no button when permission is denied', async () => {
+    permission = 'denied'
+    render(<NotificationListener />)
+    await new Promise((r) => setTimeout(r, 10))
+    expect(screen.queryByRole('button', { name: 'Nyalakan notifikasi' })).toBeNull()
+    expect(register).not.toHaveBeenCalled()
+  })
+
+  it('shows retry label when the server rejects', async () => {
+    render(<NotificationListener />)
+    const btn = await screen.findByRole('button', { name: 'Nyalakan notifikasi' })
+    fetchMock.mockImplementation(async (url: string) => (url.includes('vapid') ? { ok: false } : { ok: true }))
+    fireEvent.click(btn)
     await screen.findByRole('button', { name: 'Gagal, coba lagi' })
   })
 })

@@ -3,7 +3,8 @@ import type { MetadataRoute } from 'next'
 // Konvensi file Next.js -- ini otomatis dilayani sebagai /manifest.webmanifest dan
 // tertaut sendiri lewat <link rel="manifest">, tidak perlu ditambahkan manual di layout.
 //
-// Sebatas "installable": tidak ada service worker, tidak ada cache/offline. App ini selalu
+// Installable + Web Push: satu-satunya service worker (public/sw.js) hanya menangani
+// notifikasi push aksi booking -- tidak ada cache/offline. App ini selalu
 // terhubung live ke server (SSE untuk pesan masuk real-time), jadi mode offline bukan sesuatu
 // yang masuk akal untuk dijanjikan -- yang dibutuhkan cuma bisa di-add-to-homescreen dan
 // dibuka sebagai app standalone tanpa address bar browser.

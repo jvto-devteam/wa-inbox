@@ -8,7 +8,7 @@ vi.mock('web-push', () => ({ default: { sendNotification: vi.fn() } }))
 
 import webpush from 'web-push'
 import { prisma } from '@/lib/db'
-import { buildPushPayload, notifyBookingAction } from './send'
+import { buildPushPayload, notifyBookingAction, summarizeAction } from './send'
 
 const db = prisma as unknown as DeepMockProxy<PrismaClient>
 const send = vi.mocked(webpush.sendNotification)
@@ -74,10 +74,28 @@ describe('notifyBookingAction', () => {
     send.mockRejectedValue(new Error('x priv'))
     await notifyBookingAction(event)
     const opts = send.mock.calls[0][2] as { vapidDetails: { privateKey: string } }
+    expect((send.mock.calls[0][2] as { timeout: number }).timeout).toBe(10_000)
     expect(opts.vapidDetails.privateKey).toBe('priv')
     const logged = JSON.stringify([...vi.mocked(console.error).mock.calls, ...vi.mocked(console.warn).mock.calls])
     expect(logged).not.toContain('"priv"')
     expect(JSON.parse(send.mock.calls[0][1] as string)).toMatchObject({ tag: 'booking-action:act1' })
+  })
+})
+
+describe('summarizeAction', () => {
+  it('free-text fields show label only, never guest text', () => {
+    for (const f of ['note', 'pickup_detail', 'drop_detail']) {
+      const body = buildPushPayload({ ...event, summary: summarizeAction(f, 'Atas nama Budi Santoso, tolong jemput di lobi') }).body
+      expect(body).not.toMatch(/Budi|Santoso|lobi/)
+      expect(body).toContain('buka chat')
+    }
+    expect(summarizeAction('note', 'x')).toBe('Catatan baru — buka chat')
+    expect(summarizeAction('pickup_detail', 'x')).toBe('Detail jemput diperbarui — buka chat')
+  })
+
+  it('structured fields keep the value', () => {
+    expect(summarizeAction('pickup_point', 'Surabaya Hotel')).toBe('Titik jemput → Surabaya Hotel')
+    expect(summarizeAction('total_pax', '5')).toBe('Jumlah tamu → 5')
   })
 })
 

@@ -21,13 +21,20 @@ export function NotificationListener() {
   const [failed, setFailed] = useState(false)
 
   useEffect(() => {
-    if (pushSupported()) {
-      navigator.serviceWorker
-        .register('/sw.js')
+    let cancelled = false
+    if (pushSupported() && Notification.permission !== 'denied') {
+      // Tombol hanya muncul bila server punya VAPID (200) dan belum ada langganan aktif.
+      fetch('/api/push/vapid-public-key')
+        .then((res) => {
+          if (!res.ok) throw new Error('push tidak dikonfigurasi')
+          return navigator.serviceWorker.register('/sw.js')
+        })
         .then(() => navigator.serviceWorker.ready)
         .then((reg) => reg.pushManager.getSubscription())
-        .then((sub) => setNeedsEnable(Notification.permission !== 'granted' || !sub))
-        .catch(() => setNeedsEnable(true))
+        .then((sub) => {
+          if (!cancelled) setNeedsEnable(Notification.permission !== 'granted' || !sub)
+        })
+        .catch(() => undefined)
     }
 
     const es = new EventSource('/api/sse')
@@ -40,7 +47,10 @@ export function NotificationListener() {
         }
       }
     }
-    return () => es.close()
+    return () => {
+      cancelled = true
+      es.close()
+    }
   }, [])
 
   const enable = useCallback(async () => {

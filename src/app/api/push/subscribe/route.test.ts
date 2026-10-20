@@ -17,7 +17,9 @@ const call = (method: string, body: unknown) =>
     headers: { cookie: 'wa_inbox_session=tok', 'content-type': 'application/json' },
     body: typeof body === 'string' ? body : JSON.stringify(body),
   })
-const good = { endpoint: 'https://push.example/abc', keys: { p256dh: 'pk', auth: 'ak' } }
+const P = 'B'.repeat(87)
+const A = 'a_-Z'.repeat(5) + 'xy'
+const good = { endpoint: 'https://push.example/abc', keys: { p256dh: P, auth: A } }
 
 beforeEach(() => {
   mockReset(db)
@@ -33,6 +35,10 @@ describe('POST /api/push/subscribe', () => {
     expect((await POST(call('POST', { ...good, endpoint: 'bukan-url' }))).status).toBe(400)
     expect((await POST(call('POST', { endpoint: good.endpoint, keys: { p256dh: 'pk' } }))).status).toBe(400)
     expect((await POST(call('POST', 'not json'))).status).toBe(400)
+    // hanya https; kunci harus base64url berpanjang realistis
+    expect((await POST(call('POST', { ...good, endpoint: 'http://push.example/abc' }))).status).toBe(400)
+    expect((await POST(call('POST', { ...good, keys: { p256dh: 'pk', auth: 'ak' } }))).status).toBe(400)
+    expect((await POST(call('POST', { ...good, keys: { p256dh: P + '+/=', auth: A } }))).status).toBe(400)
     expect(db.pushSubscription.upsert).not.toHaveBeenCalled()
   })
 
@@ -41,8 +47,8 @@ describe('POST /api/push/subscribe', () => {
     expect(res.status).toBe(200)
     expect(db.pushSubscription.upsert).toHaveBeenCalledWith({
       where: { endpoint: good.endpoint },
-      create: { accountId: 'acc1', endpoint: good.endpoint, p256dh: 'pk', auth: 'ak' },
-      update: { accountId: 'acc1', p256dh: 'pk', auth: 'ak' },
+      create: { accountId: 'acc1', endpoint: good.endpoint, p256dh: P, auth: A },
+      update: { accountId: 'acc1', p256dh: P, auth: A },
     })
   })
 
