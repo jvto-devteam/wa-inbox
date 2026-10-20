@@ -31,10 +31,17 @@ export type BookingActionEventView = {
   actor: 'BOT' | 'SYSTEM' | 'ACCOUNT'
   accountName: string | null
   reason: string | null
+  sourceMessageId?: string | null
   oldValue: unknown
   newValue: unknown
   createdAt: string
 }
+
+/** Butir "Disematkan" di tab Ringkasan chat: aksi OPEN CHANGE/TASK/MISMATCH dalam booking saat ini. */
+export type PinnedBookingAction = Pick<
+  BookingActionView,
+  'id' | 'type' | 'field' | 'proposedValue' | 'sourceMessageId' | 'createdAt'
+>
 
 export type BookingActionsResponse = {
   booking: { id: string; code: string | null; start: string | null; end: string | null } | null

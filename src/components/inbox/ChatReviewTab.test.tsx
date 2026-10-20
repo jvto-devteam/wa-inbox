@@ -45,6 +45,8 @@ function response(overrides: Partial<ChatReviewResponse> = {}): ChatReviewRespon
     item: item(),
     history: [],
     lastMessageAt: null,
+    pinned: [],
+    changeHistory: [],
     ...overrides,
   }
 }
@@ -494,5 +496,71 @@ describe('tanda "Ada pesan baru"', () => {
       expect(within(days[0] as HTMLElement).queryByRole('link')).not.toBeInTheDocument()
       expect(days[0].querySelector('summary a, summary [title]')).toBeNull()
     })
+  })
+})
+
+describe('ChatReviewTab: Disematkan & Riwayat perubahan', () => {
+  const pinned = [
+    { id: 'a1', type: 'CHANGE' as const, field: 'pickup_point', proposedValue: 'Hotel Santika', sourceMessageId: 'msg_5', createdAt: '2026-10-20T01:00:00.000Z' },
+    { id: 'a2', type: 'MISMATCH' as const, field: 'total_pax', proposedValue: 4, sourceMessageId: null, createdAt: '2026-10-20T01:05:00.000Z' },
+  ]
+  const changeHistory = [
+    { id: 'e1', event: 'EXECUTED', actor: 'ACCOUNT' as const, accountName: 'Dewi', reason: null, sourceMessageId: 'msg_7', oldValue: 'A', newValue: 'B', createdAt: '2026-10-20T02:00:00.000Z' },
+  ]
+
+  it('Disematkan paling atas, butir ber-sourceMessageId menaut ke pesan; riwayat perubahan menaut juga', async () => {
+    stubFetch(() => json(response({ pinned, changeHistory })))
+    const { container } = render(<ChatReviewTab conversationId="conv_1" />)
+
+    const pin = await screen.findByRole('region', { name: 'Disematkan' })
+    expect(container.querySelector('section')).toBe(pin)
+    const rows = within(pin).getAllByRole('listitem')
+    expect(rows).toHaveLength(2)
+    expect(rows[0]).toHaveTextContent('Pickup: Hotel Santika')
+    expect(rows[0]).toHaveTextContent('Permintaan perubahan · belum dipenuhi')
+    expect(within(rows[0]).getByRole('link', { name: 'Lihat pesan' })).toHaveAttribute(
+      'href',
+      '/inbox?conversation=conv_1&message=msg_5&lihat=1'
+    )
+    expect(within(rows[1]).queryByRole('link')).not.toBeInTheDocument()
+
+    const hist = screen.getByRole('region', { name: 'Riwayat perubahan' })
+    expect(hist).toHaveTextContent('Dieksekusi · Dewi')
+    expect(within(hist).getByRole('link', { name: 'Lihat pesan' })).toHaveAttribute(
+      'href',
+      '/inbox?conversation=conv_1&message=msg_7&lihat=1'
+    )
+  })
+
+  it('tanpa aksi: kedua bagian tidak dirender', async () => {
+    stubFetch(() => json(response()))
+    render(<ChatReviewTab conversationId="conv_1" />)
+    await screen.findByRole('region', { name: 'Status tindak lanjut' })
+    expect(screen.queryByRole('region', { name: 'Disematkan' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('region', { name: 'Riwayat perubahan' })).not.toBeInTheDocument()
+  })
+
+  it('memuat ulang saat menerima booking-actions.changed / conversation.updated untuk percakapan ini saja', async () => {
+    let onmessage: ((e: { data: string }) => void) | null = null
+    class FakeES {
+      set onmessage(fn: (e: { data: string }) => void) {
+        onmessage = fn
+      }
+      close() {}
+    }
+    vi.stubGlobal('EventSource', FakeES)
+    const fetchMock = stubFetch(() => json(response()))
+    render(<ChatReviewTab conversationId="conv_1" />)
+    await screen.findByRole('region', { name: 'Status tindak lanjut' })
+    expect(onmessage).not.toBeNull()
+    const calls = () => fetchMock.mock.calls.length
+    const before = calls()
+
+    onmessage!({ data: JSON.stringify({ type: 'booking-actions.changed', conversationId: 'conv_lain' }) })
+    expect(calls()).toBe(before)
+    onmessage!({ data: JSON.stringify({ type: 'booking-actions.changed', conversationId: 'conv_1' }) })
+    await waitFor(() => expect(calls()).toBe(before + 1))
+    onmessage!({ data: JSON.stringify({ type: 'conversation.updated', conversationId: 'conv_1' }) })
+    await waitFor(() => expect(calls()).toBe(before + 2))
   })
 })

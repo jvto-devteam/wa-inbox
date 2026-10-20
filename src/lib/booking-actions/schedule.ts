@@ -22,6 +22,9 @@
  *   - harus punya `bookingData`;
  *   - trip yang `date.end_ymd`-nya sebelum hari ini (WIB) dilewati;
  *   - pesan penutup/reaksi ("ok", "thanks", emoji) tidak memicu.
+ *
+ * Sesudah ekstraksi selesai (jalur yang lolos gerbang), ringkasan chat di panel kanan ikut
+ * diperbarui lewat `scheduleChatReviewRefresh` (jeda 5 menit, gerbang nomor Indonesia sendiri).
  */
 import { prisma } from '@/lib/db'
 import { isIndonesianNumber } from '@/lib/phone'
@@ -30,6 +33,7 @@ import { buildNumberedTranscript } from '@/lib/daily-summary/collect'
 import { jakartaDayKey } from '@/lib/daily-summary/time'
 import type { BookingData } from '@/lib/booking/client'
 import { openPipelineRun, traceClose, traceStep } from '@/lib/pipeline/tracer'
+import { scheduleChatReviewRefresh } from '@/lib/chat-review/auto-refresh'
 import { extractBookingSignals } from './extract'
 import { applyExtraction, reevaluateBookingActions } from './store'
 
@@ -108,6 +112,8 @@ async function runExtraction(conversationId: string): Promise<void> {
     }
     await applyExtraction(conversationId, extraction)
     await reevaluateBookingActions(conversationId)
+    // Panel kanan Inbox ikut terbaru. Hanya mencatat lalu kembali; tidak pernah melempar.
+    scheduleChatReviewRefresh(conversationId)
     traceClose(run, 'selesai')
   } catch (error) {
     console.error('[booking-actions] ekstraksi gagal', { conversationId, error: error instanceof Error ? error.message : 'unknown' })

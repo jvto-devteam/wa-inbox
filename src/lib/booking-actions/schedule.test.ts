@@ -7,12 +7,14 @@ import type { PrismaClient } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { broadcast } from '@/lib/realtime'
 import { createPipelineTracer } from '@/lib/pipeline/tracer'
+import { scheduleChatReviewRefresh } from '@/lib/chat-review/auto-refresh'
 import { extractBookingSignals } from './extract'
 import { applyExtraction, reevaluateBookingActions } from './store'
 import { scheduleBookingExtraction, __resetBookingExtractionForTests, BOOKING_EXTRACTION_DEBOUNCE_MS } from './schedule'
 
 vi.mock('@/lib/db', () => ({ prisma: mockDeep<PrismaClient>() }))
 vi.mock('@/lib/realtime', () => ({ broadcast: vi.fn() }))
+vi.mock('@/lib/chat-review/auto-refresh', () => ({ scheduleChatReviewRefresh: vi.fn() }))
 vi.mock('./extract', () => ({ extractBookingSignals: vi.fn() }))
 vi.mock('./store', () => ({ applyExtraction: vi.fn(), reevaluateBookingActions: vi.fn() }))
 const mockPrisma = prisma as unknown as DeepMockProxy<PrismaClient>
@@ -40,6 +42,7 @@ beforeEach(() => {
     { id: 'm1', direction: 'INBOUND', sentBy: 'CUSTOMER', type: 'text', content: 'tolong ganti hotel', createdAt: new Date() },
   ] as never)
   vi.mocked(broadcast).mockReset()
+  vi.mocked(scheduleChatReviewRefresh).mockReset()
   vi.spyOn(console, 'error').mockImplementation(() => {})
 })
 afterEach(() => {
@@ -52,6 +55,20 @@ async function fire() {
 }
 
 describe('scheduleBookingExtraction', () => {
+  it('schedules a chat-review refresh after extraction completes', async () => {
+    stubConversation()
+    scheduleBookingExtraction('c1', { text: 'tolong ganti hotel' })
+    await fire()
+    expect(scheduleChatReviewRefresh).toHaveBeenCalledWith('c1')
+  })
+
+  it('does not refresh the chat review when the gate skips extraction', async () => {
+    stubConversation({ bookingData: null })
+    scheduleBookingExtraction('c1', { text: 'tolong ganti hotel' })
+    await fire()
+    expect(scheduleChatReviewRefresh).not.toHaveBeenCalled()
+  })
+
   it('runs extract -> apply -> reevaluate (independent of botEnabled: never read)', async () => {
     stubConversation()
     scheduleBookingExtraction('c1', { text: 'tolong ganti hotel' })

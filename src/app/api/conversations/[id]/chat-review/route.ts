@@ -1,13 +1,12 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { getSession } from '@/lib/auth/get-session'
-import { buildNumberedTranscript } from '@/lib/daily-summary/collect'
-import { TRANSCRIPT_MAX_MESSAGES } from '@/lib/daily-summary/config'
 import { conversationReviewSchema, type ConversationReview } from '@/lib/daily-summary/payload-schema'
-import { reviewConversation, type ReviewReason } from '@/lib/daily-summary/review'
 import { chatReviewHistory, type ChatReviewHistoryEntry } from '@/lib/chat-review/history'
-import { saveChatReview } from '@/lib/chat-review/store'
-import { applyReviewToItem, reconcileSummaryItems } from '@/lib/summary-items/sync'
+import { refreshChatReview } from '@/lib/chat-review/refresh'
+import { currentBookingId, inCurrentBooking } from '@/lib/booking-actions/scope'
+import type { BookingActionEventView, PinnedBookingAction } from '@/lib/booking-actions/view'
+import { reconcileSummaryItems } from '@/lib/summary-items/sync'
 import { toSummaryItemStatus, type SummaryItemStatus } from '@/lib/summary-items/status'
 
 /**
@@ -38,15 +37,63 @@ export type ChatReviewResponse = {
    * tidak diperbarui di setiap jalur kirim (balasan bot, misalnya). null = belum ada pesan.
    */
   lastMessageAt: string | null
+  /** Aksi booking OPEN (CHANGE/TASK/MISMATCH) dalam booking saat ini, dibaca live; terlama dulu. */
+  pinned: PinnedBookingAction[]
+  /** 20 kejadian aksi booking terbaru percakapan ini, terbaru di atas. */
+  changeHistory: BookingActionEventView[]
 }
 
+const CHANGE_HISTORY_LIMIT = 20
+
 type Ctx = { params: Promise<{ id: string }> }
+
+async function loadPinned(conversationId: string, bookingData: unknown): Promise<PinnedBookingAction[]> {
+  const bookingId = currentBookingId(bookingData)
+  const rows = await prisma.bookingAction.findMany({
+    where: { conversationId, state: 'OPEN', type: { in: ['CHANGE', 'TASK', 'MISMATCH'] } },
+    orderBy: { createdAt: 'asc' },
+  })
+  return (rows ?? [])
+    .filter((r) => inCurrentBooking(r, bookingId))
+    .map((r) => ({
+      id: r.id,
+      type: r.type as PinnedBookingAction['type'],
+      field: r.field,
+      proposedValue: r.proposedValue,
+      sourceMessageId: r.sourceMessageId,
+      createdAt: r.createdAt.toISOString(),
+    }))
+}
+
+async function loadChangeHistory(conversationId: string): Promise<BookingActionEventView[]> {
+  const events = (await prisma.bookingActionEvent.findMany({
+    where: { conversationId },
+    orderBy: { createdAt: 'desc' },
+    take: CHANGE_HISTORY_LIMIT,
+  })) ?? []
+  const accountIds = [...new Set(events.map((e) => e.accountId).filter((v): v is string => v !== null))]
+  const accounts = accountIds.length > 0
+    ? ((await prisma.account.findMany({ where: { id: { in: accountIds } }, select: { id: true, name: true } })) ?? [])
+    : []
+  const names = new Map(accounts.map((a) => [a.id, a.name]))
+  return events.map((e) => ({
+    id: e.id,
+    event: e.event,
+    actor: e.actor as BookingActionEventView['actor'],
+    accountName: e.accountId ? (names.get(e.accountId) ?? null) : null,
+    reason: e.reason,
+    sourceMessageId: e.sourceMessageId,
+    oldValue: e.oldValue,
+    newValue: e.newValue,
+    createdAt: e.createdAt.toISOString(),
+  }))
+}
 
 async function buildResponse(conversationId: string): Promise<ChatReviewResponse | null> {
   await reconcileSummaryItems()
   const conv = await prisma.conversation.findUnique({
     where: { id: conversationId },
-    select: { chatReview: true, chatReviewAt: true, summaryItem: true },
+    select: { chatReview: true, chatReviewAt: true, summaryItem: true, bookingData: true },
   })
   if (!conv) return null
   const parsed = conversationReviewSchema.safeParse(conv.chatReview)
@@ -63,6 +110,8 @@ async function buildResponse(conversationId: string): Promise<ChatReviewResponse
     item,
     history: await chatReviewHistory(conversationId),
     lastMessageAt: lastMessage?.createdAt.toISOString() ?? null,
+    pinned: await loadPinned(conversationId, conv.bookingData),
+    changeHistory: await loadChangeHistory(conversationId),
   }
 }
 
@@ -95,23 +144,9 @@ export async function POST(req: Request, { params }: Ctx) {
       return NextResponse.json(existing)
     }
 
-    const latest = await prisma.message.findMany({
-      where: { conversationId: id },
-      orderBy: { createdAt: 'desc' },
-      take: TRANSCRIPT_MAX_MESSAGES,
-      select: { id: true, direction: true, sentBy: true, type: true, content: true, createdAt: true },
-    })
-    if (latest.length === 0) return NextResponse.json({ error: 'Percakapan belum punya pesan' }, { status: 400 })
-    const messages = [...latest].reverse()
-    const reasons: ReviewReason[] = messages[messages.length - 1].direction === 'INBOUND' ? ['unreplied'] : ['active']
-
-    const settings = await prisma.settings.findUnique({ where: { id: 1 }, select: { ollamaModel: true } })
-    const review = await reviewConversation(buildNumberedTranscript(messages), reasons, settings?.ollamaModel ?? undefined)
-    if (!review) return NextResponse.json({ error: 'Gagal meringkas. Coba lagi.' }, { status: 502 })
-
-    await saveChatReview(id, review, now)
-    // Janji tim yang kini sudah ditepati menutup item PROMISE-nya (PROMISE_KEPT). Tidak pernah melempar.
-    await applyReviewToItem(id, review, now)
+    const result = await refreshChatReview(id, now)
+    if (result.status === 'empty') return NextResponse.json({ error: 'Percakapan belum punya pesan' }, { status: 400 })
+    if (result.status === 'failed') return NextResponse.json({ error: 'Gagal meringkas. Coba lagi.' }, { status: 502 })
     return NextResponse.json(await buildResponse(id))
   } catch (err) {
     console.error('POST /api/conversations/[id]/chat-review failed', err)

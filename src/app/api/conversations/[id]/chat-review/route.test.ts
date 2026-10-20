@@ -54,6 +54,49 @@ beforeEach(() => {
   mockPrisma.message.findMany.mockResolvedValue([])
 })
 
+describe('GET /api/conversations/[id]/chat-review: pinned & changeHistory', () => {
+  const act = (id: string, type: string, bookingId: string | null) => ({
+    id, type, field: 'pickup_point', proposedValue: 'Hotel X', bookingId, sourceMessageId: `m_${id}`,
+    createdAt: new Date('2026-10-20T01:00:00Z'), state: 'OPEN',
+  })
+  beforeEach(() => {
+    mockPrisma.conversation.findUnique.mockResolvedValue({
+      chatReview: null, chatReviewAt: null, summaryItem: null, bookingData: { booking_id: 'B1' },
+    } as never)
+    mockPrisma.message.findFirst.mockResolvedValue(null)
+  })
+
+  it('pinned shows open CHANGE/TASK/MISMATCH in the current booking, not closed ones', async () => {
+    mockPrisma.bookingAction.findMany.mockResolvedValue([
+      act('a1', 'CHANGE', 'B1'), act('a2', 'TASK', null), act('a3', 'MISMATCH', 'B1'), act('old', 'CHANGE', 'B0'),
+    ] as never)
+    mockPrisma.bookingActionEvent.findMany.mockResolvedValue([])
+    const body = await (await GET(req(), ctx)).json()
+    expect(body.pinned.map((p: { id: string }) => p.id)).toEqual(['a1', 'a2', 'a3'])
+    expect(body.pinned[0]).toMatchObject({ type: 'CHANGE', field: 'pickup_point', sourceMessageId: 'm_a1' })
+    // Hanya OPEN dan tiga tipe itu yang diminta ke DB: yang tertutup/DATA_REQUEST tak pernah muncul.
+    expect(mockPrisma.bookingAction.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { conversationId: 'c1', state: 'OPEN', type: { in: ['CHANGE', 'TASK', 'MISMATCH'] } } }),
+    )
+  })
+
+  it('changeHistory: 20 newest events with actor name and sourceMessageId', async () => {
+    mockPrisma.bookingAction.findMany.mockResolvedValue([])
+    mockPrisma.bookingActionEvent.findMany.mockResolvedValue([
+      { id: 'e1', event: 'EXECUTED', actor: 'ACCOUNT', accountId: 'acc1', reason: null, sourceMessageId: 'm1',
+        oldValue: 'A', newValue: 'B', createdAt: new Date('2026-10-20T02:00:00Z') },
+    ] as never)
+    mockPrisma.account.findMany.mockResolvedValue([{ id: 'acc1', name: 'Dewi' }] as never)
+    const body = await (await GET(req(), ctx)).json()
+    expect(mockPrisma.bookingActionEvent.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { conversationId: 'c1' }, orderBy: { createdAt: 'desc' }, take: 20 }),
+    )
+    expect(body.changeHistory).toEqual([
+      expect.objectContaining({ id: 'e1', event: 'EXECUTED', accountName: 'Dewi', sourceMessageId: 'm1', newValue: 'B' }),
+    ])
+  })
+})
+
 describe('GET /api/conversations/[id]/chat-review', () => {
   it('401 tanpa sesi', async () => {
     vi.mocked(verifySessionToken).mockResolvedValue(null)
@@ -106,7 +149,7 @@ describe('GET /api/conversations/[id]/chat-review', () => {
   it('latest null bila belum ada atau tidak lolos skema', async () => {
     mockPrisma.conversation.findUnique.mockResolvedValue({ chatReview: { rusak: true }, chatReviewAt: new Date(), summaryItem: null } as never)
     const body = await (await GET(req(), ctx)).json()
-    expect(body).toEqual({ latest: null, item: null, history: [], lastMessageAt: null })
+    expect(body).toEqual({ latest: null, item: null, history: [], lastMessageAt: null, pinned: [], changeHistory: [] })
   })
 
   it('lastMessageAt = waktu pesan terakhir dari tabel pesan', async () => {
@@ -159,7 +202,7 @@ describe('POST /api/conversations/[id]/chat-review', () => {
     expect(saveChatReview).toHaveBeenCalledWith('c1', review, expect.any(Date))
     // Perbarui menerapkan review baru ke item "Janji tim" dengan asOf yang sama dengan simpanannya.
     expect(applyReviewToItem).toHaveBeenCalledWith('c1', review, vi.mocked(saveChatReview).mock.calls[0][2])
-    expect(Object.keys(await res.json()).sort()).toEqual(['history', 'item', 'lastMessageAt', 'latest'])
+    expect(Object.keys(await res.json()).sort()).toEqual(['changeHistory', 'history', 'item', 'lastMessageAt', 'latest', 'pinned'])
     // Transkrip bernomor lama → baru, dengan ids yang sejajar.
     const transcript = vi.mocked(reviewConversation).mock.calls[0][0]
     expect(transcript.ids).toEqual(['m1', 'm2'])

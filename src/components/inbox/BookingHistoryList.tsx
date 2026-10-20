@@ -1,7 +1,7 @@
 'use client'
 import { valueText, type BookingActionEventView } from '@/lib/booking-actions/view'
 
-const EVENT_LABELS: Record<string, string> = {
+export const EVENT_LABELS: Record<string, string> = {
   CREATED: 'Dibuat',
   CORRECTED: 'Dikoreksi',
   EXECUTED: 'Dieksekusi',
@@ -13,13 +13,13 @@ const EVENT_LABELS: Record<string, string> = {
   REVERTED: 'Dibatalkan',
 }
 
-function actorName(e: BookingActionEventView): string {
+export function actorName(e: BookingActionEventView): string {
   if (e.actor === 'BOT') return 'Bot'
   if (e.actor === 'SYSTEM') return 'Sistem'
   return e.accountName ?? 'Admin'
 }
 
-function when(iso: string): string {
+export function when(iso: string): string {
   return new Date(iso).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta', dateStyle: 'medium', timeStyle: 'short' })
 }
 

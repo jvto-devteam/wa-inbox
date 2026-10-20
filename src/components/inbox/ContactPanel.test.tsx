@@ -278,7 +278,7 @@ describe('ContactPanel — tab Kontak / Ringkasan chat', () => {
   const chatReview = {
     latest: null,
     item: { id: 'item_1', kind: 'FOLLOW_UP', state: 'OPEN', anchorAt: '2026-10-18T13:30:00.000Z', dueAt: null, closedReason: null, note: null, closedAt: null },
-    history: [],
+    history: [], pinned: [], changeHistory: [],
   }
 
   function mockFetchWithChatReview() {

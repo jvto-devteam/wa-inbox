@@ -1,6 +1,6 @@
 'use client'
 import Link from 'next/link'
-import { useEffect, useId, useState } from 'react'
+import { useCallback, useEffect, useId, useState } from 'react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { SkeletonText } from '@/components/ui/skeleton'
@@ -15,6 +15,8 @@ import { fetchJson } from '@/lib/fetch-json'
 import { announceSummaryItemsChanged } from '@/lib/summary-items/events'
 import { followUpStatus, isActionable, summaryItemKindLabel, wibDateTimeLabel } from '@/lib/summary-items/status'
 import { PanelSectionTitle } from './ContactPanel'
+import { EVENT_LABELS, actorName, when } from './BookingHistoryList'
+import { fieldLabel, valueText } from '@/lib/booking-actions/view'
 // Hanya tipe: route itu menyentuh prisma, dan komponen klien tidak boleh membawa modul server.
 import type { ChatReviewItem, ChatReviewResponse } from '@/app/api/conversations/[id]/chat-review/route'
 
@@ -72,6 +74,74 @@ function FollowUpSection({
           {loadError}
         </p>
       )}
+    </section>
+  )
+}
+
+const PINNED_TYPE_LABEL: Record<string, string> = {
+  CHANGE: 'Permintaan perubahan · belum dipenuhi',
+  TASK: 'Perlu ditindaklanjuti',
+  MISMATCH: 'Beda dengan backoffice',
+}
+
+/** Tautan ke pesan sumber di thread sebelah; tanpa pesan sumber butir tampil sebagai teks biasa. */
+function SourceLink({ conversationId, messageId }: { conversationId: string; messageId: string | null | undefined }) {
+  if (!messageId) return null
+  return (
+    <Link
+      href={conversationHref(conversationId, messageId, { lihat: true })}
+      scroll={false}
+      onClick={() => scrollToThreadMessage(messageId)}
+      className="focus-ring inline-flex min-h-11 items-center rounded-sm text-xs text-ink-muted underline decoration-dotted underline-offset-2 hover:text-accent"
+    >
+      Lihat pesan
+    </Link>
+  )
+}
+
+/** Aksi booking yang masih terbuka, dibaca live; paling atas supaya tidak terlewat. */
+function PinnedSection({ pinned, conversationId }: { pinned: ChatReviewResponse['pinned']; conversationId: string }) {
+  if (pinned.length === 0) return null
+  return (
+    <section aria-label="Disematkan" className="space-y-1.5">
+      <PanelSectionTitle>Disematkan</PanelSectionTitle>
+      <ul className="space-y-1.5">
+        {pinned.map((p) => (
+          <li key={p.id} className="space-y-0.5 rounded-md border border-warning/40 px-2.5 py-1.5 text-sm break-words">
+            <p className="font-medium text-ink">
+              {fieldLabel(p.field)}: {valueText(p.proposedValue)}
+            </p>
+            <p className="text-xs text-warning">{PINNED_TYPE_LABEL[p.type] ?? p.type}</p>
+            <SourceLink conversationId={conversationId} messageId={p.sourceMessageId} />
+          </li>
+        ))}
+      </ul>
+    </section>
+  )
+}
+
+function ChangeHistorySection({ events, conversationId }: { events: ChatReviewResponse['changeHistory']; conversationId: string }) {
+  if (events.length === 0) return null
+  return (
+    <section aria-label="Riwayat perubahan" className="space-y-1.5">
+      <PanelSectionTitle>Riwayat perubahan</PanelSectionTitle>
+      <ul className="divide-y divide-line border-y border-line">
+        {events.map((e) => (
+          <li key={e.id} className="space-y-0.5 py-2 text-sm break-words">
+            <p className="text-ink">
+              <span className="font-medium">{EVENT_LABELS[e.event] ?? e.event}</span> · {actorName(e)}
+            </p>
+            {(e.oldValue != null || e.newValue != null) && (
+              <p className="text-xs text-ink-muted">
+                {valueText(e.oldValue)} → {valueText(e.newValue)}
+              </p>
+            )}
+            {e.reason && <p className="text-xs text-ink-muted">{e.reason}</p>}
+            <p className="text-xs text-ink-subtle">{when(e.createdAt)}</p>
+            <SourceLink conversationId={conversationId} messageId={e.sourceMessageId} />
+          </li>
+        ))}
+      </ul>
     </section>
   )
 }
@@ -211,14 +281,36 @@ export function ChatReviewTab({ conversationId, contactName }: { conversationId:
     }
   }, [url])
 
-  async function reload() {
+  const reload = useCallback(async () => {
     try {
       setData(await fetchJson<ChatReviewResponse>(url))
       setLoadError(null)
     } catch (err: unknown) {
       setLoadError(err instanceof Error ? err.message : 'Gagal memuat ringkasan')
     }
-  }
+  }, [url])
+
+  // Jalur SSE yang sama dengan ConversationList/BookingActionsSection. Review baru dari
+  // auto-refresh datang sebagai `conversation.updated`, aksi booking sebagai `booking-actions.changed`.
+  // Tanpa EventSource (jsdom, peramban lama) tab tetap jalan, hanya tidak hidup.
+  useEffect(() => {
+    if (typeof EventSource === 'undefined') return
+    const es = new EventSource('/api/sse')
+    es.onmessage = (e) => {
+      try {
+        const event = JSON.parse(e.data) as { type?: string; conversationId?: string }
+        if (
+          event.conversationId === conversationId &&
+          (event.type === 'conversation.updated' || event.type === 'booking-actions.changed')
+        ) {
+          void reload()
+        }
+      } catch {
+        // Event rusak diabaikan.
+      }
+    }
+    return () => es.close()
+  }, [conversationId, reload])
 
   async function refresh() {
     setRefreshing(true)
@@ -265,6 +357,7 @@ export function ChatReviewTab({ conversationId, contactName }: { conversationId:
 
   return (
     <div className="flex flex-col gap-4">
+      <PinnedSection pinned={data.pinned} conversationId={conversationId} />
       <FollowUpSection item={data.item} defaultNote={defaultNote} onChanged={reload} loadError={loadError} />
 
       <section aria-label="Poin penting terbaru" className="space-y-2">
@@ -302,6 +395,8 @@ export function ChatReviewTab({ conversationId, contactName }: { conversationId:
           </>
         )}
       </section>
+
+      <ChangeHistorySection events={data.changeHistory} conversationId={conversationId} />
 
       <HistorySection history={data.history} conversationId={conversationId} />
     </div>
