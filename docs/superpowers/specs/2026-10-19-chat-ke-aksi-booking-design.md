@@ -183,9 +183,10 @@ ada kedaluwarsa.
 - Aksi admin: **Setujui** (bisa mengoreksi isian dulu), **Tolak** (dengan alasan opsional).
 - **Setelan persetujuan (keputusan owner 2026-10-19, menggantikan "admin yang proses terapkan"):**
   kolom di `Settings`, diedit di `/settings`, berlaku seketika (edit → simpan → aktif, CLAUDE.md §3).
-  Tiga sakelar, masing-masing `APPROVE` atau `ALWAYS`: perubahan ringan, perubahan sedang (default
-  `APPROVE`), dan pesan permintaan data (§5.7) dengan default **`ALWAYS`** (keputusan owner 2026-10-19:
-  "pesan permintaan data selalu izinkan"). Perubahan besar tidak punya sakelar. Mengubah setelan ini mengubah
+  Tiga sakelar, masing-masing `APPROVE` atau `ALWAYS`: perubahan ringan, perubahan sedang, dan pesan
+  permintaan data (§5.7), ketiganya default **`ALWAYS`** (keputusan owner 2026-10-19: "pesan permintaan data
+  selalu izinkan"; 2026-10-20: "untuk yang bisa diupdate langsung, tidak perlu approval admin. Notif ke admin saja
+  jika sudah diupdate" -- default ringan/sedang berubah dari `APPROVE`). Perubahan besar tidak punya sakelar. Mengubah setelan ini mengubah
   apa yang dilakukan sistem, jadi lewat `hasAdminPowers()` dan `writeBotAuditLog`.
 - Mode `ALWAYS`: kartu dibuat lalu langsung diterapkan oleh sistem (actor `SYSTEM`). Kartu tetap
   tampil sebagai pemberitahuan "diterapkan otomatis" dengan tombol **Batalkan**, yang menulis
@@ -272,8 +273,9 @@ perbaikannya masuk rencana.
   yang memunculkan `new Notification` dari SSE untuk `handoff.alert`, dan **hanya selama tab
   terbuka**. Ditambah **Web Push** supaya notifikasi masuk walau aplikasi tertutup (iPhone: setelah
   wa-inbox dipasang ke layar utama).
-- **Kapan dikirim:** usulan perubahan baru, ketidakcocokan baru, tugas perubahan besar baru,
-  penerapan otomatis (`ALWAYS`) beserta tombol Batalkan, dan penerapan yang gagal. Ketuk notifikasi
+- **Kapan dikirim:** usulan perubahan baru (hanya bila tidak diterapkan otomatis; yang diterapkan otomatis
+  tidak dikabari saat dibuat, hanya sesudah tertulis, keputusan owner 2026-10-20), ketidakcocokan baru, tugas
+  perubahan besar baru, penerapan otomatis (`ALWAYS`) beserta tombol Batalkan, dan penerapan yang gagal. Ketuk notifikasi
   → `/inbox?conversation=…` dengan kartu terkait terbuka.
 - **Penerima (keputusan Claude):** semua akun yang menyalakan notifikasi di perangkatnya; satu akun
   bisa punya beberapa perangkat. Isi notifikasi memuat kode booking dan ringkasan perubahan, tanpa

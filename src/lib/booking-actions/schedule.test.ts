@@ -38,7 +38,7 @@ beforeEach(() => {
   mockReset(mockPrisma)
   __resetBookingExtractionForTests()
   vi.mocked(extractBookingSignals).mockReset().mockResolvedValue(EXTRACTION as never)
-  vi.mocked(applyExtraction).mockReset().mockResolvedValue({ created: 0, changeIds: [] })
+  vi.mocked(applyExtraction).mockReset().mockResolvedValue({ created: 0, changeIds: [], changeEvents: [] })
   vi.mocked(reevaluateBookingActions).mockReset().mockResolvedValue({ resolved: 0, opened: 0 })
   mockPrisma.message.findMany.mockResolvedValue([
     { id: 'm1', direction: 'INBOUND', sentBy: 'CUSTOMER', type: 'text', content: 'tolong ganti hotel', createdAt: new Date() },
@@ -209,10 +209,21 @@ describe('scheduleBookingExtraction', () => {
 
   it('hands the CHANGE cards created by this extraction to auto-apply (after reevaluate)', async () => {
     stubConversation()
-    vi.mocked(applyExtraction).mockResolvedValue({ created: 2, changeIds: ['a1', 'a2'] })
+    const events = ['a1', 'a2'].map((id) => ({ kind: 'CHANGE' as const, conversationId: 'c1', bookingCode: null, summary: 's', actionId: id, messageId: null }))
+    vi.mocked(applyExtraction).mockResolvedValue({ created: 2, changeIds: ['a1', 'a2'], changeEvents: events })
     scheduleBookingExtraction('c1')
     await fire()
-    expect(autoApplyCreated).toHaveBeenCalledWith(['a1', 'a2'])
+    expect(autoApplyCreated).toHaveBeenCalledWith(events)
+  })
+
+  it('still hands the events to auto-apply when reevaluate throws (so the admin is notified)', async () => {
+    stubConversation()
+    const events = [{ kind: 'CHANGE' as const, conversationId: 'c1', bookingCode: null, summary: 's', actionId: 'a1', messageId: null }]
+    vi.mocked(applyExtraction).mockResolvedValue({ created: 1, changeIds: ['a1'], changeEvents: events })
+    vi.mocked(reevaluateBookingActions).mockRejectedValue(new Error('db'))
+    scheduleBookingExtraction('c1')
+    await fire()
+    expect(autoApplyCreated).toHaveBeenCalledWith(events)
   })
 
   it('success closes the side run as selesai; skips close it as dilewati', async () => {

@@ -61,7 +61,16 @@ type Ctx = {
 }
 /** Waktu pesan sumber terbaru per field: `change` = CHANGE/TASK non-OPEN; `fact` = fakta apa pun + CHANGE/TASK apa pun. */
 type Watermarks = { change: Map<string, number>; fact: Map<string, number> }
-type Counters = { created: number; resolved: number; opened: number; touched: boolean; notify: BookingPushEvent[] }
+type Counters = {
+  created: number
+  resolved: number
+  opened: number
+  touched: boolean
+  notify: BookingPushEvent[]
+  /** true = push CHANGE ditahan di `deferred` (pemanggil menyerahkannya ke `autoApplyCreated`); false = langsung di `notify`. */
+  deferChange: boolean
+  deferred: BookingPushEvent[]
+}
 
 const CHANGE_TYPES = ['CHANGE', 'TASK']
 // REVERTED (Task 11b, "Batalkan"): nilai yang dibatalkan admin tidak boleh diusulkan lagi (proposedValue = yang ditulis).
@@ -245,14 +254,18 @@ async function createAction(
       conversationId: ctx.conversationId, bookingId: ctx.bookingId, field: data.field, sourceMessageId: data.messageId, now: ctx.now,
     })
   }
-  counters.notify.push({
+  const event: BookingPushEvent = {
     kind: data.type,
     conversationId: ctx.conversationId,
     bookingCode: bookingCodeOf(ctx.booking),
     summary: summarizeAction(data.field, data.value),
     actionId: row.id,
     messageId: data.messageId,
-  })
+  }
+  // Keputusan owner 2026-10-20: kartu CHANGE yang mungkin diterapkan otomatis tidak dikabari saat dibuat;
+  // `autoApplyCreated` mengirim AUTO_APPLIED sesudah berhasil, atau push CHANGE ini bila kartu tetap OPEN.
+  if (data.type === 'CHANGE' && counters.deferChange) counters.deferred.push(event)
+  else counters.notify.push(event)
   await recordEvent(ctx.tx, {
     conversationId: ctx.conversationId,
     bookingId: ctx.bookingId,
@@ -363,9 +376,10 @@ async function run(
   conversationId: string,
   now: Date,
   actor: BookingEventActor,
-  body: (ctx: Ctx, counters: Counters) => Promise<void>
+  body: (ctx: Ctx, counters: Counters) => Promise<void>,
+  deferChange = false
 ): Promise<Counters> {
-  const counters: Counters = { created: 0, resolved: 0, opened: 0, touched: false, notify: [] }
+  const counters: Counters = { created: 0, resolved: 0, opened: 0, touched: false, notify: [], deferChange, deferred: [] }
   await prisma.$transaction(async (tx) => {
     // Kunci per percakapan (dilepas saat commit): dua proses tak boleh menyisipkan baris OPEN/fakta ganda.
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${conversationId}))`
@@ -386,12 +400,16 @@ async function run(
   return counters
 }
 
-/** `changeIds` = kartu CHANGE yang dibuat pada pemanggilan ini (kandidat `autoApplyIfAllowed`, dipanggil schedule.ts). */
+/**
+ * `changeEvents` = push CHANGE kartu CHANGE yang dibuat pada pemanggilan ini, TIDAK dikirim di sini. Pemanggil WAJIB
+ * menyerahkannya ke `autoApplyCreated` (schedule.ts), yang menerapkan otomatis lalu mengirim AUTO_APPLIED, atau
+ * mengirim push CHANGE itu bila kartu tetap OPEN. `changeIds` = id-id yang sama.
+ */
 export async function applyExtraction(
   conversationId: string,
   ex: Extraction,
   now: Date = new Date()
-): Promise<{ created: number; changeIds: string[] }> {
+): Promise<{ created: number; changeIds: string[]; changeEvents: BookingPushEvent[] }> {
   const c = await run(conversationId, now, 'BOT', async (ctx, counters) => {
     const { tx } = ctx
     const existing = (await tx.bookingFact.findMany({ where: { conversationId, supersededAt: null } })).filter((f) => inScope(f, ctx.bookingId))
@@ -417,8 +435,8 @@ export async function applyExtraction(
       if (await proposeChange(ctx, counters, open, { field: ch.field, value: ch.value, messageId: ch.messageId })) counters.touched = true
     }
     await evaluate(ctx, counters)
-  })
-  return { created: c.created, changeIds: c.notify.filter((e) => e.kind === 'CHANGE').map((e) => e.actionId) }
+  }, true)
+  return { created: c.created, changeIds: c.deferred.map((e) => e.actionId), changeEvents: c.deferred }
 }
 
 export async function reevaluateBookingActions(conversationId: string, now: Date = new Date()): Promise<{ resolved: number; opened: number }> {

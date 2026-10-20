@@ -13,13 +13,17 @@
  *
  * Eksekusinya `executeBookingAction` yang SAMA dengan tombol Setujui (actor SYSTEM, tanpa akun, closedReason
  * AUTO_APPLIED): klaim, penulisan, event EXECUTED, kabar vendor Bali. Gagal = kartu kembali OPEN + event
- * EXECUTE_FAILED (ditulis inti) + push EXECUTE_FAILED. Sukses = push AUTO_APPLIED dengan `tag` yang sama dengan push
- * CHANGE kartu itu (`booking-action:<id>`), sehingga menggantikan notifikasi "Permintaan perubahan" di perangkat.
+ * EXECUTE_FAILED (ditulis inti) + push EXECUTE_FAILED. Sukses = push AUTO_APPLIED.
+ *
+ * Kabar ke admin hanya SESUDAH diterapkan (keputusan owner 2026-10-20: "tidak perlu approval admin, notif ke admin
+ * saja jika sudah diupdate"): `applyExtraction` tidak mengirim push CHANGE saat kartu dibuat, `autoApplyCreated`
+ * yang memutuskan -- sukses = AUTO_APPLIED saja; gagal = EXECUTE_FAILED; dilewati dan kartu masih OPEN (setelan
+ * APPROVE, titik tanpa detail, jalur tulis mati, rollout uji) = push CHANGE yang tertunda, supaya manusia tahu.
  * Tidak pernah melempar.
  */
 import { prisma } from '@/lib/db'
 import type { BookingData } from '@/lib/booking/client'
-import { notifyBookingAction, summarizeAction } from '@/lib/push/send'
+import { notifyBookingAction, summarizeAction, type BookingPushEvent } from '@/lib/push/send'
 import { executeBookingAction } from './execute'
 import { readBookingField, type FieldKey } from './fields'
 import { currentBookingId } from './scope'
@@ -102,7 +106,7 @@ async function decide(actionId: string): Promise<
   return { go: true, action, code: bookingCode(booking) }
 }
 
-export async function autoApplyIfAllowed(actionId: string): Promise<AutoApplyOutcome> {
+export async function autoApplyIfAllowed(actionId: string, onUnexpectedError?: BookingPushEvent): Promise<AutoApplyOutcome> {
   try {
     const d = await decide(actionId)
     if (!d.go) return 'skipped'
@@ -143,17 +147,26 @@ export async function autoApplyIfAllowed(actionId: string): Promise<AutoApplyOut
     return 'failed'
   } catch (error) {
     console.error('[booking-actions] autoApplyIfAllowed gagal', { actionId, error: error instanceof Error ? error.name : 'unknown' })
+    // Galat tak terduga sebelum/sesudah penulisan: admin tetap harus tahu kartu ini butuh orang.
+    if (onUnexpectedError) void notifyBookingAction({ ...onUnexpectedError, kind: 'EXECUTE_FAILED' })
     return 'failed'
   }
 }
 
-/** Satu per satu (tidak paralel): kartu yang berbagi booking tidak boleh menulis bersamaan. Tidak pernah melempar. */
-export async function autoApplyCreated(actionIds: string[]): Promise<void> {
-  for (const id of actionIds) {
+/**
+ * Satu per satu (tidak paralel): kartu yang berbagi booking tidak boleh menulis bersamaan. Tidak pernah melempar.
+ * `events` = push CHANGE tertunda dari `applyExtraction`. Kartu yang dilewati dikabari sebagai CHANGE hanya bila
+ * masih OPEN (kartu pendamping yang ikut tertulis oleh kartu lain sudah ditutup dan sudah dikabari AUTO_APPLIED).
+ */
+export async function autoApplyCreated(events: BookingPushEvent[]): Promise<void> {
+  for (const event of events) {
     try {
-      await autoApplyIfAllowed(id)
+      const outcome = await autoApplyIfAllowed(event.actionId, event)
+      if (outcome !== 'skipped') continue
+      const row = await prisma.bookingAction.findUnique({ where: { id: event.actionId }, select: { state: true } })
+      if (row?.state === 'OPEN') void notifyBookingAction(event)
     } catch {
-      // autoApplyIfAllowed sendiri tidak melempar; ini sabuk pengaman.
+      // Sabuk pengaman; kabar yang gagal dibaca tidak boleh menghentikan kartu lain.
     }
   }
 }

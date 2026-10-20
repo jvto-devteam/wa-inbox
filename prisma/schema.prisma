@@ -863,11 +863,11 @@ model Settings {
   /// Persetujuan perubahan booking dari chat (fitur Chat -> Aksi Booking, Task 11b). Dua nilai saja:
   /// APPROVE = kartu menunggu "Setujui" manusia; ALWAYS = diterapkan otomatis begitu kartu dibuat
   /// (actor SYSTEM, bisa "Batalkan"). Tugas ops (tanggal, jumlah orang, hotel) selalu ke ops dan tidak
-  /// punya sakelar. Default APPROVE: menyalakan ALWAYS = menulis ke booking produksi tanpa klik.
+  /// punya sakelar. Default ALWAYS (keputusan owner 2026-10-20): tanpa approval admin, admin dikabari sesudah diterapkan.
   /// Divalidasi sebagai z.enum di PATCH /api/settings (kolom String, bukan enum DB, supaya migrasinya aditif).
   /// bookingLightApproval = kelompok AI; bookingBaliApproval = kelompok BALI (kabar vendor ikut terkirim).
-  bookingLightApproval        String         @default("APPROVE")
-  bookingBaliApproval         String         @default("APPROVE")
+  bookingLightApproval        String         @default("ALWAYS")
+  bookingBaliApproval         String         @default("ALWAYS")
   /// Draf permintaan data ke tamu. Default ALWAYS (keputusan owner 2026-10-19).
   dataRequestApproval         String         @default("ALWAYS")
 }

@@ -222,7 +222,8 @@ Pesan pelanggan yang menyebut data booking (titik/jam/detail jemput-antar, kaos,
 catatan) menjadi kartu di panel kanan Inbox. Tabel: `BookingFact` (fakta dari chat; nilai lama diberi
 `supersededAt`, tidak ditimpa), `BookingAction` (satu usulan/tugas), `BookingActionEvent` (riwayat
 append-only tanpa FK: siapa, kapan, nilai lama/baru), `PushSubscription`. Setelan di `Settings`:
-`bookingLightApproval`, `bookingBaliApproval`, `dataRequestApproval` (`APPROVE` | `ALWAYS`).
+`bookingLightApproval`, `bookingBaliApproval`, `dataRequestApproval` (`APPROVE` | `ALWAYS`), **ketiganya default
+`ALWAYS`** (keputusan owner 2026-10-20: yang bisa diupdate langsung tidak perlu approval admin; admin dikabari sesudahnya).
 
 - **Ekstraksi per pesan** (`src/lib/booking-actions/schedule.ts`, `scheduleBookingExtraction`): debounce 8 s per
   percakapan, tidak di-await di jalur webhook, seluruhnya try/catch, **run pipeline sendiri**
@@ -268,7 +269,11 @@ append-only tanpa FK: siapa, kapan, nilai lama/baru), `PushSubscription`. Setela
 - **Push** (`src/lib/push/send.ts`, `notifyBookingAction`): Web Push untuk enam jenis kejadian — kartu baru
   `CHANGE`, `MISMATCH`, `TASK`, `AUTO_APPLIED` (diterapkan otomatis), `EXECUTE_FAILED` (gagal tulis / kabar vendor
   gagal), `DATA_REQUEST_FAILED` (draf permintaan data gagal terkirim); draf permintaan data yang terkirim tidak
-  di-push. Env
+  di-push. Push `CHANGE` dari `applyExtraction` **ditahan** (`changeEvents`) dan diserahkan ke `autoApplyCreated`
+  (`auto-apply.ts`): kartu yang diterapkan otomatis hanya mengirim `AUTO_APPLIED` sesudah berhasil; kartu yang
+  dilewati dan masih `OPEN` (setelan `APPROVE`, titik tanpa detail, lookup 409/503, rollout uji) mengirim push
+  `CHANGE` saat itu; gagal = `EXECUTE_FAILED`. `MISMATCH`/`TASK` dan `CHANGE` dari `reevaluateBookingActions`
+  tetap di-push saat dibuat. Env
   `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`. Setiap permintaan perubahan berlabel "belum
   dipenuhi" sampai ditutup; tidak ada kedaluwarsa.
 - **Panel kanan**: `GET /api/conversations/[id]/chat-review` memuat `pinned` dan `changeHistory`. Ekstraksi

@@ -5,6 +5,11 @@ import { BookingApprovalPanel, type ApprovalValues } from './BookingApprovalPane
 const values: ApprovalValues = { bookingLightApproval: 'APPROVE', bookingBaliApproval: 'APPROVE', dataRequestApproval: 'ALWAYS' }
 
 describe('BookingApprovalPanel', () => {
+  it('menjelaskan bahwa perubahan diterapkan langsung dan admin dikabari sesudahnya', () => {
+    render(<BookingApprovalPanel values={values} disabled={false} onSave={vi.fn()} />)
+    expect(screen.getByText(/tanpa approval admin; admin dikabari lewat notifikasi sesudah diterapkan/)).toBeInTheDocument()
+  })
+
   it('shows the three switches with their labels, the fixed ops note, and 44px controls', () => {
     render(<BookingApprovalPanel values={values} disabled={false} onSave={vi.fn()} />)
     expect(screen.getByRole('heading', { name: 'Persetujuan perubahan booking' })).toBeInTheDocument()

@@ -144,14 +144,25 @@ describe('applyExtraction', () => {
 })
 
 describe('notifikasi push (Task 8b)', () => {
-  it('notifies once per NEWLY created CHANGE/TASK after commit, with code, summary and message', async () => {
+  it('CHANGE push is NOT sent at creation (2026-10-20): it is returned as changeEvents; TASK still pushes at creation', async () => {
     booking = { ...booking!, id: 'JVTO-3899' } as BookingData
-    await applyExtraction('c1', ex({ changes: [item('pickup_point', 'Surabaya Hotel', 'm1'), item('travel_date', '2026-11-05', 'm2')] }), NOW)
-    expect(notifyBookingAction).toHaveBeenCalledTimes(2)
-    expect(notifyBookingAction).toHaveBeenCalledWith({
+    const r = await applyExtraction('c1', ex({ changes: [item('pickup_point', 'Surabaya Hotel', 'm1'), item('travel_date', '2026-11-05', 'm2')] }), NOW)
+    expect(notifyBookingAction).toHaveBeenCalledTimes(1)
+    expect(vi.mocked(notifyBookingAction).mock.calls[0][0]).toMatchObject({ kind: 'TASK', summary: 'Tanggal trip → 2026-11-05' })
+    expect(r.changeEvents).toEqual([{
       kind: 'CHANGE', conversationId: 'c1', bookingCode: 'JVTO-3899', summary: 'Titik jemput → Surabaya Hotel', actionId: actions[0].id, messageId: 'm1',
-    })
-    expect(vi.mocked(notifyBookingAction).mock.calls[1][0]).toMatchObject({ kind: 'TASK', summary: 'Tanggal trip → 2026-11-05' })
+    }])
+    expect(r.changeIds).toEqual([actions[0].id])
+  })
+
+  it('CHANGE cards born in reevaluateBookingActions (no auto-apply follows) still push at creation', async () => {
+    await applyExtraction('c1', ex({ facts: [item('pickup_detail', 'Hotel X', 'm3')] }), NOW)
+    // pickup_detail terisi dari fakta lahir di evaluate di dalam applyExtraction (tertunda); di jalur reevaluate harus langsung.
+    vi.mocked(notifyBookingAction).mockClear()
+    actions.splice(0, actions.length)
+    await reevaluateBookingActions('c1', NOW)
+    expect(vi.mocked(notifyBookingAction).mock.calls.every((c) => c[0].kind === 'CHANGE')).toBe(true)
+    expect(notifyBookingAction).toHaveBeenCalledTimes(1)
   })
 
   it('notifies MISMATCH created by evaluation', async () => {
@@ -171,7 +182,7 @@ describe('notifikasi push (Task 8b)', () => {
     let committed = false
     db.$transaction.mockImplementation((async (cb: (tx: unknown) => unknown) => { const r = await cb(db); committed = true; return r }) as never)
     vi.mocked(notifyBookingAction).mockImplementation((() => { expect(committed).toBe(true); throw new Error('boom') }) as never)
-    await expect(applyExtraction('c1', ex({ changes: [item('pickup_point', 'Surabaya Hotel', 'm1')] }), NOW)).resolves.toMatchObject({ created: 1 })
+    await expect(applyExtraction('c1', ex({ facts: [item('total_pax', '5', 'm1')] }), NOW)).resolves.toMatchObject({ created: 1 })
     expect(notifyBookingAction).toHaveBeenCalledTimes(1)
   })
 })
@@ -243,7 +254,7 @@ describe('kunci, ditutup orang, terbaru menang, cakupan booking', () => {
     expect(first.changeIds).toEqual([actions[0].id])
     Object.assign(actions[0], { state: 'REVERTED', closedReason: 'REVERTED', closedById: 'acc1' })
     const again = await applyExtraction('c1', ex({ changes: [item('pickup_point', 'Surabaya Hotel', 'm1')] }), NOW)
-    expect(again).toEqual({ created: 0, changeIds: [] })
+    expect(again).toEqual({ created: 0, changeIds: [], changeEvents: [] })
   })
 
   it('terbaru menang: fakta isi-data yang lebih baru menggantikan CHANGE eksplisit lama; yang lebih lama tidak', async () => {

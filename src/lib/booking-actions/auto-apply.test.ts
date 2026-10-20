@@ -181,10 +181,71 @@ describe('autoApplyIfAllowed', () => {
   })
 })
 
+const changeEvent = (id = 'a1') => ({
+  kind: 'CHANGE' as const, conversationId: 'c1', bookingCode: 'JVTO-3899', summary: 'Jam jemput → 09:00', actionId: id, messageId: 'm1',
+})
+
 describe('autoApplyCreated', () => {
-  it('runs the ids one at a time and never throws', async () => {
+  it('runs the events one at a time and never throws', async () => {
     db.bookingAction.findUnique.mockRejectedValueOnce(new Error('db')).mockResolvedValue(action({ id: 'a2' }) as never)
-    await expect(autoApplyCreated(['a1', 'a2'])).resolves.toBeUndefined()
+    await expect(autoApplyCreated([changeEvent('a1'), changeEvent('a2')])).resolves.toBeUndefined()
     expect(executeBookingAction).toHaveBeenCalledTimes(1)
+  })
+
+  it('auto-applied CHANGE: exactly one push, AUTO_APPLIED, no CHANGE push', async () => {
+    await autoApplyCreated([changeEvent()])
+    expect(notifyBookingAction).toHaveBeenCalledTimes(1)
+    expect(notifyBookingAction).toHaveBeenCalledWith(expect.objectContaining({ kind: 'AUTO_APPLIED', actionId: 'a1' }))
+  })
+
+  it('setting APPROVE (admin switched it): the held CHANGE push goes out, nothing is executed', async () => {
+    settings('APPROVE')
+    await autoApplyCreated([changeEvent()])
+    expect(executeBookingAction).not.toHaveBeenCalled()
+    expect(notifyBookingAction).toHaveBeenCalledTimes(1)
+    expect(notifyBookingAction).toHaveBeenCalledWith(changeEvent())
+  })
+
+  it('needs-detail skip leaves the card OPEN: one CHANGE push', async () => {
+    vi.mocked(executeBookingAction).mockResolvedValue({ status: 400, body: { error: 'Isi detail titik baru dulu' } } as never)
+    await autoApplyCreated([changeEvent()])
+    expect(notifyBookingAction).toHaveBeenCalledTimes(1)
+    expect(notifyBookingAction).toHaveBeenCalledWith(changeEvent())
+  })
+
+  it('409/503 lookup skip leaves the card OPEN: one CHANGE push', async () => {
+    vi.mocked(executeBookingAction).mockResolvedValue({ status: 503, body: { error: 'x' } } as never)
+    await autoApplyCreated([changeEvent()])
+    expect(notifyBookingAction).toHaveBeenCalledTimes(1)
+    expect(notifyBookingAction).toHaveBeenCalledWith(changeEvent())
+  })
+
+  it('failure: EXECUTE_FAILED only, never the CHANGE push', async () => {
+    vi.mocked(executeBookingAction).mockResolvedValue({ status: 502, body: { error: 'Backoffice gagal' } } as never)
+    await autoApplyCreated([changeEvent()])
+    expect(notifyBookingAction).toHaveBeenCalledTimes(1)
+    expect(notifyBookingAction).toHaveBeenCalledWith(expect.objectContaining({ kind: 'EXECUTE_FAILED', actionId: 'a1' }))
+  })
+
+  it('unexpected error after the card was fetched: EXECUTE_FAILED fallback from the held event', async () => {
+    vi.mocked(executeBookingAction).mockRejectedValue(new Error('boom'))
+    await autoApplyCreated([changeEvent()])
+    expect(notifyBookingAction).toHaveBeenCalledTimes(1)
+    expect(notifyBookingAction).toHaveBeenCalledWith(expect.objectContaining({ kind: 'EXECUTE_FAILED', actionId: 'a1', summary: 'Jam jemput → 09:00' }))
+  })
+
+  it('a companion card closed by its partner\'s write gets no CHANGE push', async () => {
+    db.bookingAction.findUnique
+      .mockResolvedValueOnce(action({ id: 'a2', state: 'EXECUTED' }) as never) // decide(): not OPEN -> skipped
+      .mockResolvedValueOnce({ state: 'EXECUTED' } as never) // state check
+    await autoApplyCreated([changeEvent('a2')])
+    expect(notifyBookingAction).not.toHaveBeenCalled()
+  })
+
+  it("rollout 'test' with a non-test guest: nothing executed, CHANGE push goes out (card stays for a human)", async () => {
+    delete process.env.BOOKING_ACTIONS_ROLLOUT
+    await autoApplyCreated([changeEvent()])
+    expect(executeBookingAction).not.toHaveBeenCalled()
+    expect(notifyBookingAction).toHaveBeenCalledWith(changeEvent())
   })
 })

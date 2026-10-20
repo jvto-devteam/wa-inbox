@@ -31,7 +31,7 @@ const FIELDS: ReadonlyArray<{ field: ApprovalField; label: string; hint: string;
 
 /**
  * Persetujuan perubahan booking (Task 11b). "Setujui dulu" = kartu menunggu klik; otomatis = ditulis ke booking
- * produksi begitu kartu dibuat, dan masih bisa "Batalkan" dari Inbox. Tersimpan saat pilihan diganti (edit -> simpan
+ * produksi begitu kartu dibuat (default), admin dikabari sesudahnya, dan masih bisa "Batalkan" dari Inbox. Tersimpan saat pilihan diganti (edit -> simpan
  * -> aktif). Hanya admin yang boleh menyimpan; yang lain melihatnya nonaktif.
  */
 export function BookingApprovalPanel({
@@ -56,7 +56,7 @@ export function BookingApprovalPanel({
   return (
     <FormSection
       title="Persetujuan perubahan booking"
-      description="Permintaan perubahan dari chat bisa menunggu Setujui, atau langsung ditulis ke booking tanpa klik. Yang otomatis tetap bisa dibatalkan dari Inbox."
+      description="Perubahan dari chat yang bisa diupdate langsung diterapkan tanpa approval admin; admin dikabari lewat notifikasi sesudah diterapkan dan masih bisa Batalkan dari Inbox. Pilih Setujui dulu bila suatu kelompok perlu klik manual."
     >
       <div className="flex flex-col gap-4">
         {FIELDS.map(({ field, label, hint, always }) => (

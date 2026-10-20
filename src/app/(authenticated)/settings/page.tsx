@@ -246,8 +246,8 @@ export default function SettingsPage() {
           {activeId === 'persetujuan-booking' && (
             <BookingApprovalPanel
               values={{
-                bookingLightApproval: settings.bookingLightApproval ?? 'APPROVE',
-                bookingBaliApproval: settings.bookingBaliApproval ?? 'APPROVE',
+                bookingLightApproval: settings.bookingLightApproval ?? 'ALWAYS',
+                bookingBaliApproval: settings.bookingBaliApproval ?? 'ALWAYS',
                 dataRequestApproval: settings.dataRequestApproval ?? 'ALWAYS',
               }}
               disabled={!admin}

@@ -121,9 +121,14 @@ async function runExtraction(conversationId: string): Promise<void> {
       return
     }
     const applied = await applyExtraction(conversationId, extraction)
-    await reevaluateBookingActions(conversationId)
-    // Task 11b: kartu CHANGE baru yang kelompoknya disetel ALWAYS diterapkan otomatis. Tidak pernah melempar.
-    await autoApplyCreated(applied.changeIds)
+    // Push CHANGE tertunda: apa pun yang terjadi pada reevaluate, `autoApplyCreated` tetap jalan agar admin dikabari.
+    try {
+      await reevaluateBookingActions(conversationId)
+    } finally {
+      // Task 11b: kartu CHANGE baru yang kelompoknya disetel ALWAYS diterapkan otomatis, lalu admin dikabari
+      // (AUTO_APPLIED / push CHANGE bila tetap OPEN). Tidak pernah melempar.
+      await autoApplyCreated(applied.changeEvents)
+    }
     // Panel kanan Inbox ikut terbaru. Hanya mencatat lalu kembali; tidak pernah melempar.
     scheduleChatReviewRefresh(conversationId)
     traceClose(run, 'selesai')
