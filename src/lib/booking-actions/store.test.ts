@@ -262,6 +262,14 @@ describe('kunci, ditutup orang, terbaru menang, cakupan booking', () => {
     expect(r.created).toBe(3)
   })
 
+  it('R8: CHANGE isi-data yang lahir di evaluate (bukan dari ex.changes) ikut di changeIds; MISMATCH tidak', async () => {
+    const r = await applyExtraction('c1', ex({ facts: [item('pickup_detail', 'Hotel X', 'm3'), item('total_pax', '5', 'm2')] }), NOW)
+    const fill = actions.find((x) => x.type === 'CHANGE' && x.field === 'pickup_detail')!
+    const mismatch = actions.find((x) => x.type === 'MISMATCH')!
+    expect(r.changeIds).toEqual([fill.id])
+    expect(r.changeIds).not.toContain(mismatch.id)
+  })
+
   it('fakta dari booking A tidak me-resolve atau mismatch terhadap booking B', async () => {
     await applyExtraction('c1', ex({ facts: [item('total_pax', '5', 'm1')] }), NOW)
     expect(actions[0]).toMatchObject({ bookingId: '77', state: 'OPEN' })

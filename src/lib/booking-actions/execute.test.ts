@@ -223,6 +223,55 @@ describe('revertBookingAction (Task 11b)', () => {
     expect(recordEvent).not.toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ event: 'REVERTED' }))
   })
 
+  it('BALI pickup_time revert -> one vendor notice with key bali_revert:<id>; revert of a non-transport field -> none', async () => {
+    setup({ action: { tier: 'BALI' } })
+    expect((await revertBookingAction({ actionId: 'a1', accountId: 'acc1' })).status).toBe(200)
+    expect(notifyBaliVendor).toHaveBeenCalledTimes(1)
+    expect(notifyBaliVendor).toHaveBeenCalledWith(expect.objectContaining({ actionId: 'a1', idempotencyKey: 'bali_revert:a1' }))
+    vi.mocked(notifyBaliVendor).mockClear()
+    setup({ action: { tier: 'BALI', field: 'tshirt_sizes', proposedValue: 'M x 2' }, event: { oldValue: 'L x 2', newValue: 'M x 2' }, bd: booking({ tshirtSize: 'M x 2' } as Partial<BookingData>) })
+    db.bookingAction.findMany.mockResolvedValue([{ id: 'a1', field: 'tshirt_sizes' }] as never)
+    expect((await revertBookingAction({ actionId: 'a1', accountId: 'acc1' })).status).toBe(200)
+    expect(notifyBaliVendor).not.toHaveBeenCalled()
+  })
+
+  it('AI revert and a failed revert send no vendor notice', async () => {
+    setup()
+    await revertBookingAction({ actionId: 'a1', accountId: 'acc1' })
+    setup({ action: { tier: 'BALI' } })
+    vi.mocked(fetch).mockResolvedValue({ ok: false, status: 500, json: async () => ({}) } as never)
+    await revertBookingAction({ actionId: 'a1', accountId: 'acc1' })
+    expect(notifyBaliVendor).not.toHaveBeenCalled()
+  })
+
+  it('previousDetail path: point executed with typed detail (no companion card) -> revert writes the old detail back', async () => {
+    db.bookingAction.findUnique.mockResolvedValue(executedAction({ field: 'pickup_point', proposedValue: 'Surabaya Hotel' }) as never)
+    db.bookingAction.findMany.mockResolvedValue([{ id: 'a1', field: 'pickup_point' }] as never)
+    db.bookingActionEvent.findMany.mockResolvedValue([
+      executedEvent({ oldValue: 'Surabaya Airport', newValue: 'Surabaya Hotel', backoffice: { batch: ['a1'], previousDetail: { pickup_detail: 'GA 300' } } }),
+    ] as never)
+    db.conversation.findUnique.mockResolvedValue({
+      id: 'c1', contact: { phone: '62811' },
+      bookingData: booking({ pickup: { meeting_point: 'Surabaya Hotel', meeting_point_value: 'Hotel Majapahit', pickup_time: '10:30' } }),
+    } as never)
+    vi.mocked(ensureFreshBookingData).mockResolvedValue(booking())
+    expect((await revertBookingAction({ actionId: 'a1', accountId: 'acc1' })).status).toBe(200)
+    expect(String((vi.mocked(fetch).mock.calls[0][1] as RequestInit).body)).toContain('GA+300')
+  })
+
+  it('previousDetail that was empty -> refused before any write (400)', async () => {
+    db.bookingAction.findUnique.mockResolvedValue(executedAction({ field: 'pickup_point', proposedValue: 'Surabaya Hotel' }) as never)
+    db.bookingAction.findMany.mockResolvedValue([{ id: 'a1', field: 'pickup_point' }] as never)
+    db.bookingActionEvent.findMany.mockResolvedValue([
+      executedEvent({ oldValue: 'Surabaya Airport', newValue: 'Surabaya Hotel', backoffice: { batch: ['a1'], previousDetail: { pickup_detail: null } } }),
+    ] as never)
+    db.conversation.findUnique.mockResolvedValue({
+      id: 'c1', bookingData: booking({ pickup: { meeting_point: 'Surabaya Hotel', meeting_point_value: 'X', pickup_time: '10:30' } }),
+    } as never)
+    expect((await revertBookingAction({ actionId: 'a1', accountId: 'acc1' })).status).toBe(400)
+    expect(fetch).not.toHaveBeenCalled()
+  })
+
   it('reverts the whole batch written together (point + detail) in one patch', async () => {
     db.bookingAction.findUnique.mockResolvedValue(executedAction({ field: 'pickup_point', proposedValue: 'Surabaya Hotel' }) as never)
     db.bookingAction.findMany.mockResolvedValue([{ id: 'a1', field: 'pickup_point' }, { id: 'a2', field: 'pickup_detail' }] as never)

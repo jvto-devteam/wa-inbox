@@ -18,7 +18,7 @@ const FIELDS: ReadonlyArray<{ field: ApprovalField; label: string; hint: string;
   {
     field: 'bookingBaliApproval',
     label: 'Perubahan dengan transport Bali',
-    hint: 'Booking dengan transport Bali. Vendor transport Bali tetap dikabari otomatis begitu perubahan ditulis.',
+    hint: 'Booking dengan transport Bali. Vendor transport Bali dikabari otomatis saat perubahan ditulis dan saat dibatalkan.',
     always: 'Terapkan otomatis',
   },
   {

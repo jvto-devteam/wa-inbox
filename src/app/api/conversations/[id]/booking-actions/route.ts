@@ -7,7 +7,7 @@ import { currentBookingId, inCurrentBooking } from '@/lib/booking-actions/scope'
 import type { BookingData } from '@/lib/booking/client'
 import { writeConfigured } from '@/lib/booking/backoffice-client'
 import { releaseStaleExecuting } from '@/lib/booking-actions/execute'
-import { EXECUTED_VISIBLE_MS } from '@/lib/booking-actions/view'
+import { EXECUTED_VISIBLE_MS, canRevertBatch } from '@/lib/booking-actions/view'
 
 /**
  * Kartu tindakan booking di panel Inbox: aksi OPEN percakapan ini + 50 kejadian riwayat terbaru.
@@ -89,7 +89,20 @@ export async function GET(req: Request, { params }: Ctx) {
       : []
     const executed = executedScoped.map((r) => {
       const ev = executedEvents.find((e) => e.actionId === r.id)
+      // Sama dengan revertBookingAction: semua kartu satu batch + detail lama yang tertimpa harus bisa dibalik.
+      const bo = typeof ev?.backoffice === 'object' && ev.backoffice !== null && !Array.isArray(ev.backoffice)
+        ? (ev.backoffice as Record<string, unknown>)
+        : {}
+      const batch = Array.isArray(bo.batch) ? bo.batch.filter((x): x is string => typeof x === 'string') : [r.id]
+      const members = (batch.includes(r.id) ? batch : [r.id, ...batch]).map((bid) => {
+        const row = executedScoped.find((x) => x.id === bid)
+        const m: { field: string; oldValue: unknown } | null = row
+          ? { field: row.field, oldValue: executedEvents.find((e) => e.actionId === bid)?.oldValue }
+          : null
+        return m
+      }).filter((m): m is { field: string; oldValue: unknown } => m !== null)
       return {
+        revertable: canRevertBatch(members, bo.previousDetail),
         id: r.id,
         conversationId: r.conversationId,
         field: r.field,

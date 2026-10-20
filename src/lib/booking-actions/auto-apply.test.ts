@@ -70,6 +70,16 @@ describe('autoApplyIfAllowed', () => {
     expect(notifyBookingAction).not.toHaveBeenCalled()
   })
 
+  it('R8 fill-CHANGE (booking field empty, e.g. detail) under ALWAYS is auto-applied', async () => {
+    db.bookingAction.findUnique.mockResolvedValue(action({ field: 'pickup_detail', proposedValue: 'Hotel X' }) as never)
+    db.bookingAction.findMany
+      .mockResolvedValueOnce([] as never)
+      .mockResolvedValueOnce([{ id: 'a1', field: 'pickup_detail', proposedValue: 'Hotel X', sourceMessageId: 'm1' }] as never)
+    db.conversation.findUnique.mockResolvedValue({ bookingData: booking({ pickup: { meeting_point: 'Surabaya Hotel', pickup_time: '10:30' } }) } as never)
+    expect(await autoApplyIfAllowed('a1')).toBe('applied')
+    expect(executeBookingAction).toHaveBeenCalledWith(expect.objectContaining({ actionId: 'a1', actor: 'SYSTEM' }))
+  })
+
   it('BALI tier follows bookingBaliApproval, not the light switch', async () => {
     db.bookingAction.findUnique.mockResolvedValue(action({ tier: 'BALI' }) as never)
     settings('ALWAYS', 'APPROVE')

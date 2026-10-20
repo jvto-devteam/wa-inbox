@@ -297,7 +297,7 @@ describe('BookingActionsSection', () => {
   it('recently applied changes show "Batalkan" (44px, two steps) and send op revert', async () => {
     const executed = [{
       id: 'x1', conversationId: 'c1', field: 'pickup_time', tier: 'AI', newValue: '09:00', oldValue: '10:30',
-      closedReason: 'AUTO_APPLIED', closedAt: '2026-10-20T01:00:00Z',
+      closedReason: 'AUTO_APPLIED', closedAt: '2026-10-20T01:00:00Z', revertable: true,
     }]
     let current = response({ actions: [], executed })
     const fn = mockFetch(() => current)
@@ -316,3 +316,16 @@ describe('BookingActionsSection', () => {
   })
 })
 
+
+describe('BookingActionsSection - non-revertable applied change', () => {
+  it('shows "Ubah di backoffice" instead of Batalkan when the server would refuse', async () => {
+    const executed = [{
+      id: 'x1', conversationId: 'c1', field: 'pickup_time', tier: 'AI', newValue: '09:00', oldValue: null,
+      closedReason: 'EXECUTED', closedAt: '2026-10-20T01:00:00Z', revertable: false,
+    }]
+    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(response({ actions: [], executed })) } as Response)))
+    render(<BookingActionsSection conversationId="c1" />)
+    expect(await screen.findByText('Ubah di backoffice')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Batalkan' })).not.toBeInTheDocument()
+  })
+})

@@ -63,6 +63,8 @@ export type BookingExecutedView = {
   /** EXECUTED = disetujui orang; AUTO_APPLIED = diterapkan otomatis. */
   closedReason: string | null
   closedAt: string | null
+  /** false = server akan menolak Batalkan (nilai lama kosong/jam palsu/detail lama kosong): UI tampilkan "Ubah di backoffice". */
+  revertable: boolean
 }
 
 export type BookingActionsResponse = {
@@ -141,6 +143,32 @@ export function companionFields(field: string): SideField[] {
     if ((fields as readonly string[]).includes(field)) return fields.filter((f) => f !== field)
   }
   return []
+}
+
+/** Jam palsu dari backoffice (R2); salinan dari compare.ts supaya view.ts tetap tanpa impor server. */
+const FAKE_TIME = '07:00'
+
+/**
+ * Apakah nilai LAMA ini bisa ditulis balik oleh "Batalkan"? Satu predikat untuk server (`revertBookingAction`)
+ * dan UI: kosong/null tidak bisa; jam kosong/palsu ('07:00') tidak bisa.
+ */
+export function canRevertValue(field: string, oldValue: unknown): boolean {
+  if (typeof oldValue !== 'string' || oldValue.trim() === '') return false
+  if ((field === 'pickup_time' || field === 'drop_time') && oldValue.trim() === FAKE_TIME) return false
+  return true
+}
+
+/**
+ * "Batalkan" untuk satu batch (kartu yang ditulis bersama) hanya bila SEMUA anggota lolos `canRevertValue`
+ * dan detail lama yang tertimpa lewat isian detail (`previousDetail`, objek {pickup_detail|drop_detail: nilai})
+ * tidak kosong -- titik baru wajib membawa detail lama (klien menolak sebaliknya).
+ */
+export function canRevertBatch(members: Array<{ field: string; oldValue: unknown }>, previousDetail?: unknown): boolean {
+  if (members.length === 0 || !members.every((m) => canRevertValue(m.field, m.oldValue))) return false
+  if (typeof previousDetail === 'object' && previousDetail !== null && !Array.isArray(previousDetail)) {
+    return Object.values(previousDetail as Record<string, unknown>).every((v) => typeof v === 'string' && v.trim() !== '')
+  }
+  return true
 }
 
 /** `pickup_point` -> `pickup_detail`; null untuk field selain titik (R19: detail opsional saat eksekusi). */

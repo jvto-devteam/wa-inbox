@@ -59,6 +59,11 @@ describe('notifyBaliVendor', () => {
     expect(recordEvent).not.toHaveBeenCalled()
   })
 
+  it('an explicit idempotencyKey (revert) replaces the default bali_update key', async () => {
+    await notifyBaliVendor({ ...input, idempotencyKey: 'bali_revert:a1' })
+    expect(vi.mocked(enqueueSystemTemplateSend).mock.calls.at(-1)?.[0].idempotencyKey).toBe('bali_revert:a1')
+  })
+
   it('send failure -> VENDOR_NOTICE_FAILED event + admin push, never throws, no phone in logs/push', async () => {
     vi.mocked(enqueueSystemTemplateSend).mockResolvedValue({ ok: false, code: 'TEMPLATE_NOT_FOUND' })
     await expect(notifyBaliVendor(input)).resolves.toBeUndefined()

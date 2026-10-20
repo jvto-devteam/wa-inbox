@@ -49,7 +49,7 @@ describe('GET /api/conversations/[id]/booking-actions', () => {
     const body = await (await GET(req(), ctx)).json()
     expect(body.executed).toEqual([{
       id: 'x1', conversationId: 'c1', field: 'pickup_time', tier: 'AI', newValue: '09:00', oldValue: '10:30',
-      closedReason: 'AUTO_APPLIED', closedAt: '2026-10-20T01:00:00.000Z',
+      closedReason: 'AUTO_APPLIED', closedAt: '2026-10-20T01:00:00.000Z', revertable: true,
     }])
     const q = mockPrisma.bookingAction.findMany.mock.calls.map(([a]) => a?.where).find((w) => w?.state === 'EXECUTED')
     expect(q).toMatchObject({ conversationId: 'c1', state: 'EXECUTED', type: 'CHANGE', closedAt: { gte: expect.any(Date) } })

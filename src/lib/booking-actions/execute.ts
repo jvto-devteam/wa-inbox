@@ -50,13 +50,13 @@ import {
   type WrittenPart,
 } from '@/lib/booking/backoffice-client'
 import type { BookingData } from '@/lib/booking/client'
-import { bookingTimeKnown, changeAlreadyApplied } from './compare'
+import { changeAlreadyApplied } from './compare'
 import { normalizeFieldValue, parseTshirtSizes, readBookingField, type FieldKey } from './fields'
 import { recordEvent, type BookingEventActor } from './history'
 import { notifyBaliVendor } from './bali-vendor'
 import { currentBookingId } from './scope'
 import { reevaluateBookingActions } from './store'
-import { canExecuteField, companionFields, detailFieldOf } from './view'
+import { canExecuteField, canRevertBatch, canRevertValue, companionFields, detailFieldOf } from './view'
 
 /** Klaim EXECUTING yang lebih tua dari ini dianggap proses mati di tengah. Tulis terlama ~10 s + segar. */
 export const STALE_CLAIM_MS = 2 * 60 * 1000
@@ -368,13 +368,19 @@ export async function revertBookingAction(input: { actionId: string; accountId: 
     const wasValue = plainText(ev.newValue)
     const oldValue = plainText(ev.oldValue)
     if (wasValue === null || oldValue === null) return failRevert(400, REVERT_NO_OLD_ERROR)
-    if ((field === 'pickup_time' || field === 'drop_time') && !bookingTimeKnown(oldValue)) return failRevert(400, REVERT_NO_OLD_ERROR)
+    if (!canRevertValue(field, oldValue)) return failRevert(400, REVERT_NO_OLD_ERROR)
     if (!changeAlreadyApplied({ field, value: wasValue }, booking)) return failRevert(409, REVERT_CHANGED_ERROR)
     // `value` = yang akan ditulis (nilai lama); `oldValue` = yang sekarang di booking (untuk catatan event).
     included.push({ id: m.id, field, value: oldValue, oldValue: wasValue })
   }
   if (!included.some((a) => a.id === actionId)) return failRevert(409, 'Tindakan sudah ditutup')
 
+  const prevRaw = typeof mainEvent.backoffice === 'object' && mainEvent.backoffice !== null && !Array.isArray(mainEvent.backoffice)
+    ? (mainEvent.backoffice as Record<string, unknown>).previousDetail
+    : undefined
+  if (!canRevertBatch(included.map((a) => ({ field: a.field, oldValue: a.value })), prevRaw)) {
+    return failRevert(400, REVERT_NO_OLD_ERROR)
+  }
   const patch = buildPatch(included)
   const prev = typeof mainEvent.backoffice === 'object' && mainEvent.backoffice !== null && !Array.isArray(mainEvent.backoffice)
     ? (mainEvent.backoffice as Record<string, unknown>).previousDetail
@@ -433,6 +439,10 @@ export async function revertBookingAction(input: { actionId: string; accountId: 
   broadcast({ type: 'booking-actions.changed', conversationId })
   // Klik ganda: yang kalah balapan tidak mencatat apa pun (tulisan nilai-sama sudah terjadi, idempoten).
   if (!reverted.includes(actionId)) return failRevert(409, 'Tindakan sudah dibatalkan')
+  // Vendor Bali sudah dikabari nilai baru saat diterapkan: kabari lagi bahwa dibalik. Kunci idempotensi sendiri.
+  if (action.tier === 'BALI' && included.some((a) => TRANSPORT_FIELDS.has(a.field))) {
+    void notifyBaliVendor({ actionId, conversationId, bookingId, booking: result.booking, idempotencyKey: `bali_revert:${actionId}` }).catch(() => undefined)
+  }
   return { status: 200, body: { ok: true, state: 'REVERTED', reverted } }
 }
 

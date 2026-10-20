@@ -269,7 +269,9 @@ function ExecutedCard({ item, busy, onRevert }: { item: BookingExecutedView; bus
       <p className="text-sm text-ink">
         {label}: {valueText(item.oldValue)} → <span className="font-medium">{valueText(item.newValue)}</span>
       </p>
-      {confirming ? (
+      {!item.revertable ? (
+        <p className="text-sm text-ink-muted">Ubah di backoffice</p>
+      ) : confirming ? (
         <div className="flex flex-col gap-2">
           <p className="text-sm text-ink-muted">Nilai di booking dikembalikan ke {valueText(item.oldValue)}.</p>
           <Button

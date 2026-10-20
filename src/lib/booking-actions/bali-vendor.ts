@@ -66,6 +66,8 @@ export async function notifyBaliVendor(input: {
   bookingId: string | null
   /** bookingData sesudah penyegaran pasca-tulis. */
   booking: BookingData
+  /** Default `bali_update:<actionId>`; pembatalan memakai `bali_revert:<actionId>` agar tidak dianggap duplikat. */
+  idempotencyKey?: string
 }): Promise<void> {
   const { actionId, conversationId, bookingId, booking } = input
   let sent = false
@@ -76,7 +78,7 @@ export async function notifyBaliVendor(input: {
       to: { phone: vendorPhone() },
       variables: buildVendorVariables(booking),
       // Satu eksekusi = satu kabar; kartu yang sama tidak pernah dieksekusi dua kali.
-      idempotencyKey: `bali_update:${actionId}`,
+      idempotencyKey: input.idempotencyKey ?? `bali_update:${actionId}`,
     })
     if (result.ok) {
       sent = result.status !== 'CANCELLED'
