@@ -117,10 +117,10 @@ describe('GET /api/conversations/[id]/booking-actions', () => {
       const body = await (await GET(req(), ctx)).json()
 
       const cutoff = new Date('2026-10-20T02:58:00Z')
-      expect(mockPrisma.bookingAction.findMany.mock.calls[0][0]?.where).toEqual({ conversationId: 'c1', state: 'EXECUTING', updatedAt: { lt: cutoff } })
+      expect(mockPrisma.bookingAction.findMany.mock.calls[0][0]?.where).toEqual({ conversationId: 'c1', state: 'EXECUTING', claimedAt: { lt: cutoff } })
       expect(mockPrisma.bookingAction.updateMany).toHaveBeenCalledWith({
-        where: { id: 's1', state: 'EXECUTING', updatedAt: { lt: cutoff } },
-        data: { state: 'OPEN', lastError: expect.stringContaining('Eksekusi terputus') },
+        where: { id: 's1', state: 'EXECUTING', claimedAt: { lt: cutoff } },
+        data: { state: 'OPEN', claimedAt: null, lastError: expect.stringContaining('Eksekusi terputus') },
       })
       expect(mockPrisma.bookingActionEvent.create).toHaveBeenCalledWith({
         data: expect.objectContaining({ actionId: 's1', event: 'EXECUTE_FAILED', actor: 'SYSTEM' }),

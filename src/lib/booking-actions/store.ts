@@ -132,8 +132,14 @@ async function closeAction(
   state: 'SUPERSEDED' | 'RESOLVED',
   closedReason: string,
   sourceMessageId?: string | null
-): Promise<void> {
-  await ctx.tx.bookingAction.update({ where: { id: action.id }, data: { state, closedReason, closedAt: ctx.now } })
+): Promise<boolean> {
+  // Bersyarat pada OPEN: baris yang baru saja diklaim "Setujui" (EXECUTING, execute.ts) atau ditutup
+  // orang di antara bacaan dan tulisan ini tidak boleh ditimpa. count 0 = tidak ada transisi, tidak ada event.
+  const res = await ctx.tx.bookingAction.updateMany({
+    where: { id: action.id, state: 'OPEN' },
+    data: { state, closedReason, closedAt: ctx.now },
+  })
+  if (res.count === 0) return false
   await recordEvent(ctx.tx, {
     conversationId: ctx.conversationId,
     bookingId: ctx.bookingId,
@@ -144,6 +150,7 @@ async function closeAction(
     sourceMessageId: sourceMessageId ?? null,
     reason: closedReason,
   })
+  return true
 }
 
 async function createAction(
@@ -225,8 +232,9 @@ async function evaluate(ctx: Ctx, counters: Counters): Promise<void> {
     if (!CHANGE_TYPES.includes(a.type)) continue
     const value = proposedOf(a.proposedValue)
     if (value !== null && changeAlreadyApplied({ field: a.field as FieldKey, value }, booking)) {
-      await closeAction(ctx, a, 'RESOLVED', 'MATCHED_IN_BACKOFFICE')
+      const closed = await closeAction(ctx, a, 'RESOLVED', 'MATCHED_IN_BACKOFFICE')
       open.splice(open.indexOf(a), 1)
+      if (!closed) continue
       counters.resolved++
       counters.touched = true
     }
@@ -247,8 +255,9 @@ async function evaluate(ctx: Ctx, counters: Counters): Promise<void> {
     // Fakta yang sama (field + nilai) masih aktif dan kini cocok = backoffice menyusul;
     // selain itu tamu mengoreksi dirinya sendiri.
     const stillStated = active.some((f) => f.field === a.field && f.value === value)
-    await closeAction(ctx, a, 'RESOLVED', stillStated ? 'MATCHED_IN_BACKOFFICE' : 'CHAT_CORRECTED')
+    const closed = await closeAction(ctx, a, 'RESOLVED', stillStated ? 'MATCHED_IN_BACKOFFICE' : 'CHAT_CORRECTED')
     open.splice(open.indexOf(a), 1)
+    if (!closed) continue
     counters.resolved++
     counters.touched = true
   }

@@ -82,10 +82,10 @@ describe('releaseStaleExecuting', () => {
     db.bookingAction.findMany.mockResolvedValue([stuck()] as never)
     expect(await releaseStaleExecuting('c1', NOW)).toBe(1)
     const cutoff = new Date('2026-10-20T02:58:00Z')
-    expect(db.bookingAction.findMany.mock.calls[0][0]?.where).toEqual({ conversationId: 'c1', state: 'EXECUTING', updatedAt: { lt: cutoff } })
+    expect(db.bookingAction.findMany.mock.calls[0][0]?.where).toEqual({ conversationId: 'c1', state: 'EXECUTING', claimedAt: { lt: cutoff } })
     expect(db.bookingAction.updateMany).toHaveBeenCalledWith({
-      where: { id: 's1', state: 'EXECUTING', updatedAt: { lt: cutoff } },
-      data: { state: 'OPEN', lastError: expect.stringContaining('Eksekusi terputus') },
+      where: { id: 's1', state: 'EXECUTING', claimedAt: { lt: cutoff } },
+      data: { state: 'OPEN', claimedAt: null, lastError: expect.stringContaining('Eksekusi terputus') },
     })
     expect(recordEvent).toHaveBeenCalledWith(prisma, expect.objectContaining({ actionId: 's1', event: 'EXECUTE_FAILED', actor: 'SYSTEM' }))
   })
@@ -94,7 +94,7 @@ describe('releaseStaleExecuting', () => {
     db.bookingAction.findMany.mockResolvedValue([stuck({ conversation: { bookingData: booking({ pickup: { meeting_point: 'Surabaya Hotel' } }) } })] as never)
     await releaseStaleExecuting('c1', NOW)
     expect(db.bookingAction.updateMany).toHaveBeenCalledWith(expect.objectContaining({
-      data: { state: 'RESOLVED', closedReason: 'MATCHED_IN_BACKOFFICE', closedAt: NOW, lastError: null },
+      data: { state: 'RESOLVED', closedReason: 'MATCHED_IN_BACKOFFICE', closedAt: NOW, claimedAt: null, lastError: null },
     }))
     expect(recordEvent).toHaveBeenCalledWith(prisma, expect.objectContaining({ event: 'RESOLVED', reason: 'MATCHED_IN_BACKOFFICE', actor: 'SYSTEM' }))
   })

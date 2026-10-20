@@ -1055,7 +1055,7 @@ model BookingAction {
   /// DATA_REQUEST
   draftText       String?
   /// OPEN | EXECUTING | EXECUTED | REJECTED | SUPERSEDED | RESOLVED | DONE | FAILED
-  /// EXECUTING = diklaim "Setujui" selama menulis ke backoffice (Task 11); > 2 menit dianggap macet dan dilepas ke OPEN
+  /// EXECUTING = diklaim "Setujui" selama menulis ke backoffice (Task 11); claimedAt > 2 menit = macet, dilepas
   state           String
   /// mis. MATCHED_IN_BACKOFFICE | CHAT_CORRECTED | DISMISSED_CHAT_WRONG | REPLACED | DATA_COMPLETE | TRIP_STARTED | MARKED_DONE | NOT_NEEDED
   closedReason    String?
@@ -1063,6 +1063,9 @@ model BookingAction {
   /// DATA_REQUEST: "YYYY-MM-DD" WIB
   forDay          String?
   lastError       String?
+  /// Token klaim "Setujui" (Task 11, R22): diisi saat OPEN -> EXECUTING, null di setiap transisi keluar.
+  /// Transisi akhir mencocokkan {state EXECUTING, claimedAt}; klaim basi = claimedAt < now - 2 menit.
+  claimedAt       DateTime?
   closedById      String?
   closedAt        DateTime?
   createdAt       DateTime     @default(now())

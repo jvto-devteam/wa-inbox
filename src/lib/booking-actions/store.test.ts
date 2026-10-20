@@ -68,6 +68,11 @@ beforeEach(() => {
     Object.assign(row, data)
     return row
   }) as never)
+  db.bookingAction.updateMany.mockImplementation((async ({ where, data }: { where: Record<string, unknown>; data: Record<string, unknown> }) => {
+    const rows = actions.filter((a) => matches(a, where))
+    for (const row of rows) Object.assign(row, data)
+    return { count: rows.length }
+  }) as never)
   db.bookingActionEvent.findMany.mockImplementation((async ({ where }: { where: Record<string, unknown> }) => events.filter((e) => matches(e, where))) as never)
   db.bookingActionEvent.create.mockImplementation((async ({ data }: { data: Record<string, unknown> }) => {
     const row = { id: `e${++seq}`, ...data }
@@ -280,3 +285,22 @@ describe('nilai yang dikoreksi admin saat eksekusi (Task 11 fix)', () => {
     expect(r.created).toBe(1)
   })
 })
+
+describe('closeAction bersyarat (Task 11 fix 2)', () => {
+  it('a card moved to EXECUTING by a concurrent "Setujui" is not overwritten and gets no event', async () => {
+    booking = { booking_id: 77, total_pax: 4, pickup: { meeting_point: 'Surabaya Airport', pickup_time: '09:00' } } as BookingData
+    const row = { id: 'x1', conversationId: 'c1', bookingId: '77', type: 'CHANGE', field: 'pickup_time', proposedValue: '09:00', state: 'EXECUTING', sourceMessageId: null }
+    actions.push(row)
+    // Bacaan basi: loadOpen masih melihat baris itu OPEN, padahal sudah diklaim.
+    db.bookingAction.findMany.mockImplementation((async ({ where }: { where: Record<string, unknown> }) =>
+      where.state === 'OPEN' ? actions.map((a) => ({ ...a, state: 'OPEN' })).filter((a) => matches(a, where)) : actions.filter((a) => matches(a, where))) as never)
+
+    const r = await reevaluateBookingActions('c1', NOW)
+
+    expect(row.state).toBe('EXECUTING')
+    expect(events).toHaveLength(0)
+    expect(r.resolved).toBe(0)
+    expect(db.bookingAction.update).not.toHaveBeenCalled()
+  })
+})
+

@@ -9,10 +9,12 @@
  *   EXECUTING > 2 menit (proses mati di tengah) --releaseStaleExecuting-->
  *       RESOLVED/MATCHED_IN_BACKOFFICE bila booking sudah memuat nilainya, selain itu OPEN (lastError).
  *
- * - KLAIM sebelum memanggil backoffice: `updateMany where {id, state:'OPEN'}` yang menstempel
- *   `updatedAt = claimAt`. Klik ganda / dua admin bersamaan: hanya satu mendapat count 1, yang lain 409.
- *   Transisi akhir mensyaratkan `{state:'EXECUTING', updatedAt: claimAt}`, jadi baris yang dilepas
- *   sebagai basi lalu diklaim permintaan lain tidak pernah disentuh permintaan pertama.
+ * - KLAIM sebelum memanggil backoffice: `updateMany where {id, state:'OPEN'}` yang menstempel kolom
+ *   `claimedAt = claimAt` (R22: kolom sendiri, bukan `updatedAt`, karena perilaku `@updatedAt` yang diisi
+ *   eksplisit tidak terbukti di query compiler Prisma 7). Klik ganda / dua admin bersamaan: hanya satu
+ *   mendapat count 1, yang lain 409. Transisi akhir mensyaratkan `{state:'EXECUTING', claimedAt: claimAt}`
+ *   dan selalu mengosongkan `claimedAt`, jadi baris yang dilepas sebagai basi lalu diklaim permintaan lain
+ *   tidak pernah disentuh permintaan pertama.
  * - Sesudah klaim semuanya dalam try/finally: lemparan tak terduga melepas klaim ke OPEN, KECUALI tulisan
  *   sudah berhasil (kartu dibiarkan EXECUTING; pelepasan basi memeriksa booking lebih dulu).
  * - Booking yang dituju (Task 10): `bookingId` aksi harus sama dengan `bookingData.booking_id` terbaru.
@@ -158,7 +160,7 @@ export async function executeBookingAction(input: {
   const included = await prisma.$transaction(async (tx) => {
     const claimed = await tx.bookingAction.updateMany({
       where: { id: actionId, state: 'OPEN' },
-      data: { state: 'EXECUTING', updatedAt: claimAt, lastError: null, ...(corrected ? { proposedValue: finalValue } : {}) },
+      data: { state: 'EXECUTING', claimedAt: claimAt, lastError: null, ...(corrected ? { proposedValue: finalValue } : {}) },
     })
     if (claimed.count === 0) return null
     if (corrected) {
@@ -182,7 +184,7 @@ export async function executeBookingAction(input: {
         const override = f === detailField && detail !== null && detail !== row.proposedValue ? detail : null
         const res = await tx.bookingAction.updateMany({
           where: { id: row.id, state: 'OPEN' },
-          data: { state: 'EXECUTING', updatedAt: claimAt, lastError: null, ...(override !== null ? { proposedValue: override } : {}) },
+          data: { state: 'EXECUTING', claimedAt: claimAt, lastError: null, ...(override !== null ? { proposedValue: override } : {}) },
         })
         if (res.count !== 1) continue
         if (override !== null) {
@@ -222,8 +224,8 @@ export async function executeBookingAction(input: {
       await prisma.$transaction(async (tx) => {
         for (const a of included) {
           await tx.bookingAction.updateMany({
-            where: { id: a.id, state: 'EXECUTING', updatedAt: claimAt },
-            data: { state: 'EXECUTED', closedReason: 'EXECUTED', closedById: accountId, closedAt: new Date(), lastError: null },
+            where: { id: a.id, state: 'EXECUTING', claimedAt: claimAt },
+            data: { state: 'EXECUTED', closedReason: 'EXECUTED', closedById: accountId, closedAt: new Date(), claimedAt: null, lastError: null },
           })
           // Event selalu ditulis: perubahan SUDAH ada di backoffice, apa pun hasil update di atas.
           await recordEvent(tx, {
@@ -245,8 +247,8 @@ export async function executeBookingAction(input: {
     await prisma.$transaction(async (tx) => {
       for (const a of included) {
         await tx.bookingAction.updateMany({
-          where: { id: a.id, state: 'EXECUTING', updatedAt: claimAt },
-          data: { state: 'OPEN', lastError: reason },
+          where: { id: a.id, state: 'EXECUTING', claimedAt: claimAt },
+          data: { state: 'OPEN', claimedAt: null, lastError: reason },
         })
         await recordEvent(tx, {
           conversationId, bookingId, actionId: a.id, event: 'EXECUTE_FAILED', actor: 'ACCOUNT', accountId,
@@ -269,8 +271,8 @@ async function releaseClaims(ids: string[], claimAt: Date): Promise<void> {
   for (const id of ids) {
     try {
       await prisma.bookingAction.updateMany({
-        where: { id, state: 'EXECUTING', updatedAt: claimAt },
-        data: { state: 'OPEN', lastError: UNEXPECTED_ERROR },
+        where: { id, state: 'EXECUTING', claimedAt: claimAt },
+        data: { state: 'OPEN', claimedAt: null, lastError: UNEXPECTED_ERROR },
       })
     } catch (error) {
       console.error('executeBookingAction: melepas klaim gagal', { actionId: id, error: error instanceof Error ? error.name : 'unknown' })
@@ -291,13 +293,13 @@ async function reevaluate(conversationId: string): Promise<void> {
  * `bookingData` sekarang sudah memuat nilainya (`changeAlreadyApplied`) tulisan itu ternyata masuk:
  * baris ditutup RESOLVED/MATCHED_IN_BACKOFFICE, supaya klik ulang tidak menulis produksi dua kali.
  * Selain itu kembali OPEN dengan `lastError`. Satu kueri (dengan bookingData percakapannya), lalu
- * update bersyarat per baris (`state EXECUTING AND updatedAt < cutoff`) supaya klaim hidup tidak dicuri.
+ * update bersyarat per baris (`state EXECUTING AND claimedAt < cutoff`) supaya klaim hidup tidak dicuri.
  * Tanpa `conversationId` = semua percakapan (tick).
  */
 export async function releaseStaleExecuting(conversationId?: string, now: Date = new Date()): Promise<number> {
   const cutoff = new Date(now.getTime() - STALE_CLAIM_MS)
   const rows = (await prisma.bookingAction.findMany({
-    where: { ...(conversationId ? { conversationId } : {}), state: 'EXECUTING', updatedAt: { lt: cutoff } },
+    where: { ...(conversationId ? { conversationId } : {}), state: 'EXECUTING', claimedAt: { lt: cutoff } },
     select: { id: true, conversationId: true, bookingId: true, field: true, proposedValue: true, conversation: { select: { bookingData: true } } },
   })) ?? []
   let released = 0
@@ -307,10 +309,10 @@ export async function releaseStaleExecuting(conversationId?: string, now: Date =
     const applied = value !== null && booking !== null && currentBookingId(booking) === r.bookingId &&
       changeAlreadyApplied({ field: r.field as FieldKey, value }, booking)
     const res = await prisma.bookingAction.updateMany({
-      where: { id: r.id, state: 'EXECUTING', updatedAt: { lt: cutoff } },
+      where: { id: r.id, state: 'EXECUTING', claimedAt: { lt: cutoff } },
       data: applied
-        ? { state: 'RESOLVED', closedReason: 'MATCHED_IN_BACKOFFICE', closedAt: now, lastError: null }
-        : { state: 'OPEN', lastError: STALE_CLAIM_ERROR },
+        ? { state: 'RESOLVED', closedReason: 'MATCHED_IN_BACKOFFICE', closedAt: now, claimedAt: null, lastError: null }
+        : { state: 'OPEN', claimedAt: null, lastError: STALE_CLAIM_ERROR },
     })
     if (res?.count !== 1) continue
     released++

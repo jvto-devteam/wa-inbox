@@ -134,7 +134,7 @@ describe('PATCH op execute (Task 10 + 11)', () => {
   const changeTime = action({ field: 'pickup_time', proposedValue: '09:00' })
   const events = () => vi.mocked(recordEvent).mock.calls.map(([, e]) => e)
   const updates = () => mockPrisma.bookingAction.updateMany.mock.calls.map(([a]) => a)
-  const claimAt = () => (updates()[0].data as { updatedAt: Date }).updatedAt
+  const claimAt = () => (updates()[0].data as { claimedAt: Date }).claimedAt
 
   beforeEach(() => {
     vi.mocked(writeConfigured).mockReturnValue(true)
@@ -152,11 +152,12 @@ describe('PATCH op execute (Task 10 + 11)', () => {
     expect(await res.json()).toMatchObject({ ok: true, state: 'EXECUTED', executed: ['a1'] })
     expect(writeBookingChange).toHaveBeenCalledWith('77', { pickup_time: '09:00' }, 'c1')
     // Klaim dulu (OPEN -> EXECUTING), baru tulis, baru EXECUTED.
-    expect(updates()[0]).toEqual({ where: { id: 'a1', state: 'OPEN' }, data: expect.objectContaining({ state: 'EXECUTING', updatedAt: expect.any(Date) }) })
-    // Transisi akhir terikat pada klaim permintaan INI (updatedAt klaim), bukan sekadar state.
+    expect(updates()[0]).toEqual({ where: { id: 'a1', state: 'OPEN' }, data: expect.objectContaining({ state: 'EXECUTING', claimedAt: expect.any(Date) }) })
+    // Transisi akhir terikat pada klaim permintaan INI (claimedAt, R22), bukan sekadar state.
+    expect(updates()[0].data).not.toHaveProperty('updatedAt')
     expect(updates()[1]).toEqual({
-      where: { id: 'a1', state: 'EXECUTING', updatedAt: claimAt() },
-      data: { state: 'EXECUTED', closedReason: 'EXECUTED', closedById: 'acc1', closedAt: expect.any(Date), lastError: null },
+      where: { id: 'a1', state: 'EXECUTING', claimedAt: claimAt() },
+      data: { state: 'EXECUTED', closedReason: 'EXECUTED', closedById: 'acc1', closedAt: expect.any(Date), claimedAt: null, lastError: null },
     })
     expect(events()).toEqual([expect.objectContaining({
       event: 'EXECUTED', actor: 'ACCOUNT', accountId: 'acc1', actionId: 'a1', conversationId: 'c1', bookingId: '77',
@@ -188,7 +189,7 @@ describe('PATCH op execute (Task 10 + 11)', () => {
     expect(res.status).toBe(502)
     // Pesan mentah backoffice tidak dikembalikan; ia hanya di lastError/riwayat (sudah disanitasi).
     expect(await res.json()).toEqual({ error: 'Backoffice gagal menulis perubahan (HTTP 500). Lihat "Gagal terakhir" di kartu.' })
-    expect(updates()[1]).toEqual({ where: { id: 'a1', state: 'EXECUTING', updatedAt: claimAt() }, data: { state: 'OPEN', lastError: 'Server error' } })
+    expect(updates()[1]).toEqual({ where: { id: 'a1', state: 'EXECUTING', claimedAt: claimAt() }, data: { state: 'OPEN', claimedAt: null, lastError: 'Server error' } })
     expect(events()).toEqual([expect.objectContaining({
       event: 'EXECUTE_FAILED', actor: 'ACCOUNT', accountId: 'acc1', reason: 'Server error',
       backoffice: { written: [], httpStatus: 500, kind: 'backoffice' },
@@ -364,7 +365,7 @@ describe('PATCH op execute (Task 10 + 11)', () => {
     vi.mocked(recordEvent).mockRejectedValueOnce(new Error('db'))
     expect((await PATCH(req({ op: 'execute' }), ctx)).status).toBe(500)
     const last = updates()[updates().length - 1]
-    expect(last).toMatchObject({ where: { id: 'a1', state: 'EXECUTING', updatedAt: claimAt() }, data: { state: 'OPEN' } })
+    expect(last).toMatchObject({ where: { id: 'a1', state: 'EXECUTING', claimedAt: claimAt() }, data: { state: 'OPEN', claimedAt: null } })
   })
 
   it('unexpected throw after a SUCCESSFUL write does not reopen the card (stale release decides later)', async () => {
