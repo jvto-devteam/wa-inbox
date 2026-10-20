@@ -731,7 +731,7 @@ async function findLiveCandidateIds(now: Date, excludeIndonesian: boolean): Prom
 async function recentNoticeConversationIds(since: Date, known: ReadonlySet<string>): Promise<string[]> {
   const events =
     (await prisma.bookingActionEvent.findMany({
-      where: { event: { in: ['GUEST_NOTICE_SENT', 'DRAFT_SENT'] }, createdAt: { gt: since } },
+      where: { event: { in: ['GUEST_NOTICE_SENT', 'GUEST_ACK_SENT', 'DRAFT_SENT'] }, createdAt: { gt: since } },
       select: { conversationId: true },
     })) ?? []
   return [...new Set(events.map((e) => e.conversationId))].filter((id) => !known.has(id))

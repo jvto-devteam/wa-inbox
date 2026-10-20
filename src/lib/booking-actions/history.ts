@@ -27,6 +27,8 @@ export type BookingEventName =
   | 'GUEST_NOTICE_SENT'
   | 'GUEST_NOTICE_FAILED'
   | 'GUEST_NOTICE_SKIPPED'
+  /** "Noted, permintaan Anda sudah kami terima" ke tamu, sebelum perubahan diterapkan (guest-ack.ts). */
+  | 'GUEST_ACK_SENT'
   /** Penanda teknis: admin sudah di-push untuk kartu ini (`reason` = jenis push). Tidak tampil di riwayat. */
   | 'PUSHED'
 

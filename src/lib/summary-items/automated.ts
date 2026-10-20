@@ -2,7 +2,7 @@
  * Pesan keluar OTOMATIS yang bukan "balasan kita" untuk antrean /summary dan ringkasan chat (review 2026-10-20,
  * Important 1 + A).
  *
- * Kabar "booking sudah diperbarui" ke tamu (`booking-actions/guest-notice.ts`) dan pesan permintaan data H-7
+ * Kabar "booking sudah diperbarui" ke tamu (`booking-actions/guest-notice.ts`), tanda terima "permintaan sudah kami terima" (`guest-ack.ts`), dan pesan permintaan data H-7
  * (`booking-actions/data-requests.ts`) adalah teks yang dirakit kode, terkirim beberapa detik sesudah pesan tamu.
  * Kalau dihitung balasan, "ganti kaos jadi L, dan bisa tambah Ijen?" tidak pernah jadi kandidat REPLY dan REPLY yang
  * terbuka tertutup REPLIED -- paling parah saat bot mati. Permintaan data tidak menjawab pertanyaan tamu walau
@@ -18,7 +18,9 @@ import { prisma } from '@/lib/db'
 
 export const BOOKING_UPDATE_NOTICE_SOURCE = 'booking_update_notice'
 export const DATA_REQUEST_SOURCE = 'data_request'
-const AUTOMATED_SOURCES = [BOOKING_UPDATE_NOTICE_SOURCE, DATA_REQUEST_SOURCE] as const
+/** "Noted, permintaan Anda sudah kami terima" (`booking-actions/guest-ack.ts`): otomatis, bukan balasan kita. */
+export const BOOKING_REQUEST_ACK_SOURCE = 'booking_request_ack'
+const AUTOMATED_SOURCES = [BOOKING_UPDATE_NOTICE_SOURCE, DATA_REQUEST_SOURCE, BOOKING_REQUEST_ACK_SOURCE] as const
 
 /**
  * Id pesan otomatis (OUTBOUND, `botTrace.source` di atas) di percakapan `conversationIds`, opsional sejak `since`.

@@ -37,6 +37,7 @@ import { openPipelineRun, traceClose, traceStep } from '@/lib/pipeline/tracer'
 import { extractBookingSignals } from './extract'
 import { applyExtraction, reevaluateBookingActions } from './store'
 import { autoApplyCreated } from './auto-apply'
+import { notifyGuestRequestReceived } from './guest-ack'
 import { blockedByIndonesianGate, bookingAutomationAllowed } from './rollout'
 
 export const BOOKING_EXTRACTION_DEBOUNCE_MS = 8_000
@@ -119,7 +120,10 @@ async function runExtraction(conversationId: string): Promise<void> {
       traceClose(run, 'gagal', { alasan: 'ekstraksi gagal' })
       return
     }
+    const startedAt = new Date()
     const applied = await applyExtraction(conversationId, extraction)
+    // Tanda terima ke tamu SEBELUM terapkan-otomatis; kabar "sudah diperbarui" menyusul sebagai pesan kedua. Tidak pernah melempar.
+    await notifyGuestRequestReceived({ conversationId, bookingId: typeof booking.booking_id === 'number' || typeof booking.booking_id === 'string' ? String(booking.booking_id) : null, booking, since: startedAt })
     // Push CHANGE tertunda: apa pun yang terjadi pada reevaluate, `autoApplyCreated` tetap jalan agar admin dikabari.
     try {
       await reevaluateBookingActions(conversationId)

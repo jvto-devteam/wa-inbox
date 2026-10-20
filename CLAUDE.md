@@ -279,6 +279,15 @@ append-only tanpa FK: siapa, kapan, nilai lama/baru), `PushSubscription`. Setela
   rollout `test`, kabar dari percakapan uji (`isBookingTestConversation`) dikirim ke nomor PERTAMA
   `BOOKING_ACTIONS_TEST_PHONES` (`firstBookingTestPhone`), tidak pernah ke vendor sungguhan; tanpa nomor uji = tidak
   dikirim (event `TEST_PHONE_MISSING`, tanpa push); gagal membaca percakapan = kabar gagal (event + push).
+- **Tanda terima ke tamu** (`guest-ack.ts`, `notifyGuestRequestReceived`, owner 2026-10-20): pesan PERTAMA dari dua.
+  `runExtraction` memanggilnya tepat sesudah `applyExtraction` dan SEBELUM `autoApplyCreated`; memicu hanya bila run itu
+  melahirkan kartu `CHANGE`/`TASK` dari pesan tamu (bukan `MISMATCH`/`DATA_REQUEST`, bukan kartu isian `reevaluate`).
+  Satu pesan per run: "Noted, we've received your request and are processing it now." / "Noted, permintaan Anda sudah
+  kami terima dan sedang kami proses." (kode, tanpa LLM/nama; bahasa lewat `isIndonesianGuest`). Gerbang sama dengan kabar
+  ke tamu (WhatsApp bernomor, `bookingAutomationAllowed`, jendela 24 jam terbuka; tertutup = diam tanpa push) dan terkirim
+  walau `botEnabled` mati. Idempotensi: event `GUEST_ACK_SENT` di setiap kartu (ekstraksi ulang tidak mengirim lagi) +
+  maks. satu per percakapan per 2 menit. `botTrace.source = booking_request_ack`. Gagal = log nama galat, tanpa push.
+  Kabar "sudah diperbarui" di bawah tetap pesan kedua; keduanya terkirim walau berdekatan.
 - **Kabar ke tamu** (`guest-notice.ts`, `notifyGuestOfUpdate`, owner 2026-10-20): WhatsApp lewat `sendMessage`:
   "Noted" + satu baris per field yang benar-benar ditulis + tautan portal (short link bila API memuatnya, lalu
   `client_portal_url`, lalu `customer_portal`; tidak ada = tanpa baris tautan). EN bawaan, ID bila `isIndonesianGuest`.
@@ -292,7 +301,7 @@ append-only tanpa FK: siapa, kapan, nilai lama/baru), `PushSubscription`. Setela
   **Batalkan tidak mengabari tamu**; bila tamu sudah dikabari, Batalkan mengirim push "Kabari tamu manual — perubahan
   dibatalkan" dan respons membawa `hint` yang tampil di panel.
 - **Kabar otomatis bukan balasan** (`src/lib/summary-items/automated.ts`, `automatedMessageIds`/`findOurReply`): pesan
-  ber-`botTrace.source` `booking_update_notice` atau `data_request` dikecualikan dari setiap cek "balasan kita" di
+  ber-`botTrace.source` `booking_update_notice`, `booking_request_ack` atau `data_request` dikecualikan dari setiap cek "balasan kita" di
   `sync.ts` (REPLY/FOLLOW_UP/PROMISE, live dan reconcile), `classifyConversation`, `refreshChatReview` (`reasons` dari
   pesan terakhir yang bukan kabar otomatis) dan `respondedAt` di `chatReviewHistory`. Dikenali lewat SATU kueri id
   dengan filter JSON **positif** (aman NULL; filter negatif membuang balasan sungguhan), lalu dikecualikan per id --

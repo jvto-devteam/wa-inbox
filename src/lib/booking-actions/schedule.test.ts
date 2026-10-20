@@ -11,6 +11,7 @@ import { scheduleChatReviewRefresh } from '@/lib/chat-review/auto-refresh'
 import { extractBookingSignals } from './extract'
 import { applyExtraction, reevaluateBookingActions } from './store'
 import { autoApplyCreated } from './auto-apply'
+import { notifyGuestRequestReceived } from './guest-ack'
 import { scheduleBookingExtraction, __resetBookingExtractionForTests, BOOKING_EXTRACTION_DEBOUNCE_MS } from './schedule'
 
 vi.mock('@/lib/db', () => ({ prisma: mockDeep<PrismaClient>() }))
@@ -18,6 +19,7 @@ vi.mock('@/lib/realtime', () => ({ broadcast: vi.fn() }))
 vi.mock('@/lib/chat-review/auto-refresh', () => ({ scheduleChatReviewRefresh: vi.fn() }))
 vi.mock('./extract', () => ({ extractBookingSignals: vi.fn() }))
 vi.mock('./store', () => ({ applyExtraction: vi.fn(), reevaluateBookingActions: vi.fn() }))
+vi.mock('./guest-ack', () => ({ notifyGuestRequestReceived: vi.fn().mockResolvedValue(undefined) }))
 vi.mock('./auto-apply', () => ({ autoApplyCreated: vi.fn().mockResolvedValue(undefined) }))
 const mockPrisma = prisma as unknown as DeepMockProxy<PrismaClient>
 
@@ -66,6 +68,24 @@ describe('scheduleBookingExtraction', () => {
     scheduleBookingExtraction('c1', { text: 'tolong ganti hotel' })
     await fire()
     expect(scheduleChatReviewRefresh).not.toHaveBeenCalled()
+  })
+
+  it('acknowledges the guest right after apply and BEFORE auto-apply starts', async () => {
+    stubConversation()
+    const order: string[] = []
+    vi.mocked(applyExtraction).mockImplementation(async () => {
+      order.push('apply')
+      return { created: 1, changeIds: ['a1'], changeEvents: [] }
+    })
+    vi.mocked(notifyGuestRequestReceived).mockImplementation(async () => {
+      order.push('ack')
+    })
+    vi.mocked(autoApplyCreated).mockImplementation(async () => {
+      order.push('auto-apply')
+    })
+    scheduleBookingExtraction('c1', { text: 'tolong ganti hotel' })
+    await fire()
+    expect(order).toEqual(['apply', 'ack', 'auto-apply'])
   })
 
   it('runs extract -> apply -> reevaluate (independent of botEnabled: never read)', async () => {

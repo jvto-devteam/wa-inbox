@@ -119,7 +119,7 @@ describe('createLiveReplyItems: kueri dua tahap', () => {
     // Satu-satunya kueri pesan: id pesan otomatis untuk kandidat (hanya `id`, filter JSON positif).
     for (const [q] of mockPrisma.message.findMany.mock.calls) {
       expect(q?.select).toEqual({ id: true })
-      expect(q?.where).toMatchObject({ direction: 'OUTBOUND', OR: [{ botTrace: { path: ['source'], equals: 'booking_update_notice' } }, { botTrace: { path: ['source'], equals: 'data_request' } }] })
+      expect(q?.where).toMatchObject({ direction: 'OUTBOUND', OR: [{ botTrace: { path: ['source'], equals: 'booking_update_notice' } }, { botTrace: { path: ['source'], equals: 'data_request' } }, { botTrace: { path: ['source'], equals: 'booking_request_ack' } }] })
     }
     expect(mockPrisma.message.findFirst).not.toHaveBeenCalled()
   })
@@ -427,6 +427,12 @@ describe('review 2026-10-20 Important 1: kabar otomatis bukan balasan kita', () 
     expect(created()[0]).toMatchObject({ kind: 'REPLY', anchorMessageId: 'm1', snippet: 'ganti kaos jadi L, dan bisa tambah Ijen?' })
   })
 
+  it('tanda terima "permintaan diterima" (booking_request_ack) juga otomatis: pertanyaan tamu tetap REPLY', async () => {
+    given([conv([inbound('m1', ago(2 * HOUR), 'ganti kaos jadi L, dan bisa tambah Ijen?'), notice('n1', ago(2 * HOUR - 5_000), 'booking_request_ack')])])
+    expect(await createLiveReplyItems(NOW)).toEqual({ ...none, created: 1 })
+    expect(created()[0]).toMatchObject({ kind: 'REPLY', anchorMessageId: 'm1' })
+  })
+
   it('pesan permintaan data juga dilewati; balasan agen sungguhan tetap menutup kandidat', async () => {
     given([conv([inbound('m1', ago(3 * HOUR)), notice('n1', ago(3 * HOUR - 10_000), 'data_request')])])
     expect((await createLiveReplyItems(NOW)).created).toBe(1)
@@ -447,7 +453,7 @@ describe('review 2026-10-20 Important 1: kabar otomatis bukan balasan kita', () 
     automatedFrom([c])
     expect((await createLiveReplyItems(NOW)).created).toBe(1)
     expect(mockPrisma.bookingActionEvent.findMany).toHaveBeenCalledWith(expect.objectContaining({
-      where: { event: { in: ['GUEST_NOTICE_SENT', 'DRAFT_SENT'] }, createdAt: { gt: ago(UNREPLIED_MIN_MS) } },
+      where: { event: { in: ['GUEST_NOTICE_SENT', 'GUEST_ACK_SENT', 'DRAFT_SENT'] }, createdAt: { gt: ago(UNREPLIED_MIN_MS) } },
     }))
   })
 })

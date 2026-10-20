@@ -15,6 +15,7 @@ export const EVENT_LABELS: Record<string, string> = {
   GUEST_NOTICE_SENT: 'Tamu dikabari',
   GUEST_NOTICE_FAILED: 'Kabar ke tamu gagal',
   GUEST_NOTICE_SKIPPED: 'Tamu belum dikabari',
+  GUEST_ACK_SENT: 'Tamu diberi tahu permintaan diterima',
 }
 
 export function actorName(e: BookingActionEventView): string {

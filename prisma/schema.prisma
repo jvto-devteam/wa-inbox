@@ -1097,6 +1097,7 @@ model BookingActionEvent {
   bookingId       String?
   actionId        String?
   /// CREATED | CORRECTED | EXECUTED | EXECUTE_FAILED | REJECTED | SUPERSEDED | RESOLVED | DRAFT_SENT | REVERTED | VENDOR_NOTICE_FAILED
+  /// | GUEST_ACK_SENT (ack "permintaan diterima" ke tamu segera sesudah kartu CHANGE/TASK lahir, guest-ack.ts)
   /// | GUEST_NOTICE_SENT | GUEST_NOTICE_FAILED | GUEST_NOTICE_SKIPPED (kabar "booking sudah diperbarui" ke tamu, guest-notice.ts)
   /// | PUSHED (penanda teknis: admin sudah di-push untuk kartu ini; disembunyikan dari riwayat, dipakai push-sweep.ts)
   event           String
