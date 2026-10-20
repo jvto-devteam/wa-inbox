@@ -4,12 +4,14 @@ import type { PrismaClient } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { broadcast } from '@/lib/realtime'
 import { scheduleBotRun } from '@/lib/inbound'
+import { scheduleBookingExtraction } from '@/lib/booking-actions/schedule'
 import { classifyAndStoreTopicLabels } from '@/lib/inbox/topic-labels'
 import { POST } from './route'
 
 vi.mock('@/lib/db', () => ({ prisma: mockDeep<PrismaClient>() }))
 vi.mock('@/lib/realtime', () => ({ broadcast: vi.fn() }))
 vi.mock('@/lib/inbound', () => ({ scheduleBotRun: vi.fn() }))
+vi.mock('@/lib/booking-actions/schedule', () => ({ scheduleBookingExtraction: vi.fn() }))
 vi.mock('@/lib/inbox/topic-labels', () => ({ classifyAndStoreTopicLabels: vi.fn() }))
 
 const mockPrisma = prisma as unknown as DeepMockProxy<PrismaClient>
@@ -22,6 +24,7 @@ beforeEach(() => {
   mockReset(mockPrisma)
   vi.mocked(broadcast).mockReset()
   vi.mocked(scheduleBotRun).mockReset()
+  vi.mocked(scheduleBookingExtraction).mockReset()
   vi.mocked(classifyAndStoreTopicLabels).mockReset().mockResolvedValue(null)
 })
 
@@ -65,6 +68,30 @@ describe('POST /api/conversations/[id]/test-message', () => {
     await POST(req({ text: 'halo' }), { params: Promise.resolve({ id: 'conv_test' }) })
 
     expect(scheduleBotRun).not.toHaveBeenCalled()
+  })
+
+  it('schedules booking extraction for the sandbox message (even with bot off) and survives a throwing scheduler', async () => {
+    mockPrisma.conversation.findUniqueOrThrow.mockResolvedValue({
+      id: 'conv_test', isTest: true, botEnabled: false, contact: { name: null },
+    } as never)
+    mockPrisma.message.create.mockResolvedValue({ id: 'msg_1', createdAt: new Date() } as never)
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    vi.mocked(scheduleBookingExtraction).mockImplementation(() => {
+      throw new Error('boom')
+    })
+
+    const res = await POST(req({ text: 'ganti hotel' }), { params: Promise.resolve({ id: 'conv_test' }) })
+
+    expect(res.status).toBe(200)
+    expect(scheduleBookingExtraction).toHaveBeenCalledWith('conv_test', { text: 'ganti hotel' })
+  })
+
+  it('does not schedule extraction for a non-test conversation', async () => {
+    mockPrisma.conversation.findUniqueOrThrow.mockResolvedValue({
+      id: 'conv_1', isTest: false, botEnabled: true, contact: { name: 'Bruno' },
+    } as never)
+    await POST(req({ text: 'halo' }), { params: Promise.resolve({ id: 'conv_1' }) })
+    expect(scheduleBookingExtraction).not.toHaveBeenCalled()
   })
 
   it('rejects an empty body', async () => {

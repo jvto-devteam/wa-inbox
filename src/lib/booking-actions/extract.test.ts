@@ -95,4 +95,13 @@ describe('extractBookingSignals', () => {
     vi.mocked(callLLM).mockRejectedValue(new Error('timeout'))
     expect(await extractBookingSignals(input)).toBeNull()
   })
+  it('logs only the error class, never message text that may echo LLM output', async () => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    vi.mocked(callLLM).mockRejectedValue(new SyntaxError('Unexpected token in JSON: tamu bernama Budi minta'))
+    expect(await extractBookingSignals(input)).toBeNull()
+    const logged = JSON.stringify(spy.mock.calls)
+    expect(logged).toContain('SyntaxError')
+    expect(logged).not.toContain('Budi')
+    spy.mockRestore()
+  })
 })

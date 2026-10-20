@@ -708,7 +708,7 @@ async function ingestSingleMessage(message: MetaInboundMessage, contacts: MetaCo
   // dalamnya tidak boleh sampai ke jalur webhook ini.
   if (botCanAnswer) {
     try {
-      scheduleBookingExtraction(conversation.id, tracer, { phone: contact.phone, text: inboundText })
+      scheduleBookingExtraction(conversation.id, { text: inboundText })
     } catch (error) {
       console.error('scheduleBookingExtraction gagal', { conversationId: conversation.id, error })
     }

@@ -326,7 +326,10 @@ export async function ensureFreshBookingData(conversation: {
     // Tidak ditunggu dan galatnya hanya di-log -- penyegaran booking tidak boleh terganggu.
     if (stale) {
       reevaluateBookingActions(conversation.id).catch((error: unknown) => {
-        console.error('reevaluateBookingActions gagal', { conversationId: conversation.id, error })
+        console.error('reevaluateBookingActions gagal', {
+          conversationId: conversation.id,
+          error: error instanceof Error ? error.message : 'unknown',
+        })
       })
     }
   }

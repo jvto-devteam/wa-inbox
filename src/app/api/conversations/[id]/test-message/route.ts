@@ -4,6 +4,7 @@ import { prisma } from '@/lib/db'
 import { broadcast } from '@/lib/realtime'
 import { withMediaUrl } from '@/lib/serialize-message'
 import { scheduleBotRun } from '@/lib/inbound'
+import { scheduleBookingExtraction } from '@/lib/booking-actions/schedule'
 import { classifyAndStoreTopicLabels } from '@/lib/inbox/topic-labels'
 import { parseJsonBody } from '@/lib/parse-json'
 
@@ -56,6 +57,14 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     // scheduleBotRun's header in src/lib/inbound.ts) -- the sandbox room exercises the exact
     // same behavior an admin is testing for, including how rapid-fire messages get combined.
     scheduleBotRun({ id: conversation.id, contactName: conversation.contact.name }, parsed.data.text)
+  }
+
+  // Ekstraksi sinyal booking, sama seperti jalur webhook: tidak ditunggu, tidak bergantung
+  // botEnabled, dan galatnya tidak boleh mengubah respons route ini.
+  try {
+    scheduleBookingExtraction(conversation.id, { text: parsed.data.text })
+  } catch (error) {
+    console.error('scheduleBookingExtraction gagal', { conversationId: conversation.id, error })
   }
 
   return NextResponse.json(withMediaUrl(created))

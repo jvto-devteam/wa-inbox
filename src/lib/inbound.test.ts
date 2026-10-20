@@ -804,10 +804,7 @@ describe('ingestMetaMessage bot dispatch', () => {
     await ingestMetaMessage(samplePayload)
     await vi.advanceTimersByTimeAsync(5000)
 
-    expect(scheduleBookingExtraction).toHaveBeenCalledWith('conv_1', expect.anything(), {
-      phone: '6281234567890',
-      text: 'Halo, mau tanya paket Ijen',
-    })
+    expect(scheduleBookingExtraction).toHaveBeenCalledWith('conv_1', { text: 'Halo, mau tanya paket Ijen' })
     expect(decideAndRespond).not.toHaveBeenCalled()
   })
 

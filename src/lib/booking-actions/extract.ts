@@ -117,7 +117,7 @@ export async function extractBookingSignals(input: {
     const raw = await callLLM(prompt, { system: EXTRACT_SYSTEM_PROMPT, timeoutMs: EXTRACT_TIMEOUT_MS })
     return parseExtraction(raw, input.transcript.ids)
   } catch (error) {
-    console.error('[booking-actions] extractBookingSignals failed:', error instanceof Error ? error.message : 'unknown')
+    console.error('[booking-actions] extractBookingSignals failed:', error instanceof Error ? error.name : 'unknown')
     return null
   }
 }

@@ -5,11 +5,14 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { mockDeep, mockReset, type DeepMockProxy } from 'vitest-mock-extended'
 import type { PrismaClient } from '@prisma/client'
 import { prisma } from '@/lib/db'
+import { broadcast } from '@/lib/realtime'
+import { createPipelineTracer } from '@/lib/pipeline/tracer'
 import { extractBookingSignals } from './extract'
 import { applyExtraction, reevaluateBookingActions } from './store'
 import { scheduleBookingExtraction, __resetBookingExtractionForTests, BOOKING_EXTRACTION_DEBOUNCE_MS } from './schedule'
 
 vi.mock('@/lib/db', () => ({ prisma: mockDeep<PrismaClient>() }))
+vi.mock('@/lib/realtime', () => ({ broadcast: vi.fn() }))
 vi.mock('./extract', () => ({ extractBookingSignals: vi.fn() }))
 vi.mock('./store', () => ({ applyExtraction: vi.fn(), reevaluateBookingActions: vi.fn() }))
 const mockPrisma = prisma as unknown as DeepMockProxy<PrismaClient>
@@ -36,6 +39,7 @@ beforeEach(() => {
   mockPrisma.message.findMany.mockResolvedValue([
     { id: 'm1', direction: 'INBOUND', sentBy: 'CUSTOMER', type: 'text', content: 'tolong ganti hotel', createdAt: new Date() },
   ] as never)
+  vi.mocked(broadcast).mockReset()
   vi.spyOn(console, 'error').mockImplementation(() => {})
 })
 afterEach(() => {
@@ -50,7 +54,7 @@ async function fire() {
 describe('scheduleBookingExtraction', () => {
   it('runs extract -> apply -> reevaluate (independent of botEnabled: never read)', async () => {
     stubConversation()
-    scheduleBookingExtraction('c1', undefined, { phone: FOREIGN, text: 'tolong ganti hotel' })
+    scheduleBookingExtraction('c1', { text: 'tolong ganti hotel' })
     expect(extractBookingSignals).not.toHaveBeenCalled()
     await fire()
     expect(extractBookingSignals).toHaveBeenCalledTimes(1)
@@ -61,7 +65,7 @@ describe('scheduleBookingExtraction', () => {
 
   it('skips Indonesian number even when skipBotForIndonesianNumbers=false (never consults settings)', async () => {
     stubConversation({ phone: '6281234567890' })
-    scheduleBookingExtraction('c1', undefined, { phone: '6281234567890', text: 'ganti hotel' })
+    scheduleBookingExtraction('c1', { text: 'ganti hotel' })
     await fire()
     expect(extractBookingSignals).not.toHaveBeenCalled()
     expect(mockPrisma.settings.findUnique).not.toHaveBeenCalled()
@@ -76,31 +80,28 @@ describe('scheduleBookingExtraction', () => {
 
   it('skips when trip ended (end_ymd < today WIB)', async () => {
     stubConversation({ bookingData: { id: 'B1', date: { end_ymd: '2026-10-19' } } })
-    scheduleBookingExtraction('c1', undefined, { phone: FOREIGN })
+    scheduleBookingExtraction('c1')
     await fire()
     expect(extractBookingSignals).not.toHaveBeenCalled()
   })
 
   it('runs when trip ends today (WIB)', async () => {
     stubConversation({ bookingData: { id: 'B1', date: { end_ymd: '2026-10-20' } } })
-    scheduleBookingExtraction('c1', undefined, { phone: FOREIGN })
+    scheduleBookingExtraction('c1')
     await fire()
     expect(extractBookingSignals).toHaveBeenCalledTimes(1)
   })
 
-  it('skips without bookingData and for test conversations', async () => {
+  it('skips without bookingData', async () => {
     stubConversation({ bookingData: null })
-    scheduleBookingExtraction('c1', undefined, { phone: FOREIGN })
-    await fire()
-    stubConversation({ isTest: true })
-    scheduleBookingExtraction('c2', undefined, { phone: FOREIGN })
+    scheduleBookingExtraction('c1')
     await fire()
     expect(extractBookingSignals).not.toHaveBeenCalled()
   })
 
   it('skips noise message (does not even arm a timer)', async () => {
     stubConversation()
-    scheduleBookingExtraction('c1', undefined, { phone: FOREIGN, text: 'thanks' })
+    scheduleBookingExtraction('c1', { text: 'thanks' })
     await fire()
     expect(mockPrisma.conversation.findUnique).not.toHaveBeenCalled()
     expect(extractBookingSignals).not.toHaveBeenCalled()
@@ -108,38 +109,81 @@ describe('scheduleBookingExtraction', () => {
 
   it('burst of 3 messages -> one extraction, timer reset by each message', async () => {
     stubConversation()
-    scheduleBookingExtraction('c1', undefined, { phone: FOREIGN, text: 'a b c' })
+    scheduleBookingExtraction('c1', { text: 'a b c' })
     await vi.advanceTimersByTimeAsync(5000)
-    scheduleBookingExtraction('c1', undefined, { phone: FOREIGN, text: 'd e f' })
+    scheduleBookingExtraction('c1', { text: 'd e f' })
     await vi.advanceTimersByTimeAsync(5000)
-    scheduleBookingExtraction('c1', undefined, { phone: FOREIGN, text: 'g h i' })
+    scheduleBookingExtraction('c1', { text: 'g h i' })
     await vi.advanceTimersByTimeAsync(7000)
     expect(extractBookingSignals).not.toHaveBeenCalled()
     await vi.advanceTimersByTimeAsync(1000)
     expect(extractBookingSignals).toHaveBeenCalledTimes(1)
   })
 
-  it('extractor returns null -> traced as gagal, nothing stored, never throws', async () => {
+  function sideLaneStatuses(): string[] {
+    return vi
+      .mocked(broadcast)
+      .mock.calls.map(([e]) => e as { type: string; stepId?: string; status?: string })
+      .filter((e) => e.type === 'pipeline.step' && e.stepId === 'ekstrak-booking')
+      .map((e) => e.status as string)
+  }
+
+  it('extractor returns null -> side run closed as gagal, nothing stored, never throws', async () => {
     stubConversation()
     vi.mocked(extractBookingSignals).mockResolvedValue(null)
-    const mark = vi.fn()
-    scheduleBookingExtraction('c1', { mark } as never, { phone: FOREIGN })
+    scheduleBookingExtraction('c1')
     await fire()
     expect(applyExtraction).not.toHaveBeenCalled()
-    expect(mark).toHaveBeenCalledWith('ekstrak-booking', 'gagal', expect.anything())
+    expect(sideLaneStatuses()).toEqual(['mulai', 'gagal'])
   })
 
-  it('store throws -> swallowed, traced gagal, log carries no message content', async () => {
+  it('store throws -> swallowed, side run gagal, log carries no message content', async () => {
     stubConversation()
     vi.mocked(applyExtraction).mockRejectedValue(new Error('db down'))
-    const mark = vi.fn()
-    scheduleBookingExtraction('c1', { mark } as never, { phone: FOREIGN })
+    scheduleBookingExtraction('c1')
     await expect(fire()).resolves.toBeUndefined()
-    expect(mark).toHaveBeenCalledWith('ekstrak-booking', 'gagal', expect.anything())
+    expect(sideLaneStatuses()).toEqual(['mulai', 'gagal'])
     expect(JSON.stringify(vi.mocked(console.error).mock.calls)).not.toContain('tolong ganti hotel')
   })
 
-  it('never throws synchronously, even with a hostile tracer', () => {
-    expect(() => scheduleBookingExtraction('c1', { mark: () => { throw new Error('x') } } as never, { phone: FOREIGN })).not.toThrow()
+  it('success closes the side run as selesai; skips close it as dilewati', async () => {
+    stubConversation()
+    scheduleBookingExtraction('c1')
+    await fire()
+    expect(sideLaneStatuses()).toEqual(['mulai', 'selesai'])
+    vi.mocked(broadcast).mockClear()
+    stubConversation({ bookingData: null })
+    scheduleBookingExtraction('c1')
+    await fire()
+    expect(sideLaneStatuses()).toEqual(['mulai', 'dilewati'])
+  })
+
+  it('isTest conversation with an Indonesian phone (whitelist number) DOES run (R13)', async () => {
+    stubConversation({ isTest: true, phone: '6282143403501' })
+    scheduleBookingExtraction('c1')
+    await fire()
+    expect(extractBookingSignals).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not touch an open step of the bot run tracer', async () => {
+    const botTracer = createPipelineTracer('c1', 'bot-run')
+    botTracer.mark('susun-balasan', 'mulai')
+    const before = botTracer.snapshot()
+    stubConversation()
+    scheduleBookingExtraction('c1')
+    await fire()
+    expect(botTracer.snapshot()).toEqual(before)
+    // Dan step bot itu masih bisa ditutup 'gagal' oleh pemiliknya.
+    botTracer.closeOpen('gagal')
+    expect(botTracer.snapshot().at(-1)).toMatchObject({ stepId: 'susun-balasan', status: 'gagal' })
+    const botEvents = vi
+      .mocked(broadcast)
+      .mock.calls.map(([e]) => e as { runId?: string; stepId?: string; status?: string })
+      .filter((e) => e.runId === 'bot-run' && e.stepId === 'susun-balasan')
+    expect(botEvents.map((e) => e.status)).toEqual(['mulai', 'gagal'])
+  })
+
+  it('never throws synchronously', () => {
+    expect(() => scheduleBookingExtraction('c1')).not.toThrow()
   })
 })
