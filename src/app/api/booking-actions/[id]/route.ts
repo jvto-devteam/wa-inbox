@@ -20,7 +20,12 @@ const closeSchema = z.discriminatedUnion('op', [
   z.object({ op: z.literal('done'), note: z.string().max(500).optional() }),
   z.object({ op: z.literal('not_needed'), note: z.string().max(500).optional() }),
 ])
-const executeSchema = z.object({ op: z.literal('execute'), value: z.string().max(300).optional() })
+// `detail` (R19) hanya untuk kartu titik; diperiksa di execute.ts (butuh jenis field aksi).
+const executeSchema = z.object({
+  op: z.literal('execute'),
+  value: z.string().max(300).optional(),
+  detail: z.string().max(300).optional(),
+})
 const bodySchema = z.union([closeSchema, executeSchema])
 
 type Op = z.infer<typeof closeSchema>['op']
@@ -50,7 +55,7 @@ export async function PATCH(req: Request, { params }: Ctx) {
     if (!parsed.success) return NextResponse.json({ error: 'Body tidak valid' }, { status: 400 })
     const body = parsed.data
     if (body.op === 'execute') {
-      const result = await executeBookingAction({ actionId: id, accountId: session.accountId, value: body.value })
+      const result = await executeBookingAction({ actionId: id, accountId: session.accountId, value: body.value, detail: body.detail })
       return NextResponse.json(result.body, { status: result.status })
     }
     const text = body.op === 'reject' || body.op === 'dismiss' ? body.reason : body.note

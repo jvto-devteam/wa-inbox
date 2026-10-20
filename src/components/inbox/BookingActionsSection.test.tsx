@@ -16,6 +16,8 @@ class FakeEventSource {
   }
 }
 
+const DETAIL_LABEL = 'Detail (nama hotel / nomor flight / stasiun / lokasi)'
+
 const base: BookingActionView = {
   id: 'a1', conversationId: 'c1', type: 'CHANGE', field: 'pickup_point', tier: 'AI',
   proposedValue: 'Surabaya Hotel', oldValue: 'Surabaya Airport', sourceMessageId: 'm9',
@@ -244,22 +246,53 @@ describe('BookingActionsSection', () => {
     expect(JSON.parse(String(patch?.[1]?.body))).toEqual({ op: 'done' })
   })
 
-  it('names the same-side cards that will be written together (R17) and shows the last error', async () => {
+  it('R17/R20: point card prefills its detail input from the open detail card; time cards are not companions; last error shown', async () => {
     mockFetch(() =>
       response({
         writeEnabled: true,
         actions: [
           { ...base, lastError: 'Isi detail titik baru dulu' },
           { ...base, id: 'd1', field: 'pickup_detail', proposedValue: 'Hotel Tunjungan', oldValue: 'GA 300' },
+          { ...base, id: 't1', field: 'pickup_time', proposedValue: '08:00', oldValue: '10:30' },
           { ...base, id: 'x1', field: 'drop_detail', proposedValue: 'Hotel Y', oldValue: null },
         ],
       })
     )
     render(<BookingActionsSection conversationId="c1" />)
     const card = await screen.findByRole('listitem', { name: 'CHANGE: Pickup' })
-    expect(within(card).getByText('Ditulis bersama: Detail pickup → Hotel Tunjungan')).toBeInTheDocument()
-    expect(within(card).queryByText(/Hotel Y/)).not.toBeInTheDocument()
+    expect(within(card).getByLabelText(DETAIL_LABEL)).toHaveValue('Hotel Tunjungan')
+    expect(within(card).getByText('Kartu Detail pickup ikut ditulis dan ditutup.')).toBeInTheDocument()
+    expect(within(card).queryByText(/08:00|Hotel Y/)).not.toBeInTheDocument()
     expect(within(card).getByText('Gagal terakhir: Isi detail titik baru dulu')).toBeInTheDocument()
+    const detailCard = screen.getByRole('listitem', { name: 'CHANGE: Detail pickup' })
+    expect(within(detailCard).getByText('Ditulis bersama: Pickup → Surabaya Hotel')).toBeInTheDocument()
+    const timeCard = screen.getByRole('listitem', { name: 'CHANGE: Jam pickup' })
+    expect(within(timeCard).queryByText(/Ditulis bersama/)).not.toBeInTheDocument()
+  })
+
+  it('R19: point card sends the detail with execute; empty detail is not sent', async () => {
+    const fn = mockFetch(() => response({ writeEnabled: true }))
+    render(<BookingActionsSection conversationId="c1" />)
+    const detail = await screen.findByLabelText(DETAIL_LABEL)
+    expect(detail).toHaveValue('')
+    expect(detail.className).toContain('min-h-11')
+    fireEvent.click(screen.getByRole('button', { name: 'Setujui' }))
+    await waitFor(() => expect(fn.mock.calls.filter(([, i]) => i?.method === 'PATCH')).toHaveLength(1))
+    expect(JSON.parse(String(fn.mock.calls.find(([, i]) => i?.method === 'PATCH')?.[1]?.body))).toEqual({ op: 'execute', value: 'Surabaya Hotel' })
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Setujui' })).toBeEnabled())
+    fireEvent.change(screen.getByLabelText(DETAIL_LABEL), { target: { value: 'Hotel Majapahit' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Setujui' }))
+    await waitFor(() => expect(fn.mock.calls.filter(([, i]) => i?.method === 'PATCH')).toHaveLength(2))
+    const second = fn.mock.calls.filter(([, i]) => i?.method === 'PATCH')[1]
+    expect(JSON.parse(String(second[1]?.body))).toEqual({ op: 'execute', value: 'Surabaya Hotel', detail: 'Hotel Majapahit' })
+  })
+
+  it('non-point cards have no detail input', async () => {
+    mockFetch(() => response({ writeEnabled: true, actions: [{ ...base, field: 'pickup_time', proposedValue: '09:00' }] }))
+    render(<BookingActionsSection conversationId="c1" />)
+    await screen.findByLabelText('Nilai yang ditulis')
+    expect(screen.queryByLabelText(DETAIL_LABEL)).not.toBeInTheDocument()
   })
 })
 

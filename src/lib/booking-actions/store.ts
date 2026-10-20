@@ -18,6 +18,8 @@
  *     yang lebih lama (fakta maupun permintaan eksplisit).
  *   - Yang sudah ditutup ORANG (closedById terisi: ditolak/dilepas/selesai/tak perlu) tidak dibuat
  *     ulang untuk field + nilai yang sama; nilai lain tetap membuat kartu baru.
+ *   - Usulan asli yang DIKOREKSI admin lalu dieksekusi (event CORRECTED pada aksi EXECUTED) juga tidak
+ *     dibuat ulang: kartu baru dengan nilai itu akan membalik perubahan di produksi.
  *   - Dicakup per booking: hanya baris ber-bookingId sama dengan booking sekarang (atau null).
  *   - Kunci advisory per percakapan di awal transaksi mencegah baris OPEN/fakta ganda.
  *   - Label BUKAN urusan modul ini (Ruling R1). Notifikasi push (Task 8b) dikirim SESUDAH commit untuk
@@ -83,7 +85,29 @@ async function loadBlocked(tx: Tx, conversationId: string): Promise<Set<string>>
     where: { conversationId, closedReason: { in: PERSON_REASONS } },
     select: { field: true, proposedValue: true, closedById: true },
   })
-  return new Set(rows.filter((r) => r.closedById !== null).map((r) => key(r.field, proposedOf(r.proposedValue))))
+  const blocked = new Set(rows.filter((r) => r.closedById !== null).map((r) => key(r.field, proposedOf(r.proposedValue))))
+
+  // Nilai yang dikoreksi admin saat "Setujui" (execute.ts): `proposedValue` sudah ditimpa koreksi, nilai
+  // asli hanya ada di `oldValue` event CORRECTED. Untuk aksi yang EXECUTED, nilai asli itu diblokir --
+  // kalau tidak, ekstraksi berikutnya mengusulkannya lagi dan "Setujui" akan membalik produksi.
+  const corrections = (await tx.bookingActionEvent.findMany({
+    where: { conversationId, event: 'CORRECTED' },
+    select: { actionId: true, oldValue: true },
+  })) ?? []
+  const correctedIds = [...new Set(corrections.map((c) => c.actionId).filter((id): id is string => id !== null))]
+  if (correctedIds.length > 0) {
+    const executed = (await tx.bookingAction.findMany({
+      where: { id: { in: correctedIds }, state: 'EXECUTED' },
+      select: { id: true, field: true },
+    })) ?? []
+    const fieldOf = new Map(executed.map((r) => [r.id, r.field]))
+    for (const c of corrections) {
+      const field = c.actionId ? fieldOf.get(c.actionId) : undefined
+      const original = proposedOf(c.oldValue)
+      if (field && original !== null) blocked.add(key(field, original))
+    }
+  }
+  return blocked
 }
 
 async function loadTimes(ctx: Ctx, ids: Array<string | null>): Promise<void> {

@@ -3,6 +3,7 @@ import { hasValidCronSecret } from '@/lib/outbound/cron-auth'
 import { pruneBotAuditLogs } from '@/lib/bot-control/audit'
 import { advancePipelineStagesFromBooking, refreshStaleBookingData } from '@/lib/booking/client'
 import { createLiveReplyItems, reconcileSummaryItems } from '@/lib/summary-items/sync'
+import { releaseStaleExecuting } from '@/lib/booking-actions/execute'
 
 /**
  * POST /api/summary-items/tick — antrean live Summary Harian, dipanggil crontab VPS tiap 5 menit
@@ -14,6 +15,7 @@ import { createLiveReplyItems, reconcileSummaryItems } from '@/lib/summary-items
  *    `refreshStaleBookingData` -- urutan dan alasan sama dengan di sana, dan tetap dipanggil di
  *    sana juga supaya cron di masa depan pun bekerja (ketiganya idempoten). Tahap pipeline naik
  *    SEBELUM reconcile, supaya FOLLOW_UP tertutup STAGE_ADVANCED di tick yang sama.
+ * 1b. `releaseStaleExecuting` (booking-actions/execute.ts): klaim "Setujui" yang macet > 2 menit.
  * 2. `reconcileSummaryItems` (tutup yang sudah dibalas, pengingat jatuh tempo kembali OPEN,
  *    FOLLOW_UP/PROMISE jadi REPLY).
  * 3. `createLiveReplyItems` (pesan pelanggan yang belum dibalas ≥ 1 jam masuk antrean tanpa
@@ -77,6 +79,13 @@ async function tick(): Promise<NextResponse> {
   // berarti satu panggilan HTTP ke API booking.
   await refreshStaleBookingData().catch((error: unknown) => {
     console.error('POST /api/summary-items/tick: menyegarkan data booking gagal', error)
+  })
+
+  // Klaim "Setujui" booking yang macet (proses mati di tengah tulis, > 2 menit) -- satu kueri untuk
+  // semua percakapan. Sesudah penyegaran booking: yang tulisannya ternyata masuk ditutup
+  // MATCHED_IN_BACKOFFICE, sisanya kembali OPEN. Tanpa ini kartu baru muncul lagi saat panel dibuka.
+  await releaseStaleExecuting().catch((error: unknown) => {
+    console.error('POST /api/summary-items/tick: melepas klaim eksekusi booking gagal', error instanceof Error ? error.message : 'unknown')
   })
 
   try {

@@ -101,23 +101,29 @@ export function canExecuteField(field: string): boolean {
   return !NO_WRITE_FIELDS.includes(field)
 }
 
-export type SideField =
-  | 'pickup_point' | 'pickup_detail' | 'pickup_time'
-  | 'drop_point' | 'drop_detail' | 'drop_time'
+export type SideField = 'pickup_point' | 'pickup_detail' | 'drop_point' | 'drop_detail'
 
 const SIDE_FIELDS: Record<'pickup' | 'drop', readonly SideField[]> = {
-  pickup: ['pickup_point', 'pickup_detail', 'pickup_time'],
-  drop: ['drop_point', 'drop_detail', 'drop_time'],
+  pickup: ['pickup_point', 'pickup_detail'],
+  drop: ['drop_point', 'drop_detail'],
 }
 
 /**
- * Ruling R17: field lain di sisi yang sama (titik <-> detail <-> jam) yang ikut ditulis dalam SATU
- * patch saat salah satunya dieksekusi -- backoffice menulis titik + detail + jam sekaligus, dan klien
- * menolak ganti titik tanpa detail baru. Field di luar ketiganya: [].
+ * Ruling R17 + R20: kartu titik <-> detail di sisi yang sama ditulis dalam SATU patch saat salah
+ * satunya dieksekusi -- backoffice menulis titik + detail sekaligus, dan klien menolak ganti titik
+ * tanpa detail baru. Kartu JAM tidak ikut (R20): tiap perubahan jam disetujui sendiri.
+ * Field lain: [].
  */
 export function companionFields(field: string): SideField[] {
   for (const fields of Object.values(SIDE_FIELDS)) {
     if ((fields as readonly string[]).includes(field)) return fields.filter((f) => f !== field)
   }
   return []
+}
+
+/** `pickup_point` -> `pickup_detail`; null untuk field selain titik (R19: detail opsional saat eksekusi). */
+export function detailFieldOf(field: string): 'pickup_detail' | 'drop_detail' | null {
+  if (field === 'pickup_point') return 'pickup_detail'
+  if (field === 'drop_point') return 'drop_detail'
+  return null
 }

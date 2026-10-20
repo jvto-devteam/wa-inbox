@@ -25,7 +25,8 @@ import {
  * "Setujui" pada CHANGE MENULIS ke backoffice (PATCH op execute, Task 11) dengan nilai di isian
  * "Nilai yang ditulis" (terisi usulan; admin boleh mengoreksi, ruling R14). Nonaktif selama
  * `writeEnabled` false (nilai dari server). Field tanpa jalur tulis (R16) hanya Tolak/Selesai.
- * Kartu titik/detail/jam sisi yang sama ikut ditulis bersama (R17) dan disebut di kartu.
+ * Kartu titik punya isian detail kedua (R19, terisi dari kartu detail pendamping). Kartu titik <-> detail
+ * sisi yang sama ditulis bersama (R17); kartu jam disetujui sendiri (R20).
  */
 
 type Op = 'reject' | 'dismiss' | 'done' | 'not_needed'
@@ -71,11 +72,15 @@ function ExecuteControls({
   companions: BookingActionView[]
   writeEnabled: boolean
   busy: boolean
-  onExecute: (id: string, value: string) => void
+  onExecute: (id: string, value: string, detail?: string) => void
 }) {
-  const [value, setValue] = useState(() => proposedText(action.proposedValue))
-  const inputId = `booking-action-value-${action.id}`
   const isPoint = POINT_FIELDS.includes(action.field)
+  // R19: kartu titik membawa detail; terisi dari kartu detail pendamping yang masih terbuka.
+  const detailCompanion = isPoint ? companions.find((c) => c.field.endsWith('_detail')) : undefined
+  const [value, setValue] = useState(() => proposedText(action.proposedValue))
+  const [detail, setDetail] = useState(() => proposedText(detailCompanion?.proposedValue))
+  const inputId = `booking-action-value-${action.id}`
+  const detailId = `booking-action-detail-${action.id}`
   const disabled = !writeEnabled || busy
   return (
     <>
@@ -104,12 +109,31 @@ function ExecuteControls({
           />
         )}
       </div>
-      {companions.map((c) => (
-        <p key={c.id} className="text-sm text-ink-muted">
-          Ditulis bersama: {fieldLabel(c.field)} → {valueText(c.proposedValue)}
-        </p>
-      ))}
-      <Button type="button" className={BTN} disabled={disabled || !value.trim()} onClick={() => onExecute(action.id, value)}>
+      {isPoint && (
+        <div className="flex flex-col gap-1">
+          <label htmlFor={detailId} className="text-xs text-ink-muted">
+            Detail (nama hotel / nomor flight / stasiun / lokasi)
+          </label>
+          <Input id={detailId} className="min-h-11" value={detail} disabled={disabled} maxLength={300} onChange={(e) => setDetail(e.target.value)} />
+        </div>
+      )}
+      {companions.map((c) =>
+        c === detailCompanion ? (
+          <p key={c.id} className="text-sm text-ink-muted">
+            Kartu {fieldLabel(c.field)} ikut ditulis dan ditutup.
+          </p>
+        ) : (
+          <p key={c.id} className="text-sm text-ink-muted">
+            Ditulis bersama: {fieldLabel(c.field)} → {valueText(c.proposedValue)}
+          </p>
+        )
+      )}
+      <Button
+        type="button"
+        className={BTN}
+        disabled={disabled || !value.trim()}
+        onClick={() => onExecute(action.id, value, isPoint && detail.trim() ? detail : undefined)}
+      >
         {busy ? 'Menulis…' : 'Setujui'}
       </Button>
       {!writeEnabled && <p className="text-xs text-ink-muted">Aktif setelah sambungan ke my-booking tersedia</p>}
@@ -132,7 +156,7 @@ function ActionCard({
   writeEnabled: boolean
   busy: boolean
   onOp: (id: string, op: Op) => void
-  onExecute: (id: string, value: string) => void
+  onExecute: (id: string, value: string, detail?: string) => void
 }) {
   const label = fieldLabel(action.field)
   const proposed = valueText(action.proposedValue)
@@ -270,7 +294,7 @@ export function BookingActionsSection({ conversationId }: { conversationId: stri
     return () => es.close()
   }, [conversationId, load])
 
-  async function patch(id: string, body: { op: Op } | { op: 'execute'; value: string }) {
+  async function patch(id: string, body: { op: Op } | { op: 'execute'; value: string; detail?: string }) {
     setBusyId(id)
     setError(null)
     try {
@@ -298,15 +322,15 @@ export function BookingActionsSection({ conversationId }: { conversationId: stri
         <ul className="flex flex-col gap-2">
           {data.actions.map((a) => (
             <ActionCard
-              // Kunci memuat usulan: kartu yang usulannya berubah mengisi ulang isian koreksinya.
-              key={`${a.id}:${proposedText(a.proposedValue)}`}
+              // Kunci memuat usulan (dan usulan detail pendamping): isian koreksi terisi ulang bila berubah.
+              key={`${a.id}:${proposedText(a.proposedValue)}:${companionsOf(a, data.actions).map((c) => proposedText(c.proposedValue)).join('|')}`}
               action={a}
               companions={companionsOf(a, data.actions)}
               booking={data.booking}
               writeEnabled={data.writeEnabled}
               busy={busyId !== null && (busyId === a.id || companionsOf(a, data.actions).some((c) => c.id === busyId))}
               onOp={(id, op) => void patch(id, { op })}
-              onExecute={(id, value) => void patch(id, { op: 'execute', value })}
+              onExecute={(id, value, detail) => void patch(id, detail === undefined ? { op: 'execute', value } : { op: 'execute', value, detail })}
             />
           ))}
         </ul>

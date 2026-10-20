@@ -68,6 +68,7 @@ beforeEach(() => {
     Object.assign(row, data)
     return row
   }) as never)
+  db.bookingActionEvent.findMany.mockImplementation((async ({ where }: { where: Record<string, unknown> }) => events.filter((e) => matches(e, where))) as never)
   db.bookingActionEvent.create.mockImplementation((async ({ data }: { data: Record<string, unknown> }) => {
     const row = { id: `e${++seq}`, ...data }
     events.push(row)
@@ -255,5 +256,27 @@ describe('kunci, ditutup orang, terbaru menang, cakupan booking', () => {
     expect(await reevaluateBookingActions('c1', NOW)).toEqual({ resolved: 0, opened: 0 })
     expect(actions[0].state).toBe('OPEN')
     expect(actions).toHaveLength(1)
+  })
+})
+
+describe('nilai yang dikoreksi admin saat eksekusi (Task 11 fix)', () => {
+  it('guest X → admin corrects to Y → EXECUTED; a later extraction re-proposing X creates no card and no notify', async () => {
+    booking = { booking_id: 77, total_pax: 4, pickup: { meeting_point: 'Surabaya Airport', pickup_time: '09:30' } } as BookingData
+    actions.push({ id: 'x1', conversationId: 'c1', bookingId: '77', type: 'CHANGE', field: 'pickup_time', proposedValue: '09:30', state: 'EXECUTED', closedReason: 'EXECUTED', closedById: 'acc1', sourceMessageId: 'm1' })
+    events.push({ id: 'ev1', conversationId: 'c1', actionId: 'x1', event: 'CORRECTED', oldValue: '09:00', newValue: '09:30' })
+    msgTimes = { m1: '2026-10-20T01:00:00Z', m2: '2026-10-20T02:00:00Z' }
+
+    const r = await applyExtraction('c1', ex({ changes: [item('pickup_time', '09:00', 'm2')] }), NOW)
+
+    expect(r.created).toBe(0)
+    expect(actions.filter((a) => a.state === 'OPEN')).toHaveLength(0)
+    expect(notifyBookingAction).not.toHaveBeenCalled()
+  })
+
+  it('an EXECUTED card that was NOT corrected blocks nothing extra', async () => {
+    booking = { booking_id: 77, total_pax: 4, pickup: { meeting_point: 'Surabaya Airport', pickup_time: '09:30' } } as BookingData
+    actions.push({ id: 'x1', conversationId: 'c1', bookingId: '77', type: 'CHANGE', field: 'pickup_time', proposedValue: '09:30', state: 'EXECUTED', closedReason: 'EXECUTED', closedById: 'acc1' })
+    const r = await applyExtraction('c1', ex({ changes: [item('pickup_time', '08:00', 'm2')] }), NOW)
+    expect(r.created).toBe(1)
   })
 })
