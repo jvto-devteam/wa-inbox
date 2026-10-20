@@ -134,8 +134,8 @@ describe('integritas graf pipeline', () => {
     expect(findCycles()).toEqual([])
   })
 
-  it('punya tepat satu step akhir, yaitu jalur kirim', () => {
-    expect(listTerminalPipelineStepIds()).toEqual(['kirim-balasan'])
+  it('punya dua step akhir: jalur kirim dan jalur samping ekstraksi booking', () => {
+    expect(listTerminalPipelineStepIds()).toEqual(['kirim-balasan', 'ekstrak-booking'])
   })
 
   it('mencakup percabangan keputusan: balasan terkirim ATAU handoff ke manusia', () => {

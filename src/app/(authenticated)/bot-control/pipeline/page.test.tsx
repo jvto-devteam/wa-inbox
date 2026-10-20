@@ -10,6 +10,7 @@
  *   (d) run lama yang jejaknya tidak pernah terekam disebut apa adanya, BUKAN sebagai gagal;
  *   (e) halaman tanpa satu pun run adalah keadaan normal yang tergambar, bukan spinner abadi.
  */
+import { PIPELINE_STEPS } from '@/lib/pipeline/steps'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, cleanup, act, fireEvent, waitFor, within } from '@testing-library/react'
 import { readFileSync } from 'node:fs'
@@ -166,12 +167,12 @@ describe('sisi klien tidak menarik nilai apa pun dari tracer', () => {
 })
 
 describe('halaman Alur Live', () => {
-  it('menggambar kesebelas step meski belum ada satu pun run', async () => {
+  it('menggambar setiap step registry meski belum ada satu pun run', async () => {
     stubFetch({ history: [] })
     const { container } = render(<PipelineLivePage />)
 
     await screen.findByText('Belum ada run yang tercatat.')
-    expect(container.querySelectorAll('[data-step-id]')).toHaveLength(11)
+    expect(container.querySelectorAll('[data-step-id]')).toHaveLength(PIPELINE_STEPS.length)
   })
 
   // (a)
@@ -304,7 +305,7 @@ describe('halaman Alur Live', () => {
     expect(screen.getByText(/keadaan normal saat tidak ada pesan masuk/)).toBeInTheDocument()
     expect(screen.getByText(/Belum ada percakapan yang bisa dipetakan ke funnel/)).toBeInTheDocument()
     // Petanya tetap ada — halaman kosong bukan halaman putih.
-    expect(container.querySelectorAll('[data-step-id]')).toHaveLength(11)
+    expect(container.querySelectorAll('[data-step-id]')).toHaveLength(PIPELINE_STEPS.length)
   })
 
   it('mengabaikan event SSE yang bukan miliknya tanpa menyalakan apa pun', async () => {
@@ -322,7 +323,7 @@ describe('halaman Alur Live', () => {
       source.onmessage?.({ data: 'bukan json' } as MessageEvent)
     })
 
-    expect(container.querySelectorAll('[data-live-count="0"]')).toHaveLength(11)
+    expect(container.querySelectorAll('[data-live-count="0"]')).toHaveLength(PIPELINE_STEPS.length)
     expect(screen.getByText(/Belum ada run yang berjalan/)).toBeInTheDocument()
   })
 

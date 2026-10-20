@@ -41,6 +41,7 @@ export type PipelineStepId =
   | 'verifikasi-balasan'
   | 'serahkan-agen'
   | 'kirim-balasan'
+  | 'ekstrak-booking'
 
 /**
  * Penunjuk ke kode nyata. `symbol` adalah nama fungsi/konstanta yang harus muncul di `file`;
@@ -83,6 +84,7 @@ export const PIPELINE_ENTRY_STEP_ID: PipelineStepId = 'terima-pesan'
 const COL = 200
 const LANE_MAIN = 60
 const LANE_HANDOFF = 260
+const LANE_SIDE = 460
 
 export const PIPELINE_STEPS: PipelineStep[] = [
   {
@@ -127,7 +129,10 @@ export const PIPELINE_STEPS: PipelineStep[] = [
         sourceRef: { file: 'src/lib/inbound.ts', symbol: 'ingestSingleMessage' },
       },
     ],
-    next: [{ to: 'gerbang-bot' }],
+    next: [
+      { to: 'gerbang-bot', condition: 'jalur balasan bot' },
+      { to: 'ekstrak-booking', condition: 'pesan teks, jalur samping: tidak menunggu dan tidak memengaruhi bot' },
+    ],
   },
   {
     id: 'gerbang-bot',
@@ -388,6 +393,17 @@ export const PIPELINE_STEPS: PipelineStep[] = [
         sourceRef: { file: 'src/lib/meta/messages.ts', symbol: 'sendTemplateMessage' },
       },
     ],
+    next: [],
+  },
+  {
+    id: 'ekstrak-booking',
+    label: 'Ekstrak permintaan booking di jalur samping',
+    summary:
+      'Jalur samping yang berjalan di belakang layar, terlepas dari ada-tidaknya balasan bot. Setelah 8 detik tenang, 20 pesan terakhir dibaca LLM untuk mencatat permintaan ubah data booking (titik jemput, jam, hotel, kaos) dan membandingkannya dengan data booking. Nomor Indonesia, trip yang sudah berakhir, dan pesan penutup dilewati. Gagal di sini tidak pernah menghentikan balasan.',
+    sourceRef: { file: 'src/lib/booking-actions/schedule.ts', symbol: 'scheduleBookingExtraction' },
+    x: 40 + COL,
+    y: LANE_SIDE,
+    subSteps: [],
     next: [],
   },
 ]

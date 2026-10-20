@@ -19,6 +19,7 @@ import { broadcast } from '@/lib/realtime'
 import { recordUnsourcedReplyGap } from '@/lib/inbox/gap-log'
 import { classifyAndStoreTopicLabels } from '@/lib/inbox/topic-labels'
 import { ingestMessengerPayload } from '@/lib/inbound-messenger'
+import { scheduleBookingExtraction } from '@/lib/booking-actions/schedule'
 
 vi.mock('@/lib/db', () => ({ prisma: mockDeep<PrismaClient>() }))
 vi.mock('@/lib/bot/orchestrator', () => ({ decideAndRespond: vi.fn() }))
@@ -27,6 +28,7 @@ vi.mock('@/lib/realtime', () => ({ broadcast: vi.fn() }))
 vi.mock('@/lib/inbox/topic-labels', () => ({ classifyAndStoreTopicLabels: vi.fn() }))
 vi.mock('@/lib/inbox/gap-log', () => ({ recordUnsourcedReplyGap: vi.fn() }))
 vi.mock('@/lib/inbound-messenger', () => ({ ingestMessengerPayload: vi.fn() }))
+vi.mock('@/lib/booking-actions/schedule', () => ({ scheduleBookingExtraction: vi.fn() }))
 
 const mockPrisma = prisma as unknown as DeepMockProxy<PrismaClient>
 
@@ -38,6 +40,7 @@ beforeEach(() => {
   // 'handoff' is a safe no-op default since it triggers no sendMessage call.
   vi.mocked(decideAndRespond).mockReset().mockResolvedValue({ mode: 'handoff', reason: 'default test stub' })
   vi.mocked(sendMessage).mockReset()
+  vi.mocked(scheduleBookingExtraction).mockReset()
   vi.mocked(broadcast).mockReset()
   // Default: klasifikasi selesai tanpa label. Tanpa nilai ini `.catch` di jalur ingest akan
   // dipanggil pada `undefined` untuk setiap test lama yang membuat pesan berteks.
@@ -793,6 +796,35 @@ describe('ingestMetaMessage bot dispatch', () => {
 
     expect(decideAndRespond).toHaveBeenCalledWith('conv_1', 'Halo, mau tanya paket Ijen', expect.anything())
     expect(sendMessage).toHaveBeenCalledWith(expect.objectContaining({ conversationId: 'conv_1', text: 'Info paket...', sentBy: 'BOT' }))
+  })
+
+  it('schedules booking extraction for a text message even when botEnabled=false, without touching the bot', async () => {
+    stubHappyPath({ conversation: { botEnabled: false } })
+
+    await ingestMetaMessage(samplePayload)
+    await vi.advanceTimersByTimeAsync(5000)
+
+    expect(scheduleBookingExtraction).toHaveBeenCalledWith('conv_1', expect.anything(), {
+      phone: '6281234567890',
+      text: 'Halo, mau tanya paket Ijen',
+    })
+    expect(decideAndRespond).not.toHaveBeenCalled()
+  })
+
+  it('extractor throws synchronously -> ingest still succeeds and the bot reply path is unaffected', async () => {
+    stubHappyPath()
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    vi.mocked(scheduleBookingExtraction).mockImplementation(() => {
+      throw new Error('boom')
+    })
+    vi.mocked(decideAndRespond).mockResolvedValue({ mode: 'faq', draft: 'Info paket...', sourceTopic: 'inclusions' })
+
+    const result = await ingestMetaMessage(samplePayload)
+    await vi.advanceTimersByTimeAsync(5000)
+
+    expect(result.processed).toBe(1)
+    expect(decideAndRespond).toHaveBeenCalledWith('conv_1', 'Halo, mau tanya paket Ijen', expect.anything())
+    expect(sendMessage).toHaveBeenCalledWith(expect.objectContaining({ text: 'Info paket...', sentBy: 'BOT' }))
   })
 
   it('sends a clarify reply and keeps botEnabled on, unlike a real handoff', async () => {

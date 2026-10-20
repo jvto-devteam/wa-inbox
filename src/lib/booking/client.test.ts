@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mockDeep, mockReset, type DeepMockProxy } from 'vitest-mock-extended'
 import { Prisma, type PrismaClient } from '@prisma/client'
 import { prisma } from '@/lib/db'
+import { reevaluateBookingActions } from '@/lib/booking-actions/store'
 import { lookupBooking, lookupBookingResult, ensureFreshBookingData, refreshStaleBookingData } from './client'
 
 import type { MockedFunction } from 'vitest'
@@ -16,6 +17,7 @@ type FetchInit = { method?: string; body: string; signal?: AbortSignal | null; h
 const fetchCall = (index = 0) => mockFetch().mock.calls[index] as unknown as [string, FetchInit]
 
 vi.mock('@/lib/db', () => ({ prisma: mockDeep<PrismaClient>() }))
+vi.mock('@/lib/booking-actions/store', () => ({ reevaluateBookingActions: vi.fn() }))
 const mockPrisma = prisma as unknown as DeepMockProxy<PrismaClient>
 
 beforeEach(() => {
@@ -23,6 +25,7 @@ beforeEach(() => {
   process.env.BOOKING_API_URL = 'https://booking.jvto.example/bookings'
   process.env.BOOKING_API_KEY = 'booking-key'
   mockReset(mockPrisma)
+  vi.mocked(reevaluateBookingActions).mockReset().mockResolvedValue({ resolved: 0, opened: 0 })
   mockPrisma.conversation.update.mockResolvedValue({} as never)
 })
 
@@ -496,5 +499,35 @@ describe('refreshStaleBookingData: yang terus gagal tidak menahan antrean (head-
     // random mendekati 1 membuat Fisher-Yates menukar setiap elemen dengan dirinya sendiri.
     await refreshStaleBookingData(25, 60_000, { random: () => 0.9999999 })
     expect(db.remaining()).toBe(60)
+  })
+})
+
+describe('ensureFreshBookingData — reevaluate booking actions', () => {
+  const base = { id: 'conv_1', bookingData: null, bookingCheckedAt: null, pipelineStage: 'new', contact: { phone: '6281234567890' } }
+
+  it('refresh triggers reevaluate after bookingData is rewritten', async () => {
+    ;mockFetch().mockResolvedValue({ ok: true, json: async () => ({ id: 'B1' }) })
+    await ensureFreshBookingData(base)
+    expect(reevaluateBookingActions).toHaveBeenCalledWith('conv_1')
+    const updateOrder = mockPrisma.conversation.update.mock.invocationCallOrder[0]
+    expect(vi.mocked(reevaluateBookingActions).mock.invocationCallOrder[0]).toBeGreaterThan(updateOrder)
+  })
+
+  it('does not reevaluate on a cache hit', async () => {
+    await ensureFreshBookingData({ ...base, bookingData: { id: 'B1' }, bookingCheckedAt: new Date() })
+    expect(reevaluateBookingActions).not.toHaveBeenCalled()
+  })
+
+  it('does not reevaluate when the booking API errored (bookingData not rewritten)', async () => {
+    ;mockFetch().mockRejectedValue(new Error('timeout'))
+    await ensureFreshBookingData({ ...base, bookingData: { id: 'B1' } })
+    expect(reevaluateBookingActions).not.toHaveBeenCalled()
+  })
+
+  it('a reevaluate failure is logged only and never breaks the refresh', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    ;mockFetch().mockResolvedValue({ ok: true, json: async () => ({ id: 'B1' }) })
+    vi.mocked(reevaluateBookingActions).mockRejectedValue(new Error('db'))
+    await expect(ensureFreshBookingData(base)).resolves.toEqual(expect.objectContaining({ id: 'B1' }))
   })
 })

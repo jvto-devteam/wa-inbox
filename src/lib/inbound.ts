@@ -13,6 +13,7 @@ import { isIndonesianNumber } from '@/lib/phone'
 import { recordBotDecisionRun, attachMessageToDecisionRun } from '@/lib/bot-control/decision-recorder'
 import { handoffReplyText, offHoursHandoffNotice } from '@/lib/bot/runtime-integration'
 import { openPipelineRun, traceStep, traceClose, traceSnapshot, traceRunId, type PipelineTracer } from '@/lib/pipeline/tracer'
+import { scheduleBookingExtraction } from '@/lib/booking-actions/schedule'
 import type { BotDecision } from '@/lib/bot/types'
 import { ingestMessengerPayload } from '@/lib/inbound-messenger'
 import { isMessengerPayload, type MessengerWebhookPayload } from '@/lib/meta/messenger-types'
@@ -700,6 +701,17 @@ async function ingestSingleMessage(message: MetaInboundMessage, contacts: MetaCo
     traceStep(tracer, 'gerbang-bot', 'berhenti', {
       alasan: botCanAnswer ? 'bot nonaktif untuk percakapan ini' : 'pesan bukan teks (tidak ada pertanyaan untuk dijawab)',
     })
+  }
+
+  // Ekstraksi sinyal booking (Chat -> Aksi Booking). Berdiri sendiri dari bot: tidak bergantung
+  // botEnabled, tidak ditunggu, dan dibungkus try/catch di sini juga -- apa pun yang terjadi di
+  // dalamnya tidak boleh sampai ke jalur webhook ini.
+  if (botCanAnswer) {
+    try {
+      scheduleBookingExtraction(conversation.id, tracer, { phone: contact.phone, text: inboundText })
+    } catch (error) {
+      console.error('scheduleBookingExtraction gagal', { conversationId: conversation.id, error })
+    }
   }
 
   return true

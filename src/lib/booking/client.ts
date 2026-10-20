@@ -2,6 +2,7 @@ import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { PIPELINE_STAGE_RANK } from '@/lib/pipeline'
 import { broadcast } from '@/lib/realtime'
+import { reevaluateBookingActions } from '@/lib/booking-actions/store'
 
 // Ported from chatbot-web's src/bookingApiClient.js (lookupByPhone) — the
 // proven, currently-live booking-lookup client for the JVTO booking API.
@@ -319,6 +320,14 @@ export async function ensureFreshBookingData(conversation: {
     // seluruh halaman dimuat ulang. Disiarkan hanya kalau memang ada yang berubah.
     if (pipelineStage || orderChannel) {
       broadcast({ type: 'conversation.updated', conversationId: conversation.id })
+    }
+
+    // Data booking baru ditulis: bandingkan ulang aksi booking terbuka terhadapnya (tanpa LLM).
+    // Tidak ditunggu dan galatnya hanya di-log -- penyegaran booking tidak boleh terganggu.
+    if (stale) {
+      reevaluateBookingActions(conversation.id).catch((error: unknown) => {
+        console.error('reevaluateBookingActions gagal', { conversationId: conversation.id, error })
+      })
     }
   }
   return bookingData
