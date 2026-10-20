@@ -1,7 +1,7 @@
 /** @vitest-environment node */
 import { describe, expect, it } from 'vitest'
 import type { BookingData } from '@/lib/booking/client'
-import { changeGroup, normalizeFieldValue, readBookingField, usesBaliTransport } from './fields'
+import { changeGroup, normalizeFieldValue, parseTshirtSizes, readBookingField, usesBaliTransport } from './fields'
 
 const surabaya: BookingData = {
   total_pax: 2,
@@ -102,5 +102,20 @@ describe('normalizeFieldValue', () => {
   it('free-text fields reject blanks', () => {
     expect(normalizeFieldValue('note', '  vegetarian  ')).toBe('vegetarian')
     expect(normalizeFieldValue('note', '   ')).toBeNull()
+  })
+})
+
+describe('parseTshirtSizes (Task 11)', () => {
+  it('reads the extraction format and common variants', () => {
+    expect(parseTshirtSizes('M x 2, L x 1')).toEqual({ m: 2, l: 1 })
+    expect(parseTshirtSizes('XL:1; s=2\nxs')).toEqual({ xl: 1, s: 2, xs: 1 })
+    expect(parseTshirtSizes('2 M, 2x L, 2XL')).toEqual({ m: 2, l: 2, xxl: 1 })
+    expect(parseTshirtSizes('M x 1, m x 2')).toEqual({ m: 3 })
+  })
+
+  it('null for anything it does not recognise', () => {
+    expect(parseTshirtSizes('')).toBeNull()
+    expect(parseTshirtSizes('dua medium')).toBeNull()
+    expect(parseTshirtSizes('M x 2, XXXL x 1')).toBeNull()
   })
 })

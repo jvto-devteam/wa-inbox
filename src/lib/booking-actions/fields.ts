@@ -131,3 +131,30 @@ export function normalizeFieldValue(key: FieldKey, raw: string): string | null {
       return value.length > MAX_FREE_TEXT ? `${value.slice(0, MAX_FREE_TEXT - 1)}…` : value
   }
 }
+
+const TSHIRT_SIZE = '(xxl|2xl|xl|xs|s|m|l)'
+const SIZE_FIRST = new RegExp(`^${TSHIRT_SIZE}\\s*(?:[x×:=]\\s*)?(\\d{1,2})?$`, 'i')
+const COUNT_FIRST = new RegExp(`^(\\d{1,2})\\s*(?:[x×]\\s*)?${TSHIRT_SIZE}$`, 'i')
+
+/**
+ * Teks ukuran kaos (bentuk usulan ekstraksi, mis. "M x 2, L x 1") jadi jumlah per ukuran untuk
+ * `writeBookingChange`. Butir dipisah koma/titik koma/baris baru; tiap butir "M x 2", "M:2", "M 2",
+ * "2 M", "2x M" atau "M" saja (= 1). "2XL" = xxl. Satu butir tak dikenal = null (minta admin mengoreksi);
+ * kecocokan total dengan jumlah peserta diperiksa klien tulis, bukan di sini.
+ */
+export function parseTshirtSizes(raw: string): Record<string, number> | null {
+  const parts = raw.split(/[,;\n]+/).map((p) => p.trim()).filter(Boolean)
+  if (parts.length === 0) return null
+  const out: Record<string, number> = {}
+  for (const part of parts) {
+    const a = SIZE_FIRST.exec(part)
+    const b = a ? null : COUNT_FIRST.exec(part)
+    const hit = a ? { size: a[1], qty: a[2] ?? '1' } : b ? { size: b[2], qty: b[1] } : null
+    if (!hit) return null
+    const size = hit.size.toLowerCase()
+    const qty = Number(hit.qty)
+    const key = size === '2xl' ? 'xxl' : size
+    out[key] = (out[key] ?? 0) + qty
+  }
+  return out
+}

@@ -32,6 +32,7 @@ beforeEach(() => {
   vi.mocked(computeImpact).mockClear()
   vi.mocked(verifySessionToken).mockResolvedValue({ accountId: 'acc', role: 'AGENT', tokenVersion: 0 })
   mockPrisma.bookingActionEvent.findMany.mockResolvedValue([])
+  mockPrisma.bookingAction.updateMany.mockResolvedValue({ count: 0 } as never)
 })
 
 describe('GET /api/conversations/[id]/booking-actions', () => {
@@ -103,5 +104,47 @@ describe('GET /api/conversations/[id]/booking-actions', () => {
     const res = await GET(req(), ctx)
     expect(res.status).toBe(500)
     expect(JSON.stringify(await res.json())).not.toContain('secret')
+  })
+
+  it('EXECUTING older than 2 minutes is released back to OPEN (EXECUTE_FAILED by SYSTEM) before listing', async () => {
+    vi.useFakeTimers({ now: new Date('2026-10-20T03:00:00Z'), toFake: ['Date'] })
+    try {
+      mockPrisma.conversation.findUnique.mockResolvedValue({ bookingData: bookingData('X') } as never)
+      const stuck = row({ id: 's1', state: 'EXECUTING', field: 'pickup_time', proposedValue: '09:00' })
+      mockPrisma.bookingAction.findMany.mockImplementation((async ({ where }: { where: { state: string } }) =>
+        where.state === 'EXECUTING' ? [stuck] : [{ ...stuck, state: 'OPEN' }]) as never)
+      mockPrisma.bookingAction.updateMany.mockResolvedValue({ count: 1 } as never)
+      const body = await (await GET(req(), ctx)).json()
+
+      const cutoff = new Date('2026-10-20T02:58:00Z')
+      expect(mockPrisma.bookingAction.findMany.mock.calls[0][0]?.where).toEqual({ conversationId: 'c1', state: 'EXECUTING', updatedAt: { lt: cutoff } })
+      expect(mockPrisma.bookingAction.updateMany).toHaveBeenCalledWith({
+        where: { id: 's1', state: 'EXECUTING', updatedAt: { lt: cutoff } },
+        data: { state: 'OPEN', lastError: expect.stringContaining('Eksekusi terputus') },
+      })
+      expect(mockPrisma.bookingActionEvent.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ actionId: 's1', event: 'EXECUTE_FAILED', actor: 'SYSTEM' }),
+      })
+      expect(body.actions.map((x: { id: string }) => x.id)).toEqual(['s1'])
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('a fresh EXECUTING claim is not released, and a failing release never breaks the panel', async () => {
+    mockPrisma.conversation.findUnique.mockResolvedValue({ bookingData: bookingData('X') } as never)
+    mockPrisma.bookingAction.findMany.mockImplementation((async ({ where }: { where: { state: string } }) =>
+      where.state === 'EXECUTING' ? [] : [row({})]) as never)
+    expect((await GET(req(), ctx)).status).toBe(200)
+    expect(mockPrisma.bookingAction.updateMany).not.toHaveBeenCalled()
+
+    vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    mockPrisma.bookingAction.findMany.mockImplementation((async ({ where }: { where: { state: string } }) => {
+      if (where.state === 'EXECUTING') throw new Error('db')
+      return [row({})]
+    }) as never)
+    const res = await GET(req(), ctx)
+    expect(res.status).toBe(200)
+    expect((await res.json()).actions).toHaveLength(1)
   })
 })

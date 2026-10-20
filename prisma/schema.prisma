@@ -1054,7 +1054,8 @@ model BookingAction {
   proposedValue   Json?
   /// DATA_REQUEST
   draftText       String?
-  /// OPEN | EXECUTED | REJECTED | SUPERSEDED | RESOLVED | DONE | FAILED
+  /// OPEN | EXECUTING | EXECUTED | REJECTED | SUPERSEDED | RESOLVED | DONE | FAILED
+  /// EXECUTING = diklaim "Setujui" selama menulis ke backoffice (Task 11); > 2 menit dianggap macet dan dilepas ke OPEN
   state           String
   /// mis. MATCHED_IN_BACKOFFICE | CHAT_CORRECTED | DISMISSED_CHAT_WRONG | REPLACED | DATA_COMPLETE | TRIP_STARTED | MARKED_DONE | NOT_NEEDED
   closedReason    String?

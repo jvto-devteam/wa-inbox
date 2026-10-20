@@ -30,10 +30,19 @@ export type BookingPatch = Partial<
 
 export type WrittenPart = 'pickup' | 'drop' | 'tshirt'
 
+/**
+ * Jenis galat, supaya pemanggil (eksekusi Task 11) memetakan kode HTTP tanpa mencocokkan teks:
+ *   invalid         -- ditolak di sini sebelum ada permintaan (validasi/data booking tak lengkap); mengulang tidak membantu.
+ *   booking_changed -- booking percakapan berganti/hilang sejak kartu dibuat.
+ *   unavailable     -- jalur tulis belum dikonfigurasi.
+ *   backoffice      -- backoffice menolak, tidak menjawab, atau tidak terjangkau (`httpStatus` 0 = jaringan/timeout).
+ */
+export type WriteErrorKind = 'invalid' | 'booking_changed' | 'unavailable' | 'backoffice'
+
 /** `written` = bagian yang SUDAH masuk ke backoffice (berguna saat patch gabungan gagal di tengah). */
 export type WriteResult =
   | { status: 'ok'; booking: BookingData; written: WrittenPart[] }
-  | { status: 'error'; httpStatus: number; error: string; written: WrittenPart[] }
+  | { status: 'error'; httpStatus: number; kind: WriteErrorKind; error: string; written: WrittenPart[] }
 
 const TIMEOUT_MS = 10_000
 const SIZES = ['xs', 's', 'm', 'l', 'xl', 'xxl'] as const
@@ -42,8 +51,8 @@ export function writeConfigured(): boolean {
   return Boolean(process.env.LEGACY_BASE_URL?.trim())
 }
 
-function fail(error: string, httpStatus = 0, written: WrittenPart[] = []): WriteResult {
-  return { status: 'error', httpStatus, error, written }
+function fail(kind: WriteErrorKind, error: string, httpStatus = 0): WriteResult {
+  return { status: 'error', httpStatus, kind, error, written: [] }
 }
 
 /** Segmen terakhir `…/my-booking/{url}`; null bila tidak ada atau bentuknya aneh. */
@@ -186,11 +195,11 @@ async function post(base: string, token: string, form: Form): Promise<WriteResul
     const httpStatus = res.ok ? 502 : res.status
     console.error('writeBookingChange: backoffice menolak', { kind: form.kind, httpStatus })
     const message = typeof body.message === 'string' && body.message.trim() ? body.message.trim().slice(0, 200) : 'Backoffice menolak perubahan'
-    return fail(message, httpStatus)
+    return fail('backoffice', message, httpStatus)
   } catch (error) {
     const timedOut = error instanceof Error && error.name === 'AbortError'
     console.error('writeBookingChange: permintaan gagal', { kind: form.kind, timedOut })
-    return fail(timedOut ? 'Backoffice tidak menjawab (timeout)' : 'Backoffice tidak terjangkau')
+    return fail('backoffice', timedOut ? 'Backoffice tidak menjawab (timeout)' : 'Backoffice tidak terjangkau')
   } finally {
     clearTimeout(timer)
   }
@@ -203,7 +212,7 @@ async function post(base: string, token: string, form: Form): Promise<WriteResul
  */
 export async function writeBookingChange(bookingId: string, patch: BookingPatch, conversationId: string): Promise<WriteResult> {
   const base = process.env.LEGACY_BASE_URL?.trim().replace(/\/+$/, '')
-  if (!base) return fail('Jalur tulis backoffice belum dikonfigurasi')
+  if (!base) return fail('unavailable', 'Jalur tulis backoffice belum dikonfigurasi')
 
   const conv = await prisma.conversation.findUnique({
     where: { id: conversationId },
@@ -213,15 +222,15 @@ export async function writeBookingChange(bookingId: string, patch: BookingPatch,
     },
   })
   const raw = conv?.bookingData
-  if (!conv || typeof raw !== 'object' || raw === null || Array.isArray(raw)) return fail('Data booking tidak tersedia')
+  if (!conv || typeof raw !== 'object' || raw === null || Array.isArray(raw)) return fail('booking_changed', 'Data booking tidak tersedia')
   const booking = raw as BookingData
-  if (currentBookingId(booking) !== bookingId) return fail('Booking percakapan sudah berganti')
+  if (currentBookingId(booking) !== bookingId) return fail('booking_changed', 'Booking percakapan sudah berganti')
 
   const token = bookingUrlToken(booking)
-  if (token === null) return fail('Tautan my-booking tidak ditemukan pada data booking')
+  if (token === null) return fail('invalid', 'Tautan my-booking tidak ditemukan pada data booking')
 
   const built = buildForms(booking, patch)
-  if ('error' in built) return fail(built.error)
+  if ('error' in built) return fail('invalid', built.error)
 
   const written: WrittenPart[] = []
   let failure: WriteResult | null = null

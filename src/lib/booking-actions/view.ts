@@ -22,6 +22,8 @@ export type BookingActionView = {
   oldValue: string | null
   sourceMessageId: string | null
   createdAt: string
+  /** Galat eksekusi terakhir (Task 11); null/undefined bila belum pernah gagal. */
+  lastError?: string | null
   impact?: BookingImpactView
 }
 
@@ -87,4 +89,35 @@ export function valueText(v: unknown): string {
   if (typeof v === 'string') return v
   if (typeof v === 'number' || typeof v === 'boolean') return String(v)
   return JSON.stringify(v)
+}
+
+/**
+ * Ruling R16: field tanpa jalur tulis legacy. Kartunya tetap ada, tetapi tidak bisa "Setujui";
+ * admin mengubah di backoffice lalu menandai Selesai. Dipakai UI dan API eksekusi bersama.
+ */
+export const NO_WRITE_FIELDS: readonly string[] = ['note', 'pickup_arrival', 'drop_arrival']
+
+export function canExecuteField(field: string): boolean {
+  return !NO_WRITE_FIELDS.includes(field)
+}
+
+export type SideField =
+  | 'pickup_point' | 'pickup_detail' | 'pickup_time'
+  | 'drop_point' | 'drop_detail' | 'drop_time'
+
+const SIDE_FIELDS: Record<'pickup' | 'drop', readonly SideField[]> = {
+  pickup: ['pickup_point', 'pickup_detail', 'pickup_time'],
+  drop: ['drop_point', 'drop_detail', 'drop_time'],
+}
+
+/**
+ * Ruling R17: field lain di sisi yang sama (titik <-> detail <-> jam) yang ikut ditulis dalam SATU
+ * patch saat salah satunya dieksekusi -- backoffice menulis titik + detail + jam sekaligus, dan klien
+ * menolak ganti titik tanpa detail baru. Field di luar ketiganya: [].
+ */
+export function companionFields(field: string): SideField[] {
+  for (const fields of Object.values(SIDE_FIELDS)) {
+    if ((fields as readonly string[]).includes(field)) return fields.filter((f) => f !== field)
+  }
+  return []
 }

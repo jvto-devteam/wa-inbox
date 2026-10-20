@@ -6,11 +6,14 @@ import { computeImpact, type Impact } from '@/lib/booking-actions/impact'
 import { currentBookingId, inCurrentBooking } from '@/lib/booking-actions/scope'
 import type { BookingData } from '@/lib/booking/client'
 import { writeConfigured } from '@/lib/booking/backoffice-client'
+import { releaseStaleExecuting } from '@/lib/booking-actions/execute'
 
 /**
  * Kartu tindakan booking di panel Inbox: aksi OPEN percakapan ini + 50 kejadian riwayat terbaru.
  * Terbuka untuk semua yang login (keputusan owner 2026-10-19), tanpa hasAdminPowers.
  * Nilai "lama" dibaca dari bookingData SAAT INI; dampak TASK dihitung saat ditampilkan.
+ * Klaim eksekusi basi (EXECUTING > 2 menit, proses mati di tengah) dilepas ke OPEN di sini, sebelum
+ * daftar dibaca, supaya kartunya muncul lagi saat admin membuka panel (Task 11, `execute.ts`).
  */
 const HISTORY_LIMIT = 50
 
@@ -37,6 +40,13 @@ export async function GET(req: Request, { params }: Ctx) {
     const booking = data && bookingId !== null
       ? { id: bookingId, code: str(data.id), start: str(date?.start), end: str(date?.end) }
       : null
+
+    try {
+      await releaseStaleExecuting(id)
+    } catch (error) {
+      // Panel tetap tampil; kartu yang macet menunggu pembukaan berikutnya.
+      console.error('releaseStaleExecuting gagal', { conversationId: id, error: error instanceof Error ? error.name : 'unknown' })
+    }
 
     const [rows, history] = await Promise.all([
       prisma.bookingAction.findMany({

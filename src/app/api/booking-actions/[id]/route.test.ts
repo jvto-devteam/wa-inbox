@@ -7,11 +7,16 @@ vi.mock('@/lib/db', () => ({ prisma: mockDeep<PrismaClient>() }))
 vi.mock('@/lib/auth/session', () => ({ verifySessionToken: vi.fn() }))
 vi.mock('@/lib/realtime', () => ({ broadcast: vi.fn() }))
 vi.mock('@/lib/booking-actions/history', () => ({ recordEvent: vi.fn().mockResolvedValue(undefined) }))
+vi.mock('@/lib/booking/backoffice-client', () => ({ writeBookingChange: vi.fn(), writeConfigured: vi.fn() }))
+vi.mock('@/lib/booking-actions/store', () => ({ reevaluateBookingActions: vi.fn() }))
 
 import { prisma } from '@/lib/db'
 import { verifySessionToken } from '@/lib/auth/session'
 import { broadcast } from '@/lib/realtime'
 import { recordEvent } from '@/lib/booking-actions/history'
+import { writeBookingChange, writeConfigured, type WriteResult } from '@/lib/booking/backoffice-client'
+import { reevaluateBookingActions } from '@/lib/booking-actions/store'
+import type { BookingData } from '@/lib/booking/client'
 import { PATCH } from './route'
 
 const mockPrisma = prisma as unknown as DeepMockProxy<PrismaClient>
@@ -115,5 +120,232 @@ describe('PATCH /api/booking-actions/[id]', () => {
     const res = await PATCH(req({ op: 'reject' }), ctx)
     expect(res.status).toBe(500)
     expect(JSON.stringify(await res.json())).not.toContain('secret')
+  })
+})
+
+describe('PATCH op execute (Task 10 + 11)', () => {
+  const booking = (over: Record<string, unknown> = {}) => ({
+    booking_id: 77, id: 'JVTO-77', total_pax: 3,
+    pickup: { meeting_point: 'Surabaya Airport', meeting_point_value: 'GA 300', pickup_time: '10:30' },
+    dropoff: { drop_point: 'Surabaya Hotel', drop_point_value: 'Hotel Majapahit' },
+    ...over,
+  }) as BookingData
+  const ok = (written: Array<'pickup' | 'drop' | 'tshirt'> = ['pickup']): WriteResult => ({ status: 'ok', booking: booking(), written })
+  const changeTime = action({ field: 'pickup_time', proposedValue: '09:00' })
+  const events = () => vi.mocked(recordEvent).mock.calls.map(([, e]) => e)
+  const updates = () => mockPrisma.bookingAction.updateMany.mock.calls.map(([a]) => a)
+
+  beforeEach(() => {
+    vi.mocked(writeConfigured).mockReturnValue(true)
+    vi.mocked(writeBookingChange).mockReset().mockResolvedValue(ok())
+    vi.mocked(reevaluateBookingActions).mockReset().mockResolvedValue({ resolved: 0, opened: 0 })
+    mockPrisma.bookingAction.findUnique.mockResolvedValue(changeTime as never)
+    mockPrisma.conversation.findUnique.mockResolvedValue({ bookingData: booking() } as never)
+    mockPrisma.bookingAction.findMany.mockResolvedValue([])
+    vi.spyOn(console, 'error').mockImplementation(() => undefined)
+  })
+
+  it('execute writes and records EXECUTED with old/new', async () => {
+    const res = await PATCH(req({ op: 'execute' }), ctx)
+    expect(res.status).toBe(200)
+    expect(await res.json()).toMatchObject({ ok: true, state: 'EXECUTED', executed: ['a1'] })
+    expect(writeBookingChange).toHaveBeenCalledWith('77', { pickup_time: '09:00' }, 'c1')
+    // Klaim dulu (OPEN -> EXECUTING), baru tulis, baru EXECUTED.
+    expect(updates()[0]).toEqual({ where: { id: 'a1', state: 'OPEN' }, data: expect.objectContaining({ state: 'EXECUTING' }) })
+    expect(updates()[1]).toMatchObject({
+      where: { id: 'a1' },
+      data: { state: 'EXECUTED', closedReason: 'EXECUTED', closedById: 'acc1', closedAt: expect.any(Date), lastError: null },
+    })
+    expect(events()).toEqual([expect.objectContaining({
+      event: 'EXECUTED', actor: 'ACCOUNT', accountId: 'acc1', actionId: 'a1', conversationId: 'c1', bookingId: '77',
+      oldValue: '10:30', newValue: '09:00', backoffice: { written: ['pickup'], httpStatus: 200 },
+    })])
+    expect(reevaluateBookingActions).toHaveBeenCalledWith('c1')
+    expect(broadcast).toHaveBeenCalledWith({ type: 'booking-actions.changed', conversationId: 'c1' })
+  })
+
+  it('corrected value records CORRECTED then EXECUTED', async () => {
+    const res = await PATCH(req({ op: 'execute', value: '9.30' }), ctx)
+    expect(res.status).toBe(200)
+    expect(writeBookingChange).toHaveBeenCalledWith('77', { pickup_time: '09:30' }, 'c1')
+    expect(updates()[0].data).toMatchObject({ state: 'EXECUTING', proposedValue: '09:30' })
+    expect(events().map((e) => e.event)).toEqual(['CORRECTED', 'EXECUTED'])
+    expect(events()[0]).toMatchObject({ actor: 'ACCOUNT', accountId: 'acc1', oldValue: '09:00', newValue: '09:30' })
+    expect(events()[1]).toMatchObject({ oldValue: '10:30', newValue: '09:30' })
+  })
+
+  it('same value as the proposal is not a correction', async () => {
+    await PATCH(req({ op: 'execute', value: '09:00' }), ctx)
+    expect(events().map((e) => e.event)).toEqual(['EXECUTED'])
+    expect(updates()[0].data).not.toHaveProperty('proposedValue')
+  })
+
+  it('backoffice 500 → stays OPEN, EXECUTE_FAILED, 502', async () => {
+    vi.mocked(writeBookingChange).mockResolvedValue({ status: 'error', kind: 'backoffice', httpStatus: 500, error: 'Server error', written: [] })
+    const res = await PATCH(req({ op: 'execute' }), ctx)
+    expect(res.status).toBe(502)
+    expect(await res.json()).toEqual({ error: 'Server error' })
+    expect(updates()[1]).toEqual({ where: { id: 'a1', state: 'EXECUTING' }, data: { state: 'OPEN', lastError: 'Server error' } })
+    expect(events()).toEqual([expect.objectContaining({
+      event: 'EXECUTE_FAILED', actor: 'ACCOUNT', accountId: 'acc1', reason: 'Server error',
+      backoffice: { written: [], httpStatus: 500, kind: 'backoffice' },
+    })])
+    expect(updates().some((u) => (u.data as { state?: string }).state === 'EXECUTED')).toBe(false)
+    expect(reevaluateBookingActions).not.toHaveBeenCalled()
+    expect(broadcast).toHaveBeenCalled()
+  })
+
+  it('partial write on failure is recorded and reevaluate still runs', async () => {
+    vi.mocked(writeBookingChange).mockResolvedValue({ status: 'error', kind: 'backoffice', httpStatus: 500, error: 'x', written: ['pickup'] })
+    expect((await PATCH(req({ op: 'execute' }), ctx)).status).toBe(502)
+    expect(events()[0]).toMatchObject({
+      event: 'EXECUTE_FAILED', reason: expect.stringContaining('Sebagian sudah tertulis (pickup)'),
+      backoffice: { written: ['pickup'], httpStatus: 500, kind: 'backoffice', partial: true },
+    })
+    expect(reevaluateBookingActions).toHaveBeenCalledWith('c1')
+  })
+
+  it('unlinked booking → 409', async () => {
+    // Ruling R3: bookingId aksi tidak sama dengan booking percakapan sekarang (termasuk tanpa booking).
+    mockPrisma.bookingAction.findUnique.mockResolvedValue(action({ field: 'pickup_time', proposedValue: '09:00', bookingId: null }) as never)
+    expect((await PATCH(req({ op: 'execute' }), ctx)).status).toBe(409)
+    mockPrisma.bookingAction.findUnique.mockResolvedValue(changeTime as never)
+    mockPrisma.conversation.findUnique.mockResolvedValue({ bookingData: null } as never)
+    expect((await PATCH(req({ op: 'execute' }), ctx)).status).toBe(409)
+    expect(writeBookingChange).not.toHaveBeenCalled()
+  })
+
+  it('booking_id changed since card created → execute 409, backoffice not called', async () => {
+    mockPrisma.conversation.findUnique.mockResolvedValue({ bookingData: booking({ booking_id: 78 }) } as never)
+    const res = await PATCH(req({ op: 'execute' }), ctx)
+    expect(res.status).toBe(409)
+    expect(await res.json()).toEqual({ error: 'Booking di percakapan ini berubah sejak kartu dibuat. Periksa ulang.' })
+    expect(writeBookingChange).not.toHaveBeenCalled()
+    expect(mockPrisma.bookingAction.updateMany).not.toHaveBeenCalled()
+  })
+
+  it('booking switched between check and write (client says booking_changed) → 409 with the same message', async () => {
+    vi.mocked(writeBookingChange).mockResolvedValue({ status: 'error', kind: 'booking_changed', httpStatus: 0, error: 'Booking percakapan sudah berganti', written: [] })
+    const res = await PATCH(req({ op: 'execute' }), ctx)
+    expect(res.status).toBe(409)
+    expect(await res.json()).toEqual({ error: 'Booking di percakapan ini berubah sejak kartu dibuat. Periksa ulang.' })
+    expect(updates()[1]).toMatchObject({ data: { state: 'OPEN' } })
+  })
+
+  it('double click → second call 409, backoffice called once', async () => {
+    let state = 'OPEN'
+    mockPrisma.bookingAction.updateMany.mockImplementation((async ({ where, data }: { where: { state?: unknown }; data: { state?: string } }) => {
+      const want = where.state
+      const matches = typeof want === 'string' ? want === state : true
+      if (!matches) return { count: 0 }
+      if (data.state) state = data.state
+      return { count: 1 }
+    }) as never)
+    let release: (r: WriteResult) => void = () => undefined
+    vi.mocked(writeBookingChange).mockImplementation(() => new Promise<WriteResult>((r) => { release = r }))
+    const first = PATCH(req({ op: 'execute' }), ctx)
+    // Klik kedua membaca baris sebelum klik pertama selesai (findUnique masih OPEN).
+    await vi.waitFor(() => expect(writeBookingChange).toHaveBeenCalledTimes(1))
+    const second = await PATCH(req({ op: 'execute' }), ctx)
+    expect(second.status).toBe(409)
+    release(ok())
+    expect((await first).status).toBe(200)
+    expect(writeBookingChange).toHaveBeenCalledTimes(1)
+    expect(state).toBe('EXECUTED')
+  })
+
+  it('409 when the action is already EXECUTING or closed', async () => {
+    mockPrisma.bookingAction.findUnique.mockResolvedValue(action({ state: 'EXECUTING' }) as never)
+    expect((await PATCH(req({ op: 'execute' }), ctx)).status).toBe(409)
+    mockPrisma.bookingAction.findUnique.mockResolvedValue(action({ state: 'EXECUTED' }) as never)
+    expect((await PATCH(req({ op: 'execute' }), ctx)).status).toBe(409)
+    expect(writeBookingChange).not.toHaveBeenCalled()
+  })
+
+  it('400 for non-CHANGE actions and for fields without a write path (R16)', async () => {
+    for (const a of [action({ type: 'TASK' }), action({ field: 'note', proposedValue: 'vegan' }), action({ field: 'pickup_arrival', proposedValue: '08:00' }), action({ field: 'drop_arrival', proposedValue: '08:00' })]) {
+      mockPrisma.bookingAction.findUnique.mockResolvedValue(a as never)
+      expect((await PATCH(req({ op: 'execute' }), ctx)).status).toBe(400)
+    }
+    expect(writeBookingChange).not.toHaveBeenCalled()
+    expect(mockPrisma.bookingAction.updateMany).not.toHaveBeenCalled()
+  })
+
+  it('503 when the write path is not configured', async () => {
+    vi.mocked(writeConfigured).mockReturnValue(false)
+    expect((await PATCH(req({ op: 'execute' }), ctx)).status).toBe(503)
+    expect(mockPrisma.bookingAction.updateMany).not.toHaveBeenCalled()
+  })
+
+  it('invalid corrected value → 400 before claiming', async () => {
+    const res = await PATCH(req({ op: 'execute', value: 'besok pagi-pagi' }), ctx)
+    expect(res.status).toBe(400)
+    expect(mockPrisma.bookingAction.updateMany).not.toHaveBeenCalled()
+    expect(writeBookingChange).not.toHaveBeenCalled()
+  })
+
+  it('client-side validation error (e.g. "Isi detail titik baru dulu") → 400, released, EXECUTE_FAILED', async () => {
+    mockPrisma.bookingAction.findUnique.mockResolvedValue(action({ field: 'pickup_point', proposedValue: 'Surabaya Hotel' }) as never)
+    vi.mocked(writeBookingChange).mockResolvedValue({ status: 'error', kind: 'invalid', httpStatus: 0, error: 'Isi detail titik baru dulu', written: [] })
+    const res = await PATCH(req({ op: 'execute' }), ctx)
+    expect(res.status).toBe(400)
+    expect(await res.json()).toEqual({ error: 'Isi detail titik baru dulu' })
+    expect(updates()[1]).toMatchObject({ data: { state: 'OPEN', lastError: 'Isi detail titik baru dulu' } })
+    expect(events()[0]).toMatchObject({ event: 'EXECUTE_FAILED' })
+  })
+
+  it('network failure (status 0, kind backoffice) is 502, not 400', async () => {
+    vi.mocked(writeBookingChange).mockResolvedValue({ status: 'error', kind: 'backoffice', httpStatus: 0, error: 'Backoffice tidak menjawab (timeout)', written: [] })
+    expect((await PATCH(req({ op: 'execute' }), ctx)).status).toBe(502)
+  })
+
+  it('R17: point card pulls in the OPEN detail + time cards of the same side into one patch', async () => {
+    mockPrisma.bookingAction.findUnique.mockResolvedValue(action({ field: 'pickup_point', proposedValue: 'Surabaya Hotel' }) as never)
+    mockPrisma.bookingAction.findMany.mockResolvedValue([
+      action({ id: 'd1', field: 'pickup_detail', proposedValue: 'Hotel Tunjungan' }),
+      action({ id: 't1', field: 'pickup_time', proposedValue: '08:00' }),
+    ] as never)
+    const res = await PATCH(req({ op: 'execute' }), ctx)
+    expect(res.status).toBe(200)
+    expect(await res.json()).toMatchObject({ executed: ['a1', 'd1', 't1'] })
+    expect(writeBookingChange).toHaveBeenCalledTimes(1)
+    expect(writeBookingChange).toHaveBeenCalledWith('77', { pickup_point: 'Surabaya Hotel', pickup_detail: 'Hotel Tunjungan', pickup_time: '08:00' }, 'c1')
+    const where = mockPrisma.bookingAction.findMany.mock.calls[0][0]?.where
+    expect(where).toMatchObject({ conversationId: 'c1', bookingId: '77', type: 'CHANGE', state: 'OPEN', field: { in: ['pickup_detail', 'pickup_time'] } })
+    expect(updates().filter((u) => (u.data as { state?: string }).state === 'EXECUTING').map((u) => (u.where as { id: string }).id)).toEqual(['a1', 'd1', 't1'])
+    expect(events().map((e) => [e.event, e.actionId, e.oldValue, e.newValue])).toEqual([
+      ['EXECUTED', 'a1', 'Surabaya Airport', 'Surabaya Hotel'],
+      ['EXECUTED', 'd1', 'GA 300', 'Hotel Tunjungan'],
+      ['EXECUTED', 't1', '10:30', '08:00'],
+    ])
+  })
+
+  it('R17: a companion card claimed by someone else is left out', async () => {
+    mockPrisma.bookingAction.findUnique.mockResolvedValue(action({ field: 'pickup_detail', proposedValue: 'Hotel Tunjungan' }) as never)
+    mockPrisma.bookingAction.findMany.mockResolvedValue([action({ id: 'p1', field: 'pickup_point', proposedValue: 'Surabaya Hotel' })] as never)
+    mockPrisma.bookingAction.updateMany.mockImplementation((async ({ where }: { where: { id: string } }) => ({ count: where.id === 'p1' ? 0 : 1 })) as never)
+    await PATCH(req({ op: 'execute' }), ctx)
+    expect(writeBookingChange).toHaveBeenCalledWith('77', { pickup_detail: 'Hotel Tunjungan' }, 'c1')
+  })
+
+  it('tshirt value is parsed into sizes ("M x 2, L x 1"); unparseable → 400', async () => {
+    mockPrisma.bookingAction.findUnique.mockResolvedValue(action({ field: 'tshirt_sizes', proposedValue: 'M x 2, L x 1' }) as never)
+    expect((await PATCH(req({ op: 'execute' }), ctx)).status).toBe(200)
+    expect(writeBookingChange).toHaveBeenCalledWith('77', { tshirt_sizes: { m: 2, l: 1 } }, 'c1')
+    vi.mocked(writeBookingChange).mockClear()
+    expect((await PATCH(req({ op: 'execute', value: 'dua medium' }), ctx)).status).toBe(400)
+    expect(writeBookingChange).not.toHaveBeenCalled()
+  })
+
+  it('a failing reevaluate does not turn a successful write into an error', async () => {
+    vi.mocked(reevaluateBookingActions).mockRejectedValue(new Error('db'))
+    expect((await PATCH(req({ op: 'execute' }), ctx)).status).toBe(200)
+  })
+
+  it('logs carry no customer text', async () => {
+    vi.mocked(writeBookingChange).mockResolvedValue({ status: 'error', kind: 'backoffice', httpStatus: 500, error: 'x', written: [] })
+    mockPrisma.bookingAction.findUnique.mockResolvedValue(action({ field: 'pickup_detail', proposedValue: 'Hotel Rahasia Tamu' }) as never)
+    await PATCH(req({ op: 'execute' }), ctx)
+    expect(JSON.stringify(vi.mocked(console.error).mock.calls)).not.toContain('Rahasia')
   })
 })

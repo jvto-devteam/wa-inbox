@@ -87,6 +87,15 @@ describe('applyExtraction', () => {
     expect(broadcast).toHaveBeenCalledWith({ type: 'booking-actions.changed', conversationId: 'c1' })
   })
 
+  it('new action stores bookingId from bookingData.booking_id', async () => {
+    // Task 10: eksekusi membandingkan bookingId ini dengan booking_id terbaru (numerik di API -> string).
+    booking = { ...booking, booking_id: 3899 } as BookingData
+    await applyExtraction('c1', ex({ changes: [item('pickup_time', '09:00', 'm1')] }), NOW)
+    expect(actions).toHaveLength(1)
+    expect(actions[0]).toMatchObject({ type: 'CHANGE', bookingId: '3899' })
+    expect(events[0]).toMatchObject({ bookingId: '3899', event: 'CREATED' })
+  })
+
   it('AI change becomes CHANGE', async () => {
     await applyExtraction('c1', ex({ changes: [item('pickup_point', 'Surabaya Hotel', 'm1')] }), NOW)
     expect(actions[0]).toMatchObject({ type: 'CHANGE', tier: 'AI' })

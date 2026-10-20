@@ -4,21 +4,26 @@ import { prisma } from '@/lib/db'
 import { getSession } from '@/lib/auth/get-session'
 import { recordEvent } from '@/lib/booking-actions/history'
 import { broadcast } from '@/lib/realtime'
+import { executeBookingAction } from '@/lib/booking-actions/execute'
 
 /**
- * Tutup/tolak satu tindakan booking dari Inbox. Terbuka untuk semua akun yang login (keputusan
+ * Tutup/tolak/eksekusi satu tindakan booking dari Inbox. Terbuka untuk semua akun yang login (keputusan
  * owner 2026-10-19; pengecualian hasAdminPowers dicatat di CLAUDE.md §6 pada Task 13).
  * `closedById` WAJIB terisi: store.ts tidak membuat ulang aksi yang ditutup orang untuk field+nilai
  * yang sama.
+ *
+ * `execute` (Task 10/11) MENULIS ke backoffice produksi; seluruh alurnya di `lib/booking-actions/execute.ts`.
  */
-const bodySchema = z.discriminatedUnion('op', [
+const closeSchema = z.discriminatedUnion('op', [
   z.object({ op: z.literal('reject'), reason: z.string().max(500).optional() }),
   z.object({ op: z.literal('dismiss'), reason: z.string().max(500).optional() }),
   z.object({ op: z.literal('done'), note: z.string().max(500).optional() }),
   z.object({ op: z.literal('not_needed'), note: z.string().max(500).optional() }),
 ])
+const executeSchema = z.object({ op: z.literal('execute'), value: z.string().max(300).optional() })
+const bodySchema = z.union([closeSchema, executeSchema])
 
-type Op = z.infer<typeof bodySchema>['op']
+type Op = z.infer<typeof closeSchema>['op']
 
 const OUTCOME: Record<Op, { state: string; closedReason: string; event: 'REJECTED' | 'RESOLVED'; types: readonly string[] }> = {
   reject: { state: 'REJECTED', closedReason: 'REJECTED', event: 'REJECTED', types: ['CHANGE', 'DATA_REQUEST'] },
@@ -44,6 +49,10 @@ export async function PATCH(req: Request, { params }: Ctx) {
     const parsed = bodySchema.safeParse(json)
     if (!parsed.success) return NextResponse.json({ error: 'Body tidak valid' }, { status: 400 })
     const body = parsed.data
+    if (body.op === 'execute') {
+      const result = await executeBookingAction({ actionId: id, accountId: session.accountId, value: body.value })
+      return NextResponse.json(result.body, { status: result.status })
+    }
     const text = body.op === 'reject' || body.op === 'dismiss' ? body.reason : body.note
 
     const action = await prisma.bookingAction.findUnique({ where: { id } })

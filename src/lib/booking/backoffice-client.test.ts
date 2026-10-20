@@ -122,7 +122,7 @@ describe('writeBookingChange', () => {
   it('note has no path -> error, no request', async () => {
     load(booking())
     const r = await writeBookingChange('77', { note: 'vegetarian' }, 'c1')
-    expect(r).toEqual({ status: 'error', httpStatus: 0, error: 'Catatan belum punya jalur tulis', written: [] })
+    expect(r).toEqual({ status: 'error', httpStatus: 0, kind: 'invalid', error: 'Catatan belum punya jalur tulis', written: [] })
     expect(fetch).not.toHaveBeenCalled()
   })
 
@@ -183,7 +183,7 @@ describe('writeBookingChange', () => {
   it('point change without new detail while booking has a detail -> error, no request (pickup and drop)', async () => {
     load(booking())
     const a = await writeBookingChange('77', { pickup_point: 'Surabaya Hotel' }, 'c1')
-    expect(a).toEqual({ status: 'error', httpStatus: 0, error: 'Isi detail titik baru dulu', written: [] })
+    expect(a).toEqual({ status: 'error', httpStatus: 0, kind: 'invalid', error: 'Isi detail titik baru dulu', written: [] })
     const b = await writeBookingChange('77', { drop_point: 'Surabaya Airport' }, 'c1')
     expect(b).toMatchObject({ status: 'error', httpStatus: 0, error: 'Isi detail titik baru dulu' })
     expect(fetch).not.toHaveBeenCalled()
@@ -252,5 +252,27 @@ describe('writeBookingChange', () => {
     vi.mocked(ensureFreshBookingData).mockResolvedValue(booking())
     const r = await writeBookingChange('77', { pickup_time: '09:00', tshirt_sizes: { m: 2 } }, 'c1')
     expect(r).toMatchObject({ status: 'ok', written: ['pickup', 'tshirt'] })
+  })
+
+  it('error kind tells the caller what went wrong (Task 11 maps it to a status code)', async () => {
+    delete process.env.LEGACY_BASE_URL
+    expect(await writeBookingChange('77', { pickup_time: '09:00' }, 'c1')).toMatchObject({ kind: 'unavailable' })
+    process.env.LEGACY_BASE_URL = 'https://javavolcano-touroperator.com/'
+
+    load(booking({ booking_id: 78 }))
+    expect(await writeBookingChange('77', { pickup_time: '09:00' }, 'c1')).toMatchObject({ kind: 'booking_changed' })
+    load(null)
+    expect(await writeBookingChange('77', { pickup_time: '09:00' }, 'c1')).toMatchObject({ kind: 'booking_changed' })
+
+    load(booking())
+    expect(await writeBookingChange('77', { tshirt_sizes: { m: 5 } }, 'c1')).toMatchObject({ kind: 'invalid' })
+    load(booking({ customer_portal: undefined }))
+    expect(await writeBookingChange('77', { pickup_time: '09:00' }, 'c1')).toMatchObject({ kind: 'invalid' })
+
+    load(booking())
+    ;(fetch as unknown as ReturnType<typeof vi.fn>).mockResolvedValueOnce(okJson({ success: false, message: 'x' }, 500))
+    expect(await writeBookingChange('77', { pickup_time: '09:00' }, 'c1')).toMatchObject({ kind: 'backoffice', httpStatus: 500 })
+    ;(fetch as unknown as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('ECONNREFUSED'))
+    expect(await writeBookingChange('77', { pickup_time: '09:00' }, 'c1')).toMatchObject({ kind: 'backoffice', httpStatus: 0 })
   })
 })

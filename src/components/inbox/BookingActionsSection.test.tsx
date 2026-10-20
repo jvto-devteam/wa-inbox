@@ -52,7 +52,7 @@ describe('BookingActionsSection', () => {
   it('renders single column at 360px with 44px buttons', async () => {
     mockFetch(() => response())
     render(<BookingActionsSection conversationId="c1" />)
-    await screen.findByText(/Surabaya Hotel/)
+    await screen.findByRole('button', { name: 'Tolak' })
     const list = screen.getAllByRole('list')[0]
     expect(list.className).toContain('flex-col')
     expect(list.className).not.toMatch(/grid-cols|flex-row/)
@@ -182,4 +182,84 @@ describe('BookingActionsSection', () => {
     await waitFor(() => expect(fetch).toHaveBeenCalled())
     expect(container).toBeEmptyDOMElement()
   })
+
+  it('card shows booking code and trip dates', async () => {
+    mockFetch(() => response({ writeEnabled: true }))
+    render(<BookingActionsSection conversationId="c1" />)
+    const card = await screen.findByRole('listitem', { name: 'CHANGE: Pickup' })
+    expect(within(card).getByText('JVTO-77 · 2026-11-01 – 2026-11-02')).toBeInTheDocument()
+  })
+
+  it('Setujui sends execute with the (corrected) value; the field is prefilled with the proposal', async () => {
+    let current = response({ writeEnabled: true, actions: [{ ...base, field: 'pickup_time', proposedValue: '09:00', oldValue: '10:30' }] })
+    const fn = mockFetch(() => current)
+    render(<BookingActionsSection conversationId="c1" />)
+    const input = await screen.findByLabelText('Nilai yang ditulis')
+    expect(input).toHaveValue('09:00')
+    expect(input.className).toContain('min-h-11')
+    fireEvent.change(input, { target: { value: '09:30' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Setujui' }))
+    current = response({ writeEnabled: true, actions: [] })
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Setujui' })).not.toBeInTheDocument())
+    const patch = fn.mock.calls.find(([, init]) => init?.method === 'PATCH')
+    expect(patch?.[0]).toBe('/api/booking-actions/a1')
+    expect(JSON.parse(String(patch?.[1]?.body))).toEqual({ op: 'execute', value: '09:30' })
+  })
+
+  it('point cards offer the known points as a select', async () => {
+    mockFetch(() => response({ writeEnabled: true }))
+    render(<BookingActionsSection conversationId="c1" />)
+    const select = await screen.findByLabelText('Nilai yang ditulis')
+    expect(select.tagName).toBe('SELECT')
+    expect(select).toHaveValue('Surabaya Hotel')
+    expect(within(select).getAllByRole('option').map((o) => o.textContent)).toContain('Bali Hotel')
+  })
+
+  it('Setujui and the input are disabled while executing, and the server error is shown', async () => {
+    let resolvePatch: (r: Response) => void = () => undefined
+    const fn = vi.fn((url: string, init?: RequestInit) => {
+      if (init?.method === 'PATCH') return new Promise<Response>((r) => { resolvePatch = r })
+      return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(response({ writeEnabled: true })) } as Response)
+    })
+    vi.stubGlobal('fetch', fn)
+    render(<BookingActionsSection conversationId="c1" />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Setujui' }))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Menulis…' })).toBeDisabled())
+    expect(screen.getByLabelText('Nilai yang ditulis')).toBeDisabled()
+    resolvePatch({ ok: false, status: 502, json: () => Promise.resolve({ error: 'Backoffice menolak perubahan' }) } as Response)
+    expect(await screen.findByRole('alert')).toHaveTextContent('Backoffice menolak perubahan')
+    expect(screen.getByRole('button', { name: 'Setujui' })).toBeEnabled()
+  })
+
+  it('fields without a write path (R16) show Tolak/Selesai but no Setujui and no input', async () => {
+    const fn = mockFetch(() => response({ writeEnabled: true, actions: [{ ...base, field: 'note', proposedValue: 'vegetarian', oldValue: null }] }))
+    render(<BookingActionsSection conversationId="c1" />)
+    await screen.findByRole('button', { name: 'Tolak' })
+    expect(screen.queryByRole('button', { name: 'Setujui' })).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Nilai yang ditulis')).not.toBeInTheDocument()
+    expect(screen.getByText(/Ubah di backoffice lalu tandai Selesai/)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Selesai' }))
+    await waitFor(() => expect(fn.mock.calls.some(([, i]) => i?.method === 'PATCH')).toBe(true))
+    const patch = fn.mock.calls.find(([, i]) => i?.method === 'PATCH')
+    expect(JSON.parse(String(patch?.[1]?.body))).toEqual({ op: 'done' })
+  })
+
+  it('names the same-side cards that will be written together (R17) and shows the last error', async () => {
+    mockFetch(() =>
+      response({
+        writeEnabled: true,
+        actions: [
+          { ...base, lastError: 'Isi detail titik baru dulu' },
+          { ...base, id: 'd1', field: 'pickup_detail', proposedValue: 'Hotel Tunjungan', oldValue: 'GA 300' },
+          { ...base, id: 'x1', field: 'drop_detail', proposedValue: 'Hotel Y', oldValue: null },
+        ],
+      })
+    )
+    render(<BookingActionsSection conversationId="c1" />)
+    const card = await screen.findByRole('listitem', { name: 'CHANGE: Pickup' })
+    expect(within(card).getByText('Ditulis bersama: Detail pickup → Hotel Tunjungan')).toBeInTheDocument()
+    expect(within(card).queryByText(/Hotel Y/)).not.toBeInTheDocument()
+    expect(within(card).getByText('Gagal terakhir: Isi detail titik baru dulu')).toBeInTheDocument()
+  })
 })
+
