@@ -18,6 +18,17 @@
  * - Sesudah klaim semuanya dalam try/finally: lemparan tak terduga melepas klaim ke OPEN, KECUALI tulisan
  *   sudah berhasil (kartu dibiarkan EXECUTING; pelepasan basi memeriksa booking lebih dulu).
  * - Booking yang dituju (Task 10): `bookingId` aksi harus sama dengan `bookingData.booking_id` terbaru.
+ * - DATA SEGAR SEBELUM MENULIS (final review Critical 1): `bookingData` tersimpan bisa ~24 jam basi, padahal
+ *   update-pickup/update-drop mengirim ulang titik + detail + jam -- nilai yang tidak disentuh diambil dari data
+ *   itu, jadi data basi diam-diam membalik suntingan ops/tamu (mis. jam). Maka sebelum klaim, Setujui dan
+ *   Batalkan selalu mencari booking ke API (`lookupBookingResult`, pola `sendDataRequest`): gagal/timeout = 503
+ *   tanpa menulis apa pun; booking_id lain atau booking hilang = 409; data segar disimpan lalu
+ *   `reevaluateBookingActions`; nilainya sudah ada di backoffice = kartu ditutup RESOLVED/MATCHED_IN_BACKOFFICE
+ *   tanpa menulis (409). Form tulis dirakit dari data segar itu (`writeBookingChange(..., baseBooking)`), dan cek
+ *   "nilai masih milik kita" pada Batalkan juga memakainya. Percakapan sandbox `isTest` tidak dicari (tidak
+ *   punya booking, sama dengan data-requests); nomor uji R25 punya booking dan tetap dicari.
+ * - Sesudah eksekusi, fakta aktif field itu yang lebih tua dari pesan sumber kartu diberi `supersededAt`
+ *   (`supersedeOlderFacts`, final review Important 5).
  * - Ruling R16: `note`, `pickup_arrival`, `drop_arrival` tidak punya jalur tulis -> 400.
  * - Ruling R17 + R20: kartu titik <-> detail di sisi yang sama yang masih OPEN ikut diklaim dan ditulis
  *   dalam SATU patch; kartu jam disetujui sendiri.
@@ -29,7 +40,9 @@
  * - `lastError` dan reason lewat `sanitizeTrace`; respons 502 memakai pesan generik, bukan teks backoffice.
  * - oldValue/newValue event berupa nilai polos (string/null) supaya riwayat terbaca "10:30 -> 09:00".
  * - Task 11a: sukses pada kartu tier BALI memicu SATU kabar ke vendor (`bali-vendor.ts`), sesudah transaksi,
- *   tanpa menunggu dan tanpa mengubah respons; gagal kirim = event VENDOR_NOTICE_FAILED + push admin.
+ *   tanpa menunggu dan tanpa mengubah respons; gagal kirim = event VENDOR_NOTICE_FAILED + push admin. Kabar
+ *   hanya dikirim bila booking hasil penyegaran pasca-tulis BENAR-BENAR memuat nilai yang ditulis (`expected`);
+ *   penyegaran gagal = kabar tidak dikirim, VENDOR_NOTICE_FAILED + push (final review Important 6).
  * - Task 11b: `executeBookingAction` dipakai bersama oleh `autoApplyIfAllowed` (actor SYSTEM, closedReason AUTO_APPLIED);
  *   `revertBookingAction` membalik aksi EXECUTED ("Batalkan"). Event EXECUTED memuat `backoffice.batch` (kartu yang ditulis
  *   bersama) agar pembatalan membalik semuanya.
@@ -38,6 +51,7 @@
  * Pelepasan klaim basi dipanggil dari GET panel kartu (`/api/conversations/[id]/booking-actions`) dan
  * dari `POST /api/summary-items/tick` (tiap 5 menit, semua percakapan, satu kueri).
  */
+import type { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { broadcast } from '@/lib/realtime'
 import { sanitizeTrace } from '@/lib/bot-control/trace-sanitizer'
@@ -49,8 +63,9 @@ import {
   type WriteResult,
   type WrittenPart,
 } from '@/lib/booking/backoffice-client'
-import type { BookingData } from '@/lib/booking/client'
+import { lookupBookingResult, type BookingData, type BookingLookup } from '@/lib/booking/client'
 import { changeAlreadyApplied } from './compare'
+import { supersedeOlderFacts } from './fact-supersede'
 import { normalizeFieldValue, parseTshirtSizes, readBookingField, type FieldKey } from './fields'
 import { recordEvent, type BookingEventActor } from './history'
 import { notifyBaliVendor } from './bali-vendor'
@@ -62,6 +77,8 @@ import { canExecuteField, canRevertBatch, canRevertValue, companionFields, detai
 export const STALE_CLAIM_MS = 2 * 60 * 1000
 export const BOOKING_CHANGED_ERROR = 'Booking di percakapan ini berubah sejak kartu dibuat. Periksa ulang.'
 export const STALE_CLAIM_ERROR = 'Eksekusi terputus sebelum selesai. Periksa booking di backoffice sebelum menyetujui lagi.'
+export const BOOKING_LOOKUP_ERROR = 'Data booking belum bisa diperiksa ke backoffice. Tidak ada yang ditulis; coba lagi sebentar lagi.'
+export const ALREADY_APPLIED_ERROR = 'Booking di backoffice sudah memuat nilai ini. Kartu ditutup tanpa menulis.'
 const UNEXPECTED_ERROR = 'Eksekusi berhenti karena galat tak terduga. Coba lagi.'
 const MAX_ERROR = 500
 const TRANSPORT_FIELDS: ReadonlySet<FieldKey> = new Set<FieldKey>([
@@ -72,7 +89,7 @@ export type ExecuteResult =
   | { status: 200; body: { ok: true; state: 'EXECUTED'; executed: string[]; written: WrittenPart[] } }
   | { status: 400 | 404 | 409 | 502 | 503; body: { error: string } }
 
-type Included = { id: string; field: FieldKey; value: string; oldValue: string | null }
+type Included = { id: string; field: FieldKey; value: string; oldValue: string | null; sourceMessageId?: string | null }
 type StringPatchKey = Exclude<keyof BookingPatch, 'tshirt_sizes'>
 
 const fail = (status: 400 | 404 | 409 | 502 | 503, error: string): ExecuteResult => ({ status, body: { error } })
@@ -102,6 +119,69 @@ function responseError(result: Extract<WriteResult, { status: 'error' }>): strin
     return `${partial}Backoffice gagal menulis perubahan (${code}). Lihat "Gagal terakhir" di kartu.`
   }
   return result.error
+}
+
+type Fresh = { ok: true; booking: BookingData } | { ok: false; status: 409 | 503; error: string }
+
+/**
+ * Booking SEGAR untuk menulis (Critical 1). Tidak pernah melempar ke pemanggil untuk galat API: lookup
+ * gagal = 503 dan tidak ada yang ditulis. Data yang ditemukan selalu disimpan (lalu `reevaluate`), juga bila
+ * booking_id-nya berbeda -- itu hanya cache kita yang menyusul, bukan tulisan ke backoffice.
+ */
+async function freshBookingForWrite(conversationId: string, bookingId: string | null, now: Date): Promise<Fresh> {
+  const conv = await prisma.conversation.findUnique({
+    where: { id: conversationId },
+    select: { bookingData: true, isTest: true, contact: { select: { phone: true } } },
+  })
+  const cached = asBooking(conv?.bookingData)
+  if (!conv || !cached || bookingId === null || currentBookingId(cached) !== bookingId) {
+    return { ok: false, status: 409, error: BOOKING_CHANGED_ERROR }
+  }
+  // Sandbox `isTest` tidak punya booking untuk dicari (nomor sentinel; lihat ensureFreshBookingData).
+  if (conv.isTest) return { ok: true, booking: cached }
+  const phone = conv.contact?.phone ?? null
+  if (!phone) return { ok: false, status: 503, error: BOOKING_LOOKUP_ERROR }
+  let lookup: BookingLookup
+  try {
+    lookup = await lookupBookingResult(phone)
+  } catch {
+    lookup = { status: 'error' }
+  }
+  if (lookup.status === 'error') return { ok: false, status: 503, error: BOOKING_LOOKUP_ERROR }
+  // Jawaban sah "tidak ada booking": jangan menulis; penyegaran berkala yang mengurus cache-nya.
+  if (lookup.status === 'not_found') return { ok: false, status: 409, error: BOOKING_CHANGED_ERROR }
+  await prisma.conversation.update({
+    where: { id: conversationId },
+    data: { bookingData: lookup.data as Prisma.InputJsonValue, bookingCheckedAt: now },
+  })
+  await reevaluate(conversationId)
+  if (currentBookingId(lookup.data) !== bookingId) return { ok: false, status: 409, error: BOOKING_CHANGED_ERROR }
+  return { ok: true, booking: lookup.data }
+}
+
+/** OPEN -> RESOLVED/MATCHED_IN_BACKOFFICE tanpa menulis (bersyarat OPEN; `reevaluate` mungkin sudah menutupnya). */
+async function closeMatched(action: { id: string; conversationId: string; bookingId: string | null }, value: string, now: Date): Promise<void> {
+  const res = await prisma.bookingAction.updateMany({
+    where: { id: action.id, state: 'OPEN' },
+    data: { state: 'RESOLVED', closedReason: 'MATCHED_IN_BACKOFFICE', closedAt: now, lastError: null },
+  })
+  if (res?.count === 1) {
+    await recordEvent(prisma, {
+      conversationId: action.conversationId, bookingId: action.bookingId, actionId: action.id,
+      event: 'RESOLVED', actor: 'SYSTEM', newValue: value, reason: 'MATCHED_IN_BACKOFFICE',
+    })
+  }
+  broadcast({ type: 'booking-actions.changed', conversationId: action.conversationId })
+}
+
+/** Nilai transport yang ditulis patch ini (untuk cek kabar vendor Bali). */
+function writtenTransport(patch: BookingPatch): Array<{ field: FieldKey; value: string }> {
+  const out: Array<{ field: FieldKey; value: string }> = []
+  for (const f of TRANSPORT_FIELDS) {
+    const v = patch[f as StringPatchKey]
+    if (typeof v === 'string') out.push({ field: f, value: v })
+  }
+  return out
 }
 
 function buildPatch(included: Included[]): BookingPatch {
@@ -156,10 +236,8 @@ export async function executeBookingAction(input: {
   if (!writeConfigured()) return fail(503, 'Jalur tulis backoffice belum dikonfigurasi')
 
   const conversationId = action.conversationId
-  const conv = await prisma.conversation.findUnique({ where: { id: conversationId }, select: { bookingData: true } })
-  const booking = asBooking(conv?.bookingData)
   const bookingId = action.bookingId
-  if (!booking || bookingId === null || currentBookingId(booking) !== bookingId) return fail(409, BOOKING_CHANGED_ERROR)
+  if (bookingId === null) return fail(409, BOOKING_CHANGED_ERROR)
 
   const proposed = typeof action.proposedValue === 'string' && action.proposedValue.trim() ? action.proposedValue : null
   let value = proposed
@@ -174,6 +252,17 @@ export async function executeBookingAction(input: {
   const finalValue = value
   const corrected = finalValue !== proposed
 
+  // Data booking segar sebelum klaim (Critical 1): form tulis dan nilai lama dirakit dari sini, bukan dari cache.
+  const fresh = await freshBookingForWrite(conversationId, bookingId, claimAt)
+  if (!fresh.ok) return fail(fresh.status, fresh.error)
+  const booking = fresh.booking
+  const alreadyApplied = changeAlreadyApplied({ field, value: finalValue }, booking) &&
+    (detail === null || detailField === null || changeAlreadyApplied({ field: detailField, value: detail }, booking))
+  if (alreadyApplied) {
+    await closeMatched(action, finalValue, claimAt)
+    return fail(409, ALREADY_APPLIED_ERROR)
+  }
+
   // 2-4. Klaim aksi ini (+ koreksi) dan kartu pendamping sisi yang sama (R17/R20) dalam satu transaksi.
   const included = await prisma.$transaction(async (tx) => {
     const claimed = await tx.bookingAction.updateMany({
@@ -187,13 +276,13 @@ export async function executeBookingAction(input: {
         oldValue: proposed, newValue: finalValue,
       })
     }
-    const list: Included[] = [{ id: actionId, field, value: finalValue, oldValue: readBookingField(booking, field) }]
+    const list: Included[] = [{ id: actionId, field, value: finalValue, oldValue: readBookingField(booking, field), sourceMessageId: action.sourceMessageId }]
     const others = companionFields(field)
     if (others.length > 0) {
       const rows = (await tx.bookingAction.findMany({
         where: { conversationId, bookingId, type: 'CHANGE', state: 'OPEN', field: { in: others } },
         orderBy: { createdAt: 'desc' },
-        select: { id: true, field: true, proposedValue: true },
+        select: { id: true, field: true, proposedValue: true, sourceMessageId: true },
       })) ?? []
       for (const f of others) {
         const row = rows.find((r) => r.field === f && typeof r.proposedValue === 'string' && r.proposedValue.trim() !== '')
@@ -211,7 +300,7 @@ export async function executeBookingAction(input: {
             oldValue: row.proposedValue, newValue: override,
           })
         }
-        list.push({ id: row.id, field: f, value: override ?? row.proposedValue, oldValue: readBookingField(booking, f) })
+        list.push({ id: row.id, field: f, value: override ?? row.proposedValue, oldValue: readBookingField(booking, f), sourceMessageId: row.sourceMessageId })
       }
     }
     return list
@@ -228,7 +317,7 @@ export async function executeBookingAction(input: {
     // 5. Tulis.
     let result: WriteResult
     try {
-      result = await writeBookingChange(bookingId, patch, conversationId)
+      result = await writeBookingChange(bookingId, patch, conversationId, booking)
     } catch (error) {
       // Klien sendiri tidak melempar; ini sabuk pengaman (mis. DB gagal sebelum permintaan).
       console.error('executeBookingAction: writeBookingChange melempar', { actionIds: ids, error: error instanceof Error ? error.name : 'unknown' })
@@ -259,13 +348,17 @@ export async function executeBookingAction(input: {
         }
       })
       settled = true
+      // Important 5: fakta lama field yang baru ditulis tidak boleh jadi MISMATCH palsu. Di luar transaksi di atas:
+      // kegagalannya tidak boleh membatalkan catatan EXECUTED (tulisan sudah masuk backoffice).
+      await supersedeFactsAfterWrite(conversationId, bookingId, included, new Date())
       await reevaluate(conversationId)
       broadcast({ type: 'booking-actions.changed', conversationId })
       // Task 11a: kelompok BALI -> kabari vendor transport Bali sekali. Fire-and-forget; tidak mengubah respons.
       // Gate ganda: tier BALI DAN minimal satu field transport benar-benar ditulis (kartu + pendamping).
       // Tier saja tidak cukup: changeGroup memberi BALI pada semua field non-HEAVY, termasuk kaos/catatan.
+      // `expected`: kabar hanya dikirim bila booking segar pasca-tulis memuat nilai-nilai ini (Important 6).
       if (action.tier === 'BALI' && included.some((a) => TRANSPORT_FIELDS.has(a.field))) {
-        void notifyBaliVendor({ actionId, conversationId, bookingId, booking: result.booking }).catch(() => undefined)
+        void notifyBaliVendor({ actionId, conversationId, bookingId, booking: result.booking, expected: writtenTransport(patch) }).catch(() => undefined)
       }
       return { status: 200, body: { ok: true, state: 'EXECUTED', executed: ids, written } }
     }
@@ -338,9 +431,7 @@ export async function revertBookingAction(input: { actionId: string; accountId: 
 
   const conversationId = action.conversationId
   const bookingId = action.bookingId
-  const conv = await prisma.conversation.findUnique({ where: { id: conversationId }, select: { bookingData: true } })
-  const booking = asBooking(conv?.bookingData)
-  if (!booking || bookingId === null || currentBookingId(booking) !== bookingId) return failRevert(409, BOOKING_CHANGED_ERROR)
+  if (bookingId === null) return failRevert(409, BOOKING_CHANGED_ERROR)
 
   const mainEvents = (await prisma.bookingActionEvent.findMany({
     where: { actionId, event: 'EXECUTED' },
@@ -369,7 +460,6 @@ export async function revertBookingAction(input: { actionId: string; accountId: 
     const oldValue = plainText(ev.oldValue)
     if (wasValue === null || oldValue === null) return failRevert(400, REVERT_NO_OLD_ERROR)
     if (!canRevertValue(field, oldValue)) return failRevert(400, REVERT_NO_OLD_ERROR)
-    if (!changeAlreadyApplied({ field, value: wasValue }, booking)) return failRevert(409, REVERT_CHANGED_ERROR)
     // `value` = yang akan ditulis (nilai lama); `oldValue` = yang sekarang di booking (untuk catatan event).
     included.push({ id: m.id, field, value: oldValue, oldValue: wasValue })
   }
@@ -380,6 +470,15 @@ export async function revertBookingAction(input: { actionId: string; accountId: 
     : undefined
   if (!canRevertBatch(included.map((a) => ({ field: a.field, oldValue: a.value })), prevRaw)) {
     return failRevert(400, REVERT_NO_OLD_ERROR)
+  }
+
+  // Critical 1: "nilai masih milik kita" dan form tulis dari data SEGAR, bukan cache. Sesudah validasi murni
+  // di atas supaya permintaan yang pasti ditolak tidak memanggil API booking.
+  const fresh = await freshBookingForWrite(conversationId, bookingId, input.now ?? new Date())
+  if (!fresh.ok) return failRevert(fresh.status, fresh.error)
+  const booking = fresh.booking
+  for (const a of included) {
+    if (!changeAlreadyApplied({ field: a.field, value: a.oldValue ?? '' }, booking)) return failRevert(409, REVERT_CHANGED_ERROR)
   }
   const patch = buildPatch(included)
   const prev = typeof mainEvent.backoffice === 'object' && mainEvent.backoffice !== null && !Array.isArray(mainEvent.backoffice)
@@ -395,7 +494,7 @@ export async function revertBookingAction(input: { actionId: string; accountId: 
 
   let result: WriteResult
   try {
-    result = await writeBookingChange(bookingId, patch, conversationId)
+    result = await writeBookingChange(bookingId, patch, conversationId, booking)
   } catch (error) {
     console.error('revertBookingAction: writeBookingChange melempar', { actionIds: ids, error: error instanceof Error ? error.name : 'unknown' })
     result = { status: 'error', kind: 'backoffice', httpStatus: 0, error: 'Gagal menulis ke backoffice', written: [] }
@@ -441,7 +540,9 @@ export async function revertBookingAction(input: { actionId: string; accountId: 
   if (!reverted.includes(actionId)) return failRevert(409, 'Tindakan sudah dibatalkan')
   // Vendor Bali sudah dikabari nilai baru saat diterapkan: kabari lagi bahwa dibalik. Kunci idempotensi sendiri.
   if (action.tier === 'BALI' && included.some((a) => TRANSPORT_FIELDS.has(a.field))) {
-    void notifyBaliVendor({ actionId, conversationId, bookingId, booking: result.booking, idempotencyKey: `bali_revert:${actionId}` }).catch(() => undefined)
+    void notifyBaliVendor({
+      actionId, conversationId, bookingId, booking: result.booking, idempotencyKey: `bali_revert:${actionId}`, expected: writtenTransport(patch),
+    }).catch(() => undefined)
   }
   return { status: 200, body: { ok: true, state: 'REVERTED', reverted } }
 }
@@ -456,6 +557,16 @@ async function releaseClaims(ids: string[], claimAt: Date): Promise<void> {
       })
     } catch (error) {
       console.error('executeBookingAction: melepas klaim gagal', { actionId: id, error: error instanceof Error ? error.name : 'unknown' })
+    }
+  }
+}
+
+async function supersedeFactsAfterWrite(conversationId: string, bookingId: string, included: Included[], now: Date): Promise<void> {
+  for (const a of included) {
+    try {
+      await supersedeOlderFacts(prisma, { conversationId, bookingId, field: a.field, sourceMessageId: a.sourceMessageId ?? null, now })
+    } catch (error) {
+      console.error('executeBookingAction: menandai fakta lama gagal', { actionId: a.id, error: error instanceof Error ? error.name : 'unknown' })
     }
   }
 }

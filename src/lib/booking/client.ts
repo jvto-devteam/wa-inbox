@@ -456,6 +456,68 @@ export async function refreshStaleBookingData(
   }
 }
 
+/** Umur data booking maksimal untuk percakapan yang punya kartu aksi booking terbuka (lihat di bawah). */
+export const OPEN_ACTION_REFRESH_MS = 30 * 60 * 1000
+/** Batas per tick untuk penyegaran percakapan berkartu terbuka -- bagian dari anggaran 60 s tick yang sama. */
+export const OPEN_ACTION_REFRESH_LIMIT = 10
+
+/**
+ * Percakapan dengan kartu CHANGE/TASK/MISMATCH yang masih OPEN disegarkan jauh lebih sering dari 24 jam
+ * (`OPEN_ACTION_REFRESH_MS`, 30 menit): kartu "sudah sesuai di backoffice" harus tertutup tanpa menunggu sehari,
+ * dan peringatan MISMATCH harus mencerminkan booking yang sekarang (final review Critical 1). Hanya percakapan
+ * berkartu terbuka -- sisanya tetap ritme 24 jam `refreshStaleBookingData`. Dibatasi `limit` dan `budgetMs`
+ * (pemanggil membagi anggaran 60 s tick), terlama dulu. Lookup gagal tidak menstempel apa pun
+ * (`ensureFreshBookingData`), jadi dicoba lagi tick berikutnya. Tidak pernah melempar.
+ */
+export async function refreshBookingDataForOpenActions(
+  limit = OPEN_ACTION_REFRESH_LIMIT,
+  budgetMs = REFRESH_BUDGET_MS,
+  now: Date = new Date()
+): Promise<{ diperiksa: number }> {
+  const deadline = Date.now() + budgetMs
+  try {
+    const kandidat = await prisma.conversation.findMany({
+      where: {
+        isTest: false,
+        bookingData: { not: Prisma.DbNull },
+        bookingActions: { some: { state: 'OPEN', type: { in: ['CHANGE', 'TASK', 'MISMATCH'] } } },
+        OR: [
+          { bookingCheckedAt: null },
+          { bookingCheckedAt: { lt: new Date(now.getTime() - OPEN_ACTION_REFRESH_MS) } },
+        ],
+      },
+      select: {
+        id: true,
+        bookingData: true,
+        bookingCheckedAt: true,
+        pipelineStage: true,
+        orderChannel: true,
+        isTest: true,
+        contact: { select: { phone: true } },
+      },
+      orderBy: { bookingCheckedAt: { sort: 'asc', nulls: 'first' } },
+      take: limit,
+    })
+    let diperiksa = 0
+    for (const conversation of kandidat ?? []) {
+      if (Date.now() >= deadline) break
+      diperiksa++
+      // bookingCheckedAt null memaksa ensureFreshBookingData mencari ulang walau umurnya < 24 jam.
+      await ensureFreshBookingData({ ...conversation, bookingCheckedAt: null }).catch((error: unknown) => {
+        console.error('refreshBookingDataForOpenActions: satu percakapan gagal', {
+          id: conversation.id,
+          error: error instanceof Error ? error.name : 'unknown',
+        })
+      })
+    }
+    if (diperiksa > 0) console.info('refreshBookingDataForOpenActions', { diperiksa })
+    return { diperiksa }
+  } catch (error) {
+    console.error('refreshBookingDataForOpenActions gagal', { error: error instanceof Error ? error.name : 'unknown' })
+    return { diperiksa: 0 }
+  }
+}
+
 /** Fisher-Yates pada salinan; `random` mengembalikan [0, 1) seperti `Math.random`. */
 function shuffle<T>(items: readonly T[], random: () => number): T[] {
   const copy = [...items]

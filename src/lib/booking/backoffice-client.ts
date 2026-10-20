@@ -6,8 +6,11 @@
  *
  * Aturan yang membentuk modul ini:
  * - `updatePickup`/`updateDrop` menulis ulang titik + detail SEKALIGUS (kolom `pickup`/`drop` dirakit dari
- *   keduanya), jadi klien selalu mengirim titik + detail + jam lengkap yang digabung dari `bookingData`
- *   terbaru lalu ditimpa patch.
+ *   keduanya), jadi klien selalu mengirim titik + detail + jam lengkap yang digabung dari booking dasar lalu
+ *   ditimpa patch. Booking dasar WAJIB segar: pemanggil (eksekusi/Batalkan) mencari booking ke API tepat
+ *   sebelumnya dan mengirimnya sebagai `baseBooking` -- `bookingData` tersimpan bisa ~24 jam basi dan nilai yang tidak
+ *   disentuh patch akan membalik suntingan ops (final review Critical 1). Tanpa `base` (tidak dipakai jalur
+ *   produksi) klien jatuh ke `bookingData` tersimpan.
  * - Jam kosong dari backoffice berupa '07:00' palsu (`date('H:i', strtotime(null))`, ruling R2). Bila patch
  *   tidak menyentuh jam dan jam booking tidak diketahui, jam TIDAK dikirim: controller hanya menulis jam bila
  *   `pickup_time1`/`drop_time1` tidak kosong.
@@ -210,7 +213,13 @@ async function post(base: string, token: string, form: Form): Promise<WriteResul
  * (klien butuh `bookingData` terbaru untuk menggabung titik + detail + jam, jadi percakapan dimuat di sini).
  * Booking percakapan yang sudah berganti dari `bookingId` ditolak tanpa permintaan.
  */
-export async function writeBookingChange(bookingId: string, patch: BookingPatch, conversationId: string): Promise<WriteResult> {
+export async function writeBookingChange(
+  bookingId: string,
+  patch: BookingPatch,
+  conversationId: string,
+  /** Booking segar dari API (lihat kepala file). */
+  baseBooking?: BookingData
+): Promise<WriteResult> {
   const base = process.env.LEGACY_BASE_URL?.trim().replace(/\/+$/, '')
   if (!base) return fail('unavailable', 'Jalur tulis backoffice belum dikonfigurasi')
 
@@ -221,7 +230,7 @@ export async function writeBookingChange(bookingId: string, patch: BookingPatch,
       contact: { select: { phone: true } },
     },
   })
-  const raw = conv?.bookingData
+  const raw = baseBooking ?? conv?.bookingData
   if (!conv || typeof raw !== 'object' || raw === null || Array.isArray(raw)) return fail('booking_changed', 'Data booking tidak tersedia')
   const booking = raw as BookingData
   if (currentBookingId(booking) !== bookingId) return fail('booking_changed', 'Booking percakapan sudah berganti')
@@ -241,6 +250,8 @@ export async function writeBookingChange(bookingId: string, patch: BookingPatch,
   }
 
   // Sebagian perubahan mungkin sudah masuk sebelum yang lain gagal: segarkan juga, supaya data lokal jujur.
+  // Penyegaran gagal = `booking` dikembalikan apa adanya (data SEBELUM tulis); pemanggil yang butuh nilai baru
+  // (kabar vendor Bali) wajib memeriksa isinya sendiri.
   let fresh: BookingData = booking
   if (written.length > 0) {
     try {

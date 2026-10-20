@@ -93,3 +93,35 @@ describe('notifyBaliVendor', () => {
     await expect(notifyBaliVendor(input)).resolves.toBeUndefined()
   })
 })
+
+describe('final review Important 6: no pre-change data and no fake time to the vendor', () => {
+  it('refreshed booking that does NOT carry the written value -> nothing sent, VENDOR_NOTICE_FAILED + push', async () => {
+    vi.mocked(enqueueSystemTemplateSend).mockResolvedValue({ ok: true, jobId: 'j1', status: 'QUEUED', duplicate: false })
+    // Penyegaran pasca-tulis gagal: yang diterima masih booking lama (09:30), padahal 11:00 yang ditulis.
+    await notifyBaliVendor({ ...input, expected: [{ field: 'pickup_time', value: '11:00' }] })
+    expect(enqueueSystemTemplateSend).not.toHaveBeenCalled()
+    expect(recordEvent).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+      event: 'VENDOR_NOTICE_FAILED', reason: expect.stringContaining('BOOKING_NOT_REFRESHED'),
+    }))
+    expect(notifyBookingAction).toHaveBeenCalledWith(expect.objectContaining({ kind: 'EXECUTE_FAILED', summary: 'Kabar ke vendor Bali gagal — kabari manual' }))
+  })
+
+  it('refreshed booking carrying every written value -> sent', async () => {
+    vi.mocked(enqueueSystemTemplateSend).mockResolvedValue({ ok: true, jobId: 'j1', status: 'QUEUED', duplicate: false })
+    await notifyBaliVendor({ ...input, expected: [{ field: 'pickup_time', value: '9.30' }, { field: 'pickup_detail', value: 'kuta beach hotel' }] })
+    expect(enqueueSystemTemplateSend).toHaveBeenCalledTimes(1)
+    expect(recordEvent).not.toHaveBeenCalled()
+  })
+
+  it("unknown booking time (null/''/'07:00') reads 'jam belum ada', unless 07:00 is the value just written", () => {
+    for (const t of [null, '', '07:00']) {
+      const b: BookingData = { ...booking, pickup: { ...booking.pickup, pickup_time: t } }
+      expect(buildVendorVariables(b).pickup).toBe('Bali Hotel - Kuta Beach Hotel (jam belum ada)')
+    }
+    const real: BookingData = { ...booking, pickup: { ...booking.pickup, pickup_time: '07:00' } }
+    expect(buildVendorVariables(real, [{ field: 'pickup_time', value: '07:00' }]).pickup).toBe('Bali Hotel - Kuta Beach Hotel (07:00)')
+    // Jam 07:00 antar yang tidak ditulis tetap "jam belum ada".
+    const drop: BookingData = { ...booking, dropoff: { ...booking.dropoff, drop_time: '07:00' } }
+    expect(buildVendorVariables(drop, [{ field: 'pickup_time', value: '09:30' }]).drop).toBe('Surabaya Hotel - Hotel Majapahit (jam belum ada)')
+  })
+})

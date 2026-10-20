@@ -1,7 +1,12 @@
 import { NextResponse } from 'next/server'
 import { hasValidCronSecret } from '@/lib/outbound/cron-auth'
 import { pruneBotAuditLogs } from '@/lib/bot-control/audit'
-import { advancePipelineStagesFromBooking, refreshStaleBookingData } from '@/lib/booking/client'
+import {
+  advancePipelineStagesFromBooking,
+  refreshBookingDataForOpenActions,
+  refreshStaleBookingData,
+  REFRESH_BUDGET_MS,
+} from '@/lib/booking/client'
 import { createLiveReplyItems, reconcileSummaryItems } from '@/lib/summary-items/sync'
 import { releaseStaleExecuting } from '@/lib/booking-actions/execute'
 import { createDataRequestDrafts } from '@/lib/booking-actions/data-requests'
@@ -16,6 +21,9 @@ import { createDataRequestDrafts } from '@/lib/booking-actions/data-requests'
  *    `refreshStaleBookingData` -- urutan dan alasan sama dengan di sana, dan tetap dipanggil di
  *    sana juga supaya cron di masa depan pun bekerja (ketiganya idempoten). Tahap pipeline naik
  *    SEBELUM reconcile, supaya FOLLOW_UP tertutup STAGE_ADVANCED di tick yang sama.
+ *    Sebelum `refreshStaleBookingData`: `refreshBookingDataForOpenActions` menyegarkan percakapan yang punya
+ *    kartu CHANGE/TASK/MISMATCH OPEN bila datanya > 30 menit (maks. 10 per tick). Keduanya berbagi SATU
+ *    anggaran `REFRESH_BUDGET_MS` (60 s): yang kedua mendapat sisanya.
  * 1b. `releaseStaleExecuting` (booking-actions/execute.ts): klaim "Setujui" yang macet > 2 menit.
  * 2. `reconcileSummaryItems` (tutup yang sudah dibalas, pengingat jatuh tempo kembali OPEN,
  *    FOLLOW_UP/PROMISE jadi REPLY).
@@ -80,7 +88,14 @@ async function tick(): Promise<NextResponse> {
   // sama sekali tetap berlencana "Baru" selamanya sampai ada yang membukanya -- 269 dari 340
   // percakapan ada di keadaan itu saat ditemukan. Dibatasi 25 per tick karena tiap percakapan
   // berarti satu panggilan HTTP ke API booking.
-  await refreshStaleBookingData().catch((error: unknown) => {
+  // Kartu aksi booking terbuka butuh data booking yang lebih segar (30 menit, bukan 24 jam); berbagi anggaran
+  // 60 s yang sama dengan penyegaran umum di bawah, jadi tick tidak bertambah lama.
+  const refreshStarted = Date.now()
+  await refreshBookingDataForOpenActions(undefined, REFRESH_BUDGET_MS / 2).catch((error: unknown) => {
+    console.error('POST /api/summary-items/tick: menyegarkan booking berkartu terbuka gagal', error instanceof Error ? error.name : 'unknown')
+  })
+  const remainingBudget = Math.max(0, REFRESH_BUDGET_MS - (Date.now() - refreshStarted))
+  await refreshStaleBookingData(undefined, remainingBudget).catch((error: unknown) => {
     console.error('POST /api/summary-items/tick: menyegarkan data booking gagal', error)
   })
 

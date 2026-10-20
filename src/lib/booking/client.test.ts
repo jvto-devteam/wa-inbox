@@ -3,7 +3,7 @@ import { mockDeep, mockReset, type DeepMockProxy } from 'vitest-mock-extended'
 import { Prisma, type PrismaClient } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { reevaluateBookingActions } from '@/lib/booking-actions/store'
-import { lookupBooking, lookupBookingResult, ensureFreshBookingData, refreshStaleBookingData } from './client'
+import { lookupBooking, lookupBookingResult, ensureFreshBookingData, refreshBookingDataForOpenActions, refreshStaleBookingData, OPEN_ACTION_REFRESH_MS } from './client'
 
 import type { MockedFunction } from 'vitest'
 
@@ -529,5 +529,56 @@ describe('ensureFreshBookingData — reevaluate booking actions', () => {
     ;mockFetch().mockResolvedValue({ ok: true, json: async () => ({ id: 'B1' }) })
     vi.mocked(reevaluateBookingActions).mockRejectedValue(new Error('db'))
     await expect(ensureFreshBookingData(base)).resolves.toEqual(expect.objectContaining({ id: 'B1' }))
+  })
+})
+
+describe('refreshBookingDataForOpenActions (final review Critical 1: tick refresh)', () => {
+  const NOW = new Date('2026-10-20T03:00:00Z')
+  const row = (id: string) => ({
+    id, bookingData: { booking_id: 1 }, bookingCheckedAt: new Date(NOW.getTime() - 40 * 60 * 1000), pipelineStage: 'booked', orderChannel: null, isTest: false, contact: { phone: '4915112345678' },
+  })
+
+  it('only conversations with an OPEN CHANGE/TASK/MISMATCH and data older than 30 min, oldest first, capped', async () => {
+    mockPrisma.conversation.findMany.mockResolvedValue([] as never)
+    await refreshBookingDataForOpenActions(10, 30_000, NOW)
+    const args = mockPrisma.conversation.findMany.mock.calls[0][0]
+    expect(args?.where).toEqual({
+      isTest: false,
+      bookingData: { not: Prisma.DbNull },
+      bookingActions: { some: { state: 'OPEN', type: { in: ['CHANGE', 'TASK', 'MISMATCH'] } } },
+      OR: [{ bookingCheckedAt: null }, { bookingCheckedAt: { lt: new Date(NOW.getTime() - OPEN_ACTION_REFRESH_MS) } }],
+    })
+    expect(args?.take).toBe(10)
+    expect(args?.orderBy).toEqual({ bookingCheckedAt: { sort: 'asc', nulls: 'first' } })
+  })
+
+  it('forces a lookup even though the 24 h cache is still valid, saves it and re-evaluates', async () => {
+    mockPrisma.conversation.findMany.mockResolvedValue([row('c1')] as never)
+    ;mockFetch().mockResolvedValue({ ok: true, json: async () => [{ booking_id: 1, date: { start_ymd: '2099-01-01', end_ymd: '2099-01-02' } }] })
+    expect(await refreshBookingDataForOpenActions(10, 30_000, NOW)).toEqual({ diperiksa: 1 })
+    expect(fetch).toHaveBeenCalledTimes(1)
+    expect(mockPrisma.conversation.update).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'c1' }, data: expect.objectContaining({ bookingCheckedAt: expect.any(Date) }) }))
+  })
+
+  it('API failure stamps nothing (retried next tick) and never throws', async () => {
+    mockPrisma.conversation.findMany.mockResolvedValue([row('c1')] as never)
+    ;mockFetch().mockResolvedValue({ ok: false, status: 500 })
+    expect(await refreshBookingDataForOpenActions(10, 30_000, NOW)).toEqual({ diperiksa: 1 })
+    expect(mockPrisma.conversation.update).not.toHaveBeenCalled()
+    mockPrisma.conversation.findMany.mockRejectedValue(new Error('db'))
+    vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    expect(await refreshBookingDataForOpenActions(10, 30_000, NOW)).toEqual({ diperiksa: 0 })
+  })
+
+  it('stops when its share of the tick budget is spent', async () => {
+    mockPrisma.conversation.findMany.mockResolvedValue([row('a'), row('b'), row('c')] as never)
+    let clock = 1_000_000
+    vi.spyOn(Date, 'now').mockImplementation(() => clock)
+    ;mockFetch().mockImplementation(async () => {
+      clock += 20_000
+      return { ok: true, json: async () => [] }
+    })
+    expect(await refreshBookingDataForOpenActions(10, 30_000, NOW)).toEqual({ diperiksa: 2 })
+    vi.mocked(Date.now).mockRestore()
   })
 })

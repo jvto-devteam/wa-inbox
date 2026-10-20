@@ -6,13 +6,14 @@ import type { BookingData } from '@/lib/booking/client'
 
 vi.mock('@/lib/db', () => ({ prisma: mockDeep<PrismaClient>() }))
 vi.mock('@/lib/realtime', () => ({ broadcast: vi.fn() }))
-vi.mock('@/lib/booking/client', () => ({ ensureFreshBookingData: vi.fn() }))
+vi.mock('@/lib/booking/client', () => ({ ensureFreshBookingData: vi.fn(), lookupBookingResult: vi.fn() }))
 vi.mock('@/lib/booking-actions/store', () => ({ reevaluateBookingActions: vi.fn().mockResolvedValue({ resolved: 0, opened: 0 }) }))
 vi.mock('@/lib/booking-actions/bali-vendor', () => ({ notifyBaliVendor: vi.fn().mockResolvedValue(undefined) }))
 vi.mock('@/lib/booking-actions/history', () => ({ recordEvent: vi.fn().mockResolvedValue(undefined) }))
 
 import { prisma } from '@/lib/db'
-import { ensureFreshBookingData } from '@/lib/booking/client'
+import { ensureFreshBookingData, lookupBookingResult } from '@/lib/booking/client'
+import { reevaluateBookingActions } from '@/lib/booking-actions/store'
 import { recordEvent } from '@/lib/booking-actions/history'
 import { notifyBaliVendor } from '@/lib/booking-actions/bali-vendor'
 import { executeBookingAction, releaseStaleExecuting, revertBookingAction } from './execute'
@@ -38,6 +39,12 @@ beforeEach(() => {
   db.$transaction.mockImplementation(((fn: (tx: unknown) => unknown) => fn(db)) as never)
   db.bookingAction.updateMany.mockResolvedValue({ count: 1 } as never)
   db.bookingAction.findMany.mockResolvedValue([])
+  // Critical 1: eksekusi selalu mencari booking segar. Bawaan: API menjawab booking yang sama dengan yang tersimpan.
+  vi.mocked(lookupBookingResult).mockReset().mockImplementation((async () => {
+    const conv = (await db.conversation.findUnique({ where: { id: 'c1' } })) as { bookingData?: BookingData } | null
+    return conv?.bookingData ? { status: 'found', data: conv.bookingData } : { status: 'not_found' }
+  }) as never)
+  vi.mocked(reevaluateBookingActions).mockClear()
 })
 afterEach(() => {
   delete process.env.LEGACY_BASE_URL
@@ -332,5 +339,137 @@ describe('releaseStaleExecuting', () => {
     db.bookingAction.updateMany.mockResolvedValue({ count: 0 } as never)
     expect(await releaseStaleExecuting('c1', NOW)).toBe(0)
     expect(recordEvent).not.toHaveBeenCalled()
+  })
+})
+
+describe('final review Critical 1: fresh booking lookup before every write', () => {
+  const openAction = (over: Record<string, unknown> = {}) => ({
+    id: 'a1', conversationId: 'c1', bookingId: '77', type: 'CHANGE', field: 'pickup_point', proposedValue: 'Surabaya Hotel', state: 'OPEN', tier: 'AI', sourceMessageId: 'm2', ...over,
+  })
+  const cached = () => booking({ pickup: { meeting_point: 'Surabaya Airport', meeting_point_value: 'GA 300', pickup_time: '10:30' } })
+  const setup = (fresh: BookingData | 'error' | 'not_found', over: Record<string, unknown> = {}, conv: Record<string, unknown> = {}) => {
+    db.bookingAction.findUnique.mockResolvedValue(openAction(over) as never)
+    db.conversation.findUnique.mockResolvedValue({ id: 'c1', bookingData: cached(), isTest: false, contact: { phone: '4915112345678' }, ...conv } as never)
+    vi.mocked(lookupBookingResult).mockResolvedValue(fresh === 'error' ? { status: 'error' } : fresh === 'not_found' ? { status: 'not_found' } : { status: 'found', data: fresh })
+    vi.mocked(ensureFreshBookingData).mockResolvedValue(null)
+  }
+  const form = () => Object.fromEntries(new URLSearchParams(String((vi.mocked(fetch).mock.calls[0][1] as RequestInit).body)))
+
+  it('the form carries the time from the FRESH booking (ops moved it to 11:15), not the 24 h cache (10:30)', async () => {
+    const fresh = booking({ pickup: { meeting_point: 'Surabaya Airport', meeting_point_value: 'GA 300', pickup_time: '11:15' } })
+    setup(fresh)
+    const r = await executeBookingAction({ actionId: 'a1', accountId: 'acc1', detail: 'Hotel Majapahit', now: NOW })
+    expect(r.status).toBe(200)
+    expect(lookupBookingResult).toHaveBeenCalledWith('4915112345678')
+    expect(form()).toEqual({ meeting_point: 'Surabaya Hotel', hotel: 'Hotel Majapahit', pickup_time1: '11', pickup_time2: '15' })
+    // Data segar disimpan (bukan `as never`) dan kartu lain dibandingkan ulang SEBELUM klaim.
+    expect(db.conversation.update).toHaveBeenCalledWith({ where: { id: 'c1' }, data: { bookingData: fresh, bookingCheckedAt: NOW } })
+    expect(reevaluateBookingActions).toHaveBeenCalledWith('c1')
+    expect(vi.mocked(reevaluateBookingActions).mock.invocationCallOrder[0]).toBeLessThan(db.bookingAction.updateMany.mock.invocationCallOrder[0])
+  })
+
+  it('a time change keeps the FRESH point/detail (ops changed the hotel) instead of reverting them', async () => {
+    setup(booking({ pickup: { meeting_point: 'Surabaya Hotel', meeting_point_value: 'Hotel Baru', pickup_time: '10:30' } }), { field: 'pickup_time', proposedValue: '09:00' })
+    expect((await executeBookingAction({ actionId: 'a1', accountId: 'acc1', now: NOW })).status).toBe(200)
+    expect(form()).toEqual({ meeting_point: 'Surabaya Hotel', hotel: 'Hotel Baru', pickup_time1: '09', pickup_time2: '00' })
+  })
+
+  it('lookup failure -> 503, nothing claimed, nothing written', async () => {
+    setup('error')
+    const r = await executeBookingAction({ actionId: 'a1', accountId: 'acc1', detail: 'Hotel Majapahit', now: NOW })
+    expect(r.status).toBe(503)
+    expect(fetch).not.toHaveBeenCalled()
+    expect(db.bookingAction.updateMany).not.toHaveBeenCalled()
+    expect(db.conversation.update).not.toHaveBeenCalled()
+  })
+
+  it('a different booking_id from the lookup -> 409, nothing written; no booking any more -> 409', async () => {
+    setup(booking({ booking_id: 78 }))
+    expect((await executeBookingAction({ actionId: 'a1', accountId: 'acc1', detail: 'Hotel Majapahit', now: NOW })).status).toBe(409)
+    setup('not_found')
+    expect((await executeBookingAction({ actionId: 'a1', accountId: 'acc1', detail: 'Hotel Majapahit', now: NOW })).status).toBe(409)
+    expect(fetch).not.toHaveBeenCalled()
+    expect(db.bookingAction.updateMany).not.toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ state: 'EXECUTING' }) }))
+  })
+
+  it('value already in the fresh booking -> closed MATCHED_IN_BACKOFFICE without writing (409)', async () => {
+    setup(booking({ pickup: { meeting_point: 'Surabaya Airport', pickup_time: '09:00' } }), { field: 'pickup_time', proposedValue: '09:00' })
+    const r = await executeBookingAction({ actionId: 'a1', accountId: 'acc1', now: NOW })
+    expect(r).toEqual({ status: 409, body: { error: expect.stringContaining('sudah memuat') } })
+    expect(fetch).not.toHaveBeenCalled()
+    expect(db.bookingAction.updateMany).toHaveBeenCalledWith({
+      where: { id: 'a1', state: 'OPEN' }, data: expect.objectContaining({ state: 'RESOLVED', closedReason: 'MATCHED_IN_BACKOFFICE' }),
+    })
+    expect(recordEvent).toHaveBeenCalledWith(prisma, expect.objectContaining({ event: 'RESOLVED', reason: 'MATCHED_IN_BACKOFFICE', actor: 'SYSTEM' }))
+  })
+
+  it('sandbox isTest conversation is not looked up (no booking) and uses the stored data', async () => {
+    setup('error', { field: 'pickup_time', proposedValue: '09:00' }, { isTest: true, contact: { phone: '__bot_test__' } })
+    expect((await executeBookingAction({ actionId: 'a1', accountId: 'acc1', now: NOW })).status).toBe(200)
+    expect(lookupBookingResult).not.toHaveBeenCalled()
+  })
+
+  it('revert: the "still our value" check uses the fresh booking (ops already changed it -> 409, no write)', async () => {
+    db.bookingAction.findUnique.mockResolvedValue(openAction({ field: 'pickup_time', proposedValue: '09:00', state: 'EXECUTED' }) as never)
+    db.bookingAction.findMany.mockResolvedValue([{ id: 'a1', field: 'pickup_time' }] as never)
+    db.bookingActionEvent.findMany.mockResolvedValue([{ id: 'e1', actionId: 'a1', event: 'EXECUTED', oldValue: '10:30', newValue: '09:00', backoffice: { batch: ['a1'] }, createdAt: NOW }] as never)
+    // Cache masih memuat nilai kita (09:00), tetapi backoffice sekarang 08:15.
+    db.conversation.findUnique.mockResolvedValue({ id: 'c1', bookingData: booking({ pickup: { meeting_point: 'Surabaya Airport', pickup_time: '09:00' } }), isTest: false, contact: { phone: '4915112345678' } } as never)
+    vi.mocked(lookupBookingResult).mockResolvedValue({ status: 'found', data: booking({ pickup: { meeting_point: 'Surabaya Airport', pickup_time: '08:15' } }) })
+    const r = await revertBookingAction({ actionId: 'a1', accountId: 'acc1' })
+    expect(r.status).toBe(409)
+    expect(fetch).not.toHaveBeenCalled()
+
+    vi.mocked(lookupBookingResult).mockResolvedValue({ status: 'error' })
+    expect((await revertBookingAction({ actionId: 'a1', accountId: 'acc1' })).status).toBe(503)
+    expect(fetch).not.toHaveBeenCalled()
+  })
+})
+
+describe('final review Important 3: releaseStaleExecuting closes a 07:00 change that landed', () => {
+  it("stuck pickup_time '07:00' with booking showing '07:00' -> MATCHED_IN_BACKOFFICE, not reopened", async () => {
+    db.bookingAction.findMany.mockResolvedValue([{
+      id: 's1', conversationId: 'c1', bookingId: '77', field: 'pickup_time', proposedValue: '07:00',
+      conversation: { bookingData: booking({ pickup: { meeting_point: 'Surabaya Airport', pickup_time: '07:00' } }) },
+    }] as never)
+    await releaseStaleExecuting('c1', NOW)
+    expect(db.bookingAction.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ state: 'RESOLVED', closedReason: 'MATCHED_IN_BACKOFFICE' }),
+    }))
+  })
+})
+
+describe('final review Important 5: execution supersedes older facts of the field', () => {
+  it('after a successful write, active facts older than (or from) the source message get supersededAt; newer ones stay', async () => {
+    db.bookingAction.findUnique.mockResolvedValue({
+      id: 'a1', conversationId: 'c1', bookingId: '77', type: 'CHANGE', field: 'pickup_time', proposedValue: '09:00', state: 'OPEN', tier: 'AI', sourceMessageId: 'm2',
+    } as never)
+    db.conversation.findUnique.mockResolvedValue({ id: 'c1', bookingData: booking(), isTest: false, contact: { phone: '4915112345678' } } as never)
+    vi.mocked(ensureFreshBookingData).mockResolvedValue(booking({ pickup: { meeting_point: 'Surabaya Airport', pickup_time: '09:00' } }))
+    db.bookingFact.findMany.mockResolvedValue([
+      { id: 'f-old', bookingId: '77', sourceMessageId: 'm1' },
+      { id: 'f-new', bookingId: '77', sourceMessageId: 'm3' },
+      { id: 'f-other-booking', bookingId: '55', sourceMessageId: 'm1' },
+    ] as never)
+    db.message.findMany.mockResolvedValue([
+      { id: 'm1', createdAt: new Date('2026-10-20T01:00:00Z') },
+      { id: 'm2', createdAt: new Date('2026-10-20T02:00:00Z') },
+      { id: 'm3', createdAt: new Date('2026-10-20T03:00:00Z') },
+    ] as never)
+    expect((await executeBookingAction({ actionId: 'a1', accountId: 'acc1', now: NOW })).status).toBe(200)
+    expect(db.bookingFact.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { conversationId: 'c1', supersededAt: null, field: { in: ['pickup_time'] } } }))
+    expect(db.bookingFact.update.mock.calls.map(([a]) => a.where.id)).toEqual(['f-old'])
+  })
+})
+
+describe('final review Important 6: Bali vendor notice only with the written values', () => {
+  it('passes the written transport values as `expected`, so a stale refresh cannot be sent', async () => {
+    db.bookingAction.findUnique.mockResolvedValue({
+      id: 'a1', conversationId: 'c1', bookingId: '77', type: 'CHANGE', field: 'pickup_time', proposedValue: '09:00', state: 'OPEN', tier: 'BALI',
+    } as never)
+    db.conversation.findUnique.mockResolvedValue({ id: 'c1', bookingData: booking(), isTest: false, contact: { phone: '4915112345678' } } as never)
+    vi.mocked(ensureFreshBookingData).mockResolvedValue(null) // penyegaran pasca-tulis gagal
+    expect((await executeBookingAction({ actionId: 'a1', accountId: 'acc1', now: NOW })).status).toBe(200)
+    expect(notifyBaliVendor).toHaveBeenCalledWith(expect.objectContaining({ expected: [{ field: 'pickup_time', value: '09:00' }] }))
   })
 })

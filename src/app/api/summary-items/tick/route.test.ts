@@ -4,7 +4,7 @@ import { CRON_SECRET_ENV, CRON_SECRET_HEADER } from '@/lib/outbound/cron-auth'
 import { createLiveReplyItems, reconcileSummaryItems } from '@/lib/summary-items/sync'
 import { reviewConversation } from '@/lib/daily-summary/review'
 import { pruneBotAuditLogs } from '@/lib/bot-control/audit'
-import { advancePipelineStagesFromBooking, refreshStaleBookingData } from '@/lib/booking/client'
+import { advancePipelineStagesFromBooking, refreshBookingDataForOpenActions, refreshStaleBookingData } from '@/lib/booking/client'
 import { processDueOutboundJobs } from '@/lib/outbound/worker'
 import { releaseStaleExecuting } from '@/lib/booking-actions/execute'
 import { createDataRequestDrafts } from '@/lib/booking-actions/data-requests'
@@ -13,7 +13,12 @@ import { POST } from './route'
 vi.mock('@/lib/summary-items/sync', () => ({ reconcileSummaryItems: vi.fn(), createLiveReplyItems: vi.fn() }))
 vi.mock('@/lib/daily-summary/review', () => ({ reviewConversation: vi.fn() }))
 vi.mock('@/lib/bot-control/audit', () => ({ pruneBotAuditLogs: vi.fn() }))
-vi.mock('@/lib/booking/client', () => ({ advancePipelineStagesFromBooking: vi.fn(), refreshStaleBookingData: vi.fn() }))
+vi.mock('@/lib/booking/client', () => ({
+  advancePipelineStagesFromBooking: vi.fn(),
+  refreshStaleBookingData: vi.fn(),
+  refreshBookingDataForOpenActions: vi.fn(),
+  REFRESH_BUDGET_MS: 60_000,
+}))
 vi.mock('@/lib/outbound/worker', () => ({ processDueOutboundJobs: vi.fn() }))
 vi.mock('@/lib/booking-actions/execute', () => ({ releaseStaleExecuting: vi.fn() }))
 vi.mock('@/lib/booking-actions/data-requests', () => ({ createDataRequestDrafts: vi.fn() }))
@@ -30,6 +35,7 @@ beforeEach(() => {
   vi.mocked(pruneBotAuditLogs).mockResolvedValue({ deleted: 0 } as never)
   vi.mocked(advancePipelineStagesFromBooking).mockResolvedValue({ diperbarui: 0 })
   vi.mocked(refreshStaleBookingData).mockResolvedValue({ diperiksa: 0 })
+  vi.mocked(refreshBookingDataForOpenActions).mockResolvedValue({ diperiksa: 0 })
   vi.mocked(releaseStaleExecuting).mockResolvedValue(0)
   vi.mocked(createDataRequestDrafts).mockResolvedValue({ created: 0, closed: 0, sent: 0 })
   vi.mocked(reconcileSummaryItems).mockResolvedValue({ closed: 2, converted: 1, reopened: 0 })
@@ -71,6 +77,20 @@ describe('POST /api/summary-items/tick', () => {
     const res = await POST(req(SECRET))
     expect(res.status).toBe(200)
     expect(reconcileSummaryItems).toHaveBeenCalledTimes(2)
+  })
+
+  it('Critical 1: booking berkartu terbuka disegarkan lebih dulu, berbagi anggaran 60 s dengan penyegaran umum; gagalnya tidak menghentikan tick', async () => {
+    await POST(req(SECRET))
+    expect(order(refreshBookingDataForOpenActions)).toBeLessThan(order(refreshStaleBookingData))
+    const [, openBudget] = vi.mocked(refreshBookingDataForOpenActions).mock.calls[0]
+    const [, restBudget] = vi.mocked(refreshStaleBookingData).mock.calls[0]
+    expect(openBudget).toBe(30_000)
+    expect(restBudget).toBeGreaterThan(0)
+    expect(restBudget).toBeLessThanOrEqual(60_000)
+    vi.mocked(refreshBookingDataForOpenActions).mockRejectedValue(new Error('down'))
+    const res = await POST(req(SECRET))
+    expect(res.status).toBe(200)
+    expect(refreshStaleBookingData).toHaveBeenCalledTimes(2)
   })
 
   it('tahap pipeline naik SEBELUM reconcile (STAGE_ADVANCED di tick yang sama)', async () => {

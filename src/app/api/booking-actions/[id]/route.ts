@@ -108,7 +108,8 @@ export async function PATCH(req: Request, { params }: Ctx) {
     broadcast({ type: 'booking-actions.changed', conversationId: action.conversationId })
     return NextResponse.json({ ok: true, state: outcome.state })
   } catch (error) {
-    console.error('PATCH booking-action gagal', error)
+    // Nama/kode saja: pesan galat Prisma bisa memuat argumen (teks tamu, alasan admin).
+    console.error('PATCH booking-action gagal', { error: error instanceof Error ? error.name : 'unknown' })
     return NextResponse.json({ error: 'Gagal memperbarui tindakan booking' }, { status: 500 })
   }
 }
