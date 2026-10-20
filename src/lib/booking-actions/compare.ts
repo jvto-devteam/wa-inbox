@@ -1,0 +1,61 @@
+/**
+ * Pembanding murni: fakta aktif dari chat vs `bookingData`. Tanpa DB/jaringan/LLM.
+ *
+ * Jam kosong dari backoffice: `pickup_time`/`drop_time` dibentuk `date('H:i', strtotime(null))`,
+ * jadi booking tanpa jam asli membawa jam palsu. Pembanding tidak boleh memperingatkan jam
+ * bila sisi booking tidak punya jam asli (Review Focus #2).
+ */
+import type { BookingData } from '@/lib/booking/client'
+import { normalizeFieldValue, readBookingField, type FieldKey } from './fields'
+
+/**
+ * Jam palsu dari `date('H:i', strtotime(null))`. Sumber: kueri baca-saja produksi 2026-10-20
+ * (booking tanpa meeting_point ber-pickup_time 07:00; drop_time '07:00' nilai paling sering, 66x)
+ * + `config/app.php` new-backoffice bertimezone `Asia/Jakarta`. Akibatnya jemput 07:00 sungguhan
+ * tak terbedakan dan diperlakukan "tidak diketahui" (Ruling R2).
+ */
+export const FAKE_EMPTY_TIME = '07:00'
+
+export type ActiveFact = { id: string; field: FieldKey; value: string }
+export type Mismatch = { field: FieldKey; chatValue: string; bookingValue: string | null; factId: string }
+
+const TIME_FIELDS: readonly FieldKey[] = ['pickup_time', 'drop_time']
+const COMPACT_FIELDS: readonly FieldKey[] = ['pickup_arrival', 'drop_arrival']
+
+export function bookingTimeKnown(raw: string | undefined | null): boolean {
+  if (typeof raw !== 'string') return false
+  const t = raw.trim()
+  return t !== '' && t !== FAKE_EMPTY_TIME
+}
+
+function comparable(field: FieldKey, raw: string): string {
+  const value = normalizeFieldValue(field, raw) ?? raw.trim()
+  const low = value.toLowerCase()
+  // Nomor penerbangan/tiket: spasi tidak bermakna. Lainnya: rapatkan spasi ganda.
+  return COMPACT_FIELDS.includes(field) ? low.replace(/\s+/g, '') : low.replace(/\s+/g, ' ')
+}
+
+/** Nilai booking untuk dibandingkan, atau `undefined` bila field ini tak bisa dibandingkan. */
+function comparableBookingValue(field: FieldKey, booking: BookingData): string | null | undefined {
+  if (field === 'note') return undefined
+  const value = readBookingField(booking, field)
+  if (TIME_FIELDS.includes(field) && !bookingTimeKnown(value)) return undefined
+  return value
+}
+
+export function findMismatches(facts: ActiveFact[], booking: BookingData): Mismatch[] {
+  const out: Mismatch[] = []
+  for (const f of facts) {
+    const current = comparableBookingValue(f.field, booking)
+    if (current === undefined) continue
+    if (current !== null && comparable(f.field, current) === comparable(f.field, f.value)) continue
+    out.push({ field: f.field, chatValue: f.value, bookingValue: current, factId: f.id })
+  }
+  return out
+}
+
+export function changeAlreadyApplied(change: { field: FieldKey; value: string }, booking: BookingData): boolean {
+  const current = comparableBookingValue(change.field, booking)
+  if (current === undefined || current === null) return false
+  return comparable(change.field, current) === comparable(change.field, change.value)
+}
