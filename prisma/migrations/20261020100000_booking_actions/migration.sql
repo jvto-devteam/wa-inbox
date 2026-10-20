@@ -1,4 +1,3 @@
-◇ injected env (21) from .env // tip: ◈ encrypted .env [www.dotenvx.com]
 -- CreateTable
 CREATE TABLE "BookingFact" (
     "id" TEXT NOT NULL,
