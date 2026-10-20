@@ -733,6 +733,31 @@ Mohon sesuaikan dengan data terbaru di atas.`,
     source: 'wa-inbox/src/lib/booking-actions/bali-vendor.ts (baru; tujuan mengikuti XenditController.php:499)',
   },
   {
+    key: 'internal_tshirt_update',
+    name: 'Perubahan ukuran kaos (dari chat)',
+    description: 'Dikirim ke vendor kaos setelah ukuran kaos sebuah booking diperbarui dari chat tamu (Chat → Aksi Booking), juga saat perubahan itu dibatalkan. Tanpa nama tamu.',
+    audience: 'INTERNAL',
+    body: `*🎽 Update Size T-Shirt*
+
+📌 Booking : {booking_code}
+
+🗓 Tanggal : {travel_dates}
+
+👥 Tamu : {total_pax} pax
+
+🎽 Size : {sizes}
+
+Mohon sesuaikan dengan data terbaru di atas.`,
+    imageUrl: null,
+    variables: [
+      req('booking_code', 'JVTO-3899', 'Kode booking (bookingData.id).'),
+      req('travel_dates', '12 Oct 26 - 14 Oct 26', 'Tanggal trip; satu tanggal bila mulai = selesai.'),
+      req('total_pax', '3', 'Jumlah peserta.'),
+      req('sizes', 'L x 2, XL x 1', 'Ukuran kaos terbaru dalam bentuk kanonik backoffice ("<UKURAN> x <qty>" dipisah koma).'),
+    ],
+    source: 'wa-inbox/src/lib/booking-actions/tshirt-vendor.ts (baru; tujuan mengikuti new-backoffice config/wa.php:8)',
+  },
+  {
     key: 'crew_trip_media',
     name: 'Tautan media trip ke grup crew',
     description: 'Dikirim ke grup WhatsApp crew (gambar + caption) pada jadwal wa_schedule_trip_media_crew, berisi tautan media trip dan daftar crew.',

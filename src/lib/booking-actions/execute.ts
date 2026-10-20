@@ -46,6 +46,11 @@
  * - Task 11b: `executeBookingAction` dipakai bersama oleh `autoApplyIfAllowed` (actor SYSTEM, closedReason AUTO_APPLIED);
  *   `revertBookingAction` membalik aksi EXECUTED ("Batalkan"). Event EXECUTED memuat `backoffice.batch` (kartu yang ditulis
  *   bersama) agar pembatalan membalik semuanya.
+ * - Kabar ke tamu (owner 2026-10-20, `guest-notice.ts`): setiap eksekusi yang berhasil (Setujui manual DAN otomatis)
+ *   memicu SATU WhatsApp "Noted ... sudah diperbarui" berisi field yang benar-benar ditulis + tautan portal, sesudah
+ *   transaksi, tanpa menunggu dan tanpa mengubah respons. "Batalkan" tidak mengabari tamu.
+ * - Kabar vendor kaos (`tshirt-vendor.ts`): eksekusi yang menulis `tshirt_sizes` -> satu kabar `tshirt_update:<id>`;
+ *   pembatalannya -> `tshirt_revert:<id>`. Jalur legacy `updateTshirt` sendiri tidak mengabari vendor.
  * - Log hanya id/kind/status: tanpa teks pelanggan dan tanpa token url booking.
  *
  * Pelepasan klaim basi dipanggil dari GET panel kartu (`/api/conversations/[id]/booking-actions`) dan
@@ -69,6 +74,8 @@ import { supersedeOlderFacts } from './fact-supersede'
 import { normalizeFieldValue, parseTshirtSizes, readBookingField, type FieldKey } from './fields'
 import { recordEvent, type BookingEventActor } from './history'
 import { notifyBaliVendor } from './bali-vendor'
+import { notifyGuestOfUpdate, type WrittenField } from './guest-notice'
+import { notifyTshirtVendor } from './tshirt-vendor'
 import { currentBookingId } from './scope'
 import { reevaluateBookingActions } from './store'
 import { canExecuteField, canRevertBatch, canRevertValue, companionFields, detailFieldOf } from './view'
@@ -360,6 +367,19 @@ export async function executeBookingAction(input: {
       if (action.tier === 'BALI' && included.some((a) => TRANSPORT_FIELDS.has(a.field))) {
         void notifyBaliVendor({ actionId, conversationId, bookingId, booking: result.booking, expected: writtenTransport(patch) }).catch(() => undefined)
       }
+      // Ukuran kaos berubah -> vendor kaos dikabari sekali (legacy updateTshirt tidak mengabari vendor).
+      const tshirt = included.find((a) => a.field === 'tshirt_sizes')
+      if (tshirt) {
+        void notifyTshirtVendor({ actionId, conversationId, bookingId, booking: result.booking, sizes: tshirt.value }).catch(() => undefined)
+      }
+      // Tamu dikabari sekali per eksekusi (gerbang: sumber INBOUND, rollout, jendela 24 jam -- di guest-notice.ts).
+      const writtenFields: WrittenField[] = included.map((a) => ({ field: a.field, value: a.value }))
+      if (detail !== null && detailField !== null && !included.some((a) => a.field === detailField)) {
+        writtenFields.push({ field: detailField, value: detail })
+      }
+      void notifyGuestOfUpdate({
+        actionId, conversationId, bookingId, accountId, booking, written: writtenFields, sourceMessageId: action.sourceMessageId ?? null,
+      }).catch(() => undefined)
       return { status: 200, body: { ok: true, state: 'EXECUTED', executed: ids, written } }
     }
 
@@ -418,8 +438,8 @@ function batchOf(backoffice: unknown, fallback: string): string[] {
  * nilai lama kosong/jam palsu tidak ditulis. Gagal = tetap EXECUTED + event EXECUTE_FAILED. Sukses =
  * state/closedReason REVERTED lewat update bersyarat `state: 'EXECUTED'` (klik ganda: hanya satu yang
  * mencatat event; tulisan ganda bernilai sama, jadi tidak berbahaya). `store.ts#loadBlocked` memblokir nilai
- * yang dibatalkan supaya ekstraksi berikutnya tidak mengusulkannya lagi. Kabar vendor Bali TIDAK ikut dikirim
- * ulang -- admin mengabari manual bila perlu.
+ * yang dibatalkan supaya ekstraksi berikutnya tidak mengusulkannya lagi. Vendor (Bali: `bali_revert:<id>`, kaos:
+ * `tshirt_revert:<id>`) dikabari nilai yang dikembalikan; TAMU tidak dikabari -- admin yang mengurus komunikasinya.
  */
 export async function revertBookingAction(input: { actionId: string; accountId: string; now?: Date }): Promise<RevertResult> {
   const { actionId, accountId } = input
@@ -542,6 +562,13 @@ export async function revertBookingAction(input: { actionId: string; accountId: 
   if (action.tier === 'BALI' && included.some((a) => TRANSPORT_FIELDS.has(a.field))) {
     void notifyBaliVendor({
       actionId, conversationId, bookingId, booking: result.booking, idempotencyKey: `bali_revert:${actionId}`, expected: writtenTransport(patch),
+    }).catch(() => undefined)
+  }
+  // Vendor kaos sudah dikabari ukuran baru: kabari ukuran yang dikembalikan. Tamu TIDAK dikabari (admin yang mengurus).
+  const tshirt = included.find((a) => a.field === 'tshirt_sizes')
+  if (tshirt) {
+    void notifyTshirtVendor({
+      actionId, conversationId, bookingId, booking: result.booking, sizes: tshirt.value, idempotencyKey: `tshirt_revert:${actionId}`,
     }).catch(() => undefined)
   }
   return { status: 200, body: { ok: true, state: 'REVERTED', reverted } }

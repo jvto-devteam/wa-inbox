@@ -169,6 +169,7 @@ export const REASON_LABELS: Record<string, string> = {
   AUTO_APPLIED: 'Diterapkan otomatis',
   SENT: 'Terkirim',
   SEND_FAILED: 'Pesan gagal dikirim',
+  WINDOW_CLOSED: 'Jendela 24 jam tertutup — kabari tamu manual',
 }
 
 export function reasonText(reason: string): string {

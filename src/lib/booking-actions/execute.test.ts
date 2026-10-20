@@ -10,12 +10,16 @@ vi.mock('@/lib/booking/client', () => ({ ensureFreshBookingData: vi.fn(), lookup
 vi.mock('@/lib/booking-actions/store', () => ({ reevaluateBookingActions: vi.fn().mockResolvedValue({ resolved: 0, opened: 0 }) }))
 vi.mock('@/lib/booking-actions/bali-vendor', () => ({ notifyBaliVendor: vi.fn().mockResolvedValue(undefined) }))
 vi.mock('@/lib/booking-actions/history', () => ({ recordEvent: vi.fn().mockResolvedValue(undefined) }))
+vi.mock('@/lib/booking-actions/guest-notice', () => ({ notifyGuestOfUpdate: vi.fn().mockResolvedValue(undefined) }))
+vi.mock('@/lib/booking-actions/tshirt-vendor', () => ({ notifyTshirtVendor: vi.fn().mockResolvedValue(undefined) }))
 
 import { prisma } from '@/lib/db'
 import { ensureFreshBookingData, lookupBookingResult } from '@/lib/booking/client'
 import { reevaluateBookingActions } from '@/lib/booking-actions/store'
 import { recordEvent } from '@/lib/booking-actions/history'
 import { notifyBaliVendor } from '@/lib/booking-actions/bali-vendor'
+import { notifyGuestOfUpdate } from '@/lib/booking-actions/guest-notice'
+import { notifyTshirtVendor } from '@/lib/booking-actions/tshirt-vendor'
 import { executeBookingAction, releaseStaleExecuting, revertBookingAction } from './execute'
 
 const db = prisma as unknown as DeepMockProxy<PrismaClient>
@@ -33,6 +37,8 @@ beforeEach(() => {
   mockReset(db)
   vi.mocked(recordEvent).mockClear()
   vi.mocked(notifyBaliVendor).mockClear()
+  vi.mocked(notifyGuestOfUpdate).mockClear()
+  vi.mocked(notifyTshirtVendor).mockClear()
   vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({ success: true }) }))
   process.env.LEGACY_BASE_URL = 'https://javavolcano-touroperator.com'
   vi.spyOn(console, 'error').mockImplementation(() => undefined)
@@ -471,5 +477,92 @@ describe('final review Important 6: Bali vendor notice only with the written val
     vi.mocked(ensureFreshBookingData).mockResolvedValue(null) // penyegaran pasca-tulis gagal
     expect((await executeBookingAction({ actionId: 'a1', accountId: 'acc1', now: NOW })).status).toBe(200)
     expect(notifyBaliVendor).toHaveBeenCalledWith(expect.objectContaining({ expected: [{ field: 'pickup_time', value: '09:00' }] }))
+  })
+})
+
+describe('owner 2026-10-20: guest confirmation + t-shirt vendor after a successful execute', () => {
+  const tshirtBooking = (sizes: string) => booking({ total_pax: 3, tshirtSize: sizes })
+  const run = async (over: Record<string, unknown>, opts: { accountId?: string | null; bd?: BookingData; after?: BookingData; detail?: string } = {}) => {
+    db.bookingAction.findUnique.mockResolvedValue({
+      id: 'a1', conversationId: 'c1', bookingId: '77', type: 'CHANGE', state: 'OPEN', tier: 'AI', sourceMessageId: 'm0', ...over,
+    } as never)
+    db.conversation.findUnique.mockResolvedValue({ id: 'c1', bookingData: opts.bd ?? booking(), contact: { phone: '4915112345678' } } as never)
+    vi.mocked(ensureFreshBookingData).mockResolvedValue(opts.after ?? booking())
+    const accountId = opts.accountId === undefined ? 'acc1' : opts.accountId
+    return executeBookingAction({
+      actionId: 'a1', accountId, now: NOW, ...(opts.detail ? { detail: opts.detail } : {}),
+      ...(accountId === null ? { actor: 'SYSTEM' as const, closedReason: 'AUTO_APPLIED' as const } : {}),
+    })
+  }
+
+  it('auto-apply tshirt success -> one guest notice (no account) + one vendor notice with the refreshed booking', async () => {
+    const after = tshirtBooking('L x 2, XL x 1')
+    const r = await run({ field: 'tshirt_sizes', proposedValue: 'L x 2, XL x 1' }, { accountId: null, bd: tshirtBooking('M x 3'), after })
+    expect(r.status).toBe(200)
+    expect(notifyGuestOfUpdate).toHaveBeenCalledTimes(1)
+    expect(notifyGuestOfUpdate).toHaveBeenCalledWith(expect.objectContaining({
+      actionId: 'a1', conversationId: 'c1', bookingId: '77', accountId: null, sourceMessageId: 'm0',
+      written: [{ field: 'tshirt_sizes', value: 'L x 2, XL x 1' }],
+    }))
+    expect(notifyTshirtVendor).toHaveBeenCalledTimes(1)
+    expect(notifyTshirtVendor).toHaveBeenCalledWith(expect.objectContaining({ actionId: 'a1', sizes: 'L x 2, XL x 1', booking: after }))
+    expect(vi.mocked(notifyTshirtVendor).mock.calls[0][0].idempotencyKey).toBeUndefined()
+  })
+
+  it('manual Setujui -> one guest notice with the account; point + detail (isian) both listed; non-tshirt -> no vendor notice', async () => {
+    const r = await run({ field: 'pickup_point', proposedValue: 'Surabaya Hotel' }, { detail: 'Hotel Majapahit' })
+    expect(r.status).toBe(200)
+    expect(notifyGuestOfUpdate).toHaveBeenCalledTimes(1)
+    expect(notifyGuestOfUpdate).toHaveBeenCalledWith(expect.objectContaining({
+      accountId: 'acc1',
+      written: [{ field: 'pickup_point', value: 'Surabaya Hotel' }, { field: 'pickup_detail', value: 'Hotel Majapahit' }],
+    }))
+    expect(notifyTshirtVendor).not.toHaveBeenCalled()
+  })
+
+  it('failed write -> neither guest nor vendor notice', async () => {
+    vi.mocked(fetch).mockResolvedValue({ ok: false, status: 500, json: async () => ({}) } as never)
+    expect((await run({ field: 'tshirt_sizes', proposedValue: 'L x 2, XL x 1' }, { bd: tshirtBooking('M x 3') })).status).toBe(502)
+    expect(notifyGuestOfUpdate).not.toHaveBeenCalled()
+    expect(notifyTshirtVendor).not.toHaveBeenCalled()
+  })
+
+  it('a rejecting guest notice does not change the response', async () => {
+    vi.mocked(notifyGuestOfUpdate).mockRejectedValueOnce(new Error('boom'))
+    expect((await run({ field: 'pickup_time', proposedValue: '09:00' })).status).toBe(200)
+  })
+
+  it('revert of a tshirt change -> one vendor notice with tshirt_revert key and the restored sizes; guest NOT messaged', async () => {
+    db.bookingAction.findUnique.mockResolvedValue({
+      id: 'a1', conversationId: 'c1', bookingId: '77', type: 'CHANGE', field: 'tshirt_sizes', proposedValue: 'L x 2, XL x 1', state: 'EXECUTED', tier: 'AI',
+    } as never)
+    db.bookingAction.findMany.mockResolvedValue([{ id: 'a1', field: 'tshirt_sizes' }] as never)
+    db.bookingActionEvent.findMany.mockResolvedValue([{
+      id: 'e1', actionId: 'a1', event: 'EXECUTED', oldValue: 'M x 3', newValue: 'L x 2, XL x 1', backoffice: { written: ['tshirt'], batch: ['a1'] }, createdAt: NOW,
+    }] as never)
+    db.conversation.findUnique.mockResolvedValue({ id: 'c1', bookingData: tshirtBooking('L x 2, XL x 1'), contact: { phone: '4915112345678' } } as never)
+    vi.mocked(ensureFreshBookingData).mockResolvedValue(tshirtBooking('M x 3'))
+    const r = await revertBookingAction({ actionId: 'a1', accountId: 'acc1' })
+    expect(r.status).toBe(200)
+    expect(notifyTshirtVendor).toHaveBeenCalledTimes(1)
+    expect(notifyTshirtVendor).toHaveBeenCalledWith(expect.objectContaining({ idempotencyKey: 'tshirt_revert:a1', sizes: 'M x 3' }))
+    expect(notifyGuestOfUpdate).not.toHaveBeenCalled()
+  })
+
+  it('revert of a non-tshirt change -> no vendor kaos notice, no guest notice', async () => {
+    db.bookingAction.findUnique.mockResolvedValue({
+      id: 'a1', conversationId: 'c1', bookingId: '77', type: 'CHANGE', field: 'pickup_time', proposedValue: '09:00', state: 'EXECUTED', tier: 'AI',
+    } as never)
+    db.bookingAction.findMany.mockResolvedValue([{ id: 'a1', field: 'pickup_time' }] as never)
+    db.bookingActionEvent.findMany.mockResolvedValue([{
+      id: 'e1', actionId: 'a1', event: 'EXECUTED', oldValue: '10:30', newValue: '09:00', backoffice: { written: ['pickup'], batch: ['a1'] }, createdAt: NOW,
+    }] as never)
+    db.conversation.findUnique.mockResolvedValue({
+      id: 'c1', bookingData: booking({ pickup: { meeting_point: 'Surabaya Airport', meeting_point_value: 'GA 300', pickup_time: '09:00' } }), contact: { phone: '4915112345678' },
+    } as never)
+    vi.mocked(ensureFreshBookingData).mockResolvedValue(booking())
+    expect((await revertBookingAction({ actionId: 'a1', accountId: 'acc1' })).status).toBe(200)
+    expect(notifyTshirtVendor).not.toHaveBeenCalled()
+    expect(notifyGuestOfUpdate).not.toHaveBeenCalled()
   })
 })

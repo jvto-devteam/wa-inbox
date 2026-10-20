@@ -82,7 +82,8 @@ export function findDataGaps(booking: BookingData): DataGapField[] {
   return gaps
 }
 
-function isIndonesianGuest(booking: BookingData): boolean {
+/** Tamu Indonesia (`guestDetails.country` memuat "indonesia"): teks ke tamu memakai Bahasa Indonesia. */
+export function isIndonesianGuest(booking: BookingData): boolean {
   const country = booking.guestDetails?.country
   return typeof country === 'string' && /indonesia/i.test(country)
 }

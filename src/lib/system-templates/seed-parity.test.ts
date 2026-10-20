@@ -27,6 +27,7 @@ const EXPECTED_KEYS = [
   'internal_bali_transport_update',
   'internal_consent_completed',
   'internal_new_booking',
+  'internal_tshirt_update',
   'payment_method_confirmed_card',
   'payment_method_confirmed_cash',
   'payment_method_confirmed_wise',
@@ -55,6 +56,8 @@ const KEYS_WITHOUT_PHP_ORIGIN = new Set([
   'trip_information_hotel',
   // Lahir 2026-10-20 (Chat -> Aksi Booking, Task 11a): kabar perubahan titik/jam ke vendor Bali.
   'internal_bali_transport_update',
+  // Lahir 2026-10-20 (Chat -> Aksi Booking): kabar perubahan ukuran kaos ke vendor kaos, tanpa nama tamu.
+  'internal_tshirt_update',
 ])
 
 describe('system template seeds', () => {

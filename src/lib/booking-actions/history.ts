@@ -24,6 +24,9 @@ export type BookingEventName =
   | 'DRAFT_SENT'
   | 'REVERTED'
   | 'VENDOR_NOTICE_FAILED'
+  | 'GUEST_NOTICE_SENT'
+  | 'GUEST_NOTICE_FAILED'
+  | 'GUEST_NOTICE_SKIPPED'
 
 export type BookingEventActor = 'BOT' | 'SYSTEM' | 'ACCOUNT'
 

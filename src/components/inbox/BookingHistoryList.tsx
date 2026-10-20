@@ -12,6 +12,9 @@ export const EVENT_LABELS: Record<string, string> = {
   DRAFT_SENT: 'Draf terkirim',
   REVERTED: 'Dibatalkan',
   VENDOR_NOTICE_FAILED: 'Kabar vendor gagal',
+  GUEST_NOTICE_SENT: 'Tamu dikabari',
+  GUEST_NOTICE_FAILED: 'Kabar ke tamu gagal',
+  GUEST_NOTICE_SKIPPED: 'Tamu belum dikabari',
 }
 
 export function actorName(e: BookingActionEventView): string {
