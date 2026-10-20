@@ -28,9 +28,12 @@ export type BookingPatch = Partial<
   >
 > & { tshirt_sizes?: Record<string, number>; note?: string }
 
+export type WrittenPart = 'pickup' | 'drop' | 'tshirt'
+
+/** `written` = bagian yang SUDAH masuk ke backoffice (berguna saat patch gabungan gagal di tengah). */
 export type WriteResult =
-  | { status: 'ok'; booking: BookingData }
-  | { status: 'error'; httpStatus: number; error: string }
+  | { status: 'ok'; booking: BookingData; written: WrittenPart[] }
+  | { status: 'error'; httpStatus: number; error: string; written: WrittenPart[] }
 
 const TIMEOUT_MS = 10_000
 const SIZES = ['xs', 's', 'm', 'l', 'xl', 'xxl'] as const
@@ -39,8 +42,8 @@ export function writeConfigured(): boolean {
   return Boolean(process.env.LEGACY_BASE_URL?.trim())
 }
 
-function fail(error: string, httpStatus = 0): WriteResult {
-  return { status: 'error', httpStatus, error }
+function fail(error: string, httpStatus = 0, written: WrittenPart[] = []): WriteResult {
+  return { status: 'error', httpStatus, error, written }
 }
 
 /** Segmen terakhir `…/my-booking/{url}`; null bila tidak ada atau bentuknya aneh. */
@@ -102,9 +105,14 @@ function buildPointForm(side: 'pickup' | 'drop', booking: BookingData, patch: Bo
 
   const legacy = legacyPoint(point)
   const pointChanged = patchPoint !== undefined && curPoint !== null && canonicalPoint(patchPoint) !== canonicalPoint(curPoint)
-  // Detail lama milik jenis titik lain (mis. nomor penerbangan) tidak boleh terbawa ke titik baru.
+  // Detail lama milik jenis titik lain (mis. nomor penerbangan) tidak boleh terbawa ke titik baru, dan
+  // controller tidak menghapus `meeting_point_value` bila detail dikirim kosong: titik baru wajib bawa detail baru.
   const patchDetail = patch[`${side}_detail` as 'pickup_detail' | 'drop_detail']
-  const detail = patchDetail ?? (pointChanged ? '' : readBookingField(booking, `${side}_detail` as 'pickup_detail' | 'drop_detail') ?? '')
+  const curDetail = readBookingField(booking, `${side}_detail` as 'pickup_detail' | 'drop_detail')
+  if (pointChanged && patchDetail === undefined && curDetail !== null) {
+    return { error: 'Isi detail titik baru dulu' }
+  }
+  const detail = patchDetail ?? (pointChanged ? '' : curDetail ?? '')
   const detailField = detailFieldFor(side, legacy)
   if (detailField === null) return { error: 'Titik tidak dikenal' }
   if (legacy === 'Others' && !detail.trim()) return { error: 'Detail lokasi Others wajib diisi' }
@@ -147,6 +155,10 @@ function buildForms(booking: BookingData, patch: BookingPatch): Built {
       if (!Number.isInteger(qty) || qty < 0) return { error: 'Jumlah kaos tidak valid' }
       fields[key] = String(qty)
     }
+    const total = SIZES.reduce((sum, s) => sum + Number(fields[s]), 0)
+    if (typeof booking.total_pax === 'number' && total !== booking.total_pax) {
+      return { error: `Total kaos (${total}) harus sama dengan jumlah peserta (${booking.total_pax})` }
+    }
     forms.push({ path: 'update-tshirt', fields, kind: 'tshirt' })
   }
 
@@ -170,9 +182,11 @@ async function post(base: string, token: string, form: Form): Promise<WriteResul
       body = {}
     }
     if (res.ok && body.success === true) return null
-    console.error('writeBookingChange: backoffice menolak', { kind: form.kind, httpStatus: res.status })
+    // 200 tanpa success:true (atau bukan JSON) bukan sukses dan bukan kode HTTP yang berarti: 502.
+    const httpStatus = res.ok ? 502 : res.status
+    console.error('writeBookingChange: backoffice menolak', { kind: form.kind, httpStatus })
     const message = typeof body.message === 'string' && body.message.trim() ? body.message.trim().slice(0, 200) : 'Backoffice menolak perubahan'
-    return fail(message, res.status)
+    return fail(message, httpStatus)
   } catch (error) {
     const timedOut = error instanceof Error && error.name === 'AbortError'
     console.error('writeBookingChange: permintaan gagal', { kind: form.kind, timedOut })
@@ -209,17 +223,17 @@ export async function writeBookingChange(bookingId: string, patch: BookingPatch,
   const built = buildForms(booking, patch)
   if ('error' in built) return fail(built.error)
 
-  let written = 0
+  const written: WrittenPart[] = []
   let failure: WriteResult | null = null
   for (const form of built.forms) {
     failure = await post(base, token, form)
     if (failure) break
-    written += 1
+    written.push(form.kind)
   }
 
   // Sebagian perubahan mungkin sudah masuk sebelum yang lain gagal: segarkan juga, supaya data lokal jujur.
   let fresh: BookingData = booking
-  if (written > 0) {
+  if (written.length > 0) {
     try {
       // bookingCheckedAt null memaksa ambil ulang; bila API booking gagal, data tersimpan tetap dipakai.
       const refreshed = await ensureFreshBookingData({ ...conv, bookingCheckedAt: null })
@@ -229,5 +243,6 @@ export async function writeBookingChange(bookingId: string, patch: BookingPatch,
     }
   }
 
-  return failure ?? { status: 'ok', booking: fresh }
+  if (failure && failure.status === 'error') return { ...failure, written }
+  return { status: 'ok', booking: fresh, written }
 }
