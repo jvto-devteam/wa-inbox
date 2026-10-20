@@ -216,6 +216,51 @@ mengirim `summary-items:changed`.
 Dipangkas setelah **30 hari** sejak `chatReviewAt` (keputusan owner 2026-10-19), sama dengan
 DailySummary dan SummaryItem — isinya memuat poin penting chat pelanggan.
 
+### Aksi booking (chat → booking)
+<!-- aksi-booking:mulai -->
+Pesan pelanggan yang menyebut data booking (titik/jam/detail jemput-antar, kaos, tanggal, pax, hotel,
+catatan) menjadi kartu di panel kanan Inbox. Tabel: `BookingFact` (fakta dari chat; nilai lama diberi
+`supersededAt`, tidak ditimpa), `BookingAction` (satu usulan/tugas), `BookingActionEvent` (riwayat
+append-only tanpa FK: siapa, kapan, nilai lama/baru), `PushSubscription`. Setelan di `Settings`:
+`bookingLightApproval`, `bookingBaliApproval`, `dataRequestApproval` (`APPROVE` | `ALWAYS`).
+
+- **Ekstraksi per pesan** (`src/lib/booking-actions/schedule.ts`, `scheduleBookingExtraction`): debounce 8 s per
+  percakapan, tidak di-await di jalur webhook, seluruhnya try/catch, **run pipeline sendiri**
+  (`openPipelineRun`), tidak memakai tracer bot. Gerbang: nomor Indonesia dilewati kecuali percakapan `isTest`,
+  harus punya `bookingData`, trip yang sudah lewat dilewati, penutup/reaksi tidak memicu; `botEnabled` sengaja
+  tidak diperiksa. Ke LLM hanya `pickup`, `dropoff`, `date`, `total_pax`, `hotels`, `tshirtSize` —
+  **tidak pernah** `financial`, `expense`, `paymentHistory`, `guestDetails`.
+- **Kelompok** (`changeGroup` di `fields.ts`): `AI` (titik/jam/detail di Surabaya, kaos, catatan), `BALI`
+  (booking dengan transport Bali: AI mengubah **dan** vendor dikabari), `HEAVY` (pindah Surabaya ↔ Bali,
+  tanggal, pax, hotel: hanya tugas untuk admin). **Jenis kartu**: `CHANGE` (usulan ubah/isi), `MISMATCH`
+  (chat ≠ backoffice, peringatan), `TASK` (tugas ops), `DATA_REQUEST` (draf permintaan data ke tamu).
+  `bookingTimeKnown` menganggap jam `null`, `''`, `07:00` sebagai tidak diketahui (backoffice membentuk jam
+  kosong menjadi 07:00).
+- **Eksekusi** (`execute.ts`, `executeBookingAction`): menulis lewat endpoint `my-booking` legacy
+  (`src/lib/booking/backoffice-client.ts`, env `LEGACY_BASE_URL`). Klaim `OPEN → EXECUTING` memakai `claimedAt`;
+  klaim basi (> `STALE_CLAIM_MS`, 2 menit) dilepas `releaseStaleExecuting`. Bila `bookingData.booking_id`
+  sudah berganti sejak kartu dibuat, eksekusi ditolak 409. Kartu titik ↔ detail pada sisi yang sama ditulis
+  satu patch (`companionFields`). `revertBookingAction` mengembalikan nilai lama selama booking belum berubah
+  lagi. `autoApplyIfAllowed` (mode `ALWAYS`, actor `SYSTEM`) memakai `executeBookingAction` yang sama dan
+  bisa dibatalkan. Kartu yang ditutup orang tidak dibuat ulang untuk field+nilai yang sama; fakta terbaru
+  menggantikan yang lama.
+- **Vendor Bali** (`bali-vendor.ts`, `notifyBaliVendor`): sesudah CHANGE `BALI` tertulis, template
+  `internal_bali_transport_update` masuk antrean; tanpa data pribadi tamu. Gagal = event
+  `VENDOR_NOTICE_FAILED` + push, vendor dikabari manual.
+- **Push** (`src/lib/push/send.ts`, `notifyBookingAction`): Web Push ke setiap kejadian aksi booking; env
+  `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`. Setiap permintaan perubahan berlabel "belum
+  dipenuhi" sampai ditutup; tidak ada kedaluwarsa.
+- **Panel kanan**: `GET /api/conversations/[id]/chat-review` memuat `pinned` dan `changeHistory`. Ekstraksi
+  yang lolos gerbang memanggil `scheduleChatReviewRefresh` (jeda minimal `CHAT_REVIEW_MIN_GAP_MS` = 5 menit).
+- **Permintaan data** (`data-requests.ts`, `createDataRequestDrafts`): H-7 sampai H-1 (H-0 = trip mulai, draf
+  ditutup), jam kirim 08:00–20:00 WIB (`inDataRequestHours`), satu draf per booking per hari WIB (unik
+  `[bookingId, type, forDay]`), hanya butir yang kurang (`findDataGaps`); jam **tidak** ditanyakan bila nilainya
+  `07:00`. Kirim otomatis dibatasi `MAX_AUTO_LOOKUPS_PER_TICK` dan `AUTO_SEND_BUDGET_MS` karena tiap percobaan
+  memanggil API booking.
+- **Tick 5 menit** (`POST /api/summary-items/tick`) kini juga menjalankan `releaseStaleExecuting` (sesudah
+  penyegaran booking) dan `createDataRequestDrafts` (sesudah `reconcileSummaryItems`).
+<!-- aksi-booking:selesai -->
+
 ### Simulator & test
 `simulator.ts`, Test Lab, dan `npm run eval` (13 golden case).
 
@@ -256,6 +301,12 @@ Pengecualian tunggal untuk langkah 2: perbaikan knowledge dari Inbox
 (`POST /api/inbox/decisions/[id]/fix`) terbuka untuk semua yang login karena setiap simpan
 berversi, dapat dikembalikan, dan tercatat di audit log — route knowledge lainnya tetap lewat
 `hasAdminPowers()`.
+
+Pengecualian kedua: route aksi booking — `/api/booking-actions/[id]` (semua op), `/api/booking-actions`,
+`/api/conversations/[id]/booking-actions`, `/api/push/subscribe` — terbuka untuk semua akun yang login
+(keputusan owner 2026-10-19). Alasannya: setiap aksi tercatat di `BookingActionEvent` dengan nilai lama dan
+bisa dikembalikan (`revertBookingAction`). Kolom `Settings` untuk fitur ini tetap lewat `hasAdminPowers()`
+di `PATCH /api/settings`.
 
 Response error selalu `{ error: string }` dengan status HTTP yang sesuai. `try-catch` di
 setiap handler; jangan bocorkan pesan error mentah atau secret.
