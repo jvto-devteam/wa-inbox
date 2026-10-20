@@ -14,7 +14,7 @@ import { summaryItemKindLabel, wibDateTimeLabel } from '@/lib/summary-items/stat
 import type { SummaryItemView } from '@/lib/summary-items/view'
 import { PromiseList } from '@/components/daily-summary/QuestionList'
 import { conversationHref } from '@/components/daily-summary/conversation-href'
-import { fieldLabel, valueText, type BookingQueueItem } from '@/lib/booking-actions/view'
+import { dataRequestSummary, fieldLabel, valueText, type BookingQueueItem } from '@/lib/booking-actions/view'
 
 /**
  * Antrean tindakan halaman /summary. Setiap item OPEN punya tiga jalan keluar: dibalas di Inbox
@@ -340,7 +340,7 @@ function ScheduledItemRow({ item }: { item: SummaryItemView }) {
   )
 }
 
-const BOOKING_TYPE_LABEL: Record<string, string> = { CHANGE: 'Perubahan', TASK: 'Tugas', MISMATCH: 'Tidak sesuai' }
+const BOOKING_TYPE_LABEL: Record<string, string> = { CHANGE: 'Perubahan', TASK: 'Tugas', MISMATCH: 'Tidak sesuai', DATA_REQUEST: 'Minta data' }
 
 /** Bagian "Booking": aksi booking OPEN lintas percakapan. Kartu ringkas yang menautkan ke Inbox. */
 function BookingQueueSection({ items }: { items: BookingQueueItem[] }) {
@@ -362,7 +362,9 @@ function BookingQueueSection({ items }: { items: BookingQueueItem[] }) {
               </Badge>
             </div>
             <p className="text-sm text-ink-muted">
-              {fieldLabel(b.field)}: {valueText(b.proposedValue)}
+              {b.type === 'DATA_REQUEST'
+                ? `Draf H-7 ke tamu: ${dataRequestSummary(b.proposedValue)}`
+                : `${fieldLabel(b.field)}: ${valueText(b.proposedValue)}`}
             </p>
           </li>
         ))}

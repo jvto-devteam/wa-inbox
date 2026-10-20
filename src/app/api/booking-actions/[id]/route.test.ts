@@ -9,6 +9,7 @@ vi.mock('@/lib/realtime', () => ({ broadcast: vi.fn() }))
 vi.mock('@/lib/booking-actions/history', () => ({ recordEvent: vi.fn().mockResolvedValue(undefined) }))
 vi.mock('@/lib/booking/backoffice-client', () => ({ writeBookingChange: vi.fn(), writeConfigured: vi.fn() }))
 vi.mock('@/lib/booking-actions/store', () => ({ reevaluateBookingActions: vi.fn() }))
+vi.mock('@/lib/booking-actions/data-requests', () => ({ sendDataRequest: vi.fn() }))
 
 import { prisma } from '@/lib/db'
 import { verifySessionToken } from '@/lib/auth/session'
@@ -17,6 +18,7 @@ import { recordEvent } from '@/lib/booking-actions/history'
 import { writeBookingChange, writeConfigured, type WriteResult } from '@/lib/booking/backoffice-client'
 import { reevaluateBookingActions } from '@/lib/booking-actions/store'
 import type { BookingData } from '@/lib/booking/client'
+import { sendDataRequest } from '@/lib/booking-actions/data-requests'
 import { PATCH } from './route'
 
 const mockPrisma = prisma as unknown as DeepMockProxy<PrismaClient>
@@ -113,6 +115,19 @@ describe('PATCH /api/booking-actions/[id]', () => {
     mockPrisma.bookingAction.findUnique.mockResolvedValue(action({ type: 'DATA_REQUEST' }) as never)
     expect((await PATCH(req({ op: 'done' }), ctx)).status).toBe(400)
     expect(mockPrisma.bookingAction.updateMany).not.toHaveBeenCalled()
+  })
+
+  it('op send -> sendDataRequest as the logged-in account (any role); refusal keeps its status and message', async () => {
+    vi.mocked(sendDataRequest).mockResolvedValue({ ok: true })
+    const ok = await PATCH(req({ op: 'send' }), ctx)
+    expect(ok.status).toBe(200)
+    expect(await ok.json()).toEqual({ ok: true, state: 'DONE' })
+    expect(sendDataRequest).toHaveBeenCalledWith({ actionId: 'a1', accountId: 'acc1' })
+
+    vi.mocked(sendDataRequest).mockResolvedValue({ ok: false, status: 409, error: 'Butuh template: tamu belum chat lebih dari 24 jam' })
+    const blocked = await PATCH(req({ op: 'send' }), ctx)
+    expect(blocked.status).toBe(409)
+    expect(await blocked.json()).toEqual({ error: 'Butuh template: tamu belum chat lebih dari 24 jam' })
   })
 
   it('500 generic on failure', async () => {

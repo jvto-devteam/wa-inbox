@@ -19,7 +19,7 @@ export async function GET(req: Request) {
     if (state !== 'OPEN') return NextResponse.json({ error: 'state tidak didukung' }, { status: 400 })
 
     const rows = await prisma.bookingAction.findMany({
-      where: { state: 'OPEN', type: { in: ['CHANGE', 'TASK', 'MISMATCH'] } },
+      where: { state: 'OPEN', type: { in: ['CHANGE', 'TASK', 'MISMATCH', 'DATA_REQUEST'] } },
       orderBy: { createdAt: 'desc' },
       take: LIMIT,
       include: { conversation: { select: { bookingData: true, contact: { select: { name: true } } } } },

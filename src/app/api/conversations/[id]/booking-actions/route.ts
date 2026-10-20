@@ -7,6 +7,7 @@ import { currentBookingId, inCurrentBooking } from '@/lib/booking-actions/scope'
 import type { BookingData } from '@/lib/booking/client'
 import { writeConfigured } from '@/lib/booking/backoffice-client'
 import { releaseStaleExecuting } from '@/lib/booking-actions/execute'
+import { dataRequestWindowClosed } from '@/lib/booking-actions/data-requests'
 import { EXECUTED_VISIBLE_MS, canRevertBatch } from '@/lib/booking-actions/view'
 
 /**
@@ -68,9 +69,12 @@ export async function GET(req: Request, { params }: Ctx) {
     ])
 
     const scoped = rows.filter((r) => inCurrentBooking(r, bookingId))
+    // Task 12: kartu DATA_REQUEST membawa `windowClosed` (jendela 24 jam) supaya UI memilih "Kirim" atau "Butuh template".
+    const windowClosed = scoped.some((r) => r.type === 'DATA_REQUEST') ? await dataRequestWindowClosed(id) : false
     const actions = await Promise.all(
       scoped.map(async (r) => {
         const oldValue = data ? readBookingField(data, r.field as FieldKey) : null
+        if (r.type === 'DATA_REQUEST') return { ...r, oldValue, windowClosed }
         if (r.type !== 'TASK') return { ...r, oldValue }
         const target = r.bookingId ?? bookingId
         const impact: Impact = target === null

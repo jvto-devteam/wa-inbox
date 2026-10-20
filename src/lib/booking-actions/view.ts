@@ -24,6 +24,10 @@ export type BookingActionView = {
   createdAt: string
   /** Galat eksekusi terakhir (Task 11); null/undefined bila belum pernah gagal. */
   lastError?: string | null
+  /** DATA_REQUEST (Task 12): teks draf ke tamu. */
+  draftText?: string | null
+  /** DATA_REQUEST: jendela 24 jam tertutup -> tidak boleh kirim teks bebas ("Butuh template"). */
+  windowClosed?: boolean
   impact?: BookingImpactView
 }
 
@@ -98,9 +102,17 @@ export const FIELD_LABELS: Record<string, string> = {
   drop_time: 'Jam drop-off',
   tshirt_sizes: 'Ukuran kaos',
   note: 'Catatan',
+  data_request: 'Minta data tamu',
   travel_date: 'Tanggal trip',
   total_pax: 'Jumlah tamu',
   hotel: 'Hotel',
+}
+
+/** Ringkasan butir yang diminta pada kartu DATA_REQUEST (`proposedValue` = daftar field), mis. "Jam pickup, Jam drop-off". */
+export function dataRequestSummary(proposedValue: unknown): string {
+  if (!Array.isArray(proposedValue)) return '-'
+  const labels = proposedValue.filter((f): f is string => typeof f === 'string').map((f) => fieldLabel(f))
+  return labels.length > 0 ? labels.join(', ') : '-'
 }
 
 export function fieldLabel(field: string): string {

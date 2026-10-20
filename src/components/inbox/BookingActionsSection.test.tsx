@@ -328,4 +328,32 @@ describe('BookingActionsSection - non-revertable applied change', () => {
     expect(await screen.findByText('Ubah di backoffice')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Batalkan' })).not.toBeInTheDocument()
   })
+
+  it('DATA_REQUEST: shows the draft with Kirim and Tolak; Kirim PATCHes op send', async () => {
+    const draft: BookingActionView = {
+      id: 'd1', conversationId: 'c1', type: 'DATA_REQUEST', field: 'data_request', tier: 'AI', proposedValue: ['pickup_time'],
+      oldValue: null, sourceMessageId: null, createdAt: '2026-10-20T00:00:00Z', draftText: 'Hello there', windowClosed: false,
+    }
+    const fn = mockFetch(() => response({ actions: [draft] }))
+    render(<BookingActionsSection conversationId="c1" />)
+    expect(await screen.findByText('Hello there')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Tolak' })).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Kirim' }))
+    await waitFor(() => {
+      const call = fn.mock.calls.find(([, init]) => init?.method === 'PATCH')
+      expect(call && JSON.parse(String(call[1]?.body))).toEqual({ op: 'send' })
+    })
+  })
+
+  it('DATA_REQUEST with the 24h window closed: "Butuh template" and Kirim disabled, Tolak still works', async () => {
+    const draft: BookingActionView = {
+      id: 'd1', conversationId: 'c1', type: 'DATA_REQUEST', field: 'data_request', tier: 'AI', proposedValue: ['pickup_time'],
+      oldValue: null, sourceMessageId: null, createdAt: '2026-10-20T00:00:00Z', draftText: 'Hello there', windowClosed: true,
+    }
+    mockFetch(() => response({ actions: [draft] }))
+    render(<BookingActionsSection conversationId="c1" />)
+    expect(await screen.findByText(/Butuh template/)).toBeTruthy()
+    expect((screen.getByRole('button', { name: 'Kirim' }) as HTMLButtonElement).disabled).toBe(true)
+    expect((screen.getByRole('button', { name: 'Tolak' }) as HTMLButtonElement).disabled).toBe(false)
+  })
 })

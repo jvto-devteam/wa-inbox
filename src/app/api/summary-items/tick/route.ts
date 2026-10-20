@@ -4,6 +4,7 @@ import { pruneBotAuditLogs } from '@/lib/bot-control/audit'
 import { advancePipelineStagesFromBooking, refreshStaleBookingData } from '@/lib/booking/client'
 import { createLiveReplyItems, reconcileSummaryItems } from '@/lib/summary-items/sync'
 import { releaseStaleExecuting } from '@/lib/booking-actions/execute'
+import { createDataRequestDrafts } from '@/lib/booking-actions/data-requests'
 
 /**
  * POST /api/summary-items/tick — antrean live Summary Harian, dipanggil crontab VPS tiap 5 menit
@@ -18,6 +19,8 @@ import { releaseStaleExecuting } from '@/lib/booking-actions/execute'
  * 1b. `releaseStaleExecuting` (booking-actions/execute.ts): klaim "Setujui" yang macet > 2 menit.
  * 2. `reconcileSummaryItems` (tutup yang sudah dibalas, pengingat jatuh tempo kembali OPEN,
  *    FOLLOW_UP/PROMISE jadi REPLY).
+ * 2b. `createDataRequestDrafts` (Task 12): draf H-7 harian permintaan data ke tamu (08:00-19:59 WIB saja),
+ *    dikirim otomatis bila `dataRequestApproval = ALWAYS`. Galatnya hanya di-log; tidak menahan sisa tick.
  * 3. `createLiveReplyItems` (pesan pelanggan yang belum dibalas ≥ 1 jam masuk antrean tanpa
  *    menunggu 00:00).
  * Tidak pernah memanggil LLM. `refreshStaleBookingData` memanggil API booking (maks. 25
@@ -91,6 +94,10 @@ async function tick(): Promise<NextResponse> {
   try {
     const now = new Date()
     const reconciled = await reconcileSummaryItems(now)
+    // Tidak boleh menggagalkan antrean: draf data tamu hanya tambahan. Log tanpa teks pelanggan.
+    await createDataRequestDrafts(now).catch((error: unknown) => {
+      console.error('POST /api/summary-items/tick: draf permintaan data gagal', error instanceof Error ? error.name : 'unknown')
+    })
     const live = await createLiveReplyItems(now)
     return NextResponse.json({ reconciled, live })
   } catch (error) {

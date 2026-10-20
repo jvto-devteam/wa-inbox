@@ -13,6 +13,7 @@ import { POINT_VALUES } from '@/lib/booking-actions/fields'
 import {
   canExecuteField,
   companionFields,
+  dataRequestSummary,
   fieldLabel,
   valueText,
   type BookingActionsResponse,
@@ -33,7 +34,7 @@ import {
  * dengan tombol "Batalkan" (PATCH op revert, dua langkah karena menulis booking produksi). Terbuka untuk semua yang login.
  */
 
-type Op = 'reject' | 'dismiss' | 'done' | 'not_needed'
+type Op = 'reject' | 'dismiss' | 'done' | 'not_needed' | 'send'
 const BTN = 'min-h-11 whitespace-normal'
 const POINT_FIELDS = ['pickup_point', 'drop_point']
 
@@ -170,7 +171,7 @@ function ActionCard({
     <li className="space-y-2 rounded-md border border-line bg-surface p-3 break-words" aria-label={`${action.type}: ${label}`}>
       <div className="flex flex-wrap items-center gap-2">
         <Badge variant={action.type === 'CHANGE' ? 'warning' : action.type === 'TASK' ? 'brand' : 'muted'}>
-          {action.type === 'CHANGE' ? 'Perubahan' : action.type === 'TASK' ? 'Tugas' : 'Tidak sesuai'}
+          {action.type === 'CHANGE' ? 'Perubahan' : action.type === 'TASK' ? 'Tugas' : action.type === 'DATA_REQUEST' ? 'Minta data' : 'Tidak sesuai'}
         </Badge>
       </div>
       {booking && (
@@ -188,6 +189,16 @@ function ActionCard({
           {action.field === 'tshirt_sizes' && <p className="text-sm text-ink-muted">Vendor kaos akan diberi tahu.</p>}
           {action.tier === 'BALI' && <p className="text-sm text-ink-muted">Vendor transport Bali akan diberi tahu.</p>}
           {!executable && <p className="text-sm text-ink-muted">Belum bisa ditulis otomatis. Ubah di backoffice lalu tandai Selesai.</p>}
+          {action.lastError && <p className="text-sm text-danger">Gagal terakhir: {action.lastError}</p>}
+        </>
+      )}
+      {action.type === 'DATA_REQUEST' && (
+        <>
+          <p className="text-sm text-ink">Data yang kurang: {dataRequestSummary(action.proposedValue)}</p>
+          {action.draftText && <p className="whitespace-pre-line rounded-sm bg-surface-sunken p-2 text-sm text-ink-muted">{action.draftText}</p>}
+          {action.windowClosed && (
+            <p className="text-sm text-warning">Butuh template (tamu belum chat &gt;24 jam)</p>
+          )}
           {action.lastError && <p className="text-sm text-danger">Gagal terakhir: {action.lastError}</p>}
         </>
       )}
@@ -232,6 +243,16 @@ function ActionCard({
                 Selesai
               </Button>
             )}
+            <Button type="button" variant="outline" className={BTN} disabled={busy} onClick={() => onOp(action.id, 'reject')}>
+              Tolak
+            </Button>
+          </>
+        )}
+        {action.type === 'DATA_REQUEST' && (
+          <>
+            <Button type="button" className={BTN} disabled={busy || action.windowClosed === true} onClick={() => onOp(action.id, 'send')}>
+              {busy ? 'Mengirim…' : 'Kirim'}
+            </Button>
             <Button type="button" variant="outline" className={BTN} disabled={busy} onClick={() => onOp(action.id, 'reject')}>
               Tolak
             </Button>

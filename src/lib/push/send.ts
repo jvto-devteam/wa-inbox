@@ -13,7 +13,7 @@ import webpush from 'web-push'
 import { prisma } from '@/lib/db'
 
 export type PushPayload = { title: string; body: string; url: string; tag: string }
-export type BookingPushKind = 'CHANGE' | 'MISMATCH' | 'TASK' | 'AUTO_APPLIED' | 'EXECUTE_FAILED'
+export type BookingPushKind = 'CHANGE' | 'MISMATCH' | 'TASK' | 'AUTO_APPLIED' | 'EXECUTE_FAILED' | 'DATA_REQUEST_FAILED'
 export type BookingPushEvent = {
   kind: BookingPushKind
   conversationId: string
@@ -30,6 +30,7 @@ const TITLES: Record<BookingPushKind, string> = {
   TASK: 'Tugas booking baru',
   AUTO_APPLIED: 'Perubahan booking diterapkan',
   EXECUTE_FAILED: 'Perubahan booking gagal diterapkan',
+  DATA_REQUEST_FAILED: 'Permintaan data tamu gagal terkirim',
 }
 const MAX_SUMMARY = 100
 

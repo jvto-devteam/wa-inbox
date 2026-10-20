@@ -5,6 +5,7 @@ import { getSession } from '@/lib/auth/get-session'
 import { recordEvent } from '@/lib/booking-actions/history'
 import { broadcast } from '@/lib/realtime'
 import { executeBookingAction, revertBookingAction } from '@/lib/booking-actions/execute'
+import { sendDataRequest } from '@/lib/booking-actions/data-requests'
 
 /**
  * Tutup/tolak/eksekusi satu tindakan booking dari Inbox. Terbuka untuk semua akun yang login (keputusan
@@ -29,7 +30,9 @@ const executeSchema = z.object({
 })
 // Task 11b: "Batalkan" hanya untuk aksi EXECUTED (diperiksa di revertBookingAction).
 const revertSchema = z.object({ op: z.literal('revert') })
-const bodySchema = z.union([closeSchema, executeSchema, revertSchema])
+// Task 12: kirim draf permintaan data (DATA_REQUEST) ke tamu sekarang; diperiksa di sendDataRequest.
+const sendSchema = z.object({ op: z.literal('send') })
+const bodySchema = z.union([closeSchema, executeSchema, revertSchema, sendSchema])
 
 type Op = z.infer<typeof closeSchema>['op']
 
@@ -60,6 +63,12 @@ export async function PATCH(req: Request, { params }: Ctx) {
     if (body.op === 'execute') {
       const result = await executeBookingAction({ actionId: id, accountId: session.accountId, value: body.value, detail: body.detail })
       return NextResponse.json(result.body, { status: result.status })
+    }
+    if (body.op === 'send') {
+      const result = await sendDataRequest({ actionId: id, accountId: session.accountId })
+      return result.ok
+        ? NextResponse.json({ ok: true, state: 'DONE' })
+        : NextResponse.json({ error: result.error }, { status: result.status })
     }
     if (body.op === 'revert') {
       const result = await revertBookingAction({ actionId: id, accountId: session.accountId })
