@@ -14,6 +14,7 @@ import { recordBotDecisionRun, attachMessageToDecisionRun } from '@/lib/bot-cont
 import { handoffReplyText, offHoursHandoffNotice } from '@/lib/bot/runtime-integration'
 import { openPipelineRun, traceStep, traceClose, traceSnapshot, traceRunId, type PipelineTracer } from '@/lib/pipeline/tracer'
 import { scheduleBookingExtraction } from '@/lib/booking-actions/schedule'
+import { noteInboundForChatReview } from '@/lib/chat-review/auto-refresh'
 import type { BotDecision } from '@/lib/bot/types'
 import { ingestMessengerPayload } from '@/lib/inbound-messenger'
 import { isMessengerPayload, type MessengerWebhookPayload } from '@/lib/meta/messenger-types'
@@ -713,6 +714,10 @@ async function ingestSingleMessage(message: MetaInboundMessage, contacts: MetaCo
       console.error('scheduleBookingExtraction gagal', { conversationId: conversation.id, error })
     }
   }
+
+  // Ringkasan chat di panel kanan ikut terbaru untuk SEMUA percakapan (lead tanpa booking juga). Tidak ditunggu,
+  // tidak pernah melempar; berdiri sendiri dari bot dan gerbang rollout aksi booking.
+  noteInboundForChatReview(conversation.id, { type: message.type, content: inboundText })
 
   return true
 }

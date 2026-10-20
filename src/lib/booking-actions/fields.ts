@@ -148,22 +148,48 @@ export const TSHIRT_SIZE_ORDER = ['xss', 'xxs', 'xs', 's', 'm', 'l', 'xl', 'xxl'
 /** Ukuran yang bisa ditulis jalur `update-tshirt` legacy (lihat `backoffice-client.ts`). */
 const WRITABLE_SIZES: readonly string[] = ['xs', 's', 'm', 'l', 'xl', 'xxl']
 
-const TSHIRT_SIZE = '(xxxl|3xl|xxl|2xl|xss|xxs|xl|xs|s|m|l)'
+const TSHIRT_SIZE = '(xxxl|xxl|xss|xxs|xl|xs|s|m|l)'
+const SIZE_SET: ReadonlySet<string> = new Set(['xxxl', 'xxl', 'xss', 'xxs', 'xl', 'xs', 's', 'm', 'l'])
 const SIZE_FIRST = new RegExp(`^${TSHIRT_SIZE}\\s*(?:[x×:=]\\s*)?(\\d{1,2})?$`, 'i')
-const COUNT_FIRST = new RegExp(`^(\\d{1,2})\\s*(?:[x×]\\s*)?${TSHIRT_SIZE}$`, 'i')
-const SIZE_ALIAS: Record<string, string> = { '2xl': 'xxl', '3xl': 'xxxl' }
+/** "2 XL", "2 M": hitungan lalu spasi lalu ukuran utuh. */
+const COUNT_SPACED = new RegExp(`^(\\d{1,2})\\s+${TSHIRT_SIZE}$`, 'i')
+/** "2 x XL", "2x M", "2×L": hitungan lalu pemisah x eksplisit. */
+const COUNT_TIMES = new RegExp(`^(\\d{1,2})\\s*[x×]\\s*${TSHIRT_SIZE}$`, 'i')
+/** "2m", "3l": hitungan menempel pada ukuran yang tidak diawali "x" (tidak ambigu). */
+const COUNT_GLUED = /^(\d{1,2})(xxxl|xxl|xss|xxs|xl|xs|s|m|l)$/i
+/** "2XL x 1", "3xl:1": 2XL/3XL (= XXL/XXXL) HANYA diterima bila jumlahnya ditulis eksplisit. */
+const ALIAS_WITH_QTY = /^(2|3)xl\s*[x×:=]\s*(\d{1,2})$/i
+const ALIAS: Record<string, string> = { '2': 'xxl', '3': 'xxxl' }
+
+/**
+ * "2xl"/"3xl" menempel tanpa jumlah eksplisit ambigu: 2 x XL atau satu 2XL (= XXL)? Begitu juga "2xs", "2xxl".
+ * Ambigu bila bagian setelah angka diawali "x" dan, dengan maupun tanpa "x" itu, sama-sama ukuran sah.
+ */
+function isAmbiguousGlued(part: string): boolean {
+  const m = /^\d{1,2}(x[a-z]+)$/i.exec(part)
+  if (!m) return false
+  const rest = m[1].toLowerCase()
+  return SIZE_SET.has(rest) && SIZE_SET.has(rest.slice(1))
+}
 
 function parseSizes(raw: string, allowed: readonly string[]): Record<string, number> | null {
   const parts = raw.split(/[,;\n]+/).map((p) => p.trim()).filter(Boolean)
   if (parts.length === 0) return null
   const out: Record<string, number> = {}
   for (const part of parts) {
-    const a = SIZE_FIRST.exec(part)
-    const b = a ? null : COUNT_FIRST.exec(part)
-    const hit = a ? { size: a[1], qty: a[2] ?? '1' } : b ? { size: b[2], qty: b[1] } : null
+    if (isAmbiguousGlued(part)) return null
+    const alias = ALIAS_WITH_QTY.exec(part)
+    const a = alias ? null : SIZE_FIRST.exec(part)
+    const c = alias || a ? null : COUNT_SPACED.exec(part) ?? COUNT_TIMES.exec(part) ?? COUNT_GLUED.exec(part)
+    const hit = alias
+      ? { size: ALIAS[alias[1]], qty: alias[2] }
+      : a
+        ? { size: a[1], qty: a[2] ?? '1' }
+        : c
+          ? { size: c[2], qty: c[1] }
+          : null
     if (!hit) return null
-    const size = hit.size.toLowerCase()
-    const key = SIZE_ALIAS[size] ?? size
+    const key = hit.size.toLowerCase()
     if (!allowed.includes(key)) return null
     out[key] = (out[key] ?? 0) + Number(hit.qty)
   }
@@ -173,7 +199,8 @@ function parseSizes(raw: string, allowed: readonly string[]): Record<string, num
 /**
  * Teks ukuran kaos (bentuk usulan ekstraksi, mis. "M x 2, L x 1") jadi jumlah per ukuran untuk
  * `writeBookingChange`. Butir dipisah koma/titik koma/baris baru; tiap butir "M x 2", "M:2", "M 2",
- * "2 M", "2x M" atau "M" saja (= 1). "2XL" = xxl. Satu butir tak dikenal -- termasuk ukuran yang tidak
+ * "2 M", "2x M" atau "M" saja (= 1). "2XL x 1" (jumlah eksplisit) = xxl 1; "2xl"/"3xl" TANPA jumlah eksplisit ambigu
+ * (2 x XL atau satu 2XL?) -> null; ekstraksi wajib menulis "XL x 2". Satu butir tak dikenal -- termasuk ukuran yang tidak
  * punya jalur tulis (XSS/XXS/XXXL) -- = null (minta admin mengoreksi); kecocokan total dengan jumlah
  * peserta diperiksa klien tulis, bukan di sini.
  */

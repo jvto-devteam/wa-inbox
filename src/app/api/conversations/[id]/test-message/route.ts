@@ -5,6 +5,7 @@ import { broadcast } from '@/lib/realtime'
 import { withMediaUrl } from '@/lib/serialize-message'
 import { scheduleBotRun } from '@/lib/inbound'
 import { scheduleBookingExtraction } from '@/lib/booking-actions/schedule'
+import { noteInboundForChatReview } from '@/lib/chat-review/auto-refresh'
 import { classifyAndStoreTopicLabels } from '@/lib/inbox/topic-labels'
 import { parseJsonBody } from '@/lib/parse-json'
 
@@ -66,6 +67,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   } catch (error) {
     console.error('scheduleBookingExtraction gagal', { conversationId: conversation.id, error })
   }
+
+  noteInboundForChatReview(conversation.id, { type: 'text', content: parsed.data.text })
 
   return NextResponse.json(withMediaUrl(created))
 }

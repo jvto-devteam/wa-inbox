@@ -29,6 +29,8 @@ vi.mock('@/lib/db', () => ({ prisma: mockDeep<PrismaClient>() }))
 vi.mock('@/lib/bot/orchestrator', () => ({ decideAndRespond: vi.fn() }))
 vi.mock('@/lib/send', () => ({ sendMessage: vi.fn() }))
 vi.mock('@/lib/realtime', () => ({ broadcast: vi.fn() }))
+// Ringkasan chat memakai conversation.findUnique sendiri; di sini ia akan memakan urutan mockResolvedValueOnce.
+vi.mock('@/lib/chat-review/auto-refresh', () => ({ noteInboundForChatReview: vi.fn() }))
 
 const mockPrisma = prisma as unknown as DeepMockProxy<PrismaClient>
 

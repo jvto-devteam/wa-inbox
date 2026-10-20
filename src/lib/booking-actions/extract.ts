@@ -37,7 +37,7 @@ Nilai "field" yang boleh dipakai (selain ini JANGAN ditulis):
 - pickup_detail, drop_detail: nama hotel / alamat / detail lokasi jemput atau antar
 - pickup_arrival, drop_arrival: nomor flight atau kereta beserta jamnya
 - pickup_time, drop_time: jam, format HH:MM (24 jam)
-- tshirt_sizes: ukuran kaos, mis. "M x 2, L x 1"
+- tshirt_sizes: ukuran kaos, HANYA bentuk kanonik "XL x 2, M x 1" (ukuran x jumlah, dipisah koma). Singkatan menempel seperti "2xl" ambigu (2 x XL atau satu 2XL?): putuskan memakai total_pax booking sebagai petunjuk (jumlah semua ukuran harus sama dengan total_pax bila diketahui), mis. pax 3 dan "2xl 1m" -> "XL x 2, M x 1"; satu ukuran 2XL ditulis "XXL x 1". Kalau tetap tidak bisa diputuskan, JANGAN tulis item tshirt_sizes itu sama sekali.
 - note: catatan lain (alergi, diet, permintaan khusus)
 - travel_date: tanggal mulai trip, format YYYY-MM-DD
 - total_pax: jumlah orang, bilangan bulat

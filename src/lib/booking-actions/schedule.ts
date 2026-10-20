@@ -26,7 +26,7 @@
  *   - pesan penutup/reaksi ("ok", "thanks", emoji) tidak memicu.
  *
  * Sesudah ekstraksi selesai (jalur yang lolos gerbang), ringkasan chat di panel kanan ikut
- * diperbarui lewat `scheduleChatReviewRefresh` (jeda 5 menit, gerbang nomor Indonesia sendiri).
+ * diperbarui oleh jalur masuk pesan (`noteInboundForChatReview`), bukan dari sini.
  */
 import { prisma } from '@/lib/db'
 import { isNoiseMessage } from '@/lib/summary-items/noise'
@@ -34,7 +34,6 @@ import { buildNumberedTranscript } from '@/lib/daily-summary/collect'
 import { jakartaDayKey } from '@/lib/daily-summary/time'
 import type { BookingData } from '@/lib/booking/client'
 import { openPipelineRun, traceClose, traceStep } from '@/lib/pipeline/tracer'
-import { scheduleChatReviewRefresh } from '@/lib/chat-review/auto-refresh'
 import { extractBookingSignals } from './extract'
 import { applyExtraction, reevaluateBookingActions } from './store'
 import { autoApplyCreated } from './auto-apply'
@@ -129,8 +128,6 @@ async function runExtraction(conversationId: string): Promise<void> {
       // (AUTO_APPLIED / push CHANGE bila tetap OPEN). Tidak pernah melempar.
       await autoApplyCreated(applied.changeEvents)
     }
-    // Panel kanan Inbox ikut terbaru. Hanya mencatat lalu kembali; tidak pernah melempar.
-    scheduleChatReviewRefresh(conversationId)
     traceClose(run, 'selesai')
   } catch (error) {
     console.error('[booking-actions] ekstraksi gagal', { conversationId, error: error instanceof Error ? error.message : 'unknown' })

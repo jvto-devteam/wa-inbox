@@ -122,7 +122,11 @@ describe('parseTshirtSizes (Task 11)', () => {
   it('reads the extraction format and common variants', () => {
     expect(parseTshirtSizes('M x 2, L x 1')).toEqual({ m: 2, l: 1 })
     expect(parseTshirtSizes('XL:1; s=2\nxs')).toEqual({ xl: 1, s: 2, xs: 1 })
-    expect(parseTshirtSizes('2 M, 2x L, 2XL')).toEqual({ m: 2, l: 2, xxl: 1 })
+    expect(parseTshirtSizes('2 M, 2x L, 2XL x 1')).toEqual({ m: 2, l: 2, xxl: 1 })
+    expect(parseTshirtSizes('XL x 2, M x 1')).toEqual({ xl: 2, m: 1 })
+    expect(parseTshirtSizes('2 XL, 1 M')).toEqual({ xl: 2, m: 1 })
+    expect(parseTshirtSizes('2 x XL, XXL x 1')).toEqual({ xl: 2, xxl: 1 })
+    expect(parseTshirtSizes('2M, 3l')).toEqual({ m: 2, l: 3 })
     expect(parseTshirtSizes('M x 1, m x 2')).toEqual({ m: 3 })
   })
 
@@ -130,6 +134,21 @@ describe('parseTshirtSizes (Task 11)', () => {
     expect(parseTshirtSizes('')).toBeNull()
     expect(parseTshirtSizes('dua medium')).toBeNull()
     expect(parseTshirtSizes('M x 2, XXXL x 1')).toBeNull()
+  })
+})
+
+describe('ukuran kaos ambigu ("2xl")', () => {
+  it('menolak 2xl/3xl menempel tanpa jumlah eksplisit', () => {
+    expect(parseTshirtSizes('2xl 1m')).toBeNull()
+    expect(parseTshirtSizes('2xl')).toBeNull()
+    expect(parseTshirtSizes('3XL, M x 1')).toBeNull()
+    expect(parseTshirtSizes('2xs')).toBeNull()
+    expect(normalizeFieldValue('tshirt_sizes', '2xl 1m')).toBeNull()
+  })
+  it('2XL dengan jumlah eksplisit = xxl; 3XL x 1 = xxxl', () => {
+    expect(parseTshirtSizes('2XL x 1')).toEqual({ xxl: 1 })
+    expect(normalizeFieldValue('tshirt_sizes', '2XL x 1, M x 1')).toBe('M x 1, XXL x 1')
+    expect(canonicalTshirtSizes('3XL x 1')).toBe('XXXL x 1')
   })
 })
 

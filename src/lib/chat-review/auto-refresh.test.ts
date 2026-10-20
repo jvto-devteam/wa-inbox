@@ -7,7 +7,7 @@ import type { PrismaClient } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { broadcast } from '@/lib/realtime'
 import { refreshChatReview } from './refresh'
-import { scheduleChatReviewRefresh, __resetChatReviewRefreshForTests, CHAT_REVIEW_MIN_GAP_MS } from './auto-refresh'
+import { scheduleChatReviewRefresh, noteInboundForChatReview, __resetChatReviewRefreshForTests, CHAT_REVIEW_MIN_GAP_MS } from './auto-refresh'
 
 vi.mock('@/lib/db', () => ({ prisma: mockDeep<PrismaClient>() }))
 vi.mock('@/lib/realtime', () => ({ broadcast: vi.fn() }))
@@ -16,6 +16,10 @@ const mockPrisma = prisma as unknown as DeepMockProxy<PrismaClient>
 
 const NOW = new Date('2026-10-20T03:00:00Z')
 const FOREIGN = '12025551234'
+
+function stubSkipSetting(on: boolean) {
+  mockPrisma.settings.findUnique.mockResolvedValue({ skipBotForIndonesianNumbers: on } as never)
+}
 
 function stubConversation(o: { chatReviewAt?: Date | null; isTest?: boolean; phone?: string | null } = {}) {
   mockPrisma.conversation.findUnique.mockResolvedValue({
@@ -73,7 +77,16 @@ describe('scheduleChatReviewRefresh', () => {
     expect(refreshChatReview).toHaveBeenCalledTimes(1)
   })
 
-  it('Indonesian number -> no auto refresh', async () => {
+  it('Indonesian number, skip setting OFF -> runs (daily-summary rule)', async () => {
+    stubSkipSetting(false)
+    stubConversation({ phone: '6281234567890' })
+    scheduleChatReviewRefresh('c1')
+    await vi.advanceTimersByTimeAsync(0)
+    expect(refreshChatReview).toHaveBeenCalledTimes(1)
+  })
+
+  it('Indonesian number, skip setting ON -> no auto refresh', async () => {
+    stubSkipSetting(true)
     stubConversation({ phone: '6281234567890' })
     scheduleChatReviewRefresh('c1')
     await vi.advanceTimersByTimeAsync(CHAT_REVIEW_MIN_GAP_MS)
@@ -81,6 +94,7 @@ describe('scheduleChatReviewRefresh', () => {
   })
 
   it('Indonesian number but isTest (whitelist) -> runs', async () => {
+    stubSkipSetting(true)
     stubConversation({ phone: '6282143403501', isTest: true })
     scheduleChatReviewRefresh('c1')
     await vi.advanceTimersByTimeAsync(0)
@@ -90,6 +104,7 @@ describe('scheduleChatReviewRefresh', () => {
   it('final review Important 7 (R25): a BOOKING_ACTIONS_TEST_PHONES number (not isTest) passes the Indonesian gate', async () => {
     process.env.BOOKING_ACTIONS_TEST_PHONES = '6282143403501'
     try {
+      stubSkipSetting(true)
       stubConversation({ phone: '6282143403501', isTest: false })
       scheduleChatReviewRefresh('c1')
       await vi.advanceTimersByTimeAsync(0)
@@ -129,5 +144,46 @@ describe('scheduleChatReviewRefresh', () => {
     scheduleChatReviewRefresh('c1')
     await vi.advanceTimersByTimeAsync(0)
     expect(refreshChatReview).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe('noteInboundForChatReview', () => {
+  it('lead without any booking -> refresh scheduled (no booking lookup involved)', async () => {
+    stubConversation({ chatReviewAt: null })
+    noteInboundForChatReview('c1', { type: 'text', content: 'Halo, berapa harga Bromo sunrise?' })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(refreshChatReview).toHaveBeenCalledTimes(1)
+  })
+
+  it('burst of inbound messages -> one run', async () => {
+    stubConversation({ chatReviewAt: new Date(NOW.getTime() - 60_000) })
+    for (const t of ['Halo', 'Ada slot?', 'Untuk 4 orang']) noteInboundForChatReview('c1', { type: 'text', content: t })
+    await vi.advanceTimersByTimeAsync(CHAT_REVIEW_MIN_GAP_MS)
+    expect(refreshChatReview).toHaveBeenCalledTimes(1)
+  })
+
+  it('noise (ok, thanks, reaction) and non-text do not trigger', async () => {
+    stubConversation({ chatReviewAt: null })
+    noteInboundForChatReview('c1', { type: 'text', content: 'ok thanks' })
+    noteInboundForChatReview('c1', { type: 'reaction', content: null })
+    noteInboundForChatReview('c1', { type: 'image', content: 'foto' })
+    noteInboundForChatReview('c1', { type: 'text', content: '   ' })
+    await vi.advanceTimersByTimeAsync(CHAT_REVIEW_MIN_GAP_MS)
+    expect(refreshChatReview).not.toHaveBeenCalled()
+  })
+
+  it('Indonesian number with skip setting ON -> not scheduled', async () => {
+    stubSkipSetting(true)
+    stubConversation({ phone: '6281234567890' })
+    noteInboundForChatReview('c1', { type: 'text', content: 'Halo kak, mau tanya paket' })
+    await vi.advanceTimersByTimeAsync(CHAT_REVIEW_MIN_GAP_MS)
+    expect(refreshChatReview).not.toHaveBeenCalled()
+  })
+
+  it('never throws, even when the DB is down (webhook path unaffected)', async () => {
+    mockPrisma.conversation.findUnique.mockRejectedValue(new Error('db down'))
+    expect(() => noteInboundForChatReview('c1', { type: 'text', content: 'Halo kak' })).not.toThrow()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(refreshChatReview).not.toHaveBeenCalled()
   })
 })

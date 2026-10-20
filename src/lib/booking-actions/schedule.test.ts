@@ -61,15 +61,8 @@ async function fire() {
 }
 
 describe('scheduleBookingExtraction', () => {
-  it('schedules a chat-review refresh after extraction completes', async () => {
+  it('does NOT schedule the chat-review refresh itself (the inbound path does; avoids double scheduling)', async () => {
     stubConversation()
-    scheduleBookingExtraction('c1', { text: 'tolong ganti hotel' })
-    await fire()
-    expect(scheduleChatReviewRefresh).toHaveBeenCalledWith('c1')
-  })
-
-  it('does not refresh the chat review when the gate skips extraction', async () => {
-    stubConversation({ bookingData: null })
     scheduleBookingExtraction('c1', { text: 'tolong ganti hotel' })
     await fire()
     expect(scheduleChatReviewRefresh).not.toHaveBeenCalled()

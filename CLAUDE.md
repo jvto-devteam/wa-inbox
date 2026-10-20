@@ -249,7 +249,10 @@ append-only tanpa FK: siapa, kapan, nilai lama/baru), `PushSubscription`. Setela
   `''`, `07:00` tidak diketahui — itu hanya menahan **peringatan** MISMATCH jam. `changeAlreadyApplied`
   membandingkan nilai mentah (`07:00` = `07:00`, supaya kartu jam 07:00 tertutup), dan permintaan data (R23,
   di bawah) tidak menanyakan jam `07:00` — tiga aturan untuk satu nilai yang sama. Ukuran kaos dibandingkan
-  dalam bentuk kanonik `canonicalTshirtSizes` (urutan ukuran backoffice), bukan string.
+  dalam bentuk kanonik `canonicalTshirtSizes` (urutan ukuran backoffice), bukan string. Token menempel
+  "2xl"/"3xl" tanpa jumlah eksplisit **ambigu** (2 × XL atau satu 2XL?): `parseTshirtSizes` menolaknya (null → butir
+  dibuang); prompt ekstraksi wajib menulis bentuk kanonik "XL x 2, M x 1" dengan `total_pax` sebagai petunjuk, atau
+  tidak menulis butir itu. "2XL x 1" (jumlah eksplisit) = XXL × 1.
 - **Eksekusi** (`execute.ts`, `executeBookingAction`): menulis lewat endpoint `my-booking` legacy
   (`src/lib/booking/backoffice-client.ts`, env `LEGACY_BASE_URL`). **Sebelum menulis, Setujui dan Batalkan
   selalu mencari booking segar ke API** (`lookupBookingResult`), karena form update-pickup/update-drop mengirim
@@ -313,8 +316,14 @@ append-only tanpa FK: siapa, kapan, nilai lama/baru), `PushSubscription`. Setela
   tetap di-push saat dibuat. Env
   `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`. Setiap permintaan perubahan berlabel "belum
   dipenuhi" sampai ditutup; tidak ada kedaluwarsa.
-- **Panel kanan**: `GET /api/conversations/[id]/chat-review` memuat `pinned` dan `changeHistory`. Ekstraksi
-  yang lolos gerbang memanggil `scheduleChatReviewRefresh` (jeda minimal `CHAT_REVIEW_MIN_GAP_MS` = 5 menit).
+- **Panel kanan**: `GET /api/conversations/[id]/chat-review` memuat `pinned` dan `changeHistory`. Tab ini
+  ikut terbaru untuk **semua** percakapan, termasuk lead tanpa booking (owner 2026-10-20): `noteInboundForChatReview`
+  (`auto-refresh.ts`) dipanggil dari jalur masuk pesan teks pelanggan (WhatsApp `inbound.ts`, Messenger/Instagram
+  `inbound-messenger.ts`, pesan uji) dan memanggil `scheduleChatReviewRefresh` (jeda minimal `CHAT_REVIEW_MIN_GAP_MS` =
+  5 menit, satu run per burst, tidak ditunggu, tidak pernah melempar). Tidak bergantung pada booking maupun rollout aksi
+  booking (hanya menulis catatan internal). Nomor Indonesia dilewati hanya bila `Settings.skipBotForIndonesianNumbers`
+  menyala (aturan daily summary); `isTest`/nomor uji selalu lolos; `isNoiseMessage` tidak memicu. Email (Gmail) tidak
+  memicunya. `runExtraction` **tidak** memanggilnya lagi (hindari jadwal ganda).
 - **Permintaan data** (`data-requests.ts`, `createDataRequestDrafts`): H-7 sampai H-1 (H-0 = trip mulai, draf
   ditutup), jam kirim 08:00–20:00 WIB (`inDataRequestHours`), satu draf per booking per hari WIB (unik
   `[bookingId, type, forDay]`), hanya butir yang kurang (`findDataGaps`); jam **tidak** ditanyakan bila nilainya

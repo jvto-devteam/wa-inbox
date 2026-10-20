@@ -57,6 +57,15 @@ export const EXTRACTION_CASES: ExtractionCase[] = [
     source: 'this plan, Task 2 (tamu menyatakan jumlah orang; review focus #3)',
   },
   {
+    id: 'extract-change-tshirt-2xl-ambigu-pax-3',
+    guestMessages: ['Kak tolong ubah kaos jadi 2xl 1m ya'],
+    booking: { ...SURABAYA_BOOKING, total_pax: 3, tshirtSize: 'M x 3' },
+    // "2xl" ambigu (2 x XL atau satu 2XL); pax 3 => 2 x XL + 1 M. Bentuk kanonik urut M dulu.
+    expectChanges: [{ field: 'tshirt_sizes', value: 'M x 1, XL x 2' }],
+    expectFacts: [],
+    source: 'owner 2026-10-20 ("ubah kaos jadi 2xl 1m"; total_pax sebagai petunjuk)',
+  },
+  {
     id: 'extract-none-pleasantries',
     guestMessages: ['Terima kasih banyak kak, sampai ketemu di Surabaya!', '👍'],
     booking: SURABAYA_BOOKING,

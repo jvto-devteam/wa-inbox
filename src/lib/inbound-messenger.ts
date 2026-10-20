@@ -3,6 +3,7 @@ import { prisma } from '@/lib/db'
 import { upsertChannelIdentity } from '@/lib/channel/identity'
 import { defaultBotEnabled } from '@/lib/inbound'
 import { fetchMessengerProfileName } from '@/lib/meta/messenger-profile'
+import { noteInboundForChatReview } from '@/lib/chat-review/auto-refresh'
 import { broadcast } from '@/lib/realtime'
 import { withMediaUrl } from '@/lib/serialize-message'
 import type { MessengerMessagingEvent, MessengerWebhookPayload } from '@/lib/meta/messenger-types'
@@ -143,6 +144,8 @@ async function ingestOne(
     // membawa `message` supaya ConversationList/ThreadView bisa merender bubble-nya tanpa
     // fetch ulang.
     broadcast({ type: 'message.created', conversationId: conversation.id, message: withMediaUrl(created) })
+    // Panel ringkasan chat ikut terbaru (tidak ditunggu, tidak pernah melempar).
+    noteInboundForChatReview(conversation.id, { type: 'text', content })
     return true
   } catch (error) {
     // Balapan retry-at-least-once Meta yang sama seperti ingestSingleMessage di

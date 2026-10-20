@@ -1,6 +1,11 @@
 /**
  * Menjaga tab "Ringkasan chat" di Inbox tetap terbaru tanpa menunggu operator menekan
- * "Perbarui sekarang". Dipanggil `schedule.ts` sesudah ekstraksi booking selesai.
+ * "Perbarui sekarang". Dipanggil dari jalur masuk pesan pelanggan (`noteInboundForChatReview`: WhatsApp
+ * `inbound.ts`, Messenger/Instagram `inbound-messenger.ts`, pesan uji) untuk SEMUA percakapan -- termasuk lead
+ * yang belum punya booking -- dan tidak bergantung pada gerbang rollout aksi booking: ia hanya menulis catatan
+ * internal, tidak pernah mengirim pesan ke siapa pun. Email (Gmail) sengaja tidak memicunya: benang email
+ * tidak punya panel ringkasan yang dipantau dan bot tidak menjawab email; job 00.00 dan tombol manual tetap jalan.
+ * `runExtraction` TIDAK memanggilnya lagi (jalur masuk sudah menjadwalkan; dua pemanggil = review ganda).
  *
  * TIDAK PERNAH MELEMPAR dan tidak boleh memperlambat apa pun: `scheduleChatReviewRefresh` hanya
  * mencatat bahwa percakapan ini sedang menunggu lalu kembali; kueri, LLM, dan penyimpanan
@@ -12,12 +17,15 @@
  *   - belum -> SATU timer (`unref`) di akhir jeda. Pesan berikutnya selama percakapan ini
  *     tercatat menunggu tidak menambah timer, jadi satu burst = satu review.
  *
- * Gerbang nomor Indonesia sama dengan ekstraksi booking (Ruling R13 + R25, `blockedByIndonesianGate`): nomor 62
- * dilewati, kecuali percakapan `isTest` atau nomor `BOOKING_ACTIONS_TEST_PHONES`. Gerbang dinilai di sini karena
- * butuh `isTest` dari DB.
+ * Gerbang nomor Indonesia sama dengan daily summary (`collect.ts` `excludeIndonesian`): nomor 62 dilewati HANYA
+ * bila `Settings.skipBotForIndonesianNumbers` menyala; percakapan `isTest` atau nomor `BOOKING_ACTIONS_TEST_PHONES`
+ * selalu lolos. Gerbang dinilai di sini karena butuh `isTest` dan setelan dari DB.
+ * Pesan penutup/reaksi ("ok", "thanks", 👍; `isNoiseMessage`) tidak memicu.
  */
 import { prisma } from '@/lib/db'
-import { blockedByIndonesianGate } from '@/lib/booking-actions/rollout'
+import { isBookingTestConversation } from '@/lib/booking-actions/rollout'
+import { isIndonesianNumber } from '@/lib/phone'
+import { isNoiseMessage } from '@/lib/summary-items/noise'
 import { broadcast } from '@/lib/realtime'
 import { refreshChatReview } from './refresh'
 
@@ -51,9 +59,17 @@ async function plan(conversationId: string, now: Date): Promise<void> {
       where: { id: conversationId },
       select: { chatReviewAt: true, isTest: true, contact: { select: { phone: true } } },
     })
-    if (!conv || blockedByIndonesianGate({ isTest: conv.isTest, phone: conv.contact?.phone ?? null })) {
+    if (!conv) {
       waiting.delete(conversationId)
       return
+    }
+    const phone = conv.contact?.phone ?? null
+    if (isIndonesianNumber(phone) && !isBookingTestConversation({ isTest: conv.isTest, phone })) {
+      const settings = await prisma.settings.findUnique({ where: { id: 1 }, select: { skipBotForIndonesianNumbers: true } })
+      if (settings?.skipBotForIndonesianNumbers ?? false) {
+        waiting.delete(conversationId)
+        return
+      }
     }
     const wait = conv.chatReviewAt ? conv.chatReviewAt.getTime() + CHAT_REVIEW_MIN_GAP_MS - now.getTime() : 0
     if (wait <= 0) {
@@ -76,6 +92,20 @@ export function scheduleChatReviewRefresh(conversationId: string, now: Date = ne
     void plan(conversationId, now)
   } catch (error) {
     waiting.delete(conversationId)
+    logFailure(conversationId, error)
+  }
+}
+
+/**
+ * Titik panggil jalur masuk: satu pesan teks pelanggan baru saja tersimpan. Pesan non-teks dan penutup/reaksi
+ * dilewati. Tidak ditunggu, tidak pernah melempar.
+ */
+export function noteInboundForChatReview(conversationId: string, message: { type: string; content: string | null }): void {
+  try {
+    if (message.type !== 'text' || !message.content?.trim()) return
+    if (isNoiseMessage({ type: message.type, content: message.content })) return
+    scheduleChatReviewRefresh(conversationId)
+  } catch (error) {
     logFailure(conversationId, error)
   }
 }
