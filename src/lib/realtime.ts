@@ -21,6 +21,9 @@ type RealtimeEvent =
   // penerimanya mengambil ulang daftarnya -- persis seperti yang sudah dilakukan saat ada
   // pesan dari percakapan yang belum dikenal.
   | { type: 'conversation.updated'; conversationId: string }
+  // Tindakan booking dari chat (src/lib/booking-actions/store.ts) dibuat/ditutup. Tanpa isi:
+  // panel kanan hanya perlu tahu ada perubahan lalu mengambil ulang daftarnya.
+  | { type: 'booking-actions.changed'; conversationId: string }
   // One step boundary of one bot run, emitted live while the run is still in flight (see
   // src/lib/pipeline/tracer.ts). `stepId` is a PipelineStepId from src/lib/pipeline/steps.ts,
   // never a free-form string. `runId` is the id the run's BotDecisionRun row will be written

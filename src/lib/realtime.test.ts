@@ -47,6 +47,14 @@ describe('realtime pub/sub', () => {
     expect(listener).toHaveBeenCalledWith({ type: 'knowledge.gap', conversationId: 'conv_1' })
     unsubscribe()
   })
+
+  it('mengirim booking-actions.changed tanpa isi apa pun', () => {
+    const listener = vi.fn()
+    const unsubscribe = subscribe(listener)
+    broadcast({ type: 'booking-actions.changed', conversationId: 'conv_1' })
+    expect(listener).toHaveBeenCalledWith({ type: 'booking-actions.changed', conversationId: 'conv_1' })
+    unsubscribe()
+  })
 })
 
 describe('isolasi listener saat broadcast', () => {

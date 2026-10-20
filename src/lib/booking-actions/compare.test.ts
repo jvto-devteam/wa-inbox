@@ -79,3 +79,14 @@ describe('bookingTimeKnown', () => {
     expect(bookingTimeKnown('07:30')).toBe(true)
   })
 })
+
+describe('hotel (Ruling R9)', () => {
+  const b: BookingData = { ...booking, hotels: [{ day: '1', hotel: 'Hotel Majapahit' }, { day: '2', hotel: 'Bromo Permai' }] }
+  it('cocok dengan salah satu nama hotel, trim + case-insensitive', () => {
+    expect(findMismatches([fact('hotel', '  bromo permai ')], b)).toEqual([])
+    expect(changeAlreadyApplied({ field: 'hotel', value: 'HOTEL MAJAPAHIT' }, b)).toBe(true)
+  })
+  it('hotel yang tidak ada di daftar tetap mismatch', () => {
+    expect(findMismatches([fact('hotel', 'Hotel Lain')], b)).toHaveLength(1)
+  })
+})

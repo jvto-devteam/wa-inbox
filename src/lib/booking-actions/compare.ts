@@ -43,12 +43,21 @@ function comparableBookingValue(field: FieldKey, booking: BookingData): string |
   return value
 }
 
+/** Hotel: cocok bila sama dengan SALAH SATU nama di `hotels[]` (Ruling R9), bukan gabungannya. */
+function matchesBooking(field: FieldKey, value: string, current: string, booking: BookingData): boolean {
+  if (field === 'hotel') {
+    const want = comparable(field, value)
+    return (booking.hotels ?? []).some((h) => typeof h.hotel === 'string' && comparable(field, h.hotel) === want)
+  }
+  return comparable(field, current) === comparable(field, value)
+}
+
 export function findMismatches(facts: ActiveFact[], booking: BookingData): Mismatch[] {
   const out: Mismatch[] = []
   for (const f of facts) {
     const current = comparableBookingValue(f.field, booking)
     if (current === undefined) continue
-    if (current !== null && comparable(f.field, current) === comparable(f.field, f.value)) continue
+    if (current !== null && matchesBooking(f.field, f.value, current, booking)) continue
     out.push({ field: f.field, chatValue: f.value, bookingValue: current, factId: f.id })
   }
   return out
@@ -57,5 +66,5 @@ export function findMismatches(facts: ActiveFact[], booking: BookingData): Misma
 export function changeAlreadyApplied(change: { field: FieldKey; value: string }, booking: BookingData): boolean {
   const current = comparableBookingValue(change.field, booking)
   if (current === undefined || current === null) return false
-  return comparable(change.field, current) === comparable(change.field, change.value)
+  return matchesBooking(change.field, change.value, current, booking)
 }
