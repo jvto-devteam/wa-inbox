@@ -1,7 +1,7 @@
 /** @vitest-environment node */
 import { describe, expect, it } from 'vitest'
 import type { BookingData } from '@/lib/booking/client'
-import { changeGroup, normalizeFieldValue, parseTshirtSizes, readBookingField, usesBaliTransport } from './fields'
+import { canonicalTshirtSizes, changeGroup, normalizeFieldValue, parseTshirtSizes, readBookingField, usesBaliTransport } from './fields'
 
 const surabaya: BookingData = {
   total_pax: 2,
@@ -81,6 +81,19 @@ describe('normalizeFieldValue', () => {
     expect(t('jam 2 siang')).toBe('14:00')
     expect(t('7 malam')).toBe('19:00')
   })
+  it('"malam": 12 malam = 00:00, 1-4 malam = dini hari (Bromo midnight pickup), 5-11 malam = evening', () => {
+    const t = (s: string) => normalizeFieldValue('pickup_time', s)
+    expect(t('jam 12 malam')).toBe('00:00')
+    expect(t('2 malam')).toBe('02:00')
+    expect(t('jam 1 malam')).toBe('01:00')
+    expect(t('4 malam')).toBe('04:00')
+    expect(t('jam 2.30 malam')).toBe('02:30')
+    expect(t('7 malam')).toBe('19:00')
+    expect(t('11 malam')).toBe('23:00')
+    expect(t('12 pm')).toBe('12:00')
+    expect(t('12 am')).toBe('00:00')
+    expect(t('3 sore')).toBe('15:00')
+  })
   it('pickup_time rejects text without digits and bad values', () => {
     expect(normalizeFieldValue('pickup_time', 'jam sembilan')).toBeNull()
     expect(normalizeFieldValue('pickup_time', '25:00')).toBeNull()
@@ -117,5 +130,27 @@ describe('parseTshirtSizes (Task 11)', () => {
     expect(parseTshirtSizes('')).toBeNull()
     expect(parseTshirtSizes('dua medium')).toBeNull()
     expect(parseTshirtSizes('M x 2, XXXL x 1')).toBeNull()
+  })
+})
+
+describe('canonicalTshirtSizes (final review Important 4)', () => {
+  it('orders like the backoffice (XSS..XXXL), upper-case labels, drops zeros', () => {
+    expect(canonicalTshirtSizes('L x 1, M x 2')).toBe('M x 2, L x 1')
+    expect(canonicalTshirtSizes('xxl, 2 s, xs:1, l x 0')).toBe('XS x 1, S x 2, XXL x 1')
+    expect(canonicalTshirtSizes('3XL x 1, XSS x 1, XXS x 2')).toBe('XSS x 1, XXS x 2, XXXL x 1')
+    expect(canonicalTshirtSizes('M x 1, m x 2')).toBe('M x 3')
+  })
+  it('null for unreadable or all-zero', () => {
+    expect(canonicalTshirtSizes('dua medium')).toBeNull()
+    expect(canonicalTshirtSizes('M x 0')).toBeNull()
+  })
+  it('normalizeFieldValue(tshirt_sizes) stores the canonical form and rejects unreadable text', () => {
+    expect(normalizeFieldValue('tshirt_sizes', '1 L, 2 M')).toBe('M x 2, L x 1')
+    expect(normalizeFieldValue('tshirt_sizes', 'ukuran biasa saja')).toBeNull()
+  })
+  it('write parser still refuses sizes without a write path (XXXL/XSS/XXS)', () => {
+    expect(parseTshirtSizes('XXXL x 1')).toBeNull()
+    expect(parseTshirtSizes('XSS x 1')).toBeNull()
+    expect(parseTshirtSizes('M x 2, L x 1')).toEqual({ m: 2, l: 1 })
   })
 })

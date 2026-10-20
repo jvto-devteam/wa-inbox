@@ -28,6 +28,7 @@ export function bookingTimeKnown(raw: string | undefined | null): boolean {
   return t !== '' && t !== FAKE_EMPTY_TIME
 }
 
+/** Ukuran kaos dibandingkan dalam bentuk kanonik (`canonicalTshirtSizes` lewat `normalizeFieldValue`): urutan bebas. */
 function comparable(field: FieldKey, raw: string): string {
   const value = normalizeFieldValue(field, raw) ?? raw.trim()
   const low = value.toLowerCase()
@@ -35,11 +36,16 @@ function comparable(field: FieldKey, raw: string): string {
   return COMPACT_FIELDS.includes(field) ? low.replace(/\s+/g, '') : low.replace(/\s+/g, ' ')
 }
 
-/** Nilai booking untuk dibandingkan, atau `undefined` bila field ini tak bisa dibandingkan. */
-function comparableBookingValue(field: FieldKey, booking: BookingData): string | null | undefined {
+/**
+ * Nilai booking untuk dibandingkan, atau `undefined` bila field ini tak bisa dibandingkan.
+ * `forMismatch`: jam yang tidak diketahui (null/''/'07:00', R2) tidak boleh memunculkan PERINGATAN, jadi
+ * dilewati. Untuk "sudah diterapkan?" nilai mentah yang dinormalisasi yang dipakai: usulan '07:00' pada booking
+ * berjam '07:00' memang sudah sama -- tanpa ini kartu jam 07:00 tidak pernah tertutup dan Setujui berulang.
+ */
+function comparableBookingValue(field: FieldKey, booking: BookingData, forMismatch: boolean): string | null | undefined {
   if (field === 'note') return undefined
   const value = readBookingField(booking, field)
-  if (TIME_FIELDS.includes(field) && !bookingTimeKnown(value)) return undefined
+  if (forMismatch && TIME_FIELDS.includes(field) && !bookingTimeKnown(value)) return undefined
   return value
 }
 
@@ -55,7 +61,7 @@ function matchesBooking(field: FieldKey, value: string, current: string, booking
 export function findMismatches(facts: ActiveFact[], booking: BookingData): Mismatch[] {
   const out: Mismatch[] = []
   for (const f of facts) {
-    const current = comparableBookingValue(f.field, booking)
+    const current = comparableBookingValue(f.field, booking, true)
     if (current === undefined) continue
     if (current !== null && matchesBooking(f.field, f.value, current, booking)) continue
     out.push({ field: f.field, chatValue: f.value, bookingValue: current, factId: f.id })
@@ -63,8 +69,9 @@ export function findMismatches(facts: ActiveFact[], booking: BookingData): Misma
   return out
 }
 
+/** Apakah booking SUDAH memuat nilai ini (nilai mentah ternormalisasi; '07:00' == '07:00')? */
 export function changeAlreadyApplied(change: { field: FieldKey; value: string }, booking: BookingData): boolean {
-  const current = comparableBookingValue(change.field, booking)
+  const current = comparableBookingValue(change.field, booking, false)
   if (current === undefined || current === null) return false
   return matchesBooking(change.field, change.value, current, booking)
 }

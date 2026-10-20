@@ -60,10 +60,20 @@ describe('changeAlreadyApplied', () => {
   it('note is never already applied', () => {
     expect(changeAlreadyApplied({ field: 'note', value: 'x' }, booking)).toBe(false)
   })
-  it('time not applied when booking time unknown, applied when equal', () => {
-    const b: BookingData = { ...booking, pickup: { ...booking.pickup, pickup_time: '07:00' } }
-    expect(changeAlreadyApplied({ field: 'pickup_time', value: '07:00' }, b)).toBe(false)
+  it('time applied when equal ("14.10" == "14:10")', () => {
     expect(changeAlreadyApplied({ field: 'drop_time', value: '14.10' }, booking)).toBe(true)
+  })
+  it("final review Important 3: '07:00' proposal on a booking showing '07:00' IS applied (no card loop); still never a MISMATCH", () => {
+    const b: BookingData = { ...booking, pickup: { ...booking.pickup, pickup_time: '07:00' } }
+    expect(changeAlreadyApplied({ field: 'pickup_time', value: '07:00' }, b)).toBe(true)
+    expect(changeAlreadyApplied({ field: 'pickup_time', value: '7 pagi' }, b)).toBe(true)
+    expect(changeAlreadyApplied({ field: 'pickup_time', value: '09:00' }, b)).toBe(false)
+    // R2 tetap: jam 07:00 booking tidak memicu peringatan.
+    expect(findMismatches([fact('pickup_time', '09:00')], b)).toEqual([])
+  })
+  it('empty booking time is never "applied"', () => {
+    const b: BookingData = { ...booking, pickup: { ...booking.pickup, pickup_time: '' } }
+    expect(changeAlreadyApplied({ field: 'pickup_time', value: '07:00' }, b)).toBe(false)
   })
 })
 
@@ -88,5 +98,23 @@ describe('hotel (Ruling R9)', () => {
   })
   it('hotel yang tidak ada di daftar tetap mismatch', () => {
     expect(findMismatches([fact('hotel', 'Hotel Lain')], b)).toHaveLength(1)
+  })
+})
+
+describe('final review Important 4: tshirt sizes compared canonically', () => {
+  const b: BookingData = { ...booking, tshirtSize: 'M x 2, L x 1' }
+  it('reordered / lower-case / count-first forms match the backoffice string', () => {
+    for (const v of ['L x 1, M x 2', 'm x 2, l x 1', '1 L, 2 M', 'L:1; M:2']) {
+      expect(changeAlreadyApplied({ field: 'tshirt_sizes', value: v }, b)).toBe(true)
+      expect(findMismatches([fact('tshirt_sizes', v)], b)).toEqual([])
+    }
+  })
+  it('different counts still mismatch', () => {
+    expect(changeAlreadyApplied({ field: 'tshirt_sizes', value: 'M x 1, L x 2' }, b)).toBe(false)
+    expect(findMismatches([fact('tshirt_sizes', 'M x 3')], b)).toHaveLength(1)
+  })
+  it('backoffice-only sizes (XXXL) are read too', () => {
+    const big: BookingData = { ...booking, tshirtSize: 'XL x 1, XXXL x 1' }
+    expect(changeAlreadyApplied({ field: 'tshirt_sizes', value: '3XL x 1, XL x 1' }, big)).toBe(true)
   })
 })

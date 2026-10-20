@@ -98,10 +98,15 @@ function normalizeTime(raw: string): string | null {
   let hour = Number(m[1])
   const minute = m[2] ? Number(m[2]) : 0
   if (minute > 59 || hour > 23) return null
-  const pm = /\b(pm|sore|malam)\b/.test(low)
+  const pm = /\b(pm|sore)\b/.test(low)
+  const malam = /\bmalam\b/.test(low)
   const siang = /\bsiang\b/.test(low)
   const am = /\b(am|pagi)\b/.test(low)
-  if (pm && hour < 12) hour += 12
+  // "malam": 12 malam = tengah malam (00:00); 1-4 malam = dini hari (jemput Bromo tengah malam, "jam 2 malam"
+  // = 02:00); 5-11 malam = sore/malam hari (+12).
+  if (malam && hour === 12) hour = 0
+  else if (malam && hour >= 1 && hour <= 4) { /* dini hari, jam tetap */ }
+  else if ((pm || malam) && hour < 12) hour += 12
   else if (siang && hour < 11) hour += 12
   else if (am && hour === 12) hour = 0
   return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`
@@ -127,22 +132,28 @@ export function normalizeFieldValue(key: FieldKey, raw: string): string | null {
       const d = new Date(`${value}T00:00:00Z`)
       return Number.isNaN(d.getTime()) || d.toISOString().slice(0, 10) !== value ? null : value
     }
+    case 'tshirt_sizes':
+      // Bentuk kanonik (urutan ukuran backoffice), jadi "L x 1, M x 2" == "M x 2, L x 1". Tak terbaca = ditolak.
+      return canonicalTshirtSizes(value)
     default:
       return value.length > MAX_FREE_TEXT ? `${value.slice(0, MAX_FREE_TEXT - 1)}…` : value
   }
 }
 
-const TSHIRT_SIZE = '(xxl|2xl|xl|xs|s|m|l)'
+/**
+ * Urutan ukuran persis seperti `ScheduleController` new-backoffice merangkai `tshirtSize`
+ * ("XSS x 1, XXS x 1, XS x 1, S x 1, M x 2, L x 1, XL x 1, XXL x 1, XXXL x 1"; jumlah 0 tidak ditulis).
+ */
+export const TSHIRT_SIZE_ORDER = ['xss', 'xxs', 'xs', 's', 'm', 'l', 'xl', 'xxl', 'xxxl'] as const
+/** Ukuran yang bisa ditulis jalur `update-tshirt` legacy (lihat `backoffice-client.ts`). */
+const WRITABLE_SIZES: readonly string[] = ['xs', 's', 'm', 'l', 'xl', 'xxl']
+
+const TSHIRT_SIZE = '(xxxl|3xl|xxl|2xl|xss|xxs|xl|xs|s|m|l)'
 const SIZE_FIRST = new RegExp(`^${TSHIRT_SIZE}\\s*(?:[x×:=]\\s*)?(\\d{1,2})?$`, 'i')
 const COUNT_FIRST = new RegExp(`^(\\d{1,2})\\s*(?:[x×]\\s*)?${TSHIRT_SIZE}$`, 'i')
+const SIZE_ALIAS: Record<string, string> = { '2xl': 'xxl', '3xl': 'xxxl' }
 
-/**
- * Teks ukuran kaos (bentuk usulan ekstraksi, mis. "M x 2, L x 1") jadi jumlah per ukuran untuk
- * `writeBookingChange`. Butir dipisah koma/titik koma/baris baru; tiap butir "M x 2", "M:2", "M 2",
- * "2 M", "2x M" atau "M" saja (= 1). "2XL" = xxl. Satu butir tak dikenal = null (minta admin mengoreksi);
- * kecocokan total dengan jumlah peserta diperiksa klien tulis, bukan di sini.
- */
-export function parseTshirtSizes(raw: string): Record<string, number> | null {
+function parseSizes(raw: string, allowed: readonly string[]): Record<string, number> | null {
   const parts = raw.split(/[,;\n]+/).map((p) => p.trim()).filter(Boolean)
   if (parts.length === 0) return null
   const out: Record<string, number> = {}
@@ -152,9 +163,32 @@ export function parseTshirtSizes(raw: string): Record<string, number> | null {
     const hit = a ? { size: a[1], qty: a[2] ?? '1' } : b ? { size: b[2], qty: b[1] } : null
     if (!hit) return null
     const size = hit.size.toLowerCase()
-    const qty = Number(hit.qty)
-    const key = size === '2xl' ? 'xxl' : size
-    out[key] = (out[key] ?? 0) + qty
+    const key = SIZE_ALIAS[size] ?? size
+    if (!allowed.includes(key)) return null
+    out[key] = (out[key] ?? 0) + Number(hit.qty)
   }
   return out
+}
+
+/**
+ * Teks ukuran kaos (bentuk usulan ekstraksi, mis. "M x 2, L x 1") jadi jumlah per ukuran untuk
+ * `writeBookingChange`. Butir dipisah koma/titik koma/baris baru; tiap butir "M x 2", "M:2", "M 2",
+ * "2 M", "2x M" atau "M" saja (= 1). "2XL" = xxl. Satu butir tak dikenal -- termasuk ukuran yang tidak
+ * punya jalur tulis (XSS/XXS/XXXL) -- = null (minta admin mengoreksi); kecocokan total dengan jumlah
+ * peserta diperiksa klien tulis, bukan di sini.
+ */
+export function parseTshirtSizes(raw: string): Record<string, number> | null {
+  return parseSizes(raw, WRITABLE_SIZES)
+}
+
+/**
+ * Bentuk kanonik ukuran kaos untuk menyimpan dan MEMBANDINGKAN: "M x 2, L x 1" diurutkan menurut
+ * `TSHIRT_SIZE_ORDER`, jumlah 0 dibuang, label huruf besar (sama dengan keluaran backoffice). Mengenal semua
+ * ukuran backoffice (termasuk XXXL), supaya `tshirtSize` booking selalu terbaca. null bila tak terbaca/kosong.
+ */
+export function canonicalTshirtSizes(raw: string): string | null {
+  const sizes = parseSizes(raw, TSHIRT_SIZE_ORDER)
+  if (!sizes) return null
+  const parts = TSHIRT_SIZE_ORDER.filter((s) => (sizes[s] ?? 0) > 0).map((s) => `${s.toUpperCase()} x ${sizes[s]}`)
+  return parts.length > 0 ? parts.join(', ') : null
 }
