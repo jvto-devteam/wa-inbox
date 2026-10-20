@@ -16,7 +16,7 @@ import { announceSummaryItemsChanged } from '@/lib/summary-items/events'
 import { followUpStatus, isActionable, summaryItemKindLabel, wibDateTimeLabel } from '@/lib/summary-items/status'
 import { PanelSectionTitle } from './ContactPanel'
 import { EVENT_LABELS, actorName, when } from './BookingHistoryList'
-import { fieldLabel, valueText } from '@/lib/booking-actions/view'
+import { eventValueText, fieldLabel, reasonText, valueText } from '@/lib/booking-actions/view'
 // Hanya tipe: route itu menyentuh prisma, dan komponen klien tidak boleh membawa modul server.
 import type { ChatReviewItem, ChatReviewResponse } from '@/app/api/conversations/[id]/chat-review/route'
 
@@ -133,10 +133,10 @@ function ChangeHistorySection({ events, conversationId }: { events: ChatReviewRe
             </p>
             {(e.oldValue != null || e.newValue != null) && (
               <p className="text-xs text-ink-muted">
-                {valueText(e.oldValue)} → {valueText(e.newValue)}
+                {eventValueText(e.oldValue)} → {eventValueText(e.newValue)}
               </p>
             )}
-            {e.reason && <p className="text-xs text-ink-muted">{e.reason}</p>}
+            {e.reason && <p className="text-xs text-ink-muted">{reasonText(e.reason)}</p>}
             <p className="text-xs text-ink-subtle">{when(e.createdAt)}</p>
             <SourceLink conversationId={conversationId} messageId={e.sourceMessageId} />
           </li>

@@ -128,6 +128,54 @@ export function valueText(v: unknown): string {
 }
 
 /**
+ * Nilai lama/baru sebuah EVENT riwayat jadi teks terbaca. Selain string polos, event menyimpan objek:
+ * `{ field, value }` (penutupan kartu), `{ type, field, value }` (CREATED), `{ type: 'DATA_REQUEST', fields, forDay }`
+ * dan `{ messageId, auto }` (DRAFT_SENT). Tidak pernah menampilkan JSON mentah.
+ */
+export function eventValueText(v: unknown): string {
+  if (v === null || v === undefined || typeof v !== 'object') return valueText(v)
+  if (Array.isArray(v)) return v.map((x) => eventValueText(x)).join(', ') || '-'
+  const o = v as Record<string, unknown>
+  if (Array.isArray(o.fields)) {
+    const day = typeof o.forDay === 'string' ? ` (untuk ${o.forDay})` : ''
+    return `Minta: ${dataRequestSummary(o.fields)}${day}`
+  }
+  if ('value' in o) {
+    const value = valueText(o.value)
+    return typeof o.field === 'string' ? `${fieldLabel(o.field)}: ${value}` : value
+  }
+  if (typeof o.auto === 'boolean') return o.auto ? 'Dikirim otomatis' : 'Dikirim manual'
+  const parts = Object.entries(o)
+    .filter(([, x]) => typeof x === 'string' || typeof x === 'number' || typeof x === 'boolean')
+    .map(([k, x]) => `${k}: ${String(x)}`)
+  return parts.length > 0 ? parts.join(', ') : '-'
+}
+
+/** Kode alasan sistem (closedReason / reason event) dalam bahasa Indonesia; teks bebas tetap apa adanya. */
+export const REASON_LABELS: Record<string, string> = {
+  MATCHED_IN_BACKOFFICE: 'Sudah sesuai di backoffice',
+  CHAT_CORRECTED: 'Tamu mengoreksi di chat',
+  DISMISSED_CHAT_WRONG: 'Dilepas: chat yang keliru',
+  REPLACED: 'Digantikan usulan yang lebih baru',
+  DATA_COMPLETE: 'Data booking sudah lengkap',
+  TRIP_STARTED: 'Trip sudah mulai',
+  BOOKING_CHANGED: 'Booking percakapan berganti',
+  OUT_OF_WINDOW: 'Tanggal trip di luar jendela H-7..H-1',
+  MARKED_DONE: 'Ditandai selesai',
+  NOT_NEEDED: 'Tidak perlu',
+  REJECTED: 'Ditolak',
+  REVERTED: 'Dibatalkan',
+  EXECUTED: 'Diterapkan',
+  AUTO_APPLIED: 'Diterapkan otomatis',
+  SENT: 'Terkirim',
+  SEND_FAILED: 'Pesan gagal dikirim',
+}
+
+export function reasonText(reason: string): string {
+  return REASON_LABELS[reason.trim()] ?? reason
+}
+
+/**
  * Ruling R16: field tanpa jalur tulis legacy. Kartunya tetap ada, tetapi tidak bisa "Setujui";
  * admin mengubah di backoffice lalu menandai Selesai. Dipakai UI dan API eksekusi bersama.
  */

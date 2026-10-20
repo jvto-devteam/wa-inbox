@@ -31,6 +31,9 @@ const PUBLIC_PATHS = [
   '/icon-192.png',
   '/icon-512.png',
   '/apple-icon.png',
+  // Service worker Web Push (public/sw.js): browser mengambilnya ulang di latar tanpa jaminan cookie sesi;
+  // redirect ke /login membuat pendaftaran/pembaruan service worker gagal. Isinya statis, tanpa data.
+  '/sw.js',
 ]
 
 /**

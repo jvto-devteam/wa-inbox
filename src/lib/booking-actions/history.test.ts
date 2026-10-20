@@ -67,4 +67,15 @@ describe('recordEvent', () => {
     expect(spy).toHaveBeenCalled()
     spy.mockRestore()
   })
+
+  it('final review cheap minor: the standalone log carries the error name/code only, never the Prisma message (args/customer text)', async () => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const err = Object.assign(new Error('Invalid `prisma.bookingActionEvent.create()` invocation: { reason: "tamu: jemput di Hotel Rahasia" }'), { code: 'P2000' })
+    mockPrisma.bookingActionEvent.create.mockRejectedValue(err)
+    await recordEvent(prisma, base)
+    const logged = JSON.stringify(spy.mock.calls)
+    expect(logged).not.toContain('Rahasia')
+    expect(logged).toContain('P2000')
+    spy.mockRestore()
+  })
 })

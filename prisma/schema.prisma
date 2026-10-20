@@ -1064,10 +1064,13 @@ model BookingAction {
   proposedValue   Json?
   /// DATA_REQUEST
   draftText       String?
-  /// OPEN | EXECUTING | EXECUTED | REVERTED | REJECTED | SUPERSEDED | RESOLVED | DONE | FAILED
+  /// OPEN | EXECUTING | EXECUTED | REVERTED | REJECTED | SUPERSEDED | RESOLVED | DONE
   /// EXECUTING = diklaim "Setujui" selama menulis ke backoffice (Task 11); claimedAt > 2 menit = macet, dilepas
+  /// (gagal tulis kembali ke OPEN + lastError; tidak ada state FAILED)
   state           String
-  /// mis. MATCHED_IN_BACKOFFICE | CHAT_CORRECTED | DISMISSED_CHAT_WRONG | REPLACED | DATA_COMPLETE | TRIP_STARTED | MARKED_DONE | NOT_NEEDED
+  /// EXECUTED | AUTO_APPLIED (state EXECUTED) | REVERTED | REJECTED | REPLACED (SUPERSEDED)
+  /// | MATCHED_IN_BACKOFFICE | CHAT_CORRECTED | DISMISSED_CHAT_WRONG | DATA_COMPLETE | TRIP_STARTED
+  /// | BOOKING_CHANGED | OUT_OF_WINDOW (RESOLVED) | MARKED_DONE | NOT_NEEDED | SENT (DONE)
   closedReason    String?
   sourceMessageId String?
   /// DATA_REQUEST: "YYYY-MM-DD" WIB

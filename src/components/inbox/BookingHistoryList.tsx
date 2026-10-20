@@ -1,5 +1,5 @@
 'use client'
-import { valueText, type BookingActionEventView } from '@/lib/booking-actions/view'
+import { eventValueText, reasonText, type BookingActionEventView } from '@/lib/booking-actions/view'
 
 export const EVENT_LABELS: Record<string, string> = {
   CREATED: 'Dibuat',
@@ -11,6 +11,7 @@ export const EVENT_LABELS: Record<string, string> = {
   RESOLVED: 'Selesai',
   DRAFT_SENT: 'Draf terkirim',
   REVERTED: 'Dibatalkan',
+  VENDOR_NOTICE_FAILED: 'Kabar vendor gagal',
 }
 
 export function actorName(e: BookingActionEventView): string {
@@ -37,10 +38,10 @@ export function BookingHistoryList({ events }: { events: BookingActionEventView[
             </p>
             {(e.oldValue != null || e.newValue != null) && (
               <p className="text-xs text-ink-muted">
-                {valueText(e.oldValue)} → {valueText(e.newValue)}
+                {eventValueText(e.oldValue)} → {eventValueText(e.newValue)}
               </p>
             )}
-            {e.reason && <p className="text-xs text-ink-muted">{e.reason}</p>}
+            {e.reason && <p className="text-xs text-ink-muted">{reasonText(e.reason)}</p>}
             <p className="text-xs text-ink-subtle">{when(e.createdAt)}</p>
           </li>
         ))}

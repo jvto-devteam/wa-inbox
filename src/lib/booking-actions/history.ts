@@ -44,6 +44,13 @@ export type BookingEventInput = {
 
 export type BookingEventWriter = Prisma.TransactionClient | PrismaClient
 
+/** Nama + kode Prisma (mis. P2002) sebuah galat, tanpa pesan -- pesan Prisma bisa memuat isi argumen. */
+function errorCode(error: unknown): string {
+  if (!(error instanceof Error)) return 'unknown'
+  const code = (error as { code?: unknown }).code
+  return typeof code === 'string' ? `${error.name}:${code}` : error.name
+}
+
 /** Prisma membedakan JSON null dari kolom NULL; undefined/null di sini berarti kolom NULL. */
 function json(value: Prisma.InputJsonValue | null | undefined): Prisma.InputJsonValue | typeof Prisma.DbNull {
   return value ?? Prisma.DbNull
@@ -76,6 +83,7 @@ export async function recordEvent(client: BookingEventWriter, e: BookingEventInp
   } catch (error) {
     // Client bersama = standalone; selain itu client transaksi, dan kegagalan harus merambat.
     if (client !== prisma) throw error
-    console.error('recordEvent gagal', { event: e.event, conversationId: e.conversationId, error })
+    // Hanya nama/kode galat: pesan validasi Prisma bisa memuat argumen (nilai dari chat tamu).
+    console.error('recordEvent gagal', { event: e.event, conversationId: e.conversationId, error: errorCode(error) })
   }
 }

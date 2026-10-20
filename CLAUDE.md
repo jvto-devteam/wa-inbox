@@ -226,18 +226,35 @@ append-only tanpa FK: siapa, kapan, nilai lama/baru), `PushSubscription`. Setela
 
 - **Ekstraksi per pesan** (`src/lib/booking-actions/schedule.ts`, `scheduleBookingExtraction`): debounce 8 s per
   percakapan, tidak di-await di jalur webhook, seluruhnya try/catch, **run pipeline sendiri**
-  (`openPipelineRun`), tidak memakai tracer bot. Gerbang: nomor Indonesia dilewati kecuali percakapan `isTest`,
+  (`openPipelineRun`), tidak memakai tracer bot. Gerbang: nomor Indonesia dilewati kecuali percakapan uji,
   harus punya `bookingData`, trip yang sudah lewat dilewati, penutup/reaksi tidak memicu; `botEnabled` sengaja
   tidak diperiksa. Ke LLM hanya `pickup`, `dropoff`, `date`, `total_pax`, `hotels`, `tshirtSize` —
-  **tidak pernah** `financial`, `expense`, `paymentHistory`, `guestDetails`.
+  **tidak pernah** `financial`, `expense`, `paymentHistory`, `guestDetails`. Hanya pesan INBOUND yang boleh jadi
+  sumber usulan/fakta. Ekstraksi membaca ulang 20 pesan terakhir, jadi `applyExtraction` meringkas keluaran per
+  field ke pesan terbaru dan memakai batas air: usulan dari pesan yang tidak lebih baru dari pesan sumber
+  CHANGE/TASK non-OPEN field itu dilewati (nilai lama tidak hidup lagi). CHANGE/TASK yang dibuat atau dieksekusi
+  menandai fakta lama field itu usang (`supersedeOlderFacts`).
+- **Gerbang uji & rollout** (`src/lib/booking-actions/rollout.ts`, Ruling R25): percakapan uji = `isTest` atau
+  nomor di env `BOOKING_ACTIONS_TEST_PHONES` (dipisah koma); keduanya lolos gerbang nomor Indonesia di semua
+  gerbang (`blockedByIndonesianGate`), dan nomor uji tetap dicari bookingnya (sandbox tidak). Env
+  `BOOKING_ACTIONS_ROLLOUT` = `test` (bawaan) | `all`: selama `test`, ekstraksi, terapkan-otomatis, dan
+  pembuatan/pengiriman permintaan data hanya untuk percakapan uji (`bookingAutomationAllowed`). Owner membuka
+  `all` sesudah uji whitelist.
 - **Kelompok** (`changeGroup` di `fields.ts`): `AI` (titik/jam/detail di Surabaya, kaos, catatan), `BALI`
   (booking dengan transport Bali: AI mengubah **dan** vendor dikabari), `HEAVY` (pindah Surabaya ↔ Bali,
   tanggal, pax, hotel: hanya tugas untuk admin). **Jenis kartu**: `CHANGE` (usulan ubah/isi), `MISMATCH`
   (chat ≠ backoffice, peringatan), `TASK` (tugas ops), `DATA_REQUEST` (draf permintaan data ke tamu).
-  `bookingTimeKnown` menganggap jam `null`, `''`, `07:00` sebagai tidak diketahui (backoffice membentuk jam
-  kosong menjadi 07:00).
+  Jam `07:00` (R2): backoffice membentuk jam kosong menjadi 07:00, jadi `bookingTimeKnown` menganggap `null`,
+  `''`, `07:00` tidak diketahui — itu hanya menahan **peringatan** MISMATCH jam. `changeAlreadyApplied`
+  membandingkan nilai mentah (`07:00` = `07:00`, supaya kartu jam 07:00 tertutup), dan permintaan data (R23,
+  di bawah) tidak menanyakan jam `07:00` — tiga aturan untuk satu nilai yang sama. Ukuran kaos dibandingkan
+  dalam bentuk kanonik `canonicalTshirtSizes` (urutan ukuran backoffice), bukan string.
 - **Eksekusi** (`execute.ts`, `executeBookingAction`): menulis lewat endpoint `my-booking` legacy
-  (`src/lib/booking/backoffice-client.ts`, env `LEGACY_BASE_URL`). Klaim `OPEN → EXECUTING` memakai `claimedAt`;
+  (`src/lib/booking/backoffice-client.ts`, env `LEGACY_BASE_URL`). **Sebelum menulis, Setujui dan Batalkan
+  selalu mencari booking segar ke API** (`lookupBookingResult`), karena form update-pickup/update-drop mengirim
+  ulang titik + detail + jam dan `bookingData` tersimpan bisa basi s.d. 24 jam: lookup gagal = 503 tanpa menulis,
+  booking lain = 409, nilai sudah ada di backoffice = kartu ditutup `MATCHED_IN_BACKOFFICE` tanpa menulis; form
+  dirakit dari data segar itu. Klaim `OPEN → EXECUTING` memakai `claimedAt`;
   klaim basi (> `STALE_CLAIM_MS`, 2 menit) dilepas `releaseStaleExecuting`. Bila `bookingData.booking_id`
   sudah berganti sejak kartu dibuat, eksekusi ditolak 409. Kartu titik ↔ detail pada sisi yang sama ditulis
   satu patch (`companionFields`). `revertBookingAction` mengembalikan nilai lama selama booking belum berubah
@@ -245,9 +262,13 @@ append-only tanpa FK: siapa, kapan, nilai lama/baru), `PushSubscription`. Setela
   bisa dibatalkan. Kartu yang ditutup orang tidak dibuat ulang untuk field+nilai yang sama; fakta terbaru
   menggantikan yang lama.
 - **Vendor Bali** (`bali-vendor.ts`, `notifyBaliVendor`): sesudah CHANGE `BALI` tertulis, template
-  `internal_bali_transport_update` masuk antrean; tanpa data pribadi tamu. Gagal = event
+  `internal_bali_transport_update` masuk antrean; tanpa data pribadi tamu. Hanya dikirim bila booking segar
+  pasca-tulis memuat nilai yang ditulis; jam tak diketahui ditulis "jam belum ada". Gagal = event
   `VENDOR_NOTICE_FAILED` + push, vendor dikabari manual.
-- **Push** (`src/lib/push/send.ts`, `notifyBookingAction`): Web Push ke setiap kejadian aksi booking; env
+- **Push** (`src/lib/push/send.ts`, `notifyBookingAction`): Web Push untuk enam jenis kejadian — kartu baru
+  `CHANGE`, `MISMATCH`, `TASK`, `AUTO_APPLIED` (diterapkan otomatis), `EXECUTE_FAILED` (gagal tulis / kabar vendor
+  gagal), `DATA_REQUEST_FAILED` (draf permintaan data gagal terkirim); draf permintaan data yang terkirim tidak
+  di-push. Env
   `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`. Setiap permintaan perubahan berlabel "belum
   dipenuhi" sampai ditutup; tidak ada kedaluwarsa.
 - **Panel kanan**: `GET /api/conversations/[id]/chat-review` memuat `pinned` dan `changeHistory`. Ekstraksi
@@ -257,8 +278,10 @@ append-only tanpa FK: siapa, kapan, nilai lama/baru), `PushSubscription`. Setela
   `[bookingId, type, forDay]`), hanya butir yang kurang (`findDataGaps`); jam **tidak** ditanyakan bila nilainya
   `07:00`. Kirim otomatis dibatasi `MAX_AUTO_LOOKUPS_PER_TICK` dan `AUTO_SEND_BUDGET_MS` karena tiap percobaan
   memanggil API booking.
-- **Tick 5 menit** (`POST /api/summary-items/tick`) kini juga menjalankan `releaseStaleExecuting` (sesudah
-  penyegaran booking) dan `createDataRequestDrafts` (sesudah `reconcileSummaryItems`).
+- **Tick 5 menit** (`POST /api/summary-items/tick`) kini juga menjalankan `refreshBookingDataForOpenActions`
+  (percakapan berkartu CHANGE/TASK/MISMATCH OPEN yang datanya > 30 menit, maks. 10, berbagi anggaran 60 s
+  dengan `refreshStaleBookingData`), `releaseStaleExecuting` (sesudah penyegaran booking) dan
+  `createDataRequestDrafts` (sesudah `reconcileSummaryItems`).
 <!-- aksi-booking:selesai -->
 
 ### Simulator & test

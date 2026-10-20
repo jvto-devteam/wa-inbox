@@ -40,6 +40,8 @@ describe('middleware — public paths', () => {
     '/icon-192.png',
     '/icon-512.png',
     '/apple-icon.png',
+    // final review cheap minor: service worker Web Push.
+    '/sw.js',
   ])('lets %s through without a session', async (path) => {
     const res = await middleware(request(path))
     expect(res.status).toBe(200)
