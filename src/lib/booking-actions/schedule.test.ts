@@ -46,8 +46,12 @@ beforeEach(() => {
   vi.mocked(broadcast).mockReset()
   vi.mocked(scheduleChatReviewRefresh).mockReset()
   vi.spyOn(console, 'error').mockImplementation(() => {})
+  // Perilaku sesudah rollout dibuka (R25); gerbang rollout diuji tersendiri.
+  process.env.BOOKING_ACTIONS_ROLLOUT = 'all'
 })
 afterEach(() => {
+  delete process.env.BOOKING_ACTIONS_ROLLOUT
+  delete process.env.BOOKING_ACTIONS_TEST_PHONES
   __resetBookingExtractionForTests()
   vi.useRealTimers()
 })
@@ -80,6 +84,44 @@ describe('scheduleBookingExtraction', () => {
     expect(applyExtraction).toHaveBeenCalledWith('c1', EXTRACTION)
     expect(reevaluateBookingActions).toHaveBeenCalledWith('c1')
     expect(mockPrisma.message.findMany).toHaveBeenCalledWith(expect.objectContaining({ take: 20 }))
+  })
+
+  it('final review minor: only INBOUND message ids are passed as valid sources', async () => {
+    stubConversation()
+    mockPrisma.message.findMany.mockResolvedValue([
+      { id: 'm2', direction: 'OUTBOUND', sentBy: 'AGENT', type: 'text', content: 'jemput jam 9 ya', createdAt: new Date() },
+      { id: 'm1', direction: 'INBOUND', sentBy: 'CUSTOMER', type: 'text', content: 'bisa jemput jam 10?', createdAt: new Date() },
+    ] as never)
+    scheduleBookingExtraction('c1', { text: 'bisa jemput jam 10?' })
+    await fire()
+    const arg = vi.mocked(extractBookingSignals).mock.calls[0][0]
+    expect([...(arg.inboundIds ?? [])]).toEqual(['m1'])
+    expect(arg.transcript.ids).toEqual(['m1', 'm2'])
+  })
+
+  it("final review Important 7 (R25): rollout 'test' (default) skips a normal guest; runs for isTest and for a test phone even though it is Indonesian", async () => {
+    delete process.env.BOOKING_ACTIONS_ROLLOUT
+    stubConversation()
+    scheduleBookingExtraction('c1', { text: 'ganti hotel' })
+    await fire()
+    expect(extractBookingSignals).not.toHaveBeenCalled()
+
+    process.env.BOOKING_ACTIONS_TEST_PHONES = '6282143403501'
+    stubConversation({ phone: '6282143403501' })
+    scheduleBookingExtraction('c1', { text: 'ganti hotel' })
+    await fire()
+    expect(extractBookingSignals).toHaveBeenCalledTimes(1)
+
+    stubConversation({ isTest: true, phone: '__bot_test__' })
+    scheduleBookingExtraction('c1', { text: 'ganti hotel' })
+    await fire()
+    expect(extractBookingSignals).toHaveBeenCalledTimes(2)
+
+    // Nomor Indonesia lain tetap dilewati.
+    stubConversation({ phone: '6281234567890' })
+    scheduleBookingExtraction('c1', { text: 'ganti hotel' })
+    await fire()
+    expect(extractBookingSignals).toHaveBeenCalledTimes(2)
   })
 
   it('skips Indonesian number even when skipBotForIndonesianNumbers=false (never consults settings)', async () => {

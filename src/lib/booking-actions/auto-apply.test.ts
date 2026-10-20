@@ -1,5 +1,5 @@
 /** @vitest-environment node */
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mockDeep, mockReset, type DeepMockProxy } from 'vitest-mock-extended'
 import type { PrismaClient } from '@prisma/client'
 import type { BookingData } from '@/lib/booking/client'
@@ -34,8 +34,27 @@ beforeEach(() => {
   vi.spyOn(console, 'error').mockImplementation(() => undefined)
   db.bookingAction.findUnique.mockResolvedValue(action() as never)
   db.bookingAction.findMany.mockResolvedValue([{ id: 'a1', field: 'pickup_time', proposedValue: '09:00', sourceMessageId: 'm1' }] as never)
-  db.conversation.findUnique.mockResolvedValue({ bookingData: booking() } as never)
+  db.conversation.findUnique.mockResolvedValue({ bookingData: booking(), isTest: false, contact: { phone: '4915112345678' } } as never)
   settings('ALWAYS')
+  // Perilaku sesudah rollout dibuka (R25); gerbang rollout diuji tersendiri.
+  process.env.BOOKING_ACTIONS_ROLLOUT = 'all'
+})
+afterEach(() => {
+  delete process.env.BOOKING_ACTIONS_ROLLOUT
+  delete process.env.BOOKING_ACTIONS_TEST_PHONES
+})
+
+describe("final review Important 7 (R25): rollout gate on auto-apply", () => {
+  it("rollout 'test' (default): a normal guest's card is never auto-applied; a test phone's card is", async () => {
+    delete process.env.BOOKING_ACTIONS_ROLLOUT
+    expect(await autoApplyIfAllowed('a1')).toBe('skipped')
+    expect(executeBookingAction).not.toHaveBeenCalled()
+
+    process.env.BOOKING_ACTIONS_TEST_PHONES = '6282143403501'
+    db.conversation.findUnique.mockResolvedValue({ bookingData: booking(), isTest: false, contact: { phone: '6282143403501' } } as never)
+    expect(await autoApplyIfAllowed('a1')).toBe('applied')
+    expect(executeBookingAction).toHaveBeenCalledTimes(1)
+  })
 })
 
 describe('autoApplyIfAllowed', () => {

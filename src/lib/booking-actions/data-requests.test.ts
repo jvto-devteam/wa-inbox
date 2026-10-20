@@ -1,5 +1,5 @@
 /** @vitest-environment node */
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mockDeep, mockReset, type DeepMockProxy } from 'vitest-mock-extended'
 import type { PrismaClient } from '@prisma/client'
 import type { BookingData } from '@/lib/booking/client'
@@ -8,12 +8,14 @@ vi.mock('@/lib/db', () => ({ prisma: mockDeep<PrismaClient>() }))
 vi.mock('@/lib/send', () => ({ sendMessage: vi.fn() }))
 vi.mock('@/lib/booking/client', () => ({ lookupBookingResult: vi.fn() }))
 vi.mock('@/lib/realtime', () => ({ broadcast: vi.fn() }))
+vi.mock('./store', () => ({ reevaluateBookingActions: vi.fn().mockResolvedValue({ resolved: 0, opened: 0 }) }))
 vi.mock('@/lib/push/send', async (orig) => ({ ...(await orig<typeof import('@/lib/push/send')>()), notifyBookingAction: vi.fn() }))
 
 import { prisma } from '@/lib/db'
 import { sendMessage } from '@/lib/send'
 import { lookupBookingResult } from '@/lib/booking/client'
 import { notifyBookingAction } from '@/lib/push/send'
+import { reevaluateBookingActions } from './store'
 import { buildDataRequestText, createDataRequestDrafts, findDataGaps, sendDataRequest } from './data-requests'
 
 const db = prisma as unknown as DeepMockProxy<PrismaClient>
@@ -69,6 +71,13 @@ beforeEach(() => {
   vi.mocked(lookupBookingResult).mockReset()
   vi.mocked(notifyBookingAction).mockReset()
   vi.spyOn(console, 'error').mockImplementation(() => undefined)
+  vi.mocked(reevaluateBookingActions).mockClear()
+  // Kasus di file ini menguji perilaku sesudah rollout dibuka (R25); gerbang rollout diuji tersendiri di bawah.
+  process.env.BOOKING_ACTIONS_ROLLOUT = 'all'
+})
+afterEach(() => {
+  delete process.env.BOOKING_ACTIONS_ROLLOUT
+  delete process.env.BOOKING_ACTIONS_TEST_PHONES
 })
 
 describe('createDataRequestDrafts', () => {
@@ -89,6 +98,16 @@ describe('createDataRequestDrafts', () => {
     expect((await createDataRequestDrafts(NOW)).created).toBe(0)
     setup({ convs: [conv({ contact: { phone: '6282143403501' }, isTest: true })] })
     expect((await createDataRequestDrafts(NOW)).created).toBe(1)
+  })
+
+  it("final review Important 7 (R25): rollout 'test' -> drafts only for test conversations; a whitelisted Indonesian test phone gets one", async () => {
+    delete process.env.BOOKING_ACTIONS_ROLLOUT
+    setup({ convs: [conv()] })
+    expect((await createDataRequestDrafts(NOW)).created).toBe(0)
+    process.env.BOOKING_ACTIONS_TEST_PHONES = '+62 821-4340-3501'
+    setup({ convs: [conv(), conv({ id: 'c2', contact: { phone: '6282143403501' } })] })
+    expect((await createDataRequestDrafts(NOW)).created).toBe(1)
+    expect(db.bookingAction.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ conversationId: 'c2' }) }))
   })
 
   it('no gap -> none; not WhatsApp or no phone -> none', async () => {
@@ -217,6 +236,29 @@ describe('sendDataRequest', () => {
     expect(await sendDataRequest({ actionId: 'd1', accountId: 'acc1', now: NOW })).toEqual({ ok: true })
     expect(sendMessage).toHaveBeenCalledWith(expect.objectContaining({ sentBy: 'AGENT', agentId: 'acc1' }))
     expect(db.bookingActionEvent.create).toHaveBeenCalledWith({ data: expect.objectContaining({ event: 'DRAFT_SENT', actor: 'ACCOUNT', accountId: 'acc1' }) })
+  })
+
+  it("final review Important 7 (R25): rollout 'test' refuses sending to a normal guest (also manual); a test phone is sent after a REAL booking lookup", async () => {
+    delete process.env.BOOKING_ACTIONS_ROLLOUT
+    setup()
+    expect(await sendDataRequest({ actionId: 'd1', accountId: 'acc1', now: NOW })).toMatchObject({ ok: false, status: 409 })
+    expect(sendMessage).not.toHaveBeenCalled()
+    expect(lookupBookingResult).not.toHaveBeenCalled()
+
+    process.env.BOOKING_ACTIONS_TEST_PHONES = '6282143403501'
+    setup()
+    db.bookingAction.findUnique.mockResolvedValue(stored({ conversation: conv({ contact: { phone: '6282143403501' } }) }) as never)
+    expect(await sendDataRequest({ actionId: 'd1', accountId: 'acc1', now: NOW })).toEqual({ ok: true })
+    // Tidak seperti sandbox isTest, nomor uji punya booking sungguhan: tetap dicari.
+    expect(lookupBookingResult).toHaveBeenCalledWith('6282143403501')
+    expect(sendMessage).toHaveBeenCalledTimes(1)
+  })
+
+  it('cheap minor: fresh booking is saved as JSON and the other cards are re-evaluated', async () => {
+    setup()
+    expect(await sendDataRequest({ actionId: 'd1', accountId: null, now: NOW })).toEqual({ ok: true })
+    expect(db.conversation.update).toHaveBeenCalledWith({ where: { id: 'c1' }, data: { bookingData: booking(), bookingCheckedAt: NOW } })
+    expect(reevaluateBookingActions).toHaveBeenCalledWith('c1')
   })
 
   it('already claimed by another caller -> 409, nothing sent', async () => {

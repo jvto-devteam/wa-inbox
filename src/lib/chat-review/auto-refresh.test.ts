@@ -87,6 +87,18 @@ describe('scheduleChatReviewRefresh', () => {
     expect(refreshChatReview).toHaveBeenCalledTimes(1)
   })
 
+  it('final review Important 7 (R25): a BOOKING_ACTIONS_TEST_PHONES number (not isTest) passes the Indonesian gate', async () => {
+    process.env.BOOKING_ACTIONS_TEST_PHONES = '6282143403501'
+    try {
+      stubConversation({ phone: '6282143403501', isTest: false })
+      scheduleChatReviewRefresh('c1')
+      await vi.advanceTimersByTimeAsync(0)
+      expect(refreshChatReview).toHaveBeenCalledTimes(1)
+    } finally {
+      delete process.env.BOOKING_ACTIONS_TEST_PHONES
+    }
+  })
+
   it('refresh failure leaves previous review intact: no broadcast, no throw, no chat content logged', async () => {
     stubConversation({ chatReviewAt: null })
     vi.mocked(refreshChatReview).mockResolvedValue({ status: 'failed' })

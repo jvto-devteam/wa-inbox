@@ -6,6 +6,7 @@
  *   tier AI   -> Settings.bookingLightApproval          tier BALI -> Settings.bookingBaliApproval
  *   tier HEAVY, tipe TASK/MISMATCH/DATA_REQUEST, field tanpa jalur tulis (note/*_arrival, R16) -> 'skipped'
  *   setelan bukan persis 'ALWAYS' (APPROVE, kosong, galat baca) -> 'skipped'
+ *   rollout `test` (R25, `rollout.ts`) dan percakapan bukan percakapan uji -> 'skipped'
  *   kartu pendamping titik<->detail (R17) yang kelompoknya tidak ALWAYS -> 'skipped' (satu patch menulis keduanya)
  *   kartu titik tanpa detail yang bisa dipakai (booking sudah punya detail, tak ada kartu detail) -> 'skipped',
  *     tetap OPEN untuk manusia, TANPA push gagal (klien akan menolak "Isi detail titik baru dulu")
@@ -22,6 +23,7 @@ import { notifyBookingAction, summarizeAction } from '@/lib/push/send'
 import { executeBookingAction } from './execute'
 import { readBookingField, type FieldKey } from './fields'
 import { currentBookingId } from './scope'
+import { bookingAutomationAllowed } from './rollout'
 import { canExecuteField, companionFields } from './view'
 
 export type AutoApplyOutcome = 'applied' | 'skipped' | 'failed'
@@ -73,8 +75,12 @@ async function decide(actionId: string): Promise<
   const value = nonBlank(action.proposedValue)
   if (value === null) return { go: false }
 
-  const conv = await prisma.conversation.findUnique({ where: { id: action.conversationId }, select: { bookingData: true } })
-  const booking = asBooking(conv?.bookingData)
+  const conv = await prisma.conversation.findUnique({
+    where: { id: action.conversationId },
+    select: { bookingData: true, isTest: true, contact: { select: { phone: true } } },
+  })
+  if (!conv || !bookingAutomationAllowed({ isTest: conv.isTest, phone: conv.contact?.phone ?? null })) return { go: false }
+  const booking = asBooking(conv.bookingData)
   if (!booking || action.bookingId === null || currentBookingId(booking) !== action.bookingId) return { go: false }
 
   // Kartu pendamping di sisi yang sama ikut ditulis dalam satu patch (R17): semuanya harus boleh otomatis.

@@ -6,7 +6,8 @@
  * Kandidat (semua harus terpenuhi):
  *   - percakapan WhatsApp dengan `bookingData` ber-`booking_id`, dan `date.start_ymd` 1..7 hari lagi (WIB, H-7..H-1;
  *     hari-H = trip mulai, Ruling R24);
- *   - nomor bukan Indonesia (`isIndonesianNumber`), KECUALI percakapan uji `isTest` (Ruling R13);
+ *   - nomor bukan Indonesia (`isIndonesianNumber`), KECUALI percakapan uji `isTest` (Ruling R13) atau nomor
+ *     `BOOKING_ACTIONS_TEST_PHONES` (R25); selama rollout `test` (`rollout.ts`) HANYA percakapan uji itu;
  *   - minimal satu celah (`findDataGaps`): titik jemput 'Others' atau bandara/stasiun tanpa detail DAN tanpa
  *     nomor kedatangan (kunci celah `pickup_detail`, jalur tulis ada); jam jemput/antar KOSONG (null/''). Ruling R23:
  *     '07:00' TIDAK ditanyakan (bisa jam sungguhan; pembanding lain tetap memperlakukannya tak diketahui). Jam jemput hanya ditanyakan bila titik jemput sudah ada (begitu pula jam antar) --
@@ -36,7 +37,6 @@ import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { broadcast } from '@/lib/realtime'
 import { sendMessage } from '@/lib/send'
-import { isIndonesianNumber } from '@/lib/phone'
 import { jakartaDayKey, jakartaDayRange } from '@/lib/daily-summary/time'
 import { serviceWindowClosed } from '@/lib/inbox/service-window'
 import { notifyBookingAction } from '@/lib/push/send'
@@ -44,6 +44,8 @@ import { lookupBookingResult, type BookingData } from '@/lib/booking/client'
 import { readBookingField, type FieldKey } from './fields'
 import { recordEvent } from './history'
 import { currentBookingId } from './scope'
+import { blockedByIndonesianGate, bookingAutomationAllowed } from './rollout'
+import { reevaluateBookingActions } from './store'
 
 export const DATA_REQUEST_DAYS_AHEAD = 7
 export const DATA_REQUEST_DAYS_MIN = 1
@@ -202,7 +204,11 @@ export async function sendDataRequest(input: { actionId: string; accountId: stri
     if ((conv.channelIdentity?.platform ?? 'WHATSAPP') !== 'WHATSAPP' || !conv.contact.phone) {
       return { ok: false, status: 409, error: 'Percakapan ini tidak bisa dikirimi WhatsApp' }
     }
-    if (!conv.isTest && isIndonesianNumber(conv.contact.phone)) {
+    const gate = { isTest: conv.isTest, phone: conv.contact.phone }
+    if (!bookingAutomationAllowed(gate)) {
+      return { ok: false, status: 409, error: 'Permintaan data masih tahap uji (hanya nomor uji)' }
+    }
+    if (blockedByIndonesianGate(gate)) {
       return { ok: false, status: 409, error: 'Nomor Indonesia tidak dikirimi draf otomatis' }
     }
     // Draf kemarin tidak boleh terkirim hari ini (isinya dari data kemarin) -- juga lewat tombol Kirim.
@@ -233,7 +239,13 @@ export async function sendDataRequest(input: { actionId: string; accountId: stri
         await closeOpen(action, 'RESOLVED', 'BOOKING_CHANGED', now)
         return { ok: false, status: 409, error: 'Booking percakapan berganti, periksa ulang' }
       }
-      await prisma.conversation.update({ where: { id: conv.id }, data: { bookingData: fresh.data as never, bookingCheckedAt: now } })
+      await prisma.conversation.update({ where: { id: conv.id }, data: { bookingData: fresh.data as Prisma.InputJsonValue, bookingCheckedAt: now } })
+      // Data baru tersimpan: kartu lain percakapan ini dibandingkan ulang (sama dengan ensureFreshBookingData). Tidak melempar.
+      try {
+        await reevaluateBookingActions(conv.id)
+      } catch (error) {
+        console.error('sendDataRequest: reevaluate gagal', { actionId: action.id, error: error instanceof Error ? error.name : 'unknown' })
+      }
       // Tanggal trip bisa bergeser sejak draf dibuat: di luar H-7..H-1 tidak ada yang dikirim.
       const days = daysUntil(fresh.data.date?.start_ymd, today)
       if (days === null || days < DATA_REQUEST_DAYS_MIN || days > DATA_REQUEST_DAYS_AHEAD) {
@@ -418,7 +430,8 @@ export async function createDataRequestDrafts(now: Date = new Date()): Promise<{
     if ((conv.channelIdentity?.platform ?? 'WHATSAPP') !== 'WHATSAPP') continue
     const phone = conv.contact?.phone ?? null
     if (!phone) continue
-    if (!conv.isTest && isIndonesianNumber(phone)) continue
+    const gate = { isTest: conv.isTest, phone }
+    if (!bookingAutomationAllowed(gate) || blockedByIndonesianGate(gate)) continue
     const gaps = findDataGaps(booking)
     if (gaps.length === 0) continue
 

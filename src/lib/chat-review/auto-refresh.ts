@@ -12,11 +12,12 @@
  *   - belum -> SATU timer (`unref`) di akhir jeda. Pesan berikutnya selama percakapan ini
  *     tercatat menunggu tidak menambah timer, jadi satu burst = satu review.
  *
- * Gerbang nomor Indonesia sama dengan ekstraksi booking (Ruling R13): nomor 62 dilewati, kecuali
- * percakapan `isTest`. Gerbang dinilai di sini karena butuh `isTest` dari DB.
+ * Gerbang nomor Indonesia sama dengan ekstraksi booking (Ruling R13 + R25, `blockedByIndonesianGate`): nomor 62
+ * dilewati, kecuali percakapan `isTest` atau nomor `BOOKING_ACTIONS_TEST_PHONES`. Gerbang dinilai di sini karena
+ * butuh `isTest` dari DB.
  */
 import { prisma } from '@/lib/db'
-import { isIndonesianNumber } from '@/lib/phone'
+import { blockedByIndonesianGate } from '@/lib/booking-actions/rollout'
 import { broadcast } from '@/lib/realtime'
 import { refreshChatReview } from './refresh'
 
@@ -50,7 +51,7 @@ async function plan(conversationId: string, now: Date): Promise<void> {
       where: { id: conversationId },
       select: { chatReviewAt: true, isTest: true, contact: { select: { phone: true } } },
     })
-    if (!conv || (!conv.isTest && isIndonesianNumber(conv.contact?.phone ?? null))) {
+    if (!conv || blockedByIndonesianGate({ isTest: conv.isTest, phone: conv.contact?.phone ?? null })) {
       waiting.delete(conversationId)
       return
     }

@@ -16,9 +16,11 @@
  * 'selesai', jadi memakai tracer bot akan memalsukan jejak balasan yang sedang berjalan.
  *
  * Gerbang, sengaja TIDAK memeriksa `botEnabled` (ekstraksi jalan juga saat bot dimatikan):
+ *   - rollout (Ruling R25, `rollout.ts`): selama `BOOKING_ACTIONS_ROLLOUT` bukan `all`, hanya percakapan uji
+ *     (`isTest` atau nomor `BOOKING_ACTIONS_TEST_PHONES`) yang diekstraksi;
  *   - nomor Indonesia dilewati selalu, apa pun setelan bot (`isIndonesianNumber`), KECUALI
- *     percakapan uji (`isTest`, Ruling R13): nomor whitelist 6282143403501 satu-satunya kanal uji
- *     yang diizinkan dan berawalan 62;
+ *     percakapan uji (`isTest`, Ruling R13, atau nomor uji R25): nomor whitelist 6282143403501
+ *     satu-satunya kanal uji yang diizinkan dan berawalan 62;
  *   - harus punya `bookingData`;
  *   - trip yang `date.end_ymd`-nya sebelum hari ini (WIB) dilewati;
  *   - pesan penutup/reaksi ("ok", "thanks", emoji) tidak memicu.
@@ -27,7 +29,6 @@
  * diperbarui lewat `scheduleChatReviewRefresh` (jeda 5 menit, gerbang nomor Indonesia sendiri).
  */
 import { prisma } from '@/lib/db'
-import { isIndonesianNumber } from '@/lib/phone'
 import { isNoiseMessage } from '@/lib/summary-items/noise'
 import { buildNumberedTranscript } from '@/lib/daily-summary/collect'
 import { jakartaDayKey } from '@/lib/daily-summary/time'
@@ -37,6 +38,7 @@ import { scheduleChatReviewRefresh } from '@/lib/chat-review/auto-refresh'
 import { extractBookingSignals } from './extract'
 import { applyExtraction, reevaluateBookingActions } from './store'
 import { autoApplyCreated } from './auto-apply'
+import { blockedByIndonesianGate, bookingAutomationAllowed } from './rollout'
 
 export const BOOKING_EXTRACTION_DEBOUNCE_MS = 8_000
 const TRANSCRIPT_MESSAGES = 20
@@ -84,7 +86,12 @@ async function runExtraction(conversationId: string): Promise<void> {
       traceClose(run, 'dilewati', { alasan: 'tidak ada booking' })
       return
     }
-    if (!conv.isTest && isIndonesianNumber(conv.contact?.phone ?? null)) {
+    const gate = { isTest: conv.isTest, phone: conv.contact?.phone ?? null }
+    if (!bookingAutomationAllowed(gate)) {
+      traceClose(run, 'dilewati', { alasan: 'rollout uji' })
+      return
+    }
+    if (blockedByIndonesianGate(gate)) {
       traceClose(run, 'dilewati', { alasan: 'nomor Indonesia' })
       return
     }
@@ -106,7 +113,9 @@ async function runExtraction(conversationId: string): Promise<void> {
       return
     }
     const transcript = buildNumberedTranscript([...latest].reverse())
-    const extraction = await extractBookingSignals({ transcript, booking })
+    // Hanya pesan TAMU yang boleh jadi sumber usulan/fakta (pesan tim tidak pernah).
+    const inboundIds = new Set(latest.filter((m) => m.direction === 'INBOUND').map((m) => m.id))
+    const extraction = await extractBookingSignals({ transcript, booking, inboundIds })
     if (!extraction) {
       traceClose(run, 'gagal', { alasan: 'ekstraksi gagal' })
       return

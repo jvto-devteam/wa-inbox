@@ -78,7 +78,7 @@ function stripCodeFence(raw: string): string {
   return raw.trim().replace(/^```json\s*/i, '').replace(/^```\s*/, '').replace(/```\s*$/, '')
 }
 
-function parseItems(list: unknown, ids: readonly string[]): Extraction['changes'] {
+function parseItems(list: unknown, ids: readonly string[], allowed?: ReadonlySet<string>): Extraction['changes'] {
   if (!Array.isArray(list)) return []
   const out: Extraction['changes'] = []
   for (const item of list) {
@@ -91,12 +91,15 @@ function parseItems(list: unknown, ids: readonly string[]): Extraction['changes'
     const value = normalizeFieldValue(field, rawValue)
     const messageId = resolvePesan(rec.pesan, ids)
     if (value === null || !messageId) continue
+    // Sumber harus pesan masuk (tamu): butir yang menunjuk pesan tim dibuang.
+    if (allowed && !allowed.has(messageId)) continue
     out.push({ field, value, messageId })
   }
   return out
 }
 
-export function parseExtraction(raw: string, ids: readonly string[]): Extraction {
+/** `inboundIds`: bila diisi, hanya butir yang `pesan`-nya menunjuk salah satu id ini yang dipakai. */
+export function parseExtraction(raw: string, ids: readonly string[], inboundIds?: ReadonlySet<string>): Extraction {
   let data: unknown
   try {
     data = JSON.parse(stripCodeFence(raw))
@@ -105,17 +108,19 @@ export function parseExtraction(raw: string, ids: readonly string[]): Extraction
   }
   if (typeof data !== 'object' || data === null || Array.isArray(data)) return { changes: [], facts: [] }
   const rec = data as Record<string, unknown>
-  return { changes: parseItems(rec.changes, ids), facts: parseItems(rec.facts, ids) }
+  return { changes: parseItems(rec.changes, ids, inboundIds), facts: parseItems(rec.facts, ids, inboundIds) }
 }
 
 export async function extractBookingSignals(input: {
   transcript: NumberedTranscript
   booking: BookingData
+  /** Id pesan INBOUND di transkrip; butir yang menunjuk pesan keluar (tim/bot) dibuang. */
+  inboundIds?: ReadonlySet<string>
 }): Promise<Extraction | null> {
   const prompt = `Data booking saat ini:\n${JSON.stringify(bookingContextForLLM(input.booking))}\n\nTranskrip:\n${input.transcript.text}`
   try {
     const raw = await callLLM(prompt, { system: EXTRACT_SYSTEM_PROMPT, timeoutMs: EXTRACT_TIMEOUT_MS })
-    return parseExtraction(raw, input.transcript.ids)
+    return parseExtraction(raw, input.transcript.ids, input.inboundIds)
   } catch (error) {
     console.error('[booking-actions] extractBookingSignals failed:', error instanceof Error ? error.name : 'unknown')
     return null

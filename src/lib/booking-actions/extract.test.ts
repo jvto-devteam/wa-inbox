@@ -52,6 +52,17 @@ describe('parseExtraction', () => {
     })
     expect(parseExtraction(raw, ids).facts).toEqual([{ field: 'note', value: 'a', messageId: 'm1' }])
   })
+  it('final review minor: with inboundIds, items pointing at an OUTBOUND (team/bot) message are dropped', () => {
+    const raw = JSON.stringify({
+      changes: [{ field: 'pickup_time', value: '09:00', pesan: 1 }, { field: 'pickup_time', value: '10:00', pesan: 2 }],
+      facts: [{ field: 'total_pax', value: 5, pesan: 3 }, { field: 'total_pax', value: 6, pesan: 2 }],
+    })
+    // m2 = pesan tim (OUTBOUND).
+    expect(parseExtraction(raw, ids, new Set(['m1', 'm3']))).toEqual({
+      changes: [{ field: 'pickup_time', value: '09:00', messageId: 'm1' }],
+      facts: [{ field: 'total_pax', value: '5', messageId: 'm3' }],
+    })
+  })
   it('returns empty on non-JSON and tolerates a code fence and missing arrays', () => {
     expect(parseExtraction('maaf tidak bisa', ids)).toEqual({ changes: [], facts: [] })
     expect(parseExtraction('[]', ids)).toEqual({ changes: [], facts: [] })
