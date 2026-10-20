@@ -331,6 +331,8 @@ export function BookingActionsSection({ conversationId }: { conversationId: stri
   const [data, setData] = useState<BookingActionsResponse | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  // Petunjuk dari server (mis. Batalkan sesudah tamu dikabari: "kabari tamu bahwa perubahan dibatalkan").
+  const [hint, setHint] = useState<string | null>(null)
 
   const load = useCallback(() => {
     return fetchJson<BookingActionsResponse>(`/api/conversations/${conversationId}/booking-actions`)
@@ -364,12 +366,15 @@ export function BookingActionsSection({ conversationId }: { conversationId: stri
   async function patch(id: string, body: { op: Op } | { op: 'execute'; value: string; detail?: string } | { op: 'revert' }) {
     setBusyId(id)
     setError(null)
+    setHint(null)
     try {
-      await fetchJson<unknown>(`/api/booking-actions/${encodeURIComponent(id)}`, {
+      const res = await fetchJson<unknown>(`/api/booking-actions/${encodeURIComponent(id)}`, {
         method: 'PATCH',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify(body),
       })
+      const h = typeof res === 'object' && res !== null ? (res as { hint?: unknown }).hint : undefined
+      if (typeof h === 'string' && h.trim()) setHint(h)
       announceSummaryItemsChanged()
       await load()
     } catch (err: unknown) {
@@ -408,6 +413,11 @@ export function BookingActionsSection({ conversationId }: { conversationId: stri
             <ExecutedCard key={x.id} item={x} busy={busyId === x.id} onRevert={(id) => void patch(id, { op: 'revert' })} />
           ))}
         </ul>
+      )}
+      {hint && (
+        <p role="status" className="text-sm text-ink">
+          {hint}
+        </p>
       )}
       {error && (
         <p role="alert" className="text-sm text-danger">

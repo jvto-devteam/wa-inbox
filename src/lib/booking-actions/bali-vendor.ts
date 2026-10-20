@@ -28,6 +28,7 @@ import type { BookingData } from '@/lib/booking/client'
 import { enqueueSystemTemplateSend } from '@/lib/system-templates/send'
 import { notifyBookingAction } from '@/lib/push/send'
 import { recordEvent } from './history'
+import { vendorDestination } from './vendor-destination'
 import { bookingTimeKnown, changeAlreadyApplied } from './compare'
 import { normalizeFieldValue, type FieldKey } from './fields'
 
@@ -101,18 +102,29 @@ export async function notifyBaliVendor(input: {
     reason = 'BOOKING_NOT_REFRESHED'
   } else {
     try {
-      const result = await enqueueSystemTemplateSend({
-        templateKey: BALI_UPDATE_TEMPLATE_KEY,
-        to: { phone: vendorPhone() },
-        variables: buildVendorVariables(booking, expected),
-        // Satu eksekusi = satu kabar; kartu yang sama tidak pernah dieksekusi dua kali.
-        idempotencyKey: input.idempotencyKey ?? `bali_update:${actionId}`,
-      })
-      if (result.ok) {
-        sent = result.status !== 'CANCELLED'
-        if (!sent) reason = 'CANCELLED'
+      // Important 4: percakapan uji selama rollout `test` -> nomor uji, bukan vendor sungguhan.
+      const dest = await vendorDestination(conversationId, vendorPhone())
+      if ('skip' in dest) {
+        reason = dest.skip
+        if (dest.skip === 'TEST_PHONE_MISSING') {
+          // Uji tanpa nomor uji: vendor sungguhan tidak boleh menerimanya, dan ini bukan alarm untuk admin.
+          await recordEvent(prisma, { conversationId, bookingId, actionId, event: 'VENDOR_NOTICE_FAILED', actor: 'SYSTEM', reason: `Kabar ke vendor Bali tidak dikirim (uji, ${reason})` })
+          return
+        }
       } else {
-        reason = result.code
+        const result = await enqueueSystemTemplateSend({
+          templateKey: BALI_UPDATE_TEMPLATE_KEY,
+          to: { phone: dest.phone },
+          variables: buildVendorVariables(booking, expected),
+          // Satu eksekusi = satu kabar; kartu yang sama tidak pernah dieksekusi dua kali.
+          idempotencyKey: input.idempotencyKey ?? `bali_update:${actionId}`,
+        })
+        if (result.ok) {
+          sent = result.status !== 'CANCELLED'
+          if (!sent) reason = 'CANCELLED'
+        } else {
+          reason = result.code
+        }
       }
     } catch (error) {
       reason = error instanceof Error ? error.name : 'unknown'
@@ -130,7 +142,7 @@ export async function notifyBaliVendor(input: {
   }
   try {
     const code = text(booking.id)
-    await notifyBookingAction({ kind: 'EXECUTE_FAILED', conversationId, bookingCode: code, summary: VENDOR_FAILED_SUMMARY, actionId })
+    await notifyBookingAction({ kind: 'EXECUTE_FAILED', conversationId, bookingCode: code, summary: VENDOR_FAILED_SUMMARY, actionId, tagSuffix: 'vendor-bali' })
   } catch {
     console.error('notifyBaliVendor: push gagal', { actionId })
   }

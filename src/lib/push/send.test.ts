@@ -131,3 +131,20 @@ describe('buildPushPayload', () => {
     expect(new Set(titles).size).toBe(5)
   })
 })
+
+describe('review 2026-10-20 Important 3: manual-notice alarms keep their own tag', () => {
+  it('guest/vendor failure tags differ from the card tag, so a later AUTO_APPLIED cannot replace them', () => {
+    const card = buildPushPayload({ ...event, kind: 'AUTO_APPLIED' }).tag
+    expect(card).toBe('booking-action:act1')
+    expect(buildPushPayload({ ...event, kind: 'GUEST_NOTICE_FAILED', tagSuffix: 'guest' }).tag).toBe('booking-action:act1:guest')
+    expect(buildPushPayload({ ...event, kind: 'GUEST_NOTICE_FAILED', tagSuffix: 'guest-revert' }).tag).toBe('booking-action:act1:guest-revert')
+    expect(buildPushPayload({ ...event, kind: 'EXECUTE_FAILED', tagSuffix: 'vendor-tshirt' }).tag).toBe('booking-action:act1:vendor-tshirt')
+    expect(buildPushPayload({ ...event, kind: 'EXECUTE_FAILED', tagSuffix: 'vendor-bali' }).tag).toBe('booking-action:act1:vendor-bali')
+  })
+
+  it('every push records a PUSHED marker on the card (also without VAPID), for the lost-push sweep', async () => {
+    delete process.env.VAPID_PUBLIC_KEY
+    await notifyBookingAction(event)
+    expect(db.bookingActionEvent.create).toHaveBeenCalledWith({ data: expect.objectContaining({ actionId: 'act1', event: 'PUSHED', reason: 'CHANGE', actor: 'SYSTEM' }) })
+  })
+})

@@ -49,3 +49,8 @@ export function blockedByIndonesianGate(conv: GateConversation): boolean {
 export function bookingAutomationAllowed(conv: GateConversation): boolean {
   return bookingActionsRollout() === 'all' || isBookingTestConversation(conv)
 }
+
+/** Nomor uji PERTAMA di `BOOKING_ACTIONS_TEST_PHONES` (urutan env), atau null. */
+export function firstBookingTestPhone(): string | null {
+  return bookingActionsTestPhones().values().next().value ?? null
+}

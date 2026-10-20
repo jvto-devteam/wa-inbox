@@ -67,7 +67,7 @@ async function loadPinned(conversationId: string, bookingData: unknown): Promise
 
 async function loadChangeHistory(conversationId: string): Promise<BookingActionEventView[]> {
   const events = (await prisma.bookingActionEvent.findMany({
-    where: { conversationId },
+    where: { conversationId, event: { not: 'PUSHED' } },
     orderBy: { createdAt: 'desc' },
     take: CHANGE_HISTORY_LIMIT,
   })) ?? []

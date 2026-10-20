@@ -12,6 +12,7 @@ vi.mock('@/lib/booking-actions/bali-vendor', () => ({ notifyBaliVendor: vi.fn().
 vi.mock('@/lib/booking-actions/history', () => ({ recordEvent: vi.fn().mockResolvedValue(undefined) }))
 vi.mock('@/lib/booking-actions/guest-notice', () => ({ notifyGuestOfUpdate: vi.fn().mockResolvedValue(undefined) }))
 vi.mock('@/lib/booking-actions/tshirt-vendor', () => ({ notifyTshirtVendor: vi.fn().mockResolvedValue(undefined) }))
+vi.mock('@/lib/push/send', () => ({ notifyBookingAction: vi.fn().mockResolvedValue(undefined) }))
 
 import { prisma } from '@/lib/db'
 import { ensureFreshBookingData, lookupBookingResult } from '@/lib/booking/client'
@@ -20,7 +21,8 @@ import { recordEvent } from '@/lib/booking-actions/history'
 import { notifyBaliVendor } from '@/lib/booking-actions/bali-vendor'
 import { notifyGuestOfUpdate } from '@/lib/booking-actions/guest-notice'
 import { notifyTshirtVendor } from '@/lib/booking-actions/tshirt-vendor'
-import { executeBookingAction, releaseStaleExecuting, revertBookingAction } from './execute'
+import { notifyBookingAction } from '@/lib/push/send'
+import { GUEST_REVERT_HINT, executeBookingAction, releaseStaleExecuting, revertBookingAction } from './execute'
 
 const db = prisma as unknown as DeepMockProxy<PrismaClient>
 const NOW = new Date('2026-10-20T03:00:00Z')
@@ -39,6 +41,7 @@ beforeEach(() => {
   vi.mocked(notifyBaliVendor).mockClear()
   vi.mocked(notifyGuestOfUpdate).mockClear()
   vi.mocked(notifyTshirtVendor).mockClear()
+  vi.mocked(notifyBookingAction).mockClear()
   vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({ success: true }) }))
   process.env.LEGACY_BASE_URL = 'https://javavolcano-touroperator.com'
   vi.spyOn(console, 'error').mockImplementation(() => undefined)
@@ -495,15 +498,16 @@ describe('owner 2026-10-20: guest confirmation + t-shirt vendor after a successf
     })
   }
 
-  it('auto-apply tshirt success -> one guest notice (no account) + one vendor notice with the refreshed booking', async () => {
+  it('auto-apply (deferGuestNotice) tshirt success -> NO guest notice here (auto-apply sends one combined) + one vendor notice', async () => {
     const after = tshirtBooking('L x 2, XL x 1')
-    const r = await run({ field: 'tshirt_sizes', proposedValue: 'L x 2, XL x 1' }, { accountId: null, bd: tshirtBooking('M x 3'), after })
-    expect(r.status).toBe(200)
-    expect(notifyGuestOfUpdate).toHaveBeenCalledTimes(1)
-    expect(notifyGuestOfUpdate).toHaveBeenCalledWith(expect.objectContaining({
-      actionId: 'a1', conversationId: 'c1', bookingId: '77', accountId: null, sourceMessageId: 'm0',
-      written: [{ field: 'tshirt_sizes', value: 'L x 2, XL x 1' }],
-    }))
+    db.bookingAction.findUnique.mockResolvedValue({
+      id: 'a1', conversationId: 'c1', bookingId: '77', type: 'CHANGE', state: 'OPEN', tier: 'AI', sourceMessageId: 'm0', field: 'tshirt_sizes', proposedValue: 'L x 2, XL x 1',
+    } as never)
+    db.conversation.findUnique.mockResolvedValue({ id: 'c1', bookingData: tshirtBooking('M x 3'), contact: { phone: '4915112345678' } } as never)
+    vi.mocked(ensureFreshBookingData).mockResolvedValue(after)
+    const res = await executeBookingAction({ actionId: 'a1', accountId: null, actor: 'SYSTEM', closedReason: 'AUTO_APPLIED', deferGuestNotice: true, now: NOW })
+    expect(res.status).toBe(200)
+    expect(notifyGuestOfUpdate).not.toHaveBeenCalled()
     expect(notifyTshirtVendor).toHaveBeenCalledTimes(1)
     expect(notifyTshirtVendor).toHaveBeenCalledWith(expect.objectContaining({ actionId: 'a1', sizes: 'L x 2, XL x 1', booking: after }))
     expect(vi.mocked(notifyTshirtVendor).mock.calls[0][0].idempotencyKey).toBeUndefined()
@@ -514,8 +518,8 @@ describe('owner 2026-10-20: guest confirmation + t-shirt vendor after a successf
     expect(r.status).toBe(200)
     expect(notifyGuestOfUpdate).toHaveBeenCalledTimes(1)
     expect(notifyGuestOfUpdate).toHaveBeenCalledWith(expect.objectContaining({
-      accountId: 'acc1',
-      written: [{ field: 'pickup_point', value: 'Surabaya Hotel' }, { field: 'pickup_detail', value: 'Hotel Majapahit' }],
+      conversationId: 'c1', bookingId: '77', accountId: 'acc1',
+      items: [{ actionId: 'a1', sourceMessageId: 'm0', written: [{ field: 'pickup_point', value: 'Surabaya Hotel' }, { field: 'pickup_detail', value: 'Hotel Majapahit' }] }],
     }))
     expect(notifyTshirtVendor).not.toHaveBeenCalled()
   })
@@ -547,6 +551,30 @@ describe('owner 2026-10-20: guest confirmation + t-shirt vendor after a successf
     expect(notifyTshirtVendor).toHaveBeenCalledTimes(1)
     expect(notifyTshirtVendor).toHaveBeenCalledWith(expect.objectContaining({ idempotencyKey: 'tshirt_revert:a1', sizes: 'M x 3' }))
     expect(notifyGuestOfUpdate).not.toHaveBeenCalled()
+    // Tamu belum pernah dikabari: tanpa petunjuk, tanpa push "kabari tamu".
+    expect(r.body).not.toHaveProperty('hint')
+    expect(notifyBookingAction).not.toHaveBeenCalled()
+  })
+
+  it('revert after the guest WAS notified -> push "Kabari tamu manual — perubahan dibatalkan" (own tag) + hint in the response', async () => {
+    db.bookingAction.findUnique.mockResolvedValue({
+      id: 'a1', conversationId: 'c1', bookingId: '77', type: 'CHANGE', field: 'pickup_time', proposedValue: '09:00', state: 'EXECUTED', tier: 'AI',
+    } as never)
+    db.bookingAction.findMany.mockResolvedValue([{ id: 'a1', field: 'pickup_time' }] as never)
+    db.bookingActionEvent.findMany.mockResolvedValue([{
+      id: 'e1', actionId: 'a1', event: 'EXECUTED', oldValue: '10:30', newValue: '09:00', backoffice: { written: ['pickup'], batch: ['a1'] }, createdAt: NOW,
+    }] as never)
+    db.bookingActionEvent.findFirst.mockResolvedValue({ id: 'g1' } as never)
+    db.conversation.findUnique.mockResolvedValue({
+      id: 'c1', bookingData: booking({ id: 'JVTO-3899', pickup: { meeting_point: 'Surabaya Airport', meeting_point_value: 'GA 300', pickup_time: '09:00' } }), contact: { phone: '4915112345678' },
+    } as never)
+    vi.mocked(ensureFreshBookingData).mockResolvedValue(booking({ id: 'JVTO-3899' }))
+    const r = await revertBookingAction({ actionId: 'a1', accountId: 'acc1' })
+    expect(r).toEqual({ status: 200, body: { ok: true, state: 'REVERTED', reverted: ['a1'], hint: GUEST_REVERT_HINT } })
+    expect(db.bookingActionEvent.findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: { actionId: { in: ['a1'] }, event: 'GUEST_NOTICE_SENT' } }))
+    expect(notifyBookingAction).toHaveBeenCalledWith(expect.objectContaining({
+      kind: 'GUEST_NOTICE_FAILED', summary: 'Kabari tamu manual — perubahan dibatalkan', tagSuffix: 'guest-revert', actionId: 'a1', bookingCode: 'JVTO-3899',
+    }))
   })
 
   it('revert of a non-tshirt change -> no vendor kaos notice, no guest notice', async () => {

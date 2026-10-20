@@ -11,6 +11,7 @@
  */
 import webpush from 'web-push'
 import { prisma } from '@/lib/db'
+import { recordEvent } from '@/lib/booking-actions/history'
 
 export type PushPayload = { title: string; body: string; url: string; tag: string }
 export type BookingPushKind = 'CHANGE' | 'MISMATCH' | 'TASK' | 'AUTO_APPLIED' | 'EXECUTE_FAILED' | 'DATA_REQUEST_FAILED' | 'GUEST_NOTICE_FAILED'
@@ -22,6 +23,11 @@ export type BookingPushEvent = {
   actionId: string
   /** Pesan sumber; bila ada, notifikasi membuka pesan itu. */
   messageId?: string | null
+  /**
+   * Alarm "kabari manual" memakai tag sendiri (`booking-action:<id>:<suffix>`): notifikasi bertag sama saling
+   * MENGGANTI di HP admin, jadi AUTO_APPLIED berikutnya tidak boleh menghapus alarm kabar tamu/vendor yang gagal.
+   */
+  tagSuffix?: 'guest' | 'guest-revert' | 'vendor-tshirt' | 'vendor-bali'
 }
 
 const TITLES: Record<BookingPushKind, string> = {
@@ -72,7 +78,7 @@ export function buildPushPayload(e: BookingPushEvent): PushPayload {
     title: TITLES[e.kind],
     body: code ? `${code}: ${text}` : text,
     url: `/inbox?${params.toString()}`,
-    tag: `booking-action:${e.actionId}`,
+    tag: e.tagSuffix ? `booking-action:${e.actionId}:${e.tagSuffix}` : `booking-action:${e.actionId}`,
   }
 }
 
@@ -84,7 +90,21 @@ function vapidFromEnv(): { subject: string; publicKey: string; privateKey: strin
   return { subject, publicKey, privateKey }
 }
 
+/**
+ * Penanda `PUSHED` di riwayat kartu: sapuan tick (`pushUnnotifiedChanges`) mengirim ulang push CHANGE hanya untuk
+ * kartu OPEN yang belum pernah dikabarkan (push hilang karena proses mati/restart). Dicatat sebelum kirim, juga
+ * tanpa VAPID, supaya sapuan tidak berulang tiap tick. Disembunyikan dari tampilan riwayat.
+ */
+async function markPushed(e: BookingPushEvent): Promise<void> {
+  try {
+    await recordEvent(prisma, { conversationId: e.conversationId, actionId: e.actionId, event: 'PUSHED', actor: 'SYSTEM', reason: e.kind })
+  } catch {
+    // recordEvent standalone sudah menelan; sabuk pengaman saja.
+  }
+}
+
 export async function notifyBookingAction(e: BookingPushEvent): Promise<void> {
+  await markPushed(e)
   try {
     const vapid = vapidFromEnv()
     if (!vapid) {

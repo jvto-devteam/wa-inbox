@@ -2,9 +2,10 @@
  * Kabar ke TAMU sesudah perubahan booking dari chat-nya berhasil ditulis (permintaan owner 2026-10-20: tamu
  * minta "kaos 2 L 1 XL" -> booking diperbarui -> tamu dapat WhatsApp "sudah diperbarui, detail di portal").
  *
- * Dipanggil `executeBookingAction` sesudah transaksi EXECUTED, untuk Setujui manual DAN terapkan-otomatis, satu
- * kali per eksekusi (kartu yang sama tidak pernah dieksekusi dua kali; kunci `guest_update:<actionId>` dicatat di
- * botTrace pesan dan event GUEST_NOTICE_SENT menahan panggilan ulang). Fire-and-forget, TIDAK PERNAH melempar,
+ * Setujui manual: dipanggil `executeBookingAction` sesudah transaksi EXECUTED, satu kali per eksekusi. Terapkan-otomatis:
+ * `executeBookingAction` menunda (`deferGuestNotice`) dan `autoApplyCreated` mengirim SATU kabar gabungan untuk semua
+ * kartu yang tertulis dari satu ekstraksi (review Important 2). Kunci `guest_update:<kartu pertama>` dicatat di botTrace
+ * pesan; event GUEST_NOTICE_SENT di setiap kartu menahan panggilan ulang. Fire-and-forget, TIDAK PERNAH melempar,
  * respons eksekusi tidak berubah.
  *
  * Isi dibuat di kode (tanpa LLM, tanpa nama tamu): "Noted" + satu baris per field yang BENAR-BENAR ditulis + tautan
@@ -32,6 +33,7 @@ import { prisma } from '@/lib/db'
 import { broadcast } from '@/lib/realtime'
 import { sendMessage } from '@/lib/send'
 import { notifyBookingAction } from '@/lib/push/send'
+import { BOOKING_UPDATE_NOTICE_SOURCE } from '@/lib/summary-items/automated'
 import { bookingUrlToken } from '@/lib/booking/backoffice-client'
 import type { BookingData } from '@/lib/booking/client'
 import { dataRequestWindowClosed, isIndonesianGuest } from './data-requests'
@@ -116,31 +118,45 @@ export function buildGuestNoticeText(written: readonly WrittenField[], booking: 
   return [TEXT[lang].intro, ...lines, ...(link ? ['', TEXT[lang].link(link)] : [])].join('\n')
 }
 
+/** Satu kartu yang ikut dikabarkan: id, pesan sumbernya, dan nilai yang ditulisnya (kartu + isian detail). */
+export type GuestNoticeItem = { actionId: string; sourceMessageId: string | null; written: readonly WrittenField[] }
+
+/**
+ * SATU pesan untuk semua kartu `items` (urutan = kartu utama dulu). Setujui manual: kartu + pendamping satu
+ * eksekusi; terapkan-otomatis: semua kartu yang tertulis dari satu ekstraksi (`autoApplyCreated`), supaya satu pesan
+ * tamu tidak dijawab beberapa "Noted". Kunci = `guest_update:<kartu pertama>`; GUEST_NOTICE_SENT dicatat di SETIAP
+ * kartu yang disebut, dan salah satunya sudah ada = tidak dikirim lagi.
+ */
 export async function notifyGuestOfUpdate(input: {
-  actionId: string
   conversationId: string
   bookingId: string | null
   accountId: string | null
-  /** Booking segar yang dipakai menulis (bagian yang tidak ditulis + tautan + negara). */
+  /** Booking segar (bagian yang tidak ditulis + tautan + negara). */
   booking: BookingData
-  written: readonly WrittenField[]
-  sourceMessageId: string | null
+  items: readonly GuestNoticeItem[]
   now?: Date
 }): Promise<void> {
-  const { actionId, conversationId, bookingId, accountId } = input
+  const { conversationId, bookingId, accountId } = input
   const now = input.now ?? new Date()
   const code = text(input.booking.id)
-  const pushManual = (reason: string) =>
-    Promise.resolve(
-      notifyBookingAction({ kind: 'GUEST_NOTICE_FAILED', conversationId, bookingCode: code, summary: `${GUEST_NOTICE_FAILED_SUMMARY} (${reason})`, actionId })
-    ).catch(() => undefined)
-
   try {
-    const body = buildGuestNoticeText(input.written, input.booking)
+    // Hanya kartu yang lahir dari pesan TAMU di percakapan ini.
+    const sourceIds = [...new Set(input.items.flatMap((i) => (i.sourceMessageId ? [i.sourceMessageId] : [])))]
+    if (sourceIds.length === 0) return
+    const sources = (await prisma.message.findMany({ where: { id: { in: sourceIds }, conversationId }, select: { id: true, direction: true } })) ?? []
+    const inbound = new Set(sources.filter((m) => m.direction === 'INBOUND').map((m) => m.id))
+    const items = input.items.filter((i) => i.sourceMessageId !== null && inbound.has(i.sourceMessageId))
+    if (items.length === 0) return
+    const body = buildGuestNoticeText(items.flatMap((i) => i.written), input.booking)
     if (body === null) return
-    if (input.sourceMessageId === null) return
-    const source = await prisma.message.findUnique({ where: { id: input.sourceMessageId }, select: { direction: true, conversationId: true } })
-    if (source?.direction !== 'INBOUND' || source.conversationId !== conversationId) return
+    const actionId = items[0].actionId
+    const ids = items.map((i) => i.actionId)
+    const pushManual = (reason: string) =>
+      Promise.resolve(
+        notifyBookingAction({
+          kind: 'GUEST_NOTICE_FAILED', conversationId, bookingCode: code, summary: `${GUEST_NOTICE_FAILED_SUMMARY} (${reason})`, actionId, tagSuffix: 'guest',
+        })
+      ).catch(() => undefined)
 
     const conv = await prisma.conversation.findUnique({
       where: { id: conversationId },
@@ -149,7 +165,7 @@ export async function notifyGuestOfUpdate(input: {
     if (!conv || (conv.channelIdentity?.platform ?? 'WHATSAPP') !== 'WHATSAPP' || !conv.contact?.phone) return
     if (!bookingAutomationAllowed({ isTest: conv.isTest, phone: conv.contact.phone })) return
 
-    const already = await prisma.bookingActionEvent.findFirst({ where: { actionId, event: 'GUEST_NOTICE_SENT' }, select: { id: true } })
+    const already = await prisma.bookingActionEvent.findFirst({ where: { actionId: { in: ids }, event: 'GUEST_NOTICE_SENT' }, select: { id: true } })
     if (already) return
 
     if (await dataRequestWindowClosed(conversationId, now)) {
@@ -167,7 +183,7 @@ export async function notifyGuestOfUpdate(input: {
         text: body,
         sentBy: accountId ? 'AGENT' : 'BOT',
         agentId: accountId ?? undefined,
-        botTrace: { source: 'booking_update_notice', idempotencyKey: `guest_update:${actionId}` },
+        botTrace: { source: BOOKING_UPDATE_NOTICE_SOURCE, idempotencyKey: `guest_update:${actionId}` },
       })
       messageId = sent?.id ?? null
       failed = sent?.deliveryStatus === 'FAILED'
@@ -182,12 +198,14 @@ export async function notifyGuestOfUpdate(input: {
       await pushManual('pesan gagal dikirim')
       return
     }
-    await recordEvent(prisma, {
-      conversationId, bookingId, actionId, event: 'GUEST_NOTICE_SENT', actor: accountId ? 'ACCOUNT' : 'SYSTEM', accountId,
-      newValue: { messageId },
-    })
+    for (const id of ids) {
+      await recordEvent(prisma, {
+        conversationId, bookingId, actionId: id, event: 'GUEST_NOTICE_SENT', actor: accountId ? 'ACCOUNT' : 'SYSTEM', accountId,
+        newValue: { messageId, batch: ids },
+      })
+    }
     broadcast({ type: 'booking-actions.changed', conversationId })
   } catch (error) {
-    console.error('notifyGuestOfUpdate gagal', { actionId, error: error instanceof Error ? error.name : 'unknown' })
+    console.error('notifyGuestOfUpdate gagal', { error: error instanceof Error ? error.name : 'unknown' })
   }
 }

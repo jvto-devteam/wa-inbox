@@ -25,6 +25,7 @@ import type { BookingData } from '@/lib/booking/client'
 import { enqueueSystemTemplateSend } from '@/lib/system-templates/send'
 import { notifyBookingAction } from '@/lib/push/send'
 import { recordEvent } from './history'
+import { vendorDestination } from './vendor-destination'
 import { changeAlreadyApplied } from './compare'
 import { canonicalTshirtSizes } from './fields'
 
@@ -73,17 +74,28 @@ export async function notifyTshirtVendor(input: {
     reason = 'BOOKING_NOT_REFRESHED'
   } else {
     try {
-      const result = await enqueueSystemTemplateSend({
-        templateKey: TSHIRT_UPDATE_TEMPLATE_KEY,
-        to: { phone: vendorPhone() },
-        variables: buildTshirtVendorVariables(booking, input.sizes),
-        idempotencyKey: input.idempotencyKey ?? `tshirt_update:${actionId}`,
-      })
-      if (result.ok) {
-        sent = result.status !== 'CANCELLED'
-        if (!sent) reason = 'CANCELLED'
+      // Important 4: percakapan uji selama rollout `test` -> nomor uji, bukan vendor sungguhan.
+      const dest = await vendorDestination(conversationId, vendorPhone())
+      if ('skip' in dest) {
+        reason = dest.skip
+        if (dest.skip === 'TEST_PHONE_MISSING') {
+          // Uji tanpa nomor uji: vendor sungguhan tidak boleh menerimanya, dan ini bukan alarm untuk admin.
+          await recordEvent(prisma, { conversationId, bookingId, actionId, event: 'VENDOR_NOTICE_FAILED', actor: 'SYSTEM', reason: `Kabar ke vendor kaos tidak dikirim (uji, ${reason})` })
+          return
+        }
       } else {
-        reason = result.code
+        const result = await enqueueSystemTemplateSend({
+          templateKey: TSHIRT_UPDATE_TEMPLATE_KEY,
+          to: { phone: dest.phone },
+          variables: buildTshirtVendorVariables(booking, input.sizes),
+          idempotencyKey: input.idempotencyKey ?? `tshirt_update:${actionId}`,
+        })
+        if (result.ok) {
+          sent = result.status !== 'CANCELLED'
+          if (!sent) reason = 'CANCELLED'
+        } else {
+          reason = result.code
+        }
       }
     } catch (error) {
       reason = error instanceof Error ? error.name : 'unknown'
@@ -100,7 +112,7 @@ export async function notifyTshirtVendor(input: {
     console.error('notifyTshirtVendor: mencatat event gagal', { actionId, error: error instanceof Error ? error.name : 'unknown' })
   }
   try {
-    await notifyBookingAction({ kind: 'EXECUTE_FAILED', conversationId, bookingCode: text(booking.id), summary: TSHIRT_VENDOR_FAILED_SUMMARY, actionId })
+    await notifyBookingAction({ kind: 'EXECUTE_FAILED', conversationId, bookingCode: text(booking.id), summary: TSHIRT_VENDOR_FAILED_SUMMARY, actionId, tagSuffix: 'vendor-tshirt' })
   } catch {
     console.error('notifyTshirtVendor: push gagal', { actionId })
   }

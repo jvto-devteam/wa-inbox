@@ -11,6 +11,7 @@ import {
   UNREPLIED_MIN_MS,
 } from './config'
 import type { TripBriefSummary } from './payload-schema'
+import { isAutomatedNotice } from '@/lib/summary-items/automated'
 
 /**
  * Mengumpulkan bahan ringkasan satu hari WIB. Hanya membaca; tidak ada yang ditulis di sini.
@@ -39,6 +40,8 @@ export type TranscriptMessage = {
   type: string
   content: string | null
   createdAt: Date
+  /** Kabar otomatis (`isAutomatedNotice`): tampil di transkrip, tetapi bukan "balasan kita". */
+  automated?: boolean
 }
 
 export type ConversationFacts = {
@@ -82,7 +85,9 @@ export type CollectedDay = {
 }
 
 export function classifyConversation(facts: ConversationFacts, start: Date, end: Date): Classification {
-  const last = facts.messages.at(-1)
+  // Kabar otomatis ("booking sudah diperbarui", permintaan data) tidak menjawab pelanggan: diukur dari pesan
+  // terakhir yang bukan kabar otomatis.
+  const last = facts.messages.filter((m) => !m.automated).at(-1)
   const activeToday = facts.inboundToday + facts.outboundToday > 0
   const isNewLead = facts.createdAt >= start && facts.createdAt < end
   if (!last) return { activeToday, isNewLead, unreplied: null, dormant: null }
@@ -131,7 +136,8 @@ function transcriptLine(m: TranscriptMessage): string {
   const content = m.content?.trim() ? m.content.trim().replace(/\s*\r?\n\s*/g, ' ⏎ ') : ''
   const raw = content || `[${m.type}]`
   const text = raw.length > TRANSCRIPT_MAX_CHARS_PER_MESSAGE ? `${raw.slice(0, TRANSCRIPT_MAX_CHARS_PER_MESSAGE)}…` : raw
-  return `[${jakartaStamp(m.createdAt)}] ${SPEAKER[m.sentBy]}: ${text}`
+  // Kabar otomatis diberi label sendiri supaya model tidak menilainya jawaban tim atas pertanyaan pelanggan.
+  return `[${jakartaStamp(m.createdAt)}] ${m.automated ? 'Sistem (pesan otomatis)' : SPEAKER[m.sentBy]}: ${text}`
 }
 
 /**
@@ -204,15 +210,19 @@ export async function collectDay(start: Date, end: Date, options: CollectOptions
       where: { conversationId: conversation.id, createdAt: { lt: end } },
       orderBy: { createdAt: 'desc' },
       take: TRANSCRIPT_MAX_MESSAGES,
-      select: { id: true, direction: true, sentBy: true, type: true, content: true, createdAt: true },
+      select: { id: true, direction: true, sentBy: true, type: true, content: true, createdAt: true, botTrace: true },
     })
+    const messages: TranscriptMessage[] = [...latest].reverse().map(({ botTrace, ...m }) => ({
+      ...m,
+      ...(isAutomatedNotice({ direction: m.direction, botTrace }) ? { automated: true } : {}),
+    }))
     facts.push({
       conversationId: conversation.id,
       contactName: conversation.contact.name,
       pipelineStage: conversation.pipelineStage,
       createdAt: conversation.createdAt,
       tripBrief: summarizeTripBrief(conversation.tripBrief),
-      messages: [...latest].reverse(),
+      messages,
       inboundToday: countFor(conversation.id, 'INBOUND'),
       outboundToday: countFor(conversation.id, 'OUTBOUND'),
     })

@@ -74,7 +74,8 @@ import { supersedeOlderFacts } from './fact-supersede'
 import { normalizeFieldValue, parseTshirtSizes, readBookingField, type FieldKey } from './fields'
 import { recordEvent, type BookingEventActor } from './history'
 import { notifyBaliVendor } from './bali-vendor'
-import { notifyGuestOfUpdate, type WrittenField } from './guest-notice'
+import { notifyBookingAction } from '@/lib/push/send'
+import { notifyGuestOfUpdate, type GuestNoticeItem } from './guest-notice'
 import { notifyTshirtVendor } from './tshirt-vendor'
 import { currentBookingId } from './scope'
 import { reevaluateBookingActions } from './store'
@@ -214,6 +215,8 @@ export async function executeBookingAction(input: {
   accountId: string | null
   actor?: BookingEventActor
   closedReason?: 'EXECUTED' | 'AUTO_APPLIED'
+  /** true = kabar ke tamu diserahkan ke pemanggil (terapkan-otomatis menggabungkan satu kabar per ekstraksi). */
+  deferGuestNotice?: boolean
   value?: string
   detail?: string
   now?: Date
@@ -373,13 +376,16 @@ export async function executeBookingAction(input: {
         void notifyTshirtVendor({ actionId, conversationId, bookingId, booking: result.booking, sizes: tshirt.value }).catch(() => undefined)
       }
       // Tamu dikabari sekali per eksekusi (gerbang: sumber INBOUND, rollout, jendela 24 jam -- di guest-notice.ts).
-      const writtenFields: WrittenField[] = included.map((a) => ({ field: a.field, value: a.value }))
-      if (detail !== null && detailField !== null && !included.some((a) => a.field === detailField)) {
-        writtenFields.push({ field: detailField, value: detail })
+      // Terapkan-otomatis menunda: `autoApplyCreated` mengirim SATU kabar untuk semua kartu dari satu ekstraksi.
+      if (!input.deferGuestNotice) {
+        const items: GuestNoticeItem[] = included.map((a) => ({
+          actionId: a.id, sourceMessageId: a.sourceMessageId ?? null, written: [{ field: a.field, value: a.value }],
+        }))
+        if (detail !== null && detailField !== null && !included.some((a) => a.field === detailField)) {
+          items[0] = { ...items[0], written: [...items[0].written, { field: detailField, value: detail }] }
+        }
+        void notifyGuestOfUpdate({ conversationId, bookingId, accountId, booking, items }).catch(() => undefined)
       }
-      void notifyGuestOfUpdate({
-        actionId, conversationId, bookingId, accountId, booking, written: writtenFields, sourceMessageId: action.sourceMessageId ?? null,
-      }).catch(() => undefined)
       return { status: 200, body: { ok: true, state: 'EXECUTED', executed: ids, written } }
     }
 
@@ -410,7 +416,7 @@ export async function executeBookingAction(input: {
 }
 
 export type RevertResult =
-  | { status: 200; body: { ok: true; state: 'REVERTED'; reverted: string[] } }
+  | { status: 200; body: { ok: true; state: 'REVERTED'; reverted: string[]; hint?: string } }
   | { status: 400 | 404 | 409 | 502 | 503; body: { error: string } }
 
 export const REVERT_CHANGED_ERROR = 'Nilai di booking sudah berubah sejak diterapkan. Periksa di backoffice.'
@@ -571,7 +577,30 @@ export async function revertBookingAction(input: { actionId: string; accountId: 
       actionId, conversationId, bookingId, booking: result.booking, sizes: tshirt.value, idempotencyKey: `tshirt_revert:${actionId}`,
     }).catch(() => undefined)
   }
+  // Tamu sudah menerima "booking sudah diperbarui" untuk perubahan ini: admin harus mengabarinya bahwa dibatalkan.
+  if (await guestWasNotified(ids)) {
+    void Promise.resolve(notifyBookingAction({
+      kind: 'GUEST_NOTICE_FAILED', conversationId, bookingCode: bookingCodeOf(result.booking), summary: GUEST_REVERT_SUMMARY, actionId, tagSuffix: 'guest-revert',
+    })).catch(() => undefined)
+    return { status: 200, body: { ok: true, state: 'REVERTED', reverted, hint: GUEST_REVERT_HINT } }
+  }
   return { status: 200, body: { ok: true, state: 'REVERTED', reverted } }
+}
+
+export const GUEST_REVERT_SUMMARY = 'Kabari tamu manual — perubahan dibatalkan'
+export const GUEST_REVERT_HINT = 'Tamu sudah dikabari perubahan ini lewat WhatsApp. Kabari tamu bahwa perubahan dibatalkan.'
+
+async function guestWasNotified(ids: string[]): Promise<boolean> {
+  try {
+    const row = await prisma.bookingActionEvent.findFirst({ where: { actionId: { in: ids }, event: 'GUEST_NOTICE_SENT' }, select: { id: true } })
+    return Boolean(row)
+  } catch {
+    return false
+  }
+}
+
+function bookingCodeOf(b: BookingData): string | null {
+  return typeof b.id === 'string' && b.id.trim() ? b.id.trim() : null
 }
 
 /** Lepas klaim permintaan ini (dan hanya ini) ke OPEN setelah lemparan tak terduga. Tidak pernah melempar. */

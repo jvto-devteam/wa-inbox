@@ -25,6 +25,14 @@ function facts(messages: TranscriptMessage[], overrides: Partial<ConversationFac
 }
 
 describe('classifyConversation — belum dibalas', () => {
+  it('review 2026-10-20 Important 1: kabar otomatis sesudah pertanyaan bukan balasan -> tetap kandidat, dan berlabel di transkrip', () => {
+    const notice: TranscriptMessage = { ...msg('OUTBOUND', before(2 * HOUR + 60_000), 'Noted, thank you! Your booking has been updated:'), automated: true }
+    const c = classifyConversation(facts([msg('INBOUND', before(2 * HOUR), 'ganti kaos jadi L, dan bisa tambah Ijen?'), notice]), start, end)
+    expect(c.unreplied?.waitingMs).toBe(2 * HOUR)
+    expect(c.dormant).toBeNull()
+    expect(buildTranscript([notice])).toContain('Sistem (pesan otomatis): Noted')
+  })
+
   it('pesan pelanggan ≥ 1 jam tanpa balasan masuk kandidat', () => {
     const c = classifyConversation(facts([msg('OUTBOUND', before(5 * HOUR)), msg('INBOUND', before(HOUR))]), start, end)
     expect(c.unreplied?.waitingMs).toBe(HOUR)

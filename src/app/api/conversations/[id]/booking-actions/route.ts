@@ -58,7 +58,7 @@ export async function GET(req: Request, { params }: Ctx) {
         orderBy: { createdAt: 'asc' },
       }),
       prisma.bookingActionEvent.findMany({
-        where: { conversationId: id },
+        where: { conversationId: id, event: { not: 'PUSHED' } },
         orderBy: { createdAt: 'desc' },
         take: HISTORY_LIMIT,
       }),

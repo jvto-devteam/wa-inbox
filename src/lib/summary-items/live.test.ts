@@ -18,7 +18,7 @@ const MIN = 60 * 1000
 const ago = (ms: number) => new Date(NOW.getTime() - ms)
 const wib = (d: string, hhmm: string) => new Date(`2026-10-${d}T${hhmm}:00+07:00`)
 
-type Msg = { id: string; direction: 'INBOUND' | 'OUTBOUND'; sentBy: 'CUSTOMER' | 'AGENT' | 'BOT'; type: string; content: string | null; createdAt: Date }
+type Msg = { id: string; direction: 'INBOUND' | 'OUTBOUND'; sentBy: 'CUSTOMER' | 'AGENT' | 'BOT'; type: string; content: string | null; createdAt: Date; botTrace?: unknown }
 const inbound = (id: string, createdAt: Date, content: string | null = 'harga Ijen berapa?', type = 'text'): Msg => ({
   id, direction: 'INBOUND', sentBy: 'CUSTOMER', type, content, createdAt,
 })
@@ -63,7 +63,7 @@ function given(conversations: Conv[], skipIndonesian = false) {
   mockPrisma.conversation.findMany.mockImplementation(((args: { where?: { id?: { in: string[] } } }) => {
     const ids = args.where?.id?.in
     if (ids) return Promise.resolve(conversations.filter((c) => ids.includes(c.id)))
-    return Promise.resolve(conversations.map((c) => ({ id: c.id, contact: c.contact, messages: c.messages.slice(0, 1).map((m) => ({ direction: m.direction })) })))
+    return Promise.resolve(conversations.map((c) => ({ id: c.id, contact: c.contact, messages: c.messages.slice(0, 5).map((m) => ({ direction: m.direction, botTrace: m.botTrace ?? null })) })))
   }) as never)
 }
 const phase2Ids = () => {
@@ -96,7 +96,7 @@ describe('createLiveReplyItems: kueri dua tahap', () => {
       },
     })
     expect(phase1?.select).not.toHaveProperty('chatReview')
-    expect(phase1?.select?.messages).toMatchObject({ where: { createdAt: { gte: lookbackStart } }, orderBy: { createdAt: 'desc' }, take: 1 })
+    expect(phase1?.select?.messages).toMatchObject({ where: { createdAt: { gte: lookbackStart } }, orderBy: { createdAt: 'desc' }, take: 5 })
     expect(phase2?.where).toEqual({ id: { in: ['calon'] } })
     expect(phase2?.select).toMatchObject({ chatReview: true, chatReviewAt: true, summaryItem: true })
     expect(phase2?.select?.messages).toMatchObject({ where: { createdAt: { gte: lookbackStart } }, orderBy: { createdAt: 'desc' }, take: TRANSCRIPT_MAX_MESSAGES })
@@ -393,5 +393,40 @@ describe('createLiveReplyItems: tidak pernah melempar', () => {
     mockPrisma.summaryItem.create.mockRejectedValueOnce(new Error('unique')).mockResolvedValueOnce({} as never)
     await expect(createLiveReplyItems(NOW)).resolves.toEqual({ ...none, created: 1 })
     expect(mockPrisma.summaryItem.create).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe('review 2026-10-20 Important 1: kabar otomatis bukan balasan kita', () => {
+  const notice = (id: string, createdAt: Date, source = 'booking_update_notice'): Msg => ({
+    ...outbound(id, createdAt, 'Noted, thank you! Your booking has been updated:', 'BOT'), botTrace: { source, idempotencyKey: `guest_update:${id}` },
+  })
+
+  it('pertanyaan tamu + kabar otomatis sesudahnya -> REPLY tetap dibuat (anchor = pertanyaan)', async () => {
+    given([conv([inbound('m1', ago(2 * HOUR), 'ganti kaos jadi L, dan bisa tambah Ijen?'), notice('n1', ago(2 * HOUR - 10_000))])])
+    expect(await createLiveReplyItems(NOW)).toEqual({ ...none, created: 1 })
+    expect(created()[0]).toMatchObject({ kind: 'REPLY', anchorMessageId: 'm1', snippet: 'ganti kaos jadi L, dan bisa tambah Ijen?' })
+  })
+
+  it('pesan permintaan data juga dilewati; balasan agen sungguhan tetap menutup kandidat', async () => {
+    given([conv([inbound('m1', ago(3 * HOUR)), notice('n1', ago(3 * HOUR - 10_000), 'data_request')])])
+    expect((await createLiveReplyItems(NOW)).created).toBe(1)
+    mockReset(mockPrisma)
+    given([conv([inbound('m1', ago(3 * HOUR)), notice('n1', ago(3 * HOUR - 10_000)), outbound('o1', ago(2 * HOUR))])])
+    expect((await createLiveReplyItems(NOW)).created).toBe(0)
+  })
+
+  it('percakapan yang tersaring tahap 1 karena kabar sesudah cutoff ditemukan lagi lewat event kabar', async () => {
+    const c = conv([inbound('m1', ago(61 * MIN)), notice('n1', ago(59 * MIN))], { id: 'kabar' })
+    mockPrisma.settings.findUnique.mockResolvedValue({ skipBotForIndonesianNumbers: false } as never)
+    mockPrisma.bookingActionEvent.findMany.mockResolvedValue([{ conversationId: 'kabar' }] as never)
+    mockPrisma.conversation.findMany.mockImplementation(((args: { where: { id?: { in: string[] }; isTest?: boolean } }) => {
+      if (!args.where.id) return Promise.resolve([]) // `none OUTBOUND sesudah cutoff` menyingkirkannya
+      if (args.where.isTest === false) return Promise.resolve([{ id: c.id, contact: c.contact, messages: c.messages.map((m) => ({ direction: m.direction, botTrace: m.botTrace ?? null })) }])
+      return Promise.resolve([c])
+    }) as never)
+    expect((await createLiveReplyItems(NOW)).created).toBe(1)
+    expect(mockPrisma.bookingActionEvent.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: { event: { in: ['GUEST_NOTICE_SENT', 'DRAFT_SENT'] }, createdAt: { gt: ago(UNREPLIED_MIN_MS) } },
+    }))
   })
 })

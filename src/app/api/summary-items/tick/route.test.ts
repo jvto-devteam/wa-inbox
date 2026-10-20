@@ -8,6 +8,7 @@ import { advancePipelineStagesFromBooking, refreshBookingDataForOpenActions, ref
 import { processDueOutboundJobs } from '@/lib/outbound/worker'
 import { releaseStaleExecuting } from '@/lib/booking-actions/execute'
 import { createDataRequestDrafts } from '@/lib/booking-actions/data-requests'
+import { pushUnnotifiedChanges } from '@/lib/booking-actions/push-sweep'
 import { POST } from './route'
 
 vi.mock('@/lib/summary-items/sync', () => ({ reconcileSummaryItems: vi.fn(), createLiveReplyItems: vi.fn() }))
@@ -22,6 +23,7 @@ vi.mock('@/lib/booking/client', () => ({
 vi.mock('@/lib/outbound/worker', () => ({ processDueOutboundJobs: vi.fn() }))
 vi.mock('@/lib/booking-actions/execute', () => ({ releaseStaleExecuting: vi.fn() }))
 vi.mock('@/lib/booking-actions/data-requests', () => ({ createDataRequestDrafts: vi.fn() }))
+vi.mock('@/lib/booking-actions/push-sweep', () => ({ pushUnnotifiedChanges: vi.fn().mockResolvedValue(0) }))
 
 const SECRET = 't'.repeat(40)
 const URL_ = 'http://localhost/api/summary-items/tick'
@@ -77,6 +79,14 @@ describe('POST /api/summary-items/tick', () => {
     const res = await POST(req(SECRET))
     expect(res.status).toBe(200)
     expect(reconcileSummaryItems).toHaveBeenCalledTimes(2)
+  })
+
+  it('sapuan push CHANGE yang hilang jalan sesudah pelepasan klaim; gagalnya tidak menghentikan tick', async () => {
+    await POST(req(SECRET))
+    expect(pushUnnotifiedChanges).toHaveBeenCalledTimes(1)
+    expect(order(releaseStaleExecuting)).toBeLessThan(order(pushUnnotifiedChanges))
+    vi.mocked(pushUnnotifiedChanges).mockRejectedValueOnce(new Error('down'))
+    expect((await POST(req(SECRET))).status).toBe(200)
   })
 
   it('Critical 1: booking berkartu terbuka disegarkan lebih dulu, berbagi anggaran 60 s dengan penyegaran umum; gagalnya tidak menghentikan tick', async () => {

@@ -13,7 +13,8 @@
  *
  * Eksekusinya `executeBookingAction` yang SAMA dengan tombol Setujui (actor SYSTEM, tanpa akun, closedReason
  * AUTO_APPLIED): klaim, penulisan, event EXECUTED, kabar vendor Bali. Gagal = kartu kembali OPEN + event
- * EXECUTE_FAILED (ditulis inti) + push EXECUTE_FAILED. Sukses = push AUTO_APPLIED.
+ * EXECUTE_FAILED (ditulis inti) + push EXECUTE_FAILED. Sukses = SATU push AUTO_APPLIED dan SATU kabar tamu per
+ * ekstraksi untuk semua kartu yang tertulis (`announceApplied`; review 2026-10-20 Important 2).
  *
  * Kabar ke admin hanya SESUDAH diterapkan (keputusan owner 2026-10-20: "tidak perlu approval admin, notif ke admin
  * saja jika sudah diupdate"): `applyExtraction` tidak mengirim push CHANGE saat kartu dibuat, `autoApplyCreated`
@@ -25,6 +26,7 @@ import { prisma } from '@/lib/db'
 import type { BookingData } from '@/lib/booking/client'
 import { notifyBookingAction, summarizeAction, type BookingPushEvent } from '@/lib/push/send'
 import { executeBookingAction } from './execute'
+import { notifyGuestOfUpdate, type GuestNoticeItem } from './guest-notice'
 import { readBookingField, type FieldKey } from './fields'
 import { currentBookingId } from './scope'
 import { bookingAutomationAllowed } from './rollout'
@@ -69,7 +71,7 @@ function modeOf(modes: Record<'AI' | 'BALI', ApprovalMode>, tier: string): Appro
 
 async function decide(actionId: string): Promise<
   | { go: false }
-  | { go: true; action: { field: string; proposedValue: unknown; sourceMessageId: string | null; conversationId: string }; code: string | null }
+  | { go: true; action: { field: string; proposedValue: unknown; sourceMessageId: string | null; conversationId: string }; code: string | null; bookingId: string | null }
 > {
   const action = await prisma.bookingAction.findUnique({ where: { id: actionId } })
   if (!action || action.type !== 'CHANGE' || action.state !== 'OPEN') return { go: false }
@@ -103,32 +105,40 @@ async function decide(actionId: string): Promise<
     const hasDetailCard = companions.some((c) => c.field === detailField && nonBlank(c.proposedValue) !== null)
     if (readBookingField(booking, detailField) !== null && !hasDetailCard) return { go: false }
   }
-  return { go: true, action, code: bookingCode(booking) }
+  return { go: true, action, code: bookingCode(booking), bookingId: action.bookingId }
 }
 
-export async function autoApplyIfAllowed(actionId: string, onUnexpectedError?: BookingPushEvent): Promise<AutoApplyOutcome> {
+/** Kartu yang tertulis otomatis, dikumpulkan untuk SATU push AUTO_APPLIED + SATU kabar tamu (review Important 2). */
+export type AppliedCard = { id: string; field: string; proposedValue: unknown; sourceMessageId: string | null }
+export type AppliedBatch = { conversationId: string; bookingId: string | null; code: string | null; cards: AppliedCard[] }
+
+export async function autoApplyIfAllowed(
+  actionId: string,
+  onUnexpectedError?: BookingPushEvent,
+  /** Penampung bersama `autoApplyCreated`; tanpa ini kartu ini dikabarkan sendiri sesudah berhasil. */
+  collect?: AppliedBatch[]
+): Promise<AutoApplyOutcome> {
   try {
     const d = await decide(actionId)
     if (!d.go) return 'skipped'
     const { action, code } = d
     const value = nonBlank(action.proposedValue)
 
-    const res = await executeBookingAction({ actionId, accountId: null, actor: 'SYSTEM', closedReason: 'AUTO_APPLIED' })
+    const res = await executeBookingAction({ actionId, accountId: null, actor: 'SYSTEM', closedReason: 'AUTO_APPLIED', deferGuestNotice: true })
     if (res.status === 200) {
-      // Satu push per kartu yang ikut ditulis, bertag sama dengan push CHANGE-nya.
-      const rows = (await prisma.bookingAction.findMany({
-        where: { id: { in: res.body.executed } },
-        select: { id: true, field: true, proposedValue: true, sourceMessageId: true },
-      })) ?? []
-      for (const r of rows) {
-        void notifyBookingAction({
-          kind: 'AUTO_APPLIED',
-          conversationId: action.conversationId,
-          bookingCode: code,
-          summary: summarizeAction(r.field, nonBlank(r.proposedValue)),
-          actionId: r.id,
-          messageId: r.sourceMessageId,
-        })
+      // Sudah tertulis: kegagalan sesudah ini (membaca kartu, push, kabar tamu) TIDAK boleh jadi EXECUTE_FAILED palsu.
+      try {
+        const rows = (await prisma.bookingAction.findMany({
+          where: { id: { in: res.body.executed } },
+          select: { id: true, field: true, proposedValue: true, sourceMessageId: true },
+        })) ?? []
+        // Urutan eksekusi (kartu utama dulu), bukan urutan kueri.
+        const cards = res.body.executed.flatMap((id) => rows.filter((r) => r.id === id))
+        const batch: AppliedBatch = { conversationId: action.conversationId, bookingId: d.bookingId, code, cards }
+        if (collect) collect.push(batch)
+        else await announceApplied([batch])
+      } catch (error) {
+        console.error('[booking-actions] autoApplyIfAllowed: kabar sesudah diterapkan gagal', { actionId, error: error instanceof Error ? error.name : 'unknown' })
       }
       return 'applied'
     }
@@ -154,14 +164,53 @@ export async function autoApplyIfAllowed(actionId: string, onUnexpectedError?: B
 }
 
 /**
+ * Per percakapan: SATU push AUTO_APPLIED yang menyebut semua perubahan (tag kartu pertama) dan SATU kabar tamu
+ * gabungan (`notifyGuestOfUpdate`, kunci `guest_update:<kartu pertama>`). Booking untuk kabar = `bookingData`
+ * tersimpan sesudah tulis (penyegaran pasca-tulis sudah menyimpannya). Tidak pernah melempar.
+ */
+async function announceApplied(batches: AppliedBatch[]): Promise<void> {
+  const byConversation = new Map<string, AppliedBatch[]>()
+  for (const b of batches) byConversation.set(b.conversationId, [...(byConversation.get(b.conversationId) ?? []), b])
+  for (const [conversationId, list] of byConversation) {
+    try {
+      const cards: AppliedCard[] = []
+      for (const c of list.flatMap((b) => b.cards)) if (!cards.some((x) => x.id === c.id)) cards.push(c)
+      if (cards.length === 0) continue
+      const first = cards[0]
+      const code = list.find((b) => b.code !== null)?.code ?? null
+      void notifyBookingAction({
+        kind: 'AUTO_APPLIED',
+        conversationId,
+        bookingCode: code,
+        summary: cards.map((c) => summarizeAction(c.field, nonBlank(c.proposedValue))).join('; '),
+        actionId: first.id,
+        messageId: first.sourceMessageId,
+      })
+      const conv = await prisma.conversation.findUnique({ where: { id: conversationId }, select: { bookingData: true } })
+      const booking = asBooking(conv?.bookingData)
+      if (!booking) continue
+      const items: GuestNoticeItem[] = cards.flatMap((c) => {
+        const value = nonBlank(c.proposedValue)
+        return value === null ? [] : [{ actionId: c.id, sourceMessageId: c.sourceMessageId, written: [{ field: c.field as FieldKey, value }] }]
+      })
+      await notifyGuestOfUpdate({ conversationId, bookingId: list[0].bookingId, accountId: null, booking, items })
+    } catch (error) {
+      console.error('[booking-actions] announceApplied gagal', { conversationId, error: error instanceof Error ? error.name : 'unknown' })
+    }
+  }
+}
+
+/**
  * Satu per satu (tidak paralel): kartu yang berbagi booking tidak boleh menulis bersamaan. Tidak pernah melempar.
  * `events` = push CHANGE tertunda dari `applyExtraction`. Kartu yang dilewati dikabari sebagai CHANGE hanya bila
- * masih OPEN (kartu pendamping yang ikut tertulis oleh kartu lain sudah ditutup dan sudah dikabari AUTO_APPLIED).
+ * masih OPEN (kartu pendamping yang ikut tertulis oleh kartu lain sudah ditutup). Kartu yang tertulis dikabarkan
+ * SEKALI di akhir: satu push AUTO_APPLIED + satu kabar tamu untuk semuanya (satu pesan tamu = satu "Noted").
  */
 export async function autoApplyCreated(events: BookingPushEvent[]): Promise<void> {
+  const applied: AppliedBatch[] = []
   for (const event of events) {
     try {
-      const outcome = await autoApplyIfAllowed(event.actionId, event)
+      const outcome = await autoApplyIfAllowed(event.actionId, event, applied)
       if (outcome !== 'skipped') continue
       const row = await prisma.bookingAction.findUnique({ where: { id: event.actionId }, select: { state: true } })
       if (row?.state === 'OPEN') void notifyBookingAction(event)
@@ -169,4 +218,5 @@ export async function autoApplyCreated(events: BookingPushEvent[]): Promise<void
       // Sabuk pengaman; kabar yang gagal dibaca tidak boleh menghentikan kartu lain.
     }
   }
+  if (applied.length > 0) await announceApplied(applied)
 }

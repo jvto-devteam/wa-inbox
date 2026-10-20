@@ -2,12 +2,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { BookingData } from '@/lib/booking/client'
 
-vi.mock('@/lib/db', () => ({ prisma: {} }))
+vi.mock('@/lib/db', () => ({ prisma: { conversation: { findUnique: vi.fn() } } }))
 vi.mock('@/lib/system-templates/send', () => ({ enqueueSystemTemplateSend: vi.fn() }))
 vi.mock('@/lib/push/send', () => ({ notifyBookingAction: vi.fn().mockResolvedValue(undefined) }))
 vi.mock('@/lib/booking-actions/history', () => ({ recordEvent: vi.fn().mockResolvedValue(undefined) }))
 
 import { enqueueSystemTemplateSend } from '@/lib/system-templates/send'
+import { prisma } from '@/lib/db'
 import { notifyBookingAction } from '@/lib/push/send'
 import { recordEvent } from '@/lib/booking-actions/history'
 import { SYSTEM_TEMPLATE_SEEDS } from '@/lib/system-templates/seed-data'
@@ -29,6 +30,8 @@ beforeEach(() => {
   vi.mocked(notifyBookingAction).mockClear()
   vi.mocked(recordEvent).mockClear()
   vi.spyOn(console, 'error').mockImplementation(() => undefined)
+  // Bawaan: percakapan tamu biasa (bukan uji); rollout bawaan `test`.
+  vi.mocked(prisma.conversation.findUnique).mockReset().mockResolvedValue({ isTest: false, contact: { phone: '4915112345678' } } as never)
 })
 afterEach(() => {
   delete process.env.TSHIRT_VENDOR_PHONE
@@ -83,5 +86,49 @@ describe('notifyTshirtVendor', () => {
     expect(notifyBookingAction).toHaveBeenCalledTimes(3)
     const logged = JSON.stringify([...vi.mocked(console.error).mock.calls, ...vi.mocked(notifyBookingAction).mock.calls, ...vi.mocked(recordEvent).mock.calls])
     expect(logged).not.toContain('6281337844825')
+  })
+})
+
+describe('review 2026-10-20 Important 4: test conversations never reach the real kaos vendor', () => {
+  const queued = { ok: true as const, jobId: 'j1', status: 'QUEUED' as const, duplicate: false }
+  afterEach(() => {
+    delete process.env.BOOKING_ACTIONS_TEST_PHONES
+    delete process.env.BOOKING_ACTIONS_ROLLOUT
+  })
+
+  it("rollout 'test' + test conversation (isTest or whitelisted phone) -> sent to the FIRST test phone", async () => {
+    vi.mocked(enqueueSystemTemplateSend).mockResolvedValue(queued)
+    process.env.BOOKING_ACTIONS_TEST_PHONES = '6282143403501, 6281111111111'
+    vi.mocked(prisma.conversation.findUnique).mockResolvedValue({ isTest: false, contact: { phone: '6282143403501' } } as never)
+    await notifyTshirtVendor(input)
+    vi.mocked(prisma.conversation.findUnique).mockResolvedValue({ isTest: true, contact: { phone: '628000' } } as never)
+    await notifyTshirtVendor(input)
+    expect(vi.mocked(enqueueSystemTemplateSend).mock.calls.map((c) => c[0].to)).toEqual([{ phone: '6282143403501' }, { phone: '6282143403501' }])
+    expect(vi.mocked(enqueueSystemTemplateSend).mock.calls[0][0].idempotencyKey).toBe('tshirt_update:a1')
+  })
+
+  it('test conversation without any test phone -> nothing sent, event only (no admin alarm)', async () => {
+    vi.mocked(prisma.conversation.findUnique).mockResolvedValue({ isTest: true, contact: { phone: '628000' } } as never)
+    await notifyTshirtVendor(input)
+    expect(enqueueSystemTemplateSend).not.toHaveBeenCalled()
+    expect(recordEvent).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ event: 'VENDOR_NOTICE_FAILED', reason: expect.stringContaining('TEST_PHONE_MISSING') }))
+    expect(notifyBookingAction).not.toHaveBeenCalled()
+  })
+
+  it("rollout 'all' -> the real vendor even for a test conversation (no lookup)", async () => {
+    vi.mocked(enqueueSystemTemplateSend).mockResolvedValue(queued)
+    process.env.BOOKING_ACTIONS_ROLLOUT = 'all'
+    process.env.BOOKING_ACTIONS_TEST_PHONES = '6282143403501'
+    vi.mocked(prisma.conversation.findUnique).mockResolvedValue({ isTest: true, contact: { phone: '6282143403501' } } as never)
+    await notifyTshirtVendor(input)
+    expect(vi.mocked(enqueueSystemTemplateSend).mock.calls[0][0].to).not.toEqual({ phone: '6282143403501' })
+    expect(prisma.conversation.findUnique).not.toHaveBeenCalled()
+  })
+
+  it("rollout 'test' and the conversation cannot be read -> not sent; failure event + push with the vendor tag", async () => {
+    vi.mocked(prisma.conversation.findUnique).mockRejectedValue(new Error('db'))
+    await notifyTshirtVendor(input)
+    expect(enqueueSystemTemplateSend).not.toHaveBeenCalled()
+    expect(notifyBookingAction).toHaveBeenCalledWith(expect.objectContaining({ kind: 'EXECUTE_FAILED', tagSuffix: 'vendor-tshirt' }))
   })
 })

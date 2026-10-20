@@ -6,11 +6,13 @@ import type { BookingData } from '@/lib/booking/client'
 
 vi.mock('@/lib/db', () => ({ prisma: mockDeep<PrismaClient>() }))
 vi.mock('./execute', () => ({ executeBookingAction: vi.fn() }))
+vi.mock('./guest-notice', () => ({ notifyGuestOfUpdate: vi.fn().mockResolvedValue(undefined) }))
 vi.mock('@/lib/push/send', async (orig) => ({ ...(await orig<typeof import('@/lib/push/send')>()), notifyBookingAction: vi.fn() }))
 
 import { prisma } from '@/lib/db'
 import { notifyBookingAction } from '@/lib/push/send'
 import { executeBookingAction } from './execute'
+import { notifyGuestOfUpdate } from './guest-notice'
 import { autoApplyCreated, autoApplyIfAllowed } from './auto-apply'
 
 const db = prisma as unknown as DeepMockProxy<PrismaClient>
@@ -31,6 +33,7 @@ beforeEach(() => {
   mockReset(db)
   vi.mocked(executeBookingAction).mockReset().mockResolvedValue(OK)
   vi.mocked(notifyBookingAction).mockReset()
+  vi.mocked(notifyGuestOfUpdate).mockClear()
   vi.spyOn(console, 'error').mockImplementation(() => undefined)
   db.bookingAction.findUnique.mockResolvedValue(action() as never)
   db.bookingAction.findMany.mockResolvedValue([{ id: 'a1', field: 'pickup_time', proposedValue: '09:00', sourceMessageId: 'm1' }] as never)
@@ -60,7 +63,7 @@ describe("final review Important 7 (R25): rollout gate on auto-apply", () => {
 describe('autoApplyIfAllowed', () => {
   it('ALWAYS light -> applied without click, event actor SYSTEM (no account) and AUTO_APPLIED', async () => {
     expect(await autoApplyIfAllowed('a1')).toBe('applied')
-    expect(executeBookingAction).toHaveBeenCalledWith({ actionId: 'a1', accountId: null, actor: 'SYSTEM', closedReason: 'AUTO_APPLIED' })
+    expect(executeBookingAction).toHaveBeenCalledWith({ actionId: 'a1', accountId: null, actor: 'SYSTEM', closedReason: 'AUTO_APPLIED', deferGuestNotice: true })
     expect(notifyBookingAction).toHaveBeenCalledWith(expect.objectContaining({ kind: 'AUTO_APPLIED', actionId: 'a1', bookingCode: 'JVTO-3899', summary: 'Jam jemput → 09:00' }))
   })
 
@@ -143,7 +146,7 @@ describe('autoApplyIfAllowed', () => {
       expect(notifyBookingAction).not.toHaveBeenCalled()
     })
 
-    it('with an OPEN detail card (same side) both are written in one execute and each gets its AUTO_APPLIED push', async () => {
+    it('with an OPEN detail card (same side) both are written in one execute and share ONE AUTO_APPLIED push + one guest notice', async () => {
       db.bookingAction.findUnique.mockResolvedValue(point() as never)
       db.bookingAction.findMany
         .mockResolvedValueOnce([{ field: 'pickup_detail', tier: 'AI', proposedValue: 'Hotel Majapahit' }] as never)
@@ -154,7 +157,12 @@ describe('autoApplyIfAllowed', () => {
       vi.mocked(executeBookingAction).mockResolvedValue({ status: 200, body: { ok: true, state: 'EXECUTED', executed: ['a1', 'a2'], written: ['pickup'] } } as never)
       expect(await autoApplyIfAllowed('a1')).toBe('applied')
       expect(executeBookingAction).toHaveBeenCalledTimes(1)
-      expect(vi.mocked(notifyBookingAction).mock.calls.map((c) => c[0].actionId)).toEqual(['a1', 'a2'])
+      expect(notifyBookingAction).toHaveBeenCalledTimes(1)
+      expect(notifyBookingAction).toHaveBeenCalledWith(expect.objectContaining({
+        kind: 'AUTO_APPLIED', actionId: 'a1', messageId: 'm1', summary: 'Titik jemput → Surabaya Hotel; Detail jemput diperbarui — buka chat',
+      }))
+      expect(notifyGuestOfUpdate).toHaveBeenCalledTimes(1)
+      expect(vi.mocked(notifyGuestOfUpdate).mock.calls[0][0].items.map((i) => i.actionId)).toEqual(['a1', 'a2'])
     })
 
     it('a companion card in a tier that is not ALWAYS blocks the whole pair', async () => {
@@ -247,5 +255,55 @@ describe('autoApplyCreated', () => {
     await autoApplyCreated([changeEvent()])
     expect(executeBookingAction).not.toHaveBeenCalled()
     expect(notifyBookingAction).toHaveBeenCalledWith(changeEvent())
+  })
+})
+
+describe('review 2026-10-20 Important 2: one guest message -> one Noted + one AUTO_APPLIED push', () => {
+  it('pickup point+detail, time and tshirt from one message: ONE combined guest notice and ONE AUTO_APPLIED push', async () => {
+    const cards: Record<string, Record<string, unknown>> = {
+      a1: action({ id: 'a1', field: 'pickup_point', proposedValue: 'Surabaya Hotel' }),
+      a3: action({ id: 'a3', field: 'pickup_time', proposedValue: '09:30' }),
+      a4: action({ id: 'a4', field: 'tshirt_sizes', proposedValue: 'L x 2, XL x 1' }),
+    }
+    const executed: Record<string, string[]> = { a1: ['a1', 'a2'], a3: ['a3'], a4: ['a4'] }
+    const rows: Record<string, unknown> = {
+      a1: { id: 'a1', field: 'pickup_point', proposedValue: 'Surabaya Hotel', sourceMessageId: 'm1' },
+      a2: { id: 'a2', field: 'pickup_detail', proposedValue: 'Hotel Majapahit', sourceMessageId: 'm1' },
+      a3: { id: 'a3', field: 'pickup_time', proposedValue: '09:30', sourceMessageId: 'm1' },
+      a4: { id: 'a4', field: 'tshirt_sizes', proposedValue: 'L x 2, XL x 1', sourceMessageId: 'm1' },
+    }
+    db.bookingAction.findUnique.mockImplementation((async (a: { where: { id: string } }) => cards[a.where.id] ?? null) as never)
+    db.bookingAction.findMany.mockImplementation((async (a: { where: { id?: { in: string[] }; field?: unknown } }) => {
+      if (a.where.id) return a.where.id.in.map((id) => rows[id])
+      return [{ field: 'pickup_detail', tier: 'AI', proposedValue: 'Hotel Majapahit' }] // pendamping titik
+    }) as never)
+    db.conversation.findUnique.mockResolvedValue({ bookingData: booking({ pickup: { meeting_point: 'Surabaya Airport', pickup_time: '10:30' } }), isTest: false, contact: { phone: '4915112345678' } } as never)
+    vi.mocked(executeBookingAction).mockImplementation((async (i: { actionId: string }) =>
+      ({ status: 200, body: { ok: true, state: 'EXECUTED', executed: executed[i.actionId], written: ['pickup'] } })) as never)
+
+    await autoApplyCreated(['a1', 'a3', 'a4'].map((id) => ({ kind: 'CHANGE' as const, conversationId: 'c1', bookingCode: 'JVTO-3899', summary: 's', actionId: id })))
+
+    expect(executeBookingAction).toHaveBeenCalledTimes(3)
+    for (const c of vi.mocked(executeBookingAction).mock.calls) expect(c[0]).toMatchObject({ deferGuestNotice: true })
+    expect(notifyBookingAction).toHaveBeenCalledTimes(1)
+    expect(notifyBookingAction).toHaveBeenCalledWith(expect.objectContaining({
+      kind: 'AUTO_APPLIED', actionId: 'a1',
+      summary: 'Titik jemput → Surabaya Hotel; Detail jemput diperbarui — buka chat; Jam jemput → 09:30; Ukuran kaos → L x 2, XL x 1',
+    }))
+    expect(notifyGuestOfUpdate).toHaveBeenCalledTimes(1)
+    const arg = vi.mocked(notifyGuestOfUpdate).mock.calls[0][0]
+    expect(arg).toMatchObject({ conversationId: 'c1', accountId: null, bookingId: '77' })
+    expect(arg.items).toEqual([
+      { actionId: 'a1', sourceMessageId: 'm1', written: [{ field: 'pickup_point', value: 'Surabaya Hotel' }] },
+      { actionId: 'a2', sourceMessageId: 'm1', written: [{ field: 'pickup_detail', value: 'Hotel Majapahit' }] },
+      { actionId: 'a3', sourceMessageId: 'm1', written: [{ field: 'pickup_time', value: '09:30' }] },
+      { actionId: 'a4', sourceMessageId: 'm1', written: [{ field: 'tshirt_sizes', value: 'L x 2, XL x 1' }] },
+    ])
+  })
+
+  it('minor: the post-execute read throwing never turns a written change into EXECUTE_FAILED', async () => {
+    db.bookingAction.findMany.mockRejectedValue(new Error('db blip'))
+    expect(await autoApplyIfAllowed('a1')).toBe('applied')
+    expect(notifyBookingAction).not.toHaveBeenCalledWith(expect.objectContaining({ kind: 'EXECUTE_FAILED' }))
   })
 })

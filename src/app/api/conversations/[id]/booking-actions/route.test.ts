@@ -94,7 +94,7 @@ describe('GET /api/conversations/[id]/booking-actions', () => {
     expect(body.history).toEqual([{ id: 'e1', accountName: null }])
     expect(body.writeEnabled).toBe(false) // LEGACY_BASE_URL tidak diset di test
     expect(mockPrisma.bookingActionEvent.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { conversationId: 'c1' }, orderBy: { createdAt: 'desc' }, take: 50 }),
+      expect.objectContaining({ where: { conversationId: 'c1', event: { not: 'PUSHED' } }, orderBy: { createdAt: 'desc' }, take: 50 }),
     )
   })
 

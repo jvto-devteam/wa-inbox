@@ -9,6 +9,7 @@ import {
 } from '@/lib/booking/client'
 import { createLiveReplyItems, reconcileSummaryItems } from '@/lib/summary-items/sync'
 import { releaseStaleExecuting } from '@/lib/booking-actions/execute'
+import { pushUnnotifiedChanges } from '@/lib/booking-actions/push-sweep'
 import { createDataRequestDrafts } from '@/lib/booking-actions/data-requests'
 
 /**
@@ -24,7 +25,8 @@ import { createDataRequestDrafts } from '@/lib/booking-actions/data-requests'
  *    Sebelum `refreshStaleBookingData`: `refreshBookingDataForOpenActions` menyegarkan percakapan yang punya
  *    kartu CHANGE/TASK/MISMATCH OPEN bila datanya > 30 menit (maks. 10 per tick). Keduanya berbagi SATU
  *    anggaran `REFRESH_BUDGET_MS` (60 s): yang kedua mendapat sisanya.
- * 1b. `releaseStaleExecuting` (booking-actions/execute.ts): klaim "Setujui" yang macet > 2 menit.
+ * 1b. `releaseStaleExecuting` (booking-actions/execute.ts): klaim "Setujui" yang macet > 2 menit; lalu
+ *     `pushUnnotifiedChanges` (booking-actions/push-sweep.ts): kartu CHANGE OPEN yang push-nya hilang.
  * 2. `reconcileSummaryItems` (tutup yang sudah dibalas, pengingat jatuh tempo kembali OPEN,
  *    FOLLOW_UP/PROMISE jadi REPLY).
  * 2b. `createDataRequestDrafts` (Task 12): draf H-7 harian permintaan data ke tamu (08:00-19:59 WIB saja),
@@ -105,6 +107,8 @@ async function tick(): Promise<NextResponse> {
   await releaseStaleExecuting().catch((error: unknown) => {
     console.error('POST /api/summary-items/tick: melepas klaim eksekusi booking gagal', error instanceof Error ? error.message : 'unknown')
   })
+  // Sesudah pelepasan klaim: kartu yang kembali OPEN tanpa pernah dikabarkan ikut tersapu. Tidak pernah melempar.
+  await pushUnnotifiedChanges().catch(() => undefined)
 
   try {
     const now = new Date()

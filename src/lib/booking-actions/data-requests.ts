@@ -40,6 +40,7 @@ import { sendMessage } from '@/lib/send'
 import { jakartaDayKey, jakartaDayRange } from '@/lib/daily-summary/time'
 import { serviceWindowClosed } from '@/lib/inbox/service-window'
 import { notifyBookingAction } from '@/lib/push/send'
+import { DATA_REQUEST_SOURCE } from '@/lib/summary-items/automated'
 import { lookupBookingResult, type BookingData } from '@/lib/booking/client'
 import { readBookingField, type FieldKey } from './fields'
 import { recordEvent } from './history'
@@ -287,7 +288,7 @@ export async function sendDataRequest(input: { actionId: string; accountId: stri
         text,
         sentBy: input.accountId ? 'AGENT' : 'BOT',
         agentId: input.accountId ?? undefined,
-        botTrace: { source: 'data_request', idempotencyKey: `data_request:${action.id}` },
+        botTrace: { source: DATA_REQUEST_SOURCE, idempotencyKey: `data_request:${action.id}` },
       })
       messageId = sent?.id ?? null
       if (sent?.deliveryStatus === 'FAILED') failure = 'Pesan gagal dikirim'

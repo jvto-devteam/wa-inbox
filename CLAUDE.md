@@ -272,17 +272,37 @@ append-only tanpa FK: siapa, kapan, nilai lama/baru), `PushSubscription`. Setela
   (kode, tanggal, pax, ukuran; **tanpa nama tamu**) ke nomor default new-backoffice (`WA_TSHIRT_VENDOR_NUMBER`), env
   `TSHIRT_VENDOR_PHONE` menimpanya; kunci `tshirt_update:<actionId>`, Batalkan `tshirt_revert:<actionId>`. Aturan
   booking-segar dan gagal = `VENDOR_NOTICE_FAILED` + push sama dengan vendor Bali.
-- **Kabar ke tamu** (`guest-notice.ts`, `notifyGuestOfUpdate`, owner 2026-10-20): setiap eksekusi CHANGE yang
-  berhasil (Setujui manual dan otomatis) mengirim SATU WhatsApp lewat `sendMessage`: "Noted" + satu baris per field
-  yang benar-benar ditulis + tautan portal (short link bila API memuatnya, lalu `client_portal_url`, lalu
-  `customer_portal`; tidak ada = tanpa baris tautan). EN bawaan, ID bila `isIndonesianGuest`. Hanya kartu dari pesan
-  INBOUND, hanya selama `bookingAutomationAllowed`; kunci `guest_update:<actionId>`, event `GUEST_NOTICE_SENT` menahan
-  ulangan. Jendela 24 jam tertutup = tidak kirim, event `GUEST_NOTICE_SKIPPED` (`WINDOW_CLOSED`) + push
-  `GUEST_NOTICE_FAILED`; kirim gagal = `GUEST_NOTICE_FAILED` + push yang sama. **Batalkan tidak mengabari tamu.**
+- **Tujuan vendor saat uji** (`vendor-destination.ts`, `vendorDestination`, berlaku untuk Bali dan kaos): selama
+  rollout `test`, kabar dari percakapan uji (`isBookingTestConversation`) dikirim ke nomor PERTAMA
+  `BOOKING_ACTIONS_TEST_PHONES` (`firstBookingTestPhone`), tidak pernah ke vendor sungguhan; tanpa nomor uji = tidak
+  dikirim (event `TEST_PHONE_MISSING`, tanpa push); gagal membaca percakapan = kabar gagal (event + push).
+- **Kabar ke tamu** (`guest-notice.ts`, `notifyGuestOfUpdate`, owner 2026-10-20): WhatsApp lewat `sendMessage`:
+  "Noted" + satu baris per field yang benar-benar ditulis + tautan portal (short link bila API memuatnya, lalu
+  `client_portal_url`, lalu `customer_portal`; tidak ada = tanpa baris tautan). EN bawaan, ID bila `isIndonesianGuest`.
+  Setujui manual = satu kabar per eksekusi. Terapkan-otomatis: `executeBookingAction` menunda (`deferGuestNotice`) dan
+  `autoApplyCreated` mengirim SATU kabar + SATU push `AUTO_APPLIED` untuk semua kartu yang tertulis dari satu
+  ekstraksi (`announceApplied`), supaya satu pesan tamu tidak dijawab beberapa "Noted". Hanya kartu dari pesan INBOUND,
+  hanya selama `bookingAutomationAllowed`; kunci `guest_update:<kartu pertama>`, `GUEST_NOTICE_SENT` dicatat di setiap
+  kartu dan menahan ulangan. Jendela 24 jam tertutup = tidak kirim, event `GUEST_NOTICE_SKIPPED` (`WINDOW_CLOSED`) +
+  push `GUEST_NOTICE_FAILED`; kirim gagal = `GUEST_NOTICE_FAILED` + push yang sama. Di kanal Unofficial "terkirim"
+  berarti masuk antrean outbound (kegagalan penyedia sesudahnya dipegang retry ladder, tidak memicu push).
+  **Batalkan tidak mengabari tamu**; bila tamu sudah dikabari, Batalkan mengirim push "Kabari tamu manual — perubahan
+  dibatalkan" dan respons membawa `hint` yang tampil di panel.
+- **Kabar otomatis bukan balasan** (`src/lib/summary-items/automated.ts`, `isAutomatedNotice`/`findOurReply`): pesan
+  ber-`botTrace.source` `booking_update_notice` atau `data_request` dikecualikan dari setiap cek "balasan kita" di
+  `sync.ts` (REPLY/FOLLOW_UP/PROMISE, live dan reconcile) dan `classifyConversation`; disaring di JS, bukan filter
+  JSON Prisma. Transkrip LLM melabelinya "Sistem (pesan otomatis)".
+- **Kartu dari `reevaluateBookingActions`** (tanpa pesan baru, mis. sesudah penyegaran booking) **tidak** diterapkan
+  otomatis: push CHANGE-nya langsung terkirim dan kartu menunggu orang; hanya kartu dari ekstraksi yang lewat
+  `autoApplyCreated`.
 - **Push** (`src/lib/push/send.ts`, `notifyBookingAction`): Web Push untuk tujuh jenis kejadian — kartu baru
   `CHANGE`, `MISMATCH`, `TASK`, `AUTO_APPLIED` (diterapkan otomatis), `EXECUTE_FAILED` (gagal tulis / kabar vendor
   gagal), `DATA_REQUEST_FAILED` (draf permintaan data gagal terkirim), `GUEST_NOTICE_FAILED` (tamu belum dikabari
-  perubahan, kabari manual); draf permintaan data yang terkirim tidak di-push. Push `CHANGE` dari `applyExtraction` **ditahan** (`changeEvents`) dan diserahkan ke `autoApplyCreated`
+  perubahan, kabari manual); draf permintaan data yang terkirim tidak di-push. Tag notifikasi `booking-action:<id>`;
+  alarm kabar tamu/vendor memakai tag sendiri (`tagSuffix`: `:guest`, `:guest-revert`, `:vendor-tshirt`,
+  `:vendor-bali`) supaya tidak tergantikan `AUTO_APPLIED`. Setiap push mencatat event `PUSHED` (disembunyikan dari
+  riwayat); tick menjalankan `pushUnnotifiedChanges` (`push-sweep.ts`): kartu CHANGE OPEN yang berubah 2 menit–1 jam
+  lalu tanpa `PUSHED` (push hilang karena restart, atau `releaseStaleExecuting` mengembalikannya ke OPEN) di-push sekali. Push `CHANGE` dari `applyExtraction` **ditahan** (`changeEvents`) dan diserahkan ke `autoApplyCreated`
   (`auto-apply.ts`): kartu yang diterapkan otomatis hanya mengirim `AUTO_APPLIED` sesudah berhasil; kartu yang
   dilewati dan masih `OPEN` (setelan `APPROVE`, titik tanpa detail, lookup 409/503, rollout uji) mengirim push
   `CHANGE` saat itu; gagal = `EXECUTE_FAILED`. `MISMATCH`/`TASK` dan `CHANGE` dari `reevaluateBookingActions`

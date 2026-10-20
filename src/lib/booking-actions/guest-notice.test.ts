@@ -34,13 +34,15 @@ const booking = (over: Record<string, unknown> = {}): BookingData => ({
   ...over,
 })
 
-const input = (over: Partial<Parameters<typeof notifyGuestOfUpdate>[0]> = {}): Parameters<typeof notifyGuestOfUpdate>[0] => ({
-  actionId: 'a1', conversationId: 'c1', bookingId: '77', accountId: null, booking: booking(),
-  written: [{ field: 'tshirt_sizes', value: 'XL x 1, L x 2' }], sourceMessageId: 'm0', now: NOW, ...over,
+type Input = Parameters<typeof notifyGuestOfUpdate>[0]
+const tshirtItem = { actionId: 'a1', sourceMessageId: 'm0', written: [{ field: 'tshirt_sizes' as const, value: 'XL x 1, L x 2' }] }
+const input = (over: Partial<Input> = {}): Input => ({
+  conversationId: 'c1', bookingId: '77', accountId: null, booking: booking(), items: [tshirtItem], now: NOW, ...over,
 })
 
 function setup(opts: { direction?: string; isTest?: boolean; phone?: string; platform?: string; inbound?: Date | null; sentBefore?: boolean } = {}) {
-  db.message.findUnique.mockResolvedValue({ direction: opts.direction ?? 'INBOUND', conversationId: 'c1' } as never)
+  db.message.findMany.mockImplementation((async (a: { where: { id: { in: string[] } } }) =>
+    a.where.id.in.map((id) => ({ id, direction: opts.direction ?? 'INBOUND' }))) as never)
   db.conversation.findUnique.mockResolvedValue({
     isTest: opts.isTest ?? false, contact: { phone: opts.phone ?? '4915112345678' }, channelIdentity: { platform: opts.platform ?? 'WHATSAPP' },
   } as never)
@@ -119,7 +121,7 @@ describe('notifyGuestOfUpdate', () => {
     expect(arg).toMatchObject({ conversationId: 'c1', sentBy: 'BOT', botTrace: { source: 'booking_update_notice', idempotencyKey: 'guest_update:a1' } })
     expect(arg.text).toContain('- T-shirt: L x 2, XL x 1')
     expect(arg.text).toContain(PORTAL)
-    expect(recordEvent).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ event: 'GUEST_NOTICE_SENT', actionId: 'a1', actor: 'SYSTEM', newValue: { messageId: 'm1' } }))
+    expect(recordEvent).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ event: 'GUEST_NOTICE_SENT', actionId: 'a1', actor: 'SYSTEM', newValue: { messageId: 'm1', batch: ['a1'] } }))
     expect(notifyBookingAction).not.toHaveBeenCalled()
   })
 
@@ -135,7 +137,7 @@ describe('notifyGuestOfUpdate', () => {
     await notifyGuestOfUpdate(input())
     expect(sendMessage).not.toHaveBeenCalled()
     expect(recordEvent).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ event: 'GUEST_NOTICE_SKIPPED', reason: 'WINDOW_CLOSED' }))
-    expect(notifyBookingAction).toHaveBeenCalledWith(expect.objectContaining({ kind: 'GUEST_NOTICE_FAILED', conversationId: 'c1', bookingCode: 'JVTO-3899', actionId: 'a1' }))
+    expect(notifyBookingAction).toHaveBeenCalledWith(expect.objectContaining({ kind: 'GUEST_NOTICE_FAILED', conversationId: 'c1', bookingCode: 'JVTO-3899', actionId: 'a1', tagSuffix: 'guest' }))
   })
 
   it('rollout test + ordinary guest -> nothing; the whitelisted test phone still gets it', async () => {
@@ -156,13 +158,13 @@ describe('notifyGuestOfUpdate', () => {
     setup({ sentBefore: true })
     await notifyGuestOfUpdate(input())
     expect(sendMessage).not.toHaveBeenCalled()
-    expect(db.bookingActionEvent.findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: { actionId: 'a1', event: 'GUEST_NOTICE_SENT' } }))
+    expect(db.bookingActionEvent.findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: { actionId: { in: ['a1'] }, event: 'GUEST_NOTICE_SENT' } }))
   })
 
   it('only changes that came from a guest (INBOUND) message', async () => {
     setup({ direction: 'OUTBOUND' })
     await notifyGuestOfUpdate(input())
-    await notifyGuestOfUpdate(input({ sourceMessageId: null }))
+    await notifyGuestOfUpdate(input({ items: [{ ...tshirtItem, sourceMessageId: null }] }))
     expect(sendMessage).not.toHaveBeenCalled()
   })
 
@@ -183,5 +185,37 @@ describe('notifyGuestOfUpdate', () => {
     setup({ platform: 'EMAIL' })
     await notifyGuestOfUpdate(input())
     expect(sendMessage).not.toHaveBeenCalled()
+  })
+})
+
+describe('review 2026-10-20 Important 2: one combined notice', () => {
+  it('several cards from one guest message -> ONE WhatsApp listing every field, GUEST_NOTICE_SENT on every card', async () => {
+    setup()
+    await notifyGuestOfUpdate(input({
+      items: [
+        { actionId: 'a1', sourceMessageId: 'm0', written: [{ field: 'pickup_point', value: 'Surabaya Hotel' }] },
+        { actionId: 'a2', sourceMessageId: 'm0', written: [{ field: 'pickup_detail', value: 'Hotel Majapahit' }] },
+        { actionId: 'a3', sourceMessageId: 'm0', written: [{ field: 'pickup_time', value: '09:30' }] },
+        { ...tshirtItem, actionId: 'a4' },
+      ],
+    }))
+    expect(sendMessage).toHaveBeenCalledTimes(1)
+    const arg = vi.mocked(sendMessage).mock.calls[0][0]
+    expect(arg.botTrace).toEqual({ source: 'booking_update_notice', idempotencyKey: 'guest_update:a1' })
+    expect(arg.text).toContain('- Pickup point: Surabaya Hotel · Hotel Majapahit\n- Pickup time: 09:30\n- T-shirt: L x 2, XL x 1')
+    const sentFor = vi.mocked(recordEvent).mock.calls.filter((c) => c[1].event === 'GUEST_NOTICE_SENT').map((c) => c[1].actionId)
+    expect(sentFor).toEqual(['a1', 'a2', 'a3', 'a4'])
+  })
+
+  it('a card whose source is not an INBOUND message is dropped from the combined notice', async () => {
+    setup()
+    db.message.findMany.mockResolvedValue([{ id: 'm0', direction: 'INBOUND' }, { id: 'm9', direction: 'OUTBOUND' }] as never)
+    await notifyGuestOfUpdate(input({
+      items: [{ ...tshirtItem, sourceMessageId: 'm9', actionId: 'a0' }, { actionId: 'a1', sourceMessageId: 'm0', written: [{ field: 'pickup_time', value: '09:30' }] }],
+    }))
+    const text = vi.mocked(sendMessage).mock.calls[0][0].text
+    expect(text).toContain('Pickup time: 09:30')
+    expect(text).not.toContain('T-shirt')
+    expect(vi.mocked(sendMessage).mock.calls[0][0].botTrace).toMatchObject({ idempotencyKey: 'guest_update:a1' })
   })
 })

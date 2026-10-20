@@ -18,6 +18,7 @@ import {
 } from '@/lib/daily-summary/payload-schema'
 import { jakartaDayKey, jakartaDayRange } from '@/lib/daily-summary/time'
 import { isNoiseMessage } from './noise'
+import { findOurReply, isAutomatedNotice } from './automated'
 import type { SummaryItemKind } from './status'
 
 /**
@@ -166,11 +167,7 @@ async function promiseCandidate(
   const newest = newestPromise(promises)
   const fallback = newest
     ? null
-    : await prisma.message.findFirst({
-        where: { conversationId, direction: 'OUTBOUND', createdAt: { lte: asOf } },
-        orderBy: { createdAt: 'desc' },
-        select: { createdAt: true },
-      })
+    : await findOurReply(conversationId, { lte: asOf }, 'desc')
   return {
     conversationId,
     kind: 'PROMISE',
@@ -521,6 +518,8 @@ async function closeKeptPromise(row: PromiseRow, review: ConversationReview, clo
 }
 
 const messageSelect = { id: true, direction: true, sentBy: true, type: true, content: true, createdAt: true } as const
+/** Pesan terbaru per percakapan di tahap 1 antrean live: cukup untuk melompati beberapa kabar otomatis. */
+const LIVE_LATEST_MESSAGES = 5
 
 /**
  * Menyelaraskan item OPEN/SCHEDULED dengan kenyataan: dibalas, pelanggan bicara lagi, atau
@@ -568,11 +567,8 @@ async function reconcileOne(
   if (kind === 'FOLLOW_UP' || kind === 'PROMISE') {
     let since = anchorAt
     if (kind === 'PROMISE') {
-      const lastOutbound = await prisma.message.findFirst({
-        where: { conversationId: item.conversationId, direction: 'OUTBOUND' },
-        orderBy: { createdAt: 'desc' },
-        select: { createdAt: true },
-      })
+      // Kabar otomatis (guest-notice/permintaan data) bukan jawaban tim: `findOurReply` melompatinya.
+      const lastOutbound = await findOurReply(item.conversationId, {}, 'desc')
       if (lastOutbound && lastOutbound.createdAt > since) since = lastOutbound.createdAt
     }
     const inbound = await prisma.message.findFirst({
@@ -612,11 +608,7 @@ async function reconcileOne(
   // 1b. FOLLOW_UP yang tidak berubah jadi REPLY harus punya jalan keluar sendiri: admin sudah
   // mengirim pesan sesudah anchor, atau lead sudah maju dari tahap yang perlu dikejar.
   if (kind === 'FOLLOW_UP') {
-    const outbound = await prisma.message.findFirst({
-      where: { conversationId: item.conversationId, direction: 'OUTBOUND', createdAt: { gt: anchorAt } },
-      orderBy: { createdAt: 'asc' },
-      select: { id: true, createdAt: true },
-    })
+    const outbound = await findOurReply(item.conversationId, { gt: anchorAt }, 'asc')
     if (outbound) {
       if (reminderId) completeReminderId = reminderId
       Object.assign(data, { state: 'DONE', closedReason: 'REPLIED', closedAt: outbound.createdAt })
@@ -639,11 +631,8 @@ async function reconcileOne(
 
   // 2. Sudah ada balasan kita sesudah anchor: selesai.
   if (kind === 'REPLY') {
-    const outbound = await prisma.message.findFirst({
-      where: { conversationId: item.conversationId, direction: 'OUTBOUND', createdAt: { gt: anchorAt } },
-      orderBy: { createdAt: 'asc' },
-      select: { id: true, createdAt: true },
-    })
+    // Kabar otomatis "booking sudah diperbarui" / permintaan data tidak menutup REPLY (`findOurReply`).
+    const outbound = await findOurReply(item.conversationId, { gt: anchorAt }, 'asc')
     if (outbound) {
       if (reminderId) completeReminderId = reminderId
       // closedAt = waktu balasan, bukan waktu rekonsiliasi: pesan pelanggan yang datang di antara
@@ -699,6 +688,12 @@ export type LiveResult = { created: number; updated: number; reopened: number; s
 async function findLiveCandidateIds(now: Date, excludeIndonesian: boolean): Promise<string[]> {
   const cutoff = new Date(now.getTime() - UNREPLIED_MIN_MS)
   const lookbackStart = new Date(now.getTime() - LOOKBACK_MS)
+  const latestSelect = {
+    where: { createdAt: { gte: lookbackStart } },
+    orderBy: { createdAt: 'desc' as const },
+    take: LIVE_LATEST_MESSAGES,
+    select: { direction: true, botTrace: true },
+  }
   const rows = await prisma.conversation.findMany({
     where: {
       isTest: false,
@@ -711,13 +706,33 @@ async function findLiveCandidateIds(now: Date, excludeIndonesian: boolean): Prom
     select: {
       id: true,
       contact: { select: { phone: true } },
-      messages: { where: { createdAt: { gte: lookbackStart } }, orderBy: { createdAt: 'desc' }, take: 1, select: { direction: true } },
+      messages: latestSelect,
     },
   })
-  return rows
-    .filter((c) => c.messages[0]?.direction === 'INBOUND')
+  // Saringan `none OUTBOUND` di atas juga menyingkirkan percakapan yang pesan keluarnya sesudah cutoff HANYA
+  // kabar otomatis. Percakapan itu dicari lewat event kabar (tanpa filter JSON) dan diperiksa di JS.
+  const known = new Set(rows.map((r) => r.id))
+  const noticeIds = await recentNoticeConversationIds(cutoff, known)
+  const extra = noticeIds.length
+    ? await prisma.conversation.findMany({
+        where: { id: { in: noticeIds }, isTest: false, mailAutomated: false },
+        select: { id: true, contact: { select: { phone: true } }, messages: latestSelect },
+      })
+    : []
+  return [...rows, ...extra]
+    .filter((c) => c.messages.find((m) => !isAutomatedNotice(m))?.direction === 'INBOUND')
     .filter((c) => !(excludeIndonesian && isIndonesianNumber(c.contact.phone)))
     .map((c) => c.id)
+}
+
+/** Percakapan (di luar `known`) yang menerima kabar otomatis sesudah `since` -- dari event, bukan dari JSON pesan. */
+async function recentNoticeConversationIds(since: Date, known: ReadonlySet<string>): Promise<string[]> {
+  const events =
+    (await prisma.bookingActionEvent.findMany({
+      where: { event: { in: ['GUEST_NOTICE_SENT', 'DRAFT_SENT'] }, createdAt: { gt: since } },
+      select: { conversationId: true },
+    })) ?? []
+  return [...new Set(events.map((e) => e.conversationId))].filter((id) => !known.has(id))
 }
 
 /**
@@ -739,7 +754,7 @@ async function loadLiveConversations(ids: string[], now: Date) {
         where: { createdAt: { gte: lookbackStart } },
         orderBy: { createdAt: 'desc' },
         take: TRANSCRIPT_MAX_MESSAGES,
-        select: messageSelect,
+        select: { ...messageSelect, botTrace: true },
       },
     },
   })
@@ -800,12 +815,14 @@ async function liveOne(conversation: LiveConversation, now: Date): Promise<keyof
   const lookbackStart = now.getTime() - LOOKBACK_MS
   // Pesan urut baru → lama, semuanya dalam LOOKBACK_MS (kueri); batas waktu dicek lagi di sini
   // supaya tidak hanya bergantung pada kueri.
-  const latest = conversation.messages[0]
+  // Kabar otomatis (guest-notice/permintaan data) tidak dihitung: bukan balasan dan bukan bagian rangkaian.
+  const messages = conversation.messages.filter((m) => !isAutomatedNotice(m))
+  const latest = messages[0]
   if (!latest || latest.direction !== 'INBOUND' || latest.createdAt.getTime() < lookbackStart) return null
 
   const run: TranscriptMessage[] = []
   let previousOutbound: TranscriptMessage | null = null
-  for (const m of conversation.messages) {
+  for (const m of messages) {
     if (m.direction !== 'INBOUND') {
       previousOutbound = m
       break

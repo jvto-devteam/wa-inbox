@@ -89,7 +89,7 @@ describe('GET /api/conversations/[id]/chat-review: pinned & changeHistory', () =
     mockPrisma.account.findMany.mockResolvedValue([{ id: 'acc1', name: 'Dewi' }] as never)
     const body = await (await GET(req(), ctx)).json()
     expect(mockPrisma.bookingActionEvent.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { conversationId: 'c1' }, orderBy: { createdAt: 'desc' }, take: 20 }),
+      expect.objectContaining({ where: { conversationId: 'c1', event: { not: 'PUSHED' } }, orderBy: { createdAt: 'desc' }, take: 20 }),
     )
     expect(body.changeHistory).toEqual([
       expect.objectContaining({ id: 'e1', event: 'EXECUTED', accountName: 'Dewi', sourceMessageId: 'm1', newValue: 'B' }),

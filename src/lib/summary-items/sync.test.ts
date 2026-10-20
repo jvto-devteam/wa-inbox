@@ -563,6 +563,26 @@ describe('reconcileSummaryItems', () => {
     expect(mockPrisma.$transaction).toHaveBeenCalledTimes(1)
   })
 
+  it('review 2026-10-20 Important 1: REPLY yang sesudah anchor hanya berisi kabar otomatis tetap OPEN; balasan sungguhan sesudahnya menutup', async () => {
+    mockPrisma.summaryItem.findMany.mockResolvedValue([row()] as never)
+    const noticeAt = at('2026-10-17T03:00:00Z')
+    const notice = { id: 'n1', createdAt: noticeAt, botTrace: { source: 'booking_update_notice' } }
+    mockPrisma.message.findFirst.mockImplementation((async (a: { where: { direction: string; createdAt?: { gt?: Date } } }) => {
+      if (a.where.direction !== 'OUTBOUND') return null
+      return a.where.createdAt?.gt && a.where.createdAt.gt >= noticeAt ? null : notice
+    }) as never)
+    expect(await reconcileSummaryItems(NOW)).toEqual({ closed: 0, converted: 0, reopened: 0 })
+    expect(mockPrisma.summaryItem.update).not.toHaveBeenCalled()
+
+    const replyAt = at('2026-10-17T05:00:00Z')
+    mockPrisma.message.findFirst.mockImplementation((async (a: { where: { direction: string; createdAt?: { gt?: Date } } }) => {
+      if (a.where.direction !== 'OUTBOUND') return null
+      return a.where.createdAt?.gt && a.where.createdAt.gt >= noticeAt ? { id: 'o1', createdAt: replyAt, botTrace: null } : notice
+    }) as never)
+    expect((await reconcileSummaryItems(NOW)).closed).toBe(1)
+    expect(mockPrisma.summaryItem.update.mock.calls[0][0].data).toMatchObject({ state: 'DONE', closedReason: 'REPLIED', closedAt: replyAt })
+  })
+
   it('FOLLOW_UP + inbound -> REPLY dengan anchor inbound', async () => {
     mockPrisma.summaryItem.findMany.mockResolvedValue([row({ kind: 'FOLLOW_UP' })] as never)
     mockPrisma.message.findFirst.mockImplementation((async (a: { where: { direction: string } }) => (a.where.direction === 'INBOUND' ? inbound : null)) as never)
