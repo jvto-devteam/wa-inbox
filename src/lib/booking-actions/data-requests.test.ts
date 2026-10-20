@@ -35,7 +35,7 @@ const conv = (over: Record<string, unknown> = {}) => ({
   id: 'c1', bookingData: booking(), isTest: false, contact: { phone: '4915112345678' }, channelIdentity: { platform: 'WHATSAPP' }, ...over,
 })
 const stored = (over: Record<string, unknown> = {}) => ({
-  id: 'd1', conversationId: 'c1', bookingId: '77', type: 'DATA_REQUEST', state: 'OPEN', draftText: 'Hello', forDay: '2026-10-20', lastError: null, proposedValue: ['pickup_detail'], createdAt: new Date('2026-10-20T01:30:00Z'),
+  id: 'd1', conversationId: 'c1', bookingId: '77', type: 'DATA_REQUEST', state: 'OPEN', draftText: buildDataRequestText(booking(), ['pickup_detail']), forDay: '2026-10-20', lastError: null, proposedValue: ['pickup_detail'], createdAt: new Date('2026-10-20T01:30:00Z'),
   conversation: conv(), ...over,
 })
 
@@ -286,7 +286,7 @@ describe('sendDataRequest safeguards', () => {
 
   it('fresh data with different gaps -> text rebuilt from fresh data before sending', async () => {
     setup({ fresh: booking({ pickup: { meeting_point: 'Others', meeting_point_value: 'Hotel X' } }) })
-    expect(await sendDataRequest({ actionId: 'd1', accountId: 'acc1', now: NOW })).toEqual({ ok: true })
+    expect(await sendDataRequest({ actionId: 'd1', accountId: null, now: NOW })).toEqual({ ok: true })
     const sent = vi.mocked(sendMessage).mock.calls[0][0].text
     expect(sent).toContain('pickup time')
     expect(sent).not.toContain('hotel or the exact address')
@@ -328,6 +328,87 @@ describe('sendDataRequest safeguards', () => {
     expect(await sendDataRequest({ actionId: 'd1', accountId: null, now: NOW })).toMatchObject({ ok: false, status: 409 })
     expect(await sendDataRequest({ actionId: 'd1', accountId: 'acc1', now: NOW })).toMatchObject({ ok: false, status: 409 })
     expect(sendMessage).not.toHaveBeenCalled()
+  })
+})
+
+describe('sendDataRequest fix round 2', () => {
+  it('different booking id from the lookup -> draft closed BOOKING_CHANGED with an event, nothing sent', async () => {
+    setup({ fresh: booking({ booking_id: 99 }) })
+    expect(await sendDataRequest({ actionId: 'd1', accountId: null, now: NOW })).toMatchObject({ ok: false, status: 409 })
+    expect(db.bookingAction.updateMany).toHaveBeenCalledWith({
+      where: { id: 'd1', state: 'OPEN' }, data: expect.objectContaining({ state: 'RESOLVED', closedReason: 'BOOKING_CHANGED' }),
+    })
+    expect(db.bookingActionEvent.create).toHaveBeenCalledWith({ data: expect.objectContaining({ event: 'RESOLVED', reason: 'BOOKING_CHANGED' }) })
+    expect(sendMessage).not.toHaveBeenCalled()
+  })
+
+  it('rescheduled trip with the same gaps -> text carries the new date (auto); manual gets 409 "Isi pesan berubah"', async () => {
+    const moved = booking({ date: { start_ymd: '2026-10-25' } })
+    setup({ fresh: moved })
+    expect(await sendDataRequest({ actionId: 'd1', accountId: null, now: NOW })).toEqual({ ok: true })
+    expect(vi.mocked(sendMessage).mock.calls[0][0].text).toContain('25 Oct 2026')
+
+    vi.mocked(sendMessage).mockClear()
+    setup({ fresh: moved })
+    const res = await sendDataRequest({ actionId: 'd1', accountId: 'acc1', now: NOW })
+    expect(res).toMatchObject({ ok: false, status: 409, error: 'Isi pesan berubah — muat ulang' })
+    expect(sendMessage).not.toHaveBeenCalled()
+    expect(db.bookingAction.updateMany).toHaveBeenCalledWith({
+      where: { id: 'd1', state: 'OPEN' }, data: expect.objectContaining({ draftText: expect.stringContaining('25 Oct 2026') }),
+    })
+  })
+
+  it('trip moved to today -> closed TRIP_STARTED; moved beyond H-7 -> OUT_OF_WINDOW; nothing sent', async () => {
+    setup({ fresh: booking({ date: { start_ymd: '2026-10-20' } }) })
+    expect(await sendDataRequest({ actionId: 'd1', accountId: null, now: NOW })).toMatchObject({ ok: false, status: 409 })
+    expect(db.bookingAction.updateMany).toHaveBeenCalledWith({ where: { id: 'd1', state: 'OPEN' }, data: expect.objectContaining({ closedReason: 'TRIP_STARTED' }) })
+    setup({ fresh: booking({ date: { start_ymd: '2026-11-20' } }) })
+    expect(await sendDataRequest({ actionId: 'd1', accountId: null, now: NOW })).toMatchObject({ ok: false, status: 409 })
+    expect(db.bookingAction.updateMany).toHaveBeenCalledWith({ where: { id: 'd1', state: 'OPEN' }, data: expect.objectContaining({ closedReason: 'OUT_OF_WINDOW' }) })
+    expect(sendMessage).not.toHaveBeenCalled()
+  })
+
+  it('airport guest who already gave a flight number (active pickup_arrival fact / open CHANGE) -> no auto-send', async () => {
+    const airport = booking({ pickup: { meeting_point: 'Surabaya Airport', pickup_time: '10:30' } })
+    setup({ fresh: airport })
+    db.bookingAction.findUnique.mockResolvedValue(stored({ conversation: conv({ bookingData: airport }), draftText: buildDataRequestText(airport, ['pickup_detail']) }) as never)
+    db.bookingFact.findFirst.mockImplementation(((args: { where: { field: { in: string[] } } }) =>
+      Promise.resolve(args.where.field.in.includes('pickup_arrival') ? { id: 'f1' } : null)) as never)
+    expect(await sendDataRequest({ actionId: 'd1', accountId: null, now: NOW })).toMatchObject({ ok: false, status: 409 })
+    expect(sendMessage).not.toHaveBeenCalled()
+  })
+
+  it('answered-check also runs on the RECOMPUTED gaps after the fresh lookup', async () => {
+    // Celah tersimpan hanya pickup_time; data segar menambah drop_time, dan ada fakta aktif drop_time.
+    setup({ fresh: booking({ pickup: { meeting_point: 'Surabaya Hotel', pickup_time: '10:30' }, dropoff: { drop_point: 'Surabaya Hotel' } }) })
+    db.bookingAction.findUnique.mockResolvedValue(stored({ proposedValue: ['pickup_time'], conversation: conv({ bookingData: booking({ pickup: { meeting_point: 'Surabaya Hotel' } }) }) }) as never)
+    db.bookingFact.findFirst.mockImplementation(((args: { where: { field: { in: string[] } } }) =>
+      Promise.resolve(args.where.field.in.includes('drop_time') ? { id: 'f2' } : null)) as never)
+    expect(await sendDataRequest({ actionId: 'd1', accountId: null, now: NOW })).toMatchObject({ ok: false, status: 409 })
+    expect(sendMessage).not.toHaveBeenCalled()
+  })
+})
+
+describe('tick auto-send budget', () => {
+  const many = Array.from({ length: 30 }, (_, i) => ({ id: `d${i}` }))
+
+  it('booking API hanging/failing -> at most 10 lookup attempts per tick', async () => {
+    setup({ convs: [], todays: many, fresh: 'error' })
+    db.bookingAction.findUnique.mockResolvedValue(stored() as never)
+    const res = await createDataRequestDrafts(NOW)
+    expect(res.sent).toBe(0)
+    expect(vi.mocked(lookupBookingResult)).toHaveBeenCalledTimes(10)
+  })
+
+  it('stops when the 30 s time budget is spent', async () => {
+    setup({ convs: [], todays: many, fresh: 'error' })
+    db.bookingAction.findUnique.mockResolvedValue(stored() as never)
+    let clock = 1_000_000
+    const spy = vi.spyOn(Date, 'now').mockImplementation(() => clock)
+    vi.mocked(lookupBookingResult).mockImplementation(async () => { clock += 20_000; return { status: 'error' } })
+    await createDataRequestDrafts(NOW)
+    spy.mockRestore()
+    expect(vi.mocked(lookupBookingResult)).toHaveBeenCalledTimes(2)
   })
 })
 

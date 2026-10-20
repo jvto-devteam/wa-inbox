@@ -52,6 +52,9 @@ export const DATA_REQUEST_HOUR_FROM = 8
 export const DATA_REQUEST_HOUR_TO = 20
 /** Batas pengiriman otomatis per tick (lonjakan tidak membanjiri tamu / safety guard). */
 const MAX_AUTO_SENDS_PER_TICK = 10
+/** Tiap percobaan kirim otomatis = satu panggilan API booking (timeout 10 s): dibatasi jumlah DAN total waktunya. */
+export const MAX_AUTO_LOOKUPS_PER_TICK = 10
+export const AUTO_SEND_BUDGET_MS = 30_000
 const DAY_MS = 24 * 60 * 60 * 1000
 const AIRPORT_STATION = ['Surabaya Airport', 'Denpasar Airport', 'Surabaya Train Station']
 const YMD = /^\d{4}-\d{2}-\d{2}$/
@@ -178,7 +181,7 @@ export type SendDataRequestResult =
 /**
  * Kirim satu draf DATA_REQUEST. `accountId` null = sistem (otomatis). Tidak melempar.
  */
-export async function sendDataRequest(input: { actionId: string; accountId: string | null; now?: Date }): Promise<SendDataRequestResult> {
+export async function sendDataRequest(input: { actionId: string; accountId: string | null; now?: Date; onLookup?: () => void }): Promise<SendDataRequestResult> {
   const now = input.now ?? new Date()
   try {
     const action = await prisma.bookingAction.findUnique({
@@ -222,20 +225,37 @@ export async function sendDataRequest(input: { actionId: string; accountId: stri
     // Data booking di DB bisa ~24 jam basi: segarkan SATU booking ini tepat sebelum klaim. Gagal = jangan kirim, draf
     // tetap OPEN tanpa push (dicoba lagi tick berikutnya). Percakapan uji tidak punya booking untuk dicari (sandbox).
     if (!conv.isTest) {
+      input.onLookup?.()
       const fresh = await lookupBookingResult(conv.contact.phone)
       if (fresh.status !== 'found') return { ok: false, status: 502, error: 'Data booking belum bisa diperiksa, coba lagi nanti' }
       if (currentBookingId(fresh.data) !== action.bookingId) {
+        // Draf ini milik booking lain: tutup, jangan dicoba lagi tiap 5 menit sepanjang hari.
+        await closeOpen(action, 'RESOLVED', 'BOOKING_CHANGED', now)
         return { ok: false, status: 409, error: 'Booking percakapan berganti, periksa ulang' }
       }
       await prisma.conversation.update({ where: { id: conv.id }, data: { bookingData: fresh.data as never, bookingCheckedAt: now } })
+      // Tanggal trip bisa bergeser sejak draf dibuat: di luar H-7..H-1 tidak ada yang dikirim.
+      const days = daysUntil(fresh.data.date?.start_ymd, today)
+      if (days === null || days < DATA_REQUEST_DAYS_MIN || days > DATA_REQUEST_DAYS_AHEAD) {
+        await closeOpen(action, 'RESOLVED', days !== null && days <= 0 ? 'TRIP_STARTED' : 'OUT_OF_WINDOW', now)
+        return { ok: false, status: 409, error: 'Tanggal trip di luar jendela permintaan data' }
+      }
       const gaps = findDataGaps(fresh.data)
       if (gaps.length === 0) {
         await closeOpen(action, 'RESOLVED', 'DATA_COMPLETE', now)
         return { ok: false, status: 409, error: 'Data booking sudah lengkap' }
       }
-      if (gaps.join() !== gapFields.join()) {
-        text = buildDataRequestText(fresh.data, gaps)
-        await prisma.bookingAction.updateMany({ where: { id: action.id, state: 'OPEN' }, data: { draftText: text, proposedValue: gaps } })
+      if (input.accountId === null && (await guestRecentlyAnswered(action, gaps))) {
+        return { ok: false, status: 409, error: 'Tamu baru menjawab, menunggu orang memeriksa' }
+      }
+      // Teks SELALU dibangun ulang dari data segar (tanggal bisa berubah walau celahnya sama).
+      const rebuilt = buildDataRequestText(fresh.data, gaps)
+      if (rebuilt !== text || gaps.join() !== gapFields.join()) {
+        await prisma.bookingAction.updateMany({ where: { id: action.id, state: 'OPEN' }, data: { draftText: rebuilt, proposedValue: gaps } })
+        broadcast({ type: 'booking-actions.changed', conversationId: conv.id })
+        // Operator tidak boleh mengirim teks yang berbeda dari yang ia lihat: kartu dimuat ulang, kirim lagi.
+        if (input.accountId !== null) return { ok: false, status: 409, error: 'Isi pesan berubah — muat ulang' }
+        text = rebuilt
       }
     }
 
@@ -315,7 +335,8 @@ async function guestRecentlyAnswered(
   gapFields: string[]
 ): Promise<boolean> {
   // Titik & detail jemput ditulis bersama (R17), jadi kartu titik ikut dihitung.
-  const fields = gapFields.includes('pickup_detail') ? [...gapFields, 'pickup_point'] : gapFields
+  // Nomor penerbangan/kereta yang disebut tamu disimpan ekstraktor sebagai `pickup_arrival` (tanpa jalur tulis, R16).
+  const fields = gapFields.includes('pickup_detail') ? [...gapFields, 'pickup_point', 'pickup_arrival'] : gapFields
   if (fields.length > 0) {
     const change = await prisma.bookingAction.findFirst({
       where: { conversationId: action.conversationId, type: 'CHANGE', state: 'OPEN', field: { in: fields }, OR: [{ bookingId: action.bookingId }, { bookingId: null }] },
@@ -455,10 +476,13 @@ export async function createDataRequestDrafts(now: Date = new Date()): Promise<{
       take: 100,
       select: { id: true },
     })
+    const startedAt = Date.now()
+    let lookups = 0
     for (const t of todays) {
-      // Batas dihitung dari yang BERHASIL terkirim: draf berjendela tertutup tidak boleh menghabiskan jatah.
-      if (sent >= MAX_AUTO_SENDS_PER_TICK) break
-      const res = await sendDataRequest({ actionId: t.id, accountId: null, now })
+      // Batas: terkirim, percobaan lookup (berhasil atau tidak -- API booking yang menggantung tidak boleh menahan
+      // tick ber-single-flight), dan waktu total. Draf berjendela tertutup tidak memakai lookup, jadi tak menghabiskan jatah.
+      if (sent >= MAX_AUTO_SENDS_PER_TICK || lookups >= MAX_AUTO_LOOKUPS_PER_TICK || Date.now() - startedAt >= AUTO_SEND_BUDGET_MS) break
+      const res = await sendDataRequest({ actionId: t.id, accountId: null, now, onLookup: () => { lookups++ } })
       if (res.ok) sent++
     }
   }
