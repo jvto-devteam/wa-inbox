@@ -7,6 +7,7 @@ import { MarqueeText } from '@/components/ui/marquee-text'
 import { cn } from '@/lib/utils'
 import { LabelPicker, type LabelOption } from './LabelPicker'
 import { NotesSection } from './NotesSection'
+import { BookingActionsSection } from './BookingActionsSection'
 import { RemindersSection } from './RemindersSection'
 import { ChatReviewTab } from './ChatReviewTab'
 import { BookingSummary, type BookingData, type TripBrief } from '@/components/contacts/BookingSummary'
@@ -240,6 +241,8 @@ export function ContactPanel({ conversationId, className }: { conversationId: st
           />
 
           <RemindersSection contactId={detail.contactId} />
+
+          <BookingActionsSection conversationId={conversationId} />
 
           <NotesSection contactId={detail.contactId} />
         </div>

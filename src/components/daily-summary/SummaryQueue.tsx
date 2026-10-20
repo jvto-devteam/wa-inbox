@@ -14,6 +14,7 @@ import { summaryItemKindLabel, wibDateTimeLabel } from '@/lib/summary-items/stat
 import type { SummaryItemView } from '@/lib/summary-items/view'
 import { PromiseList } from '@/components/daily-summary/QuestionList'
 import { conversationHref } from '@/components/daily-summary/conversation-href'
+import { fieldLabel, valueText, type BookingQueueItem } from '@/lib/booking-actions/view'
 
 /**
  * Antrean tindakan halaman /summary. Setiap item OPEN punya tiga jalan keluar: dibalas di Inbox
@@ -339,14 +340,48 @@ function ScheduledItemRow({ item }: { item: SummaryItemView }) {
   )
 }
 
+const BOOKING_TYPE_LABEL: Record<string, string> = { CHANGE: 'Perubahan', TASK: 'Tugas', MISMATCH: 'Tidak sesuai' }
+
+/** Bagian "Booking": aksi booking OPEN lintas percakapan. Kartu ringkas yang menautkan ke Inbox. */
+function BookingQueueSection({ items }: { items: BookingQueueItem[] }) {
+  return (
+    <section aria-label="Booking" className="rounded-lg border border-line bg-surface">
+      <h2 className="px-4 py-2.5 text-base font-semibold text-ink">Booking ({items.length})</h2>
+      <ul className="divide-y divide-line border-t border-line">
+        {items.map((b) => (
+          <li key={b.id} className="flex flex-col gap-1 px-4 py-3 break-words" aria-label={`Booking: ${b.contactName ?? 'Tanpa nama'}`}>
+            <div className="flex flex-wrap items-center gap-2">
+              <Link
+                href={conversationHref(b.conversationId)}
+                className="focus-ring min-h-11 content-center rounded-sm text-base font-medium text-ink hover:underline"
+              >
+                {b.contactName ?? 'Tanpa nama'}
+              </Link>
+              <Badge variant={b.type === 'CHANGE' ? 'warning' : b.type === 'TASK' ? 'brand' : 'muted'}>
+                {BOOKING_TYPE_LABEL[b.type] ?? b.type}
+              </Badge>
+            </div>
+            <p className="text-sm text-ink-muted">
+              {fieldLabel(b.field)}: {valueText(b.proposedValue)}
+            </p>
+          </li>
+        ))}
+      </ul>
+    </section>
+  )
+}
+
 export function SummaryQueue({
   open,
   scheduled,
+  bookingActions = [],
   now = new Date(),
   onChanged,
 }: {
   open: SummaryItemView[]
   scheduled: SummaryItemView[]
+  /** Aksi booking OPEN (`GET /api/booking-actions?state=OPEN`); kosong = bagian tidak tampil. */
+  bookingActions?: BookingQueueItem[]
   /** "Sekarang" untuk durasi tunggu dan pilihan "Ingatkan"; bisa diisi dari test. */
   now?: Date
   onChanged: () => void | Promise<void>
@@ -364,6 +399,8 @@ export function SummaryQueue({
           </ul>
         )}
       </section>
+
+      {bookingActions.length > 0 && <BookingQueueSection items={bookingActions} />}
 
       {scheduled.length > 0 && (
         <details className="rounded-lg border border-line bg-surface">

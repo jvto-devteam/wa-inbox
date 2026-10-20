@@ -220,6 +220,14 @@ export function ConversationList({
         return
       }
 
+      // Label "Permintaan perubahan" berubah di server tanpa pesan baru (ditutup, dibuat bot).
+      if (event.type === 'booking-actions.changed') {
+        if (conversationsRef.current.some((c) => c.id === event.conversationId)) {
+          loadConversations(queryRef.current, filterRef.current)
+        }
+        return
+      }
+
       if (event.type !== 'message.created') return
 
       // The membership test reads the mirror ref, not the state updater's `prev`: the updater

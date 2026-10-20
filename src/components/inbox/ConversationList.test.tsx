@@ -530,6 +530,20 @@ describe('ConversationList live updates', () => {
 
     expect(es.close).toHaveBeenCalled()
   })
+
+  it('memuat ulang daftar saat booking-actions.changed untuk percakapan yang ada di daftar', async () => {
+    mockConversationsFetch([conversation('a')])
+    render(<ConversationList selectedId={null} onSelect={() => {}} />)
+    await advanceTimers(0)
+    const es = FakeEventSource.instances[0]
+    vi.mocked(fetch).mockClear()
+    act(() => es.emit({ type: 'booking-actions.changed', conversationId: 'zzz' }))
+    await advanceTimers(0)
+    expect(fetch).not.toHaveBeenCalled()
+    act(() => es.emit({ type: 'booking-actions.changed', conversationId: 'a' }))
+    await advanceTimers(0)
+    expect(fetch).toHaveBeenCalled()
+  })
 })
 
 describe('ConversationList unread counts', () => {

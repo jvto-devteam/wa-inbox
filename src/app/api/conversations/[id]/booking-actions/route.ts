@@ -62,7 +62,16 @@ export async function GET(req: Request, { params }: Ctx) {
       }),
     )
 
-    return NextResponse.json({ booking, actions, history })
+    // Nama pelaku untuk riwayat. Satu kueri hanya bila ada kejadian oleh akun.
+    const accountIds = [...new Set(history.map((h) => h.accountId).filter((v): v is string => v !== null))]
+    const accounts = accountIds.length > 0
+      ? await prisma.account.findMany({ where: { id: { in: accountIds } }, select: { id: true, name: true } })
+      : []
+    const names = new Map((accounts ?? []).map((a) => [a.id, a.name]))
+    const historyView = history.map((h) => ({ ...h, accountName: h.accountId ? (names.get(h.accountId) ?? null) : null }))
+
+    // Tombol Setujui tetap nonaktif sampai Task 9 menyambungkannya ke writeConfigured().
+    return NextResponse.json({ booking, actions, history: historyView, writeEnabled: false })
   } catch (error) {
     console.error('GET booking-actions gagal', error)
     return NextResponse.json({ error: 'Gagal memuat tindakan booking' }, { status: 500 })

@@ -71,7 +71,8 @@ describe('GET /api/conversations/[id]/booking-actions', () => {
     expect(body.actions[1].impact.crewClashes).toEqual(['Andi'])
     expect(body.actions[0].impact).toBeUndefined()
     expect(computeImpact).toHaveBeenCalledTimes(1)
-    expect(body.history).toEqual([{ id: 'e1' }])
+    expect(body.history).toEqual([{ id: 'e1', accountName: null }])
+    expect(body.writeEnabled).toBe(false)
     expect(mockPrisma.bookingActionEvent.findMany).toHaveBeenCalledWith(
       expect.objectContaining({ where: { conversationId: 'c1' }, orderBy: { createdAt: 'desc' }, take: 50 }),
     )

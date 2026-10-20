@@ -254,4 +254,26 @@ describe('SummaryQueue', () => {
     expect(screen.getByText('Tidak ada item terbuka. Semua sudah dibalas, dijadwalkan, atau dilepas.')).toBeInTheDocument()
     expect(screen.queryByText(/Dijadwalkan/)).not.toBeInTheDocument()
   })
+
+  it('bagian Booking: kartu ringkas menautkan ke Inbox, dan tidak tampil bila kosong', () => {
+    const { rerender } = render(
+      <SummaryQueue
+        open={[]}
+        scheduled={[]}
+        bookingActions={[
+          { id: 'b1', conversationId: 'conv_9', contactName: 'Budi', type: 'CHANGE', field: 'pickup_point', proposedValue: 'Surabaya Hotel', createdAt: '2026-10-20T00:00:00Z' },
+        ]}
+        now={NOW}
+        onChanged={() => {}}
+      />
+    )
+    const section = screen.getByRole('region', { name: 'Booking' })
+    const card = within(section).getByRole('listitem', { name: 'Booking: Budi' })
+    expect(within(card).getByText('Perubahan')).toBeInTheDocument()
+    expect(card).toHaveTextContent('Pickup: Surabaya Hotel')
+    expect(within(card).getByRole('link', { name: 'Budi' })).toHaveAttribute('href', expect.stringContaining('/inbox?conversation=conv_9'))
+
+    rerender(<SummaryQueue open={[]} scheduled={[]} bookingActions={[]} now={NOW} onChanged={() => {}} />)
+    expect(screen.queryByRole('region', { name: 'Booking' })).not.toBeInTheDocument()
+  })
 })

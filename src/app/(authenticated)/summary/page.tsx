@@ -15,6 +15,7 @@ import { hasAdminPowers } from '@/lib/bot-control/permissions'
 import { isDateKey } from '@/lib/daily-summary/time'
 import { fetchJson } from '@/lib/fetch-json'
 import { announceSummaryItemsChanged } from '@/lib/summary-items/events'
+import type { BookingQueueItem } from '@/lib/booking-actions/view'
 
 type Session = { role: AccountRoleName }
 
@@ -65,6 +66,7 @@ function DailySummaryPageContent() {
   const [dates, setDates] = useState<DailySummaryResponse['dates']>([])
   const [summaryError, setSummaryError] = useState<string | null>(null)
   const [queue, setQueue] = useState<SummaryItemsResponse | null>(null)
+  const [bookingActions, setBookingActions] = useState<BookingQueueItem[]>([])
   const [queueError, setQueueError] = useState<string | null>(null)
   const [queueLoading, setQueueLoading] = useState(true)
   const [role, setRole] = useState<Session['role'] | null>(null)
@@ -96,6 +98,10 @@ function DailySummaryPageContent() {
   }, [view, applySummary, summaryFailed])
 
   const loadQueue = useCallback(() => {
+    // Terpisah dan tak pernah menggagalkan antrean: bagian Booking hanya tambahan.
+    fetchJson<{ items: BookingQueueItem[] }>('/api/booking-actions?state=OPEN')
+      .then((r) => setBookingActions(Array.isArray(r.items) ? r.items : []))
+      .catch(() => {})
     return fetchJson<SummaryItemsResponse>('/api/summary-items')
       .then((response) => {
         setQueue(response)
@@ -280,7 +286,7 @@ function DailySummaryPageContent() {
                 {queueError}
               </p>
             )}
-            {queue && <SummaryQueue open={queue.open} scheduled={queue.scheduled} onChanged={loadQueue} />}
+            {queue && <SummaryQueue open={queue.open} scheduled={queue.scheduled} bookingActions={bookingActions} onChanged={loadQueue} />}
           </div>
         )}
       </div>
