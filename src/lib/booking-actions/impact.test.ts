@@ -73,4 +73,42 @@ describe('computeImpact', () => {
     expect((await computeImpact({ field: 'hotel', proposedValue: 'x', bookingId: '1' })).unavailable).toBe(true)
     expect(fetchMock).not.toHaveBeenCalled()
   })
+
+  it('duplicate crew rows → one fetch and one clash line', async () => {
+    const dup = {
+      ...BOOKING,
+      crew: [
+        { crew_id: 7, name: 'Fredi', assignment: 'guide' },
+        { crew_id: 7, name: 'Fredi', assignment: 'escort' },
+      ],
+    }
+    fetchMock.mockImplementation(async (url: string) => {
+      if (url.includes('/internal-api/bookings/3800')) return json(dup)
+      return json({ bookings: [dup, OTHER, OTHER] })
+    })
+    const r = await computeImpact({ field: 'travel_date', proposedValue: '2026-10-25', bookingId: '3800' })
+    expect(fetchMock.mock.calls.filter(c => String(c[0]).includes('crew='))).toHaveLength(1)
+    expect(r.crewClashes).toEqual(['Fredi bentrok dengan JVTO-3910 (25–27 Okt)'])
+  })
+
+  it('shifts across month/year boundary', async () => {
+    const b = { ...BOOKING, travel_date_start: '2026-12-30', travel_date_end: '2027-01-01', at_ijen: '2026-12-31', crew: [], hotels: [{ day: 1, date: '2026-12-30', hotel_name: 'Hotel X' }] }
+    fetchMock.mockResolvedValue(json(b))
+    const r = await computeImpact({ field: 'travel_date', proposedValue: '2027-01-02', bookingId: '3800' })
+    expect(r.hotelNights).toEqual(['Hotel X: 30 Des → 2 Jan'])
+    expect(r.medicalCheckupDate).toEqual({ from: '2026-12-30', to: '2027-01-02' })
+  })
+
+  it('impossible date (2026-02-30) → unavailable', async () => {
+    fetchMock.mockResolvedValue(json(BOOKING))
+    const r = await computeImpact({ field: 'travel_date', proposedValue: '2026-02-30', bookingId: '3800' })
+    expect(r.unavailable).toBe(true)
+  })
+
+  it('any crew fetch failing → whole result unavailable', async () => {
+    fetchMock.mockImplementation(async (url: string) =>
+      url.includes('crew=') ? json({}, false, 500) : json(BOOKING))
+    const r = await computeImpact({ field: 'travel_date', proposedValue: '2026-10-25', bookingId: '3800' })
+    expect(r.unavailable).toBe(true)
+  })
 })

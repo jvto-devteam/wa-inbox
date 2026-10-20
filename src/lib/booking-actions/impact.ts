@@ -36,7 +36,8 @@ function parseYmd(s: unknown): number | null {
   const m = YMD.exec(s)
   if (!m) return null
   const t = Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]))
-  return Number.isNaN(t) ? null : t
+  if (Number.isNaN(t)) return null
+  return new Date(t).toISOString().slice(0, 10) === s ? t : null
 }
 
 function addDays(s: string | null, days: number): string | null {
@@ -67,19 +68,13 @@ function str(v: unknown): string | null {
   return typeof v === 'string' && v.trim() !== '' ? v : null
 }
 
-async function get(base: string, token: string, path: string): Promise<unknown> {
-  const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS)
-  try {
-    const res = await fetch(`${base}${path}`, {
-      headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
-      signal: controller.signal,
-    })
-    if (!res.ok) throw new Unavailable(`http ${res.status}`)
-    return await res.json()
-  } finally {
-    clearTimeout(timer)
-  }
+async function get(base: string, token: string, path: string, signal: AbortSignal): Promise<unknown> {
+  const res = await fetch(`${base}${path}`, {
+    headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
+    signal,
+  })
+  if (!res.ok) throw new Unavailable(`http ${res.status}`)
+  return await res.json()
 }
 
 type Booking = {
@@ -118,9 +113,10 @@ function parseBooking(raw: unknown): Booking {
 async function compute(
   base: string,
   token: string,
+  signal: AbortSignal,
   action: { field: FieldKey; proposedValue: unknown; bookingId: string },
 ): Promise<Impact> {
-  const booking = parseBooking(await get(base, token, `/internal-api/bookings/${encodeURIComponent(action.bookingId)}`))
+  const booking = parseBooking(await get(base, token, `/internal-api/bookings/${encodeURIComponent(action.bookingId)}`, signal))
   const impact: Impact = { crewClashes: [], hotelNights: [], medicalCheckupDate: null }
 
   if (action.field !== 'travel_date') {
@@ -145,19 +141,29 @@ async function compute(
     impact.medicalCheckupDate = { from: addDays(booking.atIjen, -1), to: addDays(booking.atIjen, delta - 1) }
   }
 
+  const members = new Map<string, string | null>()
   for (const member of booking.crew) {
     const key = member.id ?? member.name
-    if (key === null) continue
-    const q = new URLSearchParams({ from: newStart, to: newEnd, by: 'active', crew: key })
-    const body = await get(base, token, `/internal-api/bookings?${q.toString()}`)
-    if (!isRecord(body) || !Array.isArray(body.bookings)) throw new Unavailable('shape')
-    for (const other of body.bookings.filter(isRecord).map(parseBooking)) {
-      if (other.id === booking.id || other.start === null) continue
-      impact.crewClashes.push(
-        `${member.name ?? `Crew ${key}`} bentrok dengan ${other.code} (${range(other.start, other.end ?? other.start)})`,
-      )
-    }
+    if (key !== null && !members.has(key)) members.set(key, member.name)
   }
+
+  const results = await Promise.all(
+    [...members].map(async ([key, name]) => {
+      const q = new URLSearchParams({ from: newStart, to: newEnd, by: 'active', crew: key })
+      const body = await get(base, token, `/internal-api/bookings?${q.toString()}`, signal)
+      if (!isRecord(body) || !Array.isArray(body.bookings)) throw new Unavailable('shape')
+      const lines = new Map<string, string>()
+      for (const other of body.bookings.filter(isRecord).map(parseBooking)) {
+        if (other.id === booking.id || other.start === null || lines.has(other.id)) continue
+        lines.set(
+          other.id,
+          `${name ?? `Crew ${key}`} bentrok dengan ${other.code} (${range(other.start, other.end ?? other.start)})`,
+        )
+      }
+      return [...lines.values()]
+    }),
+  )
+  impact.crewClashes = results.flat()
   return impact
 }
 
@@ -169,11 +175,15 @@ export async function computeImpact(action: {
   const base = (process.env.BACKOFFICE_INTERNAL_API_URL ?? '').trim().replace(/\/+$/, '')
   const token = (process.env.BACKOFFICE_INTERNAL_API_TOKEN ?? '').trim()
   if (!base || !token) return unavailable()
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS)
   try {
-    return await compute(base, token, action)
+    return await compute(base, token, controller.signal, action)
   } catch (err) {
     const reason = err instanceof Unavailable ? err.message : err instanceof Error ? err.name : 'error'
     console.warn(`[booking-actions/impact] unavailable: ${reason}`)
     return unavailable()
+  } finally {
+    clearTimeout(timer)
   }
 }
