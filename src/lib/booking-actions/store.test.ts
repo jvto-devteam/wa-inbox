@@ -22,6 +22,8 @@ let actions: Row[]
 let events: Row[]
 let booking: BookingData | null
 let seq: number
+let calls: string[]
+let msgTimes: Record<string, string>
 
 const matches = (row: Row, where: Record<string, unknown>) =>
   Object.entries(where).every(([k, v]) => {
@@ -33,10 +35,13 @@ beforeEach(() => {
   mockReset(db)
   vi.mocked(broadcast).mockClear()
   vi.mocked(callLLM).mockClear()
-  facts = []; actions = []; events = []; seq = 0
+  facts = []; actions = []; events = []; seq = 0; calls = []; msgTimes = {}
   booking = { booking_id: 77, total_pax: 4, pickup: { meeting_point: 'Surabaya Airport' } } as BookingData
   db.$transaction.mockImplementation((async (cb: (tx: unknown) => unknown) => cb(db)) as never)
-  db.conversation.findUnique.mockImplementation((async () => ({ bookingData: booking })) as never)
+  db.$executeRaw.mockImplementation((async () => { calls.push('lock'); return 0 }) as never)
+  db.message.findMany.mockImplementation((async ({ where }: { where: { id: { in: string[] } } }) =>
+    where.id.in.filter((id) => msgTimes[id]).map((id) => ({ id, createdAt: new Date(msgTimes[id]) }))) as never)
+  db.conversation.findUnique.mockImplementation((async () => { calls.push('read'); return { bookingData: booking } }) as never)
   db.bookingFact.findMany.mockImplementation((async ({ where }: { where: Record<string, unknown> }) =>
     facts.filter((f) => matches(f, where))) as never)
   db.bookingFact.create.mockImplementation((async ({ data }: { data: Record<string, unknown> }) => {
@@ -107,7 +112,7 @@ describe('applyExtraction', () => {
     expect(actions[0]).toMatchObject({ type: 'MISMATCH', state: 'OPEN', proposedValue: '5' })
     await applyExtraction('c1', ex({ facts: [item('total_pax', '4', 'm2')] }), NOW)
     expect(facts[0].supersededAt).toEqual(NOW)
-    expect(actions[0].state).toBe('RESOLVED')
+    expect(actions[0]).toMatchObject({ state: 'RESOLVED', closedReason: 'CHAT_CORRECTED' })
     expect(actions).toHaveLength(1)
   })
 
@@ -150,5 +155,60 @@ describe('reevaluateBookingActions', () => {
     booking = null
     expect(await reevaluateBookingActions('c1', NOW)).toEqual({ resolved: 0, opened: 0 })
     expect(broadcast).not.toHaveBeenCalled()
+  })
+})
+
+describe('kunci, ditutup orang, terbaru menang, cakupan booking', () => {
+  it('mengambil kunci advisory sebelum membaca atau menulis apa pun', async () => {
+    await applyExtraction('c1', ex({ facts: [item('total_pax', '5', 'm1')] }), NOW)
+    expect(calls[0]).toBe('lock')
+    expect(calls.indexOf('lock')).toBeLessThan(calls.indexOf('read'))
+    expect(db.$executeRaw.mock.invocationCallOrder[0]).toBeLessThan(db.bookingFact.findMany.mock.invocationCallOrder[0])
+    expect(db.$executeRaw.mock.invocationCallOrder[0]).toBeLessThan(db.bookingFact.create.mock.invocationCallOrder[0])
+  })
+
+  it('MISMATCH yang dilepas orang tidak dibuat ulang; nilai lain tetap membuat kartu baru', async () => {
+    await applyExtraction('c1', ex({ facts: [item('total_pax', '5', 'm1')] }), NOW)
+    Object.assign(actions[0], { state: 'RESOLVED', closedReason: 'DISMISSED_CHAT_WRONG', closedById: 'acc1' })
+    const before = events.length
+    expect(await reevaluateBookingActions('c1', NOW)).toEqual({ resolved: 0, opened: 0 })
+    expect(actions).toHaveLength(1)
+    expect(events).toHaveLength(before)
+    const r = await applyExtraction('c1', ex({ facts: [item('total_pax', '6', 'm2')] }), NOW)
+    expect(r.created).toBe(1)
+    expect(actions[1]).toMatchObject({ type: 'MISMATCH', proposedValue: '6', state: 'OPEN' })
+  })
+
+  it('CHANGE yang ditolak orang tidak dibuat ulang oleh usulan sama', async () => {
+    await applyExtraction('c1', ex({ changes: [item('pickup_point', 'Surabaya Hotel', 'm1')] }), NOW)
+    Object.assign(actions[0], { state: 'REJECTED', closedReason: 'REJECTED', closedById: 'acc1' })
+    expect((await applyExtraction('c1', ex({ changes: [item('pickup_point', 'Surabaya Hotel', 'm1')] }), NOW)).created).toBe(0)
+  })
+
+  it('terbaru menang: fakta isi-data yang lebih baru menggantikan CHANGE eksplisit lama; yang lebih lama tidak', async () => {
+    msgTimes = { m1: '2026-10-20T01:00:00Z', m2: '2026-10-20T02:00:00Z' }
+    await applyExtraction('c1', ex({ changes: [item('pickup_detail', 'Hotel A', 'm1')] }), NOW)
+    await applyExtraction('c1', ex({ facts: [item('pickup_detail', 'Hotel B', 'm2')] }), NOW)
+    expect(actions.map((a) => [a.proposedValue, a.state])).toEqual([['Hotel A', 'SUPERSEDED'], ['Hotel B', 'OPEN']])
+    // permintaan eksplisit yang lebih lama tidak boleh menimpa yang lebih baru
+    await applyExtraction('c1', ex({ changes: [item('pickup_detail', 'Hotel C', 'm1')] }), NOW)
+    expect(actions.filter((a) => a.state === 'OPEN').map((a) => a.proposedValue)).toEqual(['Hotel B'])
+  })
+
+  it('created menghitung MISMATCH dan CHANGE isi-data yang lahir di evaluate', async () => {
+    const r = await applyExtraction('c1', ex({
+      changes: [item('pickup_point', 'Surabaya Hotel', 'm1')],
+      facts: [item('total_pax', '5', 'm2'), item('pickup_detail', 'Hotel X', 'm3')],
+    }), NOW)
+    expect(r.created).toBe(3)
+  })
+
+  it('fakta dari booking A tidak me-resolve atau mismatch terhadap booking B', async () => {
+    await applyExtraction('c1', ex({ facts: [item('total_pax', '5', 'm1')] }), NOW)
+    expect(actions[0]).toMatchObject({ bookingId: '77', state: 'OPEN' })
+    booking = { ...booking!, booking_id: 88, total_pax: 5 } as BookingData
+    expect(await reevaluateBookingActions('c1', NOW)).toEqual({ resolved: 0, opened: 0 })
+    expect(actions[0].state).toBe('OPEN')
+    expect(actions).toHaveLength(1)
   })
 })

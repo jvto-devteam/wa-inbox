@@ -13,8 +13,13 @@
  *   - CHANGE/TASK OPEN yang sudah sesuai di backoffice -> RESOLVED/MATCHED_IN_BACKOFFICE.
  *   - MISMATCH (booking terisi, chat beda) OPEN; hilang dari findMismatches -> RESOLVED.
  *   - Booking KOSONG + tamu menyebut nilai (Ruling R8): kelompok AI/BALI -> CHANGE "isi data";
- *     HEAVY -> diabaikan. CHANGE isi-data hanya menggantikan usulan OPEN yang lahir dari fakta
- *     lama yang sudah diganti (jangan menimpa permintaan eksplisit tamu).
+ *     HEAVY -> diabaikan.
+ *   - Terbaru menang: untuk field yang sama, usulan dari pesan sumber yang lebih baru menggantikan
+ *     yang lebih lama (fakta maupun permintaan eksplisit).
+ *   - Yang sudah ditutup ORANG (closedById terisi: ditolak/dilepas/selesai/tak perlu) tidak dibuat
+ *     ulang untuk field + nilai yang sama; nilai lain tetap membuat kartu baru.
+ *   - Dicakup per booking: hanya baris ber-bookingId sama dengan booking sekarang (atau null).
+ *   - Kunci advisory per percakapan di awal transaksi mencegah baris OPEN/fakta ganda.
  *   - Notifikasi/label BUKAN urusan modul ini (Ruling R1).
  */
 import type { Prisma } from '@prisma/client'
@@ -27,10 +32,23 @@ import type { Extraction } from './extract'
 import { recordEvent, type BookingEventActor } from './history'
 
 type Tx = Prisma.TransactionClient
-type Ctx = { tx: Tx; conversationId: string; bookingId: string | null; booking: BookingData; now: Date; actor: BookingEventActor }
+type Ctx = {
+  tx: Tx
+  conversationId: string
+  bookingId: string | null
+  booking: BookingData
+  now: Date
+  actor: BookingEventActor
+  /** field+nilai yang pernah ditutup orang -- jangan dibuat ulang. */
+  blocked: Set<string>
+  times: Map<string, number>
+}
 type Counters = { created: number; resolved: number; opened: number; touched: boolean }
 
 const CHANGE_TYPES = ['CHANGE', 'TASK']
+const PERSON_REASONS = ['REJECTED', 'DISMISSED_CHAT_WRONG', 'MARKED_DONE', 'NOT_NEEDED']
+
+const key = (field: string, value: string | null) => `${field}\u0000${value ?? ''}`
 
 function asBooking(raw: unknown): BookingData | null {
   return typeof raw === 'object' && raw !== null && !Array.isArray(raw) ? (raw as BookingData) : null
@@ -45,9 +63,35 @@ function proposedOf(raw: unknown): string | null {
   return typeof raw === 'string' ? raw : null
 }
 
+const inScope = (row: { bookingId: string | null }, bookingId: string | null) => row.bookingId === null || row.bookingId === bookingId
+
 async function loadBooking(tx: Tx, conversationId: string): Promise<BookingData | null> {
   const conv = await tx.conversation.findUnique({ where: { id: conversationId }, select: { bookingData: true } })
   return asBooking(conv?.bookingData)
+}
+
+async function loadBlocked(tx: Tx, conversationId: string): Promise<Set<string>> {
+  const rows = await tx.bookingAction.findMany({
+    where: { conversationId, closedReason: { in: PERSON_REASONS } },
+    select: { field: true, proposedValue: true, closedById: true },
+  })
+  return new Set(rows.filter((r) => r.closedById !== null).map((r) => key(r.field, proposedOf(r.proposedValue))))
+}
+
+async function loadTimes(ctx: Ctx, ids: Array<string | null>): Promise<void> {
+  const need = ids.filter((id): id is string => id !== null && !ctx.times.has(id))
+  if (need.length === 0) return
+  const rows = (await ctx.tx.message.findMany({ where: { id: { in: need } }, select: { id: true, createdAt: true } })) ?? []
+  for (const r of rows) ctx.times.set(r.id, r.createdAt.getTime())
+}
+
+/** Apakah pesan `next` lebih baru daripada `prev`? Tidak diketahui = anggap lebih baru. */
+function isNewer(ctx: Ctx, next: string | null, prev: string | null): boolean {
+  if (next !== null && next === prev) return false
+  const a = next === null ? undefined : ctx.times.get(next)
+  const b = prev === null ? undefined : ctx.times.get(prev)
+  if (a === undefined || b === undefined) return true
+  return a > b
 }
 
 async function closeAction(
@@ -72,6 +116,7 @@ async function closeAction(
 
 async function createAction(
   ctx: Ctx,
+  counters: Counters,
   data: { type: 'CHANGE' | 'TASK' | 'MISMATCH'; field: FieldKey; tier: ChangeGroup; value: string; messageId: string | null }
 ): Promise<void> {
   const row = await ctx.tx.bookingAction.create({
@@ -87,6 +132,7 @@ async function createAction(
     },
     select: { id: true },
   })
+  counters.created++
   await recordEvent(ctx.tx, {
     conversationId: ctx.conversationId,
     bookingId: ctx.bookingId,
@@ -98,34 +144,41 @@ async function createAction(
   })
 }
 
-type OpenRow = { id: string; type: string; field: string; proposedValue: unknown; sourceMessageId: string | null }
+type OpenRow = { id: string; bookingId: string | null; type: string; field: string; proposedValue: unknown; sourceMessageId: string | null }
 
-/** Buat usulan baru; yang OPEN dengan nilai sama dibiarkan, yang berbeda diganti. */
+async function loadOpen(ctx: Ctx, types: string[]): Promise<OpenRow[]> {
+  const rows = (await ctx.tx.bookingAction.findMany({
+    where: { conversationId: ctx.conversationId, state: 'OPEN', type: { in: types } },
+    select: { id: true, bookingId: true, type: true, field: true, proposedValue: true, sourceMessageId: true },
+  })) as OpenRow[]
+  return rows.filter((r) => inScope(r, ctx.bookingId))
+}
+
+/** Buat usulan baru; sama = dibiarkan, lebih baru = menggantikan, lebih lama = dilewati. */
 async function proposeChange(
   ctx: Ctx,
+  counters: Counters,
   open: OpenRow[],
-  p: { field: FieldKey; value: string; messageId: string | null; replaceable?: (row: OpenRow) => boolean }
+  p: { field: FieldKey; value: string; messageId: string | null }
 ): Promise<boolean> {
+  if (ctx.blocked.has(key(p.field, p.value))) return false
   const group = changeGroup(p.field, p.value, ctx.booking)
   const sameField = open.filter((r) => CHANGE_TYPES.includes(r.type) && r.field === p.field)
   if (sameField.some((r) => proposedOf(r.proposedValue) === p.value)) return false
-  const replaceable = p.replaceable ?? (() => true)
-  if (!sameField.every(replaceable)) return false
+  await loadTimes(ctx, [p.messageId, ...sameField.map((r) => r.sourceMessageId)])
+  if (!sameField.every((r) => isNewer(ctx, p.messageId, r.sourceMessageId))) return false
   for (const old of sameField) {
     await closeAction(ctx, old, 'SUPERSEDED', 'REPLACED', p.messageId)
     open.splice(open.indexOf(old), 1)
   }
-  await createAction(ctx, { type: group === 'HEAVY' ? 'TASK' : 'CHANGE', field: p.field, tier: group, value: p.value, messageId: p.messageId })
+  await createAction(ctx, counters, { type: group === 'HEAVY' ? 'TASK' : 'CHANGE', field: p.field, tier: group, value: p.value, messageId: p.messageId })
   return true
 }
 
 async function evaluate(ctx: Ctx, counters: Counters): Promise<void> {
   const { tx, conversationId, booking } = ctx
-  const open = (await tx.bookingAction.findMany({
-    where: { conversationId, state: 'OPEN', type: { in: [...CHANGE_TYPES, 'MISMATCH'] } },
-    select: { id: true, type: true, field: true, proposedValue: true, sourceMessageId: true },
-  })) as OpenRow[]
-  const factRows = await tx.bookingFact.findMany({ where: { conversationId } })
+  const open = await loadOpen(ctx, [...CHANGE_TYPES, 'MISMATCH'])
+  const factRows = (await tx.bookingFact.findMany({ where: { conversationId } })).filter((f) => inScope(f, ctx.bookingId))
 
   // 1. CHANGE/TASK yang sudah sesuai di backoffice.
   for (const a of [...open]) {
@@ -145,39 +198,35 @@ async function evaluate(ctx: Ctx, counters: Counters): Promise<void> {
     .map((f) => ({ id: f.id, field: f.field as FieldKey, value: f.value }))
   const mismatches = findMismatches(active, booking)
   const keep = new Set<string>()
-  for (const m of mismatches) if (m.bookingValue !== null) keep.add(`${m.field}\u0000${m.chatValue}`)
+  for (const m of mismatches) if (m.bookingValue !== null) keep.add(key(m.field, m.chatValue))
 
   for (const a of [...open]) {
     if (a.type !== 'MISMATCH') continue
-    if (keep.has(`${a.field}\u0000${proposedOf(a.proposedValue)}`)) continue
-    const stillStated = active.some((f) => f.field === a.field)
+    const value = proposedOf(a.proposedValue)
+    if (keep.has(key(a.field, value))) continue
+    // Fakta yang sama (field + nilai) masih aktif dan kini cocok = backoffice menyusul;
+    // selain itu tamu mengoreksi dirinya sendiri.
+    const stillStated = active.some((f) => f.field === a.field && f.value === value)
     await closeAction(ctx, a, 'RESOLVED', stillStated ? 'MATCHED_IN_BACKOFFICE' : 'CHAT_CORRECTED')
     open.splice(open.indexOf(a), 1)
     counters.resolved++
     counters.touched = true
   }
 
-  const oldFactValues = factRows.filter((f) => f.supersededAt !== null)
   for (const m of mismatches) {
     const fact = factRows.find((f) => f.id === m.factId)
     const messageId = fact?.sourceMessageId ?? null
     if (m.bookingValue !== null) {
       if (open.some((a) => a.type === 'MISMATCH' && a.field === m.field && proposedOf(a.proposedValue) === m.chatValue)) continue
-      await createAction(ctx, { type: 'MISMATCH', field: m.field, tier: changeGroup(m.field, m.chatValue, booking), value: m.chatValue, messageId })
+      if (ctx.blocked.has(key(m.field, m.chatValue))) continue
+      await createAction(ctx, counters, { type: 'MISMATCH', field: m.field, tier: changeGroup(m.field, m.chatValue, booking), value: m.chatValue, messageId })
       counters.opened++
       counters.touched = true
       continue
     }
     // Booking kosong, tamu menyebut nilai: "isi data" untuk AI/BALI, HEAVY diabaikan (R8).
     if (changeGroup(m.field, m.chatValue, booking) === 'HEAVY') continue
-    const created = await proposeChange(ctx, open, {
-      field: m.field,
-      value: m.chatValue,
-      messageId,
-      replaceable: (row) =>
-        oldFactValues.some((f) => f.field === row.field && f.value === proposedOf(row.proposedValue) && f.sourceMessageId === row.sourceMessageId),
-    })
-    if (created) {
+    if (await proposeChange(ctx, counters, open, { field: m.field, value: m.chatValue, messageId })) {
       counters.opened++
       counters.touched = true
     }
@@ -192,9 +241,12 @@ async function run(
 ): Promise<Counters> {
   const counters: Counters = { created: 0, resolved: 0, opened: 0, touched: false }
   await prisma.$transaction(async (tx) => {
+    // Kunci per percakapan (dilepas saat commit): dua proses tak boleh menyisipkan baris OPEN/fakta ganda.
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${conversationId}))`
     const booking = await loadBooking(tx, conversationId)
     if (!booking) return
-    await body({ tx, conversationId, bookingId: bookingIdOf(booking), booking, now, actor }, counters)
+    const blocked = await loadBlocked(tx, conversationId)
+    await body({ tx, conversationId, bookingId: bookingIdOf(booking), booking, now, actor, blocked, times: new Map() }, counters)
   })
   if (counters.touched) broadcast({ type: 'booking-actions.changed', conversationId })
   return counters
@@ -203,7 +255,7 @@ async function run(
 export async function applyExtraction(conversationId: string, ex: Extraction, now: Date = new Date()): Promise<{ created: number }> {
   const c = await run(conversationId, now, 'BOT', async (ctx, counters) => {
     const { tx } = ctx
-    const existing = await tx.bookingFact.findMany({ where: { conversationId, supersededAt: null } })
+    const existing = (await tx.bookingFact.findMany({ where: { conversationId, supersededAt: null } })).filter((f) => inScope(f, ctx.bookingId))
     for (const f of ex.facts) {
       const same = existing.filter((e) => e.field === f.field && e.supersededAt === null)
       if (same.some((e) => e.value === f.value)) continue
@@ -217,16 +269,10 @@ export async function applyExtraction(conversationId: string, ex: Extraction, no
       existing.push(row)
       counters.touched = true
     }
-    const open = (await tx.bookingAction.findMany({
-      where: { conversationId, state: 'OPEN', type: { in: CHANGE_TYPES } },
-      select: { id: true, type: true, field: true, proposedValue: true, sourceMessageId: true },
-    })) as OpenRow[]
+    const open = await loadOpen(ctx, CHANGE_TYPES)
     for (const ch of ex.changes) {
       if (changeAlreadyApplied({ field: ch.field, value: ch.value }, ctx.booking)) continue
-      if (await proposeChange(ctx, open, { field: ch.field, value: ch.value, messageId: ch.messageId })) {
-        counters.created++
-        counters.touched = true
-      }
+      if (await proposeChange(ctx, counters, open, { field: ch.field, value: ch.value, messageId: ch.messageId })) counters.touched = true
     }
     await evaluate(ctx, counters)
   })
