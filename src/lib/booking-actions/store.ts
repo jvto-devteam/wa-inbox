@@ -15,7 +15,16 @@
  *   - Booking KOSONG + tamu menyebut nilai (Ruling R8): kelompok AI/BALI -> CHANGE "isi data";
  *     HEAVY -> diabaikan.
  *   - Terbaru menang: untuk field yang sama, usulan dari pesan sumber yang lebih baru menggantikan
- *     yang lebih lama (fakta maupun permintaan eksplisit).
+ *     yang lebih lama (fakta maupun permintaan eksplisit). Keluaran satu ekstraksi lebih dulu diringkas
+ *     per field ke pesan sumber TERBARU (urutan keluaran LLM tidak berarti apa-apa).
+ *   - Batas air (final review Important 2): ekstraksi membaca ulang 20 pesan terakhir setiap kali, jadi pesan
+ *     lama terbaca lagi. Usulan yang pesan sumbernya lebih tua atau sama dengan pesan sumber CHANGE/TASK
+ *     NON-OPEN mana pun untuk field itu (dieksekusi, ditolak, digantikan, cocok di backoffice, ...) dilewati --
+ *     tanpa ini nilai yang sudah dilewati hidup lagi dan, dengan ALWAYS, membalik booking bolak-balik. Fakta:
+ *     dilewati bila pesannya lebih tua atau sama dengan fakta mana pun (aktif atau usang) atau CHANGE/TASK apa pun
+ *     untuk field itu (perubahan titik ikut menjadi batas fakta detail/kedatangan sisi yang sama).
+ *   - CHANGE/TASK yang dibuat (dan yang dieksekusi, execute.ts) menstempel `supersededAt` fakta aktif field itu
+ *     yang pesannya lebih tua atau sama (`supersedeOlderFacts`), supaya tidak jadi MISMATCH palsu.
  *   - Yang sudah ditutup ORANG (closedById terisi: ditolak/dilepas/selesai/tak perlu/dibatalkan) tidak dibuat
  *     ulang untuk field + nilai yang sama; nilai lain tetap membuat kartu baru.
  *   - Usulan asli yang DIKOREKSI admin lalu dieksekusi (event CORRECTED pada aksi EXECUTED) juga tidak
@@ -33,6 +42,7 @@ import { changeAlreadyApplied, findMismatches, type ActiveFact } from './compare
 import { changeGroup, type ChangeGroup, type FieldKey } from './fields'
 import type { Extraction } from './extract'
 import { recordEvent, type BookingEventActor } from './history'
+import { supersededFactFields, supersedeOlderFacts } from './fact-supersede'
 import { notifyBookingAction, summarizeAction, type BookingPushEvent } from '@/lib/push/send'
 
 type Tx = Prisma.TransactionClient
@@ -46,7 +56,11 @@ type Ctx = {
   /** field+nilai yang pernah ditutup orang -- jangan dibuat ulang. */
   blocked: Set<string>
   times: Map<string, number>
+  /** Dimuat sekali per pemanggilan saat pertama dibutuhkan (`watermarks`). */
+  marks?: Watermarks
 }
+/** Waktu pesan sumber terbaru per field: `change` = CHANGE/TASK non-OPEN; `fact` = fakta apa pun + CHANGE/TASK apa pun. */
+type Watermarks = { change: Map<string, number>; fact: Map<string, number> }
 type Counters = { created: number; resolved: number; opened: number; touched: boolean; notify: BookingPushEvent[] }
 
 const CHANGE_TYPES = ['CHANGE', 'TASK']
@@ -127,6 +141,58 @@ function isNewer(ctx: Ctx, next: string | null, prev: string | null): boolean {
   return a > b
 }
 
+async function watermarks(ctx: Ctx): Promise<Watermarks> {
+  if (ctx.marks) return ctx.marks
+  const actions = ((await ctx.tx.bookingAction.findMany({
+    where: { conversationId: ctx.conversationId, type: { in: CHANGE_TYPES } },
+    select: { bookingId: true, field: true, state: true, sourceMessageId: true },
+  })) ?? []).filter((r) => inScope(r, ctx.bookingId))
+  const facts = ((await ctx.tx.bookingFact.findMany({
+    where: { conversationId: ctx.conversationId },
+    select: { bookingId: true, field: true, sourceMessageId: true },
+  })) ?? []).filter((r) => inScope(r, ctx.bookingId))
+  await loadTimes(ctx, [...actions, ...facts].map((r) => r.sourceMessageId))
+  const marks: Watermarks = { change: new Map(), fact: new Map() }
+  const bump = (m: Map<string, number>, field: string, id: string | null) => {
+    const t = id === null ? undefined : ctx.times.get(id)
+    if (t === undefined) return
+    const cur = m.get(field)
+    if (cur === undefined || t > cur) m.set(field, t)
+  }
+  for (const a of actions) {
+    if (a.state !== 'OPEN') bump(marks.change, a.field, a.sourceMessageId)
+    for (const f of supersededFactFields(a.field)) bump(marks.fact, f, a.sourceMessageId)
+  }
+  for (const f of facts) bump(marks.fact, f.field, f.sourceMessageId)
+  ctx.marks = marks
+  return marks
+}
+
+/** Pesan `messageId` lebih baru dari batas air field ini? Tanpa batas / waktu tak diketahui = ya (sama dengan `isNewer`). */
+function aboveWatermark(ctx: Ctx, mark: Map<string, number>, field: string, messageId: string | null): boolean {
+  const wm = mark.get(field)
+  if (wm === undefined) return true
+  const t = messageId === null ? undefined : ctx.times.get(messageId)
+  if (t === undefined) return true
+  return t > wm
+}
+
+/**
+ * Satu butir per field: yang pesan sumbernya TERBARU. Waktu sama/tak diketahui = butir yang datang belakangan
+ * menang (perilaku lama).
+ */
+async function newestPerField<T extends { field: FieldKey; messageId: string }>(ctx: Ctx, items: T[]): Promise<T[]> {
+  await loadTimes(ctx, items.map((i) => i.messageId))
+  const best = new Map<string, T>()
+  for (const item of items) {
+    const cur = best.get(item.field)
+    const a = cur ? ctx.times.get(cur.messageId) : undefined
+    const b = ctx.times.get(item.messageId)
+    if (!cur || a === undefined || b === undefined || b >= a) best.set(item.field, item)
+  }
+  return [...best.values()]
+}
+
 async function closeAction(
   ctx: Ctx,
   action: { id: string; field: string; proposedValue: unknown },
@@ -173,6 +239,12 @@ async function createAction(
     select: { id: true },
   })
   counters.created++
+  // Permintaan perubahan melewati fakta lama field itu (Important 5).
+  if (data.type !== 'MISMATCH') {
+    await supersedeOlderFacts(ctx.tx, {
+      conversationId: ctx.conversationId, bookingId: ctx.bookingId, field: data.field, sourceMessageId: data.messageId, now: ctx.now,
+    })
+  }
   counters.notify.push({
     kind: data.type,
     conversationId: ctx.conversationId,
@@ -210,6 +282,10 @@ async function proposeChange(
   p: { field: FieldKey; value: string; messageId: string | null }
 ): Promise<boolean> {
   if (ctx.blocked.has(key(p.field, p.value))) return false
+  // Batas air: pesan yang sudah dilewati CHANGE/TASK yang ditutup tidak mengusulkan apa pun lagi.
+  const marks = await watermarks(ctx)
+  await loadTimes(ctx, [p.messageId])
+  if (!aboveWatermark(ctx, marks.change, p.field, p.messageId)) return false
   const group = changeGroup(p.field, p.value, ctx.booking)
   const sameField = open.filter((r) => CHANGE_TYPES.includes(r.type) && r.field === p.field)
   if (sameField.some((r) => proposedOf(r.proposedValue) === p.value)) return false
@@ -319,9 +395,12 @@ export async function applyExtraction(
   const c = await run(conversationId, now, 'BOT', async (ctx, counters) => {
     const { tx } = ctx
     const existing = (await tx.bookingFact.findMany({ where: { conversationId, supersededAt: null } })).filter((f) => inScope(f, ctx.bookingId))
-    for (const f of ex.facts) {
+    const marks = await watermarks(ctx)
+    for (const f of await newestPerField(ctx, ex.facts)) {
       const same = existing.filter((e) => e.field === f.field && e.supersededAt === null)
       if (same.some((e) => e.value === f.value)) continue
+      // Pesan lama yang terbaca ulang tidak menimpa fakta/permintaan yang lebih baru.
+      if (!aboveWatermark(ctx, marks.fact, f.field, f.messageId)) continue
       for (const old of same) {
         await tx.bookingFact.update({ where: { id: old.id }, data: { supersededAt: now } })
         old.supersededAt = now
@@ -333,7 +412,7 @@ export async function applyExtraction(
       counters.touched = true
     }
     const open = await loadOpen(ctx, CHANGE_TYPES)
-    for (const ch of ex.changes) {
+    for (const ch of await newestPerField(ctx, ex.changes)) {
       if (changeAlreadyApplied({ field: ch.field, value: ch.value }, ctx.booking)) continue
       if (await proposeChange(ctx, counters, open, { field: ch.field, value: ch.value, messageId: ch.messageId })) counters.touched = true
     }

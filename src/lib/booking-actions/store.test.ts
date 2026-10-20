@@ -14,6 +14,8 @@ import { broadcast } from '@/lib/realtime'
 import { callLLM } from '@/lib/bot/llm'
 import { notifyBookingAction } from '@/lib/push/send'
 import { applyExtraction, reevaluateBookingActions } from './store'
+import { parseExtraction } from './extract'
+import { supersedeOlderFacts } from './fact-supersede'
 
 const db = prisma as unknown as DeepMockProxy<PrismaClient>
 const NOW = new Date('2026-10-20T03:00:00Z')
@@ -320,3 +322,133 @@ describe('closeAction bersyarat (Task 11 fix 2)', () => {
   })
 })
 
+
+describe('final review Important 2: re-reading old messages (watermark + newest per field)', () => {
+  beforeEach(() => {
+    msgTimes = { m1: '2026-10-20T01:00:00Z', m2: '2026-10-20T02:00:00Z', m3: '2026-10-20T03:00:00Z' }
+    booking = { booking_id: 77, total_pax: 4, pickup: { meeting_point: 'Surabaya Airport', pickup_time: '10:30' } } as BookingData
+  })
+
+  it('one extraction with two values for a field keeps the NEWEST message, not the last in LLM output', async () => {
+    await applyExtraction('c1', ex({
+      changes: [item('pickup_time', '09:00', 'm3'), item('pickup_time', '10:00', 'm1')],
+      facts: [item('total_pax', '4', 'm3'), item('total_pax', '5', 'm1')],
+    }), NOW)
+    expect(actions.filter((a) => a.type === 'CHANGE').map((a) => a.proposedValue)).toEqual(['09:00'])
+    expect(facts.filter((f) => f.supersededAt === null && f.field === 'total_pax').map((f) => f.value)).toEqual(['4'])
+    expect(actions.some((a) => a.type === 'MISMATCH')).toBe(false)
+  })
+
+  it('an older fact re-read later does not supersede a newer active fact', async () => {
+    await applyExtraction('c1', ex({ facts: [item('total_pax', '4', 'm3')] }), NOW)
+    await applyExtraction('c1', ex({ facts: [item('total_pax', '5', 'm1')] }), NOW)
+    expect(facts.map((f) => [f.value, f.supersededAt])).toEqual([['4', null]])
+    expect(actions).toHaveLength(0)
+  })
+
+  it('a proposal from a message at or before a REJECTED/EXECUTED/SUPERSEDED card of the same field is skipped; a newer message still proposes', async () => {
+    for (const [state, closedReason] of [['REJECTED', 'REJECTED'], ['EXECUTED', 'EXECUTED'], ['SUPERSEDED', 'REPLACED'], ['RESOLVED', 'MATCHED_IN_BACKOFFICE']]) {
+      actions = []
+      actions.push({ id: 'old', conversationId: 'c1', bookingId: '77', type: 'CHANGE', field: 'pickup_time', proposedValue: '09:00', state, closedReason, closedById: null, sourceMessageId: 'm2' })
+      expect((await applyExtraction('c1', ex({ changes: [item('pickup_time', '11:00', 'm1')] }), NOW)).created).toBe(0)
+      expect((await applyExtraction('c1', ex({ changes: [item('pickup_time', '11:15', 'm2')] }), NOW)).created).toBe(0)
+      expect((await applyExtraction('c1', ex({ changes: [item('pickup_time', '11:30', 'm3')] }), NOW)).created).toBe(1)
+    }
+  })
+
+  it('watermark is per booking: a closed card of another booking does not block', async () => {
+    actions.push({ id: 'old', conversationId: 'c1', bookingId: '55', type: 'CHANGE', field: 'pickup_time', proposedValue: '09:00', state: 'EXECUTED', closedReason: 'EXECUTED', sourceMessageId: 'm2' })
+    expect((await applyExtraction('c1', ex({ changes: [item('pickup_time', '11:00', 'm1')] }), NOW)).created).toBe(1)
+  })
+})
+
+describe('final review Important 5: a change supersedes older facts of its field', () => {
+  beforeEach(() => {
+    msgTimes = { m1: '2026-10-20T01:00:00Z', m2: '2026-10-20T02:00:00Z', m3: '2026-10-20T03:00:00Z', m4: '2026-10-20T04:00:00Z' }
+  })
+
+  it('pickup_point CHANGE supersedes older pickup_detail/pickup_arrival facts, not newer ones nor the drop side', async () => {
+    booking = { booking_id: 77, total_pax: 4, pickup: { meeting_point: 'Surabaya Airport', meeting_point_value: 'GA 1', meeting_point_arrival: 'GA 1' }, dropoff: { drop_point: 'Surabaya Hotel', drop_point_value: 'Hotel X' } } as BookingData
+    await applyExtraction('c1', ex({ facts: [item('pickup_detail', 'GA 1', 'm1'), item('pickup_arrival', 'GA 1', 'm2'), item('drop_detail', 'Hotel X', 'm1')] }), NOW)
+    await applyExtraction('c1', ex({ changes: [item('pickup_point', 'Surabaya Hotel', 'm3')] }), NOW)
+    const state = Object.fromEntries(facts.map((f) => [f.field, f.supersededAt]))
+    expect(state).toEqual({ pickup_detail: NOW, pickup_arrival: NOW, drop_detail: null })
+  })
+
+  it('a fact NEWER than the change stays active', async () => {
+    booking = { booking_id: 77, total_pax: 4, pickup: { meeting_point: 'Surabaya Airport', pickup_time: '10:30' } } as BookingData
+    await applyExtraction('c1', ex({ facts: [item('pickup_time', '10:30', 'm4')] }), NOW)
+    await applyExtraction('c1', ex({ changes: [item('pickup_time', '09:00', 'm2')] }), NOW)
+    expect(facts.map((f) => f.supersededAt)).toEqual([null])
+  })
+})
+
+describe('final review regression: execute then re-extract the last 20 messages creates no card', () => {
+  const ids = ['m1', 'm2', 'm3']
+  const inbound = new Set(ids)
+  const reextract = (raw: string) => applyExtraction('c1', parseExtraction(raw, ids, inbound), NOW)
+  /** Simulasi "Setujui" yang sukses (execute.ts): EXECUTED, booking memuat nilainya, fakta lama usang. */
+  const executeOpenChange = async (apply: (b: BookingData) => BookingData) => {
+    const a = actions.find((x) => x.type === 'CHANGE' && x.state === 'OPEN')!
+    Object.assign(a, { state: 'EXECUTED', closedReason: 'EXECUTED', closedById: 'acc1', closedAt: NOW })
+    booking = apply(booking!)
+    await supersedeOlderFacts(db, { conversationId: 'c1', bookingId: '77', field: a.field as string, sourceMessageId: a.sourceMessageId as string, now: NOW })
+  }
+  const opened = () => actions.filter((a) => a.state === 'OPEN')
+
+  beforeEach(() => {
+    msgTimes = { m1: '2026-10-20T01:00:00Z', m2: '2026-10-20T02:00:00Z', m3: '2026-10-20T03:00:00Z' }
+  })
+
+  it('normal time: 10:30 -> 09:00 executed; re-reading (incl. the old 10:30 message) creates nothing', async () => {
+    booking = { booking_id: 77, total_pax: 4, pickup: { meeting_point: 'Surabaya Airport', pickup_time: '10:30' } } as BookingData
+    await reextract('{"changes":[{"field":"pickup_time","value":"09:00","pesan":2}],"facts":[{"field":"pickup_time","value":"10:30","pesan":1}]}')
+    expect(opened().map((a) => a.proposedValue)).toEqual(['09:00'])
+    await executeOpenChange((b) => ({ ...b, pickup: { ...b.pickup, pickup_time: '09:00' } }))
+    const before = actions.length
+
+    const r1 = await reextract('{"changes":[{"field":"pickup_time","value":"09:00","pesan":2}],"facts":[{"field":"pickup_time","value":"10:30","pesan":1}]}')
+    const r2 = await reextract('{"changes":[{"field":"pickup_time","value":"10:30","pesan":1}],"facts":[]}')
+    expect([r1.created, r2.created]).toEqual([0, 0])
+    expect(actions).toHaveLength(before)
+    expect(opened()).toHaveLength(0)
+  })
+
+  it("'07:00': 10:30 -> 07:00 executed; re-reading creates nothing (07:00 counts as applied)", async () => {
+    booking = { booking_id: 77, total_pax: 4, pickup: { meeting_point: 'Surabaya Airport', pickup_time: '10:30' } } as BookingData
+    await reextract('{"changes":[{"field":"pickup_time","value":"7 pagi","pesan":2}],"facts":[]}')
+    expect(opened().map((a) => a.proposedValue)).toEqual(['07:00'])
+    await executeOpenChange((b) => ({ ...b, pickup: { ...b.pickup, pickup_time: '07:00' } }))
+    const before = actions.length
+
+    expect((await reextract('{"changes":[{"field":"pickup_time","value":"07:00","pesan":2}],"facts":[]}')).created).toBe(0)
+    expect((await reextract('{"changes":[{"field":"pickup_time","value":"10:30","pesan":1}],"facts":[]}')).created).toBe(0)
+    expect(actions).toHaveLength(before)
+    expect(opened()).toHaveLength(0)
+  })
+
+  it('reordered tshirt sizes: backoffice "M x 2, L x 1" vs chat "L x 1, M x 2" creates nothing', async () => {
+    booking = { booking_id: 77, total_pax: 3, tshirtSize: 'M x 3', pickup: { meeting_point: 'Surabaya Airport' } } as BookingData
+    await reextract('{"changes":[{"field":"tshirt_sizes","value":"L x 1, M x 2","pesan":2}],"facts":[]}')
+    expect(opened().map((a) => a.proposedValue)).toEqual(['M x 2, L x 1'])
+    await executeOpenChange((b) => ({ ...b, tshirtSize: 'M x 2, L x 1' }))
+    const before = actions.length
+
+    expect((await reextract('{"changes":[{"field":"tshirt_sizes","value":"l x 1, 2 m","pesan":2}],"facts":[{"field":"tshirt_sizes","value":"L x 1, M x 2","pesan":3}]}')).created).toBe(0)
+    expect(actions).toHaveLength(before)
+    expect(opened()).toHaveLength(0)
+  })
+
+  it('older fact: the fact stated before the executed change does not come back as a MISMATCH', async () => {
+    booking = { booking_id: 77, total_pax: 4, pickup: { meeting_point: 'Surabaya Airport', pickup_time: '10:30' } } as BookingData
+    await reextract('{"changes":[],"facts":[{"field":"pickup_time","value":"10:30","pesan":1}]}')
+    await reextract('{"changes":[{"field":"pickup_time","value":"09:00","pesan":2}],"facts":[]}')
+    await executeOpenChange((b) => ({ ...b, pickup: { ...b.pickup, pickup_time: '09:00' } }))
+    const before = actions.length
+
+    expect((await reextract('{"changes":[],"facts":[{"field":"pickup_time","value":"10:30","pesan":1}]}')).created).toBe(0)
+    expect(await reevaluateBookingActions('c1', NOW)).toEqual({ resolved: 0, opened: 0 })
+    expect(actions).toHaveLength(before)
+    expect(actions.some((a) => a.type === 'MISMATCH')).toBe(false)
+  })
+})
