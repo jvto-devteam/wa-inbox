@@ -36,6 +36,7 @@ import { openPipelineRun, traceClose, traceStep } from '@/lib/pipeline/tracer'
 import { scheduleChatReviewRefresh } from '@/lib/chat-review/auto-refresh'
 import { extractBookingSignals } from './extract'
 import { applyExtraction, reevaluateBookingActions } from './store'
+import { autoApplyCreated } from './auto-apply'
 
 export const BOOKING_EXTRACTION_DEBOUNCE_MS = 8_000
 const TRANSCRIPT_MESSAGES = 20
@@ -110,8 +111,10 @@ async function runExtraction(conversationId: string): Promise<void> {
       traceClose(run, 'gagal', { alasan: 'ekstraksi gagal' })
       return
     }
-    await applyExtraction(conversationId, extraction)
+    const applied = await applyExtraction(conversationId, extraction)
     await reevaluateBookingActions(conversationId)
+    // Task 11b: kartu CHANGE baru yang kelompoknya disetel ALWAYS diterapkan otomatis. Tidak pernah melempar.
+    await autoApplyCreated(applied.changeIds)
     // Panel kanan Inbox ikut terbaru. Hanya mencatat lalu kembali; tidak pernah melempar.
     scheduleChatReviewRefresh(conversationId)
     traceClose(run, 'selesai')

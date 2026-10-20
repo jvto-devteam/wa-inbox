@@ -17,6 +17,7 @@ import {
   valueText,
   type BookingActionsResponse,
   type BookingActionView,
+  type BookingExecutedView,
   type BookingImpactView,
 } from '@/lib/booking-actions/view'
 
@@ -27,6 +28,9 @@ import {
  * `writeEnabled` false (nilai dari server). Field tanpa jalur tulis (R16) hanya Tolak/Selesai.
  * Kartu titik punya isian detail kedua (R19, terisi dari kartu detail pendamping). Kartu titik <-> detail
  * sisi yang sama ditulis bersama (R17); kartu jam disetujui sendiri (R20).
+ *
+ * Task 11b: perubahan yang sudah diterapkan (manual atau otomatis) tampil 24 jam (`EXECUTED_VISIBLE_MS`, dari server)
+ * dengan tombol "Batalkan" (PATCH op revert, dua langkah karena menulis booking produksi). Terbuka untuk semua yang login.
  */
 
 type Op = 'reject' | 'dismiss' | 'done' | 'not_needed'
@@ -253,6 +257,46 @@ function ActionCard({
   )
 }
 
+function ExecutedCard({ item, busy, onRevert }: { item: BookingExecutedView; busy: boolean; onRevert: (id: string) => void }) {
+  const [confirming, setConfirming] = useState(false)
+  const label = fieldLabel(item.field)
+  const auto = item.closedReason === 'AUTO_APPLIED'
+  return (
+    <li className="space-y-2 rounded-md border border-line bg-surface p-3 break-words" aria-label={`Diterapkan: ${label}`}>
+      <div className="flex flex-wrap items-center gap-2">
+        <Badge variant="success">{auto ? 'Diterapkan otomatis' : 'Diterapkan'}</Badge>
+      </div>
+      <p className="text-sm text-ink">
+        {label}: {valueText(item.oldValue)} → <span className="font-medium">{valueText(item.newValue)}</span>
+      </p>
+      {confirming ? (
+        <div className="flex flex-col gap-2">
+          <p className="text-sm text-ink-muted">Nilai di booking dikembalikan ke {valueText(item.oldValue)}.</p>
+          <Button
+            type="button"
+            variant="outline"
+            className={BTN}
+            disabled={busy}
+            onClick={() => {
+              setConfirming(false)
+              onRevert(item.id)
+            }}
+          >
+            {busy ? 'Membatalkan…' : 'Ya, batalkan'}
+          </Button>
+          <Button type="button" variant="ghost" className={BTN} disabled={busy} onClick={() => setConfirming(false)}>
+            Tidak
+          </Button>
+        </div>
+      ) : (
+        <Button type="button" variant="outline" className={BTN} disabled={busy} onClick={() => setConfirming(true)}>
+          Batalkan
+        </Button>
+      )}
+    </li>
+  )
+}
+
 /** Kartu CHANGE OPEN lain di sisi yang sama yang ikut ditulis saat kartu ini disetujui (R17). */
 function companionsOf(action: BookingActionView, all: BookingActionView[]): BookingActionView[] {
   if (action.type !== 'CHANGE') return []
@@ -294,7 +338,7 @@ export function BookingActionsSection({ conversationId }: { conversationId: stri
     return () => es.close()
   }, [conversationId, load])
 
-  async function patch(id: string, body: { op: Op } | { op: 'execute'; value: string; detail?: string }) {
+  async function patch(id: string, body: { op: Op } | { op: 'execute'; value: string; detail?: string } | { op: 'revert' }) {
     setBusyId(id)
     setError(null)
     try {
@@ -313,7 +357,7 @@ export function BookingActionsSection({ conversationId }: { conversationId: stri
     }
   }
 
-  if (!data || (data.actions.length === 0 && data.history.length === 0)) return null
+  if (!data || (data.actions.length === 0 && data.history.length === 0 && (data.executed ?? []).length === 0)) return null
 
   return (
     <section aria-label="Tindakan booking" className="space-y-2">
@@ -332,6 +376,13 @@ export function BookingActionsSection({ conversationId }: { conversationId: stri
               onOp={(id, op) => void patch(id, { op })}
               onExecute={(id, value, detail) => void patch(id, detail === undefined ? { op: 'execute', value } : { op: 'execute', value, detail })}
             />
+          ))}
+        </ul>
+      )}
+      {(data.executed ?? []).length > 0 && (
+        <ul aria-label="Perubahan yang sudah diterapkan" className="flex flex-col gap-2">
+          {(data.executed ?? []).map((x) => (
+            <ExecutedCard key={x.id} item={x} busy={busyId === x.id} onRevert={(id) => void patch(id, { op: 'revert' })} />
           ))}
         </ul>
       )}

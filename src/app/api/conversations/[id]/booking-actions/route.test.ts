@@ -36,6 +36,25 @@ beforeEach(() => {
 })
 
 describe('GET /api/conversations/[id]/booking-actions', () => {
+  it('lists recently EXECUTED actions (last 24 h, current booking) with the old value from their EXECUTED event', async () => {
+    mockPrisma.conversation.findUnique.mockResolvedValue({ bookingData: bookingData('X') } as never)
+    mockPrisma.bookingAction.findMany.mockImplementation((async ({ where }: { where: { state?: string } }) =>
+      where.state === 'EXECUTED'
+        ? [
+            row({ id: 'x1', field: 'pickup_time', proposedValue: '09:00', state: 'EXECUTED', closedReason: 'AUTO_APPLIED', closedAt: new Date('2026-10-20T01:00:00Z') }),
+            row({ id: 'x2', bookingId: '12', state: 'EXECUTED', closedAt: new Date('2026-10-20T01:00:00Z') }),
+          ]
+        : []) as never)
+    mockPrisma.bookingActionEvent.findMany.mockResolvedValue([{ id: 'e1', actionId: 'x1', event: 'EXECUTED', oldValue: '10:30', newValue: '09:00' }] as never)
+    const body = await (await GET(req(), ctx)).json()
+    expect(body.executed).toEqual([{
+      id: 'x1', conversationId: 'c1', field: 'pickup_time', tier: 'AI', newValue: '09:00', oldValue: '10:30',
+      closedReason: 'AUTO_APPLIED', closedAt: '2026-10-20T01:00:00.000Z',
+    }])
+    const q = mockPrisma.bookingAction.findMany.mock.calls.map(([a]) => a?.where).find((w) => w?.state === 'EXECUTED')
+    expect(q).toMatchObject({ conversationId: 'c1', state: 'EXECUTED', type: 'CHANGE', closedAt: { gte: expect.any(Date) } })
+  })
+
   it('401 without session', async () => {
     vi.mocked(verifySessionToken).mockResolvedValue(null)
     expect((await GET(req(), ctx)).status).toBe(401)

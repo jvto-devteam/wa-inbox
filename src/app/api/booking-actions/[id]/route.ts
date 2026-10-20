@@ -4,7 +4,7 @@ import { prisma } from '@/lib/db'
 import { getSession } from '@/lib/auth/get-session'
 import { recordEvent } from '@/lib/booking-actions/history'
 import { broadcast } from '@/lib/realtime'
-import { executeBookingAction } from '@/lib/booking-actions/execute'
+import { executeBookingAction, revertBookingAction } from '@/lib/booking-actions/execute'
 
 /**
  * Tutup/tolak/eksekusi satu tindakan booking dari Inbox. Terbuka untuk semua akun yang login (keputusan
@@ -12,6 +12,7 @@ import { executeBookingAction } from '@/lib/booking-actions/execute'
  * `closedById` WAJIB terisi: store.ts tidak membuat ulang aksi yang ditutup orang untuk field+nilai
  * yang sama.
  *
+ * `revert` (Task 11b, "Batalkan") menulis balik nilai lama sebuah aksi EXECUTED; `lib/booking-actions/execute.ts`.
  * `execute` (Task 10/11) MENULIS ke backoffice produksi; seluruh alurnya di `lib/booking-actions/execute.ts`.
  */
 const closeSchema = z.discriminatedUnion('op', [
@@ -26,7 +27,9 @@ const executeSchema = z.object({
   value: z.string().max(300).optional(),
   detail: z.string().max(300).optional(),
 })
-const bodySchema = z.union([closeSchema, executeSchema])
+// Task 11b: "Batalkan" hanya untuk aksi EXECUTED (diperiksa di revertBookingAction).
+const revertSchema = z.object({ op: z.literal('revert') })
+const bodySchema = z.union([closeSchema, executeSchema, revertSchema])
 
 type Op = z.infer<typeof closeSchema>['op']
 
@@ -56,6 +59,10 @@ export async function PATCH(req: Request, { params }: Ctx) {
     const body = parsed.data
     if (body.op === 'execute') {
       const result = await executeBookingAction({ actionId: id, accountId: session.accountId, value: body.value, detail: body.detail })
+      return NextResponse.json(result.body, { status: result.status })
+    }
+    if (body.op === 'revert') {
+      const result = await revertBookingAction({ actionId: id, accountId: session.accountId })
       return NextResponse.json(result.body, { status: result.status })
     }
     const text = body.op === 'reject' || body.op === 'dismiss' ? body.reason : body.note

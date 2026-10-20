@@ -7,11 +7,13 @@ import { currentBookingId, inCurrentBooking } from '@/lib/booking-actions/scope'
 import type { BookingData } from '@/lib/booking/client'
 import { writeConfigured } from '@/lib/booking/backoffice-client'
 import { releaseStaleExecuting } from '@/lib/booking-actions/execute'
+import { EXECUTED_VISIBLE_MS } from '@/lib/booking-actions/view'
 
 /**
  * Kartu tindakan booking di panel Inbox: aksi OPEN percakapan ini + 50 kejadian riwayat terbaru.
  * Terbuka untuk semua yang login (keputusan owner 2026-10-19), tanpa hasAdminPowers.
  * Nilai "lama" dibaca dari bookingData SAAT INI; dampak TASK dihitung saat ditampilkan.
+ * Aksi EXECUTED (manual atau otomatis) dalam 24 jam terakhir ikut dikirim sebagai `executed` supaya bisa "Batalkan" (Task 11b).
  * Klaim eksekusi basi (EXECUTING > 2 menit, proses mati di tengah) dilepas ke OPEN di sini, sebelum
  * daftar dibaca, supaya kartunya muncul lagi saat admin membuka panel (Task 11, `execute.ts`).
  */
@@ -48,7 +50,8 @@ export async function GET(req: Request, { params }: Ctx) {
       console.error('releaseStaleExecuting gagal', { conversationId: id, error: error instanceof Error ? error.name : 'unknown' })
     }
 
-    const [rows, history] = await Promise.all([
+    const since = new Date(Date.now() - EXECUTED_VISIBLE_MS)
+    const [rows, history, executedRows] = await Promise.all([
       prisma.bookingAction.findMany({
         where: { conversationId: id, state: 'OPEN', type: { in: ['CHANGE', 'TASK', 'MISMATCH', 'DATA_REQUEST'] } },
         orderBy: { createdAt: 'asc' },
@@ -57,6 +60,10 @@ export async function GET(req: Request, { params }: Ctx) {
         where: { conversationId: id },
         orderBy: { createdAt: 'desc' },
         take: HISTORY_LIMIT,
+      }),
+      prisma.bookingAction.findMany({
+        where: { conversationId: id, state: 'EXECUTED', type: 'CHANGE', closedAt: { gte: since } },
+        orderBy: { closedAt: 'desc' },
       }),
     ])
 
@@ -73,6 +80,27 @@ export async function GET(req: Request, { params }: Ctx) {
       }),
     )
 
+    const executedScoped = (executedRows ?? []).filter((r) => inCurrentBooking(r, bookingId))
+    const executedEvents = executedScoped.length > 0
+      ? ((await prisma.bookingActionEvent.findMany({
+          where: { actionId: { in: executedScoped.map((r) => r.id) }, event: 'EXECUTED' },
+          orderBy: { createdAt: 'desc' },
+        })) ?? [])
+      : []
+    const executed = executedScoped.map((r) => {
+      const ev = executedEvents.find((e) => e.actionId === r.id)
+      return {
+        id: r.id,
+        conversationId: r.conversationId,
+        field: r.field,
+        tier: r.tier,
+        newValue: str(r.proposedValue),
+        oldValue: str(ev?.oldValue),
+        closedReason: r.closedReason,
+        closedAt: r.closedAt ? r.closedAt.toISOString() : null,
+      }
+    })
+
     // Nama pelaku untuk riwayat. Satu kueri hanya bila ada kejadian oleh akun.
     const accountIds = [...new Set(history.map((h) => h.accountId).filter((v): v is string => v !== null))]
     const accounts = accountIds.length > 0
@@ -81,7 +109,7 @@ export async function GET(req: Request, { params }: Ctx) {
     const names = new Map((accounts ?? []).map((a) => [a.id, a.name]))
     const historyView = history.map((h) => ({ ...h, accountName: h.accountId ? (names.get(h.accountId) ?? null) : null }))
 
-    return NextResponse.json({ booking, actions, history: historyView, writeEnabled: writeConfigured() })
+    return NextResponse.json({ booking, actions, executed, history: historyView, writeEnabled: writeConfigured() })
   } catch (error) {
     console.error('GET booking-actions gagal', error)
     return NextResponse.json({ error: 'Gagal memuat tindakan booking' }, { status: 500 })

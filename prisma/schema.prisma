@@ -860,6 +860,16 @@ model Settings {
   botEnabledInstagram         Boolean        @default(false)
   botEnabledFacebook          Boolean        @default(false)
   botEnabledEmail             Boolean        @default(false)
+  /// Persetujuan perubahan booking dari chat (fitur Chat -> Aksi Booking, Task 11b). Dua nilai saja:
+  /// APPROVE = kartu menunggu "Setujui" manusia; ALWAYS = diterapkan otomatis begitu kartu dibuat
+  /// (actor SYSTEM, bisa "Batalkan"). Tugas ops (tanggal, jumlah orang, hotel) selalu ke ops dan tidak
+  /// punya sakelar. Default APPROVE: menyalakan ALWAYS = menulis ke booking produksi tanpa klik.
+  /// Divalidasi sebagai z.enum di PATCH /api/settings (kolom String, bukan enum DB, supaya migrasinya aditif).
+  /// bookingLightApproval = kelompok AI; bookingBaliApproval = kelompok BALI (kabar vendor ikut terkirim).
+  bookingLightApproval        String         @default("APPROVE")
+  bookingBaliApproval         String         @default("APPROVE")
+  /// Draf permintaan data ke tamu. Default ALWAYS (keputusan owner 2026-10-19).
+  dataRequestApproval         String         @default("ALWAYS")
 }
 
 /// Catatan setiap perubahan penting di Bot Control. SDD Manage Second §7.1.
@@ -1054,7 +1064,7 @@ model BookingAction {
   proposedValue   Json?
   /// DATA_REQUEST
   draftText       String?
-  /// OPEN | EXECUTING | EXECUTED | REJECTED | SUPERSEDED | RESOLVED | DONE | FAILED
+  /// OPEN | EXECUTING | EXECUTED | REVERTED | REJECTED | SUPERSEDED | RESOLVED | DONE | FAILED
   /// EXECUTING = diklaim "Setujui" selama menulis ke backoffice (Task 11); claimedAt > 2 menit = macet, dilepas
   state           String
   /// mis. MATCHED_IN_BACKOFFICE | CHAT_CORRECTED | DISMISSED_CHAT_WRONG | REPLACED | DATA_COMPLETE | TRIP_STARTED | MARKED_DONE | NOT_NEEDED

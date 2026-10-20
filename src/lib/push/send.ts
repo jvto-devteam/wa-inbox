@@ -64,9 +64,11 @@ export function buildPushPayload(e: BookingPushEvent): PushPayload {
   const code = e.bookingCode ? scrub(e.bookingCode) : null
   const params = new URLSearchParams({ conversation: e.conversationId })
   if (e.messageId) params.set('message', e.messageId)
+  // Perubahan yang sudah ditulis: pengingat bahwa masih bisa dibatalkan. Ditambahkan SESUDAH pemotongan ringkasan.
+  const text = e.kind === 'AUTO_APPLIED' ? `Diterapkan otomatis · ${clipped} — ketuk untuk melihat/batalkan` : clipped
   return {
     title: TITLES[e.kind],
-    body: code ? `${code}: ${clipped}` : clipped,
+    body: code ? `${code}: ${text}` : text,
     url: `/inbox?${params.toString()}`,
     tag: `booking-action:${e.actionId}`,
   }

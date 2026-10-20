@@ -46,6 +46,29 @@ describe('GET /api/settings', () => {
 })
 
 describe('PATCH /api/settings', () => {
+  it("rejects 'AUTO' for the booking approval switches and writes nothing", async () => {
+    for (const field of ['bookingLightApproval', 'bookingBaliApproval', 'dataRequestApproval']) {
+      const res = await PATCH(new Request('http://localhost/api/settings', { method: 'PATCH', headers: adminCookie, body: JSON.stringify({ [field]: 'AUTO' }) }))
+      expect(res.status).toBe(400)
+    }
+    expect(mockPrisma.settings.update).not.toHaveBeenCalled()
+  })
+
+  it('booking approval switches require an admin', async () => {
+    vi.mocked(verifySessionToken).mockResolvedValue({ accountId: 'acc_agent', role: 'AGENT', tokenVersion: 0 })
+    const res = await PATCH(new Request('http://localhost/api/settings', { method: 'PATCH', headers: adminCookie, body: JSON.stringify({ bookingLightApproval: 'ALWAYS' }) }))
+    expect(res.status).toBe(403)
+    expect(mockPrisma.settings.update).not.toHaveBeenCalled()
+  })
+
+  it('an admin saves ALWAYS/APPROVE and the audit log records the field names only', async () => {
+    mockPrisma.settings.update.mockResolvedValue({ id: 1, bookingLightApproval: 'ALWAYS' } as never)
+    const res = await PATCH(new Request('http://localhost/api/settings', { method: 'PATCH', headers: adminCookie, body: JSON.stringify({ bookingLightApproval: 'ALWAYS', bookingBaliApproval: 'APPROVE' }) }))
+    expect(res.status).toBe(200)
+    expect(mockPrisma.settings.update).toHaveBeenCalledWith({ where: { id: 1 }, data: { bookingLightApproval: 'ALWAYS', bookingBaliApproval: 'APPROVE' } })
+    expect(writeBotAuditLog).toHaveBeenCalledWith(expect.objectContaining({ action: 'UPDATE', entityKey: 'bookingBaliApproval, bookingLightApproval' }))
+  })
+
   it('updates defaultChannel when called by an admin', async () => {
     mockPrisma.settings.update.mockResolvedValue({ id: 1, defaultChannel: 'UNOFFICIAL' } as never)
 

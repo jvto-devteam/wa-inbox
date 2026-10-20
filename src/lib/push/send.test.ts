@@ -100,6 +100,13 @@ describe('summarizeAction', () => {
 })
 
 describe('buildPushPayload', () => {
+  it('AUTO_APPLIED keeps the CHANGE tag (replaces the earlier notification) and says it can be cancelled', () => {
+    const changeTag = buildPushPayload({ ...event, kind: 'CHANGE' }).tag
+    const p = buildPushPayload({ ...event, kind: 'AUTO_APPLIED', summary: 'Jam jemput → 09:00' })
+    expect(p.tag).toBe(changeTag)
+    expect(p.body).toContain('Diterapkan otomatis · Jam jemput → 09:00 — ketuk untuk melihat/batalkan')
+  })
+
   it('payload has no phone/email', () => {
     const p = buildPushPayload({ ...event, summary: 'Catatan → hubungi 081234567890 atau tamu@mail.com +62 812-3456-7890' })
     expect(p.body).not.toMatch(/\d{8,}/)

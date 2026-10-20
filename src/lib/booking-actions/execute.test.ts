@@ -15,7 +15,7 @@ import { prisma } from '@/lib/db'
 import { ensureFreshBookingData } from '@/lib/booking/client'
 import { recordEvent } from '@/lib/booking-actions/history'
 import { notifyBaliVendor } from '@/lib/booking-actions/bali-vendor'
-import { executeBookingAction, releaseStaleExecuting } from './execute'
+import { executeBookingAction, releaseStaleExecuting, revertBookingAction } from './execute'
 
 const db = prisma as unknown as DeepMockProxy<PrismaClient>
 const NOW = new Date('2026-10-20T03:00:00Z')
@@ -117,6 +117,130 @@ describe('executeBookingAction -> vendor Bali notice (Task 11a)', () => {
     vi.mocked(notifyBaliVendor).mockRejectedValueOnce(new Error('boom'))
     const r = await run('BALI')
     expect(r.status).toBe(200)
+  })
+})
+
+describe('executeBookingAction as SYSTEM (auto-apply, Task 11b)', () => {
+  it('records SYSTEM with no account, closes EXECUTED/AUTO_APPLIED with closedById null, and stores the batch', async () => {
+    db.bookingAction.findUnique.mockResolvedValue({
+      id: 'a1', conversationId: 'c1', bookingId: '77', type: 'CHANGE', field: 'pickup_time', proposedValue: '09:00', state: 'OPEN', tier: 'AI',
+    } as never)
+    db.conversation.findUnique.mockResolvedValue({ id: 'c1', bookingData: booking(), contact: { phone: '62811' } } as never)
+    vi.mocked(ensureFreshBookingData).mockResolvedValue(booking({ pickup: { meeting_point: 'Surabaya Airport', pickup_time: '09:00' } }))
+    const r = await executeBookingAction({ actionId: 'a1', accountId: null, actor: 'SYSTEM', closedReason: 'AUTO_APPLIED', now: NOW })
+    expect(r.status).toBe(200)
+    expect(db.bookingAction.updateMany).toHaveBeenCalledWith({
+      where: { id: 'a1', state: 'EXECUTING', claimedAt: NOW },
+      data: expect.objectContaining({ state: 'EXECUTED', closedReason: 'AUTO_APPLIED', closedById: null }),
+    })
+    expect(recordEvent).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+      event: 'EXECUTED', actor: 'SYSTEM', accountId: null, oldValue: '10:30', newValue: '09:00',
+      backoffice: expect.objectContaining({ batch: ['a1'] }),
+    }))
+  })
+
+  it('a failed auto write returns the card to OPEN and records EXECUTE_FAILED as SYSTEM', async () => {
+    db.bookingAction.findUnique.mockResolvedValue({
+      id: 'a1', conversationId: 'c1', bookingId: '77', type: 'CHANGE', field: 'pickup_time', proposedValue: '09:00', state: 'OPEN', tier: 'AI',
+    } as never)
+    db.conversation.findUnique.mockResolvedValue({ id: 'c1', bookingData: booking(), contact: { phone: '62811' } } as never)
+    vi.mocked(fetch).mockResolvedValue({ ok: false, status: 500, json: async () => ({}) } as never)
+    const r = await executeBookingAction({ actionId: 'a1', accountId: null, actor: 'SYSTEM', closedReason: 'AUTO_APPLIED', now: NOW })
+    expect(r.status).toBe(502)
+    expect(db.bookingAction.updateMany).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ state: 'OPEN' }) }))
+    expect(recordEvent).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ event: 'EXECUTE_FAILED', actor: 'SYSTEM', accountId: null }))
+  })
+})
+
+describe('revertBookingAction (Task 11b)', () => {
+  const executedAction = (over: Record<string, unknown> = {}) => ({
+    id: 'a1', conversationId: 'c1', bookingId: '77', type: 'CHANGE', field: 'pickup_time', proposedValue: '09:00', state: 'EXECUTED', tier: 'AI', ...over,
+  })
+  const executedEvent = (over: Record<string, unknown> = {}) => ({
+    id: 'e1', actionId: 'a1', event: 'EXECUTED', oldValue: '10:30', newValue: '09:00', backoffice: { written: ['pickup'], batch: ['a1'] }, createdAt: NOW, ...over,
+  })
+  const nowBooking = () => booking({ pickup: { meeting_point: 'Surabaya Airport', meeting_point_value: 'GA 300', pickup_time: '09:00' } })
+  const setup = (over: { action?: Record<string, unknown>; event?: Record<string, unknown>; bd?: BookingData } = {}) => {
+    db.bookingAction.findUnique.mockResolvedValue(executedAction(over.action) as never)
+    db.bookingAction.findMany.mockResolvedValue([{ id: 'a1', field: 'pickup_time' }] as never)
+    db.bookingActionEvent.findMany.mockResolvedValue([executedEvent(over.event)] as never)
+    db.conversation.findUnique.mockResolvedValue({ id: 'c1', bookingData: over.bd ?? nowBooking(), contact: { phone: '62811' } } as never)
+    vi.mocked(ensureFreshBookingData).mockResolvedValue(booking())
+  }
+
+  it('revert writes old value and records REVERTED', async () => {
+    setup()
+    const r = await revertBookingAction({ actionId: 'a1', accountId: 'acc1' })
+    expect(r).toEqual({ status: 200, body: { ok: true, state: 'REVERTED', reverted: ['a1'] } })
+    const calls = vi.mocked(fetch).mock.calls
+    expect(calls).toHaveLength(1)
+    expect(Object.fromEntries(new URLSearchParams(String((calls[0][1] as RequestInit).body)))).toMatchObject({ pickup_time1: '10', pickup_time2: '30' })
+    expect(db.bookingAction.updateMany).toHaveBeenCalledWith({
+      where: { id: 'a1', state: 'EXECUTED' },
+      data: expect.objectContaining({ state: 'REVERTED', closedReason: 'REVERTED', closedById: 'acc1' }),
+    })
+    expect(recordEvent).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ event: 'REVERTED', actor: 'ACCOUNT', accountId: 'acc1', oldValue: '09:00', newValue: '10:30' }))
+  })
+
+  it('only EXECUTED actions can be reverted', async () => {
+    setup({ action: { state: 'OPEN' } })
+    expect((await revertBookingAction({ actionId: 'a1', accountId: 'acc1' })).status).toBe(409)
+    setup({ action: { state: 'REVERTED' } })
+    expect((await revertBookingAction({ actionId: 'a1', accountId: 'acc1' })).status).toBe(409)
+    expect(fetch).not.toHaveBeenCalled()
+  })
+
+  it('refuses when the booking value is no longer what we wrote (someone changed it since)', async () => {
+    setup({ bd: booking({ pickup: { meeting_point: 'Surabaya Airport', pickup_time: '08:00' } }) })
+    const r = await revertBookingAction({ actionId: 'a1', accountId: 'acc1' })
+    expect(r.status).toBe(409)
+    expect(fetch).not.toHaveBeenCalled()
+  })
+
+  it('refuses when the previous value was empty (nothing sensible to write back)', async () => {
+    setup({ event: { oldValue: null } })
+    expect((await revertBookingAction({ actionId: 'a1', accountId: 'acc1' })).status).toBe(400)
+    setup({ event: { oldValue: '07:00' } })
+    expect((await revertBookingAction({ actionId: 'a1', accountId: 'acc1' })).status).toBe(400)
+    expect(fetch).not.toHaveBeenCalled()
+  })
+
+  it('a failed write keeps the card EXECUTED and records EXECUTE_FAILED (502)', async () => {
+    setup()
+    vi.mocked(fetch).mockResolvedValue({ ok: false, status: 500, json: async () => ({}) } as never)
+    const r = await revertBookingAction({ actionId: 'a1', accountId: 'acc1' })
+    expect(r.status).toBe(502)
+    expect(db.bookingAction.updateMany).not.toHaveBeenCalled()
+    expect(recordEvent).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ event: 'EXECUTE_FAILED', actionId: 'a1' }))
+    expect(recordEvent).not.toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ event: 'REVERTED' }))
+  })
+
+  it('double revert: the loser of the conditional update records nothing and gets 409', async () => {
+    setup()
+    db.bookingAction.updateMany.mockResolvedValue({ count: 0 } as never)
+    const r = await revertBookingAction({ actionId: 'a1', accountId: 'acc1' })
+    expect(r.status).toBe(409)
+    expect(recordEvent).not.toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ event: 'REVERTED' }))
+  })
+
+  it('reverts the whole batch written together (point + detail) in one patch', async () => {
+    db.bookingAction.findUnique.mockResolvedValue(executedAction({ field: 'pickup_point', proposedValue: 'Surabaya Hotel' }) as never)
+    db.bookingAction.findMany.mockResolvedValue([{ id: 'a1', field: 'pickup_point' }, { id: 'a2', field: 'pickup_detail' }] as never)
+    db.bookingActionEvent.findMany.mockResolvedValue([
+      executedEvent({ oldValue: 'Surabaya Airport', newValue: 'Surabaya Hotel', backoffice: { batch: ['a1', 'a2'] } }),
+      executedEvent({ id: 'e2', actionId: 'a2', oldValue: 'GA 300', newValue: 'Hotel Majapahit', backoffice: { batch: ['a1', 'a2'] } }),
+    ] as never)
+    db.conversation.findUnique.mockResolvedValue({
+      id: 'c1', contact: { phone: '62811' },
+      bookingData: booking({ pickup: { meeting_point: 'Surabaya Hotel', meeting_point_value: 'Hotel Majapahit', pickup_time: '10:30' } }),
+    } as never)
+    vi.mocked(ensureFreshBookingData).mockResolvedValue(booking())
+    const r = await revertBookingAction({ actionId: 'a1', accountId: 'acc1' })
+    expect(r.status).toBe(200)
+    expect(vi.mocked(fetch).mock.calls).toHaveLength(1)
+    expect(Object.fromEntries(new URLSearchParams(String((vi.mocked(fetch).mock.calls[0][1] as RequestInit).body)))).toMatchObject({ meeting_point: 'Surabaya Airport' })
+    expect(String((vi.mocked(fetch).mock.calls[0][1] as RequestInit).body)).toContain('GA+300')
+    expect(recordEvent).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ event: 'REVERTED', actionId: 'a2' }))
   })
 })
 

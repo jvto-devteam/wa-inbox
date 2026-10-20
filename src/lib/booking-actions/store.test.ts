@@ -169,7 +169,7 @@ describe('notifikasi push (Task 8b)', () => {
     let committed = false
     db.$transaction.mockImplementation((async (cb: (tx: unknown) => unknown) => { const r = await cb(db); committed = true; return r }) as never)
     vi.mocked(notifyBookingAction).mockImplementation((() => { expect(committed).toBe(true); throw new Error('boom') }) as never)
-    await expect(applyExtraction('c1', ex({ changes: [item('pickup_point', 'Surabaya Hotel', 'm1')] }), NOW)).resolves.toEqual({ created: 1 })
+    await expect(applyExtraction('c1', ex({ changes: [item('pickup_point', 'Surabaya Hotel', 'm1')] }), NOW)).resolves.toMatchObject({ created: 1 })
     expect(notifyBookingAction).toHaveBeenCalledTimes(1)
   })
 })
@@ -234,6 +234,14 @@ describe('kunci, ditutup orang, terbaru menang, cakupan booking', () => {
     await applyExtraction('c1', ex({ changes: [item('pickup_point', 'Surabaya Hotel', 'm1')] }), NOW)
     Object.assign(actions[0], { state: 'REJECTED', closedReason: 'REJECTED', closedById: 'acc1' })
     expect((await applyExtraction('c1', ex({ changes: [item('pickup_point', 'Surabaya Hotel', 'm1')] }), NOW)).created).toBe(0)
+  })
+
+  it('CHANGE yang dibatalkan (REVERTED) tidak diusulkan lagi, dan changeIds memuat kartu CHANGE baru', async () => {
+    const first = await applyExtraction('c1', ex({ changes: [item('pickup_point', 'Surabaya Hotel', 'm1')] }), NOW)
+    expect(first.changeIds).toEqual([actions[0].id])
+    Object.assign(actions[0], { state: 'REVERTED', closedReason: 'REVERTED', closedById: 'acc1' })
+    const again = await applyExtraction('c1', ex({ changes: [item('pickup_point', 'Surabaya Hotel', 'm1')] }), NOW)
+    expect(again).toEqual({ created: 0, changeIds: [] })
   })
 
   it('terbaru menang: fakta isi-data yang lebih baru menggantikan CHANGE eksplisit lama; yang lebih lama tidak', async () => {

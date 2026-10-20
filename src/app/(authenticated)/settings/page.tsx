@@ -13,6 +13,7 @@ import { UserManagementSection } from '@/components/settings/UserManagementSecti
 import { WebhookCredentialsPanel } from '@/components/settings/WebhookCredentialsPanel'
 import { ApiClientsPanel } from '@/components/settings/ApiClientsPanel'
 import { MailAccountsPanel } from '@/components/settings/MailAccountsPanel'
+import { BookingApprovalPanel, type ApprovalField, type ApprovalMode } from '@/components/settings/BookingApprovalPanel'
 import { hasAdminPowers } from '@/lib/bot-control/permissions'
 import { fetchJson } from '@/lib/fetch-json'
 import {
@@ -24,11 +25,14 @@ import {
 
 type Settings = {
   defaultChannel: 'OFFICIAL' | 'UNOFFICIAL'
+  bookingLightApproval?: ApprovalMode
+  bookingBaliApproval?: ApprovalMode
+  dataRequestApproval?: ApprovalMode
 } & SafetyThresholds
 
 const SAFETY_FIELDS = Object.keys(SAFETY_BOUNDS) as SafetyBoundKey[]
 
-type SettingsSectionId = 'jalur' | 'nomor' | 'pengaman' | 'halaman-lain' | 'pengguna' | 'webhook' | 'api-client' | 'kotak-surat'
+type SettingsSectionId = 'jalur' | 'nomor' | 'persetujuan-booking' | 'pengaman' | 'halaman-lain' | 'pengguna' | 'webhook' | 'api-client' | 'kotak-surat'
 
 /**
  * Bagian-bagian halaman ini, dan urutannya di sidebar kedua.
@@ -43,6 +47,7 @@ type SettingsSectionId = 'jalur' | 'nomor' | 'pengaman' | 'halaman-lain' | 'peng
 const SETTINGS_SECTIONS: ReadonlyArray<{ id: SettingsSectionId; label: string; adminOnly?: boolean }> = [
   { id: 'jalur', label: 'Default jalur kirim' },
   { id: 'nomor', label: 'Status nomor' },
+  { id: 'persetujuan-booking', label: 'Persetujuan perubahan booking' },
   { id: 'pengaman', label: 'Pengaman outbound', adminOnly: true },
   { id: 'halaman-lain', label: 'Kelola di halaman lain', adminOnly: true },
   { id: 'pengguna', label: 'Manajemen pengguna', adminOnly: true },
@@ -122,6 +127,16 @@ export default function SettingsPage() {
       setSettings(await fetchJson<Settings>('/api/settings', { method: 'PATCH', body: JSON.stringify({ defaultChannel }) }))
     } catch {
       // Leaves the select showing the last server-confirmed value.
+    }
+  }
+
+  /** Persetujuan perubahan booking: disimpan saat pilihan diganti. Galat dikembalikan ke panel, bukan ditelan. */
+  async function updateApproval(field: ApprovalField, value: ApprovalMode): Promise<string | null> {
+    try {
+      setSettings(await fetchJson<Settings>('/api/settings', { method: 'PATCH', body: JSON.stringify({ [field]: value }) }))
+      return null
+    } catch (err: unknown) {
+      return err instanceof Error ? err.message : 'Gagal menyimpan; pengaturan tetap seperti sebelumnya.'
     }
   }
 
@@ -226,6 +241,18 @@ export default function SettingsPage() {
                 </Badge>
               </div>
             </FormSection>
+          )}
+
+          {activeId === 'persetujuan-booking' && (
+            <BookingApprovalPanel
+              values={{
+                bookingLightApproval: settings.bookingLightApproval ?? 'APPROVE',
+                bookingBaliApproval: settings.bookingBaliApproval ?? 'APPROVE',
+                dataRequestApproval: settings.dataRequestApproval ?? 'ALWAYS',
+              }}
+              disabled={!admin}
+              onSave={updateApproval}
+            />
           )}
 
           {activeId === 'pengaman' && (

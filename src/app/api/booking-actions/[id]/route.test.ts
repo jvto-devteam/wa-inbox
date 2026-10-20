@@ -161,7 +161,7 @@ describe('PATCH op execute (Task 10 + 11)', () => {
     })
     expect(events()).toEqual([expect.objectContaining({
       event: 'EXECUTED', actor: 'ACCOUNT', accountId: 'acc1', actionId: 'a1', conversationId: 'c1', bookingId: '77',
-      oldValue: '10:30', newValue: '09:00', backoffice: { written: ['pickup'], httpStatus: 200 },
+      oldValue: '10:30', newValue: '09:00', backoffice: { written: ['pickup'], httpStatus: 200, batch: ['a1'] },
     })])
     expect(reevaluateBookingActions).toHaveBeenCalledWith('c1')
     expect(broadcast).toHaveBeenCalledWith({ type: 'booking-actions.changed', conversationId: 'c1' })
@@ -408,5 +408,46 @@ describe('PATCH op execute (Task 10 + 11)', () => {
     mockPrisma.bookingAction.findUnique.mockResolvedValue(action({ field: 'pickup_detail', proposedValue: 'Hotel Rahasia Tamu' }) as never)
     await PATCH(req({ op: 'execute' }), ctx)
     expect(JSON.stringify(vi.mocked(console.error).mock.calls)).not.toContain('Rahasia')
+  })
+})
+
+describe('PATCH op revert (Task 11b)', () => {
+  const nowBooking = {
+    booking_id: 77, id: 'JVTO-77', pickup: { meeting_point: 'Surabaya Airport', meeting_point_value: 'GA 300', pickup_time: '09:00' },
+  } as BookingData
+  const executed = action({ field: 'pickup_time', proposedValue: '09:00', state: 'EXECUTED' })
+
+  beforeEach(() => {
+    vi.mocked(writeConfigured).mockReturnValue(true)
+    vi.mocked(writeBookingChange).mockReset().mockResolvedValue({ status: 'ok', booking: nowBooking, written: ['pickup'] })
+    vi.mocked(reevaluateBookingActions).mockReset().mockResolvedValue({ resolved: 0, opened: 0 })
+    mockPrisma.bookingAction.findUnique.mockResolvedValue(executed as never)
+    mockPrisma.bookingAction.findMany.mockResolvedValue([{ id: 'a1', field: 'pickup_time' }] as never)
+    mockPrisma.bookingActionEvent.findMany.mockResolvedValue([
+      { id: 'e1', actionId: 'a1', event: 'EXECUTED', oldValue: '10:30', newValue: '09:00', backoffice: { batch: ['a1'] } },
+    ] as never)
+    mockPrisma.conversation.findUnique.mockResolvedValue({ bookingData: nowBooking } as never)
+    vi.spyOn(console, 'error').mockImplementation(() => undefined)
+  })
+
+  it('any logged-in AGENT can revert an EXECUTED action: old value written back, state REVERTED by that account', async () => {
+    const res = await PATCH(req({ op: 'revert' }), ctx)
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ ok: true, state: 'REVERTED', reverted: ['a1'] })
+    expect(vi.mocked(writeBookingChange).mock.calls[0][1]).toEqual({ pickup_time: '10:30' })
+    expect(mockPrisma.bookingAction.updateMany).toHaveBeenCalledWith({
+      where: { id: 'a1', state: 'EXECUTED' },
+      data: expect.objectContaining({ state: 'REVERTED', closedReason: 'REVERTED', closedById: 'acc1' }),
+    })
+    expect(recordEvent).toHaveBeenCalledWith(mockPrisma, expect.objectContaining({ event: 'REVERTED', accountId: 'acc1' }))
+  })
+
+  it('401 without a session, 409 for an action that is not EXECUTED', async () => {
+    vi.mocked(verifySessionToken).mockResolvedValue(null)
+    expect((await PATCH(req({ op: 'revert' }), ctx)).status).toBe(401)
+    vi.mocked(verifySessionToken).mockResolvedValue({ accountId: 'acc1', role: 'AGENT', tokenVersion: 0 })
+    mockPrisma.bookingAction.findUnique.mockResolvedValue(action({ state: 'OPEN' }) as never)
+    expect((await PATCH(req({ op: 'revert' }), ctx)).status).toBe(409)
+    expect(writeBookingChange).not.toHaveBeenCalled()
   })
 })

@@ -294,5 +294,25 @@ describe('BookingActionsSection', () => {
     await screen.findByLabelText('Nilai yang ditulis')
     expect(screen.queryByLabelText(DETAIL_LABEL)).not.toBeInTheDocument()
   })
+  it('recently applied changes show "Batalkan" (44px, two steps) and send op revert', async () => {
+    const executed = [{
+      id: 'x1', conversationId: 'c1', field: 'pickup_time', tier: 'AI', newValue: '09:00', oldValue: '10:30',
+      closedReason: 'AUTO_APPLIED', closedAt: '2026-10-20T01:00:00Z',
+    }]
+    let current = response({ actions: [], executed })
+    const fn = mockFetch(() => current)
+    render(<BookingActionsSection conversationId="c1" />)
+    expect(await screen.findByText('Diterapkan otomatis')).toBeInTheDocument()
+    const batalkan = screen.getByRole('button', { name: 'Batalkan' })
+    expect(batalkan.className).toContain('min-h-11')
+    fireEvent.click(batalkan)
+    expect(fn.mock.calls.some(([, init]) => init?.method === 'PATCH')).toBe(false)
+    current = response({ actions: [], executed: [] })
+    fireEvent.click(screen.getByRole('button', { name: 'Ya, batalkan' }))
+    await waitFor(() => expect(screen.queryByText('Diterapkan otomatis')).not.toBeInTheDocument())
+    const patch = fn.mock.calls.find(([, init]) => init?.method === 'PATCH')
+    expect(patch?.[0]).toBe('/api/booking-actions/x1')
+    expect(JSON.parse(String(patch?.[1]?.body))).toEqual({ op: 'revert' })
+  })
 })
 

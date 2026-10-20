@@ -16,7 +16,7 @@
  *     HEAVY -> diabaikan.
  *   - Terbaru menang: untuk field yang sama, usulan dari pesan sumber yang lebih baru menggantikan
  *     yang lebih lama (fakta maupun permintaan eksplisit).
- *   - Yang sudah ditutup ORANG (closedById terisi: ditolak/dilepas/selesai/tak perlu) tidak dibuat
+ *   - Yang sudah ditutup ORANG (closedById terisi: ditolak/dilepas/selesai/tak perlu/dibatalkan) tidak dibuat
  *     ulang untuk field + nilai yang sama; nilai lain tetap membuat kartu baru.
  *   - Usulan asli yang DIKOREKSI admin lalu dieksekusi (event CORRECTED pada aksi EXECUTED) juga tidak
  *     dibuat ulang: kartu baru dengan nilai itu akan membalik perubahan di produksi.
@@ -50,7 +50,8 @@ type Ctx = {
 type Counters = { created: number; resolved: number; opened: number; touched: boolean; notify: BookingPushEvent[] }
 
 const CHANGE_TYPES = ['CHANGE', 'TASK']
-const PERSON_REASONS = ['REJECTED', 'DISMISSED_CHAT_WRONG', 'MARKED_DONE', 'NOT_NEEDED']
+// REVERTED (Task 11b, "Batalkan"): nilai yang dibatalkan admin tidak boleh diusulkan lagi (proposedValue = yang ditulis).
+const PERSON_REASONS = ['REJECTED', 'DISMISSED_CHAT_WRONG', 'MARKED_DONE', 'NOT_NEEDED', 'REVERTED']
 
 const key = (field: string, value: string | null) => `${field}\u0000${value ?? ''}`
 
@@ -309,7 +310,12 @@ async function run(
   return counters
 }
 
-export async function applyExtraction(conversationId: string, ex: Extraction, now: Date = new Date()): Promise<{ created: number }> {
+/** `changeIds` = kartu CHANGE yang dibuat pada pemanggilan ini (kandidat `autoApplyIfAllowed`, dipanggil schedule.ts). */
+export async function applyExtraction(
+  conversationId: string,
+  ex: Extraction,
+  now: Date = new Date()
+): Promise<{ created: number; changeIds: string[] }> {
   const c = await run(conversationId, now, 'BOT', async (ctx, counters) => {
     const { tx } = ctx
     const existing = (await tx.bookingFact.findMany({ where: { conversationId, supersededAt: null } })).filter((f) => inScope(f, ctx.bookingId))
@@ -333,7 +339,7 @@ export async function applyExtraction(conversationId: string, ex: Extraction, no
     }
     await evaluate(ctx, counters)
   })
-  return { created: c.created }
+  return { created: c.created, changeIds: c.notify.filter((e) => e.kind === 'CHANGE').map((e) => e.actionId) }
 }
 
 export async function reevaluateBookingActions(conversationId: string, now: Date = new Date()): Promise<{ resolved: number; opened: number }> {

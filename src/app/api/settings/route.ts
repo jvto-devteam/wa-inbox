@@ -94,6 +94,12 @@ const patchSchema = z.object({
   duplicateWindowMs: bounded('duplicateWindowMs'),
   providerFailureThreshold: bounded('providerFailureThreshold'),
   providerFailureWindowMs: bounded('providerFailureWindowMs'),
+  // Persetujuan perubahan booking dari chat (Task 11b). ALWAYS = diterapkan otomatis tanpa klik; hanya dua
+  // nilai yang sah -- 'AUTO' dan sejenisnya ditolak, bukan ditebak. Mengubah ini mengubah apa yang
+  // dilakukan sistem pada booking produksi, jadi namanya masuk audit log seperti field lain di sini.
+  bookingLightApproval: z.enum(['APPROVE', 'ALWAYS']).optional(),
+  bookingBaliApproval: z.enum(['APPROVE', 'ALWAYS']).optional(),
+  dataRequestApproval: z.enum(['APPROVE', 'ALWAYS']).optional(),
 })
 
 // Writing settings is admin-only. The Settings page already disables the

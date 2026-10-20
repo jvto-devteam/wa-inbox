@@ -30,6 +30,9 @@
  * - oldValue/newValue event berupa nilai polos (string/null) supaya riwayat terbaca "10:30 -> 09:00".
  * - Task 11a: sukses pada kartu tier BALI memicu SATU kabar ke vendor (`bali-vendor.ts`), sesudah transaksi,
  *   tanpa menunggu dan tanpa mengubah respons; gagal kirim = event VENDOR_NOTICE_FAILED + push admin.
+ * - Task 11b: `executeBookingAction` dipakai bersama oleh `autoApplyIfAllowed` (actor SYSTEM, closedReason AUTO_APPLIED);
+ *   `revertBookingAction` membalik aksi EXECUTED ("Batalkan"). Event EXECUTED memuat `backoffice.batch` (kartu yang ditulis
+ *   bersama) agar pembatalan membalik semuanya.
  * - Log hanya id/kind/status: tanpa teks pelanggan dan tanpa token url booking.
  *
  * Pelepasan klaim basi dipanggil dari GET panel kartu (`/api/conversations/[id]/booking-actions`) dan
@@ -47,9 +50,9 @@ import {
   type WrittenPart,
 } from '@/lib/booking/backoffice-client'
 import type { BookingData } from '@/lib/booking/client'
-import { changeAlreadyApplied } from './compare'
+import { bookingTimeKnown, changeAlreadyApplied } from './compare'
 import { normalizeFieldValue, parseTshirtSizes, readBookingField, type FieldKey } from './fields'
-import { recordEvent } from './history'
+import { recordEvent, type BookingEventActor } from './history'
 import { notifyBaliVendor } from './bali-vendor'
 import { currentBookingId } from './scope'
 import { reevaluateBookingActions } from './store'
@@ -114,14 +117,23 @@ function buildPatch(included: Included[]): BookingPatch {
   return patch
 }
 
+/**
+ * Inti "Setujui". Dua pemanggil, SATU jalur: PATCH `op: execute` (aktor ACCOUNT, `closedReason` EXECUTED) dan
+ * `autoApplyIfAllowed` (aktor SYSTEM tanpa akun, `closedReason` AUTO_APPLIED; Task 11b). Perbedaannya hanya
+ * siapa yang tercatat -- klaim, penggabungan titik<->detail, penulisan, event, dan pelepasan klaim identik.
+ */
 export async function executeBookingAction(input: {
   actionId: string
-  accountId: string
+  accountId: string | null
+  actor?: BookingEventActor
+  closedReason?: 'EXECUTED' | 'AUTO_APPLIED'
   value?: string
   detail?: string
   now?: Date
 }): Promise<ExecuteResult> {
   const { actionId, accountId } = input
+  const actor: BookingEventActor = input.actor ?? 'ACCOUNT'
+  const closedReason = input.closedReason ?? 'EXECUTED'
   const claimAt = input.now ?? new Date()
 
   // 1. Validasi tanpa mengubah apa pun.
@@ -171,7 +183,7 @@ export async function executeBookingAction(input: {
     if (claimed.count === 0) return null
     if (corrected) {
       await recordEvent(tx, {
-        conversationId, bookingId, actionId, event: 'CORRECTED', actor: 'ACCOUNT', accountId,
+        conversationId, bookingId, actionId, event: 'CORRECTED', actor, accountId,
         oldValue: proposed, newValue: finalValue,
       })
     }
@@ -195,7 +207,7 @@ export async function executeBookingAction(input: {
         if (res.count !== 1) continue
         if (override !== null) {
           await recordEvent(tx, {
-            conversationId, bookingId, actionId: row.id, event: 'CORRECTED', actor: 'ACCOUNT', accountId,
+            conversationId, bookingId, actionId: row.id, event: 'CORRECTED', actor, accountId,
             oldValue: row.proposedValue, newValue: override,
           })
         }
@@ -227,16 +239,22 @@ export async function executeBookingAction(input: {
     if (result.status === 'ok') {
       writeSucceeded = true
       const written = result.written
+      // Task 11b: "Batalkan" menulis balik `oldValue` event ini. `batch` = kartu yang ditulis bersama (R17), dan
+      // `previousDetail` = detail lama yang ditimpa lewat isian detail tanpa kartu pendamping.
+      const previousDetail = detail !== null && detailField !== null && !included.some((a) => a.field === detailField)
+        ? { [detailField]: readBookingField(booking, detailField) }
+        : null
       await prisma.$transaction(async (tx) => {
         for (const a of included) {
           await tx.bookingAction.updateMany({
             where: { id: a.id, state: 'EXECUTING', claimedAt: claimAt },
-            data: { state: 'EXECUTED', closedReason: 'EXECUTED', closedById: accountId, closedAt: new Date(), claimedAt: null, lastError: null },
+            data: { state: 'EXECUTED', closedReason, closedById: accountId, closedAt: new Date(), claimedAt: null, lastError: null },
           })
           // Event selalu ditulis: perubahan SUDAH ada di backoffice, apa pun hasil update di atas.
           await recordEvent(tx, {
-            conversationId, bookingId, actionId: a.id, event: 'EXECUTED', actor: 'ACCOUNT', accountId,
-            oldValue: a.oldValue, newValue: a.value, backoffice: { written, httpStatus: 200 },
+            conversationId, bookingId, actionId: a.id, event: 'EXECUTED', actor, accountId,
+            oldValue: a.oldValue, newValue: a.value,
+            backoffice: { written, httpStatus: 200, batch: ids, ...(previousDetail ? { previousDetail } : {}) },
           })
         }
       })
@@ -263,7 +281,7 @@ export async function executeBookingAction(input: {
           data: { state: 'OPEN', claimedAt: null, lastError: reason },
         })
         await recordEvent(tx, {
-          conversationId, bookingId, actionId: a.id, event: 'EXECUTE_FAILED', actor: 'ACCOUNT', accountId,
+          conversationId, bookingId, actionId: a.id, event: 'EXECUTE_FAILED', actor, accountId,
           oldValue: a.oldValue, newValue: a.value, reason,
           backoffice: { written: result.written, httpStatus: result.httpStatus, kind: result.kind, ...(partial ? { partial: true } : {}) },
         })
@@ -276,6 +294,146 @@ export async function executeBookingAction(input: {
   } finally {
     if (!settled && !writeSucceeded) await releaseClaims(ids, claimAt)
   }
+}
+
+export type RevertResult =
+  | { status: 200; body: { ok: true; state: 'REVERTED'; reverted: string[] } }
+  | { status: 400 | 404 | 409 | 502 | 503; body: { error: string } }
+
+export const REVERT_CHANGED_ERROR = 'Nilai di booking sudah berubah sejak diterapkan. Periksa di backoffice.'
+const REVERT_NO_OLD_ERROR = 'Nilai sebelumnya kosong atau tidak diketahui. Ubah di backoffice.'
+const failRevert = (status: 400 | 404 | 409 | 502 | 503, error: string): RevertResult => ({ status, body: { error } })
+
+function plainText(v: unknown): string | null {
+  return typeof v === 'string' && v.trim() !== '' ? v : null
+}
+
+function batchOf(backoffice: unknown, fallback: string): string[] {
+  const batch = typeof backoffice === 'object' && backoffice !== null && !Array.isArray(backoffice)
+    ? (backoffice as Record<string, unknown>).batch
+    : undefined
+  const ids = Array.isArray(batch) ? batch.filter((x): x is string => typeof x === 'string') : []
+  return ids.includes(fallback) ? ids : [fallback, ...ids]
+}
+
+/**
+ * "Batalkan" (Task 11b): menulis balik `oldValue` event EXECUTED sebuah aksi (dan kartu yang ditulis
+ * bersamanya, `backoffice.batch`) lewat `writeBookingChange` -- jalur tulis yang sama dengan "Setujui".
+ *
+ * Konservatif: hanya aksi EXECUTED; booking yang dituju harus masih sama; nilai booking SEKARANG harus masih
+ * nilai yang kita tulis (kalau orang lain sudah mengubahnya, membalik akan menimpa pekerjaan mereka -> 409);
+ * nilai lama kosong/jam palsu tidak ditulis. Gagal = tetap EXECUTED + event EXECUTE_FAILED. Sukses =
+ * state/closedReason REVERTED lewat update bersyarat `state: 'EXECUTED'` (klik ganda: hanya satu yang
+ * mencatat event; tulisan ganda bernilai sama, jadi tidak berbahaya). `store.ts#loadBlocked` memblokir nilai
+ * yang dibatalkan supaya ekstraksi berikutnya tidak mengusulkannya lagi. Kabar vendor Bali TIDAK ikut dikirim
+ * ulang -- admin mengabari manual bila perlu.
+ */
+export async function revertBookingAction(input: { actionId: string; accountId: string; now?: Date }): Promise<RevertResult> {
+  const { actionId, accountId } = input
+  const action = await prisma.bookingAction.findUnique({ where: { id: actionId } })
+  if (!action) return failRevert(404, 'Tindakan tidak ditemukan')
+  if (action.type !== 'CHANGE') return failRevert(400, 'Operasi tidak cocok dengan jenis tindakan')
+  if (action.state !== 'EXECUTED') return failRevert(409, 'Hanya perubahan yang sudah diterapkan yang bisa dibatalkan')
+  if (!writeConfigured()) return failRevert(503, 'Jalur tulis backoffice belum dikonfigurasi')
+
+  const conversationId = action.conversationId
+  const bookingId = action.bookingId
+  const conv = await prisma.conversation.findUnique({ where: { id: conversationId }, select: { bookingData: true } })
+  const booking = asBooking(conv?.bookingData)
+  if (!booking || bookingId === null || currentBookingId(booking) !== bookingId) return failRevert(409, BOOKING_CHANGED_ERROR)
+
+  const mainEvents = (await prisma.bookingActionEvent.findMany({
+    where: { actionId, event: 'EXECUTED' },
+    orderBy: { createdAt: 'desc' },
+    take: 1,
+  })) ?? []
+  const mainEvent = mainEvents[0]
+  if (!mainEvent) return failRevert(409, 'Riwayat penerapan tidak ditemukan')
+  const batchIds = batchOf(mainEvent.backoffice, actionId)
+
+  const members = (await prisma.bookingAction.findMany({
+    where: { id: { in: batchIds }, state: 'EXECUTED', type: 'CHANGE' },
+    select: { id: true, field: true },
+  })) ?? []
+  const events = (await prisma.bookingActionEvent.findMany({
+    where: { actionId: { in: batchIds }, event: 'EXECUTED' },
+    orderBy: { createdAt: 'desc' },
+  })) ?? []
+
+  const included: Included[] = []
+  for (const m of members) {
+    const field = m.field as FieldKey
+    const ev = events.find((e) => e.actionId === m.id)
+    if (!ev || !canExecuteField(field)) return failRevert(409, 'Riwayat penerapan tidak ditemukan')
+    const wasValue = plainText(ev.newValue)
+    const oldValue = plainText(ev.oldValue)
+    if (wasValue === null || oldValue === null) return failRevert(400, REVERT_NO_OLD_ERROR)
+    if ((field === 'pickup_time' || field === 'drop_time') && !bookingTimeKnown(oldValue)) return failRevert(400, REVERT_NO_OLD_ERROR)
+    if (!changeAlreadyApplied({ field, value: wasValue }, booking)) return failRevert(409, REVERT_CHANGED_ERROR)
+    // `value` = yang akan ditulis (nilai lama); `oldValue` = yang sekarang di booking (untuk catatan event).
+    included.push({ id: m.id, field, value: oldValue, oldValue: wasValue })
+  }
+  if (!included.some((a) => a.id === actionId)) return failRevert(409, 'Tindakan sudah ditutup')
+
+  const patch = buildPatch(included)
+  const prev = typeof mainEvent.backoffice === 'object' && mainEvent.backoffice !== null && !Array.isArray(mainEvent.backoffice)
+    ? (mainEvent.backoffice as Record<string, unknown>).previousDetail
+    : undefined
+  if (typeof prev === 'object' && prev !== null && !Array.isArray(prev)) {
+    for (const key of ['pickup_detail', 'drop_detail'] as const) {
+      const v = plainText((prev as Record<string, unknown>)[key])
+      if (v !== null && patch[key] === undefined) patch[key] = v
+    }
+  }
+  const ids = included.map((a) => a.id)
+
+  let result: WriteResult
+  try {
+    result = await writeBookingChange(bookingId, patch, conversationId)
+  } catch (error) {
+    console.error('revertBookingAction: writeBookingChange melempar', { actionIds: ids, error: error instanceof Error ? error.name : 'unknown' })
+    result = { status: 'error', kind: 'backoffice', httpStatus: 0, error: 'Gagal menulis ke backoffice', written: [] }
+  }
+
+  if (result.status !== 'ok') {
+    const partial = result.written.length > 0
+    const reason = clean(`Batalkan gagal${partial ? ` (sebagian tertulis: ${result.written.join(', ')})` : ''}: ${result.error}`)
+    console.error('revertBookingAction: gagal', { actionIds: ids, kind: result.kind, httpStatus: result.httpStatus, written: result.written })
+    await prisma.$transaction(async (tx) => {
+      for (const a of included) {
+        await recordEvent(tx, {
+          conversationId, bookingId, actionId: a.id, event: 'EXECUTE_FAILED', actor: 'ACCOUNT', accountId,
+          oldValue: a.oldValue, newValue: a.value, reason,
+          backoffice: { written: result.written, httpStatus: result.httpStatus, kind: result.kind, revert: true, ...(partial ? { partial: true } : {}) },
+        })
+      }
+    })
+    if (partial) await reevaluate(conversationId)
+    broadcast({ type: 'booking-actions.changed', conversationId })
+    return failRevert(STATUS_BY_KIND[result.kind], responseError(result))
+  }
+
+  const reverted = await prisma.$transaction(async (tx) => {
+    const done: string[] = []
+    for (const a of included) {
+      const res = await tx.bookingAction.updateMany({
+        where: { id: a.id, state: 'EXECUTED' },
+        data: { state: 'REVERTED', closedReason: 'REVERTED', closedById: accountId, closedAt: new Date() },
+      })
+      if (res.count !== 1) continue
+      await recordEvent(tx, {
+        conversationId, bookingId, actionId: a.id, event: 'REVERTED', actor: 'ACCOUNT', accountId,
+        oldValue: a.oldValue, newValue: a.value, backoffice: { written: result.written, httpStatus: 200, batch: ids },
+      })
+      done.push(a.id)
+    }
+    return done
+  })
+  await reevaluate(conversationId)
+  broadcast({ type: 'booking-actions.changed', conversationId })
+  // Klik ganda: yang kalah balapan tidak mencatat apa pun (tulisan nilai-sama sudah terjadi, idempoten).
+  if (!reverted.includes(actionId)) return failRevert(409, 'Tindakan sudah dibatalkan')
+  return { status: 200, body: { ok: true, state: 'REVERTED', reverted } }
 }
 
 /** Lepas klaim permintaan ini (dan hanya ini) ke OPEN setelah lemparan tak terduga. Tidak pernah melempar. */

@@ -525,7 +525,7 @@ describe('ChatReviewTab: Disematkan & Riwayat perubahan', () => {
     expect(within(rows[1]).queryByRole('link')).not.toBeInTheDocument()
 
     const hist = screen.getByRole('region', { name: 'Riwayat perubahan' })
-    expect(hist).toHaveTextContent('Dieksekusi · Dewi')
+    expect(hist).toHaveTextContent('Diterapkan · Dewi')
     expect(within(hist).getByRole('link', { name: 'Lihat pesan' })).toHaveAttribute(
       'href',
       '/inbox?conversation=conv_1&message=msg_7&lihat=1'

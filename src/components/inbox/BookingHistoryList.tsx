@@ -4,8 +4,8 @@ import { valueText, type BookingActionEventView } from '@/lib/booking-actions/vi
 export const EVENT_LABELS: Record<string, string> = {
   CREATED: 'Dibuat',
   CORRECTED: 'Dikoreksi',
-  EXECUTED: 'Dieksekusi',
-  EXECUTE_FAILED: 'Eksekusi gagal',
+  EXECUTED: 'Diterapkan',
+  EXECUTE_FAILED: 'Gagal diterapkan',
   REJECTED: 'Ditolak',
   SUPERSEDED: 'Digantikan',
   RESOLVED: 'Selesai',

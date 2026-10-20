@@ -45,9 +45,31 @@ export type PinnedBookingAction = Pick<
   'id' | 'type' | 'field' | 'proposedValue' | 'sourceMessageId' | 'createdAt'
 >
 
+/**
+ * Aksi CHANGE yang baru diterapkan (manual atau otomatis) dan masih bisa "Batalkan" (Task 11b).
+ * Aturan tampil: state EXECUTED dengan `closedAt` dalam `EXECUTED_VISIBLE_MS` terakhir, di booking saat ini.
+ */
+export const EXECUTED_VISIBLE_MS = 24 * 60 * 60 * 1000
+
+export type BookingExecutedView = {
+  id: string
+  conversationId: string
+  field: string
+  tier: string
+  /** Nilai yang ditulis. */
+  newValue: string | null
+  /** Nilai sebelum ditulis (yang akan dikembalikan saat Batalkan); null = tidak diketahui/kosong. */
+  oldValue: string | null
+  /** EXECUTED = disetujui orang; AUTO_APPLIED = diterapkan otomatis. */
+  closedReason: string | null
+  closedAt: string | null
+}
+
 export type BookingActionsResponse = {
   booking: { id: string; code: string | null; start: string | null; end: string | null } | null
   actions: BookingActionView[]
+  /** Baru diterapkan, bisa dibatalkan. Opsional: respons lama tanpa kolom ini tetap dibaca. */
+  executed?: BookingExecutedView[]
   history: BookingActionEventView[]
   writeEnabled: boolean
 }

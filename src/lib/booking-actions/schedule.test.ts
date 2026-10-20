@@ -10,6 +10,7 @@ import { createPipelineTracer } from '@/lib/pipeline/tracer'
 import { scheduleChatReviewRefresh } from '@/lib/chat-review/auto-refresh'
 import { extractBookingSignals } from './extract'
 import { applyExtraction, reevaluateBookingActions } from './store'
+import { autoApplyCreated } from './auto-apply'
 import { scheduleBookingExtraction, __resetBookingExtractionForTests, BOOKING_EXTRACTION_DEBOUNCE_MS } from './schedule'
 
 vi.mock('@/lib/db', () => ({ prisma: mockDeep<PrismaClient>() }))
@@ -17,6 +18,7 @@ vi.mock('@/lib/realtime', () => ({ broadcast: vi.fn() }))
 vi.mock('@/lib/chat-review/auto-refresh', () => ({ scheduleChatReviewRefresh: vi.fn() }))
 vi.mock('./extract', () => ({ extractBookingSignals: vi.fn() }))
 vi.mock('./store', () => ({ applyExtraction: vi.fn(), reevaluateBookingActions: vi.fn() }))
+vi.mock('./auto-apply', () => ({ autoApplyCreated: vi.fn().mockResolvedValue(undefined) }))
 const mockPrisma = prisma as unknown as DeepMockProxy<PrismaClient>
 
 const FOREIGN = '12025551234'
@@ -36,7 +38,7 @@ beforeEach(() => {
   mockReset(mockPrisma)
   __resetBookingExtractionForTests()
   vi.mocked(extractBookingSignals).mockReset().mockResolvedValue(EXTRACTION as never)
-  vi.mocked(applyExtraction).mockReset().mockResolvedValue({ created: 0 })
+  vi.mocked(applyExtraction).mockReset().mockResolvedValue({ created: 0, changeIds: [] })
   vi.mocked(reevaluateBookingActions).mockReset().mockResolvedValue({ resolved: 0, opened: 0 })
   mockPrisma.message.findMany.mockResolvedValue([
     { id: 'm1', direction: 'INBOUND', sentBy: 'CUSTOMER', type: 'text', content: 'tolong ganti hotel', createdAt: new Date() },
@@ -161,6 +163,14 @@ describe('scheduleBookingExtraction', () => {
     await expect(fire()).resolves.toBeUndefined()
     expect(sideLaneStatuses()).toEqual(['mulai', 'gagal'])
     expect(JSON.stringify(vi.mocked(console.error).mock.calls)).not.toContain('tolong ganti hotel')
+  })
+
+  it('hands the CHANGE cards created by this extraction to auto-apply (after reevaluate)', async () => {
+    stubConversation()
+    vi.mocked(applyExtraction).mockResolvedValue({ created: 2, changeIds: ['a1', 'a2'] })
+    scheduleBookingExtraction('c1')
+    await fire()
+    expect(autoApplyCreated).toHaveBeenCalledWith(['a1', 'a2'])
   })
 
   it('success closes the side run as selesai; skips close it as dilewati', async () => {
