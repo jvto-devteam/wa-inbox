@@ -5,6 +5,7 @@ import { readBookingField, type FieldKey } from '@/lib/booking-actions/fields'
 import { computeImpact, type Impact } from '@/lib/booking-actions/impact'
 import { currentBookingId, inCurrentBooking } from '@/lib/booking-actions/scope'
 import type { BookingData } from '@/lib/booking/client'
+import { writeConfigured } from '@/lib/booking/backoffice-client'
 
 /**
  * Kartu tindakan booking di panel Inbox: aksi OPEN percakapan ini + 50 kejadian riwayat terbaru.
@@ -70,8 +71,7 @@ export async function GET(req: Request, { params }: Ctx) {
     const names = new Map((accounts ?? []).map((a) => [a.id, a.name]))
     const historyView = history.map((h) => ({ ...h, accountName: h.accountId ? (names.get(h.accountId) ?? null) : null }))
 
-    // Tombol Setujui tetap nonaktif sampai Task 9 menyambungkannya ke writeConfigured().
-    return NextResponse.json({ booking, actions, history: historyView, writeEnabled: false })
+    return NextResponse.json({ booking, actions, history: historyView, writeEnabled: writeConfigured() })
   } catch (error) {
     console.error('GET booking-actions gagal', error)
     return NextResponse.json({ error: 'Gagal memuat tindakan booking' }, { status: 500 })

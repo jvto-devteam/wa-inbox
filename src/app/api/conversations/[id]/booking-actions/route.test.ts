@@ -72,10 +72,22 @@ describe('GET /api/conversations/[id]/booking-actions', () => {
     expect(body.actions[0].impact).toBeUndefined()
     expect(computeImpact).toHaveBeenCalledTimes(1)
     expect(body.history).toEqual([{ id: 'e1', accountName: null }])
-    expect(body.writeEnabled).toBe(false)
+    expect(body.writeEnabled).toBe(false) // LEGACY_BASE_URL tidak diset di test
     expect(mockPrisma.bookingActionEvent.findMany).toHaveBeenCalledWith(
       expect.objectContaining({ where: { conversationId: 'c1' }, orderBy: { createdAt: 'desc' }, take: 50 }),
     )
+  })
+
+  it('writeEnabled follows writeConfigured (LEGACY_BASE_URL)', async () => {
+    mockPrisma.conversation.findUnique.mockResolvedValue({ bookingData: bookingData('X') } as never)
+    mockPrisma.bookingAction.findMany.mockResolvedValue([] as never)
+    mockPrisma.bookingActionEvent.findMany.mockResolvedValue([] as never)
+    vi.stubEnv('LEGACY_BASE_URL', 'https://legacy.example')
+    try {
+      expect((await (await GET(req(), ctx)).json()).writeEnabled).toBe(true)
+    } finally {
+      vi.unstubAllEnvs()
+    }
   })
 
   it('booking null when conversation has no booking', async () => {
