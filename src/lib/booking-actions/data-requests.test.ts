@@ -6,11 +6,13 @@ import type { BookingData } from '@/lib/booking/client'
 
 vi.mock('@/lib/db', () => ({ prisma: mockDeep<PrismaClient>() }))
 vi.mock('@/lib/send', () => ({ sendMessage: vi.fn() }))
+vi.mock('@/lib/booking/client', () => ({ lookupBookingResult: vi.fn() }))
 vi.mock('@/lib/realtime', () => ({ broadcast: vi.fn() }))
 vi.mock('@/lib/push/send', async (orig) => ({ ...(await orig<typeof import('@/lib/push/send')>()), notifyBookingAction: vi.fn() }))
 
 import { prisma } from '@/lib/db'
 import { sendMessage } from '@/lib/send'
+import { lookupBookingResult } from '@/lib/booking/client'
 import { notifyBookingAction } from '@/lib/push/send'
 import { buildDataRequestText, createDataRequestDrafts, findDataGaps, sendDataRequest } from './data-requests'
 
@@ -33,11 +35,11 @@ const conv = (over: Record<string, unknown> = {}) => ({
   id: 'c1', bookingData: booking(), isTest: false, contact: { phone: '4915112345678' }, channelIdentity: { platform: 'WHATSAPP' }, ...over,
 })
 const stored = (over: Record<string, unknown> = {}) => ({
-  id: 'd1', conversationId: 'c1', bookingId: '77', type: 'DATA_REQUEST', state: 'OPEN', draftText: 'Hello', forDay: '2026-10-20', lastError: null,
+  id: 'd1', conversationId: 'c1', bookingId: '77', type: 'DATA_REQUEST', state: 'OPEN', draftText: 'Hello', forDay: '2026-10-20', lastError: null, proposedValue: ['pickup_detail'], createdAt: new Date('2026-10-20T01:30:00Z'),
   conversation: conv(), ...over,
 })
 
-function setup(opts: { convs?: unknown[]; open?: unknown[]; older?: unknown[]; todays?: unknown[]; approval?: string; inbound?: Date | null } = {}) {
+function setup(opts: { convs?: unknown[]; open?: unknown[]; older?: unknown[]; todays?: unknown[]; approval?: string; inbound?: Date | null; newer?: boolean; fresh?: BookingData | 'error' | 'not_found' } = {}) {
   db.conversation.findMany.mockResolvedValue((opts.convs ?? [conv()]) as never)
   db.bookingAction.findMany.mockImplementation(((args: { where: { forDay?: unknown } }) => {
     const w = args.where
@@ -49,7 +51,14 @@ function setup(opts: { convs?: unknown[]; open?: unknown[]; older?: unknown[]; t
   db.bookingAction.create.mockResolvedValue({ id: 'd1' } as never)
   db.bookingAction.updateMany.mockResolvedValue({ count: 1 } as never)
   db.settings.findUnique.mockResolvedValue({ dataRequestApproval: opts.approval ?? 'ALWAYS' } as never)
-  db.message.findFirst.mockResolvedValue((opts.inbound === null ? null : { createdAt: opts.inbound ?? FRESH_INBOUND }) as never)
+  db.message.findFirst.mockImplementation(((args: { where: { createdAt?: unknown } }) => {
+    if (args.where.createdAt) return Promise.resolve(opts.newer ? { id: 'm9' } : null) // pesan masuk lebih baru dari draf
+    return Promise.resolve(opts.inbound === null ? null : { createdAt: opts.inbound ?? FRESH_INBOUND })
+  }) as never)
+  const f = opts.fresh
+  vi.mocked(lookupBookingResult).mockResolvedValue(
+    f === 'error' ? { status: 'error' } : f === 'not_found' ? { status: 'not_found' } : { status: 'found', data: f ?? booking() }
+  )
   db.bookingAction.findUnique.mockResolvedValue(stored() as never)
   vi.mocked(sendMessage).mockResolvedValue({ id: 'm1', deliveryStatus: 'SENT' } as never)
 }
@@ -57,6 +66,7 @@ function setup(opts: { convs?: unknown[]; open?: unknown[]; older?: unknown[]; t
 beforeEach(() => {
   mockReset(db)
   vi.mocked(sendMessage).mockReset()
+  vi.mocked(lookupBookingResult).mockReset()
   vi.mocked(notifyBookingAction).mockReset()
   vi.spyOn(console, 'error').mockImplementation(() => undefined)
 })
@@ -168,6 +178,23 @@ describe('createDataRequestDrafts', () => {
     })
   })
 
+  it('H-0 (start day) -> no draft is created, open draft closes TRIP_STARTED (R24)', async () => {
+    const day0 = booking({ date: { start_ymd: '2026-10-20' } })
+    setup({ convs: [conv({ bookingData: day0 })], open: [{ id: 'old', conversationId: 'c1', bookingId: '77', forDay: '2026-10-19', conversation: { bookingData: day0 } }] })
+    const res = await createDataRequestDrafts(NOW)
+    expect(res).toMatchObject({ created: 0, closed: 1 })
+    expect(db.bookingAction.updateMany).toHaveBeenCalledWith({
+      where: { id: 'old', state: 'OPEN' }, data: expect.objectContaining({ closedReason: 'TRIP_STARTED' }),
+    })
+  })
+
+  it('a draft already SENT today (e.g. manual) -> no new draft for that booking', async () => {
+    setup()
+    db.bookingAction.findFirst.mockImplementation(((args: { where: { closedReason?: string } }) =>
+      Promise.resolve(args.where.closedReason === 'SENT' ? { id: 'sent' } : null)) as never)
+    expect((await createDataRequestDrafts(NOW)).created).toBe(0)
+  })
+
   it('open draft of a different booking is left alone', async () => {
     setup({ convs: [], open: [{ id: 'old', conversationId: 'c1', bookingId: '12', forDay: '2026-10-19', conversation: { bookingData: booking() } }] })
     expect((await createDataRequestDrafts(NOW)).closed).toBe(0)
@@ -233,15 +260,99 @@ describe('sendDataRequest', () => {
   })
 })
 
+describe('sendDataRequest safeguards', () => {
+  it('refreshes the booking before claiming; lookup failure -> not sent, stays OPEN, no push', async () => {
+    for (const fresh of ['error', 'not_found'] as const) {
+      setup({ fresh })
+      const res = await sendDataRequest({ actionId: 'd1', accountId: null, now: NOW })
+      expect(res).toMatchObject({ ok: false, status: 502 })
+      expect(sendMessage).not.toHaveBeenCalled()
+      expect(db.bookingAction.updateMany).not.toHaveBeenCalled()
+      expect(notifyBookingAction).not.toHaveBeenCalled()
+    }
+  })
+
+  it('fresh data complete -> RESOLVED/DATA_COMPLETE, nothing sent (auto and manual)', async () => {
+    const complete = booking({ pickup: { meeting_point: 'Others', meeting_point_value: 'Hotel X', pickup_time: '10:30' } })
+    for (const accountId of [null, 'acc1']) {
+      setup({ fresh: complete })
+      expect(await sendDataRequest({ actionId: 'd1', accountId, now: NOW })).toMatchObject({ ok: false, status: 409 })
+      expect(sendMessage).not.toHaveBeenCalled()
+      expect(db.bookingAction.updateMany).toHaveBeenCalledWith({
+        where: { id: 'd1', state: 'OPEN' }, data: expect.objectContaining({ state: 'RESOLVED', closedReason: 'DATA_COMPLETE' }),
+      })
+    }
+  })
+
+  it('fresh data with different gaps -> text rebuilt from fresh data before sending', async () => {
+    setup({ fresh: booking({ pickup: { meeting_point: 'Others', meeting_point_value: 'Hotel X' } }) })
+    expect(await sendDataRequest({ actionId: 'd1', accountId: 'acc1', now: NOW })).toEqual({ ok: true })
+    const sent = vi.mocked(sendMessage).mock.calls[0][0].text
+    expect(sent).toContain('pickup time')
+    expect(sent).not.toContain('hotel or the exact address')
+  })
+
+  it('auto-send skipped (left OPEN) when the guest just answered: open CHANGE, active fact, or newer inbound', async () => {
+    setup()
+    db.bookingAction.findFirst.mockImplementation(((args: { where: { type?: string } }) =>
+      Promise.resolve(args.where.type === 'CHANGE' ? { id: 'ch' } : null)) as never)
+    expect(await sendDataRequest({ actionId: 'd1', accountId: null, now: NOW })).toMatchObject({ ok: false, status: 409 })
+
+    setup()
+    db.bookingAction.findUnique.mockResolvedValue(stored({ proposedValue: ['pickup_detail'] }) as never)
+    db.bookingFact.findFirst.mockResolvedValue({ id: 'f1' } as never)
+    expect(await sendDataRequest({ actionId: 'd1', accountId: null, now: NOW })).toMatchObject({ ok: false, status: 409 })
+
+    setup({ newer: true })
+    expect(await sendDataRequest({ actionId: 'd1', accountId: null, now: NOW })).toMatchObject({ ok: false, status: 409 })
+    expect(sendMessage).not.toHaveBeenCalled()
+    expect(db.bookingAction.updateMany).not.toHaveBeenCalled()
+  })
+
+  it('manual send is not blocked by those checks (a human decides)', async () => {
+    setup({ newer: true })
+    expect(await sendDataRequest({ actionId: 'd1', accountId: 'acc1', now: NOW })).toEqual({ ok: true })
+  })
+
+  it('manual send of a draft from another day -> 409 expired, nothing sent', async () => {
+    setup()
+    db.bookingAction.findUnique.mockResolvedValue(stored({ forDay: '2026-10-19' }) as never)
+    expect(await sendDataRequest({ actionId: 'd1', accountId: 'acc1', now: NOW })).toMatchObject({ ok: false, status: 409, error: 'Draf sudah kedaluwarsa' })
+    expect(sendMessage).not.toHaveBeenCalled()
+  })
+
+  it('already sent today (manual) then auto at 08:00 -> refused, one message per booking per day', async () => {
+    setup()
+    db.bookingAction.findFirst.mockImplementation(((args: { where: { closedReason?: string } }) =>
+      Promise.resolve(args.where.closedReason === 'SENT' ? { id: 'other' } : null)) as never)
+    expect(await sendDataRequest({ actionId: 'd1', accountId: null, now: NOW })).toMatchObject({ ok: false, status: 409 })
+    expect(await sendDataRequest({ actionId: 'd1', accountId: 'acc1', now: NOW })).toMatchObject({ ok: false, status: 409 })
+    expect(sendMessage).not.toHaveBeenCalled()
+  })
+})
+
 describe('findDataGaps / buildDataRequestText', () => {
-  it('lists only missing items; 07:00 counts as unknown (R2)', () => {
-    const b = booking({ pickup: { meeting_point: 'Surabaya Airport', pickup_time: '07:00' }, dropoff: { drop_point: 'Surabaya Hotel', drop_time: '07:00' } })
-    expect(findDataGaps(b)).toEqual(['pickup_arrival', 'pickup_time', 'drop_time'])
+  it('lists only missing items; only null/empty times count as missing (R23: 07:00 is not asked)', () => {
+    const b = booking({ pickup: { meeting_point: 'Surabaya Airport' }, dropoff: { drop_point: 'Surabaya Hotel', drop_time: '' } })
+    expect(findDataGaps(b)).toEqual(['pickup_detail', 'pickup_time', 'drop_time'])
     const text = buildDataRequestText(b, findDataGaps(b))
     expect(text).toContain('flight number')
     expect(text).toContain('pickup time')
     expect(text).toContain('drop-off time')
     expect(text).not.toContain('hotel or the exact address')
+    const fake = booking({ pickup: { meeting_point: 'Surabaya Hotel', pickup_time: '07:00' }, dropoff: { drop_point: 'Surabaya Hotel', drop_time: '07:00' } })
+    expect(findDataGaps(fake)).toEqual([])
+  })
+
+  it('dates are human readable (EN/ID) and a missing date drops the date clause', () => {
+    const en = booking({ date: { start_ymd: '2026-10-25' } })
+    expect(buildDataRequestText(en, findDataGaps(en))).toContain('starts on 25 Oct 2026.')
+    const id = booking({ date: { start_ymd: '2026-10-25' }, guestDetails: { country: 'Indonesia' } })
+    expect(buildDataRequestText(id, findDataGaps(id))).toContain('dimulai pada 25 Okt 2026.')
+    const none = booking({ date: {} })
+    const text = buildDataRequestText(none, findDataGaps(none))
+    expect(text).toContain('is coming up.')
+    expect(text).not.toContain('on .')
   })
 
   it('airport/station with a flight number or any detail is complete; train gets train wording', () => {
@@ -255,7 +366,7 @@ describe('findDataGaps / buildDataRequestText', () => {
     expect(buildDataRequestText(b, findDataGaps(b))).toContain('Terima kasih')
   })
 
-  it('no pickup point -> pickup time is not asked (fake 07:00 from the backoffice)', () => {
-    expect(findDataGaps(booking({ pickup: { pickup_time: '07:00' } }))).toEqual([])
+  it('no pickup point -> pickup time is not asked', () => {
+    expect(findDataGaps(booking({ pickup: {} }))).toEqual([])
   })
 })

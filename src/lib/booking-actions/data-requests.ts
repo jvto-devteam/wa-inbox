@@ -4,11 +4,12 @@
  * jadi semua keputusan di sini condong ke "jangan kirim".
  *
  * Kandidat (semua harus terpenuhi):
- *   - percakapan WhatsApp dengan `bookingData` ber-`booking_id`, dan `date.start_ymd` 0..7 hari lagi (WIB);
+ *   - percakapan WhatsApp dengan `bookingData` ber-`booking_id`, dan `date.start_ymd` 1..7 hari lagi (WIB, H-7..H-1;
+ *     hari-H = trip mulai, Ruling R24);
  *   - nomor bukan Indonesia (`isIndonesianNumber`), KECUALI percakapan uji `isTest` (Ruling R13);
- *   - minimal satu celah (`findDataGaps`): titik jemput 'Others' tanpa detail; titik jemput bandara/stasiun
- *     tanpa detail DAN tanpa nomor kedatangan; jam jemput/antar tidak diketahui (`bookingTimeKnown`, R2: '07:00'
- *     = tidak diketahui). Jam jemput hanya ditanyakan bila titik jemput sudah ada (begitu pula jam antar) --
+ *   - minimal satu celah (`findDataGaps`): titik jemput 'Others' atau bandara/stasiun tanpa detail DAN tanpa
+ *     nomor kedatangan (kunci celah `pickup_detail`, jalur tulis ada); jam jemput/antar KOSONG (null/''). Ruling R23:
+ *     '07:00' TIDAK ditanyakan (bisa jam sungguhan; pembanding lain tetap memperlakukannya tak diketahui). Jam jemput hanya ditanyakan bila titik jemput sudah ada (begitu pula jam antar) --
  *     booking tanpa titik membawa jam palsu dan menanyakannya ke tamu hanya membingungkan.
  *   Pesan HANYA menyebut celah yang ada. Teks dibuat di kode (EN; ID bila `guestDetails.country` Indonesia),
  *   tanpa LLM dan tanpa nama tamu.
@@ -36,16 +37,16 @@ import { prisma } from '@/lib/db'
 import { broadcast } from '@/lib/realtime'
 import { sendMessage } from '@/lib/send'
 import { isIndonesianNumber } from '@/lib/phone'
-import { jakartaDayKey } from '@/lib/daily-summary/time'
+import { jakartaDayKey, jakartaDayRange } from '@/lib/daily-summary/time'
 import { serviceWindowClosed } from '@/lib/inbox/service-window'
 import { notifyBookingAction } from '@/lib/push/send'
-import type { BookingData } from '@/lib/booking/client'
-import { bookingTimeKnown } from './compare'
+import { lookupBookingResult, type BookingData } from '@/lib/booking/client'
 import { readBookingField, type FieldKey } from './fields'
 import { recordEvent } from './history'
 import { currentBookingId } from './scope'
 
 export const DATA_REQUEST_DAYS_AHEAD = 7
+export const DATA_REQUEST_DAYS_MIN = 1
 /** Jam kirim WIB: [mulai, selesai). */
 export const DATA_REQUEST_HOUR_FROM = 8
 export const DATA_REQUEST_HOUR_TO = 20
@@ -55,7 +56,7 @@ const DAY_MS = 24 * 60 * 60 * 1000
 const AIRPORT_STATION = ['Surabaya Airport', 'Denpasar Airport', 'Surabaya Train Station']
 const YMD = /^\d{4}-\d{2}-\d{2}$/
 
-export type DataGapField = Extract<FieldKey, 'pickup_detail' | 'pickup_arrival' | 'pickup_time' | 'drop_time'>
+export type DataGapField = Extract<FieldKey, 'pickup_detail' | 'pickup_time' | 'drop_time'>
 
 function asBooking(raw: unknown): BookingData | null {
   return typeof raw === 'object' && raw !== null && !Array.isArray(raw) ? (raw as BookingData) : null
@@ -67,10 +68,12 @@ export function findDataGaps(booking: BookingData): DataGapField[] {
   const point = readBookingField(booking, 'pickup_point')
   const detail = readBookingField(booking, 'pickup_detail')
   const arrival = readBookingField(booking, 'pickup_arrival')
-  if (point === 'Others' && !detail) gaps.push('pickup_detail')
-  if (point !== null && AIRPORT_STATION.includes(point) && !detail && !arrival) gaps.push('pickup_arrival')
-  if (point !== null && !bookingTimeKnown(readBookingField(booking, 'pickup_time'))) gaps.push('pickup_time')
-  if (readBookingField(booking, 'drop_point') !== null && !bookingTimeKnown(readBookingField(booking, 'drop_time'))) gaps.push('drop_time')
+  // Satu kunci `pickup_detail` untuk 'Others' dan bandara/stasiun (nomor kedatangan dihitung detail): hanya field
+  // yang punya jalur tulis (R16) yang jadi celah, jadi draf tidak bisa menggantung tanpa bisa ditutup.
+  if (point !== null && (point === 'Others' || AIRPORT_STATION.includes(point)) && !detail && !arrival) gaps.push('pickup_detail')
+  // R23: hanya null/'' yang pasti kosong; '07:00' tidak ditanyakan.
+  if (point !== null && readBookingField(booking, 'pickup_time') === null) gaps.push('pickup_time')
+  if (readBookingField(booking, 'drop_point') !== null && readBookingField(booking, 'drop_time') === null) gaps.push('drop_time')
   return gaps
 }
 
@@ -81,7 +84,7 @@ function isIndonesianGuest(booking: BookingData): boolean {
 
 const TEXT = {
   en: {
-    intro: (date: string) => `Hello from Java Volcano Tour Operator! Your trip starts on ${date}. To get everything ready, could you please send us:`,
+    intro: (date: string | null) => `Hello from Java Volcano Tour Operator! Your trip ${date ? `starts on ${date}` : 'is coming up'}. To get everything ready, could you please send us:`,
     outro: 'Thank you!',
     pickup_detail: 'The name of your hotel or the exact address for pickup',
     flight: 'Your flight number and arrival time',
@@ -90,7 +93,7 @@ const TEXT = {
     drop_time: 'Your preferred drop-off time',
   },
   id: {
-    intro: (date: string) => `Halo dari Java Volcano Tour Operator! Trip Anda dimulai pada ${date}. Agar semuanya siap, mohon kirimkan:`,
+    intro: (date: string | null) => `Halo dari Java Volcano Tour Operator! Trip Anda ${date ? `dimulai pada ${date}` : 'segera dimulai'}. Agar semuanya siap, mohon kirimkan:`,
     outro: 'Terima kasih!',
     pickup_detail: 'Nama hotel atau alamat lengkap untuk penjemputan',
     flight: 'Nomor penerbangan dan jam kedatangan Anda',
@@ -100,16 +103,32 @@ const TEXT = {
   },
 } as const
 
+const MONTHS = {
+  en: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'],
+  id: ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'],
+} as const
+
+/** "2026-10-25" -> "25 Oct 2026" / "25 Okt 2026"; null bila bukan tanggal. */
+function formatYmd(ymd: string | null, lang: 'en' | 'id'): string | null {
+  if (ymd === null || !YMD.test(ymd)) return null
+  const [y, m, d] = ymd.split('-').map(Number)
+  if (m < 1 || m > 12) return null
+  return `${d} ${MONTHS[lang][m - 1]} ${y}`
+}
+
 /** Teks draf: hanya butir yang kurang. Murni, tanpa LLM dan tanpa nama tamu. */
 export function buildDataRequestText(booking: BookingData, gaps: readonly DataGapField[]): string {
   const t = isIndonesianGuest(booking) ? TEXT.id : TEXT.en
   const point = readBookingField(booking, 'pickup_point')
   const lines = gaps.map((g) => {
-    if (g === 'pickup_arrival') return `- ${point === 'Surabaya Train Station' ? t.train : t.flight}`
+    if (g === 'pickup_detail') {
+      if (point === 'Surabaya Train Station') return `- ${t.train}`
+      if (point === 'Surabaya Airport' || point === 'Denpasar Airport') return `- ${t.flight}`
+    }
     return `- ${t[g]}`
   })
-  const date = readBookingField(booking, 'travel_date') ?? ''
-  return [t.intro(date), ...lines, '', t.outro].join('\n')
+  const lang = isIndonesianGuest(booking) ? 'id' : 'en'
+  return [t.intro(formatYmd(readBookingField(booking, 'travel_date'), lang)), ...lines, '', t.outro].join('\n')
 }
 
 /** Jam WIB (0-23) pada `now`. */
@@ -168,7 +187,7 @@ export async function sendDataRequest(input: { actionId: string; accountId: stri
     })
     if (!action || action.type !== 'DATA_REQUEST') return { ok: false, status: 404, error: 'Tindakan tidak ditemukan' }
     if (action.state !== 'OPEN') return { ok: false, status: 409, error: 'Tindakan sudah ditutup' }
-    const text = action.draftText?.trim()
+    let text = action.draftText?.trim() ?? ''
     if (!text) return { ok: false, status: 409, error: 'Draf kosong' }
 
     const conv = action.conversation
@@ -183,8 +202,41 @@ export async function sendDataRequest(input: { actionId: string; accountId: stri
     if (!conv.isTest && isIndonesianNumber(conv.contact.phone)) {
       return { ok: false, status: 409, error: 'Nomor Indonesia tidak dikirimi draf otomatis' }
     }
+    // Draf kemarin tidak boleh terkirim hari ini (isinya dari data kemarin) -- juga lewat tombol Kirim.
+    const today = jakartaDayKey(now)
+    if (action.forDay !== today) return { ok: false, status: 409, error: 'Draf sudah kedaluwarsa' }
+    // Paling banyak satu pesan permintaan data per booking per hari WIB, apa pun cara kirimnya.
+    if (await sentToday(action.bookingId, today)) {
+      return { ok: false, status: 409, error: 'Permintaan data untuk booking ini sudah terkirim hari ini' }
+    }
     if (await dataRequestWindowClosed(conv.id, now)) {
       return { ok: false, status: 409, error: 'Butuh template: tamu belum chat lebih dari 24 jam' }
+    }
+
+    const gapFields = Array.isArray(action.proposedValue) ? action.proposedValue.filter((f): f is string => typeof f === 'string') : []
+    // Pengiriman OTOMATIS tidak menanyakan ulang tamu yang baru menjawab; sisanya diserahkan ke orang (draf tetap OPEN).
+    if (input.accountId === null && (await guestRecentlyAnswered(action, gapFields))) {
+      return { ok: false, status: 409, error: 'Tamu baru menjawab, menunggu orang memeriksa' }
+    }
+
+    // Data booking di DB bisa ~24 jam basi: segarkan SATU booking ini tepat sebelum klaim. Gagal = jangan kirim, draf
+    // tetap OPEN tanpa push (dicoba lagi tick berikutnya). Percakapan uji tidak punya booking untuk dicari (sandbox).
+    if (!conv.isTest) {
+      const fresh = await lookupBookingResult(conv.contact.phone)
+      if (fresh.status !== 'found') return { ok: false, status: 502, error: 'Data booking belum bisa diperiksa, coba lagi nanti' }
+      if (currentBookingId(fresh.data) !== action.bookingId) {
+        return { ok: false, status: 409, error: 'Booking percakapan berganti, periksa ulang' }
+      }
+      await prisma.conversation.update({ where: { id: conv.id }, data: { bookingData: fresh.data as never, bookingCheckedAt: now } })
+      const gaps = findDataGaps(fresh.data)
+      if (gaps.length === 0) {
+        await closeOpen(action, 'RESOLVED', 'DATA_COMPLETE', now)
+        return { ok: false, status: 409, error: 'Data booking sudah lengkap' }
+      }
+      if (gaps.join() !== gapFields.join()) {
+        text = buildDataRequestText(fresh.data, gaps)
+        await prisma.bookingAction.updateMany({ where: { id: action.id, state: 'OPEN' }, data: { draftText: text, proposedValue: gaps } })
+      }
     }
 
     // Klaim = kunci idempotensi `data_request:<actionId>`: hanya satu pemanggil yang lolos.
@@ -246,6 +298,43 @@ export async function sendDataRequest(input: { actionId: string; accountId: stri
   }
 }
 
+/** Sudah ada DATA_REQUEST terkirim (closedReason SENT) untuk booking ini pada hari WIB `day`? */
+async function sentToday(bookingId: string | null, day: string): Promise<boolean> {
+  if (bookingId === null) return false
+  const { start, end } = jakartaDayRange(day)
+  const row = await prisma.bookingAction.findFirst({
+    where: { bookingId, type: 'DATA_REQUEST', closedReason: 'SENT', closedAt: { gte: start, lt: end } },
+    select: { id: true },
+  })
+  return Boolean(row)
+}
+
+/** Tamu baru menjawab soal celah ini: CHANGE terbuka, fakta aktif, atau pesan masuk lebih baru dari draf. */
+async function guestRecentlyAnswered(
+  action: { conversationId: string; bookingId: string | null; createdAt: Date },
+  gapFields: string[]
+): Promise<boolean> {
+  // Titik & detail jemput ditulis bersama (R17), jadi kartu titik ikut dihitung.
+  const fields = gapFields.includes('pickup_detail') ? [...gapFields, 'pickup_point'] : gapFields
+  if (fields.length > 0) {
+    const change = await prisma.bookingAction.findFirst({
+      where: { conversationId: action.conversationId, type: 'CHANGE', state: 'OPEN', field: { in: fields }, OR: [{ bookingId: action.bookingId }, { bookingId: null }] },
+      select: { id: true },
+    })
+    if (change) return true
+    const fact = await prisma.bookingFact.findFirst({
+      where: { conversationId: action.conversationId, field: { in: fields }, supersededAt: null, OR: [{ bookingId: action.bookingId }, { bookingId: null }] },
+      select: { id: true },
+    })
+    if (fact) return true
+  }
+  const newer = await prisma.message.findFirst({
+    where: { conversationId: action.conversationId, direction: 'INBOUND', createdAt: { gt: action.createdAt } },
+    select: { id: true },
+  })
+  return Boolean(newer)
+}
+
 async function closeOpen(
   row: { id: string; conversationId: string; bookingId: string | null },
   state: 'SUPERSEDED' | 'RESOLVED',
@@ -283,7 +372,8 @@ export async function createDataRequestDrafts(now: Date = new Date()): Promise<{
     const booking = asBooking(row.conversation.bookingData)
     if (!booking || row.bookingId === null || currentBookingId(booking) !== row.bookingId) continue
     const days = daysUntil(booking.date?.start_ymd, today)
-    if (days !== null && days < 0) {
+    if (days !== null && days <= 0) {
+      // R24: hari-H sudah dihitung "trip mulai".
       if (await closeOpen(row, 'RESOLVED', 'TRIP_STARTED', now)) closed++
     } else if (findDataGaps(booking).length === 0) {
       if (await closeOpen(row, 'RESOLVED', 'DATA_COMPLETE', now)) closed++
@@ -303,7 +393,7 @@ export async function createDataRequestDrafts(now: Date = new Date()): Promise<{
     const bookingId = currentBookingId(booking)
     if (bookingId === null) continue
     const days = daysUntil(booking.date?.start_ymd, today)
-    if (days === null || days < 0 || days > DATA_REQUEST_DAYS_AHEAD) continue
+    if (days === null || days < DATA_REQUEST_DAYS_MIN || days > DATA_REQUEST_DAYS_AHEAD) continue
     if ((conv.channelIdentity?.platform ?? 'WHATSAPP') !== 'WHATSAPP') continue
     const phone = conv.contact?.phone ?? null
     if (!phone) continue
@@ -317,6 +407,8 @@ export async function createDataRequestDrafts(now: Date = new Date()): Promise<{
       select: { id: true },
     })
     if (existing) continue
+    // ... dan tidak jika sudah ada pesan permintaan data terkirim hari ini (mis. draf kemarin dikirim manual 07:30).
+    if (await sentToday(bookingId, today)) continue
 
     let row: { id: string }
     try {
