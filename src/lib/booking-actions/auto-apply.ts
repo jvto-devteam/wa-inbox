@@ -25,7 +25,7 @@
 import { prisma } from '@/lib/db'
 import type { BookingData } from '@/lib/booking/client'
 import { notifyBookingAction, summarizeAction, type BookingPushEvent } from '@/lib/push/send'
-import { executeBookingAction } from './execute'
+import { ALREADY_APPLIED_ERROR, executeBookingAction } from './execute'
 import { notifyGuestOfUpdate, type GuestNoticeItem } from './guest-notice'
 import { readBookingField, type FieldKey } from './fields'
 import { currentBookingId } from './scope'
@@ -110,7 +110,14 @@ async function decide(actionId: string): Promise<
 
 /** Kartu yang tertulis otomatis, dikumpulkan untuk SATU push AUTO_APPLIED + SATU kabar tamu (review Important 2). */
 export type AppliedCard = { id: string; field: string; proposedValue: unknown; sourceMessageId: string | null }
-export type AppliedBatch = { conversationId: string; bookingId: string | null; code: string | null; cards: AppliedCard[] }
+export type AppliedBatch = {
+  conversationId: string
+  bookingId: string | null
+  code: string | null
+  cards: AppliedCard[]
+  /** Kartu yang ternyata sudah sesuai di backoffice (MATCHED_IN_BACKOFFICE) setelah tanda terima terkirim: "sudah sesuai". */
+  matchedCards?: AppliedCard[]
+}
 
 export async function autoApplyIfAllowed(
   actionId: string,
@@ -141,6 +148,22 @@ export async function autoApplyIfAllowed(
         console.error('[booking-actions] autoApplyIfAllowed: kabar sesudah diterapkan gagal', { actionId, error: error instanceof Error ? error.name : 'unknown' })
       }
       return 'applied'
+    }
+    // Nilainya sudah ada di booking: kartu ditutup tanpa menulis. Tamu yang sudah dapat tanda terima ("sedang kami proses")
+    // tetap dikabari "sudah sesuai" supaya tidak berhenti di situ (butir 8 fix round 2026-10-20).
+    if (res.status === 409 && res.body.error === ALREADY_APPLIED_ERROR) {
+      try {
+        const acked = await prisma.bookingActionEvent.findFirst({ where: { actionId, event: 'GUEST_ACK_SENT' }, select: { id: true } })
+        if (acked) {
+          const card: AppliedCard = { id: actionId, field: action.field, proposedValue: action.proposedValue, sourceMessageId: action.sourceMessageId }
+          const batch: AppliedBatch = { conversationId: action.conversationId, bookingId: d.bookingId, code, cards: [], matchedCards: [card] }
+          if (collect) collect.push(batch)
+          else await announceApplied([batch])
+        }
+      } catch (error) {
+        console.error('[booking-actions] autoApplyIfAllowed: kabar sudah-sesuai gagal', { actionId, error: error instanceof Error ? error.name : 'unknown' })
+      }
+      return 'skipped'
     }
     // Belum diklaim / bukan urusan otomatis (jalur tulis mati, kartu sudah ditutup, booking berganti): biarkan OPEN.
     if (res.status === 409 || res.status === 503 || res.status === 404) return 'skipped'
@@ -175,7 +198,12 @@ async function announceApplied(batches: AppliedBatch[]): Promise<void> {
     try {
       const cards: AppliedCard[] = []
       for (const c of list.flatMap((b) => b.cards)) if (!cards.some((x) => x.id === c.id)) cards.push(c)
-      if (cards.length === 0) continue
+      if (cards.length === 0) {
+        const matched: AppliedCard[] = []
+        for (const c of list.flatMap((b) => b.matchedCards ?? [])) if (!matched.some((x) => x.id === c.id)) matched.push(c)
+        if (matched.length > 0) await announceMatched(conversationId, list[0].bookingId, matched)
+        continue
+      }
       const first = cards[0]
       const code = list.find((b) => b.code !== null)?.code ?? null
       void notifyBookingAction({
@@ -219,4 +247,16 @@ export async function autoApplyCreated(events: BookingPushEvent[]): Promise<void
     }
   }
   if (applied.length > 0) await announceApplied(applied)
+}
+
+/** "Sudah sesuai" ke tamu untuk kartu yang nilainya sudah ada di booking (tanpa push admin; tidak ada yang ditulis). */
+async function announceMatched(conversationId: string, bookingId: string | null, matched: AppliedCard[]): Promise<void> {
+  const conv = await prisma.conversation.findUnique({ where: { id: conversationId }, select: { bookingData: true } })
+  const booking = asBooking(conv?.bookingData)
+  if (!booking) return
+  const items: GuestNoticeItem[] = matched.flatMap((c) => {
+    const value = nonBlank(c.proposedValue)
+    return value === null ? [] : [{ actionId: c.id, sourceMessageId: c.sourceMessageId, written: [{ field: c.field as FieldKey, value }] }]
+  })
+  await notifyGuestOfUpdate({ conversationId, bookingId, accountId: null, booking, items, variant: 'matched' })
 }

@@ -16,10 +16,10 @@ import { GUEST_ACK_TEXT, notifyGuestRequestReceived } from './guest-ack'
 
 const db = prisma as unknown as DeepMockProxy<PrismaClient>
 const NOW = new Date('2026-10-20T03:00:00Z')
-const SINCE = new Date('2026-10-20T02:59:50Z')
 const booking = (country = 'Germany'): BookingData => ({ booking_id: 77, id: 'JVTO-1', guestDetails: { country } }) as BookingData
 
 function setup(opts: {
+  cardIds?: string[]
   cards?: { id: string; sourceMessageId: string | null }[]
   direction?: string
   platform?: string
@@ -35,13 +35,14 @@ function setup(opts: {
   db.conversation.findUnique.mockResolvedValue({
     isTest: opts.isTest ?? false, contact: { phone: opts.phone ?? '4915112345678' }, channelIdentity: { platform: opts.platform ?? 'WHATSAPP' },
   } as never)
+  db.$transaction.mockImplementation((async (fn: (tx: unknown) => unknown) => fn(db)) as never)
   db.bookingActionEvent.findFirst.mockImplementation((async (a: { where: { actionId?: unknown } }) =>
     (a.where.actionId ? (opts.acked ? { id: 'e1' } : null) : opts.recent ? { id: 'e2' } : null)) as never)
   db.message.findFirst.mockResolvedValue((opts.inbound === null ? null : { createdAt: opts.inbound ?? new Date('2026-10-20T02:59:00Z') }) as never)
   vi.mocked(sendMessage).mockResolvedValue({ id: 'out1', deliveryStatus: 'SENT' } as never)
 }
 const run = (b: BookingData = booking()) =>
-  notifyGuestRequestReceived({ conversationId: 'c1', bookingId: '77', booking: b, since: SINCE, now: NOW })
+  notifyGuestRequestReceived({ conversationId: 'c1', bookingId: '77', booking: b, cardIds: ['a1', 'a2'], now: NOW })
 
 beforeEach(() => {
   mockReset(db)
@@ -66,6 +67,47 @@ describe('notifyGuestRequestReceived', () => {
     }))
     expect(GUEST_ACK_TEXT.en).toBe("Noted, we've received your request and are processing it now.")
     expect(vi.mocked(recordEvent).mock.calls.map((c) => [c[1].actionId, c[1].event])).toEqual([['a1', 'GUEST_ACK_SENT'], ['a2', 'GUEST_ACK_SENT']])
+  })
+
+  it('claims (writes GUEST_ACK_SENT) BEFORE sending, so an overlapping run sees it', async () => {
+    setup()
+    const order: string[] = []
+    vi.mocked(recordEvent).mockImplementation(async () => {
+      order.push('claim')
+    })
+    vi.mocked(sendMessage).mockImplementation((async () => {
+      order.push('send')
+      return { id: 'out1', deliveryStatus: 'SENT' }
+    }) as never)
+    await run()
+    expect(order).toEqual(['claim', 'claim', 'send'])
+  })
+
+  it('overlapping runs -> exactly one ack (second run sees the claim)', async () => {
+    setup()
+    let claimed = false
+    vi.mocked(recordEvent).mockImplementation(async () => {
+      claimed = true
+    })
+    db.bookingActionEvent.findFirst.mockImplementation((async (a: { where: { actionId?: unknown } }) => (a.where.actionId && claimed ? { id: 'e1' } : null)) as never)
+    await run()
+    await run()
+    expect(sendMessage).toHaveBeenCalledTimes(1)
+  })
+
+  it('a reevaluate-born fill card (not in cardIds) never triggers an ack', async () => {
+    setup()
+    db.bookingAction.findMany.mockResolvedValue([] as never)
+    await notifyGuestRequestReceived({ conversationId: 'c1', bookingId: '77', booking: booking(), cardIds: [], now: NOW })
+    expect(sendMessage).not.toHaveBeenCalled()
+    expect(db.bookingAction.findMany).not.toHaveBeenCalled()
+  })
+
+  it('send failure keeps the claim (no re-send on retry)', async () => {
+    setup()
+    vi.mocked(sendMessage).mockRejectedValue(new Error('x'))
+    await run()
+    expect(vi.mocked(recordEvent).mock.calls).toHaveLength(2)
   })
 
   it('Indonesian guest -> Indonesian text', async () => {
@@ -127,11 +169,10 @@ describe('notifyGuestRequestReceived', () => {
     expect(sendMessage).not.toHaveBeenCalled()
   })
 
-  it('send failure -> logs the error name only, records no event, never throws', async () => {
+  it('send failure -> logs the error name only, never throws', async () => {
     setup()
     vi.mocked(sendMessage).mockRejectedValue(new TypeError('boom secret text'))
     await expect(run()).resolves.toBeUndefined()
-    expect(recordEvent).not.toHaveBeenCalled()
     expect(console.error).toHaveBeenCalledWith(expect.any(String), { conversationId: 'c1', error: 'TypeError' })
   })
 

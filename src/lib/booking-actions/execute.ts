@@ -71,7 +71,7 @@ import {
 import { lookupBookingResult, type BookingData, type BookingLookup } from '@/lib/booking/client'
 import { changeAlreadyApplied } from './compare'
 import { supersedeOlderFacts } from './fact-supersede'
-import { normalizeFieldValue, parseTshirtSizes, readBookingField, type FieldKey } from './fields'
+import { normalizeFieldValue, parseTshirtSizes, readBookingField, TSHIRT_AMBIGUOUS_ERROR, type FieldKey } from './fields'
 import { recordEvent, type BookingEventActor } from './history'
 import { notifyBaliVendor } from './bali-vendor'
 import { notifyBookingAction } from '@/lib/push/send'
@@ -253,11 +253,11 @@ export async function executeBookingAction(input: {
   let value = proposed
   if (input.value !== undefined) {
     value = normalizeFieldValue(field, input.value)
-    if (value === null) return fail(400, 'Nilai koreksi tidak valid')
+    if (value === null) return fail(400, field === 'tshirt_sizes' ? TSHIRT_AMBIGUOUS_ERROR : 'Nilai koreksi tidak valid')
   }
   if (value === null) return fail(400, 'Nilai usulan kosong. Isi nilai yang akan ditulis.')
   if (field === 'tshirt_sizes' && parseTshirtSizes(value) === null) {
-    return fail(400, 'Format ukuran kaos tidak dikenali (contoh: M x 2, L x 1)')
+    return fail(400, TSHIRT_AMBIGUOUS_ERROR)
   }
   const finalValue = value
   const corrected = finalValue !== proposed

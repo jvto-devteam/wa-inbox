@@ -149,7 +149,6 @@ export const TSHIRT_SIZE_ORDER = ['xss', 'xxs', 'xs', 's', 'm', 'l', 'xl', 'xxl'
 const WRITABLE_SIZES: readonly string[] = ['xs', 's', 'm', 'l', 'xl', 'xxl']
 
 const TSHIRT_SIZE = '(xxxl|xxl|xss|xxs|xl|xs|s|m|l)'
-const SIZE_SET: ReadonlySet<string> = new Set(['xxxl', 'xxl', 'xss', 'xxs', 'xl', 'xs', 's', 'm', 'l'])
 const SIZE_FIRST = new RegExp(`^${TSHIRT_SIZE}\\s*(?:[x×:=]\\s*)?(\\d{1,2})?$`, 'i')
 /** "2 XL", "2 M": hitungan lalu spasi lalu ukuran utuh. */
 const COUNT_SPACED = new RegExp(`^(\\d{1,2})\\s+${TSHIRT_SIZE}$`, 'i')
@@ -162,14 +161,13 @@ const ALIAS_WITH_QTY = /^(2|3)xl\s*[x×:=]\s*(\d{1,2})$/i
 const ALIAS: Record<string, string> = { '2': 'xxl', '3': 'xxxl' }
 
 /**
- * "2xl"/"3xl" menempel tanpa jumlah eksplisit ambigu: 2 x XL atau satu 2XL (= XXL)? Begitu juga "2xs", "2xxl".
- * Ambigu bila bagian setelah angka diawali "x" dan, dengan maupun tanpa "x" itu, sama-sama ukuran sah.
+ * Menempel tanpa jumlah eksplisit: "2xl"/"3xl"/"2xs" ambigu (2 x XL atau satu 2XL? 2 x S atau satu 2XS?) -> ditolak.
+ * Tidak ambigu (owner 2026-10-20): "1xl" = XL x 1, "2xxl"/"3xxl" = n x XXL, "2m", "3l". Ambigu hanya bila jumlah >= 2
+ * dan sisanya persis "xl" atau "xs".
  */
 function isAmbiguousGlued(part: string): boolean {
-  const m = /^\d{1,2}(x[a-z]+)$/i.exec(part)
-  if (!m) return false
-  const rest = m[1].toLowerCase()
-  return SIZE_SET.has(rest) && SIZE_SET.has(rest.slice(1))
+  const m = /^(\d{1,2})(xl|xs)$/i.exec(part)
+  return m !== null && Number(m[1]) >= 2
 }
 
 function parseSizes(raw: string, allowed: readonly string[]): Record<string, number> | null {
@@ -180,7 +178,7 @@ function parseSizes(raw: string, allowed: readonly string[]): Record<string, num
     if (isAmbiguousGlued(part)) return null
     const alias = ALIAS_WITH_QTY.exec(part)
     const a = alias ? null : SIZE_FIRST.exec(part)
-    const c = alias || a ? null : COUNT_SPACED.exec(part) ?? COUNT_TIMES.exec(part) ?? COUNT_GLUED.exec(part)
+    const c = alias || a ? null : COUNT_SPACED.exec(part) ?? COUNT_GLUED.exec(part) ?? COUNT_TIMES.exec(part)
     const hit = alias
       ? { size: ALIAS[alias[1]], qty: alias[2] }
       : a
@@ -199,11 +197,13 @@ function parseSizes(raw: string, allowed: readonly string[]): Record<string, num
 /**
  * Teks ukuran kaos (bentuk usulan ekstraksi, mis. "M x 2, L x 1") jadi jumlah per ukuran untuk
  * `writeBookingChange`. Butir dipisah koma/titik koma/baris baru; tiap butir "M x 2", "M:2", "M 2",
- * "2 M", "2x M" atau "M" saja (= 1). "2XL x 1" (jumlah eksplisit) = xxl 1; "2xl"/"3xl" TANPA jumlah eksplisit ambigu
- * (2 x XL atau satu 2XL?) -> null; ekstraksi wajib menulis "XL x 2". Satu butir tak dikenal -- termasuk ukuran yang tidak
+ * "2 M", "2x M" atau "M" saja (= 1). "2XL x 1" (jumlah eksplisit) = xxl 1; "2xl"/"3xl"/"2xs" TANPA jumlah eksplisit ambigu
+ * (2 x XL atau satu 2XL?) -> null; ekstraksi wajib menulis "XL x 2". "1xl" = XL x 1, "2xxl" = XXL x 2. Satu butir tak dikenal -- termasuk ukuran yang tidak
  * punya jalur tulis (XSS/XXS/XXXL) -- = null (minta admin mengoreksi); kecocokan total dengan jumlah
  * peserta diperiksa klien tulis, bukan di sini.
  */
+export const TSHIRT_AMBIGUOUS_ERROR = 'Ukuran kaos tidak jelas ("2xl" bisa berarti 2 × XL atau satu 2XL) — tulis seperti: XL x 2, M x 1'
+
 export function parseTshirtSizes(raw: string): Record<string, number> | null {
   return parseSizes(raw, WRITABLE_SIZES)
 }

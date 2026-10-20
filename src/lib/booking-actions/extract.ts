@@ -16,7 +16,14 @@ import { FIELD_KEYS, normalizeFieldValue, POINT_VALUES, type FieldKey } from './
 export type Extraction = {
   changes: Array<{ field: FieldKey; value: string; messageId: string }>
   facts: Array<{ field: FieldKey; value: string; messageId: string }>
+  /**
+   * Permintaan ukuran kaos dari tamu yang tak bisa dibaca (mis. "2xl" ambigu): tidak dibuang diam-diam, jadi TASK
+   * "Ukuran kaos tidak jelas — cek chat" (`applyExtraction`).
+   */
+  unclear?: Array<{ field: 'tshirt_sizes'; messageId: string }>
 }
+
+export const TSHIRT_UNCLEAR_TEXT = 'Ukuran kaos tidak jelas — cek chat'
 
 export const EXTRACT_TIMEOUT_MS = 20_000
 
@@ -78,7 +85,12 @@ function stripCodeFence(raw: string): string {
   return raw.trim().replace(/^```json\s*/i, '').replace(/^```\s*/, '').replace(/```\s*$/, '')
 }
 
-function parseItems(list: unknown, ids: readonly string[], allowed?: ReadonlySet<string>): Extraction['changes'] {
+function parseItems(
+  list: unknown,
+  ids: readonly string[],
+  allowed?: ReadonlySet<string>,
+  unclear?: NonNullable<Extraction['unclear']>
+): Extraction['changes'] {
   if (!Array.isArray(list)) return []
   const out: Extraction['changes'] = []
   for (const item of list) {
@@ -90,9 +102,13 @@ function parseItems(list: unknown, ids: readonly string[], allowed?: ReadonlySet
     if (typeof rawValue !== 'string') continue
     const value = normalizeFieldValue(field, rawValue)
     const messageId = resolvePesan(rec.pesan, ids)
-    if (value === null || !messageId) continue
+    if (!messageId) continue
     // Sumber harus pesan masuk (tamu): butir yang menunjuk pesan tim dibuang.
     if (allowed && !allowed.has(messageId)) continue
+    if (value === null) {
+      if (unclear && field === 'tshirt_sizes') unclear.push({ field, messageId })
+      continue
+    }
     out.push({ field, value, messageId })
   }
   return out
@@ -108,7 +124,8 @@ export function parseExtraction(raw: string, ids: readonly string[], inboundIds?
   }
   if (typeof data !== 'object' || data === null || Array.isArray(data)) return { changes: [], facts: [] }
   const rec = data as Record<string, unknown>
-  return { changes: parseItems(rec.changes, ids, inboundIds), facts: parseItems(rec.facts, ids, inboundIds) }
+  const unclear: NonNullable<Extraction['unclear']> = []
+  return { changes: parseItems(rec.changes, ids, inboundIds, unclear), facts: parseItems(rec.facts, ids, inboundIds), ...(unclear.length > 0 ? { unclear } : {}) }
 }
 
 export async function extractBookingSignals(input: {

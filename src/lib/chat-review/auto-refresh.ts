@@ -12,10 +12,11 @@
  * terjadi di belakang (`void`). Kegagalan hanya di-log (nama galat, tanpa isi chat); review lama
  * tetap karena `saveChatReview` tidak menimpa yang lebih baru dan tidak dipanggil bila LLM gagal.
  *
- * Jeda minimal 5 menit sejak `chatReviewAt` terakhir:
- *   - sudah lewat -> jalan sekarang;
- *   - belum -> SATU timer (`unref`) di akhir jeda. Pesan berikutnya selama percakapan ini
- *     tercatat menunggu tidak menambah timer, jadi satu burst = satu review.
+ * Jeda: paling cepat 30 dtk (`CHAT_REVIEW_DEBOUNCE_MS`, pembuka burst masuk satu review) dan minimal 5 menit sejak
+ * `chatReviewAt` ATAU percobaan terakhir (`lastAttemptAt`, juga bila gagal) -- SATU timer (`unref`). Pesan berikutnya
+ * selama percakapan ini menunggu tidak menambah timer. Pesan yang tiba SELAGI review berjalan menandai `dirty`; sesudah
+ * selesai satu run lagi dijadwalkan (jeda 5 menit dari `chatReviewAt` baru), jadi sisa burst tidak hilang. Pesan AGEN
+ * (`noteOutboundForChatReview`) ikut memicu supaya janji tim kepada lead tersemat; email (`EMAIL`) dilewati.
  *
  * Gerbang nomor Indonesia sama dengan daily summary (`collect.ts` `excludeIndonesian`): nomor 62 dilewati HANYA
  * bila `Settings.skipBotForIndonesianNumbers` menyala; percakapan `isTest` atau nomor `BOOKING_ACTIONS_TEST_PHONES`
@@ -26,13 +27,22 @@ import { prisma } from '@/lib/db'
 import { isBookingTestConversation } from '@/lib/booking-actions/rollout'
 import { isIndonesianNumber } from '@/lib/phone'
 import { isNoiseMessage } from '@/lib/summary-items/noise'
+import { isAutomatedSource } from '@/lib/summary-items/automated'
 import { broadcast } from '@/lib/realtime'
 import { refreshChatReview } from './refresh'
 
 export const CHAT_REVIEW_MIN_GAP_MS = 5 * 60_000
+/** Jeda sebelum run "segera": pembuka burst ("Hi" / "I booked Ijen" / "ganti jemput jam 5") masuk satu review. */
+export const CHAT_REVIEW_DEBOUNCE_MS = 30_000
 
-/** Percakapan yang sedang menunggu (gerbang berjalan atau timer jeda terpasang). */
+/** Percakapan yang sedang menunggu (gerbang berjalan atau timer terpasang). */
 const waiting = new Map<string, ReturnType<typeof setTimeout> | null>()
+/** Percakapan yang review-nya sedang berjalan (LLM sampai 60 dtk). */
+const running = new Set<string>()
+/** Pesan masuk selagi review berjalan: sesudah selesai, jadwalkan satu run lagi (jeda 5 menit dari yang baru). */
+const dirty = new Set<string>()
+/** Percobaan terakhir per percakapan (berhasil atau gagal): LLM yang mati tidak dicoba ulang di setiap pesan. */
+const lastAttemptAt = new Map<string, number>()
 
 function logFailure(conversationId: string, error: unknown): void {
   console.error('[chat-review] auto-refresh gagal', {
@@ -42,6 +52,9 @@ function logFailure(conversationId: string, error: unknown): void {
 }
 
 async function run(conversationId: string): Promise<void> {
+  waiting.delete(conversationId)
+  running.add(conversationId)
+  lastAttemptAt.set(conversationId, Date.now())
   try {
     const result = await refreshChatReview(conversationId, new Date())
     if (result.status === 'ok') broadcast({ type: 'conversation.updated', conversationId })
@@ -49,7 +62,9 @@ async function run(conversationId: string): Promise<void> {
   } catch (error) {
     logFailure(conversationId, error)
   } finally {
-    waiting.delete(conversationId)
+    running.delete(conversationId)
+    // Sisa burst yang tiba selagi berjalan tidak boleh hilang.
+    if (dirty.delete(conversationId)) scheduleChatReviewRefresh(conversationId)
   }
 }
 
@@ -57,9 +72,9 @@ async function plan(conversationId: string, now: Date): Promise<void> {
   try {
     const conv = await prisma.conversation.findUnique({
       where: { id: conversationId },
-      select: { chatReviewAt: true, isTest: true, contact: { select: { phone: true } } },
+      select: { chatReviewAt: true, isTest: true, contact: { select: { phone: true } }, channelIdentity: { select: { platform: true } } },
     })
-    if (!conv) {
+    if (!conv || conv.channelIdentity?.platform === 'EMAIL') {
       waiting.delete(conversationId)
       return
     }
@@ -71,11 +86,8 @@ async function plan(conversationId: string, now: Date): Promise<void> {
         return
       }
     }
-    const wait = conv.chatReviewAt ? conv.chatReviewAt.getTime() + CHAT_REVIEW_MIN_GAP_MS - now.getTime() : 0
-    if (wait <= 0) {
-      await run(conversationId)
-      return
-    }
+    const last = Math.max(conv.chatReviewAt?.getTime() ?? 0, lastAttemptAt.get(conversationId) ?? 0)
+    const wait = Math.max(last > 0 ? last + CHAT_REVIEW_MIN_GAP_MS - now.getTime() : 0, CHAT_REVIEW_DEBOUNCE_MS)
     const timer = setTimeout(() => void run(conversationId), wait)
     if (typeof timer === 'object' && 'unref' in timer) timer.unref()
     waiting.set(conversationId, timer)
@@ -87,6 +99,10 @@ async function plan(conversationId: string, now: Date): Promise<void> {
 
 export function scheduleChatReviewRefresh(conversationId: string, now: Date = new Date()): void {
   try {
+    if (running.has(conversationId)) {
+      dirty.add(conversationId)
+      return
+    }
     if (waiting.has(conversationId)) return
     waiting.set(conversationId, null)
     void plan(conversationId, now)
@@ -97,8 +113,20 @@ export function scheduleChatReviewRefresh(conversationId: string, now: Date = ne
 }
 
 /**
- * Titik panggil jalur masuk: satu pesan teks pelanggan baru saja tersimpan. Pesan non-teks dan penutup/reaksi
- * dilewati. Tidak ditunggu, tidak pernah melempar.
+ * Tombol "Perbarui sekarang" baru saja meringkas: batalkan jadwal otomatis yang menunggu dan catat percobaan, supaya
+ * tidak ada run otomatis tambahan dalam 5 menit. Run yang sedang berjalan dibiarkan.
+ */
+export function noteManualChatReviewRefresh(conversationId: string): void {
+  const timer = waiting.get(conversationId)
+  if (timer) clearTimeout(timer)
+  waiting.delete(conversationId)
+  dirty.delete(conversationId)
+  lastAttemptAt.set(conversationId, Date.now())
+}
+
+/**
+ * Titik panggil jalur masuk: satu pesan teks pelanggan baru saja tersimpan. Pesan non-teks (foto/stiker/placeholder
+ * lampiran) dan penutup/reaksi dilewati. Tidak ditunggu, tidak pernah melempar.
  */
 export function noteInboundForChatReview(conversationId: string, message: { type: string; content: string | null }): void {
   try {
@@ -110,8 +138,30 @@ export function noteInboundForChatReview(conversationId: string, message: { type
   }
 }
 
+/**
+ * Pesan keluar dari AGEN sungguhan (bukan bot, bukan pesan otomatis) ikut memicu: janji tim kepada lead perlu
+ * tersemat. Jeda dan gerbang sama dengan pesan masuk.
+ */
+export function noteOutboundForChatReview(
+  conversationId: string,
+  message: { sentBy: string; text: string; botTrace?: unknown }
+): void {
+  try {
+    if (message.sentBy !== 'AGENT' || !message.text.trim()) return
+    const trace = message.botTrace
+    const source = trace && typeof trace === 'object' ? (trace as { source?: unknown }).source : undefined
+    if (typeof source === 'string' && isAutomatedSource(source)) return
+    scheduleChatReviewRefresh(conversationId)
+  } catch (error) {
+    logFailure(conversationId, error)
+  }
+}
+
 // Test-only: membatalkan timer yang tertinggal antar kasus.
 export function __resetChatReviewRefreshForTests(): void {
   for (const t of waiting.values()) if (t) clearTimeout(t)
   waiting.clear()
+  running.clear()
+  dirty.clear()
+  lastAttemptAt.clear()
 }

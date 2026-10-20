@@ -83,7 +83,7 @@ beforeEach(() => {
   }) as never)
 })
 
-const ex = (over: { changes?: unknown[]; facts?: unknown[] }) => ({ changes: [], facts: [], ...over }) as never
+const ex = (over: { changes?: unknown[]; facts?: unknown[]; unclear?: unknown[] }) => ({ changes: [], facts: [], ...over }) as never
 const item = (field: string, value: string, messageId: string) => ({ field, value, messageId })
 
 describe('applyExtraction', () => {
@@ -93,6 +93,16 @@ describe('applyExtraction', () => {
     expect(actions).toHaveLength(1)
     expect(actions[0]).toMatchObject({ type: 'TASK', tier: 'HEAVY', state: 'OPEN', bookingId: '77', proposedValue: '2026-11-05' })
     expect(broadcast).toHaveBeenCalledWith({ type: 'booking-actions.changed', conversationId: 'c1' })
+  })
+
+  it('unreadable tshirt request (e.g. ambiguous "2xl") becomes a HEAVY TASK "tidak jelas" and is returned in cardIds', async () => {
+    const r = await applyExtraction('c1', ex({ unclear: [{ field: 'tshirt_sizes', messageId: 'm1' }] }), NOW)
+    expect(r.cardIds).toHaveLength(1)
+    expect(actions[0]).toMatchObject({ type: 'TASK', tier: 'HEAVY', field: 'tshirt_sizes', state: 'OPEN', proposedValue: 'Ukuran kaos tidak jelas — cek chat' })
+    // Ulang dengan pesan yang sama tidak menggandakan kartu.
+    const again = await applyExtraction('c1', ex({ unclear: [{ field: 'tshirt_sizes', messageId: 'm1' }] }), NOW)
+    expect(again.cardIds).toEqual([])
+    expect(actions).toHaveLength(1)
   })
 
   it('new action stores bookingId from bookingData.booking_id', async () => {
@@ -254,7 +264,7 @@ describe('kunci, ditutup orang, terbaru menang, cakupan booking', () => {
     expect(first.changeIds).toEqual([actions[0].id])
     Object.assign(actions[0], { state: 'REVERTED', closedReason: 'REVERTED', closedById: 'acc1' })
     const again = await applyExtraction('c1', ex({ changes: [item('pickup_point', 'Surabaya Hotel', 'm1')] }), NOW)
-    expect(again).toEqual({ created: 0, changeIds: [], changeEvents: [] })
+    expect(again).toEqual({ created: 0, changeIds: [], changeEvents: [], cardIds: [] })
   })
 
   it('terbaru menang: fakta isi-data yang lebih baru menggantikan CHANGE eksplisit lama; yang lebih lama tidak', async () => {

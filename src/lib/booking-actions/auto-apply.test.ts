@@ -5,7 +5,7 @@ import type { PrismaClient } from '@prisma/client'
 import type { BookingData } from '@/lib/booking/client'
 
 vi.mock('@/lib/db', () => ({ prisma: mockDeep<PrismaClient>() }))
-vi.mock('./execute', () => ({ executeBookingAction: vi.fn() }))
+vi.mock('./execute', () => ({ executeBookingAction: vi.fn(), ALREADY_APPLIED_ERROR: 'sudah' }))
 vi.mock('./guest-notice', () => ({ notifyGuestOfUpdate: vi.fn().mockResolvedValue(undefined) }))
 vi.mock('@/lib/push/send', async (orig) => ({ ...(await orig<typeof import('@/lib/push/send')>()), notifyBookingAction: vi.fn() }))
 
@@ -128,6 +128,24 @@ describe('autoApplyIfAllowed', () => {
       expect(await autoApplyIfAllowed('a1')).toBe('skipped')
     }
     expect(notifyBookingAction).not.toHaveBeenCalled()
+  })
+
+  it('value already in the booking after an ack -> "sudah sesuai" confirmation to the guest (variant matched)', async () => {
+    vi.mocked(executeBookingAction).mockResolvedValue({ status: 409, body: { error: 'sudah' } } as never)
+    db.bookingActionEvent.findFirst.mockResolvedValue({ id: 'e1' } as never)
+    expect(await autoApplyIfAllowed('a1')).toBe('skipped')
+    expect(notifyGuestOfUpdate).toHaveBeenCalledTimes(1)
+    expect(vi.mocked(notifyGuestOfUpdate).mock.calls[0][0]).toMatchObject({
+      conversationId: 'c1', variant: 'matched', items: [{ actionId: 'a1', written: [{ field: 'pickup_time', value: '09:00' }] }],
+    })
+    expect(notifyBookingAction).not.toHaveBeenCalled()
+  })
+
+  it('value already in the booking but NO ack was sent -> nothing to the guest', async () => {
+    vi.mocked(executeBookingAction).mockResolvedValue({ status: 409, body: { error: 'sudah' } } as never)
+    db.bookingActionEvent.findFirst.mockResolvedValue(null as never)
+    expect(await autoApplyIfAllowed('a1')).toBe('skipped')
+    expect(notifyGuestOfUpdate).not.toHaveBeenCalled()
   })
 
   it('booking changed since the card was made -> skipped before executing', async () => {

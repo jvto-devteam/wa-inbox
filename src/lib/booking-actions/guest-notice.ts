@@ -53,9 +53,9 @@ const LABELS: Record<Lang, Record<'pickup_point' | 'pickup_time' | 'drop_point' 
   id: { pickup_point: 'Titik jemput', pickup_time: 'Jam jemput', drop_point: 'Titik antar', drop_time: 'Jam antar', tshirt_sizes: 'Kaos' },
 }
 
-const TEXT: Record<Lang, { intro: string; link: (url: string) => string }> = {
-  en: { intro: 'Noted, thank you! Your booking has been updated:', link: (url) => `You can check the full details here: ${url}` },
-  id: { intro: 'Noted, terima kasih! Booking Anda sudah kami perbarui:', link: (url) => `Detail lengkap bisa dicek di: ${url}` },
+const TEXT: Record<Lang, { intro: string; matched: string; link: (url: string) => string }> = {
+  en: { intro: 'Noted, thank you! Your booking has been updated:', matched: 'Noted, thank you! Your booking already matches your request:', link: (url) => `You can check the full details here: ${url}` },
+  id: { intro: 'Noted, terima kasih! Booking Anda sudah kami perbarui:', matched: 'Noted, terima kasih! Booking Anda sudah sesuai dengan permintaan Anda:', link: (url) => `Detail lengkap bisa dicek di: ${url}` },
 }
 
 function text(value: unknown): string | null {
@@ -111,12 +111,12 @@ export function guestNoticeLines(written: readonly WrittenField[], booking: Book
 }
 
 /** Teks lengkap, atau null bila tidak ada baris yang bisa disebut. Murni. */
-export function buildGuestNoticeText(written: readonly WrittenField[], booking: BookingData): string | null {
+export function buildGuestNoticeText(written: readonly WrittenField[], booking: BookingData, variant: 'updated' | 'matched' = 'updated'): string | null {
   const lang: Lang = isIndonesianGuest(booking) ? 'id' : 'en'
   const lines = guestNoticeLines(written, booking, lang)
   if (lines.length === 0) return null
   const link = guestPortalLink(booking)
-  return [TEXT[lang].intro, ...lines, ...(link ? ['', TEXT[lang].link(link)] : [])].join('\n')
+  return [variant === 'matched' ? TEXT[lang].matched : TEXT[lang].intro, ...lines, ...(link ? ['', TEXT[lang].link(link)] : [])].join('\n')
 }
 
 /** Satu kartu yang ikut dikabarkan: id, pesan sumbernya, dan nilai yang ditulisnya (kartu + isian detail). */
@@ -135,6 +135,8 @@ export async function notifyGuestOfUpdate(input: {
   /** Booking segar (bagian yang tidak ditulis + tautan + negara). */
   booking: BookingData
   items: readonly GuestNoticeItem[]
+  /** 'matched' = nilainya sudah ada di booking (tidak ada tulisan): "sudah sesuai" menyusul tanda terima. */
+  variant?: 'updated' | 'matched'
   now?: Date
 }): Promise<void> {
   const { conversationId, bookingId, accountId } = input
@@ -148,7 +150,7 @@ export async function notifyGuestOfUpdate(input: {
     const inbound = new Set(sources.filter((m) => m.direction === 'INBOUND').map((m) => m.id))
     const items = input.items.filter((i) => i.sourceMessageId !== null && inbound.has(i.sourceMessageId))
     if (items.length === 0) return
-    const body = buildGuestNoticeText(items.flatMap((i) => i.written), input.booking)
+    const body = buildGuestNoticeText(items.flatMap((i) => i.written), input.booking, input.variant)
     if (body === null) return
     const actionId = items[0].actionId
     const ids = items.map((i) => i.actionId)

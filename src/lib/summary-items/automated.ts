@@ -22,6 +22,10 @@ export const DATA_REQUEST_SOURCE = 'data_request'
 export const BOOKING_REQUEST_ACK_SOURCE = 'booking_request_ack'
 const AUTOMATED_SOURCES = [BOOKING_UPDATE_NOTICE_SOURCE, DATA_REQUEST_SOURCE, BOOKING_REQUEST_ACK_SOURCE] as const
 
+export function isAutomatedSource(source: string): boolean {
+  return (AUTOMATED_SOURCES as readonly string[]).includes(source)
+}
+
 /**
  * Id pesan otomatis (OUTBOUND, `botTrace.source` di atas) di percakapan `conversationIds`, opsional sejak `since`.
  * Satu kueri, hanya `id`. Daftar kosong = tanpa kueri.

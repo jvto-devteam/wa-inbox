@@ -26,6 +26,16 @@ describe('parseExtraction', () => {
       facts: [{ field: 'total_pax', value: '5', messageId: 'm3' }],
     })
   })
+  it('ambiguous tshirt change ("2xl 1m") is not applied but reported as unclear; canonical form is kept', () => {
+    const raw = JSON.stringify({
+      changes: [{ field: 'tshirt_sizes', value: '2xl 1m', pesan: 1 }, { field: 'tshirt_sizes', value: 'XL x 2, M x 1', pesan: 2 }],
+      facts: [{ field: 'tshirt_sizes', value: '2xl', pesan: 3 }],
+    })
+    const out = parseExtraction(raw, ids)
+    expect(out.changes).toEqual([{ field: 'tshirt_sizes', value: 'M x 1, XL x 2', messageId: 'm2' }])
+    expect(out.unclear).toEqual([{ field: 'tshirt_sizes', messageId: 'm1' }])
+    expect(out.facts).toEqual([])
+  })
   it('drops pickup_point outside POINT_VALUES', () => {
     const raw = JSON.stringify({ changes: [{ field: 'pickup_point', value: 'Malang Station', pesan: 1 }], facts: [] })
     expect(parseExtraction(raw, ids).changes).toEqual([])

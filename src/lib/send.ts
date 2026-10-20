@@ -13,6 +13,7 @@ import { sendEmailMessage } from '@/lib/gmail/send'
 import { withMediaUrl } from '@/lib/serialize-message'
 import { enqueueOutboundJob } from '@/lib/outbound/queue'
 import { processOutboundJob } from '@/lib/outbound/worker'
+import { noteOutboundForChatReview } from '@/lib/chat-review/auto-refresh'
 import { sanitizeTrace } from '@/lib/bot-control/trace-sanitizer'
 
 /**
@@ -75,7 +76,16 @@ export type OutboundMedia = {
   fileName?: string
 }
 
-export async function sendMessage(params: {
+type SendMessageParams = Parameters<typeof sendMessageImpl>[0]
+
+export async function sendMessage(params: SendMessageParams): Promise<Awaited<ReturnType<typeof sendMessageImpl>>> {
+  const result = await sendMessageImpl(params)
+  // Janji tim kepada lead ikut tersemat di panel kanan (tidak ditunggu, tidak pernah melempar).
+  if (result && result.deliveryStatus !== 'FAILED') noteOutboundForChatReview(params.conversationId, params)
+  return result
+}
+
+async function sendMessageImpl(params: {
   conversationId: string
   text: string
   channel?: 'OFFICIAL' | 'UNOFFICIAL'

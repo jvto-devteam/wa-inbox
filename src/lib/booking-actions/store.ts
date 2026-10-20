@@ -40,7 +40,7 @@ import { broadcast } from '@/lib/realtime'
 import type { BookingData } from '@/lib/booking/client'
 import { changeAlreadyApplied, findMismatches, type ActiveFact } from './compare'
 import { changeGroup, type ChangeGroup, type FieldKey } from './fields'
-import type { Extraction } from './extract'
+import { TSHIRT_UNCLEAR_TEXT, type Extraction } from './extract'
 import { recordEvent, type BookingEventActor } from './history'
 import { supersededFactFields, supersedeOlderFacts } from './fact-supersede'
 import { notifyBookingAction, summarizeAction, type BookingPushEvent } from '@/lib/push/send'
@@ -70,6 +70,8 @@ type Counters = {
   /** true = push CHANGE ditahan di `deferred` (pemanggil menyerahkannya ke `autoApplyCreated`); false = langsung di `notify`. */
   deferChange: boolean
   deferred: BookingPushEvent[]
+  /** Id kartu CHANGE/TASK yang dibuat pada pemanggilan ini (bukan MISMATCH) -- dasar tanda terima ke tamu. */
+  cards: string[]
 }
 
 const CHANGE_TYPES = ['CHANGE', 'TASK']
@@ -248,6 +250,7 @@ async function createAction(
     select: { id: true },
   })
   counters.created++
+  if (data.type !== 'MISMATCH') counters.cards.push(row.id)
   // Permintaan perubahan melewati fakta lama field itu (Important 5).
   if (data.type !== 'MISMATCH') {
     await supersedeOlderFacts(ctx.tx, {
@@ -292,14 +295,15 @@ async function proposeChange(
   ctx: Ctx,
   counters: Counters,
   open: OpenRow[],
-  p: { field: FieldKey; value: string; messageId: string | null }
+  p: { field: FieldKey; value: string; messageId: string | null },
+  forceTask = false
 ): Promise<boolean> {
   if (ctx.blocked.has(key(p.field, p.value))) return false
   // Batas air: pesan yang sudah dilewati CHANGE/TASK yang ditutup tidak mengusulkan apa pun lagi.
   const marks = await watermarks(ctx)
   await loadTimes(ctx, [p.messageId])
   if (!aboveWatermark(ctx, marks.change, p.field, p.messageId)) return false
-  const group = changeGroup(p.field, p.value, ctx.booking)
+  const group = forceTask ? 'HEAVY' : changeGroup(p.field, p.value, ctx.booking)
   const sameField = open.filter((r) => CHANGE_TYPES.includes(r.type) && r.field === p.field)
   if (sameField.some((r) => proposedOf(r.proposedValue) === p.value)) return false
   await loadTimes(ctx, [p.messageId, ...sameField.map((r) => r.sourceMessageId)])
@@ -379,7 +383,7 @@ async function run(
   body: (ctx: Ctx, counters: Counters) => Promise<void>,
   deferChange = false
 ): Promise<Counters> {
-  const counters: Counters = { created: 0, resolved: 0, opened: 0, touched: false, notify: [], deferChange, deferred: [] }
+  const counters: Counters = { created: 0, resolved: 0, opened: 0, touched: false, notify: [], deferChange, deferred: [], cards: [] }
   await prisma.$transaction(async (tx) => {
     // Kunci per percakapan (dilepas saat commit): dua proses tak boleh menyisipkan baris OPEN/fakta ganda.
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${conversationId}))`
@@ -409,7 +413,7 @@ export async function applyExtraction(
   conversationId: string,
   ex: Extraction,
   now: Date = new Date()
-): Promise<{ created: number; changeIds: string[]; changeEvents: BookingPushEvent[] }> {
+): Promise<{ created: number; changeIds: string[]; changeEvents: BookingPushEvent[]; cardIds: string[] }> {
   const c = await run(conversationId, now, 'BOT', async (ctx, counters) => {
     const { tx } = ctx
     const existing = (await tx.bookingFact.findMany({ where: { conversationId, supersededAt: null } })).filter((f) => inScope(f, ctx.bookingId))
@@ -434,9 +438,13 @@ export async function applyExtraction(
       if (changeAlreadyApplied({ field: ch.field, value: ch.value }, ctx.booking)) continue
       if (await proposeChange(ctx, counters, open, { field: ch.field, value: ch.value, messageId: ch.messageId })) counters.touched = true
     }
+    // Ukuran kaos yang tak terbaca (mis. "2xl" ambigu) tidak dibuang diam-diam: TASK untuk orang (tanpa terapkan-otomatis).
+    for (const u of ex.unclear ?? []) {
+      if (await proposeChange(ctx, counters, open, { field: u.field, value: TSHIRT_UNCLEAR_TEXT, messageId: u.messageId }, true)) counters.touched = true
+    }
     await evaluate(ctx, counters)
   }, true)
-  return { created: c.created, changeIds: c.deferred.map((e) => e.actionId), changeEvents: c.deferred }
+  return { created: c.created, changeIds: c.deferred.map((e) => e.actionId), changeEvents: c.deferred, cardIds: c.cards }
 }
 
 export async function reevaluateBookingActions(conversationId: string, now: Date = new Date()): Promise<{ resolved: number; opened: number }> {

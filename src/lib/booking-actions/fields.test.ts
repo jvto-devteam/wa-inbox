@@ -143,7 +143,13 @@ describe('ukuran kaos ambigu ("2xl")', () => {
     expect(parseTshirtSizes('2xl')).toBeNull()
     expect(parseTshirtSizes('3XL, M x 1')).toBeNull()
     expect(parseTshirtSizes('2xs')).toBeNull()
+    expect(parseTshirtSizes('3xs')).toBeNull()
     expect(normalizeFieldValue('tshirt_sizes', '2xl 1m')).toBeNull()
+  })
+  it('glued forms that are NOT ambiguous: 1xl, 2xxl, 3xxl, 2m', () => {
+    expect(parseTshirtSizes('1xl')).toEqual({ xl: 1 })
+    expect(parseTshirtSizes('2xxl')).toEqual({ xxl: 2 })
+    expect(parseTshirtSizes('3xxl, 1m')).toEqual({ xxl: 3, m: 1 })
   })
   it('2XL dengan jumlah eksplisit = xxl; 3XL x 1 = xxxl', () => {
     expect(parseTshirtSizes('2XL x 1')).toEqual({ xxl: 1 })

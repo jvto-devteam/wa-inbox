@@ -145,7 +145,8 @@ async function ingestOne(
     // fetch ulang.
     broadcast({ type: 'message.created', conversationId: conversation.id, message: withMediaUrl(created) })
     // Panel ringkasan chat ikut terbaru (tidak ditunggu, tidak pernah melempar).
-    noteInboundForChatReview(conversation.id, { type: 'text', content })
+    // Hanya teks sungguhan; placeholder lampiran (foto/stiker) tidak memicu, sama seperti WhatsApp.
+    if (text) noteInboundForChatReview(conversation.id, { type: 'text', content: text })
     return true
   } catch (error) {
     // Balapan retry-at-least-once Meta yang sama seperti ingestSingleMessage di

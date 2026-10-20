@@ -250,9 +250,13 @@ append-only tanpa FK: siapa, kapan, nilai lama/baru), `PushSubscription`. Setela
   membandingkan nilai mentah (`07:00` = `07:00`, supaya kartu jam 07:00 tertutup), dan permintaan data (R23,
   di bawah) tidak menanyakan jam `07:00` — tiga aturan untuk satu nilai yang sama. Ukuran kaos dibandingkan
   dalam bentuk kanonik `canonicalTshirtSizes` (urutan ukuran backoffice), bukan string. Token menempel
-  "2xl"/"3xl" tanpa jumlah eksplisit **ambigu** (2 × XL atau satu 2XL?): `parseTshirtSizes` menolaknya (null → butir
-  dibuang); prompt ekstraksi wajib menulis bentuk kanonik "XL x 2, M x 1" dengan `total_pax` sebagai petunjuk, atau
-  tidak menulis butir itu. "2XL x 1" (jumlah eksplisit) = XXL × 1.
+  "2xl"/"3xl" tanpa jumlah eksplisit **ambigu** (2 × XL atau satu 2XL?): `parseTshirtSizes` menolaknya (null); prompt
+  ekstraksi wajib menulis bentuk kanonik "XL x 2, M x 1" dengan `total_pax` sebagai petunjuk, atau tidak menulis butir
+  itu. Permintaan kaos yang tetap tak terbaca TIDAK dibuang diam-diam: `Extraction.unclear` → `applyExtraction` membuat
+  TASK HEAVY "Ukuran kaos tidak jelas — cek chat" (tanpa terapkan-otomatis; dapat tanda terima dan push admin).
+  "2XL x 1" (jumlah eksplisit) = XXL × 1; tidak ambigu: "1xl" = XL × 1, "2xxl"/"3xxl" = n × XXL, "2m". Ambigu hanya
+  "2xl"/"3xl"/"2xs" tanpa jumlah eksplisit. Koreksi manual yang tak terbaca ditolak 400 dengan `TSHIRT_AMBIGUOUS_ERROR`
+  ("tulis seperti: XL x 2, M x 1").
 - **Eksekusi** (`execute.ts`, `executeBookingAction`): menulis lewat endpoint `my-booking` legacy
   (`src/lib/booking/backoffice-client.ts`, env `LEGACY_BASE_URL`). **Sebelum menulis, Setujui dan Batalkan
   selalu mencari booking segar ke API** (`lookupBookingResult`), karena form update-pickup/update-drop mengirim
@@ -281,7 +285,11 @@ append-only tanpa FK: siapa, kapan, nilai lama/baru), `PushSubscription`. Setela
   dikirim (event `TEST_PHONE_MISSING`, tanpa push); gagal membaca percakapan = kabar gagal (event + push).
 - **Tanda terima ke tamu** (`guest-ack.ts`, `notifyGuestRequestReceived`, owner 2026-10-20): pesan PERTAMA dari dua.
   `runExtraction` memanggilnya tepat sesudah `applyExtraction` dan SEBELUM `autoApplyCreated`; memicu hanya bila run itu
-  melahirkan kartu `CHANGE`/`TASK` dari pesan tamu (bukan `MISMATCH`/`DATA_REQUEST`, bukan kartu isian `reevaluate`).
+  melahirkan kartu `CHANGE`/`TASK` dari pesan tamu (bukan `MISMATCH`/`DATA_REQUEST`, bukan kartu yang lahir di `reevaluateBookingActions`). Kartu isian yang lahir di `evaluate()` DI DALAM `applyExtraction`
+  DOES memicunya. Kartu dipilih dari `applyExtraction().cardIds` (id CHANGE+TASK yang dibuat run itu), bukan jendela waktu.
+  Event `GUEST_ACK_SENT` ditulis SEBELUM kirim (klaim di bawah kunci advisory) sehingga run tumpang tindih tidak kirim
+  ganda; kirim gagal tidak diulang. Bila terapkan-otomatis mendapati nilainya sudah ada (MATCHED_IN_BACKOFFICE) dan tanda
+  terima sudah terkirim, tamu tetap dikabari "sudah sesuai" (`notifyGuestOfUpdate` `variant: 'matched'`).
   Satu pesan per run: "Noted, we've received your request and are processing it now." / "Noted, permintaan Anda sudah
   kami terima dan sedang kami proses." (kode, tanpa LLM/nama; bahasa lewat `isIndonesianGuest`). Gerbang sama dengan kabar
   ke tamu (WhatsApp bernomor, `bookingAutomationAllowed`, jendela 24 jam terbuka; tertutup = diam tanpa push) dan terkirim
@@ -328,11 +336,16 @@ append-only tanpa FK: siapa, kapan, nilai lama/baru), `PushSubscription`. Setela
 - **Panel kanan**: `GET /api/conversations/[id]/chat-review` memuat `pinned` dan `changeHistory`. Tab ini
   ikut terbaru untuk **semua** percakapan, termasuk lead tanpa booking (owner 2026-10-20): `noteInboundForChatReview`
   (`auto-refresh.ts`) dipanggil dari jalur masuk pesan teks pelanggan (WhatsApp `inbound.ts`, Messenger/Instagram
-  `inbound-messenger.ts`, pesan uji) dan memanggil `scheduleChatReviewRefresh` (jeda minimal `CHAT_REVIEW_MIN_GAP_MS` =
-  5 menit, satu run per burst, tidak ditunggu, tidak pernah melempar). Tidak bergantung pada booking maupun rollout aksi
-  booking (hanya menulis catatan internal). Nomor Indonesia dilewati hanya bila `Settings.skipBotForIndonesianNumbers`
-  menyala (aturan daily summary); `isTest`/nomor uji selalu lolos; `isNoiseMessage` tidak memicu. Email (Gmail) tidak
-  memicunya. `runExtraction` **tidak** memanggilnya lagi (hindari jadwal ganda).
+  `inbound-messenger.ts` -- hanya teks sungguhan, bukan placeholder lampiran --, pesan uji) dan **pesan keluar AGEN**
+  (`sendMessage` → `noteOutboundForChatReview`; bot dan sumber otomatis tidak), supaya janji tim kepada lead tersemat.
+  Jeda: ≥ `CHAT_REVIEW_DEBOUNCE_MS` (30 dtk, pembuka burst masuk satu review) dan ≥ `CHAT_REVIEW_MIN_GAP_MS` (5 menit) sejak
+  `chatReviewAt` ATAU percobaan terakhir (gagal pun, jadi LLM mati tidak dicoba tiap pesan). Pesan yang tiba SELAGI review
+  berjalan menandai `dirty`: sesudah selesai satu run lagi dijadwalkan. Tombol "Perbarui sekarang"
+  (`noteManualChatReviewRefresh`) menunda run otomatis berikutnya 5 menit. Tidak ditunggu, tidak pernah melempar. Tidak
+  bergantung pada booking maupun rollout aksi booking (hanya menulis catatan internal). Nomor Indonesia dilewati hanya
+  bila `Settings.skipBotForIndonesianNumbers` menyala (aturan daily summary); `isTest`/nomor uji selalu lolos;
+  `isNoiseMessage` tidak memicu; email dilewati. **Mematikan `skipBotForIndonesianNumbers` mengirim setiap chat Indonesia
+  ke LLM cloud untuk pin point.** `runExtraction` **tidak** memanggilnya (hindari jadwal ganda).
 - **Permintaan data** (`data-requests.ts`, `createDataRequestDrafts`): H-7 sampai H-1 (H-0 = trip mulai, draf
   ditutup), jam kirim 08:00–20:00 WIB (`inDataRequestHours`), satu draf per booking per hari WIB (unik
   `[bookingId, type, forDay]`), hanya butir yang kurang (`findDataGaps`); jam **tidak** ditanyakan bila nilainya

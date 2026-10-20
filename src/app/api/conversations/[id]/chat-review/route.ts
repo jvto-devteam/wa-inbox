@@ -3,6 +3,7 @@ import { prisma } from '@/lib/db'
 import { getSession } from '@/lib/auth/get-session'
 import { conversationReviewSchema, type ConversationReview } from '@/lib/daily-summary/payload-schema'
 import { chatReviewHistory, type ChatReviewHistoryEntry } from '@/lib/chat-review/history'
+import { noteManualChatReviewRefresh } from '@/lib/chat-review/auto-refresh'
 import { refreshChatReview } from '@/lib/chat-review/refresh'
 import { currentBookingId, inCurrentBooking } from '@/lib/booking-actions/scope'
 import type { BookingActionEventView, PinnedBookingAction } from '@/lib/booking-actions/view'
@@ -145,6 +146,8 @@ export async function POST(req: Request, { params }: Ctx) {
     }
 
     const result = await refreshChatReview(id, now)
+    // Tidak ada run otomatis tambahan dalam 5 menit sesudah tombol ini.
+    noteManualChatReviewRefresh(id)
     if (result.status === 'empty') return NextResponse.json({ error: 'Percakapan belum punya pesan' }, { status: 400 })
     if (result.status === 'failed') return NextResponse.json({ error: 'Gagal meringkas. Coba lagi.' }, { status: 502 })
     return NextResponse.json(await buildResponse(id))
