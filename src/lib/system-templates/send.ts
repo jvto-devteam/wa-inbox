@@ -33,7 +33,8 @@ import { parseVariables, type VariableValues } from './types'
 export type SystemSendTarget = { phone: string } | { groupId: string }
 
 export type SystemSendParams = {
-  clientId: string
+  /** API client pemanggil; kosong untuk kirim dari dalam wa-inbox sendiri. */
+  clientId?: string
   templateKey: string
   to: SystemSendTarget
   variables: VariableValues

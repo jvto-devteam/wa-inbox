@@ -24,6 +24,7 @@ const EXPECTED_KEYS = [
   'hotel_room_reservation',
   'internal_bali_transport',
   'internal_bali_transport_reminder',
+  'internal_bali_transport_update',
   'internal_consent_completed',
   'internal_new_booking',
   'payment_method_confirmed_card',
@@ -48,7 +49,13 @@ const EXPECTED_KEYS = [
  * ketiganya lahir 2026-09-23 sebagai varian trip_information per tipe jemput (bandara / stasiun /
  * hotel). Sisa aturan (badan template valid, kunci unik) tetap berlaku untuk mereka.
  */
-const KEYS_WITHOUT_PHP_ORIGIN = new Set(['trip_information_airport', 'trip_information_station', 'trip_information_hotel'])
+const KEYS_WITHOUT_PHP_ORIGIN = new Set([
+  'trip_information_airport',
+  'trip_information_station',
+  'trip_information_hotel',
+  // Lahir 2026-10-20 (Chat -> Aksi Booking, Task 11a): kabar perubahan titik/jam ke vendor Bali.
+  'internal_bali_transport_update',
+])
 
 describe('system template seeds', () => {
   it('cover exactly the planned keys', () => {

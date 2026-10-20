@@ -1083,7 +1083,7 @@ model BookingActionEvent {
   conversationId  String
   bookingId       String?
   actionId        String?
-  /// CREATED | CORRECTED | EXECUTED | EXECUTE_FAILED | REJECTED | SUPERSEDED | RESOLVED | DRAFT_SENT | REVERTED
+  /// CREATED | CORRECTED | EXECUTED | EXECUTE_FAILED | REJECTED | SUPERSEDED | RESOLVED | DRAFT_SENT | REVERTED | VENDOR_NOTICE_FAILED
   event           String
   /// BOT | SYSTEM | ACCOUNT
   actor           String

@@ -23,6 +23,7 @@ export type BookingEventName =
   | 'RESOLVED'
   | 'DRAFT_SENT'
   | 'REVERTED'
+  | 'VENDOR_NOTICE_FAILED'
 
 export type BookingEventActor = 'BOT' | 'SYSTEM' | 'ACCOUNT'
 

@@ -28,6 +28,8 @@
  *   EXECUTED supaya ekstraksi berikutnya tidak mengusulkan lagi nilai yang sudah dikoreksi admin.
  * - `lastError` dan reason lewat `sanitizeTrace`; respons 502 memakai pesan generik, bukan teks backoffice.
  * - oldValue/newValue event berupa nilai polos (string/null) supaya riwayat terbaca "10:30 -> 09:00".
+ * - Task 11a: sukses pada kartu tier BALI memicu SATU kabar ke vendor (`bali-vendor.ts`), sesudah transaksi,
+ *   tanpa menunggu dan tanpa mengubah respons; gagal kirim = event VENDOR_NOTICE_FAILED + push admin.
  * - Log hanya id/kind/status: tanpa teks pelanggan dan tanpa token url booking.
  *
  * Pelepasan klaim basi dipanggil dari GET panel kartu (`/api/conversations/[id]/booking-actions`) dan
@@ -48,6 +50,7 @@ import type { BookingData } from '@/lib/booking/client'
 import { changeAlreadyApplied } from './compare'
 import { normalizeFieldValue, parseTshirtSizes, readBookingField, type FieldKey } from './fields'
 import { recordEvent } from './history'
+import { notifyBaliVendor } from './bali-vendor'
 import { currentBookingId } from './scope'
 import { reevaluateBookingActions } from './store'
 import { canExecuteField, companionFields, detailFieldOf } from './view'
@@ -237,6 +240,10 @@ export async function executeBookingAction(input: {
       settled = true
       await reevaluate(conversationId)
       broadcast({ type: 'booking-actions.changed', conversationId })
+      // Task 11a: kelompok BALI -> kabari vendor transport Bali sekali. Fire-and-forget; tidak mengubah respons.
+      if (action.tier === 'BALI') {
+        void notifyBaliVendor({ actionId, conversationId, bookingId, booking: result.booking }).catch(() => undefined)
+      }
       return { status: 200, body: { ok: true, state: 'EXECUTED', executed: ids, written } }
     }
 

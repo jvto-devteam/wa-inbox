@@ -705,6 +705,34 @@ Terima kasih`,
     source: 'javavolcano-touroperator/app/Console/Commands/ReminderBali.php:106',
   },
   {
+    key: 'internal_bali_transport_update',
+    name: 'Perubahan transport Bali',
+    description: 'Dikirim ke vendor transport Bali setelah admin menyetujui perubahan titik/jam jemput atau antar pada booking yang memakai transport Bali (Chat → Aksi Booking).',
+    audience: 'INTERNAL',
+    body: `*Perubahan Transport Service Bali*
+
+📌 Booking : {booking_code}
+
+🗓 Tanggal : {travel_dates}
+
+👥 Tamu : {total_pax} pax
+
+📍 Pickup : {pickup}
+
+🏁 Drop : {drop}
+
+Mohon sesuaikan dengan data terbaru di atas.`,
+    imageUrl: null,
+    variables: [
+      req('booking_code', 'JVTO-3899', 'Kode booking (bookingData.id).'),
+      req('travel_dates', '12 October 2026 - 14 October 2026', 'Tanggal trip; satu tanggal bila mulai = selesai.'),
+      req('total_pax', '2', 'Jumlah peserta.'),
+      req('pickup', 'Bali Hotel - Kuta Beach Hotel (09:30)', "Titik + detail jemput terbaru, jam di kurung; '-' bila kosong."),
+      req('drop', 'Surabaya Hotel - Hotel Majapahit (17:00)', "Titik + detail antar terbaru, jam di kurung; '-' bila kosong."),
+    ],
+    source: 'wa-inbox/src/lib/booking-actions/bali-vendor.ts (baru; tujuan mengikuti XenditController.php:499)',
+  },
+  {
     key: 'crew_trip_media',
     name: 'Tautan media trip ke grup crew',
     description: 'Dikirim ke grup WhatsApp crew (gambar + caption) pada jadwal wa_schedule_trip_media_crew, berisi tautan media trip dan daftar crew.',
