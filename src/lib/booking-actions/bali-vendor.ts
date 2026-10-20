@@ -10,6 +10,9 @@
  * template baru `internal_bali_transport_update` (perlu `scripts/seed-system-templates.ts --apply` di VPS).
  * Template tidak ada / dinonaktifkan / antrean gagal = kegagalan kirim, bukan galat.
  *
+ * "Terkirim" berarti masuk antrean; kegagalan penyedia sesudahnya dipegang retry ladder outbound dan tidak
+ * memicu push manual.
+ *
  * Fire-and-forget dan TIDAK PERNAH melempar: perubahan booking sudah berlaku di backoffice. Gagal = event
  * `VENDOR_NOTICE_FAILED` + push ke admin supaya vendor dikabari manual. Isi pesan: kode booking, tanggal, pax,
  * titik+jam terbaru. Tanpa nama/HP/email pelanggan.

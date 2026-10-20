@@ -61,6 +61,9 @@ export const BOOKING_CHANGED_ERROR = 'Booking di percakapan ini berubah sejak ka
 export const STALE_CLAIM_ERROR = 'Eksekusi terputus sebelum selesai. Periksa booking di backoffice sebelum menyetujui lagi.'
 const UNEXPECTED_ERROR = 'Eksekusi berhenti karena galat tak terduga. Coba lagi.'
 const MAX_ERROR = 500
+const TRANSPORT_FIELDS: ReadonlySet<FieldKey> = new Set<FieldKey>([
+  'pickup_point', 'pickup_detail', 'pickup_time', 'drop_point', 'drop_detail', 'drop_time',
+])
 
 export type ExecuteResult =
   | { status: 200; body: { ok: true; state: 'EXECUTED'; executed: string[]; written: WrittenPart[] } }
@@ -241,7 +244,9 @@ export async function executeBookingAction(input: {
       await reevaluate(conversationId)
       broadcast({ type: 'booking-actions.changed', conversationId })
       // Task 11a: kelompok BALI -> kabari vendor transport Bali sekali. Fire-and-forget; tidak mengubah respons.
-      if (action.tier === 'BALI') {
+      // Gate ganda: tier BALI DAN minimal satu field transport benar-benar ditulis (kartu + pendamping).
+      // Tier saja tidak cukup: changeGroup memberi BALI pada semua field non-HEAVY, termasuk kaos/catatan.
+      if (action.tier === 'BALI' && included.some((a) => TRANSPORT_FIELDS.has(a.field))) {
         void notifyBaliVendor({ actionId, conversationId, bookingId, booking: result.booking }).catch(() => undefined)
       }
       return { status: 200, body: { ok: true, state: 'EXECUTED', executed: ids, written } }

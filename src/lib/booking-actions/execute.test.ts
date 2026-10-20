@@ -76,11 +76,11 @@ describe('executeBookingAction (klien tulis sungguhan, fetch di-stub)', () => {
 })
 
 describe('executeBookingAction -> vendor Bali notice (Task 11a)', () => {
-  const run = async (tier: string, over: Record<string, unknown> = {}) => {
+  const run = async (tier: string, over: Record<string, unknown> = {}, bd: BookingData = booking()) => {
     db.bookingAction.findUnique.mockResolvedValue({
       id: 'a1', conversationId: 'c1', bookingId: '77', type: 'CHANGE', field: 'pickup_time', proposedValue: '09:00', state: 'OPEN', tier, ...over,
     } as never)
-    db.conversation.findUnique.mockResolvedValue({ id: 'c1', bookingData: booking(), contact: { phone: '62811' } } as never)
+    db.conversation.findUnique.mockResolvedValue({ id: 'c1', bookingData: bd, contact: { phone: '62811' } } as never)
     vi.mocked(ensureFreshBookingData).mockResolvedValue(booking({ pickup: { meeting_point: 'Surabaya Airport', pickup_time: '09:00' } }))
     return executeBookingAction({ actionId: 'a1', accountId: 'acc1', now: NOW })
   }
@@ -90,6 +90,16 @@ describe('executeBookingAction -> vendor Bali notice (Task 11a)', () => {
     expect(r.status).toBe(200)
     expect(notifyBaliVendor).toHaveBeenCalledTimes(1)
     expect(notifyBaliVendor).toHaveBeenCalledWith(expect.objectContaining({ actionId: 'a1', conversationId: 'c1', bookingId: '77', booking: expect.objectContaining({ pickup: expect.objectContaining({ pickup_time: '09:00' }) }) }))
+  })
+
+  it('tshirt_sizes on a BALI booking -> no notice (not a transport field)', async () => {
+    expect((await run('BALI', { field: 'tshirt_sizes', proposedValue: 'M x 2' })).status).toBe(200)
+    expect(notifyBaliVendor).not.toHaveBeenCalled()
+  })
+
+  it('drop_time on a BALI booking -> one notice', async () => {
+    expect((await run('BALI', { field: 'drop_time', proposedValue: '17:00' }, booking({ dropoff: { drop_point: 'Surabaya Hotel', drop_time: '16:00' } }))).status).toBe(200)
+    expect(notifyBaliVendor).toHaveBeenCalledTimes(1)
   })
 
   it('AI change -> no vendor notice', async () => {
