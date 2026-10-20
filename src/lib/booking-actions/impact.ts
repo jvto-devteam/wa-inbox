@@ -141,6 +141,7 @@ async function compute(
     impact.medicalCheckupDate = { from: addDays(booking.atIjen, -1), to: addDays(booking.atIjen, delta - 1) }
   }
 
+  // Crew tanpa id dengan nama sama sengaja digabung jadi satu fetch.
   const members = new Map<string, string | null>()
   for (const member of booking.crew) {
     const key = member.id ?? member.name
@@ -182,6 +183,7 @@ export async function computeImpact(action: {
   } catch (err) {
     const reason = err instanceof Unavailable ? err.message : err instanceof Error ? err.name : 'error'
     console.warn(`[booking-actions/impact] unavailable: ${reason}`)
+    controller.abort() // hentikan fetch saudara yang masih berjalan
     return unavailable()
   } finally {
     clearTimeout(timer)

@@ -111,4 +111,21 @@ describe('computeImpact', () => {
     const r = await computeImpact({ field: 'travel_date', proposedValue: '2026-10-25', bookingId: '3800' })
     expect(r.unavailable).toBe(true)
   })
+
+  it('one crew fetch failing aborts the in-flight sibling', async () => {
+    const two = {
+      ...BOOKING,
+      crew: [{ crew_id: 7, name: 'Fredi' }, { crew_id: 8, name: 'Budi' }],
+    }
+    let siblingSignal: AbortSignal | undefined
+    fetchMock.mockImplementation(async (url: string, init: { signal: AbortSignal }) => {
+      if (!url.includes('crew=')) return json(two)
+      if (url.includes('crew=7')) throw new Error('boom')
+      siblingSignal = init.signal
+      return new Promise<Response>(() => {})
+    })
+    const r = await computeImpact({ field: 'travel_date', proposedValue: '2026-10-25', bookingId: '3800' })
+    expect(r.unavailable).toBe(true)
+    expect(siblingSignal?.aborted).toBe(true)
+  })
 })
