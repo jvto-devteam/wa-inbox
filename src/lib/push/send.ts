@@ -11,7 +11,6 @@
  */
 import webpush from 'web-push'
 import { prisma } from '@/lib/db'
-import { recordEvent } from '@/lib/booking-actions/history'
 
 export type PushPayload = { title: string; body: string; url: string; tag: string }
 export type BookingPushKind = 'CHANGE' | 'MISMATCH' | 'TASK' | 'AUTO_APPLIED' | 'EXECUTE_FAILED' | 'DATA_REQUEST_FAILED' | 'GUEST_NOTICE_FAILED'
@@ -38,6 +37,12 @@ const TITLES: Record<BookingPushKind, string> = {
   EXECUTE_FAILED: 'Perubahan booking gagal diterapkan',
   DATA_REQUEST_FAILED: 'Permintaan data tamu gagal terkirim',
   GUEST_NOTICE_FAILED: 'Tamu belum dikabari perubahan booking',
+}
+/** Judul alarm kabari-manual: lebih tepat daripada judul jenisnya (vendor gagal ≠ perubahan gagal diterapkan). */
+const SUFFIX_TITLES: Partial<Record<NonNullable<BookingPushEvent['tagSuffix']>, string>> = {
+  'guest-revert': 'Perubahan dibatalkan — kabari tamu manual',
+  'vendor-tshirt': 'Kabar ke vendor gagal',
+  'vendor-bali': 'Kabar ke vendor gagal',
 }
 const MAX_SUMMARY = 100
 
@@ -75,7 +80,7 @@ export function buildPushPayload(e: BookingPushEvent): PushPayload {
   // Perubahan yang sudah ditulis: pengingat bahwa masih bisa dibatalkan. Ditambahkan SESUDAH pemotongan ringkasan.
   const text = e.kind === 'AUTO_APPLIED' ? `Diterapkan otomatis · ${clipped} — ketuk untuk melihat/batalkan` : clipped
   return {
-    title: TITLES[e.kind],
+    title: (e.tagSuffix ? SUFFIX_TITLES[e.tagSuffix] : undefined) ?? TITLES[e.kind],
     body: code ? `${code}: ${text}` : text,
     url: `/inbox?${params.toString()}`,
     tag: e.tagSuffix ? `booking-action:${e.actionId}:${e.tagSuffix}` : `booking-action:${e.actionId}`,
@@ -94,12 +99,38 @@ function vapidFromEnv(): { subject: string; publicKey: string; privateKey: strin
  * Penanda `PUSHED` di riwayat kartu: sapuan tick (`pushUnnotifiedChanges`) mengirim ulang push CHANGE hanya untuk
  * kartu OPEN yang belum pernah dikabarkan (push hilang karena proses mati/restart). Dicatat sebelum kirim, juga
  * tanpa VAPID, supaya sapuan tidak berulang tiap tick. Disembunyikan dari tampilan riwayat.
+ *
+ * Penanda yang GAGAL ditulis diingat di memori proses (`pushMarkFailedRecently`) selama jendela sapuan, supaya kartu
+ * itu tidak di-push ulang tiap 5 menit. Restart melupakannya -- paling banyak satu push ganda per kartu.
  */
+const markFailedAt = new Map<string, number>()
+const MARK_FAILED_TTL_MS = 60 * 60 * 1000
+const MAX_MARK_FAILED = 1000
+
+export function pushMarkFailedRecently(actionId: string, now: number = Date.now()): boolean {
+  const at = markFailedAt.get(actionId)
+  if (at === undefined) return false
+  if (now - at > MARK_FAILED_TTL_MS) {
+    markFailedAt.delete(actionId)
+    return false
+  }
+  return true
+}
+
+/** Test-only. */
+export function __resetPushMarksForTests(): void {
+  markFailedAt.clear()
+}
+
 async function markPushed(e: BookingPushEvent): Promise<void> {
   try {
-    await recordEvent(prisma, { conversationId: e.conversationId, actionId: e.actionId, event: 'PUSHED', actor: 'SYSTEM', reason: e.kind })
+    await prisma.bookingActionEvent.create({
+      data: { conversationId: e.conversationId, actionId: e.actionId, event: 'PUSHED', actor: 'SYSTEM', reason: e.kind },
+    })
   } catch {
-    // recordEvent standalone sudah menelan; sabuk pengaman saja.
+    if (markFailedAt.size >= MAX_MARK_FAILED) markFailedAt.clear()
+    markFailedAt.set(e.actionId, Date.now())
+    console.error('push: penanda PUSHED gagal ditulis')
   }
 }
 

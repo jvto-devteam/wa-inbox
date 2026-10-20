@@ -11,7 +11,7 @@ import {
   UNREPLIED_MIN_MS,
 } from './config'
 import type { TripBriefSummary } from './payload-schema'
-import { isAutomatedNotice } from '@/lib/summary-items/automated'
+import { automatedMessageIds } from '@/lib/summary-items/automated'
 
 /**
  * Mengumpulkan bahan ringkasan satu hari WIB. Hanya membaca; tidak ada yang ditulis di sini.
@@ -40,7 +40,7 @@ export type TranscriptMessage = {
   type: string
   content: string | null
   createdAt: Date
-  /** Kabar otomatis (`isAutomatedNotice`): tampil di transkrip, tetapi bukan "balasan kita". */
+  /** Kabar otomatis (`automatedMessageIds`): tampil di transkrip, tetapi bukan "balasan kita". */
   automated?: boolean
 }
 
@@ -87,7 +87,7 @@ export type CollectedDay = {
 export function classifyConversation(facts: ConversationFacts, start: Date, end: Date): Classification {
   // Kabar otomatis ("booking sudah diperbarui", permintaan data) tidak menjawab pelanggan: diukur dari pesan
   // terakhir yang bukan kabar otomatis.
-  const last = facts.messages.filter((m) => !m.automated).at(-1)
+  const last = lastRealMessage(facts.messages)
   const activeToday = facts.inboundToday + facts.outboundToday > 0
   const isNewLead = facts.createdAt >= start && facts.createdAt < end
   if (!last) return { activeToday, isNewLead, unreplied: null, dormant: null }
@@ -102,6 +102,16 @@ export function classifyConversation(facts: ConversationFacts, start: Date, end:
       : null
 
   return { activeToday, isNewLead, unreplied, dormant }
+}
+
+/** Menandai `automated` pada pesan yang id-nya ada di `ids` (hasil `automatedMessageIds`). Murni. */
+export function markAutomated(messages: readonly TranscriptMessage[], ids: ReadonlySet<string>): TranscriptMessage[] {
+  return messages.map((m) => (ids.has(m.id) ? { ...m, automated: true } : m))
+}
+
+/** Pesan terakhir yang bukan kabar otomatis, atau undefined. */
+export function lastRealMessage(messages: readonly TranscriptMessage[]): TranscriptMessage | undefined {
+  return messages.filter((m) => !m.automated).at(-1)
 }
 
 /** Satu pesan sebagai teks pendek untuk kartu di halaman. */
@@ -204,18 +214,17 @@ export async function collectDay(start: Date, end: Date, options: CollectOptions
   const countFor = (conversationId: string, direction: MessageDirection) =>
     todayCounts.find((row) => row.conversationId === conversationId && row.direction === direction)?._count._all ?? 0
 
+  // Satu kueri id (tanpa memuat botTrace) untuk semua percakapan: kabar otomatis ditandai `automated`.
+  const automated = await automatedMessageIds(ids, lookbackStart)
   const facts: ConversationFacts[] = []
   for (const conversation of conversations) {
     const latest = await prisma.message.findMany({
       where: { conversationId: conversation.id, createdAt: { lt: end } },
       orderBy: { createdAt: 'desc' },
       take: TRANSCRIPT_MAX_MESSAGES,
-      select: { id: true, direction: true, sentBy: true, type: true, content: true, createdAt: true, botTrace: true },
+      select: { id: true, direction: true, sentBy: true, type: true, content: true, createdAt: true },
     })
-    const messages: TranscriptMessage[] = [...latest].reverse().map(({ botTrace, ...m }) => ({
-      ...m,
-      ...(isAutomatedNotice({ direction: m.direction, botTrace }) ? { automated: true } : {}),
-    }))
+    const messages = markAutomated([...latest].reverse(), automated)
     facts.push({
       conversationId: conversation.id,
       contactName: conversation.contact.name,

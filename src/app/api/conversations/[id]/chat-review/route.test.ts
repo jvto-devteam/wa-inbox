@@ -20,6 +20,9 @@ import { saveChatReview } from '@/lib/chat-review/store'
 import { GET, POST } from './route'
 
 const mockPrisma = prisma as unknown as DeepMockProxy<PrismaClient>
+/** Kueri pesan biasa menjawab `rows`; kueri id pesan otomatis (filter JSON `OR`) menjawab kosong. */
+const messagesExceptAutomated = (rows: unknown[]) =>
+  mockPrisma.message.findMany.mockImplementation((async (a?: { where?: { OR?: unknown } }) => (a?.where?.OR ? [] : rows)) as never)
 const req = (method = 'GET') => new Request('http://localhost/api/conversations/c1/chat-review', { method, headers: { cookie: 'wa_inbox_session=tok' } })
 const ctx = { params: Promise.resolve({ id: 'c1' }) }
 
@@ -137,7 +140,7 @@ describe('GET /api/conversations/[id]/chat-review', () => {
       { date: '2026-10-18', payload: payload('2026-10-18') },
       { date: '2026-10-16', payload: payload('2026-10-16') },
     ] as never)
-    mockPrisma.message.findMany.mockResolvedValue([{ id: 'mOut', createdAt: new Date('2026-10-19T02:00:00Z'), sentBy: 'BOT' }] as never)
+    messagesExceptAutomated([{ id: 'mOut', createdAt: new Date('2026-10-19T02:00:00Z'), sentBy: 'BOT' }])
 
     const body = await (await GET(req(), ctx)).json()
 
@@ -190,7 +193,7 @@ describe('POST /api/conversations/[id]/chat-review', () => {
   ] as const)('pesan terakhir %s → alasan %j, lalu menyimpan', async (direction, reasons) => {
     mockPrisma.conversation.findUnique.mockResolvedValue({ chatReviewAt: null, chatReview: review, summaryItem: null } as never)
     // findMany mengembalikan baru → lama.
-    mockPrisma.message.findMany.mockResolvedValue([msg(direction, 2), msg('INBOUND', 1)] as never)
+    messagesExceptAutomated([msg(direction, 2), msg('INBOUND', 1)])
     mockPrisma.settings.findUnique.mockResolvedValue({ ollamaModel: 'gemma4:31b-cloud' } as never)
     vi.mocked(reviewConversation).mockResolvedValue(review as never)
 
@@ -211,7 +214,7 @@ describe('POST /api/conversations/[id]/chat-review', () => {
 
   it('502 saat review null, tanpa menyimpan', async () => {
     mockPrisma.conversation.findUnique.mockResolvedValue({ chatReviewAt: null } as never)
-    mockPrisma.message.findMany.mockResolvedValue([msg('INBOUND', 1)] as never)
+    messagesExceptAutomated([msg('INBOUND', 1)])
     mockPrisma.settings.findUnique.mockResolvedValue(null)
     vi.mocked(reviewConversation).mockResolvedValue(null)
 

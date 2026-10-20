@@ -7,7 +7,7 @@
  * Batas 1 jam supaya kartu lama dari sebelum penanda ini ada tidak dibanjirkan sekaligus. Tidak pernah melempar.
  */
 import { prisma } from '@/lib/db'
-import { notifyBookingAction, summarizeAction } from '@/lib/push/send'
+import { notifyBookingAction, pushMarkFailedRecently, summarizeAction } from '@/lib/push/send'
 
 export const PUSH_SWEEP_MIN_AGE_MS = 2 * 60 * 1000
 export const PUSH_SWEEP_MAX_AGE_MS = 60 * 60 * 1000
@@ -29,17 +29,20 @@ export async function pushUnnotifiedChanges(now: Date = new Date()): Promise<num
       },
       orderBy: { updatedAt: 'asc' },
       take: 100,
-      select: { id: true, conversationId: true, field: true, proposedValue: true, sourceMessageId: true, conversation: { select: { bookingData: true } } },
+      select: { id: true, conversationId: true, field: true, proposedValue: true, sourceMessageId: true, createdAt: true, conversation: { select: { bookingData: true } } },
     })) ?? []
     if (rows.length === 0) return 0
+    // Dibatasi waktu (tanpa indeks actionId): penanda tidak mungkin lebih tua dari kartunya.
+    const oldest = new Date(Math.min(...rows.map((r) => r.createdAt.getTime())))
     const marked = (await prisma.bookingActionEvent.findMany({
-      where: { actionId: { in: rows.map((r) => r.id) }, event: 'PUSHED' },
+      where: { actionId: { in: rows.map((r) => r.id) }, event: 'PUSHED', createdAt: { gte: oldest } },
       select: { actionId: true },
     })) ?? []
     const pushed = new Set(marked.map((m) => m.actionId))
     let sent = 0
     for (const r of rows) {
-      if (pushed.has(r.id)) continue
+      // Penanda gagal ditulis baru-baru ini: jangan push ulang tiap tick (send.ts mengingatnya di memori).
+      if (pushed.has(r.id) || pushMarkFailedRecently(r.id, now.getTime())) continue
       if (sent >= MAX_PER_TICK) break
       const value = typeof r.proposedValue === 'string' && r.proposedValue.trim() ? r.proposedValue : null
       await notifyBookingAction({

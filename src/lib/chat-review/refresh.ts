@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/db'
-import { buildNumberedTranscript } from '@/lib/daily-summary/collect'
+import { buildNumberedTranscript, lastRealMessage, markAutomated } from '@/lib/daily-summary/collect'
+import { automatedMessageIds } from '@/lib/summary-items/automated'
 import { TRANSCRIPT_MAX_MESSAGES } from '@/lib/daily-summary/config'
 import { reviewConversation, type ReviewReason } from '@/lib/daily-summary/review'
 import { applyReviewToItem } from '@/lib/summary-items/sync'
@@ -24,8 +25,10 @@ export async function refreshChatReview(conversationId: string, asOf: Date): Pro
     select: { id: true, direction: true, sentBy: true, type: true, content: true, createdAt: true },
   })
   if (latest.length === 0) return { status: 'empty' }
-  const messages = [...latest].reverse()
-  const reasons: ReviewReason[] = messages[messages.length - 1].direction === 'INBOUND' ? ['unreplied'] : ['active']
+  // Kabar otomatis ("booking sudah diperbarui", permintaan data) berlabel sendiri di transkrip dan tidak menentukan
+  // `reasons`: pertanyaan tamu yang hanya dijawab kabar otomatis tetap 'unreplied' (review Important A).
+  const messages = markAutomated([...latest].reverse(), await automatedMessageIds([conversationId], latest[latest.length - 1].createdAt))
+  const reasons: ReviewReason[] = lastRealMessage(messages)?.direction === 'INBOUND' ? ['unreplied'] : ['active']
 
   const settings = await prisma.settings.findUnique({ where: { id: 1 }, select: { ollamaModel: true } })
   const review = await reviewConversation(buildNumberedTranscript(messages), reasons, settings?.ollamaModel ?? undefined)

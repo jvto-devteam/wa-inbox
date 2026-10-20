@@ -63,7 +63,19 @@ function given(conversations: Conv[], skipIndonesian = false) {
   mockPrisma.conversation.findMany.mockImplementation(((args: { where?: { id?: { in: string[] } } }) => {
     const ids = args.where?.id?.in
     if (ids) return Promise.resolve(conversations.filter((c) => ids.includes(c.id)))
-    return Promise.resolve(conversations.map((c) => ({ id: c.id, contact: c.contact, messages: c.messages.slice(0, 5).map((m) => ({ direction: m.direction, botTrace: m.botTrace ?? null })) })))
+    return Promise.resolve(conversations.map((c) => ({ id: c.id, contact: c.contact, messages: c.messages.slice(0, 5).map((m) => ({ id: m.id, direction: m.direction })) })))
+  }) as never)
+  automatedFrom(conversations)
+}
+/** Kueri id pesan otomatis (filter JSON positif `botTrace.source`) dijawab dari botTrace tiruan. */
+function automatedFrom(conversations: Conv[]) {
+  mockPrisma.message.findMany.mockImplementation(((args: { where: { conversationId: { in: string[] }; OR?: Array<{ botTrace: { equals: string } }> } }) => {
+    const sources = (args.where.OR ?? []).map((o) => o.botTrace.equals)
+    return Promise.resolve(conversations
+      .filter((c) => args.where.conversationId.in.includes(c.id))
+      .flatMap((c) => c.messages)
+      .filter((m) => m.direction === 'OUTBOUND' && sources.includes(String((m.botTrace as { source?: unknown } | undefined)?.source)))
+      .map((m) => ({ id: m.id })))
   }) as never)
 }
 const phase2Ids = () => {
@@ -97,10 +109,18 @@ describe('createLiveReplyItems: kueri dua tahap', () => {
     })
     expect(phase1?.select).not.toHaveProperty('chatReview')
     expect(phase1?.select?.messages).toMatchObject({ where: { createdAt: { gte: lookbackStart } }, orderBy: { createdAt: 'desc' }, take: 5 })
+    // Review Important B: botTrace (BotDecision, bisa beberapa KB) tidak pernah dimuat di tahap 1 maupun 2.
+    const messageSelect = (q: typeof phase1) => (q?.select?.messages as { select?: Record<string, unknown> } | undefined)?.select
+    expect(messageSelect(phase1)).toEqual({ id: true, direction: true })
+    expect(messageSelect(phase2)).not.toHaveProperty('botTrace')
     expect(phase2?.where).toEqual({ id: { in: ['calon'] } })
     expect(phase2?.select).toMatchObject({ chatReview: true, chatReviewAt: true, summaryItem: true })
     expect(phase2?.select?.messages).toMatchObject({ where: { createdAt: { gte: lookbackStart } }, orderBy: { createdAt: 'desc' }, take: TRANSCRIPT_MAX_MESSAGES })
-    expect(mockPrisma.message.findMany).not.toHaveBeenCalled()
+    // Satu-satunya kueri pesan: id pesan otomatis untuk kandidat (hanya `id`, filter JSON positif).
+    for (const [q] of mockPrisma.message.findMany.mock.calls) {
+      expect(q?.select).toEqual({ id: true })
+      expect(q?.where).toMatchObject({ direction: 'OUTBOUND', OR: [{ botTrace: { path: ['source'], equals: 'booking_update_notice' } }, { botTrace: { path: ['source'], equals: 'data_request' } }] })
+    }
     expect(mockPrisma.message.findFirst).not.toHaveBeenCalled()
   })
 
@@ -421,9 +441,10 @@ describe('review 2026-10-20 Important 1: kabar otomatis bukan balasan kita', () 
     mockPrisma.bookingActionEvent.findMany.mockResolvedValue([{ conversationId: 'kabar' }] as never)
     mockPrisma.conversation.findMany.mockImplementation(((args: { where: { id?: { in: string[] }; isTest?: boolean } }) => {
       if (!args.where.id) return Promise.resolve([]) // `none OUTBOUND sesudah cutoff` menyingkirkannya
-      if (args.where.isTest === false) return Promise.resolve([{ id: c.id, contact: c.contact, messages: c.messages.map((m) => ({ direction: m.direction, botTrace: m.botTrace ?? null })) }])
+      if (args.where.isTest === false) return Promise.resolve([{ id: c.id, contact: c.contact, messages: c.messages.map((m) => ({ id: m.id, direction: m.direction })) }])
       return Promise.resolve([c])
     }) as never)
+    automatedFrom([c])
     expect((await createLiveReplyItems(NOW)).created).toBe(1)
     expect(mockPrisma.bookingActionEvent.findMany).toHaveBeenCalledWith(expect.objectContaining({
       where: { event: { in: ['GUEST_NOTICE_SENT', 'DRAFT_SENT'] }, createdAt: { gt: ago(UNREPLIED_MIN_MS) } },

@@ -1,4 +1,5 @@
 import { prisma } from '@/lib/db'
+import { automatedMessageIds } from '@/lib/summary-items/automated'
 import { dailySummaryPayloadSchema, type ConversationReview } from '@/lib/daily-summary/payload-schema'
 import { jakartaDayRange } from '@/lib/daily-summary/time'
 
@@ -66,6 +67,8 @@ async function withResponses(conversationId: string, entries: ChatReviewHistoryE
     take: 500,
     select: { id: true, createdAt: true, sentBy: true },
   })
+  // Kabar otomatis (booking diperbarui / permintaan data) bukan tanggapan atas hari itu (review Important A).
+  const automated = await automatedMessageIds([conversationId], oldestEnd)
   return entries.map((e) => {
     const end = ends.get(e.date)
     if (end === undefined) return e
@@ -73,7 +76,7 @@ async function withResponses(conversationId: string, entries: ChatReviewHistoryE
     let agent: (typeof outbound)[number] | null = null
     let bot: (typeof outbound)[number] | null = null
     for (const m of outbound) {
-      if (m.createdAt.getTime() < end) continue
+      if (m.createdAt.getTime() < end || automated.has(m.id)) continue
       switch (m.sentBy) {
         case 'AGENT':
           agent = m

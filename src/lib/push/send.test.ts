@@ -8,7 +8,7 @@ vi.mock('web-push', () => ({ default: { sendNotification: vi.fn() } }))
 
 import webpush from 'web-push'
 import { prisma } from '@/lib/db'
-import { buildPushPayload, notifyBookingAction, summarizeAction } from './send'
+import { __resetPushMarksForTests, buildPushPayload, notifyBookingAction, pushMarkFailedRecently, summarizeAction } from './send'
 
 const db = prisma as unknown as DeepMockProxy<PrismaClient>
 const send = vi.mocked(webpush.sendNotification)
@@ -146,5 +146,26 @@ describe('review 2026-10-20 Important 3: manual-notice alarms keep their own tag
     delete process.env.VAPID_PUBLIC_KEY
     await notifyBookingAction(event)
     expect(db.bookingActionEvent.create).toHaveBeenCalledWith({ data: expect.objectContaining({ actionId: 'act1', event: 'PUSHED', reason: 'CHANGE', actor: 'SYSTEM' }) })
+  })
+})
+
+describe('review round 2: alarm titles and marker failures', () => {
+  it('revert alarm and vendor failures carry their own title', () => {
+    expect(buildPushPayload({ ...event, kind: 'GUEST_NOTICE_FAILED', tagSuffix: 'guest-revert' }).title).toBe('Perubahan dibatalkan — kabari tamu manual')
+    expect(buildPushPayload({ ...event, kind: 'EXECUTE_FAILED', tagSuffix: 'vendor-tshirt' }).title).toBe('Kabar ke vendor gagal')
+    expect(buildPushPayload({ ...event, kind: 'EXECUTE_FAILED', tagSuffix: 'vendor-bali' }).title).toBe('Kabar ke vendor gagal')
+    expect(buildPushPayload({ ...event, kind: 'EXECUTE_FAILED' }).title).toBe('Perubahan booking gagal diterapkan')
+    expect(buildPushPayload({ ...event, kind: 'GUEST_NOTICE_FAILED', tagSuffix: 'guest' }).title).toBe('Tamu belum dikabari perubahan booking')
+  })
+
+  it('a PUSHED marker that fails to write is remembered (the sweep skips the card), the push still goes out', async () => {
+    __resetPushMarksForTests()
+    db.bookingActionEvent.create.mockRejectedValueOnce(new Error('db'))
+    db.pushSubscription.findMany.mockResolvedValue([sub(1)] as never)
+    expect(pushMarkFailedRecently('act1')).toBe(false)
+    await notifyBookingAction(event)
+    expect(pushMarkFailedRecently('act1')).toBe(true)
+    expect(pushMarkFailedRecently('act1', Date.now() + 2 * 60 * 60 * 1000)).toBe(false)
+    expect(send).toHaveBeenCalledTimes(1)
   })
 })

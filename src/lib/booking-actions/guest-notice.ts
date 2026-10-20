@@ -45,6 +45,7 @@ export type WrittenField = { field: FieldKey; value: string }
 type Lang = 'en' | 'id'
 
 const SHORT_LINK_BASE = 'https://jvto.me/b/'
+const NOTICE_LOOKBACK_MS = 24 * 60 * 60 * 1000
 export const GUEST_NOTICE_FAILED_SUMMARY = 'Tamu belum dikabari perubahan booking — kabari manual'
 
 const LABELS: Record<Lang, Record<'pickup_point' | 'pickup_time' | 'drop_point' | 'drop_time' | 'tshirt_sizes', string>> = {
@@ -165,7 +166,11 @@ export async function notifyGuestOfUpdate(input: {
     if (!conv || (conv.channelIdentity?.platform ?? 'WHATSAPP') !== 'WHATSAPP' || !conv.contact?.phone) return
     if (!bookingAutomationAllowed({ isTest: conv.isTest, phone: conv.contact.phone })) return
 
-    const already = await prisma.bookingActionEvent.findFirst({ where: { actionId: { in: ids }, event: 'GUEST_NOTICE_SENT' }, select: { id: true } })
+    // Kabar dikirim tepat sesudah eksekusi: 24 jam cukup sebagai batas pindai (tanpa indeks actionId).
+    const already = await prisma.bookingActionEvent.findFirst({
+      where: { actionId: { in: ids }, event: 'GUEST_NOTICE_SENT', createdAt: { gte: new Date(now.getTime() - NOTICE_LOOKBACK_MS) } },
+      select: { id: true },
+    })
     if (already) return
 
     if (await dataRequestWindowClosed(conversationId, now)) {

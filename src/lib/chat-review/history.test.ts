@@ -4,9 +4,11 @@ import { mockDeep, mockReset, type DeepMockProxy } from 'vitest-mock-extended'
 import type { PrismaClient } from '@prisma/client'
 
 vi.mock('@/lib/db', () => ({ prisma: mockDeep<PrismaClient>() }))
+vi.mock('@/lib/summary-items/automated', () => ({ automatedMessageIds: vi.fn() }))
 
 import { prisma } from '@/lib/db'
 import type { ConversationReview } from '@/lib/daily-summary/payload-schema'
+import { automatedMessageIds } from '@/lib/summary-items/automated'
 import { chatReviewHistory } from './history'
 
 const mockPrisma = prisma as unknown as DeepMockProxy<PrismaClient>
@@ -30,6 +32,7 @@ function payload(date: string, parts: Record<string, unknown[]>) {
 
 beforeEach(() => {
   mockReset(mockPrisma)
+  vi.mocked(automatedMessageIds).mockReset().mockResolvedValue(new Set())
   mockPrisma.message.findMany.mockResolvedValue([])
 })
 
@@ -57,6 +60,18 @@ describe('chatReviewHistory: penanda ditanggapi', () => {
   })
   // 2026-10-17 berakhir 2026-10-17T17:00:00Z (24.00 WIB); 2026-10-18 berakhir 2026-10-18T17:00:00Z.
   const msg = (id: string, iso: string, sentBy: 'BOT' | 'AGENT') => ({ id, createdAt: new Date(iso), sentBy })
+
+  it('review Important A: kabar otomatis bukan tanggapan -- dilewati, tanggapan sungguhan sesudahnya yang dipakai', async () => {
+    mockPrisma.dailySummary.findMany.mockResolvedValue([row('2026-10-18', 'perlu_tindakan')] as never)
+    mockPrisma.message.findMany.mockResolvedValue([
+      msg('mNoted', '2026-10-18T17:30:00Z', 'AGENT'),
+      msg('mAgen', '2026-10-19T02:00:00Z', 'AGENT'),
+    ] as never)
+    vi.mocked(automatedMessageIds).mockResolvedValue(new Set(['mNoted']))
+    const h = await chatReviewHistory('c1')
+    expect(automatedMessageIds).toHaveBeenCalledWith(['c1'], new Date('2026-10-18T17:00:00Z'))
+    expect(h[0]).toMatchObject({ respondedMessageId: 'mAgen', respondedBy: 'AGENT' })
+  })
 
   it('ditanggapi dan selesai, dengan SATU kueri pesan', async () => {
     mockPrisma.dailySummary.findMany.mockResolvedValue([row('2026-10-18', 'perlu_tindakan'), row('2026-10-17', 'tidak_jelas'), row('2026-10-16', 'selesai')] as never)

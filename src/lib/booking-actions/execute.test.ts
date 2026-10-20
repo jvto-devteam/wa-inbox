@@ -558,7 +558,7 @@ describe('owner 2026-10-20: guest confirmation + t-shirt vendor after a successf
 
   it('revert after the guest WAS notified -> push "Kabari tamu manual — perubahan dibatalkan" (own tag) + hint in the response', async () => {
     db.bookingAction.findUnique.mockResolvedValue({
-      id: 'a1', conversationId: 'c1', bookingId: '77', type: 'CHANGE', field: 'pickup_time', proposedValue: '09:00', state: 'EXECUTED', tier: 'AI',
+      id: 'a1', conversationId: 'c1', bookingId: '77', type: 'CHANGE', field: 'pickup_time', proposedValue: '09:00', state: 'EXECUTED', tier: 'AI', createdAt: NOW,
     } as never)
     db.bookingAction.findMany.mockResolvedValue([{ id: 'a1', field: 'pickup_time' }] as never)
     db.bookingActionEvent.findMany.mockResolvedValue([{
@@ -571,7 +571,7 @@ describe('owner 2026-10-20: guest confirmation + t-shirt vendor after a successf
     vi.mocked(ensureFreshBookingData).mockResolvedValue(booking({ id: 'JVTO-3899' }))
     const r = await revertBookingAction({ actionId: 'a1', accountId: 'acc1' })
     expect(r).toEqual({ status: 200, body: { ok: true, state: 'REVERTED', reverted: ['a1'], hint: GUEST_REVERT_HINT } })
-    expect(db.bookingActionEvent.findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: { actionId: { in: ['a1'] }, event: 'GUEST_NOTICE_SENT' } }))
+    expect(db.bookingActionEvent.findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: { actionId: { in: ['a1'] }, event: 'GUEST_NOTICE_SENT', createdAt: { gte: NOW } } }))
     expect(notifyBookingAction).toHaveBeenCalledWith(expect.objectContaining({
       kind: 'GUEST_NOTICE_FAILED', summary: 'Kabari tamu manual — perubahan dibatalkan', tagSuffix: 'guest-revert', actionId: 'a1', bookingCode: 'JVTO-3899',
     }))

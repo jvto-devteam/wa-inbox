@@ -18,7 +18,7 @@ import {
 } from '@/lib/daily-summary/payload-schema'
 import { jakartaDayKey, jakartaDayRange } from '@/lib/daily-summary/time'
 import { isNoiseMessage } from './noise'
-import { findOurReply, isAutomatedNotice } from './automated'
+import { automatedMessageIds, findOurReply } from './automated'
 import type { SummaryItemKind } from './status'
 
 /**
@@ -692,7 +692,8 @@ async function findLiveCandidateIds(now: Date, excludeIndonesian: boolean): Prom
     where: { createdAt: { gte: lookbackStart } },
     orderBy: { createdAt: 'desc' as const },
     take: LIVE_LATEST_MESSAGES,
-    select: { direction: true, botTrace: true },
+    // Tanpa botTrace (BotDecision, bisa beberapa KB): pesan otomatis dikenali lewat id (`automatedMessageIds`).
+    select: { id: true, direction: true },
   }
   const rows = await prisma.conversation.findMany({
     where: {
@@ -719,10 +720,11 @@ async function findLiveCandidateIds(now: Date, excludeIndonesian: boolean): Prom
         select: { id: true, contact: { select: { phone: true } }, messages: latestSelect },
       })
     : []
-  return [...rows, ...extra]
-    .filter((c) => c.messages.find((m) => !isAutomatedNotice(m))?.direction === 'INBOUND')
-    .filter((c) => !(excludeIndonesian && isIndonesianNumber(c.contact.phone)))
-    .map((c) => c.id)
+  const all = [...rows, ...extra].filter((c) => !(excludeIndonesian && isIndonesianNumber(c.contact.phone)))
+  // Pesan terbaru INBOUND = kandidat tanpa kueri lagi; hanya yang terbarunya OUTBOUND yang perlu dicek apakah itu
+  // sekadar kabar otomatis (satu kueri id untuk semuanya).
+  const skip = await automatedMessageIds(all.filter((c) => c.messages[0]?.direction === 'OUTBOUND').map((c) => c.id), lookbackStart)
+  return all.filter((c) => c.messages.find((m) => !skip.has(m.id))?.direction === 'INBOUND').map((c) => c.id)
 }
 
 /** Percakapan (di luar `known`) yang menerima kabar otomatis sesudah `since` -- dari event, bukan dari JSON pesan. */
@@ -754,7 +756,7 @@ async function loadLiveConversations(ids: string[], now: Date) {
         where: { createdAt: { gte: lookbackStart } },
         orderBy: { createdAt: 'desc' },
         take: TRANSCRIPT_MAX_MESSAGES,
-        select: { ...messageSelect, botTrace: true },
+        select: messageSelect,
       },
     },
   })
@@ -791,9 +793,10 @@ export async function createLiveReplyItems(now: Date = new Date()): Promise<Live
     const settings = await prisma.settings.findUnique({ where: { id: 1 }, select: { skipBotForIndonesianNumbers: true } })
     const ids = await findLiveCandidateIds(now, settings?.skipBotForIndonesianNumbers ?? false)
     if (ids.length === 0) return result
+    const automated = await automatedMessageIds(ids, new Date(now.getTime() - LOOKBACK_MS))
     for (const conversation of await loadLiveConversations(ids, now)) {
       try {
-        const outcome = await liveOne(conversation, now)
+        const outcome = await liveOne(conversation, now, automated)
         if (outcome) result[outcome]++
       } catch (error) {
         console.error('createLiveReplyItems: satu percakapan gagal', {
@@ -810,13 +813,13 @@ export async function createLiveReplyItems(now: Date = new Date()): Promise<Live
 }
 
 /** null = bukan kandidat (pesan terakhir bukan pesan pelanggan, atau belum menunggu 1 jam). */
-async function liveOne(conversation: LiveConversation, now: Date): Promise<keyof LiveResult | null> {
+async function liveOne(conversation: LiveConversation, now: Date, automated: ReadonlySet<string>): Promise<keyof LiveResult | null> {
   const cutoff = now.getTime() - UNREPLIED_MIN_MS
   const lookbackStart = now.getTime() - LOOKBACK_MS
   // Pesan urut baru → lama, semuanya dalam LOOKBACK_MS (kueri); batas waktu dicek lagi di sini
   // supaya tidak hanya bergantung pada kueri.
   // Kabar otomatis (guest-notice/permintaan data) tidak dihitung: bukan balasan dan bukan bagian rangkaian.
-  const messages = conversation.messages.filter((m) => !isAutomatedNotice(m))
+  const messages = conversation.messages.filter((m) => !automated.has(m.id))
   const latest = messages[0]
   if (!latest || latest.direction !== 'INBOUND' || latest.createdAt.getTime() < lookbackStart) return null
 

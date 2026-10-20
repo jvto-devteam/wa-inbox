@@ -158,7 +158,9 @@ describe('notifyGuestOfUpdate', () => {
     setup({ sentBefore: true })
     await notifyGuestOfUpdate(input())
     expect(sendMessage).not.toHaveBeenCalled()
-    expect(db.bookingActionEvent.findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: { actionId: { in: ['a1'] }, event: 'GUEST_NOTICE_SENT' } }))
+    expect(db.bookingActionEvent.findFirst).toHaveBeenCalledWith(expect.objectContaining({
+      where: { actionId: { in: ['a1'] }, event: 'GUEST_NOTICE_SENT', createdAt: { gte: new Date(NOW.getTime() - 24 * 60 * 60 * 1000) } },
+    }))
   })
 
   it('only changes that came from a guest (INBOUND) message', async () => {

@@ -566,19 +566,19 @@ describe('reconcileSummaryItems', () => {
   it('review 2026-10-20 Important 1: REPLY yang sesudah anchor hanya berisi kabar otomatis tetap OPEN; balasan sungguhan sesudahnya menutup', async () => {
     mockPrisma.summaryItem.findMany.mockResolvedValue([row()] as never)
     const noticeAt = at('2026-10-17T03:00:00Z')
-    const notice = { id: 'n1', createdAt: noticeAt, botTrace: { source: 'booking_update_notice' } }
-    mockPrisma.message.findFirst.mockImplementation((async (a: { where: { direction: string; createdAt?: { gt?: Date } } }) => {
+    const replyAt = at('2026-10-17T05:00:00Z')
+    const outbound = [{ id: 'n1', createdAt: noticeAt }]
+    // Kueri id pesan otomatis (filter JSON positif) -> hanya n1.
+    mockPrisma.message.findMany.mockImplementation((async (a: { where: { OR?: unknown } }) => (a.where.OR ? [{ id: 'n1' }] : [])) as never)
+    mockPrisma.message.findFirst.mockImplementation((async (a: { where: { direction: string; id?: { notIn: string[] } } }) => {
       if (a.where.direction !== 'OUTBOUND') return null
-      return a.where.createdAt?.gt && a.where.createdAt.gt >= noticeAt ? null : notice
+      return outbound.find((m) => !a.where.id?.notIn.includes(m.id)) ?? null
     }) as never)
     expect(await reconcileSummaryItems(NOW)).toEqual({ closed: 0, converted: 0, reopened: 0 })
     expect(mockPrisma.summaryItem.update).not.toHaveBeenCalled()
+    expect(mockPrisma.message.findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ id: { notIn: ['n1'] } }), select: { id: true, createdAt: true } }))
 
-    const replyAt = at('2026-10-17T05:00:00Z')
-    mockPrisma.message.findFirst.mockImplementation((async (a: { where: { direction: string; createdAt?: { gt?: Date } } }) => {
-      if (a.where.direction !== 'OUTBOUND') return null
-      return a.where.createdAt?.gt && a.where.createdAt.gt >= noticeAt ? { id: 'o1', createdAt: replyAt, botTrace: null } : notice
-    }) as never)
+    outbound.push({ id: 'o1', createdAt: replyAt })
     expect((await reconcileSummaryItems(NOW)).closed).toBe(1)
     expect(mockPrisma.summaryItem.update.mock.calls[0][0].data).toMatchObject({ state: 'DONE', closedReason: 'REPLIED', closedAt: replyAt })
   })

@@ -578,7 +578,7 @@ export async function revertBookingAction(input: { actionId: string; accountId: 
     }).catch(() => undefined)
   }
   // Tamu sudah menerima "booking sudah diperbarui" untuk perubahan ini: admin harus mengabarinya bahwa dibatalkan.
-  if (await guestWasNotified(ids)) {
+  if (await guestWasNotified(ids, action.createdAt)) {
     void Promise.resolve(notifyBookingAction({
       kind: 'GUEST_NOTICE_FAILED', conversationId, bookingCode: bookingCodeOf(result.booking), summary: GUEST_REVERT_SUMMARY, actionId, tagSuffix: 'guest-revert',
     })).catch(() => undefined)
@@ -590,9 +590,13 @@ export async function revertBookingAction(input: { actionId: string; accountId: 
 export const GUEST_REVERT_SUMMARY = 'Kabari tamu manual — perubahan dibatalkan'
 export const GUEST_REVERT_HINT = 'Tamu sudah dikabari perubahan ini lewat WhatsApp. Kabari tamu bahwa perubahan dibatalkan.'
 
-async function guestWasNotified(ids: string[]): Promise<boolean> {
+async function guestWasNotified(ids: string[], since: Date): Promise<boolean> {
   try {
-    const row = await prisma.bookingActionEvent.findFirst({ where: { actionId: { in: ids }, event: 'GUEST_NOTICE_SENT' }, select: { id: true } })
+    // Dibatasi waktu (tanpa indeks actionId): kabar tidak mungkin lebih tua dari kartunya.
+    const row = await prisma.bookingActionEvent.findFirst({
+      where: { actionId: { in: ids }, event: 'GUEST_NOTICE_SENT', createdAt: { gte: since } },
+      select: { id: true },
+    })
     return Boolean(row)
   } catch {
     return false
