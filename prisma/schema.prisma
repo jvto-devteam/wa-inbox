@@ -104,7 +104,7 @@ model ChannelIdentity {
 }
 
 model Contact {
-  id              String        @id @default(cuid())
+  id              String            @id @default(cuid())
   /// Nomor WhatsApp. Null untuk kontak yang lahir dari channel tanpa nomor (IG/FB/email).
   /// Identitas yang sesungguhnya ada di ChannelIdentity; kolom ini dipertahankan sebagai
   /// kolom denormalisasi supaya kueri filter nomor Indonesia di
@@ -119,7 +119,7 @@ model Contact {
   // forever. Stamped on every enrichment attempt, successful or not.
   avatarCheckedAt DateTime?
   source          String?
-  createdAt       DateTime      @default(now())
+  createdAt       DateTime          @default(now())
   /// Daftar, bukan satu, sejak Task 9: Conversation.contactId dilonggarkan dari @unique
   /// supaya satu Contact bisa punya banyak Conversation (identitas ganda lintas channel).
   /// Setiap call site yang dulu mengasumsikan satu-ke-satu (mis. daftar Kontak) sekarang
@@ -202,24 +202,26 @@ model Conversation {
   /// Hanya untuk EMAIL: kotak surat JVTO mana yang disurati. Menentukan alamat pengirim
   /// balasan (spec §4.3) -- disimpan eksplisit, tidak pernah disimpulkan. Orang yang sama
   /// menyurati dua alamat JVTO = dua benang. Itu benar, bukan bug.
-  mailAccountId String?
-  mailAccount   MailAccount? @relation(fields: [mailAccountId], references: [id])
+  mailAccountId  String?
+  mailAccount    MailAccount?    @relation(fields: [mailAccountId], references: [id])
   /// Hanya untuk EMAIL: subjek benang saat lahir.
-  subject       String?
+  subject        String?
   /// Hanya untuk EMAIL: benang ini dari pengirim mesin (newsletter, notifikasi, balasan
   /// otomatis) -- lihat src/lib/gmail/automated.ts. LABEL, BUKAN GERBANG: email tetap masuk
   /// dan tetap terlihat di Inbox; yang memakai tanda ini hanya daily summary, supaya benang
   /// otomatis tidak muncul sebagai "belum dibalas". Satu email dari manusia di benang itu
   /// mengangkatnya kembali ke false, dan tidak pernah balik ke true.
-  mailAutomated Boolean @default(false)
+  mailAutomated  Boolean         @default(false)
   /// Antrean tindakan Summary Harian untuk percakapan ini (src/lib/summary-items/sync.ts).
-  summaryItem   SummaryItem?
+  summaryItem    SummaryItem?
   /// Ringkasan TERBARU percakapan ini untuk tab "Ringkasan chat" di panel Inbox (sebuah
   /// ConversationReview, src/lib/daily-summary/payload-schema.ts). Diisi job harian atau tombol
   /// "Perbarui"; hanya ditimpa oleh hasil yang `chatReviewAt`-nya lebih baru (src/lib/chat-review/store.ts).
-  chatReview    Json?
+  chatReview     Json?
   /// Waktu "per" ringkasan di atas berlaku (akhir hari WIB untuk job harian, saat klik untuk tombol).
-  chatReviewAt  DateTime?
+  chatReviewAt   DateTime?
+  bookingFacts   BookingFact[]
+  bookingActions BookingAction[]
 
   /// Dipasang di Task 5b, setelah backfill Task 5 selesai (0 duplikat terverifikasi 2026-09-24).
   /// Ini yang membuat conversation.upsert bisa dikunci lewat (channelIdentityId,
@@ -374,19 +376,19 @@ model MessageDraft {
 // the classified topic, 'verification_failed' means it had something and the
 // model reached past it anyway. Those need opposite fixes.
 model KnowledgeGapLog {
-  id             String       @id @default(cuid())
-  conversationId String
-  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
-  topic          String
-  reason         String
-  messageText    String
+  id              String       @id @default(cuid())
+  conversationId  String
+  conversation    Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  topic           String
+  reason          String
+  messageText     String
   // Notifikasi gap (2026-09-12): ketiganya hanya diisi oleh jalur gap setelah reply bot
   // terkirim (src/lib/inbox/gap-log.ts), satu-satunya titik yang memegang id pesan dan id
   // run sekaligus. Baris gap lama punya ketiganya kosong, dan notifikasi menanganinya
   // dengan hanya membuka percakapannya. Bukan relasi: menghapus pesannya tidak boleh ikut
   // menghapus catatan bahwa bot pernah menjawab kurang knowledge.
-  messageId      String?
-  runId          String?
+  messageId       String?
+  runId           String?
   // Detail spesifik gap per sub-pertanyaan/paragraf. Nullable supaya baris lama tetap valid:
   // sebelum 2026-09-13, gap hanya tahu pesan customer utuh, bukan bagian mana yang tidak
   // punya knowledge. `missingQuestion` dipakai editor Inbox untuk prefill pertanyaan knowledge
@@ -397,8 +399,8 @@ model KnowledgeGapLog {
   answerParagraph Int?
   // Kosong = masih terbuka. Diisi saat operator menyatakan jawaban barunya sudah sesuai,
   // atau saat ia menekan "Tandai selesai".
-  resolvedAt     DateTime?
-  createdAt      DateTime     @default(now())
+  resolvedAt      DateTime?
+  createdAt       DateTime     @default(now())
 
   @@index([createdAt])
   @@index([resolvedAt])
@@ -570,22 +572,22 @@ model BotDecisionRun {
 /// relasi `chunks` (model KnowledgeChunk dihapus seluruhnya — tidak ada pemakainya selain
 /// indexer; managed knowledge menyimpan isinya di KnowledgeRevision.body).
 model KnowledgeSource {
-  id           String              @id @default(cuid())
-  key          String              @unique
-  title        String
+  id        String              @id @default(cuid())
+  key       String              @unique
+  title     String
   /// Selalu 'MANUAL' sejak cerminan katalog dihapus. Kolomnya dipertahankan karena SETIAP
   /// penjaga di knowledge-workflow.ts memakainya: mutation menolak baris bertipe lain, yang
   /// membuat penulis baru berbasis file gagal keras alih-alih diam-diam menimpa tulisan
   /// operator (larangan mutlak di CLAUDE.md).
-  type         String
-  status       String              @default("PUBLISHED")
-  summary      String?
+  type      String
+  status    String              @default("PUBLISHED")
+  summary   String?
   /// Siapa yang bertanggung jawab atas isi sumber ini.
-  ownerId      String?
-  createdBy    String?
-  createdAt    DateTime            @default(now())
-  updatedAt    DateTime            @updatedAt
-  revisions    KnowledgeRevision[]
+  ownerId   String?
+  createdBy String?
+  createdAt DateTime            @default(now())
+  updatedAt DateTime            @updatedAt
+  revisions KnowledgeRevision[]
 
   @@index([type])
   @@index([status])
@@ -1000,4 +1002,80 @@ model SummaryItem {
   updatedAt       DateTime     @updatedAt
 
   @@index([state])
+}
+
+/// Fakta booking yang disebut pelanggan di chat (hasil ekstraksi). Nilai lama ditandai
+/// supersededAt, tidak ditimpa.
+model BookingFact {
+  id              String       @id @default(cuid())
+  conversationId  String
+  conversation    Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  /// booking_id backoffice dari bookingData saat dibuat
+  bookingId       String?
+  /// FieldKey (fields.ts)
+  field           String
+  value           String
+  sourceMessageId String?
+  statedAt        DateTime
+  supersededAt    DateTime?
+  createdAt       DateTime     @default(now())
+
+  @@index([conversationId, field])
+}
+
+/// Satu usulan/tugas untuk booking yang lahir dari chat.
+model BookingAction {
+  id              String       @id @default(cuid())
+  conversationId  String
+  conversation    Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  bookingId       String?
+  /// CHANGE | MISMATCH | TASK | DATA_REQUEST
+  type            String
+  field           String
+  /// ChangeGroup: AI | BALI | HEAVY
+  tier            String
+  /// CHANGE/TASK: nilai yang diminta; MISMATCH: fakta chat
+  proposedValue   Json?
+  /// DATA_REQUEST
+  draftText       String?
+  /// OPEN | EXECUTED | REJECTED | SUPERSEDED | RESOLVED | DONE | FAILED
+  state           String
+  /// mis. MATCHED_IN_BACKOFFICE | DISMISSED_CHAT_WRONG | REPLACED | DATA_COMPLETE | TRIP_STARTED | MARKED_DONE | NOT_NEEDED
+  closedReason    String?
+  sourceMessageId String?
+  /// DATA_REQUEST: "YYYY-MM-DD" WIB
+  forDay          String?
+  lastError       String?
+  closedById      String?
+  closedAt        DateTime?
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  /// Satu DATA_REQUEST per booking per hari
+  @@unique([bookingId, type, forDay])
+  @@index([conversationId, state])
+}
+
+/// Riwayat append-only tindakan booking (siapa/kapan/apa). Tanpa relasi FK: riwayat bertahan
+/// walau percakapan dihapus.
+model BookingActionEvent {
+  id              String   @id @default(cuid())
+  conversationId  String
+  bookingId       String?
+  actionId        String?
+  /// CREATED | CORRECTED | EXECUTED | EXECUTE_FAILED | REJECTED | SUPERSEDED | RESOLVED | DRAFT_SENT | REVERTED
+  event           String
+  /// BOT | SYSTEM | ACCOUNT
+  actor           String
+  accountId       String?
+  oldValue        Json?
+  newValue        Json?
+  sourceMessageId String?
+  reason          String?
+  /// Jawaban backoffice saat EXECUTED/EXECUTE_FAILED (tanpa secret)
+  backoffice      Json?
+  createdAt       DateTime @default(now())
+
+  @@index([bookingId, createdAt])
+  @@index([conversationId, createdAt])
 }
