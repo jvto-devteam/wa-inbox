@@ -28,10 +28,11 @@ function setup(opts: {
   inbound?: Date | null
   acked?: boolean
   recent?: boolean
+  content?: string | null
 } = {}) {
   db.bookingAction.findMany.mockResolvedValue((opts.cards ?? [{ id: 'a1', sourceMessageId: 'm1' }, { id: 'a2', sourceMessageId: 'm1' }]) as never)
   db.message.findMany.mockImplementation((async (a: { where: { id: { in: string[] } } }) =>
-    a.where.id.in.map((id) => ({ id, direction: opts.direction ?? 'INBOUND' }))) as never)
+    a.where.id.in.map((id) => ({ id, direction: opts.direction ?? 'INBOUND', content: opts.content ?? null }))) as never)
   db.conversation.findUnique.mockResolvedValue({
     isTest: opts.isTest ?? false, contact: { phone: opts.phone ?? '4915112345678' }, channelIdentity: { platform: opts.platform ?? 'WHATSAPP' },
   } as never)
@@ -62,7 +63,7 @@ describe('notifyGuestRequestReceived', () => {
     await run()
     expect(sendMessage).toHaveBeenCalledTimes(1)
     expect(sendMessage).toHaveBeenCalledWith(expect.objectContaining({
-      conversationId: 'c1', text: GUEST_ACK_TEXT.en, sentBy: 'BOT',
+      conversationId: 'c1', text: GUEST_ACK_TEXT.en, sentBy: 'BOT', purpose: 'SYSTEM',
       botTrace: expect.objectContaining({ source: 'booking_request_ack', idempotencyKey: 'guest_ack:a1' }),
     }))
     expect(GUEST_ACK_TEXT.en).toBe("Noted, we've received your request and are processing it now.")
@@ -108,6 +109,18 @@ describe('notifyGuestRequestReceived', () => {
     vi.mocked(sendMessage).mockRejectedValue(new Error('x'))
     await run()
     expect(vi.mocked(recordEvent).mock.calls).toHaveLength(2)
+  })
+
+  it('English chat from a guest whose booking says Indonesia -> English ack (owner 2026-10-21)', async () => {
+    setup({ content: 'Hello, just want to confirm if my pickup location is hotel 88 surabaya at 10:00 am' })
+    await run(booking('Indonesia'))
+    expect(vi.mocked(sendMessage).mock.calls[0][0].text).toBe(GUEST_ACK_TEXT.en)
+  })
+
+  it('Indonesian chat from a foreign booking -> Indonesian ack', async () => {
+    setup({ content: 'tolong ganti jam jemput jadi 10 ya' })
+    await run(booking('Germany'))
+    expect(vi.mocked(sendMessage).mock.calls[0][0].text).toBe(GUEST_ACK_TEXT.id)
   })
 
   it('Indonesian guest -> Indonesian text', async () => {

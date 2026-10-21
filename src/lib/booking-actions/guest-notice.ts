@@ -9,11 +9,13 @@
  * respons eksekusi tidak berubah.
  *
  * Isi dibuat di kode (tanpa LLM, tanpa nama tamu): "Noted" + satu baris per field yang BENAR-BENAR ditulis + tautan
- * portal. Inggris bawaan, Indonesia bila `guestDetails.country` memuat "indonesia" (`isIndonesianGuest`, aturan
- * yang sama dengan permintaan data). Tautan: short link `url_short`/`short_url` bila API booking memuatnya
- * (2026-10-20: booking-overview new-backoffice belum memuatnya, ScheduleController.php:273-290), selain itu
+ * portal. Bahasa mengikuti pesan tamu sumber kartu (`guestLanguage`, owner 2026-10-21); negara di booking
+ * (`isIndonesianGuest`) hanya cadangan bila chat tidak jelas. Tautan: short link `url_short`/`short_url` bila API booking
+ * memuatnya (2026-10-20: booking-overview new-backoffice belum memuatnya, ScheduleController.php:273-290), selain itu
  * `client_portal_url` (null untuk TWT = tanpa tautan), selain itu `customer_portal` yang bertoken sah. Tidak ada =
- * baris tautan dihilangkan.
+ * baris tautan dihilangkan. Tautan my-booking panjang diganti `jvto.me/b/<kode>` yang dihitung ulang dan diverifikasi
+ * ke legacy (`resolveGuestPortalLink`, `src/lib/booking/short-link.ts`). Dikirim dengan purpose `SYSTEM`, jadi tidak
+ * ditahan safety guard saat admin mengambil alih chat.
  *
  * Gerbang (semuanya condong ke "jangan kirim"):
  *   - hanya kartu dari pesan TAMU (`sourceMessageId` menunjuk pesan INBOUND);
@@ -36,7 +38,9 @@ import { notifyBookingAction } from '@/lib/push/send'
 import { BOOKING_UPDATE_NOTICE_SOURCE } from '@/lib/summary-items/automated'
 import { bookingUrlToken } from '@/lib/booking/backoffice-client'
 import type { BookingData } from '@/lib/booking/client'
-import { dataRequestWindowClosed, isIndonesianGuest } from './data-requests'
+import { SHORT_LINK_BASE, verifiedBookingShortCode } from '@/lib/booking/short-link'
+import { dataRequestWindowClosed } from './data-requests'
+import { guestLanguage } from './guest-language'
 import { canonicalTshirtSizes, readBookingField, type FieldKey } from './fields'
 import { recordEvent } from './history'
 import { bookingAutomationAllowed } from './rollout'
@@ -44,7 +48,6 @@ import { bookingAutomationAllowed } from './rollout'
 export type WrittenField = { field: FieldKey; value: string }
 type Lang = 'en' | 'id'
 
-const SHORT_LINK_BASE = 'https://jvto.me/b/'
 const NOTICE_LOOKBACK_MS = 24 * 60 * 60 * 1000
 export const GUEST_NOTICE_FAILED_SUMMARY = 'Tamu belum dikabari perubahan booking — kabari manual'
 
@@ -83,6 +86,20 @@ export function guestPortalLink(b: BookingData): string | null {
 }
 
 /**
+ * `guestPortalLink`, tetapi tautan my-booking panjang diganti short link `jvto.me/b/<kode>` bila kodenya terbukti milik
+ * booking ini (`verifiedBookingShortCode`). Tanpa tautan (mis. TWT), tautan short dari API, atau tautan ke tempat lain
+ * dibiarkan apa adanya. Gagal verifikasi = tautan panjang.
+ */
+export async function resolveGuestPortalLink(b: BookingData, fetchImpl?: typeof fetch): Promise<string | null> {
+  const link = guestPortalLink(b)
+  if (link === null || text(b.url_short) !== null || text(b.short_url) !== null) return link
+  const token = bookingUrlToken(b)
+  if (token === null || !link.replace(/[?#].*$/, '').replace(/\/+$/, '').endsWith(`/my-booking/${token}`)) return link
+  const code = await verifiedBookingShortCode(token, fetchImpl)
+  return code ? `${SHORT_LINK_BASE}${code}` : link
+}
+
+/**
  * Satu baris per perubahan yang ditulis. Titik + detail satu baris ("Surabaya Hotel · Hotel Majapahit"); bagian
  * yang tidak ditulis diambil dari `booking` (data segar sebelum tulis) -- kecuali detail lama saat titiknya berganti.
  */
@@ -111,11 +128,21 @@ export function guestNoticeLines(written: readonly WrittenField[], booking: Book
 }
 
 /** Teks lengkap, atau null bila tidak ada baris yang bisa disebut. Murni. */
-export function buildGuestNoticeText(written: readonly WrittenField[], booking: BookingData, variant: 'updated' | 'matched' = 'updated'): string | null {
-  const lang: Lang = isIndonesianGuest(booking) ? 'id' : 'en'
+export function buildGuestNoticeText(
+  written: readonly WrittenField[],
+  booking: BookingData,
+  variant: 'updated' | 'matched' = 'updated',
+  opts: {
+    /** Isi pesan tamu sumber kartu: bahasanya menang atas negara di booking (`guestLanguage`). */
+    guestTexts?: readonly string[]
+    /** Tautan yang sudah diselesaikan (`resolveGuestPortalLink`); kosong = `guestPortalLink(booking)`. */
+    link?: string | null
+  } = {}
+): string | null {
+  const lang: Lang = guestLanguage(booking, opts.guestTexts)
   const lines = guestNoticeLines(written, booking, lang)
   if (lines.length === 0) return null
-  const link = guestPortalLink(booking)
+  const link = opts.link !== undefined ? opts.link : guestPortalLink(booking)
   return [variant === 'matched' ? TEXT[lang].matched : TEXT[lang].intro, ...lines, ...(link ? ['', TEXT[lang].link(link)] : [])].join('\n')
 }
 
@@ -146,12 +173,15 @@ export async function notifyGuestOfUpdate(input: {
     // Hanya kartu yang lahir dari pesan TAMU di percakapan ini.
     const sourceIds = [...new Set(input.items.flatMap((i) => (i.sourceMessageId ? [i.sourceMessageId] : [])))]
     if (sourceIds.length === 0) return
-    const sources = (await prisma.message.findMany({ where: { id: { in: sourceIds }, conversationId }, select: { id: true, direction: true } })) ?? []
-    const inbound = new Set(sources.filter((m) => m.direction === 'INBOUND').map((m) => m.id))
+    const sources =
+      (await prisma.message.findMany({ where: { id: { in: sourceIds }, conversationId }, select: { id: true, direction: true, content: true } })) ?? []
+    const inboundSources = sources.filter((m) => m.direction === 'INBOUND')
+    const inbound = new Set(inboundSources.map((m) => m.id))
+    const guestTexts = inboundSources.flatMap((m) => (m.content ? [m.content] : []))
     const items = input.items.filter((i) => i.sourceMessageId !== null && inbound.has(i.sourceMessageId))
     if (items.length === 0) return
-    const body = buildGuestNoticeText(items.flatMap((i) => i.written), input.booking, input.variant)
-    if (body === null) return
+    const written = items.flatMap((i) => i.written)
+    if (buildGuestNoticeText(written, input.booking, input.variant, { guestTexts }) === null) return
     const actionId = items[0].actionId
     const ids = items.map((i) => i.actionId)
     const pushManual = (reason: string) =>
@@ -182,6 +212,10 @@ export async function notifyGuestOfUpdate(input: {
       return
     }
 
+    // Short link diselesaikan SESUDAH semua gerbang (memanggil legacy), supaya kabar yang tidak dikirim tidak memukul jaringan.
+    const link = await resolveGuestPortalLink(input.booking)
+    const body = buildGuestNoticeText(written, input.booking, input.variant, { guestTexts, link }) ?? ''
+
     let messageId: string | null = null
     let failed = false
     try {
@@ -190,6 +224,8 @@ export async function notifyGuestOfUpdate(input: {
         text: body,
         sentBy: accountId ? 'AGENT' : 'BOT',
         agentId: accountId ?? undefined,
+        // Kabar sistem, bukan balasan bot: tetap terkirim saat admin mengambil alih chat.
+        purpose: 'SYSTEM',
         botTrace: { source: BOOKING_UPDATE_NOTICE_SOURCE, idempotencyKey: `guest_update:${actionId}` },
       })
       messageId = sent?.id ?? null

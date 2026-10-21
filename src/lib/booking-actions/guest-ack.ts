@@ -5,8 +5,9 @@
  *
  * Dipanggil `runExtraction` tepat sesudah `applyExtraction`. Memicu hanya bila ekstraksi itu melahirkan kartu CHANGE/TASK (id dari `applyExtraction().cardIds`, termasuk kartu isian yang lahir di `evaluate` DI DALAM applyExtraction; kartu `reevaluate` tick tidak)
  * dari pesan TAMU (bukan MISMATCH, bukan DATA_REQUEST, bukan kartu isian lahir di reevaluate). SATU pesan per run
- * walau kartunya banyak. Teks dibuat di kode (tanpa LLM, tanpa nama tamu); Inggris bawaan, Indonesia bila
- * `isIndonesianGuest`. Terkirim juga saat bot mati (admin yang menangani chat) -- tidak membaca `botEnabled`.
+ * walau kartunya banyak. Teks dibuat di kode (tanpa LLM, tanpa nama tamu); bahasanya mengikuti pesan tamu sumber kartu
+ * (`guestLanguage`), negara di booking hanya cadangan. Terkirim juga saat bot mati (admin yang menangani chat) -- tidak
+ * membaca `botEnabled`, dan dikirim dengan purpose `SYSTEM` supaya safety guard antrean tidak menahannya sebagai balasan bot.
  *
  * Gerbang (condong ke "jangan kirim"): WhatsApp bernomor; `bookingAutomationAllowed`; jendela 24 jam terbuka (tertutup
  * = diam, tanpa push; tamu baru saja menulis, jadi lazimnya terbuka). Idempotensi: event GUEST_ACK_SENT di setiap
@@ -20,7 +21,8 @@ import { broadcast } from '@/lib/realtime'
 import { sendMessage } from '@/lib/send'
 import type { BookingData } from '@/lib/booking/client'
 import { BOOKING_REQUEST_ACK_SOURCE } from '@/lib/summary-items/automated'
-import { dataRequestWindowClosed, isIndonesianGuest } from './data-requests'
+import { dataRequestWindowClosed } from './data-requests'
+import { guestLanguage } from './guest-language'
 import { recordEvent } from './history'
 import { bookingAutomationAllowed } from './rollout'
 
@@ -31,8 +33,9 @@ export const GUEST_ACK_TEXT = {
   id: 'Noted, permintaan Anda sudah kami terima dan sedang kami proses.',
 } as const
 
-export function guestAckText(booking: BookingData): string {
-  return isIndonesianGuest(booking) ? GUEST_ACK_TEXT.id : GUEST_ACK_TEXT.en
+/** Bahasa mengikuti pesan tamu yang memicu kartu (`guestTexts`); negara di booking hanya cadangan. */
+export function guestAckText(booking: BookingData, guestTexts: readonly string[] = []): string {
+  return GUEST_ACK_TEXT[guestLanguage(booking, guestTexts)]
 }
 
 export async function notifyGuestRequestReceived(input: {
@@ -55,8 +58,11 @@ export async function notifyGuestRequestReceived(input: {
     if (cards.length === 0) return
 
     const sourceIds = [...new Set(cards.flatMap((c) => (c.sourceMessageId ? [c.sourceMessageId] : [])))]
-    const sources = (await prisma.message.findMany({ where: { id: { in: sourceIds }, conversationId }, select: { id: true, direction: true } })) ?? []
-    const inbound = new Set(sources.filter((m) => m.direction === 'INBOUND').map((m) => m.id))
+    const sources =
+      (await prisma.message.findMany({ where: { id: { in: sourceIds }, conversationId }, select: { id: true, direction: true, content: true } })) ?? []
+    const inboundSources = sources.filter((m) => m.direction === 'INBOUND')
+    const inbound = new Set(inboundSources.map((m) => m.id))
+    const guestTexts = inboundSources.flatMap((m) => (m.content ? [m.content] : []))
     const guestCards = cards.filter((c) => c.sourceMessageId !== null && inbound.has(c.sourceMessageId))
     if (guestCards.length === 0) return
 
@@ -94,8 +100,10 @@ export async function notifyGuestRequestReceived(input: {
     try {
       const sent = await sendMessage({
         conversationId,
-        text: guestAckText(input.booking),
+        text: guestAckText(input.booking, guestTexts),
         sentBy: 'BOT',
+        // Bukan balasan bot: tetap terkirim saat admin mengambil alih chat (kepala file).
+        purpose: 'SYSTEM',
         botTrace: { source: BOOKING_REQUEST_ACK_SOURCE, idempotencyKey: `guest_ack:${ids[0]}` },
       })
       if (!sent || sent.deliveryStatus === 'FAILED') console.error('notifyGuestRequestReceived: kirim gagal', { conversationId })

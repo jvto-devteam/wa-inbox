@@ -130,7 +130,7 @@ describe('createDataRequestDrafts', () => {
     expect(res).toMatchObject({ created: 1, sent: 1 })
     expect(sendMessage).toHaveBeenCalledTimes(1)
     expect(sendMessage).toHaveBeenCalledWith(expect.objectContaining({
-      conversationId: 'c1', sentBy: 'BOT', botTrace: { source: 'data_request', idempotencyKey: 'data_request:d1' },
+      conversationId: 'c1', sentBy: 'BOT', purpose: 'SYSTEM', botTrace: { source: 'data_request', idempotencyKey: 'data_request:d1' },
     }))
     expect(db.bookingAction.updateMany).toHaveBeenCalledWith(expect.objectContaining({
       where: { id: 'd1', state: 'OPEN' }, data: expect.objectContaining({ state: 'DONE', closedReason: 'SENT', closedById: null }),

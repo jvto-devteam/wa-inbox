@@ -123,6 +123,17 @@ describe('sendMessage', () => {
     }))
   })
 
+  it('passes an explicit purpose to the queue (booking system notices use SYSTEM, not BOT_REPLY), default undefined', async () => {
+    routeTo('UNOFFICIAL')
+    mockPrisma.message.create.mockResolvedValue({ id: 'msg_3c', deliveryStatus: 'PENDING' } as never)
+
+    await sendMessage({ conversationId: 'conv_1', text: 'Noted', sentBy: 'BOT', purpose: 'SYSTEM' })
+    expect(enqueueOutboundJob).toHaveBeenLastCalledWith(expect.objectContaining({ sentBy: 'BOT', purpose: 'SYSTEM' }))
+
+    await sendMessage({ conversationId: 'conv_1', text: 'Halo', sentBy: 'BOT' })
+    expect(vi.mocked(enqueueOutboundJob).mock.calls.at(-1)?.[0].purpose).toBeUndefined()
+  })
+
   it('fires the first attempt immediately, so a healthy queued send is no slower than before', async () => {
     routeTo('UNOFFICIAL')
     mockPrisma.message.create.mockResolvedValue({ id: 'msg_3b', deliveryStatus: 'PENDING' } as never)

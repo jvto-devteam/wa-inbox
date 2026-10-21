@@ -298,7 +298,10 @@ append-only tanpa FK: siapa, kapan, nilai lama/baru), `PushSubscription`. Setela
   Kabar "sudah diperbarui" di bawah tetap pesan kedua; keduanya terkirim walau berdekatan.
 - **Kabar ke tamu** (`guest-notice.ts`, `notifyGuestOfUpdate`, owner 2026-10-20): WhatsApp lewat `sendMessage`:
   "Noted" + satu baris per field yang benar-benar ditulis + tautan portal (short link bila API memuatnya, lalu
-  `client_portal_url`, lalu `customer_portal`; tidak ada = tanpa baris tautan). EN bawaan, ID bila `isIndonesianGuest`.
+  `client_portal_url`, lalu `customer_portal`; tidak ada = tanpa baris tautan). Tautan my-booking panjang diganti
+  `jvto.me/b/<kode>` (`resolveGuestPortalLink`): kode dihitung ulang dengan rumus `BookingShortUrl` PHP
+  (`src/lib/booking/short-link.ts`) dan **hanya dipakai bila** legacy `GET /bookings/short/{code}` menjawab url booking
+  yang sama (`verifiedBookingShortCode`) -- kode hasil hitungan bisa milik tamu lain; gagal/404 = tautan panjang. EN bawaan, ID bila `isIndonesianGuest`.
   Setujui manual = satu kabar per eksekusi. Terapkan-otomatis: `executeBookingAction` menunda (`deferGuestNotice`) dan
   `autoApplyCreated` mengirim SATU kabar + SATU push `AUTO_APPLIED` untuk semua kartu yang tertulis dari satu
   ekstraksi (`announceApplied`), supaya satu pesan tamu tidak dijawab beberapa "Noted". Hanya kartu dari pesan INBOUND,

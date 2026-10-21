@@ -12,6 +12,7 @@ import { broadcast } from '@/lib/realtime'
 import { sendEmailMessage } from '@/lib/gmail/send'
 import { withMediaUrl } from '@/lib/serialize-message'
 import { enqueueOutboundJob } from '@/lib/outbound/queue'
+import type { OutboundPurpose } from '@/lib/outbound/safety-guard'
 import { processOutboundJob } from '@/lib/outbound/worker'
 import { noteOutboundForChatReview } from '@/lib/chat-review/auto-refresh'
 import { sanitizeTrace } from '@/lib/bot-control/trace-sanitizer'
@@ -94,6 +95,10 @@ async function sendMessageImpl(params: {
   botTrace?: unknown
   replyToId?: string
   media?: OutboundMedia
+  // Tujuan kiriman untuk safety guard antrean Unofficial. Kosong = diturunkan dari `sentBy` (BOT -> BOT_REPLY, yang
+  // ditahan saat percakapan diambil alih agent). Kabar sistem aksi booking (tanda terima, "sudah diperbarui",
+  // permintaan data) memakai 'SYSTEM': owner 2026-10-20 meminta kabar itu tetap sampai walau bot mati.
+  purpose?: OutboundPurpose
   // Override eksplisit, jarang dipakai (mis. test yang tidak ingin memuat conversation
   // lengkap hanya untuk membuktikan sebuah cabang). Sumber kebenaran platform ada di
   // `conversation.channelIdentity.platform`, dibaca beberapa baris di bawah -- pemanggil
@@ -449,6 +454,7 @@ async function sendViaQueue(params: {
   botTrace?: unknown
   replyToId?: string
   media?: OutboundMedia
+  purpose?: OutboundPurpose
   conversation: { id: string; contactId: string; contact: { phone: string } }
   channel: 'OFFICIAL' | 'UNOFFICIAL'
 }) {
@@ -491,6 +497,7 @@ async function sendViaQueue(params: {
       media: params.media,
     },
     sentBy: params.sentBy,
+    purpose: params.purpose,
   })
 
   if (enqueued.warnings.length > 0) {

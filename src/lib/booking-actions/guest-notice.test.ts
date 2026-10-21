@@ -17,6 +17,7 @@ import { sendMessage } from '@/lib/send'
 import { notifyBookingAction } from '@/lib/push/send'
 import { recordEvent } from './history'
 import { buildGuestNoticeText, guestPortalLink, notifyGuestOfUpdate } from './guest-notice'
+import { bookingShortCandidate } from '@/lib/booking/short-link'
 
 const db = prisma as unknown as DeepMockProxy<PrismaClient>
 const NOW = new Date('2026-10-20T03:00:00Z')
@@ -40,9 +41,9 @@ const input = (over: Partial<Input> = {}): Input => ({
   conversationId: 'c1', bookingId: '77', accountId: null, booking: booking(), items: [tshirtItem], now: NOW, ...over,
 })
 
-function setup(opts: { direction?: string; isTest?: boolean; phone?: string; platform?: string; inbound?: Date | null; sentBefore?: boolean } = {}) {
+function setup(opts: { direction?: string; isTest?: boolean; phone?: string; platform?: string; inbound?: Date | null; sentBefore?: boolean; content?: string } = {}) {
   db.message.findMany.mockImplementation((async (a: { where: { id: { in: string[] } } }) =>
-    a.where.id.in.map((id) => ({ id, direction: opts.direction ?? 'INBOUND' }))) as never)
+    a.where.id.in.map((id) => ({ id, direction: opts.direction ?? 'INBOUND', content: opts.content ?? null }))) as never)
   db.conversation.findUnique.mockResolvedValue({
     isTest: opts.isTest ?? false, contact: { phone: opts.phone ?? '4915112345678' }, channelIdentity: { platform: opts.platform ?? 'WHATSAPP' },
   } as never)
@@ -62,6 +63,8 @@ beforeEach(() => {
 afterEach(() => {
   delete process.env.BOOKING_ACTIONS_ROLLOUT
   delete process.env.BOOKING_ACTIONS_TEST_PHONES
+  vi.unstubAllEnvs()
+  vi.unstubAllGlobals()
   vi.restoreAllMocks()
 })
 
@@ -118,11 +121,47 @@ describe('notifyGuestOfUpdate', () => {
     await notifyGuestOfUpdate(input())
     expect(sendMessage).toHaveBeenCalledTimes(1)
     const arg = vi.mocked(sendMessage).mock.calls[0][0]
-    expect(arg).toMatchObject({ conversationId: 'c1', sentBy: 'BOT', botTrace: { source: 'booking_update_notice', idempotencyKey: 'guest_update:a1' } })
+    expect(arg).toMatchObject({ conversationId: 'c1', sentBy: 'BOT', purpose: 'SYSTEM', botTrace: { source: 'booking_update_notice', idempotencyKey: 'guest_update:a1' } })
     expect(arg.text).toContain('- T-shirt: L x 2, XL x 1')
     expect(arg.text).toContain(PORTAL)
     expect(recordEvent).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ event: 'GUEST_NOTICE_SENT', actionId: 'a1', actor: 'SYSTEM', newValue: { messageId: 'm1', batch: ['a1'] } }))
     expect(notifyBookingAction).not.toHaveBeenCalled()
+  })
+
+  it('English chat from a guest whose booking says Indonesia -> English notice (owner 2026-10-21)', async () => {
+    setup({ content: 'Hello, just want to confirm if my pickup location is hotel 88 surabaya at 10:00 am' })
+    await notifyGuestOfUpdate(input({ booking: booking({ guestDetails: { country: 'Indonesia' } }) }))
+    expect(vi.mocked(sendMessage).mock.calls[0][0].text).toMatch(/^Noted, thank you! Your booking has been updated:/)
+  })
+
+  it('long my-booking link -> verified jvto.me short link (owner 2026-10-21)', async () => {
+    setup()
+    vi.stubEnv('LEGACY_BASE_URL', 'https://legacy.example.test')
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ url: 'tok123' }), { status: 200 }))
+    vi.stubGlobal('fetch', fetchMock)
+    await notifyGuestOfUpdate(input())
+    const text = vi.mocked(sendMessage).mock.calls[0][0].text
+    expect(text).toContain(`https://jvto.me/b/${bookingShortCandidate('tok123', 0)}`)
+    expect(text).not.toContain(PORTAL)
+    expect(fetchMock).toHaveBeenCalledWith(`https://legacy.example.test/bookings/short/${bookingShortCandidate('tok123', 0)}`, expect.anything())
+  })
+
+  it('short code not verified (404) -> long portal link stays', async () => {
+    setup()
+    vi.stubEnv('LEGACY_BASE_URL', 'https://legacy.example.test')
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('{}', { status: 404 })))
+    await notifyGuestOfUpdate(input())
+    expect(vi.mocked(sendMessage).mock.calls[0][0].text).toContain(PORTAL)
+  })
+
+  it('TWT booking (client_portal_url null) -> no link and no short-link lookup', async () => {
+    setup()
+    vi.stubEnv('LEGACY_BASE_URL', 'https://legacy.example.test')
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+    await notifyGuestOfUpdate(input({ booking: booking({ client_portal_url: null }) }))
+    expect(vi.mocked(sendMessage).mock.calls[0][0].text).not.toContain('https://')
+    expect(fetchMock).not.toHaveBeenCalled()
   })
 
   it('manual Setujui -> sent as the agent who clicked', async () => {

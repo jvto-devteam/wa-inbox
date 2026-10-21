@@ -37,6 +37,7 @@ import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { broadcast } from '@/lib/realtime'
 import { sendMessage } from '@/lib/send'
+import { guestLanguage, recentGuestTexts } from './guest-language'
 import { jakartaDayKey, jakartaDayRange } from '@/lib/daily-summary/time'
 import { serviceWindowClosed } from '@/lib/inbox/service-window'
 import { notifyBookingAction } from '@/lib/push/send'
@@ -83,11 +84,7 @@ export function findDataGaps(booking: BookingData): DataGapField[] {
   return gaps
 }
 
-/** Tamu Indonesia (`guestDetails.country` memuat "indonesia"): teks ke tamu memakai Bahasa Indonesia. */
-export function isIndonesianGuest(booking: BookingData): boolean {
-  const country = booking.guestDetails?.country
-  return typeof country === 'string' && /indonesia/i.test(country)
-}
+export { isIndonesianGuest } from './guest-language'
 
 const TEXT = {
   en: {
@@ -124,8 +121,14 @@ function formatYmd(ymd: string | null, lang: 'en' | 'id'): string | null {
 }
 
 /** Teks draf: hanya butir yang kurang. Murni, tanpa LLM dan tanpa nama tamu. */
-export function buildDataRequestText(booking: BookingData, gaps: readonly DataGapField[]): string {
-  const t = isIndonesianGuest(booking) ? TEXT.id : TEXT.en
+export function buildDataRequestText(
+  booking: BookingData,
+  gaps: readonly DataGapField[],
+  /** Chat tamu terbaru (`recentGuestTexts`): bahasanya menang atas negara di booking. */
+  guestTexts: readonly string[] = []
+): string {
+  const lang = guestLanguage(booking, guestTexts)
+  const t = TEXT[lang]
   const point = readBookingField(booking, 'pickup_point')
   const lines = gaps.map((g) => {
     if (g === 'pickup_detail') {
@@ -134,7 +137,6 @@ export function buildDataRequestText(booking: BookingData, gaps: readonly DataGa
     }
     return `- ${t[g]}`
   })
-  const lang = isIndonesianGuest(booking) ? 'id' : 'en'
   return [t.intro(formatYmd(readBookingField(booking, 'travel_date'), lang)), ...lines, '', t.outro].join('\n')
 }
 
@@ -263,7 +265,7 @@ export async function sendDataRequest(input: { actionId: string; accountId: stri
         return { ok: false, status: 409, error: 'Tamu baru menjawab, menunggu orang memeriksa' }
       }
       // Teks SELALU dibangun ulang dari data segar (tanggal bisa berubah walau celahnya sama).
-      const rebuilt = buildDataRequestText(fresh.data, gaps)
+      const rebuilt = buildDataRequestText(fresh.data, gaps, await recentGuestTexts(conv.id))
       if (rebuilt !== text || gaps.join() !== gapFields.join()) {
         await prisma.bookingAction.updateMany({ where: { id: action.id, state: 'OPEN' }, data: { draftText: rebuilt, proposedValue: gaps } })
         broadcast({ type: 'booking-actions.changed', conversationId: conv.id })
@@ -288,6 +290,7 @@ export async function sendDataRequest(input: { actionId: string; accountId: stri
         text,
         sentBy: input.accountId ? 'AGENT' : 'BOT',
         agentId: input.accountId ?? undefined,
+        purpose: 'SYSTEM',
         botTrace: { source: DATA_REQUEST_SOURCE, idempotencyKey: `data_request:${action.id}` },
       })
       messageId = sent?.id ?? null
@@ -456,7 +459,7 @@ export async function createDataRequestDrafts(now: Date = new Date()): Promise<{
           field: 'data_request',
           tier: 'AI',
           proposedValue: gaps,
-          draftText: buildDataRequestText(booking, gaps),
+          draftText: buildDataRequestText(booking, gaps, await recentGuestTexts(conv.id)),
           state: 'OPEN',
           forDay: today,
         },

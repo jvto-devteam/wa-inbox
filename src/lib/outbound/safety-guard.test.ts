@@ -77,6 +77,14 @@ describe('agent takeover', () => {
     expect(result.blockingReason).toContain('diambil alih agent')
   })
 
+  it('does not hold a SYSTEM notice (booking ack / "updated" / data request) when an agent has taken over', async () => {
+    // Owner 2026-10-20/21: the guest must get these even while an admin handles the chat.
+    mockPrisma.conversation.findUnique.mockResolvedValue({ botEnabled: false } as never)
+
+    const result = await checkOutboundSafety({ ...base, sentBy: 'BOT', purpose: 'SYSTEM' })
+    expect(result.allowed).toBe(true)
+  })
+
   it('does not apply the takeover check to an agent send', async () => {
     // An agent sending in a conversation whose bot is off is the normal case, not a violation.
     mockPrisma.conversation.findUnique.mockResolvedValue({ botEnabled: false } as never)
