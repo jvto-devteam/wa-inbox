@@ -10,7 +10,7 @@ import type { MockedFunction } from 'vitest'
 // `fetch` is re-stubbed on every beforeEach, so the handle is resolved lazily instead of
 // bound once at module scope -- binding it once would keep pointing at the previous test's
 // stub. The stubbed value stays loose because these tests hand fetch deliberately partial
-// Response fixtures (ok + json only); the call tuple gets its real shape back at the point
+// Response fixtures (ok + text only); the call tuple gets its real shape back at the point
 // of inspection instead, which is where the types actually earn something.
 const mockFetch = () => fetch as unknown as MockedFunction<(...args: never[]) => unknown>
 type FetchInit = { method?: string; body: string; signal?: AbortSignal | null; headers: Record<string, string | undefined> }
@@ -37,7 +37,7 @@ describe('lookupBooking', () => {
   })
 
   it('builds the request URL with filter_type=range, a date_range from the 1st of last month, and phone_no; sends a Bearer Authorization header', async () => {
-    ;mockFetch().mockResolvedValue({ ok: true, json: async () => ({ id: 'B1' }) })
+    ;mockFetch().mockResolvedValue({ ok: true, text: async () => JSON.stringify(({ id: 'B1' })) })
 
     await lookupBooking('+62 812-3456-7890')
 
@@ -54,7 +54,7 @@ describe('lookupBooking', () => {
 
   it('omits the Authorization header when BOOKING_API_KEY is not set', async () => {
     delete process.env.BOOKING_API_KEY
-    ;mockFetch().mockResolvedValue({ ok: true, json: async () => ({ id: 'B1' }) })
+    ;mockFetch().mockResolvedValue({ ok: true, text: async () => JSON.stringify(({ id: 'B1' })) })
 
     await lookupBooking('6281234567890')
 
@@ -71,7 +71,7 @@ describe('lookupBooking', () => {
       orderChannel: 'JVTO',
       financial: { payment: 500000, balance: 350000 },
     }
-    ;mockFetch().mockResolvedValue({ ok: true, json: async () => raw })
+    ;mockFetch().mockResolvedValue({ ok: true, text: async () => JSON.stringify(raw) })
 
     const result = await lookupBooking('6281234567890')
 
@@ -81,11 +81,11 @@ describe('lookupBooking', () => {
   it('picks the booking with the latest date.start_ymd when the API returns an array', async () => {
     ;mockFetch().mockResolvedValue({
       ok: true,
-      json: async () => [
+      text: async () => JSON.stringify([
         { id: 'B1', date: { start_ymd: '2026-08-01' } },
         { id: 'B2', date: { start_ymd: '2026-09-01' } },
         { id: 'B3', date: { start_ymd: '2026-07-15' } },
-      ],
+      ]),
     })
 
     const result = await lookupBooking('6281234567890')
@@ -94,19 +94,19 @@ describe('lookupBooking', () => {
   })
 
   it('returns null when the API returns an empty array', async () => {
-    ;mockFetch().mockResolvedValue({ ok: true, json: async () => [] })
+    ;mockFetch().mockResolvedValue({ ok: true, text: async () => JSON.stringify([]) })
     expect(await lookupBooking('6281234567890')).toBeNull()
   })
 
   it('returns null when the API returns an empty object', async () => {
-    ;mockFetch().mockResolvedValue({ ok: true, json: async () => ({}) })
+    ;mockFetch().mockResolvedValue({ ok: true, text: async () => JSON.stringify(({})) })
     expect(await lookupBooking('6281234567890')).toBeNull()
   })
 
   it('handles array items with a missing date gracefully instead of throwing', async () => {
     ;mockFetch().mockResolvedValue({
       ok: true,
-      json: async () => [{ id: 'B1' }, { id: 'B2', date: { start_ymd: '2026-09-01' } }],
+      text: async () => JSON.stringify([{ id: 'B1' }, { id: 'B2', date: { start_ymd: '2026-09-01' } }]),
     })
 
     const result = await lookupBooking('6281234567890')
@@ -115,7 +115,7 @@ describe('lookupBooking', () => {
   })
 
   it('returns null when the response is not ok (e.g. 404 or 500)', async () => {
-    ;mockFetch().mockResolvedValue({ ok: false, status: 500, json: async () => ({}) })
+    ;mockFetch().mockResolvedValue({ ok: false, status: 500, text: async () => JSON.stringify(({})) })
     expect(await lookupBooking('6281234567890')).toBeNull()
   })
 
@@ -127,11 +127,23 @@ describe('lookupBooking', () => {
   it('returns null instead of throwing when the response body is not valid JSON', async () => {
     ;mockFetch().mockResolvedValue({
       ok: true,
-      json: async () => {
-        throw new Error('invalid JSON')
-      },
+      text: async () => '<html>not json',
     })
     expect(await lookupBooking('6281234567890')).toBeNull()
+  })
+})
+
+describe('lookupBookingResult: empty 200 body (2026-10-21, booking deleted)', () => {
+  it('an empty or "null" body (backoffice ->first() found nothing) is a valid "no booking", not an error', async () => {
+    ;mockFetch().mockResolvedValue({ ok: true, text: async () => '' })
+    expect(await lookupBookingResult('6282143403501')).toEqual({ status: 'not_found' })
+    ;mockFetch().mockResolvedValue({ ok: true, text: async () => 'null' })
+    expect(await lookupBookingResult('6282143403501')).toEqual({ status: 'not_found' })
+  })
+
+  it('a non-empty body that is not JSON stays an error (never wipes bookingData)', async () => {
+    ;mockFetch().mockResolvedValue({ ok: true, text: async () => '<html>Server Error</html>' })
+    expect(await lookupBookingResult('6282143403501')).toEqual({ status: 'error' })
   })
 })
 
@@ -228,7 +240,7 @@ describe('ensureFreshBookingData', () => {
   })
 
   it('refetches when bookingCheckedAt is null (never checked)', async () => {
-    ;mockFetch().mockResolvedValue({ ok: true, json: async () => ({ id: 'B1', guest: 'Bruno' }) })
+    ;mockFetch().mockResolvedValue({ ok: true, text: async () => JSON.stringify(({ id: 'B1', guest: 'Bruno' })) })
     const conversation = { id: 'conv_1', bookingData: null, bookingCheckedAt: null, pipelineStage: 'new', contact: { phone: '6281234567890' } }
 
     const result = await ensureFreshBookingData(conversation)
@@ -238,7 +250,7 @@ describe('ensureFreshBookingData', () => {
   })
 
   it('refetches when the cached value is older than 24h', async () => {
-    ;mockFetch().mockResolvedValue({ ok: true, json: async () => ({ id: 'B2' }) })
+    ;mockFetch().mockResolvedValue({ ok: true, text: async () => JSON.stringify(({ id: 'B2' })) })
     const stale = new Date(Date.now() - 25 * 60 * 60 * 1000)
     const conversation = { id: 'conv_1', bookingData: { id: 'B1' }, bookingCheckedAt: stale, pipelineStage: 'new', contact: { phone: '6281234567890' } }
 
@@ -265,7 +277,7 @@ describe('ensureFreshBookingData', () => {
   // and only an `as never` cast would suppress that error. What this test CAN pin
   // down is the exact `data` object handed to Prisma.
   it('writes Prisma.DbNull (never plain null) when no booking is found, so bookingCheckedAt still persists', async () => {
-    ;mockFetch().mockResolvedValue({ ok: true, json: async () => ({}) })
+    ;mockFetch().mockResolvedValue({ ok: true, text: async () => JSON.stringify(({})) })
     const conversation = { id: 'conv_1', bookingData: null, bookingCheckedAt: null, pipelineStage: 'new', contact: { phone: '6281234567890' } }
 
     const result = await ensureFreshBookingData(conversation)
@@ -278,7 +290,7 @@ describe('ensureFreshBookingData', () => {
   })
 
   it('writes the raw booking object through unchanged when a booking is found', async () => {
-    ;mockFetch().mockResolvedValue({ ok: true, json: async () => ({ id: 'B1', guest: 'Bruno' }) })
+    ;mockFetch().mockResolvedValue({ ok: true, text: async () => JSON.stringify(({ id: 'B1', guest: 'Bruno' })) })
     // pipelineStage starts at 'lunas' (outranks the 'booked' this booking would otherwise
     // derive) specifically so this test's assertion isn't also asserting on the pipeline
     // auto-advance behavior -- that has its own describe block below.
@@ -299,7 +311,7 @@ describe('ensureFreshBookingData — pipeline auto-advance', () => {
   }
 
   it('advances a new/nego conversation to "booked" once a real booking is found with no balance/end-date info', async () => {
-    ;mockFetch().mockResolvedValue({ ok: true, json: async () => ({ id: 'B1' }) })
+    ;mockFetch().mockResolvedValue({ ok: true, text: async () => JSON.stringify(({ id: 'B1' })) })
 
     await ensureFreshBookingData(conversationWith('nego'))
 
@@ -309,7 +321,7 @@ describe('ensureFreshBookingData — pipeline auto-advance', () => {
   })
 
   it('advances straight to "lunas" once the booking\'s outstanding balance is zero', async () => {
-    ;mockFetch().mockResolvedValue({ ok: true, json: async () => ({ id: 'B1', financial: { balance: 0 } }) })
+    ;mockFetch().mockResolvedValue({ ok: true, text: async () => JSON.stringify(({ id: 'B1', financial: { balance: 0 } })) })
 
     await ensureFreshBookingData(conversationWith('new'))
 
@@ -319,7 +331,7 @@ describe('ensureFreshBookingData — pipeline auto-advance', () => {
   })
 
   it('does not treat a positive outstanding balance as paid', async () => {
-    ;mockFetch().mockResolvedValue({ ok: true, json: async () => ({ id: 'B1', financial: { balance: 350000 } }) })
+    ;mockFetch().mockResolvedValue({ ok: true, text: async () => JSON.stringify(({ id: 'B1', financial: { balance: 350000 } })) })
 
     await ensureFreshBookingData(conversationWith('new'))
 
@@ -331,7 +343,7 @@ describe('ensureFreshBookingData — pipeline auto-advance', () => {
   it('advances to "selesai" once the trip\'s own end date has passed', async () => {
     ;mockFetch().mockResolvedValue({
       ok: true,
-      json: async () => ({ id: 'B1', financial: { balance: 350000 }, date: { end_ymd: '2020-01-01' } }),
+      text: async () => JSON.stringify(({ id: 'B1', financial: { balance: 350000 }, date: { end_ymd: '2020-01-01' } })),
     })
 
     await ensureFreshBookingData(conversationWith('booked'))
@@ -344,7 +356,7 @@ describe('ensureFreshBookingData — pipeline auto-advance', () => {
   it('does not advance to "selesai" for a future end date', async () => {
     ;mockFetch().mockResolvedValue({
       ok: true,
-      json: async () => ({ id: 'B1', date: { end_ymd: '2099-01-01' } }),
+      text: async () => JSON.stringify(({ id: 'B1', date: { end_ymd: '2099-01-01' } })),
     })
 
     await ensureFreshBookingData(conversationWith('booked'))
@@ -355,7 +367,7 @@ describe('ensureFreshBookingData — pipeline auto-advance', () => {
   })
 
   it('never moves the stage backward past what an agent already set (lunas stays lunas even though this booking only derives "booked")', async () => {
-    ;mockFetch().mockResolvedValue({ ok: true, json: async () => ({ id: 'B1' }) })
+    ;mockFetch().mockResolvedValue({ ok: true, text: async () => JSON.stringify(({ id: 'B1' })) })
 
     await ensureFreshBookingData(conversationWith('lunas'))
 
@@ -364,7 +376,7 @@ describe('ensureFreshBookingData — pipeline auto-advance', () => {
   })
 
   it('does not touch pipelineStage when no booking is found at all', async () => {
-    ;mockFetch().mockResolvedValue({ ok: true, json: async () => ({}) })
+    ;mockFetch().mockResolvedValue({ ok: true, text: async () => JSON.stringify(({})) })
 
     await ensureFreshBookingData(conversationWith('new'))
 
@@ -373,7 +385,7 @@ describe('ensureFreshBookingData — pipeline auto-advance', () => {
   })
 
   it('treats an unrecognized current pipelineStage as rank -1, so it still advances', async () => {
-    ;mockFetch().mockResolvedValue({ ok: true, json: async () => ({ id: 'B1' }) })
+    ;mockFetch().mockResolvedValue({ ok: true, text: async () => JSON.stringify(({ id: 'B1' })) })
 
     await ensureFreshBookingData(conversationWith('some_custom_stage'))
 
@@ -389,8 +401,8 @@ describe('API booking gagal tidak menghapus data booking', () => {
 
   it.each([
     ['timeout', () => mockFetch().mockRejectedValue(Object.assign(new Error('The operation was aborted due to timeout'), { name: 'TimeoutError' }))],
-    ['status non-OK', () => mockFetch().mockResolvedValue({ ok: false, status: 503, json: async () => ({}) })],
-    ['exception saat membaca body', () => mockFetch().mockResolvedValue({ ok: true, json: async () => { throw new Error('invalid JSON') } })],
+    ['status non-OK', () => mockFetch().mockResolvedValue({ ok: false, status: 503, text: async () => JSON.stringify(({})) })],
+    ['exception saat membaca body', () => mockFetch().mockResolvedValue({ ok: true, text: async () => '<html>not json' })],
   ])('%s: lookupBookingResult = error, bookingData lama tetap, bookingCheckedAt tidak distempel', async (_name, arrange) => {
     arrange()
     expect(await lookupBookingResult('6281234567890')).toEqual({ status: 'error' })
@@ -408,7 +420,7 @@ describe('API booking gagal tidak menghapus data booking', () => {
   })
 
   it('error tetap boleh menaikkan tahap dari data lama, tanpa menyentuh bookingData', async () => {
-    ;mockFetch().mockResolvedValue({ ok: false, status: 500, json: async () => ({}) })
+    ;mockFetch().mockResolvedValue({ ok: false, status: 500, text: async () => JSON.stringify(({})) })
     await ensureFreshBookingData({ ...cached(), pipelineStage: 'new' })
     const data = mockPrisma.conversation.update.mock.calls[0][0].data
     expect(data).not.toHaveProperty('bookingData')
@@ -416,7 +428,7 @@ describe('API booking gagal tidak menghapus data booking', () => {
   })
 
   it('jawaban kosong yang sah tetap "tidak ditemukan": bookingData dikosongkan dan distempel', async () => {
-    ;mockFetch().mockResolvedValue({ ok: true, json: async () => [] })
+    ;mockFetch().mockResolvedValue({ ok: true, text: async () => JSON.stringify([]) })
     expect(await lookupBookingResult('6281234567890')).toEqual({ status: 'not_found' })
     await ensureFreshBookingData(cached())
     expect(mockPrisma.conversation.update).toHaveBeenCalledWith({
@@ -434,7 +446,7 @@ describe('refreshStaleBookingData: batas waktu per tick', () => {
     vi.spyOn(Date, 'now').mockImplementation(() => clock)
     ;mockFetch().mockImplementation(async () => {
       clock += 40_000 // tiap panggilan API makan 40 detik
-      return { ok: true, json: async () => [] }
+      return { ok: true, text: async () => JSON.stringify([]) }
     })
     expect(await refreshStaleBookingData(25, 60_000)).toEqual({ diperiksa: 2 })
     expect(fetch).toHaveBeenCalledTimes(2)
@@ -473,7 +485,7 @@ describe('refreshStaleBookingData: yang terus gagal tidak menahan antrean (head-
     const failing = new Set(Array.from({ length: FAILING }, (_, i) => phone(i)))
     ;mockFetch().mockImplementation(async (...args: never[]) => {
       const requested = new URL(String(args[0])).searchParams.get('phone_no') ?? ''
-      return failing.has(requested) ? { ok: false, status: 503, json: async () => ({}) } : { ok: true, json: async () => [] }
+      return failing.has(requested) ? { ok: false, status: 503, text: async () => JSON.stringify(({})) } : { ok: true, text: async () => JSON.stringify([]) }
     })
     return { remaining: () => stale.length }
   }
@@ -506,7 +518,7 @@ describe('ensureFreshBookingData — reevaluate booking actions', () => {
   const base = { id: 'conv_1', bookingData: null, bookingCheckedAt: null, pipelineStage: 'new', contact: { phone: '6281234567890' } }
 
   it('refresh triggers reevaluate after bookingData is rewritten', async () => {
-    ;mockFetch().mockResolvedValue({ ok: true, json: async () => ({ id: 'B1' }) })
+    ;mockFetch().mockResolvedValue({ ok: true, text: async () => JSON.stringify(({ id: 'B1' })) })
     await ensureFreshBookingData(base)
     expect(reevaluateBookingActions).toHaveBeenCalledWith('conv_1')
     const updateOrder = mockPrisma.conversation.update.mock.invocationCallOrder[0]
@@ -526,7 +538,7 @@ describe('ensureFreshBookingData — reevaluate booking actions', () => {
 
   it('a reevaluate failure is logged only and never breaks the refresh', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => {})
-    ;mockFetch().mockResolvedValue({ ok: true, json: async () => ({ id: 'B1' }) })
+    ;mockFetch().mockResolvedValue({ ok: true, text: async () => JSON.stringify(({ id: 'B1' })) })
     vi.mocked(reevaluateBookingActions).mockRejectedValue(new Error('db'))
     await expect(ensureFreshBookingData(base)).resolves.toEqual(expect.objectContaining({ id: 'B1' }))
   })
@@ -554,7 +566,7 @@ describe('refreshBookingDataForOpenActions (final review Critical 1: tick refres
 
   it('forces a lookup even though the 24 h cache is still valid, saves it and re-evaluates', async () => {
     mockPrisma.conversation.findMany.mockResolvedValue([row('c1')] as never)
-    ;mockFetch().mockResolvedValue({ ok: true, json: async () => [{ booking_id: 1, date: { start_ymd: '2099-01-01', end_ymd: '2099-01-02' } }] })
+    ;mockFetch().mockResolvedValue({ ok: true, text: async () => JSON.stringify([{ booking_id: 1, date: { start_ymd: '2099-01-01', end_ymd: '2099-01-02' } }]) })
     expect(await refreshBookingDataForOpenActions(10, 30_000, NOW)).toEqual({ diperiksa: 1 })
     expect(fetch).toHaveBeenCalledTimes(1)
     expect(mockPrisma.conversation.update).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'c1' }, data: expect.objectContaining({ bookingCheckedAt: expect.any(Date) }) }))
@@ -576,7 +588,7 @@ describe('refreshBookingDataForOpenActions (final review Critical 1: tick refres
     vi.spyOn(Date, 'now').mockImplementation(() => clock)
     ;mockFetch().mockImplementation(async () => {
       clock += 20_000
-      return { ok: true, json: async () => [] }
+      return { ok: true, text: async () => JSON.stringify([]) }
     })
     expect(await refreshBookingDataForOpenActions(10, 30_000, NOW)).toEqual({ diperiksa: 2 })
     vi.mocked(Date.now).mockRestore()

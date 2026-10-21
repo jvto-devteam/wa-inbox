@@ -161,7 +161,12 @@ export async function lookupBookingResult(phone: string): Promise<BookingLookup>
 
     if (!res.ok) return { status: 'error' }
 
-    const body = await res.json()
+    // Dengan `phone_no` backoffice menjawab `$data['booking']->first()` (ScheduleController.php): tanpa booking yang
+    // cocok hasilnya null, yang terkirim sebagai 200 dengan body KOSONG. Itu jawaban sah "tanpa booking" (mis. booking
+    // dihapus, 2026-10-21), bukan galat; body tak terbaca selain itu tetap galat.
+    const raw = await res.text()
+    if (raw.trim() === '' || raw.trim() === 'null') return { status: 'not_found' }
+    const body: unknown = JSON.parse(raw)
 
     if (Array.isArray(body)) {
       const latest = pickLatest(body as BookingData[])
