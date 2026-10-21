@@ -143,6 +143,8 @@
 // reach it rather than wait on a human to notice and manually re-enable botEnabled.
 import { prisma } from '@/lib/db'
 import { ensureFreshBookingData, type BookingData } from '@/lib/booking/client'
+import { bookingUrlToken } from '@/lib/booking/backoffice-client'
+import { SHORT_LINK_BASE, verifiedBookingShortCode } from '@/lib/booking/short-link'
 import { checkRouteGate } from './route-gate'
 import { classifySalesNeed, HANDOFF_KEYWORDS } from './sales-classifier'
 import {
@@ -1245,7 +1247,22 @@ async function runBookingContextMode(
   // and the booking JSON go in the `system` parameter -- sent as a leading
   // system-role message to Ollama's /api/chat -- while `prompt` carries ONLY
   // the customer's question, as a user turn.
-  const portalLink = typeof bookingData.customer_portal === 'string' ? bookingData.customer_portal : null
+  // Owner 2026-10-21: tamu menerima short link jvto.me/b/<kode>, bukan tautan my-booking panjang. Kode hanya dipakai bila
+  // terbukti milik booking ini (`resolveGuestPortalLink`, diverifikasi ke legacy); selain itu tautan panjang seperti dulu.
+  const longPortalLink = typeof bookingData.customer_portal === 'string' ? bookingData.customer_portal : null
+  const portalToken = longPortalLink ? bookingUrlToken(bookingData) : null
+  const shortCode = portalToken && portalToken !== 'my-booking' ? await verifiedBookingShortCode(portalToken) : null
+  const portalLink = shortCode ? `${SHORT_LINK_BASE}${shortCode}` : longPortalLink
+  // Tautan portal panjang di JSON booking (prompt dan grounding) ikut diganti short link yang terverifikasi, supaya LLM tidak menyalin yang panjang.
+  const bookingJson = JSON.stringify(
+    shortCode
+      ? {
+          ...bookingData,
+          customer_portal: portalLink,
+          ...(typeof bookingData.client_portal_url === 'string' && bookingData.client_portal_url ? { client_portal_url: portalLink } : {}),
+        }
+      : bookingData
+  )
   // Reported 2026-08-06, live-audited across 870 real customer messages: an already-booked
   // customer (Mode 3) asking something genuinely answerable but NOT in the booking JSON
   // itself -- cold-weather packing, Bromo's trekking difficulty, cash-on-arrival policy,
@@ -1288,7 +1305,7 @@ async function runBookingContextMode(
       : ''
   const system =
     `${SHARED_PERSONA_INSTRUCTIONS}\n\n` +
-    `Customer's booking data (JSON) -- your PRIMARY source of fact for anything about THEIR specific trip (dates, package, pax, pickup/dropoff, price, hotels, guides/drivers). If they ask for a hotel name and it's present in this JSON's hotels field, state it directly -- don't defer a question this data already answers: ${JSON.stringify(bookingData)}\n\n` +
+    `Customer's booking data (JSON) -- your PRIMARY source of fact for anything about THEIR specific trip (dates, package, pax, pickup/dropoff, price, hotels, guides/drivers). If they ask for a hotel name and it's present in this JSON's hotels field, state it directly -- don't defer a question this data already answers: ${bookingJson}\n\n` +
     generalFactsSection +
     klookHealthScreeningNote +
     (modeThreeRouteLegFacts.length > 0
@@ -1313,7 +1330,6 @@ async function runBookingContextMode(
   // only this branch may state), or the route-leg facts. The catalog's package
   // prices are deliberately absent: Mode 3 never shows them, so a package tier
   // quoted here would be a number this reply had no way to know.
-  const bookingJson = JSON.stringify(bookingData)
   const groundedAmounts = [
     ...bookingAmountsIn(bookingData),
     ...extractRupiahAmounts([bookingJson, ...managed.lines, klookHealthScreeningNote, ...modeThreeRouteLegFacts].join('\n')),

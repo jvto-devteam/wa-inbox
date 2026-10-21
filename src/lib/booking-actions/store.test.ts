@@ -396,6 +396,25 @@ describe('final review Important 5: a change supersedes older facts of its field
     expect(state).toEqual({ pickup_detail: NOW, pickup_arrival: NOW, drop_detail: null })
   })
 
+  it('uji owner 2026-10-21: "drop at the airport, flight ABC123" -- the flight from the SAME message as the executed point change is not blocked, an older one is', async () => {
+    booking = { booking_id: 77, total_pax: 4, dropoff: { drop_point: 'Surabaya Airport', drop_point_value: null } } as BookingData
+    actions.push({ id: 'pt', conversationId: 'c1', bookingId: '77', type: 'CHANGE', field: 'drop_point', proposedValue: 'Surabaya Airport', state: 'EXECUTED', closedReason: 'AUTO_APPLIED', closedById: null, sourceMessageId: 'm2' })
+    await applyExtraction('c1', ex({ facts: [item('drop_detail', 'OLD999', 'm1')] }), NOW)
+    expect(facts.filter((f) => f.field === 'drop_detail')).toHaveLength(0)
+    await applyExtraction('c1', ex({ facts: [item('drop_detail', 'ABC123', 'm2')] }), NOW)
+    expect(facts.filter((f) => f.field === 'drop_detail').map((f) => f.value)).toEqual(['ABC123'])
+    // Backoffice has no drop detail yet -> a fill CHANGE card is proposed for it (it then supersedes its own fact).
+    expect(actions.some((a) => a.type === 'CHANGE' && a.field === 'drop_detail' && a.proposedValue === 'ABC123')).toBe(true)
+  })
+
+  it('a pickup_point CHANGE does not supersede a detail fact from the SAME message (it is the new point\'s detail)', async () => {
+    booking = { booking_id: 77, total_pax: 4, pickup: { meeting_point: 'Surabaya Hotel', meeting_point_value: 'Hotel X' } } as BookingData
+    await applyExtraction('c1', ex({ facts: [item('pickup_detail', 'GA 300', 'm3'), item('pickup_arrival', '10:00', 'm1')] }), NOW)
+    await applyExtraction('c1', ex({ changes: [item('pickup_point', 'Surabaya Airport', 'm3')] }), NOW)
+    const state = Object.fromEntries(facts.map((f) => [f.field, f.supersededAt]))
+    expect(state).toEqual({ pickup_detail: null, pickup_arrival: NOW })
+  })
+
   it('a fact NEWER than the change stays active', async () => {
     booking = { booking_id: 77, total_pax: 4, pickup: { meeting_point: 'Surabaya Airport', pickup_time: '10:30' } } as BookingData
     await applyExtraction('c1', ex({ facts: [item('pickup_time', '10:30', 'm4')] }), NOW)

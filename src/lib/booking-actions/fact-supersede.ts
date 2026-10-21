@@ -6,7 +6,8 @@
  * kini 09:00 dibandingkan dengan fakta 10:30 dan memunculkan MISMATCH palsu. Fungsi ini menstempel `supersededAt`
  * fakta aktif field itu yang pesan sumbernya LEBIH TUA ATAU SAMA dengan pesan sumber perubahan (pesan yang sama =
  * pernyataan yang sama; permintaan eksplisitnya yang berlaku). Untuk perubahan TITIK, fakta detail/kedatangan sisi
- * yang sama ikut usang (titik baru membawa detail baru).
+ * yang sama yang LEBIH TUA ikut usang (titik baru membawa detail baru); yang dari pesan yang sama adalah detail titik baru
+ * itu dan tetap hidup.
  *
  * Tidak pernah menebak: fakta tanpa pesan sumber atau dengan waktu pesan yang tak diketahui dibiarkan.
  */
@@ -30,7 +31,7 @@ export async function supersedeOlderFacts(
   const fields = supersededFactFields(input.field)
   const facts = ((await db.bookingFact.findMany({
     where: { conversationId, supersededAt: null, field: { in: fields } },
-    select: { id: true, bookingId: true, sourceMessageId: true },
+    select: { id: true, bookingId: true, sourceMessageId: true, field: true },
   })) ?? []).filter((f) => f.bookingId === null || f.bookingId === bookingId)
   if (facts.length === 0) return 0
 
@@ -43,7 +44,9 @@ export async function supersedeOlderFacts(
   let count = 0
   for (const f of facts) {
     const t = f.sourceMessageId === null ? undefined : time.get(f.sourceMessageId)
-    if (t === undefined || t > cutoff) continue
+    // Detail/kedatangan pendamping titik dari pesan YANG SAMA adalah detail titik baru itu ("drop di bandara, flight
+    // ABC123"), bukan detail lama: hanya yang lebih tua yang usang (uji owner 2026-10-21).
+    if (t === undefined || t > cutoff || (f.field !== input.field && t === cutoff)) continue
     await db.bookingFact.update({ where: { id: f.id }, data: { supersededAt: now } })
     count++
   }

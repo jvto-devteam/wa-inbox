@@ -23,6 +23,7 @@ import { loadCatalog, readCatalogFile } from './catalog'
 import { checkDeploymentGate } from './deployment-gate'
 import { loadPublishedManagedKnowledge } from '@/lib/bot/managed-knowledge'
 import type { CatalogPackage } from './types'
+import { bookingShortCandidate } from '@/lib/booking/short-link'
 
 // `vi.mock` factories are hoisted above regular imports and `let`/`const`
 // declarations, so the mock instance must be constructed inline inside the
@@ -491,6 +492,24 @@ describe('decideAndRespond', () => {
   // price, etc) -- not unconditionally on every Mode 3 reply, since a booked customer can
   // still ask an ordinary general question (e.g. about Blue Fire) that has nothing to do with
   // their own booking specifics.
+  it('owner 2026-10-21: the portal link given to the LLM is the verified jvto.me short link, not the long my-booking URL', async () => {
+    vi.stubEnv('LEGACY_BASE_URL', 'https://legacy.example.test')
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ url: 'abc123' }), { status: 200 })))
+    try {
+      ;vi.mocked(ensureFreshBookingData).mockResolvedValue({ bookingId: 'B1', customer_portal: 'https://example.com/my-booking/abc123' })
+      ;vi.mocked(callLLM).mockResolvedValue('Your guide is Pak Budi.')
+
+      await decideAndRespond('conv_1', 'Who is my guide?')
+
+      const [, opts] = llmCall(0)
+      expect(opts.system).toContain(`https://jvto.me/b/${bookingShortCandidate('abc123', 0)}`)
+      expect(opts.system).not.toContain('https://example.com/my-booking/abc123')
+    } finally {
+      vi.unstubAllEnvs()
+      vi.unstubAllGlobals()
+    }
+  })
+
   it('instructs the LLM to only include the portal link when the answer actually used booking-specific data', async () => {
     ;vi.mocked(ensureFreshBookingData).mockResolvedValue({ bookingId: 'B1', customer_portal: 'https://example.com/my-booking/abc123' })
     ;vi.mocked(callLLM).mockResolvedValue('Your guide is Pak Budi.')

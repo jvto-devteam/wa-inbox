@@ -235,7 +235,9 @@ append-only tanpa FK: siapa, kapan, nilai lama/baru), `PushSubscription`. Setela
   **tidak pernah** `financial`, `expense`, `paymentHistory`, `guestDetails`. Hanya pesan INBOUND yang boleh jadi
   sumber usulan/fakta. Ekstraksi membaca ulang 20 pesan terakhir, jadi `applyExtraction` meringkas keluaran per
   field ke pesan terbaru dan memakai batas air: usulan dari pesan yang tidak lebih baru dari pesan sumber
-  CHANGE/TASK non-OPEN field itu dilewati (nilai lama tidak hidup lagi). CHANGE/TASK yang dibuat atau dieksekusi
+  CHANGE/TASK non-OPEN field itu dilewati (nilai lama tidak hidup lagi). Pengecualian pendamping titik: fakta
+  detail/kedatangan dari pesan YANG SAMA dengan perubahan titik tetap masuk dan tidak diusangkan (batas 1 ms sebelum pesan
+  itu; `supersedeOlderFacts` hanya yang lebih tua) -- "drop di bandara, flight ABC123" (owner 2026-10-21). CHANGE/TASK yang dibuat atau dieksekusi
   menandai fakta lama field itu usang (`supersedeOlderFacts`).
 - **Gerbang uji & rollout** (`src/lib/booking-actions/rollout.ts`, Ruling R25): percakapan uji = `isTest` atau
   nomor di env `BOOKING_ACTIONS_TEST_PHONES` (dipisah koma); keduanya lolos gerbang nomor Indonesia di semua
@@ -309,7 +311,9 @@ append-only tanpa FK: siapa, kapan, nilai lama/baru), `PushSubscription`. Setela
   `client_portal_url`, lalu `customer_portal`; tidak ada = tanpa baris tautan). Tautan my-booking panjang diganti
   `jvto.me/b/<kode>` (`resolveGuestPortalLink`): kode dihitung ulang dengan rumus `BookingShortUrl` PHP
   (`src/lib/booking/short-link.ts`) dan **hanya dipakai bila** legacy `GET /bookings/short/{code}` menjawab url booking
-  yang sama (`verifiedBookingShortCode`) -- kode hasil hitungan bisa milik tamu lain; gagal/404 = tautan panjang. EN bawaan, ID bila `isIndonesianGuest`.
+  yang sama (`verifiedBookingShortCode`) -- kode hasil hitungan bisa milik tamu lain; gagal/404 = tautan panjang. Balasan bot
+  (`orchestrator.ts`, Mode 3) memakai short link yang sama: catatan tautan portal DAN JSON booking di prompt/grounding
+  membawa `jvto.me/b/<kode>` alih-alih `customer_portal`/`client_portal_url` panjang. EN bawaan, ID bila `isIndonesianGuest`.
   Setujui manual = satu kabar per eksekusi. Terapkan-otomatis: `executeBookingAction` menunda (`deferGuestNotice`) dan
   `autoApplyCreated` mengirim SATU kabar + SATU push `AUTO_APPLIED` untuk semua kartu yang tertulis dari satu
   ekstraksi (`announceApplied`), supaya satu pesan tamu tidak dijawab beberapa "Noted". Hanya kartu dari pesan INBOUND,

@@ -164,15 +164,18 @@ async function watermarks(ctx: Ctx): Promise<Watermarks> {
   })) ?? []).filter((r) => inScope(r, ctx.bookingId))
   await loadTimes(ctx, [...actions, ...facts].map((r) => r.sourceMessageId))
   const marks: Watermarks = { change: new Map(), fact: new Map() }
-  const bump = (m: Map<string, number>, field: string, id: string | null) => {
-    const t = id === null ? undefined : ctx.times.get(id)
-    if (t === undefined) return
+  const bump = (m: Map<string, number>, field: string, id: string | null, offset = 0) => {
+    const at = id === null ? undefined : ctx.times.get(id)
+    if (at === undefined) return
+    const t = at + offset
     const cur = m.get(field)
     if (cur === undefined || t > cur) m.set(field, t)
   }
   for (const a of actions) {
     if (a.state !== 'OPEN') bump(marks.change, a.field, a.sourceMessageId)
-    for (const f of supersededFactFields(a.field)) bump(marks.fact, f, a.sourceMessageId)
+    // Pendamping titik (detail/kedatangan) dari pesan yang SAMA dengan perubahan titik tetap boleh masuk: batasnya
+    // 1 ms sebelum pesan itu (sama dengan `supersedeOlderFacts`).
+    for (const f of supersededFactFields(a.field)) bump(marks.fact, f, a.sourceMessageId, f === a.field ? 0 : -1)
   }
   for (const f of facts) bump(marks.fact, f.field, f.sourceMessageId)
   ctx.marks = marks
