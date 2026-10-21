@@ -13,7 +13,7 @@ import { isIndonesianNumber } from '@/lib/phone'
 import { recordBotDecisionRun, attachMessageToDecisionRun } from '@/lib/bot-control/decision-recorder'
 import { handoffReplyText, offHoursHandoffNotice } from '@/lib/bot/runtime-integration'
 import { openPipelineRun, traceStep, traceClose, traceSnapshot, traceRunId, type PipelineTracer } from '@/lib/pipeline/tracer'
-import { scheduleBookingExtraction } from '@/lib/booking-actions/schedule'
+import { runBookingExtractionNow, scheduleBookingExtraction } from '@/lib/booking-actions/schedule'
 import { noteInboundForChatReview } from '@/lib/chat-review/auto-refresh'
 import type { BotDecision } from '@/lib/bot/types'
 import { ingestMessengerPayload } from '@/lib/inbound-messenger'
@@ -400,6 +400,14 @@ async function flushBurst(conversation: { id: string; contactName: string | null
   if (!fresh.isTest && !checkAndRecordRateLimit(conversation.id)) {
     console.warn('flushBurst: rate limit exceeded, skipping bot reply', { conversationId: conversation.id })
     traceStep(burst.tracer, 'kumpulkan-burst', 'berhenti', { alasan: 'rate limit percakapan terlampaui' })
+    return
+  }
+
+  // Owner 2026-10-21: satu permintaan perubahan booking = SATU WhatsApp ke tamu (kabar "sudah diperbarui"). Ekstraksi
+  // aksi booking dijalankan DULU (membatalkan jadwal debounce-nya); bila pesan ini menjadi kartu CHANGE/TASK, sistem
+  // aksi booking yang menjawab dan bot diam. Percakapan tanpa booking / di luar rollout langsung lanjut ke bot.
+  if (await runBookingExtractionNow(conversation.id)) {
+    traceStep(burst.tracer, 'kumpulkan-burst', 'berhenti', { alasan: 'permintaan perubahan booking dijawab aksi booking' })
     return
   }
 

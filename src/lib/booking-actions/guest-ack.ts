@@ -1,9 +1,10 @@
 /**
- * Tanda terima ke TAMU segera sesudah permintaannya menjadi kartu (owner 2026-10-20): "Noted, permintaan Anda sudah
- * kami terima dan sedang kami proses." Dikirim SEBELUM terapkan-otomatis; kabar "sudah diperbarui" (guest-notice.ts)
- * tetap menyusul sebagai pesan kedua -- keduanya memang diminta, jadi tidak ada penahan jeda di antaranya.
+ * Tanda terima ke TAMU: "Noted, permintaan Anda sudah kami terima dan sedang kami proses." Owner 2026-10-21: satu
+ * permintaan = SATU WhatsApp. Maka dipanggil `runExtraction` SESUDAH terapkan-otomatis dan hanya untuk kartu yang masih
+ * OPEN (TASK, setelan APPROVE, gagal tulis, titik tanpa detail); kartu yang tertulis atau sudah sesuai sudah dijawab
+ * kabar "sudah diperbarui"/"sudah sesuai" (guest-notice.ts) dan tidak dapat tanda terima.
  *
- * Dipanggil `runExtraction` tepat sesudah `applyExtraction`. Memicu hanya bila ekstraksi itu melahirkan kartu CHANGE/TASK (id dari `applyExtraction().cardIds`, termasuk kartu isian yang lahir di `evaluate` DI DALAM applyExtraction; kartu `reevaluate` tick tidak)
+ * Kartu dari `applyExtraction`. Memicu hanya bila ekstraksi itu melahirkan kartu CHANGE/TASK (id dari `applyExtraction().cardIds`, termasuk kartu isian yang lahir di `evaluate` DI DALAM applyExtraction; kartu `reevaluate` tick tidak)
  * dari pesan TAMU (bukan MISMATCH, bukan DATA_REQUEST, bukan kartu isian lahir di reevaluate). SATU pesan per run
  * walau kartunya banyak. Teks dibuat di kode (tanpa LLM, tanpa nama tamu); bahasanya mengikuti pesan tamu sumber kartu
  * (`guestLanguage`), negara di booking hanya cadangan. Terkirim juga saat bot mati (admin yang menangani chat) -- tidak
@@ -52,7 +53,8 @@ export async function notifyGuestRequestReceived(input: {
     if (input.cardIds.length === 0) return
     const cards =
       (await prisma.bookingAction.findMany({
-        where: { id: { in: [...input.cardIds] }, conversationId, type: { in: ['CHANGE', 'TASK'] }, sourceMessageId: { not: null } },
+        // Hanya kartu yang masih OPEN sesudah terapkan-otomatis: yang tertulis/sudah sesuai sudah dijawab kabar perubahan.
+        where: { id: { in: [...input.cardIds] }, conversationId, type: { in: ['CHANGE', 'TASK'] }, state: 'OPEN', sourceMessageId: { not: null } },
         select: { id: true, sourceMessageId: true },
       })) ?? []
     if (cards.length === 0) return

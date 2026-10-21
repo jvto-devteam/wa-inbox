@@ -31,6 +31,8 @@ vi.mock('@/lib/send', () => ({ sendMessage: vi.fn() }))
 vi.mock('@/lib/realtime', () => ({ broadcast: vi.fn() }))
 // Ringkasan chat memakai conversation.findUnique sendiri; di sini ia akan memakan urutan mockResolvedValueOnce.
 vi.mock('@/lib/chat-review/auto-refresh', () => ({ noteInboundForChatReview: vi.fn() }))
+// Ekstraksi aksi booking membuka run pipeline SENDIRI (schedule.ts); di sini yang diuji run bot saja.
+vi.mock('@/lib/booking-actions/schedule', () => ({ scheduleBookingExtraction: vi.fn(), runBookingExtractionNow: vi.fn(async () => false) }))
 
 const mockPrisma = prisma as unknown as DeepMockProxy<PrismaClient>
 

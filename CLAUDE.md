@@ -283,19 +283,25 @@ append-only tanpa FK: siapa, kapan, nilai lama/baru), `PushSubscription`. Setela
   rollout `test`, kabar dari percakapan uji (`isBookingTestConversation`) dikirim ke nomor PERTAMA
   `BOOKING_ACTIONS_TEST_PHONES` (`firstBookingTestPhone`), tidak pernah ke vendor sungguhan; tanpa nomor uji = tidak
   dikirim (event `TEST_PHONE_MISSING`, tanpa push); gagal membaca percakapan = kabar gagal (event + push).
-- **Tanda terima ke tamu** (`guest-ack.ts`, `notifyGuestRequestReceived`, owner 2026-10-20): pesan PERTAMA dari dua.
-  `runExtraction` memanggilnya tepat sesudah `applyExtraction` dan SEBELUM `autoApplyCreated`; memicu hanya bila run itu
+- **Satu permintaan = SATU WhatsApp** (owner 2026-10-21): bot tidak ikut menjawab pesan yang menjadi kartu --
+  `flushBurst` (`inbound.ts`) menjalankan `runBookingExtractionNow` dulu (membatalkan debounce ekstraksi) dan diam bila
+  run itu melahirkan kartu CHANGE/TASK. Kartu yang tertulis dijawab kabar "sudah diperbarui", yang sudah sesuai dijawab
+  "sudah sesuai" (tanpa syarat tanda terima), dan hanya kartu yang masih OPEN sesudah terapkan-otomatis yang mendapat
+  tanda terima. Ketiganya memakai `purpose: 'SYSTEM'` (lolos safety guard saat admin mengambil alih) dan bahasa chat tamu
+  (`guestLanguage`; negara `isIndonesianGuest` hanya cadangan).
+- **Tanda terima ke tamu** (`guest-ack.ts`, `notifyGuestRequestReceived`, owner 2026-10-20; urutan diubah 2026-10-21):
+  `runExtraction` memanggilnya SESUDAH `autoApplyCreated`, hanya untuk kartu `state: 'OPEN'`; memicu hanya bila run itu
   melahirkan kartu `CHANGE`/`TASK` dari pesan tamu (bukan `MISMATCH`/`DATA_REQUEST`, bukan kartu yang lahir di `reevaluateBookingActions`). Kartu isian yang lahir di `evaluate()` DI DALAM `applyExtraction`
   DOES memicunya. Kartu dipilih dari `applyExtraction().cardIds` (id CHANGE+TASK yang dibuat run itu), bukan jendela waktu.
   Event `GUEST_ACK_SENT` ditulis SEBELUM kirim (klaim di bawah kunci advisory) sehingga run tumpang tindih tidak kirim
-  ganda; kirim gagal tidak diulang. Bila terapkan-otomatis mendapati nilainya sudah ada (MATCHED_IN_BACKOFFICE) dan tanda
-  terima sudah terkirim, tamu tetap dikabari "sudah sesuai" (`notifyGuestOfUpdate` `variant: 'matched'`).
+  ganda; kirim gagal tidak diulang. Bila terapkan-otomatis mendapati nilainya sudah ada (MATCHED_IN_BACKOFFICE), tamu
+  dikabari "sudah sesuai" (`notifyGuestOfUpdate` `variant: 'matched'`) sebagai satu-satunya jawaban.
   Satu pesan per run: "Noted, we've received your request and are processing it now." / "Noted, permintaan Anda sudah
-  kami terima dan sedang kami proses." (kode, tanpa LLM/nama; bahasa lewat `isIndonesianGuest`). Gerbang sama dengan kabar
+  kami terima dan sedang kami proses." (kode, tanpa LLM/nama; bahasa lewat `guestLanguage`). Gerbang sama dengan kabar
   ke tamu (WhatsApp bernomor, `bookingAutomationAllowed`, jendela 24 jam terbuka; tertutup = diam tanpa push) dan terkirim
   walau `botEnabled` mati. Idempotensi: event `GUEST_ACK_SENT` di setiap kartu (ekstraksi ulang tidak mengirim lagi) +
   maks. satu per percakapan per 2 menit. `botTrace.source = booking_request_ack`. Gagal = log nama galat, tanpa push.
-  Kabar "sudah diperbarui" di bawah tetap pesan kedua; keduanya terkirim walau berdekatan.
+  Kartu yang tertulis tidak mendapat tanda terima; kabar "sudah diperbarui" di bawah yang menjawabnya.
 - **Kabar ke tamu** (`guest-notice.ts`, `notifyGuestOfUpdate`, owner 2026-10-20): WhatsApp lewat `sendMessage`:
   "Noted" + satu baris per field yang benar-benar ditulis + tautan portal (short link bila API memuatnya, lalu
   `client_portal_url`, lalu `customer_portal`; tidak ada = tanpa baris tautan). Tautan my-booking panjang diganti

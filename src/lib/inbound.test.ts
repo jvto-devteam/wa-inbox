@@ -19,7 +19,7 @@ import { broadcast } from '@/lib/realtime'
 import { recordUnsourcedReplyGap } from '@/lib/inbox/gap-log'
 import { classifyAndStoreTopicLabels } from '@/lib/inbox/topic-labels'
 import { ingestMessengerPayload } from '@/lib/inbound-messenger'
-import { scheduleBookingExtraction } from '@/lib/booking-actions/schedule'
+import { runBookingExtractionNow, scheduleBookingExtraction } from '@/lib/booking-actions/schedule'
 
 vi.mock('@/lib/db', () => ({ prisma: mockDeep<PrismaClient>() }))
 vi.mock('@/lib/bot/orchestrator', () => ({ decideAndRespond: vi.fn() }))
@@ -28,12 +28,14 @@ vi.mock('@/lib/realtime', () => ({ broadcast: vi.fn() }))
 vi.mock('@/lib/inbox/topic-labels', () => ({ classifyAndStoreTopicLabels: vi.fn() }))
 vi.mock('@/lib/inbox/gap-log', () => ({ recordUnsourcedReplyGap: vi.fn() }))
 vi.mock('@/lib/inbound-messenger', () => ({ ingestMessengerPayload: vi.fn() }))
-vi.mock('@/lib/booking-actions/schedule', () => ({ scheduleBookingExtraction: vi.fn() }))
+vi.mock('@/lib/booking-actions/schedule', () => ({ scheduleBookingExtraction: vi.fn(), runBookingExtractionNow: vi.fn() }))
 
 const mockPrisma = prisma as unknown as DeepMockProxy<PrismaClient>
 
 beforeEach(() => {
   mockReset(mockPrisma)
+  // Bawaan: pesan tidak menjadi kartu aksi booking, jadi bot menjawab seperti biasa.
+  vi.mocked(runBookingExtractionNow).mockReset().mockResolvedValue(false)
   // decideAndRespond/sendMessage are plain vi.fn() module mocks (not reset by mockReset(mockPrisma)
   // above), so without this their call history leaks across tests and, absent a default resolved
   // value, a pre-existing test with botEnabled: true would crash on `decision.mode` being undefined.
@@ -1064,6 +1066,22 @@ describe('ingestMetaMessage bot dispatch', () => {
 
     expect(mockPrisma.conversation.update).toHaveBeenCalledWith({ where: { id: 'conv_1' }, data: { botEnabled: false } })
     expect(broadcast).toHaveBeenCalledWith(expect.objectContaining({ type: 'handoff.alert', conversationId: 'conv_1' }))
+  })
+
+  it('owner 2026-10-21: a burst that becomes a booking change card is answered by booking actions only -- the bot stays silent', async () => {
+    mockPrisma.message.findUnique.mockResolvedValue(null)
+    mockPrisma.contact.create.mockResolvedValue({ ...contactRow, avatarUrl: 'x' })
+    mockPrisma.message.create.mockResolvedValue({ id: 'msg_new' } as never)
+    mockPrisma.conversation.upsert.mockResolvedValue({ ...conversationRow, botEnabled: true })
+    mockPrisma.conversation.findUnique.mockResolvedValue({ botEnabled: true, isTest: false } as never)
+    vi.mocked(runBookingExtractionNow).mockResolvedValue(true)
+
+    await ingestMetaMessage(samplePayload)
+    await vi.advanceTimersByTimeAsync(5000)
+
+    expect(runBookingExtractionNow).toHaveBeenCalledWith('conv_1')
+    expect(decideAndRespond).not.toHaveBeenCalled()
+    expect(sendMessage).not.toHaveBeenCalled()
   })
 
   it('merges two messages arriving close together into one combined decision, not one reply per fragment', async () => {

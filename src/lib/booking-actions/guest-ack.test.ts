@@ -67,6 +67,8 @@ describe('notifyGuestRequestReceived', () => {
       botTrace: expect.objectContaining({ source: 'booking_request_ack', idempotencyKey: 'guest_ack:a1' }),
     }))
     expect(GUEST_ACK_TEXT.en).toBe("Noted, we've received your request and are processing it now.")
+    // Owner 2026-10-21: only cards still OPEN after auto-apply get an ack (applied/matched ones got the update notice).
+    expect(db.bookingAction.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ state: 'OPEN' }) }))
     expect(vi.mocked(recordEvent).mock.calls.map((c) => [c[1].actionId, c[1].event])).toEqual([['a1', 'GUEST_ACK_SENT'], ['a2', 'GUEST_ACK_SENT']])
   })
 

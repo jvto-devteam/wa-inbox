@@ -73,7 +73,25 @@ export function scheduleBookingExtraction(
   }
 }
 
-async function runExtraction(conversationId: string): Promise<void> {
+/**
+ * Jalankan ekstraksi SEKARANG (membatalkan jadwal debounce yang menunggu), untuk jalur bot: owner 2026-10-21 meminta
+ * satu permintaan perubahan = SATU WhatsApp ke tamu (kabar "sudah diperbarui"), jadi bot tidak boleh ikut menjawab
+ * pesan yang sudah menjadi kartu. `true` = run ini melahirkan kartu CHANGE/TASK (bot diam). Tidak pernah melempar.
+ */
+export async function runBookingExtractionNow(conversationId: string): Promise<boolean> {
+  const existing = pending.get(conversationId)
+  if (existing) {
+    clearTimeout(existing.timer)
+    pending.delete(conversationId)
+  }
+  try {
+    return await runExtraction(conversationId)
+  } catch {
+    return false
+  }
+}
+
+async function runExtraction(conversationId: string): Promise<boolean> {
   // Run sendiri; tidak pernah menyentuh tracer burst bot.
   const run = openPipelineRun(conversationId)
   traceStep(run, 'ekstrak-booking', 'mulai')
@@ -84,22 +102,22 @@ async function runExtraction(conversationId: string): Promise<void> {
     })
     if (!conv || !conv.bookingData) {
       traceClose(run, 'dilewati', { alasan: 'tidak ada booking' })
-      return
+      return false
     }
     const gate = { isTest: conv.isTest, phone: conv.contact?.phone ?? null }
     if (!bookingAutomationAllowed(gate)) {
       traceClose(run, 'dilewati', { alasan: 'rollout uji' })
-      return
+      return false
     }
     if (blockedByIndonesianGate(gate)) {
       traceClose(run, 'dilewati', { alasan: 'nomor Indonesia' })
-      return
+      return false
     }
     const booking = conv.bookingData as BookingData
     const endYmd = booking.date?.end_ymd
     if (endYmd && endYmd < jakartaDayKey(new Date())) {
       traceClose(run, 'dilewati', { alasan: 'trip sudah berakhir' })
-      return
+      return false
     }
 
     const latest = await prisma.message.findMany({
@@ -110,7 +128,7 @@ async function runExtraction(conversationId: string): Promise<void> {
     })
     if (latest.length === 0) {
       traceClose(run, 'dilewati', { alasan: 'belum ada pesan' })
-      return
+      return false
     }
     const transcript = buildNumberedTranscript([...latest].reverse())
     // Hanya pesan TAMU yang boleh jadi sumber usulan/fakta (pesan tim tidak pernah).
@@ -118,11 +136,9 @@ async function runExtraction(conversationId: string): Promise<void> {
     const extraction = await extractBookingSignals({ transcript, booking, inboundIds })
     if (!extraction) {
       traceClose(run, 'gagal', { alasan: 'ekstraksi gagal' })
-      return
+      return false
     }
     const applied = await applyExtraction(conversationId, extraction)
-    // Tanda terima ke tamu SEBELUM terapkan-otomatis; kabar "sudah diperbarui" menyusul sebagai pesan kedua. Tidak pernah melempar.
-    await notifyGuestRequestReceived({ conversationId, bookingId: typeof booking.booking_id === 'number' || typeof booking.booking_id === 'string' ? String(booking.booking_id) : null, booking, cardIds: applied.cardIds })
     // Push CHANGE tertunda: apa pun yang terjadi pada reevaluate, `autoApplyCreated` tetap jalan agar admin dikabari.
     try {
       await reevaluateBookingActions(conversationId)
@@ -131,10 +147,16 @@ async function runExtraction(conversationId: string): Promise<void> {
       // (AUTO_APPLIED / push CHANGE bila tetap OPEN). Tidak pernah melempar.
       await autoApplyCreated(applied.changeEvents)
     }
+    // Owner 2026-10-21: satu permintaan = SATU WhatsApp. Kartu yang tertulis/sudah sesuai sudah dijawab kabar
+    // "sudah diperbarui"/"sudah sesuai"; tanda terima hanya untuk kartu yang masih OPEN (TASK, setelan APPROVE, gagal
+    // tulis) supaya tamu tetap tahu permintaannya sampai. Tidak pernah melempar.
+    await notifyGuestRequestReceived({ conversationId, bookingId: typeof booking.booking_id === 'number' || typeof booking.booking_id === 'string' ? String(booking.booking_id) : null, booking, cardIds: applied.cardIds })
     traceClose(run, 'selesai')
+    return applied.cardIds.length > 0
   } catch (error) {
     console.error('[booking-actions] ekstraksi gagal', { conversationId, error: error instanceof Error ? error.message : 'unknown' })
     traceClose(run, 'gagal', { alasan: 'galat tak terduga' })
+    return false
   }
 }
 

@@ -149,17 +149,15 @@ export async function autoApplyIfAllowed(
       }
       return 'applied'
     }
-    // Nilainya sudah ada di booking: kartu ditutup tanpa menulis. Tamu yang sudah dapat tanda terima ("sedang kami proses")
-    // tetap dikabari "sudah sesuai" supaya tidak berhenti di situ (butir 8 fix round 2026-10-20).
+    // Nilainya sudah ada di booking: kartu ditutup tanpa menulis, dan tamu dikabari "sudah sesuai" -- satu-satunya
+    // jawaban untuk permintaan ini (owner 2026-10-21: satu permintaan = satu WhatsApp; tanda terima tidak dikirim untuk
+    // kartu yang sudah tertutup, dan bot diam untuk pesan yang menjadi kartu).
     if (res.status === 409 && res.body.error === ALREADY_APPLIED_ERROR) {
       try {
-        const acked = await prisma.bookingActionEvent.findFirst({ where: { actionId, event: 'GUEST_ACK_SENT' }, select: { id: true } })
-        if (acked) {
-          const card: AppliedCard = { id: actionId, field: action.field, proposedValue: action.proposedValue, sourceMessageId: action.sourceMessageId }
-          const batch: AppliedBatch = { conversationId: action.conversationId, bookingId: d.bookingId, code, cards: [], matchedCards: [card] }
-          if (collect) collect.push(batch)
-          else await announceApplied([batch])
-        }
+        const card: AppliedCard = { id: actionId, field: action.field, proposedValue: action.proposedValue, sourceMessageId: action.sourceMessageId }
+        const batch: AppliedBatch = { conversationId: action.conversationId, bookingId: d.bookingId, code, cards: [], matchedCards: [card] }
+        if (collect) collect.push(batch)
+        else await announceApplied([batch])
       } catch (error) {
         console.error('[booking-actions] autoApplyIfAllowed: kabar sudah-sesuai gagal', { actionId, error: error instanceof Error ? error.name : 'unknown' })
       }

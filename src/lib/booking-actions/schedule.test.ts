@@ -12,7 +12,7 @@ import { extractBookingSignals } from './extract'
 import { applyExtraction, reevaluateBookingActions } from './store'
 import { autoApplyCreated } from './auto-apply'
 import { notifyGuestRequestReceived } from './guest-ack'
-import { scheduleBookingExtraction, __resetBookingExtractionForTests, BOOKING_EXTRACTION_DEBOUNCE_MS } from './schedule'
+import { runBookingExtractionNow, scheduleBookingExtraction, __resetBookingExtractionForTests, BOOKING_EXTRACTION_DEBOUNCE_MS } from './schedule'
 
 vi.mock('@/lib/db', () => ({ prisma: mockDeep<PrismaClient>() }))
 vi.mock('@/lib/realtime', () => ({ broadcast: vi.fn() }))
@@ -62,6 +62,25 @@ async function fire() {
   await vi.advanceTimersByTimeAsync(BOOKING_EXTRACTION_DEBOUNCE_MS)
 }
 
+describe('runBookingExtractionNow', () => {
+  it('cancels the pending debounce, runs immediately, and reports whether a CHANGE/TASK card was born', async () => {
+    stubConversation()
+    vi.mocked(applyExtraction).mockResolvedValue({ created: 1, changeIds: ['a1'], changeEvents: [], cardIds: ['a1'] } as never)
+    scheduleBookingExtraction('c1', { text: 'tolong ganti hotel' })
+    expect(await runBookingExtractionNow('c1')).toBe(true)
+    expect(extractBookingSignals).toHaveBeenCalledTimes(1)
+    await fire()
+    // The debounced run was cancelled: no second extraction.
+    expect(extractBookingSignals).toHaveBeenCalledTimes(1)
+  })
+
+  it('no card born (or no booking) -> false, so the bot answers', async () => {
+    stubConversation()
+    vi.mocked(applyExtraction).mockResolvedValue({ created: 0, changeIds: [], changeEvents: [], cardIds: [] } as never)
+    expect(await runBookingExtractionNow('c1')).toBe(false)
+  })
+})
+
 describe('scheduleBookingExtraction', () => {
   it('does NOT schedule the chat-review refresh itself (the inbound path does; avoids double scheduling)', async () => {
     stubConversation()
@@ -70,7 +89,7 @@ describe('scheduleBookingExtraction', () => {
     expect(scheduleChatReviewRefresh).not.toHaveBeenCalled()
   })
 
-  it('acknowledges the guest right after apply and BEFORE auto-apply starts', async () => {
+  it('owner 2026-10-21 (one WhatsApp per request): auto-apply runs first, the ack only afterwards (for cards still OPEN)', async () => {
     stubConversation()
     const order: string[] = []
     vi.mocked(applyExtraction).mockImplementation(async () => {
@@ -85,7 +104,7 @@ describe('scheduleBookingExtraction', () => {
     })
     scheduleBookingExtraction('c1', { text: 'tolong ganti hotel' })
     await fire()
-    expect(order).toEqual(['apply', 'ack', 'auto-apply'])
+    expect(order).toEqual(['apply', 'auto-apply', 'ack'])
     expect(vi.mocked(notifyGuestRequestReceived).mock.calls.at(-1)?.[0]).toMatchObject({ conversationId: 'c1', cardIds: ['a1'] })
   })
 

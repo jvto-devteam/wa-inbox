@@ -141,11 +141,11 @@ describe('autoApplyIfAllowed', () => {
     expect(notifyBookingAction).not.toHaveBeenCalled()
   })
 
-  it('value already in the booking but NO ack was sent -> nothing to the guest', async () => {
+  it('owner 2026-10-21: value already in the booking -> "already matches" is the ONE reply, even with no ack sent', async () => {
     vi.mocked(executeBookingAction).mockResolvedValue({ status: 409, body: { error: 'sudah' } } as never)
     db.bookingActionEvent.findFirst.mockResolvedValue(null as never)
     expect(await autoApplyIfAllowed('a1')).toBe('skipped')
-    expect(notifyGuestOfUpdate).not.toHaveBeenCalled()
+    expect(notifyGuestOfUpdate).toHaveBeenCalledWith(expect.objectContaining({ variant: 'matched' }))
   })
 
   it('booking changed since the card was made -> skipped before executing', async () => {
