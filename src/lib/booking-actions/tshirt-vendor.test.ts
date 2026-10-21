@@ -115,14 +115,22 @@ describe('review 2026-10-20 Important 4: test conversations never reach the real
     expect(notifyBookingAction).not.toHaveBeenCalled()
   })
 
-  it("rollout 'all' -> the real vendor even for a test conversation (no lookup)", async () => {
+  it('Mode uji tanpa WA (dryRun) -> nothing sent anywhere; the notice is recorded as VENDOR_NOTICE_SIMULATED, no admin alarm', async () => {
+    process.env.BOOKING_ACTIONS_ROLLOUT = 'all'
+    vi.mocked(prisma.conversation.findUnique).mockResolvedValue({ isTest: false, dryRun: true, contact: { phone: '6282143403501' } } as never)
+    await notifyTshirtVendor(input)
+    expect(enqueueSystemTemplateSend).not.toHaveBeenCalled()
+    expect(recordEvent).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ event: 'VENDOR_NOTICE_SIMULATED' }))
+    expect(notifyBookingAction).not.toHaveBeenCalled()
+  })
+
+  it("rollout 'all' -> the real vendor even for a test conversation (the lookup only checks Mode uji tanpa WA)", async () => {
     vi.mocked(enqueueSystemTemplateSend).mockResolvedValue(queued)
     process.env.BOOKING_ACTIONS_ROLLOUT = 'all'
     process.env.BOOKING_ACTIONS_TEST_PHONES = '6282143403501'
     vi.mocked(prisma.conversation.findUnique).mockResolvedValue({ isTest: true, contact: { phone: '6282143403501' } } as never)
     await notifyTshirtVendor(input)
     expect(vi.mocked(enqueueSystemTemplateSend).mock.calls[0][0].to).not.toEqual({ phone: '6282143403501' })
-    expect(prisma.conversation.findUnique).not.toHaveBeenCalled()
   })
 
   it("rollout 'test' and the conversation cannot be read -> not sent; failure event + push with the vendor tag", async () => {

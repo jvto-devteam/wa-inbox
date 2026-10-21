@@ -41,6 +41,23 @@ describe('POST /api/conversations/[id]/test-message', () => {
     expect(scheduleBotRun).not.toHaveBeenCalled()
   })
 
+  it('Mode uji tanpa WA: a whitelisted real conversation with dryRun on accepts guest messages; dryRun off or a non-whitelisted number is refused', async () => {
+    process.env.BOOKING_ACTIONS_TEST_PHONES = '6282143403501'
+    try {
+      mockPrisma.message.create.mockResolvedValue({ id: 'msg_d', conversationId: 'conv_d', direction: 'INBOUND', content: 'hi', createdAt: new Date() } as never)
+      mockPrisma.conversation.findUniqueOrThrow.mockResolvedValue({ id: 'conv_d', isTest: false, dryRun: true, botEnabled: true, contact: { name: 'David', phone: '6282143403501' } } as never)
+      expect((await POST(req({ text: 'hi' }), { params: Promise.resolve({ id: 'conv_d' }) })).status).toBe(200)
+
+      mockPrisma.conversation.findUniqueOrThrow.mockResolvedValue({ id: 'conv_d', isTest: false, dryRun: false, botEnabled: true, contact: { name: 'David', phone: '6282143403501' } } as never)
+      expect((await POST(req({ text: 'hi' }), { params: Promise.resolve({ id: 'conv_d' }) })).status).toBe(403)
+
+      mockPrisma.conversation.findUniqueOrThrow.mockResolvedValue({ id: 'conv_x', isTest: false, dryRun: true, botEnabled: true, contact: { name: 'Bruno', phone: '4915112345678' } } as never)
+      expect((await POST(req({ text: 'hi' }), { params: Promise.resolve({ id: 'conv_x' }) })).status).toBe(403)
+    } finally {
+      delete process.env.BOOKING_ACTIONS_TEST_PHONES
+    }
+  })
+
   it('creates an INBOUND CUSTOMER message and runs the bot when the conversation is isTest and botEnabled', async () => {
     mockPrisma.conversation.findUniqueOrThrow.mockResolvedValue({
       id: 'conv_test', isTest: true, botEnabled: true, contact: { name: null },

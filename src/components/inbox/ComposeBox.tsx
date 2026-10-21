@@ -104,6 +104,7 @@ export function ComposeBox({
   contactName = null,
   bookingData = null,
   isTest = false,
+  dryRun = false,
   platform = null,
   lastInboundAt = null,
   followUp = false,
@@ -123,6 +124,12 @@ export function ComposeBox({
   // real WhatsApp number. Channel/attachments/templates are all agent-outbound concepts
   // that don't apply to "typing as the customer", so they're hidden in this mode.
   isTest?: boolean
+  /**
+   * Mode uji tanpa WA (nomor whitelist, `Conversation.dryRun`): admin memilih mengetik sebagai TAMU (pesan masuk buatan
+   * lewat test-message, memicu bot + aksi booking) atau sebagai JVTO (/api/send biasa). Server mencatat setiap kiriman
+   * tanpa meneruskannya ke WhatsApp (src/lib/send.ts).
+   */
+  dryRun?: boolean
   /** Platform percakapan (null = WhatsApp, sama seperti send.ts). Hanya dipakai `followUp`. */
   platform?: string | null
   /** Waktu pesan masuk terakhir -- jendela layanan Meta dihitung dari sini. Hanya dipakai `followUp`. */
@@ -139,6 +146,9 @@ export function ComposeBox({
 }) {
   const variableFields = bookingVariableFields(contactName, bookingData)
   const [text, setText] = useState('')
+  // Mode uji tanpa WA: bawaan mengetik sebagai tamu (David); bisa diganti ke JVTO.
+  const [asGuest, setAsGuest] = useState(true)
+  const typingAsGuest = isTest || (dryRun && asGuest)
   // Seeded from the org-wide Settings.defaultChannel ("Default jalur kirim" in Pengaturan)
   // below, not left as a hardcoded literal: ComposeBox always puts an explicit `channel` in
   // its /api/send body, so a hardcoded 'OFFICIAL' here made that setting dead configuration
@@ -278,10 +288,10 @@ export function ComposeBox({
     setSendError(null)
     setSending(true)
     try {
-      const res = await fetch(isTest ? `/api/conversations/${conversationId}/test-message` : '/api/send', {
+      const res = await fetch(typingAsGuest ? `/api/conversations/${conversationId}/test-message` : '/api/send', {
         method: 'POST',
         body: JSON.stringify(
-          isTest
+          typingAsGuest
             ? { text }
             : { conversationId, text: text || undefined, channel, replyToId: replyingTo?.id, media: attachment ?? undefined }
         ),
@@ -301,7 +311,7 @@ export function ComposeBox({
       // any) arrives separately through the same SSE broadcast a real inbound message would
       // trigger (see ThreadView's message.created handler), not from this response.
       onSent(
-        isTest
+        typingAsGuest
           ? {
               id: message.id,
               direction: 'INBOUND',
@@ -751,8 +761,19 @@ export function ComposeBox({
       {/* Satu baris alat: lampiran/template, kotak tulis, kirim. Jalur kirim pindah ke baris
           status bot di atas. items-end supaya tombol tetap sejajar dasar kotak tulis saat
           kotaknya tumbuh, bukan melompat ke tengah. */}
+      {dryRun && (
+        <div className="flex items-center gap-1.5 text-xs" role="group" aria-label="Kirim sebagai">
+          <span className="text-warning">Mode uji -- tidak terkirim ke WhatsApp. Kirim sebagai:</span>
+          <Button type="button" size="sm" variant={asGuest ? 'default' : 'outline'} className="h-6 px-2 text-xs" onClick={() => setAsGuest(true)} aria-pressed={asGuest}>
+            Tamu
+          </Button>
+          <Button type="button" size="sm" variant={asGuest ? 'outline' : 'default'} className="h-6 px-2 text-xs" onClick={() => setAsGuest(false)} aria-pressed={!asGuest}>
+            JVTO
+          </Button>
+        </div>
+      )}
       <div className="flex items-end gap-1.5">
-        {!isTest && (
+        {!typingAsGuest && (
           <>
             <input ref={fileInputRef} type="file" className="hidden" onChange={handleAttachmentSelected} />
             <div ref={attachMenuRef} className="relative shrink-0">
@@ -816,7 +837,15 @@ export function ComposeBox({
               send()
             }
           }}
-          placeholder={isTest ? 'Ketik sebagai customer untuk menguji bot...' : COMPOSER_PLACEHOLDER}
+          placeholder={
+            isTest
+              ? 'Ketik sebagai customer untuk menguji bot...'
+              : dryRun
+                ? asGuest
+                  ? 'Ketik sebagai tamu (uji, tidak terkirim ke WhatsApp)...'
+                  : 'Ketik sebagai JVTO (uji, tidak terkirim ke WhatsApp)...'
+                : COMPOSER_PLACEHOLDER
+          }
           aria-label="Pesan"
           rows={1}
           className="max-h-33 min-h-8 resize-none py-1.5 text-md leading-snug"

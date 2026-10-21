@@ -205,6 +205,22 @@ describe('sendMessage', () => {
     expect(sendMetaText).toHaveBeenCalledWith(expect.anything(), '6281234567890', 'Halo', undefined)
   })
 
+  it('Mode uji tanpa WA (dryRun, owner 2026-10-21): a real whitelisted conversation records the message but never dispatches or queues it', async () => {
+    routeTo('UNOFFICIAL')
+    mockPrisma.conversation.findUniqueOrThrow.mockResolvedValue({
+      id: 'conv_dry', isTest: false, dryRun: true, contactId: 'contact_1', contact: { phone: '6282143403501' },
+    } as never)
+    mockPrisma.message.create.mockResolvedValue({ id: 'msg_dry', deliveryStatus: 'SENT' } as never)
+
+    const result = await sendMessage({ conversationId: 'conv_dry', text: 'Noted', sentBy: 'BOT', purpose: 'SYSTEM' })
+
+    expect(result.deliveryStatus).toBe('SENT')
+    expect(enqueueOutboundJob).not.toHaveBeenCalled()
+    expect(sendMetaText).not.toHaveBeenCalled()
+    expect(sendCoexistText).not.toHaveBeenCalled()
+    expect(mockPrisma.waNumber.findFirstOrThrow).not.toHaveBeenCalled()
+  })
+
   it('skips the real dispatch entirely for the sandbox (isTest) conversation and still records the message as SENT', async () => {
     mockPrisma.conversation.findUniqueOrThrow.mockResolvedValue({
       id: 'conv_test', isTest: true, contact: { phone: '__bot_test__' },

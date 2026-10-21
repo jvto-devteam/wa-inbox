@@ -8,6 +8,7 @@ import { scheduleBookingExtraction } from '@/lib/booking-actions/schedule'
 import { noteInboundForChatReview } from '@/lib/chat-review/auto-refresh'
 import { classifyAndStoreTopicLabels } from '@/lib/inbox/topic-labels'
 import { parseJsonBody } from '@/lib/parse-json'
+import { canUseDryRun } from '@/lib/booking-actions/rollout'
 
 const bodySchema = z.object({ text: z.string().min(1) })
 
@@ -27,7 +28,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     where: { id },
     include: { contact: true },
   })
-  if (!conversation.isTest) {
+  // Sandbox, atau percakapan nomor uji yang sedang "Mode uji tanpa WA" (`dryRun`): hanya itu yang boleh diberi pesan
+  // tamu buatan. Nomor pelanggan sungguhan tidak pernah lolos (`canUseDryRun` = whitelist).
+  if (!conversation.isTest && !(conversation.dryRun && canUseDryRun(conversation))) {
     return NextResponse.json({ error: 'Endpoint ini hanya untuk percakapan tes' }, { status: 403 })
   }
 

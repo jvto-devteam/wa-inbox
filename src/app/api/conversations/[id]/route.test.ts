@@ -25,6 +25,7 @@ describe('GET /api/conversations/[id]', () => {
     mockPrisma.conversation.findUniqueOrThrow.mockResolvedValue({
       botEnabled: true,
       isTest: false,
+      dryRun: false,
       bookingData: { destination: 'Bromo', dateRange: '10-12 Aug', pax: 2, amountPaid: 500000, amountDue: 500000, status: 'CONFIRMED' },
       tripBrief: null,
       contact: { id: 'contact_1', name: 'Bruno Figarola', avatarUrl: 'https://example.com/a.jpg', source: 'Instagram' },
@@ -45,6 +46,8 @@ describe('GET /api/conversations/[id]', () => {
     expect(body).toEqual({
       botEnabled: true,
       isTest: false,
+      dryRun: false,
+      canDryRun: false,
       contactId: 'contact_1',
       contactName: 'Bruno Figarola',
       avatarUrl: 'https://example.com/a.jpg',

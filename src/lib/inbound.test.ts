@@ -106,6 +106,7 @@ const conversationRow = {
   lastReadAt: null,
   isPinned: false,
   isTest: false,
+  dryRun: false,
   createdAt: new Date(),
   channelIdentityId: null,
   externalThreadId: '',

@@ -215,7 +215,9 @@ async function sendMessageImpl(params: {
   // same commit.
   //
   // The sandbox conversation still short-circuits everything, exactly as before.
-  if (channel === 'UNOFFICIAL' && !conversation.isTest) {
+  // `dryRun` (Mode uji tanpa WA, nomor whitelist): sama dengan sandbox untuk pengiriman -- pesan dicatat, tidak dikirim.
+  const simulated = conversation.isTest || conversation.dryRun
+  if (channel === 'UNOFFICIAL' && !simulated) {
     // Already sanitized above -- sendViaQueue's own write must not sanitize a second time
     // (idempotent, but pointless) or, worse, skip it by reaching for params.botTrace directly.
     // `contact.phone` rebuilt with the already-narrowed `contactPhone`: the guard above proved
@@ -239,7 +241,7 @@ async function sendMessageImpl(params: {
   // ever reaches a real WhatsApp number -- skip the Meta/wa-coexist dispatch (and the
   // waNumber/replyToExternalId lookups it needs) entirely and record the message as if it
   // had gone out cleanly.
-  if (!conversation.isTest) {
+  if (!simulated) {
     const waNumber = await prisma.waNumber.findFirstOrThrow()
 
     // Only looked up to grab the parent's own wamid for Meta's `context.message_id` --

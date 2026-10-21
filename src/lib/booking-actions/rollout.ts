@@ -54,3 +54,11 @@ export function bookingAutomationAllowed(conv: GateConversation): boolean {
 export function firstBookingTestPhone(): string | null {
   return bookingActionsTestPhones().values().next().value ?? null
 }
+
+/**
+ * "Mode uji tanpa WA" (`Conversation.dryRun`, owner 2026-10-21) hanya untuk percakapan SUNGGUHAN milik nomor whitelist
+ * (`BOOKING_ACTIONS_TEST_PHONES`): admin chat sebagai tamu/JVTO tanpa WhatsApp keluar. Nomor pelanggan tidak pernah lolos.
+ */
+export function canUseDryRun(conv: { isTest: boolean; contact: { phone: string | null } | null }): boolean {
+  return !conv.isTest && isBookingTestConversation({ isTest: false, phone: conv.contact?.phone ?? null })
+}

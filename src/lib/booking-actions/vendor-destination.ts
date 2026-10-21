@@ -11,17 +11,26 @@
 import { prisma } from '@/lib/db'
 import { bookingActionsRollout, firstBookingTestPhone, isBookingTestConversation } from './rollout'
 
-export type VendorDestination = { phone: string; test: boolean } | { skip: 'TEST_PHONE_MISSING' | 'LOOKUP_FAILED' }
+export type VendorDestination =
+  | { phone: string; test: boolean }
+  | { skip: 'TEST_PHONE_MISSING' | 'LOOKUP_FAILED' }
+  /** Mode uji tanpa WA (`Conversation.dryRun`): kabar dicatat sebagai simulasi, tidak dikirim ke siapa pun. */
+  | { simulate: true }
 
 export async function vendorDestination(conversationId: string, vendorPhone: string): Promise<VendorDestination> {
-  if (bookingActionsRollout() !== 'test') return { phone: vendorPhone, test: false }
-  let conv: { isTest: boolean; contact: { phone: string | null } | null } | null = null
+  let conv: { isTest: boolean; dryRun: boolean; contact: { phone: string | null } | null } | null = null
   try {
-    conv = await prisma.conversation.findUnique({ where: { id: conversationId }, select: { isTest: true, contact: { select: { phone: true } } } })
+    conv = await prisma.conversation.findUnique({
+      where: { id: conversationId },
+      select: { isTest: true, dryRun: true, contact: { select: { phone: true } } },
+    })
   } catch {
     return { skip: 'LOOKUP_FAILED' }
   }
   if (!conv) return { skip: 'LOOKUP_FAILED' }
+  // Mode uji tanpa WA berlaku apa pun rollout-nya: tidak ada WhatsApp yang keluar dari percakapan ini.
+  if (conv.dryRun) return { simulate: true }
+  if (bookingActionsRollout() !== 'test') return { phone: vendorPhone, test: false }
   if (!isBookingTestConversation({ isTest: conv.isTest, phone: conv.contact?.phone ?? null })) {
     return { phone: vendorPhone, test: false }
   }

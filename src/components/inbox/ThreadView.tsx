@@ -20,6 +20,9 @@ import { autoDraftTarget, type AutoDraftTarget } from '@/lib/inbox/draft-target'
 type ConversationDetail = {
   botEnabled: boolean
   isTest?: boolean
+  /** Mode uji tanpa WA (nomor whitelist): chat sebagai tamu/JVTO, tidak ada WhatsApp keluar. */
+  dryRun?: boolean
+  canDryRun?: boolean
   lastReadAt?: string | null
   contactName?: string | null
   avatarUrl?: string | null
@@ -165,6 +168,8 @@ export function ThreadView({
   const [messages, setMessages] = useState<MessageView[]>([])
   const [botEnabled, setBotEnabled] = useState(false)
   const [isTest, setIsTest] = useState(false)
+  const [dryRun, setDryRun] = useState(false)
+  const [canDryRun, setCanDryRun] = useState(false)
   const [isEmail, setIsEmail] = useState(false)
   const [platform, setPlatform] = useState<string | null>(null)
   const [subject, setSubject] = useState<string | null>(null)
@@ -208,6 +213,8 @@ export function ThreadView({
       .then((data) => {
         setBotEnabled(data.botEnabled)
         setIsTest(data.isTest ?? false)
+        setDryRun(data.dryRun ?? false)
+        setCanDryRun(data.canDryRun ?? false)
         setIsEmail(data.platform === 'EMAIL')
         setPlatform(data.platform ?? null)
         setSubject(data.subject ?? null)
@@ -260,6 +267,19 @@ export function ThreadView({
   // kolom pesan, jadi state botEnabled yang sudah ada di ThreadView bisa diubah langsung tanpa
   // lewat prop callback lagi. Baris error di bawah header (dulu punya "Belum ditugaskan") dipakai
   // ulang untuk ini, bukan dihapus -- kegagalan tetap butuh tempat terlihat.
+  async function toggleDryRun() {
+    setBotToggleError(null)
+    try {
+      const { dryRun: newValue } = await fetchJson<{ dryRun: boolean }>(`/api/conversations/${conversationId}/dry-run`, {
+        method: 'POST',
+        body: JSON.stringify({ enabled: !dryRun }),
+      })
+      setDryRun(newValue)
+    } catch {
+      setBotToggleError('Gagal mengubah mode uji')
+    }
+  }
+
   async function toggleBot() {
     setBotToggleError(null)
     try {
@@ -397,6 +417,9 @@ export function ThreadView({
           {isTest && (
             <span className="truncate text-xs text-warning">Room Tes -- tidak terkirim ke WhatsApp</span>
           )}
+          {dryRun && (
+            <span className="truncate text-xs text-warning">Mode uji -- tidak ada yang terkirim ke WhatsApp</span>
+          )}
         </div>
         <div className="flex shrink-0 items-center gap-1.5">
           {isTest && (
@@ -412,6 +435,17 @@ export function ThreadView({
           {/* Bot tidak pernah menjawab email (D1) -- tombol ambil-alih/aktifkan bot tidak
               berarti apa-apa di sini, jadi disembunyikan sepenuhnya alih-alih ditampilkan
               menyala/mati untuk sesuatu yang tidak pernah berjalan. */}
+          {canDryRun && (
+            <Button
+              type="button"
+              variant={dryRun ? 'destructive' : 'outline'}
+              size="sm"
+              onClick={toggleDryRun}
+              className="h-6 px-2 text-xs"
+            >
+              {dryRun ? 'Matikan mode uji' : 'Mode uji tanpa WA'}
+            </Button>
+          )}
           {!isEmail && (
             <Button type="button" variant="outline" size="sm" onClick={toggleBot} className="h-6 px-2 text-xs">
               {botEnabled ? 'Ambil Alih dari Bot' : 'Aktifkan Bot untuk Chat Ini'}
@@ -498,6 +532,7 @@ export function ThreadView({
         contactName={contactName}
         bookingData={bookingData}
         isTest={isTest}
+        dryRun={dryRun}
         platform={platform}
         lastInboundAt={lastInboundAt(messages)}
         // Baru diteruskan setelah kedua permintaan selesai: sebelum itu platform dan pesan masuk

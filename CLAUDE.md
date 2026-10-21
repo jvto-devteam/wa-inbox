@@ -375,6 +375,14 @@ append-only tanpa FK: siapa, kapan, nilai lama/baru), `PushSubscription`. Setela
 ### Simulator & test
 `simulator.ts`, Test Lab, dan `npm run eval` (13 golden case).
 
+**Mode uji tanpa WA** (`Conversation.dryRun`, owner 2026-10-21): percakapan SUNGGUHAN milik nomor whitelist
+(`BOOKING_ACTIONS_TEST_PHONES`; `canUseDryRun` di `rollout.ts`) bisa dinyalakan dari header thread
+(`POST /api/conversations/[id]/dry-run`, 403 untuk nomor lain). Selama menyala, kotak pesan memilih **Tamu** (pesan
+masuk buatan lewat `test-message`, memicu bot + aksi booking seperti webhook) atau **JVTO** (`/api/send` biasa). Tidak ada
+fungsi lain yang berubah: booking tetap dicari dan ditulis sungguhan, push PWA tetap terkirim; hanya WhatsApp yang
+disimulasikan -- `sendMessage` mencatat pesan tanpa dispatch/antrean (sama dengan sandbox `isTest`), dan kabar vendor
+kaos/Bali dicatat sebagai event `VENDOR_NOTICE_SIMULATED` (`vendorDestination` -> `{ simulate: true }`, apa pun rollout-nya).
+
 ### Deployment gate
 `deployment-gate.ts` — gerbang persetujuan katalog ber-HMAC.
 **Ini berbeda total dari fitur "release" yang dihapus**, hanya kebetulan sekata. Jangan

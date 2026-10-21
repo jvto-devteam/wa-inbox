@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { ensureFreshBookingData } from '@/lib/booking/client'
+import { canUseDryRun } from '@/lib/booking-actions/rollout'
 
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
@@ -17,6 +18,8 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   return NextResponse.json({
     botEnabled: conversation.botEnabled,
     isTest: conversation.isTest,
+    dryRun: conversation.dryRun,
+    canDryRun: canUseDryRun(conversation),
     contactId: conversation.contact.id,
     contactName: conversation.contact.name,
     avatarUrl: conversation.contact.avatarUrl,

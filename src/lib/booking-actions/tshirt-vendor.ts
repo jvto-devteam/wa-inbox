@@ -76,6 +76,15 @@ export async function notifyTshirtVendor(input: {
     try {
       // Important 4: percakapan uji selama rollout `test` -> nomor uji, bukan vendor sungguhan.
       const dest = await vendorDestination(conversationId, vendorPhone())
+      if ('simulate' in dest) {
+        // Mode uji tanpa WA: isi kabar dicatat di riwayat kartu, tidak dikirim ke vendor maupun nomor uji.
+        await recordEvent(prisma, {
+          conversationId, bookingId, actionId, event: 'VENDOR_NOTICE_SIMULATED', actor: 'SYSTEM',
+          reason: `Simulasi (tanpa WA): kabar ke vendor kaos`,
+          newValue: { templateKey: TSHIRT_UPDATE_TEMPLATE_KEY, variables: buildTshirtVendorVariables(booking, input.sizes) },
+        })
+        return
+      }
       if ('skip' in dest) {
         reason = dest.skip
         if (dest.skip === 'TEST_PHONE_MISSING') {
