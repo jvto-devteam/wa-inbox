@@ -11,7 +11,7 @@ import { callLLM } from '@/lib/bot/llm'
 import type { BookingData } from '@/lib/booking/client'
 import type { NumberedTranscript } from '@/lib/daily-summary/collect'
 import { resolvePesan } from '@/lib/daily-summary/review'
-import { FIELD_KEYS, normalizeFieldValue, POINT_VALUES, type FieldKey } from './fields'
+import { FIELD_KEYS, normalizeFieldValue, POINT_VALUES, readBookingField, type FieldKey } from './fields'
 
 export type Extraction = {
   changes: Array<{ field: FieldKey; value: string; messageId: string }>
@@ -41,8 +41,8 @@ Pesan dari tim (bukan tamu) bukan sumber perubahan atau fakta, kecuali tamu meny
 
 Nilai "field" yang boleh dipakai (selain ini JANGAN ditulis):
 - pickup_point, drop_point: salah satu dari ${POINT_VALUES.join(' | ')}
-- pickup_detail, drop_detail: nama hotel / alamat / detail lokasi jemput atau antar
-- pickup_arrival, drop_arrival: nomor flight atau kereta beserta jamnya
+- pickup_detail, drop_detail: detail titik jemput/antar -- nama hotel / alamat untuk titik hotel/Others, NOMOR FLIGHT untuk titik bandara (Airport), NOMOR/NAMA KERETA untuk titik stasiun (Train Station)
+- pickup_arrival, drop_arrival: HANYA jam mendarat/tiba (bukan nomor flight/kereta; nomor itu selalu *_detail)
 - pickup_time, drop_time: jam, format HH:MM (24 jam)
 - tshirt_sizes: ukuran kaos, HANYA bentuk kanonik "XL x 2, M x 1" (ukuran x jumlah, dipisah koma). Singkatan menempel seperti "2xl" ambigu (2 x XL atau satu 2XL?): putuskan memakai total_pax booking sebagai petunjuk (jumlah semua ukuran harus sama dengan total_pax bila diketahui), mis. pax 3 dan "2xl 1m" -> "XL x 2, M x 1"; satu ukuran 2XL ditulis "XXL x 1". Kalau tetap tidak bisa diputuskan, JANGAN tulis item tshirt_sizes itu sama sekali.
 - note: catatan lain (alergi, diet, permintaan khusus)
@@ -137,9 +137,40 @@ export async function extractBookingSignals(input: {
   const prompt = `Data booking saat ini:\n${JSON.stringify(bookingContextForLLM(input.booking))}\n\nTranskrip:\n${input.transcript.text}`
   try {
     const raw = await callLLM(prompt, { system: EXTRACT_SYSTEM_PROMPT, timeoutMs: EXTRACT_TIMEOUT_MS })
-    return parseExtraction(raw, input.transcript.ids, input.inboundIds)
+    return remapArrivalToDetail(parseExtraction(raw, input.transcript.ids, input.inboundIds), input.booking)
   } catch (error) {
     console.error('[booking-actions] extractBookingSignals failed:', error instanceof Error ? error.name : 'unknown')
     return null
   }
+}
+
+/**
+ * Uji owner 2026-10-21: "drop location is surabaya international airport with flight number ABC123" jadi `drop_arrival`,
+ * yang tidak punya jalur tulis, sehingga kartunya menggantung "belum dipenuhi". Di backoffice legacy nomor flight/kereta
+ * titik bandara/stasiun ADALAH detail titik (`flight_ticket_type_number`/`drop_other_flight` -> `*_point_value`), jadi
+ * butir `*_arrival` dipetakan ke `*_detail` bila titik sisi itu (usulan di ekstraksi ini, lalu data booking) bandara atau
+ * stasiun. Butir `*_detail` dari pesan yang sama sudah ada = butir arrival dibuang (tidak dobel). Murni.
+ */
+export function remapArrivalToDetail(extraction: Extraction, booking: BookingData): Extraction {
+  const pointFor = (side: 'pickup' | 'drop'): string | null => {
+    const key: FieldKey = side === 'pickup' ? 'pickup_point' : 'drop_point'
+    const proposed = [...extraction.changes, ...extraction.facts].filter((i) => i.field === key).at(-1)?.value
+    return proposed ?? readBookingField(booking, key)
+  }
+  const usesTicketDetail = (point: string | null) => point !== null && /airport|train station/i.test(point)
+  const remap = (items: Extraction['changes']): Extraction['changes'] => {
+    const out: Extraction['changes'] = []
+    for (const item of items) {
+      const side = item.field === 'pickup_arrival' ? 'pickup' : item.field === 'drop_arrival' ? 'drop' : null
+      if (side === null || !usesTicketDetail(pointFor(side))) {
+        out.push(item)
+        continue
+      }
+      const detail: FieldKey = side === 'pickup' ? 'pickup_detail' : 'drop_detail'
+      if (items.some((i) => i.field === detail && i.messageId === item.messageId)) continue
+      out.push({ ...item, field: detail })
+    }
+    return out
+  }
+  return { ...extraction, changes: remap(extraction.changes), facts: remap(extraction.facts) }
 }

@@ -229,7 +229,9 @@ append-only tanpa FK: siapa, kapan, nilai lama/baru), `PushSubscription`. Setela
   percakapan, tidak di-await di jalur webhook, seluruhnya try/catch, **run pipeline sendiri**
   (`openPipelineRun`), tidak memakai tracer bot. Gerbang: nomor Indonesia dilewati kecuali percakapan uji,
   harus punya `bookingData`, trip yang sudah lewat dilewati, penutup/reaksi tidak memicu; `botEnabled` sengaja
-  tidak diperiksa. Ke LLM hanya `pickup`, `dropoff`, `date`, `total_pax`, `hotels`, `tshirtSize` —
+  tidak diperiksa. Nomor flight/kereta untuk titik bandara/stasiun adalah `*_detail` (legacy menyimpannya di
+  `*_point_value`); butir `*_arrival` di sisi bandara/stasiun dipetakan ke `*_detail` oleh `remapArrivalToDetail` (owner
+  2026-10-21: kartu `drop_arrival` tanpa jalur tulis menggantung). Ke LLM hanya `pickup`, `dropoff`, `date`, `total_pax`, `hotels`, `tshirtSize` —
   **tidak pernah** `financial`, `expense`, `paymentHistory`, `guestDetails`. Hanya pesan INBOUND yang boleh jadi
   sumber usulan/fakta. Ekstraksi membaca ulang 20 pesan terakhir, jadi `applyExtraction` meringkas keluaran per
   field ke pesan terbaru dan memakai batas air: usulan dari pesan yang tidak lebih baru dari pesan sumber

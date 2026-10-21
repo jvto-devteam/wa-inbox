@@ -4,7 +4,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 vi.mock('@/lib/bot/llm', () => ({ callLLM: vi.fn() }))
 
 import { callLLM } from '@/lib/bot/llm'
-import { bookingContextForLLM, extractBookingSignals, parseExtraction } from './extract'
+import { bookingContextForLLM, extractBookingSignals, parseExtraction, remapArrivalToDetail } from './extract'
+import type { BookingData } from '@/lib/booking/client'
 
 const ids = ['m1', 'm2', 'm3']
 
@@ -124,5 +125,38 @@ describe('extractBookingSignals', () => {
     expect(logged).toContain('SyntaxError')
     expect(logged).not.toContain('Budi')
     spy.mockRestore()
+  })
+})
+
+describe('remapArrivalToDetail (uji owner 2026-10-21)', () => {
+  const hotelBooking = { pickup: { meeting_point: 'Surabaya Hotel' }, dropoff: { drop_point: 'Surabaya Hotel' } } as unknown as BookingData
+  const airportBooking = { pickup: { meeting_point: 'Surabaya Airport' }, dropoff: { drop_point: 'Surabaya Airport' } } as unknown as BookingData
+
+  it('drop moved to the airport + flight number as drop_arrival -> drop_detail, so it is written with the point', () => {
+    const out = remapArrivalToDetail({
+      changes: [
+        { field: 'drop_point', value: 'Surabaya Airport', messageId: 'm1' },
+        { field: 'drop_arrival', value: 'ABC123', messageId: 'm1' },
+      ],
+      facts: [],
+    }, hotelBooking)
+    expect(out.changes).toEqual([
+      { field: 'drop_point', value: 'Surabaya Airport', messageId: 'm1' },
+      { field: 'drop_detail', value: 'ABC123', messageId: 'm1' },
+    ])
+  })
+
+  it('booking point already an airport/station -> arrival fact becomes detail', () => {
+    const out = remapArrivalToDetail({ changes: [], facts: [{ field: 'pickup_arrival', value: 'GA 300', messageId: 'm2' }] }, airportBooking)
+    expect(out.facts).toEqual([{ field: 'pickup_detail', value: 'GA 300', messageId: 'm2' }])
+  })
+
+  it('hotel point -> arrival left as is; a detail from the same message already present -> arrival dropped', () => {
+    expect(remapArrivalToDetail({ changes: [{ field: 'pickup_arrival', value: '10:00', messageId: 'm3' }], facts: [] }, hotelBooking).changes)
+      .toEqual([{ field: 'pickup_arrival', value: '10:00', messageId: 'm3' }])
+    expect(remapArrivalToDetail({
+      changes: [{ field: 'drop_detail', value: 'ABC123', messageId: 'm4' }, { field: 'drop_arrival', value: 'ABC123 10:00', messageId: 'm4' }],
+      facts: [],
+    }, airportBooking).changes).toEqual([{ field: 'drop_detail', value: 'ABC123', messageId: 'm4' }])
   })
 })
