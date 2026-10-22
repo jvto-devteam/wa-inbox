@@ -119,9 +119,9 @@ describe('pertanyaan per butir', () => {
 
   it('prompt meminta bentuk objek dengan terjawab', () => {
     expect(REVIEW_SYSTEM_PROMPT).toContain('"pertanyaan":[{"teks":"...","terjawab":true|false,"pesan":3}]')
-    expect(REVIEW_SYSTEM_PROMPT).toContain('"poinPenting":[{"jenis":"keputusan|lokasi|trip|jemput|bayar|kebutuhan","teks":"...","pesan":5}]')
+    expect(REVIEW_SYSTEM_PROMPT).toContain('"poinPenting":[{"teks":"...","jenis":"keputusan|lokasi|trip|jemput|bayar|kebutuhan","pesan":5}]')
     expect(REVIEW_SYSTEM_PROMPT).toContain('"profil":[{"label":"...","pesan":N}]')
-    expect(REVIEW_SYSTEM_PROMPT).toMatch(/"pesan": nomor #.*Kalau ragu, hilangkan "pesan"/)
+    expect(REVIEW_SYSTEM_PROMPT).toMatch(/"pesan": SATU nomor #.*Kalau ragu, hilangkan "pesan"/)
   })
 })
 
@@ -190,6 +190,22 @@ describe('poin penting berjenis + label profil (owner 2026-10-22, dari pembacaan
     )
     expect(r?.poinPenting).toEqual(['a', 'b'])
     expect(r?.profil).toEqual([{ label: 'bukan_tamu', messageId: 'm1' }])
+  })
+
+  it('memperbaiki dua kerusakan JSON yang teramati di produksi: kunci "teks" hilang, dan "pesan" berisi beberapa nomor', () => {
+    const broken = JSON.stringify({ ...valid, poinPenting: [] }).replace(
+      '"poinPenting":[]',
+      '"poinPenting":[{"jenis":"trip":"11-12 Okt, 2D1N, 3 orang","pesan":2,5},{"jenis":"jemput","teks":"Hotel 88","pesan":3}]'
+    )
+    expect(() => JSON.parse(broken)).toThrow()
+    expect(parseReview(broken, ids)?.poinPenting).toEqual([
+      { jenis: 'trip', teks: '11-12 Okt, 2D1N, 3 orang', messageId: 'm2' },
+      { jenis: 'jemput', teks: 'Hotel 88', messageId: 'm3' },
+    ])
+  })
+
+  it('JSON rusak dengan bentuk lain tetap gagal (tidak ditebak)', () => {
+    expect(parseReview('{"status":"selesai","alasan":"x" "topik":"y"}', ids)).toBeNull()
   })
 
   it('ringkasan lama tanpa "profil" atau "profil" bukan array -> []', () => {
