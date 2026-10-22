@@ -202,11 +202,13 @@ tidak ditampilkan: lencana status/jenis kontak, topik, `statusAgen`, tanda "ada 
 **Poin penting berjenis + label profil** (owner 2026-10-22, diturunkan dari pembacaan 507 chat): `poinPenting` membawa
 `jenis` dari `POINT_KINDS` (komplain · keputusan · lokasi · trip · jemput · bayar · kebutuhan; urutan = prioritas, satu poin per
 jenis, maks. 7 = jumlah jenis; `orderPoints` di review.ts; setiap label profil wajib dirinci di poin jenis yang sesuai), dan review membawa `profil` -- label dari kosakata tetap `PROFILE_LABELS`
-(situasi, cara memutuskan, asal, rombongan maks. satu, kebutuhan khusus), WAJIB `messageId` bukti; label lain/tanpa bukti
+(situasi termasuk `keselamatan`, cara memutuskan, asal, rombongan maks. satu, kebutuhan khusus), WAJIB `messageId` bukti; label lain/tanpa bukti
 dibuang (`coerceProfile`, `dedupeProfile`). `jenisKontak` mitra/lainnya: maks. 2 poin, hanya label `bukan_tamu`.
 Ringkasan menerima data booking ringkas (`bookingContextForReview`, daftar putih: kode, paket, durasi, tanggal, pax,
 jemput, antar, kaos -- tanpa keuangan/kontak) supaya poin tamu ber-booking hanya menulis perbedaan/tambahan; data itu ikut
-ke LLM cloud yang sama dengan Mode 3. Ringkasan lama tanpa `jenis`/`profil` tetap sah (`profil` dibaca `[]`). Label profil
+ke LLM cloud yang sama dengan Mode 3. Dari pembacaan 507 chat (2026-10-22): "bayar" melacak refund/kompensasi
+sampai diterima, "jemput" memuat kabar hari-H, "keputusan" memuat hambatan lead, "kebutuhan" memuat hotel, dan `janjiTim`
+ikut menangkap janji Bot ("let me check with our team") -- janji ⏳ itu masuk antrean PROMISE seperti janji agen. Ringkasan lama tanpa `jenis`/`profil` tetap sah (`profil` dibaca `[]`). Label profil
 tampil sebagai chip (bukti bisa diklik, "Ada komplain" merah) DAN setiap label wajib dirinci di poin penting -- poin
 tetap sumber detailnya (owner 2026-10-22: "boleh nambah label, tapi tetap ada poin penting").
 Ringkasan terbaru disimpan di `Conversation.chatReview` / `chatReviewAt`, ditulis dua jalur:

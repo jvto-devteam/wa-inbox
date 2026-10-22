@@ -68,7 +68,7 @@ export function normalizePoint(p: ReviewPoint): { teks: string; messageId: strin
  */
 export const PROFILE_LABELS = [
   // Situasi yang perlu ditindak
-  'komplain', 'refund_batal', 'penutupan', 'belum_pasti', 'mendesak', 'kendala_bayar',
+  'komplain', 'keselamatan', 'refund_batal', 'penutupan', 'belum_pasti', 'mendesak', 'kendala_bayar',
   // Cara tamu memutuskan
   'sensitif_harga', 'banyak_revisi', 'itinerari_custom', 'open_trip',
   // Asal
@@ -81,6 +81,7 @@ export const PROFILE_LABELS = [
 export type ProfileLabel = (typeof PROFILE_LABELS)[number]
 export const PROFILE_LABEL_TEXT: Record<ProfileLabel, string> = {
   komplain: 'Ada komplain',
+  keselamatan: 'Insiden keselamatan',
   refund_batal: 'Minta refund/batal',
   penutupan: 'Terdampak penutupan',
   belum_pasti: 'Rencana belum pasti',

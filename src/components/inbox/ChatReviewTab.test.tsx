@@ -492,6 +492,7 @@ describe('ChatReviewTab: poin berjenis + label profil (owner 2026-10-22)', () =>
       jenisKontak: 'tamu_existing' as const,
       profil: [
         { label: 'komplain' as const, messageId: 'msg_2' },
+        { label: 'keselamatan' as const, messageId: 'msg_3' },
         { label: 'pasangan' as const, messageId: 'msg_1' },
       ],
       poinPenting: [
@@ -510,6 +511,7 @@ describe('ChatReviewTab: poin berjenis + label profil (owner 2026-10-22)', () =>
     expect(complaint).toHaveAttribute('href', '/inbox?conversation=conv_1&message=msg_2&lihat=1')
     expect(complaint.className).toMatch(/danger/)
     expect(within(chips).getByRole('link', { name: 'Pasangan (lihat pesan bukti)' }).className).not.toMatch(/danger/)
+    expect(within(chips).getByRole('link', { name: 'Insiden keselamatan (lihat pesan bukti)' }).className).toMatch(/danger/)
 
     const points = within(within(region).getByRole('list', { name: 'Poin penting' })).getAllByRole('listitem')
     expect(points).toHaveLength(3)

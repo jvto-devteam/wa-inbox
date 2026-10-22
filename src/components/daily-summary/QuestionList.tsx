@@ -163,7 +163,9 @@ export function ProfileChips({ profile, conversationId }: { profile: Conversatio
       {items.map((p) => {
         const label = PROFILE_LABEL_TEXT[p.label]
         const tone =
-          p.label === 'komplain' ? 'border-danger/40 bg-danger-subtle text-danger' : 'border-line bg-surface-sunken text-ink-muted'
+          p.label === 'komplain' || p.label === 'keselamatan'
+            ? 'border-danger/40 bg-danger-subtle text-danger'
+            : 'border-line bg-surface-sunken text-ink-muted'
         return (
           <li key={p.label}>
             {conversationId ? (

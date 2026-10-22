@@ -163,6 +163,22 @@ describe('poin penting berjenis + label profil (owner 2026-10-22, dari pembacaan
     expect(REVIEW_SYSTEM_PROMPT).toContain('Setiap label di "profil" WAJIB dijelaskan rinciannya di poin jenis yang sesuai')
   })
 
+  it('pembacaan 507 chat (owner 2026-10-22): refund dilacak, kabar hari-H, hambatan lead, hotel, janji Bot, label keselamatan', () => {
+    for (const phrase of [
+      'REFUND/KOMPENSASI: nominal yang disepakati, metode, status (dijanjikan / dikirim / diterima tamu)',
+      'KABAR HARI-H terbaru dengan jamnya',
+      'sebut juga HAMBATAN yang membuatnya ragu',
+      'hotel (minta upgrade, pesan hotel sendiri + potongan',
+      'baik oleh Agen MAUPUN Bot',
+      '"keselamatan" (insiden berbahaya yang benar-benar terjadi',
+      'WAJIB ada bila "profil" memuat "komplain" atau "keselamatan"',
+    ]) {
+      expect(REVIEW_SYSTEM_PROMPT).toContain(phrase)
+    }
+    const r = parseReview(raw({ profil: [{ label: 'keselamatan', pesan: 3 }] }), ids)
+    expect(r?.profil).toEqual([{ label: 'keselamatan', messageId: 'm3' }])
+  })
+
   it('label profil: hanya kosakata tetap, wajib bukti pesan yang valid, satu kali per label, rombongan maks. satu', () => {
     const r = parseReview(
       raw({
