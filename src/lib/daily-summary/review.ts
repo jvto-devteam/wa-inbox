@@ -125,8 +125,13 @@ function stripCodeFence(raw: string): string {
   return raw.trim().replace(/^```json\s*/i, '').replace(/^```\s*/, '').replace(/```\s*$/, '')
 }
 
+/** Nomor transkrip yang diselipkan model ke dalam teks ("... via Wise #25") tidak bermakna bagi tim: dibuang. */
+function stripTranscriptRefs(text: string): string {
+  return text.replace(/\s*\(?#\d+(?:\s*,\s*#?\d+)*\)?(?=[\s.,;:)]|$)/g, '')
+}
+
 function clip(text: string): string {
-  const trimmed = text.trim()
+  const trimmed = stripTranscriptRefs(text).trim()
   return trimmed.length > MAX_TEXT ? `${trimmed.slice(0, MAX_TEXT - 1)}…` : trimmed
 }
 

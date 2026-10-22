@@ -209,6 +209,12 @@ describe('poin penting berjenis + label profil (owner 2026-10-22, dari pembacaan
     ])
   })
 
+  it('nomor transkrip yang diselipkan ke teks ("via Wise #25", "(#3, #4)") dibuang', () => {
+    const r = parseReview(raw({ poinPenting: [{ jenis: 'bayar', teks: 'Refund dikirim via Wise #25', pesan: 2 }], langkahBerikut: 'Cek bukti transfer (#3, #4).' }), ids)
+    expect(r?.poinPenting).toEqual([{ jenis: 'bayar', teks: 'Refund dikirim via Wise', messageId: 'm2' }])
+    expect(r?.langkahBerikut).toBe('Cek bukti transfer.')
+  })
+
   it('JSON rusak dengan bentuk lain tetap gagal (tidak ditebak)', () => {
     expect(parseReview('{"status":"selesai","alasan":"x" "topik":"y"}', ids)).toBeNull()
   })
