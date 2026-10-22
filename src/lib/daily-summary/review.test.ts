@@ -119,7 +119,7 @@ describe('pertanyaan per butir', () => {
 
   it('prompt meminta bentuk objek dengan terjawab', () => {
     expect(REVIEW_SYSTEM_PROMPT).toContain('"pertanyaan":[{"teks":"...","terjawab":true|false,"pesan":3}]')
-    expect(REVIEW_SYSTEM_PROMPT).toContain('"poinPenting":[{"teks":"...","jenis":"keputusan|lokasi|trip|jemput|bayar|kebutuhan","pesan":5}]')
+    expect(REVIEW_SYSTEM_PROMPT).toContain('"poinPenting":[{"teks":"...","jenis":"komplain|keputusan|lokasi|trip|jemput|bayar|kebutuhan","pesan":5}]')
     expect(REVIEW_SYSTEM_PROMPT).toContain('"profil":[{"label":"...","pesan":N}]')
     expect(REVIEW_SYSTEM_PROMPT).toMatch(/"pesan": SATU nomor #.*Kalau ragu, hilangkan "pesan"/)
   })
@@ -146,16 +146,21 @@ describe('poin penting berjenis + label profil (owner 2026-10-22, dari pembacaan
           { jenis: 'keputusan', teks: 'Pilih 3D/4D, paling lambat 25 Okt', pesan: 4 },
           { jenis: 'trip', teks: 'duplikat trip', pesan: 5 },
           { jenis: 'kebutuhan', teks: 'Twin room', pesan: 6 },
+          { jenis: 'komplain', teks: 'Jemputan telat 1 jam; minta maaf; belum dijawab', pesan: 1 },
         ],
       }),
       ids
     )
     expect(r?.poinPenting).toEqual([
+      // Komplain selalu paling atas: label "Ada komplain" tidak menjelaskan isinya.
+      { jenis: 'komplain', teks: 'Jemputan telat 1 jam; minta maaf; belum dijawab', messageId: 'm1' },
       { jenis: 'keputusan', teks: 'Pilih 3D/4D, paling lambat 25 Okt', messageId: 'm4' },
       { jenis: 'trip', teks: '26 Okt, 4D3N, 2 pax', messageId: 'm2' },
       { jenis: 'kebutuhan', teks: 'Twin room', messageId: 'm6' },
       { teks: 'Ada topan', messageId: 'm3' },
     ])
+    expect(REVIEW_SYSTEM_PROMPT).toContain('WAJIB ada bila "profil" memuat "komplain"')
+    expect(REVIEW_SYSTEM_PROMPT).toContain('Setiap label di "profil" WAJIB dijelaskan rinciannya di poin jenis yang sesuai')
   })
 
   it('label profil: hanya kosakata tetap, wajib bukti pesan yang valid, satu kali per label, rombongan maks. satu', () => {

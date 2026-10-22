@@ -31,18 +31,21 @@ export function normalizeQuestion(q: ReviewQuestion): { teks: string; terjawab: 
 }
 
 /**
- * Jenis poin penting, URUTAN = prioritas (owner 2026-10-22, dari pembacaan 507 chat): keputusan yang ditunggu +
+ * Jenis poin penting, URUTAN = prioritas (owner 2026-10-22, dari pembacaan 507 chat): isi keluhan tamu (apa yang
+ * dikeluhkan, apa yang diminta, status penanganan) paling atas -- label "Ada komplain" saja tidak menjelaskan isinya --
+ * lalu keputusan yang ditunggu +
  * tenggat paling menentukan langkah tim, lalu status lokasi + alternatif, data trip, jemput/antar, pembayaran,
  * kebutuhan khusus. Satu jenis = satu poin (review.ts). Ringkasan lama tanpa jenis tetap sah.
  */
-export const POINT_KINDS = ['keputusan', 'lokasi', 'trip', 'jemput', 'bayar', 'kebutuhan'] as const
+export const POINT_KINDS = ['komplain', 'keputusan', 'lokasi', 'trip', 'jemput', 'bayar', 'kebutuhan'] as const
 export type PointKind = (typeof POINT_KINDS)[number]
 export const POINT_KIND_LABEL: Record<PointKind, string> = {
+  komplain: 'Komplain',
   keputusan: 'Keputusan',
   lokasi: 'Lokasi',
   trip: 'Trip',
   jemput: 'Jemput/antar',
-  bayar: 'Bayar',
+  bayar: 'Harga & bayar',
   kebutuhan: 'Kebutuhan',
 }
 

@@ -486,7 +486,7 @@ describe('riwayat harian', () => {
 })
 
 describe('ChatReviewTab: poin berjenis + label profil (owner 2026-10-22)', () => {
-  it('chip profil menaut ke pesan bukti, "Ada komplain" merah; poin berjenis tampil berurutan dengan nama jenisnya, juga untuk tamu ber-booking', async () => {
+  it('poin berjenis tampil berurutan dengan nama jenisnya (Komplain paling atas), juga untuk tamu ber-booking; label profil tampil sebagai chip di atasnya', async () => {
     const typed = {
       ...review,
       jenisKontak: 'tamu_existing' as const,
@@ -495,6 +495,7 @@ describe('ChatReviewTab: poin berjenis + label profil (owner 2026-10-22)', () =>
         { label: 'pasangan' as const, messageId: 'msg_1' },
       ],
       poinPenting: [
+        { jenis: 'komplain' as const, teks: 'Jemputan telat 1 jam; minta maaf' },
         { jenis: 'keputusan' as const, teks: 'Pilih 3D/4D, paling lambat 25 Okt', messageId: 'msg_4' },
         { jenis: 'jemput' as const, teks: 'Jemput 10.00 (booking: 07.00)' },
       ],
@@ -503,6 +504,7 @@ describe('ChatReviewTab: poin berjenis + label profil (owner 2026-10-22)', () =>
     render(<ChatReviewTab conversationId="conv_1" />)
 
     const region = await screen.findByRole('region', { name: 'Ringkasan chat' })
+    // Label profil tampil sebagai chip (menaut ke pesan bukti, "Ada komplain" merah) DAN rinciannya tetap di poin penting.
     const chips = within(region).getByRole('list', { name: 'Profil tamu' })
     const complaint = within(chips).getByRole('link', { name: 'Ada komplain (lihat pesan bukti)' })
     expect(complaint).toHaveAttribute('href', '/inbox?conversation=conv_1&message=msg_2&lihat=1')
@@ -510,20 +512,15 @@ describe('ChatReviewTab: poin berjenis + label profil (owner 2026-10-22)', () =>
     expect(within(chips).getByRole('link', { name: 'Pasangan (lihat pesan bukti)' }).className).not.toMatch(/danger/)
 
     const points = within(within(region).getByRole('list', { name: 'Poin penting' })).getAllByRole('listitem')
-    expect(points).toHaveLength(2)
-    expect(points[0]).toHaveTextContent(/^Keputusan Pilih 3D\/4D, paling lambat 25 Okt$/)
-    expect(points[1]).toHaveTextContent(/^Jemput\/antar Jemput 10\.00 \(booking: 07\.00\)$/)
+    expect(points).toHaveLength(3)
+    expect(points[0]).toHaveTextContent(/^Komplain Jemputan telat 1 jam; minta maaf$/)
+    expect(points[1]).toHaveTextContent(/^Keputusan Pilih 3D\/4D, paling lambat 25 Okt$/)
+    expect(points[2]).toHaveTextContent(/^Jemput\/antar Jemput 10\.00 \(booking: 07\.00\)$/)
     // Tidak dilipat walau tamu sudah booking: isinya hanya perbedaan/tambahan dari data booking.
     expect(points[0].closest('details')).toBeNull()
     expect(within(region).queryByText(/^Poin penting \(/)).not.toBeInTheDocument()
   })
 
-  it('tanpa label profil: daftar chip tidak dirender', async () => {
-    stubFetch(() => json(response()))
-    render(<ChatReviewTab conversationId="conv_1" />)
-    await screen.findByRole('region', { name: 'Ringkasan chat' })
-    expect(screen.queryByRole('list', { name: 'Profil tamu' })).not.toBeInTheDocument()
-  })
 })
 
 describe('ChatReviewTab: Disematkan', () => {
