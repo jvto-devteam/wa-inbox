@@ -82,26 +82,37 @@ function CheckList({
 export function QuestionList({
   questions,
   conversationId,
+  label = 'Yang ditanyakan',
 }: {
   questions: ConversationReview['pertanyaan']
   /** Tanpa ini butir tidak pernah jadi tautan. */
   conversationId?: string
+  /** Judul daftar; bawaan "Yang ditanyakan" (/summary). */
+  label?: string
 }) {
   const items = questions.map((raw) => {
     const q = normalizeQuestion(raw)
     return { teks: q.teks, done: q.terjawab, messageId: q.messageId }
   })
-  return <CheckList label="Yang ditanyakan" items={items} doneText="terjawab" conversationId={conversationId} />
+  return <CheckList label={label} items={items} doneText="terjawab" conversationId={conversationId} />
 }
 
 /** Janji tim kepada pelanggan: ✅ ditepati / ⏳ belum, dengan aturan tautan yang sama. */
-export function PromiseList({ promises, conversationId }: { promises: ConversationReview['janjiTim']; conversationId?: string }) {
+export function PromiseList({
+  promises,
+  conversationId,
+  label = 'Janji tim',
+}: {
+  promises: ConversationReview['janjiTim']
+  conversationId?: string
+  label?: string
+}) {
   // `?? []`: ringkasan yang tidak lewat skema (cache klien lama) bisa tidak membawa `janjiTim`.
   const items = (promises ?? []).map((raw) => {
     const p = normalizePromise(raw)
     return { teks: p.teks, done: p.terpenuhi, messageId: p.messageId }
   })
-  return <CheckList label="Janji tim" items={items} doneText="ditepati" conversationId={conversationId} />
+  return <CheckList label={label} items={items} doneText="ditepati" conversationId={conversationId} />
 }
 
 /** Poin penting (tanggal, jumlah orang, paket, dll.), dengan aturan tautan yang sama. */

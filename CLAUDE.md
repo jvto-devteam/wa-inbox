@@ -194,6 +194,11 @@ keluaran LLM. Aturan buat/buka ulang ada di satu tempat, `upsertCandidate`.
 ### Ringkasan chat (tab di panel kanan Inbox)
 Menampilkan ringkasan LLM **terbaru** satu percakapan, tanda terjawab per pertanyaan, riwayat
 per hari, dan status tindak lanjut live dari `SummaryItem` (bisa Ingatkan/Lepas dari sini).
+Tampilannya **ringkas** (owner 2026-10-22, `ChatReviewTab.tsx`): Disematkan; satu baris status + waktu + tombol perbarui;
+hanya pertanyaan belum terjawab, janji belum dipenuhi, dan langkah berikut. Yang sudah terjawab/ditepati, poin penting
+tamu yang sudah booking (`jenisKontak: tamu_existing`; calon tamu maks. 5 tampil), dan riwayat harian dilipat. Sengaja
+tidak ditampilkan: lencana status/jenis kontak, topik, `statusAgen`, tanda "ada pesan baru", riwayat perubahan booking
+(ada di tab Kontak). Jangan tambahkan kembali tanpa permintaan owner.
 Ringkasan terbaru disimpan di `Conversation.chatReview` / `chatReviewAt`, ditulis dua jalur:
 job 00.00 (asOf = akhir hari yang diringkas) dan tombol "Perbarui sekarang"
 (`POST /api/conversations/[id]/chat-review`, asOf = `now`, cooldown 30 detik).

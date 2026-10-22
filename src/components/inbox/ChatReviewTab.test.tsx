@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import { render, screen, cleanup, fireEvent, waitFor, within } from '@testing-library/react'
-import { ChatReviewTab, hasMessagesSince } from './ChatReviewTab'
+import { ChatReviewTab } from './ChatReviewTab'
 import { followUpStatus, summaryItemKindLabel } from '@/lib/summary-items/status'
 import { SUMMARY_ITEMS_CHANGED } from '@/lib/summary-items/events'
 import type { ChatReviewItem, ChatReviewResponse } from '@/app/api/conversations/[id]/chat-review/route'
@@ -113,27 +113,31 @@ describe('ChatReviewTab: janji tim', () => {
     stubFetch(() => json(response({ latest: { review: withPromises, at: '2026-10-19T02:00:00.000Z' }, item: item({ kind: 'PROMISE' }) })))
     render(<ChatReviewTab conversationId="conv_1" />)
 
-    const status = await screen.findByRole('region', { name: 'Status tindak lanjut' })
+    const status = await screen.findByRole('region', { name: 'Ringkasan chat' })
     expect(within(status).getByText('Janji tim')).toBeInTheDocument()
     expect(within(status).getByText('Janji belum ditepati')).toBeInTheDocument()
     expect(within(status).getByRole('button', { name: 'Ingatkan' })).toBeInTheDocument()
 
-    const list = within(screen.getByRole('region', { name: 'Poin penting terbaru' })).getByRole('list', { name: 'Janji tim' })
-    const rows = within(list).getAllByRole('listitem')
+    // Ringkas (owner 2026-10-22): yang belum dipenuhi tampil; yang sudah ditepati dilipat.
+    const open = within(status).getByRole('list', { name: 'Janji tim belum dipenuhi' })
+    const rows = within(open).getAllByRole('listitem')
+    expect(rows).toHaveLength(2)
     expect(rows[0]).toHaveTextContent('Kirim invoice⏳ belum')
-    expect(rows[1]).toHaveTextContent('Cek ketersediaan jeep✅ ditepati')
-    expect(rows[2]).toHaveTextContent(/^Janji lama$/)
+    expect(rows[1]).toHaveTextContent(/^Janji lama$/)
     expect(within(rows[0]).getByRole('link', { name: 'Lihat pesan: Kirim invoice' })).toHaveAttribute(
       'href',
       '/inbox?conversation=conv_1&message=msg_9&lihat=1'
     )
-    expect(within(rows[1]).queryByRole('link')).not.toBeInTheDocument()
+    expect(within(status).getByText('1 janji ditepati').closest('summary')).not.toBeNull()
+    const kept = within(status).getByRole('list', { name: 'Sudah ditepati' })
+    expect(within(kept).getByRole('listitem')).toHaveTextContent('Cek ketersediaan jeep✅ ditepati')
+    expect(within(kept).queryByRole('link')).not.toBeInTheDocument()
   })
 
   it('tanpa janji: daftar "Janji tim" tidak dirender dan item REPLY tanpa label jenis', async () => {
     stubFetch(() => json(response()))
     render(<ChatReviewTab conversationId="conv_1" />)
-    const status = await screen.findByRole('region', { name: 'Status tindak lanjut' })
+    const status = await screen.findByRole('region', { name: 'Ringkasan chat' })
     expect(within(status).queryByText('Janji tim')).not.toBeInTheDocument()
     expect(screen.queryByRole('list', { name: 'Janji tim' })).not.toBeInTheDocument()
   })
@@ -144,31 +148,51 @@ describe('ChatReviewTab', () => {
     const fetchMock = stubFetch(() => json(response()))
     render(<ChatReviewTab conversationId="conv_1" />)
 
-    const status = await screen.findByRole('region', { name: 'Status tindak lanjut' })
+    const latest = await screen.findByRole('region', { name: 'Ringkasan chat' })
     expect(fetchMock).toHaveBeenCalledWith(URL)
-    expect(within(status).getByText('Belum dijawab')).toBeInTheDocument()
-    expect(within(status).getByRole('button', { name: 'Ingatkan' })).toBeInTheDocument()
-    expect(within(status).getByRole('button', { name: 'Lepas' })).toBeInTheDocument()
-
-    const latest = screen.getByRole('region', { name: 'Poin penting terbaru' })
+    // Satu baris: status tindak lanjut + waktu ringkasan + tombol perbarui (ikon).
+    expect(within(latest).getByText('Belum dijawab')).toBeInTheDocument()
     expect(within(latest).getByText(/^Diperbarui .*19 Okt.*09[.:]00 WIB$/)).toBeInTheDocument()
-    expect(within(latest).getByText('Perlu tindakan')).toBeInTheDocument()
-    expect(within(latest).getByText('Calon tamu')).toBeInTheDocument()
-    expect(within(latest).getByText('Paket Ijen 2 orang')).toBeInTheDocument()
+    expect(within(latest).getByRole('button', { name: 'Perbarui sekarang' })).toBeInTheDocument()
+    expect(within(latest).getByRole('button', { name: 'Ingatkan' })).toBeInTheDocument()
+    expect(within(latest).getByRole('button', { name: 'Lepas' })).toBeInTheDocument()
 
-    const questions = within(latest).getAllByRole('listitem').filter((li) => li.closest('ul')?.getAttribute('aria-label') === 'Yang ditanyakan')
-    expect(questions).toHaveLength(3)
-    expect(questions[0]).toHaveTextContent('Berapa harga untuk 2 orang?')
-    expect(within(questions[0]).getByText('⏳ belum')).toBeInTheDocument()
-    expect(within(questions[1]).getByText('✅ terjawab')).toBeInTheDocument()
-    // Ringkasan lama: string polos, tanpa tanda apa pun.
-    expect(questions[2]).toHaveTextContent(/^Bisa bayar di tempat\?$/)
+    // Sengaja tidak tampil lagi (owner 2026-10-22): lencana status/jenis kontak, topik, "sudah dijawab tim".
+    for (const gone of ['Perlu tindakan', 'Calon tamu', 'Paket Ijen 2 orang', 'Tim sudah menjelaskan rute.', 'Sudah dijawab tim:']) {
+      expect(within(latest).queryByText(gone)).not.toBeInTheDocument()
+    }
 
-    expect(within(latest).getByText('Tanggal 12 November')).toBeInTheDocument()
-    expect(within(latest).getByText('Tim sudah menjelaskan rute.')).toBeInTheDocument()
-    expect(within(latest).getByText('Sudah dijawab tim:')).toBeInTheDocument()
+    const open = within(within(latest).getByRole('list', { name: 'Belum terjawab' })).getAllByRole('listitem')
+    expect(open).toHaveLength(2)
+    expect(open[0]).toHaveTextContent('Berapa harga untuk 2 orang?')
+    expect(within(open[0]).getByText('⏳ belum')).toBeInTheDocument()
+    // Ringkasan lama: string polos, tanpa tanda apa pun -- tetap tampil (tidak diketahui sudah terjawab).
+    expect(open[1]).toHaveTextContent(/^Bisa bayar di tempat\?$/)
+    expect(within(latest).getByText('1 pertanyaan terjawab').closest('summary')).not.toBeNull()
+    const answered = within(latest).getByRole('list', { name: 'Sudah terjawab' })
+    expect(within(answered).getByText('✅ terjawab')).toBeInTheDocument()
+
+    // Calon tamu: poin penting tampil (satu-satunya tempat data perjalanannya).
+    expect(within(latest).getByText('Tanggal 12 November').closest('details')).toBeNull()
     expect(within(latest).getByText('Kirim harga paket Ijen.')).toBeInTheDocument()
     expect(within(latest).getByText('Langkah berikut:')).toBeInTheDocument()
+  })
+
+  it('tamu yang sudah booking: poin penting dilipat; calon tamu dengan >5 poin: 5 tampil, sisanya dilipat', async () => {
+    const points = ['P1', 'P2', 'P3', 'P4', 'P5', 'P6', 'P7']
+    stubFetch(() => json(response({ latest: { review: { ...review, jenisKontak: 'tamu_existing', poinPenting: points }, at: '2026-10-19T02:00:00.000Z' } })))
+    render(<ChatReviewTab conversationId="conv_1" />)
+    const booked = await screen.findByRole('region', { name: 'Ringkasan chat' })
+    expect(within(booked).getByText('Poin penting (7)').closest('summary')).not.toBeNull()
+    expect(within(booked).getByText('P1').closest('details')).not.toBeNull()
+    cleanup()
+
+    stubFetch(() => json(response({ latest: { review: { ...review, poinPenting: points }, at: '2026-10-19T02:00:00.000Z' } })))
+    render(<ChatReviewTab conversationId="conv_1" />)
+    const lead = await screen.findByRole('region', { name: 'Ringkasan chat' })
+    expect(within(lead).getByText('P5').closest('details')).toBeNull()
+    expect(within(lead).getByText('P6').closest('details')).not.toBeNull()
+    expect(within(lead).getByText('2 poin lainnya').closest('summary')).not.toBeNull()
   })
 
   it.each([
@@ -181,7 +205,7 @@ describe('ChatReviewTab', () => {
     stubFetch(() => json(response({ item: queueItem })))
     render(<ChatReviewTab conversationId="conv_1" />)
 
-    const status = await screen.findByRole('region', { name: 'Status tindak lanjut' })
+    const status = await screen.findByRole('region', { name: 'Ringkasan chat' })
     expect(within(status).getByText(label)).toBeInTheDocument()
     if (actionable) expect(within(status).getByRole('button', { name: 'Ingatkan' })).toBeInTheDocument()
     else expect(within(status).queryByRole('button', { name: 'Ingatkan' })).not.toBeInTheDocument()
@@ -212,10 +236,11 @@ describe('ChatReviewTab', () => {
     )
     render(<ChatReviewTab conversationId="conv_1" />)
 
-    const latest = await screen.findByRole('region', { name: 'Poin penting terbaru' })
+    const latest = await screen.findByRole('region', { name: 'Ringkasan chat' })
     expect(within(latest).getByText(/^Dari ringkasan harian .*18 Okt/)).toBeInTheDocument()
-    expect(within(latest).getByText('Harga Bromo')).toBeInTheDocument()
     expect(within(latest).getByText('Tanggal 12 November')).toBeInTheDocument()
+    // Entri yang dipakai sebagai "terbaru" tidak tampil dua kali di riwayat.
+    expect(screen.queryByRole('group', { name: 'Riwayat' })).not.toBeInTheDocument()
     expect(within(latest).queryByText(/^Diperbarui/)).not.toBeInTheDocument()
     expect(screen.queryByText('Belum ada ringkasan.')).not.toBeInTheDocument()
   })
@@ -232,10 +257,10 @@ describe('ChatReviewTab', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Lepas' }))
     fireEvent.click(screen.getByRole('button', { name: 'Lepas item' }))
 
-    const status = screen.getByRole('region', { name: 'Status tindak lanjut' })
+    const status = screen.getByRole('region', { name: 'Ringkasan chat' })
     expect(await within(status).findByText('Gagal memuat ringkasan')).toBeInTheDocument()
     expect(within(status).getByText('Gagal memuat ringkasan')).toHaveAttribute('role', 'alert')
-    expect(screen.getByText('Paket Ijen 2 orang')).toBeInTheDocument()
+    expect(screen.getByText('Kirim harga paket Ijen.')).toBeInTheDocument()
   })
 
   it('"Perbarui sekarang" memanggil POST, tombol nonaktif selama menunggu, lalu menampilkan hasilnya', async () => {
@@ -254,8 +279,8 @@ describe('ChatReviewTab', () => {
     expect(busy).toBeDisabled()
     expect(fetchMock).toHaveBeenCalledWith(URL, { method: 'POST' })
 
-    resolvePost(json(response({ latest: { review: { ...review, topik: 'Topik baru dari LLM' }, at: '2026-10-19T05:00:00.000Z' } })))
-    expect(await screen.findByText('Topik baru dari LLM')).toBeInTheDocument()
+    resolvePost(json(response({ latest: { review: { ...review, langkahBerikut: 'Langkah baru dari LLM' }, at: '2026-10-19T05:00:00.000Z' } })))
+    expect(await screen.findByText('Langkah baru dari LLM')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Perbarui sekarang' })).toBeEnabled()
     expect(screen.queryByText('Belum ada ringkasan.')).not.toBeInTheDocument()
     // Perbarui bisa mengubah item "Janji tim": lencana menu diberi tahu, sekali.
@@ -273,15 +298,15 @@ describe('ChatReviewTab', () => {
     render(<ChatReviewTab conversationId="conv_1" />)
 
     fireEvent.click(await screen.findByRole('button', { name: 'Perbarui sekarang' }))
-    const latest = screen.getByRole('region', { name: 'Poin penting terbaru' })
+    const latest = screen.getByRole('region', { name: 'Ringkasan chat' })
     expect(await within(latest).findByRole('alert')).toHaveTextContent('Gagal meringkas. Coba lagi.')
-    expect(within(latest).getByText('Paket Ijen 2 orang')).toBeInTheDocument()
+    expect(within(latest).getByText('Kirim harga paket Ijen.')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Perbarui sekarang' })).toBeEnabled()
     expect(listener).not.toHaveBeenCalled()
     window.removeEventListener(SUMMARY_ITEMS_CHANGED, listener)
   })
 
-  it('riwayat: satu <details> per tanggal dengan tanggal, topik, badge, dan isi yang sama formatnya', async () => {
+  it('riwayat: dilipat dalam satu "Riwayat (n hari)", satu <details> per tanggal dengan tanggal, badge, dan isi ringkas', async () => {
     stubFetch(() =>
       json(
         response({
@@ -294,12 +319,13 @@ describe('ChatReviewTab', () => {
     )
     const { container } = render(<ChatReviewTab conversationId="conv_1" />)
 
-    const history = await screen.findByRole('region', { name: 'Riwayat' })
-    const days = container.querySelectorAll('details')
+    const history = await screen.findByRole('group', { name: 'Riwayat' })
+    expect(history).not.toHaveAttribute('open')
+    expect(within(history).getByText('Riwayat (2 hari)')).toBeInTheDocument()
+    const days = container.querySelectorAll('details[aria-label="Riwayat"] > div > details')
     expect(days).toHaveLength(2)
     const first = within(days[0] as HTMLElement)
     expect(days[0].querySelector('summary')).toHaveTextContent(/18 Okt 2026/)
-    expect(first.getByText('Harga Bromo')).toBeInTheDocument()
     expect(first.getByText('Saat itu: selesai')).toBeInTheDocument()
     expect(first.getByText('⏳ belum')).toBeInTheDocument()
     expect(within(days[1] as HTMLElement).getByText('Saat itu: tidak jelas')).toBeInTheDocument()
@@ -310,8 +336,8 @@ describe('ChatReviewTab', () => {
   it('riwayat kosong: bagiannya tidak tampil', async () => {
     stubFetch(() => json(response({ history: [] })))
     render(<ChatReviewTab conversationId="conv_1" />)
-    await screen.findByRole('region', { name: 'Status tindak lanjut' })
-    expect(screen.queryByRole('region', { name: 'Riwayat' })).not.toBeInTheDocument()
+    await screen.findByRole('region', { name: 'Ringkasan chat' })
+    expect(screen.queryByRole('group', { name: 'Riwayat' })).not.toBeInTheDocument()
   })
 
   it('Lepas memakai panel antrean: POST drop dengan body {}, event dikirim, lalu dimuat ulang', async () => {
@@ -371,7 +397,7 @@ describe('butir yang bisa diklik', () => {
     stubFetch(() => json(response({ latest: { review: linked, at: '2026-10-19T02:00:00.000Z' } })))
     render(<ChatReviewTab conversationId="conv_1" />)
 
-    const latest = await screen.findByRole('region', { name: 'Poin penting terbaru' })
+    const latest = await screen.findByRole('region', { name: 'Ringkasan chat' })
     const q = within(latest).getByRole('link', { name: 'Lihat pesan: Berapa harga?' })
     expect(q).toHaveAttribute('href', '/inbox?conversation=conv_1&message=msg_3&lihat=1')
     const p = within(latest).getByRole('link', { name: 'Lihat pesan: Tanggal 12 November' })
@@ -401,54 +427,13 @@ describe('butir yang bisa diklik', () => {
   })
 })
 
-describe('tanda "Ada pesan baru"', () => {
-  it('hasMessagesSince membandingkan waktu, null tidak pernah memicu', () => {
-    expect(hasMessagesSince('2026-10-19T03:00:00.000Z', '2026-10-19T02:00:00.000Z')).toBe(true)
-    expect(hasMessagesSince('2026-10-19T02:00:00.000Z', '2026-10-19T02:00:00.000Z')).toBe(false)
-    expect(hasMessagesSince('2026-10-19T01:00:00.000Z', '2026-10-19T02:00:00.000Z')).toBe(false)
-    expect(hasMessagesSince(null, '2026-10-19T02:00:00.000Z')).toBe(false)
-    expect(hasMessagesSince('2026-10-19T03:00:00.000Z', null)).toBe(false)
-  })
-
-  it('pesan sesudah latest.at: tanda tampil dan menjelaskan tombol Perbarui', async () => {
-    stubFetch(() => json(response({ lastMessageAt: '2026-10-19T02:30:00.000Z' })))
-    render(<ChatReviewTab conversationId="conv_1" />)
-    const hint = await screen.findByText('Ada pesan baru sejak ringkasan ini.')
-    expect(screen.getByRole('button', { name: 'Perbarui sekarang' })).toHaveAttribute('aria-describedby', hint.id)
-  })
-
-  it('tidak ada pesan sesudah latest.at: tanpa tanda', async () => {
-    stubFetch(() => json(response({ lastMessageAt: '2026-10-19T02:00:00.000Z' })))
-    render(<ChatReviewTab conversationId="conv_1" />)
-    await screen.findByRole('region', { name: 'Poin penting terbaru' })
-    expect(screen.queryByText('Ada pesan baru sejak ringkasan ini.')).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Perbarui sekarang' })).not.toHaveAttribute('aria-describedby')
-  })
-
-  it.each([
-    // Akhir 18 Okt WIB = 2026-10-18T17:00:00Z.
-    ['2026-10-18T16:59:00.000Z', false],
-    ['2026-10-18T17:01:00.000Z', true],
-  ])('cadangan riwayat dibandingkan dengan akhir hari WIB (pesan %s → %s)', async (lastMessageAt, shown) => {
-    stubFetch(() => json(response({ latest: null, lastMessageAt, history: [{ date: '2026-10-18', review, ...NO_REPLY }] })))
-    render(<ChatReviewTab conversationId="conv_1" />)
-    await screen.findByText(/^Dari ringkasan harian/)
-    expect(screen.queryByText('Ada pesan baru sejak ringkasan ini.') !== null).toBe(shown)
-  })
-
-  it('belum ada ringkasan sama sekali: tanpa tanda', async () => {
-    stubFetch(() => json(response({ latest: null, lastMessageAt: '2026-10-19T02:30:00.000Z' })))
-    render(<ChatReviewTab conversationId="conv_1" />)
-    await screen.findByText('Belum ada ringkasan.')
-    expect(screen.queryByText('Ada pesan baru sejak ringkasan ini.')).not.toBeInTheDocument()
-  })
-
+describe('riwayat harian', () => {
   describe('riwayat: potret status dan penanda Ditanggapi', () => {
     async function renderHistory(history: ChatReviewResponse['history']) {
       stubFetch(() => json(response({ history })))
       const { container } = render(<ChatReviewTab conversationId="conv_1" />)
-      await screen.findByRole('region', { name: 'Riwayat' })
-      return container.querySelectorAll('details')
+      await screen.findByRole('group', { name: 'Riwayat' })
+      return container.querySelectorAll('details[aria-label="Riwayat"] > div > details')
     }
 
     it('badge riwayat netral (muted, bukan destructive) dan berlabel "Saat itu: ..."', async () => {
@@ -499,7 +484,7 @@ describe('tanda "Ada pesan baru"', () => {
   })
 })
 
-describe('ChatReviewTab: Disematkan & Riwayat perubahan', () => {
+describe('ChatReviewTab: Disematkan', () => {
   const pinned = [
     { id: 'a1', type: 'CHANGE' as const, field: 'pickup_point', proposedValue: 'Hotel Santika', sourceMessageId: 'msg_5', createdAt: '2026-10-20T01:00:00.000Z' },
     { id: 'a2', type: 'MISMATCH' as const, field: 'total_pax', proposedValue: 4, sourceMessageId: null, createdAt: '2026-10-20T01:05:00.000Z' },
@@ -508,7 +493,7 @@ describe('ChatReviewTab: Disematkan & Riwayat perubahan', () => {
     { id: 'e1', event: 'EXECUTED', actor: 'ACCOUNT' as const, accountName: 'Dewi', reason: null, sourceMessageId: 'msg_7', oldValue: 'A', newValue: 'B', createdAt: '2026-10-20T02:00:00.000Z' },
   ]
 
-  it('Disematkan paling atas, butir ber-sourceMessageId menaut ke pesan; riwayat perubahan menaut juga', async () => {
+  it('Disematkan paling atas, butir ber-sourceMessageId menaut ke pesan; riwayat perubahan tidak di tab ini (ada di tab Kontak)', async () => {
     stubFetch(() => json(response({ pinned, changeHistory })))
     const { container } = render(<ChatReviewTab conversationId="conv_1" />)
 
@@ -524,18 +509,14 @@ describe('ChatReviewTab: Disematkan & Riwayat perubahan', () => {
     )
     expect(within(rows[1]).queryByRole('link')).not.toBeInTheDocument()
 
-    const hist = screen.getByRole('region', { name: 'Riwayat perubahan' })
-    expect(hist).toHaveTextContent('Diterapkan · Dewi')
-    expect(within(hist).getByRole('link', { name: 'Lihat pesan' })).toHaveAttribute(
-      'href',
-      '/inbox?conversation=conv_1&message=msg_7&lihat=1'
-    )
+    expect(screen.queryByRole('region', { name: 'Riwayat perubahan' })).not.toBeInTheDocument()
+    expect(screen.queryByText(/Dewi/)).not.toBeInTheDocument()
   })
 
-  it('tanpa aksi: kedua bagian tidak dirender', async () => {
+  it('tanpa aksi: Disematkan tidak dirender', async () => {
     stubFetch(() => json(response()))
     render(<ChatReviewTab conversationId="conv_1" />)
-    await screen.findByRole('region', { name: 'Status tindak lanjut' })
+    await screen.findByRole('region', { name: 'Ringkasan chat' })
     expect(screen.queryByRole('region', { name: 'Disematkan' })).not.toBeInTheDocument()
     expect(screen.queryByRole('region', { name: 'Riwayat perubahan' })).not.toBeInTheDocument()
   })
@@ -551,7 +532,7 @@ describe('ChatReviewTab: Disematkan & Riwayat perubahan', () => {
     vi.stubGlobal('EventSource', FakeES)
     const fetchMock = stubFetch(() => json(response()))
     render(<ChatReviewTab conversationId="conv_1" />)
-    await screen.findByRole('region', { name: 'Status tindak lanjut' })
+    await screen.findByRole('region', { name: 'Ringkasan chat' })
     expect(onmessage).not.toBeNull()
     const calls = () => fetchMock.mock.calls.length
     const before = calls()
