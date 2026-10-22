@@ -56,6 +56,7 @@ function review(status: ConversationReview['status']): ConversationReview {
     pertanyaan: [],
     poinPenting: [],
     janjiTim: [],
+    profil: [],
     statusAgen: '',
     langkahBerikut: '',
   }

@@ -2,7 +2,14 @@
 import Link from 'next/link'
 import type { ReactNode } from 'react'
 import { conversationHref } from '@/components/daily-summary/conversation-href'
-import { normalizePoint, normalizePromise, normalizeQuestion, type ConversationReview } from '@/lib/daily-summary/payload-schema'
+import {
+  normalizePoint,
+  normalizePromise,
+  normalizeQuestion,
+  POINT_KIND_LABEL,
+  PROFILE_LABEL_TEXT,
+  type ConversationReview,
+} from '@/lib/daily-summary/payload-schema'
 import { scrollToThreadMessage } from '@/lib/inbox/message-anchor'
 
 /**
@@ -116,7 +123,16 @@ export function PromiseList({
 }
 
 /** Poin penting (tanggal, jumlah orang, paket, dll.), dengan aturan tautan yang sama. */
-export function PointList({ points, conversationId }: { points: ConversationReview['poinPenting']; conversationId?: string }) {
+export function PointList({
+  points,
+  conversationId,
+  showKind = false,
+}: {
+  points: ConversationReview['poinPenting']
+  conversationId?: string
+  /** Awali poin berjenis dengan nama jenisnya ("Keputusan", "Trip", ...). Bawaan mati (/summary). */
+  showKind?: boolean
+}) {
   if (points.length === 0) return null
   return (
     <ListBlock label="Poin penting">
@@ -125,11 +141,48 @@ export function PointList({ points, conversationId }: { points: ConversationRevi
           const p = normalizePoint(raw)
           return (
             <li key={i}>
+              {showKind && p.jenis && <span className="text-xs font-medium text-ink-subtle">{POINT_KIND_LABEL[p.jenis]} </span>}
               <ItemText teks={p.teks} messageId={p.messageId} conversationId={conversationId} />
             </li>
           )
         })}
       </ul>
     </ListBlock>
+  )
+}
+
+/**
+ * Label profil tamu (kosakata tetap, review.ts) sebagai chip; setiap chip menaut ke pesan buktinya. "Ada komplain"
+ * merah, sisanya netral.
+ */
+export function ProfileChips({ profile, conversationId }: { profile: ConversationReview['profil']; conversationId?: string }) {
+  const items = profile ?? []
+  if (items.length === 0) return null
+  return (
+    <ul aria-label="Profil tamu" className="flex flex-wrap gap-1">
+      {items.map((p) => {
+        const label = PROFILE_LABEL_TEXT[p.label]
+        const tone =
+          p.label === 'komplain' ? 'border-danger/40 bg-danger-subtle text-danger' : 'border-line bg-surface-sunken text-ink-muted'
+        return (
+          <li key={p.label}>
+            {conversationId ? (
+              <Link
+                href={conversationHref(conversationId, p.messageId, { lihat: true })}
+                scroll={false}
+                onClick={() => scrollToThreadMessage(p.messageId)}
+                title="Lihat pesan bukti"
+                aria-label={`${label} (lihat pesan bukti)`}
+                className={`focus-ring inline-flex items-center rounded-full border px-2 py-0.5 text-xs ${tone} hover:text-accent`}
+              >
+                {label}
+              </Link>
+            ) : (
+              <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs ${tone}`}>{label}</span>
+            )}
+          </li>
+        )
+      })}
+    </ul>
   )
 }

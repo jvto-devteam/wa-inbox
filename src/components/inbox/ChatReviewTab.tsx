@@ -8,9 +8,9 @@ import { IconButton } from '@/components/ui/icon-button'
 import { SkeletonText } from '@/components/ui/skeleton'
 import { RemindDropActions, conversationHref, dateKeyLabel } from '@/components/daily-summary/SummaryQueue'
 import { SnapshotStatusBadge } from '@/components/daily-summary/SnapshotStatusBadge'
-import { PointList, PromiseList, QuestionList } from '@/components/daily-summary/QuestionList'
+import { PointList, ProfileChips, PromiseList, QuestionList } from '@/components/daily-summary/QuestionList'
 import type { ChatReviewHistoryEntry } from '@/lib/chat-review/history'
-import { normalizePromise, normalizeQuestion, type ConversationReview } from '@/lib/daily-summary/payload-schema'
+import { normalizePoint, normalizePromise, normalizeQuestion, type ConversationReview } from '@/lib/daily-summary/payload-schema'
 import { scrollToThreadMessage } from '@/lib/inbox/message-anchor'
 import { fetchJson } from '@/lib/fetch-json'
 import { announceSummaryItemsChanged } from '@/lib/summary-items/events'
@@ -110,14 +110,17 @@ function CompactReview({ review, conversationId }: { review: ConversationReview;
   const openPromises = promises.filter((p) => normalizePromise(p).terpenuhi !== true)
   const kept = promises.filter((p) => normalizePromise(p).terpenuhi === true)
   const points = review.poinPenting
-  // Tamu yang sudah booking: poin penting sama dengan data booking di tab Kontak, jadi dilipat. Calon tamu: ini
-  // satu-satunya tempat destinasi/tanggal/pax tercatat, jadi tampil (maks. POINTS_SHOWN, sisanya dilipat).
-  const foldPoints = review.jenisKontak === 'tamu_existing'
-  const shownPoints = foldPoints ? [] : points.slice(0, POINTS_SHOWN)
-  const foldedPoints = foldPoints ? points : points.slice(POINTS_SHOWN)
+  // Ringkasan berjenis (sejak 2026-10-22): poin sudah diurutkan menurut prioritas dan, untuk tamu ber-booking, hanya
+  // berisi perbedaan/tambahan dari data booking -- semuanya tampil. Ringkasan lama tanpa jenis: tamu ber-booking
+  // dilipat (isinya sama dengan data booking di tab Kontak), calon tamu maks. POINTS_SHOWN tampil.
+  const kinded = points.some((p) => normalizePoint(p).jenis !== null)
+  const foldPoints = !kinded && review.jenisKontak === 'tamu_existing'
+  const shownPoints = kinded ? points : foldPoints ? [] : points.slice(0, POINTS_SHOWN)
+  const foldedPoints = kinded ? [] : foldPoints ? points : points.slice(POINTS_SHOWN)
 
   return (
     <div className="space-y-2">
+      <ProfileChips profile={review.profil} conversationId={conversationId} />
       <QuestionList questions={openQuestions} conversationId={conversationId} label="Belum terjawab" />
       <PromiseList promises={openPromises} conversationId={conversationId} label="Janji tim belum dipenuhi" />
       {review.langkahBerikut && (
@@ -126,7 +129,7 @@ function CompactReview({ review, conversationId }: { review: ConversationReview;
           {review.langkahBerikut}
         </p>
       )}
-      <PointList points={shownPoints} conversationId={conversationId} />
+      <PointList points={shownPoints} conversationId={conversationId} showKind />
       {foldedPoints.length > 0 && (
         <Folded summary={foldPoints ? `Poin penting (${foldedPoints.length})` : `${foldedPoints.length} poin lainnya`}>
           <PointList points={foldedPoints} conversationId={conversationId} />

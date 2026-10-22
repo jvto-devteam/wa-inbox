@@ -25,7 +25,7 @@ beforeEach(() => {
 describe('parseReview', () => {
   it('menerima JSON valid, juga yang dibungkus code fence', () => {
     // Ringkasan tanpa `janjiTim` (bentuk lama) tetap lolos dan terbaca sebagai daftar kosong.
-    expect(parseReview(JSON.stringify(valid))).toEqual({ ...valid, janjiTim: [] })
+    expect(parseReview(JSON.stringify(valid))).toEqual({ ...valid, janjiTim: [], profil: [] })
     expect(parseReview('```json\n' + JSON.stringify(valid) + '\n```')?.status).toBe('perlu_tindakan')
   })
 
@@ -119,16 +119,88 @@ describe('pertanyaan per butir', () => {
 
   it('prompt meminta bentuk objek dengan terjawab', () => {
     expect(REVIEW_SYSTEM_PROMPT).toContain('"pertanyaan":[{"teks":"...","terjawab":true|false,"pesan":3}]')
-    expect(REVIEW_SYSTEM_PROMPT).toContain('"poinPenting":[{"teks":"...","pesan":5}]')
+    expect(REVIEW_SYSTEM_PROMPT).toContain('"poinPenting":[{"jenis":"keputusan|lokasi|trip|jemput|bayar|kebutuhan","teks":"...","pesan":5}]')
+    expect(REVIEW_SYSTEM_PROMPT).toContain('"profil":[{"label":"...","pesan":N}]')
     expect(REVIEW_SYSTEM_PROMPT).toMatch(/"pesan": nomor #.*Kalau ragu, hilangkan "pesan"/)
   })
 })
 
 describe('poin penting per butir', () => {
   it('normalizePoint: string lama → messageId null; objek membawa messageId', () => {
-    expect(normalizePoint('3 Oktober')).toEqual({ teks: '3 Oktober', messageId: null })
-    expect(normalizePoint({ teks: '3 Oktober' })).toEqual({ teks: '3 Oktober', messageId: null })
-    expect(normalizePoint({ teks: '3 Oktober', messageId: 'm5' })).toEqual({ teks: '3 Oktober', messageId: 'm5' })
+    expect(normalizePoint('3 Oktober')).toEqual({ teks: '3 Oktober', messageId: null, jenis: null })
+    expect(normalizePoint({ teks: '3 Oktober' })).toEqual({ teks: '3 Oktober', messageId: null, jenis: null })
+    expect(normalizePoint({ teks: '3 Oktober', messageId: 'm5', jenis: 'trip' })).toEqual({ teks: '3 Oktober', messageId: 'm5', jenis: 'trip' })
+  })
+})
+
+describe('poin penting berjenis + label profil (owner 2026-10-22, dari pembacaan 507 chat)', () => {
+  const ids = ['m1', 'm2', 'm3', 'm4', 'm5', 'm6']
+  const raw = (over: Record<string, unknown>) => JSON.stringify({ ...valid, ...over })
+
+  it('poin diurutkan menurut prioritas jenis, satu per jenis, jenis tak dikenal jadi poin biasa di belakang', () => {
+    const r = parseReview(
+      raw({
+        poinPenting: [
+          { jenis: 'trip', teks: '26 Okt, 4D3N, 2 pax', pesan: 2 },
+          { jenis: 'cuaca', teks: 'Ada topan', pesan: 3 },
+          { jenis: 'keputusan', teks: 'Pilih 3D/4D, paling lambat 25 Okt', pesan: 4 },
+          { jenis: 'trip', teks: 'duplikat trip', pesan: 5 },
+          { jenis: 'kebutuhan', teks: 'Twin room', pesan: 6 },
+        ],
+      }),
+      ids
+    )
+    expect(r?.poinPenting).toEqual([
+      { jenis: 'keputusan', teks: 'Pilih 3D/4D, paling lambat 25 Okt', messageId: 'm4' },
+      { jenis: 'trip', teks: '26 Okt, 4D3N, 2 pax', messageId: 'm2' },
+      { jenis: 'kebutuhan', teks: 'Twin room', messageId: 'm6' },
+      { teks: 'Ada topan', messageId: 'm3' },
+    ])
+  })
+
+  it('label profil: hanya kosakata tetap, wajib bukti pesan yang valid, satu kali per label, rombongan maks. satu', () => {
+    const r = parseReview(
+      raw({
+        profil: [
+          { label: 'banyak_revisi', pesan: 2 },
+          { label: 'banyak_revisi', pesan: 4 },
+          { label: 'ribet', pesan: 3 },
+          { label: 'komplain' },
+          { label: 'sensitif_harga', pesan: 99 },
+          { label: 'pasangan', pesan: 1 },
+          { label: 'keluarga_anak', pesan: 5 },
+        ],
+      }),
+      ids
+    )
+    expect(r?.profil).toEqual([
+      { label: 'banyak_revisi', messageId: 'm2' },
+      { label: 'pasangan', messageId: 'm1' },
+    ])
+  })
+
+  it('bukan tamu (mitra/lainnya): maks. 2 poin, hanya label "bukan_tamu"', () => {
+    const r = parseReview(
+      raw({
+        jenisKontak: 'mitra',
+        poinPenting: ['a', 'b', 'c'],
+        profil: [{ label: 'bukan_tamu', pesan: 1 }, { label: 'sensitif_harga', pesan: 2 }],
+      }),
+      ids
+    )
+    expect(r?.poinPenting).toEqual(['a', 'b'])
+    expect(r?.profil).toEqual([{ label: 'bukan_tamu', messageId: 'm1' }])
+  })
+
+  it('ringkasan lama tanpa "profil" atau "profil" bukan array -> []', () => {
+    expect(parseReview(raw({}), ids)?.profil).toEqual([])
+    expect(parseReview(raw({ profil: 'x' }), ids)?.profil).toEqual([])
+  })
+
+  it('data booking masuk prompt sebagai konteks; tanpa booking tidak ada bagiannya', () => {
+    expect(buildReviewPrompt('#1 TAMU: halo', ['active'], '- Kode: JVTO-1')).toContain('Data booking (sudah tercatat di sistem; jangan diulang sebagai poin penting):\n- Kode: JVTO-1')
+    expect(buildReviewPrompt('#1 TAMU: halo', ['active'])).not.toContain('Data booking')
+    expect(REVIEW_SYSTEM_PROMPT).toContain('JANGAN menulis poin yang isinya sudah sama dengan data booking')
   })
 })
 

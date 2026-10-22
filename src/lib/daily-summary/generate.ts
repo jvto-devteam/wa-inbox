@@ -1,3 +1,5 @@
+import { bookingContextForReview } from '@/lib/chat-review/booking-context'
+import type { BookingData } from '@/lib/booking/client'
 import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import {
@@ -241,12 +243,20 @@ export async function generateDailySummary(date: string, now: Date = new Date())
 
     const day = await collectDay(start, end, { excludeIndonesian })
     const targets = reviewTargets(day)
-    const results = await mapWithConcurrency(targets, REVIEW_CONCURRENCY, (t) => reviewConversation(t.transcript, t.reasons, model))
+    // Data booking ringkas per percakapan: poin penting tamu ber-booking hanya menulis perbedaan/tambahan.
+    const bookings = new Map(
+      ((await prisma.conversation.findMany({
+        where: { id: { in: targets.map((t) => t.conversationId) } },
+        select: { id: true, bookingData: true },
+      })) ?? []).map((c) => [c.id, bookingContextForReview(c.bookingData as BookingData | null)])
+    )
+    const review = (t: ReviewTarget) => reviewConversation(t.transcript, t.reasons, model, bookings.get(t.conversationId) ?? null)
+    const results = await mapWithConcurrency(targets, REVIEW_CONCURRENCY, review)
     // Satu percobaan ulang, berurutan, untuk yang gagal. Kegagalan yang teramati di produksi
     // (2026-09-22: "Ollama request failed" dan timeout 60 s) datang dari server ollama.com yang
     // sedang sibuk, bukan dari percakapannya -- dan dicoba satu per satu supaya tidak menambah beban.
     for (let i = 0; i < targets.length; i++) {
-      if (results[i] === null) results[i] = await reviewConversation(targets[i].transcript, targets[i].reasons, model)
+      if (results[i] === null) results[i] = await review(targets[i])
     }
     const reviews = new Map(targets.map((t, i) => [t.conversationId, results[i]]))
 

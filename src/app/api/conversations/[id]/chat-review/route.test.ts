@@ -126,7 +126,8 @@ describe('GET /api/conversations/[id]/chat-review', () => {
 
     expect(res.status).toBe(200)
     expect(reconcileSummaryItems).toHaveBeenCalled()
-    expect(body.latest).toEqual({ review, at: '2026-10-19T00:00:00.000Z' })
+    // Ringkasan yang tersimpan sebelum label profil ada terbaca dengan `profil: []`.
+    expect(body.latest).toEqual({ review: { ...review, profil: [] }, at: '2026-10-19T00:00:00.000Z' })
     expect(body.item).toEqual({
       id: 'si1', kind: 'REPLY', state: 'DONE', anchorAt: '2026-10-17T01:00:00.000Z', dueAt: null,
       closedReason: 'REPLIED', note: null, closedAt: '2026-10-17T02:00:00.000Z',

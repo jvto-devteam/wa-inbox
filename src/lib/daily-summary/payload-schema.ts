@@ -30,13 +30,80 @@ export function normalizeQuestion(q: ReviewQuestion): { teks: string; terjawab: 
     : { teks: q.teks, terjawab: q.terjawab, messageId: q.messageId ?? null }
 }
 
-/** Satu poin penting: string polos (lama, atau tanpa pesan sumber) atau objek ber-`messageId`. */
-export const reviewPointSchema = z.union([z.string(), z.object({ teks: z.string(), messageId: z.string().optional() })])
+/**
+ * Jenis poin penting, URUTAN = prioritas (owner 2026-10-22, dari pembacaan 507 chat): keputusan yang ditunggu +
+ * tenggat paling menentukan langkah tim, lalu status lokasi + alternatif, data trip, jemput/antar, pembayaran,
+ * kebutuhan khusus. Satu jenis = satu poin (review.ts). Ringkasan lama tanpa jenis tetap sah.
+ */
+export const POINT_KINDS = ['keputusan', 'lokasi', 'trip', 'jemput', 'bayar', 'kebutuhan'] as const
+export type PointKind = (typeof POINT_KINDS)[number]
+export const POINT_KIND_LABEL: Record<PointKind, string> = {
+  keputusan: 'Keputusan',
+  lokasi: 'Lokasi',
+  trip: 'Trip',
+  jemput: 'Jemput/antar',
+  bayar: 'Bayar',
+  kebutuhan: 'Kebutuhan',
+}
+
+/** Satu poin penting: string polos (lama, atau tanpa pesan sumber) atau objek ber-`messageId` (+ `jenis` sejak 2026-10-22). */
+export const reviewPointSchema = z.union([
+  z.string(),
+  z.object({ teks: z.string(), messageId: z.string().optional(), jenis: z.enum(POINT_KINDS).optional() }),
+])
 export type ReviewPoint = z.infer<typeof reviewPointSchema>
 
-export function normalizePoint(p: ReviewPoint): { teks: string; messageId: string | null } {
-  return typeof p === 'string' ? { teks: p, messageId: null } : { teks: p.teks, messageId: p.messageId ?? null }
+export function normalizePoint(p: ReviewPoint): { teks: string; messageId: string | null; jenis: PointKind | null } {
+  return typeof p === 'string'
+    ? { teks: p, messageId: null, jenis: null }
+    : { teks: p.teks, messageId: p.messageId ?? null, jenis: p.jenis ?? null }
 }
+
+/**
+ * Label profil tamu: kosakata TETAP (owner 2026-10-22, dari pembacaan 507 chat). Model hanya boleh memilih dari sini
+ * dan wajib menunjuk pesan bukti; label lain atau tanpa bukti dibuang (review.ts). Rombongan paling banyak satu.
+ */
+export const PROFILE_LABELS = [
+  // Situasi yang perlu ditindak
+  'komplain', 'refund_batal', 'penutupan', 'belum_pasti', 'mendesak', 'kendala_bayar',
+  // Cara tamu memutuskan
+  'sensitif_harga', 'banyak_revisi', 'itinerari_custom', 'open_trip',
+  // Asal
+  'klook_ota', 'bukan_tamu',
+  // Rombongan (maks. satu)
+  'solo', 'pasangan', 'grup_kecil', 'grup_besar', 'keluarga_anak',
+  // Kebutuhan khusus
+  'kesehatan', 'diet_alergi', 'bahasa_guide', 'cemas_keamanan',
+] as const
+export type ProfileLabel = (typeof PROFILE_LABELS)[number]
+export const PROFILE_LABEL_TEXT: Record<ProfileLabel, string> = {
+  komplain: 'Ada komplain',
+  refund_batal: 'Minta refund/batal',
+  penutupan: 'Terdampak penutupan',
+  belum_pasti: 'Rencana belum pasti',
+  mendesak: 'Mendesak',
+  kendala_bayar: 'Kendala pembayaran',
+  sensitif_harga: 'Sensitif harga',
+  banyak_revisi: 'Banyak revisi',
+  itinerari_custom: 'Minta itinerari custom',
+  open_trip: 'Cari open trip',
+  klook_ota: 'Lewat Klook/OTA',
+  bukan_tamu: 'Bukan tamu',
+  solo: 'Solo',
+  pasangan: 'Pasangan',
+  grup_kecil: 'Grup kecil (3-5)',
+  grup_besar: 'Grup besar (6+)',
+  keluarga_anak: 'Keluarga + anak',
+  kesehatan: 'Kesehatan/mobilitas',
+  diet_alergi: 'Diet/alergi',
+  bahasa_guide: 'Bahasa guide',
+  cemas_keamanan: 'Cemas keamanan',
+}
+export const PARTY_LABELS: readonly ProfileLabel[] = ['solo', 'pasangan', 'grup_kecil', 'grup_besar', 'keluarga_anak']
+
+/** Satu label profil beserta pesan buktinya (wajib). */
+export const reviewProfileSchema = z.object({ label: z.enum(PROFILE_LABELS), messageId: z.string() })
+export type ReviewProfile = z.infer<typeof reviewProfileSchema>
 
 /**
  * Satu janji TIM kepada pelanggan ("saya cek dulu", "invoice menyusul"). `terpenuhi` = transkrip
@@ -74,6 +141,8 @@ export const conversationReviewSchema = z.object({
   poinPenting: z.array(reviewPointSchema),
   /** Opsional: ringkasan sebelum 19 Oktober 2026 tidak memilikinya, dan dibaca sebagai `[]`. */
   janjiTim: z.array(reviewPromiseSchema).default([]),
+  /** Opsional: ringkasan sebelum 22 Oktober 2026 tidak memilikinya, dan dibaca sebagai `[]`. */
+  profil: z.array(reviewProfileSchema).default([]),
   statusAgen: z.string(),
   langkahBerikut: z.string(),
 })

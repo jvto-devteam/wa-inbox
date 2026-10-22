@@ -19,6 +19,7 @@ const review: ChatReviewResponse['history'][number]['review'] = {
   ],
   poinPenting: ['Tanggal 12 November', 'Dari Surabaya'],
   janjiTim: [],
+  profil: [],
   statusAgen: 'Tim sudah menjelaskan rute.',
   langkahBerikut: 'Kirim harga paket Ijen.',
 }
@@ -481,6 +482,47 @@ describe('riwayat harian', () => {
       expect(within(days[0] as HTMLElement).queryByRole('link')).not.toBeInTheDocument()
       expect(days[0].querySelector('summary a, summary [title]')).toBeNull()
     })
+  })
+})
+
+describe('ChatReviewTab: poin berjenis + label profil (owner 2026-10-22)', () => {
+  it('chip profil menaut ke pesan bukti, "Ada komplain" merah; poin berjenis tampil berurutan dengan nama jenisnya, juga untuk tamu ber-booking', async () => {
+    const typed = {
+      ...review,
+      jenisKontak: 'tamu_existing' as const,
+      profil: [
+        { label: 'komplain' as const, messageId: 'msg_2' },
+        { label: 'pasangan' as const, messageId: 'msg_1' },
+      ],
+      poinPenting: [
+        { jenis: 'keputusan' as const, teks: 'Pilih 3D/4D, paling lambat 25 Okt', messageId: 'msg_4' },
+        { jenis: 'jemput' as const, teks: 'Jemput 10.00 (booking: 07.00)' },
+      ],
+    }
+    stubFetch(() => json(response({ latest: { review: typed, at: '2026-10-19T02:00:00.000Z' } })))
+    render(<ChatReviewTab conversationId="conv_1" />)
+
+    const region = await screen.findByRole('region', { name: 'Ringkasan chat' })
+    const chips = within(region).getByRole('list', { name: 'Profil tamu' })
+    const complaint = within(chips).getByRole('link', { name: 'Ada komplain (lihat pesan bukti)' })
+    expect(complaint).toHaveAttribute('href', '/inbox?conversation=conv_1&message=msg_2&lihat=1')
+    expect(complaint.className).toMatch(/danger/)
+    expect(within(chips).getByRole('link', { name: 'Pasangan (lihat pesan bukti)' }).className).not.toMatch(/danger/)
+
+    const points = within(within(region).getByRole('list', { name: 'Poin penting' })).getAllByRole('listitem')
+    expect(points).toHaveLength(2)
+    expect(points[0]).toHaveTextContent(/^Keputusan Pilih 3D\/4D, paling lambat 25 Okt$/)
+    expect(points[1]).toHaveTextContent(/^Jemput\/antar Jemput 10\.00 \(booking: 07\.00\)$/)
+    // Tidak dilipat walau tamu sudah booking: isinya hanya perbedaan/tambahan dari data booking.
+    expect(points[0].closest('details')).toBeNull()
+    expect(within(region).queryByText(/^Poin penting \(/)).not.toBeInTheDocument()
+  })
+
+  it('tanpa label profil: daftar chip tidak dirender', async () => {
+    stubFetch(() => json(response()))
+    render(<ChatReviewTab conversationId="conv_1" />)
+    await screen.findByRole('region', { name: 'Ringkasan chat' })
+    expect(screen.queryByRole('list', { name: 'Profil tamu' })).not.toBeInTheDocument()
   })
 })
 

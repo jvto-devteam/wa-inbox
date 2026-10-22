@@ -12,6 +12,7 @@ const review = {
   pertanyaan: ['Berapa harga untuk 2 orang?'],
   poinPenting: [],
   janjiTim: [],
+  profil: [],
   statusAgen: 'Belum ada balasan.',
   langkahBerikut: 'Kirim harga paket Ijen.',
 }

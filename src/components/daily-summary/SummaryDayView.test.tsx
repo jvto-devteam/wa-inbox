@@ -13,6 +13,7 @@ const review: ConversationReview = {
   pertanyaan: [{ teks: 'Berapa harga untuk 2 orang?', terjawab: false }, { teks: 'Termasuk jemput?', terjawab: true }, 'Bisa bayar di tempat?'],
   poinPenting: [],
   janjiTim: [],
+  profil: [],
   statusAgen: '',
   langkahBerikut: 'Kirim harga paket Ijen.',
 }

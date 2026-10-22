@@ -5,6 +5,8 @@ import { TRANSCRIPT_MAX_MESSAGES } from '@/lib/daily-summary/config'
 import { reviewConversation, type ReviewReason } from '@/lib/daily-summary/review'
 import { applyReviewToItem } from '@/lib/summary-items/sync'
 import { saveChatReview } from './store'
+import { bookingContextForReview } from './booking-context'
+import type { BookingData } from '@/lib/booking/client'
 
 /**
  * Meringkas SATU percakapan lewat LLM, menyimpannya sebagai ringkasan terbaru, lalu menerapkannya
@@ -31,7 +33,13 @@ export async function refreshChatReview(conversationId: string, asOf: Date): Pro
   const reasons: ReviewReason[] = lastRealMessage(messages)?.direction === 'INBOUND' ? ['unreplied'] : ['active']
 
   const settings = await prisma.settings.findUnique({ where: { id: 1 }, select: { ollamaModel: true } })
-  const review = await reviewConversation(buildNumberedTranscript(messages), reasons, settings?.ollamaModel ?? undefined)
+  const conv = await prisma.conversation.findUnique({ where: { id: conversationId }, select: { bookingData: true } })
+  const review = await reviewConversation(
+    buildNumberedTranscript(messages),
+    reasons,
+    settings?.ollamaModel ?? undefined,
+    bookingContextForReview(conv?.bookingData as BookingData | null | undefined)
+  )
   if (!review) return { status: 'failed' }
 
   await saveChatReview(conversationId, review, asOf)
