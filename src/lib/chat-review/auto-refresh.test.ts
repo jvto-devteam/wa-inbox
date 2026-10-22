@@ -7,7 +7,7 @@ import type { PrismaClient } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { broadcast } from '@/lib/realtime'
 import { refreshChatReview } from './refresh'
-import { scheduleChatReviewRefresh, noteInboundForChatReview, noteOutboundForChatReview, noteManualChatReviewRefresh, CHAT_REVIEW_DEBOUNCE_MS, __resetChatReviewRefreshForTests, CHAT_REVIEW_MIN_GAP_MS } from './auto-refresh'
+import { scheduleChatReviewRefresh, noteChatOpenedForChatReview, CHAT_REVIEW_OPEN_DEBOUNCE_MS, noteInboundForChatReview, noteOutboundForChatReview, noteManualChatReviewRefresh, CHAT_REVIEW_DEBOUNCE_MS, __resetChatReviewRefreshForTests, CHAT_REVIEW_MIN_GAP_MS } from './auto-refresh'
 
 vi.mock('@/lib/db', () => ({ prisma: mockDeep<PrismaClient>() }))
 vi.mock('@/lib/realtime', () => ({ broadcast: vi.fn() }))
@@ -42,6 +42,46 @@ beforeEach(() => {
 afterEach(() => {
   __resetChatReviewRefreshForTests()
   vi.useRealTimers()
+})
+
+describe('noteChatOpenedForChatReview (owner 2026-10-22: buka chat -> ringkasan baru bila ada pesan baru)', () => {
+  it('a message newer than the last review -> a new review runs after the short open debounce', async () => {
+    stubConversation({ chatReviewAt: new Date(NOW.getTime() - CHAT_REVIEW_MIN_GAP_MS - 60_000) })
+    mockPrisma.message.findFirst.mockResolvedValue({ createdAt: new Date(NOW.getTime() - 60_000) } as never)
+    noteChatOpenedForChatReview('c1')
+    await vi.advanceTimersByTimeAsync(CHAT_REVIEW_OPEN_DEBOUNCE_MS)
+    expect(refreshChatReview).toHaveBeenCalledTimes(1)
+    expect(broadcast).toHaveBeenCalledWith({ type: 'conversation.updated', conversationId: 'c1' })
+  })
+
+  it('never reviewed and has messages -> runs', async () => {
+    stubConversation({ chatReviewAt: null })
+    mockPrisma.message.findFirst.mockResolvedValue({ createdAt: new Date(NOW.getTime() - 60_000) } as never)
+    noteChatOpenedForChatReview('c1')
+    await vi.advanceTimersByTimeAsync(CHAT_REVIEW_OPEN_DEBOUNCE_MS)
+    expect(refreshChatReview).toHaveBeenCalledTimes(1)
+  })
+
+  it('review already covers the last message (or no messages) -> no LLM call', async () => {
+    stubConversation({ chatReviewAt: new Date(NOW.getTime() - 10 * 60_000) })
+    mockPrisma.message.findFirst.mockResolvedValue({ createdAt: new Date(NOW.getTime() - 20 * 60_000) } as never)
+    noteChatOpenedForChatReview('c1')
+    mockPrisma.message.findFirst.mockResolvedValue(null as never)
+    noteChatOpenedForChatReview('c2')
+    await vi.advanceTimersByTimeAsync(CHAT_REVIEW_MIN_GAP_MS)
+    expect(refreshChatReview).not.toHaveBeenCalled()
+  })
+
+  it('opening repeatedly right after a review still respects the 5-minute gap (one run)', async () => {
+    stubConversation({ chatReviewAt: new Date(NOW.getTime() - 60_000) })
+    mockPrisma.message.findFirst.mockResolvedValue({ createdAt: new Date(NOW.getTime() - 30_000) } as never)
+    noteChatOpenedForChatReview('c1')
+    noteChatOpenedForChatReview('c1')
+    await vi.advanceTimersByTimeAsync(CHAT_REVIEW_OPEN_DEBOUNCE_MS)
+    expect(refreshChatReview).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(CHAT_REVIEW_MIN_GAP_MS)
+    expect(refreshChatReview).toHaveBeenCalledTimes(1)
+  })
 })
 
 describe('scheduleChatReviewRefresh', () => {

@@ -3,7 +3,7 @@ import { prisma } from '@/lib/db'
 import { getSession } from '@/lib/auth/get-session'
 import { conversationReviewSchema, type ConversationReview } from '@/lib/daily-summary/payload-schema'
 import { chatReviewHistory, type ChatReviewHistoryEntry } from '@/lib/chat-review/history'
-import { noteManualChatReviewRefresh } from '@/lib/chat-review/auto-refresh'
+import { noteChatOpenedForChatReview, noteManualChatReviewRefresh } from '@/lib/chat-review/auto-refresh'
 import { refreshChatReview } from '@/lib/chat-review/refresh'
 import { currentBookingId, inCurrentBooking } from '@/lib/booking-actions/scope'
 import type { BookingActionEventView, PinnedBookingAction } from '@/lib/booking-actions/view'
@@ -123,6 +123,8 @@ export async function GET(req: Request, { params }: Ctx) {
   try {
     const body = await buildResponse(id)
     if (!body) return NextResponse.json({ error: 'Percakapan tidak ditemukan' }, { status: 404 })
+    // Chat dibuka: ada pesan sesudah ringkasan terakhir -> ringkasan baru dijadwalkan (tidak ditunggu).
+    noteChatOpenedForChatReview(id)
     return NextResponse.json(body)
   } catch (err) {
     console.error('GET /api/conversations/[id]/chat-review failed', err)

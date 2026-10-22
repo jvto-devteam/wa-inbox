@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { ensureFreshBookingData } from '@/lib/booking/client'
+import { noteChatOpenedForChatReview } from '@/lib/chat-review/auto-refresh'
 import { canUseDryRun } from '@/lib/booking-actions/rollout'
 
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -15,6 +16,9 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   // switch is on, which stops the bot but has no bearing on whether this customer
   // has a real booking on file.
   const bookingData = await ensureFreshBookingData(conversation)
+  // Owner 2026-10-22: membuka chat memeriksa apakah ada pesan sesudah ringkasan terakhir; bila ada, ringkasan baru
+  // dijadwalkan (tidak ditunggu, gerbang & jeda 5 menit sama dengan pemicu pesan).
+  noteChatOpenedForChatReview(id)
   return NextResponse.json({
     botEnabled: conversation.botEnabled,
     isTest: conversation.isTest,

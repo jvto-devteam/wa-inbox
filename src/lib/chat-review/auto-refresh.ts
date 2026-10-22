@@ -34,6 +34,8 @@ import { refreshChatReview } from './refresh'
 export const CHAT_REVIEW_MIN_GAP_MS = 5 * 60_000
 /** Jeda sebelum run "segera": pembuka burst ("Hi" / "I booked Ijen" / "ganti jemput jam 5") masuk satu review. */
 export const CHAT_REVIEW_DEBOUNCE_MS = 30_000
+/** Chat dibuka dan ada pesan sesudah ringkasan terakhir: tidak perlu menunggu burst, cukup jeda singkat. */
+export const CHAT_REVIEW_OPEN_DEBOUNCE_MS = 2_000
 
 /** Percakapan yang sedang menunggu (gerbang berjalan atau timer terpasang). */
 const waiting = new Map<string, ReturnType<typeof setTimeout> | null>()
@@ -68,7 +70,7 @@ async function run(conversationId: string): Promise<void> {
   }
 }
 
-async function plan(conversationId: string, now: Date): Promise<void> {
+async function plan(conversationId: string, now: Date, debounceMs: number): Promise<void> {
   try {
     const conv = await prisma.conversation.findUnique({
       where: { id: conversationId },
@@ -87,7 +89,7 @@ async function plan(conversationId: string, now: Date): Promise<void> {
       }
     }
     const last = Math.max(conv.chatReviewAt?.getTime() ?? 0, lastAttemptAt.get(conversationId) ?? 0)
-    const wait = Math.max(last > 0 ? last + CHAT_REVIEW_MIN_GAP_MS - now.getTime() : 0, CHAT_REVIEW_DEBOUNCE_MS)
+    const wait = Math.max(last > 0 ? last + CHAT_REVIEW_MIN_GAP_MS - now.getTime() : 0, debounceMs)
     const timer = setTimeout(() => void run(conversationId), wait)
     if (typeof timer === 'object' && 'unref' in timer) timer.unref()
     waiting.set(conversationId, timer)
@@ -97,7 +99,11 @@ async function plan(conversationId: string, now: Date): Promise<void> {
   }
 }
 
-export function scheduleChatReviewRefresh(conversationId: string, now: Date = new Date()): void {
+export function scheduleChatReviewRefresh(
+  conversationId: string,
+  now: Date = new Date(),
+  debounceMs: number = CHAT_REVIEW_DEBOUNCE_MS
+): void {
   try {
     if (running.has(conversationId)) {
       dirty.add(conversationId)
@@ -105,7 +111,7 @@ export function scheduleChatReviewRefresh(conversationId: string, now: Date = ne
     }
     if (waiting.has(conversationId)) return
     waiting.set(conversationId, null)
-    void plan(conversationId, now)
+    void plan(conversationId, now, debounceMs)
   } catch (error) {
     waiting.delete(conversationId)
     logFailure(conversationId, error)
@@ -155,6 +161,31 @@ export function noteOutboundForChatReview(
   } catch (error) {
     logFailure(conversationId, error)
   }
+}
+
+/**
+ * Owner 2026-10-22: chat dibuka -> bila ada pesan yang lebih baru dari ringkasan terakhir (atau belum pernah diringkas),
+ * jadwalkan ringkasan baru. Gerbang dan jeda minimal 5 menit sama dengan pemicu pesan (`plan`), jadi membuka chat
+ * berkali-kali tidak memanggil LLM berkali-kali; ringkasan yang sudah terbaru tidak disentuh. Tidak ditunggu, tidak
+ * pernah melempar. Tab ringkasan memuat ulang sendiri lewat `conversation.updated` sesudah ringkasan selesai.
+ */
+export function noteChatOpenedForChatReview(conversationId: string): void {
+  void (async () => {
+    try {
+      const conv = await prisma.conversation.findUnique({ where: { id: conversationId }, select: { chatReviewAt: true } })
+      if (!conv) return
+      const last = await prisma.message.findFirst({
+        where: { conversationId },
+        orderBy: { createdAt: 'desc' },
+        select: { createdAt: true },
+      })
+      if (!last) return
+      if (conv.chatReviewAt && last.createdAt.getTime() <= conv.chatReviewAt.getTime()) return
+      scheduleChatReviewRefresh(conversationId, new Date(), CHAT_REVIEW_OPEN_DEBOUNCE_MS)
+    } catch (error) {
+      logFailure(conversationId, error)
+    }
+  })()
 }
 
 // Test-only: membatalkan timer yang tertinggal antar kasus.

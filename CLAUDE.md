@@ -356,7 +356,10 @@ append-only tanpa FK: siapa, kapan, nilai lama/baru), `PushSubscription`. Setela
   Jeda: ≥ `CHAT_REVIEW_DEBOUNCE_MS` (30 dtk, pembuka burst masuk satu review) dan ≥ `CHAT_REVIEW_MIN_GAP_MS` (5 menit) sejak
   `chatReviewAt` ATAU percobaan terakhir (gagal pun, jadi LLM mati tidak dicoba tiap pesan). Pesan yang tiba SELAGI review
   berjalan menandai `dirty`: sesudah selesai satu run lagi dijadwalkan. Tombol "Perbarui sekarang"
-  (`noteManualChatReviewRefresh`) menunda run otomatis berikutnya 5 menit. Tidak ditunggu, tidak pernah melempar. Tidak
+  (`noteManualChatReviewRefresh`) menunda run otomatis berikutnya 5 menit. Membuka chat (`GET /api/conversations/[id]`
+  dan `GET .../chat-review`) memanggil `noteChatOpenedForChatReview`: ada pesan sesudah `chatReviewAt` (atau belum pernah
+  diringkas) = ringkasan baru dijadwalkan dengan jeda 2 dtk (`CHAT_REVIEW_OPEN_DEBOUNCE_MS`), tetap tunduk jeda 5 menit dan
+  gerbang yang sama (owner 2026-10-22). Tidak ditunggu, tidak pernah melempar. Tidak
   bergantung pada booking maupun rollout aksi booking (hanya menulis catatan internal). Nomor Indonesia dilewati hanya
   bila `Settings.skipBotForIndonesianNumbers` menyala (aturan daily summary); `isTest`/nomor uji selalu lolos;
   `isNoiseMessage` tidak memicu; email dilewati. **Mematikan `skipBotForIndonesianNumbers` mengirim setiap chat Indonesia
