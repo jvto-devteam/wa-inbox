@@ -393,8 +393,11 @@ append-only tanpa FK: siapa, kapan, nilai lama/baru), `PushSubscription`. Setela
 <!-- aksi-booking:selesai -->
 
 ### Kantor AI (`/ai-office`)
-Papan live (owner 2026-10-23): kantor isometrik tempat empat asisten AI terlihat bekerja -- label topik, CS bot,
-ops booking, analis ringkasan. Digerakkan event NYATA lewat SSE: `pipeline.step` (bot) dan `ai.activity`
+Papan live (owner 2026-10-23): kantor 3D (WebGL, three + @react-three/fiber/drei, `Office3D.tsx` dimuat `next/dynamic`
+ssr:false; karakter bersendi dibuat di kode, tanpa aset luar) tempat empat asisten AI terlihat bekerja -- label topik, CS bot,
+ops booking, analis ringkasan. Saat siaga karakter tetap bergerak (mengetik santai, menoleh, minum kopi, meregangkan badan);
+BEKERJA = mengetik cepat + layar menyala + progress bar + cincin lantai + lencana berputar; balasan bot terkirim = amplop
+terbang; mengantar hasil = berjalan membawa kertas ke ruang kaca admin (`deliveryPath`) lalu kembali. Digerakkan event NYATA lewat SSE: `pipeline.step` (bot) dan `ai.activity`
 (`reportAiActivity` di `src/lib/ai-office/activity.ts`, dipancarkan topic-labels, chat-review auto-refresh, dan ekstraksi
 booking). `ai.activity` hanya membawa label pendek -- tidak pernah isi chat -- dan seperti tracer pipeline, tidak pernah
 melempar atau mengubah pekerjaan aslinya. Logika status murni ada di `src/lib/ai-office/state.ts`; kartu "Terakhir/hari
