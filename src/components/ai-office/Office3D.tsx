@@ -1,10 +1,26 @@
 'use client'
 import { useEffect, useMemo, useRef, useState, type RefObject } from 'react'
-import { Canvas, useFrame } from '@react-three/fiber'
-import { ContactShadows, OrbitControls, RoundedBox } from '@react-three/drei'
+import { Canvas, useFrame, useThree } from '@react-three/fiber'
+import { ContactShadows, OrbitControls } from '@react-three/drei'
 import * as THREE from 'three'
 import type { AiAgentKey } from '@/lib/ai-office/activity'
 import type { AgentMode } from '@/lib/ai-office/state'
+import { ExecutiveDesk, JvtoRoom, Workstation } from './JvtoRoom'
+import {
+  ADMIN_SEAT,
+  ADMIN_SEAT_YAW,
+  ADMIN_SPOT,
+  AGENT_SEAT_YAW,
+  GIVE_S,
+  SEATED_BODY_Y,
+  SEATS,
+  STANDING_BODY_Y,
+  WALK_SPEED,
+  deliveryPath,
+  pathLength,
+  pointAt,
+  type Vec2,
+} from './office-layout'
 
 /**
  * Kantor AI versi 3D (WebGL, React Three Fiber; owner 2026-10-23 "buat lebih real 3D"). Dimuat hanya di browser
@@ -13,8 +29,9 @@ import type { AgentMode } from '@/lib/ai-office/state'
  * - SIAGA: tetap hidup -- mengetik santai, sesekali menoleh, minum kopi, atau meregangkan badan; layar bergulir pelan.
  * - BEKERJA: mengetik cepat, monitor terang + progress bar, cincin bercahaya di lantai, indikator berputar di atas kepala.
  * - SELESAI: tangan terangkat sebentar; balasan bot yang terkirim melepas amplop terbang.
- * - MENGANTAR: berdiri, berjalan membawa kertas ke ruang kaca, menyerahkannya ke Admin, kembali duduk.
+ * - MENGANTAR: berdiri, berjalan membawa kertas ke meja eksekutif, menyerahkannya ke Admin, kembali duduk.
  * - GAGAL: menggeleng, indikator merah.
+ * Ruangannya = kantor JVTO sungguhan (`JvtoRoom.tsx`, denah di `office-layout.ts`).
  * Statusnya datang dari event nyata (lihat AiOffice); adegan ini hanya menggambarkannya.
  */
 
@@ -28,278 +45,11 @@ export type Office3DAgent = {
   label: string
 }
 
-type Vec2 = [number, number]
 type Look = { shirt: string; hair: string; skin: string }
 
-const SEATS: Record<AiAgentKey, Vec2> = { topik: [-4, -1.2], bot: [-1.2, -1.2], booking: [-4, 2.0], ringkasan: [-1.2, 2.0] }
-/** Admin duduk menghadap pintu ruang kaca (+z); tamu meja berdiri di seberang mejanya. */
-const ADMIN_SEAT: Vec2 = [5.4, -2.4]
-const ADMIN_SPOT: Vec2 = [5.4, -0.95]
-const CORRIDOR_X = 0.8
-const DOOR_Z = 1.0
-const WALK_SPEED = 3 // meter per detik
-const GIVE_S = 1.2
 const STEP_RATE = 10
 
-/**
- * Ukuran tubuh & kursi (meter). Pinggul ada di titik duduk (0, 0) dan paha mengarah ke depan (-z), jadi dudukan kursi
- * harus tepat di bawah pinggul dan sandarannya di belakang punggung (badan berjari-jari 0,17). Kaki: paha 0,42 + betis
- * sampai telapak 0,425 di bawah lutut -- tinggi pinggul duduk = panjang betis supaya telapak menapak lantai.
- */
-export const HIP_OFFSET = 0.02
-export const THIGH_RADIUS = 0.07
-export const SHIN_TO_SOLE = 0.425
-export const SEATED_BODY_Y = SHIN_TO_SOLE - HIP_OFFSET
-export const SEAT_TOP = SEATED_BODY_Y + HIP_OFFSET - THIGH_RADIUS
-export const STANDING_BODY_Y = 0.42 + SHIN_TO_SOLE - HIP_OFFSET
-/** Pusat dudukan sedikit di belakang pinggul; sandaran (z +0.22 dari pusat) jatuh tepat di belakang punggung. */
-export const CHAIR_Z = 0.05
-
 const MODE_COLOR: Record<AgentMode, string> = { idle: '#94a3b8', working: '#3b82f6', done: '#22c55e', handoff: '#f59e0b', error: '#ef4444' }
-
-/* ------------------------------------------------------------------ perabot */
-
-function Monitor({ accent, mode }: { accent: string; mode: AgentMode | 'admin' }) {
-  const bars = useRef<THREE.Group>(null)
-  const progress = useRef<THREE.Mesh>(null)
-  const screen = useRef<THREE.MeshStandardMaterial>(null)
-  useFrame(({ clock }) => {
-    const t = clock.elapsedTime
-    const active = mode === 'working'
-    if (screen.current) {
-      screen.current.emissive.set(mode === 'error' ? '#b91c1c' : mode === 'done' ? '#15803d' : active ? accent : '#1e3a5f')
-      screen.current.emissiveIntensity = active ? 1.3 + Math.sin(t * 6) * 0.2 : mode === 'error' ? 1.1 + Math.sin(t * 12) * 0.3 : 0.6
-    }
-    // Baris "teks" di layar: bergulir pelan saat siaga, cepat saat bekerja.
-    bars.current?.children.forEach((c, i) => {
-      c.scale.x = 0.3 + 0.65 * Math.abs(Math.sin(t * (active ? 3.2 : 0.5) + i * 1.7))
-    })
-    if (progress.current) {
-      progress.current.visible = active
-      progress.current.scale.x = ((t * 0.45) % 1) + 0.02
-    }
-  })
-  return (
-    <group position={[0, 0.79, -0.22]}>
-      <mesh position={[0, 0.01, 0]} castShadow>
-        <boxGeometry args={[0.24, 0.02, 0.16]} />
-        <meshStandardMaterial color="#3a3f47" metalness={0.4} roughness={0.4} />
-      </mesh>
-      <mesh position={[0, 0.1, 0]} castShadow>
-        <boxGeometry args={[0.05, 0.18, 0.04]} />
-        <meshStandardMaterial color="#3a3f47" metalness={0.4} roughness={0.4} />
-      </mesh>
-      <RoundedBox args={[0.74, 0.46, 0.04]} radius={0.015} position={[0, 0.38, 0]} castShadow>
-        <meshStandardMaterial color="#1b1f25" roughness={0.35} />
-      </RoundedBox>
-      <mesh position={[0, 0.38, 0.021]}>
-        <planeGeometry args={[0.68, 0.4]} />
-        <meshStandardMaterial ref={screen} color="#0b1726" emissive="#1e3a5f" emissiveIntensity={0.6} roughness={0.2} />
-      </mesh>
-      <group ref={bars} position={[-0.29, 0.5, 0.023]}>
-        {[0, 1, 2, 3, 4].map((i) => (
-          <mesh key={i} position={[0, -i * 0.052, 0]}>
-            <planeGeometry args={[0.52, 0.016]} />
-            <meshBasicMaterial color="#d7ebff" transparent opacity={0.75} />
-          </mesh>
-        ))}
-      </group>
-      <group position={[-0.31, 0.22, 0.024]}>
-        <mesh ref={progress} position={[0.31, 0, 0]} visible={false}>
-          <planeGeometry args={[0.62, 0.026]} />
-          <meshBasicMaterial color="#facc15" />
-        </mesh>
-      </group>
-    </group>
-  )
-}
-
-function Chair({ color }: { color: string }) {
-  return (
-    <group position={[0, 0, CHAIR_Z]}>
-      <RoundedBox args={[0.48, 0.06, 0.46]} radius={0.025} position={[0, SEAT_TOP - 0.03, 0]} castShadow>
-        <meshStandardMaterial color={color} roughness={0.8} />
-      </RoundedBox>
-      <RoundedBox args={[0.46, 0.58, 0.06]} radius={0.03} position={[0, SEAT_TOP + 0.3, 0.22]} castShadow>
-        <meshStandardMaterial color={color} roughness={0.8} />
-      </RoundedBox>
-      <mesh position={[0, SEAT_TOP / 2, 0]}>
-        <cylinderGeometry args={[0.03, 0.03, SEAT_TOP - 0.06, 10]} />
-        <meshStandardMaterial color="#9ca3af" metalness={0.6} roughness={0.3} />
-      </mesh>
-      <mesh position={[0, 0.03, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-        <circleGeometry args={[0.24, 5]} />
-        <meshStandardMaterial color="#4b5563" side={THREE.DoubleSide} />
-      </mesh>
-    </group>
-  )
-}
-
-/** Meja + monitor + keyboard + mug + kursi, di depan titik duduk (0, 0) -- karakter menghadap -z. */
-function Workstation({ accent, mode }: { accent: string; mode: AgentMode | 'admin' }) {
-  return (
-    <group>
-      <group position={[0, 0, -0.75]}>
-        <RoundedBox args={[1.7, 0.06, 0.85]} radius={0.02} position={[0, 0.76, 0]} castShadow receiveShadow>
-          <meshStandardMaterial color="#e6d3b3" roughness={0.55} />
-        </RoundedBox>
-        {([[-0.78, -0.35], [0.78, -0.35], [-0.78, 0.35], [0.78, 0.35]] as Vec2[]).map(([lx, lz]) => (
-          <mesh key={`${lx}${lz}`} position={[lx, 0.37, lz]} castShadow>
-            <boxGeometry args={[0.05, 0.74, 0.05]} />
-            <meshStandardMaterial color="#8f7d61" />
-          </mesh>
-        ))}
-        <Monitor accent={accent} mode={mode} />
-        <mesh position={[0, 0.8, 0.25]} castShadow>
-          <boxGeometry args={[0.48, 0.02, 0.15]} />
-          <meshStandardMaterial color="#2f343b" roughness={0.6} />
-        </mesh>
-        <mesh position={[0.36, 0.8, 0.27]} castShadow>
-          <boxGeometry args={[0.07, 0.02, 0.11]} />
-          <meshStandardMaterial color="#2f343b" />
-        </mesh>
-        <mesh position={[-0.6, 0.84, 0.05]} castShadow>
-          <cylinderGeometry args={[0.045, 0.04, 0.1, 16]} />
-          <meshStandardMaterial color="#ffffff" roughness={0.3} />
-        </mesh>
-        <mesh position={[0.62, 0.8, -0.18]} rotation={[0, 0.3, 0]} castShadow>
-          <boxGeometry args={[0.22, 0.03, 0.3]} />
-          <meshStandardMaterial color="#f8fafc" />
-        </mesh>
-      </group>
-      <Chair color={mode === 'admin' ? '#1f2937' : '#374151'} />
-    </group>
-  )
-}
-
-function Plant({ at, scale = 1 }: { at: [number, number, number]; scale?: number }) {
-  const leaves = useRef<THREE.Group>(null)
-  useFrame(({ clock }) => {
-    if (leaves.current) leaves.current.rotation.z = Math.sin(clock.elapsedTime * 0.8 + at[0]) * 0.035
-  })
-  return (
-    <group position={at} scale={scale}>
-      <mesh position={[0, 0.2, 0]} castShadow>
-        <cylinderGeometry args={[0.2, 0.15, 0.4, 20]} />
-        <meshStandardMaterial color="#c9a27a" roughness={0.8} />
-      </mesh>
-      <group ref={leaves} position={[0, 0.4, 0]}>
-        {([[0, 0.22, 0, 0.28], [0.17, 0.38, 0.05, 0.22], [-0.15, 0.42, -0.06, 0.2], [0.02, 0.6, 0, 0.18]] as Array<[number, number, number, number]>).map(([x, y, z, r], i) => (
-          <mesh key={i} position={[x, y, z]} castShadow>
-            <icosahedronGeometry args={[r, 1]} />
-            <meshStandardMaterial color={i % 2 ? '#4d8b4f' : '#5fa15f'} roughness={0.7} flatShading />
-          </mesh>
-        ))}
-      </group>
-    </group>
-  )
-}
-
-function Room() {
-  const glass = (
-    <meshPhysicalMaterial color="#cfe6f3" transparent opacity={0.2} roughness={0.05} metalness={0.1} depthWrite={false} />
-  )
-  return (
-    <group>
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0.5, 0, 0.25]} receiveShadow>
-        <planeGeometry args={[15, 9.5]} />
-        <meshStandardMaterial color="#e9dcc6" roughness={0.85} />
-      </mesh>
-      {Array.from({ length: 14 }, (_, i) => (
-        <mesh key={i} rotation={[-Math.PI / 2, 0, 0]} position={[-6.5 + i, 0.002, 0.25]}>
-          <planeGeometry args={[0.012, 9.5]} />
-          <meshBasicMaterial color="#d6c5a8" />
-        </mesh>
-      ))}
-      {/* Karpet area kerja */}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[-2.6, 0.004, 0.4]} receiveShadow>
-        <planeGeometry args={[6.4, 6.4]} />
-        <meshStandardMaterial color="#d9cfc0" roughness={1} />
-      </mesh>
-      <mesh position={[0.5, 1.6, -4.5]} receiveShadow>
-        <boxGeometry args={[15, 3.2, 0.12]} />
-        <meshStandardMaterial color="#f1ede6" />
-      </mesh>
-      <mesh position={[-7, 1.6, 0.25]} receiveShadow>
-        <boxGeometry args={[0.12, 3.2, 9.5]} />
-        <meshStandardMaterial color="#e7e2d9" />
-      </mesh>
-      {/* Jendela bercahaya + papan tulis */}
-      {[-4.6, -1.6].map((x) => (
-        <group key={x} position={[x, 1.9, -4.43]}>
-          <mesh>
-            <planeGeometry args={[2.2, 1.4]} />
-            <meshStandardMaterial color="#e3f3ff" emissive="#bfe3ff" emissiveIntensity={0.7} />
-          </mesh>
-          <mesh position={[0, 0, 0.005]}>
-            <planeGeometry args={[0.04, 1.4]} />
-            <meshBasicMaterial color="#ffffff" />
-          </mesh>
-        </group>
-      ))}
-      <mesh position={[1.6, 1.7, -4.43]}>
-        <planeGeometry args={[1.8, 1.0]} />
-        <meshStandardMaterial color="#ffffff" roughness={0.3} />
-      </mesh>
-      <mesh position={[-6.93, 1.8, 0.8]} rotation={[0, Math.PI / 2, 0]}>
-        <planeGeometry args={[1.4, 0.9]} />
-        <meshStandardMaterial color="#cbd5e1" />
-      </mesh>
-      {/* Ruang kaca admin: dinding samping x=3.6, dinding depan z=0.2 dengan pintu di x 4.7-6.1 */}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[5.6, 0.003, -2.15]} receiveShadow>
-        <planeGeometry args={[4, 4.7]} />
-        <meshStandardMaterial color="#dfe7ec" />
-      </mesh>
-      <mesh position={[3.6, 1.2, -2.15]}>
-        <boxGeometry args={[0.04, 2.4, 4.7]} />
-        {glass}
-      </mesh>
-      <mesh position={[4.15, 1.2, 0.2]}>
-        <boxGeometry args={[1.1, 2.4, 0.04]} />
-        {glass}
-      </mesh>
-      <mesh position={[6.85, 1.2, 0.2]}>
-        <boxGeometry args={[1.5, 2.4, 0.04]} />
-        {glass}
-      </mesh>
-      <mesh position={[5.6, 2.42, 0.2]}>
-        <boxGeometry args={[4, 0.05, 0.06]} />
-        <meshStandardMaterial color="#8aa0ae" metalness={0.5} />
-      </mesh>
-      {/* Sofa, rak, dispenser */}
-      <RoundedBox args={[1.6, 0.4, 0.7]} radius={0.12} position={[2.2, 0.25, 3.6]} castShadow>
-        <meshStandardMaterial color="#8fb3a4" roughness={0.9} />
-      </RoundedBox>
-      <RoundedBox args={[1.6, 0.5, 0.18]} radius={0.08} position={[2.2, 0.6, 3.95]} castShadow>
-        <meshStandardMaterial color="#86a99a" roughness={0.9} />
-      </RoundedBox>
-      <mesh position={[-6.7, 0.9, -2.6]} castShadow>
-        <boxGeometry args={[0.4, 1.8, 1.4]} />
-        <meshStandardMaterial color="#c8b08c" />
-      </mesh>
-      {[0.35, 0.95, 1.5].map((y) => (
-        <mesh key={y} position={[-6.48, y, -2.6]} castShadow>
-          <boxGeometry args={[0.06, 0.3, 1.1]} />
-          <meshStandardMaterial color={y > 1 ? '#7c9cf5' : y > 0.5 ? '#f0a24b' : '#45b39a'} />
-        </mesh>
-      ))}
-      <group position={[-6.5, 0, 3.0]}>
-        <mesh position={[0, 0.55, 0]} castShadow>
-          <boxGeometry args={[0.4, 1.1, 0.4]} />
-          <meshStandardMaterial color="#e5e7eb" />
-        </mesh>
-        <mesh position={[0, 1.3, 0]} castShadow>
-          <cylinderGeometry args={[0.15, 0.15, 0.4, 16]} />
-          <meshPhysicalMaterial color="#93c5fd" transparent opacity={0.6} />
-        </mesh>
-      </group>
-      <Plant at={[-6.3, 0, 4.2]} scale={1.2} />
-      <Plant at={[0.4, 0, -4]} />
-      <Plant at={[7.3, 0, 4.1]} scale={1.1} />
-      <Plant at={[7.2, 0, -3.9]} scale={0.8} />
-    </group>
-  )
-}
 
 /* ------------------------------------------------------------------ karakter */
 
@@ -318,27 +68,6 @@ type Rig = {
   rKnee: Joint
 }
 
-/** Rute: mundur dari kursi, menyusuri lorong samping, lewat depan ruang kaca, masuk pintu, berhenti di depan meja admin. */
-export function deliveryPath(seat: Vec2): Vec2[] {
-  const back = seat[1] + 0.7
-  return [seat, [seat[0], back], [CORRIDOR_X, back], [CORRIDOR_X, DOOR_Z], [ADMIN_SPOT[0], DOOR_Z], ADMIN_SPOT]
-}
-export function pathLength(p: Vec2[]): number {
-  let d = 0
-  for (let i = 1; i < p.length; i++) d += Math.hypot(p[i][0] - p[i - 1][0], p[i][1] - p[i - 1][1])
-  return d
-}
-export function pointAt(p: Vec2[], dist: number): { pos: Vec2; dir: Vec2 } {
-  let left = Math.max(0, dist)
-  for (let i = 1; i < p.length; i++) {
-    const seg = Math.hypot(p[i][0] - p[i - 1][0], p[i][1] - p[i - 1][1])
-    if (seg === 0) continue
-    const dir: Vec2 = [(p[i][0] - p[i - 1][0]) / seg, (p[i][1] - p[i - 1][1]) / seg]
-    if (left <= seg) return { pos: [p[i - 1][0] + dir[0] * left, p[i - 1][1] + dir[1] * left], dir }
-    left -= seg
-  }
-  return { pos: p[p.length - 1], dir: [0, -1] }
-}
 /** Sudut putar Y agar karakter (menghadap -z) menghadap arah gerak. */
 const yawOf = (dir: Vec2) => Math.atan2(-dir[0], -dir[1])
 function lerpAngle(a: number, b: number, k: number) {
@@ -355,15 +84,15 @@ type PersonProps = {
   seat: Vec2
   phase: number
   isAdmin?: boolean
-  /** Titik duduk dipakai sebagai posisi dunia (agen); admin diletakkan oleh group induknya. */
-  world?: boolean
+  /** Arah hadap saat duduk (yaw 0 = -z). */
+  seatYaw: number
   /** Balon nama di lapisan DOM di atas kanvas; posisinya diproyeksikan dari kepala tiap frame. */
   bubble: RefObject<HTMLElement | null>
   selected?: boolean
   onSelect?: () => void
 }
 
-function Person({ mode, label, look, seat, phase, isAdmin = false, world = true, bubble, selected = false, onSelect }: PersonProps) {
+function Person({ mode, label, look, seat, phase, seatYaw, isAdmin = false, bubble, selected = false, onSelect }: PersonProps) {
   const anchor = useRef<THREE.Group>(null)
   const projected = useMemo(() => new THREE.Vector3(), [])
   const root = useRef<THREE.Group>(null)
@@ -426,8 +155,8 @@ function Person({ mode, label, look, seat, phase, isAdmin = false, world = true,
     // --- jalan mengantar hasil (berjalan terus walau status sudah kembali siaga)
     let walking = false
     let giving = false
-    let pos: Vec2 = world ? seat : [0, 0]
-    let yaw = 0
+    let pos: Vec2 = seat
+    let yaw = seatYaw
     if (walk.current !== null) {
       const e = t - walk.current
       const goS = len / WALK_SPEED
@@ -438,6 +167,7 @@ function Person({ mode, label, look, seat, phase, isAdmin = false, world = true,
         walking = true
       } else if (e < goS + GIVE_S) {
         pos = ADMIN_SPOT
+        yaw = 0 // menghadap Admin di seberang meja
         giving = true
       } else if (e < goS * 2 + GIVE_S) {
         const d = pointAt(back, (e - goS - GIVE_S) * WALK_SPEED)
@@ -577,7 +307,8 @@ function Person({ mode, label, look, seat, phase, isAdmin = false, world = true,
   return (
     <group
       ref={root}
-      position={world ? [seat[0], 0, seat[1]] : [0, 0, 0]}
+      position={[seat[0], 0, seat[1]]}
+      rotation={[0, seatYaw, 0]}
       onClick={
         onSelect
           ? (e) => {
@@ -710,6 +441,18 @@ function TypingDots() {
 
 /* ------------------------------------------------------------------ adegan */
 
+const CAMERA_POS: [number, number, number] = [3.4, 2.0, 4.3]
+const CAMERA_TARGET: [number, number, number] = [-2.0, 1.0, -1.8]
+
+/** Arahkan kamera ke target sekali di awal; di layar sentuh OrbitControls tidak aktif dan tidak melakukannya. */
+function LookAt({ target }: { target: [number, number, number] }) {
+  const camera = useThree((st) => st.camera)
+  useEffect(() => {
+    camera.lookAt(...target)
+  }, [camera, target])
+  return null
+}
+
 function webglAvailable(): boolean {
   try {
     const c = document.createElement('canvas')
@@ -737,34 +480,41 @@ export default function Office3D({ agents, selected, onSelect }: Office3DProps) 
   }
   return (
     <div className="relative h-full w-full">
-      <Canvas shadows dpr={[1, 2]} camera={{ position: [9, 8.6, 11.5], fov: 36 }} gl={{ antialias: true }}>
-        <color attach="background" args={['#f3efe8']} />
-        <fog attach="fog" args={['#f3efe8', 22, 40]} />
-        <hemisphereLight args={['#ffffff', '#d9cbb3', 0.75]} />
+      {/* Kamera setinggi mata dari pojok terbuka, seperti foto kantor yang dikirim owner. */}
+      <Canvas shadows dpr={[1, 2]} camera={{ position: CAMERA_POS, fov: 58, near: 0.1, far: 60 }} gl={{ antialias: true }}>
+        <color attach="background" args={['#2a2c30']} />
+        <LookAt target={CAMERA_TARGET} />
+        <hemisphereLight args={['#fff8ee', '#8a7a66', 0.85]} />
+        <ambientLight intensity={0.25} />
         <directionalLight
-          position={[6, 11, 7]}
-          intensity={1.7}
+          position={[2.5, 7, 4]}
+          intensity={1.1}
           castShadow
           shadow-mapSize-width={2048}
           shadow-mapSize-height={2048}
-          shadow-camera-left={-10}
-          shadow-camera-right={10}
-          shadow-camera-top={10}
-          shadow-camera-bottom={-10}
+          shadow-camera-left={-7}
+          shadow-camera-right={7}
+          shadow-camera-top={7}
+          shadow-camera-bottom={-7}
           shadow-bias={-0.0004}
         />
-        <pointLight position={[-3, 3.2, -3.5]} intensity={5} distance={10} color="#fff1d6" />
-        <Room />
+        {/* Lampu sorot plafon (hangat) + lampu bulat (sejuk) */}
+        {([[-3.2, -1.4], [-3.2, 2.2], [0.6, -2.6], [1.8, 1.8]] as Vec2[]).map(([x, z]) => (
+          <pointLight key={`${x}${z}`} position={[x, 2.8, z]} intensity={2.4} distance={5.5} decay={1.6} color="#ffe9c7" />
+        ))}
+        <pointLight position={[-0.6, 2.7, 0.2]} intensity={3} distance={7} decay={1.5} color="#e3eeff" />
+        <JvtoRoom />
         {agents.map((a, i) => (
           <group key={a.key}>
-            <group position={[SEATS[a.key][0], 0, SEATS[a.key][1]]}>
-              <Workstation accent={a.shirt} mode={a.mode} />
+            <group position={[SEATS[a.key][0], 0, SEATS[a.key][1]]} rotation={[0, AGENT_SEAT_YAW, 0]}>
+              <Workstation accent={a.shirt} mode={a.mode} lamp={a.key === 'booking'} />
             </group>
             <Person
               look={a}
               mode={a.mode}
               label={a.label}
               seat={SEATS[a.key]}
+              seatYaw={AGENT_SEAT_YAW}
               phase={i * 1.37}
               bubble={bubbles[a.key]}
               selected={selected === a.key}
@@ -772,20 +522,31 @@ export default function Office3D({ agents, selected, onSelect }: Office3DProps) 
             />
           </group>
         ))}
-        {/* Admin: menghadap pintu ruang kaca */}
-        <group position={[ADMIN_SEAT[0], 0, ADMIN_SEAT[1]]} rotation={[0, Math.PI, 0]}>
-          <Workstation accent="#3b5b8c" mode="admin" />
-          <Person look={{ shirt: '#3b5b8c', hair: '#222222', skin: '#d6a27a' }} mode="idle" label="Ruang Admin" seat={[0, 0]} phase={2.1} isAdmin world={false} bubble={admin} />
+        {/* Admin di meja eksekutif, membelakangi dinding hitam ber-TV, menghadap ruangan */}
+        <group position={[ADMIN_SEAT[0], 0, ADMIN_SEAT[1]]} rotation={[0, ADMIN_SEAT_YAW, 0]}>
+          <ExecutiveDesk />
         </group>
-        <ContactShadows position={[0, 0.006, 0]} opacity={0.3} scale={22} blur={2.5} far={4} />
+        <Person
+          look={{ shirt: '#3b5b8c', hair: '#222222', skin: '#d6a27a' }}
+          mode="idle"
+          label="Meja Admin"
+          seat={ADMIN_SEAT}
+          seatYaw={ADMIN_SEAT_YAW}
+          phase={2.1}
+          isAdmin
+          bubble={admin}
+        />
+        <ContactShadows position={[-0.5, 0.006, 0]} opacity={0.35} scale={12} blur={2.2} far={1.2} />
         <OrbitControls
-          target={[0.3, 0.6, 0]}
+          target={CAMERA_TARGET}
           enabled={finePointer}
           enablePan={false}
-          minDistance={8}
-          maxDistance={22}
-          minPolarAngle={0.45}
-          maxPolarAngle={1.25}
+          minDistance={2.5}
+          maxDistance={12}
+          minPolarAngle={0.35}
+          maxPolarAngle={1.52}
+          minAzimuthAngle={0.05}
+          maxAzimuthAngle={1.5}
           enableDamping
         />
       </Canvas>
@@ -819,7 +580,7 @@ export default function Office3D({ agents, selected, onSelect }: Office3DProps) 
             <span className="inline-block size-1.5 rounded-full bg-navy" aria-hidden />
             Admin
           </span>
-          <span className="block text-ink-muted">Ruang Admin</span>
+          <span className="block text-ink-muted">Meja Admin</span>
         </div>
       </div>
     </div>
