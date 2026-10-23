@@ -150,7 +150,7 @@ async function describeConversations(ids: string[]) {
 
 const COMMON_TOOLS = [searchConversations, recentConversations]
 
-/* ------------------------------------------------------------------ Tika: label topik */
+/* ------------------------------------------------------------------ Cahyo: label topik */
 
 const topicStats: ReadTool = {
   name: 'statistik_topik',
@@ -239,7 +239,7 @@ const relabel: AgentAction = {
   },
 }
 
-/* ------------------------------------------------------------------ Rafi: bot balasan */
+/* ------------------------------------------------------------------ Tarjo: bot balasan */
 
 const botStats: ReadTool = {
   name: 'statistik_bot',
@@ -331,7 +331,7 @@ function botToggle(enable: boolean): AgentAction {
   }
 }
 
-/* ------------------------------------------------------------------ Oka: aksi booking */
+/* ------------------------------------------------------------------ Samsul: aksi booking */
 
 const openCards: ReadTool = {
   name: 'kartu_terbuka',
@@ -436,7 +436,7 @@ function closeCard(name: string, op: 'reject' | 'done', types: readonly string[]
   }
 }
 
-/* ------------------------------------------------------------------ Sari: ringkasan & antrean */
+/* ------------------------------------------------------------------ Asep: ringkasan & antrean */
 
 const followUpQueue: ReadTool = {
   name: 'antrean_tindak_lanjut',
@@ -509,21 +509,21 @@ const resummarize: AgentAction = {
 
 export const AGENT_PROFILES: Record<AiAgentKey, AgentProfile> = {
   topik: {
-    name: 'Tika',
+    name: 'Cahyo',
     role: 'pemberi label topik pesan tamu',
     scope: 'topik pesan tamu (harga, pembayaran, hotel, pembatalan, dsb.): statistik, chat per topik, label satu chat, label ulang.',
     tools: [...COMMON_TOOLS, topicStats, chatsByTopic, conversationTopics],
     actions: [relabel],
   },
   bot: {
-    name: 'Rafi',
+    name: 'Tarjo',
     role: 'CS bot yang membalas tamu',
     scope: 'balasan bot: statistik hari ini, keputusan & handoff terbaru, simulasi jawaban tanpa kirim, nyalakan/matikan bot per chat.',
     tools: [...COMMON_TOOLS, botStats, botDecisions, tryReply],
     actions: [botToggle(false), botToggle(true)],
   },
   booking: {
-    name: 'Oka',
+    name: 'Samsul',
     role: 'ops booking yang mengubah data booking dari chat',
     scope: 'kartu aksi booking (terbuka, hari ini), data booking satu chat, setujui/tolak/selesaikan kartu.',
     tools: [...COMMON_TOOLS, openCards, bookingActivityToday, bookingOfConversation],
@@ -534,7 +534,7 @@ export const AGENT_PROFILES: Record<AiAgentKey, AgentProfile> = {
     ],
   },
   ringkasan: {
-    name: 'Sari',
+    name: 'Asep',
     role: 'analis ringkasan chat & antrean tindak lanjut',
     scope: 'ringkasan & poin penting satu chat, antrean belum dibalas / follow up / janji tim, ringkas ulang chat.',
     tools: [...COMMON_TOOLS, followUpQueue, conversationSummary],

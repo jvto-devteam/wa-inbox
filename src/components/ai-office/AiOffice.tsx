@@ -54,7 +54,7 @@ type AgentConfig = {
 const AGENTS: AgentConfig[] = [
   {
     key: "topik",
-    name: "Tika",
+    name: "Cahyo",
     role: "Label topik pesan",
     shirt: "#7c9cf5",
     hair: "#2f2118",
@@ -62,7 +62,7 @@ const AGENTS: AgentConfig[] = [
   },
   {
     key: "bot",
-    name: "Rafi",
+    name: "Tarjo",
     role: "CS Bot · balas tamu",
     shirt: "#45b39a",
     hair: "#1f1a17",
@@ -70,7 +70,7 @@ const AGENTS: AgentConfig[] = [
   },
   {
     key: "booking",
-    name: "Oka",
+    name: "Samsul",
     role: "Ops Booking · ubah data",
     shirt: "#f0a24b",
     hair: "#3a2a1d",
@@ -78,7 +78,7 @@ const AGENTS: AgentConfig[] = [
   },
   {
     key: "ringkasan",
-    name: "Sari",
+    name: "Asep",
     role: "Analis · ringkasan chat",
     shirt: "#d97ab8",
     hair: "#5a3420",

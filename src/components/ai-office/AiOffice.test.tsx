@@ -60,7 +60,7 @@ describe('AiOffice', () => {
     act(() => onmessage!({ data: JSON.stringify({ type: 'ai.activity', agent: 'ringkasan', state: 'mulai', label: 'Meringkas chat & poin penting', conversationId: 'c9', at: new Date().toISOString() }) }))
     expect(screen.getAllByText('Meringkas chat & poin penting').length).toBeGreaterThan(0)
     const log = screen.getByRole('region', { name: 'Kegiatan terbaru' })
-    expect(within(log).getByText('Sari')).toBeInTheDocument()
+    expect(within(log).getByText('Asep')).toBeInTheDocument()
     expect(within(log).getByRole('link', { name: 'Lihat chat' })).toHaveAttribute('href', '/inbox?conversation=c9')
 
     act(() => onmessage!({ data: JSON.stringify({ type: 'ai.activity', agent: 'ringkasan', state: 'selesai', label: 'Ringkasan & poin penting diperbarui', conversationId: 'c9', at: new Date().toISOString(), deliver: true }) }))
@@ -88,12 +88,12 @@ describe('AiOffice', () => {
     const fetchMock = vi.mocked(fetch)
     render(<AiOffice />)
     fireEvent.click(await screen.findByText('booking:idle'))
-    const panel = screen.getByRole('region', { name: 'Obrolan dengan Oka' })
+    const panel = screen.getByRole('region', { name: 'Obrolan dengan Samsul' })
 
     fetchMock.mockResolvedValueOnce(
       new Response(JSON.stringify({ reply: 'Kartu jam jemput David masih terbuka.', proposal: { action: 'setujui_kartu', args: { kartuId: 'k1' }, summary: 'Setujui kartu pickup_time → "05:00" (David)' }, used: ['kartu booking terbuka'] }), { status: 200 })
     )
-    fireEvent.change(within(panel).getByLabelText('Pesan untuk Oka'), { target: { value: 'Setujui kartu jemput David' } })
+    fireEvent.change(within(panel).getByLabelText('Pesan untuk Samsul'), { target: { value: 'Setujui kartu jemput David' } })
     fireEvent.click(within(panel).getByRole('button', { name: 'Kirim' }))
     expect(await within(panel).findByText('Kartu jam jemput David masih terbuka.')).toBeInTheDocument()
     expect(within(panel).getByText(/Data: kartu booking terbuka/)).toBeInTheDocument()
@@ -109,6 +109,6 @@ describe('AiOffice', () => {
     expect(within(panel).getByText('Sudah dijalankan')).toBeInTheDocument()
 
     fireEvent.click(within(panel).getByRole('button', { name: 'Tutup obrolan' }))
-    expect(screen.queryByRole('region', { name: 'Obrolan dengan Oka' })).toBeNull()
+    expect(screen.queryByRole('region', { name: 'Obrolan dengan Samsul' })).toBeNull()
   })
 })

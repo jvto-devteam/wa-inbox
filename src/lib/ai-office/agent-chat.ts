@@ -17,7 +17,7 @@ export const MAX_TOOL_STEPS = 4
 const CHAT_TIMEOUT_MS = 45_000
 const TOOL_RESULT_MAX_CHARS = 6000
 
-const TEAMMATES = 'Tika (label topik pesan), Rafi (bot balasan tamu), Oka (kartu & data booking), Sari (ringkasan chat & antrean tindak lanjut)'
+const TEAMMATES = 'Cahyo (label topik pesan), Tarjo (bot balasan tamu), Samsul (kartu & data booking), Asep (ringkasan chat & antrean tindak lanjut)'
 
 export function buildAgentSystemPrompt(agent: AiAgentKey, now: Date): string {
   const p = AGENT_PROFILES[agent]

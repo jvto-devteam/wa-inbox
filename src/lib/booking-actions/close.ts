@@ -4,7 +4,7 @@ import { broadcast } from '@/lib/realtime'
 
 /**
  * Menutup satu kartu booking oleh orang (Tolak / Abaikan / Selesai / Tidak perlu). Dipakai `PATCH
- * /api/booking-actions/[id]` dan obrolan Oka di Kantor AI, supaya keduanya lewat jalur yang sama.
+ * /api/booking-actions/[id]` dan obrolan Samsul di Kantor AI, supaya keduanya lewat jalur yang sama.
  * `closedById` WAJIB terisi: store.ts tidak membuat ulang aksi yang ditutup orang untuk field+nilai yang sama.
  */
 export type CloseOp = 'reject' | 'dismiss' | 'done' | 'not_needed'

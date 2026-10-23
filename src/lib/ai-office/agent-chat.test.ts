@@ -40,7 +40,7 @@ describe('parseModelTurn', () => {
 describe('buildAgentSystemPrompt', () => {
   it('setiap asisten hanya mendapat alat dan aksi miliknya', () => {
     const oka = buildAgentSystemPrompt('booking', ctx.now)
-    expect(oka).toContain('Oka')
+    expect(oka).toContain('Samsul')
     expect(oka).toContain('- kartu_terbuka')
     expect(oka).toContain('- setujui_kartu')
     expect(oka).not.toContain('- ringkas_ulang')
