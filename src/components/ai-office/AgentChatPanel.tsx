@@ -38,11 +38,13 @@ export function AgentChatPanel({
   messages,
   setMessages,
   onClose,
+  className,
 }: {
   agent: PanelAgent
   messages: PanelMessage[]
   setMessages: (update: (prev: PanelMessage[]) => PanelMessage[]) => void
   onClose: () => void
+  className?: string
 }) {
   const [draft, setDraft] = useState('')
   const [busy, setBusy] = useState(false)
@@ -116,7 +118,7 @@ export function AgentChatPanel({
   }
 
   return (
-    <section aria-label={`Obrolan dengan ${agent.name}`} className="flex h-full min-h-0 flex-col rounded-xl border border-line bg-surface">
+    <section aria-label={`Obrolan dengan ${agent.name}`} className={cn('flex h-full min-h-0 flex-col rounded-xl border border-line bg-surface', className)}>
       <header className="flex items-center gap-2 border-b border-line px-3 py-2">
         <span className="grid size-8 place-items-center rounded-full text-xs font-semibold text-white" style={{ background: agent.shirt }} aria-hidden>
           {agent.name.slice(0, 2).toUpperCase()}
