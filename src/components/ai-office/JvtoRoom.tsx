@@ -199,6 +199,63 @@ function sunsetPhoto() {
   })
 }
 
+/**
+ * Stiker kaca depan kantor (foto owner 2026-10-23). Ditempel dari luar, jadi dari dalam terbaca TERBALIK -- digambar
+ * dicerminkan. Latar transparan supaya cahaya siang di belakangnya tetap terlihat.
+ */
+function mirroredSticker(draw: (ctx: CanvasRenderingContext2D) => void) {
+  const tex = canvasTexture(512, 640, (ctx) => {
+    ctx.translate(512, 0)
+    ctx.scale(-1, 1)
+    draw(ctx)
+  })
+  tex.premultiplyAlpha = false
+  return tex
+}
+
+function javaVolcanoSticker() {
+  return mirroredSticker((ctx) => {
+    ctx.strokeStyle = 'rgba(70,70,70,0.9)'
+    ctx.fillStyle = 'rgba(70,70,70,0.9)'
+    ctx.lineWidth = 10
+    ctx.beginPath()
+    ctx.moveTo(196, 220)
+    ctx.lineTo(256, 120)
+    ctx.lineTo(316, 220)
+    ctx.closePath()
+    ctx.stroke()
+    ctx.font = 'bold 70px Arial, sans-serif'
+    ctx.textAlign = 'center'
+    ctx.fillText('JAVA', 256, 310)
+    ctx.strokeRect(126, 330, 260, 90)
+    ctx.fillText('VOLCANO', 256, 400)
+    ctx.font = '28px Arial, sans-serif'
+    ctx.fillText('TOUR OPERATOR', 256, 455)
+  })
+}
+
+function amongSticker() {
+  return mirroredSticker((ctx) => {
+    ctx.fillStyle = '#d42a2a'
+    ctx.font = 'bold 84px Arial, sans-serif'
+    ctx.textAlign = 'center'
+    ctx.fillText('Among', 256, 170)
+    ctx.fillRect(126, 190, 260, 12)
+    ctx.beginPath()
+    ctx.moveTo(110, 520)
+    ctx.lineTo(210, 300)
+    ctx.lineTo(250, 360)
+    ctx.lineTo(300, 260)
+    ctx.lineTo(400, 520)
+    ctx.lineTo(330, 440)
+    ctx.lineTo(290, 500)
+    ctx.lineTo(240, 420)
+    ctx.lineTo(180, 500)
+    ctx.closePath()
+    ctx.fill()
+  })
+}
+
 function useTextures() {
   const tex = useMemo(
     () => ({
@@ -209,6 +266,8 @@ function useTextures() {
       indonesia: textPlate('INDONESIA', '#d9c8a5', '#5b3a22'),
       sunset: sunsetPhoto(),
       poster: textPlate('BROMO', '#111214', '#e8e8e8'),
+      stickerJava: javaVolcanoSticker(),
+      stickerAmong: amongSticker(),
     }),
     []
   )
@@ -546,6 +605,118 @@ function StandingFan() {
 
 /* ------------------------------------------------------------------ ruangan */
 
+/**
+ * Dinding depan (z = maxZ; foto kedua owner 2026-10-23): pintu kayu, jendela kaca dua panel berkerai dengan stiker
+ * "JAVA VOLCANO" dan "Among", dan deretan kaca kecil (boven) di atas keduanya; cahaya siang masuk dari luar. Bidang
+ * menghadap ke dalam (-z), jadi dari luar ruangan tidak tergambar dan tidak pernah menutupi kamera.
+ */
+const FRONT = { doorX: [-0.9, 0] as Vec2, windowX: [-3.6, -0.9] as Vec2, windowY: [0.9, 2.15] as Vec2, transomY: [2.22, 2.62] as Vec2 }
+
+function FrontWall({ stickerJava, stickerAmong }: { stickerJava: THREE.Texture; stickerAmong: THREE.Texture }) {
+  const { minX, maxX, maxZ, height: H } = ROOM
+  const z = maxZ
+  const [wx0, wx1] = FRONT.windowX
+  const [dx0, dx1] = FRONT.doorX
+  const [wy0, wy1] = FRONT.windowY
+  const [ty0, ty1] = FRONT.transomY
+  const wall = <meshStandardMaterial color={GREY_WALL} roughness={0.9} />
+  const frame = <meshStandardMaterial color="#2a2b2e" roughness={0.5} metalness={0.3} />
+  const daylight = <meshStandardMaterial color="#f4f8ff" emissive="#eef4ff" emissiveIntensity={1.25} />
+  /** Bidang dinding menghadap -z dari kotak [x0,x1]×[y0,y1]. */
+  const panel = (x0: number, x1: number, y0: number, y1: number, key: string) => (
+    <mesh key={key} position={[(x0 + x1) / 2, (y0 + y1) / 2, z]} rotation={[0, Math.PI, 0]} receiveShadow>
+      <planeGeometry args={[x1 - x0, y1 - y0]} />
+      {wall}
+    </mesh>
+  )
+  const bar = (x: number, y: number, w: number, h: number, key: string) => (
+    <mesh key={key} position={[x, y, z - 0.03]}>
+      <boxGeometry args={[w, h, 0.06]} />
+      {frame}
+    </mesh>
+  )
+  const panes = [
+    { x0: wx1 - (wx1 - wx0) / 2, x1: wx1, sticker: stickerJava },
+    { x0: wx0, x1: wx1 - (wx1 - wx0) / 2, sticker: stickerAmong },
+  ]
+  const transomCols = 5
+  const tw = (dx1 - wx0) / transomCols
+  return (
+    <group>
+      {/* Dinding di sekeliling bukaan */}
+      {panel(dx1, maxX, 0, H, 'kanan')}
+      {panel(minX, wx0, 0, H, 'kiri')}
+      {panel(wx0, dx1, ty1, H, 'atas')}
+      {panel(wx0, wx1, 0, wy0, 'bawah-jendela')}
+      {panel(wx0, dx1, wy1, ty0, 'ambang')}
+      {/* Cahaya siang di balik kaca (jendela + boven) */}
+      {[...panes.map((p, i) => ({ x0: p.x0, x1: p.x1, y0: wy0, y1: wy1, k: `j${i}` })), ...Array.from({ length: transomCols }, (_, i) => ({ x0: wx0 + i * tw, x1: wx0 + (i + 1) * tw, y0: ty0, y1: ty1, k: `b${i}` }))].map((g) => (
+        <mesh key={g.k} position={[(g.x0 + g.x1) / 2, (g.y0 + g.y1) / 2, z + 0.02]} rotation={[0, Math.PI, 0]}>
+          <planeGeometry args={[g.x1 - g.x0, g.y1 - g.y0]} />
+          {daylight}
+        </mesh>
+      ))}
+      {/* Stiker kaca (terbalik dari dalam) */}
+      {panes.map((p, i) => (
+        <mesh key={`s${i}`} position={[(p.x0 + p.x1) / 2, (wy0 + wy1) / 2, z + 0.005]} rotation={[0, Math.PI, 0]}>
+          <planeGeometry args={[(p.x1 - p.x0) * 0.82, (wy1 - wy0) * 0.9]} />
+          <meshBasicMaterial map={p.sticker} transparent depthWrite={false} />
+        </mesh>
+      ))}
+      {/* Kerai horizontal di jendela */}
+      {Array.from({ length: 18 }, (_, i) => (
+        <mesh key={`k${i}`} position={[(wx0 + wx1) / 2, wy0 + 0.04 + i * ((wy1 - wy0 - 0.08) / 17), z - 0.04]} rotation={[0.55, 0, 0]}>
+          <boxGeometry args={[wx1 - wx0 - 0.04, 0.035, 0.003]} />
+          <meshStandardMaterial color="#d9dcdf" transparent opacity={0.55} roughness={0.6} />
+        </mesh>
+      ))}
+      {/* Pintu kayu berpanel timbul + kusen kayu + pegangan kuningan */}
+      <mesh position={[(dx0 + dx1) / 2, DOOR_H / 2, z - 0.025]} castShadow>
+        <boxGeometry args={[dx1 - dx0 - 0.04, DOOR_H - 0.02, 0.04]} />
+        <meshStandardMaterial color="#6e4526" roughness={0.55} />
+      </mesh>
+      {[
+        [0.55, 0.8],
+        [1.5, 0.8],
+      ].flatMap(([cy, h]) =>
+        [-1, 1].map((side) => (
+          <mesh key={`p${cy}${side}`} position={[(dx0 + dx1) / 2 + side * 0.2, cy, z - 0.05]} castShadow>
+            <boxGeometry args={[0.3, h, 0.015]} />
+            <meshStandardMaterial color="#7d5130" roughness={0.5} />
+          </mesh>
+        ))
+      )}
+      {[dx0, dx1].map((x) => (
+        <mesh key={`kd${x}`} position={[x, DOOR_H / 2, z - 0.03]}>
+          <boxGeometry args={[0.06, DOOR_H + 0.04, 0.07]} />
+          <meshStandardMaterial color={TRIM} roughness={0.6} />
+        </mesh>
+      ))}
+      <mesh position={[(dx0 + dx1) / 2, DOOR_H + 0.04, z - 0.03]}>
+        <boxGeometry args={[dx1 - dx0 + 0.12, 0.08, 0.07]} />
+        <meshStandardMaterial color={TRIM} roughness={0.6} />
+      </mesh>
+      <mesh position={[dx0 + 0.12, 1.02, z - 0.07]}>
+        <boxGeometry args={[0.025, 0.24, 0.03]} />
+        <meshStandardMaterial color="#c9a24a" metalness={0.85} roughness={0.25} />
+      </mesh>
+      {/* Kusen aluminium gelap */}
+      {bar((wx0 + dx1) / 2, ty1, dx1 - wx0 + 0.06, 0.05, 'k-atas')}
+      {bar((wx0 + dx1) / 2, ty0 - 0.02, dx1 - wx0 + 0.06, 0.08, 'k-boven')}
+      {bar((wx0 + wx1) / 2, wy0, wx1 - wx0 + 0.06, 0.05, 'k-bawah')}
+      {[wx0, wx1, wx1 - (wx1 - wx0) / 2].map((x) => bar(x, (wy0 + ty1) / 2, 0.05, ty1 - wy0, `k${x}`))}
+      {bar(dx1, (DOOR_H + ty1) / 2, 0.05, ty1 - DOOR_H, 'k-boven-kanan')}
+      {Array.from({ length: transomCols - 1 }, (_, i) => bar(wx0 + (i + 1) * tw, (ty0 + ty1) / 2, 0.03, ty1 - ty0, `kb${i}`))}
+      {/* List kayu plafon di dinding ini */}
+      <mesh position={[(minX + maxX) / 2, H - 0.12, z - 0.06]}>
+        <boxGeometry args={[maxX - minX, 0.24, 0.12]} />
+        <meshStandardMaterial color={TRIM} roughness={0.6} />
+      </mesh>
+      <pointLight position={[(wx0 + wx1) / 2, 1.7, z - 0.8]} intensity={2.5} distance={5} decay={1.6} color="#eef4ff" />
+    </group>
+  )
+}
+
 const GREY_WALL = '#4b4f53'
 const BLACK_WALL = '#1a1c20'
 const TRIM = '#4a2c1d'
@@ -747,6 +918,7 @@ export function JvtoRoom() {
         <pointLight position={[0, 0, 0.5]} intensity={0.8} distance={2.5} color="#9cc0ff" />
       </group>
 
+      <FrontWall stickerJava={tex.stickerJava} stickerAmong={tex.stickerAmong} />
       <RedLocker />
       <Sofa />
       <CoffeeTable />
