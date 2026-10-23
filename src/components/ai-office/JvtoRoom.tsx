@@ -128,32 +128,38 @@ function rugPattern() {
   })
 }
 
-/** Layar TV: logo gunung JVTO (biru, puncak merah) + "Java Volcano". */
+/**
+ * Logo resmi Java Volcano Tour Operator (salinan `javavolcano-touroperator/public/assets/img/logo512.png`; desainnya sama
+ * dengan berkas yang dikirim owner, resolusi lebih tinggi). Latar PNG transparan -- diperiksa 2026-10-23: 0 piksel putih buram.
+ */
+export const JVTO_LOGO_URL = '/brand/jvto-logo.png'
+
+/**
+ * Layar TV di dinding hitam: logo resmi JVTO di atas latar terang, seperti TV di kantor (foto owner 2026-10-23). Latar
+ * digambar langsung; logonya digambar begitu berkas termuat (gagal muat = layar terang polos, tanpa galat).
+ */
 function jvtoLogo() {
-  return canvasTexture(640, 360, (ctx) => {
+  const paintBackground = (ctx: CanvasRenderingContext2D) => {
     const g = ctx.createLinearGradient(0, 0, 640, 360)
-    g.addColorStop(0, '#e3efff')
-    g.addColorStop(1, '#7aa7ea')
+    // Biru muda seperti layar TV di foto kantor -- bukan putih.
+    g.addColorStop(0, '#dce9fb')
+    g.addColorStop(1, '#a9c6ee')
     ctx.fillStyle = g
     ctx.fillRect(0, 0, 640, 360)
-    const tri = (x1: number, y1: number, x2: number, y2: number, x3: number, y3: number, color: string) => {
-      ctx.fillStyle = color
-      ctx.beginPath()
-      ctx.moveTo(x1, y1)
-      ctx.lineTo(x2, y2)
-      ctx.lineTo(x3, y3)
-      ctx.closePath()
-      ctx.fill()
-    }
-    tri(205, 250, 300, 85, 395, 250, '#1d4fa3')
-    tri(275, 250, 350, 120, 430, 250, '#2f6fd1')
-    tri(258, 250, 300, 175, 342, 250, '#ffffff')
-    tri(278, 250, 300, 212, 322, 250, '#e23b3b')
-    ctx.fillStyle = '#ffffff'
-    ctx.font = 'italic 600 34px Georgia, serif'
-    ctx.textAlign = 'center'
-    ctx.fillText('Java Volcano', 320, 300)
-  })
+  }
+  const tex = canvasTexture(640, 360, paintBackground)
+  const img = new Image()
+  img.onload = () => {
+    const canvas = tex.image as HTMLCanvasElement
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+    paintBackground(ctx)
+    const size = 330
+    ctx.drawImage(img, (640 - size) / 2, (360 - size) / 2, size, size)
+    tex.needsUpdate = true
+  }
+  img.src = JVTO_LOGO_URL
+  return tex
 }
 
 function textPlate(text: string, bg: string, fg: string) {

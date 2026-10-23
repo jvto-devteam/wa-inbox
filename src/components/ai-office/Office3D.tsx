@@ -334,6 +334,8 @@ function Person({ mode, label, look, seat, phase, seatYaw, isAdmin = false, anch
         </mesh>
         {/* Kepala */}
         <group ref={head} position={[0, 0.72, 0]}>
+          {/* Titik balon nama: menempel di kepala, jadi ikut saat duduk, berdiri, dan berjalan. */}
+          <group ref={anchorRef} position={[0, 0.22, 0]} />
           <mesh castShadow>
             <sphereGeometry args={[0.14, 28, 28]} />
             <meshStandardMaterial color={look.skin} roughness={0.55} />
@@ -416,7 +418,6 @@ function Person({ mode, label, look, seat, phase, seatYaw, isAdmin = false, anch
           <meshStandardMaterial color="#fde68a" emissive="#f59e0b" emissiveIntensity={0.5} />
         </mesh>
       </group>
-      <group ref={anchorRef} position={[0, isAdmin ? 1.75 : 2.0, 0]} />
     </group>
   )
 }
