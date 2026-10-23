@@ -175,6 +175,11 @@ export function AgentChatPanel({
               {m.proposal && (
                 <div className="rounded-lg border border-warning/50 bg-warning-subtle px-3 py-2 text-sm">
                   <p className="font-medium text-ink">Usulan: {m.proposal.summary}</p>
+                  {m.proposal.owner !== agent.key && (
+                    <p className="mt-0.5 text-xs text-ink-muted">
+                      {agent.name} meminta {m.proposal.ownerName} mengerjakannya.
+                    </p>
+                  )}
                   {m.proposalState === 'open' && (
                     <div className="mt-2 flex gap-2">
                       <Button size="sm" onClick={() => void run(m.id, m.proposal as AgentProposal)}>

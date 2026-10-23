@@ -38,15 +38,15 @@ describe('parseModelTurn', () => {
 })
 
 describe('buildAgentSystemPrompt', () => {
-  it('setiap asisten hanya mendapat alat dan aksi miliknya', () => {
-    const oka = buildAgentSystemPrompt('booking', ctx.now)
-    expect(oka).toContain('Samsul')
-    expect(oka).toContain('- kartu_terbuka')
-    expect(oka).toContain('- setujui_kartu')
-    expect(oka).not.toContain('- ringkas_ulang')
-    const tika = buildAgentSystemPrompt('topik', ctx.now)
-    expect(tika).toContain('- label_ulang')
-    expect(tika).not.toContain('- setujui_kartu')
+  it('semua asisten melihat semua alat & aksi, dengan pengerja tiap aksi', () => {
+    const samsul = buildAgentSystemPrompt('booking', ctx.now)
+    expect(samsul).toContain('Samsul')
+    expect(samsul).toContain('- ubah_booking')
+    expect(samsul).toMatch(/- ubah_booking .*\(kamu\)/)
+    const asep = buildAgentSystemPrompt('ringkasan', ctx.now)
+    expect(asep).toMatch(/- ubah_booking .*\(Samsul\)/)
+    expect(asep).toMatch(/- ringkas_ulang .*\(kamu\)/)
+    expect(asep).toContain('meminta rekan itu')
   })
 })
 
@@ -74,16 +74,23 @@ describe('runAgentChat', () => {
     db.conversation.findUnique.mockResolvedValue({ botEnabled: true, contact: { name: 'David', phone: null } } as never)
     const llm = vi.fn().mockResolvedValue('{"jawab":"Siap, bot dimatikan setelah kamu konfirmasi.","usul":{"aksi":"matikan_bot","args":{"conversationId":"c1"}}}')
     const res = await runAgentChat('bot', ask('Matikan bot di chat David'), ctx, { llm })
-    expect(res.proposal).toEqual({ action: 'matikan_bot', args: { conversationId: 'c1' }, summary: 'Matikan bot di chat David' })
+    expect(res.proposal).toEqual({ action: 'matikan_bot', args: { conversationId: 'c1' }, summary: 'Matikan bot di chat David', owner: 'bot', ownerName: 'Tarjo' })
     expect(db.conversation.update).not.toHaveBeenCalled()
     expect(sendMessage).not.toHaveBeenCalled()
   })
 
-  it('aksi milik asisten lain ditolak: tidak ada usulan', async () => {
-    const llm = vi.fn().mockResolvedValue('{"jawab":"Oke","usul":{"aksi":"setujui_kartu","args":{"kartuId":"k1"}}}')
+  it('perintah untuk rekan: usulan tetap dibuat, pengerjanya pemilik aksi', async () => {
+    db.bookingAction.findUnique.mockResolvedValue({ type: 'CHANGE', state: 'OPEN', field: 'pickup_time', proposedValue: '11:00', conversation: { contact: { name: 'David', phone: null } } } as never)
+    const llm = vi.fn().mockResolvedValue('{"jawab":"Aku minta Samsul menyetujuinya.","usul":{"aksi":"setujui_kartu","args":{"kartuId":"k1"}}}')
     const res = await runAgentChat('ringkasan', ask('Setujui kartu k1'), ctx, { llm })
+    expect(res.proposal).toMatchObject({ action: 'setujui_kartu', owner: 'booking', ownerName: 'Samsul' })
+  })
+
+  it('aksi yang tidak ada di kantor ditolak', async () => {
+    const llm = vi.fn().mockResolvedValue('{"jawab":"Oke","usul":{"aksi":"hapus_booking","args":{}}}')
+    const res = await runAgentChat('ringkasan', ask('Hapus booking'), ctx, { llm })
     expect(res.proposal).toBeNull()
-    expect(res.reply).toContain('di luar tindakan')
+    expect(res.reply).toContain('belum bisa dikerjakan')
   })
 
   it('alat yang tidak ada dilaporkan ke model, bukan dijalankan', async () => {

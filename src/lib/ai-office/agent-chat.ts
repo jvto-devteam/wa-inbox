@@ -1,7 +1,7 @@
 import { prisma } from '@/lib/db'
 import { callLLM } from '@/lib/bot/llm'
 import { reportAiActivity, type AiAgentKey } from '@/lib/ai-office/activity'
-import { AGENT_PROFILES, findAction, findTool, type ToolCtx } from '@/lib/ai-office/agent-tools'
+import { AGENT_PROFILES, ALL_ACTIONS, ALL_TOOLS, findAction, findTool, type ToolCtx } from '@/lib/ai-office/agent-tools'
 import type { AgentChatMessage, AgentChatResponse, AgentProposal } from '@/lib/ai-office/chat-types'
 
 /**
@@ -25,7 +25,8 @@ export function buildAgentSystemPrompt(agent: AiAgentKey, now: Date): string {
   return [
     `Kamu adalah ${p.name}, ${p.role} di wa-inbox milik Java Volcano Tour Operator (JVTO). Kamu sedang mengobrol dengan operator internal JVTO, bukan tamu.`,
     `Bidangmu: ${p.scope}`,
-    `Rekan satu kantor: ${TEAMMATES}. Pertanyaan di luar bidangmu: katakan singkat dan sebutkan rekan yang tepat.`,
+    `Rekan satu kantor: ${TEAMMATES}.`,
+    'Kamu boleh membaca semua data dan menerima perintah apa pun di daftar aksi. Setiap aksi punya PENGERJA; kalau pengerjanya rekanmu, tetap usulkan aksinya dan katakan bahwa kamu akan meminta rekan itu mengerjakannya (mis. "Aku minta Samsul mengubahnya").',
     `Sekarang: ${today} WIB.`,
     'Aturan:',
     '- Bahasa Indonesia, singkat, ramah, seperti rekan kerja. Boleh daftar pendek.',
@@ -38,9 +39,9 @@ export function buildAgentSystemPrompt(agent: AiAgentKey, now: Date): string {
     '{"jawab":"<teks>"}  -- jawaban akhir',
     '{"jawab":"<teks>","usul":{"aksi":"<nama aksi>","args":{...}}}  -- jawaban + usulan tindakan',
     'Alat baca:',
-    ...p.tools.map((t) => `- ${t.name} ${t.argsHint}: ${t.description}`),
-    p.actions.length ? 'Aksi yang boleh diusulkan:' : 'Tidak ada aksi yang boleh kamu usulkan.',
-    ...p.actions.map((a) => `- ${a.name} ${a.argsHint}: ${a.description}`),
+    ...ALL_TOOLS.map((t) => `- ${t.name} ${t.argsHint}: ${t.description}`),
+    'Aksi yang boleh diusulkan (pengerja di kurung):',
+    ...ALL_ACTIONS.map((a) => `- ${a.name} ${a.argsHint} (${a.owner === agent ? 'kamu' : AGENT_PROFILES[a.owner].name}): ${a.description}`),
   ].join('\n')
 }
 
@@ -101,7 +102,7 @@ export async function runAgentChat(
 
       if (turn.kind === 'tool') {
         if (step === MAX_TOOL_STEPS) break
-        const tool = findTool(agent, turn.name)
+        const tool = findTool(turn.name)
         if (!tool) {
           results.push(`[HASIL ALAT ${turn.name}] {"error":"alat tidak ada; pakai salah satu alat di daftar"}`)
           continue
@@ -126,14 +127,14 @@ export async function runAgentChat(
       let reply = turn.reply || 'Maaf, aku belum bisa menjawab itu.'
       let proposal: AgentProposal | null = null
       if (turn.proposal) {
-        const action = findAction(agent, turn.proposal.action)
+        const action = findAction(turn.proposal.action)
         const parsed = action?.args.safeParse(turn.proposal.args)
         if (action && parsed?.success) {
           const check = await action.describe(parsed.data)
-          if (check.ok) proposal = { action: action.name, args: parsed.data, summary: check.summary }
+          if (check.ok) proposal = { action: action.name, args: parsed.data, summary: check.summary, owner: action.owner, ownerName: AGENT_PROFILES[action.owner].name }
           else reply = `${reply}\n\n(Usulan tidak bisa dibuat: ${check.error}.)`
         } else {
-          reply = `${reply}\n\n(Itu di luar tindakan yang boleh aku lakukan.)`
+          reply = `${reply}\n\n(Itu belum bisa dikerjakan siapa pun di kantor ini.)`
         }
       }
       reportAiActivity(agent, 'selesai', proposal ? 'Usulan tindakan untuk operator' : 'Jawaban untuk operator siap', '')

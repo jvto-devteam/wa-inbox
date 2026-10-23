@@ -402,18 +402,21 @@ terbang; mengantar hasil = berjalan membawa kertas ke ruang kaca admin (`deliver
 booking). `ai.activity` hanya membawa label pendek -- tidak pernah isi chat -- dan seperti tracer pipeline, tidak pernah
 melempar atau mengubah pekerjaan aslinya. Logika status murni ada di `src/lib/ai-office/state.ts`; kartu "Terakhir/hari
 ini" dari `GET /api/ai-office`.
-**Obrolan dengan asisten** (owner 2026-10-23): klik karakter/balonnya (atau "Ajak ngobrol" di kartu) membuka panel kanan
-(`AgentChatPanel`; di HP lembar bawah). `POST /api/ai-office/chat` (`agent-chat.ts`, `runAgentChat`) memakai protokol JSON
-`{"alat"}` / `{"jawab"}` / `{"jawab","usul"}`, maks. `MAX_TOOL_STEPS` alat per pertanyaan, model `Settings.ollamaModel`. Kemampuan
-per asisten ada di SATU tempat, `agent-tools.ts` (`AGENT_PROFILES`): alat BACA dijalankan server dan hanya mengembalikan
-ringkasan (nama, 4 digit akhir nomor, cuplikan ≤ 140 karakter -- tidak pernah nomor penuh/keuangan); TINDAKAN hanya diusulkan
-LLM dan baru dijalankan `POST /api/ai-office/action` sesudah operator menekan "Jalankan" (nama aksi harus milik asisten itu, args
-divalidasi ulang, sasaran diperiksa ulang lewat `describe`). Cahyo: statistik/label topik, `label_ulang`. Tarjo: statistik &
-keputusan bot, `coba_jawab` (simulator dry-run, khusus admin), `matikan_bot`/`nyalakan_bot` per chat. Samsul: kartu booking terbuka/
-hari ini, data booking chat (`bookingContextForReview`), `setujui_kartu` (`executeBookingAction`), `tolak_kartu`/
-`selesaikan_kartu` (`closeBookingAction` di `booking-actions/close.ts`, dipakai juga `PATCH /api/booking-actions/[id]`). Asep:
-antrean tindak lanjut, ringkasan chat, `ringkas_ulang` (`refreshChatReview`). Kedua route terbuka untuk semua akun yang login
-(setiap aksi memakai fungsi yang sama dengan tombolnya di Inbox, yang juga terbuka). Isi obrolan ikut ke LLM cloud yang sama.
+**Obrolan dengan asisten** (owner 2026-10-23): klik karakter/balonnya (atau "Ajak ngobrol" di kartu) membuka kolom kanan
+setinggi layar yang menempel (`AgentChatPanel`; di HP lembar bawah). `POST /api/ai-office/chat` (`agent-chat.ts`, `runAgentChat`)
+memakai protokol JSON `{"alat"}` / `{"jawab"}` / `{"jawab","usul"}`, maks. `MAX_TOOL_STEPS` alat per pertanyaan, model
+`Settings.ollamaModel`. Kemampuan ada di SATU tempat, `agent-tools.ts`: SEMUA asisten membaca semua alat (`ALL_TOOLS`) dan
+menerima perintah apa pun (`ALL_ACTIONS`), tetapi setiap aksi punya `owner` -- yang MENGERJAKAN selalu pemiliknya; asisten yang
+diajak mengobrol bilang ia meminta rekannya, dan `POST /api/ai-office/action` menyiarkan peminta "Meminta X" + pemilik bekerja lalu
+mengantar ke admin (owner 2026-10-23: "beda agent tetap bisa disuruh, yang kerja tetap agent aslinya"). Alat BACA hanya
+mengembalikan ringkasan (nama, 4 digit akhir nomor, cuplikan ≤ 140 karakter -- tidak pernah nomor penuh/keuangan); TINDAKAN
+hanya diusulkan LLM dan baru dijalankan sesudah operator menekan "Jalankan" (args divalidasi ulang, sasaran diperiksa ulang lewat
+`describe`). Pemilik aksi: Cahyo `label_ulang`; Tarjo `matikan_bot`/`nyalakan_bot` (plus alat `coba_jawab` = simulator dry-run,
+khusus admin); Samsul `ubah_booking` (jemput/antar titik-detail-jam + kaos; membuat kartu CHANGE ber-`accountId` lalu
+`executeBookingAction` -- jalur yang sama dengan Setujui, tamu/vendor dikabari; HEAVY ditolak), `setujui_kartu`, `tolak_kartu`/
+`selesaikan_kartu` (`closeBookingAction` di `booking-actions/close.ts`, dipakai juga `PATCH /api/booking-actions/[id]`); Asep
+`ringkas_ulang` (`refreshChatReview`). Kedua route terbuka untuk semua akun yang login (setiap aksi memakai fungsi yang sama
+dengan tombolnya di Inbox, yang juga terbuka). Isi obrolan ikut ke LLM cloud yang sama.
 Balon nama dirender sebagai DOM di atas kanvas (diproyeksikan per frame), bukan drei `Html`.
 
 ### Simulator & test

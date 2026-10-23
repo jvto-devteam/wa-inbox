@@ -91,7 +91,7 @@ describe('AiOffice', () => {
     const panel = screen.getByRole('region', { name: 'Obrolan dengan Samsul' })
 
     fetchMock.mockResolvedValueOnce(
-      new Response(JSON.stringify({ reply: 'Kartu jam jemput David masih terbuka.', proposal: { action: 'setujui_kartu', args: { kartuId: 'k1' }, summary: 'Setujui kartu pickup_time → "05:00" (David)' }, used: ['kartu booking terbuka'] }), { status: 200 })
+      new Response(JSON.stringify({ reply: 'Kartu jam jemput David masih terbuka.', proposal: { action: 'setujui_kartu', args: { kartuId: 'k1' }, summary: 'Setujui kartu pickup_time → "05:00" (David)', owner: 'booking', ownerName: 'Samsul' }, used: ['kartu booking terbuka'] }), { status: 200 })
     )
     fireEvent.change(within(panel).getByLabelText('Pesan untuk Samsul'), { target: { value: 'Setujui kartu jemput David' } })
     fireEvent.click(within(panel).getByRole('button', { name: 'Kirim' }))

@@ -13,6 +13,17 @@ import { RESOLVER_TOPICS } from '@/lib/bot/module-resolver'
 import { runSimulation } from '@/lib/bot-control/simulator'
 import { executeBookingAction } from '@/lib/booking-actions/execute'
 import { closeBookingAction } from '@/lib/booking-actions/close'
+import { recordEvent } from '@/lib/booking-actions/history'
+import { fieldLabel } from '@/lib/booking-actions/view'
+import {
+  POINT_VALUES,
+  TSHIRT_AMBIGUOUS_ERROR,
+  changeGroup,
+  normalizeFieldValue,
+  readBookingField,
+  type ChangeGroup,
+  type FieldKey,
+} from '@/lib/booking-actions/fields'
 import { broadcast } from '@/lib/realtime'
 
 /**
@@ -42,6 +53,10 @@ type ReadTool = {
 
 export type AgentAction = {
   name: string
+  /** Asisten yang MENGERJAKAN aksi ini, siapa pun yang diajak mengobrol. */
+  owner: AiAgentKey
+  /** Label pendek untuk balon status pemiliknya saat mengerjakan. */
+  activity: string
   description: string
   argsHint: string
   args: z.ZodType<Record<string, unknown>>
@@ -50,7 +65,8 @@ export type AgentAction = {
   run: (args: Record<string, unknown>, ctx: ActionCtx) => Promise<{ result: string; conversationId?: string | null }>
 }
 
-export type AgentProfile = { name: string; role: string; scope: string; tools: ReadTool[]; actions: AgentAction[] }
+type ActionDef = Omit<AgentAction, 'owner'>
+export type AgentProfile = { name: string; role: string; scope: string }
 
 const SNIPPET = 140
 const LIST_LIMIT = 15
@@ -133,7 +149,8 @@ async function describeConversations(ids: string[]) {
     chat: rows
       .sort((a, b) => b.lastMessageAt.getTime() - a.lastMessageAt.getTime())
       .map((c) => {
-        const booking = c.bookingData as { booking_code?: unknown; code?: unknown } | null
+        // Kode tampilan (mis. "JVTO-3752") = bookingData.id, bukan booking_id numerik (store.ts bookingCodeOf).
+        const booking = c.bookingData as { id?: unknown } | null
         return {
           id: c.id,
           nama: contactName(c.contact),
@@ -141,14 +158,13 @@ async function describeConversations(ids: string[]) {
           aktifTerakhir: wibTime(c.lastMessageAt),
           bot: c.botEnabled ? 'aktif' : 'mati',
           punyaBooking: Boolean(c.bookingData),
-          kodeBooking: typeof booking?.booking_code === 'string' ? booking.booking_code : typeof booking?.code === 'string' ? booking.code : null,
+          kodeBooking: typeof booking?.id === 'string' ? booking.id : null,
           pesanTerakhir: c.messages[0] ? `${c.messages[0].direction === 'INBOUND' ? 'Tamu' : 'Kita'}: ${snippet(c.messages[0].content)}` : null,
         }
       }),
   }
 }
 
-const COMMON_TOOLS = [searchConversations, recentConversations]
 
 /* ------------------------------------------------------------------ Cahyo: label topik */
 
@@ -215,8 +231,9 @@ const conversationTopics: ReadTool = {
   },
 }
 
-const relabel: AgentAction = {
+const relabel: ActionDef = {
   name: 'label_ulang',
+  activity: 'Memberi label ulang topik chat',
   description: 'Beri label topik ulang untuk pesan tamu terakhir di satu chat.',
   argsHint: '{"conversationId":"..."}',
   args: conversationArg,
@@ -310,9 +327,10 @@ const tryReply: ReadTool = {
   },
 }
 
-function botToggle(enable: boolean): AgentAction {
+function botToggle(enable: boolean): ActionDef {
   return {
     name: enable ? 'nyalakan_bot' : 'matikan_bot',
+    activity: enable ? 'Menyalakan bot di satu chat' : 'Mematikan bot di satu chat',
     description: enable ? 'Nyalakan bot untuk satu chat.' : 'Matikan bot untuk satu chat (admin ambil alih).',
     argsHint: '{"conversationId":"..."}',
     args: conversationArg,
@@ -407,8 +425,9 @@ async function describeCard(args: Record<string, unknown>, types: readonly strin
 
 const cardArg = obj({ kartuId: z.string().min(1).max(64), alasan: z.string().max(300).optional() })
 
-const approveCard: AgentAction = {
+const approveCard: ActionDef = {
   name: 'setujui_kartu',
+  activity: 'Menulis perubahan ke backoffice',
   description: 'Setujui kartu CHANGE: tulis nilainya ke backoffice (sama dengan tombol Setujui di Inbox).',
   argsHint: '{"kartuId":"..."}',
   args: cardArg,
@@ -421,9 +440,10 @@ const approveCard: AgentAction = {
   },
 }
 
-function closeCard(name: string, op: 'reject' | 'done', types: readonly string[], verb: string, description: string): AgentAction {
+function closeCard(name: string, op: 'reject' | 'done', types: readonly string[], verb: string, description: string): ActionDef {
   return {
     name,
+    activity: `${verb} kartu booking`,
     description,
     argsHint: '{"kartuId":"...","alasan"?:"..."}',
     args: cardArg,
@@ -434,6 +454,87 @@ function closeCard(name: string, op: 'reject' | 'done', types: readonly string[]
       return { result: `Kartu ditutup (${res.body.state}).`, conversationId: res.conversationId }
     },
   }
+}
+
+/** Field yang boleh diubah operator lewat obrolan: jalur tulis legacy ada dan bukan HEAVY (tanggal/pax/hotel = admin). */
+const CHANGEABLE_FIELDS = ['pickup_point', 'pickup_detail', 'pickup_time', 'drop_point', 'drop_detail', 'drop_time', 'tshirt_sizes'] as const
+
+const bookingIdOf = (b: BookingData): string | null => {
+  const id = (b as Record<string, unknown>).booking_id
+  return typeof id === 'string' || typeof id === 'number' ? String(id) : null
+}
+const bookingCodeOf = (b: BookingData): string | null => {
+  const id = (b as Record<string, unknown>).id
+  return typeof id === 'string' && id.trim() ? id.trim() : null
+}
+
+type ChangePlan = { ok: true; conversationId: string; booking: BookingData; field: FieldKey; value: string; tier: ChangeGroup; summary: string } | { ok: false; error: string }
+
+async function planChange(args: Record<string, unknown>): Promise<ChangePlan> {
+  const field = String(args.field) as FieldKey
+  const conv = await prisma.conversation.findUnique({ where: { id: idOf(args) }, select: { id: true, bookingData: true, contact: { select: { name: true, phone: true } } } })
+  if (!conv) return { ok: false, error: 'Chat tidak ditemukan' }
+  if (!conv.bookingData) return { ok: false, error: 'Chat ini tidak tertaut ke booking' }
+  const booking = conv.bookingData as BookingData
+  const value = normalizeFieldValue(field, String(args.nilai))
+  if (!value) {
+    if (field === 'tshirt_sizes') return { ok: false, error: TSHIRT_AMBIGUOUS_ERROR }
+    if (field === 'pickup_point' || field === 'drop_point') return { ok: false, error: `Titik harus salah satu dari: ${POINT_VALUES.join(', ')}` }
+    return { ok: false, error: `"${String(args.nilai)}" tidak terbaca sebagai ${fieldLabel(field)}` }
+  }
+  const tier = changeGroup(field, value, booking)
+  if (tier === 'HEAVY') return { ok: false, error: 'Pindah Surabaya ↔ Bali harus diubah admin di backoffice' }
+  const current = readBookingField(booking, field)
+  if (current === value) return { ok: false, error: `${fieldLabel(field)} sudah ${value}` }
+  const code = bookingCodeOf(booking) ?? 'booking'
+  const summary = `Ubah ${fieldLabel(field)} ${code} (${contactName(conv.contact)}): ${current ?? 'kosong'} → ${value}${tier === 'BALI' ? ' · vendor Bali dikabari' : ''}${field === 'tshirt_sizes' ? ' · vendor kaos dikabari' : ''} · tamu dikabari`
+  return { ok: true, conversationId: conv.id, booking, field, value, tier, summary }
+}
+
+const changeBooking: ActionDef = {
+  name: 'ubah_booking',
+  activity: 'Mengubah data booking',
+  description: `Ubah data booking satu chat langsung ke backoffice (jalur yang sama dengan tombol Setujui; tamu dikabari). field: ${CHANGEABLE_FIELDS.join(', ')}. Jam "HH:MM". Titik: ${POINT_VALUES.join(', ')} (nomor flight/kereta = *_detail). Kaos: "XL x 2, M x 1".`,
+  argsHint: '{"conversationId":"...","field":"pickup_time","nilai":"11:00","detail"?:"untuk ganti titik"}',
+  args: obj({ conversationId: z.string().min(1).max(64), field: z.enum(CHANGEABLE_FIELDS), nilai: z.string().trim().min(1).max(300), detail: z.string().trim().max(300).optional() }),
+  describe: async (args) => {
+    const plan = await planChange(args)
+    return plan.ok ? { ok: true, summary: plan.summary } : plan
+  },
+  run: async (args, { accountId, now }) => {
+    const plan = await planChange(args)
+    if (!plan.ok) return { result: `Tidak bisa: ${plan.error}` }
+    const { conversationId, booking, field, value, tier } = plan
+    const bookingId = bookingIdOf(booking)
+    // Kartu OPEN dengan nilai yang sama dipakai ulang; selain itu kartu baru, supaya riwayat & Batalkan tetap jalan.
+    const existing = await prisma.bookingAction.findFirst({
+      where: { conversationId, type: 'CHANGE', field, state: 'OPEN', proposedValue: { equals: value } },
+      select: { id: true },
+    })
+    const actionId =
+      existing?.id ??
+      (await prisma.$transaction(async (tx) => {
+        const row = await tx.bookingAction.create({
+          data: { conversationId, bookingId, type: 'CHANGE', field, tier, proposedValue: value, state: 'OPEN', sourceMessageId: null },
+          select: { id: true },
+        })
+        await recordEvent(tx, {
+          conversationId,
+          bookingId,
+          actionId: row.id,
+          event: 'CREATED',
+          actor: 'ACCOUNT',
+          accountId,
+          newValue: { type: 'CHANGE', field, value },
+          reason: 'Perintah operator lewat Kantor AI',
+        })
+        return row.id
+      }))
+    broadcast({ type: 'booking-actions.changed', conversationId })
+    const res = await executeBookingAction({ actionId, accountId, detail: typeof args.detail === 'string' ? args.detail : undefined, now })
+    if (res.status !== 200) return { result: `Kartu dibuat tapi belum tertulis: ${res.body.error}`, conversationId }
+    return { result: `Tertulis ke backoffice: ${fieldLabel(field)} → ${value}.`, conversationId }
+  },
 }
 
 /* ------------------------------------------------------------------ Asep: ringkasan & antrean */
@@ -486,8 +587,9 @@ const conversationSummary: ReadTool = {
   },
 }
 
-const resummarize: AgentAction = {
+const resummarize: ActionDef = {
   name: 'ringkas_ulang',
+  activity: 'Meringkas ulang chat',
   description: 'Buat ulang ringkasan & poin penting satu chat sekarang (sama dengan tombol "Perbarui sekarang").',
   argsHint: '{"conversationId":"..."}',
   args: conversationArg,
@@ -512,39 +614,59 @@ export const AGENT_PROFILES: Record<AiAgentKey, AgentProfile> = {
     name: 'Cahyo',
     role: 'pemberi label topik pesan tamu',
     scope: 'topik pesan tamu (harga, pembayaran, hotel, pembatalan, dsb.): statistik, chat per topik, label satu chat, label ulang.',
-    tools: [...COMMON_TOOLS, topicStats, chatsByTopic, conversationTopics],
-    actions: [relabel],
   },
   bot: {
     name: 'Tarjo',
     role: 'CS bot yang membalas tamu',
     scope: 'balasan bot: statistik hari ini, keputusan & handoff terbaru, simulasi jawaban tanpa kirim, nyalakan/matikan bot per chat.',
-    tools: [...COMMON_TOOLS, botStats, botDecisions, tryReply],
-    actions: [botToggle(false), botToggle(true)],
   },
   booking: {
     name: 'Samsul',
     role: 'ops booking yang mengubah data booking dari chat',
-    scope: 'kartu aksi booking (terbuka, hari ini), data booking satu chat, setujui/tolak/selesaikan kartu.',
-    tools: [...COMMON_TOOLS, openCards, bookingActivityToday, bookingOfConversation],
-    actions: [
-      approveCard,
-      closeCard('tolak_kartu', 'reject', ['CHANGE', 'DATA_REQUEST'], 'Tolak', 'Tolak kartu CHANGE/DATA_REQUEST (sama dengan tombol Tolak).'),
-      closeCard('selesaikan_kartu', 'done', ['CHANGE', 'TASK'], 'Tandai selesai', 'Tandai kartu TASK/CHANGE sudah dikerjakan manual.'),
-    ],
+    scope: 'data booking: ubah jemput/antar/jam/detail/kaos langsung ke backoffice, kartu aksi booking (terbuka, hari ini), setujui/tolak/selesaikan kartu.',
   },
   ringkasan: {
     name: 'Asep',
     role: 'analis ringkasan chat & antrean tindak lanjut',
     scope: 'ringkasan & poin penting satu chat, antrean belum dibalas / follow up / janji tim, ringkas ulang chat.',
-    tools: [...COMMON_TOOLS, followUpQueue, conversationSummary],
-    actions: [resummarize],
   },
 }
 
-export function findTool(agent: AiAgentKey, name: string): ReadTool | undefined {
-  return AGENT_PROFILES[agent].tools.find((t) => t.name === name)
+/**
+ * Semua asisten boleh MEMBACA semua data dan MENERIMA perintah apa pun (owner 2026-10-23: "kalau beda agent tetap bisa
+ * chat dan nyuruh"); yang MENGERJAKAN tetap pemilik aksinya (`owner`), dan asisten yang diajak mengobrol memberi tahu
+ * bahwa ia meminta rekannya. Di kantor 3D, pemilik aksilah yang terlihat bekerja.
+ */
+export const ALL_TOOLS: ReadTool[] = [
+  searchConversations,
+  recentConversations,
+  topicStats,
+  chatsByTopic,
+  conversationTopics,
+  botStats,
+  botDecisions,
+  tryReply,
+  openCards,
+  bookingActivityToday,
+  bookingOfConversation,
+  followUpQueue,
+  conversationSummary,
+]
+
+export const ALL_ACTIONS: AgentAction[] = [
+  { ...relabel, owner: 'topik' },
+  { ...botToggle(false), owner: 'bot' },
+  { ...botToggle(true), owner: 'bot' },
+  { ...changeBooking, owner: 'booking' },
+  { ...approveCard, owner: 'booking' },
+  { ...closeCard('tolak_kartu', 'reject', ['CHANGE', 'DATA_REQUEST'], 'Tolak', 'Tolak kartu CHANGE/DATA_REQUEST (sama dengan tombol Tolak).'), owner: 'booking' },
+  { ...closeCard('selesaikan_kartu', 'done', ['CHANGE', 'TASK'], 'Tandai selesai', 'Tandai kartu TASK/CHANGE sudah dikerjakan manual.'), owner: 'booking' },
+  { ...resummarize, owner: 'ringkasan' },
+]
+
+export function findTool(name: string): ReadTool | undefined {
+  return ALL_TOOLS.find((t) => t.name === name)
 }
-export function findAction(agent: AiAgentKey, name: string): AgentAction | undefined {
-  return AGENT_PROFILES[agent].actions.find((a) => a.name === name)
+export function findAction(name: string): AgentAction | undefined {
+  return ALL_ACTIONS.find((a) => a.name === name)
 }
