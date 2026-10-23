@@ -41,6 +41,20 @@ const WALK_SPEED = 3 // meter per detik
 const GIVE_S = 1.2
 const STEP_RATE = 10
 
+/**
+ * Ukuran tubuh & kursi (meter). Pinggul ada di titik duduk (0, 0) dan paha mengarah ke depan (-z), jadi dudukan kursi
+ * harus tepat di bawah pinggul dan sandarannya di belakang punggung (badan berjari-jari 0,17). Kaki: paha 0,42 + betis
+ * sampai telapak 0,425 di bawah lutut -- tinggi pinggul duduk = panjang betis supaya telapak menapak lantai.
+ */
+export const HIP_OFFSET = 0.02
+export const THIGH_RADIUS = 0.07
+export const SHIN_TO_SOLE = 0.425
+export const SEATED_BODY_Y = SHIN_TO_SOLE - HIP_OFFSET
+export const SEAT_TOP = SEATED_BODY_Y + HIP_OFFSET - THIGH_RADIUS
+export const STANDING_BODY_Y = 0.42 + SHIN_TO_SOLE - HIP_OFFSET
+/** Pusat dudukan sedikit di belakang pinggul; sandaran (z +0.22 dari pusat) jatuh tepat di belakang punggung. */
+export const CHAIR_Z = 0.05
+
 const MODE_COLOR: Record<AgentMode, string> = { idle: '#94a3b8', working: '#3b82f6', done: '#22c55e', handoff: '#f59e0b', error: '#ef4444' }
 
 /* ------------------------------------------------------------------ perabot */
@@ -102,15 +116,15 @@ function Monitor({ accent, mode }: { accent: string; mode: AgentMode | 'admin' }
 
 function Chair({ color }: { color: string }) {
   return (
-    <group position={[0, 0, 0.78]}>
-      <RoundedBox args={[0.48, 0.07, 0.46]} radius={0.03} position={[0, 0.46, 0]} castShadow>
+    <group position={[0, 0, CHAIR_Z]}>
+      <RoundedBox args={[0.48, 0.06, 0.46]} radius={0.025} position={[0, SEAT_TOP - 0.03, 0]} castShadow>
         <meshStandardMaterial color={color} roughness={0.8} />
       </RoundedBox>
-      <RoundedBox args={[0.46, 0.58, 0.06]} radius={0.03} position={[0, 0.8, 0.22]} castShadow>
+      <RoundedBox args={[0.46, 0.58, 0.06]} radius={0.03} position={[0, SEAT_TOP + 0.3, 0.22]} castShadow>
         <meshStandardMaterial color={color} roughness={0.8} />
       </RoundedBox>
-      <mesh position={[0, 0.22, 0]}>
-        <cylinderGeometry args={[0.03, 0.03, 0.44, 10]} />
+      <mesh position={[0, SEAT_TOP / 2, 0]}>
+        <cylinderGeometry args={[0.03, 0.03, SEAT_TOP - 0.06, 10]} />
         <meshStandardMaterial color="#9ca3af" metalness={0.6} roughness={0.3} />
       </mesh>
       <mesh position={[0, 0.03, 0]} rotation={[-Math.PI / 2, 0, 0]}>
@@ -136,11 +150,11 @@ function Workstation({ accent, mode }: { accent: string; mode: AgentMode | 'admi
           </mesh>
         ))}
         <Monitor accent={accent} mode={mode} />
-        <mesh position={[0, 0.8, 0.1]} castShadow>
+        <mesh position={[0, 0.8, 0.25]} castShadow>
           <boxGeometry args={[0.48, 0.02, 0.15]} />
           <meshStandardMaterial color="#2f343b" roughness={0.6} />
         </mesh>
-        <mesh position={[0.36, 0.8, 0.12]} castShadow>
+        <mesh position={[0.36, 0.8, 0.27]} castShadow>
           <boxGeometry args={[0.07, 0.02, 0.11]} />
           <meshStandardMaterial color="#2f343b" />
         </mesh>
@@ -440,7 +454,7 @@ function Person({ mode, label, look, seat, phase, isAdmin = false, world = true,
     // --- kaki: duduk (paha ke depan, betis ke bawah), berdiri, atau melangkah
     const seated = !walking && !giving
     const stride = Math.sin(tt * STEP_RATE)
-    r.body.position.y = seated ? 0.49 : 0.84 + (walking ? Math.abs(stride) * 0.035 : 0)
+    r.body.position.y = seated ? SEATED_BODY_Y : STANDING_BODY_Y + (walking ? Math.abs(stride) * 0.035 : 0)
     if (seated) {
       r.lHip.rotation.x = r.rHip.rotation.x = Math.PI / 2
       r.lKnee.rotation.x = r.rKnee.rotation.x = -Math.PI / 2
@@ -585,7 +599,7 @@ function Person({ mode, label, look, seat, phase, isAdmin = false, world = true,
           <meshStandardMaterial ref={badgeMat} color="#3b82f6" emissive="#3b82f6" emissiveIntensity={0.8} />
         </mesh>
       </group>
-      <group ref={body} position={[0, 0.49, 0]}>
+      <group ref={body} position={[0, SEATED_BODY_Y, 0]}>
         {/* Badan + kerah */}
         <mesh position={[0, 0.32, 0]} castShadow>
           <capsuleGeometry args={[0.17, 0.3, 6, 16]} />

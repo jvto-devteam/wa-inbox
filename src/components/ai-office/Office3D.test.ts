@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { deliveryPath, pathLength, pointAt } from './Office3D'
+import { CHAIR_Z, HIP_OFFSET, SEAT_TOP, SEATED_BODY_Y, SHIN_TO_SOLE, STANDING_BODY_Y, THIGH_RADIUS, deliveryPath, pathLength, pointAt } from './Office3D'
 
 describe('rute mengantar hasil ke admin', () => {
   it('mundur dari kursi, lewat lorong, masuk pintu ruang kaca, berhenti di depan meja admin', () => {
@@ -22,5 +22,20 @@ describe('rute mengantar hasil ke admin', () => {
     expect(pointAt(p, 3).pos).toEqual([1, 2])
     expect(pointAt(p, 3).dir).toEqual([1, 0])
     expect(pointAt(p, 99).pos).toEqual([3, 2])
+  })
+})
+
+describe('posisi duduk', () => {
+  it('paha bertumpu di dudukan, telapak menapak lantai, dudukan di bawah pinggul', () => {
+    const hip = SEATED_BODY_Y + HIP_OFFSET
+    expect(hip - THIGH_RADIUS).toBeCloseTo(SEAT_TOP, 6)
+    expect(hip - SHIN_TO_SOLE).toBeCloseTo(0, 6)
+    // Dudukan (lebar 0,46) memuat pinggul di z 0; sandaran (z +0.22) di belakang punggung (jari-jari badan 0,17).
+    expect(Math.abs(CHAIR_Z)).toBeLessThan(0.23)
+    expect(CHAIR_Z + 0.22 - 0.03).toBeGreaterThan(0.17)
+  })
+
+  it('berdiri: telapak menapak lantai', () => {
+    expect(STANDING_BODY_Y + HIP_OFFSET - 0.42 - SHIN_TO_SOLE).toBeCloseTo(0, 6)
   })
 })
