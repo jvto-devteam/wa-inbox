@@ -392,6 +392,14 @@ append-only tanpa FK: siapa, kapan, nilai lama/baru), `PushSubscription`. Setela
   `createDataRequestDrafts` (sesudah `reconcileSummaryItems`).
 <!-- aksi-booking:selesai -->
 
+### Kantor AI (`/ai-office`)
+Papan live (owner 2026-10-23): kantor isometrik tempat empat asisten AI terlihat bekerja -- label topik, CS bot,
+ops booking, analis ringkasan. Digerakkan event NYATA lewat SSE: `pipeline.step` (bot) dan `ai.activity`
+(`reportAiActivity` di `src/lib/ai-office/activity.ts`, dipancarkan topic-labels, chat-review auto-refresh, dan ekstraksi
+booking). `ai.activity` hanya membawa label pendek -- tidak pernah isi chat -- dan seperti tracer pipeline, tidak pernah
+melempar atau mengubah pekerjaan aslinya. Logika status murni ada di `src/lib/ai-office/state.ts`; kartu "Terakhir/hari
+ini" dari `GET /api/ai-office`.
+
 ### Simulator & test
 `simulator.ts`, Test Lab, dan `npm run eval` (13 golden case).
 

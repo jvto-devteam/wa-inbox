@@ -29,6 +29,7 @@ import { isIndonesianNumber } from '@/lib/phone'
 import { isNoiseMessage } from '@/lib/summary-items/noise'
 import { isAutomatedSource } from '@/lib/summary-items/automated'
 import { broadcast } from '@/lib/realtime'
+import { reportAiActivity } from '@/lib/ai-office/activity'
 import { refreshChatReview } from './refresh'
 
 export const CHAT_REVIEW_MIN_GAP_MS = 5 * 60_000
@@ -57,12 +58,19 @@ async function run(conversationId: string): Promise<void> {
   waiting.delete(conversationId)
   running.add(conversationId)
   lastAttemptAt.set(conversationId, Date.now())
+  reportAiActivity('ringkasan', 'mulai', 'Meringkas chat & poin penting', conversationId)
   try {
     const result = await refreshChatReview(conversationId, new Date())
-    if (result.status === 'ok') broadcast({ type: 'conversation.updated', conversationId })
-    else if (result.status === 'failed') logFailure(conversationId, new Error('ringkasan kosong'))
+    if (result.status === 'ok') {
+      broadcast({ type: 'conversation.updated', conversationId })
+      reportAiActivity('ringkasan', 'selesai', 'Ringkasan & poin penting diperbarui', conversationId, true)
+    } else {
+      if (result.status === 'failed') logFailure(conversationId, new Error('ringkasan kosong'))
+      reportAiActivity('ringkasan', 'gagal', 'Ringkasan belum berhasil', conversationId)
+    }
   } catch (error) {
     logFailure(conversationId, error)
+    reportAiActivity('ringkasan', 'gagal', 'Ringkasan belum berhasil', conversationId)
   } finally {
     running.delete(conversationId)
     // Sisa burst yang tiba selagi berjalan tidak boleh hilang.

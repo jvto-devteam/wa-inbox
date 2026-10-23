@@ -130,7 +130,8 @@ describe('classifyAndStoreTopicLabels', () => {
     await expect(classifyAndStoreTopicLabels('msg_1', 'manual')).resolves.toBeNull()
 
     expect(errorSpy).toHaveBeenCalledWith('classifyAndStoreTopicLabels gagal', expect.objectContaining({ source: 'manual' }))
-    expect(broadcast).not.toHaveBeenCalled()
+    // Tidak ada `message.updated` (label tidak tersimpan); hanya kabar kegiatan Kantor AI.
+    expect(vi.mocked(broadcast).mock.calls.some(([e]) => e.type === 'message.updated')).toBe(false)
     errorSpy.mockRestore()
   })
 })

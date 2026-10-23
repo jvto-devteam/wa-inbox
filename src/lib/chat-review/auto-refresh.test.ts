@@ -160,7 +160,9 @@ describe('scheduleChatReviewRefresh', () => {
     vi.mocked(refreshChatReview).mockResolvedValue({ status: 'failed' })
     scheduleChatReviewRefresh('c1')
     await vi.advanceTimersByTimeAsync(CHAT_REVIEW_DEBOUNCE_MS)
-    expect(broadcast).not.toHaveBeenCalled()
+    // Hanya kabar kegiatan Kantor AI ("gagal"); tidak ada `conversation.updated` (data tidak berubah).
+    expect(vi.mocked(broadcast).mock.calls.map(([e]) => e.type)).toEqual(['ai.activity', 'ai.activity'])
+    expect(broadcast).toHaveBeenLastCalledWith(expect.objectContaining({ type: 'ai.activity', agent: 'ringkasan', state: 'gagal' }))
   })
 
   it('refresh throwing never escapes and does not broadcast', async () => {
@@ -168,7 +170,7 @@ describe('scheduleChatReviewRefresh', () => {
     vi.mocked(refreshChatReview).mockRejectedValue(new Error('boom'))
     expect(() => scheduleChatReviewRefresh('c1')).not.toThrow()
     await vi.advanceTimersByTimeAsync(CHAT_REVIEW_DEBOUNCE_MS)
-    expect(broadcast).not.toHaveBeenCalled()
+    expect(vi.mocked(broadcast).mock.calls.some(([e]) => e.type === 'conversation.updated')).toBe(false)
   })
 
   it('DB failure in the gate never throws', async () => {

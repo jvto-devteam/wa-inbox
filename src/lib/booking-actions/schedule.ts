@@ -38,6 +38,7 @@ import { extractBookingSignals } from './extract'
 import { applyExtraction, reevaluateBookingActions } from './store'
 import { autoApplyCreated } from './auto-apply'
 import { notifyGuestRequestReceived } from './guest-ack'
+import { reportAiActivity } from '@/lib/ai-office/activity'
 import { blockedByIndonesianGate, bookingAutomationAllowed } from './rollout'
 
 export const BOOKING_EXTRACTION_DEBOUNCE_MS = 8_000
@@ -94,6 +95,8 @@ export async function runBookingExtractionNow(conversationId: string): Promise<b
 async function runExtraction(conversationId: string): Promise<boolean> {
   // Run sendiri; tidak pernah menyentuh tracer burst bot.
   const run = openPipelineRun(conversationId)
+  // Kantor AI: hanya bila percakapan memang lolos gerbang (lihat `extracting` di bawah).
+  let extracting = false
   traceStep(run, 'ekstrak-booking', 'mulai')
   try {
     const conv = await prisma.conversation.findUnique({
@@ -133,9 +136,12 @@ async function runExtraction(conversationId: string): Promise<boolean> {
     const transcript = buildNumberedTranscript([...latest].reverse())
     // Hanya pesan TAMU yang boleh jadi sumber usulan/fakta (pesan tim tidak pernah).
     const inboundIds = new Set(latest.filter((m) => m.direction === 'INBOUND').map((m) => m.id))
+    extracting = true
+    reportAiActivity('booking', 'mulai', 'Membaca permintaan perubahan booking', conversationId)
     const extraction = await extractBookingSignals({ transcript, booking, inboundIds })
     if (!extraction) {
       traceClose(run, 'gagal', { alasan: 'ekstraksi gagal' })
+      reportAiActivity('booking', 'gagal', 'Gagal membaca permintaan', conversationId)
       return false
     }
     const applied = await applyExtraction(conversationId, extraction)
@@ -152,10 +158,18 @@ async function runExtraction(conversationId: string): Promise<boolean> {
     // tulis) supaya tamu tetap tahu permintaannya sampai. Tidak pernah melempar.
     await notifyGuestRequestReceived({ conversationId, bookingId: typeof booking.booking_id === 'number' || typeof booking.booking_id === 'string' ? String(booking.booking_id) : null, booking, cardIds: applied.cardIds })
     traceClose(run, 'selesai')
+    reportAiActivity(
+      'booking',
+      'selesai',
+      applied.cardIds.length > 0 ? `Memproses ${applied.cardIds.length} permintaan perubahan` : 'Tidak ada permintaan perubahan',
+      conversationId,
+      applied.cardIds.length > 0
+    )
     return applied.cardIds.length > 0
   } catch (error) {
     console.error('[booking-actions] ekstraksi gagal', { conversationId, error: error instanceof Error ? error.message : 'unknown' })
     traceClose(run, 'gagal', { alasan: 'galat tak terduga' })
+    if (extracting) reportAiActivity('booking', 'gagal', 'Gagal memproses permintaan', conversationId)
     return false
   }
 }

@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Bot, FileText, Home, Menu, MessageSquare, NotebookText, Settings, SlidersHorizontal, Users, X } from 'lucide-react'
+import { Bot, Building2, FileText, Home, Menu, MessageSquare, NotebookText, Settings, SlidersHorizontal, Users, X } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { Tooltip } from '@/components/ui/tooltip'
 import { GapBell } from '@/components/GapBell'
@@ -69,6 +69,7 @@ export const NAV_ITEMS: ReadonlyArray<{ href: string; label: string; icon: Lucid
   { href: '/templates', label: 'Template Pesan', icon: FileText },
   { href: '/chatbot', label: 'Chatbot', icon: Bot },
   { href: '/bot-control', label: 'Bot Control', icon: SlidersHorizontal },
+  { href: '/ai-office', label: 'Kantor AI', icon: Building2 },
   { href: '/settings', label: 'Pengaturan', icon: Settings },
 ] as const
 

@@ -43,6 +43,17 @@ type RealtimeEvent =
       // every open browser tab, and a token in it would be a token on screen.
       detail?: unknown
     }
+  // Kegiatan asisten AI selain bot (label topik, aksi booking, ringkasan chat) untuk Kantor AI
+  // (src/lib/ai-office/activity.ts). Hanya label pendek tanpa isi chat; tidak ada bagian inbox yang bergantung padanya.
+  | {
+      type: 'ai.activity'
+      agent: 'topik' | 'booking' | 'ringkasan'
+      state: 'mulai' | 'selesai' | 'gagal'
+      label: string
+      conversationId: string
+      at: string
+      deliver?: boolean
+    }
 
 const listeners = new Set<(event: RealtimeEvent) => void>()
 

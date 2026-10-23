@@ -86,12 +86,14 @@ const DESTINATIONS_BEFORE_1B = [
   ['Pengaturan', '/settings'],
 ] as const
 
-// Satu-satunya tambahan sejak 1B: Summary Harian (2026-09-22), di posisi keempat supaya tiga
-// tujuan bar ponsel tetap sama.
+// Tambahan sejak 1B: Summary Harian (2026-09-22), di posisi keempat supaya tiga tujuan bar ponsel tetap sama, dan
+// Kantor AI (2026-10-23), sesudah Bot Control.
 const DESTINATIONS_NOW = [
   ...DESTINATIONS_BEFORE_1B.slice(0, 3),
   ['Summary Harian', '/summary'],
-  ...DESTINATIONS_BEFORE_1B.slice(3),
+  ...DESTINATIONS_BEFORE_1B.slice(3, 6),
+  ['Kantor AI', '/ai-office'],
+  ...DESTINATIONS_BEFORE_1B.slice(6),
 ] as const
 
 describe('daftar tujuan rail', () => {
@@ -338,11 +340,11 @@ describe('semua halaman masih terjangkau', () => {
   const railHrefs = new Set(NAV_ITEMS.map((i) => i.href))
   const subNavHrefs = new Set(BOT_CONTROL_SECTIONS.map((s) => s.href as string))
 
-  it('menemukan kedua puluh halaman di disk, bukan lebih sedikit', () => {
-    // Angka ini adalah jumlah halaman saat Tahap 1B ditulis (19), ditambah /summary (2026-09-22,
-    // dijangkau dari rail). Kalau ia berubah, test-test di bawah harus dibaca ulang secara sadar,
-    // bukan lolos diam-diam.
-    expect(routes).toHaveLength(20)
+  it('menemukan kedua puluh satu halaman di disk, bukan lebih sedikit', () => {
+    // Angka ini adalah jumlah halaman saat Tahap 1B ditulis (19), ditambah /summary (2026-09-22) dan /ai-office
+    // (2026-10-23), keduanya dijangkau dari rail. Kalau ia berubah, test-test di bawah harus dibaca ulang secara
+    // sadar, bukan lolos diam-diam.
+    expect(routes).toHaveLength(21)
   })
 
   for (const route of routesOnDisk()) {
