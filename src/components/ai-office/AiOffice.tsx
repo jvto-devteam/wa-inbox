@@ -237,11 +237,12 @@ export function AiOffice({ header }: { header?: ReactNode } = {}) {
 
   return (
     <div className="flex min-h-full items-start">
-      <div className="mx-auto flex w-full min-w-0 max-w-6xl flex-1 flex-col gap-4 p-4">
+      {/* Lebar container sama dengan halaman Kontak (max-w-[1600px], p-6), owner 2026-10-23. */}
+      <div className="mx-auto flex w-full min-w-0 max-w-[1600px] flex-1 flex-col gap-4 p-4 sm:p-6">
         {header}
         <section
           aria-label="Kantor AI: meja setiap asisten AI dan ruang admin. Klik asisten untuk mengobrol."
-          className="relative aspect-[4/3] w-full overflow-hidden rounded-xl border border-line bg-[#f3efe8] sm:aspect-[16/9]"
+          className="relative aspect-[4/3] max-h-[78vh] w-full overflow-hidden rounded-xl border border-line bg-[#2a2c30] sm:aspect-[16/9]"
         >
           <Office3D
             agents={AGENTS.map((a) => ({
