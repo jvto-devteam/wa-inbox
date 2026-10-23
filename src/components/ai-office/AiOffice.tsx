@@ -8,6 +8,7 @@ import { conversationHref } from '@/components/daily-summary/conversation-href'
 import { fetchJson } from '@/lib/fetch-json'
 import { wibDateTimeLabel } from '@/lib/summary-items/status'
 import { cn } from '@/lib/utils'
+import { AgentChatPanel, type PanelMessage } from './AgentChatPanel'
 import type { AiOfficeResponse } from '@/app/api/ai-office/route'
 
 /** Adegan WebGL hanya di browser: three.js tidak bisa dirender di server, dan bundelnya tidak ikut halaman lain. */
@@ -55,6 +56,9 @@ export function AiOffice() {
   const liveRef = useRef<Record<AiAgentKey, AgentLive>>(live)
   const [status, setStatus] = useState<AiOfficeResponse | null>(null)
   const [log, setLog] = useState<LogEntry[]>([])
+  // Asisten yang sedang diajak mengobrol (panel kanan) + riwayat obrolan per asisten selama halaman terbuka.
+  const [selected, setSelected] = useState<AiAgentKey | null>(null)
+  const [chats, setChats] = useState<Record<AiAgentKey, PanelMessage[]>>({ topik: [], bot: [], booking: [], ringkasan: [] })
   const timers = useRef<Map<AiAgentKey, ReturnType<typeof setTimeout>[]>>(new Map())
   const logId = useRef(0)
 
@@ -116,16 +120,36 @@ export function AiOffice() {
     }
   }, [apply])
 
+  const selectedAgent = selected ? AGENTS.find((a) => a.key === selected) ?? null : null
   const byKey = Object.fromEntries(AGENTS.map((a) => [a.key, a])) as Record<AiAgentKey, AgentConfig>
 
   return (
     <div className="flex flex-col gap-4">
-      <div
-        role="img"
-        aria-label="Kantor AI: meja setiap asisten AI dan ruang admin"
-        className="relative aspect-[4/3] w-full overflow-hidden rounded-xl border border-line bg-[#f3efe8] sm:aspect-[16/9]"
-      >
-        <Office3D agents={AGENTS.map((a) => ({ key: a.key, name: a.name, shirt: a.shirt, hair: a.hair, skin: a.skin, mode: live[a.key].mode, label: live[a.key].label }))} />
+      <div className={cn('grid gap-3', selected && 'lg:grid-cols-[minmax(0,1fr)_380px]')}>
+        <section
+          aria-label="Kantor AI: meja setiap asisten AI dan ruang admin. Klik asisten untuk mengobrol."
+          className="relative aspect-[4/3] w-full overflow-hidden rounded-xl border border-line bg-[#f3efe8] sm:aspect-[16/9]"
+        >
+          <Office3D
+            agents={AGENTS.map((a) => ({ key: a.key, name: a.name, shirt: a.shirt, hair: a.hair, skin: a.skin, mode: live[a.key].mode, label: live[a.key].label }))}
+            selected={selected}
+            onSelect={setSelected}
+          />
+        </section>
+        {selectedAgent && (
+          <div className="fixed inset-x-0 bottom-0 z-40 h-[78dvh] p-2 shadow-2xl lg:relative lg:inset-auto lg:z-auto lg:h-auto lg:p-0 lg:shadow-none">
+            {/* Di layar lebar panel mengikuti tinggi adegan (absolute), jadi obrolan panjang tidak memanjangkan baris. */}
+            <div className="h-full lg:absolute lg:inset-0">
+              <AgentChatPanel
+                key={selectedAgent.key}
+                agent={selectedAgent}
+                messages={chats[selectedAgent.key]}
+                setMessages={(update) => setChats((prev) => ({ ...prev, [selectedAgent.key]: update(prev[selectedAgent.key]) }))}
+                onClose={() => setSelected(null)}
+              />
+            </div>
+          </div>
+        )}
       </div>
 
       <ul aria-label="Asisten AI" className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
@@ -152,6 +176,13 @@ export function AiOffice() {
                 {s?.lastAt ? ` · ${wibDateTimeLabel(s.lastAt, { compact: true })}` : ''}
               </p>
               <p className="text-xs text-ink-subtle">Hari ini: {s ? s.todayCount : '…'} pekerjaan</p>
+              <button
+                type="button"
+                onClick={() => setSelected(a.key)}
+                className="focus-ring mt-2 rounded-sm text-xs font-medium text-accent underline-offset-2 hover:underline"
+              >
+                Ajak ngobrol {a.name}
+              </button>
             </li>
           )
         })}

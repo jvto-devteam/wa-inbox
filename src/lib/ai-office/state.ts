@@ -13,7 +13,7 @@ export type AgentLive = { mode: AgentMode; label: string; conversationId: string
 
 export type OfficeEvent =
   | { type: 'pipeline.step'; conversationId: string; stepId: string; status: string; at: string }
-  | { type: 'ai.activity'; agent: Exclude<AiAgentKey, 'bot'>; state: 'mulai' | 'selesai' | 'gagal'; label: string; conversationId: string; at: string; deliver?: boolean }
+  | { type: 'ai.activity'; agent: AiAgentKey; state: 'mulai' | 'selesai' | 'gagal'; label: string; conversationId: string; at: string; deliver?: boolean }
 
 export const IDLE_LABEL: Record<AiAgentKey, string> = {
   topik: 'Menunggu pesan masuk',

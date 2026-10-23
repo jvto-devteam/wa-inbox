@@ -4,20 +4,22 @@
  * try/catch dan tidak pernah melempar -- papan yang bolong jauh lebih murah daripada balasan, ringkasan, atau perubahan
  * booking yang gagal karena siaran (aturan yang sama dengan pipeline/tracer.ts).
  *
- * Bot balasan TIDAK memakai event ini: kegiatannya sudah disiarkan per langkah sebagai `pipeline.step`.
+ * Bot balasan TIDAK memakai event ini untuk membalas tamu: kegiatannya sudah disiarkan per langkah sebagai `pipeline.step`.
+ * Event ini dipakai bot hanya saat operator mengobrol dengannya di Kantor AI (`agent-chat.ts`).
  */
 import { broadcast } from '@/lib/realtime'
 
-/** Asisten AI yang punya meja di Kantor AI. `bot` digerakkan oleh `pipeline.step`, sisanya oleh `ai.activity`. */
+/** Asisten AI yang punya meja di Kantor AI. `bot` digerakkan terutama oleh `pipeline.step`, sisanya oleh `ai.activity`. */
 export const AI_AGENTS = ['topik', 'bot', 'booking', 'ringkasan'] as const
 export type AiAgentKey = (typeof AI_AGENTS)[number]
 export type AiActivityState = 'mulai' | 'selesai' | 'gagal'
 
 /** Siarkan satu kegiatan. `label` = kalimat pendek untuk balon status, tanpa isi chat atau data pribadi. */
 export function reportAiActivity(
-  agent: Exclude<AiAgentKey, 'bot'>,
+  agent: AiAgentKey,
   state: AiActivityState,
   label: string,
+  /** Kosong bila kegiatannya bukan untuk satu chat (obrolan operator). */
   conversationId: string,
   /** `selesai` yang menghasilkan sesuatu untuk admin (ringkasan baru, perubahan booking): karakter mengantarnya ke meja admin. */
   deliver = false

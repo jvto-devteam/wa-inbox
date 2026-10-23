@@ -43,11 +43,12 @@ type RealtimeEvent =
       // every open browser tab, and a token in it would be a token on screen.
       detail?: unknown
     }
-  // Kegiatan asisten AI selain bot (label topik, aksi booking, ringkasan chat) untuk Kantor AI
-  // (src/lib/ai-office/activity.ts). Hanya label pendek tanpa isi chat; tidak ada bagian inbox yang bergantung padanya.
+  // Kegiatan asisten AI untuk Kantor AI (src/lib/ai-office/activity.ts): label topik, aksi booking, ringkasan chat, dan
+  // obrolan operator dengan asisten mana pun (termasuk bot). Hanya label pendek tanpa isi chat; tidak ada bagian inbox yang
+  // bergantung padanya. `conversationId` kosong = bukan untuk satu chat (mis. obrolan operator).
   | {
       type: 'ai.activity'
-      agent: 'topik' | 'booking' | 'ringkasan'
+      agent: 'topik' | 'bot' | 'booking' | 'ringkasan'
       state: 'mulai' | 'selesai' | 'gagal'
       label: string
       conversationId: string

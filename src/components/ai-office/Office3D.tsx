@@ -1,7 +1,7 @@
 'use client'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type RefObject } from 'react'
 import { Canvas, useFrame } from '@react-three/fiber'
-import { ContactShadows, Html, OrbitControls, RoundedBox } from '@react-three/drei'
+import { ContactShadows, OrbitControls, RoundedBox } from '@react-three/drei'
 import * as THREE from 'three'
 import type { AiAgentKey } from '@/lib/ai-office/activity'
 import type { AgentMode } from '@/lib/ai-office/state'
@@ -338,15 +338,20 @@ type PersonProps = {
   look: Look
   mode: AgentMode
   label: string
-  name: string
   seat: Vec2
   phase: number
   isAdmin?: boolean
   /** Titik duduk dipakai sebagai posisi dunia (agen); admin diletakkan oleh group induknya. */
   world?: boolean
+  /** Balon nama di lapisan DOM di atas kanvas; posisinya diproyeksikan dari kepala tiap frame. */
+  bubble: RefObject<HTMLElement | null>
+  selected?: boolean
+  onSelect?: () => void
 }
 
-function Person({ look, mode, label, name, seat, phase, isAdmin = false, world = true }: PersonProps) {
+function Person({ mode, label, look, seat, phase, isAdmin = false, world = true, bubble, selected = false, onSelect }: PersonProps) {
+  const anchor = useRef<THREE.Group>(null)
+  const projected = useMemo(() => new THREE.Vector3(), [])
   const root = useRef<THREE.Group>(null)
   const body = useRef<THREE.Group>(null)
   const head = useRef<THREE.Group>(null)
@@ -377,9 +382,17 @@ function Person({ look, mode, label, name, seat, phase, isAdmin = false, world =
     if (mode === 'done' && label === 'Balasan terkirim ke tamu') envStart.current = now.current
   }, [mode, label, isAdmin])
 
-  useFrame(({ clock }) => {
+  useFrame(({ clock, camera, size }) => {
     const t = clock.elapsedTime
     now.current = t
+    const el = bubble.current
+    if (el && anchor.current) {
+      projected.setFromMatrixPosition(anchor.current.matrixWorld).project(camera)
+      const x = ((projected.x + 1) / 2) * size.width
+      const y = ((1 - projected.y) / 2) * size.height
+      el.style.setProperty('transform', `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px) translate(-50%, -100%)`)
+      el.style.setProperty('visibility', projected.z > 1 ? 'hidden' : 'visible')
+    }
     const r: Rig = {
       root: root.current,
       body: body.current,
@@ -519,9 +532,9 @@ function Person({ look, mode, label, name, seat, phase, isAdmin = false, world =
     // --- indikator kerja: cincin lantai + lencana di atas kepala
     const active = mode !== 'idle' && !isAdmin
     if (ring.current && ringMat.current) {
-      ring.current.visible = active
+      ring.current.visible = active || selected
       ring.current.scale.setScalar(1 + Math.sin(t * 4) * 0.07)
-      ringMat.current.color.set(MODE_COLOR[mode])
+      ringMat.current.color.set(active ? MODE_COLOR[mode] : '#0ea5e9')
       ringMat.current.opacity = 0.4 + Math.sin(t * 4) * 0.15
     }
     if (badge.current && badgeMat.current) {
@@ -548,7 +561,20 @@ function Person({ look, mode, label, name, seat, phase, isAdmin = false, world =
   })
 
   return (
-    <group ref={root} position={world ? [seat[0], 0, seat[1]] : [0, 0, 0]}>
+    <group
+      ref={root}
+      position={world ? [seat[0], 0, seat[1]] : [0, 0, 0]}
+      onClick={
+        onSelect
+          ? (e) => {
+              e.stopPropagation()
+              onSelect()
+            }
+          : undefined
+      }
+      onPointerOver={onSelect ? () => (document.body.style.cursor = 'pointer') : undefined}
+      onPointerOut={onSelect ? () => (document.body.style.cursor = '') : undefined}
+    >
       <mesh ref={ring} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.012, 0]} visible={false}>
         <ringGeometry args={[0.44, 0.58, 48]} />
         <meshBasicMaterial ref={ringMat} transparent opacity={0.4} color="#3b82f6" depthWrite={false} />
@@ -653,18 +679,7 @@ function Person({ look, mode, label, name, seat, phase, isAdmin = false, world =
           <meshStandardMaterial color="#fde68a" emissive="#f59e0b" emissiveIntensity={0.5} />
         </mesh>
       </group>
-      <Html position={[0, isAdmin ? 1.75 : 2.0, 0]} center zIndexRange={[30, 0]}>
-        <div className="pointer-events-none w-max max-w-[150px] rounded-lg border border-line bg-surface/95 px-2 py-1 text-[10px] leading-tight shadow-md sm:max-w-[200px] sm:text-xs">
-          <p className="flex items-center gap-1 font-semibold text-ink">
-            <span className="inline-block size-1.5 rounded-full" style={{ background: isAdmin ? '#3b5b8c' : MODE_COLOR[mode] }} aria-hidden />
-            {name}
-            {mode === 'working' && !isAdmin && <TypingDots />}
-            {mode === 'done' && !isAdmin && <span className="text-success">✓</span>}
-            {mode === 'error' && !isAdmin && <span className="text-danger">!</span>}
-          </p>
-          <p className="truncate text-ink-muted">{label}</p>
-        </div>
-      </Html>
+      <group ref={anchor} position={[0, isAdmin ? 1.75 : 2.0, 0]} />
     </group>
   )
 }
@@ -690,56 +705,109 @@ function webglAvailable(): boolean {
   }
 }
 
-export default function Office3D({ agents }: { agents: Office3DAgent[] }) {
+type Office3DProps = { agents: Office3DAgent[]; selected: AiAgentKey | null; onSelect: (key: AiAgentKey) => void }
+
+export default function Office3D({ agents, selected, onSelect }: Office3DProps) {
   const [gl] = useState(webglAvailable)
   // Di layar sentuh kamera tidak bisa diputar, supaya geser jari tetap menggulir halaman.
   const [finePointer] = useState(() => typeof window !== 'undefined' && window.matchMedia?.('(pointer: fine)').matches === true)
+  const topik = useRef<HTMLButtonElement>(null)
+  const bot = useRef<HTMLButtonElement>(null)
+  const booking = useRef<HTMLButtonElement>(null)
+  const ringkasan = useRef<HTMLButtonElement>(null)
+  const admin = useRef<HTMLDivElement>(null)
+  const bubbles: Record<AiAgentKey, RefObject<HTMLButtonElement | null>> = { topik, bot, booking, ringkasan }
+  useEffect(() => () => void (document.body.style.cursor = ''), [])
   if (!gl) {
     return <div className="grid h-full place-items-center p-4 text-center text-sm text-ink-muted">Browser ini tidak mendukung tampilan 3D (WebGL). Status asisten tetap tampil di kartu di bawah.</div>
   }
   return (
-    <Canvas shadows dpr={[1, 2]} camera={{ position: [9, 8.6, 11.5], fov: 36 }} gl={{ antialias: true }}>
-      <color attach="background" args={['#f3efe8']} />
-      <fog attach="fog" args={['#f3efe8', 22, 40]} />
-      <hemisphereLight args={['#ffffff', '#d9cbb3', 0.75]} />
-      <directionalLight
-        position={[6, 11, 7]}
-        intensity={1.7}
-        castShadow
-        shadow-mapSize-width={2048}
-        shadow-mapSize-height={2048}
-        shadow-camera-left={-10}
-        shadow-camera-right={10}
-        shadow-camera-top={10}
-        shadow-camera-bottom={-10}
-        shadow-bias={-0.0004}
-      />
-      <pointLight position={[-3, 3.2, -3.5]} intensity={5} distance={10} color="#fff1d6" />
-      <Room />
-      {agents.map((a, i) => (
-        <group key={a.key}>
-          <group position={[SEATS[a.key][0], 0, SEATS[a.key][1]]}>
-            <Workstation accent={a.shirt} mode={a.mode} />
+    <div className="relative h-full w-full">
+      <Canvas shadows dpr={[1, 2]} camera={{ position: [9, 8.6, 11.5], fov: 36 }} gl={{ antialias: true }}>
+        <color attach="background" args={['#f3efe8']} />
+        <fog attach="fog" args={['#f3efe8', 22, 40]} />
+        <hemisphereLight args={['#ffffff', '#d9cbb3', 0.75]} />
+        <directionalLight
+          position={[6, 11, 7]}
+          intensity={1.7}
+          castShadow
+          shadow-mapSize-width={2048}
+          shadow-mapSize-height={2048}
+          shadow-camera-left={-10}
+          shadow-camera-right={10}
+          shadow-camera-top={10}
+          shadow-camera-bottom={-10}
+          shadow-bias={-0.0004}
+        />
+        <pointLight position={[-3, 3.2, -3.5]} intensity={5} distance={10} color="#fff1d6" />
+        <Room />
+        {agents.map((a, i) => (
+          <group key={a.key}>
+            <group position={[SEATS[a.key][0], 0, SEATS[a.key][1]]}>
+              <Workstation accent={a.shirt} mode={a.mode} />
+            </group>
+            <Person
+              look={a}
+              mode={a.mode}
+              label={a.label}
+              seat={SEATS[a.key]}
+              phase={i * 1.37}
+              bubble={bubbles[a.key]}
+              selected={selected === a.key}
+              onSelect={() => onSelect(a.key)}
+            />
           </group>
-          <Person look={a} mode={a.mode} label={a.label} name={a.name} seat={SEATS[a.key]} phase={i * 1.37} />
+        ))}
+        {/* Admin: menghadap pintu ruang kaca */}
+        <group position={[ADMIN_SEAT[0], 0, ADMIN_SEAT[1]]} rotation={[0, Math.PI, 0]}>
+          <Workstation accent="#3b5b8c" mode="admin" />
+          <Person look={{ shirt: '#3b5b8c', hair: '#222222', skin: '#d6a27a' }} mode="idle" label="Ruang Admin" seat={[0, 0]} phase={2.1} isAdmin world={false} bubble={admin} />
         </group>
-      ))}
-      {/* Admin: menghadap pintu ruang kaca */}
-      <group position={[ADMIN_SEAT[0], 0, ADMIN_SEAT[1]]} rotation={[0, Math.PI, 0]}>
-        <Workstation accent="#3b5b8c" mode="admin" />
-        <Person look={{ shirt: '#3b5b8c', hair: '#222222', skin: '#d6a27a' }} mode="idle" label="Ruang Admin" name="Admin" seat={[0, 0]} phase={2.1} isAdmin world={false} />
-      </group>
-      <ContactShadows position={[0, 0.006, 0]} opacity={0.3} scale={22} blur={2.5} far={4} />
-      <OrbitControls
-        target={[0.3, 0.6, 0]}
-        enabled={finePointer}
-        enablePan={false}
-        minDistance={8}
-        maxDistance={22}
-        minPolarAngle={0.45}
-        maxPolarAngle={1.25}
-        enableDamping
-      />
-    </Canvas>
+        <ContactShadows position={[0, 0.006, 0]} opacity={0.3} scale={22} blur={2.5} far={4} />
+        <OrbitControls
+          target={[0.3, 0.6, 0]}
+          enabled={finePointer}
+          enablePan={false}
+          minDistance={8}
+          maxDistance={22}
+          minPolarAngle={0.45}
+          maxPolarAngle={1.25}
+          enableDamping
+        />
+      </Canvas>
+      {/* Balon nama: DOM biasa di atas kanvas, bisa diklik untuk membuka obrolan dengan asisten itu. */}
+      <div className="pointer-events-none absolute inset-0 overflow-hidden">
+        {agents.map((a) => (
+          <button
+            key={a.key}
+            ref={bubbles[a.key]}
+            type="button"
+            onClick={() => onSelect(a.key)}
+            aria-label={`Buka obrolan dengan ${a.name}`}
+            aria-pressed={selected === a.key}
+            style={{ visibility: 'hidden' }}
+            className={`focus-ring pointer-events-auto absolute left-0 top-0 w-max max-w-[150px] rounded-lg border bg-surface/95 px-2 py-1 text-left text-[10px] leading-tight shadow-md hover:border-accent sm:max-w-[210px] sm:text-xs ${
+              selected === a.key ? 'border-accent ring-2 ring-accent/40' : 'border-line'
+            }`}
+          >
+            <span className="flex items-center gap-1 font-semibold text-ink">
+              <span className="inline-block size-1.5 rounded-full" style={{ background: MODE_COLOR[a.mode] }} aria-hidden />
+              {a.name}
+              {a.mode === 'working' && <TypingDots />}
+              {a.mode === 'done' && <span className="text-success">✓</span>}
+              {a.mode === 'error' && <span className="text-danger">!</span>}
+            </span>
+            <span className="block truncate text-ink-muted">{a.label}</span>
+          </button>
+        ))}
+        <div ref={admin} style={{ visibility: 'hidden' }} className="absolute left-0 top-0 w-max rounded-lg border border-line bg-surface/95 px-2 py-1 text-[10px] leading-tight shadow-md sm:text-xs">
+          <span className="flex items-center gap-1 font-semibold text-ink">
+            <span className="inline-block size-1.5 rounded-full bg-navy" aria-hidden />
+            Admin
+          </span>
+          <span className="block text-ink-muted">Ruang Admin</span>
+        </div>
+      </div>
+    </div>
   )
 }

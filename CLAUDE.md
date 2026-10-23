@@ -402,6 +402,19 @@ terbang; mengantar hasil = berjalan membawa kertas ke ruang kaca admin (`deliver
 booking). `ai.activity` hanya membawa label pendek -- tidak pernah isi chat -- dan seperti tracer pipeline, tidak pernah
 melempar atau mengubah pekerjaan aslinya. Logika status murni ada di `src/lib/ai-office/state.ts`; kartu "Terakhir/hari
 ini" dari `GET /api/ai-office`.
+**Obrolan dengan asisten** (owner 2026-10-23): klik karakter/balonnya (atau "Ajak ngobrol" di kartu) membuka panel kanan
+(`AgentChatPanel`; di HP lembar bawah). `POST /api/ai-office/chat` (`agent-chat.ts`, `runAgentChat`) memakai protokol JSON
+`{"alat"}` / `{"jawab"}` / `{"jawab","usul"}`, maks. `MAX_TOOL_STEPS` alat per pertanyaan, model `Settings.ollamaModel`. Kemampuan
+per asisten ada di SATU tempat, `agent-tools.ts` (`AGENT_PROFILES`): alat BACA dijalankan server dan hanya mengembalikan
+ringkasan (nama, 4 digit akhir nomor, cuplikan ≤ 140 karakter -- tidak pernah nomor penuh/keuangan); TINDAKAN hanya diusulkan
+LLM dan baru dijalankan `POST /api/ai-office/action` sesudah operator menekan "Jalankan" (nama aksi harus milik asisten itu, args
+divalidasi ulang, sasaran diperiksa ulang lewat `describe`). Tika: statistik/label topik, `label_ulang`. Rafi: statistik &
+keputusan bot, `coba_jawab` (simulator dry-run, khusus admin), `matikan_bot`/`nyalakan_bot` per chat. Oka: kartu booking terbuka/
+hari ini, data booking chat (`bookingContextForReview`), `setujui_kartu` (`executeBookingAction`), `tolak_kartu`/
+`selesaikan_kartu` (`closeBookingAction` di `booking-actions/close.ts`, dipakai juga `PATCH /api/booking-actions/[id]`). Sari:
+antrean tindak lanjut, ringkasan chat, `ringkas_ulang` (`refreshChatReview`). Kedua route terbuka untuk semua akun yang login
+(setiap aksi memakai fungsi yang sama dengan tombolnya di Inbox, yang juga terbuka). Isi obrolan ikut ke LLM cloud yang sama.
+Balon nama dirender sebagai DOM di atas kanvas (diproyeksikan per frame), bukan drei `Html`.
 
 ### Simulator & test
 `simulator.ts`, Test Lab, dan `npm run eval` (13 golden case).

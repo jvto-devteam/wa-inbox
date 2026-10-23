@@ -1,13 +1,15 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { act, cleanup, render, screen, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { AiOffice } from './AiOffice'
 
 // WebGL tidak ada di jsdom: adegan 3D diganti stub yang mencatat status meja yang diterimanya.
 vi.mock('./Office3D', () => ({
-  default: ({ agents }: { agents: Array<{ key: string; mode: string }> }) => (
+  default: ({ agents, onSelect }: { agents: Array<{ key: string; name: string; mode: string }>; onSelect: (k: string) => void }) => (
     <ul aria-label="Adegan 3D">
       {agents.map((a) => (
-        <li key={a.key}>{`${a.key}:${a.mode}`}</li>
+        <li key={a.key}>
+          <button type="button" onClick={() => onSelect(a.key)}>{`${a.key}:${a.mode}`}</button>
+        </li>
       ))}
     </ul>
   ),
@@ -46,7 +48,7 @@ describe('AiOffice', () => {
     const roster = screen.getByRole('list', { name: 'Asisten AI' })
     expect(within(roster).getAllByRole('listitem')).toHaveLength(4)
     expect(await within(roster).findByText('Hari ini: 4 pekerjaan')).toBeInTheDocument()
-    expect(screen.getByRole('img', { name: /Kantor AI/ })).toBeInTheDocument()
+    expect(screen.getByRole('region', { name: /Kantor AI/ })).toBeInTheDocument()
     expect(await screen.findByText('bot:idle')).toBeInTheDocument()
   })
 
@@ -79,5 +81,34 @@ describe('AiOffice', () => {
     step('llm-composition')
     const log = screen.getByRole('region', { name: 'Kegiatan terbaru' })
     expect(within(log).getAllByText('Susun balasan dari knowledge')).toHaveLength(1)
+  })
+
+  it('klik asisten membuka obrolan di kanan; usulan baru dijalankan sesudah "Jalankan"', async () => {
+    stub()
+    const fetchMock = vi.mocked(fetch)
+    render(<AiOffice />)
+    fireEvent.click(await screen.findByText('booking:idle'))
+    const panel = screen.getByRole('region', { name: 'Obrolan dengan Oka' })
+
+    fetchMock.mockResolvedValueOnce(
+      new Response(JSON.stringify({ reply: 'Kartu jam jemput David masih terbuka.', proposal: { action: 'setujui_kartu', args: { kartuId: 'k1' }, summary: 'Setujui kartu pickup_time → "05:00" (David)' }, used: ['kartu booking terbuka'] }), { status: 200 })
+    )
+    fireEvent.change(within(panel).getByLabelText('Pesan untuk Oka'), { target: { value: 'Setujui kartu jemput David' } })
+    fireEvent.click(within(panel).getByRole('button', { name: 'Kirim' }))
+    expect(await within(panel).findByText('Kartu jam jemput David masih terbuka.')).toBeInTheDocument()
+    expect(within(panel).getByText(/Data: kartu booking terbuka/)).toBeInTheDocument()
+    const chatCall = fetchMock.mock.calls.find((c) => c[0] === '/api/ai-office/chat')
+    expect(JSON.parse(String((chatCall?.[1] as RequestInit).body))).toEqual({ agent: 'booking', messages: [{ role: 'user', content: 'Setujui kartu jemput David' }] })
+    expect(fetchMock.mock.calls.some((c) => c[0] === '/api/ai-office/action')).toBe(false)
+
+    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ result: 'Tertulis ke backoffice: pickup_time.', conversationId: 'c1' }), { status: 200 }))
+    fireEvent.click(within(panel).getByRole('button', { name: /Jalankan/ }))
+    expect(await within(panel).findByText('Tertulis ke backoffice: pickup_time.')).toBeInTheDocument()
+    const actionCall = fetchMock.mock.calls.find((c) => c[0] === '/api/ai-office/action')
+    expect(JSON.parse(String((actionCall?.[1] as RequestInit).body))).toEqual({ agent: 'booking', action: 'setujui_kartu', args: { kartuId: 'k1' } })
+    expect(within(panel).getByText('Sudah dijalankan')).toBeInTheDocument()
+
+    fireEvent.click(within(panel).getByRole('button', { name: 'Tutup obrolan' }))
+    expect(screen.queryByRole('region', { name: 'Obrolan dengan Oka' })).toBeNull()
   })
 })
