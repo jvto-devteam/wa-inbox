@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Field } from '@/components/ui/label'
+import { safeNextPath } from '@/lib/auth/next-path'
 
 /**
  * Layar masuk.
@@ -46,7 +47,8 @@ export default function LoginPage() {
         setError(body.error)
         return
       }
-      router.push('/dashboard')
+      // Kembali ke halaman yang tadi dibuka (`?next=`, hanya jalur internal), bawaan /dashboard.
+      router.push(safeNextPath(new URLSearchParams(window.location.search).get('next')))
     } catch {
       setError('Tidak bisa menghubungi server. Coba lagi.')
     } finally {

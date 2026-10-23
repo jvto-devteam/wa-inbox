@@ -642,7 +642,7 @@ describe('ConversationList session expiry', () => {
     expect(() => render(<ConversationList selectedId={null} onSelect={() => {}} />)).not.toThrow()
     await advanceTimers(0)
 
-    expect(location.href).toBe('/login')
+    expect(location.href).toBe('/login?next=%2Finbox')
     // Still a usable, empty list -- never an error object rendered as rows.
     expect(screen.getByPlaceholderText(SEARCH_INPUT_PLACEHOLDER)).toBeInTheDocument()
   })

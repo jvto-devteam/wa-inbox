@@ -299,7 +299,7 @@ export function AppRail() {
       // Hard navigation rather than router.push, for the same reason fetch-json documents:
       // a soft navigation keeps the open EventSource and every cached list alive across
       // what is supposed to be the end of the session.
-      redirectToLogin()
+      redirectToLogin({ keepPath: false })
     } catch {
       setLogoutError('Gagal keluar — coba lagi')
     } finally {

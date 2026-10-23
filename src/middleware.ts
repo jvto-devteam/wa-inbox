@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { loginPathFor } from '@/lib/auth/next-path'
 import { getSession } from '@/lib/auth/get-session'
 import { prisma } from '@/lib/db'
 import { hasValidCronSecret } from '@/lib/outbound/cron-auth'
@@ -97,7 +98,8 @@ export async function middleware(req: NextRequest) {
 
   if (!session || !account || account.tokenVersion !== session.tokenVersion) {
     if (pathname.startsWith('/api/')) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    return NextResponse.redirect(new URL('/login', req.url))
+    // Jalur asal ikut dititipkan supaya sesudah masuk operator kembali ke halaman yang tadi dibuka.
+    return NextResponse.redirect(new URL(loginPathFor(pathname, req.nextUrl.search), req.url))
   }
   return NextResponse.next()
 }

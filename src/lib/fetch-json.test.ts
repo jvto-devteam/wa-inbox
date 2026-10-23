@@ -45,7 +45,8 @@ describe('fetchJson', () => {
     } as Response)
 
     await expect(fetchJson('/api/dashboard/summary')).rejects.toBeInstanceOf(FetchJsonError)
-    expect(location.href).toBe('/login')
+    // Halaman yang sedang dibuka dititipkan: sesudah masuk lagi operator kembali ke /inbox.
+    expect(location.href).toBe('/login?next=%2Finbox')
   })
 
   it('does not redirect when already on /login, so a 401 there cannot loop', async () => {

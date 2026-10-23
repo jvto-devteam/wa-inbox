@@ -12,6 +12,8 @@
 //   any other non-ok -> throw a typed error the caller can surface or ignore.
 //   ok -> parsed JSON, exactly as before.
 
+import { loginPathFor } from '@/lib/auth/next-path'
+
 const LOGIN_PATH = '/login'
 
 export class FetchJsonError extends Error {
@@ -36,11 +38,13 @@ export class FetchJsonError extends Error {
 //    document load drops all of it.
 //
 // Read through `globalThis` (rather than `window`) so it is stubbable in jsdom tests.
-export function redirectToLogin(): void {
+/** `keepPath: false` untuk Keluar yang disengaja: tidak ada halaman untuk dikembalikan. */
+export function redirectToLogin({ keepPath = true }: { keepPath?: boolean } = {}): void {
   if (typeof globalThis.location === 'undefined') return
   // Guard against a redirect loop if something on the login screen ever calls an API.
   if (globalThis.location.pathname === LOGIN_PATH) return
-  globalThis.location.href = LOGIN_PATH
+  // Halaman yang sedang dibuka ikut dititipkan: sesudah masuk lagi, operator kembali ke sini.
+  globalThis.location.href = keepPath ? loginPathFor(globalThis.location.pathname, globalThis.location.search ?? '') : LOGIN_PATH
 }
 
 export async function fetchJson<T>(input: string, init?: RequestInit): Promise<T> {

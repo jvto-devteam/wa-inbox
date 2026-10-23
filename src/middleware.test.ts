@@ -78,7 +78,7 @@ describe('middleware — tokenVersion revocation', () => {
     const res = await middleware(request('/inbox', 'wa_inbox_session=tok'))
 
     expect(res.status).toBe(307)
-    expect(res.headers.get('location')).toBe('http://localhost/login')
+    expect(res.headers.get('location')).toBe('http://localhost/login?next=%2Finbox')
   })
 })
 
@@ -97,7 +97,7 @@ describe('middleware — deleted account', () => {
     const res = await middleware(request('/inbox', 'wa_inbox_session=tok'))
 
     expect(res.status).toBe(307)
-    expect(res.headers.get('location')).toBe('http://localhost/login')
+    expect(res.headers.get('location')).toBe('http://localhost/login?next=%2Finbox')
   })
 })
 
@@ -118,7 +118,7 @@ describe('middleware — no or invalid session', () => {
   it('redirects an unauthenticated page request to /login', async () => {
     const res = await middleware(request('/inbox'))
     expect(res.status).toBe(307)
-    expect(res.headers.get('location')).toBe('http://localhost/login')
+    expect(res.headers.get('location')).toBe('http://localhost/login?next=%2Finbox')
   })
 })
 
