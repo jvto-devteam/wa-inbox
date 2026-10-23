@@ -17,8 +17,10 @@ import {
   STANDING_BODY_Y,
   WALK_SPEED,
   deliveryPath,
+  declutterBubbles,
   pathLength,
   pointAt,
+  type BubbleInput,
   type Vec2,
 } from './office-layout'
 
@@ -86,15 +88,13 @@ type PersonProps = {
   isAdmin?: boolean
   /** Arah hadap saat duduk (yaw 0 = -z). */
   seatYaw: number
-  /** Balon nama di lapisan DOM di atas kanvas; posisinya diproyeksikan dari kepala tiap frame. */
-  bubble: RefObject<HTMLElement | null>
+  /** Titik di atas kepala tempat balon nama menunjuk (diproyeksikan oleh `BubbleLayout`). */
+  anchorRef: RefObject<THREE.Group | null>
   selected?: boolean
   onSelect?: () => void
 }
 
-function Person({ mode, label, look, seat, phase, seatYaw, isAdmin = false, bubble, selected = false, onSelect }: PersonProps) {
-  const anchor = useRef<THREE.Group>(null)
-  const projected = useMemo(() => new THREE.Vector3(), [])
+function Person({ mode, label, look, seat, phase, seatYaw, isAdmin = false, anchorRef, selected = false, onSelect }: PersonProps) {
   const root = useRef<THREE.Group>(null)
   const body = useRef<THREE.Group>(null)
   const head = useRef<THREE.Group>(null)
@@ -125,17 +125,9 @@ function Person({ mode, label, look, seat, phase, seatYaw, isAdmin = false, bubb
     if (mode === 'done' && label === 'Balasan terkirim ke tamu') envStart.current = now.current
   }, [mode, label, isAdmin])
 
-  useFrame(({ clock, camera, size }) => {
+  useFrame(({ clock }) => {
     const t = clock.elapsedTime
     now.current = t
-    const el = bubble.current
-    if (el && anchor.current) {
-      projected.setFromMatrixPosition(anchor.current.matrixWorld).project(camera)
-      const x = ((projected.x + 1) / 2) * size.width
-      const y = ((1 - projected.y) / 2) * size.height
-      el.style.setProperty('transform', `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px) translate(-50%, -100%)`)
-      el.style.setProperty('visibility', projected.z > 1 ? 'hidden' : 'visible')
-    }
     const r: Rig = {
       root: root.current,
       body: body.current,
@@ -424,7 +416,7 @@ function Person({ mode, label, look, seat, phase, seatYaw, isAdmin = false, bubb
           <meshStandardMaterial color="#fde68a" emissive="#f59e0b" emissiveIntensity={0.5} />
         </mesh>
       </group>
-      <group ref={anchor} position={[0, isAdmin ? 1.75 : 2.0, 0]} />
+      <group ref={anchorRef} position={[0, isAdmin ? 1.75 : 2.0, 0]} />
     </group>
   )
 }
@@ -437,6 +429,49 @@ function TypingDots() {
       ))}
     </span>
   )
+}
+
+/* ------------------------------------------------------------------ balon nama */
+
+type BubbleRef = RefObject<HTMLElement | null>
+
+/**
+ * Memproyeksikan titik kepala tiap karakter ke layar dan menata balon namanya supaya tidak saling menimpa
+ * (`declutterBubbles`); balon yang dinaikkan diberi garis penunjuk (`--stem`). Dipasang PALING AKHIR di kanvas supaya
+ * berjalan sesudah karakter bergerak di frame yang sama.
+ */
+function BubbleLayout({ entries }: { entries: Array<{ key: string; anchor: RefObject<THREE.Group | null>; el: BubbleRef }> }) {
+  const v = useMemo(() => new THREE.Vector3(), [])
+  const smooth = useRef<Record<string, { left: number; top: number }>>({})
+  useFrame(({ camera, size }) => {
+    const items: BubbleInput[] = []
+    const els: Record<string, HTMLElement> = {}
+    for (const e of entries) {
+      const el = e.el.current
+      const a = e.anchor.current
+      if (!el || !a) continue
+      v.setFromMatrixPosition(a.matrixWorld).project(camera)
+      if (v.z > 1) {
+        el.style.setProperty('visibility', 'hidden')
+        continue
+      }
+      els[e.key] = el
+      items.push({ key: e.key, x: ((v.x + 1) / 2) * size.width, y: ((1 - v.y) / 2) * size.height, w: el.offsetWidth, h: el.offsetHeight })
+    }
+    const placed = declutterBubbles(items, { width: size.width })
+    for (const [key, p] of Object.entries(placed)) {
+      const el = els[key]
+      const prev = smooth.current[key] ?? p
+      const left = prev.left + (p.left - prev.left) * 0.35
+      const top = prev.top + (p.top - prev.top) * 0.35
+      smooth.current[key] = { left, top }
+      const anchorY = p.top + (el.offsetHeight || 0) + p.stem
+      el.style.setProperty('transform', `translate(${left.toFixed(1)}px, ${top.toFixed(1)}px)`)
+      el.style.setProperty('--stem', `${Math.max(0, anchorY - (top + el.offsetHeight)).toFixed(1)}px`)
+      el.style.setProperty('visibility', 'visible')
+    }
+  })
+  return null
 }
 
 /* ------------------------------------------------------------------ adegan */
@@ -474,6 +509,16 @@ export default function Office3D({ agents, selected, onSelect }: Office3DProps) 
   const ringkasan = useRef<HTMLButtonElement>(null)
   const admin = useRef<HTMLDivElement>(null)
   const bubbles: Record<AiAgentKey, RefObject<HTMLButtonElement | null>> = { topik, bot, booking, ringkasan }
+  const aTopik = useRef<THREE.Group>(null)
+  const aBot = useRef<THREE.Group>(null)
+  const aBooking = useRef<THREE.Group>(null)
+  const aRingkasan = useRef<THREE.Group>(null)
+  const aAdmin = useRef<THREE.Group>(null)
+  const anchors: Record<AiAgentKey, RefObject<THREE.Group | null>> = { topik: aTopik, bot: aBot, booking: aBooking, ringkasan: aRingkasan }
+  const bubbleEntries = [
+    ...agents.map((a) => ({ key: a.key, anchor: anchors[a.key], el: bubbles[a.key] as BubbleRef })),
+    { key: 'admin', anchor: aAdmin, el: admin as BubbleRef },
+  ]
   useEffect(() => () => void (document.body.style.cursor = ''), [])
   if (!gl) {
     return <div className="grid h-full place-items-center p-4 text-center text-sm text-ink-muted">Browser ini tidak mendukung tampilan 3D (WebGL). Status asisten tetap tampil di kartu di bawah.</div>
@@ -499,7 +544,7 @@ export default function Office3D({ agents, selected, onSelect }: Office3DProps) 
           shadow-bias={-0.0004}
         />
         {/* Lampu sorot plafon (hangat) + lampu bulat (sejuk) */}
-        {([[-3.2, -1.4], [-3.2, 2.2], [0.6, -2.6], [1.8, 1.8]] as Vec2[]).map(([x, z]) => (
+        {([[-3.2, -1.4], [-3.2, 2.2], [2.2, -2.6], [1.8, 1.8]] as Vec2[]).map(([x, z]) => (
           <pointLight key={`${x}${z}`} position={[x, 2.8, z]} intensity={2.4} distance={5.5} decay={1.6} color="#ffe9c7" />
         ))}
         <pointLight position={[-0.6, 2.7, 0.2]} intensity={3} distance={7} decay={1.5} color="#e3eeff" />
@@ -516,7 +561,7 @@ export default function Office3D({ agents, selected, onSelect }: Office3DProps) 
               seat={SEATS[a.key]}
               seatYaw={AGENT_SEAT_YAW}
               phase={i * 1.37}
-              bubble={bubbles[a.key]}
+              anchorRef={anchors[a.key]}
               selected={selected === a.key}
               onSelect={() => onSelect(a.key)}
             />
@@ -534,7 +579,7 @@ export default function Office3D({ agents, selected, onSelect }: Office3DProps) 
           seatYaw={ADMIN_SEAT_YAW}
           phase={2.1}
           isAdmin
-          bubble={admin}
+          anchorRef={aAdmin}
         />
         <ContactShadows position={[-0.5, 0.006, 0]} opacity={0.35} scale={12} blur={2.2} far={1.2} />
         <OrbitControls
@@ -549,6 +594,7 @@ export default function Office3D({ agents, selected, onSelect }: Office3DProps) 
           maxAzimuthAngle={1.5}
           enableDamping
         />
+        <BubbleLayout entries={bubbleEntries} />
       </Canvas>
       {/* Balon nama: DOM biasa di atas kanvas, bisa diklik untuk membuka obrolan dengan asisten itu. */}
       <div className="pointer-events-none absolute inset-0 overflow-hidden">
@@ -572,7 +618,9 @@ export default function Office3D({ agents, selected, onSelect }: Office3DProps) 
               {a.mode === 'done' && <span className="text-success">✓</span>}
               {a.mode === 'error' && <span className="text-danger">!</span>}
             </span>
-            <span className="block truncate text-ink-muted">{a.label}</span>
+            {/* Siaga = cukup nama (status lengkap ada di kartu bawah); label tugas tampil saat bekerja atau dipilih. */}
+            {(a.mode !== 'idle' || selected === a.key) && <span className="block truncate text-ink-muted">{a.label}</span>}
+            <span aria-hidden className="pointer-events-none absolute left-1/2 top-full w-px bg-ink-subtle/70" style={{ height: 'var(--stem, 0px)' }} />
           </button>
         ))}
         <div ref={admin} style={{ visibility: 'hidden' }} className="absolute left-0 top-0 w-max rounded-lg border border-line bg-surface/95 px-2 py-1 text-[10px] leading-tight shadow-md sm:text-xs">
@@ -580,7 +628,7 @@ export default function Office3D({ agents, selected, onSelect }: Office3DProps) 
             <span className="inline-block size-1.5 rounded-full bg-navy" aria-hidden />
             Admin
           </span>
-          <span className="block text-ink-muted">Meja Admin</span>
+          <span aria-hidden className="pointer-events-none absolute left-1/2 top-full w-px bg-ink-subtle/70" style={{ height: 'var(--stem, 0px)' }} />
         </div>
       </div>
     </div>

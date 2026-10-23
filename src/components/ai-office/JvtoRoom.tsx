@@ -4,7 +4,7 @@ import { useFrame } from '@react-three/fiber'
 import { RoundedBox } from '@react-three/drei'
 import * as THREE from 'three'
 import type { AgentMode } from '@/lib/ai-office/state'
-import { CHAIR_Z, DESK_ROW_Z, ROOM, SEAT_TOP, type Vec2 } from './office-layout'
+import { BAR_STOOL, CHAIR_Z, DESK_ROW_Z, ROOM, SEAT_TOP, TV_X, type Vec2 } from './office-layout'
 
 /**
  * Ruang kantor JVTO sungguhan (foto owner 2026-10-23) untuk Kantor AI: dinding abu tua + dinding hitam ber-TV logo JVTO,
@@ -212,9 +212,12 @@ function useTextures() {
 
 /* ------------------------------------------------------------------ meja agen */
 
+/** Lebar area teks di layar monitor (layar 0,65; sisa 0,05 jadi margin kiri-kanan). */
+export const SCREEN_TEXT_W = 0.56
+
 export function Monitor({ accent, mode }: { accent: string; mode: AgentMode | 'admin' }) {
   const bars = useRef<THREE.Group>(null)
-  const progress = useRef<THREE.Mesh>(null)
+  const progress = useRef<THREE.Group>(null)
   const screen = useRef<THREE.MeshStandardMaterial>(null)
   useFrame(({ clock }) => {
     const t = clock.elapsedTime
@@ -225,7 +228,7 @@ export function Monitor({ accent, mode }: { accent: string; mode: AgentMode | 'a
     }
     // Baris "teks" di layar: bergulir pelan saat siaga, cepat saat bekerja.
     bars.current?.children.forEach((c, i) => {
-      c.scale.x = 0.3 + 0.65 * Math.abs(Math.sin(t * (active ? 3.2 : 0.5) + i * 1.7))
+      c.scale.x = 0.3 + 0.7 * Math.abs(Math.sin(t * (active ? 3.2 : 0.5) + i * 1.7))
     })
     if (progress.current) {
       progress.current.visible = active
@@ -249,17 +252,21 @@ export function Monitor({ accent, mode }: { accent: string; mode: AgentMode | 'a
         <planeGeometry args={[0.65, 0.38]} />
         <meshStandardMaterial ref={screen} color="#0b1726" emissive="#1e3a5f" emissiveIntensity={0.7} roughness={0.2} />
       </mesh>
-      <group ref={bars} position={[-0.27, 0.49, 0.023]}>
+      {/* Baris "teks": tiap baris berpangkal di tepi kiri layar (group di x kiri, mesh digeser setengah lebarnya), jadi
+          skala hanya memanjang ke kanan dan tidak pernah keluar dari bingkai (layar 0,65 lebar: -0.325..0.325). */}
+      <group ref={bars} position={[-SCREEN_TEXT_W / 2, 0.49, 0.023]}>
         {[0, 1, 2, 3, 4].map((i) => (
-          <mesh key={i} position={[0, -i * 0.05, 0]}>
-            <planeGeometry args={[0.5, 0.015]} />
-            <meshBasicMaterial color="#d7ebff" transparent opacity={0.75} />
-          </mesh>
+          <group key={i} position={[0, -i * 0.05, 0]}>
+            <mesh position={[SCREEN_TEXT_W / 2, 0, 0]}>
+              <planeGeometry args={[SCREEN_TEXT_W, 0.015]} />
+              <meshBasicMaterial color="#d7ebff" transparent opacity={0.75} />
+            </mesh>
+          </group>
         ))}
       </group>
-      <group position={[-0.3, 0.22, 0.024]}>
-        <mesh ref={progress} position={[0.3, 0, 0]} visible={false}>
-          <planeGeometry args={[0.6, 0.026]} />
+      <group ref={progress} position={[-SCREEN_TEXT_W / 2, 0.24, 0.024]} visible={false}>
+        <mesh position={[SCREEN_TEXT_W / 2, 0, 0]}>
+          <planeGeometry args={[SCREEN_TEXT_W, 0.026]} />
           <meshBasicMaterial color="#facc15" />
         </mesh>
       </group>
@@ -469,7 +476,7 @@ function RedLocker() {
 
 function BarStool() {
   return (
-    <group position={[-0.5, 0, -2.55]}>
+    <group position={[BAR_STOOL[0], 0, BAR_STOOL[1]]}>
       <mesh position={[0, 0.66, 0]} castShadow>
         <cylinderGeometry args={[0.17, 0.17, 0.05, 24]} />
         <meshStandardMaterial color="#5b3a22" roughness={0.6} />
@@ -553,7 +560,7 @@ export function JvtoRoom() {
     [-3.2, -3],
     [-3.2, 0.2],
     [-3.2, 3.2],
-    [0.4, -3],
+    [2.2, -3],
     [0.4, 2.6],
     [2.8, -0.4],
   ]
@@ -722,7 +729,7 @@ export function JvtoRoom() {
       </mesh>
 
       {/* TV berlogo JVTO di dinding hitam */}
-      <group position={[0.8, 2.0, minZ + 0.04]}>
+      <group position={[TV_X, 2.05, minZ + 0.04]}>
         <mesh>
           <boxGeometry args={[1.62, 0.94, 0.05]} />
           <meshStandardMaterial color="#0d0d0f" roughness={0.3} />

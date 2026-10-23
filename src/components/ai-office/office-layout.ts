@@ -27,11 +27,15 @@ export const SEATS: Record<AiAgentKey, Vec2> = {
 export const AGENT_SEAT_YAW = Math.PI / 2
 
 /** Admin di belakang meja eksekutif, membelakangi dinding hitam, menghadap ruangan (+z). */
-export const ADMIN_SEAT: Vec2 = [0.8, -4.0]
+/** Digeser ke kanan TV (TV di x 0.8) supaya logo JVTO tidak tertutup Admin & mejanya (owner 2026-10-23). */
+export const ADMIN_SEAT: Vec2 = [2.4, -4.0]
 export const ADMIN_SEAT_YAW = Math.PI
 /** Titik berdiri di depan meja eksekutif saat menyerahkan hasil (menghadap -z ke Admin). */
-export const ADMIN_SPOT: Vec2 = [0.8, -2.2]
+export const ADMIN_SPOT: Vec2 = [2.4, -2.2]
 export const EXEC_DESK_Z = -3.2
+export const TV_X = 0.8
+/** Kursi bar kayu di depan sudut kiri meja eksekutif, di luar jalur jalan. */
+export const BAR_STOOL: Vec2 = [0.95, -2.6]
 
 /** Lorong di belakang kursi agen, lalu jalur melintang di depan meja eksekutif (kursi bar ada di luar jalur). */
 export const AISLE_X = -2.9
@@ -76,3 +80,30 @@ export const SEAT_TOP = SEATED_BODY_Y + HIP_OFFSET - THIGH_RADIUS
 export const STANDING_BODY_Y = 0.42 + SHIN_TO_SOLE - HIP_OFFSET
 /** Pusat dudukan sedikit di belakang pinggul; sandaran (z +0.22 dari pusat) jatuh tepat di belakang punggung. */
 export const CHAIR_Z = 0.05
+
+/* ------------------------------------------------------------------ balon nama */
+
+export type BubbleInput = { key: string; x: number; y: number; w: number; h: number }
+export type BubblePlacement = { left: number; top: number; stem: number }
+
+/**
+ * Atur balon nama supaya tidak saling menimpa (owner 2026-10-23: teks agen tidak terbaca karena empat meja sebaris).
+ * Balon yang kepalanya paling bawah di layar (paling dekat kamera) ditaruh dulu tepat di atas kepala; balon berikutnya
+ * yang bertabrakan dinaikkan bertingkat. `stem` = panjang garis penunjuk dari bawah balon ke kepala.
+ */
+export function declutterBubbles(items: BubbleInput[], view: { width: number }, gap = 4, lift = 6): Record<string, BubblePlacement> {
+  const placed: Array<{ left: number; top: number; w: number; h: number }> = []
+  const out: Record<string, BubblePlacement> = {}
+  for (const it of [...items].sort((a, b) => b.y - a.y)) {
+    const left = Math.min(Math.max(gap, it.x - it.w / 2), Math.max(gap, view.width - it.w - gap))
+    let top = it.y - it.h - lift
+    for (let guard = 0; guard < 12; guard++) {
+      const hit = placed.find((p) => left < p.left + p.w + gap && left + it.w + gap > p.left && top < p.top + p.h + gap && top + it.h + gap > p.top)
+      if (!hit) break
+      top = hit.top - it.h - gap
+    }
+    placed.push({ left, top, w: it.w, h: it.h })
+    out[it.key] = { left, top, stem: Math.max(0, it.y - (top + it.h)) }
+  }
+  return out
+}
