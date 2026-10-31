@@ -6,17 +6,16 @@ import { Select } from '@/components/ui/select'
 import { RuleRegistryTable, type RuleRow } from '@/components/bot-control/RuleRegistryTable'
 import { listBotRules, listRuleCategories, type RuleSettingsKey } from '@/lib/bot-control/rule-registry'
 import { fetchJson } from '@/lib/fetch-json'
-import { PageHeader } from '@/components/ui/page-header'
 
 /** Only the two columns any rule is switched by. */
 type SettingsFlags = Record<RuleSettingsKey, boolean>
 
 /**
- * The bot's rules, as a reference page.
+ * The bot's rules, as a reference tab.
  *
  * --- Why there is nothing to press here ---
  *
- * This page used to fetch `/api/bot-control/rules`, which layered database rows over the static
+ * This view used to fetch `/api/bot-control/rules`, which layered database rows over the static
  * registry and handed back an edit surface per rule, backed by six routes and a
  * draft → review → approve → publish state machine. For ten rows that will never become eleven,
  * eight of which are hardcoded behaviour no row could change. The registry is a static list in
@@ -27,7 +26,7 @@ type SettingsFlags = Record<RuleSettingsKey, boolean>
  * that comes from `Settings` — the same two booleans /chatbot writes. A failed read leaves them
  * `undefined`, which the table renders as "tidak terbaca" rather than as off.
  */
-export default function RulesRegistryPage() {
+export function RulesReference() {
   const [query, setQuery] = useState('')
   const [category, setCategory] = useState('')
   const [flags, setFlags] = useState<SettingsFlags | null>(null)
@@ -71,33 +70,25 @@ export default function RulesRegistryPage() {
   }, [rules, query, category])
 
   return (
-    <main className="mx-auto w-full max-w-[1600px] space-y-5 p-6">
-      <PageHeader
-        title="Rules Registry"
-        description={
-          <>
-            <p>
-              Aturan yang benar-benar mengikat bot hari ini, beserta file yang menegakkannya. Daftar ini hanya untuk
-              dibaca.
-            </p>
-            {/* Said plainly, because "kenapa tidak ada tombolnya" is the first question this
-                page raises, and an operator who goes looking for a switch that does not exist
-                will eventually convince themselves they found one. */}
-            <p className="mt-1 text-xs">
-              Delapan aturan di bawah ditegakkan langsung oleh kode dan hanya berubah lewat deploy. Dua sisanya punya
-              sakelar di{' '}
-              <Link href="/chatbot" className="text-accent hover:underline">
-                Chatbot
-              </Link>
-              , dan default jalur kirim diatur di{' '}
-              <Link href="/settings" className="text-accent hover:underline">
-                Pengaturan
-              </Link>
-              .
-            </p>
-          </>
-        }
-      />
+    <div className="space-y-5">
+      <div className="space-y-1 text-sm text-ink-muted">
+        <p>Aturan yang benar-benar mengikat bot hari ini, beserta file yang menegakkannya. Daftar ini hanya dibaca.</p>
+        {/* Said plainly, because "kenapa tidak ada tombolnya" is the first question this
+            section raises, and an operator who goes looking for a switch that does not exist
+            will eventually convince themselves they found one. */}
+        <p className="text-xs">
+          Delapan aturan di bawah ditegakkan langsung oleh kode dan hanya berubah lewat deploy. Dua sisanya sakelar
+          di{' '}
+          <Link href="/chatbot" className="text-accent hover:underline">
+            Chatbot
+          </Link>
+          , dan default jalur kirim diatur di{' '}
+          <Link href="/settings" className="text-accent hover:underline">
+            Pengaturan
+          </Link>
+          .
+        </p>
+      </div>
 
       <div className="flex flex-wrap items-center gap-2">
         <Input
@@ -118,6 +109,6 @@ export default function RulesRegistryPage() {
       </div>
 
       <RuleRegistryTable rules={visible} />
-    </main>
+    </div>
   )
 }

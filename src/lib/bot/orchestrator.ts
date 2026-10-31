@@ -1017,7 +1017,7 @@ async function composeVerifiedReply(params: {
   // bot-stays-active fallback instead (see TECHNICAL_HICCUP_REPLY's header).
   if (!reply || !reply.trim()) {
     trace.push('Jawaban kosong atau tidak valid', 'Model tidak memberikan jawaban yang bisa dikirim -- tetap dijawab dengan pesan cadangan, bot tetap aktif.')
-    return { ok: false, decision: { mode: 'clarify', reply: TECHNICAL_HICCUP_REPLY, steps: trace.steps } }
+    return { ok: false, decision: { mode: 'clarify', reply: await fallbackReplyText(TECHNICAL_HICCUP_REPLY), steps: trace.steps } }
   }
 
   // GUARDRAIL_INSTRUCTION forbids inventing a price or URL, but nothing ever

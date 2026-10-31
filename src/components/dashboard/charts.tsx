@@ -2,20 +2,20 @@
 import { cn } from '@/lib/utils'
 
 /**
- * Tiga bentuk grafik, digambar tangan dengan SVG. TIDAK ADA dependensi grafik.
+ * Dua bentuk grafik, digambar tangan dengan SVG. TIDAK ADA dependensi grafik.
  *
- * Bukan penghematan bundle demi penghematan: yang dibutuhkan halaman ini adalah tiga bentuk
- * sederhana (bar horizontal, bar bertumpuk, kolom harian), dan sebuah pustaka grafik membawa
- * sistem warna, tipografi, dan tooltip-nya sendiri yang seluruhnya harus dilawan supaya tidak
- * bertabrakan dengan sistem desain di globals.css. Tiga <rect> lebih sedikit kode daripada
- * konfigurasi untuk mematikan semua itu.
+ * Bukan penghematan bundle demi penghematan: yang dibutuhkan halaman ini adalah dua bentuk
+ * sederhana (bar horizontal, bar bertumpuk), dan sebuah pustaka grafik membawa sistem warna,
+ * tipografi, dan tooltip-nya sendiri yang seluruhnya harus dilawan supaya tidak bertabrakan
+ * dengan sistem desain di globals.css. Dua <rect> lebih sedikit kode daripada konfigurasi untuk
+ * mematikan semua itu.
  *
  * KEPUTUSAN BENTUK: marka digambar SVG, TEKS ditulis HTML di sekelilingnya.
  * `preserveAspectRatio="none"` membuat sebuah rect meregang mengikuti lebar panel apa pun tanpa
  * perlu mengukur kontainer — sebuah rect yang diregangkan tetaplah rect. Tapi teks yang ikut
  * diregangkan akan mengecil dan membesar mengikuti lebar kolom grid, dan ukuran huruf yang
  * berubah-ubah menurut breakpoint adalah persis yang tidak boleh terjadi pada skala tipografi
- * Tahap 1A. Jadi label sumbu, nilai, dan legenda semuanya HTML dengan token tema yang sama
+ * Tahap 1A. Jadi nilai dan legenda semuanya HTML dengan token tema yang sama
  * seperti sisa aplikasi, dan SVG hanya memegang batangnya.
  */
 
@@ -115,74 +115,5 @@ export function LegendSwatch({ tone, label }: { tone: ChartTone; label: string }
       <span aria-hidden="true" className={cn('size-2 shrink-0 rounded-xs', SWATCH[tone])} />
       {label}
     </span>
-  )
-}
-
-export type DayVolume = { day: string; inbound: number; outbound: number }
-
-/**
- * Kolom bertumpuk per hari: masuk di bawah, keluar di atas.
- *
- * Bertumpuk dan bukan berdampingan karena pertanyaan pertamanya adalah "seberapa sibuk hari itu"
- * (tinggi total) dan yang kedua "berapa banyak yang kami balas" (pembagiannya) — dua batang
- * terpisah menjawab yang kedua dan membuat yang pertama harus dijumlah dengan mata.
- *
- * Menyorot satu kolom mengubah pembacaan angka di atas grafik. Itulah satu-satunya interaksi di
- * sini, dan ia ada karena tanpanya grafik tiga puluh hari hanya bisa menjawab "bentuknya naik
- * atau turun" — bukan "hari Sabtu itu berapa".
- */
-export function DayColumns({
-  days,
-  activeIndex,
-  onHover,
-  label,
-}: {
-  days: DayVolume[]
-  activeIndex: number | null
-  onHover: (index: number | null) => void
-  label: string
-}) {
-  const max = days.reduce((m, d) => Math.max(m, d.inbound + d.outbound), 0)
-  const slot = 10
-  const gap = 2
-
-  return (
-    <svg
-      viewBox={`0 0 ${Math.max(days.length, 1) * slot} 100`}
-      preserveAspectRatio="none"
-      role="img"
-      aria-label={label}
-      className="block h-24 w-full border-b border-line"
-      onMouseLeave={() => onHover(null)}
-    >
-      {days.map((d, i) => {
-        const scale = max > 0 ? 100 / max : 0
-        const inH = d.inbound > 0 ? Math.max(d.inbound * scale, MIN_VISIBLE) : 0
-        const outH = d.outbound > 0 ? Math.max(d.outbound * scale, MIN_VISIBLE) : 0
-        const x = i * slot + gap / 2
-        const width = slot - gap
-        const active = i === activeIndex
-
-        return (
-          <g key={d.day}>
-            {active && <rect x={i * slot} y="0" width={slot} height="100" className="fill-surface-sunken" />}
-            {outH > 0 && (
-              <rect x={x} y={100 - inH - outH} width={width} height={outH} className={FILL['line']} />
-            )}
-            {inH > 0 && <rect x={x} y={100 - inH} width={width} height={inH} className={FILL['ink']} />}
-            {/* Sasaran sorot setinggi penuh: hari sepi tetap bisa disorot walau batangnya
-                setinggi satu piksel. */}
-            <rect
-              x={i * slot}
-              y="0"
-              width={slot}
-              height="100"
-              fill="transparent"
-              onMouseEnter={() => onHover(i)}
-            />
-          </g>
-        )
-      })}
-    </svg>
   )
 }

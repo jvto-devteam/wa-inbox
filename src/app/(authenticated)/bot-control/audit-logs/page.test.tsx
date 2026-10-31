@@ -94,6 +94,7 @@ describe('AuditLogsPage', () => {
       'BOT_SETTING',
       'OUTBOUND_PROVIDER',
       'OUTBOUND_JOB',
+      'SYSTEM_TEMPLATE',
     ])
   })
 

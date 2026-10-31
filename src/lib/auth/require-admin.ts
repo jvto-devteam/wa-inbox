@@ -5,7 +5,7 @@ import { hasAdminPowers } from '@/lib/bot-control/permissions'
 // Shared by every admin-only route (src/app/api/accounts/route.ts,
 // src/app/api/accounts/[id]/route.ts, src/app/api/numbers/credentials/route.ts,
 // src/app/api/settings/route.ts, src/app/api/numbers/relink/route.ts,
-// src/app/api/bot/mode/route.ts, src/app/api/bot/sync-catalog/route.ts,
+// src/app/api/bot/mode/route.ts,
 // src/app/api/templates/route.ts, src/app/api/templates/[id]/route.ts).
 //
 // The cookie parsing itself now lives in getSession() so it is shared with the

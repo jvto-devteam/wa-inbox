@@ -8,6 +8,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { TableContainer } from '@/components/ui/table'
 import { PageHeader } from '@/components/ui/page-header'
 import { fetchJson } from '@/lib/fetch-json'
+import { KNOWLEDGE_GAP_SHORT_LABEL } from '@/lib/inbox/gap-labels'
 
 type KnowledgeGap = {
   id: string
@@ -21,13 +22,6 @@ type KnowledgeGap = {
   answerParagraph?: number | null
   createdAt: string
   resolvedAt: string | null
-}
-
-const REASON_LABEL: Record<string, string> = {
-  no_facts_resolved: 'Tidak ada fakta',
-  verification_failed: 'Gagal verifikasi',
-  reply_unsourced: 'Jawaban tanpa sumber',
-  reply_deferred_knowledge: 'Butuh knowledge tambahan',
 }
 
 export default function KnowledgeGapsPage() {
@@ -83,9 +77,11 @@ export default function KnowledgeGapsPage() {
         actions={
           <Select aria-label="Saring menurut alasan" value={filter} onChange={(e) => setFilter(e.target.value)}>
             <option value="">Semua alasan</option>
-            <option value="no_facts_resolved">Tidak ada fakta</option>
-            <option value="verification_failed">Gagal verifikasi</option>
-            <option value="reply_deferred_knowledge">Butuh knowledge tambahan</option>
+            {Object.entries(KNOWLEDGE_GAP_SHORT_LABEL).map(([reason, label]) => (
+              <option key={reason} value={reason}>
+                {label}
+              </option>
+            ))}
           </Select>
         }
       />
@@ -118,7 +114,7 @@ export default function KnowledgeGapsPage() {
               <li key={g.id} className="px-4 py-3">
                 <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                   <span className="text-base font-medium text-ink">{g.topic}</span>
-                  <Badge variant="muted">{REASON_LABEL[g.reason] ?? g.reason}</Badge>
+                  <Badge variant="muted">{KNOWLEDGE_GAP_SHORT_LABEL[g.reason] ?? g.reason}</Badge>
                   <span className="text-xs text-ink-muted">{g.contactName ?? g.conversationId}</span>
                   <time dateTime={g.createdAt} className="ml-auto font-mono text-xs text-ink-subtle">
                     {new Date(g.createdAt).toLocaleString('id-ID')}

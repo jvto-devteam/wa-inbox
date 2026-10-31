@@ -839,6 +839,16 @@ describe('decideAndRespond', () => {
     expect(result.mode).toBe('clarify')
   })
 
+  it('memakai fallbackReply operator saat LLM menjawab kosong', async () => {
+    ;vi.mocked(ensureFreshBookingData).mockResolvedValue({ bookingId: 'B1' })
+    ;vi.mocked(callLLM).mockResolvedValue('   ')
+    mockPrisma.settings.findUnique.mockResolvedValue({ fallbackReply: 'Maaf, coba lagi sebentar ya.' } as never)
+
+    const result = await decideAndRespond('conv_1', 'Booking saya sudah lunas belum?')
+
+    expect((result as { reply: string }).reply).toBe('Maaf, coba lagi sebentar ya.')
+  })
+
   it('stays active with a graceful fallback (not a handoff) when the Mode 3 LLM call times out or rejects', async () => {
     ;vi.mocked(ensureFreshBookingData).mockResolvedValue({ bookingId: 'B1' })
     ;vi.mocked(callLLM).mockRejectedValue(new DOMException('The operation was aborted.', 'TimeoutError'))

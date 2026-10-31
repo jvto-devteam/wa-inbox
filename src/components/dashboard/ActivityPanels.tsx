@@ -1,9 +1,7 @@
 'use client'
-import { useState } from 'react'
-import { CheckCircle2 } from 'lucide-react'
 import { Panel, PanelError, PanelLoading, Stat } from './Panel'
-import { DayColumns, HBar, LegendSwatch, SegmentBar, type ChartTone, type DayVolume } from './charts'
-import { formatDayLabel, formatLatency, formatNumber } from './data'
+import { HBar, LegendSwatch, SegmentBar, type ChartTone } from './charts'
+import { formatLatency, formatNumber } from './data'
 
 /** Label Indonesia untuk `BotDecisionRun.status` (pemetaan aslinya di decision-recorder.ts). */
 const DECISION_LABEL: Record<string, string> = {
@@ -25,113 +23,6 @@ const DECISION_TONES: { key: string; tone: ChartTone }[] = [
   { key: 'FAILED', tone: 'danger' },
   { key: 'SKIPPED', tone: 'line' },
 ]
-
-/** `KnowledgeGapLog.reason` adalah himpunan tertutup (lihat komentar modelnya), jadi ini lengkap. */
-const GAP_REASON_LABEL: Record<string, string> = {
-  no_facts_resolved: 'Tidak ada fakta',
-  verification_failed: 'Gagal verifikasi',
-  reply_unsourced: 'Jawaban tanpa sumber',
-  reply_deferred_knowledge: 'Butuh knowledge tambahan',
-}
-
-/**
- * VOLUME PESAN — seberapa sibuk, dan seberapa banyak yang benar-benar dibalas.
- *
- * Satu-satunya panel di halaman ini yang benar-benar butuh gambar. Pertanyaannya adalah bentuk
- * sepanjang waktu ("apakah minggu ini lebih ramai", "apakah ada hari yang tiba-tiba sepi"), dan
- * tiga puluh pasang angka dalam tabel tidak menjawabnya — hanya membuat orang menggambar
- * grafiknya sendiri di kepala.
- *
- * Harinya adalah hari Asia/Jakarta, dipotong di database. Lihat /api/dashboard/activity.
- */
-export function VolumePanel({
-  days,
-  rangeDays,
-  error,
-  loading,
-  onRetry,
-  className,
-}: {
-  days: DayVolume[]
-  rangeDays: number
-  error: string | null
-  loading: boolean
-  onRetry?: () => void
-  className?: string
-}) {
-  const [active, setActive] = useState<number | null>(null)
-
-  const totalIn = days.reduce((s, d) => s + d.inbound, 0)
-  const totalOut = days.reduce((s, d) => s + d.outbound, 0)
-  const busiest = days.reduce<DayVolume | null>(
-    (best, d) => (best === null || d.inbound + d.outbound > best.inbound + best.outbound ? d : best),
-    null
-  )
-  const shown = active !== null && days[active] ? days[active] : null
-
-  return (
-    <Panel
-      title="Volume pesan"
-      subtitle={loading || error ? undefined : `${rangeDays} hari terakhir · zona Asia/Jakarta`}
-      className={className}
-    >
-      {loading ? (
-        <PanelLoading rows={4} />
-      ) : error ? (
-        <PanelError message={error} onRetry={onRetry} />
-      ) : totalIn + totalOut === 0 ? (
-        <p className="text-sm text-ink-muted">
-          Tidak ada satu pesan pun dalam {rangeDays} hari terakhir.
-        </p>
-      ) : (
-        <div className="space-y-2">
-          {/* Pembacaan hidup: menyorot satu kolom mengubah baris ini. Tanpa hover ia menyebut
-              total rentangnya, jadi tidak pernah ada ruang kosong menunggu mouse. */}
-          <div className="flex items-baseline justify-between gap-3">
-            <p className="min-w-0 truncate text-sm text-ink">
-              {shown ? (
-                <>
-                  <span className="font-medium">{formatDayLabel(shown.day)}</span>
-                  <span className="text-ink-muted">
-                    {' · '}
-                    {formatNumber(shown.inbound)} masuk, {formatNumber(shown.outbound)} keluar
-                  </span>
-                </>
-              ) : (
-                <>
-                  <span className="font-medium">{formatNumber(totalIn + totalOut)}</span>
-                  <span className="text-ink-muted"> pesan · {formatNumber(totalIn)} masuk, {formatNumber(totalOut)} keluar</span>
-                </>
-              )}
-            </p>
-            {busiest && (
-              <p className="shrink-0 font-mono text-xs text-ink-subtle tabular-nums">
-                maks {formatNumber(busiest.inbound + busiest.outbound)}/hari
-              </p>
-            )}
-          </div>
-
-          <DayColumns
-            days={days}
-            activeIndex={active}
-            onHover={setActive}
-            label={`Volume pesan per hari selama ${rangeDays} hari terakhir: ${formatNumber(totalIn)} masuk dan ${formatNumber(totalOut)} keluar, hari tersibuk ${busiest ? formatDayLabel(busiest.day) : '-'}`}
-          />
-
-          <div className="flex items-center justify-between gap-3 font-mono text-xs text-ink-subtle tabular-nums">
-            <span>{formatDayLabel(days[0]?.day ?? '')}</span>
-            <span>{formatDayLabel(days[days.length - 1]?.day ?? '')}</span>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
-            <LegendSwatch tone="ink" label={`Masuk ${formatNumber(totalIn)}`} />
-            <LegendSwatch tone="line" label={`Keluar ${formatNumber(totalOut)}`} />
-          </div>
-        </div>
-      )}
-    </Panel>
-  )
-}
 
 /**
  * KESEHATAN BOT — apakah bot masih menyelesaikan percakapan sendiri.
@@ -227,84 +118,6 @@ export function BotHealthPanel({
           <p className="text-xs text-ink-muted">
             Terlama {formatLatency(decisions.maxLatencyMs)}
             {decisions.flagged > 0 && ` · ${formatNumber(decisions.flagged)} keputusan ditandai untuk diperbaiki`}
-          </p>
-        </div>
-      )}
-    </Panel>
-  )
-}
-
-/**
- * PERTANYAAN YANG BOT TIDAK BISA JAWAB — masukan produk paling langsung yang dimiliki JVTO.
- *
- * Setiap baris adalah satu pelanggan yang bertanya sesuatu yang tidak ada jawabannya di katalog
- * atau knowledge base. Dikelompokkan menurut topik karena satu topik yang muncul dua belas kali
- * adalah satu paragraf yang perlu ditulis, sementara dua belas baris terpisah terbaca sebagai
- * dua belas kejadian sial.
- */
-export function KnowledgeGapsPanel({
-  gaps,
-  rangeDays,
-  error,
-  loading,
-  onRetry,
-  className,
-}: {
-  gaps: {
-    total: number
-    byReason: Record<string, number>
-    topTopics: { topic: string; count: number }[]
-  } | null
-  rangeDays: number
-  error: string | null
-  loading: boolean
-  onRetry?: () => void
-  className?: string
-}) {
-  const max = gaps?.topTopics.reduce((m, t) => Math.max(m, t.count), 0) ?? 0
-
-  return (
-    <Panel
-      title="Pertanyaan yang bot tidak bisa jawab"
-      subtitle={loading || error || !gaps ? undefined : `${formatNumber(gaps.total)} dalam ${rangeDays} hari terakhir`}
-      href="/settings/knowledge-gaps"
-      hrefLabel="Semua pertanyaan"
-      className={className}
-    >
-      {loading ? (
-        <PanelLoading rows={4} />
-      ) : error || !gaps ? (
-        <PanelError message={error ?? 'Daftar pertanyaan tidak terbaca'} onRetry={onRetry} />
-      ) : gaps.total === 0 ? (
-        <p className="flex items-center gap-2 text-sm text-ink-muted">
-          <CheckCircle2 aria-hidden="true" className="size-4 shrink-0 text-success" strokeWidth={1.75} />
-          Bot menjawab semua yang ditanyakan dalam {rangeDays} hari terakhir.
-        </p>
-      ) : (
-        <div className="space-y-3">
-          <ul className="space-y-2.5">
-            {gaps.topTopics.map((t) => (
-              <li key={t.topic}>
-                <div className="flex items-baseline justify-between gap-3">
-                  <span className="truncate text-sm text-ink">{t.topic}</span>
-                  <span className="shrink-0 font-mono text-sm text-ink tabular-nums">
-                    {formatNumber(t.count)}
-                  </span>
-                </div>
-                <div className="mt-1">
-                  <HBar value={t.count} max={max} tone="warning" />
-                </div>
-              </li>
-            ))}
-          </ul>
-
-          <p className="flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-line pt-2.5">
-            {Object.entries(gaps.byReason).map(([reason, count]) => (
-              <span key={reason} className="text-xs text-ink-muted">
-                {GAP_REASON_LABEL[reason] ?? reason}{' '}
-                <span className="font-mono text-ink tabular-nums">{formatNumber(count)}</span>
-              </span>
-            ))}
           </p>
         </div>
       )}

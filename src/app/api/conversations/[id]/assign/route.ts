@@ -1,11 +1,15 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { prisma } from '@/lib/db'
+import { getSession } from '@/lib/auth/get-session'
 import { parseJsonBody } from '@/lib/parse-json'
 
 const bodySchema = z.object({ agentId: z.string().nullable() })
 
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
+  const session = await getSession(req)
+  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
   const { id } = await params
   const parsed = await parseJsonBody(req, bodySchema, 'agentId wajib diisi (atau null)')
   if (!parsed.success) return NextResponse.json({ error: parsed.error }, { status: 400 })

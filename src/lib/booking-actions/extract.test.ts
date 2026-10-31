@@ -2,8 +2,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('@/lib/bot/llm', () => ({ callLLM: vi.fn() }))
+vi.mock('@/lib/db', () => ({ prisma: { settings: { findUnique: vi.fn() } } }))
 
 import { callLLM } from '@/lib/bot/llm'
+import { prisma } from '@/lib/db'
 import { bookingContextForLLM, extractBookingSignals, parseExtraction, remapArrivalToDetail } from './extract'
 import type { BookingData } from '@/lib/booking/client'
 
@@ -11,6 +13,7 @@ const ids = ['m1', 'm2', 'm3']
 
 beforeEach(() => {
   vi.mocked(callLLM).mockReset()
+  vi.mocked(prisma.settings.findUnique).mockResolvedValue({ ollamaModel: 'gemma4:31b-cloud' } as never)
 })
 
 describe('parseExtraction', () => {
@@ -112,6 +115,12 @@ describe('extractBookingSignals', () => {
     const opts = vi.mocked(callLLM).mock.calls[0][1]
     expect(opts?.timeoutMs).toBe(20_000)
     expect(opts?.system).toBeTruthy()
+  })
+  it('memakai model dari Settings, sama dengan LLM bot lainnya', async () => {
+    vi.mocked(prisma.settings.findUnique).mockResolvedValue({ ollamaModel: 'gemma-lokal:12b' } as never)
+    vi.mocked(callLLM).mockResolvedValue(JSON.stringify({ changes: [], facts: [] }))
+    await extractBookingSignals(input)
+    expect(vi.mocked(callLLM).mock.calls[0][1]?.model).toBe('gemma-lokal:12b')
   })
   it('returns null on technical failure', async () => {
     vi.mocked(callLLM).mockRejectedValue(new Error('timeout'))

@@ -7,6 +7,7 @@ import { IconButton } from '@/components/ui/icon-button'
 import { Textarea } from '@/components/ui/textarea'
 import { KnowledgeEditor, type KnowledgeDraft } from '@/components/bot-control/KnowledgeEditor'
 import { fetchJson } from '@/lib/fetch-json'
+import { KNOWLEDGE_GAP_LABEL } from '@/lib/inbox/gap-labels'
 import { cn } from '@/lib/utils'
 import type { BotDecision } from '@/lib/bot/types'
 import type { KnowledgeItem } from '@/lib/bot-control/knowledge-body'
@@ -46,12 +47,6 @@ type Retest =
 
 const MIN_NOTE_LENGTH = 10
 type UsedSource = { key: string; label: string; sourceId?: string }
-const KNOWLEDGE_GAP_LABEL: Record<string, string> = {
-  no_facts_resolved: 'Tidak ada fakta knowledge untuk pertanyaan ini',
-  verification_failed: 'Jawaban gagal diverifikasi terhadap knowledge',
-  reply_unsourced: 'Ada jawaban yang tidak punya knowledge',
-  reply_deferred_knowledge: 'Ada bagian jawaban yang belum punya knowledge',
-}
 
 /** Batas knowledgeItemSchema (question) dan judul yang wajar untuk entri baru. */
 const QUESTION_MAX = 1000

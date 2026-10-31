@@ -21,7 +21,7 @@ import type { ReactNode } from 'react'
  * judul `text-base font-semibold`, penjelasan kecil di bawahnya, dipisah garis rambut dari
  * isinya. Kalau salah satu berubah, yang lain harus ikut.
  *
- * `actions` untuk aksi tingkat bagian (mis. "Sinkron Sekarang"). Aksi utama tiap bagian
+ * `actions` untuk aksi tingkat bagian (mis. "Tambah akun"). Aksi utama tiap bagian
  * cukup satu; sisanya outline atau ghost.
  *
  * `bodyClassName` (seperti pada `Panel`) untuk bagian yang ISINYA HANYA satu tabel: diberi

@@ -1,68 +1,40 @@
 'use client'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { ArrowRight, TriangleAlert } from 'lucide-react'
 import { PageHeader } from '@/components/ui/page-header'
 import { Skeleton } from '@/components/ui/skeleton'
 import { RangeSwitch } from '@/components/dashboard/Panel'
-import { WaitingQueuePanel, RemindersPanel } from '@/components/dashboard/WaitingPanels'
-import { ContextPanel, FunnelPanel, OutboundPanel } from '@/components/dashboard/OpsPanels'
-import { BotHealthPanel, DecisionTopicPanel, KnowledgeGapsPanel, VolumePanel } from '@/components/dashboard/ActivityPanels'
-import {
-  buildWaitingList,
-  countBotHeld,
-  type ConversationRow,
-  type DueReminder,
-  type Summary,
-} from '@/components/dashboard/data'
+import { RemindersPanel } from '@/components/dashboard/RemindersPanel'
+import { FunnelPanel, OutboundPanel } from '@/components/dashboard/OpsPanels'
+import { BotHealthPanel, DecisionTopicPanel } from '@/components/dashboard/ActivityPanels'
+import type { ChannelStatus, DueReminder } from '@/components/dashboard/data'
 import type { DashboardActivity } from '@/app/api/dashboard/activity/route'
 import type { DashboardOperations } from '@/app/api/dashboard/operations/route'
 import { fetchJson, FetchJsonError } from '@/lib/fetch-json'
 
 /**
- * BERANDA — jendela ke seluruh aplikasi, bukan ke satu daftar.
+ * BERANDA — keadaan bisnis dan mesinnya, sekali lihat.
  *
- * Bentuk sebelumnya menjawab satu pertanyaan dengan sangat baik ("siapa yang paling lama
- * menunggu dibalas") dan tidak menjawab apa pun selain itu, di dalam kolom selebar 768px di
- * layar 2880px. Pemiliknya membacanya persis seperti itu: isinya sedikit, datar, dan kanan
- * kirinya kosong.
+ * Sejak audit 2026-10-31 hanya berisi hal yang tidak dijawab layar lain: chat yang perlu dibalas
+ * ada di /summary (antrean bertindakan, tertua dulu), jadi panel bacaan Antrean chat, Volume,
+ * Pertanyaan tak terjawab, dan Ringkasan inbox dilepas.
  *
- * Yang berubah, dan alasannya:
+ * Yang sengaja tetap:
+ *   - Funnel: permintaan pemilik, "di mana pelanggan menumpuk" tidak dijawab layar mana pun.
+ *   - Reminder jatuh tempo: satu-satunya tempat reminder manual muncul.
+ *   - Keputusan per cluster topik/job (R53): tanpa panel ini kolomnya ditulis dan tak terbaca.
  *
- *  1. LEBAR. `max-w-3xl` diganti `max-w-[1600px]`. Batasnya tetap ada — di layar ultrawide
- *     baris teks selebar dua meter tidak bisa dibaca siapa pun — tapi sekarang ia memuat tiga
- *     kolom panel, bukan satu kolom yang ditarik melar.
- *
- *  2. CAKUPAN. Sembilan panel, satu per wilayah aplikasi yang benar-benar punya datanya:
- *     antrean chat (Inbox), reminder (CRM), funnel penjualan (pipeline), antrean outbound,
- *     volume pesan, kesehatan bot, pertanyaan tak terjawab (knowledge), keputusan bot per
- *     cluster topik/job (R53), dan ringkasan inbox + saluran. Tidak ada satu pun angka di
- *     halaman ini yang tidak berasal dari tabel nyata.
- *
- *  3. INTERAKSI YANG BERARTI. Dua saja, dan keduanya mengubah jawaban: pemilih rentang
- *     (7/14/30 hari) yang benar-benar menarik ulang angkanya dari database, dan sorotan kolom
- *     di grafik volume yang membuka angka satu hari tertentu. Tidak ada animasi yang tidak
- *     menjawab pertanyaan.
- *
- * URUTAN PANEL, bukan urutan menu:
+ * URUTAN PANEL:
  *   0. Peringatan saluran — HANYA kalau rusak. Kalau pesan tidak bisa keluar, semua di bawahnya
  *      tidak bisa dikerjakan.
- *   1. Funnel, volume, kesehatan bot. Keadaan bisnis dan mesinnya.
- *   2. Antrean chat menunggu (dua kolom) + reminder + antrean outbound. Pekerjaan hari ini.
- *   3. Pertanyaan tak terjawab + ringkasan inbox. Pekerjaan minggu depan.
- *   4. Keputusan bot per cluster topik/job (R53). Sama waktunya dengan baris 1 (activity), tapi
- *      diturunkan ke bawah karena isinya diagnostik -- berguna saat menyelidiki, bukan setiap
- *      kali membuka Beranda.
+ *   1. Funnel, kesehatan bot, antrean outbound. Keadaan bisnis dan mesinnya.
+ *   2. Reminder + keputusan bot per cluster.
  *
- * Baris 1 dan 2 SENGAJA dibalik dari urutan mendesaknya, atas permintaan pemilik. Alasannya
- * masuk akal untuk peran yang membuka layar ini: "siapa yang menunggu" sudah dijawab sidebar
- * Inbox sepanjang hari, sedangkan "di mana pelanggan menumpuk" tidak dijawab layar mana pun
- * selain di sini. Antrean tetap di paruh atas, jadi tidak ada yang tenggelam.
- *
- * EMPAT SUMBER DATA YANG BERDIRI SENDIRI. Setiap panel gagal sendirian dan mengaku sendiri;
- * satu endpoint yang 500 tidak boleh mengosongkan delapan panel yang datanya baik-baik saja.
- * Pengecualiannya adalah 401: fetchJson sudah melempar browser ke /login, dan menulis "gagal"
- * di layar yang sedang ditinggalkan hanya menakuti orang tanpa memberi tahu apa pun.
+ * SUMBER DATA BERDIRI SENDIRI. Setiap panel gagal sendirian dan mengaku sendiri; satu endpoint
+ * yang 500 tidak boleh mengosongkan panel yang datanya baik-baik saja. Pengecualiannya adalah
+ * 401: fetchJson sudah melempar browser ke /login, dan menulis "gagal" di layar yang sedang
+ * ditinggalkan hanya menakuti orang tanpa memberi tahu apa pun.
  */
 
 /**
@@ -125,96 +97,30 @@ function useEndpoint<T>(url: string): Loadable<T> {
   return { data, error, loading: loadedKey !== key, reload: () => setAttempt((a) => a + 1) }
 }
 
-type InboxState = {
-  summary: Summary | null
-  conversations: ConversationRow[] | null
-  error: string | null
-  loading: boolean
-}
-
-/**
- * Ringkasan + daftar percakapan, sengaja SATU keadaan.
- *
- * Antrean chat butuh keduanya sekaligus dan tidak bisa separuh: /api/dashboard/summary adalah
- * satu-satunya yang tahu percakapan mana yang sudah diserahkan bot dan belum dipegang siapa pun
- * (`assignedAgentId` tidak ada di /api/conversations), sementara /api/conversations adalah
- * satu-satunya yang membawa `lastMessageAt` — tanpa itu antrean ini tidak bisa diurutkan menurut
- * lama tunggu sama sekali, dan itulah seluruh alasan panel ini ada.
- */
-function useInbox(): InboxState & { reload: () => void } {
-  const [state, setState] = useState<InboxState>({
-    summary: null,
-    conversations: null,
-    error: null,
-    loading: true,
-  })
-  const [attempt, setAttempt] = useState(0)
-
-  useEffect(() => {
-    let cancelled = false
-    Promise.all([
-      fetchJson<Summary>('/api/dashboard/summary'),
-      fetchJson<ConversationRow[]>('/api/conversations'),
-    ])
-      .then(([summary, conversations]) => {
-        if (!cancelled) setState({ summary, conversations, error: null, loading: false })
-      })
-      .catch((err: unknown) => {
-        if (cancelled) return
-        if (err instanceof FetchJsonError && err.status === 401) return
-        setState({
-          summary: null,
-          conversations: null,
-          error: err instanceof Error ? err.message : 'Permintaan gagal',
-          loading: false,
-        })
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [attempt])
-
-  return { ...state, reload: () => setAttempt((a) => a + 1) }
-}
-
 export default function DashboardPage() {
   const [range, setRange] = useState<number>(DEFAULT_RANGE)
 
-  const inbox = useInbox()
+  const channels = useEndpoint<ChannelStatus>('/api/numbers/status')
   const reminders = useEndpoint<DueReminder[]>('/api/reminders/due')
   const operations = useEndpoint<DashboardOperations>('/api/dashboard/operations')
   const activity = useEndpoint<DashboardActivity>(`/api/dashboard/activity?days=${range}`)
 
-  // Ditandai sekali saat data masuk lalu berdetak tiap menit: isi utama panel teratas adalah
-  // "sudah menunggu berapa lama", dan layar yang dibiarkan terbuka sepanjang pagi tidak boleh
-  // terus mengaku "4 jam" sampai sore. Dibaca hanya di cabang yang sudah punya data, jadi tidak
-  // pernah ikut render server dan tidak bisa memicu ketidakcocokan hidrasi.
+  // Ditandai sekali lalu berdetak tiap menit: layar yang dibiarkan terbuka sepanjang pagi tidak
+  // boleh terus mengaku reminder "terlambat 1 jam" sampai sore.
   const [now, setNow] = useState(() => new Date())
   useEffect(() => {
     const tick = setInterval(() => setNow(new Date()), 60_000)
     return () => clearInterval(tick)
   }, [])
 
-  const waiting = useMemo(
-    () =>
-      inbox.summary && inbox.conversations
-        ? buildWaitingList(inbox.summary, inbox.conversations)
-        : [],
-    [inbox.summary, inbox.conversations]
-  )
-  const botHeld = useMemo(
-    () => (inbox.conversations ? countBotHeld(inbox.conversations) : 0),
-    [inbox.conversations]
-  )
-
   const onRangeChange = useCallback((next: number) => setRange(next), [])
 
-  const summary = inbox.summary
-  const channelsHealthy = summary ? summary.officialTokenValid && summary.unofficialConfigured : true
+  const status = channels.data
+  const channelsHealthy = status ? status.officialTokenValid && status.unofficialConfigured : true
   const brokenChannelTitle =
-    summary && !summary.officialTokenValid && !summary.unofficialConfigured
+    status && !status.officialTokenValid && !status.unofficialConfigured
       ? 'Kedua saluran WhatsApp tidak siap mengirim'
-      : summary && !summary.officialTokenValid
+      : status && !status.officialTokenValid
         ? 'Saluran resmi tidak bisa mengirim pesan'
         : 'Saluran tidak resmi belum diatur'
 
@@ -233,14 +139,14 @@ export default function DashboardPage() {
         }
       />
 
-      {inbox.loading ? (
+      {channels.loading ? (
         <DashboardBodySkeleton />
       ) : (
         <>
           {/* Satu-satunya hal di halaman ini yang boleh berteriak, dan ia hanya ada saat memang
               rusak. Kalau pesan tidak bisa keluar, seluruh pekerjaan di bawahnya tidak bisa
               diselesaikan — jadi ia mendahului, bukan jadi lencana di pojok. */}
-          {summary && !channelsHealthy && (
+          {status && !channelsHealthy && (
             <Link
               href="/settings"
               className="focus-ring flex items-start gap-2.5 rounded-lg border border-danger/35 bg-danger-subtle px-4 py-3"
@@ -256,9 +162,14 @@ export default function DashboardPage() {
             </Link>
           )}
 
-          {/* BARIS 1 — keadaan bisnis dan mesinnya. Dinaikkan ke atas atas permintaan pemilik:
-              pertanyaan pertama yang ia bawa ke layar ini adalah "di mana pelanggan menumpuk",
-              bukan "siapa yang menunggu" — yang sudah dijawab sidebar Inbox sepanjang hari. */}
+          <Link
+            href="/summary"
+            className="focus-ring flex items-center gap-2 rounded-lg border border-line bg-surface px-4 py-2.5 text-sm font-medium text-ink transition-colors hover:bg-surface-sunken"
+          >
+            Chat yang perlu dibalas ada di Summary Harian
+            <ArrowRight aria-hidden="true" className="size-3.5 text-ink-muted" strokeWidth={1.75} />
+          </Link>
+
           <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
             <FunnelPanel
               funnel={operations.data?.funnel ?? []}
@@ -267,13 +178,6 @@ export default function DashboardPage() {
               loading={operations.loading}
               onRetry={operations.reload}
             />
-            <VolumePanel
-              days={activity.data?.volume ?? []}
-              rangeDays={range}
-              error={activity.error}
-              loading={activity.loading}
-              onRetry={activity.reload}
-            />
             <BotHealthPanel
               decisions={activity.data?.decisions ?? null}
               rangeDays={range}
@@ -281,59 +185,22 @@ export default function DashboardPage() {
               loading={activity.loading}
               onRetry={activity.reload}
             />
+            <OutboundPanel
+              outbound={operations.data?.outbound ?? null}
+              error={operations.error}
+              loading={operations.loading}
+              onRetry={operations.reload}
+            />
           </div>
 
-          {/* BARIS 2 — pekerjaan hari ini. Antrean mendapat dua pertiga lebar karena ia satu-satunya
-              panel yang isinya orang, bukan angka. */}
-          <div className="grid gap-4 xl:grid-cols-3">
-            <WaitingQueuePanel
-              className="xl:col-span-2"
-              rows={waiting}
-              botHeld={botHeld}
+          <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
+            <RemindersPanel
+              reminders={reminders.data ?? []}
               now={now}
-              error={inbox.error}
-              loading={inbox.loading}
-              onRetry={inbox.reload}
+              error={reminders.error}
+              loading={reminders.loading}
+              onRetry={reminders.reload}
             />
-            <div className="flex flex-col gap-4">
-              <RemindersPanel
-                reminders={reminders.data ?? []}
-                now={now}
-                error={reminders.error}
-                loading={reminders.loading}
-                onRetry={reminders.reload}
-              />
-              <OutboundPanel
-                outbound={operations.data?.outbound ?? null}
-                error={operations.error}
-                loading={operations.loading}
-                onRetry={operations.reload}
-              />
-            </div>
-          </div>
-
-          {/* BARIS 3 — pekerjaan minggu depan, dan konteks yang tenang. */}
-          <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
-            <KnowledgeGapsPanel
-              className="xl:col-span-2"
-              gaps={activity.data?.gaps ?? null}
-              rangeDays={range}
-              error={activity.error}
-              loading={activity.loading}
-              onRetry={activity.reload}
-            />
-            <ContextPanel
-              summary={summary}
-              botHeld={botHeld}
-              error={inbox.error}
-              loading={inbox.loading}
-              onRetry={inbox.reload}
-            />
-          </div>
-
-          {/* BARIS 4 — dua sumbu klasifikasi giliran bot (`topic`, `job`), yang tanpa panel ini
-              hanyalah kolom yang ditulis dan tidak pernah dibaca siapa pun (Ruling R53). */}
-          <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
             <DecisionTopicPanel
               className="xl:col-span-2"
               byTopic={activity.data?.byTopic ?? null}
@@ -353,7 +220,7 @@ export default function DashboardPage() {
 /**
  * Kerangka pemuatan: bentuk halaman jadinya, bukan pemintal.
  *
- * Empat baris grid yang sama persis dengan yang akan menggantikannya, sehingga isi yang datang
+ * Baris grid yang sama persis dengan yang akan menggantikannya, sehingga isi yang datang
  * tidak menggeser apa pun. Ia sengaja HANYA mengganti badan halaman — kepala (judul, tanggal,
  * pemilih rentang) tetap terpasang sepanjang pemuatan, karena menukar seluruh <main> membuat
  * React membongkar dan memasang ulang seluruh pohon, dan judul yang berkedip di setiap muat
@@ -367,18 +234,8 @@ function DashboardBodySkeleton() {
         <SkeletonPanel rows={5} />
         <SkeletonPanel rows={5} />
       </div>
-      <div className="grid gap-4 xl:grid-cols-3">
-        <SkeletonPanel rows={6} className="xl:col-span-2" />
-        <div className="flex flex-col gap-4">
-          <SkeletonPanel rows={3} />
-          <SkeletonPanel rows={2} />
-        </div>
-      </div>
       <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
-        <SkeletonPanel rows={4} className="xl:col-span-2" />
         <SkeletonPanel rows={3} />
-      </div>
-      <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
         <SkeletonPanel rows={5} className="xl:col-span-2" />
       </div>
     </div>

@@ -340,11 +340,11 @@ describe('semua halaman masih terjangkau', () => {
   const railHrefs = new Set(NAV_ITEMS.map((i) => i.href))
   const subNavHrefs = new Set(BOT_CONTROL_SECTIONS.map((s) => s.href as string))
 
-  it('menemukan kedua puluh satu halaman di disk, bukan lebih sedikit', () => {
+  it('menemukan kesembilan belas halaman di disk, bukan lebih sedikit', () => {
     // Angka ini adalah jumlah halaman saat Tahap 1B ditulis (19), ditambah /summary (2026-09-22) dan /ai-office
-    // (2026-10-23), keduanya dijangkau dari rail. Kalau ia berubah, test-test di bawah harus dibaca ulang secara
-    // sadar, bukan lolos diam-diam.
-    expect(routes).toHaveLength(21)
+    // (2026-10-23), dikurangi Flow Map dan Rules yang jadi tab /bot-control (2026-10-31). Kalau ia berubah,
+    // test-test di bawah harus dibaca ulang secara sadar, bukan lolos diam-diam.
+    expect(routes).toHaveLength(19)
   })
 
   for (const route of routesOnDisk()) {

@@ -12,7 +12,6 @@ import {
   type ExistingFlowNode,
 } from '@/lib/bot-control/existing-flow-registry'
 import { getBotRule } from '@/lib/bot-control/rule-registry'
-import { PageHeader } from '@/components/ui/page-header'
 
 /**
  * The pipeline, as a map. Nothing on this page changes anything.
@@ -37,7 +36,7 @@ function DetailBlock({ label, children }: { label: string; children: React.React
   )
 }
 
-export default function FlowMapPage() {
+export function FlowMapReference({ onOpenRules }: { onOpenRules: () => void }) {
   const [activeKey, setActiveKey] = useState<string>(EXISTING_FLOWS[0]?.key ?? '')
   const flow: ExistingFlowDefinition | null = EXISTING_FLOWS.find((f) => f.key === activeKey) ?? null
   // Never null while a flow is selected, so the detail panel is never empty on first paint.
@@ -54,21 +53,16 @@ export default function FlowMapPage() {
   }
 
   return (
-    <main className="mx-auto w-full max-w-[1600px] space-y-4 p-6">
-      <PageHeader
-        title="Flow Map"
-        description={
-          <>
-            Langkah-langkah pipeline bot yang berjalan hari ini. Seluruh halaman ini read-only &mdash; percabangannya
-            adalah control flow di kode, bukan data. Dua kalimat bot yang bisa diubah tanpa deploy (balasan saat bot
-            tidak tahu jawabannya dan kalimat saat percakapan dialihkan ke manusia) ada di halaman{' '}
-            <Link href="/chatbot" className="text-accent hover:underline">
-              Chatbot
-            </Link>
-            .
-          </>
-        }
-      />
+    <div className="space-y-4">
+      <p className="text-sm text-ink-muted">
+        Langkah-langkah pipeline bot yang berjalan hari ini. Seluruh isi tab ini read-only &mdash; yang
+        ditampilkan adalah control flow di kode, bukan data. Dua kalimat bot yang bisa diubah tanpa deploy ada
+        di halaman{' '}
+        <Link href="/chatbot" className="text-accent hover:underline">
+          Chatbot
+        </Link>
+        .
+      </p>
 
       <div className="grid gap-4 lg:grid-cols-[minmax(0,15rem)_minmax(0,1fr)_minmax(0,24rem)] lg:items-start">
         <Card className="h-fit">
@@ -161,9 +155,13 @@ export default function FlowMapPage() {
                     <ul className="space-y-0.5 text-sm">
                       {selectedNode.relatedRuleKeys.map((key) => (
                         <li key={key}>
-                          <Link href="/bot-control/rules" className="focus-ring rounded-sm text-accent hover:underline">
+                          <button
+                            type="button"
+                            onClick={onOpenRules}
+                            className="focus-ring rounded-sm text-accent hover:underline"
+                          >
                             {getBotRule(key)?.name ?? key}
-                          </Link>
+                          </button>
                         </li>
                       ))}
                     </ul>
@@ -176,6 +174,6 @@ export default function FlowMapPage() {
           )}
         </Card>
       </div>
-    </main>
+    </div>
   )
 }

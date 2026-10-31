@@ -3,7 +3,7 @@ import Link from 'next/link'
 import { CheckCircle2, PauseCircle, TriangleAlert } from 'lucide-react'
 import { Panel, PanelError, PanelLoading } from './Panel'
 import { HBar } from './charts'
-import { formatNumber, type Summary } from './data'
+import { formatNumber } from './data'
 import { cn } from '@/lib/utils'
 
 type Funnel = { stage: string; label: string; count: number }[]
@@ -200,82 +200,4 @@ function OutboundStat({
       </dd>
     </div>
   )
-}
-
-/**
- * RINGKASAN INBOX + SALURAN — konteks yang tidak menuntut tindakan, tapi punya tujuan kalau diklik.
- *
- * Tiga angka ini dulu memenuhi bagian atas Beranda sebagai kartu besar yang tidak satu pun bisa
- * diklik. Ukurannya turun, tujuannya naik.
- *
- * Baris saluran ikut di sini karena rail kiri menyembunyikan titik statusnya di bawah md (tooltip
- * tanpa hover), sehingga di ponsel BARIS INI satu-satunya tempat status kedua saluran terbaca —
- * dan karena itu ia menyebut keduanya dengan kata, bukan cuma sebuah titik.
- */
-export function ContextPanel({
-  summary,
-  botHeld,
-  error,
-  loading,
-  onRetry,
-  className,
-}: {
-  summary: Summary | null
-  botHeld: number
-  error: string | null
-  loading: boolean
-  onRetry?: () => void
-  className?: string
-}) {
-  return (
-    <Panel title="Ringkasan inbox" className={className} bodyClassName={loading || error ? 'p-4' : ''}>
-      {loading ? (
-        <PanelLoading rows={3} />
-      ) : error || !summary ? (
-        <PanelError message={error ?? 'Ringkasan tidak terbaca'} onRetry={onRetry} />
-      ) : (
-        <>
-          <div className="grid grid-cols-3 gap-px bg-line">
-            <ContextCell href="/inbox" value={summary.openCount} label="Percakapan terbuka" />
-            <ContextCell href="/inbox" value={botHeld} label="Dipegang bot" />
-            <ContextCell
-              href="/bot-control/decisions"
-              value={summary.handoffTodayCount}
-              label="Diserahkan bot hari ini"
-            />
-          </div>
-          <Link
-            href="/settings"
-            className="focus-ring flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-line px-4 py-2.5 text-sm transition-colors hover:bg-surface-sunken"
-          >
-            <span className="font-medium text-ink">Saluran WhatsApp</span>
-            <span className="flex items-center gap-1.5 text-ink-muted">
-              <StatusDot ok={summary.officialTokenValid} />
-              Resmi — {summary.officialTokenValid ? 'token valid' : 'token tidak valid'}
-            </span>
-            <span className="flex items-center gap-1.5 text-ink-muted">
-              <StatusDot ok={summary.unofficialConfigured} />
-              Tidak resmi — {summary.unofficialConfigured ? 'terkonfigurasi' : 'belum diatur'}
-            </span>
-          </Link>
-        </>
-      )}
-    </Panel>
-  )
-}
-
-function ContextCell({ href, value, label }: { href: string; value: number; label: string }) {
-  return (
-    <Link
-      href={href}
-      className="focus-ring bg-surface px-4 py-2.5 transition-colors hover:bg-surface-sunken"
-    >
-      <p className="font-mono text-base font-medium text-ink tabular-nums">{formatNumber(value)}</p>
-      <p className="mt-0.5 text-xs text-ink-muted">{label}</p>
-    </Link>
-  )
-}
-
-function StatusDot({ ok }: { ok: boolean }) {
-  return <span aria-hidden="true" className={cn('size-2 shrink-0 rounded-full', ok ? 'bg-success' : 'bg-danger')} />
 }

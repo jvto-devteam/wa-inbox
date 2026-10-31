@@ -11,6 +11,14 @@ export const KNOWLEDGE_GAP_LABEL: Record<string, string> = {
   reply_deferred_knowledge: 'Ada bagian jawaban yang belum punya knowledge',
 }
 
+/** Versi pendek untuk daftar dan lencana; urutannya juga urutan opsi saringan. */
+export const KNOWLEDGE_GAP_SHORT_LABEL: Record<string, string> = {
+  no_facts_resolved: 'Tidak ada fakta',
+  verification_failed: 'Gagal verifikasi',
+  reply_unsourced: 'Jawaban tanpa sumber',
+  reply_deferred_knowledge: 'Butuh knowledge tambahan',
+}
+
 export function knowledgeGapLabel(reason: string): string {
   return KNOWLEDGE_GAP_LABEL[reason] ?? 'Ada gap knowledge pada jawaban ini'
 }

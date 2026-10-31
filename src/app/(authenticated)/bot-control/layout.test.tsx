@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, cleanup } from '@testing-library/react'
+import { render, screen, cleanup, fireEvent } from '@testing-library/react'
 import { readFileSync, readdirSync, existsSync } from 'node:fs'
 import path from 'node:path'
 import BotControlLayout from './layout'
@@ -106,9 +106,31 @@ describe('/bot-control itu sendiri', () => {
   })
 })
 
+describe('tab Referensi', () => {
+  it('membuka Flow Map dan Rules di halaman yang sama, dan aturan terkait pindah ke tab Rules', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({ skipBotForIndonesianNumbers: true, handoffOnHumanRequest: true }),
+      }))
+    )
+    render(<BotControlPage />)
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Flow Map' }))
+    expect(screen.getByText('Langkah', { selector: 'h3, h2, p, div' })).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Kemampuan per channel' })).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Rules' }))
+    expect(await screen.findByLabelText('Cari aturan')).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: 'Rules' })).toHaveAttribute('aria-selected', 'true')
+  })
+})
+
 describe('tautan Bot Control di AppRail', () => {
   it('masih mengarah ke /bot-control dan tetap menyala di rute bersarang', async () => {
-    pathname.mockReturnValue('/bot-control/rules')
+    pathname.mockReturnValue('/bot-control/decisions')
     vi.stubGlobal(
       'fetch',
       vi.fn(async (url: string) => ({

@@ -74,7 +74,8 @@ Semua diedit di `/chatbot` atau `/settings`, tersimpan langsung:
 - `botAutoReplyAll`, `skipBotForIndonesianNumbers` — mode bot global.
 - `handoffOnHumanRequest` — sakelar lapisan eskalasi LLM. Gerbang keyword di
   `escalation-classifier.ts` **tidak** di belakang sakelar ini.
-- `fallbackReply`, `handoffReply` — dua kalimat yang boleh diubah tanpa deploy. Kosong =
+- `fallbackReply`, `handoffReply` — dua kalimat yang boleh diubah tanpa deploy (`fallbackReply` berlaku di semua
+  jalur cadangan kecuali catch-all terluar orchestrator, yang sengaja konstanta supaya aman saat DB mati). Kosong =
   pakai default di kode, **bukan** "jangan bicara".
 - `workingHoursStart` / `End` / `offHoursAutoReply` — zona **`Asia/Jakarta`** selalu (VPS
   jalan UTC). Fungsinya **hanya satu**: menambahkan satu kalimat pada pesan handoff di luar
@@ -98,11 +99,23 @@ Semua diedit di `/chatbot` atau `/settings`, tersimpan langsung:
   aktif.
 - Revisi `PUBLISHED` **immutable**. Setiap perubahan = revisi baru.
 - Katalog (`catalog/*.json`) dibaca langsung dari file dan digabung dengan managed knowledge
-  **saat baca**, tidak pernah dicerminkan ke tabel.
+  **saat baca**, tidak pernah dicerminkan ke tabel. Katalog baru tiba lewat deploy; `npm run sync:knowledge`
+  adalah langkah dev-time di laptop (butuh repo saudara), bukan aksi dari UI. Kolom `Settings.catalogSyncedAt` tidak lagi ditulis.
+
+### Beranda (`/dashboard`)
+Keadaan bisnis dan mesinnya, bukan antrean kerja (audit 2026-10-31): chat yang perlu dibalas ada di `/summary`, jadi panel
+Antrean chat, Volume, Pertanyaan tak terjawab, dan Ringkasan inbox dilepas. Yang sengaja tetap: Funnel (permintaan pemilik),
+Kesehatan bot, Outbound, Reminder (satu-satunya tempat reminder manual muncul saat jatuh tempo), dan cluster topik/job (R53).
+
+### Kontak (`/contacts/[id]`)
+Tampak menduplikasi panel kanan Inbox, tetapi panel kanan hanya tampil dari lebar `xl`: di ponsel dan tablet halaman ini
+satu-satunya jalan ke booking, label, reminder, dan catatan, dan satu-satunya tempat Consent. Jangan dipensiunkan tanpa
+memindahkan akses itu dulu.
 
 ### Registry statis (kode, bukan DB)
 `rule-registry.ts`, `existing-flow-registry.ts` (28 node), `channel-capabilities.ts`.
-Halaman `/bot-control/rules` dan `/bot-control/flows` **read-only** terhadap registry ini.
+Flow Map dan Rules adalah tab **read-only** terhadap registry ini di halaman Referensi `/bot-control`, bersama tabel
+kemampuan channel (audit 2026-10-31: bukan lagi item menu sendiri; URL lama dialihkan di `next.config.ts`).
 
 ### Audit log
 `BotControlAuditLog`, lima hal: kapan, siapa, aksi (`UPDATE`/`PUBLISH`/`ENABLE`/`DISABLE`),

@@ -39,9 +39,6 @@ function mockFetch(overrides: Record<string, unknown> = {}) {
       if (url === '/api/bot/indonesia-filter' && init?.method === 'POST') {
         return Promise.resolve({ ok: true, json: async () => ({ skipBotForIndonesianNumbers: true }) })
       }
-      if (url === '/api/bot/sync-catalog' && init?.method === 'POST') {
-        return typeof overrides.sync === 'function' ? (overrides.sync as () => unknown)() : Promise.resolve({ ok: true, json: async () => ({ ok: true }) })
-      }
       return Promise.resolve({ ok: true, json: async () => ({}) })
     })
   )
@@ -221,18 +218,6 @@ describe('ChatbotPage', () => {
     expect(screen.getByText('Rp 1.500.000')).toBeInTheDocument()
   })
 
-  it('re-fetches settings, gate status, and catalog summary after a sync', async () => {
-    mockFetch()
-    render(<ChatbotPage />)
-
-    await openSection('Katalog paket')
-    fireEvent.click(screen.getByText('Sinkron Sekarang'))
-
-    await waitFor(() =>
-      expect(vi.mocked(fetch).mock.calls.filter(([url]) => url === '/api/bot/catalog-summary')).toHaveLength(2)
-    )
-  })
-
   it('hides admin controls for a non-admin role', async () => {
     vi.stubGlobal(
       'fetch',
@@ -255,6 +240,5 @@ describe('ChatbotPage', () => {
     // Dibuka dulu, baru diperiksa: sebuah bagian yang tidak dirender akan membuat assertion ini
     // lulus tanpa pernah melihat tombolnya, yang bukan janji yang dimaksud test ini.
     await openSection('Katalog paket')
-    expect(screen.queryByText('Sinkron Sekarang')).not.toBeInTheDocument()
   })
 })

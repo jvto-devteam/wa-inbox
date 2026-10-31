@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mockDeep, mockReset, type DeepMockProxy } from 'vitest-mock-extended'
 import type { PrismaClient } from '@prisma/client'
 import { prisma } from '@/lib/db'
+import { getSession } from '@/lib/auth/get-session'
 import { PATCH } from './route'
 
 // `vi.mock` factories are hoisted above regular imports and `let`/`const`
@@ -10,15 +11,25 @@ import { PATCH } from './route'
 // `PrismaClient` type) rather than via an outer variable — otherwise the
 // factory throws "Cannot access ... before initialization".
 vi.mock('@/lib/db', () => ({ prisma: mockDeep<PrismaClient>() }))
+vi.mock('@/lib/auth/get-session', () => ({ getSession: vi.fn() }))
 
 const mockPrisma = prisma as unknown as DeepMockProxy<PrismaClient>
 
 beforeEach(() => {
   mockReset(mockPrisma)
   mockPrisma.account.findUnique.mockResolvedValue({ id: 'acc_2' } as never)
+  vi.mocked(getSession).mockResolvedValue({ accountId: 'acc_1', role: 'ADMIN' } as never)
 })
 
 describe('PATCH /api/conversations/[id]/assign', () => {
+  it('rejects a request without a session', async () => {
+    vi.mocked(getSession).mockResolvedValue(null)
+    const req = new Request('http://localhost', { method: 'PATCH', body: JSON.stringify({ agentId: 'acc_2' }) })
+    const res = await PATCH(req, { params: Promise.resolve({ id: 'conv_1' }) })
+    expect(res.status).toBe(401)
+    expect(mockPrisma.conversation.update).not.toHaveBeenCalled()
+  })
+
   it('assigns the conversation to an agent', async () => {
     mockPrisma.conversation.update.mockResolvedValue({ assignedAgentId: 'acc_2' } as never)
     const req = new Request('http://localhost', { method: 'PATCH', body: JSON.stringify({ agentId: 'acc_2' }) })

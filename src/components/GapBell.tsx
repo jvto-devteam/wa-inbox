@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { Bell } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { fetchJson } from '@/lib/fetch-json'
+import { KNOWLEDGE_GAP_SHORT_LABEL } from '@/lib/inbox/gap-labels'
 
 export type GapItem = {
   id: string
@@ -18,13 +19,6 @@ export type GapItem = {
 }
 
 type GapFeed = { count: number; items: GapItem[] }
-
-const REASON_LABEL: Record<string, string> = {
-  reply_unsourced: 'Jawaban tanpa sumber',
-  reply_deferred_knowledge: 'Butuh knowledge tambahan',
-  no_facts_resolved: 'Tidak ada fakta',
-  verification_failed: 'Gagal verifikasi',
-}
 
 /**
  * Tanpa id pesan, notifikasi hanya bisa membuka percakapannya -- menebak gelembung mana yang
@@ -154,7 +148,7 @@ export function GapBell() {
                       {gap.contactName ?? gap.conversationId} · {gap.topic}
                     </span>
                     <span className="mt-0.5 block truncate text-xs text-ink-muted">{gap.messageText}</span>
-                    <span className="block text-[11px] text-ink-subtle">{REASON_LABEL[gap.reason] ?? gap.reason}</span>
+                    <span className="block text-[11px] text-ink-subtle">{KNOWLEDGE_GAP_SHORT_LABEL[gap.reason] ?? gap.reason}</span>
                   </Link>
                 </li>
               ))}

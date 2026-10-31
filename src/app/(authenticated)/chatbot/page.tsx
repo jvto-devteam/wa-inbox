@@ -27,7 +27,6 @@ type Settings = {
   botEnabledInstagram: boolean
   botEnabledFacebook: boolean
   botEnabledEmail: boolean
-  catalogSyncedAt: string | null
   fallbackReply: string | null
   handoffReply: string | null
   ollamaModel: string
@@ -95,7 +94,6 @@ export default function ChatbotPage() {
   const [gateStatus, setGateStatus] = useState<GateStatus | null>(null)
   const [catalogSummary, setCatalogSummary] = useState<CatalogSummary | null>(null)
   const [role, setRole] = useState<Role>(null)
-  const [syncing, setSyncing] = useState(false)
   const [active, setActive] = useState<ChatbotSectionId>('kapan')
 
   const [workingHoursStart, setWorkingHoursStart] = useState('')
@@ -247,22 +245,6 @@ export default function ChatbotPage() {
       setModelError('Gagal menyimpan model')
     } finally {
       setSavingModels(false)
-    }
-  }
-
-  async function syncCatalog() {
-    setSyncing(true)
-    try {
-      await fetchJson('/api/bot/sync-catalog', { method: 'POST' })
-      await Promise.all([
-        fetchJson<Settings>('/api/settings').then(setSettings),
-        fetchJson<GateStatus>('/api/bot/gate-status').then(setGateStatus),
-        fetchJson<CatalogSummary>('/api/bot/catalog-summary').then(setCatalogSummary),
-      ])
-    } catch {
-      // The "terakhir disinkron" timestamp and package list just stay as they were.
-    } finally {
-      setSyncing(false)
     }
   }
 
@@ -546,14 +528,7 @@ export default function ChatbotPage() {
           {active === 'katalog' && (
             <FormSection
               title="Pengetahuan (katalog paket)"
-              description="Paket yang boleh disebut bot. Katalog dibaca dari berkas, bukan diketik di sini; sinkron menariknya ulang."
-              actions={
-                admin ? (
-                  <Button onClick={syncCatalog} variant="outline" size="sm" disabled={syncing}>
-                    {syncing ? 'Menyinkron...' : 'Sinkron Sekarang'}
-                  </Button>
-                ) : undefined
-              }
+              description="Paket yang boleh disebut bot. Katalog dibaca dari berkas dan tiba lewat deploy, bukan diketik di sini."
             >
               <div className="space-y-4">
                 <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
@@ -584,7 +559,7 @@ export default function ChatbotPage() {
                 {catalogSummary.packageCount === 0 ? (
                   <EmptyState
                     title="Belum ada paket tersinkron."
-                    description="Bot belum punya satu pun paket untuk disebut. Tekan Sinkron Sekarang setelah katalog diperbarui."
+                    description="Bot belum punya satu pun paket untuk disebut. Katalog baru tiba lewat deploy."
                     className="rounded-lg border border-line bg-surface"
                   />
                 ) : (

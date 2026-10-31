@@ -7,10 +7,9 @@ import { SectionNav } from '@/components/ui/section-nav'
 //
 // /bot-control dulu adalah halaman kartu yang seluruh isinya link: satu klik untuk masuk, satu
 // klik lagi untuk pindah bagian, dan setiap perpindahan antar-bagian harus kembali dulu ke
-// indeks. Setelah kartu Documentation, Triage Queue, dan Releases dihapus, yang tersisa adalah
-// delapan halaman — sembilan bagian dengan Ringkasan sendiri. Daftar sependek itu muat
-// seluruhnya sebagai menu yang selalu terlihat, sehingga operator pindah bagian langsung dari
-// mana pun di dalam Bot Control.
+// indeks. Daftar yang tersisa cukup pendek untuk muat seluruhnya sebagai menu yang selalu
+// terlihat, sehingga operator pindah bagian langsung dari mana pun di dalam Bot Control. Flow Map
+// dan Rules adalah tab di halaman Referensi (/bot-control), bukan bagian sendiri.
 //
 // Sejak sidebar kedua, bentuknya BUKAN lagi baris tab melainkan kolom di kiri isi halaman,
 // dan rupanya datang dari <SectionNav> — komponen yang sama yang dipakai /chatbot dan
@@ -30,10 +29,8 @@ export const BOT_CONTROL_ROOT = '/bot-control'
  * sini akan gagal di CI, bukan diam-diam menjadi halaman yatim.
  */
 export const BOT_CONTROL_SECTIONS = [
-  { href: BOT_CONTROL_ROOT, label: 'Ringkasan' },
-  { href: '/bot-control/flows', label: 'Flow Map' },
+  { href: BOT_CONTROL_ROOT, label: 'Referensi' },
   { href: '/bot-control/pipeline', label: 'Alur Live' },
-  { href: '/bot-control/rules', label: 'Rules' },
   { href: '/bot-control/knowledge', label: 'Knowledge' },
   { href: '/bot-control/decisions', label: 'Decision Logs' },
   { href: '/bot-control/test-lab', label: 'Test Lab' },
@@ -48,7 +45,7 @@ export const BOT_CONTROL_SECTIONS = [
  * harus tetap menyalakan "Decision Logs", dan aturan segmen di helper itu (`href + '/'`, bukan
  * `startsWith` telanjang) berlaku sama di sini.
  *
- * Ringkasan adalah satu-satunya pengecualian, dan bukan karena aturannya berbeda: /bot-control
+ * Referensi adalah satu-satunya pengecualian, dan bukan karena aturannya berbeda: /bot-control
  * adalah induk dari semua href lain, jadi aturan "cocok untuk dirinya sendiri dan segala yang
  * bersarang di bawahnya" akan membuatnya menyala di SETIAP bagian. Ia dicocokkan persis.
  */

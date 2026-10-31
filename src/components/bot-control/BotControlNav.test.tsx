@@ -24,9 +24,9 @@ describe('isActiveSection', () => {
     expect(isActiveSection('/bot-control/flows', '/bot-control/rules')).toBe(false)
   })
 
-  it('mencocokkan Ringkasan secara persis, karena ia induk dari semua bagian lain', () => {
+  it('mencocokkan Referensi secara persis, karena ia induk dari semua bagian lain', () => {
     expect(isActiveSection('/bot-control', '/bot-control')).toBe(true)
-    // Aturan "dirinya sendiri + segala yang bersarang" akan membuat Ringkasan menyala di
+    // Aturan "dirinya sendiri + segala yang bersarang" akan membuat Referensi menyala di
     // setiap halaman Bot Control, jadi dua tab aktif sekaligus.
     expect(isActiveSection('/bot-control/rules', '/bot-control')).toBe(false)
   })
@@ -46,7 +46,7 @@ describe('BotControlNav', () => {
     render(<BotControlNav />)
 
     expect(screen.getByRole('link', { name: 'Knowledge' })).toHaveAttribute('aria-current', 'page')
-    expect(screen.getByRole('link', { name: 'Ringkasan' })).not.toHaveAttribute('aria-current')
+    expect(screen.getByRole('link', { name: 'Referensi' })).not.toHaveAttribute('aria-current')
   })
 
   it('mempertahankan bagian induk yang aktif pada rute bersarang', () => {
@@ -54,15 +54,15 @@ describe('BotControlNav', () => {
     render(<BotControlNav />)
 
     expect(screen.getByRole('link', { name: 'Decision Logs' })).toHaveAttribute('aria-current', 'page')
-    // Tepat satu tab yang aktif — termasuk di halaman bersarang, tempat Ringkasan paling mudah
+    // Tepat satu tab yang aktif — termasuk di halaman bersarang, tempat Referensi paling mudah
     // ikut menyala kalau pencocokannya salah.
     expect(screen.getAllByRole('link').filter((a) => a.getAttribute('aria-current') === 'page')).toHaveLength(1)
   })
 
-  it('menyalakan Ringkasan hanya di /bot-control', () => {
+  it('menyalakan Referensi hanya di /bot-control', () => {
     render(<BotControlNav />)
 
-    expect(screen.getByRole('link', { name: 'Ringkasan' })).toHaveAttribute('aria-current', 'page')
+    expect(screen.getByRole('link', { name: 'Referensi' })).toHaveAttribute('aria-current', 'page')
     expect(screen.getAllByRole('link').filter((a) => a.getAttribute('aria-current') === 'page')).toHaveLength(1)
   })
 

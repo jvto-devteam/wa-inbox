@@ -8,6 +8,7 @@
  * bookingData yang masuk daftar putih `bookingContextForLLM` -- tidak pernah financial/guestDetails.
  */
 import { callLLM } from '@/lib/bot/llm'
+import { prisma } from '@/lib/db'
 import type { BookingData } from '@/lib/booking/client'
 import type { NumberedTranscript } from '@/lib/daily-summary/collect'
 import { resolvePesan } from '@/lib/daily-summary/review'
@@ -136,7 +137,12 @@ export async function extractBookingSignals(input: {
 }): Promise<Extraction | null> {
   const prompt = `Data booking saat ini:\n${JSON.stringify(bookingContextForLLM(input.booking))}\n\nTranskrip:\n${input.transcript.text}`
   try {
-    const raw = await callLLM(prompt, { system: EXTRACT_SYSTEM_PROMPT, timeoutMs: EXTRACT_TIMEOUT_MS })
+    const settings = await prisma.settings.findUnique({ where: { id: 1 }, select: { ollamaModel: true } })
+    const raw = await callLLM(prompt, {
+      system: EXTRACT_SYSTEM_PROMPT,
+      model: settings?.ollamaModel ?? undefined,
+      timeoutMs: EXTRACT_TIMEOUT_MS,
+    })
     return remapArrivalToDetail(parseExtraction(raw, input.transcript.ids, input.inboundIds), input.booking)
   } catch (error) {
     console.error('[booking-actions] extractBookingSignals failed:', error instanceof Error ? error.name : 'unknown')

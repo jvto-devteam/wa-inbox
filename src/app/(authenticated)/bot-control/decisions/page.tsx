@@ -162,7 +162,7 @@ export default function DecisionLogsPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ answer, reason }),
       })
-      setActionNotice('Draft knowledge dibuat. Buka halaman Knowledge untuk mengirimnya ke review.')
+      setActionNotice('Draft knowledge dibuat. Buka halaman Knowledge untuk menerbitkannya.')
     } catch (err: unknown) {
       setActionError(err instanceof Error ? err.message : 'Gagal membuat draft knowledge')
     }

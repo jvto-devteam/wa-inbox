@@ -20,15 +20,12 @@ function req(query = '', withSession = true) {
 }
 
 // Beberapa `groupBy` berjalan di satu Promise.all lewat model yang sama
-// (`botDecisionRun.groupBy` dipakai untuk statusGroups, byTopic, DAN byJob;
-// `knowledgeGapLog.groupBy` dipakai untuk byReason DAN topTopics), jadi satu
+// (`botDecisionRun.groupBy` dipakai untuk statusGroups, byTopic, DAN byJob), jadi satu
 // `mockResolvedValue` akan memberi hasil yang sama ke semuanya. Fixture-fixture
 // di bawah ini dipilih lewat `args.by` di dalam `mockImplementation`.
 let statusGroupsFixture: unknown[] = []
 let topicStatusFixture: unknown[] = []
 let jobStatusFixture: unknown[] = []
-let reasonGroupsFixture: unknown[] = []
-let topTopicsFixture: unknown[] = []
 
 beforeEach(() => {
   mockReset(mockPrisma)
@@ -37,24 +34,17 @@ beforeEach(() => {
   statusGroupsFixture = []
   topicStatusFixture = []
   jobStatusFixture = []
-  reasonGroupsFixture = []
-  topTopicsFixture = []
 
   ;(mockPrisma.botDecisionRun.groupBy as unknown as Mock).mockImplementation((args: { by: string[] }) => {
     if (args.by.includes('job')) return Promise.resolve(jobStatusFixture)
     if (args.by.includes('topic')) return Promise.resolve(topicStatusFixture)
     return Promise.resolve(statusGroupsFixture)
   })
-  ;(mockPrisma.knowledgeGapLog.groupBy as unknown as Mock).mockImplementation((args: { by: string[] }) => {
-    if (args.by.includes('topic')) return Promise.resolve(topTopicsFixture)
-    return Promise.resolve(reasonGroupsFixture)
-  })
   mockPrisma.botDecisionRun.aggregate.mockResolvedValue({
     _avg: { latencyMs: null },
     _max: { latencyMs: null },
   } as never)
   mockPrisma.botDecisionRun.count.mockResolvedValue(0 as never)
-  mockPrisma.$queryRaw.mockResolvedValue([] as never)
 })
 
 describe('GET /api/dashboard/activity', () => {

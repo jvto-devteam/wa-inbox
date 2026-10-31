@@ -39,7 +39,7 @@ const ACTIONS = ['UPDATE', 'PUBLISH', 'ENABLE', 'DISABLE']
 
 // Every entityType `writeBotAuditLog` is actually called with. BOT_SETTING covers the global
 // switches on /chatbot and the outbound safety thresholds.
-const ENTITY_TYPES = ['KNOWLEDGE', 'BOT_SETTING', 'OUTBOUND_PROVIDER', 'OUTBOUND_JOB']
+const ENTITY_TYPES = ['KNOWLEDGE', 'BOT_SETTING', 'OUTBOUND_PROVIDER', 'OUTBOUND_JOB', 'SYSTEM_TEMPLATE']
 
 // Turning something OFF gets visual weight: it is the row somebody is looking for when the bot
 // stopped answering. A log where every row shouts is one where that row does not stand out.
