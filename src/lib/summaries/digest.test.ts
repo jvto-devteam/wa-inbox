@@ -88,6 +88,18 @@ describe('redactText', () => {
     )
   })
 
+  it('keeps money amounts, dates and times, but still catches local and international numbers', () => {
+    expect(redactText('DP IDR 2,040,000 lunas, sisa Rp 9.310.000 dan Rp1.500.000; USD 161,05')).toBe(
+      'DP IDR 2,040,000 lunas, sisa Rp 9.310.000 dan Rp1.500.000; USD 161,05'
+    )
+    expect(redactText('2 pax: Rp 2.800.000/orang, tiba 2026-11-10 jam 15.40')).toBe(
+      '2 pax: Rp 2.800.000/orang, tiba 2026-11-10 jam 15.40'
+    )
+    expect(redactText('WA 0812-3456-7890 atau 6281234567890 atau +33 6 12 34 56 78')).toBe(
+      'WA [nomor] atau [nomor] atau [nomor]'
+    )
+  })
+
   it('does not touch words that only contain the name', () => {
     expect(redactText('Annapurna trip', 'Anna')).toBe('Annapurna trip')
   })
