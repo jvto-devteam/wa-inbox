@@ -204,6 +204,14 @@ Pesan keluar **tidak** menutupnya; janji terbuka membuka lagi DONE/REPLIED bila 
 **terbaru** (max `createdAt`), jadi buka ulang setelah Lepas/PROMISE_KEPT tidak bergantung pada urutan
 keluaran LLM. Aturan buat/buka ulang ada di satu tempat, `upsertCandidate`.
 
+**API baca untuk agen** (`GET /api/v1/summaries?date=YYYY-MM-DD`, `src/app/api/v1/summaries/route.ts`, owner
+2026-11-05): ringkasan harian versi mesin untuk agen Operator second brain JVTO. Bearer key `wai_` seperti
+`/api/v1/system-messages`, **ditambah** daftar baca `SUMMARIES_READ_CLIENT_IDS` (env kosong = tertutup, 403) supaya key
+pengirim pesan tidak ikut bisa membaca. Tanpa `date` = ringkasan DONE/PARTIAL terbaru; plus `openItems` (SummaryItem
+OPEN/SCHEDULED per jenis). `buildSummaryDigest` (`src/lib/summaries/digest.ts`) membuang nama kontak, snippet, teks pesan,
+dan messageId, lalu menyaring teks LLM (`redactText`: nama kontak percakapan itu, telepon, email). Yang ikut: conversationId
+dan kode booking. Retensi tetap 30 hari karena membaca DailySummary yang sama.
+
 ### Ringkasan chat (tab di panel kanan Inbox)
 Menampilkan ringkasan LLM **terbaru** satu percakapan, tanda terjawab per pertanyaan, riwayat
 per hari, dan status tindak lanjut live dari `SummaryItem` (bisa Ingatkan/Lepas dari sini).

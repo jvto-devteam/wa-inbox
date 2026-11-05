@@ -201,7 +201,7 @@ describe('middleware — API key paths', () => {
     return new NextRequest(`http://localhost${path}`, { headers: authorization ? { authorization } : {} })
   }
 
-  it.each(['/api/v1/system-messages', '/api/v1/system-messages/templates'])(
+  it.each(['/api/v1/system-messages', '/api/v1/system-messages/templates', '/api/v1/summaries'])(
     'hands %s to the route (which verifies the key) when a Bearer key is present',
     async (path) => {
       const res = await middleware(keyRequest(path, 'Bearer wai_abc'))
