@@ -22,7 +22,14 @@ import {
   type DailySummaryPayload,
 } from '@/lib/daily-summary/payload-schema'
 
-const PHONE_RE = /\+?\d[\d\s().-]{6,}\d/g
+/**
+ * Kandidat nomor telepon: deretan angka dengan pemisah. Kandidat baru dianggap telepon oleh
+ * `looksLikePhone` -- tanpa saringan itu nominal ("Rp 1.500.000", "IDR 2,040,000") dan tanggal
+ * ("2026-11-04") ikut tersensor dan insight pembayaran kehilangan angkanya (ditemukan di produksi
+ * 2026-11-05: 15 nominal jadi "[nomor]").
+ */
+const PHONE_CANDIDATE_RE = /\+?\d[\d\s().-]{6,}\d/g
+const CURRENCY_BEFORE_RE = /(?:rp|idr|usd|us\$|\$|€|eur|myr|rm|sgd|s\$)\s*\.?\s*$/i
 const EMAIL_RE = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi
 const NAME_MARK = '[tamu]'
 
@@ -41,8 +48,26 @@ function nameNeedles(contactName: string | null | undefined): string[] {
   return [full, ...parts].sort((a, b) => b.length - a.length)
 }
 
+/**
+ * Telepon = 10-15 digit, diawali "+", "0", atau "62", dan tidak didahului simbol mata uang.
+ * Nominal ribuan berpemisah titik/koma ("1.500.000") tidak pernah lolos karena tidak diawali 0/62/+,
+ * kecuali angkanya memang berbentuk nomor Indonesia.
+ */
+function looksLikePhone(match: string, before: string): boolean {
+  if (CURRENCY_BEFORE_RE.test(before)) return false
+  const digits = match.replace(/\D/g, '')
+  if (digits.length < 10 || digits.length > 15) return false
+  return match.startsWith('+') || digits.startsWith('0') || digits.startsWith('62')
+}
+
+function redactPhones(text: string): string {
+  return text.replace(PHONE_CANDIDATE_RE, (match: string, offset: number) =>
+    looksLikePhone(match, text.slice(Math.max(0, offset - 6), offset)) ? '[nomor]' : match
+  )
+}
+
 export function redactText(text: string, contactName?: string | null): string {
-  let out = text.replace(EMAIL_RE, '[email]').replace(PHONE_RE, '[nomor]')
+  let out = redactPhones(text.replace(EMAIL_RE, '[email]'))
   for (const needle of nameNeedles(contactName)) {
     out = out.replace(new RegExp(`(?<![\\p{L}])${escapeRegExp(needle)}(?![\\p{L}])`, 'giu'), NAME_MARK)
   }
