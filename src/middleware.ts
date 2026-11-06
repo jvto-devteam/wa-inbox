@@ -62,7 +62,12 @@ const CRON_PATHS = new Set([
  * that knows which client it belongs to. A request without such a header falls through to the
  * session check and gets the usual 401.
  */
-const API_KEY_PATHS = new Set(['/api/v1/system-messages', '/api/v1/system-messages/templates', '/api/v1/summaries'])
+const API_KEY_PATHS = new Set([
+  '/api/v1/system-messages',
+  '/api/v1/system-messages/templates',
+  '/api/v1/summaries',
+  '/api/v1/booking-brief',
+])
 
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl

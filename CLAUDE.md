@@ -212,6 +212,14 @@ OPEN/SCHEDULED per jenis). `buildSummaryDigest` (`src/lib/summaries/digest.ts`) 
 dan messageId, lalu menyaring teks LLM (`redactText`: nama kontak percakapan itu, telepon, email). Yang ikut: conversationId
 dan kode booking. Retensi tetap 30 hari karena membaca DailySummary yang sama.
 
+**Catatan untuk crew / Guest Brief** (owner 2026-11-06): `chatReview.catatanCrew`, dibuat `src/lib/chat-review/crew-note.ts`
+sebagai panggilan LLM kedua sesudah ringkasan chat, hanya untuk percakapan ber-booking dan hanya bila
+`CREW_NOTE_ENABLED=1` (default mati). Masukan LLM disaring dulu (tanpa poin bayar/komplain, label komersial, nominal);
+keluaran disaring lagi (nominal, kata pembayaran, telepon, email). `saveChatReview` mempertahankan catatan bila ringkasan
+baru (job harian) tidak membawanya. Tampil di panel Inbox, tab Kontak, bawah data booking (`CrewNoteSection`), dan dibaca
+crew-portal lewat `GET /api/v1/booking-brief?ref=<booking_code|invoice_code_origin>` (daftar baca
+`BOOKING_BRIEF_READ_CLIENT_IDS`, kosong = 403; 404 bila tidak ada catatan).
+
 ### Ringkasan chat (tab di panel kanan Inbox)
 Menampilkan ringkasan LLM **terbaru** satu percakapan, tanda terjawab per pertanyaan, riwayat
 per hari, dan status tindak lanjut live dari `SummaryItem` (bisa Ingatkan/Lepas dari sini).
