@@ -912,7 +912,7 @@ Mohon sesuaikan dengan data terbaru di atas.`,
 
 {missing_list}
 
-Please update them on your booking page: {portal_link}
+Please complete this on your booking page: {portal_link}
 
 Thank you!`,
     imageUrl: null,
