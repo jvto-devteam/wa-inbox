@@ -21,6 +21,8 @@ const EXPECTED_KEYS = [
   'crew_reminder_group',
   'crew_reminder_personal',
   'crew_trip_media',
+  'guest_data_followup_en',
+  'guest_data_followup_id',
   'hotel_room_reservation',
   'internal_bali_transport',
   'internal_bali_transport_reminder',
@@ -41,6 +43,7 @@ const EXPECTED_KEYS = [
   'trip_information_hotel',
   'trip_information_station',
   'trip_payment_arrangement',
+  'vendor_booking_change',
   'vendor_tshirt_size_update',
 ]
 
@@ -58,6 +61,10 @@ const KEYS_WITHOUT_PHP_ORIGIN = new Set([
   'internal_bali_transport_update',
   // Lahir 2026-10-20 (Chat -> Aksi Booking): kabar perubahan ukuran kaos ke vendor kaos, tanpa nama tamu.
   'internal_tshirt_update',
+  // Lahir 2026-11-06 (kabar otomatis ke vendor dan follow-up data tamu, dikirim new-backoffice/legacy): tidak ada asal PHP.
+  'vendor_booking_change',
+  'guest_data_followup_en',
+  'guest_data_followup_id',
 ])
 
 describe('system template seeds', () => {

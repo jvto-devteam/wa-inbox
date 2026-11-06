@@ -874,4 +874,69 @@ Size: {sizes}`,
     ],
     source: 'new-backoffice/app/Http/Controllers/BookingController.php:2826',
   },
+  {
+    key: 'vendor_booking_change',
+    name: 'Perubahan data booking (ke vendor)',
+    description: 'Dikirim ke vendor (kaos, Pak Agus Bali) saat data booking yang mereka pakai berubah, lewat jalur apa pun (customer portal, backoffice, chat). Memuat apa yang berubah dengan nilai lama dan baru, plus data terbaru. Dikirim VendorChangeNotifier di new-backoffice dan legacy.',
+    audience: 'INTERNAL',
+    body: `*🔔 PERUBAHAN BOOKING ({vendor_label})*
+
+👤 Tamu : {guest_name} ({channel})
+
+🗓 Tanggal trip : {trip_date}
+
+*Yang berubah:*
+{changes}
+
+*Data terbaru:*
+{current}
+
+Mohon sesuaikan dengan data terbaru di atas.`,
+    imageUrl: null,
+    variables: [
+      req('vendor_label', 'Vendor Kaos', 'Nama peran vendor penerima (Vendor Kaos atau Transport Bali).'),
+      req('guest_name', 'Julie Neant', 'Nama tamu.'),
+      req('channel', 'JVTO', 'JVTO, KLOOK, atau TWT.'),
+      req('trip_date', '08 Nov 2026', 'Tanggal mulai trip.'),
+      req('changes', 'Ukuran kaos: M x 1; XL x 2 → XL x 3', 'Satu baris per perubahan, nilai lama → baru.'),
+      req('current', 'XL x 3', 'Data terbaru yang dipakai vendor itu (ukuran kaos, atau rincian layanan Bali).'),
+    ],
+    source: 'new-backoffice/app/Services/Notifications/VendorChangeNotifier.php (baru)',
+  },
+  {
+    key: 'guest_data_followup_en',
+    name: 'Follow-up data tamu (Inggris)',
+    description: 'Dikirim tiap hari mulai H-7 ke tamu non-Indonesia yang datanya belum lengkap (titik/jam jemput, titik/jam antar, ukuran kaos). Balasan tamu diproses alur Aksi Booking. Dikirim guests:follow-up-missing-data di new-backoffice.',
+    audience: 'CUSTOMER',
+    body: `Hi {guest_name}, this is Java Volcano Tour Operator. Your trip starts on {trip_date}. To get everything ready, we still need:
+
+{missing_list}
+
+Please reply to this message with the details. Thank you!`,
+    imageUrl: null,
+    variables: [
+      req('guest_name', 'Julie', 'Nama depan tamu.'),
+      req('trip_date', '08 Nov 2026', 'Tanggal mulai trip.'),
+      req('missing_list', '- Pick-up time\n- T-shirt size for each guest', 'Daftar berpoin data yang belum lengkap.'),
+    ],
+    source: 'new-backoffice/app/Console/Commands/FollowUpMissingGuestData.php (baru)',
+  },
+  {
+    key: 'guest_data_followup_id',
+    name: 'Follow-up data tamu (Indonesia)',
+    description: 'Dikirim tiap hari mulai H-7 ke tamu Indonesia yang datanya belum lengkap (titik/jam jemput, titik/jam antar, ukuran kaos). Balasan tamu diproses alur Aksi Booking. Dikirim guests:follow-up-missing-data di new-backoffice.',
+    audience: 'CUSTOMER',
+    body: `Halo {guest_name}, ini Java Volcano Tour Operator. Trip Anda dimulai {trip_date}. Agar semuanya siap, kami masih membutuhkan:
+
+{missing_list}
+
+Mohon balas pesan ini dengan datanya. Terima kasih!`,
+    imageUrl: null,
+    variables: [
+      req('guest_name', 'Budi', 'Nama depan tamu.'),
+      req('trip_date', '08 Nov 2026', 'Tanggal mulai trip.'),
+      req('missing_list', '- Jam jemput\n- Ukuran kaos tiap tamu', 'Daftar berpoin data yang belum lengkap.'),
+    ],
+    source: 'new-backoffice/app/Console/Commands/FollowUpMissingGuestData.php (baru)',
+  },
 ]

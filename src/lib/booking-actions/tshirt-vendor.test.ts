@@ -140,3 +140,16 @@ describe('review 2026-10-20 Important 4: test conversations never reach the real
     expect(notifyBookingAction).toHaveBeenCalledWith(expect.objectContaining({ kind: 'EXECUTE_FAILED', tagSuffix: 'vendor-tshirt' }))
   })
 })
+
+describe('VENDOR_NOTICE_DISABLED', () => {
+  afterEach(() => {
+    delete process.env.VENDOR_NOTICE_DISABLED
+  })
+
+  it('1 = tidak mengirim apa pun dari wa-inbox (kabar vendor dipegang VendorChangeNotifier)', async () => {
+    process.env.VENDOR_NOTICE_DISABLED = '1'
+    await notifyTshirtVendor(input)
+    expect(enqueueSystemTemplateSend).not.toHaveBeenCalled()
+    expect(recordEvent).not.toHaveBeenCalled()
+  })
+})
