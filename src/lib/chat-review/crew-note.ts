@@ -108,6 +108,13 @@ export function isUnsafeForCrew(line: string): boolean {
   return MONEY_RE.test(line) || PAYMENT_WORD_RE.test(line) || line.includes('[nomor]') || line.includes('[email]')
 }
 
+/** Kalimat tentang hal yang TIDAK diketahui ("Asal negara tidak disebutkan") bukan informasi bagi crew. */
+const UNKNOWN_RE = /\b(?:tidak|belum)\s+(?:disebutkan|diketahui|ada\s+informasi|jelas)\b/i
+
+export function isNoiseForCrew(line: string): boolean {
+  return UNKNOWN_RE.test(line)
+}
+
 export type CrewNoteInput = {
   booking: string
   poin: { jenis: string | null; teks: string }[]
@@ -174,6 +181,8 @@ Aturan tulis:
 - Sebut "tamu", jangan memakai nama atau kata ganti bergender.
 - DILARANG menulis nominal uang, harga, pembayaran, DP, invoice, diskon, refund, nomor telepon, email, atau nama tamu. Lewati hal itu.
 - Jangan menambah fakta yang tidak ada di masukan. Jangan menebak jam atau lokasi.
+- Hanya tulis hal yang DIKETAHUI. Jangan menulis kalimat tentang hal yang tidak diketahui ("tidak disebutkan", "belum diketahui", "tidak ada informasi"): lewati saja.
+- Jangan mengulang hal yang sama di dua bagian. Satu fakta ditulis di bagian yang paling tepat: jam penting di "waktuKritis"; "logistik" hanya untuk hal yang belum tercakup di bagian lain (kamar, tempat tidur, hotel, tambahan malam, titik antar).
 - Hal yang sudah sama dengan "booking" jangan diulang, kecuali itu perubahan.
 - Bagian tanpa isi dibiarkan kosong. Tiap kalimat paling banyak 200 huruf.`
 
@@ -214,7 +223,7 @@ export function parseCrewNote(raw: string, contactName: string | null, now: Date
       const line = cleanLine(item)
       if (!line) continue
       const safe = redactText(line, contactName).replace(/\[tamu\]/g, 'tamu')
-      if (isUnsafeForCrew(safe) || seen.has(safe)) continue
+      if (isUnsafeForCrew(safe) || isNoiseForCrew(safe) || seen.has(safe)) continue
       seen.add(safe)
       note[section].push(safe)
       if (note[section].length >= MAX_PER_SECTION[section]) break
