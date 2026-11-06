@@ -8,12 +8,14 @@ vi.mock('@/lib/daily-summary/review', () => ({ reviewConversation: vi.fn() }))
 vi.mock('@/lib/summary-items/sync', () => ({ applyReviewToItem: vi.fn().mockResolvedValue('unchanged') }))
 vi.mock('./store', async (orig) => ({ ...(await orig<typeof import('./store')>()), saveChatReview: vi.fn().mockResolvedValue(undefined) }))
 vi.mock('./crew-note', async (orig) => ({ ...(await orig<typeof import('./crew-note')>()), generateCrewNote: vi.fn() }))
+vi.mock('./crew-note-sync', async (orig) => ({ ...(await orig<typeof import('./crew-note-sync')>()), scheduleCrewNotePush: vi.fn() }))
 
 import { prisma } from '@/lib/db'
 import { reviewConversation } from '@/lib/daily-summary/review'
 import { refreshChatReview } from './refresh'
 import { saveChatReview } from './store'
 import { generateCrewNote, emptyCrewNote } from './crew-note'
+import { scheduleCrewNotePush } from './crew-note-sync'
 
 const db = prisma as unknown as DeepMockProxy<PrismaClient>
 const NOW = new Date('2026-10-20T05:00:00Z')
@@ -62,6 +64,7 @@ describe('refreshChatReview: catatan crew (Guest Brief)', () => {
     delete process.env.CREW_NOTE_ENABLED
     vi.mocked(saveChatReview).mockClear()
     vi.mocked(generateCrewNote).mockReset()
+    vi.mocked(scheduleCrewNotePush).mockReset()
     vi.mocked(reviewConversation).mockResolvedValue(goodReview)
     db.conversation.findUnique.mockResolvedValue({ bookingData: booking, chatReview: null, contact: { name: 'Budi' } } as never)
     given([])
@@ -70,6 +73,7 @@ describe('refreshChatReview: catatan crew (Guest Brief)', () => {
   it('mati secara default: tidak memanggil LLM kedua dan tidak menambah catatanCrew', async () => {
     await refreshChatReview('c1', NOW)
     expect(generateCrewNote).not.toHaveBeenCalled()
+    expect(scheduleCrewNotePush).not.toHaveBeenCalled()
     expect(vi.mocked(saveChatReview).mock.calls[0][1]).toEqual(goodReview)
   })
 
@@ -79,6 +83,8 @@ describe('refreshChatReview: catatan crew (Guest Brief)', () => {
     await refreshChatReview('c1', NOW)
     expect(generateCrewNote).toHaveBeenCalledWith(expect.objectContaining({ contactName: 'Budi', previous: null, model: 'm' }))
     expect(vi.mocked(saveChatReview).mock.calls[0][1]).toMatchObject({ catatanCrew: note })
+    // Catatan baru dikirim ke backoffice dengan nomor booking dari bookingData.
+    expect(scheduleCrewNotePush).toHaveBeenCalledWith('JVR/012/11/26', note)
   })
 
   it('tanpa booking: tidak ada catatan crew', async () => {
@@ -101,5 +107,7 @@ describe('refreshChatReview: catatan crew (Guest Brief)', () => {
     vi.mocked(generateCrewNote).mockResolvedValue(null)
     await expect(refreshChatReview('c1', NOW)).resolves.toEqual({ status: 'ok' })
     expect(vi.mocked(saveChatReview).mock.calls[0][1]).toMatchObject({ catatanCrew: note })
+    // Yang dipertahankan karena LLM gagal bukan catatan baru: tidak dikirim ulang.
+    expect(scheduleCrewNotePush).not.toHaveBeenCalled()
   })
 })

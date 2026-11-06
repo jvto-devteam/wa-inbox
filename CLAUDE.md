@@ -216,9 +216,11 @@ dan kode booking. Retensi tetap 30 hari karena membaca DailySummary yang sama.
 sebagai panggilan LLM kedua sesudah ringkasan chat, hanya untuk percakapan ber-booking dan hanya bila
 `CREW_NOTE_ENABLED=1` (default mati). Masukan LLM disaring dulu (tanpa poin bayar/komplain, label komersial, nominal);
 keluaran disaring lagi (nominal, kata pembayaran, telepon, email). `saveChatReview` mempertahankan catatan bila ringkasan
-baru (job harian) tidak membawanya. Tampil di panel Inbox, tab Kontak, bawah data booking (`CrewNoteSection`), dan dibaca
-crew-portal lewat `GET /api/v1/booking-brief?ref=<booking_code|invoice_code_origin>` (daftar baca
-`BOOKING_BRIEF_READ_CLIENT_IDS`, kosong = 403; 404 bila tidak ada catatan).
+baru (job harian) tidak membawanya. Tampil di panel Inbox, tab Kontak, bawah data booking (`CrewNoteSection`). Catatan
+BARU dikirim di belakang ke new-backoffice (`crew-note-sync.ts`: `POST /crew-notes-api/booking-notes`, token
+`CREW_NOTES_TOKEN`, URL `CREW_NOTES_API_URL`, keduanya kosong = tidak dikirim; satu pengulangan bila jaringan/5xx) dan
+disimpan di tabel `booking_crew_notes`; crew-portal membacanya dari tabel itu, TANPA memanggil wa-inbox. Wa-inbox tidak
+punya koneksi ke MySQL backoffice; endpoint itulah satu-satunya jalur.
 
 ### Ringkasan chat (tab di panel kanan Inbox)
 Menampilkan ringkasan LLM **terbaru** satu percakapan, tanda terjawab per pertanyaan, riwayat

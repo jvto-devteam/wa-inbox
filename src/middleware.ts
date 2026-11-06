@@ -66,7 +66,6 @@ const API_KEY_PATHS = new Set([
   '/api/v1/system-messages',
   '/api/v1/system-messages/templates',
   '/api/v1/summaries',
-  '/api/v1/booking-brief',
 ])
 
 export async function middleware(req: NextRequest) {
