@@ -144,7 +144,12 @@ export async function lookupBookingResult(phone: string): Promise<BookingLookup>
 
   const key = process.env.BOOKING_API_KEY
   const headers: Record<string, string> = {}
-  if (key) headers.Authorization = `Bearer ${key}`
+  if (key) {
+    headers.Authorization = `Bearer ${key}`
+    // new-backoffice (`internal.token`) hanya membaca X-Internal-Token (atau ?token=), bukan Bearer: tanpa header ini
+    // pencarian booking dijawab 403 sejak endpoint itu fail-closed (2026-11-06).
+    headers['X-Internal-Token'] = key
+  }
 
   try {
     const normalized = normalizePhone(phone)

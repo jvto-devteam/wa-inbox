@@ -49,6 +49,8 @@ describe('lookupBooking', () => {
       /^https:\/\/booking\.jvto\.example\/bookings\?filter_type=range&date_range=\d{4}-\d{2}-01_2099-12-31&phone_no=\+6281234567890$/
     )
     expect(options.headers.Authorization).toBe('Bearer booking-key')
+    // new-backoffice (`internal.token`) membaca X-Internal-Token, bukan Bearer.
+    expect(options.headers['X-Internal-Token']).toBe('booking-key')
     expect(options.signal).toBeInstanceOf(AbortSignal)
   })
 
@@ -60,6 +62,7 @@ describe('lookupBooking', () => {
 
     const [, options] = fetchCall(0)
     expect(options.headers.Authorization).toBeUndefined()
+    expect(options.headers['X-Internal-Token']).toBeUndefined()
   })
 
   it('returns the raw booking object as-is when the API returns a single object (no field remapping)', async () => {
