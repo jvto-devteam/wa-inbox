@@ -217,8 +217,9 @@ sebagai panggilan LLM kedua sesudah ringkasan chat, hanya untuk percakapan ber-b
 `CREW_NOTE_ENABLED=1` (default mati). Masukan LLM disaring dulu (tanpa poin bayar/komplain, label komersial, nominal);
 keluaran disaring lagi (nominal, kata pembayaran, telepon, email). `saveChatReview` mempertahankan catatan bila ringkasan
 baru (job harian) tidak membawanya. Tampil di panel Inbox, tab Kontak, bawah data booking (`CrewNoteSection`). Catatan
-BARU dikirim di belakang ke new-backoffice (`crew-note-sync.ts`: `POST /crew-notes-api/booking-notes`, token
-`CREW_NOTES_TOKEN`, URL `CREW_NOTES_API_URL`, keduanya kosong = tidak dikirim; satu pengulangan bila jaringan/5xx) dan
+BARU dikirim di belakang ke new-backoffice (`crew-note-sync.ts`: `POST /crew-notes-api/booking-notes`, asal
+`BOOKING_API_URL` + `BOOKING_API_KEY` sebagai header `X-Internal-Token`, kredensial yang sama dengan pencarian booking;
+kosong = tidak dikirim; satu pengulangan bila jaringan/5xx) dan
 disimpan di tabel `booking_crew_notes`; crew-portal membacanya dari tabel itu, TANPA memanggil wa-inbox. Wa-inbox tidak
 punya koneksi ke MySQL backoffice; endpoint itulah satu-satunya jalur.
 

@@ -5,17 +5,29 @@ import { CREW_NOTE_SECTIONS } from '@/lib/daily-summary/payload-schema'
  * Mengirim "Catatan untuk crew" terbaru satu booking ke new-backoffice (POST /crew-notes-api/booking-notes), yang
  * menyimpannya di tabel `booking_crew_notes`; crew-portal membacanya dari sana (tanpa memanggil wa-inbox).
  *
- * Wa-inbox hanya punya PostgreSQL sendiri, jadi satu-satunya jalur ke database backoffice adalah endpoint itu, dengan
- * token sendiri (`CREW_NOTES_TOKEN`). Env kosong = pengiriman mati (catatan tetap tersimpan di wa-inbox dan tampil di
- * panel Inbox). Tidak pernah melempar dan tidak pernah memperlambat pemanggil: dijalankan di belakang; satu pengulangan
+ * Wa-inbox hanya punya PostgreSQL sendiri, jadi satu-satunya jalur ke database backoffice adalah endpoint itu.
+ * Alamat dan kredensialnya SAMA dengan jalur baca booking yang sudah ada: asal (origin) `BOOKING_API_URL` dan
+ * `BOOKING_API_KEY` (= INTERNAL_API_TOKEN new-backoffice), dikirim sebagai header `X-Internal-Token`. Tidak ada env
+ * baru. Salah satu kosong = pengiriman mati (catatan tetap tersimpan di wa-inbox dan tampil di panel Inbox). Tidak pernah melempar dan tidak pernah memperlambat pemanggil: dijalankan di belakang; satu pengulangan
  * bila gagal karena jaringan/5xx; 404 (booking tidak ditemukan di backoffice), 409, dan 422 tidak diulang.
  */
 
 export const CREW_NOTE_RETRY_DELAY_MS = 60_000
 const REQUEST_TIMEOUT_MS = 8_000
 
+/** Asal new-backoffice, dari `BOOKING_API_URL` (https://host/path?...) -> https://host. null bila kosong atau bukan URL. */
+export function crewNotesBaseUrl(): string | null {
+  const raw = process.env.BOOKING_API_URL?.trim()
+  if (!raw) return null
+  try {
+    return new URL(raw).origin
+  } catch {
+    return null
+  }
+}
+
 export function crewNoteSyncConfigured(): boolean {
-  return Boolean(process.env.CREW_NOTES_API_URL?.trim() && process.env.CREW_NOTES_TOKEN?.trim())
+  return Boolean(crewNotesBaseUrl() && process.env.BOOKING_API_KEY?.trim())
 }
 
 /** Nomor booking untuk backoffice: `bookingData.booking_number`, atau `id` bila tidak ada (sama dengan /api/v1/summaries). */
@@ -34,14 +46,14 @@ export type PushResult = { ok: true } | { ok: false; retryable: boolean; status:
 
 export async function pushCrewNote(ref: string, note: CrewNote): Promise<PushResult> {
   try {
-    const base = (process.env.CREW_NOTES_API_URL ?? '').trim().replace(/\/+$/, '')
+    const base = crewNotesBaseUrl() ?? ''
     const sections = Object.fromEntries(CREW_NOTE_SECTIONS.map((s) => [s, note[s]]))
     const res = await fetch(`${base}/crew-notes-api/booking-notes`, {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
         accept: 'application/json',
-        authorization: `Bearer ${process.env.CREW_NOTES_TOKEN ?? ''}`,
+        'x-internal-token': process.env.BOOKING_API_KEY?.trim() ?? '',
       },
       body: JSON.stringify({ ref, generated_at: note.diperbaruiAt, note: sections }),
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),

@@ -4,6 +4,7 @@ import { emptyCrewNote } from './crew-note'
 import {
   CREW_NOTE_RETRY_DELAY_MS,
   crewNoteRefOf,
+  crewNotesBaseUrl,
   crewNoteSyncConfigured,
   pushCrewNote,
   scheduleCrewNotePush,
@@ -25,14 +26,14 @@ function stubFetch(...statuses: (number | Error)[]) {
 }
 
 beforeEach(() => {
-  process.env.CREW_NOTES_API_URL = 'https://bo.test/'
-  process.env.CREW_NOTES_TOKEN = 'tok_rahasia'
+  process.env.BOOKING_API_URL = 'https://bo.test/booking-overview/api?json=true'
+  process.env.BOOKING_API_KEY = 'tok_rahasia'
   vi.spyOn(console, 'error').mockImplementation(() => undefined)
 })
 
 afterEach(() => {
-  delete process.env.CREW_NOTES_API_URL
-  delete process.env.CREW_NOTES_TOKEN
+  delete process.env.BOOKING_API_URL
+  delete process.env.BOOKING_API_KEY
   vi.unstubAllGlobals()
   vi.useRealTimers()
   vi.restoreAllMocks()
@@ -49,12 +50,19 @@ describe('crewNoteRefOf', () => {
   })
 })
 
-describe('crewNoteSyncConfigured', () => {
-  it('butuh URL dan token', () => {
+describe('crewNotesBaseUrl / crewNoteSyncConfigured', () => {
+  it('alamat diambil dari asal BOOKING_API_URL; butuh URL yang sah dan key', () => {
+    expect(crewNotesBaseUrl()).toBe('https://bo.test')
     expect(crewNoteSyncConfigured()).toBe(true)
-    delete process.env.CREW_NOTES_TOKEN
+    delete process.env.BOOKING_API_KEY
     expect(crewNoteSyncConfigured()).toBe(false)
-    process.env.CREW_NOTES_TOKEN = ' '
+    process.env.BOOKING_API_KEY = ' '
+    expect(crewNoteSyncConfigured()).toBe(false)
+    process.env.BOOKING_API_KEY = 'k'
+    process.env.BOOKING_API_URL = 'bukan url'
+    expect(crewNotesBaseUrl()).toBeNull()
+    expect(crewNoteSyncConfigured()).toBe(false)
+    delete process.env.BOOKING_API_URL
     expect(crewNoteSyncConfigured()).toBe(false)
   })
 })
@@ -65,7 +73,8 @@ describe('pushCrewNote', () => {
     expect(await pushCrewNote('JVR/012/11/26', note)).toEqual({ ok: true })
     const [url, init] = fetchMock.mock.calls[0]
     expect(url).toBe('https://bo.test/crew-notes-api/booking-notes')
-    expect((init?.headers as Record<string, string>).authorization).toBe('Bearer tok_rahasia')
+    expect((init?.headers as Record<string, string>)['x-internal-token']).toBe('tok_rahasia')
+    expect((init?.headers as Record<string, string>).authorization).toBeUndefined()
     const body = JSON.parse(String(init?.body))
     expect(body.ref).toBe('JVR/012/11/26')
     expect(body.generated_at).toBe(note.diperbaruiAt)
@@ -98,7 +107,7 @@ describe('scheduleCrewNotePush', () => {
     const fetchMock = stubFetch(200)
     scheduleCrewNotePush(null, note)
     scheduleCrewNotePush('JVR/1', null)
-    delete process.env.CREW_NOTES_TOKEN
+    delete process.env.BOOKING_API_KEY
     scheduleCrewNotePush('JVR/1', note)
     await Promise.resolve()
     expect(fetchMock).not.toHaveBeenCalled()
