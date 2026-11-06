@@ -11,6 +11,7 @@ import {
   crewNoteIsEmpty,
   emptyCrewNote,
   generateCrewNote,
+  isNoiseForCrew,
   isUnsafeForCrew,
   scrubMoney,
   parseCrewNote,
@@ -78,6 +79,18 @@ describe('scrubMoney', () => {
     expect(scrubMoney('Permit drone harian (biaya IDR 2jt); putuskan di hari H.')).toBe('Permit drone harian; putuskan di hari H.')
     expect(scrubMoney('Single supplement Rp700.000 untuk 2 kamar')).toBe('Single supplement untuk 2 kamar')
     expect(scrubMoney('Tiba 16:40, jemput 17:30')).toBe('Tiba 16:40, jemput 17:30')
+  })
+})
+
+describe('isNoiseForCrew', () => {
+  it.each(['Asal negara dan bahasa tidak disebutkan.', 'Jam jemput belum diketahui.', 'Tidak ada informasi tambahan.'])('membuang %s', (line) =>
+    expect(isNoiseForCrew(line)).toBe(true)
+  )
+  it.each(['Pasangan, 2 orang.', 'Jemput jam 07.00 di hotel.', 'Tamu tidak makan daging.'])('meloloskan %s', (line) => expect(isNoiseForCrew(line)).toBe(false))
+
+  it('parseCrewNote ikut membuangnya', () => {
+    const note = parseCrewNote(JSON.stringify({ siapa: ['Pasangan.', 'Asal negara tidak disebutkan.'] }), null, NOW)!
+    expect(note.siapa).toEqual(['Pasangan.'])
   })
 })
 
