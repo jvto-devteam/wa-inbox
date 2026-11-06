@@ -6,6 +6,7 @@ import { reviewConversation, type ReviewReason } from '@/lib/daily-summary/revie
 import { applyReviewToItem } from '@/lib/summary-items/sync'
 import { saveChatReview, crewNoteOf } from './store'
 import { crewNoteEnabled, generateCrewNote } from './crew-note'
+import { crewNoteRefOf, scheduleCrewNotePush } from './crew-note-sync'
 import { bookingContextForReview } from './booking-context'
 import type { BookingData } from '@/lib/booking/client'
 
@@ -57,6 +58,8 @@ export async function refreshChatReview(conversationId: string, asOf: Date): Pro
     })
     const catatanCrew = note ?? previous
     if (catatanCrew) toSave = { ...review, catatanCrew }
+    // Catatan BARU (bukan yang dipertahankan karena LLM gagal) dikirim ke backoffice untuk crew-portal. Di belakang.
+    if (note) scheduleCrewNotePush(crewNoteRefOf(conv?.bookingData), note)
   }
 
   await saveChatReview(conversationId, toSave, asOf)
