@@ -93,6 +93,10 @@ export async function notifyBaliVendor(input: {
   /** Nilai transport yang baru ditulis; `booking` wajib sudah memuat semuanya, kalau tidak kabar tidak dikirim. */
   expected?: readonly WrittenValue[]
 }): Promise<void> {
+  // Kabar vendor kini dikirim VendorChangeNotifier di new-backoffice dan legacy untuk SEMUA jalur ubah data (termasuk
+  // tulis dari chat, karena wa-inbox menulis lewat rute legacy yang sama). VENDOR_NOTICE_DISABLED=1 mematikan kabar
+  // dari sini supaya vendor tidak menerima dua pesan; nyalakan bersamaan dengan VENDOR_NOTIFY_MODE=live di sana.
+  if (process.env.VENDOR_NOTICE_DISABLED === '1') return
   const { actionId, conversationId, bookingId, booking } = input
   const expected = input.expected ?? []
   let sent = false
