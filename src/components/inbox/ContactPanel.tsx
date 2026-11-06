@@ -10,6 +10,7 @@ import { NotesSection } from './NotesSection'
 import { BookingActionsSection } from './BookingActionsSection'
 import { RemindersSection } from './RemindersSection'
 import { ChatReviewTab } from './ChatReviewTab'
+import { CrewNoteSection } from './CrewNoteSection'
 import { BookingSummary, type BookingData, type TripBrief } from '@/components/contacts/BookingSummary'
 import { bookingGuestName, contactDisplayName } from '@/lib/booking/display-name'
 import { fetchJson } from '@/lib/fetch-json'
@@ -210,6 +211,8 @@ export function ContactPanel({ conversationId, className }: { conversationId: st
           )}
 
           <BookingSummary bookingData={detail.bookingData} tripBrief={detail.tripBrief} />
+
+          <CrewNoteSection conversationId={conversationId} hasBooking={Boolean(detail.bookingData?.id)} />
 
           <div className="space-y-2">
             <PanelSectionTitle>Tahap Pipeline</PanelSectionTitle>

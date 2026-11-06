@@ -28,6 +28,27 @@ describe('saveChatReview', () => {
     })
   })
 
+  it('mempertahankan catatanCrew yang sudah tersimpan bila ringkasan baru tidak membawanya (job harian)', async () => {
+    const kept = { diperbaruiAt: '2026-11-06T03:00:00.000Z', perubahan: ['Jemput 11:00, bukan 08:00.'], waktuKritis: [], siapa: [], karakter: [], kebutuhan: [], permintaan: [], logistik: [], janjiTim: [], jangan: [] }
+    mockPrisma.conversation.findUnique.mockResolvedValue({ chatReview: { ...review, catatanCrew: kept } } as never)
+    mockPrisma.conversation.updateMany.mockResolvedValue({ count: 1 })
+    const asOf = new Date('2026-11-06T17:00:00Z')
+    await saveChatReview('c1', review, asOf)
+    expect(mockPrisma.conversation.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { chatReview: { ...review, catatanCrew: kept }, chatReviewAt: asOf } })
+    )
+  })
+
+  it('catatanCrew di ringkasan baru menang atas yang lama, tanpa membaca baris lama', async () => {
+    const fresh = { diperbaruiAt: '2026-11-06T04:00:00.000Z', perubahan: [], waktuKritis: [], siapa: ['Pasangan.'], karakter: [], kebutuhan: [], permintaan: [], logistik: [], janjiTim: [], jangan: [] }
+    mockPrisma.conversation.updateMany.mockResolvedValue({ count: 1 })
+    await saveChatReview('c1', { ...review, catatanCrew: fresh }, new Date())
+    expect(mockPrisma.conversation.findUnique).not.toHaveBeenCalled()
+    expect(mockPrisma.conversation.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ chatReview: { ...review, catatanCrew: fresh } }) })
+    )
+  })
+
   it('mengembalikan false bila hasil yang lebih baru sudah ada (0 baris)', async () => {
     mockPrisma.conversation.updateMany.mockResolvedValue({ count: 0 })
     expect(await saveChatReview('c1', review, new Date())).toBe(false)
