@@ -4,7 +4,8 @@ import { automatedMessageIds } from '@/lib/summary-items/automated'
 import { TRANSCRIPT_MAX_MESSAGES } from '@/lib/daily-summary/config'
 import { reviewConversation, type ReviewReason } from '@/lib/daily-summary/review'
 import { applyReviewToItem } from '@/lib/summary-items/sync'
-import { saveChatReview } from './store'
+import { saveChatReview, crewNoteOf } from './store'
+import { crewNoteEnabled, generateCrewNote } from './crew-note'
 import { bookingContextForReview } from './booking-context'
 import type { BookingData } from '@/lib/booking/client'
 
@@ -33,16 +34,32 @@ export async function refreshChatReview(conversationId: string, asOf: Date): Pro
   const reasons: ReviewReason[] = lastRealMessage(messages)?.direction === 'INBOUND' ? ['unreplied'] : ['active']
 
   const settings = await prisma.settings.findUnique({ where: { id: 1 }, select: { ollamaModel: true } })
-  const conv = await prisma.conversation.findUnique({ where: { id: conversationId }, select: { bookingData: true } })
-  const review = await reviewConversation(
-    buildNumberedTranscript(messages),
-    reasons,
-    settings?.ollamaModel ?? undefined,
-    bookingContextForReview(conv?.bookingData as BookingData | null | undefined)
-  )
+  const conv = await prisma.conversation.findUnique({
+    where: { id: conversationId },
+    select: { bookingData: true, chatReview: true, contact: { select: { name: true } } },
+  })
+  const bookingContext = bookingContextForReview(conv?.bookingData as BookingData | null | undefined)
+  const review = await reviewConversation(buildNumberedTranscript(messages), reasons, settings?.ollamaModel ?? undefined, bookingContext)
   if (!review) return { status: 'failed' }
 
-  await saveChatReview(conversationId, review, asOf)
+  // Catatan untuk crew (Guest Brief): hanya percakapan ber-booking dengan tamu, dan hanya bila fitur menyala. Gagal =
+  // catatan sebelumnya dipertahankan (saveChatReview juga mempertahankannya bila `catatanCrew` tidak ada).
+  let toSave = review
+  if (crewNoteEnabled() && bookingContext && review.jenisKontak !== 'mitra' && review.jenisKontak !== 'lainnya') {
+    const previous = crewNoteOf(conv?.chatReview)
+    const note = await generateCrewNote({
+      review,
+      bookingContext,
+      previous,
+      contactName: conv?.contact?.name ?? null,
+      model: settings?.ollamaModel ?? undefined,
+      now: asOf,
+    })
+    const catatanCrew = note ?? previous
+    if (catatanCrew) toSave = { ...review, catatanCrew }
+  }
+
+  await saveChatReview(conversationId, toSave, asOf)
   // Janji tim yang kini sudah ditepati menutup item PROMISE-nya (PROMISE_KEPT). Tidak pernah melempar.
   await applyReviewToItem(conversationId, review, asOf)
   return { status: 'ok' }

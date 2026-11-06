@@ -135,6 +135,52 @@ export function unkeptPromises(review: Pick<ConversationReview, 'janjiTim'>): Re
   return (review.janjiTim ?? []).map(normalizePromise).filter((p) => p.terpenuhi === false)
 }
 
+/**
+ * Catatan untuk crew (Guest Brief): poin dari chat yang dibutuhkan crew sebelum berangkat, ditulis sebagai arahan.
+ * Bukan hasil panggilan review: dibuat panggilan kedua (`chat-review/crew-note.ts`) dari review yang sudah disaring
+ * (tanpa poin bayar/komplain dan label komersial), lalu disimpan DI DALAM `chatReview`. Sembilan bagian, urutan = urutan
+ * di layar crew. Teks selalu lolos saringan nominal, telepon, dan email sebelum disimpan.
+ */
+export const CREW_NOTE_SECTIONS = [
+  'perubahan', // ubahan terbaru setelah booking (jam jemput, hotel, rencana)
+  'waktuKritis', // penerbangan, jam jemput bandara, rapat online, check-in
+  'siapa', // komposisi rombongan, negara, bahasa
+  'karakter', // karakter tamu dan cara melayani
+  'kebutuhan', // fisik, kenyamanan, kesehatan seperlunya
+  'permintaan', // drone, foto, momen khusus, rencana tamu
+  'logistik', // lokasi jemput, kamar, hotel, tambahan malam
+  'janjiTim', // yang sudah dijanjikan admin dan harus ditepati
+  'jangan', // pertanyaan belum dijawab: jangan dijanjikan, kabari admin
+] as const
+export type CrewNoteSection = (typeof CREW_NOTE_SECTIONS)[number]
+
+export const CREW_NOTE_SECTION_LABEL: Record<CrewNoteSection, string> = {
+  perubahan: 'Perubahan terbaru',
+  waktuKritis: 'Waktu kritis',
+  siapa: 'Siapa mereka',
+  karakter: 'Karakter dan cara melayani',
+  kebutuhan: 'Kebutuhan',
+  permintaan: 'Permintaan khusus',
+  logistik: 'Logistik',
+  janjiTim: 'Janji tim',
+  jangan: 'Jangan menjanjikan',
+}
+
+export const crewNoteSchema = z.object({
+  /** ISO, kapan catatan ini dibuat. */
+  diperbaruiAt: z.string(),
+  perubahan: z.array(z.string()).default([]),
+  waktuKritis: z.array(z.string()).default([]),
+  siapa: z.array(z.string()).default([]),
+  karakter: z.array(z.string()).default([]),
+  kebutuhan: z.array(z.string()).default([]),
+  permintaan: z.array(z.string()).default([]),
+  logistik: z.array(z.string()).default([]),
+  janjiTim: z.array(z.string()).default([]),
+  jangan: z.array(z.string()).default([]),
+})
+export type CrewNote = z.infer<typeof crewNoteSchema>
+
 /** Hasil satu panggilan LLM untuk satu percakapan (review.ts). */
 export const conversationReviewSchema = z.object({
   status: z.enum(REVIEW_STATUSES),
@@ -149,6 +195,8 @@ export const conversationReviewSchema = z.object({
   profil: z.array(reviewProfileSchema).default([]),
   statusAgen: z.string(),
   langkahBerikut: z.string(),
+  /** Opsional: hanya percakapan ber-booking, dan hanya setelah fitur Catatan crew menyala. Bukan keluaran review LLM. */
+  catatanCrew: crewNoteSchema.optional(),
 })
 export type ConversationReview = z.infer<typeof conversationReviewSchema>
 
