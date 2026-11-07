@@ -904,6 +904,35 @@ Mohon sesuaikan dengan data terbaru di atas.`,
     source: 'new-backoffice/app/Services/Notifications/VendorChangeNotifier.php (baru)',
   },
   {
+    key: 'hotel_booking_change',
+    name: 'Perubahan reservasi hotel',
+    description: 'Dikirim ke grup WhatsApp hotel (hotels.group_wa_id) saat booking yang sudah dikonfirmasi diedit di booking overview new-backoffice (kamar, makan, jumlah tamu, hotel ganti, reservasi baru atau batal). Satu pesan per hotel, memuat nilai lama dan baru. Dikirim HotelChangeNotifier di new-backoffice.',
+    audience: 'INTERNAL',
+    body: `*🔔 Reservation Update {hotel_name}*
+
+👥 Guest : {guest}
+
+*Yang berubah:*
+{changes}
+
+*Reservasi terbaru:*
+{current}
+
+Cek detail Reservasi ⬇️⬇️
+https://partner.javavolcano-touroperator.com/reservation/{hotel_slug}
+
+Mohon sesuaikan dengan data terbaru di atas. Terima kasih`,
+    imageUrl: null,
+    variables: [
+      req('hotel_name', 'Hotel Example Bromo', 'Nama hotel.'),
+      req('guest', 'John Doe (2 PAX)', 'Nama tamu diikuti " (<pax> PAX)".'),
+      req('changes', 'Rooms (09 Nov 2026): Double x 1 → Double x 2', 'Satu baris per perubahan, nilai lama → baru.'),
+      req('current', 'Check In 09 Nov 2026, Check Out 10 Nov 2026, Rooms Double x 2', 'Rincian menginap terbaru di hotel itu.'),
+      req('hotel_slug', 'hotel-example-bromo', 'hotels.slug untuk tautan partner portal.'),
+    ],
+    source: 'new-backoffice/app/Services/Notifications/HotelChangeNotifier.php (baru)',
+  },
+  {
     key: 'guest_data_followup_portal',
     name: 'Follow-up data tamu (customer portal)',
     description: 'Dikirim tiap hari mulai H-7 ke tamu yang datanya belum lengkap (titik/jam jemput, titik/jam antar, ukuran kaos), selalu berbahasa Inggris. Mengarahkan tamu ke customer portal dengan tautan pendek untuk melengkapi data. Dikirim guests:follow-up-missing-data di new-backoffice. Menggantikan guest_data_followup_en/_id (tidak dipakai lagi).',
