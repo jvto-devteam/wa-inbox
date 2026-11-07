@@ -933,6 +933,33 @@ Mohon sesuaikan dengan data terbaru di atas. Terima kasih`,
     source: 'new-backoffice/app/Services/Notifications/HotelChangeNotifier.php (baru)',
   },
   {
+    key: 'crew_pickup_change',
+    name: 'Perubahan jemput (ke crew)',
+    description: 'Dikirim ke tiap crew yang diplot (driver, escort, guide Ijen) saat titik atau jam jemput booking berubah antara H-7 dan hari trip dimulai, lewat jalur apa pun (customer portal, edit admin). Memuat nilai lama dan baru. Dikirim CrewPickupChangeNotifier di new-backoffice dan legacy, memakai mode kabar vendor.',
+    audience: 'INTERNAL',
+    body: `*🔔 PERUBAHAN JEMPUT*
+
+Halo {crew_name}, tamu {guest_name} ({channel}), trip {trip_date}, mengubah data jemput.
+
+*Yang berubah:*
+{changes}
+
+*Data terbaru:*
+{current}
+
+Mohon sesuaikan jadwal. Detail lengkap ada di crew-portal.`,
+    imageUrl: null,
+    variables: [
+      req('crew_name', 'Fredi', 'Nama crew penerima.'),
+      req('guest_name', 'Julie Neant', 'Nama tamu.'),
+      req('channel', 'JVTO', 'JVTO, KLOOK, atau TWT.'),
+      req('trip_date', '08 Nov 2026', 'Tanggal mulai trip.'),
+      req('changes', 'Jam jemput: 07:00 → 09:30', 'Satu baris per perubahan, nilai lama → baru. Belum diisi tampil BELUM ADA.'),
+      req('current', 'Hotel Kuta, jam 09:30', 'Titik dan jam jemput terbaru.'),
+    ],
+    source: 'new-backoffice/app/Services/Notifications/CrewPickupChangeNotifier.php (baru)',
+  },
+  {
     key: 'guest_data_followup_portal',
     name: 'Follow-up data tamu (customer portal)',
     description: 'Dikirim tiap hari mulai H-7 ke tamu yang datanya belum lengkap (titik/jam jemput, titik/jam antar, ukuran kaos), selalu berbahasa Inggris. Mengarahkan tamu ke customer portal dengan tautan pendek untuk melengkapi data. Dikirim guests:follow-up-missing-data di new-backoffice. Menggantikan guest_data_followup_en/_id (tidak dipakai lagi).',
