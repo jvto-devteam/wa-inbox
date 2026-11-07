@@ -17,6 +17,7 @@ import {
   isUnsafeForCrew,
   scrubMoney,
   parseCrewNote,
+  isSalesTopicForKarakter,
 } from './crew-note'
 
 const NOW = new Date('2026-11-06T03:00:00Z')
@@ -93,6 +94,33 @@ describe('isNoiseForCrew', () => {
   it('parseCrewNote ikut membuangnya', () => {
     const note = parseCrewNote(JSON.stringify({ siapa: ['Pasangan.', 'Asal negara tidak disebutkan.'] }), null, NOW)!
     expect(note.siapa).toEqual(['Pasangan.'])
+  })
+})
+
+describe('isSalesTopicForKarakter', () => {
+  it('mengenali pertanyaan produk/kebijakan sebelum booking', () => {
+    expect(isSalesTopicForKarakter('Tamu butuh kepastian soal privat atau tidak. Berikan konfirmasi jelas di awal.')).toBe(true)
+    expect(isSalesTopicForKarakter('Tamu bertanya apakah tur private atau sharing.')).toBe(true)
+    expect(isSalesTopicForKarakter('Tamu menanyakan ketersediaan tanggal dan lisensi.')).toBe(true)
+  })
+
+  it('tidak menyentuh perilaku lapangan yang sah', () => {
+    expect(isSalesTopicForKarakter('Tamu sering mengubah rencana. Cek ulang jam jemput dan rute H-1.')).toBe(false)
+    expect(isSalesTopicForKarakter('Tamu cemas soal keselamatan. Jelaskan rute dan kondisi sebelum jalan.')).toBe(false)
+    expect(isSalesTopicForKarakter('Tamu menjaga privasi, tidak suka difoto.')).toBe(false)
+  })
+
+  it('parseCrewNote membuangnya hanya dari bagian karakter', () => {
+    const note = parseCrewNote(
+      JSON.stringify({
+        karakter: ['Tamu butuh kepastian soal privat atau tidak. Berikan konfirmasi jelas di awal.', 'Tamu cemas soal ketinggian. Jalan pelan.'],
+        permintaan: ['Minta tur private untuk foto drone.'],
+      }),
+      null,
+      NOW
+    )!
+    expect(note.karakter).toEqual(['Tamu cemas soal ketinggian. Jalan pelan.'])
+    expect(note.permintaan).toEqual(['Minta tur private untuk foto drone.'])
   })
 })
 
