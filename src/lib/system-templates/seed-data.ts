@@ -924,4 +924,23 @@ Thank you!`,
     ],
     source: 'new-backoffice/app/Console/Commands/FollowUpMissingGuestData.php (baru)',
   },
+  {
+    key: 'guest_data_update_confirmation',
+    name: 'Konfirmasi data diperbarui di portal (ke tamu)',
+    description: 'Dikirim ke tamu setelah ia memperbarui jemput, antar, atau ukuran kaos di customer portal. Merinci yang tersimpan dan, bila masih ada data wajib yang kurang, apa saja serta tautan portalnya. Selalu berbahasa Inggris. Dikirim legacy (GuestPortalConfirmation).',
+    audience: 'CUSTOMER',
+    body: `Hi {guest_name}, thank you! We have saved your updated details for your trip on {trip_date}:
+
+{updated_list}
+
+{next_step}`,
+    imageUrl: null,
+    variables: [
+      req('guest_name', 'Julie', 'Nama depan tamu.'),
+      req('trip_date', '08 Nov 2026', 'Tanggal mulai trip.'),
+      req('updated_list', '- Pick-up: Hotel Kuta at 09:30', 'Daftar berpoin hal yang baru tersimpan.'),
+      req('next_step', 'Everything we need is now complete.', 'Penutup: lengkap, atau daftar yang masih kurang dengan tautan portal.'),
+    ],
+    source: 'javavolcano-touroperator/app/Services/Notifications/GuestPortalConfirmation.php (baru)',
+  },
 ]

@@ -22,6 +22,7 @@ const EXPECTED_KEYS = [
   'crew_reminder_personal',
   'crew_trip_media',
   'guest_data_followup_portal',
+  'guest_data_update_confirmation',
   'hotel_room_reservation',
   'internal_bali_transport',
   'internal_bali_transport_reminder',
@@ -63,6 +64,7 @@ const KEYS_WITHOUT_PHP_ORIGIN = new Set([
   // Lahir 2026-11-06 (kabar otomatis ke vendor dan follow-up data tamu, dikirim new-backoffice/legacy): tidak ada asal PHP.
   'vendor_booking_change',
   'guest_data_followup_portal',
+  'guest_data_update_confirmation',
 ])
 
 describe('system template seeds', () => {
