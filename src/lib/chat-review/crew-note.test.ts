@@ -7,6 +7,7 @@ import { callLLM } from '@/lib/bot/llm'
 import type { ConversationReview } from '@/lib/daily-summary/payload-schema'
 import {
   buildCrewNotePrompt,
+  dropBookingEchoes,
   crewNoteInput,
   crewNoteIsEmpty,
   emptyCrewNote,
@@ -200,5 +201,45 @@ describe('generateCrewNote', () => {
     expect(await generateCrewNote(base)).toBeNull()
     vi.mocked(callLLM).mockResolvedValueOnce('bukan json')
     expect(await generateCrewNote(base)).toBeNull()
+  })
+})
+
+describe('dropBookingEchoes', () => {
+  const booking = '- Kode: JVTO-3920\n- Pax: 2\n- Jemput: Surabaya Hotel · Sumi Hotel Surabaya · 10:00\n- Antar: Bali Hotel · jam belum ada\n- Kaos: 2XL x 1; 3XL x 1'
+  const note = (over: Partial<ReturnType<typeof emptyCrewNote>>) => ({ ...emptyCrewNote(new Date('2026-11-07T00:00:00Z')), ...over })
+
+  it('membuang baris yang hanya mengulang data booking', () => {
+    const out = dropBookingEchoes(
+      note({
+        waktuKritis: ['Jemput jam 10:00 di Sumi Hotel Surabaya'],
+        siapa: ['Pasangan, 2 orang.'],
+        logistik: ['Jemput di Sumi Hotel Surabaya. Antar sampai hotel di Bali.'],
+        kebutuhan: ['Kaos ukuran 2XL dan 3XL.'],
+      }),
+      booking
+    )
+    expect(out.waktuKritis).toEqual([])
+    expect(out.siapa).toEqual([])
+    expect(out.kebutuhan).toEqual([])
+  })
+
+  it('mempertahankan hal dari chat yang tidak ada di booking', () => {
+    const out = dropBookingEchoes(
+      note({
+        waktuKritis: ['Jemput bandara jam 18:20 (CX779).'],
+        siapa: ['Keluarga dari Prancis dengan dua anak.'],
+        logistik: ['Tamu akan menghubungi lewat WhatsApp dari arrival hall.'],
+        kebutuhan: ['Vegetarian.'],
+        karakter: ['Tamu cerewet dan banyak permintaan. Konfirmasi satu per satu.'],
+        perubahan: ['Jam jemput menjadi 11:00 dari 10:00.'],
+      }),
+      booking
+    )
+    expect(out.waktuKritis).toHaveLength(1)
+    expect(out.siapa).toHaveLength(1)
+    expect(out.logistik).toHaveLength(1)
+    expect(out.kebutuhan).toEqual(['Vegetarian.'])
+    expect(out.karakter).toHaveLength(1)
+    expect(out.perubahan).toHaveLength(1)
   })
 })
