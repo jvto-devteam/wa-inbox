@@ -63,6 +63,7 @@ import { sanitizeTrace } from '@/lib/bot-control/trace-sanitizer'
 import {
   writeBookingChange,
   writeConfigured,
+  writeUnavailableMessage,
   type BookingPatch,
   type WriteErrorKind,
   type WriteResult,
@@ -243,7 +244,7 @@ export async function executeBookingAction(input: {
     detail = normalizeFieldValue(detailField, input.detail)
     if (detail === null) return fail(400, 'Detail titik tidak valid')
   }
-  if (!writeConfigured()) return fail(503, 'Jalur tulis backoffice belum dikonfigurasi')
+  if (!writeConfigured()) return fail(503, writeUnavailableMessage())
 
   const conversationId = action.conversationId
   const bookingId = action.bookingId
@@ -453,7 +454,7 @@ export async function revertBookingAction(input: { actionId: string; accountId: 
   if (!action) return failRevert(404, 'Tindakan tidak ditemukan')
   if (action.type !== 'CHANGE') return failRevert(400, 'Operasi tidak cocok dengan jenis tindakan')
   if (action.state !== 'EXECUTED') return failRevert(409, 'Hanya perubahan yang sudah diterapkan yang bisa dibatalkan')
-  if (!writeConfigured()) return failRevert(503, 'Jalur tulis backoffice belum dikonfigurasi')
+  if (!writeConfigured()) return failRevert(503, writeUnavailableMessage())
 
   const conversationId = action.conversationId
   const bookingId = action.bookingId

@@ -50,8 +50,25 @@ export type WriteResult =
 const TIMEOUT_MS = 10_000
 const SIZES = ['xs', 's', 'm', 'l', 'xl', 'xxl'] as const
 
+/**
+ * Saklar penutup: BOOKING_WRITE_DISABLED=1 menutup SEMUA penulisan booking dari chat (terapkan otomatis, tombol Setujui,
+ * Batalkan). Owner 2026-11-07: sementara tamu mengubah data lewat customer portal, bukan lewat chat. Kartu CHANGE tetap
+ * dibuat dan tetap OPEN untuk admin (sama seperti jalur tulis yang tidak dikonfigurasi: eksekusi 503, terapkan otomatis
+ * 'skipped'); UI menerima `writeEnabled: false`.
+ */
+export function writesDisabled(): boolean {
+  return process.env.BOOKING_WRITE_DISABLED === '1'
+}
+
 export function writeConfigured(): boolean {
-  return Boolean(process.env.LEGACY_BASE_URL?.trim())
+  return !writesDisabled() && Boolean(process.env.LEGACY_BASE_URL?.trim())
+}
+
+/** Alasan jalur tulis tidak tersedia, untuk pesan galat ke admin. */
+export function writeUnavailableMessage(): string {
+  return writesDisabled()
+    ? 'Penulisan perubahan booking dari chat ditutup sementara. Minta tamu mengubahnya lewat customer portal.'
+    : 'Jalur tulis backoffice belum dikonfigurasi'
 }
 
 function fail(kind: WriteErrorKind, error: string, httpStatus = 0): WriteResult {
@@ -220,8 +237,9 @@ export async function writeBookingChange(
   /** Booking segar dari API (lihat kepala file). */
   baseBooking?: BookingData
 ): Promise<WriteResult> {
+  if (writesDisabled()) return fail('unavailable', writeUnavailableMessage())
   const base = process.env.LEGACY_BASE_URL?.trim().replace(/\/+$/, '')
-  if (!base) return fail('unavailable', 'Jalur tulis backoffice belum dikonfigurasi')
+  if (!base) return fail('unavailable', writeUnavailableMessage())
 
   const conv = await prisma.conversation.findUnique({
     where: { id: conversationId },

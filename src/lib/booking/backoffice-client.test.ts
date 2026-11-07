@@ -3,7 +3,7 @@ import { mockDeep, mockReset, type DeepMockProxy } from 'vitest-mock-extended'
 import type { PrismaClient } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { ensureFreshBookingData, type BookingData } from '@/lib/booking/client'
-import { writeBookingChange, writeConfigured, bookingUrlToken } from './backoffice-client'
+import { writeBookingChange, writeConfigured, writesDisabled, writeUnavailableMessage, bookingUrlToken } from './backoffice-client'
 
 vi.mock('@/lib/db', () => ({ prisma: mockDeep<PrismaClient>() }))
 vi.mock('@/lib/booking/client', () => ({ ensureFreshBookingData: vi.fn() }))
@@ -274,5 +274,40 @@ describe('writeBookingChange', () => {
     expect(await writeBookingChange('77', { pickup_time: '09:00' }, 'c1')).toMatchObject({ kind: 'backoffice', httpStatus: 500 })
     ;(fetch as unknown as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('ECONNREFUSED'))
     expect(await writeBookingChange('77', { pickup_time: '09:00' }, 'c1')).toMatchObject({ kind: 'backoffice', httpStatus: 0 })
+  })
+})
+
+describe('BOOKING_WRITE_DISABLED (saklar penutup penulisan dari chat)', () => {
+  afterEach(() => {
+    delete process.env.BOOKING_WRITE_DISABLED
+    delete process.env.LEGACY_BASE_URL
+  })
+
+  it('mematikan writeConfigured walau LEGACY_BASE_URL terisi, dan pesan galatnya jelas', () => {
+    process.env.LEGACY_BASE_URL = 'https://legacy.example'
+    expect(writeConfigured()).toBe(true)
+    expect(writeUnavailableMessage()).toBe('Jalur tulis backoffice belum dikonfigurasi')
+
+    process.env.BOOKING_WRITE_DISABLED = '1'
+    expect(writesDisabled()).toBe(true)
+    expect(writeConfigured()).toBe(false)
+    expect(writeUnavailableMessage()).toMatch(/ditutup sementara.*customer portal/)
+  })
+
+  it('nilai selain "1" tidak menutup', () => {
+    process.env.LEGACY_BASE_URL = 'https://legacy.example'
+    process.env.BOOKING_WRITE_DISABLED = '0'
+    expect(writeConfigured()).toBe(true)
+  })
+
+  it('writeBookingChange menolak tanpa permintaan keluar', async () => {
+    process.env.LEGACY_BASE_URL = 'https://legacy.example'
+    process.env.BOOKING_WRITE_DISABLED = '1'
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+    const res = await writeBookingChange('JVTO-1', { pickup_time: '10:00' }, 'c1')
+    expect(res).toMatchObject({ status: 'error', kind: 'unavailable' })
+    expect(fetchMock).not.toHaveBeenCalled()
+    vi.unstubAllGlobals()
   })
 })

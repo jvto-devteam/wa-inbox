@@ -7,7 +7,11 @@ vi.mock('@/lib/db', () => ({ prisma: mockDeep<PrismaClient>() }))
 vi.mock('@/lib/auth/session', () => ({ verifySessionToken: vi.fn() }))
 vi.mock('@/lib/realtime', () => ({ broadcast: vi.fn() }))
 vi.mock('@/lib/booking-actions/history', () => ({ recordEvent: vi.fn().mockResolvedValue(undefined) }))
-vi.mock('@/lib/booking/backoffice-client', () => ({ writeBookingChange: vi.fn(), writeConfigured: vi.fn() }))
+vi.mock('@/lib/booking/backoffice-client', () => ({
+  writeBookingChange: vi.fn(),
+  writeConfigured: vi.fn(),
+  writeUnavailableMessage: () => 'Jalur tulis backoffice belum dikonfigurasi',
+}))
 vi.mock('@/lib/booking-actions/store', () => ({ reevaluateBookingActions: vi.fn() }))
 vi.mock('@/lib/booking-actions/data-requests', () => ({ sendDataRequest: vi.fn() }))
 vi.mock('@/lib/booking/client', () => ({ lookupBookingResult: vi.fn() }))
