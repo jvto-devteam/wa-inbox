@@ -5,7 +5,7 @@ import { TRANSCRIPT_MAX_MESSAGES } from '@/lib/daily-summary/config'
 import { reviewConversation, type ReviewReason } from '@/lib/daily-summary/review'
 import { applyReviewToItem } from '@/lib/summary-items/sync'
 import { saveChatReview, crewNoteOf } from './store'
-import { crewNoteEnabled, generateCrewNote } from './crew-note'
+import { crewNoteEnabled, generateCrewNote, guestMessagesForCrew } from './crew-note'
 import { crewNoteRefOf, scheduleCrewNotePush } from './crew-note-sync'
 import { bookingContextForReview } from './booking-context'
 import type { BookingData } from '@/lib/booking/client'
@@ -55,6 +55,7 @@ export async function refreshChatReview(conversationId: string, asOf: Date): Pro
       contactName: conv?.contact?.name ?? null,
       model: settings?.ollamaModel ?? undefined,
       now: asOf,
+      guestMessages: guestMessagesForCrew(messages, conv?.contact?.name ?? null),
     })
     const catatanCrew = note ?? previous
     if (catatanCrew) toSave = { ...review, catatanCrew }
