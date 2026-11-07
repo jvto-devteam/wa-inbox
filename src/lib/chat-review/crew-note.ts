@@ -169,7 +169,7 @@ Isi tiap bagian:
 - "perubahan": hal yang berubah setelah booking (jam jemput, hotel, tanggal, rencana). Tulis nilai baru dan nilai lama bila ada. Sertakan juga hal yang sudah ada di "catatanSebelumnya.perubahan" selama masih berlaku. Bandingkan juga dengan "catatanSebelumnya": hal yang kini berbeda dari catatan sebelumnya adalah perubahan.
 - "waktuKritis": jam yang tidak boleh meleset: penerbangan atau kereta tiba, jam jemput bandara, rapat online, jam check-in.
 - "siapa": komposisi rombongan (pasangan, solo, grup, keluarga dengan anak), negara, bahasa. Maksimal dua kalimat.
-- "karakter": supaya crew bisa mengantisipasi tamu yang menuntut perhatian ekstra. Ambil dari "profil" DAN dari pola di chat: banyak permintaan atau sering menambah permintaan, sering mengubah rencana, menuntut ketepatan waktu, gampang khawatir atau mengeluh, minta jawaban cepat, atau butuh banyak kepastian. Tulis netral dan bermanfaat: gambarkan pola perilakunya, lalu satu arahan cara melayaninya. Contoh: banyak_revisi -> "Tamu teliti dan sering menyesuaikan rencana. Konfirmasi ulang jam jemput dan rute sehari sebelumnya."; banyak permintaan -> "Tamu punya banyak permintaan khusus. Siapkan semuanya sejak awal dan konfirmasi satu per satu."; cemas_keamanan -> "Tamu cemas soal keselamatan. Jelaskan rute dan kondisi sebelum jalan, jangan meremehkan."; mendesak -> "Tamu butuh jawaban cepat. Balas segera."; belum_pasti -> "Rencana masih bisa berubah. Cek ulang H-1."; keluarga_anak -> "Keluarga dengan anak. Jalan pelan, tanyakan usia anak." Hanya tulis pola yang benar-benar terlihat di masukan, jangan menebak watak. DILARANG memakai kata "ribet", "rewel", "cerewet", "susah", "menyebalkan" atau penilaian negatif lain: tulis perilakunya, bukan label wataknya.
+- "karakter": gambaran sifat dan cara bertanya tamu supaya crew siap sebelum bertemu. Ambil dari "profil" DAN dari pola di chat: banyak permintaan atau sering menambah permintaan, sering mengubah rencana, menuntut ketepatan waktu, gampang khawatir atau mengeluh, minta jawaban cepat, banyak bertanya detail, butuh banyak kepastian. Tulis APA ADANYA, dengan bahasa crew sehari-hari, boleh memakai kata seperti "cerewet", "banyak maunya", "ribet", "detail banget" bila polanya memang terlihat di chat. Lalu tambahkan satu arahan cara melayaninya. Contoh: "Tamu cerewet dan banyak permintaan. Siapkan semuanya sejak awal, konfirmasi satu per satu."; "Tamu teliti dan sering ganti rencana. Konfirmasi ulang jam jemput dan rute sehari sebelumnya."; "Tamu cemas soal keselamatan. Jelaskan rute dan kondisi sebelum jalan."; "Tamu butuh jawaban cepat. Balas segera."; "Rencana masih bisa berubah. Cek ulang H-1."; "Keluarga dengan anak. Jalan pelan, tanyakan usia anak." Hanya tulis pola yang benar-benar terlihat di masukan, jangan menebak watak. DILARANG: hinaan kasar, kata yang merendahkan, atau menilai tamu dari negara, suku, agama, usia, atau fisiknya.
 - "kebutuhan": kebutuhan fisik dan kenyamanan (takut ketinggian, viewpoint sepi, usia, diet atau alergi, kesehatan seperlunya untuk keselamatan, bahasa guide). Tanpa detail medis berlebihan. Pertanyaan tamu yang belum dijawab soal persiapan (pakaian, suhu, perlengkapan) ditulis di sini sebagai pengingat untuk crew: apa yang ditanyakan tamu dan "ingatkan" hal yang perlu dibawa.
 - "permintaan": permintaan khusus dan rencana tamu (drone, foto, momen khusus, tempat yang ingin dilihat).
 - "logistik": lokasi jemput, susunan kamar dan tempat tidur, upgrade atau pindah hotel, tambahan malam, hal teknis perjalanan.
@@ -183,7 +183,7 @@ Aturan tulis:
 - Jangan menambah fakta yang tidak ada di masukan. Jangan menebak jam atau lokasi.
 - Hanya tulis hal yang DIKETAHUI. Jangan menulis kalimat tentang hal yang tidak diketahui ("tidak disebutkan", "belum diketahui", "tidak ada informasi"): lewati saja.
 - Jangan mengulang hal yang sama di dua bagian. Satu fakta ditulis di bagian yang paling tepat: jam penting di "waktuKritis"; "logistik" hanya untuk hal yang belum tercakup di bagian lain (kamar, tempat tidur, hotel, tambahan malam, titik antar).
-- Hal yang sudah sama dengan "booking" jangan diulang, kecuali itu perubahan.
+- Hal yang sudah ada di "booking" (jam dan titik jemput atau antar, jumlah tamu, ukuran kaos, paket, tanggal) JANGAN ditulis lagi, kecuali itu perubahan. Catatan ini hanya untuk hal yang TIDAK ada di booking: sifat tamu, permintaan, janji, kebutuhan khusus, larangan menjanjikan.
 - Bagian tanpa isi dibiarkan kosong. Tiap kalimat paling banyak 200 huruf.`
 
 export function buildCrewNotePrompt(input: CrewNoteInput): string {
@@ -232,6 +232,33 @@ export function parseCrewNote(raw: string, contactName: string | null, now: Date
   return note
 }
 
+const ECHO_STOP = new Set(['jemput', 'antar', 'tamu', 'jam', 'di', 'ke', 'dan', 'yang', 'untuk', 'dari', 'sampai', 'hotel', 'orang', 'dengan', 'pada', 'the', 'and'])
+const SIAPA_KEEP_RE = /\b(?:dari|negara|bahasa|berbahasa|anak|remaja|lansia|usia|tahun|balita|bayi|keluarga|teman|rombongan)\b/i
+const KAOS_RE = /\b(?:kaos|t-?shirt|ukuran\s+(?:s|m|l|xl|2xl|3xl|xxl))\b/i
+
+function echoTokens(text: string): string[] {
+  return (text.toLowerCase().match(/[a-z0-9]+/g) ?? []).filter((t) => !ECHO_STOP.has(t) && (t.length >= 3 || /\d/.test(t)))
+}
+
+/**
+ * Membuang baris yang hanya mengulang data booking (sudah tampil di kartu data trip crew): ukuran kaos, komposisi
+ * rombongan tanpa informasi tambahan, serta jam dan titik jemput atau antar yang semua kata pentingnya sudah ada di
+ * konteks booking. Perubahan dan sifat tamu tidak pernah dibuang.
+ */
+export function dropBookingEchoes(note: CrewNote, bookingContext: string): CrewNote {
+  const known = new Set(echoTokens(bookingContext))
+  const echo = (line: string) => {
+    const tokens = echoTokens(line)
+    return tokens.length > 0 && tokens.every((t) => known.has(t))
+  }
+  const out: CrewNote = { ...note }
+  out.siapa = note.siapa.filter((l) => SIAPA_KEEP_RE.test(l) && !echo(l))
+  out.kebutuhan = note.kebutuhan.filter((l) => !KAOS_RE.test(l))
+  out.waktuKritis = note.waktuKritis.filter((l) => !echo(l))
+  out.logistik = note.logistik.filter((l) => !echo(l))
+  return out
+}
+
 export async function generateCrewNote(args: {
   review: ConversationReview
   bookingContext: string
@@ -246,9 +273,9 @@ export async function generateCrewNote(args: {
     // Tidak ada yang layak untuk crew: catatan kosong, tanpa memanggil LLM.
     if (!input) return emptyCrewNote(now)
     const raw = await callLLM(buildCrewNotePrompt(input), { system: CREW_NOTE_SYSTEM_PROMPT, model, timeoutMs: REVIEW_TIMEOUT_MS })
-    const note = parseCrewNote(raw, contactName, now)
-    if (!note) console.error('generateCrewNote: output LLM tidak sesuai bentuk')
-    return note
+    const parsed = parseCrewNote(raw, contactName, now)
+    if (!parsed) console.error('generateCrewNote: output LLM tidak sesuai bentuk')
+    return parsed ? dropBookingEchoes(parsed, bookingContext) : null
   } catch (error) {
     console.error('generateCrewNote gagal', { error: error instanceof Error ? error.message : 'unknown' })
     return null
