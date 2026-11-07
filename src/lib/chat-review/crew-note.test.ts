@@ -8,6 +8,7 @@ import type { ConversationReview } from '@/lib/daily-summary/payload-schema'
 import {
   buildCrewNotePrompt,
   dropBookingEchoes,
+  guestMessagesForCrew,
   crewNoteInput,
   crewNoteIsEmpty,
   emptyCrewNote,
@@ -241,5 +242,32 @@ describe('dropBookingEchoes', () => {
     expect(out.kebutuhan).toEqual(['Vegetarian.'])
     expect(out.karakter).toHaveLength(1)
     expect(out.perubahan).toHaveLength(1)
+  })
+})
+
+describe('guestMessagesForCrew', () => {
+  it('hanya pesan masuk, tanpa telepon dan urusan uang', () => {
+    const out = guestMessagesForCrew(
+      [
+        { direction: 'INBOUND', content: 'Can we change the pickup again? Call me on +62 812 3456 7890' },
+        { direction: 'OUTBOUND', content: 'Sure, noted.' },
+        { direction: 'INBOUND', content: 'This is the price I am getting' },
+        { direction: 'INBOUND', content: 'Berapa total bayar? Rp 2jt' },
+        { direction: 'INBOUND', content: 'ok' },
+        { direction: 'INBOUND', content: null },
+        { direction: 'INBOUND', content: 'Is there a packing list for the mountain?' },
+      ],
+      'Julie'
+    )
+    // Pesan yang memuat telepon dibuang seluruhnya (sensor menandainya tidak aman), begitu juga urusan uang.
+    expect(out).toEqual(['Is there a packing list for the mountain?'])
+  })
+
+  it('maksimal 40 pesan terakhir dan dipangkas', () => {
+    const many = Array.from({ length: 60 }, (_, i) => ({ direction: 'INBOUND', content: `pesan nomor ${i} ${'x'.repeat(400)}` }))
+    const out = guestMessagesForCrew(many, null)
+    expect(out).toHaveLength(40)
+    expect(out[39]).toContain('nomor 59')
+    expect(out[0].length).toBeLessThanOrEqual(220)
   })
 })
