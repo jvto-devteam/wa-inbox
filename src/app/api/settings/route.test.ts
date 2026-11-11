@@ -99,6 +99,21 @@ describe('PATCH /api/settings', () => {
     })
   })
 
+  it('menyimpan llmProvider (ollama | deepseek) dan menolak nilai lain', async () => {
+    mockPrisma.settings.update.mockResolvedValue({ id: 1, llmProvider: 'deepseek' } as never)
+    const patch = (body: unknown) =>
+      PATCH(new Request('http://localhost/api/settings', { method: 'PATCH', headers: adminCookie, body: JSON.stringify(body) }))
+
+    const ok = await patch({ llmProvider: 'deepseek' })
+    expect(ok.status).toBe(200)
+    expect(mockPrisma.settings.update).toHaveBeenCalledWith({ where: { id: 1 }, data: { llmProvider: 'deepseek' } })
+
+    mockPrisma.settings.update.mockClear()
+    const bad = await patch({ llmProvider: 'openai' })
+    expect(bad.status).toBe(400)
+    expect(mockPrisma.settings.update).not.toHaveBeenCalled()
+  })
+
   it('rejects invalid payloads', async () => {
     const req = new Request('http://localhost/api/settings', {
       method: 'PATCH',

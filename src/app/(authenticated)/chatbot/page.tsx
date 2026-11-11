@@ -8,6 +8,7 @@ import { EmptyState } from '@/components/ui/empty-state'
 import { Field, FieldError } from '@/components/ui/label'
 import { PageHeader } from '@/components/ui/page-header'
 import { Input } from '@/components/ui/input'
+import { Select } from '@/components/ui/select'
 import { Skeleton, SkeletonText } from '@/components/ui/skeleton'
 import { Textarea } from '@/components/ui/textarea'
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table'
@@ -30,6 +31,7 @@ type Settings = {
   fallbackReply: string | null
   handoffReply: string | null
   ollamaModel: string
+  llmProvider: 'ollama' | 'deepseek'
 }
 type GateStatus = { readyForApproval: boolean; blocking: string[] }
 type CatalogPackageSummary = { packageKey: string; title: string; destinationTokens: string[]; priceIdr: number | null }
@@ -109,6 +111,9 @@ export default function ChatbotPage() {
   const [ollamaModel, setOllamaModel] = useState('')
   const [savingModels, setSavingModels] = useState(false)
   const [modelError, setModelError] = useState<string | null>(null)
+  const [llmProvider, setLlmProvider] = useState<Settings['llmProvider']>('ollama')
+  const [savingProvider, setSavingProvider] = useState(false)
+  const [providerError, setProviderError] = useState<string | null>(null)
 
   useEffect(() => {
     fetchJson<Settings>('/api/settings').then(setSettings).catch(() => {})
@@ -135,6 +140,7 @@ export default function ChatbotPage() {
     setFallbackReply(settings.fallbackReply ?? '')
     setHandoffReply(settings.handoffReply ?? '')
     setOllamaModel(settings.ollamaModel)
+    setLlmProvider(settings.llmProvider === 'deepseek' ? 'deepseek' : 'ollama')
   }
 
   async function toggleBotMode() {
@@ -245,6 +251,23 @@ export default function ChatbotPage() {
       setModelError('Gagal menyimpan model')
     } finally {
       setSavingModels(false)
+    }
+  }
+
+  async function saveProvider() {
+    setProviderError(null)
+    setSavingProvider(true)
+    try {
+      setSettings(
+        await fetchJson<Settings>('/api/settings', {
+          method: 'PATCH',
+          body: JSON.stringify({ llmProvider }),
+        })
+      )
+    } catch {
+      setProviderError('Gagal menyimpan penyedia LLM')
+    } finally {
+      setSavingProvider(false)
     }
   }
 
@@ -502,9 +525,38 @@ export default function ChatbotPage() {
           {active === 'model' && (
             <FormSection
               title="Model LLM"
-              description="Bot memanggil Ollama di VPS yang sama — tidak ada penyedia hosted lain (OpenAI dkk). Model default gemma4:31b-cloud adalah tag cloud Ollama: inferensinya berjalan di server ollama.com, jadi teks pelanggan dan data booking dikirim ke sana. Hanya tag model lokal (tanpa -cloud) yang menjaga semuanya tetap di server."
+              description="Pilih penyedia LLM untuk seluruh bot, ringkasan chat, dan ekstraksi booking. Ollama (bawaan) memanggil daemon di VPS yang sama. Model default gemma4:31b-cloud adalah tag cloud Ollama: inferensinya berjalan di server ollama.com, jadi teks pelanggan dan data booking dikirim ke sana. Hanya tag model lokal (tanpa -cloud) yang menjaga semuanya tetap di server."
             >
               <div className="space-y-4">
+                <Field label="Penyedia LLM" htmlFor="llm-provider" className="max-w-sm">
+                  <Select
+                    id="llm-provider"
+                    value={llmProvider}
+                    onChange={(e) => setLlmProvider(e.target.value === 'deepseek' ? 'deepseek' : 'ollama')}
+                    disabled={!admin}
+                  >
+                    <option value="ollama">Ollama (VPS)</option>
+                    <option value="deepseek">DeepSeek (api.deepseek.com)</option>
+                  </Select>
+                </Field>
+                {llmProvider === 'deepseek' && (
+                  <p className="max-w-xl text-sm text-ink-muted">
+                    Dengan DeepSeek, teks pelanggan dan data booking dikirim ke DeepSeek. Model Ollama di bawah
+                    diabaikan; kuncinya dibaca dari env server (DEEPSEEK_API_KEY), bukan dari halaman ini.
+                  </p>
+                )}
+                {admin && (
+                  <div>
+                    <Button
+                      onClick={saveProvider}
+                      size="sm"
+                      disabled={savingProvider || llmProvider === settings.llmProvider}
+                    >
+                      {savingProvider ? 'Menyimpan...' : 'Simpan penyedia'}
+                    </Button>
+                  </div>
+                )}
+                {providerError && <FieldError>{providerError}</FieldError>}
                 <Field label="Model Ollama" htmlFor="ollama-model" className="max-w-sm">
                   <Input
                     id="ollama-model"

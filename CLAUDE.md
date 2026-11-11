@@ -24,7 +24,12 @@ Konsekuensi yang harus dipegang setiap agen:
 ## 2. Stack Teknologi
 
 Next.js 16 App Router, React 19, TypeScript, Prisma 7, PostgreSQL, Tailwind v4, Vitest.
-LLM dipanggil lewat daemon Ollama di VPS yang sama, tanpa penyedia hosted lain (OpenAI dkk).
+LLM dipanggil lewat daemon Ollama di VPS yang sama (bawaan). Satu-satunya penyedia hosted lain yang
+diizinkan adalah **DeepSeek** (`api.deepseek.com`), dipilih operator di `/chatbot` → Model LLM
+(`Settings.llmProvider`, `ollama` | `deepseek`, tersimpan = langsung berlaku, gagal-aman ke Ollama;
+key hanya dari env `DEEPSEEK_API_KEY`, model dari env `DEEPSEEK_MODEL`, bawaan `deepseek-chat`;
+keputusan owner 2026-11-11 saat Ollama cloud menjawab 402 karena saldo $0). Selama `deepseek` dipilih,
+teks pelanggan dan data booking keluar dari VPS ke DeepSeek. OpenAI dkk tetap tidak dipakai.
 **Model produksi saat ini, `gemma4:31b-cloud`, adalah tag cloud:** daemon meneruskan inferensi
 ke server ollama.com, jadi teks pelanggan — dan data booking di Mode 3 — **keluar dari VPS**
 untuk diproses di sana. Hanya tag model lokal (tanpa `-cloud`) yang menjaga inferensi tetap di

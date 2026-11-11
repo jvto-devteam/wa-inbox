@@ -89,6 +89,8 @@ const patchSchema = z.object({
   handoffOnHumanRequest: z.boolean().optional(),
   // Which Ollama model src/lib/bot/llm.ts asks for (see the Settings.ollamaModel schema comment).
   ollamaModel: z.string().min(1).optional(),
+  // Penyedia LLM global (see the Settings.llmProvider schema comment). Saved and live.
+  llmProvider: z.enum(['ollama', 'deepseek']).optional(),
   // The outbound safety thresholds (see the Settings schema comment and SAFETY_BOUNDS).
   campaignRatePerMinute: bounded('campaignRatePerMinute'),
   duplicateWindowMs: bounded('duplicateWindowMs'),
