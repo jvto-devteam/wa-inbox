@@ -830,6 +830,12 @@ model Settings {
   // forward inference to ollama.com, so customer text and booking data DO leave the VPS; only a
   // local tag keeps inference on the machine. Verified 2026-09-10 via /api/tags (remote_host).
   ollamaModel                 String         @default("gemma4:31b-cloud")
+  // Penyedia LLM untuk SEMUA panggilan lewat src/lib/bot/llm.ts: `ollama` (bawaan) atau `deepseek`
+  // (api.deepseek.com, key dari env DEEPSEEK_API_KEY -- tidak pernah di DB/UI). Dibaca tiap
+  // panggilan tanpa cache; nilai tak dikenal atau DB gagal = Ollama. Dengan `deepseek`, teks
+  // pelanggan dan data booking dikirim ke DeepSeek; `ollamaModel` diabaikan, nama model dari env
+  // DEEPSEEK_MODEL (bawaan deepseek-chat). Ditambahkan 2026-11-11 saat Ollama cloud menjawab 402.
+  llmProvider                 String         @default("ollama")
   // --- Pengaman outbound (dulu kolom Json `safetyConfig` di tabel kebijakan channel) ---
   //
   // Empat angka yang dibaca src/lib/outbound/safety-guard.ts sebelum sebuah pesan benar-benar

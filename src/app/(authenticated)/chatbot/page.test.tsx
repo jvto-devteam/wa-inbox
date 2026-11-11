@@ -13,6 +13,7 @@ const settings = {
   fallbackReply: null,
   handoffReply: null,
   ollamaModel: 'gemma4:31b-cloud',
+  llmProvider: 'ollama',
 }
 const gateStatus = { readyForApproval: true, blocking: [] }
 const catalogSummary = {
@@ -170,6 +171,28 @@ describe('ChatbotPage', () => {
     )
   })
 
+  it('memilih penyedia LLM (Ollama/DeepSeek) dan menyimpannya sendiri, tanpa menyentuh model Ollama', async () => {
+    mockFetch()
+    render(<ChatbotPage />)
+
+    await openSection('Model LLM')
+    const select = screen.getByLabelText('Penyedia LLM')
+    expect(select).toHaveValue('ollama')
+    expect(screen.queryByText(/dikirim ke DeepSeek/)).not.toBeInTheDocument()
+
+    fireEvent.change(select, { target: { value: 'deepseek' } })
+    // Peringatan privasi muncul begitu DeepSeek dipilih, sebelum disimpan.
+    expect(screen.getByText(/dikirim ke DeepSeek/)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Simpan penyedia' }))
+
+    await waitFor(() =>
+      expect(fetch).toHaveBeenCalledWith(
+        '/api/settings',
+        expect.objectContaining({ method: 'PATCH', body: JSON.stringify({ llmProvider: 'deepseek' }) })
+      )
+    )
+  })
+
   it('saves the two operator-editable bot sentences', async () => {
     mockFetch()
     render(<ChatbotPage />)
@@ -237,6 +260,7 @@ describe('ChatbotPage', () => {
     expect(screen.getByLabelText('Mulai')).toBeDisabled()
     await openSection('Model LLM')
     expect(screen.getByLabelText('Model Ollama')).toBeDisabled()
+    expect(screen.getByLabelText('Penyedia LLM')).toBeDisabled()
     // Dibuka dulu, baru diperiksa: sebuah bagian yang tidak dirender akan membuat assertion ini
     // lulus tanpa pernah melihat tombolnya, yang bukan janji yang dimaksud test ini.
     await openSection('Katalog paket')

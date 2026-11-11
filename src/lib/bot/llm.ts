@@ -20,6 +20,8 @@
 // data) OUT of the user turn, so raw customer text can never be read as an
 // instruction that outranks them -- see the Mode 3 prompt in orchestrator.ts.
 
+import { prisma } from '@/lib/db'
+
 // Matches src/lib/booking/client.ts's existing 10s convention.
 const LLM_TIMEOUT_MS = 10000
 
@@ -102,6 +104,66 @@ async function callOllama(
   return requireNonEmptyReply(body?.message?.content, 'Ollama')
 }
 
+// Jalur ALTERNATIF (2026-11-11): DeepSeek hosted API, dipilih operator lewat Settings.llmProvider
+// (dropdown di /chatbot, simpan = langsung berlaku). Bawaan `ollama`: callLLM tetap persis seperti
+// sebelumnya. Ditambahkan karena Ollama cloud menjawab 402 saat saldo akun $0. Konsekuensi yang
+// disengaja pemilik: selama jalur ini menyala, teks pelanggan (dan data booking di Mode 3) dikirim
+// ke api.deepseek.com. Key hanya dari env DEEPSEEK_API_KEY, tidak pernah di DB atau UI.
+// `model` dari LLMOptions (tag Ollama dari Settings.ollamaModel) SENGAJA diabaikan di sini --
+// tag itu tidak dikenal DeepSeek; nama model diatur env DEEPSEEK_MODEL (bawaan deepseek-chat).
+// Pesan galat tidak pernah memuat key atau isi respons penyedia.
+const DEEPSEEK_URL = 'https://api.deepseek.com/chat/completions'
+const DEFAULT_DEEPSEEK_MODEL = 'deepseek-chat'
+
+async function callDeepSeek(
+  prompt: string,
+  system?: string,
+  history?: LLMOptions['history'],
+  context?: string,
+  timeoutMs?: number
+): Promise<string> {
+  const apiKey = process.env.DEEPSEEK_API_KEY
+  if (!apiKey) throw new Error('DEEPSEEK_API_KEY belum diisi')
+  const res = await fetch(DEEPSEEK_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+    body: JSON.stringify({
+      model: process.env.DEEPSEEK_MODEL || DEFAULT_DEEPSEEK_MODEL,
+      stream: false,
+      messages: [
+        ...(system ? [{ role: 'system', content: system }] : []),
+        ...(context ? [{ role: 'system', content: context }] : []),
+        ...(history ?? []),
+        { role: 'user', content: prompt },
+      ],
+    }),
+    signal: AbortSignal.timeout(timeoutMs ?? LLM_TIMEOUT_MS),
+  })
+  if (!res.ok) throw new Error(`DeepSeek request failed (${res.status})`)
+  const body = await res.json()
+  return requireNonEmptyReply(body?.choices?.[0]?.message?.content, 'DeepSeek')
+}
+
+/**
+ * Penyedia aktif dari `Settings.llmProvider`. Sengaja TANPA cache -- satu lookup berindeks pada
+ * satu baris, dan /chatbot menjanjikan "simpan lalu langsung berlaku" (pola yang sama dengan
+ * `settingsText` di runtime-integration.ts). Gagal-aman: nilai tak dikenal, baris hilang, atau DB
+ * mati = Ollama, perilaku bot sebelum sakelar ada -- giliran bot tidak boleh mati hanya karena
+ * pembacaan KONFIGURASI gagal.
+ */
+async function activeProvider(): Promise<'ollama' | 'deepseek'> {
+  try {
+    const row = await prisma.settings.findUnique({ where: { id: 1 }, select: { llmProvider: true } })
+    return row?.llmProvider === 'deepseek' ? 'deepseek' : 'ollama'
+  } catch (error) {
+    console.error('llm: gagal membaca Settings.llmProvider, memakai Ollama', { error })
+    return 'ollama'
+  }
+}
+
 export async function callLLM(prompt: string, opts?: LLMOptions): Promise<string> {
+  if ((await activeProvider()) === 'deepseek') {
+    return callDeepSeek(prompt, opts?.system, opts?.history, opts?.context, opts?.timeoutMs)
+  }
   return callOllama(prompt, opts?.system, opts?.model, opts?.history, opts?.context, opts?.timeoutMs)
 }
