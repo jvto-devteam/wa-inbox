@@ -48,6 +48,7 @@ function response(overrides: Partial<ChatReviewResponse> = {}): ChatReviewRespon
     lastMessageAt: null,
     pinned: [],
     changeHistory: [],
+    scheduleNote: null,
     ...overrides,
   }
 }

@@ -153,7 +153,15 @@ describe('GET /api/conversations/[id]/chat-review', () => {
   it('latest null bila belum ada atau tidak lolos skema', async () => {
     mockPrisma.conversation.findUnique.mockResolvedValue({ chatReview: { rusak: true }, chatReviewAt: new Date(), summaryItem: null } as never)
     const body = await (await GET(req(), ctx)).json()
-    expect(body).toEqual({ latest: null, item: null, history: [], lastMessageAt: null, pinned: [], changeHistory: [] })
+    expect(body).toEqual({ latest: null, item: null, history: [], lastMessageAt: null, pinned: [], changeHistory: [], scheduleNote: null })
+  })
+
+  it('scheduleNote: disusun dari poin ringkasan terbaru + booking, tanpa mengulang jemput/hotel', async () => {
+    const at = new Date('2026-10-19T02:00:00Z')
+    const withPoints = { ...review, poinPenting: [{ teks: 'Strict vegetarian', jenis: 'kebutuhan' }, { teks: 'Jemput di bandara jam 10', jenis: 'kebutuhan' }] }
+    mockPrisma.conversation.findUnique.mockResolvedValue({ chatReview: withPoints, chatReviewAt: at, summaryItem: null, bookingData: { id: 'JVTO-1', pickup: { meeting_point: 'Bandara' } } } as never)
+    const body = await (await GET(req(), ctx)).json()
+    expect(body.scheduleNote).toEqual({ baris: ['Strict vegetarian'], diperbaruiAt: at.toISOString() })
   })
 
   it('lastMessageAt = waktu pesan terakhir dari tabel pesan', async () => {
@@ -206,7 +214,7 @@ describe('POST /api/conversations/[id]/chat-review', () => {
     expect(saveChatReview).toHaveBeenCalledWith('c1', review, expect.any(Date))
     // Perbarui menerapkan review baru ke item "Janji tim" dengan asOf yang sama dengan simpanannya.
     expect(applyReviewToItem).toHaveBeenCalledWith('c1', review, vi.mocked(saveChatReview).mock.calls[0][2])
-    expect(Object.keys(await res.json()).sort()).toEqual(['changeHistory', 'history', 'item', 'lastMessageAt', 'latest', 'pinned'])
+    expect(Object.keys(await res.json()).sort()).toEqual(['changeHistory', 'history', 'item', 'lastMessageAt', 'latest', 'pinned', 'scheduleNote'])
     // Transkrip bernomor lama → baru, dengan ids yang sejajar.
     const transcript = vi.mocked(reviewConversation).mock.calls[0][0]
     expect(transcript.ids).toEqual(['m1', 'm2'])

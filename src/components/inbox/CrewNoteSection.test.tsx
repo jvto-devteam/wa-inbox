@@ -45,6 +45,7 @@ function body(catatanCrew?: CrewNote): ChatReviewResponse {
     lastMessageAt: null,
     pinned: [],
     changeHistory: [],
+    scheduleNote: null,
   }
 }
 
