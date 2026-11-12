@@ -5,6 +5,8 @@ import { conversationReviewSchema, type ConversationReview } from '@/lib/daily-s
 import { chatReviewHistory, type ChatReviewHistoryEntry } from '@/lib/chat-review/history'
 import { noteChatOpenedForChatReview, noteManualChatReviewRefresh } from '@/lib/chat-review/auto-refresh'
 import { refreshChatReview } from '@/lib/chat-review/refresh'
+import { buildScheduleNote, type ScheduleNote } from '@/lib/chat-review/schedule-note'
+import type { BookingData } from '@/lib/booking/client'
 import { currentBookingId, inCurrentBooking } from '@/lib/booking-actions/scope'
 import type { BookingActionEventView, PinnedBookingAction } from '@/lib/booking-actions/view'
 import { reconcileSummaryItems } from '@/lib/summary-items/sync'
@@ -42,6 +44,8 @@ export type ChatReviewResponse = {
   pinned: PinnedBookingAction[]
   /** 20 kejadian aksi booking terbaru percakapan ini, terbaru di atas. */
   changeHistory: BookingActionEventView[]
+  /** Note untuk Schedule yang disusun dari ringkasan terbaru; null bila tanpa booking atau tidak ada yang layak. */
+  scheduleNote: ScheduleNote | null
 }
 
 const CHANGE_HISTORY_LIMIT = 20
@@ -113,6 +117,7 @@ async function buildResponse(conversationId: string): Promise<ChatReviewResponse
     lastMessageAt: lastMessage?.createdAt.toISOString() ?? null,
     pinned: await loadPinned(conversationId, conv.bookingData),
     changeHistory: await loadChangeHistory(conversationId),
+    scheduleNote: latest ? buildScheduleNote(latest.review, conv.bookingData as BookingData | null, new Date(latest.at)) : null,
   }
 }
 

@@ -11,6 +11,7 @@ import { BookingActionsSection } from './BookingActionsSection'
 import { RemindersSection } from './RemindersSection'
 import { ChatReviewTab } from './ChatReviewTab'
 import { CrewNoteSection } from './CrewNoteSection'
+import { ScheduleNoteSection } from './ScheduleNoteSection'
 import { BookingSummary, type BookingData, type TripBrief } from '@/components/contacts/BookingSummary'
 import { bookingGuestName, contactDisplayName } from '@/lib/booking/display-name'
 import { fetchJson } from '@/lib/fetch-json'
@@ -211,6 +212,8 @@ export function ContactPanel({ conversationId, className }: { conversationId: st
           )}
 
           <BookingSummary bookingData={detail.bookingData} tripBrief={detail.tripBrief} />
+
+          <ScheduleNoteSection conversationId={conversationId} hasBooking={Boolean(detail.bookingData?.id)} />
 
           <CrewNoteSection conversationId={conversationId} hasBooking={Boolean(detail.bookingData?.id)} />
 
