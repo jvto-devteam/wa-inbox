@@ -1,12 +1,19 @@
 import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { RETENTION_MS } from '@/lib/daily-summary/config'
-import { crewNoteSchema, type ConversationReview, type CrewNote } from '@/lib/daily-summary/payload-schema'
+import { crewNoteSchema, scheduleNoteSchema, type ConversationReview, type CrewNote, type ScheduleNote } from '@/lib/daily-summary/payload-schema'
 
 /** Catatan crew yang tersimpan di `chatReview` sebuah percakapan, atau null (belum ada / bentuk lama). */
 export function crewNoteOf(chatReview: unknown): CrewNote | null {
   if (!chatReview || typeof chatReview !== 'object') return null
   const parsed = crewNoteSchema.safeParse((chatReview as { catatanCrew?: unknown }).catatanCrew)
+  return parsed.success ? parsed.data : null
+}
+
+/** Note untuk Schedule yang tersimpan di `chatReview` sebuah percakapan, atau null. */
+export function scheduleNoteOf(chatReview: unknown): ScheduleNote | null {
+  if (!chatReview || typeof chatReview !== 'object') return null
+  const parsed = scheduleNoteSchema.safeParse((chatReview as { catatanSchedule?: unknown }).catatanSchedule)
   return parsed.success ? parsed.data : null
 }
 
@@ -20,12 +27,15 @@ export function crewNoteOf(chatReview: unknown): CrewNote | null {
  */
 export async function saveChatReview(conversationId: string, review: ConversationReview, asOf: Date): Promise<boolean> {
   try {
-    // Ringkasan dari jalur lain (job harian) tidak membawa `catatanCrew`; tanpa ini catatan crew terhapus tiap tengah malam.
+    // Ringkasan dari jalur lain (job harian) tidak membawa `catatanCrew` maupun `catatanSchedule`; tanpa ini keduanya
+    // terhapus tiap tengah malam.
     let toSave = review
-    if (!review.catatanCrew) {
+    if (!review.catatanCrew || !review.catatanSchedule) {
       const existing = await prisma.conversation.findUnique({ where: { id: conversationId }, select: { chatReview: true } })
-      const kept = crewNoteOf(existing?.chatReview)
-      if (kept) toSave = { ...review, catatanCrew: kept }
+      const keptCrew = review.catatanCrew ? null : crewNoteOf(existing?.chatReview)
+      const keptSchedule = review.catatanSchedule ? null : scheduleNoteOf(existing?.chatReview)
+      if (keptCrew) toSave = { ...toSave, catatanCrew: keptCrew }
+      if (keptSchedule) toSave = { ...toSave, catatanSchedule: keptSchedule }
     }
     const { count } = await prisma.conversation.updateMany({
       where: { id: conversationId, OR: [{ chatReviewAt: null }, { chatReviewAt: { lte: asOf } }] },

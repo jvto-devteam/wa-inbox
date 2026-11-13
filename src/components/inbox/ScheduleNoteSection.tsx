@@ -6,13 +6,13 @@ import { wibDateTimeLabel } from '@/lib/summary-items/status'
 import { PanelSectionTitle } from './ContactPanel'
 // Hanya tipe: route itu menyentuh prisma, dan komponen klien tidak boleh membawa modul server.
 import type { ChatReviewResponse } from '@/app/api/conversations/[id]/chat-review/route'
-import type { ScheduleNote } from '@/lib/chat-review/schedule-note'
+import type { ScheduleNote } from '@/lib/daily-summary/payload-schema'
 
 /**
  * "Note untuk Schedule" di tab Kontak panel kanan Inbox, tepat di bawah data booking (owner 2026-11-12).
  *
  * Isinya hal dari chat tamu yang belum punya tempat di Schedule (diet, perayaan, permintaan aktivitas, rencana rute),
- * disusun `chat-review/schedule-note.ts` dari ringkasan chat terbaru dan sengaja TIDAK mengulang jemput/antar, hotel,
+ * disusun `chat-review/schedule-note.ts` sesudah ringkasan chat dan sengaja TIDAK mengulang jemput/antar, hotel,
  * tanggal, pax, atau kaos. Hanya tampilan: belum dikirim ke Schedule. Ikut terbaru lewat SSE yang sama dengan
  * "Catatan untuk crew". Tidak tampil bila percakapan tanpa booking atau tidak ada yang layak.
  */

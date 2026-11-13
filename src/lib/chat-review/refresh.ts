@@ -4,10 +4,11 @@ import { automatedMessageIds } from '@/lib/summary-items/automated'
 import { TRANSCRIPT_MAX_MESSAGES } from '@/lib/daily-summary/config'
 import { reviewConversation, type ReviewReason } from '@/lib/daily-summary/review'
 import { applyReviewToItem } from '@/lib/summary-items/sync'
-import { saveChatReview, crewNoteOf } from './store'
+import { saveChatReview, crewNoteOf, scheduleNoteOf } from './store'
 import { crewNoteEnabled, generateCrewNote, guestMessagesForCrew } from './crew-note'
 import { crewNoteRefOf, scheduleCrewNotePush } from './crew-note-sync'
 import { bookingContextForReview } from './booking-context'
+import { generateScheduleNote } from './schedule-note'
 import type { BookingData } from '@/lib/booking/client'
 
 /**
@@ -61,6 +62,21 @@ export async function refreshChatReview(conversationId: string, asOf: Date): Pro
     if (catatanCrew) toSave = { ...review, catatanCrew }
     // Catatan BARU (bukan yang dipertahankan karena LLM gagal) dikirim ke backoffice untuk crew-portal. Di belakang.
     if (note) scheduleCrewNotePush(crewNoteRefOf(conv?.bookingData), note)
+  }
+
+  // Note untuk Schedule: poin pendek dari chat yang belum ada di Schedule. Hanya percakapan ber-booking dengan tamu.
+  // Gagal = note sebelumnya dipertahankan (saveChatReview juga mempertahankannya bila `catatanSchedule` tidak ada).
+  if (bookingContext && review.jenisKontak !== 'mitra' && review.jenisKontak !== 'lainnya') {
+    const note = await generateScheduleNote({
+      review,
+      booking: conv?.bookingData as BookingData | null | undefined,
+      bookingContext,
+      contactName: conv?.contact?.name ?? null,
+      model: settings?.ollamaModel ?? undefined,
+      at: asOf,
+    })
+    const catatanSchedule = note ?? scheduleNoteOf(conv?.chatReview)
+    if (catatanSchedule) toSave = { ...toSave, catatanSchedule }
   }
 
   await saveChatReview(conversationId, toSave, asOf)
