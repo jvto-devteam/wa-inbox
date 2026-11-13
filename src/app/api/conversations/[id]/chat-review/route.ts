@@ -1,12 +1,10 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { getSession } from '@/lib/auth/get-session'
-import { conversationReviewSchema, type ConversationReview } from '@/lib/daily-summary/payload-schema'
+import { conversationReviewSchema, type ConversationReview, type ScheduleNote } from '@/lib/daily-summary/payload-schema'
 import { chatReviewHistory, type ChatReviewHistoryEntry } from '@/lib/chat-review/history'
 import { noteChatOpenedForChatReview, noteManualChatReviewRefresh } from '@/lib/chat-review/auto-refresh'
 import { refreshChatReview } from '@/lib/chat-review/refresh'
-import { buildScheduleNote, type ScheduleNote } from '@/lib/chat-review/schedule-note'
-import type { BookingData } from '@/lib/booking/client'
 import { currentBookingId, inCurrentBooking } from '@/lib/booking-actions/scope'
 import type { BookingActionEventView, PinnedBookingAction } from '@/lib/booking-actions/view'
 import { reconcileSummaryItems } from '@/lib/summary-items/sync'
@@ -44,7 +42,7 @@ export type ChatReviewResponse = {
   pinned: PinnedBookingAction[]
   /** 20 kejadian aksi booking terbaru percakapan ini, terbaru di atas. */
   changeHistory: BookingActionEventView[]
-  /** Note untuk Schedule yang disusun dari ringkasan terbaru; null bila tanpa booking atau tidak ada yang layak. */
+  /** Note untuk Schedule dari ringkasan terbaru (`chatReview.catatanSchedule`); null bila belum ada atau kosong. */
   scheduleNote: ScheduleNote | null
 }
 
@@ -117,7 +115,7 @@ async function buildResponse(conversationId: string): Promise<ChatReviewResponse
     lastMessageAt: lastMessage?.createdAt.toISOString() ?? null,
     pinned: await loadPinned(conversationId, conv.bookingData),
     changeHistory: await loadChangeHistory(conversationId),
-    scheduleNote: latest ? buildScheduleNote(latest.review, conv.bookingData as BookingData | null, new Date(latest.at)) : null,
+    scheduleNote: latest?.review.catatanSchedule && latest.review.catatanSchedule.baris.length > 0 ? latest.review.catatanSchedule : null,
   }
 }
 

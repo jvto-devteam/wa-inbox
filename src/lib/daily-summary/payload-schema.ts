@@ -181,6 +181,14 @@ export const crewNoteSchema = z.object({
 })
 export type CrewNote = z.infer<typeof crewNoteSchema>
 
+/** "Note untuk Schedule": poin pendek dari chat yang belum punya tempat di Schedule (`chat-review/schedule-note.ts`). */
+export const scheduleNoteSchema = z.object({
+  /** ISO, kapan note ini dibuat. */
+  diperbaruiAt: z.string(),
+  baris: z.array(z.string()).default([]),
+})
+export type ScheduleNote = z.infer<typeof scheduleNoteSchema>
+
 /** Hasil satu panggilan LLM untuk satu percakapan (review.ts). */
 export const conversationReviewSchema = z.object({
   status: z.enum(REVIEW_STATUSES),
@@ -197,6 +205,8 @@ export const conversationReviewSchema = z.object({
   langkahBerikut: z.string(),
   /** Opsional: hanya percakapan ber-booking, dan hanya setelah fitur Catatan crew menyala. Bukan keluaran review LLM. */
   catatanCrew: crewNoteSchema.optional(),
+  /** Opsional: hanya percakapan ber-booking. Bukan keluaran review LLM; dibuat panggilan kecil sesudahnya. */
+  catatanSchedule: scheduleNoteSchema.optional(),
 })
 export type ConversationReview = z.infer<typeof conversationReviewSchema>
 

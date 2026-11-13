@@ -8,6 +8,7 @@ vi.mock('@/lib/daily-summary/review', () => ({ reviewConversation: vi.fn() }))
 vi.mock('@/lib/summary-items/sync', () => ({ applyReviewToItem: vi.fn().mockResolvedValue('unchanged') }))
 vi.mock('./store', async (orig) => ({ ...(await orig<typeof import('./store')>()), saveChatReview: vi.fn().mockResolvedValue(undefined) }))
 vi.mock('./crew-note', async (orig) => ({ ...(await orig<typeof import('./crew-note')>()), generateCrewNote: vi.fn() }))
+vi.mock('./schedule-note', async (orig) => ({ ...(await orig<typeof import('./schedule-note')>()), generateScheduleNote: vi.fn() }))
 vi.mock('./crew-note-sync', async (orig) => ({ ...(await orig<typeof import('./crew-note-sync')>()), scheduleCrewNotePush: vi.fn() }))
 
 import { prisma } from '@/lib/db'
@@ -16,6 +17,7 @@ import { refreshChatReview } from './refresh'
 import { saveChatReview } from './store'
 import { generateCrewNote, emptyCrewNote } from './crew-note'
 import { scheduleCrewNotePush } from './crew-note-sync'
+import { generateScheduleNote } from './schedule-note'
 
 const db = prisma as unknown as DeepMockProxy<PrismaClient>
 const NOW = new Date('2026-10-20T05:00:00Z')
@@ -65,6 +67,7 @@ describe('refreshChatReview: catatan crew (Guest Brief)', () => {
     vi.mocked(saveChatReview).mockClear()
     vi.mocked(generateCrewNote).mockReset()
     vi.mocked(scheduleCrewNotePush).mockReset()
+    vi.mocked(generateScheduleNote).mockReset().mockResolvedValue(null)
     vi.mocked(reviewConversation).mockResolvedValue(goodReview)
     db.conversation.findUnique.mockResolvedValue({ bookingData: booking, chatReview: null, contact: { name: 'Budi' } } as never)
     given([])
@@ -75,6 +78,27 @@ describe('refreshChatReview: catatan crew (Guest Brief)', () => {
     expect(generateCrewNote).not.toHaveBeenCalled()
     expect(scheduleCrewNotePush).not.toHaveBeenCalled()
     expect(vi.mocked(saveChatReview).mock.calls[0][1]).toEqual(goodReview)
+  })
+
+  it('note untuk Schedule: dibuat untuk percakapan ber-booking walau catatan crew mati, disimpan bersama ringkasan', async () => {
+    const scheduleNote = { baris: ['1 orang vegan'], diperbaruiAt: NOW.toISOString() }
+    vi.mocked(generateScheduleNote).mockResolvedValue(scheduleNote)
+    await refreshChatReview('c1', NOW)
+    expect(generateScheduleNote).toHaveBeenCalledWith(expect.objectContaining({ booking, contactName: 'Budi', model: 'm', at: NOW }))
+    expect(vi.mocked(saveChatReview).mock.calls[0][1]).toMatchObject({ catatanSchedule: scheduleNote })
+    expect(generateCrewNote).not.toHaveBeenCalled()
+  })
+
+  it('note untuk Schedule gagal: note sebelumnya dipertahankan; tanpa booking atau mitra: tidak dibuat', async () => {
+    const previous = { baris: ['2 tamu vegan'], diperbaruiAt: '2026-11-12T05:00:00.000Z' }
+    db.conversation.findUnique.mockResolvedValue({ bookingData: booking, chatReview: { catatanSchedule: previous }, contact: { name: 'Budi' } } as never)
+    await refreshChatReview('c1', NOW)
+    expect(vi.mocked(saveChatReview).mock.calls[0][1]).toMatchObject({ catatanSchedule: previous })
+
+    vi.mocked(generateScheduleNote).mockClear()
+    db.conversation.findUnique.mockResolvedValue({ bookingData: null, chatReview: null, contact: { name: 'Budi' } } as never)
+    await refreshChatReview('c1', NOW)
+    expect(generateScheduleNote).not.toHaveBeenCalled()
   })
 
   it('menyala: menyimpan catatanCrew bersama ringkasan untuk percakapan ber-booking', async () => {

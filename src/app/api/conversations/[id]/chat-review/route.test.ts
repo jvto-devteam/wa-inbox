@@ -156,12 +156,17 @@ describe('GET /api/conversations/[id]/chat-review', () => {
     expect(body).toEqual({ latest: null, item: null, history: [], lastMessageAt: null, pinned: [], changeHistory: [], scheduleNote: null })
   })
 
-  it('scheduleNote: disusun dari poin ringkasan terbaru + booking, tanpa mengulang jemput/hotel', async () => {
+  it('scheduleNote: dibaca dari ringkasan terbaru (catatanSchedule); kosong atau belum ada = null', async () => {
     const at = new Date('2026-10-19T02:00:00Z')
-    const withPoints = { ...review, poinPenting: [{ teks: 'Strict vegetarian', jenis: 'kebutuhan' }, { teks: 'Jemput di bandara jam 10', jenis: 'kebutuhan' }] }
-    mockPrisma.conversation.findUnique.mockResolvedValue({ chatReview: withPoints, chatReviewAt: at, summaryItem: null, bookingData: { id: 'JVTO-1', pickup: { meeting_point: 'Bandara' } } } as never)
-    const body = await (await GET(req(), ctx)).json()
-    expect(body.scheduleNote).toEqual({ baris: ['Strict vegetarian'], diperbaruiAt: at.toISOString() })
+    const note = { baris: ['1 orang vegetarian', 'Minta AC mobil dingin'], diperbaruiAt: at.toISOString() }
+    mockPrisma.conversation.findUnique.mockResolvedValue({ chatReview: { ...review, catatanSchedule: note }, chatReviewAt: at, summaryItem: null, bookingData: null } as never)
+    expect((await (await GET(req(), ctx)).json()).scheduleNote).toEqual(note)
+
+    mockPrisma.conversation.findUnique.mockResolvedValue({ chatReview: { ...review, catatanSchedule: { baris: [], diperbaruiAt: at.toISOString() } }, chatReviewAt: at, summaryItem: null, bookingData: null } as never)
+    expect((await (await GET(req(), ctx)).json()).scheduleNote).toBeNull()
+
+    mockPrisma.conversation.findUnique.mockResolvedValue({ chatReview: review, chatReviewAt: at, summaryItem: null, bookingData: null } as never)
+    expect((await (await GET(req(), ctx)).json()).scheduleNote).toBeNull()
   })
 
   it('lastMessageAt = waktu pesan terakhir dari tabel pesan', async () => {

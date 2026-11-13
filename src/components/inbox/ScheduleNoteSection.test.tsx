@@ -2,7 +2,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest'
 import { render, screen, cleanup, waitFor, act } from '@testing-library/react'
 import { ScheduleNoteSection } from './ScheduleNoteSection'
 import type { ChatReviewResponse } from '@/app/api/conversations/[id]/chat-review/route'
-import type { ScheduleNote } from '@/lib/chat-review/schedule-note'
+import type { ScheduleNote } from '@/lib/daily-summary/payload-schema'
 
 const URL = '/api/conversations/conv_1/chat-review'
 
