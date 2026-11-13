@@ -115,6 +115,16 @@ describe('refreshChatReview: catatan crew (Guest Brief)', () => {
     delete process.env.BOOKING_ACTIONS_TEST_PHONES
   })
 
+  it('SCHEDULE_NOTE_ROLLOUT=all membuka note ke semua percakapan ber-booking', async () => {
+    vi.mocked(generateScheduleNote).mockResolvedValue({ baris: ['1 orang vegan'], diperbaruiAt: NOW.toISOString() })
+    process.env.SCHEDULE_NOTE_ROLLOUT = 'all'
+    vi.mocked(scheduleScheduleNoteSync).mockClear()
+    db.conversation.findUnique.mockResolvedValue({ bookingData: booking, chatReview: null, isTest: false, contact: { name: 'Budi', phone: '6281234567890' } } as never)
+    await refreshChatReview('c1', NOW)
+    expect(scheduleScheduleNoteSync).toHaveBeenCalledTimes(1)
+    delete process.env.SCHEDULE_NOTE_ROLLOUT
+  })
+
   it('note untuk Schedule gagal: note sebelumnya dipertahankan; tanpa booking atau mitra: tidak dibuat', async () => {
     const previous = { baris: ['2 tamu vegan'], diperbaruiAt: '2026-11-12T05:00:00.000Z' }
     db.conversation.findUnique.mockResolvedValue({ bookingData: booking, chatReview: { catatanSchedule: previous }, contact: { name: 'Budi' } } as never)
