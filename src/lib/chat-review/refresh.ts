@@ -9,7 +9,7 @@ import { crewNoteEnabled, generateCrewNote, guestMessagesForCrew } from './crew-
 import { crewNoteRefOf, scheduleCrewNotePush } from './crew-note-sync'
 import { bookingContextForReview } from './booking-context'
 import { generateScheduleNote } from './schedule-note'
-import { bookingAutomationAllowed } from '@/lib/booking-actions/rollout'
+import { scheduleNoteAllowed } from '@/lib/booking-note/rollout'
 import { scheduleScheduleNoteSync } from '@/lib/booking-note/sync'
 import type { BookingData } from '@/lib/booking/client'
 
@@ -85,9 +85,9 @@ export async function refreshChatReview(conversationId: string, asOf: Date): Pro
 
   // Note untuk Schedule ikut ke `bookings.note` (digabung dengan note admin, `booking-note/`). Dijalankan tiap ringkasan
   // dibuat, bukan hanya saat isinya berubah: penggabungannya idempoten (satu pembacaan bila tak ada yang berubah) dan
-  // memulihkan blok yang tertimpa jalur lain. Sakelar `SCHEDULE_NOTE_SYNC_ENABLED` (bawaan mati) dan rollout uji berlaku.
+  // memulihkan blok yang tertimpa jalur lain. Sakelar `SCHEDULE_NOTE_SYNC_ENABLED` (bawaan mati) dan gerbang `SCHEDULE_NOTE_ROLLOUT` (bawaan: hanya whitelist) berlaku.
   const scheduleNote = toSave.catatanSchedule
-  if (scheduleNote && bookingAutomationAllowed({ isTest: conv?.isTest, phone: conv?.contact?.phone })) {
+  if (scheduleNote && scheduleNoteAllowed({ isTest: conv?.isTest, phone: conv?.contact?.phone })) {
     scheduleScheduleNoteSync(conv?.bookingData, scheduleNote.baris, asOf)
   }
   // Janji tim yang kini sudah ditepati menutup item PROMISE-nya (PROMISE_KEPT). Tidak pernah melempar.
