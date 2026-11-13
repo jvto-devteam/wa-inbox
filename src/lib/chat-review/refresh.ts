@@ -9,6 +9,8 @@ import { crewNoteEnabled, generateCrewNote, guestMessagesForCrew } from './crew-
 import { crewNoteRefOf, scheduleCrewNotePush } from './crew-note-sync'
 import { bookingContextForReview } from './booking-context'
 import { generateScheduleNote } from './schedule-note'
+import { bookingAutomationAllowed } from '@/lib/booking-actions/rollout'
+import { scheduleScheduleNoteSync } from '@/lib/booking-note/sync'
 import type { BookingData } from '@/lib/booking/client'
 
 /**
@@ -38,7 +40,7 @@ export async function refreshChatReview(conversationId: string, asOf: Date): Pro
   const settings = await prisma.settings.findUnique({ where: { id: 1 }, select: { ollamaModel: true } })
   const conv = await prisma.conversation.findUnique({
     where: { id: conversationId },
-    select: { bookingData: true, chatReview: true, contact: { select: { name: true } } },
+    select: { bookingData: true, chatReview: true, isTest: true, contact: { select: { name: true, phone: true } } },
   })
   const bookingContext = bookingContextForReview(conv?.bookingData as BookingData | null | undefined)
   const review = await reviewConversation(buildNumberedTranscript(messages), reasons, settings?.ollamaModel ?? undefined, bookingContext)
@@ -80,6 +82,14 @@ export async function refreshChatReview(conversationId: string, asOf: Date): Pro
   }
 
   await saveChatReview(conversationId, toSave, asOf)
+
+  // Note untuk Schedule ikut ke `bookings.note` (digabung dengan note admin, `booking-note/`). Dijalankan tiap ringkasan
+  // dibuat, bukan hanya saat isinya berubah: penggabungannya idempoten (satu pembacaan bila tak ada yang berubah) dan
+  // memulihkan blok yang tertimpa jalur lain. Sakelar `SCHEDULE_NOTE_SYNC_ENABLED` (bawaan mati) dan rollout uji berlaku.
+  const scheduleNote = toSave.catatanSchedule
+  if (scheduleNote && bookingAutomationAllowed({ isTest: conv?.isTest, phone: conv?.contact?.phone })) {
+    scheduleScheduleNoteSync(conv?.bookingData, scheduleNote.baris, asOf)
+  }
   // Janji tim yang kini sudah ditepati menutup item PROMISE-nya (PROMISE_KEPT). Tidak pernah melempar.
   await applyReviewToItem(conversationId, review, asOf)
   return { status: 'ok' }
