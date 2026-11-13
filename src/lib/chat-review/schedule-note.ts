@@ -32,6 +32,17 @@ const ADMIN_TOPIC_RE = /\b(?:batal|dibatalkan|pembatalan|cancel|cancelled|kredit
 const HEADCOUNT_CHANGE_RE =
   /\b\d+\s*(?:pax|orang|people|guests?)\b.*\b(?:jadi|menjadi|berubah|ganti|tambah|kurang|reduce|add)\b|\b(?:jadi|menjadi|berubah|ganti|tambah|kurang|reduce|add)\b.*\b\d+\s*(?:pax|orang|people|guests?)\b/i
 
+/** Perlengkapan dan barang bawaan: jawaban tim atas pertanyaan umum ("bawa daypack, jaket, sepatu tertutup"), bukan kebutuhan tamu. */
+const GEAR_RE = /\b(?:daypack|ransel|jaket|sepatu|celana|headlamp|masker|perlengkapan|koper\b.*\b(?:titip|dititipkan|penitipan)|(?:titip|dititipkan|penitipan)\b.*\bkoper)\b/i
+
+/** Kata komposisi rombongan; baris yang HANYA berisi ini (sisanya angka/kata umum) sudah terlihat dari pax di Schedule. */
+const PARTY_WORDS = new Set(['solo', 'traveler', 'traveller', 'dewasa', 'adult', 'adults', 'pasangan', 'couple', 'keluarga', 'family', 'rombongan', 'grup', 'group', 'tamu', 'orang', 'pax', 'peserta', 'wisatawan'])
+
+export function isCompositionOnly(line: string): boolean {
+  const rest = words(line).filter((w) => !PARTY_WORDS.has(w) && !/^\d+$/.test(w))
+  return rest.length === 0
+}
+
 /** Kata pembuka nama hotel yang terlalu umum untuk dipakai sebagai penanda. */
 const GENERIC_NAME_WORD = new Set(['hotel', 'bromo', 'ijen', 'surabaya', 'bali', 'resort', 'villa', 'cabin', 'homestay', 'mount', 'grand', 'bondowoso', 'banyuwangi', 'airport', 'station', 'terminal'])
 
@@ -68,7 +79,7 @@ export function scheduleNoteCandidates(review: Pick<ConversationReview, 'poinPen
     if (!jenis || !INCLUDED_KINDS.has(jenis)) continue
     const clean = scrubMoney(teks).replace(/\s+/g, ' ').trim()
     if (!clean || isUnsafeForCrew(clean) || isNoiseForCrew(clean)) continue
-    if (FIELD_TOPIC_RE.test(clean) || ADMIN_TOPIC_RE.test(clean) || HEADCOUNT_CHANGE_RE.test(clean) || SALES_QA_RE.test(clean)) continue
+    if (FIELD_TOPIC_RE.test(clean) || ADMIN_TOPIC_RE.test(clean) || HEADCOUNT_CHANGE_RE.test(clean) || SALES_QA_RE.test(clean) || GEAR_RE.test(clean) || isCompositionOnly(clean)) continue
     if (seen.has(clean.toLowerCase())) continue
     seen.add(clean.toLowerCase())
     out.push(clean)
@@ -125,7 +136,7 @@ export function parseScheduleNote(raw: string, booking: BookingData | null | und
     if (typeof item !== 'string') continue
     const text = redactText(scrubMoney(item), contactName).replace(/\[tamu\]/g, 'tamu').replace(/\s+/g, ' ').replace(/[.;]+$/, '').trim()
     if (!text || isUnsafeForCrew(text) || isNoiseForCrew(text)) continue
-    if (FIELD_TOPIC_RE.test(text) || ADMIN_TOPIC_RE.test(text) || HEADCOUNT_CHANGE_RE.test(text)) continue
+    if (FIELD_TOPIC_RE.test(text) || ADMIN_TOPIC_RE.test(text) || HEADCOUNT_CHANGE_RE.test(text) || GEAR_RE.test(text) || isCompositionOnly(text)) continue
     const lower = text.toLowerCase()
     if (keys.some((k) => lower.includes(k))) continue
     if (seen.has(lower)) continue
