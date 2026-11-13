@@ -9,6 +9,7 @@ vi.mock('@/lib/summary-items/sync', () => ({ applyReviewToItem: vi.fn().mockReso
 vi.mock('./store', async (orig) => ({ ...(await orig<typeof import('./store')>()), saveChatReview: vi.fn().mockResolvedValue(undefined) }))
 vi.mock('./crew-note', async (orig) => ({ ...(await orig<typeof import('./crew-note')>()), generateCrewNote: vi.fn() }))
 vi.mock('./schedule-note', async (orig) => ({ ...(await orig<typeof import('./schedule-note')>()), generateScheduleNote: vi.fn() }))
+vi.mock('@/lib/booking-note/sync', () => ({ scheduleScheduleNoteSync: vi.fn() }))
 vi.mock('./crew-note-sync', async (orig) => ({ ...(await orig<typeof import('./crew-note-sync')>()), scheduleCrewNotePush: vi.fn() }))
 
 import { prisma } from '@/lib/db'
@@ -18,6 +19,7 @@ import { saveChatReview } from './store'
 import { generateCrewNote, emptyCrewNote } from './crew-note'
 import { scheduleCrewNotePush } from './crew-note-sync'
 import { generateScheduleNote } from './schedule-note'
+import { scheduleScheduleNoteSync } from '@/lib/booking-note/sync'
 
 const db = prisma as unknown as DeepMockProxy<PrismaClient>
 const NOW = new Date('2026-10-20T05:00:00Z')
@@ -87,6 +89,30 @@ describe('refreshChatReview: catatan crew (Guest Brief)', () => {
     expect(generateScheduleNote).toHaveBeenCalledWith(expect.objectContaining({ booking, contactName: 'Budi', model: 'm', at: NOW }))
     expect(vi.mocked(saveChatReview).mock.calls[0][1]).toMatchObject({ catatanSchedule: scheduleNote })
     expect(generateCrewNote).not.toHaveBeenCalled()
+  })
+
+  it('note untuk Schedule dikirim ke bookings.note untuk percakapan uji; percakapan pelanggan sungguhan ditahan selama rollout test', async () => {
+    const scheduleNote = { baris: ['1 orang vegan'], diperbaruiAt: NOW.toISOString() }
+    vi.mocked(generateScheduleNote).mockResolvedValue(scheduleNote)
+    delete process.env.BOOKING_ACTIONS_ROLLOUT
+    process.env.BOOKING_ACTIONS_TEST_PHONES = '6282143403501'
+
+    vi.mocked(scheduleScheduleNoteSync).mockClear()
+    db.conversation.findUnique.mockResolvedValue({ bookingData: booking, chatReview: null, isTest: false, contact: { name: 'Budi', phone: '6281234567890' } } as never)
+    await refreshChatReview('c1', NOW)
+    expect(scheduleScheduleNoteSync).not.toHaveBeenCalled()
+
+    db.conversation.findUnique.mockResolvedValue({ bookingData: booking, chatReview: null, isTest: false, contact: { name: 'Budi', phone: '082143403501' } } as never)
+    await refreshChatReview('c1', NOW)
+    expect(scheduleScheduleNoteSync).toHaveBeenCalledWith(booking, ['1 orang vegan'], NOW)
+
+    process.env.BOOKING_ACTIONS_ROLLOUT = 'all'
+    vi.mocked(scheduleScheduleNoteSync).mockClear()
+    db.conversation.findUnique.mockResolvedValue({ bookingData: booking, chatReview: null, isTest: false, contact: { name: 'Budi', phone: '6281234567890' } } as never)
+    await refreshChatReview('c1', NOW)
+    expect(scheduleScheduleNoteSync).toHaveBeenCalledTimes(1)
+    delete process.env.BOOKING_ACTIONS_ROLLOUT
+    delete process.env.BOOKING_ACTIONS_TEST_PHONES
   })
 
   it('note untuk Schedule gagal: note sebelumnya dipertahankan; tanpa booking atau mitra: tidak dibuat', async () => {
