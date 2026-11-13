@@ -1,6 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { syncScheduleNote, scheduleNoteSyncEnabled } from './sync'
-import { WA_NOTE_HEADER as H } from './merge'
 
 const AT = new Date('2026-11-13T05:00:00.000Z')
 type Call = { url: string; method: string; body: Record<string, unknown> | null }
@@ -49,12 +48,12 @@ describe('syncScheduleNote', () => {
     expect(await syncScheduleNote('JVR/012/11/26', ['1 orang vegan'], AT)).toBe('written')
     expect(calls[0].url).toBe('https://backoffice.test/crew-notes-api/booking-note?ref=JVR%2F012%2F11%2F26')
     expect(calls[1].method).toBe('PUT')
-    expect(calls[1].body).toMatchObject({ ref: 'JVR/012/11/26', expected_note: 'Driver: Egy', note: `Driver: Egy\n\n${H}\n- 1 orang vegan` })
-    expect(calls[1].body?.note_wa).toMatchObject({ lines: ['1 orang vegan'], dismissed: [], prev: 'Driver: Egy' })
+    expect(calls[1].body).toMatchObject({ ref: 'JVR/012/11/26', expected_note: 'Driver: Egy', note: 'Driver: Egy\n- 1 orang vegan' })
+    expect(calls[1].body?.note_wa).toMatchObject({ lines: ['1 orang vegan'], dismissed: [], prev: 'Driver: Egy', admin: 'Driver: Egy' })
   })
 
   it('tidak menulis bila hasil gabungan sama dengan note sekarang', async () => {
-    const calls = setup([{ status: 200, json: { note: `${H}\n- 1 orang vegan`, note_wa: { lines: ['1 orang vegan'], dismissed: [], prev: null, at: '' } } }])
+    const calls = setup([{ status: 200, json: { note: '- 1 orang vegan', note_wa: { lines: ['1 orang vegan'], dismissed: [], prev: null, at: '' } } }])
     expect(await syncScheduleNote('X1', ['1 orang vegan'], AT)).toBe('unchanged')
     expect(calls).toHaveLength(1)
   })
@@ -67,7 +66,7 @@ describe('syncScheduleNote', () => {
       { status: 200, json: { ok: true } },
     ])
     expect(await syncScheduleNote('X1', ['1 orang vegan'], AT)).toBe('written')
-    expect(calls[3].body).toMatchObject({ expected_note: 'Driver: Egy\nGuide ijen: Andi', note: `Driver: Egy\nGuide ijen: Andi\n\n${H}\n- 1 orang vegan` })
+    expect(calls[3].body).toMatchObject({ expected_note: 'Driver: Egy\nGuide ijen: Andi', note: 'Driver: Egy\nGuide ijen: Andi\n- 1 orang vegan' })
   })
 
   it('note terus berubah: menyerah setelah tiga putaran tanpa menimpa apa pun', async () => {

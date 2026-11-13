@@ -32,7 +32,7 @@ function parseState(raw: unknown): WaNoteState | null {
   if (!raw || typeof raw !== 'object') return null
   const o = raw as Record<string, unknown>
   const strings = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : [])
-  return { lines: strings(o.lines), dismissed: strings(o.dismissed), prev: typeof o.prev === 'string' ? o.prev : null, at: typeof o.at === 'string' ? o.at : '' }
+  return { lines: strings(o.lines), dismissed: strings(o.dismissed), prev: typeof o.prev === 'string' ? o.prev : null, at: typeof o.at === 'string' ? o.at : '', admin: typeof o.admin === 'string' ? o.admin : null }
 }
 
 async function fetchRemote(ref: string): Promise<Fetched> {
