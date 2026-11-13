@@ -52,10 +52,19 @@ describe('scheduleNoteCandidates (saringan awal sebelum LLM)', () => {
       p('Tamu batal berangkat; tim memberi kredit perjalanan', 'keputusan'),
       p('Tamu menanyakan apakah tur privat atau gabung grup', 'kebutuhan'),
       p('Tamu menanyakan suhu malam di Bromo', 'kebutuhan'),
+      p('Solo traveler, dewasa', 'kebutuhan'),
+      p('2 pax dewasa', 'kebutuhan'),
+      p('Bawa daypack; koper besar dititipkan', 'kebutuhan'),
+      p('Siapkan jaket hangat, sepatu tertutup, dan headlamp', 'kebutuhan'),
       p('Tamu memberi review sangat positif untuk guide dan driver', 'keputusan'),
       p('Tamu meminta titik akhir tour dipindah ke Surabaya', 'keputusan'),
     ]
     expect(cands(dobel)).toEqual([])
+  })
+
+  it('komposisi rombongan yang disertai kebutuhan nyata tetap lolos', () => {
+    expect(cands([p('Keluarga dengan anak 3 tahun, butuh child seat', 'kebutuhan')])).toHaveLength(1)
+    expect(parse(['Solo traveler, butuh guide berbahasa Inggris'])).toEqual(['Solo traveler, butuh guide berbahasa Inggris'])
   })
 
   it('poin lama tanpa jenis dan string polos tidak ikut; maksimal delapan kandidat tanpa duplikat', () => {
@@ -92,6 +101,8 @@ describe('parseScheduleNote (saringan keluaran LLM)', () => {
         'Refund 1 pax',
         'Hubungi tamu 0812-3456-7890',
         'Rombongan jadi 3 pax',
+        'Solo traveler, dewasa',
+        'Bawa daypack dan jaket',
         'Review positif: guide Gufron',
         'Minta titik akhir tour di Surabaya',
       ]),

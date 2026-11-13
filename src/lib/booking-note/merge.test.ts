@@ -30,6 +30,16 @@ describe('mergeScheduleNote: tiga aturan pemilik', () => {
     expect(r.note).toBe(`- Vegan 2 orang\n- Driver: Egy\n\n${H}\n- Minta AC mobil dingin`)
   })
 
+  it('3b. tidak dobel menurut makna: kata bermakna sudah ditulis admin (angka dan "tamu/orang" diabaikan)', () => {
+    const r = merge('Move hotel to Padis,\nDInner dGarden;\n\nVEGAN', ['2 tamu vegan', 'Minta AC mobil dingin'])
+    expect(r.note).toBe(`Move hotel to Padis,\nDInner dGarden;\n\nVEGAN\n\n${H}\n- Minta AC mobil dingin`)
+    // Hanya sebagian kata yang sudah ada: tetap ditulis (maknanya berbeda).
+    expect(merge('AC', ['Minta AC mobil dingin']).note).toContain('- Minta AC mobil dingin')
+    expect(merge('VEGAN', ['1 orang vegetarian']).note).toContain('- 1 orang vegetarian')
+    // Tidak ada kata bermakna sama sekali (hanya angka/kata umum): tidak dianggap dobel.
+    expect(merge('Driver: Egy', ['2 tamu']).note).toContain('- 2 tamu')
+  })
+
   it('idempoten: menjalankan lagi dengan poin sama tidak mengubah apa pun', () => {
     const first = apply('Driver: Egy', ['1 orang vegan'], null)
     const second = merge(first.note, ['1 orang vegan'], first.state)

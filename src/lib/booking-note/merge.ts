@@ -12,6 +12,7 @@
  * Dihapus admin = judul blok masih ada tetapi barisnya berkurang. Bila judul blok hilang seluruhnya, note ditimpa jalur
  * lain (import Excel, form lama, modal plotting), BUKAN keputusan admin: blok ditulis lagi, `dismissed` tidak bertambah.
  * Baris yang admin ketik atau ubah di dalam blok adalah tulisan admin: dipindah ke bagian admin, tidak dibuang.
+ * Dedup berlapis: frasa utuh dan kata bermakna (angka dan kata umum diabaikan) yang sudah ada di bagian admin.
  * Batasan: admin yang sengaja menghapus judul beserta seluruh blok tidak bisa dibedakan dari penimpaan.
  */
 
@@ -24,7 +25,11 @@ export type MergeResult = { note: string | null; state: WaNoteState; changed: bo
 /** Legacy `booking-overview` memilih warna note dengan `str_contains(strtolower(note), 'confirm')`: blok kita tidak boleh memuatnya. */
 const CONFIRM_RE = /confirm/i
 
+/** Kata yang tidak membawa makna sendiri ("2 tamu vegan" dan "VEGAN" sama maknanya); angka murni juga dibuang. */
+const FILLER = new Set(['tamu', 'orang', 'peserta', 'minta', 'meminta', 'perlu', 'butuh', 'membutuhkan', 'ingin', 'mau', 'pax', 'dan', 'yang', 'untuk', 'dari', 'ke', 'di', 'ada', 'the', 'and', 'a', 'of', 'guest', 'guests', 'wants', 'need', 'needs'])
+
 const norm = (s: string): string => s.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim()
+const contentWords = (s: string): string[] => norm(s).split(' ').filter((w) => w && !FILLER.has(w) && !/^\d+$/.test(w))
 const stripBullet = (s: string): string => s.replace(/^\s*[-•*]\s*/, '').trim()
 const eol = (s: string): string => s.replace(/\r\n/g, '\n').trim()
 
@@ -51,6 +56,7 @@ export function mergeScheduleNote(args: { current: string | null; state: WaNoteS
 
   const adminPart = [adminBefore, ...adminInBlock.map((l) => `- ${l}`)].filter(Boolean).join('\n')
   const adminWords = ` ${norm(adminPart)} `
+  const adminWordSet = new Set(norm(adminPart).split(' '))
   const dismissedNorm = new Set(dismissed.map(norm))
 
   const lines: string[] = []
@@ -60,6 +66,9 @@ export function mergeScheduleNote(args: { current: string | null; state: WaNoteS
     const n = norm(line)
     if (!line || !n || seen.has(n)) continue
     if (CONFIRM_RE.test(line) || dismissedNorm.has(n) || adminWords.includes(` ${n} `)) continue
+    // Semua kata bermakna sudah ditulis admin ("2 tamu vegan" vs "VEGAN"): sama maknanya, tidak diulang.
+    const content = contentWords(line)
+    if (content.length > 0 && content.every((w) => adminWordSet.has(w))) continue
     seen.add(n)
     lines.push(line)
   }
