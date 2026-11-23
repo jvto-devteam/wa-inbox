@@ -18,6 +18,7 @@ const EXPECTED_KEYS = [
   'booking_confirmed_backoffice_klook',
   'booking_confirmed_klook_email',
   'booking_pending_payment',
+  'crew_chat_unreplied_reminder',
   'crew_pickup_change',
   'crew_reminder_group',
   'crew_reminder_personal',
@@ -70,6 +71,8 @@ const KEYS_WITHOUT_PHP_ORIGIN = new Set([
   'guest_data_update_confirmation',
   // Lahir 2026-11-07 (kabar jemput berubah ke crew, dikirim new-backoffice/legacy): tidak ada asal PHP.
   'crew_pickup_change',
+  // Lahir 2026-11-23 (susulan telepon pengingat chat tamu belum dibalas, dikirim chat-server): tidak ada asal PHP.
+  'crew_chat_unreplied_reminder',
 ])
 
 describe('system template seeds', () => {

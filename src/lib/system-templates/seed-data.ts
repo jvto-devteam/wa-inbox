@@ -780,6 +780,18 @@ Mohon sesuaikan dengan data terbaru di atas.`,
     source: 'javavolcano-touroperator/app/Console/Commands/TripMediaCrew.php:57',
   },
   {
+    key: 'crew_chat_unreplied_reminder',
+    name: 'Chat tamu belum dibalas (susulan telepon)',
+    description: 'Dikirim ke crew yang tidak mengangkat telepon pengingat dari chat-server (customer chat di portal tamu belum dibalas ≥5 menit). Satu pesan per crew per telepon; tidak dikirim bila telepon diangkat atau chat sudah dibalas.',
+    audience: 'INTERNAL',
+    body: `Halo {crew_name} Customer melakukan chat dan belum kamu balas. Segera balas chat dari tamu di crew portal`,
+    imageUrl: null,
+    variables: [
+      req('crew_name', 'Budi', 'Nama crew penerima (di mode uji chat-server diawali "[UJI] ").'),
+    ],
+    source: 'chat-server/src/reminders/notify.js (baru; teks dari owner 2026-11-23)',
+  },
+  {
     key: 'crew_reminder_personal',
     name: 'Pengingat jadwal ke crew',
     description: 'Dikirim ke setiap crew (guide/driver) yang punya nomor, pada jadwal wa_schedule_reminder_crew sehari sebelum trip.',
