@@ -1,28 +1,47 @@
 'use client'
 
-// Menu Template pesan: teks pesan sistem (reminder, konfirmasi, kabar internal) yang dikirim
-// legacy/new-backoffice lewat wa-inbox. Di pratinjau /new, simpan hanya mengubah salinan di browser;
-// editor yang benar-benar berlaku tetap /templates → Template Sistem.
+// Menu Template pesan (DATA ASLI): teks pesan sistem yang dikirim legacy/new-backoffice lewat wa-inbox.
+// Baca GET /api/system-templates, tulis PATCH /api/system-templates/[key] -- route yang sama dengan
+// /templates → Template Sistem (keduanya admin). Menonaktifkan template membuat permintaan kirimnya
+// ditolak, jadi selalu dikonfirmasi dulu.
 import { useState } from 'react'
 import { AGS } from '@/lib/new/mock-data'
 import { TPL_CATS, exampleValues, initialTemplates, tplAgent, tplCategory } from '@/lib/new/templates'
+import type { Tpl } from '@/lib/new/types'
 import { renderSystemTemplate, validateTemplateBody } from '@/lib/system-templates/render'
 import { Banner, StatStrip } from '../Blocks'
 import { NAV_ICON } from '../icons'
 import { useNew } from '../store'
+import { apiSend, useApi } from '../useApi'
 
 type Css = React.CSSProperties & Record<`--${string}`, string>
 const AUD = { CUSTOMER: ['info', 'Tamu'], INTERNAL: ['neu', 'Internal'] } as const
 
-export function TemplateDrawer({ tplKey, onClose }: { tplKey: string; onClose: () => void }) {
-  const { s, set, toast } = useNew()
-  const t = s.tpl.find((x) => x.key === tplKey)
-  const [body, setBody] = useState(t?.body ?? '')
-  if (!t) return null
+/** Bentuk baris dari API (description boleh null). */
+interface ApiTpl extends Omit<Tpl, 'description'> { description: string | null; updatedAt?: string }
+const toTpl = (t: ApiTpl): Tpl => ({ ...t, description: t.description ?? '' })
+
+function TemplateDrawer({ t, onClose, onSaved, onToggle }: { t: Tpl; onClose: () => void; onSaved: (t: Tpl) => void; onToggle: (t: Tpl, on: boolean) => void }) {
+  const { toast } = useNew()
+  const [body, setBody] = useState(t.body)
+  const [busy, setBusy] = useState(false)
   const errs = validateTemplateBody(body, t.variables)
   const prev = renderSystemTemplate({ body, variables: t.variables }, exampleValues(t))
   const ag = tplAgent(t.key)
   const dirty = body !== t.body
+  const seed = initialTemplates().find((x) => x.key === t.key)
+  const save = async () => {
+    setBusy(true)
+    try {
+      const r = await apiSend<ApiTpl>('/api/system-templates/' + encodeURIComponent(t.key), 'PATCH', { body })
+      onSaved(toTpl(r))
+      toast('Tersimpan. Pesan berikutnya memakai teks ini.')
+    } catch (e) {
+      toast((e as Error).message)
+    } finally {
+      setBusy(false)
+    }
+  }
   return (
     <div className="drawer" role="dialog" aria-label="Edit template pesan">
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
@@ -42,8 +61,7 @@ export function TemplateDrawer({ tplKey, onClose }: { tplKey: string; onClose: (
         <div className="set" style={{ padding: 0 }}>
           <div><b>Aktif</b><span className="h">Nonaktif = permintaan kirim dengan template ini ditolak</span></div>
           <label className="sw">
-            <input type="checkbox" checked={t.isActive} aria-label="Template aktif"
-              onChange={(e) => { const on = e.target.checked; set((d) => { const x = d.tpl.find((y) => y.key === t.key); if (x) x.isActive = on }); toast(on ? 'Template diaktifkan' : 'Template dinonaktifkan') }} />
+            <input type="checkbox" checked={t.isActive} aria-label="Template aktif" onChange={(e) => onToggle(t, e.target.checked)} />
             <i />
           </label>
         </div>
@@ -70,14 +88,9 @@ export function TemplateDrawer({ tplKey, onClose }: { tplKey: string; onClose: (
         <div className="log">{prev.ok ? prev.text : 'Variabel wajib kosong: ' + prev.missing.join(', ')}</div>
       </div>
       <div className="acts" style={{ marginTop: 12 }}>
-        <button className="btn pri" disabled={!dirty || errs.length > 0} onClick={() => {
-          set((d) => { const x = d.tpl.find((y) => y.key === t.key); if (x) x.body = body })
-          toast('Tersimpan (pratinjau, belum ke server)')
-        }}>Simpan</button>
-        <button className="btn" onClick={() => {
-          const seed = initialTemplates().find((x) => x.key === t.key)
-          if (seed) setBody(seed.body)
-        }}>Kembalikan teks awal</button>
+        <button className="btn pri" disabled={!dirty || errs.length > 0 || busy} onClick={save}>{busy ? 'Menyimpan…' : 'Simpan'}</button>
+        {seed && seed.body !== body && <button className="btn" onClick={() => setBody(seed.body)}>Isi dengan teks awal</button>}
+        {dirty && <button className="btn" onClick={() => setBody(t.body)}>Batalkan perubahan</button>}
       </div>
     </div>
   )
@@ -85,32 +98,59 @@ export function TemplateDrawer({ tplKey, onClose }: { tplKey: string; onClose: (
 
 export function TemplateView() {
   const st = useNew()
-  const { s, set } = st
+  const { s, set, toast } = st
+  const api = useApi<{ items: ApiTpl[] }>('/api/system-templates')
+  const [open, setOpen] = useState<string | null>(null)
+  const all = (api.data?.items ?? []).map(toTpl)
   const q = s.tq.trim().toLowerCase()
-  const cats = ['Semua', ...TPL_CATS, 'Lainnya'].filter((c) => c === 'Semua' || s.tpl.some((t) => tplCategory(t.key) === c))
-  const L = s.tpl.filter((t) =>
+  const cats = ['Semua', ...TPL_CATS, 'Lainnya'].filter((c) => c === 'Semua' || all.some((t) => tplCategory(t.key) === c))
+  const L = all.filter((t) =>
     (s.tcat === 'Semua' || tplCategory(t.key) === s.tcat) &&
     (!q || (t.name + ' ' + t.key + ' ' + t.description).toLowerCase().includes(q)))
-  const off = s.tpl.filter((t) => !t.isActive).length
-  const kpi: [string, number, string][] = [
-    ['Template', s.tpl.length, 'pesan sistem'],
-    ['Ke tamu', s.tpl.filter((t) => t.audience === 'CUSTOMER').length, 'reminder & konfirmasi'],
-    ['Internal', s.tpl.filter((t) => t.audience === 'INTERNAL').length, 'crew, vendor, hotel, tim'],
-    ['Nonaktif', off, off ? 'permintaan kirim ditolak' : 'semua aktif'],
-  ]
+  const off = all.filter((t) => !t.isActive).length
+  const tamu = all.filter((t) => t.audience === 'CUSTOMER').length
+
+  const replace = (t: Tpl) => {
+    if (!api.data) return
+    api.setData({ items: api.data.items.map((x) => (x.key === t.key ? { ...x, ...t } : x)) })
+  }
+  const toggle = (t: Tpl, on: boolean) => {
+    const run = async () => {
+      try {
+        const r = await apiSend<ApiTpl>('/api/system-templates/' + encodeURIComponent(t.key), 'PATCH', { isActive: on })
+        replace(toTpl(r))
+        toast(on ? 'Template diaktifkan' : 'Template dinonaktifkan: permintaan kirimnya kini ditolak')
+      } catch (e) {
+        toast((e as Error).message)
+      }
+    }
+    if (on) run()
+    else st.sheet('Nonaktifkan "' + t.name + '"? Pesan yang memakai template ini tidak akan terkirim.', [{ label: 'Nonaktifkan', danger: true, run }])
+  }
+  const current = open ? all.find((t) => t.key === open) : undefined
+
+  if (api.code === 403) {
+    return (
+      <section className="view fx" id="v-template">
+        <Banner tone="off" icon={NAV_ICON.template} title="Hanya admin" sub="Template pesan sistem hanya bisa dilihat dan diubah akun admin." />
+      </section>
+    )
+  }
+
   return (
     <section className="view fx" id="v-template">
       <Banner
-        tone={off ? 'warn' : 'info'}
+        tone={api.error ? 'off' : off ? 'warn' : 'info'}
         icon={NAV_ICON.template}
-        title={s.tpl.length + ' template pesan sistem'}
-        sub={kpi[1][1] + ' ke tamu · ' + kpi[2][1] + ' internal · ' + (off ? off + ' nonaktif' : 'semua aktif') + ' · dikirim legacy & new-backoffice lewat wa-inbox'}
+        title={api.loading ? 'Memuat template…' : api.error ? 'Gagal memuat template' : all.length + ' template pesan sistem'}
+        sub={api.error || (api.loading ? undefined : tamu + ' ke tamu · ' + (all.length - tamu) + ' internal · ' + (off ? off + ' nonaktif' : 'semua aktif') + ' · dikirim legacy & new-backoffice lewat wa-inbox')}
+        right={api.error ? <button className="btn sm" onClick={api.reload}>Coba lagi</button> : undefined}
       />
       <StatStrip
         id="t-hk"
         items={[
           ...(['Reminder', 'Konfirmasi', 'Kabar perubahan'] as const).map((c) => ({
-            label: c, value: s.tpl.filter((t) => tplCategory(t.key) === c).length, on: s.tcat === c, onClick: () => set((d) => { d.tcat = c }),
+            label: c, value: all.filter((t) => tplCategory(t.key) === c).length, on: s.tcat === c, onClick: () => set((d) => { d.tcat = c }),
           })),
           { label: 'Nonaktif', value: off, tone: off ? 'bad' as const : undefined },
         ]}
@@ -118,7 +158,7 @@ export function TemplateView() {
       <div className="tabs" id="t-chips">
         {cats.map((c) => (
           <button key={c} className={c === s.tcat ? 'on' : ''} onClick={() => set((d) => { d.tcat = c })}>
-            {c}<i>{c === 'Semua' ? s.tpl.length : s.tpl.filter((t) => tplCategory(t.key) === c).length}</i>
+            {c}<i>{c === 'Semua' ? all.length : all.filter((t) => tplCategory(t.key) === c).length}</i>
           </button>
         ))}
       </div>
@@ -127,12 +167,12 @@ export function TemplateView() {
           value={s.tq} onChange={(e) => { const v = e.target.value; set((d) => { d.tq = v }) }} />
       </div>
       <div className="card" id="t-list">
-        {L.length ? L.map((t) => {
+        {api.loading ? <div className="mut" style={{ padding: 20, textAlign: 'center' }}>Memuat…</div> : L.length ? L.map((t) => {
           const ag = tplAgent(t.key)
           return (
             <div key={t.key} className="item" style={{ cursor: 'pointer' }} onClick={(e) => {
               if ((e.target as HTMLElement).closest('label,input,button')) return
-              st.drawer({ kind: 'template', key: t.key })
+              setOpen(t.key)
             }}>
               <div style={{ minWidth: 0 }}>
                 <b>{t.name}</b>{' '}
@@ -143,14 +183,18 @@ export function TemplateView() {
                 {t.description && <p>{t.description}</p>}
               </div>
               <label className="sw" title={t.isActive ? 'Aktif' : 'Nonaktif'}>
-                <input type="checkbox" checked={t.isActive} aria-label={'Aktif: ' + t.name}
-                  onChange={(e) => { const on = e.target.checked; set((d) => { const x = d.tpl.find((y) => y.key === t.key); if (x) x.isActive = on }) }} />
+                <input type="checkbox" checked={t.isActive} aria-label={'Aktif: ' + t.name} onChange={(e) => toggle(t, e.target.checked)} />
                 <i />
               </label>
             </div>
           )
-        }) : <div className="mut" style={{ padding: 20, textAlign: 'center' }}>Tidak ada template.</div>}
+        }) : <div className="mut" style={{ padding: 20, textAlign: 'center' }}>{api.error ? 'Tidak bisa memuat template.' : 'Tidak ada template.'}</div>}
       </div>
+      {current && (
+        <div id="t-drawer" onClick={(e) => { if (e.target === e.currentTarget) setOpen(null) }}>
+          <TemplateDrawer key={current.key + (current.body.length)} t={current} onClose={() => setOpen(null)} onSaved={replace} onToggle={toggle} />
+        </div>
+      )}
     </section>
   )
 }

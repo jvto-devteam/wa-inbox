@@ -1,44 +1,102 @@
 'use client'
 
+// Bot (DATA ASLI kecuali tab Agent). Route yang dipakai sama dengan /chatbot, /bot-control/* dan
+// /settings/knowledge-gaps:
+//   GET/PATCH /api/settings, POST /api/bot/mode & /api/bot/indonesia-filter (membalik nilai dan menulis
+//   ulang botEnabled semua percakapan -> selalu dikonfirmasi), GET /api/bot-control/knowledge/sources,
+//   POST .../[id]/publish, GET /api/bot/knowledge-gaps, POST /api/inbox/gaps/[id]/resolve,
+//   POST /api/bot-control/simulate (dry-run), GET /api/bot-control/decisions, GET /api/bot-control/audit-logs.
+// Tulis butuh admin (server menolak 403); tombol tulis dimatikan untuk non-admin.
 import { useState } from 'react'
 import { accuracy } from '@/lib/new/logic'
-import { AGD, AGENT_KEYS, AGS, AGT, LG, MODES } from '@/lib/new/mock-data'
+import { AGD, AGENT_KEYS, AGS, AGT, MODES } from '@/lib/new/mock-data'
 import type { AgentKey, AgentMode, State } from '@/lib/new/types'
 import { StatStrip } from '../Blocks'
 import { useItemTap, useNew } from '../store'
+import { apiSend, useApi, useIsAdmin, type ApiState } from '../useApi'
 
 type Css = React.CSSProperties & Record<`--${string}`, string>
 const TABS: State['btab'][] = ['Perilaku', 'Agent', 'Knowledge', 'Uji', 'Log']
 
-function Sw({ on, onChange, label }: { on: boolean; onChange: (v: boolean) => void; label?: string }) {
-  return <label className="sw"><input type="checkbox" checked={on} aria-label={label} onChange={(e) => onChange(e.target.checked)} /><i /></label>
+export interface BotSettingsApi {
+  botAutoReplyAll: boolean
+  skipBotForIndonesianNumbers: boolean
+  handoffOnHumanRequest: boolean
+  fallbackReply: string | null
+  handoffReply: string | null
+  workingHoursStart: string | null
+  workingHoursEnd: string | null
+}
+interface Source { id: string; title: string; status: string; summary: string | null; managed: boolean; latestRevision: { id: string; version: number; status: string } | null; hasDraft: boolean }
+interface Gap { id: string; conversationId: string | null; contactName: string | null; topic: string | null; messageText: string | null; missingQuestion: string | null; createdAt: string; resolvedAt: string | null }
+interface Decision { id: string; contactName: string | null; status: string; inboundPreview: string | null; startedAt: string; conversationId: string | null }
+interface Audit { id: string; actorName: string | null; action: string; entityType: string; entityKey: string | null; reason: string | null; createdAt: string }
+interface Sim { status: string; reply: string | null; warnings: string[]; latencyMs: number; wouldSendViaChannel?: string }
+
+const DEC_TONE: Record<string, string> = { REPLIED: 'good', CLARIFIED: 'info', HANDOFF: 'warn', FAILED: 'bad', SKIPPED: 'neu' }
+const SIM_TEXT: Record<string, string> = { WOULD_REPLY: 'Bot akan menjawab', WOULD_CLARIFY: 'Bot akan bertanya balik', WOULD_HANDOFF: 'Bot akan menyerahkan ke tim', FAILED: 'Gagal' }
+const when = (iso: string) => new Date(iso).toLocaleString('id-ID', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
+const startOfTodayIso = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return d.toISOString() }
+
+function Sw({ on, onChange, label, disabled }: { on: boolean; onChange: (v: boolean) => void; label?: string; disabled?: boolean }) {
+  return <label className="sw"><input type="checkbox" checked={on} disabled={disabled} aria-label={label} onChange={(e) => onChange(e.target.checked)} /><i /></label>
 }
 
-function Perilaku() {
-  const { s, set, toast } = useNew()
-  const [f, setF] = useState(s.bs)
-  const row = (k: 'auto' | 'skip' | 'hand', b: string, h: string) => (
-    <div className="set"><div><b>{b}</b><span className="h">{h}</span></div><Sw on={f[k]} label={b} onChange={(v) => setF({ ...f, [k]: v })} /></div>
-  )
+function useSettingsActions(settings: ApiState<BotSettingsApi>) {
+  const st = useNew()
+  const flip = (path: string, field: 'botAutoReplyAll' | 'skipBotForIndonesianNumbers', next: boolean, ask: string, done: string) => {
+    st.sheet(ask, [{ label: 'Ya, terapkan', danger: !next || field === 'skipBotForIndonesianNumbers', run: async () => {
+      try {
+        const r = await apiSend<Record<string, boolean>>(path, 'POST')
+        if (settings.data) settings.setData({ ...settings.data, [field]: r[field] })
+        st.toast(done)
+      } catch (e) { st.toast((e as Error).message) }
+    } }])
+  }
+  return {
+    setAuto: (v: boolean) => flip('/api/bot/mode', 'botAutoReplyAll', v,
+      v ? 'Nyalakan bot untuk SEMUA chat? Bot akan menjawab di setiap percakapan.' : 'Matikan bot untuk SEMUA chat? Tim membalas manual.',
+      v ? 'Bot menjawab semua chat. Berlaku langsung.' : 'Bot dimatikan. Tim membalas manual.'),
+    setSkip: (v: boolean) => flip('/api/bot/indonesia-filter', 'skipBotForIndonesianNumbers', v,
+      v ? 'Lewati nomor Indonesia? Bot berhenti menjawab chat bernomor +62.' : 'Jawab juga nomor Indonesia? Bot mulai menjawab chat bernomor +62.',
+      v ? 'Nomor Indonesia dilewati bot.' : 'Bot kini juga menjawab nomor Indonesia.'),
+    patch: async (body: Partial<BotSettingsApi>, done: string) => {
+      try {
+        const r = await apiSend<BotSettingsApi>('/api/settings', 'PATCH', body)
+        settings.setData(r)
+        st.toast(done)
+        return true
+      } catch (e) { st.toast((e as Error).message); return false }
+    },
+  }
+}
+
+function Perilaku({ settings, admin }: { settings: ApiState<BotSettingsApi>; admin: boolean }) {
+  const S = settings.data!
+  const act = useSettingsActions(settings)
+  const [fb, setFb] = useState(S.fallbackReply ?? '')
+  const [hr, setHr] = useState(S.handoffReply ?? '')
+  const dirty = fb !== (S.fallbackReply ?? '') || hr !== (S.handoffReply ?? '')
+  const hours = S.workingHoursStart && S.workingHoursEnd ? S.workingHoursStart + '–' + S.workingHoursEnd + ' WIB' : 'belum diatur'
   return (
     <div className="grid g2">
       <div className="card">
         <h3>Mode bot</h3>
-        <p className="hint">Simpan = langsung berlaku</p>
-        {row('auto', 'Bot menjawab semua chat', 'Matikan untuk mengambil alih semua')}
-        {row('skip', 'Lewati nomor Indonesia', 'Tim membalas sendiri')}
-        {row('hand', 'Serahkan bila tamu minta manusia', 'Lapisan eskalasi')}
+        <p className="hint">{admin ? 'Berlaku langsung setelah dikonfirmasi' : 'Hanya admin yang bisa mengubah'}</p>
+        <div className="set"><div><b>Bot menjawab semua chat</b><span className="h">Mengubah bot di semua percakapan</span></div><Sw on={S.botAutoReplyAll} disabled={!admin} label="Mode bot semua chat" onChange={act.setAuto} /></div>
+        <div className="set"><div><b>Lewati nomor Indonesia</b><span className="h">Chat +62 dibalas tim sendiri</span></div><Sw on={S.skipBotForIndonesianNumbers} disabled={!admin} label="Lewati nomor Indonesia" onChange={act.setSkip} /></div>
+        <div className="set"><div><b>Serahkan bila tamu minta manusia</b><span className="h">Lapisan eskalasi LLM</span></div><Sw on={S.handoffOnHumanRequest} disabled={!admin} label="Serahkan bila tamu minta manusia" onChange={(v) => act.patch({ handoffOnHumanRequest: v }, v ? 'Eskalasi ke tim menyala' : 'Eskalasi ke tim dimatikan')} /></div>
         <div className="set">
-          <div><b>Jam kerja 08:00–20:00 WIB</b><span className="h">Hanya menambah satu kalimat pada pesan serah-terima. Bot tetap menjawab 24/7.</span></div>
-          <span className="pill neu">Info</span>
+          <div><b>Jam kerja {hours}</b><span className="h">Hanya menambah satu kalimat pada pesan serah-terima. Bot tetap menjawab 24/7.</span></div>
+          <a className="pill neu" href="/chatbot">Ubah</a>
         </div>
       </div>
       <div className="card">
         <h3>Kalimat cadangan</h3>
         <p className="hint">Kosong = pakai bawaan kode</p>
-        <label className="f">Balasan cadangan<textarea className="ta" value={f.fb} onChange={(e) => setF({ ...f, fb: e.target.value })} /></label>
-        <label className="f">Balasan serah-terima<textarea className="ta" value={f.hr} onChange={(e) => setF({ ...f, hr: e.target.value })} /></label>
-        <button className="btn pri" onClick={() => { set((d) => { d.bs = f }); toast('Tersimpan dan langsung berlaku') }}>Simpan</button>
+        <label className="f">Balasan cadangan<textarea className="ta" value={fb} disabled={!admin} placeholder="(bawaan kode)" onChange={(e) => setFb(e.target.value)} /></label>
+        <label className="f">Balasan serah-terima<textarea className="ta" value={hr} disabled={!admin} placeholder="(bawaan kode)" onChange={(e) => setHr(e.target.value)} /></label>
+        <button className="btn pri" disabled={!admin || !dirty} onClick={() => act.patch({ fallbackReply: fb, handoffReply: hr }, 'Tersimpan dan langsung berlaku')}>Simpan</button>
       </div>
     </div>
   )
@@ -58,6 +116,10 @@ function Agents() {
   }
   return (
     <>
+      <div className="bt-ban warn" style={{ marginBottom: 12 }}>
+        <span className="ic" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" /><path d="M12 8v5M12 16h.01" /></svg></span>
+        <div className="tx"><b>Data contoh</b><span>Mode per agent dan jeda semua agent belum tersambung ke sistem. Perubahan di tab ini tidak memengaruhi bot.</span></div>
+      </div>
       <div className="card" style={{ marginBottom: 12, display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
         <div style={{ flex: 1, minWidth: 200 }}>
           <h3>Jeda semua agent</h3>
@@ -103,104 +165,166 @@ function Agents() {
   )
 }
 
-function Knowledge() {
-  const { s, set, toast } = useNew()
+function Knowledge({ sources, gaps, admin }: { sources: ApiState<{ items: Source[]; total: number }>; gaps: ApiState<Gap[]>; admin: boolean }) {
+  const st = useNew()
+  const items = (sources.data?.items ?? []).filter((x) => x.status !== 'ARCHIVED')
+  const drafts = items.filter((x) => x.hasDraft)
+  const open = (gaps.data ?? []).filter((g) => !g.resolvedAt)
+  const publish = (x: Source) => st.sheet('Terbitkan "' + x.title + '"? Bot langsung memakai versi ini.', [{ label: 'Terbitkan', run: async () => {
+    try {
+      await apiSend('/api/bot-control/knowledge/sources/' + x.id + '/publish', 'POST', {})
+      sources.reload()
+      st.toast('"' + x.title + '" terbit dan langsung dipakai bot')
+    } catch (e) { st.toast((e as Error).message) }
+  } }])
+  const resolve = async (g: Gap) => {
+    try {
+      await apiSend('/api/inbox/gaps/' + g.id + '/resolve', 'POST')
+      if (gaps.data) gaps.setData(gaps.data.map((x) => (x.id === g.id ? { ...x, resolvedAt: new Date().toISOString() } : x)))
+      st.toast('Celah ditandai selesai')
+    } catch (e) { st.toast((e as Error).message) }
+  }
+  const sorted = [...drafts, ...items.filter((x) => !x.hasDraft)]
   return (
     <div className="grid g2">
       <div className="card">
-        <h3>Knowledge</h3>
-        <p className="hint">Revisi yang diterbitkan tidak bisa diubah; setiap perubahan = versi baru</p>
-        {s.kn.map((k, i) => (
-          <div key={i} className="item">
-            <div><b>{k.title}</b><p>Versi {k.ver}</p></div>
-            {k.status === 'PUBLISHED' ? <span className="pill good">PUBLISHED</span> : (
-              <div className="acts">
-                <span className="pill neu">DRAFT</span>
-                <button className="btn sm" onClick={() => { set((d) => { d.kn[i].status = 'PUBLISHED' }); toast('"' + k.title + '" terbit dan langsung dipakai bot') }}>Terbitkan</button>
-              </div>
-            )}
-          </div>
-        ))}
-        <button className="btn sm" style={{ marginTop: 8 }} onClick={() => { set((d) => { d.kn.push({ title: 'Knowledge baru', status: 'DRAFT', ver: 'v1' }) }); toast('Draf knowledge dibuat') }}>+ Tambah</button>
+        <div className="pg-card-h" style={{ margin: 0 }}><h3>Knowledge</h3><a className="btn sm" href="/bot-control/knowledge" style={{ marginLeft: 'auto' }}>Kelola / + Tambah</a></div>
+        <p className="hint">{items.filter((x) => x.status === 'PUBLISHED').length} terbit · {drafts.length} punya draf. Revisi yang terbit tidak bisa diubah; perubahan = versi baru.</p>
+        <div className="db-scroll" style={{ maxHeight: 460 }}>
+          {sources.loading ? <div className="mut">Memuat…</div> : sources.error ? <div className="mut">{sources.error}</div> : sorted.map((x) => (
+            <div key={x.id} className="item">
+              <div style={{ minWidth: 0 }}><b>{x.title}</b><p>{x.latestRevision ? 'Versi ' + x.latestRevision.version : 'Belum ada revisi'}{x.summary ? ' · ' + x.summary : ''}</p></div>
+              {x.hasDraft ? (
+                <div className="acts">
+                  <span className="pill warn">DRAF</span>
+                  {admin && <button className="btn sm" onClick={() => publish(x)}>Terbitkan</button>}
+                </div>
+              ) : <span className={'pill ' + (x.status === 'PUBLISHED' ? 'good' : 'neu')}>{x.status === 'PUBLISHED' ? 'TERBIT' : x.status}</span>}
+            </div>
+          ))}
+        </div>
       </div>
       <div className="card">
-        <h3>Celah knowledge</h3>
-        <p className="hint">Pertanyaan tamu yang belum ada jawabannya</p>
-        {s.gap.map((g, i) => (
-          <div key={g} className="item">
-            <div><b>{g}</b></div>
-            <button className="btn sm" onClick={() => { set((d) => { d.kn.push({ title: d.gap.splice(i, 1)[0], status: 'DRAFT', ver: 'v1' }) }); toast('Draf knowledge dibuat dari pertanyaan ini') }}>Isi jawaban</button>
-          </div>
-        ))}
+        <div className="pg-card-h" style={{ margin: 0 }}><h3>Celah knowledge</h3><a className="btn sm" href="/settings/knowledge-gaps" style={{ marginLeft: 'auto' }}>Semua</a></div>
+        <p className="hint">Pertanyaan tamu yang belum ada jawabannya · {open.length} terbuka</p>
+        <div className="db-scroll" style={{ maxHeight: 460 }}>
+          {gaps.loading ? <div className="mut">Memuat…</div> : gaps.error ? <div className="mut">{gaps.error}</div> : open.length ? open.slice(0, 50).map((g) => (
+            <div key={g.id} className="item">
+              <div style={{ minWidth: 0 }}>
+                <b>{g.missingQuestion || g.messageText || '(tanpa teks)'}</b>
+                <p>{g.contactName || 'Tanpa nama'}{g.topic ? ' · ' + g.topic : ''} · {when(g.createdAt)}</p>
+              </div>
+              <div className="acts">
+                {g.conversationId && <a className="btn sm" href={'/inbox?conversation=' + g.conversationId}>Chat</a>}
+                <button className="btn sm" onClick={() => resolve(g)}>Selesai</button>
+              </div>
+            </div>
+          )) : <div className="mut">Tidak ada celah terbuka.</div>}
+        </div>
       </div>
     </div>
   )
 }
 
-function Uji() {
+function Uji({ admin }: { admin: boolean }) {
   const [q, setQ] = useState('What time does Ijen open?')
-  const [out, setOut] = useState('Hasil simulasi tampil di sini.')
+  const [busy, setBusy] = useState(false)
+  const [res, setRes] = useState<Sim | string | null>(null)
+  const run = async () => {
+    setBusy(true)
+    try { setRes(await apiSend<Sim>('/api/bot-control/simulate', 'POST', { message: q, dryRun: true })) } catch (e) { setRes((e as Error).message) } finally { setBusy(false) }
+  }
   return (
-    <div className="card" style={{ maxWidth: 640 }}>
+    <div className="card" style={{ maxWidth: 680 }}>
       <h3>Simulator (dry-run)</h3>
-      <p className="hint">Tidak pernah mengirim pesan dan tidak membuat pekerjaan outbound</p>
-      <label className="f">Pesan tamu<input className="in" value={q} onChange={(e) => setQ(e.target.value)} /></label>
-      <button className="btn pri" onClick={() => setOut('[DRY-RUN, tidak ada pesan terkirim]\nKlasifikasi: pertanyaan jam buka\nSumber: knowledge "Jam buka Ijen" v2\nBalasan: Ijen crater is open daily from 00:00 for sunrise trekking.')}>Coba jawab</button>
-      <div className="log" style={{ marginTop: 10 }}>{out}</div>
+      <p className="hint">Memakai bot sungguhan, tetapi tidak pernah mengirim pesan dan tidak membuat pekerjaan outbound.{admin ? '' : ' Hanya admin.'}</p>
+      <label className="f">Pesan tamu<input className="in" value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && admin && q.trim()) run() }} /></label>
+      <button className="btn pri" disabled={!admin || busy || !q.trim()} onClick={run}>{busy ? 'Menjalankan…' : 'Coba jawab'}</button>
+      {res && (typeof res === 'string' ? <div className="log" style={{ marginTop: 10, color: 'var(--bad)' }}>{res}</div> : (
+        <div className="log" style={{ marginTop: 10 }}>
+          {'[DRY-RUN, tidak ada pesan terkirim]\n'}
+          {(SIM_TEXT[res.status] || res.status) + ' · ' + res.latencyMs + ' ms\n'}
+          {res.reply ? '\nBalasan:\n' + res.reply + '\n' : ''}
+          {res.warnings.length ? '\nPeringatan:\n- ' + res.warnings.join('\n- ') : ''}
+        </div>
+      ))}
     </div>
   )
 }
 
-function Log() {
+function Log({ admin }: { admin: boolean }) {
   const { s, set } = useNew()
+  const dec = useApi<{ items: Decision[] }>('/api/bot-control/decisions?limit=30')
+  const aud = useApi<{ items: Audit[] }>(admin ? '/api/bot-control/audit-logs?limit=30' : null)
+  type Row = { k: 'Keputusan' | 'Audit'; at: string; title: string; sub: string; tone: string; tag: string; href?: string }
+  const rows: Row[] = [
+    ...(dec.data?.items ?? []).map((d): Row => ({ k: 'Keputusan', at: d.startedAt, title: (d.contactName || 'Tanpa nama') + ' · ' + (d.inboundPreview || ''), sub: 'Keputusan bot', tone: DEC_TONE[d.status] || 'neu', tag: d.status, href: d.conversationId ? '/inbox?conversation=' + d.conversationId : undefined })),
+    ...(aud.data?.items ?? []).map((a): Row => ({ k: 'Audit', at: a.createdAt, title: (a.actorName || 'Sistem') + ' · ' + a.action + ' ' + a.entityType + (a.entityKey ? ' (' + a.entityKey + ')' : ''), sub: a.reason || 'Perubahan pengaturan bot', tone: 'neu', tag: a.action })),
+  ].sort((x, y) => y.at.localeCompare(x.at))
+  const tabs = admin ? ['Semua', 'Keputusan', 'Audit'] : ['Semua', 'Keputusan']
+  const lf = tabs.includes(s.lf) ? s.lf : 'Semua'
   return (
     <>
       <div className="chips">
-        {['Semua', 'Keputusan', 'Alur', 'Audit', 'Aturan'].map((t) => <button key={t} className={t === s.lf ? 'on' : ''} onClick={() => set((d) => { d.lf = t })}>{t}</button>)}
+        {tabs.map((t) => <button key={t} className={t === lf ? 'on' : ''} onClick={() => set((d) => { d.lf = t })}>{t}</button>)}
+        <a className="btn sm" href="/bot-control/decisions" style={{ marginLeft: 'auto' }}>Log lengkap</a>
       </div>
       <div className="card">
-        {LG.filter((r) => s.lf === 'Semua' || r[0] === s.lf).map((r, i) => (
+        {dec.loading ? <div className="mut">Memuat…</div> : rows.filter((r) => lf === 'Semua' || r.k === lf).map((r, i) => (
           <div key={i} className="item">
-            <div><span className="pill neu">{r[0]}</span> <b style={{ marginLeft: 6 }}>{r[1]}</b></div>
-            <span className="mut sm">{r[2]}</span>
+            <div style={{ minWidth: 0 }}>
+              <span className={'pill ' + r.tone}>{r.tag}</span> <b style={{ marginLeft: 6 }}>{r.href ? <a href={r.href}>{r.title}</a> : r.title}</b>
+              <p>{r.sub}</p>
+            </div>
+            <span className="mut sm" style={{ whiteSpace: 'nowrap' }}>{when(r.at)}</span>
           </div>
         ))}
+        {dec.error && <div className="mut">{dec.error}</div>}
       </div>
     </>
   )
 }
 
 export function BotView() {
-  const { s, set, toast } = useNew()
-  const aktif = AGENT_KEYS.filter((k) => s.agm[k] !== 'mati').length
-  const pub = s.kn.filter((k) => k.status === 'PUBLISHED').length
-  const tot = AGENT_KEYS.reduce((n, k) => n + s.agst[k].ok + s.agst[k].bad, 0)
-  const okAll = AGENT_KEYS.reduce((n, k) => n + s.agst[k].ok, 0)
-  const acc = tot ? Math.round((okAll / tot) * 100) : 0
+  const { s, set } = useNew()
+  const admin = useIsAdmin() === true
+  const settings = useApi<BotSettingsApi>('/api/settings')
+  const sources = useApi<{ items: Source[]; total: number }>('/api/bot-control/knowledge/sources?limit=200')
+  const gaps = useApi<Gap[]>('/api/bot/knowledge-gaps')
+  const today = useApi<{ total: number }>('/api/bot-control/decisions?limit=1&dateFrom=' + encodeURIComponent(startOfTodayIso()))
+  const act = useSettingsActions(settings)
+  const S = settings.data
+  const pub = (sources.data?.items ?? []).filter((x) => x.status === 'PUBLISHED').length
+  const allK = (sources.data?.items ?? []).filter((x) => x.status !== 'ARCHIVED').length
+  const openGaps = (gaps.data ?? []).filter((g) => !g.resolvedAt).length
   return (
     <section className="view fx" id="v-bot">
-      <div className={'bt-ban' + (s.bs.auto && !s.pause ? '' : ' off')}>
+      <div className={'bt-ban' + (!S ? ' info' : S.botAutoReplyAll ? '' : ' off')}>
         <span className="ic" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="4" y="8" width="16" height="11" rx="3" /><path d="M12 8V4M9 13h.01M15 13h.01" /></svg></span>
         <div className="tx">
-          <b>{s.pause ? 'Semua agent dijeda' : s.bs.auto ? 'Bot menjawab semua chat' : 'Bot dimatikan, tim membalas manual'}</b>
-          <span>{s.bs.skip ? 'Nomor Indonesia dilewati' : 'Semua nomor dijawab'} · {s.bs.hand ? 'serahkan ke tim bila diminta' : 'tanpa eskalasi'} · bot tetap 24/7</span>
+          <b>{!S ? (settings.error ? 'Gagal memuat pengaturan bot' : 'Memuat…') : S.botAutoReplyAll ? 'Bot menjawab semua chat' : 'Bot dimatikan, tim membalas manual'}</b>
+          <span>{S ? (S.skipBotForIndonesianNumbers ? 'Nomor Indonesia dilewati' : 'Semua nomor dijawab') + ' · ' + (S.handoffOnHumanRequest ? 'serahkan ke tim bila diminta' : 'tanpa eskalasi') + ' · bot tetap 24/7' : settings.error || ''}</span>
         </div>
-        <Sw on={s.bs.auto} label="Bot menjawab semua chat" onChange={(v) => { set((d) => { d.bs.auto = v }); toast(v ? 'Bot menjawab semua chat. Berlaku langsung.' : 'Bot dimatikan. Tim membalas manual.') }} />
+        {S && <Sw on={S.botAutoReplyAll} disabled={!admin} label="Bot menjawab semua chat" onChange={act.setAuto} />}
       </div>
       <StatStrip
         id="b-hk"
         items={[
-          { label: 'Agent aktif', value: aktif + '/' + AGENT_KEYS.length, on: s.btab === 'Agent', onClick: () => set((d) => { d.btab = 'Agent' }) },
-          { label: 'Akurasi agent', value: acc + '%', tone: acc >= 90 ? 'good' : 'warn', onClick: () => set((d) => { d.btab = 'Agent' }) },
-          { label: 'Knowledge terbit', value: pub + '/' + s.kn.length, on: s.btab === 'Knowledge', onClick: () => set((d) => { d.btab = 'Knowledge' }) },
-          { label: 'Celah knowledge', value: s.gap.length, tone: s.gap.length ? 'warn' : undefined, onClick: () => set((d) => { d.btab = 'Knowledge' }) },
+          { label: 'Mode bot', value: S ? (S.botAutoReplyAll ? 'Otomatis' : 'Manual') : '…', on: s.btab === 'Perilaku', onClick: () => set((d) => { d.btab = 'Perilaku' }) },
+          { label: 'Knowledge terbit', value: sources.data ? pub + '/' + allK : '…', on: s.btab === 'Knowledge', onClick: () => set((d) => { d.btab = 'Knowledge' }) },
+          { label: 'Celah knowledge', value: gaps.data ? openGaps : '…', tone: openGaps ? 'warn' : undefined, onClick: () => set((d) => { d.btab = 'Knowledge' }) },
+          { label: 'Keputusan hari ini', value: today.data ? today.data.total : '…', on: s.btab === 'Log', onClick: () => set((d) => { d.btab = 'Log' }) },
         ]}
       />
       <div className="tabs" id="b-tabs">
         {TABS.map((k) => <button key={k} className={k === s.btab ? 'on' : ''} onClick={() => set((d) => { d.btab = k })}>{k}</button>)}
       </div>
       <div id="b-body">
-        {s.btab === 'Perilaku' ? <Perilaku key={String(s.bs.auto)} /> : s.btab === 'Agent' ? <Agents /> : s.btab === 'Knowledge' ? <Knowledge /> : s.btab === 'Uji' ? <Uji /> : <Log />}
+        {s.btab === 'Perilaku' ? (S ? <Perilaku key={(S.fallbackReply ?? '') + '|' + (S.handoffReply ?? '')} settings={settings} admin={admin} /> : <div className="card mut">{settings.error || 'Memuat…'}</div>)
+          : s.btab === 'Agent' ? <Agents />
+          : s.btab === 'Knowledge' ? <Knowledge sources={sources} gaps={gaps} admin={admin} />
+          : s.btab === 'Uji' ? <Uji admin={admin} />
+          : <Log admin={admin} />}
       </div>
     </section>
   )

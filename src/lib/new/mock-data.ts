@@ -4,7 +4,6 @@ import type {
   AgentEvent, AgentKey, AgentMode, AtItem, AtKey, ChannelKey, Contact, Conv, DaySummary,
   Knowledge, PointKind, Sched, State, Tone,
 } from './types'
-import { initialTemplates } from './templates'
 
 export const CH: Record<ChannelKey, [string, string]> = {
   wa: ['WhatsApp', '--ch-wa'],
@@ -326,7 +325,7 @@ export function initialState(): State {
     rday: 'Hari ini', rkind: 'Semua', rregen: 0, rtab: 'poin',
     aday: 'Hari ini', aag: 'Semua', ast: 'Semua', aq: '',
     kq: '', kl: '',
-    tpl: initialTemplates(), tcat: 'Semua', tq: '',
+    tcat: 'Semua', tq: '',
     btab: 'Perilaku', lf: 'Semua',
   } satisfies State)
 }

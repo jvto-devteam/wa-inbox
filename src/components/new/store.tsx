@@ -43,7 +43,7 @@ export interface SheetItem {
 
 export type DayKey = 'r' | 'a' | 's'
 
-export type DrawerDesc = { kind: 'kontak'; idx: number } | { kind: 'agent'; idx: number } | { kind: 'template'; key: string }
+export type DrawerDesc = { kind: 'agent'; idx: number }
 
 export interface RemReq {
   name: string

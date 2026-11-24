@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { NewShell } from './Shell'
 import { viewFromPath } from './store'
@@ -7,10 +7,8 @@ import { AntreanView } from './views/AntreanView'
 import { BotView } from './views/BotView'
 import { HubView } from './views/HubView'
 import { InboxView } from './views/InboxView'
-import { KontakView } from './views/KontakView'
 import { LaporanView } from './views/LaporanView'
 import { RingkasanView } from './views/RingkasanView'
-import { TemplateView } from './views/TemplateView'
 
 let path = '/new/dashboard'
 const push = vi.fn()
@@ -43,9 +41,6 @@ describe('/new', () => {
     ['/new/antrean', <AntreanView key="a" />, 'Janji Admin'],
     ['/new/ringkasan', <RingkasanView key="r" />, 'Per percakapan'],
     ['/new/agent', <AgentView key="g" />, 'Semua status'],
-    ['/new/kontak', <KontakView key="k" />, 'Vendor Transport Bali'],
-    ['/new/bot', <BotView key="b" />, 'Mode bot'],
-    ['/new/template', <TemplateView key="t" />, 'payment_reminder_balance'],
     ['/new/laporan', <LaporanView key="l" />, 'Belum booking: alasan & follow-up'],
   ])('%s tergambar dengan data contoh', (p, el, text) => {
     at(p, el)
@@ -73,20 +68,6 @@ describe('/new', () => {
     const row = screen.getByText(/Reminder crew \(H-1\)/).closest('.item') as HTMLElement
     fireEvent.click(Array.from(row.querySelectorAll('button')).find((b) => b.textContent === 'Kirim sekarang')!)
     expect(screen.queryByText(/Reminder crew \(H-1\)/)).toBeNull()
-  })
-
-  it('Template pesan: buka, ubah, simpan', () => {
-    at('/new/template', <TemplateView />)
-    fireEvent.click(within(document.getElementById('t-chips')!).getByText('Reminder').closest('button')!)
-    const row = screen.getByText('payment_reminder_balance').closest('.item') as HTMLElement
-    fireEvent.click(row)
-    const ta = screen.getByLabelText('Isi pesan') as HTMLTextAreaElement
-    fireEvent.change(ta, { target: { value: ta.value + '\n{tidak_ada}' } })
-    expect(screen.getByText(/tidak dideklarasikan/)).toBeInTheDocument()
-    expect((screen.getByText('Simpan') as HTMLButtonElement).disabled).toBe(true)
-    fireEvent.change(ta, { target: { value: 'Halo {customer_name}' } })
-    fireEvent.click(screen.getByText('Simpan'))
-    expect(screen.getByText('Tersimpan (pratinjau, belum ke server)')).toBeInTheDocument()
   })
 
   it('Dashboard: KPI, tren, alasan belum booking, strip agent dari data contoh, tanpa fetch', () => {
