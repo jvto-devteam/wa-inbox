@@ -23,7 +23,7 @@ export function useAgentCek() {
     } else if (h.k === 'poin') {
       st.set((d) => { d.rday = h.day; d.rkind = h.kind })
       st.go('ringkasan')
-      st.flash(h.n ? '#r-pts .item' : '#r-hk .pg-st', h.n)
+      st.flash(h.n ? '#r-pts .item' : '#r-sum', h.n)
     } else if (h.k === 'out') {
       st.drawer({ kind: 'agent', idx: st.s.ae.indexOf(e) })
     } else {

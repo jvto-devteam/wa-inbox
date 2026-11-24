@@ -704,21 +704,18 @@
 .nwa .pg-card-h{display:flex;align-items:center;gap:8px;margin:0 0 10px}
 .nwa .pg-card-h h3{margin:0;font-size:14px;font-weight:700}
 .nwa .pg-card-h .mut{margin-left:auto}
-.nwa #a-list .item{border-left:3px solid var(--ac,transparent);padding-left:10px;margin-left:-14px;padding-right:0}
+.nwa #a-list .item,.nwa #r-pts .item{border-left:3px solid var(--ac,transparent);padding-left:10px;margin-left:-14px;padding-right:0}
 @media (max-width:860px){
  .nwa .pg-urgent{grid-template-columns:minmax(0,1fr);border-top:0;border-right:0;border-bottom:0}
  .nwa .pg-urgent .acts{justify-content:flex-start}
  .nwa .pg-card{border:0}
- .nwa #a-list .item{margin-left:-16px;padding-left:13px}
+ .nwa #a-list .item,.nwa #r-pts .item{margin-left:-16px;padding-left:13px}
 }
-.nwa #r-pts{display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:8px}
-.nwa #r-pts .item{border:1px solid var(--line);border-left:3px solid var(--kc,var(--line));border-radius:10px;padding:9px 11px}
-.nwa #r-pts .item:last-child{border-bottom:1px solid var(--line)}
-.nwa #r-pts .item p{margin-top:3px}
-@media (max-width:860px){
- .nwa #r-pts{grid-template-columns:minmax(0,1fr);gap:0}
- .nwa #r-pts .item{border:0;border-left:3px solid var(--kc,var(--line));border-radius:0;border-bottom:.5px solid var(--sep);padding:10px 26px 10px 10px}
-}
+/* Ringkasan memakai pola daftar Antrean: garis warna per jenis di kiri item. */
+.nwa .r-view{display:flex;width:100%}
+.nwa .r-view button{flex:1;line-height:30px}
+.nwa #v-ringkasan .pg-card-h{flex-wrap:wrap}
+@media (max-width:860px){.nwa #v-ringkasan .r-regen{display:none}.nwa .r-view button{font-size:12.5px;padding:0 6px}}
 .nwa .ag-tl{padding:6px 14px 10px}
 .nwa .ag-g{position:relative;padding-left:16px}
 .nwa .ag-g::before{content:"";position:absolute;left:4px;top:24px;bottom:4px;border-left:2px solid var(--line)}
