@@ -28,9 +28,9 @@ describe('tata letak berbeda per halaman /new', () => {
     ['Antrean', <AntreanView key="a" />, '.pg-urgent', false],
     ['Ringkasan', <RingkasanView key="r" />, '#v-ringkasan .pg-urgent', false],
     ['Laporan', <LaporanView key="l" />, '.db-hero', true],
-    ['Riwayat Agent', <AgentView key="g" />, '.ag-ev', false],
+    ['Riwayat Agent', <AgentView key="g" />, '#v-agent .bt-ban', false],
     ['Kontak', <KontakView key="k" />, '.kt-c', false],
-    ['Template', <TemplateView key="t" />, '.tp-side', false],
+    ['Template', <TemplateView key="t" />, '#v-template .bt-ban', false],
     ['Bot', <BotView key="b" />, '.bt-ban', false],
     ['Inbox', <InboxView key="i" />, '.inbox', false],
   ])('%s', (_n, el, signature, hero) => {
@@ -59,8 +59,10 @@ describe('tata letak berbeda per halaman /new', () => {
     expect(document.getElementById('r-pts')).toBeNull()
   })
 
-  it('Riwayat Agent: linimasa per jam, strip Gagal menyaring', () => {
+  it('Riwayat Agent: banner peringatan bila ada yang gagal, linimasa per jam, strip Gagal menyaring', () => {
     show(<AgentView />)
+    expect(document.querySelector('#v-agent .bt-ban')?.className).toContain('warn')
+    expect(document.querySelector('#v-agent .bt-ban .tx span')?.textContent).toMatch(/^2 gagal perlu dicek/)
     expect(document.querySelector('.ag-h')?.textContent).toMatch(/^\d\d\.00$/)
     fireEvent.click(within(document.getElementById('g-hk')!).getByText('Gagal').closest('button')!)
     expect((screen.getByLabelText('Saring status') as HTMLSelectElement).value).toBe('gagal')
@@ -77,8 +79,11 @@ describe('tata letak berbeda per halaman /new', () => {
     expect(cards[0].textContent).toContain('Vendor Transport Bali')
   })
 
-  it('Template: kategori di panel samping menyaring daftar', () => {
+  it('Template: pola Bot (banner, strip, tab kategori) dan tab menyaring daftar', () => {
     show(<TemplateView />)
+    expect(document.querySelector('.bt-ban b')?.textContent).toBe('33 template pesan sistem')
+    fireEvent.click(within(document.getElementById('t-hk')!).getByText('Reminder').closest('button')!)
+    expect(document.querySelectorAll('#t-list .item')).toHaveLength(11)
     fireEvent.click(within(document.getElementById('t-chips')!).getByText('Trip').closest('button')!)
     expect(document.querySelectorAll('#t-list .item')).toHaveLength(2)
   })

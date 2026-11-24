@@ -8,6 +8,23 @@ import type { WeekPoint } from '@/lib/new/report'
 const MONS = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des']
 export const d2 = (ymd: string) => { const [, m, d] = ymd.split('-').map(Number); return d + ' ' + MONS[m - 1] }
 
+/** Banner status ala halaman Bot: ikon, satu kalimat utama, keterangan, dan kendali opsional di kanan. */
+export function Banner({ icon, title, sub, tone = 'ok', right }: {
+  icon: React.ReactNode
+  title: React.ReactNode
+  sub?: React.ReactNode
+  tone?: 'ok' | 'off' | 'warn' | 'info'
+  right?: React.ReactNode
+}) {
+  return (
+    <div className={'bt-ban' + (tone === 'ok' ? '' : ' ' + tone)}>
+      <span className="ic" aria-hidden="true"><svg viewBox="0 0 24 24">{icon}</svg></span>
+      <div className="tx"><b>{title}</b>{sub && <span>{sub}</span>}</div>
+      {right}
+    </div>
+  )
+}
+
 export interface StatItem {
   label: string
   value: React.ReactNode

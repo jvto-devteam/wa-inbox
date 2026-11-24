@@ -7,6 +7,8 @@ import { useState } from 'react'
 import { AGS } from '@/lib/new/mock-data'
 import { TPL_CATS, exampleValues, initialTemplates, tplAgent, tplCategory } from '@/lib/new/templates'
 import { renderSystemTemplate, validateTemplateBody } from '@/lib/system-templates/render'
+import { Banner, StatStrip } from '../Blocks'
+import { NAV_ICON } from '../icons'
 import { useNew } from '../store'
 
 type Css = React.CSSProperties & Record<`--${string}`, string>
@@ -98,23 +100,30 @@ export function TemplateView() {
   ]
   return (
     <section className="view fx" id="v-template">
-      <div className="tp-wrap">
-      <aside className="tp-side">
-        <div className="tp-sum">
-          <b>{s.tpl.length}</b> template pesan sistem
-          <span>{kpi[1][1]} ke tamu · {kpi[2][1]} internal{off ? ' · ' : ''}{off ? <em>{off} nonaktif</em> : ''}</span>
-        </div>
-        <div className="tp-cats" id="t-chips">
-          {cats.map((c) => (
-            <button key={c} className={c === s.tcat ? 'on' : ''} onClick={() => set((d) => { d.tcat = c })}>
-              <span>{c}</span><b>{c === 'Semua' ? s.tpl.length : s.tpl.filter((t) => tplCategory(t.key) === c).length}</b>
-            </button>
-          ))}
-        </div>
-      </aside>
-      <div className="tp-main">
-      <div style={{ marginBottom: 10 }}>
-        <input className="in" placeholder="Cari nama atau kunci template" aria-label="Cari template" style={{ maxWidth: 320 }}
+      <Banner
+        tone={off ? 'warn' : 'info'}
+        icon={NAV_ICON.template}
+        title={s.tpl.length + ' template pesan sistem'}
+        sub={kpi[1][1] + ' ke tamu · ' + kpi[2][1] + ' internal · ' + (off ? off + ' nonaktif' : 'semua aktif') + ' · dikirim legacy & new-backoffice lewat wa-inbox'}
+      />
+      <StatStrip
+        id="t-hk"
+        items={[
+          ...(['Reminder', 'Konfirmasi', 'Kabar perubahan'] as const).map((c) => ({
+            label: c, value: s.tpl.filter((t) => tplCategory(t.key) === c).length, on: s.tcat === c, onClick: () => set((d) => { d.tcat = c }),
+          })),
+          { label: 'Nonaktif', value: off, tone: off ? 'bad' as const : undefined },
+        ]}
+      />
+      <div className="tabs" id="t-chips">
+        {cats.map((c) => (
+          <button key={c} className={c === s.tcat ? 'on' : ''} onClick={() => set((d) => { d.tcat = c })}>
+            {c}<i>{c === 'Semua' ? s.tpl.length : s.tpl.filter((t) => tplCategory(t.key) === c).length}</i>
+          </button>
+        ))}
+      </div>
+      <div className="g-bar">
+        <input className="in" placeholder="Cari nama atau kunci template" aria-label="Cari template"
           value={s.tq} onChange={(e) => { const v = e.target.value; set((d) => { d.tq = v }) }} />
       </div>
       <div className="card" id="t-list">
@@ -141,8 +150,6 @@ export function TemplateView() {
             </div>
           )
         }) : <div className="mut" style={{ padding: 20, textAlign: 'center' }}>Tidak ada template.</div>}
-      </div>
-      </div>
       </div>
     </section>
   )
