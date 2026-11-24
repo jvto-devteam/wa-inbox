@@ -186,19 +186,39 @@ export function HubView() {
         </div>
 
         <div className="db-c s12">
-          <div className="db-h"><h3>Agent hari ini</h3><span className="mut sm">geser untuk melihat semua</span><button type="button" className="x" onClick={() => hubGo('agent')}>Riwayat Agent</button></div>
+          <div className="db-h"><h3>Agent hari ini</h3><button type="button" className="x" onClick={() => hubGo('agent')}>Riwayat Agent</button></div>
+          <div className="db-sum">
+            <span className="pill good">{aktif} aktif</span>
+            <span className="pill info">{today.length} tugas</span>
+            <span className="pill good">{ok} berhasil</span>
+            {gagalToday > 0 && <span className="pill bad">{gagalToday} gagal</span>}
+          </div>
           <div className="db-strip">
             {AGENT_KEYS.map((k) => {
               const ev = today.filter((e) => e.a === k)
               const okK = ev.filter((e) => e.s === 'ok').length
+              const badK = ev.filter((e) => e.s === 'gagal').length
+              const restK = ev.length - okK - badK
+              const last = ev[0]
+              const mode = s.pause ? ['off', 'Dijeda'] : s.agm[k] === 'mati' ? ['off', 'Mati'] : s.agm[k] === 'draf' ? ['dr', 'Draf'] : ['on', 'Otomatis']
               return (
                 <button key={k} type="button" className="db-ag" style={{ '--g1': G[k][0], '--g2': G[k][1] } as Css}
                   onClick={() => hubGo('agent', (d) => { d.aag = k })}>
-                  {s.agm[k] === 'mati' ? <span className="tf">Mati</span> : s.agm[k] === 'draf' ? <span className="tf">Draf</span> : null}
-                  <span className="rb" dangerouslySetInnerHTML={{ __html: robotSvg(k) }} />
-                  <span className="tn">{AGS[k][0]}</span>
-                  <span className="tv">{ev.length}<small>tugas{ev.length - okK ? ' · ' + (ev.length - okK) + ' gagal' : ''}</small></span>
-                  <span className="mt" aria-hidden="true"><span style={{ width: (ev.length ? (okK / ev.length) * 100 : 0) + '%' }} /></span>
+                  <span className="hd">
+                    <span className="rb" dangerouslySetInnerHTML={{ __html: robotSvg(k) }} />
+                    <span className="tn">{AGS[k][0]}</span>
+                    <span className={'md ' + mode[0]}>{mode[1]}</span>
+                  </span>
+                  <span className="tv">
+                    <b>{ev.length}</b><small>tugas</small>
+                    {badK > 0 && <span className="bad">{badK} gagal</span>}
+                  </span>
+                  <span className="mt" aria-hidden="true">
+                    {okK > 0 && <span style={{ flex: okK, background: 'var(--good)' }} />}
+                    {restK > 0 && <span style={{ flex: restK, background: 'var(--warn)' }} />}
+                    {badK > 0 && <span style={{ flex: badK, background: 'var(--bad)' }} />}
+                  </span>
+                  <span className="ft">{last ? 'Terakhir ' + last.t + ' · ' + last.c : 'Belum ada tugas hari ini'}</span>
                 </button>
               )
             })}

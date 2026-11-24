@@ -97,7 +97,13 @@ describe('/new', () => {
     expect(screen.getByText('Kenapa belum booking')).toBeInTheDocument()
     expect(screen.getByText(/lead menunggu balasan kita/)).toBeInTheDocument()
     expect(screen.getByRole('img', { name: /^Inquiry dan booking 8 minggu/ })).toBeInTheDocument()
-    expect(document.querySelectorAll('.db-ag')).toHaveLength(8)
+    const tiles = document.querySelectorAll('.db-ag')
+    expect(tiles).toHaveLength(8)
+    const balas = Array.from(tiles).find((t) => t.textContent?.includes('Balas pesan'))!
+    expect(balas.textContent).toMatch(/Otomatis/)
+    expect(balas.textContent).toMatch(/Terakhir \d\d:\d\d · /)
+    const lead = Array.from(tiles).find((t) => t.textContent?.includes('Follow-up lead'))!
+    expect(lead.textContent).toMatch(/Draf/)
     expect(fetchMock).not.toHaveBeenCalled()
     vi.unstubAllGlobals()
   })
