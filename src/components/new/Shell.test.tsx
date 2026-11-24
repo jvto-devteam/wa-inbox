@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { NewShell } from './Shell'
 import { viewFromPath } from './store'
@@ -77,7 +77,7 @@ describe('/new', () => {
 
   it('Template pesan: buka, ubah, simpan', () => {
     at('/new/template', <TemplateView />)
-    fireEvent.click(screen.getByText('Reminder', { selector: '#t-chips button', exact: false }))
+    fireEvent.click(within(document.getElementById('t-chips')!).getByText('Reminder').closest('button')!)
     const row = screen.getByText('payment_reminder_balance').closest('.item') as HTMLElement
     fireEvent.click(row)
     const ta = screen.getByLabelText('Isi pesan') as HTMLTextAreaElement

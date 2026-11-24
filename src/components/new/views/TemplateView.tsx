@@ -7,7 +7,6 @@ import { useState } from 'react'
 import { AGS } from '@/lib/new/mock-data'
 import { TPL_CATS, exampleValues, initialTemplates, tplAgent, tplCategory } from '@/lib/new/templates'
 import { renderSystemTemplate, validateTemplateBody } from '@/lib/system-templates/render'
-import { PageHero } from '../PageHero'
 import { useNew } from '../store'
 
 type Css = React.CSSProperties & Record<`--${string}`, string>
@@ -99,30 +98,21 @@ export function TemplateView() {
   ]
   return (
     <section className="view fx" id="v-template">
-      <PageHero
-        view="template"
-        kicker="Template pesan sistem"
-        title={s.tpl.length + ' template pesan'}
-        sub={kpi[1][1] + ' ke tamu, ' + kpi[2][1] + ' internal (crew, vendor, hotel, tim). Dikirim legacy dan new-backoffice lewat wa-inbox.'}
-        status={{ text: off ? off + ' nonaktif' : 'Semua aktif', off: off > 0 }}
-        kpiId="t-hk"
-        kpis={[
-          { label: 'Semua', value: s.tpl.length, detail: 'pesan sistem', on: s.tcat === 'Semua', onClick: () => set((d) => { d.tcat = 'Semua' }) },
-          ...(['Reminder', 'Konfirmasi', 'Kabar perubahan'] as const).map((c) => ({
-            label: c, value: s.tpl.filter((t) => tplCategory(t.key) === c).length,
-            detail: c === 'Reminder' ? 'dikirim agent reminder' : c === 'Konfirmasi' ? 'booking & pembayaran' : 'ke vendor & crew',
-            on: s.tcat === c, onClick: () => set((d) => { d.tcat = c }),
-          })),
-          { label: 'Nonaktif', value: off, tone: off ? 'bad' as const : undefined, detail: off ? 'permintaan kirim ditolak' : 'tidak ada' },
-        ]}
-      />
-      <div className="chips" id="t-chips">
-        {cats.map((c) => (
-          <button key={c} className={c === s.tcat ? 'on' : ''} onClick={() => set((d) => { d.tcat = c })}>
-            {c} {c === 'Semua' ? s.tpl.length : s.tpl.filter((t) => tplCategory(t.key) === c).length}
-          </button>
-        ))}
-      </div>
+      <div className="tp-wrap">
+      <aside className="tp-side">
+        <div className="tp-sum">
+          <b>{s.tpl.length}</b> template pesan sistem
+          <span>{kpi[1][1]} ke tamu · {kpi[2][1]} internal{off ? ' · ' : ''}{off ? <em>{off} nonaktif</em> : ''}</span>
+        </div>
+        <div className="tp-cats" id="t-chips">
+          {cats.map((c) => (
+            <button key={c} className={c === s.tcat ? 'on' : ''} onClick={() => set((d) => { d.tcat = c })}>
+              <span>{c}</span><b>{c === 'Semua' ? s.tpl.length : s.tpl.filter((t) => tplCategory(t.key) === c).length}</b>
+            </button>
+          ))}
+        </div>
+      </aside>
+      <div className="tp-main">
       <div style={{ marginBottom: 10 }}>
         <input className="in" placeholder="Cari nama atau kunci template" aria-label="Cari template" style={{ maxWidth: 320 }}
           value={s.tq} onChange={(e) => { const v = e.target.value; set((d) => { d.tq = v }) }} />
@@ -151,6 +141,8 @@ export function TemplateView() {
             </div>
           )
         }) : <div className="mut" style={{ padding: 20, textAlign: 'center' }}>Tidak ada template.</div>}
+      </div>
+      </div>
       </div>
     </section>
   )

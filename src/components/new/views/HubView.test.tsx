@@ -59,7 +59,7 @@ describe('Dashboard: setiap item punya rujukan', () => {
     const hub = renderWith(<RingkasanView />)
     fireEvent.click(within(hub).getByText('Komplain').closest('button')!)
     expect(push).toHaveBeenLastCalledWith('/new/ringkasan')
-    expect(document.querySelector('#r-chips button.on')?.textContent).toBe('komplain')
+    expect(document.querySelector('#r-chips button.on')?.textContent).toMatch(/^komplain \d/)
   })
 
   it('item jadwal → Antrean tab Follow-up agent', () => {
