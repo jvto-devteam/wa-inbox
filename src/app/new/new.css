@@ -517,3 +517,99 @@
 .nwa .drawer,.nwa .drp-panel,.nwa .mpanel,.nwa .udrop,.nwa .mpop,.nwa .sres{animation:fxin .22s ease-out both}
 .nwa .hlbox{border-left:3px solid var(--accent);padding:4px 8px;background:var(--accent-soft);border-radius:6px}
 .nwa .demo{font-size:11px}
+
+/* ---------- Dashboard compact (bento) ----------
+   Palet seri divalidasi dataviz validate_palette.js terhadap surface #fff / #161a23 (2026-11-24):
+   s1 biru, s2 oranye, s3 aqua, s4 kuning. s3/s4 terang < 3:1 -> angka selalu ditulis di samping/atas mark. */
+.nwa{--s1:#2a78d6;--s2:#eb6834;--s3:#1baf7a;--s4:#eda100}
+.nwa[data-theme="dark"]{--s1:#3987e5;--s2:#d95926;--s3:#199e70;--s4:#c98500}
+.nwa .db-hero{position:relative;overflow:hidden;border-radius:16px;padding:14px 18px 50px;margin:0 0 -38px;color:#fff;background:linear-gradient(120deg,#2f63f5 0%,#1c3fc2 70%,#16309a 100%)}
+.nwa .db-hero .hr{position:absolute;right:-26px;top:-34px;width:190px;height:190px;opacity:.2;fill:none;stroke:#fff;stroke-width:1.1;stroke-linecap:round;stroke-linejoin:round;pointer-events:none}
+.nwa .db-hero .hd{font-size:12.5px;opacity:.85}
+.nwa .db-hero h2{margin:2px 0 0;font-size:22px;font-weight:800;letter-spacing:-.02em;color:#fff}
+.nwa .db-hero p{margin:4px 0 0;font-size:13.5px;opacity:.92;max-width:640px}
+.nwa .db-hero .st{position:absolute;right:16px;top:14px;display:inline-flex;align-items:center;gap:7px;background:rgba(255,255,255,.18);border-radius:99px;padding:3px 10px;font-size:12px;font-weight:650}
+.nwa .db-hero .st i{width:8px;height:8px;border-radius:50%;background:#4ade80;animation:hblink 1.6s ease-in-out infinite}
+.nwa .db-hero .st.off i{background:#ff8585;animation:none}
+.nwa .db-kpi{position:relative;z-index:1;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;padding:0 12px}
+.nwa .db-k{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:11px 13px;box-shadow:0 6px 18px rgba(20,30,80,.08);text-align:left;color:var(--ink);display:flex;flex-direction:column;gap:6px;min-width:0;cursor:pointer;transition:transform .15s}
+.nwa .db-k:hover{transform:translateY(-2px)}
+.nwa .db-k .l{font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.nwa .db-k .r{display:flex;align-items:baseline;gap:8px}
+.nwa .db-k .v{font-size:26px;font-weight:800;letter-spacing:-.02em;line-height:1;font-variant-numeric:tabular-nums}
+.nwa .db-k .d{font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.nwa .db-stack{display:flex;gap:2px;height:8px;border-radius:4px;overflow:hidden;background:var(--neutral-bg)}
+.nwa .db-stack span{display:block;height:100%}
+.nwa .db-leg{display:flex;flex-wrap:wrap;gap:2px 10px;font-size:11.5px;color:var(--muted)}
+.nwa .db-leg b{font-weight:650;color:var(--ink)}
+.nwa .db-leg i{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:4px;vertical-align:0}
+.nwa .db-spark{display:block;width:100%;height:28px;overflow:visible}
+.nwa .db-meter{height:8px;border-radius:4px;background:var(--neutral-bg);overflow:hidden}
+.nwa .db-meter span{display:block;height:100%;border-radius:4px;background:var(--s3)}
+.nwa .db-grid{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:12px;margin-top:12px}
+.nwa .db-c{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:12px 14px;min-width:0;display:flex;flex-direction:column}
+.nwa .db-h{display:flex;align-items:center;gap:8px;margin:0 0 8px}
+.nwa .db-h h3{margin:0;font-size:14px;font-weight:700}
+.nwa .db-h .x{margin-left:auto;background:none;border:0;color:var(--accent);font-weight:650;font-size:12.5px;padding:0}
+.nwa .s4{grid-column:span 4}.nwa .s5{grid-column:span 5}.nwa .s3{grid-column:span 3}.nwa .s6{grid-column:span 6}.nwa .s7{grid-column:span 7}.nwa .s12{grid-column:span 12}
+.nwa .db-att{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.nwa .db-a{display:flex;align-items:center;gap:9px;border:1px solid var(--line);border-radius:11px;padding:8px 10px;background:var(--surface2);text-align:left;color:var(--ink);min-width:0}
+.nwa .db-a:hover{border-color:var(--accent)}
+.nwa .db-a .n{flex:none;min-width:30px;height:30px;border-radius:9px;display:grid;place-items:center;font-weight:800;font-size:15px;font-variant-numeric:tabular-nums;background:var(--neutral-bg)}
+.nwa .db-a .n.w{background:var(--warn-bg);color:var(--warn)}.nwa .db-a .n.b{background:var(--bad-bg);color:var(--bad)}.nwa .db-a .n.i{background:var(--accent-soft);color:var(--accent)}
+.nwa .db-a b{display:block;font-size:12.5px;font-weight:650;line-height:1.25}
+.nwa .db-a span.t{display:block;font-size:11.5px;color:var(--muted);line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.nwa .db-cols{position:relative;flex:1;display:grid;grid-template-columns:repeat(8,minmax(0,1fr));gap:6px;align-items:end;min-height:132px;padding-top:16px}
+.nwa .db-cols .gl{position:absolute;left:0;right:0;border-top:1px dashed var(--line);pointer-events:none}
+.nwa .db-col{position:relative;height:100%;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;gap:4px;cursor:default}
+.nwa .db-col .bars{display:flex;align-items:flex-end;gap:2px;width:100%;height:110px}
+.nwa .db-col .bars span{flex:1;border-radius:4px 4px 0 0;min-height:2px;position:relative}
+.nwa .db-col .bars em{position:absolute;bottom:100%;left:50%;transform:translateX(-50%);font-style:normal;font-size:10.5px;font-weight:700;color:var(--ink);padding-bottom:1px}
+.nwa .db-col small{font-size:10.5px;color:var(--muted);white-space:nowrap}
+.nwa .db-col.on .bars{outline:2px solid var(--accent-soft);outline-offset:2px;border-radius:5px}
+.nwa .db-tip{position:absolute;z-index:3;top:0;transform:translateX(-50%);background:var(--ink);color:var(--bg);border-radius:8px;padding:5px 8px;font-size:11.5px;white-space:nowrap;pointer-events:none;box-shadow:0 6px 16px rgba(0,0,0,.2)}
+.nwa .db-hb{display:grid;grid-template-columns:minmax(0,1fr) 22px;gap:2px 8px;align-items:center;font-size:12.5px;margin:0 0 7px}
+.nwa .db-hb .bar{grid-column:1/2;height:7px;border-radius:4px;background:var(--neutral-bg);overflow:hidden}
+.nwa .db-hb .bar span{display:block;height:100%;border-radius:4px;background:var(--s2)}
+.nwa .db-hb b{grid-row:1/3;grid-column:2;text-align:right;font-variant-numeric:tabular-nums}
+.nwa .db-call{margin-top:auto;display:flex;align-items:center;gap:8px;border-radius:10px;padding:7px 10px;background:var(--bad-bg);color:var(--bad);font-size:12.5px;font-weight:600;border:0;text-align:left}
+.nwa .db-strip{display:flex;gap:10px;overflow-x:auto;scroll-snap-type:x proximity;padding:2px 2px 6px;scrollbar-width:thin}
+.nwa .db-ag{flex:none;width:168px;scroll-snap-align:start;display:grid;grid-template-columns:44px minmax(0,1fr);gap:2px 10px;align-items:center;border-radius:13px;padding:9px 11px;color:#fff;border:0;text-align:left;background:linear-gradient(135deg,var(--g1),var(--g2));position:relative}
+.nwa .db-ag .rb{grid-row:1/4;width:44px;height:44px;filter:drop-shadow(0 4px 4px rgba(0,0,0,.18))}
+.nwa .db-ag .rb svg{width:100%;height:100%}
+.nwa .db-ag .tn{font-size:11.5px;font-weight:650;opacity:.95;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.nwa .db-ag .tv{font-size:19px;font-weight:800;line-height:1.1}
+.nwa .db-ag .tv small{font-size:11px;font-weight:650;opacity:.85;margin-left:3px}
+.nwa .db-ag .mt{height:4px;border-radius:2px;background:rgba(255,255,255,.3);overflow:hidden}
+.nwa .db-ag .mt span{display:block;height:100%;background:#fff}
+.nwa .db-ag .tf{position:absolute;right:7px;top:7px;font-size:10px;font-weight:700;background:rgba(0,0,0,.25);border-radius:99px;padding:1px 7px}
+.nwa .db-chips{display:flex;gap:5px;flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;margin:0 0 6px}
+.nwa .db-chips button{flex:none;border:1px solid var(--line);background:var(--surface);border-radius:99px;padding:2px 9px;font-size:11.5px;font-weight:600;color:var(--muted)}
+.nwa .db-chips button.on{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.nwa .db-scroll{max-height:236px;overflow-y:auto;margin:0 -4px;padding:0 4px;scrollbar-width:thin}
+.nwa .db-li{display:flex;gap:9px;width:100%;text-align:left;background:none;border:0;border-top:1px solid var(--line);padding:8px 0;color:var(--ink);align-items:flex-start}
+.nwa .db-li:first-child{border-top:0}
+.nwa .db-li .av{flex:none;width:28px;height:28px;font-size:12px}
+.nwa .db-li .av.bad{background:var(--bad-bg);color:var(--bad)}.nwa .db-li .av.warn{background:var(--warn-bg);color:var(--warn)}.nwa .db-li .av.info{background:var(--accent-soft);color:var(--accent)}
+.nwa .db-li .hb{flex:1;min-width:0}
+.nwa .db-li .tp{display:flex;align-items:center;gap:6px}
+.nwa .db-li .tp b{font-size:13px;font-weight:650}
+.nwa .db-li .tx{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;font-size:12.5px;color:var(--muted);line-height:1.35}
+.nwa .db-tl{position:relative;padding-left:14px}
+.nwa .db-tl::before{content:"";position:absolute;left:4px;top:6px;bottom:6px;border-left:2px solid var(--line)}
+.nwa .db-day{font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin:6px 0 2px}
+.nwa .db-ev{position:relative;display:grid;grid-template-columns:42px minmax(0,1fr);gap:8px;padding:5px 0;font-size:12.5px}
+.nwa .db-ev::before{content:"";position:absolute;left:-14px;top:9px;width:10px;height:10px;border-radius:50%;background:var(--c);box-shadow:0 0 0 2px var(--surface)}
+.nwa .db-ev .t{font-weight:700;font-variant-numeric:tabular-nums}
+.nwa .db-ev b{font-weight:650}
+.nwa .db-ev .mut{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+@media (max-width:1180px){.nwa .db-kpi{grid-template-columns:repeat(2,minmax(0,1fr))}.nwa .s4,.nwa .s5,.nwa .s3,.nwa .s6,.nwa .s7{grid-column:span 6}.nwa .s5{grid-column:span 12}}
+@media (max-width:860px){
+ .nwa .db-hero{margin:-12px -16px -38px;border-radius:0 0 22px 22px;padding:14px 18px 50px}
+ .nwa .db-hero .st{position:static;margin-top:8px}
+ .nwa .db-kpi{padding:0;gap:8px}
+ .nwa .db-k .v{font-size:22px}
+ .nwa .s4,.nwa .s5,.nwa .s3,.nwa .s6,.nwa .s7{grid-column:span 12}
+ .nwa .db-c{border:0}
+ .nwa .db-strip{margin:0 -16px;padding:2px 16px 6px}
+}

@@ -89,14 +89,27 @@ describe('/new', () => {
     expect(screen.getByText('Tersimpan (pratinjau, belum ke server)')).toBeInTheDocument()
   })
 
-  it('Dashboard dan Laporan menampilkan WhatsApp → booking dari data contoh, tanpa fetch', () => {
+  it('Dashboard: KPI, tren, alasan belum booking, strip agent dari data contoh, tanpa fetch', () => {
     const fetchMock = vi.fn()
     vi.stubGlobal('fetch', fetchMock)
     at('/new/dashboard', <HubView />)
-    expect(screen.getByText('WhatsApp → booking minggu ini')).toBeInTheDocument()
-    expect(screen.getByText('Lead menunggu balasan kita')).toBeInTheDocument()
+    expect(screen.getByText('Inquiry vs booking · 8 minggu')).toBeInTheDocument()
+    expect(screen.getByText('Kenapa belum booking')).toBeInTheDocument()
+    expect(screen.getByText(/lead menunggu balasan kita/)).toBeInTheDocument()
+    expect(screen.getByRole('img', { name: /^Inquiry dan booking 8 minggu/ })).toBeInTheDocument()
+    expect(document.querySelectorAll('.db-ag')).toHaveLength(8)
     expect(fetchMock).not.toHaveBeenCalled()
     vi.unstubAllGlobals()
+  })
+
+  it('Dashboard: hover kolom tren menampilkan tooltip angka minggu itu', () => {
+    at('/new/dashboard', <HubView />)
+    const cols = document.querySelectorAll('.db-col')
+    expect(cols).toHaveLength(8)
+    fireEvent.mouseEnter(cols[0])
+    expect(document.querySelector('.db-tip')?.textContent).toMatch(/inquiry · \d+ booking \(\d+%\)/)
+    fireEvent.mouseLeave(cols[0])
+    expect(document.querySelector('.db-tip')).toBeNull()
   })
 
   it('Kirim di Inbox menambah pesan admin dan membuang draf', () => {
