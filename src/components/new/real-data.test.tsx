@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { NewShell } from './Shell'
+import { AgentView } from './views/AgentView'
 import { BotView } from './views/BotView'
 import { KontakView } from './views/KontakView'
 import { TemplateView } from './views/TemplateView'
@@ -144,5 +145,28 @@ describe('Bot: data asli', () => {
     await act(async () => { fireEvent.click(screen.getByText('Coba jawab')) })
     expect(calls.at(-1)).toMatchObject({ method: 'POST', url: '/api/bot-control/simulate', body: { dryRun: true } })
     expect(document.querySelector('.log')?.textContent).toContain('Ijen buka 01:00')
+  })
+})
+
+describe('Riwayat Agent: data asli', () => {
+  it('memuat /api/new/agent-activity untuk hari ini, banner kuning bila ada gagal, saring status, detail', async () => {
+    const t = (h: number) => { const d = new Date(); d.setHours(h, 5, 0, 0); return d.toISOString() }
+    routes['GET /api/new/agent-activity'] = () => ({ body: { items: [
+      { id: 'job:1', at: t(10), agent: 'reminder', status: 'ok', title: 'Pengingat pelunasan', input: 'Template payment_reminder_balance ke tamu', output: 'Terkirim', conversationId: 'c1', contact: 'Sarah' },
+      { id: 'job:2', at: t(9), agent: 'crew', status: 'gagal', title: 'Reminder crew', input: 'Template crew_reminder_group ke crew', output: 'Gagal terkirim: grup tidak ada', conversationId: null, contact: null },
+      { id: 'run:3', at: t(9), agent: 'balas', status: 'ok', title: 'Membalas pesan tamu', input: 'Pesan tamu: "hi"', output: 'Balasan: "hello"', conversationId: 'c2', contact: 'Tom' },
+    ] } })
+    show('/new/agent', <AgentView />)
+    await waitFor(() => expect(document.querySelector('#v-agent .bt-ban b')?.textContent).toBe('3 aktivitas agent'))
+    const q = calls.find((c) => c.url.startsWith('/api/new/agent-activity'))!
+    const u = new URL(q.url, 'http://x')
+    expect(new Date(u.searchParams.get('to')!).getTime() - new Date(u.searchParams.get('from')!).getTime()).toBe(864e5)
+    expect(document.querySelector('#v-agent .bt-ban')?.className).toContain('warn')
+    expect(Array.from(document.querySelectorAll('.ag-h')).map((e) => e.textContent)).toEqual(['10.00', '09.00'])
+
+    fireEvent.click(within(document.getElementById('g-hk')!).getByText('Gagal').closest('button')!)
+    expect(document.querySelectorAll('#g-t .ag-ev')).toHaveLength(1)
+    fireEvent.click(document.querySelector('#g-t .ag-ev')!)
+    expect(document.querySelector('#g-drawer')?.textContent).toContain('Gagal terkirim: grup tidak ada')
   })
 })

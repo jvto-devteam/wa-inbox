@@ -66,17 +66,6 @@ export function rData(v: string, t0: Date = startOfDay()): DaySummary {
   }
 }
 
-export function cekLabel(e: AgentEvent): string {
-  const k = e.h.k
-  if (k === 'msg') return e.a === 'balas' ? 'Lihat balasan' : 'Lihat pesan'
-  if (k === 'poin') return 'Lihat poin'
-  if (k === 'note') return 'Lihat note'
-  if (k === 'ring') return 'Lihat ringkasan'
-  if (k === 'booking') return 'Lihat booking'
-  if (k === 'out') return 'Lihat kiriman'
-  return 'Lihat di Antrean'
-}
-
 export function initials(n: string): string {
   return n.slice(0, 2).toUpperCase()
 }

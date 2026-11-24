@@ -43,8 +43,6 @@ export interface SheetItem {
 
 export type DayKey = 'r' | 'a' | 's'
 
-export type DrawerDesc = { kind: 'agent'; idx: number }
-
 export interface RemReq {
   name: string
   onDone: (off: number, tm: string) => void
@@ -65,7 +63,6 @@ export interface NewStore {
   sheet: (title: string, items: SheetItem[]) => void
   remind: (req: RemReq) => void
   pickRange: (k: DayKey) => void
-  drawer: (d: DrawerDesc | null) => void
   setChatMode: (m: 'list' | 'chat') => void
   toggleInfo: (on?: boolean) => void
 }

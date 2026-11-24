@@ -1,46 +1,77 @@
 'use client'
 
-import { DOFF, dFmt, dayMatch, parseR } from '@/lib/new/dates'
-import { cekLabel } from '@/lib/new/logic'
-import { AGENT_KEYS, AGS, AST } from '@/lib/new/mock-data'
-import { useAgentCek } from '../agent-actions'
-import { DaySelect } from '../Overlays'
+// Riwayat Agent (DATA ASLI): GET /api/new/agent-activity untuk rentang hari yang dipilih. Aktivitas
+// dirangkai dari log yang sudah ada (keputusan bot, pesan sistem, aksi booking, ringkasan); lihat
+// src/lib/new/agent-activity.ts. Baca saja.
+import { useState } from 'react'
+import type { Activity, ActStatus } from '@/lib/new/agent-activity'
+import { DOFF, dAt, dFmt, dOff, parseR } from '@/lib/new/dates'
+import { AGENT_KEYS, AGS } from '@/lib/new/mock-data'
 import { Banner, StatStrip } from '../Blocks'
 import { NAV_ICON } from '../icons'
+import { DaySelect } from '../Overlays'
 import { useNew } from '../store'
+import { useApi } from '../useApi'
 
 type Css = React.CSSProperties & Record<`--${string}`, string>
+const ST: Record<ActStatus, [string, string]> = { ok: ['good', 'Berhasil'], gagal: ['bad', 'Gagal'], tunggu: ['warn', 'Menunggu'], batal: ['neu', 'Dibatalkan'] }
+const hm = (iso: string) => { const d = new Date(iso); return ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2) }
+
+/** Hari pilihan ("Hari ini", "Kemarin", atau rentang r:f:t) -> [from, to) tengah malam waktu peramban (WIB). */
+export function dayRange(v: string): { from: string; to: string; multi: boolean } {
+  const r = parseR(v)
+  const f = r ? r.f : DOFF[v] ?? 0
+  const t = r ? r.t : DOFF[v] ?? 0
+  return { from: dAt(f).toISOString(), to: dAt(t + 1).toISOString(), multi: t > f }
+}
+
+function Detail({ a, onClose }: { a: Activity; onClose: () => void }) {
+  const t = ST[a.status]
+  return (
+    <div className="drawer" role="dialog" aria-label="Detail aktivitas agent">
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <b style={{ fontSize: 16, flex: 1 }}>{a.title}</b>
+        <button className="btn sm" aria-label="Tutup" onClick={onClose}>✕</button>
+      </div>
+      <div style={{ margin: '8px 0', display: 'flex', gap: 8, alignItems: 'center' }}>
+        <span className="ag" style={{ '--c': `var(${AGS[a.agent][1]})` } as Css}>{AGS[a.agent][0]}</span>
+        <span className={'pill ' + t[0]}>{t[1]}</span>
+      </div>
+      <div className="box"><h4>Waktu dan percakapan</h4><dl className="kv"><dt>Waktu</dt><dd>{new Date(a.at).toLocaleString('id-ID', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</dd><dt>Percakapan</dt><dd>{a.contact || '—'}</dd></dl></div>
+      <div className="box" style={{ marginTop: 10 }}><h4>Masukan</h4>{a.input}</div>
+      <div className="box" style={{ marginTop: 10 }}><h4>Hasil</h4>{a.output}</div>
+      {a.conversationId && <div className="acts" style={{ marginTop: 12 }}><a className="btn pri" href={'/inbox?conversation=' + a.conversationId}>Buka chat</a></div>}
+    </div>
+  )
+}
 
 export function AgentView() {
-  const st = useNew()
-  const { s, set } = st
-  const cek = useAgentCek()
-  const base = s.ae.filter((e) => dayMatch(e.d, s.aday))
-  const n = (x: string) => base.filter((e) => e.s === x).length
+  const { s, set } = useNew()
+  const [open, setOpen] = useState<Activity | null>(null)
+  const rg = dayRange(s.aday)
+  const api = useApi<{ items: Activity[] }>('/api/new/agent-activity?from=' + encodeURIComponent(rg.from) + '&to=' + encodeURIComponent(rg.to))
+  const base = api.data?.items ?? []
+  const n = (x: ActStatus) => base.filter((e) => e.status === x).length
   const aq = s.aq.trim().toLowerCase()
-  const R = base.filter((e) => (s.aag === 'Semua' || e.a === s.aag) && (s.ast === 'Semua' || e.s === s.ast) && (!aq || (e.c + ' ' + e.ti).toLowerCase().includes(aq)))
-  const isRange = !!parseR(s.aday)
-  // Linimasa per jam ("10.00"), terbaru di atas; rentang tanggal menambahkan harinya.
-  // Urut terbaru dulu: hari (DOFF), lalu jam; "sekarang" paling atas. Grup berurutan, jadi kunci grup unik.
-  const rank = (e: (typeof R)[number]) => (DOFF[e.d] ?? -99) * 10000 + (/^\d\d:\d\d$/.test(e.t) ? +e.t.replace(':', '') : 9999)
-  const sorted = [...R].sort((a, b) => rank(b) - rank(a))
-  const groups: [string, typeof R][] = []
-  for (const e of sorted) {
-    const h = /^\d\d:/.test(e.t) ? e.t.slice(0, 2) + '.00' : 'Baru saja'
-    const g = (isRange ? e.d + ' · ' : '') + h
+  const R = base.filter((e) => (s.aag === 'Semua' || e.agent === s.aag) && (s.ast === 'Semua' || e.status === s.ast) && (!aq || ((e.contact || '') + ' ' + e.title).toLowerCase().includes(aq)))
+  // Linimasa per jam, terbaru dulu (API sudah mengurutkan); rentang beberapa hari menambahkan tanggal.
+  const groups: [string, Activity[]][] = []
+  for (const e of R) {
+    const d = new Date(e.at)
+    const g = (rg.multi ? dFmt(dOff(d)) + ' · ' : '') + ('0' + d.getHours()).slice(-2) + '.00'
     const last = groups[groups.length - 1]
     if (last && last[0] === g) last[1].push(e)
     else groups.push([g, [e]])
   }
-  const busiest = AGENT_KEYS.map((k) => [k, base.filter((e) => e.a === k).length] as const).sort((a, b) => b[1] - a[1]).find((x) => x[1] > 0)
+  const busiest = AGENT_KEYS.map((k) => [k, base.filter((e) => e.agent === k).length] as const).sort((a, b) => b[1] - a[1]).find((x) => x[1] > 0)
 
   return (
     <section className="view fx" id="v-agent">
       <Banner
-        tone={n('gagal') ? 'warn' : 'ok'}
+        tone={api.error ? 'off' : n('gagal') ? 'warn' : 'ok'}
         icon={NAV_ICON.agent}
-        title={base.length + ' aktivitas agent'}
-        sub={(n('gagal') ? n('gagal') + ' gagal perlu dicek' : 'Tidak ada yang gagal') + (busiest ? ' · paling sibuk ' + AGS[busiest[0]][0] + ' (' + busiest[1] + ')' : '')}
+        title={api.loading ? 'Memuat aktivitas…' : api.error ? 'Gagal memuat riwayat agent' : base.length + ' aktivitas agent'}
+        sub={api.error || (api.loading ? undefined : (n('gagal') ? n('gagal') + ' gagal perlu dicek' : 'Tidak ada yang gagal') + (busiest ? ' · paling sibuk ' + AGS[busiest[0]][0] + ' (' + busiest[1] + ')' : ''))}
         right={<DaySelect k="a" id="g-day" value={s.aday} onChange={(v) => set((d) => { d.aday = v; d.aag = 'Semua' })} />}
       />
       <StatStrip
@@ -56,12 +87,12 @@ export function AgentView() {
         <button className={s.aag === 'Semua' ? 'on' : ''} onClick={() => set((d) => { d.aag = 'Semua' })}>Semua<i>{base.length}</i></button>
         {AGENT_KEYS.map((k) => (
           <button key={k} className={s.aag === k ? 'on' : ''} onClick={() => set((d) => { d.aag = k })}>
-            {AGS[k][0]}<i>{base.filter((e) => e.a === k).length}</i>
+            {AGS[k][0]}<i>{base.filter((e) => e.agent === k).length}</i>
           </button>
         ))}
       </div>
       <div className="g-bar">
-        <input className="in" id="g-q" placeholder="Cari percakapan atau aktivitas" aria-label="Cari aktivitas"
+        <input className="in" id="g-q" placeholder="Cari kontak atau aktivitas" aria-label="Cari aktivitas"
           value={s.aq} onChange={(e) => { const v = e.target.value; set((d) => { d.aq = v }) }} />
         <select className="sel" id="g-st" aria-label="Saring status" value={s.ast}
           onChange={(e) => { const v = e.target.value; set((d) => { d.ast = v }) }}>
@@ -72,30 +103,34 @@ export function AgentView() {
         </select>
       </div>
       <div className="pg-card ag-tl" id="g-t">
-        {R.length ? groups.map(([g, evs]) => (
-          <div key={g} className="ag-g">
-            <div className="ag-h">{g}</div>
-            {evs.map((e) => {
-              const idx = s.ae.indexOf(e)
-              const t = AST[e.s]
-              return (
-                <div key={idx} className="ag-ev" data-i={idx} role="button" tabIndex={0} style={{ '--c': `var(${AGS[e.a][1]})` } as Css}
-                  onClick={() => st.drawer({ kind: 'agent', idx })}
-                  onKeyDown={(ev) => { if (ev.key === 'Enter') st.drawer({ kind: 'agent', idx }) }}>
-                  <div className="b" style={{ minWidth: 0 }}>
-                    <b>{e.ti}</b>
-                    <span className="m"><span className="ag" style={{ '--c': `var(${AGS[e.a][1]})` } as Css}>{AGS[e.a][0]}</span> · {e.c} · {e.t}{isRange && DOFF[e.d] !== undefined ? ', ' + dFmt(DOFF[e.d]) : ''}</span>
+        {api.loading ? <div className="mut" style={{ textAlign: 'center', padding: 20 }}>Memuat…</div>
+          : R.length ? groups.map(([g, evs]) => (
+            <div key={g} className="ag-g">
+              <div className="ag-h">{g}</div>
+              {evs.map((e) => {
+                const t = ST[e.status]
+                return (
+                  <div key={e.id} className="ag-ev" data-i={e.id} role="button" tabIndex={0} style={{ '--c': `var(${AGS[e.agent][1]})` } as Css}
+                    onClick={() => setOpen(e)} onKeyDown={(ev) => { if (ev.key === 'Enter') setOpen(e) }}>
+                    <div className="b" style={{ minWidth: 0 }}>
+                      <b>{e.title}</b>
+                      <span className="m"><span className="ag" style={{ '--c': `var(${AGS[e.agent][1]})` } as Css}>{AGS[e.agent][0]}</span>{e.contact ? ' · ' + e.contact : ''} · {hm(e.at)}</span>
+                    </div>
+                    <div className="r">
+                      <span className={'pill ' + t[0]}>{t[1]}</span>
+                      {e.conversationId && <a className="btn sm" href={'/inbox?conversation=' + e.conversationId} onClick={(ev) => ev.stopPropagation()}>Buka chat</a>}
+                    </div>
                   </div>
-                  <div className="r">
-                    <span className={'pill ' + t[0]}>{t[1]}</span>
-                    <button className="btn sm cekb" onClick={(ev) => { ev.stopPropagation(); cek(e) }}>{cekLabel(e)}</button>
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        )) : <div className="mut" style={{ textAlign: 'center', padding: 20 }}>Tidak ada aktivitas.</div>}
+                )
+              })}
+            </div>
+          )) : <div className="mut" style={{ textAlign: 'center', padding: 20 }}>{api.error ? 'Tidak bisa memuat riwayat.' : 'Tidak ada aktivitas.'}</div>}
       </div>
+      {open && (
+        <div id="g-drawer" onClick={(e) => { if (e.target === e.currentTarget) setOpen(null) }}>
+          <Detail a={open} onClose={() => setOpen(null)} />
+        </div>
+      )}
     </section>
   )
 }
