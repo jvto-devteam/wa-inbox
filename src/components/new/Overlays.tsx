@@ -2,8 +2,8 @@
 
 import { useState } from 'react'
 import { MONL, WEEKDAYS, dAt, dFmt, dOff, hhmm, monthCells, parseR, rLabel, whenLabel } from '@/lib/new/dates'
-import { cekLabel, initials } from '@/lib/new/logic'
-import { AGS, AST, KT, SRC } from '@/lib/new/mock-data'
+import { cekLabel } from '@/lib/new/logic'
+import { AGS, AST, SRC } from '@/lib/new/mock-data'
 import { markWrong, useAgentCek } from './agent-actions'
 import { useNew, type DayKey, type RemReq, type SheetItem } from './store'
 
@@ -169,35 +169,6 @@ export function RemPicker({ req, onClose }: { req: RemReq; onClose: () => void }
               onClick={() => { if (past) return; onClose(); req.onDone(st.off, st.tm) }}>Jadwalkan</button>
           </span>
         </div>
-      </div>
-    </div>
-  )
-}
-
-export function KontakDrawer({ idx, onClose }: { idx: number; onClose: () => void }) {
-  const st = useNew()
-  const r = KT[idx]
-  if (!r) return null
-  return (
-    <div className="drawer" role="dialog" aria-label="Detail kontak">
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <div className="av">{initials(r.n)}</div>
-        <div><b style={{ fontSize: 16 }}>{r.n}</b><div className="mut sm">{r.ch} · {r.lab}</div></div>
-        <button className="btn sm" style={{ marginLeft: 'auto' }} aria-label="Tutup" onClick={onClose}>✕</button>
-      </div>
-      <div className="box" style={{ marginTop: 12 }}><h4>Booking</h4><dl className="kv"><dt>Kode</dt><dd>{r.kode}</dd><dt>Ringkas</dt><dd>{r.ringkas}</dd></dl></div>
-      <div className="box" style={{ marginTop: 10 }}><h4>Label</h4><span className="pill info">{r.lab}</span></div>
-      <div className="box" style={{ marginTop: 10 }}><h4>Reminder</h4><span className="mut">Belum ada</span></div>
-      <div className="box" style={{ marginTop: 10 }}><h4>Catatan</h4><textarea className="ta" aria-label="Catatan" placeholder="Tulis catatan internal" /></div>
-      <div className="box" style={{ marginTop: 10 }}>
-        <h4>Consent</h4>
-        <div className="set">
-          <div><b>Boleh dihubungi lewat WhatsApp</b><span className="h">Hanya tampil di halaman Kontak</span></div>
-          <label className="sw"><input type="checkbox" defaultChecked aria-label="Consent" /><i /></label>
-        </div>
-      </div>
-      <div className="acts" style={{ marginTop: 12 }}>
-        <button className="btn pri" onClick={() => { onClose(); st.openConv(r.n) }}>Buka di Inbox</button>
       </div>
     </div>
   )

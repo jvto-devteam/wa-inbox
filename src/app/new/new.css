@@ -778,3 +778,6 @@
 .nwa .g-bar{display:flex;gap:8px;margin:0 0 10px}
 .nwa .g-bar .in{flex:1;max-width:360px}
 .nwa .g-bar .sel{width:auto}
+.nwa #t-drawer:has(.drawer)::before{content:"";position:fixed;inset:0;background:rgba(10,14,24,.25);z-index:39}
+.nwa .view.fx>#t-drawer,.nwa .view.fx>#k-drawer{animation:none}
+.nwa #k-drawer:has(.drawer)::before{content:"";position:fixed;inset:0;background:rgba(10,14,24,.25);z-index:39}

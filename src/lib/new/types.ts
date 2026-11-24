@@ -152,7 +152,6 @@ export interface State {
   kn: Knowledge[]
   gap: string[]
   bs: BotSettings
-  tpl: Tpl[]
   // UI yang dibawa lintas halaman (mis. dari Dashboard langsung ke tab tertentu)
   icv: number
   ifl: string

@@ -3,12 +3,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { NewShell } from './Shell'
 import { AgentView } from './views/AgentView'
 import { AntreanView } from './views/AntreanView'
-import { BotView } from './views/BotView'
 import { InboxView } from './views/InboxView'
-import { KontakView } from './views/KontakView'
 import { LaporanView } from './views/LaporanView'
 import { RingkasanView } from './views/RingkasanView'
-import { TemplateView } from './views/TemplateView'
 
 vi.mock('next/navigation', () => ({ usePathname: () => '/new/antrean', useRouter: () => ({ push: vi.fn() }) }))
 
@@ -29,9 +26,6 @@ describe('tata letak berbeda per halaman /new', () => {
     ['Ringkasan', <RingkasanView key="r" />, '#v-ringkasan .pg-urgent', false],
     ['Laporan', <LaporanView key="l" />, '.db-hero', true],
     ['Riwayat Agent', <AgentView key="g" />, '#v-agent .bt-ban', false],
-    ['Kontak', <KontakView key="k" />, '.kt-c', false],
-    ['Template', <TemplateView key="t" />, '#v-template .bt-ban', false],
-    ['Bot', <BotView key="b" />, '.bt-ban', false],
     ['Inbox', <InboxView key="i" />, '.inbox', false],
   ])('%s', (_n, el, signature, hero) => {
     show(el)
@@ -69,31 +63,6 @@ describe('tata letak berbeda per halaman /new', () => {
     const evs = document.querySelectorAll('#g-t .ag-ev')
     expect(evs.length).toBeGreaterThan(0)
     expect(Array.from(evs).map((e) => e.querySelector('.pill')?.textContent)).toEqual(Array(evs.length).fill('Gagal'))
-  })
-
-  it('Kontak: komposisi Mitra menyaring kartu', () => {
-    show(<KontakView />)
-    fireEvent.click(within(document.getElementById('k-hk')!).getByText('Mitra').closest('button')!)
-    const cards = document.querySelectorAll('#k-t .kt-c')
-    expect(cards).toHaveLength(1)
-    expect(cards[0].textContent).toContain('Vendor Transport Bali')
-  })
-
-  it('Template: pola Bot (banner, strip, tab kategori) dan tab menyaring daftar', () => {
-    show(<TemplateView />)
-    expect(document.querySelector('.bt-ban b')?.textContent).toBe('33 template pesan sistem')
-    fireEvent.click(within(document.getElementById('t-hk')!).getByText('Reminder').closest('button')!)
-    expect(document.querySelectorAll('#t-list .item')).toHaveLength(11)
-    fireEvent.click(within(document.getElementById('t-chips')!).getByText('Trip').closest('button')!)
-    expect(document.querySelectorAll('#t-list .item')).toHaveLength(2)
-  })
-
-  it('Bot: sakelar banner langsung berlaku, strip membuka tab', () => {
-    show(<BotView />)
-    fireEvent.click(screen.getByLabelText('Bot menjawab semua chat', { selector: '.bt-ban input' }))
-    expect(document.querySelector('.bt-ban b')?.textContent).toBe('Bot dimatikan, tim membalas manual')
-    fireEvent.click(within(document.getElementById('b-hk')!).getByText('Knowledge terbit').closest('button')!)
-    expect(document.querySelector('#b-tabs button.on')?.textContent).toBe('Knowledge')
   })
 
   it('Laporan: lead dikelompokkan, yang menunggu balasan kita lebih dulu', () => {
