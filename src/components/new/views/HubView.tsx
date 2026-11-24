@@ -10,6 +10,7 @@ import { AGENT_KEYS, AGS, ALBL, AT_KEYS, KC, SD } from '@/lib/new/mock-data'
 import { periodRange, type WeekPoint } from '@/lib/new/report'
 import type { AtKey, State, ViewKey } from '@/lib/new/types'
 import { robotSvg } from '../robot'
+import { Spark } from '../PageHero'
 import { useNew } from '../store'
 import { useReport } from '../useReport'
 
@@ -18,19 +19,6 @@ type Css = React.CSSProperties & Record<`--${string}`, string>
 const AT_COLOR: Record<AtKey, string> = { Balas: 'var(--s1)', 'Tindak lanjut': 'var(--s2)', 'Janji tim': 'var(--s3)', Reminder: 'var(--s4)' }
 const MONS = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des']
 const d2 = (ymd: string) => { const [, m, d] = ymd.split('-').map(Number); return d + ' ' + MONS[m - 1] }
-
-function Spark({ values }: { values: number[] }) {
-  if (values.length < 2) return null
-  const max = Math.max(1, ...values)
-  const pts = values.map((v, i) => [(i / (values.length - 1)) * 100, 26 - (v / max) * 22] as const)
-  const last = pts[pts.length - 1]
-  return (
-    <svg className="db-spark" viewBox="0 0 100 28" preserveAspectRatio="none" aria-hidden="true">
-      <polyline points={pts.map((p) => p.join(',')).join(' ')} fill="none" stroke="var(--s1)" strokeWidth="2" vectorEffect="non-scaling-stroke" strokeLinejoin="round" strokeLinecap="round" />
-      <circle cx={last[0]} cy={last[1]} r="2.6" fill="var(--s1)" stroke="var(--surface)" strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
-    </svg>
-  )
-}
 
 function TrendChart({ data, onPick }: { data: WeekPoint[]; onPick: () => void }) {
   const [hov, setHov] = useState<number | null>(null)
@@ -142,7 +130,7 @@ export function HubView() {
           <span className="db-meter" aria-hidden="true"><span style={{ width: (today.length ? (ok / today.length) * 100 : 0) + '%' }} /></span>
           <span className="db-leg"><span>Tingkat berhasil <b>{today.length ? Math.round((ok / today.length) * 100) : 0}%</b></span></span>
         </button>
-        <button type="button" className="db-k" onClick={() => toLaporan('#l-kpi .card')}>
+        <button type="button" className="db-k" onClick={() => toLaporan('#l-hk .db-k')}>
           <span className="l">Inquiry minggu ini</span>
           <span className="r"><span className="v">{RP?.inquiries ?? 0}</span><span className="d">chat WhatsApp baru</span></span>
           {RP && <Spark values={RP.trend.map((w) => w.inquiries)} />}

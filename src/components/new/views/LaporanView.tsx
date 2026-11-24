@@ -6,6 +6,7 @@ import { useState } from 'react'
 import { jakartaDay } from '@/lib/bot/eval/replay-pairs'
 import { MONS } from '@/lib/new/dates'
 import { periodRange, type PeriodKey } from '@/lib/new/report'
+import { Meter, PageHero, Spark } from '../PageHero'
 import { useNew } from '../store'
 import { useReport } from '../useReport'
 
@@ -28,24 +29,24 @@ export function LaporanView() {
 
   return (
     <section className="view fx" id="v-laporan">
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
-        <select className="sel" aria-label="Pilih periode" value={period} onChange={(e) => setPeriod(e.target.value as PeriodKey)}
-          style={{ width: 'auto', padding: '5px 10px', fontSize: 13, borderRadius: 8 }}>
-          {PERIODS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
-        </select>
-        <span className="mut sm">{fmt(from)} – {fmt(to)} {to.slice(0, 4)} · WIB</span>
-      </div>
-
-      <div className="grid g4" id="l-kpi" style={{ marginBottom: 12 }}>
-        {([
-          ['Inquiry baru', R ? R.inquiries : '…', 'chat WhatsApp pertama di periode ini'],
-          ['Jadi booking', R ? R.inquiriesBooked : '…', 'dari inquiry periode ini, sampai hari ini'],
-          ['Konversi', R ? conv + '%' : '…', 'inquiry → booking'],
-          ['Booking dari WA', R ? R.bookings.length : '…', 'tanggal booking di periode ini'],
-        ] as [string, string | number, string][]).map((k) => (
-          <div key={k[0]} className="card kpi"><div className="l">{k[0]}</div><div className="v">{k[1]}</div><div className="d">{k[2]}</div></div>
-        ))}
-      </div>
+      <PageHero
+        view="laporan"
+        kicker={'Laporan WhatsApp → booking · ' + fmt(from) + ' – ' + fmt(to) + ' ' + to.slice(0, 4)}
+        title={R ? R.inquiries + ' inquiry, ' + R.inquiriesBooked + ' jadi booking (' + conv + '%)' : 'Memuat laporan…'}
+        sub={R && R.blockers.length ? 'Alasan belum booking terbanyak: ' + R.blockers[0].label.toLowerCase() + ' (' + R.blockers[0].count + ' lead).' : undefined}
+        right={
+          <select aria-label="Pilih periode" value={period} onChange={(e) => setPeriod(e.target.value as PeriodKey)}>
+            {PERIODS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+          </select>
+        }
+        kpiId="l-hk"
+        kpis={[
+          { label: 'Inquiry baru', value: R ? R.inquiries : '…', detail: 'chat WhatsApp pertama', visual: R ? <Spark values={R.trend.map((w) => w.inquiries)} /> : undefined, onClick: () => st.flash('#l-trend') },
+          { label: 'Jadi booking', value: R ? R.inquiriesBooked : '…', detail: 'konversi ' + conv + '%', visual: <Meter pct={conv} color="var(--s1)" /> },
+          { label: 'Booking dari WA', value: R ? R.bookings.length : '…', detail: 'tanggal booking di periode', onClick: () => st.flash('#l-bookings') },
+          { label: 'Belum booking', value: R ? R.leads.length : '…', tone: R && R.leads.length ? 'warn' : undefined, detail: R ? R.leads.filter((l) => l.lastFrom === 'tamu').length + ' menunggu balasan kita' : '', onClick: () => st.flash('#l-leads') },
+        ]}
+      />
 
       {error && <div className="card" style={{ color: 'var(--bad)', marginBottom: 12 }}>{error}</div>}
 

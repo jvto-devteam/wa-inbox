@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { accuracy } from '@/lib/new/logic'
 import { AGD, AGENT_KEYS, AGS, AGT, LG, MODES } from '@/lib/new/mock-data'
 import type { AgentKey, AgentMode, State } from '@/lib/new/types'
+import { Meter, PageHero } from '../PageHero'
 import { useItemTap, useNew } from '../store'
 
 type Css = React.CSSProperties & Record<`--${string}`, string>
@@ -171,8 +172,27 @@ function Log() {
 
 export function BotView() {
   const { s, set } = useNew()
+  const aktif = AGENT_KEYS.filter((k) => s.agm[k] !== 'mati').length
+  const pub = s.kn.filter((k) => k.status === 'PUBLISHED').length
+  const tot = AGENT_KEYS.reduce((n, k) => n + s.agst[k].ok + s.agst[k].bad, 0)
+  const okAll = AGENT_KEYS.reduce((n, k) => n + s.agst[k].ok, 0)
+  const acc = tot ? Math.round((okAll / tot) * 100) : 0
   return (
     <section className="view fx" id="v-bot">
+      <PageHero
+        view="bot"
+        kicker="Bot & agent"
+        title={s.bs.auto ? 'Bot menjawab semua chat' : 'Bot dimatikan, tim membalas manual'}
+        sub={aktif + ' dari ' + AGENT_KEYS.length + ' agent aktif · akurasi ' + acc + '% · ' + pub + ' knowledge terbit · ' + s.gap.length + ' celah knowledge.'}
+        status={{ text: s.pause ? 'Agent dijeda' : 'Agent berjalan', off: s.pause, onClick: () => set((d) => { d.btab = 'Agent' }) }}
+        kpiId="b-hk"
+        kpis={[
+          { label: 'Perilaku', value: s.bs.auto ? 'Otomatis' : 'Manual', detail: s.bs.skip ? 'lewati nomor Indonesia' : 'semua nomor', on: s.btab === 'Perilaku', onClick: () => set((d) => { d.btab = 'Perilaku' }) },
+          { label: 'Agent aktif', value: aktif + '/' + AGENT_KEYS.length, detail: 'akurasi ' + acc + '%', visual: <Meter pct={acc} />, on: s.btab === 'Agent', onClick: () => set((d) => { d.btab = 'Agent' }) },
+          { label: 'Knowledge', value: pub + '/' + s.kn.length, detail: 'terbit', on: s.btab === 'Knowledge', onClick: () => set((d) => { d.btab = 'Knowledge' }) },
+          { label: 'Celah knowledge', value: s.gap.length, detail: 'pertanyaan belum ada jawaban', tone: s.gap.length ? 'warn' : undefined, onClick: () => set((d) => { d.btab = 'Knowledge' }) },
+        ]}
+      />
       <div className="tabs" id="b-tabs">
         {TABS.map((k) => <button key={k} className={k === s.btab ? 'on' : ''} onClick={() => set((d) => { d.btab = k })}>{k}</button>)}
       </div>
