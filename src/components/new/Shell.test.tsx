@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { NewShell } from './Shell'
 import { viewFromPath } from './store'
@@ -8,6 +8,7 @@ import { BotView } from './views/BotView'
 import { HubView } from './views/HubView'
 import { InboxView } from './views/InboxView'
 import { KontakView } from './views/KontakView'
+import { LaporanView } from './views/LaporanView'
 import { RingkasanView } from './views/RingkasanView'
 import { TemplateView } from './views/TemplateView'
 
@@ -45,6 +46,7 @@ describe('/new', () => {
     ['/new/kontak', <KontakView key="k" />, 'Vendor Transport Bali'],
     ['/new/bot', <BotView key="b" />, 'Mode bot'],
     ['/new/template', <TemplateView key="t" />, 'payment_reminder_balance'],
+    ['/new/laporan', <LaporanView key="l" />, 'Belum booking: alasan & follow-up'],
   ])('%s tergambar dengan data contoh', (p, el, text) => {
     at(p, el)
     expect(document.body.textContent + Array.from(document.querySelectorAll('textarea')).map((t) => t.placeholder).join(' ')).toContain(text)
@@ -87,18 +89,13 @@ describe('/new', () => {
     expect(screen.getByText('Tersimpan (pratinjau, belum ke server)')).toBeInTheDocument()
   })
 
-  it('Dashboard menampilkan ringkasan WhatsApp → booking dari data asli', async () => {
-    const report = {
-      from: '2026-11-23', to: '2026-11-24', inquiries: 10, inquiriesBooked: 3, bookings: [{}, {}, {}, {}],
-      leads: [{ lastFrom: 'tamu' }, { lastFrom: 'tim' }], blockers: [{ alasan: 'harga', label: 'Harga / budget', count: 2 }], trend: [],
-    }
-    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => report })
+  it('Dashboard dan Laporan menampilkan WhatsApp → booking dari data contoh, tanpa fetch', () => {
+    const fetchMock = vi.fn()
     vi.stubGlobal('fetch', fetchMock)
     at('/new/dashboard', <HubView />)
-    await waitFor(() => expect(screen.getByText('Lead menunggu balasan kita')).toBeInTheDocument())
-    expect(fetchMock.mock.calls[0][0]).toMatch(/^\/api\/new\/report\?from=\d{4}-\d{2}-\d{2}&to=/)
-    expect(screen.getByText('30%')).toBeInTheDocument()
-    expect(screen.getByText('Harga / budget 2')).toBeInTheDocument()
+    expect(screen.getByText('WhatsApp → booking minggu ini')).toBeInTheDocument()
+    expect(screen.getByText('Lead menunggu balasan kita')).toBeInTheDocument()
+    expect(fetchMock).not.toHaveBeenCalled()
     vi.unstubAllGlobals()
   })
 

@@ -223,7 +223,7 @@ export function NewShell({ children }: { children: React.ReactNode }) {
                 )}
               </div>
               <div className="attn">
-                {view !== 'laporan' && <span className="pill warn demo" title="Pratinjau: semua data di halaman ini adalah contoh">Data contoh</span>}
+                <span className="pill warn demo" title="Pratinjau: semua data di halaman ini adalah contoh">Data contoh</span>
                 {s.pause && (
                   <button className="pill bad" onClick={() => { set((d) => { d.btab = 'Agent' }); go('bot') }}>Agent dijeda</button>
                 )}

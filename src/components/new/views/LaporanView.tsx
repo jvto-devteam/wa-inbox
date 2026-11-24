@@ -1,11 +1,12 @@
 'use client'
 
-// Menu Laporan: inquiry WhatsApp → booking. Halaman /new pertama yang memakai DATA ASLI
-// (GET /api/new/report); definisi angka di src/lib/new/report.ts.
+// Menu Laporan: inquiry WhatsApp → booking, dari DATA CONTOH (src/lib/new/report-mock.ts);
+// definisi angka di src/lib/new/report.ts.
 import { useState } from 'react'
 import { jakartaDay } from '@/lib/bot/eval/replay-pairs'
 import { MONS } from '@/lib/new/dates'
 import { periodRange, type PeriodKey } from '@/lib/new/report'
+import { useNew } from '../store'
 import { useReport } from '../useReport'
 
 const PERIODS: [PeriodKey, string][] = [['minggu-ini', 'Minggu ini'], ['minggu-lalu', 'Minggu lalu'], ['bulan-ini', 'Bulan ini'], ['bulan-lalu', 'Bulan lalu']]
@@ -17,6 +18,7 @@ function fmt(ymd: string): string {
 }
 
 export function LaporanView() {
+  const st = useNew()
   const [period, setPeriod] = useState<PeriodKey>('minggu-ini')
   const today = jakartaDay(new Date())
   const { from, to } = periodRange(period, today)
@@ -32,7 +34,6 @@ export function LaporanView() {
           {PERIODS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
         </select>
         <span className="mut sm">{fmt(from)} – {fmt(to)} {to.slice(0, 4)} · WIB</span>
-        <span className="pill good" style={{ marginLeft: 'auto' }}>Data asli</span>
       </div>
 
       <div className="grid g4" id="l-kpi" style={{ marginBottom: 12 }}>
@@ -51,7 +52,7 @@ export function LaporanView() {
       <div className="grid g21">
         <div className="card">
           <h3>Customer dari WhatsApp yang booking</h3>
-          <p className="hint">Awalnya chat WhatsApp, lalu booking. Nama membuka chat aslinya di Inbox.</p>
+          <p className="hint">Awalnya chat WhatsApp, lalu booking. Nama membuka chat-nya di Inbox (bila ada di data contoh).</p>
           {loading ? <div className="mut" style={{ padding: 16 }}>Memuat…</div> : R && R.bookings.length ? (
             <div className="tw">
               <table>
@@ -59,7 +60,7 @@ export function LaporanView() {
                 <tbody>
                   {R.bookings.map((b) => (
                     <tr key={b.conversationId}>
-                      <td><a href={'/inbox?conversation=' + b.conversationId} style={{ color: 'var(--accent)', fontWeight: 600 }}>{b.name}</a><div className="mut sm">{b.phoneTail}</div></td>
+                      <td><button type="button" onClick={() => st.openConv(b.name)} style={{ color: 'var(--accent)', fontWeight: 600, background: 'none', border: 0, padding: 0 }}>{b.name}</button><div className="mut sm">{b.phoneTail}</div></td>
                       <td className="sm">{fmt(b.firstChatDay)}</td>
                       <td className="sm">{fmt(b.bookingDay)}</td>
                       <td className="sm">{b.daysToBook === 0 ? 'hari sama' : b.daysToBook + ' hari'}</td>
@@ -98,7 +99,7 @@ export function LaporanView() {
           {loading ? <div className="mut" style={{ padding: 16 }}>Memuat…</div> : R && R.leads.length ? R.leads.map((l) => (
             <div key={l.conversationId} className="item" style={{ gridTemplateColumns: 'minmax(0,1fr)' }}>
               <div style={{ minWidth: 0 }}>
-                <a href={'/inbox?conversation=' + l.conversationId} style={{ color: 'var(--accent)', fontWeight: 600 }}>{l.name}</a>{' '}
+                <button type="button" onClick={() => st.openConv(l.name)} style={{ color: 'var(--accent)', fontWeight: 600, background: 'none', border: 0, padding: 0 }}>{l.name}</button>{' '}
                 <span className="mut sm">{l.phoneTail} · chat {fmt(l.firstChatDay)}</span>{' '}
                 <span className={'pill ' + (l.alasan === 'belum_dijawab' || l.alasan === 'menunggu_tim' ? 'bad' : l.alasan === 'harga' ? 'warn' : 'neu')}>{l.alasanText}</span>{' '}
                 {l.lastFrom && (
@@ -135,8 +136,8 @@ export function LaporanView() {
         Inquiry = percakapan WhatsApp yang pesan masuk pertamanya jatuh di periode (vendor, crew, hotel yang dikenali ringkasan
         sebagai mitra tidak dihitung). Booking = tanggal booking sama atau sesudah hari chat pertama; tamu yang sudah booking sebelum
         chat tidak dihitung. Hanya booking terbaru per nomor yang tersimpan, dan data booking disegarkan bertahap tiap 5 menit.
-        Alasan belum booking ditulis AI saat meringkas chat (pesan masuk, chat dibuka, atau job 00.00); rekomendasi hanya saran
-        internal untuk tim, tidak pernah dikirim ke tamu.
+        Alasan belum booking dan rekomendasi follow-up ditulis AI saat meringkas chat; rekomendasi hanya saran internal untuk
+        tim, tidak pernah dikirim ke tamu. Semua angka di halaman ini data contoh.
       </p>
     </section>
   )

@@ -84,7 +84,7 @@ export function HubView() {
       </div>
       <div id="h-wa">
         <div className="hub-lab">
-          <span>WhatsApp → booking minggu ini <span className="pill good">Data asli</span></span>
+          <span>WhatsApp → booking minggu ini</span>
           <button type="button" onClick={() => hubGo('laporan')}>Laporan lengkap</button>
         </div>
         <div className="card">
