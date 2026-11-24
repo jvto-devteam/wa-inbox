@@ -662,17 +662,18 @@
 }
 
 /* ---------- Blok bersama halaman (Blocks.tsx) ---------- */
-.nwa .pg-strip{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:10px 6px;margin-bottom:12px}
+.nwa .pg-strip{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:6px;margin-bottom:12px}
 .nwa .pg-strip-t{padding:0 10px 6px;font-size:12px;color:var(--muted)}
 .nwa .pg-strip-g{display:grid;grid-template-columns:repeat(var(--n,4),minmax(0,1fr))}
-.nwa .pg-st{display:flex;flex-direction:column;align-items:flex-start;gap:1px;padding:2px 12px;border:0;background:none;color:var(--ink);text-align:left;border-left:1px solid var(--line);min-width:0}
+.nwa .pg-st{display:flex;flex-direction:column;align-items:flex-start;gap:1px;padding:6px 12px;border:0;background:none;color:var(--ink);text-align:left;border-left:1px solid var(--line);min-width:0}
 .nwa .pg-st:first-child{border-left:0}
 .nwa .pg-st b{font-size:20px;font-weight:750;line-height:1.15;font-variant-numeric:tabular-nums}
 .nwa .pg-st span{font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
 .nwa button.pg-st{cursor:pointer;border-radius:0}
 .nwa button.pg-st:hover span{color:var(--accent)}
-.nwa .pg-st.on span{color:var(--accent);font-weight:650}
-.nwa .pg-st.on b{text-decoration:underline;text-decoration-color:var(--accent);text-decoration-thickness:2px;text-underline-offset:4px}
+.nwa .pg-st.on{background:var(--accent-soft);border-radius:10px}
+.nwa .pg-st.on,.nwa .pg-st.on+.pg-st{border-left-color:transparent}
+.nwa .pg-st.on span{color:var(--accent)}
 .nwa .pg-st b.t-bad{color:var(--bad)}.nwa .pg-st b.t-warn{color:var(--warn)}.nwa .pg-st b.t-good{color:var(--good)}
 .nwa .pg-seg{display:flex;flex-direction:column;gap:8px}
 .nwa .pg-seg-bar{height:10px}
@@ -687,7 +688,7 @@
 .nwa .pg-sec .pill{letter-spacing:0;text-transform:none}
 @media (max-width:860px){
  .nwa .pg-strip{border:0;border-radius:14px}
- .nwa .pg-st{padding:2px 8px}
+ .nwa .pg-st{padding:6px 8px}
  .nwa .pg-st b{font-size:18px}
  .nwa .pg-st span{font-size:11px}
  .nwa .pg-seg-l{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;margin:0 -14px;padding:0 14px}
@@ -781,3 +782,4 @@
 .nwa #t-drawer:has(.drawer)::before{content:"";position:fixed;inset:0;background:rgba(10,14,24,.25);z-index:39}
 .nwa .view.fx>#t-drawer,.nwa .view.fx>#k-drawer{animation:none}
 .nwa #k-drawer:has(.drawer)::before{content:"";position:fixed;inset:0;background:rgba(10,14,24,.25);z-index:39}
+.nwa .pg-st:focus:not(:focus-visible),.nwa .pg-seg-l>button:focus:not(:focus-visible){outline:none}
