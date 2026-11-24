@@ -184,7 +184,6 @@ export function HubView() {
         <div className="db-c s12">
           <div className="db-h">
             <h3>Agent hari ini</h3>
-            <span className="mut sm">{today.length} tugas · {ok} berhasil{gagalToday ? ' · ' + gagalToday + ' gagal' : ''}</span>
             <button type="button" className="x" onClick={() => hubGo('agent')}>Riwayat Agent</button>
           </div>
           <div className="db-agl">
@@ -204,6 +203,7 @@ export function HubView() {
               )
             })}
           </div>
+          <div className="db-agf mut sm">{today.length} tugas · {ok} berhasil{gagalToday ? ' · ' + gagalToday + ' gagal' : ''}</div>
         </div>
 
         <div className="db-c s7">
