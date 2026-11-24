@@ -33,7 +33,7 @@ export async function GET(req: Request) {
       }),
       prisma.outboundJob.findMany({
         where: { createdAt: range, templateKey: { in: Object.keys(TEMPLATE_AGENT) } },
-        select: { id: true, conversationId: true, templateKey: true, status: true, lastError: true, createdAt: true },
+        select: { id: true, conversationId: true, templateKey: true, status: true, lastError: true, createdAt: true, target: true, payload: true, idempotencyKey: true },
         orderBy: { createdAt: 'desc' }, take: TAKE,
       }),
       prisma.bookingActionEvent.findMany({
@@ -53,10 +53,27 @@ export async function GET(req: Request) {
       prisma.systemTemplate.findMany({ select: { key: true, name: true } }),
     ])
 
+    // Pesan internal ke nomor (vendor/crew) tidak menyimpan conversationId: cocokkan nomor tujuannya ke
+    // percakapan WhatsApp di Inbox (identitas kanal, atau nomor kontak untuk percakapan lama).
+    const phones = [...new Set(jobs.filter((j) => !j.conversationId && j.target && !j.target.startsWith('grup:')).map((j) => j.target as string))]
+    const byPhone = new Map<string, string>()
+    if (phones.length) {
+      const found = await prisma.conversation.findMany({
+        where: { isTest: false, OR: [{ channelIdentity: { platform: 'WHATSAPP', externalId: { in: phones } } }, { contact: { phone: { in: phones } } }] },
+        select: { id: true, channelIdentity: { select: { externalId: true } }, contact: { select: { phone: true } } },
+        orderBy: { lastMessageAt: 'desc' },
+      })
+      for (const c of found) {
+        const p = c.channelIdentity?.externalId ?? c.contact?.phone
+        if (p && !byPhone.has(p)) byPhone.set(p, c.id)
+      }
+    }
+    const chatOf = (j: (typeof jobs)[number]) => j.conversationId ?? (j.target ? byPhone.get(j.target) ?? null : null)
+
     const actionIds = events.map((e) => e.actionId).filter((x): x is string => !!x)
     const convIds = new Set<string>()
     for (const r of runs) convIds.add(r.conversationId)
-    for (const j of jobs) if (j.conversationId) convIds.add(j.conversationId)
+    for (const j of jobs) { const c = chatOf(j); if (c) convIds.add(c) }
     for (const e of events) convIds.add(e.conversationId)
     for (const c of reviews) convIds.add(c.id)
     const [actions, convs] = await Promise.all([
@@ -70,7 +87,7 @@ export async function GET(req: Request) {
 
     const out: Activity[] = []
     for (const r of runs) { const a = fromRun(r, name(r.conversationId)); if (a) out.push(a) }
-    for (const j of jobs) { const a = fromJob(j, name(j.conversationId), j.templateKey ? tplName.get(j.templateKey) : undefined); if (a) out.push(a) }
+    for (const j of jobs) { const c = chatOf(j); const a = fromJob(j, name(c), j.templateKey ? tplName.get(j.templateKey) : undefined, c); if (a) out.push(a) }
     for (const e of events) { const a = fromEvent(e, name(e.conversationId), e.actionId ? fieldOf.get(e.actionId) : undefined); if (a) out.push(a) }
     for (const c of reviews) {
       if (!c.chatReviewAt) continue

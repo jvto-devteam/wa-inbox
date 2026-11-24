@@ -155,7 +155,7 @@ describe('Riwayat Agent: data asli', () => {
     const t = (h: number) => { const d = new Date(); d.setHours(h, 5, 0, 0); return d.toISOString() }
     routes['GET /api/new/agent-activity'] = () => ({ body: { items: [
       { id: 'job:1', at: t(10), agent: 'reminder', status: 'ok', title: 'Pengingat pelunasan', input: 'Template payment_reminder_balance ke tamu', output: 'Terkirim', conversationId: 'c1', contact: 'Sarah' },
-      { id: 'job:2', at: t(9), agent: 'crew', status: 'gagal', title: 'Reminder crew', input: 'Template crew_reminder_group ke crew', output: 'Gagal terkirim: grup tidak ada', conversationId: null, contact: null },
+      { id: 'job:2', at: t(9), agent: 'crew', status: 'gagal', title: 'Reminder crew', input: 'Template crew_reminder_group ke crew', output: 'Gagal terkirim: grup tidak ada', conversationId: null, contact: null, message: { text: '*Besok* jemput 07:00', imageUrl: null, to: 'Grup WhatsApp crew' }, chatNote: 'Dikirim ke grup WhatsApp; grup tidak tampil di Inbox.', bookingRef: '88' },
       { id: 'run:3', at: t(9), agent: 'balas', status: 'ok', title: 'Membalas pesan tamu', input: 'Pesan tamu: "hi"', output: 'Balasan: "hello"', conversationId: 'c2', contact: 'Tom' },
     ] } })
     show('/new/agent', <AgentView />)
@@ -170,5 +170,10 @@ describe('Riwayat Agent: data asli', () => {
     expect(document.querySelectorAll('#g-t .ag-ev')).toHaveLength(1)
     fireEvent.click(document.querySelector('#g-t .ag-ev')!)
     expect(document.querySelector('#g-drawer')?.textContent).toContain('Gagal terkirim: grup tidak ada')
+    const dr = document.querySelector('#g-drawer')!
+    expect(dr.querySelector('.wa-b strong')?.textContent).toBe('Besok')
+    expect(dr.textContent).toContain('Ke: Grup WhatsApp crew')
+    expect(dr.textContent).toContain('#88')
+    expect(dr.textContent).toContain('grup tidak tampil di Inbox')
   })
 })

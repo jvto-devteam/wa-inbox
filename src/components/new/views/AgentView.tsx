@@ -11,6 +11,7 @@ import { Banner, StatStrip } from '../Blocks'
 import { NAV_ICON } from '../icons'
 import { DaySelect } from '../Overlays'
 import { useNew } from '../store'
+import { WaBubble } from '../WaBubble'
 import { useApi } from '../useApi'
 
 type Css = React.CSSProperties & Record<`--${string}`, string>
@@ -37,10 +38,24 @@ function Detail({ a, onClose }: { a: Activity; onClose: () => void }) {
         <span className="ag" style={{ '--c': `var(${AGS[a.agent][1]})` } as Css}>{AGS[a.agent][0]}</span>
         <span className={'pill ' + t[0]}>{t[1]}</span>
       </div>
-      <div className="box"><h4>Waktu dan percakapan</h4><dl className="kv"><dt>Waktu</dt><dd>{new Date(a.at).toLocaleString('id-ID', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</dd><dt>Percakapan</dt><dd>{a.contact || '—'}</dd></dl></div>
-      <div className="box" style={{ marginTop: 10 }}><h4>Masukan</h4>{a.input}</div>
+      <div className="box"><h4>Waktu dan percakapan</h4><dl className="kv"><dt>Waktu</dt><dd>{new Date(a.at).toLocaleString('id-ID', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</dd><dt>Percakapan</dt><dd>{a.contact || '—'}</dd>{a.bookingRef && <><dt>Booking</dt><dd>#{a.bookingRef}</dd></>}</dl></div>
+      {(a.message || a.inbound) && (
+        <div className="box" style={{ marginTop: 10 }}>
+          <h4>{a.message ? 'Isi pesan terkirim (bukti)' : 'Pesan tamu'}</h4>
+          {a.message && <p className="ev-to">Ke: {a.message.to}</p>}
+          <div className="wa-pair">
+            {a.inbound && <WaBubble dir="in" text={a.inbound} time={hm(a.at)} />}
+            {a.message && <WaBubble text={a.message.text} imageUrl={a.message.imageUrl} time={hm(a.at)} />}
+          </div>
+        </div>
+      )}
       <div className="box" style={{ marginTop: 10 }}><h4>Hasil</h4>{a.output}</div>
-      {a.conversationId && <div className="acts" style={{ marginTop: 12 }}><a className="btn pri" href={'/inbox?conversation=' + a.conversationId}>Buka chat</a></div>}
+      {!a.message && !a.inbound && <div className="box" style={{ marginTop: 10 }}><h4>Masukan</h4>{a.input}</div>}
+      <div className="acts" style={{ marginTop: 12 }}>
+        {a.conversationId
+          ? <a className="btn pri" href={'/inbox?conversation=' + a.conversationId}>Buka chat</a>
+          : <span className="mut sm">{a.chatNote || 'Tidak ada percakapan terkait di Inbox.'}</span>}
+      </div>
     </div>
   )
 }
