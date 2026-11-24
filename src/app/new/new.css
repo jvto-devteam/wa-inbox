@@ -810,3 +810,14 @@
 @media (max-width:860px){.nwa .tpw-grid{grid-template-columns:minmax(0,1fr)}.nwa .tpw{border:0}}
 .nwa .view.fx>#g-drawer{animation:none}
 .nwa #g-drawer:has(.drawer)::before{content:"";position:fixed;inset:0;background:rgba(10,14,24,.25);z-index:39}
+/* Drawer detail (Template, Kontak, Riwayat Agent) selalu di atas tab bar bawah (z 40) dan bar atas. */
+.nwa #t-drawer .drawer,.nwa #k-drawer .drawer,.nwa #g-drawer .drawer{z-index:75}
+.nwa #t-drawer:has(.drawer)::before,.nwa #k-drawer:has(.drawer)::before,.nwa #g-drawer:has(.drawer)::before{z-index:74}
+@media (max-width:860px){
+ .nwa #t-drawer .drawer,.nwa #k-drawer .drawer,.nwa #g-drawer .drawer{max-height:88dvh;overscroll-behavior:contain}
+ .nwa #t-drawer:has(.drawer)::before,.nwa #k-drawer:has(.drawer)::before,.nwa #g-drawer:has(.drawer)::before{background:rgba(10,14,24,.4)}
+}
+.nwa .ag-ev:focus:not(:focus-visible),.nwa .kt-c:focus:not(:focus-visible),.nwa .tpw:focus:not(:focus-visible){outline:none}
+/* Lembar konfirmasi dan toast harus di atas drawer (mis. "Nonaktifkan template" dari editor). */
+.nwa .msheet{z-index:80}
+.nwa .toast{z-index:90}
