@@ -1,8 +1,10 @@
 'use client'
 
+import { parseR, rLabel } from '@/lib/new/dates'
 import { rData } from '@/lib/new/logic'
 import { KC, POINT_KINDS } from '@/lib/new/mock-data'
 import { DaySelect } from '../Overlays'
+import { PageHero } from '../PageHero'
 import { useItemTap, useNew } from '../store'
 
 export function RingkasanView() {
@@ -27,13 +29,25 @@ export function RingkasanView() {
     ['Komplain', kc, kc ? 'perlu perhatian' : 'tidak ada'],
     ['Janji tim terbuka', D.j, D.j ? 'masuk Antrean' : 'semua ditepati'],
   ]
+  const nConv = new Set(P.map((x) => x[1])).size
+  const dayLabel = parseR(s.rday) ? rLabel(parseR(s.rday)!.f, parseR(s.rday)!.t) : s.rday
   const selStyle = { width: 'auto', padding: '5px 10px', fontSize: 13, borderRadius: 8 }
 
   return (
     <section className="view fx" id="v-ringkasan">
-      <div className="grid g4" id="r-kpi" style={{ marginBottom: 12 }}>
-        {kpi.map((k) => <div key={k[0]} className="card kpi"><div className="l">{k[0]}</div><div className="v">{k[1]}</div><div className="d">{k[2]}</div></div>)}
-      </div>
+      <PageHero
+        view="ringkasan"
+        kicker={'Ringkasan harian · ' + dayLabel}
+        title={P.length ? P.length + ' poin penting dari ' + nConv + ' percakapan' : 'Belum ada poin penting'}
+        sub={time + (kc ? ' · ' + kc + ' komplain perlu perhatian' : '')}
+        kpiId="r-hk"
+        kpis={[
+          { label: kpi[0][0], value: kpi[0][1], detail: kpi[0][2] },
+          { label: kpi[1][0], value: kpi[1][1], detail: kpi[1][2], on: s.rtab === 'poin' && rkind === 'Semua', onClick: () => set((d) => { d.rtab = 'poin'; d.rkind = 'Semua' }) },
+          { label: kpi[2][0], value: kpi[2][1], detail: kpi[2][2], tone: kc ? 'bad' : undefined, on: rkind === 'komplain', onClick: () => set((d) => { d.rtab = 'poin'; d.rkind = 'komplain' }) },
+          { label: kpi[3][0], value: kpi[3][1], detail: kpi[3][2], tone: D.j ? 'warn' : undefined, onClick: () => { set((d) => { d.atab = 'Janji tim' }); st.go('antrean') } },
+        ]}
+      />
       <div className="tabs rt" id="r-tabs">
         <button className={s.rtab === 'poin' ? 'on' : ''} onClick={() => set((d) => { d.rtab = 'poin' })}>Poin penting<i>{P.length}</i></button>
         <button className={s.rtab === 'chat' ? 'on' : ''} onClick={() => set((d) => { d.rtab = 'chat' })}>Per percakapan<i>{s.cv.length}</i></button>

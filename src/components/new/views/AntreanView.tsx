@@ -5,6 +5,7 @@ import { dayMatch, whenLabel } from '@/lib/new/dates'
 import { AGENT_KEYS, AGS, ALBL, AT_KEYS, FUT, SD } from '@/lib/new/mock-data'
 import type { AgentEvent, AtKey, Sched, Tone } from '@/lib/new/types'
 import { DaySelect } from '../Overlays'
+import { PageHero } from '../PageHero'
 import { useItemTap, useNew, type SheetItem } from '../store'
 
 type Css = React.CSSProperties & Record<`--${string}`, string>
@@ -128,17 +129,32 @@ export function AntreanView() {
       },
     })
   }
+  const tot = AT_KEYS.reduce((n, k) => n + s.at[k].length, 0)
+  const top = s.at.Balas[0] || s.at['Tindak lanjut'][0] || s.at['Janji tim'][0]
   const remove = (k: AtKey, i: number, msg: string) => { set((d) => { d.at[k].splice(i, 1) }); toast(msg) }
 
   return (
     <section className="view fx" id="v-antrean">
-      <div className="tabs" id="a-tabs">
-        {keys.map((k) => (
-          <button key={k} className={k === tab ? 'on' : ''} onClick={() => set((d) => { d.atab = k })}>
-            {(k !== FUT && ALBL[k]) || k}<i>{k === FUT ? s.sj.length : s.at[k].length}</i>
-          </button>
-        ))}
-      </div>
+      <PageHero
+        view="antrean"
+        kicker="Antrean tim"
+        title={tot ? tot + ' hal menunggu tim' : 'Antrean kosong'}
+        sub={top ? 'Paling mendesak: ' + top.n + ' — ' + top.d + ' (' + top.w.toLowerCase() + ').' : 'Semua chat sudah tertangani.'}
+        status={{ text: s.pause ? 'Agent dijeda' : s.sj.length + ' follow-up agent terjadwal', off: s.pause }}
+        kpiId="a-tabs"
+        kpis={keys.map((k) => {
+          const n = k === FUT ? s.sj.length : s.at[k].length
+          const first = k === FUT ? null : s.at[k][0]
+          return {
+            label: (k !== FUT && ALBL[k]) || k,
+            value: n,
+            tone: k === 'Balas' && n ? 'bad' as const : undefined,
+            detail: k === FUT ? s.sj.filter((e) => e.d === 'Hari ini').length + ' hari ini' : first ? first.w : 'kosong',
+            on: k === tab,
+            onClick: () => set((d) => { d.atab = k }),
+          }
+        })}
+      />
       <div className="card" id="a-list">
         {tab === FUT ? <Schedule /> : s.at[tab].length ? s.at[tab].map((x, i) => {
           const items: SheetItem[] = tab === 'Reminder'

@@ -531,7 +531,7 @@
 .nwa .db-hero .st{position:absolute;right:16px;top:14px;display:inline-flex;align-items:center;gap:7px;background:rgba(255,255,255,.18);border-radius:99px;padding:3px 10px;font-size:12px;font-weight:650}
 .nwa .db-hero .st i{width:8px;height:8px;border-radius:50%;background:#4ade80;animation:hblink 1.6s ease-in-out infinite}
 .nwa .db-hero .st.off i{background:#ff8585;animation:none}
-.nwa .db-kpi{position:relative;z-index:1;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;padding:0 12px}
+.nwa .db-kpi{position:relative;z-index:1;display:grid;grid-template-columns:repeat(var(--kc,4),minmax(0,1fr));gap:10px;padding:0 12px}
 .nwa .db-k{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:11px 13px;box-shadow:0 6px 18px rgba(20,30,80,.08);text-align:left;color:var(--ink);display:flex;flex-direction:column;gap:6px;min-width:0;cursor:pointer;transition:transform .15s}
 .nwa .db-k:hover{transform:translateY(-2px)}
 .nwa .db-k .l{font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
@@ -619,3 +619,17 @@
  .nwa .db-agl .db-ag:nth-child(-n+4){border-top:1px solid var(--line)}
  .nwa .db-agl .db-ag:nth-child(-n+2){border-top:0}
 }
+
+/* ---------- Hero halaman lain (PageHero) ---------- */
+.nwa .db-hero .db-hr{position:absolute;right:16px;top:14px;display:flex;gap:8px;align-items:center}
+.nwa .db-hero .db-hr .st{position:static}
+.nwa .db-hero button.st{border:0;color:#fff;cursor:pointer}
+.nwa .db-hero select{background:rgba(255,255,255,.18);color:#fff;border:0;border-radius:99px;padding:3px 10px;font-size:12px;font-weight:650;cursor:pointer}
+.nwa .db-hero select option{color:#151922}
+.nwa .db-k.on{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent-soft),0 6px 18px rgba(20,30,80,.08)}
+.nwa .db-k.on .l{color:var(--accent)}
+.nwa .db-k.static{cursor:default}
+.nwa .db-k.static:hover{transform:none}
+.nwa .db-k .v.t-bad{color:var(--bad)}.nwa .db-k .v.t-warn{color:var(--warn)}.nwa .db-k .v.t-good{color:var(--good)}
+.nwa .view>.db-kpi+*{margin-top:12px}
+@media (max-width:860px){.nwa .db-hero .db-hr{position:static;margin-top:8px;flex-wrap:wrap}.nwa .db-kpi{grid-template-columns:repeat(2,minmax(0,1fr))}}

@@ -1,10 +1,11 @@
 'use client'
 
-import { DOFF, dFmt, dayMatch, parseR } from '@/lib/new/dates'
+import { DOFF, dFmt, dayMatch, parseR, rLabel } from '@/lib/new/dates'
 import { cekLabel } from '@/lib/new/logic'
 import { AGENT_KEYS, AGS, AST } from '@/lib/new/mock-data'
 import { useAgentCek } from '../agent-actions'
 import { DaySelect } from '../Overlays'
+import { Meter, PageHero } from '../PageHero'
 import { useNew } from '../store'
 
 type Css = React.CSSProperties & Record<`--${string}`, string>
@@ -25,12 +26,25 @@ export function AgentView() {
     ['Menunggu', n('tunggu'), n('tunggu') ? 'menunggu keputusan orang' : 'tidak ada'],
   ]
   const isRange = !!parseR(s.aday)
+  const dayLabel = isRange ? rLabel(parseR(s.aday)!.f, parseR(s.aday)!.t) : s.aday
+  const busiest = AGENT_KEYS.map((k) => [k, base.filter((e) => e.a === k).length] as const).sort((a, b) => b[1] - a[1]).find((x) => x[1] > 0)
 
   return (
     <section className="view fx" id="v-agent">
-      <div className="grid g4" id="g-kpi" style={{ marginBottom: 12 }}>
-        {kpi.map((k) => <div key={k[0]} className="card kpi"><div className="l">{k[0]}</div><div className="v">{k[1]}</div><div className="d">{k[2]}</div></div>)}
-      </div>
+      <PageHero
+        view="agent"
+        kicker={'Riwayat Agent · ' + dayLabel}
+        title={base.length + ' aktivitas oleh ' + AGENT_KEYS.filter((k) => base.some((e) => e.a === k)).length + ' agent'}
+        sub={busiest ? 'Paling sibuk: ' + AGS[busiest[0]][0] + ' (' + busiest[1] + ' tugas).' + (n('gagal') ? ' ' + n('gagal') + ' tugas gagal perlu dicek.' : '') : 'Belum ada aktivitas pada tanggal ini.'}
+        status={{ text: s.pause ? 'Agent dijeda' : 'Agent berjalan', off: s.pause, onClick: () => { set((d) => { d.btab = 'Agent' }); st.go('bot') } }}
+        kpiId="g-hk"
+        kpis={[
+          { label: kpi[0][0], value: kpi[0][1], detail: kpi[0][2], on: s.ast === 'Semua', onClick: () => set((d) => { d.ast = 'Semua' }) },
+          { label: kpi[1][0], value: kpi[1][1], detail: kpi[1][2], visual: <Meter pct={base.length ? (n('ok') / base.length) * 100 : 0} />, on: s.ast === 'ok', onClick: () => set((d) => { d.ast = 'ok' }) },
+          { label: kpi[2][0], value: kpi[2][1], detail: kpi[2][2], tone: n('gagal') ? 'bad' : undefined, on: s.ast === 'gagal', onClick: () => set((d) => { d.ast = 'gagal' }) },
+          { label: kpi[3][0], value: kpi[3][1], detail: kpi[3][2], tone: n('tunggu') ? 'warn' : undefined, on: s.ast === 'tunggu', onClick: () => set((d) => { d.ast = 'tunggu' }) },
+        ]}
+      />
       <div className="chips" id="g-chips" role="group" aria-label="Saring agent">
         <button className={s.aag === 'Semua' ? 'on' : ''} onClick={() => set((d) => { d.aag = 'Semua' })}>Semua {base.length}</button>
         {AGENT_KEYS.map((k) => (

@@ -7,6 +7,7 @@ import { useState } from 'react'
 import { AGS } from '@/lib/new/mock-data'
 import { TPL_CATS, exampleValues, initialTemplates, tplAgent, tplCategory } from '@/lib/new/templates'
 import { renderSystemTemplate, validateTemplateBody } from '@/lib/system-templates/render'
+import { PageHero } from '../PageHero'
 import { useNew } from '../store'
 
 type Css = React.CSSProperties & Record<`--${string}`, string>
@@ -98,9 +99,23 @@ export function TemplateView() {
   ]
   return (
     <section className="view fx" id="v-template">
-      <div className="grid g4" id="t-kpi" style={{ marginBottom: 12 }}>
-        {kpi.map((k) => <div key={k[0]} className="card kpi"><div className="l">{k[0]}</div><div className="v">{k[1]}</div><div className="d">{k[2]}</div></div>)}
-      </div>
+      <PageHero
+        view="template"
+        kicker="Template pesan sistem"
+        title={s.tpl.length + ' template pesan'}
+        sub={kpi[1][1] + ' ke tamu, ' + kpi[2][1] + ' internal (crew, vendor, hotel, tim). Dikirim legacy dan new-backoffice lewat wa-inbox.'}
+        status={{ text: off ? off + ' nonaktif' : 'Semua aktif', off: off > 0 }}
+        kpiId="t-hk"
+        kpis={[
+          { label: 'Semua', value: s.tpl.length, detail: 'pesan sistem', on: s.tcat === 'Semua', onClick: () => set((d) => { d.tcat = 'Semua' }) },
+          ...(['Reminder', 'Konfirmasi', 'Kabar perubahan'] as const).map((c) => ({
+            label: c, value: s.tpl.filter((t) => tplCategory(t.key) === c).length,
+            detail: c === 'Reminder' ? 'dikirim agent reminder' : c === 'Konfirmasi' ? 'booking & pembayaran' : 'ke vendor & crew',
+            on: s.tcat === c, onClick: () => set((d) => { d.tcat = c }),
+          })),
+          { label: 'Nonaktif', value: off, tone: off ? 'bad' as const : undefined, detail: off ? 'permintaan kirim ditolak' : 'tidak ada' },
+        ]}
+      />
       <div className="chips" id="t-chips">
         {cats.map((c) => (
           <button key={c} className={c === s.tcat ? 'on' : ''} onClick={() => set((d) => { d.tcat = c })}>
