@@ -1,15 +1,15 @@
 'use client'
 
-import { DOFF, dFmt, dayMatch, parseR, rLabel } from '@/lib/new/dates'
+import { DOFF, dFmt, dayMatch, parseR } from '@/lib/new/dates'
 import { cekLabel } from '@/lib/new/logic'
 import { AGENT_KEYS, AGS, AST } from '@/lib/new/mock-data'
 import { useAgentCek } from '../agent-actions'
 import { DaySelect } from '../Overlays'
-import { StatStrip } from '../Blocks'
+import { Banner, StatStrip } from '../Blocks'
+import { NAV_ICON } from '../icons'
 import { useNew } from '../store'
 
 type Css = React.CSSProperties & Record<`--${string}`, string>
-const SMALL = { width: 'auto', padding: '5px 10px', fontSize: 13, borderRadius: 8 }
 
 export function AgentView() {
   const st = useNew()
@@ -32,14 +32,19 @@ export function AgentView() {
     if (last && last[0] === g) last[1].push(e)
     else groups.push([g, [e]])
   }
-  const dayLabel = isRange ? rLabel(parseR(s.aday)!.f, parseR(s.aday)!.t) : s.aday
   const busiest = AGENT_KEYS.map((k) => [k, base.filter((e) => e.a === k).length] as const).sort((a, b) => b[1] - a[1]).find((x) => x[1] > 0)
 
   return (
     <section className="view fx" id="v-agent">
+      <Banner
+        tone={n('gagal') ? 'warn' : 'ok'}
+        icon={NAV_ICON.agent}
+        title={base.length + ' aktivitas agent'}
+        sub={(n('gagal') ? n('gagal') + ' gagal perlu dicek' : 'Tidak ada yang gagal') + (busiest ? ' · paling sibuk ' + AGS[busiest[0]][0] + ' (' + busiest[1] + ')' : '')}
+        right={<DaySelect k="a" id="g-day" value={s.aday} onChange={(v) => set((d) => { d.aday = v; d.aag = 'Semua' })} />}
+      />
       <StatStrip
         id="g-hk"
-        title={<>Riwayat Agent · <b style={{ color: 'var(--ink)' }}>{dayLabel}</b>{busiest ? ' · paling sibuk ' + AGS[busiest[0]][0] + ' (' + busiest[1] + ')' : ''}</>}
         items={[
           { label: 'Aktivitas', value: base.length, on: s.ast === 'Semua', onClick: () => set((d) => { d.ast = 'Semua' }) },
           { label: 'Berhasil', value: n('ok'), tone: 'good', on: s.ast === 'ok', onClick: () => set((d) => { d.ast = 'ok' }) },
@@ -47,20 +52,18 @@ export function AgentView() {
           { label: 'Menunggu', value: n('tunggu'), tone: n('tunggu') ? 'warn' : undefined, on: s.ast === 'tunggu', onClick: () => set((d) => { d.ast = 'tunggu' }) },
         ]}
       />
-      <div className="chips" id="g-chips" role="group" aria-label="Saring agent">
-        <button className={s.aag === 'Semua' ? 'on' : ''} onClick={() => set((d) => { d.aag = 'Semua' })}>Semua {base.length}</button>
+      <div className="tabs" id="g-chips" role="group" aria-label="Saring agent">
+        <button className={s.aag === 'Semua' ? 'on' : ''} onClick={() => set((d) => { d.aag = 'Semua' })}>Semua<i>{base.length}</i></button>
         {AGENT_KEYS.map((k) => (
           <button key={k} className={s.aag === k ? 'on' : ''} onClick={() => set((d) => { d.aag = k })}>
-            {AGS[k][0]} {base.filter((e) => e.a === k).length}
+            {AGS[k][0]}<i>{base.filter((e) => e.a === k).length}</i>
           </button>
         ))}
       </div>
-      <div className="tbar" style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 8, alignItems: 'center' }}>
-        <DaySelect k="a" id="g-day" value={s.aday} onChange={(v) => set((d) => { d.aday = v; d.aag = 'Semua' })} style={SMALL} />
+      <div className="g-bar">
         <input className="in" id="g-q" placeholder="Cari percakapan atau aktivitas" aria-label="Cari aktivitas"
-          style={{ maxWidth: 320, padding: '5px 10px', fontSize: 13, borderRadius: 8 }}
           value={s.aq} onChange={(e) => { const v = e.target.value; set((d) => { d.aq = v }) }} />
-        <select className="sel" id="g-st" style={SMALL} aria-label="Saring status" value={s.ast}
+        <select className="sel" id="g-st" aria-label="Saring status" value={s.ast}
           onChange={(e) => { const v = e.target.value; set((d) => { d.ast = v }) }}>
           <option value="Semua">Semua status</option>
           <option value="ok">Berhasil</option>
