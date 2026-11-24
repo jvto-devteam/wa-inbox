@@ -21,6 +21,24 @@ export interface Activity {
   output: string
   conversationId: string | null
   contact: string | null
+  /** Bukti: pesan yang dikirim agent (teks persis seperti terkirim, gambar bila ada) dan tujuannya. */
+  message?: { text: string; imageUrl: string | null; to: string }
+  /** Pesan tamu yang dijawab (khusus Balas pesan). */
+  inbound?: string
+  /** Keterangan bila tidak ada percakapan di Inbox (mis. dikirim ke grup). */
+  chatNote?: string
+  /** Rujukan booking dari kunci idempotensi pengirim (legacy: "<template>:<booking>:<tanggal>"). */
+  bookingRef?: string
+}
+
+/**
+ * Nomor booking dari kunci idempotensi pesan sistem. Legacy menulis "<template>:<bookingId>[:...]" atau
+ * "<template>:booking-<id>:<tanggal>"; "addon-<id>" bukan booking. Hanya angka yang diterima.
+ */
+export function bookingRefOf(key: string | null | undefined): string | undefined {
+  const seg = (key ?? '').split(':')[1] ?? ''
+  const m = /^(?:booking-)?(\d{1,10})$/.exec(seg)
+  return m ? m[1] : undefined
 }
 
 /** Template pesan sistem yang dikirim agent reminder (tamu), crew, dan vendor. */
@@ -70,11 +88,24 @@ export function fromRun(r: RunRow, contact: string | null): Activity | null {
     input: 'Pesan tamu: "' + clip(r.inboundText, 200) + '"',
     output: r.status === 'FAILED' ? 'Galat: ' + clip(r.error, 200) : r.status === 'HANDOFF' ? 'Chat diteruskan ke tim' + (r.replyText ? '; balasan: "' + clip(r.replyText, 240) + '"' : '') : 'Balasan: "' + clip(r.replyText, 300) + '"',
     conversationId: r.conversationId, contact,
+    inbound: r.inboundText,
+    ...(r.replyText ? { message: { text: r.replyText, imageUrl: null, to: 'Tamu' + (contact ? ' · ' + contact : '') } } : {}),
   }
 }
 
-export interface JobRow { id: string; conversationId: string | null; templateKey: string | null; status: string; lastError: string | null; createdAt: Date }
-export function fromJob(j: JobRow, contact: string | null, templateName: string | undefined): Activity | null {
+/** Nomor hanya 4 digit akhir; grup ditandai sebagai grup. */
+export function targetLabel(target: string | null, agent: AgentKey, contact: string | null): string {
+  const who = agent === 'crew' ? 'Crew' : agent === 'vendor' ? 'Vendor' : 'Tamu'
+  if (!target) return who + (contact ? ' · ' + contact : '')
+  if (target.startsWith('grup:')) return 'Grup WhatsApp ' + who.toLowerCase()
+  const d = target.replace(/\D/g, '')
+  return who + (contact ? ' · ' + contact : '') + (d ? ' · ••• ' + d.slice(-4) : '')
+}
+
+export interface JobPayload { text?: unknown; media?: { url?: unknown } | null }
+
+export interface JobRow { id: string; conversationId: string | null; templateKey: string | null; status: string; lastError: string | null; createdAt: Date; target?: string | null; payload?: unknown; idempotencyKey?: string | null }
+export function fromJob(j: JobRow, contact: string | null, templateName: string | undefined, chatId: string | null = j.conversationId): Activity | null {
   const agent = j.templateKey ? TEMPLATE_AGENT[j.templateKey] : undefined
   if (!agent) return null
   const status: ActStatus = j.status === 'SENT' ? 'ok' : j.status === 'FAILED' ? 'gagal' : j.status === 'CANCELLED' ? 'batal' : 'tunggu'
@@ -83,8 +114,18 @@ export function fromJob(j: JobRow, contact: string | null, templateName: string 
     title: templateName || j.templateKey!,
     input: 'Template ' + j.templateKey + ' ke ' + TARGET[agent],
     output: status === 'ok' ? 'Terkirim' : status === 'gagal' ? 'Gagal terkirim' + (j.lastError ? ': ' + clip(j.lastError, 200) : '') : status === 'batal' ? 'Dibatalkan' : 'Dalam antrean (' + j.status.toLowerCase() + ')',
-    conversationId: j.conversationId, contact,
+    conversationId: chatId, contact,
+    ...messageOf(j, agent, contact),
+    ...(bookingRefOf(j.idempotencyKey) ? { bookingRef: bookingRefOf(j.idempotencyKey) } : {}),
+    ...(!chatId ? { chatNote: j.target?.startsWith('grup:') ? 'Dikirim ke grup WhatsApp; grup tidak tampil di Inbox.' : 'Nomor tujuan belum punya percakapan di Inbox.' } : {}),
   }
+}
+
+function messageOf(j: JobRow, agent: AgentKey, contact: string | null): Pick<Activity, 'message'> {
+  const p = (j.payload ?? {}) as JobPayload
+  if (typeof p.text !== 'string' || !p.text) return {}
+  const img = p.media && typeof p.media.url === 'string' ? p.media.url : null
+  return { message: { text: p.text, imageUrl: img, to: targetLabel(j.target ?? null, agent, contact) } }
 }
 
 export interface EventRow { id: string; conversationId: string; event: string; actor: string; reason: string | null; createdAt: Date }

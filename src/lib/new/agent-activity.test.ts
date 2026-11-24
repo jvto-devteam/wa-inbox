@@ -41,3 +41,27 @@ describe('riwayat agent dari log yang ada', () => {
     expect(sortActivities([a, b]).map((x) => x.id)).toEqual(['x', 'sum:s'])
   })
 })
+
+describe('bukti pesan & rujukan legacy', () => {
+  it('isi pesan terkirim dari payload, tujuan disamarkan, grup diberi keterangan', () => {
+    const base = { id: 'j', conversationId: null, status: 'SENT', lastError: null, createdAt: at }
+    const v = fromJob({ ...base, templateKey: 'internal_bali_transport_reminder', target: '628155703072', payload: { text: '*Transport Bali*\nJemput 07:00', media: null }, idempotencyKey: 'internal_bali_transport_reminder:booking-4521:2026-11-25' }, null, 'Pengingat transport Bali H-1', 'conv-vendor')
+    expect(v).toMatchObject({ conversationId: 'conv-vendor', bookingRef: '4521', message: { text: '*Transport Bali*\nJemput 07:00', imageUrl: null, to: 'Vendor · ••• 3072' } })
+    expect(JSON.stringify(v)).not.toContain('628155703072')
+    const g = fromJob({ ...base, templateKey: 'crew_reminder_group', target: 'grup:120363@g.us', payload: { text: 'Besok jemput', media: { url: 'https://x/y.jpg' } }, idempotencyKey: 'crew_reminder_group:88:2026-11-25' }, null, undefined, null)
+    expect(g).toMatchObject({ bookingRef: '88', message: { to: 'Grup WhatsApp crew', imageUrl: 'https://x/y.jpg' }, chatNote: 'Dikirim ke grup WhatsApp; grup tidak tampil di Inbox.' })
+  })
+
+  it('rujukan booking hanya dari segmen angka', async () => {
+    const { bookingRefOf } = await import('./agent-activity')
+    expect(bookingRefOf('payment_reminder_balance:123:2026-11-24')).toBe('123')
+    expect(bookingRefOf('internal_bali_transport_reminder:addon-9:2026-11-24')).toBeUndefined()
+    expect(bookingRefOf('trip_concluded:abc')).toBeUndefined()
+    expect(bookingRefOf(null)).toBeUndefined()
+  })
+
+  it('balasan bot membawa pesan tamu dan balasan sebagai bukti', () => {
+    const a = fromRun({ id: 'r', conversationId: 'c', status: 'REPLIED', inboundText: 'Ijen buka?', replyText: 'Buka 01:00', error: null, startedAt: at }, 'Tom')
+    expect(a).toMatchObject({ inbound: 'Ijen buka?', message: { text: 'Buka 01:00', to: 'Tamu · Tom' } })
+  })
+})
