@@ -50,7 +50,7 @@ function useStageCounts(): Record<string, number> | null {
   useEffect(() => {
     let alive = true
     const keys = ['', ...PIPELINE_STAGES.map((s) => s.value)]
-    Promise.all(keys.map((k) => fetch('/api/contacts?limit=1' + (k ? '&stage=' + k : '')).then((r) => (r.ok ? r.json() : null)).catch(() => null)))
+    Promise.all(keys.map((k) => fetch('/api/contacts?hasPhone=1&limit=1' + (k ? '&stage=' + k : '')).then((r) => (r.ok ? r.json() : null)).catch(() => null)))
       .then((rs) => {
         if (!alive) return
         const out: Record<string, number> = {}
@@ -146,7 +146,7 @@ export function KontakView() {
     return () => clearTimeout(h)
   }, [q, set])
   const stage = s.kl
-  const url = '/api/contacts?limit=' + LIMIT + '&page=' + page + (s.kq ? '&q=' + encodeURIComponent(s.kq) : '') + (stage ? '&stage=' + stage : '')
+  const url = '/api/contacts?hasPhone=1&limit=' + LIMIT + '&page=' + page + (s.kq ? '&q=' + encodeURIComponent(s.kq) : '') + (stage ? '&stage=' + stage : '')
   const api = useApi<{ rows: Row[]; total: number; page: number; limit: number }>(url)
   const counts = useStageCounts()
   const rows = api.data?.rows ?? []
@@ -159,14 +159,14 @@ export function KontakView() {
         tone={api.error ? 'off' : 'info'}
         icon={NAV_ICON.kontak}
         title={counts?.Semua !== undefined ? counts.Semua + ' kontak' : 'Kontak'}
-        sub={api.error || 'Tahap mengikuti pipeline percakapan (otomatis dari data booking, atau diubah tim).'}
+        sub={api.error || 'Kontak bernomor WhatsApp. Tahap mengikuti pipeline percakapan (otomatis dari data booking, atau diubah tim).'}
         right={api.error ? <button className="btn sm" onClick={api.reload}>Coba lagi</button> : undefined}
       />
       <div className="pg-card">
         <SegBar
           id="k-hk"
           active={stage || 'Semua'}
-          total={{ key: 'Semua', label: 'Semua' }}
+          total={{ key: 'Semua', label: 'Semua', n: counts?.Semua }}
           onPick={(k) => { set((d) => { d.kl = k === 'Semua' ? '' : k }); setPage(1) }}
           items={PIPELINE_STAGES.map((p) => ({ key: p.value, label: p.label, n: counts?.[p.value] ?? 0, color: STAGE_COLOR[p.value] }))}
         />
@@ -182,12 +182,12 @@ export function KontakView() {
               <span className={'av ' + (r.pipelineStage === 'booked' || r.pipelineStage === 'lunas' ? 'info' : r.pipelineStage === 'nego' ? 'warn' : '')}>{initials(r.name || r.phone || '?')}</span>
               <div className="b">
                 <b>{r.name || fmtPhone(r.phone)}</b>
-                <span className="m">{fmtPhone(r.phone)}{r.orderChannel ? ' · ' + r.orderChannel : ''}</span>
-                <span className="m">{r.labels.length ? r.labels.join(', ') : ' '}</span>
+                <span className="kt-m">{fmtPhone(r.phone)}{r.orderChannel ? ' · ' + r.orderChannel : ''}</span>
+                {r.labels.length > 0 && <span className="kt-m">{r.labels.join(', ')}</span>}
               </div>
               <div className="r">
                 <span className={'pill ' + (STAGE_PILL[r.pipelineStage] || 'neu')}>{STAGE_LABELS[r.pipelineStage] || r.pipelineStage}</span>
-                <span className="t">{ago(r.lastContactAt)}</span>
+                {r.lastContactAt && <span className="t">{ago(r.lastContactAt)}</span>}
                 {r.conversationId && <a className="btn sm" href={'/inbox?conversation=' + r.conversationId} onClick={(e) => e.stopPropagation()} aria-label={'Buka chat ' + (r.name || r.phone)}>Chat</a>}
               </div>
             </div>

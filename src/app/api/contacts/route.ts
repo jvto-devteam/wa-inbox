@@ -76,6 +76,8 @@ export async function GET(req: Request) {
   const stage = url.searchParams.get('stage')
   const labelId = url.searchParams.get('labelId')
   const q = url.searchParams.get('q')?.trim() ?? ''
+  // `hasPhone=1`: hanya kontak bernomor (WhatsApp); kontak IG/FB/email tanpa nomor dilewati.
+  const hasPhone = url.searchParams.get('hasPhone') === '1'
   const { page, limit, skip } = readPaging(url)
 
   const conversationFilter: Prisma.ConversationWhereInput = {}
@@ -94,16 +96,19 @@ export async function GET(req: Request) {
     ? { OR: [{ name: { contains: q, mode: 'insensitive' } }, { phone: { contains: q } }] }
     : {}
 
+  const phoneFilter: Prisma.ContactWhereInput = hasPhone ? { AND: [{ phone: { not: null } }, { NOT: { phone: '' } }] } : {}
+  const contactWhere: Prisma.ContactWhereInput = { ...contactSearch, ...phoneFilter }
+
   const conversationWhere: Prisma.ConversationWhereInput = {
     ...conversationFilter,
-    ...(q ? { contact: contactSearch } : {}),
+    ...(q || hasPhone ? { contact: contactWhere } : {}),
   }
 
   // Filter stage/labelId hidup di Conversation -- kontak tanpa percakapan tidak pernah cocok,
   // jadi tier 1 kosong (bukan diquery) saat salah satunya aktif.
   const noConversationWhere: Prisma.ContactWhereInput | null = hasConversationFilter
     ? null
-    : { ...contactSearch, conversations: { none: {} } }
+    : { ...contactWhere, conversations: { none: {} } }
 
   const [conversationTotal, noConversationTotal] = await Promise.all([
     prisma.conversation.count({ where: conversationWhere }),

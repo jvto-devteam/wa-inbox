@@ -89,6 +89,8 @@ describe('Kontak: data asli', () => {
 
     fireEvent.click(within(document.getElementById('k-hk')!).getByText('Booked').closest('button')!)
     await waitFor(() => expect(calls.some((c) => c.url.includes('limit=40') && c.url.includes('stage=booked'))).toBe(true))
+    expect(calls.filter((c) => c.url.startsWith('/api/contacts?')).every((c) => c.url.includes('hasPhone=1'))).toBe(true)
+    expect(document.querySelectorAll('.kt-c .kt-m')).toHaveLength(2) // nomor + label (baris label hanya bila ada)
 
     fireEvent.click(document.querySelector('.kt-c')!)
     await waitFor(() => expect(screen.getByText('Belum pernah ditanyakan')).toBeInTheDocument())

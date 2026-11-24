@@ -84,6 +84,18 @@ describe('GET /api/contacts', () => {
     )
   })
 
+  it('?hasPhone=1 hanya kontak bernomor, di kedua tier dan di hitungan total', async () => {
+    await GET(new Request('http://localhost/api/contacts?hasPhone=1'))
+    const phone = { AND: [{ phone: { not: null } }, { NOT: { phone: '' } }] }
+    expect(mockPrisma.conversation.count).toHaveBeenCalledWith({ where: expect.objectContaining({ contact: expect.objectContaining(phone) }) })
+    expect(mockPrisma.contact.count).toHaveBeenCalledWith({ where: expect.objectContaining({ ...phone, conversations: { none: {} } }) })
+  })
+
+  it('tanpa hasPhone, kontak tanpa nomor tetap ikut (perilaku /contacts tidak berubah)', async () => {
+    await GET(new Request('http://localhost/api/contacts'))
+    expect(mockPrisma.conversation.count).toHaveBeenCalledWith({ where: {} })
+  })
+
   it('filters by ?labelId= to only contacts whose conversation has that label attached', async () => {
     mockPrisma.conversation.count.mockResolvedValue(1 as never)
     mockPrisma.conversation.findMany.mockResolvedValue([

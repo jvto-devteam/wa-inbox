@@ -58,7 +58,7 @@ export interface SegItem {
 }
 
 /** Batang komposisi + legenda; bila `onPick` ada, legenda menjadi tab/saringan (tombol dengan .on). */
-export function SegBar({ items, active, onPick, id, total }: { items: SegItem[]; active?: string; onPick?: (k: string) => void; id?: string; total?: { label: string; key: string } }) {
+export function SegBar({ items, active, onPick, id, total }: { items: SegItem[]; active?: string; onPick?: (k: string) => void; id?: string; total?: { label: string; key: string; n?: number } }) {
   const sum = items.reduce((n, i) => n + i.n, 0)
   return (
     <div className="pg-seg">
@@ -67,7 +67,7 @@ export function SegBar({ items, active, onPick, id, total }: { items: SegItem[];
       </div>
       <div className="pg-seg-l" id={id}>
         {total && onPick && (
-          <button type="button" className={active === total.key ? 'on' : ''} onClick={() => onPick(total.key)}>{total.label} <b>{sum}</b></button>
+          <button type="button" className={active === total.key ? 'on' : ''} onClick={() => onPick(total.key)}>{total.label} <b>{total.n ?? sum}</b></button>
         )}
         {items.map((i) => onPick
           ? <button key={i.key} type="button" className={active === i.key ? 'on' : ''} onClick={() => onPick(i.key)}><i style={{ background: i.color }} />{i.label} <b>{i.n}</b></button>
