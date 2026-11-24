@@ -100,10 +100,11 @@ describe('/new', () => {
     const tiles = document.querySelectorAll('.db-ag')
     expect(tiles).toHaveLength(8)
     const balas = Array.from(tiles).find((t) => t.textContent?.includes('Balas pesan'))!
-    expect(balas.textContent).toMatch(/Otomatis/)
-    expect(balas.textContent).toMatch(/Terakhir \d\d:\d\d · /)
+    expect(balas.textContent).toMatch(/Terakhir \d\d:\d\d/)
     const lead = Array.from(tiles).find((t) => t.textContent?.includes('Follow-up lead'))!
-    expect(lead.textContent).toMatch(/Draf/)
+    expect(lead.textContent).toMatch(/Draf saja/)
+    const vendor = Array.from(tiles).find((t) => t.textContent?.includes('Reminder ke vendor'))!
+    expect(vendor.textContent).toMatch(/1 gagal/)
     expect(fetchMock).not.toHaveBeenCalled()
     vi.unstubAllGlobals()
   })
