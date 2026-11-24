@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { getSession } from '@/lib/auth/get-session'
 import { prisma } from '@/lib/db'
+import { jakartaDay } from '@/lib/bot/eval/replay-pairs'
 import { buildReport, type ReportRow } from '@/lib/new/report'
 
 /**
@@ -30,6 +31,11 @@ type Raw = {
   start_ymd: string | null
   order_channel: string | null
   kind: string | null
+  blocker: unknown
+  next_step: string | null
+  review_at: Date | null
+  last_at: Date | null
+  last_dir: 'INBOUND' | 'OUTBOUND' | null
 }
 
 export async function GET(req: Request) {
@@ -51,15 +57,25 @@ export async function GET(req: Request) {
         c."bookingData"->>'package' as package,
         c."bookingData"->'date'->>'start_ymd' as start_ymd,
         c."bookingData"->>'orderChannel' as order_channel,
-        c."chatReview"->>'jenisKontak' as kind
+        c."chatReview"->>'jenisKontak' as kind,
+        c."chatReview"->'belumBooking' as blocker,
+        c."chatReview"->>'langkahBerikut' as next_step,
+        c."chatReviewAt" as review_at,
+        last.created_at as last_at,
+        last.direction::text as last_dir
       from "Conversation" c
       join "Contact" ct on ct.id = c."contactId"
       left join "ChannelIdentity" ci on ci.id = c."channelIdentityId"
       join "Message" m on m."conversationId" = c.id and m.direction = 'INBOUND'
+      left join lateral (
+        select lm."createdAt" as created_at, lm.direction
+        from "Message" lm where lm."conversationId" = c.id
+        order by lm."createdAt" desc limit 1
+      ) last on true
       where c."isTest" = false
         and (ci.platform = 'WHATSAPP'
           or (c."channelIdentityId" is null and c."mailAccountId" is null and ct.phone is not null))
-      group by c.id, ct.id`
+      group by c.id, ct.id, last.created_at, last.direction`
 
     const rows: ReportRow[] = raw.map((r) => ({
       id: r.id,
@@ -73,8 +89,14 @@ export async function GET(req: Request) {
       startYmd: r.start_ymd,
       orderChannel: r.order_channel,
       kind: r.kind,
+      blocker: r.blocker,
+      nextStep: r.next_step,
+      reviewAt: r.review_at ? new Date(r.review_at) : null,
+      lastAt: r.last_at ? new Date(r.last_at) : null,
+      lastDir: r.last_dir,
     }))
-    return NextResponse.json(buildReport(rows, parsed.data.from, parsed.data.to))
+    const today = jakartaDay(new Date())
+    return NextResponse.json(buildReport(rows, parsed.data.from, parsed.data.to, 8, today))
   } catch (error) {
     console.error('GET /api/new/report gagal', { error })
     return NextResponse.json({ error: 'Gagal membuat laporan' }, { status: 500 })

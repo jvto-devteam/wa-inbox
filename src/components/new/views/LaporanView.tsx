@@ -2,10 +2,11 @@
 
 // Menu Laporan: inquiry WhatsApp → booking. Halaman /new pertama yang memakai DATA ASLI
 // (GET /api/new/report); definisi angka di src/lib/new/report.ts.
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { jakartaDay } from '@/lib/bot/eval/replay-pairs'
 import { MONS } from '@/lib/new/dates'
-import { periodRange, type PeriodKey, type Report } from '@/lib/new/report'
+import { periodRange, type PeriodKey } from '@/lib/new/report'
+import { useReport } from '../useReport'
 
 const PERIODS: [PeriodKey, string][] = [['minggu-ini', 'Minggu ini'], ['minggu-lalu', 'Minggu lalu'], ['bulan-ini', 'Bulan ini'], ['bulan-lalu', 'Bulan lalu']]
 
@@ -19,24 +20,7 @@ export function LaporanView() {
   const [period, setPeriod] = useState<PeriodKey>('minggu-ini')
   const today = jakartaDay(new Date())
   const { from, to } = periodRange(period, today)
-  const key = from + '_' + to
-  const [res, setRes] = useState<{ key: string; data?: Report; error?: string } | null>(null)
-
-  useEffect(() => {
-    let alive = true
-    fetch(`/api/new/report?from=${from}&to=${to}`)
-      .then(async (r) => {
-        const j = await r.json()
-        if (!alive) return
-        if (!r.ok) setRes({ key, error: (j && j.error) || 'Gagal memuat laporan' })
-        else setRes({ key, data: j as Report })
-      })
-      .catch(() => { if (alive) setRes({ key, error: 'Gagal memuat laporan' }) })
-    return () => { alive = false }
-  }, [from, to, key])
-
-  const loading = !res || res.key !== key
-  const R = !loading ? res?.data : undefined
+  const { loading, data: R, error } = useReport(from, to)
   const conv = R && R.inquiries ? Math.round((R.inquiriesBooked / R.inquiries) * 100) : 0
   const maxT = R ? Math.max(1, ...R.trend.map((w) => w.inquiries)) : 1
 
@@ -62,7 +46,7 @@ export function LaporanView() {
         ))}
       </div>
 
-      {res?.error && !loading && <div className="card" style={{ color: 'var(--bad)', marginBottom: 12 }}>{res.error}</div>}
+      {error && <div className="card" style={{ color: 'var(--bad)', marginBottom: 12 }}>{error}</div>}
 
       <div className="grid g21">
         <div className="card">
@@ -107,10 +91,52 @@ export function LaporanView() {
         </div>
       </div>
 
+      <div className="grid g21" style={{ marginTop: 12 }}>
+        <div className="card" id="l-leads">
+          <h3>Belum booking: alasan & follow-up</h3>
+          <p className="hint">Inquiry periode ini yang belum booking. Alasan dan rekomendasi dari ringkasan chat AI; yang belum dinilai AI disimpulkan dari pesan terakhir.</p>
+          {loading ? <div className="mut" style={{ padding: 16 }}>Memuat…</div> : R && R.leads.length ? R.leads.map((l) => (
+            <div key={l.conversationId} className="item" style={{ gridTemplateColumns: 'minmax(0,1fr)' }}>
+              <div style={{ minWidth: 0 }}>
+                <a href={'/inbox?conversation=' + l.conversationId} style={{ color: 'var(--accent)', fontWeight: 600 }}>{l.name}</a>{' '}
+                <span className="mut sm">{l.phoneTail} · chat {fmt(l.firstChatDay)}</span>{' '}
+                <span className={'pill ' + (l.alasan === 'belum_dijawab' || l.alasan === 'menunggu_tim' ? 'bad' : l.alasan === 'harga' ? 'warn' : 'neu')}>{l.alasanText}</span>{' '}
+                {l.lastFrom && (
+                  <span className={'pill ' + (l.lastFrom === 'tamu' ? 'bad' : 'neu')}>
+                    {l.lastFrom === 'tamu' ? 'Menunggu balasan kita' : 'Menunggu tamu'}{l.silentDays ? ' · ' + l.silentDays + ' hari' : ''}
+                  </span>
+                )}
+                <p>{l.teks}</p>
+                {l.rekomendasi && <p><b style={{ color: 'var(--ink)' }}>Follow-up:</b> {l.rekomendasi}</p>}
+                <p className="sm">{l.sumber === 'ai' ? 'Dinilai AI' + (l.reviewDay ? ' ' + fmt(l.reviewDay) : '') : 'Belum dinilai AI'}</p>
+              </div>
+            </div>
+          )) : <div className="mut" style={{ padding: 16, textAlign: 'center' }}>Semua inquiry periode ini sudah booking, atau belum ada inquiry.</div>}
+        </div>
+
+        <div className="card" id="l-blockers">
+          <h3>Alasan belum booking</h3>
+          <p className="hint">Jumlah lead per alasan di periode ini.</p>
+          {loading ? <div className="mut" style={{ padding: 16 }}>Memuat…</div> : R && R.blockers.length ? R.blockers.map((b) => (
+            <div key={b.alasan} className="item" style={{ gridTemplateColumns: 'minmax(0,1fr) auto' }}>
+              <div>
+                <b style={{ fontWeight: 550 }}>{b.label}</b>
+                <div aria-hidden="true" style={{ marginTop: 4, height: 8, borderRadius: 4, background: 'var(--neutral-bg)', overflow: 'hidden' }}>
+                  <div style={{ height: '100%', width: (b.count / R.leads.length) * 100 + '%', background: 'var(--warn)' }} />
+                </div>
+              </div>
+              <b style={{ fontVariantNumeric: 'tabular-nums' }}>{b.count}</b>
+            </div>
+          )) : <div className="mut" style={{ padding: 16, textAlign: 'center' }}>Tidak ada lead yang tertunda.</div>}
+        </div>
+      </div>
+
       <p className="hint" style={{ marginTop: 12 }}>
         Inquiry = percakapan WhatsApp yang pesan masuk pertamanya jatuh di periode (vendor, crew, hotel yang dikenali ringkasan
         sebagai mitra tidak dihitung). Booking = tanggal booking sama atau sesudah hari chat pertama; tamu yang sudah booking sebelum
         chat tidak dihitung. Hanya booking terbaru per nomor yang tersimpan, dan data booking disegarkan bertahap tiap 5 menit.
+        Alasan belum booking ditulis AI saat meringkas chat (pesan masuk, chat dibuka, atau job 00.00); rekomendasi hanya saran
+        internal untuk tim, tidak pernah dikirim ke tamu.
       </p>
     </section>
   )
