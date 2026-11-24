@@ -2,9 +2,6 @@
 
 import { useState } from 'react'
 import { MONL, WEEKDAYS, dAt, dFmt, dOff, hhmm, monthCells, parseR, rLabel, whenLabel } from '@/lib/new/dates'
-import { cekLabel } from '@/lib/new/logic'
-import { AGS, AST, SRC } from '@/lib/new/mock-data'
-import { markWrong, useAgentCek } from './agent-actions'
 import { useNew, type DayKey, type RemReq, type SheetItem } from './store'
 
 export function ActionSheet({ title, items, onClose }: { title: string; items: SheetItem[]; onClose: () => void }) {
@@ -169,82 +166,6 @@ export function RemPicker({ req, onClose }: { req: RemReq; onClose: () => void }
               onClick={() => { if (past) return; onClose(); req.onDone(st.off, st.tm) }}>Jadwalkan</button>
           </span>
         </div>
-      </div>
-    </div>
-  )
-}
-
-export function AgentDrawer({ idx, onClose }: { idx: number; onClose: () => void }) {
-  const st = useNew()
-  const cek = useAgentCek()
-  const [open, setOpen] = useState(false)
-  const [fix, setFix] = useState('')
-  const e = st.s.ae[idx]
-  if (!e) return null
-  const tone = AST[e.s]
-  const src = e.src || SRC[e.a][0]
-  const save = () => {
-    const v = fix.trim()
-    st.set((d) => { const x = d.ae[idx]; x.fb = 'salah'; x.fix = v || undefined; markWrong(d, x.a, src, v) })
-    setOpen(false)
-    st.toast(v ? 'Ditandai salah. Koreksi disimpan sebagai draf knowledge' : 'Ditandai salah. Dipakai untuk akurasi agent')
-  }
-  return (
-    <div className="drawer" role="dialog" aria-label="Detail aktivitas agent">
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <b style={{ fontSize: 16, flex: 1 }}>{e.ti}</b>
-        <button className="btn sm" aria-label="Tutup" onClick={onClose}>✕</button>
-      </div>
-      <div style={{ margin: '8px 0', display: 'flex', gap: 8, alignItems: 'center' }}>
-        <span className="ag" style={{ '--c': `var(${AGS[e.a][1]})` } as React.CSSProperties}>{AGS[e.a][0]}</span>
-        <span className={'pill ' + tone[0]}>{tone[1]}</span>
-      </div>
-      <div className="box"><h4>Waktu dan percakapan</h4><dl className="kv"><dt>Waktu</dt><dd>{e.d}, {e.t}</dd><dt>Percakapan</dt><dd>{e.c}</dd></dl></div>
-      <div className="box" style={{ marginTop: 10 }}><h4>Masukan</h4>{e.i}</div>
-      <div className="box" style={{ marginTop: 10 }}><h4>Hasil</h4>{e.o}</div>
-      <div className="box" style={{ marginTop: 10 }}><h4>Sumber dan alasan</h4><dl className="kv"><dt>Sumber</dt><dd>{src}</dd><dt>Alasan</dt><dd>{e.why || SRC[e.a][1]}</dd></dl></div>
-      <div className="box" style={{ marginTop: 10 }}>
-        <h4>Penilaian</h4>
-        {e.fb === 'salah' ? (
-          <>
-            <span className="pill bad">Ditandai salah</span>
-            {e.fix && <p className="mut sm" style={{ margin: '6px 0 0' }}>Koreksi: {e.fix}</p>}
-          </>
-        ) : open ? (
-          <>
-            <textarea className="ta" placeholder="Jawaban yang benar (opsional)" aria-label="Jawaban yang benar" value={fix} onChange={(x) => setFix(x.target.value)} autoFocus />
-            <div className="acts" style={{ marginTop: 6 }}>
-              <button className="btn sm" onClick={() => setOpen(false)}>Batal</button>
-              <button className="btn pri sm" onClick={save}>Tandai salah</button>
-            </div>
-          </>
-        ) : (
-          <button className="btn sm bad" onClick={() => {
-            if (e.a === 'balas' || e.a === 'lead') setOpen(true)
-            else {
-              st.set((d) => { d.ae[idx].fb = 'salah'; markWrong(d, e.a, src, '') })
-              st.toast('Ditandai salah. Dipakai untuk akurasi agent')
-            }
-          }}>Tandai salah</button>
-        )}
-      </div>
-      <div className="acts" style={{ marginTop: 12 }}>
-        {e.h.k !== 'out' && <button className="btn pri" onClick={() => cek(e)}>{cekLabel(e)}</button>}
-        <button className="btn" onClick={() => { onClose(); if (e.c === 'Semua percakapan') st.go('ringkasan'); else st.openConv(e.c) }}>Buka chat</button>
-        {e.s === 'gagal' && (
-          <button className="btn" onClick={() => {
-            st.set((d) => { d.ae[idx].s = 'ok'; d.ae[idx].o = 'Berhasil dikirim ulang sekarang' })
-            onClose()
-            st.toast('Dicoba lagi, berhasil')
-          }}>Coba lagi</button>
-        )}
-        {e.r && e.s === 'ok' && (
-          <button className="btn bad" onClick={() => {
-            st.set((d) => { d.ae[idx].s = 'batal'; d.ae[idx].o += ' · dibatalkan, tamu perlu dikabari manual' })
-            onClose()
-            st.toast('Perubahan dibatalkan')
-          }}>Batalkan</button>
-        )}
       </div>
     </div>
   )

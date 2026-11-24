@@ -1,7 +1,6 @@
 import { fireEvent, render, screen, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { NewShell } from './Shell'
-import { AgentView } from './views/AgentView'
 import { AntreanView } from './views/AntreanView'
 import { InboxView } from './views/InboxView'
 import { LaporanView } from './views/LaporanView'
@@ -25,7 +24,6 @@ describe('tata letak berbeda per halaman /new', () => {
     ['Antrean', <AntreanView key="a" />, '.pg-urgent', false],
     ['Ringkasan', <RingkasanView key="r" />, '#v-ringkasan .pg-urgent', false],
     ['Laporan', <LaporanView key="l" />, '.db-hero', true],
-    ['Riwayat Agent', <AgentView key="g" />, '#v-agent .bt-ban', false],
     ['Inbox', <InboxView key="i" />, '.inbox', false],
   ])('%s', (_n, el, signature, hero) => {
     show(el)
@@ -51,18 +49,6 @@ describe('tata letak berbeda per halaman /new', () => {
     fireEvent.click(screen.getByText(/^Per percakapan/))
     expect(document.querySelectorAll('#r-chats details').length).toBeGreaterThan(5)
     expect(document.getElementById('r-pts')).toBeNull()
-  })
-
-  it('Riwayat Agent: banner peringatan bila ada yang gagal, linimasa per jam, strip Gagal menyaring', () => {
-    show(<AgentView />)
-    expect(document.querySelector('#v-agent .bt-ban')?.className).toContain('warn')
-    expect(document.querySelector('#v-agent .bt-ban .tx span')?.textContent).toMatch(/^2 gagal perlu dicek/)
-    expect(document.querySelector('.ag-h')?.textContent).toMatch(/^\d\d\.00$/)
-    fireEvent.click(within(document.getElementById('g-hk')!).getByText('Gagal').closest('button')!)
-    expect((screen.getByLabelText('Saring status') as HTMLSelectElement).value).toBe('gagal')
-    const evs = document.querySelectorAll('#g-t .ag-ev')
-    expect(evs.length).toBeGreaterThan(0)
-    expect(Array.from(evs).map((e) => e.querySelector('.pill')?.textContent)).toEqual(Array(evs.length).fill('Gagal'))
   })
 
   it('Laporan: lead dikelompokkan, yang menunggu balasan kita lebih dulu', () => {

@@ -8,10 +8,10 @@ import { antreanTotal, failedCount, inboxBadge } from '@/lib/new/logic'
 import { CH, KT, initialState } from '@/lib/new/mock-data'
 import type { State, ViewKey } from '@/lib/new/types'
 import { NAV_ICON, SearchIcon } from './icons'
-import { ActionSheet, AgentDrawer, RangePicker, RemPicker } from './Overlays'
+import { ActionSheet, RangePicker, RemPicker } from './Overlays'
 import {
   ROUTES, StoreCtx, TITLES, viewFromPath,
-  type DayKey, type DrawerDesc, type NewStore, type RemReq, type SheetItem,
+  type DayKey, type NewStore, type RemReq, type SheetItem,
 } from './store'
 
 const MQ = '(max-width:860px)'
@@ -45,7 +45,6 @@ export function NewShell({ children }: { children: React.ReactNode }) {
   const [mInfo, setMInfo] = useState(false)
   const [mSearch, setMSearch] = useState(false)
   const [more, setMore] = useState(false)
-  const [drawerD, setDrawerD] = useState<DrawerDesc | null>(null)
   const [sheetD, setSheetD] = useState<{ title: string; items: SheetItem[] } | null>(null)
   const [remD, setRemD] = useState<RemReq | null>(null)
   const [drpK, setDrpK] = useState<DayKey | null>(null)
@@ -95,7 +94,6 @@ export function NewShell({ children }: { children: React.ReactNode }) {
     sheet: (title, items) => setSheetD({ title, items }),
     remind: (req) => setRemD(req),
     pickRange: (k) => setDrpK(k),
-    drawer: (d) => setDrawerD(d),
     setChatMode: (m) => { setMstate(m); if (m !== 'chat') setMInfo(false) },
     toggleInfo: (on) => setMInfo((p) => (on === undefined ? !p : on)),
   }), [s, set, view, isM, mstate, go, toast, openConv])
@@ -119,7 +117,7 @@ export function NewShell({ children }: { children: React.ReactNode }) {
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); gsRef.current?.focus() }
       if (e.key === 'Escape') {
-        setDrawerD(null); setUdrop(false); setMSearch(false); setMInfo(false); setMore(false); setSheetD(null); setDrpK(null); setRemD(null)
+        setUdrop(false); setMSearch(false); setMInfo(false); setMore(false); setSheetD(null); setDrpK(null); setRemD(null)
       }
     }
     const onClick = (e: MouseEvent) => {
@@ -249,9 +247,6 @@ export function NewShell({ children }: { children: React.ReactNode }) {
           </main>
         </div>
 
-        <div id="drawer" onClick={(e) => { if (e.target === e.currentTarget) setDrawerD(null) }}>
-          {drawerD?.kind === 'agent' && <AgentDrawer key={drawerD.idx} idx={drawerD.idx} onClose={() => setDrawerD(null)} />}
-        </div>
         <div id="toast">{toastM && <div key={toastM.n} className="toast" role="status">{toastM.m}</div>}</div>
 
         <nav className="mtab" aria-label="Menu utama">
