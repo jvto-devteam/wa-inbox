@@ -48,9 +48,10 @@ describe('Template pesan: data asli', () => {
     routes['PATCH /api/system-templates/payment_reminder_balance'] = (_u, b) => ({ body: { ...TPL('payment_reminder_balance', 'CUSTOMER'), ...(b as object) } })
     show('/new/template', <TemplateView />)
     await waitFor(() => expect(document.querySelector('.bt-ban b')?.textContent).toBe('2 template pesan sistem'))
-    expect(screen.getByText('Data asli')).toBeInTheDocument()
+    // pratinjau WhatsApp: nilai contoh terisi, format *tebal* dirender
+    expect(document.querySelector('#t-list .wa-b')?.textContent).toContain('Halo John')
 
-    fireEvent.click(screen.getByText('Nama payment_reminder_balance').closest('.item')!)
+    fireEvent.click(screen.getByText('Nama payment_reminder_balance').closest('.tpw')!)
     fireEvent.change(screen.getByLabelText('Isi pesan'), { target: { value: 'Hai {customer_name}, sisa pembayaran' } })
     await act(async () => { fireEvent.click(screen.getByText('Simpan')) })
     expect(calls.find((c) => c.method === 'PATCH')).toMatchObject({ url: '/api/system-templates/payment_reminder_balance', body: { body: 'Hai {customer_name}, sisa pembayaran' } })

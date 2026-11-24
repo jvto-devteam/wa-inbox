@@ -24,8 +24,6 @@ const noop = () => () => {}
 
 const SIDE: ViewKey[] = ['hub', 'inbox', 'antrean', 'ringkasan', 'laporan', 'agent', 'kontak', 'template', 'bot']
 const MTAB: ViewKey[] = ['hub', 'inbox', 'antrean', 'ringkasan']
-/** Halaman /new yang sudah tersambung data produksi. */
-const REAL: ViewKey[] = ['bot', 'template', 'kontak']
 const MORE: ViewKey[] = ['laporan', 'agent', 'kontak', 'template', 'bot']
 
 interface Hit { t: 'Chat' | 'Kontak'; n: string; s: string }
@@ -224,9 +222,6 @@ export function NewShell({ children }: { children: React.ReactNode }) {
                 )}
               </div>
               <div className="attn">
-                {REAL.includes(view)
-                  ? <span className="pill good demo" title="Halaman ini membaca dan menulis data produksi">Data asli</span>
-                  : <span className="pill warn demo" title="Pratinjau: semua data di halaman ini adalah contoh">Data contoh</span>}
                 {s.pause && (
                   <button className="pill bad" onClick={() => { set((d) => { d.btab = 'Agent' }); go('bot') }}>Agent dijeda</button>
                 )}

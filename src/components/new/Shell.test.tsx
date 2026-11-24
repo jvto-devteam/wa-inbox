@@ -45,7 +45,7 @@ describe('/new', () => {
   ])('%s tergambar dengan data contoh', (p, el, text) => {
     at(p, el)
     expect(document.body.textContent + Array.from(document.querySelectorAll('textarea')).map((t) => t.placeholder).join(' ')).toContain(text)
-    expect(screen.getByText('Data contoh')).toBeInTheDocument()
+    expect(screen.queryByText('Data contoh')).toBeNull()
   })
 
   it('menu sidebar berpindah lewat router, bukan hash', () => {
