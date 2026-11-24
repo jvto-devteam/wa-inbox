@@ -12,6 +12,7 @@ import { renderSystemTemplate, validateTemplateBody } from '@/lib/system-templat
 import { Banner, StatStrip } from '../Blocks'
 import { NAV_ICON } from '../icons'
 import { useNew } from '../store'
+import { WaBubble } from '../WaBubble'
 import { apiSend, useApi } from '../useApi'
 
 type Css = React.CSSProperties & Record<`--${string}`, string>
@@ -84,8 +85,8 @@ function TemplateDrawer({ t, onClose, onSaved, onToggle }: { t: Tpl; onClose: ()
         <p className="hint" style={{ margin: '6px 0 0' }}>* wajib. Klik untuk menambahkan ke akhir teks. Variabel opsional yang kosong membuang barisnya.</p>
       </div>
       <div className="box" style={{ marginTop: 10 }}>
-        <h4>Pratinjau dengan contoh</h4>
-        <div className="log">{prev.ok ? prev.text : 'Variabel wajib kosong: ' + prev.missing.join(', ')}</div>
+        <h4>Pratinjau di WhatsApp (nilai contoh)</h4>
+        {prev.ok ? <WaBubble text={prev.text} imageUrl={t.imageUrl} /> : <div className="log">Variabel wajib kosong: {prev.missing.join(', ')}</div>}
       </div>
       <div className="acts" style={{ marginTop: 12 }}>
         <button className="btn pri" disabled={!dirty || errs.length > 0 || busy} onClick={save}>{busy ? 'Menyimpan…' : 'Simpan'}</button>
@@ -166,29 +167,34 @@ export function TemplateView() {
         <input className="in" placeholder="Cari nama atau kunci template" aria-label="Cari template"
           value={s.tq} onChange={(e) => { const v = e.target.value; set((d) => { d.tq = v }) }} />
       </div>
-      <div className="card" id="t-list">
-        {api.loading ? <div className="mut" style={{ padding: 20, textAlign: 'center' }}>Memuat…</div> : L.length ? L.map((t) => {
+      <div className="tpw-grid" id="t-list">
+        {api.loading ? <div className="pg-card mut" style={{ textAlign: 'center' }}>Memuat…</div> : L.length ? L.map((t) => {
           const ag = tplAgent(t.key)
+          const r = renderSystemTemplate(t, exampleValues(t))
           return (
-            <div key={t.key} className="item" style={{ cursor: 'pointer' }} onClick={(e) => {
-              if ((e.target as HTMLElement).closest('label,input,button')) return
-              setOpen(t.key)
-            }}>
-              <div style={{ minWidth: 0 }}>
-                <b>{t.name}</b>{' '}
-                <span className={'pill ' + AUD[t.audience][0]}>{AUD[t.audience][1]}</span>{' '}
-                <span className="pill neu">{tplCategory(t.key)}</span>{' '}
-                {ag && <span className="ag" style={{ '--c': `var(${AGS[ag][1]})`, marginLeft: 4 } as Css}>{AGS[ag][0]}</span>}
-                <p style={{ fontFamily: 'ui-monospace,Menlo,monospace', fontSize: 12 }}>{t.key}</p>
-                {t.description && <p>{t.description}</p>}
+            <div key={t.key} className={'tpw' + (t.isActive ? '' : ' off')} role="button" tabIndex={0}
+              onClick={(e) => { if (!(e.target as HTMLElement).closest('label,input,button')) setOpen(t.key) }}
+              onKeyDown={(e) => { if (e.key === 'Enter') setOpen(t.key) }}>
+              <div className="tpw-h">
+                <div className="n">
+                  <b>{t.name}</b>
+                  <div className="p">
+                    <span className={'pill ' + AUD[t.audience][0]}>Ke {AUD[t.audience][1].toLowerCase()}</span>
+                    <span className="pill neu">{tplCategory(t.key)}</span>
+                    {ag && <span className="ag" style={{ '--c': `var(${AGS[ag][1]})` } as Css}>{AGS[ag][0]}</span>}
+                    {!t.isActive && <span className="pill bad">Nonaktif</span>}
+                  </div>
+                </div>
+                <label className="sw" title={t.isActive ? 'Aktif' : 'Nonaktif'}>
+                  <input type="checkbox" checked={t.isActive} aria-label={'Aktif: ' + t.name} onChange={(e) => toggle(t, e.target.checked)} />
+                  <i />
+                </label>
               </div>
-              <label className="sw" title={t.isActive ? 'Aktif' : 'Nonaktif'}>
-                <input type="checkbox" checked={t.isActive} aria-label={'Aktif: ' + t.name} onChange={(e) => toggle(t, e.target.checked)} />
-                <i />
-              </label>
+              <WaBubble text={r.ok ? r.text : t.body} imageUrl={t.imageUrl} clamp />
+              <div className="tpw-f"><code>{t.key}</code>{t.description && <span title={t.description}>· {t.description.length > 70 ? t.description.slice(0, 70) + '…' : t.description}</span>}</div>
             </div>
           )
-        }) : <div className="mut" style={{ padding: 20, textAlign: 'center' }}>{api.error ? 'Tidak bisa memuat template.' : 'Tidak ada template.'}</div>}
+        }) : <div className="pg-card mut" style={{ textAlign: 'center' }}>{api.error ? 'Tidak bisa memuat template.' : 'Tidak ada template.'}</div>}
       </div>
       {current && (
         <div id="t-drawer" onClick={(e) => { if (e.target === e.currentTarget) setOpen(null) }}>

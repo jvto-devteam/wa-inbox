@@ -783,3 +783,29 @@
 .nwa .view.fx>#t-drawer,.nwa .view.fx>#k-drawer{animation:none}
 .nwa #k-drawer:has(.drawer)::before{content:"";position:fixed;inset:0;background:rgba(10,14,24,.25);z-index:39}
 .nwa .pg-st:focus:not(:focus-visible),.nwa .pg-seg-l>button:focus:not(:focus-visible){outline:none}
+
+/* ---------- Pratinjau pesan WhatsApp (Template pesan) ---------- */
+.nwa{--wa-bg:#efeae2;--wa-out:#d9fdd3;--wa-ink:#111b21;--wa-meta:#667781;--wa-link:#027eb5;--wa-tick:#53bdeb}
+.nwa[data-theme="dark"]{--wa-bg:#0b141a;--wa-out:#005c4b;--wa-ink:#e9edef;--wa-meta:#8696a0;--wa-link:#53bdeb}
+.nwa .wa-chat{background:var(--wa-bg);background-image:radial-gradient(rgba(0,0,0,.045) 1px,transparent 1.2px);background-size:14px 14px;padding:10px 10px 12px 26px;border-radius:10px;display:flex;justify-content:flex-end}
+.nwa .wa-b{position:relative;max-width:100%;background:var(--wa-out);color:var(--wa-ink);border-radius:8px 0 8px 8px;padding:6px 8px 8px 9px;box-shadow:0 1px .5px rgba(11,20,26,.13);font:14px/1.38 -apple-system,'Segoe UI',Helvetica,Arial,sans-serif;overflow-wrap:anywhere}
+.nwa .wa-b::after{content:"";position:absolute;right:-8px;top:0;border:8px solid transparent;border-top-color:var(--wa-out);border-left-color:var(--wa-out);border-right-width:0;border-bottom-width:0}
+.nwa .wa-img{display:block;width:100%;max-height:170px;object-fit:cover;border-radius:6px;margin:-2px 0 6px;background:rgba(0,0,0,.06)}
+.nwa .wa-ln{min-height:1.38em;white-space:pre-wrap}
+.nwa .wa-t strong{font-weight:700}
+.nwa .wa-t code{font:12.5px ui-monospace,Menlo,monospace}
+.nwa .wa-l{color:var(--wa-link);text-decoration:underline;text-decoration-thickness:1px}
+.nwa .wa-more{border:0;background:none;padding:0;margin-top:2px;color:var(--wa-link);font:inherit;font-weight:600;cursor:pointer}
+.nwa .wa-meta{float:right;display:inline-flex;align-items:center;gap:3px;margin:6px -2px -4px 10px;font-size:11px;color:var(--wa-meta)}
+.nwa .wa-meta svg{width:16px;height:11px;fill:var(--wa-tick)}
+.nwa .tpw-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:12px;align-items:start}
+.nwa .tpw{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:10px;display:flex;flex-direction:column;gap:8px;cursor:pointer;min-width:0}
+.nwa .tpw:hover{border-color:var(--accent)}
+.nwa .tpw.off{opacity:.6}
+.nwa .tpw-h{display:flex;align-items:flex-start;gap:8px}
+.nwa .tpw-h .n{flex:1;min-width:0}
+.nwa .tpw-h b{display:block;font-weight:650;font-size:13.5px;line-height:1.3}
+.nwa .tpw-h .p{display:flex;gap:4px;flex-wrap:wrap;margin-top:3px}
+.nwa .tpw-f{font-size:11.5px;color:var(--muted);display:flex;gap:6px;align-items:center;min-width:0}
+.nwa .tpw-f code{font:11px ui-monospace,Menlo,monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+@media (max-width:860px){.nwa .tpw-grid{grid-template-columns:minmax(0,1fr)}.nwa .tpw{border:0}}
