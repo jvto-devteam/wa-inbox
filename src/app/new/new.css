@@ -583,6 +583,7 @@
 .nwa .db-ag .tn{display:block;font-size:12.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .nwa .db-ag .st{display:block;font-size:11.5px;color:var(--muted)}
 .nwa .db-ag .st.bad{color:var(--bad)}
+.nwa .db-agf{border-top:1px solid var(--line);margin-top:4px;padding-top:8px;text-align:right}
 .nwa .db-ag .v{flex:none;font-size:17px;font-weight:700;font-variant-numeric:tabular-nums}
 .nwa .db-chips{display:flex;gap:5px;flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;margin:0 0 6px}
 .nwa .db-chips button{flex:none;border:1px solid var(--line);background:var(--surface);border-radius:99px;padding:2px 9px;font-size:11.5px;font-weight:600;color:var(--muted)}
