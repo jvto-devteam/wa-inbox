@@ -14,10 +14,6 @@ import { useNew } from '../store'
 import { useReport } from '../useReport'
 
 type Css = React.CSSProperties & Record<`--${string}`, string>
-const G: Record<string, [string, string]> = {
-  balas: ['#3b6cf6', '#2347c9'], poin: ['#a855f7', '#7b2fd1'], note: ['#14b8a6', '#0b7a72'], ringkas: ['#64748b', '#334155'],
-  reminder: ['#fb923c', '#ea580c'], crew: ['#38bdf8', '#0369a1'], vendor: ['#ef4444', '#b91c1c'], lead: ['#22c55e', '#15803d'],
-}
 /** Komposisi antrean: slot kategorikal tetap per jenis (bukan per urutan). */
 const AT_COLOR: Record<AtKey, string> = { Balas: 'var(--s1)', 'Tindak lanjut': 'var(--s2)', 'Janji tim': 'var(--s3)', Reminder: 'var(--s4)' }
 const MONS = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des']
@@ -186,39 +182,24 @@ export function HubView() {
         </div>
 
         <div className="db-c s12">
-          <div className="db-h"><h3>Agent hari ini</h3><button type="button" className="x" onClick={() => hubGo('agent')}>Riwayat Agent</button></div>
-          <div className="db-sum">
-            <span className="pill good">{aktif} aktif</span>
-            <span className="pill info">{today.length} tugas</span>
-            <span className="pill good">{ok} berhasil</span>
-            {gagalToday > 0 && <span className="pill bad">{gagalToday} gagal</span>}
+          <div className="db-h">
+            <h3>Agent hari ini</h3>
+            <span className="mut sm">{today.length} tugas · {ok} berhasil{gagalToday ? ' · ' + gagalToday + ' gagal' : ''}</span>
+            <button type="button" className="x" onClick={() => hubGo('agent')}>Riwayat Agent</button>
           </div>
-          <div className="db-strip">
+          <div className="db-agl">
             {AGENT_KEYS.map((k) => {
               const ev = today.filter((e) => e.a === k)
-              const okK = ev.filter((e) => e.s === 'ok').length
               const badK = ev.filter((e) => e.s === 'gagal').length
-              const restK = ev.length - okK - badK
-              const last = ev[0]
-              const mode = s.pause ? ['off', 'Dijeda'] : s.agm[k] === 'mati' ? ['off', 'Mati'] : s.agm[k] === 'draf' ? ['dr', 'Draf'] : ['on', 'Otomatis']
+              const note = s.pause ? 'Dijeda' : s.agm[k] === 'mati' ? 'Mati' : badK ? badK + ' gagal' : s.agm[k] === 'draf' ? 'Draf saja' : ev.length ? 'Terakhir ' + ev[0].t : 'Belum ada tugas'
               return (
-                <button key={k} type="button" className="db-ag" style={{ '--g1': G[k][0], '--g2': G[k][1] } as Css}
-                  onClick={() => hubGo('agent', (d) => { d.aag = k })}>
-                  <span className="hd">
-                    <span className="rb" dangerouslySetInnerHTML={{ __html: robotSvg(k) }} />
+                <button key={k} type="button" className="db-ag" onClick={() => hubGo('agent', (d) => { d.aag = k })}>
+                  <span className="rb" dangerouslySetInnerHTML={{ __html: robotSvg(k) }} />
+                  <span className="tx">
                     <span className="tn">{AGS[k][0]}</span>
-                    <span className={'md ' + mode[0]}>{mode[1]}</span>
+                    <span className={'st' + (badK || s.pause || s.agm[k] === 'mati' ? ' bad' : '')}>{note}</span>
                   </span>
-                  <span className="tv">
-                    <b>{ev.length}</b><small>tugas</small>
-                    {badK > 0 && <span className="bad">{badK} gagal</span>}
-                  </span>
-                  <span className="mt" aria-hidden="true">
-                    {okK > 0 && <span style={{ flex: okK, background: 'var(--good)' }} />}
-                    {restK > 0 && <span style={{ flex: restK, background: 'var(--warn)' }} />}
-                    {badK > 0 && <span style={{ flex: badK, background: 'var(--bad)' }} />}
-                  </span>
-                  <span className="ft">{last ? 'Terakhir ' + last.t + ' · ' + last.c : 'Belum ada tugas hari ini'}</span>
+                  <span className="v">{ev.length}</span>
                 </button>
               )
             })}
