@@ -105,6 +105,37 @@ export const PROFILE_LABEL_TEXT: Record<ProfileLabel, string> = {
 }
 export const PARTY_LABELS: readonly ProfileLabel[] = ['solo', 'pasangan', 'grup_kecil', 'grup_besar', 'keluarga_anak']
 
+/**
+ * Kenapa calon tamu BELUM booking, dari kosakata tetap (owner 2026-11-24: laporan inquiry → booking
+ * harus bisa menjawab "kenapa tidak jadi" dan "follow-up apa"). Urutan = urutan tampil.
+ */
+export const LEAD_BLOCKERS = [
+  'harga', 'belum_pasti', 'diskusi_rombongan', 'belum_dijawab', 'menunggu_tim', 'tamu_diam',
+  'paket_tidak_cocok', 'pilih_lain', 'kendala_bayar', 'hanya_tanya', 'lainnya',
+] as const
+export type LeadBlocker = (typeof LEAD_BLOCKERS)[number]
+export const LEAD_BLOCKER_TEXT: Record<LeadBlocker, string> = {
+  harga: 'Harga / budget',
+  belum_pasti: 'Tanggal atau rencana belum pasti',
+  diskusi_rombongan: 'Menunggu keputusan rombongan',
+  belum_dijawab: 'Pertanyaan tamu belum dijawab tuntas',
+  menunggu_tim: 'Menunggu info yang dijanjikan tim',
+  tamu_diam: 'Tamu diam setelah penawaran',
+  paket_tidak_cocok: 'Paket/rute tidak cocok',
+  pilih_lain: 'Memilih operator lain / open trip',
+  kendala_bayar: 'Kendala pembayaran',
+  hanya_tanya: 'Sekadar cari info',
+  lainnya: 'Lainnya',
+}
+/** Hanya calon tamu tanpa booking. `rekomendasi` = satu langkah follow-up untuk tim (internal, tidak dikirim). */
+export const leadBlockerSchema = z.object({
+  alasan: z.enum(LEAD_BLOCKERS),
+  teks: z.string(),
+  rekomendasi: z.string(),
+  messageId: z.string().optional(),
+})
+export type ReviewLeadBlocker = z.infer<typeof leadBlockerSchema>
+
 /** Satu label profil beserta pesan buktinya (wajib). */
 export const reviewProfileSchema = z.object({ label: z.enum(PROFILE_LABELS), messageId: z.string() })
 export type ReviewProfile = z.infer<typeof reviewProfileSchema>
@@ -203,6 +234,8 @@ export const conversationReviewSchema = z.object({
   profil: z.array(reviewProfileSchema).default([]),
   statusAgen: z.string(),
   langkahBerikut: z.string(),
+  /** Opsional: hanya calon tamu tanpa booking; ringkasan sebelum 24 November 2026 tidak memilikinya. */
+  belumBooking: leadBlockerSchema.optional(),
   /** Opsional: hanya percakapan ber-booking, dan hanya setelah fitur Catatan crew menyala. Bukan keluaran review LLM. */
   catatanCrew: crewNoteSchema.optional(),
   /** Opsional: hanya percakapan ber-booking. Bukan keluaran review LLM; dibuat panggilan kecil sesudahnya. */
