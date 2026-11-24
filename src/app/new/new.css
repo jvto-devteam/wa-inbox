@@ -712,10 +712,21 @@
  .nwa #a-list .item,.nwa #r-pts .item{margin-left:-16px;padding-left:13px}
 }
 /* Ringkasan memakai pola daftar Antrean: garis warna per jenis di kiri item. */
+.nwa .r-top{display:flex;align-items:center;gap:8px}
+.nwa .r-top .r-day{width:auto;border:0;background-color:transparent;padding:0 22px 0 0;font-size:16px;font-weight:700;color:var(--ink);cursor:pointer}
+.nwa .r-top .r-regen{margin-left:auto}
+.nwa .r-meta{margin:2px 0 10px;font-size:12.5px;color:var(--muted)}
 .nwa .r-view{display:flex;width:100%}
-.nwa .r-view button{flex:1;line-height:30px}
-.nwa #v-ringkasan .pg-card-h{flex-wrap:wrap}
-@media (max-width:860px){.nwa #v-ringkasan .r-regen{display:none}.nwa .r-view button{font-size:12.5px;padding:0 6px}}
+.nwa .r-view button{flex:1;line-height:28px;white-space:nowrap;padding:0 8px}
+.nwa .r-view button b{font-weight:700;margin-left:4px;color:var(--muted)}
+.nwa .r-view button.on b{color:var(--accent)}
+.nwa .r-view button:focus:not(:focus-visible){outline:none}
+.nwa .r-view button:focus-visible{outline-offset:-2px}
+@media (max-width:860px){
+ .nwa #v-ringkasan .r-regen{display:none}
+ .nwa .r-top .r-day{font-size:17px!important;color:var(--ink)!important;min-height:30px}
+ .nwa .r-view button{font-size:13.5px;line-height:30px}
+}
 .nwa .ag-tl{padding:6px 14px 10px}
 .nwa .ag-g{position:relative;padding-left:16px}
 .nwa .ag-g::before{content:"";position:absolute;left:4px;top:24px;bottom:4px;border-left:2px solid var(--line)}
