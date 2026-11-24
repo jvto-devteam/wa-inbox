@@ -1,15 +1,24 @@
 'use client'
 
-import { useMemo } from 'react'
-import { jakartaDay } from '@/lib/bot/eval/replay-pairs'
-import { buildReport, type Report } from '@/lib/new/report'
-import { reportRows } from '@/lib/new/report-mock'
+import { useEffect, useState } from 'react'
+import type { Report } from '@/lib/new/report'
 
-/** Laporan inquiry → booking dari DATA CONTOH untuk rentang [from, to]; dipakai Laporan dan Dashboard /new. */
+/** Laporan inquiry → booking (data asli) untuk rentang [from, to]; dipakai Laporan dan Dashboard /new. */
 export function useReport(from: string, to: string): { loading: boolean; data?: Report; error?: string } {
-  const data = useMemo(() => {
-    const today = jakartaDay(new Date())
-    return buildReport(reportRows(today), from, to, 8, today)
-  }, [from, to])
-  return { loading: false, data }
+  const key = from + '_' + to
+  const [res, setRes] = useState<{ key: string; data?: Report; error?: string } | null>(null)
+  useEffect(() => {
+    let alive = true
+    fetch(`/api/new/report?from=${from}&to=${to}`)
+      .then(async (r) => {
+        const j = await r.json()
+        if (!alive) return
+        if (!r.ok) setRes({ key, error: (j && j.error) || 'Gagal memuat laporan' })
+        else setRes({ key, data: j as Report })
+      })
+      .catch(() => { if (alive) setRes({ key, error: 'Gagal memuat laporan' }) })
+    return () => { alive = false }
+  }, [from, to, key])
+  const loading = !res || res.key !== key
+  return { loading, data: loading ? undefined : res?.data, error: loading ? undefined : res?.error }
 }

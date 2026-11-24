@@ -1,6 +1,6 @@
 'use client'
 
-// Menu Laporan: inquiry WhatsApp → booking, dari DATA CONTOH (src/lib/new/report-mock.ts);
+// Menu Laporan: inquiry WhatsApp → booking, DATA ASLI (GET /api/new/report);
 // definisi angka di src/lib/new/report.ts.
 import { Fragment, useState } from 'react'
 import { jakartaDay } from '@/lib/bot/eval/replay-pairs'
@@ -55,14 +55,14 @@ export function LaporanView() {
       <div className="grid g21">
         <div className="card" id="l-bookings">
           <h3>Customer dari WhatsApp yang booking</h3>
-          <p className="hint">Awalnya chat WhatsApp, lalu booking. Nama membuka chat-nya di Inbox (bila ada di data contoh).</p>
+          <p className="hint">Awalnya chat WhatsApp, lalu booking. Nama membuka chat aslinya di Inbox.</p>
           {loading ? <div className="mut" style={{ padding: 16 }}>Memuat…</div> : R && R.bookings.length ? (
             <>
             <div className="l-mlist">
               {R.bookings.map((b) => (
                 <div key={b.conversationId} className="item">
                   <div style={{ minWidth: 0 }}>
-                    <button type="button" onClick={() => st.openConv(b.name)} style={{ color: 'var(--accent)', fontWeight: 600, background: 'none', border: 0, padding: 0, fontSize: 15 }}>{b.name}</button>{' '}
+                    <a href={'/inbox?conversation=' + b.conversationId} style={{ color: 'var(--accent)', fontWeight: 600, background: 'none', border: 0, padding: 0, fontSize: 15 }}>{b.name}</a>{' '}
                     <span className="mut sm">{b.phoneTail}</span>
                     <p>Chat {fmt(b.firstChatDay)} → booking {fmt(b.bookingDay)} · {b.daysToBook === 0 ? 'hari sama' : b.daysToBook + ' hari'}</p>
                     <p>{b.bookingNumber} · {b.pkg}{b.startYmd === '—' ? '' : ' · trip ' + fmt(b.startYmd)}</p>
@@ -77,7 +77,7 @@ export function LaporanView() {
                 <tbody>
                   {R.bookings.map((b) => (
                     <tr key={b.conversationId}>
-                      <td><button type="button" onClick={() => st.openConv(b.name)} style={{ color: 'var(--accent)', fontWeight: 600, background: 'none', border: 0, padding: 0 }}>{b.name}</button><div className="mut sm">{b.phoneTail}</div></td>
+                      <td><a href={'/inbox?conversation=' + b.conversationId} style={{ color: 'var(--accent)', fontWeight: 600, background: 'none', border: 0, padding: 0 }}>{b.name}</a><div className="mut sm">{b.phoneTail}</div></td>
                       <td className="sm">{fmt(b.firstChatDay)}</td>
                       <td className="sm">{fmt(b.bookingDay)}</td>
                       <td className="sm">{b.daysToBook === 0 ? 'hari sama' : b.daysToBook + ' hari'}</td>
@@ -112,7 +112,7 @@ export function LaporanView() {
             )}
             <div className="item" style={{ gridTemplateColumns: 'minmax(0,1fr)' }}>
               <div style={{ minWidth: 0 }}>
-                <button type="button" onClick={() => st.openConv(l.name)} style={{ color: 'var(--accent)', fontWeight: 600, background: 'none', border: 0, padding: 0 }}>{l.name}</button>{' '}
+                <a href={'/inbox?conversation=' + l.conversationId} style={{ color: 'var(--accent)', fontWeight: 600, background: 'none', border: 0, padding: 0 }}>{l.name}</a>{' '}
                 <span className="mut sm">{l.phoneTail} · chat {fmt(l.firstChatDay)}</span>{' '}
                 <span className={'pill ' + (l.alasan === 'belum_dijawab' || l.alasan === 'menunggu_tim' ? 'bad' : l.alasan === 'harga' ? 'warn' : 'neu')}>{l.alasanText}</span>{' '}
                 {l.lastFrom && (
@@ -151,7 +151,7 @@ export function LaporanView() {
         sebagai mitra tidak dihitung). Booking = tanggal booking sama atau sesudah hari chat pertama; tamu yang sudah booking sebelum
         chat tidak dihitung. Hanya booking terbaru per nomor yang tersimpan, dan data booking disegarkan bertahap tiap 5 menit.
         Alasan belum booking dan rekomendasi follow-up ditulis AI saat meringkas chat; rekomendasi hanya saran internal untuk
-        tim, tidak pernah dikirim ke tamu. Semua angka di halaman ini data contoh.
+        tim, tidak pernah dikirim ke tamu.
       </p>
     </section>
   )

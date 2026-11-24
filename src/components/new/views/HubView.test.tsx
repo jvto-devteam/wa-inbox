@@ -1,5 +1,6 @@
-import { fireEvent, render, screen, within } from '@testing-library/react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { stubReportFetch } from '../__fixtures__/report'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { NewShell } from '../Shell'
 import { AgentView } from './AgentView'
 import { AntreanView } from './AntreanView'
@@ -9,6 +10,8 @@ import { RingkasanView } from './RingkasanView'
 
 const push = vi.fn()
 vi.mock('next/navigation', () => ({ usePathname: () => '/new/dashboard', useRouter: () => ({ push }) }))
+
+afterEach(() => vi.unstubAllGlobals())
 
 beforeEach(() => {
   push.mockClear()
@@ -76,8 +79,10 @@ describe('Dashboard: setiap item punya rujukan', () => {
     expect(document.querySelector('#b-tabs button.on')?.textContent).toBe('Agent')
   })
 
-  it('alasan belum booking dan KPI inquiry → Laporan', () => {
+  it('alasan belum booking dan KPI inquiry → Laporan', async () => {
+    stubReportFetch()
     const hub = renderWith()
+    await waitFor(() => expect(hub.querySelector('.db-hb')).not.toBeNull())
     fireEvent.click(hub.querySelector('.db-hb')!)
     expect(push).toHaveBeenLastCalledWith('/new/laporan')
     fireEvent.click(within(hub).getByText('Inquiry minggu ini').closest('button')!)

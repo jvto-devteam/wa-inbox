@@ -1,5 +1,6 @@
-import { fireEvent, render, screen, within } from '@testing-library/react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { stubReportFetch } from './__fixtures__/report'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { NewShell } from './Shell'
 import { AntreanView } from './views/AntreanView'
 import { InboxView } from './views/InboxView'
@@ -7,6 +8,8 @@ import { LaporanView } from './views/LaporanView'
 import { RingkasanView } from './views/RingkasanView'
 
 vi.mock('next/navigation', () => ({ usePathname: () => '/new/antrean', useRouter: () => ({ push: vi.fn() }) }))
+
+afterEach(() => vi.unstubAllGlobals())
 
 beforeEach(() => {
   window.matchMedia = ((q: string) => ({
@@ -51,8 +54,10 @@ describe('tata letak berbeda per halaman /new', () => {
     expect(document.getElementById('r-pts')).toBeNull()
   })
 
-  it('Laporan: lead dikelompokkan, yang menunggu balasan kita lebih dulu', () => {
+  it('Laporan: lead dikelompokkan, yang menunggu balasan kita lebih dulu', async () => {
+    stubReportFetch()
     show(<LaporanView />)
+    await waitFor(() => expect(document.querySelectorAll('#l-leads .pg-sec').length).toBeGreaterThan(0))
     const secs = Array.from(document.querySelectorAll('#l-leads .pg-sec')).map((e) => e.textContent)
     expect(secs[0]).toMatch(/^Menunggu balasan kita/)
     expect(document.querySelectorAll('#l-trend .db-col')).toHaveLength(8)

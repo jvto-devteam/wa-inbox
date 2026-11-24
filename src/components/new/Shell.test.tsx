@@ -1,4 +1,5 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { stubReportFetch } from './__fixtures__/report'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { NewShell } from './Shell'
 import { viewFromPath } from './store'
@@ -70,28 +71,20 @@ describe('/new', () => {
     expect(screen.queryByText(/Reminder crew \(H-1\)/)).toBeNull()
   })
 
-  it('Dashboard: KPI, tren, alasan belum booking, strip agent dari data contoh, tanpa fetch', () => {
-    const fetchMock = vi.fn()
-    vi.stubGlobal('fetch', fetchMock)
+  it('Dashboard: KPI, tren, alasan belum booking dari API laporan asli', async () => {
+    const fetchMock = stubReportFetch()
     at('/new/dashboard', <HubView />)
+    await waitFor(() => expect(screen.getByText(/lead menunggu balasan kita/)).toBeInTheDocument())
+    expect(fetchMock.mock.calls.some((c) => String(c[0]).startsWith('/api/new/report?from='))).toBe(true)
     expect(screen.getByText('Inquiry vs booking · 8 minggu')).toBeInTheDocument()
     expect(screen.getByText('Kenapa belum booking')).toBeInTheDocument()
-    expect(screen.getByText(/lead menunggu balasan kita/)).toBeInTheDocument()
     expect(screen.getByRole('img', { name: /^Inquiry dan booking 8 minggu/ })).toBeInTheDocument()
-    const tiles = document.querySelectorAll('.db-ag')
-    expect(tiles).toHaveLength(8)
-    const balas = Array.from(tiles).find((t) => t.textContent?.includes('Balas pesan'))!
-    expect(balas.textContent).toMatch(/Terakhir \d\d:\d\d/)
-    const lead = Array.from(tiles).find((t) => t.textContent?.includes('Follow-up lead'))!
-    expect(lead.textContent).toMatch(/Draf saja/)
-    const vendor = Array.from(tiles).find((t) => t.textContent?.includes('Reminder ke vendor'))!
-    expect(vendor.textContent).toMatch(/1 gagal/)
-    expect(fetchMock).not.toHaveBeenCalled()
     vi.unstubAllGlobals()
   })
-
-  it('Dashboard: hover kolom tren menampilkan tooltip angka minggu itu', () => {
+  it('Dashboard: hover kolom tren menampilkan tooltip angka minggu itu', async () => {
+    stubReportFetch()
     at('/new/dashboard', <HubView />)
+    await waitFor(() => expect(document.querySelectorAll('.db-col')).toHaveLength(8))
     const cols = document.querySelectorAll('.db-col')
     expect(cols).toHaveLength(8)
     fireEvent.mouseEnter(cols[0])
