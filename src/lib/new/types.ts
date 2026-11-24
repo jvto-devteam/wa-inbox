@@ -3,7 +3,7 @@
 
 export type ViewKey = 'hub' | 'inbox' | 'antrean' | 'ringkasan' | 'agent' | 'kontak' | 'bot'
 export type ChannelKey = 'wa' | 'kl' | 'ml' | 'ig'
-export type AgentKey = 'balas' | 'poin' | 'note' | 'ringkas' | 'reminder' | 'vendor' | 'lead'
+export type AgentKey = 'balas' | 'poin' | 'note' | 'ringkas' | 'reminder' | 'crew' | 'vendor' | 'lead'
 export type AgentMode = 'mati' | 'draf' | 'otomatis'
 export type Tone = 'good' | 'warn' | 'bad' | 'info' | 'neu'
 

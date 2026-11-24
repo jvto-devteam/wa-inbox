@@ -32,14 +32,16 @@ function Schedule() {
     set((d) => {
       d.sj.splice(i, 1)
       const cv = d.cv.find((x) => x.n === e.c)
+      // crew dan vendor dikabari di luar chat tamu, jadi tidak ada pesan baru di percakapan tamu
+      const internal = e.a === 'vendor' || e.a === 'crew'
       const txt = e.a === 'lead' && cv && cv.drl ? cv.drl : 'Reminder: please check your trip details here: jvto.me/b/xxxx'
       const ev: AgentEvent = {
         d: 'Hari ini', t: 'sekarang', a: e.a, c: e.c, s: 'ok', ti: 'Dikirim lebih awal: ' + e.ti,
         i: 'Dijadwalkan ' + e.d.toLowerCase() + ' ' + e.t + ', dikirim manual dari Antrean',
-        o: e.a === 'vendor' ? 'Kabar terkirim ke vendor' : 'Pesan berisi link portal terkirim', r: false,
-        h: e.a === 'vendor' ? { k: 'out' } : { k: 'msg', m: txt },
+        o: e.a === 'vendor' ? 'Kabar terkirim ke vendor' : e.a === 'crew' ? 'Reminder terkirim ke crew' : 'Pesan berisi link portal terkirim', r: false,
+        h: internal ? { k: 'out' } : { k: 'msg', m: txt },
       }
-      if (e.a !== 'vendor' && cv) {
+      if (!internal && cv) {
         cv.msgs.push({ k: 'b', text: txt, time: 'sekarang', meta: { ag: e.a, src: e.a === 'lead' ? 'Follow-up lead' : 'Jadwal reminder', why: e.a === 'lead' ? 'Tamu tanya harga lalu berhenti membalas' : 'Data perjalanan belum lengkap' } })
         cv.last = 'Bot: ' + txt.slice(0, 34) + '…'
         if (e.a === 'lead') { cv.drx = true; d.lead.dikirim++ }

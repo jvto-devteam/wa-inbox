@@ -18,7 +18,8 @@ export const AGS: Record<AgentKey, [string, string]> = {
   note: ['Update note', '--ch-mail'],
   ringkas: ['Summarize', '--muted'],
   reminder: ['Reminder ke tamu', '--ch-klook'],
-  vendor: ['Hubungi vendor', '--bad'],
+  crew: ['Reminder ke crew', '--good'],
+  vendor: ['Reminder ke vendor', '--bad'],
   lead: ['Follow-up lead', '--warn'],
 }
 export const AGENT_KEYS = Object.keys(AGS) as AgentKey[]
@@ -30,8 +31,9 @@ export const AGD: Record<AgentKey, string> = {
   poin: 'Memperbarui poin penting setelah ada pesan baru',
   note: 'Menulis note ke booking dari pesan tamu',
   ringkas: 'Meringkas percakapan harian dan saat chat dibuka',
-  reminder: 'Mengirim reminder dan link portal ke tamu (H-7 sampai H-1)',
-  vendor: 'Mengabari vendor saat data tamu berubah',
+  reminder: 'Mengirim reminder ke tamu berisi link portal: pelunasan, info trip dengan detail jemput, dan pesan trip selesai',
+  crew: 'Mengingatkan crew yang diplot sehari sebelum trip: nama tamu, titik dan jam jemput',
+  vendor: 'Mengingatkan vendor transport Bali sehari sebelum trip, dan mengabari vendor saat data tamu berubah',
   lead: 'Menghubungi kembali calon tamu yang berhenti membalas setelah tanya harga',
 }
 
@@ -40,9 +42,17 @@ export const SRC: Record<AgentKey, [string, string]> = {
   poin: ['Transkrip chat 5 sampai 8 pesan terakhir', 'Ada pesan baru setelah ringkasan terakhir'],
   note: ['Pesan tamu yang menyebut data perjalanan', 'Pesan memuat detail jemput atau kaos yang layak dicatat'],
   ringkas: ['Seluruh percakapan hari itu', 'Job harian 00:00 atau chat dibuka setelah ada pesan baru'],
-  reminder: ['Jadwal reminder H-7 sampai H-1', 'Data perjalanan tamu belum lengkap'],
-  vendor: ['Perubahan data tamu di portal', 'Vendor perlu dikabari saat data berubah'],
+  reminder: ['Jadwal reminder tamu (H-7, H-2, hari terakhir trip)', 'Waktu kirim reminder tamu tiba'],
+  crew: ['Plot crew booking dan jadwal H-1', 'Trip dimulai besok; crew perlu tahu tamu, titik dan jam jemput'],
+  vendor: ['Booking dengan transport Bali dan perubahan data tamu di portal', 'Trip Bali dimulai besok, atau data yang dipakai vendor berubah'],
   lead: ['Chat calon tamu yang berhenti setelah tanya harga', 'Tidak ada balasan dalam 24 sampai 72 jam'],
+}
+
+/** Tugas terjadwal per agent (diambil dari job WhatsApp legacy, 2026-11-24). Agent tanpa entri = berbasis kejadian. */
+export const AGT: Partial<Record<AgentKey, [string, string][]>> = {
+  reminder: [['Pelunasan', 'H-7 · 15:00'], ['Info trip', 'H-2 · 20:00'], ['Trip selesai', 'Hari terakhir · 15:00']],
+  crew: [['Reminder crew', 'H-1 · 10:00']],
+  vendor: [['Vendor transport Bali', 'H-1 · 15:15']],
 }
 
 export const AST: Record<AgentEvent['s'], [Tone, string]> = {
@@ -198,6 +208,11 @@ const SJ: Sched[] = [
   { d: 'Hari ini', t: '16:00', a: 'reminder', c: 'Sarah M.', ti: 'Cek apakah tamu sudah memperbarui data di portal' },
   { d: 'Besok', t: '08:00', a: 'reminder', c: 'Elena C.', ti: 'Pelunasan akhir (H-1) dengan link portal' },
   { d: 'Besok', t: '08:00', a: 'vendor', c: 'Lukas B.', ti: 'Ulangi kabar kaos ke vendor yang gagal tadi' },
+  { d: 'Hari ini', t: '20:00', a: 'reminder', c: 'Elena C.', ti: 'Info trip (H-2): jam dan titik jemput, pickup sign' },
+  { d: 'Hari ini', t: '15:00', a: 'reminder', c: 'Mei H.', ti: 'Pelunasan (H-7): sisa bayar dan link kartu/QRIS' },
+  { d: 'Hari ini', t: '15:15', a: 'vendor', c: 'Lukas B.', ti: 'Vendor transport Bali (H-1): unit, jemput, antar Ketapang' },
+  { d: 'Besok', t: '10:00', a: 'crew', c: 'Elena C.', ti: 'Reminder crew (H-1): tamu, titik dan jam jemput' },
+  { d: 'Besok', t: '15:00', a: 'reminder', c: 'Jonas O.', ti: 'Trip selesai: terima kasih dan link portal' },
   { d: 'Besok', t: '09:00', a: 'reminder', c: 'Kenji T.', ti: 'Lengkapi titik antar (H-3)' },
   { d: '2 hari lagi', t: '08:00', a: 'reminder', c: 'Mei H.', ti: 'Tanyakan data jemput (H-5)' },
   { d: 'Hari ini', t: '17:00', a: 'lead', c: 'Priya S.', ti: 'Follow-up lead: tanya harga 4D Bromo + Ijen, 3 hari tanpa balasan' },
@@ -277,9 +292,13 @@ const AE: AgentEvent[] = [
   { d: 'Hari ini', t: '09:05', a: 'lead', c: 'Tom W.', s: 'ok', ti: 'Follow-up lead terkirim: tanya harga Bromo sunrise (H+1)', i: 'Tamu tanya harga lalu 24 jam tidak membalas', o: 'Pesan Instagram terkirim 09:05; menunggu balasan tamu', r: false, h: { k: 'msg', m: 'Hi Tom, just checking in' } },
   { d: 'Hari ini', t: '08:00', a: 'reminder', c: 'Elena C.', s: 'ok', ti: 'Reminder ke tamu: lengkapi data jemput (H-3)', i: 'Butir yang kurang: jam jemput, titik antar', o: 'Pesan WhatsApp berisi link portal terkirim 08:00', r: false, h: { k: 'msg', m: 'Reminder: please complete' } },
   { d: 'Hari ini', t: '08:00', a: 'reminder', c: 'Noor V.', s: 'gagal', ti: 'Reminder ke tamu: konfirmasi jam jemput (H-2)', i: 'Butir yang kurang: jam jemput', o: 'Tidak dikirim: jendela WhatsApp 24 jam tertutup. Hubungi manual.', r: false, h: { k: 'antrean', tab: 'Tindak lanjut', n: 'Noor V.' } },
+  { d: 'Hari ini', t: '10:00', a: 'crew', c: 'Lukas B.', s: 'ok', ti: 'Reminder crew (H-1): 2 crew + grup crew', i: 'Plot crew: driver dan guide Ijen; jemput Bali 07:00', o: 'Template crew_reminder_personal terkirim ke 2 crew, crew_reminder_group ke grup crew', r: false, h: { k: 'out', m: 'Reminder crew' } },
   { d: 'Hari ini', t: '07:30', a: 'ringkas', c: 'Mei H.', s: 'ok', ti: 'Ringkasan chat diperbarui', i: 'Chat dibuka setelah ada pesan baru', o: '1 pertanyaan belum terjawab: status Ijen hari Jumat', r: false, h: { k: 'ring' } },
   { d: 'Hari ini', t: '00:20', a: 'vendor', c: 'Daniel P.', s: 'ok', ti: 'Kabar perubahan jemput ke vendor Bali', i: 'Tamu mengubah titik jemput di portal; booking transport Bali', o: 'Template internal terkirim; jam ditulis "jam belum ada"', r: false, h: { k: 'out', m: 'Kabar jemput ke vendor Bali' } },
   { d: 'Hari ini', t: '00:00', a: 'ringkas', c: 'Semua percakapan', s: 'ok', ti: 'Ringkasan harian dibuat', i: '9 percakapan aktif kemarin', o: '7 poin penting, 2 janji tim, 9 item masuk Antrean', r: false, h: { k: 'poin', day: 'Hari ini', kind: 'Semua' } },
+  { d: 'Kemarin', t: '20:00', a: 'reminder', c: 'Noor V.', s: 'ok', ti: 'Info trip (H-2): detail jemput hotel', i: 'Jadwal info trip H-2 20:00; jemput hotel 06:30', o: 'Template trip_information_hotel terkirim dengan gambar pickup sign', r: false, h: { k: 'out', m: 'Info trip' } },
+  { d: 'Kemarin', t: '15:15', a: 'vendor', c: 'Lukas B.', s: 'ok', ti: 'Vendor transport Bali (H-1): Elf Short, 4 pax', i: 'Trip mulai Bali besok; jemput hotel Bali 07:00', o: 'Template internal_bali_transport_reminder terkirim ke vendor (tanpa nomor tamu)', r: false, h: { k: 'out', m: 'Vendor transport Bali' } },
+  { d: 'Kemarin', t: '15:00', a: 'reminder', c: 'Daniel P.', s: 'ok', ti: 'Pelunasan (H-7): sisa bayar dan link kartu/QRIS', i: 'Sisa bayar belum lunas; batas kartu H-5, transfer H-3', o: 'Template payment_reminder_balance terkirim dengan link pembayaran baru', r: false, h: { k: 'out', m: 'Pelunasan' } },
   { d: 'Kemarin', t: '21:10', a: 'balas', c: 'Ayu R.', s: 'ok', ti: 'Membalas ucapan terima kasih', i: 'Pesan tamu: "Terima kasih, sudah sampai hotel"', o: 'Chat ditandai selesai, tidak ada balasan dikirim', r: false, h: { k: 'msg', m: 'Terima kasih, sudah sampai hotel' } },
   { d: 'Kemarin', t: '18:45', a: 'note', c: 'Elena C.', s: 'ok', ti: 'Note ditulis ke booking', i: 'Pesan tamu tentang kamar hotel', o: 'Note: "Minta kamar tanpa asap rokok"', r: false, h: { k: 'note' } },
   { d: 'Kemarin', t: '16:20', a: 'reminder', c: 'Kenji T.', s: 'ok', ti: 'Reminder ke tamu: lengkapi data jemput (H-5)', i: 'Butir yang kurang: titik antar', o: 'Pesan WhatsApp berisi link portal terkirim 16:20', r: false, h: { k: 'msg', m: 'Reminder: please share your drop-off' } },
@@ -294,8 +313,8 @@ export function initialState(): State {
     at: AT,
     sj: SJ,
     ae: AE,
-    agm: { balas: 'otomatis', poin: 'otomatis', note: 'otomatis', ringkas: 'otomatis', reminder: 'otomatis', vendor: 'otomatis', lead: 'draf' },
-    agst: { balas: { ok: 41, bad: 4 }, poin: { ok: 30, bad: 2 }, note: { ok: 18, bad: 1 }, ringkas: { ok: 22, bad: 1 }, reminder: { ok: 27, bad: 0 }, vendor: { ok: 12, bad: 1 }, lead: { ok: 9, bad: 2 } },
+    agm: { balas: 'otomatis', poin: 'otomatis', note: 'otomatis', ringkas: 'otomatis', reminder: 'otomatis', crew: 'otomatis', vendor: 'otomatis', lead: 'draf' },
+    agst: { balas: { ok: 41, bad: 4 }, poin: { ok: 30, bad: 2 }, note: { ok: 18, bad: 1 }, ringkas: { ok: 22, bad: 1 }, reminder: { ok: 27, bad: 0 }, crew: { ok: 14, bad: 0 }, vendor: { ok: 12, bad: 1 }, lead: { ok: 9, bad: 2 } },
     lead: { dikirim: 11, booking: 3 },
     pause: false,
     kn: KN,
