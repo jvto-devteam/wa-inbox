@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { dayMatch, monthCells, parseR, rLabel, whenLabel } from './dates'
 import { accuracy, antreanTotal, draftOf, filterConvs, inboxBadge, rData } from './logic'
-import { initialState } from './mock-data'
+import { AGS, AGT, initialState } from './mock-data'
 
 const T0 = new Date(2026, 10, 24) // 24 Nov 2026
 
@@ -76,6 +76,15 @@ describe('logic', () => {
     expect(g.j).toBe(3)
     expect(g.t).toBe('Gabungan 2 hari · 23–24 Nov')
     expect(rData('r:5:6', T0).p).toHaveLength(0)
+  })
+
+  it('tugas reminder per agent: tamu, crew, vendor', () => {
+    expect(AGT.reminder!.map((t) => t[0])).toEqual(['Pelunasan', 'Info trip', 'Trip selesai'])
+    expect(AGT.crew!.map((t) => t[0])).toEqual(['Reminder crew'])
+    expect(AGT.vendor!.map((t) => t[0])).toEqual(['Vendor transport Bali'])
+    expect(AGS.crew[0]).toBe('Reminder ke crew')
+    expect(AGS.vendor[0]).toBe('Reminder ke vendor')
+    expect(initialState().agm.crew).toBe('otomatis')
   })
 
   it('initialState mengembalikan salinan baru tiap panggilan', () => {

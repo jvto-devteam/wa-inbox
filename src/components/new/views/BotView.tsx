@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { accuracy } from '@/lib/new/logic'
-import { AGD, AGENT_KEYS, AGS, LG, MODES } from '@/lib/new/mock-data'
+import { AGD, AGENT_KEYS, AGS, AGT, LG, MODES } from '@/lib/new/mock-data'
 import type { AgentKey, AgentMode, State } from '@/lib/new/types'
 import { useItemTap, useNew } from '../store'
 
@@ -80,6 +80,11 @@ function Agents() {
                 <span className="ag" style={{ '--c': `var(${AGS[k][1]})` } as Css}>{AGS[k][0]}</span>{' '}
                 {s.pause ? <span className="pill bad">Dijeda</span> : m === 'mati' ? <span className="pill neu">Mati</span> : null}
                 <p>{AGD[k]}</p>
+                {AGT[k] && (
+                  <p className="agt" style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 4 }}>
+                    {AGT[k]!.map(([t, w]) => <span key={t} className="pill neu">{t} · {w}</span>)}
+                  </p>
+                )}
                 <p>
                   Akurasi <b>{accuracy(s.agst[k])}%</b> dari {tot} penilaian · Terakhir: {lastRun(k)}
                   {k === 'lead' && ' · ' + s.lead.booking + ' dari ' + s.lead.dikirim + ' lead akhirnya booking'}

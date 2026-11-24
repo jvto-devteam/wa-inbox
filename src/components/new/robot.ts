@@ -8,6 +8,7 @@ const BOT_PAL: Record<AgentKey, string[]> = {
   note: ['#064e4a', '#0d9488', '#5eead4', '#fef9c3', '#fde047'],
   ringkas: ['#05070d', '#1e293b', '#cbd5e1', '#ffffff', '#e2e8f0'],
   reminder: ['#312e81', '#ea580c', '#fdba74', '#fffbd1', '#facc15'],
+  crew: ['#0c2a4d', '#0369a1', '#7dd3fc', '#ffffff', '#bae6fd'],
   vendor: ['#111827', '#7f1d1d', '#fca5a5', '#ffffff', '#fecaca'],
   lead: ['#052e16', '#16a34a', '#6ee7b7', '#fffbd1', '#facc15'],
 }
@@ -18,6 +19,8 @@ const BOT_ACC: Record<AgentKey, string> = {
   note: '<g transform="rotate(24 82 40)"><rect x="79" y="20" width="6" height="26" rx="1.5" fill="#fbbf24"/><path d="M79 46h6l-3 7z" fill="#f5d0a9"/><path d="M81 51.5l1 1.8 1-1.8z" fill="#334155"/><rect x="79" y="17" width="6" height="5" rx="2" fill="#f472b6"/></g>',
   ringkas: '<circle cx="41" cy="58" r="14.5" fill="none" stroke="#fbbf24" stroke-width="2.6"/><circle cx="59" cy="58" r="14.5" fill="none" stroke="#fbbf24" stroke-width="2.6"/><path d="M55.5 56q-5.5-3-11 0" stroke="#fbbf24" stroke-width="2.4" fill="none"/>',
   reminder: '<g transform="translate(60 1)"><path d="M1 18q0-10 7-10t7 10z" fill="#fbbf24"/><rect x="0" y="18" width="16" height="2.6" rx="1.3" fill="#f59e0b"/><circle cx="8" cy="23.5" r="2" fill="#f59e0b"/><path d="M-3 7q-2 3-1 7M19 7q2 3 1 7" stroke="#fff" stroke-width="1.5" fill="none" stroke-linecap="round" opacity=".85"/></g>',
+  // setir kecil: crew (driver, escort, guide)
+  crew: '<g transform="translate(80 30)"><circle r="9" fill="none" stroke="#1b2038" stroke-width="3"/><circle r="2.4" fill="#1b2038"/><path d="M-8.5 0h6M2.5 0h6M0 2.4v6" stroke="#1b2038" stroke-width="2.6" stroke-linecap="round"/></g>',
   vendor: '<path d="M17 47C17 29 32 21 50 21s33 8 33 26z" fill="#1b2038"/><rect x="46" y="42" width="42" height="5.5" rx="2.7" fill="#1b2038"/><circle cx="50" cy="33" r="4.2" fill="#fbbf24"/>',
   lead: '<g transform="translate(76 31)"><circle r="8.5" fill="#fff"/><circle r="6" fill="#ef4444"/><circle r="3.4" fill="#fff"/><circle r="1.5" fill="#ef4444"/></g>',
 }

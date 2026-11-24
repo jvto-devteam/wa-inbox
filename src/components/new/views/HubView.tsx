@@ -14,7 +14,7 @@ const IC = {
 }
 const G: Record<string, [string, string]> = {
   balas: ['#3b6cf6', '#2347c9'], poin: ['#a855f7', '#7b2fd1'], note: ['#14b8a6', '#0b7a72'], ringkas: ['#64748b', '#334155'],
-  reminder: ['#fb923c', '#ea580c'], vendor: ['#ef4444', '#b91c1c'], lead: ['#22c55e', '#15803d'],
+  reminder: ['#fb923c', '#ea580c'], crew: ['#38bdf8', '#0369a1'], vendor: ['#ef4444', '#b91c1c'], lead: ['#22c55e', '#15803d'],
 }
 type Css = React.CSSProperties & Record<`--${string}`, string>
 
@@ -31,7 +31,7 @@ export function HubView() {
   const ok = today.filter((e) => e.s === 'ok').length
   const gagal = s.ae.filter((e) => e.s === 'gagal').length
   const tot = antreanTotal(s)
-  const auto = today.filter((e) => e.s === 'ok' && (e.a === 'balas' || e.a === 'reminder' || e.a === 'vendor')).length
+  const auto = today.filter((e) => e.s === 'ok' && (e.a === 'balas' || e.a === 'reminder' || e.a === 'crew' || e.a === 'vendor')).length
   const kom = P.filter((x) => x[0] === 'komplain').length
   const aktif = AGENT_KEYS.filter((k) => s.agm[k] !== 'mati').length
   const dt = new Date().toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
@@ -39,7 +39,7 @@ export function HubView() {
   const K: [string, number, string, ViewKey, ((d: State) => void) | undefined, string, keyof typeof IC][] = [
     ['Isi Antrean', tot, 'Balas, Follow Up, Janji Admin, Reminder', 'antrean', (d) => { d.atab = 'Balas' }, '#3b6cf6', 'tim'],
     ['Pekerjaan agent', today.length, ok + ' berhasil hari ini', 'agent', undefined, '#22b45f', 'agent'],
-    ['Pesan otomatis', auto, 'ke tamu dan vendor', 'agent', undefined, '#f97316', 'acc'],
+    ['Pesan otomatis', auto, 'ke tamu, crew, dan vendor', 'agent', undefined, '#f97316', 'acc'],
     ['Poin penting', P.length, kom ? kom + ' komplain' : 'tanpa komplain', 'ringkasan', undefined, '#a855f7', 'poin'],
   ]
   const R: [string, number, string, ViewKey, (d: State) => void, string][] = ([

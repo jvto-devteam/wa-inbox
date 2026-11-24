@@ -55,6 +55,22 @@ describe('/new', () => {
     expect(push).toHaveBeenCalledWith('/new/kontak')
   })
 
+  it('tab Bot → Agent menampilkan tugas reminder tamu, crew, vendor', () => {
+    at('/new/bot', <BotView />)
+    fireEvent.click(screen.getByText('Agent', { selector: '#b-tabs button' }))
+    for (const t of ['Pelunasan · H-7 · 15:00', 'Info trip · H-2 · 20:00', 'Trip selesai · Hari terakhir · 15:00', 'Reminder crew · H-1 · 10:00', 'Vendor transport Bali · H-1 · 15:15']) {
+      expect(screen.getByText(t)).toBeInTheDocument()
+    }
+  })
+
+  it('Kirim sekarang untuk reminder crew mengeluarkannya dari jadwal', () => {
+    at('/new/antrean', <AntreanView />)
+    fireEvent.click(screen.getByText(/^Follow-up agent/))
+    const row = screen.getByText(/Reminder crew \(H-1\)/).closest('.item') as HTMLElement
+    fireEvent.click(Array.from(row.querySelectorAll('button')).find((b) => b.textContent === 'Kirim sekarang')!)
+    expect(screen.queryByText(/Reminder crew \(H-1\)/)).toBeNull()
+  })
+
   it('Kirim di Inbox menambah pesan admin dan membuang draf', () => {
     at('/new/inbox', <InboxView />)
     fireEvent.click(screen.getByText('Lukas B.', { selector: '.row b *, .row b' }).closest('button')!)
