@@ -1,5 +1,6 @@
-// Laporan inquiry WhatsApp → booking (menu Laporan di /new). Satu-satunya halaman /new yang
-// membaca DATA ASLI. Logika murni di sini; kueri ada di src/app/api/new/report/route.ts.
+// Laporan inquiry WhatsApp → booking (menu Laporan di /new). Seperti halaman /new lain, memakai
+// DATA CONTOH (reportRows di mock-data.ts); logika murni di sini supaya bisa diuji dan nanti
+// dipakai ulang saat disambung ke data asli.
 //
 // Definisi (ditampilkan juga di halaman supaya angka bisa dibaca dengan benar):
 // - Inquiry   = percakapan WhatsApp (bukan sandbox) yang pesan MASUK pertamanya jatuh di periode.
@@ -7,10 +8,33 @@
 // - Booking   = percakapan WhatsApp yang bookingData-nya bertanggal booking (booking_date) SAMA
 //               ATAU SESUDAH hari chat pertama: awalnya chat, lalu booking. Tamu yang sudah booking
 //               sebelum pertama kali chat tidak dihitung.
-// Batas data: bookingData hanya menyimpan booking terbaru per nomor, dan hanya untuk percakapan
-// yang sudah dicek ke API booking (tick 5 menit menyegarkan bertahap).
 import { jakartaDay, parseBookingDay } from '@/lib/bot/eval/replay-pairs'
-import { LEAD_BLOCKERS, LEAD_BLOCKER_TEXT, leadBlockerSchema, type LeadBlocker } from '@/lib/daily-summary/payload-schema'
+
+/** Kenapa calon tamu belum booking (kosakata tetap; urutan = urutan tampil). */
+export const LEAD_BLOCKERS = [
+  'harga', 'belum_pasti', 'diskusi_rombongan', 'belum_dijawab', 'menunggu_tim', 'tamu_diam',
+  'paket_tidak_cocok', 'pilih_lain', 'kendala_bayar', 'hanya_tanya', 'lainnya',
+] as const
+export type LeadBlocker = (typeof LEAD_BLOCKERS)[number]
+export const LEAD_BLOCKER_TEXT: Record<LeadBlocker, string> = {
+  harga: 'Harga / budget',
+  belum_pasti: 'Tanggal atau rencana belum pasti',
+  diskusi_rombongan: 'Menunggu keputusan rombongan',
+  belum_dijawab: 'Pertanyaan tamu belum dijawab tuntas',
+  menunggu_tim: 'Menunggu info yang dijanjikan tim',
+  tamu_diam: 'Tamu diam setelah penawaran',
+  paket_tidak_cocok: 'Paket/rute tidak cocok',
+  pilih_lain: 'Memilih operator lain / open trip',
+  kendala_bayar: 'Kendala pembayaran',
+  hanya_tanya: 'Sekadar cari info',
+  lainnya: 'Lainnya',
+}
+export interface LeadBlockerNote {
+  alasan: LeadBlocker
+  teks: string
+  /** satu langkah follow-up untuk tim (internal, tidak dikirim) */
+  rekomendasi: string
+}
 
 export interface ReportRow {
   id: string
@@ -24,8 +48,8 @@ export interface ReportRow {
   startYmd: string | null
   orderChannel: string | null
   kind: string | null
-  /** chatReview.belumBooking mentah (JSON); divalidasi di sini. */
-  blocker?: unknown
+  /** penilaian AI kenapa belum booking; tidak ada = belum dinilai */
+  blocker?: LeadBlockerNote | null
   nextStep?: string | null
   reviewAt?: Date | null
   lastAt?: Date | null
@@ -129,7 +153,6 @@ function phoneTail(p: string | null): string {
 
 function toLead(c: Classified, today: string): ReportLead {
   const r = c.row
-  const parsed = leadBlockerSchema.safeParse(r.blocker)
   const lastDay = r.lastAt ? jakartaDay(r.lastAt) : null
   const lastFrom = r.lastDir === 'INBOUND' ? 'tamu' : r.lastDir === 'OUTBOUND' ? 'tim' : null
   const base = {
@@ -142,13 +165,13 @@ function toLead(c: Classified, today: string): ReportLead {
     silentDays: lastDay ? dayDiff(lastDay, today) : null,
     reviewDay: r.reviewAt ? jakartaDay(r.reviewAt) : null,
   } as const
-  if (parsed.success) {
+  if (r.blocker) {
     return {
       ...base,
-      alasan: parsed.data.alasan,
-      alasanText: LEAD_BLOCKER_TEXT[parsed.data.alasan],
-      teks: parsed.data.teks,
-      rekomendasi: parsed.data.rekomendasi || r.nextStep || '',
+      alasan: r.blocker.alasan,
+      alasanText: LEAD_BLOCKER_TEXT[r.blocker.alasan],
+      teks: r.blocker.teks,
+      rekomendasi: r.blocker.rekomendasi || r.nextStep || '',
       sumber: 'ai',
     }
   }

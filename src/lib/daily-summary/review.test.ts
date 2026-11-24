@@ -374,35 +374,3 @@ describe('janji tim', () => {
     ).toEqual([{ teks: 'Belum', terpenuhi: false, messageId: 'm3' }])
   })
 })
-
-describe('belumBooking (alasan calon tamu belum booking)', () => {
-  const ids = ['m1', 'm2', 'm3']
-  it('prompt meminta kosakata tetap dan melarang menjanjikan diskon', () => {
-    expect(REVIEW_SYSTEM_PROMPT).toContain('"belumBooking":{"alasan":"...","teks":"...","rekomendasi":"...","pesan":N}')
-    expect(REVIEW_SYSTEM_PROMPT).toContain('HANYA untuk jenisKontak "calon_tamu" yang belum booking')
-    expect(REVIEW_SYSTEM_PROMPT).toContain('JANGAN menjanjikan diskon, harga, atau jadwal yang tidak tertulis')
-  })
-
-  it('menyimpan alasan, bukti, dan rekomendasi calon tamu', () => {
-    const r = parseReview(JSON.stringify({ ...valid, belumBooking: { alasan: 'harga', teks: 'Minta di bawah Rp4 jt', rekomendasi: 'Tawarkan paket 3D2N', pesan: 2 } }), ids)
-    expect(r?.belumBooking).toEqual({ alasan: 'harga', teks: 'Minta di bawah Rp4 jt', rekomendasi: 'Tawarkan paket 3D2N', messageId: 'm2' })
-  })
-
-  it('alasan di luar kosakata menjadi "lainnya"; tanpa teks atau null = tidak ada', () => {
-    expect(parseReview(JSON.stringify({ ...valid, belumBooking: { alasan: 'mahal', teks: 'Terlalu mahal' } }))?.belumBooking)
-      .toEqual({ alasan: 'lainnya', teks: 'Terlalu mahal', rekomendasi: '' })
-    expect(parseReview(JSON.stringify({ ...valid, belumBooking: null }))?.belumBooking).toBeUndefined()
-    expect(parseReview(JSON.stringify({ ...valid, belumBooking: { alasan: 'harga', teks: ' ' } }))?.belumBooking).toBeUndefined()
-  })
-
-  it('diabaikan untuk tamu ber-booking dan mitra', () => {
-    for (const jenisKontak of ['tamu_existing', 'mitra', 'lainnya']) {
-      const r = parseReview(JSON.stringify({ ...valid, jenisKontak, belumBooking: { alasan: 'harga', teks: 'x', rekomendasi: 'y' } }))
-      expect(r?.belumBooking).toBeUndefined()
-    }
-  })
-
-  it('ringkasan lama tanpa belumBooking tetap sah', () => {
-    expect(parseReview(JSON.stringify(valid))?.belumBooking).toBeUndefined()
-  })
-})
