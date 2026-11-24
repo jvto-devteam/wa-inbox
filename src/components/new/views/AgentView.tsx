@@ -21,9 +21,9 @@ export function AgentView() {
   const R = base.filter((e) => (s.aag === 'Semua' || e.a === s.aag) && (s.ast === 'Semua' || e.s === s.ast) && (!aq || (e.c + ' ' + e.ti).toLowerCase().includes(aq)))
   const kpi: [string, number, string][] = [
     ['Aktivitas', base.length, 'oleh ' + AGENT_KEYS.filter((k) => base.some((e) => e.a === k)).length + ' agent'],
-    ['Berhasil', n('ok'), 'selesai tanpa campur tangan'],
+    ['Berhasil', n('ok'), 'selesai otomatis'],
     ['Gagal', n('gagal'), n('gagal') ? 'perlu dicoba lagi' : 'tidak ada'],
-    ['Menunggu', n('tunggu'), n('tunggu') ? 'menunggu keputusan orang' : 'tidak ada'],
+    ['Menunggu', n('tunggu'), n('tunggu') ? 'menunggu orang' : 'tidak ada'],
   ]
   const isRange = !!parseR(s.aday)
   const dayLabel = isRange ? rLabel(parseR(s.aday)!.f, parseR(s.aday)!.t) : s.aday
