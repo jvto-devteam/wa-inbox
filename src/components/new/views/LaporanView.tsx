@@ -55,6 +55,20 @@ export function LaporanView() {
           <h3>Customer dari WhatsApp yang booking</h3>
           <p className="hint">Awalnya chat WhatsApp, lalu booking. Nama membuka chat-nya di Inbox (bila ada di data contoh).</p>
           {loading ? <div className="mut" style={{ padding: 16 }}>Memuat…</div> : R && R.bookings.length ? (
+            <>
+            <div className="l-mlist">
+              {R.bookings.map((b) => (
+                <div key={b.conversationId} className="item">
+                  <div style={{ minWidth: 0 }}>
+                    <button type="button" onClick={() => st.openConv(b.name)} style={{ color: 'var(--accent)', fontWeight: 600, background: 'none', border: 0, padding: 0, fontSize: 15 }}>{b.name}</button>{' '}
+                    <span className="mut sm">{b.phoneTail}</span>
+                    <p>Chat {fmt(b.firstChatDay)} → booking {fmt(b.bookingDay)} · {b.daysToBook === 0 ? 'hari sama' : b.daysToBook + ' hari'}</p>
+                    <p>{b.bookingNumber} · {b.pkg}{b.startYmd === '—' ? '' : ' · trip ' + fmt(b.startYmd)}</p>
+                  </div>
+                  <span className="pill neu">{b.orderChannel}</span>
+                </div>
+              ))}
+            </div>
             <div className="tw">
               <table>
                 <thead><tr><th>Nama</th><th>Chat pertama</th><th>Booking</th><th>Jeda</th><th>Kode</th><th>Paket</th><th>Trip</th><th>Channel</th></tr></thead>
@@ -74,6 +88,7 @@ export function LaporanView() {
                 </tbody>
               </table>
             </div>
+            </>
           ) : <div className="mut" style={{ padding: 16, textAlign: 'center' }}>Belum ada booking dari chat WhatsApp di periode ini.</div>}
         </div>
 

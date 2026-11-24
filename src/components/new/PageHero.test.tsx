@@ -64,6 +64,13 @@ describe('hero + KPI di halaman /new', () => {
     expect(Array.from(document.querySelectorAll('#g-t tr[data-i]')).every((tr) => tr.textContent?.includes('Gagal'))).toBe(true)
   })
 
+  it('Laporan: daftar booking versi ponsel berlabel (chat → booking, kode, paket)', () => {
+    render(<NewShell><LaporanView /></NewShell>)
+    const first = document.querySelector('#l-bookings .l-mlist .item')!
+    expect(first.textContent).toMatch(/Chat \d+ \w+ → booking \d+ \w+ · (hari sama|\d+ hari)/)
+    expect(first.textContent).toMatch(/-xxxx · /)
+  })
+
   it('Bot: KPI Knowledge membuka tab Knowledge', () => {
     render(<NewShell><BotView /></NewShell>)
     fireEvent.click(within(kpis()).getByText('Knowledge').closest('button')!)

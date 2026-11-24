@@ -187,10 +187,10 @@ export function BotView() {
         status={{ text: s.pause ? 'Agent dijeda' : 'Agent berjalan', off: s.pause, onClick: () => set((d) => { d.btab = 'Agent' }) }}
         kpiId="b-hk"
         kpis={[
-          { label: 'Perilaku', value: s.bs.auto ? 'Otomatis' : 'Manual', detail: s.bs.skip ? 'lewati nomor Indonesia' : 'semua nomor', on: s.btab === 'Perilaku', onClick: () => set((d) => { d.btab = 'Perilaku' }) },
+          { label: 'Perilaku', value: s.bs.auto ? 'Otomatis' : 'Manual', detail: s.bs.skip ? 'kecuali nomor ID' : 'semua nomor', on: s.btab === 'Perilaku', onClick: () => set((d) => { d.btab = 'Perilaku' }) },
           { label: 'Agent aktif', value: aktif + '/' + AGENT_KEYS.length, detail: 'akurasi ' + acc + '%', visual: <Meter pct={acc} />, on: s.btab === 'Agent', onClick: () => set((d) => { d.btab = 'Agent' }) },
           { label: 'Knowledge', value: pub + '/' + s.kn.length, detail: 'terbit', on: s.btab === 'Knowledge', onClick: () => set((d) => { d.btab = 'Knowledge' }) },
-          { label: 'Celah knowledge', value: s.gap.length, detail: 'pertanyaan belum ada jawaban', tone: s.gap.length ? 'warn' : undefined, onClick: () => set((d) => { d.btab = 'Knowledge' }) },
+          { label: 'Celah knowledge', value: s.gap.length, detail: 'belum terjawab', tone: s.gap.length ? 'warn' : undefined, onClick: () => set((d) => { d.btab = 'Knowledge' }) },
         ]}
       />
       <div className="tabs" id="b-tabs">
