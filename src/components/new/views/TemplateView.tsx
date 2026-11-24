@@ -191,7 +191,7 @@ export function TemplateView() {
                 </label>
               </div>
               <WaBubble text={r.ok ? r.text : t.body} imageUrl={t.imageUrl} clamp />
-              <div className="tpw-f"><code>{t.key}</code>{t.description && <span title={t.description}>· {t.description.length > 70 ? t.description.slice(0, 70) + '…' : t.description}</span>}</div>
+              {t.description && <p className="tpw-f" title={t.description}>{t.description}</p>}
             </div>
           )
         }) : <div className="pg-card mut" style={{ textAlign: 'center' }}>{api.error ? 'Tidak bisa memuat template.' : 'Tidak ada template.'}</div>}
