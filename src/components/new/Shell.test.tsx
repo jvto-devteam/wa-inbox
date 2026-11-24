@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { NewShell } from './Shell'
 import { viewFromPath } from './store'
@@ -85,6 +85,21 @@ describe('/new', () => {
     fireEvent.change(ta, { target: { value: 'Halo {customer_name}' } })
     fireEvent.click(screen.getByText('Simpan'))
     expect(screen.getByText('Tersimpan (pratinjau, belum ke server)')).toBeInTheDocument()
+  })
+
+  it('Dashboard menampilkan ringkasan WhatsApp → booking dari data asli', async () => {
+    const report = {
+      from: '2026-11-23', to: '2026-11-24', inquiries: 10, inquiriesBooked: 3, bookings: [{}, {}, {}, {}],
+      leads: [{ lastFrom: 'tamu' }, { lastFrom: 'tim' }], blockers: [{ alasan: 'harga', label: 'Harga / budget', count: 2 }], trend: [],
+    }
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => report })
+    vi.stubGlobal('fetch', fetchMock)
+    at('/new/dashboard', <HubView />)
+    await waitFor(() => expect(screen.getByText('Lead menunggu balasan kita')).toBeInTheDocument())
+    expect(fetchMock.mock.calls[0][0]).toMatch(/^\/api\/new\/report\?from=\d{4}-\d{2}-\d{2}&to=/)
+    expect(screen.getByText('30%')).toBeInTheDocument()
+    expect(screen.getByText('Harga / budget 2')).toBeInTheDocument()
+    vi.unstubAllGlobals()
   })
 
   it('Kirim di Inbox menambah pesan admin dan membuang draf', () => {

@@ -10,6 +10,7 @@
 // Batas data: bookingData hanya menyimpan booking terbaru per nomor, dan hanya untuk percakapan
 // yang sudah dicek ke API booking (tick 5 menit menyegarkan bertahap).
 import { jakartaDay, parseBookingDay } from '@/lib/bot/eval/replay-pairs'
+import { LEAD_BLOCKERS, LEAD_BLOCKER_TEXT, leadBlockerSchema, type LeadBlocker } from '@/lib/daily-summary/payload-schema'
 
 export interface ReportRow {
   id: string
@@ -23,6 +24,31 @@ export interface ReportRow {
   startYmd: string | null
   orderChannel: string | null
   kind: string | null
+  /** chatReview.belumBooking mentah (JSON); divalidasi di sini. */
+  blocker?: unknown
+  nextStep?: string | null
+  reviewAt?: Date | null
+  lastAt?: Date | null
+  lastDir?: 'INBOUND' | 'OUTBOUND' | null
+}
+
+/** Calon tamu dari inquiry periode ini yang belum booking, dengan alasan dan rekomendasi follow-up. */
+export interface ReportLead {
+  conversationId: string
+  name: string
+  phoneTail: string
+  firstChatDay: string
+  lastDay: string | null
+  /** pesan terakhir dari tamu (menunggu kita) atau dari tim (menunggu tamu) */
+  lastFrom: 'tamu' | 'tim' | null
+  silentDays: number | null
+  alasan: LeadBlocker
+  alasanText: string
+  teks: string
+  rekomendasi: string
+  /** ai = dinilai ringkasan chat; sinyal = belum dinilai AI, disimpulkan dari pesan terakhir */
+  sumber: 'ai' | 'sinyal'
+  reviewDay: string | null
 }
 
 export interface ReportBooking {
@@ -54,6 +80,9 @@ export interface Report {
   inquiriesBooked: number
   /** Booking (tanggal booking di periode ini) dari customer yang awalnya chat WhatsApp. */
   bookings: ReportBooking[]
+  leads: ReportLead[]
+  /** Jumlah lead per alasan, urut terbanyak; hanya alasan yang muncul. */
+  blockers: { alasan: LeadBlocker; label: string; count: number }[]
   trend: WeekPoint[]
 }
 
@@ -98,8 +127,45 @@ function phoneTail(p: string | null): string {
   return d ? '••• ' + d.slice(-4) : '—'
 }
 
-/** `from`/`to` inklusif, YYYY-MM-DD WIB. */
-export function buildReport(rows: ReportRow[], from: string, to: string, trendWeeks = 8): Report {
+function toLead(c: Classified, today: string): ReportLead {
+  const r = c.row
+  const parsed = leadBlockerSchema.safeParse(r.blocker)
+  const lastDay = r.lastAt ? jakartaDay(r.lastAt) : null
+  const lastFrom = r.lastDir === 'INBOUND' ? 'tamu' : r.lastDir === 'OUTBOUND' ? 'tim' : null
+  const base = {
+    conversationId: r.id,
+    name: r.name || '(tanpa nama)',
+    phoneTail: phoneTail(r.phone),
+    firstChatDay: c.firstDay,
+    lastDay,
+    lastFrom,
+    silentDays: lastDay ? dayDiff(lastDay, today) : null,
+    reviewDay: r.reviewAt ? jakartaDay(r.reviewAt) : null,
+  } as const
+  if (parsed.success) {
+    return {
+      ...base,
+      alasan: parsed.data.alasan,
+      alasanText: LEAD_BLOCKER_TEXT[parsed.data.alasan],
+      teks: parsed.data.teks,
+      rekomendasi: parsed.data.rekomendasi || r.nextStep || '',
+      sumber: 'ai',
+    }
+  }
+  // Belum dinilai AI (ringkasan lama/belum ada): hanya fakta dari pesan terakhir, tanpa menebak alasan lain.
+  const alasan: LeadBlocker = lastFrom === 'tamu' ? 'belum_dijawab' : lastFrom === 'tim' ? 'tamu_diam' : 'lainnya'
+  return {
+    ...base,
+    alasan,
+    alasanText: LEAD_BLOCKER_TEXT[alasan],
+    teks: lastFrom === 'tamu' ? 'Pesan terakhir dari tamu belum dibalas tim.' : lastFrom === 'tim' ? 'Tamu belum membalas sejak pesan terakhir tim.' : 'Belum ada ringkasan chat.',
+    rekomendasi: r.nextStep || (lastFrom === 'tamu' ? 'Balas pesan tamu.' : 'Follow-up: tanyakan rencana tanggal dan jumlah orang.'),
+    sumber: 'sinyal',
+  }
+}
+
+/** `from`/`to` inklusif, YYYY-MM-DD WIB. `today` untuk menghitung lama diam. */
+export function buildReport(rows: ReportRow[], from: string, to: string, trendWeeks = 8, today: string = to): Report {
   const C = classify(rows)
   const inRange = (d: string | null) => !!d && d >= from && d <= to
   const cohort = C.filter((c) => inRange(c.firstDay))
@@ -118,6 +184,17 @@ export function buildReport(rows: ReportRow[], from: string, to: string, trendWe
       stage: c.row.stage,
     }))
     .sort((a, b) => b.bookingDay.localeCompare(a.bookingDay) || a.name.localeCompare(b.name))
+
+  // Lead = inquiry periode ini yang belum booking dan bukan tamu lama (booking sebelum chat / dinilai tamu_existing).
+  const leads = cohort
+    .filter((c) => !c.fromChat && !c.bookingDay && c.row.kind !== 'tamu_existing')
+    .map((c) => toLead(c, today))
+    .sort((a, b) => (b.lastDay || '').localeCompare(a.lastDay || '') || a.name.localeCompare(b.name))
+  const counts = new Map<LeadBlocker, number>()
+  for (const l of leads) counts.set(l.alasan, (counts.get(l.alasan) || 0) + 1)
+  const blockers = LEAD_BLOCKERS.filter((k) => counts.has(k))
+    .map((k) => ({ alasan: k, label: LEAD_BLOCKER_TEXT[k], count: counts.get(k)! }))
+    .sort((a, b) => b.count - a.count)
 
   const lastMon = mondayOf(to)
   const trend: WeekPoint[] = []
@@ -138,6 +215,8 @@ export function buildReport(rows: ReportRow[], from: string, to: string, trendWe
     inquiries: cohort.length,
     inquiriesBooked: cohort.filter((c) => c.fromChat).length,
     bookings,
+    leads,
+    blockers,
     trend,
   }
 }

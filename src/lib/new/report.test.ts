@@ -39,6 +39,26 @@ describe('laporan inquiry → booking', () => {
     expect(r.trend[6]).toMatchObject({ from: '2026-11-16', inquiries: 1, booked: 0 })
   })
 
+  it('lead belum booking: alasan AI, atau sinyal pesan terakhir bila belum dinilai', () => {
+    const extra: ReportRow[] = [
+      row({ id: 'g', firstIn: '2026-11-24T02:00:00Z', kind: 'calon_tamu', lastAt: new Date('2026-11-24T03:00:00Z'), lastDir: 'OUTBOUND',
+        blocker: { alasan: 'harga', teks: 'Minta di bawah Rp4 jt', rekomendasi: 'Tawarkan 3D2N tanpa hotel' }, reviewAt: new Date('2026-11-24T04:00:00Z') }),
+      row({ id: 'h', firstIn: '2026-11-24T05:00:00Z', lastAt: new Date('2026-11-24T05:00:00Z'), lastDir: 'INBOUND', nextStep: 'Kirim harga 2 orang' }),
+      // tamu lama yang dinilai tamu_existing -> bukan lead
+      row({ id: 'i', firstIn: '2026-11-24T06:00:00Z', kind: 'tamu_existing' }),
+    ]
+    const r = buildReport([...rows, ...extra], '2026-11-23', '2026-11-29', 8, '2026-11-26')
+    const ids = r.leads.map((l) => l.conversationId).sort()
+    expect(ids).toEqual(['b', 'f', 'g', 'h']) // a booking, c tamu lama (booking sebelum chat), i tamu_existing
+    const g = r.leads.find((l) => l.conversationId === 'g')!
+    expect(g).toMatchObject({ alasan: 'harga', alasanText: 'Harga / budget', rekomendasi: 'Tawarkan 3D2N tanpa hotel', sumber: 'ai', lastFrom: 'tim', silentDays: 2 })
+    const h = r.leads.find((l) => l.conversationId === 'h')!
+    expect(h).toMatchObject({ alasan: 'belum_dijawab', sumber: 'sinyal', rekomendasi: 'Kirim harga 2 orang', lastFrom: 'tamu' })
+    // blocker tidak valid (alasan di luar kosakata) tidak dianggap penilaian AI
+    expect(r.blockers[0]).toMatchObject({ count: 2 }) // b & f: tanpa pesan terakhir -> lainnya
+    expect(r.blockers.reduce((n, b) => n + b.count, 0)).toBe(r.leads.length)
+  })
+
   it('periode dan Senin', () => {
     expect(mondayOf('2026-11-24')).toBe('2026-11-23')
     expect(mondayOf('2026-11-29')).toBe('2026-11-23')

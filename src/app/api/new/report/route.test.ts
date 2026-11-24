@@ -28,14 +28,19 @@ describe('GET /api/new/report', () => {
 
   it('membangun laporan dari baris kueri', async () => {
     vi.mocked(prisma.$queryRaw).mockResolvedValue([
-      { id: 'c1', name: 'Tamu', phone: '447700900123', stage: 'booked', first_in: new Date('2026-11-23T03:00:00Z'), booking_date: '24 Nov 2026', booking_number: 'JVTO-9', package: '3D Bromo', start_ymd: '2026-12-10', order_channel: 'JVTO', kind: 'calon_tamu' },
+      { id: 'c1', name: 'Tamu', phone: '447700900123', stage: 'booked', first_in: new Date('2026-11-23T03:00:00Z'), booking_date: '24 Nov 2026', booking_number: 'JVTO-9', package: '3D Bromo', start_ymd: '2026-12-10', order_channel: 'JVTO', kind: 'calon_tamu', blocker: null, next_step: null, review_at: null, last_at: null, last_dir: null },
+      { id: 'c2', name: 'Lead', phone: '447700900999', stage: 'new', first_in: new Date('2026-11-24T03:00:00Z'), booking_date: null, booking_number: null, package: null, start_ymd: null, order_channel: null, kind: 'calon_tamu', blocker: { alasan: 'belum_pasti', teks: 'Menunggu cuti', rekomendasi: 'Tanya lagi Jumat' }, next_step: '', review_at: new Date('2026-11-24T04:00:00Z'), last_at: new Date('2026-11-24T03:30:00Z'), last_dir: 'OUTBOUND' },
     ] as never)
     const res = await GET(req('?from=2026-11-23&to=2026-11-29'))
     expect(res.status).toBe(200)
     const body = await res.json()
-    expect(body).toMatchObject({ inquiries: 1, inquiriesBooked: 1 })
+    expect(body).toMatchObject({ inquiries: 2, inquiriesBooked: 1 })
+    expect(body.leads).toHaveLength(1)
+    expect(body.leads[0]).toMatchObject({ conversationId: 'c2', alasan: 'belum_pasti', rekomendasi: 'Tanya lagi Jumat', sumber: 'ai' })
+    expect(body.blockers).toEqual([{ alasan: 'belum_pasti', label: 'Tanggal atau rencana belum pasti', count: 1 }])
     expect(body.bookings[0]).toMatchObject({ conversationId: 'c1', bookingNumber: 'JVTO-9', phoneTail: '••• 0123' })
     expect(JSON.stringify(body)).not.toContain('447700900123')
+    expect(JSON.stringify(body)).not.toContain('447700900999')
   })
 
   it('500 tanpa membocorkan galat', async () => {

@@ -1,10 +1,13 @@
 'use client'
 
+import { jakartaDay } from '@/lib/bot/eval/replay-pairs'
 import { antreanTotal, rData } from '@/lib/new/logic'
+import { periodRange } from '@/lib/new/report'
 import { AGENT_KEYS, AGS, KC } from '@/lib/new/mock-data'
 import type { State, ViewKey } from '@/lib/new/types'
 import { robotSvg } from '../robot'
 import { useNew } from '../store'
+import { useReport } from '../useReport'
 
 const IC = {
   tim: (<><path d="M9 6h11M9 12h11M9 18h11" /><path d="M3.5 6l1 1 2-2M3.5 12l1 1 2-2M3.5 18l1 1 2-2" /></>),
@@ -22,6 +25,10 @@ export function HubView() {
   const st = useNew()
   const { s } = st
   const hubGo = (v: ViewKey, pre?: (d: State) => void) => { if (pre) st.set(pre); st.go(v) }
+  const wk = periodRange('minggu-ini', jakartaDay(new Date()))
+  const rep = useReport(wk.from, wk.to)
+  const RP = rep.data
+  const waiting = RP ? RP.leads.filter((l) => l.lastFrom === 'tamu').length : 0
 
   const h = new Date().getHours()
   const sp = h < 11 ? 'pagi' : h < 15 ? 'siang' : h < 18 ? 'sore' : 'malam'
@@ -74,6 +81,42 @@ export function HubView() {
             </div>
           )
         })}
+      </div>
+      <div id="h-wa">
+        <div className="hub-lab">
+          <span>WhatsApp → booking minggu ini <span className="pill good">Data asli</span></span>
+          <button type="button" onClick={() => hubGo('laporan')}>Laporan lengkap</button>
+        </div>
+        <div className="card">
+          {rep.loading ? <div className="hub-ok">Memuat…</div> : rep.error || !RP ? <div className="hub-ok">{rep.error || 'Laporan belum tersedia'}</div> : (
+            <>
+              <button type="button" className="hub-r" onClick={() => hubGo('laporan')}>
+                <span className="n i">{RP.inquiries}</span>
+                <span className="t"><b>Inquiry baru</b><span>Chat WhatsApp pertama minggu ini</span></span>
+                <span className="c">&rsaquo;</span>
+              </button>
+              <button type="button" className="hub-r" onClick={() => hubGo('laporan')}>
+                <span className="n">{RP.inquiriesBooked}<small>{RP.inquiries ? Math.round((RP.inquiriesBooked / RP.inquiries) * 100) + '%' : '0%'}</small></span>
+                <span className="t"><b>Jadi booking</b><span>{RP.bookings.length} booking minggu ini berawal dari chat WhatsApp</span></span>
+                <span className="c">&rsaquo;</span>
+              </button>
+              {waiting > 0 && (
+                <button type="button" className="hub-r" onClick={() => hubGo('laporan')}>
+                  <span className="n b">{waiting}</span>
+                  <span className="t"><b>Lead menunggu balasan kita</b><span>Pesan terakhir dari calon tamu, belum dibalas</span></span>
+                  <span className="c">&rsaquo;</span>
+                </button>
+              )}
+              {RP.blockers.length > 0 && (
+                <button type="button" className="hub-r" onClick={() => hubGo('laporan')}>
+                  <span className="n w">{RP.leads.length}</span>
+                  <span className="t"><b>Belum booking</b><span>{RP.blockers.slice(0, 3).map((b) => b.label + ' ' + b.count).join(' · ')}</span></span>
+                  <span className="c">&rsaquo;</span>
+                </button>
+              )}
+            </>
+          )}
+        </div>
       </div>
       <div id="h-agents">
         <div className="hub-lab"><span>Agent bekerja hari ini</span><button type="button" onClick={() => hubGo('agent')}>Riwayat Agent</button></div>
