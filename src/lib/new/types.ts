@@ -1,7 +1,7 @@
 // Tipe untuk pratinjau /new (port artifact "New WA Inbox"). Semua data di sini DATA CONTOH;
 // belum ada yang dibaca dari atau ditulis ke database.
 
-export type ViewKey = 'hub' | 'inbox' | 'antrean' | 'ringkasan' | 'agent' | 'kontak' | 'bot'
+export type ViewKey = 'hub' | 'inbox' | 'antrean' | 'ringkasan' | 'agent' | 'kontak' | 'template' | 'bot'
 export type ChannelKey = 'wa' | 'kl' | 'ml' | 'ig'
 export type AgentKey = 'balas' | 'poin' | 'note' | 'ringkas' | 'reminder' | 'crew' | 'vendor' | 'lead'
 export type AgentMode = 'mati' | 'draf' | 'otomatis'
@@ -120,6 +120,18 @@ export interface Knowledge {
   text?: string
 }
 
+/** Template pesan sistem (reminder, konfirmasi, kabar internal) yang dikirim program lain lewat wa-inbox. */
+export interface Tpl {
+  key: string
+  name: string
+  description: string
+  audience: 'CUSTOMER' | 'INTERNAL'
+  body: string
+  imageUrl: string | null
+  variables: { name: string; required: boolean; example?: string; description?: string }[]
+  isActive: boolean
+}
+
 export interface BotSettings {
   auto: boolean
   skip: boolean
@@ -140,6 +152,7 @@ export interface State {
   kn: Knowledge[]
   gap: string[]
   bs: BotSettings
+  tpl: Tpl[]
   // UI yang dibawa lintas halaman (mis. dari Dashboard langsung ke tab tertentu)
   icv: number
   ifl: string
@@ -157,6 +170,8 @@ export interface State {
   aq: string
   kq: string
   kl: string
+  tcat: string
+  tq: string
   btab: 'Perilaku' | 'Agent' | 'Knowledge' | 'Uji' | 'Log'
   lf: string
 }

@@ -8,6 +8,7 @@ export const NAV_ICON: Record<ViewKey, React.ReactNode> = {
   ringkasan: (<><path d="M6 3h9l4 4v14H6z" /><path d="M14 3v5h5M9 13h7M9 17h7M9 9h2" /></>),
   agent: (<><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></>),
   kontak: (<><circle cx="9" cy="8" r="3.5" /><path d="M2.5 20c0-3.6 2.9-6 6.5-6s6.5 2.4 6.5 6" /><path d="M16 4.5a3.5 3.5 0 010 7M18 14.5c2 .7 3.5 2.6 3.5 5.5" /></>),
+  template: (<><path d="M4 5h16v11H9l-5 4z" /><path d="M8 9h8M8 12.5h5" /></>),
   bot: (<><rect x="4" y="8" width="16" height="11" rx="3" /><path d="M12 8V4M9 13h.01M15 13h.01" /></>),
 }
 
