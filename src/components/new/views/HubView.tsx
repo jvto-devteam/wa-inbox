@@ -32,7 +32,7 @@ function Spark({ values }: { values: number[] }) {
   )
 }
 
-function TrendChart({ data }: { data: WeekPoint[] }) {
+function TrendChart({ data, onPick }: { data: WeekPoint[]; onPick: () => void }) {
   const [hov, setHov] = useState<number | null>(null)
   const max = Math.max(1, ...data.map((w) => w.inquiries))
   const top = Math.ceil(max / 5) * 5 || 5
@@ -49,7 +49,7 @@ function TrendChart({ data }: { data: WeekPoint[] }) {
         {data.map((w, i) => {
           const show = i === lastI || i === hov
           return (
-            <div key={w.from} className={'db-col' + (hov === i ? ' on' : '')} onMouseEnter={() => setHov(i)} onMouseLeave={() => setHov(null)}>
+            <div key={w.from} className={'db-col' + (hov === i ? ' on' : '')} onMouseEnter={() => setHov(i)} onMouseLeave={() => setHov(null)} onClick={onPick} style={{ cursor: 'pointer' }}>
               <div className="bars">
                 <span style={{ height: (w.inquiries / top) * 100 + '%', background: 'var(--s1)' }}>{show && <em>{w.inquiries}</em>}</span>
                 <span style={{ height: (w.booked / top) * 100 + '%', background: 'var(--s3)' }}>{show && <em>{w.booked}</em>}</span>
@@ -73,6 +73,16 @@ export function HubView() {
   const { s } = st
   const [kind, setKind] = useState('Semua')
   const hubGo = (v: ViewKey, pre?: (d: State) => void) => { if (pre) st.set(pre); st.go(v) }
+  /** Riwayat Agent selalu dibuka pada hari ini (angka di Dashboard = hari ini), saringan lain di-reset. */
+  const toAgent = (pre?: (d: State) => void) => hubGo('agent', (d) => { d.aday = 'Hari ini'; d.aag = 'Semua'; d.ast = 'Semua'; d.aq = ''; pre?.(d) })
+  /** Laporan + sorot bagian yang dirujuk. */
+  const toLaporan = (sel?: string) => { hubGo('laporan'); if (sel) st.flash(sel) }
+  /** Ringkasan hari ini (sama dengan poin di Dashboard), opsional jenis tertentu. */
+  const toRingkasan = (k = 'Semua') => hubGo('ringkasan', (d) => { d.rday = 'Hari ini'; d.rkind = k; d.rtab = 'poin' })
+  const toJadwal = (name?: string) => {
+    hubGo('antrean', (d) => { d.atab = 'Follow-up agent'; d.sjday = 'Semua'; d.sjag = 'Semua' })
+    if (name) st.flash('#a-list .item', name)
+  }
 
   const wk = periodRange('minggu-ini', jakartaDay(new Date()))
   const RP = useReport(wk.from, wk.to).data
@@ -86,7 +96,6 @@ export function HubView() {
   const today = s.ae.filter((e) => e.d === 'Hari ini')
   const ok = today.filter((e) => e.s === 'ok').length
   const gagalToday = today.filter((e) => e.s === 'gagal').length
-  const gagal = s.ae.filter((e) => e.s === 'gagal').length
   const tot = antreanTotal(s)
   const kom = P.filter((x) => x[0] === 'komplain').length
   const aktif = AGENT_KEYS.filter((k) => s.agm[k] !== 'mati').length
@@ -97,8 +106,8 @@ export function HubView() {
     ['Follow Up', s.at['Tindak lanjut'].length, 'Chat diam', 'antrean', (d: State) => { d.atab = 'Tindak lanjut' }, 'w'],
     ['Janji Admin', s.at['Janji tim'].length, 'Belum ditepati', 'antrean', (d: State) => { d.atab = 'Janji tim' }, 'w'],
     ['Reminder', s.at.Reminder.length, 'Dijadwalkan tim', 'antrean', (d: State) => { d.atab = 'Reminder' }, 'i'],
-    ['Agent gagal', gagal, 'Coba ulang / manual', 'agent', (d: State) => { d.ast = 'gagal' }, 'b'],
-    ['Komplain', kom, 'Di ringkasan hari ini', 'ringkasan', () => {}, 'b'],
+    ['Agent gagal', gagalToday, 'Coba ulang / manual', 'agent', (d: State) => { d.aday = 'Hari ini'; d.aag = 'Semua'; d.ast = 'gagal'; d.aq = '' }, 'b'],
+    ['Komplain', kom, 'Di ringkasan hari ini', 'ringkasan', (d: State) => { d.rday = 'Hari ini'; d.rkind = 'komplain'; d.rtab = 'poin' }, 'b'],
   ] as [string, number, string, ViewKey, (d: State) => void, string][]).filter((r) => r[1] > 0)
 
   const kinds = ['Semua', ...Array.from(new Set(P.map((x) => x[0])))]
@@ -114,7 +123,8 @@ export function HubView() {
         <div className="hd">{dt}</div>
         <h2>Selamat {sp} &#128075;</h2>
         <p>Agent mengerjakan {today.length} tugas ({ok} berhasil){gagalToday ? ', ' + gagalToday + ' gagal' : ''}. {tot ? tot + ' hal menunggu tim.' : 'Tidak ada yang menunggu tim.'}</p>
-        <span className={'st' + (s.pause ? ' off' : '')}><i />{s.pause ? 'Agent dijeda' : aktif + ' agent berjalan'}</span>
+        <button type="button" className={'st' + (s.pause ? ' off' : '')} style={{ border: 0, color: '#fff' }} title="Atur agent di Bot"
+          onClick={() => hubGo('bot', (d) => { d.btab = 'Agent' })}><i />{s.pause ? 'Agent dijeda' : aktif + ' agent berjalan'}</button>
       </div>
 
       <div className="db-kpi" id="h-kpi">
@@ -126,18 +136,18 @@ export function HubView() {
           </span>
           <span className="db-leg">{AT_KEYS.map((k) => <span key={k}><i style={{ background: AT_COLOR[k] }} />{ALBL[k] || k} <b>{s.at[k].length}</b></span>)}</span>
         </button>
-        <button type="button" className="db-k" onClick={() => hubGo('agent')}>
+        <button type="button" className="db-k" onClick={() => toAgent()}>
           <span className="l">Pekerjaan agent</span>
           <span className="r"><span className="v">{today.length}</span><span className="d">{ok} berhasil · {gagalToday} gagal</span></span>
           <span className="db-meter" aria-hidden="true"><span style={{ width: (today.length ? (ok / today.length) * 100 : 0) + '%' }} /></span>
           <span className="db-leg"><span>Tingkat berhasil <b>{today.length ? Math.round((ok / today.length) * 100) : 0}%</b></span></span>
         </button>
-        <button type="button" className="db-k" onClick={() => hubGo('laporan')}>
+        <button type="button" className="db-k" onClick={() => toLaporan('#l-kpi .card')}>
           <span className="l">Inquiry minggu ini</span>
           <span className="r"><span className="v">{RP?.inquiries ?? 0}</span><span className="d">chat WhatsApp baru</span></span>
           {RP && <Spark values={RP.trend.map((w) => w.inquiries)} />}
         </button>
-        <button type="button" className="db-k" onClick={() => hubGo('laporan')}>
+        <button type="button" className="db-k" onClick={() => toLaporan('#l-bookings')}>
           <span className="l">Jadi booking</span>
           <span className="r"><span className="v">{RP?.inquiriesBooked ?? 0}</span><span className="d">konversi {conv}%</span></span>
           <span className="db-meter" aria-hidden="true"><span style={{ width: conv + '%', background: 'var(--s1)' }} /></span>
@@ -147,7 +157,7 @@ export function HubView() {
 
       <div className="db-grid">
         <div className="db-c s4">
-          <div className="db-h"><h3>Perlu perhatian</h3><span className="pill warn">{tot + gagal + kom}</span></div>
+          <div className="db-h"><h3>Perlu perhatian</h3><span className="pill warn">{tot + gagalToday + kom}</span></div>
           {R.length ? (
             <div className="db-att">
               {R.map((r) => (
@@ -161,21 +171,21 @@ export function HubView() {
         </div>
 
         <div className="db-c s5">
-          <div className="db-h"><h3>Inquiry vs booking · 8 minggu</h3><button type="button" className="x" onClick={() => hubGo('laporan')}>Laporan</button></div>
-          {RP && <TrendChart data={RP.trend} />}
+          <div className="db-h"><h3>Inquiry vs booking · 8 minggu</h3><button type="button" className="x" onClick={() => toLaporan('#l-trend')}>Laporan</button></div>
+          {RP && <TrendChart data={RP.trend} onPick={() => toLaporan('#l-trend')} />}
         </div>
 
         <div className="db-c s3">
-          <div className="db-h"><h3>Kenapa belum booking</h3></div>
+          <div className="db-h"><h3>Kenapa belum booking</h3><button type="button" className="x" onClick={() => toLaporan('#l-blockers')}>Laporan</button></div>
           {RP && RP.blockers.slice(0, 5).map((b) => (
-            <div key={b.alasan} className="db-hb">
+            <button key={b.alasan} type="button" className="db-hb" onClick={() => toLaporan('#l-leads')} title="Lihat lead dan rekomendasi follow-up">
               <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{b.label}</span>
               <span className="bar"><span style={{ width: (b.count / maxB) * 100 + '%' }} /></span>
               <b>{b.count}</b>
-            </div>
+            </button>
           ))}
           {waiting > 0 && (
-            <button type="button" className="db-call" onClick={() => hubGo('laporan')}>
+            <button type="button" className="db-call" onClick={() => toLaporan('#l-leads')}>
               <b style={{ fontSize: 16 }}>{waiting}</b> lead menunggu balasan kita &rsaquo;
             </button>
           )}
@@ -184,7 +194,7 @@ export function HubView() {
         <div className="db-c s12">
           <div className="db-h">
             <h3>Agent hari ini</h3>
-            <button type="button" className="x" onClick={() => hubGo('agent')}>Riwayat Agent</button>
+            <button type="button" className="x" onClick={() => toAgent()}>Riwayat Agent</button>
           </div>
           <div className="db-agl">
             {AGENT_KEYS.map((k) => {
@@ -192,7 +202,7 @@ export function HubView() {
               const badK = ev.filter((e) => e.s === 'gagal').length
               const note = s.pause ? 'Dijeda' : s.agm[k] === 'mati' ? 'Mati' : badK ? badK + ' gagal' : s.agm[k] === 'draf' ? 'Draf saja' : ev.length ? 'Terakhir ' + ev[0].t : 'Belum ada tugas'
               return (
-                <button key={k} type="button" className="db-ag" onClick={() => hubGo('agent', (d) => { d.aag = k })}>
+                <button key={k} type="button" className="db-ag" onClick={() => toAgent((d) => { d.aag = k })}>
                   <span className="rb" dangerouslySetInnerHTML={{ __html: robotSvg(k) }} />
                   <span className="tx">
                     <span className="tn">{AGS[k][0]}</span>
@@ -207,7 +217,7 @@ export function HubView() {
         </div>
 
         <div className="db-c s7">
-          <div className="db-h"><h3>Yang terjadi di WhatsApp hari ini</h3><button type="button" className="x" onClick={() => hubGo('ringkasan')}>Ringkasan</button></div>
+          <div className="db-h"><h3>Yang terjadi di WhatsApp hari ini</h3><button type="button" className="x" onClick={() => toRingkasan(kind)}>Ringkasan</button></div>
           <div className="db-chips">
             {kinds.map((k) => (
               <button key={k} type="button" className={k === kind ? 'on' : ''} onClick={() => setKind(k)}>
@@ -229,16 +239,16 @@ export function HubView() {
         </div>
 
         <div className="db-c s5">
-          <div className="db-h"><h3>Terjadwal berikutnya</h3><span className="pill neu">{sched.length}</span><button type="button" className="x" onClick={() => hubGo('antrean', (d) => { d.atab = 'Follow-up agent' })}>Jadwal</button></div>
+          <div className="db-h"><h3>Terjadwal berikutnya</h3><span className="pill neu">{sched.length}</span><button type="button" className="x" onClick={() => toJadwal()}>Jadwal</button></div>
           <div className="db-scroll db-tl">
             {days.map((dd) => (
               <div key={dd}>
                 <div className="db-day">{dd}</div>
                 {sched.filter((x) => x.d === dd).map((x, i) => (
-                  <div key={i} className="db-ev" style={{ '--c': `var(${AGS[x.a][1]})` } as Css}>
+                  <button key={i} type="button" className="db-ev" style={{ '--c': `var(${AGS[x.a][1]})` } as Css} onClick={() => toJadwal(x.c)}>
                     <span className="t">{x.t}</span>
                     <span style={{ minWidth: 0 }}><b>{x.c}</b> <span className="mut sm" style={{ display: 'inline' }}>· {AGS[x.a][0]}</span><span className="mut sm">{x.ti}</span></span>
-                  </div>
+                  </button>
                 ))}
               </div>
             ))}

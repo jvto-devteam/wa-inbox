@@ -50,7 +50,7 @@ export function LaporanView() {
       {error && <div className="card" style={{ color: 'var(--bad)', marginBottom: 12 }}>{error}</div>}
 
       <div className="grid g21">
-        <div className="card">
+        <div className="card" id="l-bookings">
           <h3>Customer dari WhatsApp yang booking</h3>
           <p className="hint">Awalnya chat WhatsApp, lalu booking. Nama membuka chat-nya di Inbox (bila ada di data contoh).</p>
           {loading ? <div className="mut" style={{ padding: 16 }}>Memuat…</div> : R && R.bookings.length ? (
@@ -76,7 +76,7 @@ export function LaporanView() {
           ) : <div className="mut" style={{ padding: 16, textAlign: 'center' }}>Belum ada booking dari chat WhatsApp di periode ini.</div>}
         </div>
 
-        <div className="card">
+        <div className="card" id="l-trend">
           <h3>Tren 8 minggu</h3>
           <p className="hint">Per minggu Senin–Minggu: inquiry baru dan booking yang awalnya dari chat.</p>
           {loading ? <div className="mut" style={{ padding: 16 }}>Memuat…</div> : R && R.trend.map((w) => (
