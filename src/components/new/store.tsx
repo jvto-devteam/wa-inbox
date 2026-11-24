@@ -13,6 +13,7 @@ export const ROUTES: Record<ViewKey, string> = {
   agent: '/new/agent',
   kontak: '/new/kontak',
   template: '/new/template',
+  laporan: '/new/laporan',
   bot: '/new/bot',
 }
 
@@ -23,6 +24,7 @@ export const TITLES: Record<ViewKey, string> = {
   ringkasan: 'Ringkasan',
   kontak: 'Kontak',
   template: 'Template pesan',
+  laporan: 'Laporan',
   bot: 'Bot',
   agent: 'Riwayat Agent',
 }

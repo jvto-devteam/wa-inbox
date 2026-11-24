@@ -1,7 +1,7 @@
 // Tipe untuk pratinjau /new (port artifact "New WA Inbox"). Semua data di sini DATA CONTOH;
 // belum ada yang dibaca dari atau ditulis ke database.
 
-export type ViewKey = 'hub' | 'inbox' | 'antrean' | 'ringkasan' | 'agent' | 'kontak' | 'template' | 'bot'
+export type ViewKey = 'hub' | 'inbox' | 'antrean' | 'ringkasan' | 'agent' | 'kontak' | 'template' | 'laporan' | 'bot'
 export type ChannelKey = 'wa' | 'kl' | 'ml' | 'ig'
 export type AgentKey = 'balas' | 'poin' | 'note' | 'ringkas' | 'reminder' | 'crew' | 'vendor' | 'lead'
 export type AgentMode = 'mati' | 'draf' | 'otomatis'
