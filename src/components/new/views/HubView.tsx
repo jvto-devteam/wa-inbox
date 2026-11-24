@@ -7,9 +7,10 @@ import { useState } from 'react'
 import { jakartaDay } from '@/lib/bot/eval/replay-pairs'
 import { antreanTotal, rData } from '@/lib/new/logic'
 import { AGENT_KEYS, AGS, ALBL, AT_KEYS, KC, SD } from '@/lib/new/mock-data'
-import { periodRange, type WeekPoint } from '@/lib/new/report'
+import { periodRange } from '@/lib/new/report'
 import type { AtKey, State, ViewKey } from '@/lib/new/types'
 import { robotSvg } from '../robot'
+import { TrendChart } from '../Blocks'
 import { Spark } from '../PageHero'
 import { useNew } from '../store'
 import { useReport } from '../useReport'
@@ -17,44 +18,6 @@ import { useReport } from '../useReport'
 type Css = React.CSSProperties & Record<`--${string}`, string>
 /** Komposisi antrean: slot kategorikal tetap per jenis (bukan per urutan). */
 const AT_COLOR: Record<AtKey, string> = { Balas: 'var(--s1)', 'Tindak lanjut': 'var(--s2)', 'Janji tim': 'var(--s3)', Reminder: 'var(--s4)' }
-const MONS = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des']
-const d2 = (ymd: string) => { const [, m, d] = ymd.split('-').map(Number); return d + ' ' + MONS[m - 1] }
-
-function TrendChart({ data, onPick }: { data: WeekPoint[]; onPick: () => void }) {
-  const [hov, setHov] = useState<number | null>(null)
-  const max = Math.max(1, ...data.map((w) => w.inquiries))
-  const top = Math.ceil(max / 5) * 5 || 5
-  const lastI = data.length - 1
-  return (
-    <>
-      <div className="db-leg" style={{ marginBottom: 2 }}>
-        <span><i style={{ background: 'var(--s1)' }} />Inquiry</span>
-        <span><i style={{ background: 'var(--s3)' }} />Booking dari chat</span>
-        <span style={{ marginLeft: 'auto' }}>skala 0–{top}</span>
-      </div>
-      <div className="db-cols" role="img" aria-label={'Inquiry dan booking 8 minggu: ' + data.map((w) => d2(w.from) + ' ' + w.inquiries + '/' + w.booked).join(', ')}>
-        {[0.5, 1].map((f) => <div key={f} className="gl" style={{ bottom: 18 + 110 * f }} />)}
-        {data.map((w, i) => {
-          const show = i === lastI || i === hov
-          return (
-            <div key={w.from} className={'db-col' + (hov === i ? ' on' : '')} onMouseEnter={() => setHov(i)} onMouseLeave={() => setHov(null)} onClick={onPick} style={{ cursor: 'pointer' }}>
-              <div className="bars">
-                <span style={{ height: (w.inquiries / top) * 100 + '%', background: 'var(--s1)' }}>{show && <em>{w.inquiries}</em>}</span>
-                <span style={{ height: (w.booked / top) * 100 + '%', background: 'var(--s3)' }}>{show && <em>{w.booked}</em>}</span>
-              </div>
-              <small>{i === lastI ? 'Minggu ini' : d2(w.from)}</small>
-              {hov === i && (
-                <div className="db-tip" style={{ left: '50%' }}>
-                  {d2(w.from)}–{d2(w.to)} · {w.inquiries} inquiry · {w.booked} booking ({w.inquiries ? Math.round((w.booked / w.inquiries) * 100) : 0}%)
-                </div>
-              )}
-            </div>
-          )
-        })}
-      </div>
-    </>
-  )
-}
 
 export function HubView() {
   const st = useNew()

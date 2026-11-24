@@ -2,10 +2,11 @@
 
 // Menu Laporan: inquiry WhatsApp → booking, dari DATA CONTOH (src/lib/new/report-mock.ts);
 // definisi angka di src/lib/new/report.ts.
-import { useState } from 'react'
+import { Fragment, useState } from 'react'
 import { jakartaDay } from '@/lib/bot/eval/replay-pairs'
 import { MONS } from '@/lib/new/dates'
 import { periodRange, type PeriodKey } from '@/lib/new/report'
+import { TrendChart } from '../Blocks'
 import { Meter, PageHero, Spark } from '../PageHero'
 import { useNew } from '../store'
 import { useReport } from '../useReport'
@@ -25,7 +26,8 @@ export function LaporanView() {
   const { from, to } = periodRange(period, today)
   const { loading, data: R, error } = useReport(from, to)
   const conv = R && R.inquiries ? Math.round((R.inquiriesBooked / R.inquiries) * 100) : 0
-  const maxT = R ? Math.max(1, ...R.trend.map((w) => w.inquiries)) : 1
+  // Lead yang menunggu balasan kita lebih dulu (itu yang bisa langsung dikerjakan tim).
+  const leads = R ? [...R.leads].sort((a, b) => Number(b.lastFrom === 'tamu') - Number(a.lastFrom === 'tamu')) : []
 
   return (
     <section className="view fx" id="v-laporan">
@@ -95,16 +97,7 @@ export function LaporanView() {
         <div className="card" id="l-trend">
           <h3>Tren 8 minggu</h3>
           <p className="hint">Per minggu Senin–Minggu: inquiry baru dan booking yang awalnya dari chat.</p>
-          {loading ? <div className="mut" style={{ padding: 16 }}>Memuat…</div> : R && R.trend.map((w) => (
-            <div key={w.from} className="item" style={{ gridTemplateColumns: '74px minmax(0,1fr) auto' }}>
-              <span className="mut sm">{fmt(w.from)}</span>
-              <div aria-hidden="true" style={{ position: 'relative', height: 14, background: 'var(--neutral-bg)', borderRadius: 4, overflow: 'hidden' }}>
-                <div style={{ position: 'absolute', inset: 0, width: (w.inquiries / maxT) * 100 + '%', background: 'var(--accent-soft)' }} />
-                <div style={{ position: 'absolute', inset: 0, width: (w.booked / maxT) * 100 + '%', background: 'var(--good)' }} />
-              </div>
-              <span className="sm" style={{ fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}><b>{w.inquiries}</b> inquiry · <b style={{ color: 'var(--good)' }}>{w.booked}</b> booking</span>
-            </div>
-          ))}
+          {R && <TrendChart data={R.trend} />}
         </div>
       </div>
 
@@ -112,8 +105,12 @@ export function LaporanView() {
         <div className="card" id="l-leads">
           <h3>Belum booking: alasan & follow-up</h3>
           <p className="hint">Inquiry periode ini yang belum booking. Alasan dan rekomendasi dari ringkasan chat AI; yang belum dinilai AI disimpulkan dari pesan terakhir.</p>
-          {loading ? <div className="mut" style={{ padding: 16 }}>Memuat…</div> : R && R.leads.length ? R.leads.map((l) => (
-            <div key={l.conversationId} className="item" style={{ gridTemplateColumns: 'minmax(0,1fr)' }}>
+          {loading ? <div className="mut" style={{ padding: 16 }}>Memuat…</div> : R && R.leads.length ? leads.map((l, i) => (
+            <Fragment key={l.conversationId}>
+            {(i === 0 || (leads[i - 1].lastFrom === 'tamu') !== (l.lastFrom === 'tamu')) && (
+              <div className="pg-sec">{l.lastFrom === 'tamu' ? 'Menunggu balasan kita' : 'Menunggu tamu / belum ada kabar'} <span className={'pill ' + (l.lastFrom === 'tamu' ? 'bad' : 'neu')}>{leads.filter((x) => (x.lastFrom === 'tamu') === (l.lastFrom === 'tamu')).length}</span></div>
+            )}
+            <div className="item" style={{ gridTemplateColumns: 'minmax(0,1fr)' }}>
               <div style={{ minWidth: 0 }}>
                 <button type="button" onClick={() => st.openConv(l.name)} style={{ color: 'var(--accent)', fontWeight: 600, background: 'none', border: 0, padding: 0 }}>{l.name}</button>{' '}
                 <span className="mut sm">{l.phoneTail} · chat {fmt(l.firstChatDay)}</span>{' '}
@@ -128,6 +125,7 @@ export function LaporanView() {
                 <p className="sm">{l.sumber === 'ai' ? 'Dinilai AI' + (l.reviewDay ? ' ' + fmt(l.reviewDay) : '') : 'Belum dinilai AI'}</p>
               </div>
             </div>
+            </Fragment>
           )) : <div className="mut" style={{ padding: 16, textAlign: 'center' }}>Semua inquiry periode ini sudah booking, atau belum ada inquiry.</div>}
         </div>
 

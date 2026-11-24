@@ -3,8 +3,12 @@
 import { parseR, rLabel } from '@/lib/new/dates'
 import { rData } from '@/lib/new/logic'
 import { KC, POINT_KINDS } from '@/lib/new/mock-data'
+import type { PointKind } from '@/lib/new/types'
+
+/** Warna jenis poin mengikuti nada pill-nya (komplain merah, bayar kuning, jemput aksen); sisanya netral, dibedakan label. */
+const KIND_COLOR: Record<PointKind, string> = { komplain: 'var(--bad)', bayar: 'var(--warn)', jemput: 'var(--accent)', keputusan: 'var(--muted)', lokasi: 'var(--muted)', trip: 'var(--muted)', kebutuhan: 'var(--muted)' }
 import { DaySelect } from '../Overlays'
-import { PageHero } from '../PageHero'
+import { SegBar, StatStrip } from '../Blocks'
 import { useItemTap, useNew } from '../store'
 
 export function RingkasanView() {
@@ -29,23 +33,19 @@ export function RingkasanView() {
     ['Komplain', kc, kc ? 'perlu perhatian' : 'tidak ada'],
     ['Janji tim terbuka', D.j, D.j ? 'masuk Antrean' : 'semua ditepati'],
   ]
-  const nConv = new Set(P.map((x) => x[1])).size
   const dayLabel = parseR(s.rday) ? rLabel(parseR(s.rday)!.f, parseR(s.rday)!.t) : s.rday
   const selStyle = { width: 'auto', padding: '5px 10px', fontSize: 13, borderRadius: 8 }
 
   return (
     <section className="view fx" id="v-ringkasan">
-      <PageHero
-        view="ringkasan"
-        kicker={'Ringkasan harian · ' + dayLabel}
-        title={P.length ? P.length + ' poin penting dari ' + nConv + ' percakapan' : 'Belum ada poin penting'}
-        sub={time + (kc ? ' · ' + kc + ' komplain perlu perhatian' : '')}
-        kpiId="r-hk"
-        kpis={[
-          { label: kpi[0][0], value: kpi[0][1], detail: kpi[0][2] },
-          { label: kpi[1][0], value: kpi[1][1], detail: kpi[1][2], on: s.rtab === 'poin' && rkind === 'Semua', onClick: () => set((d) => { d.rtab = 'poin'; d.rkind = 'Semua' }) },
-          { label: kpi[2][0], value: kpi[2][1], detail: kpi[2][2], tone: kc ? 'bad' : undefined, on: rkind === 'komplain', onClick: () => set((d) => { d.rtab = 'poin'; d.rkind = 'komplain' }) },
-          { label: kpi[3][0], value: kpi[3][1], detail: kpi[3][2], tone: D.j ? 'warn' : undefined, onClick: () => { set((d) => { d.atab = 'Janji tim' }); st.go('antrean') } },
+      <StatStrip
+        id="r-hk"
+        title={<>Ringkasan harian · <b style={{ color: 'var(--ink)' }}>{dayLabel}</b> · {time}</>}
+        items={[
+          { label: kpi[0][0], value: kpi[0][1] },
+          { label: kpi[1][0], value: kpi[1][1], on: s.rtab === 'poin' && rkind === 'Semua', onClick: () => set((d) => { d.rtab = 'poin'; d.rkind = 'Semua' }) },
+          { label: kpi[2][0], value: kpi[2][1], tone: kc ? 'bad' : undefined, on: rkind === 'komplain', onClick: () => set((d) => { d.rtab = 'poin'; d.rkind = 'komplain' }) },
+          { label: 'Janji tim terbuka', value: D.j, tone: D.j ? 'warn' : undefined, onClick: () => { set((d) => { d.atab = 'Janji tim' }); st.go('antrean') } },
         ]}
       />
       <div className="tabs rt" id="r-tabs">
@@ -63,13 +63,19 @@ export function RingkasanView() {
             <DaySelect k="r" id="r-day" value={s.rday} onChange={setDay} style={selStyle} />
             <button className="btn pri sm" id="r-regen" style={{ height: 30 }} onClick={regen}>Buat ulang</button>
           </div>
-          <div className="chips" id="r-chips">
-            {kinds.map((k) => <button key={k} className={k === rkind ? 'on' : ''} onClick={() => set((d) => { d.rkind = k })}>{k}</button>)}
+          <div style={{ marginBottom: 10 }}>
+            <SegBar
+              id="r-chips"
+              active={rkind}
+              total={{ key: 'Semua', label: 'Semua' }}
+              onPick={(k) => set((d) => { d.rkind = k })}
+              items={kinds.filter((k) => k !== 'Semua').map((k) => ({ key: k, label: k, n: P.filter((x) => x[0] === k).length, color: KIND_COLOR[k as PointKind] }))}
+            />
           </div>
           <div id="r-pts">
             {!P.length ? <div className="mut" style={{ padding: 20, textAlign: 'center' }}>Tidak ada poin penting pada tanggal ini.</div>
               : P.filter((x) => rkind === 'Semua' || x[0] === rkind).map((x, i) => (
-                <div key={i} className="item" onClick={tap(x[1], [{ label: 'Buka chat', run: () => st.openConv(x[1]) }])}>
+                <div key={i} className="item" style={{ '--kc': KIND_COLOR[x[0]] } as React.CSSProperties} onClick={tap(x[1], [{ label: 'Buka chat', run: () => st.openConv(x[1]) }])}>
                   <div><span className={'pill ' + KC[x[0]]}>{x[0]}</span> <b style={{ marginLeft: 6 }}>{x[1]}</b><p>{x[2]}</p></div>
                   <button className="btn sm" onClick={() => st.openConv(x[1])}>Buka chat</button>
                 </div>

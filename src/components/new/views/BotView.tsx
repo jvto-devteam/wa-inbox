@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { accuracy } from '@/lib/new/logic'
 import { AGD, AGENT_KEYS, AGS, AGT, LG, MODES } from '@/lib/new/mock-data'
 import type { AgentKey, AgentMode, State } from '@/lib/new/types'
-import { Meter, PageHero } from '../PageHero'
+import { StatStrip } from '../Blocks'
 import { useItemTap, useNew } from '../store'
 
 type Css = React.CSSProperties & Record<`--${string}`, string>
@@ -171,7 +171,7 @@ function Log() {
 }
 
 export function BotView() {
-  const { s, set } = useNew()
+  const { s, set, toast } = useNew()
   const aktif = AGENT_KEYS.filter((k) => s.agm[k] !== 'mati').length
   const pub = s.kn.filter((k) => k.status === 'PUBLISHED').length
   const tot = AGENT_KEYS.reduce((n, k) => n + s.agst[k].ok + s.agst[k].bad, 0)
@@ -179,25 +179,28 @@ export function BotView() {
   const acc = tot ? Math.round((okAll / tot) * 100) : 0
   return (
     <section className="view fx" id="v-bot">
-      <PageHero
-        view="bot"
-        kicker="Bot & agent"
-        title={s.bs.auto ? 'Bot menjawab semua chat' : 'Bot dimatikan, tim membalas manual'}
-        sub={aktif + ' dari ' + AGENT_KEYS.length + ' agent aktif · akurasi ' + acc + '% · ' + pub + ' knowledge terbit · ' + s.gap.length + ' celah knowledge.'}
-        status={{ text: s.pause ? 'Agent dijeda' : 'Agent berjalan', off: s.pause, onClick: () => set((d) => { d.btab = 'Agent' }) }}
-        kpiId="b-hk"
-        kpis={[
-          { label: 'Perilaku', value: s.bs.auto ? 'Otomatis' : 'Manual', detail: s.bs.skip ? 'kecuali nomor ID' : 'semua nomor', on: s.btab === 'Perilaku', onClick: () => set((d) => { d.btab = 'Perilaku' }) },
-          { label: 'Agent aktif', value: aktif + '/' + AGENT_KEYS.length, detail: 'akurasi ' + acc + '%', visual: <Meter pct={acc} />, on: s.btab === 'Agent', onClick: () => set((d) => { d.btab = 'Agent' }) },
-          { label: 'Knowledge', value: pub + '/' + s.kn.length, detail: 'terbit', on: s.btab === 'Knowledge', onClick: () => set((d) => { d.btab = 'Knowledge' }) },
-          { label: 'Celah knowledge', value: s.gap.length, detail: 'belum terjawab', tone: s.gap.length ? 'warn' : undefined, onClick: () => set((d) => { d.btab = 'Knowledge' }) },
+      <div className={'bt-ban' + (s.bs.auto && !s.pause ? '' : ' off')}>
+        <span className="ic" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="4" y="8" width="16" height="11" rx="3" /><path d="M12 8V4M9 13h.01M15 13h.01" /></svg></span>
+        <div className="tx">
+          <b>{s.pause ? 'Semua agent dijeda' : s.bs.auto ? 'Bot menjawab semua chat' : 'Bot dimatikan, tim membalas manual'}</b>
+          <span>{s.bs.skip ? 'Nomor Indonesia dilewati' : 'Semua nomor dijawab'} · {s.bs.hand ? 'serahkan ke tim bila diminta' : 'tanpa eskalasi'} · bot tetap 24/7</span>
+        </div>
+        <Sw on={s.bs.auto} label="Bot menjawab semua chat" onChange={(v) => { set((d) => { d.bs.auto = v }); toast(v ? 'Bot menjawab semua chat. Berlaku langsung.' : 'Bot dimatikan. Tim membalas manual.') }} />
+      </div>
+      <StatStrip
+        id="b-hk"
+        items={[
+          { label: 'Agent aktif', value: aktif + '/' + AGENT_KEYS.length, on: s.btab === 'Agent', onClick: () => set((d) => { d.btab = 'Agent' }) },
+          { label: 'Akurasi agent', value: acc + '%', tone: acc >= 90 ? 'good' : 'warn', onClick: () => set((d) => { d.btab = 'Agent' }) },
+          { label: 'Knowledge terbit', value: pub + '/' + s.kn.length, on: s.btab === 'Knowledge', onClick: () => set((d) => { d.btab = 'Knowledge' }) },
+          { label: 'Celah knowledge', value: s.gap.length, tone: s.gap.length ? 'warn' : undefined, onClick: () => set((d) => { d.btab = 'Knowledge' }) },
         ]}
       />
       <div className="tabs" id="b-tabs">
         {TABS.map((k) => <button key={k} className={k === s.btab ? 'on' : ''} onClick={() => set((d) => { d.btab = k })}>{k}</button>)}
       </div>
       <div id="b-body">
-        {s.btab === 'Perilaku' ? <Perilaku /> : s.btab === 'Agent' ? <Agents /> : s.btab === 'Knowledge' ? <Knowledge /> : s.btab === 'Uji' ? <Uji /> : <Log />}
+        {s.btab === 'Perilaku' ? <Perilaku key={String(s.bs.auto)} /> : s.btab === 'Agent' ? <Agents /> : s.btab === 'Knowledge' ? <Knowledge /> : s.btab === 'Uji' ? <Uji /> : <Log />}
       </div>
     </section>
   )
