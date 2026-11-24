@@ -26,7 +26,7 @@ describe('tata letak berbeda per halaman /new', () => {
   // Jumbotron biru hanya untuk halaman ringkasan (Dashboard, Laporan); lainnya punya bentuk sendiri.
   it.each([
     ['Antrean', <AntreanView key="a" />, '.pg-urgent', false],
-    ['Ringkasan', <RingkasanView key="r" />, '#r-hk .pg-st', false],
+    ['Ringkasan', <RingkasanView key="r" />, '#v-ringkasan .pg-urgent', false],
     ['Laporan', <LaporanView key="l" />, '.db-hero', true],
     ['Riwayat Agent', <AgentView key="g" />, '.ag-ev', false],
     ['Kontak', <KontakView key="k" />, '.kt-c', false],
@@ -47,12 +47,16 @@ describe('tata letak berbeda per halaman /new', () => {
     expect(document.getElementById('a-list')?.textContent).toContain('Cek mutasi pembayaran')
   })
 
-  it('Ringkasan: strip Komplain menyaring poin', () => {
+  it('Ringkasan: sorotan komplain di atas, sebaran jenis menyaring poin, tombol Per percakapan', () => {
     show(<RingkasanView />)
-    fireEvent.click(within(document.getElementById('r-hk')!).getByText('Komplain').closest('button')!)
+    expect(document.querySelector('.pg-urgent')?.textContent).toMatch(/komplain.*Lukas B\./)
+    fireEvent.click(within(document.getElementById('r-chips')!).getByText('komplain').closest('button')!)
     const pts = document.querySelectorAll('#r-pts .item')
     expect(pts).toHaveLength(1)
     expect(pts[0].textContent).toContain('Lukas B.')
+    fireEvent.click(screen.getByText(/^Per percakapan/))
+    expect(document.querySelectorAll('#r-chats details').length).toBeGreaterThan(5)
+    expect(document.getElementById('r-pts')).toBeNull()
   })
 
   it('Riwayat Agent: linimasa per jam, strip Gagal menyaring', () => {
