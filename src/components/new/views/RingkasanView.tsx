@@ -2,7 +2,6 @@
 
 // Ringkasan harian, pola sama dengan Antrean: kartu sorotan (komplain / janji terbuka), satu kartu
 // kendali (hari, Poin vs Per percakapan, sebaran jenis sebagai saringan), lalu daftar sederhana.
-import { parseR, rLabel } from '@/lib/new/dates'
 import { rData } from '@/lib/new/logic'
 import { KC, POINT_KINDS } from '@/lib/new/mock-data'
 import type { PointKind } from '@/lib/new/types'
@@ -24,7 +23,6 @@ export function RingkasanView() {
   const kinds = ['Semua', ...POINT_KINDS.filter((k) => P.some((x) => x[0] === k))]
   const rkind = kinds.includes(s.rkind) ? s.rkind : 'Semua'
   const nConv = new Set(P.map((x) => x[1])).size
-  const dayLabel = parseR(s.rday) ? rLabel(parseR(s.rday)!.f, parseR(s.rday)!.t) : s.rday
   const setDay = (v: string) => set((d) => { d.rday = v; d.rkind = 'Semua' })
   const regen = () => {
     if (s.rday !== 'Hari ini') { toast('Ringkasan hari lalu dibuat ulang dari percakapan hari itu'); return }
@@ -61,17 +59,14 @@ export function RingkasanView() {
       )}
 
       <div className="pg-card" id="r-sum">
-        <div className="pg-card-h">
-          <h3>{dayLabel}</h3>
-          <span className="mut sm" style={{ marginLeft: 0 }}>{D.a} percakapan aktif · {time}</span>
-          <span style={{ marginLeft: 'auto', display: 'flex', gap: 6, alignItems: 'center' }}>
-            <DaySelect k="r" id="r-dsel" value={s.rday} onChange={setDay} style={{ width: 'auto', padding: '4px 8px', fontSize: 13, borderRadius: 8 }} />
-            <button className="btn sm r-regen" onClick={regen}>Buat ulang</button>
-          </span>
+        <div className="r-top">
+          <DaySelect k="r" id="r-dsel" value={s.rday} onChange={setDay} className="sel r-day" />
+          <button className="btn sm r-regen" onClick={regen}>Buat ulang</button>
         </div>
+        <p className="r-meta">{D.a} percakapan aktif · {time}</p>
         <div className="seg r-view" role="group" aria-label="Tampilan ringkasan">
-          <button className={s.rtab === 'poin' ? 'on' : ''} onClick={() => set((d) => { d.rtab = 'poin' })}>Poin penting · {P.length}</button>
-          <button className={s.rtab === 'chat' ? 'on' : ''} onClick={() => set((d) => { d.rtab = 'chat' })}>Per percakapan · {openN} perlu tindakan</button>
+          <button className={s.rtab === 'poin' ? 'on' : ''} aria-pressed={s.rtab === 'poin'} onClick={() => set((d) => { d.rtab = 'poin' })}>Poin penting <b>{P.length}</b></button>
+          <button className={s.rtab === 'chat' ? 'on' : ''} aria-pressed={s.rtab === 'chat'} title={openN + ' percakapan perlu tindakan'} onClick={() => set((d) => { d.rtab = 'chat' })}>Per percakapan <b>{openN}</b></button>
         </div>
         {s.rtab === 'poin' && P.length > 0 && (
           <div style={{ marginTop: 10 }}>
