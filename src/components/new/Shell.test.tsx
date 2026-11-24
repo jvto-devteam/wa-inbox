@@ -9,6 +9,7 @@ import { HubView } from './views/HubView'
 import { InboxView } from './views/InboxView'
 import { KontakView } from './views/KontakView'
 import { RingkasanView } from './views/RingkasanView'
+import { TemplateView } from './views/TemplateView'
 
 let path = '/new/dashboard'
 const push = vi.fn()
@@ -43,6 +44,7 @@ describe('/new', () => {
     ['/new/agent', <AgentView key="g" />, 'Semua status'],
     ['/new/kontak', <KontakView key="k" />, 'Vendor Transport Bali'],
     ['/new/bot', <BotView key="b" />, 'Mode bot'],
+    ['/new/template', <TemplateView key="t" />, 'payment_reminder_balance'],
   ])('%s tergambar dengan data contoh', (p, el, text) => {
     at(p, el)
     expect(document.body.textContent + Array.from(document.querySelectorAll('textarea')).map((t) => t.placeholder).join(' ')).toContain(text)
@@ -69,6 +71,20 @@ describe('/new', () => {
     const row = screen.getByText(/Reminder crew \(H-1\)/).closest('.item') as HTMLElement
     fireEvent.click(Array.from(row.querySelectorAll('button')).find((b) => b.textContent === 'Kirim sekarang')!)
     expect(screen.queryByText(/Reminder crew \(H-1\)/)).toBeNull()
+  })
+
+  it('Template pesan: buka, ubah, simpan', () => {
+    at('/new/template', <TemplateView />)
+    fireEvent.click(screen.getByText('Reminder', { selector: '#t-chips button', exact: false }))
+    const row = screen.getByText('payment_reminder_balance').closest('.item') as HTMLElement
+    fireEvent.click(row)
+    const ta = screen.getByLabelText('Isi pesan') as HTMLTextAreaElement
+    fireEvent.change(ta, { target: { value: ta.value + '\n{tidak_ada}' } })
+    expect(screen.getByText(/tidak dideklarasikan/)).toBeInTheDocument()
+    expect((screen.getByText('Simpan') as HTMLButtonElement).disabled).toBe(true)
+    fireEvent.change(ta, { target: { value: 'Halo {customer_name}' } })
+    fireEvent.click(screen.getByText('Simpan'))
+    expect(screen.getByText('Tersimpan (pratinjau, belum ke server)')).toBeInTheDocument()
   })
 
   it('Kirim di Inbox menambah pesan admin dan membuang draf', () => {

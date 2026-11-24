@@ -12,6 +12,7 @@ export const ROUTES: Record<ViewKey, string> = {
   ringkasan: '/new/ringkasan',
   agent: '/new/agent',
   kontak: '/new/kontak',
+  template: '/new/template',
   bot: '/new/bot',
 }
 
@@ -21,6 +22,7 @@ export const TITLES: Record<ViewKey, string> = {
   antrean: 'Antrean',
   ringkasan: 'Ringkasan',
   kontak: 'Kontak',
+  template: 'Template pesan',
   bot: 'Bot',
   agent: 'Riwayat Agent',
 }
@@ -39,7 +41,7 @@ export interface SheetItem {
 
 export type DayKey = 'r' | 'a' | 's'
 
-export type DrawerDesc = { kind: 'kontak'; idx: number } | { kind: 'agent'; idx: number }
+export type DrawerDesc = { kind: 'kontak'; idx: number } | { kind: 'agent'; idx: number } | { kind: 'template'; key: string }
 
 export interface RemReq {
   name: string

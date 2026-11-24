@@ -9,6 +9,7 @@ import { CH, KT, initialState } from '@/lib/new/mock-data'
 import type { State, ViewKey } from '@/lib/new/types'
 import { NAV_ICON, SearchIcon } from './icons'
 import { ActionSheet, AgentDrawer, KontakDrawer, RangePicker, RemPicker } from './Overlays'
+import { TemplateDrawer } from './views/TemplateView'
 import {
   ROUTES, StoreCtx, TITLES, viewFromPath,
   type DayKey, type DrawerDesc, type NewStore, type RemReq, type SheetItem,
@@ -22,9 +23,9 @@ function subscribeMq(cb: () => void) {
 }
 const noop = () => () => {}
 
-const SIDE: ViewKey[] = ['hub', 'inbox', 'antrean', 'ringkasan', 'agent', 'kontak', 'bot']
+const SIDE: ViewKey[] = ['hub', 'inbox', 'antrean', 'ringkasan', 'agent', 'kontak', 'template', 'bot']
 const MTAB: ViewKey[] = ['hub', 'inbox', 'antrean', 'ringkasan']
-const MORE: ViewKey[] = ['agent', 'kontak', 'bot']
+const MORE: ViewKey[] = ['agent', 'kontak', 'template', 'bot']
 
 interface Hit { t: 'Chat' | 'Kontak'; n: string; s: string }
 
@@ -252,6 +253,7 @@ export function NewShell({ children }: { children: React.ReactNode }) {
 
         <div id="drawer" onClick={(e) => { if (e.target === e.currentTarget) setDrawerD(null) }}>
           {drawerD?.kind === 'kontak' && <KontakDrawer idx={drawerD.idx} onClose={() => setDrawerD(null)} />}
+          {drawerD?.kind === 'template' && <TemplateDrawer key={drawerD.key} tplKey={drawerD.key} onClose={() => setDrawerD(null)} />}
           {drawerD?.kind === 'agent' && <AgentDrawer key={drawerD.idx} idx={drawerD.idx} onClose={() => setDrawerD(null)} />}
         </div>
         <div id="toast">{toastM && <div key={toastM.n} className="toast" role="status">{toastM.m}</div>}</div>
