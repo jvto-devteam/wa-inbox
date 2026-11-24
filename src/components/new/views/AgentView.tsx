@@ -114,7 +114,7 @@ export function AgentView() {
                     onClick={() => setOpen(e)} onKeyDown={(ev) => { if (ev.key === 'Enter') setOpen(e) }}>
                     <div className="b" style={{ minWidth: 0 }}>
                       <b>{e.title}</b>
-                      <span className="m"><span className="ag" style={{ '--c': `var(${AGS[e.agent][1]})` } as Css}>{AGS[e.agent][0]}</span>{e.contact ? ' · ' + e.contact : ''} · {hm(e.at)}</span>
+                      <span className="ag-m"><span className="ag" style={{ '--c': `var(${AGS[e.agent][1]})` } as Css}>{AGS[e.agent][0]}</span>{e.contact ? ' · ' + e.contact : ''} · {hm(e.at)}</span>
                     </div>
                     <div className="r">
                       <span className={'pill ' + t[0]}>{t[1]}</span>

@@ -736,8 +736,8 @@
 .nwa .ag-ev:hover{background:var(--surface2)}
 .nwa .ag-ev::before{content:"";position:absolute;left:-16px;top:14px;width:10px;height:10px;border-radius:50%;background:var(--c);box-shadow:0 0 0 2px var(--surface)}
 .nwa .ag-ev b{display:block;font-weight:600;font-size:13.5px;line-height:1.3}
-.nwa .ag-ev .m{display:block;font-size:12px;color:var(--muted);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.nwa .ag-ev .m .ag{font-size:12px}
+.nwa .ag-ev .ag-m{display:block;font-size:12px;color:var(--muted);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.nwa .ag-ev .ag-m .ag{font-size:12px}
 .nwa .ag-ev .r{display:flex;align-items:center;gap:6px}
 @media (max-width:860px){
  .nwa .ag-tl{border:0;padding:4px 12px 8px}
@@ -750,7 +750,7 @@
 .nwa .kt-c .av{width:40px;height:40px;font-size:14px}
 .nwa .kt-c .av.info{background:var(--accent-soft);color:var(--accent)}.nwa .kt-c .av.warn{background:var(--warn-bg);color:var(--warn)}
 .nwa .kt-c b{display:block;font-weight:650}
-.nwa .kt-c .m{display:block;font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.nwa .kt-c .kt-m{display:block;font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .nwa .kt-c .r{display:flex;flex-direction:column;align-items:flex-end;gap:4px}
 .nwa .kt-c .t{font-size:11.5px;color:var(--muted);white-space:nowrap}
 @media (max-width:860px){
