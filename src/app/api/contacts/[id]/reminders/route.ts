@@ -25,7 +25,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   return NextResponse.json(reminder)
 }
 
-const patchSchema = z.object({ reminderId: z.string(), done: z.boolean() })
+// `dueAt` (opsional) = Tunda dari Antrean /new; minimal salah satu dari done/dueAt.
+const patchSchema = z
+  .object({ reminderId: z.string(), done: z.boolean().optional(), dueAt: z.iso.datetime({ offset: true }).optional() })
+  .refine((b) => b.done !== undefined || b.dueAt !== undefined, 'done atau dueAt wajib diisi')
 
 // `reminderId` is globally unique (cuid), so `prisma.reminder.update({ where: { id } })` alone
 // would happily flip the `done` flag on a reminder belonging to a different contact if the
@@ -34,7 +37,7 @@ const patchSchema = z.object({ reminderId: z.string(), done: z.boolean() })
 // as a defense-in-depth guard against a buggy or malicious client.
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
-  const parsed = await parseJsonBody(req, patchSchema, 'reminderId dan done wajib diisi')
+  const parsed = await parseJsonBody(req, patchSchema, 'reminderId dan done/dueAt wajib diisi')
   if (!parsed.success) return NextResponse.json({ error: parsed.error }, { status: 400 })
 
   const existing = await prisma.reminder.findUnique({ where: { id: parsed.data.reminderId } })
@@ -44,7 +47,10 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 
   const reminder = await prisma.reminder.update({
     where: { id: parsed.data.reminderId },
-    data: { done: parsed.data.done },
+    data: {
+      ...(parsed.data.done !== undefined ? { done: parsed.data.done } : {}),
+      ...(parsed.data.dueAt !== undefined ? { dueAt: new Date(parsed.data.dueAt) } : {}),
+    },
   })
   return NextResponse.json(reminder)
 }
