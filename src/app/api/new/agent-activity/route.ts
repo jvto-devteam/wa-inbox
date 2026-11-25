@@ -1,6 +1,9 @@
 import { NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth/get-session'
 import { prisma } from '@/lib/db'
+import { HISTORY_MAX_DAYS } from '@/lib/chat-review/history'
+import { jakartaDayKey } from '@/lib/daily-summary/time'
+import { indexPointCounts, previousPointCount } from '@/lib/new/review-points'
 import {
   TEMPLATE_AGENT, fromEvent, fromJob, fromReview, fromRun, fromSummary, sortActivities, type Activity,
 } from '@/lib/new/agent-activity'
@@ -89,10 +92,24 @@ export async function GET(req: Request) {
     for (const r of runs) { const a = fromRun(r, name(r.conversationId)); if (a) out.push(a) }
     for (const j of jobs) { const c = chatOf(j); const a = fromJob(j, name(c), j.templateKey ? tplName.get(j.templateKey) : undefined, c); if (a) out.push(a) }
     for (const e of events) { const a = fromEvent(e, name(e.conversationId), e.actionId ? fieldOf.get(e.actionId) : undefined); if (a) out.push(a) }
+    // Pembanding "sebelumnya" = ringkasan harian sebelum hari pembaruan. Ringkasan job 00.00 berstempel
+    // akhir hari yang diringkas, jadi hari pembaruan diambil dari 1 ms sebelum chatReviewAt.
+    const reviewDay = (at: Date) => jakartaDayKey(new Date(at.getTime() - 1))
+    const days = reviews.flatMap((c) => (c.chatReviewAt ? [reviewDay(c.chatReviewAt)] : []))
+    const history = days.length
+      ? indexPointCounts(await prisma.dailySummary.findMany({
+        where: { date: { lt: days.reduce((a, b) => (a > b ? a : b)) } },
+        orderBy: { date: 'desc' }, take: HISTORY_MAX_DAYS, select: { date: true, payload: true },
+      }))
+      : []
     for (const c of reviews) {
       if (!c.chatReviewAt) continue
       const rv = (c.chatReview ?? {}) as { poinPenting?: unknown[]; status?: string }
-      out.push(fromReview({ id: c.id, chatReviewAt: c.chatReviewAt, points: Array.isArray(rv.poinPenting) ? rv.poinPenting.length : 0, open: rv.status === 'perlu_tindakan' }, name(c.id)))
+      const a = fromReview({
+        id: c.id, chatReviewAt: c.chatReviewAt, points: Array.isArray(rv.poinPenting) ? rv.poinPenting : [],
+        prev: previousPointCount(history, c.id, reviewDay(c.chatReviewAt)), open: rv.status === 'perlu_tindakan',
+      }, name(c.id))
+      if (a) out.push(a)
     }
     for (const d of sums) out.push(fromSummary(d))
     return NextResponse.json({ items: sortActivities(out) })

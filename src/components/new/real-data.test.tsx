@@ -176,4 +176,20 @@ describe('Riwayat Agent: data asli', () => {
     expect(dr.textContent).toContain('#88')
     expect(dr.textContent).toContain('grup tidak tampil di Inbox')
   })
+
+  it('detail Poin penting diperbarui: daftar poin sebagai bukti, tanpa kotak Masukan', async () => {
+    const at = new Date(); at.setHours(7, 11, 0, 0)
+    routes['GET /api/new/agent-activity'] = () => ({ body: { items: [
+      { id: 'rev:c1:1', at: at.toISOString(), agent: 'poin', status: 'ok', title: 'Poin penting diperbarui', input: '', output: '2 poin penting (sebelumnya 4) · masih perlu tindakan', conversationId: 'c1', contact: 'Vytas',
+        points: [{ teks: 'Komplain jemputan telat', jenis: 'komplain' }, { teks: 'Tanya hotel dekat stasiun', jenis: null }] },
+    ] } })
+    show('/new/agent', <AgentView />)
+    await waitFor(() => expect(document.querySelectorAll('#g-t .ag-ev')).toHaveLength(1))
+    fireEvent.click(document.querySelector('#g-t .ag-ev')!)
+    const dr = document.querySelector('#g-drawer')!
+    expect(Array.from(dr.querySelectorAll('.ag-pts li')).map((li) => li.textContent?.trim())).toEqual(['komplain Komplain jemputan telat', 'Tanya hotel dekat stasiun'])
+    expect(dr.querySelector('.ag-pts .pill.bad')?.textContent).toBe('komplain')
+    expect(dr.textContent).toContain('(sebelumnya 4)')
+    expect(dr.textContent).not.toContain('Masukan')
+  })
 })

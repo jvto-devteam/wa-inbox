@@ -50,7 +50,17 @@ function Detail({ a, onClose }: { a: Activity; onClose: () => void }) {
         </div>
       )}
       <div className="box" style={{ marginTop: 10 }}><h4>Hasil</h4>{a.output}</div>
-      {!a.message && !a.inbound && <div className="box" style={{ marginTop: 10 }}><h4>Masukan</h4>{a.input}</div>}
+      {!!a.points?.length && (
+        <div className="box" style={{ marginTop: 10 }}>
+          <h4>Poin penting (bukti)</h4>
+          <ul className="ag-pts">
+            {a.points.map((p, i) => (
+              <li key={i}>{p.jenis && <span className={'pill ' + (p.jenis === 'komplain' ? 'bad' : 'neu')}>{p.jenis}</span>} {p.teks}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {!a.message && !a.inbound && a.input && <div className="box" style={{ marginTop: 10 }}><h4>Masukan</h4>{a.input}</div>}
       <div className="acts" style={{ marginTop: 12 }}>
         {a.conversationId
           ? <a className="btn pri" href={'/inbox?conversation=' + a.conversationId}>Buka chat</a>

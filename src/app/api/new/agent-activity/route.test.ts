@@ -58,4 +58,27 @@ describe('GET /api/new/agent-activity', () => {
     expect(res.status).toBe(500)
     expect(await res.json()).toEqual({ error: 'Gagal memuat riwayat agent' })
   })
+
+  it('poin penting: 0 tanpa poin sebelumnya disembunyikan, 4 → 0 tampil, bukti = isi poin', async () => {
+    const at = new Date('2026-11-24T17:00:00Z') // 25 Nov 00:00 WIB = ringkasan job hari 24
+    vi.mocked(prisma.conversation.findMany).mockImplementation((async (args: { select: Record<string, unknown> }) =>
+      args.select.chatReview
+        ? [
+            { id: 'nol', chatReviewAt: at, chatReview: { poinPenting: [], status: 'selesai' } },
+            { id: 'turun', chatReviewAt: at, chatReview: { poinPenting: [], status: 'selesai' } },
+            { id: 'isi', chatReviewAt: at, chatReview: { poinPenting: [{ teks: 'Minta jemput 06:30', jenis: 'jemput' }], status: 'perlu_tindakan' } },
+          ]
+        : [{ id: 'turun', contact: { name: 'Vytas' } }]) as never)
+    const conv = (id: string, n: number) => ({ conversationId: id, contactName: null, pipelineStage: 'NEW', inbound: 1, outbound: 0, review: { status: 'selesai', alasan: '', jenisKontak: 'calon_tamu', topik: '', pertanyaan: [], poinPenting: Array(n).fill('p'), janjiTim: [], profil: [], statusAgen: '', langkahBerikut: '' } })
+    const payload = { version: 1, date: '2026-11-23', windowStart: 'a', windowEnd: 'b', generatedAt: 'c', thresholds: { unrepliedMinMs: 1, dormantMinMs: 1, lookbackMs: 1 }, counts: { activeConversations: 0, inbound: 0, outbound: 0, newConversations: 0, reviewed: 0, reviewFailed: 0 }, filteredOut: { unreplied: 0, dormant: 0 }, unreplied: [], dormant: [], newLeads: [], handoffs: [], gaps: { newCount: 0, openTotal: 0, byReason: [], byTopic: [], items: [] }, conversations: [conv('nol', 0), conv('turun', 4)] }
+    vi.mocked(prisma.dailySummary.findMany).mockImplementation((async (args: { select: Record<string, unknown> }) =>
+      args.select.payload ? [{ date: '2026-11-23', payload }] : []) as never)
+
+    const items = (await (await GET(req(Q))).json()).items as Array<{ id: string; output: string; points?: unknown; input: string }>
+    const poin = items.filter((i) => i.id.startsWith('rev:'))
+    expect(poin.map((i) => i.id.split(':')[1]).sort()).toEqual(['isi', 'turun'])
+    expect(poin.find((i) => i.id.startsWith('rev:turun'))!.output).toBe('0 poin penting (sebelumnya 4) · selesai')
+    expect(poin.find((i) => i.id.startsWith('rev:isi'))).toMatchObject({ input: '', points: [{ teks: 'Minta jemput 06:30', jenis: 'jemput' }] })
+    expect(prisma.dailySummary.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { date: { lt: '2026-11-24' } }, orderBy: { date: 'desc' }, take: 31 }))
+  })
 })
