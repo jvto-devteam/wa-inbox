@@ -102,6 +102,9 @@ describe('exclusionFor', () => {
     expect(tripEndDay({ tanggalTripSelesai: '2025-12-24' }, chatAt)).toBe('2026-12-24') // Villeval
     expect(tripEndDay({ tanggalTripSelesai: '2024-11-24' }, chatAt)).toBe('2026-11-24')
     expect(tripEndDay({ tanggalTripSelesai: '2026-12-24' }, chatAt)).toBe('2026-12-24')
+    // tahun yang sama dipercaya: tanggal sebelum chat dimulai memang sudah lewat (Pro Tech)
+    expect(tripEndDay({ tanggalTripSelesai: '2026-11-13' }, new Date('2026-11-17T03:00:00Z'))).toBe('2026-11-13')
+    expect(tripEndDay({ tanggalTripSelesai: '2025-03-10' }, chatAt)).toBe('2027-03-10')
     expect(tripEndDay({ tanggalTripSelesai: null }, chatAt)).toBeNull()
     mockPrisma.conversation.findUnique.mockResolvedValue({ ...conv({ chatReview: { jenisKontak: 'calon_tamu', status: 'perlu_tindakan', tanggalTripSelesai: '2025-12-24' } }), createdAt: chatAt } as never)
     expect(await exclusionFor('c', 'PROMISE', null, NOW)).toBeNull()
