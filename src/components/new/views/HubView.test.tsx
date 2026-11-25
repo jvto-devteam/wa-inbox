@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { stubReportFetch } from '../__fixtures__/report'
+import { stubSummaryFetch } from '../__fixtures__/summary'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { NewShell } from '../Shell'
 import { AgentView } from './AgentView'
@@ -58,11 +59,12 @@ describe('Dashboard: setiap item punya rujukan', () => {
     expect(document.querySelector('#g-chips button.on')?.textContent).toMatch(/^Reminder ke crew/)
   })
 
-  it('Komplain → Ringkasan hari ini, jenis komplain', () => {
+  it('Komplain → Ringkasan terbaru, jenis komplain', async () => {
+    stubSummaryFetch()
     const hub = renderWith(<RingkasanView />)
     fireEvent.click(within(hub).getByText('Komplain').closest('button')!)
     expect(push).toHaveBeenLastCalledWith('/new/ringkasan')
-    expect(document.querySelector('#r-chips button.on')?.textContent).toMatch(/^komplain \d/)
+    await waitFor(() => expect(document.querySelector('#r-chips button.on')?.textContent).toMatch(/^komplain \d/))
   })
 
   it('item jadwal → Antrean tab Follow-up agent', () => {
