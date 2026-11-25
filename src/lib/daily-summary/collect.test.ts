@@ -123,7 +123,11 @@ describe('buildTranscript & messageSnippet', () => {
   })
 
   it('memotong pesan panjang', () => {
-    expect(buildTranscript([msg('INBOUND', start, 'a'.repeat(1500))]).length).toBeLessThan(1100)
+    // 1500 huruf tidak lagi dipotong (batas 2000); 2500 dipotong dan ditandai
+    expect(buildTranscript([msg('INBOUND', start, 'a'.repeat(1500))])).not.toContain('[dipotong]')
+    const cut = buildTranscript([msg('INBOUND', start, 'a'.repeat(2500))])
+    expect(cut.length).toBeLessThan(2100)
+    expect(cut.endsWith('…[dipotong]')).toBe(true)
     expect(messageSnippet(msg('INBOUND', start, 'b'.repeat(500))).length).toBe(160)
   })
 })

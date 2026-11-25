@@ -406,6 +406,13 @@ describe('janjiTim: yang bukan janji', () => {
   })
 })
 
+describe('pesan terpotong dan open trip', () => {
+  it('prompt: pesan [dipotong] bukan berarti belum dikirim; open trip = pilih_lain', () => {
+    expect(REVIEW_SYSTEM_PROMPT).toContain('Pesan yang berakhir "…[dipotong]" hanya terpotong di transkrip ini')
+    expect(REVIEW_SYSTEM_PROMPT).toContain('mencari open trip/group tour/tur gabungan')
+  })
+})
+
 describe('tanggalTripSelesai', () => {
   it('prompt meminta hari terakhir rencana trip; tanggal sah dibaca, tidak sah = tidak diketahui', () => {
     expect(REVIEW_SYSTEM_PROMPT).toContain('"tanggalTripSelesai":"YYYY-MM-DD"|null')
