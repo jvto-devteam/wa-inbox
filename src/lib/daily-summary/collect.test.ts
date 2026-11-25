@@ -106,7 +106,7 @@ describe('buildTranscript & messageSnippet', () => {
     const numbered = buildNumberedTranscript([a, b, c])
     expect(numbered.text).toBe('#1 [21/09 09.05] Pelanggan: Ijen 3 Oktober?\n#2 [21/09 09.10] Agen: [image]\n#3 [21/09 09.12] Pelanggan: ok')
     expect(numbered.ids).toEqual([a.id, b.id, c.id])
-    expect(buildNumberedTranscript([])).toEqual({ text: '', ids: [] })
+    expect(buildNumberedTranscript([])).toEqual({ text: '', ids: [], botIds: [] })
   })
 
   it('baris baru di dalam pesan jadi ⏎, jadi pelanggan tidak bisa memalsukan baris bernomor', () => {
