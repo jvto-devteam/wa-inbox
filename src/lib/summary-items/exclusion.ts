@@ -88,18 +88,26 @@ export function reviewSaysNoReply(chatReview: unknown, chatReviewAt: Date | null
 }
 
 /**
- * Janji tim yang sudah ditindaklanjuti AGEN dengan pertanyaan ke tamu, dan tamu belum menjawab (pesan berisi): bola
+ * Janji tim yang sudah ditindaklanjuti AGEN dengan pertanyaan / permintaan konfirmasi ke tamu (pesan agen TERAKHIR
+ * sesudah janji, `ASKS_GUEST`), dan tamu belum menjawab (pesan berisi): bola
  * ada di tamu, jadi item itu Follow Up, bukan janji yang menggantung (owner 2026-11-25, kasus Bela Reister). Balasan
  * agen TANPA pertanyaan ("refund sedang diproses") tidak dihitung: janjinya tetap terbuka sampai AI menilainya ditepati.
  * Mengembalikan pertanyaan agen terakhir itu, atau null.
  */
+/**
+ * Pesan agen yang meminta jawaban tamu: tanda tanya, atau kalimat minta konfirmasi tanpa "?" ("Just to confirm, you are
+ * looking for…", "please let me know", "mohon konfirmasi"). Sengaja sempit: "refund sedang kami proses" bukan permintaan.
+ */
+export const ASKS_GUEST = /\?|\bconfirm|\blet (me|us) know\b|\bplease (advise|reply|tell)\b|\bkonfirmasi\b|\bkabari\b|\bmohon (info|dikabari|balas)/i
+
 export async function promiseAwaitingGuest(conversationId: string, promiseAt: Date) {
+  // Pesan agen terakhir sesudah janji; dihitung menunggu tamu hanya bila ia meminta jawaban (ASKS_GUEST).
   const question = await prisma.message.findFirst({
-    where: { conversationId, direction: 'OUTBOUND', sentBy: 'AGENT', createdAt: { gt: promiseAt }, content: { contains: '?' } },
+    where: { conversationId, direction: 'OUTBOUND', sentBy: 'AGENT', createdAt: { gt: promiseAt }, content: { not: null } },
     orderBy: { createdAt: 'desc' },
     select: { id: true, createdAt: true, content: true, type: true, direction: true, sentBy: true },
   })
-  if (!question) return null
+  if (!question || !ASKS_GUEST.test(question.content ?? '')) return null
   const answered = await prisma.message.findFirst({
     where: { conversationId, direction: 'INBOUND', ...CONTENT_MESSAGE_WHERE, createdAt: { gt: question.createdAt } },
     select: { id: true },

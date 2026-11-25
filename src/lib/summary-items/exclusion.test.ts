@@ -128,12 +128,20 @@ describe('perluBalas dari ringkasan AI', () => {
 })
 
 describe('janji menunggu tamu', () => {
+  it('permintaan jawaban: tanda tanya atau kalimat konfirmasi; kabar proses bukan', async () => {
+    const { ASKS_GUEST } = await import('./exclusion')
+    for (const t of ['Just to confirm, you are looking for private transportation.', 'Please let me know your flight.', 'Mohon konfirmasi jumlah orang.', 'Nanti kabari ya', 'berapa orang?'])
+      expect(ASKS_GUEST.test(t), t).toBe(true)
+    for (const t of ['Refund sedang kami proses.', 'Noted, we will send the invoice tomorrow.'])
+      expect(ASKS_GUEST.test(t), t).toBe(false)
+  })
+
   it('pertanyaan agen sesudah janji + tamu belum menjawab = menunggu tamu; dijawab atau tanpa pertanyaan = bukan', async () => {
     const { promiseAwaitingGuest } = await import('./exclusion')
     const q = { id: 'q1', createdAt: new Date('2026-09-23T00:00:00Z'), content: 'Just to confirm…?', type: 'text', direction: 'OUTBOUND', sentBy: 'AGENT' }
     mockPrisma.message.findFirst.mockResolvedValueOnce(q as never).mockResolvedValueOnce(null)
     expect(await promiseAwaitingGuest('c', new Date('2026-09-22T16:00:00Z'))).toEqual(q)
-    expect(mockPrisma.message.findFirst.mock.calls[0][0]).toMatchObject({ where: { direction: 'OUTBOUND', sentBy: 'AGENT', content: { contains: '?' } } })
+    expect(mockPrisma.message.findFirst.mock.calls[0][0]).toMatchObject({ where: { direction: 'OUTBOUND', sentBy: 'AGENT' }, orderBy: { createdAt: 'desc' } })
     mockPrisma.message.findFirst.mockResolvedValueOnce(q as never).mockResolvedValueOnce({ id: 'jawab' } as never)
     expect(await promiseAwaitingGuest('c', new Date('2026-09-22T16:00:00Z'))).toBeNull()
     mockPrisma.message.findFirst.mockResolvedValueOnce(null)
