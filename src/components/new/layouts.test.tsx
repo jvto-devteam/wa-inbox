@@ -52,7 +52,9 @@ describe('tata letak berbeda per halaman /new', () => {
     expect(document.querySelector('.db-hero')).toBeNull()
     expect(document.querySelector('.pg-urgent a.btn')?.getAttribute('href')).toBe('/inbox?conversation=c2&message=m7')
     expect(document.querySelector('.pg-urgent .nx')?.textContent).toContain('1 janji tim belum ditepati')
-    expect(document.querySelector('.r-meta')?.textContent).toMatch(/^9 percakapan aktif · dibuat 00[.:]04$/)
+    expect(document.querySelector('.r-meta')?.textContent).toMatch(/^2 percakapan diringkas · 9 aktif hari itu · dibuat 00[.:]04$/)
+    // tombol = jumlah percakapan di daftarnya (bukan hanya yang perlu tindakan)
+    expect(screen.getByText(/^Per percakapan/).textContent).toBe('Per percakapan 2')
     expect(document.querySelectorAll('#r-pts .item')).toHaveLength(3)
     fireEvent.click(within(document.getElementById('r-chips')!).getByText('komplain').closest('button')!)
     const pts = document.querySelectorAll('#r-pts .item')
@@ -60,6 +62,7 @@ describe('tata letak berbeda per halaman /new', () => {
     expect(pts[0].textContent).toContain('Lukas B.')
     fireEvent.click(screen.getByText(/^Per percakapan/))
     expect(document.querySelectorAll('#r-chats details')).toHaveLength(2)
+    expect(Array.from(document.querySelectorAll('#r-chats .pg-sec')).map((e) => e.textContent)).toEqual(['Perlu tindakan 2'])
     expect(document.getElementById('r-pts')).toBeNull()
 
     // ganti hari → memuat tanggal itu

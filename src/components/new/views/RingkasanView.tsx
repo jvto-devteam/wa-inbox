@@ -6,7 +6,7 @@
 // Saran tindakan dari AI (langkah berikut / follow-up lead) + tombol: Buka chat, Ingatkan (POST
 // /api/summary-items/[id]/schedule, membuat reminder) dan Lepas (.../drop); keduanya tanpa pesan ke tamu.
 // "Buat ulang" = POST /api/daily-summary/generate, hanya admin.
-import { useState } from 'react'
+import { Fragment, useState } from 'react'
 import type { DailySummaryResponse } from '@/app/api/daily-summary/route'
 import { jakartaDay } from '@/lib/bot/eval/replay-pairs'
 import { isDateKey, previousJakartaDayKey } from '@/lib/daily-summary/time'
@@ -121,7 +121,8 @@ export function RingkasanView() {
   }
   const top = kom[0] ? byId.get(kom[0].conversationId) : undefined
   const meta = D
-    ? D.active + ' percakapan aktif' + (D.finishedAt ? ' · dibuat ' + hhmm(D.finishedAt) : '') + (STATUS_NOTE[D.status] ? ' · ' + STATUS_NOTE[D.status] : '')
+    // Diringkas = percakapan aktif hari itu + yang 14 hari terakhir belum dibalas/diam/lead baru; satu angka dengan tombol Per percakapan.
+    ? chats.length + ' percakapan diringkas · ' + D.active + ' aktif hari itu' + (D.finishedAt ? ' · dibuat ' + hhmm(D.finishedAt) : '') + (STATUS_NOTE[D.status] ? ' · ' + STATUS_NOTE[D.status] : '')
     : api.loading ? 'Memuat ringkasan…' : 'Belum ada ringkasan'
 
   return (
@@ -164,7 +165,7 @@ export function RingkasanView() {
         {D?.error && <p className="r-meta" style={{ color: 'var(--bad)' }}>{D.error}</p>}
         <div className="seg r-view" role="group" aria-label="Tampilan ringkasan">
           <button className={s.rtab === 'poin' ? 'on' : ''} aria-pressed={s.rtab === 'poin'} onClick={() => set((d) => { d.rtab = 'poin' })}>Poin penting <b>{P.length}</b></button>
-          <button className={s.rtab === 'chat' ? 'on' : ''} aria-pressed={s.rtab === 'chat'} title={openN + ' percakapan perlu tindakan'} onClick={() => set((d) => { d.rtab = 'chat' })}>Per percakapan <b>{openN}</b></button>
+          <button className={s.rtab === 'chat' ? 'on' : ''} aria-pressed={s.rtab === 'chat'} title={openN + ' percakapan perlu tindakan'} onClick={() => set((d) => { d.rtab = 'chat' })}>Per percakapan <b>{chats.length}</b></button>
         </div>
         {s.rtab === 'poin' && P.length > 0 && (
           <div style={{ marginTop: 10 }}>
@@ -199,8 +200,12 @@ export function RingkasanView() {
         <div className="card" id="r-chats">
           {api.loading ? <div className="mut" style={{ padding: 20, textAlign: 'center' }}>Memuat…</div>
             : !chats.length ? <div className="mut" style={{ padding: 20, textAlign: 'center' }}>Tidak ada percakapan yang diringkas pada tanggal ini.</div>
-            : chats.map((c) => (
-              <details key={c.conversationId} className="feat" style={{ margin: '0 0 8px' }} open={c.open}>
+            : chats.map((c, i) => (
+              <Fragment key={c.conversationId}>
+              {(i === 0 || chats[i - 1].open !== c.open) && (
+                <div className="pg-sec">{c.open ? 'Perlu tindakan' : 'Selesai'} <span className={'pill ' + (c.open ? 'warn' : 'good')}>{c.open ? openN : chats.length - openN}</span></div>
+              )}
+              <details className="feat" style={{ margin: '0 0 8px' }} open={c.open}>
                 <summary><b>{c.name}</b><span className={'pill ' + (c.open ? 'warn' : 'good')} style={{ marginLeft: 'auto' }}>{c.open ? 'Perlu tindakan' : 'Selesai'}</span></summary>
                 <div style={{ padding: '0 14px 12px' }}>
                   {c.lines.map((x, i) => <div key={i} style={{ padding: '2px 0' }}>{x}</div>)}
@@ -208,6 +213,7 @@ export function RingkasanView() {
                   <div style={{ marginTop: 8 }}>{actsEl(c, chatHref(c.conversationId))}</div>
                 </div>
               </details>
+              </Fragment>
             ))}
         </div>
       )}
