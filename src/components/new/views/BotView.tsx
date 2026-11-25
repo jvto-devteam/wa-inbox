@@ -215,7 +215,7 @@ function Knowledge({ sources, gaps, admin }: { sources: ApiState<{ items: Source
                 <p>{g.contactName || 'Tanpa nama'}{g.topic ? ' · ' + g.topic : ''} · {when(g.createdAt)}</p>
               </div>
               <div className="acts">
-                {g.conversationId && <a className="btn sm" href={'/inbox?conversation=' + g.conversationId}>Chat</a>}
+                {g.conversationId && <a className="btn sm" href={'/new/inbox?conversation=' + g.conversationId}>Chat</a>}
                 <button className="btn sm" onClick={() => resolve(g)}>Selesai</button>
               </div>
             </div>
@@ -258,7 +258,7 @@ function Log({ admin }: { admin: boolean }) {
   const aud = useApi<{ items: Audit[] }>(admin ? '/api/bot-control/audit-logs?limit=30' : null)
   type Row = { k: 'Keputusan' | 'Audit'; at: string; title: string; sub: string; tone: string; tag: string; href?: string }
   const rows: Row[] = [
-    ...(dec.data?.items ?? []).map((d): Row => ({ k: 'Keputusan', at: d.startedAt, title: (d.contactName || 'Tanpa nama') + ' · ' + (d.inboundPreview || ''), sub: 'Keputusan bot', tone: DEC_TONE[d.status] || 'neu', tag: d.status, href: d.conversationId ? '/inbox?conversation=' + d.conversationId : undefined })),
+    ...(dec.data?.items ?? []).map((d): Row => ({ k: 'Keputusan', at: d.startedAt, title: (d.contactName || 'Tanpa nama') + ' · ' + (d.inboundPreview || ''), sub: 'Keputusan bot', tone: DEC_TONE[d.status] || 'neu', tag: d.status, href: d.conversationId ? '/new/inbox?conversation=' + d.conversationId : undefined })),
     ...(aud.data?.items ?? []).map((a): Row => ({ k: 'Audit', at: a.createdAt, title: (a.actorName || 'Sistem') + ' · ' + a.action + ' ' + a.entityType + (a.entityKey ? ' (' + a.entityKey + ')' : ''), sub: a.reason || 'Perubahan pengaturan bot', tone: 'neu', tag: a.action })),
   ].sort((x, y) => y.at.localeCompare(x.at))
   const tabs = admin ? ['Semua', 'Keputusan', 'Audit'] : ['Semua', 'Keputusan']

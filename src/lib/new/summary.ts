@@ -47,7 +47,7 @@ export interface SummaryDay {
 
 /** Href Inbox untuk satu percakapan, opsional menyorot pesan. */
 export function chatHref(conversationId: string, messageId?: string | null): string {
-  return '/inbox?conversation=' + encodeURIComponent(conversationId) + (messageId ? '&message=' + encodeURIComponent(messageId) : '')
+  return '/new/inbox?conversation=' + encodeURIComponent(conversationId) + (messageId ? '&message=' + encodeURIComponent(messageId) : '')
 }
 
 const RANK = (k: PointKind | null) => (k ? POINT_KINDS.indexOf(k) : POINT_KINDS.length)

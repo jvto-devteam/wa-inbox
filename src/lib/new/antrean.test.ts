@@ -20,7 +20,7 @@ describe('antrean /new', () => {
     expect(Object.fromEntries(Object.entries(Q).map(([k, v]) => [k, v.map((x) => x.name)]))).toEqual({
       Balas: ['Sarah M.', 'Ben C.'], 'Tindak lanjut': ['Tom W.'], 'Janji tim': ['Rina K.'], Reminder: ['Mei H.', 'Hana Y.'],
     })
-    expect(Q.Balas[0]).toMatchObject({ when: 'Menunggu 3 jam', saran: 'Konfirmasi jam jemput 05.00', href: '/inbox?conversation=c-a&message=m-a', itemId: 'a' })
+    expect(Q.Balas[0]).toMatchObject({ when: 'Menunggu 3 jam', saran: 'Konfirmasi jam jemput 05.00', href: '/new/inbox?conversation=c-a&message=m-a', itemId: 'a' })
     expect(Q['Tindak lanjut'][0]).toMatchObject({ when: 'Pengingat jatuh tempo', overdue: true })
     expect(Q.Reminder.find((x) => x.name === 'Hana Y.')).toMatchObject({ href: null, itemId: 'i9' })
   })
