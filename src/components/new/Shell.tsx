@@ -1,11 +1,16 @@
 'use client'
 
-// Cangkang pratinjau /new: sidebar, bar atas, tab bar ponsel, dan semua overlay.
-// Port dari artifact "New WA Inbox"; seluruh data adalah data contoh (lib/new/mock-data).
+// Cangkang /new: sidebar, bar atas, tab bar ponsel, dan semua overlay. Port dari artifact "New WA Inbox".
+// DATA ASLI di cangkang: lencana menu (chat belum dibaca, antrean terbuka, agent gagal hari ini), pencarian global
+// (GET /api/conversations?q=), nama akun (GET /api/session), dan Keluar (POST /api/auth/logout). State contoh
+// (`initialState`) tinggal dipakai halaman yang belum memakai data asli.
 import { usePathname, useRouter } from 'next/navigation'
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
-import { antreanTotal, failedCount, inboxBadge } from '@/lib/new/logic'
-import { CH, KT, initialState } from '@/lib/new/mock-data'
+import { jakartaDay } from '@/lib/bot/eval/replay-pairs'
+import { contactDisplayName } from '@/lib/booking/display-name'
+import { fetchJson, redirectToLogin } from '@/lib/fetch-json'
+import { initialState } from '@/lib/new/mock-data'
+import { SUMMARY_ITEMS_CHANGED } from '@/lib/summary-items/events'
 import type { State, ViewKey } from '@/lib/new/types'
 import { NAV_ICON, SearchIcon } from './icons'
 import { ActionSheet, RangePicker, RemPicker } from './Overlays'
@@ -26,7 +31,19 @@ const SIDE: ViewKey[] = ['hub', 'inbox', 'antrean', 'ringkasan', 'laporan', 'age
 const MTAB: ViewKey[] = ['hub', 'inbox', 'antrean', 'ringkasan']
 const MORE: ViewKey[] = ['laporan', 'agent', 'kontak', 'template', 'bot']
 
-interface Hit { t: 'Chat' | 'Kontak'; n: string; s: string }
+interface Hit { id: string; n: string; s: string }
+
+/** Baris GET /api/conversations yang dipakai pencarian. */
+interface ConvRow { id: string; contactName: string | null; contactPhone: string | null; bookingGuestName: string | null; lastMessage: string | null; platform: string | null; isTest: boolean }
+
+const PLATFORM: Record<string, string> = { WHATSAPP: 'WhatsApp', INSTAGRAM: 'Instagram', FACEBOOK: 'Messenger', EMAIL: 'Email' }
+const COUNT_POLL_MS = 60_000
+const MAX_HITS = 8
+
+function initialsOf(name: string): string {
+  const w = name.trim().split(/\s+/).filter(Boolean)
+  return ((w[0]?.[0] ?? '') + (w[1]?.[0] ?? '')).toUpperCase() || '?'
+}
 
 export function NewShell({ children }: { children: React.ReactNode }) {
   const router = useRouter()
@@ -51,7 +68,10 @@ export function NewShell({ children }: { children: React.ReactNode }) {
   const [toastM, setToastM] = useState<{ m: string; n: number } | null>(null)
   const [flashReq, setFlashReq] = useState<{ sel: string; text?: string; n: number } | null>(null)
   const [udrop, setUdrop] = useState(false)
-  const [out, setOut] = useState(false)
+  const [me, setMe] = useState<{ name: string; role: string } | null>(null)
+  const [loggingOut, setLoggingOut] = useState(false)
+  const [counts, setCounts] = useState<{ inbox?: number; antrean?: number; agent?: number }>({})
+  const [found, setFound] = useState<{ q: string; hits: Hit[] } | null>(null)
   const [q, setQ] = useState('')
   const [sOpen, setSOpen] = useState(false)
   const [sidx, setSidx] = useState(0)
@@ -130,28 +150,79 @@ export function NewShell({ children }: { children: React.ReactNode }) {
     return () => { document.removeEventListener('keydown', onKey); document.removeEventListener('click', onClick) }
   }, [])
 
-  const hits: Hit[] = useMemo(() => {
-    const k = q.trim().toLowerCase()
-    if (!k) return []
-    const R: Hit[] = []
-    for (const c of s.cv) if ((c.n + ' ' + c.bk.kode + ' ' + c.last).toLowerCase().includes(k)) R.push({ t: 'Chat', n: c.n, s: CH[c.ch][0] + ' · ' + c.bk.kode + ' · ' + c.last })
-    for (const r of KT) if (!s.cv.some((c) => c.n === r.n) && (r.n + ' ' + r.kode).toLowerCase().includes(k)) R.push({ t: 'Kontak', n: r.n, s: r.ch + ' · ' + r.lab })
-    return R
-  }, [q, s.cv])
+  // Nama akun dari sesi.
+  useEffect(() => {
+    fetchJson<{ name?: string; role?: string }>('/api/session')
+      .then((b) => setMe({ name: b.name || 'Akun', role: b.role || '' }))
+      .catch(() => {})
+  }, [])
+
+  // Lencana menu: saat mount, tiap menit, dan seketika saat antrean berubah. Gagal = lencana lama dibiarkan.
+  useEffect(() => {
+    let cancelled = false
+    const num = (v: unknown) => (typeof v === 'number' ? v : undefined)
+    const load = () => {
+      const from = new Date(jakartaDay(new Date()) + 'T00:00:00+07:00').toISOString()
+      const to = new Date().toISOString()
+      fetchJson<{ unread?: unknown }>('/api/new/unread').then((b) => { if (!cancelled) setCounts((c) => ({ ...c, inbox: num(b.unread) })) }).catch(() => {})
+      fetchJson<{ open?: unknown }>('/api/summary-items/count').then((b) => { if (!cancelled) setCounts((c) => ({ ...c, antrean: num(b.open) })) }).catch(() => {})
+      fetchJson<{ items?: { status?: string }[] }>('/api/new/agent-activity?from=' + encodeURIComponent(from) + '&to=' + encodeURIComponent(to))
+        .then((b) => { if (!cancelled) setCounts((c) => ({ ...c, agent: (b.items ?? []).filter((e) => e.status === 'gagal').length })) })
+        .catch(() => {})
+    }
+    load()
+    const timer = setInterval(load, COUNT_POLL_MS)
+    window.addEventListener(SUMMARY_ITEMS_CHANGED, load)
+    return () => { cancelled = true; clearInterval(timer); window.removeEventListener(SUMMARY_ITEMS_CHANGED, load) }
+  }, [])
+
+  // Pencarian global: nama, nomor, atau isi chat (GET /api/conversations?q=, sama dengan pencarian Inbox).
+  useEffect(() => {
+    const k = q.trim()
+    if (!k) return
+    let cancelled = false
+    const h = setTimeout(() => {
+      fetchJson<ConvRow[]>('/api/conversations?q=' + encodeURIComponent(k))
+        .then((rows) => {
+          if (cancelled) return
+          const hits = rows.filter((r) => !r.isTest).slice(0, MAX_HITS).map((r): Hit => ({
+            id: r.id,
+            n: contactDisplayName(r.contactName, r.bookingGuestName, r.contactPhone || 'Tanpa nama'),
+            s: [PLATFORM[r.platform ?? ''] ?? 'WhatsApp', r.lastMessage?.replace(/\s+/g, ' ').slice(0, 80)].filter(Boolean).join(' · '),
+          }))
+          setFound({ q: k, hits })
+        })
+        .catch(() => { if (!cancelled) setFound({ q: k, hits: [] }) })
+    }, 250)
+    return () => { cancelled = true; clearTimeout(h) }
+  }, [q])
+  const hits: Hit[] = found && found.q === q.trim() ? found.hits : []
+  const searching = !!q.trim() && found?.q !== q.trim()
   const sel = Math.min(sidx, Math.max(hits.length - 1, 0))
 
   const pick = (r: Hit | undefined) => {
     if (!r) return
     setMSearch(false); setSOpen(false); setQ(''); (document.activeElement as HTMLElement | null)?.blur()
-    if (r.t === 'Chat') openConv(r.n)
-    else { set((d) => { d.kq = r.n }); go('kontak') }
+    closeAll()
+    router.push('/new/inbox?conversation=' + encodeURIComponent(r.id))
   }
 
-  const badges: Partial<Record<ViewKey, number>> = {
-    inbox: inboxBadge(s.cv),
-    antrean: antreanTotal(s),
-    agent: failedCount(s.ae),
+  const logout = async () => {
+    if (loggingOut) return
+    setLoggingOut(true)
+    try {
+      const res = await fetch('/api/auth/logout', { method: 'POST' })
+      if (!res.ok) { toast('Gagal keluar, coba lagi'); return }
+      // Navigasi penuh (bukan router.push): koneksi realtime dan data yang tersimpan ikut berakhir bersama sesi.
+      redirectToLogin({ keepPath: false })
+    } catch {
+      toast('Gagal keluar, coba lagi')
+    } finally {
+      setLoggingOut(false)
+    }
   }
+
+  const badges: Partial<Record<ViewKey, number>> = { inbox: counts.inbox, antrean: counts.antrean, agent: counts.agent }
 
   const rootCls = ['nwa',
     col.c && !isM ? 'collapsed' : '',
@@ -175,7 +246,7 @@ export function NewShell({ children }: { children: React.ReactNode }) {
                 <button key={v} className={view === v ? 'on' : ''} title={TITLES[v]} onClick={() => go(v)}>
                   <svg viewBox="0 0 24 24">{NAV_ICON[v]}</svg>
                   <span className="lbl">{TITLES[v]}</span>
-                  {badges[v] !== undefined && (v !== 'agent' || badges[v]! > 0) && (
+                  {!!badges[v] && (
                     <span className={'bd' + (v === 'inbox' ? '' : ' w')}>{badges[v]}</span>
                   )}
                 </button>
@@ -191,7 +262,7 @@ export function NewShell({ children }: { children: React.ReactNode }) {
               <div className="swrap">
                 <label className="sbox">
                   <SearchIcon />
-                  <input ref={gsRef} placeholder="Cari chat, kontak, kode booking" aria-label="Pencarian global" value={q}
+                  <input ref={gsRef} placeholder="Cari nama, nomor, atau isi chat" aria-label="Pencarian global" value={q}
                     onChange={(e) => { setQ(e.target.value); setSidx(0); setSOpen(true) }}
                     onFocus={() => setSOpen(true)}
                     onKeyDown={(e) => {
@@ -207,9 +278,9 @@ export function NewShell({ children }: { children: React.ReactNode }) {
                 <button className="mcancel" onClick={() => { setMSearch(false); setQ(''); setSOpen(false) }}>Batal</button>
                 {sOpen && q.trim() && (
                   <div className="sres">
-                    {hits.length ? hits.map((r, i) => (
-                      <button key={r.t + r.n} type="button" className={i === sel ? 'act' : ''} onClick={() => pick(r)}>
-                        <span className={'pill ' + (r.t === 'Chat' ? 'info' : 'neu')}>{r.t}</span>
+                    {searching ? <div className="mut" style={{ padding: 12 }}>Mencari…</div> : hits.length ? hits.map((r, i) => (
+                      <button key={r.id} type="button" className={i === sel ? 'act' : ''} onClick={() => pick(r)}>
+                        <span className="pill info">Chat</span>
                         <span style={{ minWidth: 0 }}>
                           <b>{r.n}</b>
                           <div className="mut sm" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.s}</div>
@@ -229,15 +300,13 @@ export function NewShell({ children }: { children: React.ReactNode }) {
                 <button className="btn sm" id="theme" aria-label="Ganti tema" onClick={() => setTheme((t) => (t === 'dark' ? 'light' : 'dark'))}>◐</button>
                 <div className="umenu" id="umenu">
                   <button className="ubtn" aria-haspopup="menu" aria-expanded={udrop} aria-label="Menu akun" onClick={() => setUdrop((o) => !o)}>
-                    <span className="uav">AD</span><span className="uname">Admin</span>
+                    <span className="uav">{initialsOf(me?.name ?? '')}</span><span className="uname">{me?.name ?? '…'}</span>
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg>
                   </button>
                   {udrop && (
                     <div className="udrop" role="menu">
-                      <div className="uh"><b>Admin</b><div className="mut sm">Admin · JVTO</div></div>
-                      <button role="menuitem" onClick={() => { setUdrop(false); toast('Profil saya dibuka') }}>Profil saya</button>
-                      <button role="menuitem" onClick={() => { setUdrop(false); toast('Pengaturan notifikasi dibuka') }}>Notifikasi</button>
-                      <button role="menuitem" className="out" onClick={() => { setUdrop(false); setOut(true) }}>Keluar</button>
+                      <div className="uh"><b>{me?.name ?? '…'}</b><div className="mut sm">{me?.role === 'ADMIN' ? 'Admin' : me?.role === 'AGENT' ? 'Agen' : me?.role ?? ''} · JVTO</div></div>
+                      <button role="menuitem" className="out" disabled={loggingOut} onClick={() => { setUdrop(false); void logout() }}>{loggingOut ? 'Keluar…' : 'Keluar'}</button>
                     </div>
                   )}
                 </div>
@@ -300,16 +369,6 @@ export function NewShell({ children }: { children: React.ReactNode }) {
               else d.sjday = v
             })}
           />
-        )}
-        {out && (
-          <div className="lo">
-            <div className="card" style={{ maxWidth: 360, textAlign: 'center' }}>
-              <div className="logo" style={{ margin: '0 auto 10px' }}>JV</div>
-              <h3>Anda sudah keluar</h3>
-              <p className="hint">Masuk lagi untuk membuka inbox.</p>
-              <button className="btn pri" onClick={() => { setOut(false); go('inbox'); toast('Selamat datang kembali') }}>Masuk lagi</button>
-            </div>
-          </div>
         )}
       </div>
     </StoreCtx.Provider>

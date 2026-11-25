@@ -10,9 +10,10 @@ import { InboxView } from './InboxView'
 // komponen Inbox sendiri, yang tidak diubah.
 let search = new URLSearchParams()
 const replace = vi.fn()
+const push = vi.fn()
 vi.mock('next/navigation', () => ({
   usePathname: () => '/new/inbox',
-  useRouter: () => ({ push: vi.fn(), replace }),
+  useRouter: () => ({ push, replace }),
   useSearchParams: () => search,
 }))
 vi.mock('@/components/inbox/ConversationList', () => ({
@@ -20,7 +21,10 @@ vi.mock('@/components/inbox/ConversationList', () => ({
 }))
 vi.mock('@/components/inbox/ThreadView', () => ({
   ThreadView: ({ conversationId, onBack }: { conversationId: string; onBack: () => void }) => (
-    <div data-testid="thread">{conversationId}<button onClick={onBack}>kembali</button></div>
+    <div data-testid="thread">{conversationId}<button onClick={onBack}>kembali</button>
+      <a href="/inbox?conversation=c2&message=m5&lihat=1">butir ringkasan</a>
+      <a href="https://jvto.me/b/abc">portal</a>
+    </div>
   ),
 }))
 vi.mock('@/components/inbox/ContactPanel', () => ({ ContactPanel: () => <div data-testid="panel" /> }))
@@ -35,6 +39,7 @@ const mobile = (on: boolean) => {
 
 beforeEach(() => {
   replace.mockClear()
+  push.mockClear()
   search = new URLSearchParams()
   mobile(false)
 })
@@ -46,6 +51,20 @@ describe('Inbox /new = Inbox asli dengan kulit baru', () => {
     fireEvent.click(screen.getByText('pilih c1'))
     expect(replace).toHaveBeenCalledWith('/new/inbox?conversation=c1', { scroll: false })
     expect(screen.getByTestId('thread').textContent).toContain('c1')
+  })
+
+  it('tautan /inbox?... di dalam komponen Inbox tetap dibuka di /new/inbox; tautan lain tidak disentuh', () => {
+    search = new URLSearchParams('conversation=c1')
+    render(<NewShell><InboxView /></NewShell>)
+    const inner = screen.getByText('butir ringkasan')
+    expect(fireEvent.click(inner)).toBe(false) // default dicegah
+    expect(push).toHaveBeenCalledWith('/new/inbox?conversation=c2&message=m5&lihat=1')
+    push.mockClear()
+    fireEvent.click(screen.getByText("portal"))
+    expect(push).not.toHaveBeenCalled()
+    // Ctrl/⌘-klik = tab baru, dibiarkan
+    fireEvent.click(inner, { metaKey: true })
+    expect(push).not.toHaveBeenCalled()
   })
 
   it('tautan ?conversation= membuka chat itu (sama dengan /inbox)', () => {
