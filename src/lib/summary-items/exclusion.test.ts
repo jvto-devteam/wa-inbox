@@ -14,6 +14,7 @@ const mockPrisma = prisma as unknown as DeepMockProxy<PrismaClient>
 const NOW = new Date('2026-11-25T05:00:00Z') // 12:00 WIB
 const conv = (o: { phone?: string | null; isTest?: boolean; end?: string; chatReview?: unknown; chatReviewAt?: Date; platform?: string; mail?: boolean } = {}) => ({
   isTest: o.isTest ?? false,
+  createdAt: new Date('2026-09-01T00:00:00Z'),
   bookingCheckedAt: null as Date | null,
   chatReviewAt: o.chatReviewAt ?? null,
   mailAccountId: o.mail ? 'mb1' : null,
@@ -93,6 +94,17 @@ describe('exclusionFor', () => {
     expect(await exclusionFor('c', 'PROMISE', null, NOW)).toBe('PILIH_OPERATOR_LAIN')
     expect(await exclusionFor('c', 'FOLLOW_UP', null, NOW)).toBe('PILIH_OPERATOR_LAIN')
     expect(await exclusionFor('c', 'REPLY', null, NOW)).toBeNull()
+  })
+
+  it('tahun tanggal trip dari AI dibetulkan: tidak pernah sebelum percakapan dimulai', async () => {
+    const { tripEndDay } = await import('./exclusion')
+    const chatAt = new Date('2026-11-22T03:00:00Z')
+    expect(tripEndDay({ tanggalTripSelesai: '2025-12-24' }, chatAt)).toBe('2026-12-24') // Villeval
+    expect(tripEndDay({ tanggalTripSelesai: '2024-11-24' }, chatAt)).toBe('2026-11-24')
+    expect(tripEndDay({ tanggalTripSelesai: '2026-12-24' }, chatAt)).toBe('2026-12-24')
+    expect(tripEndDay({ tanggalTripSelesai: null }, chatAt)).toBeNull()
+    mockPrisma.conversation.findUnique.mockResolvedValue({ ...conv({ chatReview: { jenisKontak: 'calon_tamu', status: 'perlu_tindakan', tanggalTripSelesai: '2025-12-24' } }), createdAt: chatAt } as never)
+    expect(await exclusionFor('c', 'PROMISE', null, NOW)).toBeNull()
   })
 
   it('lead tanpa booking yang tanggal trip mintaannya sudah lewat keluar dari Follow Up/Janji; yang belum lewat atau ber-booking tetap', async () => {

@@ -72,6 +72,21 @@ export const CONTENT_MESSAGE_WHERE = {
   OR: [{ content: null }, { content: { notIn: [...NON_CONTENT_PLACEHOLDERS] } }],
 }
 
+/**
+ * Hari terakhir trip mintaan dari ringkasan, tahunnya dibetulkan: transkrip tidak memuat tahun, jadi model kadang menulis
+ * 2025/2024 untuk "22 December" (audit 2026-11-25: Villeval, Kevin, Félix tertutup keliru). Rencana trip tidak mungkin
+ * sebelum percakapan dimulai, jadi tahun dimajukan sampai tanggalnya >= hari percakapan dibuat.
+ */
+export function tripEndDay(review: unknown, conversationCreatedAt: Date): string | null {
+  const v = (review as { tanggalTripSelesai?: unknown } | null)?.tanggalTripSelesai
+  if (typeof v !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(v)) return null
+  const start = jakartaDay(conversationCreatedAt)
+  let [y] = v.split('-').map(Number)
+  const md = v.slice(4)
+  for (let i = 0; i < 5 && `${y}${md}` < start; i++) y++
+  return `${y}${md}`
+}
+
 /** Trip sudah lewat: tanggal selesai booking (WIB) sebelum hari ini. */
 export function tripEnded(bookingData: unknown, today: string): boolean {
   const end = (bookingData as { date?: { end_ymd?: unknown } } | null)?.date?.end_ymd
@@ -182,7 +197,7 @@ export async function exclusionFor(conversationId: string, kind: string, review:
   const conv = await prisma.conversation.findUnique({
     where: { id: conversationId },
     select: {
-      isTest: true, bookingData: true, bookingCheckedAt: true, chatReview: true, chatReviewAt: true, mailAccountId: true, channelIdentityId: true,
+      isTest: true, createdAt: true, bookingData: true, bookingCheckedAt: true, chatReview: true, chatReviewAt: true, mailAccountId: true, channelIdentityId: true,
       channelIdentity: { select: { platform: true } }, contact: { select: { phone: true } },
     },
   })
@@ -199,8 +214,9 @@ export async function exclusionFor(conversationId: string, kind: string, review:
   if ((kind === 'FOLLOW_UP' || kind === 'PROMISE') && latest.status === 'selesai') return 'PERCAKAPAN_SELESAI'
   if ((kind === 'FOLLOW_UP' || kind === 'PROMISE') && latest.belumBooking?.alasan === 'pilih_lain') return 'PILIH_OPERATOR_LAIN'
   // Lead tanpa booking yang tanggal trip yang dimintanya sudah lewat: tidak ada lagi yang bisa ditindaklanjuti.
-  if ((kind === 'FOLLOW_UP' || kind === 'PROMISE') && !conv.bookingData && typeof latest.tanggalTripSelesai === 'string' && latest.tanggalTripSelesai < jakartaDay(now)) {
-    return 'TANGGAL_TRIP_LEWAT'
+  if (kind === 'FOLLOW_UP' || kind === 'PROMISE') {
+    const end = conv.bookingData ? null : tripEndDay(conv.chatReview, conv.createdAt)
+    if (end && end < jakartaDay(now)) return 'TANGGAL_TRIP_LEWAT'
   }
   if (kind === 'REPLY') {
     const run = await unansweredRun(conversationId)
