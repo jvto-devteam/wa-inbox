@@ -406,6 +406,21 @@ describe('janjiTim: yang bukan janji', () => {
   })
 })
 
+describe('tanggalTripSelesai', () => {
+  it('prompt meminta hari terakhir rencana trip; tanggal sah dibaca, tidak sah = tidak diketahui', () => {
+    expect(REVIEW_SYSTEM_PROMPT).toContain('"tanggalTripSelesai":"YYYY-MM-DD"|null')
+    expect(REVIEW_SYSTEM_PROMPT).toContain('bila hanya bulan yang disebut, pakai tanggal terakhir bulan itu')
+    expect(parseReview(JSON.stringify({ ...valid, tanggalTripSelesai: '2026-10-12' }))?.tanggalTripSelesai).toBe('2026-10-12')
+    expect(parseReview(JSON.stringify({ ...valid, tanggalTripSelesai: '2026-02-30' }))?.tanggalTripSelesai).toBeUndefined()
+    expect(parseReview(JSON.stringify({ ...valid, tanggalTripSelesai: null }))?.tanggalTripSelesai).toBeUndefined()
+    expect(parseReview(JSON.stringify({ ...valid, tanggalTripSelesai: 'Oktober' }))).not.toBeNull()
+  })
+
+  it('lampiran agen + "here is the price" = janji terpenuhi (aturan prompt)', () => {
+    expect(REVIEW_SYSTEM_PROMPT).toContain('Baris berawalan [image]/[document] dari agen')
+  })
+})
+
 describe('perluBalas (pesan terakhir pelanggan menunggu balasan)', () => {
   it('prompt meminta perluBalas terpisah dari status', () => {
     expect(REVIEW_SYSTEM_PROMPT).toContain('"perluBalas":true|false')

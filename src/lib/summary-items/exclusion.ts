@@ -25,7 +25,7 @@ import { findOurReply } from './automated'
 
 export type ExclusionReason =
   | 'BUKAN_WHATSAPP' | 'NOMOR_INDONESIA' | 'HANYA_REAKSI' | 'TIDAK_PERLU_BALAS' | 'TRIP_SELESAI'
-  | 'BUKAN_TAMU' | 'MITRA_BUKAN_FOLLOW_UP' | 'PERCAKAPAN_SELESAI' | 'PERCAKAPAN_UJI' | 'PILIH_OPERATOR_LAIN'
+  | 'BUKAN_TAMU' | 'MITRA_BUKAN_FOLLOW_UP' | 'PERCAKAPAN_SELESAI' | 'PERCAKAPAN_UJI' | 'PILIH_OPERATOR_LAIN' | 'TANGGAL_TRIP_LEWAT'
 
 export const EXCLUSION_NOTE: Record<ExclusionReason, string> = {
   BUKAN_WHATSAPP: 'Bukan chat WhatsApp',
@@ -38,6 +38,7 @@ export const EXCLUSION_NOTE: Record<ExclusionReason, string> = {
   PERCAKAPAN_SELESAI: 'Menurut AI percakapan sudah selesai',
   PERCAKAPAN_UJI: 'Percakapan uji',
   PILIH_OPERATOR_LAIN: 'Tamu memilih operator lain',
+  TANGGAL_TRIP_LEWAT: 'Tanggal trip yang diminta sudah lewat',
 }
 
 /** Penanda (di `note` item OPEN) bahwa Janji tim ini pindahan dari Follow Up karena tim berutang; dibalik bila tidak lagi. */
@@ -137,7 +138,8 @@ export function asksGuest(text: string): boolean {
 export async function promiseAwaitingGuest(conversationId: string, promiseAt: Date) {
   // Pesan agen terakhir sesudah janji; dihitung menunggu tamu hanya bila ia meminta jawaban (ASKS_GUEST).
   const question = await prisma.message.findFirst({
-    where: { conversationId, direction: 'OUTBOUND', sentBy: 'AGENT', createdAt: { gt: promiseAt }, content: { not: null } },
+    // gte: pesan janji itu sendiri bisa bertanya ("sebelum quotation final, hotel mau termasuk?") -- bola di tamu.
+    where: { conversationId, direction: 'OUTBOUND', sentBy: 'AGENT', createdAt: { gte: promiseAt }, content: { not: null } },
     orderBy: { createdAt: 'desc' },
     select: { id: true, createdAt: true, content: true, type: true, direction: true, sentBy: true },
   })
@@ -191,11 +193,15 @@ export async function exclusionFor(conversationId: string, kind: string, review:
   if (!whatsapp) return 'BUKAN_WHATSAPP'
   if (conv.isTest) return 'PERCAKAPAN_UJI'
   if (blockedByIndonesianGate({ isTest: conv.isTest, phone: conv.contact?.phone ?? null })) return 'NOMOR_INDONESIA'
-  const latest = (conv.chatReview ?? {}) as { jenisKontak?: unknown; status?: unknown; belumBooking?: { alasan?: unknown } }
+  const latest = (conv.chatReview ?? {}) as { jenisKontak?: unknown; status?: unknown; belumBooking?: { alasan?: unknown }; tanggalTripSelesai?: unknown }
   if (latest.jenisKontak === 'lainnya') return 'BUKAN_TAMU'
   if (kind === 'FOLLOW_UP' && latest.jenisKontak === 'mitra') return 'MITRA_BUKAN_FOLLOW_UP'
   if ((kind === 'FOLLOW_UP' || kind === 'PROMISE') && latest.status === 'selesai') return 'PERCAKAPAN_SELESAI'
   if ((kind === 'FOLLOW_UP' || kind === 'PROMISE') && latest.belumBooking?.alasan === 'pilih_lain') return 'PILIH_OPERATOR_LAIN'
+  // Lead tanpa booking yang tanggal trip yang dimintanya sudah lewat: tidak ada lagi yang bisa ditindaklanjuti.
+  if ((kind === 'FOLLOW_UP' || kind === 'PROMISE') && !conv.bookingData && typeof latest.tanggalTripSelesai === 'string' && latest.tanggalTripSelesai < jakartaDay(now)) {
+    return 'TANGGAL_TRIP_LEWAT'
+  }
   if (kind === 'REPLY') {
     const run = await unansweredRun(conversationId)
     if (contentlessRun(run)) return 'HANYA_REAKSI'

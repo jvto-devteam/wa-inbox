@@ -154,7 +154,7 @@ type StoreItem = {
   dueAt: Date | null; closedReason: string | null; note: string | null; closedById: string | null; closedAt: Date | null
 }
 type StoreMsg = { id: string; conversationId: string; direction: 'INBOUND' | 'OUTBOUND'; sentBy: string; type: string; content: string; createdAt: Date }
-type MsgWhere = { conversationId?: string; direction?: string; createdAt?: { gt?: Date; lte?: Date }; id?: { in: string[] }; sentBy?: string; content?: { contains?: string } }
+type MsgWhere = { conversationId?: string; direction?: string; createdAt?: { gt?: Date; gte?: Date; lte?: Date }; id?: { in: string[] }; sentBy?: string; content?: { contains?: string } }
 
 function useStore() {
   const st = {
@@ -201,6 +201,7 @@ function useStore() {
         .filter((m) => m.conversationId === conversationId)
         .filter((m) => direction === undefined || m.direction === direction)
         .filter((m) => !createdAt?.gt || m.createdAt > createdAt.gt)
+        .filter((m) => !createdAt?.gte || m.createdAt >= createdAt.gte)
         .filter((m) => !createdAt?.lte || m.createdAt <= createdAt.lte)
         .filter((m) => !id || id.in.includes(m.id))
         .filter((m) => !a.where.sentBy || m.sentBy === a.where.sentBy)

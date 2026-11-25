@@ -242,6 +242,11 @@ export const conversationReviewSchema = z.object({
    * dan saat itu antrean memakai saringan kata (`isNoiseMessage`).
    */
   perluBalas: z.boolean().optional(),
+  /**
+   * Hari TERAKHIR rencana trip yang diminta calon tamu (YYYY-MM-DD; hanya bulan = akhir bulan itu), owner 2026-11-25: lead
+   * tanpa booking yang tanggal ini sudah lewat tidak masuk Follow Up/Janji (summary-items/exclusion.ts). Opsional.
+   */
+  tanggalTripSelesai: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   /** Opsional: hanya percakapan ber-booking, dan hanya setelah fitur Catatan crew menyala. Bukan keluaran review LLM. */
   catatanCrew: crewNoteSchema.optional(),
   /** Opsional: hanya percakapan ber-booking. Bukan keluaran review LLM; dibuat panggilan kecil sesudahnya. */
