@@ -129,7 +129,7 @@ function KontakDrawer({ row, onClose }: { row: Row; onClose: () => void }) {
       </div>
       <div className="acts" style={{ marginTop: 12 }}>
         {row.conversationId && <a className="btn pri" href={'/new/inbox?conversation=' + row.conversationId}>Buka chat</a>}
-        <a className="btn" href={'/contacts/' + row.id}>Booking & detail lengkap</a>
+        <a className="btn" href={'/new/kontak/' + row.id}>Booking & detail lengkap</a>
       </div>
     </div>
   )

@@ -88,7 +88,7 @@ function Perilaku({ settings, admin }: { settings: ApiState<BotSettingsApi>; adm
         <div className="set"><div><b>Serahkan bila tamu minta manusia</b><span className="h">Lapisan eskalasi LLM</span></div><Sw on={S.handoffOnHumanRequest} disabled={!admin} label="Serahkan bila tamu minta manusia" onChange={(v) => act.patch({ handoffOnHumanRequest: v }, v ? 'Eskalasi ke tim menyala' : 'Eskalasi ke tim dimatikan')} /></div>
         <div className="set">
           <div><b>Jam kerja {hours}</b><span className="h">Hanya menambah satu kalimat pada pesan serah-terima. Bot tetap menjawab 24/7.</span></div>
-          <a className="pill neu" href="/chatbot">Ubah</a>
+          <a className="pill neu" href="/new/bot/pengaturan">Ubah</a>
         </div>
       </div>
       <div className="card">
@@ -188,7 +188,7 @@ function Knowledge({ sources, gaps, admin }: { sources: ApiState<{ items: Source
   return (
     <div className="grid g2">
       <div className="card">
-        <div className="pg-card-h" style={{ margin: 0 }}><h3>Knowledge</h3><a className="btn sm" href="/bot-control/knowledge" style={{ marginLeft: 'auto' }}>Kelola / + Tambah</a></div>
+        <div className="pg-card-h" style={{ margin: 0 }}><h3>Knowledge</h3><a className="btn sm" href="/new/bot/knowledge" style={{ marginLeft: 'auto' }}>Kelola / + Tambah</a></div>
         <p className="hint">{items.filter((x) => x.status === 'PUBLISHED').length} terbit · {drafts.length} punya draf. Revisi yang terbit tidak bisa diubah; perubahan = versi baru.</p>
         <div className="db-scroll" style={{ maxHeight: 460 }}>
           {sources.loading ? <div className="mut">Memuat…</div> : sources.error ? <div className="mut">{sources.error}</div> : sorted.map((x) => (
@@ -205,7 +205,7 @@ function Knowledge({ sources, gaps, admin }: { sources: ApiState<{ items: Source
         </div>
       </div>
       <div className="card">
-        <div className="pg-card-h" style={{ margin: 0 }}><h3>Celah knowledge</h3><a className="btn sm" href="/settings/knowledge-gaps" style={{ marginLeft: 'auto' }}>Semua</a></div>
+        <div className="pg-card-h" style={{ margin: 0 }}><h3>Celah knowledge</h3><a className="btn sm" href="/new/bot/celah" style={{ marginLeft: 'auto' }}>Semua</a></div>
         <p className="hint">Pertanyaan tamu yang belum ada jawabannya · {open.length} terbuka</p>
         <div className="db-scroll" style={{ maxHeight: 460 }}>
           {gaps.loading ? <div className="mut">Memuat…</div> : gaps.error ? <div className="mut">{gaps.error}</div> : open.length ? open.slice(0, 50).map((g) => (
@@ -267,7 +267,7 @@ function Log({ admin }: { admin: boolean }) {
     <>
       <div className="chips">
         {tabs.map((t) => <button key={t} className={t === lf ? 'on' : ''} onClick={() => set((d) => { d.lf = t })}>{t}</button>)}
-        <a className="btn sm" href="/bot-control/decisions" style={{ marginLeft: 'auto' }}>Log lengkap</a>
+        <a className="btn sm" href="/new/bot/keputusan" style={{ marginLeft: 'auto' }}>Log lengkap</a>
       </div>
       <div className="card">
         {dec.loading ? <div className="mut">Memuat…</div> : rows.filter((r) => lf === 'Semua' || r.k === lf).map((r, i) => (

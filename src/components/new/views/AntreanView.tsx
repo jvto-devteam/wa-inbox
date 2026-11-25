@@ -13,8 +13,9 @@ import type { NewReminder } from '@/app/api/new/reminders/route'
 import { jakartaDay } from '@/lib/bot/eval/replay-pairs'
 import { buildQueue, chatHref, type QueueItem } from '@/lib/new/antrean'
 import { whenLabel } from '@/lib/new/dates'
-import { ALBL, AT_KEYS, FUT } from '@/lib/new/mock-data'
 import { addDays } from '@/lib/new/report'
+import { dayHead, KIND_LABEL, wibTime } from '@/lib/new/schedule'
+import { ALBL, AT_KEYS, FUT } from '@/lib/new/mock-data'
 import type { AtKey, Tone } from '@/lib/new/types'
 import { SegBar } from '../Blocks'
 import { useItemTap, useNew, type SheetItem } from '../store'
@@ -24,23 +25,10 @@ type Css = React.CSSProperties & Record<`--${string}`, string>
 /** Warna jenis antrean: slot kategorikal tetap (sama dengan Dashboard). */
 const TAB_COLOR: Record<AtKey | typeof FUT, string> = { Balas: 'var(--s1)', 'Tindak lanjut': 'var(--s2)', 'Janji tim': 'var(--s3)', Reminder: 'var(--s4)', [FUT]: 'var(--muted)' }
 
-const KIND_LABEL: Record<string, string> = {
-  trip_information: 'Info trip', trip_concluded: 'Trip selesai', crew_reminder: 'Reminder crew',
-  crew_trip_media: 'Foto trip ke grup crew', payment_reminder: 'Pelunasan', bali_transport: 'Transport Bali',
-}
 const STATUS: Record<string, [Tone, string]> = {
   scheduled: ['neu', 'Terjadwal'], sent: ['good', 'Terkirim'], failed: ['bad', 'Gagal'], missed: ['bad', 'Terlewat'],
   will_skip: ['neu', 'Tidak dikirim · sudah lunas'], unknown: ['neu', 'Tidak tercatat'],
 }
-const wibTime = (iso: string) => new Date(iso).toLocaleTimeString('id-ID', { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
-function dayHead(iso: string, today: string): string {
-  const d = jakartaDay(new Date(iso))
-  if (d === today) return 'Hari ini'
-  if (d === addDays(today, 1)) return 'Besok'
-  if (d === addDays(today, -1)) return 'Kemarin'
-  return new Date(iso).toLocaleDateString('id-ID', { timeZone: 'Asia/Jakarta', weekday: 'long', day: 'numeric', month: 'short' })
-}
-
 /** Jadwal reminder yang dikirim sistem booking (cron legacy); hanya baca. */
 function Schedule({ data, loading }: { data?: AgentScheduleResponse; loading: boolean }) {
   const tap = useItemTap()

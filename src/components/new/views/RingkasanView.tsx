@@ -37,6 +37,8 @@ function hhmm(iso: string): string {
 export function RingkasanView() {
   const st = useNew()
   const { s, set, toast } = st
+  /** Janji tim yang belum ditepati ada di tab Janji Admin halaman Antrean. */
+  const toJanji = (e: React.MouseEvent) => { e.preventDefault(); set((d) => { d.atab = 'Janji tim' }); st.go('antrean') }
   const tap = useItemTap()
   const admin = useIsAdmin()
   const [busy, setBusy] = useState(false)
@@ -141,7 +143,7 @@ export function RingkasanView() {
             {top && isActionable(top.item) && <button className="btn sm" onClick={() => ingatkan(top)}>Ingatkan</button>}
             {kom.length > 1 && <button className="btn sm" onClick={() => set((d) => { d.rtab = 'poin'; d.rkind = 'komplain' })}>Semua komplain</button>}
           </div>
-          {D.unkept > 0 && <div className="nx">Juga: {D.unkept} janji tim belum ditepati · <a href="/summary">Lihat di Antrean</a></div>}
+          {D.unkept > 0 && <div className="nx">Juga: {D.unkept} janji tim belum ditepati · <a href="/new/antrean" onClick={toJanji}>Lihat di Antrean</a></div>}
         </div>
       ) : (
         <div className="pg-urgent" style={{ borderLeftColor: 'var(--good)' }}>
@@ -149,7 +151,7 @@ export function RingkasanView() {
             <div className="k" style={{ color: 'var(--good)' }}>Tidak ada komplain</div>
             <div className="n">{D.unkept ? D.unkept + ' janji tim belum ditepati' : 'Semua janji tim sudah ditepati'}</div>
           </div>
-          {D.unkept > 0 && <div className="acts"><a className="btn sm" href="/summary">Lihat di Antrean</a></div>}
+          {D.unkept > 0 && <div className="acts"><a className="btn sm" href="/new/antrean" onClick={toJanji}>Lihat di Antrean</a></div>}
         </div>
       ))}
 

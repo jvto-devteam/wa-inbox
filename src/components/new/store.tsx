@@ -58,7 +58,6 @@ export interface NewStore {
   mstate: 'list' | 'chat'
   go: (v: ViewKey) => void
   toast: (m: string) => void
-  openConv: (name: string) => boolean
   flash: (sel: string, text?: string) => void
   sheet: (title: string, items: SheetItem[]) => void
   remind: (req: RemReq) => void

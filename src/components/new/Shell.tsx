@@ -99,24 +99,15 @@ export function NewShell({ children }: { children: React.ReactNode }) {
     window.scrollTo(0, 0)
   }, [closeAll, pathname, router])
 
-  const openConv = useCallback((n: string) => {
-    const c = s.cv.find((x) => x.n === n)
-    if (!c) { toast('Belum ada percakapan dengan ' + n); return false }
-    set((d) => { d.icv = c.id; d.ifl = 'Semua'; d.itab = 'Booking'; const x = d.cv.find((y) => y.id === c.id); if (x) x.un = 0 })
-    go('inbox')
-    if (isM) setMstate('chat')
-    return true
-  }, [s.cv, set, go, isM, toast])
-
   const store: NewStore = useMemo(() => ({
-    s, set, view, isM, mstate, go, toast, openConv,
+    s, set, view, isM, mstate, go, toast,
     flash: (sel, text) => setFlashReq((p) => ({ sel, text, n: (p?.n || 0) + 1 })),
     sheet: (title, items) => setSheetD({ title, items }),
     remind: (req) => setRemD(req),
     pickRange: (k) => setDrpK(k),
     setChatMode: (m) => { setMstate(m); if (m !== 'chat') setMInfo(false) },
     toggleInfo: (on) => setMInfo((p) => (on === undefined ? !p : on)),
-  }), [s, set, view, isM, mstate, go, toast, openConv])
+  }), [s, set, view, isM, mstate, go, toast])
 
   // Sorot hasil "Cek" setelah halaman tujuan tergambar.
   useEffect(() => {
