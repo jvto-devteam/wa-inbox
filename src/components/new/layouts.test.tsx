@@ -62,7 +62,7 @@ describe('tata letak berbeda per halaman /new', () => {
     expect(pts[0].textContent).toContain('Lukas B.')
     fireEvent.click(screen.getByText(/^Per percakapan/))
     expect(document.querySelectorAll('#r-chats details')).toHaveLength(2)
-    expect(Array.from(document.querySelectorAll('#r-chats .pg-sec')).map((e) => e.textContent)).toEqual(['Perlu tindakan 2'])
+    expect(Array.from(document.querySelectorAll('#r-chats .pg-sec')).map((e) => e.textContent)).toEqual(['Aktif hari itu 1', 'Masih menggantung · tidak ada pesan baru 1'])
     expect(document.getElementById('r-pts')).toBeNull()
 
     // ganti hari → memuat tanggal itu

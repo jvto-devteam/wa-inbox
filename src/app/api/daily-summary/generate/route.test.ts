@@ -50,6 +50,8 @@ describe('POST /api/daily-summary/generate', () => {
     expect(res.status).toBe(200)
     expect(await res.json()).toEqual({ date: '2026-09-21', status: 'DONE' })
     expect(vi.mocked(generateDailySummary).mock.calls[0][0]).toBe('2026-09-21')
+    // cron memakai ulang ringkasan chat yang tidak berubah
+    expect(vi.mocked(generateDailySummary).mock.calls[0][2]).toEqual({ reuse: true })
   })
 
   it('menolak tanpa secret dan tanpa sesi admin', async () => {
@@ -67,6 +69,8 @@ describe('POST /api/daily-summary/generate', () => {
     const res = await POST(adminReq({ date: '2026-09-15' }))
     expect(res.status).toBe(200)
     expect(vi.mocked(generateDailySummary).mock.calls[0][0]).toBe('2026-09-15')
+    // "Buat ulang" admin = semua percakapan diringkas ulang oleh AI
+    expect(vi.mocked(generateDailySummary).mock.calls[0][2]).toEqual({ reuse: false })
   })
 
   it.each([

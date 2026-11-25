@@ -19,7 +19,7 @@ import {
   type NumberedTranscript,
   type TranscriptMessage,
 } from './collect'
-import { dailySummaryPayloadSchema, type ConversationReview, type DailySummaryPayload } from './payload-schema'
+import { conversationReviewSchema, dailySummaryPayloadSchema, type ConversationReview, type DailySummaryPayload } from './payload-schema'
 import { reviewConversation, type ReviewReason } from './review'
 import { pruneChatReviews, saveChatReview } from '@/lib/chat-review/store'
 import { pruneSummaryItems, reconcileSummaryItems, syncSummaryItems } from '@/lib/summary-items/sync'
@@ -228,7 +228,36 @@ export function oldestRetainedDateKey(now: Date): string {
   return jakartaDayKey(new Date(now.getTime() - RETENTION_MS))
 }
 
-export async function generateDailySummary(date: string, now: Date = new Date()): Promise<GenerateResult> {
+/**
+ * Ringkasan terakhir percakapan yang boleh dipakai ulang tanpa memanggil AI (owner 2026-11-25): tidak ada pesan
+ * sesudah ringkasan itu dibuat, dan ringkasan itu tidak lebih baru dari akhir hari yang diringkas (yang lebih baru
+ * bisa memuat pesan hari berikutnya). Tanpa ini job malam meringkas ulang setiap chat yang menggantung walau isinya
+ * sama, hasilnya bisa bergeser, dan Riwayat Agent mencatat "poin penting diperbarui" untuk chat yang tidak berubah.
+ *
+ * `lastMessageAt` = pesan terakhir sebelum `end` (fakta collectDay). Catatan crew/schedule dibuang: bukan keluaran
+ * review dan tidak termasuk payload harian.
+ */
+export function reusableReview(
+  stored: { chatReview: unknown; chatReviewAt: Date | null } | undefined,
+  lastMessageAt: Date | undefined,
+  end: Date,
+): ConversationReview | null {
+  if (!stored?.chatReviewAt || !lastMessageAt) return null
+  if (stored.chatReviewAt.getTime() < lastMessageAt.getTime() || stored.chatReviewAt.getTime() > end.getTime()) return null
+  const parsed = conversationReviewSchema.safeParse(stored.chatReview)
+  if (!parsed.success) return null
+  const review: ConversationReview = { ...parsed.data }
+  delete review.catatanCrew
+  delete review.catatanSchedule
+  return review
+}
+
+/**
+ * `reuse` (bawaan true, dipakai cron): percakapan tanpa pesan baru sejak ringkasan terakhirnya memakai ringkasan itu.
+ * "Buat ulang" oleh admin mengirim false: semua percakapan diringkas ulang oleh AI.
+ */
+export async function generateDailySummary(date: string, now: Date = new Date(), opts: { reuse?: boolean } = {}): Promise<GenerateResult> {
+  const reuse = opts.reuse ?? true
   const { start, end } = jakartaDayRange(date)
   if (!(await claim(date, now))) return { outcome: 'already_running', date }
 
@@ -242,14 +271,24 @@ export async function generateDailySummary(date: string, now: Date = new Date())
     const excludeIndonesian = settings?.skipBotForIndonesianNumbers ?? false
 
     const day = await collectDay(start, end, { excludeIndonesian })
-    const targets = reviewTargets(day)
+    const allTargets = reviewTargets(day)
     // Data booking ringkas per percakapan: poin penting tamu ber-booking hanya menulis perbedaan/tambahan.
-    const bookings = new Map(
-      ((await prisma.conversation.findMany({
-        where: { id: { in: targets.map((t) => t.conversationId) } },
-        select: { id: true, bookingData: true },
-      })) ?? []).map((c) => [c.id, bookingContextForReview(c.bookingData as BookingData | null)])
-    )
+    // Ringkasan terakhir ikut dimuat untuk dipakai ulang (lihat `reusableReview`).
+    const rows = (await prisma.conversation.findMany({
+      where: { id: { in: allTargets.map((t) => t.conversationId) } },
+      select: { id: true, bookingData: true, chatReview: true, chatReviewAt: true },
+    })) ?? []
+    const bookings = new Map(rows.map((c) => [c.id, bookingContextForReview(c.bookingData as BookingData | null)]))
+    const stored = new Map(rows.map((c) => [c.id, c]))
+    const lastAt = new Map(day.conversations.map((f) => [f.conversationId, f.messages.at(-1)?.createdAt]))
+    const reused = new Map<string, ConversationReview>()
+    if (reuse) {
+      for (const t of allTargets) {
+        const r = reusableReview(stored.get(t.conversationId), lastAt.get(t.conversationId), end)
+        if (r) reused.set(t.conversationId, r)
+      }
+    }
+    const targets = allTargets.filter((t) => !reused.has(t.conversationId))
     const review = (t: ReviewTarget) => reviewConversation(t.transcript, t.reasons, model, bookings.get(t.conversationId) ?? null)
     const results = await mapWithConcurrency(targets, REVIEW_CONCURRENCY, review)
     // Satu percobaan ulang, berurutan, untuk yang gagal. Kegagalan yang teramati di produksi
@@ -258,9 +297,12 @@ export async function generateDailySummary(date: string, now: Date = new Date())
     for (let i = 0; i < targets.length; i++) {
       if (results[i] === null) results[i] = await review(targets[i])
     }
-    const reviews = new Map(targets.map((t, i) => [t.conversationId, results[i]]))
+    const fresh = new Map(targets.map((t, i) => [t.conversationId, results[i]]))
+    const reviews = new Map<string, ConversationReview | null>([...fresh, ...reused])
 
-    const payload = dailySummaryPayloadSchema.parse({ ...buildPayload(date, day, reviews, new Date()), excludedIndonesian: excludeIndonesian })
+    const built = buildPayload(date, day, reviews, new Date())
+    built.counts.reviewReused = reused.size
+    const payload = dailySummaryPayloadSchema.parse({ ...built, excludedIndonesian: excludeIndonesian })
     const status = payload.counts.reviewFailed > 0 ? 'PARTIAL' : 'DONE'
     await prisma.dailySummary.update({
       where: { date },
@@ -269,7 +311,8 @@ export async function generateDailySummary(date: string, now: Date = new Date())
     // Ringkasan terbaru per percakapan untuk panel Inbox. `saveChatReview` tidak pernah melempar
     // dan tidak menimpa hasil yang lebih baru; kegagalannya tidak mengubah status ringkasan.
     try {
-      for (const [conversationId, review] of reviews) {
+      // Hanya hasil AI baru; ringkasan yang dipakai ulang sudah tersimpan dan tidak "diperbarui".
+      for (const [conversationId, review] of fresh) {
         if (review) await saveChatReview(conversationId, review, end)
       }
     } catch (saveError) {
