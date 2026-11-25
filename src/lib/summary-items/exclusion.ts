@@ -1,6 +1,9 @@
 // Percakapan yang TIDAK masuk antrean tindakan (owner 2026-11-25, dari isi Antrean /new):
+// - selain WhatsApp (Instagram, Messenger, Email): antrean hanya untuk chat WhatsApp;
 // - nomor Indonesia (gerbang yang sama dengan aksi booking: percakapan uji tetap lolos);
-// - Belum dibalas yang rangkaian pesan pelanggannya hanya reaksi (👍 pada pesan kita bukan pertanyaan);
+// - Belum dibalas yang rangkaian pesan pelanggannya TANPA ISI: reaksi, stiker, pesan dihapus/diedit, pesan yang tidak
+//   didukung, lampiran Instagram story_mention/ig_post (owner 2026-11-25). Foto, dokumen, suara, video, lokasi, kontak
+//   tetap isi (bisa bukti bayar/paspor);
 // - Follow Up / Janji tim untuk tamu yang TRIP-nya sudah selesai, kecuali review terbaru melihat potensi booking baru
 //   (jenisKontak calon_tamu, atau ada `belumBooking`). Tamu yang trip-nya belum jalan tetap masuk.
 // Satu tempat untuk ketiganya: dipakai `upsertCandidate` (tidak membuat/membuka item) dan `closeExcludedItems`
@@ -11,12 +14,29 @@ import { blockedByIndonesianGate } from '@/lib/booking-actions/rollout'
 import { conversationReviewSchema } from '@/lib/daily-summary/payload-schema'
 import { findOurReply } from './automated'
 
-export type ExclusionReason = 'NOMOR_INDONESIA' | 'HANYA_REAKSI' | 'TRIP_SELESAI'
+export type ExclusionReason = 'BUKAN_WHATSAPP' | 'NOMOR_INDONESIA' | 'HANYA_REAKSI' | 'TRIP_SELESAI'
 
 export const EXCLUSION_NOTE: Record<ExclusionReason, string> = {
+  BUKAN_WHATSAPP: 'Bukan chat WhatsApp',
   NOMOR_INDONESIA: 'Nomor Indonesia',
-  HANYA_REAKSI: 'Hanya reaksi',
+  HANYA_REAKSI: 'Tanpa isi (reaksi, stiker, pesan dihapus, lampiran IG)',
   TRIP_SELESAI: 'Trip sudah selesai',
+}
+
+/** Jenis pesan masuk yang bukan isi (dipetakan dari pesan masuk produksi 2026-11-25). */
+export const NON_CONTENT_TYPES = ['reaction', 'sticker', 'revoke', 'edit', 'unsupported', 'system'] as const
+/** Placeholder teks lampiran Instagram/Messenger yang bukan isi (`[Lampiran: <jenis>]`, inbound-messenger.ts). */
+export const NON_CONTENT_PLACEHOLDERS = ['[Lampiran: story_mention]', '[Lampiran: ig_post]', '[Lampiran: unsupported_type]'] as const
+
+export function isNonContent(m: { type: string; content: string | null }): boolean {
+  if ((NON_CONTENT_TYPES as readonly string[]).includes(m.type)) return true
+  return (NON_CONTENT_PLACEHOLDERS as readonly string[]).includes(m.content?.trim() ?? '')
+}
+
+/** Filter Prisma: pesan yang ISI (kebalikan `isNonContent`), untuk kueri "pelanggan bicara lagi". */
+export const CONTENT_MESSAGE_WHERE = {
+  type: { notIn: [...NON_CONTENT_TYPES] },
+  OR: [{ content: null }, { content: { notIn: [...NON_CONTENT_PLACEHOLDERS] } }],
 }
 
 /** Trip sudah lewat: tanggal selesai booking (WIB) sebelum hari ini. */
@@ -32,14 +52,14 @@ export function potentialNewBooking(review: unknown): boolean {
   return (r.success && r.data.jenisKontak === 'calon_tamu') || Boolean(blocker)
 }
 
-/** Rangkaian pesan pelanggan sesudah balasan terakhir kita ada, dan semuanya reaksi. */
+/** Rangkaian pesan pelanggan sesudah balasan terakhir kita ada, dan semuanya tanpa isi (`isNonContent`). */
 async function reactionOnlyRun(conversationId: string): Promise<boolean> {
   const lastOurs = await findOurReply(conversationId, {}, 'desc')
   const run = await prisma.message.findMany({
     where: { conversationId, direction: 'INBOUND', ...(lastOurs ? { createdAt: { gt: lastOurs.createdAt } } : {}) },
-    select: { type: true },
+    select: { type: true, content: true },
   })
-  return run.length > 0 && run.every((m) => m.type === 'reaction')
+  return run.length > 0 && run.every(isNonContent)
 }
 
 /**
@@ -49,9 +69,16 @@ async function reactionOnlyRun(conversationId: string): Promise<boolean> {
 export async function exclusionFor(conversationId: string, kind: string, review: unknown, now: Date = new Date()): Promise<ExclusionReason | null> {
   const conv = await prisma.conversation.findUnique({
     where: { id: conversationId },
-    select: { isTest: true, bookingData: true, chatReview: true, contact: { select: { phone: true } } },
+    select: {
+      isTest: true, bookingData: true, chatReview: true, mailAccountId: true, channelIdentityId: true,
+      channelIdentity: { select: { platform: true } }, contact: { select: { phone: true } },
+    },
   })
   if (!conv) return null
+  // WhatsApp = identitas WA, atau percakapan lama tanpa identitas yang bukan email (Instagram/Facebook selalu punya
+  // identitas sendiri; sebelum ChannelIdentity ada, satu-satunya channel non-email adalah WhatsApp).
+  const whatsapp = conv.channelIdentity ? conv.channelIdentity.platform === 'WHATSAPP' : !conv.mailAccountId
+  if (!whatsapp) return 'BUKAN_WHATSAPP'
   if (blockedByIndonesianGate({ isTest: conv.isTest, phone: conv.contact?.phone ?? null })) return 'NOMOR_INDONESIA'
   if (kind === 'REPLY') return (await reactionOnlyRun(conversationId)) ? 'HANYA_REAKSI' : null
   if ((kind === 'FOLLOW_UP' || kind === 'PROMISE') && tripEnded(conv.bookingData, jakartaDay(now))) {

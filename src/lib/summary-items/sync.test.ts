@@ -36,7 +36,7 @@ beforeEach(() => {
 
 describe('syncSummaryItems', () => {
   it('nomor Indonesia tidak masuk antrean: tidak dibuat, item terbuka ditutup NOT_QUEUED', async () => {
-    mockPrisma.conversation.findUnique.mockResolvedValue({ isTest: false, bookingData: null, chatReview: null, contact: { phone: '6281234567890' } } as never)
+    mockPrisma.conversation.findUnique.mockResolvedValue({ isTest: false, bookingData: null, chatReview: null, mailAccountId: null, channelIdentityId: null, channelIdentity: null, contact: { phone: '6281234567890' } } as never)
     mockPrisma.summaryItem.findUnique.mockResolvedValue(null)
     const r = await syncSummaryItems('2026-10-17', payload({ unreplied: [unreplied('c1', '2026-10-17T01:00:00Z')] as never }), NOW)
     expect(r.created).toBe(0)
@@ -605,11 +605,11 @@ describe('reconcileSummaryItems', () => {
     })
   })
 
-  it('reaksi pelanggan bukan "bicara lagi": kueri inbound melewati pesan reaction', async () => {
+  it('pesan tanpa isi bukan "bicara lagi": kueri inbound melewati reaksi, pesan dihapus, lampiran IG', async () => {
     mockPrisma.summaryItem.findMany.mockResolvedValue([row({ kind: 'FOLLOW_UP' })] as never)
     await reconcileSummaryItems(NOW)
     const inboundQuery = mockPrisma.message.findFirst.mock.calls.map((c) => c[0]).find((a) => (a as { where: { direction?: string } }).where.direction === 'INBOUND')
-    expect(inboundQuery).toMatchObject({ where: { type: { not: 'reaction' } } })
+    expect(inboundQuery).toMatchObject({ where: { type: { notIn: expect.arrayContaining(['reaction', 'revoke', 'sticker']) }, OR: [{ content: null }, { content: { notIn: expect.arrayContaining(['[Lampiran: story_mention]']) } }] } })
   })
 
   it('FOLLOW_UP + beberapa inbound -> anchor inbound pertama, cakupan + snippet inbound terbaru', async () => {
