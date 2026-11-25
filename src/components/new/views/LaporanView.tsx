@@ -146,13 +146,6 @@ export function LaporanView() {
         </div>
       </div>
 
-      <p className="hint" style={{ marginTop: 12 }}>
-        Inquiry = percakapan WhatsApp yang pesan masuk pertamanya jatuh di periode (vendor, crew, hotel yang dikenali ringkasan
-        sebagai mitra tidak dihitung). Booking = tanggal booking sama atau sesudah hari chat pertama; tamu yang sudah booking sebelum
-        chat tidak dihitung. Hanya booking terbaru per nomor yang tersimpan, dan data booking disegarkan bertahap tiap 5 menit.
-        Alasan belum booking dan rekomendasi follow-up ditulis AI saat meringkas chat; rekomendasi hanya saran internal untuk
-        tim, tidak pernah dikirim ke tamu.
-      </p>
     </section>
   )
 }
