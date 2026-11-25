@@ -278,7 +278,7 @@ Ringkasan menerima data booking ringkas (`bookingContextForReview`, daftar putih
 jemput, antar, kaos -- tanpa keuangan/kontak) supaya poin tamu ber-booking hanya menulis perbedaan/tambahan; data itu ikut
 ke LLM cloud yang sama dengan Mode 3. Dari pembacaan 507 chat (2026-10-22): "bayar" melacak refund/kompensasi
 sampai diterima, "jemput" memuat kabar hari-H, "keputusan" memuat hambatan lead, "kebutuhan" memuat hotel, dan `janjiTim`
-ikut menangkap janji Bot ("let me check with our team") -- janji ⏳ itu masuk antrean PROMISE seperti janji agen. Ringkasan lama tanpa `jenis`/`profil` tetap sah (`profil` dibaca `[]`). Label profil
+HANYA janji AGEN: ucapan Bot ("let me check with our team") bukan janji tim (owner 2026-11-25, membalik 2026-10-22; `parseReview` membuang janji yang menunjuk pesan Bot lewat `botIds`). Ringkasan lama tanpa `jenis`/`profil` tetap sah (`profil` dibaca `[]`). Label profil
 tampil sebagai chip (bukti bisa diklik, "Ada komplain" merah) DAN setiap label wajib dirinci di poin penting -- poin
 tetap sumber detailnya (owner 2026-10-22: "boleh nambah label, tapi tetap ada poin penting").
 Ringkasan terbaru disimpan di `Conversation.chatReview` / `chatReviewAt`, ditulis dua jalur:

@@ -169,7 +169,8 @@ describe('poin penting berjenis + label profil (owner 2026-10-22, dari pembacaan
       'KABAR HARI-H terbaru dengan jamnya',
       'sebut juga HAMBATAN yang membuatnya ragu',
       'hotel (minta upgrade, pesan hotel sendiri + potongan',
-      'baik oleh Agen MAUPUN Bot',
+      // janji Bot dibalik owner 2026-11-25: ucapan Bot bukan janji tim
+      'ucapan Bot ("let me check with our team"',
       '"keselamatan" (insiden berbahaya yang benar-benar terjadi',
       'WAJIB ada bila "profil" memuat "komplain" atau "keselamatan"',
     ]) {
@@ -334,7 +335,7 @@ describe('janji tim', () => {
 
   it('prompt meminta janjiTim berbentuk objek dengan terpenuhi dan pesan', () => {
     expect(REVIEW_SYSTEM_PROMPT).toContain('"janjiTim":[{"teks":"...","terpenuhi":true|false,"pesan":N}]')
-    expect(REVIEW_SYSTEM_PROMPT).toMatch(/"janjiTim": komitmen yang diucapkan TIM/)
+    expect(REVIEW_SYSTEM_PROMPT).toMatch(/"janjiTim": komitmen yang diucapkan AGEN/)
     // Janji yang ditepati tetap membawa nomor pesan janjinya: penutupan PROMISE_KEPT mencocokkan lewat id, bukan teks.
     expect(REVIEW_SYSTEM_PROMPT).toMatch(/sudah terpenuhi tetap ditulis dengan "pesan" tempat janji itu DIUCAPKAN/)
     expect(REVIEW_SYSTEM_PROMPT).toMatch(/"terpenuhi" bernilai true HANYA bila transkrip menunjukkan janji itu sudah dilakukan/)
@@ -379,6 +380,19 @@ describe('janjiTim: yang bukan janji', () => {
   it('prompt mengecualikan tawaran bersyarat, pernyataan kemampuan, arahan, dan yang sudah dilakukan', () => {
     expect(REVIEW_SYSTEM_PROMPT).toContain('BUKAN janji: tawaran bersyarat')
     expect(REVIEW_SYSTEM_PROMPT).toContain('tim dapat menyesuaikan detail setelah booking')
+  })
+
+  it('janji dari pesan Bot (atau berawalan "Bot") dibuang; janji agen tetap', () => {
+    expect(REVIEW_SYSTEM_PROMPT).toContain('komitmen yang diucapkan AGEN (manusia)')
+    expect(REVIEW_SYSTEM_PROMPT).toContain('ucapan Bot ("let me check with our team"')
+    expect(REVIEW_SYSTEM_PROMPT).not.toContain('baik oleh Agen MAUPUN Bot')
+    const ids = ['m1', 'm2', 'm3']
+    const r = parseReview(JSON.stringify({ ...valid, janjiTim: [
+      { teks: 'Mengecek drop-off Munduk ke tim', terpenuhi: false, pesan: 1 },
+      { teks: 'Bot akan mengecek ke tim apakah hike termasuk', terpenuhi: false },
+      { teks: 'Mengirim invoice besok', terpenuhi: false, pesan: 2 },
+    ] }), ids, new Set(['m1']))
+    expect(r?.janjiTim.map((j) => (typeof j === 'string' ? j : j.teks))).toEqual(['Mengirim invoice besok'])
   })
 
   it('pernyataan kemampuan dan tawaran bersyarat dibuang saat dibaca; janji nyata tetap', () => {

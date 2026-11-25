@@ -77,7 +77,7 @@ Aturan isi:
   Asal: "klook_ota" (pesan lewat Klook/OTA), "bukan_tamu" (crew, mitra, vendor, sales, salah operator).
   Rombongan, paling banyak SATU: "solo", "pasangan", "grup_kecil" (3-5 orang), "grup_besar" (6 orang atau lebih), "keluarga_anak" (ada anak).
   Kebutuhan khusus: "kesehatan" (sakit, hamil, sulit berjalan, asma), "diet_alergi", "bahasa_guide" (minta guide berbahasa tertentu), "cemas_keamanan" (khawatir keselamatan, asap, cuaca).
-- "janjiTim": komitmen yang diucapkan TIM kepada pelanggan -- baik oleh Agen MAUPUN Bot (mis. Bot: "let me check with our team", "kami cek dulu" = janji mengecek dan mengabari), misalnya akan mengirim harga, invoice, atau itinerary, mengecek ketersediaan, atau mengonfirmasi sesuatu; maksimal 5. Janji pelanggan kepada tim tidak termasuk; pesan "Sistem (pesan otomatis)" juga bukan janji. BUKAN janji: tawaran bersyarat ("kalau mau, kami bisa kirim opsi hotel"), pernyataan kemampuan ("tim dapat menyesuaikan detail setelah booking"), arahan ke tamu ("silakan booking lewat link"), dan sesuatu yang sudah dilakukan di pesan itu juga (mengirim harga/paket = bukan janji). "terpenuhi" bernilai true HANYA bila transkrip menunjukkan janji itu sudah dilakukan; selain itu false. Janji yang sudah terpenuhi tetap ditulis dengan "pesan" tempat janji itu DIUCAPKAN (bukan pesan saat ditepati), supaya bisa dicocokkan dengan janji yang sama di ringkasan sebelumnya.
+- "janjiTim": komitmen yang diucapkan AGEN (manusia) kepada pelanggan, misalnya akan mengirim harga, invoice, atau itinerary, mengecek ketersediaan, atau mengonfirmasi sesuatu; maksimal 5. Janji pelanggan kepada tim tidak termasuk; pesan "Sistem (pesan otomatis)" juga bukan janji; ucapan Bot ("let me check with our team", "kami cek dulu ke tim") BUKAN janji tim. BUKAN janji: tawaran bersyarat ("kalau mau, kami bisa kirim opsi hotel"), pernyataan kemampuan ("tim dapat menyesuaikan detail setelah booking"), arahan ke tamu ("silakan booking lewat link"), dan sesuatu yang sudah dilakukan di pesan itu juga (mengirim harga/paket = bukan janji). "terpenuhi" bernilai true HANYA bila transkrip menunjukkan janji itu sudah dilakukan; selain itu false. Janji yang sudah terpenuhi tetap ditulis dengan "pesan" tempat janji itu DIUCAPKAN (bukan pesan saat ditepati), supaya bisa dicocokkan dengan janji yang sama di ringkasan sebelumnya.
 - "pesan": SATU nomor # (satu angka saja, bukan daftar) dari baris transkrip tempat pertanyaan itu diajukan, poin itu disebutkan, atau janji itu diucapkan. Kalau ragu, hilangkan "pesan" -- jangan menebak.
 - "statusAgen": apa yang sudah dijawab atau dijanjikan tim.
 - "langkahBerikut": apa yang sebaiknya dilakukan tim berikutnya; string kosong kalau tidak ada.
@@ -313,7 +313,11 @@ export function notAPromise(teks: string): boolean {
   return /^(tim|agen|bot|kami)?\s*(dapat|bisa|boleh)\b/i.test(teks.trim()) || /\b(bila|jika|kalau|apabila)\b/i.test(teks)
 }
 
-export function parseReview(raw: string, ids: readonly string[] = []): ConversationReview | null {
+/**
+ * `botIds`: id pesan Bot di transkrip. Janji yang menunjuk pesan Bot, atau yang teksnya diawali "Bot", dibuang: ucapan bot
+ * "let me check with our team" bukan janji tim (owner 2026-11-25, membalik aturan 2026-10-22).
+ */
+export function parseReview(raw: string, ids: readonly string[] = [], botIds: ReadonlySet<string> = new Set()): ConversationReview | null {
   let parsed: unknown
   const text = stripCodeFence(raw)
   try {
@@ -344,6 +348,7 @@ export function parseReview(raw: string, ids: readonly string[] = []): Conversat
     janjiTim: review.janjiTim
       .map(clipPromise)
       .filter((p) => itemText(p) !== '' && !notAPromise(itemText(p)))
+      .filter((p) => !/^bot\b/i.test(itemText(p).trim()) && !(typeof p !== 'string' && p.messageId && botIds.has(p.messageId)))
       .slice(0, MAX_ITEMS),
     statusAgen: clip(review.statusAgen),
     langkahBerikut: clip(review.langkahBerikut),
@@ -373,7 +378,7 @@ export async function reviewConversation(
       model,
       timeoutMs: REVIEW_TIMEOUT_MS,
     })
-    const review = parseReview(raw, transcript.ids)
+    const review = parseReview(raw, transcript.ids, new Set(transcript.botIds ?? []))
     if (!review) console.error('reviewConversation: output LLM tidak sesuai skema')
     return review
   } catch (error) {

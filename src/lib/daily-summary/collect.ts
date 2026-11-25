@@ -159,7 +159,8 @@ export function buildTranscript(messages: TranscriptMessage[]): string {
 }
 
 /** Transkrip bernomor + peta nomor → id pesan (`ids[N - 1]` = pesan `#N`). */
-export type NumberedTranscript = { text: string; ids: string[] }
+/** `botIds` = id pesan yang dikirim Bot: ucapan bot bukan janji tim (owner 2026-11-25, review.ts `parseReview`). */
+export type NumberedTranscript = { text: string; ids: string[]; botIds?: string[] }
 
 /**
  * Sama dengan `buildTranscript`, tetapi tiap baris diawali `#N ` (1..jumlah pesan). Model
@@ -170,6 +171,7 @@ export function buildNumberedTranscript(messages: TranscriptMessage[]): Numbered
   return {
     text: messages.map((m, i) => `#${i + 1} ${transcriptLine(m)}`).join('\n'),
     ids: messages.map((m) => m.id),
+    botIds: messages.filter((m) => m.sentBy === 'BOT').map((m) => m.id),
   }
 }
 
