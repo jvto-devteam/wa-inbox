@@ -852,3 +852,36 @@
  .nwa #l-leads .l-lead .l-acts{display:none}
  .nwa #l-leads .l-lead{padding-right:26px;background:var(--chev) no-repeat right 4px center/7px auto;cursor:pointer}
 }
+
+/* Inbox /new: komponen Inbox ASLI (InboxScreen) dengan kulit desain baru. Hanya variabel tema Inbox lama
+   (globals.css @theme) yang dipetakan ke token /new; komponennya tidak diubah. Ikut tema gelap /new karena
+   semuanya merujuk token. */
+.nwa .inbox-real{
+  --color-canvas:var(--bg);--color-surface:var(--surface);--color-surface-sunken:var(--surface2);
+  --color-line:var(--line);--color-line-strong:color-mix(in srgb,var(--line) 60%,var(--muted));
+  --color-ink:var(--ink);--color-ink-muted:var(--muted);--color-ink-subtle:color-mix(in srgb,var(--muted) 65%,var(--surface));
+  --color-accent:var(--accent);--color-accent-hover:color-mix(in srgb,var(--accent) 86%,#000);--color-accent-subtle:var(--accent-soft);
+  --color-success:var(--good);--color-success-subtle:var(--good-bg);--color-warning:var(--warn);--color-warning-subtle:var(--warn-bg);
+  --color-danger:var(--bad);--color-danger-subtle:var(--bad-bg);
+  --color-navy:var(--ink);--color-navy-light:var(--ink);--color-brand:var(--accent);--color-brand-dark:color-mix(in srgb,var(--accent) 86%,#000);
+  --color-brand-light:color-mix(in srgb,var(--accent) 70%,#fff);--color-background:var(--surface);--color-foreground:var(--ink);
+  --color-border:var(--line);--color-input:var(--line);--color-muted:var(--surface2);--color-muted-foreground:var(--muted);
+  --color-secondary:var(--surface2);--color-secondary-foreground:var(--ink);--color-destructive:var(--bad);
+  --font-sans:var(--f);
+  --radius-sm:6px;--radius:8px;--radius-md:8px;--radius-lg:10px;--radius-xl:12px;--radius-2xl:14px;--radius-3xl:16px;--radius-4xl:18px;
+  height:100%;min-height:0;background:var(--bg);color:var(--ink);font-family:var(--f)
+}
+/* Aturan umum /new di atas tidak berlapis (unlayered) sehingga mengalahkan kelas Tailwind (berlapis). Di dalam Inbox
+   asli, kembalikan ke gaya komponen itu sendiri. Daftar ini hasil pemeriksaan bentrokan nama kelas/elemen. */
+.nwa .inbox-real :is(button,input,select,textarea){font:revert-layer;color:revert-layer}
+.nwa .inbox-real .grid{gap:revert-layer}
+.nwa .inbox-real h1{font-size:revert-layer;margin:revert-layer;font-weight:revert-layer;letter-spacing:revert-layer}
+.nwa .inbox-real table{border-collapse:revert-layer;width:revert-layer}
+.nwa .inbox-real :is(th,td){font-weight:revert-layer;color:revert-layer;text-align:revert-layer;font-size:revert-layer;padding:revert-layer;background:revert-layer;border-bottom:revert-layer;white-space:revert-layer;vertical-align:revert-layer}
+.nwa .inbox-real svg{display:revert-layer}
+@media (max-width:860px){
+  /* daftar chat tidak tertutup bar tab bawah; chat terbuka = bar disembunyikan Shell (m-inchat) */
+  .nwa.v-inbox:not(.m-inchat) .inbox-real{padding-bottom:calc(56px + env(safe-area-inset-bottom,0px))}
+  .nwa.v-inbox.m-inchat .inbox-real{padding-bottom:env(safe-area-inset-bottom,0px)}
+  .nwa .inbox-real :is(input,textarea,select){font-size:16px}
+}

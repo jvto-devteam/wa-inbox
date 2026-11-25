@@ -7,7 +7,6 @@ import { AgentView } from './views/AgentView'
 import { AntreanView } from './views/AntreanView'
 import { BotView } from './views/BotView'
 import { HubView } from './views/HubView'
-import { InboxView } from './views/InboxView'
 import { LaporanView } from './views/LaporanView'
 import { RingkasanView } from './views/RingkasanView'
 
@@ -38,7 +37,6 @@ describe('/new', () => {
 
   it.each([
     ['/new/dashboard', <HubView key="h" />, 'Perlu perhatian'],
-    ['/new/inbox', <InboxView key="i" />, 'Tulis balasan…'],
     ['/new/antrean', <AntreanView key="a" />, 'Janji Admin'],
     ['/new/ringkasan', <RingkasanView key="r" />, 'Per percakapan'],
     ['/new/agent', <AgentView key="g" />, 'Semua status'],
@@ -85,13 +83,4 @@ describe('/new', () => {
     expect(document.querySelector('.db-tip')).toBeNull()
   })
 
-  it('Kirim di Inbox menambah pesan admin dan membuang draf', () => {
-    at('/new/inbox', <InboxView />)
-    fireEvent.click(screen.getByText('Lukas B.', { selector: '.row b *, .row b' }).closest('button')!)
-    const ta = screen.getByLabelText('Tulis balasan') as HTMLTextAreaElement
-    expect(ta.value).toContain('Hello Lukas')
-    fireEvent.click(screen.getByText('Kirim'))
-    expect(document.querySelectorAll('#i-chat .m.a')).toHaveLength(1)
-    expect(screen.queryByText(/Draf dari/)).toBeNull()
-  })
 })
