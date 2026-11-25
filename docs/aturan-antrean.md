@@ -53,7 +53,7 @@ status percakapan, jenis kontak, janji tim, alasan belum booking, `perluBalas`, 
 | AQ-21 | Percakapan yang menurut AI sudah selesai tidak masuk Follow Up maupun Janji Admin. | `PERCAKAPAN_SELESAI` |
 | AQ-22 | Tamu yang memilih operator lain tidak masuk Follow Up maupun Janji Admin. | `PILIH_OPERATOR_LAIN` |
 | AQ-23 | Tamu yang trip-nya sudah selesai tidak masuk Follow Up maupun Janji Admin, kecuali AI melihat potensi booking baru. Tamu lama yang datanya sudah dicek tapi tanpa booking aktif juga dihitung trip selesai, karena pencarian booking hanya melihat trip sejak awal bulan lalu. | `TRIP_SELESAI` |
-| AQ-24 | Calon tamu tanpa booking yang tanggal trip mintaannya sudah lewat tidak masuk Follow Up maupun Janji Admin. Bila tamu hanya menyebut bulan, batasnya akhir bulan itu. | `TANGGAL_TRIP_LEWAT` (`tanggalTripSelesai`) |
+| AQ-24 | Calon tamu tanpa booking yang tanggal trip mintaannya sudah lewat tidak masuk Follow Up maupun Janji Admin. Bila tamu hanya menyebut bulan, batasnya akhir bulan itu. Bila tahun tidak disebut, tanggal tidak pernah dianggap sebelum percakapan dimulai (tahunnya dimajukan). | `TANGGAL_TRIP_LEWAT` (`tanggalTripSelesai`, `tripEndDay`) |
 | AQ-25 | Follow Up yang ternyata tim masih berutang (janji belum ditepati, pertanyaan tamu belum dijawab tuntas, info yang dijanjikan belum dikirim) dipindah ke Janji Admin, kecuali pesan admin terakhir meminta jawaban tamu. Bila utangnya beres, ia kembali ke Follow Up. | `followUpOwedByTeam`, catatan "Pindahan Follow Up: tim masih berutang" |
 
 ## Janji Admin
