@@ -161,7 +161,7 @@ function toLead(c: Classified, today: string): ReportLead {
     alasan,
     alasanText: LEAD_BLOCKER_TEXT[alasan],
     teks: lastFrom === 'tamu' ? 'Pesan terakhir dari tamu belum dibalas tim.' : lastFrom === 'tim' ? 'Tamu belum membalas sejak pesan terakhir tim.' : 'Belum ada ringkasan chat.',
-    rekomendasi: r.nextStep || (lastFrom === 'tamu' ? 'Balas pesan tamu.' : 'Follow-up: tanyakan rencana tanggal dan jumlah orang.'),
+    rekomendasi: r.nextStep || (lastFrom === 'tamu' ? 'Balas pesan tamu.' : 'Tanyakan rencana tanggal dan jumlah orang.'),
     sumber: 'sinyal',
   }
 }

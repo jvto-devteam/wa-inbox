@@ -116,19 +116,20 @@ export function LaporanView() {
             {(i === 0 || (leads[i - 1].lastFrom === 'tamu') !== (l.lastFrom === 'tamu')) && (
               <div className="pg-sec">{l.lastFrom === 'tamu' ? 'Menunggu balasan kita' : 'Menunggu tamu / belum ada kabar'} <span className={'pill ' + (l.lastFrom === 'tamu' ? 'bad' : 'neu')}>{leads.filter((x) => (x.lastFrom === 'tamu') === (l.lastFrom === 'tamu')).length}</span></div>
             )}
-            <div className="item" style={{ gridTemplateColumns: 'minmax(0,1fr)' }}>
+            {/* Urutan baca: siapa → alasan (pill) → konteks singkat → follow-up (kotak saran). Status menunggu
+                sudah dinyatakan judul kelompok, jadi di kartu tinggal lamanya. */}
+            <div className="item l-lead" style={{ gridTemplateColumns: 'minmax(0,1fr)' }}>
               <div style={{ minWidth: 0 }}>
-                <a href={'/inbox?conversation=' + l.conversationId} style={{ color: 'var(--accent)', fontWeight: 600, background: 'none', border: 0, padding: 0 }}>{l.name}</a>{' '}
-                <span className="mut sm">{l.phoneTail} · chat {fmt(l.firstChatDay)}</span>{' '}
-                <span className={'pill ' + (l.alasan === 'belum_dijawab' || l.alasan === 'menunggu_tim' ? 'bad' : l.alasan === 'harga' ? 'warn' : 'neu')}>{l.alasanText}</span>{' '}
-                {l.lastFrom && (
-                  <span className={'pill ' + (l.lastFrom === 'tamu' ? 'bad' : 'neu')}>
-                    {l.lastFrom === 'tamu' ? 'Menunggu balasan kita' : 'Menunggu tamu'}{l.silentDays ? ' · ' + l.silentDays + ' hari' : ''}
-                  </span>
-                )}
-                <p>{l.teks}</p>
-                {l.rekomendasi && <p><b style={{ color: 'var(--ink)' }}>Follow-up:</b> {l.rekomendasi}</p>}
-                <p className="sm">{l.sumber === 'ai' ? 'Dinilai AI' + (l.reviewDay ? ' ' + fmt(l.reviewDay) : '') : 'Belum dinilai AI'}</p>
+                <div className="l-lh">
+                  <a href={'/inbox?conversation=' + l.conversationId}>{l.name}</a>
+                  <span className={'pill ' + (l.alasan === 'belum_dijawab' || l.alasan === 'menunggu_tim' ? 'bad' : l.alasan === 'harga' ? 'warn' : 'neu')}>{l.alasanText}</span>
+                </div>
+                <div className="l-lm">
+                  {l.phoneTail} · chat {fmt(l.firstChatDay)}{l.lastFrom && l.silentDays ? ' · menunggu ' + l.silentDays + ' hari' : ''}
+                  {' · '}{l.sumber === 'ai' ? 'Dinilai AI' + (l.reviewDay ? ' ' + fmt(l.reviewDay) : '') : 'Belum dinilai AI'}
+                </div>
+                <p className="l-lt">{l.teks}</p>
+                {l.rekomendasi && <div className="saran"><span className="saran-k">Follow-up</span><span className="saran-t">{l.rekomendasi}</span></div>}
               </div>
             </div>
             </Fragment>
