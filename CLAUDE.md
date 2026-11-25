@@ -229,7 +229,12 @@ baru (`calon_tamu` atau ada `belumBooking`); REPLY yang menurut ringkasan AI ter
 dibalas (`perluBalas` false, `reviewSaysNoReply`; tanpa nilai itu = saringan kata `isNoiseMessage`). Janji yang sudah ditindaklanjuti
 AGEN dengan pertanyaan atau permintaan konfirmasi (`ASKS_GUEST`, pesan agen terakhir sesudah janji) dan tamu belum menjawab berubah jadi
 FOLLOW_UP berjangkar pesan itu (`promiseAwaitingGuest`,
-`promiseToFollowUp`); balasan agen tanpa pertanyaan tidak menutup janji. Lead tanpa booking TIDAK diberi batas umur (owner). `upsertCandidate` tidak membuat/membuka item itu; `closeExcludedItems` (tick, sesudah
+`promiseToFollowUp`); balasan agen tanpa pertanyaan tidak menutup janji. Lead tanpa booking TIDAK diberi batas umur (owner).
+Lebih selektif (owner 2026-11-25, dari audit 51 Follow Up): kontak `lainnya` menurut ringkasan terbaru tidak masuk sama sekali;
+`mitra` tidak masuk Follow Up (tetap Balas/Janji); Follow Up yang ringkasannya `selesai` tidak masuk; Follow Up yang sebenarnya utang
+tim (`teamOwed`: janji belum ditepati, atau `belumBooking.alasan` belum_dijawab/menunggu_tim) dipindah ke PROMISE bertanda
+`OWED_NOTE` di `note` oleh tick (`followUpOwedByTeam`), kecuali pesan agen terakhir meminta jawaban tamu; tanda itu membalikkannya
+ke FOLLOW_UP bila utangnya beres, dan sync malam tidak membalik baris bertanda. `upsertCandidate` tidak membuat/membuka item itu; `closeExcludedItems` (tick, sesudah
 reconcile) menutup yang OPEN sebagai DONE `NOT_QUEUED` dengan alasan di `note`. SCHEDULED tidak disentuh. Pesan tanpa isi juga
 tidak mengubah FOLLOW_UP/PROMISE menjadi REPLY di reconcile (`CONTENT_MESSAGE_WHERE`).
 

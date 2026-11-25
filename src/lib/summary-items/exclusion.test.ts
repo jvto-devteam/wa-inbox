@@ -149,11 +149,56 @@ describe('janji menunggu tamu', () => {
   })
 })
 
+describe('lebih selektif: bukan tamu, mitra, percakapan selesai, utang tim', () => {
+  it('teamOwed: janji belum ditepati atau alasan belum_dijawab/menunggu_tim; tamu_diam = bukan utang tim', async () => {
+    const { teamOwed } = await import('./exclusion')
+    expect(teamOwed({ janjiTim: [{ teks: 'Kirim harga', terpenuhi: false }] })).toBe('Kirim harga')
+    expect(teamOwed({ janjiTim: [{ teks: 'Kirim harga', terpenuhi: true }], belumBooking: { alasan: 'belum_dijawab', teks: 'Jemput Banyuwangi belum dijawab' } })).toBe('Jemput Banyuwangi belum dijawab')
+    expect(teamOwed({ belumBooking: { alasan: 'tamu_diam', teks: 'x' } })).toBeNull()
+    expect(teamOwed(null)).toBeNull()
+  })
+
+  it('lainnya keluar dari semua jenis; mitra hanya keluar dari Follow Up; Follow Up yang AI nilai selesai keluar', async () => {
+    mockPrisma.message.findMany.mockResolvedValue([{ type: 'text', content: 'halo', createdAt: new Date('2026-11-25T01:00:00Z') }] as never)
+    mockPrisma.conversation.findUnique.mockResolvedValue(conv({ chatReview: { jenisKontak: 'lainnya' } }) as never)
+    expect(await exclusionFor('c', 'REPLY', null, NOW)).toBe('BUKAN_TAMU')
+    mockPrisma.conversation.findUnique.mockResolvedValue(conv({ chatReview: { jenisKontak: 'mitra' } }) as never)
+    expect(await exclusionFor('c', 'FOLLOW_UP', null, NOW)).toBe('MITRA_BUKAN_FOLLOW_UP')
+    expect(await exclusionFor('c', 'REPLY', null, NOW)).toBeNull()
+    expect(await exclusionFor('c', 'PROMISE', null, NOW)).toBeNull()
+    mockPrisma.conversation.findUnique.mockResolvedValue(conv({ chatReview: { jenisKontak: 'calon_tamu', status: 'selesai' } }) as never)
+    expect(await exclusionFor('c', 'FOLLOW_UP', null, NOW)).toBe('PERCAKAPAN_SELESAI')
+    mockPrisma.conversation.findUnique.mockResolvedValue(conv({ chatReview: { jenisKontak: 'calon_tamu', status: 'perlu_tindakan' } }) as never)
+    expect(await exclusionFor('c', 'FOLLOW_UP', null, NOW)).toBeNull()
+  })
+
+  it('Follow Up yang utang tim pindah ke Janji (bertanda), lalu kembali bila utangnya beres', async () => {
+    mockPrisma.summaryItem.findMany.mockResolvedValue([{ id: 'f1', conversationId: 'c', kind: 'FOLLOW_UP', review: null, anchorAt: NOW, note: null }] as never)
+    mockPrisma.conversation.findUnique.mockResolvedValue(conv({ chatReview: { jenisKontak: 'calon_tamu', status: 'perlu_tindakan', belumBooking: { alasan: 'menunggu_tim', teks: 'Itinerary belum dikirim' } } }) as never)
+    mockPrisma.message.findFirst.mockResolvedValue(null) // tidak ada pesan agen yang meminta jawaban
+    await closeExcludedItems(NOW)
+    expect(mockPrisma.summaryItem.update.mock.calls[0][0]).toEqual({ where: { id: 'f1' }, data: { kind: 'PROMISE', snippet: 'Itinerary belum dikirim', note: 'Pindahan Follow Up: tim masih berutang' } })
+
+    mockPrisma.summaryItem.update.mockClear()
+    mockPrisma.summaryItem.findMany.mockResolvedValue([{ id: 'f1', conversationId: 'c', kind: 'PROMISE', review: null, anchorAt: NOW, note: 'Pindahan Follow Up: tim masih berutang' }] as never)
+    mockPrisma.conversation.findUnique.mockResolvedValue(conv({ chatReview: { jenisKontak: 'calon_tamu', status: 'perlu_tindakan', belumBooking: { alasan: 'tamu_diam', teks: 'x' } } }) as never)
+    await closeExcludedItems(NOW)
+    expect(mockPrisma.summaryItem.update.mock.calls[0][0]).toEqual({ where: { id: 'f1' }, data: { kind: 'FOLLOW_UP', note: null } })
+  })
+
+  it('utang tim tetapi pesan agen terakhir meminta jawaban tamu: tetap Follow Up', async () => {
+    const { followUpOwedByTeam } = await import('./exclusion')
+    mockPrisma.conversation.findUnique.mockResolvedValue(conv({ chatReview: { belumBooking: { alasan: 'menunggu_tim', teks: 'x' } } }) as never)
+    mockPrisma.message.findFirst.mockResolvedValueOnce({ id: 'q', createdAt: NOW, content: 'Just to confirm the dates?', type: 'text', direction: 'OUTBOUND', sentBy: 'AGENT' } as never).mockResolvedValueOnce(null)
+    expect(await followUpOwedByTeam('c')).toBeNull()
+  })
+})
+
 describe('closeExcludedItems', () => {
   it('menutup item OPEN yang kena aturan dengan NOT_QUEUED + alasan; yang lain tidak disentuh', async () => {
     mockPrisma.summaryItem.findMany.mockResolvedValue([
-      { id: 'i1', conversationId: 'indo', kind: 'REPLY', review: null, anchorAt: NOW },
-      { id: 'i2', conversationId: 'ok', kind: 'REPLY', review: null, anchorAt: NOW },
+      { id: 'i1', conversationId: 'indo', kind: 'REPLY', review: null, anchorAt: NOW, note: null },
+      { id: 'i2', conversationId: 'ok', kind: 'REPLY', review: null, anchorAt: NOW, note: null },
     ] as never)
     mockPrisma.conversation.findUnique.mockImplementation((async (a: { where: { id: string } }) =>
       a.where.id === 'indo' ? conv({ phone: '6281234567890' }) : conv()) as never)

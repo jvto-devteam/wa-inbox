@@ -18,7 +18,7 @@ import {
 } from '@/lib/daily-summary/payload-schema'
 import { jakartaDayKey, jakartaDayRange } from '@/lib/daily-summary/time'
 import { isNoiseMessage } from './noise'
-import { CONTENT_MESSAGE_WHERE, EXCLUSION_NOTE, exclusionFor, promiseAwaitingGuest, promiseToFollowUp } from './exclusion'
+import { CONTENT_MESSAGE_WHERE, EXCLUSION_NOTE, exclusionFor, OWED_NOTE, promiseAwaitingGuest, promiseToFollowUp } from './exclusion'
 import { automatedMessageIds, findOurReply } from './automated'
 import type { SummaryItemKind } from './status'
 
@@ -268,6 +268,8 @@ async function upsertCandidate(c: Candidate, row: ItemRow | null, clock: ReviewC
       return 'skipped'
     }
   }
+  // Follow Up yang ternyata utang tim sudah dipindah ke Janji oleh tick (closeExcludedItems): jangan dibalik tiap malam.
+  if (c.kind === 'FOLLOW_UP' && row && row.state === 'OPEN' && row.kind === 'PROMISE' && row.note === OWED_NOTE) return 'skipped'
   const excluded = await exclusionFor(c.conversationId, c.kind, c.review)
   if (excluded) {
     // Hanya item berjenis sama: kandidat janji yang tersaring tidak menutup Follow Up/Balas yang masih terbuka.
