@@ -10,7 +10,7 @@ import { EXCLUSION_NOTE, NON_CONTENT_TYPES, OWED_NOTE } from './exclusion'
  */
 const ROOT = join(__dirname, '..', '..', '..')
 const doc = readFileSync(join(ROOT, 'docs', 'aturan-antrean.md'), 'utf8')
-const code = ['src/lib/summary-items/exclusion.ts', 'src/lib/summary-items/sync.ts', 'src/lib/summary-items/noise.ts', 'src/lib/daily-summary/review.ts', 'src/lib/daily-summary/generate.ts', 'src/lib/daily-summary/payload-schema.ts', 'src/lib/daily-summary/collect.ts', 'src/lib/daily-summary/config.ts', 'scripts/audit-antrean.ts']
+const code = ['src/lib/summary-items/exclusion.ts', 'src/lib/summary-items/sync.ts', 'src/lib/summary-items/noise.ts', 'src/lib/daily-summary/review.ts', 'src/lib/daily-summary/generate.ts', 'src/lib/daily-summary/payload-schema.ts', 'src/lib/daily-summary/collect.ts', 'src/lib/daily-summary/config.ts', 'scripts/audit-antrean.ts', 'src/lib/new/summary.ts', 'src/app/api/daily-summary/route.ts']
   .map((p) => readFileSync(join(ROOT, p), 'utf8'))
   .join('\n')
 
@@ -42,5 +42,12 @@ describe('buku aturan antrean = kode', () => {
     const ids = [...doc.matchAll(/^\| (AQ-\d{2}) \|/gm)].map((m) => m[1])
     expect(ids.length).toBeGreaterThanOrEqual(20)
     expect(new Set(ids).size).toBe(ids.length)
+  })
+
+  it('aturan halaman Ringkasan (AR-xx) unik dan masing-masing dirujuk di kode', () => {
+    const ids = [...doc.matchAll(/^\| (AR-\d{2}) \|/gm)].map((m) => m[1])
+    expect(ids.length).toBeGreaterThanOrEqual(3)
+    expect(new Set(ids).size).toBe(ids.length)
+    for (const id of ids) expect(code, `aturan ${id} tidak dirujuk di kode`).toContain(id)
   })
 })

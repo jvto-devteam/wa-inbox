@@ -104,3 +104,13 @@ status percakapan, jenis kontak, janji tim, alasan belum booking, `perluBalas`, 
 |---|---|---|
 | AQ-41 | Pesan panjang dikirim ke AI sampai 2.000 huruf. Yang lebih panjang dipotong dengan penanda "…[dipotong]", dan AI diberi tahu bagian yang terpotong bukan berarti belum dikirim. | `TRANSCRIPT_MAX_CHARS_PER_MESSAGE`, `TRANSCRIPT_CUT_MARK` |
 | AQ-40 | Job pukul 00.00 tidak meringkas ulang chat yang tidak punya pesan baru sejak ringkasan terakhirnya. Ringkasan lama dipakai apa adanya dan tidak tercatat sebagai pembaruan. Tombol "Buat ulang" admin tetap meringkas ulang semuanya. | `reusableReview` |
+
+## Halaman Ringkasan
+
+Ringkasan menampilkan poin penting per hari. Isinya disaring dengan dasar yang sama dengan Antrean. Penilaian "penting atau tidak" dibuat AI dari makna chat, bukan dari daftar kata. Tab Ringkasan chat di Inbox tetap memuat semua poin. Saringan ini hanya untuk halaman Ringkasan.
+
+| ID | Aturan | Kode alasan |
+|---|---|---|
+| AR-01 | Percakapan yang tidak boleh masuk Antrean karena aturan dasarnya juga tidak tampil di Ringkasan, baik poinnya maupun daftarnya: chat selain WhatsApp, nomor Indonesia, percakapan uji, dan kontak bukan tamu. | `summaryHidden`, `BUKAN_WHATSAPP`, `NOMOR_INDONESIA`, `PERCAKAPAN_UJI`, `BUKAN_TAMU` |
+| AR-02 | Calon tamu tanpa booking yang tanggal trip mintaannya sudah lewat pada hari ringkasan tidak tampil. Cara menghitung tanggalnya sama dengan AQ-24. Tamu yang sudah booking tetap tampil walau trip-nya selesai, karena komplain sesudah trip itu penting. | `TANGGAL_TRIP_LEWAT` |
+| AR-03 | AI menilai setiap poin `penting`. Poin dinilai penting HANYA bila menuntut perhatian atau tindakan tim, atau mengubah jalannya trip: komplain atau insiden, permintaan yang berbeda dari booking, kebutuhan khusus, masalah pembayaran (tenggat, gagal, refund), lokasi tutup yang berdampak, atau keputusan yang ditunggu dari tim. Poin tidak penting: paket, harga, jumlah orang, atau tanggal yang sudah diketahui; hal yang sudah beres; basa-basi atau review positif. Hanya poin penting yang tampil. Ringkasan lama yang belum dinilai tetap tampil. | `normalizePoint`, `coercePoint` |

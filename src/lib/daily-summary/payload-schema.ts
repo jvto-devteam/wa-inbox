@@ -52,14 +52,18 @@ export const POINT_KIND_LABEL: Record<PointKind, string> = {
 /** Satu poin penting: string polos (lama, atau tanpa pesan sumber) atau objek ber-`messageId` (+ `jenis` sejak 2026-10-22). */
 export const reviewPointSchema = z.union([
   z.string(),
-  z.object({ teks: z.string(), messageId: z.string().optional(), jenis: z.enum(POINT_KINDS).optional() }),
+  /**
+   * `penting` (owner 2026-11-25): poin yang menuntut perhatian/tindakan tim atau mengubah jalannya trip. Halaman Ringkasan
+   * hanya menampilkan `penting: true`; tab Ringkasan chat di Inbox tetap memuat semua poin. Ringkasan lama tanpa nilai = tampil.
+   */
+  z.object({ teks: z.string(), messageId: z.string().optional(), jenis: z.enum(POINT_KINDS).optional(), penting: z.boolean().optional() }),
 ])
 export type ReviewPoint = z.infer<typeof reviewPointSchema>
 
-export function normalizePoint(p: ReviewPoint): { teks: string; messageId: string | null; jenis: PointKind | null } {
+export function normalizePoint(p: ReviewPoint): { teks: string; messageId: string | null; jenis: PointKind | null; penting: boolean | null } {
   return typeof p === 'string'
-    ? { teks: p, messageId: null, jenis: null }
-    : { teks: p.teks, messageId: p.messageId ?? null, jenis: p.jenis ?? null }
+    ? { teks: p, messageId: null, jenis: null, penting: null }
+    : { teks: p.teks, messageId: p.messageId ?? null, jenis: p.jenis ?? null, penting: p.penting ?? null }
 }
 
 /**

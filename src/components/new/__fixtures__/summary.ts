@@ -42,6 +42,7 @@ export function sampleSummary(): DailySummaryResponse {
     },
     // c1: review "selesai", tetapi janji masih OPEN di antrean live → perlu tindakan
     items: { c1: { id: 'i1', kind: 'PROMISE', state: 'OPEN', dueAt: null, closedReason: null, note: null, closedAt: null } },
+    hidden: {},
   }
 }
 

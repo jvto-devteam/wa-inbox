@@ -33,10 +33,29 @@ describe('summaryDay', () => {
   })
 
   it('tanpa ringkasan = null; payload rusak = tanpa poin', () => {
-    expect(summaryDay({ dates: [], summary: null, items: {} })).toBeNull()
+    expect(summaryDay({ dates: [], summary: null, items: {}, hidden: {} })).toBeNull()
     const res = sampleSummary()
     res.summary = { ...res.summary!, payload: null, error: 'Format ringkasan tersimpan tidak dikenali. Buat ulang ringkasan ini.' }
     expect(summaryDay(res)).toMatchObject({ points: [], chats: [], error: expect.stringContaining('Buat ulang') })
+  })
+
+  it('AR-03: poin yang dinilai AI tidak penting tidak tampil; tanpa penilaian tetap tampil', () => {
+    const res = sampleSummary()
+    const emma = res.summary!.payload!.conversations[0]!.review!
+    emma.poinPenting = [
+      { teks: 'Paket Ijen 2D1N, 2 orang', jenis: 'trip', penting: false },
+      { teks: 'Vegetarian, tanpa telur', jenis: 'kebutuhan', penting: true },
+      'Poin lama tanpa penilaian',
+    ]
+    expect(summaryDay(res)!.points.filter((p) => p.name === 'Emma R.').map((p) => p.text)).toEqual(['Vegetarian, tanpa telur', 'Poin lama tanpa penilaian'])
+  })
+
+  it('AR-01/AR-02: percakapan tersaring (hidden) tidak tampil di poin maupun daftar', () => {
+    const res = sampleSummary()
+    res.hidden = { c2: 'NOMOR_INDONESIA' }
+    const D = summaryDay(res)!
+    expect(D.points.some((p) => p.conversationId === 'c2')).toBe(false)
+    expect(D.chats.map((c) => c.conversationId)).toEqual(['c1'])
   })
 
   it('chatHref menyorot pesan bila ada', () => {

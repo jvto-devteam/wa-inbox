@@ -61,7 +61,8 @@ export function summaryDay(res: DailySummaryResponse): SummaryDay | null {
   if (p) {
     for (const list of [p.conversations, p.unreplied, p.dormant, p.newLeads]) {
       for (const e of list) {
-        if (!e.review || seen.has(e.conversationId)) continue
+        // AR-01/AR-02: percakapan yang disaring aturan dasar tidak tampil sama sekali.
+        if (!e.review || seen.has(e.conversationId) || res.hidden[e.conversationId]) continue
         seen.set(e.conversationId, { name: e.contactName || 'Tanpa nama', review: e.review })
       }
     }
@@ -73,6 +74,8 @@ export function summaryDay(res: DailySummaryResponse): SummaryDay | null {
   for (const [conversationId, { name, review }] of seen) {
     for (const raw of review.poinPenting) {
       const pt = normalizePoint(raw)
+      // AR-03: hanya poin yang dinilai AI penting; ringkasan lama tanpa penilaian tetap tampil.
+      if (pt.penting === false) continue
       points.push({ kind: pt.jenis, name, text: pt.teks, conversationId, messageId: pt.messageId })
     }
     const promises = unkeptPromises(review)

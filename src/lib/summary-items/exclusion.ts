@@ -195,27 +195,69 @@ export async function followUpOwedByTeam(conversationId: string): Promise<string
   return (await promiseAwaitingGuest(conversationId, new Date(0))) ? null : owed
 }
 
-export async function exclusionFor(conversationId: string, kind: string, review: unknown, now: Date = new Date()): Promise<ExclusionReason | null> {
-  const conv = await prisma.conversation.findUnique({
-    where: { id: conversationId },
-    select: {
-      isTest: true, createdAt: true, bookingData: true, bookingCheckedAt: true, chatReview: true, chatReviewAt: true, mailAccountId: true, channelIdentityId: true,
-      channelIdentity: { select: { platform: true } }, contact: { select: { phone: true } },
-    },
-  })
-  if (!conv) return null
+const BASE_SELECT = {
+  isTest: true, createdAt: true, bookingData: true, chatReview: true, mailAccountId: true,
+  channelIdentity: { select: { platform: true } }, contact: { select: { phone: true } },
+} as const
+
+type BaseConversation = {
+  isTest: boolean
+  createdAt: Date
+  bookingData: unknown
+  chatReview: unknown
+  mailAccountId: string | null
+  channelIdentity: { platform: string } | null
+  contact: { phone: string | null } | null
+}
+
+/**
+ * Aturan yang tidak bergantung pada jenis item: dipakai Antrean (`exclusionFor`) DAN halaman Ringkasan (`summaryHidden`),
+ * supaya keduanya menyaring percakapan yang sama.
+ */
+function baseExclusion(conv: BaseConversation): ExclusionReason | null {
   // WhatsApp = identitas WA, atau percakapan lama tanpa identitas yang bukan email (Instagram/Facebook selalu punya
   // identitas sendiri; sebelum ChannelIdentity ada, satu-satunya channel non-email adalah WhatsApp).
   const whatsapp = conv.channelIdentity ? conv.channelIdentity.platform === 'WHATSAPP' : !conv.mailAccountId
   if (!whatsapp) return 'BUKAN_WHATSAPP'
   if (conv.isTest) return 'PERCAKAPAN_UJI'
+  if (blockedByIndonesianGate({ isTest: conv.isTest, phone: conv.contact?.phone ?? null })) return 'NOMOR_INDONESIA'
+  if ((conv.chatReview as { jenisKontak?: unknown } | null)?.jenisKontak === 'lainnya') return 'BUKAN_TAMU'
+  return null
+}
+
+/** Calon tamu tanpa booking yang hari mulai (tanpa itu: hari selesai) trip mintaannya sebelum `day` (YYYY-MM-DD, WIB). */
+function leadTripPassedOn(conv: BaseConversation, day: string): boolean {
+  const leadDay = conv.bookingData ? null : (tripStartDay(conv.chatReview, conv.createdAt) ?? tripEndDay(conv.chatReview, conv.createdAt))
+  return !!leadDay && leadDay < day
+}
+
+/**
+ * Percakapan yang TIDAK ditampilkan di halaman Ringkasan untuk hari `day` (buku aturan AR-01, AR-02): aturan dasar
+ * Antrean, ditambah calon tamu yang tanggal trip mintaannya sudah lewat pada hari itu. Satu kueri untuk semua id.
+ */
+export async function summaryHidden(conversationIds: readonly string[], day: string): Promise<Record<string, ExclusionReason>> {
+  if (conversationIds.length === 0) return {}
+  const rows = await prisma.conversation.findMany({ where: { id: { in: [...conversationIds] } }, select: { id: true, ...BASE_SELECT } })
+  const hidden: Record<string, ExclusionReason> = {}
+  for (const row of rows) {
+    const reason = baseExclusion(row) ?? (leadTripPassedOn(row, day) ? 'TANGGAL_TRIP_LEWAT' : null)
+    if (reason) hidden[row.id] = reason
+  }
+  return hidden
+}
+
+export async function exclusionFor(conversationId: string, kind: string, review: unknown, now: Date = new Date()): Promise<ExclusionReason | null> {
+  const conv = await prisma.conversation.findUnique({
+    where: { id: conversationId },
+    select: { ...BASE_SELECT, bookingCheckedAt: true, chatReviewAt: true },
+  })
+  if (!conv) return null
+  const base = baseExclusion(conv)
+  if (base) return base
   // Calon tamu tanpa booking yang tanggal MULAI trip mintaannya sudah lewat: tidak bisa ditindaklanjuti di antrean mana pun,
   // termasuk Balas (audit 2026-11-25: 4 dari 5 Balas adalah lead yang trip-nya sudah lewat). Tamu ber-booking tidak kena.
-  const leadDay = conv.bookingData ? null : (tripStartDay(conv.chatReview, conv.createdAt) ?? tripEndDay(conv.chatReview, conv.createdAt))
-  const leadTripPassed = !!leadDay && leadDay < jakartaDay(now)
-  if (blockedByIndonesianGate({ isTest: conv.isTest, phone: conv.contact?.phone ?? null })) return 'NOMOR_INDONESIA'
+  const leadTripPassed = leadTripPassedOn(conv, jakartaDay(now))
   const latest = (conv.chatReview ?? {}) as { jenisKontak?: unknown; status?: unknown; belumBooking?: { alasan?: unknown }; tanggalTripSelesai?: unknown; profil?: unknown }
-  if (latest.jenisKontak === 'lainnya') return 'BUKAN_TAMU'
   if (kind === 'FOLLOW_UP' && latest.jenisKontak === 'mitra') return 'MITRA_BUKAN_FOLLOW_UP'
   if ((kind === 'FOLLOW_UP' || kind === 'PROMISE') && latest.status === 'selesai') return 'PERCAKAPAN_SELESAI'
   // Memilih operator lain, atau calon tamu tanpa booking yang mencari open trip (label profil `open_trip`): JVTO hanya

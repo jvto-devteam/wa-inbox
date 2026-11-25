@@ -105,8 +105,13 @@ describe('GET /api/daily-summary', () => {
       ]
     }) as never)
 
+    // AR-01: c5 nomor Indonesia → hidden; percakapan lain WhatsApp luar negeri
+    const conv = (id: string, phone: string) => ({ id, isTest: false, createdAt: new Date('2026-09-01T00:00:00Z'), bookingData: null, chatReview: null, mailAccountId: null, channelIdentity: { platform: 'WHATSAPP' }, contact: { phone } })
+    mockPrisma.conversation.findMany.mockResolvedValue([conv('c1', '447700900123'), conv('c5', '6281234567890')] as never)
+
     const body = await (await GET(req('?date=2026-09-21'))).json()
 
+    expect(body.hidden).toEqual({ c5: 'NOMOR_INDONESIA' })
     expect(order).toEqual(['reconcile', 'findMany'])
     const where = mockPrisma.summaryItem.findMany.mock.calls[0][0]?.where as { conversationId: { in: string[] } }
     expect(where.conversationId.in.sort()).toEqual(['c1', 'c2', 'c3', 'c4', 'c5'])
