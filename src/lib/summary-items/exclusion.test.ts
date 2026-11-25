@@ -99,6 +99,14 @@ describe('exclusionFor', () => {
     expect(await exclusionFor('c', 'PROMISE', null, NOW)).toBe('PILIH_OPERATOR_LAIN')
   })
 
+  it('Balas juga: calon tamu tanpa booking yang trip-nya sudah mulai keluar; tamu ber-booking tetap', async () => {
+    mockPrisma.message.findMany.mockResolvedValue([{ type: 'text', content: 'can pay cash?', createdAt: new Date('2026-10-22T04:29:00Z') }] as never)
+    mockPrisma.conversation.findUnique.mockResolvedValue(conv({ chatReview: { jenisKontak: 'calon_tamu', status: 'perlu_tindakan', perluBalas: true, tanggalTripMulai: '2026-10-26' } }) as never)
+    expect(await exclusionFor('c', 'REPLY', null, NOW)).toBe('TANGGAL_TRIP_LEWAT')
+    mockPrisma.conversation.findUnique.mockResolvedValue(conv({ end: '2026-12-26', chatReview: { jenisKontak: 'tamu_existing', status: 'perlu_tindakan', perluBalas: true, tanggalTripMulai: '2026-10-26' } }) as never)
+    expect(await exclusionFor('c', 'REPLY', null, NOW)).toBeNull()
+  })
+
   it('lead: tanggal MULAI trip yang menentukan (Mikkel: mulai 21 Nov lewat, selesai 27 Nov belum)', async () => {
     mockPrisma.conversation.findUnique.mockResolvedValue(conv({ chatReview: { jenisKontak: 'calon_tamu', status: 'perlu_tindakan', tanggalTripMulai: '2026-11-21', tanggalTripSelesai: '2026-11-27' } }) as never)
     expect(await exclusionFor('c', 'FOLLOW_UP', null, NOW)).toBe('TANGGAL_TRIP_LEWAT')

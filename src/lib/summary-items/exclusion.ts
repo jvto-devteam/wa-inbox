@@ -209,6 +209,10 @@ export async function exclusionFor(conversationId: string, kind: string, review:
   const whatsapp = conv.channelIdentity ? conv.channelIdentity.platform === 'WHATSAPP' : !conv.mailAccountId
   if (!whatsapp) return 'BUKAN_WHATSAPP'
   if (conv.isTest) return 'PERCAKAPAN_UJI'
+  // Calon tamu tanpa booking yang tanggal MULAI trip mintaannya sudah lewat: tidak bisa ditindaklanjuti di antrean mana pun,
+  // termasuk Balas (audit 2026-11-25: 4 dari 5 Balas adalah lead yang trip-nya sudah lewat). Tamu ber-booking tidak kena.
+  const leadDay = conv.bookingData ? null : (tripStartDay(conv.chatReview, conv.createdAt) ?? tripEndDay(conv.chatReview, conv.createdAt))
+  const leadTripPassed = !!leadDay && leadDay < jakartaDay(now)
   if (blockedByIndonesianGate({ isTest: conv.isTest, phone: conv.contact?.phone ?? null })) return 'NOMOR_INDONESIA'
   const latest = (conv.chatReview ?? {}) as { jenisKontak?: unknown; status?: unknown; belumBooking?: { alasan?: unknown }; tanggalTripSelesai?: unknown; profil?: unknown }
   if (latest.jenisKontak === 'lainnya') return 'BUKAN_TAMU'
@@ -219,15 +223,13 @@ export async function exclusionFor(conversationId: string, kind: string, review:
   const seeksOpenTrip = !conv.bookingData && Array.isArray(latest.profil) && latest.profil.some((p) => (p as { label?: unknown } | null)?.label === 'open_trip')
   if ((kind === 'FOLLOW_UP' || kind === 'PROMISE') && (latest.belumBooking?.alasan === 'pilih_lain' || seeksOpenTrip)) return 'PILIH_OPERATOR_LAIN'
   // Lead tanpa booking yang tanggal trip yang dimintanya sudah lewat: tidak ada lagi yang bisa ditindaklanjuti.
-  if (kind === 'FOLLOW_UP' || kind === 'PROMISE') {
-    // Hari MULAI menentukan (lead yang belum booking sampai trip mulai sudah tidak bisa dikejar); tanpa itu, hari selesai.
-    const day = conv.bookingData ? null : (tripStartDay(conv.chatReview, conv.createdAt) ?? tripEndDay(conv.chatReview, conv.createdAt))
-    if (day && day < jakartaDay(now)) return 'TANGGAL_TRIP_LEWAT'
-  }
+  // Hari MULAI menentukan (lead yang belum booking sampai trip mulai sudah tidak bisa dikejar); tanpa itu, hari selesai.
+  if ((kind === 'FOLLOW_UP' || kind === 'PROMISE') && leadTripPassed) return 'TANGGAL_TRIP_LEWAT'
   if (kind === 'REPLY') {
     const run = await unansweredRun(conversationId)
     if (contentlessRun(run)) return 'HANYA_REAKSI'
-    return reviewSaysNoReply(conv.chatReview, conv.chatReviewAt, run.at(-1)?.createdAt) ? 'TIDAK_PERLU_BALAS' : null
+    if (reviewSaysNoReply(conv.chatReview, conv.chatReviewAt, run.at(-1)?.createdAt)) return 'TIDAK_PERLU_BALAS'
+    return leadTripPassed ? 'TANGGAL_TRIP_LEWAT' : null
   }
   const pastGuest = latest.jenisKontak === 'tamu_existing' && !conv.bookingData && conv.bookingCheckedAt !== null
   if ((kind === 'FOLLOW_UP' || kind === 'PROMISE') && (tripEnded(conv.bookingData, jakartaDay(now)) || pastGuest)) {
