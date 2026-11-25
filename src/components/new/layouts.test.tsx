@@ -70,13 +70,14 @@ describe('tata letak berbeda per halaman /new', () => {
   it('Ringkasan: saran AI + Ingatkan (reminder) dan Lepas memakai item antrean live', async () => {
     const fn = stubSummaryFetch()
     show(<RingkasanView />)
-    await waitFor(() => expect(document.querySelector('.pg-urgent .r-saran')?.textContent).toBe('Saran: Minta maaf dan tawarkan jemput ulang'))
+    await waitFor(() => expect(document.querySelector('.pg-urgent .saran .saran-t')?.textContent).toBe('Minta maaf dan tawarkan jemput ulang'))
     // Lukas tanpa item antrean: saran tampil, tanpa Ingatkan/Lepas
     expect(within(document.querySelector('.pg-urgent') as HTMLElement).queryByText('Ingatkan')).toBeNull()
     const emma = Array.from(document.querySelectorAll('#r-pts .item')).filter((e) => e.textContent?.includes('Emma R.'))
     expect(emma).toHaveLength(2)
-    expect(emma[0].querySelector('.r-saran')?.textContent).toBe('Saran: Kirim invoice hari ini')
-    expect(emma[1].querySelector('.r-saran')).toBeNull()
+    expect(emma[0].querySelector('.saran .saran-k')?.textContent).toBe('Saran tindakan')
+    expect(emma[0].querySelector('.saran .saran-t')?.textContent).toBe('Kirim invoice hari ini')
+    expect(emma[1].querySelector('.saran')).toBeNull()
 
     fireEvent.click(within(emma[0] as HTMLElement).getByText('Ingatkan'))
     fireEvent.click(screen.getByText('Jadwalkan'))
@@ -113,6 +114,11 @@ describe('tata letak berbeda per halaman /new', () => {
     await waitFor(() => expect(document.querySelectorAll('#l-leads .pg-sec').length).toBeGreaterThan(0))
     const secs = Array.from(document.querySelectorAll('#l-leads .pg-sec')).map((e) => e.textContent)
     expect(secs[0]).toMatch(/^Menunggu balasan kita/)
+    // follow-up di kotak saran, terpisah dari konteks lead
+    const lead = document.querySelector('#l-leads .l-lead')!
+    expect(lead.querySelector('.saran .saran-k')?.textContent).toBe('Follow-up')
+    expect(lead.querySelector('.saran .saran-t')?.textContent).toBe('Jawab soal jemput')
+    expect(lead.querySelector('.l-lt')?.textContent).toBe('Tanya jemput Banyuwangi')
     expect(document.querySelectorAll('#l-trend .db-col')).toHaveLength(8)
     const first = document.querySelector('#l-bookings .l-mlist .item')!
     expect(first.textContent).toMatch(/Chat \d+ \w+ → booking \d+ \w+ · (hari sama|\d+ hari)/)

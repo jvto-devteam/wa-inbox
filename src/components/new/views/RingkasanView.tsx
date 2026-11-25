@@ -108,7 +108,10 @@ export function RingkasanView() {
     </div>
   )
   const saranEl = (c: SummaryChat | undefined) => c?.saran ? (
-    <p className="r-saran"><b style={{ color: 'var(--ink)' }}>Saran:</b> {c.saran}{c.item?.state === 'SCHEDULED' ? ' · ' + followUpStatus(c.item).label : ''}</p>
+    <div className="saran">
+      <span className="saran-k">Saran tindakan{c.item?.state === 'SCHEDULED' ? ' · ' + followUpStatus(c.item).label : ''}</span>
+      <span className="saran-t">{c.saran}</span>
+    </div>
   ) : null
   // Saran + tombol hanya di poin PERTAMA tiap percakapan, supaya tidak berulang.
   const firstOf = new Set<number>()
