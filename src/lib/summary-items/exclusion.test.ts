@@ -43,6 +43,17 @@ describe('tripEnded / potentialNewBooking', () => {
   })
 })
 
+describe('contentlessRun: revoke membatalkan pesan berisi terakhir', () => {
+  it('dokumen lalu dihapus = tanpa isi; teks + dokumen dihapus = masih berisi; revoke saja = tanpa isi', async () => {
+    const { contentlessRun } = await import('./exclusion')
+    expect(contentlessRun([{ type: 'document', content: null }, { type: 'revoke', content: null }])).toBe(true)
+    expect(contentlessRun([{ type: 'text', content: 'halo?' }, { type: 'document', content: null }, { type: 'revoke', content: null }])).toBe(false)
+    expect(contentlessRun([{ type: 'revoke', content: null }])).toBe(true)
+    expect(contentlessRun([{ type: 'revoke', content: null }, { type: 'text', content: 'halo?' }])).toBe(false)
+    expect(contentlessRun([])).toBe(false)
+  })
+})
+
 describe('exclusionFor', () => {
   it('hanya WhatsApp: Instagram/Messenger/Email keluar; identitas WA atau percakapan lama bernomor tetap masuk', async () => {
     mockPrisma.conversation.findUnique.mockResolvedValue(conv({ platform: 'INSTAGRAM' }) as never)

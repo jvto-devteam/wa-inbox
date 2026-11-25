@@ -223,7 +223,7 @@ keluaran LLM. Aturan buat/buka ulang ada di satu tempat, `upsertCandidate`.
 
 **Yang tidak masuk antrean** (owner 2026-11-25, `src/lib/summary-items/exclusion.ts`): selain WhatsApp (Instagram, Facebook,
 Email); nomor Indonesia (gerbang `blockedByIndonesianGate`, percakapan uji tetap masuk); REPLY yang rangkaian pesan pelanggannya
-tanpa isi (`isNonContent`: reaksi, stiker, revoke, edit, unsupported, system, lampiran IG; foto/dokumen/suara tetap isi); FOLLOW_UP/PROMISE
+tanpa isi (`contentlessRun`: reaksi, stiker, edit, unsupported, system, lampiran IG; `revoke` membatalkan pesan berisi terakhir sebelumnya; foto/dokumen/suara tetap isi); FOLLOW_UP/PROMISE
 untuk tamu yang trip-nya sudah selesai (`bookingData.date.end_ymd` < hari ini WIB) kecuali review terbaru melihat potensi booking
 baru (`calon_tamu` atau ada `belumBooking`). `upsertCandidate` tidak membuat/membuka item itu; `closeExcludedItems` (tick, sesudah
 reconcile) menutup yang OPEN sebagai DONE `NOT_QUEUED` dengan alasan di `note`. SCHEDULED tidak disentuh. Pesan tanpa isi juga
