@@ -35,6 +35,18 @@ beforeEach(() => {
 })
 
 describe('syncSummaryItems', () => {
+  it('nomor Indonesia tidak masuk antrean: tidak dibuat, item terbuka ditutup NOT_QUEUED', async () => {
+    mockPrisma.conversation.findUnique.mockResolvedValue({ isTest: false, bookingData: null, chatReview: null, contact: { phone: '6281234567890' } } as never)
+    mockPrisma.summaryItem.findUnique.mockResolvedValue(null)
+    const r = await syncSummaryItems('2026-10-17', payload({ unreplied: [unreplied('c1', '2026-10-17T01:00:00Z')] as never }), NOW)
+    expect(r.created).toBe(0)
+    expect(mockPrisma.summaryItem.create).not.toHaveBeenCalled()
+
+    mockPrisma.summaryItem.findUnique.mockResolvedValue(row() as never)
+    await syncSummaryItems('2026-10-18', payload({ unreplied: [unreplied('c1', '2026-10-17T01:00:00Z')] as never }), NOW)
+    expect(mockPrisma.summaryItem.update.mock.calls[0][0].data).toMatchObject({ state: 'DONE', closedReason: 'NOT_QUEUED', note: 'Nomor Indonesia' })
+  })
+
   it('membuat item baru OPEN dengan openedOn = lastSeenOn = tanggal', async () => {
     mockPrisma.summaryItem.findUnique.mockResolvedValue(null)
     const r = await syncSummaryItems('2026-10-17', payload({ unreplied: [unreplied('c1', '2026-10-17T01:00:00Z')] as never }), NOW)
@@ -591,6 +603,13 @@ describe('reconcileSummaryItems', () => {
     expect(mockPrisma.summaryItem.update.mock.calls[0][0].data).toMatchObject({
       kind: 'REPLY', state: 'OPEN', anchorAt: inbound.createdAt, anchorMessageId: 'in1', snippet: 'masih ada?', reminderId: null, dueAt: null,
     })
+  })
+
+  it('reaksi pelanggan bukan "bicara lagi": kueri inbound melewati pesan reaction', async () => {
+    mockPrisma.summaryItem.findMany.mockResolvedValue([row({ kind: 'FOLLOW_UP' })] as never)
+    await reconcileSummaryItems(NOW)
+    const inboundQuery = mockPrisma.message.findFirst.mock.calls.map((c) => c[0]).find((a) => (a as { where: { direction?: string } }).where.direction === 'INBOUND')
+    expect(inboundQuery).toMatchObject({ where: { type: { not: 'reaction' } } })
   })
 
   it('FOLLOW_UP + beberapa inbound -> anchor inbound pertama, cakupan + snippet inbound terbaru', async () => {

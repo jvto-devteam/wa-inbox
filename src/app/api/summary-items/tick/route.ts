@@ -12,6 +12,7 @@ import { releaseStaleExecuting } from '@/lib/booking-actions/execute'
 import { pushUnnotifiedChanges } from '@/lib/booking-actions/push-sweep'
 import { createDataRequestDrafts } from '@/lib/booking-actions/data-requests'
 import { syncAgentSchedule } from '@/lib/agent-schedule/sync'
+import { closeExcludedItems } from '@/lib/summary-items/exclusion'
 
 /**
  * POST /api/summary-items/tick — antrean live Summary Harian, dipanggil crontab VPS tiap 5 menit
@@ -118,6 +119,8 @@ async function tick(): Promise<NextResponse> {
   try {
     const now = new Date()
     const reconciled = await reconcileSummaryItems(now)
+    // Sesudah konversi jenis: tutup item yang tidak masuk antrean (nomor Indonesia, hanya reaksi, trip selesai).
+    await closeExcludedItems(now)
     // Tidak boleh menggagalkan antrean: draf data tamu hanya tambahan. Log tanpa teks pelanggan.
     await createDataRequestDrafts(now).catch((error: unknown) => {
       console.error('POST /api/summary-items/tick: draf permintaan data gagal', error instanceof Error ? error.name : 'unknown')
