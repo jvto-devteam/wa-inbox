@@ -379,6 +379,10 @@ describe('belumBooking (alasan calon tamu belum booking)', () => {
   const ids = ['m1', 'm2', 'm3']
   it('prompt meminta kosakata tetap dan melarang menjanjikan diskon', () => {
     expect(REVIEW_SYSTEM_PROMPT).toContain('"belumBooking":{"alasan":"...","teks":"...","rekomendasi":"...","pesan":N}')
+    // Laporan menampilkan teks ini ke tim: harus Bahasa Indonesia, bukan kutipan pesan tamu (owner 2026-11-25)
+    expect(REVIEW_SYSTEM_PROMPT).toContain('"teks": satu kalimat ringkasan alasannya dalam Bahasa Indonesia')
+    expect(REVIEW_SYSTEM_PROMPT).toContain('JANGAN mengutip pesan tamu apa adanya')
+    expect(REVIEW_SYSTEM_PROMPT).not.toContain('satu kalimat dari transkrip')
     expect(REVIEW_SYSTEM_PROMPT).toContain('HANYA untuk jenisKontak "calon_tamu" yang belum booking')
     expect(REVIEW_SYSTEM_PROMPT).toContain('JANGAN menjanjikan diskon, harga, atau jadwal yang tidak tertulis')
   })
