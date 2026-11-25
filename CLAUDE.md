@@ -160,6 +160,10 @@ Dibuat `POST /api/daily-summary/generate` (crontab VPS `0 0 * * *` — jam siste
 `x-cron-secret`; atau admin lewat tombol "Buat ulang"). Satu panggilan LLM per percakapan
 (model `Settings.ollamaModel`, timeout 60 s) yang meringkas **dan** menyaring kandidat "belum
 dibalas"/"pelanggan diam" yang sudah selesai. Ambang di `src/lib/daily-summary/config.ts`.
+**Cron memakai ulang** `Conversation.chatReview` tanpa memanggil LLM bila tidak ada pesan sesudah ringkasan itu dan
+`chatReviewAt` ≤ akhir hari (`reusableReview`, owner 2026-11-25); yang dipakai ulang tidak ditulis lagi lewat `saveChatReview`
+(Riwayat Agent tidak mencatat pembaruan palsu), jumlahnya di `counts.reviewReused`. "Buat ulang" admin (`reuse: false`)
+tetap meringkas ulang semuanya.
 Dipangkas setelah **30 hari** per `date` (keputusan owner 2026-09-22) — payload memuat nama
 dan cuplikan chat pelanggan.
 
