@@ -1,5 +1,7 @@
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import { stubReportFetch } from './__fixtures__/report'
+import { sampleReport, stubReportFetch } from './__fixtures__/report'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { NewShell } from './Shell'
 import { AntreanView } from './views/AntreanView'
@@ -63,5 +65,29 @@ describe('tata letak berbeda per halaman /new', () => {
     expect(document.querySelectorAll('#l-trend .db-col')).toHaveLength(8)
     const first = document.querySelector('#l-bookings .l-mlist .item')!
     expect(first.textContent).toMatch(/Chat \d+ \w+ → booking \d+ \w+ · (hari sama|\d+ hari)/)
+  })
+
+  it('Laporan: badge channel JVTO biru, Klook oranye, channel lain netral', async () => {
+    const report = sampleReport()
+    const b = report.bookings[0]
+    report.bookings.push({ ...b, conversationId: b.conversationId + '-k', orderChannel: 'Klook' }, { ...b, conversationId: b.conversationId + '-t', orderChannel: 'TWT' })
+    stubReportFetch(report)
+    show(<LaporanView />)
+    await waitFor(() => expect(document.querySelectorAll('#l-bookings .l-mlist .item').length).toBe(3))
+    const badge = (ch: string) => Array.from(document.querySelectorAll('#l-bookings .l-mlist .item span')).find((e) => e.textContent === ch)!
+    expect(badge('JVTO').className).toBe('lb lb-jvto')
+    expect(badge('Klook').className).toBe('lb lb-klook')
+    expect(badge('TWT').className).toBe('pill neu')
+  })
+})
+
+describe('CSS /new', () => {
+  // Animasi masuk halaman yang menahan transform (fill both/forwards) membuat setiap anak .view jadi
+  // konteks tumpukan; panel info Inbox (fixed, z 60) lalu terkurung di bawah scrim (z 55) dan redup.
+  it('animasi masuk .view.fx>* tidak menahan transform setelah selesai', () => {
+    const css = readFileSync(join(process.cwd(), 'src/app/new/new.css'), 'utf8')
+    const rule = /\.view\.fx>\*\{animation:([^}]*)\}/.exec(css)
+    expect(rule).not.toBeNull()
+    expect(rule![1]).not.toMatch(/\b(both|forwards)\b/)
   })
 })

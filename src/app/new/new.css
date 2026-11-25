@@ -509,7 +509,7 @@
 .nwa svg{display:inline-block}
 .nwa .nav button.on,.nwa .nav button.on:hover{background:var(--accent-soft)}
 .nwa .seg button.on{background:var(--surface);box-shadow:0 1px 2px rgba(20,25,40,.14)}
-.nwa .view.fx>*{animation:fxin .3s ease-out both}
+.nwa .view.fx>*{animation:fxin .3s ease-out backwards}
 .nwa .view.fx>*:nth-child(2){animation-delay:.035s}
 .nwa .view.fx>*:nth-child(3){animation-delay:.07s}
 .nwa .view.fx>*:nth-child(4){animation-delay:.105s}
