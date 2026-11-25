@@ -119,7 +119,7 @@ describe('pertanyaan per butir', () => {
 
   it('prompt meminta bentuk objek dengan terjawab', () => {
     expect(REVIEW_SYSTEM_PROMPT).toContain('"pertanyaan":[{"teks":"...","terjawab":true|false,"pesan":3}]')
-    expect(REVIEW_SYSTEM_PROMPT).toContain('"poinPenting":[{"teks":"...","jenis":"komplain|keputusan|lokasi|trip|jemput|bayar|kebutuhan","pesan":5}]')
+    expect(REVIEW_SYSTEM_PROMPT).toContain('"poinPenting":[{"teks":"...","jenis":"komplain|keputusan|lokasi|trip|jemput|bayar|kebutuhan","penting":true|false,"pesan":5}]')
     expect(REVIEW_SYSTEM_PROMPT).toContain('"profil":[{"label":"...","pesan":N}]')
     expect(REVIEW_SYSTEM_PROMPT).toMatch(/"pesan": SATU nomor #.*Kalau ragu, hilangkan "pesan"/)
   })
@@ -127,9 +127,29 @@ describe('pertanyaan per butir', () => {
 
 describe('poin penting per butir', () => {
   it('normalizePoint: string lama → messageId null; objek membawa messageId', () => {
-    expect(normalizePoint('3 Oktober')).toEqual({ teks: '3 Oktober', messageId: null, jenis: null })
-    expect(normalizePoint({ teks: '3 Oktober' })).toEqual({ teks: '3 Oktober', messageId: null, jenis: null })
-    expect(normalizePoint({ teks: '3 Oktober', messageId: 'm5', jenis: 'trip' })).toEqual({ teks: '3 Oktober', messageId: 'm5', jenis: 'trip' })
+    expect(normalizePoint('3 Oktober')).toEqual({ teks: '3 Oktober', messageId: null, jenis: null, penting: null })
+    expect(normalizePoint({ teks: '3 Oktober' })).toEqual({ teks: '3 Oktober', messageId: null, jenis: null, penting: null })
+    expect(normalizePoint({ teks: '3 Oktober', messageId: 'm5', jenis: 'trip', penting: false })).toEqual({ teks: '3 Oktober', messageId: 'm5', jenis: 'trip', penting: false })
+  })
+
+  it('AR-03: parseReview menyimpan penilaian "penting" per poin; nilai yang bukan boolean dibuang', () => {
+    const r = parseReview(
+      JSON.stringify({
+        ...valid,
+        poinPenting: [
+          { jenis: 'komplain', teks: 'Sopir telat', penting: true, pesan: 1 },
+          { jenis: 'trip', teks: 'Ijen 2D1N, 2 orang', penting: false, pesan: 2 },
+          { jenis: 'kebutuhan', teks: 'Twin room', penting: 'mungkin' },
+        ],
+      }),
+      ['m1', 'm2']
+    )
+    expect(r?.poinPenting).toEqual([
+      { jenis: 'komplain', teks: 'Sopir telat', penting: true, messageId: 'm1' },
+      { jenis: 'trip', teks: 'Ijen 2D1N, 2 orang', penting: false, messageId: 'm2' },
+      { jenis: 'kebutuhan', teks: 'Twin room' },
+    ])
+    expect(REVIEW_SYSTEM_PROMPT).toContain('Setiap poin WAJIB diberi "penting": true HANYA bila')
   })
 })
 

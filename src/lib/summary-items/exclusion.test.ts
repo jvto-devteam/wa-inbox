@@ -8,7 +8,7 @@ vi.mock('./automated', () => ({ findOurReply: vi.fn() }))
 
 import { prisma } from '@/lib/db'
 import { findOurReply } from './automated'
-import { closeExcludedItems, exclusionFor, potentialNewBooking, tripEnded } from './exclusion'
+import { closeExcludedItems, exclusionFor, potentialNewBooking, summaryHidden, tripEnded } from './exclusion'
 
 const mockPrisma = prisma as unknown as DeepMockProxy<PrismaClient>
 const NOW = new Date('2026-11-25T05:00:00Z') // 12:00 WIB
@@ -280,5 +280,26 @@ describe('closeExcludedItems', () => {
       where: { id: 'i1', state: 'OPEN' },
       data: { state: 'DONE', closedReason: 'NOT_QUEUED', note: 'Nomor Indonesia', closedAt: NOW },
     })
+  })
+})
+
+describe('summaryHidden (Ringkasan, AR-01/AR-02)', () => {
+  it('aturan dasar Antrean + calon tamu yang trip-nya sudah lewat pada hari ringkasan', async () => {
+    mockPrisma.conversation.findMany.mockResolvedValue([
+      { id: 'wa', ...conv() },
+      { id: 'mail', ...conv({ mail: true }) },
+      { id: 'ig', ...conv({ platform: 'INSTAGRAM' }) },
+      { id: 'indo', ...conv({ phone: '6281234567890' }) },
+      { id: 'uji', ...conv({ isTest: true }) },
+      { id: 'sales', ...conv({ chatReview: { jenisKontak: 'lainnya' } }) },
+      { id: 'lewat', ...conv({ chatReview: { jenisKontak: 'calon_tamu', tanggalTripMulai: '2026-11-20' } }) },
+      { id: 'nanti', ...conv({ chatReview: { jenisKontak: 'calon_tamu', tanggalTripMulai: '2026-11-24' } }) },
+      // tamu ber-booking yang trip-nya sudah selesai tetap tampil (komplain sesudah trip itu penting)
+      { id: 'tamu', ...conv({ end: '2026-11-10', chatReview: { jenisKontak: 'tamu_existing', tanggalTripMulai: '2026-11-01' } }) },
+    ] as never)
+    expect(await summaryHidden(['wa', 'mail', 'ig', 'indo', 'uji', 'sales', 'lewat', 'nanti', 'tamu'], '2026-11-24')).toEqual({
+      mail: 'BUKAN_WHATSAPP', ig: 'BUKAN_WHATSAPP', indo: 'NOMOR_INDONESIA', uji: 'PERCAKAPAN_UJI', sales: 'BUKAN_TAMU', lewat: 'TANGGAL_TRIP_LEWAT',
+    })
+    expect(await summaryHidden([], '2026-11-24')).toEqual({})
   })
 })

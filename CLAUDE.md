@@ -222,7 +222,7 @@ Pesan keluar **tidak** menutupnya; janji terbuka membuka lagi DONE/REPLIED bila 
 keluaran LLM. Aturan buat/buka ulang ada di satu tempat, `upsertCandidate`.
 
 **Buku aturan antrean: `docs/aturan-antrean.md`** (AQ-01 s.d. AQ-40) adalah sumber aturan masuk/tidak masuk Balas, Follow Up,
-Janji Admin; `rulebook.test.ts` gagal bila kode dan dokumen itu tidak cocok. Ubah aturan = ubah dokumen itu dan kodenya bersamaan.
+Janji Admin, ditambah AR-01 s.d. AR-03 untuk isi halaman Ringkasan (saringan dasar yang sama + penilaian AI `penting` per poin); `rulebook.test.ts` gagal bila kode dan dokumen itu tidak cocok. Ubah aturan = ubah dokumen itu dan kodenya bersamaan.
 Prinsipnya: makna pesan (bertanya? janji? perlu dibalas? kapan trip?) dinilai AI lewat isian ringkasan yang sudah berjalan
 (`perluBalas`, `menungguTamu`, `jenis` per janji, `tanggalTripMulai`/`tanggalTripSelesai`, status, jenis kontak, alasan belum
 booking), bukan daftar kata; kode hanya memakai data terstruktur (jenis pesan, platform, nomor, data booking, waktu). Satu-satunya

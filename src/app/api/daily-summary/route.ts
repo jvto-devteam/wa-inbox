@@ -5,6 +5,7 @@ import { dailySummaryPayloadSchema, type DailySummaryPayload } from '@/lib/daily
 import { isDateKey } from '@/lib/daily-summary/time'
 import { toSummaryItemStatus, type SummaryItemStatus } from '@/lib/summary-items/status'
 import { reconcileSummaryItems } from '@/lib/summary-items/sync'
+import { summaryHidden, type ExclusionReason } from '@/lib/summary-items/exclusion'
 
 /**
  * GET /api/daily-summary?date=YYYY-MM-DD — ringkasan satu hari untuk halaman /summary, plus
@@ -35,6 +36,8 @@ export type DailySummaryResponse = {
   summary: DailySummaryView | null
   /** Per conversationId; percakapan yang tidak punya SummaryItem tidak ada di sini. */
   items: Record<string, SummaryItemStatus>
+  /** Percakapan yang tidak ditampilkan di Ringkasan (docs/aturan-antrean.md AR-01/AR-02), dengan alasannya. */
+  hidden: Record<string, ExclusionReason>
 }
 
 /** Semua conversationId yang muncul di payload, tanpa duplikat. */
@@ -89,7 +92,8 @@ export async function GET(req: Request) {
     }
 
     const items = await liveItemStatuses(summary?.payload ?? null)
-    return NextResponse.json({ dates, summary, items } satisfies DailySummaryResponse)
+    const hidden = summary?.payload ? await summaryHidden(payloadConversationIds(summary.payload), summary.date) : {}
+    return NextResponse.json({ dates, summary, items, hidden } satisfies DailySummaryResponse)
   } catch (error) {
     console.error('GET /api/daily-summary gagal', error)
     return NextResponse.json({ error: 'Gagal memuat ringkasan' }, { status: 500 })
