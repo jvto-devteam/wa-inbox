@@ -87,6 +87,14 @@ describe('exclusionFor', () => {
     expect(await exclusionFor('c', 'PROMISE', null, NOW)).toBeNull()
   })
 
+  it('lead yang memilih operator lain keluar dari Follow Up dan Janji; Balas tetap', async () => {
+    mockPrisma.message.findMany.mockResolvedValue([{ type: 'text', content: 'halo?', createdAt: new Date('2026-11-25T01:00:00Z') }] as never)
+    mockPrisma.conversation.findUnique.mockResolvedValue(conv({ chatReview: { jenisKontak: 'calon_tamu', status: 'perlu_tindakan', belumBooking: { alasan: 'pilih_lain' } } }) as never)
+    expect(await exclusionFor('c', 'PROMISE', null, NOW)).toBe('PILIH_OPERATOR_LAIN')
+    expect(await exclusionFor('c', 'FOLLOW_UP', null, NOW)).toBe('PILIH_OPERATOR_LAIN')
+    expect(await exclusionFor('c', 'REPLY', null, NOW)).toBeNull()
+  })
+
   it('Janji Admin yang AI nilai percakapannya selesai keluar', async () => {
     mockPrisma.conversation.findUnique.mockResolvedValue(conv({ chatReview: { jenisKontak: 'calon_tamu', status: 'selesai' } }) as never)
     expect(await exclusionFor('c', 'PROMISE', null, NOW)).toBe('PERCAKAPAN_SELESAI')

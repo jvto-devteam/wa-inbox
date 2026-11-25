@@ -304,6 +304,15 @@ export function repairReviewJson(text: string): string {
     .replace(/"pesan"\s*:\s*(\d+)(?:\s*,\s*\d+)+(?=\s*[}\]])/g, '"pesan":$1')
 }
 
+/**
+ * Pengaman sesudah prompt (audit Janji Admin 2026-11-25): model tetap menulis pernyataan kemampuan ("Tim dapat
+ * menyesuaikan…", "Bisa mengatur trip tahun depan") dan tawaran bersyarat ("Akan membantu bila pelanggan…") sebagai
+ * janji. Keduanya bukan utang tim, jadi dibuang saat dibaca.
+ */
+export function notAPromise(teks: string): boolean {
+  return /^(tim|agen|bot|kami)?\s*(dapat|bisa|boleh)\b/i.test(teks.trim()) || /\b(bila|jika|kalau|apabila)\b/i.test(teks)
+}
+
 export function parseReview(raw: string, ids: readonly string[] = []): ConversationReview | null {
   let parsed: unknown
   const text = stripCodeFence(raw)
@@ -334,7 +343,7 @@ export function parseReview(raw: string, ids: readonly string[] = []): Conversat
     profil: dedupeProfile(review.profil, review.jenisKontak),
     janjiTim: review.janjiTim
       .map(clipPromise)
-      .filter((p) => itemText(p) !== '')
+      .filter((p) => itemText(p) !== '' && !notAPromise(itemText(p)))
       .slice(0, MAX_ITEMS),
     statusAgen: clip(review.statusAgen),
     langkahBerikut: clip(review.langkahBerikut),

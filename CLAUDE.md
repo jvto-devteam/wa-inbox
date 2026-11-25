@@ -237,7 +237,8 @@ tim (`teamOwed`: janji belum ditepati, atau `belumBooking.alasan` belum_dijawab/
 ke FOLLOW_UP bila utangnya beres, dan sync malam tidak membalik baris bertanda.
 Audit Janji Admin (owner 2026-11-25): PROMISE yang ringkasannya `selesai` juga tidak masuk; tamu lama (`tamu_existing`) yang datanya
 sudah dicek (`bookingCheckedAt`) tetapi tanpa `bookingData` dihitung trip selesai, karena pencarian booking hanya melihat trip sejak
-awal bulan lalu (`buildDateRange`). `upsertCandidate` tidak membuat/membuka item itu; `closeExcludedItems` (tick, sesudah
+awal bulan lalu (`buildDateRange`). Lead yang `belumBooking.alasan` = `pilih_lain` tidak masuk Follow Up/Janji. `notAPromise` (review.ts)
+membuang "janji" berupa pernyataan kemampuan (dapat/bisa/boleh) atau bersyarat (bila/jika/kalau) saat ringkasan dibaca. `upsertCandidate` tidak membuat/membuka item itu; `closeExcludedItems` (tick, sesudah
 reconcile) menutup yang OPEN sebagai DONE `NOT_QUEUED` dengan alasan di `note`. SCHEDULED tidak disentuh. Pesan tanpa isi juga
 tidak mengubah FOLLOW_UP/PROMISE menjadi REPLY di reconcile (`CONTENT_MESSAGE_WHERE`).
 
