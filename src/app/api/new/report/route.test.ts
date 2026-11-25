@@ -43,6 +43,18 @@ describe('GET /api/new/report', () => {
     expect(JSON.stringify(body)).not.toContain('447700900999')
   })
 
+  it('AL-03/AL-05: tanggal trip dari ringkasan (tahun dibetulkan) dan item Balas terbuka ikut ke laporan', async () => {
+    const lead = { id: 'c3', contact_id: 'k3', name: 'Lead', phone: '447700900555', stage: 'new', first_in: new Date('2026-11-12T03:00:00Z'), booking_date: null, booking_number: null, package: null, start_ymd: null, order_channel: null, kind: 'calon_tamu', blocker: { alasan: 'menunggu_tim', teks: 'Link DP', rekomendasi: 'Kirim' }, next_step: null, review_at: null, last_at: null, last_dir: null, created_at: new Date('2026-11-12T03:00:00Z'), profile: null, awaiting_guest: null }
+    vi.mocked(prisma.$queryRaw).mockResolvedValue([
+      // AI menulis 2025, percakapan dimulai Nov 2026 -> 2026-11-19
+      { ...lead, trip_start: '2025-11-19', trip_end: null, awaiting_reply: false },
+      { ...lead, id: 'c4', trip_start: null, trip_end: null, awaiting_reply: true },
+    ] as never)
+    const body = await (await GET(req('?from=2026-11-01&to=2026-11-30'))).json()
+    expect(body.leads.find((l: { conversationId: string }) => l.conversationId === 'c3')).toMatchObject({ tripPassed: true, lostByUs: true, waitingUs: false })
+    expect(body.leads.find((l: { conversationId: string }) => l.conversationId === 'c4')).toMatchObject({ tripPassed: false, waitingUs: true })
+  })
+
   it('500 tanpa membocorkan galat', async () => {
     vi.mocked(prisma.$queryRaw).mockRejectedValue(new Error('koneksi postgres://rahasia'))
     const res = await GET(req('?from=2026-11-23&to=2026-11-29'))

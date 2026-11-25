@@ -16,7 +16,9 @@ export function sampleReport(today = jakartaDay(new Date())): Report {
   const rows: ReportRow[] = [
     row('a', today, { bookingDate: bookingDate(today), bookingNumber: 'JVTO-1', pkg: '3D Bromo · Ijen', startYmd: addDays(today, 20), orderChannel: 'JVTO' }),
     row('b', today, { lastAt: at(today, 10), lastDir: 'OUTBOUND', blocker: { alasan: 'harga', teks: 'Minta di bawah Rp4 jt', rekomendasi: 'Tawarkan 3D2N' } }),
-    row('c', today, { lastAt: at(today, 11), lastDir: 'INBOUND', blocker: { alasan: 'belum_dijawab', teks: 'Tanya jemput Banyuwangi', rekomendasi: 'Jawab soal jemput' } }),
+    row('c', today, { lastAt: at(today, 11), lastDir: 'INBOUND', awaitingReply: true, blocker: { alasan: 'belum_dijawab', teks: 'Tanya jemput Banyuwangi', rekomendasi: 'Jawab soal jemput' } }),
+    // tanggal trip mintaan sudah lewat dan tim belum menjawab: kalah karena kita (AL-03)
+    row('d', today, { lastAt: at(today, 8), lastDir: 'OUTBOUND', leadTripDay: addDays(today, -1), blocker: { alasan: 'menunggu_tim', teks: 'Link DP belum dikirim', rekomendasi: 'Kirim link DP' } }),
   ]
   for (let w = 1; w <= 7; w++) rows.push(row('p' + w, addDays(mon, -7 * w)), row('q' + w, addDays(mon, -7 * w), { bookingDate: bookingDate(addDays(mon, -7 * w)) }))
   return buildReport(rows, mon, today, 8, today)
