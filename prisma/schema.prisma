@@ -681,6 +681,30 @@ model Note {
   createdAt DateTime @default(now())
 }
 
+/// Salinan jadwal reminder WhatsApp yang dikirim cron LEGACY (info trip, trip selesai, crew, foto crew, pelunasan,
+/// transport Bali), diambil dari new-backoffice `GET /wa-inbox-api/upcoming-reminders` tiap tick 5 menit
+/// (src/lib/agent-schedule/sync.ts). Read-only: sumber kebenarannya tetap tabel `bookings` backoffice; baris yang hilang
+/// dari jawaban (booking batal/diubah) dihapus. Hanya 4 digit akhir nomor tamu yang disimpan.
+model AgentSchedule {
+  /// "<kind>:<booking id>" atau "bali_transport:addon-<id>", sama dengan kunci dari backoffice.
+  key            String   @id
+  kind           String
+  bookingId      Int
+  bookingCode    String?
+  bookingStatus  String?
+  guestName      String?
+  phoneTail      String?
+  /// Percakapan WhatsApp tamu (dicocokkan lewat nomor saat sinkron); null = tidak ketemu.
+  conversationId String?
+  recipient      String
+  sendAt         DateTime
+  /// scheduled | sent | failed | missed | will_skip | unknown (lihat backoffice UpcomingRemindersController)
+  status         String
+  refreshedAt    DateTime
+
+  @@index([sendAt])
+}
+
 model Reminder {
   id        String   @id @default(cuid())
   contactId String

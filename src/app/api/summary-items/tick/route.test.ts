@@ -24,6 +24,7 @@ vi.mock('@/lib/outbound/worker', () => ({ processDueOutboundJobs: vi.fn() }))
 vi.mock('@/lib/booking-actions/execute', () => ({ releaseStaleExecuting: vi.fn() }))
 vi.mock('@/lib/booking-actions/data-requests', () => ({ createDataRequestDrafts: vi.fn() }))
 vi.mock('@/lib/booking-actions/push-sweep', () => ({ pushUnnotifiedChanges: vi.fn().mockResolvedValue(0) }))
+vi.mock('@/lib/agent-schedule/sync', () => ({ syncAgentSchedule: vi.fn().mockResolvedValue({ status: 'ok', upserted: 0 }) }))
 
 const SECRET = 't'.repeat(40)
 const URL_ = 'http://localhost/api/summary-items/tick'
@@ -59,6 +60,14 @@ describe('POST /api/summary-items/tick', () => {
     expect(sequence.every((n) => typeof n === 'number')).toBe(true)
     expect([...sequence].sort((a, b) => a - b)).toEqual(sequence)
     expect(vi.mocked(createLiveReplyItems).mock.calls[0][0]).toBe(vi.mocked(reconcileSummaryItems).mock.calls[0][0])
+  })
+
+  it('menyalin jadwal reminder agent dari backoffice; gagalnya tidak menggagalkan tick', async () => {
+    const { syncAgentSchedule } = await import('@/lib/agent-schedule/sync')
+    vi.mocked(syncAgentSchedule).mockRejectedValueOnce(new Error('down'))
+    const res = await POST(req(SECRET))
+    expect(res.status).toBe(200)
+    expect(syncAgentSchedule).toHaveBeenCalledTimes(1)
   })
 
   it('draf permintaan data H-7 jalan sesudah reconcile dengan waktu yang sama; gagalnya tidak menggagalkan tick', async () => {

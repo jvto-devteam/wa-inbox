@@ -11,6 +11,7 @@ import { createLiveReplyItems, reconcileSummaryItems } from '@/lib/summary-items
 import { releaseStaleExecuting } from '@/lib/booking-actions/execute'
 import { pushUnnotifiedChanges } from '@/lib/booking-actions/push-sweep'
 import { createDataRequestDrafts } from '@/lib/booking-actions/data-requests'
+import { syncAgentSchedule } from '@/lib/agent-schedule/sync'
 
 /**
  * POST /api/summary-items/tick — antrean live Summary Harian, dipanggil crontab VPS tiap 5 menit
@@ -109,6 +110,9 @@ async function tick(): Promise<NextResponse> {
   })
   // Sesudah pelepasan klaim: kartu yang kembali OPEN tanpa pernah dikabarkan ikut tersapu. Tidak pernah melempar.
   await pushUnnotifiedChanges().catch(() => undefined)
+  // Salinan jadwal reminder WA cron legacy dari new-backoffice (tab "Jadwal agent" di Antrean). Satu panggilan HTTP
+  // (timeout 15 s); gagal = salinan lama dibiarkan. Tidak pernah melempar.
+  await syncAgentSchedule().catch(() => undefined)
 
   try {
     const now = new Date()

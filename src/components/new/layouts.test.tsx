@@ -47,7 +47,7 @@ describe('tata letak berbeda per halaman /new', () => {
     expect(urgent.querySelector('.saran-t')?.textContent).toBe('Konfirmasi jam jemput 05.00')
     expect(within(urgent).getByText('Balas sekarang').getAttribute('href')).toBe('/inbox?conversation=c-a&message=m-a')
     expect(urgent.querySelector('.nx')?.textContent).toContain('Ben C.')
-    expect(Array.from(document.querySelectorAll('#a-tabs button')).map((b) => b.textContent)).toEqual(['Balas2', 'Follow Up1', 'Janji Admin1', 'Reminder2'].map((t) => t.replace(/(\d)$/, ' $1')))
+    await waitFor(() => expect(Array.from(document.querySelectorAll('#a-tabs button')).map((b) => b.textContent)).toEqual(['Balas 2', 'Follow Up 1', 'Janji Admin 1', 'Reminder 2', 'Jadwal agent 3']))
 
     // Lepas (dikonfirmasi) → drop
     const ben = Array.from(document.querySelectorAll('#a-list .item')).find((e) => e.textContent?.includes('Ben C.')) as HTMLElement
@@ -78,6 +78,17 @@ describe('tata letak berbeda per halaman /new', () => {
     fireEvent.click(within(hana).getByText('Tunda'))
     fireEvent.click(screen.getByText('Jadwalkan'))
     await waitFor(() => expect(fn.mock.calls.some(([u]) => String(u) === '/api/summary-items/i9/schedule')).toBe(true))
+
+    // Jadwal agent: salinan jadwal reminder sistem booking, hanya baca
+    fireEvent.click(within(document.getElementById('a-tabs')!).getByText('Jadwal agent').closest('button')!)
+    const rows = Array.from(document.querySelectorAll('#a-list .item'))
+    expect(rows.map((r) => r.querySelector('b')?.textContent)).toEqual(['Reminder crew', 'Info trip', 'Transport Bali'])
+    expect(rows[0].textContent).toContain('Gagal')
+    expect(rows[1].textContent).toContain('Terjadwal')
+    expect(rows[2].textContent).toContain('booking cancel')
+    expect(within(rows[1] as HTMLElement).getByText('Buka chat').getAttribute('href')).toBe('/inbox?conversation=c-emma')
+    expect(within(rows[2] as HTMLElement).queryByText('Buka chat')).toBeNull()
+    expect(within(document.getElementById('a-list')!).queryByText('Tunda')).toBeNull()
   })
 
   it('Ringkasan (data asli): sorotan komplain di atas, sebaran jenis menyaring poin, tombol Per percakapan', async () => {
