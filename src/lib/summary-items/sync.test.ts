@@ -162,6 +162,7 @@ function useStore() {
     messages: [] as StoreMsg[],
     reminders: {} as Record<string, { id: string; done: boolean; dueAt: Date }>,
     chatReviewAt: null as Date | null,
+    chatReview: null as unknown,
   }
   const matches = (item: StoreItem, where: Record<string, unknown>) =>
     Object.entries(where).every(([key, cond]) => {
@@ -174,6 +175,7 @@ function useStore() {
     st.messages = []
     st.reminders = {}
     st.chatReviewAt = null
+    st.chatReview = null
     mockPrisma.summaryItem.findUnique.mockImplementation((async (a: { where: { conversationId: string } }) =>
       st.items.find((i) => i.conversationId === a.where.conversationId) ?? null) as never)
     mockPrisma.summaryItem.findMany.mockImplementation((async (a: { where: Record<string, unknown> }) => st.items.filter((i) => matches(i, a.where))) as never)
@@ -193,7 +195,7 @@ function useStore() {
       if (r) r.done = true
       return { count: r ? 1 : 0 }
     }) as never)
-    mockPrisma.conversation.findUnique.mockImplementation((async () => ({ pipelineStage: 'nego', chatReviewAt: st.chatReviewAt })) as never)
+    mockPrisma.conversation.findUnique.mockImplementation((async () => ({ pipelineStage: 'nego', chatReviewAt: st.chatReviewAt, chatReview: st.chatReview })) as never)
     mockPrisma.$transaction.mockImplementation((async (ops: unknown) => (Array.isArray(ops) ? Promise.all(ops) : ops)) as never)
     mockPrisma.message.findFirst.mockImplementation((async (a: { where: MsgWhere; orderBy: { createdAt: 'asc' | 'desc' } }) => {
       const { conversationId, direction, createdAt, id } = a.where
@@ -305,9 +307,11 @@ describe('janji tim (PROMISE): kandidat dan prioritas', () => {
 describe('janji tim (PROMISE): janji tidak hilang dan tidak bolak-balik', () => {
   const { st, msg, snap } = useStore()
 
-  it('janji yang ditindaklanjuti agen dengan PERTANYAAN dan tamu diam -> bukan PROMISE (kasus Bela)', async () => {
+  it('janji yang ditindaklanjuti agen dan AI menilai menungguTamu -> bukan PROMISE (kasus Bela)', async () => {
     msg('janji', 'OUTBOUND', '2026-10-17T03:00:00Z')
-    msg('konfirmasi rincian?', 'OUTBOUND', '2026-10-17T05:00:00Z')
+    msg('konfirmasi rincian', 'OUTBOUND', '2026-10-17T05:00:00Z')
+    st.chatReview = { menungguTamu: true }
+    st.chatReviewAt = at('2026-10-17T06:00:00Z')
     await nightly('2026-10-17', unkeptId)
     expect(st.items.filter((i) => i.kind === 'PROMISE')).toHaveLength(0)
   })
@@ -317,6 +321,8 @@ describe('janji tim (PROMISE): janji tidak hilang dan tidak bolak-balik', () => 
     await nightly('2026-10-17', unkeptId)
     expect(snap()).toBe('PROMISE/OPEN/-')
     msg('jadi berapa orang?', 'OUTBOUND', '2026-10-18T02:00:00Z')
+    st.chatReview = { menungguTamu: true }
+    st.chatReviewAt = at('2026-10-18T03:00:00Z')
     await nightly('2026-10-18', unkeptId)
     expect(st.items[0]).toMatchObject({ kind: 'FOLLOW_UP', state: 'OPEN', anchorAt: at('2026-10-18T02:00:00Z'), anchorMessageId: 'jadi berapa orang?' })
   })

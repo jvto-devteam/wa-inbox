@@ -18,6 +18,13 @@ Kode sumber: `src/lib/summary-items/exclusion.ts` (penyaring), `src/lib/summary-
 | **Reminder** | Pengingat yang dijadwalkan tim | Hasil tombol Ingatkan, atau "Ingatkan follow-up" di Laporan |
 | **Jadwal agent** | Reminder WhatsApp yang akan dikirim sistem booking | Salinan jadwal backoffice, hanya dibaca |
 
+## Prinsip
+
+Makna pesan (apakah bertanya, apakah janji, apakah perlu dibalas, kapan trip-nya) dinilai **AI** lewat isian ringkasan
+yang sudah berjalan, bukan daftar kata, karena pesan tamu dan admin beragam bahasa dan susunan. Kode hanya memakai data
+terstruktur: jenis pesan dari WhatsApp, platform, nomor, data booking, waktu pesan. Satu pengecualian, AQ-12, adalah
+cadangan sementara sampai AI menilai.
+
 ## Kriteria layak (standar)
 
 Sebuah chat **layak** masuk antrean hanya bila memenuhi SEMUA kriteria jenisnya. Setiap kriteria dijaga oleh aturan
@@ -67,7 +74,7 @@ status percakapan, jenis kontak, janji tim, alasan belum booking, `perluBalas`, 
 |---|---|---|
 | AQ-10 | Pesan tanpa isi tidak masuk: reaction, stiker, pesan yang diedit, pesan yang tidak didukung, pesan sistem, lampiran Instagram (story_mention, ig_post). Pesan yang dihapus tamu (revoke) membatalkan pesan berisi terakhir sebelumnya. Foto, dokumen, voice note, video, lokasi, dan kontak tetap dihitung isi. | `HANYA_REAKSI` (`contentlessRun`, `NON_CONTENT_TYPES`) |
 | AQ-11 | Bila ringkasan AI yang dibuat SESUDAH pesan terakhir tamu menilai pesan itu tidak perlu dibalas ("ok", "correct", "great", "thanks", emoji), chat tidak masuk. | `TIDAK_PERLU_BALAS` (`reviewSaysNoReply`, `perluBalas`) |
-| AQ-12 | Selama AI belum menilai, dipakai saringan kata: pesan penutup murni tidak masuk; pesan bertanda tanya, jawaban atas pertanyaan admin, dan "yes/ya" tetap masuk. | `isNoiseMessage` |
+| AQ-12 | CADANGAN, hanya selama AI belum menilai pesan itu (tick 5 menit tidak memanggil AI): saringan kata untuk penutup murni ("ok", "thanks", emoji). Begitu ringkasan AI ada, AQ-11 yang berlaku. Ini satu-satunya aturan berbasis kata untuk makna pesan. | `isNoiseMessage` |
 | AQ-13 | Pesan tanpa isi (AQ-10) tidak memindahkan Follow Up atau Janji Admin menjadi Balas. | `CONTENT_MESSAGE_WHERE` |
 
 ## Follow Up
@@ -86,9 +93,9 @@ status percakapan, jenis kontak, janji tim, alasan belum booking, `perluBalas`, 
 | ID | Aturan | Kode alasan |
 |---|---|---|
 | AQ-30 | Hanya janji yang diucapkan admin (manusia). Ucapan bot seperti "let me check with our team" bukan janji tim. | `botIds` di `parseReview` |
-| AQ-31 | Bukan janji: tawaran bersyarat ("kalau mau…", "bila…", "setelah tamu/tanggal…"), pernyataan kemampuan ("tim dapat…", "bisa…"), arahan ke tamu ("silakan booking lewat link"), dan sesuatu yang sudah dilakukan di pesan yang sama. | `notAPromise` |
+| AQ-31 | AI memberi setiap ucapan tim satu jenis: janji, tawaran bersyarat ("kalau mau…", "setelah tanggal diketahui"), pernyataan kemampuan ("tim dapat…"), arahan ke tamu ("silakan booking lewat link"), atau sudah dilakukan. Hanya jenis janji yang dihitung utang tim. Penilaiannya oleh AI dalam bahasa apa pun, bukan daftar kata. | `PROMISE_KINDS` |
 | AQ-32 | Admin yang menulis "here is the price" / "berikut harganya" disertai gambar atau dokumen dianggap sudah mengirimnya: janjinya terpenuhi. | penanda `[image]` di transkrip |
-| AQ-33 | Janji yang sudah ditanggapi admin dengan pertanyaan atau permintaan konfirmasi ke tamu ("Just to confirm…", "please let me know", "mohon konfirmasi"), dan tamu belum menjawab, pindah ke Follow Up. Yang dibaca adalah seluruh rentetan balasan admin sesudah pesan terakhir tamu, bukan hanya pesan terakhirnya; pesan janji itu sendiri boleh jadi pertanyaannya. Tanda tanya di dalam tautan tidak dihitung. | `promiseAwaitingGuest`, `ASKS_GUEST` |
+| AQ-33 | Bila ringkasan AI yang dibuat SESUDAH pesan terakhir menilai rentetan pesan tim terakhir meminta jawaban, konfirmasi, pilihan, atau data dari tamu (langkah berikutnya ada di tamu), Janji Admin pindah ke Follow Up dan Follow Up tidak dipindah ke Janji Admin. Penilaian AI, bukan daftar kata. | `menungguTamu`, `reviewSaysAwaitingGuest`, `promiseAwaitingGuest` |
 | AQ-34 | Balasan admin tanpa pertanyaan ("refund sedang kami proses") tidak menutup janji. Janji tertutup bila AI menilai semua janjinya ditepati, atau tim menekan Lepas. | `PROMISE_KEPT` |
 
 ## Ringkasan malam

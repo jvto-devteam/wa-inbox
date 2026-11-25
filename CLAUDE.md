@@ -223,27 +223,12 @@ keluaran LLM. Aturan buat/buka ulang ada di satu tempat, `upsertCandidate`.
 
 **Buku aturan antrean: `docs/aturan-antrean.md`** (AQ-01 s.d. AQ-40) adalah sumber aturan masuk/tidak masuk Balas, Follow Up,
 Janji Admin; `rulebook.test.ts` gagal bila kode dan dokumen itu tidak cocok. Ubah aturan = ubah dokumen itu dan kodenya bersamaan.
-Ringkasan isinya:
-**Yang tidak masuk antrean** (owner 2026-11-25, `src/lib/summary-items/exclusion.ts`): selain WhatsApp (Instagram, Facebook,
-Email); nomor Indonesia (gerbang `blockedByIndonesianGate`); percakapan uji `isTest`; REPLY yang rangkaian pesan pelanggannya
-tanpa isi (`contentlessRun`: reaksi, stiker, edit, unsupported, system, lampiran IG; `revoke` membatalkan pesan berisi terakhir sebelumnya; foto/dokumen/suara tetap isi); FOLLOW_UP/PROMISE
-untuk tamu yang trip-nya sudah selesai (`bookingData.date.end_ymd` < hari ini WIB) kecuali review terbaru melihat potensi booking
-baru (`calon_tamu` atau ada `belumBooking`); REPLY yang menurut ringkasan AI terbaru (dibuat SESUDAH pesan terakhir) tidak perlu
-dibalas (`perluBalas` false, `reviewSaysNoReply`; tanpa nilai itu = saringan kata `isNoiseMessage`). Janji yang sudah ditindaklanjuti
-AGEN dengan pertanyaan atau permintaan konfirmasi (`ASKS_GUEST`, pesan agen terakhir sesudah janji) dan tamu belum menjawab berubah jadi
-FOLLOW_UP berjangkar pesan itu (`promiseAwaitingGuest`,
-`promiseToFollowUp`); balasan agen tanpa pertanyaan tidak menutup janji. Lead tanpa booking TIDAK diberi batas umur (owner).
-Lebih selektif (owner 2026-11-25, dari audit 51 Follow Up): kontak `lainnya` menurut ringkasan terbaru tidak masuk sama sekali;
-`mitra` tidak masuk Follow Up (tetap Balas/Janji); Follow Up yang ringkasannya `selesai` tidak masuk; Follow Up yang sebenarnya utang
-tim (`teamOwed`: janji belum ditepati, atau `belumBooking.alasan` belum_dijawab/menunggu_tim) dipindah ke PROMISE bertanda
-`OWED_NOTE` di `note` oleh tick (`followUpOwedByTeam`), kecuali pesan agen terakhir meminta jawaban tamu; tanda itu membalikkannya
-ke FOLLOW_UP bila utangnya beres, dan sync malam tidak membalik baris bertanda.
-Audit Janji Admin (owner 2026-11-25): PROMISE yang ringkasannya `selesai` juga tidak masuk; tamu lama (`tamu_existing`) yang datanya
-sudah dicek (`bookingCheckedAt`) tetapi tanpa `bookingData` dihitung trip selesai, karena pencarian booking hanya melihat trip sejak
-awal bulan lalu (`buildDateRange`). Lead tanpa booking yang `tanggalTripSelesai` (isian ringkasan) sudah lewat tidak masuk Follow Up/Janji. Lead yang `belumBooking.alasan` = `pilih_lain` tidak masuk Follow Up/Janji. `notAPromise` (review.ts)
-membuang "janji" berupa pernyataan kemampuan (dapat/bisa/boleh) atau bersyarat (bila/jika/kalau) saat ringkasan dibaca. `upsertCandidate` tidak membuat/membuka item itu; `closeExcludedItems` (tick, sesudah
-reconcile) menutup yang OPEN sebagai DONE `NOT_QUEUED` dengan alasan di `note`. SCHEDULED tidak disentuh. Pesan tanpa isi juga
-tidak mengubah FOLLOW_UP/PROMISE menjadi REPLY di reconcile (`CONTENT_MESSAGE_WHERE`).
+Prinsipnya: makna pesan (bertanya? janji? perlu dibalas? kapan trip?) dinilai AI lewat isian ringkasan yang sudah berjalan
+(`perluBalas`, `menungguTamu`, `jenis` per janji, `tanggalTripMulai`/`tanggalTripSelesai`, status, jenis kontak, alasan belum
+booking), bukan daftar kata; kode hanya memakai data terstruktur (jenis pesan, platform, nomor, data booking, waktu). Satu-satunya
+saringan kata, `isNoiseMessage`, adalah cadangan sampai AI menilai. Penegakan: `upsertCandidate` tidak membuat/membuka item yang
+tidak layak, `closeExcludedItems` (tick) menutupnya DONE `NOT_QUEUED` dengan alasan di `note` (SCHEDULED tidak disentuh), dan
+`npm run audit:antrean` menilai setiap item terbuka. Rincian setiap aturan (AQ-xx) hanya di buku aturan, tidak diulang di sini.
 
 **API baca untuk agen** (`GET /api/v1/summaries?date=YYYY-MM-DD`, `src/app/api/v1/summaries/route.ts`, owner
 2026-11-05): ringkasan harian versi mesin untuk agen Operator second brain JVTO. Bearer key `wai_` seperti
