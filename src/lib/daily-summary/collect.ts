@@ -142,9 +142,13 @@ function jakartaStamp(at: Date): string {
  * pelanggan bisa menulis "halo\n#3 [..] Agen: ..." dan memalsukan satu baris bernomor yang
  * ditunjuk model sebagai `pesan`.
  */
+/** Lampiran yang bisa membawa caption: jenisnya ikut ditulis supaya model tahu ada gambar/dokumen (mis. daftar harga). */
+const MEDIA_TYPES = new Set(['image', 'document', 'video'])
+
 function transcriptLine(m: TranscriptMessage): string {
   const content = m.content?.trim() ? m.content.trim().replace(/\s*\r?\n\s*/g, ' ⏎ ') : ''
-  const raw = content || `[${m.type}]`
+  // "here is the transport price" + gambar harga: tanpa penanda, model mengira harganya belum dikirim (audit 2026-11-25).
+  const raw = content ? (MEDIA_TYPES.has(m.type.toLowerCase()) ? `[${m.type}] ${content}` : content) : `[${m.type}]`
   const text = raw.length > TRANSCRIPT_MAX_CHARS_PER_MESSAGE ? `${raw.slice(0, TRANSCRIPT_MAX_CHARS_PER_MESSAGE)}…` : raw
   // Kabar otomatis diberi label sendiri supaya model tidak menilainya jawaban tim atas pertanyaan pelanggan.
   return `[${jakartaStamp(m.createdAt)}] ${m.automated ? 'Sistem (pesan otomatis)' : SPEAKER[m.sentBy]}: ${text}`

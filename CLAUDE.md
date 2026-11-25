@@ -221,6 +221,9 @@ Pesan keluar **tidak** menutupnya; janji terbuka membuka lagi DONE/REPLIED bila 
 **terbaru** (max `createdAt`), jadi buka ulang setelah Lepas/PROMISE_KEPT tidak bergantung pada urutan
 keluaran LLM. Aturan buat/buka ulang ada di satu tempat, `upsertCandidate`.
 
+**Buku aturan antrean: `docs/aturan-antrean.md`** (AQ-01 s.d. AQ-40) adalah sumber aturan masuk/tidak masuk Balas, Follow Up,
+Janji Admin; `rulebook.test.ts` gagal bila kode dan dokumen itu tidak cocok. Ubah aturan = ubah dokumen itu dan kodenya bersamaan.
+Ringkasan isinya:
 **Yang tidak masuk antrean** (owner 2026-11-25, `src/lib/summary-items/exclusion.ts`): selain WhatsApp (Instagram, Facebook,
 Email); nomor Indonesia (gerbang `blockedByIndonesianGate`); percakapan uji `isTest`; REPLY yang rangkaian pesan pelanggannya
 tanpa isi (`contentlessRun`: reaksi, stiker, edit, unsupported, system, lampiran IG; `revoke` membatalkan pesan berisi terakhir sebelumnya; foto/dokumen/suara tetap isi); FOLLOW_UP/PROMISE
@@ -237,7 +240,7 @@ tim (`teamOwed`: janji belum ditepati, atau `belumBooking.alasan` belum_dijawab/
 ke FOLLOW_UP bila utangnya beres, dan sync malam tidak membalik baris bertanda.
 Audit Janji Admin (owner 2026-11-25): PROMISE yang ringkasannya `selesai` juga tidak masuk; tamu lama (`tamu_existing`) yang datanya
 sudah dicek (`bookingCheckedAt`) tetapi tanpa `bookingData` dihitung trip selesai, karena pencarian booking hanya melihat trip sejak
-awal bulan lalu (`buildDateRange`). Lead yang `belumBooking.alasan` = `pilih_lain` tidak masuk Follow Up/Janji. `notAPromise` (review.ts)
+awal bulan lalu (`buildDateRange`). Lead tanpa booking yang `tanggalTripSelesai` (isian ringkasan) sudah lewat tidak masuk Follow Up/Janji. Lead yang `belumBooking.alasan` = `pilih_lain` tidak masuk Follow Up/Janji. `notAPromise` (review.ts)
 membuang "janji" berupa pernyataan kemampuan (dapat/bisa/boleh) atau bersyarat (bila/jika/kalau) saat ringkasan dibaca. `upsertCandidate` tidak membuat/membuka item itu; `closeExcludedItems` (tick, sesudah
 reconcile) menutup yang OPEN sebagai DONE `NOT_QUEUED` dengan alasan di `note`. SCHEDULED tidak disentuh. Pesan tanpa isi juga
 tidak mengubah FOLLOW_UP/PROMISE menjadi REPLY di reconcile (`CONTENT_MESSAGE_WHERE`).

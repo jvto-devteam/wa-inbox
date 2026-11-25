@@ -107,6 +107,9 @@ describe('buildTranscript & messageSnippet', () => {
     expect(numbered.text).toBe('#1 [21/09 09.05] Pelanggan: Ijen 3 Oktober?\n#2 [21/09 09.10] Agen: [image]\n#3 [21/09 09.12] Pelanggan: ok')
     expect(numbered.ids).toEqual([a.id, b.id, c.id])
     expect(buildNumberedTranscript([])).toEqual({ text: '', ids: [], botIds: [] })
+    // gambar/dokumen bercaption ditandai jenisnya (mis. daftar harga yang dikirim sebagai gambar)
+    const pic = { ...a, id: 'p', type: 'image', content: 'here is the transport price' }
+    expect(buildNumberedTranscript([pic]).text).toContain('[image] here is the transport price')
   })
 
   it('baris baru di dalam pesan jadi ⏎, jadi pelanggan tidak bisa memalsukan baris bernomor', () => {
