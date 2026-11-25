@@ -19,12 +19,17 @@ describe('summaryDay', () => {
     const D = summaryDay(sampleSummary())!
     expect(D.chats.map((c) => [c.name, c.open])).toEqual([['Emma R.', true], ['Lukas B.', true]])
     const lukas = D.chats.find((c) => c.conversationId === 'c2')!
-    expect(lukas.lines).toEqual(['❓ Kapan sopir datang?', '→ Minta maaf dan tawarkan jemput ulang'])
-    expect(D.chats.find((c) => c.conversationId === 'c1')!.lines).toEqual(['⏳ Kirim invoice'])
+    expect(lukas.lines).toEqual(['❓ Kapan sopir datang?'])
+    expect(lukas).toMatchObject({ saran: 'Minta maaf dan tawarkan jemput ulang', item: null })
+    const emma = D.chats.find((c) => c.conversationId === 'c1')!
+    expect(emma.lines).toEqual(['⏳ Kirim invoice'])
+    // langkahBerikut kosong → rekomendasi follow-up lead
+    expect(emma).toMatchObject({ saran: 'Kirim invoice hari ini', item: { id: 'i1', state: 'OPEN' } })
 
     const res = sampleSummary()
     res.items = { c1: { ...res.items.c1, state: 'DONE' } }
-    expect(summaryDay(res)!.chats.find((c) => c.conversationId === 'c1')!.open).toBe(false)
+    // percakapan yang sudah selesai tidak membawa saran lama
+    expect(summaryDay(res)!.chats.find((c) => c.conversationId === 'c1')!).toMatchObject({ open: false, saran: null })
   })
 
   it('tanpa ringkasan = null; payload rusak = tanpa poin', () => {

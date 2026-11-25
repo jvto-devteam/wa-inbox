@@ -32,6 +32,8 @@ export function sampleSummary(): DailySummaryResponse {
           { ...ref('c1', 'Emma R.'), inbound: 3, outbound: 2, review: review({
             poinPenting: [{ teks: 'Jemput di Ketapang jam 06.00', jenis: 'jemput' }, 'Poin lama tanpa jenis'],
             janjiTim: [{ teks: 'Kirim invoice', terpenuhi: false }, { teks: 'Cek kamar', terpenuhi: true }],
+            // tanpa langkahBerikut: saran memakai rekomendasi follow-up lead
+            belumBooking: { alasan: 'menunggu_tim', teks: 'Menunggu invoice', rekomendasi: 'Kirim invoice hari ini' },
           }) },
           // c2 juga ada di unreplied: review pertama yang ada dipakai, tidak terhitung dua kali
           { ...ref('c2', 'Lukas B.'), inbound: 1, outbound: 0, review: null },
@@ -52,6 +54,7 @@ export function stubSummaryFetch(res: DailySummaryResponse = sampleSummary(), ro
     if (path === '/api/daily-summary') return ok(res)
     if (path === '/api/session') return ok({ role })
     if (path === '/api/daily-summary/generate' && init?.method === 'POST') return ok({ date: '2026-11-24', status: 'DONE' })
+    if (/^\/api\/summary-items\/[^/]+\/(schedule|drop)$/.test(path) && init?.method === 'POST') return ok({ ok: true })
     return { ok: false, status: 404, json: async () => ({ error: 'tidak ada' }) } as Response
   })
   vi.stubGlobal('fetch', fn)

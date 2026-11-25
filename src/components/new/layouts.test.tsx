@@ -67,6 +67,30 @@ describe('tata letak berbeda per halaman /new', () => {
     await waitFor(() => expect(fn.mock.calls.some(([u]) => String(u) === '/api/daily-summary?date=2026-11-23')).toBe(true))
   })
 
+  it('Ringkasan: saran AI + Ingatkan (reminder) dan Lepas memakai item antrean live', async () => {
+    const fn = stubSummaryFetch()
+    show(<RingkasanView />)
+    await waitFor(() => expect(document.querySelector('.pg-urgent .r-saran')?.textContent).toBe('Saran: Minta maaf dan tawarkan jemput ulang'))
+    // Lukas tanpa item antrean: saran tampil, tanpa Ingatkan/Lepas
+    expect(within(document.querySelector('.pg-urgent') as HTMLElement).queryByText('Ingatkan')).toBeNull()
+    const emma = Array.from(document.querySelectorAll('#r-pts .item')).filter((e) => e.textContent?.includes('Emma R.'))
+    expect(emma).toHaveLength(2)
+    expect(emma[0].querySelector('.r-saran')?.textContent).toBe('Saran: Kirim invoice hari ini')
+    expect(emma[1].querySelector('.r-saran')).toBeNull()
+
+    fireEvent.click(within(emma[0] as HTMLElement).getByText('Ingatkan'))
+    fireEvent.click(screen.getByText('Jadwalkan'))
+    await waitFor(() => expect(fn.mock.calls.some(([u]) => String(u) === '/api/summary-items/i1/schedule')).toBe(true))
+    const [, init] = fn.mock.calls.find(([u]) => String(u) === '/api/summary-items/i1/schedule')!
+    const body = JSON.parse(String((init as RequestInit).body))
+    expect(body.note).toBe('Kirim invoice hari ini')
+    expect(body.dueAt).toMatch(/^\d{4}-\d\d-\d\dT\d\d:\d\d:00\+07:00$/)
+
+    fireEvent.click(within(emma[0] as HTMLElement).getByText('Lepas'))
+    fireEvent.click(within(document.querySelector('.msheet') as HTMLElement).getByText('Lepas'))
+    await waitFor(() => expect(fn.mock.calls.some(([u]) => String(u) === '/api/summary-items/i1/drop')).toBe(true))
+  })
+
   it('Ringkasan: admin membuat ulang lewat POST generate; non-admin tanpa tombol', async () => {
     const fn = stubSummaryFetch()
     const { unmount } = show(<RingkasanView />)

@@ -3,17 +3,22 @@
 // Ringkasan harian, DATA ASLI (GET /api/daily-summary, rute yang sama dengan /summary; olahan di
 // src/lib/new/summary.ts). Pola sama dengan Antrean: kartu sorotan (komplain / janji terbuka), satu
 // kartu kendali (hari, Poin vs Per percakapan, sebaran jenis sebagai saringan), lalu daftar sederhana.
+// Saran tindakan dari AI (langkah berikut / follow-up lead) + tombol: Buka chat, Ingatkan (POST
+// /api/summary-items/[id]/schedule, membuat reminder) dan Lepas (.../drop); keduanya tanpa pesan ke tamu.
 // "Buat ulang" = POST /api/daily-summary/generate, hanya admin.
 import { useState } from 'react'
 import type { DailySummaryResponse } from '@/app/api/daily-summary/route'
+import { jakartaDay } from '@/lib/bot/eval/replay-pairs'
 import { isDateKey, previousJakartaDayKey } from '@/lib/daily-summary/time'
-import { MONS } from '@/lib/new/dates'
+import { MONS, whenLabel } from '@/lib/new/dates'
+import { addDays } from '@/lib/new/report'
 import { KC, POINT_KINDS } from '@/lib/new/mock-data'
-import { chatHref, summaryDay } from '@/lib/new/summary'
+import { chatHref, summaryDay, type SummaryChat } from '@/lib/new/summary'
+import { followUpStatus, isActionable } from '@/lib/summary-items/status'
 import type { PointKind } from '@/lib/new/types'
 import { SegBar } from '../Blocks'
 import { apiSend, useApi, useIsAdmin } from '../useApi'
-import { useItemTap, useNew } from '../store'
+import { useItemTap, useNew, type SheetItem } from '../store'
 
 /** Warna jenis poin mengikuti nada pill-nya (komplain merah, bayar kuning, jemput aksen); sisanya netral, dibedakan label. */
 const KIND_COLOR: Record<PointKind, string> = { komplain: 'var(--bad)', bayar: 'var(--warn)', jemput: 'var(--accent)', keputusan: 'var(--muted)', lokasi: 'var(--muted)', trip: 'var(--muted)', kebutuhan: 'var(--muted)' }
@@ -62,6 +67,56 @@ export function RingkasanView() {
       setBusy(false)
     }
   }
+  const byId = new Map(chats.map((c) => [c.conversationId, c]))
+  const ingatkan = (c: SummaryChat) => {
+    const item = c.item
+    if (!isActionable(item)) return
+    st.remind({
+      name: c.name,
+      onDone: (off, tm) => {
+        const dueAt = addDays(jakartaDay(new Date()), off) + 'T' + tm + ':00+07:00'
+        apiSend('/api/summary-items/' + item.id + '/schedule', 'POST', { dueAt, note: (c.saran || 'Tindak lanjut chat ' + c.name).slice(0, 500) })
+          .then(() => { toast('Dijadwalkan ' + whenLabel(off, tm).toLowerCase()); api.reload() })
+          .catch((e: unknown) => toast(e instanceof Error ? e.message : 'Gagal menjadwalkan'))
+      },
+    })
+  }
+  const lepas = (c: SummaryChat) => {
+    const item = c.item
+    if (!isActionable(item)) return
+    st.sheet('Lepas ' + c.name + ' dari antrean?', [{
+      label: 'Lepas', danger: true,
+      run: () => {
+        apiSend('/api/summary-items/' + item.id + '/drop', 'POST', {})
+          .then(() => { toast('Dilepas dari antrean'); api.reload() })
+          .catch((e: unknown) => toast(e instanceof Error ? e.message : 'Gagal melepas'))
+      },
+    }])
+  }
+  /** Tombol tindakan satu percakapan; urutan sama di layar lebar dan lembar ponsel. */
+  const actsOf = (c: SummaryChat | undefined, href: string): SheetItem[] => [
+    { label: 'Buka chat', run: () => { window.location.href = href } },
+    ...(c && isActionable(c.item) ? [{ label: 'Ingatkan', run: () => ingatkan(c) }, { label: 'Lepas', danger: true, run: () => lepas(c) }] : []),
+  ]
+  const actsEl = (c: SummaryChat | undefined, href: string) => (
+    <div className="acts">
+      <a className="btn sm" href={href}>Buka chat</a>
+      {c && isActionable(c.item) && <>
+        <button className="btn sm" onClick={() => ingatkan(c)}>Ingatkan</button>
+        <button className="btn sm" onClick={() => lepas(c)}>Lepas</button>
+      </>}
+    </div>
+  )
+  const saranEl = (c: SummaryChat | undefined) => c?.saran ? (
+    <p className="r-saran"><b style={{ color: 'var(--ink)' }}>Saran:</b> {c.saran}{c.item?.state === 'SCHEDULED' ? ' · ' + followUpStatus(c.item).label : ''}</p>
+  ) : null
+  // Saran + tombol hanya di poin PERTAMA tiap percakapan, supaya tidak berulang.
+  const firstOf = new Set<number>()
+  {
+    const seenConv = new Set<string>()
+    L.forEach((x, i) => { if (!seenConv.has(x.conversationId)) { seenConv.add(x.conversationId); firstOf.add(i) } })
+  }
+  const top = kom[0] ? byId.get(kom[0].conversationId) : undefined
   const meta = D
     ? D.active + ' percakapan aktif' + (D.finishedAt ? ' · dibuat ' + hhmm(D.finishedAt) : '') + (STATUS_NOTE[D.status] ? ' · ' + STATUS_NOTE[D.status] : '')
     : api.loading ? 'Memuat ringkasan…' : 'Belum ada ringkasan'
@@ -75,9 +130,11 @@ export function RingkasanView() {
             <div className="k">Perlu perhatian · komplain{kom.length > 1 ? ' (' + kom.length + ')' : ''}</div>
             <div className="n">{kom[0].name}</div>
             <p>{kom[0].text}</p>
+            {saranEl(top)}
           </div>
           <div className="acts">
             <a className="btn pri sm" href={chatHref(kom[0].conversationId, kom[0].messageId)}>Buka chat</a>
+            {top && isActionable(top.item) && <button className="btn sm" onClick={() => ingatkan(top)}>Ingatkan</button>}
             {kom.length > 1 && <button className="btn sm" onClick={() => set((d) => { d.rtab = 'poin'; d.rkind = 'komplain' })}>Semua komplain</button>}
           </div>
           {D.unkept > 0 && <div className="nx">Juga: {D.unkept} janji tim belum ditepati · <a href="/summary">Lihat di Antrean</a></div>}
@@ -125,10 +182,11 @@ export function RingkasanView() {
             : !P.length ? <div className="mut" style={{ padding: 20, textAlign: 'center' }}>Tidak ada poin penting pada tanggal ini.</div>
             : L.map((x, i) => {
               const href = chatHref(x.conversationId, x.messageId)
+              const c = firstOf.has(i) ? byId.get(x.conversationId) : undefined
               return (
-                <div key={i} className="item" style={{ '--ac': x.kind ? KIND_COLOR[x.kind] : 'var(--muted)' } as React.CSSProperties} onClick={tap(x.name, [{ label: 'Buka chat', run: () => { window.location.href = href } }])}>
-                  <div><b>{x.name}</b> {x.kind && <span className={'pill ' + KC[x.kind]}>{x.kind}</span>}<p>{x.text}</p></div>
-                  <a className="btn sm" href={href}>Buka chat</a>
+                <div key={i} className="item" style={{ '--ac': x.kind ? KIND_COLOR[x.kind] : 'var(--muted)' } as React.CSSProperties} onClick={tap(x.name, actsOf(c, href))}>
+                  <div><b>{x.name}</b> {x.kind && <span className={'pill ' + KC[x.kind]}>{x.kind}</span>}<p>{x.text}</p>{saranEl(c)}</div>
+                  {actsEl(c, href)}
                 </div>
               )
             })}
@@ -143,7 +201,8 @@ export function RingkasanView() {
                 <summary><b>{c.name}</b><span className={'pill ' + (c.open ? 'warn' : 'good')} style={{ marginLeft: 'auto' }}>{c.open ? 'Perlu tindakan' : 'Selesai'}</span></summary>
                 <div style={{ padding: '0 14px 12px' }}>
                   {c.lines.map((x, i) => <div key={i} style={{ padding: '2px 0' }}>{x}</div>)}
-                  <a className="btn sm" style={{ marginTop: 8 }} href={chatHref(c.conversationId)}>Buka chat</a>
+                  {saranEl(c)}
+                  <div style={{ marginTop: 8 }}>{actsEl(c, chatHref(c.conversationId))}</div>
                 </div>
               </details>
             ))}
