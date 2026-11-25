@@ -4,6 +4,8 @@
 // - Belum dibalas yang rangkaian pesan pelanggannya TANPA ISI: reaksi, stiker, pesan dihapus/diedit, pesan yang tidak
 //   didukung, lampiran Instagram story_mention/ig_post (owner 2026-11-25). Foto, dokumen, suara, video, lokasi, kontak
 //   tetap isi (bisa bukti bayar/paspor);
+// - Belum dibalas yang menurut ringkasan AI terbaru (sudah membaca pesan terakhir) tidak perlu dibalas (`perluBalas`
+//   false); ringkasan yang belum membacanya / tanpa `perluBalas` = saringan kata seperti sebelumnya;
 // - Follow Up / Janji tim untuk tamu yang TRIP-nya sudah selesai, kecuali review terbaru melihat potensi booking baru
 //   (jenisKontak calon_tamu, atau ada `belumBooking`). Tamu yang trip-nya belum jalan tetap masuk.
 // Satu tempat untuk ketiganya: dipakai `upsertCandidate` (tidak membuat/membuka item) dan `closeExcludedItems`
@@ -14,12 +16,13 @@ import { blockedByIndonesianGate } from '@/lib/booking-actions/rollout'
 import { conversationReviewSchema } from '@/lib/daily-summary/payload-schema'
 import { findOurReply } from './automated'
 
-export type ExclusionReason = 'BUKAN_WHATSAPP' | 'NOMOR_INDONESIA' | 'HANYA_REAKSI' | 'TRIP_SELESAI'
+export type ExclusionReason = 'BUKAN_WHATSAPP' | 'NOMOR_INDONESIA' | 'HANYA_REAKSI' | 'TIDAK_PERLU_BALAS' | 'TRIP_SELESAI'
 
 export const EXCLUSION_NOTE: Record<ExclusionReason, string> = {
   BUKAN_WHATSAPP: 'Bukan chat WhatsApp',
   NOMOR_INDONESIA: 'Nomor Indonesia',
   HANYA_REAKSI: 'Tanpa isi (reaksi, stiker, pesan dihapus, lampiran IG)',
+  TIDAK_PERLU_BALAS: 'Menurut AI tidak perlu dibalas',
   TRIP_SELESAI: 'Trip sudah selesai',
 }
 
@@ -67,15 +70,51 @@ export function contentlessRun(run: readonly { type: string; content: string | n
   return content === 0
 }
 
-/** Rangkaian pesan pelanggan sesudah balasan terakhir kita ada, dan tanpa isi (`contentlessRun`). */
-async function reactionOnlyRun(conversationId: string): Promise<boolean> {
+/** Rangkaian pesan pelanggan sesudah balasan terakhir kita (urut waktu). */
+async function unansweredRun(conversationId: string) {
   const lastOurs = await findOurReply(conversationId, {}, 'desc')
-  const run = await prisma.message.findMany({
+  return prisma.message.findMany({
     where: { conversationId, direction: 'INBOUND', ...(lastOurs ? { createdAt: { gt: lastOurs.createdAt } } : {}) },
     orderBy: { createdAt: 'asc' },
-    select: { type: true, content: true },
+    select: { type: true, content: true, createdAt: true },
   })
-  return contentlessRun(run)
+}
+
+/** Ringkasan terbaru sudah membaca pesan terakhir (dibuat SESUDAHNYA) dan menilai `perluBalas` false. */
+export function reviewSaysNoReply(chatReview: unknown, chatReviewAt: Date | null, lastInboundAt: Date | undefined): boolean {
+  if (!chatReviewAt || !lastInboundAt || !(lastInboundAt < chatReviewAt)) return false
+  const r = conversationReviewSchema.pick({ perluBalas: true }).safeParse(chatReview)
+  return r.success && r.data.perluBalas === false
+}
+
+/**
+ * Janji tim yang sudah ditindaklanjuti AGEN dengan pertanyaan ke tamu, dan tamu belum menjawab (pesan berisi): bola
+ * ada di tamu, jadi item itu Follow Up, bukan janji yang menggantung (owner 2026-11-25, kasus Bela Reister). Balasan
+ * agen TANPA pertanyaan ("refund sedang diproses") tidak dihitung: janjinya tetap terbuka sampai AI menilainya ditepati.
+ * Mengembalikan pertanyaan agen terakhir itu, atau null.
+ */
+export async function promiseAwaitingGuest(conversationId: string, promiseAt: Date) {
+  const question = await prisma.message.findFirst({
+    where: { conversationId, direction: 'OUTBOUND', sentBy: 'AGENT', createdAt: { gt: promiseAt }, content: { contains: '?' } },
+    orderBy: { createdAt: 'desc' },
+    select: { id: true, createdAt: true, content: true, type: true, direction: true, sentBy: true },
+  })
+  if (!question) return null
+  const answered = await prisma.message.findFirst({
+    where: { conversationId, direction: 'INBOUND', ...CONTENT_MESSAGE_WHERE, createdAt: { gt: question.createdAt } },
+    select: { id: true },
+  })
+  return answered ? null : question
+}
+
+/** Ubah item PROMISE terbuka jadi FOLLOW_UP berjangkar pertanyaan agen (lihat `promiseAwaitingGuest`). */
+export async function promiseToFollowUp(itemId: string, question: { id: string; createdAt: Date; content: string | null }): Promise<void> {
+  const snippet = (question.content ?? '').trim()
+  // Pemanggil sudah memastikan item ini PROMISE yang OPEN.
+  await prisma.summaryItem.update({
+    where: { id: itemId },
+    data: { kind: 'FOLLOW_UP', anchorAt: question.createdAt, anchorMessageId: question.id, snippet: snippet.length > 200 ? snippet.slice(0, 199) + '…' : snippet },
+  })
 }
 
 /**
@@ -86,7 +125,7 @@ export async function exclusionFor(conversationId: string, kind: string, review:
   const conv = await prisma.conversation.findUnique({
     where: { id: conversationId },
     select: {
-      isTest: true, bookingData: true, chatReview: true, mailAccountId: true, channelIdentityId: true,
+      isTest: true, bookingData: true, chatReview: true, chatReviewAt: true, mailAccountId: true, channelIdentityId: true,
       channelIdentity: { select: { platform: true } }, contact: { select: { phone: true } },
     },
   })
@@ -96,7 +135,11 @@ export async function exclusionFor(conversationId: string, kind: string, review:
   const whatsapp = conv.channelIdentity ? conv.channelIdentity.platform === 'WHATSAPP' : !conv.mailAccountId
   if (!whatsapp) return 'BUKAN_WHATSAPP'
   if (blockedByIndonesianGate({ isTest: conv.isTest, phone: conv.contact?.phone ?? null })) return 'NOMOR_INDONESIA'
-  if (kind === 'REPLY') return (await reactionOnlyRun(conversationId)) ? 'HANYA_REAKSI' : null
+  if (kind === 'REPLY') {
+    const run = await unansweredRun(conversationId)
+    if (contentlessRun(run)) return 'HANYA_REAKSI'
+    return reviewSaysNoReply(conv.chatReview, conv.chatReviewAt, run.at(-1)?.createdAt) ? 'TIDAK_PERLU_BALAS' : null
+  }
   if ((kind === 'FOLLOW_UP' || kind === 'PROMISE') && tripEnded(conv.bookingData, jakartaDay(now))) {
     return potentialNewBooking(conv.chatReview ?? review) ? null : 'TRIP_SELESAI'
   }
@@ -111,9 +154,17 @@ export async function exclusionFor(conversationId: string, kind: string, review:
 export async function closeExcludedItems(now: Date = new Date()): Promise<number> {
   let closed = 0
   try {
-    const items = await prisma.summaryItem.findMany({ where: { state: 'OPEN' }, select: { id: true, conversationId: true, kind: true, review: true } })
+    const items = await prisma.summaryItem.findMany({ where: { state: 'OPEN' }, select: { id: true, conversationId: true, kind: true, review: true, anchorAt: true } })
     for (const it of items) {
-      const reason = await exclusionFor(it.conversationId, it.kind, it.review, now).catch(() => null)
+      let kind = it.kind
+      if (kind === 'PROMISE') {
+        const question = await promiseAwaitingGuest(it.conversationId, it.anchorAt).catch(() => null)
+        if (question) {
+          await promiseToFollowUp(it.id, question)
+          kind = 'FOLLOW_UP'
+        }
+      }
+      const reason = await exclusionFor(it.conversationId, kind, it.review, now).catch(() => null)
       if (!reason) continue
       await prisma.summaryItem.updateMany({
         where: { id: it.id, state: 'OPEN' },

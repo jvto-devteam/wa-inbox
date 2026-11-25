@@ -18,7 +18,7 @@ import {
 } from '@/lib/daily-summary/payload-schema'
 import { jakartaDayKey, jakartaDayRange } from '@/lib/daily-summary/time'
 import { isNoiseMessage } from './noise'
-import { CONTENT_MESSAGE_WHERE, EXCLUSION_NOTE, exclusionFor } from './exclusion'
+import { CONTENT_MESSAGE_WHERE, EXCLUSION_NOTE, exclusionFor, promiseAwaitingGuest, promiseToFollowUp } from './exclusion'
 import { automatedMessageIds, findOurReply } from './automated'
 import type { SummaryItemKind } from './status'
 
@@ -260,9 +260,18 @@ async function upsertCandidate(c: Candidate, row: ItemRow | null, clock: ReviewC
   const { date } = clock
   // Nomor Indonesia, rangkaian hanya reaksi, Follow Up/Janji untuk tamu yang trip-nya selesai: tidak masuk antrean
   // (exclusion.ts). Item yang masih terbuka ditutup NOT_QUEUED; yang tertutup tidak dibuka lagi.
+  // Janji yang sudah ditindaklanjuti agen dengan pertanyaan dan menunggu tamu = Follow Up, bukan janji (exclusion.ts).
+  if (c.kind === 'PROMISE') {
+    const question = await promiseAwaitingGuest(c.conversationId, c.anchorAt)
+    if (question) {
+      if (row && row.state === 'OPEN' && row.kind === 'PROMISE') await promiseToFollowUp(row.id, question)
+      return 'skipped'
+    }
+  }
   const excluded = await exclusionFor(c.conversationId, c.kind, c.review)
   if (excluded) {
-    if (row && row.state === 'OPEN') {
+    // Hanya item berjenis sama: kandidat janji yang tersaring tidak menutup Follow Up/Balas yang masih terbuka.
+    if (row && row.state === 'OPEN' && row.kind === c.kind) {
       await prisma.summaryItem.update({
         where: { id: row.id },
         data: { state: 'DONE', closedReason: 'NOT_QUEUED', note: EXCLUSION_NOTE[excluded], closedAt: new Date() },

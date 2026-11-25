@@ -375,6 +375,23 @@ describe('janji tim', () => {
   })
 })
 
+describe('perluBalas (pesan terakhir pelanggan menunggu balasan)', () => {
+  it('prompt meminta perluBalas terpisah dari status', () => {
+    expect(REVIEW_SYSTEM_PROMPT).toContain('"perluBalas":true|false')
+    expect(REVIEW_SYSTEM_PROMPT).toContain('khusus pesan TERAKHIR pelanggan')
+    expect(REVIEW_SYSTEM_PROMPT).toContain('"correct"')
+  })
+
+  it('boolean dan "true"/"false" dibaca; bentuk lain = tidak diketahui (undefined), ringkasan tetap sah', () => {
+    expect(parseReview(JSON.stringify({ ...valid, perluBalas: false }))?.perluBalas).toBe(false)
+    expect(parseReview(JSON.stringify({ ...valid, perluBalas: 'true' }))?.perluBalas).toBe(true)
+    const r = parseReview(JSON.stringify({ ...valid, perluBalas: 'mungkin' }))
+    expect(r).not.toBeNull()
+    expect(r?.perluBalas).toBeUndefined()
+    expect(parseReview(JSON.stringify(valid))?.perluBalas).toBeUndefined()
+  })
+})
+
 describe('belumBooking (alasan calon tamu belum booking)', () => {
   const ids = ['m1', 'm2', 'm3']
   it('prompt meminta kosakata tetap dan melarang menjanjikan diskon', () => {
