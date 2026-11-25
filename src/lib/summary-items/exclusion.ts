@@ -7,7 +7,10 @@
 // - Belum dibalas yang menurut ringkasan AI terbaru (sudah membaca pesan terakhir) tidak perlu dibalas (`perluBalas`
 //   false); ringkasan yang belum membacanya / tanpa `perluBalas` = saringan kata seperti sebelumnya;
 // - Follow Up / Janji tim untuk tamu yang TRIP-nya sudah selesai, kecuali review terbaru melihat potensi booking baru
-//   (jenisKontak calon_tamu, atau ada `belumBooking`). Tamu yang trip-nya belum jalan tetap masuk.
+//   (jenisKontak calon_tamu, atau ada `belumBooking`). Tamu yang trip-nya belum jalan tetap masuk. Tamu lama
+//   (tamu_existing) yang datanya SUDAH dicek tapi tanpa booking aktif juga dihitung trip selesai: pencarian booking hanya
+//   melihat trip sejak awal bulan lalu (booking/client.ts buildDateRange), jadi trip lama tidak punya bookingData;
+// - percakapan uji (`isTest`) tidak masuk antrean;
 // - kontak "lainnya" menurut AI (sales, salah sambung, uji coba): tidak masuk sama sekali; "mitra" (Klook, vendor,
 //   hotel): tetap Balas/Janji, bukan Follow Up; Follow Up yang menurut AI percakapannya sudah "selesai" tidak masuk;
 // - Follow Up yang ternyata TIM masih berutang (pertanyaan tamu belum dijawab, info dijanjikan belum dikirim, janji belum
@@ -22,7 +25,7 @@ import { findOurReply } from './automated'
 
 export type ExclusionReason =
   | 'BUKAN_WHATSAPP' | 'NOMOR_INDONESIA' | 'HANYA_REAKSI' | 'TIDAK_PERLU_BALAS' | 'TRIP_SELESAI'
-  | 'BUKAN_TAMU' | 'MITRA_BUKAN_FOLLOW_UP' | 'PERCAKAPAN_SELESAI'
+  | 'BUKAN_TAMU' | 'MITRA_BUKAN_FOLLOW_UP' | 'PERCAKAPAN_SELESAI' | 'PERCAKAPAN_UJI'
 
 export const EXCLUSION_NOTE: Record<ExclusionReason, string> = {
   BUKAN_WHATSAPP: 'Bukan chat WhatsApp',
@@ -33,6 +36,7 @@ export const EXCLUSION_NOTE: Record<ExclusionReason, string> = {
   BUKAN_TAMU: 'Bukan tamu (sales, salah sambung, uji coba)',
   MITRA_BUKAN_FOLLOW_UP: 'Mitra: bukan follow-up lead',
   PERCAKAPAN_SELESAI: 'Menurut AI percakapan sudah selesai',
+  PERCAKAPAN_UJI: 'Percakapan uji',
 }
 
 /** Penanda (di `note` item OPEN) bahwa Janji tim ini pindahan dari Follow Up karena tim berutang; dibalik bila tidak lagi. */
@@ -175,7 +179,7 @@ export async function exclusionFor(conversationId: string, kind: string, review:
   const conv = await prisma.conversation.findUnique({
     where: { id: conversationId },
     select: {
-      isTest: true, bookingData: true, chatReview: true, chatReviewAt: true, mailAccountId: true, channelIdentityId: true,
+      isTest: true, bookingData: true, bookingCheckedAt: true, chatReview: true, chatReviewAt: true, mailAccountId: true, channelIdentityId: true,
       channelIdentity: { select: { platform: true } }, contact: { select: { phone: true } },
     },
   })
@@ -184,17 +188,19 @@ export async function exclusionFor(conversationId: string, kind: string, review:
   // identitas sendiri; sebelum ChannelIdentity ada, satu-satunya channel non-email adalah WhatsApp).
   const whatsapp = conv.channelIdentity ? conv.channelIdentity.platform === 'WHATSAPP' : !conv.mailAccountId
   if (!whatsapp) return 'BUKAN_WHATSAPP'
+  if (conv.isTest) return 'PERCAKAPAN_UJI'
   if (blockedByIndonesianGate({ isTest: conv.isTest, phone: conv.contact?.phone ?? null })) return 'NOMOR_INDONESIA'
   const latest = (conv.chatReview ?? {}) as { jenisKontak?: unknown; status?: unknown }
   if (latest.jenisKontak === 'lainnya') return 'BUKAN_TAMU'
   if (kind === 'FOLLOW_UP' && latest.jenisKontak === 'mitra') return 'MITRA_BUKAN_FOLLOW_UP'
-  if (kind === 'FOLLOW_UP' && latest.status === 'selesai') return 'PERCAKAPAN_SELESAI'
+  if ((kind === 'FOLLOW_UP' || kind === 'PROMISE') && latest.status === 'selesai') return 'PERCAKAPAN_SELESAI'
   if (kind === 'REPLY') {
     const run = await unansweredRun(conversationId)
     if (contentlessRun(run)) return 'HANYA_REAKSI'
     return reviewSaysNoReply(conv.chatReview, conv.chatReviewAt, run.at(-1)?.createdAt) ? 'TIDAK_PERLU_BALAS' : null
   }
-  if ((kind === 'FOLLOW_UP' || kind === 'PROMISE') && tripEnded(conv.bookingData, jakartaDay(now))) {
+  const pastGuest = latest.jenisKontak === 'tamu_existing' && !conv.bookingData && conv.bookingCheckedAt !== null
+  if ((kind === 'FOLLOW_UP' || kind === 'PROMISE') && (tripEnded(conv.bookingData, jakartaDay(now)) || pastGuest)) {
     return potentialNewBooking(conv.chatReview ?? review) ? null : 'TRIP_SELESAI'
   }
   return null

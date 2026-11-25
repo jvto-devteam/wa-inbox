@@ -222,7 +222,7 @@ Pesan keluar **tidak** menutupnya; janji terbuka membuka lagi DONE/REPLIED bila 
 keluaran LLM. Aturan buat/buka ulang ada di satu tempat, `upsertCandidate`.
 
 **Yang tidak masuk antrean** (owner 2026-11-25, `src/lib/summary-items/exclusion.ts`): selain WhatsApp (Instagram, Facebook,
-Email); nomor Indonesia (gerbang `blockedByIndonesianGate`, percakapan uji tetap masuk); REPLY yang rangkaian pesan pelanggannya
+Email); nomor Indonesia (gerbang `blockedByIndonesianGate`); percakapan uji `isTest`; REPLY yang rangkaian pesan pelanggannya
 tanpa isi (`contentlessRun`: reaksi, stiker, edit, unsupported, system, lampiran IG; `revoke` membatalkan pesan berisi terakhir sebelumnya; foto/dokumen/suara tetap isi); FOLLOW_UP/PROMISE
 untuk tamu yang trip-nya sudah selesai (`bookingData.date.end_ymd` < hari ini WIB) kecuali review terbaru melihat potensi booking
 baru (`calon_tamu` atau ada `belumBooking`); REPLY yang menurut ringkasan AI terbaru (dibuat SESUDAH pesan terakhir) tidak perlu
@@ -234,7 +234,10 @@ Lebih selektif (owner 2026-11-25, dari audit 51 Follow Up): kontak `lainnya` men
 `mitra` tidak masuk Follow Up (tetap Balas/Janji); Follow Up yang ringkasannya `selesai` tidak masuk; Follow Up yang sebenarnya utang
 tim (`teamOwed`: janji belum ditepati, atau `belumBooking.alasan` belum_dijawab/menunggu_tim) dipindah ke PROMISE bertanda
 `OWED_NOTE` di `note` oleh tick (`followUpOwedByTeam`), kecuali pesan agen terakhir meminta jawaban tamu; tanda itu membalikkannya
-ke FOLLOW_UP bila utangnya beres, dan sync malam tidak membalik baris bertanda. `upsertCandidate` tidak membuat/membuka item itu; `closeExcludedItems` (tick, sesudah
+ke FOLLOW_UP bila utangnya beres, dan sync malam tidak membalik baris bertanda.
+Audit Janji Admin (owner 2026-11-25): PROMISE yang ringkasannya `selesai` juga tidak masuk; tamu lama (`tamu_existing`) yang datanya
+sudah dicek (`bookingCheckedAt`) tetapi tanpa `bookingData` dihitung trip selesai, karena pencarian booking hanya melihat trip sejak
+awal bulan lalu (`buildDateRange`). `upsertCandidate` tidak membuat/membuka item itu; `closeExcludedItems` (tick, sesudah
 reconcile) menutup yang OPEN sebagai DONE `NOT_QUEUED` dengan alasan di `note`. SCHEDULED tidak disentuh. Pesan tanpa isi juga
 tidak mengubah FOLLOW_UP/PROMISE menjadi REPLY di reconcile (`CONTENT_MESSAGE_WHERE`).
 

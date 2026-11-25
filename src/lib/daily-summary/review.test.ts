@@ -375,6 +375,13 @@ describe('janji tim', () => {
   })
 })
 
+describe('janjiTim: yang bukan janji', () => {
+  it('prompt mengecualikan tawaran bersyarat, pernyataan kemampuan, arahan, dan yang sudah dilakukan', () => {
+    expect(REVIEW_SYSTEM_PROMPT).toContain('BUKAN janji: tawaran bersyarat')
+    expect(REVIEW_SYSTEM_PROMPT).toContain('tim dapat menyesuaikan detail setelah booking')
+  })
+})
+
 describe('perluBalas (pesan terakhir pelanggan menunggu balasan)', () => {
   it('prompt meminta perluBalas terpisah dari status', () => {
     expect(REVIEW_SYSTEM_PROMPT).toContain('"perluBalas":true|false')

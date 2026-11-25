@@ -14,6 +14,7 @@ const mockPrisma = prisma as unknown as DeepMockProxy<PrismaClient>
 const NOW = new Date('2026-11-25T05:00:00Z') // 12:00 WIB
 const conv = (o: { phone?: string | null; isTest?: boolean; end?: string; chatReview?: unknown; chatReviewAt?: Date; platform?: string; mail?: boolean } = {}) => ({
   isTest: o.isTest ?? false,
+  bookingCheckedAt: null as Date | null,
   chatReviewAt: o.chatReviewAt ?? null,
   mailAccountId: o.mail ? 'mb1' : null,
   channelIdentityId: o.platform ? 'ci1' : null,
@@ -69,12 +70,26 @@ describe('exclusionFor', () => {
     expect(await exclusionFor('c', 'REPLY', null, NOW)).toBeNull()
   })
 
-  it('nomor Indonesia keluar untuk semua jenis; percakapan uji tetap masuk', async () => {
+  it('nomor Indonesia keluar untuk semua jenis; percakapan uji (isTest) keluar juga', async () => {
     mockPrisma.conversation.findUnique.mockResolvedValue(conv({ phone: '6281234567890' }) as never)
     expect(await exclusionFor('c', 'REPLY', null, NOW)).toBe('NOMOR_INDONESIA')
     expect(await exclusionFor('c', 'PROMISE', null, NOW)).toBe('NOMOR_INDONESIA')
     mockPrisma.conversation.findUnique.mockResolvedValue(conv({ phone: '6281234567890', isTest: true }) as never)
-    expect(await exclusionFor('c', 'REPLY', null, NOW)).toBeNull()
+    expect(await exclusionFor('c', 'REPLY', null, NOW)).toBe('PERCAKAPAN_UJI')
+  })
+
+  it('tamu lama tanpa booking aktif (sudah dicek) = trip selesai; belum pernah dicek = tetap masuk', async () => {
+    const past = { ...conv({ chatReview: { jenisKontak: 'tamu_existing', status: 'perlu_tindakan' } }), bookingCheckedAt: NOW }
+    mockPrisma.conversation.findUnique.mockResolvedValue(past as never)
+    expect(await exclusionFor('c', 'PROMISE', null, NOW)).toBe('TRIP_SELESAI')
+    expect(await exclusionFor('c', 'FOLLOW_UP', null, NOW)).toBe('TRIP_SELESAI')
+    mockPrisma.conversation.findUnique.mockResolvedValue({ ...past, bookingCheckedAt: null } as never)
+    expect(await exclusionFor('c', 'PROMISE', null, NOW)).toBeNull()
+  })
+
+  it('Janji Admin yang AI nilai percakapannya selesai keluar', async () => {
+    mockPrisma.conversation.findUnique.mockResolvedValue(conv({ chatReview: { jenisKontak: 'calon_tamu', status: 'selesai' } }) as never)
+    expect(await exclusionFor('c', 'PROMISE', null, NOW)).toBe('PERCAKAPAN_SELESAI')
   })
 
   it('pesan tanpa isi: reaksi, stiker, dihapus, edit, unsupported, lampiran IG; foto/dokumen/teks tetap isi', async () => {
