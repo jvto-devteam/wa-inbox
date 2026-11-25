@@ -124,6 +124,11 @@ export function reviewSaysNoReply(chatReview: unknown, chatReviewAt: Date | null
  */
 export const ASKS_GUEST = /\?|\bconfirm|\blet (me|us) know\b|\bplease (advise|reply|tell)\b|\bkonfirmasi\b|\bkabari\b|\bmohon (info|dikabari|balas)/i
 
+/** `ASKS_GUEST` pada teks tanpa tautan: "?" di query string URL (…?utm=) bukan pertanyaan (audit 2026-11-25). */
+export function asksGuest(text: string): boolean {
+  return ASKS_GUEST.test(text.replace(/https?:\/\/\S+/g, ' '))
+}
+
 export async function promiseAwaitingGuest(conversationId: string, promiseAt: Date) {
   // Pesan agen terakhir sesudah janji; dihitung menunggu tamu hanya bila ia meminta jawaban (ASKS_GUEST).
   const question = await prisma.message.findFirst({
@@ -131,7 +136,7 @@ export async function promiseAwaitingGuest(conversationId: string, promiseAt: Da
     orderBy: { createdAt: 'desc' },
     select: { id: true, createdAt: true, content: true, type: true, direction: true, sentBy: true },
   })
-  if (!question || !ASKS_GUEST.test(question.content ?? '')) return null
+  if (!question || !asksGuest(question.content ?? '')) return null
   const answered = await prisma.message.findFirst({
     where: { conversationId, direction: 'INBOUND', ...CONTENT_MESSAGE_WHERE, createdAt: { gt: question.createdAt } },
     select: { id: true },
