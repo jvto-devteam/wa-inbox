@@ -1,7 +1,8 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { sampleReport, stubReportFetch } from './__fixtures__/report'
+import { stubSummaryFetch } from './__fixtures__/summary'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { NewShell } from './Shell'
 import { AntreanView } from './views/AntreanView'
@@ -25,9 +26,9 @@ const show = (el: React.ReactNode) => render(<NewShell>{el}</NewShell>)
 
 describe('tata letak berbeda per halaman /new', () => {
   // Jumbotron biru hanya untuk halaman ringkasan (Dashboard, Laporan); lainnya punya bentuk sendiri.
+  // Ringkasan (data asli, tanpa jumbotron) diperiksa di test Ringkasan di bawah.
   it.each([
     ['Antrean', <AntreanView key="a" />, '.pg-urgent', false],
-    ['Ringkasan', <RingkasanView key="r" />, '#v-ringkasan .pg-urgent', false],
     ['Laporan', <LaporanView key="l" />, '.db-hero', true],
     ['Inbox', <InboxView key="i" />, '.inbox', false],
   ])('%s', (_n, el, signature, hero) => {
@@ -44,16 +45,42 @@ describe('tata letak berbeda per halaman /new', () => {
     expect(document.getElementById('a-list')?.textContent).toContain('Cek mutasi pembayaran')
   })
 
-  it('Ringkasan: sorotan komplain di atas, sebaran jenis menyaring poin, tombol Per percakapan', () => {
+  it('Ringkasan (data asli): sorotan komplain di atas, sebaran jenis menyaring poin, tombol Per percakapan', async () => {
+    const fn = stubSummaryFetch()
     show(<RingkasanView />)
-    expect(document.querySelector('.pg-urgent')?.textContent).toMatch(/komplain.*Lukas B\./)
+    await waitFor(() => expect(document.querySelector('#v-ringkasan .pg-urgent')?.textContent).toMatch(/komplain.*Lukas B\./))
+    expect(document.querySelector('.db-hero')).toBeNull()
+    expect(document.querySelector('.pg-urgent a.btn')?.getAttribute('href')).toBe('/inbox?conversation=c2&message=m7')
+    expect(document.querySelector('.pg-urgent .nx')?.textContent).toContain('1 janji tim belum ditepati')
+    expect(document.querySelector('.r-meta')?.textContent).toMatch(/^9 percakapan aktif · dibuat 00[.:]04$/)
+    expect(document.querySelectorAll('#r-pts .item')).toHaveLength(3)
     fireEvent.click(within(document.getElementById('r-chips')!).getByText('komplain').closest('button')!)
     const pts = document.querySelectorAll('#r-pts .item')
     expect(pts).toHaveLength(1)
     expect(pts[0].textContent).toContain('Lukas B.')
     fireEvent.click(screen.getByText(/^Per percakapan/))
-    expect(document.querySelectorAll('#r-chats details').length).toBeGreaterThan(5)
+    expect(document.querySelectorAll('#r-chats details')).toHaveLength(2)
     expect(document.getElementById('r-pts')).toBeNull()
+
+    // ganti hari → memuat tanggal itu
+    fireEvent.change(document.getElementById('r-dsel')!, { target: { value: '2026-11-23' } })
+    await waitFor(() => expect(fn.mock.calls.some(([u]) => String(u) === '/api/daily-summary?date=2026-11-23')).toBe(true))
+  })
+
+  it('Ringkasan: admin membuat ulang lewat POST generate; non-admin tanpa tombol', async () => {
+    const fn = stubSummaryFetch()
+    const { unmount } = show(<RingkasanView />)
+    const btn = await screen.findByText('Buat ulang', { selector: '.r-regen' })
+    fireEvent.click(btn)
+    await waitFor(() => expect(fn.mock.calls.some(([u, i]) => String(u) === '/api/daily-summary/generate' && (i as RequestInit | undefined)?.method === 'POST' && (i as RequestInit).body === JSON.stringify({ date: '2026-11-24' }))).toBe(true))
+    unmount()
+
+    stubSummaryFetch(undefined, 'AGENT')
+    show(<RingkasanView />)
+    await waitFor(() => expect(document.querySelector('.pg-urgent')).not.toBeNull())
+    await act(async () => {})
+    expect(document.querySelector('.r-regen')).toBeNull()
+    expect(document.querySelector('.rfab')).toBeNull()
   })
 
   it('Laporan: lead dikelompokkan, yang menunggu balasan kita lebih dulu', async () => {
