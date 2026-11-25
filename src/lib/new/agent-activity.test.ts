@@ -1,8 +1,26 @@
 import { describe, expect, it } from 'vitest'
-import { TEMPLATE_AGENT, fromEvent, fromJob, fromRun, fromSummary, sortActivities } from './agent-activity'
+import { TEMPLATE_AGENT, fromEvent, fromJob, fromReview, fromRun, fromSummary, sortActivities } from './agent-activity'
 import { SYSTEM_TEMPLATE_SEEDS } from '@/lib/system-templates/seed-data'
 
 const at = new Date('2026-11-24T03:00:00Z')
+
+describe('poin penting diperbarui', () => {
+  const base = { id: 'c', chatReviewAt: at, open: true }
+  const pts = [{ teks: 'Minta jemput 06:30', messageId: 'm1', jenis: 'jemput' }, 'Poin lama tanpa jenis']
+
+  it('bukti = isi poin penting; jumlah sebelumnya disebut bila berubah; tanpa Masukan', () => {
+    const a = fromReview({ ...base, points: pts, prev: 4 }, 'Vytas')!
+    expect(a).toMatchObject({ agent: 'poin', status: 'ok', contact: 'Vytas', input: '', output: '2 poin penting (sebelumnya 4) · masih perlu tindakan' })
+    expect(a.points).toEqual([{ teks: 'Minta jemput 06:30', jenis: 'jemput' }, { teks: 'Poin lama tanpa jenis', jenis: null }])
+    expect(fromReview({ ...base, points: pts, prev: 2 }, null)!.output).toBe('2 poin penting · masih perlu tindakan')
+  })
+
+  it('0 poin disembunyikan bila sebelumnya juga 0 atau belum pernah diringkas; 4 → 0 tetap tampil', () => {
+    expect(fromReview({ ...base, points: [], prev: 0 }, null)).toBeNull()
+    expect(fromReview({ ...base, points: [], prev: null }, null)).toBeNull()
+    expect(fromReview({ ...base, points: [], prev: 4, open: false }, null)?.output).toBe('0 poin penting (sebelumnya 4) · selesai')
+  })
+})
 
 describe('riwayat agent dari log yang ada', () => {
   it('keputusan bot -> agent Balas pesan; SKIPPED/SIMULATED diabaikan', () => {

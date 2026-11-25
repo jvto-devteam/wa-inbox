@@ -29,6 +29,8 @@ export interface Activity {
   chatNote?: string
   /** Rujukan booking dari kunci idempotensi pengirim (legacy: "<template>:<booking>:<tanggal>"). */
   bookingRef?: string
+  /** Bukti Update poin penting: isi poin hasil pembaruan, dengan jenisnya bila ada. */
+  points?: { teks: string; jenis: string | null }[]
 }
 
 /**
@@ -156,12 +158,24 @@ export function fromEvent(e: EventRow, contact: string | null, field: string | u
   }
 }
 
-export function fromReview(c: { id: string; chatReviewAt: Date; points: number; open: boolean }, contact: string | null): Activity {
+/**
+ * Pembaruan poin penting. `prev` = jumlah poin di ringkasan harian sebelumnya (null = belum pernah).
+ * 0 poin tanpa poin sebelumnya bukan pembaruan yang berarti, jadi tidak ditampilkan; 4 → 0 tetap tampil.
+ * Buktinya isi poin itu sendiri, bukan "Masukan" (yang selalu sama: transkrip chat).
+ */
+export function fromReview(c: { id: string; chatReviewAt: Date; points: unknown[]; prev: number | null; open: boolean }, contact: string | null): Activity | null {
+  const n = c.points.length
+  if (n === 0 && !c.prev) return null
+  const points = c.points.flatMap((p) => {
+    if (typeof p === 'string') return [{ teks: p, jenis: null }]
+    const o = (p ?? {}) as { teks?: unknown; jenis?: unknown }
+    return typeof o.teks === 'string' ? [{ teks: o.teks, jenis: typeof o.jenis === 'string' ? o.jenis : null }] : []
+  })
   return {
     id: 'rev:' + c.id + ':' + c.chatReviewAt.getTime(), at: c.chatReviewAt.toISOString(), agent: 'poin', status: 'ok',
-    title: 'Poin penting diperbarui', input: 'Transkrip chat terbaru',
-    output: c.points + ' poin penting' + (c.open ? ' · masih perlu tindakan' : ' · selesai'),
-    conversationId: c.id, contact,
+    title: 'Poin penting diperbarui', input: '',
+    output: n + ' poin penting' + (c.prev !== null && c.prev !== n ? ' (sebelumnya ' + c.prev + ')' : '') + (c.open ? ' · masih perlu tindakan' : ' · selesai'),
+    conversationId: c.id, contact, points,
   }
 }
 
