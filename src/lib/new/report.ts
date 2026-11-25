@@ -16,6 +16,8 @@ export { LEAD_BLOCKER_TEXT, type LeadBlocker }
 
 export interface ReportRow {
   id: string
+  /** Kontak percakapan; dipakai tombol Ingatkan (reminder kontak). */
+  contactId?: string | null
   name: string | null
   phone: string | null
   stage: string
@@ -37,6 +39,7 @@ export interface ReportRow {
 /** Calon tamu dari inquiry periode ini yang belum booking, dengan alasan dan rekomendasi follow-up. */
 export interface ReportLead {
   conversationId: string
+  contactId: string | null
   name: string
   phoneTail: string
   firstChatDay: string
@@ -135,6 +138,7 @@ function toLead(c: Classified, today: string): ReportLead {
   const lastFrom = r.lastDir === 'INBOUND' ? 'tamu' : r.lastDir === 'OUTBOUND' ? 'tim' : null
   const base = {
     conversationId: r.id,
+    contactId: r.contactId ?? null,
     name: r.name || '(tanpa nama)',
     phoneTail: phoneTail(r.phone),
     firstChatDay: c.firstDay,

@@ -78,7 +78,8 @@ export function SegBar({ items, active, onPick, id, total }: { items: SegItem[];
 }
 
 /** Grafik kolom berpasangan inquiry vs booking per minggu, dengan tooltip hover. */
-export function TrendChart({ data, onPick }: { data: WeekPoint[]; onPick?: () => void }) {
+/** `onPick` menerima minggu yang diklik (Laporan membuka periode minggu itu). */
+export function TrendChart({ data, onPick }: { data: WeekPoint[]; onPick?: (w: WeekPoint) => void }) {
   const [hov, setHov] = useState<number | null>(null)
   const max = Math.max(1, ...data.map((w) => w.inquiries))
   const top = Math.ceil(max / 5) * 5 || 5
@@ -95,7 +96,7 @@ export function TrendChart({ data, onPick }: { data: WeekPoint[]; onPick?: () =>
         {data.map((w, i) => {
           const show = i === lastI || i === hov
           return (
-            <div key={w.from} className={'db-col' + (hov === i ? ' on' : '')} onMouseEnter={() => setHov(i)} onMouseLeave={() => setHov(null)} onClick={onPick} style={{ cursor: 'pointer' }}>
+            <div key={w.from} className={'db-col' + (hov === i ? ' on' : '')} onMouseEnter={() => setHov(i)} onMouseLeave={() => setHov(null)} onClick={() => onPick?.(w)} style={{ cursor: 'pointer' }}>
               <div className="bars">
                 <span style={{ height: (w.inquiries / top) * 100 + '%', background: 'var(--s1)' }}>{show && <em>{w.inquiries}</em>}</span>
                 <span style={{ height: (w.booked / top) * 100 + '%', background: 'var(--s3)' }}>{show && <em>{w.booked}</em>}</span>
