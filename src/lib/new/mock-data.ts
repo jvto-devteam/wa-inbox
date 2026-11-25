@@ -1,16 +1,9 @@
 // DATA CONTOH dari artifact "New WA Inbox". Nama tamu, kode booking, dan isi chat fiktif.
 // Jangan diisi data pelanggan sungguhan.
 import type {
-  AgentEvent, AgentKey, AgentMode, AtItem, AtKey, ChannelKey, Contact, Conv, DaySummary,
+  AgentEvent, AgentKey, AgentMode, AtItem, AtKey, Conv,
   Knowledge, PointKind, Sched, State, Tone,
 } from './types'
-
-export const CH: Record<ChannelKey, [string, string]> = {
-  wa: ['WhatsApp', '--ch-wa'],
-  kl: ['Klook', '--ch-klook'],
-  ml: ['Email', '--ch-mail'],
-  ig: ['Instagram', '--ch-ig'],
-}
 
 export const AGS: Record<AgentKey, [string, string]> = {
   balas: ['Balas pesan', '--ch-wa'],
@@ -67,12 +60,10 @@ export const KC: Record<PointKind, Tone> = {
 }
 export const POINT_KINDS = Object.keys(KC) as PointKind[]
 
-export const IFL = ['Semua', 'Belum dibalas', 'Bot', 'Saya', 'Email']
 export const FUT = 'Follow-up agent' as const
 export const AT_KEYS: AtKey[] = ['Balas', 'Tindak lanjut', 'Janji tim', 'Reminder']
 export const ALBL: Partial<Record<AtKey, string>> = { 'Tindak lanjut': 'Follow Up', 'Janji tim': 'Janji Admin' }
 /** Urutan hari untuk jadwal follow-up (tunda = geser ke hari berikutnya). */
-export const SD = ['Hari ini', 'Besok', '2 hari lagi', '3 hari lagi']
 
 const CV: Conv[] = [
   {
@@ -217,53 +208,6 @@ const SJ: Sched[] = [
   { d: '2 hari lagi', t: '08:00', a: 'reminder', c: 'Mei H.', ti: 'Tanyakan data jemput (H-5)' },
   { d: 'Hari ini', t: '17:00', a: 'lead', c: 'Priya S.', ti: 'Follow-up lead: tanya harga 4D Bromo + Ijen, 3 hari tanpa balasan' },
   { d: '2 hari lagi', t: '10:00', a: 'lead', c: 'Tom W.', ti: 'Follow-up lead kedua bila belum membalas' },
-]
-
-export const RD: Record<string, DaySummary> = {
-  'Hari ini': {
-    t: 'Dibuat 00:00 · diperbarui 10:15', a: 9, j: 2,
-    p: [
-      ['komplain', 'Lukas B.', 'Jemput hari kedua terlambat 30 menit; tamu meminta kompensasi'],
-      ['jemput', 'Sarah M.', 'Minta jemput 06:30; tamu memperbarui sendiri lewat portal'],
-      ['kebutuhan', 'Sarah M.', 'Kaos 4 buah: 2× M, 2× L'],
-      ['bayar', 'Daniel P.', 'Bukti transfer dikirim, mutasi belum dicek'],
-      ['keputusan', 'Noor V.', 'Menimbang menambah Ijen, menunggu harga dari tim'],
-      ['lokasi', 'Jonas O.', 'Titik kumpul hari pertama di lobi hotel, 07:00'],
-      ['trip', 'Mei H.', 'Menanyakan status Ijen hari Jumat'],
-    ],
-  },
-  Kemarin: {
-    t: 'Dibuat 00:00 · tidak diperbarui lagi', a: 12, j: 1,
-    p: [
-      ['bayar', 'Elena C.', 'Pelunasan dijanjikan sebelum keberangkatan'],
-      ['jemput', 'Kenji T.', 'Jemput di hotel Surabaya, 07:00, sudah dikonfirmasi'],
-      ['kebutuhan', 'Ayu R.', 'Meminta kamar hotel tanpa asap rokok'],
-      ['trip', 'Lukas B.', 'Memastikan itinerary hari pertama'],
-      ['keputusan', 'Mei H.', 'Memilih paket 4 hari dibanding 3 hari'],
-    ],
-  },
-  '2 hari lalu': {
-    t: 'Dibuat 00:00 · tidak diperbarui lagi', a: 8, j: 0,
-    p: [
-      ['keputusan', 'Noor V.', 'Memilih menambah Madakaripura'],
-      ['bayar', 'Sarah M.', 'DP 30% diterima'],
-    ],
-  },
-}
-
-export const KT: Contact[] = [
-  { n: 'Sarah M.', ch: 'WhatsApp', lab: 'Tamu', kode: 'JVTO-xxxx', last: '2 menit lalu', ringkas: '4 pax, jemput bandara SUB' },
-  { n: 'Kenji T.', ch: 'Klook', lab: 'Tamu', kode: 'KLOOK-xxxx', last: '9 menit lalu', ringkas: '6 pax, hotel Surabaya' },
-  { n: 'Lukas B.', ch: 'WhatsApp', lab: 'Tamu', kode: 'JVTO-xxxx', last: '14 menit lalu', ringkas: '2 pax' },
-  { n: 'Ayu R.', ch: 'Instagram', lab: 'Calon tamu', kode: '—', last: '31 menit lalu', ringkas: 'Belum ada booking' },
-  { n: 'Mei H.', ch: 'WhatsApp', lab: 'Tamu', kode: 'JVTO-xxxx', last: '1 jam lalu', ringkas: '3 pax' },
-  { n: 'Daniel P.', ch: 'Email', lab: 'Tamu', kode: 'JVTO-xxxx', last: '2 jam lalu', ringkas: 'Menunggu pembayaran' },
-  { n: 'Vendor Transport Bali', ch: 'WhatsApp', lab: 'Mitra', kode: '—', last: 'kemarin', ringkas: 'Transport Bali' },
-  { n: 'Noor V.', ch: 'WhatsApp', lab: 'Tamu', kode: 'JVTO-xxxx', last: '3 jam lalu', ringkas: '2 pax' },
-  { n: 'Elena C.', ch: 'WhatsApp', lab: 'Tamu', kode: 'JVTO-xxxx', last: '5 jam lalu', ringkas: '4 pax' },
-  { n: 'Jonas O.', ch: 'Klook', lab: 'Tamu', kode: 'KLOOK-xxxx', last: '4 jam lalu', ringkas: '3 pax' },
-  { n: 'Priya S.', ch: 'WhatsApp', lab: 'Calon tamu', kode: '—', last: '3 hari lalu', ringkas: 'Tanya paket 4D Bromo + Ijen' },
-  { n: 'Tom W.', ch: 'Instagram', lab: 'Calon tamu', kode: '—', last: '2 hari lalu', ringkas: 'Tanya Bromo sunrise' },
 ]
 
 const KN: Knowledge[] = [
