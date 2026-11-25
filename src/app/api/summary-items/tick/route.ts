@@ -112,7 +112,8 @@ async function tick(): Promise<NextResponse> {
   await pushUnnotifiedChanges().catch(() => undefined)
   // Salinan jadwal reminder WA cron legacy dari new-backoffice (tab "Jadwal agent" di Antrean). Satu panggilan HTTP
   // (timeout 15 s); gagal = salinan lama dibiarkan. Tidak pernah melempar.
-  await syncAgentSchedule().catch(() => undefined)
+  const sched = await syncAgentSchedule().catch(() => null)
+  if (sched && sched.status !== 'ok') console.warn('POST /api/summary-items/tick: salinan jadwal agent tidak diperbarui', JSON.stringify(sched))
 
   try {
     const now = new Date()
