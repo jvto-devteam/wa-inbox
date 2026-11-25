@@ -25,7 +25,7 @@ import { findOurReply } from './automated'
 
 export type ExclusionReason =
   | 'BUKAN_WHATSAPP' | 'NOMOR_INDONESIA' | 'HANYA_REAKSI' | 'TIDAK_PERLU_BALAS' | 'TRIP_SELESAI'
-  | 'BUKAN_TAMU' | 'MITRA_BUKAN_FOLLOW_UP' | 'PERCAKAPAN_SELESAI' | 'PERCAKAPAN_UJI'
+  | 'BUKAN_TAMU' | 'MITRA_BUKAN_FOLLOW_UP' | 'PERCAKAPAN_SELESAI' | 'PERCAKAPAN_UJI' | 'PILIH_OPERATOR_LAIN'
 
 export const EXCLUSION_NOTE: Record<ExclusionReason, string> = {
   BUKAN_WHATSAPP: 'Bukan chat WhatsApp',
@@ -37,6 +37,7 @@ export const EXCLUSION_NOTE: Record<ExclusionReason, string> = {
   MITRA_BUKAN_FOLLOW_UP: 'Mitra: bukan follow-up lead',
   PERCAKAPAN_SELESAI: 'Menurut AI percakapan sudah selesai',
   PERCAKAPAN_UJI: 'Percakapan uji',
+  PILIH_OPERATOR_LAIN: 'Tamu memilih operator lain',
 }
 
 /** Penanda (di `note` item OPEN) bahwa Janji tim ini pindahan dari Follow Up karena tim berutang; dibalik bila tidak lagi. */
@@ -190,10 +191,11 @@ export async function exclusionFor(conversationId: string, kind: string, review:
   if (!whatsapp) return 'BUKAN_WHATSAPP'
   if (conv.isTest) return 'PERCAKAPAN_UJI'
   if (blockedByIndonesianGate({ isTest: conv.isTest, phone: conv.contact?.phone ?? null })) return 'NOMOR_INDONESIA'
-  const latest = (conv.chatReview ?? {}) as { jenisKontak?: unknown; status?: unknown }
+  const latest = (conv.chatReview ?? {}) as { jenisKontak?: unknown; status?: unknown; belumBooking?: { alasan?: unknown } }
   if (latest.jenisKontak === 'lainnya') return 'BUKAN_TAMU'
   if (kind === 'FOLLOW_UP' && latest.jenisKontak === 'mitra') return 'MITRA_BUKAN_FOLLOW_UP'
   if ((kind === 'FOLLOW_UP' || kind === 'PROMISE') && latest.status === 'selesai') return 'PERCAKAPAN_SELESAI'
+  if ((kind === 'FOLLOW_UP' || kind === 'PROMISE') && latest.belumBooking?.alasan === 'pilih_lain') return 'PILIH_OPERATOR_LAIN'
   if (kind === 'REPLY') {
     const run = await unansweredRun(conversationId)
     if (contentlessRun(run)) return 'HANYA_REAKSI'

@@ -380,6 +380,16 @@ describe('janjiTim: yang bukan janji', () => {
     expect(REVIEW_SYSTEM_PROMPT).toContain('BUKAN janji: tawaran bersyarat')
     expect(REVIEW_SYSTEM_PROMPT).toContain('tim dapat menyesuaikan detail setelah booking')
   })
+
+  it('pernyataan kemampuan dan tawaran bersyarat dibuang saat dibaca; janji nyata tetap', () => {
+    const r = parseReview(JSON.stringify({ ...valid, janjiTim: [
+      { teks: 'Tim dapat menyesuaikan detail setelah tamu booking', terpenuhi: false },
+      { teks: 'Bisa mengatur trip Mt Raung untuk tahun depan.', terpenuhi: false },
+      { teks: 'Akan membantu mengatur tour 4D3N bila pelanggan memutuskan', terpenuhi: false },
+      { teks: 'Mengirim harga transport ke Lovina untuk 3 orang.', terpenuhi: false },
+    ] }))
+    expect(r?.janjiTim.map((j) => (typeof j === 'string' ? j : j.teks))).toEqual(['Mengirim harga transport ke Lovina untuk 3 orang.'])
+  })
 })
 
 describe('perluBalas (pesan terakhir pelanggan menunggu balasan)', () => {
