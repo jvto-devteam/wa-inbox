@@ -18,6 +18,31 @@ Kode sumber: `src/lib/summary-items/exclusion.ts` (penyaring), `src/lib/summary-
 | **Reminder** | Pengingat yang dijadwalkan tim | Hasil tombol Ingatkan, atau "Ingatkan follow-up" di Laporan |
 | **Jadwal agent** | Reminder WhatsApp yang akan dikirim sistem booking | Salinan jadwal backoffice, hanya dibaca |
 
+## Kriteria layak (standar)
+
+Sebuah chat **layak** masuk antrean hanya bila memenuhi SEMUA kriteria jenisnya. Setiap kriteria dijaga oleh aturan
+AQ di bawah; yang gagal ditutup otomatis setiap 5 menit.
+
+| Antrean | Layak bila | Dijaga oleh |
+|---|---|---|
+| Semua | Chat WhatsApp, nomor luar negeri, bukan percakapan uji, kontak tamu atau mitra | AQ-01, AQ-02, AQ-03, AQ-04 |
+| **Balas** | Pesan berisi terakhir datang dari tamu, dan menurut AI pesan itu menunggu jawaban tim | AQ-10, AQ-11, AQ-12 |
+| **Follow Up** | Calon tamu (bukan mitra). Pesan terakhir dari tim, berisi penawaran atau pertanyaan. Tamu diam. Tim tidak sedang berutang. Percakapan belum selesai. Tamu tidak memilih operator lain atau open trip. Tanggal mulai trip belum lewat (atau belum diketahui). | AQ-20 s.d. AQ-25 |
+| **Janji Admin** | Ada janji tertulis dari ADMIN yang belum ditepati, atau permintaan tamu yang belum dijawab tuntas. Janji itu tidak bersyarat pada langkah tamu. Rentetan balasan admin sesudahnya tidak bertanya balik ke tamu. Tanggal mulai trip belum lewat (atau belum diketahui). Percakapan belum selesai. | AQ-21 s.d. AQ-24, AQ-30 s.d. AQ-34 |
+
+## Audit
+
+`npm run audit:antrean` (skrip `scripts/audit-antrean.ts`, hanya membaca) menilai setiap item terbuka:
+**LAYAK**, **TIDAK LAYAK** (melanggar aturan AQ; seharusnya nol karena tick menutupnya, keluar dengan kode 1 bila ada),
+atau **PERLU DICEK** bila data AI belum cukup untuk memutuskan:
+
+| Tanda | Arti |
+|---|---|
+| `TANPA_RINGKASAN` | Percakapan belum pernah diringkas AI |
+| `TANGGAL_TRIP_BELUM_DIKETAHUI` | Calon tamu belum menyebut kapan trip-nya; aturan AQ-24 belum bisa dipakai |
+| `HANYA_DIBALAS_BOT` | Belum pernah ada balasan admin di percakapan ini |
+| `JANJI_TIDAK_TERCATAT_DI_RINGKASAN` | Kartu Janji Admin yang ringkasan terbarunya tidak lagi mencatat utang tim |
+
 ## Bahan penilaian
 
 Penilaian memakai **ringkasan AI terbaru** percakapan itu. Ringkasan dibuat ulang setiap ada pesan baru, setiap pukul
@@ -53,7 +78,7 @@ status percakapan, jenis kontak, janji tim, alasan belum booking, `perluBalas`, 
 | AQ-21 | Percakapan yang menurut AI sudah selesai tidak masuk Follow Up maupun Janji Admin. | `PERCAKAPAN_SELESAI` |
 | AQ-22 | Tamu yang memilih operator lain, atau calon tamu yang mencari open trip/group tour (JVTO hanya tur privat), tidak masuk Follow Up maupun Janji Admin. | `PILIH_OPERATOR_LAIN` (label profil `open_trip`) |
 | AQ-23 | Tamu yang trip-nya sudah selesai tidak masuk Follow Up maupun Janji Admin, kecuali AI melihat potensi booking baru. Tamu lama yang datanya sudah dicek tapi tanpa booking aktif juga dihitung trip selesai, karena pencarian booking hanya melihat trip sejak awal bulan lalu. | `TRIP_SELESAI` |
-| AQ-24 | Calon tamu tanpa booking yang tanggal trip mintaannya sudah lewat tidak masuk Follow Up maupun Janji Admin. Bila tamu hanya menyebut bulan, batasnya akhir bulan itu. Bila tahun tidak disebut, tanggal tidak pernah dianggap sebelum percakapan dimulai (tahunnya dimajukan). | `TANGGAL_TRIP_LEWAT` (`tanggalTripSelesai`, `tripEndDay`) |
+| AQ-24 | Calon tamu tanpa booking yang tanggal MULAI trip mintaannya sudah lewat tidak masuk Follow Up maupun Janji Admin (lead yang belum booking sampai trip mulai sudah tidak bisa dikejar); bila tanggal mulai tidak diketahui, dipakai tanggal selesai. Tanggal relatif ("besok", "next 3 days", "this weekend", "sedang menginap di lokasi") dihitung dari tanggal pesannya. Bila tamu hanya menyebut bulan, batasnya akhir bulan itu. Bila tahun tidak disebut, tanggal tidak pernah dianggap sebelum percakapan dimulai (tahunnya dimajukan). | `TANGGAL_TRIP_LEWAT` (`tanggalTripMulai`, `tanggalTripSelesai`, `tripStartDay`, `tripEndDay`) |
 | AQ-25 | Follow Up yang ternyata tim masih berutang (janji belum ditepati, pertanyaan tamu belum dijawab tuntas, info yang dijanjikan belum dikirim) dipindah ke Janji Admin, kecuali pesan admin terakhir meminta jawaban tamu. Bila utangnya beres, ia kembali ke Follow Up. | `followUpOwedByTeam`, catatan "Pindahan Follow Up: tim masih berutang" |
 
 ## Janji Admin
@@ -61,9 +86,9 @@ status percakapan, jenis kontak, janji tim, alasan belum booking, `perluBalas`, 
 | ID | Aturan | Kode alasan |
 |---|---|---|
 | AQ-30 | Hanya janji yang diucapkan admin (manusia). Ucapan bot seperti "let me check with our team" bukan janji tim. | `botIds` di `parseReview` |
-| AQ-31 | Bukan janji: tawaran bersyarat ("kalau mau…", "bila…"), pernyataan kemampuan ("tim dapat…", "bisa…"), arahan ke tamu ("silakan booking lewat link"), dan sesuatu yang sudah dilakukan di pesan yang sama. | `notAPromise` |
+| AQ-31 | Bukan janji: tawaran bersyarat ("kalau mau…", "bila…", "setelah tamu/tanggal…"), pernyataan kemampuan ("tim dapat…", "bisa…"), arahan ke tamu ("silakan booking lewat link"), dan sesuatu yang sudah dilakukan di pesan yang sama. | `notAPromise` |
 | AQ-32 | Admin yang menulis "here is the price" / "berikut harganya" disertai gambar atau dokumen dianggap sudah mengirimnya: janjinya terpenuhi. | penanda `[image]` di transkrip |
-| AQ-33 | Janji yang sudah ditanggapi admin dengan pertanyaan atau permintaan konfirmasi ke tamu ("Just to confirm…", "please let me know", "mohon konfirmasi"), dan tamu belum menjawab, pindah ke Follow Up. Pesan janji itu sendiri boleh jadi pertanyaannya. Tanda tanya di dalam tautan tidak dihitung. | `promiseAwaitingGuest`, `ASKS_GUEST` |
+| AQ-33 | Janji yang sudah ditanggapi admin dengan pertanyaan atau permintaan konfirmasi ke tamu ("Just to confirm…", "please let me know", "mohon konfirmasi"), dan tamu belum menjawab, pindah ke Follow Up. Yang dibaca adalah seluruh rentetan balasan admin sesudah pesan terakhir tamu, bukan hanya pesan terakhirnya; pesan janji itu sendiri boleh jadi pertanyaannya. Tanda tanya di dalam tautan tidak dihitung. | `promiseAwaitingGuest`, `ASKS_GUEST` |
 | AQ-34 | Balasan admin tanpa pertanyaan ("refund sedang kami proses") tidak menutup janji. Janji tertutup bila AI menilai semua janjinya ditepati, atau tim menekan Lepas. | `PROMISE_KEPT` |
 
 ## Ringkasan malam

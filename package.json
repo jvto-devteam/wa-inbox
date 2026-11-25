@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "audit:antrean": "tsx --env-file=.env scripts/audit-antrean.ts",
     "dev": "next dev",
     "build": "next build",
     "start": "next start",

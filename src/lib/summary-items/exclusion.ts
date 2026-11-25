@@ -79,7 +79,15 @@ export const CONTENT_MESSAGE_WHERE = {
  * dipercaya apa adanya (Pro Tech: "13 Nov 2026" ditulis tamu pada 17 Nov 2026 memang sudah lewat).
  */
 export function tripEndDay(review: unknown, conversationCreatedAt: Date): string | null {
-  const v = (review as { tanggalTripSelesai?: unknown } | null)?.tanggalTripSelesai
+  return correctedDay((review as { tanggalTripSelesai?: unknown } | null)?.tanggalTripSelesai, conversationCreatedAt)
+}
+
+/** Hari pertama trip mintaan (`tanggalTripMulai`), tahunnya dibetulkan seperti `tripEndDay`. */
+export function tripStartDay(review: unknown, conversationCreatedAt: Date): string | null {
+  return correctedDay((review as { tanggalTripMulai?: unknown } | null)?.tanggalTripMulai, conversationCreatedAt)
+}
+
+function correctedDay(v: unknown, conversationCreatedAt: Date): string | null {
   if (typeof v !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(v)) return null
   const start = jakartaDay(conversationCreatedAt)
   const startYear = Number(start.slice(0, 4))
@@ -153,19 +161,22 @@ export function asksGuest(text: string): boolean {
 }
 
 export async function promiseAwaitingGuest(conversationId: string, promiseAt: Date) {
-  // Pesan agen terakhir sesudah janji; dihitung menunggu tamu hanya bila ia meminta jawaban (ASKS_GUEST).
-  const question = await prisma.message.findFirst({
-    // gte: pesan janji itu sendiri bisa bertanya ("sebelum quotation final, hotel mau termasuk?") -- bola di tamu.
-    where: { conversationId, direction: 'OUTBOUND', sentBy: 'AGENT', createdAt: { gte: promiseAt }, content: { not: null } },
+  // Rentetan balasan agen SESUDAH pesan berisi terakhir tamu (dan tidak sebelum janji): bila salah satunya meminta jawaban,
+  // bola di tamu. Agen sering membalas dalam beberapa pesan, dan pertanyaannya tidak selalu yang terakhir (audit 2026-11-25,
+  // Bilel). gte pada janji: pesan janji itu sendiri boleh jadi pertanyaannya.
+  const lastGuest = await prisma.message.findFirst({
+    where: { conversationId, direction: 'INBOUND', ...CONTENT_MESSAGE_WHERE },
     orderBy: { createdAt: 'desc' },
+    select: { createdAt: true },
+  })
+  const since = lastGuest && lastGuest.createdAt >= promiseAt ? { gt: lastGuest.createdAt } : { gte: promiseAt }
+  const burst = await prisma.message.findMany({
+    where: { conversationId, direction: 'OUTBOUND', sentBy: 'AGENT', createdAt: since, content: { not: null } },
+    orderBy: { createdAt: 'desc' },
+    take: 20,
     select: { id: true, createdAt: true, content: true, type: true, direction: true, sentBy: true },
   })
-  if (!question || !asksGuest(question.content ?? '')) return null
-  const answered = await prisma.message.findFirst({
-    where: { conversationId, direction: 'INBOUND', ...CONTENT_MESSAGE_WHERE, createdAt: { gt: question.createdAt } },
-    select: { id: true },
-  })
-  return answered ? null : question
+  return burst.find((m) => asksGuest(m.content ?? '')) ?? null
 }
 
 const clipSnippet = (t: string) => (t.trim().length > 200 ? t.trim().slice(0, 199) + '…' : t.trim())
@@ -220,8 +231,9 @@ export async function exclusionFor(conversationId: string, kind: string, review:
   if ((kind === 'FOLLOW_UP' || kind === 'PROMISE') && (latest.belumBooking?.alasan === 'pilih_lain' || seeksOpenTrip)) return 'PILIH_OPERATOR_LAIN'
   // Lead tanpa booking yang tanggal trip yang dimintanya sudah lewat: tidak ada lagi yang bisa ditindaklanjuti.
   if (kind === 'FOLLOW_UP' || kind === 'PROMISE') {
-    const end = conv.bookingData ? null : tripEndDay(conv.chatReview, conv.createdAt)
-    if (end && end < jakartaDay(now)) return 'TANGGAL_TRIP_LEWAT'
+    // Hari MULAI menentukan (lead yang belum booking sampai trip mulai sudah tidak bisa dikejar); tanpa itu, hari selesai.
+    const day = conv.bookingData ? null : (tripStartDay(conv.chatReview, conv.createdAt) ?? tripEndDay(conv.chatReview, conv.createdAt))
+    if (day && day < jakartaDay(now)) return 'TANGGAL_TRIP_LEWAT'
   }
   if (kind === 'REPLY') {
     const run = await unansweredRun(conversationId)
