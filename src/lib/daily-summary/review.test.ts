@@ -150,6 +150,7 @@ describe('poin penting per butir', () => {
       { jenis: 'kebutuhan', teks: 'Twin room' },
     ])
     expect(REVIEW_SYSTEM_PROMPT).toContain('Setiap poin WAJIB diberi "penting": true HANYA bila')
+    expect(REVIEW_SYSTEM_PROMPT).toContain('tetap true walau sudah dicatat, selama trip belum selesai')
   })
 })
 
