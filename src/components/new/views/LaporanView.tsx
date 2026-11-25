@@ -49,7 +49,7 @@ export function LaporanView() {
         }
         kpiId="l-hk"
         kpis={[
-          { label: 'Inquiry baru', value: R ? R.inquiries : '…', detail: 'chat WhatsApp pertama', visual: R ? <Spark values={R.trend.map((w) => w.inquiries)} /> : undefined, onClick: () => st.flash('#l-trend') },
+          { label: 'Inquiry baru', value: R ? R.inquiries : '…', detail: 'chat WhatsApp nomor luar negeri', visual: R ? <Spark values={R.trend.map((w) => w.inquiries)} /> : undefined, onClick: () => st.flash('#l-trend') },
           { label: 'Jadi booking', value: R ? R.inquiriesBooked : '…', detail: 'konversi ' + conv + '%', visual: <Meter pct={conv} color="var(--s1)" /> },
           { label: 'Booking dari WA', value: R ? R.bookings.length : '…', detail: 'tanggal booking di periode', onClick: () => st.flash('#l-bookings') },
           { label: 'Belum booking', value: R ? R.leads.length : '…', tone: R && R.leads.length ? 'warn' : undefined, detail: R ? R.leads.filter((l) => l.lastFrom === 'tamu').length + ' menunggu balasan kita' : '', onClick: () => st.flash('#l-leads') },

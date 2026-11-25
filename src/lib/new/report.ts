@@ -2,13 +2,15 @@
 // kueri ada di src/app/api/new/report/route.ts.
 //
 // Definisi (ditampilkan juga di halaman supaya angka bisa dibaca dengan benar):
-// - Inquiry   = percakapan WhatsApp (bukan sandbox) yang pesan MASUK pertamanya jatuh di periode.
+// - Inquiry   = percakapan WhatsApp (bukan sandbox) dari nomor LUAR NEGERI yang pesan MASUK pertamanya
+//               jatuh di periode. Nomor Indonesia (62…) tidak dihitung (keputusan owner 2026-11-25).
 //               Kontak yang dinilai ringkasan sebagai mitra/lainnya (vendor, crew, hotel) dibuang.
 // - Booking   = percakapan WhatsApp yang bookingData-nya bertanggal booking (booking_date) SAMA
 //               ATAU SESUDAH hari chat pertama: awalnya chat, lalu booking. Tamu yang sudah booking
 //               sebelum pertama kali chat tidak dihitung.
 import { jakartaDay, parseBookingDay } from '@/lib/bot/eval/replay-pairs'
 import { LEAD_BLOCKERS, LEAD_BLOCKER_TEXT, leadBlockerSchema, type LeadBlocker } from '@/lib/daily-summary/payload-schema'
+import { isIndonesianNumber } from '@/lib/phone'
 
 export { LEAD_BLOCKER_TEXT, type LeadBlocker }
 
@@ -114,7 +116,7 @@ interface Classified {
 
 function classify(rows: ReportRow[]): Classified[] {
   return rows
-    .filter((r) => !(r.kind && NON_CUSTOMER.has(r.kind)))
+    .filter((r) => !isIndonesianNumber(r.phone) && !(r.kind && NON_CUSTOMER.has(r.kind)))
     .map((row) => {
       const firstDay = jakartaDay(row.firstIn)
       const bookingDay = parseBookingDay(row.bookingDate)

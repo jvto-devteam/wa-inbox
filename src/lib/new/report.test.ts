@@ -3,7 +3,7 @@ import { buildReport, mondayOf, periodRange, type ReportRow } from './report'
 
 // Jam UTC: 2026-11-23T17:30Z = 24 Nov 00:30 WIB.
 const row = (o: Omit<Partial<ReportRow>, 'firstIn'> & { id: string; firstIn: string }): ReportRow => ({
-  name: o.id.toUpperCase(), phone: '6281234567890', stage: 'new', bookingDate: null, bookingNumber: null,
+  name: o.id.toUpperCase(), phone: '447712347890', stage: 'new', bookingDate: null, bookingNumber: null,
   pkg: null, startYmd: null, orderChannel: null, kind: null, ...o, firstIn: new Date(o.firstIn),
 })
 
@@ -21,6 +21,22 @@ const rows: ReportRow[] = [
   // 23 Nov 00:30 WIB tapi 22 Nov UTC -> tetap masuk minggu ini menurut WIB
   row({ id: 'f', firstIn: '2026-11-22T17:30:00Z' }),
 ]
+
+describe('laporan: hanya nomor luar negeri', () => {
+  it('nomor Indonesia (62…) tidak dihitung sebagai inquiry, booking, lead, maupun tren', () => {
+    const id = [
+      row({ id: 'id1', phone: '6281234567890', firstIn: '2026-11-24T02:00:00Z', bookingDate: '25 Nov 2026' }),
+      row({ id: 'id2', phone: '6285700001111', firstIn: '2026-11-24T03:00:00Z' }),
+    ]
+    const base = buildReport(rows, '2026-11-23', '2026-11-29')
+    const r = buildReport([...rows, ...id], '2026-11-23', '2026-11-29')
+    expect(r.inquiries).toBe(base.inquiries)
+    expect(r.inquiriesBooked).toBe(base.inquiriesBooked)
+    expect(r.bookings.map((b) => b.conversationId)).not.toContain('id1')
+    expect(r.leads.map((l) => l.conversationId)).not.toContain('id2')
+    expect(r.trend.at(-1)).toEqual(base.trend.at(-1))
+  })
+})
 
 describe('laporan inquiry → booking', () => {
   it('menghitung inquiry, konversi kohort, dan booking dari chat', () => {
