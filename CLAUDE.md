@@ -227,7 +227,8 @@ tanpa isi (`contentlessRun`: reaksi, stiker, edit, unsupported, system, lampiran
 untuk tamu yang trip-nya sudah selesai (`bookingData.date.end_ymd` < hari ini WIB) kecuali review terbaru melihat potensi booking
 baru (`calon_tamu` atau ada `belumBooking`); REPLY yang menurut ringkasan AI terbaru (dibuat SESUDAH pesan terakhir) tidak perlu
 dibalas (`perluBalas` false, `reviewSaysNoReply`; tanpa nilai itu = saringan kata `isNoiseMessage`). Janji yang sudah ditindaklanjuti
-AGEN dengan pertanyaan ke tamu dan tamu belum menjawab berubah jadi FOLLOW_UP berjangkar pertanyaan itu (`promiseAwaitingGuest`,
+AGEN dengan pertanyaan atau permintaan konfirmasi (`ASKS_GUEST`, pesan agen terakhir sesudah janji) dan tamu belum menjawab berubah jadi
+FOLLOW_UP berjangkar pesan itu (`promiseAwaitingGuest`,
 `promiseToFollowUp`); balasan agen tanpa pertanyaan tidak menutup janji. Lead tanpa booking TIDAK diberi batas umur (owner). `upsertCandidate` tidak membuat/membuka item itu; `closeExcludedItems` (tick, sesudah
 reconcile) menutup yang OPEN sebagai DONE `NOT_QUEUED` dengan alasan di `note`. SCHEDULED tidak disentuh. Pesan tanpa isi juga
 tidak mengubah FOLLOW_UP/PROMISE menjadi REPLY di reconcile (`CONTENT_MESSAGE_WHERE`).
