@@ -5,7 +5,6 @@ import { chatHref, summaryDay } from './summary'
 describe('summaryDay', () => {
   it('poin per jenis (komplain dulu), satu review per percakapan, janji belum ditepati dihitung', () => {
     const D = summaryDay(sampleSummary())!
-    expect(D.active).toBe(9)
     expect(D.points.map((p) => [p.kind, p.name, p.text])).toEqual([
       ['komplain', 'Lukas B.', 'Sopir telat 1 jam di hotel'],
       ['jemput', 'Emma R.', 'Jemput di Ketapang jam 06.00'],
@@ -37,7 +36,7 @@ describe('summaryDay', () => {
     expect(summaryDay({ dates: [], summary: null, items: {} })).toBeNull()
     const res = sampleSummary()
     res.summary = { ...res.summary!, payload: null, error: 'Format ringkasan tersimpan tidak dikenali. Buat ulang ringkasan ini.' }
-    expect(summaryDay(res)).toMatchObject({ points: [], chats: [], active: 0, error: expect.stringContaining('Buat ulang') })
+    expect(summaryDay(res)).toMatchObject({ points: [], chats: [], error: expect.stringContaining('Buat ulang') })
   })
 
   it('chatHref menyorot pesan bila ada', () => {

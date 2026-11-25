@@ -48,7 +48,6 @@ export function RingkasanView() {
   const kom = P.filter((x) => x.kind === 'komplain')
   const kinds = ['Semua', ...POINT_KINDS.filter((k) => P.some((x) => x.kind === k))]
   const rkind = kinds.includes(s.rkind) ? s.rkind : 'Semua'
-  const nConv = new Set(P.map((x) => x.conversationId)).size
   const L = P.filter((x) => rkind === 'Semua' || x.kind === rkind)
   const chats = D?.chats ?? []
   const openN = chats.filter((c) => c.open).length
@@ -120,9 +119,10 @@ export function RingkasanView() {
     L.forEach((x, i) => { if (!seenConv.has(x.conversationId)) { seenConv.add(x.conversationId); firstOf.add(i) } })
   }
   const top = kom[0] ? byId.get(kom[0].conversationId) : undefined
+  // Setiap angka muncul sekali, di tempat ia dipakai (owner 2026-11-25): jumlah daftar di tombol, aktif/menggantung di
+  // judul kelompok Per percakapan. Keterangan ini hanya waktu dibuat + status.
   const meta = D
-    // Diringkas = percakapan aktif hari itu + yang 14 hari terakhir belum dibalas/diam/lead baru; satu angka dengan tombol Per percakapan.
-    ? chats.length + ' percakapan diringkas · ' + D.active + ' aktif hari itu' + (D.finishedAt ? ' · dibuat ' + hhmm(D.finishedAt) : '') + (STATUS_NOTE[D.status] ? ' · ' + STATUS_NOTE[D.status] : '')
+    ? [D.finishedAt ? 'Dibuat ' + hhmm(D.finishedAt) : '', STATUS_NOTE[D.status] ?? ''].filter(Boolean).join(' · ')
     : api.loading ? 'Memuat ringkasan…' : 'Belum ada ringkasan'
 
   return (
@@ -194,7 +194,6 @@ export function RingkasanView() {
                 </div>
               )
             })}
-          {P.length > 0 && <p className="hint" style={{ margin: '8px 0 0' }}>{L.length} poin dari {nConv} percakapan</p>}
         </div>
       ) : (
         <div className="card" id="r-chats">
