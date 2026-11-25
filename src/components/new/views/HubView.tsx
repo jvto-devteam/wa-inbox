@@ -95,7 +95,7 @@ export function HubView() {
         </button>
         <button type="button" className="db-k" onClick={() => toLaporan('#l-hk .db-k')}>
           <span className="l">Inquiry minggu ini</span>
-          <span className="r"><span className="v">{RP?.inquiries ?? 0}</span><span className="d">chat WhatsApp baru</span></span>
+          <span className="r"><span className="v">{RP?.inquiries ?? 0}</span><span className="d">chat WhatsApp nomor luar negeri</span></span>
           {RP && <Spark values={RP.trend.map((w) => w.inquiries)} />}
         </button>
         <button type="button" className="db-k" onClick={() => toLaporan('#l-bookings')}>
