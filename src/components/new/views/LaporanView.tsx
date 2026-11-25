@@ -13,6 +13,12 @@ import { useReport } from '../useReport'
 
 const PERIODS: [PeriodKey, string][] = [['minggu-ini', 'Minggu ini'], ['minggu-lalu', 'Minggu lalu'], ['bulan-ini', 'Bulan ini'], ['bulan-lalu', 'Bulan lalu']]
 
+/** Badge channel: JVTO biru dan Klook oranye memakai label yang sama dengan daftar chat Inbox; lainnya netral. */
+function channelCls(ch: string): string {
+  const k = ch.toLowerCase()
+  return k === 'jvto' || k === 'klook' ? 'lb lb-' + k : 'pill neu'
+}
+
 function fmt(ymd: string): string {
   const [y, m, d] = ymd.split('-').map(Number)
   if (!y || !m || !d) return ymd
@@ -67,7 +73,7 @@ export function LaporanView() {
                     <p>Chat {fmt(b.firstChatDay)} → booking {fmt(b.bookingDay)} · {b.daysToBook === 0 ? 'hari sama' : b.daysToBook + ' hari'}</p>
                     <p>{b.bookingNumber} · {b.pkg}{b.startYmd === '—' ? '' : ' · trip ' + fmt(b.startYmd)}</p>
                   </div>
-                  <span className="pill neu">{b.orderChannel}</span>
+                  <span className={channelCls(b.orderChannel)}>{b.orderChannel}</span>
                 </div>
               ))}
             </div>
@@ -84,7 +90,7 @@ export function LaporanView() {
                       <td className="sm">{b.bookingNumber}</td>
                       <td className="sm">{b.pkg}</td>
                       <td className="sm">{b.startYmd === '—' ? '—' : fmt(b.startYmd)}</td>
-                      <td><span className="pill neu">{b.orderChannel}</span></td>
+                      <td><span className={channelCls(b.orderChannel)}>{b.orderChannel}</span></td>
                     </tr>
                   ))}
                 </tbody>
