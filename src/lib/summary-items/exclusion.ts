@@ -143,40 +143,29 @@ export function reviewSaysNoReply(chatReview: unknown, chatReviewAt: Date | null
 }
 
 /**
- * Janji tim yang sudah ditindaklanjuti AGEN dengan pertanyaan / permintaan konfirmasi ke tamu (pesan agen TERAKHIR
- * sesudah janji, `ASKS_GUEST`), dan tamu belum menjawab (pesan berisi): bola
- * ada di tamu, jadi item itu Follow Up, bukan janji yang menggantung (owner 2026-11-25, kasus Bela Reister). Balasan
- * agen TANPA pertanyaan ("refund sedang diproses") tidak dihitung: janjinya tetap terbuka sampai AI menilainya ditepati.
- * Mengembalikan pertanyaan agen terakhir itu, atau null.
+ * Ringkasan terbaru (dibuat SESUDAH pesan terakhir percakapan) menilai langkah berikutnya ada di tamu (`menungguTamu`):
+ * rentetan pesan tim terakhir meminta jawaban/konfirmasi/data tamu. Penilaian makna oleh AI, bukan daftar kata (owner
+ * 2026-11-25). Tanpa penilaian itu = tidak diketahui, item dibiarkan.
  */
-/**
- * Pesan agen yang meminta jawaban tamu: tanda tanya, atau kalimat minta konfirmasi tanpa "?" ("Just to confirm, you are
- * looking for…", "please let me know", "mohon konfirmasi"). Sengaja sempit: "refund sedang kami proses" bukan permintaan.
- */
-export const ASKS_GUEST = /\?|\bconfirm|\blet (me|us) know\b|\bplease (advise|reply|tell)\b|\bkonfirmasi\b|\bkabari\b|\bmohon (info|dikabari|balas)/i
-
-/** `ASKS_GUEST` pada teks tanpa tautan: "?" di query string URL (…?utm=) bukan pertanyaan (audit 2026-11-25). */
-export function asksGuest(text: string): boolean {
-  return ASKS_GUEST.test(text.replace(/https?:\/\/\S+/g, ' '))
+export function reviewSaysAwaitingGuest(chatReview: unknown, chatReviewAt: Date | null, lastMessageAt: Date | undefined): boolean {
+  if (!chatReviewAt || !lastMessageAt || !(lastMessageAt < chatReviewAt)) return false
+  const r = conversationReviewSchema.pick({ menungguTamu: true }).safeParse(chatReview)
+  return r.success && r.data.menungguTamu === true
 }
 
+/**
+ * Janji tim yang sudah ditanggapi agen dengan permintaan jawaban ke tamu, dan tamu belum menjawab (`reviewSaysAwaitingGuest`):
+ * bola di tamu, jadi itu Follow Up. Mengembalikan pesan agen terakhir sejak janji (jangkar Follow Up), atau null.
+ */
 export async function promiseAwaitingGuest(conversationId: string, promiseAt: Date) {
-  // Rentetan balasan agen SESUDAH pesan berisi terakhir tamu (dan tidak sebelum janji): bila salah satunya meminta jawaban,
-  // bola di tamu. Agen sering membalas dalam beberapa pesan, dan pertanyaannya tidak selalu yang terakhir (audit 2026-11-25,
-  // Bilel). gte pada janji: pesan janji itu sendiri boleh jadi pertanyaannya.
-  const lastGuest = await prisma.message.findFirst({
-    where: { conversationId, direction: 'INBOUND', ...CONTENT_MESSAGE_WHERE },
+  const conv = await prisma.conversation.findUnique({ where: { id: conversationId }, select: { chatReview: true, chatReviewAt: true } })
+  const last = await prisma.message.findFirst({ where: { conversationId }, orderBy: { createdAt: 'desc' }, select: { createdAt: true } })
+  if (!conv || !reviewSaysAwaitingGuest(conv.chatReview, conv.chatReviewAt, last?.createdAt)) return null
+  return prisma.message.findFirst({
+    where: { conversationId, direction: 'OUTBOUND', sentBy: 'AGENT', createdAt: { gte: promiseAt } },
     orderBy: { createdAt: 'desc' },
-    select: { createdAt: true },
-  })
-  const since = lastGuest && lastGuest.createdAt >= promiseAt ? { gt: lastGuest.createdAt } : { gte: promiseAt }
-  const burst = await prisma.message.findMany({
-    where: { conversationId, direction: 'OUTBOUND', sentBy: 'AGENT', createdAt: since, content: { not: null } },
-    orderBy: { createdAt: 'desc' },
-    take: 20,
     select: { id: true, createdAt: true, content: true, type: true, direction: true, sentBy: true },
   })
-  return burst.find((m) => asksGuest(m.content ?? '')) ?? null
 }
 
 const clipSnippet = (t: string) => (t.trim().length > 200 ? t.trim().slice(0, 199) + '…' : t.trim())

@@ -334,7 +334,7 @@ describe('janji tim', () => {
   const parseJ = (janjiTim: unknown) => parseReview(JSON.stringify({ ...valid, janjiTim }), ids)
 
   it('prompt meminta janjiTim berbentuk objek dengan terpenuhi dan pesan', () => {
-    expect(REVIEW_SYSTEM_PROMPT).toContain('"janjiTim":[{"teks":"...","terpenuhi":true|false,"pesan":N}]')
+    expect(REVIEW_SYSTEM_PROMPT).toContain('"janjiTim":[{"teks":"...","jenis":"janji|tawaran_bersyarat|kemampuan|arahan|sudah_dilakukan","terpenuhi":true|false,"pesan":N}]')
     expect(REVIEW_SYSTEM_PROMPT).toMatch(/"janjiTim": komitmen yang diucapkan AGEN/)
     // Janji yang ditepati tetap membawa nomor pesan janjinya: penutupan PROMISE_KEPT mencocokkan lewat id, bukan teks.
     expect(REVIEW_SYSTEM_PROMPT).toMatch(/sudah terpenuhi tetap ditulis dengan "pesan" tempat janji itu DIUCAPKAN/)
@@ -377,9 +377,11 @@ describe('janji tim', () => {
 })
 
 describe('janjiTim: yang bukan janji', () => {
-  it('prompt mengecualikan tawaran bersyarat, pernyataan kemampuan, arahan, dan yang sudah dilakukan', () => {
-    expect(REVIEW_SYSTEM_PROMPT).toContain('BUKAN janji: tawaran bersyarat')
-    expect(REVIEW_SYSTEM_PROMPT).toContain('tim dapat menyesuaikan detail setelah booking')
+  it('prompt: setiap janji WAJIB diberi jenis; hanya "janji" yang utang tim (penilaian AI, bukan daftar kata)', () => {
+    expect(REVIEW_SYSTEM_PROMPT).toContain('Setiap item WAJIB diberi "jenis"')
+    expect(REVIEW_SYSTEM_PROMPT).toContain('Hanya "janji" yang dihitung sebagai utang tim')
+    expect(REVIEW_SYSTEM_PROMPT).toContain('"menungguTamu":true|false')
+    expect(REVIEW_SYSTEM_PROMPT).toContain('dalam bahasa apa pun')
   })
 
   it('janji dari pesan Bot (atau berawalan "Bot") dibuang; janji agen tetap', () => {
@@ -395,14 +397,16 @@ describe('janjiTim: yang bukan janji', () => {
     expect(r?.janjiTim.map((j) => (typeof j === 'string' ? j : j.teks))).toEqual(['Mengirim invoice besok'])
   })
 
-  it('pernyataan kemampuan dan tawaran bersyarat dibuang saat dibaca; janji nyata tetap', () => {
-    const r = parseReview(JSON.stringify({ ...valid, janjiTim: [
-      { teks: 'Tim dapat menyesuaikan detail setelah tamu booking', terpenuhi: false },
-      { teks: 'Bisa mengatur trip Mt Raung untuk tahun depan.', terpenuhi: false },
-      { teks: 'Akan membantu mengatur tour 4D3N bila pelanggan memutuskan', terpenuhi: false },
-      { teks: 'Mengirim harga transport ke Lovina untuk 3 orang.', terpenuhi: false },
+  it('janji berjenis selain "janji" dibuang saat dibaca; janji tanpa jenis (ringkasan lama) tetap; menungguTamu dibaca', () => {
+    const r = parseReview(JSON.stringify({ ...valid, menungguTamu: 'true', janjiTim: [
+      { teks: 'Tim dapat menyesuaikan detail setelah tamu booking', jenis: 'kemampuan', terpenuhi: false },
+      { teks: 'Akan membantu mengatur tour 4D3N bila pelanggan memutuskan', jenis: 'tawaran_bersyarat', terpenuhi: false },
+      { teks: 'Silakan booking lewat link', jenis: 'arahan', terpenuhi: false },
+      { teks: 'Mengirim harga transport ke Lovina untuk 3 orang.', jenis: 'janji', terpenuhi: false },
+      { teks: 'Cek kamar', terpenuhi: false },
     ] }))
-    expect(r?.janjiTim.map((j) => (typeof j === 'string' ? j : j.teks))).toEqual(['Mengirim harga transport ke Lovina untuk 3 orang.'])
+    expect(r?.janjiTim.map((j) => (typeof j === 'string' ? j : j.teks))).toEqual(['Mengirim harga transport ke Lovina untuk 3 orang.', 'Cek kamar'])
+    expect(r?.menungguTamu).toBe(true)
   })
 })
 
@@ -430,8 +434,8 @@ describe('tanggalTripSelesai', () => {
     expect(parseReview(JSON.stringify({ ...valid, tanggalTripMulai: '2026-11-21' }))?.tanggalTripMulai).toBe('2026-11-21')
   })
 
-  it('janji bersyarat pada langkah tamu ("setelah tanggal diketahui") bukan janji', () => {
-    const r = parseReview(JSON.stringify({ ...valid, janjiTim: [{ teks: 'Akan mengecek ketersediaan setelah tanggal perjalanan diketahui', terpenuhi: false }, { teks: 'Mengirim invoice', terpenuhi: false }] }))
+  it('janji bersyarat pada langkah tamu ("setelah tanggal diketahui") = jenis tawaran_bersyarat dari AI, dibuang', () => {
+    const r = parseReview(JSON.stringify({ ...valid, janjiTim: [{ teks: 'Akan mengecek ketersediaan setelah tanggal perjalanan diketahui', jenis: 'tawaran_bersyarat', terpenuhi: false }, { teks: 'Mengirim invoice', jenis: 'janji', terpenuhi: false }] }))
     expect(r?.janjiTim.map((j) => (typeof j === 'string' ? j : j.teks))).toEqual(['Mengirim invoice'])
   })
 

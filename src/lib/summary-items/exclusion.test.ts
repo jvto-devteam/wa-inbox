@@ -185,34 +185,28 @@ describe('perluBalas dari ringkasan AI', () => {
   })
 })
 
-describe('janji menunggu tamu', () => {
-  it('permintaan jawaban: tanda tanya atau kalimat konfirmasi; kabar proses bukan', async () => {
-    const { ASKS_GUEST } = await import('./exclusion')
-    for (const t of ['Just to confirm, you are looking for private transportation.', 'Please let me know your flight.', 'Mohon konfirmasi jumlah orang.', 'Nanti kabari ya', 'berapa orang?'])
-      expect(ASKS_GUEST.test(t), t).toBe(true)
-    for (const t of ['Refund sedang kami proses.', 'Noted, we will send the invoice tomorrow.'])
-      expect(ASKS_GUEST.test(t), t).toBe(false)
-    const { asksGuest } = await import('./exclusion')
-    expect(asksGuest('Here is our package https://javavolcano-touroperator.com/tours?utm_source=wa')).toBe(false)
-    expect(asksGuest('See https://x.com/a?b=1 — how many people?')).toBe(true)
+describe('janji menunggu tamu (penilaian AI menungguTamu)', () => {
+  const promiseAt = new Date('2026-11-17T04:00:00Z')
+  const last = new Date('2026-11-17T04:39:00Z')
+  const agent = { id: 'a1', createdAt: last, content: 'What date are you planning?', type: 'text', direction: 'OUTBOUND', sentBy: 'AGENT' }
+
+  it('ringkasan SESUDAH pesan terakhir menilai menungguTamu true = janji menunggu tamu (jangkar = pesan agen terakhir)', async () => {
+    const { promiseAwaitingGuest, reviewSaysAwaitingGuest } = await import('./exclusion')
+    mockPrisma.conversation.findUnique.mockResolvedValue({ chatReview: { menungguTamu: true }, chatReviewAt: new Date('2026-11-17T05:00:00Z') } as never)
+    mockPrisma.message.findFirst.mockResolvedValueOnce({ createdAt: last } as never).mockResolvedValueOnce(agent as never)
+    expect(await promiseAwaitingGuest('c', promiseAt)).toEqual(agent)
+    expect(mockPrisma.message.findFirst.mock.calls[1][0]).toMatchObject({ where: { direction: 'OUTBOUND', sentBy: 'AGENT', createdAt: { gte: promiseAt } } })
+    // ringkasan sebelum pesan terakhir, false, atau tanpa nilai = tidak diketahui
+    expect(reviewSaysAwaitingGuest({ menungguTamu: true }, new Date('2026-11-17T04:00:00Z'), last)).toBe(false)
+    expect(reviewSaysAwaitingGuest({ menungguTamu: false }, new Date('2026-11-17T05:00:00Z'), last)).toBe(false)
+    expect(reviewSaysAwaitingGuest({}, new Date('2026-11-17T05:00:00Z'), last)).toBe(false)
   })
 
-  it('rentetan balasan agen sesudah pesan tamu terakhir: salah satunya bertanya = menunggu tamu (Bilel); tanpa pertanyaan = bukan', async () => {
+  it('menungguTamu false: janji tetap janji', async () => {
     const { promiseAwaitingGuest } = await import('./exclusion')
-    const promiseAt = new Date('2026-11-17T04:00:00Z')
-    const ask = { id: 'q1', createdAt: new Date('2026-11-17T04:36:00Z'), content: 'What date are you planning to start your tour?', type: 'text', direction: 'OUTBOUND', sentBy: 'AGENT' }
-    const info = { id: 'q2', createdAt: new Date('2026-11-17T04:39:00Z'), content: 'You can still enjoy the Ijen sunrise.', type: 'text', direction: 'OUTBOUND', sentBy: 'AGENT' }
-    // pesan berisi terakhir tamu SEBELUM janji -> rentetan dihitung dari janji (gte)
-    mockPrisma.message.findFirst.mockResolvedValueOnce({ createdAt: new Date('2026-11-17T03:00:00Z') } as never)
-    mockPrisma.message.findMany.mockResolvedValueOnce([info, ask] as never)
-    expect(await promiseAwaitingGuest('c', promiseAt)).toEqual(ask)
-    expect(mockPrisma.message.findMany.mock.calls[0][0]).toMatchObject({ where: { direction: 'OUTBOUND', sentBy: 'AGENT', createdAt: { gte: promiseAt } } })
-    // tamu menulis sesudah janji -> rentetan dihitung sesudah pesan tamu itu
-    const guestAt = new Date('2026-11-17T05:00:00Z')
-    mockPrisma.message.findFirst.mockResolvedValueOnce({ createdAt: guestAt } as never)
-    mockPrisma.message.findMany.mockResolvedValueOnce([info] as never)
+    mockPrisma.conversation.findUnique.mockResolvedValue({ chatReview: { menungguTamu: false }, chatReviewAt: new Date('2026-11-17T05:00:00Z') } as never)
+    mockPrisma.message.findFirst.mockResolvedValueOnce({ createdAt: last } as never)
     expect(await promiseAwaitingGuest('c', promiseAt)).toBeNull()
-    expect(mockPrisma.message.findMany.mock.calls[1][0]).toMatchObject({ where: { createdAt: { gt: guestAt } } })
   })
 })
 
@@ -253,11 +247,10 @@ describe('lebih selektif: bukan tamu, mitra, percakapan selesai, utang tim', () 
     expect(mockPrisma.summaryItem.update.mock.calls[0][0]).toEqual({ where: { id: 'f1' }, data: { kind: 'FOLLOW_UP', note: null } })
   })
 
-  it('utang tim tetapi pesan agen terakhir meminta jawaban tamu: tetap Follow Up', async () => {
+  it('utang tim tetapi AI menilai langkah berikutnya di tamu (menungguTamu): tetap Follow Up', async () => {
     const { followUpOwedByTeam } = await import('./exclusion')
-    mockPrisma.conversation.findUnique.mockResolvedValue(conv({ chatReview: { belumBooking: { alasan: 'menunggu_tim', teks: 'x' } } }) as never)
-    mockPrisma.message.findFirst.mockResolvedValueOnce(null)
-    mockPrisma.message.findMany.mockResolvedValueOnce([{ id: 'q', createdAt: NOW, content: 'Just to confirm the dates?', type: 'text', direction: 'OUTBOUND', sentBy: 'AGENT' }] as never)
+    mockPrisma.conversation.findUnique.mockResolvedValue({ ...conv({ chatReview: { belumBooking: { alasan: 'menunggu_tim', teks: 'x' }, menungguTamu: true } }), chatReviewAt: new Date(NOW.getTime() + 60e3) } as never)
+    mockPrisma.message.findFirst.mockResolvedValueOnce({ createdAt: NOW } as never).mockResolvedValueOnce({ id: 'q', createdAt: NOW } as never)
     expect(await followUpOwedByTeam('c')).toBeNull()
   })
 })

@@ -145,9 +145,14 @@ export type ReviewProfile = z.infer<typeof reviewProfileSchema>
  * menunjukkan janji itu sudah dilakukan. String polos diterima seperti pertanyaan lama: tanpa
  * tanda, dan tidak pernah dianggap janji yang belum ditepati.
  */
+/**
+ * Jenis ucapan tim yang dicatat model (owner 2026-11-25: penilaian makna oleh AI, bukan daftar kata). Hanya `janji` yang
+ * dihitung utang tim; jenis lain dibuang saat dibaca (review.ts). Ringkasan lama tanpa `jenis` = janji.
+ */
+export const PROMISE_KINDS = ['janji', 'tawaran_bersyarat', 'kemampuan', 'arahan', 'sudah_dilakukan'] as const
 export const reviewPromiseSchema = z.union([
   z.string(),
-  z.object({ teks: z.string(), terpenuhi: z.boolean(), messageId: z.string().optional() }),
+  z.object({ teks: z.string(), terpenuhi: z.boolean(), messageId: z.string().optional(), jenis: z.enum(PROMISE_KINDS).optional() }),
 ])
 export type ReviewPromise = z.infer<typeof reviewPromiseSchema>
 
@@ -242,6 +247,11 @@ export const conversationReviewSchema = z.object({
    * dan saat itu antrean memakai saringan kata (`isNoiseMessage`).
    */
   perluBalas: z.boolean().optional(),
+  /**
+   * Rentetan pesan TIM sesudah pesan terakhir pelanggan meminta jawaban/keputusan/data pelanggan: langkah berikutnya ada di
+   * pelanggan (owner 2026-11-25, menggantikan daftar kata). Janji Admin seperti itu menjadi Follow Up (exclusion.ts).
+   */
+  menungguTamu: z.boolean().optional(),
   /**
    * Hari TERAKHIR rencana trip yang diminta calon tamu (YYYY-MM-DD; hanya bulan = akhir bulan itu), owner 2026-11-25: lead
    * tanpa booking yang tanggal ini sudah lewat tidak masuk Follow Up/Janji (summary-items/exclusion.ts). Opsional.
