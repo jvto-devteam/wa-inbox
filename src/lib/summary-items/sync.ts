@@ -18,7 +18,7 @@ import {
 } from '@/lib/daily-summary/payload-schema'
 import { jakartaDayKey, jakartaDayRange } from '@/lib/daily-summary/time'
 import { isNoiseMessage } from './noise'
-import { EXCLUSION_NOTE, exclusionFor } from './exclusion'
+import { CONTENT_MESSAGE_WHERE, EXCLUSION_NOTE, exclusionFor } from './exclusion'
 import { automatedMessageIds, findOurReply } from './automated'
 import type { SummaryItemKind } from './status'
 
@@ -584,9 +584,9 @@ async function reconcileOne(
       const lastOutbound = await findOurReply(item.conversationId, {}, 'desc')
       if (lastOutbound && lastOutbound.createdAt > since) since = lastOutbound.createdAt
     }
-    // Reaksi (👍 pada pesan kita) bukan "pelanggan bicara lagi" (owner 2026-11-25).
+    // Pesan tanpa isi (reaksi, stiker, dihapus, lampiran IG) bukan "pelanggan bicara lagi" (owner 2026-11-25).
     const inbound = await prisma.message.findFirst({
-      where: { conversationId: item.conversationId, direction: 'INBOUND', type: { not: 'reaction' }, createdAt: { gt: since } },
+      where: { conversationId: item.conversationId, direction: 'INBOUND', ...CONTENT_MESSAGE_WHERE, createdAt: { gt: since } },
       orderBy: { createdAt: 'asc' },
       select: messageSelect,
     })
@@ -600,7 +600,7 @@ async function reconcileOne(
       // pesan masuk terbaru.
       const newest =
         (await prisma.message.findFirst({
-          where: { conversationId: item.conversationId, direction: 'INBOUND', type: { not: 'reaction' }, createdAt: { gt: since } },
+          where: { conversationId: item.conversationId, direction: 'INBOUND', ...CONTENT_MESSAGE_WHERE, createdAt: { gt: since } },
           orderBy: { createdAt: 'desc' },
           select: messageSelect,
         })) ?? inbound

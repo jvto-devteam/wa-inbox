@@ -12,8 +12,11 @@ import { closeExcludedItems, exclusionFor, potentialNewBooking, tripEnded } from
 
 const mockPrisma = prisma as unknown as DeepMockProxy<PrismaClient>
 const NOW = new Date('2026-11-25T05:00:00Z') // 12:00 WIB
-const conv = (o: { phone?: string | null; isTest?: boolean; end?: string; chatReview?: unknown } = {}) => ({
+const conv = (o: { phone?: string | null; isTest?: boolean; end?: string; chatReview?: unknown; platform?: string; mail?: boolean } = {}) => ({
   isTest: o.isTest ?? false,
+  mailAccountId: o.mail ? 'mb1' : null,
+  channelIdentityId: o.platform ? 'ci1' : null,
+  channelIdentity: o.platform ? { platform: o.platform } : null,
   bookingData: o.end ? { date: { start_ymd: '2026-11-01', end_ymd: o.end } } : null,
   chatReview: o.chatReview ?? null,
   contact: { phone: o.phone === undefined ? '447700900123' : o.phone },
@@ -22,7 +25,7 @@ const conv = (o: { phone?: string | null; isTest?: boolean; end?: string; chatRe
 beforeEach(() => {
   mockReset(mockPrisma)
   vi.mocked(findOurReply).mockResolvedValue({ id: 'o1', createdAt: new Date('2026-11-20T00:00:00Z') })
-  mockPrisma.message.findMany.mockResolvedValue([{ type: 'text' }] as never)
+  mockPrisma.message.findMany.mockResolvedValue([{ type: 'text', content: 'halo' }] as never)
 })
 
 describe('tripEnded / potentialNewBooking', () => {
@@ -41,6 +44,19 @@ describe('tripEnded / potentialNewBooking', () => {
 })
 
 describe('exclusionFor', () => {
+  it('hanya WhatsApp: Instagram/Messenger/Email keluar; identitas WA atau percakapan lama bernomor tetap masuk', async () => {
+    mockPrisma.conversation.findUnique.mockResolvedValue(conv({ platform: 'INSTAGRAM' }) as never)
+    expect(await exclusionFor('c', 'REPLY', null, NOW)).toBe('BUKAN_WHATSAPP')
+    mockPrisma.conversation.findUnique.mockResolvedValue(conv({ platform: 'FACEBOOK' }) as never)
+    expect(await exclusionFor('c', 'PROMISE', null, NOW)).toBe('BUKAN_WHATSAPP')
+    mockPrisma.conversation.findUnique.mockResolvedValue(conv({ mail: true }) as never)
+    expect(await exclusionFor('c', 'REPLY', null, NOW)).toBe('BUKAN_WHATSAPP')
+    mockPrisma.conversation.findUnique.mockResolvedValue(conv({ platform: 'WHATSAPP' }) as never)
+    expect(await exclusionFor('c', 'REPLY', null, NOW)).toBeNull()
+    mockPrisma.conversation.findUnique.mockResolvedValue(conv() as never)
+    expect(await exclusionFor('c', 'REPLY', null, NOW)).toBeNull()
+  })
+
   it('nomor Indonesia keluar untuk semua jenis; percakapan uji tetap masuk', async () => {
     mockPrisma.conversation.findUnique.mockResolvedValue(conv({ phone: '6281234567890' }) as never)
     expect(await exclusionFor('c', 'REPLY', null, NOW)).toBe('NOMOR_INDONESIA')
@@ -49,12 +65,25 @@ describe('exclusionFor', () => {
     expect(await exclusionFor('c', 'REPLY', null, NOW)).toBeNull()
   })
 
+  it('pesan tanpa isi: reaksi, stiker, dihapus, edit, unsupported, lampiran IG; foto/dokumen/teks tetap isi', async () => {
+    const { isNonContent } = await import('./exclusion')
+    for (const t of ['reaction', 'sticker', 'revoke', 'edit', 'unsupported', 'system']) expect(isNonContent({ type: t, content: null })).toBe(true)
+    for (const c of ['[Lampiran: story_mention]', '[Lampiran: ig_post]', '[Lampiran: unsupported_type]']) expect(isNonContent({ type: 'text', content: c })).toBe(true)
+    for (const t of ['image', 'document', 'audio', 'video', 'location', 'contacts']) expect(isNonContent({ type: t, content: null })).toBe(false)
+    expect(isNonContent({ type: 'text', content: 'can pay cash?' })).toBe(false)
+    mockPrisma.conversation.findUnique.mockResolvedValue(conv() as never)
+    mockPrisma.message.findMany.mockResolvedValue([{ type: 'revoke', content: null }, { type: 'text', content: '[Lampiran: story_mention]' }] as never)
+    expect(await exclusionFor('c', 'REPLY', null, NOW)).toBe('HANYA_REAKSI')
+    mockPrisma.message.findMany.mockResolvedValue([{ type: 'image', content: null }] as never)
+    expect(await exclusionFor('c', 'REPLY', null, NOW)).toBeNull()
+  })
+
   it('Belum dibalas yang rangkaiannya hanya reaksi keluar; ada teks = tetap masuk', async () => {
     mockPrisma.conversation.findUnique.mockResolvedValue(conv() as never)
-    mockPrisma.message.findMany.mockResolvedValue([{ type: 'reaction' }, { type: 'reaction' }] as never)
+    mockPrisma.message.findMany.mockResolvedValue([{ type: 'reaction', content: null }, { type: 'reaction', content: null }] as never)
     expect(await exclusionFor('c', 'REPLY', null, NOW)).toBe('HANYA_REAKSI')
     expect(mockPrisma.message.findMany.mock.calls[0][0]).toMatchObject({ where: { direction: 'INBOUND', createdAt: { gt: new Date('2026-11-20T00:00:00Z') } } })
-    mockPrisma.message.findMany.mockResolvedValue([{ type: 'reaction' }, { type: 'text' }] as never)
+    mockPrisma.message.findMany.mockResolvedValue([{ type: 'reaction', content: null }, { type: 'text', content: 'halo?' }] as never)
     expect(await exclusionFor('c', 'REPLY', null, NOW)).toBeNull()
   })
 
