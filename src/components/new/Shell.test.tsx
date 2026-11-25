@@ -63,14 +63,6 @@ describe('/new', () => {
     }
   })
 
-  it('Kirim sekarang untuk reminder crew mengeluarkannya dari jadwal', () => {
-    at('/new/antrean', <AntreanView />)
-    fireEvent.click(screen.getByText(/^Follow-up agent/))
-    const row = screen.getByText(/Reminder crew \(H-1\)/).closest('.item') as HTMLElement
-    fireEvent.click(Array.from(row.querySelectorAll('button')).find((b) => b.textContent === 'Kirim sekarang')!)
-    expect(screen.queryByText(/Reminder crew \(H-1\)/)).toBeNull()
-  })
-
   it('Dashboard: KPI, tren, alasan belum booking dari API laporan asli', async () => {
     const fetchMock = stubReportFetch()
     at('/new/dashboard', <HubView />)

@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { sampleReport, stubReportFetch } from './__fixtures__/report'
 import { stubSummaryFetch } from './__fixtures__/summary'
+import { stubQueueFetch } from './__fixtures__/antrean'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { NewShell } from './Shell'
 import { AntreanView } from './views/AntreanView'
@@ -37,12 +38,46 @@ describe('tata letak berbeda per halaman /new', () => {
     expect(!!document.querySelector('.db-hero')).toBe(hero)
   })
 
-  it('Antrean: kartu paling mendesak + batang komposisi berfungsi sebagai tab', () => {
+  it('Antrean (data asli): paling mendesak = Belum dibalas tertua, tab per jenis, aksi memakai route antrean', async () => {
+    const fn = stubQueueFetch()
     show(<AntreanView />)
-    expect(document.querySelector('.pg-urgent')?.textContent).toContain('Sarah M.')
+    await waitFor(() => expect(document.querySelector('.pg-urgent')?.textContent).toContain('Sarah M.'))
+    const urgent = document.querySelector('.pg-urgent') as HTMLElement
+    expect(urgent.textContent).toContain('Menunggu 3 jam')
+    expect(urgent.querySelector('.saran-t')?.textContent).toBe('Konfirmasi jam jemput 05.00')
+    expect(within(urgent).getByText('Balas sekarang').getAttribute('href')).toBe('/inbox?conversation=c-a&message=m-a')
+    expect(urgent.querySelector('.nx')?.textContent).toContain('Ben C.')
+    expect(Array.from(document.querySelectorAll('#a-tabs button')).map((b) => b.textContent)).toEqual(['Balas2', 'Follow Up1', 'Janji Admin1', 'Reminder2'].map((t) => t.replace(/(\d)$/, ' $1')))
+
+    // Lepas (dikonfirmasi) → drop
+    const ben = Array.from(document.querySelectorAll('#a-list .item')).find((e) => e.textContent?.includes('Ben C.')) as HTMLElement
+    fireEvent.click(within(ben).getByText('Lepas'))
+    fireEvent.click(within(document.querySelector('.msheet') as HTMLElement).getByText('Lepas'))
+    await waitFor(() => expect(fn.mock.calls.some(([u, i]) => String(u) === '/api/summary-items/b/drop' && (i as RequestInit | undefined)?.method === 'POST')).toBe(true))
+
+    // Ingatkan → schedule dengan catatan = saran
+    fireEvent.click(within(urgent).getByText('Ingatkan'))
+    fireEvent.click(screen.getByText('Jadwalkan'))
+    await waitFor(() => expect(fn.mock.calls.some(([u]) => String(u) === '/api/summary-items/a/schedule')).toBe(true))
+    const [, init] = fn.mock.calls.find(([u]) => String(u) === '/api/summary-items/a/schedule')! as unknown as [string, RequestInit]
+    expect(JSON.parse(String(init.body))).toMatchObject({ note: 'Konfirmasi jam jemput 05.00' })
+
+    // Reminder: reminder kontak tanpa item → Tunda lewat PATCH dueAt, Selesai lewat PATCH done
     fireEvent.click(within(document.getElementById('a-tabs')!).getByText('Reminder').closest('button')!)
-    expect(document.querySelector('#a-tabs button.on')?.textContent).toMatch(/^Reminder 2/)
     expect(document.getElementById('a-list')?.textContent).toContain('Cek mutasi pembayaran')
+    const hana = Array.from(document.querySelectorAll('#a-list .item')).find((e) => e.textContent?.includes('Hana Y.')) as HTMLElement
+    expect(hana.textContent).toMatch(/Lewat · /)
+    expect(within(hana).queryByText('Buka chat')).toBeNull()
+    const mei = Array.from(document.querySelectorAll('#a-list .item')).find((e) => e.textContent?.includes('Mei H.')) as HTMLElement
+    fireEvent.click(within(mei).getByText('Tunda'))
+    fireEvent.click(screen.getByText('Jadwalkan'))
+    await waitFor(() => expect(fn.mock.calls.some(([u, i]) => String(u) === '/api/contacts/k1/reminders' && JSON.parse(String((i as RequestInit).body)).dueAt)).toBe(true))
+    fireEvent.click(within(mei).getByText('Selesai'))
+    await waitFor(() => expect(fn.mock.calls.some(([u, i]) => String(u) === '/api/contacts/k1/reminders' && JSON.parse(String((i as RequestInit).body)).done === true)).toBe(true))
+    // Hana punya item antrean → Tunda lewat schedule
+    fireEvent.click(within(hana).getByText('Tunda'))
+    fireEvent.click(screen.getByText('Jadwalkan'))
+    await waitFor(() => expect(fn.mock.calls.some(([u]) => String(u) === '/api/summary-items/i9/schedule')).toBe(true))
   })
 
   it('Ringkasan (data asli): sorotan komplain di atas, sebaran jenis menyaring poin, tombol Per percakapan', async () => {

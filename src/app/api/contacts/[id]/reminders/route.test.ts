@@ -62,6 +62,21 @@ describe('contact reminders API', () => {
     expect(mockPrisma.reminder.update).toHaveBeenCalledWith({ where: { id: 'r1' }, data: { done: true } })
   })
 
+  it('PATCH mengganti jatuh tempo (Tunda) tanpa mengubah done', async () => {
+    mockPrisma.reminder.findUnique.mockResolvedValue({ id: 'r1', contactId: 'contact_1', done: false } as never)
+    mockPrisma.reminder.update.mockResolvedValue({ id: 'r1' } as never)
+    const req = new Request('http://localhost', { method: 'PATCH', body: JSON.stringify({ reminderId: 'r1', dueAt: '2026-12-01T08:00:00+07:00' }) })
+    const res = await PATCH(req, { params: Promise.resolve({ id: 'contact_1' }) })
+    expect(res.status).toBe(200)
+    expect(mockPrisma.reminder.update).toHaveBeenCalledWith({ where: { id: 'r1' }, data: { dueAt: new Date('2026-12-01T01:00:00Z') } })
+  })
+
+  it('PATCH tanpa done maupun dueAt ditolak 400', async () => {
+    const req = new Request('http://localhost', { method: 'PATCH', body: JSON.stringify({ reminderId: 'r1' }) })
+    expect((await PATCH(req, { params: Promise.resolve({ id: 'contact_1' }) })).status).toBe(400)
+    expect(mockPrisma.reminder.update).not.toHaveBeenCalled()
+  })
+
   it('PATCH rejects a reminder that belongs to a different contact', async () => {
     mockPrisma.reminder.findUnique.mockResolvedValue({ id: 'r1', contactId: 'contact_OTHER', done: false } as never)
     const req = new Request('http://localhost', { method: 'PATCH', body: JSON.stringify({ reminderId: 'r1', done: true }) })
