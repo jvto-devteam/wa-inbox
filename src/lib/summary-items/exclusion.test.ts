@@ -301,5 +301,9 @@ describe('summaryHidden (Ringkasan, AR-01/AR-02)', () => {
       mail: 'BUKAN_WHATSAPP', ig: 'BUKAN_WHATSAPP', indo: 'NOMOR_INDONESIA', uji: 'PERCAKAPAN_UJI', sales: 'BUKAN_TAMU', lewat: 'TANGGAL_TRIP_LEWAT',
     })
     expect(await summaryHidden([], '2026-11-24')).toEqual({})
+    // review HARI ITU yang menentukan tanggal (kasus Félix: ringkasan terbaru tidak membawa tanggal mulai)
+    mockPrisma.conversation.findMany.mockResolvedValue([{ id: 'felix', ...conv({ chatReview: { jenisKontak: 'calon_tamu', tanggalTripSelesai: '2026-11-25' } }) }] as never)
+    expect(await summaryHidden(['felix'], '2026-11-24')).toEqual({})
+    expect(await summaryHidden(['felix'], '2026-11-24', { felix: { tanggalTripMulai: '2026-11-19' } })).toEqual({ felix: 'TANGGAL_TRIP_LEWAT' })
   })
 })

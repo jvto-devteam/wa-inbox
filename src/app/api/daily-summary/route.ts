@@ -49,6 +49,15 @@ function payloadConversationIds(payload: DailySummaryPayload): string[] {
   return [...ids]
 }
 
+/** Review hari itu per percakapan (review pertama yang ada, urutan sama dengan halaman Ringkasan). */
+function dayReviews(payload: DailySummaryPayload): Record<string, unknown> {
+  const out: Record<string, unknown> = {}
+  for (const list of [payload.conversations, payload.unreplied, payload.dormant, payload.newLeads]) {
+    for (const e of list) if (e.review && !(e.conversationId in out)) out[e.conversationId] = e.review
+  }
+  return out
+}
+
 async function liveItemStatuses(payload: DailySummaryPayload | null): Promise<Record<string, SummaryItemStatus>> {
   const ids = payload ? payloadConversationIds(payload) : []
   if (ids.length === 0) return {}
@@ -92,7 +101,7 @@ export async function GET(req: Request) {
     }
 
     const items = await liveItemStatuses(summary?.payload ?? null)
-    const hidden = summary?.payload ? await summaryHidden(payloadConversationIds(summary.payload), summary.date) : {}
+    const hidden = summary?.payload ? await summaryHidden(payloadConversationIds(summary.payload), summary.date, dayReviews(summary.payload)) : {}
     return NextResponse.json({ dates, summary, items, hidden } satisfies DailySummaryResponse)
   } catch (error) {
     console.error('GET /api/daily-summary gagal', error)

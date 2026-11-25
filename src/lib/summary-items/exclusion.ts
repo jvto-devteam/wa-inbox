@@ -225,22 +225,31 @@ function baseExclusion(conv: BaseConversation): ExclusionReason | null {
   return null
 }
 
-/** Calon tamu tanpa booking yang hari mulai (tanpa itu: hari selesai) trip mintaannya sebelum `day` (YYYY-MM-DD, WIB). */
-function leadTripPassedOn(conv: BaseConversation, day: string): boolean {
-  const leadDay = conv.bookingData ? null : (tripStartDay(conv.chatReview, conv.createdAt) ?? tripEndDay(conv.chatReview, conv.createdAt))
+/**
+ * Calon tamu tanpa booking yang hari mulai (tanpa itu: hari selesai) trip mintaannya sebelum `day` (YYYY-MM-DD, WIB).
+ * `review` = review yang dinilai (bawaan: ringkasan terbaru percakapan).
+ */
+function leadTripPassedOn(conv: BaseConversation, day: string, review: unknown = conv.chatReview): boolean {
+  const leadDay = conv.bookingData ? null : (tripStartDay(review, conv.createdAt) ?? tripEndDay(review, conv.createdAt))
   return !!leadDay && leadDay < day
 }
 
 /**
  * Percakapan yang TIDAK ditampilkan di halaman Ringkasan untuk hari `day` (buku aturan AR-01, AR-02): aturan dasar
- * Antrean, ditambah calon tamu yang tanggal trip mintaannya sudah lewat pada hari itu. Satu kueri untuk semua id.
+ * Antrean, ditambah calon tamu yang tanggal trip mintaannya sudah lewat pada hari itu. Tanggal trip dibaca dari review
+ * HARI ITU (`dayReviews`, yang ditampilkan halaman), ringkasan terbaru hanya cadangan. Satu kueri untuk semua id.
  */
-export async function summaryHidden(conversationIds: readonly string[], day: string): Promise<Record<string, ExclusionReason>> {
+export async function summaryHidden(
+  conversationIds: readonly string[],
+  day: string,
+  dayReviews: Readonly<Record<string, unknown>> = {}
+): Promise<Record<string, ExclusionReason>> {
   if (conversationIds.length === 0) return {}
   const rows = await prisma.conversation.findMany({ where: { id: { in: [...conversationIds] } }, select: { id: true, ...BASE_SELECT } })
   const hidden: Record<string, ExclusionReason> = {}
   for (const row of rows) {
-    const reason = baseExclusion(row) ?? (leadTripPassedOn(row, day) ? 'TANGGAL_TRIP_LEWAT' : null)
+    const review = dayReviews[row.id] ?? row.chatReview
+    const reason = baseExclusion(row) ?? (leadTripPassedOn(row, day, review) ? 'TANGGAL_TRIP_LEWAT' : null)
     if (reason) hidden[row.id] = reason
   }
   return hidden
