@@ -209,8 +209,17 @@ function useStore() {
         .sort((x, y) => x.createdAt.getTime() - y.createdAt.getTime())
       return (a.orderBy?.createdAt === 'desc' ? hits.reverse() : hits)[0] ?? null
     }) as never)
-    mockPrisma.message.findMany.mockImplementation((async (a: { where: MsgWhere }) =>
-      st.messages.filter((m) => m.conversationId === a.where.conversationId && (!a.where.id || a.where.id.in.includes(m.id)))) as never)
+    mockPrisma.message.findMany.mockImplementation((async (a: { where: MsgWhere; orderBy?: { createdAt: 'asc' | 'desc' } }) => {
+      const { createdAt } = a.where
+      const hits = st.messages
+        .filter((m) => m.conversationId === a.where.conversationId && (!a.where.id || a.where.id.in.includes(m.id)))
+        .filter((m) => a.where.direction === undefined || m.direction === a.where.direction)
+        .filter((m) => !a.where.sentBy || m.sentBy === a.where.sentBy)
+        .filter((m) => !createdAt?.gt || m.createdAt > createdAt.gt)
+        .filter((m) => !createdAt?.gte || m.createdAt >= createdAt.gte)
+        .sort((x, y) => x.createdAt.getTime() - y.createdAt.getTime())
+      return a.orderBy?.createdAt === 'desc' ? hits.reverse() : hits
+    }) as never)
   })
   const msg = (id: string, direction: StoreMsg['direction'], iso: string) =>
     st.messages.push({ id, conversationId: 'c1', direction, sentBy: direction === 'INBOUND' ? 'CUSTOMER' : 'AGENT', type: 'TEXT', content: id, createdAt: at(iso) })

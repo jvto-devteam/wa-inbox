@@ -423,6 +423,18 @@ describe('tanggalTripSelesai', () => {
     expect(parseReview(JSON.stringify({ ...valid, tanggalTripSelesai: 'Oktober' }))).not.toBeNull()
   })
 
+  it('tanggalTripMulai + tanggal relatif dihitung dari cap waktu pesan', () => {
+    expect(REVIEW_SYSTEM_PROMPT).toContain('"tanggalTripMulai":"YYYY-MM-DD"|null')
+    expect(REVIEW_SYSTEM_PROMPT).toContain('"next 3 days"/"dalam 3 hari" = hari pesan + 3')
+    expect(REVIEW_SYSTEM_PROMPT).toContain('SEDANG berada/menginap di lokasi tur = tanggal pesan itu')
+    expect(parseReview(JSON.stringify({ ...valid, tanggalTripMulai: '2026-11-21' }))?.tanggalTripMulai).toBe('2026-11-21')
+  })
+
+  it('janji bersyarat pada langkah tamu ("setelah tanggal diketahui") bukan janji', () => {
+    const r = parseReview(JSON.stringify({ ...valid, janjiTim: [{ teks: 'Akan mengecek ketersediaan setelah tanggal perjalanan diketahui', terpenuhi: false }, { teks: 'Mengirim invoice', terpenuhi: false }] }))
+    expect(r?.janjiTim.map((j) => (typeof j === 'string' ? j : j.teks))).toEqual(['Mengirim invoice'])
+  })
+
   it('lampiran agen + "here is the price" = janji terpenuhi (aturan prompt)', () => {
     expect(REVIEW_SYSTEM_PROMPT).toContain('Baris berawalan [image]/[document] dari agen')
   })
