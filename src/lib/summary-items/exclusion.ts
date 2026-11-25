@@ -52,14 +52,30 @@ export function potentialNewBooking(review: unknown): boolean {
   return (r.success && r.data.jenisKontak === 'calon_tamu') || Boolean(blocker)
 }
 
-/** Rangkaian pesan pelanggan sesudah balasan terakhir kita ada, dan semuanya tanpa isi (`isNonContent`). */
+/**
+ * Rangkaian (urut waktu) tanpa isi: setiap pesan `isNonContent`, sesudah `revoke` membatalkan pesan BERISI terakhir
+ * sebelumnya. Pesan `revoke` tidak menyimpan rujukan ke pesan yang dihapusnya (tidak ada kolomnya), jadi dipakai
+ * kebiasaan tamu: yang ditarik adalah pesan terakhirnya ("kirim dokumen, 8 detik kemudian dihapus").
+ */
+export function contentlessRun(run: readonly { type: string; content: string | null }[]): boolean {
+  if (!run.length) return false
+  let content = 0
+  for (const m of run) {
+    if (m.type === 'revoke') content = Math.max(0, content - 1)
+    else if (!isNonContent(m)) content++
+  }
+  return content === 0
+}
+
+/** Rangkaian pesan pelanggan sesudah balasan terakhir kita ada, dan tanpa isi (`contentlessRun`). */
 async function reactionOnlyRun(conversationId: string): Promise<boolean> {
   const lastOurs = await findOurReply(conversationId, {}, 'desc')
   const run = await prisma.message.findMany({
     where: { conversationId, direction: 'INBOUND', ...(lastOurs ? { createdAt: { gt: lastOurs.createdAt } } : {}) },
+    orderBy: { createdAt: 'asc' },
     select: { type: true, content: true },
   })
-  return run.length > 0 && run.every(isNonContent)
+  return contentlessRun(run)
 }
 
 /**
