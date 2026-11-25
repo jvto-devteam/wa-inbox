@@ -39,7 +39,6 @@ export interface SummaryDay {
   status: string
   finishedAt: string | null
   error: string | null
-  active: number
   points: SummaryPoint[]
   /** Janji tim yang menurut review hari itu belum ditepati. */
   unkept: number
@@ -97,7 +96,6 @@ export function summaryDay(res: DailySummaryResponse): SummaryDay | null {
     status: s.status,
     finishedAt: s.finishedAt,
     error: s.error,
-    active: p?.counts.activeConversations ?? 0,
     points,
     unkept,
     chats,
