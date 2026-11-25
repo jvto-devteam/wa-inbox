@@ -236,6 +236,12 @@ export const conversationReviewSchema = z.object({
   langkahBerikut: z.string(),
   /** Opsional: hanya calon tamu tanpa booking; ringkasan sebelum 24 November 2026 tidak memilikinya. */
   belumBooking: leadBlockerSchema.optional(),
+  /**
+   * Pesan TERAKHIR pelanggan masih menunggu balasan tim (owner 2026-11-25): penentu antrean "Balas" bila ringkasan ini
+   * sudah membaca pesan itu (summary-items/exclusion.ts). Opsional: ringkasan sebelum 25 November 2026 tidak memilikinya,
+   * dan saat itu antrean memakai saringan kata (`isNoiseMessage`).
+   */
+  perluBalas: z.boolean().optional(),
   /** Opsional: hanya percakapan ber-booking, dan hanya setelah fitur Catatan crew menyala. Bukan keluaran review LLM. */
   catatanCrew: crewNoteSchema.optional(),
   /** Opsional: hanya percakapan ber-booking. Bukan keluaran review LLM; dibuat panggilan kecil sesudahnya. */

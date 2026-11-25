@@ -154,7 +154,7 @@ type StoreItem = {
   dueAt: Date | null; closedReason: string | null; note: string | null; closedById: string | null; closedAt: Date | null
 }
 type StoreMsg = { id: string; conversationId: string; direction: 'INBOUND' | 'OUTBOUND'; sentBy: string; type: string; content: string; createdAt: Date }
-type MsgWhere = { conversationId?: string; direction?: string; createdAt?: { gt?: Date; lte?: Date }; id?: { in: string[] } }
+type MsgWhere = { conversationId?: string; direction?: string; createdAt?: { gt?: Date; lte?: Date }; id?: { in: string[] }; sentBy?: string; content?: { contains?: string } }
 
 function useStore() {
   const st = {
@@ -203,6 +203,8 @@ function useStore() {
         .filter((m) => !createdAt?.gt || m.createdAt > createdAt.gt)
         .filter((m) => !createdAt?.lte || m.createdAt <= createdAt.lte)
         .filter((m) => !id || id.in.includes(m.id))
+        .filter((m) => !a.where.sentBy || m.sentBy === a.where.sentBy)
+        .filter((m) => !a.where.content?.contains || (m.content ?? '').includes(a.where.content.contains))
         .sort((x, y) => x.createdAt.getTime() - y.createdAt.getTime())
       return (a.orderBy?.createdAt === 'desc' ? hits.reverse() : hits)[0] ?? null
     }) as never)
@@ -292,6 +294,22 @@ describe('janji tim (PROMISE): kandidat dan prioritas', () => {
 
 describe('janji tim (PROMISE): janji tidak hilang dan tidak bolak-balik', () => {
   const { st, msg, snap } = useStore()
+
+  it('janji yang ditindaklanjuti agen dengan PERTANYAAN dan tamu diam -> bukan PROMISE (kasus Bela)', async () => {
+    msg('janji', 'OUTBOUND', '2026-10-17T03:00:00Z')
+    msg('konfirmasi rincian?', 'OUTBOUND', '2026-10-17T05:00:00Z')
+    await nightly('2026-10-17', unkeptId)
+    expect(st.items.filter((i) => i.kind === 'PROMISE')).toHaveLength(0)
+  })
+
+  it('PROMISE terbuka yang kemudian ditanya balik agen berubah jadi FOLLOW_UP berjangkar pertanyaan itu', async () => {
+    msg('janji', 'OUTBOUND', '2026-10-17T03:00:00Z')
+    await nightly('2026-10-17', unkeptId)
+    expect(snap()).toBe('PROMISE/OPEN/-')
+    msg('jadi berapa orang?', 'OUTBOUND', '2026-10-18T02:00:00Z')
+    await nightly('2026-10-18', unkeptId)
+    expect(st.items[0]).toMatchObject({ kind: 'FOLLOW_UP', state: 'OPEN', anchorAt: at('2026-10-18T02:00:00Z'), anchorMessageId: 'jadi berapa orang?' })
+  })
 
   it('satu hari: janji, "ok ditunggu", "baik" sebelum job malam -> tetap PROMISE OPEN, juga malam berikutnya', async () => {
     msg('janji', 'OUTBOUND', '2026-10-17T03:00:00Z')

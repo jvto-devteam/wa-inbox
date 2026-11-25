@@ -12,8 +12,9 @@ import { closeExcludedItems, exclusionFor, potentialNewBooking, tripEnded } from
 
 const mockPrisma = prisma as unknown as DeepMockProxy<PrismaClient>
 const NOW = new Date('2026-11-25T05:00:00Z') // 12:00 WIB
-const conv = (o: { phone?: string | null; isTest?: boolean; end?: string; chatReview?: unknown; platform?: string; mail?: boolean } = {}) => ({
+const conv = (o: { phone?: string | null; isTest?: boolean; end?: string; chatReview?: unknown; chatReviewAt?: Date; platform?: string; mail?: boolean } = {}) => ({
   isTest: o.isTest ?? false,
+  chatReviewAt: o.chatReviewAt ?? null,
   mailAccountId: o.mail ? 'mb1' : null,
   channelIdentityId: o.platform ? 'ci1' : null,
   channelIdentity: o.platform ? { platform: o.platform } : null,
@@ -111,11 +112,40 @@ describe('exclusionFor', () => {
   })
 })
 
+describe('perluBalas dari ringkasan AI', () => {
+  const last = new Date('2026-11-25T03:00:00Z')
+  it('REPLY keluar bila ringkasan SESUDAH pesan terakhir menilai perluBalas false; sebelum pesan itu / tanpa nilai = tetap masuk', async () => {
+    mockPrisma.message.findMany.mockResolvedValue([{ type: 'text', content: 'Correct', createdAt: last }] as never)
+    mockPrisma.conversation.findUnique.mockResolvedValue(conv({ chatReview: { perluBalas: false }, chatReviewAt: new Date('2026-11-25T03:01:00Z') }) as never)
+    expect(await exclusionFor('c', 'REPLY', null, NOW)).toBe('TIDAK_PERLU_BALAS')
+    mockPrisma.conversation.findUnique.mockResolvedValue(conv({ chatReview: { perluBalas: false }, chatReviewAt: new Date('2026-11-25T02:59:00Z') }) as never)
+    expect(await exclusionFor('c', 'REPLY', null, NOW)).toBeNull()
+    mockPrisma.conversation.findUnique.mockResolvedValue(conv({ chatReview: { perluBalas: true }, chatReviewAt: new Date('2026-11-25T03:01:00Z') }) as never)
+    expect(await exclusionFor('c', 'REPLY', null, NOW)).toBeNull()
+    mockPrisma.conversation.findUnique.mockResolvedValue(conv({ chatReview: { status: 'selesai' }, chatReviewAt: new Date('2026-11-25T03:01:00Z') }) as never)
+    expect(await exclusionFor('c', 'REPLY', null, NOW)).toBeNull()
+  })
+})
+
+describe('janji menunggu tamu', () => {
+  it('pertanyaan agen sesudah janji + tamu belum menjawab = menunggu tamu; dijawab atau tanpa pertanyaan = bukan', async () => {
+    const { promiseAwaitingGuest } = await import('./exclusion')
+    const q = { id: 'q1', createdAt: new Date('2026-09-23T00:00:00Z'), content: 'Just to confirm…?', type: 'text', direction: 'OUTBOUND', sentBy: 'AGENT' }
+    mockPrisma.message.findFirst.mockResolvedValueOnce(q as never).mockResolvedValueOnce(null)
+    expect(await promiseAwaitingGuest('c', new Date('2026-09-22T16:00:00Z'))).toEqual(q)
+    expect(mockPrisma.message.findFirst.mock.calls[0][0]).toMatchObject({ where: { direction: 'OUTBOUND', sentBy: 'AGENT', content: { contains: '?' } } })
+    mockPrisma.message.findFirst.mockResolvedValueOnce(q as never).mockResolvedValueOnce({ id: 'jawab' } as never)
+    expect(await promiseAwaitingGuest('c', new Date('2026-09-22T16:00:00Z'))).toBeNull()
+    mockPrisma.message.findFirst.mockResolvedValueOnce(null)
+    expect(await promiseAwaitingGuest('c', new Date('2026-09-22T16:00:00Z'))).toBeNull()
+  })
+})
+
 describe('closeExcludedItems', () => {
   it('menutup item OPEN yang kena aturan dengan NOT_QUEUED + alasan; yang lain tidak disentuh', async () => {
     mockPrisma.summaryItem.findMany.mockResolvedValue([
-      { id: 'i1', conversationId: 'indo', kind: 'REPLY', review: null },
-      { id: 'i2', conversationId: 'ok', kind: 'REPLY', review: null },
+      { id: 'i1', conversationId: 'indo', kind: 'REPLY', review: null, anchorAt: NOW },
+      { id: 'i2', conversationId: 'ok', kind: 'REPLY', review: null, anchorAt: NOW },
     ] as never)
     mockPrisma.conversation.findUnique.mockImplementation((async (a: { where: { id: string } }) =>
       a.where.id === 'indo' ? conv({ phone: '6281234567890' }) : conv()) as never)
