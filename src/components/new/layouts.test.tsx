@@ -124,6 +124,37 @@ describe('tata letak berbeda per halaman /new', () => {
     expect(first.textContent).toMatch(/Chat \d+ \w+ → booking \d+ \w+ · (hari sama|\d+ hari)/)
   })
 
+  it('Laporan: tidak berhenti di bacaan -- alasan menyaring lead, lead punya Buka chat + Ingatkan, minggu tren membuka periode', async () => {
+    const fn = stubReportFetch()
+    show(<LaporanView />)
+    await waitFor(() => expect(document.querySelectorAll('#l-leads .l-lead')).toHaveLength(2))
+
+    // alasan → saring lead; klik lagi / "Tampilkan semua" melepas
+    fireEvent.click(within(document.getElementById('l-blockers')!).getByText('Harga / budget').closest('.l-blk')!)
+    expect(document.querySelectorAll('#l-leads .l-lead')).toHaveLength(1)
+    expect(document.querySelector('#l-leads .l-filter')?.textContent).toContain('Harga / budget')
+    fireEvent.click(screen.getByText('Tampilkan semua'))
+    expect(document.querySelectorAll('#l-leads .l-lead')).toHaveLength(2)
+
+    // lead yang menunggu balasan kita: tombol utama "Balas di chat" ke Inbox
+    const first = document.querySelector('#l-leads .l-lead')!
+    expect(within(first as HTMLElement).getByText('Balas di chat').getAttribute('href')).toBe('/inbox?conversation=c')
+
+    // Ingatkan follow-up → reminder kontak berisi follow-up
+    fireEvent.click(within(first as HTMLElement).getByText('Ingatkan follow-up'))
+    fireEvent.click(screen.getByText('Jadwalkan'))
+    await waitFor(() => expect(fn.mock.calls.some(([u]) => String(u) === '/api/contacts/ct-c/reminders')).toBe(true))
+    const [, init] = fn.mock.calls.find(([u]) => String(u) === '/api/contacts/ct-c/reminders')! as unknown as [string, RequestInit]
+    expect(JSON.parse(String(init.body))).toMatchObject({ note: 'Follow-up: Jawab soal jemput' })
+
+    // minggu di tren → laporan minggu itu
+    const cols = document.querySelectorAll('#l-trend .db-col')
+    fireEvent.click(cols[0])
+    await waitFor(() => expect((screen.getByLabelText('Pilih periode') as HTMLSelectElement).value).toMatch(/^w:\d{4}-\d\d-\d\d$/))
+    const mon = (screen.getByLabelText('Pilih periode') as HTMLSelectElement).value.slice(2)
+    await waitFor(() => expect(fn.mock.calls.some(([u]) => String(u).startsWith('/api/new/report?from=' + mon + '&to='))).toBe(true))
+  })
+
   it('Laporan: badge channel JVTO biru, Klook oranye, channel lain netral', async () => {
     const report = sampleReport()
     const b = report.bookings[0]

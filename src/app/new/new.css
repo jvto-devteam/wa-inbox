@@ -842,3 +842,8 @@
 .nwa .l-lead .l-lh a{color:var(--accent);font-weight:600;font-size:15px}
 .nwa .l-lead .l-lm{font-size:12px;color:var(--muted);margin-top:2px}
 .nwa .item.l-lead p.l-lt{font-size:13.5px;color:var(--muted);margin-top:6px;line-height:1.4}
+/* Laporan: aksi lead, saringan alasan aktif */
+.nwa .l-lead .l-acts{margin-top:10px}
+.nwa .l-filter{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:13px;color:var(--muted);margin:4px 0 6px}
+.nwa .l-filter b{color:var(--ink)}
+.nwa .item.l-blk.on{background:var(--accent-soft);border-radius:8px}

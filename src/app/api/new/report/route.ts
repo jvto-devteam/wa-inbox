@@ -21,6 +21,7 @@ const Q = z.object({
 
 type Raw = {
   id: string
+  contact_id: string
   name: string | null
   phone: string | null
   stage: string
@@ -50,7 +51,7 @@ export async function GET(req: Request) {
 
   try {
     const raw = await prisma.$queryRaw<Raw[]>`
-      select c.id, ct.name, ct.phone, c."pipelineStage" as stage,
+      select c.id, ct.id as contact_id, ct.name, ct.phone, c."pipelineStage" as stage,
         min(m."createdAt") as first_in,
         c."bookingData"->>'booking_date' as booking_date,
         c."bookingData"->>'booking_number' as booking_number,
@@ -79,6 +80,7 @@ export async function GET(req: Request) {
 
     const rows: ReportRow[] = raw.map((r) => ({
       id: r.id,
+      contactId: r.contact_id,
       name: r.name,
       phone: r.phone,
       stage: r.stage,

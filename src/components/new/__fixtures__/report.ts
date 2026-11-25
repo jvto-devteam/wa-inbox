@@ -10,7 +10,7 @@ const at = (ymd: string, h: number) => new Date(Date.parse(ymd + 'T' + String(h)
 export function sampleReport(today = jakartaDay(new Date())): Report {
   const mon = mondayOf(today)
   const row = (id: string, chatDay: string, o: Partial<ReportRow> = {}): ReportRow => ({
-    id, name: 'Tamu ' + id, phone: '4477009001' + id.length, stage: 'new', firstIn: at(chatDay, 9), bookingDate: null, bookingNumber: null,
+    id, contactId: 'ct-' + id, name: 'Tamu ' + id, phone: '4477009001' + id.length, stage: 'new', firstIn: at(chatDay, 9), bookingDate: null, bookingNumber: null,
     pkg: null, startYmd: null, orderChannel: null, kind: 'calon_tamu', ...o,
   })
   const rows: ReportRow[] = [
@@ -27,6 +27,7 @@ export function stubReportFetch(report: Report = sampleReport()) {
   const fn = vi.fn(async (input: string) => {
     const path = new URL(input, 'http://x').pathname
     if (path === '/api/new/report') return { ok: true, status: 200, json: async () => report } as Response
+    if (/^\/api\/contacts\/[^/]+\/reminders$/.test(path)) return { ok: true, status: 200, json: async () => ({ id: 'r1' }) } as Response
     return { ok: false, status: 404, json: async () => ({ error: 'tidak ada' }) } as Response
   })
   vi.stubGlobal('fetch', fn)
