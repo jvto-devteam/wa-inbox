@@ -847,3 +847,8 @@
 .nwa .l-filter{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:13px;color:var(--muted);margin:4px 0 6px}
 .nwa .l-filter b{color:var(--ink)}
 .nwa .item.l-blk.on{background:var(--accent-soft);border-radius:8px}
+/* Ponsel: kartu lead diketuk membuka pilihan (Buka chat, Ingatkan follow-up), jadi tombolnya disembunyikan; chevron sebagai penanda */
+@media (max-width:860px){
+ .nwa #l-leads .l-lead .l-acts{display:none}
+ .nwa #l-leads .l-lead{padding-right:26px;background:var(--chev) no-repeat right 4px center/7px auto;cursor:pointer}
+}
