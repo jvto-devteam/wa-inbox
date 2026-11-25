@@ -1,6 +1,7 @@
 // Menu Ringkasan /new: DATA ASLI dari GET /api/daily-summary (rute yang sama dengan /summary).
 // Fungsi murni: payload ringkasan harian → poin penting per jenis + daftar per percakapan.
 import type { DailySummaryResponse } from '@/app/api/daily-summary/route'
+import type { SummaryItemStatus } from '@/lib/summary-items/status'
 import {
   normalizePoint,
   normalizeQuestion,
@@ -25,6 +26,10 @@ export interface SummaryChat {
   /** Status SEKARANG: item antrean live bila ada, selain itu penilaian review hari itu. */
   open: boolean
   lines: string[]
+  /** Saran tindakan berikutnya dari AI; hanya selama percakapan masih perlu tindakan. */
+  saran: string | null
+  /** Item antrean live (Ingatkan/Lepas memakai id-nya); null = tidak pernah masuk antrean. */
+  item: SummaryItemStatus | null
 }
 
 export interface SummaryDay {
@@ -70,14 +75,15 @@ export function summaryDay(res: DailySummaryResponse): SummaryDay | null {
     }
     const promises = unkeptPromises(review)
     unkept += promises.length
-    const item = res.items[conversationId]
+    const item = res.items[conversationId] ?? null
     const open = item ? item.state === 'OPEN' || item.state === 'SCHEDULED' : review.status === 'perlu_tindakan'
     const lines = [
       ...review.pertanyaan.map(normalizeQuestion).filter((q) => q.terjawab === false).map((q) => '❓ ' + q.teks),
       ...promises.map((x) => '⏳ ' + x.teks),
-      ...(review.langkahBerikut.trim() ? ['→ ' + review.langkahBerikut.trim()] : []),
     ]
-    chats.push({ conversationId, name, open, lines: lines.length ? lines : [review.alasan || review.topik || 'Tidak ada catatan.'] })
+    // Langkah berikut dulu; calon tamu tanpa itu memakai rekomendasi follow-up "belum booking".
+    const saran = open ? review.langkahBerikut.trim() || review.belumBooking?.rekomendasi.trim() || null : null
+    chats.push({ conversationId, name, open, lines: lines.length || saran ? lines : [review.alasan || review.topik || 'Tidak ada catatan.'], saran, item })
   }
   // Urutan jenis = prioritas (komplain dulu); dalam satu jenis urutan payload dipertahankan.
   points.sort((a, b) => RANK(a.kind) - RANK(b.kind))

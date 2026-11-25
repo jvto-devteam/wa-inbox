@@ -386,7 +386,7 @@
  .nwa .item p{font-size:14px;color:var(--muted);margin-top:1px;line-height:1.35}
  .nwa #a-list{background:var(--grp);border:0;box-shadow:none;border-radius:14px;padding:0 16px}
  .nwa #a-list .item,.nwa #r-pts .item{padding-right:26px;background:var(--chev) no-repeat right 4px center/7px auto}
- .nwa #a-list .item>.acts,.nwa #r-pts .item>button{display:none}
+ .nwa #a-list .item>.acts,.nwa #r-pts .item>.acts{display:none}
  .nwa .item:has(>.acts){grid-template-columns:minmax(0,1fr)}
  .nwa .item:has(>.agseg){grid-template-columns:minmax(0,1fr) auto;align-items:center}
  .nwa .agseg{display:none!important}
