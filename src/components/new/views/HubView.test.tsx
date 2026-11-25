@@ -67,11 +67,11 @@ describe('Dashboard: setiap item punya rujukan', () => {
     await waitFor(() => expect(document.querySelector('#r-chips button.on')?.textContent).toMatch(/^komplain \d/))
   })
 
-  it('item jadwal → Antrean (tab Follow-up agent tidak ada lagi: jatuh ke Belum dibalas)', () => {
+  it('item jadwal → Antrean tab Jadwal agent', () => {
     const hub = renderWith(<AntreanView />)
     fireEvent.click(hub.querySelector('.db-ev')!)
     expect(push).toHaveBeenLastCalledWith('/new/antrean')
-    expect(document.querySelector('#a-tabs button.on')?.textContent).toMatch(/^Balas/)
+    expect(document.querySelector('#a-tabs button.on')?.textContent).toMatch(/^Jadwal agent/)
   })
 
   it('status agent di hero → Bot tab Agent', () => {

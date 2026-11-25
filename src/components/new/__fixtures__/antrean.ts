@@ -2,6 +2,7 @@
 import { vi } from 'vitest'
 import type { SummaryItemsResponse } from '@/app/api/summary-items/route'
 import type { NewReminder } from '@/app/api/new/reminders/route'
+import type { AgentScheduleResponse } from '@/app/api/new/agent-schedule/route'
 import type { SummaryItemView } from '@/lib/summary-items/view'
 import { review } from './summary'
 
@@ -12,8 +13,20 @@ const item = (id: string, kind: SummaryItemView['kind'], name: string, hoursAgo:
   review: null, handoff: false, newLead: false, openedOn: '2026-11-24', dueAt: null, ...o,
 })
 
-export function sampleQueue(): { items: SummaryItemsResponse; reminders: NewReminder[] } {
+export function sampleQueue(): { items: SummaryItemsResponse; reminders: NewReminder[]; schedule: AgentScheduleResponse } {
+  const sched = (key: string, kind: string, hours: number, status: string, o: Partial<AgentScheduleResponse['items'][number]> = {}) => ({
+    key, kind, bookingCode: 'JVTO-' + key.length, bookingStatus: 'booked', guestName: 'Emma R.', phoneTail: '0123', conversationId: 'c-emma',
+    recipient: 'tamu', sendAt: new Date(Date.now() + hours * H).toISOString(), status, ...o,
+  })
   return {
+    schedule: {
+      refreshedAt: new Date().toISOString(),
+      items: [
+        sched('crew_reminder:1', 'crew_reminder', -1, 'failed', { recipient: 'crew' }),
+        sched('trip_information:1', 'trip_information', 2, 'scheduled'),
+        sched('bali_transport:booking-7', 'bali_transport', 3, 'scheduled', { recipient: 'vendor transport Bali', conversationId: null, bookingStatus: 'cancel' }),
+      ],
+    },
     items: {
       open: [
         item('a', 'REPLY', 'Sarah M.', 3, { snippet: 'Bisa jemput jam 5?', review: review({ langkahBerikut: 'Konfirmasi jam jemput 05.00' }) }),
@@ -38,6 +51,7 @@ export function stubQueueFetch(q = sampleQueue()) {
     const ok = (body: unknown) => ({ ok: true, status: 200, json: async () => body }) as Response
     if (path === '/api/summary-items') return ok(q.items)
     if (path === '/api/new/reminders') return ok({ reminders: q.reminders })
+    if (path === '/api/new/agent-schedule') return ok(q.schedule)
     if (init?.method && /^\/api\/(summary-items\/[^/]+\/(schedule|drop)|contacts\/[^/]+\/reminders)$/.test(path)) return ok({ ok: true })
     return { ok: false, status: 404, json: async () => ({ error: 'tidak ada' }) } as Response
   })

@@ -133,6 +133,14 @@ Dipangkas otomatis setelah 365 hari lewat `pruneBotAuditLogs()`, dipanggil dari
 Ditulis hanya untuk perubahan pada **apa yang bot lakukan**. Draft, flag, dan pekerjaan
 setengah jadi tidak dicatat.
 
+### Jadwal agent (Antrean /new)
+Reminder WhatsApp terjadwal (info trip H-2 20:00, trip selesai, reminder crew H-1 10:00, foto trip crew, pelunasan H-7 15:00,
+transport Bali H-1 15:15) dikirim **cron legacy** (`my:*` everyMinute), bukan wa-inbox. Tabel `AgentSchedule` = salinan
+read-only dari new-backoffice `GET /wa-inbox-api/upcoming-reminders` (kredensial = `BOOKING_API_URL` origin + `BOOKING_API_KEY`
+di `X-Internal-Token`), disegarkan tick 5 menit oleh `syncAgentSchedule` (`src/lib/agent-schedule/sync.ts`; jendela kemarin..+7
+hari, yang hilang dari jawaban dihapus, gagal = salinan lama dibiarkan, hanya 4 digit akhir nomor tamu). Tampil di tab "Jadwal agent"
+lewat `GET /api/new/agent-schedule`; jadwalnya diubah di backoffice, tidak dari wa-inbox (owner 2026-11-25).
+
 ### Outbound
 `OutboundJob` + worker + retry ladder (`retry-policy.ts`) + safety guard + stuck recovery.
 Definisi "macet" ada di **satu tempat**: `src/lib/outbound/stuck.ts` — dipakai bersama oleh

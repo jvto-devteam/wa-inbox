@@ -4,22 +4,75 @@
 // kontak dari GET /api/new/reminders; olahan di src/lib/new/antrean.ts. Aksi memakai route yang sudah ada, tidak ada
 // yang mengirim pesan ke tamu: Ingatkan = POST /api/summary-items/[id]/schedule (membuat reminder), Lepas = .../drop,
 // Tunda = schedule ulang (item) atau PATCH /api/contacts/[id]/reminders { dueAt }, Selesai = PATCH { done: true }.
-// Tab "Follow-up agent" dibuang: jadwal reminder agent dikirim backoffice, belum ada datanya di sini.
+// Tab "Jadwal agent" = salinan jadwal reminder WA cron legacy (GET /api/new/agent-schedule, disegarkan tick dari
+// new-backoffice). Read-only: jadwalnya diatur di backoffice; dari sini hanya Buka chat.
+import { Fragment } from 'react'
+import type { AgentScheduleResponse, AgentScheduleRow } from '@/app/api/new/agent-schedule/route'
 import type { SummaryItemsResponse } from '@/app/api/summary-items/route'
 import type { NewReminder } from '@/app/api/new/reminders/route'
 import { jakartaDay } from '@/lib/bot/eval/replay-pairs'
-import { buildQueue, type QueueItem } from '@/lib/new/antrean'
+import { buildQueue, chatHref, type QueueItem } from '@/lib/new/antrean'
 import { whenLabel } from '@/lib/new/dates'
 import { ALBL, AT_KEYS, FUT } from '@/lib/new/mock-data'
 import { addDays } from '@/lib/new/report'
-import type { AtKey } from '@/lib/new/types'
+import type { AtKey, Tone } from '@/lib/new/types'
 import { SegBar } from '../Blocks'
 import { useItemTap, useNew, type SheetItem } from '../store'
 import { apiSend, useApi } from '../useApi'
 
 type Css = React.CSSProperties & Record<`--${string}`, string>
 /** Warna jenis antrean: slot kategorikal tetap (sama dengan Dashboard). */
-const TAB_COLOR: Record<AtKey, string> = { Balas: 'var(--s1)', 'Tindak lanjut': 'var(--s2)', 'Janji tim': 'var(--s3)', Reminder: 'var(--s4)' }
+const TAB_COLOR: Record<AtKey | typeof FUT, string> = { Balas: 'var(--s1)', 'Tindak lanjut': 'var(--s2)', 'Janji tim': 'var(--s3)', Reminder: 'var(--s4)', [FUT]: 'var(--muted)' }
+
+const KIND_LABEL: Record<string, string> = {
+  trip_information: 'Info trip', trip_concluded: 'Trip selesai', crew_reminder: 'Reminder crew',
+  crew_trip_media: 'Foto trip ke grup crew', payment_reminder: 'Pelunasan', bali_transport: 'Transport Bali',
+}
+const STATUS: Record<string, [Tone, string]> = {
+  scheduled: ['neu', 'Terjadwal'], sent: ['good', 'Terkirim'], failed: ['bad', 'Gagal'], missed: ['bad', 'Terlewat'],
+  will_skip: ['neu', 'Tidak dikirim · sudah lunas'], unknown: ['neu', 'Tidak tercatat'],
+}
+const wibTime = (iso: string) => new Date(iso).toLocaleTimeString('id-ID', { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
+function dayHead(iso: string, today: string): string {
+  const d = jakartaDay(new Date(iso))
+  if (d === today) return 'Hari ini'
+  if (d === addDays(today, 1)) return 'Besok'
+  if (d === addDays(today, -1)) return 'Kemarin'
+  return new Date(iso).toLocaleDateString('id-ID', { timeZone: 'Asia/Jakarta', weekday: 'long', day: 'numeric', month: 'short' })
+}
+
+/** Jadwal reminder yang dikirim sistem booking (cron legacy); hanya baca. */
+function Schedule({ data, loading }: { data?: AgentScheduleResponse; loading: boolean }) {
+  const tap = useItemTap()
+  if (loading && !data) return <div className="mut" style={{ padding: 20, textAlign: 'center' }}>Memuat…</div>
+  const items = data?.items ?? []
+  const today = jakartaDay(new Date())
+  return (
+    <>
+      <p className="hint" style={{ margin: '0 0 6px' }}>
+        Dikirim otomatis oleh sistem booking; jadwalnya diatur di backoffice.{data?.refreshedAt ? ' Diperbarui ' + wibTime(data.refreshedAt) + '.' : ''}
+      </p>
+      {items.length ? items.map((e: AgentScheduleRow, i) => {
+        const head = i === 0 || dayHead(items[i - 1].sendAt, today) !== dayHead(e.sendAt, today)
+        const [tone, label] = STATUS[e.status] ?? ['neu', e.status]
+        const href = e.conversationId ? chatHref(e.conversationId) : null
+        return (
+          <Fragment key={e.key}>
+            {head && <div className="mut sm" style={{ fontWeight: 600, padding: '10px 0 2px' }}>{dayHead(e.sendAt, today)}</div>}
+            <div className="item" onClick={tap(e.guestName || e.bookingCode || '', href ? [{ label: 'Buka chat', run: () => window.location.assign(href) }] : [])}>
+              <div style={{ minWidth: 0 }}>
+                <b>{KIND_LABEL[e.kind] ?? e.kind}</b> <span className="pill neu">{wibTime(e.sendAt)}</span> <span className={'pill ' + tone}>{label}</span>
+                {e.bookingStatus && e.bookingStatus !== 'booked' && <> <span className="pill warn">booking {e.bookingStatus}</span></>}
+                <p>{[e.guestName, e.bookingCode].filter(Boolean).join(' · ') || 'Tanpa nama'} · ke {e.recipient}</p>
+              </div>
+              <div className="acts">{href && <a className="btn sm" href={href}>Buka chat</a>}</div>
+            </div>
+          </Fragment>
+        )
+      }) : <div className="mut" style={{ padding: 20, textAlign: 'center' }}>{data?.refreshedAt ? 'Tidak ada reminder terjadwal.' : 'Belum ada data jadwal dari sistem booking.'}</div>}
+    </>
+  )
+}
 
 /** Pilihan pemilih waktu (hari ke-off dari hari ini WIB, jam) → ISO. */
 function dueIso(off: number, tm: string): string {
@@ -32,12 +85,12 @@ export function AntreanView() {
   const tap = useItemTap()
   const itemsApi = useApi<SummaryItemsResponse>('/api/summary-items')
   const remApi = useApi<{ reminders: NewReminder[] }>('/api/new/reminders')
+  const schedApi = useApi<AgentScheduleResponse>('/api/new/agent-schedule')
   const Q = buildQueue(itemsApi.data, remApi.data?.reminders, new Date())
   const loading = itemsApi.loading || remApi.loading
   const error = itemsApi.error || remApi.error
   const reload = () => { itemsApi.reload(); remApi.reload() }
-  // Tautan lama ke tab Follow-up agent (Dashboard) jatuh ke Balas.
-  const tab: AtKey = s.atab === FUT ? 'Balas' : s.atab
+  const tab = s.atab
   const fail = (e: unknown) => toast(e instanceof Error ? e.message : 'Gagal')
   const go = (href: string | null) => { if (href) window.location.assign(href) }
 
@@ -94,7 +147,7 @@ export function AntreanView() {
   const topK = (['Balas', 'Tindak lanjut', 'Janji tim'] as AtKey[]).find((k) => Q[k].length)
   const top = topK ? Q[topK][0] : null
   const next = topK ? Q[topK].slice(1, 4) : []
-  const list = Q[tab]
+  const list = tab === FUT ? [] : Q[tab]
 
   return (
     <section className="view fx" id="v-antrean">
@@ -128,15 +181,19 @@ export function AntreanView() {
         <SegBar
           id="a-tabs"
           active={tab}
-          onPick={(k) => set((d) => { d.atab = k as AtKey })}
-          items={AT_KEYS.map((k) => ({ key: k, label: ALBL[k] || k, n: Q[k].length, color: TAB_COLOR[k] }))}
+          onPick={(k) => set((d) => { d.atab = k as AtKey | typeof FUT })}
+          items={[
+            ...AT_KEYS.map((k) => ({ key: k, label: ALBL[k] || k, n: Q[k].length, color: TAB_COLOR[k] })),
+            { key: FUT, label: 'Jadwal agent', n: schedApi.data?.items.length ?? 0, color: TAB_COLOR[FUT] },
+          ]}
         />
       </div>
 
       <div className="card" id="a-list">
-        {loading && !itemsApi.data ? <div className="mut" style={{ padding: 20, textAlign: 'center' }}>Memuat…</div>
+        {tab === FUT ? <Schedule data={schedApi.data} loading={schedApi.loading} />
+          : loading && !itemsApi.data ? <div className="mut" style={{ padding: 20, textAlign: 'center' }}>Memuat…</div>
           : list.length ? list.map((x) => {
-            const items = actsOf(x, tab)
+            const items = actsOf(x, tab as AtKey)
             return (
               <div key={x.key} className="item" style={{ '--ac': TAB_COLOR[tab] } as Css} onClick={tap(x.name, items)}>
                 <div style={{ minWidth: 0 }}>
