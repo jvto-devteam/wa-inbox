@@ -94,6 +94,9 @@ describe('exclusionFor', () => {
     expect(await exclusionFor('c', 'PROMISE', null, NOW)).toBe('PILIH_OPERATOR_LAIN')
     expect(await exclusionFor('c', 'FOLLOW_UP', null, NOW)).toBe('PILIH_OPERATOR_LAIN')
     expect(await exclusionFor('c', 'REPLY', null, NOW)).toBeNull()
+    // pencari open trip (label profil) tanpa booking = sama
+    mockPrisma.conversation.findUnique.mockResolvedValue(conv({ chatReview: { jenisKontak: 'calon_tamu', status: 'perlu_tindakan', profil: [{ label: 'open_trip', messageId: 'm1' }] } }) as never)
+    expect(await exclusionFor('c', 'PROMISE', null, NOW)).toBe('PILIH_OPERATOR_LAIN')
   })
 
   it('tahun tanggal trip dari AI dibetulkan: tidak pernah sebelum percakapan dimulai', async () => {

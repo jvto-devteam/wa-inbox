@@ -51,7 +51,7 @@ status percakapan, jenis kontak, janji tim, alasan belum booking, `perluBalas`, 
 |---|---|---|
 | AQ-20 | Mitra (Klook, vendor, hotel) bukan Follow Up lead. Pesan mitra tetap bisa masuk Balas atau Janji Admin. | `MITRA_BUKAN_FOLLOW_UP` |
 | AQ-21 | Percakapan yang menurut AI sudah selesai tidak masuk Follow Up maupun Janji Admin. | `PERCAKAPAN_SELESAI` |
-| AQ-22 | Tamu yang memilih operator lain tidak masuk Follow Up maupun Janji Admin. | `PILIH_OPERATOR_LAIN` |
+| AQ-22 | Tamu yang memilih operator lain, atau calon tamu yang mencari open trip/group tour (JVTO hanya tur privat), tidak masuk Follow Up maupun Janji Admin. | `PILIH_OPERATOR_LAIN` (label profil `open_trip`) |
 | AQ-23 | Tamu yang trip-nya sudah selesai tidak masuk Follow Up maupun Janji Admin, kecuali AI melihat potensi booking baru. Tamu lama yang datanya sudah dicek tapi tanpa booking aktif juga dihitung trip selesai, karena pencarian booking hanya melihat trip sejak awal bulan lalu. | `TRIP_SELESAI` |
 | AQ-24 | Calon tamu tanpa booking yang tanggal trip mintaannya sudah lewat tidak masuk Follow Up maupun Janji Admin. Bila tamu hanya menyebut bulan, batasnya akhir bulan itu. Bila tahun tidak disebut, tanggal tidak pernah dianggap sebelum percakapan dimulai (tahunnya dimajukan). | `TANGGAL_TRIP_LEWAT` (`tanggalTripSelesai`, `tripEndDay`) |
 | AQ-25 | Follow Up yang ternyata tim masih berutang (janji belum ditepati, pertanyaan tamu belum dijawab tuntas, info yang dijanjikan belum dikirim) dipindah ke Janji Admin, kecuali pesan admin terakhir meminta jawaban tamu. Bila utangnya beres, ia kembali ke Follow Up. | `followUpOwedByTeam`, catatan "Pindahan Follow Up: tim masih berutang" |
@@ -70,4 +70,5 @@ status percakapan, jenis kontak, janji tim, alasan belum booking, `perluBalas`, 
 
 | ID | Aturan | Kode alasan |
 |---|---|---|
+| AQ-41 | Pesan panjang dikirim ke AI sampai 2.000 huruf. Yang lebih panjang dipotong dengan penanda "…[dipotong]", dan AI diberi tahu bagian yang terpotong bukan berarti belum dikirim. | `TRANSCRIPT_MAX_CHARS_PER_MESSAGE`, `TRANSCRIPT_CUT_MARK` |
 | AQ-40 | Job pukul 00.00 tidak meringkas ulang chat yang tidak punya pesan baru sejak ringkasan terakhirnya. Ringkasan lama dipakai apa adanya dan tidak tercatat sebagai pembaruan. Tombol "Buat ulang" admin tetap meringkas ulang semuanya. | `reusableReview` |

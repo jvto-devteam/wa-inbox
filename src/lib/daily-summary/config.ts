@@ -22,8 +22,13 @@ export const DORMANT_STAGES: readonly string[] = ['new', 'nego']
 
 /** Pesan terakhir per percakapan yang dikirim ke LLM. */
 export const TRANSCRIPT_MAX_MESSAGES = 30
-/** Satu pesan panjang (itinerary yang di-paste) tidak boleh menghabiskan seluruh prompt. */
-export const TRANSCRIPT_MAX_CHARS_PER_MESSAGE = 1000
+/**
+ * Satu pesan panjang (itinerary yang di-paste) tidak boleh menghabiskan seluruh prompt. 2000 (dari 1000, audit 2026-11-25):
+ * balasan admin JVTO rutin > 1000 huruf, dan bagian akhirnya (tautan harga, "thank you for considering") yang hilang
+ * membuat model mengira harga belum dikirim (Félix). Yang tetap terpotong diberi penanda `TRANSCRIPT_CUT_MARK`.
+ */
+export const TRANSCRIPT_MAX_CHARS_PER_MESSAGE = 2000
+export const TRANSCRIPT_CUT_MARK = '…[dipotong]'
 
 /** Jauh di atas default 10 s llm.ts: job ini di luar jalur webhook, tidak ada yang menunggu. */
 export const REVIEW_TIMEOUT_MS = 60_000

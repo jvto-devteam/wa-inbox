@@ -10,7 +10,7 @@ import { EXCLUSION_NOTE, NON_CONTENT_TYPES, OWED_NOTE } from './exclusion'
  */
 const ROOT = join(__dirname, '..', '..', '..')
 const doc = readFileSync(join(ROOT, 'docs', 'aturan-antrean.md'), 'utf8')
-const code = ['src/lib/summary-items/exclusion.ts', 'src/lib/summary-items/sync.ts', 'src/lib/summary-items/noise.ts', 'src/lib/daily-summary/review.ts', 'src/lib/daily-summary/generate.ts', 'src/lib/daily-summary/payload-schema.ts', 'src/lib/daily-summary/collect.ts']
+const code = ['src/lib/summary-items/exclusion.ts', 'src/lib/summary-items/sync.ts', 'src/lib/summary-items/noise.ts', 'src/lib/daily-summary/review.ts', 'src/lib/daily-summary/generate.ts', 'src/lib/daily-summary/payload-schema.ts', 'src/lib/daily-summary/collect.ts', 'src/lib/daily-summary/config.ts']
   .map((p) => readFileSync(join(ROOT, p), 'utf8'))
   .join('\n')
 

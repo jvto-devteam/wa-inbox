@@ -37,7 +37,7 @@ export const EXCLUSION_NOTE: Record<ExclusionReason, string> = {
   MITRA_BUKAN_FOLLOW_UP: 'Mitra: bukan follow-up lead',
   PERCAKAPAN_SELESAI: 'Menurut AI percakapan sudah selesai',
   PERCAKAPAN_UJI: 'Percakapan uji',
-  PILIH_OPERATOR_LAIN: 'Tamu memilih operator lain',
+  PILIH_OPERATOR_LAIN: 'Tamu memilih operator lain / mencari open trip',
   TANGGAL_TRIP_LEWAT: 'Tanggal trip yang diminta sudah lewat',
 }
 
@@ -210,11 +210,14 @@ export async function exclusionFor(conversationId: string, kind: string, review:
   if (!whatsapp) return 'BUKAN_WHATSAPP'
   if (conv.isTest) return 'PERCAKAPAN_UJI'
   if (blockedByIndonesianGate({ isTest: conv.isTest, phone: conv.contact?.phone ?? null })) return 'NOMOR_INDONESIA'
-  const latest = (conv.chatReview ?? {}) as { jenisKontak?: unknown; status?: unknown; belumBooking?: { alasan?: unknown }; tanggalTripSelesai?: unknown }
+  const latest = (conv.chatReview ?? {}) as { jenisKontak?: unknown; status?: unknown; belumBooking?: { alasan?: unknown }; tanggalTripSelesai?: unknown; profil?: unknown }
   if (latest.jenisKontak === 'lainnya') return 'BUKAN_TAMU'
   if (kind === 'FOLLOW_UP' && latest.jenisKontak === 'mitra') return 'MITRA_BUKAN_FOLLOW_UP'
   if ((kind === 'FOLLOW_UP' || kind === 'PROMISE') && latest.status === 'selesai') return 'PERCAKAPAN_SELESAI'
-  if ((kind === 'FOLLOW_UP' || kind === 'PROMISE') && latest.belumBooking?.alasan === 'pilih_lain') return 'PILIH_OPERATOR_LAIN'
+  // Memilih operator lain, atau calon tamu tanpa booking yang mencari open trip (label profil `open_trip`): JVTO hanya
+  // tur privat, jadi tidak ada yang bisa ditindaklanjuti (owner 2026-11-25, kasus Félix).
+  const seeksOpenTrip = !conv.bookingData && Array.isArray(latest.profil) && latest.profil.some((p) => (p as { label?: unknown } | null)?.label === 'open_trip')
+  if ((kind === 'FOLLOW_UP' || kind === 'PROMISE') && (latest.belumBooking?.alasan === 'pilih_lain' || seeksOpenTrip)) return 'PILIH_OPERATOR_LAIN'
   // Lead tanpa booking yang tanggal trip yang dimintanya sudah lewat: tidak ada lagi yang bisa ditindaklanjuti.
   if (kind === 'FOLLOW_UP' || kind === 'PROMISE') {
     const end = conv.bookingData ? null : tripEndDay(conv.chatReview, conv.createdAt)

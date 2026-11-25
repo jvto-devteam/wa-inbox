@@ -6,6 +6,7 @@ import {
   DORMANT_STAGES,
   LOOKBACK_MS,
   SNIPPET_MAX_CHARS,
+  TRANSCRIPT_CUT_MARK,
   TRANSCRIPT_MAX_CHARS_PER_MESSAGE,
   TRANSCRIPT_MAX_MESSAGES,
   UNREPLIED_MIN_MS,
@@ -149,7 +150,7 @@ function transcriptLine(m: TranscriptMessage): string {
   const content = m.content?.trim() ? m.content.trim().replace(/\s*\r?\n\s*/g, ' ⏎ ') : ''
   // "here is the transport price" + gambar harga: tanpa penanda, model mengira harganya belum dikirim (audit 2026-11-25).
   const raw = content ? (MEDIA_TYPES.has(m.type.toLowerCase()) ? `[${m.type}] ${content}` : content) : `[${m.type}]`
-  const text = raw.length > TRANSCRIPT_MAX_CHARS_PER_MESSAGE ? `${raw.slice(0, TRANSCRIPT_MAX_CHARS_PER_MESSAGE)}…` : raw
+  const text = raw.length > TRANSCRIPT_MAX_CHARS_PER_MESSAGE ? `${raw.slice(0, TRANSCRIPT_MAX_CHARS_PER_MESSAGE)}${TRANSCRIPT_CUT_MARK}` : raw
   // Kabar otomatis diberi label sendiri supaya model tidak menilainya jawaban tim atas pertanyaan pelanggan.
   return `[${jakartaStamp(m.createdAt)}] ${m.automated ? 'Sistem (pesan otomatis)' : SPEAKER[m.sentBy]}: ${text}`
 }
