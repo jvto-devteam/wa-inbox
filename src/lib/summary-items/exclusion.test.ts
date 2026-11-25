@@ -134,6 +134,9 @@ describe('janji menunggu tamu', () => {
       expect(ASKS_GUEST.test(t), t).toBe(true)
     for (const t of ['Refund sedang kami proses.', 'Noted, we will send the invoice tomorrow.'])
       expect(ASKS_GUEST.test(t), t).toBe(false)
+    const { asksGuest } = await import('./exclusion')
+    expect(asksGuest('Here is our package https://javavolcano-touroperator.com/tours?utm_source=wa')).toBe(false)
+    expect(asksGuest('See https://x.com/a?b=1 — how many people?')).toBe(true)
   })
 
   it('pertanyaan agen sesudah janji + tamu belum menjawab = menunggu tamu; dijawab atau tanpa pertanyaan = bukan', async () => {
