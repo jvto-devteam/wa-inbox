@@ -74,17 +74,19 @@ export const CONTENT_MESSAGE_WHERE = {
 
 /**
  * Hari terakhir trip mintaan dari ringkasan, tahunnya dibetulkan: transkrip tidak memuat tahun, jadi model kadang menulis
- * 2025/2024 untuk "22 December" (audit 2026-11-25: Villeval, Kevin, Félix tertutup keliru). Rencana trip tidak mungkin
- * sebelum percakapan dimulai, jadi tahun dimajukan sampai tanggalnya >= hari percakapan dibuat.
+ * 2025/2024 untuk "22 December" (audit 2026-11-25: Villeval, Kevin, Félix tertutup keliru). Hanya tahun yang LEBIH LAMA dari
+ * tahun percakapan yang dikoreksi: dijadikan tahun percakapan, lalu +1 bila masih sebelum percakapan dimulai. Tahun yang sama
+ * dipercaya apa adanya (Pro Tech: "13 Nov 2026" ditulis tamu pada 17 Nov 2026 memang sudah lewat).
  */
 export function tripEndDay(review: unknown, conversationCreatedAt: Date): string | null {
   const v = (review as { tanggalTripSelesai?: unknown } | null)?.tanggalTripSelesai
   if (typeof v !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(v)) return null
   const start = jakartaDay(conversationCreatedAt)
-  let [y] = v.split('-').map(Number)
+  const startYear = Number(start.slice(0, 4))
+  const y = Number(v.slice(0, 4))
+  if (y >= startYear) return v
   const md = v.slice(4)
-  for (let i = 0; i < 5 && `${y}${md}` < start; i++) y++
-  return `${y}${md}`
+  return `${startYear}${md}` < start ? `${startYear + 1}${md}` : `${startYear}${md}`
 }
 
 /** Trip sudah lewat: tanggal selesai booking (WIB) sebelum hari ini. */
