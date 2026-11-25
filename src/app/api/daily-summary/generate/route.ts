@@ -28,7 +28,8 @@ async function readBody(req: Request): Promise<unknown> {
 }
 
 export async function POST(req: Request) {
-  const authorized = hasValidCronSecret(req) || (await requireAdmin(req)) !== null
+  const fromCron = hasValidCronSecret(req)
+  const authorized = fromCron || (await requireAdmin(req)) !== null
   if (!authorized) {
     return NextResponse.json({ error: 'Hanya admin atau scheduler yang bisa membuat ringkasan' }, { status: 403 })
   }
@@ -52,7 +53,8 @@ export async function POST(req: Request) {
   }
 
   try {
-    const result = await generateDailySummary(date, now)
+    // Cron memakai ulang ringkasan chat yang tidak berubah; "Buat ulang" admin meringkas ulang semuanya.
+    const result = await generateDailySummary(date, now, { reuse: fromCron })
     if (result.outcome === 'already_running') {
       return NextResponse.json({ error: 'Ringkasan tanggal ini sedang dibuat' }, { status: 409 })
     }

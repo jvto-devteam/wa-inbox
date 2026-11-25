@@ -35,8 +35,7 @@ export function sampleSummary(): DailySummaryResponse {
             // tanpa langkahBerikut: saran memakai rekomendasi follow-up lead
             belumBooking: { alasan: 'menunggu_tim', teks: 'Menunggu invoice', rekomendasi: 'Kirim invoice hari ini' },
           }) },
-          // c2 juga ada di unreplied: review pertama yang ada dipakai, tidak terhitung dua kali
-          { ...ref('c2', 'Lukas B.'), inbound: 1, outbound: 0, review: null },
+          // c2 (Lukas) hanya kandidat belum dibalas: tidak ada pesan hari itu = masih menggantung
           { ...ref('c3', null), inbound: 1, outbound: 0, review: null },
         ],
       },

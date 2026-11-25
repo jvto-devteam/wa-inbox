@@ -30,6 +30,8 @@ export interface SummaryChat {
   saran: string | null
   /** Item antrean live (Ingatkan/Lepas memakai id-nya); null = tidak pernah masuk antrean. */
   item: SummaryItemStatus | null
+  /** Ada pesan pada hari itu; false = masih menggantung (belum dibalas/diam) tanpa pesan baru. */
+  active: boolean
 }
 
 export interface SummaryDay {
@@ -65,6 +67,7 @@ export function summaryDay(res: DailySummaryResponse): SummaryDay | null {
       }
     }
   }
+  const activeIds = new Set(p?.conversations.map((c) => c.conversationId) ?? [])
   const points: SummaryPoint[] = []
   const chats: SummaryChat[] = []
   let unkept = 0
@@ -83,11 +86,12 @@ export function summaryDay(res: DailySummaryResponse): SummaryDay | null {
     ]
     // Langkah berikut dulu; calon tamu tanpa itu memakai rekomendasi follow-up "belum booking".
     const saran = open ? review.langkahBerikut.trim() || review.belumBooking?.rekomendasi.trim() || null : null
-    chats.push({ conversationId, name, open, lines: lines.length || saran ? lines : [review.alasan || review.topik || 'Tidak ada catatan.'], saran, item })
+    chats.push({ conversationId, name, open, lines: lines.length || saran ? lines : [review.alasan || review.topik || 'Tidak ada catatan.'], saran, item, active: activeIds.has(conversationId) })
   }
   // Urutan jenis = prioritas (komplain dulu); dalam satu jenis urutan payload dipertahankan.
   points.sort((a, b) => RANK(a.kind) - RANK(b.kind))
-  chats.sort((a, b) => Number(b.open) - Number(a.open))
+  // Aktif hari itu dulu, lalu yang menggantung; di dalamnya yang perlu tindakan dulu.
+  chats.sort((a, b) => Number(b.active) - Number(a.active) || Number(b.open) - Number(a.open))
   return {
     date: s.date,
     status: s.status,

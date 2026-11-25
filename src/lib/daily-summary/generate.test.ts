@@ -20,7 +20,7 @@ import { prisma } from '@/lib/db'
 import { collectDay, type CollectedDay, type ConversationFacts, type TranscriptMessage } from './collect'
 import { reviewConversation } from './review'
 import { pruneChatReviews, saveChatReview } from '@/lib/chat-review/store'
-import { buildPayload, generateDailySummary, pruneDailySummaries } from './generate'
+import { buildPayload, generateDailySummary, pruneDailySummaries, reusableReview } from './generate'
 import type { ConversationReview } from './payload-schema'
 import { jakartaDayRange } from './time'
 
@@ -246,6 +246,69 @@ describe('generateDailySummary', () => {
     const update = mockPrisma.dailySummary.update.mock.calls[0][0]
     expect(update.data.status).toBe('FAILED')
     expect(String(update.data.error)).not.toContain('secret')
+  })
+})
+
+describe('reusableReview: tanpa pesan baru, ringkasan terakhir dipakai ulang', () => {
+  const last = new Date(end.getTime() - 30 * HOUR)
+  const stored = (at: Date | null, chatReview: unknown = review('perlu_tindakan')) => ({ chatReview, chatReviewAt: at })
+
+  it('dipakai bila dibuat sesudah pesan terakhir dan tidak lewat akhir hari; catatan crew dibuang', () => {
+    const withCrew = { ...review('perlu_tindakan'), catatanCrew: { diperbaruiAt: 'x', perubahan: ['a'] } }
+    const r = reusableReview(stored(new Date(last.getTime() + HOUR), withCrew), last, end)
+    expect(r).toMatchObject({ status: 'perlu_tindakan' })
+    expect(r).not.toHaveProperty('catatanCrew')
+    expect(reusableReview(stored(last), last, end)).not.toBeNull()
+    expect(reusableReview(stored(end), last, end)).not.toBeNull()
+  })
+
+  it('tidak dipakai bila ada pesan sesudahnya, lebih baru dari akhir hari, belum ada, atau rusak', () => {
+    expect(reusableReview(stored(new Date(last.getTime() - 1)), last, end)).toBeNull()
+    expect(reusableReview(stored(new Date(end.getTime() + 1)), last, end)).toBeNull()
+    expect(reusableReview(stored(null), last, end)).toBeNull()
+    expect(reusableReview(undefined, last, end)).toBeNull()
+    expect(reusableReview(stored(end, { status: 'aneh' }), last, end)).toBeNull()
+    expect(reusableReview(stored(end), undefined, end)).toBeNull()
+  })
+})
+
+describe('generateDailySummary: pakai ulang ringkasan', () => {
+  beforeEach(() => {
+    mockPrisma.settings.findUnique.mockResolvedValue({ ollamaModel: 'm' } as never)
+    mockPrisma.dailySummary.deleteMany.mockResolvedValue({ count: 0 })
+    mockPrisma.dailySummary.updateMany.mockResolvedValue({ count: 1 })
+  })
+  // 'diam': lead yang tidak ada pesan hari itu, ringkasan terakhir sesudah pesan terakhirnya.
+  // 'aktif': ada pesan hari itu sesudah ringkasan terakhirnya → AI.
+  const quietAt = new Date(end.getTime() - 72 * HOUR)
+  const setup = () => {
+    vi.mocked(collectDay).mockResolvedValue(day([
+      conv('diam', [msg('OUTBOUND', quietAt)]),
+      conv('aktif', [msg('INBOUND', new Date(end.getTime() - 2 * HOUR))], { inboundToday: 1 }),
+    ]))
+    mockPrisma.conversation.findMany.mockResolvedValue([
+      { id: 'diam', bookingData: null, chatReview: review('perlu_tindakan'), chatReviewAt: new Date(quietAt.getTime() + HOUR) },
+      { id: 'aktif', bookingData: null, chatReview: review('selesai'), chatReviewAt: new Date(end.getTime() - 5 * HOUR) },
+    ] as never)
+    vi.mocked(reviewConversation).mockResolvedValue(review('perlu_tindakan'))
+  }
+
+  it('cron: chat tanpa pesan baru tidak memanggil AI dan tidak ditulis ulang sebagai ringkasan terbaru', async () => {
+    setup()
+    await generateDailySummary(DATE, end)
+    expect(reviewConversation).toHaveBeenCalledTimes(1)
+    expect(vi.mocked(reviewConversation).mock.calls[0][0].ids).toEqual([`m-INBOUND-${end.getTime() - 2 * HOUR}`])
+    expect(vi.mocked(saveChatReview).mock.calls.map((c) => c[0])).toEqual(['aktif'])
+    const payload = mockPrisma.dailySummary.update.mock.calls[0][0].data.payload as { counts: { reviewReused: number; reviewed: number }; dormant: { conversationId: string; review: unknown }[] }
+    expect(payload.counts).toMatchObject({ reviewReused: 1, reviewed: 2 })
+    expect(payload.dormant.find((d) => d.conversationId === 'diam')?.review).toMatchObject({ status: 'perlu_tindakan' })
+  })
+
+  it('Buat ulang (reuse: false): semua diringkas ulang oleh AI', async () => {
+    setup()
+    await generateDailySummary(DATE, end, { reuse: false })
+    expect(reviewConversation).toHaveBeenCalledTimes(2)
+    expect(vi.mocked(saveChatReview).mock.calls.map((c) => c[0]).sort()).toEqual(['aktif', 'diam'])
   })
 })
 

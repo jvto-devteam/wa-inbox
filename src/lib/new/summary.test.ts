@@ -17,7 +17,8 @@ describe('summaryDay', () => {
 
   it('status per percakapan: item antrean live menang atas review hari itu; tanpa review tidak tampil', () => {
     const D = summaryDay(sampleSummary())!
-    expect(D.chats.map((c) => [c.name, c.open])).toEqual([['Emma R.', true], ['Lukas B.', true]])
+    // Emma ada di payload.conversations (aktif hari itu); Lukas hanya kandidat belum dibalas (menggantung)
+    expect(D.chats.map((c) => [c.name, c.open, c.active])).toEqual([['Emma R.', true, true], ['Lukas B.', true, false]])
     const lukas = D.chats.find((c) => c.conversationId === 'c2')!
     expect(lukas.lines).toEqual(['❓ Kapan sopir datang?'])
     expect(lukas).toMatchObject({ saran: 'Minta maaf dan tawarkan jemput ulang', item: null })

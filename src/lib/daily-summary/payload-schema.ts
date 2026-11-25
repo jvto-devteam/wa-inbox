@@ -346,6 +346,8 @@ export const dailySummaryPayloadSchema = z.object({
     newConversations: z.number(),
     reviewed: z.number(),
     reviewFailed: z.number(),
+    /** Review yang dipakai ulang dari ringkasan terakhir (tanpa pesan baru, tanpa panggilan AI). Opsional: baris lama tidak punya. */
+    reviewReused: z.number().optional(),
   }),
   /** Kandidat yang dinilai LLM sudah `selesai` -- tidak tampil, tapi dihitung agar bisa diaudit. */
   filteredOut: z.object({

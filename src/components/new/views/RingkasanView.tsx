@@ -202,8 +202,8 @@ export function RingkasanView() {
             : !chats.length ? <div className="mut" style={{ padding: 20, textAlign: 'center' }}>Tidak ada percakapan yang diringkas pada tanggal ini.</div>
             : chats.map((c, i) => (
               <Fragment key={c.conversationId}>
-              {(i === 0 || chats[i - 1].open !== c.open) && (
-                <div className="pg-sec">{c.open ? 'Perlu tindakan' : 'Selesai'} <span className={'pill ' + (c.open ? 'warn' : 'good')}>{c.open ? openN : chats.length - openN}</span></div>
+              {(i === 0 || chats[i - 1].active !== c.active) && (
+                <div className="pg-sec">{c.active ? 'Aktif hari itu' : 'Masih menggantung · tidak ada pesan baru'} <span className="pill neu">{chats.filter((x) => x.active === c.active).length}</span></div>
               )}
               <details className="feat" style={{ margin: '0 0 8px' }} open={c.open}>
                 <summary><b>{c.name}</b><span className={'pill ' + (c.open ? 'warn' : 'good')} style={{ marginLeft: 'auto' }}>{c.open ? 'Perlu tindakan' : 'Selesai'}</span></summary>
