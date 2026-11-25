@@ -51,8 +51,12 @@ export function LaporanView() {
   const { from, to } = rangeOf(period, today)
   const { loading, data: R, error } = useReport(from, to)
   const conv = R && R.inquiries ? Math.round((R.inquiriesBooked / R.inquiries) * 100) : 0
-  // Lead yang menunggu balasan kita lebih dulu (itu yang bisa langsung dikerjakan tim).
-  const leads = R ? [...R.leads].filter((l) => !alasanF || l.alasan === alasanF).sort((a, b) => Number(b.lastFrom === 'tamu') - Number(a.lastFrom === 'tamu')) : []
+  // Urutan dari server: menunggu balasan kita, masih bisa dikejar, lalu tanggal trip sudah lewat (AL-03, AL-05).
+  const leads = R ? R.leads.filter((l) => !alasanF || l.alasan === alasanF) : []
+  const groupOf = (l: ReportLead) => (l.tripPassed ? 'lewat' : l.waitingUs ? 'balas' : 'tunggu')
+  const GROUP_LABEL = { balas: 'Menunggu balasan kita', tunggu: 'Menunggu tamu / belum ada kabar', lewat: 'Tanggal trip sudah lewat' } as const
+  const waitingUs = R ? R.leads.filter((l) => groupOf(l) === 'balas').length : 0
+  const passed = R ? R.leads.filter((l) => l.tripPassed).length : 0
   const pickAlasan = (a: LeadBlocker) => { setAlasanF((cur) => (cur === a ? null : a)); st.flash('#l-leads') }
   const go = (href: string) => window.location.assign(href)
   /** Reminder kontak berisi follow-up; tidak mengirim apa pun ke tamu. */
@@ -88,7 +92,7 @@ export function LaporanView() {
           { label: 'Inquiry baru', value: R ? R.inquiries : '…', detail: 'chat WhatsApp nomor luar negeri', visual: R ? <Spark values={R.trend.map((w) => w.inquiries)} /> : undefined, onClick: () => st.flash('#l-trend') },
           { label: 'Jadi booking', value: R ? R.inquiriesBooked : '…', detail: 'konversi ' + conv + '%', visual: <Meter pct={conv} color="var(--s1)" />, onClick: () => st.flash('#l-bookings') },
           { label: 'Booking dari WA', value: R ? R.bookings.length : '…', detail: 'tanggal booking di periode', onClick: () => st.flash('#l-bookings') },
-          { label: 'Belum booking', value: R ? R.leads.length : '…', tone: R && R.leads.length ? 'warn' : undefined, detail: R ? R.leads.filter((l) => l.lastFrom === 'tamu').length + ' menunggu balasan kita' : '', onClick: () => st.flash('#l-leads') },
+          { label: 'Belum booking', value: R ? R.leads.length : '…', tone: R && R.leads.length ? 'warn' : undefined, detail: R ? waitingUs + ' menunggu balasan kita' + (passed ? ' · ' + passed + ' trip sudah lewat' : '') : '', onClick: () => st.flash('#l-leads') },
         ]}
       />
 
@@ -146,7 +150,7 @@ export function LaporanView() {
       <div className="grid g21" style={{ marginTop: 12 }}>
         <div className="card" id="l-leads">
           <h3>Belum booking: alasan & follow-up</h3>
-          <p className="hint">Inquiry periode ini yang belum booking. Alasan dan rekomendasi dari ringkasan chat AI; yang belum dinilai AI disimpulkan dari pesan terakhir.</p>
+          <p className="hint">Inquiry periode ini yang belum booking. Alasan dan rekomendasi dari ringkasan chat AI; yang belum dinilai AI disimpulkan dari pesan terakhir. Yang tanggal trip-nya sudah lewat tidak perlu di-follow-up lagi, tapi tetap dihitung di alasan.</p>
           {alasanF && R && (
             <div className="l-filter">
               Alasan: <b>{R.blockers.find((b) => b.alasan === alasanF)?.label ?? alasanF}</b>
@@ -155,27 +159,28 @@ export function LaporanView() {
           )}
           {loading ? <div className="mut" style={{ padding: 16 }}>Memuat…</div> : R && leads.length ? leads.map((l, i) => (
             <Fragment key={l.conversationId}>
-            {(i === 0 || (leads[i - 1].lastFrom === 'tamu') !== (l.lastFrom === 'tamu')) && (
-              <div className="pg-sec">{l.lastFrom === 'tamu' ? 'Menunggu balasan kita' : 'Menunggu tamu / belum ada kabar'} <span className={'pill ' + (l.lastFrom === 'tamu' ? 'bad' : 'neu')}>{leads.filter((x) => (x.lastFrom === 'tamu') === (l.lastFrom === 'tamu')).length}</span></div>
+            {(i === 0 || groupOf(leads[i - 1]) !== groupOf(l)) && (
+              <div className="pg-sec">{GROUP_LABEL[groupOf(l)]} <span className={'pill ' + (groupOf(l) === 'balas' ? 'bad' : 'neu')}>{leads.filter((x) => groupOf(x) === groupOf(l)).length}</span></div>
             )}
             {/* Urutan baca: siapa → alasan (pill) → konteks singkat → follow-up (kotak saran). Status menunggu
                 sudah dinyatakan judul kelompok, jadi di kartu tinggal lamanya. */}
             <div className="item l-lead" style={{ gridTemplateColumns: 'minmax(0,1fr)' }}
-              onClick={tap(l.name, [{ label: 'Buka chat', run: () => go(chatHref(l.conversationId)) }, ...(l.contactId ? [{ label: 'Ingatkan follow-up', run: () => ingatkan(l) }] : [])])}>
+              onClick={tap(l.name, [{ label: 'Buka chat', run: () => go(chatHref(l.conversationId)) }, ...(l.contactId && !l.tripPassed ? [{ label: 'Ingatkan follow-up', run: () => ingatkan(l) }] : [])])}>
               <div style={{ minWidth: 0 }}>
                 <div className="l-lh">
                   <a href={'/inbox?conversation=' + l.conversationId}>{l.name}</a>
                   <span className={'pill ' + (l.alasan === 'belum_dijawab' || l.alasan === 'menunggu_tim' ? 'bad' : l.alasan === 'harga' ? 'warn' : 'neu')}>{l.alasanText}</span>
+                  {l.lostByUs && <span className="pill bad" title="Tanggal trip lewat sementara giliran ada di tim">Lepas karena belum kita jawab</span>}
                 </div>
                 <div className="l-lm">
                   {l.phoneTail} · chat {fmt(l.firstChatDay)}{l.lastFrom && l.silentDays ? ' · menunggu ' + l.silentDays + ' hari' : ''}
                   {' · '}{l.sumber === 'ai' ? 'Dinilai AI' + (l.reviewDay ? ' ' + fmt(l.reviewDay) : '') : 'Belum dinilai AI'}
                 </div>
                 <p className="l-lt">{l.teks}</p>
-                {l.rekomendasi && <div className="saran"><span className="saran-k">Follow-up</span><span className="saran-t">{l.rekomendasi}</span></div>}
+                {l.rekomendasi && !l.tripPassed && <div className="saran"><span className="saran-k">Follow-up</span><span className="saran-t">{l.rekomendasi}</span></div>}
                 <div className="acts l-acts">
-                  <a className="btn pri sm" href={chatHref(l.conversationId)}>{l.lastFrom === 'tamu' ? 'Balas di chat' : 'Buka chat'}</a>
-                  {l.contactId && <button type="button" className="btn sm" onClick={() => ingatkan(l)}>Ingatkan follow-up</button>}
+                  <a className={'btn sm' + (l.tripPassed ? '' : ' pri')} href={chatHref(l.conversationId)}>{l.waitingUs && !l.tripPassed ? 'Balas di chat' : 'Buka chat'}</a>
+                  {l.contactId && !l.tripPassed && <button type="button" className="btn sm" onClick={() => ingatkan(l)}>Ingatkan follow-up</button>}
                 </div>
               </div>
             </div>

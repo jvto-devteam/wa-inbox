@@ -177,14 +177,21 @@ describe('tata letak berbeda per halaman /new', () => {
   it('Laporan: tidak berhenti di bacaan -- alasan menyaring lead, lead punya Buka chat + Ingatkan, minggu tren membuka periode', async () => {
     const fn = stubReportFetch()
     show(<LaporanView />)
-    await waitFor(() => expect(document.querySelectorAll('#l-leads .l-lead')).toHaveLength(2))
+    await waitFor(() => expect(document.querySelectorAll('#l-leads .l-lead')).toHaveLength(3))
 
     // alasan → saring lead; klik lagi / "Tampilkan semua" melepas
     fireEvent.click(within(document.getElementById('l-blockers')!).getByText('Harga / budget').closest('.l-blk')!)
     expect(document.querySelectorAll('#l-leads .l-lead')).toHaveLength(1)
     expect(document.querySelector('#l-leads .l-filter')?.textContent).toContain('Harga / budget')
     fireEvent.click(screen.getByText('Tampilkan semua'))
-    expect(document.querySelectorAll('#l-leads .l-lead')).toHaveLength(2)
+    expect(document.querySelectorAll('#l-leads .l-lead')).toHaveLength(3)
+
+    // AL-03: trip sudah lewat = kelompok terakhir, tanpa follow-up/Ingatkan, ditandai bila kalah karena kita
+    const last = document.querySelectorAll('#l-leads .l-lead')[2] as HTMLElement
+    expect(within(last).getByText('Lepas karena belum kita jawab')).toBeTruthy()
+    expect(within(last).queryByText('Ingatkan follow-up')).toBeNull()
+    expect(within(last).queryByText('Follow-up')).toBeNull()
+    expect(document.getElementById('l-leads')!.textContent).toContain('Tanggal trip sudah lewat')
 
     // lead yang menunggu balasan kita: tombol utama "Balas di chat" ke Inbox
     const first = document.querySelector('#l-leads .l-lead')!

@@ -4,6 +4,7 @@ import { getSession } from '@/lib/auth/get-session'
 import { prisma } from '@/lib/db'
 import { jakartaDay } from '@/lib/bot/eval/replay-pairs'
 import { buildReport, type ReportRow } from '@/lib/new/report'
+import { tripEndDay, tripStartDay } from '@/lib/summary-items/exclusion'
 
 /**
  * GET /api/new/report?from=YYYY-MM-DD&to=YYYY-MM-DD — laporan inquiry WhatsApp → booking untuk
@@ -37,6 +38,12 @@ type Raw = {
   review_at: Date | null
   last_at: Date | null
   last_dir: 'INBOUND' | 'OUTBOUND' | null
+  created_at: Date
+  trip_start: string | null
+  trip_end: string | null
+  profile: unknown
+  awaiting_guest: boolean | null
+  awaiting_reply: boolean
 }
 
 export async function GET(req: Request) {
@@ -62,6 +69,12 @@ export async function GET(req: Request) {
         c."chatReview"->'belumBooking' as blocker,
         c."chatReview"->>'langkahBerikut' as next_step,
         c."chatReviewAt" as review_at,
+        c."createdAt" as created_at,
+        c."chatReview"->>'tanggalTripMulai' as trip_start,
+        c."chatReview"->>'tanggalTripSelesai' as trip_end,
+        c."chatReview"->'profil' as profile,
+        case when jsonb_typeof(c."chatReview"->'menungguTamu') = 'boolean' then (c."chatReview"->>'menungguTamu')::boolean end as awaiting_guest,
+        exists (select 1 from "SummaryItem" si where si."conversationId" = c.id and si.kind = 'REPLY' and si.state in ('OPEN', 'SCHEDULED')) as awaiting_reply,
         last.created_at as last_at,
         last.direction::text as last_dir
       from "Conversation" c
@@ -96,6 +109,15 @@ export async function GET(req: Request) {
       reviewAt: r.review_at ? new Date(r.review_at) : null,
       lastAt: r.last_at ? new Date(r.last_at) : null,
       lastDir: r.last_dir,
+      // Tanggal trip mintaan, tahunnya dibetulkan sama dengan Antrean (AQ-24); hari mulai dulu, tanpa itu hari selesai.
+      leadTripDay: (() => {
+        const review = { tanggalTripMulai: r.trip_start, tanggalTripSelesai: r.trip_end }
+        const createdAt = new Date(r.created_at)
+        return tripStartDay(review, createdAt) ?? tripEndDay(review, createdAt)
+      })(),
+      profile: r.profile,
+      awaitingGuest: r.awaiting_guest,
+      awaitingReply: r.awaiting_reply === true,
     }))
     const today = jakartaDay(new Date())
     return NextResponse.json(buildReport(rows, parsed.data.from, parsed.data.to, 8, today))

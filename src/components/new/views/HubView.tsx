@@ -37,7 +37,7 @@ export function HubView() {
 
   const wk = periodRange('minggu-ini', jakartaDay(new Date()))
   const RP = useReport(wk.from, wk.to).data
-  const waiting = RP ? RP.leads.filter((l) => l.lastFrom === 'tamu').length : 0
+  const waiting = RP ? RP.leads.filter((l) => l.waitingUs && !l.tripPassed).length : 0
   const conv = RP && RP.inquiries ? Math.round((RP.inquiriesBooked / RP.inquiries) * 100) : 0
 
   const h = new Date().getHours()

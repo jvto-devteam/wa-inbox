@@ -114,3 +114,15 @@ Ringkasan menampilkan poin penting per hari. Isinya disaring dengan dasar yang s
 | AR-01 | Percakapan yang tidak boleh masuk Antrean karena aturan dasarnya juga tidak tampil di Ringkasan, baik poinnya maupun daftarnya: chat selain WhatsApp, nomor Indonesia, percakapan uji, dan kontak bukan tamu. | `summaryHidden`, `BUKAN_WHATSAPP`, `NOMOR_INDONESIA`, `PERCAKAPAN_UJI`, `BUKAN_TAMU` |
 | AR-02 | Calon tamu tanpa booking yang tanggal trip mintaannya sudah lewat pada hari ringkasan tidak tampil. Cara menghitung tanggalnya sama dengan AQ-24, dan tanggal dibaca dari ringkasan hari itu (yang ditampilkan), ringkasan terbaru hanya cadangan. Tamu yang sudah booking tetap tampil walau trip-nya selesai, karena komplain sesudah trip itu penting. | `TANGGAL_TRIP_LEWAT` |
 | AR-03 | AI menilai setiap poin `penting`. Poin dinilai penting HANYA bila menuntut perhatian atau tindakan tim, atau mengubah jalannya trip: komplain atau insiden, permintaan yang berbeda dari booking, kebutuhan khusus, masalah pembayaran (tenggat, gagal, refund), lokasi tutup yang berdampak, atau keputusan yang ditunggu dari tim. Poin tidak penting: paket, harga, jumlah orang, atau tanggal yang sudah diketahui; hal yang sudah beres; basa-basi atau review positif. Kebutuhan khusus tetap penting walau sudah dicatat, selama trip belum selesai, karena crew harus tahu. Hanya poin penting yang tampil. Ringkasan lama yang belum dinilai tetap tampil. | `normalizePoint`, `coercePoint` |
+
+## Halaman Laporan
+
+Laporan mengukur inquiry WhatsApp yang menjadi booking. Angkanya hanya menghitung orang yang benar-benar baru bertanya, dan alasan belum booking memakai penilaian AI yang sama dengan Antrean, bukan daftar kata.
+
+| ID | Aturan | Kode alasan |
+|---|---|---|
+| AL-01 | Orang yang sudah jadi tamu bukan inquiry, baik di angka inquiry, konversi, maupun tren: yang booking sebelum chat pertama, yang booking lewat Klook, dan tamu lama tanpa booking aktif (`tamu_existing`). | `alreadyGuest` |
+| AL-02 | Booking yang `orderChannel`-nya KLOOK dibuat di Klook, jadi tidak dihitung sebagai booking dari chat WhatsApp. | `isKlook` |
+| AL-03 | Calon tamu yang tanggal trip mintaannya sudah lewat (cara hitung sama dengan AQ-24) tetap dihitung di alasan belum booking, tetapi dipindah ke kelompok "Tanggal trip sudah lewat" tanpa saran follow-up dan tanpa Ingatkan. Bila alasannya "belum dijawab" atau "menunggu info dari tim", ia ditandai lepas karena belum kita jawab. | `tripPassed`, `lostByUs` |
+| AL-04 | Alasan diselaraskan dengan penilaian AI lain di ringkasan yang sama: label profil open trip berarti alasan "Memilih operator lain / open trip"; bila AI menilai giliran ada di tamu (`menungguTamu`, ringkasan sudah membaca pesan terakhir), alasannya tidak boleh "belum dijawab" atau "menunggu info dari tim" dan menjadi "Tamu diam setelah penawaran". | `seeksOpenTrip`, `guestsTurn` |
+| AL-05 | "Menunggu balasan kita" = ada item Balas terbuka di Antrean, bukan sekadar pesan terakhir dari tamu. Lead yang belum dinilai AI hanya berlabel "belum dijawab" bila item Balas itu ada. | `waitingUs`, `awaitingReply` |
