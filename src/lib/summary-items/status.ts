@@ -79,6 +79,7 @@ const CLOSED_REASON_LABEL: Record<string, string> = {
   STAGE_ADVANCED: 'tahap pipeline naik',
   PROMISE_KEPT: 'janji ditepati',
   JUDGED_DONE: 'dinilai selesai',
+  NOT_QUEUED: 'tidak masuk antrean',
 }
 
 export type FollowUpStatus = {

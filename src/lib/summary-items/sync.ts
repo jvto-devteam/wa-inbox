@@ -18,6 +18,7 @@ import {
 } from '@/lib/daily-summary/payload-schema'
 import { jakartaDayKey, jakartaDayRange } from '@/lib/daily-summary/time'
 import { isNoiseMessage } from './noise'
+import { EXCLUSION_NOTE, exclusionFor } from './exclusion'
 import { automatedMessageIds, findOurReply } from './automated'
 import type { SummaryItemKind } from './status'
 
@@ -257,6 +258,18 @@ type UpsertOutcome = 'created' | 'updated' | 'reopened' | 'skipped'
  */
 async function upsertCandidate(c: Candidate, row: ItemRow | null, clock: ReviewClock): Promise<UpsertOutcome> {
   const { date } = clock
+  // Nomor Indonesia, rangkaian hanya reaksi, Follow Up/Janji untuk tamu yang trip-nya selesai: tidak masuk antrean
+  // (exclusion.ts). Item yang masih terbuka ditutup NOT_QUEUED; yang tertutup tidak dibuka lagi.
+  const excluded = await exclusionFor(c.conversationId, c.kind, c.review)
+  if (excluded) {
+    if (row && row.state === 'OPEN') {
+      await prisma.summaryItem.update({
+        where: { id: row.id },
+        data: { state: 'DONE', closedReason: 'NOT_QUEUED', note: EXCLUSION_NOTE[excluded], closedAt: new Date() },
+      })
+    }
+    return 'skipped'
+  }
   const fields = {
     kind: c.kind,
     anchorAt: c.anchorAt,
@@ -571,8 +584,9 @@ async function reconcileOne(
       const lastOutbound = await findOurReply(item.conversationId, {}, 'desc')
       if (lastOutbound && lastOutbound.createdAt > since) since = lastOutbound.createdAt
     }
+    // Reaksi (👍 pada pesan kita) bukan "pelanggan bicara lagi" (owner 2026-11-25).
     const inbound = await prisma.message.findFirst({
-      where: { conversationId: item.conversationId, direction: 'INBOUND', createdAt: { gt: since } },
+      where: { conversationId: item.conversationId, direction: 'INBOUND', type: { not: 'reaction' }, createdAt: { gt: since } },
       orderBy: { createdAt: 'asc' },
       select: messageSelect,
     })
@@ -586,7 +600,7 @@ async function reconcileOne(
       // pesan masuk terbaru.
       const newest =
         (await prisma.message.findFirst({
-          where: { conversationId: item.conversationId, direction: 'INBOUND', createdAt: { gt: since } },
+          where: { conversationId: item.conversationId, direction: 'INBOUND', type: { not: 'reaction' }, createdAt: { gt: since } },
           orderBy: { createdAt: 'desc' },
           select: messageSelect,
         })) ?? inbound

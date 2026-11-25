@@ -221,6 +221,13 @@ Pesan keluar **tidak** menutupnya; janji terbuka membuka lagi DONE/REPLIED bila 
 **terbaru** (max `createdAt`), jadi buka ulang setelah Lepas/PROMISE_KEPT tidak bergantung pada urutan
 keluaran LLM. Aturan buat/buka ulang ada di satu tempat, `upsertCandidate`.
 
+**Yang tidak masuk antrean** (owner 2026-11-25, `src/lib/summary-items/exclusion.ts`): nomor Indonesia (gerbang
+`blockedByIndonesianGate`, percakapan uji tetap masuk); REPLY yang rangkaian pesan pelanggannya hanya reaksi; FOLLOW_UP/PROMISE
+untuk tamu yang trip-nya sudah selesai (`bookingData.date.end_ymd` < hari ini WIB) kecuali review terbaru melihat potensi booking
+baru (`calon_tamu` atau ada `belumBooking`). `upsertCandidate` tidak membuat/membuka item itu; `closeExcludedItems` (tick, sesudah
+reconcile) menutup yang OPEN sebagai DONE `NOT_QUEUED` dengan alasan di `note`. SCHEDULED tidak disentuh. Reaksi juga tidak
+mengubah FOLLOW_UP/PROMISE menjadi REPLY di reconcile.
+
 **API baca untuk agen** (`GET /api/v1/summaries?date=YYYY-MM-DD`, `src/app/api/v1/summaries/route.ts`, owner
 2026-11-05): ringkasan harian versi mesin untuk agen Operator second brain JVTO. Bearer key `wai_` seperti
 `/api/v1/system-messages`, **ditambah** daftar baca `SUMMARIES_READ_CLIENT_IDS` (env kosong = tertutup, 403) supaya key
