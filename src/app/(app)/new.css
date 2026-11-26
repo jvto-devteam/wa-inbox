@@ -923,3 +923,30 @@
 /* Antrean: pilihan urutan Terbaru | Terlama (.seg tanpa indikator geser: tombol aktif diberi latar sendiri). */
 .nwa #a-list .sj-top{border-bottom:1px solid var(--line)}
 .nwa #a-list .seg button.on{background:var(--surface);box-shadow:0 1px 2px rgba(20,25,40,.14)}
+
+/* Layar masuk (/login): desain yang sama dengan aplikasi -- panel gradien seperti kartu sapaan Dashboard, kartu formulir. */
+.nwa.login{min-height:100dvh;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
+.nwa .lg-hero{position:relative;overflow:hidden;background:linear-gradient(135deg,#2f63f5 0%,#1c3fc2 100%);color:#fff;padding:32px 40px;display:flex;flex-direction:column;justify-content:space-between;gap:24px}
+.nwa .lg-hero .hr{position:absolute;right:-40px;bottom:-40px;width:320px;height:320px;opacity:.18;fill:none;stroke:currentColor;stroke-width:1.1;stroke-linecap:round;stroke-linejoin:round;pointer-events:none}
+.nwa .lg-hero h2{margin:0;font-size:30px;font-weight:800;letter-spacing:-.02em;line-height:1.15;max-width:460px;text-wrap:balance}
+.nwa .lg-hero p{margin:10px 0 0;font-size:15px;line-height:1.5;opacity:.9;max-width:460px}
+.nwa .lg-hero .logo{background:#fff;color:#1c3fc2}
+.nwa .lg-hero .brand-lg span:not(.logo){color:rgba(255,255,255,.75)}
+.nwa .lg-foot{font-size:12.5px;opacity:.7}
+.nwa .brand-lg{display:flex;gap:10px;align-items:center}
+.nwa .brand-lg b{display:block;font-weight:650}
+.nwa .brand-lg span:not(.logo){display:block;color:var(--muted);font-size:12px}
+.nwa .lg-side{display:grid;place-items:center;padding:32px max(16px,env(safe-area-inset-right,0px)) 32px max(16px,env(safe-area-inset-left,0px))}
+.nwa .lg-card{width:100%;max-width:400px;padding:28px;border-radius:18px;display:flex;flex-direction:column}
+.nwa .lg-card h1{margin:0 0 2px}
+.nwa .lg-card .sub{margin:0 0 8px}
+.nwa .lg-mbrand{display:none;margin-bottom:16px}
+.nwa .lg-err{margin:6px 0 0;padding:8px 12px;border-radius:9px;background:var(--bad-bg);color:var(--bad);font-size:13px}
+.nwa .lg-btn{margin-top:14px;justify-content:center;padding:10px 14px;font-size:15px}
+.nwa .lg-btn[disabled]{opacity:.7;cursor:default}
+@media (max-width:860px){
+ .nwa.login{grid-template-columns:minmax(0,1fr)}
+ .nwa .lg-hero{display:none}
+ .nwa .lg-mbrand{display:flex}
+ .nwa .lg-card{padding:22px 18px}
+}
