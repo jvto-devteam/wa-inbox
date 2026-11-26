@@ -1,12 +1,13 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { getSession } from '@/lib/auth/get-session'
-import { reconcileSummaryItems } from '@/lib/summary-items/sync'
+import { createLiveReplyItems, reconcileSummaryItems } from '@/lib/summary-items/sync'
 import { SUMMARY_ITEM_INCLUDE, toSummaryItemView, type SummaryItemView } from '@/lib/summary-items/view'
 
 /**
  * GET /api/summary-items — antrean tindakan Summary Harian. Rekonsiliasi dulu dengan pesan
- * dan pengingat terbaru, lalu OPEN (REPLY, lalu FOLLOW_UP, lalu PROMISE; tertua dulu) dan SCHEDULED
+ * dan pengingat terbaru, lalu pesan pelanggan yang belum dibalas langsung jadi Balas (`createLiveReplyItems`, sama dengan
+ * tick; owner 2026-11-26: tidak menunggu), lalu OPEN (REPLY, lalu FOLLOW_UP, lalu PROMISE; tertua dulu) dan SCHEDULED
  * (jatuh tempo terdekat dulu). Terbuka untuk semua yang login, seperti /api/daily-summary.
  */
 export type SummaryItemsResponse = { open: SummaryItemView[]; scheduled: SummaryItemView[]; openGapTotal: number }
@@ -17,6 +18,7 @@ export async function GET(req: Request) {
 
   try {
     await reconcileSummaryItems()
+    await createLiveReplyItems()
     const [rows, openGapTotal] = await Promise.all([
       prisma.summaryItem.findMany({
         where: { state: { in: ['OPEN', 'SCHEDULED'] } },
