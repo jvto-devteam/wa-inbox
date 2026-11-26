@@ -1,9 +1,8 @@
 'use client'
 
-// Inbox /new = Inbox ASLI (src/components/inbox/InboxScreen: daftar chat, isi chat, kotak balasan, panel kontak)
-// dengan kulit desain /new. Tidak ada logika di sini: membalas, bot, template, jendela 24 jam, lampiran, dan mode uji
-// semuanya milik komponen Inbox yang sama dengan /inbox. Kulitnya hanya CSS (.inbox-real di new.css) yang memetakan
-// variabel warna/huruf/sudut Inbox lama ke token /new.
+// Inbox = tampilan desain artifact (.inbox di new.css: daftar | chat | panel kanan) yang digambar langsung oleh komponen
+// Inbox (src/components/inbox/InboxScreen dan anak-anaknya). Tidak ada logika di sini: membalas, bot, template, jendela
+// 24 jam, lampiran, mode uji, dan aksi booking semuanya milik komponen Inbox itu sendiri.
 import { Suspense, useCallback } from 'react'
 import { InboxScreen } from '@/components/inbox/InboxScreen'
 import { LegacyFrame } from '../LegacyFrame'
@@ -11,17 +10,20 @@ import { useNew } from '../store'
 
 export function InboxView() {
   const st = useNew()
-  const { setChatMode } = st
-  // Di ponsel, bar atas dan bar tab bawah /new disembunyikan selagi satu chat terbuka (sama dengan tampilan contoh).
+  const { setChatMode, toggleInfo } = st
+  // Di ponsel, bar atas dan bar tab bawah disembunyikan selagi satu chat terbuka (sama dengan tampilan contoh).
   const onSelectedChange = useCallback((id: string | null) => setChatMode(id ? 'chat' : 'list'), [setChatMode])
+  const onInfo = useCallback(() => toggleInfo(), [toggleInfo])
   return (
     <section className={'view fx' + (st.mstate === 'chat' ? ' m-chat' : '')} id="v-inbox">
-      {/* Tautan di dalam komponen Inbox (mis. /inbox?..., /contacts/...) dibuka di halaman /new padanannya. */}
-      <LegacyFrame className="inbox-real">
+      {/* Hanya penjaga tautan (tanpa kulit): tautan lama di dalam bagian Inbox (mis. /bot-control/decisions) dibuka di
+          halaman padanannya. */}
+      <LegacyFrame skin={false} className="inbox-frame">
         <Suspense fallback={<div className="mut" style={{ padding: 16 }}>Memuat inbox…</div>}>
-          <InboxScreen basePath="/inbox" onSelectedChange={onSelectedChange} />
+          <InboxScreen basePath="/inbox" onSelectedChange={onSelectedChange} onInfo={onInfo} />
         </Suspense>
       </LegacyFrame>
+      <div className="infoscrim" onClick={() => toggleInfo(false)} />
     </section>
   )
 }

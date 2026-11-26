@@ -44,28 +44,30 @@ function mockFetchWithPipeline(detail: typeof baseDetail, pipelineResponse: { ok
   )
 }
 
-// Tab terakhir diingat di localStorage; tiap test mulai dari tab Kontak.
+// Tab terakhir diingat di localStorage; tiap test mulai dari tab bawaan (Booking).
 beforeEach(() => {
   localStorage.clear()
 })
 
+/** Detail kontak sudah dimuat: kolom tidak lagi aria-busy. */
+async function waitForDetail() {
+  await waitFor(() => expect(screen.getByRole('region', { name: 'Info kontak' })).not.toHaveAttribute('aria-busy'))
+}
+
+/** Nama, pipeline, label, dan info platform tinggal di tab Kontak. */
+async function openKontakTab() {
+  await waitForDetail()
+  fireEvent.click(screen.getByRole('tab', { name: 'Kontak' }))
+}
+
 describe('ContactPanel', () => {
-  it('renders contact name, source, and an initial-letter avatar fallback when avatarUrl is null', async () => {
+  it('renders contact name and source in the Kontak tab', async () => {
     mockFetchWith(baseDetail)
     render(<ContactPanel conversationId="conv_1" />)
 
-    await screen.findByText('Bruno Figarola')
+    await openKontakTab()
+    expect(screen.getByText('Bruno Figarola')).toBeInTheDocument()
     expect(screen.getByText('Instagram')).toBeInTheDocument()
-    expect(screen.getByText('B')).toBeInTheDocument()
-    expect(screen.queryByRole('img')).not.toBeInTheDocument()
-  })
-
-  it('renders an <img> avatar when avatarUrl is set', async () => {
-    mockFetchWith({ ...baseDetail, avatarUrl: 'https://example.com/a.jpg' })
-    render(<ContactPanel conversationId="conv_1" />)
-
-    const img = await screen.findByRole('img')
-    expect(img).toHaveAttribute('src', 'https://example.com/a.jpg')
   })
 
   it('shows a verified "Booking Ada" summary when bookingData is present (Mode 3)', async () => {
@@ -106,7 +108,7 @@ describe('ContactPanel', () => {
     mockFetchWith({ ...baseDetail, bookingData: null, tripBrief: null })
     render(<ContactPanel conversationId="conv_1" />)
 
-    await waitFor(() => expect(screen.getByText('Bruno Figarola')).toBeInTheDocument())
+    await waitForDetail()
     expect(screen.queryByText('Booking Ada')).not.toBeInTheDocument()
     expect(screen.queryByText('Info dari percakapan (belum booking)')).not.toBeInTheDocument()
     expect(screen.getByText('Belum ada data booking atau brief perjalanan.')).toBeInTheDocument()
@@ -116,6 +118,7 @@ describe('ContactPanel', () => {
     mockFetchWith(baseDetail)
     render(<ContactPanel conversationId="conv_1" />)
 
+    await openKontakTab()
     await screen.findByText('Confirmed Booking')
   })
 
@@ -141,7 +144,7 @@ describe('ContactPanel', () => {
     mockFetchWith({ ...baseDetail, pipelineStage: 'nego' })
     render(<ContactPanel conversationId="conv_1" />)
 
-    await screen.findByText('Bruno Figarola')
+    await openKontakTab()
     expect(screen.getByLabelText('Tahap pipeline')).toHaveValue('nego')
   })
 
@@ -149,7 +152,7 @@ describe('ContactPanel', () => {
     mockFetchWithPipeline(baseDetail, { ok: true, json: () => Promise.resolve({ pipelineStage: 'booked' }) })
     render(<ContactPanel conversationId="conv_1" />)
 
-    await screen.findByText('Bruno Figarola')
+    await openKontakTab()
     expect(screen.getByLabelText('Tahap pipeline')).toHaveValue('new')
 
     fireEvent.change(screen.getByLabelText('Tahap pipeline'), { target: { value: 'booked' } })
@@ -165,7 +168,7 @@ describe('ContactPanel', () => {
     mockFetchWithPipeline(baseDetail, { ok: false, json: () => Promise.resolve({ error: 'nope' }) })
     render(<ContactPanel conversationId="conv_1" />)
 
-    await screen.findByText('Bruno Figarola')
+    await openKontakTab()
 
     fireEvent.change(screen.getByLabelText('Tahap pipeline'), { target: { value: 'booked' } })
 
@@ -186,7 +189,7 @@ describe('ContactPanel', () => {
     )
     render(<ContactPanel conversationId="conv_1" />)
 
-    await screen.findByText('Bruno Figarola')
+    await openKontakTab()
 
     fireEvent.change(screen.getByLabelText('Tahap pipeline'), { target: { value: 'booked' } })
 
@@ -195,38 +198,29 @@ describe('ContactPanel', () => {
   })
 })
 
-// Tahap 1C. Panel kanan: nama kolom, kerangka saat memuat, dan gulungan sendiri.
+// Tahap 1C. Panel kanan: nama kolom, keadaan memuat, dan gulungan sendiri.
 describe('ContactPanel — kolom, memuat, dan gulungan', () => {
-  it('menunjukkan kerangka selagi detail kontak dimuat, bukan kata "Memuat..." telanjang', () => {
+  it('menandai kolom sibuk selagi detail kontak dimuat, dengan tab tetap tampil', () => {
     // Sengaja tidak pernah selesai: inilah jendela waktu yang sedang diuji.
     vi.stubGlobal('fetch', vi.fn(() => new Promise(() => {})))
-    const { container } = render(<ContactPanel conversationId="conv_1" />)
+    render(<ContactPanel conversationId="conv_1" />)
 
-    const column = container.firstElementChild as HTMLElement
+    const column = screen.getByRole('region', { name: 'Info kontak' })
     expect(column).toHaveAttribute('aria-busy', 'true')
-    expect(container.querySelectorAll('.animate-pulse').length).toBeGreaterThan(0)
+    expect(screen.getAllByRole('tab')).toHaveLength(3)
+    expect(screen.getByText('Memuat…')).toBeInTheDocument()
   })
 
   it('memberi kolomnya nama dan menggulung di dalam dirinya sendiri', async () => {
     mockFetchWith(baseDetail)
     const { container } = render(<ContactPanel conversationId="conv_1" />)
-    await screen.findByText('Bruno Figarola')
+    await waitForDetail()
 
     const column = container.firstElementChild as HTMLElement
     expect(column).toHaveAttribute('aria-label', 'Info kontak')
-    expect(column).toHaveClass('h-full', 'min-h-0', 'overflow-y-auto')
-  })
-
-  it('meneruskan aturan tampil/sembunyi dari halaman tanpa menambah pembungkus sendiri', async () => {
-    mockFetchWith(baseDetail)
-    const { container } = render(<ContactPanel conversationId="conv_1" className="hidden xl:flex" />)
-    await screen.findByText('Bruno Figarola')
-
-    const column = container.firstElementChild as HTMLElement
-    expect(column).toHaveClass('hidden', 'xl:flex')
-    // twMerge harus membuang `flex` bawaan komponen, kalau tidak panel tetap terlihat di layar
-    // sedang justru saat halaman menyuruhnya sembunyi.
-    expect(column.className.split(/\s+/)).not.toContain('flex')
+    expect(column).toHaveClass('col')
+    // Isi yang menggulung sendiri ada di .pan (gaya di new.css), di dalam kolom.
+    expect(column.querySelector('.pan')).toBe(screen.getByRole('tabpanel'))
   })
 })
 
@@ -249,32 +243,37 @@ describe('ContactPanel — info kontak di platform asal', () => {
       href: 'https://www.instagram.com/sinta.jvto/', linkLabel: 'Buka profil Instagram',
     })
     render(<ContactPanel conversationId="conv_1" />)
+    await openKontakTab()
 
     const link = await screen.findByRole('link', { name: '@sinta.jvto' })
     expect(link).toHaveAttribute('href', 'https://www.instagram.com/sinta.jvto/')
     expect(link).toHaveAttribute('target', '_blank')
     expect(link).toHaveAttribute('rel', expect.stringContaining('noopener'))
-    expect(within(screen.getByRole('region', { name: 'Kontak' })).getByText('Instagram')).toBeInTheDocument()
+    expect(screen.getByText('Platform').nextElementSibling).toHaveTextContent('Instagram')
   })
 
   it('nilai tanpa tautan tampil sebagai teks biasa', async () => {
     mockFetchWithChannel({ platform: 'FACEBOOK', platformLabel: 'Facebook', value: 'David', href: null, linkLabel: null })
     render(<ContactPanel conversationId="conv_1" />)
+    await openKontakTab()
 
-    const section = await screen.findByRole('region', { name: 'Kontak' })
-    expect(within(section).getByText('David')).toBeInTheDocument()
-    expect(within(section).queryByRole('link')).not.toBeInTheDocument()
+    const value = await screen.findByText('David')
+    expect(value.tagName).toBe('DD')
+    expect(within(value).queryByRole('link')).not.toBeInTheDocument()
+    expect(screen.getByText('Platform').nextElementSibling).toHaveTextContent('Facebook')
   })
 
   it('tanpa info kontak (respons kosong) bagian ini tidak tampil, panel tetap jalan', async () => {
     mockFetchWithChannel(null)
     render(<ContactPanel conversationId="conv_1" />)
-    await waitFor(() => expect(screen.getByText('Bruno Figarola')).toBeInTheDocument())
-    expect(screen.queryByRole('region', { name: 'Kontak' })).not.toBeInTheDocument()
+    await openKontakTab()
+
+    expect(screen.getByText('Bruno Figarola')).toBeInTheDocument()
+    expect(screen.queryByText('Platform')).not.toBeInTheDocument()
   })
 })
 
-describe('ContactPanel — tab Kontak / Ringkasan chat', () => {
+describe('ContactPanel — tab Booking / Ringkasan / Kontak', () => {
   const chatReview = {
     latest: null,
     item: { id: 'item_1', kind: 'FOLLOW_UP', state: 'OPEN', anchorAt: '2026-10-18T13:30:00.000Z', dueAt: null, closedReason: null, note: null, closedAt: null },
@@ -293,44 +292,47 @@ describe('ContactPanel — tab Kontak / Ringkasan chat', () => {
     )
   }
 
-  it('mulai di tab Kontak dengan isi lama, dan belum memuat ringkasan', async () => {
+  it('mulai di tab Booking, dan belum memuat ringkasan', async () => {
     mockFetchWithChatReview()
     render(<ContactPanel conversationId="conv_1" />)
 
-    await screen.findByText('Bruno Figarola')
-    expect(screen.getByRole('tab', { name: 'Kontak' })).toHaveAttribute('aria-selected', 'true')
-    expect(screen.getByRole('tab', { name: 'Ringkasan chat' })).toHaveAttribute('aria-selected', 'false')
-    expect(screen.getByRole('tabpanel', { name: 'Kontak' })).toContainElement(screen.getByLabelText('Tahap pipeline'))
+    await waitForDetail()
+    expect(screen.getByRole('tab', { name: 'Booking' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByRole('tab', { name: 'Ringkasan' })).toHaveAttribute('aria-selected', 'false')
+    expect(screen.getByRole('tab', { name: 'Kontak' })).toHaveAttribute('aria-selected', 'false')
+    expect(await within(screen.getByRole('tabpanel', { name: 'Booking' })).findByText('Catatan')).toBeInTheDocument()
+    expect(screen.queryByLabelText('Tahap pipeline')).not.toBeInTheDocument()
     expect(fetch).not.toHaveBeenCalledWith('/api/conversations/conv_1/chat-review')
   })
 
-  it('berpindah ke Ringkasan chat lalu kembali ke Kontak, isi lama tetap ada', async () => {
+  it('berpindah ke Ringkasan lalu ke Kontak, isi tiap tab tampil di tabnya', async () => {
     mockFetchWithChatReview()
     render(<ContactPanel conversationId="conv_1" />)
-    await screen.findByText('Bruno Figarola')
+    await waitForDetail()
 
-    fireEvent.click(screen.getByRole('tab', { name: 'Ringkasan chat' }))
-    expect(screen.getByRole('tab', { name: 'Ringkasan chat' })).toHaveAttribute('aria-selected', 'true')
-    const panel = screen.getByRole('tabpanel', { name: 'Ringkasan chat' })
+    fireEvent.click(screen.getByRole('tab', { name: 'Ringkasan' }))
+    expect(screen.getByRole('tab', { name: 'Ringkasan' })).toHaveAttribute('aria-selected', 'true')
+    const panel = screen.getByRole('tabpanel', { name: 'Ringkasan' })
     expect(await within(panel).findByText('Perlu follow up')).toBeInTheDocument()
     expect(fetch).toHaveBeenCalledWith('/api/conversations/conv_1/chat-review')
     expect(screen.queryByLabelText('Tahap pipeline')).not.toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('tab', { name: 'Kontak' }))
-    expect(screen.getByText('Bruno Figarola')).toBeInTheDocument()
-    expect(screen.getByLabelText('Tahap pipeline')).toHaveValue('new')
-    expect(screen.queryByRole('tabpanel', { name: 'Ringkasan chat' })).not.toBeInTheDocument()
+    const kontak = screen.getByRole('tabpanel', { name: 'Kontak' })
+    expect(within(kontak).getByText('Bruno Figarola')).toBeInTheDocument()
+    expect(within(kontak).getByLabelText('Tahap pipeline')).toHaveValue('new')
+    expect(screen.queryByRole('tabpanel', { name: 'Ringkasan' })).not.toBeInTheDocument()
   })
 
   it('tab terakhir diingat untuk panel berikutnya', async () => {
     mockFetchWithChatReview()
     const { unmount } = render(<ContactPanel conversationId="conv_1" />)
-    await screen.findByText('Bruno Figarola')
-    fireEvent.click(screen.getByRole('tab', { name: 'Ringkasan chat' }))
+    await waitForDetail()
+    fireEvent.click(screen.getByRole('tab', { name: 'Ringkasan' }))
     unmount()
 
     render(<ContactPanel conversationId="conv_1" />)
-    expect(await screen.findByRole('tab', { name: 'Ringkasan chat' })).toHaveAttribute('aria-selected', 'true')
+    expect(await screen.findByRole('tab', { name: 'Ringkasan' })).toHaveAttribute('aria-selected', 'true')
     expect(await screen.findByText('Perlu follow up')).toBeInTheDocument()
   })
 
@@ -344,10 +346,10 @@ describe('ContactPanel — tab Kontak / Ringkasan chat', () => {
     })
     try {
       render(<ContactPanel conversationId="conv_1" />)
-      await screen.findByText('Bruno Figarola')
-      expect(screen.getByRole('tab', { name: 'Kontak' })).toHaveAttribute('aria-selected', 'true')
-      fireEvent.click(screen.getByRole('tab', { name: 'Ringkasan chat' }))
-      expect(screen.getByRole('tab', { name: 'Ringkasan chat' })).toHaveAttribute('aria-selected', 'true')
+      await waitForDetail()
+      expect(screen.getByRole('tab', { name: 'Booking' })).toHaveAttribute('aria-selected', 'true')
+      fireEvent.click(screen.getByRole('tab', { name: 'Ringkasan' }))
+      expect(screen.getByRole('tab', { name: 'Ringkasan' })).toHaveAttribute('aria-selected', 'true')
     } finally {
       getItem.mockRestore()
       setItem.mockRestore()

@@ -2,8 +2,6 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, within, fireEvent, cleanup, act } from '@testing-library/react'
 import { ConversationList } from './ConversationList'
 
-const SEARCH_INPUT_PLACEHOLDER = 'Cari nama, nomor, atau isi pesan...'
-
 function jsonResponse(body: unknown) {
   return { ok: true, status: 200, json: () => Promise.resolve(body) } as Response
 }
@@ -41,6 +39,14 @@ class FakeEventSource {
   }
 }
 
+// The rows container (`.rows#i-rows`): rows are buttons placed directly in it, and the filter row's own buttons
+// (Semua, WhatsApp, Facebook, ...) sit outside it, so scoping to it keeps a filter pill from being taken for a row.
+function rowsEl(): HTMLElement {
+  const el = document.getElementById('i-rows')
+  if (!el) throw new Error('rows container #i-rows not rendered')
+  return el
+}
+
 // Wraps timer advancement (which flushes the pending setTimeout, its fetch mock, and the
 // resulting setConversations state update) in `act` so React doesn't warn about updates
 // happening outside of a rendered/asserted batch.
@@ -64,67 +70,15 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-describe('ConversationList search debounce', () => {
-  it('fetches the WhatsApp-filtered list immediately on mount, with no debounce delay', async () => {
+describe('ConversationList initial load', () => {
+  it('fetches the WhatsApp-filtered list immediately on mount', async () => {
     render(<ConversationList selectedId={null} onSelect={() => {}} />)
 
-    // No timer advance at all -- the very first load must not wait out the debounce window.
+    // No timer advance at all -- the very first load must not wait on anything.
     await advanceTimers(0)
 
     // Default filter is the WhatsApp platform tab (see ConversationList's initial state) --
     // day one after deploy shows exactly what the team sees today.
-    expect(fetch).toHaveBeenCalledWith('/api/conversations?platform=WHATSAPP')
-  })
-
-  it('schedules exactly one fetch after the debounce delay when typing quickly, not one per keystroke', async () => {
-    render(<ConversationList selectedId={null} onSelect={() => {}} />)
-    await advanceTimers(0) // flush the initial mount fetch
-    vi.mocked(fetch).mockClear()
-
-    const input = screen.getByPlaceholderText(SEARCH_INPUT_PLACEHOLDER)
-    act(() => { fireEvent.change(input, { target: { value: 'i' } }) })
-    act(() => { fireEvent.change(input, { target: { value: 'ij' } }) })
-    act(() => { fireEvent.change(input, { target: { value: 'ije' } }) })
-    act(() => { fireEvent.change(input, { target: { value: 'ijen' } }) })
-
-    // Still inside the debounce window -- nothing should have fired yet, and each keystroke
-    // must not have triggered its own immediate fetch alongside the delayed one.
-    expect(fetch).not.toHaveBeenCalled()
-
-    await advanceTimers(300)
-
-    expect(fetch).toHaveBeenCalledTimes(1)
-    expect(fetch).toHaveBeenCalledWith('/api/conversations?q=ijen&platform=WHATSAPP')
-  })
-
-  it('clears the debounce timer on unmount, so no stale fetch fires afterward', async () => {
-    const { unmount } = render(<ConversationList selectedId={null} onSelect={() => {}} />)
-    await advanceTimers(0) // flush the initial mount fetch
-    vi.mocked(fetch).mockClear()
-
-    const input = screen.getByPlaceholderText(SEARCH_INPUT_PLACEHOLDER)
-    act(() => { fireEvent.change(input, { target: { value: 'ijen' } }) })
-
-    unmount()
-
-    await advanceTimers(1000)
-
-    expect(fetch).not.toHaveBeenCalled()
-  })
-
-  it('re-fetches the WhatsApp-filtered list when the search input is cleared', async () => {
-    render(<ConversationList selectedId={null} onSelect={() => {}} />)
-    await advanceTimers(0) // flush the initial mount fetch
-
-    const input = screen.getByPlaceholderText(SEARCH_INPUT_PLACEHOLDER)
-    act(() => { fireEvent.change(input, { target: { value: 'ijen' } }) })
-    await advanceTimers(300)
-    vi.mocked(fetch).mockClear()
-
-    act(() => { fireEvent.change(input, { target: { value: '' } }) })
-    await advanceTimers(300)
-
-    expect(fetch).toHaveBeenCalledTimes(1)
     expect(fetch).toHaveBeenCalledWith('/api/conversations?platform=WHATSAPP')
   })
 })
@@ -149,13 +103,13 @@ describe('ConversationList filter row (channel + label)', () => {
     expect(screen.getByRole('button', { name: 'Facebook' })).toBeInTheDocument()
   })
 
-  it('renders All + platform tabs + one button per channel and per label, with WhatsApp active by default', async () => {
+  it('renders Semua + platform tabs + one button per channel and per label, with WhatsApp active by default', async () => {
     mockConversationsFetch([], CHANNELS, LABELS)
     render(<ConversationList selectedId={null} onSelect={() => {}} />)
     await advanceTimers(0)
 
     const group = screen.getByRole('group', { name: 'Filter inbox' })
-    expect(screen.getByRole('button', { name: 'All' })).toHaveAttribute('aria-pressed', 'false')
+    expect(screen.getByRole('button', { name: 'Semua' })).toHaveAttribute('aria-pressed', 'false')
     expect(screen.getByRole('button', { name: 'WhatsApp' })).toHaveAttribute('aria-pressed', 'true')
     expect(screen.getByRole('button', { name: 'Facebook' })).toHaveAttribute('aria-pressed', 'false')
     expect(screen.getByRole('button', { name: 'JVTO' })).toHaveAttribute('aria-pressed', 'false')
@@ -199,7 +153,7 @@ describe('ConversationList filter row (channel + label)', () => {
 
     expect(fetch).toHaveBeenCalledWith('/api/conversations?orderChannel=JVTO')
     expect(screen.getByRole('button', { name: 'JVTO' })).toHaveAttribute('aria-pressed', 'true')
-    expect(screen.getByRole('button', { name: 'All' })).toHaveAttribute('aria-pressed', 'false')
+    expect(screen.getByRole('button', { name: 'Semua' })).toHaveAttribute('aria-pressed', 'false')
   })
 
   it('re-fetches with labelId when a label pill is clicked, and marks it active', async () => {
@@ -213,7 +167,7 @@ describe('ConversationList filter row (channel + label)', () => {
 
     expect(fetch).toHaveBeenCalledWith('/api/conversations?labelId=lbl_1')
     expect(screen.getByRole('button', { name: 'VIP' })).toHaveAttribute('aria-pressed', 'true')
-    expect(screen.getByRole('button', { name: 'All' })).toHaveAttribute('aria-pressed', 'false')
+    expect(screen.getByRole('button', { name: 'Semua' })).toHaveAttribute('aria-pressed', 'false')
   })
 
   it('picking a label deactivates a previously active channel pill, and vice versa', async () => {
@@ -232,22 +186,7 @@ describe('ConversationList filter row (channel + label)', () => {
     expect(screen.getByRole('button', { name: 'VIP' })).toHaveAttribute('aria-pressed', 'true')
   })
 
-  it('combines the active filter with a search query', async () => {
-    mockConversationsFetch([], CHANNELS, LABELS)
-    render(<ConversationList selectedId={null} onSelect={() => {}} />)
-    await advanceTimers(0)
-
-    fireEvent.click(screen.getByRole('button', { name: 'JVTO' }))
-    await advanceTimers(300)
-    vi.mocked(fetch).mockClear()
-
-    fireEvent.change(screen.getByPlaceholderText(SEARCH_INPUT_PLACEHOLDER), { target: { value: 'ijen' } })
-    await advanceTimers(300)
-
-    expect(fetch).toHaveBeenCalledWith('/api/conversations?q=ijen&orderChannel=JVTO')
-  })
-
-  it('returns to the unfiltered list when All is clicked again', async () => {
+  it('returns to the unfiltered list when Semua is clicked again', async () => {
     mockConversationsFetch([], CHANNELS, LABELS)
     render(<ConversationList selectedId={null} onSelect={() => {}} />)
     await advanceTimers(0)
@@ -256,11 +195,11 @@ describe('ConversationList filter row (channel + label)', () => {
     await advanceTimers(300)
     vi.mocked(fetch).mockClear()
 
-    fireEvent.click(screen.getByRole('button', { name: 'All' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Semua' }))
     await advanceTimers(300)
 
     expect(fetch).toHaveBeenCalledWith('/api/conversations')
-    expect(screen.getByRole('button', { name: 'All' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: 'Semua' })).toHaveAttribute('aria-pressed', 'true')
   })
 })
 
@@ -286,25 +225,25 @@ describe('ConversationList platform badge visibility', () => {
     }
   }
 
-  // Scoped to the <ul> of conversation rows throughout -- "Facebook"/"WhatsApp" is also the
+  // Scoped to the rows container throughout -- "Facebook"/"WhatsApp" is also the
   // text of the filter row's own tab buttons, which must not be mistaken for the row badge.
   it('hides the platform badge on the default WhatsApp tab', async () => {
     mockConversationsFetch([conversation('a')])
     render(<ConversationList selectedId={null} onSelect={() => {}} />)
     await advanceTimers(0)
 
-    expect(within(screen.getByRole('list')).queryByText('WhatsApp')).not.toBeInTheDocument()
+    expect(within(rowsEl()).queryByText('WhatsApp')).not.toBeInTheDocument()
   })
 
-  it('shows the platform badge once "All" is selected', async () => {
+  it('shows the platform badge once "Semua" is selected', async () => {
     mockConversationsFetch([conversation('a', { platform: 'FACEBOOK' })])
     render(<ConversationList selectedId={null} onSelect={() => {}} />)
     await advanceTimers(0)
 
-    fireEvent.click(screen.getByRole('button', { name: 'All' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Semua' }))
     await advanceTimers(300)
 
-    expect(within(screen.getByRole('list')).getByText('Facebook')).toBeInTheDocument()
+    expect(within(rowsEl()).getByText('Facebook')).toBeInTheDocument()
   })
 
   it('hides the platform badge again after switching to a single-platform tab', async () => {
@@ -312,14 +251,14 @@ describe('ConversationList platform badge visibility', () => {
     render(<ConversationList selectedId={null} onSelect={() => {}} />)
     await advanceTimers(0)
 
-    fireEvent.click(screen.getByRole('button', { name: 'All' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Semua' }))
     await advanceTimers(300)
-    expect(within(screen.getByRole('list')).getByText('Facebook')).toBeInTheDocument()
+    expect(within(rowsEl()).getByText('Facebook')).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: 'Facebook' }))
     await advanceTimers(300)
 
-    expect(within(screen.getByRole('list')).queryByText('Facebook')).not.toBeInTheDocument()
+    expect(within(rowsEl()).queryByText('Facebook')).not.toBeInTheDocument()
   })
 
   // GET /api/conversations only constrains channelIdentity when `platform` itself is the
@@ -338,8 +277,8 @@ describe('ConversationList platform badge visibility', () => {
     fireEvent.click(screen.getByRole('button', { name: 'KLOOK' }))
     await advanceTimers(300)
 
-    expect(within(screen.getByRole('list')).getByText('WhatsApp')).toBeInTheDocument()
-    expect(within(screen.getByRole('list')).getByText('Facebook')).toBeInTheDocument()
+    expect(within(rowsEl()).getByText('WhatsApp')).toBeInTheDocument()
+    expect(within(rowsEl()).getByText('Facebook')).toBeInTheDocument()
   })
 
   it('shows the platform badge when a label pill is active, since it can mix rows from more than one platform', async () => {
@@ -354,8 +293,8 @@ describe('ConversationList platform badge visibility', () => {
     fireEvent.click(screen.getByRole('button', { name: 'VIP' }))
     await advanceTimers(300)
 
-    expect(within(screen.getByRole('list')).getByText('WhatsApp')).toBeInTheDocument()
-    expect(within(screen.getByRole('list')).getByText('Facebook')).toBeInTheDocument()
+    expect(within(rowsEl()).getByText('WhatsApp')).toBeInTheDocument()
+    expect(within(rowsEl()).getByText('Facebook')).toBeInTheDocument()
   })
 })
 
@@ -413,9 +352,9 @@ describe('ConversationList live updates', () => {
     expect(screen.getByText('Halo, masih ada slot besok?')).toBeInTheDocument()
     expect(screen.queryByText('Pesan lama b')).not.toBeInTheDocument()
 
-    // Scoped to the <ul> of conversation rows -- the filter row's own buttons (All, WhatsApp,
+    // Scoped to the rows container -- the filter row's own buttons (Semua, WhatsApp,
     // Facebook, ...) sit above the list and would otherwise be picked up as rows[0]/rows[1].
-    const rows = within(screen.getByRole('list')).getAllByRole('button').map((el) => el.textContent)
+    const rows = within(rowsEl()).getAllByRole('button').map((el) => el.textContent)
     expect(rows[0]).toContain('Kontak b')
     expect(rows[1]).toContain('Kontak a')
 
@@ -445,7 +384,7 @@ describe('ConversationList live updates', () => {
     })
     await advanceTimers(0)
 
-    const rows = within(screen.getByRole('list')).getAllByRole('button').map((el) => el.textContent)
+    const rows = within(rowsEl()).getAllByRole('button').map((el) => el.textContent)
     expect(rows[0]).toContain('Kontak test')
     expect(rows[1]).toContain('Kontak a')
   })
@@ -474,13 +413,13 @@ describe('ConversationList live updates', () => {
     expect(screen.getByText('Pelanggan Baru')).toBeInTheDocument()
   })
 
-  it('keeps the active search filter on the re-fetch triggered by a new conversation', async () => {
-    mockConversationsFetch([conversation('a')])
+  it('keeps the active filter on the re-fetch triggered by a new conversation', async () => {
+    mockConversationsFetch([conversation('a')], ['JVTO'])
 
     render(<ConversationList selectedId={null} onSelect={() => {}} />)
     await advanceTimers(0)
 
-    fireEvent.change(screen.getByPlaceholderText(SEARCH_INPUT_PLACEHOLDER), { target: { value: 'ijen' } })
+    fireEvent.click(screen.getByRole('button', { name: 'JVTO' }))
     await advanceTimers(300)
     vi.mocked(fetch).mockClear()
 
@@ -494,9 +433,9 @@ describe('ConversationList live updates', () => {
     })
     await advanceTimers(0)
 
-    // Re-fetching without the active filter would silently drop the agent's search (and its
-    // default WhatsApp tab).
-    expect(fetch).toHaveBeenCalledWith('/api/conversations?q=ijen&platform=WHATSAPP')
+    // Re-fetching without the active filter would silently drop the agent's chosen pill
+    // (and fall back to the unfiltered list).
+    expect(fetch).toHaveBeenCalledWith('/api/conversations?orderChannel=JVTO')
   })
 
   it('ignores event types it does not handle', async () => {
@@ -644,7 +583,8 @@ describe('ConversationList session expiry', () => {
 
     expect(location.href).toBe('/login?next=%2Finbox')
     // Still a usable, empty list -- never an error object rendered as rows.
-    expect(screen.getByPlaceholderText(SEARCH_INPUT_PLACEHOLDER)).toBeInTheDocument()
+    expect(screen.getByRole('group', { name: 'Filter inbox' })).toBeInTheDocument()
+    expect(screen.getByText('Tidak ada chat.')).toBeInTheDocument()
   })
 
   it('renders the list normally on a 200, exactly as before', async () => {
@@ -670,7 +610,7 @@ describe('ConversationList session expiry', () => {
     expect(location.href).toBe('http://localhost/inbox')
   })
 
-  it('keeps the existing rows when a non-401 failure happens on a later search', async () => {
+  it('keeps the existing rows when a non-401 failure happens on a later filter change', async () => {
     mockConversationsFetch([conversationRow()])
 
     render(<ConversationList selectedId={null} onSelect={() => {}} />)
@@ -680,7 +620,7 @@ describe('ConversationList session expiry', () => {
     vi.mocked(fetch).mockImplementation(() =>
       Promise.resolve({ ok: false, status: 500, json: () => Promise.resolve({ error: 'boom' }) } as Response)
     )
-    fireEvent.change(screen.getByPlaceholderText(SEARCH_INPUT_PLACEHOLDER), { target: { value: 'ijen' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Facebook' }))
     await advanceTimers(300)
 
     // A server error must not blank out the agent's inbox, and must not bounce them to login.
@@ -731,30 +671,23 @@ describe('ConversationList — aksesibilitas dan gulungan', () => {
     render(<ConversationList selectedId={null} onSelect={() => {}} />)
     await advanceTimers(0)
 
-    expect(screen.getByRole('complementary', { name: 'Daftar percakapan' })).toBeInTheDocument()
+    expect(screen.getByRole('region', { name: 'Daftar percakapan' })).toBeInTheDocument()
   })
 
-  it('memberi kotak pencarian nama sendiri, bukan hanya placeholder', async () => {
-    render(<ConversationList selectedId={null} onSelect={() => {}} />)
-    await advanceTimers(0)
-
-    expect(screen.getByLabelText('Cari percakapan')).toBeInTheDocument()
-  })
-
-  it('menyusun barisnya sebagai daftar sungguhan, dan tiap baris adalah tombol yang bisa di-Tab', async () => {
+  it('menyusun setiap baris sebagai tombol yang bisa di-Tab', async () => {
     mockConversationsFetch([row('a'), row('b')])
     render(<ConversationList selectedId={null} onSelect={() => {}} />)
     await advanceTimers(0)
 
-    const items = screen.getAllByRole('listitem')
-    expect(items).toHaveLength(2)
+    const buttons = within(rowsEl()).getAllByRole('button')
+    expect(buttons).toHaveLength(2)
     // Tombol native: fokus keyboard, Enter dan Spasi datang gratis dan benar. Sebuah <div
     // onClick> akan terlihat sama persis dan tidak bisa dicapai tanpa tetikus sama sekali.
-    for (const item of items) {
-      const button = item.querySelector('button')
-      expect(button).toBeInTheDocument()
+    for (const button of buttons) {
+      expect(button.tagName).toBe('BUTTON')
+      expect(button).toHaveClass('row')
       expect(button).not.toHaveAttribute('disabled')
-      expect(button?.tabIndex).not.toBe(-1)
+      expect(button.tabIndex).not.toBe(-1)
     }
   })
 
@@ -774,9 +707,9 @@ describe('ConversationList — aksesibilitas dan gulungan', () => {
     render(<ConversationList selectedId={null} onSelect={onSelect} />)
     await advanceTimers(0)
 
-    // Scoped to the <ul> of conversation rows -- the filter row's own buttons (All, WhatsApp,
+    // Scoped to the rows container -- the filter row's own buttons (Semua, WhatsApp,
     // Facebook, ...) sit above the list and would otherwise be picked up as button [0].
-    const button = within(screen.getByRole('list')).getAllByRole('button')[0]
+    const button = within(rowsEl()).getAllByRole('button')[0]
     button.focus()
     expect(document.activeElement).toBe(button)
     // fireEvent.click adalah apa yang dikirim browser untuk Enter/Spasi pada <button>.
@@ -789,15 +722,15 @@ describe('ConversationList — aksesibilitas dan gulungan', () => {
     const { container } = render(<ConversationList selectedId={null} onSelect={() => {}} />)
     await advanceTimers(0)
 
+    // Gulungan diatur CSS (.inbox .col / .rows di new.css): kolomnya .col, scroller-nya .rows di dalamnya,
+    // jadi deret filter tetap di tempat dan tidak ada dua bilah gulung yang bertumpuk.
     const column = container.firstElementChild as HTMLElement
-    expect(column).toHaveClass('h-full', 'min-h-0')
-    // Kolomnya sendiri TIDAK menggulung; scroller-nya ada di dalam, jadi kepala pencarian tetap
-    // di tempat dan tidak ada dua bilah gulung yang bertumpuk.
-    expect(column.className).not.toContain('overflow-y-auto')
+    expect(column).toHaveClass('col')
+    expect(column).not.toHaveClass('rows')
 
-    const scroller = column.querySelector('.overflow-y-auto')
+    const scroller = column.querySelector(':scope > .rows')
     expect(scroller).toBeInTheDocument()
-    expect(scroller).toHaveClass('min-h-0', 'flex-1')
+    expect(scroller).toBe(rowsEl())
   })
 })
 
@@ -808,31 +741,16 @@ describe('ConversationList — keadaan memuat dan kosong', () => {
     vi.mocked(fetch).mockImplementation(() => new Promise(() => {}))
     const { container } = render(<ConversationList selectedId={null} onSelect={() => {}} />)
 
-    expect(container.querySelectorAll('.animate-pulse').length).toBeGreaterThan(0)
+    expect(container.querySelectorAll('#i-rows [aria-hidden="true"] .row').length).toBeGreaterThan(0)
+    expect(screen.queryByText('Tidak ada chat.')).not.toBeInTheDocument()
   })
 
   it('mengganti kerangka dengan ajakan yang jelas ketika memang belum ada percakapan', async () => {
     render(<ConversationList selectedId={null} onSelect={() => {}} />)
     await advanceTimers(0)
 
-    expect(screen.getByText('Belum ada percakapan')).toBeInTheDocument()
-    expect(screen.getByText(/pelanggan mengirim pesan pertama/)).toBeInTheDocument()
+    expect(screen.getByText('Tidak ada chat.')).toBeInTheDocument()
+    expect(document.querySelector('#i-rows [aria-hidden="true"]')).not.toBeInTheDocument()
   })
 
-  it('membedakan "pencarian tidak ketemu" dari "memang belum ada apa-apa", dan menawarkan jalan keluar', async () => {
-    render(<ConversationList selectedId={null} onSelect={() => {}} />)
-    await advanceTimers(0)
-
-    fireEvent.change(screen.getByPlaceholderText(SEARCH_INPUT_PLACEHOLDER), { target: { value: 'ijen' } })
-    await advanceTimers(300)
-
-    expect(screen.getByText('Tidak ada yang cocok')).toBeInTheDocument()
-    expect(screen.getByText(/"ijen"/)).toBeInTheDocument()
-
-    fireEvent.click(screen.getByRole('button', { name: 'Hapus pencarian' }))
-    await advanceTimers(300)
-
-    expect(screen.getByText('Belum ada percakapan')).toBeInTheDocument()
-    expect(screen.getByPlaceholderText(SEARCH_INPUT_PLACEHOLDER)).toHaveValue('')
-  })
 })

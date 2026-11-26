@@ -1,11 +1,6 @@
 'use client'
 import { useEffect, useRef, useState } from 'react'
-import { AlertTriangle, Bot, Brain, Copy, CornerUpLeft, Film, Image as ImageIcon, Paperclip, Tag } from 'lucide-react'
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
-import { IconButton } from '@/components/ui/icon-button'
-import { Tooltip } from '@/components/ui/tooltip'
-import { cn } from '@/lib/utils'
+import { Film, Image as ImageIcon, Paperclip } from 'lucide-react'
 import { BotTracePopover } from './BotTracePopover'
 import { FixAnswerPanel } from './FixAnswerPanel'
 import { isHandoffLogMessage, HANDOFF_LOG_SUMMARY } from '@/lib/message-display'
@@ -80,9 +75,9 @@ function quotedPreviewLabel(replyTo: NonNullable<MessageView['replyTo']>): strin
 /** The small quoted-message box WhatsApp shows atop a reply, sourced from Message.replyTo. */
 function QuotedPreview({ replyTo }: { replyTo: NonNullable<MessageView['replyTo']> }) {
   return (
-    <div className="mb-1.5 rounded-sm border-l-2 border-ink/25 bg-ink/5 px-2 py-1 text-xs">
-      <p className="font-medium text-ink">{SENDER_LABEL[replyTo.sentBy] ?? replyTo.sentBy}</p>
-      <p className="truncate text-ink-muted">{formatWhatsAppText(quotedPreviewLabel(replyTo))}</p>
+    <div className="mq">
+      <b>{SENDER_LABEL[replyTo.sentBy] ?? replyTo.sentBy}</b>
+      <span>{formatWhatsAppText(quotedPreviewLabel(replyTo))}</span>
     </div>
   )
 }
@@ -221,16 +216,16 @@ function CouponChip({ coupon }: { coupon: NonNullable<NonNullable<MessageView['t
 /** Topik & intent satu pesan masuk. "perkiraan" = topik dari regex cadangan, bukan dari model. */
 function TopicChips({ labels }: { labels: TopicLabels }) {
   return (
-    <>
-      <Badge variant="brand">{topicLabelName(labels.topic)}</Badge>
+    <span className="mtopic">
+      <span className="pill info">{topicLabelName(labels.topic)}</span>
       {labels.alsoTopics.map((topic) => (
-        <Badge key={topic} variant="muted">
+        <span key={topic} className="pill neu">
           {topicLabelName(topic)}
-        </Badge>
+        </span>
       ))}
-      <Badge variant="default">{jobLabelName(labels.job)}</Badge>
-      {labels.topicSource === 'regex_fallback' && <span className="italic">perkiraan</span>}
-    </>
+      <span className="pill neu">{jobLabelName(labels.job)}</span>
+      {labels.topicSource === 'regex_fallback' && <i>perkiraan</i>}
+    </span>
   )
 }
 
@@ -240,60 +235,12 @@ function formatTime(iso: string): string {
   return new Date(iso).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })
 }
 
-// WhatsApp-style receipt ticks for an OUTBOUND message's current deliveryStatus.
-// A single tick means Meta/wa-coexist has accepted the send (SENT); a second tick
-// means the recipient's device got it (DELIVERED); both tick blue once the
-// recipient has actually opened it (READ). FAILED is handled by the caller
-// (a destructive badge + retry button, not a tick).
-//
-// Ikonnya SELALU didampingi katanya (lihat DELIVERY_LABEL di bawah). Satu centang, dua
-// centang, dan dua centang biru adalah konvensi WhatsApp yang dihafal, bukan yang dibaca --
-// dan "dihafal" berarti setiap operator baru menebak selama beberapa hari pertama. Kata di
-// sebelahnya menghapus tebakan itu tanpa mengubah ikon yang sudah dikenal orang lama.
+// Status kirim pesan keluar, ditulis sebagai kata di baris waktu gelembung (FAILED punya tanda + tombol sendiri).
 const DELIVERY_LABEL: Record<string, string> = {
   PENDING: 'Mengantre',
   SENT: 'Terkirim',
   DELIVERED: 'Diterima',
   READ: 'Dibaca',
-}
-
-function DeliveryTicks({ status }: { status: string }) {
-  if (status === 'PENDING') return null
-  const isRead = status === 'READ'
-  const isDouble = status === 'DELIVERED' || status === 'READ'
-  const label = DELIVERY_LABEL[status] ?? status
-  return (
-    <svg
-      role="img"
-      aria-label={label}
-      width={isDouble ? 18 : 12}
-      height="12"
-      viewBox={`0 0 ${isDouble ? 18 : 12} 12`}
-      // READ memakai aksen, bukan biru langit dari palet lain. Ini satu-satunya pemakaian
-      // aksen di luar tiga yang disebut sistem desain, dan disengaja: centang biru "sudah
-      // dibaca" adalah satu-satunya tanda di layar ini yang sudah punya arti bawaan bagi
-      // siapa pun yang pernah memakai WhatsApp.
-      className={isRead ? 'text-accent' : 'text-ink-subtle'}
-      fill="none"
-    >
-      <path d="M1 6.5L4 9.5L11 2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-      {isDouble && (
-        <path d="M6 6.5L9 9.5L16 2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-      )}
-    </svg>
-  )
-}
-
-/** Ikon + kata, untuk semua status non-gagal sebuah pesan keluar. */
-function DeliveryStatus({ status }: { status: string }) {
-  const label = DELIVERY_LABEL[status]
-  if (!label) return null
-  return (
-    <span className={cn('flex items-center gap-1', status === 'READ' ? 'text-accent' : 'text-ink-subtle')}>
-      <DeliveryTicks status={status} />
-      {label}
-    </span>
-  )
 }
 
 export function MessageBubble({
@@ -324,6 +271,8 @@ export function MessageBubble({
   // Declared before the handoff-log early return below so every render calls the same hooks
   // in the same order (Rules of Hooks) -- unused in that branch, which is fine.
   const [showTrace, setShowTrace] = useState(false)
+  // Posisi tombol panah saat menu aksi pesan terbuka; null = tertutup.
+  const [menu, setMenu] = useState<DOMRect | null>(null)
   // Nilai awal, bukan efek: gelembung ini dirender ulang saat pesannya berubah, dan sebuah efek
   // akan membuka kembali panel yang baru saja ditutup operator.
   const [showFix, setShowFix] = useState(Boolean(autoOpenFix))
@@ -431,24 +380,18 @@ export function MessageBubble({
   // same BotTracePopover a real bot reply's 🧠 icon would.
   if (isHandoffLogMessage(message)) {
     return (
-      <div className="flex w-full flex-col items-center gap-1">
-        <div className="flex w-full items-center gap-2">
-          <div className="h-px flex-1 bg-line" />
-          <button
-            type="button"
-            onClick={() => setShowTrace((prev) => !prev)}
-            className="focus-ring cursor-pointer rounded-sm border border-line bg-surface px-2 py-0.5 text-xs font-medium text-ink-muted hover:border-line-strong hover:text-ink"
-          >
-            {HANDOFF_LOG_SUMMARY}
-          </button>
-          <div className="h-px flex-1 bg-line" />
-        </div>
+      <div className="mwrap" style={{ alignItems: 'center' }}>
+        <button type="button" className="m s" onClick={() => setShowTrace((prev) => !prev)} style={{ border: 0 }}>
+          {HANDOFF_LOG_SUMMARY}
+        </button>
         {showTrace && (
-          <BotTracePopover
-            trace={(message.botTrace as BotDecision | null) ?? null}
-            messageId={message.id}
-            onClose={() => setShowTrace(false)}
-          />
+          <div className="legacy-skin mlegacy">
+            <BotTracePopover
+              trace={(message.botTrace as BotDecision | null) ?? null}
+              messageId={message.id}
+              onClose={() => setShowTrace(false)}
+            />
+          </div>
         )}
       </div>
     )
@@ -472,186 +415,165 @@ export function MessageBubble({
   const canCheckTopic = !isOutbound && !topicLabels && Boolean(conversationId && message.content?.trim())
   const canCopyBotReply = isBotMessage && Boolean(message.content?.trim())
   const knowledgeGap = showsBotReasoning ? message.knowledgeGap : null
-  const bubble = (
-    <div
-      className={cn(
-        cards?.length ? 'max-w-lg' : 'max-w-md',
-        // text-md (15px), bukan ukuran UI 13.5px: isi pesan adalah satu-satunya teks di
-        // aplikasi ini yang dibaca berparagraf-paragraf, berjam-jam, setiap hari.
-        // `break-words` di samping `whitespace-pre-wrap`: pre-wrap sendiri cuma membungkus di
-        // spasi/baris baru, jadi satu untai tanpa spasi (URL panjang, "Booking ID: JVR/045/…")
-        // tidak akan pernah pecah -- lebar bubble jadi ikut melebar mengikuti untai itu, dan
-        // `overflow-hidden` di baris ini menyembunyikan kelebihannya secara diam-diam alih-alih
-        // menampilkan scrollbar. break-words memaksa untai sepanjang itu pecah ke baris baru.
-        'overflow-hidden rounded-lg border px-3.5 py-2.5 text-md whitespace-pre-wrap break-words',
-        // Masuk vs keluar dibedakan oleh warna dan sudut yang dipangkas, bukan oleh bayangan:
-        // keluar = tint aksen dengan sudut kanan atas rata, masuk = putih dengan sudut kiri
-        // atas rata. Dua-duanya bergaris rambut, jadi keduanya tetap terbaca di atas canvas.
-        isOutbound
-          ? 'rounded-tr-none border-accent/20 bg-accent-subtle text-ink'
-          : 'rounded-tl-none border-line bg-surface text-ink',
-        knowledgeGap && 'border-warning ring-1 ring-warning/30'
-      )}
+  // Desain artifact: tamu = .m.g (putih, kiri), bot = .m.b, agen = .m.a (aksen, kanan).
+  const kind = !isOutbound ? 'g' : isBotMessage ? 'b' : 'a'
+  const meta = [
+    isBotMessage ? 'Bot' : message.sentBy === 'AGENT' ? 'Agen' : null,
+    formatTime(message.createdAt),
+    isFromDraft ? 'Dari draft bot' : null,
+    message.templatePayload ? 'Template' : null,
+    // Only outbound: which channel WE sent through is useful to an agent.
+    isOutbound ? CHANNEL_LABEL[message.channel] : null,
+    isOutbound && !isFailed ? DELIVERY_LABEL[message.deliveryStatus] : null,
+  ].filter(Boolean).join(' · ')
+
+  const closeMenu = () => setMenu(null)
+  const menuItem = (label: string, onClick: () => void, opts: { disabled?: boolean; danger?: boolean } = {}) => (
+    <button
+      type="button"
+      role="menuitem"
+      className={'mp-act' + (opts.danger ? '' : ' mp-neu')}
+      disabled={opts.disabled}
+      onClick={() => {
+        closeMenu()
+        onClick()
+      }}
     >
-      {message.replyTo && <QuotedPreview replyTo={message.replyTo} />}
-      <div className="flex flex-col gap-1.5">
-        {message.templatePayload?.limitedTimeOffer && (
-          <LimitedTimeOfferBanner offer={message.templatePayload.limitedTimeOffer} />
-        )}
-        {hasMedia && <MediaContent message={message} />}
-        {message.content ? (
-          <span className="select-text cursor-text">{formatWhatsAppText(message.content)}</span>
-        ) : (
-          !hasMedia && message.type && message.type !== 'text' && `[${message.type}]`
-        )}
-        {cards && cards.length > 0 && <CarouselContent cards={cards} />}
-        {message.templatePayload?.coupon && <CouponChip coupon={message.templatePayload.coupon} />}
-      </div>
-    </div>
+      {label}
+    </button>
   )
 
   return (
-    // `group`: aksi balas hanya muncul saat baris ini di-hover atau salah satu kontrolnya
-    // menerima fokus keyboard. Sebuah tombol tetap di bawah setiap gelembung mengubah riwayat
-    // percakapan jadi daftar tombol; di layar sentuh (yang tidak punya hover) ia tetap terlihat.
-    <div className={cn('group flex flex-col gap-1', isOutbound ? 'items-end' : 'items-start')}>
-      {knowledgeGap ? <Tooltip content={knowledgeGapLabel(knowledgeGap.reason)}>{bubble}</Tooltip> : bubble}
-      {canGenerateDraft && (
-        <div className="w-full max-w-md space-y-1">
-          <Button type="button" variant="outline" size="sm" onClick={() => generateDraft()} disabled={generatingDraft}>
-            {generatingDraft ? 'Menyusun draft...' : 'Generate draft'}
-          </Button>
-          {draftError && (
-            <p role="alert" className="text-danger">
-              {draftError}
-            </p>
+    <div className={'mwrap' + (isOutbound ? ' out' : '')}>
+      <div
+        className={'m ' + kind + ' hasmeta' + (knowledgeGap ? ' gap' : '')}
+        title={knowledgeGap ? knowledgeGapLabel(knowledgeGap.reason) : undefined}
+      >
+        {message.replyTo && <QuotedPreview replyTo={message.replyTo} />}
+        {message.templatePayload?.limitedTimeOffer && (
+          <div className="legacy-skin mlegacy"><LimitedTimeOfferBanner offer={message.templatePayload.limitedTimeOffer} /></div>
+        )}
+        {hasMedia && <div className="legacy-skin mlegacy"><MediaContent message={message} /></div>}
+        {message.content ? (
+          <span className="mtext">{formatWhatsAppText(message.content)}</span>
+        ) : (
+          !hasMedia && message.type && message.type !== 'text' && `[${message.type}]`
+        )}
+        {cards && cards.length > 0 && <div className="legacy-skin mlegacy"><CarouselContent cards={cards} /></div>}
+        {message.templatePayload?.coupon && <div className="legacy-skin mlegacy"><CouponChip coupon={message.templatePayload.coupon} /></div>}
+        <small>
+          {meta}
+          {knowledgeGap ? ' · Ada gap knowledge' : ''}
+        </small>
+        <button
+          type="button"
+          className="mchev"
+          aria-label="Aksi pesan"
+          aria-haspopup="menu"
+          aria-expanded={menu !== null}
+          onClick={(e) => {
+            e.stopPropagation()
+            const rect = e.currentTarget.getBoundingClientRect()
+            setMenu((m) => (m ? null : rect))
+          }}
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg>
+        </button>
+      </div>
+      {!isOutbound && topicLabels && <TopicChips labels={topicLabels} />}
+      {menu && (
+        <MessageMenu rect={menu} onClose={closeMenu}>
+          {knowledgeGap && (
+            <div className="mp-src">
+              <div className="mp-h">Gap knowledge</div>
+              <div className="mp-why">{knowledgeGapLabel(knowledgeGap.reason)}</div>
+            </div>
           )}
+          {onReply && menuItem('Balas pesan ini', () => onReply(message))}
+          {showsBotReasoning && menuItem(showTrace ? 'Sembunyikan alasan bot' : 'Lihat alasan bot', () => setShowTrace((prev) => !prev))}
+          {showsBotReasoning && menuItem('Tandai jawaban salah', () => setShowFix(true), { danger: true })}
+          {canCopyBotReply && menuItem('Salin balasan bot', () => void copyBotReply().catch(() => {}))}
+          {canGenerateDraft && menuItem(generatingDraft ? 'Menyusun draft...' : 'Generate draft', () => void generateDraft(), { disabled: generatingDraft })}
+          {canCheckTopic && menuItem(checkingTopic ? 'Memeriksa topik...' : 'Cek topik', () => void checkTopic(), { disabled: checkingTopic })}
+        </MessageMenu>
+      )}
+      {(generatingDraft || draftError || topicError) && (
+        <p role={draftError || topicError ? 'alert' : 'status'} className="mnote">
+          {draftError ?? topicError ?? 'Menyusun draft...'}
+        </p>
+      )}
+      {isFailed && (
+        <div className="mnote">
+          <span className="pill bad">Gagal terkirim</span>
+          <button type="button" className="btn sm" onClick={retrySend} disabled={retrying} aria-label="Kirim ulang">
+            {retrying ? 'Mengirim ulang...' : 'Kirim ulang'}
+          </button>
+          {retryError && <span role="alert" style={{ color: 'var(--bad)' }}>{retryError}</span>}
         </div>
       )}
       {message.draft && conversationId && (
-        <MessageDraftCard
-          draft={message.draft}
-          conversationId={conversationId}
-          messageId={message.id}
-          onDraftChange={onDraftChange}
-          onDraftSent={onDraftSent}
-        />
+        <div className="legacy-skin mlegacy mwide">
+          <MessageDraftCard
+            draft={message.draft}
+            conversationId={conversationId}
+            messageId={message.id}
+            onDraftChange={onDraftChange}
+            onDraftSent={onDraftSent}
+          />
+        </div>
       )}
       {showsBotReasoning && showTrace && (
-        <BotTracePopover
-          trace={(message.botTrace as BotDecision | null) ?? null}
-          messageId={message.id}
-          onFix={() => {
-            setShowTrace(false)
-            setShowFix(true)
-          }}
-          onClose={() => setShowTrace(false)}
-        />
+        <div className="legacy-skin mlegacy mwide">
+          <BotTracePopover
+            trace={(message.botTrace as BotDecision | null) ?? null}
+            messageId={message.id}
+            onFix={() => {
+              setShowTrace(false)
+              setShowFix(true)
+            }}
+            onClose={() => setShowTrace(false)}
+          />
+        </div>
       )}
       {showsBotReasoning && showFix && (
-        <FixAnswerPanel
-          messageId={message.id}
-          trace={(message.botTrace as BotDecision | null) ?? null}
-          replyText={message.content}
-          onClose={() => setShowFix(false)}
-        />
+        <div className="legacy-skin mlegacy mwide">
+          <FixAnswerPanel
+            messageId={message.id}
+            trace={(message.botTrace as BotDecision | null) ?? null}
+            replyText={message.content}
+            onClose={() => setShowFix(false)}
+          />
+        </div>
       )}
-      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-ink-subtle">
-        {message.sentBy === 'BOT' && (
-          <Badge variant="default" className="gap-1">
-            <Bot aria-hidden="true" className="size-3" strokeWidth={1.75} />
-            Bot
-          </Badge>
-        )}
-        {isFromDraft && <Badge variant="muted">Dari draft bot</Badge>}
-        {knowledgeGap && (
-          <IconButton
-            size="sm"
-            label="Ada gap knowledge pada jawaban ini"
-            icon={<AlertTriangle strokeWidth={1.75} />}
-            onClick={() => setShowFix(true)}
-            className="-my-1 border border-warning/35 bg-warning-subtle text-warning hover:bg-warning-subtle hover:text-warning"
-          />
-        )}
-        {/* Dedicated trigger for the reasoning trace, separate from the bubble itself -- clicking
-            the message text/media should never be overloaded with an unrelated toggle. */}
-        {showsBotReasoning && (
-          <IconButton
-            size="sm"
-            label={showTrace ? 'Sembunyikan alasan bot' : 'Lihat alasan bot'}
-            icon={<Brain strokeWidth={1.75} />}
-            aria-pressed={showTrace}
-            onClick={() => setShowTrace((prev) => !prev)}
-            className="-my-1"
-          />
-        )}
-        {canCopyBotReply && (
-          <IconButton
-            size="sm"
-            label="Salin balasan bot"
-            icon={<Copy strokeWidth={1.75} />}
-            onClick={() => {
-              void copyBotReply().catch(() => {})
-            }}
-            className="-my-1"
-          />
-        )}
-        {message.sentBy === 'AGENT' && <span>Agen</span>}
-        {message.templatePayload && <Badge variant="muted">Template</Badge>}
-        {/* Only outbound: which channel WE sent through is useful to an agent; which channel a
-            customer's own inbound message happened to arrive on is not. */}
-        {isOutbound && CHANNEL_LABEL[message.channel] && <Badge variant="muted">{CHANNEL_LABEL[message.channel]}</Badge>}
-        {!isOutbound && topicLabels && <TopicChips labels={topicLabels} />}
-        {canCheckTopic && (
-          <IconButton
-            size="sm"
-            label={checkingTopic ? 'Memeriksa topik...' : 'Cek topik'}
-            icon={<Tag strokeWidth={1.75} />}
-            onClick={checkTopic}
-            disabled={checkingTopic}
-            className="-my-1"
-          />
-        )}
-        {topicError && (
-          <span role="alert" className="text-danger">
-            {topicError}
-          </span>
-        )}
-        <time dateTime={message.createdAt}>{formatTime(message.createdAt)}</time>
-        {isFailed ? (
-          <>
-            {/* "FAILED" adalah nama kolom database, bukan kalimat. Operator yang melihat baris
-                merah ini sedang memutuskan apakah pelanggannya menerima pesan itu atau tidak. */}
-            <Badge variant="destructive">Gagal terkirim</Badge>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={retrySend}
-              disabled={retrying}
-              aria-label="Kirim ulang"
-            >
-              {retrying ? 'Mengirim ulang...' : 'Kirim ulang'}
-            </Button>
-            {retryError && (
-              <span role="alert" className="text-danger">
-                {retryError}
-              </span>
-            )}
-          </>
-        ) : (
-          isOutbound && <DeliveryStatus status={message.deliveryStatus} />
-        )}
-        {onReply && (
-          <IconButton
-            size="sm"
-            label="Balas pesan ini"
-            icon={<CornerUpLeft strokeWidth={1.75} />}
-            onClick={() => onReply(message)}
-            className="-my-1 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 max-md:opacity-100"
-          />
-        )}
-      </div>
+    </div>
+  )
+}
+
+/** Menu aksi satu pesan (.mpop, desain artifact): melayang di dekat tombol panah, tertutup saat klik di luar/Escape/gulir. */
+function MessageMenu({ rect, onClose, children }: { rect: DOMRect; onClose: () => void; children: React.ReactNode }) {
+  useEffect(() => {
+    const close = (e: MouseEvent) => {
+      const t = e.target as HTMLElement
+      if (!t.closest('.mpop') && !t.closest('.mchev')) onClose()
+    }
+    const esc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose()
+    }
+    document.addEventListener('click', close)
+    document.addEventListener('keydown', esc)
+    window.addEventListener('scroll', onClose, true)
+    return () => {
+      document.removeEventListener('click', close)
+      document.removeEventListener('keydown', esc)
+      window.removeEventListener('scroll', onClose, true)
+    }
+  }, [onClose])
+  const h = typeof window === 'undefined' ? 800 : window.innerHeight
+  const w = typeof window === 'undefined' ? 1200 : window.innerWidth
+  const top = rect.bottom + 6 + 220 > h ? Math.max(8, rect.top - 226) : rect.bottom + 6
+  return (
+    <div className="mpop" role="menu" style={{ right: Math.max(8, w - rect.right), top }} onClick={(e) => e.stopPropagation()}>
+      {children}
     </div>
   )
 }

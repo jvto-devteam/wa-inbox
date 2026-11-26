@@ -1,9 +1,8 @@
 'use client'
 import { useEffect, useRef, useState, type ChangeEvent } from 'react'
-import { FileText, Film, Image as ImageIcon, Music, Paperclip, Plus, SendHorizontal, X } from 'lucide-react'
+import { FileText, Film, Image as ImageIcon, Music, X } from 'lucide-react'
 import { SENDER_LABEL, type MessageView } from './MessageBubble'
 import { Input } from '@/components/ui/input'
-import { Textarea } from '@/components/ui/textarea'
 import { Button } from '@/components/ui/button'
 import { IconButton } from '@/components/ui/icon-button'
 import { Card } from '@/components/ui/card'
@@ -52,9 +51,6 @@ const ATTACHMENT_ICON: Record<MediaKind, typeof ImageIcon> = {
 // berbahasa Inggris di layar yang seluruhnya berbahasa Indonesia, dan ia menyebut aplikasi
 // lain, bukan pekerjaan yang sedang dilakukan di sini.
 export const COMPOSER_PLACEHOLDER = 'Tulis balasan ke pelanggan...'
-// Batas tumbuh kotak tulis, dalam piksel. Di atas ini ia menggulung sendiri alih-alih terus
-// mendorong riwayat percakapan keluar layar -- kira-kira enam baris di 15px/22px.
-const COMPOSER_MAX_HEIGHT = 132
 
 function mediaKindFromMime(mime: string): MediaKind {
   if (mime.startsWith('image/')) return 'image'
@@ -236,19 +232,6 @@ export function ComposeBox({
     // Penjaga ref di atas yang memastikan pemicu ini hanya berjalan sekali per permintaan,
     // meski dependensinya (mis. pesan masuk baru lewat SSE) berubah sesudahnya.
   }, [followUp, channelSettled, isTest, platform, channel, lastInboundAt])
-
-  // Kotak tulis tumbuh mengikuti isinya, bukan mengikuti jumlah baris baru. Bentuk sebelumnya
-  // menghitung '\n' (rows={text.split('\n').length}), jadi satu paragraf panjang yang
-  // membungkus ke lima baris di layar tetap ditampilkan setinggi satu baris dan operator
-  // menulis ke dalam lubang intip. Diukur dari scrollHeight sesudah tinggi dikembalikan ke
-  // auto -- satu-satunya cara membaca tinggi konten sebenarnya yang sudah menyusut.
-  useEffect(() => {
-    const el = textareaRef.current
-    if (!el) return
-    el.style.height = 'auto'
-    // jsdom melaporkan scrollHeight 0; jangan menulis tinggi 0px ke elemen sungguhan.
-    if (el.scrollHeight > 0) el.style.height = `${Math.min(el.scrollHeight, COMPOSER_MAX_HEIGHT)}px`
-  }, [text])
 
   // Same dismiss-on-outside-click/Escape pattern as AppNav's account menu.
   useEffect(() => {
@@ -526,61 +509,68 @@ export function ComposeBox({
   }, {})
 
   return (
-    // Menempel di dasar kolom thread. `shrink-0` supaya ia tidak pernah diperas oleh riwayat
-    // di atasnya: kotak tulis adalah alat kerja, bukan sisa ruang.
-    <div className="flex shrink-0 flex-col gap-2 border-t border-line bg-surface p-2.5">
+    // Kotak tulis desain artifact (.comp): kotak teks, lalu satu baris alat (Template, Lampiran) dan Kirim.
+    // Formulir template/balasan cepat dan pratinjau lampiran memakai komponen lama di dalam .legacy-skin.
+    <div className="comp">
       {replyingTo && (
-        <div className="flex items-center justify-between gap-2 rounded-sm border-l-2 border-accent bg-surface-sunken px-2.5 py-1.5 text-xs">
-          <div className="min-w-0">
-            <p className="font-medium text-ink">Membalas {SENDER_LABEL[replyingTo.sentBy] ?? replyingTo.sentBy}</p>
-            <p className="truncate text-ink-muted">
+        <div className="dbar">
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <b className="sm">Membalas {SENDER_LABEL[replyingTo.sentBy] ?? replyingTo.sentBy}</b>
+            <div className="mut sm" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               {replyingTo.content ? formatWhatsAppText(replyingTo.content) : replyingTo.type && replyingTo.type !== 'text' ? `[${replyingTo.type}]` : ''}
-            </p>
+            </div>
           </div>
-          <IconButton
-            size="sm"
-            label="Batalkan balasan"
-            icon={<X strokeWidth={2} />}
-            onClick={onCancelReply}
-          />
+          <button type="button" className="btn sm" aria-label="Batalkan balasan" onClick={onCancelReply}>Batal</button>
+        </div>
+      )}
+      {dryRun && (
+        <div className="dbar" role="group" aria-label="Kirim sebagai">
+          <span className="sm" style={{ color: 'var(--warn)', flex: 1 }}>Mode uji -- tidak terkirim ke WhatsApp. Kirim sebagai:</span>
+          <button type="button" className={'btn sm' + (asGuest ? ' pri' : '')} onClick={() => setAsGuest(true)} aria-pressed={asGuest}>
+            Tamu
+          </button>
+          <button type="button" className={'btn sm' + (asGuest ? '' : ' pri')} onClick={() => setAsGuest(false)} aria-pressed={!asGuest}>
+            JVTO
+          </button>
         </div>
       )}
       {attachmentError && (
-        <p role="alert" className="text-xs text-danger">
+        <p role="alert" className="sm" style={{ margin: 0, color: 'var(--bad)' }}>
           {attachmentError}
         </p>
       )}
-      {pendingFile && (
-        <div className="relative w-fit max-w-40 rounded-md border border-line bg-surface-sunken p-1.5">
-          <button
-            type="button"
-            onClick={() => {
-              clearPendingFile()
-              setAttachment(null)
-            }}
-            aria-label="Batalkan lampiran"
-            className="focus-ring absolute -top-2 -right-2 flex size-5 items-center justify-center rounded-full bg-ink text-white hover:bg-ink/85"
-          >
-            <X aria-hidden="true" className="size-3" strokeWidth={2.5} />
-          </button>
-          {pendingFile.kind === 'image' ? (
-            <img src={pendingFile.previewUrl} alt={pendingFile.file.name} className="h-28 w-full rounded object-cover" />
-          ) : pendingFile.kind === 'video' ? (
-            // No controls -- this is a compose-time preview, not a player; the browser shows
-            // the first frame by default with no autoplay/interaction needed.
-            <video src={pendingFile.previewUrl} className="h-28 w-full rounded object-cover" muted />
-          ) : (
-            <div className="flex items-center gap-1.5 px-1 py-6 text-xs text-ink">
-              {(() => {
-                const Icon = ATTACHMENT_ICON[pendingFile.kind]
-                return <Icon aria-hidden="true" className="size-4 shrink-0 text-ink-subtle" strokeWidth={1.75} />
-              })()}
-              <span className="min-w-0 truncate">{pendingFile.file.name}</span>
+      {(pendingFile || pickerOpen) && (
+        <div className="legacy-skin comp-legacy">
+          {pendingFile && (
+            <div className="relative w-fit max-w-40 rounded-md border border-line bg-surface-sunken p-1.5">
+              <button
+                type="button"
+                onClick={() => {
+                  clearPendingFile()
+                  setAttachment(null)
+                }}
+                aria-label="Batalkan lampiran"
+                className="focus-ring absolute -top-2 -right-2 flex size-5 items-center justify-center rounded-full bg-ink text-white hover:bg-ink/85"
+              >
+                <X aria-hidden="true" className="size-3" strokeWidth={2.5} />
+              </button>
+              {pendingFile.kind === 'image' ? (
+                <img src={pendingFile.previewUrl} alt={pendingFile.file.name} className="h-28 w-full rounded object-cover" />
+              ) : pendingFile.kind === 'video' ? (
+                // No controls -- this is a compose-time preview, not a player.
+                <video src={pendingFile.previewUrl} className="h-28 w-full rounded object-cover" muted />
+              ) : (
+                <div className="flex items-center gap-1.5 px-1 py-6 text-xs text-ink">
+                  {(() => {
+                    const Icon = ATTACHMENT_ICON[pendingFile.kind]
+                    return <Icon aria-hidden="true" className="size-4 shrink-0 text-ink-subtle" strokeWidth={1.75} />
+                  })()}
+                  <span className="min-w-0 truncate">{pendingFile.file.name}</span>
+                </div>
+              )}
+              {uploading && <p className="mt-1 text-center text-[10px] text-ink-muted">Mengunggah...</p>}
             </div>
           )}
-          {uploading && <p className="mt-1 text-center text-[10px] text-ink-muted">Mengunggah...</p>}
-        </div>
-      )}
       {pickerOpen && templateForm && (
         <Card className="space-y-3 p-3">
           <h4 className="text-base font-semibold text-ink">Kirim Template: {templateForm.name}</h4>
@@ -743,123 +733,83 @@ export function ComposeBox({
           )}
         </Card>
       )}
+        </div>
+      )}
       {windowWarning && (
-        <p role="status" className="text-xs text-warning">
+        <p role="status" className="sm" style={{ margin: 0, color: 'var(--warn)' }}>
           Jendela 24 jam sudah tertutup — pesan kemungkinan ditolak Meta.
         </p>
       )}
       {templateError && (
-        <p role="alert" className="text-xs text-danger">
+        <p role="alert" className="sm" style={{ margin: 0, color: 'var(--bad)' }}>
           {templateError}
         </p>
       )}
       {sendError && (
-        <p role="alert" className="text-xs text-danger">
+        <p role="alert" className="sm" style={{ margin: 0, color: 'var(--bad)' }}>
           {sendError}
         </p>
       )}
-      {/* Satu baris alat: lampiran/template, kotak tulis, kirim. Jalur kirim pindah ke baris
-          status bot di atas. items-end supaya tombol tetap sejajar dasar kotak tulis saat
-          kotaknya tumbuh, bukan melompat ke tengah. */}
-      {dryRun && (
-        <div className="flex items-center gap-1.5 text-xs" role="group" aria-label="Kirim sebagai">
-          <span className="text-warning">Mode uji -- tidak terkirim ke WhatsApp. Kirim sebagai:</span>
-          <Button type="button" size="sm" variant={asGuest ? 'default' : 'outline'} className="h-6 px-2 text-xs" onClick={() => setAsGuest(true)} aria-pressed={asGuest}>
-            Tamu
-          </Button>
-          <Button type="button" size="sm" variant={asGuest ? 'outline' : 'default'} className="h-6 px-2 text-xs" onClick={() => setAsGuest(false)} aria-pressed={!asGuest}>
-            JVTO
-          </Button>
-        </div>
-      )}
-      <div className="flex items-end gap-1.5">
-        {!typingAsGuest && (
-          <>
-            <input ref={fileInputRef} type="file" className="hidden" onChange={handleAttachmentSelected} />
-            <div ref={attachMenuRef} className="relative shrink-0">
-              {/* A single "+" trigger for everything besides plain text -- Foto & Video, Dokumen,
-                  and Template are three peers in the same menu, not a separate standalone
-                  "Template" button living outside it. */}
-              <IconButton
-                variant="outline"
-                label="Tambah lampiran atau template"
-                icon={<Plus strokeWidth={2} />}
-                aria-expanded={attachMenuOpen}
-                aria-haspopup="menu"
-                onClick={() => setAttachMenuOpen((prev) => !prev)}
-                disabled={uploading}
-              />
-              {attachMenuOpen && (
-                <Card role="menu" className="absolute bottom-full left-0 z-10 mb-1.5 w-48 space-y-0.5 p-1 shadow-popover">
-                  <button
-                    type="button"
-                    role="menuitem"
-                    onClick={() => pickAttachment('media')}
-                    className="focus-ring flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-base text-ink hover:bg-surface-sunken"
-                  >
-                    <ImageIcon aria-hidden="true" className="size-4 shrink-0 text-ink-subtle" strokeWidth={1.75} />
-                    Foto &amp; Video
-                  </button>
-                  <button
-                    type="button"
-                    role="menuitem"
-                    onClick={() => pickAttachment('document')}
-                    className="focus-ring flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-base text-ink hover:bg-surface-sunken"
-                  >
-                    <Paperclip aria-hidden="true" className="size-4 shrink-0 text-ink-subtle" strokeWidth={1.75} />
-                    Dokumen
-                  </button>
-                  <button
-                    type="button"
-                    role="menuitem"
-                    onClick={openTemplatePicker}
-                    className="focus-ring flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-base text-ink hover:bg-surface-sunken"
-                  >
-                    <FileText aria-hidden="true" className="size-4 shrink-0 text-ink-subtle" strokeWidth={1.75} />
-                    Template
-                  </button>
-                </Card>
-              )}
-            </div>
-          </>
-        )}
-        {/* max-h-33 = 33 x 4px = 132px = COMPOSER_MAX_HEIGHT di atas. Kelas literal, bukan
-            dirangkai dari konstanta, supaya pemindai kelas Tailwind melihatnya. */}
-        <Textarea
-          ref={textareaRef}
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          onKeyDown={(e) => {
-            // Plain Enter sends. Shift/Ctrl/Cmd+Enter falls through to the textarea's own
-            // default behavior (insert a newline) -- nothing to handle for those explicitly.
-            if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
-              e.preventDefault()
-              send()
-            }
-          }}
-          placeholder={
-            isTest
-              ? 'Ketik sebagai customer untuk menguji bot...'
-              : dryRun
-                ? asGuest
-                  ? 'Ketik sebagai tamu (uji, tidak terkirim ke WhatsApp)...'
-                  : 'Ketik sebagai JVTO (uji, tidak terkirim ke WhatsApp)...'
-                : COMPOSER_PLACEHOLDER
+      <textarea
+        ref={textareaRef}
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        onKeyDown={(e) => {
+          // Plain Enter sends. Shift/Ctrl/Cmd+Enter falls through to the textarea's own
+          // default behavior (insert a newline) -- nothing to handle for those explicitly.
+          if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
+            e.preventDefault()
+            send()
           }
-          aria-label="Pesan"
-          rows={1}
-          className="max-h-33 min-h-8 resize-none py-1.5 text-md leading-snug"
-        />
-        {/* Ikon saja, seperti tombol kirim WhatsApp -- namanya yang bisa dibaca pembaca layar
-            tetap "Kirim" lewat `label`, cuma tidak lagi tertulis di layar. */}
-        <IconButton
-          type="button"
-          variant="default"
-          label="Kirim"
-          icon={<SendHorizontal strokeWidth={1.75} />}
-          onClick={send}
-          disabled={sending || uploading}
-        />
+        }}
+        placeholder={
+          isTest
+            ? 'Ketik sebagai customer untuk menguji bot...'
+            : dryRun
+              ? asGuest
+                ? 'Ketik sebagai tamu (uji, tidak terkirim ke WhatsApp)...'
+                : 'Ketik sebagai JVTO (uji, tidak terkirim ke WhatsApp)...'
+              : COMPOSER_PLACEHOLDER
+        }
+        aria-label="Pesan"
+        rows={1}
+      />
+      <div className="tools">
+        <div className="tl2">
+          {!typingAsGuest && (
+            <>
+              <button type="button" className="btn sm" onClick={openTemplatePicker}>
+                Template
+              </button>
+              <input ref={fileInputRef} type="file" hidden onChange={handleAttachmentSelected} />
+              <div ref={attachMenuRef} style={{ position: 'relative' }}>
+                <button
+                  type="button"
+                  className="btn sm"
+                  aria-expanded={attachMenuOpen}
+                  aria-haspopup="menu"
+                  onClick={() => setAttachMenuOpen((prev) => !prev)}
+                  disabled={uploading}
+                >
+                  Lampiran
+                </button>
+                {attachMenuOpen && (
+                  <div role="menu" className="udrop" style={{ left: 0, right: 'auto', top: 'auto', bottom: 'calc(100% + 6px)', minWidth: 180 }}>
+                    <button type="button" role="menuitem" onClick={() => pickAttachment('media')}>
+                      Foto &amp; Video
+                    </button>
+                    <button type="button" role="menuitem" onClick={() => pickAttachment('document')}>
+                      Dokumen
+                    </button>
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+        </div>
+        <button type="button" className="btn pri sm" id="snd" style={{ marginLeft: 'auto' }} onClick={send} disabled={sending || uploading}>
+          Kirim
+        </button>
       </div>
     </div>
   )

@@ -1,19 +1,19 @@
 import type { Platform } from '@prisma/client'
-import { Bot, BotOff, Pin } from 'lucide-react'
-import { Avatar } from '@/components/ui/avatar'
-import { Badge } from '@/components/ui/badge'
-import { MarqueeText } from '@/components/ui/marquee-text'
-import { cn } from '@/lib/utils'
 import { isHandoffLogMessage, HANDOFF_LOG_SUMMARY } from '@/lib/message-display'
-import { STAGE_LABELS, STAGE_VARIANTS } from '@/lib/pipeline'
+import { STAGE_LABELS } from '@/lib/pipeline'
 import { contactDisplayName } from '@/lib/booking/display-name'
 import { PLATFORM_LABEL } from '@/lib/channel/platform'
 
-// Unlisted channels (e.g. TWT) fall back to the Badge component's own default `muted` look
-// rather than guessing a color for a platform we haven't been told one for.
-const ORDER_CHANNEL_CLASSES: Record<string, string> = {
-  JVTO: 'bg-blue-50 text-blue-700',
-  KLOOK: 'bg-orange-50 text-orange-700',
+type Css = React.CSSProperties & Record<`--${string}`, string>
+
+// Warna label baris (kelas .lb-* di new.css, desain artifact). Asal booking yang tidak dikenal (mis. TWT) memakai
+// warna netral .lb tanpa kelas tambahan.
+const ORDER_CHANNEL_CLASS: Record<string, string> = { JVTO: 'lb-jvto', KLOOK: 'lb-klook' }
+const PLATFORM_COLOR: Record<string, string> = {
+  WHATSAPP: 'var(--ch-wa)',
+  INSTAGRAM: 'var(--ch-ig)',
+  FACEBOOK: 'var(--ch-wa)',
+  EMAIL: 'var(--ch-mail)',
 }
 
 // Siapa yang bicara terakhir, di depan cuplikan. Pelanggan tidak diberi awalan: dialah
@@ -77,20 +77,19 @@ export function formatListTime(iso: string, now: Date = new Date()): string {
   return date.toLocaleDateString('id-ID', { day: '2-digit', month: '2-digit', year: '2-digit' })
 }
 
+/** Dua huruf awal untuk lingkaran avatar: huruf pertama dua kata pertama ("Sarah Lee" -> "SL"). */
+export function nameInitials(name: string): string {
+  const words = name.trim().split(/\s+/).filter(Boolean)
+  if (words.length === 0) return '?'
+  if (words.length === 1) return words[0].slice(0, 2).toUpperCase()
+  return (words[0][0] + words[1][0]).toUpperCase()
+}
+
 /**
- * Satu baris daftar, BUKAN kartu.
- *
- * Yang berubah dari bentuk sebelumnya, dan alasannya:
- *
- *  - Dipisah garis rambut penuh lebar, tanpa radius dan tanpa bayangan. Kartu ber-radius yang
- *    ditumpuk membuat mata menghitung kotak; daftar membuat mata memindai kolom.
- *  - Hierarki tiga tingkat yang tetap: nama + waktu di atas, cuplikan + belum-dibaca di
- *    tengah, lencana + status bot di bawah. Sebelumnya nama, cuplikan, dan lencana kira-kira
- *    sama beratnya, jadi tidak ada satu pun yang bisa dipindai duluan.
- *  - Avatar netral (lihat `tone` di src/components/ui/avatar.tsx): di daftar rapat, delapan
- *    rona acak di kolom paling kiri melawan penanda belum dibaca tanpa memberi informasi baru.
- *  - Aksen hanya di dua tempat: bilah kiri baris aktif dan lencana belum dibaca. Waktu,
- *    nama, dan cuplikan semuanya netral.
+ * Satu baris daftar chat, bentuk desain artifact (.row di new.css): avatar inisial, nama + label, cuplikan pesan
+ * terakhir, waktu + jumlah belum dibaca. Label pertama = asal booking (JVTO/KLOOK) bila ada, kalau belum = tahap
+ * pipeline; sesudahnya permintaan perubahan yang belum dipenuhi, label operator, dan platform (bila daftar
+ * mencampur platform). Isi dan urutan data tidak berubah dari bentuk sebelumnya.
  */
 export function ConversationListItem({
   conversation,
@@ -103,10 +102,7 @@ export function ConversationListItem({
   active?: boolean
   // False only when a single platform tab (WhatsApp/Facebook) is active -- the one state
   // where every row on screen already agrees on its platform, so the badge would be uniform
-  // noise. Every other filter state ("Semua", an orderChannel pill, a label pill) can mix
-  // rows from more than one platform (see ConversationList's `showPlatformBadge` comment for
-  // why), so the badge stays meaningful there. ConversationList passes this as
-  // `filter?.kind !== 'platform'`.
+  // noise. ConversationList passes this as `filter?.kind !== 'platform'`.
   showPlatformBadge?: boolean
 }) {
   // A handoff decision (Task 34) is logged as a Message row with content: null, sentBy: 'BOT' --
@@ -121,115 +117,57 @@ export function ConversationListItem({
   // Email: subjek lebih bermakna daripada kalimat pertama balasan ("Terima kasih, ...").
   const isEmail = conversation.platform === 'EMAIL'
   const preview = isEmail && conversation.subject ? `${conversation.subject} — ${rawPreview ?? ''}` : rawPreview
-  const BotIcon = conversation.botEnabled ? Bot : BotOff
+  const name = contactDisplayName(conversation.contactName, conversation.bookingGuestName, conversation.contactPhone)
 
   return (
-    <li>
-      <button
-        type="button"
-        onClick={onClick}
-        // aria-current, bukan sekadar warna latar: percakapan yang sedang dibuka adalah
-        // "halaman" saat ini di dalam daftar ini, dan pembaca layar tidak melihat tint biru.
-        aria-current={active ? 'true' : undefined}
-        className={cn(
-          'focus-ring flex w-full gap-2.5 border-b border-l-2 border-b-line py-2.5 pr-3 pl-2 text-left transition-colors',
-          active
-            ? 'border-l-accent bg-accent-subtle'
-            : 'border-l-transparent hover:bg-surface-sunken'
-        )}
-      >
-        <Avatar
-          name={conversation.contactName}
-          src={conversation.avatarUrl}
-          alt={conversation.contactName ?? 'Kontak'}
-          maxInitials={1}
-          tone="neutral"
-          className="mt-0.5 size-9"
-        />
-        <span className="flex min-w-0 flex-1 flex-col gap-1">
-          <span className="flex items-baseline gap-2">
-            {conversation.isPinned && (
-              <span aria-label="Disematkan" title="Disematkan" className="shrink-0 text-ink-subtle">
-                <Pin aria-hidden="true" className="size-3.5" strokeWidth={1.75} />
-              </span>
-            )}
-            <span className="min-w-0 flex-1">
-              <MarqueeText
-                text={contactDisplayName(conversation.contactName, conversation.bookingGuestName, conversation.contactPhone)}
-                className={cn('text-base text-ink', isUnread ? 'font-semibold' : 'font-medium')}
-              />
-            </span>
-            <time dateTime={conversation.lastMessageAt} className="shrink-0 text-xs text-ink-subtle">
-              {formatListTime(conversation.lastMessageAt)}
-            </time>
-          </span>
-
-          <span className="flex items-center gap-2">
-            <span
-              className={cn(
-                'min-w-0 flex-1 truncate text-sm',
-                isUnread ? 'font-medium text-ink' : 'text-ink-muted'
-              )}
-            >
-              {prefix && <span className="text-ink-subtle">{prefix} </span>}
-              {preview ?? <span className="text-ink-subtle italic">Belum ada pesan</span>}
-            </span>
-            {isUnread && (
-              <span
-                aria-label={`${conversation.unreadCount} pesan belum dibaca`}
-                className="flex h-4.5 min-w-4.5 shrink-0 items-center justify-center rounded-full bg-accent px-1 text-[10px] leading-none font-semibold text-white tabular-nums"
-              >
-                {conversation.unreadCount > 99 ? '99+' : conversation.unreadCount}
-              </span>
-            )}
-          </span>
-
-          {/* flex-wrap: order channel + pipeline stage + every label share one row when they
-              fit, and drop to a second line instead of overflowing/colliding when they don't.
-              Status bot didorong ke ujung kanan baris ini -- satu slot glif yang selalu di
-              tempat yang sama, jadi "bot menjawab / bot mati" bisa dipindai menurun tanpa
-              membaca satu kata pun. */}
-          <span className="flex flex-wrap items-center gap-1">
-            {/* Badge platform (WhatsApp/Facebook/...) -- bentuknya SENGAJA beda dari badge
-                orderChannel di bawahnya (variant="brand", bukan "muted", dan label kata penuh
-                "WhatsApp"/"Facebook" bukan kode singkat "JVTO"/"KLOOK") supaya operator tidak
-                mengira keduanya fakta yang sama: yang ini platform pesan, yang di bawah asal
-                booking. Tersembunyi HANYA saat tab satu platform aktif -- lihat penjelasan
-                showPlatformBadge di signature komponen ini untuk kenapa "Semua" bukan
-                satu-satunya keadaan yang perlu badge ini. */}
-            {showPlatformBadge && conversation.platform && (
-              <Badge variant="brand">{PLATFORM_LABEL[conversation.platform]}</Badge>
-            )}
-            {conversation.orderChannel && (
-              <Badge variant="muted" className={ORDER_CHANNEL_CLASSES[conversation.orderChannel]}>
-                {conversation.orderChannel}
-              </Badge>
-            )}
-            {(conversation.openChangeRequests ?? 0) > 0 && (
-              <Badge variant="warning">Permintaan perubahan · belum dipenuhi</Badge>
-            )}
-            <Badge variant={STAGE_VARIANTS[conversation.pipelineStage] ?? 'muted'}>
+    <button
+      type="button"
+      onClick={onClick}
+      // aria-current, bukan sekadar warna latar: percakapan yang sedang dibuka adalah
+      // "halaman" saat ini di dalam daftar ini, dan pembaca layar tidak melihat tint biru.
+      aria-current={active ? 'true' : undefined}
+      className={'row' + (active ? ' on' : '')}
+    >
+      <div className="av" aria-hidden="true">{nameInitials(conversation.contactName || name)}</div>
+      <div style={{ minWidth: 0 }}>
+        <b style={{ flexWrap: 'wrap' }}>
+          {conversation.isPinned && <span aria-label="Disematkan" title="Disematkan">📌</span>}
+          <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</span>
+          {conversation.orderChannel ? (
+            <span className={'lb ' + (ORDER_CHANNEL_CLASS[conversation.orderChannel] ?? '')}>{conversation.orderChannel}</span>
+          ) : (
+            <span className={'lb' + (conversation.pipelineStage === 'new' ? ' lb-new' : '')}>
               {STAGE_LABELS[conversation.pipelineStage] ?? conversation.pipelineStage}
-            </Badge>
-            {conversation.labels.map((l) => (
-              <Badge key={l.id} style={{ backgroundColor: l.color + '22', color: l.color }}>
-                {l.name}
-              </Badge>
-            ))}
-            {/* Bot tidak pernah menjawab email (D1) -- ikon status bot di baris email hanya
-                bisa menyesatkan, jadi disembunyikan sepenuhnya di sana. */}
-            {!isEmail && (
-              <span
-                aria-label={conversation.botEnabled ? 'Bot aktif' : 'Bot mati'}
-                title={conversation.botEnabled ? 'Bot menjawab otomatis' : 'Bot mati — dijawab agen'}
-                className="ml-auto shrink-0 pl-1 text-ink-subtle"
-              >
-                <BotIcon aria-hidden="true" className="size-3.5" strokeWidth={1.75} />
-              </span>
-            )}
-          </span>
-        </span>
-      </button>
-    </li>
+            </span>
+          )}
+          {(conversation.openChangeRequests ?? 0) > 0 && (
+            <span className="lb" style={{ '--c': 'var(--warn)' } as Css} title="Permintaan perubahan · belum dipenuhi">Perubahan</span>
+          )}
+          {conversation.labels.map((l) => (
+            <span key={l.id} className="lb" style={{ '--c': l.color } as Css}>{l.name}</span>
+          ))}
+          {showPlatformBadge && conversation.platform && (
+            <span className="lb" style={{ '--c': PLATFORM_COLOR[conversation.platform] ?? 'var(--muted)' } as Css}>
+              {PLATFORM_LABEL[conversation.platform]}
+            </span>
+          )}
+        </b>
+        <p style={isUnread ? { color: 'var(--ink)', fontWeight: 550 } : undefined}>
+          {prefix && <>{prefix} </>}
+          {preview ?? <i>Belum ada pesan</i>}
+        </p>
+      </div>
+      <div className="t">
+        <time dateTime={conversation.lastMessageAt}>{formatListTime(conversation.lastMessageAt)}</time>
+        {isUnread && (
+          <>
+            <br />
+            <span className="un" aria-label={`${conversation.unreadCount} pesan belum dibaca`}>
+              {conversation.unreadCount > 99 ? '99+' : conversation.unreadCount}
+            </span>
+          </>
+        )}
+      </div>
+    </button>
   )
 }

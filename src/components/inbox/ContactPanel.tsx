@@ -1,10 +1,6 @@
 'use client'
 import { useEffect, useState } from 'react'
-import { Select } from '@/components/ui/select'
-import { Skeleton, SkeletonText } from '@/components/ui/skeleton'
-import { ContactAvatar } from '@/components/ContactAvatar'
-import { MarqueeText } from '@/components/ui/marquee-text'
-import { cn } from '@/lib/utils'
+import Link from 'next/link'
 import { LabelPicker, type LabelOption } from './LabelPicker'
 import { NotesSection } from './NotesSection'
 import { BookingActionsSection } from './BookingActionsSection'
@@ -31,33 +27,34 @@ type ContactDetail = {
 }
 
 /**
- * Judul bagian di panel kanan. Empat berkas (panel ini, LabelPicker, NotesSection,
- * RemindersSection) sebelumnya menulis `<h3 className="text-xs font-medium uppercase
- * tracking-wide text-muted-foreground">` masing-masing; empat salinan dari satu keputusan
- * berarti empat kesempatan untuk berbeda.
+ * Judul bagian di panel kanan. Satu salinan untuk semua bagian (LabelPicker, NotesSection, RemindersSection, ...);
+ * bentuknya judul kotak artifact (`.box h4` di new.css: kecil, kapital, redam).
  */
 export function PanelSectionTitle({ children }: { children: React.ReactNode }) {
-  return <h3 className="text-xs font-semibold tracking-wide text-ink-subtle uppercase">{children}</h3>
+  return <h3 className="psec">{children}</h3>
 }
 
-type PanelTab = 'kontak' | 'ringkasan'
+type PanelTab = 'booking' | 'ringkasan' | 'kontak'
 
+// Tiga tab panel kanan desain artifact.
 const PANEL_TABS: ReadonlyArray<{ value: PanelTab; label: string }> = [
+  { value: 'booking', label: 'Booking' },
+  { value: 'ringkasan', label: 'Ringkasan' },
   { value: 'kontak', label: 'Kontak' },
-  { value: 'ringkasan', label: 'Ringkasan chat' },
 ]
 
 /**
  * Tab terakhir yang dipilih, per browser. Kenyamanan saja: penyimpanan bisa kosong atau melempar
- * (jendela privat, data situs diblokir), dan panel tetap jalan dengan tab Kontak.
+ * (jendela privat, data situs diblokir), dan panel tetap jalan dengan tab Booking.
  */
-const TAB_STORAGE_KEY = 'wa-inbox:contact-panel-tab'
+const TAB_STORAGE_KEY = 'wa-inbox:inbox-panel-tab'
 
 function readStoredTab(): PanelTab {
   try {
-    return globalThis.localStorage?.getItem(TAB_STORAGE_KEY) === 'ringkasan' ? 'ringkasan' : 'kontak'
+    const v = globalThis.localStorage?.getItem(TAB_STORAGE_KEY)
+    return v === 'ringkasan' || v === 'kontak' ? v : 'booking'
   } catch {
-    return 'kontak'
+    return 'booking'
   }
 }
 
@@ -69,32 +66,13 @@ function storeTab(tab: PanelTab) {
   }
 }
 
-function ContactPanelSkeleton({ className }: { className?: string }) {
-  return (
-    <aside
-      aria-label="Info kontak"
-      aria-busy="true"
-      className={cn('flex h-full min-h-0 flex-col gap-4 border-l border-line bg-surface p-4', className)}
-    >
-      <div className="flex items-center gap-2.5">
-        <Skeleton className="size-10 shrink-0 rounded-full" />
-        <div className="flex min-w-0 flex-1 flex-col gap-1.5">
-          <Skeleton className="h-3.5 w-2/3" />
-          <Skeleton className="h-3 w-1/3" />
-        </div>
-      </div>
-      <SkeletonText lines={4} />
-      <SkeletonText lines={3} />
-    </aside>
-  )
-}
-
-export function ContactPanel({ conversationId, className }: { conversationId: string; className?: string }) {
+export function ContactPanel({ conversationId }: { conversationId: string }) {
   const [detail, setDetail] = useState<ContactDetail | null>(null)
   const [allLabels, setAllLabels] = useState<LabelOption[]>([])
   const [pipelineError, setPipelineError] = useState<string | null>(null)
   const [channel, setChannel] = useState<ChannelContact | null>(null)
-  // Dibaca saat mount aman dari beda hidrasi: render pertama selalu kerangka, tanpa tab.
+  // Dibaca saat mount aman dari beda hidrasi: selama detail belum termuat (render pertama, juga di server) tidak ada tab
+  // yang ditandai terpilih -- lihat `shown` di bawah.
   const [tab, setTab] = useState<PanelTab>(readStoredTab)
 
   function selectTab(next: PanelTab) {
@@ -133,22 +111,15 @@ export function ContactPanel({ conversationId, className }: { conversationId: st
     }
   }
 
-  if (!detail) return <ContactPanelSkeleton className={className} />
+  const shown: PanelTab | null = detail ? tab : null
 
   return (
-    // Kolom ketiga menggulung sendiri, sama seperti dua yang lain. `className` datang dari
-    // /inbox dan hanya pernah berisi aturan tampil/sembunyi per lebar layar -- itulah sebabnya
-    // `flex` ada di sana dan bukan di sini.
-    <aside
-      aria-label="Info kontak"
-      className={cn(
-        'flex h-full min-h-0 flex-col gap-4 overflow-y-auto overscroll-contain border-l border-line bg-surface p-4',
-        className
-      )}
-    >
-      <div role="tablist" aria-label="Isi panel kanan" className="flex shrink-0 gap-4 border-b border-line">
+    // Kolom ketiga .inbox (desain artifact): tab di atas, isi yang menggulung sendiri (.pan) dari kotak-kotak (.box).
+    // Bagian yang dipasang di sini adalah komponen lama; .legacy-skin memberi mereka token warna desain baru.
+    <div className="col" role="region" aria-label="Info kontak" aria-busy={detail ? undefined : true}>
+      <div className="tabs" id="i-tabs" role="tablist" aria-label="Isi panel kanan" style={{ padding: '0 8px', margin: 0 }}>
         {PANEL_TABS.map(({ value, label }) => {
-          const active = tab === value
+          const active = shown === value
           return (
             <button
               key={value}
@@ -157,106 +128,108 @@ export function ContactPanel({ conversationId, className }: { conversationId: st
               id={`contact-panel-tab-${value}`}
               aria-selected={active}
               aria-controls={`contact-panel-tabpanel-${value}`}
+              className={active ? 'on' : ''}
               onClick={() => selectTab(value)}
-              className={cn(
-                'focus-ring -mb-px border-b-2 px-0.5 pb-2 text-sm font-medium transition-colors',
-                active ? 'border-accent text-ink' : 'border-transparent text-ink-muted hover:text-ink'
-              )}
+              style={{ background: 'none', border: 0, borderBottom: '2px solid ' + (active ? 'var(--accent)' : 'transparent'), padding: 10, fontWeight: 550, color: active ? 'var(--ink)' : 'var(--muted)' }}
             >
               {label}
             </button>
           )
         })}
       </div>
-
-      {tab === 'kontak' ? (
-        <div
-          role="tabpanel"
-          id="contact-panel-tabpanel-kontak"
-          aria-labelledby="contact-panel-tab-kontak"
-          className="flex flex-col gap-4"
-        >
-          <div className="flex items-center gap-2.5">
-            <ContactAvatar name={detail.contactName} avatarUrl={detail.avatarUrl} />
-            <div className="min-w-0 flex-1">
-              <MarqueeText
-                text={contactDisplayName(detail.contactName, bookingGuestName(detail.bookingData), 'Tanpa nama')}
-                className="text-base font-semibold text-ink"
-              />
-              {detail.source && <p className="truncate text-xs text-ink-muted">{detail.source}</p>}
+      <div className="pan" id="i-pan" role="tabpanel" aria-labelledby={`contact-panel-tab-${tab}`}>
+        {!detail ? (
+          <div className="mut" style={{ padding: 4 }}>Memuat…</div>
+        ) : tab === 'booking' ? (
+          <>
+            <div className="box legacy-skin">
+              <BookingSummary bookingData={detail.bookingData} tripBrief={detail.tripBrief} />
             </div>
+            <div className="box legacy-skin">
+              <BookingActionsSection conversationId={conversationId} />
+            </div>
+            <div className="box legacy-skin">
+              <ScheduleNoteSection conversationId={conversationId} hasBooking={Boolean(detail.bookingData?.id)} />
+            </div>
+            <div className="box legacy-skin">
+              <CrewNoteSection conversationId={conversationId} hasBooking={Boolean(detail.bookingData?.id)} />
+            </div>
+            <div className="box legacy-skin">
+              <RemindersSection contactId={detail.contactId} />
+            </div>
+            <div className="box legacy-skin">
+              <NotesSection contactId={detail.contactId} />
+            </div>
+          </>
+        ) : tab === 'ringkasan' ? (
+          <div className="legacy-skin">
+            <ChatReviewTab key={conversationId} conversationId={conversationId} contactName={detail.contactName} />
           </div>
-
-          {channel && (
-            // Kontak di platform asal: nomor WA, alamat email, @username IG, atau nama FB -- dengan
-            // tautan ke sana kalau ada. Facebook hanya bisa ditautkan ke percakapan di inbox Page,
-            // bukan ke profil orangnya (Meta tidak membuka profil dari PSID).
-            <section aria-label="Kontak" className="space-y-1">
-              <PanelSectionTitle>Kontak</PanelSectionTitle>
-              <p className="text-xs text-ink-muted">{channel.platformLabel}</p>
-              {channel.href ? (
-                <a
-                  href={channel.href}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  title={channel.linkLabel ?? undefined}
-                  className="block text-sm font-medium break-all text-accent hover:underline"
-                >
-                  {channel.value}
-                </a>
-              ) : (
-                <p className="text-sm break-all text-ink">{channel.value}</p>
+        ) : (
+          <>
+            <div className="box">
+              <h4>Kontak</h4>
+              <dl className="kv">
+                <dt>Nama</dt>
+                <dd>{contactDisplayName(detail.contactName, bookingGuestName(detail.bookingData), 'Tanpa nama')}</dd>
+                {channel && (
+                  // Kontak di platform asal: nomor WA, alamat email, @username IG, atau nama FB -- dengan
+                  // tautan ke sana kalau ada. Facebook hanya bisa ditautkan ke percakapan di inbox Page.
+                  <>
+                    <dt>Kontak</dt>
+                    <dd>
+                      {channel.href ? (
+                        <a href={channel.href} target="_blank" rel="noopener noreferrer" title={channel.linkLabel ?? undefined} style={{ color: 'var(--accent)' }}>
+                          {channel.value}
+                        </a>
+                      ) : (
+                        channel.value
+                      )}
+                    </dd>
+                    <dt>Platform</dt>
+                    <dd>{channel.platformLabel}</dd>
+                  </>
+                )}
+                {detail.source && (
+                  <>
+                    <dt>Sumber</dt>
+                    <dd>{detail.source}</dd>
+                  </>
+                )}
+                <dt>Consent</dt>
+                <dd>Di halaman Kontak</dd>
+              </dl>
+            </div>
+            <div className="box">
+              <h4>Tahap pipeline</h4>
+              <select className="sel" aria-label="Tahap pipeline" value={detail.pipelineStage} onChange={(e) => changePipelineStage(e.target.value)}>
+                {PIPELINE_STAGES.map((s) => (
+                  <option key={s.value} value={s.value}>
+                    {s.label}
+                  </option>
+                ))}
+              </select>
+              {pipelineError && (
+                <p role="alert" className="sm" style={{ margin: '6px 0 0', color: 'var(--bad)' }}>
+                  {pipelineError}
+                </p>
               )}
-              {channel.href && channel.linkLabel && <p className="text-xs text-ink-subtle">{channel.linkLabel} ↗</p>}
-            </section>
-          )}
-
-          <BookingSummary bookingData={detail.bookingData} tripBrief={detail.tripBrief} />
-
-          <ScheduleNoteSection conversationId={conversationId} hasBooking={Boolean(detail.bookingData?.id)} />
-
-          <CrewNoteSection conversationId={conversationId} hasBooking={Boolean(detail.bookingData?.id)} />
-
-          <div className="space-y-2">
-            <PanelSectionTitle>Tahap Pipeline</PanelSectionTitle>
-            <Select
-              aria-label="Tahap pipeline"
-              value={detail.pipelineStage}
-              onChange={(e) => changePipelineStage(e.target.value)}
-              className="w-full"
-            >
-              {PIPELINE_STAGES.map((s) => (
-                <option key={s.value} value={s.value}>
-                  {s.label}
-                </option>
-              ))}
-            </Select>
-            {pipelineError && (
-              <p role="alert" className="text-xs text-danger">
-                {pipelineError}
-              </p>
-            )}
-          </div>
-
-          <LabelPicker
-            conversationId={conversationId}
-            allLabels={allLabels}
-            attachedLabels={detail.labels}
-            onAttachedChange={(labels) => setDetail((prev) => (prev ? { ...prev, labels } : prev))}
-            onAllLabelsChange={setAllLabels}
-          />
-
-          <RemindersSection contactId={detail.contactId} />
-
-          <BookingActionsSection conversationId={conversationId} />
-
-          <NotesSection contactId={detail.contactId} />
-        </div>
-      ) : (
-        <div role="tabpanel" id="contact-panel-tabpanel-ringkasan" aria-labelledby="contact-panel-tab-ringkasan">
-          <ChatReviewTab key={conversationId} conversationId={conversationId} contactName={detail.contactName} />
-        </div>
-      )}
-    </aside>
+            </div>
+            <div className="box legacy-skin">
+              <LabelPicker
+                conversationId={conversationId}
+                allLabels={allLabels}
+                attachedLabels={detail.labels}
+                onAttachedChange={(labels) => setDetail((prev) => (prev ? { ...prev, labels } : prev))}
+                onAllLabelsChange={setAllLabels}
+              />
+            </div>
+            <Link className="btn sm" href={`/kontak/${encodeURIComponent(detail.contactId)}`} style={{ alignSelf: 'flex-start' }}>
+              Buka di Kontak
+            </Link>
+          </>
+        )}
+      </div>
+    </div>
   )
 }

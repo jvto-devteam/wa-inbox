@@ -47,6 +47,15 @@ class FakeEventSource {
   }
 }
 
+// Sakelar bot di kepala thread (desain artifact): checkbox, bukan tombol teks lagi.
+const botSwitch = () => screen.getByRole('checkbox', { name: 'Bot aktif untuk chat ini' })
+const findBotSwitch = () => screen.findByRole('checkbox', { name: 'Bot aktif untuk chat ini' })
+
+// Aksi per pesan (Balas, Generate draft, Cek topik, ...) ada di menu panah gelembungnya.
+function openMessageMenu(index = 0) {
+  fireEvent.click(screen.getAllByRole('button', { name: 'Aksi pesan' })[index])
+}
+
 beforeEach(() => {
   FakeEventSource.instances = []
   vi.stubGlobal('fetch', vi.fn())
@@ -123,15 +132,16 @@ describe('ThreadView keyed by conversationId', () => {
 
     render(<Harness />)
 
-    // conv_1 has the bot on: the "Ambil Alih dari Bot" takeover button shows.
-    await waitFor(() => expect(screen.getByText('Ambil Alih dari Bot')).toBeInTheDocument())
+    // conv_1 has the bot on: the bot switch is checked.
+    await waitFor(() => expect(botSwitch()).toBeChecked())
 
     fireEvent.click(screen.getByText('switch'))
 
     // conv_2 has the bot off. If ThreadView carried over conv_1's `true`
     // instead of resetting on remount and re-fetching conv_2's own value,
-    // the button would incorrectly remain visible.
-    await waitFor(() => expect(screen.queryByText('Ambil Alih dari Bot')).not.toBeInTheDocument())
+    // the switch would incorrectly stay checked.
+    await waitFor(() => expect(botSwitch()).not.toBeChecked())
+    expect(screen.getByText('Manual')).toBeInTheDocument()
   })
 
   it("does not carry over the previous conversation's botEnabled value after switching (false -> true)", async () => {
@@ -144,21 +154,23 @@ describe('ThreadView keyed by conversationId', () => {
 
     render(<Harness />)
 
-    // conv_1 has the bot off: no takeover button, and the remount default (false) agrees.
+    // conv_1 has the bot off: switch unchecked, and the remount default (false) agrees.
     await waitFor(() => expect(fetch).toHaveBeenCalledWith(expect.stringContaining('conv_1')))
-    expect(screen.queryByText('Ambil Alih dari Bot')).not.toBeInTheDocument()
+    expect(botSwitch()).not.toBeChecked()
 
     fireEvent.click(screen.getByText('switch'))
 
-    // conv_2 has the bot on — the button must appear once conv_2's own
+    // conv_2 has the bot on — the switch must turn checked once conv_2's own
     // detail fetch resolves, proving the value is freshly sourced per
     // conversation rather than stuck at whatever conv_1 had (or the default).
-    await waitFor(() => expect(screen.getByText('Ambil Alih dari Bot')).toBeInTheDocument())
+    await waitFor(() => expect(botSwitch()).toBeChecked())
+    expect(screen.getByText('Bot aktif')).toBeInTheDocument()
   })
 })
 
 describe('ThreadView header identity', () => {
-  it("shows the contact's name and avatar photo in the header when available", async () => {
+  // Kepala thread desain artifact tidak lagi memakai foto: avatarUrl diabaikan, inisial yang tampil.
+  it("shows the contact's name and initials (never the avatar photo) in the header", async () => {
     vi.mocked(fetch).mockImplementation((url) => {
       const s = String(url)
       if (s.endsWith('/messages')) return Promise.resolve({ ok: true, json: () => Promise.resolve([]) } as Response)
@@ -172,10 +184,11 @@ describe('ThreadView header identity', () => {
     render(<ThreadView conversationId="conv_1" />)
 
     expect(await screen.findByText('Bruno Figarola')).toBeInTheDocument()
-    expect(screen.getByAltText('Bruno Figarola')).toBeInTheDocument()
+    expect(screen.getByText('BF')).toBeInTheDocument()
+    expect(screen.queryByAltText('Bruno Figarola')).not.toBeInTheDocument()
   })
 
-  it('falls back to an initial-letter avatar when the contact has no avatarUrl', async () => {
+  it('shows initials when the contact has no avatarUrl', async () => {
     vi.mocked(fetch).mockImplementation((url) => {
       const s = String(url)
       if (s.endsWith('/messages')) return Promise.resolve({ ok: true, json: () => Promise.resolve([]) } as Response)
@@ -189,7 +202,7 @@ describe('ThreadView header identity', () => {
     render(<ThreadView conversationId="conv_1" />)
 
     await screen.findByText('Bruno Figarola')
-    expect(screen.getByText('B')).toBeInTheDocument()
+    expect(screen.getByText('BF')).toBeInTheDocument()
   })
 
   it('percakapan email: subjek tampil di header dan tombol bot tidak ada', async () => {
@@ -206,7 +219,7 @@ describe('ThreadView header identity', () => {
     render(<ThreadView conversationId="conv_mail" />)
 
     await waitFor(() => expect(screen.getByText('Tur Bromo 3D2N')).toBeInTheDocument())
-    expect(screen.queryByRole('button', { name: /Ambil Alih dari Bot|Aktifkan Bot untuk Chat Ini/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('checkbox', { name: 'Bot aktif untuk chat ini' })).not.toBeInTheDocument()
   })
 
   it('shows the "Room Tes" badge when isTest is true', async () => {
@@ -335,7 +348,7 @@ describe('ThreadView live delivery-status updates', () => {
 
     render(<ThreadView conversationId="conv_1" />)
 
-    await waitFor(() => expect(screen.getByRole('img', { name: 'Terkirim' })).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText(/· Terkirim$/)).toBeInTheDocument())
 
     const es = FakeEventSource.instances[0]
     act(() => {
@@ -348,9 +361,9 @@ describe('ThreadView live delivery-status updates', () => {
 
     // Tahap 1C: lencana ini menampilkan kalimat ("Gagal terkirim"), bukan nama status
     // mentah dari database. Perilaku yang ditegakkan tidak berubah: gelembungnya diganti
-    // di tempat, dan centang "Terkirim"-nya hilang.
+    // di tempat, dan kata "Terkirim"-nya hilang dari baris waktu.
     await waitFor(() => expect(screen.getByText('Gagal terkirim')).toBeInTheDocument())
-    expect(screen.queryByRole('img', { name: 'Terkirim' })).not.toBeInTheDocument()
+    expect(screen.queryByText(/· Terkirim$/)).not.toBeInTheDocument()
     expect(screen.getAllByText('Penawaran paket Ijen')).toHaveLength(1)
   })
 
@@ -369,7 +382,9 @@ describe('ThreadView live delivery-status updates', () => {
     mockBasicFetch([inboundMessage])
 
     render(<ThreadView conversationId="conv_1" />)
-    await waitFor(() => expect(screen.getByLabelText('Cek topik')).toBeInTheDocument())
+    await screen.findByText('Berapa harga paket Ijen?')
+    openMessageMenu()
+    expect(screen.getByRole('menuitem', { name: 'Cek topik' })).toBeInTheDocument()
 
     act(() => {
       FakeEventSource.instances[0].emit({
@@ -383,7 +398,9 @@ describe('ThreadView live delivery-status updates', () => {
     })
 
     await waitFor(() => expect(screen.getByText('Harga & nilai')).toBeInTheDocument())
-    expect(screen.queryByLabelText('Cek topik')).not.toBeInTheDocument()
+    // Menu masih terbuka; "Cek topik" hilang dari situ karena labelnya sudah ada.
+    expect(screen.getByRole('menuitem', { name: 'Balas pesan ini' })).toBeInTheDocument()
+    expect(screen.queryByRole('menuitem', { name: 'Cek topik' })).not.toBeInTheDocument()
   })
 
   it('memuat ulang message list saat knowledge.gap tiba, lalu menampilkan warning di bubble terkait', async () => {
@@ -420,14 +437,21 @@ describe('ThreadView live delivery-status updates', () => {
     })
 
     render(<ThreadView conversationId="conv_1" />)
-    await waitFor(() => expect(screen.queryByLabelText('Ada gap knowledge pada jawaban ini')).not.toBeInTheDocument())
+    await screen.findByText('Let me check with our team.')
+    expect(screen.queryByText(/Ada gap knowledge/)).not.toBeInTheDocument()
+    expect(screen.queryByTitle('Ada bagian jawaban yang belum punya knowledge')).not.toBeInTheDocument()
 
     messages = [gappedReply]
     act(() => {
       FakeEventSource.instances[0].emit({ type: 'knowledge.gap', conversationId: 'conv_1' })
     })
 
-    await waitFor(() => expect(screen.getByLabelText('Ada gap knowledge pada jawaban ini')).toBeInTheDocument())
+    // Gelembung gap: kelas "gap", judul = alasan gap, dan baris waktu menyebut "Ada gap knowledge".
+    await waitFor(() => expect(screen.getByText(/· Ada gap knowledge$/)).toBeInTheDocument())
+    expect(screen.getByTitle('Ada bagian jawaban yang belum punya knowledge')).toHaveClass('gap')
+    // Menu aksi pesan memuat kepala "Gap knowledge" dengan alasannya.
+    openMessageMenu()
+    expect(screen.getByText('Gap knowledge')).toBeInTheDocument()
     expect(screen.getByText('Ada bagian jawaban yang belum punya knowledge')).toBeInTheDocument()
   })
 
@@ -436,7 +460,7 @@ describe('ThreadView live delivery-status updates', () => {
 
     render(<ThreadView conversationId="conv_1" />)
 
-    await waitFor(() => expect(screen.getByRole('img', { name: 'Terkirim' })).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText(/· Terkirim$/)).toBeInTheDocument())
 
     const es = FakeEventSource.instances[0]
     act(() => {
@@ -447,7 +471,8 @@ describe('ThreadView live delivery-status updates', () => {
       })
     })
 
-    await waitFor(() => expect(screen.getByRole('img', { name: 'Terkirim' })).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText(/· Terkirim$/)).toBeInTheDocument())
+    expect(screen.queryByText('Gagal terkirim')).not.toBeInTheDocument()
   })
 
   it('tidak menghapus draft yang sudah tampil saat message.updated tiba tanpa field draft (broadcast SSE tidak pernah membawanya)', async () => {
@@ -512,7 +537,7 @@ describe('ThreadView live handoff sync', () => {
       if (s.endsWith('/messages')) return Promise.resolve({ ok: true, json: () => Promise.resolve([]) } as Response)
       if (s.endsWith('/api/accounts')) return Promise.resolve({ ok: true, json: () => Promise.resolve([]) } as Response)
       // Agent manually re-activated the bot for this one chat (botEnabled: true), the scenario
-      // where a stale "Ambil Alih dari Bot" button reads exactly backwards after a handoff.
+      // where a stale "Bot aktif" switch reads exactly backwards after a handoff.
       return Promise.resolve({ ok: true, json: () => Promise.resolve({ botEnabled: true, assignedAgentId: null }) } as Response)
     })
   }
@@ -522,15 +547,16 @@ describe('ThreadView live handoff sync', () => {
 
     render(<ThreadView conversationId="conv_1" />)
 
-    expect(await screen.findByText('Ambil Alih dari Bot')).toBeInTheDocument()
+    await waitFor(() => expect(botSwitch()).toBeChecked())
 
     const es = FakeEventSource.instances[0]
     act(() => {
       es.emit({ type: 'handoff.alert', conversationId: 'conv_1', contactName: 'David Setya' })
     })
 
-    await waitFor(() => expect(screen.getByText('Aktifkan Bot untuk Chat Ini')).toBeInTheDocument())
-    expect(screen.queryByText('Ambil Alih dari Bot')).not.toBeInTheDocument()
+    await waitFor(() => expect(botSwitch()).not.toBeChecked())
+    expect(screen.getByText('Manual')).toBeInTheDocument()
+    expect(screen.queryByText('Bot aktif')).not.toBeInTheDocument()
   })
 
   it('ignores a handoff.alert event for a different conversation', async () => {
@@ -538,14 +564,15 @@ describe('ThreadView live handoff sync', () => {
 
     render(<ThreadView conversationId="conv_1" />)
 
-    expect(await screen.findByText('Ambil Alih dari Bot')).toBeInTheDocument()
+    await waitFor(() => expect(botSwitch()).toBeChecked())
 
     const es = FakeEventSource.instances[0]
     act(() => {
       es.emit({ type: 'handoff.alert', conversationId: 'conv_other', contactName: 'Someone Else' })
     })
 
-    await waitFor(() => expect(screen.getByText('Ambil Alih dari Bot')).toBeInTheDocument())
+    await waitFor(() => expect(botSwitch()).toBeChecked())
+    expect(screen.getByText('Bot aktif')).toBeInTheDocument()
   })
 })
 
@@ -611,7 +638,7 @@ describe('ThreadView read tracking', () => {
 
     // The divider sits between the already-read message and the first unread one, not
     // above the whole thread.
-    const container = screen.getByText('Pesan lama').closest('.space-y-3')!
+    const container = screen.getByRole('log', { name: 'Riwayat pesan' })
     const order = [...container.querySelectorAll('div')].map((el) => el.textContent).join('|')
     const oldIndex = order.indexOf('Pesan lama')
     const dividerIndex = order.indexOf('Pesan belum dibaca')
@@ -650,50 +677,64 @@ describe('ThreadView header — toggle bot', () => {
     })
   }
 
-  it('renders "Aktifkan Bot untuk Chat Ini" di header saat bot nonaktif', async () => {
-    vi.stubGlobal('fetch', mockFetchWithBotEnabled(false))
-    render(<ThreadView conversationId="conv_1" />)
+  // Klik sakelar sebelum GET detail mendarat bisa ditimpa nilai detail; markAsRead dipanggil
+  // tepat sesudah detail diterapkan, jadi PATCH /read menandai state awal sudah final.
+  async function waitForDetail(fetchMock: ReturnType<typeof vi.fn>) {
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith('/api/conversations/conv_1/read', expect.objectContaining({ method: 'PATCH' }))
+    )
+  }
 
-    expect(await screen.findByRole('button', { name: 'Aktifkan Bot untuk Chat Ini' })).toBeInTheDocument()
-  })
-
-  it('renders "Ambil Alih dari Bot" di header saat bot aktif', async () => {
-    vi.stubGlobal('fetch', mockFetchWithBotEnabled(true))
-    render(<ThreadView conversationId="conv_1" />)
-
-    expect(await screen.findByRole('button', { name: 'Ambil Alih dari Bot' })).toBeInTheDocument()
-  })
-
-  it('memanggil endpoint toggle-bot dan menukar label tombolnya begitu server konfirmasi', async () => {
+  it('sakelar bot tidak tercentang dan berlabel "Manual" saat bot nonaktif', async () => {
     const fetchMock = mockFetchWithBotEnabled(false)
     vi.stubGlobal('fetch', fetchMock)
     render(<ThreadView conversationId="conv_1" />)
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Aktifkan Bot untuk Chat Ini' }))
+    await waitForDetail(fetchMock)
+    expect(await findBotSwitch()).not.toBeChecked()
+    expect(screen.getByText('Manual')).toBeInTheDocument()
+  })
+
+  it('sakelar bot tercentang dan berlabel "Bot aktif" saat bot aktif', async () => {
+    vi.stubGlobal('fetch', mockFetchWithBotEnabled(true))
+    render(<ThreadView conversationId="conv_1" />)
+
+    await waitFor(() => expect(botSwitch()).toBeChecked())
+    expect(screen.getByText('Bot aktif')).toBeInTheDocument()
+  })
+
+  it('memanggil endpoint toggle-bot dan menukar keadaan sakelarnya begitu server konfirmasi', async () => {
+    const fetchMock = mockFetchWithBotEnabled(false)
+    vi.stubGlobal('fetch', fetchMock)
+    render(<ThreadView conversationId="conv_1" />)
+    await waitForDetail(fetchMock)
+
+    fireEvent.click(await findBotSwitch())
 
     expect(fetchMock).toHaveBeenCalledWith('/api/conversations/conv_1/toggle-bot', { method: 'POST' })
-    expect(await screen.findByRole('button', { name: 'Ambil Alih dari Bot' })).toBeInTheDocument()
+    await waitFor(() => expect(botSwitch()).toBeChecked())
+    expect(screen.getByText('Bot aktif')).toBeInTheDocument()
   })
 
   it('menampilkan error inline di bawah header saat endpoint toggle-bot gagal', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn((url: RequestInfo | URL, init?: RequestInit) => {
-        const s = String(url)
-        if (s.endsWith('/messages')) return Promise.resolve({ ok: true, json: () => Promise.resolve([]) } as Response)
-        if (s.endsWith('/toggle-bot') && init?.method === 'POST') {
-          return Promise.reject(new Error('network error'))
-        }
-        return Promise.resolve({ ok: true, json: () => Promise.resolve({ botEnabled: false }) } as Response)
-      })
-    )
+    const fetchMock = vi.fn((url: RequestInfo | URL, init?: RequestInit) => {
+      const s = String(url)
+      if (s.endsWith('/messages')) return Promise.resolve({ ok: true, json: () => Promise.resolve([]) } as Response)
+      if (s.endsWith('/toggle-bot') && init?.method === 'POST') {
+        return Promise.reject(new Error('network error'))
+      }
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({ botEnabled: false }) } as Response)
+    })
+    vi.stubGlobal('fetch', fetchMock)
     render(<ThreadView conversationId="conv_1" />)
+    await waitForDetail(fetchMock)
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Aktifkan Bot untuk Chat Ini' }))
+    fireEvent.click(await findBotSwitch())
 
     expect(await screen.findByText('Gagal mengambil alih dari bot')).toBeInTheDocument()
-    // Tombolnya tetap menawarkan aksi yang sama -- gagal bukan berarti diam-diam berhasil.
-    expect(screen.getByRole('button', { name: 'Aktifkan Bot untuk Chat Ini' })).toBeInTheDocument()
+    // Sakelarnya tetap di keadaan lama -- gagal bukan berarti diam-diam berhasil.
+    expect(botSwitch()).not.toBeChecked()
+    expect(screen.getByText('Manual')).toBeInTheDocument()
   })
 })
 
@@ -726,13 +767,14 @@ describe('ThreadView reply/quote', () => {
     })
   }
 
-  it('shows the reply preview bar in ComposeBox after clicking Balas on a message', async () => {
+  it('shows the reply preview bar in ComposeBox after choosing Balas from a message menu', async () => {
     vi.stubGlobal('fetch', mockFetch())
 
     render(<ThreadView conversationId="conv_1" />)
     await waitFor(() => expect(screen.getByText('Paketnya yang 3D2N kan?')).toBeInTheDocument())
 
-    fireEvent.click(screen.getByRole('button', { name: 'Balas pesan ini' }))
+    openMessageMenu()
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Balas pesan ini' }))
 
     expect(screen.getByText('Membalas Pelanggan')).toBeInTheDocument()
   })
@@ -742,7 +784,8 @@ describe('ThreadView reply/quote', () => {
 
     render(<ThreadView conversationId="conv_1" />)
     await waitFor(() => expect(screen.getByText('Paketnya yang 3D2N kan?')).toBeInTheDocument())
-    fireEvent.click(screen.getByRole('button', { name: 'Balas pesan ini' }))
+    openMessageMenu()
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Balas pesan ini' }))
     expect(screen.getByText('Membalas Pelanggan')).toBeInTheDocument()
 
     fireEvent.change(screen.getByLabelText('Pesan'), { target: { value: 'Iya benar' } })
@@ -756,7 +799,8 @@ describe('ThreadView reply/quote', () => {
 
     render(<ThreadView conversationId="conv_1" />)
     await waitFor(() => expect(screen.getByText('Paketnya yang 3D2N kan?')).toBeInTheDocument())
-    fireEvent.click(screen.getByRole('button', { name: 'Balas pesan ini' }))
+    openMessageMenu()
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Balas pesan ini' }))
 
     fireEvent.click(screen.getByLabelText('Batalkan balasan'))
 
@@ -851,8 +895,7 @@ describe('ThreadView template variable data', () => {
     render(<ThreadView conversationId="conv_1" />)
     await waitFor(() => expect(screen.getByText('Bruno Figarola')).toBeInTheDocument())
 
-    fireEvent.click(await screen.findByLabelText('Tambah lampiran atau template'))
-    fireEvent.click(await screen.findByRole('menuitem', { name: 'Template' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Template' }))
     fireEvent.click(await screen.findByText('Konfirmasi'))
 
     const picker = await screen.findByLabelText('Isi dari data booking/kontak')
@@ -1058,12 +1101,16 @@ describe('ThreadView — kepala, layar sempit, dan gulungan', () => {
     const { container } = render(<ThreadView conversationId="conv_1" />)
     await screen.findByRole('log', { name: 'Riwayat pesan' })
 
+    // Aturan gulungnya sekarang di CSS (src/app/(app)/new.css): `.col` = kolom flex min-height:0
+    // tanpa overflow, `.msgs` = flex:1; min-height:0; overflow:auto. jsdom tidak memuat CSS itu,
+    // jadi yang dijaga di sini adalah kelas yang membawanya.
     const column = container.firstElementChild as HTMLElement
-    expect(column).toHaveClass('h-full', 'min-h-0')
-    expect(column.className).not.toContain('overflow-y-auto')
+    expect(column).toHaveClass('col')
+    expect(column).not.toHaveClass('msgs')
 
     const log = screen.getByRole('log', { name: 'Riwayat pesan' })
-    expect(log).toHaveClass('overflow-y-auto', 'min-h-0', 'flex-1')
+    expect(log).toHaveClass('msgs')
+    expect(column.contains(log)).toBe(true)
   })
 
   it('tidak menampilkan tombol kembali kalau tidak ada tempat untuk kembali', async () => {
@@ -1081,22 +1128,6 @@ describe('ThreadView — kepala, layar sempit, dan gulungan', () => {
 
     fireEvent.click(await screen.findByLabelText('Kembali ke daftar percakapan'))
     expect(onBack).toHaveBeenCalled()
-  })
-
-  it('menamai tombol panel kontak menurut apa yang akan terjadi, bukan menurut keadaan sekarang', async () => {
-    mockBasic()
-    const onToggle = vi.fn()
-    const { rerender } = render(
-      <ThreadView conversationId="conv_1" contactPanelOpen onToggleContactPanel={onToggle} />
-    )
-
-    const hide = await screen.findByLabelText('Sembunyikan panel kontak')
-    expect(hide).toHaveAttribute('aria-pressed', 'true')
-    fireEvent.click(hide)
-    expect(onToggle).toHaveBeenCalled()
-
-    rerender(<ThreadView conversationId="conv_1" contactPanelOpen={false} onToggleContactPanel={onToggle} />)
-    expect(screen.getByLabelText('Tampilkan panel kontak')).toHaveAttribute('aria-pressed', 'false')
   })
 
   it('mengatakan percakapan ini masih kosong, alih-alih memperlihatkan area kosong tanpa penjelasan', async () => {
@@ -1204,7 +1235,7 @@ describe('ThreadView — lompat ke pesan tertentu', () => {
 
     await waitFor(() => expect(scrollSpy).toHaveBeenCalledWith({ block: 'center' }))
     expect(screen.getByText('Harga ATV mulai Rp350.000.')).toBeInTheDocument()
-    expect(document.getElementById(threadMessageDomId('m_bot'))?.className).toContain('ring-2')
+    expect(document.getElementById(threadMessageDomId('m_bot'))).toHaveClass('flash')
     expect(screen.queryByText('Perbaiki jawaban bot')).not.toBeInTheDocument()
     scrollSpy.mockRestore()
   })
@@ -1291,8 +1322,8 @@ describe('ThreadView — siap kirim dari antrean', () => {
 
     await waitFor(() => expect(draftPosts()).toHaveLength(1))
     expect(String(draftPosts()[0][0])).toBe('/api/conversations/conv_1/messages/m_in2/draft')
-    expect(document.getElementById(threadMessageDomId('m_in'))?.className).toContain('ring-2')
-    expect(document.getElementById(threadMessageDomId('m_in2'))?.className).not.toContain('ring-2')
+    expect(document.getElementById(threadMessageDomId('m_in'))).toHaveClass('flash')
+    expect(document.getElementById(threadMessageDomId('m_in2'))).not.toHaveClass('flash')
     scrollSpy.mockRestore()
   })
 
@@ -1365,7 +1396,9 @@ describe('ThreadView — siap kirim dari antrean', () => {
   it('tanpa autoDraft tidak ada draft yang disusun', async () => {
     stubThread([inbound(new Date().toISOString())])
     render(<ThreadView conversationId="conv_1" focusMessageId="m_in" />)
-    expect(await screen.findByRole('button', { name: 'Generate draft' })).toBeInTheDocument()
+    await screen.findByText('berapa harga ATV sekarang?')
+    openMessageMenu()
+    expect(screen.getByRole('menuitem', { name: 'Generate draft' })).toBeInTheDocument()
     expect(callsTo((url) => url.endsWith('/draft'))).toHaveLength(0)
   })
 

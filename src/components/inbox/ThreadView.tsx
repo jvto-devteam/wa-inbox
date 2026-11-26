@@ -1,15 +1,10 @@
 'use client'
 import { useEffect, useRef, useState } from 'react'
-import { ArrowLeft, PanelRight, PanelRightClose } from 'lucide-react'
 import { MessageBubble, type MessageView } from './MessageBubble'
 import { ComposeBox } from './ComposeBox'
-import { Button } from '@/components/ui/button'
-import { IconButton } from '@/components/ui/icon-button'
-import { SkeletonText } from '@/components/ui/skeleton'
-import { ContactAvatar } from '@/components/ContactAvatar'
-import { MarqueeText } from '@/components/ui/marquee-text'
-import { cn } from '@/lib/utils'
+import { nameInitials } from './ConversationListItem'
 import { fetchJson } from '@/lib/fetch-json'
+import { PLATFORM_LABEL } from '@/lib/channel/platform'
 import type { BookingData } from '@/lib/booking/client'
 import { bookingGuestName, contactDisplayName } from '@/lib/booking/display-name'
 import type { MessageDraftView } from '@/lib/inbox/message-draft-view'
@@ -94,11 +89,8 @@ function upsertSentMessage(prev: MessageView[], sent: MessageView): MessageView[
 }
 
 /**
- * Pembatas mendatar di dalam thread: garis - teks - garis.
- *
- * Dua pemakaiannya sengaja terlihat berbeda. Pembatas hari adalah orientasi (netral, kalem);
- * "Pesan belum dibaca" adalah penanda belum dibaca -- salah satu dari tiga tempat aksen boleh
- * dibelanjakan di sistem ini -- dan ia memang harus bisa ditemukan mata saat menggulung.
+ * Pembatas di dalam thread, bentuk pesan sistem artifact (.m.s, pil di tengah). Pembatas hari netral; "Pesan belum
+ * dibaca" memakai aksen supaya bisa ditemukan mata saat menggulung.
  */
 function ThreadDivider({
   label,
@@ -109,19 +101,9 @@ function ThreadDivider({
   tone?: 'neutral' | 'accent'
   innerRef?: React.Ref<HTMLDivElement>
 }) {
-  const accent = tone === 'accent'
   return (
-    <div ref={innerRef} className="mb-3 flex items-center gap-2">
-      <div className={cn('h-px flex-1', accent ? 'bg-accent/35' : 'bg-line')} />
-      <span
-        className={cn(
-          'rounded-sm px-2 py-0.5 text-xs font-medium',
-          accent ? 'bg-accent-subtle text-accent' : 'border border-line bg-surface text-ink-muted'
-        )}
-      >
-        {label}
-      </span>
-      <div className={cn('h-px flex-1', accent ? 'bg-accent/35' : 'bg-line')} />
+    <div ref={innerRef} className={'m s' + (tone === 'accent' ? ' info' : '')} style={{ margin: '0 auto 9px', width: 'fit-content' }}>
+      {label}
     </div>
   )
 }
@@ -129,20 +111,17 @@ function ThreadDivider({
 export function ThreadView({
   conversationId,
   onBack,
-  contactPanelOpen,
-  onToggleContactPanel,
-  className,
+  onInfo,
   focusMessageId,
   openFixOnFocus = true,
   autoDraft = false,
   followUp = false,
 }: {
   conversationId: string
-  /** Hanya dirender di bawah md, tempat tiga kolom menjadi satu kolom bertingkat. */
+  /** Tombol kembali ke daftar; hanya tampil di ponsel (.mback), tempat tiga kolom menjadi satu. */
   onBack?: () => void
-  contactPanelOpen?: boolean
-  onToggleContactPanel?: () => void
-  className?: string
+  /** Tombol info (.minfo, hanya di ponsel): membuka panel kanan sebagai lembar bawah. */
+  onInfo?: () => void
   /**
    * Pesan yang harus dituju saat thread dibuka dari notifikasi gap (`/inbox?...&message=<id>`):
    * digulung ke tengah layar, disorot, dan panel perbaikannya dibuka.
@@ -174,7 +153,6 @@ export function ThreadView({
   const [platform, setPlatform] = useState<string | null>(null)
   const [subject, setSubject] = useState<string | null>(null)
   const [contactName, setContactName] = useState<string | null>(null)
-  const [avatarUrl, setAvatarUrl] = useState<string | null>(null)
   const [bookingData, setBookingData] = useState<BookingData | null>(null)
   const [botToggleError, setBotToggleError] = useState<string | null>(null)
   const [clearingChat, setClearingChat] = useState(false)
@@ -220,7 +198,6 @@ export function ThreadView({
         setSubject(data.subject ?? null)
         setUnreadCutoff(data.lastReadAt ?? null)
         setContactName(data.contactName ?? null)
-        setAvatarUrl(data.avatarUrl ?? null)
         setBookingData(data.bookingData ?? null)
         // Only after lastReadAt is captured above -- otherwise a mark-as-read that lands
         // before this GET resolves would erase the very boundary the divider needs.
@@ -389,106 +366,68 @@ export function ThreadView({
     ? messages.findIndex((m) => m.direction === 'INBOUND' && new Date(m.createdAt) > new Date(unreadCutoff))
     : -1
 
+  const displayName = contactDisplayName(contactName, bookingGuestName(bookingData), 'Tanpa nama')
+  const subtitle = [
+    platform ? PLATFORM_LABEL[platform as keyof typeof PLATFORM_LABEL] ?? platform : 'WhatsApp',
+    bookingData?.booking_number ?? null,
+  ].filter(Boolean).join(' · ')
+
   return (
-    // Kolom tengah: kepala tetap, riwayat yang menggulung sendiri, kotak tulis menempel di
-    // bawah. min-h-0 wajib supaya scroller di tengah yang menyusut, bukan kolomnya yang tumbuh.
-    <section
-      aria-label="Percakapan"
-      className={cn('flex h-full min-h-0 flex-col bg-canvas', className)}
-    >
-      <header className="flex shrink-0 items-center gap-2 border-b border-line bg-surface px-3 py-2">
+    // Kolom tengah .inbox (desain artifact): kepala tetap, riwayat yang menggulung sendiri, kotak tulis di bawah.
+    <div className="col" id="i-chat" role="region" aria-label="Percakapan">
+      <div className="chead">
         {onBack && (
-          // Hanya ada di layar sempit: di sana daftar percakapan tergantikan oleh thread ini,
-          // jadi tanpa tombol ini tidak ada jalan kembali ke daftar.
-          <IconButton
-            label="Kembali ke daftar percakapan"
-            icon={<ArrowLeft strokeWidth={1.75} />}
-            onClick={onBack}
-            className="md:hidden"
-          />
+          // Hanya tampil di ponsel (CSS .mback): di sana daftar percakapan tergantikan oleh thread ini.
+          <button type="button" className="mback" aria-label="Kembali ke daftar percakapan" onClick={onBack}>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 5-7 7 7 7" /></svg>
+          </button>
         )}
-        <ContactAvatar name={contactName} avatarUrl={avatarUrl} size="size-8" />
-        <div className="flex min-w-0 flex-1 flex-col">
-          <MarqueeText
-            text={contactDisplayName(contactName, bookingGuestName(bookingData), 'Tanpa nama')}
-            className="text-base font-semibold text-ink"
-          />
-          {isEmail && subject && <span className="truncate text-xs text-ink-muted">{subject}</span>}
-          {isTest && (
-            <span className="truncate text-xs text-warning">Room Tes -- tidak terkirim ke WhatsApp</span>
-          )}
-          {dryRun && (
-            <span className="truncate text-xs text-warning">Mode uji -- tidak ada yang terkirim ke WhatsApp</span>
-          )}
+        <div className="av" aria-hidden="true">{nameInitials(contactName || displayName)}</div>
+        <div style={{ minWidth: 0, flex: 1 }}>
+          <b style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{displayName}</b>
+          <div className="mut sm" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {isEmail && subject ? subject : subtitle}
+          </div>
+          {isTest && <div className="sm" style={{ color: 'var(--warn)' }}>Room Tes -- tidak terkirim ke WhatsApp</div>}
+          {dryRun && <div className="sm" style={{ color: 'var(--warn)' }}>Mode uji -- tidak ada yang terkirim ke WhatsApp</div>}
         </div>
-        <div className="flex shrink-0 items-center gap-1.5">
-          {isTest && (
-            <Button type="button" variant="destructive" size="sm" onClick={clearChat} disabled={clearingChat}>
-              {clearingChat ? 'Menghapus...' : 'Hapus Chat'}
-            </Button>
-          )}
-          {/* Menggantikan dropdown "Belum ditugaskan" (dihapus -- lihat CLAUDE.md soal fitur
-              yang dihapus, ini kasus baru yang sama semangatnya: satu peran nyata tidak butuh
-              lapisan penugasan). Tombol toggle bot pindah kemari dari ComposeBox supaya selalu
-              terlihat dekat nama kontak, di mobile maupun desktop, tanpa harus digulung sampai
-              dasar kolom pesan dulu. */}
-          {/* Bot tidak pernah menjawab email (D1) -- tombol ambil-alih/aktifkan bot tidak
-              berarti apa-apa di sini, jadi disembunyikan sepenuhnya alih-alih ditampilkan
-              menyala/mati untuk sesuatu yang tidak pernah berjalan. */}
-          {canDryRun && (
-            <Button
-              type="button"
-              variant={dryRun ? 'destructive' : 'outline'}
-              size="sm"
-              onClick={toggleDryRun}
-              className="h-6 px-2 text-xs"
-            >
-              {dryRun ? 'Matikan mode uji' : 'Mode uji tanpa WA'}
-            </Button>
-          )}
-          {!isEmail && (
-            <Button type="button" variant="outline" size="sm" onClick={toggleBot} className="h-6 px-2 text-xs">
-              {botEnabled ? 'Ambil Alih dari Bot' : 'Aktifkan Bot untuk Chat Ini'}
-            </Button>
-          )}
-          {onToggleContactPanel && (
-            // Hanya dari xl ke atas: di bawah itu panel kontak memang tidak punya kolom untuk
-            // ditempati, jadi tombol yang tidak bisa menampilkan apa-apa lebih baik tidak ada.
-            <IconButton
-              label={contactPanelOpen ? 'Sembunyikan panel kontak' : 'Tampilkan panel kontak'}
-              icon={contactPanelOpen ? <PanelRightClose strokeWidth={1.75} /> : <PanelRight strokeWidth={1.75} />}
-              aria-pressed={contactPanelOpen}
-              onClick={onToggleContactPanel}
-              className="hidden xl:inline-flex"
-            />
-          )}
-        </div>
-      </header>
+        {isTest && (
+          <button type="button" className="btn sm bad" onClick={clearChat} disabled={clearingChat}>
+            {clearingChat ? 'Menghapus...' : 'Hapus Chat'}
+          </button>
+        )}
+        {canDryRun && (
+          <button type="button" className={'btn sm' + (dryRun ? ' bad' : '')} onClick={toggleDryRun}>
+            {dryRun ? 'Matikan mode uji' : 'Mode uji tanpa WA'}
+          </button>
+        )}
+        {/* Bot tidak pernah menjawab email (D1) -- sakelar bot tidak berarti apa-apa di sana. */}
+        {!isEmail && (
+          <>
+            <label className="sw" title="Bot untuk chat ini">
+              <input type="checkbox" checked={botEnabled} aria-label="Bot aktif untuk chat ini" onChange={toggleBot} />
+              <i />
+            </label>
+            <span className="sm mut" style={{ width: 62 }}>{botEnabled ? 'Bot aktif' : 'Manual'}</span>
+          </>
+        )}
+        {onInfo && (
+          <button type="button" className="minfo" aria-label="Info chat" onClick={onInfo}>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M12 11v5M12 8h.01" /></svg>
+          </button>
+        )}
+      </div>
       {botToggleError && (
-        <p role="alert" className="shrink-0 border-b border-line bg-danger-subtle px-3 py-1.5 text-xs text-danger">
+        <p role="alert" className="sm" style={{ margin: 0, padding: '6px 14px', background: 'var(--bad-bg)', color: 'var(--bad)' }}>
           {botToggleError}
         </p>
       )}
-      {/* role="log": riwayat yang bertambah sendiri lewat SSE. Pembaca layar butuh tahu bahwa
-          kotak ini bertambah, bukan sekadar sebuah div yang menggulung. */}
-      <div
-        role="log"
-        aria-label="Riwayat pesan"
-        // `overflow-x-hidden` eksplisit, bukan dibiarkan `visible`: begitu `overflow-y` diset
-        // non-`visible`, CSS menghitung ulang sumbu lainnya jadi `auto` juga kalau dibiarkan --
-        // sebuah bubble yang gagal wrap (lihat perbaikan break-words di MessageBubble) akan
-        // membuat kotak ini jadi scroll-container horizontal-nya sendiri, sebelum sempat
-        // mentok ke overflow-hidden grid terluar (lihat komentar di inbox/page.tsx).
-        className="min-h-0 flex-1 space-y-3 overflow-x-hidden overflow-y-auto overscroll-contain px-3 py-4 sm:px-4"
-      >
+      {/* role="log": riwayat yang bertambah sendiri lewat SSE. */}
+      <div role="log" aria-label="Riwayat pesan" className="msgs">
         {!messagesLoaded ? (
-          <div className="space-y-4" aria-hidden="true">
-            <SkeletonText lines={2} className="max-w-md" />
-            <SkeletonText lines={1} className="ml-auto max-w-xs" />
-            <SkeletonText lines={3} className="max-w-md" />
-          </div>
+          <div className="mut" aria-hidden="true" style={{ padding: 8 }}>Memuat pesan…</div>
         ) : messages.length === 0 ? (
-          <p className="py-8 text-center text-sm text-ink-muted">
+          <p className="mut" style={{ textAlign: 'center', padding: '32px 0', margin: 0 }}>
             Belum ada pesan di percakapan ini. Tulis yang pertama di bawah.
           </p>
         ) : null}
@@ -499,7 +438,8 @@ export function ThreadView({
               key={m.id}
               id={threadMessageDomId(m.id)}
               ref={focused ? focusRef : undefined}
-              className={cn(focused && 'rounded-lg ring-2 ring-accent/40')}
+              className={focused ? 'flash' : undefined}
+              style={focused ? { borderRadius: 14 } : undefined}
             >
               {(i === 0 || !isSameDay(new Date(m.createdAt), new Date(messages[i - 1].createdAt))) && (
                 <ThreadDivider label={dayDividerLabel(m.createdAt)} />
@@ -518,7 +458,7 @@ export function ThreadView({
               />
               {focused && lockedTarget?.kind === 'no-text' && (
                 // Sorotan tetap di pesan fokus; catatan ini menggantikan "tidak terjadi apa-apa".
-                <p role="status" className="mt-1 text-xs text-ink-muted">
+                <p role="status" className="mut sm" style={{ margin: '4px 0 0' }}>
                   Tidak ada pesan teks dari pelanggan di sini untuk disusun draftnya — balas langsung dari kotak di bawah.
                 </p>
               )}
@@ -549,6 +489,6 @@ export function ThreadView({
           setReplyingTo(null)
         }}
       />
-    </section>
+    </div>
   )
 }

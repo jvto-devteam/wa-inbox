@@ -58,10 +58,10 @@ describe('ConversationListItem', () => {
 
   it('colors the KLOOK badge orange and the JVTO badge blue', () => {
     const { rerender } = render(<ConversationListItem conversation={{ ...summary, orderChannel: 'KLOOK' }} onClick={() => {}} />)
-    expect(screen.getByText('KLOOK')).toHaveClass('bg-orange-50', 'text-orange-700')
+    expect(screen.getByText('KLOOK')).toHaveClass('lb', 'lb-klook')
 
     rerender(<ConversationListItem conversation={{ ...summary, orderChannel: 'JVTO' }} onClick={() => {}} />)
-    expect(screen.getByText('JVTO')).toHaveClass('bg-blue-50', 'text-blue-700')
+    expect(screen.getByText('JVTO')).toHaveClass('lb', 'lb-jvto')
   })
 
   it('shows no order channel badge at all when there is no booking yet', () => {
@@ -80,10 +80,11 @@ describe('ConversationListItem', () => {
     expect(screen.getByText('Baru')).toBeInTheDocument()
   })
 
-  it('shows the order channel badge and the pipeline stage badge together without either being dropped', () => {
+  // Desain artifact: satu label utama per baris -- asal booking menggantikan tahap pipeline bila ada.
+  it('shows the order channel badge instead of the pipeline stage badge when a booking exists', () => {
     render(<ConversationListItem conversation={{ ...summary, orderChannel: 'JVTO', pipelineStage: 'lunas' }} onClick={() => {}} />)
     expect(screen.getByText('JVTO')).toBeInTheDocument()
-    expect(screen.getByText('Lunas')).toBeInTheDocument()
+    expect(screen.queryByText('Lunas')).not.toBeInTheDocument()
   })
 
   it('shows the platform badge when showPlatformBadge is true and the conversation has a platform', () => {
@@ -143,15 +144,11 @@ describe('ConversationListItem', () => {
     expect(screen.getByText('Bruno Figarola')).toBeInTheDocument()
   })
 
-  it('shows the real avatar photo when avatarUrl is set, instead of the initial fallback', () => {
-    render(<ConversationListItem conversation={{ ...summary, avatarUrl: 'https://x.test/photo.jpg' }} onClick={() => {}} />)
-    expect(screen.getByAltText('Bruno Figarola')).toBeInTheDocument()
-    expect(screen.queryByText('B')).not.toBeInTheDocument()
-  })
-
-  it('shows an initial-letter avatar when there is no avatarUrl', () => {
+  it('shows an initials avatar (first letters of the first two words), hidden from screen readers', () => {
     render(<ConversationListItem conversation={summary} onClick={() => {}} />)
-    expect(screen.getByText('B')).toBeInTheDocument()
+    const initials = screen.getByText('BF')
+    expect(initials).toHaveClass('av')
+    expect(initials).toHaveAttribute('aria-hidden', 'true')
   })
 
   it('percakapan email menampilkan subjek di depan cuplikan dan TIDAK menampilkan ikon bot', () => {
@@ -164,11 +161,6 @@ describe('ConversationListItem', () => {
     expect(screen.getByText(/Tur Bromo 3D2N/)).toBeInTheDocument()
     expect(screen.queryByLabelText('Bot mati')).not.toBeInTheDocument()
     expect(screen.queryByLabelText('Bot aktif')).not.toBeInTheDocument()
-  })
-
-  it('percakapan non-email tetap menampilkan ikon bot', () => {
-    render(<ConversationListItem conversation={{ ...summary, platform: 'WHATSAPP' }} onClick={() => {}} />)
-    expect(screen.getByLabelText('Bot aktif')).toBeInTheDocument()
   })
 })
 
@@ -192,15 +184,6 @@ describe('ConversationListItem — hierarki satu baris', () => {
     expect(time?.textContent).not.toBe('')
   })
 
-  it('menandai bot aktif dan bot mati, dua-duanya dengan nama yang terbaca', () => {
-    const { rerender } = render(<ConversationListItem conversation={summary} onClick={() => {}} />)
-    expect(screen.getByLabelText('Bot aktif')).toBeInTheDocument()
-
-    rerender(<ConversationListItem conversation={{ ...summary, botEnabled: false }} onClick={() => {}} />)
-    expect(screen.getByLabelText('Bot mati')).toBeInTheDocument()
-    expect(screen.queryByLabelText('Bot aktif')).not.toBeInTheDocument()
-  })
-
   it('menyebut siapa yang bicara terakhir kalau itu bukan pelanggan', () => {
     const { rerender } = render(
       <ConversationListItem
@@ -208,11 +191,12 @@ describe('ConversationListItem — hierarki satu baris', () => {
         onClick={() => {}}
       />
     )
-    expect(screen.getByText('Agen:')).toBeInTheDocument()
+    expect(screen.getByText('Agen: Sudah saya cek ya')).toBeInTheDocument()
 
     // Pelanggan adalah suara bawaan sebuah inbox; menuliskannya di setiap baris hanya tinta.
     rerender(<ConversationListItem conversation={summary} onClick={() => {}} />)
-    expect(screen.queryByText('Pelanggan:')).not.toBeInTheDocument()
+    expect(screen.queryByText(/Pelanggan:/)).not.toBeInTheDocument()
+    expect(screen.getByText('Halo!')).toBeInTheDocument()
   })
 
   it('mengatakan "belum ada pesan" alih-alih meninggalkan baris cuplikan kosong', () => {
@@ -223,16 +207,6 @@ describe('ConversationListItem — hierarki satu baris', () => {
       />
     )
     expect(screen.getByText('Belum ada pesan')).toBeInTheDocument()
-  })
-
-  it('memakai avatar netral di daftar, bukan salah satu dari delapan rona deterministik', () => {
-    // Keputusan Tahap 1C: rona per-nama menolong di panel kontak (satu avatar, jangkar
-    // identitas) dan merugikan di daftar rapat, tempat ia melawan penanda belum dibaca.
-    render(<ConversationListItem conversation={summary} onClick={() => {}} />)
-
-    const initial = screen.getByText('B')
-    expect(initial).toHaveClass('bg-surface-sunken')
-    expect(initial.className).not.toMatch(/bg-\[#/)
   })
 })
 
@@ -266,10 +240,10 @@ describe('formatListTime', () => {
 describe('ConversationListItem change-request label', () => {
   it('shows the chip while openChangeRequests > 0 and hides it otherwise', () => {
     const { rerender } = render(<ConversationListItem conversation={{ ...summary, openChangeRequests: 2 }} onClick={() => {}} />)
-    expect(screen.getByText('Permintaan perubahan · belum dipenuhi')).toBeInTheDocument()
+    expect(screen.getByTitle('Permintaan perubahan · belum dipenuhi')).toHaveTextContent('Perubahan')
     rerender(<ConversationListItem conversation={{ ...summary, openChangeRequests: 0 }} onClick={() => {}} />)
-    expect(screen.queryByText('Permintaan perubahan · belum dipenuhi')).not.toBeInTheDocument()
+    expect(screen.queryByTitle('Permintaan perubahan · belum dipenuhi')).not.toBeInTheDocument()
     rerender(<ConversationListItem conversation={summary} onClick={() => {}} />)
-    expect(screen.queryByText('Permintaan perubahan · belum dipenuhi')).not.toBeInTheDocument()
+    expect(screen.queryByTitle('Permintaan perubahan · belum dipenuhi')).not.toBeInTheDocument()
   })
 })

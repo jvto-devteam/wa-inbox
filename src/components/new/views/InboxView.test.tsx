@@ -5,9 +5,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { NewShell } from '../Shell'
 import { InboxView } from './InboxView'
 
-// Inbox /new memasang InboxScreen (susunan Inbox asli). Tiga komponen anaknya ditiru di sini -- yang diuji hanya
-// sambungan /new: alamat yang ditulis, mode chat ponsel, dan pembungkus kulit. Logika membalas diuji di test
-// komponen Inbox sendiri, yang tidak diubah.
+// Inbox memasang InboxScreen (komponen Inbox dengan markup desain artifact). Tiga komponen anaknya ditiru di sini --
+// yang diuji hanya sambungan ke aplikasi: alamat yang ditulis, mode chat + lembar info ponsel, dan penjaga tautan.
+// Logika membalas diuji di test komponen Inbox sendiri.
 let search = new URLSearchParams()
 const replace = vi.fn()
 const push = vi.fn()
@@ -20,8 +20,8 @@ vi.mock('@/components/inbox/ConversationList', () => ({
   ConversationList: ({ onSelect }: { onSelect: (id: string) => void }) => <button onClick={() => onSelect('c1')}>pilih c1</button>,
 }))
 vi.mock('@/components/inbox/ThreadView', () => ({
-  ThreadView: ({ conversationId, onBack }: { conversationId: string; onBack: () => void }) => (
-    <div data-testid="thread">{conversationId}<button onClick={onBack}>kembali</button>
+  ThreadView: ({ conversationId, onBack, onInfo }: { conversationId: string; onBack: () => void; onInfo?: () => void }) => (
+    <div data-testid="thread">{conversationId}<button onClick={onBack}>kembali</button><button onClick={onInfo}>info</button>
       <a href="/inbox?conversation=c2&message=m5&lihat=1">butir ringkasan</a>
       <a href="/contacts/k1?tab=x">kontak lama</a>
       <a href="https://jvto.me/b/abc">portal</a>
@@ -45,10 +45,12 @@ beforeEach(() => {
   mobile(false)
 })
 
-describe('Inbox = Inbox asli dengan kulit baru', () => {
-  it('memasang susunan Inbox asli di dalam pembungkus kulit; memilih chat menulis alamat /inbox', () => {
+describe('Inbox = komponen Inbox dengan markup desain baru', () => {
+  it('memasang tiga kolom .inbox langsung (tanpa kulit .legacy-skin di luarnya); memilih chat menulis alamat /inbox', () => {
     render(<NewShell><InboxView /></NewShell>)
-    expect(document.querySelector('#v-inbox .inbox-real')).not.toBeNull()
+    expect(document.querySelector('#v-inbox .inbox-frame > .inbox')).not.toBeNull()
+    // Kulit lama mereset font/warna tombol di dalamnya -- di luar markup baru ia akan merusak .btn desain baru.
+    expect(document.querySelector('#v-inbox .inbox-frame.legacy-skin')).toBeNull()
     fireEvent.click(screen.getByText('pilih c1'))
     expect(replace).toHaveBeenCalledWith('/inbox?conversation=c1', { scroll: false })
     expect(screen.getByTestId('thread').textContent).toContain('c1')
@@ -87,6 +89,23 @@ describe('Inbox = Inbox asli dengan kulit baru', () => {
     expect(root.classList.contains('m-inchat')).toBe(true)
     fireEvent.click(screen.getByText('kembali'))
     expect(root.classList.contains('m-inchat')).toBe(false)
+  })
+
+  it('ponsel: tombol info membuka panel kanan sebagai lembar bawah; ketuk latar menutupnya', () => {
+    mobile(true)
+    search = new URLSearchParams('conversation=c1')
+    render(<NewShell><InboxView /></NewShell>)
+    const root = document.querySelector('.nwa')!
+    fireEvent.click(screen.getByText('info'))
+    expect(root.classList.contains('m-info')).toBe(true)
+    fireEvent.click(document.querySelector('#v-inbox .infoscrim')!)
+    expect(root.classList.contains('m-info')).toBe(false)
+  })
+
+  it('CSS Inbox desain artifact tersedia untuk markup komponen Inbox', () => {
+    const css = readFileSync(join(__dirname, '..', '..', '..', 'app', '(app)', 'new.css'), 'utf8')
+    for (const sel of ['.nwa .inbox{', '.nwa .row{', '.nwa .chead{', '.nwa .msgs{', '.nwa .m.g{', '.nwa .comp{', '.nwa .pan{', '.nwa .box{', '.nwa .mpop{', '.nwa .mwrap{'])
+      expect(css, sel).toContain(sel)
   })
 
   it('kulit hanya memetakan variabel tema dan menetralkan aturan umum desain baru yang bentrok', () => {

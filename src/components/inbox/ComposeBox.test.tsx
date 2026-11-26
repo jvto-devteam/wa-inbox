@@ -7,15 +7,11 @@ beforeEach(() => {
   vi.stubGlobal('fetch', vi.fn())
 })
 
-// Template is one of three options (alongside Foto & Video / Dokumen) inside the "+"
-// attach menu now, not its own standalone button -- opens the menu, then picks it.
-//
-// Tahap 1C mengganti emoji di label menu ini dengan ikon lucide, jadi teksnya tidak lagi
-// '📋 Template' melainkan 'Template'. Dicari lewat role menuitem, bukan lewat teks telanjang,
-// supaya pencarian ini tidak bisa tertukar dengan kata "Template" lain di layar.
+// Template punya tombolnya sendiri di baris alat kotak tulis (di samping menu "Lampiran"
+// yang berisi Foto & Video / Dokumen). Dicari lewat role button + nama persis, supaya tidak
+// tertukar dengan kata "Template" lain di layar.
 async function openTemplateMenu() {
-  fireEvent.click(await screen.findByLabelText('Tambah lampiran atau template'))
-  fireEvent.click(await screen.findByRole('menuitem', { name: 'Template' }))
+  fireEvent.click(await screen.findByRole('button', { name: 'Template' }))
 }
 
 // The picker only ever shows the templates sendable on whichever channel is currently active
@@ -921,7 +917,8 @@ describe('ComposeBox — test room (isTest)', () => {
   it('hides the attach menu and shows the customer-typing placeholder', () => {
     render(<ComposeBox conversationId="conv_test" isTest={true} onSent={() => {}} />)
 
-    expect(screen.queryByLabelText('Tambah lampiran atau template')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Template' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Lampiran' })).not.toBeInTheDocument()
     expect(screen.getByPlaceholderText('Ketik sebagai customer untuk menguji bot...')).toBeInTheDocument()
   })
 
@@ -954,23 +951,24 @@ describe('ComposeBox — nama kontrol dan pintasan', () => {
     render(<ComposeBox conversationId="conv_1" onSent={() => {}} />)
 
     expect(screen.getByLabelText('Pesan')).toBeInTheDocument()
-    expect(await screen.findByLabelText('Tambah lampiran atau template')).toBeInTheDocument()
-    // Tombol kirim ikon-saja: namanya untuk pembaca layar tetap "Kirim" lewat aria-label,
-    // meski tidak lagi ada teks yang tertulis di layar.
+    expect(await screen.findByRole('button', { name: 'Template' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Lampiran' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Kirim' })).toBeInTheDocument()
   })
 
-  it('membuka lampiran/template sebagai menu sungguhan, dengan tiga pilihan yang bernama', async () => {
+  it('membuka lampiran sebagai menu sungguhan, dengan dua pilihan yang bernama', async () => {
     render(<ComposeBox conversationId="conv_1" onSent={() => {}} />)
 
-    const trigger = await screen.findByLabelText('Tambah lampiran atau template')
+    const trigger = await screen.findByRole('button', { name: 'Lampiran' })
+    expect(trigger).toHaveAttribute('aria-haspopup', 'menu')
     expect(trigger).toHaveAttribute('aria-expanded', 'false')
     fireEvent.click(trigger)
 
     expect(trigger).toHaveAttribute('aria-expanded', 'true')
     expect(screen.getByRole('menuitem', { name: 'Foto & Video' })).toBeInTheDocument()
     expect(screen.getByRole('menuitem', { name: 'Dokumen' })).toBeInTheDocument()
-    expect(screen.getByRole('menuitem', { name: 'Template' })).toBeInTheDocument()
+    // Template bukan lagi pilihan di menu ini -- ia tombol sendiri di baris alat.
+    expect(screen.queryByRole('menuitem', { name: 'Template' })).not.toBeInTheDocument()
   })
 
   it('tetap mengirim dengan Enter dan tetap membuat baris baru dengan Shift+Enter', async () => {
@@ -1102,8 +1100,8 @@ describe('ComposeBox — followUp dari antrean', () => {
 
     // Tidak diblokir: operator tetap bisa mengirim dengan klik sendiri.
     fireEvent.change(screen.getByPlaceholderText(COMPOSER_PLACEHOLDER), { target: { value: 'Halo kak' } })
-    expect(screen.getByLabelText('Kirim')).toBeEnabled()
-    fireEvent.click(screen.getByLabelText('Kirim'))
+    expect(screen.getByRole('button', { name: 'Kirim' })).toBeEnabled()
+    fireEvent.click(screen.getByRole('button', { name: 'Kirim' }))
     await waitFor(() => expect(sendCalls(fetchMock)).toHaveLength(1))
   })
 
