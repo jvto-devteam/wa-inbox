@@ -440,7 +440,10 @@ append-only tanpa FK: siapa, kapan, nilai lama/baru), `PushSubscription`. Setela
   dilewati dan masih `OPEN` (setelan `APPROVE`, titik tanpa detail, lookup 409/503, rollout uji) mengirim push
   `CHANGE` saat itu; gagal = `EXECUTE_FAILED`. `MISMATCH`/`TASK` dan `CHANGE` dari `reevaluateBookingActions`
   tetap di-push saat dibuat. Env
-  `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`. Setiap permintaan perubahan berlabel "belum
+  `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`. **Reminder jatuh tempo** juga di-push (owner 2026-11-26,
+  `src/lib/push/reminders.ts`, `pushDueReminders` dipanggil tick): semua reminder kontak (Ingatkan, Laporan, Kontak), sekali
+  per jatuh tempo lewat kolom `Reminder.pushedFor` (ditunda = dikabarkan lagi), isi = nama kontak + catatan (HP/email
+  disaring; keputusan owner), ketuk = chat kontak; yang terlambat > 24 jam tidak di-push. Pengiriman bersama `sendPushToAll`. Setiap permintaan perubahan berlabel "belum
   dipenuhi" sampai ditutup; tidak ada kedaluwarsa.
 - **Panel kanan**: `GET /api/conversations/[id]/chat-review` memuat `pinned` dan `changeHistory`. Tab ini
   ikut terbaru untuk **semua** percakapan, termasuk lead tanpa booking (owner 2026-10-20): `noteInboundForChatReview`

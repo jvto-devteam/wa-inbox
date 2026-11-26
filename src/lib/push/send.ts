@@ -63,7 +63,7 @@ export function summarizeAction(field: string, value: string | null): string {
 }
 
 /** Buang email dan deret angka panjang (nomor HP, termasuk yang berspasi/strip). */
-function scrub(text: string): string {
+export function scrub(text: string): string {
   return text
     .replace(/[^\s@]+@[^\s@]+/g, '…')
     .replace(/\+?\d[\d\s().-]{6,}\d/g, (m) => (m.replace(/\D/g, '').length >= 7 ? '…' : m))
@@ -134,20 +134,23 @@ async function markPushed(e: BookingPushEvent): Promise<void> {
   }
 }
 
-export async function notifyBookingAction(e: BookingPushEvent): Promise<void> {
-  await markPushed(e)
+/**
+ * Kirim satu notifikasi ke semua langganan Web Push (tim kecil, satu bisnis: semua akun menerima yang sama). Tidak
+ * pernah melempar. Tanpa VAPID = no-op (log satu kali). Langganan yang dijawab 404/410 dihapus.
+ */
+export async function sendPushToAll(payload: PushPayload): Promise<void> {
   try {
     const vapid = vapidFromEnv()
     if (!vapid) {
       if (!warnedUnconfigured) {
         warnedUnconfigured = true
-        console.warn('push: VAPID belum diisi, notifikasi booking dilewati')
+        console.warn('push: VAPID belum diisi, notifikasi dilewati')
       }
       return
     }
     const subs = await prisma.pushSubscription.findMany()
     if (subs.length === 0) return
-    const body = JSON.stringify(buildPushPayload(e))
+    const body = JSON.stringify(payload)
     await Promise.all(
       subs.map(async (s) => {
         try {
@@ -168,6 +171,11 @@ export async function notifyBookingAction(e: BookingPushEvent): Promise<void> {
       })
     )
   } catch {
-    console.error('push: notifyBookingAction gagal')
+    console.error('push: sendPushToAll gagal')
   }
+}
+
+export async function notifyBookingAction(e: BookingPushEvent): Promise<void> {
+  await markPushed(e)
+  await sendPushToAll(buildPushPayload(e))
 }
