@@ -78,7 +78,7 @@ export function InboxScreen({ basePath = '/inbox', onSelectedChange, onInfo }: I
   return (
     // Tiga kolom desain artifact (.inbox di new.css): daftar | chat | panel kanan. Urutannya load-bearing: CSS memilih
     // kolom lewat :nth-child (ponsel: daftar ATAU chat; panel kanan jadi lembar bawah; < 1180px panel kanan disembunyikan),
-    // jadi ketiga kolom selalu dirender, juga saat belum ada percakapan yang dipilih.
+    // jadi ketiga kolom selalu dirender, juga saat belum ada percakapan yang dipilih (kolomnya kosong, tanpa teks).
     <div className="inbox">
       <ConversationList
         selectedId={selectedId}
@@ -119,15 +119,10 @@ export function InboxScreen({ basePath = '/inbox', onSelectedChange, onInfo }: I
           <ContactPanel key={`contact-${selectedId}`} conversationId={selectedId} />
         </>
       ) : (
+        // Belum ada chat dipilih: dua kolom kosong tanpa teks (owner 2026-11-26). Tanpa inline `display` -- CSS ponsel
+        // menyembunyikan kolom kedua lewat :nth-child, dan inline style akan mengalahkannya.
         <>
-          <div className="col" style={{ display: 'grid', placeItems: 'center', background: 'var(--surface2)' }}>
-            <div style={{ textAlign: 'center', maxWidth: 320, padding: 16 }}>
-              <b>Pilih percakapan</b>
-              <p className="mut sm" style={{ margin: '4px 0 0' }}>
-                Buka satu percakapan di daftar kiri untuk membaca riwayatnya dan membalas pelanggan.
-              </p>
-            </div>
-          </div>
+          <div className="col" style={{ background: 'var(--surface2)' }} />
           <div className="col" />
         </>
       )}

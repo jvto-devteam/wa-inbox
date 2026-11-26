@@ -74,6 +74,17 @@ describe('Inbox = komponen Inbox dengan markup desain baru', () => {
     expect(push).not.toHaveBeenCalled()
   })
 
+  it('belum ada chat dipilih: tiga kolom, dua kolom kosong tanpa teks dan tanpa inline display (CSS ponsel menyembunyikannya)', () => {
+    render(<NewShell><InboxView /></NewShell>)
+    const cols = Array.from(document.querySelectorAll('#v-inbox .inbox > .col')) as HTMLElement[]
+    expect(cols).toHaveLength(2) // daftar ditiru (tombol), sisanya dua kolom kosong
+    for (const c of cols) {
+      expect(c.textContent).toBe('')
+      expect(c.style.display).toBe('')
+    }
+    expect(screen.queryByText('Pilih percakapan')).toBeNull()
+  })
+
   it('tautan ?conversation= membuka chat itu (sama dengan /inbox)', () => {
     search = new URLSearchParams('conversation=c9')
     render(<NewShell><InboxView /></NewShell>)
