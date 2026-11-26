@@ -38,6 +38,11 @@ export type DailySummaryResponse = {
   items: Record<string, SummaryItemStatus>
   /** Percakapan yang tidak ditampilkan di Ringkasan (docs/aturan-antrean.md AR-01/AR-02), dengan alasannya. */
   hidden: Record<string, ExclusionReason>
+  /**
+   * AR-04: jumlah janji admin yang belum ditepati SEKARANG = item PROMISE berstatus OPEN, persis isi tab Janji Admin di
+   * Antrean (GET /api/summary-items `open`). Bukan hitungan janji di review hari itu, yang tidak melewati aturan antrean.
+   */
+  openPromises: number
 }
 
 /** Semua conversationId yang muncul di payload, tanpa duplikat. */
@@ -61,7 +66,7 @@ function dayReviews(payload: DailySummaryPayload): Record<string, unknown> {
 async function liveItemStatuses(payload: DailySummaryPayload | null): Promise<Record<string, SummaryItemStatus>> {
   const ids = payload ? payloadConversationIds(payload) : []
   if (ids.length === 0) return {}
-  // Rekonsiliasi dulu: item yang sudah dibalas sejak tick terakhir harus tampil tertutup.
+  // Rekonsiliasi dulu: item yang sudah dibalas sejak tick terakhir harus tampil tertutup (juga untuk openPromises).
   await reconcileSummaryItems()
   const rows = await prisma.summaryItem.findMany({
     where: { conversationId: { in: ids } },
@@ -102,7 +107,8 @@ export async function GET(req: Request) {
 
     const items = await liveItemStatuses(summary?.payload ?? null)
     const hidden = summary?.payload ? await summaryHidden(payloadConversationIds(summary.payload), summary.date, dayReviews(summary.payload)) : {}
-    return NextResponse.json({ dates, summary, items, hidden } satisfies DailySummaryResponse)
+    const openPromises = await prisma.summaryItem.count({ where: { kind: 'PROMISE', state: 'OPEN' } })
+    return NextResponse.json({ dates, summary, items, hidden, openPromises } satisfies DailySummaryResponse)
   } catch (error) {
     console.error('GET /api/daily-summary gagal', error)
     return NextResponse.json({ error: 'Gagal memuat ringkasan' }, { status: 500 })

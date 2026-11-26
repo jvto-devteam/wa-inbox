@@ -3,7 +3,7 @@ import { sampleSummary } from '@/components/new/__fixtures__/summary'
 import { chatHref, summaryDay } from './summary'
 
 describe('summaryDay', () => {
-  it('poin per jenis (komplain dulu), satu review per percakapan, janji belum ditepati dihitung', () => {
+  it('poin per jenis (komplain dulu), satu review per percakapan; jumlah janji = antrean live (AR-04)', () => {
     const D = summaryDay(sampleSummary())!
     expect(D.points.map((p) => [p.kind, p.name, p.text])).toEqual([
       ['komplain', 'Lukas B.', 'Sopir telat 1 jam di hotel'],
@@ -11,7 +11,8 @@ describe('summaryDay', () => {
       [null, 'Emma R.', 'Poin lama tanpa jenis'],
     ])
     expect(D.points[0]).toMatchObject({ conversationId: 'c2', messageId: 'm7' })
-    expect(D.unkept).toBe(1)
+    // Review hari itu memuat 1 janji belum ditepati, tetapi angkanya mengikuti tab Janji Admin di Antrean.
+    expect(D.openPromises).toBe(3)
   })
 
   it('status per percakapan: item antrean live menang atas review hari itu; tanpa review tidak tampil', () => {
@@ -33,7 +34,7 @@ describe('summaryDay', () => {
   })
 
   it('tanpa ringkasan = null; payload rusak = tanpa poin', () => {
-    expect(summaryDay({ dates: [], summary: null, items: {}, hidden: {} })).toBeNull()
+    expect(summaryDay({ dates: [], summary: null, items: {}, hidden: {}, openPromises: 0 })).toBeNull()
     const res = sampleSummary()
     res.summary = { ...res.summary!, payload: null, error: 'Format ringkasan tersimpan tidak dikenali. Buat ulang ringkasan ini.' }
     expect(summaryDay(res)).toMatchObject({ points: [], chats: [], error: expect.stringContaining('Buat ulang') })

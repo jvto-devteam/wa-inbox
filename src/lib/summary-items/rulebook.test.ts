@@ -44,7 +44,7 @@ describe('buku aturan antrean = kode', () => {
     expect(new Set(ids).size).toBe(ids.length)
   })
 
-  it.each([['AR', 3], ['AL', 5]] as const)('aturan halaman (%s-xx) unik dan masing-masing dirujuk di kode', (prefix, min) => {
+  it.each([['AR', 4], ['AL', 5]] as const)('aturan halaman (%s-xx) unik dan masing-masing dirujuk di kode', (prefix, min) => {
     const ids = [...doc.matchAll(new RegExp('^\\| (' + prefix + '-\\d{2}) \\|', 'gm'))].map((m) => m[1])
     expect(ids.length).toBeGreaterThanOrEqual(min)
     expect(new Set(ids).size).toBe(ids.length)

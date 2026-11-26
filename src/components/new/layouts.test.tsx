@@ -95,7 +95,7 @@ describe('tata letak berbeda per halaman /new', () => {
     await waitFor(() => expect(document.querySelector('#v-ringkasan .pg-urgent')?.textContent).toMatch(/komplain.*Lukas B\./))
     expect(document.querySelector('.db-hero')).toBeNull()
     expect(document.querySelector('.pg-urgent a.btn')?.getAttribute('href')).toBe('/inbox?conversation=c2&message=m7')
-    expect(document.querySelector('.pg-urgent .nx')?.textContent).toContain('1 janji tim belum ditepati')
+    expect(document.querySelector('.pg-urgent .nx')?.textContent).toContain('3 janji admin belum ditepati')
     expect(document.querySelector('.r-meta')?.textContent).toMatch(/^Dibuat 00[.:]04$/)
     expect(document.querySelector('#r-pts .hint')).toBeNull()
     // tombol = jumlah percakapan di daftarnya (bukan hanya yang perlu tindakan)

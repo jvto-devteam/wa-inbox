@@ -147,3 +147,16 @@ describe('GET /api/daily-summary', () => {
     expect(body.summary.error).toMatch(/tidak dikenali/)
   })
 })
+
+describe('AR-04: jumlah janji admin = tab Janji Admin di Antrean', () => {
+  it('openPromises = item PROMISE yang OPEN sekarang, bukan janji di review hari itu', async () => {
+    mockPrisma.dailySummary.findMany.mockResolvedValue([{ date: '2026-09-21', status: 'DONE' }] as never)
+    mockPrisma.dailySummary.findUnique.mockResolvedValue(row({ payload }) as never)
+    mockPrisma.summaryItem.count.mockResolvedValue(2)
+
+    const body = await (await GET(req('?date=2026-09-21'))).json()
+
+    expect(body.openPromises).toBe(2)
+    expect(mockPrisma.summaryItem.count).toHaveBeenCalledWith({ where: { kind: 'PROMISE', state: 'OPEN' } })
+  })
+})
