@@ -53,6 +53,13 @@ describe('/', () => {
     expect(push).toHaveBeenCalledWith('/kontak')
   })
 
+  it('Kantor AI dan Pengaturan tidak tampil di menu (owner 2026-11-26), halamannya tetap bisa dibuka lewat alamat', () => {
+    at('/dashboard', <HubView />)
+    expect(screen.queryByTitle('Kantor AI')).toBeNull()
+    expect(screen.queryByTitle('Pengaturan')).toBeNull()
+    expect(viewFromPath('/settings')).toBe('pengaturan')
+  })
+
   it('tab Bot → Agent menampilkan tugas reminder tamu, crew, vendor', () => {
     at('/bot', <BotView />)
     fireEvent.click(screen.getByText('Agent', { selector: '#b-tabs button' }))

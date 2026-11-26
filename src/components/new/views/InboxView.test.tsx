@@ -108,6 +108,11 @@ describe('Inbox = komponen Inbox dengan markup desain baru', () => {
       expect(css, sel).toContain(sel)
   })
 
+  it('tautan di gelembung biru (bot/agen) ikut warna teks gelembung, tidak biru di atas biru', () => {
+    const css = readFileSync(join(__dirname, '..', '..', '..', 'app', '(app)', 'new.css'), 'utf8')
+    expect(css).toContain('.nwa .m.b a,.nwa .m.a a{color:inherit}')
+  })
+
   it('kulit hanya memetakan variabel tema dan menetralkan aturan umum desain baru yang bentrok', () => {
     const css = readFileSync(join(__dirname, '..', '..', '..', 'app', '(app)', 'new.css'), 'utf8')
     const globals = readFileSync(join(__dirname, '..', '..', '..', 'app', 'globals.css'), 'utf8')

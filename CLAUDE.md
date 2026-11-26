@@ -110,7 +110,7 @@ Semua diedit di `/bot/pengaturan`, tab Bot, atau `/settings`, tersimpan langsung
 ### Aplikasi (root, sejak 2026-11-26)
 Tampilan baru (dulu pratinjau `/new`) menggantikan yang lama di root, grup route `src/app/(app)` (layout: `NewShell` +
 `NotificationListener`). Menu: `/dashboard`, `/inbox`, `/antrean`, `/ringkasan`, `/laporan`, `/agent`, `/kontak`, `/template`,
-`/bot`, `/ai-office`, `/settings`. Halaman lama yang SUDAH digantikan dialihkan (307) lewat `LEGACY_REDIRECTS` di
+`/bot` (`/ai-office` dan `/settings` tetap ada tetapi sengaja tidak di menu, owner 2026-11-26). Halaman lama yang SUDAH digantikan dialihkan (307) lewat `LEGACY_REDIRECTS` di
 `src/lib/new/legacy-routes.ts` (`/contacts`→`/kontak`, `/summary`→`/antrean`, `/chatbot`→`/bot/pengaturan`,
 `/bot-control/knowledge`→`/bot/knowledge`, `/settings/knowledge-gaps`→`/bot/celah`, `/bot-control/decisions`→`/bot/keputusan`,
 `/new/*`→`/*`). Halaman lama TANPA padanan (`/templates`, `/settings`, `/bot-control/*`, `/ai-office`) tetap di alamatnya, dipasang
