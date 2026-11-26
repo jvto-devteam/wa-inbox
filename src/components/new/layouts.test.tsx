@@ -234,3 +234,10 @@ describe('CSS /new', () => {
     expect(rule![1]).not.toMatch(/\b(both|forwards)\b/)
   })
 })
+
+describe('kartu atas (Banner) di ponsel', () => {
+  it('tombol turun ke baris sendiri selebar kartu, supaya judul tidak terjepit', () => {
+    const css = readFileSync(join(__dirname, '..', '..', 'app', '(app)', 'new.css'), 'utf8')
+    expect(css).toContain('@media (max-width:860px){.nwa .bt-ban>.btn{grid-column:1/-1;')
+  })
+})
