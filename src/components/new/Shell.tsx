@@ -157,7 +157,7 @@ export function NewShell({ children }: { children: React.ReactNode }) {
       const from = new Date(jakartaDay(new Date()) + 'T00:00:00+07:00').toISOString()
       const to = new Date().toISOString()
       fetchJson<{ unread?: unknown }>('/api/new/unread').then((b) => { if (!cancelled) setCounts((c) => ({ ...c, inbox: num(b.unread) })) }).catch(() => {})
-      fetchJson<{ open?: unknown }>('/api/summary-items/count').then((b) => { if (!cancelled) setCounts((c) => ({ ...c, antrean: num(b.open) })) }).catch(() => {})
+      fetchJson<{ total?: unknown }>('/api/summary-items/count').then((b) => { if (!cancelled) setCounts((c) => ({ ...c, antrean: num(b.total) })) }).catch(() => {})
       fetchJson<{ items?: { status?: string }[] }>('/api/new/agent-activity?from=' + encodeURIComponent(from) + '&to=' + encodeURIComponent(to))
         .then((b) => { if (!cancelled) setCounts((c) => ({ ...c, agent: (b.items ?? []).filter((e) => e.status === 'gagal').length })) })
         .catch(() => {})

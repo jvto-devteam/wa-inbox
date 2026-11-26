@@ -920,3 +920,6 @@
 @media (max-width:860px){
   .nwa .comp>p,.nwa .comp>.comp-legacy{grid-column:1/-1;margin-bottom:8px}
 }
+/* Antrean: pilihan urutan Terbaru | Terlama (.seg tanpa indikator geser: tombol aktif diberi latar sendiri). */
+.nwa #a-list .sj-top{border-bottom:1px solid var(--line)}
+.nwa #a-list .seg button.on{background:var(--surface);box-shadow:0 1px 2px rgba(20,25,40,.14)}

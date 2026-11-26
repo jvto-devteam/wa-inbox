@@ -11,7 +11,7 @@ import type { AgentScheduleResponse, AgentScheduleRow } from '@/app/api/new/agen
 import type { SummaryItemsResponse } from '@/app/api/summary-items/route'
 import type { NewReminder } from '@/app/api/new/reminders/route'
 import { jakartaDay } from '@/lib/bot/eval/replay-pairs'
-import { buildQueue, chatHref, type QueueItem } from '@/lib/new/antrean'
+import { buildQueue, chatHref, sortQueue, type QueueItem, type QueueOrder } from '@/lib/new/antrean'
 import { whenLabel } from '@/lib/new/dates'
 import { addDays } from '@/lib/new/report'
 import { dayHead, KIND_LABEL, wibTime } from '@/lib/new/schedule'
@@ -135,7 +135,8 @@ export function AntreanView() {
   const topK = (['Balas', 'Tindak lanjut', 'Janji tim'] as AtKey[]).find((k) => Q[k].length)
   const top = topK ? Q[topK][0] : null
   const next = topK ? Q[topK].slice(1, 4) : []
-  const list = tab === FUT ? [] : Q[tab]
+  // Urutan daftar dipilih operator (bawaan terbaru); kartu "Paling mendesak" di atas tetap yang paling lama menunggu.
+  const list = tab === FUT ? [] : sortQueue(Q[tab], s.aord)
 
   return (
     <section className="view fx" id="v-antrean">
@@ -178,6 +179,16 @@ export function AntreanView() {
       </div>
 
       <div className="card" id="a-list">
+        {tab !== FUT && list.length > 1 && (
+          <div className="sj-top">
+            <b className="mut sm" style={{ fontWeight: 550 }}>Urutkan</b>
+            <div className="seg" role="group" aria-label="Urutan antrean">
+              {([['baru', 'Terbaru'], ['lama', 'Terlama']] as [QueueOrder, string][]).map(([k, l]) => (
+                <button key={k} type="button" className={s.aord === k ? 'on' : ''} aria-pressed={s.aord === k} onClick={() => set((d) => { d.aord = k })}>{l}</button>
+              ))}
+            </div>
+          </div>
+        )}
         {tab === FUT ? <Schedule data={schedApi.data} loading={schedApi.loading} />
           : loading && !itemsApi.data ? <div className="mut" style={{ padding: 20, textAlign: 'center' }}>Memuat…</div>
           : list.length ? list.map((x) => {

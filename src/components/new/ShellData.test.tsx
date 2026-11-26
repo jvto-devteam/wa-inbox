@@ -23,7 +23,7 @@ function stub(routes: Record<string, Route>) {
 const base: Record<string, Route> = {
   '/api/session': () => ({ name: 'Dewi Lestari', role: 'ADMIN' }),
   '/api/new/unread': () => ({ unread: 4 }),
-  '/api/summary-items/count': () => ({ open: 9 }),
+  '/api/summary-items/count': () => ({ open: 8, reminders: 1, total: 9 }),
   '/api/new/agent-activity': () => ({ items: [{ status: 'gagal' }, { status: 'ok' }, { status: 'gagal' }] }),
   '/api/auth/logout': () => ({ ok: true }),
   '/api/conversations': (u) => (u.searchParams.get('q') === 'lukas'

@@ -17,6 +17,16 @@ export interface QueueItem {
   overdue: boolean
   text: string
   saran: string | null
+  /** Waktu urut: sejak kapan item menunggu (anchorAt), atau jatuh tempo untuk reminder. */
+  at: string
+}
+
+/** Urutan daftar Antrean (owner 2026-11-26): 'baru' = terbaru dulu (bawaan), 'lama' = terlama dulu. */
+export type QueueOrder = 'baru' | 'lama'
+
+export function sortQueue(list: QueueItem[], order: QueueOrder): QueueItem[] {
+  const dir = order === 'baru' ? -1 : 1
+  return [...list].sort((a, b) => dir * (Date.parse(a.at) - Date.parse(b.at)))
 }
 
 const KIND_TAB: Record<string, AtKey> = { REPLY: 'Balas', FOLLOW_UP: 'Tindak lanjut', PROMISE: 'Janji tim' }
@@ -56,6 +66,7 @@ export function buildQueue(items: SummaryItemsResponse | undefined, reminders: N
       when,
       overdue: !!it.dueAt,
       text: it.snippet,
+      at: it.anchorAt,
       saran: r?.langkahBerikut.trim() || r?.belumBooking?.rekomendasi.trim() || null,
     })
   }
@@ -72,6 +83,7 @@ export function buildQueue(items: SummaryItemsResponse | undefined, reminders: N
       overdue,
       text: rm.note,
       saran: null,
+      at: rm.dueAt,
     })
   }
   return out
