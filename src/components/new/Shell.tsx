@@ -27,9 +27,10 @@ function subscribeMq(cb: () => void) {
 }
 const noop = () => () => {}
 
-const SIDE: ViewKey[] = ['hub', 'inbox', 'antrean', 'ringkasan', 'laporan', 'agent', 'kontak', 'template', 'bot', 'kantor', 'pengaturan']
+// Kantor AI (/ai-office) dan Pengaturan (/settings) sengaja tidak di menu (owner 2026-11-26); alamatnya tetap berlaku.
+const SIDE: ViewKey[] = ['hub', 'inbox', 'antrean', 'ringkasan', 'laporan', 'agent', 'kontak', 'template', 'bot']
 const MTAB: ViewKey[] = ['hub', 'inbox', 'antrean', 'ringkasan']
-const MORE: ViewKey[] = ['laporan', 'agent', 'kontak', 'template', 'bot', 'kantor', 'pengaturan']
+const MORE: ViewKey[] = ['laporan', 'agent', 'kontak', 'template', 'bot']
 
 interface Hit { id: string; n: string; s: string }
 
