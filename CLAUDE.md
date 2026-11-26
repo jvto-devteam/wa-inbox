@@ -116,8 +116,12 @@ Tampilan baru (dulu pratinjau `/new`) menggantikan yang lama di root, grup route
 `/new/*`→`/*`). Halaman lama TANPA padanan (`/templates`, `/settings`, `/bot-control/*`, `/ai-office`) tetap di alamatnya, dipasang
 apa adanya di cangkang baru lewat `LegacyPage`/`LegacyFrame` (kulit `.legacy-skin` di `(app)/new.css`: variabel tema lama
 dipetakan ke token baru; tautan di dalamnya ke halaman yang sudah digantikan dibelokkan ke padanannya). Halaman lama yang
-dipasang di halaman baru (`/bot/*`, `/kontak/[id]`) ada di `src/components/legacy-pages/`. Inbox = `InboxScreen` (susunan
-Inbox lama apa adanya). `legacy-routes.test.ts` gagal bila kode baru menulis alamat lama/`/new` atau tautan di komponen lama yang
+dipasang di halaman baru (`/bot/*`, `/kontak/[id]`) ada di `src/components/legacy-pages/`. Inbox = `InboxScreen` dan anak-anaknya
+di `src/components/inbox/`, digambar dengan markup desain artifact (`.inbox`/`.row`/`.chead`/`.m`/`.comp`/`.tabs`/`.box`,
+owner 2026-11-26: "sama persis, action/backend tetap yang lama"): logika (fetch, SSE, kirim, template, lampiran, bot, mode uji)
+tidak berubah, hanya markup; aksi per pesan ada di menu panah gelembung, pencarian di bar atas, panel kanan bertab Booking ·
+Ringkasan · Kontak. Bagian lama di dalamnya (BookingSummary, aksi booking, ringkasan chat, draft, trace bot) dibungkus
+`.legacy-skin`; pembungkus luar Inbox `LegacyFrame skin={false}` (hanya penjaga tautan). `legacy-routes.test.ts` gagal bila kode baru menulis alamat lama/`/new` atau tautan di komponen lama yang
 dipasang menunjuk halaman yang tidak ada.
 
 ### Dashboard (`/dashboard`)
@@ -127,9 +131,9 @@ Antrean), agent hari ini (= Riwayat Agent), poin WhatsApp ringkasan terbaru (`su
 Outbound, cluster topik) tidak ikut sejak 2026-11-26; antrean outbound ada di Bot → Antrean outbound.
 
 ### Kontak (`/kontak`, `/kontak/[id]`)
-Detail kontak (`/kontak/[id]`, dulu `/contacts/[id]`) tampak menduplikasi panel kanan Inbox, tetapi panel kanan hanya tampil
-dari lebar `xl`: di ponsel dan tablet halaman ini satu-satunya jalan ke booking, label, reminder, dan catatan, dan
-satu-satunya tempat Consent. Jangan dipensiunkan tanpa memindahkan akses itu dulu.
+Detail kontak (`/kontak/[id]`, dulu `/contacts/[id]`) tampak menduplikasi panel kanan Inbox, tetapi panel kanan Inbox tampil
+dari lebar 1180px dan di ponsel lewat tombol info (lembar bawah) -- di tablet (861–1179px) tidak ada sama sekali, jadi di sana
+halaman ini satu-satunya jalan ke booking, label, reminder, dan catatan; dan di semua lebar satu-satunya tempat Consent. Jangan dipensiunkan tanpa memindahkan akses itu dulu.
 
 ### Registry statis (kode, bukan DB)
 `rule-registry.ts`, `existing-flow-registry.ts` (28 node), `channel-capabilities.ts`.

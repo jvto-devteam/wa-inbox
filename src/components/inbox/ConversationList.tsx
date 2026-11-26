@@ -1,17 +1,9 @@
 'use client'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { MessagesSquare, Search, SearchX } from 'lucide-react'
-import { Input } from '@/components/ui/input'
-import { Button } from '@/components/ui/button'
-import { EmptyState } from '@/components/ui/empty-state'
-import { Skeleton } from '@/components/ui/skeleton'
-import { cn } from '@/lib/utils'
 import { ConversationListItem, type ConversationSummary } from './ConversationListItem'
 import type { LabelOption } from './LabelPicker'
 import { fetchJson } from '@/lib/fetch-json'
 import { SHIPPED_PLATFORMS, PLATFORM_LABEL } from '@/lib/channel/platform'
-
-const SEARCH_DEBOUNCE_MS = 300
 
 // The filter row is single-select across three different dimensions -- a booking's origin
 // platform (orderChannel, e.g. JVTO/KLOOK), an operator-defined Label, and the messaging
@@ -29,10 +21,9 @@ function sameFilter(a: FilterOption | null, b: FilterOption | null) {
   return a === b || (a !== null && b !== null && a.kind === b.kind && a.value === b.value)
 }
 
-function conversationsUrl(query: string, filter: FilterOption | null) {
+// Pencarian ada di kotak cari bar atas (Shell), yang membuka percakapan langsung; daftar ini hanya memakai filter.
+function conversationsUrl(filter: FilterOption | null) {
   const params = new URLSearchParams()
-  const trimmed = query.trim()
-  if (trimmed) params.set('q', trimmed)
   if (filter?.kind === 'channel') params.set('orderChannel', filter.value)
   if (filter?.kind === 'label') params.set('labelId', filter.value)
   if (filter?.kind === 'platform') params.set('platform', filter.value)
@@ -57,22 +48,18 @@ type BroadcastMessage = {
   direction: string
 }
 
-/**
- * Baris palsu selagi permintaan pertama berjalan. Bentuknya sengaja meniru geometri baris
- * sungguhan (avatar 36px, tiga baris teks) supaya daftar tidak melompat saat datanya tiba --
- * itulah bedanya keadaan memuat yang dirancang dari kotak abu sembarangan.
- */
+/** Baris palsu selagi permintaan pertama berjalan, setinggi baris sungguhan supaya daftar tidak melompat. */
 function ConversationListSkeleton() {
   return (
-    <div className="divide-y divide-line" aria-hidden="true">
+    <div aria-hidden="true">
       {Array.from({ length: 7 }, (_, i) => (
-        <div key={i} className="flex gap-2.5 py-2.5 pr-3 pl-2">
-          <Skeleton className="size-9 shrink-0 rounded-full" />
-          <div className="flex min-w-0 flex-1 flex-col gap-1.5 pt-0.5">
-            <Skeleton className={cn('h-3', i % 3 === 0 ? 'w-2/5' : 'w-3/5')} />
-            <Skeleton className={cn('h-3', i % 2 === 0 ? 'w-4/5' : 'w-3/5')} />
-            <Skeleton className="h-3.5 w-16" />
+        <div key={i} className="row" style={{ pointerEvents: 'none' }}>
+          <div className="av" />
+          <div>
+            <b style={{ display: 'block', height: 12, width: i % 3 === 0 ? '40%' : '60%', background: 'var(--neutral-bg)', borderRadius: 4 }} />
+            <p style={{ height: 10, width: i % 2 === 0 ? '80%' : '60%', background: 'var(--neutral-bg)', borderRadius: 4, marginTop: 6 }} />
           </div>
+          <div className="t" />
         </div>
       ))}
     </div>
@@ -82,34 +69,26 @@ function ConversationListSkeleton() {
 export function ConversationList({
   selectedId,
   onSelect,
-  className,
 }: {
   selectedId: string | null
   onSelect: (id: string) => void
-  className?: string
 }) {
   const [conversations, setConversations] = useState<ConversationSummary[]>([])
-  const [query, setQuery] = useState('')
   // Default WhatsApp, bukan null ("Semua") -- hari pertama setelah deploy tim melihat persis
   // apa yang mereka lihat sekarang (satu-satunya platform yang pernah ada sebelum tab ini).
   const [filter, setFilter] = useState<FilterOption | null>({ kind: 'platform', value: 'WHATSAPP' })
   const [channels, setChannels] = useState<string[]>([])
   const [allLabels, setAllLabels] = useState<LabelOption[]>([])
-  // Hanya menandai permintaan PERTAMA. Menyalakan kerangka di setiap pencarian akan membuat
-  // daftar berkedip di setiap ketukan tombol; hasil lama yang tinggal sebentar lebih tenang.
+  // Hanya menandai permintaan PERTAMA. Menyalakan kerangka di setiap ganti filter akan membuat
+  // daftar berkedip; hasil lama yang tinggal sebentar lebih tenang.
   const [firstLoadDone, setFirstLoadDone] = useState(false)
-  const isFirstRender = useRef(true)
 
-  // Latest-value mirrors read by the SSE effect below. Depending on `query`/`conversations`
-  // directly would tear down and re-open the EventSource on every keystroke and on every
+  // Latest-value mirrors read by the SSE effect below. Depending on `filter`/`conversations`
+  // directly would tear down and re-open the EventSource on every filter change and on every
   // single incoming message; the refs let that effect stay mounted for the tab's lifetime.
-  const queryRef = useRef(query)
   const filterRef = useRef(filter)
   const conversationsRef = useRef(conversations)
   const selectedIdRef = useRef(selectedId)
-  useEffect(() => {
-    queryRef.current = query
-  }, [query])
   useEffect(() => {
     filterRef.current = filter
   }, [filter])
@@ -154,14 +133,14 @@ export function ConversationList({
     }
   }
 
-  const loadConversations = useCallback((q: string, f: FilterOption | null) => {
+  const loadConversations = useCallback((f: FilterOption | null) => {
     // On a rejection the list simply keeps whatever it already had: a 401 has already sent
     // the browser to /login, and a 500 must not blank out the agent's inbox.
     //
     // The deep-link case (/inbox?conversation=<id>) is why the selected row is cleared here
     // too: there the id is already selected on mount, so the adjustment above has nothing to
     // react to by the time the list itself arrives.
-    fetchJson<ConversationSummary[]>(conversationsUrl(q, f))
+    fetchJson<ConversationSummary[]>(conversationsUrl(f))
       .then((list) =>
         setConversations(
           selectedIdRef.current
@@ -174,15 +153,8 @@ export function ConversationList({
   }, [])
 
   useEffect(() => {
-    if (isFirstRender.current) {
-      isFirstRender.current = false
-      loadConversations(query, filter)
-      return
-    }
-
-    const timer = setTimeout(() => loadConversations(query, filter), SEARCH_DEBOUNCE_MS)
-    return () => clearTimeout(timer)
-  }, [query, filter, loadConversations])
+    loadConversations(filter)
+  }, [filter, loadConversations])
 
   // Live updates. Without this the sidebar was a one-shot snapshot: a new customer message
   // never appeared as a row, and a reply on an existing conversation never moved it to the
@@ -215,7 +187,7 @@ export function ConversationList({
       // "percakapan belum dikenal" di bawah.
       if (event.type === 'conversation.updated') {
         if (conversationsRef.current.some((c) => c.id === event.conversationId)) {
-          loadConversations(queryRef.current, filterRef.current)
+          loadConversations(filterRef.current)
         }
         return
       }
@@ -223,7 +195,7 @@ export function ConversationList({
       // Label "Permintaan perubahan" berubah di server tanpa pesan baru (ditutup, dibuat bot).
       if (event.type === 'booking-actions.changed') {
         if (conversationsRef.current.some((c) => c.id === event.conversationId)) {
-          loadConversations(queryRef.current, filterRef.current)
+          loadConversations(filterRef.current)
         }
         return
       }
@@ -236,7 +208,7 @@ export function ConversationList({
       // what must stay a pure function (React may invoke it twice).
       const known = conversationsRef.current.some((c) => c.id === event.conversationId)
       if (!known) {
-        loadConversations(queryRef.current, filterRef.current)
+        loadConversations(filterRef.current)
         return
       }
 
@@ -264,156 +236,52 @@ export function ConversationList({
     return () => es.close()
   }, [loadConversations])
 
-  const isSearching = query.trim().length > 0
+  const filterButton = (key: string, active: boolean, onClick: () => void, label: React.ReactNode) => (
+    <button key={key} type="button" className={active ? 'on' : ''} aria-pressed={active} onClick={onClick}>
+      {label}
+    </button>
+  )
 
   return (
-    // min-h-0 + h-full: kolom ini menggulung SENDIRI. Tanpa min-h-0 sebuah item flex/grid
-    // menolak menyusut di bawah tinggi isinya, dan overflow-nya terdorong balik ke pembungkus
-    // layout -- yaitu gulungan ganda yang dilarang.
-    <aside
-      aria-label="Daftar percakapan"
-      className={cn('flex h-full min-h-0 flex-col border-r border-line bg-surface', className)}
-    >
-      <div className="shrink-0 border-b border-line p-2">
-        <div className="relative">
-          <Search
-            aria-hidden="true"
-            strokeWidth={1.75}
-            className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-ink-subtle"
-          />
-          <Input
-            type="search"
-            aria-label="Cari percakapan"
-            placeholder="Cari nama, nomor, atau isi pesan..."
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            className="pl-8"
-          />
+    // Kolom pertama .inbox (desain artifact): deret filter + daftar yang menggulung sendiri.
+    <div className="col" role="region" aria-label="Daftar percakapan">
+      {(SHIPPED_PLATFORMS.length > 0 || channels.length > 0 || allLabels.length > 0) && (
+        // Tiga dimensi, satu pilihan: platform pesan, asal booking (orderChannel), label operator.
+        <div className="flt" id="i-flt" role="group" aria-label="Filter inbox">
+          {filterButton('all', filter === null, () => setFilter(null), 'Semua')}
+          {SHIPPED_PLATFORMS.map((p) =>
+            filterButton(`platform:${p}`, sameFilter(filter, { kind: 'platform', value: p }), () => setFilter({ kind: 'platform', value: p }), PLATFORM_LABEL[p])
+          )}
+          {channels.map((c) =>
+            filterButton(`channel:${c}`, sameFilter(filter, { kind: 'channel', value: c }), () => setFilter({ kind: 'channel', value: c }), c)
+          )}
+          {allLabels.map((l) =>
+            filterButton(`label:${l.id}`, sameFilter(filter, { kind: 'label', value: l.id }), () => setFilter({ kind: 'label', value: l.id }), l.name)
+          )}
         </div>
+      )}
 
-        {(SHIPPED_PLATFORMS.length > 0 || channels.length > 0 || allLabels.length > 0) && (
-          <div role="group" aria-label="Filter inbox" className="mt-2 flex items-center gap-1.5 overflow-x-auto">
-            <Button
-              type="button"
-              size="sm"
-              variant={filter === null ? 'default' : 'outline'}
-              aria-pressed={filter === null}
-              onClick={() => setFilter(null)}
-            >
-              All
-            </Button>
-            {SHIPPED_PLATFORMS.map((p) => {
-              const active = sameFilter(filter, { kind: 'platform', value: p })
-              return (
-                <Button
-                  key={`platform:${p}`}
-                  type="button"
-                  size="sm"
-                  variant={active ? 'default' : 'outline'}
-                  aria-pressed={active}
-                  onClick={() => setFilter({ kind: 'platform', value: p })}
-                >
-                  {PLATFORM_LABEL[p]}
-                </Button>
-              )
-            })}
-
-            {/* Pemisah antar dimensi: platform pesan (di atas) vs asal booking + label
-                operator (di bawah) adalah fakta yang berbeda -- tanpa pemisah, KLOOK bisa
-                terlihat seperti "platform lain" setara WhatsApp/Facebook di deret yang sama. */}
-            {(channels.length > 0 || allLabels.length > 0) && (
-              <span aria-hidden="true" className="mx-0.5 h-5 w-px shrink-0 bg-line" />
-            )}
-
-            {channels.map((c) => {
-              const active = sameFilter(filter, { kind: 'channel', value: c })
-              return (
-                <Button
-                  key={`channel:${c}`}
-                  type="button"
-                  size="sm"
-                  variant={active ? 'default' : 'outline'}
-                  aria-pressed={active}
-                  onClick={() => setFilter({ kind: 'channel', value: c })}
-                >
-                  {c}
-                </Button>
-              )
-            })}
-
-            {/* Pemisah kedua: asal booking vs label operator -- dua dimensi ini sendiri
-                sudah ada sebelum task platform, tetap dipisah agar konsisten dengan
-                pemisah di atas alih-alih membiarkan satu sisi terlihat "tergabung". */}
-            {channels.length > 0 && allLabels.length > 0 && (
-              <span aria-hidden="true" className="mx-0.5 h-5 w-px shrink-0 bg-line" />
-            )}
-
-            {allLabels.map((l) => {
-              const active = sameFilter(filter, { kind: 'label', value: l.id })
-              return (
-                <Button
-                  key={`label:${l.id}`}
-                  type="button"
-                  size="sm"
-                  variant={active ? 'default' : 'outline'}
-                  aria-pressed={active}
-                  onClick={() => setFilter({ kind: 'label', value: l.id })}
-                >
-                  <span aria-hidden="true" className="size-2 shrink-0 rounded-full" style={{ backgroundColor: l.color }} />
-                  {l.name}
-                </Button>
-              )
-            })}
-          </div>
-        )}
-      </div>
-
-      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+      <div className="rows" id="i-rows">
         {!firstLoadDone ? (
           <ConversationListSkeleton />
         ) : conversations.length === 0 ? (
-          isSearching ? (
-            <EmptyState
-              icon={<SearchX strokeWidth={1.5} />}
-              title="Tidak ada yang cocok"
-              description={`Tidak ada percakapan yang memuat "${query.trim()}". Coba potongan nomor atau satu kata dari isi pesannya.`}
-              action={
-                <Button variant="outline" size="sm" onClick={() => setQuery('')}>
-                  Hapus pencarian
-                </Button>
-              }
-            />
-          ) : (
-            <EmptyState
-              icon={<MessagesSquare strokeWidth={1.5} />}
-              title="Belum ada percakapan"
-              description="Percakapan muncul di sini begitu pelanggan mengirim pesan pertama ke nomor WhatsApp JVTO."
-            />
-          )
+          <div className="mut" style={{ padding: 16 }}>Tidak ada chat.</div>
         ) : (
-          <ul>
-            {conversations.map((c) => (
-              <ConversationListItem
-                key={c.id}
-                conversation={c}
-                active={c.id === selectedId}
-                onClick={() => onSelect(c.id)}
-                // Hidden ONLY when a single platform tab is active (filter.kind === 'platform')
-                // -- that is the one state where every row on screen already agrees on its
-                // platform, so the badge would be uniform noise. Every other state -- "Semua"
-                // (filter === null), an orderChannel pill (e.g. KLOOK), or a label pill -- can
-                // mix rows from more than one platform: GET /api/conversations only constrains
-                // channelIdentity when `platform` itself is the active filter (see route.ts);
-                // orderChannel/labelId filter across every platform with no such restriction.
-                // `filter === null` alone used to gate this and was too narrow -- it missed the
-                // channel/label pills, where a KLOOK (say) booking from WhatsApp and one from
-                // Facebook could sit side by side with no way to tell them apart.
-                showPlatformBadge={filter?.kind !== 'platform'}
-              />
-            ))}
-          </ul>
+          conversations.map((c) => (
+            <ConversationListItem
+              key={c.id}
+              conversation={c}
+              active={c.id === selectedId}
+              onClick={() => onSelect(c.id)}
+              // Hidden ONLY when a single platform tab is active (filter.kind === 'platform')
+              // -- that is the one state where every row on screen already agrees on its
+              // platform. Every other state -- "Semua", an orderChannel pill, a label pill --
+              // can mix rows from more than one platform (see GET /api/conversations).
+              showPlatformBadge={filter?.kind !== 'platform'}
+            />
+          ))
         )}
       </div>
-    </aside>
+    </div>
   )
 }

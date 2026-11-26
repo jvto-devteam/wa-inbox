@@ -5,21 +5,20 @@
 // Logika membalas, bot, dan antrean tidak ada di sini -- semuanya di komponen anak yang tidak diubah.
 import { useEffect, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { MessagesSquare } from 'lucide-react'
 import { ConversationList } from '@/components/inbox/ConversationList'
 import { ThreadView } from '@/components/inbox/ThreadView'
 import { ContactPanel } from '@/components/inbox/ContactPanel'
-import { EmptyState } from '@/components/ui/empty-state'
-import { cn } from '@/lib/utils'
 
 export interface InboxScreenProps {
   /** Alamat halaman ini; dipakai saat menulis `?conversation=` ke URL. Bawaan `/inbox`. */
   basePath?: string
   /** Dipanggil setiap percakapan terpilih berubah (null = kembali ke daftar). */
   onSelectedChange?: (id: string | null) => void
+  /** Tombol info di kepala chat (ponsel): membuka panel kanan sebagai lembar bawah. */
+  onInfo?: () => void
 }
 
-export function InboxScreen({ basePath = '/inbox', onSelectedChange }: InboxScreenProps = {}) {
+export function InboxScreen({ basePath = '/inbox', onSelectedChange, onInfo }: InboxScreenProps = {}) {
   // Deep-linked from the Beranda "Perlu perhatian" widget (/inbox?conversation=<id>) -- read
   // once on mount as the initial state rather than synced continuously via an effect, so a user
   // manually picking a different conversation from ConversationList afterward doesn't get
@@ -76,43 +75,11 @@ export function InboxScreen({ basePath = '/inbox', onSelectedChange }: InboxScre
       setFollowUp(urlFollowUp)
     }
   }
-  // Hanya berlaku dari xl ke atas -- lihat komentar geometri di bawah. Di bawah xl panel kontak
-  // memang tidak punya kolom, jadi tombolnya pun tidak dirender di sana (ThreadView).
-  const [contactPanelOpen, setContactPanelOpen] = useState(true)
-
   return (
-    // GEOMETRI TIGA KOLOM (load-bearing, bukan dekorasi)
-    //
-    // h-full, bukan h-screen: src/app/(authenticated)/layout.tsx memiliki tinggi viewport dan
-    // menaruh rail di sebelahnya, jadi anak setinggi 100vh di sini akan mengabaikan rail dan
-    // membuat dokumen lebih tinggi dari layar.
-    //
-    // grid-rows-[minmax(0,1fr)] wajib: baris implisit sebuah grid default-nya `auto` (setinggi
-    // anak tertingginya), jadi tanpa ini thread yang panjang menumbuhkan barisnya melewati
-    // viewport dan pembungkus layout luar (yang memegang overflow-y-auto sendiri) menggulung
-    // SELURUH grid sebagai satu blok -- gulungan ganda yang persis dilarang. minmax(0,1fr)
-    // memakukan baris ke tinggi kontainer dan membiarkannya menyusut, sehingga h-full +
-    // overflow-y-auto milik tiap kolom yang benar-benar menggulung.
-    //
-    // Kolom tengah juga minmax(0,1fr), bukan 1fr: minimum implisit sebuah track adalah
-    // `auto` (min-content isinya), jadi satu untai tanpa spasi di dalam thread -- URL, kutipan
-    // balasan, satu kata panjang -- akan melebarkan kolom (dan grid) melewati layar alih-alih
-    // membiarkan truncate/wrap milik ThreadView bekerja.
-    //
-    // TIGA BENTUK, SATU SUSUNAN DOM:
-    //   < md  : satu kolom bertingkat. Daftar mengisi layar; begitu sebuah percakapan dipilih
-    //           daftar ber-`display:none` (jadi bukan item grid lagi) dan thread mengambil satu-
-    //           satunya sel. Tombol kembali di kepala thread yang mengembalikannya.
-    //   md-xl : dua kolom. Panel kontak menyembunyikan diri -- 300px ketiga tidak muat tanpa
-    //           memeras thread di bawah lebar baca yang wajar.
-    //   >= xl : tiga kolom, dan panel kontak bisa ditutup operator (lalu thread melebar).
-    <div
-      className={cn(
-        'grid h-full grid-cols-1 grid-rows-[minmax(0,1fr)] overflow-hidden bg-canvas',
-        'md:grid-cols-[20rem_minmax(0,1fr)]',
-        selectedId && contactPanelOpen && 'xl:grid-cols-[20rem_minmax(0,1fr)_18.75rem]'
-      )}
-    >
+    // Tiga kolom desain artifact (.inbox di new.css): daftar | chat | panel kanan. Urutannya load-bearing: CSS memilih
+    // kolom lewat :nth-child (ponsel: daftar ATAU chat; panel kanan jadi lembar bawah; < 1180px panel kanan disembunyikan),
+    // jadi ketiga kolom selalu dirender, juga saat belum ada percakapan yang dipilih.
+    <div className="inbox">
       <ConversationList
         selectedId={selectedId}
         onSelect={(id) => {
@@ -121,29 +88,24 @@ export function InboxScreen({ basePath = '/inbox', onSelectedChange }: InboxScre
           setAutoDraft(false)
           setFollowUp(false)
           // Pilihan manual ikut ditulis ke URL supaya "apa yang tertulis di URL" dan "apa yang
-          // terlihat di layar" tidak pernah berpisah. Tanpa ini, menekan gap yang SAMA setelah
-          // operator berpindah percakapan sendiri tidak melakukan apa-apa: href gap itu identik
+          // terlihat di layar" tidak pernah berpisah. Tanpa ini, menekan tautan yang SAMA setelah
+          // operator berpindah percakapan sendiri tidak melakukan apa-apa: href-nya identik
           // dengan URL lama yang masih tertinggal, jadi tidak ada query yang berubah untuk
-          // disinkronkan. `replace`, bukan `push`: berpindah percakapan bukan langkah riwayat,
-          // dan setiap klik di daftar akan menumpuk satu entri tombol-kembali kalau ia jadi.
+          // disinkronkan. `replace`, bukan `push`: berpindah percakapan bukan langkah riwayat.
           //
           // `lastUrlKey` sengaja TIDAK disetel di sini ke URL yang sebentar lagi berlaku.
           // Navigasi itu asinkron: menebaknya lebih dulu membuat URL yang masih tertinggal
           // terbaca sebagai "query berubah" pada render berikutnya, dan penyesuaian di atas
-          // justru menarik balik percakapan yang baru saja diklik. Biarkan ia mencatat apa yang
-          // BENAR-BENAR terlihat; saat replace mendarat, penyesuaiannya menjadi no-op.
+          // justru menarik balik percakapan yang baru saja diklik.
           router.replace(`${basePath}?conversation=${encodeURIComponent(id)}`, { scroll: false })
         }}
-        className={cn(selectedId && 'max-md:hidden')}
       />
       {selectedId ? (
         <>
           {/* Distinct key prefixes, not just `selectedId` on both -- ThreadView and ContactPanel
               are siblings in the same Fragment, and React's key-based reconciliation matches by
-              key alone across ALL siblings in a list regardless of element type. Two siblings
-              sharing one key collide in that lookup (the second overwrites the first), which
-              left a stale ThreadView DOM node behind whenever selectedId changed -- reproduced by
-              the "switch conversations" test in page.test.tsx. */}
+              key alone across ALL siblings. Two siblings sharing one key collide in that lookup,
+              which left a stale ThreadView DOM node behind whenever selectedId changed. */}
           <ThreadView
             key={`thread-${selectedId}`}
             conversationId={selectedId}
@@ -152,25 +114,22 @@ export function InboxScreen({ basePath = '/inbox', onSelectedChange }: InboxScre
             autoDraft={autoDraft}
             followUp={followUp}
             onBack={() => setSelectedId(null)}
-            contactPanelOpen={contactPanelOpen}
-            onToggleContactPanel={() => setContactPanelOpen((open) => !open)}
+            onInfo={onInfo}
           />
-          <ContactPanel
-            key={`contact-${selectedId}`}
-            conversationId={selectedId}
-            className={cn(contactPanelOpen ? 'hidden xl:flex' : 'hidden')}
-          />
+          <ContactPanel key={`contact-${selectedId}`} conversationId={selectedId} />
         </>
       ) : (
-        // Tidak dirender di bawah md: di sana daftar percakapan SENDIRI yang mengisi layar, dan
-        // "pilih percakapan" di bawah daftar yang sudah terlihat cuma menambah baris kosong.
-        <div className="hidden items-center justify-center md:flex">
-          <EmptyState
-            icon={<MessagesSquare strokeWidth={1.5} />}
-            title="Pilih percakapan"
-            description="Buka satu percakapan di daftar kiri untuk membaca riwayatnya dan membalas pelanggan."
-          />
-        </div>
+        <>
+          <div className="col" style={{ display: 'grid', placeItems: 'center', background: 'var(--surface2)' }}>
+            <div style={{ textAlign: 'center', maxWidth: 320, padding: 16 }}>
+              <b>Pilih percakapan</b>
+              <p className="mut sm" style={{ margin: '4px 0 0' }}>
+                Buka satu percakapan di daftar kiri untuk membaca riwayatnya dan membalas pelanggan.
+              </p>
+            </div>
+          </div>
+          <div className="col" />
+        </>
       )}
     </div>
   )

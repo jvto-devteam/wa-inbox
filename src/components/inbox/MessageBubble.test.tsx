@@ -14,11 +14,29 @@ vi.mock('./FixAnswerPanel', () => ({
   ),
 }))
 
+// Aksi pesan kini ada di menu panah ("Aksi pesan"), bukan tombol ikon di bawah gelembung.
+function openMenu() {
+  const chevron = screen.getByRole('button', { name: 'Aksi pesan' })
+  if (chevron.getAttribute('aria-expanded') !== 'true') fireEvent.click(chevron)
+}
+function menuItem(name: string) {
+  openMenu()
+  return screen.getByRole('menuitem', { name })
+}
+function queryMenuItem(name: string) {
+  openMenu()
+  return screen.queryByRole('menuitem', { name })
+}
+// Baris meta gelembung: "Bot · 10.30 · Official · Terkirim" dalam satu <small>.
+function metaText() {
+  return document.querySelector('.m > small')?.textContent ?? ''
+}
+
 describe('MessageBubble', () => {
   it('shows bot-sent messages with a Bot badge', () => {
     render(<MessageBubble message={{ id: 'm1', direction: 'OUTBOUND', content: 'Info paket Ijen...', channel: 'OFFICIAL', sentBy: 'BOT', deliveryStatus: 'SENT', createdAt: new Date().toISOString(), botTrace: { mode: 'faq', draft: 'Info paket Ijen...', sourceTopic: 'inclusions' } }} />)
     expect(screen.getByText('Info paket Ijen...')).toBeInTheDocument()
-    expect(screen.getByText('Bot')).toBeInTheDocument()
+    expect(metaText().split(' · ')[0]).toBe('Bot')
   })
 
   it('membuat teks balasan bot bisa diblok dan disalin', async () => {
@@ -30,8 +48,8 @@ describe('MessageBubble', () => {
 
     render(<MessageBubble message={{ id: 'm1b', direction: 'OUTBOUND', content: 'Info paket Ijen bisa disalin.', channel: 'OFFICIAL', sentBy: 'BOT', deliveryStatus: 'SENT', createdAt: new Date().toISOString(), botTrace: { mode: 'faq', draft: 'Info paket Ijen bisa disalin.', sourceTopic: 'inclusions' } }} />)
 
-    expect(screen.getByText('Info paket Ijen bisa disalin.').closest('.select-text')).toBeInTheDocument()
-    fireEvent.click(screen.getByLabelText('Salin balasan bot'))
+    expect(screen.getByText('Info paket Ijen bisa disalin.').closest('.mtext')).toBeInTheDocument()
+    fireEvent.click(menuItem('Salin balasan bot'))
 
     await waitFor(() => expect(writeText).toHaveBeenCalledWith('Info paket Ijen bisa disalin.'))
   })
@@ -41,7 +59,7 @@ describe('MessageBubble', () => {
     expect(screen.getByRole('button', { name: /kirim ulang/i })).toBeInTheDocument()
   })
 
-  it('toggles the bot trace popover open and closed via the dedicated 🧠 icon, not the message text', () => {
+  it('toggles the bot trace popover open and closed via the message menu, not the message text', () => {
     render(
       <MessageBubble
         message={{
@@ -58,12 +76,13 @@ describe('MessageBubble', () => {
     )
     expect(screen.queryByText(/sumber topik/i)).not.toBeInTheDocument()
 
-    const icon = screen.getByLabelText('Lihat alasan bot')
-    fireEvent.click(icon)
-    expect(screen.getByText(/sumber topik/i)).toBeInTheDocument()
-    expect(screen.getByLabelText('Sembunyikan alasan bot')).toBeInTheDocument()
+    fireEvent.click(screen.getByText('Info paket Ijen...'))
+    expect(screen.queryByText(/sumber topik/i)).not.toBeInTheDocument()
 
-    fireEvent.click(screen.getByLabelText('Sembunyikan alasan bot'))
+    fireEvent.click(menuItem('Lihat alasan bot'))
+    expect(screen.getByText(/sumber topik/i)).toBeInTheDocument()
+
+    fireEvent.click(menuItem('Sembunyikan alasan bot'))
     expect(screen.queryByText(/sumber topik/i)).not.toBeInTheDocument()
   })
 
@@ -87,11 +106,11 @@ describe('MessageBubble', () => {
       />
     )
 
-    fireEvent.click(screen.getByLabelText('Lihat alasan bot'))
+    fireEvent.click(menuItem('Lihat alasan bot'))
     expect(screen.getByText('Trace tidak tersedia untuk pesan ini')).toBeInTheDocument()
   })
 
-  it('does not show a 🧠 trace icon on a non-bot message even if botTrace were somehow set', () => {
+  it('does not offer the bot trace on a non-bot message even if botTrace were somehow set', () => {
     render(
       <MessageBubble
         message={{
@@ -106,7 +125,7 @@ describe('MessageBubble', () => {
         }}
       />
     )
-    expect(screen.queryByLabelText('Lihat alasan bot')).not.toBeInTheDocument()
+    expect(queryMenuItem('Lihat alasan bot')).not.toBeInTheDocument()
   })
 
   it('shows a clear handoff placeholder instead of a blank bubble for a logged handoff decision', () => {
@@ -144,7 +163,8 @@ describe('MessageBubble', () => {
     expect(screen.queryByText('Bot')).not.toBeInTheDocument()
     expect(screen.queryByText('Official')).not.toBeInTheDocument()
     expect(screen.queryByText('Unofficial')).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Balas pesan ini' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Aksi pesan' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('menuitem', { name: 'Balas pesan ini' })).not.toBeInTheDocument()
     // No formatted time string rendered anywhere for this row.
     expect(screen.queryByText(/^\d{2}\.\d{2}$/)).not.toBeInTheDocument()
   })
@@ -180,25 +200,17 @@ describe('MessageBubble', () => {
   })
 
   it('shows a channel badge and time for every message', () => {
-    render(<MessageBubble message={{ id: 'm7', direction: 'OUTBOUND', content: 'Halo', channel: 'UNOFFICIAL', sentBy: 'AGENT', deliveryStatus: 'SENT', createdAt: new Date('2026-01-01T10:30:00Z').toISOString(), botTrace: null }} />)
-    expect(screen.getByText('Unofficial')).toBeInTheDocument()
-  })
-
-  it('shows a single tick for a sent outbound message and a blue double tick once read', () => {
-    const { rerender } = render(
-      <MessageBubble message={{ id: 'm8', direction: 'OUTBOUND', content: 'Halo', channel: 'OFFICIAL', sentBy: 'AGENT', deliveryStatus: 'SENT', createdAt: new Date().toISOString(), botTrace: null }} />
-    )
-    expect(screen.getByRole('img', { name: 'Terkirim' })).toBeInTheDocument()
-
-    rerender(
-      <MessageBubble message={{ id: 'm8', direction: 'OUTBOUND', content: 'Halo', channel: 'OFFICIAL', sentBy: 'AGENT', deliveryStatus: 'READ', createdAt: new Date().toISOString(), botTrace: null }} />
-    )
-    expect(screen.getByRole('img', { name: 'Dibaca' })).toBeInTheDocument()
+    const createdAt = new Date('2026-01-01T10:30:00Z')
+    render(<MessageBubble message={{ id: 'm7', direction: 'OUTBOUND', content: 'Halo', channel: 'UNOFFICIAL', sentBy: 'AGENT', deliveryStatus: 'SENT', createdAt: createdAt.toISOString(), botTrace: null }} />)
+    const parts = metaText().split(' · ')
+    expect(parts).toContain('Unofficial')
+    expect(parts).toContain(createdAt.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }))
   })
 
   it('does not show a delivery tick for inbound messages', () => {
     render(<MessageBubble message={{ id: 'm9', direction: 'INBOUND', content: 'Halo', channel: 'OFFICIAL', sentBy: 'CUSTOMER', deliveryStatus: 'DELIVERED', createdAt: new Date().toISOString(), botTrace: null }} />)
     expect(screen.queryByRole('img')).not.toBeInTheDocument()
+    expect(metaText()).not.toContain('Diterima')
   })
 
   it('shows a tap-to-load placeholder for an inbound image instead of fetching it immediately', () => {
@@ -295,9 +307,10 @@ describe('MessageBubble', () => {
     }
     render(<MessageBubble message={message} onReply={onReply} />)
 
-    fireEvent.click(screen.getByRole('button', { name: 'Balas pesan ini' }))
+    fireEvent.click(menuItem('Balas pesan ini'))
 
     expect(onReply).toHaveBeenCalledWith(message)
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument()
   })
 
   it('does not show a reply button when onReply is not provided', () => {
@@ -309,7 +322,7 @@ describe('MessageBubble', () => {
         }}
       />
     )
-    expect(screen.queryByRole('button', { name: 'Balas pesan ini' })).not.toBeInTheDocument()
+    expect(queryMenuItem('Balas pesan ini')).not.toBeInTheDocument()
   })
 
   it('does not show a reply button on a handoff log placeholder', () => {
@@ -323,7 +336,8 @@ describe('MessageBubble', () => {
         onReply={() => {}}
       />
     )
-    expect(screen.queryByRole('button', { name: 'Balas pesan ini' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Aksi pesan' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('menuitem', { name: 'Balas pesan ini' })).not.toBeInTheDocument()
   })
 
   it('renders a sent carousel template with its cards, media, body, and buttons', () => {
@@ -346,7 +360,7 @@ describe('MessageBubble', () => {
       />
     )
     expect(screen.getByText('Halo, rekomendasi untuk Anda:')).toBeInTheDocument()
-    expect(screen.getByText('Template')).toBeInTheDocument()
+    expect(metaText().split(' · ')).toContain('Template')
     expect(screen.getByText('Paket Ijen 3D2N')).toBeInTheDocument()
     const img = screen.getByAltText('Paket Ijen 3D2N')
     expect(img).toHaveAttribute('src', 'https://example.com/ijen.jpg')
@@ -382,6 +396,7 @@ describe('MessageBubble', () => {
       />
     )
     expect(screen.queryByText('Template')).not.toBeInTheDocument()
+    expect(metaText().split(' · ')).not.toContain('Template')
   })
 
   it('shows the LTO countdown banner with the real per-send expiration time', () => {
@@ -455,7 +470,7 @@ describe('MessageBubble — Perbaiki', () => {
     expect(screen.queryByText('panel perbaikan msg_bot')).not.toBeInTheDocument()
     expect(screen.queryByLabelText('Perbaiki jawaban bot')).not.toBeInTheDocument()
 
-    fireEvent.click(screen.getByLabelText('Lihat alasan bot'))
+    fireEvent.click(menuItem('Lihat alasan bot'))
     fireEvent.click(screen.getByRole('button', { name: 'Perbaiki jawaban bot' }))
     expect(screen.getByText('panel perbaikan msg_bot')).toBeInTheDocument()
     expect(screen.queryByText(/sumber topik/i)).not.toBeInTheDocument()
@@ -467,13 +482,15 @@ describe('MessageBubble — Perbaiki', () => {
   it('tidak ada perbaikan bot di pesan agen maupun pelanggan', () => {
     const { unmount } = render(<MessageBubble message={{ ...botReply, sentBy: 'AGENT', botTrace: null }} />)
     expect(screen.queryByRole('button', { name: 'Perbaiki jawaban bot' })).not.toBeInTheDocument()
+    expect(queryMenuItem('Tandai jawaban salah')).not.toBeInTheDocument()
     unmount()
 
     render(<MessageBubble message={{ ...botReply, direction: 'INBOUND', sentBy: 'CUSTOMER', botTrace: null }} />)
     expect(screen.queryByRole('button', { name: 'Perbaiki jawaban bot' })).not.toBeInTheDocument()
+    expect(queryMenuItem('Tandai jawaban salah')).not.toBeInTheDocument()
   })
 
-  it('menandai balasan bot yang punya gap knowledge dengan border dan ikon warning', () => {
+  it('menandai balasan bot yang punya gap knowledge di gelembung, baris meta, dan menu aksi', () => {
     const { container } = render(
       <MessageBubble
         message={{
@@ -489,12 +506,15 @@ describe('MessageBubble — Perbaiki', () => {
       />
     )
 
-    expect(screen.getByLabelText('Ada gap knowledge pada jawaban ini')).toBeInTheDocument()
+    expect(container.querySelector('.m.gap')).toBeInTheDocument()
+    expect(metaText()).toContain('Ada gap knowledge')
+    openMenu()
+    expect(screen.getByText('Gap knowledge')).toBeInTheDocument()
     expect(screen.getByText('Ada bagian jawaban yang belum punya knowledge')).toBeInTheDocument()
-    expect(container.querySelector('.border-warning')).toBeInTheDocument()
+    expect(screen.getByRole('menuitem', { name: 'Tandai jawaban salah' })).toBeInTheDocument()
   })
 
-  it('tooltip gap menempel pada jawaban, bukan pada ikon warning', () => {
+  it('keterangan gap menempel pada gelembung jawaban', () => {
     render(
       <MessageBubble
         message={{
@@ -510,11 +530,13 @@ describe('MessageBubble — Perbaiki', () => {
       />
     )
 
-    expect(screen.getByText('Harga ATV Rp350.000.').closest('.relative')).toHaveTextContent('Ada bagian jawaban yang belum punya knowledge')
-    expect(screen.getByLabelText('Ada gap knowledge pada jawaban ini').parentElement).not.toHaveClass('relative')
+    expect(screen.getByText('Harga ATV Rp350.000.').closest('.m')).toHaveAttribute(
+      'title',
+      'Ada bagian jawaban yang belum punya knowledge'
+    )
   })
 
-  it('klik ikon warning membuka panel perbaikan untuk jawaban itu', () => {
+  it('"Tandai jawaban salah" di menu membuka panel perbaikan untuk jawaban itu', () => {
     render(
       <MessageBubble
         message={{
@@ -530,7 +552,8 @@ describe('MessageBubble — Perbaiki', () => {
       />
     )
 
-    fireEvent.click(screen.getByLabelText('Ada gap knowledge pada jawaban ini'))
+    expect(screen.queryByText('panel perbaikan msg_bot')).not.toBeInTheDocument()
+    fireEvent.click(menuItem('Tandai jawaban salah'))
 
     expect(screen.getByText('panel perbaikan msg_bot')).toBeInTheDocument()
   })
@@ -610,22 +633,22 @@ describe('MessageBubble — status kirim yang terbaca', () => {
     botTrace: null,
   }
 
-  it('menuliskan kata statusnya di samping centang, untuk ketiga keadaan berhasil', () => {
+  it('menuliskan kata statusnya di baris meta, untuk ketiga keadaan berhasil', () => {
     const { rerender } = render(<MessageBubble message={outbound} />)
-    expect(screen.getByText('Terkirim')).toBeInTheDocument()
+    expect(metaText().split(' · ')).toContain('Terkirim')
 
     rerender(<MessageBubble message={{ ...outbound, deliveryStatus: 'DELIVERED' }} />)
-    expect(screen.getByText('Diterima')).toBeInTheDocument()
+    expect(metaText().split(' · ')).toContain('Diterima')
 
     rerender(<MessageBubble message={{ ...outbound, deliveryStatus: 'READ' }} />)
-    expect(screen.getByText('Dibaca')).toBeInTheDocument()
+    expect(metaText().split(' · ')).toContain('Dibaca')
   })
 
   it('mengakui pesan yang masih mengantre alih-alih tidak menampilkan status apa pun', () => {
     // Sebelumnya PENDING merender null: gelembungnya muncul tanpa satu pun tanda, tidak bisa
     // dibedakan dari pesan yang gagal diam-diam.
     render(<MessageBubble message={{ ...outbound, deliveryStatus: 'PENDING' }} />)
-    expect(screen.getByText('Mengantre')).toBeInTheDocument()
+    expect(metaText().split(' · ')).toContain('Mengantre')
   })
 
   it('menyebut kegagalan dengan kalimat, bukan dengan nama kolom database', () => {
@@ -633,24 +656,15 @@ describe('MessageBubble — status kirim yang terbaca', () => {
 
     expect(screen.getByText('Gagal terkirim')).toBeInTheDocument()
     expect(screen.queryByText('FAILED')).not.toBeInTheDocument()
+    expect(metaText()).not.toContain('FAILED')
     expect(screen.getByLabelText('Kirim ulang')).toBeInTheDocument()
   })
 
   it('tidak menempelkan status kirim pada pesan masuk — kita tidak mengirimnya', () => {
     render(<MessageBubble message={{ ...outbound, direction: 'INBOUND', sentBy: 'CUSTOMER' }} />)
 
-    expect(screen.queryByText('Terkirim')).not.toBeInTheDocument()
+    expect(metaText().split(' · ')).not.toContain('Terkirim')
     expect(screen.queryByRole('img')).not.toBeInTheDocument()
-  })
-
-  it('menaikkan isi pesan ke ukuran baca (15px), bukan ukuran UI', () => {
-    // Isi pesan adalah satu-satunya teks di aplikasi ini yang dibaca berjam-jam setiap hari.
-    render(<MessageBubble message={outbound} />)
-
-    const bubble = screen.getByText('Halo kak').closest('.text-md')
-    expect(bubble).toBeInTheDocument()
-    // dan ukuran itu memang milik gelembungnya, bukan milik meta 11px di bawahnya
-    expect(bubble?.className).toContain('whitespace-pre-wrap')
   })
 
   it('memisahkan gelembung dengan warna dan garis, tanpa bayangan', () => {
@@ -692,7 +706,7 @@ describe('MessageBubble — label topik', () => {
     expect(screen.getByText('Pembayaran')).toBeInTheDocument()
     expect(screen.getByText('Harga & nilai')).toBeInTheDocument()
     expect(screen.queryByText('perkiraan')).not.toBeInTheDocument()
-    expect(screen.queryByLabelText('Cek topik')).not.toBeInTheDocument()
+    expect(queryMenuItem('Cek topik')).not.toBeInTheDocument()
   })
 
   it('menandai label hasil regex_fallback sebagai perkiraan', () => {
@@ -708,7 +722,7 @@ describe('MessageBubble — label topik', () => {
       />
     )
     expect(screen.queryByText('Harga & nilai')).not.toBeInTheDocument()
-    expect(screen.queryByLabelText('Cek topik')).not.toBeInTheDocument()
+    expect(queryMenuItem('Cek topik')).not.toBeInTheDocument()
   })
 
   it('menawarkan "Cek topik" untuk pesan masuk berteks tanpa label, lalu menampilkan chip hasilnya', async () => {
@@ -716,22 +730,22 @@ describe('MessageBubble — label topik', () => {
     vi.stubGlobal('fetch', fetchMock)
 
     render(<MessageBubble message={inbound} conversationId="conv_1" />)
-    fireEvent.click(screen.getByLabelText('Cek topik'))
+    fireEvent.click(menuItem('Cek topik'))
 
     await waitFor(() => expect(screen.getByText('Harga & nilai')).toBeInTheDocument())
     const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
     expect(url).toBe('/api/conversations/conv_1/messages/msg_in/topic-labels')
     expect(init.method).toBe('POST')
-    expect(screen.queryByLabelText('Cek topik')).not.toBeInTheDocument()
+    expect(queryMenuItem('Cek topik')).not.toBeInTheDocument()
   })
 
   it('berganti ke status memuat selama pemeriksaan', () => {
     vi.stubGlobal('fetch', vi.fn(() => new Promise<Response>(() => {})))
 
     render(<MessageBubble message={inbound} conversationId="conv_1" />)
-    fireEvent.click(screen.getByLabelText('Cek topik'))
+    fireEvent.click(menuItem('Cek topik'))
 
-    expect(screen.getByLabelText('Memeriksa topik...')).toBeDisabled()
+    expect(menuItem('Memeriksa topik...')).toBeDisabled()
   })
 
   it('menampilkan galat di tempat bila pemeriksaan gagal', async () => {
@@ -741,21 +755,21 @@ describe('MessageBubble — label topik', () => {
     )
 
     render(<MessageBubble message={inbound} conversationId="conv_1" />)
-    fireEvent.click(screen.getByLabelText('Cek topik'))
+    fireEvent.click(menuItem('Cek topik'))
 
     await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('Topik gagal diperiksa. Coba lagi sebentar lagi.'))
-    expect(screen.getByLabelText('Cek topik')).toBeInTheDocument()
+    expect(menuItem('Cek topik')).toBeEnabled()
   })
 
   it('tidak menawarkan "Cek topik" untuk pesan media tanpa teks, atau tanpa conversationId', () => {
     const { unmount } = render(
       <MessageBubble message={{ ...inbound, content: null, type: 'image', mediaUrl: '/api/media/msg_in' }} conversationId="conv_1" />
     )
-    expect(screen.queryByLabelText('Cek topik')).not.toBeInTheDocument()
+    expect(queryMenuItem('Cek topik')).not.toBeInTheDocument()
     unmount()
 
     render(<MessageBubble message={inbound} />)
-    expect(screen.queryByLabelText('Cek topik')).not.toBeInTheDocument()
+    expect(queryMenuItem('Cek topik')).not.toBeInTheDocument()
   })
 })
 
@@ -819,12 +833,12 @@ describe('MessageBubble — draft jawaban bot', () => {
 
   it('menampilkan tombol Generate draft hanya untuk pesan masuk berteks dengan conversationId, dan belum ada draft', () => {
     render(<MessageBubble message={inboundText} conversationId="conv_1" />)
-    expect(screen.getByRole('button', { name: 'Generate draft' })).toBeInTheDocument()
+    expect(menuItem('Generate draft')).toBeEnabled()
   })
 
   it('tidak menampilkan tombol Generate draft tanpa conversationId', () => {
     render(<MessageBubble message={inboundText} />)
-    expect(screen.queryByRole('button', { name: 'Generate draft' })).not.toBeInTheDocument()
+    expect(queryMenuItem('Generate draft')).not.toBeInTheDocument()
   })
 
   it('tidak menampilkan tombol Generate draft pada pesan keluar', () => {
@@ -834,7 +848,7 @@ describe('MessageBubble — draft jawaban bot', () => {
         conversationId="conv_1"
       />
     )
-    expect(screen.queryByRole('button', { name: 'Generate draft' })).not.toBeInTheDocument()
+    expect(queryMenuItem('Generate draft')).not.toBeInTheDocument()
   })
 
   it('tidak menampilkan tombol Generate draft pada pesan media tanpa teks', () => {
@@ -844,7 +858,7 @@ describe('MessageBubble — draft jawaban bot', () => {
         conversationId="conv_1"
       />
     )
-    expect(screen.queryByRole('button', { name: 'Generate draft' })).not.toBeInTheDocument()
+    expect(queryMenuItem('Generate draft')).not.toBeInTheDocument()
   })
 
   it('tidak menampilkan tombol Generate draft pada pesan gambar BERKAPTION (ada teks tapi type bukan text)', () => {
@@ -854,12 +868,12 @@ describe('MessageBubble — draft jawaban bot', () => {
         conversationId="conv_1"
       />
     )
-    expect(screen.queryByRole('button', { name: 'Generate draft' })).not.toBeInTheDocument()
+    expect(queryMenuItem('Generate draft')).not.toBeInTheDocument()
   })
 
   it('tidak menampilkan tombol Generate draft kalau draft sudah ada', () => {
     render(<MessageBubble message={{ ...inboundText, draft: draftView }} conversationId="conv_1" />)
-    expect(screen.queryByRole('button', { name: 'Generate draft' })).not.toBeInTheDocument()
+    expect(queryMenuItem('Generate draft')).not.toBeInTheDocument()
     expect(screen.getByText('Draft jawaban bot')).toBeInTheDocument()
   })
 
@@ -869,9 +883,10 @@ describe('MessageBubble — draft jawaban bot', () => {
     const onDraftChange = vi.fn()
 
     render(<MessageBubble message={inboundText} conversationId="conv_1" onDraftChange={onDraftChange} />)
-    fireEvent.click(screen.getByRole('button', { name: 'Generate draft' }))
+    fireEvent.click(menuItem('Generate draft'))
 
-    expect(screen.getByRole('button', { name: 'Menyusun draft...' })).toBeDisabled()
+    expect(screen.getByRole('status')).toHaveTextContent('Menyusun draft...')
+    expect(menuItem('Menyusun draft...')).toBeDisabled()
 
     await waitFor(() => expect(onDraftChange).toHaveBeenCalledWith('m_in', draftView))
     const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
@@ -888,7 +903,7 @@ describe('MessageBubble — draft jawaban bot', () => {
     const { rerender } = render(
       <MessageBubble message={inboundText} conversationId="conv_1" autoGenerateDraft onDraftChange={onDraftChange} />
     )
-    expect(screen.getByRole('button', { name: 'Menyusun draft...' })).toBeDisabled()
+    expect(menuItem('Menyusun draft...')).toBeDisabled()
     await waitFor(() => expect(onDraftChange).toHaveBeenCalledWith('m_in', draftView))
 
     // Render ulang dengan pesan yang sama (mis. tanda terima lewat SSE) dan juga dengan draft
@@ -907,7 +922,7 @@ describe('MessageBubble — draft jawaban bot', () => {
     rerender(
       <MessageBubble message={inboundText} conversationId="conv_1" autoGenerateDraft onDraftChange={onDraftChange} />
     )
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Generate draft' })).toBeEnabled())
+    await waitFor(() => expect(menuItem('Generate draft')).toBeEnabled())
     expect(fetchMock).toHaveBeenCalledTimes(1)
     const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
     expect(url).toBe('/api/conversations/conv_1/messages/m_in/draft')
@@ -925,7 +940,7 @@ describe('MessageBubble — draft jawaban bot', () => {
     unmount()
 
     render(<MessageBubble message={inboundText} conversationId="conv_1" />)
-    fireEvent.click(screen.getByRole('button', { name: 'Generate draft' }))
+    fireEvent.click(menuItem('Generate draft'))
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2))
     const [, manualInit] = fetchMock.mock.calls[1] as unknown as [string, RequestInit]
     expect(manualInit.method).toBe('POST')
@@ -960,14 +975,14 @@ describe('MessageBubble — draft jawaban bot', () => {
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
-  it('menampilkan galat generate sebagai teks text-danger di bawah tombol', async () => {
+  it('menampilkan galat generate sebagai alert di bawah gelembung', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(async () => ({ ok: false, status: 500, json: async () => ({ error: 'Gagal membuat draft' }) }) as Response)
     )
 
     render(<MessageBubble message={inboundText} conversationId="conv_1" />)
-    fireEvent.click(screen.getByRole('button', { name: 'Generate draft' }))
+    fireEvent.click(menuItem('Generate draft'))
 
     await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('Gagal membuat draft'))
   })
@@ -989,8 +1004,9 @@ describe('MessageBubble — draft jawaban bot', () => {
       />
     )
 
-    expect(screen.getByText('Dari draft bot')).toBeInTheDocument()
-    expect(screen.getByLabelText('Lihat alasan bot')).toBeInTheDocument()
+    expect(metaText().split(' · ')).toContain('Dari draft bot')
+    expect(menuItem('Lihat alasan bot')).toBeInTheDocument()
+    expect(screen.getByRole('menuitem', { name: 'Tandai jawaban salah' })).toBeInTheDocument()
   })
 
   it('pesan agen biasa (fromDraft tidak diset) tidak menampilkan badge "Dari draft bot" atau tombol alasan bot', () => {
@@ -1009,8 +1025,8 @@ describe('MessageBubble — draft jawaban bot', () => {
       />
     )
 
-    expect(screen.queryByText('Dari draft bot')).not.toBeInTheDocument()
-    expect(screen.queryByLabelText('Lihat alasan bot')).not.toBeInTheDocument()
+    expect(metaText()).not.toContain('Dari draft bot')
+    expect(queryMenuItem('Lihat alasan bot')).not.toBeInTheDocument()
   })
 
   it('tombol salin balasan bot tetap hanya untuk BOT, bukan untuk pesan fromDraft dari AGENT', () => {
@@ -1029,6 +1045,6 @@ describe('MessageBubble — draft jawaban bot', () => {
         }}
       />
     )
-    expect(screen.queryByLabelText('Salin balasan bot')).not.toBeInTheDocument()
+    expect(queryMenuItem('Salin balasan bot')).not.toBeInTheDocument()
   })
 })

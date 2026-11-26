@@ -871,7 +871,6 @@
   --radius-sm:6px;--radius:8px;--radius-md:8px;--radius-lg:10px;--radius-xl:12px;--radius-2xl:14px;--radius-3xl:16px;--radius-4xl:18px;
   color:var(--ink);font-family:var(--f)
 }
-.nwa .inbox-real{height:100%;min-height:0;background:var(--bg)}
 /* Aturan umum /new di atas tidak berlapis (unlayered) sehingga mengalahkan kelas Tailwind (berlapis). Di dalam komponen
    lama, kembalikan ke gaya komponen itu sendiri. Daftar ini hasil pemeriksaan bentrokan nama kelas/elemen. */
 .nwa .legacy-skin :is(button,input,select,textarea){font:revert-layer;color:revert-layer}
@@ -881,12 +880,36 @@
 .nwa .legacy-skin :is(th,td){font-weight:revert-layer;color:revert-layer;text-align:revert-layer;font-size:revert-layer;padding:revert-layer;background:revert-layer;border-bottom:revert-layer;white-space:revert-layer;vertical-align:revert-layer}
 .nwa .legacy-skin svg{display:revert-layer}
 @media (max-width:860px){
-  /* daftar chat tidak tertutup bar tab bawah; chat terbuka = bar disembunyikan Shell (m-inchat) */
-  .nwa.v-inbox:not(.m-inchat) .inbox-real{padding-bottom:calc(56px + env(safe-area-inset-bottom,0px))}
-  .nwa.v-inbox.m-inchat .inbox-real{padding-bottom:env(safe-area-inset-bottom,0px)}
   .nwa .legacy-skin :is(input,textarea,select){font-size:16px}
 }
 .nwa .legacy-page .legacy-back{margin:4px 0 8px}
 .nwa .legacy-page .legacy-skin{background:var(--surface);border:1px solid var(--line);border-radius:14px;overflow:hidden}
 .nwa .legacy-page.legacy-full .legacy-skin{min-height:calc(100dvh - 120px);display:flex;flex-direction:column}
 .nwa .legacy-page.legacy-full .legacy-skin>*{flex:1;min-height:0}
+
+/* Inbox: komponen Inbox (src/components/inbox) digambar dengan markup artifact (.inbox/.row/.chead/.m/.comp/.tabs/.box
+   di atas). Tambahan di bawah hanya untuk hal yang ada di Inbox sungguhan tetapi tidak di contoh artifact. */
+.nwa .inbox-frame{height:100%;min-height:0}
+.nwa .mwrap{display:flex;flex-direction:column;align-items:flex-start;gap:4px;min-width:0}
+.nwa .mwrap.out{align-items:flex-end}
+.nwa .m{white-space:pre-wrap;overflow-wrap:anywhere}
+.nwa .m.s.info{background:var(--accent-soft);color:var(--accent);font-weight:600}
+.nwa button.m.s{cursor:pointer;font:inherit;font-size:12px}
+.nwa .m.gap{box-shadow:0 0 0 2px var(--warn)}
+.nwa .m.g .mchev:hover,.nwa .m.g .mchev[aria-expanded="true"]{background:var(--neutral-bg)}
+.nwa .m .mq{display:block;border-left:3px solid currentColor;background:color-mix(in srgb,currentColor 10%,transparent);border-radius:6px;padding:3px 8px;margin:0 0 6px;font-size:12px;white-space:normal}
+.nwa .m .mq b{display:block;font-weight:600}
+.nwa .m .mq span{display:block;opacity:.8;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.nwa .m .mlegacy{white-space:normal;margin:2px 0 6px;color:var(--ink)}
+.nwa .mwide{width:min(100%,560px);white-space:normal}
+.nwa .mnote{display:flex;gap:6px;align-items:center;flex-wrap:wrap;font-size:12px;color:var(--muted);margin:0}
+.nwa .mtopic{display:flex;gap:4px;flex-wrap:wrap;align-items:center;font-size:11px}
+.nwa .mtopic .pill{font-size:11px;padding:1px 7px}
+.nwa .mp-act.mp-neu{color:var(--ink)}
+.nwa .mp-act[disabled]{opacity:.5;cursor:default}
+.nwa .comp-legacy{display:flex;flex-direction:column;gap:8px;max-height:45vh;overflow:auto}
+.nwa .pan .box:empty{display:none}
+.nwa .psec{margin:0 0 5px;font-size:11.5px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.07em}
+@media (max-width:860px){
+  .nwa .comp>p,.nwa .comp>.comp-legacy{grid-column:1/-1;margin-bottom:8px}
+}

@@ -6,7 +6,9 @@
 import { useRouter } from 'next/navigation'
 import { newPathFor } from '@/lib/new/legacy-routes'
 
-export function LegacyFrame({ className, children }: { className?: string; children: React.ReactNode }) {
+// `skin={false}`: hanya penjaga tautan, tanpa kulit .legacy-skin -- dipakai Inbox, yang markupnya sudah desain baru
+// dan hanya membungkus bagian lamanya sendiri dengan .legacy-skin.
+export function LegacyFrame({ className, skin = true, children }: { className?: string; skin?: boolean; children: React.ReactNode }) {
   const router = useRouter()
   const keepInNew = (e: React.MouseEvent) => {
     if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return
@@ -20,5 +22,6 @@ export function LegacyFrame({ className, children }: { className?: string; child
     e.stopPropagation()
     router.push(to + url.search + url.hash)
   }
-  return <div className={'legacy-skin' + (className ? ' ' + className : '')} onClickCapture={keepInNew}>{children}</div>
+  const cls = [skin ? 'legacy-skin' : '', className ?? ''].filter(Boolean).join(' ')
+  return <div className={cls || undefined} onClickCapture={keepInNew}>{children}</div>
 }

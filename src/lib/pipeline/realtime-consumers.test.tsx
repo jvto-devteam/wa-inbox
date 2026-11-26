@@ -135,8 +135,8 @@ describe('konsumen SSE lama terhadap event pipeline.step', () => {
     })
 
     expect(screen.getByText('Halo dari pelanggan')).toBeInTheDocument()
-    // `handoff.alert` mematikan tombol "Ambil Alih dari Bot"; sebuah event tak dikenal tidak boleh.
-    expect(screen.getByText('Ambil Alih dari Bot')).toBeInTheDocument()
+    // `handoff.alert` mematikan sakelar bot; sebuah event tak dikenal tidak boleh.
+    expect(screen.getByRole('checkbox', { name: 'Bot aktif untuk chat ini' })).toBeChecked()
   })
 
   it('NotificationListener mengabaikannya: tidak ada bunyi dan tidak ada notifikasi desktop', () => {
