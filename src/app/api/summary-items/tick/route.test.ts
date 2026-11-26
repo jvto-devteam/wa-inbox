@@ -24,6 +24,7 @@ vi.mock('@/lib/outbound/worker', () => ({ processDueOutboundJobs: vi.fn() }))
 vi.mock('@/lib/booking-actions/execute', () => ({ releaseStaleExecuting: vi.fn() }))
 vi.mock('@/lib/booking-actions/data-requests', () => ({ createDataRequestDrafts: vi.fn() }))
 vi.mock('@/lib/booking-actions/push-sweep', () => ({ pushUnnotifiedChanges: vi.fn().mockResolvedValue(0) }))
+vi.mock('@/lib/push/reminders', () => ({ pushDueReminders: vi.fn().mockResolvedValue({ sent: 2 }) }))
 vi.mock('@/lib/agent-schedule/sync', () => ({ syncAgentSchedule: vi.fn().mockResolvedValue({ status: 'ok', upserted: 0 }) }))
 
 const SECRET = 't'.repeat(40)
@@ -55,11 +56,14 @@ describe('POST /api/summary-items/tick', () => {
   it('scheduler dengan secret: kebersihan, reconcile, lalu item live, dengan waktu yang sama', async () => {
     const res = await POST(req(SECRET))
     expect(res.status).toBe(200)
-    expect(await res.json()).toEqual({ reconciled: { closed: 2, converted: 1, reopened: 0 }, live: { created: 3, updated: 2, reopened: 1, skipped: 4 } })
+    expect(await res.json()).toEqual({ reconciled: { closed: 2, converted: 1, reopened: 0 }, live: { created: 3, updated: 2, reopened: 1, skipped: 4 }, reminders: { sent: 2 } })
     const sequence = [pruneBotAuditLogs, advancePipelineStagesFromBooking, refreshStaleBookingData, reconcileSummaryItems, createLiveReplyItems].map(order)
     expect(sequence.every((n) => typeof n === 'number')).toBe(true)
     expect([...sequence].sort((a, b) => a - b)).toEqual(sequence)
     expect(vi.mocked(createLiveReplyItems).mock.calls[0][0]).toBe(vi.mocked(reconcileSummaryItems).mock.calls[0][0])
+    // Reminder jatuh tempo dikabarkan lewat Web Push di setiap tick, dengan waktu yang sama
+    const { pushDueReminders } = await import('@/lib/push/reminders')
+    expect(vi.mocked(pushDueReminders).mock.calls[0][0]).toBe(vi.mocked(reconcileSummaryItems).mock.calls[0][0])
   })
 
   it('menyalin jadwal reminder agent dari backoffice; gagalnya tidak menggagalkan tick', async () => {

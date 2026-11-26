@@ -713,6 +713,9 @@ model Reminder {
   note      String
   done      Boolean  @default(false)
   createdAt DateTime @default(now())
+  /// Jatuh tempo yang sudah dikabarkan lewat Web Push (owner 2026-11-26). Push dikirim tick bila dueAt <= sekarang dan
+  /// pushedFor != dueAt, jadi reminder yang ditunda (dueAt baru) dikabarkan lagi tanpa mengubah jalur tulis reminder.
+  pushedFor DateTime?
 }
 
 enum TemplateType {

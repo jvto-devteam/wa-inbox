@@ -10,6 +10,7 @@ import {
 import { createLiveReplyItems, reconcileSummaryItems } from '@/lib/summary-items/sync'
 import { releaseStaleExecuting } from '@/lib/booking-actions/execute'
 import { pushUnnotifiedChanges } from '@/lib/booking-actions/push-sweep'
+import { pushDueReminders } from '@/lib/push/reminders'
 import { createDataRequestDrafts } from '@/lib/booking-actions/data-requests'
 import { syncAgentSchedule } from '@/lib/agent-schedule/sync'
 import { closeExcludedItems } from '@/lib/summary-items/exclusion'
@@ -29,6 +30,7 @@ import { closeExcludedItems } from '@/lib/summary-items/exclusion'
  *    anggaran `REFRESH_BUDGET_MS` (60 s): yang kedua mendapat sisanya.
  * 1b. `releaseStaleExecuting` (booking-actions/execute.ts): klaim "Setujui" yang macet > 2 menit; lalu
  *     `pushUnnotifiedChanges` (booking-actions/push-sweep.ts): kartu CHANGE OPEN yang push-nya hilang.
+ * 4. `pushDueReminders` (push/reminders.ts): Web Push untuk reminder yang jatuh tempo (owner 2026-11-26).
  * 2. `reconcileSummaryItems` (tutup yang sudah dibalas, pengingat jatuh tempo kembali OPEN,
  *    FOLLOW_UP/PROMISE jadi REPLY).
  * 2b. `createDataRequestDrafts` (Task 12): draf H-7 harian permintaan data ke tamu (08:00-19:59 WIB saja),
@@ -126,7 +128,9 @@ async function tick(): Promise<NextResponse> {
       console.error('POST /api/summary-items/tick: draf permintaan data gagal', error instanceof Error ? error.name : 'unknown')
     })
     const live = await createLiveReplyItems(now)
-    return NextResponse.json({ reconciled, live })
+    // Reminder yang jatuh tempo dikabarkan lewat Web Push (sekali per jatuh tempo). Tidak pernah melempar.
+    const reminders = await pushDueReminders(now)
+    return NextResponse.json({ reconciled, live, reminders })
   } catch (error) {
     console.error('POST /api/summary-items/tick gagal', error instanceof Error ? error.message : 'unknown')
     return NextResponse.json({ error: 'Gagal menjalankan tick antrean' }, { status: 500 })
