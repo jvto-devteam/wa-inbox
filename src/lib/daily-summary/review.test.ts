@@ -466,6 +466,11 @@ describe('tanggalTripSelesai', () => {
 })
 
 describe('perluBalas (pesan terakhir pelanggan menunggu balasan)', () => {
+  it('persetujuan atas usulan admin = usulan diterima, tidak perlu dibalas (owner 2026-11-26, kasus Winnie)', () => {
+    expect(REVIEW_SYSTEM_PROMPT).toContain('berarti usulan tim DITERIMA: "perluBalas" false')
+    expect(REVIEW_SYSTEM_PROMPT).toContain('dianggap selesai dengan keputusan tim')
+  })
+
   it('prompt meminta perluBalas terpisah dari status', () => {
     expect(REVIEW_SYSTEM_PROMPT).toContain('"perluBalas":true|false')
     expect(REVIEW_SYSTEM_PROMPT).toContain('khusus pesan TERAKHIR pelanggan')

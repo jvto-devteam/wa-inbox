@@ -6,11 +6,14 @@ import type { PrismaClient } from '@prisma/client'
 vi.mock('@/lib/db', () => ({ prisma: mockDeep<PrismaClient>() }))
 vi.mock('@/lib/auth/session', () => ({ verifySessionToken: vi.fn() }))
 
-vi.mock('@/lib/summary-items/sync', () => ({ reconcileSummaryItems: vi.fn().mockResolvedValue(undefined) }))
+vi.mock('@/lib/summary-items/sync', () => ({
+  reconcileSummaryItems: vi.fn().mockResolvedValue(undefined),
+  createLiveReplyItems: vi.fn().mockResolvedValue({ created: 0, updated: 0, reopened: 0, skipped: 0 }),
+}))
 
 import { prisma } from '@/lib/db'
 import { verifySessionToken } from '@/lib/auth/session'
-import { reconcileSummaryItems } from '@/lib/summary-items/sync'
+import { createLiveReplyItems, reconcileSummaryItems } from '@/lib/summary-items/sync'
 import { GET } from './route'
 
 const mockPrisma = prisma as unknown as DeepMockProxy<PrismaClient>
@@ -59,6 +62,9 @@ describe('GET /api/summary-items', () => {
     expect(res.status).toBe(200)
     const body = await res.json()
     expect(reconcileSummaryItems).toHaveBeenCalledTimes(1)
+    // Antrean dibuka = pesan yang belum dibalas langsung jadi Balas, sesudah reconcile (owner 2026-11-26)
+    expect(createLiveReplyItems).toHaveBeenCalledTimes(1)
+    expect(vi.mocked(reconcileSummaryItems).mock.invocationCallOrder[0]).toBeLessThan(vi.mocked(createLiveReplyItems).mock.invocationCallOrder[0])
     expect(body.open.map((i: { id: string }) => i.id)).toEqual(['r_old', 'r_new', 'f_old', 'p_old'])
     expect(body.scheduled.map((i: { id: string }) => i.id)).toEqual(['s_soon', 's_late'])
     expect(body.openGapTotal).toBe(3)

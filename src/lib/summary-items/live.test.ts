@@ -166,10 +166,18 @@ describe('createLiveReplyItems: pemilihan kandidat', () => {
     expect(created()[0]).toMatchObject({ anchorMessageId: 'm1', anchorAt: wib('19', '09:00'), coveredUntil: wib('19', '10:20'), snippet: 'kak' })
   })
 
-  it('balasan kita di tengah memotong rangkaian: pesan sesudahnya yang baru 10 menit belum jadi item', async () => {
+  it('balasan kita di tengah memotong rangkaian; pesan sesudahnya langsung jadi item tanpa jeda (owner 2026-11-26)', async () => {
     given([conv([inbound('m1', ago(3 * HOUR)), outbound('o1', ago(2 * HOUR)), inbound('m2', ago(10 * MIN))])])
-    expect(await createLiveReplyItems(NOW)).toEqual(none)
-    expect(mockPrisma.summaryItem.create).not.toHaveBeenCalled()
+    expect(await createLiveReplyItems(NOW)).toEqual({ ...none, created: 1 })
+    expect(created()[0]).toMatchObject({ anchorMessageId: 'm2', anchorAt: ago(10 * MIN) })
+  })
+
+  it('single-flight: tick dan Antrean dibuka bersamaan berbagi satu putaran, tidak membuat item dua kali', async () => {
+    given([conv([inbound('m1', ago(2 * HOUR))])])
+    const [a, b] = await Promise.all([createLiveReplyItems(NOW), createLiveReplyItems(NOW)])
+    expect(a).toEqual({ ...none, created: 1 })
+    expect(b).toBe(a)
+    expect(mockPrisma.summaryItem.create).toHaveBeenCalledTimes(1)
   })
 
   it('batas 14 hari: tepat 14 hari masih masuk, lebih tua tidak', async () => {

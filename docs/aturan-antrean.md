@@ -33,7 +33,7 @@ AQ di bawah; yang gagal ditutup otomatis setiap 5 menit.
 | Antrean | Layak bila | Dijaga oleh |
 |---|---|---|
 | Semua | Chat WhatsApp, nomor luar negeri, bukan percakapan uji, kontak tamu atau mitra | AQ-01, AQ-02, AQ-03, AQ-04 |
-| **Balas** | Pesan berisi terakhir datang dari tamu, dan menurut AI pesan itu menunggu jawaban tim. Calon tamu tanpa booking: tanggal mulai trip belum lewat (atau belum diketahui). | AQ-10, AQ-11, AQ-12, AQ-24 |
+| **Balas** | Pesan berisi terakhir datang dari tamu, dan menurut AI pesan itu menunggu jawaban tim. Calon tamu tanpa booking: tanggal mulai trip belum lewat (atau belum diketahui). | AQ-10, AQ-11, AQ-12, AQ-14, AQ-24 |
 | **Follow Up** | Calon tamu (bukan mitra). Pesan terakhir dari tim, berisi penawaran atau pertanyaan. Tamu diam. Tim tidak sedang berutang. Percakapan belum selesai. Tamu tidak memilih operator lain atau open trip. Tanggal mulai trip belum lewat (atau belum diketahui). | AQ-20 s.d. AQ-25 |
 | **Janji Admin** | Ada janji tertulis dari ADMIN yang belum ditepati, atau permintaan tamu yang belum dijawab tuntas. Janji itu tidak bersyarat pada langkah tamu. Rentetan balasan admin sesudahnya tidak bertanya balik ke tamu. Tanggal mulai trip belum lewat (atau belum diketahui). Percakapan belum selesai. | AQ-21 s.d. AQ-24, AQ-30 s.d. AQ-34 |
 
@@ -73,9 +73,10 @@ status percakapan, jenis kontak, janji tim, alasan belum booking, `perluBalas`, 
 | ID | Aturan | Kode alasan |
 |---|---|---|
 | AQ-10 | Pesan tanpa isi tidak masuk: reaction, stiker, pesan yang diedit, pesan yang tidak didukung, pesan sistem, lampiran Instagram (story_mention, ig_post). Pesan yang dihapus tamu (revoke) membatalkan pesan berisi terakhir sebelumnya. Foto, dokumen, voice note, video, lokasi, dan kontak tetap dihitung isi. | `HANYA_REAKSI` (`contentlessRun`, `NON_CONTENT_TYPES`) |
-| AQ-11 | Bila ringkasan AI yang dibuat SESUDAH pesan terakhir tamu menilai pesan itu tidak perlu dibalas ("ok", "correct", "great", "thanks", emoji), chat tidak masuk. | `TIDAK_PERLU_BALAS` (`reviewSaysNoReply`, `perluBalas`) |
+| AQ-11 | Bila ringkasan AI yang dibuat SESUDAH pesan terakhir tamu menilai pesan itu tidak perlu dibalas ("ok", "correct", "great", "thanks", emoji), chat tidak masuk. Jawaban singkat yang membenarkan atau menyetujui pertanyaan/usulan admin (admin mengusulkan double bed, tamu menjawab "correct") berarti usulan admin diterima: tidak perlu dibalas (owner 2026-11-26, kasus Winnie). | `TIDAK_PERLU_BALAS` (`reviewSaysNoReply`, `perluBalas`) |
 | AQ-12 | CADANGAN, hanya selama AI belum menilai pesan itu (tick 5 menit tidak memanggil AI): saringan kata untuk penutup murni ("ok", "thanks", emoji). Begitu ringkasan AI ada, AQ-11 yang berlaku. Ini satu-satunya aturan berbasis kata untuk makna pesan. | `isNoiseMessage` |
 | AQ-13 | Pesan tanpa isi (AQ-10) tidak memindahkan Follow Up atau Janji Admin menjadi Balas. | `CONTENT_MESSAGE_WHERE` |
+| AQ-14 | Tanpa jeda: pesan tamu yang belum dibalas langsung masuk Balas, tidak menunggu 1 jam dan tidak menunggu 00.00 (owner 2026-11-26). Dicek tiap 5 menit dan setiap kali Antrean dibuka; begitu dibalas, item tertutup sendiri. | `UNREPLIED_MIN_MS` = 0 |
 
 ## Follow Up
 

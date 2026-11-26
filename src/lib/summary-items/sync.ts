@@ -791,7 +791,7 @@ type LiveConversation = Awaited<ReturnType<typeof loadLiveConversations>>[number
 
 /**
  * Antrean live: rangkaian pesan pelanggan sesudah balasan terakhir kita yang pesan PERTAMA-nya
- * sudah ≥ UNREPLIED_MIN_MS jadi item REPLY tanpa menunggu job 00:00. Murni DB, tanpa LLM;
+ * sudah ≥ UNREPLIED_MIN_MS (kini 0: tanpa jeda) jadi item REPLY tanpa menunggu job 00:00. Murni DB, tanpa LLM;
  * dipanggil tick `POST /api/summary-items/tick` sesudah `reconcileSummaryItems`. Tidak pernah
  * melempar.
  *
@@ -812,7 +812,19 @@ type LiveConversation = Awaited<ReturnType<typeof loadLiveConversations>>[number
  * - `openedOn`/`lastSeenOn` = hari WIB pesan terbaru, sehingga sync malam untuk hari itu tetap
  *   menyentuh item yang lahir sesudah 00:00 untuk pesan sebelum 00:00.
  */
-export async function createLiveReplyItems(now: Date = new Date()): Promise<LiveResult> {
+// Single-flight per proses: tick 5 menit dan GET /api/summary-items (Antrean dibuka) sama-sama memanggil ini; dua
+// putaran bersamaan berebut membuat baris yang sama (P2002). Pemanggil kedua menunggu putaran yang sedang jalan.
+let liveInFlight: Promise<LiveResult> | null = null
+
+export function createLiveReplyItems(now: Date = new Date()): Promise<LiveResult> {
+  if (liveInFlight) return liveInFlight
+  liveInFlight = runLiveReplyItems(now).finally(() => {
+    liveInFlight = null
+  })
+  return liveInFlight
+}
+
+async function runLiveReplyItems(now: Date): Promise<LiveResult> {
   const result: LiveResult = { created: 0, updated: 0, reopened: 0, skipped: 0 }
   try {
     const settings = await prisma.settings.findUnique({ where: { id: 1 }, select: { skipBotForIndonesianNumbers: true } })
