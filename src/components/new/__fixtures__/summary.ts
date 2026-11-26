@@ -43,6 +43,8 @@ export function sampleSummary(): DailySummaryResponse {
     // c1: review "selesai", tetapi janji masih OPEN di antrean live → perlu tindakan
     items: { c1: { id: 'i1', kind: 'PROMISE', state: 'OPEN', dueAt: null, closedReason: null, note: null, closedAt: null } },
     hidden: {},
+    // Sengaja beda dari jumlah janji belum ditepati di review (1): angka ini datang dari antrean live (AR-04).
+    openPromises: 3,
   }
 }
 

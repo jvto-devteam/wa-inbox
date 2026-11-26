@@ -40,8 +40,8 @@ export interface SummaryDay {
   finishedAt: string | null
   error: string | null
   points: SummaryPoint[]
-  /** Janji tim yang menurut review hari itu belum ditepati. */
-  unkept: number
+  /** AR-04: janji admin belum ditepati SEKARANG = isi tab Janji Admin di Antrean (item PROMISE OPEN). */
+  openPromises: number
   chats: SummaryChat[]
 }
 
@@ -70,7 +70,6 @@ export function summaryDay(res: DailySummaryResponse): SummaryDay | null {
   const activeIds = new Set(p?.conversations.map((c) => c.conversationId) ?? [])
   const points: SummaryPoint[] = []
   const chats: SummaryChat[] = []
-  let unkept = 0
   for (const [conversationId, { name, review }] of seen) {
     for (const raw of review.poinPenting) {
       const pt = normalizePoint(raw)
@@ -79,7 +78,6 @@ export function summaryDay(res: DailySummaryResponse): SummaryDay | null {
       points.push({ kind: pt.jenis, name, text: pt.teks, conversationId, messageId: pt.messageId })
     }
     const promises = unkeptPromises(review)
-    unkept += promises.length
     const item = res.items[conversationId] ?? null
     const open = item ? item.state === 'OPEN' || item.state === 'SCHEDULED' : review.status === 'perlu_tindakan'
     const lines = [
@@ -100,7 +98,7 @@ export function summaryDay(res: DailySummaryResponse): SummaryDay | null {
     finishedAt: s.finishedAt,
     error: s.error,
     points,
-    unkept,
+    openPromises: res.openPromises,
     chats,
   }
 }
