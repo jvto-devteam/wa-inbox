@@ -265,7 +265,7 @@ export function initialState(): State {
     gap: ['Apakah Ijen buka saat hujan?', 'Boleh membawa drone di Bromo?', 'Ada diskon rombongan 12 orang?'],
     bs: { auto: true, skip: true, hand: true, fb: 'Maaf, kami cek dulu dan segera kembali ke Anda.', hr: 'Kami teruskan ke tim kami, mohon tunggu sebentar.' },
     icv: 1, ifl: 'Semua', itab: 'Booking',
-    atab: 'Balas', sjag: 'Semua', sjday: 'Semua',
+    atab: 'Balas', aord: 'baru', sjag: 'Semua', sjday: 'Semua',
     rday: 'Hari ini', rkind: 'Semua', rregen: 0, rtab: 'poin',
     aday: 'Hari ini', aag: 'Semua', ast: 'Semua', aq: '',
     kq: '', kl: '',

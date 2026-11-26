@@ -157,6 +157,8 @@ export interface State {
   ifl: string
   itab: 'Booking' | 'Ringkasan' | 'Kontak'
   atab: AtKey | 'Follow-up agent'
+  /** Urutan daftar Antrean: terbaru dulu (bawaan) atau terlama dulu. */
+  aord: 'baru' | 'lama'
   sjag: string
   sjday: string
   rday: string

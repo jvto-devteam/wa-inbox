@@ -89,6 +89,19 @@ describe('tata letak berbeda per halaman /new', () => {
     expect(within(document.getElementById('a-list')!).queryByText('Tunda')).toBeNull()
   })
 
+  it('Antrean: daftar bisa diurutkan Terbaru (bawaan) atau Terlama; Paling mendesak tetap yang terlama', async () => {
+    stubQueueFetch()
+    show(<AntreanView />)
+    const names = () => Array.from(document.querySelectorAll('#a-list .item b')).map((b) => b.textContent)
+    // Balas: Ben (1 jam) lebih baru dari Sarah (3 jam)
+    await waitFor(() => expect(names()).toEqual(['Ben C.', 'Sarah M.']))
+    const order = screen.getByRole('group', { name: 'Urutan antrean' })
+    expect(within(order).getByText('Terbaru').getAttribute('aria-pressed')).toBe('true')
+    fireEvent.click(within(order).getByText('Terlama'))
+    expect(names()).toEqual(['Sarah M.', 'Ben C.'])
+    expect(document.querySelector('.pg-urgent .n')?.textContent).toContain('Sarah M.')
+  })
+
   it('Ringkasan (data asli): sorotan komplain di atas, sebaran jenis menyaring poin, tombol Per percakapan', async () => {
     const fn = stubSummaryFetch()
     show(<RingkasanView />)

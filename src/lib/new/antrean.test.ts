@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { sampleQueue } from '@/components/new/__fixtures__/antrean'
-import { ago, buildQueue } from './antrean'
+import { ago, buildQueue, sortQueue } from './antrean'
 
 const now = new Date('2026-11-25T06:00:00Z')
 
@@ -27,5 +27,16 @@ describe('antrean /new', () => {
 
   it('tanpa data = semua tab kosong', () => {
     expect(Object.values(buildQueue(undefined, undefined, now)).every((v) => v.length === 0)).toBe(true)
+  })
+})
+
+describe('sortQueue', () => {
+  it('terbaru dulu atau terlama dulu menurut waktu tunggu (anchorAt) / jatuh tempo reminder', () => {
+    const { items, reminders } = sampleQueue()
+    const Q = buildQueue(items, reminders, new Date())
+    expect(sortQueue(Q.Balas, 'baru').map((x) => x.name)).toEqual(['Ben C.', 'Sarah M.'])
+    expect(sortQueue(Q.Balas, 'lama').map((x) => x.name)).toEqual(['Sarah M.', 'Ben C.'])
+    // tidak mengubah daftar asli
+    expect(Q.Balas.map((x) => x.name)).toEqual(['Sarah M.', 'Ben C.'])
   })
 })
