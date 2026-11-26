@@ -1,21 +1,26 @@
 'use client'
 
-// Status bersama pratinjau /new. Disimpan di layout /new sehingga bertahan saat pindah
-// halaman (navigasi sisi klien); hilang saat reload, sama seperti artifact-nya.
+// Status bersama aplikasi. Disimpan di layout grup (app) sehingga bertahan saat pindah halaman (navigasi sisi klien);
+// hilang saat reload.
 import { createContext, useContext } from 'react'
 import type { State, ViewKey } from '@/lib/new/types'
 
 export const ROUTES: Record<ViewKey, string> = {
-  hub: '/new/dashboard',
-  inbox: '/new/inbox',
-  antrean: '/new/antrean',
-  ringkasan: '/new/ringkasan',
-  agent: '/new/agent',
-  kontak: '/new/kontak',
-  template: '/new/template',
-  laporan: '/new/laporan',
-  bot: '/new/bot',
+  hub: '/dashboard',
+  inbox: '/inbox',
+  antrean: '/antrean',
+  ringkasan: '/ringkasan',
+  agent: '/agent',
+  kontak: '/kontak',
+  template: '/template',
+  laporan: '/laporan',
+  bot: '/bot',
+  kantor: '/ai-office',
+  pengaturan: '/settings',
 }
+
+/** Halaman lama yang tetap ada (tanpa padanan baru) dan menu yang menaunginya. */
+const ALIASES: [string, ViewKey][] = [['/bot-control', 'bot'], ['/templates', 'template']]
 
 export const TITLES: Record<ViewKey, string> = {
   hub: 'Dashboard',
@@ -27,10 +32,13 @@ export const TITLES: Record<ViewKey, string> = {
   laporan: 'Laporan',
   bot: 'Bot',
   agent: 'Riwayat Agent',
+  kantor: 'Kantor AI',
+  pengaturan: 'Pengaturan',
 }
 
 export function viewFromPath(pathname: string): ViewKey {
-  const hit = (Object.keys(ROUTES) as ViewKey[]).find((k) => pathname === ROUTES[k] || pathname.startsWith(ROUTES[k] + '/'))
+  const under = (base: string) => pathname === base || pathname.startsWith(base + '/')
+  const hit = (Object.keys(ROUTES) as ViewKey[]).find((k) => under(ROUTES[k])) ?? ALIASES.find(([base]) => under(base))?.[1]
   return hit || 'hub'
 }
 

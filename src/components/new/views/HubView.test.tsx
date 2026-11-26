@@ -13,7 +13,7 @@ import { HubView } from './HubView'
 import { RingkasanView } from './RingkasanView'
 
 const push = vi.fn()
-vi.mock('next/navigation', () => ({ usePathname: () => '/new/dashboard', useRouter: () => ({ push }) }))
+vi.mock('next/navigation', () => ({ usePathname: () => '/dashboard', useRouter: () => ({ push }) }))
 
 const act = (id: string, agent: Activity['agent'], status: Activity['status']): Activity => ({
   id, at: new Date().toISOString(), agent, status, title: 'Tugas ' + id, input: '', output: '', conversationId: null, contact: null,
@@ -76,7 +76,7 @@ describe('Dashboard: data asli', () => {
     expect(hub.querySelector('.db-tl')?.textContent).toContain('Info trip')
     // poin WhatsApp terbaru membuka chat di /new/inbox, menyorot pesannya
     const lukas = within(hub).getByText('Sopir telat 1 jam di hotel').closest('a')!
-    expect(lukas.getAttribute('href')).toBe('/new/inbox?conversation=c2&message=m7')
+    expect(lukas.getAttribute('href')).toBe('/inbox?conversation=c2&message=m7')
     expect(hub.textContent).toContain('Yang terjadi di WhatsApp · 24 Nov')
   })
 })
@@ -87,7 +87,7 @@ describe('Dashboard: setiap item punya rujukan', () => {
     const buttons = Array.from(hub.querySelectorAll('button')).filter((b) => !b.closest('.db-chips'))
     expect(buttons.length).toBeGreaterThan(20)
     // poin WhatsApp kini tautan ke /new/inbox (bukan tombol)
-    for (const a of Array.from(hub.querySelectorAll(".db-li"))) expect(a.getAttribute("href")).toMatch(/^\/new\/inbox\?conversation=/)
+    for (const a of Array.from(hub.querySelectorAll(".db-li"))) expect(a.getAttribute("href")).toMatch(/^\/inbox\?conversation=/)
     for (const b of buttons) {
       push.mockClear()
       fireEvent.click(b)
@@ -99,7 +99,7 @@ describe('Dashboard: setiap item punya rujukan', () => {
     const { hub } = await renderWith(<AgentView />)
     fireEvent.change(screen.getByLabelText('Saring status'), { target: { value: 'ok' } })
     fireEvent.click(within(hub).getByText('Agent gagal').closest('button')!)
-    expect(push).toHaveBeenLastCalledWith('/new/agent')
+    expect(push).toHaveBeenLastCalledWith('/agent')
     expect((screen.getByLabelText('Saring status') as HTMLSelectElement).value).toBe('gagal')
     expect((document.getElementById('g-day') as HTMLSelectElement).value).toBe('Hari ini')
   })
@@ -115,21 +115,21 @@ describe('Dashboard: setiap item punya rujukan', () => {
   it('Komplain → Ringkasan terbaru, jenis komplain', async () => {
     const { hub } = await renderWith(<RingkasanView />)
     fireEvent.click(within(hub).getByText('Komplain').closest('button')!)
-    expect(push).toHaveBeenLastCalledWith('/new/ringkasan')
+    expect(push).toHaveBeenLastCalledWith('/ringkasan')
     await waitFor(() => expect(document.querySelector('#r-chips button.on')?.textContent).toMatch(/^komplain \d/))
   })
 
   it('item jadwal → Antrean tab Jadwal agent', async () => {
     const { hub } = await renderWith(<AntreanView />)
     fireEvent.click(hub.querySelector('.db-ev')!)
-    expect(push).toHaveBeenLastCalledWith('/new/antrean')
+    expect(push).toHaveBeenLastCalledWith('/antrean')
     expect(document.querySelector('#a-tabs button.on')?.textContent).toMatch(/^Jadwal agent/)
   })
 
   it('status agent di hero → Riwayat Agent hari ini', async () => {
     const { hub } = await renderWith(<AgentView />)
     fireEvent.click(within(hub).getByText(/agent bekerja hari ini/))
-    expect(push).toHaveBeenLastCalledWith('/new/agent')
+    expect(push).toHaveBeenLastCalledWith('/agent')
     expect((document.getElementById('g-day') as HTMLSelectElement).value).toBe('Hari ini')
   })
 
@@ -137,8 +137,8 @@ describe('Dashboard: setiap item punya rujukan', () => {
     const { hub } = await renderWith()
     await waitFor(() => expect(hub.querySelector('.db-hb')).not.toBeNull())
     fireEvent.click(hub.querySelector('.db-hb')!)
-    expect(push).toHaveBeenLastCalledWith('/new/laporan')
+    expect(push).toHaveBeenLastCalledWith('/laporan')
     fireEvent.click(within(hub).getByText('Inquiry minggu ini').closest('button')!)
-    expect(push).toHaveBeenLastCalledWith('/new/laporan')
+    expect(push).toHaveBeenLastCalledWith('/laporan')
   })
 })

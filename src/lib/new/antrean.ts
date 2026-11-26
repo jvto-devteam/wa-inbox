@@ -22,7 +22,7 @@ export interface QueueItem {
 const KIND_TAB: Record<string, AtKey> = { REPLY: 'Balas', FOLLOW_UP: 'Tindak lanjut', PROMISE: 'Janji tim' }
 
 export function chatHref(conversationId: string, messageId?: string | null): string {
-  return '/new/inbox?conversation=' + encodeURIComponent(conversationId) + (messageId ? '&message=' + encodeURIComponent(messageId) : '')
+  return '/inbox?conversation=' + encodeURIComponent(conversationId) + (messageId ? '&message=' + encodeURIComponent(messageId) : '')
 }
 
 /** "3 jam", "2 hari", "baru saja". */

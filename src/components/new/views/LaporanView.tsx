@@ -39,7 +39,7 @@ function rangeOf(p: Period, today: string): { from: string; to: string } {
   return { from: mon, to: sun < today ? sun : today }
 }
 
-const chatHref = (id: string) => '/new/inbox?conversation=' + encodeURIComponent(id)
+const chatHref = (id: string) => '/inbox?conversation=' + encodeURIComponent(id)
 
 export function LaporanView() {
   const st = useNew()
@@ -108,7 +108,7 @@ export function LaporanView() {
               {R.bookings.map((b) => (
                 <div key={b.conversationId} className="item" style={{ cursor: 'pointer' }} onClick={tap(b.name, [{ label: 'Buka chat', run: () => go(chatHref(b.conversationId)) }])}>
                   <div style={{ minWidth: 0 }}>
-                    <a href={'/new/inbox?conversation=' + b.conversationId} style={{ color: 'var(--accent)', fontWeight: 600, background: 'none', border: 0, padding: 0, fontSize: 15 }}>{b.name}</a>{' '}
+                    <a href={'/inbox?conversation=' + b.conversationId} style={{ color: 'var(--accent)', fontWeight: 600, background: 'none', border: 0, padding: 0, fontSize: 15 }}>{b.name}</a>{' '}
                     <span className="mut sm">{b.phoneTail}</span>
                     <p>Chat {fmt(b.firstChatDay)} → booking {fmt(b.bookingDay)} · {b.daysToBook === 0 ? 'hari sama' : b.daysToBook + ' hari'}</p>
                     <p>{b.bookingNumber} · {b.pkg}{b.startYmd === '—' ? '' : ' · trip ' + fmt(b.startYmd)}</p>
@@ -123,7 +123,7 @@ export function LaporanView() {
                 <tbody>
                   {R.bookings.map((b) => (
                     <tr key={b.conversationId} style={{ cursor: 'pointer' }} title="Buka chat" onClick={(e) => { if (!(e.target as HTMLElement).closest('a')) go(chatHref(b.conversationId)) }}>
-                      <td><a href={'/new/inbox?conversation=' + b.conversationId} style={{ color: 'var(--accent)', fontWeight: 600, background: 'none', border: 0, padding: 0 }}>{b.name}</a><div className="mut sm">{b.phoneTail}</div></td>
+                      <td><a href={'/inbox?conversation=' + b.conversationId} style={{ color: 'var(--accent)', fontWeight: 600, background: 'none', border: 0, padding: 0 }}>{b.name}</a><div className="mut sm">{b.phoneTail}</div></td>
                       <td className="sm">{fmt(b.firstChatDay)}</td>
                       <td className="sm">{fmt(b.bookingDay)}</td>
                       <td className="sm">{b.daysToBook === 0 ? 'hari sama' : b.daysToBook + ' hari'}</td>
@@ -168,7 +168,7 @@ export function LaporanView() {
               onClick={tap(l.name, [{ label: 'Buka chat', run: () => go(chatHref(l.conversationId)) }, ...(l.contactId && !l.tripPassed ? [{ label: 'Ingatkan follow-up', run: () => ingatkan(l) }] : [])])}>
               <div style={{ minWidth: 0 }}>
                 <div className="l-lh">
-                  <a href={'/new/inbox?conversation=' + l.conversationId}>{l.name}</a>
+                  <a href={'/inbox?conversation=' + l.conversationId}>{l.name}</a>
                   <span className={'pill ' + (l.alasan === 'belum_dijawab' || l.alasan === 'menunggu_tim' ? 'bad' : l.alasan === 'harga' ? 'warn' : 'neu')}>{l.alasanText}</span>
                   {l.lostByUs && <span className="pill bad" title="Tanggal trip lewat sementara giliran ada di tim">Lepas karena belum kita jawab</span>}
                 </div>

@@ -25,7 +25,7 @@ Konsekuensi yang harus dipegang setiap agen:
 
 Next.js 16 App Router, React 19, TypeScript, Prisma 7, PostgreSQL, Tailwind v4, Vitest.
 LLM dipanggil lewat daemon Ollama di VPS yang sama (bawaan). Satu-satunya penyedia hosted lain yang
-diizinkan adalah **DeepSeek** (`api.deepseek.com`), dipilih operator di `/chatbot` → Model LLM
+diizinkan adalah **DeepSeek** (`api.deepseek.com`), dipilih operator di `/bot/pengaturan` (dulu `/chatbot`) → Model LLM
 (`Settings.llmProvider`, `ollama` | `deepseek`, tersimpan = langsung berlaku, gagal-aman ke Ollama;
 key hanya dari env `DEEPSEEK_API_KEY`, model dari env `DEEPSEEK_MODEL`, bawaan `deepseek-chat`;
 keputusan owner 2026-11-11 saat Ollama cloud menjawab 402 karena saldo $0). Selama `deepseek` dipilih,
@@ -74,7 +74,7 @@ terpisah yang dipegang dua orang berbeda, diskusikan dulu — jangan mulai dari 
 ## 4. Peta Sistem Saat Ini
 
 ### Konfigurasi bot (`Settings`, satu baris, id=1)
-Semua diedit di `/chatbot` atau `/settings`, tersimpan langsung:
+Semua diedit di `/bot/pengaturan`, tab Bot, atau `/settings`, tersimpan langsung:
 
 - `botAutoReplyAll`, `skipBotForIndonesianNumbers` — mode bot global.
 - `handoffOnHumanRequest` — sakelar lapisan eskalasi LLM. Gerbang keyword di
@@ -107,15 +107,29 @@ Semua diedit di `/chatbot` atau `/settings`, tersimpan langsung:
   **saat baca**, tidak pernah dicerminkan ke tabel. Katalog baru tiba lewat deploy; `npm run sync:knowledge`
   adalah langkah dev-time di laptop (butuh repo saudara), bukan aksi dari UI. Kolom `Settings.catalogSyncedAt` tidak lagi ditulis.
 
-### Beranda (`/dashboard`)
-Keadaan bisnis dan mesinnya, bukan antrean kerja (audit 2026-10-31): chat yang perlu dibalas ada di `/summary`, jadi panel
-Antrean chat, Volume, Pertanyaan tak terjawab, dan Ringkasan inbox dilepas. Yang sengaja tetap: Funnel (permintaan pemilik),
-Kesehatan bot, Outbound, Reminder (satu-satunya tempat reminder manual muncul saat jatuh tempo), dan cluster topik/job (R53).
+### Aplikasi (root, sejak 2026-11-26)
+Tampilan baru (dulu pratinjau `/new`) menggantikan yang lama di root, grup route `src/app/(app)` (layout: `NewShell` +
+`NotificationListener`). Menu: `/dashboard`, `/inbox`, `/antrean`, `/ringkasan`, `/laporan`, `/agent`, `/kontak`, `/template`,
+`/bot`, `/ai-office`, `/settings`. Halaman lama yang SUDAH digantikan dialihkan (307) lewat `LEGACY_REDIRECTS` di
+`src/lib/new/legacy-routes.ts` (`/contacts`→`/kontak`, `/summary`→`/antrean`, `/chatbot`→`/bot/pengaturan`,
+`/bot-control/knowledge`→`/bot/knowledge`, `/settings/knowledge-gaps`→`/bot/celah`, `/bot-control/decisions`→`/bot/keputusan`,
+`/new/*`→`/*`). Halaman lama TANPA padanan (`/templates`, `/settings`, `/bot-control/*`, `/ai-office`) tetap di alamatnya, dipasang
+apa adanya di cangkang baru lewat `LegacyPage`/`LegacyFrame` (kulit `.legacy-skin` di `(app)/new.css`: variabel tema lama
+dipetakan ke token baru; tautan di dalamnya ke halaman yang sudah digantikan dibelokkan ke padanannya). Halaman lama yang
+dipasang di halaman baru (`/bot/*`, `/kontak/[id]`) ada di `src/components/legacy-pages/`. Inbox = `InboxScreen` (susunan
+Inbox lama apa adanya). `legacy-routes.test.ts` gagal bila kode baru menulis alamat lama/`/new` atau tautan di komponen lama yang
+dipasang menunjuk halaman yang tidak ada.
 
-### Kontak (`/contacts/[id]`)
-Tampak menduplikasi panel kanan Inbox, tetapi panel kanan hanya tampil dari lebar `xl`: di ponsel dan tablet halaman ini
-satu-satunya jalan ke booking, label, reminder, dan catatan, dan satu-satunya tempat Consent. Jangan dipensiunkan tanpa
-memindahkan akses itu dulu.
+### Dashboard (`/dashboard`)
+Ringkas keadaan hari ini, angkanya dari route yang sama dengan halaman tujuannya (`HubView.tsx`): antrean (`buildQueue`, =
+Antrean), agent hari ini (= Riwayat Agent), poin WhatsApp ringkasan terbaru (`summaryDay`, = Ringkasan), jadwal mendatang
+(= Antrean → Jadwal agent), inquiry/booking minggu ini (= Laporan). Panel Beranda lama (Funnel tahap pipeline, Kesehatan bot,
+Outbound, cluster topik) tidak ikut sejak 2026-11-26; antrean outbound ada di Bot → Antrean outbound.
+
+### Kontak (`/kontak`, `/kontak/[id]`)
+Detail kontak (`/kontak/[id]`, dulu `/contacts/[id]`) tampak menduplikasi panel kanan Inbox, tetapi panel kanan hanya tampil
+dari lebar `xl`: di ponsel dan tablet halaman ini satu-satunya jalan ke booking, label, reminder, dan catatan, dan
+satu-satunya tempat Consent. Jangan dipensiunkan tanpa memindahkan akses itu dulu.
 
 ### Registry statis (kode, bukan DB)
 `rule-registry.ts`, `existing-flow-registry.ts` (28 node), `channel-capabilities.ts`.
@@ -133,7 +147,7 @@ Dipangkas otomatis setelah 365 hari lewat `pruneBotAuditLogs()`, dipanggil dari
 Ditulis hanya untuk perubahan pada **apa yang bot lakukan**. Draft, flag, dan pekerjaan
 setengah jadi tidak dicatat.
 
-### Jadwal agent (Antrean /new)
+### Jadwal agent (Antrean → tab Jadwal agent)
 Reminder WhatsApp terjadwal (info trip H-2 20:00, trip selesai, reminder crew H-1 10:00, foto trip crew, pelunasan H-7 15:00,
 transport Bali H-1 15:15) dikirim **cron legacy** (`my:*` everyMinute), bukan wa-inbox. Tabel `AgentSchedule` = salinan
 read-only dari new-backoffice `GET /wa-inbox-api/upcoming-reminders` (kredensial = `BOOKING_API_URL` origin + `BOOKING_API_KEY`
@@ -162,7 +176,7 @@ email tetap masuk, hanya daily summary yang tidak mengumpulkannya. Kode di `src/
 `BotDecisionRun` + trace viewer + popover di Inbox. Triage = dua kolom `flaggedAt` /
 `flagNote` pada baris yang sama, bukan tabel tersendiri.
 
-### Summary harian (`/summary`)
+### Summary harian (`/antrean` + `/ringkasan`; `/summary` dialihkan)
 `DailySummary`, satu baris per hari WIB, payload JSON (`src/lib/daily-summary/payload-schema.ts`).
 Dibuat `POST /api/daily-summary/generate` (crontab VPS `0 0 * * *` — jam sistem VPS Asia/Jakarta, header
 `x-cron-secret`; atau admin lewat tombol "Buat ulang"). Satu panggilan LLM per percakapan
@@ -273,7 +287,7 @@ Ringkasan terbaru disimpan di `Conversation.chatReview` / `chatReviewAt`, dituli
 job 00.00 (asOf = akhir hari yang diringkas) dan tombol "Perbarui sekarang"
 (`POST /api/conversations/[id]/chat-review`, asOf = `now`, cooldown 30 detik).
 `saveChatReview` (`src/lib/chat-review/store.ts`) menulis bersyarat dan **tidak pernah menimpa**
-hasil yang lebih baru; "Buat ulang" tanggal lama di /summary tidak menurunkan tab ini.
+hasil yang lebih baru; "Buat ulang" tanggal lama di /ringkasan tidak menurunkan tab ini.
 Tiap pertanyaan membawa `terjawab` (true/false); ringkasan lama yang berupa string polos tampil
 tanpa tanda. `parseReview` menurunkan item yang bentuknya melenceng, bukan menggagalkan seluruh
 ringkasan. Riwayat dibaca dari payload `DailySummary`, bukan dari kolom ini.
@@ -282,7 +296,7 @@ entri `perlu_tindakan`/`tidak_jelas` membawa `respondedAt`/`respondedMessageId`/
 pertama sesudah akhir hari WIB itu, satu kueri di `chatReviewHistory`) -- penanda "sudah dibalas", bukan bukti semua terjawab.
 Transkrip ke LLM bernomor `#N` (`buildNumberedTranscript`); model menunjuk pesan sumber lewat
 `pesan`, dan `parseReview` menyimpannya sebagai `messageId` (nomor mentah tidak pernah disimpan,
-nomor tidak valid dibuang). Butir pertanyaan/poin ber-`messageId` di tab ini dan di /summary bisa
+nomor tidak valid dibuang). Butir pertanyaan/poin ber-`messageId` di tab ini dan di /ringkasan bisa
 diklik ke `/inbox?conversation=…&message=…`; string lama tampil sebagai teks biasa.
 Review juga memuat `janjiTim` (`{ teks, terpenuhi, messageId? }`, opsional, default `[]`), tampil ✅/⏳
 lewat `CheckList` yang sama dengan pertanyaan; "Perbarui sekarang" memanggil `applyReviewToItem` sesudah menyimpan

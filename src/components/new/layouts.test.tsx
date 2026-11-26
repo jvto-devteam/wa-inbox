@@ -10,7 +10,7 @@ import { AntreanView } from './views/AntreanView'
 import { LaporanView } from './views/LaporanView'
 import { RingkasanView } from './views/RingkasanView'
 
-vi.mock('next/navigation', () => ({ usePathname: () => '/new/antrean', useRouter: () => ({ push: vi.fn() }) }))
+vi.mock('next/navigation', () => ({ usePathname: () => '/antrean', useRouter: () => ({ push: vi.fn() }) }))
 
 afterEach(() => vi.unstubAllGlobals())
 
@@ -43,7 +43,7 @@ describe('tata letak berbeda per halaman /new', () => {
     const urgent = document.querySelector('.pg-urgent') as HTMLElement
     expect(urgent.textContent).toContain('Menunggu 3 jam')
     expect(urgent.querySelector('.saran-t')?.textContent).toBe('Konfirmasi jam jemput 05.00')
-    expect(within(urgent).getByText('Balas sekarang').getAttribute('href')).toBe('/new/inbox?conversation=c-a&message=m-a')
+    expect(within(urgent).getByText('Balas sekarang').getAttribute('href')).toBe('/inbox?conversation=c-a&message=m-a')
     expect(urgent.querySelector('.nx')?.textContent).toContain('Ben C.')
     await waitFor(() => expect(Array.from(document.querySelectorAll('#a-tabs button')).map((b) => b.textContent)).toEqual(['Balas 2', 'Follow Up 1', 'Janji Admin 1', 'Reminder 2', 'Jadwal agent 3']))
 
@@ -84,7 +84,7 @@ describe('tata letak berbeda per halaman /new', () => {
     expect(rows[0].textContent).toContain('Gagal')
     expect(rows[1].textContent).toContain('Terjadwal')
     expect(rows[2].textContent).toContain('booking cancel')
-    expect(within(rows[1] as HTMLElement).getByText('Buka chat').getAttribute('href')).toBe('/new/inbox?conversation=c-emma')
+    expect(within(rows[1] as HTMLElement).getByText('Buka chat').getAttribute('href')).toBe('/inbox?conversation=c-emma')
     expect(within(rows[2] as HTMLElement).queryByText('Buka chat')).toBeNull()
     expect(within(document.getElementById('a-list')!).queryByText('Tunda')).toBeNull()
   })
@@ -94,7 +94,7 @@ describe('tata letak berbeda per halaman /new', () => {
     show(<RingkasanView />)
     await waitFor(() => expect(document.querySelector('#v-ringkasan .pg-urgent')?.textContent).toMatch(/komplain.*Lukas B\./))
     expect(document.querySelector('.db-hero')).toBeNull()
-    expect(document.querySelector('.pg-urgent a.btn')?.getAttribute('href')).toBe('/new/inbox?conversation=c2&message=m7')
+    expect(document.querySelector('.pg-urgent a.btn')?.getAttribute('href')).toBe('/inbox?conversation=c2&message=m7')
     expect(document.querySelector('.pg-urgent .nx')?.textContent).toContain('1 janji tim belum ditepati')
     expect(document.querySelector('.r-meta')?.textContent).toMatch(/^Dibuat 00[.:]04$/)
     expect(document.querySelector('#r-pts .hint')).toBeNull()
@@ -193,7 +193,7 @@ describe('tata letak berbeda per halaman /new', () => {
 
     // lead yang menunggu balasan kita: tombol utama "Balas di chat" ke Inbox
     const first = document.querySelector('#l-leads .l-lead')!
-    expect(within(first as HTMLElement).getByText('Balas di chat').getAttribute('href')).toBe('/new/inbox?conversation=c')
+    expect(within(first as HTMLElement).getByText('Balas di chat').getAttribute('href')).toBe('/inbox?conversation=c')
 
     // Ingatkan follow-up → reminder kontak berisi follow-up
     fireEvent.click(within(first as HTMLElement).getByText('Ingatkan follow-up'))
@@ -228,7 +228,7 @@ describe('CSS /new', () => {
   // Animasi masuk halaman yang menahan transform (fill both/forwards) membuat setiap anak .view jadi
   // konteks tumpukan; panel info Inbox (fixed, z 60) lalu terkurung di bawah scrim (z 55) dan redup.
   it('animasi masuk .view.fx>* tidak menahan transform setelah selesai', () => {
-    const css = readFileSync(join(process.cwd(), 'src/app/new/new.css'), 'utf8')
+    const css = readFileSync(join(process.cwd(), 'src/app/(app)/new.css'), 'utf8')
     const rule = /\.view\.fx>\*\{animation:([^}]*)\}/.exec(css)
     expect(rule).not.toBeNull()
     expect(rule![1]).not.toMatch(/\b(both|forwards)\b/)

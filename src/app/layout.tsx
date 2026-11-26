@@ -52,7 +52,7 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="id" className={`${poppins.variable} ${ibmPlexMono.variable}`}>
-      {/* NotificationListener deliberately lives in src/app/(authenticated)/layout.tsx, not
+      {/* NotificationListener deliberately lives in src/app/(app)/layout.tsx, not
           here: mounted at the root it also ran on /login, where its EventSource 401s and
           reconnects forever. See that file for the full reasoning. */}
       <body className="font-sans antialiased">{children}</body>

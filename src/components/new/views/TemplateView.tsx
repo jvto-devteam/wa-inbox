@@ -145,7 +145,7 @@ export function TemplateView() {
         icon={NAV_ICON.template}
         title={api.loading ? 'Memuat template…' : api.error ? 'Gagal memuat template' : all.length + ' template pesan sistem'}
         sub={api.error || (api.loading ? undefined : tamu + ' ke tamu · ' + (all.length - tamu) + ' internal · ' + (off ? off + ' nonaktif' : 'semua aktif') + ' · dikirim legacy & new-backoffice lewat wa-inbox')}
-        right={api.error ? <button className="btn sm" onClick={api.reload}>Coba lagi</button> : undefined}
+        right={api.error ? <button className="btn sm" onClick={api.reload}>Coba lagi</button> : <a className="btn sm" href="/templates">Template WhatsApp & balasan cepat</a>}
       />
       <StatStrip
         id="t-hk"

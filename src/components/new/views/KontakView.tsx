@@ -128,8 +128,8 @@ function KontakDrawer({ row, onClose }: { row: Row; onClose: () => void }) {
         </div>
       </div>
       <div className="acts" style={{ marginTop: 12 }}>
-        {row.conversationId && <a className="btn pri" href={'/new/inbox?conversation=' + row.conversationId}>Buka chat</a>}
-        <a className="btn" href={'/new/kontak/' + row.id}>Booking & detail lengkap</a>
+        {row.conversationId && <a className="btn pri" href={'/inbox?conversation=' + row.conversationId}>Buka chat</a>}
+        <a className="btn" href={'/kontak/' + row.id}>Booking & detail lengkap</a>
       </div>
     </div>
   )
@@ -188,7 +188,7 @@ export function KontakView() {
               <div className="r">
                 <span className={'pill ' + (STAGE_PILL[r.pipelineStage] || 'neu')}>{STAGE_LABELS[r.pipelineStage] || r.pipelineStage}</span>
                 {r.lastContactAt && <span className="t">{ago(r.lastContactAt)}</span>}
-                {r.conversationId && <a className="btn sm" href={'/new/inbox?conversation=' + r.conversationId} onClick={(e) => e.stopPropagation()} aria-label={'Buka chat ' + (r.name || r.phone)}>Chat</a>}
+                {r.conversationId && <a className="btn sm" href={'/inbox?conversation=' + r.conversationId} onClick={(e) => e.stopPropagation()} aria-label={'Buka chat ' + (r.name || r.phone)}>Chat</a>}
               </div>
             </div>
           )) : <div className="pg-card mut" style={{ textAlign: 'center' }}>{api.error ? 'Tidak bisa memuat kontak.' : 'Tidak ada kontak.'}</div>}
