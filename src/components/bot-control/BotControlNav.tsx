@@ -1,6 +1,5 @@
 'use client'
 import { usePathname } from 'next/navigation'
-import { isActivePath } from '@/components/AppRail'
 import { SectionNav } from '@/components/ui/section-nav'
 
 // Sub-navigasi Bot Control.
@@ -31,8 +30,9 @@ export const BOT_CONTROL_ROOT = '/bot-control'
 export const BOT_CONTROL_SECTIONS = [
   { href: BOT_CONTROL_ROOT, label: 'Referensi' },
   { href: '/bot-control/pipeline', label: 'Alur Live' },
-  { href: '/bot-control/knowledge', label: 'Knowledge' },
-  { href: '/bot-control/decisions', label: 'Decision Logs' },
+  // Knowledge dan Decision Logs pindah ke menu Bot aplikasi baru (2026-11-26).
+  { href: '/bot/knowledge', label: 'Knowledge' },
+  { href: '/bot/keputusan', label: 'Decision Logs' },
   { href: '/bot-control/test-lab', label: 'Test Lab' },
   { href: '/bot-control/outbound-queue', label: 'Outbound Queue' },
   { href: '/bot-control/audit-logs', label: 'Audit Logs' },
@@ -41,7 +41,7 @@ export const BOT_CONTROL_SECTIONS = [
 /**
  * Penanda aktif untuk satu tab.
  *
- * Rute bersarang memakai `isActivePath` yang sudah dipakai AppRail — /bot-control/decisions/xyz
+ * Rute bersarang memakai `isActivePath` (aturan segmen yang dulu milik AppRail) — /bot-control/decisions/xyz
  * harus tetap menyalakan "Decision Logs", dan aturan segmen di helper itu (`href + '/'`, bukan
  * `startsWith` telanjang) berlaku sama di sini.
  *
@@ -71,4 +71,9 @@ export function BotControlNav() {
       className="px-3 pt-4 lg:sticky lg:top-0 lg:py-6 lg:pr-0"
     />
   )
+}
+
+/** Aktif bila alamatnya sama atau di bawahnya (/bot-control/x aktif untuk /bot-control/x/y, bukan /bot-control/xy). */
+export function isActivePath(pathname: string, href: string): boolean {
+  return pathname === href || pathname.startsWith(`${href}/`)
 }

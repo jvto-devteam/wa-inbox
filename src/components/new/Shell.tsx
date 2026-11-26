@@ -27,9 +27,9 @@ function subscribeMq(cb: () => void) {
 }
 const noop = () => () => {}
 
-const SIDE: ViewKey[] = ['hub', 'inbox', 'antrean', 'ringkasan', 'laporan', 'agent', 'kontak', 'template', 'bot']
+const SIDE: ViewKey[] = ['hub', 'inbox', 'antrean', 'ringkasan', 'laporan', 'agent', 'kontak', 'template', 'bot', 'kantor', 'pengaturan']
 const MTAB: ViewKey[] = ['hub', 'inbox', 'antrean', 'ringkasan']
-const MORE: ViewKey[] = ['laporan', 'agent', 'kontak', 'template', 'bot']
+const MORE: ViewKey[] = ['laporan', 'agent', 'kontak', 'template', 'bot', 'kantor', 'pengaturan']
 
 interface Hit { id: string; n: string; s: string }
 
@@ -195,7 +195,7 @@ export function NewShell({ children }: { children: React.ReactNode }) {
     if (!r) return
     setMSearch(false); setSOpen(false); setQ(''); (document.activeElement as HTMLElement | null)?.blur()
     closeAll()
-    router.push('/new/inbox?conversation=' + encodeURIComponent(r.id))
+    router.push('/inbox?conversation=' + encodeURIComponent(r.id))
   }
 
   const logout = async () => {

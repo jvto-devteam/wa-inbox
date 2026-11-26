@@ -59,7 +59,7 @@ describe('summaryDay', () => {
   })
 
   it('chatHref menyorot pesan bila ada', () => {
-    expect(chatHref('c1')).toBe('/new/inbox?conversation=c1')
-    expect(chatHref('c1', 'm7')).toBe('/new/inbox?conversation=c1&message=m7')
+    expect(chatHref('c1')).toBe('/inbox?conversation=c1')
+    expect(chatHref('c1', 'm7')).toBe('/inbox?conversation=c1&message=m7')
   })
 })

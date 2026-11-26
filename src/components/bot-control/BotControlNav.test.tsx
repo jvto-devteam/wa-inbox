@@ -18,8 +18,7 @@ describe('isActiveSection', () => {
   })
 
   it('tidak menyalakan bagian lain yang kebetulan berbagi awalan karakter', () => {
-    // Aturan segmen ini datang dari isActivePath milik AppRail, yang dipakai ulang di sini
-    // supaya tidak ada dua logika "halaman aktif" yang bisa berbeda.
+    // Aturan segmen: isActivePath (dulu milik AppRail, kini di BotControlNav).
     expect(isActiveSection('/bot-control/rules-archive', '/bot-control/rules')).toBe(false)
     expect(isActiveSection('/bot-control/flows', '/bot-control/rules')).toBe(false)
   })
@@ -42,18 +41,18 @@ describe('BotControlNav', () => {
   })
 
   it('menandai bagian untuk rute saat ini sebagai halaman aktif', () => {
-    pathname.mockReturnValue('/bot-control/knowledge')
+    pathname.mockReturnValue('/bot-control/test-lab')
     render(<BotControlNav />)
 
-    expect(screen.getByRole('link', { name: 'Knowledge' })).toHaveAttribute('aria-current', 'page')
+    expect(screen.getByRole('link', { name: 'Test Lab' })).toHaveAttribute('aria-current', 'page')
     expect(screen.getByRole('link', { name: 'Referensi' })).not.toHaveAttribute('aria-current')
   })
 
   it('mempertahankan bagian induk yang aktif pada rute bersarang', () => {
-    pathname.mockReturnValue('/bot-control/decisions/run_7')
+    pathname.mockReturnValue('/bot-control/outbound-queue/job_7')
     render(<BotControlNav />)
 
-    expect(screen.getByRole('link', { name: 'Decision Logs' })).toHaveAttribute('aria-current', 'page')
+    expect(screen.getByRole('link', { name: 'Outbound Queue' })).toHaveAttribute('aria-current', 'page')
     // Tepat satu tab yang aktif — termasuk di halaman bersarang, tempat Referensi paling mudah
     // ikut menyala kalau pencocokannya salah.
     expect(screen.getAllByRole('link').filter((a) => a.getAttribute('aria-current') === 'page')).toHaveLength(1)

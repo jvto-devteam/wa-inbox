@@ -88,7 +88,7 @@ function Perilaku({ settings, admin }: { settings: ApiState<BotSettingsApi>; adm
         <div className="set"><div><b>Serahkan bila tamu minta manusia</b><span className="h">Lapisan eskalasi LLM</span></div><Sw on={S.handoffOnHumanRequest} disabled={!admin} label="Serahkan bila tamu minta manusia" onChange={(v) => act.patch({ handoffOnHumanRequest: v }, v ? 'Eskalasi ke tim menyala' : 'Eskalasi ke tim dimatikan')} /></div>
         <div className="set">
           <div><b>Jam kerja {hours}</b><span className="h">Hanya menambah satu kalimat pada pesan serah-terima. Bot tetap menjawab 24/7.</span></div>
-          <a className="pill neu" href="/new/bot/pengaturan">Ubah</a>
+          <a className="pill neu" href="/bot/pengaturan">Ubah</a>
         </div>
       </div>
       <div className="card">
@@ -188,7 +188,7 @@ function Knowledge({ sources, gaps, admin }: { sources: ApiState<{ items: Source
   return (
     <div className="grid g2">
       <div className="card">
-        <div className="pg-card-h" style={{ margin: 0 }}><h3>Knowledge</h3><a className="btn sm" href="/new/bot/knowledge" style={{ marginLeft: 'auto' }}>Kelola / + Tambah</a></div>
+        <div className="pg-card-h" style={{ margin: 0 }}><h3>Knowledge</h3><a className="btn sm" href="/bot/knowledge" style={{ marginLeft: 'auto' }}>Kelola / + Tambah</a></div>
         <p className="hint">{items.filter((x) => x.status === 'PUBLISHED').length} terbit · {drafts.length} punya draf. Revisi yang terbit tidak bisa diubah; perubahan = versi baru.</p>
         <div className="db-scroll" style={{ maxHeight: 460 }}>
           {sources.loading ? <div className="mut">Memuat…</div> : sources.error ? <div className="mut">{sources.error}</div> : sorted.map((x) => (
@@ -205,7 +205,7 @@ function Knowledge({ sources, gaps, admin }: { sources: ApiState<{ items: Source
         </div>
       </div>
       <div className="card">
-        <div className="pg-card-h" style={{ margin: 0 }}><h3>Celah knowledge</h3><a className="btn sm" href="/new/bot/celah" style={{ marginLeft: 'auto' }}>Semua</a></div>
+        <div className="pg-card-h" style={{ margin: 0 }}><h3>Celah knowledge</h3><a className="btn sm" href="/bot/celah" style={{ marginLeft: 'auto' }}>Semua</a></div>
         <p className="hint">Pertanyaan tamu yang belum ada jawabannya · {open.length} terbuka</p>
         <div className="db-scroll" style={{ maxHeight: 460 }}>
           {gaps.loading ? <div className="mut">Memuat…</div> : gaps.error ? <div className="mut">{gaps.error}</div> : open.length ? open.slice(0, 50).map((g) => (
@@ -215,7 +215,7 @@ function Knowledge({ sources, gaps, admin }: { sources: ApiState<{ items: Source
                 <p>{g.contactName || 'Tanpa nama'}{g.topic ? ' · ' + g.topic : ''} · {when(g.createdAt)}</p>
               </div>
               <div className="acts">
-                {g.conversationId && <a className="btn sm" href={'/new/inbox?conversation=' + g.conversationId}>Chat</a>}
+                {g.conversationId && <a className="btn sm" href={'/inbox?conversation=' + g.conversationId}>Chat</a>}
                 <button className="btn sm" onClick={() => resolve(g)}>Selesai</button>
               </div>
             </div>
@@ -258,7 +258,7 @@ function Log({ admin }: { admin: boolean }) {
   const aud = useApi<{ items: Audit[] }>(admin ? '/api/bot-control/audit-logs?limit=30' : null)
   type Row = { k: 'Keputusan' | 'Audit'; at: string; title: string; sub: string; tone: string; tag: string; href?: string }
   const rows: Row[] = [
-    ...(dec.data?.items ?? []).map((d): Row => ({ k: 'Keputusan', at: d.startedAt, title: (d.contactName || 'Tanpa nama') + ' · ' + (d.inboundPreview || ''), sub: 'Keputusan bot', tone: DEC_TONE[d.status] || 'neu', tag: d.status, href: d.conversationId ? '/new/inbox?conversation=' + d.conversationId : undefined })),
+    ...(dec.data?.items ?? []).map((d): Row => ({ k: 'Keputusan', at: d.startedAt, title: (d.contactName || 'Tanpa nama') + ' · ' + (d.inboundPreview || ''), sub: 'Keputusan bot', tone: DEC_TONE[d.status] || 'neu', tag: d.status, href: d.conversationId ? '/inbox?conversation=' + d.conversationId : undefined })),
     ...(aud.data?.items ?? []).map((a): Row => ({ k: 'Audit', at: a.createdAt, title: (a.actorName || 'Sistem') + ' · ' + a.action + ' ' + a.entityType + (a.entityKey ? ' (' + a.entityKey + ')' : ''), sub: a.reason || 'Perubahan pengaturan bot', tone: 'neu', tag: a.action })),
   ].sort((x, y) => y.at.localeCompare(x.at))
   const tabs = admin ? ['Semua', 'Keputusan', 'Audit'] : ['Semua', 'Keputusan']
@@ -267,7 +267,7 @@ function Log({ admin }: { admin: boolean }) {
     <>
       <div className="chips">
         {tabs.map((t) => <button key={t} className={t === lf ? 'on' : ''} onClick={() => set((d) => { d.lf = t })}>{t}</button>)}
-        <a className="btn sm" href="/new/bot/keputusan" style={{ marginLeft: 'auto' }}>Log lengkap</a>
+        <a className="btn sm" href="/bot/keputusan" style={{ marginLeft: 'auto' }}>Log lengkap</a>
       </div>
       <div className="card">
         {dec.loading ? <div className="mut">Memuat…</div> : rows.filter((r) => lf === 'Semua' || r.k === lf).map((r, i) => (
@@ -284,6 +284,11 @@ function Log({ admin }: { admin: boolean }) {
     </>
   )
 }
+
+const BOT_TOOLS: [string, string][] = [
+  ['/bot-control', 'Referensi & aturan'], ['/bot-control/pipeline', 'Alur live'], ['/bot-control/test-lab', 'Test Lab'],
+  ['/bot-control/outbound-queue', 'Antrean outbound'], ['/bot-control/audit-logs', 'Audit log'],
+]
 
 export function BotView() {
   const { s, set } = useNew()
@@ -319,6 +324,11 @@ export function BotView() {
       <div className="tabs" id="b-tabs">
         {TABS.map((k) => <button key={k} className={k === s.btab ? 'on' : ''} onClick={() => set((d) => { d.btab = k })}>{k}</button>)}
       </div>
+      {/* Halaman Bot Control lama yang belum punya padanan baru tetap bisa dibuka dari sini. */}
+      <nav className="acts" id="b-more" aria-label="Alat bot lain" style={{ margin: '0 0 12px', flexWrap: 'wrap' }}>
+        <span className="mut sm">Alat lain:</span>
+        {BOT_TOOLS.map(([href, label]) => <a key={href} className="btn sm" href={href}>{label}</a>)}
+      </nav>
       <div id="b-body">
         {s.btab === 'Perilaku' ? (S ? <Perilaku key={(S.fallbackReply ?? '') + '|' + (S.handoffReply ?? '')} settings={settings} admin={admin} /> : <div className="card mut">{settings.error || 'Memuat…'}</div>)
           : s.btab === 'Agent' ? <Agents />

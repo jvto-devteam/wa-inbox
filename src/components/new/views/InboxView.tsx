@@ -19,7 +19,7 @@ export function InboxView() {
       {/* Tautan di dalam komponen Inbox (mis. /inbox?..., /contacts/...) dibuka di halaman /new padanannya. */}
       <LegacyFrame className="inbox-real">
         <Suspense fallback={<div className="mut" style={{ padding: 16 }}>Memuat inbox…</div>}>
-          <InboxScreen basePath="/new/inbox" onSelectedChange={onSelectedChange} />
+          <InboxScreen basePath="/inbox" onSelectedChange={onSelectedChange} />
         </Suspense>
       </LegacyFrame>
     </section>

@@ -12,7 +12,7 @@ let search = new URLSearchParams()
 const replace = vi.fn()
 const push = vi.fn()
 vi.mock('next/navigation', () => ({
-  usePathname: () => '/new/inbox',
+  usePathname: () => '/inbox',
   useRouter: () => ({ push, replace }),
   useSearchParams: () => search,
 }))
@@ -23,6 +23,7 @@ vi.mock('@/components/inbox/ThreadView', () => ({
   ThreadView: ({ conversationId, onBack }: { conversationId: string; onBack: () => void }) => (
     <div data-testid="thread">{conversationId}<button onClick={onBack}>kembali</button>
       <a href="/inbox?conversation=c2&message=m5&lihat=1">butir ringkasan</a>
+      <a href="/contacts/k1?tab=x">kontak lama</a>
       <a href="https://jvto.me/b/abc">portal</a>
     </div>
   ),
@@ -44,26 +45,30 @@ beforeEach(() => {
   mobile(false)
 })
 
-describe('Inbox /new = Inbox asli dengan kulit baru', () => {
-  it('memasang susunan Inbox asli di dalam pembungkus kulit; memilih chat menulis alamat /new/inbox', () => {
+describe('Inbox = Inbox asli dengan kulit baru', () => {
+  it('memasang susunan Inbox asli di dalam pembungkus kulit; memilih chat menulis alamat /inbox', () => {
     render(<NewShell><InboxView /></NewShell>)
     expect(document.querySelector('#v-inbox .inbox-real')).not.toBeNull()
     fireEvent.click(screen.getByText('pilih c1'))
-    expect(replace).toHaveBeenCalledWith('/new/inbox?conversation=c1', { scroll: false })
+    expect(replace).toHaveBeenCalledWith('/inbox?conversation=c1', { scroll: false })
     expect(screen.getByTestId('thread').textContent).toContain('c1')
   })
 
-  it('tautan /inbox?... di dalam komponen Inbox tetap dibuka di /new/inbox; tautan lain tidak disentuh', () => {
+  it('tautan ke halaman lama yang sudah digantikan dibuka di padanan barunya; tautan lain tidak disentuh', () => {
     search = new URLSearchParams('conversation=c1')
     render(<NewShell><InboxView /></NewShell>)
-    const inner = screen.getByText('butir ringkasan')
-    expect(fireEvent.click(inner)).toBe(false) // default dicegah
-    expect(push).toHaveBeenCalledWith('/new/inbox?conversation=c2&message=m5&lihat=1')
+    const old = screen.getByText('kontak lama')
+    expect(fireEvent.click(old)).toBe(false) // default dicegah
+    expect(push).toHaveBeenCalledWith('/kontak/k1?tab=x')
     push.mockClear()
-    fireEvent.click(screen.getByText("portal"))
+    // /inbox sudah alamat aplikasi ini: tidak dibelokkan
+    const inbox = screen.getByText('butir ringkasan')
+    inbox.addEventListener('click', (e) => e.preventDefault()) // jsdom tidak bernavigasi
+    fireEvent.click(inbox)
+    fireEvent.click(screen.getByText('portal'))
     expect(push).not.toHaveBeenCalled()
     // Ctrl/⌘-klik = tab baru, dibiarkan
-    fireEvent.click(inner, { metaKey: true })
+    fireEvent.click(old, { metaKey: true })
     expect(push).not.toHaveBeenCalled()
   })
 
@@ -73,7 +78,7 @@ describe('Inbox /new = Inbox asli dengan kulit baru', () => {
     expect(screen.getByTestId('thread').textContent).toContain('c9')
   })
 
-  it('ponsel: chat terbuka menyembunyikan bar atas/bawah /new, kembali memunculkannya', () => {
+  it('ponsel: chat terbuka menyembunyikan bar atas/bawah aplikasi, kembali memunculkannya', () => {
     mobile(true)
     render(<NewShell><InboxView /></NewShell>)
     const root = document.querySelector('.nwa')!
@@ -84,8 +89,8 @@ describe('Inbox /new = Inbox asli dengan kulit baru', () => {
     expect(root.classList.contains('m-inchat')).toBe(false)
   })
 
-  it('kulit hanya memetakan variabel tema dan menetralkan aturan umum /new yang bentrok', () => {
-    const css = readFileSync(join(__dirname, '..', '..', '..', 'app', 'new', 'new.css'), 'utf8')
+  it('kulit hanya memetakan variabel tema dan menetralkan aturan umum desain baru yang bentrok', () => {
+    const css = readFileSync(join(__dirname, '..', '..', '..', 'app', '(app)', 'new.css'), 'utf8')
     const globals = readFileSync(join(__dirname, '..', '..', '..', 'app', 'globals.css'), 'utf8')
     const block = css.slice(css.indexOf('.nwa .legacy-skin{'))
     // setiap variabel warna tema Inbox lama dipetakan (supaya tidak ada warna lama yang tertinggal)

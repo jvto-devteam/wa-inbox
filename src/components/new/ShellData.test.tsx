@@ -4,7 +4,7 @@ import { NewShell } from './Shell'
 
 // Cangkang /new memakai data asli: lencana menu, pencarian global, nama akun, Keluar.
 const push = vi.fn()
-vi.mock('next/navigation', () => ({ usePathname: () => '/new/laporan', useRouter: () => ({ push }) }))
+vi.mock('next/navigation', () => ({ usePathname: () => '/laporan', useRouter: () => ({ push }) }))
 const redirectToLogin = vi.fn()
 vi.mock('@/lib/fetch-json', async (orig) => ({ ...(await orig<typeof import('@/lib/fetch-json')>()), redirectToLogin: (o: unknown) => redirectToLogin(o) }))
 
@@ -65,7 +65,7 @@ describe('cangkang /new: data asli', () => {
     expect(screen.getByText('WhatsApp · Kapan jemput?')).toBeTruthy()
     expect(fn.mock.calls.some(([u]) => String(u) === '/api/conversations?q=lukas')).toBe(true)
     fireEvent.keyDown(input, { key: 'Enter' })
-    expect(push).toHaveBeenCalledWith('/new/inbox?conversation=c1')
+    expect(push).toHaveBeenCalledWith('/inbox?conversation=c1')
   })
 
   it('Keluar memanggil logout sungguhan lalu ke halaman login', async () => {

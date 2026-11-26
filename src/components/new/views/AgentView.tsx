@@ -63,7 +63,7 @@ function Detail({ a, onClose }: { a: Activity; onClose: () => void }) {
       {!a.message && !a.inbound && a.input && <div className="box" style={{ marginTop: 10 }}><h4>Masukan</h4>{a.input}</div>}
       <div className="acts" style={{ marginTop: 12 }}>
         {a.conversationId
-          ? <a className="btn pri" href={'/new/inbox?conversation=' + a.conversationId}>Buka chat</a>
+          ? <a className="btn pri" href={'/inbox?conversation=' + a.conversationId}>Buka chat</a>
           : <span className="mut sm">{a.chatNote || 'Tidak ada percakapan terkait di Inbox.'}</span>}
       </div>
     </div>
@@ -143,7 +143,7 @@ export function AgentView() {
                     </div>
                     <div className="r">
                       <span className={'pill ' + t[0]}>{t[1]}</span>
-                      {e.conversationId && <a className="btn sm" href={'/new/inbox?conversation=' + e.conversationId} onClick={(ev) => ev.stopPropagation()}>Buka chat</a>}
+                      {e.conversationId && <a className="btn sm" href={'/inbox?conversation=' + e.conversationId} onClick={(ev) => ev.stopPropagation()}>Buka chat</a>}
                     </div>
                   </div>
                 )

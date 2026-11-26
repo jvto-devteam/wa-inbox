@@ -6,7 +6,7 @@ import { BotView } from './views/BotView'
 import { KontakView } from './views/KontakView'
 import { TemplateView } from './views/TemplateView'
 
-let path = '/new/bot'
+let path = '/bot'
 vi.mock('next/navigation', () => ({ usePathname: () => path, useRouter: () => ({ push: vi.fn() }) }))
 
 type Handler = (url: URL, body: unknown) => { status?: number; body: unknown }
@@ -47,7 +47,7 @@ describe('Template pesan: data asli', () => {
   it('memuat dari API, menyimpan isi lewat PATCH, nonaktif minta konfirmasi', async () => {
     routes['GET /api/system-templates'] = () => ({ body: { items: [TPL('payment_reminder_balance', 'CUSTOMER'), TPL('internal_new_booking', 'INTERNAL')] } })
     routes['PATCH /api/system-templates/payment_reminder_balance'] = (_u, b) => ({ body: { ...TPL('payment_reminder_balance', 'CUSTOMER'), ...(b as object) } })
-    show('/new/template', <TemplateView />)
+    show('/template', <TemplateView />)
     await waitFor(() => expect(document.querySelector('.bt-ban b')?.textContent).toBe('2 template pesan sistem'))
     // pratinjau WhatsApp: nilai contoh terisi, format *tebal* dirender
     expect(document.querySelector('#t-list .wa-b')?.textContent).toContain('Halo John')
@@ -66,7 +66,7 @@ describe('Template pesan: data asli', () => {
 
   it('akun non-admin (403) melihat pesan "Hanya admin"', async () => {
     routes['GET /api/system-templates'] = () => ({ status: 403, body: { error: 'Forbidden' } })
-    show('/new/template', <TemplateView />)
+    show('/template', <TemplateView />)
     await waitFor(() => expect(screen.getByText('Hanya admin')).toBeInTheDocument())
   })
 })
@@ -82,7 +82,7 @@ describe('Kontak: data asli', () => {
     routes['GET /api/contacts/c1/reminders'] = () => ({ body: [] })
     routes['GET /api/contacts/c1/consent'] = () => ({ body: { consent: null } })
     routes['PUT /api/contacts/c1/consent'] = (_u, b) => ({ body: { consent: { optOut: (b as { optOut: boolean }).optOut, source: null, note: null, updatedAt: new Date().toISOString() } } })
-    show('/new/kontak', <KontakView />)
+    show('/kontak', <KontakView />)
     await waitFor(() => expect(document.querySelector('.bt-ban b')?.textContent).toBe('10 kontak'))
     expect(screen.getByText('Sarah')).toBeInTheDocument()
     expect(document.querySelector('.kt-c')?.textContent).toContain('+393331112222')
@@ -115,7 +115,7 @@ describe('Bot: data asli', () => {
   it('admin: banner dari settings, mematikan bot lewat POST /api/bot/mode sesudah konfirmasi', async () => {
     base('ADMIN')
     routes['POST /api/bot/mode'] = () => ({ body: { botAutoReplyAll: false } })
-    show('/new/bot', <BotView />)
+    show('/bot', <BotView />)
     await waitFor(() => expect(document.querySelector('.bt-ban b')?.textContent).toBe('Bot menjawab semua chat'))
     await waitFor(() => expect(within(document.getElementById('b-hk')!).getByText('17')).toBeInTheDocument())
     await waitFor(() => expect((screen.getByLabelText('Bot menjawab semua chat') as HTMLInputElement).disabled).toBe(false))
@@ -128,7 +128,7 @@ describe('Bot: data asli', () => {
 
   it('non-admin: sakelar dimatikan', async () => {
     base('AGENT')
-    show('/new/bot', <BotView />)
+    show('/bot', <BotView />)
     await waitFor(() => expect(document.querySelector('.bt-ban b')?.textContent).toBe('Bot menjawab semua chat'))
     expect((screen.getByLabelText('Bot menjawab semua chat') as HTMLInputElement).disabled).toBe(true)
   })
@@ -136,7 +136,7 @@ describe('Bot: data asli', () => {
   it('Knowledge & celah dari API; simulator dry-run memanggil /api/bot-control/simulate', async () => {
     base('ADMIN')
     routes['POST /api/bot-control/simulate'] = () => ({ body: { status: 'WOULD_REPLY', reply: 'Ijen buka 01:00', warnings: [], latencyMs: 812 } })
-    show('/new/bot', <BotView />)
+    show('/bot', <BotView />)
     await waitFor(() => expect(within(document.getElementById('b-hk')!).getByText('2/2')).toBeInTheDocument())
     fireEvent.click(within(document.getElementById('b-tabs')!).getByText('Knowledge'))
     await waitFor(() => expect(screen.getByText('Drone boleh?')).toBeInTheDocument())
@@ -158,7 +158,7 @@ describe('Riwayat Agent: data asli', () => {
       { id: 'job:2', at: t(9), agent: 'crew', status: 'gagal', title: 'Reminder crew', input: 'Template crew_reminder_group ke crew', output: 'Gagal terkirim: grup tidak ada', conversationId: null, contact: null, message: { text: '*Besok* jemput 07:00', imageUrl: null, to: 'Grup WhatsApp crew' }, chatNote: 'Dikirim ke grup WhatsApp; grup tidak tampil di Inbox.', bookingRef: '88' },
       { id: 'run:3', at: t(9), agent: 'balas', status: 'ok', title: 'Membalas pesan tamu', input: 'Pesan tamu: "hi"', output: 'Balasan: "hello"', conversationId: 'c2', contact: 'Tom' },
     ] } })
-    show('/new/agent', <AgentView />)
+    show('/agent', <AgentView />)
     await waitFor(() => expect(document.querySelector('#v-agent .bt-ban b')?.textContent).toBe('3 aktivitas agent'))
     const q = calls.find((c) => c.url.startsWith('/api/new/agent-activity'))!
     const u = new URL(q.url, 'http://x')
@@ -183,7 +183,7 @@ describe('Riwayat Agent: data asli', () => {
       { id: 'rev:c1:1', at: at.toISOString(), agent: 'poin', status: 'ok', title: 'Poin penting diperbarui', input: '', output: '2 poin penting (sebelumnya 4) · masih perlu tindakan', conversationId: 'c1', contact: 'Vytas',
         points: [{ teks: 'Komplain jemputan telat', jenis: 'komplain' }, { teks: 'Tanya hotel dekat stasiun', jenis: null }] },
     ] } })
-    show('/new/agent', <AgentView />)
+    show('/agent', <AgentView />)
     await waitFor(() => expect(document.querySelectorAll('#g-t .ag-ev')).toHaveLength(1))
     fireEvent.click(document.querySelector('#g-t .ag-ev')!)
     const dr = document.querySelector('#g-drawer')!

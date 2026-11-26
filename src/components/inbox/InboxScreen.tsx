@@ -1,6 +1,6 @@
 'use client'
 // Susunan halaman Inbox (daftar chat, isi chat + kotak balasan, panel kontak), dipindah apa adanya dari
-// src/app/(authenticated)/inbox/page.tsx supaya /inbox dan /new/inbox memakai SATU susunan yang sama.
+// halaman /inbox lama supaya susunan Inbox tetap satu dan tidak berubah.
 // Satu-satunya parameter: `basePath`, alamat yang ditulis saat operator memilih percakapan.
 // Logika membalas, bot, dan antrean tidak ada di sini -- semuanya di komponen anak yang tidak diubah.
 import { useEffect, useState } from 'react'
