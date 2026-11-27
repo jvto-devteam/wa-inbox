@@ -13,6 +13,7 @@ import { pushUnnotifiedChanges } from '@/lib/booking-actions/push-sweep'
 import { pushDueReminders } from '@/lib/push/reminders'
 import { replayWebhookFailures } from '@/lib/meta/webhook-failure-store'
 import { pushFollowUpDigest, pushNewQueueItems } from '@/lib/push/queue'
+import { runCallEscalations } from '@/lib/call-escalation/escalate'
 import { createDataRequestDrafts } from '@/lib/booking-actions/data-requests'
 import { syncAgentSchedule } from '@/lib/agent-schedule/sync'
 import { closeExcludedItems } from '@/lib/summary-items/exclusion'
@@ -39,6 +40,7 @@ import { closeExcludedItems } from '@/lib/summary-items/exclusion'
  *    dikirim otomatis bila `dataRequestApproval = ALWAYS`. Galatnya hanya di-log; tidak menahan sisa tick.
  * 3. `createLiveReplyItems` (pesan pelanggan yang belum dibalas ≥ 30 menit masuk antrean tanpa
  *    menunggu 00:00; juga dipanggil GET /api/summary-items, dijaga single-flight di sync.ts).
+ * 7. `runCallEscalations` (call-escalation/escalate.ts): telepon admin bila notif HP 15 menit tanpa tindakan (owner 2026-11-27).
  * 6. `replayWebhookFailures` (meta/webhook-failure-store.ts): memproses ulang webhook Meta yang gagal (27 Nov 2026).
  * 5. `pushNewQueueItems` + `pushFollowUpDigest` (push/queue.ts): notif HP Balas/Janji Admin baru dan rangkuman
  *    Follow Up mulai 08:00 WIB (owner 2026-11-27).
@@ -142,7 +144,9 @@ async function tick(): Promise<NextResponse> {
     // Sesudah reconcile + live, jadi yang sudah tertutup tidak dikabarkan. Keduanya tidak pernah melempar.
     const queuePush = await pushNewQueueItems(now)
     const followUpPush = await pushFollowUpDigest(now)
-    return NextResponse.json({ reconciled, live, reminders, queuePush, followUpPush, webhookReplay })
+    // Telepon ke admin bila notif Belum dibalas / Komplain 15 menit tanpa tindakan (owner 2026-11-27). Tidak pernah melempar.
+    const callEscalation = await runCallEscalations(now)
+    return NextResponse.json({ reconciled, live, reminders, queuePush, followUpPush, webhookReplay, callEscalation })
   } catch (error) {
     console.error('POST /api/summary-items/tick gagal', error instanceof Error ? error.message : 'unknown')
     return NextResponse.json({ error: 'Gagal menjalankan tick antrean' }, { status: 500 })

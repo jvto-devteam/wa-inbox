@@ -1183,3 +1183,32 @@ model WebhookFailure {
 
   @@index([processedAt, createdAt])
 }
+
+/// Eskalasi telepon ke admin (owner 2026-11-27): sesudah notif HP "Belum dibalas" atau "Komplain/masalah" terkirim dan
+/// 15 menit tidak ada tindakan, tick menelepon admin lewat telepon-service (`src/lib/call-escalation/`). Satu baris per
+/// notif (`triggerKey` unik): dibuat saat notifnya terkirim (ARMED), lalu dievaluasi tiap tick. Tanpa data pelanggan
+/// (hanya id percakapan); dipangkas setelah 30 hari.
+model CallEscalation {
+  id             String   @id @default(cuid())
+  /// REPLY (kartu Balas) | PROBLEM (label komplain/masalah dari ringkasan AI)
+  kind           String
+  conversationId String
+  /// "reply:<itemId>:<anchorAt ms>" | "problem:<conversationId>:<label>:<ms>"
+  triggerKey     String   @unique
+  /// REPLY: SummaryItem.id dan anchorAt saat notif -- tindakan = kartu tidak OPEN lagi atau anchor-nya berganti.
+  itemId         String?
+  anchorAt       DateTime?
+  /// PROBLEM: label profil yang memicu.
+  label          String?
+  /// Saat notif HP terkirim; jeda tunggu dihitung dari sini.
+  armedAt        DateTime @default(now())
+  /// ARMED | CALLING | CALLED | RESOLVED | EXPIRED | FAILED | DRY_RUN
+  status         String   @default("ARMED")
+  /// Id pekerjaan di telepon-service dan hasilnya (completed | ended_early | not_answered | declined_or_missed).
+  jobId          String?
+  outcome        String?
+  detail         String?
+  updatedAt      DateTime @updatedAt
+
+  @@index([status, armedAt])
+}

@@ -8,6 +8,7 @@
  * hilang lalu muncul lagi dikabarkan lagi. Isi: label + nama kontak, tanpa teks pesan. Tidak pernah melempar.
  */
 import { PROFILE_LABEL_TEXT, type ConversationReview, type ProfileLabel } from '@/lib/daily-summary/payload-schema'
+import { armCallEscalation } from '@/lib/call-escalation/escalate'
 import { scrub, sendPushToAll, type PushPayload } from './send'
 
 export const PROBLEM_LABELS: readonly ProfileLabel[] = ['keselamatan', 'komplain', 'mendesak', 'refund_batal', 'kendala_bayar']
@@ -41,7 +42,11 @@ export async function notifyNewProblems(conversationId: string, previousReview: 
   try {
     const before = labelsOf(previousReview)
     const fresh = problemsOf(review).filter((p) => !before.has(p.label))
-    for (const p of fresh) await sendPushToAll(buildProblemPayload({ conversationId, ...p, contactName }))
+    for (const p of fresh) {
+      await sendPushToAll(buildProblemPayload({ conversationId, ...p, contactName }))
+      // Eskalasi telepon (owner 2026-11-27): 15 menit tanpa pesan keluar agen = admin ditelepon. Tidak pernah melempar.
+      await armCallEscalation({ kind: 'PROBLEM', conversationId, label: p.label })
+    }
     return fresh.length
   } catch {
     console.error('notifyNewProblems gagal')

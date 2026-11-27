@@ -202,6 +202,23 @@ payload, tanpa nilai) dan menyimpan isi mentahnya di `WebhookFailure` (`webhook-
 unik); tick 5 menit memprosesnya ulang (jeda 15 menit, jendela 7 hari, idempoten karena ingest melewati `externalId` yang
 sudah ada) dan memangkas yang lebih tua dari 30 hari. Jawaban tetap 500 supaya Meta ikut mengirim ulang.
 
+### Eskalasi telepon ke admin (owner 2026-11-27)
+Notif HP **Belum dibalas** (kartu Balas, notif PERTAMA; pengingat ulang, Janji Admin, dan Follow Up tidak menelepon) dan
+**Komplain/masalah** (label `keselamatan`/`komplain`/`mendesak`/`refund_batal`/`kendala_bayar`) yang **15 menit tanpa tindakan**
+membuat admin ditelepon lewat WhatsApp: rekaman "Ada pesan tamu belum dibalas, cek di wa inbox" / "Ada komplain atau masalah
+dari tamu, cek di wa inbox". **Tanpa jam senyap** (24 jam, owner). Satu penerima (`ESCALATION_CALL_PHONE`), satu telepon per notif,
+tidak diulang walau tidak diangkat. Kode di `src/lib/call-escalation/`: `armCallEscalation` dipanggil saat notifnya terkirim
+(`push/queue.ts`, `push/problems.ts`) dan menulis `CallEscalation` (ARMED, tanpa data pelanggan, dipangkas 30 hari);
+`runCallEscalations` (tick 5 menit) memeriksa yang sudah 15 menit: Balas = kartu tidak OPEN lagi atau anchor berganti
+(dibalas/Lepas/Ingatkan) -> RESOLVED; masalah = ada pesan keluar `sentBy AGEN` sesudah notif -> RESOLVED; selain itu klaim
+ARMED->CALLING bersyarat lalu `POST /call` ke telepon-service (`127.0.0.1:3030`, jalur WhatsApp TIDAK resmi di VPS yang sama,
+bagian dari rantai crew chat-server). Lewat 1 jam dari jatuh tempo = EXPIRED (tidak menelepon soal basi); 429 batas per jam
+telepon-service = tetap ARMED, dicoba lagi. Waktu sebenarnya = 15 menit + sampai 5 menit tick. Env (VPS, bukan repo):
+`ESCALATION_CALL_MODE` (`live` | `dry` = hanya DRY_RUN | kosong = mati), `ESCALATION_CALL_PHONE`, `TELEPON_TOKEN`, opsional
+`TELEPON_URL`. Rekaman `belum-dibalas.wav` dan `komplain.wav` ada di `telepon-service/audio/` (VPS dan repo lokalnya; layanan
+membaca folder itu saat start). Batas per jam telepon-service (12 total, 3 per nomor) DIPAKAI BERSAMA reminder crew: telepon
+admin ke nomor yang sama ikut menghabiskan jatah 3 per jam itu.
+
 ### Decision log & triage
 `BotDecisionRun` + trace viewer + popover di Inbox. Triage = dua kolom `flaggedAt` /
 `flagNote` pada baris yang sama, bukan tabel tersendiri.
