@@ -3,6 +3,7 @@ import path from 'path'
 import type { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { sendMetaText, sendMetaMedia } from '@/lib/meta/messages'
+import type { MetaRecipient } from '@/lib/meta/recipient'
 import { uploadMetaMediaFromUrl } from '@/lib/meta/media-upload'
 import { sendMessengerText } from '@/lib/meta/messenger-send'
 import { sendCoexistText, sendCoexistMedia } from '@/lib/coexist/client'
@@ -152,7 +153,15 @@ async function sendMessageImpl(params: {
   // The capability matrix decides both WHICH channel carries this send and whether it may go
   // out at all. SDD Manage Second §15 Phase H task 4.
   const capability = capabilityForSend(params.media)
-  const routing = await resolveChannelForCapability(capability, params.channel)
+  // WhatsApp tanpa nomor (pengguna ber-username, owner 2026-11-27): hanya jalur Official yang bisa menjangkaunya, lewat
+  // BSUID (`recipient`). Dipaksa Official apa pun pilihan pemanggil -- Unofficial (wa-coexist) bekerja dengan nomor, jadi
+  // memilihnya di sini pasti gagal. Pengecualian atas aturan "bawaan Unofficial" (channel-policy.md), disetujui owner.
+  const bsuidRecipient =
+    !conversation.contact.phone && conversation.channelIdentity?.bsuid ? { bsuid: conversation.channelIdentity.bsuid } : null
+  if (bsuidRecipient && params.channel === 'UNOFFICIAL') {
+    console.warn('sendMessage: percakapan tanpa nomor tidak bisa lewat Unofficial, dikirim lewat Official', { conversationId: params.conversationId })
+  }
+  const routing = await resolveChannelForCapability(capability, bsuidRecipient ? 'OFFICIAL' : params.channel)
   const channel = routing.channel
 
   // A send that cannot physically go out (no channel supports the capability, or -- since
@@ -194,13 +203,15 @@ async function sendMessageImpl(params: {
   // a real phone number. A null `contact.phone` (Task 9: contacts born on IG/FB/email have no
   // phone) reaching this path is a routing bug elsewhere, not something to crash on; other
   // channels get their own send path once they exist, not this one.
-  if (!conversation.contact.phone) {
+  if (!conversation.contact.phone && !bsuidRecipient) {
     console.error('sendMessage: kontak tidak punya nomor telepon untuk jalur kirim WhatsApp', {
       conversationId: params.conversationId,
     })
     return recordBlocked()
   }
   const contactPhone = conversation.contact.phone
+  // Tujuan Official: nomor bila ada, selain itu BSUID (gerbang di atas menjamin salah satunya ada).
+  const metaRecipient: MetaRecipient = contactPhone ?? (bsuidRecipient as { bsuid: string })
 
   // --- Phase 6: Unofficial goes through the outbound queue ---
   //
@@ -217,7 +228,7 @@ async function sendMessageImpl(params: {
   // The sandbox conversation still short-circuits everything, exactly as before.
   // `dryRun` (Mode uji tanpa WA, nomor whitelist): sama dengan sandbox untuk pengiriman -- pesan dicatat, tidak dikirim.
   const simulated = conversation.isTest || conversation.dryRun
-  if (channel === 'UNOFFICIAL' && !simulated) {
+  if (channel === 'UNOFFICIAL' && !simulated && contactPhone) {
     // Already sanitized above -- sendViaQueue's own write must not sanitize a second time
     // (idempotent, but pointless) or, worse, skip it by reaching for params.botTrace directly.
     // `contact.phone` rebuilt with the already-narrowed `contactPhone`: the guard above proved
@@ -258,7 +269,7 @@ async function sendMessageImpl(params: {
           mediaId = uploaded.id
           const result = await sendMetaMedia(
             waNumber,
-            contactPhone,
+            metaRecipient,
             params.media.type,
             uploaded.id,
             params.text || undefined,
@@ -266,9 +277,13 @@ async function sendMessageImpl(params: {
           )
           externalId = result.externalId
         } else {
-          const result = await sendMetaText(waNumber, contactPhone, params.text, replyToExternalId)
+          const result = await sendMetaText(waNumber, metaRecipient, params.text, replyToExternalId)
           externalId = result.externalId
         }
+      } else if (!contactPhone) {
+        // Tidak terjangkau: percakapan tanpa nomor selalu dipaksa Official di atas. Dijaga supaya tidak pernah ada
+        // panggilan wa-coexist dengan nomor kosong.
+        throw new Error('Jalur Unofficial butuh nomor telepon')
       } else if (params.media) {
         // wa-coexist's WatZap-compatible API has no distinct audio endpoint (see
         // src/lib/coexist/client.ts) -- audio rides the same send_file_url path as video/document,

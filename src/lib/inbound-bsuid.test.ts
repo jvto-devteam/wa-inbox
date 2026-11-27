@@ -158,3 +158,64 @@ describe('echo balasan tanpa nomor', () => {
     expect(db.message.create).not.toHaveBeenCalled()
   })
 })
+
+describe('nomor muncul di payload lain (owner 2026-11-27: otomatis diperbarui)', () => {
+  const status = (contact: Record<string, unknown>): MetaWebhookPayload =>
+    ({ entry: [{ changes: [{ field: 'messages', value: { contacts: [contact], statuses: [{ id: 'wamid.OUT9', status: 'delivered', timestamp: '1700000000' }] } }] }] }) as never
+
+  async function seedBsuidOnlyChat() {
+    await ingestMetaMessage(inbound({ from_user_id: BSUID }))
+    db.contact.create.mockClear()
+    db.contact.updateMany.mockClear()
+  }
+
+  it('status kirim yang membawa wa_id + user_id menaikkan identitas tanpa nomor (tanpa pesan masuk)', async () => {
+    await seedBsuidOnlyChat()
+    await ingestMetaMessage(status({ profile: { name: 'Khairul' }, wa_id: PHONE, user_id: BSUID }))
+    expect(identities).toEqual([expect.objectContaining({ id: 'ci_1', externalId: PHONE, bsuid: BSUID })])
+    expect(db.contact.updateMany).toHaveBeenCalledWith({ where: { id: 'c_new', phone: null }, data: { phone: PHONE } })
+  })
+
+  it('pesan yang hanya punya from_user_id tetapi contacts[] membawa wa_id: nomor itu dipakai', async () => {
+    await seedBsuidOnlyChat()
+    await ingestMetaMessage(inbound({ id: 'wamid.IN7', from_user_id: BSUID }, { profile: { name: 'Khairul' }, wa_id: PHONE, user_id: BSUID }))
+    expect(identities).toEqual([expect.objectContaining({ id: 'ci_1', externalId: PHONE, bsuid: BSUID })])
+    expect(identities).toHaveLength(1)
+  })
+
+  it('echo yang hanya punya to_user_id tetapi contacts[] membawa wa_id: nomor itu dipakai', async () => {
+    await seedBsuidOnlyChat()
+    const payload = echo({ to_user_id: BSUID })
+    ;(payload.entry![0].changes![0].value!.contacts as unknown[])[0] = { profile: { name: 'Khairul' }, wa_id: PHONE, user_id: BSUID }
+    await ingestMetaMessage(payload)
+    expect(identities).toEqual([expect.objectContaining({ id: 'ci_1', externalId: PHONE })])
+  })
+
+  it('status untuk bsuid yang belum pernah kita lihat TIDAK membuat identitas atau kontak', async () => {
+    await ingestMetaMessage(status({ profile: { name: 'X' }, wa_id: PHONE, user_id: 'MY.999' }))
+    expect(identities).toEqual([])
+    expect(db.contact.create).not.toHaveBeenCalled()
+    expect(db.channelIdentity.create).not.toHaveBeenCalled()
+  })
+
+  it('identitas yang sudah punya nomor lain tidak ditimpa (nomor berbeda untuk bsuid yang sama dicatat)', async () => {
+    identities.push({ id: 'ci_x', contactId: 'c_x', externalId: '60111111111', bsuid: BSUID })
+    await ingestMetaMessage(status({ profile: { name: 'X' }, wa_id: PHONE, user_id: BSUID }))
+    expect(identities).toEqual([expect.objectContaining({ externalId: '60111111111' })])
+    expect(db.contact.updateMany).not.toHaveBeenCalled()
+    expect(console.warn).toHaveBeenCalledWith(expect.stringContaining('nomor berbeda'), expect.anything())
+  })
+
+  it('nomor yang sudah dipegang identitas lain: tidak digabung otomatis, dicatat', async () => {
+    identities.push({ id: 'ci_bsuid', contactId: 'c_a', externalId: BSUID, bsuid: BSUID }, { id: 'ci_phone', contactId: 'c_b', externalId: PHONE, bsuid: null })
+    await ingestMetaMessage(status({ profile: { name: 'X' }, wa_id: PHONE, user_id: BSUID }))
+    expect(identities.map((r) => r.externalId)).toEqual([BSUID, PHONE])
+    expect(console.warn).toHaveBeenCalledWith(expect.stringContaining('identitas ganda'), expect.anything())
+  })
+
+  it('webhook lama tanpa user_id tidak menambah kueri identitas', async () => {
+    await ingestMetaMessage(status({ profile: { name: 'X' }, wa_id: PHONE }))
+    expect(db.channelIdentity.findUnique).not.toHaveBeenCalled()
+  })
+})
+

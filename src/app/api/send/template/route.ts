@@ -4,6 +4,7 @@ import { prisma } from '@/lib/db'
 import { getSession } from '@/lib/auth/get-session'
 import { parseJsonBody } from '@/lib/parse-json'
 import { sendTemplateMessage } from '@/lib/meta/messages'
+import type { MetaRecipient } from '@/lib/meta/recipient'
 import { uploadMetaMediaFromUrl } from '@/lib/meta/media-upload'
 import { broadcast } from '@/lib/realtime'
 import { withMediaUrl } from '@/lib/serialize-message'
@@ -52,15 +53,17 @@ export async function POST(req: Request) {
 
   const conversation = await prisma.conversation.findUniqueOrThrow({
     where: { id: parsed.data.conversationId },
-    include: { contact: true },
+    include: { contact: true, channelIdentity: true },
   })
   // Meta template sends only ever go over WhatsApp (see the module comment above) and need a
-  // real phone number. Since Task 9, Contact.phone is nullable for contacts born on a channel
-  // without one (IG/FB/email) -- not something this Cloud-API-only path can ever serve.
-  if (!conversation.contact.phone) {
+  // real phone number -- or, for a WhatsApp user without one (username; owner 2026-11-27), the BSUID the webhook gave us
+  // (Cloud API `recipient`). Since Task 9, Contact.phone is nullable for contacts born on a channel without one
+  // (IG/FB/email): those have neither and this Cloud-API-only path can never serve them.
+  const bsuid = conversation.channelIdentity?.platform === 'WHATSAPP' ? conversation.channelIdentity.bsuid : null
+  const recipient: MetaRecipient | null = conversation.contact.phone ?? (bsuid ? { bsuid } : null)
+  if (!recipient) {
     return NextResponse.json({ error: 'Kontak ini tidak punya nomor WhatsApp' }, { status: 400 })
   }
-  const contactPhone = conversation.contact.phone
   const waNumber = await prisma.waNumber.findFirstOrThrow()
   const session = await getSession(req)
 
@@ -112,7 +115,7 @@ export async function POST(req: Request) {
   let externalId: string | undefined
   let deliveryStatus: 'SENT' | 'FAILED' = 'SENT'
   try {
-    const result = await sendTemplateMessage(waNumber, contactPhone, {
+    const result = await sendTemplateMessage(waNumber, recipient, {
       name: template.name,
       bodyParams,
       header: sendHeader,

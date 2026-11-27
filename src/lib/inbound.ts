@@ -1,6 +1,6 @@
 import { Prisma, type DeliveryStatus, type TemplateMetaStatus, type Platform } from '@prisma/client'
 import { prisma } from '@/lib/db'
-import { findWhatsappContactId, upsertWhatsappIdentity } from '@/lib/channel/identity'
+import { attachWhatsappPhone, findWhatsappContactId, upsertWhatsappIdentity } from '@/lib/channel/identity'
 import { hasPhoneNumber, BOT_TOGGLE_COLUMN_BY_PLATFORM } from '@/lib/channel/platform'
 import { broadcast } from '@/lib/realtime'
 import { decideAndRespond } from '@/lib/bot/orchestrator'
@@ -577,8 +577,9 @@ async function ingestSingleMessage(message: MetaInboundMessage, contacts: MetaCo
   // Profile name comes from THIS change's own contacts array (each change carries its
   // own), matched on wa_id where possible -- a hoisted single value would attach one
   // sender's name to another sender's contact once several changes are batched.
-  const phone = message.from ?? null
   const bsuid = message.from_user_id ?? null
+  // Nomor: `from`, atau `wa_id` kontak yang `user_id`-nya sama bila Meta hanya menaruhnya di `contacts`.
+  const phone = message.from ?? (bsuid ? contacts?.find((c) => c.user_id === bsuid)?.wa_id : undefined) ?? null
   if (!phone && !bsuid) {
     // Tanpa nomor DAN tanpa bsuid tidak ada yang bisa dipakai sebagai identitas. Dicatat (bentuknya saja), bukan ditelan.
     console.warn('ingestSingleMessage: pesan tanpa nomor dan tanpa bsuid dilewati', { messageType: message.type })
@@ -745,7 +746,7 @@ async function ingestSingleMessage(message: MetaInboundMessage, contacts: MetaCo
  * echo.from, the business itself) and there is no bot dispatch -- a human already handled
  * this message by typing it.
  */
-async function ingestEchoedMessage(echo: MetaMessageEcho): Promise<boolean> {
+async function ingestEchoedMessage(echo: MetaMessageEcho, contacts?: MetaContact[]): Promise<boolean> {
   if (echo.type === 'revoke' || echo.type === 'edit') return false
 
   const existing = await prisma.message.findUnique({ where: { externalId: echo.id } })
@@ -754,8 +755,8 @@ async function ingestEchoedMessage(echo: MetaMessageEcho): Promise<boolean> {
   // Kontak dicari lewat identitasnya, bukan lewat nomornya. Setelah Task 9 melepas
   // Contact.phone @unique, Prisma menolak `phone` di `where` sebuah upsert -- dan nomor
   // memang bukan lagi identitas: ia hanya salah satu alamat, kebetulan yang pertama ada.
-  const phone = echo.to ?? null
   const bsuid = echo.to_user_id ?? null
+  const phone = echo.to ?? (bsuid ? contacts?.find((c) => c.user_id === bsuid)?.wa_id : undefined) ?? null
   if (!phone && !bsuid) {
     console.warn('ingestEchoedMessage: echo tanpa nomor dan tanpa bsuid dilewati', { messageType: echo.type })
     return false
@@ -913,6 +914,13 @@ export async function ingestMetaMessage(
         continue
       }
 
+      // Nomor yang baru muncul untuk pengguna yang tadinya tanpa nomor: `contacts[]` membawa `wa_id` + `user_id` pada pesan,
+      // status kirim, dan echo. Identitas tanpa nomor milik bsuid itu langsung dinaikkan (owner 2026-11-27), di payload
+      // jenis apa pun. Hanya memperbarui yang sudah ada; tanpa `user_id` (webhook lama) tidak ada kueri tambahan.
+      for (const contact of value.contacts ?? []) {
+        if (contact?.wa_id && contact.user_id) await attachWhatsappPhone(contact.wa_id, contact.user_id)
+      }
+
       for (const message of value.messages ?? []) {
         // Messages are processed sequentially: two messages from the same new contact in
         // one batch must not race each other's contact/conversation upserts.
@@ -925,7 +933,7 @@ export async function ingestMetaMessage(
       }
 
       for (const echo of value.message_echoes ?? []) {
-        if (await ingestEchoedMessage(echo)) echoed += 1
+        if (await ingestEchoedMessage(echo, value.contacts)) echoed += 1
       }
     }
   }

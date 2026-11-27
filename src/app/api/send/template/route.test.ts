@@ -44,6 +44,17 @@ describe('POST /api/send/template', () => {
   // sebelum waNumber.findFirstOrThrow) belum punya test sama sekali di review pertama. Template
   // Meta HANYA lewat Cloud API WhatsApp -- kontak tanpa nomor (IG/FB/email, sejak Task 9) tidak
   // bisa dikirimi lewat jalur ini sama sekali.
+  it('kontak tanpa nomor tapi punya BSUID (pengguna ber-username): template dikirim ke BSUID', async () => {
+    mockPrisma.template.findUnique.mockResolvedValue({ id: 't1', metaStatus: 'APPROVED', name: 'tpl', body: 'Halo', cards: null, header: null, format: 'TEXT' } as never)
+    mockPrisma.conversation.findUniqueOrThrow.mockResolvedValue({ id: 'conv_1', contact: { phone: null }, channelIdentity: { platform: 'WHATSAPP', bsuid: 'MY.1' } } as never)
+    mockPrisma.message.create.mockResolvedValue({ id: 'm1' } as never)
+    vi.mocked(sendTemplateMessage).mockResolvedValue({ externalId: 'wamid.T1' })
+
+    await POST(req({ conversationId: 'conv_1', templateId: 't1' }))
+
+    expect(sendTemplateMessage).toHaveBeenCalledWith(expect.anything(), { bsuid: 'MY.1' }, expect.objectContaining({ name: 'tpl' }))
+  })
+
   it('returns 400 when the contact has no phone number, and touches no side effect (Temuan I-4b)', async () => {
     mockPrisma.template.findUnique.mockResolvedValue({ id: 't1', metaStatus: 'APPROVED', body: 'Halo', cards: null } as never)
     mockPrisma.conversation.findUniqueOrThrow.mockResolvedValue({ id: 'conv_1', contact: { phone: null } } as never)
