@@ -497,6 +497,80 @@ describe('sendMessage — kebijakan kemampuan channel (regresi Temuan 2)', () =>
 // Contact.phone jadi nullable sejak Task 9 (kontak lahir dari IG/FB/email). Pola persis meniru
 // describe block "kebijakan kemampuan channel" di atas: pastikan TIDAK SATU PUN provider
 // dipanggil, dan Message FAILED + broadcast tetap terjadi (bukan crash/silent drop).
+describe('sendMessage — percakapan WhatsApp tanpa nomor (BSUID, owner 2026-11-27)', () => {
+  const noPhoneConv = {
+    id: 'conv_1', contactId: 'contact_1', isTest: false, dryRun: false, contact: { phone: null },
+    channelIdentity: { platform: 'WHATSAPP', externalId: 'MY.1', bsuid: 'MY.1' },
+  }
+
+  it('teks: dipaksa Official dan dikirim ke BSUID; Unofficial/antrean tidak tersentuh', async () => {
+    routeTo('OFFICIAL')
+    mockPrisma.conversation.findUniqueOrThrow.mockResolvedValue(noPhoneConv as never)
+    mockPrisma.message.create.mockResolvedValue({ id: 'msg_b1', deliveryStatus: 'SENT' } as never)
+    vi.mocked(sendMetaText).mockResolvedValue({ externalId: 'wamid.B1' })
+
+    const result = await sendMessage({ conversationId: 'conv_1', text: 'halo', sentBy: 'AGENT' })
+
+    expect(resolveChannelForCapability).toHaveBeenCalledWith('send_text', 'OFFICIAL')
+    expect(sendMetaText).toHaveBeenCalledWith({ phoneNumberId: 'pnid', accessToken: 'tok' }, { bsuid: 'MY.1' }, 'halo', undefined)
+    expect(sendCoexistText).not.toHaveBeenCalled()
+    expect(enqueueOutboundJob).not.toHaveBeenCalled()
+    expect(result.deliveryStatus).toBe('SENT')
+    expect(mockPrisma.message.create.mock.calls[0][0].data).toMatchObject({ channel: 'OFFICIAL', externalId: 'wamid.B1', deliveryStatus: 'SENT' })
+  })
+
+  it('pemanggil memilih UNOFFICIAL: tetap Official (dicatat), karena Unofficial butuh nomor', async () => {
+    routeTo('OFFICIAL')
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    mockPrisma.conversation.findUniqueOrThrow.mockResolvedValue(noPhoneConv as never)
+    mockPrisma.message.create.mockResolvedValue({ id: 'msg_b2', deliveryStatus: 'SENT' } as never)
+    vi.mocked(sendMetaText).mockResolvedValue({ externalId: 'wamid.B2' })
+
+    await sendMessage({ conversationId: 'conv_1', text: 'halo', sentBy: 'AGENT', channel: 'UNOFFICIAL' })
+
+    expect(resolveChannelForCapability).toHaveBeenCalledWith('send_text', 'OFFICIAL')
+    expect(sendMetaText).toHaveBeenCalledTimes(1)
+    expect(enqueueOutboundJob).not.toHaveBeenCalled()
+    expect(warn).toHaveBeenCalled()
+    warn.mockRestore()
+  })
+
+  it('lampiran: diunggah ke Meta lalu dikirim ke BSUID', async () => {
+    routeTo('OFFICIAL')
+    mockPrisma.conversation.findUniqueOrThrow.mockResolvedValue(noPhoneConv as never)
+    mockPrisma.message.create.mockResolvedValue({ id: 'msg_b3', deliveryStatus: 'SENT' } as never)
+    vi.mocked(uploadMetaMediaFromUrl).mockResolvedValue({ id: 'media1' } as never)
+    vi.mocked(sendMetaMedia).mockResolvedValue({ externalId: 'wamid.B3' })
+
+    await sendMessage({ conversationId: 'conv_1', text: 'cap', sentBy: 'AGENT', media: { url: 'https://x/y.jpg', type: 'image', mimeType: 'image/jpeg' } })
+
+    expect(sendMetaMedia).toHaveBeenCalledWith({ phoneNumberId: 'pnid', accessToken: 'tok' }, { bsuid: 'MY.1' }, 'image', 'media1', 'cap', undefined)
+    expect(resolveChannelForCapability).toHaveBeenCalledWith('send_media', 'OFFICIAL')
+  })
+
+  it('kontak ber-nomor tidak berubah: pilihan channel pemanggil dihormati dan nomor dipakai', async () => {
+    routeTo('OFFICIAL')
+    mockPrisma.conversation.findUniqueOrThrow.mockResolvedValue({ ...noPhoneConv, contact: { phone: '6281234567890' } } as never)
+    mockPrisma.message.create.mockResolvedValue({ id: 'msg_b4', deliveryStatus: 'SENT' } as never)
+    vi.mocked(sendMetaText).mockResolvedValue({ externalId: 'wamid.B4' })
+
+    await sendMessage({ conversationId: 'conv_1', text: 'halo', sentBy: 'AGENT', channel: 'OFFICIAL' })
+
+    expect(resolveChannelForCapability).toHaveBeenCalledWith('send_text', 'OFFICIAL')
+    expect(sendMetaText).toHaveBeenCalledWith(expect.anything(), '6281234567890', 'halo', undefined)
+  })
+
+  it('tanpa nomor DAN tanpa bsuid tetap dicatat FAILED tanpa menyentuh provider', async () => {
+    routeTo('OFFICIAL')
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    mockPrisma.conversation.findUniqueOrThrow.mockResolvedValue({ ...noPhoneConv, channelIdentity: { platform: 'WHATSAPP', externalId: 'x', bsuid: null } } as never)
+    mockPrisma.message.create.mockResolvedValue({ id: 'msg_b5', deliveryStatus: 'FAILED' } as never)
+    await sendMessage({ conversationId: 'conv_1', text: 'halo', sentBy: 'AGENT' })
+    expect(sendMetaText).not.toHaveBeenCalled()
+    expect(mockPrisma.message.create.mock.calls[0][0].data).toMatchObject({ deliveryStatus: 'FAILED' })
+  })
+})
+
 describe('sendMessage — kontak tanpa nomor telepon (Temuan I-4a, fix round 1)', () => {
   it('mencatat Message FAILED dan broadcast, tanpa memanggil satu pun provider, saat contact.phone null', async () => {
     routeTo('OFFICIAL')

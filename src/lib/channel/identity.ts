@@ -139,22 +139,15 @@ export async function upsertWhatsappIdentity(input: WhatsappKeys & { contactId: 
 
   // Ada nomor dan bsuid.
   if (byBsuid && byBsuid.externalId !== phone) {
+    const linked = await linkPhoneToBsuidIdentity(byBsuid, bsuid, phone, displayName)
+    if (linked) return linked
+    // Tidak dinaikkan (identitas ber-nomor lain sudah ada, atau bsuid ini sudah punya nomor berbeda): chat ber-nomor yang
+    // dipakai bila ada, selain itu identitas bsuid apa adanya.
     const byPhone = await prisma.channelIdentity.findUnique({
       where: { platform_externalId: { platform: 'WHATSAPP', externalId: phone } },
       select: { id: true, contactId: true },
     })
-    if (!byPhone) {
-      // Nomornya baru muncul: identitas tanpa nomor dinaikkan jadi identitas ber-nomor.
-      await prisma.channelIdentity.update({ where: { id: byBsuid.id }, data: { externalId: phone, ...(displayName ? { displayName } : {}) } })
-      await prisma.contact.updateMany({ where: { id: byBsuid.contactId, phone: null }, data: { phone } })
-      return { id: byBsuid.id, contactId: byBsuid.contactId }
-    }
-    // Dua identitas untuk orang yang sama: tidak digabung otomatis (tidak bisa dibatalkan). Chat ber-nomor yang dipakai.
-    console.warn('upsertWhatsappIdentity: identitas ganda (bsuid dan nomor milik baris berbeda), tidak digabung', {
-      bsuidIdentityId: byBsuid.id,
-      phoneIdentityId: byPhone.id,
-    })
-    return byPhone
+    return byPhone ?? { id: byBsuid.id, contactId: byBsuid.contactId }
   }
 
   const identity = await upsertChannelIdentity({ platform: 'WHATSAPP', externalId: phone, contactId, displayName })
@@ -164,4 +157,55 @@ export async function upsertWhatsappIdentity(input: WhatsappKeys & { contactId: 
     if (!(error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002')) throw error
   })
   return identity
+}
+
+type BsuidIdentity = { id: string; contactId: string; externalId: string }
+
+/**
+ * Menaikkan identitas TANPA nomor (externalId = bsuid) jadi identitas ber-nomor: externalId jadi nomor dan `Contact.phone`
+ * diisi bila masih kosong. Mengembalikan identitasnya, atau null bila TIDAK dinaikkan:
+ * - identitas itu sudah punya nomor lain (externalId bukan bsuid): nomor tidak ditimpa -- bila diganti, `Contact.phone`
+ *   dan jalur kirim bisa berselisih; dicatat di log.
+ * - nomor itu sudah dipegang identitas lain: dua baris untuk orang yang sama tidak digabung otomatis (menggabungkan
+ *   percakapan tidak bisa dibatalkan); dicatat di log.
+ */
+async function linkPhoneToBsuidIdentity(identity: BsuidIdentity, bsuid: string, phone: string, displayName?: string | null): Promise<{ id: string; contactId: string } | null> {
+  if (identity.externalId !== bsuid) {
+    console.warn('upsertWhatsappIdentity: bsuid ini sudah punya nomor berbeda, tidak diubah', { identityId: identity.id })
+    return null
+  }
+  const byPhone = await prisma.channelIdentity.findUnique({
+    where: { platform_externalId: { platform: 'WHATSAPP', externalId: phone } },
+    select: { id: true },
+  })
+  if (byPhone) {
+    console.warn('upsertWhatsappIdentity: identitas ganda (bsuid dan nomor milik baris berbeda), tidak digabung', {
+      bsuidIdentityId: identity.id,
+      phoneIdentityId: byPhone.id,
+    })
+    return null
+  }
+  await prisma.channelIdentity.update({ where: { id: identity.id }, data: { externalId: phone, ...(displayName ? { displayName } : {}) } })
+  await prisma.contact.updateMany({ where: { id: identity.contactId, phone: null }, data: { phone } })
+  return { id: identity.id, contactId: identity.contactId }
+}
+
+/**
+ * Nomor yang muncul di payload mana pun (bukan hanya pesan masuk): `contacts[]` dengan `wa_id` + `user_id` -- ikut pada
+ * status kirim, echo, dan pesan -- menaikkan identitas TANPA nomor milik bsuid itu. Hanya memperbarui yang sudah ada:
+ * tidak pernah membuat identitas dari payload yang bukan pesan. Tidak ada identitas / sudah ber-nomor = tidak melakukan apa pun.
+ * Tidak melempar ke pemanggil webhook untuk urusan sampingan ini: galat dicatat.
+ */
+export async function attachWhatsappPhone(phone: string, bsuid: string): Promise<boolean> {
+  try {
+    const byBsuid = await prisma.channelIdentity.findUnique({
+      where: { platform_bsuid: { platform: 'WHATSAPP', bsuid } },
+      select: { id: true, contactId: true, externalId: true },
+    })
+    if (!byBsuid || byBsuid.externalId === phone) return false
+    return (await linkPhoneToBsuidIdentity(byBsuid, bsuid, phone)) !== null
+  } catch (error) {
+    console.error('attachWhatsappPhone gagal', error instanceof Error ? error.name : 'unknown')
+    return false
+  }
 }

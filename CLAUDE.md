@@ -185,10 +185,17 @@ Dulu kode memakai nomor sebagai satu-satunya kunci, jadi pesan seperti itu dijaw
 `Contact.phone` null, percakapan lahir dengan **bot mati** (jalur kirim butuh nomor); nomor yang muncul belakangan
 **menaikkan** identitas yang sama (externalId jadi nomor, `Contact.phone` diisi, chat tetap satu); bsuid dicatat juga untuk
 tamu ber-nomor supaya yang kelak memakai username masuk ke chat yang sama. Dua baris (tanpa nomor dan ber-nomor) untuk orang
-yang sama **tidak digabung otomatis** (tidak bisa dibatalkan), hanya dicatat di log. **Membalas** ke pengguna tanpa nomor
-BELUM bisa: `sendMessage` menolak kontak tanpa nomor, dan jalur Unofficial memang butuh nomor; Official (Cloud API) menerima
-`recipient` = BSUID, tetapi memakainya untuk chat tanpa nomor adalah pengecualian atas aturan channel dan menunggu keputusan owner.
-Balas dari Meta Business Suite sementara itu.
+yang sama **tidak digabung otomatis** (tidak bisa dibatalkan), hanya dicatat di log. Nomor yang baru muncul di payload MANA PUN
+(`contacts[]` dengan `wa_id` + `user_id` pada pesan, status kirim, atau echo) langsung menaikkan identitas tanpa nomor milik bsuid itu
+(`attachWhatsappPhone`, dipanggil `ingestMetaMessage`; hanya memperbarui yang ada, tidak pernah membuat identitas dari payload
+non-pesan; identitas yang sudah punya nomor lain tidak ditimpa).
+**Membalas** ke pengguna tanpa nomor (owner 2026-11-27: **Official dipakai khusus untuk chat tanpa nomor** -- pengecualian atas
+"bawaan Unofficial" di `channel-policy.md`): `sendMessage` memaksa Official bila `contact.phone` kosong dan
+`channelIdentity.bsuid` ada, apa pun `params.channel`, dan mengirim ke BSUID lewat `recipient` + `recipient_type`, TANPA `to`
+(`src/lib/meta/recipient.ts`; Meta: `recipient` hanya dipakai bila `to` kosong). Teks, lampiran, dan template (`/api/send/template`)
+semuanya; permintaan ke BSUID memakai `BSUID_GRAPH_VERSION` (v27.0, versi contoh dokumentasi Meta), nomor tetap di versi bawaan
+`metaFetch`. Aturan jendela 24 jam Meta berlaku seperti biasa (di luar jendela = template). Tanpa nomor DAN tanpa bsuid tetap
+dicatat FAILED. **Belum terbukti di produksi** (butuh akun uji ber-username; kirim ke pelanggan sungguhan dilarang untuk uji).
 
 Jaring pengaman: `POST /api/webhooks/meta` yang gagal mencatat sebabnya (`webhook-failure.ts`: jenis galat + nama kolom
 payload, tanpa nilai) dan menyimpan isi mentahnya di `WebhookFailure` (`webhook-failure-store.ts`, satu baris per isi

@@ -1,7 +1,8 @@
 const GRAPH_BASE = 'https://graph.facebook.com/v20.0'
 
-export async function metaFetch(path: string, accessToken: string, init?: RequestInit) {
-  const res = await fetch(`${GRAPH_BASE}${path}`, {
+export async function metaFetch(path: string, accessToken: string, init?: RequestInit, graphVersion?: string) {
+  const base = graphVersion ? `https://graph.facebook.com/${graphVersion}` : GRAPH_BASE
+  const res = await fetch(`${base}${path}`, {
     ...init,
     headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json', ...init?.headers },
   })

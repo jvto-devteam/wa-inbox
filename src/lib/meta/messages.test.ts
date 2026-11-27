@@ -274,3 +274,42 @@ describe('sendTemplateMessage', () => {
     expect(components.some((c: { sub_type?: string }) => c.sub_type === 'copy_code')).toBe(false)
   })
 })
+
+describe('kirim ke BSUID (pengguna ber-username tanpa nomor, owner 2026-11-27)', () => {
+  const ok = () => mockFetch().mockResolvedValue({ ok: true, json: async () => ({ messages: [{ id: 'wamid.B1' }] }) })
+  const wa = { phoneNumberId: '123', accessToken: 'tok' }
+
+  it('teks: `recipient` + `recipient_type` TANPA `to`, di versi Graph yang dipakai dokumentasi BSUID', async () => {
+    ok()
+    expect(await sendMetaText(wa, { bsuid: 'MY.1234567890123456' }, 'Halo!')).toEqual({ externalId: 'wamid.B1' })
+    const [url, init] = fetchCall()
+    expect(url).toBe('https://graph.facebook.com/v27.0/123/messages')
+    const body = JSON.parse(init.body)
+    expect(body).toEqual({ messaging_product: 'whatsapp', recipient_type: 'individual', recipient: 'MY.1234567890123456', type: 'text', text: { body: 'Halo!' } })
+    expect(body).not.toHaveProperty('to')
+  })
+
+  it('media dan template juga memakai `recipient`', async () => {
+    ok()
+    await sendMetaMedia(wa, { bsuid: 'MY.1' }, 'image', 'media1', 'caption')
+    ok()
+    await sendTemplateMessage(wa, { bsuid: 'MY.1' }, { name: 'tpl', bodyParams: [] })
+    for (const i of [0, 1]) {
+      const body = JSON.parse(fetchCall(i)[1].body)
+      expect(body).toMatchObject({ recipient_type: 'individual', recipient: 'MY.1' })
+      expect(body).not.toHaveProperty('to')
+      expect(fetchCall(i)[0]).toContain('/v27.0/')
+    }
+  })
+
+  it('kirim ke nomor tidak berubah: `to` dan versi Graph bawaan', async () => {
+    ok()
+    await sendMetaText(wa, '6281234567890', 'Halo!')
+    const [url, init] = fetchCall()
+    expect(url).toBe('https://graph.facebook.com/v20.0/123/messages')
+    const body = JSON.parse(init.body)
+    expect(body.to).toBe('6281234567890')
+    expect(body).not.toHaveProperty('recipient')
+  })
+})
+

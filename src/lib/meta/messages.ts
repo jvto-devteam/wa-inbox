@@ -1,22 +1,28 @@
 import { metaFetch } from './client'
+import { graphVersionFor, recipientFields, type MetaRecipient } from './recipient'
 import type { CarouselButtonDef } from './carousel-types'
 
 export async function sendMetaText(
   waNumber: { phoneNumberId: string; accessToken: string },
-  to: string,
+  to: MetaRecipient,
   text: string,
   replyToExternalId?: string
 ): Promise<{ externalId: string }> {
-  const body = await metaFetch(`/${waNumber.phoneNumberId}/messages`, waNumber.accessToken, {
-    method: 'POST',
-    body: JSON.stringify({
-      messaging_product: 'whatsapp',
-      to,
-      type: 'text',
-      text: { body: text },
-      ...(replyToExternalId ? { context: { message_id: replyToExternalId } } : {}),
-    }),
-  })
+  const body = await metaFetch(
+    `/${waNumber.phoneNumberId}/messages`,
+    waNumber.accessToken,
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        messaging_product: 'whatsapp',
+        ...recipientFields(to),
+        type: 'text',
+        text: { body: text },
+        ...(replyToExternalId ? { context: { message_id: replyToExternalId } } : {}),
+      }),
+    },
+    graphVersionFor(to)
+  )
   return { externalId: body.messages[0].id }
 }
 
@@ -29,7 +35,7 @@ type MetaMediaType = 'image' | 'video' | 'audio' | 'document'
  */
 export async function sendMetaMedia(
   waNumber: { phoneNumberId: string; accessToken: string },
-  to: string,
+  to: MetaRecipient,
   mediaType: MetaMediaType,
   mediaId: string,
   caption?: string,
@@ -38,16 +44,21 @@ export async function sendMetaMedia(
   const mediaObject: Record<string, unknown> = { id: mediaId }
   if (caption && mediaType !== 'audio') mediaObject.caption = caption
 
-  const body = await metaFetch(`/${waNumber.phoneNumberId}/messages`, waNumber.accessToken, {
-    method: 'POST',
-    body: JSON.stringify({
-      messaging_product: 'whatsapp',
-      to,
-      type: mediaType,
-      [mediaType]: mediaObject,
-      ...(replyToExternalId ? { context: { message_id: replyToExternalId } } : {}),
-    }),
-  })
+  const body = await metaFetch(
+    `/${waNumber.phoneNumberId}/messages`,
+    waNumber.accessToken,
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        messaging_product: 'whatsapp',
+        ...recipientFields(to),
+        type: mediaType,
+        [mediaType]: mediaObject,
+        ...(replyToExternalId ? { context: { message_id: replyToExternalId } } : {}),
+      }),
+    },
+    graphVersionFor(to)
+  )
   return { externalId: body.messages[0].id }
 }
 
@@ -63,7 +74,7 @@ type TemplateCardToSend = { mediaId: string; mediaType: 'IMAGE' | 'VIDEO'; butto
  */
 export async function sendTemplateMessage(
   waNumber: { phoneNumberId: string; accessToken: string },
-  to: string,
+  to: MetaRecipient,
   template: {
     name: string
     bodyParams: string[]
@@ -132,14 +143,19 @@ export async function sendTemplateMessage(
     })
   }
 
-  const body = await metaFetch(`/${waNumber.phoneNumberId}/messages`, waNumber.accessToken, {
-    method: 'POST',
-    body: JSON.stringify({
-      messaging_product: 'whatsapp',
-      to,
-      type: 'template',
-      template: { name: template.name, language: { code: 'id' }, components },
-    }),
-  })
+  const body = await metaFetch(
+    `/${waNumber.phoneNumberId}/messages`,
+    waNumber.accessToken,
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        messaging_product: 'whatsapp',
+        ...recipientFields(to),
+        type: 'template',
+        template: { name: template.name, language: { code: 'id' }, components },
+      }),
+    },
+    graphVersionFor(to)
+  )
   return { externalId: body.messages[0].id }
 }
