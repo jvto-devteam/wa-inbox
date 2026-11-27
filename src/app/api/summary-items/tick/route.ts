@@ -135,7 +135,7 @@ async function tick(): Promise<NextResponse> {
     const reminders = await pushDueReminders(now)
     // Notif HP antrean (owner 2026-11-27): Balas/Janji Admin baru satu per item, Follow Up dirangkum mulai 08:00 WIB.
     // Sesudah reconcile + live, jadi yang sudah tertutup tidak dikabarkan. Keduanya tidak pernah melempar.
-    const queuePush = await pushNewQueueItems()
+    const queuePush = await pushNewQueueItems(now)
     const followUpPush = await pushFollowUpDigest(now)
     return NextResponse.json({ reconciled, live, reminders, queuePush, followUpPush })
   } catch (error) {

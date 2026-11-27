@@ -448,7 +448,8 @@ append-only tanpa FK: siapa, kapan, nilai lama/baru), `PushSubscription`. Setela
   disaring; keputusan owner), ketuk = chat kontak; yang terlambat > 24 jam tidak di-push. Pengiriman bersama `sendPushToAll`.
   **Notif HP antrean** (owner 2026-11-27, dikirim 24 jam, isi = nama kontak tanpa teks pesan): tick memanggil
   `pushNewQueueItems` (`src/lib/push/queue.ts`; REPLY/PROMISE OPEN yang anchor-nya belum dikabarkan, penanda
-  `SummaryItem.pushedFor` = anchorAt, maks. 5 satu per item lalu sisanya digabung) dan `pushFollowUpDigest` (FOLLOW_UP lahir
+  `SummaryItem.pushedFor` = anchorAt, maks. 5 satu per item lalu sisanya digabung; REPLY yang masih OPEN diingatkan ulang tiap
+  1 jam sejak push terakhir, maks. 3 ulangan = 4 notif per anchor, lewat `pushCount`/`pushedAt`, tag sama) dan `pushFollowUpDigest` (FOLLOW_UP lahir
   00:00, dirangkum satu push mulai 08:00 WIB). Komplain/masalah (`src/lib/push/problems.ts`): `saveChatReview` memanggil
   `notifyNewProblems` untuk label profil `keselamatan`/`komplain`/`mendesak`/`refund_batal`/`kendala_bayar` yang belum ada di
   ringkasan sebelumnya. Service worker (`public/sw.js`) selalu menampilkan notifikasi, aplikasi dibuka maupun tertutup

@@ -8,17 +8,20 @@ vi.mock('./send', async (orig) => ({ ...(await orig<typeof import('./send')>()),
 
 import { prisma } from '@/lib/db'
 import { sendPushToAll } from './send'
-import { MAX_SINGLE_PER_TICK, buildQueueItemPayload, pushFollowUpDigest, pushNewQueueItems } from './queue'
+import { MAX_REPEATS, MAX_SINGLE_PER_TICK, REPEAT_EVERY_MS, buildQueueItemPayload, pushFollowUpDigest, pushNewQueueItems } from './queue'
 
 const db = prisma as unknown as DeepMockProxy<PrismaClient>
 const ANCHOR = new Date('2026-11-27T03:05:00Z') // 10.05 WIB
-const item = (id: string, o: { kind?: string; anchorAt?: Date; pushedFor?: Date | null; name?: string | null } = {}) => ({
+const NOW = new Date('2026-11-27T04:00:00Z') // 11.00 WIB
+const item = (id: string, o: { kind?: string; anchorAt?: Date; pushedFor?: Date | null; name?: string | null; pushCount?: number; pushedAt?: Date | null } = {}) => ({
   id,
   kind: o.kind ?? 'REPLY',
   conversationId: `c-${id}`,
   anchorAt: o.anchorAt ?? ANCHOR,
   anchorMessageId: `m-${id}`,
   pushedFor: o.pushedFor ?? null,
+  pushCount: o.pushCount ?? 0,
+  pushedAt: o.pushedAt ?? null,
   conversation: { contact: { name: o.name === undefined ? 'Sophie' : o.name } },
 })
 const payloads = () => vi.mocked(sendPushToAll).mock.calls.map((c) => c[0])
@@ -44,9 +47,9 @@ describe('buildQueueItemPayload', () => {
 describe('pushNewQueueItems', () => {
   it('hanya REPLY/PROMISE OPEN yang anchor-nya belum dikabarkan; klaim bersyarat sebelum kirim', async () => {
     db.summaryItem.findMany.mockResolvedValue([item('a'), item('b', { pushedFor: ANCHOR }), item('c', { kind: 'PROMISE', pushedFor: new Date(ANCHOR.getTime() - 1) })] as never)
-    expect(await pushNewQueueItems()).toEqual({ sent: 2 })
+    expect(await pushNewQueueItems(NOW)).toEqual({ sent: 2 })
     expect(db.summaryItem.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { state: 'OPEN', kind: { in: ['REPLY', 'PROMISE'] } } }))
-    expect(db.summaryItem.updateMany).toHaveBeenCalledWith({ where: { id: 'a', state: 'OPEN', pushedFor: null, anchorAt: ANCHOR }, data: { pushedFor: ANCHOR } })
+    expect(db.summaryItem.updateMany).toHaveBeenCalledWith({ where: { id: 'a', state: 'OPEN', pushedFor: null, anchorAt: ANCHOR }, data: { pushedFor: ANCHOR, pushCount: 1, pushedAt: NOW } })
     expect(payloads().map((p) => p.tag)).toEqual(['summary-item:a', 'summary-item:c'])
     expect(payloads()[1].title).toBe('Janji Admin: Sophie')
   })
@@ -54,21 +57,63 @@ describe('pushNewQueueItems', () => {
   it('klaim kalah (tick lain sudah mengirim / item tertutup) = tidak dikirim', async () => {
     db.summaryItem.findMany.mockResolvedValue([item('a')] as never)
     db.summaryItem.updateMany.mockResolvedValue({ count: 0 })
-    expect(await pushNewQueueItems()).toEqual({ sent: 0 })
+    expect(await pushNewQueueItems(NOW)).toEqual({ sent: 0 })
     expect(sendPushToAll).not.toHaveBeenCalled()
   })
 
   it('banyak sekaligus: lima pertama satu per item, sisanya digabung satu push', async () => {
     const many = Array.from({ length: MAX_SINGLE_PER_TICK + 3 }, (_, n) => item(`i${n}`, { kind: n === MAX_SINGLE_PER_TICK + 2 ? 'PROMISE' : 'REPLY' }))
     db.summaryItem.findMany.mockResolvedValue(many as never)
-    expect(await pushNewQueueItems()).toEqual({ sent: MAX_SINGLE_PER_TICK + 1 })
+    expect(await pushNewQueueItems(NOW)).toEqual({ sent: MAX_SINGLE_PER_TICK + 1 })
     expect(payloads().at(-1)).toEqual({ title: '3 chat lain di Antrean', body: '2 belum dibalas · 1 janji admin — ketuk untuk membuka Antrean', url: '/antrean', tag: 'queue-batch' })
   })
 
   it('tidak pernah melempar', async () => {
     db.summaryItem.findMany.mockRejectedValue(new Error('db'))
     vi.spyOn(console, 'error').mockImplementation(() => {})
-    await expect(pushNewQueueItems()).resolves.toEqual({ sent: 0 })
+    await expect(pushNewQueueItems(NOW)).resolves.toEqual({ sent: 0 })
+  })
+})
+
+describe('pengingat ulang Belum dibalas (owner 2026-11-27: tiap 1 jam, maks. 3 kali)', () => {
+  const HOUR = REPEAT_EVERY_MS
+
+  it('REPLY yang masih OPEN ≥ 1 jam sejak push terakhir diingatkan lagi, tag sama (menggantikan notif lama)', async () => {
+    db.summaryItem.findMany.mockResolvedValue([item('a', { pushedFor: ANCHOR, pushCount: 1, pushedAt: new Date(NOW.getTime() - HOUR) })] as never)
+    expect(await pushNewQueueItems(NOW)).toEqual({ sent: 1 })
+    expect(db.summaryItem.updateMany).toHaveBeenCalledWith({ where: { id: 'a', state: 'OPEN', pushedFor: ANCHOR, anchorAt: ANCHOR, pushCount: 1 }, data: { pushedFor: ANCHOR, pushCount: 2, pushedAt: NOW } })
+    expect(payloads()[0]).toEqual({
+      title: 'Masih belum dibalas: Sophie',
+      body: 'Menunggu sejak 10.05 WIB (± 1 jam) · pengingat 1/3 — ketuk untuk membalas',
+      url: '/inbox?conversation=c-a&message=m-a',
+      tag: 'summary-item:a',
+    })
+  })
+
+  it('belum 1 jam, ulangan habis (4 notif), Janji Admin, atau baris lama tanpa hitungan = tidak diulang', async () => {
+    db.summaryItem.findMany.mockResolvedValue([
+      item('early', { pushedFor: ANCHOR, pushCount: 1, pushedAt: new Date(NOW.getTime() - HOUR + 60_000) }),
+      item('done', { pushedFor: ANCHOR, pushCount: MAX_REPEATS + 1, pushedAt: new Date(NOW.getTime() - 5 * HOUR) }),
+      item('promise', { kind: 'PROMISE', pushedFor: ANCHOR, pushCount: 1, pushedAt: new Date(NOW.getTime() - 5 * HOUR) }),
+      item('legacy', { pushedFor: ANCHOR, pushCount: 0, pushedAt: null }),
+    ] as never)
+    expect(await pushNewQueueItems(NOW)).toEqual({ sent: 0 })
+    expect(db.summaryItem.updateMany).not.toHaveBeenCalled()
+  })
+
+  it('ulangan terakhir = pengingat 3/3; sesudahnya berhenti', async () => {
+    db.summaryItem.findMany.mockResolvedValue([item('a', { pushedFor: ANCHOR, pushCount: MAX_REPEATS, pushedAt: new Date(NOW.getTime() - HOUR) })] as never)
+    await pushNewQueueItems(NOW)
+    expect(payloads()[0].body).toContain('pengingat 3/3')
+    expect(db.summaryItem.updateMany).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ pushCount: MAX_REPEATS + 1 }) }))
+  })
+
+  it('anchor baru (tamu chat lagi sesudah ditutup) mulai dari notif pertama lagi', async () => {
+    const later = new Date(ANCHOR.getTime() + 3 * HOUR)
+    db.summaryItem.findMany.mockResolvedValue([item('a', { anchorAt: later, pushedFor: ANCHOR, pushCount: MAX_REPEATS + 1, pushedAt: new Date(NOW.getTime() - 60_000) })] as never)
+    await pushNewQueueItems(NOW)
+    expect(payloads()[0].title).toBe('Belum dibalas: Sophie')
+    expect(db.summaryItem.updateMany).toHaveBeenCalledWith(expect.objectContaining({ data: { pushedFor: later, pushCount: 1, pushedAt: NOW } }))
   })
 })
 
