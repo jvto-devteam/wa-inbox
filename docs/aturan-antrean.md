@@ -76,7 +76,7 @@ status percakapan, jenis kontak, janji tim, alasan belum booking, `perluBalas`, 
 | AQ-11 | Bila ringkasan AI yang dibuat SESUDAH pesan terakhir tamu menilai pesan itu tidak perlu dibalas ("ok", "correct", "great", "thanks", emoji), chat tidak masuk. Jawaban singkat yang membenarkan atau menyetujui pertanyaan/usulan admin (admin mengusulkan double bed, tamu menjawab "correct") berarti usulan admin diterima: tidak perlu dibalas (owner 2026-11-26, kasus Winnie). | `TIDAK_PERLU_BALAS` (`reviewSaysNoReply`, `perluBalas`) |
 | AQ-12 | CADANGAN, hanya selama AI belum menilai pesan itu (tick 5 menit tidak memanggil AI): saringan kata untuk penutup murni ("ok", "thanks", emoji). Begitu ringkasan AI ada, AQ-11 yang berlaku. Ini satu-satunya aturan berbasis kata untuk makna pesan. | `isNoiseMessage` |
 | AQ-13 | Pesan tanpa isi (AQ-10) tidak memindahkan Follow Up atau Janji Admin menjadi Balas. | `CONTENT_MESSAGE_WHERE` |
-| AQ-14 | Tanpa jeda: pesan tamu yang belum dibalas langsung masuk Balas, tidak menunggu 1 jam dan tidak menunggu 00.00 (owner 2026-11-26). Dicek tiap 5 menit dan setiap kali Antrean dibuka; begitu dibalas, item tertutup sendiri. | `UNREPLIED_MIN_MS` = 0 |
+| AQ-14 | Minimal 30 menit: pesan tamu masuk Balas bila sudah 30 menit belum dibalas, dihitung dari pesan pertama yang belum dibalas; tidak menunggu 00.00 (owner 2026-11-27; dulu 1 jam, lalu tanpa jeda 2026-11-26). Dicek tiap 5 menit dan setiap kali Antrean dibuka; begitu dibalas, item tertutup sendiri. | `UNREPLIED_MIN_MS` = 30 menit |
 
 ## Follow Up
 

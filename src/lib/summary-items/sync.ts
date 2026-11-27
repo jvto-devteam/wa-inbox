@@ -791,7 +791,7 @@ type LiveConversation = Awaited<ReturnType<typeof loadLiveConversations>>[number
 
 /**
  * Antrean live: rangkaian pesan pelanggan sesudah balasan terakhir kita yang pesan PERTAMA-nya
- * sudah ≥ UNREPLIED_MIN_MS (kini 0: tanpa jeda) jadi item REPLY tanpa menunggu job 00:00. Murni DB, tanpa LLM;
+ * sudah ≥ UNREPLIED_MIN_MS (30 menit) jadi item REPLY tanpa menunggu job 00:00. Murni DB, tanpa LLM;
  * dipanggil tick `POST /api/summary-items/tick` sesudah `reconcileSummaryItems`. Tidak pernah
  * melempar.
  *
