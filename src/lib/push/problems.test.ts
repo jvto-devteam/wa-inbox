@@ -1,9 +1,11 @@
 /** @vitest-environment node */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+vi.mock('@/lib/call-escalation/escalate', () => ({ armCallEscalation: vi.fn().mockResolvedValue(undefined) }))
 vi.mock('./send', async (orig) => ({ ...(await orig<typeof import('./send')>()), sendPushToAll: vi.fn().mockResolvedValue(undefined) }))
 
 import type { ConversationReview } from '@/lib/daily-summary/payload-schema'
+import { armCallEscalation } from '@/lib/call-escalation/escalate'
 import { sendPushToAll } from './send'
 import { buildProblemPayload, notifyNewProblems, problemsOf } from './problems'
 
@@ -13,7 +15,10 @@ const base: ConversationReview = {
 const withLabels = (...labels: [ConversationReview['profil'][number]['label'], string][]) => ({ ...base, profil: labels.map(([label, messageId]) => ({ label, messageId })) })
 const payloads = () => vi.mocked(sendPushToAll).mock.calls.map((c) => c[0])
 
-beforeEach(() => vi.mocked(sendPushToAll).mockClear())
+beforeEach(() => {
+  vi.mocked(sendPushToAll).mockClear()
+  vi.mocked(armCallEscalation).mockClear()
+})
 
 describe('problemsOf', () => {
   it('hanya lima label masalah (owner 2026-11-27), urut prioritas', () => {
@@ -37,6 +42,12 @@ describe('notifyNewProblems', () => {
     expect(await notifyNewProblems('c1', 'rusak', withLabels(['sensitif_harga', 'm1']), null)).toBe(0)
     expect(await notifyNewProblems('c1', { profil: 'x' }, withLabels(['keselamatan', 'm1']), null)).toBe(1)
     expect(payloads()[0].title).toBe('Insiden keselamatan: Pelanggan')
+  })
+
+  it('eskalasi telepon: tiap notif masalah yang terkirim didaftarkan; label yang sudah ada tidak', async () => {
+    await notifyNewProblems('c1', withLabels(['komplain', 'm1']), withLabels(['komplain', 'm2'], ['keselamatan', 'm3']), 'Sophie')
+    expect(armCallEscalation).toHaveBeenCalledTimes(1)
+    expect(armCallEscalation).toHaveBeenCalledWith({ kind: 'PROBLEM', conversationId: 'c1', label: 'keselamatan' })
   })
 
   it('nama berupa nomor HP disaring', () => {

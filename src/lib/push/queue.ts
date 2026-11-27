@@ -17,6 +17,7 @@
  * disaring `scrub`. Ketuk = chat itu (pesan anchor bila ada). Tidak pernah melempar.
  */
 import { prisma } from '@/lib/db'
+import { armCallEscalation } from '@/lib/call-escalation/escalate'
 import { scrub, sendPushToAll, type PushPayload } from './send'
 
 export const MAX_SINGLE_PER_TICK = 5
@@ -111,6 +112,11 @@ export async function pushNewQueueItems(now: Date = new Date()): Promise<{ sent:
       const parts = [replies > 0 ? `${replies} belum dibalas` : null, promises > 0 ? `${promises} janji admin` : null].filter(Boolean)
       await sendPushToAll({ title: `${rest.length} chat lain di Antrean`, body: `${parts.join(' · ')} — ketuk untuk membuka Antrean`, url: '/antrean', tag: 'queue-batch' })
       sent++
+    }
+    // Eskalasi telepon (owner 2026-11-27): hanya notif PERTAMA kartu Balas (bukan pengingat ulang, bukan Janji Admin);
+    // 15 menit tanpa tindakan = admin ditelepon (`call-escalation/escalate.ts`). Tidak pernah melempar.
+    for (const r of items) {
+      if (r.kind === 'REPLY' && r.repeat === 0) await armCallEscalation({ kind: 'REPLY', conversationId: r.conversationId, itemId: r.id, anchorAt: r.anchorAt }, now)
     }
   } catch (error) {
     console.error('pushNewQueueItems gagal', { error: error instanceof Error ? error.message : 'unknown' })

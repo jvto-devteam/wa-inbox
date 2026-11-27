@@ -4,9 +4,11 @@ import { mockDeep, mockReset, type DeepMockProxy } from 'vitest-mock-extended'
 import type { PrismaClient } from '@prisma/client'
 
 vi.mock('@/lib/db', () => ({ prisma: mockDeep<PrismaClient>() }))
+vi.mock('@/lib/call-escalation/escalate', () => ({ armCallEscalation: vi.fn().mockResolvedValue(undefined) }))
 vi.mock('./send', async (orig) => ({ ...(await orig<typeof import('./send')>()), sendPushToAll: vi.fn().mockResolvedValue(undefined) }))
 
 import { prisma } from '@/lib/db'
+import { armCallEscalation } from '@/lib/call-escalation/escalate'
 import { sendPushToAll } from './send'
 import { MAX_REPEATS, MAX_SINGLE_PER_TICK, REPEAT_EVERY_MS, buildQueueItemPayload, pushFollowUpDigest, pushNewQueueItems } from './queue'
 
@@ -29,6 +31,7 @@ const payloads = () => vi.mocked(sendPushToAll).mock.calls.map((c) => c[0])
 beforeEach(() => {
   mockReset(db)
   vi.mocked(sendPushToAll).mockClear()
+  vi.mocked(armCallEscalation).mockClear()
   db.summaryItem.updateMany.mockResolvedValue({ count: 1 })
 })
 
@@ -72,6 +75,26 @@ describe('pushNewQueueItems', () => {
     db.summaryItem.findMany.mockRejectedValue(new Error('db'))
     vi.spyOn(console, 'error').mockImplementation(() => {})
     await expect(pushNewQueueItems(NOW)).resolves.toEqual({ sent: 0 })
+  })
+})
+
+describe('eskalasi telepon (owner 2026-11-27)', () => {
+  it('notif PERTAMA kartu Balas didaftarkan; Janji Admin dan pengingat ulang tidak', async () => {
+    db.summaryItem.findMany.mockResolvedValue([
+      item('a'),
+      item('p', { kind: 'PROMISE' }),
+      item('r', { pushedFor: ANCHOR, pushCount: 1, pushedAt: new Date(NOW.getTime() - REPEAT_EVERY_MS) }),
+    ] as never)
+    await pushNewQueueItems(NOW)
+    expect(sendPushToAll).toHaveBeenCalledTimes(3)
+    expect(armCallEscalation).toHaveBeenCalledTimes(1)
+    expect(armCallEscalation).toHaveBeenCalledWith({ kind: 'REPLY', conversationId: 'c-a', itemId: 'a', anchorAt: ANCHOR }, NOW)
+  })
+
+  it('yang digabung dalam satu notif (lebih dari 5 sekaligus) tetap didaftarkan', async () => {
+    db.summaryItem.findMany.mockResolvedValue(Array.from({ length: MAX_SINGLE_PER_TICK + 2 }, (_, n) => item(`i${n}`)) as never)
+    await pushNewQueueItems(NOW)
+    expect(armCallEscalation).toHaveBeenCalledTimes(MAX_SINGLE_PER_TICK + 2)
   })
 })
 
