@@ -11,6 +11,7 @@ import { createLiveReplyItems, reconcileSummaryItems } from '@/lib/summary-items
 import { releaseStaleExecuting } from '@/lib/booking-actions/execute'
 import { pushUnnotifiedChanges } from '@/lib/booking-actions/push-sweep'
 import { pushDueReminders } from '@/lib/push/reminders'
+import { pushFollowUpDigest, pushNewQueueItems } from '@/lib/push/queue'
 import { createDataRequestDrafts } from '@/lib/booking-actions/data-requests'
 import { syncAgentSchedule } from '@/lib/agent-schedule/sync'
 import { closeExcludedItems } from '@/lib/summary-items/exclusion'
@@ -37,6 +38,8 @@ import { closeExcludedItems } from '@/lib/summary-items/exclusion'
  *    dikirim otomatis bila `dataRequestApproval = ALWAYS`. Galatnya hanya di-log; tidak menahan sisa tick.
  * 3. `createLiveReplyItems` (pesan pelanggan yang belum dibalas ≥ 30 menit masuk antrean tanpa
  *    menunggu 00:00; juga dipanggil GET /api/summary-items, dijaga single-flight di sync.ts).
+ * 5. `pushNewQueueItems` + `pushFollowUpDigest` (push/queue.ts): notif HP Balas/Janji Admin baru dan rangkuman
+ *    Follow Up mulai 08:00 WIB (owner 2026-11-27).
  * Tidak pernah memanggil LLM. `refreshStaleBookingData` memanggil API booking (maks. 25
  * percakapan per tick, diacak dari 100 yang paling basi, berurutan, timeout 10 s per panggilan,
  * berhenti sesudah 60 s).
@@ -130,7 +133,11 @@ async function tick(): Promise<NextResponse> {
     const live = await createLiveReplyItems(now)
     // Reminder yang jatuh tempo dikabarkan lewat Web Push (sekali per jatuh tempo). Tidak pernah melempar.
     const reminders = await pushDueReminders(now)
-    return NextResponse.json({ reconciled, live, reminders })
+    // Notif HP antrean (owner 2026-11-27): Balas/Janji Admin baru satu per item, Follow Up dirangkum mulai 08:00 WIB.
+    // Sesudah reconcile + live, jadi yang sudah tertutup tidak dikabarkan. Keduanya tidak pernah melempar.
+    const queuePush = await pushNewQueueItems()
+    const followUpPush = await pushFollowUpDigest(now)
+    return NextResponse.json({ reconciled, live, reminders, queuePush, followUpPush })
   } catch (error) {
     console.error('POST /api/summary-items/tick gagal', error instanceof Error ? error.message : 'unknown')
     return NextResponse.json({ error: 'Gagal menjalankan tick antrean' }, { status: 500 })
