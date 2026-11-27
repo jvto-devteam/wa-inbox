@@ -3,9 +3,9 @@
  * dan angka yang dipakai job tidak pernah bisa berbeda.
  *
  * Alasan tiap angka (disepakati owner 2026-09-22):
- * - Belum dibalas: TANPA jeda (owner 2026-11-26: "balas kalo memang gak dibalas aja, jangan nunggu 1 jam").
- *   Dulu 1 jam (2026-09-22); kini pesan pelanggan terakhir yang belum dibalas langsung masuk Balas lewat tick 5 menit
- *   atau saat Antrean dibuka, dan tertutup sendiri begitu dibalas (reconcile).
+ * - Belum dibalas: minimal 30 menit (owner 2026-11-27), diukur dari pesan PERTAMA yang belum dibalas.
+ *   Dulu 1 jam (2026-09-22), lalu tanpa jeda (2026-11-26); masuk Balas lewat tick 5 menit atau saat Antrean
+ *   dibuka, dan tertutup sendiri begitu dibalas (reconcile).
  * - 48 jam pelanggan diam: tamu asing beda zona waktu dan sering berdiskusi dulu dengan
  *   rombongannya; 24 jam terlalu dini untuk disebut menggantung.
  * - 14 hari ke belakang: lead yang lebih tua sudah dingin, dan daftar yang terus menumpuk
@@ -14,7 +14,7 @@
 const HOUR_MS = 60 * 60 * 1000
 const DAY_MS = 24 * HOUR_MS
 
-export const UNREPLIED_MIN_MS = 0
+export const UNREPLIED_MIN_MS = 30 * 60 * 1000
 export const DORMANT_MIN_MS = 2 * DAY_MS
 export const LOOKBACK_MS = 14 * DAY_MS
 /** Tahap booked/lunas/selesai sudah bukan lead yang perlu dikejar. */

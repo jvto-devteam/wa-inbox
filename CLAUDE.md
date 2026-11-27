@@ -211,8 +211,8 @@ route (`{ busy: true }`); penyegaran data booking dibatasi 60 s dan 25 percakapa
 100 yang paling basi supaya yang terus gagal tidak menahan sisanya, dan API booking yang gagal
 (timeout/non-OK/error) **tidak pernah** menghapus `bookingData` atau menstempel `bookingCheckedAt` —
 hanya jawaban kosong yang sah yang berarti "tanpa booking". Rangkaian pesan pelanggan sesudah balasan
-terakhir kita (pesan terakhir INBOUND, ≤ `LOOKBACK_MS`) langsung jadi REPLY tanpa jeda dan tanpa menunggu 00:00
-(`UNREPLIED_MIN_MS` = 0 sejak owner 2026-11-26, dulu 1 jam; juga dibuat saat Antrean dibuka lewat GET `/api/summary-items`,
+terakhir kita (pesan terakhir INBOUND, ≤ `LOOKBACK_MS`) yang pesan **pertamanya** sudah ≥ 30 menit jadi REPLY tanpa menunggu 00:00
+(`UNREPLIED_MIN_MS` = 30 menit sejak owner 2026-11-27; dulu 1 jam, lalu 0 pada 2026-11-26; juga dibuat saat Antrean dibuka lewat GET `/api/summary-items`,
 `createLiveReplyItems` single-flight). Aturan REPLY satu untuk live, sync malam,
 dan reconcile: `anchorAt` = pesan masuk **pertama** rangkaian dan tidak pernah maju selama item terbuka;
 `coveredUntil` + snippet = pesan masuk **terbaru** yang sudah tercakup kartu — keduanya selalu bergerak

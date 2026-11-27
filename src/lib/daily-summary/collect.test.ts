@@ -39,9 +39,9 @@ describe('classifyConversation — belum dibalas', () => {
     expect(c.dormant).toBeNull()
   })
 
-  it('pesan pelanggan yang belum dibalas langsung dicap, walau baru 1 menit (tanpa jeda, owner 2026-11-26)', () => {
-    const c = classifyConversation(facts([msg('INBOUND', before(60 * 1000))]), start, end)
-    expect(c.unreplied?.waitingMs).toBe(60 * 1000)
+  it('pesan pelanggan baru dicap sesudah 30 menit belum dibalas (owner 2026-11-27)', () => {
+    expect(classifyConversation(facts([msg('INBOUND', before(29 * 60 * 1000))]), start, end).unreplied).toBeNull()
+    expect(classifyConversation(facts([msg('INBOUND', before(30 * 60 * 1000))]), start, end).unreplied?.waitingMs).toBe(30 * 60 * 1000)
   })
 
   it('lebih dari 14 hari tidak lagi dihitung', () => {

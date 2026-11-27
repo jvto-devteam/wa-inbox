@@ -6,8 +6,8 @@ import { SUMMARY_ITEM_INCLUDE, toSummaryItemView, type SummaryItemView } from '@
 
 /**
  * GET /api/summary-items — antrean tindakan Summary Harian. Rekonsiliasi dulu dengan pesan
- * dan pengingat terbaru, lalu pesan pelanggan yang belum dibalas langsung jadi Balas (`createLiveReplyItems`, sama dengan
- * tick; owner 2026-11-26: tidak menunggu), lalu OPEN (REPLY, lalu FOLLOW_UP, lalu PROMISE; tertua dulu) dan SCHEDULED
+ * dan pengingat terbaru, lalu pesan pelanggan yang belum dibalas ≥ 30 menit jadi Balas (`createLiveReplyItems`, sama dengan
+ * tick; tidak menunggu tick), lalu OPEN (REPLY, lalu FOLLOW_UP, lalu PROMISE; tertua dulu) dan SCHEDULED
  * (jatuh tempo terdekat dulu). Terbuka untuk semua yang login, seperti /api/daily-summary.
  */
 export type SummaryItemsResponse = { open: SummaryItemView[]; scheduled: SummaryItemView[]; openGapTotal: number }

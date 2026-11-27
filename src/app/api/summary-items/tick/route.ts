@@ -35,7 +35,7 @@ import { closeExcludedItems } from '@/lib/summary-items/exclusion'
  *    FOLLOW_UP/PROMISE jadi REPLY).
  * 2b. `createDataRequestDrafts` (Task 12): draf H-7 harian permintaan data ke tamu (08:00-19:59 WIB saja),
  *    dikirim otomatis bila `dataRequestApproval = ALWAYS`. Galatnya hanya di-log; tidak menahan sisa tick.
- * 3. `createLiveReplyItems` (pesan pelanggan yang belum dibalas masuk antrean tanpa jeda dan tanpa
+ * 3. `createLiveReplyItems` (pesan pelanggan yang belum dibalas ≥ 30 menit masuk antrean tanpa
  *    menunggu 00:00; juga dipanggil GET /api/summary-items, dijaga single-flight di sync.ts).
  * Tidak pernah memanggil LLM. `refreshStaleBookingData` memanggil API booking (maks. 25
  * percakapan per tick, diacak dari 100 yang paling basi, berurutan, timeout 10 s per panggilan,
