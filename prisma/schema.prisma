@@ -1057,6 +1057,9 @@ model SummaryItem {
   lastSeenOn      String
   reminderId      String?
   dueAt           DateTime?
+  /// anchorAt yang sudah dikabarkan lewat Web Push (owner 2026-11-27, `src/lib/push/queue.ts`). Push dikirim bila item
+  /// OPEN dan pushedFor != anchorAt, jadi item yang dibuka ulang dengan anchor baru dikabarkan lagi.
+  pushedFor       DateTime?
   /// REPLIED | REMINDER_DONE | DROPPED | STAGE_ADVANCED | PROMISE_KEPT | JUDGED_DONE
   closedReason    String?
   note            String?

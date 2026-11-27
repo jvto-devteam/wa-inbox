@@ -4,10 +4,12 @@ import { mockDeep, mockReset, type DeepMockProxy } from 'vitest-mock-extended'
 import type { PrismaClient } from '@prisma/client'
 
 vi.mock('@/lib/db', () => ({ prisma: mockDeep<PrismaClient>() }))
+vi.mock('@/lib/push/problems', async (orig) => ({ ...(await orig<typeof import('@/lib/push/problems')>()), notifyNewProblems: vi.fn().mockResolvedValue(0) }))
 
 import { prisma } from '@/lib/db'
 import type { ConversationReview } from '@/lib/daily-summary/payload-schema'
 import { Prisma } from '@prisma/client'
+import { notifyNewProblems } from '@/lib/push/problems'
 import { pruneChatReviews, saveChatReview } from './store'
 
 const mockPrisma = prisma as unknown as DeepMockProxy<PrismaClient>
@@ -15,9 +17,32 @@ const review: ConversationReview = {
   status: 'selesai', alasan: 'a', jenisKontak: 'lainnya', topik: 't', pertanyaan: [], poinPenting: [], janjiTim: [], profil: [], statusAgen: '', langkahBerikut: '',
 }
 
-beforeEach(() => mockReset(mockPrisma))
+beforeEach(() => {
+  mockReset(mockPrisma)
+  vi.mocked(notifyNewProblems).mockClear()
+})
 
 describe('saveChatReview', () => {
+  it('owner 2026-11-27: ringkasan berlabel masalah yang tersimpan = push dibandingkan ringkasan sebelumnya', async () => {
+    const prev = { ...review, profil: [{ label: 'komplain', messageId: 'm1' }] }
+    const next = { ...review, catatanCrew: undefined, profil: [{ label: 'komplain' as const, messageId: 'm2' }, { label: 'mendesak' as const, messageId: 'm3' }] }
+    mockPrisma.conversation.findUnique.mockResolvedValue({ chatReview: prev, contact: { name: 'Sophie' } } as never)
+    mockPrisma.conversation.updateMany.mockResolvedValue({ count: 1 })
+    await saveChatReview('c1', next, new Date())
+    expect(mockPrisma.conversation.findUnique).toHaveBeenCalledWith({ where: { id: 'c1' }, select: { chatReview: true, contact: { select: { name: true } } } })
+    expect(notifyNewProblems).toHaveBeenCalledWith('c1', prev, next, 'Sophie')
+  })
+
+  it('ringkasan yang tidak tersimpan (ada yang lebih baru) atau tanpa label masalah tidak memicu push', async () => {
+    const next = { ...review, profil: [{ label: 'komplain' as const, messageId: 'm2' }] }
+    mockPrisma.conversation.findUnique.mockResolvedValue({ chatReview: null, contact: { name: null } } as never)
+    mockPrisma.conversation.updateMany.mockResolvedValue({ count: 0 })
+    await saveChatReview('c1', next, new Date())
+    mockPrisma.conversation.updateMany.mockResolvedValue({ count: 1 })
+    await saveChatReview('c1', review, new Date())
+    expect(notifyNewProblems).not.toHaveBeenCalled()
+  })
+
   it('hanya menulis bila chatReviewAt kosong, lebih lama, atau sama dengan asOf', async () => {
     mockPrisma.conversation.updateMany.mockResolvedValue({ count: 1 })
     const asOf = new Date('2026-10-19T00:00:00Z')

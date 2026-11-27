@@ -1,6 +1,7 @@
 import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { RETENTION_MS } from '@/lib/daily-summary/config'
+import { notifyNewProblems, problemsOf } from '@/lib/push/problems'
 import { crewNoteSchema, scheduleNoteSchema, type ConversationReview, type CrewNote, type ScheduleNote } from '@/lib/daily-summary/payload-schema'
 
 /** Catatan crew yang tersimpan di `chatReview` sebuah percakapan, atau null (belum ada / bentuk lama). */
@@ -30,8 +31,13 @@ export async function saveChatReview(conversationId: string, review: Conversatio
     // Ringkasan dari jalur lain (job harian) tidak membawa `catatanCrew` maupun `catatanSchedule`; tanpa ini keduanya
     // terhapus tiap tengah malam.
     let toSave = review
+    // Label masalah (komplain dll.) dibandingkan dengan ringkasan sebelumnya untuk push HP; tanpa label = tanpa baca.
+    const hasProblems = problemsOf(review).length > 0
+    const existing =
+      !review.catatanCrew || !review.catatanSchedule || hasProblems
+        ? await prisma.conversation.findUnique({ where: { id: conversationId }, select: { chatReview: true, contact: { select: { name: true } } } })
+        : null
     if (!review.catatanCrew || !review.catatanSchedule) {
-      const existing = await prisma.conversation.findUnique({ where: { id: conversationId }, select: { chatReview: true } })
       const keptCrew = review.catatanCrew ? null : crewNoteOf(existing?.chatReview)
       const keptSchedule = review.catatanSchedule ? null : scheduleNoteOf(existing?.chatReview)
       if (keptCrew) toSave = { ...toSave, catatanCrew: keptCrew }
@@ -41,6 +47,8 @@ export async function saveChatReview(conversationId: string, review: Conversatio
       where: { id: conversationId, OR: [{ chatReviewAt: null }, { chatReviewAt: { lte: asOf } }] },
       data: { chatReview: toSave, chatReviewAt: asOf },
     })
+    // Push tidak ditunggu: job harian menyimpan ratusan ringkasan, dan push gagal tidak boleh menggagalkan simpan.
+    if (count > 0 && hasProblems) void notifyNewProblems(conversationId, existing?.chatReview, review, existing?.contact?.name ?? null)
     return count > 0
   } catch (error) {
     console.error('saveChatReview gagal', { conversationId, error: error instanceof Error ? error.message : 'unknown' })

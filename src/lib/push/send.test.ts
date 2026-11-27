@@ -19,6 +19,8 @@ const event = {
   summary: 'Titik jemput → Surabaya Hotel',
   actionId: 'act1',
 }
+/** Jenis yang masih dikirim ke HP (owner 2026-11-27); dipakai test pengiriman. */
+const failed = { ...event, kind: 'EXECUTE_FAILED' as const }
 const sub = (n: number) => ({ id: `s${n}`, accountId: `acc${n}`, endpoint: `https://push.example/${n}`, p256dh: `p${n}`, auth: `a${n}`, createdAt: new Date(), lastSuccessAt: null })
 
 beforeEach(() => {
@@ -34,8 +36,20 @@ beforeEach(() => {
 })
 
 describe('notifyBookingAction', () => {
+  it('owner 2026-11-27: hanya alarm gagal yang dikirim ke HP; jenis lain tetap dicatat PUSHED tanpa dikirim', async () => {
+    for (const kind of ['CHANGE', 'MISMATCH', 'TASK', 'AUTO_APPLIED', 'DATA_REQUEST_FAILED'] as const) {
+      await notifyBookingAction({ ...event, kind })
+      expect(db.bookingActionEvent.create).toHaveBeenLastCalledWith({ data: expect.objectContaining({ event: 'PUSHED', reason: kind }) })
+    }
+    expect(send).not.toHaveBeenCalled()
+    await notifyBookingAction({ ...event, kind: 'GUEST_NOTICE_FAILED', tagSuffix: 'guest' })
+    expect(send).toHaveBeenCalledTimes(2)
+    await notifyBookingAction(failed)
+    expect(send).toHaveBeenCalledTimes(4)
+  })
+
   it('sends to every subscription of every account', async () => {
-    await notifyBookingAction(event)
+    await notifyBookingAction(failed)
     expect(send).toHaveBeenCalledTimes(2)
     expect(send.mock.calls.map((c) => (c[0] as { endpoint: string }).endpoint)).toEqual(['https://push.example/1', 'https://push.example/2'])
     expect(db.pushSubscription.findMany).toHaveBeenCalledWith()
@@ -43,7 +57,7 @@ describe('notifyBookingAction', () => {
 
   it('410 from push service deletes subscription', async () => {
     send.mockRejectedValueOnce(Object.assign(new Error('gone'), { statusCode: 410 }))
-    await notifyBookingAction(event)
+    await notifyBookingAction(failed)
     expect(db.pushSubscription.deleteMany).toHaveBeenCalledWith({ where: { endpoint: 'https://push.example/1' } })
     expect(db.pushSubscription.deleteMany).toHaveBeenCalledTimes(1)
   })
@@ -51,28 +65,28 @@ describe('notifyBookingAction', () => {
   it('404 also deletes; 500 keeps the subscription', async () => {
     send.mockRejectedValueOnce(Object.assign(new Error('nf'), { statusCode: 404 }))
     send.mockRejectedValueOnce(Object.assign(new Error('boom'), { statusCode: 500 }))
-    await notifyBookingAction(event)
+    await notifyBookingAction(failed)
     expect(db.pushSubscription.deleteMany).toHaveBeenCalledTimes(1)
     expect(db.pushSubscription.deleteMany).toHaveBeenCalledWith({ where: { endpoint: 'https://push.example/1' } })
   })
 
   it('push failure never throws into caller', async () => {
     send.mockRejectedValue(new Error('network down'))
-    await expect(notifyBookingAction(event)).resolves.toBeUndefined()
+    await expect(notifyBookingAction(failed)).resolves.toBeUndefined()
     db.pushSubscription.findMany.mockRejectedValue(new Error('db down'))
-    await expect(notifyBookingAction(event)).resolves.toBeUndefined()
+    await expect(notifyBookingAction(failed)).resolves.toBeUndefined()
   })
 
   it('is a silent no-op without VAPID env', async () => {
     delete process.env.VAPID_PRIVATE_KEY
-    await notifyBookingAction(event)
+    await notifyBookingAction(failed)
     expect(send).not.toHaveBeenCalled()
     expect(db.pushSubscription.findMany).not.toHaveBeenCalled()
   })
 
   it('passes VAPID details and the JSON payload to web-push, never logging the private key', async () => {
     send.mockRejectedValue(new Error('x priv'))
-    await notifyBookingAction(event)
+    await notifyBookingAction(failed)
     const opts = send.mock.calls[0][2] as { vapidDetails: { privateKey: string } }
     expect((send.mock.calls[0][2] as { timeout: number }).timeout).toBe(10_000)
     expect(opts.vapidDetails.privateKey).toBe('priv')
@@ -163,7 +177,7 @@ describe('review round 2: alarm titles and marker failures', () => {
     db.bookingActionEvent.create.mockRejectedValueOnce(new Error('db'))
     db.pushSubscription.findMany.mockResolvedValue([sub(1)] as never)
     expect(pushMarkFailedRecently('act1')).toBe(false)
-    await notifyBookingAction(event)
+    await notifyBookingAction(failed)
     expect(pushMarkFailedRecently('act1')).toBe(true)
     expect(pushMarkFailedRecently('act1', Date.now() + 2 * 60 * 60 * 1000)).toBe(false)
     expect(send).toHaveBeenCalledTimes(1)

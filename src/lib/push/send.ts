@@ -175,7 +175,16 @@ export async function sendPushToAll(payload: PushPayload): Promise<void> {
   }
 }
 
+/**
+ * Jenis push aksi booking yang masih DIKIRIM ke HP (owner 2026-11-27: notif HP hanya untuk antrean -- reminder, belum
+ * dibalas, follow up, janji admin, komplain/masalah -- ditambah alarm gagal). Yang lain tetap mencatat `PUSHED` (supaya
+ * sapuan tick tidak mencoba ulang tiap 5 menit) tetapi tidak dikirim; kartunya tetap tampil di panel Inbox.
+ * EXECUTE_FAILED mencakup gagal tulis dan kabar vendor gagal; GUEST_NOTICE_FAILED = tamu belum dikabari / batal.
+ */
+export const SENT_BOOKING_PUSH_KINDS: ReadonlySet<BookingPushKind> = new Set(['EXECUTE_FAILED', 'GUEST_NOTICE_FAILED'])
+
 export async function notifyBookingAction(e: BookingPushEvent): Promise<void> {
   await markPushed(e)
+  if (!SENT_BOOKING_PUSH_KINDS.has(e.kind)) return
   await sendPushToAll(buildPushPayload(e))
 }

@@ -426,7 +426,9 @@ append-only tanpa FK: siapa, kapan, nilai lama/baru), `PushSubscription`. Setela
 - **Kartu dari `reevaluateBookingActions`** (tanpa pesan baru, mis. sesudah penyegaran booking) **tidak** diterapkan
   otomatis: push CHANGE-nya langsung terkirim dan kartu menunggu orang; hanya kartu dari ekstraksi yang lewat
   `autoApplyCreated`.
-- **Push** (`src/lib/push/send.ts`, `notifyBookingAction`): Web Push untuk tujuh jenis kejadian — kartu baru
+- **Push** (`src/lib/push/send.ts`, `notifyBookingAction`): **sejak owner 2026-11-27 hanya `EXECUTE_FAILED` dan
+  `GUEST_NOTICE_FAILED` yang dikirim ke HP** (`SENT_BOOKING_PUSH_KINDS`); jenis lain tetap mencatat `PUSHED` tanpa dikirim,
+  kartunya tetap di panel Inbox. Aslinya Web Push untuk tujuh jenis kejadian — kartu baru
   `CHANGE`, `MISMATCH`, `TASK`, `AUTO_APPLIED` (diterapkan otomatis), `EXECUTE_FAILED` (gagal tulis / kabar vendor
   gagal), `DATA_REQUEST_FAILED` (draf permintaan data gagal terkirim), `GUEST_NOTICE_FAILED` (tamu belum dikabari
   perubahan, kabari manual); draf permintaan data yang terkirim tidak di-push. Tag notifikasi `booking-action:<id>`;
@@ -443,7 +445,14 @@ append-only tanpa FK: siapa, kapan, nilai lama/baru), `PushSubscription`. Setela
   `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`. **Reminder jatuh tempo** juga di-push (owner 2026-11-26,
   `src/lib/push/reminders.ts`, `pushDueReminders` dipanggil tick): semua reminder kontak (Ingatkan, Laporan, Kontak), sekali
   per jatuh tempo lewat kolom `Reminder.pushedFor` (ditunda = dikabarkan lagi), isi = nama kontak + catatan (HP/email
-  disaring; keputusan owner), ketuk = chat kontak; yang terlambat > 24 jam tidak di-push. Pengiriman bersama `sendPushToAll`. Setiap permintaan perubahan berlabel "belum
+  disaring; keputusan owner), ketuk = chat kontak; yang terlambat > 24 jam tidak di-push. Pengiriman bersama `sendPushToAll`.
+  **Notif HP antrean** (owner 2026-11-27, dikirim 24 jam, isi = nama kontak tanpa teks pesan): tick memanggil
+  `pushNewQueueItems` (`src/lib/push/queue.ts`; REPLY/PROMISE OPEN yang anchor-nya belum dikabarkan, penanda
+  `SummaryItem.pushedFor` = anchorAt, maks. 5 satu per item lalu sisanya digabung) dan `pushFollowUpDigest` (FOLLOW_UP lahir
+  00:00, dirangkum satu push mulai 08:00 WIB). Komplain/masalah (`src/lib/push/problems.ts`): `saveChatReview` memanggil
+  `notifyNewProblems` untuk label profil `keselamatan`/`komplain`/`mendesak`/`refund_batal`/`kendala_bayar` yang belum ada di
+  ringkasan sebelumnya. Service worker (`public/sw.js`) selalu menampilkan notifikasi, aplikasi dibuka maupun tertutup
+  (`sw.test.ts`). Setiap permintaan perubahan berlabel "belum
   dipenuhi" sampai ditutup; tidak ada kedaluwarsa.
 - **Panel kanan**: `GET /api/conversations/[id]/chat-review` memuat `pinned` dan `changeHistory`. Tab ini
   ikut terbaru untuk **semua** percakapan, termasuk lead tanpa booking (owner 2026-10-20): `noteInboundForChatReview`

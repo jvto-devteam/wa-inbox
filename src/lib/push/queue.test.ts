@@ -1,0 +1,97 @@
+/** @vitest-environment node */
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { mockDeep, mockReset, type DeepMockProxy } from 'vitest-mock-extended'
+import type { PrismaClient } from '@prisma/client'
+
+vi.mock('@/lib/db', () => ({ prisma: mockDeep<PrismaClient>() }))
+vi.mock('./send', async (orig) => ({ ...(await orig<typeof import('./send')>()), sendPushToAll: vi.fn().mockResolvedValue(undefined) }))
+
+import { prisma } from '@/lib/db'
+import { sendPushToAll } from './send'
+import { MAX_SINGLE_PER_TICK, buildQueueItemPayload, pushFollowUpDigest, pushNewQueueItems } from './queue'
+
+const db = prisma as unknown as DeepMockProxy<PrismaClient>
+const ANCHOR = new Date('2026-11-27T03:05:00Z') // 10.05 WIB
+const item = (id: string, o: { kind?: string; anchorAt?: Date; pushedFor?: Date | null; name?: string | null } = {}) => ({
+  id,
+  kind: o.kind ?? 'REPLY',
+  conversationId: `c-${id}`,
+  anchorAt: o.anchorAt ?? ANCHOR,
+  anchorMessageId: `m-${id}`,
+  pushedFor: o.pushedFor ?? null,
+  conversation: { contact: { name: o.name === undefined ? 'Sophie' : o.name } },
+})
+const payloads = () => vi.mocked(sendPushToAll).mock.calls.map((c) => c[0])
+
+beforeEach(() => {
+  mockReset(db)
+  vi.mocked(sendPushToAll).mockClear()
+  db.summaryItem.updateMany.mockResolvedValue({ count: 1 })
+})
+
+describe('buildQueueItemPayload', () => {
+  it('Balas: nama kontak + jam WIB, tanpa teks pesan; ketuk membuka pesan anchor', () => {
+    const p = buildQueueItemPayload({ id: 'i1', kind: 'REPLY', conversationId: 'c1', anchorAt: ANCHOR, anchorMessageId: 'm1', contactName: 'Sophie' })
+    expect(p).toEqual({ title: 'Belum dibalas: Sophie', body: 'Menunggu balasan sejak 10.05 WIB — ketuk untuk membalas', url: '/inbox?conversation=c1&message=m1', tag: 'summary-item:i1' })
+  })
+
+  it('Janji Admin; nama yang berupa nomor HP disaring, tanpa nama = "Pelanggan"', () => {
+    expect(buildQueueItemPayload({ id: 'i2', kind: 'PROMISE', conversationId: 'c2', anchorAt: ANCHOR, anchorMessageId: null, contactName: '+62 812-3456-7890' }).title).not.toMatch(/812/)
+    expect(buildQueueItemPayload({ id: 'i2', kind: 'PROMISE', conversationId: 'c2', anchorAt: ANCHOR, anchorMessageId: null, contactName: null })).toMatchObject({ title: 'Janji Admin: Pelanggan', url: '/inbox?conversation=c2' })
+  })
+})
+
+describe('pushNewQueueItems', () => {
+  it('hanya REPLY/PROMISE OPEN yang anchor-nya belum dikabarkan; klaim bersyarat sebelum kirim', async () => {
+    db.summaryItem.findMany.mockResolvedValue([item('a'), item('b', { pushedFor: ANCHOR }), item('c', { kind: 'PROMISE', pushedFor: new Date(ANCHOR.getTime() - 1) })] as never)
+    expect(await pushNewQueueItems()).toEqual({ sent: 2 })
+    expect(db.summaryItem.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { state: 'OPEN', kind: { in: ['REPLY', 'PROMISE'] } } }))
+    expect(db.summaryItem.updateMany).toHaveBeenCalledWith({ where: { id: 'a', state: 'OPEN', pushedFor: null, anchorAt: ANCHOR }, data: { pushedFor: ANCHOR } })
+    expect(payloads().map((p) => p.tag)).toEqual(['summary-item:a', 'summary-item:c'])
+    expect(payloads()[1].title).toBe('Janji Admin: Sophie')
+  })
+
+  it('klaim kalah (tick lain sudah mengirim / item tertutup) = tidak dikirim', async () => {
+    db.summaryItem.findMany.mockResolvedValue([item('a')] as never)
+    db.summaryItem.updateMany.mockResolvedValue({ count: 0 })
+    expect(await pushNewQueueItems()).toEqual({ sent: 0 })
+    expect(sendPushToAll).not.toHaveBeenCalled()
+  })
+
+  it('banyak sekaligus: lima pertama satu per item, sisanya digabung satu push', async () => {
+    const many = Array.from({ length: MAX_SINGLE_PER_TICK + 3 }, (_, n) => item(`i${n}`, { kind: n === MAX_SINGLE_PER_TICK + 2 ? 'PROMISE' : 'REPLY' }))
+    db.summaryItem.findMany.mockResolvedValue(many as never)
+    expect(await pushNewQueueItems()).toEqual({ sent: MAX_SINGLE_PER_TICK + 1 })
+    expect(payloads().at(-1)).toEqual({ title: '3 chat lain di Antrean', body: '2 belum dibalas · 1 janji admin — ketuk untuk membuka Antrean', url: '/antrean', tag: 'queue-batch' })
+  })
+
+  it('tidak pernah melempar', async () => {
+    db.summaryItem.findMany.mockRejectedValue(new Error('db'))
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    await expect(pushNewQueueItems()).resolves.toEqual({ sent: 0 })
+  })
+})
+
+describe('pushFollowUpDigest', () => {
+  const at = (wib: string) => new Date(`2026-11-27T${wib}:00+07:00`)
+
+  it('sebelum 08:00 WIB ditahan, tanpa membaca DB', async () => {
+    expect(await pushFollowUpDigest(at('07:55'))).toEqual({ sent: 0 })
+    expect(db.summaryItem.findMany).not.toHaveBeenCalled()
+  })
+
+  it('mulai 08:00 WIB: satu push merangkum Follow Up baru, ditandai supaya tidak diulang', async () => {
+    db.summaryItem.findMany.mockResolvedValue([item('f1', { kind: 'FOLLOW_UP' }), item('f2', { kind: 'FOLLOW_UP' })] as never)
+    db.summaryItem.count.mockResolvedValue(6)
+    expect(await pushFollowUpDigest(at('08:00'))).toEqual({ sent: 1 })
+    expect(db.summaryItem.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { state: 'OPEN', kind: { in: ['FOLLOW_UP'] } } }))
+    expect(db.summaryItem.updateMany).toHaveBeenCalledTimes(2)
+    expect(payloads()).toEqual([{ title: 'Follow up hari ini', body: '2 chat perlu follow up (total 6 terbuka) — ketuk untuk membuka Antrean', url: '/antrean', tag: 'follow-up-digest' }])
+  })
+
+  it('tidak ada Follow Up baru = tidak ada push', async () => {
+    db.summaryItem.findMany.mockResolvedValue([item('f1', { kind: 'FOLLOW_UP', pushedFor: ANCHOR })] as never)
+    expect(await pushFollowUpDigest(at('09:00'))).toEqual({ sent: 0 })
+    expect(sendPushToAll).not.toHaveBeenCalled()
+  })
+})
