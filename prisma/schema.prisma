@@ -106,8 +106,12 @@ enum Platform {
 model ChannelIdentity {
   id          String   @id @default(cuid())
   platform    Platform
-  /// WA: 6281… · IG: IGSID · FB: PSID · EMAIL: alamat@domain
+  /// WA: 6281… · IG: IGSID · FB: PSID · EMAIL: alamat@domain.
+  /// WA tanpa nomor (pengguna ber-username, Meta hanya mengirim `bsuid`): sementara berisi bsuid itu sendiri sampai
+  /// nomornya muncul, lalu diganti nomor (`upsertWhatsappIdentity`, owner 2026-11-27).
   externalId  String
+  /// WhatsApp business-scoped user ID (`from_user_id`/`user_id`/`to_user_id` di webhook Meta). Null = belum pernah terlihat.
+  bsuid       String?
   contactId   String
   contact     Contact  @relation(fields: [contactId], references: [id])
   displayName String?
@@ -116,6 +120,7 @@ model ChannelIdentity {
   conversations Conversation[]
 
   @@unique([platform, externalId])
+  @@unique([platform, bsuid])
   @@index([contactId])
 }
 
@@ -1159,4 +1164,22 @@ model BookingActionEvent {
 
   @@index([bookingId, createdAt])
   @@index([conversationId, createdAt])
+}
+
+/// Webhook Meta yang gagal diproses (`POST /api/webhooks/meta` menjawab 500). Isi mentahnya disimpan supaya pesan tidak
+/// hilang bila Meta berhenti mengirim ulang: tick memproses ulang (`replayWebhookFailures`), idempoten karena ingest
+/// melewati pesan yang externalId-nya sudah ada. Satu baris per isi unik (`bodyHash`): kiriman ulang Meta tidak menggandakan.
+/// Memuat teks dan nomor pelanggan -> dipangkas setelah 30 hari (`pruneWebhookFailures`).
+model WebhookFailure {
+  id            String    @id @default(cuid())
+  bodyHash      String    @unique
+  body          String
+  error         String
+  attempts      Int       @default(0)
+  createdAt     DateTime  @default(now())
+  lastAttemptAt DateTime?
+  /// Null = belum berhasil diproses.
+  processedAt   DateTime?
+
+  @@index([processedAt, createdAt])
 }

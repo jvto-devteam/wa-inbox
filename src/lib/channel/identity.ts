@@ -63,3 +63,105 @@ export async function upsertChannelIdentity(input: {
     throw error
   }
 }
+
+/**
+ * Identitas WhatsApp dengan dua kunci: nomor (`phone`, `externalId`) dan `bsuid` (ID pengguna dari Meta).
+ *
+ * Sejak pengguna WhatsApp bisa memakai username (2026), Meta tidak selalu mengirim nomor: webhook hanya membawa
+ * `from_user_id`/`user_id`/`to_user_id`. Nomor ikut hanya bila bisnis pernah bertukar pesan dengan nomor itu dalam 30 hari
+ * atau nomornya ada di buku kontak (https://developers.facebook.com/documentation/business-messaging/whatsapp/business-scoped-user-ids).
+ * Kode lama memakai nomor sebagai satu-satunya kunci, sehingga pesan tanpa nomor dijawab 500 dan hilang (27 Nov 2026).
+ *
+ * Aturan satu orang = satu identitas:
+ * - Tanpa `bsuid` (webhook lama / nomor saja): persis `upsertChannelIdentity` -- tidak ada kueri tambahan.
+ * - Nomor + `bsuid`: identitas ber-nomor menang. Bila yang ada baru identitas tanpa nomor (externalId = bsuid), ia
+ *   DINAIKKAN: externalId jadi nomor dan `Contact.phone` diisi -- chat, riwayat, dan kontaknya tetap satu. Bila `bsuid` itu
+ *   sudah dipegang baris lain yang juga ber-nomor, dua baris dibiarkan (menggabungkan percakapan tidak bisa dibatalkan) dan
+ *   dicatat di log.
+ * - Hanya `bsuid`: dicari lewat `bsuid`; belum ada = dibuat dengan externalId = bsuid (kolom wajib dan unik) dan
+ *   `Contact.phone` null.
+ */
+export type WhatsappKeys = { phone?: string | null; bsuid?: string | null }
+
+/** Contact pemilik identitas WhatsApp itu (cari lewat nomor dulu, lalu bsuid), atau null bila belum pernah ada. */
+export async function findWhatsappContactId(keys: WhatsappKeys): Promise<string | null> {
+  if (keys.phone) {
+    const byPhone = await prisma.channelIdentity.findUnique({
+      where: { platform_externalId: { platform: 'WHATSAPP', externalId: keys.phone } },
+      select: { contactId: true },
+    })
+    if (byPhone) return byPhone.contactId
+  }
+  if (keys.bsuid) {
+    const byBsuid = await prisma.channelIdentity.findUnique({
+      where: { platform_bsuid: { platform: 'WHATSAPP', bsuid: keys.bsuid } },
+      select: { contactId: true },
+    })
+    if (byBsuid) return byBsuid.contactId
+  }
+  return null
+}
+
+export async function upsertWhatsappIdentity(input: WhatsappKeys & { contactId: string; displayName?: string | null }): Promise<{ id: string; contactId: string }> {
+  const { phone, bsuid, contactId, displayName } = input
+  if (!phone && !bsuid) throw new Error('upsertWhatsappIdentity: butuh nomor atau bsuid')
+  if (!bsuid) return upsertChannelIdentity({ platform: 'WHATSAPP', externalId: phone as string, contactId, displayName })
+
+  const byBsuid = await prisma.channelIdentity.findUnique({
+    where: { platform_bsuid: { platform: 'WHATSAPP', bsuid } },
+    select: { id: true, contactId: true, externalId: true },
+  })
+
+  if (!phone) {
+    if (byBsuid) {
+      if (displayName) await prisma.channelIdentity.update({ where: { id: byBsuid.id }, data: { displayName } })
+      return { id: byBsuid.id, contactId: byBsuid.contactId }
+    }
+    const create = () =>
+      prisma.channelIdentity.create({
+        data: { platform: 'WHATSAPP', externalId: bsuid, bsuid, contactId, displayName: displayName ?? null },
+        select: { id: true, contactId: true },
+      })
+    try {
+      return await create()
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+        // Balapan: pesan pertama yang nyaris bersamaan. Barisnya sudah ditulis yang menang.
+        const won = await prisma.channelIdentity.findUnique({
+          where: { platform_bsuid: { platform: 'WHATSAPP', bsuid } },
+          select: { id: true, contactId: true },
+        })
+        if (won) return won
+      }
+      throw error
+    }
+  }
+
+  // Ada nomor dan bsuid.
+  if (byBsuid && byBsuid.externalId !== phone) {
+    const byPhone = await prisma.channelIdentity.findUnique({
+      where: { platform_externalId: { platform: 'WHATSAPP', externalId: phone } },
+      select: { id: true, contactId: true },
+    })
+    if (!byPhone) {
+      // Nomornya baru muncul: identitas tanpa nomor dinaikkan jadi identitas ber-nomor.
+      await prisma.channelIdentity.update({ where: { id: byBsuid.id }, data: { externalId: phone, ...(displayName ? { displayName } : {}) } })
+      await prisma.contact.updateMany({ where: { id: byBsuid.contactId, phone: null }, data: { phone } })
+      return { id: byBsuid.id, contactId: byBsuid.contactId }
+    }
+    // Dua identitas untuk orang yang sama: tidak digabung otomatis (tidak bisa dibatalkan). Chat ber-nomor yang dipakai.
+    console.warn('upsertWhatsappIdentity: identitas ganda (bsuid dan nomor milik baris berbeda), tidak digabung', {
+      bsuidIdentityId: byBsuid.id,
+      phoneIdentityId: byPhone.id,
+    })
+    return byPhone
+  }
+
+  const identity = await upsertChannelIdentity({ platform: 'WHATSAPP', externalId: phone, contactId, displayName })
+  // Catat bsuid-nya (sekali): pesan tanpa nomor berikutnya dari orang ini -- mis. sesudah ia memakai username -- akan
+  // menemukan chat yang sama. updateMany bersyarat: tidak menimpa, tidak melempar bila baris lain sudah memegang bsuid itu.
+  await prisma.channelIdentity.updateMany({ where: { id: identity.id, bsuid: null }, data: { bsuid } }).catch((error: unknown) => {
+    if (!(error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002')) throw error
+  })
+  return identity
+}
