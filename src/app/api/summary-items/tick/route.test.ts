@@ -69,6 +69,7 @@ describe('POST /api/summary-items/tick', () => {
     const { pushNewQueueItems, pushFollowUpDigest } = await import('@/lib/push/queue')
     expect(vi.mocked(createLiveReplyItems).mock.invocationCallOrder[0]).toBeLessThan(vi.mocked(pushNewQueueItems).mock.invocationCallOrder[0])
     expect(vi.mocked(pushFollowUpDigest).mock.calls[0][0]).toBe(vi.mocked(reconcileSummaryItems).mock.calls[0][0])
+    expect(vi.mocked(pushNewQueueItems).mock.calls[0][0]).toBe(vi.mocked(reconcileSummaryItems).mock.calls[0][0])
   })
 
   it('menyalin jadwal reminder agent dari backoffice; gagalnya tidak menggagalkan tick', async () => {

@@ -1060,6 +1060,10 @@ model SummaryItem {
   /// anchorAt yang sudah dikabarkan lewat Web Push (owner 2026-11-27, `src/lib/push/queue.ts`). Push dikirim bila item
   /// OPEN dan pushedFor != anchorAt, jadi item yang dibuka ulang dengan anchor baru dikabarkan lagi.
   pushedFor       DateTime?
+  /// Jumlah push untuk anchor `pushedFor` dan waktu push terakhir: REPLY yang masih OPEN diingatkan ulang tiap 1 jam,
+  /// maks. 3 ulangan (owner 2026-11-27). 0/null = belum pernah (termasuk baris lama sebelum kolom ini).
+  pushCount       Int          @default(0)
+  pushedAt        DateTime?
   /// REPLIED | REMINDER_DONE | DROPPED | STAGE_ADVANCED | PROMISE_KEPT | JUDGED_DONE
   closedReason    String?
   note            String?
