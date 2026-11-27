@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeAll, vi } from 'vitest'
 import crypto from 'crypto'
 import { GET, POST } from './route'
+import { describeWebhookFailure } from '@/lib/meta/webhook-failure'
 import { ingestMetaMessage } from '@/lib/inbound'
 
 vi.mock('@/lib/inbound', () => ({
@@ -105,4 +106,27 @@ describe('POST /api/webhooks/meta', () => {
     expect(typeof json.error).toBe('string')
     expect(json.error).not.toContain('db is down')
   })
+
+  it('2026-11-27: galat ingest dicatat (jenis + bentuk payload) tanpa nomor/isi pesan', async () => {
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {})
+    vi.mocked(ingestMetaMessage).mockRejectedValueOnce(new Error('Argument externalId is missing for 6281234567890 a@b.co'))
+    const payload = {
+      object: 'whatsapp_business_account',
+      entry: [{ id: '1', changes: [{ field: 'messages', value: { contacts: [{ profile: { name: 'Khairul' }, user_id: 'MY.1' }], messages: [{ from_user_id: 'MY.1', id: 'wamid.X', text: { body: 'halo rahasia' }, type: 'text' }] } }] }],
+    }
+    const body = JSON.stringify(payload)
+    const sig = 'sha256=' + crypto.createHmac('sha256', 'app-secret').update(body).digest('hex')
+    const res = await POST(new Request('http://localhost/api/webhooks/meta', { method: 'POST', headers: { 'x-hub-signature-256': sig }, body }))
+    expect(res.status).toBe(500)
+    const logged = JSON.stringify(err.mock.calls)
+    expect(logged).toContain('from_user_id')
+    expect(logged).toContain('externalId is missing')
+    expect(logged).not.toMatch(/6281234567890|a@b\.co|halo rahasia|Khairul|wamid\.X/)
+    err.mockRestore()
+  })
+
+  it('describeWebhookFailure tahan payload aneh', () => {
+    expect(describeWebhookFailure(null, 'x')).toMatchObject({ error: 'string', object: null, shape: '[]' })
+  })
 })
+

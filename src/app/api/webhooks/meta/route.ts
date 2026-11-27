@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { verifyMetaSignature } from '@/lib/meta/webhook-verify'
 import { ingestMetaMessage } from '@/lib/inbound'
+import { describeWebhookFailure } from '@/lib/meta/webhook-failure'
 
 export async function GET(req: Request) {
   const url = new URL(req.url)
@@ -42,7 +43,11 @@ export async function POST(req: Request) {
 
   try {
     await ingestMetaMessage(payload)
-  } catch {
+  } catch (error) {
+    // Dulu ditelan tanpa jejak: 2026-11-27 pesan WhatsApp dari nomor baru ditolak 500 berulang kali dan tidak ada
+    // satu baris pun di log yang menjelaskan sebabnya. Yang dicatat hanya jenis galat + bentuk payload (nama kolom,
+    // tanpa isi pesan/nomor); deret angka panjang dan email di pesan galat disamarkan.
+    console.error('POST /api/webhooks/meta gagal', describeWebhookFailure(payload, error))
     return NextResponse.json({ error: 'Failed to process webhook' }, { status: 500 })
   }
   return new Response('OK', { status: 200 })
