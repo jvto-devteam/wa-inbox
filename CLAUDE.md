@@ -176,6 +176,25 @@ balasan keluar dari alamat itu). Masuk lewat dua lapis: push Pub/Sub `POST /api/
 `Conversation.mailAutomated` menandai benang dari pengirim mesin (label, bukan gerbang):
 email tetap masuk, hanya daily summary yang tidak mengumpulkannya. Kode di `src/lib/gmail/`.
 
+### WhatsApp tanpa nomor (BSUID) & jaring pengaman webhook
+Sejak pengguna WhatsApp bisa memakai username, webhook Meta tidak selalu membawa nomor: hanya `from_user_id`/`user_id`/
+`to_user_id` (BSUID); nomor ikut bila bisnis pernah bertukar pesan dengan nomor itu dalam 30 hari atau ada di buku kontak.
+Dulu kode memakai nomor sebagai satu-satunya kunci, jadi pesan seperti itu dijawab 500 dan hilang (27 Nov 2026, tamu iklan
+"khairulnizamsidi"). Kini `ChannelIdentity.bsuid` (unik per platform) + `src/lib/channel/identity.ts`
+(`findWhatsappContactId`, `upsertWhatsappIdentity`): tanpa nomor = identitas dibuat dengan `externalId` = bsuid dan
+`Contact.phone` null, percakapan lahir dengan **bot mati** (jalur kirim butuh nomor); nomor yang muncul belakangan
+**menaikkan** identitas yang sama (externalId jadi nomor, `Contact.phone` diisi, chat tetap satu); bsuid dicatat juga untuk
+tamu ber-nomor supaya yang kelak memakai username masuk ke chat yang sama. Dua baris (tanpa nomor dan ber-nomor) untuk orang
+yang sama **tidak digabung otomatis** (tidak bisa dibatalkan), hanya dicatat di log. **Membalas** ke pengguna tanpa nomor
+BELUM bisa: `sendMessage` menolak kontak tanpa nomor, dan jalur Unofficial memang butuh nomor; Official (Cloud API) menerima
+`recipient` = BSUID, tetapi memakainya untuk chat tanpa nomor adalah pengecualian atas aturan channel dan menunggu keputusan owner.
+Balas dari Meta Business Suite sementara itu.
+
+Jaring pengaman: `POST /api/webhooks/meta` yang gagal mencatat sebabnya (`webhook-failure.ts`: jenis galat + nama kolom
+payload, tanpa nilai) dan menyimpan isi mentahnya di `WebhookFailure` (`webhook-failure-store.ts`, satu baris per isi
+unik); tick 5 menit memprosesnya ulang (jeda 15 menit, jendela 7 hari, idempoten karena ingest melewati `externalId` yang
+sudah ada) dan memangkas yang lebih tua dari 30 hari. Jawaban tetap 500 supaya Meta ikut mengirim ulang.
+
 ### Decision log & triage
 `BotDecisionRun` + trace viewer + popover di Inbox. Triage = dua kolom `flaggedAt` /
 `flagNote` pada baris yang sama, bukan tabel tersendiri.

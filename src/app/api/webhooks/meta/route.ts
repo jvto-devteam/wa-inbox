@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { verifyMetaSignature } from '@/lib/meta/webhook-verify'
 import { ingestMetaMessage } from '@/lib/inbound'
 import { describeWebhookFailure } from '@/lib/meta/webhook-failure'
+import { saveWebhookFailure } from '@/lib/meta/webhook-failure-store'
 
 export async function GET(req: Request) {
   const url = new URL(req.url)
@@ -48,6 +49,9 @@ export async function POST(req: Request) {
     // satu baris pun di log yang menjelaskan sebabnya. Yang dicatat hanya jenis galat + bentuk payload (nama kolom,
     // tanpa isi pesan/nomor); deret angka panjang dan email di pesan galat disamarkan.
     console.error('POST /api/webhooks/meta gagal', describeWebhookFailure(payload, error))
+    // Isi mentahnya disimpan dan diproses ulang tick 5 menit (webhook-failure-store.ts); jawaban tetap 500 supaya Meta
+    // juga mengirim ulang. Tidak pernah melempar.
+    await saveWebhookFailure(rawBody, error)
     return NextResponse.json({ error: 'Failed to process webhook' }, { status: 500 })
   }
   return new Response('OK', { status: 200 })

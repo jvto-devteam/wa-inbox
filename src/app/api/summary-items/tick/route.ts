@@ -11,6 +11,7 @@ import { createLiveReplyItems, reconcileSummaryItems } from '@/lib/summary-items
 import { releaseStaleExecuting } from '@/lib/booking-actions/execute'
 import { pushUnnotifiedChanges } from '@/lib/booking-actions/push-sweep'
 import { pushDueReminders } from '@/lib/push/reminders'
+import { replayWebhookFailures } from '@/lib/meta/webhook-failure-store'
 import { pushFollowUpDigest, pushNewQueueItems } from '@/lib/push/queue'
 import { createDataRequestDrafts } from '@/lib/booking-actions/data-requests'
 import { syncAgentSchedule } from '@/lib/agent-schedule/sync'
@@ -38,6 +39,7 @@ import { closeExcludedItems } from '@/lib/summary-items/exclusion'
  *    dikirim otomatis bila `dataRequestApproval = ALWAYS`. Galatnya hanya di-log; tidak menahan sisa tick.
  * 3. `createLiveReplyItems` (pesan pelanggan yang belum dibalas ≥ 30 menit masuk antrean tanpa
  *    menunggu 00:00; juga dipanggil GET /api/summary-items, dijaga single-flight di sync.ts).
+ * 6. `replayWebhookFailures` (meta/webhook-failure-store.ts): memproses ulang webhook Meta yang gagal (27 Nov 2026).
  * 5. `pushNewQueueItems` + `pushFollowUpDigest` (push/queue.ts): notif HP Balas/Janji Admin baru dan rangkuman
  *    Follow Up mulai 08:00 WIB (owner 2026-11-27).
  * Tidak pernah memanggil LLM. `refreshStaleBookingData` memanggil API booking (maks. 25
@@ -131,13 +133,16 @@ async function tick(): Promise<NextResponse> {
       console.error('POST /api/summary-items/tick: draf permintaan data gagal', error instanceof Error ? error.name : 'unknown')
     })
     const live = await createLiveReplyItems(now)
+    // Webhook Meta yang gagal diproses diulang di sini (jaring pengaman pesan hilang). Sesudah item live supaya pesan yang
+    // baru pulih ikut terbaca tick berikutnya; tidak pernah melempar.
+    const webhookReplay = await replayWebhookFailures(now)
     // Reminder yang jatuh tempo dikabarkan lewat Web Push (sekali per jatuh tempo). Tidak pernah melempar.
     const reminders = await pushDueReminders(now)
     // Notif HP antrean (owner 2026-11-27): Balas/Janji Admin baru satu per item, Follow Up dirangkum mulai 08:00 WIB.
     // Sesudah reconcile + live, jadi yang sudah tertutup tidak dikabarkan. Keduanya tidak pernah melempar.
     const queuePush = await pushNewQueueItems(now)
     const followUpPush = await pushFollowUpDigest(now)
-    return NextResponse.json({ reconciled, live, reminders, queuePush, followUpPush })
+    return NextResponse.json({ reconciled, live, reminders, queuePush, followUpPush, webhookReplay })
   } catch (error) {
     console.error('POST /api/summary-items/tick gagal', error instanceof Error ? error.message : 'unknown')
     return NextResponse.json({ error: 'Gagal menjalankan tick antrean' }, { status: 500 })

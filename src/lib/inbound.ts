@@ -1,6 +1,6 @@
 import { Prisma, type DeliveryStatus, type TemplateMetaStatus, type Platform } from '@prisma/client'
 import { prisma } from '@/lib/db'
-import { upsertChannelIdentity } from '@/lib/channel/identity'
+import { findWhatsappContactId, upsertWhatsappIdentity } from '@/lib/channel/identity'
 import { hasPhoneNumber, BOT_TOGGLE_COLUMN_BY_PLATFORM } from '@/lib/channel/platform'
 import { broadcast } from '@/lib/realtime'
 import { decideAndRespond } from '@/lib/bot/orchestrator'
@@ -23,7 +23,10 @@ type MetaMediaObject = { id: string; mime_type: string; caption?: string; filena
 
 export type MetaInboundMessage = {
   id: string
-  from: string
+  /** Nomor pengirim. HILANG bila pengirim memakai username dan nomornya tidak tersedia -- lihat `from_user_id`. */
+  from?: string
+  /** BSUID (business-scoped user ID) pengirim; selalu ada pada webhook baru. */
+  from_user_id?: string
   timestamp: string
   type: string
   text?: { body: string }
@@ -126,7 +129,9 @@ function mediaObjectFor(message: MetaInboundMessage): MetaMediaObject | undefine
 export type MetaMessageEcho = {
   id: string
   from: string
-  to: string
+  /** Nomor pelanggan. HILANG bila pelanggan memakai username dan nomornya tidak tersedia -- lihat `to_user_id`. */
+  to?: string
+  to_user_id?: string
   timestamp: string
   type: string
   text?: { body: string }
@@ -142,7 +147,7 @@ export type MetaMessageEcho = {
   edit?: { original_message_id: string }
 }
 
-export type MetaContact = { profile?: { name?: string | null } | null; wa_id: string }
+export type MetaContact = { profile?: { name?: string | null } | null; wa_id?: string; user_id?: string }
 
 // Delivery receipts for previously-sent OUTBOUND messages. `id` is the wamid we
 // stored as Message.externalId when we sent it.
@@ -572,32 +577,33 @@ async function ingestSingleMessage(message: MetaInboundMessage, contacts: MetaCo
   // Profile name comes from THIS change's own contacts array (each change carries its
   // own), matched on wa_id where possible -- a hoisted single value would attach one
   // sender's name to another sender's contact once several changes are batched.
+  const phone = message.from ?? null
+  const bsuid = message.from_user_id ?? null
+  if (!phone && !bsuid) {
+    // Tanpa nomor DAN tanpa bsuid tidak ada yang bisa dipakai sebagai identitas. Dicatat (bentuknya saja), bukan ditelan.
+    console.warn('ingestSingleMessage: pesan tanpa nomor dan tanpa bsuid dilewati', { messageType: message.type })
+    return false
+  }
   const profileName =
-    contacts?.find((c) => c.wa_id === message.from)?.profile?.name ?? contacts?.[0]?.profile?.name ?? undefined
+    contacts?.find((c) => (phone && c.wa_id === phone) || (bsuid && c.user_id === bsuid))?.profile?.name ??
+    contacts?.[0]?.profile?.name ??
+    undefined
 
   // Kontak dicari lewat identitasnya, bukan lewat nomornya. Setelah Task 9 melepas
   // Contact.phone @unique, Prisma menolak `phone` di `where` sebuah upsert -- dan nomor
   // memang bukan lagi identitas: ia hanya salah satu alamat, kebetulan yang pertama ada.
-  const known = await prisma.channelIdentity.findUnique({
-    where: { platform_externalId: { platform: 'WHATSAPP', externalId: message.from } },
-    select: { contactId: true },
-  })
+  const knownContactId = await findWhatsappContactId({ phone, bsuid })
 
-  const contact = known
+  const contact = knownContactId
     ? await prisma.contact.update({
-        where: { id: known.contactId },
+        where: { id: knownContactId },
         data: profileName ? { name: profileName } : {},
       })
-    : await prisma.contact.create({ data: { phone: message.from, name: profileName ?? null } })
+    : await prisma.contact.create({ data: { phone, name: profileName ?? null } })
 
-  const identity = await upsertChannelIdentity({
-    platform: 'WHATSAPP',
-    // Diambil dari payload, bukan dari contact.phone: setelah Task 9 kolom itu bertipe
-    // `string | null` dan tidak bisa dipakai sebagai externalId yang wajib string.
-    externalId: message.from,
-    contactId: contact.id,
-    displayName: profileName,
-  })
+  // Nomor dan/atau bsuid diambil dari payload, bukan dari contact.phone: kolom itu `string | null`. Pengirim tanpa nomor
+  // (pengguna ber-username) memakai bsuid; nomor yang muncul belakangan menaikkan identitasnya (upsertWhatsappIdentity).
+  const identity = await upsertWhatsappIdentity({ phone, bsuid, contactId: contact.id, displayName: profileName })
 
   const sentAt = parseMetaTimestamp(message.timestamp)
 
@@ -612,7 +618,7 @@ async function ingestSingleMessage(message: MetaInboundMessage, contacts: MetaCo
     create: {
       // `identity.contactId`, NOT the locally resolved `contact.id`. Contact.phone is no longer
       // @unique, so two near-simultaneous first messages from the same new number both find no
-      // identity and both create a Contact (A and B). upsertChannelIdentity binds the identity
+      // identity and both create a Contact (A and B). upsertWhatsappIdentity binds the identity
       // to whichever committed first; the loser would otherwise open the conversation under its
       // own Contact, leaving Conversation.contactId permanently disagreeing with
       // ChannelIdentity.contactId -- and src/app/api/send/route.ts, which looks a contact up by
@@ -624,7 +630,8 @@ async function ingestSingleMessage(message: MetaInboundMessage, contacts: MetaCo
       channelIdentityId: identity.id,
       externalThreadId: '',
       lastMessageAt: sentAt,
-      botEnabled: await defaultBotEnabled({ platform: 'WHATSAPP', phone: message.from }),
+      // Tanpa nomor, bot tidak bisa membalas (jalur kirim WhatsApp butuh nomor): percakapan lahir dengan bot mati.
+      botEnabled: phone ? await defaultBotEnabled({ platform: 'WHATSAPP', phone }) : false,
     },
   })
 
@@ -747,26 +754,23 @@ async function ingestEchoedMessage(echo: MetaMessageEcho): Promise<boolean> {
   // Kontak dicari lewat identitasnya, bukan lewat nomornya. Setelah Task 9 melepas
   // Contact.phone @unique, Prisma menolak `phone` di `where` sebuah upsert -- dan nomor
   // memang bukan lagi identitas: ia hanya salah satu alamat, kebetulan yang pertama ada.
-  const known = await prisma.channelIdentity.findUnique({
-    where: { platform_externalId: { platform: 'WHATSAPP', externalId: echo.to } },
-    select: { contactId: true },
-  })
+  const phone = echo.to ?? null
+  const bsuid = echo.to_user_id ?? null
+  if (!phone && !bsuid) {
+    console.warn('ingestEchoedMessage: echo tanpa nomor dan tanpa bsuid dilewati', { messageType: echo.type })
+    return false
+  }
+  const knownContactId = await findWhatsappContactId({ phone, bsuid })
 
   // `findUniqueOrThrow`, not `update({ data: {} })`. An echo carries no profile name, so there
   // has never been anything to write here -- the old no-op UPDATE was a plain read wearing a
   // write's clothes, and it ran on EVERY echoed message. (ingestSingleMessage above keeps its
   // `update` because an inbound message genuinely can carry a new profile name.)
-  const contact = known
-    ? await prisma.contact.findUniqueOrThrow({ where: { id: known.contactId } })
-    : await prisma.contact.create({ data: { phone: echo.to, name: null } })
+  const contact = knownContactId
+    ? await prisma.contact.findUniqueOrThrow({ where: { id: knownContactId } })
+    : await prisma.contact.create({ data: { phone, name: null } })
 
-  const identity = await upsertChannelIdentity({
-    platform: 'WHATSAPP',
-    // Diambil dari payload, bukan dari contact.phone: setelah Task 9 kolom itu bertipe
-    // `string | null` dan tidak bisa dipakai sebagai externalId yang wajib string.
-    externalId: echo.to,
-    contactId: contact.id,
-  })
+  const identity = await upsertWhatsappIdentity({ phone, bsuid, contactId: contact.id })
 
   const sentAt = parseMetaTimestamp(echo.timestamp)
 
@@ -785,7 +789,7 @@ async function ingestEchoedMessage(echo: MetaMessageEcho): Promise<boolean> {
       channelIdentityId: identity.id,
       externalThreadId: '',
       lastMessageAt: sentAt,
-      botEnabled: await defaultBotEnabled({ platform: 'WHATSAPP', phone: echo.to }),
+      botEnabled: phone ? await defaultBotEnabled({ platform: 'WHATSAPP', phone }) : false,
     },
   })
 

@@ -2,8 +2,10 @@ import { describe, it, expect, beforeAll, vi } from 'vitest'
 import crypto from 'crypto'
 import { GET, POST } from './route'
 import { describeWebhookFailure } from '@/lib/meta/webhook-failure'
+import { saveWebhookFailure } from '@/lib/meta/webhook-failure-store'
 import { ingestMetaMessage } from '@/lib/inbound'
 
+vi.mock('@/lib/meta/webhook-failure-store', () => ({ saveWebhookFailure: vi.fn().mockResolvedValue(undefined) }))
 vi.mock('@/lib/inbound', () => ({
   ingestMetaMessage: vi.fn().mockResolvedValue({ processed: 0, skipped: 0, statusUpdates: 0, templateStatusUpdates: 0 }),
 }))
@@ -122,6 +124,8 @@ describe('POST /api/webhooks/meta', () => {
     expect(logged).toContain('from_user_id')
     expect(logged).toContain('externalId is missing')
     expect(logged).not.toMatch(/6281234567890|a@b\.co|halo rahasia|Khairul|wamid\.X/)
+    // Isi mentahnya disimpan untuk diproses ulang tick (jaring pengaman), jawaban tetap 500.
+    expect(saveWebhookFailure).toHaveBeenCalledWith(body, expect.any(Error))
     err.mockRestore()
   })
 
